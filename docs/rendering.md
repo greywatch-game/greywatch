@@ -1929,42 +1929,109 @@ and then toward the map's own `floorColor` in the last few centimetres, off the
 baked bed-depth map, lit by the same banded key, ambient and sky fill as the
 ground it sits in); the **mirror** (the map's own dome gradient with the light's
 glare in it, and a picture of the world composited over that out of a cube
-probe); **Schlick** between them; the **glint**; the **foam**; the
-**atmosphere**, copied term for term from the cel shader.
+probe); **Schlick** between them; the **light on the waves**, cut hard; the
+**foam**; the **atmosphere**, copied from the cel shader but for one ramp.
+
+**And it MOVES — the swell is geometry, and that is what stopped it reading as
+flat.** A plane with a normal painted on it can honestly carry about a quarter
+of a metre of implied relief before the slope aims the mirrored ray at the ground
+behind the player, so the old surface was a flat sheet with a fine crinkle over
+it at every range, and that is exactly what it read as — photographic foil in a
+drawn frame on a pond, a grey sheet on a sea. Now the grid under the eye is
+displaced by the same wave field the fragment lights, so a crest occludes the
+trough behind it, the waterline runs up the bank and drains, and **the ink finds
+the crests of a sea by the depth step they leave, exactly as it finds a
+roofline** — which is the most hand-drawn thing on the water and costs no term
+of its own.
+
+### The grid: one mesh, stood under the eye, cut by clamping
+
+**Every body draws the SAME grid**, built per `build` in `WaterSystem` and
+stood under the camera by a uniform (`gridOrigin`) rather than by moving the
+mesh, and **each rect is cut out of it in the vertex shader by CLAMPING** each
+vertex into the rect. The grid and the rect are both axis-aligned, so a clamped
+cell is exactly the cell's overlap with the rect: wholly outside collapses to a
+line and draws nothing, straddling the shore is trimmed to the edge. No
+fragment is discarded, and a pond and a sea partitioned into eight rects are the
+same geometry. Three things follow and all three are load-bearing:
+
+- **The meshes stand at the origin, frozen, with their bounds set BY HAND** to
+  the rect and the tallest crest the field can raise. A water mesh's vertex
+  positions are not where it is drawn — `position.xz` is an offset from the
+  grid's origin and `position.y` is not a height at all but the CELL SIZE at
+  that vertex, which the vertex stage's sampling test reads. Nothing may read
+  a water mesh's vertices as world geometry, and nothing may
+  `refreshBoundingInfo` it.
+- **The grid is uniform under the camera and geometric beyond**
+  (`CONFIG.water.grid`), and the origin snaps to one near cell, so a near
+  vertex lands on the same world point every frame and cannot swim. A far
+  vertex moves a near cell's width at a snap, which is nothing against the only
+  trains it carries: **a vertex draws a train only where it has `grid.detail`
+  cells per wavelength**, so the swell leaves the geometry of its own accord as
+  the cells grow. That number is not a look. At 2.5–4 cells a wave the
+  linear interpolation folds visibly along the triangle edges and the ink draws
+  the GRID; at 5–8 it does not. Measured over a 30-frame walk across three
+  snaps, the snap frames' difference was indistinguishable from their
+  neighbours'.
+- **A body past `grid.quadBeyond` is drawn as a two-triangle quad instead**,
+  swapped per frame in `WaterSystem.follow`, because none of the grid carries
+  anything out there and its triangles would all be clamped to nothing at the
+  cost of shading their corners. And `follow` is pushed from `tick` in every
+  state (`docs/game.md`), because a deploy screen over the bay is a live view
+  of a grid that would otherwise stand wherever the player last did.
 
 ### The wave field is analytic, and that is a rule
 
 **There is no normal map and there must not be one again.** The surface was
 three scrolled, rotated, mutually-warped layers of a tiling fBm normal map, and
 every one of those adjectives was a defence against the same thing: a lattice
-sampled on a plane the size of a valley is a lattice you can see. Three rules,
-a tuning floor on the wave scales that existed purely as a sampling limit, and a
-committed 512px PNG, all so that a repeating image would not look like one. It
-looked like lichen anyway — cloudy directionless mottling, which is what fBm is
-and is not what water is.
+sampled on a plane the size of a valley is a lattice you can see. It looked like
+lichen anyway — cloudy directionless mottling, which is what fBm is and is not
+what water is.
 
-A sum of directional wave TRAINS has no lattice, so none of those rules exist.
-What replaces them is `waveDetail`, which is not a tuning at all but a sampling
-criterion: `fwidth(vPosW.xz)` is how many metres of world a pixel covers, so a
-train under a few pixels per wavelength is faded out because it cannot be drawn
-— at any resolution and any field of view, with no second number to keep in
-step. Three details in `waveField` are load-bearing and each is argued in the
-file: `exp(sin(x) - 1)` rather than `sin(x)` (crests are narrow and troughs are
-flat, and its derivative is itself times `cos`); each train dragged by the phase
-of the one above it (six sinusoids at fixed bearings still beat on a period you
-can see); and deep-water dispersion, `speed *= sqrt(lacunarity)`, so the ripples
-crawl while the swell rolls — give every train one speed and the field slides
-across the pond as a sheet, which is the most obvious scrolling-texture tell
-there is. Bearings are spread by the golden angle and not evenly, because six
-even bearings are a hexagonal lattice by another name.
+A sum of directional wave TRAINS has no lattice. **The vertex and fragment
+stages evaluate ONE WGSL function** (`WAVES`, interpolated into both), the one
+displacing by the height and the other lighting by the slope, so the shape and
+the light can never describe two different seas. The trains are built in
+TypeScript (`waveTrains`), **seeded and never random, and the seed is not the
+body's**: a partitioned sea whose rects summed different fields would draw every
+seam as a line across the bay. Three details in the field are load-bearing and
+each is argued in the file: `exp(sin(x) - 1)` rather than `sin(x)` (crests are
+narrow and troughs are flat, and its derivative is itself times `cos`); each
+train sampled where the ones above it have DRAGGED the point toward their crests
+(sinusoids at fixed bearings still beat on a period you can see, and the drag is
+also what bunches the chop onto the swell's crests); and **deep-water dispersion
+outright**, `omega = sqrt(g k)`, so the ripples crawl while the swell rolls —
+give every train one speed and the field slides across the pond as a sheet, the
+most obvious scrolling-texture tell there is. Bearings are drawn inside a SPREAD
+that widens as the trains shorten: a wind sea's swell is ordered and its chop
+comes from everywhere, and trains spread evenly all round are a crosshatch,
+which read as crinkled foil.
 
-**The far field is allowed to flatten, and it was not before.** The old shader
-faded its fine layers but never its swell, because a flat surface has one
-specular answer over its whole area and that arrives as a hard white sheet. That
-is true of a shader with no reflection in it. With one, distant water that
-flattens toward a mirror returns the sky and the far bank — which is what a lake
-does — so the trains fade against the FULL amplitude rather than being
-renormalised over the survivors.
+**The spectrum is the MAP's and the steepness is the physics.** A map states one
+number, `WaterEnvSpec.swell` — how tall its open water stands — and the longest
+train's wavelength is that over `waves.steepness`, the chop walking down from
+there to `waves.ripple`. So a pond is all ripple and a sea rolls, and one value
+serves a map with a harbour and a millpond on it, because two caps apply per
+body without anybody stating them: **no wave taller than the water under it**
+(`waves.break`, so a flood meadow ankle-deep for twenty metres is calm and its
+channel moves), and **no swell wider than the rect can raise** (`waves.fetch`, so
+a six-metre creek on a sea map still ripples). A rect whose `sound` is
+`"stream"` carries its whole field downstream along its long side — the rect's
+own claim that the water runs, which is the half of the distinction geometry
+cannot make.
+
+**Two sampling tests, one per stage.** The vertex's is in cells (above). The
+fragment's is `waves.detail`, in pixels per wavelength off `fwidth(vPosW.xz)`,
+so it holds at any resolution and field of view. **What a pixel cannot draw is
+not thrown away: its slope becomes ROUGHNESS** (`Waves.lost`), which blurs the
+mirror, widens the light's cones and dims them by the same factor. So the far
+reach of a lake goes to a soft sheen rather than flattening into a mirror that
+shows the sun as a hard egg — and the trains are sorted longest-first, so the
+first one a pixel cannot carry starts a tail it cannot carry either, which the
+fragment counts as roughness for the cost of a multiply rather than a sin, a cos
+and an exp each. That skip is what held the sea's GPU cost within 0.2 ms of the
+flat plane it replaced.
 
 ### The mirror, and the three ways it can be got wrong
 
@@ -2006,6 +2073,46 @@ centroid of the WET cells it found on its way past. Editor builds park the
 probes and return strength 0, exactly as the glazing does, which leaves the
 water showing the analytic dome and no more.
 
+### The light on the waves: cut hard, in degrees, and asked of the waves
+
+**The PICTURE follows the swell and only part of the chop (`mirrorChop`); the
+LIGHT follows all of it.** That split is the stylisation, and it is how water is
+painted: the far bank's reflection is a few smooth, wobbling shapes, and the sun
+on the same water is a scatter of hard sparks. Asked of one normal, the chop
+steep enough to break the sun into glitter breaks the reflection into foil with
+it — which is what every photographic water shader does and exactly what did not
+belong in this frame. The Fresnel is taken off the picture's normal, so the mix
+between body and mirror is as smooth as the mirror.
+
+**Every light on the water is a cone on the MIRRORED RAY, cut hard in
+degrees** (`CONFIG.water.light`): within `glint` of the light a facet shows the
+light itself, within `sheen` the path of light round it, and a point light gets
+the same pair (`lamp`) so a lantern lays a broken column across a creek. Where
+they are is where the wave field puts a facet, and they move because the waves
+do — **no lattice, no clock, and no sparkle that moves on its own**, all three of
+which have been tried on this surface and rejected on sight. The unresolved
+chop widens both cones and spends the same light over the wider one, which is
+what keeps a calm far reach from drawing the light's image as a hard egg. This
+is also what finally fires under a LOW sun: the Blinn lobe it replaced wanted a
+facet within a few degrees of the half-vector against centimetres of relief, and
+at Harrowmead's 14.5 degrees it multiplied out to nothing (it was `FINDINGS.md`
+14 for that). `WaterEnvSpec.glint` scales both cones' strength.
+
+**Light THROUGH a backlit crest** (`light.through`) is the one diffuse term that
+is the water's own: looking toward a low light, the thin top of a swell lit from
+behind glows in the water's shallow colour. It needs the light ahead, a face
+turned toward the eye and the top of a crest, it arrives through the body so it
+is what the Fresnel leaves, and it is two hard steps rather than a gradient. **It
+is scaled by the map's SWELL** (`through.swell`): a pond's ripple has no crest
+thick enough to see into, and on one the term drew flat pale coins.
+
+**The body's key light is BANDED on the swell's normal and never on the chop's**
+(`waterBand`, over a `scatter` floor), so its tone patches are the shapes of the
+waves. The floor is physics before it is taste — what colours water is light
+scattered inside it, which does not care which way the surface tilts — and
+without it a wave's back facing away from a low sun went to ambient and read as
+a hole in the sea.
+
 ### The body, the bed and the foam
 
 **The depth fade is Beer-Lambert and not a ramp**, and the difference is not
@@ -2013,7 +2120,9 @@ subtle on a lumpy bed: a linear fade that clamps draws the depth map's own
 contour line across the water wherever the bed crosses it, and a flood meadow is
 nothing but scattered pockets a few centimetres either side of one. An
 exponential is what absorption is, has no knee anywhere, and never quite reaches
-the deep colour — which is also true of water.
+the deep colour — which is also true of water. The depth it reads is the
+DISPLACED surface's, so a trough over a bank is shallower than a crest and shows
+more of the bed.
 
 **The bed shows THROUGH without the water ceasing to be opaque.** There is
 exactly one see-through material in this renderer and it is glazing; what the
@@ -2022,14 +2131,19 @@ last few centimetres do instead is grade the body toward the map's own
 centimetres of water over a bank is indistinguishable from the thing it stands
 in for.
 
-**Foam is a lip and not a covering, and `foamDepth` is the number that decides
-which.** These are flood meadows and mill leats, not beaches: a rect can be
-ankle-deep for twenty metres, and the shoreline distance is derived from the
-depth, so a generous `foamDepth` does not widen a line along the bank — it
-paints the whole flat white. The same mistake in a second place is
-`fleckStrength`, the one foam term with no shoreline in it: it was a literal
-0.14 in the shader and a thresholded copy of the foam mask over every water
-pixel is, once again, a texture on the water.
+**Foam is a LINE along the waterline, measured as a DISTANCE rather than a
+depth.** The shader divides the water's depth by the bed's own slope (two more
+taps of the bed map) to get how far the waterline is, so the lace is one width,
+`foamWidth`, on a steep bank and a gentle one alike. Keyed on depth alone it was
+a line on the steep bank and a SHEET on the gentle one — a flat just awash is
+shallow over its whole area — and `foamSlope` is the floor under the slope so a
+truly level shoal foams only where it meets the air. **It is crisp and it is a
+LACE**: hard edges, broken by the drifting mask even at the waterline itself,
+thinning to scraps outward; a band that fills whenever it is full is a metre of
+white paint along a gentle shore. Whitecaps are the same: on a swell tall
+enough to break (`caps.swell`), at its crests, and only where their own mask is
+thick — gated on the crest alone, the top of the nearest big wave went white
+from end to end and read as a sandbar.
 
 ### The one thing that disturbs it: a rotor
 
@@ -2041,7 +2155,10 @@ start at its RIM — there is nothing left under the disc for a ring to be a rin
 on — and the disc reuses three things the surface already has rather than adding
 a fourth kind of shading. The ordered swell is pressed out of it
 (`washFlatten`), because trains rolling on through a patch that is visibly being
-shredded is what tells a viewer the two effects are drawn by different things.
+shredded is what tells a viewer the two effects are drawn by different things —
+and pressed out of the GEOMETRY as well as the light, the vertex stage reading
+the same sites (`washCore`), or the lit surface lies flat on a mesh still heaving
+under it.
 The mirror is roughened (`washBlur`), which is the term that actually reads as a
 hole: a water surface is mostly its reflection, so the fastest way to say "this
 is not a mirror any more" is to blur what it returns — and it goes into the wave
@@ -2070,14 +2187,14 @@ aliasing; the disc is smooth and a smooth thing has nothing to alias.
 not either one — and it must be judged on a BRIGHT map.** Fitted first on the
 night map at 0.09 m over 2.2 m, four times the steepest thing the wind's own
 field produces, and on Sarab in daylight that rendered as a set of hard white
-arcs: the crests were tipped far enough to catch `specStrength` through its own
+arcs: the crests were tipped far enough to catch the crest glint through its own
 `smoothstep`, so what a viewer read was a stencil of rings rather than water
 moving. A night harbour cannot fail that test, because a dark mirror returns
 almost nothing at any slope. At 0.085 over 3.4 m the rings are legible on
 Sarab's birkat and faint on Cinderhaven's bay, which is what a dark mirror
 honestly does.
 
-### Two traps that cost time
+### Traps that cost time
 
 **A trailing `//` comment in a GLSL string may not contain a semicolon.**
 Babylon's shader processor splits statements at every `;` and moves the
@@ -2098,6 +2215,27 @@ DOES bite a comment here, which is JavaScript's rather than the processor's.
 is what makes the cel shader's floors and roofs read as lit; water is the most
 up-facing surface on any map, and leaving it out is what made a pond read as a
 hole in a lit field.
+
+**Three ghosts, all found by photographing a SMOOTH surface, and all three are
+rules for anything else that goes smooth.** The water is the one surface in the
+frame with no texture to hide a soft edge in, so terms that are invisible on the
+ground drew shapes on it, each of which read as a separate object rather than as
+light:
+
+- **The mist's range ramp is smoothstepped here where the cel shader clamps
+  it.** A clamped ramp has a kink where it starts, six metres from the eye; on a
+  textured bank nothing shows it, and on the water it drew a ring round the
+  player's feet on every map.
+- **The shared `band()` has a FLOOR on its edge width (0.15 of a band), and on
+  water that floor is the whole picture.** It is nothing on a facet, whose band
+  index barely moves across a wall; the swell turns its normal a few degrees
+  over metres, so 0.15 of a band is a ramp the size of a wave, and the tone
+  patches arrived as soft translucent lobes. `waterBand` is the same function
+  with a pixel-wide edge.
+- **The caustics are the one SOFT term, because cut hard they drew a flat pale
+  lobe under every crest of a shallow pond.** A caustic is a network finer than
+  anything this field resolves; a brightening that rides the crest is what is
+  left of it that can be drawn honestly.
 
 ## Hand-written WGSL: what the dialect and the processor decide
 

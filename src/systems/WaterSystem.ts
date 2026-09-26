@@ -1,11 +1,14 @@
 /**
- * WaterSystem.ts — Water surfaces built from the map's WaterRects; syncs each
- * water material's time/camera/point-light uniforms every frame.
+ * WaterSystem.ts — Water surfaces built from the map's WaterRects; stands the
+ * one wave grid under the camera and syncs each water material's
+ * time/camera/point-light uniforms every frame.
  * Invariants: water meshes are unpickable, non-colliding, and never carry
  * metadata.solid — ray tests must not see them. update() runs after the camera
  * and LightingSystem updates (shares the same 16 light slots). Meshes are
- * frozen; the one tiling texture left (the foam mask) is loaded once and
- * reused across rebuilds.
+ * frozen at the ORIGIN with their bounds set by hand: the grid is moved by a
+ * uniform and clamped to each rect in the vertex shader, so no world matrix or
+ * vertex ever changes. The one tiling texture left (the foam mask) is loaded
+ * once and reused across rebuilds.
  * A rect without its own `y` floats ankle-deep above the TERRAIN under it, not
  * above absolute zero — that is what lets a pool sit recessed in a dug bed.
  * The BED-DEPTH map is per body and per build — it is baked against the
@@ -16,10 +19,11 @@
  * every material must be born holding.
  */
 import {
+  BoundingInfo,
   Color3,
   Constants,
+  Geometry,
   Mesh,
-  MeshBuilder,
   RawTexture,
   Scene,
   type ShaderMaterial,
@@ -27,6 +31,7 @@ import {
   Vector2,
   Vector3,
   Vector4,
+  VertexData,
 } from "@babylonjs/core";
 
 import { CONFIG } from "../config";
@@ -36,17 +41,105 @@ import {
   type PointLightData,
   type CubeReflection,
 } from "../shaders/CelShader";
-import { createWaterMaterial } from "../shaders/WaterShader";
+import { createWaterMaterial, waveTrains } from "../shaders/WaterShader";
 import type { EnvironmentSpec } from "../world/environment";
 import type { WaterRect } from "../world/MapBuilder";
 import { waterY, type TerrainField } from "../world/TerrainField";
 import foamUrl from "../../textures/water-foam.png?url";
 
 interface WaterBody {
-  mesh: Mesh;
+  /** The shared wave grid, for when the camera is near enough to see it move. */
+  grid: Mesh;
+  /** Two triangles over the whole rect, for when it is not. */
+  quad: Mesh;
   mat: ShaderMaterial;
   /** Baked against this build's terrain, so it dies with the body. */
   depth: RawTexture;
+  /** The rect, for the near/far test. */
+  min: Vector2;
+  max: Vector2;
+}
+
+/**
+ * The grid's lines along one axis, as offsets from its origin, and the cell
+ * each one bounds — the WIDER of its two neighbours', because that is the one
+ * a train drawn at that vertex has to be resolved against.
+ *
+ * Uniform under the camera and geometric beyond it, closed by one line far
+ * enough to reach any rect in the tree. See `CONFIG.water.grid`.
+ */
+function gridLines(): { at: number[]; cell: number[] } {
+  const g = CONFIG.water.grid;
+  const half = [0];
+  let x = 0;
+  while (x + g.cell <= g.near + 1e-6) {
+    x += g.cell;
+    half.push(x);
+  }
+  let step: number = g.cell;
+  while (x < g.reach) {
+    step *= g.growth;
+    x += step;
+    half.push(x);
+  }
+  half.push(g.far);
+  const at = [
+    ...half
+      .slice(1)
+      .reverse()
+      .map((v) => -v),
+    ...half,
+  ];
+  const cell = at.map((v, i) =>
+    Math.max(
+      i > 0 ? v - at[i - 1] : 0,
+      i < at.length - 1 ? at[i + 1] - v : 0,
+    ),
+  );
+  return { at, cell };
+}
+
+/**
+ * A grid over `xs` by `zs`, laid out and wound exactly as
+ * `MeshBuilder.CreateGround` lays out its own, so it faces the way every
+ * other floor in the game faces. `position.y` is not a height — it is the
+ * cell size at that vertex, which the vertex shader reads as its sampling
+ * test; the height is the wave field's.
+ */
+function gridData(
+  xs: { at: number[]; cell: number[] },
+  zs: { at: number[]; cell: number[] },
+): VertexData {
+  const nx = xs.at.length;
+  const nz = zs.at.length;
+  const positions = new Float32Array(nx * nz * 3);
+  for (let row = 0; row < nz; row++) {
+    // CreateGround's row 0 is its FAR edge (max z), and the winding below
+    // assumes it.
+    const j = nz - 1 - row;
+    for (let col = 0; col < nx; col++) {
+      const o = (row * nx + col) * 3;
+      positions[o] = xs.at[col];
+      positions[o + 1] = Math.max(xs.cell[col], zs.cell[j]);
+      positions[o + 2] = zs.at[j];
+    }
+  }
+  const indices = new Uint32Array((nx - 1) * (nz - 1) * 6);
+  let k = 0;
+  for (let row = 0; row < nz - 1; row++) {
+    for (let col = 0; col < nx - 1; col++) {
+      indices[k++] = col + 1 + (row + 1) * nx;
+      indices[k++] = col + 1 + row * nx;
+      indices[k++] = col + row * nx;
+      indices[k++] = col + (row + 1) * nx;
+      indices[k++] = col + 1 + (row + 1) * nx;
+      indices[k++] = col + row * nx;
+    }
+  }
+  const data = new VertexData();
+  data.positions = positions;
+  data.indices = indices;
+  return data;
 }
 
 /** What `bakeDepth` works out about one rect. */
@@ -82,6 +175,10 @@ interface BedMap {
 export class WaterSystem {
   private bodies: WaterBody[] = [];
   private foam: Texture | null = null;
+  private origin = new Vector2();
+  /** The eye the bodies were last stood under — see `follow`. */
+  private eye = new Vector3();
+  private followed = false;
   private time = 0;
   /**
    * How many wash sites the bodies are currently holding. Held only so a map
@@ -137,33 +234,83 @@ export class WaterSystem {
 
     const w = CONFIG.water;
     const lit = env.lighting;
+    // The wave grid and the far quad, shared by every body's two meshes: a
+    // grid is the same shape under every rect, because the rect is cut out of
+    // it in the vertex shader. Built per build rather than kept, because a
+    // Geometry is disposed with the last mesh wearing it.
+    const lines = gridLines();
+    const gridGeom = new Geometry("waterGrid", this.scene, gridData(lines, lines));
+    const far = { at: [-w.grid.far, w.grid.far], cell: [1e6, 1e6] };
+    const quadGeom = new Geometry("waterQuad", this.scene, gridData(far, far));
+    // The open water's swell is the map's; everything finer follows from it.
+    const mapSwell = colors.swell ?? w.waves.swell;
     for (let i = 0; i < rects.length; i++) {
       const r = rects[i];
       const bed = beds[i];
-      const mesh = MeshBuilder.CreateGround(
-        "water",
-        { width: r.width, height: r.depth },
-        this.scene,
-      );
       // Ankle-deep over the bed, not over absolute zero. Dig a basin under a
       // pool and the surface drops with it, so the water reads as sitting IN
       // the ground with a bank around it rather than hovering over a flat
       // plane. On a flat map the bed is 0 and this is the old behaviour.
       const surfaceY = waterY(r, terrain);
-      mesh.position.set(r.x, surfaceY, r.z);
-      mesh.isPickable = false;
-      mesh.checkCollisions = false;
-      mesh.metadata = { noGlow: true };
-      mesh.freezeWorldMatrix();
-
       const hx = r.width / 2;
       const hz = r.depth / 2;
+      // A narrow rect cannot raise the map's swell — see `waves.fetch`.
+      const swell = Math.min(mapSwell, w.waves.fetch * Math.min(r.width, r.depth));
+      const trains = waveTrains(swell);
+      // A stream runs along its long side; the sign is arbitrary and nothing
+      // downstream of it can tell.
+      const flow =
+        r.sound === "stream"
+          ? r.width >= r.depth
+            ? new Vector2(w.waves.stream, 0)
+            : new Vector2(0, w.waves.stream)
+          : Vector2.Zero();
+      const caps =
+        w.crestFoam *
+        Math.min(
+          Math.max((swell - w.caps.swell[0]) / (w.caps.swell[1] - w.caps.swell[0]), 0),
+          1,
+        );
+      // Light through a crest needs a crest thick enough to be seen from the
+      // side; on a pond's ripple it drew flat pale coins.
+      const through =
+        w.light.through.strength *
+        Math.min(
+          Math.max(
+            (swell - w.light.through.swell[0]) /
+              (w.light.through.swell[1] - w.light.through.swell[0]),
+            0,
+          ),
+          1,
+        );
       const mat = createWaterMaterial(
         this.scene,
         "water",
         { foam: this.foam, depth: bed.tex },
         new Vector4(r.x - hx, r.z - hz, r.x + hx, r.z + hz),
+        { y: surfaceY, trains, flow, caps, through },
       );
+      // Both meshes stand at the origin and never move: the vertex shader
+      // puts every vertex where it belongs, so the bounds Babylon culls
+      // against are the rect's, stated by hand, with the tallest crest the
+      // field can raise over it.
+      const lo = new Vector3(r.x - hx, surfaceY - trains.crest, r.z - hz);
+      const hi = new Vector3(r.x + hx, surfaceY + trains.crest, r.z + hz);
+      const make = (geom: Geometry, name: string): Mesh => {
+        const mesh = new Mesh(name, this.scene);
+        geom.applyToMesh(mesh);
+        mesh.setBoundingInfo(new BoundingInfo(lo, hi));
+        mesh.doNotSyncBoundingInfo = true;
+        mesh.isPickable = false;
+        mesh.checkCollisions = false;
+        mesh.metadata = { noGlow: true };
+        mesh.material = mat;
+        mesh.freezeWorldMatrix();
+        return mesh;
+      };
+      const grid = make(gridGeom, "water");
+      const quad = make(quadGeom, "waterFar");
+      quad.isVisible = false;
       // The factory's LIVE key, by reference — see GrassSystem.
       const key = this.mats.keyLight;
       mat.setVector3("lightDir", key.dir);
@@ -205,8 +352,10 @@ export class WaterSystem {
         Color3.FromHexString(colors.bedColor ?? env.floorColor),
       );
       mat.setColor3("foamColor", Color3.FromHexString(colors.foamColor));
-      // The one wave tunable a map gets a say in — see WaterEnvSpec.glint.
-      mat.setFloat("specStrength", w.specStrength * (colors.glint ?? 1));
+      // How bright the light on the waves is — see WaterEnvSpec.glint.
+      const glint = colors.glint ?? 1;
+      mat.setFloat("glintStrength", w.light.glint.strength * glint);
+      mat.setFloat("sheenStrength", w.light.sheen.strength * glint);
 
       // The mirror. No parallax box: the water reads its cube the way a
       // skybox is read, and `celProbeBox` is where that is argued.
@@ -227,8 +376,14 @@ export class WaterSystem {
       // sample an unbound sampler and the body would sit in permanent shadow.
       this.mats.registerShadowConsumer(mat);
 
-      mesh.material = mat;
-      this.bodies.push({ mesh, mat, depth: bed.tex });
+      this.bodies.push({
+        grid,
+        quad,
+        mat,
+        depth: bed.tex,
+        min: new Vector2(r.x - hx, r.z - hz),
+        max: new Vector2(r.x + hx, r.z + hz),
+      });
     }
   }
 
@@ -357,9 +512,9 @@ export class WaterSystem {
       this.pointRange[i] = l.range;
     }
 
+    this.follow(camPos);
     for (const { mat } of this.bodies) {
       mat.setFloat("time", this.time);
-      mat.setVector3("camPos", camPos);
       mat.setArray3("pointPos", this.pointPos as unknown as number[]);
       mat.setArray3("pointColor", this.pointColor as unknown as number[]);
       mat.setFloats("pointRange", this.pointRange as unknown as number[]);
@@ -367,16 +522,59 @@ export class WaterSystem {
     }
   }
 
+  /**
+   * Stands the wave grid under the eye and tells every body where the eye is.
+   *
+   * **Pushed from `tick` in EVERY state, beside the cull and the mote field,
+   * and called by `update` as well.** `update` is the camera tail, which only
+   * the states that simulate reach, and the scene renders behind the deploy
+   * screen and the kit turntable too: a grid left standing wherever the last
+   * live frame stood is a sea that heaves over there and lies flat under the
+   * eye, with its Fresnel asked of the wrong vantage. Nothing here advances
+   * the water's clock, so a held world stays held. Guarded on the position,
+   * so the second call in a live frame costs one comparison.
+   */
+  follow(camPos: Vector3): void {
+    if (this.bodies.length === 0) return;
+    if (this.followed && this.eye.equalsWithEpsilon(camPos, 1e-4)) return;
+    this.followed = true;
+    this.eye.copyFrom(camPos);
+    // Snapped to one near cell: a near vertex then lands on the same world
+    // point every frame and cannot swim through the swell it is sampling.
+    const cell = CONFIG.water.grid.cell;
+    this.origin.set(
+      Math.round(camPos.x / cell) * cell,
+      Math.round(camPos.z / cell) * cell,
+    );
+    const reach = CONFIG.water.grid.quadBeyond;
+    for (const body of this.bodies) {
+      // A body whose nearest point is past the grid's reach is drawn as its
+      // quad: nothing out there is carrying a wave, and the grid's triangles
+      // would all be clamped to nothing at the cost of shading their corners.
+      const dx = Math.max(body.min.x - camPos.x, 0, camPos.x - body.max.x);
+      const dz = Math.max(body.min.y - camPos.z, 0, camPos.z - body.max.y);
+      const near = dx * dx + dz * dz < reach * reach;
+      body.grid.isVisible = near;
+      body.quad.isVisible = !near;
+      body.mat.setVector3("camPos", this.eye);
+      body.mat.setVector2("gridOrigin", this.origin);
+    }
+  }
+
   dispose(): void {
+    // The next build's materials have never been told where the eye is.
+    this.followed = false;
     // The count describes materials that are about to stop existing; the next
     // build's are born holding zero, so leaving it set would let `setWash`
     // skip the first push that actually had something to say.
     this.washCount = 0;
-    for (const { mesh, mat, depth } of this.bodies) {
+    for (const { grid, quad, mat, depth } of this.bodies) {
       // Before the dispose, not after: the factory would otherwise keep writing
       // three uniforms a frame into a dead material for the rest of the session.
       this.mats.unregisterShadowConsumer(mat);
-      mesh.dispose();
+      // The shared grid and quad go with the last body wearing them.
+      grid.dispose();
+      quad.dispose();
       mat.dispose();
       // Baked against the terrain this body was built on; the next build's is
       // a different shape, so this one goes with the mesh rather than caching.

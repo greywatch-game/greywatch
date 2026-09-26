@@ -700,8 +700,11 @@ beacon against the sky was painted over — see `docs/rendering.md`'s sky sectio
 
 **Water is a MIRROR with a dark body under it, and it is SAMPLED FROM NOTHING** —
 directional wave trains and no normal map, re-adding which brings back four
-rules that existed only to hide its lattice. **The one thing that DISTURBS it
-is a rotor**, and a hole straddling the seam between two rects is one hole in
+rules that existed only to hide its lattice. **Its swell is GEOMETRY**: one grid
+stood under the eye and clamped to each rect in the vertex shader, so a water
+mesh's vertices are not where it is drawn and its bounds are set by hand, and
+the ink finds its crests as it finds a roofline. **The one thing that DISTURBS
+it is a rotor**, and a hole straddling the seam between two rects is one hole in
 one sea.
 
 **The world is OPAQUE with exactly one exception, and it is glazing.** Glass you

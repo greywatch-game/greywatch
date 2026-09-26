@@ -183,7 +183,12 @@ against wherever the last *live* frame stood — the origin, before there has be
 one. `updateCamera` guards on the position, so a state with a still camera pays
 one comparison; and because a new material is seeded with that same eye
 (`CelShader.applyCamera`), a map built under the building card comes out of
-`installMap` already correct.
+`installMap` already correct. **The water owes the same push and gets it on
+the same terms** (`WaterSystem.follow`, beside the cull): its Fresnel is asked
+of the eye, and its wave grid is stood UNDER the eye, so left to the camera
+tail a deploy screen over the bay would show a sea heaving wherever the player
+last stood and lying flat under the view. It moves no clock, so a held world
+stays held.
 
 **`Game.pushScoreboard` is the other thing pushed from `tick` rather than from a
 state's own arm**, and for the mirror reason: the Tab board is owed to `playing`,

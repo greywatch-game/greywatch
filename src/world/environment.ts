@@ -255,17 +255,17 @@ export interface WaterEnvSpec {
    */
   mirror?: number;
   /**
-   * Scales `CONFIG.water.specStrength` — the hard sparkle on the CRESTS.
+   * Scales the light cut on the WAVES — `CONFIG.water.light`'s glint and
+   * sheen, the hard-edged path a light lays across the water toward the eye.
    * Defaults to 1.
    *
-   * **This is not the sun on the water; the sun on the water is in the
-   * mirror.** The glare a low light lays across a reach is `CONFIG.water`'s
-   * `sunHalo`, and it arrives through the Fresnel like everything else
-   * reflected — so it is broad, it is where the geometry says it should be,
-   * and it is bounded by the sky it is added to. This term is the other thing:
-   * a facet tipped at the light by a passing crest, which fires anywhere on
-   * the body including straight down into still water where the mirror returns
-   * almost nothing. It is what makes a surface read as MOVING.
+   * **It is not the soft glare; that is in the mirror.** What a low light
+   * lays across a reach where the chop is too fine to draw is `CONFIG.water`'s
+   * `sunHalo`, arriving through the Fresnel like everything else reflected.
+   * This term is the facets: wherever the wave field tips one so that the
+   * mirrored ray lands within a few degrees of the light, it shows the light,
+   * with a hard edge — so the path breaks up along the shapes of the waves
+   * and moves because they do. It is what makes a surface read as MOVING.
    *
    * **It used to cost the SHAFTS as well, and that is worth knowing because it
    * is why several maps hold a glint lower than the look alone wants.** The
@@ -280,6 +280,19 @@ export interface WaterEnvSpec {
    * obvious move.
    */
   glint?: number;
+  /**
+   * How tall the waves on this map's OPEN water stand, crest to trough, in
+   * metres. Defaults to `CONFIG.water.waves.swell` (0.12 — a pond's ripple).
+   *
+   * **It is the one number that says what KIND of water this is**, because the
+   * rest of the spectrum follows from it: the longest wave is this height over
+   * `waves.steepness`, and the chop walks down from there. A pond, a river and
+   * a sea are the same physics at three sizes. It is the OPEN water's: the
+   * depth caps it wherever the bed comes up (`waves.break`), and a narrow rect
+   * caps it by its own width (a creek cannot raise a swell), so one value
+   * serves a map with a harbour and a millpond on it.
+   */
+  swell?: number;
 }
 
 /** Grass-field palette. Omitting it leaves the map bald. */

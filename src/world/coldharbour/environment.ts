@@ -500,22 +500,27 @@ export const ColdharbourEnvironment: EnvironmentSpec = {
    * rather than as a shoal anybody will stand in.
    *
    * **`glint` is the field to be careful with on this map and it is held
-   * LOW.** The sun is 24 degrees at azimuth 225, which puts it straight down
-   * the water: the term is `lightColor * specStrength * glint` added RAW past
-   * the cel shader's soft shoulder, and a key of 1.12 in #ffd9a0 over half a
-   * square kilometre of surface is the brightest thing in this frame by a
-   * distance. 0.35 keeps the crests reading as a moving surface without the
-   * sea becoming the light source; the broad glare off a low sun is the
+   * under 1.** The sun is 24 degrees at azimuth 225, which puts it straight
+   * down the water, and the light on the waves is added past the cel
+   * shader's soft shoulder: a key of 1.12 in #ffd9a0 over half a square
+   * kilometre of surface is the brightest thing in this frame by a distance.
+   * 0.7 keeps the path of light a scatter of sparks on a grey sea rather than
+   * the sea becoming the light source; the broad glare off a low sun is the
    * MIRROR's job (`CONFIG.water.sunHalo`) and arrives through the Fresnel
    * where the geometry says it should.
    */
   water: {
+    /**
+     * Open sea on the fourth side, so the harbour rolls: a 13 m swell
+     * at 60 cm, which the quay's bed depth lets run right up to the wall.
+     */
+    swell: 0.6,
     deepColor: "#33433f",
     shallowColor: "#566d68",
     foamColor: "#c8cdc2",
     bedColor: "#3a3630",
     mirror: 0.7,
-    glint: 0.35,
+    glint: 0.7,
   },
   /**
    * The civic square's lawn, and the one green thing on the map.

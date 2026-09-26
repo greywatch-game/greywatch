@@ -3338,6 +3338,10 @@ export class Game {
     // the eye rather than over the whole square (`ParticleSpec.volume`). A
     // no-op for every map that states none, which is all of them but one.
     this.atmosphere.update(this.cameraSys.camera.position);
+    // And the water: its wave grid stands under the eye and its Fresnel is
+    // asked of it, and a deploy screen over the bay is a live view of both.
+    // Nothing here advances its clock — see `WaterSystem.follow`.
+    this.water.follow(this.cameraSys.camera.position);
     // The dust under the rotors, on the fleet's terms rather than the eye's: a
     // held world is a machine frozen over a street, and one still boiling that
     // street is the droning-engine lie with a picture instead of a sound. In

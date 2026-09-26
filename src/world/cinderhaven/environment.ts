@@ -389,6 +389,12 @@ export const CinderhavenEnvironment: EnvironmentSpec = {
    * the mirror returns nothing.
    */
   water: {
+    /**
+     * An island in open ocean, and the tallest water in the game: an 18 m
+     * swell at 80 cm, tall enough to break (`CONFIG.water.caps`). The
+     * foreshore's depth takes it down to a lap on the beaches by itself.
+     */
+    swell: 0.8,
     deepColor: "#050d14",
     shallowColor: "#12525a",
     foamColor: "#9fd6d4",

@@ -629,9 +629,11 @@ src/
                         #   is never a candidate, a mesh carrying metadata.block
                         #   is one inside the map's fogEnd, everything else
                         #   always is
-    WaterSystem.ts      # Water surfaces from map WaterRects; bakes their bed depth.
-                        #   `setWash` is the rotor sites, pushed from `tick` and
-                        #   not from the camera tail — see it for why
+    WaterSystem.ts      # Water surfaces from map WaterRects; bakes their bed depth
+                        #   and stands the one wave GRID under the eye (`follow`,
+                        #   pushed from `tick` in every state). `setWash` is the
+                        #   rotor sites, pushed from `tick` and not from the
+                        #   camera tail — see it for why
     GrassSystem.ts      # Grass fields as one thin-instanced draw; tufts inside a
                         #   collider are rejected at scatter time
   dev/                  # Dev-only tools that are not the editor. Same rule:
@@ -1185,8 +1187,10 @@ src/
                         #   with GiVolume. RayWorld's box and floor queries,
                         #   ported: the volume traces the COLLIDERS, never a
                         #   mesh
-    WaterShader.ts      # Water ShaderMaterial: analytic wave trains, Fresnel
-                        #   mirror, and the hole a rotor tears in it. WGSL
+    WaterShader.ts      # Water ShaderMaterial: analytic wave trains DISPLACING
+                        #   the grid and lighting it from one function, Fresnel
+                        #   mirror, light cut hard on the waves, and the hole a
+                        #   rotor tears in it. WGSL
     GrassShader.ts      # The blade bend: wind, and combatants pushing through.
                         #   WGSL
     FlameShader.ts      # THE FIRE: every open flame's one material. Tongues

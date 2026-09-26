@@ -178,10 +178,14 @@ export const KurenaiEnvironment: EnvironmentSpec = {
    * in the channel, paling over the stones. The gold comes from the mirror.
    */
   water: {
+    /**
+     * A mountain stream and two temple ponds. The ponds are capped
+     * lower still by their own width (`waves.fetch`).
+     */
+    swell: 0.15,
     deepColor: "#17313a",
     shallowColor: "#3d6a6a",
     foamColor: "#eef2ee",
-    glint: 0.2,
   },
   /** Autumn grass: olive at the root, gone to straw at the tip. */
   grass: {

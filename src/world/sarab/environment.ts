@@ -403,9 +403,10 @@ export const SarabEnvironment: EnvironmentSpec = {
    * and a crest sparkle is a hard specular that fires anywhere on a body
    * including where the mirror returns nothing — exactly the term that would
    * have crossed it. `Volumetrics` occludes on the shadow map and that pressure
-   * is gone; the number stays because it is also the right look for a shallow
-   * desert pool.
-   * 0.3 is enough to say the surface is moving and spends none of the margin.
+   * is gone. What holds it under 1 now is the look: the sun here is high and
+   * hard, and a silty pool under it throws sparks rather than a sheet. 0.6
+   * says the surface is moving without the birkat outshining the sand round
+   * it.
    *
    * `mirror` is 0.85 rather than 1 for the reason the field exists: these are
    * silty and a metre of suspended dust scatters most of what lands on them.
@@ -418,7 +419,7 @@ export const SarabEnvironment: EnvironmentSpec = {
     foamColor: "#e2d8bf",
     bedColor: "#6d6047",
     mirror: 0.85,
-    glint: 0.3,
+    glint: 0.6,
   },
   /**
    * Dry scrub, and the one place on this map a colour is allowed to be green.

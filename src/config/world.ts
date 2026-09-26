@@ -319,156 +319,209 @@ export const wear = {
 
 /**
  * Surface water (Hollowmere's creek and bog, Greyfen's flood, Harrowmead's
- * mill leat). Visual only — the planes carry no collider, so wading is free
- * and swimming never comes up. Palette lives in the map's EnvironmentSpec;
- * this is motion, shape and how much of a mirror it is.
+ * river, two seas and a desert's pools). Visual only — the surfaces carry no
+ * collider, so wading is free and swimming never comes up. Palette and how
+ * big the waves are live in the map's `WaterEnvSpec`; this is the physics of
+ * the waves, the grid that carries them, and how the light lands on them.
  *
- * **Nothing in here is a texture scale any more**, and the block is shorter
- * than it was for that reason: the surface is summed from directional wave
- * trains rather than sampled from a tiling normal map, so the numbers that
- * used to exist to keep a lattice off the screen — three uv scales with a
- * sampling floor under them, three scroll speeds tied to those scales, a warp
- * strength and a detail-fade distance — have no referent. See
- * `shaders/WaterShader.ts` for what replaced them and why the replacement has
- * no equivalent trap.
+ * **Nothing in here is a texture scale.** The surface is summed from
+ * directional wave trains rather than sampled from a tiling normal map, and
+ * since the swell became GEOMETRY it is summed twice — once per vertex to
+ * displace the grid, once per pixel to light it — from one WGSL function. See
+ * `shaders/WaterShader.ts`.
  */
 export const water = {
   /** Default surface height above the ground plane: ankle-deep. */
   surfaceY: 0.32,
   /**
-   * How many wave trains are summed. Six is the whole cost of the surface —
-   * a sin, a cos and an exp each — and it is where the sum stops looking like
-   * its own parts: at four you can still count the crossings, and at eight the
-   * two finest trains are under a pixel at any range a player stands at, so
-   * `waveDetail` has already faded them and they are paid for and invisible.
+   * The wave field: a SPECTRUM, of which a map states only the top.
    *
-   * It is a `#define` in the shader rather than a uniform, so changing it
-   * recompiles rather than rebinds. That is the right way round for something
-   * that is a loop bound.
+   * `WaterEnvSpec.swell` is how tall the longest train stands, crest to
+   * trough, on open water; `steepness` turns that into its wavelength, and
+   * `gain` and `lacunarity` walk down from there to `ripple`, the shortest
+   * train worth summing. So a pond with a 12 cm swell is a 2.7 m wave and
+   * eight trains of chop under it, and a sea with 80 cm is an 18 m wave and
+   * sixteen — the same physics at two sizes, which is why one number per map
+   * is enough.
    */
-  waveTrains: 6,
+  waves: {
+    /**
+     * The most trains any body sums. A loop bound and a uniform ARRAY's size,
+     * interpolated into the shader as a literal, so raising it recompiles. A
+     * small swell stops early, at `ripple`.
+     */
+    trains: 16,
+    /** The swell a map gets that states none, metres crest to trough. */
+    swell: 0.12,
+    /**
+     * Metres of swell per metre of a rect's SHORT side, as a cap on the map's
+     * own: wind raises a wave over the water it crosses, so a 6 m creek
+     * cannot carry a harbour's swell whatever map it is on. A sea's rects are
+     * hundreds of metres across and never meet it.
+     */
+    fetch: 0.015,
+    /**
+     * Height over wavelength of the longest train. 1/22: a wind sea that has
+     * been blowing a while, well short of the 1/7 at which a wave breaks. It
+     * is what turns a map's swell into a wavelength, so raising it makes
+     * every map's longest wave SHORTER and choppier, not taller.
+     */
+    steepness: 0.045,
+    /**
+     * Amplitude and wavelength ratios between successive trains. Their
+     * PRODUCT is how the steepness moves down the spectrum: at 0.94 the chop
+     * is a little flatter than the swell it rides, so the long waves carry
+     * the shape and the short ones the sparkle. Never an exact ratio —
+     * `jitter` moves each step by up to that fraction, because an exact one
+     * puts every crest on a harmonic of the swell's and harmonics beat.
+     */
+    gain: 0.7,
+    lacunarity: 1.31,
+    jitter: 0.12,
+    /** Metres: the shortest train summed — capillary ripple, what sparkles. */
+    ripple: 0.28,
+    /**
+     * Which way the swell runs, radians, and how far a train may stray from
+     * it: `spread[0]` for the longest, `spread[1]` for the shortest. A wind
+     * sea's swell is ordered and its chop comes from everywhere; spreading
+     * every train evenly all round is a crosshatch, which read as crinkled
+     * foil. NOT `CONFIG.wind.bearing` — the bodies here are creeks, a river,
+     * a flood and two seas, whose grain is set by where they drain and what
+     * fetch they have, not by the weather in the canopy.
+     */
+    bearing: 0.9,
+    spread: [1.0, 2.8],
+    /** The seed every body's trains are drawn from. See `waveTrains`. */
+    seed: 0x5ea5,
+    /**
+     * How many of the longest trains are the SWELL — the shapes the body's
+     * tone bands, the crest glow and the whitecaps follow. The rest is chop,
+     * which the mirror and the glints are asked of.
+     */
+    broad: 4,
+    /**
+     * How far each train's sample is dragged toward the crest of the one
+     * above it, in multiples of that train's amplitude. It is what breaks the
+     * beat between fixed bearings and what bunches the chop onto the swell's
+     * crests; zero it and the repeat comes back within a few seconds.
+     */
+    drag: 1.4,
+    /** Multiple of deep-water dispersion (`sqrt(g k)`). 1 is physical. */
+    speed: 0.85,
+    /**
+     * Metres per second a STREAM carries its whole field downstream — a rect
+     * whose `sound` is `"stream"` runs along its long side, because that is
+     * the rect's own claim that the water runs. Standing water has none.
+     */
+    stream: 0.55,
+    /**
+     * No wave taller than `1 / break` of the water under it — a wave breaks
+     * at about 0.78 of the depth, and 1.6 keeps well short of that — plus
+     * `lap` metres at the very waterline, so the edge still breathes rather
+     * than standing dead. This is what makes a flood meadow calm and a
+     * channel through it move, with nobody saying which is which.
+     */
+    break: 1.6,
+    lap: 0.035,
+    /**
+     * Pixels per wavelength a train needs before it is LIT at full amplitude.
+     * A sampling limit, not a look: the shader measures its own footprint
+     * with `fwidth`, so it holds at any resolution and field of view. What a
+     * pixel cannot draw becomes roughness rather than nothing.
+     */
+    detail: 5,
+  },
   /**
-   * The relief, in metres from trough to crest of the whole sum.
+   * The grid the swell is displaced on, stood under the camera and clamped to
+   * each rect in the vertex shader.
    *
-   * **This is a small number and it has to be**: it is centimetres of chop on
-   * a plane that never moves, and the reason it reads at all is the mirror.
-   * A reflection is violently sensitive to slope — a two-degree tilt swings
-   * the sampled ray by four — so the visible roughness of the water is set
-   * here long before it is set by anything about the light. Push it past ~0.25
-   * and the ripples start returning the ground behind the player, which is the
-   * one direction a surface with no vertex displacement cannot honestly show.
+   * **Uniform under the camera, geometric beyond.** `cell` metres out to
+   * `near`, then each step `growth` times the last out to `reach`, then one
+   * last line far enough to close any rect in the tree. The origin snaps to
+   * one near cell, so near vertices land on the same world points every
+   * frame; a far vertex moves a near cell's width when it snaps, which is
+   * nothing against the only trains it carries — a vertex draws a train only
+   * where it has `detail[1]` cells per wavelength (none below `detail[0]`),
+   * so the swell leaves the geometry of its own accord as the cells grow.
+   * `quadBeyond` is the distance past which a body is drawn with a plain
+   * two-triangle quad instead, because none of the grid is carrying anything
+   * there and its triangles would all be clamped to nothing.
    */
-  waveHeight: 0.13,
+  grid: {
+    cell: 0.5,
+    near: 12,
+    growth: 1.05,
+    reach: 240,
+    far: 40000,
+    detail: [5, 8],
+    quadBeyond: 120,
+  },
   /**
-   * The longest train's wavelength in metres, and the speed it runs at.
-   *
-   * Everything finer follows from `waveLacunarity` and deep-water dispersion,
-   * so these two are the only ones with a unit anybody has to picture: 7.5 m
-   * of swell crossing a pond at half a metre a second. The finest train is
-   * `waveLength / waveLacunarity^5`, which is ~35 cm — capillary ripple, and
-   * the thing that actually sparkles.
-   */
-  waveLength: 7.5,
-  waveSpeed: 0.5,
-  /**
-   * Amplitude and frequency ratios between successive trains.
-   *
-   * Their RATIO is the interesting number, because `gain / lacunarity` is how
-   * the STEEPNESS moves up the spectrum: at 1 every train is equally steep and
-   * the surface is uniformly rough sandpaper, and near 0 the fine trains are
-   * flat and the water is a slow swell with no sparkle on it. 0.36 leaves the
-   * ripples visibly steeper than the swell, which is what a real short wave is.
-   *
-   * `waveLacunarity` is deliberately not 2: an octave doubling puts every
-   * train's crest on a harmonic of the swell's, and harmonics beat.
-   */
-  waveGain: 0.66,
-  waveLacunarity: 1.85,
-  /**
-   * Which way the swell runs, in radians. Every other train is this plus a
-   * multiple of the golden angle, so one number sets the whole field's grain.
-   *
-   * It is NOT `CONFIG.wind.bearing`, and the two must not be joined: the wind
-   * bearing is what the grass and the canopy lean in, and the shipped water is
-   * a creek, a flooded valley and a mill leat — bodies whose surface grain is
-   * set by where they drain to, not by the weather.
-   */
-  waveBearing: 0.9,
-  /**
-   * How far each train is dragged by the phase of the one above it.
-   *
-   * The whole point is that a sum of sinusoids at fixed bearings still has a
-   * period, and this is what it costs to have none: one multiply-add. Zero it
-   * and the beat comes back within a few seconds of watching.
-   */
-  waveDrag: 0.55,
-  /**
-   * Pixels per wavelength a train needs before it is drawn at full amplitude.
-   *
-   * **The one number in this block that is a sampling limit rather than a
-   * look**, and unlike the tiling floor it replaced it is expressed against
-   * the pixel rather than against the world: the shader measures its own
-   * footprint with `fwidth`, so this holds at any resolution, any field of
-   * view and any distance without a second number to keep in step. Five is
-   * comfortably above the two a Nyquist argument would ask for, because the
-   * crests are sharp and a sharp crest carries harmonics of its own.
-   */
-  waveDetail: 5,
-  /**
-   * Fresnel reflectance face-on. Water's own is about 0.02 and this is barely
-   * over it, which is the point: looking straight down into a pond you see the
-   * water, and the mirror is what the same pond does from its bank. The
-   * grazing end is not a tunable at all — Schlick takes it to 1.
+   * Fresnel reflectance face-on. Water's own is about 0.02: looking straight
+   * down into a pond you see the water, and the mirror is what the same pond
+   * does from its bank.
    */
   reflectance: 0.03,
   /**
    * Schlick's exponent, and the one place this shader is knowingly not
-   * physical.
-   *
-   * Five is the real number and it puts the sheen on very late: a pond is
-   * half mirror only inside about eight degrees of the horizontal, which is
-   * true and which leaves everything a player is actually standing over
-   * reading as the dark body colour. Four brings it on while you are still
-   * looking down at the water in front of you, which is the same trade
-   * `CONFIG.graphics.glass.falloff` makes for the same reason and by a wider
-   * margin (it uses three). Do not answer a dull pond by raising
-   * `reflectance` instead — that lifts the FACE-ON end, which is the one
-   * angle where a pond genuinely is its own colour.
+   * physical: five puts the sheen on only inside about eight degrees of the
+   * horizontal, four brings it on while you are still looking down at the
+   * water in front of you. Do not answer a dull pond by raising `reflectance`
+   * — that lifts the FACE-ON end, the one angle where a pond is its own
+   * colour.
    */
   fresnelPower: 4,
   /**
-   * Cosine half-width of the light's glare in the mirror — ~18 degrees, and
-   * broad on purpose for the reason `CONFIG.graphics.glass.halo` is: what a
-   * low sun lays on water is a smeared reach of light between you and it, not
-   * a second disc. The hard sparkle is `specStrength`, which is a different
-   * term about a different thing.
+   * Cosine half-width and strength of the light's SOFT glare in the mirror —
+   * the sky itself round the sun, reflected, ~18 degrees. The hard light is
+   * `light`, below; this is what is left of it where the chop is too fine to
+   * draw.
    */
   sunHalo: 0.95,
+  haloStrength: 0.6,
   /**
    * How many mip levels of the reflection cube the UNRESOLVED chop blurs it
-   * by — the ripples the pixel is too small to draw, expressed as roughness.
-   *
-   * It has to be an explicit level rather than the hardware's own choice, and
-   * that is a fact about cube maps rather than a tuning: the screen-space
-   * derivative of a cube direction across a grazing water pixel is enormous,
-   * so the automatic mip is the bottom of the chain and every sample comes
-   * back as the cube's average colour. Four levels of 128px is down to 8px,
-   * which is a smear rather than a picture — which is what a far reach of
-   * broken water returns.
+   * by. It has to be an explicit level: the automatic mip across a grazing
+   * water pixel is the bottom of the chain, every sample the cube's average.
    */
   mirrorBlur: 4,
   /**
-   * The crest glint: Blinn exponent and brightness. `specStrength` is scaled
-   * by the map's own `WaterEnvSpec.glint`.
-   *
-   * 60 rather than the 90 this was under the old normal map. The exponent is
-   * only meaningful against the slopes the surface actually reaches, and an
-   * analytic field of known amplitude reaches a few degrees where a normal map
-   * scaled by a `waveStrength` reached whatever it reached — so the lobe was
-   * retuned against a surface whose roughness is now a stated number.
+   * The share of the CHOP the reflected picture follows; the swell it follows
+   * whole, and the light on the waves takes all of both. Low, because that
+   * split is the stylisation: a reflection painted as a few smooth wobbling
+   * shapes, and the sun on the same water as hard sparks. At 1 the chop that
+   * breaks the sun into glitter breaks the far bank into foil with it.
    */
-  specPower: 60,
-  specStrength: 0.9,
+  mirrorChop: 0.35,
+  /**
+   * **Every light on the water is asked of the WAVES and cut hard in
+   * DEGREES** — on the angle between the mirrored ray and the light, off the
+   * full wave field's normal. `glint` is the core, where a facet shows the
+   * light itself; `sheen` is the path of light round it. The chop too fine to
+   * draw widens both and dims them by the same factor, so the far reach goes
+   * to the soft `sunHalo` instead of drawing the light as an egg. `lamp` is
+   * the same pair for a point light, wider because a lamp is near.
+   *
+   * `through` is the light glowing THROUGH a backlit crest — looking toward a
+   * low sun, the thin top of a swell lit from behind in the water's own
+   * shallow colour. `crest` is how near the top of the swell it starts, and
+   * `swell` the range (m) over which a map's water goes from showing none of
+   * it to all of it — a pond's ripple has no crest thick enough to see into.
+   *
+   * A map scales `glint.strength` and `sheen.strength` by its own
+   * `WaterEnvSpec.glint`.
+   */
+  light: {
+    glint: { degrees: 2.2, strength: 1.3 },
+    sheen: { degrees: 6, strength: 0.28 },
+    lamp: [2, 5],
+    through: { strength: 0.55, crest: 0.72, swell: [0.25, 0.6] },
+  },
+  /**
+   * Whitecaps: how near the crest one may start, and the swell (m) over which
+   * a map's water goes from breaking nowhere to breaking at `crestFoam`.
+   */
+  caps: { level: 0.9, swell: [0.35, 0.9] },
   /**
    * The baked bed-depth map (see `WaterSystem.bakeDepth`) and what reads it.
    * `depthMax` is the depth the byte saturates at, so it only has to cover the
@@ -480,59 +533,52 @@ export const water = {
   depthTexelsMax: 512,
   /**
    * The depth (m) at which the body has absorbed 1/e of the way from the
-   * shallow colour to the deep one.
-   *
-   * Beer-Lambert, not a ramp: the fade never reaches the deep colour and has
-   * no knee anywhere, which is what keeps a lumpy bed from drawing its own
-   * contour across the water. See the shader.
+   * shallow colour to the deep one. Beer-Lambert, not a ramp: the fade never
+   * reaches the deep colour and has no knee anywhere, which is what keeps a
+   * lumpy bed from drawing its own contour across the water.
    */
   depthFade: 0.4,
   /**
    * The bed showing THROUGH: the depth (m) over which it stops, and how much
-   * of it is there at zero.
-   *
-   * The water is opaque and stays opaque — the world has exactly one
-   * see-through material and it is glazing — so this is not transparency, it
-   * is the body colour grading into the map's own `floorColor` where there is
-   * nothing left of the body to see. It costs no blend, no sort and no second
-   * draw, and at 5 cm of water over a bank it is indistinguishable from the
-   * thing it stands in for.
+   * of it is there at zero. Not transparency — the body colour grading into
+   * the map's own `floorColor` where there is nothing left of the body to see.
    */
   bedDepth: 0.1,
   bedShow: 0.35,
-  /**
-   * Light focused by the crests onto a shallow bed. Small, and it is the one
-   * term here that is allowed to look like an effect: a shoal that does not
-   * move under a lit surface reads as a painted patch, and the crests are
-   * where the focusing physically happens.
-   */
+  /** Light focused by the crests onto a shallow bed. */
   caustics: 0.1,
   /**
-   * Shoreline foam: band width (m), mask tiling, mask scroll speed, the depth
-   * (m) at which it has faded out, how far the waterline breathes with the
-   * swell (m), and how hard the crests break over a shoal.
+   * The share of the key the BODY takes whichever way the surface faces.
+   * What colours water is light scattered inside it, which does not care
+   * which way the surface is tilted, so the banded tone patches the swell
+   * casts are a shift over this floor rather than the whole of the light —
+   * at 0 a wave's back facing away from the sun went to ambient and read
+   * as a hole in the sea.
+   */
+  scatter: 0.55,
+  /**
+   * Shoreline foam: how far out from the waterline the lace runs (m), the
+   * mask's tiling and scroll speed, and the flattest bed the line is measured
+   * against.
    *
-   * **The depth is the one that matters and it wants to be SMALL.** These are
-   * flood meadows and mill leats, not beaches: a rect can be ankle-deep for
-   * twenty metres, and `shore` is `depth * (width / depth-at-which-it-ends`),
-   * so a generous `foamDepth` does not widen a line along the bank — it paints
-   * the whole flat white. Nine centimetres is a lip at the edge of the water,
-   * which is what foam on still water is.
+   * **`foamWidth` is a DISTANCE from the waterline, not a depth.** The shader
+   * divides the water's depth by the bed's own slope, so the lace is one
+   * width on a steep bank and a gentle one — keyed on depth alone, a flat just
+   * awash foamed across its whole area. `foamSlope` is the floor under that
+   * slope: a bed flatter than it counts as this steep, so a truly level shoal
+   * foams only where it actually meets the air. The lapping is no longer a
+   * number either: the depth the band reads is the DISPLACED surface's, so
+   * the line runs up the bank under a crest and drains behind it.
    */
   foamWidth: 0.45,
   foamScale: 0.28,
   foamSpeed: 0.045,
-  foamDepth: 0.05,
-  foamLap: 0.22,
-  crestFoam: 0.04,
+  foamSlope: 0.04,
+  /** How far a breaking crest goes toward the foam colour, at full swell. */
+  crestFoam: 0.8,
   /**
    * Scum drifting out on the open water — the one foam term with no shoreline
    * in it, and therefore the one that can paint a whole body.
-   *
-   * It was a literal 0.14 in the shader and it was most of what still read as
-   * a mud flat after the shore band had been brought under control: a
-   * thresholded copy of the foam mask over EVERY water pixel is a texture on
-   * the water, which is the complaint this whole rewrite started from.
    */
   fleckStrength: 0.05,
   /**

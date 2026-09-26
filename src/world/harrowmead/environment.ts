@@ -388,20 +388,22 @@ export const HarrowmeadEnvironment: EnvironmentSpec = {
    * colour coming through the last few centimetres off `floorColor` — see
    * `WaterEnvSpec.bedColor`, which this map does not need to state.
    *
-   * `glint` stays at 0.2 and the measurement behind it stands, but the reason
-   * has narrowed. The Blinn term still barely fires at a 14.5-degree sun —
-   * it wants a facet tipped within ten degrees of the half-vector and the
-   * relief is centimetres — so it is not what puts light on this water. What
-   * does is `CONFIG.water.sunHalo` through the Fresnel, which is the sun's
-   * own reach along the water toward the player and is bounded by the sky it
-   * is added to. The dial is left where it is because there is still nothing
-   * to buy with it and the headroom it protects is still Greyfen's.
+   * `glint` is the default. It sat at 0.2 while it scaled a Blinn term that
+   * barely fired under a 14.5-degree sun, which made it a dial with nothing
+   * on the end of it. The light on the waves is cut in DEGREES on the
+   * mirrored ray now, so a low sun straight down the river is exactly where
+   * it fires — a broken path of light from the mill to the bank — and at
+   * full strength it is the evening's own gold rather than a white sheet.
    */
   water: {
+    /**
+     * A slow lowland river a hundred metres across: a 5.5 m swell at a
+     * quarter of a metre, running downstream with the stream.
+     */
+    swell: 0.25,
     deepColor: "#16333a",
     shallowColor: "#3c6f6b",
     foamColor: "#e6efee",
-    glint: 0.2,
   },
   /**
    * Unchanged from midday, and that is discipline rather than oversight:

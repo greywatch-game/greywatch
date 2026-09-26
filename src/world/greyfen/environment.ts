@@ -537,49 +537,28 @@ export const GreyfenEnvironment: EnvironmentSpec = {
    */
   groundSpec: { color: "#ffe4bc", intensity: 0.05, shininess: 30 },
   water: {
+    /**
+     * Flood water in a sheltered valley. Barely any fetch reaches it
+     * under the canopy, and most of it is ankle-deep, which the depth
+     * cap calms further.
+     */
+    swell: 0.15,
     deepColor: "#3f5148",
     shallowColor: "#7d9b90",
     foamColor: "#dfe8e2",
     /**
-     * **It came DOWN when the sun came out, which is the opposite of the
-     * obvious move and is the same argument the field's own contract makes.**
+     * **Held under 1, and the reason is the size of the thing.** The light on
+     * the waves is cut in degrees on the mirrored ray and fires wherever the
+     * chop tips a facet at the sun, and a flood the width of a valley has a
+     * great many facets: at full strength the basin went to a scatter of white
+     * over a third of the frame. 0.6 keeps the sparks and loses the sheet.
      *
-     * The glint is a picture of the light SOURCE, and under the overcast dome
-     * the source was the whole sky, so 0.3 was already restraint — a broad
-     * sheen the width of a flooded valley. There is a disc now, which argues
-     * for a small hard sparkle; what argues against turning the number UP is
-     * the arithmetic. The term is `lightColor * specStrength * glint`, added
-     * RAW past the cel shader's soft shoulder, so it scales straight with the
-     * key — and the key went up 38% with the hour. At 0.3 the lobe adds
-     * `1.55 * 0.9 * 0.3` = 0.42 of the key's colour on top of whatever the
-     * water already is; at 0.22 it adds 0.31.
-     *
-     * That difference is most of the margin. Measured over the confluence
-     * basin at 0.22, **nothing below the horizon reaches 0.77** against a
-     * the shafts' old threshold of 0.82 — water, foam and flecks included, and the
-     * only pixels in the frame over the line are sky. What the extra 0.08
-     * would buy on the far side of it is not a brighter river: it is a river
-     * that stops occluding and starts throwing shafts of its own from below
-     * the horizon.
-     *
-     * **The water became a mirror after this was written, and the margin
-     * survived it — measured again rather than assumed.** The obvious fear is
-     * that a Fresnel returning the sky at every grazing angle is a sheet of
-     * sky lying under the horizon, which is the one thing the threshold
-     * cannot have. It is not, and the reason is the arithmetic this note
-     * already makes: what the mirror returns is the DOME, and the dome below
-     * its own bright band is darker than the lit water it replaced. Over the
-     * same basin, along the sun and across it, the reflection LOWERED the
-     * frame maximum in the bottom 45% — 0.924 against 0.940 with the mirror
-     * muted — and halved the fraction over the line, and what is left over it
-     * is sky seen through the canopy rather than anything on the river.
-     *
-     * The term that could still cross it is `CONFIG.water.sunHalo`, which is
-     * added to the dome INSIDE the Fresnel and is what a low sun lays along a
-     * reach. It is bounded by the sky it sits on; a map that widens it owes
-     * this measurement again.
+     * It used to be held far lower (0.22) to keep the lit water under the
+     * luminance threshold the old screen-space shafts occluded on. `Volumetrics`
+     * asks the shadow map now, so nothing in the world can radiate and that
+     * margin no longer binds anything.
      */
-    glint: 0.22,
+    glint: 0.6,
   },
   /**
    * Wet understory: dark at the root, fresh green at the tip. These were
