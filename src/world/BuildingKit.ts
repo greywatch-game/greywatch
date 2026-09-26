@@ -229,7 +229,8 @@ export type BuilderKind = keyof typeof BUILDERS;
  * (`streetSeed`). The chapel lays its floor a step over the highest ground
  * under its nave and carries its footings down to the lowest. The stilt hut
  * cuts each pile to the ground under it, and seeds its dressing as the
- * cottage does.
+ * cottage does. The cart sits down on the ground under its four wheels, and
+ * seeds its load, its paint and its lock off where it stands.
  */
 export const CONFORMS_TO_TERRAIN: ReadonlySet<BuilderKind> = new Set([
   "road",
@@ -241,4 +242,5 @@ export const CONFORMS_TO_TERRAIN: ReadonlySet<BuilderKind> = new Set([
   "cottage",
   "chapel",
   "stiltHut",
+  "cart",
 ] as const);

@@ -12,6 +12,7 @@ import {
   type BuildCtx,
   type BuildParams,
   type Structure,
+  streetSeed,
   ASHLAR,
   AWNING,
   BRICK,
@@ -84,27 +85,6 @@ const DOOR_PAINTS = [PLANK, TEAK, VERDIGRIS, AWNING] as const;
 
 const outward = (s: Side): number => (s === "+z" || s === "+x" ? 1 : -1);
 const runsAlongX = (s: Side): boolean => s === "-z" || s === "+z";
-
-/**
- * Which house in the street this is, as a number: the placement's position and
- * size hashed together, so two neighbours of one size still come out different
- * and a rebuild of the same layout always comes out the same.
- *
- * The position is what makes the builder a function of WHERE it stands, and
- * that is what puts `townhouse` and `cottage` in `CONFORMS_TO_TERRAIN` —
- * without it the editor would translate a dragged house and leave it wearing
- * the door of the spot it left. Absent (a caller with no placement), the size
- * alone decides.
- */
-function streetSeed(w: number, d: number, h: number, ctx?: BuildCtx): number {
-  let x =
-    Math.imul(Math.round((ctx?.x ?? 0) * 10), 73856093) ^
-    Math.imul(Math.round((ctx?.z ?? 0) * 10), 19349663) ^
-    Math.imul(Math.round(w * 100 + d * 37 + h * 1000), 83492791);
-  x = Math.imul(x ^ (x >>> 16), 0x45d9f3b);
-  x = Math.imul(x ^ (x >>> 16), 0x45d9f3b);
-  return (x ^ (x >>> 16)) >>> 0;
-}
 
 /** Every interval of `[a, b]` left once each cut is taken out of it. */
 function carve(a: number, b: number, cuts: [number, number][]): [number, number][] {

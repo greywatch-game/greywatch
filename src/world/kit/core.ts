@@ -345,6 +345,27 @@ export interface BuildCtx {
   roads?: RoadFootprint;
 }
 
+/**
+ * Which house in the street this is, as a number: the placement's position and
+ * size hashed together, so two neighbours of one size still come out different
+ * and a rebuild of the same layout always comes out the same.
+ *
+ * The position is what makes the builder a function of WHERE it stands, and
+ * that is what puts every builder that calls it in `CONFORMS_TO_TERRAIN` —
+ * without it the editor would translate a dragged house and leave it wearing
+ * the door of the spot it left. Absent (a caller with no placement), the size
+ * alone decides.
+ */
+export function streetSeed(w: number, d: number, h: number, ctx?: BuildCtx): number {
+  let x =
+    Math.imul(Math.round((ctx?.x ?? 0) * 10), 73856093) ^
+    Math.imul(Math.round((ctx?.z ?? 0) * 10), 19349663) ^
+    Math.imul(Math.round(w * 100 + d * 37 + h * 1000), 83492791);
+  x = Math.imul(x ^ (x >>> 16), 0x45d9f3b);
+  x = Math.imul(x ^ (x >>> 16), 0x45d9f3b);
+  return (x ^ (x >>> 16)) >>> 0;
+}
+
 /** One stretch of a run whose ground line is level, in local X. */
 export interface RunSpan {
   x0: number;
@@ -575,6 +596,12 @@ export const STONE = "#5a5f5c";
 export const DARK_STONE = "#3d423f";
 export const SLATE = "#33383a";
 export const THATCH = "#5c5340";
+/**
+ * Straw and hay that are still straw and hay: a cart's load, the litter in its
+ * bed. `THATCH` is the same stalk after years on a roof, and a load in that
+ * colour read as a cart full of earth.
+ */
+export const STRAW = "#74673f";
 export const IRON = "#2f3338";
 export const PLANK = "#4a4034";
 export const DIRT = "#4a4438";
