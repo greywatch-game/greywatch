@@ -594,7 +594,7 @@ const controlPoints: ControlPointDef[] = [
   // centre inside a collider, where nothing can stand.
   { id: "C", name: "The Square", pos: new Vector3(0, 0, -4), radius: 14 },
   { id: "D", name: "The Farmstead", pos: new Vector3(80, 0, 34), radius: 13, poleLift: 3.4 },
-  { id: "E", name: "The Bog Docks", pos: new Vector3(40, 0.73, -84), radius: 12, poleLift: 1.5 },
+  { id: "E", name: "The Bog Docks", pos: new Vector3(40, 0.73, -84), radius: 12, poleLift: 4.3 },
 ];
 
 /**
