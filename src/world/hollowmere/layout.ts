@@ -588,7 +588,7 @@ const scatter: ScatterSpec[] = [
 ];
 
 const controlPoints: ControlPointDef[] = [
-  { id: "A", name: "The Chapel", pos: new Vector3(-60, TERRACE_H, 76), radius: 14, poleLift: 2.5 },
+  { id: "A", name: "The Chapel", pos: new Vector3(-60, TERRACE_H, 76), radius: 14, poleLift: 5.4 },
   { id: "B", name: "The Mill", pos: new Vector3(-97, TERRACE_H, -28), radius: 13 },
   // Just south of the well: standing the flag *on* the well would put its
   // centre inside a collider, where nothing can stand.

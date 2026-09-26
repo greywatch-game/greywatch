@@ -226,7 +226,8 @@ export type BuilderKind = keyof typeof BUILDERS;
  * to the ground under the next pole. The townhouse and the cottage read no
  * ground at all and are here for the same reason: their doors, their studding
  * and the rest of their dressing are seeded off where they stand
- * (`streetSeed`).
+ * (`streetSeed`). The chapel lays its floor a step over the highest ground
+ * under its nave and carries its footings down to the lowest.
  */
 export const CONFORMS_TO_TERRAIN: ReadonlySet<BuilderKind> = new Set([
   "road",
@@ -236,4 +237,5 @@ export const CONFORMS_TO_TERRAIN: ReadonlySet<BuilderKind> = new Set([
   "pylon",
   "townhouse",
   "cottage",
+  "chapel",
 ] as const);

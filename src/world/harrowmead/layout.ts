@@ -153,7 +153,8 @@ const placements: Placement[] = [
   { kind: "chapel", x: 20, z: 26 },
   { kind: "townhouse", x: 10, z: 10, params: { litWindows: true } },
   { kind: "cottage", x: 34, z: 12, rotY: Math.PI / 2, params: { width: 8 } },
-  { kind: "cottage", x: 14, z: 40, params: { litWindows: true } },
+  // Two metres clear of the chapel tower's west buttress, which it stood in.
+  { kind: "cottage", x: 12, z: 41, params: { litWindows: true } },
   { kind: "townhouse", x: -16, z: -18, params: { litWindows: true } },
   { kind: "smithy", x: -32, z: -20 },
   { kind: "cottage", x: -14, z: -36, rotY: Math.PI },
