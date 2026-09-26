@@ -77,6 +77,9 @@ import {
 import type { ReportVoice } from "../entities/weapons";
 import { SAMPLE_URLS, type SampleId } from "./samples";
 
+/** A world position as the panner reads one — a `Vector3` is one. */
+type Point = { x: number; y: number; z: number };
+
 /**
  * How far past full scale the master soft clip stays roughly linear. 3 lets a
  * firefight stack three simultaneous full-level sounds before the curve bends
@@ -873,6 +876,8 @@ export class Sfx {
   private lx = 0;
   private ly = 0;
   private lz = 0;
+  /** `aboard`'s answer, reused: it is read into a panner the call it is made. */
+  private readonly aboardAt: Point = { x: 0, y: 0, z: 0 };
   /** Audio-clock time of the last impact, for that method's own rate limit. */
   private lastImpact = 0;
   /**
@@ -1131,8 +1136,9 @@ export class Sfx {
    * throws away all but about a tenth of a noise slice's amplitude, the same
    * arithmetic the body layer and every footstep in here are written against.
    *
-   * **These five layers are the one sound in the game exempt from the voice
-   * cap** (`keep`), and it is the impact reserve's argument taken one step
+   * **These five layers are exempt from the voice cap** (`keep`) — they and a
+   * crew's own hull guns (`aboard`) are the only sounds in the game that
+   * are — and it is the impact reserve's argument taken one step
    * further. The cap is first-come-first-served, so the firefight loud enough
    * to spend it is exactly the moment the player's own weapon would come out
    * thin — the roll, the thump and the action are scheduled last and would be
@@ -1979,10 +1985,18 @@ export class Sfx {
    * arrive as one message and have to be laid back out in time. Scheduled on
    * the audio clock rather than through a `setTimeout`, so the spacing is
    * sample-accurate and unaffected by the frame rate.
+   *
+   * `onBoard` is a gun on the hull the listener is riding — see `aboard`.
    */
-  botShot(at: Vector3, after = 0, voice: ReportVoice = FLAT_REPORT): void {
+  botShot(
+    from: Vector3,
+    after = 0,
+    voice: ReportVoice = FLAT_REPORT,
+    onBoard = false,
+  ): void {
     const bus = this.bus(voice.mix ?? "otherGun", "worldGun");
     const a = CONFIG.audio;
+    const at = onBoard ? this.aboard(from) : from;
     const dist = this.distanceToListener(at);
     // The gate, and it is a VOICE decision rather than a free one: under the
     // inverse rolloff 70 m is ~24 dB down through an air-absorption lowpass
@@ -1990,7 +2004,7 @@ export class Sfx {
     // could pick out — so building the nodes only burns voices that could
     // have carried an audible one. Reject before the panner, not after.
     if (dist > a.maxDistance) return;
-    const panner = this.panner(bus, at);
+    const panner = this.panner(bus, at, onBoard);
     if (!panner) return;
     const far = dist / a.maxDistance;
     const delay = after + dist / a.speedOfSound;
@@ -2023,19 +2037,19 @@ export class Sfx {
     // is the synthesis's, and every use of it there is a filter frequency.
     if (voice.sample && this.sample(bus, voice.sample, {
       vol: SAMPLE_LEVEL * 0.8 * voice.level, rate: v, delay, out: panner,
-      send: send * voice.tail, lowpass: 16000 - 14800 * far,
+      send: send * voice.tail, lowpass: 16000 - 14800 * far, keep: onBoard,
     })) return;
     this.burst(bus, {
       dur: 0.03, vol: 0.4 * v * voice.level * voice.snap * (1 - far * 0.8),
       type: "highpass", freq: (2400 - 1700 * far) * v * p, q: 0.6, delay,
-      out: panner, send: send * 0.3 * voice.tail,
+      out: panner, send: send * 0.3 * voice.tail, keep: onBoard,
     });
     // The far half of the map hears a longer, duller thud; the near half hears
     // a report with an edge on it.
     this.burst(bus, {
       dur: (0.1 + far * 0.14) * voice.length, vol: 0.62 * voice.level,
       type: "lowpass", freq: (1500 - 1150 * far) * p, freqEnd: 190 * p, delay,
-      out: panner, send: send * voice.tail,
+      out: panner, send: send * voice.tail, keep: onBoard,
     });
     // The low roll, close in only. Faded over its OWN range rather than the
     // panner's much longer one, so the last of it trails off instead of
@@ -2046,7 +2060,7 @@ export class Sfx {
     this.burst(bus, {
       dur: 0.2 * voice.length, vol: 1.5 * near * voice.level * voice.weight,
       type: "lowpass", freq: 320 * p, freqEnd: 95 * p, q: 3, delay,
-      out: panner, send: send * 0.8 * voice.tail,
+      out: panner, send: send * 0.8 * voice.tail, keep: onBoard,
     });
   }
 
@@ -2311,13 +2325,16 @@ export class Sfx {
    * **A recording (`tankCannon`) stands in for all three layers when it has
    * landed**, on `shoot`'s terms: a preference, never a requirement, and the
    * synthesis below is what the game does without it.
+   *
+   * `onBoard` is the hull the listener is riding — see `aboard`.
    */
-  cannon(at: Vector3): void {
+  cannon(from: Vector3, onBoard = false): void {
     const bus = this.bus("cannon", "worldGun");
     const a = CONFIG.audio;
+    const at = onBoard ? this.aboard(from) : from;
     const dist = this.distanceToListener(at);
     if (dist > a.maxDistance * 2.2) return;
-    const panner = this.panner(bus, at);
+    const panner = this.panner(bus, at, onBoard);
     if (!panner) return;
     const far = Math.min(1, dist / (a.maxDistance * 1.4));
     const delay = dist / a.speedOfSound;
@@ -2335,23 +2352,25 @@ export class Sfx {
     // twice, and nothing here is going to play this one.
     if (this.sample(bus, "tankCannon", {
       vol: BLAST_LEVEL, rate: v, delay, out: panner,
-      send: 1.4, lowpass: 14000 - 12800 * far,
+      send: 1.4, lowpass: 14000 - 12800 * far, keep: onBoard,
     })) return;
     // The muzzle blast: broadband and over in 60 ms. Twice a rifle's and half
     // the length of the roll behind it.
     this.burst(bus, {
       dur: 0.06, vol: 1.15 * (1 - far * 0.6), type: "highpass",
       freq: (1500 - 1100 * far) * v, q: 0.6, delay, out: panner, send: 0.7,
+      keep: onBoard,
     });
     // The body, sweeping down as the pressure wave spreads. Longer than a
     // grenade's, because the barrel keeps pointing it somewhere.
     this.burst(bus, {
       dur: 0.62 + far * 0.4, vol: 1, type: "lowpass",
       freq: 700 - 460 * far, freqEnd: 55, delay, out: panner, send: 1.7,
+      keep: onBoard,
     });
     // The chest thump, an octave under the grenade's.
     this.tone(bus, 24 * v, 0.55, "sine", 0.62 * (1 - far * 0.45), 0.5, panner, {
-      delay, send: 0.9,
+      delay, send: 0.9, keep: onBoard,
     });
   }
 
@@ -3834,11 +3853,47 @@ export class Sfx {
     this.reverb.buffer = ir;
   }
 
-  private distanceToListener(at: Vector3): number {
+  private distanceToListener(at: Point): number {
     const dx = at.x - this.lx;
     const dy = at.y - this.ly;
     const dz = at.z - this.lz;
     return Math.sqrt(dx * dx + dy * dy + dz * dz);
+  }
+
+  /**
+   * Where a gun on the hull the LISTENER is riding is heard from: on the same
+   * bearing as `at`, but never further out than `refDistance`, the plateau.
+   *
+   * The listener is the camera, and in a chase view the camera is ten to
+   * fourteen metres off the hull — so a gun the listener is sitting behind
+   * was placed as a stranger's across the street, ~10 dB down under the
+   * inverse rolloff with the top filtered off it, and came back to full the
+   * moment a gunner put the sight up and the eye went onto the gun. Nobody in
+   * a tank hears its own gun from twelve metres off. So the DISTANCE is
+   * pulled in to where "beside me" stops being a distance, and the BEARING is
+   * kept: the report is still panned, still the mono file, and still on
+   * `worldGun` — what changed is where the crew is, not what the sound is.
+   *
+   * **An `onBoard` shot is also exempt from the voice cap**, on `shoot`'s
+   * argument: a crew is in the fight that spends the cap, and its own gun
+   * losing rounds then is the gun going thin exactly when it is fired in
+   * anger. It is bounded the same way — one hull, two guns, rates the spec
+   * caps. The cupola's report is 0.112 s at ~9 rounds a second (two voices;
+   * about four if it is synthesized) and a shell is at most three layers
+   * every few seconds, so the whole crew is ~7 at worst — and it never
+   * overlaps `shoot`'s ten, because nobody in a hull fires a carried weapon.
+   * They are still COUNTED, so everything else still yields to them.
+   */
+  private aboard(at: Point): Point {
+    const d = this.distanceToListener(at);
+    const r = CONFIG.audio.refDistance;
+    if (d <= r) return at;
+    const k = r / d;
+    const p = this.aboardAt;
+    p.x = this.lx + (at.x - this.lx) * k;
+    p.y = this.ly + (at.y - this.ly) * k;
+    p.z = this.lz + (at.z - this.lz) * k;
+    return p;
   }
 
   /**
@@ -3873,10 +3928,10 @@ export class Sfx {
    * model their nodes were built and then multiplied by exactly zero, so a
    * grenade past 70 m was silent but for its tail.
    */
-  private panner(bus: MixBus | null, at: Vector3): PannerNode | null {
+  private panner(bus: MixBus | null, at: Point, keep = false): PannerNode | null {
     if (!this.ctx || !bus) return null;
     const a = CONFIG.audio;
-    if (this.voices >= a.maxVoices) return null;
+    if (!keep && this.voices >= a.maxVoices) return null;
     const node = this.ctx.createPanner();
     node.panningModel = "equalpower";
     node.distanceModel = "inverse";

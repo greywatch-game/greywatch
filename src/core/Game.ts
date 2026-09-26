@@ -6017,7 +6017,9 @@ export class Game {
       lc.muzzleIntensity,
       lc.muzzleLife * 2.5,
     );
-    this.sfx.cannon(muzzle);
+    // Whoever pulled it, a crew hears its own gun beside them rather than from
+    // where the chase camera stands — see `Sfx.aboard`.
+    this.sfx.cannon(muzzle, tank === this.driving);
     return true;
   }
 
@@ -6100,11 +6102,12 @@ export class Game {
       lc.muzzleIntensity,
       lc.muzzleLife,
     );
-    // Placed at the muzzle rather than voiced in the ear, because in a chase
-    // view the gun is twelve metres away from the listener and every other
-    // shot in the game at that distance is placed. `report` is what makes it
-    // a heavy machine gun rather than a rifle — see `CONFIG…mg.report`.
-    this.sfx.botShot(muzzle, 0, m.report);
+    // Placed at the muzzle rather than voiced in the ear, so it is panned like
+    // every other gun in the world — but a crew riding THIS hull hears it at
+    // arm's length rather than from the chase camera twelve metres back, which
+    // is `Sfx.aboard`. `report` is what makes it a heavy machine gun rather
+    // than a rifle — see `CONFIG…mg.report`.
+    this.sfx.botShot(muzzle, 0, m.report, tank === this.driving);
     return true;
   }
 
@@ -7152,7 +7155,7 @@ export class Game {
         if (!tank || (tank === this.driving && this.drivingSeat === DRIVER)) break;
         const g = tank.spec.gun;
         if (g) this.queueNetShot(event.tank, 1, 0, g.range, "cannon");
-        this.sfx.cannon(tank.muzzleToRef(this.shellFrom));
+        this.sfx.cannon(tank.muzzleToRef(this.shellFrom), tank === this.driving);
         const lc = CONFIG.lighting;
         this.lighting.pulse(
           this.shellFrom,
@@ -7424,8 +7427,9 @@ export class Game {
     const rounds = Math.min(Math.max(event.n ?? 1, 1), TICK_HZ / SNAPSHOT_HZ);
     const spacing = 1 / SNAPSHOT_HZ / rounds;
     tank.mgMuzzleToRef(this.netMuzzle);
+    const onBoard = tank === this.driving;
     for (let i = 0; i < rounds; i++) {
-      this.sfx.botShot(this.netMuzzle, i * spacing, m.report);
+      this.sfx.botShot(this.netMuzzle, i * spacing, m.report, onBoard);
     }
     this.queueNetShot(event.tank, rounds, spacing, m.range, "mg");
   }

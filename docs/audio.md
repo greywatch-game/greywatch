@@ -181,6 +181,18 @@ slots rather than memory.
    panned exactly as a bot's is. No unpanned path, no exception, mono. It
    costs 0.112 mono-seconds where the same cut in stereo would cost 0.224.
 
+   **What the crew of a hull does NOT inherit from that is the twelve metres.**
+   Placed at the muzzle and heard from the chase camera, a crew's own gun was
+   ~10 dB down with the top filtered off it, and back at full the moment a
+   gunner put the sight up — the eye going onto the gun. So every report and
+   every shell from the hull the listener is riding, whoever pulled the
+   trigger and offline or on the wire, is pulled in to `refDistance` on the
+   same bearing (`Sfx.aboard`): the level, the air absorption, the delay and
+   the roll of a gun beside you, still panned, still mono, still `worldGun`.
+   **And exempt from the voice cap**, on the player's own report's argument
+   (`docs/weapons.md`): one hull, two guns, ~7 voices at worst, never at the
+   same time as the carried weapon's ten.
+
    **The six MECHANISM rows are heard exactly where the exception applies and
    are mono anyway, because there is no width in either master to keep.** The
    side channel peaks 21.6 dB under the mid on the magazine change and 13.7 to

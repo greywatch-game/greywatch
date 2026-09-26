@@ -807,8 +807,10 @@ load-bearing:
   outside the layers and are unchanged. A recording played louder and quieter
   is not a rifle at two distances.
 
-**The player's own report is the one sound in the game exempt from the voice
-cap**, and it is the impact reserve's argument taken one step further. The cap
+**The player's own report is exempt from the voice cap** — it and a hull
+crew's own guns (`Sfx.aboard`, `docs/audio.md`) are the only sounds that are,
+and never at once, because nobody in a hull fires a carried weapon — and it is
+the impact reserve's argument taken one step further. The cap
 is first-come-first-served, so a firefight loud enough to spend it is exactly
 the moment the player's own weapon would come out thin: the roll, the thump and
 the action are scheduled last and would be the three dropped, which is to say

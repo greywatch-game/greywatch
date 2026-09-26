@@ -177,9 +177,10 @@ export const CHANNEL_GROUPS = {
   lmg: ["ownGun", "worldGun"],
   pistol: ["ownGun", "worldGun"],
   // Never unpanned, either of them, and both for the same reason. `Game
-  // .resolveMg` reaches `Sfx.botShot` on purpose — in a chase view the cupola
-  // is twelve metres from the listener — and a cannon has no unpanned path
-  // even for the crew firing it. See `docs/audio.md`'s mono rule.
+  // .resolveMg` reaches `Sfx.botShot` on purpose and a cannon has no unpanned
+  // path even for the crew firing it — a crew's own gun is pulled in to arm's
+  // length (`Sfx.aboard`) but stays on its bearing. See `docs/audio.md`'s mono
+  // rule.
   mountedGun: ["worldGun"],
   cannon: ["worldGun"],
   otherGun: ["ownGun", "worldGun"],
