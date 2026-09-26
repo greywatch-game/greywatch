@@ -1973,6 +1973,17 @@ same geometry. Three things follow and all three are load-bearing:
   the GRID; at 5–8 it does not. Measured over a 30-frame walk across three
   snaps, the snap frames' difference was indistinguishable from their
   neighbours'.
+- **The near `cell` decides which maps have a waterline that MOVES**, because
+  the waterline is where the displaced grid meets the ground and a train
+  reaches the grid only at `grid.detail` cells per wavelength. At 0.5 m
+  nothing shorter than 2.5 m was geometry, which is the whole of a pond's
+  spectrum — the default 12 cm swell is a 2.7 m wave — so Hollowmere's bog,
+  Sarab's pools and Kurenai's stream lit their waves and stood dead at the
+  edge while Cinderhaven's sea surged metres up its beaches. At 0.25 m a
+  pond's top two or three trains are geometry near the eye, which is where a
+  shoreline is read, and it measured under 0.1 ms of GPU on every vantage.
+  **A map that states a smaller `swell` owes this check again**: its longest
+  train is `swell / waves.steepness`, and it needs `grid.detail[0]` cells.
 - **A body past `grid.quadBeyond` is drawn as a two-triangle quad instead**,
   swapped per frame in `WaterSystem.follow`, because none of the grid carries
   anything out there and its triangles would all be clamped to nothing at the
@@ -2137,7 +2148,21 @@ taps of the bed map) to get how far the waterline is, so the lace is one width,
 `foamWidth`, on a steep bank and a gentle one alike. Keyed on depth alone it was
 a line on the steep bank and a SHEET on the gentle one — a flat just awash is
 shallow over its whole area — and `foamSlope` is the floor under the slope so a
-truly level shoal foams only where it meets the air. **It is crisp and it is a
+truly level shoal foams only where it meets the air.
+
+**The bed map is SIGNED, and the foam is only where the waterline is because
+it is.** The byte spans `-depthDry..depthMax`, the bank above the surface
+stored as negative depth. Clamped to zero instead, the filtered zero sat half
+a texel UP the bank — under the ground — so the visible waterline read a few
+centimetres deep, the lace measured from zero was drawn where the bank hid it,
+and the slope two taps across the shore came out at half. On a sea's gentle
+foreshore the error was small against the surge and the halved slope widened
+the band into what looked right; on a pond's bank it was the whole band, and
+Hollowmere and Sarab had no foam at all. The same reach up the bank is what
+lets a crest RUN onto it: a grid vertex is capped by the depth it reads
+(`waveCap`), and that cap reaches zero `waves.lap` up the bank — a clamped map
+read every vertex on the bank as standing in water. So `lap` is how far up the
+bank the edge can rise, and `depthDry` has to cover it with room to spare. **It is crisp and it is a
 LACE**: hard edges, broken by the drifting mask even at the waterline itself,
 thinning to scraps outward; a band that fills whenever it is full is a metre of
 white paint along a gentle shore. Whitecaps are the same: on a swell tall

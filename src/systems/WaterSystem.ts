@@ -427,8 +427,12 @@ export class WaterSystem {
       const z = r.z - r.depth / 2 + (r.depth * (j + 0.5)) / nz;
       for (let i = 0; i < nx; i++) {
         const x = r.x - r.width / 2 + (r.width * (i + 0.5)) / nx;
+        // SIGNED: the bank above the surface is negative depth, so the
+        // filtered zero is where the ground actually crosses the water rather
+        // than half a texel up the bank under it. See `CONFIG.water.depthDry`.
         const d = (surfaceY - terrain.surfaceAt(x, z, false)) / w.depthMax;
-        data[j * nx + i] = d <= 0 ? 0 : d >= 1 ? 255 : Math.round(d * 255);
+        const e = (d * w.depthMax + w.depthDry) / (w.depthMax + w.depthDry);
+        data[j * nx + i] = e <= 0 ? 0 : e >= 1 ? 255 : Math.round(e * 255);
         if (d > 0) {
           const g = Math.min(d, 1);
           wx += x * g;

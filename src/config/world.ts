@@ -420,9 +420,17 @@ export const water = {
      * `lap` metres at the very waterline, so the edge still breathes rather
      * than standing dead. This is what makes a flood meadow calm and a
      * channel through it move, with nobody saying which is which.
+     *
+     * **`lap` is how far the waterline RUNS, and it is sized against the
+     * bank rather than the wave.** At the water's edge every train is capped
+     * to `lap / break`, so on a pond it is the whole of the edge's rise and
+     * fall; at 3.5 cm that was about a centimetre of height, which on a 0.2
+     * bank moves the line five centimetres and reads as a still shore
+     * however the open water moves. A crest can only run up a bank the bed
+     * map reaches up — see `depthDry`.
      */
     break: 1.6,
-    lap: 0.035,
+    lap: 0.08,
     /**
      * Pixels per wavelength a train needs before it is LIT at full amplitude.
      * A sampling limit, not a look: the shader measures its own footprint
@@ -446,9 +454,19 @@ export const water = {
    * `quadBeyond` is the distance past which a body is drawn with a plain
    * two-triangle quad instead, because none of the grid is carrying anything
    * there and its triangles would all be clamped to nothing.
+   *
+   * **`cell` decides the shortest swell that moves the GEOMETRY, and so which
+   * maps have a waterline that moves at all.** The waterline is where the
+   * displaced grid meets the ground, and a train is drawn only at `detail`
+   * cells per wavelength: at 0.5 m nothing under 2.5 m moved, which is the
+   * whole of a pond's spectrum (the default 12 cm swell is a 2.7 m wave), so
+   * Hollowmere's bog and Sarab's pools lit their waves and stood dead at the
+   * edge while Cinderhaven's sea surged. 0.25 m carries a pond's top two or
+   * three trains near the eye, which is where a shoreline is read, for under
+   * 0.1 ms of GPU on every vantage measured.
    */
   grid: {
-    cell: 0.5,
+    cell: 0.25,
     near: 12,
     growth: 1.05,
     reach: 240,
@@ -527,8 +545,18 @@ export const water = {
    * `depthMax` is the depth the byte saturates at, so it only has to cover the
    * deepest bed under any rect; `texels` is its resolution in texels per metre
    * and `texelsMax` the cap a map-wide rect hits.
+   *
+   * **The map is SIGNED: `depthDry` metres of bank above the surface are
+   * stored as NEGATIVE depth**, and the byte spans `-depthDry..depthMax`. A
+   * map that clamped dry ground to zero put the filtered zero half a texel up
+   * the bank, under the ground, so the real waterline read a few centimetres
+   * deep and the foam band that is measured from zero was drawn where the bank
+   * hides it — and the bed's slope, two taps across the shore, came out at
+   * half. It has to reach further up the bank than `waves.lap`, which is how
+   * high a crest may run onto it.
    */
   depthMax: 1.5,
+  depthDry: 0.5,
   depthTexels: 2,
   depthTexelsMax: 512,
   /**
@@ -569,8 +597,13 @@ export const water = {
    * foams only where it actually meets the air. The lapping is no longer a
    * number either: the depth the band reads is the DISPLACED surface's, so
    * the line runs up the bank under a crest and drains behind it.
+   *
+   * 0.7 is the width the lace had on Cinderhaven's beaches while the bed map
+   * clamped its dry side to zero, which halved the slope measured across the
+   * shore and so doubled the band; the signed map (`depthDry`) measures the
+   * slope honestly, and this is the number that keeps that look.
    */
-  foamWidth: 0.45,
+  foamWidth: 0.7,
   foamScale: 0.28,
   foamSpeed: 0.045,
   foamSlope: 0.04,

@@ -224,6 +224,13 @@ const BED_UV = /* wgsl */ `
 fn bedUv(xz: vec2f) -> vec2f {
   return (xz - uniforms.bounds.xy) / max(uniforms.bounds.zw - uniforms.bounds.xy, vec2f(0.001));
 }
+
+// The byte is SIGNED depth: 0 is 'depthDry' of bank above the surface and 1 is
+// 'depthMax' of water under it, so the zero this returns is the real
+// waterline. Negative is dry ground.
+fn bedDepth(texel: f32) -> f32 {
+  return texel * (uniforms.depthMax + uniforms.depthDry) - uniforms.depthDry;
+}
 `;
 
 /** The uniforms both stages read. Declared in each, laid out once. */
@@ -232,6 +239,7 @@ uniform time: f32;
 uniform bounds: vec4f;   // minX, minZ, maxX, maxZ — the rect
 uniform surfaceY: f32;   // the rest level
 uniform depthMax: f32;   // metres the depth byte saturates at
+uniform depthDry: f32;   // metres of bank the byte reaches below zero
 
 // --- the wave field (see waves() and waveTrains) ---
 uniform trainA: array<vec4f, ${CONFIG.water.waves.trains}>;
@@ -304,8 +312,7 @@ fn main(input: VertexInputs) -> FragmentInputs {
   // with the same geometry.
   let xz = clamp(vertexInputs.position.xz + uniforms.gridOrigin,
     uniforms.bounds.xy, uniforms.bounds.zw);
-  let depth = textureSampleLevel(depthTex, depthTexSampler, bedUv(xz), 0.0).r
-    * uniforms.depthMax;
+  let depth = bedDepth(textureSampleLevel(depthTex, depthTexSampler, bedUv(xz), 0.0).r);
   let w = waves(xz, depth, vertexInputs.position.y,
     uniforms.gridDetail.x, uniforms.gridDetail.y, true);
   let calm = 1.0 - washCore(xz) * uniforms.washFlatten;
@@ -328,7 +335,7 @@ varying vPosW: vec3f;
 var foamTexSampler: sampler;
 var foamTex: texture_2d<f32>;
 var depthTexSampler: sampler;
-var depthTex: texture_2d<f32>; // r = bed depth / depthMax, over "bounds"
+var depthTex: texture_2d<f32>; // r = SIGNED bed depth (see bedDepth), over "bounds"
 uniform camPos: vec3f;
 ${SHARED_UNIFORMS}
 
@@ -553,8 +560,7 @@ fn main(input: FragmentInputs) -> FragmentOutputs {
   // mips), and an explicit level 0 turns that off — a single bilinear tap
   // that moved the far shoreline of Harrowmead's millpond by up to 28/255.
   // See docs/rendering.md.
-  let restDepth = textureSample(depthTex, depthTexSampler, bedUv(posW.xz)).r
-    * uniforms.depthMax;
+  let restDepth = bedDepth(textureSample(depthTex, depthTexSampler, bedUv(posW.xz)).r);
 
   // --- the surface ---
   let wv = waves(posW.xz, restDepth, footprint, 1.0, uniforms.waveDetail, false);
@@ -742,7 +748,8 @@ fn main(input: FragmentInputs) -> FragmentOutputs {
   let bedZ = textureSample(depthTex, depthTexSampler, bedAt + vec2f(0.0, texel.y)).r
     - textureSample(depthTex, depthTexSampler, bedAt - vec2f(0.0, texel.y)).r;
   let perTexel = (uniforms.bounds.zw - uniforms.bounds.xy) * texel * 2.0;
-  let bedSlope = length(vec2f(bedX, bedZ) / perTexel) * uniforms.depthMax;
+  let bedSlope = length(vec2f(bedX, bedZ) / perTexel)
+    * (uniforms.depthMax + uniforms.depthDry);
   let edge = min(posW.xz - uniforms.bounds.xy, uniforms.bounds.zw - posW.xz);
   let shore = min(min(edge.x, edge.y),
     depth / max(bedSlope, uniforms.foamSlope));
@@ -837,6 +844,7 @@ const WATER_UNIFORMS = [
   "throughStrength",
   "throughCrest",
   "depthMax",
+  "depthDry",
   "depthFade",
   "bedDepth",
   "bedShow",
@@ -1014,6 +1022,7 @@ export function createWaterMaterial(
   mat.setFloat("throughStrength", surface.through);
   mat.setFloat("throughCrest", w.light.through.crest);
   mat.setFloat("depthMax", w.depthMax);
+  mat.setFloat("depthDry", w.depthDry);
   mat.setFloat("depthFade", w.depthFade);
   mat.setFloat("bedDepth", w.bedDepth);
   mat.setFloat("bedShow", w.bedShow);
