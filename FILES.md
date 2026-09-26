@@ -749,7 +749,9 @@ src/
                         #   submeshes and would stop nothing
     BuildingKit.ts      # Facade: shared types + BUILDERS registry
     kit/core.ts         #   Build accumulator (box/wall/guard/flight/...),
-                        #   palette, builder contract
+                        #   palette, builder contract, and the forest's
+                        #   drawing words (limb/rope/slab/fern) the jungle
+                        #   ruin and the temple both grow their fig from
     kit/buildings.ts    #   cottage, townhouse, tavern, smithy, ruin,
                         #   watchtower, chapel, barn, mill, boathouse,
                         #   gatehouse, stiltHut, jungleRuin

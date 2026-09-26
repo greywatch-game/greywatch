@@ -14,8 +14,17 @@ import {
   Build,
   type BuildCtx,
   type BuildParams,
+  type Point3,
   type Structure,
   streetSeed,
+  carve,
+  fern,
+  heading,
+  limb,
+  orient,
+  rope,
+  slab,
+  stepAlong,
   ASHLAR,
   AWNING,
   BRICK,
@@ -24,6 +33,9 @@ import {
   DARK_STONE,
   DIRT,
   EMBER,
+  FIG_BARK,
+  FIG_LEAF,
+  FIG_LEAF_LIT,
   FLAME,
   GUARD_HEIGHT,
   GUARD_THICKNESS,
@@ -88,24 +100,6 @@ const DOOR_PAINTS = [PLANK, TEAK, VERDIGRIS, AWNING] as const;
 
 const outward = (s: Side): number => (s === "+z" || s === "+x" ? 1 : -1);
 const runsAlongX = (s: Side): boolean => s === "-z" || s === "+z";
-
-/** Every interval of `[a, b]` left once each cut is taken out of it. */
-function carve(a: number, b: number, cuts: [number, number][]): [number, number][] {
-  let out: [number, number][] = [[a, b]];
-  for (const [c0, c1] of cuts) {
-    const next: [number, number][] = [];
-    for (const [s0, s1] of out) {
-      if (c1 <= s0 || c0 >= s1) {
-        next.push([s0, s1]);
-        continue;
-      }
-      if (c0 > s0) next.push([s0, c0]);
-      if (c1 < s1) next.push([c1, s1]);
-    }
-    out = next;
-  }
-  return out;
-}
 
 /**
  * A member laid ON a face: `along` the run, `tall` up it and `thick` through
@@ -337,8 +331,6 @@ function boardUp(
     onFace(b, s, plane, u, y, across + 0.3, 0.17, 0.04, out, PLANK, (i % 2 === 0 ? 1 : -1) * 0.13);
   }
 }
-
-type Point3 = readonly [number, number, number];
 
 /**
  * A convex solid between two matching faces — `from[i]` joined to `to[i]` —
@@ -6972,15 +6964,6 @@ const RUIN_CORE = "#46332d";
  */
 const TILE = "#5b4536";
 const TILE_SLATE = "#4a4c46";
-/**
- * The fig: `Props.ts`'s jungle hardwood, restated rather than imported for the
- * reason that file restates `CREEPER` — the kit and the scatter each own their
- * palette — and restated EXACTLY, so the tree that took this house is the same
- * tree as the forest standing round it.
- */
-const FIG_BARK = "#5b5443";
-const FIG_LEAF = "#2c5230";
-const FIG_LEAF_LIT = "#437a3e";
 
 /** One course of brick. Every head, tooth and exposed patch is laid in it. */
 const COURSE = 0.075;
@@ -7349,85 +7332,6 @@ function quoins(b: Build, a: QuoinFace, c: QuoinFace, y0: number, y1: number): v
       const len = Math.min(long ? 0.52 : 0.3, f.max);
       onFace(b, f.s, f.plane, f.corner + (f.dir * (len - 0.03)) / 2, y + QH / 2, len + 0.03, QH - 0.03, 0.03, RENDER_PROUD + 0.012, STUCCO);
     }
-  }
-}
-
-/** Where a member laid from `a` to `c` along its own Z stands, and how it is turned. */
-function orient(a: Point3, c: Point3): { len: number; mid: Point3; rot: { x: number; y: number } } {
-  const dx = c[0] - a[0];
-  const dy = c[1] - a[1];
-  const dz = c[2] - a[2];
-  const len = Math.max(1e-4, Math.hypot(dx, dy, dz));
-  return {
-    len,
-    mid: [(a[0] + c[0]) / 2, (a[1] + c[1]) / 2, (a[2] + c[2]) / 2],
-    // Babylon turns a part by Z, then X, then Y: X tips its +Z end DOWN by
-    // the angle, and Y then swings it round to its bearing.
-    rot: { x: -Math.asin(Math.max(-1, Math.min(1, dy / len))), y: Math.atan2(dx, dz) },
-  };
-}
-
-/** A flat member laid from `a` to `c`: a rafter, a beam, a fern's blade. */
-function slab(b: Build, a: Point3, c: Point3, wide: number, thick: number, color: string): void {
-  const o = orient(a, c);
-  b.box(wide, thick, o.len, o.mid[0], o.mid[1], o.mid[2], color, o.rot);
-}
-
-/**
- * A round member from `a` (diameter `da`) to `c` (diameter `dc`): a root, a
- * limb, a stem. Run on past both ends by a little, so a chain of them reads as
- * one thing bending rather than as a string of sausages.
- */
-function limb(b: Build, a: Point3, c: Point3, da: number, dc: number, color: string, tess = 6): void {
-  const dx = c[0] - a[0];
-  const dy = c[1] - a[1];
-  const dz = c[2] - a[2];
-  const len = Math.hypot(dx, dy, dz);
-  if (len < 0.01) return;
-  // A cylinder's axis is its Y: X tips that axis toward +Z, then Y swings it.
-  b.cyl(len + Math.min(da, dc) * 0.5, dc, da, tess, (a[0] + c[0]) / 2, (a[1] + c[1]) / 2, (a[2] + c[2]) / 2, color, {
-    x: Math.acos(Math.max(-1, Math.min(1, dy / len))),
-    y: Math.atan2(dx, dz),
-  });
-}
-
-/** A chain of `limb`s through `pts`, tapering from `d0` to `d1` along its length. */
-function rope(b: Build, pts: readonly Point3[], d0: number, d1: number, color: string, tess = 6): void {
-  let total = 0;
-  for (let i = 1; i < pts.length; i++) total += Math.hypot(pts[i][0] - pts[i - 1][0], pts[i][1] - pts[i - 1][1], pts[i][2] - pts[i - 1][2]);
-  let run = 0;
-  for (let i = 1; i < pts.length; i++) {
-    const seg = Math.hypot(pts[i][0] - pts[i - 1][0], pts[i][1] - pts[i - 1][1], pts[i][2] - pts[i - 1][2]);
-    const da = d0 + ((d1 - d0) * run) / total;
-    run += seg;
-    const dc = d0 + ((d1 - d0) * run) / total;
-    limb(b, pts[i - 1], pts[i], da, dc, color, tess);
-  }
-}
-
-/** Which way a blade leaves its crown: bearing `a` round Y, `e` up from level. */
-const heading = (a: number, e: number): Point3 => [Math.sin(a) * Math.cos(e), Math.sin(e), Math.cos(a) * Math.cos(e)];
-const stepAlong = (p: Point3, v: Point3, s: number): Point3 => [p[0] + v[0] * s, p[1] + v[1] * s, p[2] + v[2] * s];
-
-/**
- * A fern: blades rising out of a crack and arching over, each in two lengths
- * so it breaks at the arch — a single straight blade is a spike. Low by
- * construction (`size` 0.8 stands under half a metre), because a fern is
- * something you walk through and anything soft at chest height has to be
- * solid or absent (`buildFernClump`).
- */
-function fern(b: Build, x: number, y: number, z: number, size: number, rnd: () => number): void {
-  const n = 5 + Math.floor(rnd() * 3);
-  const turn = rnd() * Math.PI * 2;
-  for (let i = 0; i < n; i++) {
-    const a = turn + (i / n) * Math.PI * 2 + (rnd() - 0.5) * 0.5;
-    const l1 = size * (0.4 + rnd() * 0.2);
-    const l2 = size * (0.38 + rnd() * 0.2);
-    const color = i % 3 === 0 ? FIG_LEAF_LIT : CREEPER;
-    const root: Point3 = [x, y, z];
-    const knee = stepAlong(root, heading(a, 0.6 + rnd() * 0.4), l1);
-    slab(b, root, knee, 0.05 + size * 0.14, 0.02, color);
-    slab(b, knee, stepAlong(knee, heading(a, -0.3 - rnd() * 0.45), l2), 0.04 + size * 0.1, 0.02, color);
   }
 }
 

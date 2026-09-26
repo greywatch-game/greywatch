@@ -643,6 +643,16 @@ export const TEAK = "#4a3a2c";
 export const VERDIGRIS = "#3f6055";
 /** Creeper, vine and moss: what the forest has already taken back. */
 export const CREEPER = "#41552f";
+/**
+ * The strangler fig: `Props.ts`'s jungle hardwood, restated rather than
+ * imported for the reason that file restates `CREEPER` — the kit and the
+ * scatter each own their palette — and restated EXACTLY, so the tree that took
+ * a building is the same tree as the forest standing round it. The jungle ruin
+ * and the temple both grow one.
+ */
+export const FIG_BARK = "#5b5443";
+export const FIG_LEAF = "#2c5230";
+export const FIG_LEAF_LIT = "#437a3e";
 
 // --- the built city --------------------------------------------------------
 // A third climate, on the same terms as the tropical set above: colours, not a
@@ -1602,5 +1612,113 @@ export class Build implements Structure {
     // Roofs block bullets and sight, but the collider is a flat slab at the
     // eaves rather than two rotated planes — cheaper, and nothing walks up there.
     this.block({ w: w + overhang * 2, h: 0.3, d: d + overhang * 2, x, y, z });
+  }
+}
+
+// --- the forest's drawing ---------------------------------------------------
+//
+// Words for things that are not boxes standing square: a member laid between
+// two points, a root or a limb bending through several, and the fern that
+// grows out of a joint. Shared by every builder the forest has taken — the
+// jungle ruin and the temple — so the fig on one is drawn as the fig on the
+// other. All VISUAL.
+
+/** Every interval of `[a, b]` left once each cut is taken out of it. */
+export function carve(a: number, b: number, cuts: [number, number][]): [number, number][] {
+  let out: [number, number][] = [[a, b]];
+  for (const [c0, c1] of cuts) {
+    const next: [number, number][] = [];
+    for (const [s0, s1] of out) {
+      if (c1 <= s0 || c0 >= s1) {
+        next.push([s0, s1]);
+        continue;
+      }
+      if (c0 > s0) next.push([s0, c0]);
+      if (c1 < s1) next.push([c1, s1]);
+    }
+    out = next;
+  }
+  return out;
+}
+
+/** A point in a structure's own frame. */
+export type Point3 = readonly [number, number, number];
+
+/** Where a member laid from `a` to `c` along its own Z stands, and how it is turned. */
+export function orient(a: Point3, c: Point3): { len: number; mid: Point3; rot: { x: number; y: number } } {
+  const dx = c[0] - a[0];
+  const dy = c[1] - a[1];
+  const dz = c[2] - a[2];
+  const len = Math.max(1e-4, Math.hypot(dx, dy, dz));
+  return {
+    len,
+    mid: [(a[0] + c[0]) / 2, (a[1] + c[1]) / 2, (a[2] + c[2]) / 2],
+    // Babylon turns a part by Z, then X, then Y: X tips its +Z end DOWN by
+    // the angle, and Y then swings it round to its bearing.
+    rot: { x: -Math.asin(Math.max(-1, Math.min(1, dy / len))), y: Math.atan2(dx, dz) },
+  };
+}
+
+/** A flat member laid from `a` to `c`: a rafter, a beam, a fern's blade. */
+export function slab(b: Build, a: Point3, c: Point3, wide: number, thick: number, color: string): void {
+  const o = orient(a, c);
+  b.box(wide, thick, o.len, o.mid[0], o.mid[1], o.mid[2], color, o.rot);
+}
+
+/**
+ * A round member from `a` (diameter `da`) to `c` (diameter `dc`): a root, a
+ * limb, a stem. Run on past both ends by a little, so a chain of them reads as
+ * one thing bending rather than as a string of sausages.
+ */
+export function limb(b: Build, a: Point3, c: Point3, da: number, dc: number, color: string, tess = 6): void {
+  const dx = c[0] - a[0];
+  const dy = c[1] - a[1];
+  const dz = c[2] - a[2];
+  const len = Math.hypot(dx, dy, dz);
+  if (len < 0.01) return;
+  // A cylinder's axis is its Y: X tips that axis toward +Z, then Y swings it.
+  b.cyl(len + Math.min(da, dc) * 0.5, dc, da, tess, (a[0] + c[0]) / 2, (a[1] + c[1]) / 2, (a[2] + c[2]) / 2, color, {
+    x: Math.acos(Math.max(-1, Math.min(1, dy / len))),
+    y: Math.atan2(dx, dz),
+  });
+}
+
+/** A chain of `limb`s through `pts`, tapering from `d0` to `d1` along its length. */
+export function rope(b: Build, pts: readonly Point3[], d0: number, d1: number, color: string, tess = 6): void {
+  let total = 0;
+  for (let i = 1; i < pts.length; i++) total += Math.hypot(pts[i][0] - pts[i - 1][0], pts[i][1] - pts[i - 1][1], pts[i][2] - pts[i - 1][2]);
+  let run = 0;
+  for (let i = 1; i < pts.length; i++) {
+    const seg = Math.hypot(pts[i][0] - pts[i - 1][0], pts[i][1] - pts[i - 1][1], pts[i][2] - pts[i - 1][2]);
+    const da = d0 + ((d1 - d0) * run) / total;
+    run += seg;
+    const dc = d0 + ((d1 - d0) * run) / total;
+    limb(b, pts[i - 1], pts[i], da, dc, color, tess);
+  }
+}
+
+/** Which way a blade leaves its crown: bearing `a` round Y, `e` up from level. */
+export const heading = (a: number, e: number): Point3 => [Math.sin(a) * Math.cos(e), Math.sin(e), Math.cos(a) * Math.cos(e)];
+export const stepAlong = (p: Point3, v: Point3, s: number): Point3 => [p[0] + v[0] * s, p[1] + v[1] * s, p[2] + v[2] * s];
+
+/**
+ * A fern: blades rising out of a crack and arching over, each in two lengths
+ * so it breaks at the arch — a single straight blade is a spike. Low by
+ * construction (`size` 0.8 stands under half a metre), because a fern is
+ * something you walk through and anything soft at chest height has to be
+ * solid or absent (`buildFernClump`).
+ */
+export function fern(b: Build, x: number, y: number, z: number, size: number, rnd: () => number): void {
+  const n = 5 + Math.floor(rnd() * 3);
+  const turn = rnd() * Math.PI * 2;
+  for (let i = 0; i < n; i++) {
+    const a = turn + (i / n) * Math.PI * 2 + (rnd() - 0.5) * 0.5;
+    const l1 = size * (0.4 + rnd() * 0.2);
+    const l2 = size * (0.38 + rnd() * 0.2);
+    const color = i % 3 === 0 ? FIG_LEAF_LIT : CREEPER;
+    const root: Point3 = [x, y, z];
+    const knee = stepAlong(root, heading(a, 0.6 + rnd() * 0.4), l1);
+    slab(b, root, knee, 0.05 + size * 0.14, 0.02, color);
+    slab(b, knee, stepAlong(knee, heading(a, -0.3 - rnd() * 0.45), l2), 0.04 + size * 0.1, 0.02, color);
   }
 }
