@@ -3,9 +3,10 @@
  * down the GUNNER's sight from inside it: where the eye goes, where it looks,
  * and the angle the turret is being ASKED for.
  * Owns: the chase camera's own yaw and pitch, its occlusion pull-in, the gun's
- * report kick, and the sight picture the second seat may put up over all of it.
- * Owns no camera — like `DeathCam`, it produces an `eye`, a `look` and a `fov`,
- * and `Game` hands all three to `CameraSystem.place`.
+ * report kick, the crew's concussion rattle, and the sight picture the second
+ * seat may put up over all of it.
+ * Owns no camera — like `DeathCam`, it produces an `eye`, a `look`, a `fov` and
+ * a `roll`, and `Game` hands all four to `CameraSystem.place`.
  *
  * ## Why this is a second camera and not a mode on the first
  *
@@ -91,6 +92,7 @@ import type { AxisSpec, VehicleSpec } from "../config/vehicles";
 import type { Vehicle } from "../entities/Vehicle";
 import type { InputManager } from "../core/InputManager";
 import type { GyroMode } from "../core/settings";
+import { CameraShake } from "../core/cameraShake";
 import { newRayHit, type RayWorld } from "../world/RayWorld";
 
 /**
@@ -156,6 +158,8 @@ export class VehicleCamera {
    * sight goes down is a frame that has already put the wide field back.
    */
   fov: number = CONFIG.camera.fovHip;
+  /** …and the roll, which only the rattle below ever writes. */
+  roll = 0;
 
   /**
    * The gun's report, as an angle on the camera and nothing else. It is not on
@@ -167,6 +171,14 @@ export class VehicleCamera {
    */
   private kick = 0;
   private kickVel = 0;
+  /**
+   * The concussion rattle (`CONFIG.camera.shake`): the hull ringing under its
+   * own gun, or under a blast close by. Spent on the LOOK and never on the
+   * boom — added to the pitch that places the eye, 0.01 rad is twelve
+   * centimetres of eye swinging on a twelve-metre arm, which reads as the
+   * camera being on a stick rather than the picture being shaken.
+   */
+  private readonly shake = new CameraShake();
 
   /** The player's look-speed settings, pushed by `Game.applySettings`. */
   private mouseScale = 1;
@@ -226,6 +238,7 @@ export class VehicleCamera {
     this.pitch = this.view.restPitch;
     this.kick = 0;
     this.kickVel = 0;
+    this.shake.reset();
     // Opened in the CHASE view whichever seat this is, which is the paragraph
     // above carried through: a sight put up on the frame somebody sits down is
     // one that has told them nothing about the machine they are now in.
@@ -235,6 +248,11 @@ export class VehicleCamera {
   /** The gun went off. Cosmetic, and entirely on the eye. */
   addKick(radians: number): void {
     this.kickVel -= radians * 12;
+  }
+
+  /** A concussion, worth `amount` with 1 a grenade at point blank. */
+  addShake(amount: number): void {
+    this.shake.add(amount);
   }
 
   /**
@@ -292,6 +310,7 @@ export class VehicleCamera {
         this.kickVel = 0;
       }
     }
+    this.shake.step(dt);
   }
 
   /**
@@ -337,15 +356,17 @@ export class VehicleCamera {
       span > 1e-4
         ? Math.max(0, Math.min(1, (pitch - v.pitchMin) / span))
         : 1;
-    const lp = pitch + CONFIG.vehicles.frameLift * t;
+    const lp = pitch + CONFIG.vehicles.frameLift * t + this.shake.pitch;
     const clp = Math.cos(lp);
+    const ly = this.yaw + this.shake.yaw;
+    this.roll = this.shake.roll;
     // Off the EYE rather than off the anchor, so the pull-in below carries the
     // look with it: a boom that shortens against a wall must not swing the
     // view round as it goes.
     this.look.set(
-      this.eye.x + clp * sy * v.distance,
+      this.eye.x + clp * Math.sin(ly) * v.distance,
       this.eye.y + Math.sin(lp) * v.distance,
-      this.eye.z + clp * cy * v.distance,
+      this.eye.z + clp * Math.cos(ly) * v.distance,
     );
     this.pullIn(tank);
   }
@@ -377,6 +398,18 @@ export class VehicleCamera {
     this.fov = SIGHT_FOV;
     tank.mgSightToRef(this.eye);
     tank.mgDirToRef(this.dir, -this.kick);
+    // The rattle through the glass, turned down for `shake.adsMult`'s reason.
+    // Applied as angles off the bore rather than folded into `mgDirToRef`,
+    // which takes a pitch and nothing else.
+    const m = CONFIG.camera.shake.adsMult;
+    if (this.shake.active) {
+      const p = Math.asin(Math.max(-1, Math.min(1, this.dir.y))) +
+        this.shake.pitch * m;
+      const y = Math.atan2(this.dir.x, this.dir.z) + this.shake.yaw * m;
+      const cp = Math.cos(p);
+      this.dir.set(cp * Math.sin(y), Math.sin(p), cp * Math.cos(y));
+    }
+    this.roll = this.shake.roll * m;
     this.look
       .copyFrom(this.eye)
       .addInPlace(this.dir.scaleInPlace(SIGHT_REACH));

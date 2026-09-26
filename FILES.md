@@ -188,6 +188,10 @@ src/
                         #   for the settings row; applies nothing
     CameraSystem.ts     # First-person cam at the eye; ADS zooms and slows by
                         #   the fitted optic, at the weapon's own rate
+    cameraShake.ts      # The concussion rattle: a two-pole envelope over
+                        #   smooth noise, three COSMETIC angles. One each in
+                        #   CameraSystem and VehicleCamera; Game.shakeFrom
+                        #   feeds whichever is running
     Sfx.ts              # Procedural WebAudio, spatialised, voice-capped —
                         #   plus SIXTEEN RECORDINGS: eight standing in for a
                         #   report, six for a mechanism the player works with

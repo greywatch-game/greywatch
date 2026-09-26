@@ -270,8 +270,11 @@ starts using grenades once it has been held up.
 
 Three things elsewhere are part of this: **the blast light is deliberately outside
 `spendMuzzleLightBudget`** (transients always win a slot, and there are seconds
-between blasts); **the camera's concussion reuses `CameraSystem.land()`**, since a
-shake of its own would be a second integrator writing the same offset; and **a
+between blasts); **the camera's concussion DIP reuses `CameraSystem.land()`**, since a
+dip of its own would be a second integrator writing the same offset — the RATTLE
+on top of it (`core/cameraShake.ts`, `CONFIG.camera.shake`) writes only angles,
+reaches further than the dip, and is the one half a hull's crew gets, through
+`Game.shakeFrom` picking whichever camera is running; and **a
 blast kills through `Game.registerBotKill`**, the one place a bot's death reaches
 the scoreboard, tickets and killfeed from all three causes (the hitmarker and rumble
 stay with the weapon, being about the shot that landed rather than the body).

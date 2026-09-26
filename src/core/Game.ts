@@ -6020,6 +6020,7 @@ export class Game {
     // Whoever pulled it, a crew hears its own gun beside them rather than from
     // where the chase camera stands — see `Sfx.aboard`.
     this.sfx.cannon(muzzle, tank === this.driving);
+    this.shakeFromCannon(tank, muzzle);
     return true;
   }
 
@@ -6236,6 +6237,7 @@ export class Game {
       this.vehicleCam.eye,
       this.vehicleCam.look,
       this.vehicleCam.fov,
+      this.vehicleCam.roll,
     );
     // Around the HULL rather than the eye, and with no forward bias: the tank
     // is the thing the frame is about and it is already twelve metres inside
@@ -7156,6 +7158,7 @@ export class Game {
         const g = tank.spec.gun;
         if (g) this.queueNetShot(event.tank, 1, 0, g.range, "cannon");
         this.sfx.cannon(tank.muzzleToRef(this.shellFrom), tank === this.driving);
+        this.shakeFromCannon(tank, this.shellFrom);
         const lc = CONFIG.lighting;
         this.lighting.pulse(
           this.shellFrom,
@@ -9221,6 +9224,12 @@ export class Game {
    * edge still registers as one. What it does NOT reuse is the punch's
    * direction: `addPunch` takes one, so the shove is thrown away from where
    * the blast actually was rather than being the same nudge every time.
+   *
+   * The RATTLE on top of both is a different thing and has its own
+   * (`core/cameraShake.ts`): it writes angles only, never the eye's height,
+   * so it is no second integrator on the dip — and it is the one of the three
+   * a seat in a hull gets, because the other two are `CameraSystem`'s and that
+   * camera is not running while the hull's is.
    */
   private onExplosion(at: Vector3, power: number, ground: BlastGround): void {
     const lc = CONFIG.lighting;
@@ -9246,24 +9255,72 @@ export class Game {
     this.blastDebris.burst(at, power, ground, this.cameraSys.camera.position);
     this.sfx.explosion(at, power);
     if (this.state !== "playing") return;
+    // The rattle, on its own longer reach. The dip and the punch below are
+    // skipped for a crew: raised on a camera that is not running, they would
+    // bank until the player next stepped out of the hull.
+    this.shakeFrom(at, power, CONFIG.camera.shake.blastReach * power);
     const g = CONFIG.grenade;
     const reach = g.blastRadius * 2 * power;
-    const d = Vector3.Distance(at, this.cameraSys.camera.position);
+    const tank = this.driving;
+    const d = Vector3.Distance(
+      at,
+      tank ? tank.center : this.cameraSys.camera.position,
+    );
     if (d >= reach) return;
-    this.cameraSys.land(g.shakeSpeed * power * (1 - d / reach));
-    // Which side it went off, as the punch's drift: the sign of the blast's
-    // bearing across the view. A grenade behind a shoulder throws the view the
-    // other way, which is free here because the punch already takes a
-    // direction for the gun and a pressure wave has one just as much.
-    const right = this.cameraSys.flatRight;
-    const bearing = (at.x - this.cameraSys.camera.position.x) * right.x +
-      (at.z - this.cameraSys.camera.position.z) * right.z;
-    // The twist goes with the bearing rather than taking the weapon's fixed
-    // torque: a blast has a side it came from and no bore to rotate about.
-    const blastDrift = d > 0.001 ? -bearing / d : 0;
-    this.cameraSys.addPunch(blastDrift, 1, -blastDrift);
+    if (!tank) {
+      this.cameraSys.land(g.shakeSpeed * power * (1 - d / reach));
+      // Which side it went off, as the punch's drift: the sign of the blast's
+      // bearing across the view. A grenade behind a shoulder throws the view
+      // the other way, which is free here because the punch already takes a
+      // direction for the gun and a pressure wave has one just as much.
+      const right = this.cameraSys.flatRight;
+      const bearing = (at.x - this.cameraSys.camera.position.x) * right.x +
+        (at.z - this.cameraSys.camera.position.z) * right.z;
+      // The twist goes with the bearing rather than taking the weapon's fixed
+      // torque: a blast has a side it came from and no bore to rotate about.
+      const blastDrift = d > 0.001 ? -bearing / d : 0;
+      this.cameraSys.addPunch(blastDrift, 1, -blastDrift);
+    }
     const haptic = CONFIG.rumble;
     this.input.rumble(haptic.hurtStrong, haptic.hurtWeak, haptic.hurtMs);
+  }
+
+  /**
+   * A concussion at `at`, worth `amount` at point blank and nothing at
+   * `reach`, handed to whichever camera is running this frame — the one rule
+   * `core/cameraShake.ts` states from its own side. A seat measures from the
+   * HULL rather than from the chase eye twelve metres behind it, and takes
+   * `shake.hullMult` off for the armour in between.
+   *
+   * Squared on the distance's share of the reach, so the rattle is violent up
+   * close and only a tremor at the edge: linear read as the same shake at
+   * every range, only smaller.
+   */
+  private shakeFrom(at: Vector3, amount: number, reach: number): void {
+    if (this.state !== "playing") return;
+    const tank = this.driving;
+    const from = tank ? tank.center : this.cameraSys.camera.position;
+    const d = Vector3.Distance(at, from);
+    if (d >= reach) return;
+    const f = 1 - d / reach;
+    const worth = amount * f * f;
+    if (tank) this.vehicleCam.addShake(worth * CONFIG.camera.shake.hullMult);
+    else this.cameraSys.addShake(worth);
+  }
+
+  /**
+   * A tank gun went off, whoever fired it: the crew of THAT hull is rung at
+   * full (`shake.cannon`), and anybody else is shaken by the muzzle blast as
+   * by a small blast at the muzzle. Everything else a crew is owed on a shot —
+   * the boom's kick, the rumble — is the trigger's, in `fireShell`.
+   */
+  private shakeFromCannon(tank: Vehicle, muzzle: Vector3): void {
+    const s = CONFIG.camera.shake;
+    if (tank === this.driving) {
+      if (this.state === "playing") this.vehicleCam.addShake(s.cannon);
+      return;
+    }
+    this.shakeFrom(muzzle, s.cannonNear, s.cannonReach);
   }
 
   /**

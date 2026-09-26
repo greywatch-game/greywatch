@@ -146,6 +146,85 @@ export const camera = {
     adsMult: 0.35,
   },
   /**
+   * Concussion SHAKE: what a blast or a tank gun does to the picture on top of
+   * the dip (`land`) and the punch. Those two are one event each — the eye
+   * sinks once, the view is thrown once — and a pressure wave through the
+   * ground and the body is not one event, it is a RATTLE. `core/cameraShake.ts`
+   * is the model; `CameraSystem` and `VehicleCamera` each hold one, and Game's
+   * `shakeFrom` decides which of the two a given event reaches.
+   *
+   * **Cosmetic, on the rendered picture only**, the same bargain as the punch
+   * and the landing nod: nothing here reaches `aimPitch`/`aimYaw`, a gun's
+   * orders or where a round goes.
+   *
+   * The unit is a GRENADE AT POINT BLANK, which is 1 — the blast's own
+   * reference — so a tank shell's `blastPower` (1.85) is already what it is
+   * worth here and nothing had to be stated twice.
+   */
+  shake: {
+    /**
+     * The envelope, as the view punch's two poles (s): the level chases the
+     * drive over `rise`, and the drive bleeds away over `fall`. The rise puts
+     * the peak ~55 ms after the event, three frames at 60 Hz — an amplitude
+     * stepped up on one frame is a cut, not an arrival.
+     */
+    rise: 0.018,
+    fall: 0.32,
+    /**
+     * Ceiling on the level, so a shell landing on a grenade's shake cannot
+     * stack into a picture nobody can read. Stacking is otherwise additive: a
+     * second blast inside the first one's tail adds to it rather than
+     * restarting it.
+     */
+    max: 1.6,
+    /** Peak angles (rad) at level 1, per axis. */
+    pitch: 0.011,
+    yaw: 0.009,
+    roll: 0.02,
+    /**
+     * The rattle's base frequency (Hz). Each axis runs two partials off it at
+     * incommensurate ratios, so it never repeats and never reads as a
+     * vibrating motor. Held near 10 Hz on purpose: faster than ~15 Hz is two
+     * samples a cycle at 60 Hz and reads as a buzz, which is the frame rule
+     * `CONFIG.recoil.settle` states for the recoil.
+     */
+    frequency: 10,
+    /**
+     * Multiplier on all three angles through a sight — a rifle's ADS and a
+     * gunner's optic both. The rotations are what swing the picture off the
+     * rounds, the same half the landing's `adsMult` suppresses, and a
+     * magnified picture magnifies the shake with it.
+     */
+    adsMult: 0.4,
+    /**
+     * How far a blast's shake reaches, in metres per unit of `power` — a
+     * grenade is felt out to 28 m and a shell to 52, well past the dip's
+     * `2 * blastRadius`, because the ground carries a thump further than the
+     * air carries a shove. Falls off as the square of the distance's share of
+     * it, so the rattle is violent up close and a tremor at the edge.
+     */
+    blastReach: 28,
+    /**
+     * What a tank's main gun hands its OWN crew, whoever pulled the trigger —
+     * the driver's round and a gunner sitting beside a crewman's alike. On top
+     * of `gun.cameraKick`, which is the boom being thrown up; this is the hull
+     * ringing.
+     */
+    cannon: 0.85,
+    /**
+     * …and what the same report hands a body on foot beside the hull, at the
+     * muzzle, falling off over `cannonReach` (m) as a blast does.
+     */
+    cannonNear: 0.7,
+    cannonReach: 24,
+    /**
+     * What armour takes out of a blast's shake for the crew inside it. Most of
+     * it survives on purpose: a shell against the hull you are sitting in
+     * should be the hardest shake in the game, not the softest.
+     */
+    hullMult: 0.75,
+  },
+  /**
    * Hold sway: the wander of an aimed weapon that nobody's arms can hold
    * still. Everything else the camera does for show — the bob, the punch,
    * the landing nod — is kept out of aimPitch/aimYaw so the bullets never

@@ -43,9 +43,10 @@
  * is not running, so no amount of breathing or cycling walks the aim anywhere.
  * The landing absorb is a damped spring this system owns and the viewmodel
  * READS (`landDip`) — one integrator per impact, the same rule as the bob
- * phase. It and the view punch are the only two things that write the camera's
- * roll, and they do it through ONE assignment at the end of `update`: a second
- * write site is how a roll becomes whichever contributor happened to run last.
+ * phase. It, the view punch and the concussion rattle (`core/cameraShake.ts`)
+ * are the only things that write the camera's roll, and they do it through ONE
+ * assignment at the end of `update`: a second write site is how a roll becomes
+ * whichever contributor happened to run last.
  * Must run before lighting.update()/sfx.setListener() in Game's frame order,
  * and before the shader's eye is pushed on the way into the render.
  */
@@ -53,6 +54,7 @@ import { FreeCamera, Scene, Vector3 } from "@babylonjs/core";
 import { CONFIG } from "../config";
 import { hermite, impulse, smoothstep } from "./math";
 import { RecoilAxis, recoilGain, type RecoilShape } from "./recoilCurve";
+import { CameraShake } from "./cameraShake";
 import {
   DEFAULT_SIGHT,
   sightSetup,
@@ -344,6 +346,14 @@ export class CameraSystem {
   landDip = 0;
   private landVel = 0;
 
+  /**
+   * The concussion rattle (`CONFIG.camera.shake`) — the third cosmetic on the
+   * rendered view beside the punch and the landing nod, and like them never on
+   * the aim. `VehicleCamera` holds the other one; see `core/cameraShake.ts` for
+   * why there are two.
+   */
+  private readonly shake = new CameraShake();
+
   /** Scratch for the rendered camera position — no per-frame allocation. */
   private readonly eye = new Vector3();
 
@@ -607,6 +617,12 @@ export class CameraSystem {
     this.bobTarget = 0;
     this.landDip = 0;
     this.landVel = 0;
+    this.shake.reset();
+  }
+
+  /** A concussion, worth `amount` with 1 a grenade at point blank. */
+  addShake(amount: number): void {
+    this.shake.add(amount);
   }
 
   /**
@@ -860,10 +876,18 @@ export class CameraSystem {
   // Annotated, not inferred: `CONFIG` is `as const`, so a bare default here
   // would give the parameter the LITERAL type of `fovHip` and refuse every
   // other field of view.
-  place(eye: Vector3, target: Vector3, fov: number = CONFIG.camera.fovHip): void {
+  //
+  // `roll` defaults to level for the same reason: the one caller that passes it
+  // is `VehicleCamera`'s shake, a transient that is zero at rest.
+  place(
+    eye: Vector3,
+    target: Vector3,
+    fov: number = CONFIG.camera.fovHip,
+    roll = 0,
+  ): void {
     this.camera.position.copyFrom(eye);
     this.camera.setTarget(target);
-    this.camera.rotation.z = 0;
+    this.camera.rotation.z = roll;
     this.camera.fov = fov;
   }
 
@@ -1023,6 +1047,9 @@ export class CameraSystem {
       }
     }
 
+    // --- concussion rattle (cosmetic, exact at any dt like the punch) ---
+    this.shake.step(dt);
+
     // --- ADS blend (exponential ease toward target) ---
     const target = input.ads ? 1 : 0;
     this.adsBlend +=
@@ -1162,13 +1189,18 @@ export class CameraSystem {
     // looking through a sight.
     const swing = this.landDip * (1 - (1 - l.adsMult) * t);
     const nod = swing * l.nod;
+    // The rattle, damped through a sight for the landing nod's reason: it is
+    // the rotations that swing the picture off the rounds, and a magnified
+    // picture magnifies them.
+    const rattle = 1 - (1 - CONFIG.camera.shake.adsMult) * t;
+    const rattling = this.shake.active;
 
     this.camera.position.copyFrom(this.eye);
-    if (punch > 0 || nod !== 0) {
+    if (punch > 0 || nod !== 0 || rattling) {
       const shPitch = this.punchPitch * r.shakePitch * punch;
       const shYaw = this.punchYaw * r.shakeYaw * punch;
-      const sp = this.aimPitch + shPitch + nod;
-      const sy = this.aimYaw + shYaw;
+      const sp = this.aimPitch + shPitch + nod + this.shake.pitch * rattle;
+      const sy = this.aimYaw + shYaw + this.shake.yaw * rattle;
       const cp = Math.cos(sp);
       this.camera.setTarget(
         this.eye.add(
@@ -1201,7 +1233,8 @@ export class CameraSystem {
       rb.amp *
       this.punchScale *
       this.rollTwist;
-    this.camera.rotation.z = swing * l.roll + twist;
+    this.camera.rotation.z =
+      swing * l.roll + twist + this.shake.roll * rattle;
     this.camera.fov =
       c.fovHip + (this.sight.fovAds - c.fovHip) * t + r.fovPunch * punch;
   }
