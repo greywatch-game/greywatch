@@ -211,8 +211,10 @@ world-keyed term on a *moving* mesh makes it shimmer as it walks.
 
 **Every material `CelMaterialFactory` hands out is frozen, and `remember` is
 the one door into the cache** — the six creation paths all file through it, so
-no future seventh can leave one unfrozen by omission. `createGrassMaterial` and
-the water's factory freeze on the same argument at their single return.
+no future seventh can leave one unfrozen by omission. `createGrassMaterial`,
+`createTurfMaterial` and the water's factory freeze on the same argument at
+their single return — the grass's one material is worn by every blade patch
+mesh, which is safe because they differ only in how many blades they hold.
 
 **What freezing skips is the ASKING, not the answer.**
 `ShaderMaterial.isReady` is called for every submesh of every draw — in the
@@ -1924,6 +1926,153 @@ village's lanterns, so `BattleSystem` only records flash positions and
 nearest few. Any new per-bot transient light needs the same treatment. Fixture
 lights are hand-placed and must stay **spatially spread** — clustering lanterns
 wastes slots and flattens the darkness.
+
+## The grass: a field stood around the eye
+
+**What a field costs is what can be SEEN of it, and nothing about how much
+ground it covers.** That one sentence is the whole design, and it is the
+inversion of what the field used to be: every tuft on the map was one thin
+instance, scattered at load and drawn every frame from one bounding box over
+the valley, so a map paid for its grass by AREA and every layout carried a tuft
+budget — 0.1 tufts a square metre on Cinderhaven, 0.4 on Harrowmead's pasture,
+spread as thin as the ground was wide and read as weeds standing in dirt. Now
+nothing about a blade is stored per blade, the blades are placed in the vertex
+stage around the eye, and a layout states how lush a field is and never how
+many blades that costs (`GrassRect.density` is a SHARE, 0..1, of the quality
+rung's field — see `docs/world.md`).
+
+### The mask, the patches and the one blade order
+
+**`world/grassMask.ts` bakes the field once per map** into one RGBA8 texture's
+worth of bytes, half a metre a texel until the extent would pass 2048: the
+ground's height as a 16-bit number over two channels, density in the third,
+and in the fourth the height multiplier with the WET bit on top. It is where
+every refusal lives — a carriageway (sampled 2x2 per texel so its edge is a
+coverage, not a staircase), a collider's footprint (rasterised box by box and
+padded most of a texel, so the filtered edge lies outside the wall rather than
+straddling it), the ground under a water rect's surface (a REED BED: thinner,
+taller, no turf) — and it is pure, so every client bakes the same field.
+**The shader reads it by hand**, four `textureLoad`s and a bilinear mix,
+because the height is split over two bytes and filtering the bytes would blend
+a carry into the wrong one; the wet bit is taken out of the alpha before
+anything is averaged.
+
+**The field is drawn as square PATCHES** (`CONFIG.grass.patch`, 8 m), anchored
+on whole patches in WORLD space so a blade does not move when the mask's extent
+does. Every patch holds the same SEEDS — a root in the unit square, a `rank`,
+two random numbers — and the thin-instance matrix is the patch: X scale its
+side, translation its corner. A patch's own position is hashed into every seed,
+or the field repeats every eight metres.
+
+**The blade order is the load-bearing part.** A patch mesh holds a PREFIX of
+one order in which every prefix is spread evenly over the square — a jittered
+grid read in bit-reversed quadtree order with each node's four children
+SHUFFLED, because plain bit reversal puts the first 4^j blades in the same
+corner of every block, a lattice a field shows at a glance as rows. So a far
+patch drawn from the first eighth of the blades is the same field, thinner, and
+**the shader's keep test is one threshold over rank**: a blade is drawn if
+`rank < keep(d) * density`, and the last fifth under the threshold SHRINK into
+the ground rather than blink out. `keep(d)` is 1 inside `near` and `(near/d)^2`
+beyond — a constant number of blades per unit of SCREEN — floored at
+`thinFloor`, and a thinned blade is WIDENED as `1/sqrt(keep)` and shortened a
+little, which is what lets a hillside at a hundred metres read as a carpet
+rather than a comb.
+
+**`GrassSystem.keep` and the shader's `keepShare` must agree number for
+number.** The CPU picks the mesh a patch is drawn from — the smallest one
+still holding every blade the shader will keep there, meshes stepping by
+`LOD_STEP` (√½, so a patch wastes at most 29% of its vertices on blades the
+shader collapses) — and a patch drawn from a mesh holding fewer blades than the
+shader keeps is a patch with a hole in it. Meshes at an eighth and below carry
+a single TRIANGLE per blade instead of five; they are only ever chosen thirty
+metres out and further, where a blade's curve is not a thing anybody can see.
+
+**The sight scales every distance** (`lodScale`, the zoom against `fovHip`):
+with a 6x scope up the far field is on screen at the size a near one was, so
+it is drawn as one, and the field reaches further while the sight is up.
+
+### The turf: why the field is a carpet and not a comb
+
+**Past `near` the blades thin, and whatever is between them is the map's own
+floor** — on Harrowmead, cracked earth. The TURF is a sheet laid on the same
+ground from the same mask, in the colour the field reads as from the distance
+it is drawn at: the dark floor of the stand under your feet, the field's own
+average green on the far hillside. Three patch meshes (1, 2 and 4 m cells, each
+with a SKIRT, because a fine patch beside a coarse one samples the ground at
+different points and the floor shows through the crack) out to the rung's
+`turf` reach, capped at the map's `fogEnd`. **It is biased toward the eye by
+`ROAD_DEPTH_UNITS`, because it IS a road's problem** — a sheet coplanar with
+the floor — and it stays under a road by growing nowhere a road is. **It starts
+at half density** (`turf.from`): a thinner field is blades standing on the
+map's own floor, which is what scrub and a meadow gone to seed ARE, and under
+water it does not grow at all. Its edge is the mask's contour read per PIXEL,
+so it holds still however coarse the patch drawing it.
+
+### Where a field ends
+
+**A rect is a rectangle and no field is**, so the bake thins the field toward
+where it ends along a line that wanders (`edge` metres deep, on a wave
+`edgeWave` long). **It is the UNION's edge and never a rect's**: two fields laid
+edge to edge are one field, and a feather per rect would open a bare seam down
+every join — Harrowmead's borderland is a hundred and fifty rects laid exactly
+edge to edge. So each texel's distance to the nearest texel NO rect covers is
+measured (a two-pass chamfer), and a carriageway or a wall is not in that test:
+grass stops against those as sharply as it ever did. A tended lawn states
+`edge: 0` and is cut clean.
+
+### The wind in it
+
+All of it is taken at the ROOT, so a blade bends as one stalk: the steady sway
+(`CONFIG.wind.grass.travel`, the number the fern is set against), a quick
+flutter, and the GUSTS — a slow noise field carried DOWNWIND along
+`CONFIG.wind.dir`, which leans every blade it is over and turns its tip up to
+the sky (`sheen`), the pale wave you watch roll across a hayfield. A blade
+keeps its length: the further its tip travels, the lower it stands. Pushers
+(the nearest bodies' FEET) part it and lay it over, gated on height so a man
+on a roof does not flatten the lawn below him.
+
+**A blade is lit on the side the light is on and seen from whichever side faces
+the eye.** A leaf is thin enough that the key comes through it, so the key term
+takes the blade's normal flipped toward the LIGHT and turned part way to the
+sky, and the face turned away from the eye gets `transmit` of it; everything
+else takes the normal turned most of the way up, so a stand is lit like the
+ground it covers and does not scintillate facet by facet under a banded key.
+Before this a field under Harrowmead's 14-degree sun stood in its own shade.
+
+### Three rules that are not visible until they break
+
+- **`follow` is pushed from `tick` in EVERY state**, beside the water's, and
+  `update` (the clock, the lamps, the pushers) is the camera tail. A field
+  chosen only in the tail is a deploy screen over bare ground — which is how
+  the rule was found.
+- **A patch mesh with no patches this frame is made INVISIBLE, never merely
+  emptied.** Babylon draws a thin-instanced mesh at a count of zero as one
+  plain copy at its own origin, and this mesh's origin is a 1 m patch of grass
+  at the map's centre.
+- **Growing a patch mesh's instance buffer owes `resetDrawCache`.** Handing a
+  mesh a new buffer destroys the old one, and under `compatibilityMode =
+  false` the cached draw still names it: every frame after is a submit of a
+  destroyed buffer, which WebGPU refuses WHOLE — the entire frame comes out
+  black, not just the grass. The buffers start at 512 patches so a round rarely
+  grows one, and a test that forces growth is in `FINDINGS.md`.
+
+### What it costs
+
+Measured on the Windows box at Harrowmead's pasture, four vantages, with the
+grass hidden versus drawn in one session. At 1080p the frame is CPU-bound near
+500 fps and the field is inside the noise; forced GPU-bound at 4800x2700 it
+costs **0.6 ms on `low` and 0.9 ms on `high`** (the old sparse field cost 0.1–
+0.15 ms there). **It is PIXELS, not vertices**: cutting the vertex work by a
+third moved nothing, and the blades are about three quarters of it and the turf
+the rest. A phone gets `low` on a fresh install (`defaultGrassQuality`, the
+coarse-pointer test). The bake is 120–450 ms per map inside the loading card,
+Harrowmead's borderland the largest; the mask is 16 MB of GPU memory at its
+2048 cap.
+
+**Not built:** the turf carries no bounce light (neither do the blades — the
+field never did), and nothing tints the TERRAIN under a field, which would be
+the cheaper far field but costs the bumped ground variant its sixteenth
+sampled texture.
 
 ## The water: a mirror with a body under it
 

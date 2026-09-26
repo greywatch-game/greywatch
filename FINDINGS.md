@@ -2024,8 +2024,9 @@ the game's own JS, finding 6 — therefore got *cheaper*.
 
 For scale, the same sweep reads 337k active triangles on Hollowmere and 339k on
 Coldharbour. Greyfen was already 2.5x either of them before this (the grass
-field is one mesh with a single bounding box over the valley, so all ~25k tufts
-are active every frame whatever the camera does) and is now 4.1x.
+field WAS one mesh with a single bounding box over the valley, so all ~25k tufts
+were active every frame whatever the camera did — finding 46 retired that) and
+is now 4.1x.
 
 ### What is open
 
@@ -2042,9 +2043,9 @@ onto.
 Three levers exist if it does matter, in the order they should be reached for.
 **The counts in `greyfen/layout.ts`** are the direct one and are authored per
 region, so density can be dialled without touching a builder. **The grass** is
-the cheapest triangle on the map to give back and 7,600 tufts of it have already
-gone; the field is still ~17k tufts and ~260k triangles a frame, none of it
-culled. **The canopy tree itself** is near its floor at 351 triangles — the
+no longer a lever here: it is drawn around the eye and culled per 8 m patch now
+(finding 46), so what it costs is what is in view at the player's rung, and the
+~17k tufts this section counted are gone. **The canopy tree itself** is near its floor at 351 triangles — the
 plates are 3.5x more sky per triangle than a frond and the ring counts were cut
 until removing one more measurably opened the sky — so there is little left
 there without a second, cheaper tree species, which is the one thing this change
@@ -5593,3 +5594,58 @@ Also open and not a cost: the atlas face-seam shows as a hairline where two
 faces of one cube meet at a grazing receiver, because each face clamps its taps
 a texel inside its own tile. Not seen in a screenshot yet; a filter across the
 seam is the fix if it is.
+
+## 46. The grass field is priced on ONE desktop GPU, and on a phone nothing is measured
+
+**Status:** shipped measured on the Windows box only. `docs/rendering.md`, "The
+grass", is the contract; this is what is not yet known about it.
+
+### What was measured
+
+Harrowmead's pasture, four vantages (standing in the field, crouched in it,
+looking down its length, and a 12 m overlook), the field hidden versus drawn in
+ONE session so the run-to-run spread cancels (the scratch script toggled
+`grass.follow` and hid every patch mesh; conditions interleaved `off, high,
+medium, low, off`):
+
+| | 1080p, uncapped | 4800x2700 (render scale 0.4), uncapped |
+| --- | --- | --- |
+| off | ~500 fps, CPU-bound | 143–158 fps |
+| `low` | inside the noise | −0.6 ms |
+| `high` | −1% to −7% | −0.9 ms |
+| the OLD sparse field, same vantages | — | −0.1 to −0.15 ms |
+
+**It is PIXELS.** Cutting the blade vertex work by about a third (√½ LOD steps
+and one-triangle far blades) moved none of those numbers, and hiding the turf
+alone gave back ~0.2 ms of the 0.9. The fragment stage is the cel shader's whole
+model — four-band key through the shadow maps and the cloud field, the lamp
+loop, rim, mist, fog — over a lot of overdraw.
+
+The profiler's `?gpu` whole-frame counter read ~6 ms in EVERY condition on this
+box, grass or none, so it is not the instrument for a cost this size here; the
+GPU-bound frame rate is.
+
+**The mask bake** is 120–270 ms on six maps and 443 ms on Harrowmead, whose
+borderland ring makes its mask 1440 m across at 0.7 m a texel (2048² — the cap).
+Two thirds of the first version's 1.1 s was four road queries per texel; one
+padded query per 8 m patch and then per texel took it down.
+
+### What is open
+
+- **A phone.** `?profile` with the settings screen's Grass row at `low` against
+  the field hidden (there is no `off` rung; hide it from the console as above),
+  standing in Harrowmead's pasture and on Coldharbour's square. If `low` is over
+  ~1 ms there, the levers in order: `tiers.low.turf` (the sheet is cheap in
+  vertices but it is a second layer of ground pixels), `tiers.low.reach`, then a
+  cheaper fragment stage for the far blades — the lamp loop and the rim are the
+  terms a far blade needs least.
+- **The mask's memory on a phone.** 16 MB of GPU texture at the cap, plus ~100 MB
+  of transient typed arrays during the bake. Neither has been watched on a
+  device that could run short.
+- **Growth of a patch buffer mid-round** is the one path that can take the WHOLE
+  frame down (`docs/rendering.md`'s third rule). It was tested by shrinking the
+  starting capacity to four patches and walking Harrowmead through three rung
+  switches: buffers grew to 32x, no GPU validation error, every frame drawn.
+  Re-run that if anything about how the patch meshes are made changes — and it
+  is not covered by `npm run parity` or the reference bank.
+

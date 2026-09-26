@@ -676,57 +676,59 @@ const water: WaterRect[] = [
  * x -106.4..-98.4 over z -5.2..72.9, and the north one runs z 56.7..64.7 over
  * x -102.2..-2.2. Nothing here may enter either.
  *
- * **A rect over a channel is a REED BED and is deliberately thin.** The water
- * surface is a flat plane at -0.52 and the beds bottom at -1.34, so a blade in
- * the deepest water stands 0.82 m in it and just breaks the surface. That is
- * the look the low-density bank rects are for; at field density the same rect
- * is a lawn growing underwater.
+ * **A rect over a channel is a REED BED**, and the mask makes it one: ground
+ * under a water rect's surface grows a share of the rect's density, taller so
+ * it breaks the waterline, and lays no turf — a sheet of meadow under a clear
+ * channel is a lawn growing underwater (`CONFIG.grass.reeds`).
+ *
+ * `density` is how LUSH, 0..1 of the quality rung's field, and never a count:
+ * the field is drawn around the eye, so what a rect costs is not its area.
  */
 const grass: GrassRect[] = [
   // THE FOREST FLOOR — the southern half, under 85-95% canopy closure. Thin on
   // purpose: this is litter and root, not undergrowth, and the ferns scattered
   // through it are what the eye reads at ankle height.
-  { x: -34, z: -96, width: 74, depth: 44, density: 0.28 },
-  { x: 54, z: -96, width: 76, depth: 44, density: 0.28 },
-  { x: -4, z: -44, width: 78, depth: 58, density: 0.28 },
-  { x: 76, z: -60, width: 76, depth: 24, density: 0.3 },
+  { x: -34, z: -96, width: 74, depth: 44, density: 0.35, height: 0.7 },
+  { x: 54, z: -96, width: 76, depth: 44, density: 0.35, height: 0.7 },
+  { x: -4, z: -44, width: 78, depth: 58, density: 0.35, height: 0.7 },
+  { x: 76, z: -60, width: 76, depth: 24, density: 0.38, height: 0.7 },
   // E, the canopy camp — the darkest ground on the map now, so the thinnest.
   // It was the thickest, back when the belt over it was forty trees.
-  { x: 40, z: -82, width: 34, depth: 26, density: 0.35 },
+  { x: 40, z: -82, width: 34, depth: 26, density: 0.3, height: 0.65 },
   // C, the manor. The flanks are crowded by forest; the north front is a lawn
   // nobody has cut in a decade and still has sky over it, so it keeps its
   // density and the flanks give theirs up.
-  { x: -28, z: -6, width: 24, depth: 42, density: 0.5 },
-  { x: 30, z: -6, width: 26, depth: 42, density: 0.5 },
-  { x: 0, z: 10, width: 40, depth: 14, density: 1.0 },
+  { x: -28, z: -6, width: 24, depth: 42, density: 0.6 },
+  { x: 30, z: -6, width: 26, depth: 42, density: 0.6 },
+  { x: 0, z: 10, width: 40, depth: 14, height: 1.15 },
   // B, the west bank — the flag the layout note calls the most exposed on the
   // map, and now the clearing the forest stops short of. Knee-high grass gives
   // it CONCEALMENT without giving it cover, which is the one thing this layer
   // can offer a flag with nothing on it, and it does not move the 25 m of open
   // ground that makes B what it is.
-  { x: -97, z: -30, width: 40, depth: 44, density: 1.3 },
-  { x: -104, z: -46, width: 26, depth: 24, density: 0.9 },
+  { x: -97, z: -30, width: 40, depth: 44, height: 1.2 },
+  { x: -104, z: -46, width: 26, depth: 24, height: 1.1 },
   // A, the treeline hamlet: the clearing the stilts stand in and the open
   // ground south of it that the walks overlook. Both are gaps in the canopy, so
   // both stay rich. The western approach is forest now and thins with it.
-  { x: -62, z: 88, width: 46, depth: 40, density: 1.2 },
-  { x: -58, z: 74, width: 54, depth: 16, density: 1.1 },
-  { x: -74, z: 36, width: 40, depth: 36, density: 0.4 },
+  { x: -62, z: 88, width: 46, depth: 40, height: 1.1 },
+  { x: -58, z: 74, width: 54, depth: 16, height: 1.1 },
+  { x: -74, z: 36, width: 40, depth: 36, density: 0.55 },
   // D, the temple, on the raised north-east quadrant. The platform itself is
   // the one place on this map with open sky and no water, so it keeps a real
   // field; the woods either side of it do not.
-  { x: 80, z: 34, width: 52, depth: 48, density: 0.6 },
-  { x: 96, z: 76, width: 44, depth: 44, density: 0.3 },
-  { x: 58, z: 12, width: 30, depth: 44, density: 0.4 },
-  // THE BANKS — reeds, at the thin densities the note above explains, and the
-  // one place the old array and this one agree. A river is a hole in the
-  // canopy: the light comes down it, so the water's edge is the richest ground
-  // in a real jungle and the only reason these are thin is that they are IN the
-  // water. The first is the marsh bar itself, either side of the causeway.
-  { x: 2, z: 36, width: 22, depth: 34, density: 0.7 },
-  { x: -40, z: 26, width: 26, depth: 30, density: 0.5 },
-  { x: -58, z: -10, width: 30, depth: 56, density: 0.45 },
-  { x: 66, z: -32, width: 44, depth: 22, density: 0.45 },
+  { x: 80, z: 34, width: 52, depth: 48, density: 0.85 },
+  { x: 96, z: 76, width: 44, depth: 44, density: 0.45 },
+  { x: 58, z: 12, width: 30, depth: 44, density: 0.55 },
+  // THE BANKS — reeds where they are IN the water, which the mask thins for
+  // them, and the richest ground on the map where they are not. A river is a
+  // hole in the canopy: the light comes down it, so the water's edge is where
+  // a real jungle grows thickest. The first is the marsh bar itself, either
+  // side of the causeway.
+  { x: 2, z: 36, width: 22, depth: 34, height: 1.2 },
+  { x: -40, z: 26, width: 26, depth: 30, height: 1.2 },
+  { x: -58, z: -10, width: 30, depth: 56, height: 1.2 },
+  { x: 66, z: -32, width: 44, depth: 22, height: 1.2 },
 ];
 
 export const GreyfenLayout: MapLayout = {

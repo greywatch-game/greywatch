@@ -710,35 +710,141 @@ export const water = {
 } as const;
 
 /**
- * Grass fields (src/systems/GrassSystem.ts): thin-instanced tufts with a
- * vertex-shader wind sway plus a radial "pusher" bend around every nearby
- * combatant — the ripple as you run through it. Visual only: no collider,
- * no picking, no outline. Palette lives in the map's EnvironmentSpec.
+ * Grass fields (src/systems/GrassSystem.ts): blades PLACED ON THE GPU in a
+ * field that follows the eye, off a mask baked from the map's GrassRects —
+ * so what the field costs is what is in VIEW, never how much ground it
+ * covers. Visual only: no collider, no picking. Palette lives in the map's
+ * EnvironmentSpec, and the wind it leans in is `config/wind.ts`'s.
+ *
+ * **What a field COSTS is `tiers[q].density` near the eye and nothing about
+ * the map.** The field is drawn as square PATCHES of blades, `patch` metres a
+ * side, stood only where the mask says there is grass, only inside `reach`
+ * and only inside the frustum. Every patch is a PREFIX of one progressive
+ * blade sequence, so the far field is the near field with its later blades
+ * left out — the share kept falls as `(near / d)^2`, which holds the number
+ * of blades per unit of SCREEN constant past `near` — and a blade on its way
+ * out SHRINKS into the ground rather than blinking. See `GrassSystem`.
  */
 export const grass = {
-  /** Tufts per square metre when a rect doesn't override density. One tuft
-   *  is `bladesPerTuft` blades, so this is ~5x that in blades. */
-  density: 1.1,
-  bladesPerTuft: 5,
+  /**
+   * Per quality rung (`Settings.grass`): blades per square metre inside
+   * `near` metres of the eye, and how far any grass is drawn at all. The
+   * field keeps full density to `near` and thins as `(near / d)^2` past it,
+   * floored at `thinFloor`, so the blades in view are roughly
+   * `hfov * density * near^2 * (1/2 + ln(reach / near))` — about 55,000 on
+   * `high` at a 16:9 hip view — and the map's own AREA is in no term of it.
+   *
+   * `turf` is how far the TURF runs — the sheet under the blades that
+   * carries the field's colour past the last of them (see `turf` below). It
+   * is a few hundred vertices a patch at most, so it reaches much further
+   * than a blade does; the map's own `fogEnd` caps it.
+   */
+  tiers: {
+    low: { density: 28, near: 7, reach: 70, turf: 220 },
+    medium: { density: 52, near: 9, reach: 100, turf: 320 },
+    high: { density: 90, near: 11, reach: 140, turf: 450 },
+  },
+  /**
+   * The turf's colour. `under` is its value beneath a full stand, as a share
+   * of the root colour — the floor of a meadow is darker than any blade in it.
+   * `over` is where between root and tip it sits once it stands in for the
+   * whole field, which is roughly the green a meadow reads as from a hundred
+   * metres: mostly the upper blades, some of the shade between them. `from`
+   * is the density it starts at: a thinner field is blades on the map's own
+   * floor, which is what scrub and a meadow gone to seed ARE.
+   */
+  turf: { under: 0.8, over: 0.5, from: 0.5 },
+  /**
+   * The side of one patch, metres. Also the pitch the CPU culls at, so a
+   * smaller one culls tighter and uploads more instances; eight is the size
+   * where the per-patch bookkeeping stopped showing up at all.
+   */
+  patch: 8,
+  /**
+   * The far field's floor: past `near / sqrt(thinFloor)` the share kept stops
+   * falling, so a hillside at a hundred metres still reads as grass rather
+   * than as a few stalks on bare ground.
+   */
+  thinFloor: 0.035,
+  /**
+   * How far a thinned blade is widened to cover for the ones left out — as
+   * `1 / sqrt(share)`, capped here. A blade that kept its near width all the
+   * way out would leave a distant field as a comb of hairlines.
+   */
+  widenMax: 5,
+  /** The share of `reach` over which the far edge of the field sinks away. */
+  fade: 0.25,
   /**
    * Blade height range (metres). Knee-high at the top end — tall enough to
    * read as a field and to swallow boots, short enough that it never hides
-   * a crawling firefight.
+   * a crawling firefight. A rect's `height` scales both.
    */
-  heightMin: 0.45,
-  heightMax: 0.85,
-  // The ambient wind is NOT here. It moved to `config/wind.ts` when the world's
-  // foliage became a second thing that leans in it: a bearing this file owned
-  // and one reader read is a bearing the canopy could only agree with by
-  // copying it. See that module for why the direction is shared and the
-  // amplitudes are not.
+  heightMin: 0.4,
+  heightMax: 0.82,
+  /** Blade width at the root, metres; it tapers to a point. */
+  widthMin: 0.034,
+  widthMax: 0.06,
+  /**
+   * How far a blade leans of its own accord, as a share of its height, before
+   * any wind reaches it. Grass that stands dead straight reads as a brush.
+   */
+  lean: 0.34,
+  /**
+   * The field's own unevenness: blades grow in CLUMPS a few metres across that
+   * stand taller or shorter than the ground around them, and the colour
+   * wanders on a longer wave than that. Wavelengths in metres, amounts as a
+   * share. Without both a lush field is one flat carpet, which is exactly
+   * what a real one never is.
+   */
+  clump: { length: 3.2, amount: 0.45 },
+  tint: { length: 22, amount: 0.22 },
+  /**
+   * How dark the base of a dense stand is, 0..1 of full light — the ground a
+   * blade grows from is in the shade of every blade around it. It is what
+   * makes a thick field read as DEPTH rather than as a green surface.
+   */
+  rootShade: 0.42,
+  /**
+   * How much of the key comes THROUGH an upper blade with the light behind
+   * it. A blade is a leaf a fraction of a millimetre thick, and a field seen
+   * into a low sun is lit from inside; this is the one term that shows it.
+   */
+  backlight: 0.6,
+  /**
+   * How much of the key a blade's SHADED face still shows, 0..1. A leaf this
+   * thin passes a good part of the light that falls on it, so the side of a
+   * blade turned away from a low sun is dimmer, never dark.
+   */
+  transmit: 0.6,
+  /**
+   * How a field ENDS where no rect carries it on: thinned over `edge` metres
+   * along a line that wanders on a wave `edgeWave` long, so the fields a
+   * layout states as rectangles meet the bare ground as fields do. A
+   * `GrassRect.edge` overrides it, and 0 is a clean cut — a lawn.
+   */
+  edge: 2.5,
+  edgeWave: 6,
+  /**
+   * What a field becomes where its ground is under a WaterRect's surface: a
+   * reed bed — this share of the rect's density, standing at least this
+   * multiple of the blade height so it breaks the surface — and no turf.
+   */
+  reeds: { density: 0.3, height: 1.5 },
+  /**
+   * The mask's resolution: metres per texel, and the largest side it may
+   * take before the texel grows instead. A texel is also how far a field's
+   * edge feathers against a wall or a carriageway.
+   */
+  texel: 0.5,
+  maxTexels: 2048,
   /**
    * Character interaction: how far out a body bends blades (m) and how far
-   * the tip travels at ground zero (m). The radius wants to be just past a
-   * sprint stride so the grass reacts ahead of the feet, not under them.
+   * the tip travels at ground zero, as a share of the blade's own height. The
+   * radius wants to be just past a sprint stride so the grass reacts ahead of
+   * the feet, not under them.
    */
   pushRadius: 1.35,
-  pushStrength: 0.6,
+  pushStrength: 0.85,
   /**
    * Shader array size for simultaneous pushers. The player plus the seven
    * nearest bots; beyond that the bend is outside reading distance anyway.

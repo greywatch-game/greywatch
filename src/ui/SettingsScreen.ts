@@ -15,7 +15,7 @@
  */
 import "./settings.css";
 import { CONFIG } from "../config";
-import { SHADOW_QUALITIES, type Settings } from "../core/settings";
+import { GRASS_QUALITIES, SHADOW_QUALITIES, type Settings } from "../core/settings";
 import type { GyroStatus } from "../core/GyroInput";
 
 /**
@@ -319,8 +319,9 @@ const PAGES: readonly Page[] = [
   {
     // Split off Display when the shadows row made it nine, which ran under the
     // footer at a phone's 832x384 — this list's own rule for a page that
-    // outgrows the panel. The three are the ones a slow device turns down.
-    label: "Light",
+    // outgrows the panel. The four are the ones a slow device turns down, which
+    // is why grass is here beside the light rather than on a page of its own.
+    label: "Detail",
     rows: [
       {
         key: "volumetrics",
@@ -362,6 +363,15 @@ const PAGES: readonly Page[] = [
         // Off the config's tier table, which already names `off` as a rung —
         // what off means is stated per map there rather than here.
         options: SHADOW_QUALITIES.map((k) => ({
+          value: k,
+          label: k.charAt(0).toUpperCase() + k.slice(1),
+        })),
+      },
+      {
+        key: "grass",
+        label: "Grass",
+        hint: "How thick the grass grows around you and how far it reaches",
+        options: GRASS_QUALITIES.map((k) => ({
           value: k,
           label: k.charAt(0).toUpperCase() + k.slice(1),
         })),

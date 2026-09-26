@@ -1450,11 +1450,10 @@ const water: WaterRect[] = [
 ];
 
 const grass: GrassRect[] = [
-  // Dry scrub, and a BUDGET rather than a blanket: the field is one mesh of
-  // thin instances with NO culling inside it, so the cost is the whole tuft
-  // count wherever the camera stands — which is the one thing on this map
-  // that is not paid for by distance and is why the number is stated here.
-  // ~17,400, against Harrowmead's ~23,000 on a fifth of the ground.
+  // Dry scrub. `density` is how lush, 0..1 of the quality rung's field, and
+  // the field is drawn around the eye, so its area is no price — what keeps
+  // this map's grass THIN is that it is a desert. Under half density there
+  // is no turf, so the scrub stands on the sand rather than on a sheet.
   //
   // A desert should be BARE, so what these are for is the ground that is
   // not: the wadi's whole run at two densities (see the loop — the middle
@@ -1463,27 +1462,27 @@ const grass: GrassRect[] = [
   // straight over the three pools, which is deliberate: an opaque body
   // hides every tuft standing in it, so what is left of a rect crossing a
   // pool is the ring of it on the shore.
-  { x: -358, z: -77.1, width: 58, depth: 46, density: 0.22 },
-  { x: -296, z: -80.8, width: 58, depth: 46, density: 0.22 },
-  { x: -234, z: -82.1, width: 58, depth: 46, density: 0.22 },
-  { x: -172, z: -80.2, width: 58, depth: 46, density: 0.4 },
-  { x: -110, z: -75, width: 58, depth: 46, density: 0.4 },
-  { x: -48, z: -67.1, width: 58, depth: 46, density: 0.4 },
-  { x: 14, z: -57.9, width: 58, depth: 46, density: 0.4 },
-  { x: 76, z: -49.1, width: 58, depth: 46, density: 0.4 },
-  { x: 138, z: -42.2, width: 58, depth: 46, density: 0.4 },
-  { x: 200, z: -38.5, width: 58, depth: 46, density: 0.4 },
-  { x: 262, z: -38.1, width: 58, depth: 46, density: 0.22 },
-  { x: 324, z: -40.7, width: 58, depth: 46, density: 0.22 },
-  { x: 386, z: -45, width: 58, depth: 46, density: 0.22 },
-  { x: -186, z: 90, width: 50, depth: 16, density: 0.5 },
-  { x: -186, z: 50, width: 50, depth: 16, density: 0.5 },
-  { x: -198, z: 242, width: 80, depth: 44, density: 0.3 },
-  { x: -300, z: 24, width: 70, depth: 60, density: 0.16 },
-  { x: 120, z: 40, width: 80, depth: 70, density: 0.16 },
-  { x: -60, z: 330, width: 110, depth: 60, density: 0.14 },
-  { x: 300, z: -60, width: 90, depth: 80, density: 0.14 },
-  { x: 30, z: -350, width: 120, depth: 60, density: 0.14 },
+  { x: -358, z: -77.1, width: 58, depth: 46, density: 0.28, height: 0.7 },
+  { x: -296, z: -80.8, width: 58, depth: 46, density: 0.28, height: 0.7 },
+  { x: -234, z: -82.1, width: 58, depth: 46, density: 0.28, height: 0.7 },
+  { x: -172, z: -80.2, width: 58, depth: 46, density: 0.45, height: 0.85 },
+  { x: -110, z: -75, width: 58, depth: 46, density: 0.45, height: 0.85 },
+  { x: -48, z: -67.1, width: 58, depth: 46, density: 0.45, height: 0.85 },
+  { x: 14, z: -57.9, width: 58, depth: 46, density: 0.45, height: 0.85 },
+  { x: 76, z: -49.1, width: 58, depth: 46, density: 0.45, height: 0.85 },
+  { x: 138, z: -42.2, width: 58, depth: 46, density: 0.45, height: 0.85 },
+  { x: 200, z: -38.5, width: 58, depth: 46, density: 0.45, height: 0.85 },
+  { x: 262, z: -38.1, width: 58, depth: 46, density: 0.28, height: 0.7 },
+  { x: 324, z: -40.7, width: 58, depth: 46, density: 0.28, height: 0.7 },
+  { x: 386, z: -45, width: 58, depth: 46, density: 0.28, height: 0.7 },
+  { x: -186, z: 90, width: 50, depth: 16, height: 1.1 },
+  { x: -186, z: 50, width: 50, depth: 16, height: 1.1 },
+  { x: -198, z: 242, width: 80, depth: 44, density: 0.4, height: 0.8 },
+  { x: -300, z: 24, width: 70, depth: 60, density: 0.22, height: 0.6 },
+  { x: 120, z: 40, width: 80, depth: 70, density: 0.22, height: 0.6 },
+  { x: -60, z: 330, width: 110, depth: 60, density: 0.2, height: 0.6 },
+  { x: 300, z: -60, width: 90, depth: 80, density: 0.2, height: 0.6 },
+  { x: 30, z: -350, width: 120, depth: 60, density: 0.2, height: 0.6 },
 ];
 
 export const SarabLayout: MapLayout = {
@@ -1579,9 +1578,9 @@ export const SarabLayout: MapLayout = {
    * margin's width for it to be flush with.
    *
    * What stands out there is the rim of the basin the town sits in — low, dry
-   * hills at ±750, rising 60 to 90 m over 150 m of run. Gentler than the downs
-   * Harrowmead used to carry, and much further away, because the whole point of
-   * the 300 m margin is that the boundary is scenery rather than architecture: at
+   * hills at ±750, rising 60 to 90 m over 150 m of run. Gentler than
+   * Harrowmead's downs and much further away, because the whole point of the
+   * 300 m margin is that the boundary is scenery rather than architecture: at
    * this distance the rim is drawn almost entirely in `fogColor` and its job is
    * to be a horizon line rather than a landform.
    *

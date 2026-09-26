@@ -215,9 +215,10 @@ export interface WaterRect {
 /**
  * A rectangular grass field. Purely visual: no collider, no nav cost —
  * combatants walk straight through (the shader bends the blades around
- * them). Consumed by the GrassSystem, not by the MapBuilder (grass is never
- * merged or frozen here; tufts that would grow inside a collider are
- * rejected by the GrassSystem at build time).
+ * them). Consumed by the GrassSystem, not by the MapBuilder: the rects are
+ * baked into one mask (`world/grassMask.ts`), which refuses a collider's
+ * footprint and a carriageway and frays the fields' joint edge, and the
+ * blades are placed around the eye. A rect states how LUSH, never how many.
  */
 export interface GrassRect {
   x: number;
@@ -227,8 +228,25 @@ export interface GrassRect {
   depth: number;
   /** Base height — set for fields on a terrace or embankment. */
   y?: number;
-  /** Tufts per m²; defaults to CONFIG.grass.density. */
+  /**
+   * How thick it grows, 0..1: a share of the quality rung's full density
+   * (`CONFIG.grass.tiers`). Absent is 1 — a field says how lush it is, never
+   * how many blades that costs, because the field is drawn around the eye and
+   * its AREA is not a price. Overlapping rects add, capped at 1.
+   */
   density?: number;
+  /**
+   * How tall, as a multiplier on `CONFIG.grass.heightMin..heightMax`. Absent
+   * is 1; a mown green is ~0.45, reeds and a neglected paddock ~1.3.
+   */
+  height?: number;
+  /**
+   * How many metres of ragged edge the field thins out over where nothing
+   * carries it on (`CONFIG.grass.edge` when absent). 0 is a clean cut: a
+   * tended lawn against its path. It is the edge of all the fields together,
+   * so two rects laid side by side meet without a seam whatever this says.
+   */
+  edge?: number;
 }
 
 /**

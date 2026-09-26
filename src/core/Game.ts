@@ -2593,6 +2593,9 @@ export class Game {
     this.shadows.setQuality(this.shadowQuality);
     this.bodyShadows.setQuality(this.shadowQuality);
     this.localShadows.setQuality(this.shadowQuality);
+    // A no-op unless the rung moved; a change rebuilds the patch meshes and
+    // keeps the map's mask.
+    this.grass.setQuality(this.settings.grass);
     this.setMotionBlurEnabled(this.settings.motionBlur);
     // After the blur, and that is the order rather than a preference: the
     // blur's own toggle takes the grade off and puts it back to keep the
@@ -3342,6 +3345,10 @@ export class Game {
     // asked of it, and a deploy screen over the bay is a live view of both.
     // Nothing here advances its clock — see `WaterSystem.follow`.
     this.water.follow(this.cameraSys.camera.position);
+    // And the grass, whose patches are chosen around the eye and inside the
+    // frustum: a deploy screen over a meadow is a live view of it too. Nothing
+    // here advances its clock — see `GrassSystem.follow`.
+    this.grass.follow(this.cameraSys.camera);
     // The dust under the rotors, on the fleet's terms rather than the eye's: a
     // held world is a machine frozen over a street, and one still boiling that
     // street is the droning-engine lie with a picture instead of a sound. In
@@ -4319,11 +4326,13 @@ export class Game {
     );
     this.grass.build(
       map.grass,
+      map.water,
       environment,
       map.colliderBoxes,
       map.roads,
       map.terrain,
       map.size,
+      map.margin,
     );
     // Where the edge of the map is, and whether it is a rule rather than a
     // wall. `margin` is 0 on every map closed by the rim, which turns the leash

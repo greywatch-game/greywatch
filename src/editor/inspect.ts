@@ -300,15 +300,11 @@ export function inspect(
         deletable: true,
         fields: [
           ...rect(reach, r),
-          number(
-            "density",
-            "density",
-            r.density ?? null,
-            0.02,
-            4,
-            0.05,
-            CONFIG.grass.density,
-          ),
+          // Both are SHARES rather than counts: how lush against the quality
+          // rung's full field, and how tall against the config's blade range.
+          number("density", "density", r.density ?? null, 0, 1, 0.05, 1),
+          number("height", "height", r.height ?? null, 0.2, 2, 0.05, 1),
+          number("edge", "edge", r.edge ?? null, 0, 10, 0.5, CONFIG.grass.edge),
         ],
       };
     }

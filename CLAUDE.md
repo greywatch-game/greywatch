@@ -17,7 +17,7 @@ substitute: read the companion before changing that subsystem.
 | [`docs/grenades.md`](docs/grenades.md) | anything about the one projectile in the game |
 | [`docs/states.md`](docs/states.md) | a new screen, a new game state, anything about what a lid holds or lets run |
 | [`docs/ui.md`](docs/ui.md) | any screen, any stylesheet, anything under `src/ui/` |
-| [`docs/rendering.md`](docs/rendering.md) | lights, shadows, fog, outlines, block visibility, the post chain, the sky |
+| [`docs/rendering.md`](docs/rendering.md) | lights, shadows, fog, outlines, block visibility, the post chain, the sky, the grass |
 | [`docs/world.md`](docs/world.md) | a map, a layout, a builder, the terrain or the rim |
 | [`docs/editor.md`](docs/editor.md) | anything under `src/editor/` or the dev write endpoint |
 | [`docs/bots.md`](docs/bots.md) | navigation, perception, cover, squads, bot cost |
@@ -776,6 +776,8 @@ follows a light, why the blend is 1, what it costs), the water's wave field and
 mirror and the three ways a cube probe goes flat, the four light terms and the
 colour buffer's three further rules, the frozen define set and what it measured,
 the ground's height maps carved as a DEPTH (parallax, self-shadow) and not only a slope,
+the grass field stood around the EYE (its mask, the one blade order every patch is a
+prefix of, the turf, and the three rules that are invisible until they break),
 the ink's tint and its NIB, the wind's two bounds, the fire (one material, its
 UV vocabulary, and the mask twin a moving emissive owes the glow), the muzzle-flash budget, the
 fog split, the shadow window, the bodies' map (its own window, the back faces,
@@ -907,7 +909,7 @@ symptom in a screenshot**.
 
 **A ROAD is visual-only and rejects exactly one thing, which is anything that
 GROWS** (`world/roads.ts`, `GameMap.roads`): `MapBuilder` sows no
-`PropBody.rooted` prop on a carriageway and `GrassSystem` no tuft. It is a
+`PropBody.rooted` prop on a carriageway and the grass mask no blade. It is a
 per-PROP fact rather than a per-region flag, because a street is where rubble,
 cones and litter belong — and **what is sown there stands on the ROAD** rather
 than on the floor under it (`roadTopAt`). **Any change to a placement rule

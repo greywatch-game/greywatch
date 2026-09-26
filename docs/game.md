@@ -188,7 +188,11 @@ the same terms** (`WaterSystem.follow`, beside the cull): its Fresnel is asked
 of the eye, and its wave grid is stood UNDER the eye, so left to the camera
 tail a deploy screen over the bay would show a sea heaving wherever the player
 last stood and lying flat under the view. It moves no clock, so a held world
-stays held.
+stays held. **So does the grass** (`GrassSystem.follow`, right after the water):
+its patches are CHOSEN around the eye and inside the frustum, so left to the
+camera tail a deploy screen over a meadow shows bare ground — the field is only
+ever drawn where it was last chosen. Its clock stays in the tail with the
+foliage's, so a paused field holds still.
 
 **`Game.pushScoreboard` is the other thing pushed from `tick` rather than from a
 state's own arm**, and for the mirror reason: the Tab board is owed to `playing`,

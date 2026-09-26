@@ -2186,11 +2186,10 @@ water.push(
 }
 
 const grass = [
-  "  // Dry scrub, and a BUDGET rather than a blanket: the field is one mesh of",
-  "  // thin instances with NO culling inside it, so the cost is the whole tuft",
-  "  // count wherever the camera stands — which is the one thing on this map",
-  "  // that is not paid for by distance and is why the number is stated here.",
-  "  // ~17,400, against Harrowmead's ~23,000 on a fifth of the ground.",
+  "  // Dry scrub. `density` is how lush, 0..1 of the quality rung's field, and",
+  "  // the field is drawn around the eye, so its area is no price — what keeps",
+  "  // this map's grass THIN is that it is a desert. Under half density there",
+  "  // is no turf, so the scrub stands on the sand rather than on a sheet.",
   "  //",
   "  // A desert should be BARE, so what these are for is the ground that is",
   "  // not: the wadi's whole run at two densities (see the loop — the middle",
@@ -2212,22 +2211,23 @@ for (let i = -6; i <= 6; i++) {
   const x = i * 62 + 14;
   grass.push(
     `  { x: ${n2(x)}, z: ${n2(Number(wadiZ(x).toFixed(1)))}, width: 58, depth: 46, ` +
-      `density: ${Math.abs(i) <= 3 ? 0.4 : 0.22} },`,
+      `density: ${Math.abs(i) <= 3 ? 0.45 : 0.28}, height: ${Math.abs(i) <= 3 ? 0.85 : 0.7} },`,
   );
 }
 grass.push(
   // The birkat's margins: reeds, and the trick every wet rect in the tree uses.
-  // These deliberately OVERLAP the water — a tuft standing in two metres of an
-  // opaque body is simply not drawn, so what survives is the ring on the shore,
-  // which is where reeds are.
-  `  { x: ${n2(BIRKAT.x)}, z: ${n2(BIRKAT.z + 20)}, width: 50, depth: 16, density: 0.5 },`,
-  `  { x: ${n2(BIRKAT.x)}, z: ${n2(BIRKAT.z - 20)}, width: 50, depth: 16, density: 0.5 },`,
-  `  { x: ${n2(A.x - 6)}, z: ${n2(A.z + 92)}, width: 80, depth: 44, density: 0.3 },`,
-  "  { x: -300, z: 24, width: 70, depth: 60, density: 0.16 },",
-  "  { x: 120, z: 40, width: 80, depth: 70, density: 0.16 },",
-  "  { x: -60, z: 330, width: 110, depth: 60, density: 0.14 },",
-  "  { x: 300, z: -60, width: 90, depth: 80, density: 0.14 },",
-  "  { x: 30, z: -350, width: 120, depth: 60, density: 0.14 },",
+  // These deliberately OVERLAP the water — the grass mask grows a rect's
+  // underwater share as a thin reed bed with no turf, and an opaque body hides
+  // what stands deep in it, so what reads is the ring on the shore, which is
+  // where reeds are.
+  `  { x: ${n2(BIRKAT.x)}, z: ${n2(BIRKAT.z + 20)}, width: 50, depth: 16, height: 1.1 },`,
+  `  { x: ${n2(BIRKAT.x)}, z: ${n2(BIRKAT.z - 20)}, width: 50, depth: 16, height: 1.1 },`,
+  `  { x: ${n2(A.x - 6)}, z: ${n2(A.z + 92)}, width: 80, depth: 44, density: 0.4, height: 0.8 },`,
+  "  { x: -300, z: 24, width: 70, depth: 60, density: 0.22, height: 0.6 },",
+  "  { x: 120, z: 40, width: 80, depth: 70, density: 0.22, height: 0.6 },",
+  "  { x: -60, z: 330, width: 110, depth: 60, density: 0.2, height: 0.6 },",
+  "  { x: 300, z: -60, width: 90, depth: 80, density: 0.2, height: 0.6 },",
+  "  { x: 30, z: -350, width: 120, depth: 60, density: 0.2, height: 0.6 },",
 );
 
 const NAMED = FLAGS.map(

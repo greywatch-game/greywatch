@@ -594,36 +594,42 @@ const water: WaterRect[] = [
 ];
 
 const grass: GrassRect[] = [
-  // Autumn grass: gold-tipped, and a BUDGET rather than a blanket (the
-  // field is one mesh of thin instances with no culling inside it). What it
-  // is for is the ground that is not wood or town — the meadows between the
-  // flags, the riverbanks and the courts' margins.
-  { x: -101.2, z: -100.2, width: 30, depth: 26, density: 0.2 },
-  { x: -62.4, z: -97, width: 30, depth: 26, density: 0.16 },
-  { x: -24.8, z: -99.8, width: 30, depth: 26, density: 0.19 },
-  { x: 12.2, z: -98.1, width: 30, depth: 26, density: 0.18 },
-  { x: 42.7, z: -97.2, width: 30, depth: 26, density: 0.17 },
-  { x: -62.1, z: -67.9, width: 30, depth: 26, density: 0.19 },
-  { x: 40.9, z: -60.2, width: 30, depth: 26, density: 0.18 },
-  { x: 75, z: -68, width: 30, depth: 26, density: 0.19 },
-  { x: -98.8, z: -32.5, width: 30, depth: 26, density: 0.16 },
-  { x: 43.3, z: -24.8, width: 30, depth: 26, density: 0.16 },
-  { x: 78.5, z: -26.6, width: 30, depth: 26, density: 0.21 },
-  { x: -103.9, z: 11.5, width: 30, depth: 26, density: 0.2 },
-  { x: 49.5, z: 13.3, width: 30, depth: 26, density: 0.15 },
-  { x: -103.6, z: 48.9, width: 30, depth: 26, density: 0.17 },
-  { x: -66.8, z: 48.2, width: 30, depth: 26, density: 0.16 },
-  { x: 48.6, z: 48, width: 30, depth: 26, density: 0.15 },
-  { x: 76.4, z: 44, width: 30, depth: 26, density: 0.19 },
-  { x: -103.3, z: 79.9, width: 30, depth: 26, density: 0.17 },
-  { x: 40.9, z: 85, width: 30, depth: 26, density: 0.2 },
-  { x: 83, z: 74.3, width: 30, depth: 26, density: 0.17 },
-  { x: -104, z: -10.8, width: 26, depth: 30, density: 0.28 },
-  { x: -78, z: -12, width: 26, depth: 30, density: 0.28 },
-  { x: -52, z: -10.5, width: 26, depth: 30, density: 0.28 },
-  { x: 52, z: -0.3, width: 26, depth: 30, density: 0.28 },
-  { x: 78, z: -2.8, width: 26, depth: 30, density: 0.28 },
-  { x: 104, z: -6.7, width: 26, depth: 30, density: 0.28 },
+  // Autumn grass: gold-tipped, and a BLANKET over the ground that is not
+  // wood or town — the meadows between the flags, the riverbanks and the
+  // courts' margins. `density` is how lush, 0..1 of the quality rung's field,
+  // and never a count: the field is drawn around the eye, so a rect's area
+  // is not what it costs. Each meadow is wider than the lattice's pitch, so
+  // they run on into one another; a thin one is a meadow gone to seed.
+  { x: -101.2, z: -100.2, width: 44, depth: 40, height: 1.02 },
+  { x: -62.4, z: -97, width: 44, depth: 40, height: 0.9 },
+  { x: -24.8, z: -99.8, width: 44, depth: 40, height: 1.01 },
+  { x: 12.2, z: -98.1, width: 44, depth: 40, height: 0.98 },
+  { x: 42.7, z: -97.2, width: 44, depth: 40, height: 0.95 },
+  { x: 84.5, z: -101.9, width: 44, depth: 40, density: 0.55, height: 0.8 },
+  { x: -105.1, z: -58.9, width: 44, depth: 40, density: 0.55, height: 0.8 },
+  { x: -62.1, z: -67.9, width: 44, depth: 40, height: 1.01 },
+  { x: 40.9, z: -60.2, width: 44, depth: 40, height: 0.98 },
+  { x: 75, z: -68, width: 44, depth: 40, height: 1 },
+  { x: -98.8, z: -32.5, width: 44, depth: 40, height: 0.92 },
+  { x: 43.3, z: -24.8, width: 44, depth: 40, height: 0.91 },
+  { x: 78.5, z: -26.6, width: 44, depth: 40, height: 1.06 },
+  { x: -103.9, z: 11.5, width: 44, depth: 40, height: 1.03 },
+  { x: 49.5, z: 13.3, width: 44, depth: 40, height: 0.89 },
+  { x: 85.9, z: 10.8, width: 44, depth: 40, density: 0.55, height: 0.8 },
+  { x: -103.6, z: 48.9, width: 44, depth: 40, height: 0.94 },
+  { x: -66.8, z: 48.2, width: 44, depth: 40, height: 0.91 },
+  { x: 48.6, z: 48, width: 44, depth: 40, height: 0.87 },
+  { x: 76.4, z: 44, width: 44, depth: 40, height: 1.01 },
+  { x: -103.3, z: 79.9, width: 44, depth: 40, height: 0.94 },
+  { x: -62.4, z: 78.5, width: 44, depth: 40, density: 0.55, height: 0.8 },
+  { x: 40.9, z: 85, width: 44, depth: 40, height: 1.03 },
+  { x: 83, z: 74.3, width: 44, depth: 40, height: 0.94 },
+  { x: -104, z: -10.8, width: 28, depth: 32, height: 1.2 },
+  { x: -78, z: -12, width: 28, depth: 32, height: 1.2 },
+  { x: -52, z: -10.5, width: 28, depth: 32, height: 1.2 },
+  { x: 52, z: -0.3, width: 28, depth: 32, height: 1.2 },
+  { x: 78, z: -2.8, width: 28, depth: 32, height: 1.2 },
+  { x: 104, z: -6.7, width: 28, depth: 32, height: 1.2 },
 ];
 
 export const KurenaiLayout: MapLayout = {

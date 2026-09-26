@@ -52,6 +52,15 @@ export type GiQuality = "off" | keyof typeof CONFIG.gi.tiers;
 export type ShadowQuality = keyof typeof CONFIG.graphics.shadowTiers;
 
 /**
+ * How thick the grass grows near the eye and how far it reaches, as one of
+ * `CONFIG.grass.tiers`. Derived from that table for `RenderScale`'s reason.
+ * There is no `off`: the lowest rung is a field a phone draws for less than
+ * the tuft budget every map used to carry, and a bald map is not a quality
+ * setting — it is a different map.
+ */
+export type GrassQuality = keyof typeof CONFIG.grass.tiers;
+
+/**
  * A look-sensitivity multiplier, as one of `CONFIG.camera.lookScales`. Derived
  * from that list for the same reason `RenderScale` is derived from its own: the
  * ladder is declared once, and a value that is not on it cannot be stored.
@@ -133,6 +142,11 @@ export type Settings = {
    * Derived per MACHINE on a fresh install: see `defaultShadowQuality`.
    */
   shadows: ShadowQuality;
+  /**
+   * Grass — how dense the field is near the eye and how far it reaches.
+   * Derived per MACHINE on a fresh install: see `defaultGrassQuality`.
+   */
+  grass: GrassQuality;
   /**
    * Mouse look speed, as a multiplier on `CONFIG.camera.sensX`/`sensY`.
    *
@@ -292,6 +306,19 @@ export function defaultShadowQuality(): ShadowQuality {
 }
 
 /**
+ * The grass a fresh install gets, on `defaultGiQuality`'s test: the field is
+ * nearly all VERTEX work over a lot of overdraw, which is the GPU work a phone
+ * pays ~2.4x a desktop's price for.
+ */
+export function defaultGrassQuality(): GrassQuality {
+  const coarse =
+    typeof window !== "undefined" &&
+    typeof window.matchMedia === "function" &&
+    window.matchMedia("(pointer: coarse)").matches;
+  return coarse ? "low" : "high";
+}
+
+/**
  * What a fresh install gets.
  *
  * The blur's default is derived from `CONFIG` rather than restated, so the
@@ -318,6 +345,7 @@ export const SETTING_DEFAULTS: Settings = {
   volumetrics: "medium",
   gi: defaultGiQuality(),
   shadows: defaultShadowQuality(),
+  grass: defaultGrassQuality(),
   renderScale: defaultRenderScale(),
   // 1 on both, and it is the one default that means "change nothing": the rates
   // in `CONFIG.camera` are what every other number there was tuned against.
@@ -451,6 +479,9 @@ export const SHADOW_QUALITIES = Object.keys(
   CONFIG.graphics.shadowTiers,
 ) as ShadowQuality[];
 
+/** The grass rungs, in the order the screen draws them. */
+export const GRASS_QUALITIES = Object.keys(CONFIG.grass.tiers) as GrassQuality[];
+
 /**
  * One codec per field. The mapped type is the point: a field added to
  * `Settings` without an entry here does not compile, so the store can never
@@ -464,6 +495,7 @@ const CODECS: { [K in keyof Settings]: Codec<Settings[K]> } = {
   volumetrics: oneOfString(VOLUMETRIC_QUALITIES),
   gi: oneOfString(GI_QUALITIES),
   shadows: oneOfString(SHADOW_QUALITIES),
+  grass: oneOfString(GRASS_QUALITIES),
   mouseSensitivity: oneOf(CONFIG.camera.lookScales),
   stickSensitivity: oneOf(CONFIG.camera.lookScales),
   touchSensitivity: oneOf(CONFIG.camera.lookScales),

@@ -100,11 +100,29 @@ export const wind = {
    */
   dir: [0.78, 0.63],
   /**
-   * The grass field's own answer to it — tip travel in metres, and speed.
-   * These are the numbers `CONFIG.grass` used to carry; grass looks exactly as
-   * it did.
+   * The grass field's own answer to it.
+   *
+   * `travel` and `speed` are the steady sway every blade has — tip travel in
+   * metres and a rate — and are the numbers `CONFIG.grass` used to carry.
+   *
+   * **The GUSTS are what make a field read as wind rather than as blades
+   * rocking**: a slow noise field, `gust` metres to a wave, carried DOWNWIND
+   * at `gustSpeed` m/s, which leans every blade it is over by a further
+   * `gustLean` of its own height and turns its tip up to the sky by `sheen`
+   * — the pale wave you watch roll across a hayfield. Carried along `dir`, so
+   * it travels the way the canopy's gust does; faster than it, because a
+   * gust crosses open grass faster than it crosses a stand of trees.
+   * `flutter` is the quick shiver on top, as a share of `travel`.
    */
-  grass: { travel: 0.16, speed: 1.7 },
+  grass: {
+    travel: 0.16,
+    speed: 1.7,
+    gust: 13,
+    gustSpeed: 4.2,
+    gustLean: 0.5,
+    sheen: 0.5,
+    flutter: 0.35,
+  },
   /**
    * The world's foliage: how far a fully-weighted vertex travels (metres), how
    * fast, and how long a gust is on the ground.

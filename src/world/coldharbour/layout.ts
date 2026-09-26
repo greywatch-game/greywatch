@@ -722,14 +722,13 @@ const vehicles: VehicleSpawnDef[] = [
  * other. The bare 2 m at the kerb and along each path is what makes the paths
  * read as paths.
  *
- * **`density` is 5 against the 1.1 default, and the default is what a FIELD
- * wants rather than what a lawn does.** At 1.1 tufts per square metre the
- * square came out as weeds standing in gravel — right for Hollowmere's dead
- * pasture, wrong for the one tended place in a city, and from above it did not
- * read as green at all. Five is where the tufts close up into a surface from
- * standing height without going solid enough to hide a prone body. It costs
- * ~13,500 tufts over the four rects, which is one thin-instanced draw call and
- * a build-time scatter, not a per-frame cost.
+ * **It is the one tended place in a city, so it is a LAWN: full density,
+ * short.** `density` is how lush against the quality rung's field and `height`
+ * a multiplier on the blade range — a mown square stands at under half the
+ * meadow's knee-high, which closes it into a surface from standing height
+ * without hiding a body lying on it, and `edge: 0` cuts it clean against the
+ * kerb where a field would fray. Its area is no part of what it costs; the
+ * field is drawn around the eye.
  */
 /**
  * THE SEA, as four rectangles, and what it is FOR is the horizon rather than
@@ -786,10 +785,10 @@ const water: WaterRect[] = [
 ];
 
 const grass: GrassRect[] = [
-  { x: 17, z: 17, width: 26, depth: 26, density: 5 },
-  { x: -17, z: 17, width: 26, depth: 26, density: 5 },
-  { x: -17, z: -17, width: 26, depth: 26, density: 5 },
-  { x: 17, z: -17, width: 26, depth: 26, density: 5 },
+  { x: 17, z: 17, width: 26, depth: 26, height: 0.45, edge: 0 },
+  { x: -17, z: 17, width: 26, depth: 26, height: 0.45, edge: 0 },
+  { x: -17, z: -17, width: 26, depth: 26, height: 0.45, edge: 0 },
+  { x: 17, z: -17, width: 26, depth: 26, height: 0.45, edge: 0 },
 ];
 
 export const ColdharbourLayout: MapLayout = {

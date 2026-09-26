@@ -1262,32 +1262,43 @@ for (const [b, note] of [
 }
 
 const grass = [
-  "  // Autumn grass: gold-tipped, and a BUDGET rather than a blanket (the",
-  "  // field is one mesh of thin instances with no culling inside it). What it",
-  "  // is for is the ground that is not wood or town — the meadows between the",
-  "  // flags, the riverbanks and the courts' margins.",
+  "  // Autumn grass: gold-tipped, and a BLANKET over the ground that is not",
+  "  // wood or town — the meadows between the flags, the riverbanks and the",
+  "  // courts' margins. `density` is how lush, 0..1 of the quality rung's field,",
+  "  // and never a count: the field is drawn around the eye, so a rect's area",
+  "  // is not what it costs. Each meadow is wider than the lattice's pitch, so",
+  "  // they run on into one another; a thin one is a meadow gone to seed.",
 ];
 {
-  let tufts = 0;
+  let area = 0;
   for (let gz = -HALF + 20; gz < HALF - 10; gz += 36) {
     for (let gx = -HALF + 20; gx < HALF - 10; gx += 36) {
       const x = gx + rand(-6, 6);
       const z = gz + rand(-6, 6);
       if (Math.abs(x) < 40 && z > -64 && z < 98) continue;
       const w = woodiness(x, z);
-      if (w > 0.75 || chance(0.3)) continue;
-      const density = Number(rand(0.14, 0.22).toFixed(2));
-      grass.push(`  { x: ${n2(Number(x.toFixed(1)))}, z: ${n2(Number(z.toFixed(1)))}, width: 30, depth: 26, density: ${density} },`);
-      tufts += 30 * 26 * density;
+      if (w > 0.75) continue;
+      // The draws the budget spent — a cell skipped outright, a density for the
+      // rest — are spent on the look instead, in the same order and only where
+      // they were drawn before, so every placement after this is unmoved.
+      if (chance(0.3)) {
+        grass.push(`  { x: ${n2(Number(x.toFixed(1)))}, z: ${n2(Number(z.toFixed(1)))}, width: 44, depth: 40, density: 0.55, height: 0.8 },`);
+      } else {
+        const tall = Number((0.85 + (rand(0.14, 0.22) - 0.14) * 3).toFixed(2));
+        grass.push(`  { x: ${n2(Number(x.toFixed(1)))}, z: ${n2(Number(z.toFixed(1)))}, width: 44, depth: 40, height: ${tall} },`);
+      }
+      area += 44 * 40;
     }
   }
-  // The riverbanks, where it is lush.
+  // The riverbanks, where it is lush: reeds where they stand in the water,
+  // which the mask thins for them, and the tallest grass in the valley where
+  // they do not.
   for (let x = -104; x <= 104; x += 26) {
     if (Math.abs(x) < 44) continue;
-    grass.push(`  { x: ${n2(x)}, z: ${n2(Number(zr(x).toFixed(1)))}, width: 26, depth: 30, density: 0.28 },`);
-    tufts += 26 * 30 * 0.28;
+    grass.push(`  { x: ${n2(x)}, z: ${n2(Number(zr(x).toFixed(1)))}, width: 28, depth: 32, height: 1.2 },`);
+    area += 28 * 32;
   }
-  console.log(`  grass: ~${Math.round(tufts)} tufts`);
+  console.log(`  grass: ~${Math.round(area)} m²`);
 }
 
 const NAMED = FLAGS.map(

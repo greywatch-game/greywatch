@@ -1563,25 +1563,34 @@ for (let x = -HALF; x <= HALF; x += 1) {
 // --- the grass ---------------------------------------------------------------
 
 const grass = [];
-let tufts = 0;
-function turf(x, z, w, d, density, note) {
+let grassArea = 0;
+/**
+ * One field. `density` is how lush, 0..1 of the quality rung's full field, and
+ * `height` a multiplier on the config's blade range — both SHARES, never a
+ * count: the field is drawn around the eye (`GrassSystem`), so its area is not
+ * a price and nothing here is a budget. Either is left out when it is 1.
+ */
+function turf(x, z, w, d, density, height, note) {
   if (note) grass.push(`  // ${note}`);
-  grass.push(`  { x: ${f1(x)}, z: ${f1(z)}, width: ${f1(w)}, depth: ${f1(d)}, density: ${n2(density)} },`);
-  tufts += w * d * density;
+  const extra =
+    (density === 1 ? "" : `, density: ${n2(density)}`) + (height === 1 ? "" : `, height: ${n2(height)}`);
+  grass.push(`  { x: ${f1(x)}, z: ${f1(z)}, width: ${f1(w)}, depth: ${f1(d)}${extra} },`);
+  grassArea += w * d;
 }
-turf(0, 0, 44, 30, 1.15, "The green, mown closest and walked barest.");
-turf(-88, 63, 26, 26, 0.7, "The yards.");
-turf(-95, -95, 26, 30, 0.7);
-turf(98, -63, 36, 30, 0.6);
-turf(109, 100, 30, 24, 0.9);
-turf(-156, -156, 36, 36, 0.5);
-turf(156, 156, 36, 36, 0.5);
+turf(0, 0, 44, 30, 1, 0.42, "The green, mown closest and walked barest.");
+turf(-88, 63, 26, 26, 1, 1.05, "The yards, grown long against the walls.");
+turf(-95, -95, 26, 30, 1, 1.05);
+turf(98, -63, 36, 30, 1, 1.05);
+turf(109, 100, 30, 24, 1, 1.05);
+turf(-156, -156, 36, 36, 1, 1.1);
+turf(156, 156, 36, 36, 1, 1.1);
 grass.push(
   "  // The fields, on a lattice: the ground BETWEEN the flags is most of what a",
   "  // player crosses, and a vale dressed only where the buildings are reads as",
-  "  // a green table with farms on it. Thinner than the yards on purpose — this",
-  "  // is grazed pasture seen mostly at fifty metres and up. Kept off the water:",
-  "  // a wet rect is a lawn growing underwater.",
+  "  // a green table with farms on it. Each rect is wider than the lattice's",
+  "  // pitch, so the pasture runs on unbroken from one to the next; how hard a",
+  "  // field has been grazed is its HEIGHT. Kept off the water: a wet rect is a",
+  "  // lawn growing underwater.",
 );
 for (let gz = -HALF + 22; gz < HALF - 10; gz += 40) {
   for (let gx = -HALF + 22; gx < HALF - 10; gx += 40) {
@@ -1592,16 +1601,58 @@ for (let gz = -HALF + 22; gz < HALF - 10; gz += 40) {
     let dry = true;
     for (const fx of [-1, 0, 1]) for (const fz of [-1, 0, 1]) if (wet(x + fx * 17, z + fz * 15, 0.1)) dry = false;
     if (!dry) continue;
-    turf(x, z, 30, 26, Number(rand(0.3, 0.42).toFixed(2)));
+    // The draw the old per-field density took, spent on the grazing instead so
+    // the stream after it — and so every placement below — is unmoved.
+    const grazed = rand(0.3, 0.42);
+    turf(x, z, 48, 48, 1, Number((0.62 + (grazed - 0.3) * 3).toFixed(2)));
   }
 }
-grass.push("  // The brook's banks, under the ash line: the wet edge grows thickest.");
+grass.push(
+  "  // THE COUNTRY PAST THE SQUARE, out to where the fog has it: the borderland",
+  "  // note's \"600 m of unbroken grass\", which the field can grow now that it is",
+  "  // drawn around the eye. Four slabs round the square cut into 120 m cells;",
+  "  // where the brook runs out of the map a cell is sown only on its dry side.",
+  "  // A fixed lattice, no draws from the seeded stream.",
+);
+{
+  const OUT = HALF + 520;
+  const IN = HALF - 4;
+  const slabs = [
+    [-OUT, IN, OUT, OUT], // north
+    [-OUT, -OUT, OUT, -IN], // south
+    [IN, -IN, OUT, IN], // east
+    [-OUT, -IN, -IN, IN], // west
+  ];
+  const dryOver = (cx, cz, w, d) => {
+    for (const fx of [-0.4, 0, 0.4]) for (const fz of [-0.4, 0, 0.4]) if (wet(cx + fx * w, cz + fz * d, 0.1)) return false;
+    return true;
+  };
+  // A cell the brook crosses is split in four and only its dry quarters sown,
+  // so the grass comes down to the channel rather than stopping 60 m short.
+  const sow = (cx, cz, w, d, split) => {
+    if (dryOver(cx, cz, w, d)) turf(cx, cz, w, d, 1, 1);
+    else if (split) {
+      for (const sx of [-0.25, 0.25]) for (const sz of [-0.25, 0.25]) sow(cx + sx * w, cz + sz * d, w / 2, d / 2, false);
+    }
+  };
+  const CELL_W = 120;
+  for (const [x0, z0, x1, z1] of slabs) {
+    for (let z = z0; z < z1; z += CELL_W) {
+      for (let x = x0; x < x1; x += CELL_W) {
+        const w = Math.min(CELL_W, x1 - x);
+        const d = Math.min(CELL_W, z1 - z);
+        sow(x + w / 2, z + d / 2, w, d, true);
+      }
+    }
+  }
+}
+grass.push("  // The brook's banks, under the ash line: the wet edge grows tallest.");
 for (let i = 0; i < BROOK.length; i += 60) {
   const [x, z] = BROOK[i];
   if (Math.abs(x) > HALF - 12) continue;
   for (const side of [-1, 1]) {
     const pz = z + side * (LIP + 5);
-    if (!wet(x, pz, 0.1) && !wet(x, pz - side * 3, 0.05)) turf(x, pz, 22, 7, 0.65);
+    if (!wet(x, pz, 0.1) && !wet(x, pz - side * 3, 0.05)) turf(x, pz, 26, 8, 1, 1.3);
   }
 }
 
@@ -1747,7 +1798,7 @@ writeFileSync(
       `  { x: ${n2(WATER.x)}, z: ${n2(WATER.z)}, width: ${n2(WATER.width)}, depth: ${n2(WATER.depth)}, y: ${n2(WATER.y)}, sound: "stream" },`,
     )
     .replace("%GRASS%", grass.join("\n"))
-    .replace("%TUFTS%", String(Math.round(tufts / 100) * 100)),
+    .replace("%TUFTS%", String(Math.round(grassArea / 1000) * 1000)),
 );
 
 const byKind = {};
@@ -1764,7 +1815,7 @@ console.log(
   `harrowmead: ${PLAY} m square\n` +
     `  ${placed.length} placements, ${scatter.filter((l) => l.includes("{ prop:")).length} scatter regions (~${trees} trees in play), ${runs.filter((r) => r.placed).length} field runs\n` +
     `  ${ROW}x${ROW} height vertices, ground ${lo.toFixed(2)}..${hi.toFixed(2)} m\n` +
-    `  water rect z ${wz0}..${wz1}, deepest ${deepest.toFixed(2)} m; grass ~${Math.round(tufts)} tufts\n` +
+    `  water rect z ${wz0}..${wz1}, deepest ${deepest.toFixed(2)} m; grass ~${Math.round(grassArea)} m²\n` +
     `  steepest cell step ${worstStep.toFixed(2)} m (grade ${worstGrade.toFixed(3)}) at ${worstAt}\n` +
     `  wrote src/world/harrowmead/{layout,heights}.ts`,
 );
@@ -1951,11 +2002,10 @@ const water: WaterRect[] = [
 ];
 
 /**
- * Summer pasture — a budget rather than a blanket. The field is one mesh of
- * thin instances with no culling inside it, so the cost is the tuft COUNT
- * wherever the camera stands: these sum to ~%TUFTS% tufts (density x area),
- * against Greyfen's 16,900. Structures and roads clear themselves (the
- * GrassSystem's collider rejection, and a road refuses what grows).
+ * Summer pasture, and a BLANKET rather than a budget: the field is drawn
+ * around the eye, so what these cost is what can be seen of them and their
+ * ~%TUFTS% m² is no part of it. Structures and roads clear themselves (the
+ * grass mask refuses a collider's footprint and a carriageway both).
  */
 const grass: GrassRect[] = [
 %GRASS%

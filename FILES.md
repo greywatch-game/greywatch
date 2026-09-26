@@ -638,8 +638,12 @@ src/
                         #   pushed from `tick` in every state). `setWash` is the
                         #   rotor sites, pushed from `tick` and not from the
                         #   camera tail — see it for why
-    GrassSystem.ts      # Grass fields as one thin-instanced draw; tufts inside a
-                        #   collider are rejected at scatter time
+    GrassSystem.ts      # The grass field stood around the EYE: patches of
+                        #   blade seeds chosen per frame in view (`follow`,
+                        #   pushed from `tick` in every state), each drawn from
+                        #   the smallest prefix mesh that holds the blades it
+                        #   keeps, and the TURF sheet under them. Cost is what
+                        #   is in view, never the map's grass area
   dev/                  # Dev-only tools that are not the editor. Same rule:
     mixer/              #   dynamically imported, never on the static graph
       index.ts          #   The F4 audio mixer: a slider per family and per
@@ -710,6 +714,12 @@ src/
                         #   on another road, ends on each other, a crossing —
                         #   into cuts and filleted patches. Pure; the client
                         #   and the authority resolve the same one
+    grassMask.ts        # Where grass grows, baked once per map into one
+                        #   RGBA8 grid: the ground's height, density, height
+                        #   multiplier and the WET bit. Owns the refusals (a
+                        #   road, a collider, water makes reeds) and the
+                        #   field's frayed EDGE, and the per-patch summary the
+                        #   GrassSystem culls with. Pure — no scene
     rng.ts              # mulberry32 — the seeded PRNG world-building uses
     MapBuilder.ts       # Builds the map; merges visuals, emits colliders
     solid.ts            # SOLID_ONLY — the one mesh pick predicate left, and the
@@ -1199,8 +1209,10 @@ src/
                         #   the grid and lighting it from one function, Fresnel
                         #   mirror, light cut hard on the waves, and the hole a
                         #   rotor tears in it. WGSL
-    GrassShader.ts      # The blade bend: wind, and combatants pushing through.
-                        #   WGSL
+    GrassShader.ts      # Blades BUILT in the vertex stage off the mask: the
+                        #   keep threshold over rank, the lean, the gusts carried
+                        #   downwind, bodies pushing through; and the turf's
+                        #   material. One lighting function for both. WGSL
     FlameShader.ts      # THE FIRE: every open flame's one material. Tongues
                         #   that boil on twos in hard bands, embers on the
                         #   smooth clock, and the glow-mask TWIN that runs the

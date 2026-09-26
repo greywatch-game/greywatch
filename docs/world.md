@@ -310,7 +310,7 @@ ARGUMENT nearly everywhere: `GameMap.size` has always carried it, and `NavGrid`,
 `ObstacleField`, the minimap and the deploy map have always been handed it. What
 had to change is the handful of readers that took it from nothing — `TerrainField`
 and `terrainSlab` (which now take their half-extent from the heightfield's own
-`size * cell`, since the grid states it twice), `GrassSystem`'s collider index,
+`size * cell`, since the grid states it twice), the grass mask's extent,
 `Ridge`'s outside-play assertion, the editor's coordinate spinners and terrain
 grade check, and `buildServerWorld`. Three things a larger map owes:
 
@@ -683,6 +683,16 @@ must still equal the map's extent and nothing in the type system says so any
 more, so `MapBuilder.build` asserts it in a DEV build. See ENGINE_UPGRADE.md
 S7 for the measurement and `src/world/maps.ts` for the shape.
 
+- **A `GrassRect` states how LUSH, never how many.** `density` is a share, 0..1,
+  of the quality rung's field (`CONFIG.grass.tiers`), absent meaning 1; `height`
+  multiplies the blade range (a mown lawn ~0.45, reeds ~1.3); `edge` is how many
+  metres the field frays over where no rect carries it on, 0 being a clean cut. The
+  field is drawn around the eye (`docs/rendering.md`), so a rect's AREA is no part
+  of what it costs — a layout that finds itself thinning a field to afford it is
+  reasoning about the old one. Overlapping rects add, capped at 1, and a rect over a
+  water rect's surface grows a thin, tall REED BED there and no turf, which is how
+  every map puts reeds round a shore. Under half density no turf is laid either, so
+  scrub reads as blades on the map's own floor.
 - **`Placement.y`, `ScatterSpec.y` and `GrassRect.y` are offsets above the local
   floor**, not absolute heights, so dressing rides the ground when it moves. Control
   points and spawns stay absolute — the editor snaps their height to the nav surface.
@@ -972,9 +982,11 @@ and `onRoad` is the test. There are two readers.
 padded by the prop's own **half-footprint** rather than by its placement clearance —
 which is the difference between a tree that may lean its crown over a street and one
 that may stand in it, and holding a palm's 2.6 m clearance off every kerb would leave
-a bald verge down both sides of the road the grove is there to shade. `GrassSystem`
-refuses a tuft outright, with no pad at all: grass is rooted by definition and has no
-table to say so in, and a blade against the kerb is the verge rather than a bug.
+a bald verge down both sides of the road the grove is there to shade. The grass
+mask (`world/grassMask.ts`) refuses a carriageway outright, sampled 2x2 inside each
+texel so the verge feathers over half a metre rather than stepping: grass is rooted by
+definition and has no table to say so in, and a blade against the kerb is the verge
+rather than a bug.
 
 **The line `rooted` draws is what a thing IS, not how big it is and not whether it
 blocks** — a tree, a shrub, a fern, a toadstool. Everything else in `PROP_BODIES` is

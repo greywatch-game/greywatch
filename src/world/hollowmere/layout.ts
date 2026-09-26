@@ -679,42 +679,43 @@ const water: WaterRect[] = [
 
 /**
  * Grass fields. Pale, dead, knee-high — the valley's one crop that still
- * grows. Placement rules: rects dodge roads (roads are visual-only, so no
- * collider rejects a blade poking through the cobbles — that check is on the
- * author), while structures, fences, and props are cleared automatically by
- * the GrassSystem's collider rejection. Grass in the bog pool reads as
- * reeds: the blades outgrow the ankle-deep waterline on purpose.
+ * grows. `density` is how LUSH, 0..1 of the quality rung's field, and never a
+ * count: the field is drawn around the eye, so a rect's area costs nothing.
+ * Roads, structures, fences and props clear themselves (the grass mask refuses
+ * a carriageway and a collider's footprint both). Grass in the bog pool reads
+ * as reeds: under a water rect's surface the mask grows it thinner and taller
+ * so it breaks the waterline, and lays no turf.
  */
 const grass: GrassRect[] = [
   // The chapel graveyard, on the terrace: strips either side of the nave.
-  { x: -72, z: 81, width: 12, depth: 28, y: TERRACE_H },
-  { x: -48, z: 81, width: 12, depth: 28, y: TERRACE_H },
+  { x: -72, z: 81, width: 12, depth: 28, y: TERRACE_H, height: 0.85 },
+  { x: -48, z: 81, width: 12, depth: 28, y: TERRACE_H, height: 0.85 },
   // The creek embankments, on the bank tops — reeds above the sunken lane.
-  { x: -97, z: -10, width: 15, depth: 70, y: BANK_H, density: 0.7 },
-  { x: -73, z: -10, width: 15, depth: 70, y: BANK_H, density: 0.7 },
+  { x: -97, z: -10, width: 15, depth: 70, y: BANK_H, density: 0.9, height: 1.2 },
+  { x: -73, z: -10, width: 15, depth: 70, y: BANK_H, density: 0.9, height: 1.2 },
   // The field west of the square, between the north road and the chapel road.
-  { x: -13, z: 27, width: 16, depth: 18, density: 0.6 },
+  { x: -13, z: 27, width: 16, depth: 18, density: 0.85 },
   // The farmstead paddocks — tall grass over the open sightlines at D.
-  { x: 68, z: 16, width: 18, depth: 15, density: 3 },
-  { x: 93, z: 44, width: 16, depth: 14, density: 3 },
+  { x: 68, z: 16, width: 18, depth: 15, height: 1.35 },
+  { x: 93, z: 44, width: 16, depth: 14, height: 1.35 },
   // The bog: the pool's shallows grow reeds around the jetties.
-  { x: 40, z: -88, width: 36, depth: 20, density: 0.8 },
+  { x: 40, z: -88, width: 36, depth: 20 },
   // The dead woods in the north-east corner, sparse under the trees.
-  { x: 98, z: 88, width: 30, depth: 30, density: 0.5 },
+  { x: 98, z: 88, width: 30, depth: 30, density: 0.45, height: 0.8 },
   // Ashwood's clearing, east of the logging lane.
-  { x: 48, z: 80, width: 16, depth: 20, density: 0.5 },
+  { x: 48, z: 80, width: 16, depth: 20, density: 0.7 },
   // The north crofts' paddock, east of the road out of the square.
-  { x: 12, z: 60, width: 14, depth: 16, density: 0.7 },
+  { x: 12, z: 60, width: 14, depth: 16, density: 0.9 },
   // The burying ground, inside its walls.
-  { x: -24, z: -52, width: 20, depth: 16, density: 0.6 },
+  { x: -24, z: -52, width: 20, depth: 16, density: 0.8, height: 0.9 },
   // The moor, between the churchyard and the southern woods.
-  { x: -30, z: -84, width: 40, depth: 20, density: 0.55 },
+  { x: -30, z: -84, width: 40, depth: 20, density: 0.8, height: 0.8 },
   // The mire's shallows — reeds, same trick as the bog.
-  { x: -56, z: -94, width: 30, depth: 20, density: 0.8 },
+  { x: -56, z: -94, width: 30, depth: 20 },
   // The east holdings' rough grazing, east of the Redline lane.
-  { x: 98, z: -20, width: 16, depth: 26, density: 0.5 },
-  { x: 53.884, z: -15.486, width: 57, depth: 22, density: 2 },
-  { x: 63.027, z: -48.428, width: 39, depth: 44, density: 2 },
+  { x: 98, z: -20, width: 16, depth: 26, density: 0.75 },
+  { x: 53.884, z: -15.486, width: 57, depth: 22, height: 1.15 },
+  { x: 63.027, z: -48.428, width: 39, depth: 44, height: 1.15 },
 ];
 
 export const HollowmereLayout: MapLayout = {
