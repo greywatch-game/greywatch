@@ -223,7 +223,9 @@ export type BuilderKind = keyof typeof BUILDERS;
  * builder that reads the ground and is missing from this set is drawn against
  * the floor it was dragged away from until the next full rebuild. The road is
  * contoured, the three runs step (`groundRun`), and the pylon's span is drawn
- * to the ground under the next pole.
+ * to the ground under the next pole. The townhouse reads no ground at all and
+ * is here for the same reason: its door, its studding and whether it keeps a
+ * shop are seeded off where it stands (`streetSeed`).
  */
 export const CONFORMS_TO_TERRAIN: ReadonlySet<BuilderKind> = new Set([
   "road",
@@ -231,4 +233,5 @@ export const CONFORMS_TO_TERRAIN: ReadonlySet<BuilderKind> = new Set([
   "fence",
   "compoundWall",
   "pylon",
+  "townhouse",
 ] as const);

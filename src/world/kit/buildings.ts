@@ -9,9 +9,12 @@ import { Scene } from "@babylonjs/core";
 import type { CelMaterialFactory } from "../../shaders/CelShader";
 import {
   Build,
+  type BuildCtx,
   type BuildParams,
   type Structure,
+  AWNING,
   BRICK,
+  CITY_BRICK,
   CREEPER,
   DARK_STONE,
   EMBER,
@@ -87,19 +90,349 @@ export function buildCottage(
   return b;
 }
 
+// --- the townhouse's elevations ---------------------------------------------
+//
+// Four small words the townhouse is drawn in, because it lays the same member
+// on four faces and two storeys. Everything they make is VISUAL: the masses and
+// the roof already carry every collider the building has, and nothing here may
+// add one — see the header on `buildTownhouse`.
+
+/** Which way an elevation faces. Fixes both the axis and the outward sign. */
+type Side = "-z" | "+z" | "-x" | "+x";
+
+/** An opening in an elevation, frame and all, in that face's own (u, y). */
+interface Hole {
+  u0: number;
+  u1: number;
+  y0: number;
+  y1: number;
+}
+
+/**
+ * The glass of a window with nobody behind it. Not a hole and not a pane:
+ * the building is a solid mass, so what is behind the frame is plaster, and a
+ * real sheet there would buy a reflection probe on every block a townhouse
+ * stands in for a window nobody can see through anyway (`PaneSpec`).
+ */
+const CASEMENT = "#272c2d";
+/** A lit room behind the same glass — the lamp colour the village has always had. */
+const LAMPLIT = "#ffb257";
+/**
+ * A lit SHOP window, which is the same room behind four times the glass. At
+ * `LAMPLIT` a 4 m frontage bloomed into a lantern under Harrowmead's low sun —
+ * `ROOM_GLOW`'s argument, that what an emissive may be is set by its AREA —
+ * so the wide one is a step down and still reads as the same lamps.
+ */
+const SHOPLIT = "#b3733a";
+/**
+ * What a street paints its doors and shutters, walked by a seed off the
+ * placement's own size. Every one is a colour the kit already has, so a row of
+ * them costs palette slots the map has spent anyway.
+ */
+const DOOR_PAINTS = [PLANK, TEAK, VERDIGRIS, AWNING] as const;
+
+const outward = (s: Side): number => (s === "+z" || s === "+x" ? 1 : -1);
+const runsAlongX = (s: Side): boolean => s === "-z" || s === "+z";
+
+/**
+ * Which house in the street this is, as a number: the placement's position and
+ * size hashed together, so two neighbours of one size still come out different
+ * and a rebuild of the same layout always comes out the same.
+ *
+ * The position is what makes the builder a function of WHERE it stands, and
+ * that is what puts `townhouse` in `CONFORMS_TO_TERRAIN` — without it the
+ * editor would translate a dragged house and leave it wearing the door of the
+ * spot it left. Absent (a caller with no placement), the size alone decides.
+ */
+function streetSeed(w: number, d: number, h: number, ctx?: BuildCtx): number {
+  let x =
+    Math.imul(Math.round((ctx?.x ?? 0) * 10), 73856093) ^
+    Math.imul(Math.round((ctx?.z ?? 0) * 10), 19349663) ^
+    Math.imul(Math.round(w * 100 + d * 37 + h * 1000), 83492791);
+  x = Math.imul(x ^ (x >>> 16), 0x45d9f3b);
+  x = Math.imul(x ^ (x >>> 16), 0x45d9f3b);
+  return (x ^ (x >>> 16)) >>> 0;
+}
+
+/** Every interval of `[a, b]` left once each cut is taken out of it. */
+function carve(a: number, b: number, cuts: [number, number][]): [number, number][] {
+  let out: [number, number][] = [[a, b]];
+  for (const [c0, c1] of cuts) {
+    const next: [number, number][] = [];
+    for (const [s0, s1] of out) {
+      if (c1 <= s0 || c0 >= s1) {
+        next.push([s0, s1]);
+        continue;
+      }
+      if (c0 > s0) next.push([s0, c0]);
+      if (c1 < s1) next.push([c1, s1]);
+    }
+    out = next;
+  }
+  return out;
+}
+
+/**
+ * A member laid ON a face: `along` the run, `tall` up it and `thick` through
+ * it, with its centre `out` past the face plane at `plane` and `u` along the
+ * run. `tilt` leans it in the face's own plane, rising toward +u.
+ *
+ * The two axes take opposite rotation signs for the same lean — Babylon's
+ * `RotationZ` lifts +x and its `RotationX` drops +z — which is the whole
+ * reason this is a function rather than a `b.box` at every call.
+ */
+function onFace(
+  b: Build,
+  s: Side,
+  plane: number,
+  u: number,
+  y: number,
+  along: number,
+  tall: number,
+  thick: number,
+  out: number,
+  color: string,
+  tilt = 0,
+): void {
+  const c = outward(s) * (plane + out);
+  if (runsAlongX(s)) b.box(along, tall, thick, u, y, c, color, tilt ? { z: tilt } : undefined);
+  else b.box(thick, tall, along, c, y, u, color, tilt ? { x: -tilt } : undefined);
+}
+
+/**
+ * A member standing OUT from a face, running from `r0` to `r1` past its plane
+ * and from `y0` to `y1` as it goes: a bracket under the jetty, a stall board,
+ * a sign's arm. `along` is its width on the run and `thick` its depth
+ * vertically.
+ */
+function offFace(
+  b: Build,
+  s: Side,
+  plane: number,
+  u: number,
+  along: number,
+  y0: number,
+  y1: number,
+  r0: number,
+  r1: number,
+  thick: number,
+  color: string,
+): void {
+  const n = outward(s);
+  const rise = Math.atan2(y1 - y0, r1 - r0);
+  const len = Math.hypot(r1 - r0, y1 - y0);
+  const c = n * (plane + (r0 + r1) / 2);
+  const y = (y0 + y1) / 2;
+  if (runsAlongX(s)) b.box(along, thick, len, u, y, c, color, rise ? { x: -n * rise } : undefined);
+  else b.box(len, thick, along, c, y, u, color, rise ? { z: n * rise } : undefined);
+}
+
+/**
+ * A casement: the glass (dark, or lamplit), a frame standing proud of the
+ * plaster, a sill board, and mullions and a transom — which are what turn a
+ * glowing rectangle into a window, the mill's argument about framing a lit
+ * pane carried one step further. `lit` names the lamplight behind the glass,
+ * and `shutters` the leaves' paint, throwing a pair back flat on the wall.
+ */
+function casement(
+  b: Build,
+  s: Side,
+  plane: number,
+  u: number,
+  sill: number,
+  ww: number,
+  wh: number,
+  o: { lit?: string; shutters?: string; lights?: number } = {},
+): Hole {
+  const top = sill + wh;
+  const mid = sill + wh / 2;
+  if (o.lit) {
+    const c = outward(s) * (plane + 0.015);
+    if (runsAlongX(s)) b.glow(ww, wh, 0.05, u, mid, c, o.lit);
+    else b.glow(0.05, wh, ww, c, mid, u, o.lit);
+  } else {
+    onFace(b, s, plane, u, mid, ww, wh, 0.06, 0.01, CASEMENT);
+  }
+  for (const k of [-1, 1]) {
+    onFace(b, s, plane, u + k * (ww / 2 + 0.06), mid + 0.07, 0.12, wh + 0.14, 0.16, 0.04, TIMBER);
+  }
+  onFace(b, s, plane, u, top + 0.07, ww + 0.24, 0.14, 0.16, 0.04, TIMBER);
+  onFace(b, s, plane, u, sill - 0.06, ww + 0.4, 0.12, 0.26, 0.09, TIMBER);
+  const lights = o.lights ?? (ww > 0.75 ? 2 : 1);
+  for (let i = 1; i < lights; i++) {
+    onFace(b, s, plane, u - ww / 2 + (i * ww) / lights, mid, 0.07, wh, 0.1, 0.04, TIMBER);
+  }
+  onFace(b, s, plane, u, sill + wh * 0.7, ww, 0.07, 0.1, 0.04, TIMBER);
+
+  let reach = ww / 2 + 0.12;
+  if (o.shutters) {
+    const leaf = ww / 2;
+    for (const k of [-1, 1]) {
+      const lu = u + k * (ww / 2 + 0.14 + leaf / 2);
+      onFace(b, s, plane, lu, mid, leaf, wh, 0.06, 0.04, o.shutters);
+      for (const y of [sill + 0.22, top - 0.22]) {
+        onFace(b, s, plane, lu, y, leaf - 0.08, 0.09, 0.03, 0.085, TIMBER);
+      }
+    }
+    reach += leaf + 0.04;
+  }
+  return { u0: u - reach, u1: u + reach, y0: sill - 0.12, y1: top + 0.14 };
+}
+
+/**
+ * A doorway on the plinth: jambs, a head, a stone step, and — when `leaf`
+ * names a paint — a ledged door shut in it, with its seams, its strap hinges
+ * and its latch. `null` draws the frame alone, round an opening the walls
+ * have already left (an enterable ground floor's).
+ */
+function doorway(
+  b: Build,
+  s: Side,
+  plane: number,
+  stepPlane: number,
+  u: number,
+  dw: number,
+  dh: number,
+  leaf: string | null,
+): Hole {
+  const foot = 0.3; // the plinth's top
+  const top = foot + dh;
+  for (const k of [-1, 1]) {
+    onFace(b, s, plane, u + k * (dw / 2 + 0.09), (foot + top + 0.2) / 2, 0.18, dh + 0.2, 0.18, 0.05, TIMBER);
+  }
+  onFace(b, s, plane, u, top + 0.1, dw + 0.46, 0.2, 0.18, 0.05, TIMBER);
+  onFace(b, s, stepPlane, u, 0.08, dw + 0.5, 0.16, 0.4, 0.2, DARK_STONE);
+  if (leaf) {
+    const mid = foot + dh / 2;
+    onFace(b, s, plane, u, mid, dw, dh, 0.06, 0.02, leaf);
+    for (let k = 1; k < 4; k++) {
+      onFace(b, s, plane, u - dw / 2 + (k * dw) / 4, mid, 0.025, dh - 0.06, 0.02, 0.055, TIMBER);
+    }
+    for (const y of [foot + 0.4, top - 0.4]) {
+      onFace(b, s, plane, u - dw * 0.12, y, dw * 0.72, 0.07, 0.02, 0.065, IRON);
+    }
+    onFace(b, s, plane, u + dw * 0.36, foot + dh * 0.48, 0.07, 0.12, 0.04, 0.07, IRON);
+  }
+  return { u0: u - dw / 2 - 0.2, u1: u + dw / 2 + 0.2, y0: 0, y1: top + 0.2 };
+}
+
+/**
+ * The frame of one storey on one face, between its corner posts: posts at a
+ * pitch, an optional rail, and a brace in each end panel — every member
+ * stopped at an opening rather than drawn across it, which is what a real
+ * frame does, since the window was framed into it.
+ *
+ * `close` is close studding, the street front's display; `panel` is square
+ * framing with a brace at each end, what the other three faces are built in.
+ * A post that would only graze an opening's frame is left out rather than
+ * drawn as a sliver beside it.
+ */
+function framing(
+  b: Build,
+  s: Side,
+  plane: number,
+  half: number,
+  y0: number,
+  y1: number,
+  rail: number | null,
+  holes: Hole[],
+  style: "close" | "panel",
+): void {
+  const inner = half - 0.22; // the corner posts' inner edge
+  const pitch = style === "close" ? 0.52 : 1.35;
+  const pw = style === "close" ? 0.15 : 0.2;
+  const n = Math.max(1, Math.round((2 * inner) / pitch));
+  const posts: number[] = [];
+  for (let i = 1; i < n; i++) {
+    const u = -inner + (i * 2 * inner) / n;
+    const hit = holes.filter((h) => u + pw / 2 > h.u0 - 0.06 && u - pw / 2 < h.u1 + 0.06);
+    if (hit.some((h) => u < h.u0 + 0.1 || u > h.u1 - 0.1)) continue;
+    posts.push(u);
+    const cuts = hit.map((h): [number, number] => [h.y0, h.y1]);
+    for (const [a, c] of carve(y0, y1, cuts)) {
+      if (c - a > 0.15) onFace(b, s, plane, u, (a + c) / 2, pw, c - a, 0.14, 0.03, TIMBER);
+    }
+  }
+  if (rail !== null) {
+    const cuts = holes
+      .filter((h) => rail + 0.08 > h.y0 && rail - 0.08 < h.y1)
+      .map((h): [number, number] => [h.u0, h.u1]);
+    for (const [a, c] of carve(-inner, inner, cuts)) {
+      if (c - a > 0.15) onFace(b, s, plane, (a + c) / 2, rail, c - a, 0.16, 0.14, 0.03, TIMBER);
+    }
+  }
+  if (style !== "panel") return;
+  // A brace in each end panel, high at the corner and low toward the middle,
+  // in the deeper of the two bands the rail leaves (or the whole storey).
+  let lo = y0 + 0.02;
+  let hi = y1 - 0.02;
+  if (rail !== null) {
+    if (rail - y0 > y1 - rail) hi = rail - 0.08;
+    else lo = rail + 0.08;
+  }
+  for (const k of [-1, 1]) {
+    const edge = k * inner;
+    const next = posts.length ? (k > 0 ? posts[posts.length - 1] : posts[0]) : 0;
+    const span = Math.abs(edge - next) - 0.1;
+    if (span < 0.5) continue;
+    const uIn = edge - k * span;
+    const [ua, ub] = k > 0 ? [uIn, edge] : [edge, uIn];
+    if (holes.some((h) => h.u1 > ua - 0.05 && h.u0 < ub + 0.05 && h.y1 > lo && h.y0 < hi)) continue;
+    const du = edge - uIn;
+    const dy = hi - lo;
+    onFace(b, s, plane, (edge + uIn) / 2, (lo + hi) / 2, Math.hypot(du, dy), 0.16, 0.12, 0.02, TIMBER, Math.atan2(dy, du));
+  }
+}
+
 /**
  * Two-storey townhouse: a jettied upper floor oversailing the ground floor,
- * close-studded timber framing, steep slate roof, brick stack.
+ * a timber frame on both storeys, a steep slate roof and a brick stack.
  *
  * The cottage is a village silhouette; this is a *street* silhouette — taller
  * than it is wide, so a row of them walls a lane in and gives the square an
  * actual skyline. `enterable` hollows the ground floor only; the upper storey
  * is the ceiling.
+ *
+ * **The masses are the building's and the detail is the drawing, and only the
+ * masses carry a collider.** The first block below — the two storeys, the
+ * bressumer, the roof and the stack — is every collider and every box the
+ * collision bake has ever seen here, and nothing after it may add one: a
+ * window frame or a joist end is a few centimetres of timber that `NavGrid`
+ * can only get wrong, and a townhouse is placed sixty times over on
+ * Cinderhaven. So a change below that line owes no `npm run collision`, and a
+ * change above it does.
+ *
+ * What the drawing is FOR is that the old one was two plaster boxes with
+ * stripes on the upper one: no door, no window on a house whose lamps were
+ * out, a gable end in roof slate, and nothing under the jetty to say what was
+ * holding it up. Read front to back it is now the things a jettied house is
+ * recognised by, each built from the frame's own vocabulary so the ink finds
+ * it: joist ends and corner brackets under the oversail, a sole plate, posts
+ * and braces on the ground storey and close studding over it, casements with
+ * mullions in every elevation, a plastered gable with its collar and king
+ * post under a pair of bargeboards, and clay ridge tiles and pots against the
+ * slate.
+ *
+ * **Every applied member is bedded on a FACE**, and an enterable ground floor
+ * has its face half a wall further out than a solid one — its walls are
+ * centred on the footprint line — which is why `gx`/`gz` exist. The old corner
+ * posts were centred on the footprint corner, and on the enterable one the
+ * walls closed over them completely (`kit/core.ts`'s applied-member rule).
+ *
+ * **The variation is seeded off the placement's position and size, never
+ * drawn** (world building may not call `Math.random()`, and `streetSeed` says
+ * why that costs an entry in `CONFORMS_TO_TERRAIN`): which paint the door and
+ * shutters are, whether the street front is close-studded or square-framed,
+ * and whether a solid one keeps a SHOP — its door at one end, a wide window
+ * with the stall board let down as a counter and the upper board propped over
+ * it, and a sign on an iron arm. An enterable one is never a shop, because its
+ * doorway is a collider's and is centred.
  */
 export function buildTownhouse(
   scene: Scene,
   mats: CelMaterialFactory,
   p: BuildParams = {},
+  ctx?: BuildCtx,
 ): Structure {
   const b = new Build(scene, mats, "townhouse");
   const w = p.width ?? 6.5;
@@ -109,9 +442,16 @@ export function buildTownhouse(
   const g = 3.3; // ground-floor ceiling
   const up = h - g; // upper storey
   const jut = 0.45; // how far the upper floor oversails
+  const rise = 2.1;
+  const eaves = 0.4;
+  const open = p.enterable === true;
+  const lit = p.litWindows ? LAMPLIT : undefined;
 
+  // ------------------------------------------------------------ the masses
+  //
+  // Every collider this building has. See the header before adding to it.
   b.box(w + 0.5, 0.3, d + 0.5, 0, 0.15, 0, DARK_STONE); // plinth
-  if (p.enterable) {
+  if (open) {
     // Proud of the plinth, not flush with it — see buildTavern's floor.
     b.box(w, 0.2, d, 0, 0.24, 0, PLANK);
     b.doorWall(w, g, t, 0, g / 2, -d / 2, PLASTER, 1.6, 2.3);
@@ -126,37 +466,236 @@ export function buildTownhouse(
     b.box(w + jut * 2, up, d + jut * 2, 0, g + up / 2, 0, PLASTER);
     b.block({ w: w + jut * 2, h: up, d: d + jut * 2, x: 0, y: g + up / 2, z: 0 });
   }
-
-  // Bressumer beam under the overhang, then close studding above it — the
-  // vertical rhythm is what separates a townhouse from a taller cottage.
+  // The bressumer: the beam the oversailing storey stands on.
   b.box(w + jut * 2 + 0.2, 0.34, d + jut * 2 + 0.2, 0, g + 0.17, 0, TIMBER);
-  const studs = Math.max(2, Math.round(w / 1.3));
-  for (let i = 0; i <= studs; i++) {
-    const x = -(w / 2) + (i / studs) * w;
-    for (const sz of [-1, 1]) {
-      b.box(0.2, up, 0.2, x, g + up / 2, sz * (d / 2 + jut), TIMBER);
+  b.gableRoof(w + jut * 2, d + jut * 2, rise, 0, h, 0, SLATE, eaves);
+  // Brick stack, kept inside the footprint so it needs no collider of its own.
+  const ch = h + 2.6;
+  const cx = w / 2 - 0.6;
+  const cz = d / 2 - 1.4;
+  b.box(1.0, ch, 1.0, cx, ch / 2, cz, BRICK);
+  b.box(1.3, 0.24, 1.3, cx, ch, cz, DARK_STONE);
+
+  // ----------------------------------------------------------- the drawing
+  // Each choice reads its own HIGH bits: the finaliser's low ones walked
+  // seven of the eleven doors on Hollowmere and Harrowmead to one paint.
+  const seed = streetSeed(w, d, h, ctx);
+  const paint = DOOR_PAINTS[(seed >>> 20) % DOOR_PAINTS.length];
+  const shop = !open && (seed >>> 11) % 3 === 0;
+  const closeStudded = ((seed >>> 25) & 1) === 0;
+
+  /** The two storeys' outer faces. See the header on the enterable one. */
+  const gx = w / 2 + (open ? t / 2 : 0);
+  const gz = d / 2 + (open ? t / 2 : 0);
+  const ux = w / 2 + jut;
+  const uz = d / 2 + jut;
+  const gPlane = (s: Side): number => (runsAlongX(s) ? gz : gx);
+  const gHalf = (s: Side): number => (runsAlongX(s) ? gx : gz);
+  const uPlane = (s: Side): number => (runsAlongX(s) ? uz : ux);
+  /** The plinth's own face, which a doorstep stands out from. */
+  const plinth = (s: Side): number => (runsAlongX(s) ? d : w) / 2 + 0.25;
+  const SIDES: Side[] = ["-z", "+z", "-x", "+x"];
+
+  /** Top of the sole plate, and underside of the ground storey's top plate. */
+  const sole = 0.52;
+  const gTop = g - 0.44;
+  /** Top of the bressumer, and the upper storey's window sill and rail. */
+  const uFoot = g + 0.34;
+  const uSill = uFoot + 0.72;
+  const uRail = uSill - 0.2;
+  const uWin = Math.min(1.2, h - 0.54 - uSill - 0.14);
+
+  // Plates and posts. The corner posts stand on the sole plate and run up to
+  // the plate over them, 0.1 proud of both faces they turn.
+  for (const s of SIDES) {
+    onFace(b, s, gPlane(s), 0, g - 0.31, gHalf(s) * 2 + 0.2, 0.26, 0.16, 0.04, TIMBER);
+    // The two gable ends carry a TIE beam, deep enough to close the strip
+    // between the wall head and the plaster gable standing on it; the eaves
+    // sides a plate tall enough to close the slit under the roof slab.
+    if (runsAlongX(s)) {
+      onFace(b, s, uz, 0, h + 0.02, ux * 2 + 0.2, 0.32, 0.2, 0.06, TIMBER);
+    } else {
+      onFace(b, s, ux, 0, h - 0.05, uz * 2 + 0.2, 0.38, 0.16, 0.04, TIMBER);
     }
   }
   for (const sx of [-1, 1]) {
     for (const sz of [-1, 1]) {
-      b.box(0.28, g, 0.28, (sx * w) / 2, g / 2, (sz * d) / 2, TIMBER);
-      b.box(0.26, up, 0.26, sx * (w / 2 + jut), g + up / 2, sz * (d / 2 + jut), TIMBER);
+      b.box(0.32, gTop - sole, 0.32, sx * (gx - 0.06), (sole + gTop) / 2, sz * (gz - 0.06), TIMBER);
+      const top = h - 0.24;
+      b.box(0.3, top - uFoot, 0.3, sx * (ux - 0.05), (uFoot + top) / 2, sz * (uz - 0.05), TIMBER);
     }
   }
 
-  b.gableRoof(w + jut * 2, d + jut * 2, 2.1, 0, h, 0, SLATE, 0.4);
+  // Under the jetty: the joists' ends where the floor they carry runs out past
+  // the wall, and a bracket off each corner post on the two gable ends. This
+  // is the detail that says the upper storey is held up rather than stacked.
+  for (const s of SIDES) {
+    const half = gHalf(s) - 0.4;
+    const len = uPlane(s) - gPlane(s);
+    const n = Math.max(2, Math.round((2 * half) / 0.55));
+    for (let i = 0; i <= n; i++) {
+      onFace(b, s, gPlane(s), -half + (i * 2 * half) / n, g - 0.09, 0.15, 0.18, len, len / 2, TIMBER);
+    }
+  }
+  for (const s of ["-z", "+z"] as const) {
+    for (const k of [-1, 1]) {
+      offFace(b, s, gz, k * (gx - 0.06), 0.16, g - 0.95, g - 0.18, 0.1, uz - gz - 0.03, 0.16, TIMBER);
+    }
+  }
 
-  // Brick stack, kept inside the footprint so it needs no collider of its own.
-  const ch = h + 2.6;
-  b.box(1.0, ch, 1.0, w / 2 - 0.6, ch / 2, d / 2 - 1.4, BRICK);
-  b.box(1.3, 0.24, 1.3, w / 2 - 0.6, ch, d / 2 - 1.4, DARK_STONE);
+  // ---- the street front (-Z)
+  const front: Side = "-z";
+  const fGround: Hole[] = [];
+  const fUpper: Hole[] = [];
+  // Where a pair of windows either side of a centred door falls. The upper
+  // storey keeps the same pair on a shop too, so the rhythm reads up the face.
+  const dHalf = open ? 0.8 : 0.525;
+  const pairL = dHalf + 0.3;
+  const pairR = gx - 0.32;
+  const pairU = (pairL + pairR) / 2;
+  if (shop) {
+    const sd = ((seed >>> 28) & 1) === 0 ? 1 : -1;
+    const dw = 1.0;
+    const ud = sd * (pairR - 0.1 - dw / 2 - 0.18);
+    fGround.push(doorway(b, front, gz, plinth(front), ud, dw, 1.95, paint));
+    const uA = -sd * pairR;
+    const uB = ud - sd * (dw / 2 + 0.4);
+    const uc = (uA + uB) / 2;
+    const ww = Math.abs(uB - uA) - 0.24;
+    const sill = 1.0;
+    const head = sill + 1.3;
+    fGround.push(casement(b, front, gz, uc, sill, ww, 1.3, { lit: lit && SHOPLIT, lights: Math.max(2, Math.round(ww / 0.6)) }));
+    // The stall board, let down on two brackets as a counter...
+    offFace(b, front, gz, uc, ww + 0.1, 0.84, 0.84, 0.02, 0.6, 0.07, PLANK);
+    for (const k of [-1, 1]) {
+      offFace(b, front, gz, uc + k * ww * 0.35, 0.06, 0.4, 0.8, 0.02, 0.5, 0.06, TIMBER);
+    }
+    // ...and the board over it propped out as a pentice on two iron stays.
+    offFace(b, front, gz, uc, ww + 0.1, head + 0.16, head - 0.06, 0.08, 0.75, 0.05, paint);
+    for (const k of [-1, 1]) {
+      offFace(b, front, gz, uc + k * (ww / 2 - 0.1), 0.03, head + 0.62, head - 0.02, 0.05, 0.72, 0.03, IRON);
+    }
+    // A sign on an iron arm off the corner post, hung edge-on to the street
+    // so it is read from along it.
+    const uArm = sd * (gx - 0.06);
+    offFace(b, front, gz, uArm, 0.05, 2.78, 2.78, 0.1, 1.05, 0.05, IRON);
+    offFace(b, front, gz, uArm, 0.05, 2.35, 2.35, 0.3, 0.95, 0.5, paint);
+    for (const r of [0.38, 0.87]) {
+      offFace(b, front, gz, uArm, 0.025, 2.68, 2.68, r - 0.015, r + 0.015, 0.2, IRON);
+    }
+  } else {
+    fGround.push(
+      doorway(b, front, gz, plinth(front), 0, dHalf * 2, open ? 2.0 : 1.95, open ? null : paint),
+    );
+    const span = pairR - pairL;
+    const shuttered = (span - 0.36) / 2 >= 0.6;
+    const ww = shuttered ? Math.min(1.05, (span - 0.36) / 2) : Math.min(1.05, span - 0.3);
+    for (const k of [-1, 1]) {
+      fGround.push(casement(b, front, gz, k * pairU, 1.0, ww, 1.2, { lit, shutters: shuttered ? paint : undefined }));
+    }
+  }
+  for (const k of [-1, 1]) {
+    fUpper.push(casement(b, front, uz, k * pairU, uSill, 1.0, uWin, { lit }));
+  }
+  framing(b, front, gz, gx, sole, gTop, null, fGround, "panel");
+  framing(b, front, uz, ux, uFoot, h - 0.14, uRail, fUpper, closeStudded ? "close" : "panel");
 
-  if (p.litWindows) {
+  // ---- the back (+Z): a plain door away from the stack, the scullery window
+  // beside it, and one light upstairs.
+  const back: Side = "+z";
+  const bGround = [
+    doorway(b, back, gz, plinth(back), -(pairR - 0.1 - 0.47 - 0.18), 0.95, 1.9, PLANK),
+    casement(b, back, gz, pairU, 1.1, 0.75, 0.95),
+  ];
+  framing(b, back, gz, gx, sole, gTop, null, bGround, "panel");
+  framing(b, back, uz, ux, uFoot, h - 0.14, uRail, [casement(b, back, uz, 0, uSill, 0.95, uWin)], "panel");
+
+  // ---- the flanks: one window upstairs on each, and one down on the side
+  // away from the hearth.
+  for (const s of ["-x", "+x"] as const) {
+    const below = s === "-x" ? [casement(b, s, gx, 0, 1.1, 0.75, 1.0)] : [];
+    framing(b, s, gx, gz, sole, gTop, null, below, "panel");
+    framing(b, s, ux, uz, uFoot, h - 0.24, uRail, [casement(b, s, ux, 0, uSill, 0.85, uWin)], "panel");
+  }
+
+  // ---- the sole plate the ground storey stands on, laid on the plinth and
+  // cut at every doorway: a beam across a threshold draws a step the ground
+  // probe says is not there (the barn's footing note), and a door's jambs
+  // stand on the plinth either side of the cut.
+  const doors: Record<Side, Hole[]> = {
+    "-z": fGround.filter((hole) => hole.y0 === 0),
+    "+z": bGround.filter((hole) => hole.y0 === 0),
+    "-x": [],
+    "+x": [],
+  };
+  for (const s of SIDES) {
+    const run = gHalf(s) + 0.1;
+    const cuts = doors[s].map((hole): [number, number] => [hole.u0, hole.u1]);
+    for (const [a, c] of carve(-run, run, cuts)) {
+      if (c - a > 0.15) onFace(b, s, gPlane(s), (a + c) / 2, (0.3 + sole) / 2, c - a, sole - 0.3, 0.16, 0.04, TIMBER);
+    }
+  }
+
+  // ---- the gables. `gableRoof` closes each end in a slate panel, which is
+  // right for the roof void and wrong for a timber house: a gable is wall. So
+  // a plaster one stands in front of it, its sloped edges tucked up into the
+  // slabs, framed with a collar and a king post round an attic light, under a
+  // pair of bargeboards and a finial at the apex.
+  const slopeW = ux + eaves;
+  const slopeK = rise / slopeW;
+  const pitch = Math.atan2(rise, slopeW);
+  const slabLen = Math.hypot(slopeW, rise);
+  for (const s of ["-z", "+z"] as const) {
+    const n = outward(s);
+    const a = ux + 0.1;
+    const yb = h + (slopeW - a) * slopeK - 0.06;
+    const face = uz + 0.15;
+    b.gableEnd(2 * a, a * slopeK, 0.06, 0, yb, n * (uz + 0.12), PLASTER);
+    const yCol = yb + 0.5 * a * slopeK;
+    onFace(b, s, face, 0, yCol, a - 0.2, 0.16, 0.12, 0.03, TIMBER);
+    const kingTop = yb + a * slopeK - 0.2;
+    onFace(b, s, face, 0, (yCol + kingTop) / 2, 0.16, kingTop - yCol, 0.12, 0.03, TIMBER);
+    for (const kk of [-1, 1]) {
+      const r = 0.62 * a;
+      const top = yb + (a - r) * slopeK - 0.1;
+      onFace(b, s, face, kk * r, (yb + top) / 2, 0.15, top - yb, 0.12, 0.03, TIMBER);
+    }
+    const attic = yCol - 0.22 - (yb + 0.28);
+    if (attic > 0.3) casement(b, s, face, 0, yb + 0.28, 0.55, Math.min(0.75, attic), { lights: 1 });
+
+    const barge = n * (uz + eaves - 0.05);
     for (const sx of [-1, 1]) {
-      b.glow(0.75, 0.9, 0.06, (sx * w) / 4, g * 0.55, -d / 2 - t / 2, "#ffb257");
-      b.glow(0.7, 0.85, 0.06, (sx * w) / 4, g + up * 0.5, -(d / 2 + jut) - 0.05, "#ffb257");
+      b.box(slabLen - 0.1, 0.24, 0.06, (sx * slopeW) / 2, h + rise / 2 - 0.2 / Math.cos(pitch), barge, TIMBER, {
+        z: -sx * pitch,
+      });
+    }
+    b.box(0.14, 0.7, 0.14, 0, h + rise + 0.15, barge, TIMBER);
+  }
+
+  // ---- the roof: clay ridge tiles, and the slate's courses as lines on its
+  // own plane — one slab is one tone whatever the light is doing, and a course
+  // line is a depth step the ink can find.
+  b.box(0.3, 0.16, 2 * (uz + eaves) + 0.04, 0, h + rise + 0.09, 0, BRICK);
+  const off = 0.108; // the slab's half thickness and the course's
+  for (const sx of [-1, 1]) {
+    for (const f of [0.2, 0.4, 0.6, 0.8]) {
+      const r = slopeW * (1 - f);
+      b.box(
+        0.09,
+        0.035,
+        2 * (uz + eaves) - 0.02,
+        sx * (r + Math.sin(pitch) * off),
+        h + rise * f + Math.cos(pitch) * off,
+        0,
+        IRON,
+        { z: -sx * pitch },
+      );
     }
   }
+  // The stack's oversailing course and its pots.
+  b.box(1.1, 0.12, 1.1, cx, ch - 0.55, cz, DARK_STONE);
+  for (const kk of [-1, 1]) b.cyl(0.5, 0.22, 0.3, 8, cx + kk * 0.24, ch + 0.37, cz, CITY_BRICK);
+
   return b;
 }
 
