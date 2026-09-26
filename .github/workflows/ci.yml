@@ -3,8 +3,8 @@
 # There is no test suite and no linter here by design; `npm run typecheck` and
 # the four scripts around it ARE the gates, and until this file existed nothing
 # ran them automatically. `docker.yml` builds the images, which runs `npm run
-# build` as a side effect of the image build — but only on `main` and `develop`,
-# only after a push has already landed, and it reports a failure as "the image
+# build` as a side effect of the image build — but only after a push has
+# already landed, and it reports a failure as "the image
 # did not build" rather than as the type error it was.
 #
 # **The gap this closes was measured rather than assumed.** `npm run build` used

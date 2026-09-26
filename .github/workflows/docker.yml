@@ -6,10 +6,14 @@
 #   web     ghcr.io/greywatch-game/greywatch         nginx + dist/ — the game
 #   server  ghcr.io/greywatch-game/greywatch-server  node + dist-server/ — the authority
 #
-#   main    -> :main    + :latest
-#   develop -> :develop
+#   main       -> :main    + :latest
+#   develop    -> :develop
+#   any branch -> :<branch>, with `/` and other characters a tag cannot hold
+#                 turned into `-` by `metadata-action` (feature/x -> :feature-x)
 #
-# Every push also gets an immutable :sha-<short> tag, which is what you roll
+# EVERY branch builds, so a branch can be pulled onto a box and played before it
+# merges. Only `main` moves `:latest`, which is what a deploy that names no tag
+# gets. Every push also gets an immutable :sha-<short> tag, which is what you roll
 # back to; the branch tags move. **The two images are tagged from the same
 # commit and are meant to be deployed together** — the wire protocol is versioned
 # (`PROTOCOL_VERSION`), and a client one version off is refused at the handshake
@@ -37,7 +41,8 @@ name: Docker
 
 on:
   push:
-    branches: [main, develop]
+    # Every branch, and branches only — a pushed git TAG is not a build.
+    branches: ['**']
   workflow_dispatch:
 
 # A second push to the same branch makes the in-flight build irrelevant — the
