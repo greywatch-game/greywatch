@@ -842,7 +842,8 @@ placements.push(
   "  // each side lane, and Main Street's two frontages below.",
 );
 must("well", 0, 9, 0, null, { force: true });
-for (const [x, z, t] of [[-12, -6, 0], [12, -6, 0], [-10, 6, 2], [11, 5, 2]]) {
+// A stall's counter is its local -Z, so each is turned to face the flag.
+for (const [x, z, t] of [[-12, -6, 2], [12, -6, 2], [-10, 6, 0], [11, 5, 0]]) {
   must("stall", x, z, t, null, { force: true });
 }
 must("trough", -17, 9, 1, null, { force: true });

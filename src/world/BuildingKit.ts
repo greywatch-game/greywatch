@@ -234,7 +234,9 @@ export type BuilderKind = keyof typeof BUILDERS;
  * ruin cuts its plinth, its steps, its veranda and its rubble to the ground
  * under them, and seeds its decay off where it stands. The temple carries its
  * lowest terrace's facing, its south stair and its causeway down to the
- * ground, and seeds its decay the same way.
+ * ground, and seeds its decay the same way. The market stall seeds its trade,
+ * its front and its canvas off where it stands, and cuts its posts and boarding
+ * to the ground under them.
  */
 export const CONFORMS_TO_TERRAIN: ReadonlySet<BuilderKind> = new Set([
   "road",
@@ -249,4 +251,5 @@ export const CONFORMS_TO_TERRAIN: ReadonlySet<BuilderKind> = new Set([
   "jungleRuin",
   "templeRuin",
   "cart",
+  "stall",
 ] as const);

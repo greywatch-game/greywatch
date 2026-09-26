@@ -147,10 +147,10 @@ const placements: Placement[] = [
   // to face it — the church and the inn across North Street, a terrace down
   // each side lane, and Main Street's two frontages below.
   { kind: "well", x: 0, z: 9 },
-  { kind: "stall", x: -12, z: -6 },
-  { kind: "stall", x: 12, z: -6 },
-  { kind: "stall", x: -10, z: 6, rotY: Math.PI },
-  { kind: "stall", x: 11, z: 5, rotY: Math.PI },
+  { kind: "stall", x: -12, z: -6, rotY: Math.PI },
+  { kind: "stall", x: 12, z: -6, rotY: Math.PI },
+  { kind: "stall", x: -10, z: 6 },
+  { kind: "stall", x: 11, z: 5 },
   { kind: "trough", x: -17, z: 9, rotY: Math.PI / 2 },
   { kind: "trough", x: 17, z: -10, rotY: Math.PI / 2 },
   { kind: "cart", x: -16, z: -11 },
