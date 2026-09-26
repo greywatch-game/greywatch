@@ -5,7 +5,7 @@
  * All follow the contract in kit/core.ts (origin-local geometry, no
  * solid/pickable/collisions metadata).
  */
-import { Scene, VertexData } from "@babylonjs/core";
+import { Scene } from "@babylonjs/core";
 import { CONFIG } from "../../config";
 import type { CelMaterialFactory } from "../../shaders/CelShader";
 import { mulberry32 } from "../rng";
@@ -18,6 +18,14 @@ import {
   type Structure,
   streetSeed,
   carve,
+  convexSolid,
+  onFace,
+  outward,
+  runsAlongX,
+  type Hole,
+  type Side,
+  CASEMENT,
+  DOOR_PAINTS,
   fern,
   heading,
   limb,
@@ -26,7 +34,6 @@ import {
   slab,
   stepAlong,
   ASHLAR,
-  AWNING,
   BRICK,
   CITY_BRICK,
   CREEPER,
@@ -59,29 +66,12 @@ import {
 
 // --- the village elevations ------------------------------------------------
 //
-// Four small words the cottage and the townhouse are drawn in, because each
-// lays the same member on four faces. Everything they make is VISUAL: the
-// masses and the roof already carry every collider either building has, and
-// nothing here may add one — see the header on `buildTownhouse`.
+// The words the cottage and the townhouse are drawn in, over `onFace` and
+// `Side` in core.ts, because each lays the same member on four faces.
+// Everything they make is VISUAL: the masses and the roof already carry every
+// collider either building has, and nothing here may add one — see the header
+// on `buildTownhouse`.
 
-/** Which way an elevation faces. Fixes both the axis and the outward sign. */
-type Side = "-z" | "+z" | "-x" | "+x";
-
-/** An opening in an elevation, frame and all, in that face's own (u, y). */
-interface Hole {
-  u0: number;
-  u1: number;
-  y0: number;
-  y1: number;
-}
-
-/**
- * The glass of a window with nobody behind it. Not a hole and not a pane:
- * the building is a solid mass, so what is behind the frame is plaster, and a
- * real sheet there would buy a reflection probe on every block a townhouse
- * stands in for a window nobody can see through anyway (`PaneSpec`).
- */
-const CASEMENT = "#272c2d";
 /** A lit room behind the same glass — the lamp colour the village has always had. */
 const LAMPLIT = "#ffb257";
 /**
@@ -91,43 +81,6 @@ const LAMPLIT = "#ffb257";
  * so the wide one is a step down and still reads as the same lamps.
  */
 const SHOPLIT = "#b3733a";
-/**
- * What a street paints its doors and shutters, walked by a seed off the
- * placement's own size. Every one is a colour the kit already has, so a row of
- * them costs palette slots the map has spent anyway.
- */
-const DOOR_PAINTS = [PLANK, TEAK, VERDIGRIS, AWNING] as const;
-
-const outward = (s: Side): number => (s === "+z" || s === "+x" ? 1 : -1);
-const runsAlongX = (s: Side): boolean => s === "-z" || s === "+z";
-
-/**
- * A member laid ON a face: `along` the run, `tall` up it and `thick` through
- * it, with its centre `out` past the face plane at `plane` and `u` along the
- * run. `tilt` leans it in the face's own plane, rising toward +u.
- *
- * The two axes take opposite rotation signs for the same lean — Babylon's
- * `RotationZ` lifts +x and its `RotationX` drops +z — which is the whole
- * reason this is a function rather than a `b.box` at every call.
- */
-function onFace(
-  b: Build,
-  s: Side,
-  plane: number,
-  u: number,
-  y: number,
-  along: number,
-  tall: number,
-  thick: number,
-  out: number,
-  color: string,
-  tilt = 0,
-): void {
-  const c = outward(s) * (plane + out);
-  if (runsAlongX(s)) b.box(along, tall, thick, u, y, c, color, tilt ? { z: tilt } : undefined);
-  else b.box(thick, tall, along, c, y, u, color, tilt ? { x: -tilt } : undefined);
-}
-
 /**
  * A member standing OUT from a face, running from `r0` to `r1` past its plane
  * and from `y0` to `y1` as it goes: a bracket under the jetty, a stall board,
@@ -330,63 +283,6 @@ function boardUp(
     const y = y0 + ((i + 0.5) * (y1 - y0)) / n;
     onFace(b, s, plane, u, y, across + 0.3, 0.17, 0.04, out, PLANK, (i % 2 === 0 ? 1 : -1) * 0.13);
   }
-}
-
-/**
- * A convex solid between two matching faces — `from[i]` joined to `to[i]` —
- * for the shapes a box cannot be: a coat of thatch cut vertical at the eave
- * where a box would be cut square to the slope, and the teeth along a ridge.
- *
- * Each face carries its own vertices, so the normals come out flat and the ink
- * finds its edges as it finds a box's. Every triangle is wound by testing it
- * against the solid's own centroid rather than by the order the caller walked
- * the outline in, which is what lets one helper take a face walked either way
- * round and a mirrored copy of it.
- *
- * **A front face's cross product `(q - p) x (r - p)` points INTO the solid** —
- * `CreateBoxVertexData`'s winding and `TerrainField.quad`'s, which is Babylon's
- * left-handed default. This helper shipped with the test the other way round
- * and nothing complained: an inside-out solid draws its FAR faces, each lit as
- * if it faced the eye, so a slab of slate or thatch looked right to within its
- * own thickness. What gave it away was the smithy's gables, where half a metre
- * of it put the wall head as a ledge across the gable and the flue in front of
- * the stone — and the cottage's ridge teeth, which had never been visible.
- */
-function convexSolid(b: Build, from: Point3[], to: Point3[], color: string): void {
-  const all = [...from, ...to];
-  const c = [0, 1, 2].map((i) => all.reduce((sum, p) => sum + p[i], 0) / all.length);
-  const positions: number[] = [];
-  const indices: number[] = [];
-  const uvs: number[] = [];
-  const face = (pts: Point3[]): void => {
-    const f = [0, 1, 2].map((i) => pts.reduce((sum, p) => sum + p[i], 0) / pts.length);
-    for (let i = 1; i + 1 < pts.length; i++) {
-      let [p, q, r] = [pts[0], pts[i], pts[i + 1]];
-      const u = [q[0] - p[0], q[1] - p[1], q[2] - p[2]];
-      const v = [r[0] - p[0], r[1] - p[1], r[2] - p[2]];
-      const n = [u[1] * v[2] - u[2] * v[1], u[2] * v[0] - u[0] * v[2], u[0] * v[1] - u[1] * v[0]];
-      if (n[0] * (f[0] - c[0]) + n[1] * (f[1] - c[1]) + n[2] * (f[2] - c[2]) > 0) [q, r] = [r, q];
-      for (const vtx of [p, q, r]) {
-        positions.push(vtx[0], vtx[1], vtx[2]);
-        uvs.push(vtx[0], vtx[1]);
-        indices.push(indices.length);
-      }
-    }
-  };
-  face(from);
-  face(to);
-  for (let i = 0; i < from.length; i++) {
-    const j = (i + 1) % from.length;
-    face([from[i], from[j], to[j], to[i]]);
-  }
-  const data = new VertexData();
-  data.positions = positions;
-  data.uvs = uvs;
-  data.indices = indices;
-  const normals: number[] = [];
-  VertexData.ComputeNormals(positions, indices, normals);
-  data.normals = normals;
-  b.surface(data, color);
 }
 
 /**

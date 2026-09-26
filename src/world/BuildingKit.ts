@@ -236,7 +236,9 @@ export type BuilderKind = keyof typeof BUILDERS;
  * lowest terrace's facing, its south stair and its causeway down to the
  * ground, and seeds its decay the same way. The market stall seeds its trade,
  * its front and its canvas off where it stands, and cuts its posts and boarding
- * to the ground under them.
+ * to the ground under them. The shed seeds its cladding, its roof, its door and
+ * what hangs on it off where it stands, and carries its footing down to the
+ * ground under each wall.
  */
 export const CONFORMS_TO_TERRAIN: ReadonlySet<BuilderKind> = new Set([
   "road",
@@ -252,4 +254,5 @@ export const CONFORMS_TO_TERRAIN: ReadonlySet<BuilderKind> = new Set([
   "templeRuin",
   "cart",
   "stall",
+  "shed",
 ] as const);
