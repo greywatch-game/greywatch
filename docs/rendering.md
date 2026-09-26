@@ -1814,6 +1814,20 @@ two rules, for its reasons. `nearClear` (0.35 m) is every face's near plane
 and the proxy gather skips any box the light stands inside: a lantern is in its
 own housing, and recording that as an occluder puts the whole light out.
 
+**A facet turned AWAY from a lamp is occluded, and the lookup says so without
+reading the tile** (`pointLocal`). The moon never needed this rule because its
+term is zero on such a face anyway; a lamp's is not — `0.25 + 0.75 * band(ndl)`
+gives every face in range a quarter of the lamp — and a back-face tile records
+that very face, so it tested LIT unless something stood nearer the light. The
+symptom was the far side of a solid wearing the shadows of whatever stood
+between it and the lamp: the smithy's forge put a quarter of itself on the
+OUTSIDE of the front gable with the roof truss printed across the stone, and
+the well's base took its own head frame's shadow on the side facing away from
+the lamp behind it. Every caster is closed, so the answer is always
+"occluded". It holds only where the ATLAS answers; a slot on the volume's
+visibility keeps the floor on its far faces, which the probes' coarseness
+already bounds.
+
 **A slot is published only once its layer is DRAWN** — a static layer when its
 last face is queued (the queue is drawn in the same frame, before the main
 pass), a dynamic one after its first pass. Until then the slot keeps the

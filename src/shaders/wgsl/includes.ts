@@ -573,6 +573,13 @@ fn pointLocal(i: i32, posW: vec3f, n: vec3f) -> vec2f {
     cone = smoothstep(spot.w, max(shade.x, spot.w + 1e-4), c);
   }
   if (shade.y < 0.0 && shade.z < 0.0) { return vec2f(cone, -1.0); }
+  // A facet that faces AWAY from the light is in its own solid's shadow, and a
+  // back-face tile cannot say so: that facet IS one of the back faces the tile
+  // recorded, so it reads as lit unless something stands nearer the light —
+  // which put a quarter of a forge on the OUTSIDE of the smithy's front wall,
+  // with the roof truss behind it printed across the stone as shadow. Every
+  // caster is closed, so the honest answer is always "occluded".
+  if (dot(n, toP) > 0.0) { return vec2f(cone, 0.0); }
   let toward = select(-1.0, 1.0, dot(n, toP) < 0.0);
   let d = toP + n * (toward * uniforms.localParams.y);
   let rel = (length(d) - uniforms.localParams.x) / max(uniforms.pointRange[i], 1e-3);
