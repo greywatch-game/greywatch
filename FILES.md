@@ -880,13 +880,15 @@ src/
     coldharbour/environment.ts# Palette, sun, sky — a clear afternoon, and the
                               #   first map with no fog wall (`fogEnd: 480`)
     coldharbour/collision.ts  # GENERATED collider boxes (`npm run collision`)
-    harrowmead/layout.ts      # The fourth map: a farming town in a green
-                              #   vale. The largest yet (`size: 400`) — five
-                              #   farmyard flags in rolling, hedged country,
-                              #   and the second map with armour on it
-    harrowmead/heights.ts     # GENERATED floor heights — rolling hills and a
-                              #   stream carved to a constant wadeable bed.
-                              #   The biggest at 51 KB, and LAZY
+    harrowmead/layout.ts      # The fourth map: a farming village in a green
+                              #   vale (`size: 400`) — a green with the church
+                              #   and the inn, five flags in rolling, hedged
+                              #   country, and the second map with armour.
+                              #   SEEDED by `npm run harrowmead` and owned by
+                              #   the editor after
+    harrowmead/heights.ts     # GENERATED floor heights (`npm run harrowmead`)
+                              #   — rolling hills, level plots and a brook cut
+                              #   to a constant wadeable bed. LAZY
     harrowmead/environment.ts # Palette, sun, sky — high summer, late
                               #   morning, no fog wall (`fogEnd: 520`)
     harrowmead/collision.ts   # GENERATED collider boxes (`npm run collision`)

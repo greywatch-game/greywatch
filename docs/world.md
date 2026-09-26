@@ -53,6 +53,22 @@ it breaks. It is also **the map with no wall around
 it**: the fields run on past the play square and a leash brings you back, which
 is its own section below.
 
+**Harrowmead was typed for four years and is SEEDED now** (`npm run
+harrowmead`, on Sarab's precedent), and the reason is general rather than
+local: a hand-kept layout and a hand-sculpted floor drift apart the way any
+two hand-kept copies of one idea do. The church had come to stand across the
+stream with its floor drawn under the water, a cottage stood in the bank, two
+roads ran straight through the brook with nothing to carry them, and half the
+village turned its front doors to a hedge — none of which crashes, so nothing
+caught it. The generator designs the brook, the village and the fields
+together and CHECKS what hand-editing did not: no building on a road, in the
+water or on a slope, **every front door (a builder's local -Z) opening onto a
+street, a yard or the green before it meets anything solid**, and no road in
+the water except at a declared ford. Its header carries the rest; the one
+number to know from outside it is `blockSize: 200` — the whole square is
+inside its `fogEnd`, so a merge block buys no cull and costs a draw per
+material, and at 48 the village ran 122 fps where 200 runs 244.
+
 **Sarab is the fifth and by a wide margin the biggest: 900 m of PLAY inside
 1500 m of ground**, which is 5.1 times Harrowmead's playable area. It is the map
 `ENGINE_UPGRADE.md` was written to make possible and the first that spends most

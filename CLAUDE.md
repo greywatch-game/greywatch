@@ -267,6 +267,12 @@ npm run kurenai    # RE-SEED the temple valley's layout and heights (committed
                    #   `-- --probe` prints the floor as a plan and writes
                    #   nothing; `-- --plan` prints the claim list and
                    #   `-- --refusals` every plot that did not fit
+npm run harrowmead # RE-SEED Harrowmead's layout and heights (committed
+                   #   source). Same one-shot rule and warning as `sarab`;
+                   #   owes `npm run collision -- harrowmead` after it.
+                   #   `-- --probe` prints the floor, `--refusals` every plot
+                   #   refused and why (a road, the water, a slope, or a
+                   #   front door opening onto nothing)
 ```
 
 No test suite, no linter. `npm run typecheck` is the only automated gate — run it
@@ -864,9 +870,12 @@ down from 750 m because the same kit over three times the side read as
 sparse and cost 88 fps where it now runs 154). **Coldharbour, Harrowmead,
 Sarab and Cinderhaven are the four with vehicles on them**; **Sarab and
 Cinderhaven are the two with all THREE KINDS and the two that are not 8v8** —
-24 a side, online and off. Those two and Kurenai were
+24 a side, online and off. Those two, Kurenai and Harrowmead are
 **SEEDED by a generator** (`npm run sarab`, `npm run cinderhaven`,
-`npm run kurenai`) rather than typed, and the emitted `layout.ts` is an
+`npm run kurenai`, `npm run harrowmead`) rather than
+typed — Harrowmead was typed until its layout and floor had drifted apart
+(a church in the stream, doors onto hedges), and its generator now CHECKS
+that every front door opens onto a street, a yard or the green — and the emitted `layout.ts` is an
 ordinary layout file the editor opens, patches and saves like any other —
 re-running the generator discards editor edits. **Sarab is the map that SPENDS
 the levers**, stating six of the eight rows above, and the first to state a

@@ -98,20 +98,16 @@ export const MAP_SHOTS: Readonly<Record<string, MapShot>> = {
     url: coldharbourShot,
     vantage: { pos: [40, 10, 48], target: [2.5, 12, 2.5], fov: 58 },
   },
-  // The market green from the south-east — into the sunset, so the village
-  // stands as roofs and lit windows against the gold over the western downs,
-  // with the sun itself in frame low over the rim. The same vantage was a
-  // lit-faces shot when this map was a morning; the hour turned it around.
-  //
-  // The eye is five metres higher than it was, and a TREE is why: the vale's
-  // hedgerow ash was planted after this frame was chosen, and one of the two
-  // on the green grew straight through the right third of it. At 15 m the same
-  // crown is a corner the village is framed by rather than a screen in front
-  // of it — which is the frame to preserve if this is ever re-shot, since a
-  // 10 m eye now photographs a leaf.
+  // The market green from over East Lane — into the sunset, looking across the
+  // stalls and the well to the church and the coaching inn on North Street,
+  // the spire standing against the sun and the inn's windows lit. **The frame
+  // to preserve is the church and the inn together across the green**: they
+  // are what the village is laid out round, and the one frame on this map
+  // that says it is a village rather than a farm. The old vantage (44, 15,
+  // -58) now looks at the backs of Main Street's terrace.
   harrowmead: {
     url: harrowmeadShot,
-    vantage: { pos: [44, 15, -58], target: [-10, 4, 14] },
+    vantage: { pos: [32, 12, -10], target: [-12, 4, 30], fov: 62 },
   },
   // Off the east highway's verge, looking north-west up the length of the town:
   // the souk's two arcades and their awnings in the near ground, the old town's

@@ -135,11 +135,11 @@ export const DIFF_VANTAGES = {
   harrowmead: [
     {
       id: "millpond",
-      of: "the millpond from its west shore, the mill and its wheel on the far lip",
+      of: "the millpond from its west shore, and the mill and its wheel downstream past its east lip",
       proves:
         "the water on the map where it is a POND rather than a sheet over everything — a reflected mass with a shore round it, plus the water meadows' grass at the edge",
-      pos: [-136, 1.6, 64],
-      target: [-106, 3, 44],
+      pos: [-160, 1.6, 102],
+      target: [-108, 3, 70],
     },
     {
       id: "borderland",
