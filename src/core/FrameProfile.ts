@@ -626,6 +626,30 @@ export interface HitchFrame {
   phases: Partial<Record<Phase, number>>;
 }
 
+/**
+ * The graphics a frame was drawn with, pushed by `Game` whenever the settings
+ * are applied. Plain strings rather than the settings' own unions, because this
+ * file may not know what a rung IS — only what to write down.
+ *
+ * **Every value is the one IN FORCE, not the one stored.** A `?gi=` or a
+ * `?shadows=` overrides the setting for a session, and a capture taken under
+ * one that reported the stored rung would be a confident wrong answer about the
+ * very thing it was taken to compare. `forced` names the keys the URL decided.
+ */
+export interface ProfileGraphics {
+  /** `Settings.renderScale` — a share of the panel's native resolution. */
+  renderScale: number;
+  shadows: string;
+  gi: string;
+  grass: string;
+  /** The shaft pass's rung, or `off` when it is off the camera. */
+  volumetrics: string;
+  motionBlur: boolean;
+  paperGrain: boolean;
+  /** Keys above whose value came from the URL rather than the setting. */
+  forced: string[];
+}
+
 /** What a capture hands back. JSON by construction — this is the artefact. */
 export interface ProfileReport {
   version: number;
@@ -642,7 +666,20 @@ export interface ProfileReport {
     hardwareConcurrency: number;
     /** `navigator.deviceMemory` where the browser has it. */
     deviceMemoryGb: number | null;
+    /**
+     * `(pointer: coarse)` — the test every per-machine default in
+     * `settings.ts` keys on, so it says which defaults a fresh install got.
+     */
+    coarsePointer: boolean;
   };
+  /**
+   * The graphics settings in force when the capture was taken, or null where
+   * nothing pushed them. `inForceSeconds` is how long they had been: **shorter
+   * than `window.seconds` means the window straddles a change** (past the
+   * 0.1 s both are rounded to — a ring armed at boot ties exactly), and its
+   * aggregates are a blend of two configurations.
+   */
+  graphics: (ProfileGraphics & { inForceSeconds: number }) | null;
   /**
    * Child phase → the span that contains it, straight from `PARENT_OF`.
    *
@@ -1081,6 +1118,9 @@ export class FrameProfile {
 
   /** Which map the ring holds. Pushed by `Game`, since nothing here may ask. */
   private mapId = "?";
+  /** The graphics in force, and since when. Pushed by `Game` like the map. */
+  private graphics: ProfileGraphics | null = null;
+  private graphicsAt = 0;
 
   /** The last capture, kept so a script (or a failed clipboard) can fetch it. */
   private lastReport: ProfileReport | null = null;
@@ -1109,6 +1149,21 @@ export class FrameProfile {
   /** Which map the ring is recording. Set by `Game.installMap`. */
   setMap(id: string): void {
     this.mapId = id;
+  }
+
+  /**
+   * Which graphics the frames are being drawn with. Set by
+   * `Game.applySettings`, armed or not — it runs on a settings change rather
+   * than per frame, and a ring armed later still wants to know how long the
+   * settings have stood.
+   *
+   * The clock restarts only when a VALUE moves: `applySettings` runs on every
+   * change to every setting, and a look-speed nudge is not a new configuration.
+   */
+  setGraphics(g: ProfileGraphics): void {
+    if (this.graphics && sameGraphics(this.graphics, g)) return;
+    this.graphics = g;
+    this.graphicsAt = performance.now();
   }
 
   /**
@@ -1766,13 +1821,24 @@ export class FrameProfile {
       // wall clock and its phases are one row apart.
       // 3: `present`, the first phase outside `frame`, and the `roots` that
       // let a reader tell a second root from a phase it has not heard of.
-      version: 9,
+      // 10: `graphics` — the settings in force and how long they had been —
+      // and `device.coarsePointer`. Before it a capture could only be read
+      // against a guess at its settings, the render scale worked back out of
+      // the backing store and every rung assumed to be the device's default.
+      version: 10,
       takenAt: new Date().toISOString(),
       reason,
       map: this.mapId,
       tree: PARENT_OF,
       roots: [...ROOTS],
       device: this.deviceFacts(),
+      graphics: this.graphics
+        ? {
+            ...this.graphics,
+            forced: [...this.graphics.forced],
+            inForceSeconds: round((performance.now() - this.graphicsAt) / 1000, 1),
+          }
+        : null,
       clock: {
         grainMs: round(this.grainMs, 4),
         overheadUs: round(this.overheadUs, 3),
@@ -2191,6 +2257,9 @@ export class FrameProfile {
         : "?",
       hardwareConcurrency: navigator.hardwareConcurrency || 0,
       deviceMemoryGb: nav.deviceMemory ?? null,
+      coarsePointer:
+        typeof window.matchMedia === "function" &&
+        window.matchMedia("(pointer: coarse)").matches,
     };
   }
 
@@ -2596,4 +2665,18 @@ function onePercentLow(values: Float64Array, n: number): number {
 function round(v: number, places = 3): number {
   const f = 10 ** places;
   return Math.round(v * f) / f;
+}
+
+/** Whether two pushes describe the same configuration. */
+function sameGraphics(a: ProfileGraphics, b: ProfileGraphics): boolean {
+  return (
+    a.renderScale === b.renderScale &&
+    a.shadows === b.shadows &&
+    a.gi === b.gi &&
+    a.grass === b.grass &&
+    a.volumetrics === b.volumetrics &&
+    a.motionBlur === b.motionBlur &&
+    a.paperGrain === b.paperGrain &&
+    a.forced.join() === b.forced.join()
+  );
 }

@@ -2629,6 +2629,31 @@ export class Game {
     this.cameraSys.setGyro(this.settings.touchGyro, this.settings.gyroSensitivity);
     this.vehicleCam.setGyro(this.settings.touchGyro, this.settings.gyroSensitivity);
     this.gyro.setEnabled(this.settings.touchGyro !== "off");
+    // Last, so every value below is the one the calls above just put in force.
+    this.pushProfileGraphics();
+  }
+
+  /**
+   * Tells the profiler what the frames are being drawn with, so a capture off
+   * a device nobody here owns states its own settings rather than leaving them
+   * to be guessed from the backing store. The values IN FORCE — the URL's rung
+   * where one overrides the setting — because that is what the frame cost.
+   */
+  private pushProfileGraphics(): void {
+    const forced: string[] = [];
+    if (this.giForced) forced.push("gi");
+    if (this.shadowsForced) forced.push("shadows");
+    if (this.volumetricsForced) forced.push("volumetrics");
+    this.prof.setGraphics({
+      renderScale: this.settings.renderScale,
+      shadows: this.shadowQuality,
+      gi: this.giForced ?? this.settings.gi,
+      grass: this.settings.grass,
+      volumetrics: this.volumetricsRung ?? "off",
+      motionBlur: this.settings.motionBlur,
+      paperGrain: this.settings.paperGrain,
+      forced,
+    });
   }
 
   /**

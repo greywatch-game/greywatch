@@ -645,6 +645,28 @@ That block above predates both fields — it was taken before the memory reading
 existed, and the numbers in it have not been re-taken, because a capture
 re-printed from a later run is a capture of something else.
 
+**From report version 10 a capture states the GRAPHICS it was drawn with**
+(`graphics`), and **`device.coarsePointer`**, the test that picks every
+per-machine default in `settings.ts`. Before it, two tablet captures on Sarab
+and Cinderhaven had to be read against a guess — the render scale worked back
+out of the backing store and every rung assumed to be the touch default. Three
+details:
+
+- **The values are the ones IN FORCE, not the ones stored.** `?gi=`,
+  `?shadows=` and `?volumetrics=` override the setting for a session, and
+  `graphics.forced` names the keys the URL decided — a capture taken to compare
+  rungs that reported the stored one would be wrong about the one thing it was
+  for. `Game.pushProfileGraphics` reads each value after `applySettings` has
+  put it in force.
+- **`inForceSeconds` is how long they had stood**, and one shorter than
+  `window.seconds` means the window STRADDLES a change — its aggregates are a
+  blend of two configurations. The clock restarts only when a value moves,
+  because `applySettings` runs on every change to every setting, a look speed
+  included. The viewer says so in words.
+- **A new graphics setting owes a field here**, in `ProfileGraphics`,
+  `sameGraphics` and the viewer's `Graphics` row, or captures go on describing
+  a configuration that no longer names everything the frame paid for.
+
 ---
 
 ## Reading one: `/profile_viewer.html`

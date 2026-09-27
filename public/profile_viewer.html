@@ -1141,6 +1141,24 @@ function renderReport(r) {
         fmt(lt.scriptMs, 0) + " script / " + fmt(lt.renderMs, 0) + " rendering / " +
         fmt(lt.blockingMs, 0) + " blocking"
       : "totals withheld — a capture before report v9 carries the whole session's, not the window's");
+  const gx = r.graphics;
+  if (gx) {
+    const tag = k => (gx.forced || []).indexOf(k) >= 0 ? " (URL)" : "";
+    kv("Graphics",
+      "scale " + gx.renderScale + " · shadows " + gx.shadows + tag("shadows") +
+      " · bounce " + gx.gi + tag("gi") + " · grass " + gx.grass +
+      " · shafts " + gx.volumetrics + tag("volumetrics") +
+      " · blur " + (gx.motionBlur ? "on" : "off") + " · grain " + (gx.paperGrain ? "on" : "off"));
+    kv("Settings stood", fmt(gx.inForceSeconds, 1) + " s" +
+      // 0.1 s of slack: both figures are rounded to it, and settings pushed
+      // at boot stand exactly as long as a ring armed with them.
+      (gx.inForceSeconds + 0.1 < r.window.seconds
+        ? " — CHANGED inside this " + fmt(r.window.seconds, 1) + " s window, so it blends two configurations"
+        : ""));
+  } else {
+    kv("Graphics", "not recorded — a capture before report v10");
+  }
+  kv("Pointer", dev.coarsePointer == null ? "not recorded" : dev.coarsePointer ? "coarse (touch defaults)" : "fine");
   kv("Viewport", (dev.window || "?") + "  →  " + (dev.backingStore || "?"));
   kv("Pixel ratio", String(dev.devicePixelRatio != null ? dev.devicePixelRatio : "?"));
   kv("Cores / memory", (dev.hardwareConcurrency || "?") + " ×  " + (dev.deviceMemoryGb != null ? dev.deviceMemoryGb + " GB" : "?"));

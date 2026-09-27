@@ -98,8 +98,19 @@ const POLE_HEX = "#5d6166";
 /** How far the cloth may be from the pole axis, for the fixed bounds. */
 const REACH = FLAG_LENGTH + 0.3;
 
-/** Past a hitch, the cloth takes at most this much time in one frame. */
-const MAX_FRAME = 0.1;
+/**
+ * The most substeps the cloth takes in one frame — 33 ms of air at the 120 Hz
+ * step, so a flag keeps real time down to 30 fps and slows below it.
+ *
+ * **What a longer frame owed is DROPPED, not carried.** A fixed step that
+ * catches up does its most work on exactly the frames that are already late:
+ * measured on an Android tablet on Sarab and Cinderhaven, the frame after a
+ * 35-55 ms wait ran every other phase 2.5x slower on a clocked-down CPU and
+ * `zones` 4x, because it was also stepping five or six times. This was 0.1 s,
+ * twelve substeps. A flag that loses 20 ms of air behind a hitch is invisible;
+ * a frame that pays for it is the next hitch.
+ */
+const MAX_SUBSTEPS = 4;
 
 /** What one flag is wearing: the field and the band, both cel hexes. */
 export interface FlagColours {
@@ -247,7 +258,7 @@ export class FlagCloth {
       this.hoistY = target;
     }
     const from = this.hoistY;
-    this.acc += Math.min(dt, MAX_FRAME);
+    this.acc = Math.min(this.acc + dt, MAX_SUBSTEPS * h);
     let n = Math.floor(this.acc / h);
     this.acc -= n * h;
     const total = n;
