@@ -242,7 +242,9 @@ export type BuilderKind = keyof typeof BUILDERS;
  * breaks and its debris off where it stands, and carries the first course of
  * every face, its footings, its heaps and its threshold down to the ground. The woodpile seeds how it is ended, how it is
  * covered and every billet off where it stands, and carries its posts and the
- * stones under its bearers down to the ground.
+ * stones under its bearers down to the ground. The footbridge seeds its
+ * planks, its boarding and its stones off where it stands, stands its bank
+ * seats where the bank falls away under it and cuts each pile into the bed.
  */
 export const CONFORMS_TO_TERRAIN: ReadonlySet<BuilderKind> = new Set([
   "road",
@@ -261,4 +263,5 @@ export const CONFORMS_TO_TERRAIN: ReadonlySet<BuilderKind> = new Set([
   "shed",
   "ruin",
   "woodpile",
+  "bridge",
 ] as const);
