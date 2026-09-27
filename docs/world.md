@@ -81,14 +81,18 @@ network of paths the village is built along, and holds every building to the
 same four refusals Harrowmead's does. Two things are its own. **The floor's zero
 is the MIST's datum**, because `mistHeight` is an absolute falloff: the village
 stands just above it and keeps the mist it had, the dell, the moor and the bog
-shore sit below it and drown, and the chapel's crown stands clear. And **a low
-scatter prop on a HILL can be sown inside a wall**: `MapBuilder`'s burial test
-measures a prop from its region's `y` rather than from the ground under it, so
-on raised ground a headstone reads as standing below a building's footing. The
-engine is unchanged; the generator keeps every low region off every claim
-(`groveOk`/`rectOk`), which is what makes that blind spot unreachable from this
-map — and it is worth knowing before sowing anything short on a hillside
-anywhere else.
+shore sit below it and drown, and the chapel's crown stands clear.
+
+**Building it found the scatter's burial test blind to the floor.**
+`MapBuilder.insideCollider` measured a prop's height band from its region's `y`
+alone while the boxes it tested against are in world height, so on raised
+ground a low prop read as standing metres below a wall's footing and was sown
+inside it. It now measures from where the prop will actually stand — the
+region's `y`, the floor at the spot and the road over it, the sum
+`scatterRegion` places it at. Counted off the bakes, blocking props inside a
+structure's collider went from 63 (46 on Cinderhaven's slopes, 15 on Sarab, 2 on
+Hollowmere) to none on any map, and the dressing on those three, Harrowmead and
+Kurenai re-rolled with it.
 
 **Sarab is the fifth and by a wide margin the biggest: 900 m of PLAY inside
 1500 m of ground**, which is 5.1 times Harrowmead's playable area. It is the map

@@ -1549,12 +1549,10 @@ for (const [kind, x, z, t, p] of [
  * clear of every claim but a road (a road already refuses what grows), under
  * `maxGrade`, and inside the square.
  *
- * **Clear of every claim is load-bearing here and not only tidy.**
- * `MapBuilder.findSpot`'s burial test measures a prop from the region's `y`
- * rather than from the ground under it, so on a hill it reads a low prop — a
- * headstone, a stump — as standing below a building's footing and plants it
- * inside the wall. Keeping every region off every claim is what makes that
- * test's blind spot unreachable from this map.
+ * Clear of every claim is a choice about the LOOK rather than a guard: the
+ * builder's own burial test keeps each prop out of every collider, but a stand
+ * sown over a yard or a building still spends its count on refusals and packs
+ * what is left against the walls.
  */
 function groveOk(x, z, r, maxGrade = 0.3, skipOpen = false, tall = false) {
   if (Math.abs(x) + r > HALF - 2 || Math.abs(z) + r > HALF - 2) return false;

@@ -1819,7 +1819,7 @@ export class MapBuilder {
     for (let i = 0; i < spec.count; i++) {
       const scale = minS + rng() * (maxS - minS);
       const clearance = (spec.clearance ?? 0.8) * scale;
-      const spot = this.findSpot(spec, rot, clearance, scale, placed, rng);
+      const spot = this.findSpot(spec, terrain, rot, clearance, scale, placed, rng);
       if (!spot) continue;
       placed.push({ x: spot.x, z: spot.z, r: clearance });
 
@@ -1947,6 +1947,7 @@ export class MapBuilder {
    */
   private findSpot(
     spec: ScatterSpec,
+    terrain: TerrainField,
     rot: number,
     clearance: number,
     /** This prop's own draw from the region's range — see `scatterRegion`. */
@@ -1981,7 +1982,7 @@ export class MapBuilder {
           break;
         }
       }
-      if (ok && this.insideCollider(spec, x, z, clearance)) ok = false;
+      if (ok && this.insideCollider(spec, terrain, x, z, clearance)) ok = false;
       // Nothing GROWS out of a carriageway. Padded by the prop's own
       // half-footprint rather than by its placement clearance, which is the
       // difference between a tree that may lean over a street and one that may
@@ -2016,14 +2017,24 @@ export class MapBuilder {
    * *stand on* the terrace), and neither do colliders clear above its top
    * (a log passes *under* a creek bridge). Ramps count as their full
    * footprint, so nothing spawns halfway into a slope.
+   *
+   * **The base is where the prop will STAND, in world height** — the region's
+   * `y`, the floor at the spot and the road over it, the same sum
+   * `scatterRegion` places the prop at. It used to be the region's `y` alone,
+   * which is only right on a floor at zero: the boxes are world-space, so on a
+   * hill a headstone read as standing metres below a wall's footing and was
+   * sown inside it, and in a hollow a low prop read as over a wall it was
+   * buried in. Tall props mostly escaped, because their band reached up into
+   * the box anyway.
    */
   private insideCollider(
     spec: ScatterSpec,
+    terrain: TerrainField,
     x: number,
     z: number,
     clearance: number,
   ): boolean {
-    const baseY = spec.y ?? 0;
+    const baseY = (spec.y ?? 0) + terrain.heightAt(x, z) + roadTopAt(this.roads, x, z);
     // The prop's visual reach, not its collider height: a lantern flame or a
     // spray of branches buried in a wall looks broken even though nothing
     // solid overlaps.
