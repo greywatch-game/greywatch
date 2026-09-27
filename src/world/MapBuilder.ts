@@ -793,9 +793,10 @@ const PROP_BODIES: Record<ScatterSpec["prop"], PropBody> = {
   // Never blocking: a clump is ten-centimetre culms and air (see
   // `buildBamboo`). Filled honestly for the fern's reason.
   bamboo: { w: 1.6, d: 1.6, h: 8, visualTop: 10.5, rooted: true },
-  // Trunk plus its buttress core: the fins reach 0.97 m from the axis at their
-  // widest, so a 1.0 m box is the flare you can see rather than a margin around
-  // it. The canopy is 4 m of frond starting nine metres up and is not in this —
+  // Trunk plus its buttress core: the bole, its flare and flutes stay inside
+  // the box's 0.5 m half-width from 0.4 m up, and what of the buttresses is
+  // outside it is LOW — under a metre at the box's corner and a surface root
+  // under 0.3 m past it, out to ~1.6 m (see `buildJungleTree`). The canopy is 4 m of frond starting nine metres up and is not in this —
   // there is nothing to shoot up there, and a box that held it would stop
   // rounds through open air across the whole stand. Full trunk height, so a
   // jungle tree bakes as hard cover (CoverMap's 1.7 m) the way a wall does.

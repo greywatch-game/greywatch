@@ -16,11 +16,12 @@
  * curtain has to hang from a crown and scatter placement is what pushed it
  * away from every crown on the map. Its own header carries the measurement.
  */
-import { Mesh, MeshBuilder, Scene } from "@babylonjs/core";
+import { Matrix, Mesh, MeshBuilder, Scene, Vector3, VertexData } from "@babylonjs/core";
 import { CONFIG } from "../config";
 import type { CelMaterialFactory } from "../shaders/CelShader";
 import { flameData } from "./flame";
-import { partBox, partCylinder } from "./parts";
+import { partBox, partCylinder, partSurface } from "./parts";
+import { mulberry32 } from "./rng";
 import { marksSway } from "./sway";
 
 /**
@@ -374,30 +375,260 @@ export interface LianaHang {
   y: number;
 }
 
+/** A point in a part's own plane — see `prism`. */
+type Flat = readonly [number, number];
+
+/** One cross-section of a `loft`: its centre and its radius. */
+interface Ring {
+  x: number;
+  y: number;
+  z: number;
+  r: number;
+}
+
 /**
- * Jungle hardwood: a buttressed trunk running bare for two storeys and then
- * spreading into a canopy of broad fronds. The tall counterpart to the pine —
- * where a pine is a cone you see the whole of, this is a column with the
- * foliage held above the fight, so a stand of them closes the sky without
- * closing the sight lines under it.
+ * One triangle, wound the way Babylon draws a FRONT face: the one whose
+ * `(b - a) x (c - a)` points INTO the solid, which is the box's own convention
+ * and `convexSolid`'s. Asked of the normal rather than assumed, so no caller
+ * has to know which way round its outline runs.
+ */
+function tri(
+  indices: number[],
+  p: readonly number[],
+  a: number,
+  b: number,
+  c: number,
+  n: readonly number[],
+): void {
+  const ux = p[b * 3] - p[a * 3];
+  const uy = p[b * 3 + 1] - p[a * 3 + 1];
+  const uz = p[b * 3 + 2] - p[a * 3 + 2];
+  const vx = p[c * 3] - p[a * 3];
+  const vy = p[c * 3 + 1] - p[a * 3 + 1];
+  const vz = p[c * 3 + 2] - p[a * 3 + 2];
+  const cross =
+    (uy * vz - uz * vy) * n[0] + (uz * vx - ux * vz) * n[1] + (ux * vy - uy * vx) * n[2];
+  if (cross > 0) indices.push(a, c, b);
+  else indices.push(a, b, c);
+}
+
+/**
+ * A flat-sided solid cut from an OUTLINE — a leaf, a frond, a buttress — at a
+ * box's price or near it. `outline` lies in the part's own XY plane, stood
+ * `thick` deep along Z, or with `plane: "xz"` in its XZ plane, `thick` deep
+ * along Y (a leaf plate lies flat, a buttress stands up). `thick` may be one
+ * number or one per outline point, so a fin can thin toward its tail.
  *
- * Three things about the shape are load-bearing rather than decorative:
+ * Every face is flat-shaded, which is what lets the bands and the ink find its
+ * edges exactly as they find a box's; the point of it is the OUTLINE, which a
+ * box can only ever draw as a rectangle. A four-point outline costs exactly
+ * the box's 24 vertices. `skip` leaves out the side faces nothing can see — an
+ * edge buried in the ground or inside the bole — by the index of the point
+ * each starts at. The caps are fanned from the first point, which needs the
+ * outline to be star-shaped about it, or from the centroid with `centre`.
+ */
+function prism(
+  name: string,
+  outline: readonly Flat[],
+  thick: number | readonly number[],
+  scene: Scene,
+  opts: { plane?: "xy" | "xz"; centre?: boolean; skip?: readonly number[] } = {},
+): Mesh {
+  const n = outline.length;
+  const at = (u: number, v: number, w: number): number[] =>
+    opts.plane === "xz" ? [u, w, v] : [u, v, w];
+  const half = (i: number) => (typeof thick === "number" ? thick : thick[i]) / 2;
+  const positions: number[] = [];
+  const normals: number[] = [];
+  const uvs: number[] = [];
+  const indices: number[] = [];
+  const vert = (p: readonly number[], nrm: readonly number[]): number => {
+    positions.push(p[0], p[1], p[2]);
+    normals.push(nrm[0], nrm[1], nrm[2]);
+    uvs.push(p[0], p[1] + p[2]);
+    return positions.length / 3 - 1;
+  };
+  let cu = 0;
+  let cv = 0;
+  let ch = 0;
+  for (let i = 0; i < n; i++) {
+    cu += outline[i][0] / n;
+    cv += outline[i][1] / n;
+    ch += half(i) / n;
+  }
+  for (const side of [1, -1]) {
+    const nrm = at(0, 0, side);
+    const first = positions.length / 3;
+    for (let i = 0; i < n; i++) vert(at(outline[i][0], outline[i][1], side * half(i)), nrm);
+    if (opts.centre) {
+      const c = vert(at(cu, cv, side * ch), nrm);
+      for (let i = 0; i < n; i++) tri(indices, positions, c, first + i, first + ((i + 1) % n), nrm);
+    } else {
+      for (let i = 1; i + 1 < n; i++) tri(indices, positions, first, first + i, first + i + 1, nrm);
+    }
+  }
+  const skip = new Set(opts.skip ?? []);
+  for (let i = 0; i < n; i++) {
+    if (skip.has(i)) continue;
+    const j = (i + 1) % n;
+    const [ui, vi] = outline[i];
+    const [uj, vj] = outline[j];
+    // Square to the edge in the outline's plane, and away from its middle.
+    let nu = vj - vi;
+    let nv = ui - uj;
+    if (nu * ((ui + uj) / 2 - cu) + nv * ((vi + vj) / 2 - cv) < 0) {
+      nu = -nu;
+      nv = -nv;
+    }
+    const len = Math.hypot(nu, nv) || 1;
+    const nrm = at(nu / len, nv / len, 0);
+    const q = [
+      vert(at(ui, vi, half(i)), nrm),
+      vert(at(uj, vj, half(j)), nrm),
+      vert(at(uj, vj, -half(j)), nrm),
+      vert(at(ui, vi, -half(i)), nrm),
+    ];
+    tri(indices, positions, q[0], q[1], q[2], nrm);
+    tri(indices, positions, q[0], q[2], q[3], nrm);
+  }
+  const data = new VertexData();
+  data.positions = positions;
+  data.normals = normals;
+  data.uvs = uvs;
+  data.indices = indices;
+  return partSurface(name, data, scene);
+}
+
+/**
+ * A round member through a run of `rings` — a bole that wanders, a limb that
+ * arches, a vine that winds — smooth round its girth like the cylinders it
+ * replaces, and open at both ends, because every caller buries both.
+ *
+ * The cross-section is carried ring to ring (each ring's first axis is the
+ * last one's, squared to the new tangent) so a bend does not twist the mesh.
+ * `flute` is a radius scale per SIDE rather than per vertex, the same at every
+ * ring: an irregular section held the whole height reads as the ridged,
+ * fluted bole of a rainforest hardwood, where noise per vertex reads as a
+ * crumpled can.
+ */
+function loft(
+  name: string,
+  rings: readonly Ring[],
+  sides: number,
+  scene: Scene,
+  flute?: readonly number[],
+): Mesh {
+  const positions: number[] = [];
+  const normals: number[] = [];
+  const uvs: number[] = [];
+  const indices: number[] = [];
+  let ux = 0;
+  let uy = 0;
+  let uz = 0;
+  let run = 0;
+  for (let i = 0; i < rings.length; i++) {
+    const ring = rings[i];
+    const a = rings[Math.max(0, i - 1)];
+    const b = rings[Math.min(rings.length - 1, i + 1)];
+    let tx = b.x - a.x;
+    let ty = b.y - a.y;
+    let tz = b.z - a.z;
+    const tl = Math.hypot(tx, ty, tz) || 1;
+    tx /= tl;
+    ty /= tl;
+    tz /= tl;
+    if (i === 0) {
+      // Any axis square to the first tangent: up × t, or X × t for a member
+      // that starts out vertical.
+      const [rx, ry, rz] = Math.abs(ty) < 0.9 ? [0, 1, 0] : [1, 0, 0];
+      ux = ry * tz - rz * ty;
+      uy = rz * tx - rx * tz;
+      uz = rx * ty - ry * tx;
+    } else {
+      run += Math.hypot(ring.x - a.x, ring.y - a.y, ring.z - a.z);
+    }
+    const d = ux * tx + uy * ty + uz * tz;
+    ux -= tx * d;
+    uy -= ty * d;
+    uz -= tz * d;
+    const ul = Math.hypot(ux, uy, uz) || 1;
+    ux /= ul;
+    uy /= ul;
+    uz /= ul;
+    const vx = ty * uz - tz * uy;
+    const vy = tz * ux - tx * uz;
+    const vz = tx * uy - ty * ux;
+    for (let j = 0; j <= sides; j++) {
+      const th = (j / sides) * Math.PI * 2;
+      const c = Math.cos(th);
+      const s = Math.sin(th);
+      const nx = c * ux + s * vx;
+      const ny = c * uy + s * vy;
+      const nz = c * uz + s * vz;
+      const r = ring.r * (1 + (flute?.[j % sides] ?? 0));
+      positions.push(ring.x + nx * r, ring.y + ny * r, ring.z + nz * r);
+      normals.push(nx, ny, nz);
+      uvs.push(j / sides, run);
+    }
+  }
+  const row = sides + 1;
+  for (let i = 0; i + 1 < rings.length; i++) {
+    for (let j = 0; j < sides; j++) {
+      const a = i * row + j;
+      const b = a + row;
+      const na = normals.slice(a * 3, a * 3 + 3);
+      tri(indices, positions, a, b, a + 1, na);
+      tri(indices, positions, a + 1, b, b + 1, na);
+    }
+  }
+  const data = new VertexData();
+  data.positions = positions;
+  data.normals = normals;
+  data.uvs = uvs;
+  data.indices = indices;
+  return partSurface(name, data, scene);
+}
+
+/**
+ * Jungle hardwood: a buttressed, fluted bole running bare for two storeys and
+ * then forking into a canopy of broad leaf and fronds. The tall counterpart
+ * to the pine — where a pine is a cone you see the whole of, this is a column
+ * with the foliage held above the fight, so a stand of them closes the sky
+ * without closing the sight lines under it.
+ *
+ * Four things about the shape are load-bearing rather than decorative:
  *
  * - **The lowest leaf hangs at ~9 m**, five times clear of the 1.7 m hit
  *   sphere. The collider is the trunk and its buttress core only (see
  *   `PROP_BODIES`), so anything at chest height would be foliage rounds pass
  *   straight through — the pine's rule, and a canopy tree has far more leaf to
- *   get it wrong with.
- * - **The buttresses stay inside 1.0 m of the axis**, which is the collider's
- *   own half-width, so the flare a player walks up to is the flare that stops
- *   them. They are what makes the trunk read as tropical at all; a bare
- *   cylinder of this height is a telegraph pole.
+ *   get it wrong with. The climber below is the one leaf under it, and it is
+ *   pressed flat on the bark.
+ * - **The bole stays inside the collider's 0.5 m half-width up to the crown**
+ *   — flare, flutes and bend together — so the column a round stops on is the
+ *   column you see. The BUTTRESSES do not, and are shaped so that what is
+ *   outside is low: steep against the bole and falling away, under a metre
+ *   high at the box's corner and a surface root under 0.3 m past it. They are
+ *   what makes the trunk read as tropical at all; a bare cylinder of this
+ *   height is a telegraph pole.
  * - **The fronds are two segments, not one**, and the outer one droops harder.
  *   A single straight blade reads as a plank at any distance the fog leaves
- *   visible; the break is where the whole silhouette comes from.
+ *   visible; the break is where the whole silhouette comes from. Both are cut
+ *   to a LEAF's outline — narrow at the stalk, pointed at the tip — rather than
+ *   boxed, at the box's price (see `prism`).
  * - **The shade is the PLATES' and the silhouette is the FRONDS'**, and the
  *   split is what makes a closed canopy affordable at all. See the crown
  *   below, which carries the measurement that forced it.
+ *
+ * **Its detail comes from a stream of its OWN, and neither of the two it is
+ * handed.** `rng` is the map's shared scatter stream and every draw from it
+ * moves every tree, fern and flag walk after this one, so this takes exactly
+ * the forty-eight draws it always took, in the same order; `sub` is the veil's
+ * (below), and a draw taken from it would re-hang every curtain on the map.
+ * So the flutes, the bend, the extra buttresses, the limbs, the leaf outlines
+ * and the climber are drawn from `own`, a generator keyed off this tree's
+ * first shared draw — distinct per tree, fixed per layout, and invisible to
+ * both of the others.
  *
  * **Some of them carry the belt's mid-story, and it is a CHILD of the trunk
  * rather than a prop placed near one.** `buildLianaVeil` is the curtain and
@@ -419,6 +650,14 @@ export interface LianaHang {
  * defaults to `rng` so a one-off caller stays a two- or three-argument call;
  * `MapBuilder.scatterRegion` is what mints the real one.
  *
+ * **It is the most-placed model on its map by a wide margin** — some fourteen
+ * hundred on Greyfen — so it is budgeted as dressing, a vertex here being
+ * fourteen hundred in the scene. That is what the shapes below are chosen
+ * against: an outline where a box read as a board, a loft where a cylinder
+ * read as a pole, and nothing that only the far side of a leaf could see.
+ * Built from parts (`world/parts.ts`), like the maple, so none of it is
+ * uploaded to the device on its way to the merge.
+ *
  * Nothing here is scaled non-uniformly — `renderOutline` extrudes along vertex
  * normals and `VertexData.transform` does not re-normalise them, so a squashed
  * part grows a lopsided ink shell.
@@ -430,33 +669,108 @@ export function buildJungleTree(
   sub: () => number = rng,
 ): Mesh {
   const bark = mats.get(JUNGLE_BARK);
-  const trunk = MeshBuilder.CreateCylinder(
-    "jungle-trunk",
-    { height: 11.2, diameterTop: 0.42, diameterBottom: 1.0, tessellation: 6 },
-    scene,
-  );
-  trunk.position.y = 5.6;
-  trunk.material = bark;
+  const vine = mats.get(VINE);
+  const leaf = mats.getTranslucent(LEAF, CONFIG.graphics.translucency.canopy);
+  const leafLit = mats.getTranslucent(LEAF_LIT, CONFIG.graphics.translucency.canopy);
   // A hardwood carries its own weight — a fifth of the pine's already-slight
-  // lean, and only enough that a stand of them is not a row of posts.
-  trunk.rotation.z = (rng() - 0.5) * 0.05;
+  // lean, and only enough that a stand of them is not a row of posts. The
+  // first shared draw, and the seed of this tree's own stream (see the
+  // header): `mulberry32` hands out whole multiples of 2^-32, so the product
+  // is an exact integer and no two trees on a map share it.
+  const lean = rng();
+  const own = mulberry32(Math.floor(lean * 4294967296) ^ 0x2c1b3c6d);
 
-  // Buttress roots. Thin radial fins, leaning their tops into the trunk so the
-  // flare widens toward the ground the way a real one does.
-  const fins = 3;
+  // Everything below is in the trunk's own frame, whose origin is 5.6 m up
+  // (MapBuilder scales that and stands it on the ground), so a height above
+  // the FOOT is `h + FOOT`.
+  const FOOT = -5.6;
+  // The bole's girth, as [height above the foot, radius]: a flare into the
+  // roots, a quick narrowing to the column, and a slow taper to the crown. The
+  // whole of it is inside the collider's 0.5 m half-width from 0.4 m up, with
+  // the flutes and the bend below included — 0.47 at chest height, and 5% of
+  // flute puts that at 0.49.
+  const GIRTH: readonly Flat[] = [
+    [-0.6, 0.62],
+    [0, 0.6],
+    [0.4, 0.52],
+    [1.1, 0.47],
+    [2.6, 0.43],
+    [5.4, 0.36],
+    [7.8, 0.285],
+    [10.75, 0.2],
+  ];
+  // It wanders, a few centimetres either way, and only above head height:
+  // a straight bole of this height is the other half of the telegraph pole.
+  const bendAmp = 0.05 + own() * 0.05;
+  const bendRate = 0.35 + own() * 0.25;
+  const bendPhase = own() * Math.PI * 2;
+  const bendDir = own() * Math.PI * 2;
+  const bole = (h: number): Ring => {
+    let r = GIRTH[GIRTH.length - 1][1];
+    for (let i = 1; i < GIRTH.length; i++) {
+      if (h <= GIRTH[i][0]) {
+        const [h0, r0] = GIRTH[i - 1];
+        const [h1, r1] = GIRTH[i];
+        r = r0 + ((r1 - r0) * (h - h0)) / (h1 - h0);
+        break;
+      }
+    }
+    const w = bendAmp * Math.sin(h * bendRate + bendPhase) * Math.min(1, Math.max(0, h - 1.5) / 4);
+    return { x: Math.cos(bendDir) * w, y: h + FOOT, z: Math.sin(bendDir) * w, r };
+  };
+  const SIDES = 8;
+  const flute = Array.from({ length: SIDES }, () => (own() - 0.5) * 0.1);
+  // It stops at 10.75 m, the middle of the upper plate tier, where it used to
+  // run on to 11.2 and stand through the top of its own crown: from above, a
+  // forest of green plates each with a stump in the middle. The collider still
+  // runs to 11.2 — inside the leaf, where nothing can tell.
+  const trunk = loft("jungle-trunk", GIRTH.map(([h]) => bole(h)), SIDES, scene, flute);
+  trunk.position.y = -FOOT;
+  trunk.material = bark;
+  trunk.rotation.z = (lean - 0.5) * 0.05;
+
+  // Buttress roots: plank fins standing out of the bole, steep against it and
+  // falling away in a curve to a root that runs on along the ground. The
+  // profile is concave on purpose — a fin cut as a triangle or a box reads as
+  // cardboard propped against a post, and the curve is what reads as wood
+  // that grew there. Thick at the bole and thinning to the tail.
+  //
+  // Four or five of them. The first three take their heights from the shared
+  // stream, as the three boxes they replace did; the rest are the tree's own,
+  // and lower.
   const finTurn = rng() * Math.PI * 2;
+  const finRise = [rng(), rng(), rng()];
+  const fins = own() < 0.5 ? 4 : 5;
   for (let i = 0; i < fins; i++) {
-    const a = (i / fins) * Math.PI * 2 + finTurn;
-    const fin = MeshBuilder.CreateBox(
+    const a = (i / fins) * Math.PI * 2 + finTurn + (own() - 0.5) * 0.5;
+    const h = i < 3 ? 2.3 + finRise[i] * 0.5 : 1.5 + own() * 0.9;
+    // Where it meets the ground, and where the root running on from it sinks.
+    const foot = 0.75 + h * 0.12 + own() * 0.2;
+    const end = foot + 0.3 + own() * 0.35;
+    const fin = prism(
       `jungle-buttress${i}`,
-      { width: 0.2, height: 2.3 + rng() * 0.5, depth: 1.1 },
+      [
+        // Inside the bole, from under the ground to above where it leaves.
+        [0.1, -0.6],
+        [0.1, h + 0.15],
+        // Where it leaves the bole, and down the curve.
+        [0.4, h],
+        [0.55, h * 0.5],
+        [0.8, h * 0.2 + 0.06],
+        [foot, 0.22],
+        // The root's tail, and down into the ground under it — deep enough to
+        // stay buried on a slope the tree does not know it stands on.
+        [end, 0.05],
+        [end - 0.08, -0.6],
+      ],
+      [0.26, 0.26, 0.24, 0.2, 0.16, 0.12, 0.07, 0.08],
       scene,
+      // Inside the bole, inside the bole, and under the ground.
+      { skip: [0, 1, 7] },
     );
     fin.parent = trunk;
-    // Local to the trunk's centre: -5.6 is its foot.
-    fin.position.set(Math.sin(a) * 0.42, -4.5, Math.cos(a) * 0.42);
+    fin.position.y = FOOT;
     fin.rotation.y = a;
-    fin.rotation.x = -0.16;
     fin.material = bark;
   }
 
@@ -481,19 +795,44 @@ export function buildJungleTree(
   // Two tiers, because one rosette of plates is a parasol: the upper tier sits
   // 0.8 m higher and is turned off the lower one's spokes, so the gaps in each
   // sit over the other's leaf and the mass has depth when you stand under it.
-  const plates: [number, number, number, number][] = [
-    // count, height on the trunk, width, depth
-    [4, 4.35, 7.6, 3.0],
-    [3, 5.15, 5.6, 2.5],
+  //
+  // Each plate is a LOZENGE rather than a rectangle: pointed at both ends of
+  // its length and irregular along its sides, stated as fractions of the box
+  // it replaced and sized to within a few per cent of its area, so the sky it
+  // closes is the sky the box closed. A rosette of rectangles is a stack of
+  // boards from underneath; the same rosette of lozenges is a star of leaf.
+  const plates: [number, number, number, number, number][] = [
+    // count, height on the trunk, width, depth, thickness
+    [4, 4.35, 7.6, 3.0, 0.55],
+    [3, 5.15, 5.6, 2.5, 0.45],
   ];
-  plates.forEach(([count, y, width, depth], tier) => {
+  // The lower tier as it was laid, for the limbs that carry it.
+  const lower: { a: number; roll: number; pitch: number }[] = [];
+  plates.forEach(([count, y, width, depth, thick], tier) => {
     const turn = rng() * Math.PI * 2;
     for (let i = 0; i < count; i++) {
       const a = (i / count) * Math.PI * 2 + turn + rng() * 0.3;
-      const plate = MeshBuilder.CreateBox(
+      // Relief, so the mass is not a flat lid. `roll` turns the plate about
+      // its own long axis and `pitch` tips it along its depth — both after
+      // the yaw, so both are in the plate's own frame.
+      const roll = (rng() - 0.5) * 0.26;
+      const pitch = (rng() - 0.5) * 0.18;
+      const A = width / 2;
+      const B = depth / 2;
+      const j = () => 1 + (own() - 0.5) * 0.14;
+      const plate = prism(
         `jungle-leaf${tier}-${i}`,
-        { width, height: tier === 0 ? 0.55 : 0.45, depth },
+        [
+          [1.18 * A * j(), (own() - 0.5) * 0.5 * B],
+          [0.58 * A * j(), 1.12 * B * j()],
+          [-0.52 * A * j(), 1.08 * B * j()],
+          [-1.18 * A * j(), (own() - 0.5) * 0.5 * B],
+          [-0.58 * A * j(), -1.12 * B * j()],
+          [0.52 * A * j(), -1.08 * B * j()],
+        ],
+        thick,
         scene,
+        { plane: "xz" },
       );
       plate.parent = trunk;
       // Centred ON the axis rather than out from it: a plate is a slab of
@@ -502,23 +841,56 @@ export function buildJungleTree(
       // at a radius, below.
       plate.position.y = y;
       plate.rotation.y = a;
-      // Relief, so the mass is not a flat lid. `rotation.z` rolls the plate
-      // about its own long axis and `rotation.x` tips it along its depth —
-      // both after the yaw, so both are in the plate's own frame.
-      plate.rotation.z = (rng() - 0.5) * 0.26;
-      plate.rotation.x = (rng() - 0.5) * 0.18;
+      plate.rotation.z = roll;
+      plate.rotation.x = pitch;
       // The lit green goes up, the shaded green goes down: what a canopy shows
       // the sky is never what it shows the ground beneath it.
-      plate.material = mats.getTranslucent(
-        tier === 0 ? LEAF : LEAF_LIT,
-        CONFIG.graphics.translucency.canopy,
-      );
+      plate.material = tier === 0 ? leaf : leafLit;
       // The whole crown is what the wind moves, and the trunk under it is not
       // — `world/sway.ts` carries the argument, and the geometry that makes it
       // safe is here: a plate is centred on the axis and metres across, so the
       // third of a metre it drifts is inside its own overlap of the bole.
       marksSway(plate, "canopy");
+      if (tier === 0) lower.push({ a, roll, pitch });
     }
+  });
+
+  // The LIMBS, forking out of the bole two metres under the crown and each
+  // running up into the long arm of a lower plate. From underneath, which is
+  // where anybody on this map looks at a canopy from, they are what says the
+  // crown is CARRIED — without them it was a lid balanced on a post.
+  //
+  // Each ends at the middle of its plate's thickness, a metre and a half or
+  // so out along the arm — computed through the plate's own roll and pitch,
+  // not guessed at — and that is the ash's rule for its reason: the crown
+  // sways and the limb does not (a limb is a long thin thing lying along the
+  // ramp, the trunk's argument at a shorter length), so the join has to be
+  // BURIED. The arm is over three metres across there against the third of a
+  // metre the plate drifts, and a tip ~0.1 m thick sits inside a slab 0.55 m
+  // deep with its roll already accounted for.
+  const limbs = own() < 0.45 ? 4 : 3;
+  const bare = limbs === 4 ? -1 : Math.floor(own() * 4);
+  lower.forEach((p, k) => {
+    if (k === bare) return;
+    const reach = new Vector3(1.4 + own() * 0.4, 0, (own() - 0.5) * 0.6);
+    const tip = Vector3.TransformCoordinates(reach, Matrix.RotationYawPitchRoll(p.a, p.pitch, p.roll));
+    tip.y += plates[0][1];
+    const from = bole(7.7 + own() * 0.7);
+    const along = (f: number, rise: number, r: number): Ring => ({
+      x: from.x + (tip.x - from.x) * f,
+      y: from.y + (tip.y - from.y) * rise,
+      z: from.z + (tip.z - from.z) * f,
+      r,
+    });
+    // Steep out of the fork and flattening into the leaf.
+    const limb = loft(
+      `jungle-limb${k}`,
+      [along(0, 0, 0.22), along(0.45, 0.72, 0.16), along(1, 1, 0.1)],
+      6,
+      scene,
+    );
+    limb.parent = trunk;
+    limb.material = bark;
   });
 
   // Two rings of fronds, offset from each other so the gaps in one sit over the
@@ -530,7 +902,7 @@ export function buildJungleTree(
   //
   // The count is a budget as much as a shape. A canopy tree is the most-drawn
   // object on this map by a wide margin — there are around fourteen hundred of
-  // them — so a frond costs 1,400 boxes wherever it is added, and the ring
+  // them — so a frond costs 1,400 blades wherever it is added, and the ring
   // counts were cut to the point where taking one more measurably opened the
   // sky (see the closure figures in `greyfen/layout.ts`).
   const rings: [number, number, number, number, number][] = [
@@ -547,10 +919,29 @@ export function buildJungleTree(
     for (let i = 0; i < count; i++) {
       const a = (i / count) * Math.PI * 2 + turn + rng() * 0.25;
       const tilt = droop + rng() * 0.16;
-      const blade = MeshBuilder.CreateBox(
+      // Narrow at the stalk and widening to the break, where the tip takes
+      // over — or, on the upper ring, which has no tip, pointed there itself.
+      const w = width / 2;
+      const l = len / 2;
+      const blade = prism(
         `jungle-frond${ring}-${i}`,
-        { width, height: 0.14, depth: len },
+        ring === 0
+          ? [
+              [-0.4 * w, -l],
+              [0.4 * w, -l],
+              [0.96 * w, l],
+              [-0.96 * w, l],
+            ]
+          : [
+              [-0.4 * w, -l],
+              [0.4 * w, -l],
+              [w, 0.1 * len],
+              [0, l],
+              [-w, 0.1 * len],
+            ],
+        0.14,
         scene,
+        { plane: "xz" },
       );
       blade.parent = trunk;
       blade.position.set(
@@ -562,19 +953,16 @@ export function buildJungleTree(
       blade.rotation.x = tilt;
       // The lit green goes on the upper ring, for the reason the plates split
       // the same way.
-      blade.material = mats.getTranslucent(
-        ring === 0 ? LEAF : LEAF_LIT,
-        CONFIG.graphics.translucency.canopy,
-      );
+      blade.material = ring === 0 ? leaf : leafLit;
       // With the plates, and at the same height, so the crown travels as one
       // piece rather than the fronds shearing off the mass they break the edge
       // of. The tip below inherits it for the same reason.
       marksSway(blade, "canopy");
 
       // The drooping tip, hung off the blade's own far end so it rides the
-      // parent's yaw and tilt. Its centre is derived from its own break angle
-      // rather than authored: a fixed offset leaves the joint open at one
-      // angle and the two segments overlapping at another.
+      // parent's yaw and tilt, and pointed. Its centre is derived from its own
+      // break angle rather than authored: a fixed offset leaves the joint open
+      // at one angle and the two segments overlapping at another.
       //
       // **Only on the LOWER ring**, which is the one break in the "two
       // segments, not one" rule and is a fact about where the ring sits rather
@@ -582,15 +970,24 @@ export function buildJungleTree(
       // blades are shorter, so its tip breaks over INSIDE the mass the lower
       // ring and the plates already make: it is drawn against leaf from below
       // and against leaf from above, and the only silhouette it was ever in is
-      // the lower ring's. Fourteen hundred trees, so that is 1,400 boxes drawn
+      // the lower ring's. Fourteen hundred trees, so that is 1,400 blades drawn
       // for an edge nothing can see.
       if (ring === 0) {
         const brk = 0.5 + rng() * 0.3;
         const tipLen = len * 0.8;
-        const tip = MeshBuilder.CreateBox(
+        const t = tipLen / 2;
+        const tip = prism(
           `jungle-tip${ring}-${i}`,
-          { width: width * 0.72, height: 0.12, depth: tipLen },
+          [
+            [-0.88 * w, -t],
+            [0.88 * w, -t],
+            [0.8 * w, 0.05 * tipLen],
+            [0, t],
+            [-0.8 * w, 0.05 * tipLen],
+          ],
+          0.12,
           scene,
+          { plane: "xz" },
         );
         tip.parent = blade;
         tip.rotation.x = brk;
@@ -606,6 +1003,76 @@ export function buildJungleTree(
     }
   });
 
+  // A CLIMBER on some of them — a vine winding up the bole with broad leaves
+  // pressed flat to the bark, the aroid every rainforest trunk carries. It is
+  // the one leaf under the canopy, and it may be because it is ON the trunk:
+  // flat on a face and never more than a hand's breadth off the bark, so it
+  // changes nothing a round or a body meets. It is also the only detail on
+  // this tree at the height a player actually looks, which is what it is for.
+  // Not every tree, for the veil's reason — a climber on every trunk is a
+  // plantation's stakes.
+  if (own() < 0.3) {
+    const from = 0.25;
+    const to = 5.5 + own() * 2.5;
+    const turns = (1.1 + own() * 0.8) * (own() < 0.5 ? 1 : -1);
+    const phase = own() * Math.PI * 2;
+    // Round the bole a clear hand off the widest flute, at `t` of the way up.
+    const wind = (t: number, off: number): Ring & { th: number } => {
+      const b = bole(from + (to - from) * t);
+      const th = phase + turns * Math.PI * 2 * t;
+      const r = b.r * 1.05 + off;
+      return { x: b.x + Math.sin(th) * r, y: b.y, z: b.z + Math.cos(th) * r, r: 0, th };
+    };
+    const steps = 10;
+    const stem = loft(
+      "jungle-climber",
+      Array.from({ length: steps }, (_, i) => ({
+        ...wind(i / (steps - 1), 0.04),
+        r: 0.045 - (0.02 * i) / (steps - 1),
+      })),
+      4,
+      scene,
+    );
+    stem.parent = trunk;
+    stem.material = vine;
+    // The leaves are the canopy's green but NOT its material, and the
+    // difference is a draw call a block. The crown's leaf is translucent and
+    // marked to sway; this is neither — a leaf flat on bark has no sky behind
+    // it to glow against, and it may not drift off the trunk it grips — and a
+    // translucent mesh that disagrees with its fellows about the sway mark is
+    // a merge group of its own in every block with a climber in it. Plain
+    // matte, it goes into the block's palette with the bark (see
+    // `mergeByMaterial`) and costs nothing but its vertices.
+    const blade0 = mats.get(LEAF);
+    const count = 5 + Math.floor(own() * 4);
+    for (let k = 0; k < count; k++) {
+      const at = wind((k + 0.5 + (own() - 0.5) * 0.6) / count, 0.035);
+      // A broad blade hanging from its stalk, a hand's length and pointed —
+      // the aroid's, not the creeper's fingernail: this one is read at the
+      // ten metres a stand is crossed at, not at a wall's arm's length.
+      const s = 0.8 + own() * 0.4;
+      const blade = prism(
+        "jungle-climber-leaf",
+        [
+          [0, 0],
+          [0.11 * s, -0.09 * s],
+          [0, -0.34 * s],
+          [-0.11 * s, -0.09 * s],
+        ],
+        0.03,
+        scene,
+      );
+      blade.parent = trunk;
+      blade.position.set(at.x, at.y, at.z);
+      // Face out from the bole (the blade's own +Z), turned in the bark's
+      // plane, and its tip lifted off the bark a little.
+      blade.rotation.y = at.th;
+      blade.rotation.z = (own() - 0.5) * 1.2;
+      blade.rotation.x = -(0.2 + own() * 0.3);
+      blade.material = k % 3 === 0 ? vine : blade0;
+    }
+  }
+
   // The mid-story. Not every tree: a belt where every trunk wore the same
   // curtain would read as a manufactured screen, and the gaps are what let the
   // layer scatter through the stand rather than ring each trunk in it.
@@ -620,8 +1087,8 @@ export function buildJungleTree(
   // valley is about a hundred and sixty veils, which is what the sparse one
   // had: the layer keeps its absolute weight while the forest around it
   // triples. It is also the most expensive thing this builder can draw (a veil
-  // is more triangles than the tree it hangs on), so the number is worth
-  // getting right twice over.
+  // is about as many triangles as the tree it hangs on), so the number is
+  // worth getting right twice over.
   if (sub() < 0.16) {
     // The collar hangs at 4.05 above the trunk's own centre — 9.65 m up a
     // scale-1 tree, which is just under the lower plate tier (4.07 to 4.63 in
