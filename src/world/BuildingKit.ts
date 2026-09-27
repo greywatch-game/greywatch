@@ -253,6 +253,9 @@ export type BuilderKind = keyof typeof BUILDERS;
  * what lies at its head off where it stands, finds its head as the end the
  * ground falls away under, and cuts each pile, brace, sill and step to the
  * ground under it.
+ * The kiln seeds which of its fire mouths are firing, where its bonts are
+ * tightened, its weathered brickwork and what lies at its foot off where it
+ * stands, and carries its plinth down to the lowest ground round the drum.
  */
 export const CONFORMS_TO_TERRAIN: ReadonlySet<BuilderKind> = new Set([
   "road",
@@ -275,4 +278,5 @@ export const CONFORMS_TO_TERRAIN: ReadonlySet<BuilderKind> = new Set([
   "well",
   "bridge",
   "jetty",
+  "kiln",
 ] as const);
