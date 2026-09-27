@@ -584,6 +584,15 @@ export interface Structure {
    */
   paneMeshes: Mesh[];
   panes: PaneSpec[];
+  /**
+   * The parts among `meshes` built from finished vertices (`surface`,
+   * `groundSurface`) rather than as one primitive — a batch of a thousand
+   * rubble stones, a contoured road — so that their BOUNDS are not their
+   * shape. What reads a part's bounds as the part itself (the grass mask's
+   * refusal, through `GameMap.partBoxes`) skips these, or one burnt
+   * cottage's stones would bald the whole square they stand in.
+   */
+  freeform: Set<Mesh>;
 }
 
 // --- village palette -------------------------------------------------------
@@ -853,6 +862,7 @@ export class Build implements Structure {
   sounds: LocalSound[] = [];
   paneMeshes: Mesh[] = [];
   panes: PaneSpec[] = [];
+  freeform = new Set<Mesh>();
 
   constructor(
     private scene: Scene,
@@ -970,6 +980,7 @@ export class Build implements Structure {
     );
     m.material = this.mats.get(color, this.depthUnits);
     this.meshes.push(m);
+    this.freeform.add(m);
     return m;
   }
 
@@ -991,6 +1002,7 @@ export class Build implements Structure {
     );
     m.material = this.groundMaterial(paving);
     this.meshes.push(m);
+    this.freeform.add(m);
     return m;
   }
 

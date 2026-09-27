@@ -717,7 +717,8 @@ src/
     grassMask.ts        # Where grass grows, baked once per map into one
                         #   RGBA8 grid: the ground's height, density, height
                         #   multiplier and the WET bit. Owns the refusals (a
-                        #   road, a collider, water makes reeds) and the
+                        #   road, a collider, a structure's drawn part on the
+                        #   ground, water makes reeds) and the
                         #   field's frayed EDGE, and the per-patch summary the
                         #   GrassSystem culls with. Pure — no scene
     rng.ts              # mulberry32 — the seeded PRNG world-building uses

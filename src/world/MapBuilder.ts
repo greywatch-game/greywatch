@@ -78,6 +78,7 @@ import {
 } from "./boxIndex";
 import { ridgeSegments } from "./Ridge";
 import { roadNetwork, type RoadNetwork } from "./roadPaths";
+import { MAX_HEIGHT_SCALE } from "./grassMask";
 import { onRoad, type RoadFootprint, roadFootprint, roadTopAt } from "./roads";
 import { TerrainField, terrainPatches, waterY } from "./TerrainField";
 import { NavGrid } from "./NavGrid";
@@ -217,7 +218,8 @@ export interface WaterRect {
  * combatants walk straight through (the shader bends the blades around
  * them). Consumed by the GrassSystem, not by the MapBuilder: the rects are
  * baked into one mask (`world/grassMask.ts`), which refuses a collider's
- * footprint and a carriageway and frays the fields' joint edge, and the
+ * footprint, a structure's drawn parts standing in it (`GameMap.partBoxes`)
+ * and a carriageway and frays the fields' joint edge, and the
  * blades are placed around the eye. A rect states how LUSH, never how many.
  */
 export interface GrassRect {
@@ -466,6 +468,20 @@ export interface GameMap {
    * `colliderBoxes`: `MapBuilder.recordBox` is the one place either grows.
    */
   colliderAlbedo?: Float32Array;
+  /**
+   * Every placed structure's VISUAL parts that stand where grass grows, as
+   * boxes in world space — the plank floor of a barn, a plinth, a doorstep, a
+   * manger. What stands on them is refused by the grass mask exactly as the
+   * inside of a collider is, because most of a building that meets the ground
+   * is drawn and not solid: the barn's floor never had a collider, and every
+   * blade under it grew straight up through the boards.
+   *
+   * **Client-only, like `colliderAlbedo`, and it decides nothing.** It is not
+   * a collider, not in the nav grid, not on the wire and not in the bake; the
+   * one thing that reads it is `GrassSystem`. Roads are not in it — their
+   * footprint is `roads`, which feathers where a box would cut.
+   */
+  partBoxes?: WorldBox[];
   /**
    * The `strut` boxes — ray geometry with no body behind it — grouped by the
    * collider mesh each group was merged into.
@@ -897,6 +913,8 @@ export class MapBuilder {
    */
   private boxAlbedo: number[] = [];
   private albedoHint: [number, number, number] = [...NEUTRAL_ALBEDO];
+  /** Every placement's visual parts near the ground — see `GameMap.partBoxes`. */
+  private partBoxes: WorldBox[] = [];
 
   /**
    * The `strut` boxes, grouped by the placement whose collider mesh they were
@@ -1058,6 +1076,7 @@ export class MapBuilder {
     const terrainColliders: Mesh[] = [];
     this.boxes = [];
     this.boxAlbedo = [];
+    this.partBoxes = [];
     // The rim and the ground plane's stand-ins are the floor as far as a
     // bounce is concerned, so the valley pass records its boxes in its colour.
     this.setAlbedoHint(Color3.FromHexString(env.floorColor));
@@ -1205,6 +1224,11 @@ export class MapBuilder {
       // the merge below disposes these meshes — what it hands back wears the
       // palette material, which has no single colour to read.
       this.albedoFromMeshes(s.meshes);
+      // …and where its parts stand, for the same reason and against the same
+      // deadline: after the merge there is no part left to ask. A road is not
+      // asked at all — its footprint is `this.roads`, which feathers the grass
+      // into the verge where a box would cut it off square.
+      if (!isRoad) this.recordParts(s, origin, rotY, terrain);
 
       for (const merged of mergeByMaterial(s.meshes, p.kind)) {
         merged.rotation.y = rotY;
@@ -1490,6 +1514,7 @@ export class MapBuilder {
       colliders,
       colliderBoxes: this.boxes,
       colliderAlbedo: Float32Array.from(this.boxAlbedo),
+      partBoxes: this.partBoxes,
       rayGroups: this.rayGroups,
       boxGroups: this.boxGroups,
       panes: this.panes,
@@ -2238,6 +2263,115 @@ export class MapBuilder {
     return world;
   }
 
+  /**
+   * Records each of a placed structure's visual parts that stands where grass
+   * grows as a box in world space — `GameMap.partBoxes`.
+   *
+   * The box is the part's own vertex bounds carried through its transform, so
+   * whatever a builder did to a part after `Build` made it (a `reframe`, a
+   * `scaling.x`) is what is recorded. A part turned only about the vertical
+   * keeps its shape as an oriented box; one tilted out of it is recorded as
+   * the upright box that contains it, which is the collider test's own
+   * approximation for a ramp. `Structure.freeform` parts are skipped — their
+   * bounds are a batch's, not a shape's.
+   *
+   * Only parts that can reach into a blade are kept: the ground under the
+   * box's centre and corners, against the tallest blade a rect can grow. The
+   * mask repeats the test exactly, per texel; this is only what keeps a
+   * 900 m town's roofs and upper floors out of the list.
+   */
+  private recordParts(
+    s: Structure,
+    origin: Vector3,
+    rotY: number,
+    terrain: TerrainField,
+  ): void {
+    const reach = CONFIG.grass.heightMax * MAX_HEIGHT_SCALE;
+    for (const m of s.meshes) {
+      if (s.freeform.has(m)) continue;
+      const pos = m.getVerticesData(VertexBuffer.PositionKind);
+      if (!pos || pos.length < 3) continue;
+      let x0 = Infinity;
+      let y0 = Infinity;
+      let z0 = Infinity;
+      let x1 = -Infinity;
+      let y1 = -Infinity;
+      let z1 = -Infinity;
+      for (let i = 0; i < pos.length; i += 3) {
+        const x = pos[i];
+        const y = pos[i + 1];
+        const z = pos[i + 2];
+        if (x < x0) x0 = x;
+        if (x > x1) x1 = x;
+        if (y < y0) y0 = y;
+        if (y > y1) y1 = y;
+        if (z < z0) z0 = z;
+        if (z > z1) z1 = z;
+      }
+      // Row-vector convention: a point is `v * M`, so rows 0-2 are the part's
+      // own axes (scaled) in the structure's frame and row 3 its position.
+      const M = m.computeWorldMatrix(true).m;
+      const lx = (x0 + x1) / 2;
+      const ly = (y0 + y1) / 2;
+      const lz = (z0 + z1) / 2;
+      const ex = (x1 - x0) / 2;
+      const ey = (y1 - y0) / 2;
+      const ez = (z1 - z0) / 2;
+      const sx = lx * M[0] + ly * M[4] + lz * M[8] + M[12];
+      const sy = lx * M[1] + ly * M[5] + lz * M[9] + M[13];
+      const sz = lx * M[2] + ly * M[6] + lz * M[10] + M[14];
+      const axx = M[0] * ex;
+      const axy = M[1] * ex;
+      const axz = M[2] * ex;
+      const ayx = M[4] * ey;
+      const ayy = M[5] * ey;
+      const ayz = M[6] * ey;
+      const azx = M[8] * ez;
+      const azy = M[9] * ez;
+      const azz = M[10] * ez;
+      const flatX = Math.hypot(axx, axz);
+      const flatZ = Math.hypot(azx, azz);
+      let w: number;
+      let h: number;
+      let d: number;
+      let yaw: number;
+      const upright =
+        Math.abs(axy) <= 1e-3 * flatX &&
+        Math.abs(azy) <= 1e-3 * flatZ &&
+        Math.abs(ayx) + Math.abs(ayz) <= 1e-3 * Math.abs(ayy);
+      if (upright) {
+        w = 2 * flatX;
+        h = 2 * Math.abs(ayy);
+        d = 2 * flatZ;
+        // Babylon's `RotationY(t)` has rows (cos, 0, -sin) and (sin, 0, cos),
+        // so either horizontal axis says the turn; the longer says it better.
+        yaw = flatX >= flatZ ? Math.atan2(-axz, axx) : Math.atan2(azx, azz);
+      } else {
+        w = 2 * (Math.abs(axx) + Math.abs(ayx) + Math.abs(azx));
+        h = 2 * (Math.abs(axy) + Math.abs(ayy) + Math.abs(azy));
+        d = 2 * (Math.abs(axz) + Math.abs(ayz) + Math.abs(azz));
+        yaw = 0;
+      }
+      const at = rotateY(sx, sy, sz, rotY).addInPlace(origin);
+      const turn = rotY + yaw;
+      const bottom = at.y - h / 2;
+      const top = at.y + h / 2;
+      const c = Math.cos(turn);
+      const sn = Math.sin(turn);
+      let lo = terrain.heightAt(at.x, at.z);
+      let hi = lo;
+      for (const [u, v] of CORNERS) {
+        const du = (u * w) / 2;
+        const dv = (v * d) / 2;
+        const g = terrain.heightAt(at.x + du * c + dv * sn, at.z - du * sn + dv * c);
+        if (g < lo) lo = g;
+        if (g > hi) hi = g;
+      }
+      if (bottom >= hi + reach || top <= lo + 0.05) continue;
+      this.partBoxes.push({ w, h, d, cx: at.x, cy: at.y, cz: at.z, rotX: 0, rotY: turn });
+    }
+  }
+
   private setAlbedoHint(c: Color3): void {
     this.albedoHint = [c.r, c.g, c.b];
   }
@@ -2940,6 +3074,14 @@ function flatten(root: Mesh): Mesh[] {
   }
   return out;
 }
+
+/** A box's four corners, as signs on its two horizontal half-extents. */
+const CORNERS = [
+  [-1, -1],
+  [1, -1],
+  [1, 1],
+  [-1, 1],
+] as const;
 
 /** Rotates a local offset about the Y axis. */
 function rotateY(x: number, y: number, z: number, angle: number): Vector3 {

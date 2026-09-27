@@ -1950,8 +1950,18 @@ and in the fourth the height multiplier with the WET bit on top. It is where
 every refusal lives — a carriageway (sampled 2x2 per texel so its edge is a
 coverage, not a staircase), a collider's footprint (rasterised box by box and
 padded most of a texel, so the filtered edge lies outside the wall rather than
-straddling it), the ground under a water rect's surface (a REED BED: thinner,
+straddling it), a structure's DRAWN part standing in the grass
+(`GameMap.partBoxes`, the same test with the pad capped at half the part's own
+narrow side), the ground under a water rect's surface (a REED BED: thinner,
 taller, no turf) — and it is pure, so every client bakes the same field.
+**The parts are there because most of a building that meets the ground is not
+solid**: a barn's plank floor, a plinth, a doorstep and a manger are visual
+boxes, and asking only the colliders grew a meadow up through the barn's floor.
+They are each part's own vertex bounds carried through its transform, taken in
+`MapBuilder.recordParts` before the merge takes the parts away; a part built
+from finished vertices (`Structure.freeform` — a batch of rubble, a contoured
+road) is skipped, its bounds being a batch's rather than a shape's, and roads
+are not asked at all because their footprint already feathers the verge.
 **The shader reads it by hand**, four `textureLoad`s and a bilinear mix,
 because the height is split over two bytes and filtering the bytes would blend
 a carry into the wrong one; the wet bit is taken out of the alpha before
