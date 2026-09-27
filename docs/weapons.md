@@ -2246,9 +2246,16 @@ first**, the way a gun is drawn on paper — a profile point costs nothing and a
 slope is what a box cannot give. **State a grip by its two FACES**
 (`spanRing(y, w, front, back)`) rather than a centre and a depth, because a
 finger groove moves the front face and a palm swell the back, and nothing else.
-**Step a width down as the part rises** (the rifle's body, deck and rail are
-80, 68 and 58 mm), because the shelf that makes is the line a real receiver
-has and one slab cannot. **Sink a panel by building its RIM** — the stock is a
+**Step a width down as the part rises** (the rifle's belt, wall, deck and rail
+are 86, 72, 64 and 58 mm), because the shelf that makes is the line a real
+receiver has and one slab cannot — and **give each shelf a real chamfer**, 6 mm
+rather than a bevel's 3, because the cel shader bands by facing and a sloped
+face is a different tone the whole length of the part, where a 4 mm step is a
+pencil line. **Divide a long part along its LENGTH as well as up its height**:
+the rifle's upper was one depth for 80 cm and read as a plank however many
+inlays were laid on it, and what fixed it was a separate handguard block with a
+gap in front of the belt, a swept nose, and one line of port, slot and cuts
+running down the flank. **Sink a panel by building its RIM** — the stock is a
 thin web with a frame stood proud of it on both faces, since a slab cannot be
 cut into and a recess is most of what makes a moulded part read as moulded.
 

@@ -113,7 +113,11 @@ const SUPPORT_ELBOW = new Vector3(-0.3, -0.5, 0.12);
  * at a real rail's slot pitch, a shallow polymer lower whose front slants down
  * to the magwell's mouth, an oversized square guard, a straight 7.62
  * magazine, a long exposed barrel, and a side-folding stock that is a raised
- * frame round a recessed panel with the comb moulded in. Every part with a
+ * frame round a recessed panel with the comb moulded in. The upper is STEPPED
+ * rather than even — belt, wall, deck and rail at four widths, a bolted-on
+ * handguard forward of the lower — and the lower's flank is framed like the
+ * stock's, because a part this long seen side-on has to be divided along its
+ * length as well as up its height or it reads as a plank. Every part with a
  * character is a bevelled profile slab or a contoured loft — see
  * `docs/weapons.md`'s procedural-models section, which is the design language
  * the rest of the kit follows.
@@ -133,24 +137,56 @@ export function buildRifle(
   const root = new TransformNode(`${prefix}_rifle`, scene);
   const b = new WeaponBuild(scene, mats, prefix, root);
 
-  // --- upper receiver: the SCAR's spine. One long, deep, even aluminium
-  // extrusion from the stock hinge to the gas block, with the lower hung under
-  // its rear half and a full-length rail on top. Two slabs, because the real
-  // one narrows a step at the shoulder under the rail ---
+  // --- upper receiver: the SCAR's spine. One long, deep aluminium extrusion
+  // from the stock hinge to the gas block, with the lower hung under its rear
+  // half and a full-length rail on top.
+  //
+  // It is NOT one depth, and one depth is what made it read as a plank: seen
+  // side-on it was 80 cm of a single plane with inlays laid on it. The real
+  // extrusion is stepped, so it is built as four widths standing on each
+  // other — a proud BELT along the bottom, the WALL the port and the channel
+  // are cut in, the DECK under the rail, and the rail — each shelf a line the
+  // ink draws the whole length of the weapon. Forward of the lower, the belt
+  // gives way to the bolted-on HANDGUARD that carries the side and bottom
+  // rails, so the length is divided as well as the height ---
   b.slab("upper", BODY, [
     [-0.265, -0.022],
-    [0.548, -0.022],
+    [0.532, -0.022],
+    [0.548, 0],
     [0.548, 0.046],
     [0.542, 0.056],
     [-0.265, 0.056],
-  ], 0.08, 0.004);
+  ], 0.072, 0.004);
+  // The belt, over the lower: where the receiver is thickest, and where the
+  // takedown pins go through it.
+  b.slab("upperBelt", BODY, [
+    [-0.265, -0.022],
+    [0.186, -0.022],
+    [0.186, 0.004],
+    [0.18, 0.01],
+    [-0.265, 0.01],
+  ], 0.086, 0.006);
+  // The handguard: the widest part of the upper and a separate piece, so a
+  // gap stands between it and the belt, its nose is swept back under the
+  // barrel, and its clamp bolts are showing.
+  b.slab("handguard", BODY, [
+    [0.192, -0.022],
+    [0.5, -0.022],
+    [0.524, 0.002],
+    [0.524, 0.014],
+    [0.2, 0.014],
+    [0.192, 0.006],
+  ], 0.09, 0.007);
+  for (const z of [0.225, 0.345]) {
+    b.pin("hgBolt", METAL, 0.01, 0.094, 0, -0.004, z);
+  }
   b.slab("upperDeck", BODY, [
     [-0.25, 0.052],
     [0.54, 0.052],
     [0.54, 0.064],
     [0.534, 0.07],
     [-0.25, 0.07],
-  ], 0.068, 0.004);
+  ], 0.064, 0.006);
   // The full-length top rail: a real picatinny, dovetailed teeth on a spine
   // with open slots between them, at a real rail's pitch — a coarse one is
   // the quickest way to make a rifle read as a toy. Its teeth top out at
@@ -158,17 +194,37 @@ export function buildRifle(
   b.picatinny("topRail", 0, 0.07, -0.25, 40, { width: 0.058, height: RAIL_TOP - 0.07 });
 
   // Receiver side detail, as dark inlays standing a hair proud of the face:
-  // the long charging-handle channel on the left, the three lightening slots
+  // the long charging-handle channel, the three lightening slots
   // forward on both sides, and the ejection port on the right. These are what
   // make a flat extrusion read as a machined receiver rather than a plank.
-  b.slab("chChannel", RUBBER, [
-    [-0.16, 0.026],
-    [0.3, 0.026],
-    [0.304, 0.03],
-    [0.3, 0.034],
-    [-0.16, 0.034],
-    [-0.164, 0.03],
-  ], 0.003, 0, -0.0405);
+  //
+  // The channel runs in a raised RIB of its own, rounded at both ends — a
+  // slot laid straight on the wall was a pencil line on a plank. The SCAR's
+  // charging handle swaps sides, so the right wall carries the same slot,
+  // blanked, running forward from the port: port, slot and lightening cuts
+  // are then one line down that flank.
+  const channel = (side: -1 | 1, rear: number) => {
+    b.slab("chRib", BODY, [
+      [rear - 0.012, 0.024],
+      [rear - 0.006, 0.02],
+      [0.31, 0.02],
+      [0.316, 0.024],
+      [0.316, 0.036],
+      [0.31, 0.04],
+      [rear - 0.006, 0.04],
+      [rear - 0.012, 0.036],
+    ], 0.006, 0.0015, side * 0.039);
+    b.slab("chChannel", RUBBER, [
+      [rear, 0.026],
+      [0.3, 0.026],
+      [0.304, 0.03],
+      [0.3, 0.034],
+      [rear, 0.034],
+      [rear - 0.004, 0.03],
+    ], 0.003, 0, side * 0.0435);
+  };
+  channel(-1, -0.16);
+  channel(1, 0.146);
   for (let i = 0; i < 3; i++) {
     const zc = 0.35 + i * 0.056;
     b.slab("lightSlot", RUBBER, [
@@ -178,14 +234,14 @@ export function buildRifle(
       [zc + 0.022, 0.03],
       [zc + 0.017, 0.035],
       [zc - 0.017, 0.035],
-    ], 0.083, 0);
+    ], 0.075, 0);
   }
   b.slab("ejectPort", RUBBER, [
     [0.005, 0.024],
     [0.115, 0.024],
     [0.115, 0.05],
     [0.005, 0.05],
-  ], 0.003, 0, 0.0405);
+  ], 0.003, 0, 0.0375);
   // The brass deflector: a swept hump behind the port.
   b.slab("deflector", BODY, [
     [-0.045, 0.028],
@@ -193,29 +249,31 @@ export function buildRifle(
     [-0.002, 0.036],
     [-0.02, 0.054],
     [-0.045, 0.054],
-  ], 0.012, 0.003, 0.044);
+  ], 0.012, 0.003, 0.042);
   // A thin frame round the port, standing a hair proud of the receiver, so
   // it reads as an opening cut into the side rather than a patch laid on it.
-  b.box("portRim", BODY, 0.003, 0.004, 0.118, 0.042, 0.052, 0.06);
-  b.box("portRim", BODY, 0.003, 0.004, 0.118, 0.042, 0.022, 0.06);
-  b.box("portRim", BODY, 0.003, 0.034, 0.004, 0.042, 0.037, 0.117);
-  b.box("portRim", BODY, 0.003, 0.034, 0.004, 0.042, 0.037, 0.003);
-  // Takedown pins and a few screw heads, small — the size a real one is —
-  // and the head of the bolt that clamps the barrel into the upper.
-  for (const [z, y] of [[0.13, -0.008], [IRON_REAR_Z, -0.008], [0.25, 0.012], [0.47, 0.012]] as const) {
-    b.pin("pin", METAL, 0.009, 0.084, 0, y, z);
+  b.box("portRim", BODY, 0.003, 0.004, 0.118, 0.0385, 0.052, 0.06);
+  b.box("portRim", BODY, 0.003, 0.004, 0.118, 0.0385, 0.022, 0.06);
+  b.box("portRim", BODY, 0.003, 0.034, 0.004, 0.0385, 0.037, 0.117);
+  b.box("portRim", BODY, 0.003, 0.034, 0.004, 0.0385, 0.037, 0.003);
+  // Takedown pins through the belt, small — the size a real one is — and the
+  // head of the bolt that clamps the barrel into the upper, on the wall over
+  // the handguard's nose.
+  for (const z of [0.13, IRON_REAR_Z]) {
+    b.pin("pin", METAL, 0.009, 0.09, 0, -0.008, z);
   }
-  b.pin("barrelBolt", METAL, 0.013, 0.086, 0, 0.014, 0.52);
+  b.pin("barrelBolt", METAL, 0.013, 0.076, 0, 0.03, 0.515);
   // Charging handle: a small folding lever at the front of its channel.
   b.box("chArm", POLYMER, 0.03, 0.01, 0.018, -0.055, 0.03, 0.29);
   b.box("chKnob", POLYMER, 0.012, 0.018, 0.03, -0.069, 0.03, 0.285);
 
-  // Short side rails low on the front of the upper, and the bottom rail the
-  // foregrip clamps to — at the same fine pitch as the top.
+  // Short side rails on the handguard's flanks, and the bottom rail the
+  // foregrip clamps to — at the same fine pitch as the top, and both stopping
+  // short of the handguard's swept nose.
   for (const [side, facing] of [[-1, "left"], [1, "right"]] as const) {
-    b.picatinny("sideRail", side * 0.04, -0.005, 0.392, 8, { width: 0.022, height: 0.008, facing });
+    b.picatinny("sideRail", side * 0.045, -0.004, 0.37, 7, { width: 0.022, height: 0.008, facing });
   }
-  b.picatinny("bottomRail", 0, -0.022, 0.21, 17, { width: 0.044, height: 0.009, facing: "down" });
+  b.picatinny("bottomRail", 0, -0.022, 0.21, 15, { width: 0.044, height: 0.009, facing: "down" });
 
   // --- lower receiver: polymer, shallow, hung under the rear of the upper.
   // Its front is one steep slant from the upper down to the magwell's mouth,
@@ -234,13 +292,51 @@ export function buildRifle(
     [-0.245, -0.07],
     [-0.262, -0.05],
   ], 0.072, 0.005);
-  // The mouth of the well, a little wider than the lower — the funnel.
+  // The mouth of the well, a little wider than the lower — the funnel — and
+  // a band as proud as it running up the front slant to the handguard, so the
+  // well is FRAMED on the flank rather than being one more flat plane.
   b.slab("magwellLip", POLYMER, [
     [-0.014, -0.138],
     [0.146, -0.138],
     [0.14, -0.122],
     [-0.018, -0.122],
-  ], 0.078, 0.003);
+  ], 0.082, 0.003);
+  b.slab("magwellFront", POLYMER, [
+    [0.186, -0.018],
+    [0.2, -0.018],
+    [0.2, -0.03],
+    [0.15, -0.126],
+    [0.136, -0.126],
+    [0.184, -0.034],
+  ], 0.082, 0.003);
+  // The flat behind the well carries the same rim back to the grip, up the
+  // lower's back and forward along its top under the belt, so the whole flank
+  // is a panel sunk inside its own frame — the stock's construction, and the
+  // one thing that stops the lower being the rifle's biggest flat plane.
+  b.slab("lowerSkirt", POLYMER, [
+    [-0.016, -0.126],
+    [-0.04, -0.1],
+    [-0.2, -0.1],
+    [-0.196, -0.09],
+    [-0.036, -0.09],
+    [-0.008, -0.122],
+  ], 0.082, 0.0025);
+  b.slab("lowerBack", POLYMER, [
+    [-0.2, -0.1],
+    [-0.245, -0.07],
+    [-0.262, -0.05],
+    [-0.262, -0.018],
+    [-0.25, -0.018],
+    [-0.25, -0.048],
+    [-0.236, -0.066],
+    [-0.196, -0.09],
+  ], 0.082, 0.0025);
+  b.slab("lowerTop", POLYMER, [
+    [-0.262, -0.018],
+    [0.186, -0.018],
+    [0.182, -0.026],
+    [-0.262, -0.026],
+  ], 0.082, 0.0025);
   // Small, dark controls: magazine release at the guard, bolt catch above
   // it, and the ambidextrous selector over the grip.
   b.box("magRelease", POLYMER, 0.006, 0.014, 0.016, 0.037, -0.085, -0.012);
@@ -261,7 +357,7 @@ export function buildRifle(
   }
   b.pin("safetyPin", METAL, 0.01, 0.078, 0, -0.045, -0.118);
   for (const side of [-1, 1] as const) {
-    b.box("safetyLever", METAL, 0.004, 0.024, 0.009, side * 0.04, -0.035, -0.118);
+    b.box("safetyLever", METAL, 0.006, 0.024, 0.009, side * 0.04, -0.035, -0.118);
   }
   // The guard is oversized and square, the way the SCAR's is — a gloved
   // finger has to get in. A U drawn from the side, down from the lower, along
