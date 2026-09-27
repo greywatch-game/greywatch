@@ -1336,37 +1336,8 @@ export class Build implements Structure {
     surface: number,
     opts: { pitch?: number; height?: number; color?: string } = {},
   ): void {
-    const t = GUARD_THICKNESS;
-    const height = opts.height ?? GUARD_HEIGHT;
-    const pitch = opts.pitch ?? 0;
-    const color = opts.color ?? TIMBER;
-    const alongZ = side === "+x" || side === "-x";
-    if (import.meta.env.DEV && pitch !== 0 && !alongZ) {
-      throw new Error(
-        `guard: a pitched run turns about X, so it must run along Z (side ±x), not ${side}`,
-      );
-    }
-    // Outboard: half a thickness past the face, so the rail never overlaps the
-    // footprint the nav grid samples.
-    const off = edge + ((side === "+x" || side === "+z" ? 1 : -1) * t) / 2;
-    // Cut perpendicular to the run. A pitched box of section `h` presents
-    // `h / cos` vertically, so `height * cos` is what stands `height` up.
-    const section = height * Math.cos(pitch);
-    // Bottom face on the surface: `surface + section / 2 / cos` — which is
-    // `surface + height / 2` however the run is pitched.
-    const y = surface + height / 2;
-    const spec: BoxSpec = alongZ
-      ? {
-          w: t,
-          h: section,
-          d: length / Math.cos(pitch),
-          x: off,
-          y,
-          z: along,
-          rotX: -pitch,
-        }
-      : { w: length, h: section, d: t, x: along, y, z: off };
-    this.box(spec.w, spec.h, spec.d, spec.x, spec.y, spec.z, color, {
+    const spec = guardSpec(side, edge, along, length, surface, opts);
+    this.box(spec.w, spec.h, spec.d, spec.x, spec.y, spec.z, opts.color ?? TIMBER, {
       x: spec.rotX,
     });
     this.colliders.push(spec);
@@ -1613,6 +1584,51 @@ export class Build implements Structure {
     // eaves rather than two rotated planes — cheaper, and nothing walks up there.
     this.block({ w: w + overhang * 2, h: 0.3, d: d + overhang * 2, x, y, z });
   }
+}
+
+/**
+ * The collider `Build.guard` declares, without the slab it draws: for a
+ * builder that owes a rail the same body and draws its own timber over it (the
+ * watchtower's breastwork). One arithmetic for both, so a drawn rail cannot
+ * move its collider by a float. The arguments are `guard`'s own.
+ */
+export function guardSpec(
+  side: GuardSide,
+  edge: number,
+  along: number,
+  length: number,
+  surface: number,
+  opts: { pitch?: number; height?: number } = {},
+): BoxSpec {
+  const t = GUARD_THICKNESS;
+  const height = opts.height ?? GUARD_HEIGHT;
+  const pitch = opts.pitch ?? 0;
+  const alongZ = side === "+x" || side === "-x";
+  if (import.meta.env.DEV && pitch !== 0 && !alongZ) {
+    throw new Error(
+      `guard: a pitched run turns about X, so it must run along Z (side ±x), not ${side}`,
+    );
+  }
+  // Outboard: half a thickness past the face, so the rail never overlaps the
+  // footprint the nav grid samples.
+  const off = edge + ((side === "+x" || side === "+z" ? 1 : -1) * t) / 2;
+  // Cut perpendicular to the run. A pitched box of section `h` presents
+  // `h / cos` vertically, so `height * cos` is what stands `height` up.
+  const section = height * Math.cos(pitch);
+  // Bottom face on the surface: `surface + section / 2 / cos` — which is
+  // `surface + height / 2` however the run is pitched.
+  const y = surface + height / 2;
+  return alongZ
+    ? {
+        w: t,
+        h: section,
+        d: length / Math.cos(pitch),
+        x: off,
+        y,
+        z: along,
+        rotX: -pitch,
+      }
+    : { w: length, h: section, d: t, x: along, y, z: off };
 }
 
 // --- the village elevations --------------------------------------------------
