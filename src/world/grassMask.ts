@@ -3,7 +3,8 @@
  * grows from, baked once per map into one texture's worth of bytes.
  * Owns: rasterising a map's GrassRects into a density/height/ground grid, the
  * frayed EDGE of the fields they make together, the refusals a field makes (a
- * carriageway, the inside of a collider) and what water makes of it (reeds),
+ * carriageway, the inside of a collider, a structure's drawn part standing on
+ * the ground) and what water makes of it (reeds),
  * and the per-PATCH summary the GrassSystem culls with.
  * Invariants: pure — no scene, no Babylon, no randomness — so every client
  * bakes the same field off the same layout. The ground height is
@@ -100,11 +101,16 @@ function valueNoise(x: number, z: number): number {
  * `extent` is how far the ground runs from the origin on each axis (half the
  * map plus its borderland margin): a rect is clipped to it rather than
  * growing grass over nothing.
+ *
+ * `boxes` are the colliders and `parts` the structures' drawn parts near the
+ * ground (`GameMap.partBoxes`); both refuse what stands in them, and differ
+ * only in how far past their faces — see step 3.
  */
 export function bakeGrassMask(
   rects: readonly GrassRect[],
   water: readonly WaterRect[],
   boxes: readonly WorldBox[],
+  parts: readonly WorldBox[],
   roads: RoadFootprint,
   terrain: TerrainField,
   extent: number,
@@ -317,15 +323,22 @@ export function bakeGrassMask(
   //    a texel, so the feathered edge the filter makes lies outside the wall
   //    rather than straddling it — a blade poking through a cottage's wall
   //    reads as a bug, and a slightly thinner edge against it as trampling.
+  //
+  //    **And the PARTS, on the same test**, because most of a building that
+  //    meets the ground is drawn rather than solid: a barn's plank floor, a
+  //    plinth, a doorstep. Their pad is capped at half the part's own narrow
+  //    side, so a floor gets the wall's margin while a 0.2 m post bares at most
+  //    twice its own width — grass round the foot of a post is a field, and a
+  //    metre-wide bald ring round every one of them is not.
   const pad = texel * 0.75;
   const maxH = g.heightMax * MAX_HEIGHT_SCALE;
-  for (const b of boxes) {
+  const refuse = (b: WorldBox, pad: number): void => {
     const reach = Math.hypot(b.w, b.d) / 2 + pad;
     const i0 = Math.max(0, Math.floor((b.cx - reach - x0) / texel));
     const i1 = Math.min(nx - 1, Math.ceil((b.cx + reach - x0) / texel));
     const j0 = Math.max(0, Math.floor((b.cz - reach - z0) / texel));
     const j1 = Math.min(nz - 1, Math.ceil((b.cz + reach - z0) / texel));
-    if (i0 > i1 || j0 > j1) continue;
+    if (i0 > i1 || j0 > j1) return;
     // A tilted box (rotX ramps) spans a taller band than its thickness.
     let halfH = b.h / 2;
     if (b.rotX !== 0) halfH += (Math.abs(Math.sin(b.rotX)) * b.d) / 2;
@@ -348,7 +361,9 @@ export function bakeGrassMask(
         if (Math.abs(lx) <= hw && Math.abs(lz) <= hd) density[k] = 0;
       }
     }
-  }
+  };
+  for (const b of boxes) refuse(b, pad);
+  for (const b of parts) refuse(b, Math.min(pad, Math.min(b.w, b.d) / 2));
 
   // 4. Encode, and summarise per patch.
   let yMin = Infinity;

@@ -4354,6 +4354,7 @@ export class Game {
       map.water,
       environment,
       map.colliderBoxes,
+      map.partBoxes ?? [],
       map.roads,
       map.terrain,
       map.size,

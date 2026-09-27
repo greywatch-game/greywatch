@@ -319,14 +319,17 @@ export class GrassSystem {
   /**
    * Rebuilds the field for a round. No-ops to a bald map when the layout has
    * no grass rects or the environment has no grass palette. `boxes` are the
-   * map's colliders and `roads` its carriageways: grass is ROOTED, and grows
-   * in neither; under `water` it grows as reeds (see `bakeGrassMask`).
+   * map's colliders, `parts` its structures' drawn parts near the ground
+   * (`GameMap.partBoxes`) and `roads` its carriageways: grass is ROOTED, and
+   * grows in none of them; under `water` it grows as reeds (see
+   * `bakeGrassMask`).
    */
   build(
     rects: readonly GrassRect[],
     water: readonly WaterRect[],
     env: EnvironmentSpec,
     boxes: readonly WorldBox[],
+    parts: readonly WorldBox[],
     roads: RoadFootprint,
     terrain: TerrainField,
     /** The map's extent, and how far its ground runs past it. */
@@ -338,7 +341,7 @@ export class GrassSystem {
     this.time = 0;
     this.fogEnd = env.fogEnd;
 
-    const mask = bakeGrassMask(rects, water, boxes, roads, terrain, size / 2 + margin);
+    const mask = bakeGrassMask(rects, water, boxes, parts, roads, terrain, size / 2 + margin);
     if (!mask) return;
     this.mask = mask;
     this.blocks = summariseBlocks(mask);
