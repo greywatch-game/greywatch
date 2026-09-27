@@ -1183,7 +1183,7 @@ is one machine's:
   64 azimuths. Take it at 1024, and **read the mesh names rather than the
   count** — the floor is not zero. The reticle is meant to be in the picture
   (52 rays on the 6x, 39 on the 3.5x, 33 on the 2x green dot) and a handful of rays of the OUTERMOST ring
-  land on the tube — 6 on the 3.5x, 8 on the octagonal prism, 10 on the 6x — because a stepped tube circumscribes its own cone and meets it at
+  land on the tube — 6 on the 3.5x, 6 on the prism, 10 on the 6x — because a stepped tube circumscribes its own cone and meets it at
   every step's far rim. Only a name that is neither of those is a fault. The launcher's optic read 0 clear of 313
   as a solid body and 270 of 313 as a tube; a `Ray` constructor with no import
   is `scene.createPickingRay(0, 0, null, scene.activeCamera).constructor`. A

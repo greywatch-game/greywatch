@@ -120,11 +120,13 @@ export const sights = {
     /**
      * Short, and shorter than the picture alone would ask for. A prism is
      * built around a glass block rather than a long air path, and it is the
-     * eye relief that pays for that: this is barely past the scope's, and it
-     * is what keeps a 2.5x optic to a body the length of the receiver's
-     * ejection port rather than a second scope.
+     * eye relief that pays for that: it is what keeps a 2.5x optic to a body
+     * the length of the receiver's ejection port rather than a second scope.
+     * It came in from 0.18, and it is under the scope's, which the near plane
+     * allows only because the magnification is lower: `zoomComp` at 2.5x is
+     * 0.64, so the stand-off is 10.2 cm against the scope's 7.8.
      */
-    eyeRelief: 0.18,
+    eyeRelief: 0.16,
     adsSpeedMult: 0.88,
   },
   /**
