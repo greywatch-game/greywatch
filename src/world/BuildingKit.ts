@@ -240,7 +240,9 @@ export type BuilderKind = keyof typeof BUILDERS;
  * what hangs on it off where it stands, and carries its footing down to the
  * ground under each wall. The burnt cottage (`ruin`) seeds its stonework, its
  * breaks and its debris off where it stands, and carries the first course of
- * every face, its footings, its heaps and its threshold down to the ground.
+ * every face, its footings, its heaps and its threshold down to the ground. The woodpile seeds how it is ended, how it is
+ * covered and every billet off where it stands, and carries its posts and the
+ * stones under its bearers down to the ground.
  */
 export const CONFORMS_TO_TERRAIN: ReadonlySet<BuilderKind> = new Set([
   "road",
@@ -258,4 +260,5 @@ export const CONFORMS_TO_TERRAIN: ReadonlySet<BuilderKind> = new Set([
   "stall",
   "shed",
   "ruin",
+  "woodpile",
 ] as const);
