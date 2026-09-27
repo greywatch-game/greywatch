@@ -53,7 +53,7 @@ import {
   type CelMaterialFactory,
   type PointLightData,
 } from "../shaders/CelShader";
-import { createGrassMaterial, createTurfMaterial } from "../shaders/GrassShader";
+import { TURF_LODS, createGrassMaterial, createTurfMaterial } from "../shaders/GrassShader";
 import type { EnvironmentSpec } from "../world/environment";
 import { bakeGrassMask, type GrassMask, MAX_HEIGHT_SCALE } from "../world/grassMask";
 import type { GrassRect, WaterRect, WorldBox } from "../world/MapBuilder";
@@ -90,26 +90,6 @@ const LOD_STEP = Math.SQRT1_2;
  * not a thing anyone can see; and those far patches are most of the patches.
  */
 const SIMPLE_SHARE = 0.126;
-
-/**
- * The turf's patch meshes: cells a side, the distance (already scaled by the
- * sight) inside which each is used, how far it is lifted off the ground it
- * samples, and how far its skirt hangs.
- *
- * The lift is what a coarse sheet owes the floor it lies on: the terrain is
- * flat triangles three to six metres across and the turf samples it only at
- * its own vertices, so a cell that spans a fold in the ground cuts under it by
- * up to half the fold. A metre cell spans almost none and lies on the floor
- * to the millimetre; four metres at eighty metres out is lifted a hand's
- * width, which nobody standing that far away can see. The SKIRT closes the
- * seam where a fine patch meets a coarse one — the two edges sample the ground
- * at different points, and without it the floor shows through the crack.
- */
-const TURF_LODS = [
-  { cells: 8, within: 24, lift: 0.006, skirt: 0.2 },
-  { cells: 4, within: 80, lift: 0.04, skirt: 0.4 },
-  { cells: 2, within: Infinity, lift: 0.12, skirt: 0.9 },
-] as const;
 
 /** Patches per side of the coarse block the walk culls first. */
 const BLOCK = 4;
@@ -228,9 +208,9 @@ function bladeVertexData(
 }
 
 /**
- * One turf patch mesh: an `n` x `n` grid over the unit square, and a skirt
- * hung from its four edges. `position` is (u, skirt, v); the shader puts it on
- * the ground and hangs the skirt vertices below it.
+ * One turf patch mesh: an `n` x `n` grid over the unit square. `position` is
+ * (u, 0, v); the shader puts it on the ground, and puts a vertex on an EDGE
+ * where the coarser patch beside it draws that edge.
  */
 function turfVertexData(n: number): VertexData {
   const positions: number[] = [];
@@ -247,21 +227,6 @@ function turfVertexData(n: number): VertexData {
       const d = at(i + 1, j + 1);
       indices.push(a, c, b, b, c, d);
     }
-  }
-  // The skirt: the perimeter walked once, each edge vertex dropped below itself.
-  const ring: number[] = [];
-  for (let i = 0; i < n; i++) ring.push(at(i, 0));
-  for (let j = 0; j < n; j++) ring.push(at(n, j));
-  for (let i = n; i > 0; i--) ring.push(at(i, n));
-  for (let j = n; j > 0; j--) ring.push(at(0, j));
-  const first = positions.length / 3;
-  for (const k of ring) positions.push(positions[k * 3], 1, positions[k * 3 + 2]);
-  for (let r = 0; r < ring.length; r++) {
-    const a = ring[r];
-    const b = ring[(r + 1) % ring.length];
-    const a2 = first + r;
-    const b2 = first + ((r + 1) % ring.length);
-    indices.push(a, b, a2, b, b2, a2);
   }
   const data = new VertexData();
   data.positions = positions;
@@ -324,6 +289,25 @@ export class GrassSystem {
   private planes: Plane[] = Frustum.GetPlanes(Matrix.Identity());
   private fieldParams = new Vector4();
   private camScratch = new Vector3();
+  /**
+   * Per patch, the `TURF_LODS` row it draws its turf at this walk (-1 for
+   * none), filled only as the walk asks, and the walk that filled it. See
+   * `turfRow`: a patch's edges are stitched off its NEIGHBOURS' rows, so a row
+   * is asked up to nine times a walk.
+   */
+  private rowOf = new Int8Array(0);
+  private rowWalk = new Uint32Array(0);
+  private walkId = 0;
+  /** What `turfRow` measures from, written at the top of each walk. */
+  private readonly walkAt = {
+    ex: 0,
+    ey: 0,
+    ez: 0,
+    lodScale: 1,
+    reach: 0,
+    floor: 0,
+    bladeTop: 0,
+  };
   /** What the field drew last frame, for anyone measuring it. */
   readonly stats = { patches: 0, blades: 0, turf: 0 };
 
@@ -358,6 +342,8 @@ export class GrassSystem {
     if (!mask) return;
     this.mask = mask;
     this.blocks = summariseBlocks(mask);
+    this.rowOf = new Int8Array(mask.patches.nx * mask.patches.nz);
+    this.rowWalk = new Uint32Array(mask.patches.nx * mask.patches.nz);
 
     // invertY false: row 0 is the min-Z edge, which is what the shader's
     // `(xz - origin) / texel` puts at row 0. Every read is a textureLoad, but a
@@ -627,6 +613,9 @@ export class GrassSystem {
     const zoom = Math.tan(camera.fov / 2) / Math.tan(CONFIG.camera.fovHip / 2);
     const lodScale = Math.min(1, Math.max(0.05, zoom));
     const turfReach = Math.min(tier.turf, this.fogEnd);
+    // The density below which the turf's ramp covers nothing even at the top
+    // of its wobble: a patch no denser than this would draw only discards.
+    const turfFloor = g.turf.from - g.turf.feather - g.turf.wobble / 2;
     // Past which neither a blade nor the turf is drawn, in unscaled metres.
     const radius = Math.min(Math.max(reach / lodScale, turfReach), this.fogEnd);
 
@@ -657,6 +646,15 @@ export class GrassSystem {
     // How far a tip can travel past its patch, and how tall a blade can stand.
     const sway = g.heightMax * MAX_HEIGHT_SCALE * 0.9;
     const bladeTop = g.heightMax * (1 + g.clump.amount);
+    const at = this.walkAt;
+    at.ex = ex;
+    at.ey = ey;
+    at.ez = ez;
+    at.lodScale = lodScale;
+    at.reach = turfReach;
+    at.floor = turfFloor;
+    at.bladeTop = bladeTop;
+    this.walkId++;
     for (let bj = b0z; bj <= b1z; bj++) {
       const bz0 = mask.z0 + bj * B;
       for (let bi = b0x; bi <= b1x; bi++) {
@@ -684,13 +682,9 @@ export class GrassSystem {
             if (dm >= radius) continue;
             if (!inFrustum(planes, x0 - sway, yLo, z0 - sway, x0 + P + sway, yHi, z0 + P + sway)) continue;
             const d = dm * lodScale;
-            // The turf, out to its own reach.
-            if (dm < turfReach) {
-              let t = 0;
-              while (d >= TURF_LODS[t].within) t++;
-              const lod = turfs[t];
-              this.place(lod, x0, z0, P, TURF_LODS[t].lift, TURF_LODS[t].skirt);
-            }
+            // The turf, out to its own reach, where the shader's ramp reaches.
+            const t = this.turfRow(i, j);
+            if (t >= 0) this.placeTurf(turfs[t], i, j, t, x0, z0, P);
             // The blades, out to theirs.
             if (d >= reach) continue;
             const need = this.keep(d, near, reach) * cover;
@@ -699,7 +693,7 @@ export class GrassSystem {
             let pick = 0;
             while (pick + 1 < lods.length && lods[pick + 1].share >= need) pick++;
             const lod = lods[pick];
-            this.place(lod, x0, z0, P, 0, 1);
+            this.place(lod, x0, z0, P, 0);
             blades += Math.ceil(lod.share * tier.density * P * P);
           }
         }
@@ -726,20 +720,90 @@ export class GrassSystem {
   /**
    * Appends one patch to a mesh's instance list: X scale the side, the
    * translation its min corner, and — read only by the turf — Y translation
-   * its lift and Y scale its skirt's drop.
+   * its lift. Returns the offset it wrote at.
    */
-  private place(lod: PatchLod, x0: number, z0: number, side: number, lift: number, drop: number): void {
+  private place(lod: PatchLod, x0: number, z0: number, side: number, lift: number): number {
     if ((lod.count + 1) * 16 > lod.matrices.length) this.grow(lod);
     const m = lod.matrices;
     const o = lod.count * 16;
     m[o] = side;
-    m[o + 5] = drop;
+    m[o + 5] = 1;
     m[o + 10] = side;
     m[o + 12] = x0;
     m[o + 13] = lift;
     m[o + 14] = z0;
     m[o + 15] = 1;
     lod.count++;
+    return o;
+  }
+
+  /**
+   * Appends one turf patch at `TURF_LODS` row `t`, STITCHED to the patches
+   * round it: each edge is drawn at the coarser of the two rows either side of
+   * it and each corner lifted by the coarsest of the four patches meeting
+   * there, packed as base-4 digits into the matrix's two spare entries — edges
+   * W, E, S, N and corners SW, SE, NW, NE, where W is `i - 1` and S `j - 1`.
+   * Both patches either side of a seam work the seam out from the same rows,
+   * so both draw it through the same points. A neighbour with no turf of its
+   * own (-1) stitches nothing.
+   */
+  private placeTurf(
+    lod: PatchLod,
+    i: number,
+    j: number,
+    t: number,
+    x0: number,
+    z0: number,
+    side: number,
+  ): void {
+    const o = this.place(lod, x0, z0, side, TURF_LODS[t].lift);
+    const w = Math.max(t, this.turfRow(i - 1, j));
+    const e = Math.max(t, this.turfRow(i + 1, j));
+    const s = Math.max(t, this.turfRow(i, j - 1));
+    const n = Math.max(t, this.turfRow(i, j + 1));
+    const sw = Math.max(w, s, this.turfRow(i - 1, j - 1));
+    const se = Math.max(e, s, this.turfRow(i + 1, j - 1));
+    const nw = Math.max(w, n, this.turfRow(i - 1, j + 1));
+    const ne = Math.max(e, n, this.turfRow(i + 1, j + 1));
+    const m = lod.matrices;
+    m[o + 1] = w + 4 * e + 16 * s + 64 * n;
+    m[o + 2] = sw + 4 * se + 16 * nw + 64 * ne;
+  }
+
+  /**
+   * The `TURF_LODS` row patch (i, j) draws its turf at this walk, or -1 where
+   * it draws none — off the grid, too thin for the ramp to cover anything, or
+   * past the turf's reach. The walk asks it of every patch it draws AND of
+   * that patch's eight neighbours, which is why it is a pure function of the
+   * patch and the eye rather than of what the walk happened to draw: a
+   * neighbour culled by the frustum still has to be stitched to as the row it
+   * WOULD be drawn at, or a seam half on screen opens. Cached per walk.
+   */
+  private turfRow(i: number, j: number): number {
+    const mask = this.mask;
+    if (!mask) return -1;
+    const pt = mask.patches;
+    if (i < 0 || j < 0 || i >= pt.nx || j >= pt.nz) return -1;
+    const k = j * pt.nx + i;
+    if (this.rowWalk[k] === this.walkId) return this.rowOf[k];
+    const at = this.walkAt;
+    const P = CONFIG.grass.patch;
+    let row = -1;
+    if (pt.cover[k] > at.floor) {
+      const x0 = mask.x0 + i * P;
+      const z0 = mask.z0 + j * P;
+      const yLo = pt.yLo[k] - 0.1;
+      const yHi = pt.yHi[k] + at.bladeTop * pt.tall[k] + 0.2;
+      const dm = boxDistance(at.ex, at.ey, at.ez, x0, yLo, z0, x0 + P, yHi, z0 + P);
+      if (dm < at.reach) {
+        const d = dm * at.lodScale;
+        row = 0;
+        while (d >= TURF_LODS[row].within) row++;
+      }
+    }
+    this.rowOf[k] = row;
+    this.rowWalk[k] = this.walkId;
+    return row;
   }
 
   /** Hands a mesh this frame's count; hides it outright when that is zero. */

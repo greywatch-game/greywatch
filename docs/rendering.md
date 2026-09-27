@@ -1997,16 +1997,57 @@ it is drawn as one, and the field reaches further while the sight is up.
 floor** — on Harrowmead, cracked earth. The TURF is a sheet laid on the same
 ground from the same mask, in the colour the field reads as from the distance
 it is drawn at: the dark floor of the stand under your feet, the field's own
-average green on the far hillside. Three patch meshes (1, 2 and 4 m cells, each
-with a SKIRT, because a fine patch beside a coarse one samples the ground at
-different points and the floor shows through the crack) out to the rung's
-`turf` reach, capped at the map's `fogEnd`. **It is biased toward the eye by
-`ROAD_DEPTH_UNITS`, because it IS a road's problem** — a sheet coplanar with
-the floor — and it stays under a road by growing nowhere a road is. **It starts
-at half density** (`turf.from`): a thinner field is blades standing on the
-map's own floor, which is what scrub and a meadow gone to seed ARE, and under
-water it does not grow at all. Its edge is the mask's contour read per PIXEL,
-so it holds still however coarse the patch drawing it.
+average green on the far hillside. Three patch meshes (1, 2 and 4 m cells,
+`TURF_LODS` in `GrassShader.ts`) out to the rung's `turf` reach, capped at the
+map's `fogEnd`. **It is biased toward the eye by `ROAD_DEPTH_UNITS`, because it
+IS a road's problem** — a sheet coplanar with the floor — and it stays under a
+road by growing nowhere a road is. Under water it does not grow at all.
+
+**How much of the floor it covers is a RAMP over density, never a cut.** It
+covers half the floor at `turf.from` (0.5), none of it `feather` below and all
+of it `feather` above, the density it reads nudged by a slow noise (`wobble`,
+over `wobbleLength` metres) so one density is not one flat wash: a thin field
+is blades standing on the map's own floor, which is what scrub and a meadow
+gone to seed ARE. It was a cut once — the contour at half, wandered by a noise
+at 0.8 m — and fields are AUTHORED near half as often as not (Kurenai's
+paddocks at 0.55, Sarab's oasis at 0.45), so wherever the density sat inside
+that noise the floor broke into dark islands with hard edges: the splotches in
+`reference-media/grass-splotches*.png`. Read per PIXEL, so it holds still
+however coarse the patch drawing it.
+
+**A ramp is a BLEND, and the turf is the one blended draw that leaves the
+frame's coverage alpha alone.** Under `ALPHA_COMBINE` it would add itself to
+the coverage `CelInk` scales its edge by, and take the ink off every blade
+standing in a lush field — so its colour blends `SRC_ALPHA / ONE_MINUS_SRC_ALPHA`
+and its alpha `ZERO / ONE`. Babylon has no alpha mode for that, so
+`createTurfMaterial` writes the factors into the engine's alpha state on BIND
+and sets the mode back to disabled on UNBIND; the WebGPU pipeline cache reads
+that state's arrays at draw time, and resetting the MODE is what makes the next
+`setAlphaMode(COMBINE)` rewrite them rather than early-out on a mode it thinks
+is already set. Two more things follow. It draws on group 0's **ALPHA-TEST
+list**, the clouds' trick for the clouds' reason — that list is the ORDER, and a
+blend has to land after the floor it lies over, which the opaque list does not
+promise. And it writes **no depth**: the floor has written the surface, the
+blades are drawn before it and test it out where they stand, and a sheet that
+wrote depth wherever it was a hundredth covered would hide every coplanar mark
+laid after it.
+
+**The patches are STITCHED rather than skirted.** A fine patch beside a coarse
+one samples the ground at different points, so their shared edge is two
+polylines and the floor shows through between them. That crack was once closed
+by a SKIRT hung down every edge — invisible while the turf was opaque, and a
+grid of dark lines under a blend, because the skirt and the sheet beside it land
+on the same pixels along every seam and a blend counts twice. Now each patch is
+told, in two spare matrix entries, which `TURF_LODS` row each EDGE is drawn at
+(the coarser of the two patches either side) and which lift each CORNER takes
+(the coarsest of the four meeting there), and the vertex stage draws an edge
+vertex on that row's polyline: the ground at the coarse cells, joined straight,
+at the coarse lift. Both sides of a seam work it out from the same rows, so both
+draw it through the same points. **`GrassSystem.turfRow` is therefore a pure
+function of the patch and the eye, and never of what the walk happened to
+draw** — a neighbour the frustum culled is still stitched to as the row it WOULD
+be drawn at, or a seam half on screen opens. Painted solid magenta at full
+cover, the three rungs meet with no floor showing at either ring.
 
 ### Where a field ends
 

@@ -693,9 +693,13 @@ tree owes it.** Everything opaque writes **0** into that channel (`CelShader`'s
 channel is the bake's own coverage mask, so
 `ReflectionSystem` flips `opaqueAlpha` to 1 for the length of a bake, and **a
 shader that hardcodes either value breaks one of the two passes silently**.
-**One blended mesh is the exception and it is the one that WRITES DEPTH** — the
-kit screen's backdrop IS the surface a pixel records, so it writes 0 coverage
-over the whole frustum (`ALPHA_REPLACE_COLOR` at a fragment alpha of 0).
+**Two blended meshes are exceptions.** The one that WRITES DEPTH — the kit
+screen's backdrop IS the surface a pixel records, so it writes 0 coverage over
+the whole frustum (`ALPHA_REPLACE_COLOR` at a fragment alpha of 0). And the
+grass TURF, which is blended over the floor it lies on and adds NOTHING to
+coverage (alpha factors `ZERO, ONE`, set by hand on bind), because nothing is
+seen THROUGH it and a turf counted as coverage takes the ink off every blade in
+a field.
 **The sky's CLOUDS stand in the world but write the depth of a point 7 km out
 along each pixel's ray**, so every
 surface a map draws must be nearer than that or a cloud draws over it, and the

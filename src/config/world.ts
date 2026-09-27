@@ -750,10 +750,15 @@ export const grass = {
    * `over` is where between root and tip it sits once it stands in for the
    * whole field, which is roughly the green a meadow reads as from a hundred
    * metres: mostly the upper blades, some of the shade between them. `from`
-   * is the density it starts at: a thinner field is blades on the map's own
-   * floor, which is what scrub and a meadow gone to seed ARE.
+   * is the density at which it covers HALF the floor, and it covers none of
+   * it `feather` below that and all of it `feather` above: a thinner field is
+   * blades on the map's own floor, which is what scrub and a meadow gone to
+   * seed ARE. A ramp and never a cut — fields are laid near half, and a cut
+   * there is dark islands with hard edges. `wobble` is how far a slow noise
+   * (`wobbleLength` metres) moves the density that ramp reads, so a field at
+   * one density is not one flat wash.
    */
-  turf: { under: 0.8, over: 0.5, from: 0.5 },
+  turf: { under: 0.8, over: 0.5, from: 0.5, feather: 0.3, wobble: 0.12, wobbleLength: 3 },
   /**
    * The side of one patch, metres. Also the pitch the CPU culls at, so a
    * smaller one culls tighter and uploads more instances; eight is the size

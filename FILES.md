@@ -1212,7 +1212,9 @@ src/
     GrassShader.ts      # Blades BUILT in the vertex stage off the mask: the
                         #   keep threshold over rank, the lean, the gusts carried
                         #   downwind, bodies pushing through; and the turf's
-                        #   material. One lighting function for both. WGSL
+                        #   material — a density RAMP blended over the floor,
+                        #   its patches stitched edge to edge (`TURF_LODS`).
+                        #   One lighting function for both. WGSL
     FlameShader.ts      # THE FIRE: every open flame's one material. Tongues
                         #   that boil on twos in hard bands, embers on the
                         #   smooth clock, and the glow-mask TWIN that runs the

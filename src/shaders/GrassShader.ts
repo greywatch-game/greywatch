@@ -9,14 +9,16 @@
  * (u, t, v), the root's place in its patch and the height along the blade,
  * and `blade` is (side, rank, s0, s1). The thin-instance matrix is the PATCH:
  * its translation is the patch's min corner and its X scale the patch's side
- * (the turf reads its lift and skirt from the matrix's Y translation and Y
- * scale). `rank` is the blade's place in the patch's progressive order, and
- * the keep test below must agree with `GrassSystem.keep` or a patch is drawn
+ * (the turf reads its lift from the matrix's Y translation, and how its edges
+ * and corners are stitched from two spare entries — see its vertex stage).
+ * `rank` is the blade's place in the patch's progressive order, and the keep
+ * test below must agree with `GrassSystem.keep` or a patch is drawn
  * from a mesh that holds fewer blades than it wants. Point-light arrays are
  * MAX_POINT_LIGHTS and filled from the same LightingSystem slots as the cel
- * shader; the pusher array is CONFIG.grass.maxPushers. Opaque output; no
- * Babylon lights. Nothing inside a WGSL template string may contain a
- * backtick — it closes the template.
+ * shader; the pusher array is CONFIG.grass.maxPushers. The blades are
+ * opaque; the turf BLENDS, and leaves the frame's coverage alpha untouched
+ * (`createTurfMaterial`). No Babylon lights. Nothing inside a WGSL template
+ * string may contain a backtick — it closes the template.
  * Both stages of both are hand-written WGSL, and `shaderLanguage` on the
  * material is load-bearing rather than declarative: a `ShaderMaterial`
  * defaults to GLSL and would look these up in a store nothing writes any more.
@@ -24,6 +26,7 @@
  * decide.
  */
 import {
+  Constants,
   Scene,
   ShaderLanguage,
   ShaderMaterial,
@@ -107,6 +110,39 @@ const MAX_PUSHERS = CONFIG.grass.maxPushers;
 const f = (n: number): string => n.toFixed(6);
 
 const g = CONFIG.grass;
+
+/**
+ * The turf's patch meshes: cells a side, the distance (already scaled by the
+ * sight) inside which each is used, and how far it is lifted off the ground it
+ * samples. Read by `GrassSystem`, which picks a row per patch, and by the
+ * turf's vertex stage, which draws an EDGE at the coarser of the two rows
+ * either side of it.
+ *
+ * The lift is what a coarse sheet owes the floor it lies on: the terrain is
+ * flat triangles three to six metres across and the turf samples it only at
+ * its own vertices, so a cell that spans a fold in the ground cuts under it by
+ * up to half the fold. A metre cell spans almost none and lies on the floor
+ * to the millimetre; four metres at eighty metres out is lifted a hand's
+ * width, which nobody standing that far away can see.
+ *
+ * **Where a fine patch meets a coarse one the fine one's edge is drawn as the
+ * coarse one's** — the ground at the coarse cells, joined straight, at the
+ * coarse lift — so the sheet has no crack to close. It used to hang a SKIRT
+ * down each edge instead, which was invisible while the turf was opaque and is
+ * a grid of dark lines under a blend: the skirt and the sheet beside it both
+ * land on the same pixels along every seam, and a blend counts twice.
+ */
+export const TURF_LODS = [
+  { cells: 8, within: 24, lift: 0.006 },
+  { cells: 4, within: 80, lift: 0.04 },
+  { cells: 2, within: Infinity, lift: 0.12 },
+] as const;
+
+/** One column of `TURF_LODS` as a WGSL lookup body over `row`. */
+function turfTable(key: "cells" | "lift"): string {
+  const rows = TURF_LODS.map((r, i) => "if (row == " + i + "u) { return " + f(r[key]) + "; }");
+  return rows.join("\n  ");
+}
 
 /**
  * Hashes and value noise, shared by every stage here. Sine-free on purpose:
@@ -495,10 +531,12 @@ fn main(input: FragmentInputs) -> FragmentOutputs {
 `;
 
 ShaderStore.ShadersStoreWGSL["grassTurfVertexShader"] = `
-attribute position: vec3f;   // (u, skirt, v): the vertex in its patch, 1 on the skirt
+attribute position: vec3f;   // (u, 0, v): the vertex in its patch
 
-// The PATCH transform. X scale is its side, translation its min corner, and —
-// the turf's own two — Y translation its lift and Y scale its skirt's drop.
+// The PATCH transform. X scale is its side, translation its min corner, and
+// the turf's own three: Y translation its lift, and two numbers packed four
+// base-4 digits apiece — which TURF_LODS row each EDGE is sampled at (W, E, S,
+// N) and each CORNER is lifted by (SW, SE, NW, NE). See GrassSystem.stitch.
 #include<celInstancesDeclaration>
 
 uniform viewProjection: mat4x4f;
@@ -511,22 +549,72 @@ varying vPosW: vec3f;
 varying vNormalW: vec3f;
 varying vFar: f32;        // 0 under the stand, 1 where the turf IS the field
 
+fn turfCells(row: u32) -> f32 {
+  ${turfTable("cells")}
+  return ${f(TURF_LODS[TURF_LODS.length - 1].cells)};
+}
+
+fn turfLift(row: u32) -> f32 {
+  ${turfTable("lift")}
+  return ${f(TURF_LODS[TURF_LODS.length - 1].lift)};
+}
+
+fn digit(packed: f32, k: u32) -> u32 {
+  return (u32(packed + 0.5) >> (2u * k)) & 3u;
+}
+
+// The sheet's height at a vertex on an EDGE, as the coarser of the two
+// patches either side of it draws that edge: the ground sampled at that
+// patch's cells and joined by straight lines, lifted by that patch's lift and
+// at the two ends by the corners'. Both patches compute the same function of
+// the same points, so a fine patch beside a coarse one meets it exactly and
+// no crack opens between them. 'along' is where the vertex is on the edge,
+// 0 at 'base' and 1 a patch side along 'dir'.
+fn edgeHeight(base: vec2f, dir: vec2f, side: f32, along: f32, row: u32,
+    liftStart: f32, liftEnd: f32) -> f32 {
+  let n = turfCells(row);
+  let s0 = min(floor(along * n), n - 1.0) / n;
+  let s1 = s0 + 1.0 / n;
+  let h0 = sampleMask(base + dir * (s0 * side)).x + select(turfLift(row), liftStart, s0 <= 0.0);
+  let h1 = sampleMask(base + dir * (s1 * side)).x + select(turfLift(row), liftEnd, s1 >= 1.0);
+  return mix(h0, h1, (along - s0) * n);
+}
+
 @vertex
 fn main(input: VertexInputs) -> FragmentInputs {
   #include<celInstancesVertex>
 
   let patchSide = finalWorld[0].x;
-  let lift = finalWorld[3].y;
-  let drop = finalWorld[1].y;
-  let xz = finalWorld[3].xz + vertexInputs.position.xz * patchSide;
-  let m = sampleMask(xz);
+  let corner = finalWorld[3].xz;
+  let edges = finalWorld[0].y;
+  let corners = finalWorld[0].z;
+  let uv = vertexInputs.position.xz;
+  let xz = corner + uv * patchSide;
+  // An interior vertex is the ground plus this patch's own lift; one on an
+  // edge is the edge's, which is what keeps the sheet whole across a change of
+  // cell size. A corner is on two edges and both give the same answer, the
+  // corner's own lift at the ground under it.
+  var h = sampleMask(xz).x + finalWorld[3].y;
+  if (uv.x <= 0.0 || uv.x >= 1.0) {
+    let east = uv.x >= 1.0;
+    h = edgeHeight(corner + vec2f(uv.x * patchSide, 0.0), vec2f(0.0, 1.0), patchSide, uv.y,
+      digit(edges, select(0u, 1u, east)),
+      turfLift(digit(corners, select(0u, 1u, east))),
+      turfLift(digit(corners, select(2u, 3u, east))));
+  } else if (uv.y <= 0.0 || uv.y >= 1.0) {
+    let north = uv.y >= 1.0;
+    h = edgeHeight(corner + vec2f(0.0, uv.y * patchSide), vec2f(1.0, 0.0), patchSide, uv.x,
+      digit(edges, select(2u, 3u, north)),
+      turfLift(digit(corners, select(0u, 2u, north))),
+      turfLift(digit(corners, select(1u, 3u, north))));
+  }
   // The ground's slope, off the same mask the height came from: a step either
   // way of one texel, which is as fine as the height itself is known.
   let e = uniforms.maskOrigin.z;
   let hx = sampleMask(xz + vec2f(e, 0.0)).x - sampleMask(xz - vec2f(e, 0.0)).x;
   let hz = sampleMask(xz + vec2f(0.0, e)).x - sampleMask(xz - vec2f(0.0, e)).x;
   vertexOutputs.vNormalW = normalize(vec3f(-hx, 2.0 * e, -hz));
-  let p = vec3f(xz.x, m.x + lift - vertexInputs.position.y * drop, xz.y);
+  let p = vec3f(xz.x, h, xz.y);
   vertexOutputs.vPosW = p;
   let d = length(p - uniforms.camPos) * uniforms.lodScale;
   vertexOutputs.vFar = smoothstep(uniforms.fieldParams.x, uniforms.fieldParams.x * 5.0, d);
@@ -554,16 +642,23 @@ ${NOISE}
 @fragment
 fn main(input: FragmentInputs) -> FragmentOutputs {
   let posW = fragmentInputs.vPosW;
-  // Where the turf ends: the mask's density contour at about HALF, broken by a
-  // little noise so its edge is ragged rather than a ruled line. Half and not
-  // the field's own edge, because a thin field — scrub, a reed bed, grass going
-  // to seed under trees — is ground with blades on it, and turf there would
-  // lay a green sheet over the map's own floor. Read per PIXEL, so it holds
-  // still however coarse the patch drawing it.
+  // How much turf: a RAMP over the mask's density, centred at about HALF and
+  // never a contour across it. Half and not the field's own edge, because a
+  // thin field — scrub, a reed bed, grass going to seed under trees — is
+  // ground with blades on it, and turf there would lay a green sheet over the
+  // map's own floor. A ramp and not a cut, because a field is AUTHORED near
+  // half as often as not, and a cut there broke it into dark islands with
+  // hard edges wherever the density sat inside the noise that wandered the
+  // cut. So a meadow at half is the floor half covered, evenly, drifting a
+  // little on a slow wave. Read per PIXEL, so it holds still however coarse
+  // the patch drawing it.
   let m = sampleMask(posW.xz);
-  let edge = ${f(g.turf.from)} + 0.3 * (vnoise(posW.xz * 1.3) - 0.5);
-  // No turf under water: that is a reed bed, and the bed is the water's.
-  if (m.y < edge || m.w > 0.5) {
+  let lush = m.y + ${f(g.turf.wobble)} * (vnoise(posW.xz / ${f(g.turf.wobbleLength)}) - 0.5);
+  // No turf under water: that is a reed bed, and the bed is the water's. The
+  // wet share is already filtered, so the turf fades over the texel it ends in.
+  let cover = smoothstep(${f(g.turf.from - g.turf.feather)}, ${f(g.turf.from + g.turf.feather)}, lush)
+    * (1.0 - m.w);
+  if (cover < ${f(1 / 255)}) {
     discard;
   }
   let n = normalize(fragmentInputs.vNormalW);
@@ -577,7 +672,10 @@ fn main(input: FragmentInputs) -> FragmentOutputs {
   let occl = mix(${f(g.rootShade)}, 1.0, far);
   let lit = fieldLight(n, n, posW, occl, mix(${f(g.rootShade)}, 1.0, far));
   let col = fieldAtmosphere(base * lit.light, posW);
-  fragmentOutputs.color = vec4f(dither(col), 0.0);
+  // The alpha here is the BLEND weight and nothing else: the turf's blend
+  // leaves the frame's coverage channel as the floor under it wrote it (see
+  // createTurfMaterial), so what this writes never reaches the ink.
+  fragmentOutputs.color = vec4f(dither(col), cover);
 }
 `;
 
@@ -683,6 +781,28 @@ export function createGrassMaterial(scene: Scene, name: string): ShaderMaterial 
  * Biased toward the eye by the road's own depth offset, because the turf is a
  * sheet lying ON the floor exactly as a carriageway is — and for that reason
  * it must stay below a road, which it does by growing nowhere a road is.
+ *
+ * **It is BLENDED over the floor and is the one blended draw that leaves the
+ * frame's coverage alpha alone.** A thin field is the floor partly covered,
+ * so its weight is a blend (see the fragment stage). But the frame's alpha is
+ * translucent COVERAGE, which `CelInk` scales its edge by — and a turf that
+ * added itself there under `ALPHA_COMBINE` would take the ink off every blade
+ * standing in a lush field. Nothing is SEEN THROUGH the turf, so it must say
+ * nothing about coverage: colour blends SRC_ALPHA / ONE_MINUS_SRC_ALPHA, alpha
+ * ZERO / ONE. Babylon has no alpha mode for that, so the factors are written
+ * into the engine's alpha state while this material is bound and the mode is
+ * put back to disabled when it unbinds — the WebGPU pipeline cache reads that
+ * state's arrays at draw time, and a later `setAlphaMode(COMBINE)` rewrites
+ * them because the mode it compares against is DISABLE again.
+ *
+ * Two more things follow from blending. It draws on group 0's ALPHA-TEST list
+ * (as the clouds do, and for their reason: that list is the ORDER, after every
+ * opaque surface), because a blend has to land on the floor it lies over and
+ * the opaque list has no order in which the terrain comes first. And it writes
+ * NO depth: the floor under it already wrote the surface, the blades over it
+ * are drawn before it and test it out where they stand, and a sheet writing a
+ * depth wherever it is a hundredth covered would hide every coplanar mark laid
+ * after it.
  */
 export function createTurfMaterial(scene: Scene, name: string): ShaderMaterial {
   const mat = new ShaderMaterial(
@@ -694,11 +814,29 @@ export function createTurfMaterial(scene: Scene, name: string): ShaderMaterial {
       uniforms: [...SHARED_UNIFORMS, ...SHADOW_UNIFORM_NAMES],
       samplers: ["maskTex", ...SHADOW_SAMPLER_NAMES],
       shaderLanguage: ShaderLanguage.WGSL,
+      // Not a claim that anything is alpha-tested: the draw ORDER. See above.
+      needAlphaTesting: true,
     },
   );
-  // The skirts hang both ways, and a sheet is never seen from below.
+  // A sheet on the ground is never seen from below, so nothing is saved by
+  // culling one face of it and nothing has to agree which way the grid winds.
   mat.backFaceCulling = false;
   mat.zOffsetUnits = ROAD_DEPTH_UNITS;
+  mat.disableDepthWrite = true;
+  const engine = scene.getEngine();
+  mat.onBindObservable.add(() => {
+    // `true`: leave the depth mask to `disableDepthWrite`.
+    engine.setAlphaMode(Constants.ALPHA_COMBINE, true);
+    engine.alphaState.setAlphaBlendFunctionParameters(
+      Constants.GL_ALPHA_FUNCTION_SRC_ALPHA,
+      Constants.GL_ALPHA_FUNCTION_ONE_MINUS_SRC_ALPHA,
+      0, // ZERO and ONE: Babylon names neither
+      1,
+    );
+  });
+  mat.onUnBindObservable.add(() => {
+    engine.setAlphaMode(Constants.ALPHA_DISABLE, true);
+  });
   primeShared(mat);
   mat.freeze();
   return mat;
