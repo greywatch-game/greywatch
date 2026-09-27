@@ -244,7 +244,9 @@ export type BuilderKind = keyof typeof BUILDERS;
  * covered and every billet off where it stands, and carries its posts and the
  * stones under its bearers down to the ground. The watchtower cuts its legs,
  * its pads and its ramp's bents to the ground under each, and seeds its board
- * ends, its joints and the billets by its fire off where it stands.
+ * ends, its joints and the billets by its fire off where it stands. The well
+ * carries the flags round its foot down to the ground under each, and seeds
+ * its stonework, which half its lid covers and which side its crank is on.
  */
 export const CONFORMS_TO_TERRAIN: ReadonlySet<BuilderKind> = new Set([
   "road",
@@ -264,4 +266,5 @@ export const CONFORMS_TO_TERRAIN: ReadonlySet<BuilderKind> = new Set([
   "ruin",
   "woodpile",
   "watchtower",
+  "well",
 ] as const);
