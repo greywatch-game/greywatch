@@ -111,7 +111,14 @@ const IRON_RISE = 0.036;
  * now, which leaves 3.5 mm of daylight under the picture.
  */
 const SCOPE_RISE = 0.094;
-const PRISM_RISE = 0.096;
+/**
+ * The prism's, and a quarter lower than it was (0.096), which is a choice
+ * about the PICTURE and not only the mount: this rise is what pays for
+ * `PRISM_CONE`, so it came down by bringing the cone in from 0.1039 to 0.0775.
+ * The shorter eye relief (0.18 to 0.16) bought almost none of it — the cone's
+ * run to the rail's far end is mostly `RAIL_REACH`, not the eye.
+ */
+const PRISM_RISE = 0.069;
 /**
  * The 6x's, and it is the ONE rise here the rail does not decide — see
  * `LONG_CONE`. What sets it is the objective bell's own outer radius: the
@@ -309,51 +316,50 @@ const scopeBore = (dz: number): number =>
  *
  * `PRISM_CONE` is then not a choice at all — it is whatever `PRISM_RISE` will
  * pay for against `RAIL_REACH`, solved rather than written the way the reflex's
- * window is. It works out at 0.104: in screen terms a circle a little over half
- * the frame high, smaller than the scope's two thirds, and a WIDER cone of
- * actual world (5.9 deg against 5.7) — the honest way round for the optic that
- * magnifies less.
+ * window is. It works out at 0.0775: in screen terms a circle 0.38 of the
+ * frame high, still wider than the green dot's three tenths and well inside
+ * the scope's two thirds. **It is a NARROWER cone of actual world than the
+ * scope's (4.4 deg against 5.7)**, which is the wrong way round for the optic
+ * that magnifies less, and was paid on purpose: at 0.104 it was the right way
+ * round and stood the sight a quarter higher on every long rail.
  */
 /**
- * The wall and the step count are what the shooter actually LOOKS at, and they
- * are not the same lever as the cone.
+ * The wall is what the shooter actually LOOKS at, and it is not the same lever
+ * as the cone.
  *
  * The bore is the picture and is solved above; everything outside it is a black
  * ring around that picture, and at the near end that ring was most of the
  * screen. Two things set its width, and only one of them is the wall: a section
  * carries its FAR rim's radius all the way back, so the ocular end stands
- * `cone * seg` proud of the cone whatever the wall does. Halving the step
- * length is therefore worth more than halving the wall — four sections over a
- * body this short is a fine staircase.
+ * `cone * seg` proud of the cone whatever the wall does — which is why the
+ * body is cut into short steps rather than one long one.
+ * The picture is not what gets smaller and must not be — it is `PRISM_CONE`'s,
+ * and `PRISM_CONE` answers to the rail.
  *
- * Measured on the rifle at full ADS, against the flush rims below: the
- * housing's outer edge came in from 97% of the half-screen to 81% while the
- * picture stayed exactly where the cone puts it (~50%), which is 40% less black
- * ring around the same view. The picture is not what got smaller and must not
- * be — it is `PRISM_CONE`'s, and `PRISM_CONE` answers to the rail.
- *
- * The floor under both is the same as the scope's: a wall thinner than the ink
- * shell `renderOutline` extrudes reads as a line rather than a rim.
+ * The floor is the same as the scope's: a wall thinner than the ink shell
+ * `renderOutline` extrudes reads as a line rather than a rim. The launcher's
+ * optic borrows this with the cone (`RpgModel`).
  */
 export const PRISM_WALL = 0.005;
-const PRISM_SECTIONS = 4;
 /**
- * The prism is the one housing here that is NOT round: an octagon, flat on
- * top, bottom and both flanks. A prism sight carries a glass block, and a
- * faceted body is what says so at a glance — beside two round scopes it is the
- * silhouette, before any colour is read. The bore is still the cone's: `shell`
- * stands every slab off the bore's radius, so the octagon's INSCRIBED circle
- * is the one the picture needs and the corners are all extra.
+ * The prism is ONE round body, eyepiece to bell, drawn from the Primary Arms
+ * SLx and the Spitfire: a knurled dioptre ring on the eyepiece, a stepped body
+ * with a collar round its middle for the three controls, and a bell with a
+ * steel lip. Every radius is `prismBore` plus a wall at the step's FAR rim, so
+ * the body circumscribes the cone and the picture is the cone's.
+ *
+ * `PRISM_EYEPIECE_DZ` is where the eyepiece's own section ends and the body's
+ * `PRISM_SECTIONS` steps begin; the last of them is the bell.
  */
-const PRISM_SIDES = 8;
-const PRISM_OCULAR_DZ = -0.06;
-const PRISM_OBJECTIVE_DZ = 0.05;
+const PRISM_OCULAR_DZ = -0.05;
+const PRISM_EYEPIECE_DZ = -0.03;
+const PRISM_OBJECTIVE_DZ = 0.045;
+const PRISM_SECTIONS = 3;
 const PRISM_FLOOR_GAP = 0.0025;
 export const PRISM_CONE =
   (PRISM_RISE - PRISM_FLOOR_GAP) /
   (eyeDistance("prism") + RAIL_REACH - PRISM_OCULAR_DZ);
 
-/** `scopeBore`'s twin: the clear bore a prism section ending at `dz` carries. */
 /**
  * The prism's rise on this weapon: `PRISM_RISE` is the rise on the longest
  * rail and what fixes the cone, and this is the same inequality solved against
@@ -362,6 +368,7 @@ export const PRISM_CONE =
 const prismRiseOf = (mount: OpticMount): number =>
   PRISM_CONE * (eyeDistance("prism") + reachOf(mount) - PRISM_OCULAR_DZ) + PRISM_FLOOR_GAP;
 
+/** `scopeBore`'s twin: the clear bore the prism must carry at `dz`. */
 const prismBore = (dz: number): number =>
   2 * PRISM_CONE * (eyeDistance("prism") + dz - PRISM_OCULAR_DZ);
 
@@ -447,7 +454,7 @@ const dot2Bore = (dz: number): number =>
  * rise is what follows, rather than the other way round.
  *
  * 0.072 is 0.84 of the screen's half-height at 6x, against the 3.5x scope's
- * 0.674 and the prism's 0.506 — the reading being that a bigger, heavier optic
+ * 0.674 and the prism's 0.377 — the reading being that a bigger, heavier optic
  * shows you MORE of the frame, not less, and that the tunnel is the 3.5x's
  * character rather than a tax every scope owes. The daylight left under it
  * against `RAIL_REACH` is 0.023, which is the most of any optic here.
@@ -515,8 +522,8 @@ const LONG_RET_ARM = 0.0005;
  * black, and every accent on them is a NEUTRAL: an optic stands on sixteen
  * finishes it cannot be repainted to match (see `WeaponBuild.paint`), so a
  * housing with a hue of its own clashes with most of them. What tells the four
- * apart is their SHAPE — a short taper, an octagon, a slant-fronted compact
- * and a long tube with a sunshade.
+ * apart is their SHAPE — a short taper on a riser, a square housing between
+ * two round ends, a slant-fronted compact and a long tube with a sunshade.
  *
  * Deeper than `POLYMER`, which the kit screen's lamps lift to a slate blue; the
  * eyepieces and lips stay `POLYMER` and `RUBBER`, so the black body still reads
@@ -1037,7 +1044,7 @@ export function buildOptics(
     b.shell("dot2ShadeLip", METAL, rObjective * 2, 0.004, 0.003, dot2Y, objectiveZ + 0.0145);
 
     // The riser: a flat clamp foot on the rail, and one black slab from it up
-    // to the tube whose top FOLLOWS the taper — the prism mount's argument, so
+    // to the tube whose top FOLLOWS the taper — the scope base's argument, so
     // it can never reach into the cone. A window is cut up through its waist,
     // scaled to the height this weapon's rail leaves it, so it stays a waist
     // on the carbine's short rise rather than cutting the riser in two.
@@ -1150,92 +1157,232 @@ export function buildOptics(
   };
 
   /**
-   * The 2.5x prism: a short OCTAGONAL black body on ONE integral
-   * mount, with an etched chevron hung near the objective.
+   * A pivot that turns a SLAB onto another axis. `slab` extrudes along x and
+   * takes its profile in (z, y); stood on this with `axis` "z" it extrudes
+   * along the bore and takes its profile in (x, y) — an END-ON outline, which
+   * is what a block with a hole through it needs — and with "y" it extrudes
+   * upward, for a cap on a crown.
+   */
+  const across = (
+    name: string,
+    axis: "x" | "y" | "z",
+    x: number,
+    y: number,
+    z: number,
+  ): TransformNode => {
+    const p = b.pivot(name, x, y, z, 0);
+    if (axis === "y") p.rotation.z = Math.PI / 2;
+    else if (axis === "z") p.rotation.y = Math.PI / 2;
+    return p;
+  };
+
+  /**
+   * A KNURLED disc — a dial or a turret cap — `thick` along `axis`, as a slab
+   * whose outline is `teeth` square-cut teeth between `rIn` and `rOut`. The
+   * teeth are real steps in the silhouette, so `CelInk` draws the knurl as the
+   * rim of a thing you turn rather than as a pattern painted on a pin.
+   */
+  const knurl = (
+    name: string,
+    color: string,
+    axis: "x" | "y" | "z",
+    x: number,
+    y: number,
+    z: number,
+    rOut: number,
+    rIn: number,
+    teeth: number,
+    thick: number,
+  ): void => {
+    const q = Math.PI / (2 * teeth);
+    const pts: [number, number][] = [];
+    for (let k = 0; k < teeth; k++) {
+      const a = (k / teeth) * Math.PI * 2;
+      for (const [r, da] of [[rOut, -q], [rOut, q], [rIn, q], [rIn, 3 * q]] as const) {
+        pts.push([Math.cos(a + da) * r, Math.sin(a + da) * r]);
+      }
+    }
+    b.slab(name, color, pts, thick, 0.0003, 0, across(`${name}Axis`, axis, x, y, z));
+  };
+
+  /**
+   * The 2.5x prism, drawn from the Primary Arms SLx 2.5x and the Vortex
+   * Spitfire: one round body from a knurled eyepiece to a steel-lipped bell,
+   * a collar round its middle carrying the three controls, on ONE integral
+   * slant mount, with an etched chevron hung in the objective.
    *
    * The mount is what tells it apart from the scope at a glance, and it is not
    * decoration: a prism carries its glass in a single block and is bolted down
-   * as one piece, where a scope is a tube borrowed by rings. The faceted
-   * housing (`PRISM_SIDES`) is the other half of that silhouette.
+   * as one piece, where a scope is a tube borrowed by rings. Every part stands
+   * OUTSIDE the cone at its own far end, so nothing on the body can reach into
+   * the picture.
    */
   const buildPrism = (node: TransformNode): Vector3 => {
     // No front leaf, for the scope's reason: this cone is wider still.
     foldedIrons(false);
+    const y = prismY;
     const ocularZ = winZ + PRISM_OCULAR_DZ;
     const objectiveZ = winZ + PRISM_OBJECTIVE_DZ;
-    const seg = (PRISM_OBJECTIVE_DZ - PRISM_OCULAR_DZ) / PRISM_SECTIONS;
-    /** The radius a section carries — its FAR rim's. See `outerAt` in the scope. */
+    const eyeEndZ = winZ + PRISM_EYEPIECE_DZ;
+    const seg = (PRISM_OBJECTIVE_DZ - PRISM_EYEPIECE_DZ) / PRISM_SECTIONS;
+    const wall = 0.004;
+    const bellWall = 0.0055;
+    /** The radius the body carries at `dz` — its section's FAR rim's, plus the wall. */
     const outerAt = (dz: number): number => {
-      const i = Math.min(
-        PRISM_SECTIONS,
-        Math.max(1, Math.ceil((dz - PRISM_OCULAR_DZ) / seg)),
-      );
-      return prismBore(PRISM_OCULAR_DZ + i * seg) / 2 + PRISM_WALL;
+      if (dz <= PRISM_EYEPIECE_DZ) return prismBore(PRISM_EYEPIECE_DZ) / 2 + wall;
+      const i = Math.min(PRISM_SECTIONS, Math.ceil((dz - PRISM_EYEPIECE_DZ) / seg));
+      return prismBore(PRISM_EYEPIECE_DZ + i * seg) / 2 + (i === PRISM_SECTIONS ? bellWall : wall);
     };
-    for (let i = 0; i < PRISM_SECTIONS; i++) {
-      const far = PRISM_OCULAR_DZ + seg * (i + 1);
+
+    // The eyepiece: its own short section, with a rubber rim at the back and
+    // the dioptre ring on it — a knurl of polymer ribs on a black band, which
+    // is what a ring set once with a thumb looks like.
+    const eyeBore = prismBore(PRISM_EYEPIECE_DZ);
+    const rEye = eyeBore / 2 + wall;
+    b.shell("prismEyepiece", black, eyeBore, wall, eyeEndZ - ocularZ, y, (ocularZ + eyeEndZ) / 2);
+    b.shell("prismEyeRim", RUBBER, eyeBore, 0.0085, 0.004, y, ocularZ - 0.001);
+    const dioptreZ = ocularZ + 0.0065;
+    b.shell("prismDioptre", black, rEye * 2, 0.004, 0.009, y, dioptreZ);
+    b.shell("prismDioptreKnurl", POLYMER, rEye * 2 + 0.008, 0.002, 0.008, y, dioptreZ, 28, 0, 0.5);
+
+    // The body, in steps that each just clear the cone at their own far rim,
+    // the last a wall thicker so the front reads as a bell. A fine steel line
+    // where the eyepiece meets it, and a steel lip on the bell's mouth so the
+    // front is a finished edge rather than a cut tube.
+    for (let i = 1; i <= PRISM_SECTIONS; i++) {
+      const far = PRISM_EYEPIECE_DZ + seg * i;
+      const bell = i === PRISM_SECTIONS;
       b.shell(
-        "prismTube",
+        bell ? "prismBell" : "prismTube",
         black,
         prismBore(far),
-        PRISM_WALL,
+        bell ? bellWall : wall,
         seg,
-        prismY,
+        y,
         winZ + far - seg / 2,
-        PRISM_SIDES,
       );
     }
-    const rOcular = outerAt(PRISM_OCULAR_DZ);
-    const rObjective = outerAt(PRISM_OBJECTIVE_DZ);
-    // The near end is the widest thing in the frame, since it is nearest the
-    // eye, so it is ONE diameter rather than a stack: a thin black lip flush
-    // with the housing, and a round rubber cup behind it — the one part of this
-    // sight about the eye relief rather than the picture, since a short,
-    // unforgiving eye box is what a shooter finds a cup for. Both stand
-    // AROUND the housing's outer radius and never inside the cone, and they
-    // butt end to end rather than overlapping, so no two end faces share a
-    // plane the eye looks straight down.
-    b.shell("prismOcular", POLYMER, rOcular * 2, 0.004, 0.01, prismY, ocularZ - 0.001, PRISM_SIDES);
-    b.shell("prismCup", RUBBER, rOcular * 2, 0.004, 0.012, prismY, ocularZ - 0.012);
-    // A short octagonal hood past the objective, and a steel lip on its mouth
-    // so the front reads as a finished edge rather than a cut tube.
-    b.shell("prismHood", black, rObjective * 2, 0.004, 0.016, prismY, objectiveZ + 0.008, PRISM_SIDES);
-    b.shell("prismHoodLip", METAL, rObjective * 2, 0.0045, 0.004, prismY, objectiveZ + 0.018, PRISM_SIDES);
-    // The mount: one slab from the rail up to the housing, its top a straight
-    // line that FOLLOWS the taper — at each end it meets the underside of the
-    // section standing there. That line cannot reach into the cone: both ends
-    // stand a wall's thickness outside it and both are straight lines in z, so
-    // the gap between them is too everywhere in between. The ends are raked,
-    // which is most of what makes it read as a machined part rather than a
-    // block the housing was set down on.
+    b.shell("prismEyeTrim", METAL, rEye * 2, 0.0025, 0.0025, y, eyeEndZ + 0.00125);
+    b.shell("prismBellLip", METAL, prismBore(PRISM_OBJECTIVE_DZ + 0.002), bellWall, 0.0025, y, objectiveZ);
+
+    // The mount: a SLANT mount, its foot set forward of the body it carries,
+    // which is what brings a prism's short eye box back to the eye. A clamp
+    // foot on the rail; a raked riser whose flanks are sunk between two
+    // full-width pillars and a saddle, so each side reads as a lightening
+    // pocket; and the saddle's top a straight line from one step's underside
+    // to another's, so it FOLLOWS the taper — both ends stand a wall outside
+    // the cone and both are straight in z, so everything between does too.
+    // Two cross-bolts through the foot, nuts on the left.
     const baseBottom = mount.railTop - 0.003;
-    const rearZ = winZ - 0.05;
-    const frontZ = winZ + 0.034;
-    const topRearZ = rearZ + 0.012;
-    const topFrontZ = frontZ - 0.012;
+    const footH = 0.008;
+    const footTop = baseBottom + footH;
+    const footRear = winZ - 0.03;
+    const footFront = winZ + 0.04;
     b.slab(
-      "prismMount",
+      "prismFoot",
       black,
       [
-        [rearZ, baseBottom],
-        [frontZ, baseBottom],
-        [topFrontZ, prismY - outerAt(topFrontZ - winZ)],
-        [topRearZ, prismY - outerAt(topRearZ - winZ)],
+        [footRear, baseBottom],
+        [footFront, baseBottom],
+        [footFront - 0.003, footTop],
+        [footRear + 0.003, footTop],
+      ],
+      0.034,
+      0.0015,
+    );
+    const rb = footTop - 0.001;
+    const rtRear = winZ - 0.026;
+    const rtFront = winZ + 0.012;
+    const rtRearY = y - outerAt(rtRear - winZ) + 0.0005;
+    const rtFrontY = y - outerAt(rtFront - winZ) + 0.0005;
+    const rbRear = footRear + 0.006;
+    const rbFront = footFront - 0.008;
+    const pillar = 0.008;
+    /** The saddle's top at `z`. */
+    const topAt = (z: number): number =>
+      rtRearY + ((rtFrontY - rtRearY) * (z - rtRear)) / (rtFront - rtRear);
+    b.slab(
+      "prismRiser",
+      black,
+      [
+        [rbRear, rb],
+        [rbFront, rb],
+        [rtFront, rtFrontY],
+        [rtRear, rtRearY],
+      ],
+      0.018,
+      0.0015,
+    );
+    b.slab(
+      "prismPillar",
+      black,
+      [
+        [rbRear, rb],
+        [rbRear + pillar, rb],
+        [rtRear + pillar, topAt(rtRear + pillar)],
+        [rtRear, rtRearY],
       ],
       0.03,
-      0.003,
+      0.0015,
     );
-    b.box("prismLever", METAL, 0.006, 0.018, 0.034, 0.018, mount.railTop + 0.011, winZ - 0.022);
-    b.pin("prismBolt", METAL, 0.009, 0.038, 0, mount.railTop + 0.008, winZ + 0.018);
-    // Low caps on the flats, a prism being zeroed once and left. The wider,
-    // black knob opposite them is the reticle's illumination, which is the part
-    // of this sight that gets used mid-round.
-    const turretZ = winZ + 0.005;
-    const rTurret = outerAt(0.005);
-    b.pin("prismElev", METAL, 0.018, 0.007, 0, prismY + rTurret + 0.0035, turretZ, "y");
-    b.pin("prismWind", METAL, 0.018, 0.007, rTurret + 0.0035, prismY, turretZ, "x");
-    b.pin("prismIllum", POLYMER, 0.024, 0.009, -(rTurret + 0.0045), prismY, turretZ, "x");
-    b.pin("prismIllumCap", METAL, 0.015, 0.003, -(rTurret + 0.0105), prismY, turretZ, "x");
+    b.slab(
+      "prismPillar",
+      black,
+      [
+        [rbFront - pillar, rb],
+        [rbFront, rb],
+        [rtFront, rtFrontY],
+        [rtFront - pillar, topAt(rtFront - pillar)],
+      ],
+      0.03,
+      0.0015,
+    );
+    b.slab(
+      "prismSaddle",
+      black,
+      [
+        [rtRear, rtRearY - 0.004],
+        [rtFront, rtFrontY - 0.004],
+        [rtFront, rtFrontY],
+        [rtRear, rtRearY],
+      ],
+      0.03,
+      0.0012,
+    );
+    const boltY = baseBottom + footH / 2;
+    for (const z of [footRear + 0.012, footFront - 0.012] as const) {
+      b.pin("prismCrossBolt", METAL, 0.0055, 0.038, 0, boltY, z);
+      b.pin("prismBoltHead", METAL, 0.009, 0.003, 0.0185, boltY, z);
+      b.pin("prismNut", METAL, 0.0105, 0.004, -0.019, boltY, z);
+    }
+
+    // A collar round the middle step, and the controls on it as they are on
+    // the real thing: capped, knurled turrets on the crown and the right flank
+    // — a prism is zeroed once and left — and on the left the one control used
+    // mid-round, the illumination: a wide knurled dial on a boss, its face the
+    // battery cap with a coin slot across it.
+    //
+    // **Their height is set by the EYEPIECE**, as the green dot's are: aimed,
+    // the eye sees past the dioptre ring, and anything on the body subtending
+    // more than that ring stands out round the picture as a knob. So the ring
+    // is the fattest thing at the back, as a real eyepiece is, the caps stop a
+    // few millimetres proud of the collar, and the dial is thin.
+    const turretZ = winZ - 0.006;
+    const rCollar = outerAt(turretZ - winZ) + 0.0025;
+    b.shell("prismCollar", black, outerAt(turretZ - winZ) * 2, 0.0025, 0.022, y, turretZ);
+    const tBody = 0.003;
+    const tCap = 0.002;
+    b.pin("prismElev", black, 0.014, tBody, 0, y + rCollar + tBody / 2, turretZ, "y");
+    knurl("prismElevCap", METAL, "y", 0, y + rCollar + tBody + tCap / 2, turretZ, 0.0056, 0.005, 14, tCap);
+    b.pin("prismWind", black, 0.014, tBody, rCollar + tBody / 2, y, turretZ, "x");
+    knurl("prismWindCap", METAL, "x", rCollar + tBody + tCap / 2, y, turretZ, 0.0056, 0.005, 14, tCap);
+    const boss = 0.0015;
+    const dial = 0.004;
+    const face = -(rCollar + boss + dial);
+    b.pin("prismIllumBoss", black, 0.015, boss, -(rCollar + boss / 2), y, turretZ, "x");
+    knurl("prismIllum", POLYMER, "x", -(rCollar + boss + dial / 2), y, turretZ, 0.0095, 0.0085, 20, dial);
+    b.pin("prismIllumCap", METAL, 0.0085, 0.001, face - 0.0005, y, turretZ, "x");
+    b.box("prismIllumSlot", black, 0.0006, 0.0012, 0.0065, face - 0.0013, y, turretZ);
     b.merge("prism", node);
 
     // The reticle: a caret and nothing else, two arms merged into one emissive
@@ -1296,7 +1443,7 @@ export function buildOptics(
    * keyhole. The reticle's arms are cut to just inside that far rim, so they
    * run out to the edge of the visible circle and stop.
    *
-   * The slanted front is the silhouette: the prism is an octagon, the 6x a long
+   * The slanted front is the silhouette: the prism is a square housing, the 6x a long
    * tube with a sunshade, and this a short body whose hood reaches furthest
    * over the TOP of the glass and hardly at all under it — what an ACOG is at
    * a glance. The narrow rib along its crown is the fibre housing that feeds
@@ -1374,7 +1521,7 @@ export function buildOptics(
     }
     // The fibre rib along the crown, from just forward of the elevation cap to
     // the hood. Its underside is a straight line from one section's top to the
-    // next section's — the prism mount's argument upside down: both ends stand
+    // next section's — the base's argument below, upside down: both ends stand
     // a wall outside the cone and both are straight in z, so all of it does.
     const ribRear = 0.018;
     const ribFront = SCOPE_OBJECTIVE_DZ - 0.004;
@@ -1392,8 +1539,10 @@ export function buildOptics(
       0.012,
       0.002,
     );
-    // The base: one flat-bottomed slab whose top follows the taper exactly as
-    // the prism's does, and for the same reason can never reach into the cone.
+    // The base: one flat-bottomed slab whose top is a straight line from the
+    // underside of one section to the underside of another, so it FOLLOWS the
+    // taper. It cannot reach into the cone: both ends stand a wall's thickness
+    // outside it and both are straight lines in z, so everything between does.
     // Two thumb nuts on the left, which is what clamps an ACOG to its rail.
     const baseBottom = mount.railTop - 0.003;
     const rearDz = -0.045;

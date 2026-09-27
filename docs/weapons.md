@@ -1932,7 +1932,7 @@ which belongs to the weapon, goes with the weapon.
   no rim in it at all, which is not a scope, it is the absence of one. A higher
   magnification is a narrower aimed FOV, so the same angular cone fills more of
   the frame. `LONG_CONE` is therefore authored against the FRAME (0.072, which is
-  0.84 of the half-height, against the 3.5x's 0.674 and the prism's 0.506) and
+  0.84 of the half-height, against the 3.5x's 0.674 and the prism's 0.377) and
   its rise is set by the objective bell's own radius instead, with the rail's
   inequality satisfied comfortably as a consequence. **A bigger, heavier optic
   showing MORE of the frame is the intended reading**: the tunnel is the 3.5x's
@@ -1977,7 +1977,7 @@ and read the MESH NAMES, never the count**: the honest floor is not zero —
 1024 rays find the reticle (52 on the 6x, 39 on the 3.5x's posts, 33 on the 2x's, which is what
 thinning the reticle moved and is the only place that shows up as a number) and
 a handful of rays of the outermost ring find the tube itself (6 on the 3.5x,
-8 on the octagonal prism, 10 on the 6x, and only ever on that ring), because a stepped tube
+6 on the prism, 10 on the 6x, and only ever on that ring), because a stepped tube
 circumscribes its own cone and touches it at every step's far rim. A count
 compared against a remembered number would have called both of those a
 regression and the lever nothing at all.
