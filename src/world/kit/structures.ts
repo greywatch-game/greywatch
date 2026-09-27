@@ -31,7 +31,9 @@
  * `PROP_BODIES` in MapBuilder.ts argues for scatter, where too small costs a
  * round clipping a silhouette and too large costs shots that visibly should
  * have landed. The silo has always done this (its box is the nominal `dia`,
- * not the 1.06 it splays to at the foot); it is the pattern to copy.
+ * not the 1.06 it splays to at the foot); it is the pattern to copy. The well
+ * goes one further, a dodecagon of six bars rather than one box, because a
+ * square round a 3.3 m drum is 0.7 m of air on every diagonal.
  *
  * Two things here are walked ON rather than hidden behind — the two bridges and
  * the temple — so they additionally owe what kit/terrain.ts's header states:
@@ -129,11 +131,20 @@ export function buildSilo(scene: Scene, mats: CelMaterialFactory): Structure {
  * hung in the mouth, cranked from one side. Half the mouth is closed by a
  * boarded lid.
  *
- * **The collider is the box it has always been**, first and alone, and every
- * part obeys the three rules: the drum and the coping are the box's own
- * silhouette, the flags round the foot are 7 cm high, and everything else
- * stands on the box's top — the mouth is a black disc laid ON it rather than a
- * shaft cut into it, so a round that stops there stops on what is drawn.
+ * **The collider is the drum, not a square drawn round it.** It was one
+ * 3.4 m box, so on the diagonals it stood 0.7 m proud of the stone and a round
+ * stopped on open air — the haystack's and the kiln's bug. It is a
+ * dodecagon now, with an apothem of `DRUM` and corners at 1.656 m, built as
+ * the union of six bars turned 30° apart, each 2 x `DRUM` long and one side
+ * wide (three crossed SQUARES are a twelve-pointed star reaching 2.26 m, which
+ * is worse than the square they replace). It sits inside the drawn faces
+ * everywhere (18 stones on 1.60-1.66 m) and never more than ~5 cm short of
+ * them, which is the side of the trade a round clipping the stone is on
+ * rather than one stopping in the air. Still 1.5 m and still first. Every part obeys the three rules: the drum and the
+ * coping are its silhouette, the flags round the foot are 7 cm high, and
+ * everything else stands on its top — the mouth is a black disc laid ON it
+ * rather than a shaft cut into it, so a round that stops there stops on what
+ * is drawn.
  *
  * **Which half the lid covers, which side the crank is on, how the stones
  * are laid and weathered and whether a pail stands on the lid are seeded off
@@ -147,9 +158,16 @@ export function buildWell(
   ctx?: BuildCtx,
 ): Structure {
   const b = new Build(scene, mats, "well");
-  // ---- the collider: the drum, as it always was.
-  b.block({ w: 3.4, h: 1.5, d: 3.4, x: 0, y: 0.75, z: 0 });
+  // ---- the collider: the drum, as a dodecagon — the union of six bars, each
+  // reaching a pair of opposite flats and exactly as wide as one side, so its
+  // corners are the polygon's own. Squares would make a star.
+  const DRUM = 1.6;
+  const SIDES = 12;
+  for (let k = 0; k < SIDES / 2; k++) {
+    b.block({ w: 2 * DRUM, h: 1.5, d: 2 * DRUM * Math.tan(Math.PI / SIDES), x: 0, y: 0.75, z: 0, rotY: (2 * k * Math.PI) / SIDES });
+  }
 
+  // Seeded on the footprint the collider used to be, so the drawing did not re-roll with it.
   const rnd = mulberry32(streetSeed(3.4, 3.4, 1.5, ctx));
   /** Which half of the mouth the lid covers (+Z or -Z) and the crank's side. */
   const lidSide = rnd() < 0.5 ? 1 : -1;
