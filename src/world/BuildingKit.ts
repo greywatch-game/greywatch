@@ -249,7 +249,10 @@ export type BuilderKind = keyof typeof BUILDERS;
  * its stonework, which half its lid covers and which side its crank is on.
  * The footbridge seeds its planks, its boarding and its stones off where it
  * stands, stands its bank seats where the bank falls away under it and cuts
- * each pile into the bed.
+ * each pile into the bed. The jetty seeds its planks, its piles' heads and
+ * what lies at its head off where it stands, finds its head as the end the
+ * ground falls away under, and cuts each pile, brace, sill and step to the
+ * ground under it.
  */
 export const CONFORMS_TO_TERRAIN: ReadonlySet<BuilderKind> = new Set([
   "road",
@@ -271,4 +274,5 @@ export const CONFORMS_TO_TERRAIN: ReadonlySet<BuilderKind> = new Set([
   "watchtower",
   "well",
   "bridge",
+  "jetty",
 ] as const);

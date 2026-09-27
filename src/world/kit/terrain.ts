@@ -35,13 +35,21 @@ import {
   DARK_STONE,
   DIRT,
   GUARD_THICKNESS,
+  IRON,
   KERB,
   KERB_WORN,
+  PITCH,
   PLANK,
   ROAD_PAINT,
+  SAILCLOTH,
   TEAK,
   TIMBER,
+  type Point3,
+  rope,
+  slab,
+  streetSeed,
 } from "./core";
+import { mulberry32 } from "../rng";
 
 /**
  * A raised earth terrace with a ramp on one side. Used for the chapel's
@@ -869,24 +877,303 @@ export function buildStairs(
   return b;
 }
 
-/** Rotting jetty over the bog, running along Z. */
+/**
+ * A PILE-AND-HEADSTOCK LANDING STAGE running along Z: plank decking laid across
+ * four stringers, tarred piles in pairs outboard of the deck edge, clamped at
+ * each bent by a double waling bolted through, braced where the water is deep
+ * enough to need it, with a ladder, two bollards and a coil of rope at the
+ * seaward head and a sill and a step at the shore end. It was a plank slab with
+ * the tops of six posts poking through it.
+ *
+ * **The collider is the one it has always had**: the deck slab, 0.24 thick,
+ * its top 0.57 over local zero. That height is load-bearing — it must stay
+ * under `CONFIG.nav.stepHeight` above the mud, or the flood fill never reaches
+ * it and bots treat the jetty as a wall — and it means the whole understructure
+ * stands in the band between the slab and the water, a few tens of centimetres
+ * on every placement. So what reads from the side is the plank ends, the outer
+ * stringer, the walings and the pile heads; the braces are drawn and mostly
+ * drowned.
+ *
+ * **Nothing walked is drawn proud of the collider**: the planks' tops are the
+ * slab's top (a worn one a few millimetres under it), and the outer stringers'
+ * faces and the headers across both ends are flush with its sides, so no round
+ * arriving at the edge stops on air. What stands on the deck — the bollards, the
+ * cleats, the coil, the fish box — is under 0.3 m and walked over; the pile heads
+ * stand outboard of the deck and no higher; the ladder is laid flat on the end.
+ *
+ * Seeded off where it stands (`streetSeed`) — the planks' widths and wear, the
+ * piles' heads and lean, the ladder's side, the fish box — and cut to the
+ * ground: each pile is carried into the bed under its own foot and left out
+ * where the bank has risen over it, the braces are drawn only where the bed
+ * falls away far enough to want one, and the HEAD is whichever end the ground
+ * falls away under. That is what puts `jetty` in `CONFORMS_TO_TERRAIN`. The
+ * palette is the boathouse's, which stands beside almost every jetty in the
+ * game, so it costs no colour a block near one did not already draw. Without a
+ * `BuildCtx` (a preview) it is drawn from a bank at +Z out over a bed 0.6 deep.
+ */
 export function buildJetty(
   scene: Scene,
   mats: CelMaterialFactory,
   p: BuildParams = {},
+  ctx?: BuildCtx,
 ): Structure {
   const b = new Build(scene, mats, "jetty");
   const len = p.length ?? 18;
   const w = 3;
+
+  // --- the collider: unchanged ---------------------------------------------
   // Deck top must stay under CONFIG.nav.stepHeight above the mud, or the
   // flood fill never reaches it and bots treat the jetty as a wall.
-  b.box(w, 0.24, len, 0, 0.45, 0, PLANK);
   b.block({ w, h: 0.24, d: len, x: 0, y: 0.45, z: 0 });
-  const posts = Math.round(len / 3);
-  for (let i = 0; i <= posts; i++) {
-    const z = -len / 2 + (i / posts) * len;
+
+  // --- everything after this is drawing ------------------------------------
+  /** The walked surface: the slab's top. */
+  const top = 0.57;
+  const rnd = mulberry32(streetSeed(w, len, top, ctx));
+  const ground = (lx: number, lz: number): number => {
+    if (!ctx) {
+      // A preview: a bank at +Z shelving down to a bed 0.6 under zero.
+      const t = Math.min(1, Math.max(0, (lz + len / 2 - len * 0.6) / (len * 0.4)));
+      return -0.6 + t * 1.25;
+    }
+    const cos = Math.cos(ctx.rotY);
+    const sin = Math.sin(ctx.rotY);
+    return ctx.terrain.surfaceAt(ctx.x + lx * cos + lz * sin, ctx.z - lx * sin + lz * cos) - ctx.y;
+  };
+  /** The lowest of three samples across the deck at `z`. */
+  const across = (z: number): number => Math.min(ground(-w / 2, z), ground(0, z), ground(w / 2, z));
+
+  // The head is the end the ground falls away under; the shore end is the
+  // other. A level placement keeps its head at -Z.
+  const head = across(len / 2) < across(-len / 2) - 0.02 ? 1 : -1;
+  const headZ = (head * len) / 2;
+  const shoreZ = -headZ;
+
+  const plankT = 0.07;
+  /** The stringers' tops: the planks' undersides. */
+  const bed = top - plankT;
+  const stringerH = 0.2;
+  /** The stringers' undersides, which the walings and braces hang from. */
+  const soffit = bed - stringerH;
+  const pileD = 0.26;
+  /** A pile's centre, |x|: outboard, against the outer stringer's face. */
+  const pileX = w / 2 + pileD / 2 + 0.01;
+
+  // The decking: planks across, of seeded widths with a gap the ink finds,
+  // their ends ragged past the outer stringers, a few worn hollow and a few
+  // replaced in fresher timber.
+  for (let z = -len / 2; z < len / 2 - 0.05; ) {
+    let pw = 0.2 + rnd() * 0.08;
+    if (z + pw > len / 2 - 0.12) pw = len / 2 - z;
+    const xl = -(w / 2 + 0.02 + rnd() * 0.05);
+    const xr = w / 2 + 0.02 + rnd() * 0.05;
+    const sink = rnd() < 0.2 ? 0.004 + rnd() * 0.008 : 0;
+    const colour = rnd() < 0.08 ? TIMBER : PLANK;
+    b.box(xr - xl, plankT, pw - 0.016, (xl + xr) / 2, top - sink - plankT / 2, z + pw / 2, colour);
+    z += pw;
+  }
+  // The stringers the planks are spiked to, emitted after the planks that
+  // hide their tops. The outer pair's faces are flush with the slab's sides.
+  for (const x of [-(w / 2 - 0.08), -0.5, 0.5, w / 2 - 0.08]) {
+    b.box(Math.abs(x) > 1 ? 0.16 : 0.14, stringerH, len, x, bed - stringerH / 2, 0, TIMBER);
+  }
+  // A header across each end, its face flush with the slab's end.
+  for (const s of [-1, 1]) {
+    b.box(w, stringerH, 0.1, 0, bed - stringerH / 2, (s * len) / 2 - s * 0.05, TIMBER);
+  }
+
+  // The bents: a pair of tarred piles outboard of the deck, clamped by a
+  // waling either side of them, bolted through. At most 2.6 m apart.
+  const n = Math.max(2, Math.ceil((len - 0.7) / 2.6));
+  const bents: number[] = [];
+  for (let i = 0; i <= n; i++) bents.push(-len / 2 + 0.35 + (i * (len - 0.7)) / n);
+  /** The bed under each pile, for the braces. Null where no pile stands. */
+  const feet: (number | null)[][] = [];
+  const walH = 0.18;
+  const walY = soffit + 0.04 + walH / 2;
+  const walT = 0.08;
+  for (const z of bents) {
+    const row: (number | null)[] = [];
     for (const sx of [-1, 1]) {
-      b.cyl(1.3, 0.26, 0.32, 5, (sx * w) / 2.5, 0.05, z, TIMBER);
+      const x = sx * pileX;
+      const g = ground(x, z);
+      // Cut off a little over the deck, never higher than a step, and a
+      // weathered chamfer on the cut.
+      const cap = top + 0.06 + rnd() * 0.18;
+      const foot = g - 0.4;
+      if (g > cap - 0.1) {
+        row.push(null);
+        continue;
+      }
+      row.push(g);
+      const lean = (rnd() - 0.5) * 0.03;
+      b.cyl(cap - 0.04 - foot, pileD, pileD + 0.02, 7, x, (cap - 0.04 + foot) / 2, z, PITCH, { z: lean });
+      b.cyl(0.04, pileD * 0.62, pileD, 7, x - lean * (cap - foot) * 0.5, cap - 0.02, z, PITCH);
+      // A bolt head on each waling's face.
+      for (const dz of [-1, 1]) {
+        b.box(0.05, 0.05, 0.03, x, walY, z + dz * (pileD / 2 + walT + 0.015), IRON);
+      }
+    }
+    feet.push(row);
+    // The walings: across under the stringers, over the piles' faces, their
+    // ends run just past the piles.
+    const reach = pileX + pileD / 2 + 0.1;
+    for (const dz of [-1, 1]) {
+      b.box(reach * 2, walH, walT, 0, walY, z + dz * (pileD / 2 + walT / 2), TIMBER);
+    }
+  }
+
+  // Braces, where the bed falls far enough under the walings to want one: a
+  // cross brace between each bent's pair, turned alternately, and one on the
+  // outer face of each side from bent to bent.
+  const braceTop = soffit - 0.02;
+  bents.forEach((z, i) => {
+    const [l, r] = feet[i];
+    if (l === null || r === null) return;
+    const low = Math.min(l, r);
+    if (braceTop - low < 0.5) return;
+    const d = i % 2 === 0 ? 1 : -1;
+    slab(b, [-d * pileX, braceTop, z], [d * pileX, Math.max(low + 0.1, braceTop - 2 * pileX * 0.7), z], 0.06, 0.14, TIMBER);
+  });
+  for (const [k, sx] of [[0, -1], [1, 1]] as const) {
+    const x = sx * (pileX + pileD / 2 + 0.03);
+    for (let i = 0; i < bents.length - 1; i++) {
+      const a = feet[i][k];
+      const c = feet[i + 1][k];
+      if (a === null || c === null) continue;
+      const up = i % 2 === 0;
+      const lowEnd = (up ? a : c) + 0.12;
+      if (braceTop - lowEnd < 0.5) continue;
+      const za = bents[i] + 0.18;
+      const zc = bents[i + 1] - 0.18;
+      slab(b, [x, up ? lowEnd : braceTop, za], [x, up ? braceTop : lowEnd, zc], 0.05, 0.14, TIMBER);
+    }
+  }
+
+  // Cleats on the deck edge at alternate bents, low enough to walk over.
+  bents.forEach((z, i) => {
+    if (i % 2 === 1 || Math.abs(z - headZ) < 1) return;
+    const x = (i % 4 === 0 ? 1 : -1) * (w / 2 - 0.14);
+    b.box(0.07, 0.04, 0.12, x, top + 0.02, z - 0.1, TIMBER);
+    b.box(0.07, 0.04, 0.12, x, top + 0.02, z + 0.1, TIMBER);
+    b.box(0.08, 0.05, 0.4, x, top + 0.065, z, TIMBER);
+  });
+
+  // ---- the head ----
+  // A pair of iron bollards near the corners, a coil of rope made fast to one
+  // and run over the side, and a fish box by the other.
+  const bz = headZ - head * 0.55;
+  const ropeSide = rnd() < 0.5 ? -1 : 1;
+  for (const sx of [-1, 1]) {
+    const x = sx * (w / 2 - 0.32);
+    b.cyl(0.18, 0.16, 0.2, 8, x, top + 0.09, bz, IRON);
+    b.cyl(0.05, 0.26, 0.2, 8, x, top + 0.2, bz, IRON);
+  }
+  {
+    const bx = ropeSide * (w / 2 - 0.32);
+    // Two turns round the bollard's neck.
+    const turn: Point3[] = [];
+    for (let k = 0; k <= 16; k++) {
+      const a = (k / 8) * Math.PI * 2;
+      turn.push([bx + Math.cos(a) * 0.11, top + 0.1 + k * 0.004, bz + Math.sin(a) * 0.11]);
+    }
+    rope(b, turn, 0.035, 0.035, SAILCLOTH, 5);
+    // Then out to the edge and down the side into the water, sagging.
+    const edge = ropeSide * (w / 2 + 0.06);
+    rope(
+      b,
+      [
+        [bx + ropeSide * 0.1, top + 0.13, bz],
+        [edge, top + 0.02, bz - head * 0.25],
+        [edge + ropeSide * 0.12, top - 0.35, bz - head * 0.5],
+        [edge + ropeSide * 0.2, top - 0.9, bz - head * 0.6],
+      ],
+      0.035,
+      0.035,
+      SAILCLOTH,
+      5,
+    );
+    // The fall coiled down on the deck inboard of it: turns laid one on the
+    // last, open in the middle — a flat spiral read as a plate.
+    const cx = ropeSide * (w / 2 - 0.85);
+    const cz = bz - head * 0.2;
+    const coil: Point3[] = [];
+    for (let k = 0; k <= 40; k++) {
+      const a = (k / 10) * Math.PI * 2;
+      const r = 0.24 - (k / 40) * 0.04;
+      coil.push([cx + Math.cos(a) * r, top + 0.02 + (k / 40) * 0.1, cz + Math.sin(a) * r * 0.9]);
+    }
+    rope(b, coil, 0.04, 0.04, SAILCLOTH, 5);
+  }
+  if (rnd() < 0.7) {
+    // A fish box, boarded, standing by the other bollard.
+    const fx = -ropeSide * (w / 2 - 0.9);
+    const fz = bz - head * (0.35 + rnd() * 0.3);
+    const yaw = (rnd() - 0.5) * 0.5;
+    const c = Math.cos(yaw);
+    const s = Math.sin(yaw);
+    const at = (lx: number, lz: number): [number, number] => [fx + lx * c + lz * s, fz - lx * s + lz * c];
+    const fw = 0.62;
+    const fd = 0.42;
+    const fh = 0.24;
+    for (const k of [-1, 1]) {
+      const [x1, z1] = at((k * fw) / 2, 0);
+      b.box(0.025, fh, fd, x1, top + fh / 2, z1, PLANK, { y: yaw });
+      const [x2, z2] = at(0, (k * fd) / 2);
+      b.box(fw - 0.05, fh - 0.04, 0.025, x2, top + (fh - 0.04) / 2 + 0.02, z2, PLANK, { y: yaw });
+    }
+    // Hand-holes read as a dark cleat across each end, and the base inside.
+    for (const k of [-1, 1]) {
+      const [x1, z1] = at((k * (fw / 2 + 0.02)), 0);
+      b.box(0.02, 0.04, fd * 0.8, x1, top + fh - 0.05, z1, TIMBER, { y: yaw });
+    }
+    const [x0, z0] = at(0, 0);
+    b.box(fw - 0.05, 0.02, fd - 0.05, x0, top + 0.04, z0, TIMBER, { y: yaw });
+  }
+  // The ladder down the end, laid flat on the header, to the bed.
+  {
+    const g = across(headZ + head * 0.2);
+    if (top - g > 0.45) {
+      const lx = (rnd() < 0.5 ? -1 : 1) * (0.5 + rnd() * 0.4);
+      const lz = headZ + head * 0.14;
+      const foot = g - 0.15;
+      const stile = top - 0.02 - foot;
+      for (const k of [-1, 1]) {
+        b.box(0.07, stile, 0.08, lx + k * 0.22, (top - 0.02 + foot) / 2, lz, TIMBER);
+      }
+      for (let y = top - 0.18; y > foot + 0.1; y -= 0.28) {
+        b.box(0.4, 0.045, 0.045, lx, y, lz + head * 0.01, TIMBER);
+      }
+    }
+  }
+
+  // ---- the shore end ----
+  // A sill on the ground under the stringers where the deck clears it, with a
+  // block under each; and where it clears it by more than a step's worth, a
+  // timber step up onto the deck.
+  {
+    const sz = shoreZ + head * 0.35;
+    const g = across(sz);
+    const sillH = 0.2;
+    const sillTop = Math.min(soffit, g + sillH - 0.05);
+    if (soffit - g > 0.08) {
+      b.box(w + 0.5, sillTop - (g - 0.15), 0.26, 0, (sillTop + g - 0.15) / 2, sz, TIMBER);
+      if (soffit - sillTop > 0.04) {
+        for (const x of [-(w / 2 - 0.08), -0.5, 0.5, w / 2 - 0.08]) {
+          b.box(0.16, soffit - sillTop, 0.2, x, (soffit + sillTop) / 2, sz, TIMBER);
+        }
+      }
+    }
+    // Only where that end really is the bank: a jetty laid level along the
+    // waterline has no shore end, and a step there stands in the sea.
+    const eg = across(shoreZ - head * 0.3);
+    if (top - eg > 0.32 && eg > across(headZ) + 0.15) {
+      const stepTop = top - Math.min(0.29, (top - eg) / 2);
+      const stepZ = shoreZ - head * 0.22;
+      b.box(1.7, stepTop - (eg - 0.1), 0.4, 0, (stepTop + eg - 0.1) / 2, stepZ, PLANK);
+      for (const x of [-0.7, 0.7]) {
+        b.box(0.14, stepTop - (eg - 0.1) + 0.02, 0.14, x, (stepTop + eg - 0.1) / 2 + 0.01, stepZ - head * 0.2, PITCH);
+      }
     }
   }
   return b;
