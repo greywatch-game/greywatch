@@ -196,11 +196,12 @@ In `kit/core.ts`: `Build` (`box`, `cyl`, `wall`, `block`, `strut`, `guard`,
 `pane`, `doorWall`, `gableRoof`), `streetSeed`, `groundRun` (a run stepping
 down a slope), `carve` (intervals minus cuts), and the forest's words: `orient`,
 `slab` (a flat member from A to C), `limb` (a round one), `rope` (a tapering
-chain — roots, stems, cables), `heading`, `stepAlong`, `fern`, plus `FIG_*`;
+chain — roots, stems, cables), `heading`, `stepAlong`, `fern`, `curtain` (creeper
+hung down a face), plus `FIG_*`;
 `convexSolid` (a solid between two matching faces), and the elevations' words
 `onFace` (a member laid on one of four faces), `Side`, `Hole`, `CASEMENT` and
 `DOOR_PAINTS`. In `buildings.ts` (file-local, move to core.ts if a second
 file needs one): `offFace`, `casement`, `doorway`, `framing`, `facePoly`, `archRing`, `lancet`, `buttress`, `renderFace`, `wallHead`,
-`toothing`, `quoins`, `curtain`. In `structures.ts`: the temple's `flat`,
+`toothing`, `quoins`. In `structures.ts`: the temple's `flat`,
 `courses`, `hang`, `moss`, `fallen`, `devata`. Moving a helper to core.ts is
 the right fix for a second caller; a copy is not.

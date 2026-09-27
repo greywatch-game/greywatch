@@ -19,6 +19,7 @@ import {
   streetSeed,
   carve,
   convexSolid,
+  curtain,
   onFace,
   outward,
   runsAlongX,
@@ -7227,40 +7228,6 @@ function quoins(b: Build, a: QuoinFace, c: QuoinFace, y0: number, y1: number): v
     ] as const) {
       const len = Math.min(long ? 0.52 : 0.3, f.max);
       onFace(b, f.s, f.plane, f.corner + (f.dir * (len - 0.03)) / 2, y + QH / 2, len + 0.03, QH - 0.03, 0.03, RENDER_PROUD + 0.012, STUCCO);
-    }
-  }
-}
-
-/**
- * Creeper hanging down a face from its head: strands of irregular length,
- * longest in the middle of the run, each leafed alternately down its length.
- * A strand stops short of whatever `floor` says is under it — a window's head,
- * a door's — so the curtain frames an opening rather than hanging across it.
- */
-function curtain(
-  b: Build,
-  s: Side,
-  plane: number,
-  u0: number,
-  u1: number,
-  yTop: number,
-  reach: number,
-  out: number,
-  rnd: () => number,
-  floor: (u: number) => number,
-): void {
-  if (u1 - u0 < 0.3) return;
-  for (let u = u0 + rnd() * 0.08; u < u1; u += 0.12 + rnd() * 0.14) {
-    const q = (u - u0) / (u1 - u0);
-    const env = Math.sqrt(Math.max(0, Math.sin(Math.PI * q)));
-    const bottom = Math.max(yTop - reach * env * (0.3 + 0.7 * rnd()), floor(u));
-    if (yTop - bottom < 0.12) continue;
-    onFace(b, s, plane, u, (yTop + bottom) / 2, 0.03 + rnd() * 0.035, yTop - bottom, 0.035, out, CREEPER, (rnd() - 0.5) * 0.05);
-    let side = rnd() < 0.5 ? -1 : 1;
-    for (let y = yTop - 0.05 - rnd() * 0.1; y > bottom + 0.04; y -= 0.16 + rnd() * 0.14) {
-      const lu = u + side * (0.04 + rnd() * 0.04);
-      onFace(b, s, plane, lu, y, 0.15 + rnd() * 0.09, 0.09 + rnd() * 0.06, 0.025, out + 0.02 + rnd() * 0.02, rnd() < 0.3 ? FIG_LEAF_LIT : CREEPER, side * (0.35 + rnd() * 0.5));
-      side = -side;
     }
   }
 }
