@@ -273,6 +273,9 @@ npm run harrowmead # RE-SEED Harrowmead's layout and heights (committed
                    #   `-- --probe` prints the floor, `--refusals` every plot
                    #   refused and why (a road, the water, a slope, or a
                    #   front door opening onto nothing)
+npm run hollowmere # RE-SEED Hollowmere's layout and heights (committed
+                   #   source). Same rules, flags and warning as
+                   #   `harrowmead`; owes `npm run collision -- hollowmere`
 ```
 
 No test suite, no linter. `npm run typecheck` is the only automated gate — run it
@@ -876,12 +879,13 @@ down from 750 m because the same kit over three times the side read as
 sparse and cost 88 fps where it now runs 154). **Coldharbour, Harrowmead,
 Sarab and Cinderhaven are the four with vehicles on them**; **Sarab and
 Cinderhaven are the two with all THREE KINDS and the two that are not 8v8** —
-24 a side, online and off. Those two, Kurenai and Harrowmead are
+24 a side, online and off. Those two, Kurenai, Harrowmead and Hollowmere are
 **SEEDED by a generator** (`npm run sarab`, `npm run cinderhaven`,
-`npm run kurenai`, `npm run harrowmead`) rather than
-typed — Harrowmead was typed until its layout and floor had drifted apart
-(a church in the stream, doors onto hedges), and its generator now CHECKS
-that every front door opens onto a street, a yard or the green — and the emitted `layout.ts` is an
+`npm run kurenai`, `npm run harrowmead`, `npm run hollowmere`) rather than
+typed — Harrowmead and Hollowmere were typed until their layouts and floors
+had drifted apart (a church in the stream, doors onto hedges, relief built out
+of terrace boxes on a flat floor), and each generator now CHECKS that every
+front door opens onto a street, a yard or the green — and the emitted `layout.ts` is an
 ordinary layout file the editor opens, patches and saves like any other —
 re-running the generator discards editor edits. **Sarab is the map that SPENDS
 the levers**, stating six of the eight rows above, and the first to state a

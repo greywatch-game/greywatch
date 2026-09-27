@@ -77,11 +77,11 @@ export interface MapShot {
  * re-frame has to preserve and the numbers alone do not say it.
  */
 export const MAP_SHOTS: Readonly<Record<string, MapShot>> = {
-  // The chapel on its terrace, seen from the lane below it: lit windows, the
-  // graveyard, the spire against the aurora and the valley wall behind.
+  // The chapel on its hill, seen from Church Lane where it climbs out of the
+  // village: a lit cottage, the churchyard wall, the spire against the stars.
   hollowmere: {
     url: hollowmereShot,
-    vantage: { pos: [-32, 7, 100], target: [-58, 10, 78] },
+    vantage: { pos: [-38, 2.2, 38], target: [-60, 10, 82] },
   },
   // Under the canopy looking north-east into the morning sun — the temple
   // platform through the mist, with the trunks and the ferns in front of it.

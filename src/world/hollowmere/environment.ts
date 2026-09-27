@@ -19,8 +19,9 @@ export const HollowmereEnvironment: EnvironmentSpec = {
   floorColor: "#3a3a33",
   /**
    * Soil rather than the flat colour this floor used to be. The whole valley
-   * was one untextured hex across all 25 terrain blocks — and because 6,003 of
-   * the heightfield's 6,561 vertices are exactly 0, most of those blocks are a
+   * was one untextured hex across all 25 terrain blocks — and while the floor
+   * was flat (6,003 of its 6,561 vertices exactly 0, before the generator gave
+   * it hills in `scripts/generate-hollowmere.mjs`) most of those blocks were a
    * single quad, so there was no shading variation either. Looking at your own
    * feet returned a featureless wash.
    *
@@ -49,6 +50,13 @@ export const HollowmereEnvironment: EnvironmentSpec = {
   fogColor: "#131c2a",
   fogStart: 22,
   fogEnd: 78,
+  /**
+   * The mist's falloff is ABSOLUTE height (`exp(-max(y, 0) / mistHeight)`),
+   * and the floor's zero is chosen for it: the village stands a metre or so
+   * over it and keeps the mist it always had, the creek's dell, the moor and
+   * the bog shore sit below it and drown, and the chapel's hill at +5 stands
+   * clear. Raising this flattens that difference out.
+   */
   mistColor: "#1d2a38",
   mistHeight: 3.2,
   mistStrength: 0.45,
@@ -138,7 +146,7 @@ export const HollowmereEnvironment: EnvironmentSpec = {
     cloudLitStrength: 0.34,
   },
   /**
-   * The creek at B and the bog at E: black-green standing water that mostly
+   * The creek past B and the bog at E: black-green water that mostly
    * exists to catch the moon and the muzzle flashes — and which now does the
    * catching through a MIRROR rather than through a tint, so these two are
    * the body of the water and nothing else.

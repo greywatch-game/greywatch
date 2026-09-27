@@ -69,6 +69,27 @@ number to know from outside it is `blockSize: 200` — the whole square is
 inside its `fogEnd`, so a merge block buys no cull and costs a draw per
 material, and at 48 the village ran 122 fps where 200 runs 244.
 
+**Hollowmere is seeded now too** (`npm run hollowmere`), on Harrowmead's
+generator at this map's scale and for the same reason: it had been typed a
+placement at a time over a floor that was flat but for two scraped basins, its
+streets were a grid of rectangles that stopped in fields, its houses faced
+whichever way the last edit left them, and every piece of relief the flags were
+designed round — the chapel's terrace, the creek's two embankments — was a BOX.
+The generator lays the valley first (north high, the moor and the bog low, a
+real hill under the chapel and a real dell under the mill), then a street
+network of paths the village is built along, and holds every building to the
+same four refusals Harrowmead's does. Two things are its own. **The floor's zero
+is the MIST's datum**, because `mistHeight` is an absolute falloff: the village
+stands just above it and keeps the mist it had, the dell, the moor and the bog
+shore sit below it and drown, and the chapel's crown stands clear. And **a low
+scatter prop on a HILL can be sown inside a wall**: `MapBuilder`'s burial test
+measures a prop from its region's `y` rather than from the ground under it, so
+on raised ground a headstone reads as standing below a building's footing. The
+engine is unchanged; the generator keeps every low region off every claim
+(`groveOk`/`rectOk`), which is what makes that blind spot unreachable from this
+map — and it is worth knowing before sowing anything short on a hillside
+anywhere else.
+
 **Sarab is the fifth and by a wide margin the biggest: 900 m of PLAY inside
 1500 m of ground**, which is 5.1 times Harrowmead's playable area. It is the map
 `ENGINE_UPGRADE.md` was written to make possible and the first that spends most
