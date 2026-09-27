@@ -238,7 +238,9 @@ export type BuilderKind = keyof typeof BUILDERS;
  * its front and its canvas off where it stands, and cuts its posts and boarding
  * to the ground under them. The shed seeds its cladding, its roof, its door and
  * what hangs on it off where it stands, and carries its footing down to the
- * ground under each wall.
+ * ground under each wall. The woodpile seeds how it is ended, how it is
+ * covered and every billet off where it stands, and carries its posts and the
+ * stones under its bearers down to the ground.
  */
 export const CONFORMS_TO_TERRAIN: ReadonlySet<BuilderKind> = new Set([
   "road",
@@ -255,4 +257,5 @@ export const CONFORMS_TO_TERRAIN: ReadonlySet<BuilderKind> = new Set([
   "cart",
   "stall",
   "shed",
+  "woodpile",
 ] as const);
