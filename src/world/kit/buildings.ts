@@ -5,7 +5,7 @@
  * All follow the contract in kit/core.ts (origin-local geometry, no
  * solid/pickable/collisions metadata).
  */
-import { Scene } from "@babylonjs/core";
+import { Matrix, Quaternion, Scene, Vector3, VertexData } from "@babylonjs/core";
 import { CONFIG } from "../../config";
 import type { CelMaterialFactory } from "../../shaders/CelShader";
 import { mulberry32 } from "../rng";
@@ -2198,40 +2198,901 @@ export function buildSmithy(scene: Scene, mats: CelMaterialFactory): Structure {
   return b;
 }
 
+// --- the burnt cottage's drawing ---------------------------------------------
+//
+// The words `buildRuin` is drawn in: random rubble laid in courses over a core
+// set back behind the collider's face, so every joint between two stones is a
+// step the ink finds. Everything they make is VISUAL — the block at the top of
+// `buildRuin` is every collider the ruin has, and nothing here may add one.
+
+/** How far a rubble stone's face stands proud of the collider's, at most. */
+const RUBBLE_PROUD = 0.03;
 /**
- * A roofless stone shell: chest-high walls, one corner still carrying its
- * chimney breast. Fills ground that would otherwise be empty with somewhere
- * to *fight*, which a solid building never does — every wall here is cover on
- * both sides and none of them reaches the eaves.
+ * How far the core between the stones stands BEHIND the collider's face: the
+ * depth of a joint. Flush, a wall is a grey box with lines on it; this far
+ * back, every stone is its own step and the ink draws round it.
+ */
+const RUBBLE_BACK = 0.04;
+/** A face stone's depth front to back; its back is buried in the core. */
+const RUBBLE_DEEP = 0.08;
+/** The mortar joint between two stones, bed and perpend alike. */
+const RUBBLE_JOINT = 0.025;
+
+/** A box's six faces, as the axis each faces along and which way: +x -x +y -y +z -z. */
+const BOX_FACES = [
+  [0, 1],
+  [0, -1],
+  [1, 1],
+  [1, -1],
+  [2, 1],
+  [2, -1],
+] as const;
+/** The bit that leaves a stone's UNDERSIDE out, which nothing looks up at. */
+const HIDE_UNDER = 1 << 3;
+/** The bit that leaves out the face a stone on side `s` turns to the wall. */
+const hideBack = (s: Side): number => (s === "+x" ? 1 << 1 : s === "-x" ? 1 : s === "+z" ? 1 << 5 : 1 << 4);
+
+/**
+ * Stones by the thousand, as ONE surface per colour rather than a part each.
+ * A burnt cottage is some fifteen hundred stones, and as `Build.box` parts
+ * that was 1,600 meshes and 39 k vertices a placement for the merge to build
+ * and throw away; batched it is 73 parts and 29 k (9 by 7). Here a
+ * stone is a box's faces written straight into its colour's arrays, turned
+ * exactly as `Build.box` turns a part (Babylon's Z, then X, then Y), and a
+ * stone laid on a face may leave out the two faces nobody sees: its back,
+ * buried in the core, and its underside.
+ *
+ * `flush` hands each colour to `Build.surface`, so everything after it —
+ * the cores — is emitted after the stones that hide it.
+ */
+class StoneBatch {
+  private readonly sets = new Map<string, { pos: number[]; nrm: number[]; uv: number[]; idx: number[] }>();
+  private readonly q = new Quaternion();
+  private readonly m = new Matrix();
+  private readonly v = new Vector3();
+  private readonly at = new Vector3();
+  private readonly one = Vector3.One();
+
+  box(
+    w: number,
+    h: number,
+    d: number,
+    x: number,
+    y: number,
+    z: number,
+    color: string,
+    rot?: { x?: number; y?: number; z?: number },
+    hide = 0,
+  ): void {
+    let set = this.sets.get(color);
+    if (!set) this.sets.set(color, (set = { pos: [], nrm: [], uv: [], idx: [] }));
+    Quaternion.RotationYawPitchRollToRef(rot?.y ?? 0, rot?.x ?? 0, rot?.z ?? 0, this.q);
+    this.at.set(x, y, z);
+    Matrix.ComposeToRef(this.one, this.q, this.at, this.m);
+    const half = [w / 2, h / 2, d / 2];
+    const l = [0, 0, 0];
+    const n = [0, 0, 0];
+    for (let f = 0; f < 6; f++) {
+      if (hide & (1 << f)) continue;
+      const [a, sg] = BOX_FACES[f];
+      const b1 = (a + 1) % 3;
+      const b2 = (a + 2) % 3;
+      const base = set.pos.length / 3;
+      n[0] = n[1] = n[2] = 0;
+      n[a] = sg;
+      Vector3.TransformNormalFromFloatsToRef(n[0], n[1], n[2], this.m, this.v);
+      const [nx, ny, nz] = [this.v.x, this.v.y, this.v.z];
+      for (const [p, r] of [
+        [-1, -1],
+        [1, -1],
+        [1, 1],
+        [-1, 1],
+      ]) {
+        l[a] = sg * half[a];
+        l[b1] = p * half[b1];
+        l[b2] = r * half[b2];
+        Vector3.TransformCoordinatesFromFloatsToRef(l[0], l[1], l[2], this.m, this.v);
+        set.pos.push(this.v.x, this.v.y, this.v.z);
+        set.nrm.push(nx, ny, nz);
+        set.uv.push((p + 1) / 2, (r + 1) / 2);
+      }
+      // Walked (-,-) (+,-) (+,+) round (b1, b2), the first triangle's cross
+      // product is +a; a front face's must point INTO the solid
+      // (`convexSolid`'s rule), so a face looking along +a is wound back.
+      if (sg > 0) set.idx.push(base, base + 2, base + 1, base, base + 3, base + 2);
+      else set.idx.push(base, base + 1, base + 2, base, base + 2, base + 3);
+    }
+  }
+
+  /** `onFace`, into the batch — with a turn about the vertical, and faces to leave out. */
+  onFace(
+    s: Side,
+    plane: number,
+    u: number,
+    y: number,
+    along: number,
+    tall: number,
+    thick: number,
+    out: number,
+    color: string,
+    tilt = 0,
+    yaw = 0,
+    hide = 0,
+  ): void {
+    const c = outward(s) * (plane + out);
+    if (runsAlongX(s)) this.box(along, tall, thick, u, y, c, color, { y: yaw, z: tilt }, hide);
+    else this.box(thick, tall, along, c, y, u, color, { x: -tilt, y: yaw }, hide);
+  }
+
+  flush(b: Build): void {
+    for (const [color, set] of this.sets) {
+      const data = new VertexData();
+      data.positions = set.pos;
+      data.normals = set.nrm;
+      data.uvs = set.uv;
+      data.indices = set.idx;
+      b.surface(data, color);
+    }
+    this.sets.clear();
+  }
+}
+
+/**
+ * Courses from `y0` to `y1`, each `h0` plus up to `hs` high and the last one
+ * fitted to the head. Both faces of a wall are laid to ONE list, which is what
+ * lets a tooth at a break be a through-stone in the course either face shows,
+ * and two walls meeting at a corner share one so its dressed stones cross.
+ */
+function rubbleCourses(y0: number, y1: number, rnd: () => number, h0 = 0.17, hs = 0.12): [number, number][] {
+  const out: [number, number][] = [];
+  for (let y = y0; y1 - y > 0.02; ) {
+    let h = h0 + rnd() * hs;
+    if (y1 - (y + h) < h0 * 0.7) h = y1 - y;
+    out.push([y, y + h]);
+    y += h;
+  }
+  return out;
+}
+
+/** One face of rubble, and what is left unlaid in it. */
+interface RubbleFace {
+  s: Side;
+  /** The collider's face, as a signed coordinate on the side's own axis. */
+  at: number;
+  u0: number;
+  u1: number;
+  courses: readonly [number, number][];
+  /** A face whose head steps down lays each course only along the run standing that high. */
+  extent?: (c1: number) => [number, number];
+  /** What a course leaves unlaid its whole height: the dressed stones at a corner or a jamb. */
+  cut?: (k: number) => [number, number][];
+  /** Openings, pockets and the masses standing against the face; stones are cut round them both ways. */
+  holes?: readonly Hole[];
+  /** The chance a stone at (u, y) is blackened: how far the fire reached up an inside face. */
+  soot?: (u: number, y: number) => number;
+  /** The ground along the face; the first course is carried down to it. */
+  ground?: (u: number) => number;
+  /** Smaller stones: the later infill of a blocked opening. */
+  small?: boolean;
+}
+
+/**
+ * Random rubble on one face, a course at a time: stones of uneven length, each
+ * standing a different distance proud and leaning a little in its bed, so the
+ * face is a field of small planes the bands catch one by one rather than one
+ * plane with a pattern on it. Cut round the holes exactly.
+ */
+function rubbleFace(sb: StoneBatch, f: RubbleFace, rnd: () => number): void {
+  const plane = outward(f.s) * f.at;
+  const hide = hideBack(f.s) | HIDE_UNDER;
+  const [lo, span] = f.small ? [0.14, 0.14] : [0.3, 0.42];
+  const holes = f.holes ?? [];
+  // Each stone is turned a little about the vertical as well as in its bed,
+  // so its face is a plane of its own that the key light finds at its own
+  // angle; laid square to the wall, a course read as a row of bricks. A
+  // stone short of its bed sits anywhere in it, which is what varies the
+  // joints.
+  const stone = (ua: number, ub: number, y0: number, y1: number): void => {
+    const um = (ua + ub) / 2;
+    const short = rnd() < 0.4 ? rnd() * 0.05 : 0;
+    const tall = y1 - y0 - short;
+    const y = y0 + tall / 2 + short * rnd();
+    const soot = f.soot?.(um, y) ?? 0;
+    const color = rnd() < soot + 0.07 ? DARK_STONE : rnd() < 0.28 ? STONE : MOSS_STONE;
+    const proud = 0.008 + rnd() * (RUBBLE_PROUD - 0.008);
+    sb.onFace(f.s, plane, um, y, ub - ua, tall, RUBBLE_DEEP, proud - RUBBLE_DEEP / 2, color, (rnd() - 0.5) * 0.06, (rnd() - 0.5) * 0.12, hide);
+  };
+  for (let k = 0; k < f.courses.length; k++) {
+    const [c0, c1] = f.courses[k];
+    const [e0, e1] = f.extent?.(c1) ?? [f.u0, f.u1];
+    if (e1 - e0 < 0.08) continue;
+    const cuts = f.cut?.(k) ?? [];
+    const y0 = c0 + RUBBLE_JOINT / 2;
+    const y1 = c1 - RUBBLE_JOINT / 2;
+    // The first stone of every course is cut short by its own amount, so no
+    // perpend runs up two courses.
+    let len = lo * (0.3 + rnd() * 0.9);
+    for (let u = e0; u < e1 - 0.04; ) {
+      if (e1 - (u + len) < lo * 0.5) len = e1 - u;
+      const a = u;
+      u += len;
+      len = lo + rnd() * span;
+      for (const [p0, p1] of carve(a, u, cuts)) {
+        const over = holes.filter((h) => h.u1 > p0 && h.u0 < p1 && h.y1 > y0 && h.y0 < y1);
+        const edges = [p0, p1];
+        for (const h of over) for (const e of [h.u0, h.u1]) if (e > p0 && e < p1) edges.push(e);
+        edges.sort((m, n) => m - n);
+        for (let i = 0; i + 1 < edges.length; i++) {
+          const [q0, q1] = [edges[i], edges[i + 1]];
+          if (q1 - q0 < 0.08) continue;
+          const qm = (q0 + q1) / 2;
+          const inHole = over.filter((h) => qm > h.u0 && qm < h.u1).map((h): [number, number] => [h.y0, h.y1]);
+          const bot = k === 0 && f.ground ? Math.min(y0, f.ground(qm) - 0.05) : y0;
+          for (const [r0, r1] of carve(bot, y1, inHole)) {
+            if (r1 - r0 < 0.06) continue;
+            stone(q0 + RUBBLE_JOINT / 2, q1 - RUBBLE_JOINT / 2, r0 > bot ? r0 + RUBBLE_JOINT / 2 : r0, r1 < y1 ? r1 - RUBBLE_JOINT / 2 : r1);
+          }
+        }
+      }
+    }
+  }
+}
+
+/**
+ * Squared stone in level courses: the stack above the eaves, which was built
+ * to be seen and so is the one part of this house that is not rubble.
+ */
+function ashlarFace(
+  sb: StoneBatch,
+  s: Side,
+  at: number,
+  u0: number,
+  u1: number,
+  y0: number,
+  y1: number,
+  rnd: () => number,
+  soot: (y: number) => number,
+): void {
+  const plane = outward(s) * at;
+  const n = Math.max(1, Math.round((y1 - y0) / 0.3));
+  const ch = (y1 - y0) / n;
+  for (let k = 0; k < n; k++) {
+    const y = y0 + (k + 0.5) * ch;
+    let len = 0.22 + rnd() * 0.2 + (k % 2) * 0.18;
+    for (let u = u0; u < u1 - 0.05; ) {
+      if (u1 - (u + len) < 0.2) len = u1 - u;
+      const color = rnd() < soot(y) + 0.05 ? DARK_STONE : STONE;
+      sb.onFace(s, plane, u + len / 2, y, len - 0.015, ch - 0.015, 0.06, -0.01, color, 0, 0, hideBack(s));
+      u += len;
+      len = 0.4 + rnd() * 0.25;
+    }
+  }
+}
+
+/**
+ * Dressed stones up an arris — a corner or a jamb — long and short in turn,
+ * and crossed at the arris with the face round it (`parity` 0 on one, 1 on the
+ * other); the long one runs on over the other face's so the edge is closed.
+ * Squared, a step paler than the rubble and standing further out of it: what
+ * says this edge was BUILT, where every other end of this ruin is a break.
+ * Returns the run each course's stone takes, for the rubble to be cut round.
+ */
+function dressedEdge(
+  sb: StoneBatch,
+  s: Side,
+  at: number,
+  corner: number,
+  dir: 1 | -1,
+  courses: readonly [number, number][],
+  parity: 0 | 1,
+  long = 0.5,
+  short = 0.28,
+): (k: number) => [number, number][] {
+  const plane = outward(s) * at;
+  const lens = courses.map((_, k) => ((k + parity) % 2 === 0 ? long : short));
+  courses.forEach(([c0, c1], k) => {
+    const lap = lens[k] === long ? 0.035 : 0;
+    const len = lens[k] + lap;
+    sb.onFace(s, plane, corner + dir * (len / 2 - lap), (c0 + c1) / 2, len - 0.012, c1 - c0 - 0.012, 0.1, -0.015, STONE, 0, 0, hideBack(s));
+  });
+  return (k) => {
+    const e = corner + dir * (lens[k] + 0.01);
+    return [[Math.min(corner, e), Math.max(corner, e)]];
+  };
+}
+
+/**
+ * The broken head of a rubble wall: through-stones standing on the collider's
+ * top, as many courses at each point as `ks` says with some noise on it, so a
+ * head is a torn stepped line and never a ruled one; moss where it settled.
+ */
+function rubbleHead(
+  sb: StoneBatch,
+  alongX: boolean,
+  c: number,
+  u0: number,
+  u1: number,
+  y: number,
+  width: number,
+  ks: (u: number) => number,
+  rnd: () => number,
+): void {
+  const put = (l: number, hh: number, wd: number, u: number, yc: number, off: number, color: string, yaw: number): void => {
+    if (alongX) sb.box(l, hh, wd, u, yc, c + off, color, { y: yaw }, HIDE_UNDER);
+    else sb.box(wd, hh, l, c + off, yc, u, color, { y: yaw }, HIDE_UNDER);
+  };
+  for (let u = u0; u < u1 - 0.05; ) {
+    const len = Math.min(u1 - u, 0.28 + rnd() * 0.4);
+    const um = u + len / 2;
+    u += len;
+    const k = Math.max(0, Math.round(ks(um) + (rnd() - 0.5) * 1.2));
+    let top = y;
+    for (let i = 0; i < k; i++) {
+      const hh = 0.13 + rnd() * 0.1;
+      const l = (len - RUBBLE_JOINT) * (1 - i * 0.16) * (0.82 + rnd() * 0.18);
+      const color = rnd() < 0.3 ? STONE : rnd() < 0.1 ? DARK_STONE : MOSS_STONE;
+      put(l, hh, width + 0.02 - i * 0.06 - rnd() * 0.05, um + (rnd() - 0.5) * (len - l), top + hh / 2, (rnd() - 0.5) * 0.06, color, (rnd() - 0.5) * 0.12);
+      top += hh;
+    }
+    if (rnd() < 0.35) {
+      put(len * (0.4 + rnd() * 0.5), 0.03, width * (0.45 + rnd() * 0.4), um, top + 0.012, (rnd() - 0.5) * 0.1, CREEPER, (rnd() - 0.5) * 0.4);
+    }
+  }
+}
+
+/**
+ * The free end of a rubble wall: through-stones run on past the break in
+ * alternate courses, the way a wall comes apart along its bond. The
+ * collider's end is square and these stand past it — the honest side of the
+ * trade: a round aimed at a tooth passes.
+ */
+function rubbleTeeth(
+  sb: StoneBatch,
+  alongX: boolean,
+  c: number,
+  width: number,
+  uEnd: number,
+  dir: 1 | -1,
+  courses: readonly [number, number][],
+  rnd: () => number,
+): void {
+  courses.forEach(([c0, c1], k) => {
+    const reach = k % 2 === 0 ? 0.1 + rnd() * 0.16 : rnd() < 0.3 ? 0.05 + rnd() * 0.06 : 0;
+    if (reach < 0.04) return;
+    const len = reach + 0.06;
+    const u = uEnd + (dir * (reach - 0.06)) / 2;
+    const hh = c1 - c0 - RUBBLE_JOINT;
+    const wd = width + 0.02 - rnd() * 0.06;
+    const color = rnd() < 0.3 ? STONE : MOSS_STONE;
+    const yaw = { y: (rnd() - 0.5) * 0.1 };
+    if (alongX) sb.box(len, hh, wd, u, (c0 + c1) / 2, c, color, yaw);
+    else sb.box(wd, hh, len, c, (c0 + c1) / 2, u, color, yaw);
+  });
+}
+
+/**
+ * Where a wall has gone altogether its footing is still there: a course or two
+ * of stones along its line, low enough to step over, so the house keeps its
+ * outline. Carried down to the ground under each stone.
+ */
+function rubbleFooting(
+  sb: StoneBatch,
+  alongX: boolean,
+  c: number,
+  u0: number,
+  u1: number,
+  width: number,
+  ground: (u: number) => number,
+  rnd: () => number,
+): void {
+  for (let u = u0; u < u1 - 0.1; ) {
+    const len = Math.min(u1 - u, 0.3 + rnd() * 0.35);
+    const um = u + len / 2;
+    u += len;
+    const k = rnd() < 0.15 ? 0 : rnd() < 0.55 ? 1 : 2;
+    let top = ground(um) - 0.05;
+    for (let i = 0; i < k; i++) {
+      const hh = 0.1 + rnd() * 0.05;
+      const l = (len - RUBBLE_JOINT) * (1 - i * 0.2);
+      const wd = width - i * 0.08 - rnd() * 0.06;
+      const off = (rnd() - 0.5) * 0.08;
+      const color = rnd() < 0.3 ? STONE : MOSS_STONE;
+      const yaw = { y: (rnd() - 0.5) * 0.15 };
+      if (alongX) sb.box(l, hh, wd, um, top + hh / 2, c + off, color, yaw, HIDE_UNDER);
+      else sb.box(wd, hh, l, c + off, top + hh / 2, um, color, yaw, HIDE_UNDER);
+      top += hh;
+    }
+  }
+}
+
+/** Loose stones lying on the ground round (x, z): what fell off a head. */
+function rubbleScatter(
+  sb: StoneBatch,
+  x: number,
+  z: number,
+  r: number,
+  n: number,
+  ground: (lx: number, lz: number) => number,
+  rnd: () => number,
+): void {
+  for (let i = 0; i < n; i++) {
+    const a = rnd() * Math.PI * 2;
+    const q = r * Math.sqrt(rnd());
+    const sx = x + Math.cos(a) * q;
+    const sz = z + Math.sin(a) * q;
+    const hh = 0.1 + rnd() * 0.1;
+    const color = rnd() < 0.3 ? STONE : MOSS_STONE;
+    sb.box(0.2 + rnd() * 0.2, hh, 0.14 + rnd() * 0.14, sx, ground(sx, sz) + hh * 0.25, sz, color, {
+      x: (rnd() - 0.5) * 0.5,
+      y: rnd() * Math.PI,
+      z: (rnd() - 0.5) * 0.5,
+    });
+  }
+}
+
+/**
+ * A heap of what came down, over a collider box `hw` by `hd` and `h` high: a
+ * mound cut to CONTAIN the box — its crown the box's top and a little over,
+ * the box's corners on the crown's chamfers — spreading past it onto the
+ * ground, in earth and ash with stones and a charred rafter or two on it.
+ */
+function rubbleHeap(
+  b: Build,
+  sb: StoneBatch,
+  cx: number,
+  cz: number,
+  hw: number,
+  hd: number,
+  h: number,
+  ground: (lx: number, lz: number) => number,
+  rnd: () => number,
+): void {
+  const e = 0.06;
+  const spread = 0.5;
+  const top = h + 0.05;
+  const ring = (m: number, y: (x: number, z: number) => number): Point3[] =>
+    (
+      [
+        [hw + m, -hd],
+        [hw + m, hd],
+        [hw, hd + m],
+        [-hw, hd + m],
+        [-hw - m, hd],
+        [-hw - m, -hd],
+        [-hw, -hd - m],
+        [hw, -hd - m],
+      ] as const
+    ).map(([x, z]): Point3 => [cx + x, y(cx + x, cz + z), cz + z]);
+  convexSolid(b, ring(e, () => top), ring(spread, (x, z) => ground(x, z) - 0.05), DIRT);
+  // A hump off-centre on the crown, so the heap is not a table.
+  const ox = (rnd() - 0.5) * hw * 0.6;
+  const oz = (rnd() - 0.5) * hd * 0.6;
+  const hump = (sx: number, sz: number, y: number): Point3[] =>
+    [
+      [sx, -sz * 0.6],
+      [sx, sz * 0.6],
+      [sx * 0.6, sz],
+      [-sx * 0.6, sz],
+      [-sx, sz * 0.6],
+      [-sx, -sz * 0.6],
+      [-sx * 0.6, -sz],
+      [sx * 0.6, -sz],
+    ].map(([x, z]): Point3 => [cx + ox + x, y, cz + oz + z]);
+  convexSolid(b, hump(hw * 0.7, hd * 0.7, top - 0.01), hump(hw * 0.35, hd * 0.3, top + 0.16), DIRT);
+
+  const surface = (x: number, z: number): number => {
+    const out = Math.max(Math.abs(x - cx) - hw - e, Math.abs(z - cz) - hd - e, 0) / (spread - e);
+    return out >= 1 ? ground(x, z) : top + (ground(x, z) - top) * out;
+  };
+  const n = Math.round(16 + hw * hd * 12);
+  for (let i = 0; i < n; i++) {
+    const x = cx + (rnd() * 2 - 1) * (hw + spread * 0.8);
+    const z = cz + (rnd() * 2 - 1) * (hd + spread * 0.8);
+    const hh = 0.12 + rnd() * 0.12;
+    const color = rnd() < 0.3 ? STONE : rnd() < 0.15 ? DARK_STONE : MOSS_STONE;
+    sb.box(0.22 + rnd() * 0.28, hh, 0.18 + rnd() * 0.22, x, surface(x, z) + hh * 0.2, z, color, {
+      x: (rnd() - 0.5) * 0.5,
+      y: rnd() * Math.PI,
+      z: (rnd() - 0.5) * 0.5,
+    });
+  }
+  for (let i = 0; i < 2; i++) {
+    const a = rnd() * Math.PI * 2;
+    const from: Point3 = [cx + (rnd() - 0.5) * hw, top + 0.1, cz + (rnd() - 0.5) * hd];
+    const far = Math.max(hw, hd) + 0.9 + rnd() * 0.6;
+    const tx = cx + Math.cos(a) * far;
+    const tz = cz + Math.sin(a) * far;
+    slab(b, from, [tx, ground(tx, tz) + 0.05, tz], 0.1, 0.13, TIMBER);
+  }
+}
+
+/**
+ * Ivy up a face from its foot: a few stems wandering upward, leaves thick at
+ * the foot and thinning toward where each stem gave out. The shaded front of
+ * a ruin in a wet country always carries some.
+ */
+function ivy(
+  sb: StoneBatch,
+  s: Side,
+  at: number,
+  u: number,
+  spread: number,
+  height: number,
+  ground: (u: number) => number,
+  rnd: () => number,
+): void {
+  const plane = outward(s) * at;
+  const stems = 3 + Math.floor(rnd() * 3);
+  for (let i = 0; i < stems; i++) {
+    let su = u + (rnd() - 0.5) * spread;
+    let y = ground(su);
+    const reach = height * (0.45 + rnd() * 0.55);
+    let side = 1;
+    while (y < reach) {
+      const step = 0.14 + rnd() * 0.08;
+      const lean = (rnd() - 0.5) * 0.12;
+      sb.onFace(s, plane, su + lean / 2, y + step / 2, 0.022, step + 0.02, 0.02, RUBBLE_PROUD + 0.012, CREEPER, 0, 0, hideBack(s));
+      for (let j = 0; j < 2; j++) {
+        if (rnd() > 1 - 0.5 * (y / reach)) continue;
+        sb.onFace(s, plane, su + side * (0.05 + rnd() * 0.05), y + step * rnd(), 0.1 + rnd() * 0.05, 0.08 + rnd() * 0.04, 0.018, RUBBLE_PROUD + 0.03 + rnd() * 0.03, CREEPER, side * (0.3 + rnd() * 0.6), 0, hideBack(s));
+        side = -side;
+      }
+      su += lean;
+      y += step;
+    }
+  }
+}
+
+/**
+ * A stone cottage that burnt, roof and floors, and was never rebuilt: rubble
+ * walls broken down to different heights, one corner still standing to the
+ * eaves with its chimney breast, and the stack still up above it all — the bit
+ * of a burnt house that always survives. Fills ground that would otherwise be
+ * empty with somewhere to *fight*, which a solid building never does — every
+ * wall here is cover on both sides and none of them reaches the eaves.
+ *
+ * ## The masses are the colliders' and the detail is the drawing
+ *
+ * The block at the top is every collider this ruin has ever had, in the order
+ * it has always emitted them — each `wall` restated as the `block` it pushed —
+ * so a change below that block owes no `npm run collision`, and one inside it
+ * does. Everything else is drawing and obeys one of three rules: it is flat on
+ * a face, it is low enough to walk over, or it stands on top of a collider. A
+ * broken head and the teeth at a break stand a course or several past the box
+ * that answers for them — the jungle ruin's trade: a round through the top
+ * course passes.
+ *
+ * ## What it is drawn as
+ *
+ * - **Random rubble in courses** on every face of every wall, over a dark core
+ *   set back four centimetres (`RUBBLE_BACK`), so each joint is a step the ink
+ *   draws; each stone stands its own distance proud and leans a little, which
+ *   is what makes a face a field of stones under the bands rather than a
+ *   plane. Both faces of a wall share one list of courses.
+ * - **Broken heads and broken ends.** A head is through-stones a course or
+ *   several high standing on the collider, torn along a slow wave; the north
+ *   front breaks down to the low wall in a staircase of courses on top of it;
+ *   a wall that broke off has teeth down its end; and where a wall has gone
+ *   altogether its footing is still there, a course or two, so the line of the
+ *   house survives.
+ * - **What says it was built.** The one corner still standing (the north-east)
+ *   is quoined in dressed stone crossing at the arris, and so is the doorway's
+ *   surviving jamb, with its reveal, its two hinge pintles and a threshold and
+ *   step. A window in the east gable was blocked long before the fire: a
+ *   dressed sill, jambs and lintel outside and a timber lintel inside, both
+ *   round smaller stones laid later.
+ * - **The chimney breast** is rubble to the eaves with a fireplace in its
+ *   face — a charred timber bressummer on dressed jambs over a sooted fireback,
+ *   an iron crane with its pot, a hearthstone, and soot fanning up the breast
+ *   above it — and ashlar above the eaves under a drip course, an oversailing
+ *   cap and two pots, one broken off.
+ * - **The fire.** Every inside face is blackened in proportion to its height,
+ *   which is where a burning roof puts it; the loft floor's joists have left a
+ *   row of pockets in the north wall, some with a charred stub still in them.
+ *   The two heaps are mounds of rubble with rafters out of them, a purlin lies
+ *   from the larger across the room, a rafter leans on the east head, and the
+ *   door lies flat inside where it fell.
+ * - **Ivy** up the north front, and moss on the heads.
+ *
+ * **All of it is seeded off where it stands** (`streetSeed`), and the first
+ * course of every face, the footings, the heaps and the threshold are carried
+ * to the ground under them, which is what puts `ruin` in `CONFORMS_TO_TERRAIN`.
  */
 export function buildRuin(
   scene: Scene,
   mats: CelMaterialFactory,
   p: BuildParams = {},
+  ctx?: BuildCtx,
 ): Structure {
   const b = new Build(scene, mats, "ruin");
   const w = p.width ?? 10;
   const d = p.depth ?? 8;
   const t = 0.5;
 
-  b.box(w, 0.2, d, 0, 0.1, 0, DARK_STONE);
+  // ---- the colliders: every one this ruin has ever had, in the order it
+  // has always emitted them.
   // North wall: mostly standing, broken down at one end.
-  b.wall(w * 0.62, 3.4, t, -w * 0.19, 1.7, d / 2, MOSS_STONE);
-  b.wall(w * 0.38, 1.8, t, w * 0.31, 0.9, d / 2, MOSS_STONE);
+  b.block({ w: w * 0.62, h: 3.4, d: t, x: -w * 0.19, y: 1.7, z: d / 2 });
+  b.block({ w: w * 0.38, h: 1.8, d: t, x: w * 0.31, y: 0.9, z: d / 2 });
   // East wall standing tall, west wall down to a stub.
-  b.wall(t, 2.7, d * 0.72, w / 2, 1.35, d * 0.14, MOSS_STONE);
-  b.wall(t, 1.2, d * 0.5, -w / 2, 0.6, -d * 0.1, MOSS_STONE);
+  b.block({ w: t, h: 2.7, d: d * 0.72, x: w / 2, y: 1.35, z: d * 0.14 });
+  b.block({ w: t, h: 1.2, d: d * 0.5, x: -w / 2, y: 0.6, z: -d * 0.1 });
   // South wall: two jambs either side of where the door was.
   for (const sx of [-1, 1]) {
-    b.wall(w * 0.3, 1.5, t, sx * w * 0.35, 0.75, -d / 2, MOSS_STONE);
+    b.block({ w: w * 0.3, h: 1.5, d: t, x: sx * w * 0.35, y: 0.75, z: -d / 2 });
   }
-  // The chimney breast — the bit of a burnt cottage that always survives.
-  b.wall(2.0, 5.2, 1.4, -w / 2 + 1.4, 2.6, d / 2 - 0.9, BRICK);
-  b.box(2.4, 0.24, 1.7, -w / 2 + 1.4, 5.2, d / 2 - 0.9, DARK_STONE);
-  // A fallen roof beam and the heap it came down in.
-  b.box(0.4, 0.4, d * 0.8, w * 0.1, 1.0, 0, TIMBER, { x: 0.5, z: 0.2 });
-  b.wall(2.4, 0.7, 2.0, w * 0.22, 0.35, -d * 0.2, DARK_STONE);
-  b.wall(1.8, 0.6, 1.6, -w * 0.28, 0.3, d * 0.22, DARK_STONE);
+  // The chimney breast.
+  b.block({ w: 2.0, h: 5.2, d: 1.4, x: -w / 2 + 1.4, y: 2.6, z: d / 2 - 0.9 });
+  // The two heaps the roof came down in.
+  b.block({ w: 2.4, h: 0.7, d: 2.0, x: w * 0.22, y: 0.35, z: -d * 0.2 });
+  b.block({ w: 1.8, h: 0.6, d: 1.6, x: -w * 0.28, y: 0.3, z: d * 0.22 });
+
+  // ---- everything below is drawing.
+  const rnd = mulberry32(streetSeed(w, d, 0, ctx));
+  const sb = new StoneBatch();
+  const ground = (lx: number, lz: number): number => {
+    if (!ctx) return 0;
+    const cos = Math.cos(ctx.rotY);
+    const sin = Math.sin(ctx.rotY);
+    return ctx.terrain.surfaceAt(ctx.x + lx * cos + lz * sin, ctx.z - lx * sin + lz * cos) - ctx.y;
+  };
+  const along = (z: number) => (x: number) => ground(x, z);
+  const across = (x: number) => (z: number) => ground(x, z);
+  const pl = (s: Side, at: number): number => outward(s) * at;
+  const h2 = t / 2;
+  const [xW, xE, zS, zN] = [-w / 2, w / 2, -d / 2, d / 2];
+  /** Where the north front steps down from the eaves to the low wall. */
+  const xj = w * 0.12;
+  /** Where the east wall broke off, and the west stub's two ends. */
+  const eS = -d * 0.22;
+  const [wS, wN] = [-d * 0.35, d * 0.15];
+  /** The inner ends of the south wall; the one at -X is the doorway's jamb. */
+  const sIn = w * 0.2;
+  const jamb = -sIn;
+  const dw = Math.min(1.0, w * 0.4 - 0.3);
+  /** The chimney breast, and the hearth's centre. */
+  const [bx0, bx1, bz0, bz1] = [-w / 2 + 0.4, -w / 2 + 2.4, d / 2 - 1.6, d / 2 - 0.2];
+  const xc = -w / 2 + 1.4;
+  const zc = d / 2 - 0.9;
+
+  const low = rubbleCourses(0, 1.8, rnd);
+  const north = [...low, ...rubbleCourses(1.8, 3.4, rnd)];
+  const east = [...low, ...rubbleCourses(1.8, 2.7, rnd)];
+  const west = rubbleCourses(0, 1.2, rnd);
+  const south = rubbleCourses(0, 1.5, rnd);
+  const breast = rubbleCourses(0, 3.4, rnd);
+  const soot = (_u: number, y: number): number => Math.max(0, Math.min(1, (y - 1.3) / 2.2)) * 0.45;
+
+  // ---- the north front, and the corner it turns with the east gable.
+  const neN = dressedEdge(sb, "+z", zN + h2, xE + h2, -1, low, 0);
+  const neE = dressedEdge(sb, "+x", xE + h2, zN + h2, -1, low, 1);
+  rubbleFace(sb, {
+    s: "+z",
+    at: zN + h2,
+    u0: xW,
+    u1: xE + h2,
+    courses: north,
+    extent: (c1) => [xW, c1 > 1.8 + 1e-6 ? xj : xE + h2],
+    cut: (k) => (k < low.length ? neN(k) : []),
+    ground: along(zN + h2),
+  }, rnd);
+  const pockets: Hole[] = [];
+  for (let x = bx1 + 0.5; x < xj - 0.3; x += 0.8 + rnd() * 0.2) {
+    pockets.push({ u0: x - 0.11, u1: x + 0.11, y0: 2.47, y1: 2.74 });
+  }
+  rubbleFace(sb, {
+    s: "-z",
+    at: zN - h2,
+    u0: xW,
+    u1: xE - h2,
+    courses: north,
+    extent: (c1) => [xW, c1 > 1.8 + 1e-6 ? xj : xE - h2],
+    holes: [{ u0: bx0 - 0.01, u1: bx1 + 0.01, y0: -1, y1: 6 }, ...pockets],
+    soot,
+    ground: along(zN - h2),
+  }, rnd);
+  for (const pk of pockets) {
+    if (rnd() < 0.45) continue;
+    const len = 0.12 + rnd() * 0.45;
+    b.box(0.16, 0.22, len + 0.06, (pk.u0 + pk.u1) / 2, 2.6, zN - h2 - len / 2 + 0.03, TIMBER, { x: (rnd() - 0.5) * 0.08 });
+  }
+  rubbleTeeth(sb, true, zN, t, xW, -1, north, rnd);
+  rubbleTeeth(sb, true, zN, t, xj, 1, north.slice(low.length), rnd);
+  ivy(sb, "+z", zN + h2, xW + (xj - xW) * (0.3 + rnd() * 0.4), 1.4, 3.0, along(zN + h2), rnd);
+
+  // ---- the east gable, with the window blocked long before the fire.
+  const zw = d * 0.14;
+  const win = d * 0.72 > 2.6;
+  rubbleFace(sb, {
+    s: "+x",
+    at: xE + h2,
+    u0: eS,
+    u1: zN,
+    courses: east,
+    cut: (k) => (k < low.length ? neE(k) : []),
+    holes: win
+      ? [
+          { u0: zw - 0.65, u1: zw + 0.65, y0: 1.95, y1: 2.2 },
+          { u0: zw - 0.6, u1: zw + 0.6, y0: 0.95, y1: 1.95 },
+          { u0: zw - 0.5, u1: zw + 0.5, y0: 0.87, y1: 0.95 },
+        ]
+      : [],
+    ground: across(xE + h2),
+  }, rnd);
+  rubbleFace(sb, {
+    s: "-x",
+    at: xE - h2,
+    u0: eS,
+    u1: zN - h2,
+    courses: east,
+    holes: win
+      ? [
+          { u0: zw - 0.7, u1: zw + 0.7, y0: 1.95, y1: 2.15 },
+          { u0: zw - 0.45, u1: zw + 0.45, y0: 0.95, y1: 1.95 },
+        ]
+      : [],
+    soot,
+    ground: across(xE - h2),
+  }, rnd);
+  if (win) {
+    const po = pl("+x", xE + h2);
+    onFace(b, "+x", po, zw, 0.91, 1.0, 0.08, 0.14, 0.05, STONE);
+    for (const sg of [-1, 1]) {
+      for (let i = 0; i < 3; i++) onFace(b, "+x", po, zw + sg * 0.5, 0.95 + (i + 0.5) / 3, 0.19, 1 / 3 - 0.012, 0.1, -0.015, STONE);
+    }
+    onFace(b, "+x", po, zw, 2.075, 1.28, 0.24, 0.1, -0.015, STONE);
+    rubbleFace(sb, { s: "+x", at: xE + h2, u0: zw - 0.4, u1: zw + 0.4, courses: rubbleCourses(0.95, 1.95, rnd, 0.11, 0.06), small: true }, rnd);
+    onFace(b, "-x", pl("-x", xE - h2), zw, 2.05, 1.4, 0.2, 0.12, 0.02, TIMBER);
+    rubbleFace(sb, { s: "-x", at: xE - h2, u0: zw - 0.45, u1: zw + 0.45, courses: rubbleCourses(0.95, 1.95, rnd, 0.11, 0.06), small: true, soot }, rnd);
+  }
+  rubbleTeeth(sb, false, xE, t, eS, -1, east, rnd);
+  rubbleTeeth(sb, false, xE, t, zN, 1, east.slice(low.length), rnd);
+
+  // ---- the west stub.
+  rubbleFace(sb, { s: "-x", at: xW - h2, u0: wS, u1: wN, courses: west, ground: across(xW - h2) }, rnd);
+  rubbleFace(sb, { s: "+x", at: xW + h2, u0: wS, u1: wN, courses: west, soot, ground: across(xW + h2) }, rnd);
+  rubbleTeeth(sb, false, xW, t, wS, -1, west, rnd);
+  rubbleTeeth(sb, false, xW, t, wN, 1, west, rnd);
+
+  // ---- the south front: the doorway's one jamb still dressed, the wall past
+  // it down to its footing, and the far stretch broken off at both ends.
+  const jOut = dressedEdge(sb, "-z", zS - h2, jamb, -1, south, 0, 0.4, 0.22);
+  const jIn = dressedEdge(sb, "+z", zS + h2, jamb, -1, south, 1, 0.4, 0.22);
+  for (const [c0, c1] of south) onFace(b, "+x", pl("+x", jamb), zS, (c0 + c1) / 2, t + 0.07, c1 - c0 - 0.012, 0.1, -0.03, STONE);
+  for (const y of [0.35, 1.15]) onFace(b, "+x", pl("+x", jamb), zS - h2 + 0.09, y, 0.035, 0.035, 0.1, 0.05, IRON);
+  for (const sx of [-1, 1]) {
+    const [x0, x1] = sx < 0 ? [xW, jamb] : [sIn, xE];
+    rubbleFace(sb, { s: "-z", at: zS - h2, u0: x0, u1: x1, courses: south, cut: sx < 0 ? jOut : undefined, ground: along(zS - h2) }, rnd);
+    rubbleFace(sb, { s: "+z", at: zS + h2, u0: x0, u1: x1, courses: south, cut: sx < 0 ? jIn : undefined, soot, ground: along(zS + h2) }, rnd);
+  }
+  rubbleTeeth(sb, true, zS, t, xW, -1, south, rnd);
+  rubbleTeeth(sb, true, zS, t, sIn, -1, south, rnd);
+  rubbleTeeth(sb, true, zS, t, xE, 1, south, rnd);
+  {
+    const x = jamb + dw / 2;
+    b.box(dw, 0.1, t + 0.06, x, ground(x, zS) + 0.03, zS, STONE);
+    b.box(dw + 0.2, 0.08, 0.36, x, ground(x, zS - h2 - 0.2) - 0.01, zS - h2 - 0.2, STONE);
+  }
+
+  // ---- the chimney breast: rubble to the eaves round a fireplace, ashlar
+  // above them, capped and potted.
+  const fh = 1.1;
+  const breastSoot = (u: number, y: number): number =>
+    soot(u, y) + (y > fh + 0.3 ? 0.8 * Math.max(0, 1 - Math.abs(u - xc) / (0.9 - (y - fh - 0.3) * 0.2)) : 0);
+  rubbleFace(sb, {
+    s: "-z",
+    at: bz0,
+    u0: bx0,
+    u1: bx1,
+    courses: breast,
+    holes: [
+      { u0: xc - 0.85, u1: xc + 0.85, y0: fh, y1: fh + 0.3 },
+      { u0: xc - 0.75, u1: xc + 0.75, y0: -1, y1: fh },
+    ],
+    soot: breastSoot,
+    ground: along(bz0),
+  }, rnd);
+  rubbleFace(sb, { s: "-x", at: bx0, u0: bz0, u1: zN - h2, courses: breast, soot, ground: across(bx0) }, rnd);
+  rubbleFace(sb, { s: "+x", at: bx1, u0: bz0, u1: zN - h2, courses: breast, soot, ground: across(bx1) }, rnd);
+  {
+    const ff = pl("-z", bz0);
+    const gf = ground(xc, bz0 - 0.3);
+    onFace(b, "-z", ff, xc, (fh + gf) / 2, 1.0, fh - gf, 0.02, 0, CASEMENT);
+    for (const sg of [-1, 1]) {
+      for (let i = 0; i < 3; i++) onFace(b, "-z", ff, xc + sg * 0.625, ((i + 0.5) * fh) / 3, 0.24, fh / 3 - 0.012, 0.12, -0.01, STONE);
+    }
+    onFace(b, "-z", ff, xc, fh + 0.15, 1.7, 0.3, 0.18, -0.01, TIMBER);
+    // The crane: a pivot bar at one jamb, its arm and brace, and the pot on its hook.
+    onFace(b, "-z", ff, xc - 0.4, 0.62, 0.035, 0.9, 0.035, 0.07, IRON);
+    onFace(b, "-z", ff, xc - 0.1, 0.98, 0.62, 0.035, 0.035, 0.07, IRON);
+    onFace(b, "-z", ff, xc - 0.25, 0.84, 0.36, 0.03, 0.03, 0.07, IRON, 0.6);
+    onFace(b, "-z", ff, xc + 0.12, 0.83, 0.02, 0.3, 0.02, 0.07, IRON);
+    b.cyl(0.24, 0.3, 0.22, 10, xc + 0.12, 0.56, bz0 - 0.2, IRON);
+    b.box(1.6, 0.06, 0.6, xc, gf + 0.02, bz0 - 0.3, STONE);
+  }
+  const stackSoot = (y: number): number => Math.max(0, (y - 4.5) / 0.7) * 0.6;
+  ashlarFace(sb, "-z", bz0, bx0, bx1, 3.4, 5.2, rnd, stackSoot);
+  ashlarFace(sb, "+z", bz1, bx0, bx1, 3.4, 5.2, rnd, stackSoot);
+  ashlarFace(sb, "-x", bx0, bz0, bz1, 3.4, 5.2, rnd, stackSoot);
+  ashlarFace(sb, "+x", bx1, bz0, bz1, 3.4, 5.2, rnd, stackSoot);
+  onFace(b, "-z", pl("-z", bz0), xc, 3.4, 2.12, 0.1, 0.08, 0.04, STONE);
+  for (const [s, at] of [["-x", bx0], ["+x", bx1]] as const) onFace(b, s, pl(s, at), (bz0 - 0.06 + zN - h2) / 2, 3.4, zN - h2 - bz0 + 0.06, 0.1, 0.08, 0.04, STONE);
+  b.box(2.12, 0.12, 1.52, xc, 5.26, zc, STONE);
+  b.box(2.24, 0.1, 1.64, xc, 5.37, zc, STONE);
+  b.box(1.7, 0.08, 1.05, xc, 5.46, zc, DARK_STONE);
+  for (const [i, dx] of [-0.45, 0.45].entries()) {
+    const hp = i === 0 ? 0.55 : 0.2 + rnd() * 0.12;
+    b.cyl(hp, i === 0 ? 0.26 : 0.3, 0.32, 10, xc + dx, 5.5 + hp / 2, zc, BRICK);
+    if (i === 0) b.cyl(0.06, 0.32, 0.32, 10, xc + dx, 5.5 + hp - 0.03, zc, BRICK);
+    b.cyl(0.02, 0.2, 0.2, 10, xc + dx, 5.5 + hp, zc, CASEMENT);
+  }
+
+  // ---- the heads, broken along a slow wave; the north front's staircase
+  // down to the low wall stands on the low wall's head.
+  const wave = (a: number, f: number): ((u: number) => number) => {
+    const ph = rnd() * 6.3;
+    return (u) => a * (0.5 + 0.5 * Math.sin(u * f + ph)) + 0.25 * Math.sin(u * 3.1 + ph * 2);
+  };
+  const nLow = wave(0.9, 1.3);
+  rubbleHead(sb, true, zN, xW, xj, 3.4, t, wave(2.2, 0.9), rnd);
+  rubbleHead(sb, true, zN, xj, xE + h2, 1.8, t, (u) => Math.max(nLow(u), 2.6 * (1 - (u - xj) / 1.5)), rnd);
+  rubbleHead(sb, false, xE, eS, zN, 2.7, t, wave(1.8, 1.1), rnd);
+  rubbleHead(sb, false, xW, wS, wN, 1.2, t, wave(1.3, 1.2), rnd);
+  rubbleHead(sb, true, zS, xW, jamb, 1.5, t, wave(1.2, 1.4), rnd);
+  rubbleHead(sb, true, zS, sIn, xE, 1.5, t, wave(1.2, 1.4), rnd);
+
+  // ---- the footings where a wall has gone, and what fell off the breaks.
+  rubbleFooting(sb, false, xW, t, zS + h2, wS, across(xW), rnd);
+  rubbleFooting(sb, false, xW, t, wN, zN - h2, across(xW), rnd);
+  rubbleFooting(sb, false, xE, t, zS + h2, eS, across(xE), rnd);
+  rubbleFooting(sb, true, zS, t, jamb + dw + 0.03, sIn, along(zS), rnd);
+  rubbleScatter(sb, xE + 0.7, eS - 0.4, 0.8, 6, ground, rnd);
+  rubbleScatter(sb, xW - 0.7, zN - 0.3, 0.8, 6, ground, rnd);
+  rubbleScatter(sb, 0, zS - 0.8, 1.0, 5, ground, rnd);
+
+  // ---- what came down inside: the two heaps, a purlin from the larger across
+  // the room, a rafter leaning on the east head, and the door where it fell.
+  rubbleHeap(b, sb, w * 0.22, -d * 0.2, 1.2, 1.0, 0.7, ground, rnd);
+  rubbleHeap(b, sb, -w * 0.28, d * 0.22, 0.9, 0.8, 0.6, ground, rnd);
+  {
+    const [cx, cz] = [w * 0.22, -d * 0.2];
+    const [tx, tz] = [cx - 2.9, cz + 2.0];
+    slab(b, [cx - 0.7, 0.86, cz + 0.5], [tx, ground(tx, tz) + 0.12, tz], 0.22, 0.24, TIMBER);
+    const zr = d * 0.3;
+    const fx = xE - h2 - 0.55;
+    slab(b, [fx, ground(fx, zr - 0.25), zr - 0.25], [xE - h2 + 0.06, 2.78, zr + 0.1], 0.1, 0.14, TIMBER);
+  }
+  {
+    const cx = jamb + dw / 2 + 0.2;
+    const cz = zS + h2 + 1.2;
+    const a = 0.5 + rnd() * 0.4;
+    const g = ground(cx, cz);
+    const [ca, sa] = [Math.cos(a), Math.sin(a)];
+    for (let i = 0; i < 4; i++) {
+      const o = (i - 1.5) * 0.21;
+      const l = i === 3 ? 1.35 : 1.75;
+      b.box(0.2, 0.035, l, cx + o * ca + ((1.75 - l) / 2) * sa, g + 0.02, cz - o * sa + ((1.75 - l) / 2) * ca, PLANK, { y: a });
+    }
+    for (const o of [-0.55, 0.55]) b.box(0.8, 0.03, 0.14, cx + o * sa, g + 0.05, cz + o * ca, TIMBER, { y: a });
+  }
+
+  // ---- the cores, set back behind every face, emitted after what hides them.
+  sb.flush(b);
+  const gMin = (...pts: [number, number][]): number => Math.min(0, ...pts.map(([x, z]) => ground(x, z))) - 0.06;
+  const core = (x0: number, x1: number, y0: number, y1: number, z0: number, z1: number): void => {
+    b.box(x1 - x0, y1 - y0, z1 - z0, (x0 + x1) / 2, (y0 + y1) / 2, (z0 + z1) / 2, DARK_STONE);
+  };
+  const [n0, n1] = [zN - h2 + RUBBLE_BACK, zN + h2 - RUBBLE_BACK];
+  core(xW, xj, gMin([xW, zN], [xj, zN]), 3.4, n0, n1);
+  core(xj, xE + h2 - RUBBLE_BACK, gMin([xj, zN], [xE, zN]), 1.8, n0, n1);
+  const [e0, e1] = [xE - h2 + RUBBLE_BACK, xE + h2 - RUBBLE_BACK];
+  core(e0, e1, gMin([xE, eS], [xE, zN]), 2.7, eS, zN);
+  core(xW - h2 + RUBBLE_BACK, xW + h2 - RUBBLE_BACK, gMin([xW, wS], [xW, wN]), 1.2, wS, wN);
+  const [s0, s1] = [zS - h2 + RUBBLE_BACK, zS + h2 - RUBBLE_BACK];
+  core(xW, jamb, gMin([xW, zS], [jamb, zS]), 1.5, s0, s1);
+  core(sIn, xE, gMin([sIn, zS], [xE, zS]), 1.5, s0, s1);
+  core(bx0 + RUBBLE_BACK, bx1 - RUBBLE_BACK, gMin([bx0, bz0], [bx1, bz0]), 3.4, bz0 + RUBBLE_BACK, zN - h2);
+  core(bx0 + 0.03, bx1 - 0.03, 3.4, 5.2, bz0 + 0.03, bz1 - 0.03);
   return b;
 }
 
