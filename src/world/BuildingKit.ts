@@ -245,6 +245,9 @@ export type BuilderKind = keyof typeof BUILDERS;
  * stones under its bearers down to the ground. The footbridge seeds its
  * planks, its boarding and its stones off where it stands, stands its bank
  * seats where the bank falls away under it and cuts each pile into the bed.
+ * The kiln seeds which of its fire mouths are firing, where its bonts are
+ * tightened, its weathered brickwork and what lies at its foot off where it
+ * stands, and carries its plinth down to the lowest ground round the drum.
  */
 export const CONFORMS_TO_TERRAIN: ReadonlySet<BuilderKind> = new Set([
   "road",
@@ -264,4 +267,5 @@ export const CONFORMS_TO_TERRAIN: ReadonlySet<BuilderKind> = new Set([
   "ruin",
   "woodpile",
   "bridge",
+  "kiln",
 ] as const);
