@@ -42,7 +42,7 @@
 import type { MapCollision } from "../collision";
 
 export const CandylandCollision: MapCollision = {
-  sourceHash: "251c126e39dafd40",
+  sourceHash: "e17984ce2a890042",
   boxes: [
   [504,20,2,0,10,251,0,0],
   [504,20,2,0,10,-251,0,0],

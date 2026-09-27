@@ -1003,28 +1003,74 @@ water.push(
 );
 
 const grass = [
-  "  // A spring lawn: bright-tipped, and a BUDGET rather than a blanket (the",
-  "  // field is one mesh of thin instances with no culling inside it). It",
-  "  // never grows on the path — the road footprint refuses a tuft — so the",
-  "  // rects can lie across it.",
+  "  // A spring lawn: bright-tipped, and a BLANKET under the whole board.",
+  "  // `density` is absent, so full: how lush, never a count — the field is",
+  "  // drawn around the eye, so a rect's area is not what it costs. Each rect",
+  "  // is wider than the lattice's pitch and its jitter, so they run on into",
+  "  // one another. It never grows on the path — the road footprint refuses a",
+  "  // blade — so the rects can lie across it. They come down to the shores",
+  "  // and stop there: a rect over the sea is reeds in the ice cream, and the",
+  "  // molasses is a sheet with no collider, so blades would grow up through it.",
 ];
 {
-  let tufts = 0;
+  let area = 0;
+  /** One field if it is dry all over, else its dry quarters, `split` deep. */
+  const sow = (cx, cz, w, d, height, split) => {
+    let dry = true;
+    for (const fx of [-0.5, 0, 0.5]) for (const fz of [-0.5, 0, 0.5]) if (wet(cx + fx * w, cz + fz * d, 0.05)) dry = false;
+    if (dry) {
+      grass.push(`  { x: ${n2(Number(cx.toFixed(1)))}, z: ${n2(Number(cz.toFixed(1)))}, width: ${n2(w)}, depth: ${n2(d)}, height: ${height} },`);
+      area += w * d;
+    } else if (split > 0) {
+      for (const sx of [-0.25, 0.25]) for (const sz of [-0.25, 0.25]) sow(cx + sx * w, cz + sz * d, w / 2, d / 2, height, split - 1);
+    }
+  };
   for (let gz = -HALF + 18; gz < HALF - 10; gz += 30) {
     for (let gx = -HALF + 18; gx < HALF - 10; gx += 30) {
       const x = gx + rand(-5, 5);
       const z = gz + rand(-5, 5);
-      let ok = true;
-      for (const [dx, dz] of [[0, 0], [-14, -12], [14, -12], [-14, 12], [14, 12]]) {
-        if (wet(x + dx, z + dz, 0.4)) ok = false;
+      const dry = (hx, hz) =>
+        [[0, 0], [-hx, -hz], [hx, -hz], [-hx, hz], [hx, hz]].every(([dx, dz]) => !wet(x + dx, z + dz, 0.4));
+      // The old 30 x 26 test decides whether a draw is taken, exactly as it
+      // did when the draw was a tuft budget; the draw is spent on the length
+      // instead, in the same order, so every placement after this is unmoved.
+      // Only then is the wider rect kept off the water — split into quarters
+      // up to three times, and only the dry ones sown, so the lawn comes down
+      // to the waterline rather than stopping short of it. A cell the old
+      // test refused took no draw and takes none now: it is sown at a fixed
+      // length.
+      if (!dry(14, 12)) {
+        sow(Number(x.toFixed(1)), Number(z.toFixed(1)), 42, 40, 0.7, 3);
+        continue;
       }
-      if (!ok) continue;
-      const density = Number(rand(0.09, 0.13).toFixed(2));
-      grass.push(`  { x: ${n2(Number(x.toFixed(1)))}, z: ${n2(Number(z.toFixed(1)))}, width: 30, depth: 26, density: ${density} },`);
-      tufts += 30 * 26 * density;
+      const tall = Number((0.6 + (rand(0.09, 0.13) - 0.09) * 5).toFixed(2));
+      sow(Number(x.toFixed(1)), Number(z.toFixed(1)), 42, 40, tall, 3);
     }
   }
-  console.log(`  grass: ~${Math.round(tufts)} tufts`);
+  grass.push(
+    "  // THE LAWN PAST THE SQUARE, out to the edge of the ground: without it the",
+    "  // turf stops on the play square's line and draws that line across the",
+    "  // margin. Four slabs round the square cut into cells; a fixed lattice,",
+    "  // no draws from the seeded stream.",
+  );
+  const OUT = HALF + MARGIN;
+  const IN = HALF - 4;
+  const CELL = 104;
+  for (const [x0, z0, x1, z1] of [
+    [-OUT, IN, OUT, OUT], // north
+    [-OUT, -OUT, OUT, -IN], // south
+    [IN, -IN, OUT, IN], // east
+    [-OUT, -IN, -IN, IN], // west
+  ]) {
+    for (let z = z0; z < z1; z += CELL) {
+      for (let x = x0; x < x1; x += CELL) {
+        const w = Math.min(CELL, x1 - x);
+        const d = Math.min(CELL, z1 - z);
+        sow(x + w / 2, z + d / 2, w, d, 0.8, 3);
+      }
+    }
+  }
+  console.log(`  grass: ${grass.filter((l) => l.startsWith("  {")).length} fields over ~${Math.round(area / 1e4)} ha`);
 }
 
 const NAMED = FLAGS.map(
