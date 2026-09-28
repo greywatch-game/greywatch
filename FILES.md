@@ -874,12 +874,17 @@ src/
                               #   a map's grid is not in the main bundle
     hollowmere/environment.ts # Palette, fog, mist, particles — night
     hollowmere/collision.ts   # GENERATED collider boxes (`npm run collision`)
-    greyfen/layout.ts         # The second map, being built: the jungle manor
-                              #   on C, a stilt-hut settlement and a temple on
-                              #   the other flags, and the trestle over the river
-    greyfen/heights.ts        # GENERATED floor heights — a Y-shaped river,
-                              #   wadeable everywhere (banks grade at 0.22).
-                              #   LAZY, like every heights.ts
+    greyfen/layout.ts         # The second map: a jungle valley with a
+                              #   plantation at its heart — the manor on C, a
+                              #   stilt village, the ferry, the temple on its
+                              #   hill, a dug-in camp, and the landing, the
+                              #   sawmill and the old city between them.
+                              #   SEEDED by `npm run greyfen` and owned by the
+                              #   editor after
+    greyfen/heights.ts        # GENERATED floor heights (`npm run greyfen`) —
+                              #   a Y-shaped river wadeable everywhere, the
+                              #   temple's hill, the spine, the old city's
+                              #   hollow and the lagoon. LAZY
     greyfen/environment.ts    # Palette, fog, sun, sky, shafts — a jungle
                               #   morning two hours after sunrise
     greyfen/collision.ts      # GENERATED collider boxes (`npm run collision`)

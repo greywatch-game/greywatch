@@ -83,12 +83,14 @@ export const MAP_SHOTS: Readonly<Record<string, MapShot>> = {
     url: hollowmereShot,
     vantage: { pos: [-38, 2.2, 38], target: [-60, 10, 82] },
   },
-  // Under the canopy looking north-east into the morning sun — the temple
-  // platform through the mist, with the trunks and the ferns in front of it.
-  // The bearing is the sun's own (043), which is what puts the glow in frame.
+  // From the processional way where it reaches the temple's hill, looking up
+  // at the terraces through the trunks — the paved road in the foreground, the
+  // sanctuary on its summit in the morning haze. Stood ON the paving because a
+  // road is the one place a jungle tree cannot grow (`PropBody.rooted`), so
+  // the frame is never a trunk from edge to edge.
   greyfen: {
     url: greyfenShot,
-    vantage: { pos: [54, 6, 8], target: [78, 9, 32] },
+    vantage: { pos: [68, 3.6, 10], target: [81, 5.6, 32] },
   },
   // The central square from the avenue, looking south-west down the sun's
   // bearing (225) so the towers either side are rim-lit and the glass has

@@ -1,4 +1,4 @@
-// The ground each village-kit kind takes, and which way it faces — shared by
+// The ground each village-kit and jungle-kit kind takes, and which way it faces — shared by
 // audit.mjs and plan.mjs.
 //
 // A mirror of the FOOT tables in scripts/generate-harrowmead.mjs and
@@ -57,10 +57,26 @@ export const FOOT = {
   bridge: (p) => [-(p.width ?? 3.2) / 2 - 0.3, (p.width ?? 3.2) / 2 + 0.3, -(p.length ?? 12) / 2, (p.length ?? 12) / 2],
   jetty: (p) => [-1.7, 1.7, -(p.length ?? 18) / 2, (p.length ?? 18) / 2],
   ramp: (p) => [-(p.width ?? 5) / 2, (p.width ?? 5) / 2, -(p.length ?? 8) / 2, (p.length ?? 8) / 2],
+  // The jungle kit (Greyfen) — mirrored from scripts/generate-greyfen.mjs.
+  manor: () => [-14.5, 18, -18.4, 7.4],
+  stiltHut: () => [-5, 5, -4.4, 4.4],
+  jungleRuin: (p) => {
+    const w = p.width ?? 12;
+    const d = p.depth ?? 9;
+    return [-w / 2 - 1.8, w / 2 + 1.8, -d / 2 - 3.0, d / 2 + 0.6];
+  },
+  templeRuin: (p) => [-(p.width ?? 26) / 2 - 0.5, (p.width ?? 26) / 2 + 0.5, -(p.depth ?? 22) / 2 - 6, (p.depth ?? 22) / 2 + 0.5],
+  trestleBridge: (p) => [-(p.width ?? 3.2) / 2 - 0.4, (p.width ?? 3.2) / 2 + 0.4, -(p.length ?? 26) / 2 - 7, (p.length ?? 26) / 2 + 7],
+  boardwalk: (p) => [-(p.width ?? 2.4) / 2 - 0.2, (p.width ?? 2.4) / 2 + 0.2, -(p.length ?? 14) / 2, (p.length ?? 14) / 2],
+  // Front (-Z) is the FOOT of the flight; it climbs toward +Z at 0.35.
+  stairs: (p) => [-1.4, 1.4, -(p.height ?? 2.5) / 0.35 / 2 - 0.6, (p.height ?? 2.5) / 0.35 / 2],
+  fishRack: (p) => [-(p.length ?? 9) / 2 - 0.2, (p.length ?? 9) / 2 + 0.2, -1.1, 1.1],
+  careenedHull: (p) => [-1.9, 1.9, -(p.length ?? 11) / 2 - 0.3, (p.length ?? 11) / 2 + 0.3],
+  sandbags: (p) => [-(p.length ?? 6) / 2 - 0.1, (p.length ?? 6) / 2 + 0.1, -0.5, 0.5],
 };
 
 /** Kinds with a front door that has to open onto a street, a yard or open ground. */
-export const DOORS = new Set(["cottage", "townhouse", "tavern", "smithy", "chapel", "mill", "barn", "boathouse", "ruin"]);
+export const DOORS = new Set(["cottage", "townhouse", "tavern", "smithy", "chapel", "mill", "barn", "boathouse", "ruin", "jungleRuin", "stiltHut"]);
 
 /** Kinds that are buildings: the ones a slope check applies to strictly. */
 export const BUILDINGS = new Set([...DOORS, "silo", "watchtower", "gatehouse", "shed", "kiln"]);

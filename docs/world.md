@@ -31,14 +31,9 @@ farming vale at sunset in high summer), **Sarab** (a desert town an hour
 before noon), **Cinderhaven** (a harbour town on a volcanic island, at
 night) and **Kurenai** (a temple town in a mountain valley as the maples turn,
 forty minutes before sunset). Greyfen
-was forked from Hollowmere's layout, cleared back to a blank valley, and is
-now being rebuilt as a jungle one: what stands is the **manor** on flag C, the
-districts around the other four flags, and the forest itself — ~1,390 canopy
-trees over the valley at a nearest-neighbour median of 3.8 m, closing 85-97% of
-the sky where it is deep. It shipped as five belts of forty trees in an
-otherwise empty valley, which measured out at one trunk per 12.5 m of map and a
-canopy that stopped 24% of a ray fired straight up; the layout file carries what
-changed and why.
+was forked from Hollowmere's layout, cleared back to a blank valley and rebuilt
+as a jungle one — first as the **manor** on flag C and a forest over everything
+else, and now SEEDED (below) as a valley with places in it.
 Coldharbour was written from nothing and is the one that pushed on what a map is
 allowed to be — see the next section. **Harrowmead** is the fourth and the
 largest: 400 m of rolling, hedged country written
@@ -82,6 +77,45 @@ same four refusals Harrowmead's does. Two things are its own. **The floor's zero
 is the MIST's datum**, because `mistHeight` is an absolute falloff: the village
 stands just above it and keeps the mist it had, the dell, the moor and the bog
 shore sit below it and drown, and the chapel's crown stands clear.
+
+**Greyfen is seeded now as well** (`npm run greyfen`), and what it was missing
+was not a street network but PLACES. The forest was right — dense, dark, a trunk
+every few metres — and it was all there was: between the five flags the valley
+was one texture of trees, the odd ruin and a hut. The generator keeps the forest
+as the default state of the ground and cuts the valley's places out of it — the
+Landing at the confluence, the manor's walled garden and kitchen yard, the stilt
+village on its lagoon, the ferry and the mission, the sawmill, the old city in a
+hollow under a ridge, the temple on a real hill with a broken precinct wall and a
+paved processional way, a dug-in camp, an outpost at each home — on a floor with
+relief it never had. Four things from it are general:
+
+- **The forest is sown THROUGH solid claims, and a log is not.** A jungle stand
+  that must clear every wall leaves a bare ring round every building, which is a
+  clearing nobody cut; so the lattice's stands skip solid claims and let
+  `findSpot`'s burial test refuse the trunks that would stand in a collider. That
+  test is a POINT, though, and a five-metre buttress log lying half across a wall
+  is not buried at its centre — so the log alone is kept to stands clear of
+  every structure (`buried.mjs` caught the one that was not).
+- **A lit fixture costs a slot EVERYWHERE until there are sixteen.**
+  `LightingSystem` picks nearest-first with no range cull, so ten lamps at the
+  far end of the map fill ten slots at this end, and each is paid per pixel. The
+  first pass lit its new places like a village at night and lost 13-26% of the
+  frame at every flag against the old map's five lights; removing the lit
+  classes one at a time found it, and a MORNING map keeps ten — the manor's, one
+  camp drum, the camp look-out's basket, one sawmill kiln and the boathouse. A
+  map adding lit dressing owes that measurement.
+- **A flag's own spawn is a balance lever as strong as the flags' positions.**
+  The re-lay first ran 26-10 to Redline over 36 bot rounds against the old map's
+  17-19, with every nav distance within 6 m of the old; lowering the manor's
+  terrace, the temple's hill and adding cover each moved nothing. What moved it
+  was B's spawn: the old map had it on the flag's east side, toward the manor, and
+  the first pass put it 11 m further west — so every Valeguard reinforcement bound
+  for C started further away. Put back on the east side, the same layout ran 18-18.
+  **Measure per-flag hold time, not wins**: a batch of twelve swings from 9-3 to
+  1-11 on identical files, while each flag's share held to within ten points.
+- **A long, narrow pool is a CAPSULE, not an ellipse.** Scaling an ellipse's
+  distance by its short radius stretches its bank by the aspect ratio along its
+  length — the lagoon's 5 m bank ran 26 m down its axis and drowned an outpost.
 
 **Building it found the scatter's burial test blind to the floor.**
 `MapBuilder.insideCollider` measured a prop's height band from its region's `y`
@@ -1788,7 +1822,8 @@ so it is data both sides have to agree on. The `WorldBox` list keeps one entry
 per prop either way, which is why nothing derived from geometry can tell.
 So every blocking prop
 on the map, across all regions, is gathered into one mesh per 12 m square after
-the scatter pass. Greyfen's 1,412 blocking props come to ~180 meshes; unmerged
+the scatter pass. Greyfen's 1,412 blocking props (as it was before its re-lay;
+~1,040 since) came to ~180 meshes; unmerged
 they would be more collider meshes than the rest of the map put together. The
 grouping is deliberately done ONCE for the whole pass rather than per region,
 because the regions overlap and per-region grouping left the same square with

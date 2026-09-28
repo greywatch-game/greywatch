@@ -276,6 +276,10 @@ npm run harrowmead # RE-SEED Harrowmead's layout and heights (committed
 npm run hollowmere # RE-SEED Hollowmere's layout and heights (committed
                    #   source). Same rules, flags and warning as
                    #   `harrowmead`; owes `npm run collision -- hollowmere`
+npm run greyfen    # RE-SEED Greyfen's layout and heights (committed source).
+                   #   Same rules and warning; owes `npm run collision --
+                   #   greyfen`. `-- --at x0,z0,x1,z1` / `--point x,z` print
+                   #   the floor, `--stands` how the forest fitted
 ```
 
 No test suite, no linter. `npm run typecheck` is the only automated gate — run it
@@ -879,10 +883,10 @@ down from 750 m because the same kit over three times the side read as
 sparse and cost 88 fps where it now runs 154). **Coldharbour, Harrowmead,
 Sarab and Cinderhaven are the four with vehicles on them**; **Sarab and
 Cinderhaven are the two with all THREE KINDS and the two that are not 8v8** —
-24 a side, online and off. Those two, Kurenai, Harrowmead and Hollowmere are
-**SEEDED by a generator** (`npm run sarab`, `npm run cinderhaven`,
-`npm run kurenai`, `npm run harrowmead`, `npm run hollowmere`) rather than
-typed — Harrowmead and Hollowmere were typed until their layouts and floors
+24 a side, online and off. Those two, Kurenai, Harrowmead, Hollowmere and
+Greyfen are **SEEDED by a generator** (`npm run sarab`, `npm run cinderhaven`,
+`npm run kurenai`, `npm run harrowmead`, `npm run hollowmere`,
+`npm run greyfen`) rather than typed — Harrowmead and Hollowmere were typed until their layouts and floors
 had drifted apart (a church in the stream, doors onto hedges, relief built out
 of terrace boxes on a flat floor), and each generator now CHECKS that every
 front door opens onto a street, a yard or the green — and the emitted `layout.ts` is an

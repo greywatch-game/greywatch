@@ -1,6 +1,6 @@
 # A seeded map generator
 
-`scripts/generate-hollowmere.mjs` (240 m village, the most recent) and
+`scripts/generate-hollowmere.mjs` (240 m village) and
 `scripts/generate-harrowmead.mjs` (400 m farming vale) are the worked
 examples; Sarab, Cinderhaven and Kurenai have their own at larger scales. A new
 one starts as a copy of the nearer of the first two and keeps its shape: the
@@ -55,6 +55,19 @@ CLAUDE.md's commands block.
   skill's `footprints.mjs`). A builder whose footprint changes owes all of
   them — this is the argument for a shared module, not yet written.
 
+## A forest map
+
+`scripts/generate-greyfen.mjs` is the worked example for a map whose default
+ground is FOREST rather than fields: a 12 m lattice of stands, one disc over
+the cell where it fits and a stand per quarter where it does not, each checked
+dry and clear of yards, clearings and spawns but sown THROUGH solid claims (the
+builder's burial test refuses trunks in colliders) — except logs, whose burial
+test is a point and which lie across walls. Density is a `woodiness` function
+with `thin(x, z, r, floor)` clearings, so a clearing is a sparse stand rather
+than a bald hole. It also carries `hard` districts (re-levelled after the
+water's cone, for a building by the river), capsule pools, broken wall lines
+(a chance per run to be gone), and `--at` / `--point` / `--stands` probes.
+
 ## Traps that have already cost time
 
 - **`--dry` first.** Write nothing until the refusals list reads right; keep
@@ -79,6 +92,11 @@ CLAUDE.md's commands block.
 - **`npm run parity` runs a dev server**: editing any file under `src/` while
   it runs reloads the page and crashes it partway ("Execution context was
   destroyed") — wait for it.
+- **A long pool as an ellipse**: `poolDist` scaled by the short radius
+  stretches the bank by the aspect ratio down the long axis; use a capsule.
+- **A failed generation does not stop a chained sim.** Run
+  `generate && collision && simulate`, or the batch measures the last layout
+  that wrote.
 - **Scatter burial measured from zero**: fixed in `76013c9`
   (`MapBuilder.insideCollider` now measures from the ground). If `buried.mjs`
   is ever non-zero again, that test has been defeated.

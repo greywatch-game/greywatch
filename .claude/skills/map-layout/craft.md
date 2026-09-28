@@ -111,11 +111,34 @@ before any building so nothing is built on it; home spawns on the village side
 of the gatehouse barricades, off the road through the arch. A blocking scatter
 prop is held off flags and spawns by `MapBuilder.keepClear`.
 
+**A flag's spawn is a balance lever as strong as the flag.** It is where
+every reinforcement for the NEXT flag starts, so moving one 11 m away from
+the contested middle took Greyfen's re-lay from 18-18 to 26-10 on nav
+distances that were all within 6 m of the old map's. Keep each spawn on the
+side of its flag that faces the fight it feeds, and when re-laying, start
+from the OLD spawns' bearings rather than from a fresh guess.
+
+**Read the sim per FLAG, not per round.** Batches of twelve on identical
+files swing from 9-3 to 1-11; each flag's share of the round held by each
+side stays within about ten points. `server/simulate.ts` does not print it:
+patch a counter over `game.conquest.points` (`owner` per tick) into the step
+loop for the run and take it out again, and run the OLD map the same way for
+the baseline before believing any difference.
+
 **Water is wadeable.** No swimming: a channel's banks grade under ~0.25 so
 anybody wades it anywhere, and the footbridges and fords are the easy line,
 not the only one. Anything steeper than 0.4 per metre severs its own nav
 links — the generators refuse a floor steeper than 0.36 anywhere (0.4 less a
 tenth for margin).
+
+**A lit fixture costs a slot everywhere.** `LightingSystem` fills its 16
+point-light slots nearest-first with no range cull, so every lamp, drum, kiln,
+shrine and watchtower basket ON THE MAP is paid per pixel at every flag until
+there are sixteen of them. Greyfen's first pass lit its new places like a
+village at night and lost 13-26% of the frame; ten lights got it back to within
+6-14%. Count the lit kinds (`grep` the layout for `lamp`, `fireDrum`, `kiln`,
+`shrine`, `watchtower`, `fungus`, and the lit builders) and measure before and
+after with `perf.mjs`.
 
 **Density is cost.** A map is priced on its area and its placements
 (`docs/world.md` on Kurenai): ~200-250 placements and ~55 houses on 240 m kept

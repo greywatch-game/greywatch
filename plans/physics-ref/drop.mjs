@@ -5,7 +5,10 @@
  *
  * Run with `node plans/physics-ref/drop.mjs [map...]`, `--check` to grade
  * against what is banked rather than replacing it, `--steps N` to lengthen the
- * settle. Resting sets land in `plans/physics-ref/ref/<map>.json`.
+ * settle. Resting sets land in `plans/physics-ref/ref/<map>.json`, which
+ * records the `steps` it was banked at — and a check owes the same number:
+ * Greyfen's is 2400, because since the valley was re-laid one body lands on
+ * the east arm's bank under water and is still sliding at 480 and 960.
  *
  * **It exists because a physics change is the one class of change this tree had
  * no way to check.** `npm run parity` fingerprints the NAV GRAPH, and physics
