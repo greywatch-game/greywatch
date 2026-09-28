@@ -73,12 +73,12 @@
  * the two lengths are a drawing decision, and the spring that bends them is
  * scaled by their ratio rather than tuned twice.
  */
-import { MeshBuilder, Scene, TransformNode } from "@babylonjs/core";
+import { Scene, TransformNode } from "@babylonjs/core";
 import { CONFIG } from "../config";
 import type { CelMaterialFactory } from "../shaders/CelShader";
 import type { Team } from "./Combatant";
 import { viewTeam } from "../core/teamView";
-import { extrude, solidBetween, type Point3, type ProfilePoint } from "./facet";
+import { extrude, rodBetween, solidBetween, type Point3, type ProfilePoint } from "./facet";
 import {
   paintRig,
   segmentOf,
@@ -337,23 +337,10 @@ export function buildTank(
    * the way `world/kit/core.ts`'s `orient` turns a member, because neither the
    * box's two rotations nor a cylinder's three axes can lay a tube at an angle.
    */
-  const rod = (a: Point3, b: Point3, d: number, color: string, tess = 8, dTop = d): Shape => {
-    const dx = b[0] - a[0];
-    const dy = b[1] - a[1];
-    const dz = b[2] - a[2];
-    const len = Math.max(1e-4, Math.hypot(dx, dy, dz));
-    const m = MeshBuilder.CreateCylinder(
-      "tank-rod",
-      { height: len, diameterBottom: d, diameterTop: dTop, tessellation: tess },
-      scene,
-    );
-    m.rotation.x = Math.PI / 2;
-    m.bakeCurrentTransformIntoVertices();
-    m.position.set((a[0] + b[0]) / 2, (a[1] + b[1]) / 2, (a[2] + b[2]) / 2);
-    m.rotation.x = -Math.asin(Math.max(-1, Math.min(1, dy / len)));
-    m.rotation.y = Math.atan2(dx, dz);
-    return [m, color];
-  };
+  const rod = (a: Point3, b: Point3, d: number, color: string, tess = 8, dTop = d): Shape => [
+    rodBetween("tank-rod", scene, a, b, d, tess, dTop),
+    color,
+  ];
   /** A side profile extruded across X — a hull, a skirt plate, a sight head. */
   const slab = (
     profile: readonly ProfilePoint[],

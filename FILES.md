@@ -389,12 +389,16 @@ src/
                         #   full depression.
                         #   NO main gun — `VehicleRig.gun`/`muzzle` are null,
                         #   which is what `Vehicle.armed` reads. Art only
-    HeliModel.ts        # The helicopter: a light gunship on skids with a main
-                        #   rotor, a tail rotor and a REMOTE door station on the
-                        #   port sill (the truck's rule — nothing may promise a
-                        #   body standing at it). `gun`/`muzzle` null and
-                        #   `turret` an INERT collar, exactly as the truck does
-                        #   it, so `aimMg` needs no branch. Both discs turn off
+    HeliModel.ts        # The helicopter: a tandem attack helicopter on skids
+                        #   drawn off the AH-1Z Viper — a lofted fuselage, a
+                        #   framed stepped canopy, the nose sensor ball, the
+                        #   doghouse, two nacelles into IR suppressors, stub
+                        #   wings with a rocket pod and a Sidewinder each, and
+                        #   a CHIN turret rather than a door gun (the truck's
+                        #   rule — nothing may promise a body standing at it).
+                        #   Two whips on the boom are its one non-rigid part.
+                        #   `gun`/`muzzle` null and `turret` an INERT node,
+                        #   so `aimMg` needs no branch. Both discs turn off
                         #   `setRun`'s FOURTH argument, and the transmission's
                         #   gear ratio lives here because it is a drawing
                         #   decision. No tip-path ring: `inkRig` makes anything
@@ -417,9 +421,11 @@ src/
                         #   phase and stepLength, velocity in the feet's frame,
                         #   kick, reload, ready. Bot and NetSoldier drive the
                         #   same one the same way
-    facet.ts            # The faceted LOFT (chamfered cross-sections joined)
-                        #   and the bevelled SLAB (a side profile extruded,
-                        #   concave allowed), both shaded flat and merged
+    facet.ts            # The faceted LOFT (chamfered cross-sections joined;
+                        #   `loftAlongZ` lays one down a fuselage), the
+                        #   bevelled SLAB (a side profile extruded, concave
+                        #   allowed), the convex SOLID between two faces and a
+                        #   ROD laid at any angle, all shaded flat and merged
                         #   beside boxes. The soldier and its rifle are cut
                         #   from the loft, the first-person rifle from both;
                         #   the slung launcher is still boxes

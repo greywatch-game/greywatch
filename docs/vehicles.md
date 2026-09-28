@@ -344,10 +344,9 @@ box a round stops on is the box it always was.
 
 ### The HELICOPTER is a GUNSHIP, and the DOORWAY was what was wrong with it
 
-`entities/HeliModel.ts` is the same accounting a third time — **eighteen meshes,
-ten of which move** (four for the two discs, four for the chin turret, two for
-the mast), for about twice the parts the aircraft it replaces carried and one
-mesh FEWER — and it was a light utility hull with a small remote station let
+`entities/HeliModel.ts` is the same accounting a third time — **twenty meshes,
+twelve of which move** (four for the two discs, four for the chin turret, four
+for the two whips) — and it was a light utility hull with a small remote station let
 into the port sill until the thing that was wrong with it turned out to be the
 truck's own lesson, misapplied.
 
@@ -388,19 +387,23 @@ Four things fell out of it and one of them is a bug that predates the redesign:
 - **The aerial was inside the rotor disc, and had been since the kind
   existed.** The utility version stood a 1.15 m whip on the boom whose tip
   reached 3.15 against a blade path at 3.06 — six centimetres through it, four
-  times a revolution. It is a 0.66 m blade aerial now, measured at 2.94, and the
-  disc is what bounds it. The same clearance is what sets the fin's top edge and
-  the tail rotor's height: the fin crosses the blade line 15 cm outside the tip,
+  times a revolution. It is two short whips now, 0.66 m and 0.5 m, the long
+  one's tip measured at 2.95, and the disc is what bounds them. The same
+  clearance is what sets the fin's leading edge and the tail rotor's height:
+  the fin crosses the blade line 24 cm outside the tip,
   and a tail rotor any higher or any further forward puts its own upper tip
   inside the main disc's radius.
 
-**The stub wings are bounded by the COLLIDER and not by taste.** The stores are
-what says "attack helicopter" before the canopy or the turret has landed, and
-the temptation is a proper span — but a span wider than `hull.width` is a wing
-rounds pass through, and the rotor disc is the one thing in this vehicle allowed
-outside the box, exempted by MOVING. So the tip is read off `hull.width / 2`
-rather than written down, and what fills the wing out is the DEPTH of what hangs
-under it.
+**The stub wings OVERHANG the collider by 40 cm a side, by decision — the
+second exception after the rotor disc.** Nothing drawn on a vehicle may promise
+mass outside its box, and the wing kept that rule until it was photographed:
+tips on the box's face read as stubs. Of the two ways out, widening the box
+would make the helicopter ~30% easier to hit from ahead, behind and above for
+the sake of a thin wing, where the overhang costs only that a round through the
+outer 40 cm of a wing, or the Sidewinder under its tip, flies on. So the tip is
+`hull.width / 2` plus `WING_OVERHANG` and nothing else goes out past the box;
+the pod — the store a player aims at — stays inside it. What fills the wing out
+besides its span is the DEPTH of what hangs under it.
 
 **That depth is the one thing here that was photographed rather than reasoned
 about**, and it generalises: the 58 cm of wing that stands clear of a 1.44 m
@@ -427,6 +430,25 @@ the nineteenth mesh went — `spec.gun` is null so that node is a permanent loca
 zero, the barbette welded to the airframe is therefore drawn in the body segment
 where it is free, and the node survives only because `mgMount` must have the
 same parent it has on a tank.
+
+**It is drawn off the AH-1Z Viper, and only the DRAWING moved.** Everything the
+aircraft does was already the Viper's — tandem crew, four blades, a starboard
+tail rotor, skids, a three-barrelled chin gun, stub wings with a pod and a tip
+missile — and it was drawn as dark boxes on a square pipe. So every station the
+physics, the gun or the disc reads is where it was, and the Viper is laid over
+them at about seven tenths of its size. The fuselage, the canopy, the doghouse
+and the keel are LOFTS through chamfered sections (`facet.ts`'s `loftAlongZ`,
+whose rings may be cut differently above and below — a rounded belly under
+square shoulders), which is what retired the staircase the box version needed
+from nose to tail. Three things the browser taught on the way: a sensor ball
+narrower than the nose it sits on is only the nose's blunt end, so the nose
+tapers IN to meet a ball wider than itself; glazing reads as glazing only by its
+FRAME — four dark lofts with no bows were one black shape at any range; and the
+arched skid cross tubes rise to the belly over their own station, which is 18 cm
+higher aft than forward. The second whip is the only mesh the Viper bought, and
+it was bought for MOVING: two masts of different lengths answer at different
+rates, which is what reads as springs rather than as one animation — and it is
+what keeps a parked aircraft with its rotor stopped from being a statue.
 
 ## The hull LEANS, and it leans TWICE
 

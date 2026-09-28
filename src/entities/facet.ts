@@ -1,9 +1,10 @@
 /**
  * facet.ts — The faceted LOFT (a solid built by joining a stack of chamfered
- * rectangular cross-sections), the bevelled SLAB (a side profile extruded
- * and chamfered — `extrude`) and the convex SOLID between two end faces
- * (`solidBetween`, a wedge of armour), all shaded flat, for the parts of a
- * model that a box makes read as a toy.
+ * rectangular cross-sections — `loftAlongZ` lays one down a fuselage), the
+ * bevelled SLAB (a side profile extruded and chamfered — `extrude`), the
+ * convex SOLID between two end faces (`solidBetween`, a wedge of armour) and a
+ * ROD laid at any angle (`rodBetween`), all shaded flat but the rod, for the
+ * parts of a model that a box makes read as a toy.
  * Invariants: every face carries its own normal and its own vertices, so the
  * part shades in flat planes exactly as a `CreateBox` does and a `mergeByColor`
  * beside boxes cannot tell the two apart; positions, normals AND uvs are
@@ -25,7 +26,7 @@
  * purpose: `CelInk` draws an edge wherever the normal bends, so every facet is
  * a potential pen line, and a round section at range is a scribble.
  */
-import { Mesh, Scene, Vector3, VertexData } from "@babylonjs/core";
+import { Mesh, MeshBuilder, Scene, Vector3, VertexData } from "@babylonjs/core";
 
 /**
  * One cross-section of a loft, in the part's own frame: a rectangle `w` by `d`
@@ -33,12 +34,23 @@ import { Mesh, Scene, Vector3, VertexData } from "@babylonjs/core";
  * 0 is a plain rectangle (four sides), 0.5 is close to a regular octagon for a
  * square section. `x`/`z` offset the ring, which is how a part leans or bellies
  * forward without a rotation.
+ *
+ * `kn` cuts the two corners on the −z side by a different share, for a section
+ * that is not the same shape on both sides — a fuselage whose belly is rounded
+ * off and whose shoulders are kept square for a canopy to sit on. Both cuts
+ * must be above 0 for an 8-point ring, or both 0 for a plain rectangle.
+ *
+ * `n` replaces the rectangle with an `n`-sided ELLIPSE through the same `w` by
+ * `d` box — a duct, a nacelle — turned half a side so that its extremes are
+ * flat faces rather than ridges; the cuts are then ignored.
  */
 export interface Ring {
   y: number;
   w: number;
   d: number;
   k?: number;
+  kn?: number;
+  n?: number;
   x?: number;
   z?: number;
 }
@@ -48,21 +60,32 @@ function outline(r: Ring): Vector3[] {
   const hw = r.w / 2;
   const hd = r.d / 2;
   const k = r.k ?? 0;
+  const kn = r.kn ?? k;
   const x = r.x ?? 0;
   const z = r.z ?? 0;
   const p = (px: number, pz: number) => new Vector3(x + px, r.y, z + pz);
-  if (k <= 0) return [p(hw, -hd), p(hw, hd), p(-hw, hd), p(-hw, -hd)];
+  if (r.n) {
+    const out: Vector3[] = [];
+    for (let i = 0; i < r.n; i++) {
+      const a = ((i + 0.5) / r.n) * Math.PI * 2;
+      out.push(p(Math.cos(a) * hw, Math.sin(a) * hd));
+    }
+    return out;
+  }
+  if (k <= 0 && kn <= 0) return [p(hw, -hd), p(hw, hd), p(-hw, hd), p(-hw, -hd)];
   const cw = hw * (1 - k);
   const cd = hd * (1 - k);
+  const cwn = hw * (1 - kn);
+  const cdn = hd * (1 - kn);
   return [
-    p(hw, -cd),
+    p(hw, -cdn),
     p(hw, cd),
     p(cw, hd),
     p(-cw, hd),
     p(-hw, cd),
-    p(-hw, -cd),
-    p(-cw, -hd),
-    p(cw, -hd),
+    p(-hw, -cdn),
+    p(-cwn, -hd),
+    p(cwn, -hd),
   ];
 }
 
@@ -153,6 +176,131 @@ export function loft(
   data.indices = indices;
   data.applyToMesh(mesh);
   return mesh;
+}
+
+/**
+ * One cross-section of a loft laid ALONG Z — a fuselage, a boom, a canopy —
+ * as a draughtsman states it: at station `z`, `w` across, from `lo` up to
+ * `hi`, with the two upper corners cut back by `top` and the two lower by
+ * `bot` (the same shares `Ring.k` takes). `x` shifts it sideways, and `n`
+ * makes it an ellipse of that many sides instead (see `Ring.n`).
+ */
+export interface Station {
+  z: number;
+  w: number;
+  lo: number;
+  hi: number;
+  top: number;
+  bot: number;
+  n?: number;
+  x?: number;
+}
+
+/**
+ * The loft through `stations`, nose to tail or tail to nose, lying along Z.
+ *
+ * **A loft is a stack standing up Y, and a fuselage is a stack lying down**, so
+ * this builds it standing and turns the vertices a quarter over about X —
+ * `(x, y, z)` to `(x, -z, y)`, a proper rotation and not a mirror, so every
+ * triangle keeps the winding `loft` gave it. The ring's −z side comes out on
+ * TOP, which is why `top` is handed to `kn`.
+ */
+export function loftAlongZ(
+  name: string,
+  scene: Scene,
+  stations: readonly Station[],
+  caps: { capBottom?: boolean; capTop?: boolean } = {},
+): Mesh {
+  const mesh = loft(
+    name,
+    scene,
+    stations.map((s) => ({
+      y: s.z,
+      w: s.w,
+      d: s.hi - s.lo,
+      k: s.bot,
+      kn: s.top,
+      n: s.n,
+      x: s.x ?? 0,
+      z: -(s.hi + s.lo) / 2,
+    })),
+    caps,
+  );
+  const turn = (data: Float32Array | number[]) => {
+    for (let i = 0; i < data.length; i += 3) {
+      const y = data[i + 1];
+      data[i + 1] = -data[i + 2];
+      data[i + 2] = y;
+    }
+    return data;
+  };
+  const pos = mesh.getVerticesData("position")!;
+  const nrm = mesh.getVerticesData("normal")!;
+  mesh.setVerticesData("position", turn(pos));
+  mesh.setVerticesData("normal", turn(nrm));
+  mesh.refreshBoundingInfo();
+  return mesh;
+}
+
+/**
+ * The section of a lofted body at station `z`, found by straight lines between
+ * the two stations either side of it — for seating a part ON a surface the
+ * loft drew rather than restating where that surface is. Clamped at the ends.
+ */
+export function stationAt(stations: readonly Station[], z: number): Station {
+  const sorted = [...stations].sort((a, b) => a.z - b.z);
+  if (z <= sorted[0].z) return sorted[0];
+  const last = sorted[sorted.length - 1];
+  if (z >= last.z) return last;
+  let i = 0;
+  while (sorted[i + 1].z < z) i++;
+  const a = sorted[i];
+  const b = sorted[i + 1];
+  const t = (z - a.z) / (b.z - a.z);
+  const mix = (p: number, q: number) => p + (q - p) * t;
+  return {
+    z,
+    w: mix(a.w, b.w),
+    lo: mix(a.lo, b.lo),
+    hi: mix(a.hi, b.hi),
+    top: mix(a.top, b.top),
+    bot: mix(a.bot, b.bot),
+    n: a.n,
+    x: mix(a.x ?? 0, b.x ?? 0),
+  };
+}
+
+/**
+ * A round member from `a` to `b` — a rail, a cable, a tube, a strut laid at an
+ * angle. Built along +Z and turned onto its bearing the way `world/kit/core.ts`'s
+ * `orient` turns a member, because neither a box's two rotations nor a
+ * cylinder's three axes can lay a tube at an angle. `d` is the diameter at `a`
+ * and `dTop` at `b`.
+ */
+export function rodBetween(
+  name: string,
+  scene: Scene,
+  a: Point3,
+  b: Point3,
+  d: number,
+  tess = 8,
+  dTop = d,
+): Mesh {
+  const dx = b[0] - a[0];
+  const dy = b[1] - a[1];
+  const dz = b[2] - a[2];
+  const len = Math.max(1e-4, Math.hypot(dx, dy, dz));
+  const m = MeshBuilder.CreateCylinder(
+    name,
+    { height: len, diameterBottom: d, diameterTop: dTop, tessellation: tess },
+    scene,
+  );
+  m.rotation.x = Math.PI / 2;
+  m.bakeCurrentTransformIntoVertices();
+  m.position.set((a[0] + b[0]) / 2, (a[1] + b[1]) / 2, (a[2] + b[2]) / 2);
+  m.rotation.x = -Math.asin(Math.max(-1, Math.min(1, dy / len)));
+  m.rotation.y = Math.atan2(dx, dz);
+  return m;
 }
 
 /**
