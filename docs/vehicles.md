@@ -178,23 +178,27 @@ tank, the truck and the helicopter each stand one a side.
 
 ## What it is drawn as, and the tracks that RUN
 
-`entities/TankModel.ts` is ~180 boxes and cylinders and **twenty-six meshes**, and
-the number that matters is the second one: the outline pass draws every mesh
-twice, so a tank's cost is COLOURS PER SEGMENT and not parts. A greeble in a
-colour its segment already carries is free; a sixth colour on the hull is two
-more draw calls on every hull on the field. That is the whole budget rule, and
-it is why the barrel is round, the road wheels are round and the hub caps are
-their own little discs — geometry is not what a mesh costs. Measured on
-Coldharbour: 26 meshes a hull, all of them inked, 104 for both hulls against
-the 2,262 the map draws.
+`entities/TankModel.ts` is drawn as a **Leopard 2A6** — ~600 boxes, cylinders,
+rods and faceted solids (`entities/facet.ts`: the hull and the turret are
+extruded PROFILES, the turret's arrowhead is two `solidBetween` wedges) — and
+**twenty-five meshes**, and the number that matters is the second one: a mesh
+is a draw call, so a tank's cost is COLOURS PER MOVING PART and not parts. A
+greeble in a colour its node already carries is free; a new colour on the hull
+is one more draw call on every hull on the field. That is the whole budget
+rule, and it is why the whole sprung hull is ONE segment and the whole turret
+another — split into several segments on one node, a colour pays once per
+segment — and why the tyres ride in the BELT's segment, being its colour.
+Geometry is not what a mesh costs: the rework took a hull from 7.2 k vertices
+to 23.6 k with the mesh count unchanged, and Coldharbour's frame rate at the
+hardstanding did not move outside the run-to-run spread.
 
 **A mesh is bought here for exactly one reason and it is never a colour:
 something that MOVES differently from everything around it cannot merge with any
-of it.** Twelve of the twenty-six are that — six for the tracks, four for the
+of it.** Twelve of the twenty-five are that — six for the tracks, four for the
 two antennae and two for the commander's gun on its own ring — and nothing else
 in the model has earned one.
 
-**Six of the twenty-six move, and between them they are the tracks.** A belt cannot
+**Six of the twenty-five move, and between them they are the tracks.** A belt cannot
 be one mesh: the links go round a loop and a rigid mesh only slides. So the band
 is static and a strip of raised LINKS is laid along each run and slid by how far
 that track has run, modulo the link pitch — which is exactly a scroll, because
@@ -238,21 +242,26 @@ Four things the model may not do, each of which has already been done once:
   louvre or a stowed drum within reach of the ring is something a traversing
   turret drives through. What is drawn back there sits behind `z = -2.5`, which
   is past the corner of the turret box.
-- **Nothing below the track line at the nose or the tail.** A box cannot have a
-  corner taken off it, so the glacis is built UP to its slope — the sponson
-  stops short, a step carries the hull out to the nose, and the plate is thick
-  enough to overlap the sponson's front face at every height it crosses. The
-  version that laid a thin raked plate over a square hull left a wedge of open
-  air behind it that read as a triangular hole punched in the front of the tank;
-  the version that filled that wedge with a thicker plate reached down through
-  the idler. Neither is available. The same staircase makes the tail.
+- **Nothing below the track line at the nose or the tail.** The box version
+  had to build the glacis UP to its slope as a staircase, because a box cannot
+  have a corner taken off it: a thin raked plate over a square hull left a
+  wedge of open air that read as a triangular hole in the front of the tank,
+  and a thicker plate filling it reached down through the idler. The hull is
+  an extruded side PROFILE now, which has no such wedge — but its underside
+  still stops at `LOOP`, because armour drawn through a road wheel is worse
+  than any hole.
 
-Stowage hangs off the FLANK and never off the fender: the sponson overhangs the
-tracks, so a fender's whole depth is under a metre of armour and a bin standing
-on one is inside the hull. That costs 30 cm of width the collider does not have,
-which is the same kind of overhang the fender lip itself has, and it is what
-stops six metres of unbroken plate down each side reading as a shipping
-container.
+The FLANK is the SKIRTS: three thick bolted armour panels at the front and five
+thin ones behind, hung outboard of the road wheels' hubs, and **a tapered band
+rather than a board** — they stop 45 cm under the deck edge, their two ends are
+raked back as the nose and the tail are, and their foot rises toward the idler
+and the sprocket. Run full height and square-ended they were a second hull
+standing in front of the first, and the vehicle's own shape was behind them. Six metres of unbroken
+plate down each side read as a shipping container, and the skirts' panel joints
+are what break it up — they replaced the flank bins that used to do that job.
+They cost the few centimetres of width the collider does not have, the same
+kind of overhang the bins had, and they stop ABOVE the hubs so the row of
+wheels, the running links and the sprocket's teeth are all still in view.
 
 **None of this moved the collider.** `CONFIG.vehicles.tank.hull` is what the
 model is built to and the model is what changed: the hull got rounder, better

@@ -49,7 +49,7 @@
  *
  * ## Twenty-two meshes, and fourteen of them move
  *
- * A tank is twenty-six because it has two belts, two masts and a cupola gun on
+ * A tank is twenty-five because it has two belts, two masts and a cupola gun on
  * its own ring. This is the same accounting on a smaller machine: **eight for
  * the four wheels, four for the station and two for the mast cannot merge with
  * anything, because a mesh is bought here for exactly one reason and it is

@@ -2,7 +2,7 @@
  * vehicleRig.ts — What every vehicle's MESH is, whatever kind it is, and the
  * two helpers both models are drawn with.
  * Owns: the `VehicleRig` contract — the joints `Vehicle` writes and the three
- * closures it calls — plus `Box`/`Cyl`, the per-colour merge and the outline
+ * closures it calls — plus `Box`/`Cyl`/`Shape`, the per-colour merge and the outline
  * pass every model owes.
  * Owns NO geometry and no numbers. `TankModel.ts` and `TruckModel.ts` are the
  * ART, one file per kind; this is the shape they both come out in, and the one
@@ -100,6 +100,16 @@ export type Cyl = [
   "x" | "y" | "z",
   number?,
 ];
+
+/**
+ * `[mesh, colour]` — a part already BUILT, for the shapes neither a box nor a
+ * cylinder can be: a profile extruded, a solid between two faces, a rod laid
+ * at an angle (`entities/facet.ts`). The mesh is built at the origin in the
+ * segment's own frame, may carry a position and rotation of its own, and is
+ * merged exactly as a box is — which is why it must carry positions, normals
+ * AND uvs, the three attributes every box has.
+ */
+export type Shape = readonly [Mesh, string];
 
 /**
  * What a destroyed hull is repainted in. One colour for the whole vehicle —
@@ -354,13 +364,14 @@ export interface Segments {
    * The two lists are one segment: a cylinder in a colour the boxes beside it
    * already carry merges into their mesh and costs nothing, which is why a
    * wheel's hub caps sit in the wheel segment and a barrel sits with the
-   * mantlet.
+   * mantlet. `shapes` are the same bargain for a part built beforehand.
    */
   segment(
     name: string,
     parent: TransformNode,
     boxes: Box[],
     cyls?: Cyl[],
+    shapes?: readonly Shape[],
   ): void;
 }
 
@@ -372,6 +383,7 @@ export function segmentOf(scene: Scene, mats: CelMaterialFactory): Segments {
     parent: TransformNode,
     boxes: Box[],
     cyls: Cyl[] = [],
+    shapes: readonly Shape[] = [],
   ): void => {
     const parts: Mesh[] = [];
     for (let i = 0; i < boxes.length; i++) {
@@ -408,6 +420,10 @@ export function segmentOf(scene: Scene, mats: CelMaterialFactory): Segments {
       if (axis === "x") m.rotation.z = Math.PI / 2;
       else if (axis === "z") m.rotation.x = Math.PI / 2;
       m.position.set(x, y, z);
+      m.material = mats.get(color);
+      parts.push(m);
+    }
+    for (const [m, color] of shapes) {
       m.material = mats.get(color);
       parts.push(m);
     }

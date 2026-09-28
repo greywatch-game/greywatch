@@ -1,8 +1,9 @@
 /**
  * facet.ts — The faceted LOFT (a solid built by joining a stack of chamfered
- * rectangular cross-sections) and the bevelled SLAB (a side profile extruded
- * and chamfered — `extrude`), both shaded flat, for the parts of a model that
- * a box makes read as a toy.
+ * rectangular cross-sections), the bevelled SLAB (a side profile extruded
+ * and chamfered — `extrude`) and the convex SOLID between two end faces
+ * (`solidBetween`, a wedge of armour), all shaded flat, for the parts of a
+ * model that a box makes read as a toy.
  * Invariants: every face carries its own normal and its own vertices, so the
  * part shades in flat planes exactly as a `CreateBox` does and a `mergeByColor`
  * beside boxes cannot tell the two apart; positions, normals AND uvs are
@@ -280,6 +281,100 @@ export function extrude(
       new Vector3(side, 0, 0),
       tris,
     );
+  }
+
+  const mesh = new Mesh(name, scene);
+  const data = new VertexData();
+  data.positions = positions;
+  data.normals = normals;
+  data.uvs = uvs;
+  data.indices = indices;
+  data.applyToMesh(mesh);
+  return mesh;
+}
+
+/** A point in a part's own frame, `[x, y, z]`. */
+export type Point3 = readonly [number, number, number];
+
+/**
+ * A SOLID between two matching faces — the third primitive, and the one a
+ * piece of ARMOUR wants: a wedge, a sloped cheek, anything whose faces run
+ * between two outlines that are neither the same size nor the same shape.
+ *
+ * `from` and `to` are the two end faces, corner for corner (the same count,
+ * walked the same way round); every side is the quad between corner `i` and
+ * `i + 1` of both. The solid must be CONVEX — which side is out is measured
+ * from its centroid, exactly as `loft` measures a band's — and a side whose
+ * four corners are not coplanar is fanned into two flat triangles, which the
+ * ink will find as a crease. A corner that collapses (`from[i]` equal to
+ * `to[i]` on both neighbours) leaves a triangle rather than a sliver.
+ *
+ * Emitted exactly as `loft` and `extrude` are — a vertex set per face, flat
+ * normals, zero uvs — so it merges beside boxes without either knowing.
+ */
+export function solidBetween(
+  name: string,
+  scene: Scene,
+  from: readonly Point3[],
+  to: readonly Point3[],
+): Mesh {
+  if (from.length !== to.length || from.length < 3) {
+    throw new Error(`solidBetween ${name}: the two faces need the same corner count`);
+  }
+  const a = from.map(([x, y, z]) => new Vector3(x, y, z));
+  const b = to.map(([x, y, z]) => new Vector3(x, y, z));
+  const centre = (l: Vector3[]) =>
+    l.reduce((s, v) => s.addInPlace(v), Vector3.Zero()).scaleInPlace(1 / l.length);
+  const inside = centre([...a, ...b]);
+
+  const positions: number[] = [];
+  const normals: number[] = [];
+  const uvs: number[] = [];
+  const indices: number[] = [];
+
+  /** One flat polygon, its normal (Newell's) turned away from `inside`. */
+  const face = (corners: Vector3[]): void => {
+    const n = Vector3.Zero();
+    for (let i = 0; i < corners.length; i++) {
+      const c = corners[i];
+      const d = corners[(i + 1) % corners.length];
+      n.x += (c.y - d.y) * (c.z + d.z);
+      n.y += (c.z - d.z) * (c.x + d.x);
+      n.z += (c.x - d.x) * (c.y + d.y);
+    }
+    if (n.lengthSquared() < 1e-14) return;
+    n.normalize();
+    if (Vector3.Dot(n, centre(corners).subtract(inside)) < 0) n.scaleInPlace(-1);
+    const base = positions.length / 3;
+    for (const c of corners) {
+      positions.push(c.x, c.y, c.z);
+      normals.push(n.x, n.y, n.z);
+      uvs.push(0, 0);
+    }
+    for (let t = 1; t + 1 < corners.length; t++) {
+      const p = corners[0];
+      const q = corners[t];
+      const r = corners[t + 1];
+      const wound = Vector3.Dot(Vector3.Cross(p.subtract(q), r.subtract(q)), n) > 0;
+      if (wound) indices.push(base, base + t, base + t + 1);
+      else indices.push(base, base + t + 1, base + t);
+    }
+  };
+
+  face(a);
+  face(b);
+  for (let i = 0; i < a.length; i++) {
+    const j = (i + 1) % a.length;
+    const poly: Vector3[] = [];
+    for (const v of [a[i], a[j], b[j], b[i]]) {
+      if (!poly.length || !v.equalsWithEpsilon(poly[poly.length - 1], 1e-6)) poly.push(v);
+    }
+    if (poly.length > 1 && poly[poly.length - 1].equalsWithEpsilon(poly[0], 1e-6)) poly.pop();
+    if (poly.length === 4) {
+      // Two flat triangles rather than one quad that may not be planar.
+      face([poly[0], poly[1], poly[2]]);
+      face([poly[0], poly[2], poly[3]]);
+    } else if (poly.length === 3) face(poly);
   }
 
   const mesh = new Mesh(name, scene);
