@@ -1,7 +1,8 @@
 /**
- * TruckModel.ts — The gun truck's mesh: an armoured 4x4 estate with a REMOTE
- * weapon station on its roof, four wheels that turn and two that steer, and
- * the charred repaint a wreck takes.
+ * TruckModel.ts — The gun truck's mesh: an armoured 4x4 drawn off the Oshkosh
+ * JLTV (the M1278 heavy guns carrier), with a REMOTE weapon station on its
+ * roof, four wheels that turn and two that steer, two whips that bow, and the
+ * charred repaint a wreck takes.
  * Owns: the ART. Every extent in here is a drawing decision and belongs to
  * this file; the extents that are RULES — the collider box, the height a bot
  * aims at — are `CONFIG.vehicles.truck` and are read, not restated. The one
@@ -28,36 +29,52 @@
  * metres back.
  *
  * A closed body makes the same absence read correctly instead. The crew are
- * INSIDE, behind glazing too shallow and too dark to see through, and what is
- * on the roof is a REMOTE station: a cradle, an armoured shield, an optic head
- * and a barrel, with no pintle, no grips and nowhere for a body to stand. The
- * gun traverses because the man at the screen below it traversed it, which is
- * what an armoured car's weapon station actually is — so the thing that used
- * to look broken now looks like the point.
+ * INSIDE, behind small armoured windows too dark to see through, and what is
+ * on the roof is a REMOTE station: a turntable, a sensor head, a cradle and a
+ * barrel, with no pintle, no grips and nowhere for a body to stand. The gun
+ * traverses because the man at the screen below it traversed it, which is
+ * what an armoured car's weapon station actually is.
  *
- * Two more things fell out of it and neither was the reason:
+ * ## It is a JLTV, and what reads as one is the SHAPE rather than the parts
  *
- * - **The gun's arc is 360 degrees by construction.** The pintle's whole
- *   geometry problem was that it had to shoot over its own cab, which is what
- *   the 1.14 m pedestal under it existed for; a station on the ROOF is above
- *   everything the vehicle has. What is left is the one clearance below, and
- *   it is downward rather than forward.
- * - **A body riding on the hull stands 50 cm over the roof instead of 1.7 m
- *   over the bed.** `Vehicle.deckAt` answers with the COLLIDER's top face,
- *   which is 2.5 m up on both designs — so a rider on the pickup floated well
- *   clear of the floor he looked like he was standing on.
+ * The first closed version was an armoured estate: a slab tub, a slab roof and
+ * four boxes of arch flare, which is a shape every modern armoured car shares
+ * with a removal van. What says "JLTV" before any detail resolves is three
+ * things, and all three are silhouettes rather than greebles:
  *
- * ## Twenty-two meshes, and fourteen of them move
+ * - **The wheel ARCHES are cut out of the body**, not flares bolted over a
+ *   body the tyres run through. `lower` is an extruded side PROFILE with the
+ *   two arches in it (`facet.ts`'s `extrude` takes a concave outline), so the
+ *   fender stands over the wheel with daylight under it, and the wells behind
+ *   are dark — the two inner tubs, narrow enough for the front pair to steer.
+ * - **The hood is a CLAMSHELL above the fenders**, a loft that rises toward
+ *   the cowl with its top corners cut, sitting between two fender tops the
+ *   body shows either side of it. A flat bonnet is the estate again.
+ * - **The belly is a V**, and there is no ladder frame under it at all. The
+ *   running gear is four independent corners — two A-arms, a knuckle, a
+ *   coil-over and a half-shaft each — which is what a player nosed into a
+ *   ditch sees, and what makes the gap under the body read as clearance.
+ *
+ * The greebles are then the ones a photograph of the vehicle is recognised
+ * by: the mesh grille with the bracket standing proud of it, the angular
+ * headlamp pods with two round lamps each, the tow bar and the winch, the
+ * split raked windscreen with its wipers, the thick frames round small side
+ * windows, the air-intake canister up the offside A-pillar, the big mirrors,
+ * the door steps, and a tarped cargo bed behind the cab with its straps.
+ *
+ * ## Twenty-six meshes, and seventeen of them move
  *
  * A tank is twenty-five because it has two belts, two masts and a cupola gun on
  * its own ring. This is the same accounting on a smaller machine: **eight for
- * the four wheels, four for the station and two for the mast cannot merge with
- * anything, because a mesh is bought here for exactly one reason and it is
- * never a colour — something that MOVES differently from everything around it
- * cannot merge with any of it.** The other eight are one per colour per
- * segment, exactly as over there, and there are FEWER of them than the pickup
- * had (23) carrying about twice the parts: every greeble below is in a colour
- * its own segment already pays for.
+ * the four wheels, five for the station and four for the two masts cannot
+ * merge with anything, because a mesh is bought here for exactly one reason
+ * and it is never a colour — something that MOVES differently from everything
+ * around it cannot merge with any of it.** The rest is one per colour per
+ * segment, exactly as over there: the whole sprung body is ONE segment in six
+ * colours, so every detail above that is in a colour the body already pays for
+ * is free, and the suspension is two (its frame and its springs). It was 22
+ * as an estate; the four more are the second whip's two and a colour each on
+ * the suspension (the springs) and the station (the sensor head).
  *
  * ## The wheels are the whole difference, and there are two halves to it
  *
@@ -66,12 +83,14 @@
  * each — and a disc rotating about its own axis is famously indistinguishable
  * from a disc at rest, which is the argument that got the tank's road wheels
  * no nodes at all. So the tyre alone would be a wasted mesh, and what earns it
- * is what is drawn ON it: **eight tread lugs standing proud of the carcass and
- * a pale hub with six bolts in the middle of it**, which is a pattern with an
+ * is what is drawn ON it: **two staggered rows of tread blocks standing proud
+ * of the carcass, and a pale rim inside a dark beadlock ring with a circle of
+ * bolts on it and eight studs round the hub**, which is a pattern with an
  * orientation twice over — at the silhouette, where a wheel is an edge, and at
  * the face, where it is a disc. Both are in the same two meshes — a wheel is
  * one merge of two colours' worth of parts — because nothing on a wheel moves
- * against the rest of it.
+ * against the rest of it, and the dark ring is the TYRE's colour rather than
+ * the frame's for exactly that reason: a third colour would be a third mesh.
  *
  * The second half is the STEER, and it is the one thing this model does that
  * the tank's cannot: the front pair are hung under a yaw node each and turned
@@ -79,14 +98,18 @@
  * opposite ways; a truck that cornered at 65 km/h with its wheels pointing
  * dead ahead is a vehicle sliding sideways. That is why `VehicleRig.setRun`
  * takes a third argument at all — see its note, and note that the tank ignores
- * it for a reason rather than by omission.
+ * it for a reason rather than by omission. **The front wells are narrower than
+ * the rear ones for the same reason**: a steered tyre's inner corners swing
+ * 20 cm further in than a straight one's face.
  *
  * **The three numbers the physics reads off this drawing did not move.**
  * `gauge`, `contactReach` and `wheelReach` are the pickup's to the centimetre,
  * because the wheels are where they were: the axles, the track and the tyre
  * are the one part of the vehicle a redesign of the BODY has no business
- * touching, and leaving them alone is what makes this a repaint rather than a
- * retune of the suspension, the lean and the ten ground contacts.
+ * touching, and leaving them alone is what makes this a redrawing rather than
+ * a retune of the suspension, the lean and the ten ground contacts. The JLTV's
+ * own tyre is 0.94 m across and this one is 0.92, which is part of why it was
+ * the vehicle to draw.
  *
  * ## What the model may not do
  *
@@ -94,10 +117,12 @@
  * and one more this shape invites: **nothing may stand on the roof inside the
  * station's sweep.** The gun turns a full circle and its muzzle reaches 1.46 m
  * past the trunnion, so a rack, a light bar or a rolled tarp anywhere within
- * that radius of `RING_Z` is something a traversing gun drives through. The
- * roof is therefore BARE, and everything that would have gone on it is on the
- * rear door, on the flanks or forward of the windscreen instead — which is
- * where it is on the vehicles this is drawn from anyway.
+ * that radius of `RING_Z` and above the roof is something a traversing gun
+ * drives through. The roof is therefore BARE; the cargo bed behind the cab is
+ * inside the radius but LOWER — its canvas tops out at 1.87 where the brake's
+ * underside is never below 1.96 — and the two whips stand on the bed's rear
+ * posts, 1.7 m and more from the ring, which a mast bent as far as its spring
+ * can reach still clears. See `ANTENNA_FEET`.
  */
 import { Scene, TransformNode } from "@babylonjs/core";
 import { CONFIG } from "../config";
@@ -105,10 +130,22 @@ import type { CelMaterialFactory } from "../shaders/CelShader";
 import type { Team } from "./Combatant";
 import { viewTeam } from "../core/teamView";
 import {
+  extrude,
+  loftAlongZ,
+  rodBetween,
+  solidBetween,
+  stationAt,
+  type Point3,
+  type ProfilePoint,
+  type Station,
+} from "./facet";
+import {
   type Box,
+  type Cyl,
   paintRig,
   segmentOf,
   setAntennaBend,
+  type Shape,
   type VehicleRig,
   type Whip,
 } from "./vehicleRig";
@@ -119,39 +156,37 @@ import {
  * shape whoever owns it, and what tells the sides apart is hue and a saturated
  * accent.
  *
- * **The palette is deliberately not the tank's.** This is a civilian 4x4 with
- * plate bolted onto it, and what says so at a glance is that it is not painted
- * like armour: the body is dusty and light rather than olive and heavy, the
- * panels are flat, and there is sand-coloured kit strapped to the outside of
- * it. A player who cannot tell the two kinds apart at range is a player who
- * brings a rocket to the wrong vehicle.
+ * **The palette is deliberately not the tank's.** The body is dusty and light
+ * rather than olive and heavy, and there is sand-coloured kit strapped to the
+ * outside of it. A player who cannot tell the two kinds apart at range is a
+ * player who brings a rocket to the wrong vehicle.
  */
 interface TruckKit {
-  /** The body, the bonnet, the roof and the appliqué plate: most of what is seen. */
+  /** The body, the hood, the cab and the door plates: most of what is seen. */
   body: string;
   /**
-   * The dark structure — the chassis, the bar work, the arch flares, the
-   * sliders, the snorkel, the weapon station and the gun. Nearly everything
-   * that is not a panel, which is what makes it worth one mesh per segment.
+   * The dark structure — the belly, the wells, the running gear, the grille,
+   * the bumper, the steps, the mirrors, the weapon station and the gun. Nearly
+   * everything that is not a panel, which is what makes it worth one mesh per
+   * segment.
    */
   frame: string;
-  /** Tyres. The darkest thing on the vehicle. */
+  /** Tyres, and the beadlock ring on each rim. The darkest thing on the vehicle. */
   tyre: string;
   /**
-   * BARE METAL — the wheel hubs and their bolts, the winch drum, the snorkel
-   * head, the exhaust tip, the barrel's jacket and the station's optic.
+   * BARE METAL — the rims and their bolts, the springs, the winch drum, the
+   * lamp bezels, the door handles, the whips' spring feet, and the station's
+   * lens rims and barrel jacket.
    *
-   * Its first job is still the hub, and there the contrast against the tyre is
+   * Its first job is still the rim, and there the contrast against the tyre is
    * load-bearing rather than decorative: a wheel is the only thing on this
-   * vehicle whose ROTATION can be read, and a hub in the tyre's own value
-   * rotates invisibly. Everywhere else it is the colour that picks the four or
-   * five FITTINGS out of a vehicle that is otherwise two flat panels and a lot
-   * of near-black, and it is spent in exactly two segments beyond the wheels.
+   * vehicle whose ROTATION can be read, and a rim in the tyre's own value
+   * rotates invisibly.
    */
   metal: string;
-  /** The armoured glazing. Drawn, not glazed: a model may not hang a `Build.pane`. */
+  /** The armoured glazing and the lamps. Drawn, not glazed: a model may not hang a `Build.pane`. */
   glass: string;
-  /** The spare, the cans, the sand ladders — what breaks the flat panels up. */
+  /** The cargo tarp and the cans — what breaks the flat panels up. */
   stow: string;
   /** The friend/foe colour, from `CONFIG.teams`. */
   accent: string;
@@ -167,9 +202,7 @@ const KITS: readonly TruckKit[] = [
     // **Darker than the first version, and the accent is why.** Team 0's colour
     // is `#c9a15e`, and a tan body at `#9a8a63` put a warm gold marking on a
     // warm gold panel — no marking at all at three pixels, which is exactly
-    // what `CLAUDE.md`'s conventions say a team colour may never be. What makes
-    // this read as a civilian body rather than as armour is the PALE kit
-    // strapped to it and the flat panels, not the body's own value.
+    // what `CLAUDE.md`'s conventions say a team colour may never be.
     body: "#7b7053",
     frame: "#2b2a26",
     tyre: "#1c1b19",
@@ -207,17 +240,18 @@ const HUB_Y = WHEEL_R;
  * The body is 2.36 wide over its panels and a tyre is 0.34, so the wheels are
  * proud of the sides at 1.05: a truck's wheels stick out and a tank's are
  * under its sponsons, which is one of the two silhouette cues that tell the
- * kinds apart from behind (the other is the station on the roof). The arch
- * FLARES are what cover the gap, and they are what makes a wheel standing
- * outside its own bodywork read as a design rather than as a mistake.
+ * kinds apart from behind (the other is the station on the roof). The dark
+ * arch lips are what make a wheel standing outside its own bodywork read as a
+ * design rather than as a mistake.
  */
 const TRACK_X = 1.05;
 /**
  * How far fore and aft the axles stand — the wheelbase's half-length.
  *
  * Well inside the body's own half-length (2.7), which is what leaves an
- * overhang at each end: a bonnet in front of the front wheels and a rear door
- * behind the back ones. A vehicle whose wheels are at its corners is a go-kart.
+ * overhang at each end: the nose and its bumper in front of the front wheels
+ * and the cargo bed behind the back ones. A vehicle whose wheels are at its
+ * corners is a go-kart.
  */
 const AXLE_Z = 1.62;
 /**
@@ -229,7 +263,7 @@ const TRACK_GAUGE = TRACK_X * 2;
  * How far fore and aft of the centre the ground contacts reach.
  *
  * The AXLES and not the bumpers: a truck touches the ground at its tyres, and
- * a contact sampled out at the rear door is a vehicle rearing up on a kerb its
+ * a contact sampled out at the tailgate is a vehicle rearing up on a kerb its
  * wheels have not reached. This is what `TRACK_REACH` is to a tank, and it is
  * shorter relative to the body for the same reason the overhangs exist.
  */
@@ -237,43 +271,67 @@ const CONTACT_REACH = AXLE_Z;
 /** How far the front wheels turn at full lock. ~28 deg, which reads without looking broken. */
 const STEER_LOCK = 0.49;
 /**
- * Tread lugs round the carcass, and bolts round the hub.
+ * Tread blocks per ROW round the carcass — there are two rows, staggered by
+ * half a block, which is the chunky cross-country pattern the vehicle is
+ * recognised by from the flank — and bolts round the beadlock ring and studs
+ * round the hub.
  *
- * Two patterns with an orientation on the one part of this vehicle whose
- * rotation has to be legible — the lugs from the flank, where a wheel is a
- * silhouette, and the bolts from three-quarters on, where it is a face. Both
- * are free: a lug is the tyre's own colour and a bolt is the hub's, so neither
- * buys a mesh. See the header.
+ * Patterns with an orientation on the one part of this vehicle whose rotation
+ * has to be legible — the blocks from the flank, where a wheel is a
+ * silhouette, and the bolts from three-quarters on, where it is a face. All
+ * free: a block is the tyre's own colour and a bolt is the rim's, so none of
+ * them buys a mesh. See the header.
  */
-const TREAD_LUGS = 8;
-const HUB_BOLTS = 6;
+const TREAD_BLOCKS = 14;
+const RING_BOLTS = 12;
+const HUB_STUDS = 8;
 
-// --- the body, from the chassis rail up ------------------------------------
+// --- the body, from the belly up ------------------------------------------
 
-/** Where the chassis rail's top sits — what the springs push against. */
-const FRAME_Y = 0.62;
-/** The cabin floor, and the bottom of the body sides. */
+/** The bottom of the body between the arches, and the cabin floor. */
 const SILL_Y = 0.74;
+/** The bottom of the body at the two ENDS, outside the arches — the fender tips. */
+const END_Y = 0.8;
 /**
- * The belt line: the top of the armoured lower body and the bottom of the
- * glazing.
+ * The belt line: the top of the lower body and the bottom of the glazing.
  *
  * High, and the height is the whole read. A civilian estate is about half
- * glass; this is 70 cm of plate under a 40 cm slot, which is the proportion
- * that says "armoured" before any other detail on the vehicle has resolved —
- * and it is also what makes the crew UNSEEABLE at the range this is fought at,
- * which is the point of the whole redesign.
+ * glass; this is 70 cm of plate under windows barely 40 cm tall, which is the
+ * proportion that says "armoured" before any other detail on the vehicle has
+ * resolved — and it is also what makes the crew UNSEEABLE at the range this
+ * is fought at.
  */
 const WAIST_Y = 1.44;
-/** The top of the roof panel. Everything above this is the weapon station. */
+/** The top of the cab roof. Everything above this is the weapon station. */
 const ROOF_Y = 1.96;
-/** Half the body's own width, inside the collider's 1.25 by a flare's thickness. */
+/** Half the body's own width, inside the collider's 1.25 by an arch lip's thickness. */
 const BODY_HW = (CONFIG.vehicles.truck.hull.width - 0.14) / 2;
+/** Half the CAB's width: 5 cm inside the body each side, so the belt line is a ledge the ink finds. */
+const CAB_HW = BODY_HW - 0.05;
 
-/** Where the bonnet stops and the windscreen starts. */
-const SCUTTLE_Z = 0.98;
-/** …and the rake it stands at, shared by the screen and the A-pillars beside it. */
-const SCREEN_RAKE = -0.55;
+/** The front face of the body, behind the bumper corners and the tow bar. */
+const NOSE_Z = 2.42;
+/** The back face of the body — the tailgate — inside the collider by the bumper and the cans. */
+const TAIL_Z = -2.44;
+/** Where the windscreen's foot meets the cowl. */
+const SCUTTLE_Z = 0.97;
+/** Where the windscreen's head meets the roof. */
+const HEADER_Z = 0.66;
+/** The back of the cab, and the front of the cargo bed. */
+const CAB_TAIL_Z = -1.56;
+
+/**
+ * One wheel arch, as the outline the body's side profile is cut round:
+ * `z0`/`z1` its two feet, `top` the soffit. Squarish with its shoulders cut,
+ * because that is the JLTV's, and a round arch at this size is eight facets
+ * of pen line.
+ *
+ * **1.10 is 18 cm over the tyre**, which is the room the springs use: the
+ * body heaves on `sprung` and the wheels do not, and an arch sized to the tyre
+ * at rest is a body landing on its own wheels.
+ */
+const ARCH_TOP = 1.1;
+const ARCH_HALF = 0.53;
 
 /** The station's base ring: how big it is and how high it turns. */
 const RING_R = 0.44;
@@ -283,13 +341,39 @@ const RING_Y = ROOF_Y + 0.04;
  * it is sitting.
  *
  * It is also about as far back as the sweep allows: the muzzle reaches 1.46 m
- * and the roof runs to -2.42, so a station much further aft would swing its
- * barrel off the back of the vehicle rather than over it.
+ * and the cab roof runs to -1.56, so a station much further aft would swing
+ * its barrel down over the cargo bed.
  */
 const RING_Z = -0.85;
 
-/** The one whip's length. */
-const ANTENNA_LENGTH = 1.35;
+/**
+ * The two whips' lengths in metres, the long one first — the order
+ * `VehicleRig.antennae` is measured against.
+ *
+ * LONG, because a JLTV's are, and because length is what makes a whip read at
+ * all: at the chase camera's twelve metres a mast is a line of three pixels,
+ * and a line has to be long for its BOW to be seen. A cantilever's frequency
+ * goes as 1/L^2, so the pair ring at two rates off one config spring
+ * (`CONFIG.vehicles.truck.antenna`), roughly 2 Hz and 3 Hz.
+ */
+const ANTENNA_LENGTHS = [2.2, 1.8] as const;
+/** Where the two rear corner posts stand, just behind the canvas. */
+const POST_Z = -2.37;
+/**
+ * The two mast feet, `[x, z]` — the long one on top of the port rear post
+ * and the short one on an arm forward off the starboard one, which is where
+ * the JLTV carries them and the only place on this vehicle both clear of the
+ * station and high enough to be seen.
+ *
+ * **1.89 m and 1.77 m from the ring**, against a muzzle that reaches 1.46 m.
+ * Staggered in Z as well as X, the tank's rule: two masts at the same station
+ * are a pair of goalposts. A mast bent the whole of `bendLimit` toward the
+ * ring comes about 0.15 m in at the barrel's height, so it clears a traversing
+ * gun at every lay the gun can reach.
+ */
+const ANTENNA_FEET = [[-(BODY_HW - 0.06), POST_Z], [BODY_HW - 0.06, -2.22]] as const;
+/** The mast foot's height — the top of the posts, level with the cab roof. */
+const ANTENNA_FOOT_Y = ROOF_Y;
 
 /**
  * One wheel: the yaw node that STEERS it (front only) and the node that SPINS.
@@ -322,33 +406,46 @@ export function buildTruck(
   // index for it: the local player's own side wears amber whichever slot a
   // match seated them in. See `core/teamView.ts`.
   const kit = KITS[viewTeam(team)];
-  const t = CONFIG.vehicles.truck;
-  // Built to the collider's own extents rather than to numbers of its own, so
-  // the shape a round stops on and the shape a player aims at cannot drift
-  // apart. Everything below is expressed against these.
-  const L = t.hull.length;
-  /** The front of the bonnet, inside the collider by the bar work in front of it. */
-  const noseZ = L / 2 - 0.22;
-  /** The rear door's face, inside the collider by the spare bolted to it. */
-  const tailZ = -(L / 2 - 0.26);
 
   const root = new TransformNode("truck", scene);
   const hull = new TransformNode("truck-hull", scene);
   hull.parent = root;
-  // Everything the springs carry, which is everything except the wheels.
-  // See `VehicleRig.sprung`.
+  // Everything the springs carry, which is everything except the wheels and
+  // the arms they hang on. See `VehicleRig.sprung`.
   const sprung = new TransformNode("truck-sprung", scene);
   sprung.parent = hull;
 
   const { meshes, livery, segment } = segmentOf(scene, mats);
 
-  // --- the wheels: four discs with two patterns on them ---------------------
+  /** A round member from `a` to `b` — an arm, a spring, a wiper, a strap, a chute. */
+  const rod = (a: Point3, b: Point3, d: number, color: string, tess = 6, dTop = d): Shape => [
+    rodBetween("truck-rod", scene, a, b, d, tess, dTop),
+    color,
+  ];
+  /** A side profile extruded across X — the body. */
+  const slab = (
+    profile: readonly ProfilePoint[],
+    width: number,
+    bevel: number,
+    x: number,
+    color: string,
+  ): Shape => [extrude("truck-slab", scene, profile, width, bevel, x), color];
+  /** A convex solid between two end faces — the V under the cab. */
+  const solid = (from: readonly Point3[], to: readonly Point3[], color: string): Shape =>
+    [solidBetween("truck-solid", scene, from, to), color];
+  /** A loft lying along Z — the hood, the tarp and its straps. */
+  const lofted = (stations: readonly Station[], color: string): Shape =>
+    [loftAlongZ("truck-loft", scene, stations), color];
+
+  // ==========================================================================
+  // THE WHEELS: four discs with two patterns on them
+  // ==========================================================================
   //
   // Each is its own mesh because it moves differently from everything around
-  // it, and each is TWO colours in one merge — a near-black lugged tyre and a
-  // pale bolted hub, which is what makes the rotation legible from the flank
-  // and from three-quarters on. See the header on why the tank's road wheels
-  // get none of this.
+  // it, and each is TWO colours in one merge — a near-black blocky tyre with a
+  // dark beadlock ring, and a pale rim with its bolts, which is what makes the
+  // rotation legible from the flank and from three-quarters on. See the header
+  // on why the tank's road wheels get none of this.
   const wheels: Wheel[] = [];
   const wheel = (i: number, x: number, z: number, steers: boolean): Wheel => {
     let steer: TransformNode | null = null;
@@ -366,44 +463,47 @@ export function buildTruck(
     spin.position.set(steers ? 0 : x, steers ? 0 : HUB_Y, steers ? 0 : z);
     const sign = x < 0 ? -1 : 1;
     const parts: Box[] = [];
-    // The tread: a block standing 4 cm proud of the carcass and 1 cm proud of
-    // it each side, laid round the circumference in the y-z plane the wheel
-    // turns in. `rotX` is the same angle as the position, which is what puts
-    // each lug's own up-axis along the radius.
-    for (let k = 0; k < TREAD_LUGS; k++) {
-      const a = (k * Math.PI * 2) / TREAD_LUGS;
-      parts.push([
-        WHEEL_W + 0.02,
-        0.08,
-        0.2,
-        0,
-        WHEEL_R * Math.cos(a),
-        WHEEL_R * Math.sin(a),
-        kit.tyre,
-        a,
-      ]);
+    // The tread: two rows of blocks, each standing 3.5 cm proud of the
+    // carcass, the outer row turned half a block on from the inner. `rotX` is
+    // the same angle as the position, which is what puts each block's own
+    // up-axis along the radius.
+    for (let row = 0; row < 2; row++) {
+      const ox = (row === 0 ? -1 : 1) * (WHEEL_W / 4 + 0.005);
+      for (let k = 0; k < TREAD_BLOCKS; k++) {
+        const a = ((k + row * 0.5) * Math.PI * 2) / TREAD_BLOCKS;
+        parts.push([
+          WHEEL_W / 2 + 0.01,
+          0.07,
+          0.15,
+          ox,
+          WHEEL_R * Math.cos(a),
+          WHEEL_R * Math.sin(a),
+          kit.tyre,
+          a,
+        ]);
+      }
     }
-    // The bolts, on the OUTBOARD face only — the inboard one is never seen and
-    // a pattern there is parts paying for nothing. Boxes rather than cylinders
-    // because at 6 cm the facets are not a thing an eye can find.
-    for (let k = 0; k < HUB_BOLTS; k++) {
-      const a = (k * Math.PI * 2) / HUB_BOLTS;
-      parts.push([
-        0.06,
-        0.07,
-        0.07,
-        sign * (WHEEL_W / 2 - 0.01),
-        0.17 * Math.cos(a),
-        0.17 * Math.sin(a),
-        kit.metal,
-      ]);
+    // The bolts round the beadlock ring and the studs round the hub, on the
+    // OUTBOARD face only — the inboard one is never seen and a pattern there
+    // is parts paying for nothing. Boxes rather than cylinders because at 4 cm
+    // the facets are not a thing an eye can find.
+    for (let k = 0; k < RING_BOLTS; k++) {
+      const a = (k * Math.PI * 2) / RING_BOLTS;
+      parts.push([0.03, 0.045, 0.045, sign * 0.19, 0.3 * Math.cos(a), 0.3 * Math.sin(a), kit.metal]);
+    }
+    for (let k = 0; k < HUB_STUDS; k++) {
+      const a = (k * Math.PI * 2) / HUB_STUDS;
+      parts.push([0.03, 0.035, 0.035, sign * 0.195, 0.14 * Math.cos(a), 0.14 * Math.sin(a), kit.metal]);
     }
     segment(`truck-wheel${i}-m`, spin, parts, [
       [WHEEL_R * 2, WHEEL_W, 0, 0, 0, kit.tyre, "x"],
-      // The rim and the centre cap over it, both outboard for the bolts'
-      // reason.
-      [WHEEL_R * 1.15, 0.08, sign * (WHEEL_W / 2 - 0.03), 0, 0, kit.metal, "x"],
-      [0.2, 0.06, sign * (WHEEL_W / 2 + 0.02), 0, 0, kit.metal, "x"],
+      // The beadlock ring — the dark band between the sidewall and the rim —
+      // then the rim inside it and a dark hub cap in the middle of that. Three
+      // discs stepping OUT toward the hub, so the ink draws two circles on
+      // the face and the bolts sit on the step between them.
+      [0.68, 0.04, sign * 0.16, 0, 0, kit.tyre, "x"],
+      [0.5, 0.04, sign * 0.175, 0, 0, kit.metal, "x"],
+      [0.2, 0.03, sign * 0.195, 0, 0, kit.tyre, "x"],
     ]);
     const w: Wheel = { steer, spin };
     wheels.push(w);
@@ -416,266 +516,429 @@ export function buildTruck(
   wheel(2, -TRACK_X, -AXLE_Z, false);
   wheel(3, TRACK_X, -AXLE_Z, false);
 
-  // --- the chassis: two rails, two live axles and the gear between them -----
+  // ==========================================================================
+  // THE RUNNING GEAR: four independent corners, on `hull`
+  // ==========================================================================
   //
-  // On `hull` rather than `sprung`, because a ladder frame is what the springs
-  // push AGAINST: this is the running gear's half of the vehicle, and keeping
-  // it here is what stops the axles rising with the body when it settles. It
-  // is also the only part of the drawing a player sees from BELOW — a hull
-  // nosed into a ditch shows its underside, and a flat plate down there is a
-  // vehicle with no mechanism in it.
-  segment(
-    "truck-frame",
-    hull,
-    [
-      [0.16, 0.2, L - 0.9, -0.72, FRAME_Y - 0.12, 0, kit.frame],
-      [0.16, 0.2, L - 0.9, 0.72, FRAME_Y - 0.12, 0, kit.frame],
-      // The two axle beams, which are what make the gap under the body read as
-      // ground clearance rather than as a body floating over four discs.
-      [TRACK_X * 2, 0.16, 0.2, 0, HUB_Y, AXLE_Z, kit.frame],
-      [TRACK_X * 2, 0.18, 0.24, 0, HUB_Y, -AXLE_Z, kit.frame],
-      // A differential on EACH axle, off the centreline and on the same side —
-      // the cue that says "live axles, driven at both ends", which is the one
-      // mechanical claim this vehicle's handling actually makes.
-      [0.34, 0.32, 0.34, 0.12, HUB_Y, -AXLE_Z, kit.frame],
-      [0.3, 0.28, 0.3, 0.12, HUB_Y, AXLE_Z, kit.frame],
-      // The transfer case between them, and the fuel tank slung off the far
-      // rail.
-      [0.3, 0.26, 0.44, 0.1, FRAME_Y - 0.2, 0.24, kit.frame],
-      [0.68, 0.26, 0.9, -0.4, FRAME_Y - 0.2, -0.85, kit.frame],
-    ],
-    [
-      // Two propeller shafts out of the transfer case, which is what joins the
-      // three lumps above into one drivetrain.
-      [0.1, 1.3, 0.11, FRAME_Y - 0.22, -0.68, kit.frame, "z"],
-      [0.09, 0.95, 0.11, FRAME_Y - 0.22, 0.93, kit.frame, "z"],
-      // Four shock cans, standing off the axle beams at the wheel stations.
-      [0.12, 0.36, -0.8, HUB_Y + 0.2, AXLE_Z, kit.frame, "y"],
-      [0.12, 0.36, 0.8, HUB_Y + 0.2, AXLE_Z, kit.frame, "y"],
-      [0.12, 0.36, -0.8, HUB_Y + 0.2, -AXLE_Z, kit.frame, "y"],
-      [0.12, 0.36, 0.8, HUB_Y + 0.2, -AXLE_Z, kit.frame, "y"],
-    ],
-  );
+  // On `hull` rather than `sprung`, because the arms are what the springs push
+  // AGAINST: this is the running gear's half of the vehicle, and keeping it
+  // here is what stops the wheels' mounts rising with the body when it
+  // settles. It is also the only part of the drawing a player sees from BELOW
+  // — a hull nosed into a ditch shows its underside — and four corners with
+  // daylight between them are what say "independent suspension" where the
+  // pickup's two beam axles said "farm truck".
+  //
+  // Two colours: the frame's near-black for the arms, the knuckles, the
+  // shafts and the differentials, and the METAL for the four coil springs,
+  // which are the one part of it bright enough to find in a wheel well.
+  const gear: Box[] = [];
+  const gearShapes: Shape[] = [];
+  for (const az of [AXLE_Z, -AXLE_Z]) {
+    // The differential on the centreline, and the half-shafts out of it to
+    // each hub — one tube across, because the two halves are colinear.
+    gear.push([0.36, 0.28, 0.32, 0, HUB_Y, az, kit.frame]);
+    gearShapes.push(rod([-0.86, HUB_Y, az], [0.86, HUB_Y, az], 0.08, kit.frame));
+    for (const s of [-1, 1]) {
+      // The knuckle the wheel hangs from, just inboard of the tyre's face.
+      gear.push([0.08, 0.46, 0.14, s * 0.83, HUB_Y + 0.02, az, kit.frame]);
+      // Two A-arms: each a pair of tubes from two pivots on the body, 40 cm
+      // apart, to one ball joint on the knuckle — which is the V that makes
+      // an arm read as an arm and not as a strut.
+      const lo: Point3 = [s * 0.82, 0.28, az];
+      const hi: Point3 = [s * 0.82, 0.7, az];
+      for (const dz of [-0.2, 0.2]) {
+        gearShapes.push(rod([s * 0.34, 0.3, az + dz], lo, 0.06, kit.frame));
+        gearShapes.push(rod([s * 0.42, 0.68, az + dz], hi, 0.05, kit.frame));
+      }
+      // The coil-over, leaning in from the lower arm to the body: a spring in
+      // metal over a thinner damper body in the frame's colour.
+      gearShapes.push(rod([s * 0.66, 0.32, az + 0.1], [s * 0.5, 1.0, az + 0.1], 0.13, kit.metal, 8));
+      gearShapes.push(rod([s * 0.68, 0.26, az + 0.1], [s * 0.48, 1.08, az + 0.1], 0.06, kit.frame));
+    }
+  }
+  // The steering track rod across the front, which is what the stick moves.
+  gearShapes.push(rod([-0.84, 0.5, AXLE_Z + 0.16], [0.84, 0.5, AXLE_Z + 0.16], 0.045, kit.frame));
+  segment("truck-gear", hull, gear, [], gearShapes);
 
-  // --- the body: one closed shell, from the nose to the rear door -----------
-  segment("truck-body", sprung, [
-    // The tub — the armoured lower body, floor to belt line, rear door to
-    // scuttle. One slab, because that is what it is: what keeps it from
-    // reading as a crate is the glazing slot above it and the bar work hung
-    // off it, not a facet on it.
-    [
+  // ==========================================================================
+  // THE BODY: one segment, every colour it wears, on `sprung`
+  // ==========================================================================
+  //
+  // Everything the springs carry that does not move against the springs is
+  // ONE segment — the tank's rule — so a colour is paid for once, however many
+  // parts wear it. What follows is organised by where it is on the vehicle,
+  // not by colour, because the merge does not care.
+  const body: Box[] = [];
+  const bodyCyls: Cyl[] = [];
+  const bodyShapes: Shape[] = [];
+
+  // --- the lower body: a side profile with the two arches cut out of it -----
+  //
+  // The whole of what makes the fenders fenders: the profile runs along the
+  // sill and hops up over each wheel, so there is daylight under a fender and
+  // a soffit over the tyre rather than a slab the tyre runs through. Full
+  // width, so the arches are tunnels across the vehicle — which is what the
+  // dark WELLS below close off.
+  const arch = (c: number): ProfilePoint[] => {
+    // Written front to back, so a caller walking the sill from the nose to
+    // the tail can splice it in as it comes.
+    const f = c + ARCH_HALF;
+    const r = c - ARCH_HALF;
+    return [
+      [f, c > 0 ? END_Y : SILL_Y],
+      [f - 0.08, 1.0],
+      [f - 0.26, ARCH_TOP],
+      [r + 0.26, ARCH_TOP],
+      [r + 0.08, 1.0],
+      [r, c > 0 ? SILL_Y : END_Y],
+    ];
+  };
+  bodyShapes.push(
+    slab(
+      [
+        [NOSE_Z, END_Y],
+        [NOSE_Z, 1.24],
+        [NOSE_Z - 0.08, 1.3],
+        [SCUTTLE_Z, WAIST_Y],
+        [TAIL_Z, WAIST_Y],
+        [TAIL_Z, END_Y],
+        ...arch(-AXLE_Z).reverse(),
+        ...arch(AXLE_Z).reverse(),
+      ],
       BODY_HW * 2,
-      WAIST_Y - SILL_Y,
-      SCUTTLE_Z + 0.12 - tailZ,
+      0.035,
       0,
-      (SILL_Y + WAIST_Y) / 2,
-      (SCUTTLE_Z + 0.12 + tailZ) / 2,
       kit.body,
-    ],
-    // The bonnet, sloping very slightly down toward the grille. `rotX` rather
-    // than a stack of boxes: this is the one panel on the vehicle whose angle
-    // is read against the windscreen behind it, and two parallel flat plates
-    // are a shipping container.
-    [BODY_HW * 2 - 0.12, 0.3, 1.46, 0, 1.3, 1.75, kit.body, -0.045],
-    // The engine bay's front, and the two wings beside the bonnet — which is
-    // what a bonnet 12 cm narrower than the body leaves room for.
-    [BODY_HW * 2 - 0.04, 0.52, 1.4, 0, 0.94, 1.78, kit.body],
-    [0.22, 0.44, 1.44, -(BODY_HW - 0.11), 1.22, 1.74, kit.body],
-    [0.22, 0.44, 1.44, BODY_HW - 0.11, 1.22, 1.74, kit.body],
-    // Four pillars a side. The A-pair take the windscreen's own rake, so the
-    // greenhouse is one shape rather than a raked pane between two uprights.
-    [0.14, 0.56, 0.14, -(BODY_HW - 0.08), 1.68, 0.83, kit.body, SCREEN_RAKE],
-    [0.14, 0.56, 0.14, BODY_HW - 0.08, 1.68, 0.83, kit.body, SCREEN_RAKE],
-    [0.14, 0.48, 0.16, -(BODY_HW - 0.08), 1.68, -0.3, kit.body],
-    [0.14, 0.48, 0.16, BODY_HW - 0.08, 1.68, -0.3, kit.body],
-    [0.14, 0.48, 0.16, -(BODY_HW - 0.08), 1.68, -1.5, kit.body],
-    [0.14, 0.48, 0.16, BODY_HW - 0.08, 1.68, -1.5, kit.body],
-    [0.14, 0.48, 0.16, -(BODY_HW - 0.08), 1.68, -2.36, kit.body],
-    [0.14, 0.48, 0.16, BODY_HW - 0.08, 1.68, -2.36, kit.body],
-    // The roof, and the header rail the windscreen stops against. Nothing else
-    // is up here and nothing else may be — see the header.
-    [BODY_HW * 2 - 0.04, 0.1, 3.0, 0, ROOF_Y - 0.05, -0.92, kit.body],
-    [BODY_HW * 2 - 0.04, 0.14, 0.18, 0, 1.89, 0.62, kit.body],
-    // The rear door, raised out of the tub's back face so the vehicle has a
-    // way in that reads from behind — which is the angle most of the map sees
-    // it from, this being the thing that drives away.
-    [BODY_HW * 2 - 0.24, 0.62, 0.1, 0, 1.1, tailZ - 0.06, kit.body],
-    // Appliqué plate over both doors each side: a panel standing 2 cm off the
-    // body, which is the single detail that says the tub is not merely a tall
-    // body but a plated one. The team flash sits ON these, so the two depths
-    // have to stack — see `truck-mark`.
-    [0.05, 0.46, 1.1, -(BODY_HW - 0.005), 1.12, 0.3, kit.body],
-    [0.05, 0.46, 1.1, BODY_HW - 0.005, 1.12, 0.3, kit.body],
-    [0.05, 0.46, 1.2, -(BODY_HW - 0.005), 1.12, -0.95, kit.body],
-    [0.05, 0.46, 1.2, BODY_HW - 0.005, 1.12, -0.95, kit.body],
-  ]);
+    ),
+  );
+  // The WELLS behind the arches, in the frame's colour so a wheel well reads as
+  // shadow. The front pair's is narrower than the tyres' inner faces by 26 cm
+  // a side, which is what the steer spends; the rear's by only 3.
+  body.push([1.24, 0.5, 1.2, 0, 0.86, AXLE_Z, kit.frame]);
+  body.push([1.7, 0.4, 1.2, 0, 0.92, -AXLE_Z, kit.frame]);
+  // The V under the cab, from well to well. It is what a mine-protected hull
+  // IS, and from the flank it is the dark wedge between the wheels that says
+  // this body is not sitting on a chassis rail.
+  const vee = (z: number): Point3[] => [
+    [-0.96, SILL_Y + 0.02, z],
+    [0.96, SILL_Y + 0.02, z],
+    [0.55, 0.56, z],
+    [0, 0.48, z],
+    [-0.55, 0.56, z],
+  ];
+  bodyShapes.push(solid(vee(AXLE_Z - 0.6), vee(-AXLE_Z + 0.6), kit.frame));
+  // A skid plate under the nose, between the front wheels.
+  body.push([1.2, 0.07, 0.62, 0, 0.6, 2.18, kit.frame]);
 
-  // --- the bar work, the flares and the fittings: everything dark -----------
+  // --- the hood: a clamshell above the fenders ------------------------------
   //
-  // One segment and two colours, which is what the whole of this costs. A
-  // vehicle like this is mostly bar and bracket over two flat panels, and
-  // every part below is either the frame's near-black or the metal fittings'
-  // grey — so the twenty-odd shapes here are two meshes between them.
-  segment(
-    "truck-kit",
-    sprung,
-    [
-      // Arch flares over all four wheels, covering the 4 cm of tread that
-      // stands outside the bodywork. Out to 1.24 of the collider's 1.25 — the
-      // widest anything on this vehicle gets, and deliberately so: a flare
-      // that stops short of the tyre is a flare that looks bent.
-      [0.16, 0.18, 1.34, -1.16, 1.1, AXLE_Z, kit.frame],
-      [0.16, 0.18, 1.34, 1.16, 1.1, AXLE_Z, kit.frame],
-      [0.16, 0.18, 1.34, -1.16, 1.1, -AXLE_Z, kit.frame],
-      [0.16, 0.18, 1.34, 1.16, 1.1, -AXLE_Z, kit.frame],
-      // The grille, sunk between the wings.
-      [BODY_HW * 2 - 0.44, 0.34, 0.1, 0, 1.16, noseZ + 0.03, kit.frame],
-      // The bull bar: two uprights, two rails and a wing turned in at each
-      // corner. It stands 14 cm proud of the nose, which is inside the
-      // collider — nothing here may reach past `L / 2`.
-      [0.12, 0.66, 0.14, -0.78, FRAME_Y + 0.4, noseZ + 0.14, kit.frame],
-      [0.12, 0.66, 0.14, 0.78, FRAME_Y + 0.4, noseZ + 0.14, kit.frame],
-      [1.86, 0.12, 0.14, 0, FRAME_Y + 0.68, noseZ + 0.14, kit.frame],
-      [1.86, 0.12, 0.14, 0, FRAME_Y + 0.12, noseZ + 0.14, kit.frame],
-      [0.5, 0.6, 0.12, -0.98, FRAME_Y + 0.4, noseZ - 0.06, kit.frame, 0, 0.5],
-      [0.5, 0.6, 0.12, 0.98, FRAME_Y + 0.4, noseZ - 0.06, kit.frame, 0, -0.5],
-      // The rear bumper, and a tow eye each side of it.
-      [2.0, 0.24, 0.16, 0, FRAME_Y + 0.04, tailZ - 0.12, kit.frame],
-      [0.12, 0.2, 0.24, -0.62, FRAME_Y + 0.02, tailZ - 0.2, kit.frame],
-      [0.12, 0.2, 0.24, 0.62, FRAME_Y + 0.02, tailZ - 0.2, kit.frame],
-      // Mirror arms and heads: the last thing on the vehicle drawn at a
-      // person's scale rather than a vehicle's, which is most of why they are
-      // worth eight boxes.
-      [0.12, 0.05, 0.05, -1.14, 1.56, 0.9, kit.frame],
-      [0.12, 0.05, 0.05, 1.14, 1.56, 0.9, kit.frame],
-      [0.06, 0.2, 0.12, -1.21, 1.54, 0.86, kit.frame],
-      [0.06, 0.2, 0.12, 1.21, 1.54, 0.86, kit.frame],
-      // The snorkel's elbow into the wing. The stack itself is a cylinder
-      // below.
-      [0.15, 0.16, 0.4, 1.15, 1.16, 1.32, kit.frame],
-      // The snorkel HEAD, facing forward off the top of the stack. Metal,
-      // because it is the one fitting on this vehicle that stands against the
-      // sky, and a near-black one is a hole in the silhouette.
-      [0.18, 0.22, 0.28, 1.15, 2.18, 1.06, kit.metal],
-      // Door handles, which cost nothing and are the difference between a body
-      // with doors in it and a body with lines drawn on it.
-      [0.05, 0.06, 0.24, -(BODY_HW + 0.06), 1.3, 0.62, kit.metal],
-      [0.05, 0.06, 0.24, BODY_HW + 0.06, 1.3, 0.62, kit.metal],
-      [0.05, 0.06, 0.24, -(BODY_HW + 0.06), 1.3, -0.58, kit.metal],
-      [0.05, 0.06, 0.24, BODY_HW + 0.06, 1.3, -0.58, kit.metal],
-    ],
-    [
-      // Rock sliders under the doors. A tube rather than a box because it is
-      // 12 cm of pipe seen against the ground and a square one is a girder —
-      // the barrel's argument, one metre lower down.
-      [0.12, 2.0, -1.16, SILL_Y - 0.16, -0.1, kit.frame, "z"],
-      [0.12, 2.0, 1.16, SILL_Y - 0.16, -0.1, kit.frame, "z"],
-      // The snorkel stack, up the off-side A-pillar and clear of the station's
-      // sweep by well over a metre.
-      [0.14, 1.1, 1.15, 1.62, 1.06, kit.frame, "y"],
-      // The exhaust, out behind the rear wheel with a metal tip on it.
-      [0.11, 0.8, -1.12, 0.5, -2.05, kit.frame, "z"],
-      [0.13, 0.14, -1.12, 0.5, -2.5, kit.metal, "z"],
-      // The winch drum in the bull bar — the fitting that explains the bar.
-      [0.24, 0.46, 0, FRAME_Y + 0.4, noseZ + 0.08, kit.metal, "x"],
-    ],
+  // A loft rising toward the cowl, its top corners cut, and 17 cm narrower a
+  // side than the body — so the fender tops show beside it and the hood reads
+  // as a separate panel standing on them. Its back station is tucked under
+  // the windscreen, which is the cowl.
+  const HOOD: readonly Station[] = [
+    { z: NOSE_Z - 0.02, w: 1.86, lo: 1.16, hi: 1.34, top: 0.45, bot: 0.05 },
+    { z: 2.0, w: 1.98, lo: 1.2, hi: 1.43, top: 0.38, bot: 0.05 },
+    { z: 1.2, w: 2.02, lo: 1.28, hi: 1.52, top: 0.34, bot: 0.05 },
+    { z: 0.9, w: 2.02, lo: 1.3, hi: 1.53, top: 0.34, bot: 0.05 },
+  ];
+  bodyShapes.push(lofted(HOOD, kit.body));
+  /** The hood's top at station `z`, for seating a part ON it. */
+  const hoodTop = (z: number): number => stationAt(HOOD, z).hi;
+  /** …and the rake of that top, for laying a part along it. Negative is nose-down. */
+  const hoodRake = (z: number): number => Math.atan2(hoodTop(z + 0.05) - hoodTop(z - 0.05), 0.1);
+  // The two louvred vents on the back of the hood, either side of the crown:
+  // five dark slats each, laid along the hood's own rake. At range they are
+  // two grey patches, which is exactly what the vehicle's own are.
+  for (const s of [-1, 1]) {
+    for (let k = 0; k < 5; k++) {
+      const z = 1.2 + k * 0.075;
+      body.push([0.46, 0.025, 0.035, s * 0.33, hoodTop(z) + 0.008, z, kit.frame, -hoodRake(z)]);
+    }
+  }
+  // The two lifting eyes, forward of the vents.
+  for (const s of [-1, 1]) {
+    body.push([0.03, 0.1, 0.12, s * 0.52, hoodTop(1.7) + 0.04, 1.7, kit.frame]);
+  }
+
+  // --- the nose: grille, lamp pods, bumper corners, tow bar, winch ---------
+  //
+  // Everything here stands PROUD of the body's front face by a few
+  // centimetres, which is the depth step the ink draws a line at — a grille
+  // painted flush on the face is a grille nobody can see. Nothing reaches past
+  // the collider's 2.70.
+  //
+  // The mesh grille, and the bracket standing proud of it: two uprights, a
+  // plate across their tops and a bar across the bottom of the grille.
+  body.push([1.12, 0.42, 0.03, 0, 1.05, NOSE_Z + 0.01, kit.frame]);
+  body.push([0.07, 0.42, 0.04, -0.17, 1.05, NOSE_Z + 0.035, kit.body]);
+  body.push([0.07, 0.42, 0.04, 0.17, 1.05, NOSE_Z + 0.035, kit.body]);
+  body.push([0.46, 0.09, 0.04, 0, 1.22, NOSE_Z + 0.035, kit.body]);
+  body.push([1.16, 0.06, 0.04, 0, 0.86, NOSE_Z + 0.035, kit.body]);
+  for (const s of [-1, 1]) {
+    // The lamp pod: a dark recess with two round lamps in bezels, the
+    // outboard one smaller — which is the face of the vehicle from the front.
+    body.push([0.42, 0.2, 0.05, s * 0.86, 1.12, NOSE_Z + 0.02, kit.frame]);
+    bodyCyls.push([0.15, 0.02, s * 0.76, 1.12, NOSE_Z + 0.05, kit.metal, "z"]);
+    bodyCyls.push([0.11, 0.03, s * 0.76, 1.12, NOSE_Z + 0.06, kit.glass, "z"]);
+    bodyCyls.push([0.12, 0.02, s * 0.96, 1.12, NOSE_Z + 0.05, kit.metal, "z"]);
+    bodyCyls.push([0.08, 0.03, s * 0.96, 1.12, NOSE_Z + 0.06, kit.glass, "z"]);
+    // The bumper corner under it, standing out from the fender tip.
+    body.push([0.34, 0.24, 0.16, s * 0.98, 0.9, NOSE_Z + 0.07, kit.body]);
+    // The tow bar's bracket back to the body.
+    body.push([0.1, 0.12, 0.24, s * 0.46, 0.72, NOSE_Z + 0.1, kit.frame]);
+  }
+  // The tubular tow bar, the winch above it and its drum, and the hook.
+  bodyCyls.push([0.12, 2.2, 0, 0.72, 2.6, kit.frame, "x"]);
+  body.push([0.46, 0.24, 0.16, 0, 0.93, NOSE_Z + 0.1, kit.frame]);
+  bodyCyls.push([0.13, 0.28, 0, 0.93, 2.6, kit.metal, "x"]);
+  body.push([0.08, 0.1, 0.06, 0.08, 0.63, 2.66, kit.stow]);
+
+  // --- the arch lips: a dark rubber edge round each arch -------------------
+  //
+  // The widest thing on the vehicle, out to 1.24 of the collider's 1.25, and
+  // deliberately: it is what covers the 4 cm of tread standing outside the
+  // bodywork, and a lip that stops short of the tyre is a lip that looks bent.
+  for (const c of [AXLE_Z, -AXLE_Z]) {
+    const pts = arch(c);
+    for (const s of [-1, 1]) {
+      for (let k = 0; k + 1 < pts.length; k++) {
+        const [za, ya] = pts[k];
+        const [zb, yb] = pts[k + 1];
+        bodyShapes.push(rod([s * 1.2, ya, za], [s * 1.2, yb, zb], 0.08, kit.frame));
+      }
+    }
+  }
+
+  // --- the cab: a profile from the belt line to the roof --------------------
+  //
+  // Its front face IS the windscreen's rake, so the greenhouse is one shape
+  // rather than a raked pane between two uprights; its edges are bevelled 5 cm,
+  // which is the chamfer round the roof that the JLTV's own cab has and the
+  // estate's did not.
+  bodyShapes.push(
+    slab(
+      [
+        [SCUTTLE_Z, WAIST_Y - 0.04],
+        [HEADER_Z, ROOF_Y],
+        [CAB_TAIL_Z, ROOF_Y],
+        [CAB_TAIL_Z, WAIST_Y - 0.04],
+      ],
+      CAB_HW * 2,
+      0.05,
+      0,
+      kit.body,
+    ),
   );
 
-  // --- the glazing and the lamps -------------------------------------------
+  // --- the windscreen: two panes on the rake, a post, a frame, two wipers ---
   //
-  // A 40 cm slot between 70 cm of plate and the roof, and that proportion is
-  // the whole point of it: what is behind this glass is a crew nobody can
-  // resolve, on a vehicle whose gun is on the OUTSIDE. See the header.
-  segment("truck-glass", sprung, [
-    // The windscreen, at the A-pillars' own rake.
-    [BODY_HW * 2 - 0.32, 0.56, 0.07, 0, 1.68, 0.83, kit.glass, SCREEN_RAKE],
-    // Front and rear side windows, and a quarter light behind each.
-    [0.06, 0.4, 1.0, -(BODY_HW + 0.01), 1.68, 0.28, kit.glass],
-    [0.06, 0.4, 1.0, BODY_HW + 0.01, 1.68, 0.28, kit.glass],
-    [0.06, 0.4, 1.04, -(BODY_HW + 0.01), 1.68, -0.9, kit.glass],
-    [0.06, 0.4, 1.04, BODY_HW + 0.01, 1.68, -0.9, kit.glass],
-    [0.06, 0.36, 0.7, -(BODY_HW + 0.01), 1.68, -1.93, kit.glass],
-    [0.06, 0.36, 0.7, BODY_HW + 0.01, 1.68, -1.93, kit.glass],
-    // The rear window, which is what makes the back of this a back rather than
-    // a wall.
-    [BODY_HW * 2 - 0.44, 0.38, 0.06, 0, 1.66, tailZ + 0.02, kit.glass],
-    // The lamps. BOXES and not lights — nothing on a vehicle is emissive (see
-    // `vehicleRig.ts`).
-    [0.26, 0.2, 0.08, -(BODY_HW - 0.34), 1.16, noseZ + 0.06, kit.glass],
-    [0.26, 0.2, 0.08, BODY_HW - 0.34, 1.16, noseZ + 0.06, kit.glass],
-    [0.16, 0.32, 0.07, -(BODY_HW - 0.2), 1.24, tailZ - 0.12, kit.glass],
-    [0.16, 0.32, 0.07, BODY_HW - 0.2, 1.24, tailZ - 0.12, kit.glass],
-  ]);
+  // Everything here is placed ON the raked face by `onScreen`, which is the
+  // face's own coordinates — `up` metres up it from its foot, `out` off it —
+  // so the panes and their frame cannot drift off the cab they are bolted to.
+  const faceLen = Math.hypot(SCUTTLE_Z - HEADER_Z, ROOF_Y - (WAIST_Y - 0.04));
+  const upZ = (HEADER_Z - SCUTTLE_Z) / faceLen;
+  const upY = (ROOF_Y - (WAIST_Y - 0.04)) / faceLen;
+  /** The rake as a box rotation: the face leans back by this from vertical. */
+  const rake = -Math.atan2(SCUTTLE_Z - HEADER_Z, ROOF_Y - (WAIST_Y - 0.04));
+  const onScreen = (x: number, up: number, out: number): Point3 => [
+    x,
+    WAIST_Y - 0.04 + upY * up + upZ * -out,
+    SCUTTLE_Z + upZ * up + upY * out,
+  ];
+  const screenBox = (w: number, h: number, d: number, x: number, up: number, out: number, color: string): Box => {
+    const [, y, z] = onScreen(x, up, out);
+    return [w, h, d, x, y, z, color, rake];
+  };
+  // The panes, from just above the cowl to just under the header.
+  body.push(screenBox(0.9, 0.4, 0.03, -0.51, 0.38, 0.012, kit.glass));
+  body.push(screenBox(0.9, 0.4, 0.03, 0.51, 0.38, 0.012, kit.glass));
+  // The centre post and the frame round both: what makes it TWO windscreens,
+  // which is the JLTV's face as much as the grille is.
+  body.push(screenBox(0.12, 0.46, 0.04, 0, 0.38, 0.02, kit.body));
+  body.push(screenBox(0.1, 0.46, 0.04, -(CAB_HW - 0.06), 0.38, 0.02, kit.body));
+  body.push(screenBox(0.1, 0.46, 0.04, CAB_HW - 0.06, 0.38, 0.02, kit.body));
+  body.push(screenBox(CAB_HW * 2 - 0.04, 0.07, 0.04, 0, 0.6, 0.02, kit.body));
+  // The wipers, hung from the header as the JLTV's are and parked slanting in
+  // toward the post.
+  for (const s of [-1, 1]) {
+    bodyShapes.push(rod(onScreen(s * 0.62, 0.56, 0.035), onScreen(s * 0.2, 0.24, 0.035), 0.022, kit.frame, 4));
+  }
+
+  // --- the side windows: small, and framed thick ---------------------------
+  //
+  // Two a side, one per door, in the top of the door under the roof — and
+  // each with a frame of four bars standing 3 cm off the cab, which is how
+  // armoured glazing reads from outside: the glass is the least of it.
+  const sideWindow = (s: number, z0: number, z1: number): void => {
+    const x = s * (CAB_HW + 0.006);
+    const zc = (z0 + z1) / 2;
+    const len = z0 - z1;
+    body.push([0.02, 0.34, len, x, 1.7, zc, kit.glass]);
+    const fx = s * (CAB_HW + 0.015);
+    body.push([0.03, 0.06, len + 0.12, fx, 1.9, zc, kit.body]);
+    body.push([0.03, 0.06, len + 0.12, fx, 1.5, zc, kit.body]);
+    body.push([0.03, 0.46, 0.06, fx, 1.7, z0 + 0.03, kit.body]);
+    body.push([0.03, 0.46, 0.06, fx, 1.7, z1 - 0.03, kit.body]);
+  };
+  for (const s of [-1, 1]) {
+    sideWindow(s, 0.56, 0.02);
+    sideWindow(s, -0.5, -1.02);
+  }
+  // A small window in the back of the cab, looking out over the bed.
+  body.push([0.8, 0.26, 0.02, 0, 1.72, CAB_TAIL_Z - 0.006, kit.glass]);
+
+  // --- the doors: four plates, their hinges, handles and steps --------------
+  //
+  // Each door's lower half is a plate standing 2.5 cm off the body, and the
+  // gaps between plates are the door lines — the ink draws each plate's edge,
+  // so a vehicle with four doors in it rather than a slab with lines painted
+  // on. The team flash sits ON the front plate, so the two depths have to
+  // stack — see the markings below.
+  const DOORS: readonly [number, number][] = [[0.94, -0.2], [-0.28, -1.04]];
+  for (const s of [-1, 1]) {
+    for (const [z0, z1] of DOORS) {
+      body.push([0.025, 0.54, z0 - z1, s * (BODY_HW + 0.0125), 1.11, (z0 + z1) / 2, kit.body]);
+      // Two hinges on the leading edge, and a latch handle on the trailing
+      // one — metal, because a handle is the one fitting a player's eye is
+      // drawn to on a door, and the difference between a door and a panel.
+      body.push([0.04, 0.1, 0.07, s * (BODY_HW + 0.035), 0.96, z0 - 0.03, kit.frame]);
+      body.push([0.04, 0.1, 0.07, s * (BODY_HW + 0.035), 1.28, z0 - 0.03, kit.frame]);
+      body.push([0.04, 0.05, 0.2, s * (BODY_HW + 0.045), 1.3, z1 + 0.16, kit.metal]);
+    }
+    // The step under the doors, on two hangers.
+    body.push([0.2, 0.04, 1.8, s * (BODY_HW - 0.1), 0.6, -0.05, kit.frame]);
+    body.push([0.04, 0.16, 0.04, s * (BODY_HW - 0.12), 0.68, 0.6, kit.frame]);
+    body.push([0.04, 0.16, 0.04, s * (BODY_HW - 0.12), 0.68, -0.7, kit.frame]);
+    // The mirror: a big dark head held out on two arms off the A-pillar,
+    // the last thing on the vehicle drawn at a person's scale rather than a
+    // vehicle's, which is most of why it is worth the parts.
+    body.push([0.05, 0.3, 0.2, s * 1.215, 1.66, 1.04, kit.frame]);
+    bodyShapes.push(rod([s * CAB_HW, 1.52, 0.9], [s * 1.2, 1.56, 1.02], 0.035, kit.frame, 4));
+    bodyShapes.push(rod([s * CAB_HW, 1.62, 0.84], [s * 1.2, 1.76, 1.02], 0.035, kit.frame, 4));
+  }
+
+  // --- the air intake: the canister up the offside A-pillar ----------------
+  //
+  // The single most recognisable fitting on the vehicle from three-quarters
+  // on, and the one dark thing standing against the sky beside the cab — a
+  // near-black can on a dome, over a round filter housing on the fender. It
+  // is 1.9 m from the ring, clear of the sweep.
+  bodyCyls.push([0.3, 0.3, 1.08, 1.82, 0.86, kit.frame, "y"]);
+  bodyCyls.push([0.3, 0.08, 1.08, 2.01, 0.86, kit.frame, "y", 0.2]);
+  body.push([0.16, 0.36, 0.16, 1.1, 1.5, 0.86, kit.frame]);
+  bodyCyls.push([0.34, 0.06, BODY_HW + 0.02, 1.26, 1.0, kit.frame, "x"]);
+  bodyCyls.push([0.14, 0.02, BODY_HW + 0.06, 1.26, 1.0, kit.metal, "x"]);
+
+  // --- the cargo bed: a canvas top, its straps, and the two corner posts ----
+  //
+  // Behind the cab and lower than its roof, which is the only way a bed this
+  // close to the station can have anything in it — see the header. The canvas
+  // rises straight off the belt line with its top corners cut, and it SAGS
+  // between the bows, because a tarp stretched flat is a lid and the first
+  // version of this read from behind as a white box on a tan one.
+  const tarp = (z: number, hi: number): Station => ({ z, w: CAB_HW * 2, lo: WAIST_Y, hi, top: 0.4, bot: 0.05 });
+  const BOWS = [CAB_TAIL_Z - 0.02, -1.95, -2.3];
+  const TARP: readonly Station[] = [
+    tarp(BOWS[0], 1.84),
+    tarp((BOWS[0] + BOWS[1]) / 2, 1.79),
+    tarp(BOWS[1], 1.86),
+    tarp((BOWS[1] + BOWS[2]) / 2, 1.79),
+    tarp(BOWS[2], 1.83),
+  ];
+  bodyShapes.push(lofted(TARP, kit.stow));
+  // Three straps across it: the canvas's own section, a centimetre proud of
+  // it and five wide — a band the ink outlines rather than a stripe.
+  for (const z of [BOWS[0] - 0.14, BOWS[1], BOWS[2] + 0.14]) {
+    const hi = stationAt(TARP, z).hi;
+    bodyShapes.push(
+      lofted(
+        [
+          { z: z - 0.025, w: CAB_HW * 2 + 0.02, lo: WAIST_Y - 0.01, hi: hi + 0.012, top: 0.4, bot: 0.05 },
+          { z: z + 0.025, w: CAB_HW * 2 + 0.02, lo: WAIST_Y - 0.01, hi: hi + 0.012, top: 0.4, bot: 0.05 },
+        ],
+        kit.frame,
+      ),
+    );
+  }
+  // The back flap, rolled up under the last bow, and the two ties hanging down
+  // the canvas's rear face below it — without which the end of the load is one
+  // flat pale panel filling the whole view from the chase camera.
+  bodyCyls.push([0.11, CAB_HW * 2 - 0.3, 0, stationAt(TARP, BOWS[2]).hi - 0.1, BOWS[2] - 0.03, kit.stow, "x"]);
+  for (const s of [-1, 1]) {
+    body.push([0.04, 0.28, 0.02, s * 0.5, WAIST_Y + 0.2, BOWS[2] - 0.01, kit.frame]);
+  }
+  // The two tall posts at the bed's back corners, up to the cab's own roof
+  // line — the JLTV's rear silhouette, and what its whips are carried on. They
+  // are 1.9 m from the ring, outside the sweep.
+  for (const s of [-1, 1]) {
+    body.push([0.1, ROOF_Y - WAIST_Y, 0.1, s * (CAB_HW - 0.01), (ROOF_Y + WAIST_Y) / 2, POST_Z, kit.frame]);
+  }
+  // The long whip's foot is on its post's top; the short one's is on an arm
+  // forward off the other, so the two masts are staggered in Z as well as X.
+  // A spring foot on each — metal, and 16 cm tall, with the whip's pivot
+  // inside it so the mast never bends out of its own foot.
+  body.push([0.1, 0.06, ANTENNA_FEET[1][1] - POST_Z + 0.06, ANTENNA_FEET[1][0], ROOF_Y - 0.03, (ANTENNA_FEET[1][1] + POST_Z) / 2 + 0.03, kit.frame]);
+  for (const [x, z] of ANTENNA_FEET) {
+    bodyCyls.push([0.08, 0.16, x, ANTENNA_FOOT_Y + 0.08, z, kit.metal, "y"]);
+  }
+
+  // --- the tail -------------------------------------------------------------
+  //
+  // The tailgate, ribbed and latched; the lamps in dark housings; the bumper,
+  // the pintle and the tow eyes; and the two cans in their brackets either
+  // side — the rear is the angle most of the map sees this vehicle from, it
+  // being the thing that drives away.
+  body.push([1.6, 0.46, 0.03, 0, 1.12, TAIL_Z - 0.015, kit.body]);
+  body.push([1.5, 0.05, 0.03, 0, 0.97, TAIL_Z - 0.04, kit.body]);
+  body.push([1.5, 0.05, 0.03, 0, 1.19, TAIL_Z - 0.04, kit.body]);
+  for (const s of [-1, 1]) {
+    body.push([0.2, 0.34, 0.05, s * 0.99, 1.2, TAIL_Z - 0.02, kit.frame]);
+    body.push([0.13, 0.11, 0.03, s * 0.99, 1.29, TAIL_Z - 0.05, kit.glass]);
+    body.push([0.13, 0.11, 0.03, s * 0.99, 1.12, TAIL_Z - 0.05, kit.glass]);
+    body.push([0.1, 0.05, 0.04, s * 0.3, 1.08, TAIL_Z - 0.05, kit.metal]);
+    body.push([0.3, 0.42, 0.16, s * 0.6, 1.0, TAIL_Z - 0.11, kit.stow]);
+    body.push([0.32, 0.04, 0.02, s * 0.6, 1.08, TAIL_Z - 0.2, kit.frame]);
+    body.push([0.34, 0.04, 0.2, s * 0.6, 0.78, TAIL_Z - 0.1, kit.frame]);
+    body.push([0.12, 0.2, 0.2, s * 0.62, 0.66, TAIL_Z - 0.14, kit.frame]);
+  }
+  body.push([2.2, 0.16, 0.14, 0, 0.74, TAIL_Z - 0.08, kit.frame]);
+  body.push([0.14, 0.14, 0.14, 0, 0.64, TAIL_Z - 0.18, kit.frame]);
 
   // --- the markings: `CONFIG.teams`' colour, facing every direction ---------
   //
   // The same three-way read `SoldierModel`'s kits make, minus the silhouette:
-  // a flash on each flank, one across the bonnet and one across the rear door,
-  // so a marking is visible from wherever the vehicle is being looked at. A
-  // marking that only reads from the flank is no marking at all on a thing
-  // that is mostly seen coming or going.
+  // a flash on each front door, one across the hood and one across the
+  // tailgate, so a marking is visible from wherever the vehicle is being
+  // looked at. A marking that only reads from the flank is no marking at all
+  // on a thing that is mostly seen coming or going.
   //
-  // **The flank pair have to clear the appliqué plate's INK and not merely its
-  // face**, which is the one thing this arrangement got wrong first time out.
-  // `inkRig` gives every mesh a 2 cm outline hull, so a flash standing 2 cm
-  // off a plate is a flash drawn entirely inside that plate's own ink and the
-  // vehicle has no flank marking at all — measured on a photograph, where the
-  // door read as a dark rectangle. They stand 4 cm proud instead (1.17 to 1.24
-  // against the plate's 1.15 to 1.20), which is inside the collider's 1.25
-  // with a centimetre to spare and is the ink's width twice over.
-  segment("truck-mark", sprung, [
-    [0.07, 0.26, 0.66, -(BODY_HW + 0.025), 1.12, 0.3, kit.accent],
-    [0.07, 0.26, 0.66, BODY_HW + 0.025, 1.12, 0.3, kit.accent],
-    // A stripe across the bonnet rather than a panel on it: the bonnet is the
-    // biggest flat surface the vehicle has and a marking sized to it reads as
-    // a hazard placard rather than as a side's colour.
-    [BODY_HW * 2 - 1.1, 0.06, 0.34, 0, 1.46, 1.86, kit.accent, -0.045],
-    [BODY_HW * 2 - 0.7, 0.14, 0.05, 0, 0.94, tailZ - 0.12, kit.accent],
-  ]);
+  // **The door pair have to clear the door plate's INK and not merely its
+  // face.** `inkRig` gives every mesh a 2 cm outline hull, so a flash standing
+  // 2 cm off a plate is a flash drawn entirely inside that plate's own ink and
+  // the vehicle has no flank marking at all — measured on a photograph of the
+  // first closed version, where the door read as a dark rectangle. They stand
+  // 4 cm proud instead (1.205 to 1.245 against the plate's 1.18 to 1.205),
+  // inside the collider's 1.25 and the ink's width twice over.
+  body.push([0.04, 0.22, 0.46, -(BODY_HW + 0.045), 1.14, 0.46, kit.accent]);
+  body.push([0.04, 0.22, 0.46, BODY_HW + 0.045, 1.14, 0.46, kit.accent]);
+  // A stripe across the hood rather than a panel on it: the hood is the
+  // biggest flat surface the vehicle has and a marking sized to it reads as a
+  // hazard placard rather than as a side's colour.
+  body.push([0.8, 0.02, 0.3, 0, hoodTop(1.95) + 0.01, 1.95, kit.accent, -hoodRake(1.95)]);
+  body.push([1.0, 0.1, 0.04, 0, 1.3, TAIL_Z - 0.05, kit.accent]);
 
-  // --- what is strapped to the outside -------------------------------------
-  //
-  // All of it on the REAR DOOR or the flanks, because the roof belongs to the
-  // gun — see the header. That is also where it is on the vehicles this is
-  // drawn from: the spare goes on the door because there is no bed to put it
-  // in, which is the same reason this vehicle has a door at all.
-  segment(
-    "truck-stow",
-    sprung,
-    [
-      // Two jerry cans low on the rear door, either side of the spare.
-      [0.18, 0.42, 0.3, -0.82, 0.98, tailZ - 0.18, kit.stow],
-      [0.18, 0.42, 0.3, 0.82, 0.98, tailZ - 0.18, kit.stow],
-      // Sand ladders lashed along each flank, sitting on top of the appliqué
-      // plate exactly as they would be strapped to it.
-      [0.06, 0.1, 2.2, -(BODY_HW + 0.04), 1.38, -0.35, kit.stow],
-      [0.06, 0.1, 2.2, BODY_HW + 0.04, 1.38, -0.35, kit.stow],
-      // A tool box under the rear quarter, in the gap between the slider and
-      // the plate.
-      [0.2, 0.28, 0.5, -(BODY_HW - 0.06), 0.88, -1.9, kit.stow],
-    ],
-    [
-      // The spare, flat on the rear door. In the stow colour rather than the
-      // tyre's because it merges here for free and a spare on a vehicle like
-      // this is under a cover.
-      //
-      // Low on the door rather than centred on it: at the belt line it stood
-      // across the middle of the rear window, which reads as a wheel hung over
-      // a hole rather than bolted to a door. Down here it laps the window's
-      // bottom edge by 18 cm, which is where one actually sits.
-      [WHEEL_R * 1.95, 0.22, 0, 1.2, tailZ - 0.2, kit.stow, "z"],
-    ],
-  );
+  segment("truck-body", sprung, body, bodyCyls, bodyShapes);
 
-  // --- the station's base ring: the node that never moves -------------------
+  // ==========================================================================
+  // THE STATION: a remote weapon station, and what it deliberately has not got
+  // ==========================================================================
   //
   // **`VehicleRig.turret` is here and is deliberately inert.** `Vehicle` keeps
   // `turretYaw` equal to the hull's own yaw on a gunless kind, so the local
   // angle written on this node is always zero — which is exactly what a ring
   // BOLTED to a roof should do. It exists so that the mount below has the same
-  // parent it has on a tank and `aimMg` needs no branch: the machine gun is
-  // held in WORLD angles either way, and what it hangs off is the only thing
-  // that differs.
+  // parent it has on a tank and `aimMg` needs no branch.
   const turret = new TransformNode("truck-ring", scene);
   turret.parent = sprung;
   segment("truck-ring-m", turret, [], [
@@ -685,63 +948,75 @@ export function buildTruck(
     [RING_R * 2 + 0.16, 0.06, 0, ROOF_Y + 0.02, RING_Z, kit.frame, "y"],
   ]);
 
-  // --- the REMOTE weapon station, and what it deliberately has not got ------
+  // Two nodes, the same pair the tank's cupola gun gets and for the same
+  // reason: they move differently from everything around them. The mount
+  // TRAVERSES on the ring and the gun ELEVATES in it.
   //
-  // Two nodes and four meshes, the same pair the tank's cupola gun gets and
-  // for the same reason: they move differently from everything around them.
-  // The cradle TRAVERSES on the ring and the gun ELEVATES in the cradle.
-  //
-  // **There is no pintle, no spade grip and nowhere to stand**, and each of
-  // those absences is the point rather than an economy — see the header. What
-  // is here instead is an armoured shield, a traverse actuator and an OPTIC,
+  // **There is no pintle, no spade grip, no shield and nowhere to stand**, and
+  // each of those absences is the point rather than an economy — see the
+  // header. What is here instead is the station the JLTV actually carries: a
+  // turntable, a yoke, and on the GUN's side of the trunnion a sensor head
+  // with two lenses in it and an ammunition chute arching over into the feed —
   // which between them say that the thing aiming this gun is downstairs.
   const mgMount = new TransformNode("truck-mg", scene);
   mgMount.parent = turret;
   mgMount.position.set(0, RING_Y + 0.06, RING_Z);
   segment("truck-mg-ring", mgMount, [
-    // The cradle's base, sitting on the ring.
-    [0.56, 0.16, 0.62, 0, 0.02, -0.02, kit.frame],
-    // The two trunnion cheeks the gun hangs between.
-    [0.1, 0.26, 0.24, -0.26, 0.16, 0.06, kit.frame],
-    [0.1, 0.26, 0.24, 0.26, 0.16, 0.06, kit.frame],
-    // The shield, and a wing turned in at each edge. It is what makes the
-    // traverse legible from outside — a flat plate has an orientation where a
-    // bare gun is a stick — and it is the one part of the station that reads
-    // at the range this vehicle is usually seen at.
-    [0.66, 0.36, 0.06, 0, 0.28, 0.3, kit.frame],
-    [0.18, 0.32, 0.05, -0.36, 0.26, 0.26, kit.frame, 0, 0.5],
-    [0.18, 0.32, 0.05, 0.36, 0.26, 0.26, kit.frame, 0, -0.5],
-    // The traverse actuator behind the cradle.
-    [0.16, 0.18, 0.22, -0.28, 0, -0.24, kit.frame],
-    // The optic head on the near cheek, with a dark face in it. METAL, which
-    // is the whole of what makes it read as a sight rather than as another
-    // bracket: it is the only pale thing above the roof line, so the eye finds
-    // it — and finding it is what tells a player where this gun is looking.
-    [0.2, 0.18, 0.26, -0.36, 0.3, 0.02, kit.metal],
-    [0.14, 0.1, 0.05, -0.36, 0.3, 0.16, kit.frame],
+    // The yoke arm on the right, the drive housing outboard of it, and the
+    // smaller cheek on the left between the gun and the sensor head. Nothing
+    // BEHIND the trunnion: the buffer swings down through there at full
+    // elevation.
+    [0.1, 0.34, 0.3, 0.33, 0.17, 0.02, kit.frame],
+    [0.12, 0.18, 0.26, 0.44, 0.09, -0.02, kit.frame],
+    [0.07, 0.24, 0.22, -0.2, 0.14, 0.05, kit.frame],
+  ], [
+    // The turntable drum on the ring, and the trunnion axle through both arms —
+    // metal, and the one line across the station that says where it pivots.
+    [0.66, 0.12, 0, 0, 0, kit.frame, "y"],
+    [0.07, 0.62, 0.06, 0.18, 0.06, kit.metal, "x"],
   ]);
   const mgGun = new TransformNode("truck-mg-gun", scene);
   mgGun.parent = mgMount;
   mgGun.position.set(0, 0.18, 0.06);
   segment("truck-mg-m", mgGun, [
-    // The receiver, the ammunition can on its flank, the buffer behind it and
-    // the charging handle — the shapes that make a heavy machine gun read as
-    // one at ten metres. Bigger than the tank's cupola gun, because it is a
-    // bigger gun: this is the only weapon the vehicle has.
+    // The receiver, the buffer behind it, the charging handle and the feed
+    // cover — the shapes that make a heavy machine gun read as one at ten
+    // metres — and the cradle it lies in.
     [0.2, 0.2, 0.66, 0, 0, 0.04, kit.frame],
-    [0.22, 0.26, 0.3, 0.22, -0.01, -0.06, kit.frame],
     [0.16, 0.14, 0.16, 0, 0.01, -0.34, kit.frame],
     [0.06, 0.06, 0.16, -0.14, 0.02, -0.1, kit.frame],
-    // The elevation actuator, running down to the cradle. It is what a gun
-    // with no hands on it is moved BY, and it is one box.
-    [0.1, 0.1, 0.28, -0.24, -0.13, -0.14, kit.frame],
+    [0.18, 0.05, 0.3, 0, 0.12, -0.02, kit.frame],
+    [0.24, 0.06, 0.5, 0, -0.13, 0.1, kit.frame],
+    // The ammunition can on the right flank, on the gun so it elevates with it.
+    [0.14, 0.2, 0.3, 0.18, 0, -0.08, kit.frame],
+    // **The sensor head**, on the gun's left, in the BODY's colour: the one
+    // big pale shape above the roof line, so the eye finds it — and finding
+    // it is what tells a player where this gun is looking. Its two lenses are
+    // the station's face.
+    [0.24, 0.26, 0.4, -0.36, 0.1, 0.08, kit.body],
+    [0.2, 0.04, 0.12, -0.36, 0.245, 0.24, kit.body],
   ], [
     // A ROUND barrel with a jacket at its root and a brake on its nose, for
     // the reason every barrel in this game is round: a square pipe is a
-    // girder. The two metal parts are the fitting colour the optic is.
+    // girder.
     [0.17, 0.34, 0, 0.02, 0.46, kit.metal, "z"],
     [0.095, 0.8, 0, 0.02, 0.92, kit.frame, "z", 0.08],
     [0.14, 0.14, 0, 0.02, 1.36, kit.metal, "z"],
+    // The two lenses in their bezels: a big day camera over a smaller
+    // thermal, dark faces in pale rims. The faces are the FRAME's colour
+    // rather than the glazing's — at this size the two are one value, and the
+    // glazing's would be a mesh bought for two discs.
+    [0.15, 0.03, -0.36, 0.14, 0.29, kit.metal, "z"],
+    [0.12, 0.04, -0.36, 0.14, 0.3, kit.frame, "z"],
+    [0.1, 0.03, -0.36, 0.03, 0.29, kit.metal, "z"],
+    [0.075, 0.04, -0.36, 0.03, 0.3, kit.frame, "z"],
+  ], [
+    // The chute, from the top of the can up and over into the feed — the arch
+    // over the station that is the most recognisable line on it in outline.
+    rod([0.2, 0.09, -0.12], [0.23, 0.2, -0.1], 0.06, kit.frame, 6),
+    rod([0.23, 0.2, -0.1], [0.15, 0.27, -0.08], 0.06, kit.frame, 6),
+    rod([0.15, 0.27, -0.08], [0.05, 0.22, -0.06], 0.06, kit.frame, 6),
+    rod([0.05, 0.22, -0.06], [0.02, 0.14, -0.04], 0.06, kit.frame, 6),
   ]);
   const mgMuzzle = new TransformNode("truck-mg-muzzle", scene);
   mgMuzzle.parent = mgGun;
@@ -750,63 +1025,76 @@ export function buildTruck(
   //
   // **This 1.46 is the tightest number in the file.** The trunnion is at 2.24
   // and `mg.pitchMin` is -0.16 rad, so at full depression the muzzle stands at
-  // 2.03 above the tracks — MEASURED off `mgMuzzle.getAbsolutePosition()` on
+  // 2.03 above the tyres — MEASURED off `mgMuzzle.getAbsolutePosition()` on
   // Sarab with the gun laid abeam and fully depressed, which is 6.7 cm over a
   // roof at 1.96, through every bearing of the traverse. Re-derive it if the
   // roof, the ring height, the barrel's length or `pitchMin` moves: a station
   // that depresses into its own roof is the pickup's pedestal problem in a new
-  // place.
+  // place. **The sensor head and the chute are inside that envelope at every
+  // lay**: the head's lowest corner is 9 cm over the turntable at `pitchMax`
+  // and 10 cm over it at `pitchMin`.
   mgMuzzle.position.set(0, 0.02, 1.46);
 
-  // **The gunner's eye, in front of the optic head on the near cheek** — the
-  // pale metal box with the dark face let into it, drawn two segments up for
-  // exactly this: it is the only thing above this roof line that says where the
-  // station is looking, and now it is where the station looks FROM.
+  // **The gunner's eye, in front of the sensor head's upper lens** — the head
+  // that is the only big pale thing above this roof line, and now where the
+  // station looks FROM.
   //
-  // On `mgGun` rather than on the mount it is drawn on (`VehicleRig.mgSight`
-  // says why), so the head's own mount-space 0.30 comes down to 0.12 here.
-  // **The `z` is the clearance that matters**: the shield and its port wing
-  // stand out to 0.285 in mount space — 0.225 in this one — and an eye behind
-  // that is an eye looking at the back of its own plate. 0.4 puts it 0.175
-  // clear, which is well past the near plane on a station that depresses only
-  // 0.16 rad and can therefore never swing this into anything.
+  // On `mgGun` rather than on the mount (`VehicleRig.mgSight` says why), and
+  // the head is on the gun too, so the eye and the lens it stands at elevate
+  // together. **The `z` is the clearance that matters**: the lens bezels stand
+  // out to 0.32 on this node, and 0.4 puts the eye 8 cm clear of them, past
+  // the near plane at every lay.
   const mgSight = new TransformNode("truck-mg-sight", scene);
   mgSight.parent = mgGun;
   mgSight.position.set(-0.36, 0.12, 0.4);
 
-  // --- one whip, off the front wing ----------------------------------------
+  // ==========================================================================
+  // THE WHIPS: two, on the bed's back corners
+  // ==========================================================================
   //
-  // ONE and not the tank's two, and the difference is what a mast is for on
-  // each: a tank carries a pair because a command vehicle runs two nets, and
-  // this is a truck with a radio in it. It costs two meshes rather than four,
-  // and it is the only part of this vehicle that reports on the DRIVE the way
-  // the tank's tracks do — the wheels say it is moving and the mast says how
-  // hard.
-  //
-  // **On the front WING**, which on the pickup was a fix for a mast the gun
-  // swept through and here is simply the only place left: the roof belongs to
-  // the station, and a whip stood anywhere on it is 1.46 m of barrel's worth
-  // of trouble. Out here it is 2.5 m from the ring, which nothing on it can
-  // reach.
-  const whipBase = new TransformNode("truck-whip", scene);
-  whipBase.parent = sprung;
-  whipBase.position.set(-(BODY_HW - 0.06), WAIST_Y, 1.4);
-  const whipTip = new TransformNode("truck-whip-tip", scene);
-  whipTip.parent = whipBase;
-  whipTip.position.set(0, ANTENNA_LENGTH / 2, 0);
-  segment("truck-whip-lo", whipBase, [], [
-    [0.05, ANTENNA_LENGTH / 2, 0, ANTENNA_LENGTH / 4, 0, kit.frame, "y", 0.042],
-  ]);
-  segment("truck-whip-hi", whipTip, [], [
-    [0.042, ANTENNA_LENGTH / 2, 0, ANTENNA_LENGTH / 4, 0, kit.frame, "y", 0.028],
-  ]);
-  // `rate` is 1 because this is the model's only mast and therefore its
-  // longest — the config spring is stated for exactly that one. `phase` is 0
-  // for the same reason: there is nothing for it to be out of step with.
-  const antennae: readonly Whip[] = [
-    { base: whipBase, tip: whipTip, rate: 1, phase: 0 },
-  ];
-
+  // Two meshes each, and they are the one place the budget rule is knowingly
+  // spent: a whip cannot merge with anything, because the whole point of it is
+  // that it moves differently from every other part, and it needs TWO of its
+  // own because one link pivoting at its foot is a lever and what a mast does
+  // is bow. What they buy is the only moving parts on this vehicle that report
+  // on the DRIVE the way the tank's tracks do — the wheels say it is moving
+  // and the masts say how hard — and, parked, the one thing on it that is
+  // never quite still: `antenna.wind` stirs them with a slow sway and a
+  // quicker flutter, so a truck at its hardstanding is not a photograph.
+  const whip = (i: number): Whip => {
+    const len = ANTENNA_LENGTHS[i];
+    const [x, z] = ANTENNA_FEET[i];
+    const base = new TransformNode(`truck-whip${i}`, scene);
+    base.parent = sprung;
+    // Inside the spring foot, so the pivot is inside the foot at every bend
+    // the springs can reach.
+    base.position.set(x, ANTENNA_FOOT_Y + 0.1, z);
+    const tip = new TransformNode(`truck-whip${i}-tip`, scene);
+    tip.parent = base;
+    tip.position.set(0, len / 2, 0);
+    // Each link is drawn from its own node's origin UP, and each tapers into
+    // the next: a whip is thinner at the top, and the taper is what stops two
+    // straight rods reading as one straight rod with a joint in it. The cap on
+    // the tip is the ball a real whip ends in.
+    segment(`truck-whip${i}-lo`, base, [], [
+      [0.045, len / 2, 0, len / 4, 0, kit.frame, "y", 0.036],
+    ]);
+    segment(`truck-whip${i}-hi`, tip, [], [
+      [0.036, len / 2, 0, len / 4, 0, kit.frame, "y", 0.022],
+      [0.05, 0.05, 0, len / 2, 0, kit.frame, "y"],
+    ]);
+    // A cantilever's natural frequency goes as 1/L^2, so the short mast is
+    // stiffer than the long one by the square of the length ratio and nothing
+    // about it is tuned separately — see `Whip.rate`. The phases are arbitrary
+    // and exist so the one gust does not stir both in step.
+    return {
+      base,
+      tip,
+      rate: (ANTENNA_LENGTHS[0] / len) ** 2,
+      phase: i * 2.1,
+    };
+  };
+  const antennae: readonly [Whip, Whip] = [whip(0), whip(1)];
 
   const rig: VehicleRig = {
     root,

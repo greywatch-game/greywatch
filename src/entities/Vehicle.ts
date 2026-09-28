@@ -4136,11 +4136,22 @@ export class Vehicle implements Combatant, RayHull {
       // Two sines well off a whole ratio, so the gust does not come round on a
       // metronome — the same trick the grass shader plays, at a mast's rate.
       const t = this.windT * a.wind.speed + whip.phase;
-      const puff = a.wind.sway * (Math.sin(t) * 0.7 + Math.sin(t * 0.41) * 0.3);
+      // The flutter rides on top of the drift: a quicker beat, about a second
+      // at the speed every kind states, swelling and fading on a slower
+      // envelope so it comes in gusts rather than on a metronome. Mostly along
+      // the wind and partly across it — a whip in a steady wind is shaken
+      // sideways by its own wake — and both ride the same whip's phase, so a
+      // pair are shaken out of step. 0 on a kind that states none, where this
+      // is the drift exactly as it always was.
+      const beat = a.wind.flutter * (0.6 + 0.4 * Math.sin(t * 0.73));
+      const along = a.wind.sway * (Math.sin(t) * 0.7 + Math.sin(t * 0.41) * 0.3)
+        + beat * Math.sin(t * 5.3 + whip.phase);
+      const across = beat * 0.5 * Math.sin(t * 4.1 + whip.phase * 1.7);
       // A positive X rotation tips the mast's top toward +Z and a positive Z
       // rotation tips it toward -X, which is where both signs below come from.
-      const wantX = -localAZ * a.swayPerAccel - rateX * a.lagPerRate + windZ * puff;
-      const wantZ = localAX * a.swayPerAccel - rateZ * a.lagPerRate - windX * puff;
+      // `across` is the wind's bearing turned a quarter, (-windZ, windX).
+      const wantX = -localAZ * a.swayPerAccel - rateX * a.lagPerRate + windZ * along + windX * across;
+      const wantZ = localAX * a.swayPerAccel - rateZ * a.lagPerRate - windX * along + windZ * across;
       // One spring per mast, scaled off the long one by its length — see
       // `Whip.rate`. Stiffness goes as the square of the rate and damping as
       // the rate itself, which is what keeps both at the same damping RATIO:

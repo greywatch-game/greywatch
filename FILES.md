@@ -379,13 +379,17 @@ src/
                         #   antennae that BOW, and the charred repaint a wreck
                         #   takes.
                         #   Art only — the extents that are RULES are CONFIG's
-    TruckModel.ts       # The gun truck: a CLOSED armoured 4x4 with a REMOTE
-                        #   weapon station on its roof (no pintle, no grips,
-                        #   nowhere to stand — there is no player model to put
-                        #   there), four wheels that TURN and two that STEER,
-                        #   one whip on the front wing, and the same charred
+    TruckModel.ts       # The gun truck: a CLOSED armoured 4x4 drawn off the
+                        #   Oshkosh JLTV — arches cut out of an extruded body,
+                        #   a clamshell hood, a V belly over four independent
+                        #   corners, a framed split windscreen, a tarped bed —
+                        #   with a REMOTE weapon station on its roof (a sensor
+                        #   head and a chute; no pintle, no grips, nowhere to
+                        #   stand — there is no player model to put there),
+                        #   four wheels that TURN and two that STEER, two long
+                        #   whips on the bed's rear posts, and the same charred
                         #   repaint. Nothing may stand on the roof inside the
-                        #   station's sweep; the muzzle clears it by 5 cm at
+                        #   station's sweep; the muzzle clears it by 6.7 cm at
                         #   full depression.
                         #   NO main gun — `VehicleRig.gun`/`muzzle` are null,
                         #   which is what `Vehicle.armed` reads. Art only

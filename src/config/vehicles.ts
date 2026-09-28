@@ -111,7 +111,7 @@ export interface VehicleSpec {
     readonly bendLimit: number;
     readonly baseShare: number;
     readonly lagRate: number;
-    readonly wind: { readonly sway: number; readonly speed: number };
+    readonly wind: { readonly sway: number; readonly speed: number; readonly flutter: number };
     readonly gunKick: number;
   };
   /** The main gun, its mount and its round — or null on a vehicle that has none. */
@@ -1666,8 +1666,15 @@ export const vehicles = {
        * `sway` is radians at a full gust and is small enough to be motion
        * rather than a lean — the whips are never seen against anything but the
        * sky, where a couple of degrees of drift at the tip is plainly visible.
+       *
+       * `flutter` is radians of the quicker BUFFET on top of it, about a
+       * second a beat and swelling and fading on a slower envelope — the drift
+       * is a mast leaning into a gust and the flutter is it being shaken by
+       * one. 0 here: the tank's two masts are short, and the drift is enough
+       * on them. The truck's are long and are the one thing on that vehicle
+       * that moves while it is parked, which is why its block states one.
        */
-      wind: { sway: 0.05, speed: 1.1 },
+      wind: { sway: 0.05, speed: 1.1, flutter: 0 },
       /**
        * The gun, in rad/s straight into both whips' springs — out along the
        * GUN's axis, because the recoil shoves the hull back down that axis and
@@ -2336,16 +2343,33 @@ export const vehicles = {
       heaveBump: 0.19,
       heaveDroop: 0.15,
     },
-    /** One mast, and the tank's spring for it — see `TruckModel`'s single whip. */
+    /**
+     * Two masts, the tank's block with three numbers moved — see `TruckModel`'s
+     * `ANTENNA_LENGTHS`.
+     *
+     * **They are LONG, so the spring is softer and rings longer.** A cantilever's
+     * frequency goes as 1/L^2, and a 2.2 m whip on the tank's 230 would be a
+     * 1.5 m whip's stiffness on a mast half as long again. 150 puts the long one
+     * at ~1.9 Hz and the short at ~2.9 Hz; the damping is taken down further
+     * than the stiffness (ratio 0.24 to 0.20), because a whip that rings a
+     * beat longer after the truck stops is what reads as a whip.
+     *
+     * **And they are never still, which is `wind.flutter`.** Parked, the drive
+     * terms are zero and the tank's slow drift alone left two long masts
+     * standing like fence posts; the flutter is a buffet on top of the drift,
+     * about a second a beat, which a 2 m mast turns into its own wobble.
+     * Euler still holds: the short mast is `w * dt` of 0.92 at the clamped
+     * 0.05 frame, against a ceiling of 2.
+     */
     antenna: {
       swayPerAccel: 0.032,
       lagPerRate: 0.42,
-      stiffness: 230,
-      damping: 7.2,
+      stiffness: 150,
+      damping: 4.9,
       bendLimit: 0.46,
       baseShare: 0.62,
       lagRate: 14,
-      wind: { sway: 0.05, speed: 1.1 },
+      wind: { sway: 0.07, speed: 1.1, flutter: 0.045 },
       /** Nothing to be kicked BY. See `suspension.gunKick`. */
       gunKick: 0,
     },
@@ -2637,7 +2661,7 @@ export const vehicles = {
       bendLimit: 0.46,
       baseShare: 0.62,
       lagRate: 14,
-      wind: { sway: 0.05, speed: 1.1 },
+      wind: { sway: 0.05, speed: 1.1, flutter: 0 },
       gunKick: 0,
     },
     /**

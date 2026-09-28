@@ -270,10 +270,10 @@ lit and busier, and the box a round stops on is the box it always was.
 ### The TRUCK is a CLOSED body, and that is a fix rather than a restyle
 
 `entities/TruckModel.ts` is the same accounting on a smaller machine —
-**twenty-two meshes, fourteen of which move** (eight for the wheels, four for
-the weapon station, two for the mast) — and it was an open-bedded pickup with a
-pintle gun standing on the bed until the thing that was wrong with it turned
-out to be something no number could reach.
+**twenty-six meshes, seventeen of which move** (eight for the wheels, five for
+the weapon station, four for the two masts) — and it was an open-bedded pickup
+with a pintle gun standing on the bed until the thing that was wrong with it
+turned out to be something no number could reach.
 
 **There is no player model in this game, so a gun that visibly needs a man
 behind it is a gun with nobody behind it.** A pintle, a shield and a pair of
@@ -285,16 +285,16 @@ counterpart of the rule the soldier kit is written under: what a player reads
 off a body at range is its silhouette, and this silhouette was making a claim
 the game cannot honour.
 
-An armoured 4x4 estate makes the same absence read correctly instead. The crew
-are INSIDE, behind a 40 cm glazing slot over 70 cm of plate — too shallow and
+A closed armoured body makes the same absence read correctly instead. The crew
+are INSIDE, behind small framed windows over 70 cm of plate — too shallow and
 too dark to resolve anybody through, which is the proportion that says
 "armoured" before any other detail on the vehicle has landed — and what is on
-the roof is a REMOTE station: a cradle, an armoured shield, an optic head and a
-barrel, with no pintle, no grips and nowhere for a body to stand. The gun
-traverses because the man at the screen below it traversed it. What used to
-look broken now looks like the point, and `Vehicle.aimMg`'s world-held angle
-did not move a line to get there — a station is exactly as much of a
-body-mounted ring as a pintle was.
+the roof is a REMOTE station: a turntable, a yoke, a sensor head with two
+lenses, an ammunition chute and a barrel, with no pintle, no grips, no shield
+and nowhere for a body to stand. The gun traverses because the man at the
+screen below it traversed it. `Vehicle.aimMg`'s world-held angle did not move a
+line to get there — a station is exactly as much of a body-mounted ring as a
+pintle was.
 
 Three things fell out of it and none was the reason:
 
@@ -309,38 +309,63 @@ Three things fell out of it and none was the reason:
 - **Nothing may stand on the roof**, which is the pickup's bed rule moved up a
   storey and tightened. The muzzle reaches 1.46 m past the trunnion and the
   station turns a full circle, so a rack, a light bar or a rolled tarp anywhere
-  inside that radius is something a traversing gun drives through. The roof is
-  therefore BARE and the stowage is on the rear door, on the flanks and forward
-  of the windscreen — which is where it is on the vehicles this is drawn from
-  anyway, the spare going on the door precisely because there is no bed to put
-  it in.
+  inside that radius and above the roof is something a traversing gun drives
+  through. The roof is therefore BARE. The cargo bed behind the cab is inside
+  the radius but LOWER — its canvas tops out at 1.87, where the brake's
+  underside is never below 1.96 — and the whips stand on the bed's rear
+  posts, 1.77 m and 1.89 m from the ring.
 - **A body riding on the hull stands 50 cm over the roof instead of 1.7 m over
   the bed.** `Vehicle.deckAt` answers with the COLLIDER's top face, which is
   2.5 m up on both designs, so a rider on the pickup floated well clear of the
   floor he looked like he was standing on.
 
-**It carries about twice the parts for one fewer mesh than the pickup had**
-(22 against 23), and that is the budget rule doing exactly what it is for: a
-greeble in a colour its segment already carries is free. The chassis grew a
-second differential, a transfer case, two propeller shafts, a fuel tank and
-four shock cans, and cost nothing, because the frame was already one mesh and
-a player nosed into a ditch sees the underside. The wheels grew eight tread
-lugs and six hub bolts and cost nothing, because a lug is the tyre's colour and
-a bolt is the hub's — and between them they are two rotation cues rather than
-one, at the silhouette and at the face. The one colour that was ADDED is not a
-colour: `hub` became `metal`, the same value doing the same job on the wheel
-and picking out the four fittings a player might otherwise never find — the
-winch, the snorkel head, the exhaust tip and the station's optic, which is the
-only pale thing above the roof line and is therefore what the eye uses to read
-where the gun is looking.
+**It is drawn off the Oshkosh JLTV (the M1278 heavy guns carrier), and what
+reads as one is the SHAPE rather than the parts.** The first closed version was
+an armoured estate — a slab tub, a slab roof and four boxes of arch flare —
+which is a shape every armoured car shares with a removal van. Three
+silhouettes replaced it, and each is a primitive from `facet.ts` rather than
+more boxes:
+
+- **The wheel arches are CUT OUT of the body.** The lower body is one extruded
+  side profile with both arches in its outline, so the fender stands over the
+  wheel with daylight under it. The arches are tunnels across the whole width,
+  closed off by two dark WELLS — the front pair's 26 cm a side inside the tyres'
+  inner faces, which is what a steered tyre's swinging corners spend, the rear
+  pair's only 3.
+- **The hood is a CLAMSHELL** — a loft rising toward the cowl with its top
+  corners cut, narrower than the body so the fender tops show either side of it.
+- **The belly is a V** (`solidBetween`) and there is no ladder frame under it.
+  The running gear is four independent corners on `hull` — two A-arms as rods
+  from two pivots each, a knuckle, a coil-over in metal and a half-shaft — which
+  is what a player nosed into a ditch sees, and what makes the gap under the
+  body read as clearance rather than as a body floating over four discs.
+
+The greebles are then the ones a photograph of the vehicle is recognised by:
+the mesh grille with its bracket standing proud, the angular lamp pods with two
+round lamps each, the tow bar and the winch, the split raked windscreen with
+its wipers, the thick frames round small side windows, the air-intake canister
+up the offside A-pillar, the mirrors, the door plates with their hinges and
+handles, the steps, and the tarped bed with its straps, rolled flap and the two
+tall rear posts. **Everything that must read stands PROUD of its face by a few
+centimetres**, because the ink draws a line at a depth step and a detail
+painted flush is one nobody can see.
+
+**The whole sprung body is ONE segment**, the tank's rule: six colours, six
+meshes, so every detail in a colour the body already wears is free. The four
+meshes more than the estate had are the second whip's two, the suspension's
+springs (a colour on `hull`) and the sensor head (a colour on the gun). The
+wheels grew two staggered rows of tread blocks, a dark beadlock ring with twelve
+bolts and eight studs round the hub, and cost nothing: the ring is the TYRE's
+colour for exactly that reason. 12.1 k vertices a hull against 4.8 k.
 
 **The three numbers the physics reads off the drawing did not move.** `gauge`,
 `contactReach` and `wheelReach` are the pickup's to the centimetre, because the
 wheels are where they were: a redesign of the BODY has no business touching the
-axles, and leaving them alone is what makes this a repaint rather than a retune
-of the suspension, the lean and the ten ground contacts. Neither did the
-collider — `CONFIG.vehicles.truck.hull` is what the model is built to, and the
-box a round stops on is the box it always was.
+axles, and leaving them alone is what makes this a redrawing rather than a
+retune of the suspension, the lean and the ten ground contacts. Neither did the
+collider, the muzzle, the mount or the gunner's eye — the sensor head was drawn
+round `mgSight` rather than the eye moved to it, on the GUN so the lens and the
+eye in front of it elevate together, and its bezels stand 8 cm short of it.
 
 ### The HELICOPTER is a GUNSHIP, and the DOORWAY was what was wrong with it
 
@@ -751,6 +776,7 @@ along a tank that was stopping beside them:
 | sideways | `speed * yawRate`, as the hull's roll is — so a neutral-steer pivot whips nothing sideways | 11 deg out of a turn at road speed |
 | the base's rotation RATE | the term that makes the hull's own motion visible at the top of the mast. Read off the SUM of the ground lean and the suspension, so a kerb cracks the whips exactly as the gun does | — |
 | the wind | bearing from `CONFIG.wind.dir`, because there is one wind; amplitude and speed its own, because a mast is not a blade of grass | 2 deg of stir on a parked hull |
+| the flutter | `wind.flutter`: a quicker BUFFET on top of the drift, ~1 s a beat on a slower swelling envelope, mostly along the wind and half as much across it (a whip in a steady wind is shaken sideways by its own wake). 0 on the tank and the gunship, whose masts are short; the truck states one | the truck's two parked: ±6.5 and ±7 deg of tip lean |
 
 **The gun is stated in its own right, and it is the second half of
 `suspension.gunKick`'s argument.** The recoil is spent on `speed` outside
@@ -781,6 +807,17 @@ on `TRACK_GAUGE`'s precedent and `WHIP_RATE` turns it into a stiffness and a
 damping per mast, keeping the damping RATIO equal — 2.4 Hz and 3.8 Hz. That is
 the whole reason two masts on one turret never swing in step, and a pair that
 did would read as one animation playing twice.
+
+**The truck's two are long, and they are the one thing on it that moves while
+it is parked.** 2.2 m and 1.8 m on the bed's rear posts, which is what the JLTV
+carries and what makes a whip READ at twelve metres — a mast is a line of three
+pixels, and a line has to be long for its bow to show. The spring is softer for
+it (`truck.antenna.stiffness` 150, ~1.9 Hz and ~2.9 Hz) and damped further than
+it is stiffened, ratio 0.24 to 0.20, so a whip rings a beat longer after the
+truck stops. Parked, the drive terms are zero and the tank's slow drift alone
+left two long masts standing like fence posts, which is what `wind.flutter` is
+for. Measured headlessly through the fleet update: ±6.5 and ±7 deg of tip lean
+parked, 16 deg back under power, 24 forward under the brake.
 
 Stepped semi-implicit Euler like the suspension. `dt` is clamped at 0.05 and the
 faster mast runs at 3.8 Hz, which is `w * dt` of 1.2 against Euler's ceiling of
@@ -2115,9 +2152,9 @@ over the magnification, and NOT the chase camera's `lookMult`, which exists only
 because that eye is twelve metres back).
 
 Two of the three heads were already drawn and already described as exactly this.
-The truck's is "the optic head on the near cheek… the only pale thing above the
-roof line, so the eye finds it — and finding it is what tells a player where this
-gun is looking"; the gunship's is "the OPTIC, on the port cheek and in METAL,
+The truck's is the sensor head on the gun's port side — "the one big pale shape
+above the roof line, so the eye finds it — and finding it is what tells a player
+where this gun is looking"; the gunship's is "the OPTIC, on the port cheek and in METAL,
 which is the pale thing that says where the gun is looking". They now tell the
 gunner the same thing from in front of them. **The tank's cupola gun is the one
 that draws no such head and gets no new mesh either**: a pintle gun with spade
