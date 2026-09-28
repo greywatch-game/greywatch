@@ -207,7 +207,7 @@ before the welcome that says which way round to paint them.
 The team INDEX on the wire, in the target lists, in the score and in the spawn
 rules is the authority's on both machines; `teamLook` is only reached by a name,
 a palette and a kit. The two absolute readers left are naming the presentation
-PAIR rather than a side — the menu's dossier, which is drawn before there is an
+PAIR rather than a side — the menu's intel plate, which is drawn before there is an
 authority to seat anybody, and the round-over card's `mine`/`theirs` slots,
 which `Game` now fills in the viewer's order.
 

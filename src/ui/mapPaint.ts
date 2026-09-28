@@ -20,7 +20,7 @@
  * town is as loud as the objective is a drawing a player has to search.
  *
  * **What it draws is the same at every magnification and NOT the same
- * drawing.** One plan is read at 0.15 px/m on the menu's dossier, 0.4 on
+ * drawing.** One plan is read at 0.15 px/m on the menu's intel plate, 0.4 on
  * Cinderhaven's deploy map and 1.8 on the minimap — a factor of twelve — so
  * the layers gate themselves on `PlanView.scale`: contour interval is chosen
  * so the lines never crowd, fences appear when a fence is more than a smudge,

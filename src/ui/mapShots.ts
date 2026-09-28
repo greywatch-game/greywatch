@@ -171,3 +171,57 @@ export const MAP_SHOTS: Readonly<Record<string, MapShot>> = {
 export function mapShotUrl(id: string): string | undefined {
   return MAP_SHOTS[id]?.url;
 }
+
+/**
+ * How wide the menu reel's copy of a shot is, in pixels. The reel's widest
+ * card is ~270 CSS px on a 1440p monitor, so this covers it at a device ratio
+ * of about 1.8 and is a sixteenth of the full photograph's pixels.
+ */
+const THUMB_WIDTH = 480;
+/** One downscale per photograph per session, shared by every reel. */
+const thumbs = new Map<string, Promise<string>>();
+
+/**
+ * A SMALL copy of a map's photograph, for the menu's map reel — as an object
+ * URL, or the full shot's own URL when the downscale cannot be made.
+ *
+ * **The reel shows every map at once and the photographs are 1920x1080**, so
+ * pointing seven cards at the full images keeps seven 8 MB decoded bitmaps
+ * alive for a strip whose widest card is a couple of hundred pixels — on the
+ * phone this menu is also laid out for, that is real memory spent on nothing.
+ * So each photograph is decoded ONCE, drawn down into a canvas, re-encoded,
+ * and the full decode is let go. The backdrop behind the card still takes the
+ * full image, which is the one place its pixels are seen.
+ *
+ * Not a committed asset, and deliberately so: a thumbnail on disk is a fifth
+ * file per map for `npm run shots` to keep in step with the first, and the
+ * client can make one from the photograph it already has.
+ */
+export function shotThumbUrl(id: string): Promise<string> | undefined {
+  const url = mapShotUrl(id);
+  if (!url) return undefined;
+  let made = thumbs.get(url);
+  if (!made) {
+    made = (async () => {
+      try {
+        const img = new Image();
+        img.src = url;
+        await img.decode();
+        const canvas = document.createElement("canvas");
+        canvas.width = THUMB_WIDTH;
+        canvas.height = Math.round((THUMB_WIDTH * img.naturalHeight) / img.naturalWidth);
+        const ctx = canvas.getContext("2d");
+        if (!ctx) return url;
+        ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+        const blob = await new Promise<Blob | null>((done) =>
+          canvas.toBlob(done, "image/jpeg", 0.84),
+        );
+        return blob ? URL.createObjectURL(blob) : url;
+      } catch {
+        return url;
+      }
+    })();
+    thumbs.set(url, made);
+  }
+  return made;
+}

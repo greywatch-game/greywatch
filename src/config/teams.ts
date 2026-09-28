@@ -10,7 +10,7 @@
  * table, so a match seats you where it likes and you are amber regardless.
  * A LIVE team index therefore belongs in `teamLook` and nowhere else. The
  * places that index this table literally are naming the presentation PAIR
- * rather than a side — the menu's dossier and the round-over card's two
+ * rather than a side — the menu's intel plate and the round-over card's two
  * slots, both of which mean "yours" and "theirs" — and are correct as they
  * are.
  */

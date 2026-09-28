@@ -104,7 +104,7 @@ export interface MapDef {
    *
    * **What changed is who asks.** This was "the browser has no use for it: a
    * client builds the real colliders", and that is still true of the ROUND —
-   * but the menu's dossier draws a schematic of a map nothing has built yet,
+   * but the menu's intel plate draws a schematic of a map nothing has built yet,
    * and this is the only description of that map's BUILDINGS that exists
    * outside a built world (a `Placement` is a point and a kit name; the
    * footprint is the builder's). So a map row under the cursor now fetches
@@ -421,7 +421,7 @@ export function heightsOf(def: MapDef): Heightfield | null | undefined {
  * interface's three maps becoming one drawing.
  *
  * **The bake is no longer the server's alone**, which is the one thing to know
- * before reading `MapDef.collision`'s note above: the menu's dossier draws a
+ * before reading `MapDef.collision`'s note above: the menu's intel plate draws a
  * schematic of a map nothing has built yet, and the only description of that
  * map's BUILDINGS that exists outside a built world is this. It is a lazy
  * import for exactly the reason it always was — hundreds of kilobytes per map,

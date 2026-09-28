@@ -224,3 +224,66 @@
   #deploy #deploy-actions { flex-direction: row; }
   #deploy #deploy-go, #deploy #deploy-kit { flex: 1 1 auto; }
 }
+
+/* --- the kit button beside the deploy map ---
+   Opens the kit screen from the orders panel: a label, what is currently
+   chosen, and the key that gets there, spread across the panel's width
+   rather than hugging its text — left to shrink-wrap it was a small box
+   adrift in a large gap. `nowrap` because the widest kit ("Marksman rifle ·
+   Scope") is within a few pixels of the space, and a wrapped caption makes
+   the button taller than the Deploy button beside it.
+
+   It was one of four such openers in `base.css` while the main menu drew
+   three of its own in the same shape; the menu's are its own now
+   (`overlay.css`), so this is one screen's rule and lives in that screen's
+   sheet. `#deploy` opts into pointer events for its whole area, which is
+   why it needs no carve-out of its own. */
+#deploy-kit {
+  font: inherit;
+  pointer-events: auto;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+  padding: clamp(7px, 1.1vh, 12px) clamp(12px, 1.4vw, 22px);
+  color: #cdd6e6;
+  background: var(--plate);
+  border: 0;
+  cursor: pointer;
+  text-align: left;
+  clip-path: polygon(8px 0, 100% 0, 100% calc(100% - 8px), calc(100% - 8px) 100%, 0 100%, 0 8px);
+  transition: background 0.12s, color 0.12s;
+}
+#deploy-kit b {
+  font-size: var(--ui-row);
+  font-weight: 700;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+}
+#deploy-kit i {
+  font-style: normal;
+  font-size: var(--ui-cap);
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--dim);
+}
+#deploy-kit:hover {
+  background: rgba(255, 230, 128, 0.18);
+  color: var(--hot);
+}
+#deploy-kit {
+  flex-direction: row;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 14px;
+}
+#deploy-kit b,
+#deploy-kit i,
+#deploy-kit .lbl { white-space: nowrap; }
+#deploy-kit { padding: 8px 16px; }
+#deploy-kit .lbl {
+  font-size: 10px;
+  letter-spacing: 0.24em;
+  text-transform: uppercase;
+  color: rgba(255, 255, 255, 0.42);
+}

@@ -1,5 +1,5 @@
 /**
- * MapThumb.ts — The top-down schematic of a map for the menu's dossier, drawn
+ * MapThumb.ts — The top-down schematic of a map for the menu's intel plate, drawn
  * from a map's own DATA rather than from a built world.
  * Owns: the projection into the panel's canvas, the fetch-and-upgrade order,
  * and the flags and home gates over the plan. The plan itself is
@@ -86,7 +86,7 @@ export function drawMapThumb(
     ox: (w - side) / 2 + side / 2,
     oy: (h - side) / 2 + side / 2,
   };
-  // A grid of LINES rather than of letters: the dossier's panel is 220 px on
+  // A grid of LINES rather than of letters: the intel plate's schematic is 220 px on
   // a phone and ~380 on a laptop, so a lettered grid there is either
   // unreadable or the loudest thing on a drawing whose job is to say what
   // shape the place is. The deploy screen, which is the whole window, letters

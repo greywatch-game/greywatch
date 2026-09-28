@@ -337,6 +337,20 @@ export class InputManager {
   menuUpPressed = false;
   menuDownPressed = false;
   /**
+   * Edge-triggered PAGE steps (Q / E, Page Up / Page Down, gamepad LB / RB),
+   * with the same repeat the four directions above have.
+   *
+   * A third axis rather than two more buttons, for the directions' reason:
+   * opposing presses cancel. What it is FOR is the shoulder-button idiom every
+   * console front end teaches — the bumpers turn the page whatever the cursor
+   * is resting on — and on the main menu the page is the MAP, which is what
+   * lets that picker sit in a list without being the only way to reach it.
+   * Menus only: RB is the grenade and E is the vehicle verb in a round, and
+   * nothing in gameplay reads these.
+   */
+  menuPrevPressed = false;
+  menuNextPressed = false;
+  /**
    * Edge-triggered "back out of this screen" (Backspace / gamepad B).
    *
    * Menus only, which is what makes B available at all: on the pad B is
@@ -466,6 +480,15 @@ export class InputManager {
    * reason both exist.
    */
   padInHand = false;
+  /**
+   * Whether ANY device has spoken yet. Before the first key, click, touch or
+   * pad input none of the three above is true, and a screen choosing which
+   * prompts to draw has to keep its own guess rather than read "keyboard"
+   * off a machine nobody has touched — a phone's first frame is exactly that.
+   */
+  get anyDeviceUsed(): boolean {
+    return this.lastKbmAt > 0 || this.lastTouchAt > 0 || this.lastPadAt > 0;
+  }
 
   // --- internals ---
   private keys = new Set<string>();
@@ -497,6 +520,7 @@ export class InputManager {
   /** The two menu axes' held direction and repeat clock. See `menuLeftPressed`. */
   private navX: NavAxis = { dir: 0, next: 0 };
   private navY: NavAxis = { dir: 0, next: 0 };
+  private navPage: NavAxis = { dir: 0, next: 0 };
   private prevMenuBack = false;
   private prevPause = false;
   private prevUse = false;
@@ -565,6 +589,7 @@ export class InputManager {
       // and would fire the moment its repeat clock came round.
       this.navX.dir = 0;
       this.navY.dir = 0;
+      this.navPage.dir = 0;
       this.prevTouchSprint = false;
     });
 
@@ -943,6 +968,17 @@ export class InputManager {
     this.menuRightPressed = navX > 0;
     this.menuUpPressed = navY < 0;
     this.menuDownPressed = navY > 0;
+    // The page axis. Buttons 4 and 5 are the bumpers on the standard mapping.
+    const pageHeld = (keyA: string, keyB: string, button: number) =>
+      this.keys.has(keyA) ||
+      this.keys.has(keyB) ||
+      (pad ? buttonHeld(pad, button, trig) : false);
+    const pageNow =
+      (pageHeld("KeyE", "PageDown", 5) ? 1 : 0) -
+      (pageHeld("KeyQ", "PageUp", 4) ? 1 : 0);
+    const page = stepNav(this.navPage, pageNow, now);
+    this.menuPrevPressed = page < 0;
+    this.menuNextPressed = page > 0;
 
     // Back. `padCrouch` is B, and reading it here rather than a fourth face
     // button is the whole point: B is the back button everywhere else on a
@@ -1171,6 +1207,7 @@ const BOUND_CODES = new Set([
   "KeyR",
   "KeyC",
   "KeyE",
+  "KeyQ",
   "KeyF",
   "KeyG",
   "KeyL",
@@ -1190,6 +1227,8 @@ const BOUND_CODES = new Set([
   "ArrowRight",
   "ArrowUp",
   "ArrowDown",
+  "PageUp",
+  "PageDown",
   "ShiftLeft",
   "ShiftRight",
   "ControlLeft",

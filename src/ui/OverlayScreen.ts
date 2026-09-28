@@ -2,18 +2,20 @@
  * OverlayScreen.ts — The four full-screen cards that stop the game: the main
  * menu, the round-over result, the pause list, and the one that stands over a
  * map being built.
- * Owns: `#overlay` and everything written into it, the pause list's selection,
- * and the `.overlaid` class on `#hud` that hides the gameplay chrome behind a
- * card. A peer of DeployScreen and LoadoutScreen — Game wires its callbacks
- * (`onStart`, `onDifficulty`, `onOpenLoadout`, `onPauseAction`, `onVote`) and
- * drives its selection, and it knows nothing about game state beyond what it is
- * handed.
- * Invariants: only one card is up at a time — each `show*` rewrites the whole
- * element — and `hide()` is the single way down from any of them.
+ * Owns: `#overlay` and everything written into it, the menu's and the pause
+ * list's selection, `#menu-shot` (the photograph the menu stands on), and the
+ * `.overlaid` class on `#hud` that hides the gameplay chrome behind a card. A
+ * peer of DeployScreen and LoadoutScreen — Game wires its callbacks
+ * (`onStart`, `onDifficulty`, `onMap`, `onOpenLoadout`, `onPauseAction`,
+ * `onVote`) and drives its selection, and it knows nothing about game state
+ * beyond what it is handed.
+ * Invariants: only one card is up at a time and `hide()` is the single way down
+ * from any of them. The menu is BUILT when it is raised and PATCHED on every
+ * later `showMenu` — the other three are rewritten whole by each `show*`.
  *
  * One class rather than four because the cards are one element, not four
- * screens that happen to overlap: they share the shell, the title block and,
- * between the menu and the round-over card, the Deploy button. What splitting
+ * screens that happen to overlap: they share the element, the veil and,
+ * between the menu and the round-over card, the Deploy verb. What splitting
  * them would buy is four files that could never be shown together anyway, at
  * the cost of a base class or a duplicated stylesheet. A card that grows its
  * own state — a settings screen with rows to edit, a map picker — has earned a
@@ -27,11 +29,10 @@
  * all belong to the authority and arrive whole (`setVote`), so nothing here
  * decides anything — take that away and it would be a screen, and it would go.
  *
- * Deliberately NOT here: the KEY-CAP TABLE. It hung under the menu's title and
- * under the pause list, drawn from one table by one loop, and it belongs to
- * `SettingsScreen` now — a card the player is on to make a decision should not
- * carry the longest block on the screen as reference material under it, and the
- * settings screen is one row of the menu and one item of the pause list away.
+ * Deliberately NOT here: the KEY-CAP TABLE. It belongs to `SettingsScreen` —
+ * a card the player is on to make a decision should not carry the longest
+ * block on the screen as reference material, and the settings screen is one
+ * press of the menu's cursor and one item of the pause list away.
  *
  * Deliberately NOT here either: `setPaused`/`setEditing`. Those hide parts of
  * the HUD's own chrome and stay with the HUD, even though a pause is what
@@ -50,8 +51,8 @@ import {
   loadHeights,
   type MapDef,
 } from "../world/maps";
-import { kitLabel, WEAPON_BLURBS } from "./LoadoutScreen";
-import { mapShotUrl } from "./mapShots";
+import { WEAPON_BLURBS } from "./LoadoutScreen";
+import { mapShotUrl, shotThumbUrl } from "./mapShots";
 import { drawMapThumb } from "./MapThumb";
 
 /**
@@ -81,22 +82,26 @@ const PAUSE_ITEMS: readonly [PauseAction, string, boolean][] = [
 ];
 
 /**
- * What the main menu's cursor can rest on, in screen order.
+ * Which device the player has in hand, as far as the prompts drawn on the
+ * menu are concerned. `Game` pushes it (`setInputDevice`); this screen never
+ * reads `InputManager`.
+ */
+export type InputDevice = "kbm" | "pad" | "touch";
+
+/**
+ * What the main menu's cursor can rest on.
  *
- * The menu used to be four things reached by four different buttons — left and
- * right for the difficulty, `L`/Y for the kit, `O` for the settings, and a
- * confirm from anywhere for the round — which is a keyboard's idea of a menu
- * and leaves a pad player with no way at all to reach a row nobody thought to
- * give a face button. It is a LIST now: up and down move the cursor, A picks
- * what it is on, and the dedicated keys survive as accelerators rather than as
- * the only way in.
+ * The menu is a LIST a pad steps through — up and down move, left and right
+ * change the row the cursor is on, A fires it — and every dedicated key
+ * (`L`/Y, `O`, `M`, the bumpers) is an accelerator rather than the only way
+ * in, which is what lets a pad reach every row on this screen.
  */
 type MenuItem =
+  | "multiplayer"
+  | "settings"
   | "map"
   | "difficulty"
   | "loadout"
-  | "settings"
-  | "multiplayer"
   | "start";
 
 /**
@@ -108,13 +113,10 @@ type MenuItem =
  */
 export interface MenuState {
   /**
-   * The maps themselves, not their names.
-   *
-   * The panel beside the list draws a thumbnail of the highlighted map out of
-   * its layout and colours it out of its environment, so what this row needs
-   * is the `MapDef` — and once it has that, the flag count and the extent the
-   * card used to be handed separately are read off the same object rather than
-   * being passed alongside it and trusted to agree.
+   * The maps themselves, not their names: the reel draws each one's
+   * photograph, the hero reads the flag count and the extent off the chosen
+   * one, and the intel panel paints its schematic out of its layout — all off
+   * the same object, so none of it can disagree.
    */
   maps: readonly MapDef[];
   selectedMap: number;
@@ -171,70 +173,64 @@ export interface RoundOverState {
 }
 
 /**
- * Small counts as words, because the tagline is prose: "take and hold five
- * points" is a sentence and "take and hold 5 points" is a stat line. Anything
- * past the ones a Conquest map plausibly carries falls back to the digits.
- */
-const COUNT_WORDS = [
-  "no",
-  "one",
-  "two",
-  "three",
-  "four",
-  "five",
-  "six",
-  "seven",
-  "eight",
-  "nine",
-];
-const spellCount = (n: number) => COUNT_WORDS[n] ?? String(n);
-/**
- * `multiplayer` sits with the other two screen-openers rather than beside
- * Deploy, because that is what it IS — a button that leaves this card for
- * another one. Deploy stays alone at the bottom as the only row that ends the
- * menu in a round, and the rows above it are, in order, what that round will be
- * made of and then the two places you can go instead.
+ * The cursor's order, and it is a RING: up from the map reel is the system bar
+ * along the top of the screen, and down from Deploy wraps back up to it.
+ *
+ * That is what makes a single list honest on a screen that is not one column.
+ * Everything the round is made of is a column down the left — the map, the
+ * enemy, the kit and the button that spends them, in the order they are read —
+ * and the two places you can go INSTEAD of a round are a system bar in the top
+ * corner, where every console front end keeps them. Stepping up off the top of
+ * the column lands on that bar, which is where it is on the glass, and left and
+ * right walk along it (`stepMenuItem`).
  */
 const MENU_ITEMS: readonly MenuItem[] = [
+  "multiplayer",
+  "settings",
   "map",
   "difficulty",
   "loadout",
-  "settings",
-  "multiplayer",
   "start",
 ];
 /**
- * Where the cursor sits when the menu is raised. Deploy rather than the top
- * row, because it is the thing all but one visitor to this screen came for —
- * and because it keeps Enter/A meaning "start the round" the moment the title
- * appears, exactly as it did before there was a cursor at all.
+ * Where the cursor sits when the menu is raised. Deploy, because it is the
+ * thing all but one visitor to this screen came for — and because it keeps
+ * Enter/A meaning "start the round" the moment the title appears.
  */
 const MENU_DEFAULT = MENU_ITEMS.indexOf("start");
 
 /**
- * How long the menu card's entrance runs for, in milliseconds — the longest
- * of the four staggered blocks, delay included (`.ui-foot`, 0.32 + 0.6 s),
- * with a little over it.
+ * The map reel's two card shapes, as multiples of the card's HEIGHT: a slim
+ * slice of photograph for every map that is not chosen and a full 16:9 frame
+ * for the one that is.
  *
- * It is a WINDOW rather than a flag, and the reason is that a raise is not one
- * call. `Game` builds the menu and then enters the `menu` state, and both of
- * those redraw this card inside the same task at boot — so an entrance played
- * only when `card !== "menu"` is an entrance the second call throws away
- * before a frame has been painted, which is how it shipped and never once ran.
- * Redraws inside the window keep the animation; the map steps and the returns
- * from the kit and settings screens that this card is really rewritten by are
- * all far outside it.
+ * Written here and handed to the stylesheet as custom properties on the reel,
+ * because the script needs them too: centring the chosen card in a reel that
+ * scrolls has to know where that card will END UP, and while its width is
+ * still transitioning the only place that answer exists is these two numbers.
  */
-const MENU_ENTER_MS = 950;
+const CARD_SLIM = 0.78;
+const CARD_WIDE = 16 / 9;
 
 /**
- * The project's source, linked from the menu's foot. A link rather than a row
+ * The project's source, linked from the system bar. A link rather than a row
  * in `MENU_ITEMS`: it leaves the game rather than choosing anything in it, so
  * the cursor never lands on it and Enter can never open a tab by accident.
  */
 const SOURCE_URL = "https://github.com/greywatch-game/greywatch";
 /** GitHub's mark, inline so the menu stays asset-free; filled from `currentColor`. */
 const GITHUB_MARK = `<svg viewBox="0 0 16 16" aria-hidden="true"><path fill="currentColor" d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z"/></svg>`;
+/**
+ * The system bar's two marks — a mast for Online, a cog for Settings — drawn
+ * inline from `currentColor` for `GITHUB_MARK`'s reason. Strokes rather than
+ * fills, at the weight of the type beside them, and square-capped: this
+ * interface is cut corners, and a round-capped icon is the one soft thing on it.
+ */
+const ICON_ONLINE = `<svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="square"><path d="M12 11v10M8 21h8"/><circle cx="12" cy="9" r="2"/><path d="M7.8 13.2a6 6 0 0 1 0-8.4M16.2 4.8a6 6 0 0 1 0 8.4M4.9 16.1a10 10 0 0 1 0-14.2M19.1 1.9a10 10 0 0 1 0 14.2"/></svg>`;
+const ICON_SETTINGS = `<svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="square"><circle cx="12" cy="12" r="3.2"/><path d="M12 2.5v3M12 18.5v3M2.5 12h3M18.5 12h3M5.3 5.3l2.1 2.1M16.6 16.6l2.1 2.1M5.3 18.7l2.1-2.1M16.6 7.4l2.1-2.1"/></svg>`;
+
+/** A 1-based index as two digits: the reel's counter and the hero's numeral. */
+const twoDigits = (n: number) => String(n).padStart(2, "0");
 
 /**
  * The panel's three shapes, as three functions rather than three copies of the
@@ -262,6 +258,34 @@ function detailBlock(eyebrow: string, title: string, blurb: string): string {
   return `${detailHead(eyebrow, title)}<p class="ov-blurb">${blurb}</p>`;
 }
 
+/**
+ * A PROMPT: the key or the button that reaches a control, drawn ON the control
+ * the way a console front end draws one, for whichever device is in hand.
+ *
+ * Both labels are written into the markup and the STYLESHEET picks one, off
+ * the `dev-*` class on the card — so the player picking up a pad turns every
+ * prompt on the screen over in one class write, without a redraw, and a
+ * prompt with no label for the device in hand is simply not drawn. Touch gets
+ * none at all: the control under the finger is its own prompt.
+ */
+function glyph(key: string | null, pad: string | null): string {
+  return `<kbd class="gl"${key ? ` data-k="${key}"` : ""}${pad ? ` data-p="${pad}"` : ""}></kbd>`;
+}
+
+/** The references the patch path writes through, held from the build. */
+interface MenuRefs {
+  hero: HTMLElement;
+  reel: HTMLElement;
+  cards: HTMLElement[];
+  count: HTMLElement;
+  prev: HTMLElement;
+  next: HTMLElement;
+  tiers: HTMLElement[];
+  tierName: HTMLElement;
+  kitWeapon: HTMLElement;
+  kitSight: HTMLElement;
+}
+
 export class OverlayScreen {
   private root: HTMLElement;
   /** Live only while the pause card is up — the buttons die with its markup. */
@@ -277,6 +301,12 @@ export class OverlayScreen {
   private mapCount = 0;
   private mapIndex = 0;
   /**
+   * The map the HERO is currently showing, which is what decides whether a
+   * patch replays the hero's swap — a redraw for a difficulty change or a
+   * return from the kit screen must not re-announce the same map.
+   */
+  private heroMap = -1;
+  /**
    * What the panel beside the list draws itself from, held because the panel
    * is redrawn on every cursor move while `showMenu` is called only when
    * something actually changed. Both are set from the `MenuState` and never
@@ -290,6 +320,19 @@ export class OverlayScreen {
   };
   /** The panel element, live only while the menu card is up. */
   private detailEl: HTMLElement | null = null;
+  /** The menu's patchable parts, live only while the menu card is up. */
+  private refs: MenuRefs | null = null;
+  /**
+   * Which device's prompts the menu draws. Guessed from the POINTER until a
+   * device has actually been used — a phone's first frame has touched
+   * nothing, and prompting it for Enter would be the one wrong answer — and
+   * then whatever `Game` says is in hand.
+   */
+  private device: InputDevice =
+    typeof matchMedia === "function" &&
+    matchMedia("(hover: none) and (pointer: coarse)").matches
+      ? "touch"
+      : "kbm";
   /**
    * The building card's progress bar, live only while that card is up. Held
    * rather than re-queried because it is written on a frame the main thread is
@@ -298,22 +341,17 @@ export class OverlayScreen {
   private buildBar: HTMLElement | null = null;
   /**
    * The menu's BACKDROP: a photograph of the map that is chosen, under the
-   * veil, cross-faded when the choice changes.
+   * card, cross-faded when the choice changes.
    *
    * It is a root of its OWN (`#menu-shot`, appended to `#hud` beside
    * `#overlay`) rather than markup inside the card, and both halves of that
-   * are load-bearing. It has to survive `showMenu`, which rewrites the card
-   * wholesale on every map step — a layer removed and re-inserted has no style
-   * to interpolate FROM, so the cross-fade would jump-cut. And it has to sit
-   * UNDER the veil, which is the card's own background: a child of `#overlay`
-   * paints over its parent's background whatever its z-index, so a photograph
-   * inside the card would put the picture on top of the scrim that makes the
-   * type over it legible.
-   *
-   * What that buys is that the veil needs no second copy for the menu. It is
-   * the same five layers every screen here draws, at `card-menu`'s own
-   * density — the two custom properties `.ui-veil` already exposes for exactly
-   * this question of how much of what is behind shows through.
+   * are load-bearing. It has to survive the card being rewritten — the round
+   * -over card and a fresh raise both rewrite it, and a layer removed and
+   * re-inserted has no style to interpolate FROM, so the cross-fade would
+   * jump-cut. And it has to sit UNDER the scrim, which is the card's own
+   * background: a child of `#overlay` paints over its parent's background
+   * whatever its z-index, so a photograph inside the card would put the
+   * picture on top of the gradients that make the type over it legible.
    */
   private shotRoot: HTMLElement;
   /**
@@ -331,20 +369,13 @@ export class OverlayScreen {
    */
   private shotUrl: string | undefined;
   /**
-   * Which card is up. The cursor is reset when the menu is RAISED and kept
-   * across a redraw: `showMenu` is called again on every difficulty change and
-   * on the way back from the kit and settings screens, and a cursor that
-   * jumped back to Deploy each time would make the row you just left the one
-   * place you cannot stay.
+   * Which card is up. The menu is BUILT when it is raised and PATCHED while it
+   * is up: `showMenu` is called again on every map step, every difficulty
+   * change and on the way back from the kit, settings and lobby screens, and a
+   * cursor that jumped back to Deploy each time would make the row you just
+   * left the one place you cannot stay.
    */
   private card: "none" | "menu" | "roundover" | "pause" | "building" = "none";
-  /**
-   * When the menu card was last RAISED, which is what the entrance animation
-   * is measured from. See `MENU_ENTER_MS`: a raise is not one call to
-   * `showMenu`, so "was the card already up" is not a question that can be
-   * asked once.
-   */
-  private menuRaisedAt = -Infinity;
 
   /** Wired by Game: the player picked a difficulty tier from the menu. */
   onDifficulty: (tier: number) => void = () => {};
@@ -411,220 +442,297 @@ export class OverlayScreen {
     // can be taken with either of those on screen and an overlay you can see a
     // map through is not an overlay.
     document.getElementById("hud")!.appendChild(this.root);
-    // The one thing on this screen that a resize genuinely breaks. Everything
-    // else here is CSS and re-lays itself; the map schematic is a canvas whose
-    // backing store was sized to the box it had when it was drawn, so a window
-    // dragged wider leaves it stretched. Guarded on the card, because the
-    // panel only exists on one of the four.
+    // The two things on this screen a resize genuinely breaks. Everything else
+    // is CSS and re-lays itself; the schematic is a canvas whose backing store
+    // was sized to the box it had when it was drawn, and the reel's scroll was
+    // centred on a width it no longer has. Guarded on the card, because both
+    // only exist on one of the four.
     window.addEventListener("resize", () => {
-      if (this.card === "menu") this.paintThumb();
+      if (this.card !== "menu") return;
+      this.paintThumb();
+      this.centreReel(false);
     });
   }
 
   /**
-   * The main menu: the operation on the left, the dossier on the right, and a
-   * photograph of the map behind both.
+   * The main menu — a title screen rather than a form.
    *
-   * **It is a FRONT END and not a settings list, and that is the whole of what
-   * this card was rebuilt to be.** What stood here was five `label · control ·
-   * accelerator` rows in the middle-left of the window with a schematic beside
-   * them — correct, reachable, and indistinguishable from the settings screen
-   * two rows down it. A shooter's title screen has one job before it has any
-   * other: say what this game looks like. So the picture is the largest thing
-   * on the card now, the scrim that makes the type legible is a DIRECTIONAL
-   * one that darkens the column the rail stands in and lets the right-hand
-   * two-thirds of the photograph through at nearly full strength, and the rail
-   * is the shortest arrangement of the same six decisions that will fit under
-   * it.
+   * **The MAP is the hero, because it is the one thing on this screen that
+   * says what the game looks like.** The photograph of the chosen map fills the
+   * window (`#menu-shot`), the scrim over it is dark only where there is type,
+   * and the map's NAME is the largest thing on the card, set over the picture
+   * like a title card rather than in a control. The wordmark is a lockup in the
+   * corner: a player looking at this screen has already found the game.
    *
-   * **The rows are GROUPED, because five equal rows are a form and three plus
-   * two is a menu.** `Operation` is what the round will be made of — the map,
-   * the enemy, the kit — and the two under the second tag are places you can
-   * go instead. The Deploy button is under both with air over it. Nothing
-   * about the ORDER moved: it is still `MENU_ITEMS`, still parameters then
-   * destinations then the action, and the cursor still walks it top to bottom.
+   * **Everything the round is made of is ONE column, read top to bottom**:
+   * the map reel, the enemy, the kit, and Deploy under them — the order the
+   * decisions are made in, ending on the button that spends them. The two
+   * places you can go instead (Online, Settings) are a system bar in the
+   * opposite corner, which is where every console front end keeps them, and
+   * the cursor's ring walks off the top of the column onto it (`MENU_ITEMS`).
+   * The right-hand side is an INTEL panel on whatever the cursor rests on —
+   * the map's plan, the enemy tier, the kit — shown where a viewport has room
+   * for a third thing and dropped where it does not, since nothing on it is a
+   * control.
    *
-   * **The map row is a STEPPER and not a strip of buttons, and that is a
-   * correctness fix rather than a style.** Six shipped maps (seven in a dev
-   * build) in a segmented row of equal shares is 96 px a button on a laptop
-   * and 42 on a phone: every shipped map read as `HOLLO…`, `GREYF…`,
-   * `COLDH…`, which is a picker whose labels are all the same word. A stepper
-   * names ONE map at full size, at every viewport, and the pips under it say
-   * how many there are and which this is — and it costs nothing in reach,
-   * because left and right along this row was always what stepped it.
+   * **The maps are a REEL of photographs, not a stepper and not a strip of
+   * words.** A strip of names gave seven maps an equal share of one column
+   * and every one read as `HOLLO…`; a stepper named one map and hid the rest.
+   * A photograph needs no label to be told apart, so every map is on screen at
+   * once as a slim slice of its own picture and the chosen one opens to a full
+   * frame — how many there are, which this is, and what each looks like, in a
+   * row that fits a phone. The bumpers turn it from anywhere (LB/RB, Q/E),
+   * left and right turn it while the cursor is on it, a click or a tap picks a
+   * card, and on glass it scrolls under the thumb.
    *
-   * The kit itself is not edited here — it is two slots and a stat chart,
-   * which is a screen rather than a strip of buttons under a title. What sits
-   * here is the button that opens it and a reminder of what is in the player's
-   * hands.
+   * **Every prompt is drawn ON its control, for the device in hand** — a key
+   * cap, a pad's face button, or nothing under a finger (`glyph`,
+   * `setInputDevice`). A line of hints naming three devices at once made every
+   * player work out which of them was theirs.
    *
-   * The card is drawn in the shell (`.ui-screen` in `base.css`) and is
-   * ANCHORED to the viewport rather than centred in it. It was a 600px column
-   * down the middle of the window, which on a monitor is a quarter of the
-   * width in use and nothing within 500px of an edge — a dialog box over a
-   * game rather than the game's own front end. What that column's width
-   * bought was alignment, and the rail keeps it a different way: every row
-   * states the same three tracks, so the labels line up and every control
-   * begins on one edge.
+   * **It is BUILT on a raise and PATCHED after**, which is what lets a map
+   * change ANIMATE: the chosen card opens, the hero slides the new name in and
+   * the photograph cross-fades, on elements that were already there. Written
+   * wholesale on every press as it used to be, each of those would have been
+   * a jump cut. Only the intel panel is still rewritten, on every cursor move;
+   * it carries no listener and no hover state, so a rewrite costs one box.
    *
-   * `#overlay` is inside a `pointer-events: none` HUD and does not opt back in
-   * (only `#deploy` does), so the individual CONTROLS ask for pointer events —
-   * the stepper's arrows and pips, the tier buttons, the three openers and
-   * Deploy, never the rows around them. The labels, the hints and the grid's
-   * own gaps stay inert, and a click that lands on one of them does NOTHING:
-   * the pointer's only way off this screen is the Deploy button. It used to be
-   * every pixel of it, which meant choosing a map or a difficulty deployed you
-   * the instant you chose one — those two fire on mouse-UP, and the confirm
-   * reads the mouse-DOWN before it.
-   *
-   * **The entrance animation runs on a RAISE and never on a redraw.** This
-   * method rewrites the card wholesale on every map step and on the way back
-   * from the kit and the settings screens, so an entrance keyed to the markup
-   * existing would replay on each of them — the rail would re-deal itself
-   * every time the player pressed Right along the map row, which is the one
-   * press it is most likely to be seen on. `.enter` is put on the root only
-   * when the card was not already up, exactly as the cursor is only reset then.
+   * `#overlay` is inside a `pointer-events: none` HUD and does not opt back in,
+   * so the CONTROLS ask for pointer events and the rest of the card stays
+   * inert: a click on the art, a caption or a gap does nothing, and **the
+   * pointer's only way into a round is the Deploy button**. It used to be
+   * every pixel of the card, which deployed the player the instant they chose
+   * a map — the picks fire on mouse-UP and the confirm read the mouse-DOWN
+   * before it.
    */
   showMenu(opts: MenuState): void {
     const { maps, selectedMap, difficulties, selected } = opts;
     this.setOverlaid(true);
-    // Raised anew, not redrawn — see `card`. The cursor and the entrance
-    // animation are the two things that key off this, and for the same reason.
-    const raised = this.card !== "menu";
-    if (raised) {
-      this.menuIndex = MENU_DEFAULT;
-      this.menuRaisedAt = performance.now();
-    }
-    // Still ARRIVING, which is not the same question as "was it raised by this
-    // call" — see `MENU_ENTER_MS`.
-    const entering = performance.now() - this.menuRaisedAt < MENU_ENTER_MS;
-    this.card = "menu";
     this.kit = { weapon: opts.weapon, sight: opts.sight };
     this.maps = maps;
     this.tierCount = difficulties.length;
     this.tier = selected;
     this.mapCount = maps.length;
     this.mapIndex = selectedMap;
-    const map = maps[selectedMap];
-    this.setShot(map);
-    const flags = map ? map.layout.controlPoints.length : 0;
-    // Read off the highlighted map for the reason the flag count above it is:
-    // how many a side is the MAP's now (`MapLayout.perTeam`), and a card that
-    // drew CONFIG's default would promise 8 v 8 on the one map that fields 24.
-    const perSide = map ? perTeamOf(map.layout) : CONFIG.bots.perTeam;
+    this.setShot(maps[selectedMap]);
+    // A patch for a card that is already up with the same shape of rows; a
+    // build for anything else. The row COUNTS are the shape — the maps can
+    // differ between a dev build and a release, never inside one session.
+    if (
+      this.card === "menu" &&
+      this.refs &&
+      this.refs.cards.length === maps.length &&
+      this.refs.tiers.length === difficulties.length
+    ) {
+      this.patchMenu(opts);
+    } else {
+      this.buildMenu(opts);
+    }
+    this.applyMenuSelection();
+  }
+
+  /**
+   * Writes the menu card from nothing. Called when it is RAISED — from any
+   * other card, or from nothing at all — and never while it is up.
+   *
+   * The cursor resets here and nowhere else, and so does the entrance: the
+   * `.enter` class has to be on the root before the markup is written, because
+   * what animates are elements that do not exist yet. At boot `Game` shows the
+   * menu and then enters the `menu` state, both inside one task; the second
+   * call is a PATCH, so the entrance the first one started runs on.
+   */
+  private buildMenu(opts: MenuState): void {
+    const { maps, selectedMap, difficulties, selected } = opts;
+    this.menuIndex = MENU_DEFAULT;
+    this.card = "menu";
+    this.setCardClass("menu", true);
     const tiers = difficulties
       .map(
         (name, i) =>
-          `<button class="tier${i === selected ? " on" : ""}" data-tier="${i}">${name}</button>`,
+          // The PIPS are a tier's rank drawn as a count, so the row reads as a
+          // ladder at a glance and the words only have to be read once.
+          `<button class="mm-tier${i === selected ? " on" : ""}" data-tier="${i}">
+            <b>${name}</b><i>${"<s></s>".repeat(difficulties.length)}</i>
+          </button>`,
       )
       .join("");
-    // One rung per map, the chosen one lit — how many there are and which
-    // this is, which is the half of a segmented row a stepper would otherwise
-    // lose. Each is a button rather than a mark: on a row whose only other way
-    // along it is one map at a time, a rung is how a pointer reaches the sixth
-    // without pressing an arrow five times. It is INSIDE the row (a second
-    // grid line, under the stepper) rather than a strip beneath it, so it
-    // lines up with the control it belongs to and shares that row's hover —
-    // a pointer travelling down to it must not take the cursor off the map
-    // row on its way to a control that is the map row's.
-    const pips = maps
+    const cards = maps
       .map(
         (m, i) =>
-          `<button class="pip${i === selectedMap ? " on" : ""}" data-map="${i}" title="${m.name}"></button>`,
+          `<button class="mm-card${i === selectedMap ? " on" : ""}" data-map="${i}" title="${m.name}">
+            <span class="mm-card-n">${twoDigits(i + 1)}</span>
+            <span class="mm-card-name">${m.name}</span>
+          </button>`,
       )
       .join("");
-    this.setCardClass("menu", entering);
+    const weapon = CONFIG.weapons[opts.weapon];
+    const sight = CONFIG.sights[opts.sight];
     this.root.innerHTML = `
-      <div class="ui-head">
-        <div class="ui-titles">
-          <span class="ui-eyebrow">Cel-shaded conquest</span>
-          <h1>GREYWATCH</h1>
-          <p class="tagline">Take and hold ${spellCount(flags)} points against ${CONFIG.teams[1].name}</p>
+      <div class="mm-top">
+        <div class="mm-brand">
+          <span class="mm-kicker">Cel-shaded conquest</span>
+          <span class="mm-word">GREYWATCH</span>
         </div>
-        <div class="ui-meta">
-          <span>Conquest &middot; ${perSide} v ${perSide}</span>
-          <b>${CONFIG.teams[0].name}</b>
-          <span>Single player</span>
+        <div class="mm-sys">
+          <button class="mm-sysbtn" data-menu="multiplayer">${ICON_ONLINE}<b>Online</b>${glyph("M", null)}</button>
+          <button class="mm-sysbtn" data-menu="settings">${ICON_SETTINGS}<b>Settings</b>${glyph("O", null)}</button>
+          <a class="mm-source" href="${SOURCE_URL}" target="_blank" rel="noopener noreferrer"
+             title="Source on GitHub" aria-label="Source on GitHub">${GITHUB_MARK}</a>
         </div>
       </div>
-      <div class="ui-body">
-        <div class="ui-rail">
-          <div class="ov-group">
-            <span class="ov-tag">Operation</span>
-            <div class="ov-row stepper" data-menu="map">
-              <span class="label">Map</span>
-              <div class="ov-step">
-                <button class="step${selectedMap <= 0 ? " off" : ""}" data-step="-1">&lsaquo;</button>
-                <span class="now">${map ? map.name : "&mdash;"}</span>
-                <button class="step${selectedMap >= maps.length - 1 ? " off" : ""}" data-step="1">&rsaquo;</button>
-              </div>
-              <span class="hint">&larr; &rarr;</span>
-              <div class="ov-pips">${pips}</div>
-            </div>
-            <div class="ov-row segmented" data-menu="difficulty">
-              <span class="label">Enemy</span>
-              <div class="tiers">${tiers}</div>
-              <span class="hint">&larr; &rarr;</span>
-            </div>
-            <!-- The one opener with no caption on it, and the reason is that
-                 its VALUE is the long thing. "Change kit" said what the row's
-                 own label and the chevron already say, and it said it in the
-                 space "Marksman rifle · Scope" needs: the two together
-                 overran the control column at every viewport where the type
-                 is at full size, so the row that had something to say was the
-                 one being ellipsised. -->
-            <div class="ov-row kit" data-menu="loadout">
-              <span class="label">Loadout</span>
-              <button class="kit-open"><b>${kitLabel(opts.weapon, opts.sight)}</b></button>
-              <span class="hint">L / Y</span>
-            </div>
-          </div>
-          <div class="ov-group">
-            <span class="ov-tag">Elsewhere</span>
-            <div class="ov-row kit" data-menu="settings">
-              <span class="label">Options</span>
-              <button class="settings-open"><b>Settings</b><i>Controls &middot; display</i></button>
-              <span class="hint">O</span>
-            </div>
-            <div class="ov-row kit" data-menu="multiplayer">
-              <span class="label">Online</span>
-              <button class="mp-open"><b>Multiplayer</b><i>Browse matches</i></button>
-              <span class="hint">M</span>
-            </div>
-          </div>
-          <button class="ov-start" data-menu="start"><b>Deploy</b><i>Enter &middot; A &middot; Start</i></button>
+      <div class="mm-hero"></div>
+      <div class="mm-row mm-maps" data-menu="map">
+        <div class="mm-cap"><span>Map</span><b class="mm-count"></b></div>
+        <div class="mm-strip">
+          <button class="mm-nav prev" data-step="-1" aria-label="Previous map">${glyph("Q", "LB")}</button>
+          <div class="mm-reel" style="--slim:${CARD_SLIM};--wide:${CARD_WIDE}">${cards}</div>
+          <button class="mm-nav next" data-step="1" aria-label="Next map">${glyph("E", "RB")}</button>
         </div>
-        <div class="ui-panel ui-optional ov-detail"></div>
       </div>
-      <p class="ui-foot">
-        <span><kbd>&uarr;</kbd><kbd>&darr;</kbd><kbd class="pad">Stick / D-pad</kbd> move</span>
-        <span><kbd>&larr;</kbd><kbd>&rarr;</kbd> change</span>
-        <span><kbd>Enter</kbd><kbd class="pad">A</kbd> select</span>
-        <a class="ov-source" href="${SOURCE_URL}" target="_blank" rel="noopener noreferrer"
-           title="Source on GitHub" aria-label="Source on GitHub">${GITHUB_MARK}</a>
-      </p>
+      <div class="mm-row mm-enemy" data-menu="difficulty">
+        <div class="mm-cap"><span>Enemy</span><b class="mm-tier-now"></b></div>
+        <div class="mm-tiers">${tiers}</div>
+      </div>
+      <div class="mm-row mm-kitrow" data-menu="loadout">
+        <button class="mm-kit">
+          <span class="mm-kit-cap">Loadout</span>
+          <b class="mm-kit-w">${weapon.name}</b>
+          <i class="mm-kit-s">${sight.name}</i>
+          ${glyph("L", "Y")}
+        </button>
+      </div>
+      <div class="mm-row mm-go" data-menu="start">
+        <button class="mm-deploy">
+          <span class="mm-deploy-t"><b>Deploy</b><i>Conquest &middot; vs bots</i></span>
+          ${glyph("Enter", "A")}
+        </button>
+      </div>
+      <aside class="mm-intel"></aside>
+      <div class="mm-foot">
+        <span data-dev="kbm"><kbd>&uarr;</kbd><kbd>&darr;</kbd> Move</span>
+        <span data-dev="kbm"><kbd>&larr;</kbd><kbd>&rarr;</kbd> Change</span>
+        <span data-dev="kbm"><kbd>Q</kbd><kbd>E</kbd> Map</span>
+        <span data-dev="kbm"><kbd>Enter</kbd> Select</span>
+        <span data-dev="pad"><kbd class="pd">D-pad</kbd> Navigate</span>
+        <span data-dev="pad"><kbd class="pd">LB</kbd><kbd class="pd">RB</kbd> Map</span>
+        <span data-dev="pad"><kbd class="pd face-a">A</kbd> Select</span>
+      </div>
     `;
-    this.detailEl = this.root.querySelector(".ov-detail");
-    this.root
-      .querySelectorAll<HTMLElement>("button[data-tier]")
-      .forEach((btn) => {
-        btn.onclick = () => this.onDifficulty(Number(btn.dataset.tier));
-      });
-    // The stepper's two arrows and the pips under them, both ordinary clicks
-    // on the way UP for the reason the tier buttons are: they step a choice
-    // and do not leave the screen. `onMap` CLAMPS, which is what the `off`
-    // class on an end arrow is drawn from — an arrow that looks live and does
-    // nothing is worse than one that says it is at the end of the row.
-    this.root
-      .querySelectorAll<HTMLElement>("button[data-step]")
-      .forEach((btn) => {
-        btn.onclick = () => this.onMap(this.mapIndex + Number(btn.dataset.step));
-      });
-    this.root.querySelectorAll<HTMLElement>("button[data-map]").forEach((btn) => {
-      btn.onclick = () => this.onMap(Number(btn.dataset.map));
+    const q = <T extends HTMLElement>(sel: string) => this.root.querySelector<T>(sel)!;
+    this.refs = {
+      hero: q(".mm-hero"),
+      reel: q(".mm-reel"),
+      cards: Array.from(this.root.querySelectorAll<HTMLElement>(".mm-card")),
+      count: q(".mm-count"),
+      prev: q(".mm-nav.prev"),
+      next: q(".mm-nav.next"),
+      tiers: Array.from(this.root.querySelectorAll<HTMLElement>(".mm-tier")),
+      tierName: q(".mm-tier-now"),
+      kitWeapon: q(".mm-kit-w"),
+      kitSight: q(".mm-kit-s"),
+    };
+    this.detailEl = q(".mm-intel");
+    this.heroMap = -1;
+    this.bindMenu();
+    this.fillReel(maps);
+    this.patchMenu(opts);
+  }
+
+  /**
+   * Writes a changed `MenuState` over the card that is already up — the
+   * values, never the structure. Classes on elements that exist, text on
+   * elements that exist, and the hero, which is the one block that is
+   * REPLACED, because replacing it is how its swap animation replays.
+   */
+  private patchMenu(opts: MenuState): void {
+    const refs = this.refs;
+    if (!refs) return;
+    const { maps, selectedMap, selected } = opts;
+    refs.cards.forEach((c, i) => c.classList.toggle("on", i === selectedMap));
+    refs.count.textContent = `${twoDigits(selectedMap + 1)} / ${twoDigits(maps.length)}`;
+    // `Game.setMap` CLAMPS, so an arrow at either end answers nothing — and
+    // an arrow that looks live and does nothing is worse than one that says
+    // it has run out of row.
+    refs.prev.classList.toggle("off", selectedMap <= 0);
+    refs.next.classList.toggle("off", selectedMap >= maps.length - 1);
+    refs.tiers.forEach((t, i) => {
+      t.classList.toggle("on", i === selected);
+      // A tier's pips are lit up to its OWN rank, so the row is a ladder;
+      // the chosen tier is the one filled, not the one with the most pips.
+      t.querySelectorAll("s").forEach((s, k) => s.classList.toggle("lit", k <= i));
     });
-    // The cursor's row is collected from the markup rather than kept in step
-    // by hand, so a row added above only has to name itself in `MENU_ITEMS`.
+    refs.tierName.textContent = opts.difficulties[selected] ?? "";
+    refs.kitWeapon.textContent = CONFIG.weapons[opts.weapon].name;
+    refs.kitSight.textContent = CONFIG.sights[opts.sight].name;
+    if (this.heroMap !== selectedMap) {
+      const swap = this.heroMap >= 0;
+      this.heroMap = selectedMap;
+      refs.hero.innerHTML = this.heroMarkup(maps[selectedMap], selectedMap, swap);
+      this.centreReel(swap);
+    }
+  }
+
+  /**
+   * The hero: the chosen map's name, set as the title of the screen, over the
+   * mode, a line about the place and the three figures that tell two maps
+   * apart. `swap` is a map CHANGE rather than a raise — it slides the new name
+   * in, where a raise leaves the arrival to the card's own entrance.
+   */
+  private heroMarkup(map: MapDef | undefined, index: number, swap: boolean): string {
+    if (!map) return "";
+    const size = map.layout.size ?? CONFIG.map.size;
+    const fog = map.environment.fogEnd;
+    // How many a side is the MAP's (`MapLayout.perTeam`): a card that drew
+    // CONFIG's default would promise 8 v 8 on the maps that field 24.
+    const per = perTeamOf(map.layout);
+    return `
+      <div class="mm-hero-in${swap ? " swap" : ""}">
+        <span class="mm-index" aria-hidden="true">${twoDigits(index + 1)}</span>
+        <span class="mm-mode">Conquest &middot; ${per} v ${per} &middot; ${CONFIG.teams[0].name} vs ${CONFIG.teams[1].name}</span>
+        <h1 class="mm-title">${map.name}</h1>
+        <p class="mm-blurb">${map.blurb}</p>
+        <div class="mm-facts">
+          <span><b>${map.layout.controlPoints.length}</b> points</span>
+          <span><b>${size} m</b> across</span>
+          <span><b>${fog >= size ? "Clear" : `${Math.round(fog)} m`}</b> visibility</span>
+        </div>
+      </div>`;
+  }
+
+  /**
+   * Hangs the pointer on the controls. Once per BUILD, because a patch keeps
+   * every element and therefore every handler.
+   *
+   * Two edges, and which one is the rule rather than taste: a control that
+   * only CHANGES a value on this card (a map card, a reel arrow, a tier) is an
+   * ordinary click on the way up, and one that LEAVES the card (the kit, the
+   * system bar, Deploy) goes on pointer-DOWN, the edge every button in the
+   * interface that leaves a screen uses.
+   */
+  private bindMenu(): void {
+    const refs = this.refs;
+    if (!refs) return;
+    refs.cards.forEach((c) => {
+      c.onclick = () => this.onMap(Number(c.dataset.map));
+    });
+    for (const nav of [refs.prev, refs.next]) {
+      nav.onclick = () => this.stepMap(Number(nav.dataset.step));
+    }
+    refs.tiers.forEach((t) => {
+      t.onclick = () => this.onDifficulty(Number(t.dataset.tier));
+    });
+    const leave: [string, () => void][] = [
+      ["button.mm-kit", () => this.onOpenLoadout()],
+      ['button[data-menu="settings"]', () => this.onOpenSettings()],
+      ['button[data-menu="multiplayer"]', () => this.onOpenMultiplayer()],
+      ["button.mm-deploy", () => this.onStart()],
+    ];
+    for (const [sel, fire] of leave) {
+      const el = this.root.querySelector<HTMLElement>(sel);
+      if (el) el.onpointerdown = fire;
+    }
+    // The cursor's rows are collected from the markup rather than kept in
+    // step by hand, so a row added only has to name itself in `MENU_ITEMS`.
     this.menuEls.clear();
     this.root.querySelectorAll<HTMLElement>("[data-menu]").forEach((el) => {
       const item = el.dataset.menu as MenuItem;
@@ -634,109 +742,121 @@ export class OverlayScreen {
       // the kit screen's slots and the settings rows all follow.
       el.onmouseenter = () => this.setMenuSelection(MENU_ITEMS.indexOf(item));
     });
-    this.applyMenuSelection();
-    // POINTERDOWN, not click — kept now that the confirm no longer counts the
-    // mouse, because it is the edge these three have always changed state on
-    // and the deploy screen's twins still do it for a live reason. Every
-    // button on this card that leaves the screen it is on agrees on the down
-    // edge; the ones that only step a row (the stepper, the pips, the tiers)
-    // are ordinary clicks.
-    const kitBtn = this.root.querySelector<HTMLElement>("button.kit-open");
-    if (kitBtn) kitBtn.onpointerdown = () => this.onOpenLoadout();
-    const setBtn = this.root.querySelector<HTMLElement>("button.settings-open");
-    if (setBtn) setBtn.onpointerdown = () => this.onOpenSettings();
-    const mpBtn = this.root.querySelector<HTMLElement>("button.mp-open");
-    if (mpBtn) mpBtn.onpointerdown = () => this.onOpenMultiplayer();
-    this.bindStart();
   }
 
   /**
-   * The panel beside the list, and the reason the menu is a two-column screen
-   * rather than a column down the middle of one.
+   * Puts each map's photograph on its card, as each thumbnail arrives.
    *
-   * A front end for a game with five decisions on it is a short list and a
-   * great deal of leftover window. The leftover is spent here, on whatever the
-   * cursor is standing on: which map, drawn and described; which enemy, and
-   * what that tier is like to fight; what is in your hands and what it does.
-   * That is the whole justification for the width — a wide screen that puts
-   * the same six rows in the middle of more emptiness has not used the space,
-   * it has just left more of it.
+   * The downscale is `shotThumbUrl`'s and is made once a session, so after
+   * the first raise this answers on a resolved promise. A card whose map has
+   * no photograph keeps its plate, which is the drawing of a map nobody has
+   * photographed yet rather than a broken card.
+   */
+  private fillReel(maps: readonly MapDef[]): void {
+    const refs = this.refs;
+    if (!refs) return;
+    maps.forEach((m, i) => {
+      void shotThumbUrl(m.id)?.then((url) => {
+        const card = this.refs?.cards[i];
+        if (card) card.style.backgroundImage = `url("${url}")`;
+      });
+    });
+  }
+
+  /**
+   * Scrolls the reel so the chosen card is in the middle of it — which on a
+   * viewport wide enough for the whole reel is no scroll at all.
    *
-   * It is REDRAWN on every cursor move and the rows are not: the rows carry
-   * the selection as a class on elements that already exist (see
-   * `applyMenuSelection`), because moving down a list must not restart the
-   * title's animation or drop the hover under the mouse. The panel has neither
-   * a listener nor a transition on it, so rewriting it costs a layout of one
-   * box and nothing that can be seen going wrong.
+   * The target is computed from where the cards will END UP rather than
+   * measured, because the chosen card is still opening (and the last one
+   * still closing) when this runs: a measurement taken now centres the reel
+   * on a width that is about to change. The card's HEIGHT does not
+   * transition, and `CARD_SLIM`/`CARD_WIDE` turn it into both widths.
+   */
+  private centreReel(smooth: boolean): void {
+    const refs = this.refs;
+    const card = refs?.cards[this.mapIndex];
+    if (!refs || !card) return;
+    const reel = refs.reel;
+    const h = card.offsetHeight;
+    const gap = parseFloat(getComputedStyle(reel).columnGap) || 0;
+    const left = this.mapIndex * (h * CARD_SLIM + gap);
+    const target = left + (h * CARD_WIDE) / 2 - reel.clientWidth / 2;
+    reel.scrollTo({ left: Math.max(0, target), behavior: smooth ? "smooth" : "auto" });
+  }
+
+  /**
+   * The panel beside the column — the INTEL on whatever the cursor rests on.
    *
-   * `start` gets the DEPLOYMENT BRIEF rather than nothing, and that is where
-   * the cursor opens: the map, the enemy and the kit, which between them are
-   * the whole of what pressing the button under it is about.
+   * A front end for a game with five decisions on it is a short column and a
+   * great deal of leftover window, and the window is mostly the photograph,
+   * which is the point of it. What is left is spent here: the map's PLAN (the
+   * one thing the photograph cannot tell you — where the flags are), what an
+   * enemy tier is like to fight, what the kit in your hands does. It is not a
+   * control, which is why it is the thing a viewport without room for it
+   * drops; the hero carries the map's own figures either way.
+   *
+   * It is REDRAWN on every cursor move and nothing else on the card is: it
+   * has neither a listener nor a transition on it, so a rewrite costs a
+   * layout of one box and nothing that can be seen going wrong.
    */
   private drawDetail(): void {
     const el = this.detailEl;
     if (!el) return;
     const item = MENU_ITEMS[this.menuIndex];
     const map = this.maps[this.mapIndex];
+    let html = "";
     switch (item) {
       case "map":
-        el.innerHTML = map ? this.mapDetail(map) : "";
+      case "start":
+        html = map ? this.mapDetail(map) : "";
         break;
       case "difficulty":
-        el.innerHTML = this.tierDetail();
+        html = this.tierDetail();
         break;
       case "loadout":
-        el.innerHTML = this.kitDetail();
+        html = this.kitDetail();
         break;
       case "settings":
-        el.innerHTML = detailBlock(
+        html = detailBlock(
           "Options",
           "Settings",
           "Look speed for mouse, stick and thumb; how much of the screen the " +
-            "renderer is given; and the full control map for all three.",
+            "renderer is given; the mix; and the full control map for all three.",
         );
         break;
       case "multiplayer":
-        el.innerHTML = detailBlock(
+        html = detailBlock(
           "Online",
           "Multiplayer",
-          `Browse what every region is running, or start a round of your own. ` +
-            `Sixteen slots either way — every seat nobody is sitting in is a bot, ` +
-            `and it stands up again when they leave.`,
+          `Browse what every region is running, or start a match of your own. ` +
+            `Every seat nobody is sitting in is a bot, and it stands up again ` +
+            `when they leave.`,
         );
         break;
-      case "start":
-        el.innerHTML = this.briefDetail(map);
-        break;
     }
+    el.innerHTML = `<div class="mm-intel-in">${html}</div>`;
     this.paintThumb();
   }
 
-  /** The map row's panel: the schematic, the line, and the three facts. */
-  private mapDetail(map: MapDef): string {
-    return `
-      ${detailHead("Map", map.name)}
-      <div class="ov-thumb"><canvas></canvas></div>
-      <p class="ov-blurb">${map.blurb}</p>
-      ${this.mapFacts(map)}
-    `;
-  }
-
   /**
-   * What is countable about a map, read off the map rather than written down
-   * beside it: how many flags, how big the square is, and how far you can
-   * actually see across it — which on this game's maps is the single biggest
-   * difference between two of them, and is `fogEnd` against the map's extent
-   * rather than a weather note somebody has to remember to update.
+   * The map's intel: its PLAN, with the five flags and both sides' deploy
+   * points on it, and a key to the two marks that are not self-evident.
+   * Offered on the map row and on Deploy, which is the panel a player who
+   * presses A the moment the title appears is looking at.
    */
-  private mapFacts(map: MapDef): string {
-    const size = map.layout.size ?? CONFIG.map.size;
-    const fog = map.environment.fogEnd;
-    return facts([
-      [String(map.layout.controlPoints.length), "Control points"],
-      [`${size} m`, "Across"],
-      [fog >= size ? "Clear" : `${Math.round(fog)} m`, "Visibility"],
-    ]);
+  private mapDetail(map: MapDef): string {
+    const mine = CONFIG.teams[0];
+    const theirs = CONFIG.teams[1];
+    return `
+      ${detailHead("Tactical map", map.name)}
+      <div class="ov-thumb"><canvas></canvas></div>
+      <div class="mm-legend">
+        <span><i class="dia" style="--c:${mine.color}"></i>${mine.name}</span>
+        <span><i class="dia" style="--c:${theirs.color}"></i>${theirs.name}</span>
+        <span><i class="hex"></i>Control point</span>
+      </div>
+    `;
   }
 
   /**
@@ -773,13 +893,9 @@ export class OverlayScreen {
   }
 
   /**
-   * How many bodies a side the HIGHLIGHTED map fields.
-   *
-   * The enemy-skill panel names it, and it belongs to the map rather than to
-   * the tier — a rookie squad and an ace squad are the same twenty-four bodies
-   * on Sarab and the same eight everywhere else. Read through the fields the
-   * menu already keeps rather than passed in, because the panel is redrawn as
-   * the map selection moves under it.
+   * How many bodies a side the CHOSEN map fields. It belongs to the map
+   * rather than to the tier — a rookie squad and an ace squad are the same
+   * twenty-four bodies on Sarab and the same eight on Hollowmere.
    */
   private perSide(): number {
     const map = this.maps[this.mapIndex];
@@ -807,51 +923,26 @@ export class OverlayScreen {
   }
 
   /**
-   * The brief: what the Deploy button under the cursor is about to spend.
-   *
-   * Three lines and the map's own schematic, which is the summary a player
-   * arriving at this screen and pressing A immediately never otherwise gets to
-   * see — and the one place the three separate decisions above are shown
-   * having been made together.
-   */
-  private briefDetail(map: MapDef | undefined): string {
-    const tier = difficultyTiers()[this.tier];
-    return `
-      ${detailHead("Ready", "Deployment brief")}
-      <div class="ov-thumb"><canvas></canvas></div>
-      <div class="ov-brief">
-        <div><span>Map</span><b>${map ? map.name : "&mdash;"}</b></div>
-        <div><span>Enemy</span><b>${tier ? tier.name : "&mdash;"}</b></div>
-        <div><span>Kit</span><b>${kitLabel(this.kit.weapon, this.kit.sight)}</b></div>
-      </div>
-    `;
-  }
-
-  /**
    * Paints the map schematic, if the panel that is up has one in it.
    *
    * Separate from the markup because a canvas is not markup: it has to be
    * drawn AFTER the element is in the document and has been laid out, since
-   * `drawMapThumb` sizes its backing store from the box it was given. Reading
-   * that box here forces the layout the assignment above deferred, which is
-   * the one synchronous reflow this screen pays and is why it is not on a
-   * frame callback — a thumbnail that arrives a frame after the row it belongs
-   * to reads as the panel flickering.
+   * `drawMapThumb` sizes its backing store from the box it was given — and a
+   * panel the viewport has dropped has no box, which `drawMapThumb` answers
+   * by drawing nothing. The resize handler paints it again if it comes back.
    *
    * **The paint is synchronous and NEITHER of the map's two bulk halves may be
    * here yet, which is why this can run three times for one row.** The
    * heightfield and the collider bake are chunks of their own
-   * (`MapDef.heights`, `MapDef.collision`) — the only fields on this panel
-   * that are fetched rather than bundled — so the first paint draws whatever
+   * (`MapDef.heights`, `MapDef.collision`), so the first paint draws whatever
    * has already landed, which on a cold boot is neither, and each arrival
    * books another. What the player sees is a bare square, then the ground it
    * is cut in, then the town on it; see `MapThumb.ts` for why that order is
    * the honest one.
    *
-   * The row is re-tested inside every callback because the cursor moves faster
-   * than a fetch: a floor arriving for the map the player has already scrolled
-   * off must not repaint the one they are looking at now. A warm map answers
-   * on the first paint and books nothing.
+   * The map is re-tested inside every callback because the cursor moves
+   * faster than a fetch: a floor arriving for the map the player has already
+   * stepped off must not repaint the one they are looking at now.
    */
   private paintThumb(): void {
     const canvas = this.detailEl?.querySelector("canvas");
@@ -882,8 +973,7 @@ export class OverlayScreen {
    *
    * Called from `showMenu` rather than from the cursor, because the backdrop
    * follows the map that has been CHOSEN and not the row the cursor happens to
-   * be resting on — the menu is redrawn on every map step, so this is called
-   * exactly when the answer changes.
+   * be resting on — so this is called exactly when the answer changes.
    *
    * It waits for the image to DECODE before swapping. A fade into a layer the
    * browser has not finished decoding is a fade into a blank rectangle and
@@ -891,7 +981,7 @@ export class OverlayScreen {
    * cost of waiting is that the very first backdrop arrives a frame or two
    * after the card it is behind, which is the harmless half of the trade.
    *
-   * The `shotUrl` guard is what makes stepping quickly along the map row safe:
+   * The `shotUrl` guard is what makes stepping quickly along the reel safe:
    * whichever pick is the latest owns the swap, and a decode that comes back
    * after a later one has already been asked for is dropped rather than
    * fighting it for the front layer.
@@ -920,7 +1010,7 @@ export class OverlayScreen {
       this.shotFront = 1 - this.shotFront;
     };
     // A rejection is a build missing its own asset, and there is nothing to
-    // fall back TO but the veil the picture is already over — so the last
+    // fall back TO but the scrim the picture is already under — so the last
     // backdrop stays and the screen is the one it was before shots existed.
     img.decode().then(raise, () => {});
   }
@@ -939,13 +1029,9 @@ export class OverlayScreen {
   }
 
   /**
-   * The one button that starts the round, shared by the menu and the round-over
-   * card, and the ONLY thing on either that a pointer can deploy with. It began
-   * as a redundant target beside a click-anywhere confirm — an instruction in
-   * prose is not a target, and a pad player reading "click, press Enter, or
-   * press Start" has to work out which of those they own — and is now carrying
-   * the mouse and the finger by itself, which is what lets the rows above it
-   * be picked from without also ending the screen they are on.
+   * The round-over card's Deploy button, and the ONLY thing on that card a
+   * pointer can start a round with. The menu's own is bound in `bindMenu`,
+   * with the card's other controls.
    *
    * POINTERDOWN, the same edge every button here that leaves the screen uses.
    */
@@ -954,7 +1040,21 @@ export class OverlayScreen {
     if (btn) btn.onpointerdown = () => this.onStart();
   }
 
-  /** Steps the menu cursor, wrapping at both ends. No-op off the menu card. */
+  /**
+   * Which device's prompts to draw. A class on the card, compared before it
+   * is written, so `Game` can push it every frame; every prompt on the card
+   * turns over on that one write because the stylesheet picks the label.
+   */
+  setInputDevice(device: InputDevice): void {
+    if (device === this.device) return;
+    this.device = device;
+    if (this.card !== "menu") return;
+    for (const d of ["kbm", "pad", "touch"] as const) {
+      this.root.classList.toggle(`dev-${d}`, d === device);
+    }
+  }
+
+  /** Steps the menu cursor around its ring. No-op off the menu card. */
   moveMenuSelection(delta: number): void {
     if (this.menuEls.size === 0) return;
     const n = MENU_ITEMS.length;
@@ -962,32 +1062,48 @@ export class OverlayScreen {
   }
 
   /**
-   * Left/right on the cursor's row. Only the two segmented rows — the map and
-   * the difficulty — have anything to step; on a row that is a button this is
-   * deliberately nothing, because a horizontal nudge that fired a screen would
-   * make the cursor's own left and right edges feel like traps.
-   *
-   * It CLAMPS where `activateMenu` wraps: left and right are a slider along a
-   * row of four tiers, and a slider that jumps from Ace back to Green at the
-   * end is one you have to watch rather than feel.
+   * Turns the map reel, from wherever the cursor is — the bumpers, Q/E, and
+   * the reel's own arrows. `Game.setMap` clamps, so a step off either end is
+   * no step. No-op off the menu card.
+   */
+  stepMap(delta: number): void {
+    if (this.menuEls.size === 0) return;
+    this.onMap(this.mapIndex + delta);
+  }
+
+  /**
+   * Left/right on the cursor's row. The two rows with a VALUE step it — the
+   * map and the enemy, both clamped, because a slider that jumps from Elite
+   * back to Recruit at the end is one you have to watch rather than feel. The
+   * system bar is a ROW of two, so left and right walk along it. On the kit
+   * and Deploy this is nothing: a horizontal nudge that fired a screen would
+   * make the cursor's own edges feel like traps.
    */
   stepMenuItem(delta: number): void {
     if (this.menuEls.size === 0) return;
-    if (MENU_ITEMS[this.menuIndex] === "difficulty") {
-      this.onDifficulty(this.tier + delta);
-    } else if (MENU_ITEMS[this.menuIndex] === "map") {
-      this.onMap(this.mapIndex + delta);
+    switch (MENU_ITEMS[this.menuIndex]) {
+      case "difficulty":
+        this.onDifficulty(this.tier + delta);
+        break;
+      case "map":
+        this.onMap(this.mapIndex + delta);
+        break;
+      case "multiplayer":
+        if (delta > 0) this.setMenuSelection(MENU_ITEMS.indexOf("settings"));
+        break;
+      case "settings":
+        if (delta < 0) this.setMenuSelection(MENU_ITEMS.indexOf("multiplayer"));
+        break;
     }
   }
 
   /**
    * Fires the cursor's row — Enter / gamepad A.
    *
-   * The difficulty row cycles rather than doing nothing: a confirm that
-   * answers nothing is the thing this screen was rebuilt to remove, and with
-   * four tiers on screen and the current one lit, a press that advances to the
-   * next says what it did. It WRAPS, unlike left/right, so the button always
-   * changes something wherever the row happens to be resting.
+   * The two value rows CYCLE rather than doing nothing: a confirm that answers
+   * nothing is the thing this screen was rebuilt to remove, and with the
+   * choice lit, a press that advances to the next says what it did. It WRAPS,
+   * unlike left/right, so the button always changes something.
    */
   activateMenu(): void {
     if (this.menuEls.size === 0) return;
@@ -1021,16 +1137,13 @@ export class OverlayScreen {
 
   /**
    * Paints the cursor. A class on rows that already exist rather than a
-   * redraw, so moving down the menu does not restart the title's animation or
-   * drop the hover state under the mouse — the same rule the pause list keeps.
+   * redraw, so moving down the menu does not restart an animation or drop the
+   * hover state under the mouse — the same rule the pause list keeps.
    */
   private applyMenuSelection(): void {
     MENU_ITEMS.forEach((item, i) => {
       this.menuEls.get(item)?.classList.toggle("sel", i === this.menuIndex);
     });
-    // The panel IS redrawn, and only the panel: it carries no listener, no
-    // transition and no hover state, so there is nothing on it a rewrite can
-    // interrupt — which is exactly what the rows above cannot say.
     this.drawDetail();
   }
 
@@ -1465,31 +1578,34 @@ export class OverlayScreen {
   /**
    * Which card is up, as a class on the root — and what BACKDROP it gets.
    *
-   * Three of the four are full-bleed screens over a scene that is either last
-   * round's or nothing at all, and they take the shell's frame and its veil.
-   * The pause is the exception and has to be: it is a lid over a live round
-   * that the player is coming back to, so it is anchored to one side and
-   * scrimmed from that side only. Setting `className` outright rather than
-   * toggling is what stops the previous card's modifier surviving into the
-   * next one — every one of these rewrites the markup underneath it anyway.
+   * The round-over card and the building card are full-bleed screens over a
+   * scene that is either last round's or nothing at all, and they take the
+   * shell's frame and its veil. The MENU takes neither: it is laid out on a
+   * grid of its own over a photograph, with a scrim shaped like that layout
+   * (`#overlay.card-menu` in `overlay.css`), and it carries the prompt device
+   * (`dev-*`) because every prompt on it is picked by the stylesheet. The
+   * pause is anchored to one side and scrimmed from that side only, being a
+   * lid over a live round the player is coming back to. Setting `className`
+   * outright rather than toggling is what stops the previous card's modifier
+   * surviving into the next one.
    *
-   * `raised` is the menu's entrance animation and nothing else: the class has
-   * to be on the ROOT before the markup is written, because what animates are
-   * elements that do not exist yet and a class added afterwards would restart
-   * them on the frame after they had already been painted at rest. It is off
-   * on a REDRAW for the reason the cursor is not reset on one — this card is
-   * rewritten on every map step, and a rail that re-deals itself under the
-   * player's hand as they scroll along the map row is the one place an
-   * entrance would be seen most and wanted least.
+   * `raised` is the menu's entrance and nothing else: the class has to be on
+   * the ROOT before the markup is written, because what animates are
+   * elements that do not exist yet.
    */
   private setCardClass(
     card: "menu" | "roundover" | "building" | "pause",
     raised = false,
   ): void {
+    // Every card but the menu writes over the menu's markup, so the patch
+    // path's references die here rather than at each of the three callers.
+    if (card !== "menu") this.refs = null;
     this.root.className =
       card === "pause"
         ? "card-pause"
-        : `ui-screen ui-veil card-${card}${raised ? " enter" : ""}`;
+        : card === "menu"
+          ? `card-menu dev-${this.device}${raised ? " enter" : ""}`
+          : `ui-screen ui-veil card-${card}`;
   }
 
   /** Takes whichever card is up back down. The single way off all three. */
@@ -1500,6 +1616,7 @@ export class OverlayScreen {
     this.detailEl = null;
     this.buildBar = null;
     this.clearVote();
+    this.refs = null;
     // The buttons live in the card's markup, so they die with it.
     this.pauseButtons = [];
     this.pauseIndex = 0;

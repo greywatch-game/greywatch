@@ -61,36 +61,15 @@ than shrinking (`.ui-optional`), because half a panel says less than none and
 takes the rail's room to say it. `--ui-lean` is the same pair of queries as a
 custom property, for the screens that drop optional matter of their own.
 
-**The MENU has a threshold of its own, and it is the only screen that does.**
-900 px is the width below which a rail and a panel stop fitting on the settings
-screen and the lobby; the menu's rail is wider than either, carrying a map's
-name at 22 px between two arrows, four tier buttons that have to stay readable
-words, and three openers with a caption on each. At 1024 px — a tablet held
-upright — the shell's rule still says two columns and the rail gets 383 of
-them, which is `HOLLOWM…`, `RECR…`, `REGU…`, `VETE…`: the ellipsis the map
-stepper was built to remove, arriving from the layout instead of from the
-picker. So `#overlay.card-menu` drops to one column at **1100**, and the number
-is what its widest row measures rather than anything about a device. A screen
-that grows a wide row owes the same arithmetic; a screen that does not stays on
-the shell's.
-
-**And it is the one screen that puts its panel BACK on an upright viewport.**
-Dropping the panel is right because a narrow window has no room BESIDE the
-rail — and a phone or a tablet held upright has no room beside it and a great
-deal under it, which the shell's rule left as four hundred pixels of nothing
-below the Deploy button. Under `(orientation: portrait) and (min-height:
-700px)` the menu's body becomes two ROWS and the dossier is the second. Two
-rules make that safe rather than merely possible. **The panel's row is
-bounded** (`minmax(0, 1fr)`, `overflow: hidden`): sized `auto` under a rail the
-dossier is as tall as whatever is in it — 399 px on a 390-wide phone, 608 on a
-tablet — and runs off the bottom of the viewport and under the foot, since
-nothing in this HUD scrolls. And **the SCHEMATIC is the first thing out of that
-budget, not the last**: it is the best thing on the dossier and it is also
-220 px square on the phone that has 212 px to give the whole panel, so a phone
-gets a head, a clamped line and the figures, and the schematic waits for
-`min-height: 1000px` — an upright tablet — where it can be drawn at a size
-worth drawing. A 60 px map of Cinderhaven is not a smaller schematic; it is a
-grey square where one used to be.
+**The MENU is the one screen between the title and the world that is NOT drawn
+in the shell**, and the reason is its job. The shell is a frame round a list and
+the panel that describes it, which is right for a screen whose job is its list;
+the menu's job is to say what the game looks like, so the photograph of the map
+is the screen and the controls are laid on it. It has a grid of its own — named
+areas, four templates, one unit — described under *The main menu* below, and
+what it keeps from the shell is the vocabulary (`.ui-eyebrow`, `.ui-facts`, the
+tokens), not the frame. A new screen goes in the shell; the menu is not the
+pattern to copy.
 
 **A screen over another SCREEN is opaque; a screen over the SCENE is not.**
 `.ui-veil` is the backdrop — a warm glow off the lower-left corner and a cold one
@@ -633,7 +612,7 @@ change moved no content-hashed filename. Three rules keep it that way:
 
 ## The three maps are one drawing
 
-**This interface draws the same place three times — the menu's dossier, the
+**This interface draws the same place three times — the menu's intel plate, the
 deploy screen and the corner minimap — and until they were made one drawing
 they were three.** The menu plotted a placement as a grey square, because a
 `Placement` is a point and a kit name; the deploy screen filled every collider
@@ -687,7 +666,7 @@ distance.
 
 **A building is not a box; it is eight or ten WALLS, and every version of the
 mass layer has had to answer that.** Drawn honestly a 0.25 m wall is a quarter
-of a pixel on the dossier, so the town vanishes; thickened, the same walls are
+of a pixel on the menu's intel plate, so the town vanishes; thickened, the same walls are
 a field of disconnected four-pixel dashes, which is what Hollowmere read as —
 confetti, not a plan. So the rectangles are grown by a metre and a half a side
 into an offscreen sheet, which welds a building's own walls into one silhouette
@@ -883,30 +862,22 @@ So the backdrop needs no scrim of its own: the card in front of it is the
 scrim. **What the menu does NOT take is the shell's veil**, and that is the
 change that turned this card from a form into a front end.
 
-**The shell's veil is an ellipse, and an ellipse is the wrong shape for a
-screen whose content is a column down one side.** `.ui-veil` is dense at the
-edges and lighter in the middle, the same in every direction, which is right
-for a screen that puts its reading matter in the centre of the frame. The menu
-does not: the rail is the left third, the dossier the right, and the picture is
-what they are laid on. Tuned dense enough to hold `--dim` row labels over
-Coldharbour's dusk sky it put the whole photograph behind a wash, and every
-shipped map read as a dark rectangle; tuned light enough for the photograph it
-stopped holding the type. **There is no single density that does both, because
-the two demands are in different PLACES.**
-
-`#overlay.card-menu` therefore states its own `background` outright, and it is
-raked rather than centred: the column the rail stands in is held to ~0.95, the
-right-hand two-thirds comes through at 0.12–0.24, and the head and the foot get
-a horizontal band of their own because both carry type over whatever the picture
-is doing up there — and a photograph's sky is the brightest thing in it. The
-friend/foe glow pair and the scanlines are kept from the shell so the card is
-lit from the same two corners as every other screen; the scanlines are at half
-weight, because over a village glimpsed through a veil they are texture and over
-a photograph at full strength they are a screen door.
-
-**`--veil-in`/`--veil-out` are still set on the card and nothing on it reads
-them.** They are `.ui-veil`'s contract, and a card that unset them would take
-the shared 0.84/0.98 silently the moment anything here fell back to it.
+**The scrim is shaped like the LAYOUT rather than like a frame.** The shell's
+veil is an ellipse — dense at the edges, lighter in the middle, the same in every
+direction — which is right for a screen whose reading matter is in the middle of
+it and wrong for a card whose controls are a column down one side. Tuned dense
+enough to hold small type over Coldharbour's dusk sky it put the whole
+photograph behind a wash; tuned light enough for the photograph it stopped
+holding the type. **There is no single density that does both, because the two
+demands are in different PLACES.** So `#overlay.card-menu` states its own
+background: dark behind the column, a band along the bottom and the top where
+there is type, a softer one at the right edge for the intel, and the middle of
+the window let through at full strength. **The column's gradient is measured
+from the COLUMN** (`--gx` and `--col` in its colour stops) rather than from the
+window, so on a capped ultrawide it still falls off just past the controls
+instead of darkening the empty margin and fading before it reaches them. The
+portrait and short-landscape templates carry their own, because the controls
+are somewhere else in both.
 
 **The picture DRIFTS**, 46 seconds a length, alternating: a title screen on a
 still photograph reads as a paused game, and the same photograph moving a few
@@ -962,13 +933,15 @@ screen was exactly that). The dedicated keys survive as accelerators; none is th
 only way in.
 
 - **The cursor is `OverlayScreen`'s, and it is a class on rows that already
-  exist.** `MENU_ITEMS` is the list, `activateMenu` is what A fires, and the mark is
-  a caret on the label plus a ring on the control — never a fill, since the tier
-  buttons and Deploy button are *already* filled hot to say what is chosen. **The
-  ring has to be INSET on anything chamfered**: every button here is cut by a
-  `clip-path`, which clips its own element's outline and box-shadow along with the
-  corner, so an offset outline draws on the tier group (a plain div) and silently on
-  nothing else.
+  exist.** `MENU_ITEMS` is the list, `activateMenu` is what A fires, and the mark
+  is a pair of sight BRACKETS closing in on two corners of the row, plus the
+  row's caption lighting — never a fill, since the tier buttons and Deploy are
+  *already* filled hot to say what is chosen. **Anything drawn ON a chamfered
+  control has to be INSET**: every button here is cut by a `clip-path`, which
+  clips its own element's outline and box-shadow along with the corner. That is
+  why the brackets are pseudo-elements of the ROW (which is not clipped), why a
+  focused plate's ring is an inset shadow, and why Deploy's glow is a
+  `drop-shadow` filter on its row rather than a shadow on the button.
 - **A / Enter fire the cursor's row and BREAK; Start still starts the round from
   anywhere.** Both flags come up on the same frame for A, so the order is the whole
   mechanism — without the break, A on the settings row opens the screen and then
@@ -982,9 +955,11 @@ only way in.
   now; the button carries the mouse and the tap by itself. Restoring a
   click-anywhere confirm to a screen that has controls on it restores that bug.
 - **The cursor survives a redraw and resets when the card is RAISED**
-  (`OverlayScreen.card`). `showMenu` is called again on every difficulty change and on
-  the way back from the kit and settings screens; a cursor that jumped home each time
-  would make the row you just left the one place you cannot stay.
+  (`OverlayScreen.card`). `showMenu` is called again on every map step, every
+  difficulty change and on the way back from the kit, settings and lobby
+  screens; a cursor that jumped home each time would make the row you just left
+  the one place you cannot stay. On the menu that is now structural rather than
+  a guard: the card is BUILT on a raise and PATCHED by every later call.
 
 **The LEFT STICK drives all of it, and holding a direction repeats.** It is the
 left stick alone (the right one turns the kit turntable), read raw against
@@ -996,99 +971,122 @@ buttons, so opposing presses cancel and a diagonal resolves into one step per ax
 is what makes a stick usable (it has no detent to tap) and deliberately does not
 extend to confirm or back.
 
-**Each screen hangs off the SHELL's tracks, and what is left screen-local is
-what only that screen has.** `--col` is gone — the one content width every
-block measured to was what made these screens a column in the middle of a
-window (see the shell, at the top of this file). `#deploy` still declares
-`--map`, because the map's side is genuinely the number the orders panel beside
-it is measured against.
+**The BUMPERS turn the page, from anywhere** — LB/RB on a pad, Q/E or Page
+Up/Down on a keyboard (`menuPrevPressed`/`menuNextPressed`, a third `stepNav`
+axis so opposing presses cancel and a held one repeats). On the menu the page is
+the MAP, which is what lets the map reel sit in the cursor's list without being
+the only way to reach it: a player on Deploy can look through every map without
+leaving the button they are about to press. Nothing in a round reads these —
+RB is the grenade and E is the vehicle verb there.
 
-- **The menu's rows all state the same three tracks**, so the labels line up
-  down the rail and every control begins on one edge — a label column sized to
-  `max-content` is measured per row, and five rows would find five widths. Each
-  row is a box of its own rather than `display: contents`, because each one now
-  carries a selection: a directional wash and an accent bar down its left side.
-  The control column is `minmax(0, 1fr)`, so the four difficulty tiers and the
-  kit button span the same width. **The accelerator column is given a WIDTH
-  rather than being left to shrink-wrap**, and that is the half of the
-  alignment that was missing: the third track is `auto`, so a hint that
-  measures itself sizes that track per row — `L / Y` is thirty pixels and `O`
-  is eight — and every control on the rail started on one edge and then ended
-  on a different one, which on a column of plates is the misalignment that
-  shows. The width collapses with the hint at `display: none`, so the narrow
-  layout reserves no lane for a chip it is not drawing.
-- **The rail is CAPPED at 600 px, and the cap is what makes the picture the
-  screen.** Left to fill its `5fr` track it is 700 px of rows on a 1920 window
-  and a Deploy button as wide as a paragraph, with the dossier stretched to
-  match on the other side and the photograph reduced to whatever showed between
-  them. Capped, the rail is a column of controls, the dossier is a document,
-  and what is between and behind them is the map.
-- **The rows are GROUPED, because five equal rows are a form and three plus two
-  is a menu.** `Operation` is what the round will be made of — the map, the
-  enemy, the kit — and the two under the second tag are the places you can go
-  instead of starting one. Nothing about the cursor's order moved: `MENU_ITEMS`
-  still runs parameters, then destinations, then the action, and the tags are
-  drawn between rows the cursor was already walking in that order. On a
-  landscape phone the tags are the first thing dropped, because they are the
-  only text on the rail that names nothing you can press and the hairline
-  between the two groups says what the second one said.
-- **The map row is a STEPPER and a ladder, not a strip of buttons, and that is
-  a correctness fix rather than a style.** Six maps ship and a dev build has
-  seven; a segmented row gives each an equal share of one column, which is
-  96 px on a laptop and 42 on a phone, and every shipped map read as `HOLLO…`,
-  `GREYF…`, `COLDH…` — a picker whose labels were all the same word. The
-  stepper names ONE map at whatever size the viewport can give it and the
-  ladder under it carries what the strip of buttons was really for: how many
-  there are and which of them this is. It costs nothing in reach — left and
-  right along this row was always what stepped it, the arrows are what a
-  pointer uses, and a ladder rung is how a pointer reaches the sixth map
-  without pressing an arrow five times. **`Game.setMap` CLAMPS**, so an arrow
-  at either end is drawn `off`: an arrow that looks live and answers nothing is
-  worse than one that says it has run out of row.
-  The rung's hit area is 14 px with a 4 px mark inside it
-  (`background-clip: content-box` over vertical padding) — a 4 px target is not
-  one on glass, and a 14 px bar is not a hairline.
-  **The ladder is INSIDE the row** — a second grid line, placed in column 2 —
-  rather than a strip beneath it, so it lines up with the control it belongs to
-  and shares that row's hover. A pointer travelling down to it must not take
-  the cursor off the map row on its way to a control that is the map row's.
-- **The LOADOUT row is the one opener with no caption on it.** Its VALUE is the
-  long thing: `Marksman rifle · Scope` and `Change kit` together overran the
-  control column at every viewport where the type is at full size, so the row
-  that had something to say was the one being ellipsised — and what the caption
-  said, the row's own label and the chevron already say. The other two keep
-  theirs, and lose them below 560 px of rail, where there is no room for a
-  name, a caption and a mark on one line and the name is the one that cannot
-  go.
-- **The panel beside the rail is redrawn on every cursor move and the rows are
-  not.** The rows carry the selection as a class on elements that already exist,
-  for the reasons below; the panel has no listener, no transition and no hover
-  state on it, so rewriting it costs one box's layout and nothing that can be
-  seen going wrong. `start` gets a DEPLOYMENT BRIEF rather than nothing, and
-  that is where the cursor opens — the map, the enemy and the kit, which are
-  the whole of what the button under it is about.
-- **On this card the panel is a PLATE, and it is the only place `.ui-panel` is
-  a box.** The panel is a rule down an edge everywhere else because the
-  settings screen and the lobby stand on a solid veil, where a box would be a
-  container drawn around nothing. This card stands on a photograph that the
-  scrim deliberately lets through at close to full strength on exactly the side
-  the panel is on, so it has to carry its own darkness or the map's name is set
-  over whatever the sky happened to be doing in that frame. It is centred in
-  its track rather than stretched, and capped: full height it was a plate with
-  four lines at the top of it, which is the argument `.ui-panel` makes for
-  being a rule, made the other way round for the one screen that needs the box.
-- **The card's entrance runs on a RAISE and never on a redraw.** `showMenu`
-  rewrites this card wholesale on every map step and on the way back from the
-  kit and settings screens, so an entrance keyed to the markup existing would
-  replay on each of them — the rail would re-deal itself every time the player
-  pressed Right along the map row, which is the one press it is most likely to
-  be seen on. `setCardClass` puts `.enter` on the root only when the card was
-  not already up, exactly as the cursor is only reset then, and it has to go on
-  before the markup is written because what animates are elements that do not
-  exist yet. The dossier FADES where the rail rises, and that is a canvas
-  rather than a taste: the schematic is sized off the box it is painted into,
-  and a fade cannot even raise the question a travelling panel would.
-- **The map row's schematic is never drawn from a BUILT map**
+**Each screen but the menu hangs off the SHELL's tracks, and what is left
+screen-local is what only that screen has.** `--col` is gone from the shell —
+the one content width every block measured to was what made these screens a
+column in the middle of a window (see the shell, at the top of this file).
+`#deploy` still declares `--map`, because the map's side is genuinely the number
+the orders panel beside it is measured against.
+
+## The main menu
+
+**A title screen, not a form.** The chosen map's photograph fills the window,
+its NAME is the largest thing on the card — set over the picture like a title
+card, with its number in the rotation hollow and enormous behind it — and the
+wordmark is a lockup in the corner. Everything the round is made of is one
+column down the left: the map reel, the enemy, the kit and Deploy, in the order
+the decisions are made. Online and Settings are a system bar in the top corner.
+The right-hand side is an INTEL plate on whatever the cursor rests on.
+
+- **The cursor's list is a RING, and that is what keeps one list honest on a
+  screen that is not one column.** `MENU_ITEMS` runs Online, Settings, map,
+  enemy, kit, Deploy: up off the top of the column lands on the system bar,
+  which is where the bar is on the glass, down off Deploy wraps up to it, and
+  left and right walk ALONG the bar (`stepMenuItem`). The two value rows step
+  their value on left and right and CLAMP; A cycles them and WRAPS, so a
+  confirm always changes something.
+- **The maps are a REEL of photographs** — every map on screen at once as a
+  slim slice of its own picture, the chosen one opened to a full 16:9 frame.
+  It replaced a stepper, which replaced a strip of names, and each of those
+  failed in one of the two ways a map picker can: a strip gave seven maps an
+  equal share of one column and every one read as `HOLLO…`; a stepper named one
+  map and hid how many there were. A photograph needs no label to be told
+  apart. **The two card widths are multiples of the card's HEIGHT stated in
+  the SCRIPT** (`CARD_SLIM`, `CARD_WIDE`) and handed to the stylesheet, because
+  `centreReel` has to know where the chosen card will END UP while its width is
+  still transitioning. A reel longer than its row scrolls: natively under a
+  thumb (`touch-action: pan-x`, the one gesture this interface hands back to
+  the browser) and by being re-centred on every step under a pad or a key.
+- **The reel's pictures are THUMBNAILS the client makes** (`shotThumbUrl`):
+  each photograph decoded once, drawn down to 480 px, re-encoded as an object
+  URL and cached for the session. Seven cards pointed at the full 1920x1080
+  shots keep seven 8 MB bitmaps alive for a strip whose widest card is a couple
+  of hundred pixels, which on the phone this menu is laid out for is real
+  memory spent on nothing. The backdrop still takes the full shot. A map with
+  no photograph keeps its plate, which is not a broken card.
+- **Every PROMPT is drawn on its control, for the device in hand** — a key cap,
+  a pad button in the controller's own colours (A green, Y yellow, the bumpers
+  as tabs), or nothing under a finger, where the control is its own prompt.
+  Both labels are in the markup (`glyph`: `data-k`, `data-p`) and the card's
+  `dev-*` class picks one, so picking up a pad turns every prompt over in one
+  class write with no redraw. `Game` pushes the device every menu frame from
+  `InputManager.padInHand`/`touchActive` — **but only once `anyDeviceUsed`**,
+  because a phone's first frame has touched nothing and would otherwise be
+  prompted for Enter; until then the card keeps its own guess off
+  `(hover: none) and (pointer: coarse)`. The foot's hint line follows the same
+  class and is absent under a finger.
+- **The card is BUILT on a raise and PATCHED after** (`buildMenu`,
+  `patchMenu`), and that is what lets a map change ANIMATE: the chosen card
+  opens, the hero wipes the new name in (`.swap`), and the photograph
+  cross-fades, all on elements that were already there. Written wholesale on
+  every press, as it used to be, each of those was a jump cut. The patch writes
+  classes and text and REPLACES only the hero, because replacing it is how the
+  swap replays; the hero is rewritten only when the map actually changed, so a
+  difficulty change does not re-announce the same map. **The entrance runs on
+  a raise and never on a patch** — `.enter` goes on the root in `setCardClass`
+  before the markup exists. At boot `Game` shows the menu and then enters the
+  `menu` state inside one task; the second call is a patch, so the entrance the
+  first one started runs on (it used to be thrown away, which is what the old
+  `MENU_ENTER_MS` window existed to paper over).
+- **The intel plate is REDRAWN on every cursor move and nothing else is.** It
+  has no listener, no hover state and no transition, so a rewrite costs one box.
+  The map row and Deploy both show the map's PLAN with a key to its marks —
+  the one thing the photograph cannot tell you is where the flags are — the
+  enemy row the tier's meter and reaction time, the kit its table. **It is a
+  PLATE and not an open column** because it stands on the side of the picture
+  the scrim deliberately leaves light.
+- **ONE UNIT, `--u`, is one pixel of a 1080-line screen**, `clamp()`ed over
+  `vmin`: a console front end scales with the vertical resolution, so a 1440p
+  monitor gets the 1080p composition a third bigger rather than the same
+  pixels with more emptiness round them — which is what the shell's `clamp(…,
+  88px)` ceilings did to this card. **Everything READ is `max()` of the unit
+  and a pixel FLOOR** (the `--t-*` type scale, prompts, hit areas), because a
+  phone's unit is half a pixel and a caption set to scale there is a caption
+  nobody can read; the floors are what make the phone templates a layout rather
+  than a miniature. A SHAPE (a gap, a chamfer) follows the unit with no floor.
+  **`--hit` is a finger** — 44 px under a coarse pointer and 0 otherwise — and
+  sits under every control as a `min-height`, so a desktop is untouched.
+- **The frame is capped at 2.4:1 and centred** (`--gx`): a 21:9 monitor is used
+  edge to edge and a 32:9 one gets the same composition in its middle, rather
+  than a column of controls a metre from the intel it is read against. The
+  photograph is not capped; it is its own root and runs to the glass.
+- **Four TEMPLATES over one set of named areas**, chosen by the two things that
+  actually run out. WIDE is column, art, intel. Under 1100 px wide or 620 tall
+  the intel GOES — it is the one block that is not a control — and the hero's
+  own figures (points, extent, visibility) are what is left of it. A phone held
+  SIDEWAYS (landscape, 560 tall or less) is two columns — the map on the left,
+  the enemy, the kit and Deploy on the right under the thumb — the only shape
+  in which four rows and a title fit 360 px of height at a size a finger can
+  use; there the TITLE is sized off the width (`6vw`), because it shares the
+  width with that column and eleven capitals sized off the height ran under the
+  loadout plate. A phone held UPRIGHT stacks the column at the BOTTOM of the
+  glass where the thumbs are, capped at 680 px so an upright tablet does not
+  get a Deploy button half a metre wide, with the photograph cropped into the
+  space above it. Under 560 px wide the system bar keeps its marks and loses
+  its words.
+- **The card opts out of `--ov-scale`.** That ladder scales `#overlay` down
+  under 380 px of height; this card is laid out for those viewports by its
+  floors, and a scaled card is a scaled 44 px target.
+
+- **The intel's schematic is never drawn from a BUILT map**
   ([`MapThumb.ts`](../src/ui/MapThumb.ts)). The deploy screen draws out of the
   finished collider set, which is the honest way to draw a map you are standing
   in; the menu is the one screen in the game where there is no built map at
@@ -1135,17 +1133,20 @@ it is measured against.
   count, the extent, the view distance, the reaction time — so a panel cannot
   describe a map or a difficulty that is not the one being played.
 - **Only the controls opt into pointer events, never the rows.** `#hud` is
-  `pointer-events: none` and the menu's confirm is a mouse-down anywhere, so a row
-  that claimed events would turn its labels, hints and the grid's gaps into dead zones
-  where a click does nothing instead of starting the round. **The cost is that a new
-  control is unclickable until it names itself**, and the failure is quiet from both
-  sides: the keyboard fires it through `activateMenu`, which never touches the DOM, so
-  the row works perfectly for whoever is testing with a pad and is dead under the
-  mouse. The screen-openers share one list in `base.css` (`kit-open`,
-  `settings-open`, `mp-open`, `#deploy-kit`) and the selection ring is a second list
-  in `overlay.css` — a fifth opener goes in **both**, not just the first. The
-  multiplayer button shipped in neither and read as a bug in the button rather than a
+  `pointer-events: none`, so a row, a caption, the art and the grid's gaps stay
+  inert and a click on any of them does nothing — which is what keeps Deploy
+  the pointer's only way into a round. **The cost is that a new control is
+  unclickable until it names itself**, and the failure is quiet from both
+  sides: the keyboard fires it through `activateMenu`, which never touches the
+  DOM, so the row works perfectly for whoever is testing with a pad and is dead
+  under the mouse. On the menu every control states `pointer-events: auto` in
+  its own rule in `overlay.css` (the reel's container too, or a thumb cannot
+  scroll it); the deploy screen's kit button is `deploy.css`'s. The multiplayer
+  button once shipped without it and read as a bug in the button rather than a
   missing rule.
+
+## After the menu: the deploy screen
+
 - **`#deploy-actions` is a column**, now that the buttons are in an orders panel
   beside the map rather than under it. They were a wrapping row because the
   map's width was all they had, and on a 768-tall laptop the longest kit

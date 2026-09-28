@@ -532,20 +532,20 @@ a stylesheet — one possible layout, everything else squeezed beside it.
 **Anything else that wants to place a 3D object against the interface owes the
 same shape.**
 
-**The menu stands on a PHOTOGRAPH of the map**, and `#menu-shot` is a root of its
-OWN at z-index 9 rather than a child of `#overlay`, which would paint over the
-veil whatever its z-index. **A map with no row in `mapShots.ts` is not broken.**
-**Its scrim is the one in this interface that is DIRECTIONAL**, which the
-shell's ellipse cannot be because the two demands are in different places; **the
-dossier is therefore the one `.ui-panel` that is a BOX**, and **the menu is the
-one screen with a one-column threshold of its own**. **The map row is a
-STEPPER**, seven maps in a segmented row of equal shares being `HOLLO…`, `GREYF…`,
-`COLDH…` at every viewport a player has. **The entrance animation is keyed to
-the card being RAISED** (`setCardClass`'s `raised`), never to its markup
-existing — `showMenu` rewrites this card on every map step.
+**The MENU is a title screen and the one screen NOT drawn in the shell**: the
+chosen map's PHOTOGRAPH is the screen (`#menu-shot`, a root of its OWN at z-index
+9, because a child of `#overlay` would paint over the scrim whatever its
+z-index), its name is the title, and the round's decisions are one column over
+it on a grid of named areas with four templates. **A map with no row in
+`mapShots.ts` is not broken.** **The maps are a REEL of photographs** — a strip
+of names read `HOLLO…` at every viewport and a stepper hid how many there were —
+turned from anywhere by the BUMPERS (LB/RB, Q/E). **Every prompt is drawn on its
+control for the device in hand**, picked by a `dev-*` class the stylesheet reads,
+and none under a finger. **It is BUILT on a raise and PATCHED after**, which is
+what lets a map change animate, and the entrance is keyed to the RAISE.
 
 **THERE ARE THREE MAPS OF THE SAME PLACE HERE AND THEY ARE ONE DRAWING** — the
-menu's dossier, the deploy screen and the corner minimap. `ui/mapPlan.ts` is
+menu's intel plate, the deploy screen and the corner minimap. `ui/mapPlan.ts` is
 WHAT is drawn (the floor, the water, the carriageways, the masses, and
 **nothing about a round**) and `ui/mapPaint.ts` is what it looks like; a screen
 supplies a projection and its own overlay, and **a fourth surface is a

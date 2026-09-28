@@ -1011,14 +1011,15 @@ src/
       overlay.css       #   the .overlaid class they raise, and #menu-shot, the
                         #   map photograph the menu stands on: a second root of
                         #   its own so it survives the card being rewritten and
-                        #   stays UNDER the veil, drifting, behind a scrim
-                        #   raked across the frame rather than the shell's
-                        #   centred one. The menu is a
-                        #   LIST: MENU_ITEMS is the cursor's whole world, drawn
-                        #   as a rail of two GROUPS — the map a stepper and a
-                        #   ladder, never a strip of buttons — with a DOSSIER
-                        #   beside it describing the row the cursor is on, the
-                        #   one .ui-panel in the tree that is a plate. The
+                        #   stays UNDER the scrim, drifting. The menu is the
+                        #   one screen NOT in the shell: a title screen on its
+                        #   own grid of named areas (four templates, one unit,
+                        #   `--u`), the map's name as the hero, a column of the
+                        #   round's decisions — a REEL of map photographs, the
+                        #   enemy, the kit, Deploy — a system bar, and an INTEL
+                        #   plate on whatever the cursor rests on. MENU_ITEMS
+                        #   is a RING; prompts are per DEVICE (`dev-*`); the
+                        #   card is BUILT on a raise and PATCHED after. The
                         #   pause is the one card that
                         #   does not take the screen — left-anchored over a
                         #   round that is still worth seeing
@@ -1040,8 +1041,8 @@ src/
                         #   two marks all three share, a control point's zone
                         #   and the hexagon `hud.css` names it with. Colour
                         #   means OWNERSHIP here and nothing else does
-    MapThumb.ts         # The menu panel's map schematic: the projection into
-                        #   the dossier's canvas, and the flags and home gates
+    MapThumb.ts         # The menu intel's map schematic: the projection into
+                        #   the intel plate's canvas, and the flags and home gates
                         #   over the plan. Never touches a built GameMap — the
                         #   menu is the one screen where there is none — so it
                         #   takes the FLOOR and the COLLIDER BAKE as arguments
@@ -1052,7 +1053,9 @@ src/
                         #   was taken from, which is what lets `npm run shots`
                         #   retake it rather than hunt for the frame again. A
                         #   map with no row here simply has no backdrop. Not a
-                        #   field on MapDef, because the SERVER imports those
+                        #   field on MapDef, because the SERVER imports those.
+                        #   Also the menu reel's THUMBNAILS, downscaled once a
+                        #   session on the client rather than committed
     DeployScreen.ts     # Top-down deploy map, with the orders panel beside it
       deploy.css        #   rather than under it. The plan is mapPaint's,
                         #   PRERENDERED once per map and blitted — this screen

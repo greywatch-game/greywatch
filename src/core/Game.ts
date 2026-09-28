@@ -3515,6 +3515,18 @@ export class Game {
       if (this.input.menuDownPressed) this.overlayScreen.moveMenuSelection(1);
       if (this.input.menuLeftPressed) this.overlayScreen.stepMenuItem(-1);
       if (this.input.menuRightPressed) this.overlayScreen.stepMenuItem(1);
+      // The bumpers turn the MAP wherever the cursor is resting — the page
+      // this screen is about, and the console idiom for turning one.
+      if (this.input.menuPrevPressed) this.overlayScreen.stepMap(-1);
+      if (this.input.menuNextPressed) this.overlayScreen.stepMap(1);
+      // Which device's prompts the card draws. Pushed rather than read, the
+      // screen knowing nothing about `InputManager`; it compares before it
+      // touches the DOM, so this is a string compare a frame.
+      if (this.input.anyDeviceUsed) {
+        this.overlayScreen.setInputDevice(
+          this.input.padInHand ? "pad" : this.input.touchActive ? "touch" : "kbm",
+        );
+      }
       // Enter and pad A fire the cursor's row, and BREAK — they raise
       // `confirmPressed` on the same frame, and the fall-through below
       // would otherwise start the round out from under whichever screen

@@ -42,7 +42,7 @@ import type { GameMap, SpawnPointDef } from "../world/MapBuilder";
  * authored minimap. That keeps the two from ever disagreeing — if a building
  * blocks movement it appears here, and nothing has to be updated twice when the
  * layout changes. It is the same drawing the corner minimap and the menu's
- * dossier make of the same place, at three magnifications; see
+ * intel plate make of the same place, at three magnifications; see
  * `mapPaint.ts` for what that buys and `docs/ui.md` for what it replaced.
  *
  * Note the CSS contract: `#hud` is `pointer-events: none` so the HUD never eats
@@ -397,7 +397,7 @@ export class DeployScreen {
       // The one of the three maps that letters its grid. It is the whole
       // window, and it is the map a player reads a position OFF — "the barn in
       // D4" is a thing two people can say to each other, and neither the
-      // dossier's thumbnail nor a turning corner map can carry it.
+      // menu's intel plate nor a turning corner map can carry it.
       grid: "labelled",
     });
     this.base = base;
