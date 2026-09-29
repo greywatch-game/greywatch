@@ -130,7 +130,8 @@ src/
                         #   The one config file a tool rewrites (F4)
     graphics.ts         # Render pipeline knobs + pooled effects (graphics,
                         #   effects)
-    hud.ts              # Minimap and damage arcs (minimap, damageIndicator)
+    hud.ts              # Minimap, damage arcs and the pause card's refresh
+                        #   in a match (minimap, damageIndicator, pauseCard)
     net.ts              # The wire's own numbers: the socket path, the
                         #   interpolation delay and clock window, the reconnect
                         #   backoff, the hit-credit window, the ping bands the
@@ -1029,9 +1030,11 @@ src/
                         #   plates, or a wait plate, in a match), the top of
                         #   the board as the intel, and Main menu / Leave
                         #   match in the system corner. The
-                        #   pause is the one card that
-                        #   does not take the screen — left-anchored over a
-                        #   round that is still worth seeing
+                        #   PAUSE is a title screen for the round it holds and
+                        #   the one card that does not take the screen: the
+                        #   map's name as the title (Paused / Match live), your
+                        #   round so far, and a column of plates — Resume the
+                        #   hot one, the way back — anchored left over the round
     fieldNotes.ts       # The building card's one line of advice: a table of
                         #   notes about how this game plays, numbers read off
                         #   CONFIG, armour notes only on armoured maps, never

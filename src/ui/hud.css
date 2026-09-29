@@ -202,8 +202,8 @@
   --cham: 20px;
   --frame-fill: rgba(6, 8, 13, 0.94);
   /* Wide enough for the score column on both sides of the panel and the
-     ping column beside it, and no wider: this is inside #hud and so is NOT
-     scaled by --ov-scale (see base.css), which makes the width a promise to
+     ping column beside it, and no wider: nothing under #hud is scaled to a
+     short viewport (see base.css), which makes the width a promise to
      the shortest viewport the game runs on rather than a layout preference. */
   min-width: 700px;
   padding: 0 0 15px;
@@ -379,8 +379,8 @@
 #scoreboard.deep .sb-pname { letter-spacing: 0.04em; }
 /* Twenty-four rows two-up is ~430 px of panel, and a landscape phone is 390.
    This is the one place the board scales itself, and it is deliberately a
-   TRANSFORM rather than `--ov-scale`: `#scoreboard` lives inside `#hud`, which
-   that variable does not touch (see base.css), and the whole reason its width
+   TRANSFORM of its own: nothing else under `#hud` is scaled to a viewport
+   (see base.css), and the whole reason its width
    is a fixed promise is that the layout must not move under a viewport. A
    panel that is simply too tall for the screen is the one case where nothing
    about the layout is wrong and the only honest answer is to draw it smaller —

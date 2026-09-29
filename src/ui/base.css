@@ -162,38 +162,15 @@ body { font-family: "Segoe UI", "Helvetica Neue", Arial, sans-serif; }
   color: rgba(255, 255, 255, 0.5);
 }
 
-/* --- short viewports (a phone held sideways) ---
-   The menu and the deploy map stack a title, a picker, a table and a
-   prompt, and NOTHING in this HUD scrolls — so a stack authored in px
-   for a 720p window simply runs off both ends of a 350px-tall landscape
-   phone. The fix is to draw the whole screen at the size it was
-   authored for and scale it down: the box is grown by 1/s so that
-   scaling it by s about the top-left lands exactly on the viewport
-   again, which keeps the backdrop full-bleed. At the default s = 1 both
-   the size and the transform are identities, so a desktop layout is
-   untouched pixel for pixel.
-
-   **IT IS A SAFETY VALVE NOW, NOT THE LAYOUT**, and the pause card is
-   the one screen left that takes it. Everything else is sized in
-   `clamp()` over `vmin`/`vh`, so it fits the viewport it is given rather than being drawn at one size and shrunk to
-   another — and a fluid layout fought this transform rather than being
-   helped by it: at the old 0.45 a landscape phone got a legible desktop
-   menu rendered at 45%, which is a miniature of the wrong design. The
-   ladder is therefore 1 down to viewports shorter than anything the
-   fluid minimums fit in, and gentle when it does engage. Raising it back
-   toward the old numbers un-does the responsive layout wholesale.
-
-   `#loadout` is deliberately NOT in this list. Its stage is a hole in
-   the scrim that the 3D turntable is placed through, back-projected
-   from the SAME viewport fractions the CSS uses (see
-   CONFIG.viewmodel.inspect) — a transform would move the hole and
-   leave the weapon behind it. `#settings` and `#lobby` are not in it
-   either, and nor are the three front-end cards on `#overlay`: all are
-   front-end screens laid out for a phone by their own floors (see THE FRONT END below), and a
-   scaled screen is a scaled 44 px target. */
-#hud { --ov-scale: 1; }
-@media (max-height: 380px) { #hud { --ov-scale: 0.84; } }
-@media (max-height: 300px) { #hud { --ov-scale: 0.66; } }
+/* --- short viewports: NO transform ---
+   Every screen under `#hud` used to be drawn at the size it was authored
+   for and scaled down on a short viewport (`--ov-scale`), which gave a
+   landscape phone a miniature of a desktop layout: right proportions,
+   unreadable type, a 44 px target drawn at 37. Each screen left that ladder
+   as it became a front-end screen sized in `clamp()` over `vmin` with a
+   pixel FLOOR under everything that is read, and the pause card was the
+   last to go. Nothing here scales a screen any more; a new one lays itself
+   out for a phone by its own floors (see THE FRONT END below). */
 
 /* --- THE GAUGES' OWN METRIC, and it is a UNIT rather than a transform ---
    The gameplay chrome was authored in pixels for a 720p window — a 224 px
@@ -255,12 +232,6 @@ body { font-family: "Segoe UI", "Helvetica Neue", Arial, sans-serif; }
   --hud-trim: 0.78;
   --hud-trim-cap: 0.94;
 }
-#overlay {
-  width: calc(100% / var(--ov-scale));
-  height: calc(100% / var(--ov-scale));
-  transform: scale(var(--ov-scale));
-  transform-origin: top left;
-}
 
 /* =====================================================================
    THE TOKENS every card and screen under `#hud` is set in.
@@ -269,17 +240,15 @@ body { font-family: "Segoe UI", "Helvetica Neue", Arial, sans-serif; }
    with the way out along it, the frame every screen between the title and
    the world was drawn in. Each screen left it for THE FRONT END below as it
    became a title screen (the menu, the kit screen, the settings screen,
-   the lobby, the deploy screen, and last the round-over card), and the
-   frame went with the last of them; `docs/ui.md` keeps what it taught. What
-   is left is what the pause card and the front end's plates still read: the
-   type scale, the surfaces, and two pieces of vocabulary.
+   the lobby, the deploy screen, the round-over card, and last the pause),
+   and the frame went with the last of them; `docs/ui.md` keeps what it
+   taught. What is left is what the front end's plates still read: a type
+   scale for the small parts they share, the surfaces, and two pieces of
+   vocabulary.
    ===================================================================== */
 #hud {
-  /* The pause card's inset. */
-  --ui-pad-x: clamp(18px, 4vw, 88px);
-  /* The pause card's type scale, top to bottom. The front end is set on
-     `--t-*` below instead. */
-  --ui-h1: clamp(30px, 7vmin, 88px);
+  /* A type scale for the intel's parts (`.ov-slot`, `.ui-eyebrow`,
+     `.ui-facts`); a screen's own type is set on `--t-*` below. */
   --ui-row: clamp(12px, 1.75vmin, 16px);
   --ui-cap: clamp(9px, 1.15vmin, 11px);
   /* Surfaces. A plate is what a control is drawn on, a rule is what
@@ -336,9 +305,10 @@ body { font-family: "Segoe UI", "Helvetica Neue", Arial, sans-serif; }
 /* =====================================================================
    THE FRONT END — every screen between the title and the world, laid out
    like a console title screen: the main menu (`#overlay.card-menu`), the
-   round-over card (`#overlay.card-roundover`), the kit screen
-   (`#loadout`), the settings screen (`#settings`), the lobby (`#lobby`)
-   and the deploy screen (`#deploy`). All six are sized off one unit and
+   round-over card (`#overlay.card-roundover`), the pause
+   (`#overlay.card-pause`), the kit screen (`#loadout`), the settings
+   screen (`#settings`), the lobby (`#lobby`) and the deploy screen
+   (`#deploy`). All seven are sized off one unit and
    draw their prompts on their controls, so the unit and the prompt are
    stated once, here, for all of them. The building card
    (`#overlay.card-building`) takes the unit and none of the prompts: it
@@ -358,7 +328,7 @@ body { font-family: "Segoe UI", "Helvetica Neue", Arial, sans-serif; }
    and centres it, so 21:9 is used edge to edge and 32:9 keeps the
    composition together.
    ===================================================================== */
-:is(#overlay.card-menu, #overlay.card-building, #overlay.card-roundover, #loadout, #settings, #lobby, #deploy) {
+:is(#overlay.card-menu, #overlay.card-building, #overlay.card-roundover, #overlay.card-pause, #loadout, #settings, #lobby, #deploy) {
   --u: clamp(0.5px, calc(100vmin / 1080), 2.4px);
   --hit: 0px;
   --gx: max(clamp(16px, 3.4vw, 104px), calc((100% - 240vh) / 2));
@@ -372,7 +342,7 @@ body { font-family: "Segoe UI", "Helvetica Neue", Arial, sans-serif; }
   --cut: max(6px, calc(10 * var(--u)));
 }
 @media (pointer: coarse) {
-  :is(#overlay.card-menu, #overlay.card-building, #overlay.card-roundover, #loadout, #settings, #lobby, #deploy) { --hit: 44px; }
+  :is(#overlay.card-menu, #overlay.card-building, #overlay.card-roundover, #overlay.card-pause, #loadout, #settings, #lobby, #deploy) { --hit: 44px; }
 }
 
 /* --- the prompts (`prompts.ts`) ---
@@ -381,7 +351,7 @@ body { font-family: "Segoe UI", "Helvetica Neue", Arial, sans-serif; }
    turns every prompt on the screen over in one class write. A prompt with no
    label for the device in hand is not drawn, and under a finger none are —
    the control under the thumb is its own prompt. */
-:is(#overlay.card-menu, #overlay.card-roundover, #loadout, #settings, #lobby, #deploy) kbd.gl {
+:is(#overlay.card-menu, #overlay.card-roundover, #overlay.card-pause, #loadout, #settings, #lobby, #deploy) kbd.gl {
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -401,15 +371,15 @@ body { font-family: "Segoe UI", "Helvetica Neue", Arial, sans-serif; }
   box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.26);
   clip-path: polygon(4px 0, 100% 0, 100% calc(100% - 4px), calc(100% - 4px) 100%, 0 100%, 0 4px);
 }
-:is(#overlay.card-menu, #overlay.card-roundover, #loadout, #settings, #lobby, #deploy) kbd.gl::before { content: attr(data-k); }
-:is(#overlay.card-menu, #overlay.card-roundover, #loadout, #settings, #lobby, #deploy).dev-pad kbd.gl::before { content: attr(data-p); }
-:is(#overlay.card-menu, #overlay.card-roundover, #loadout, #settings, #lobby, #deploy).dev-kbm kbd.gl:not([data-k]),
-:is(#overlay.card-menu, #overlay.card-roundover, #loadout, #settings, #lobby, #deploy).dev-pad kbd.gl:not([data-p]),
-:is(#overlay.card-menu, #overlay.card-roundover, #loadout, #settings, #lobby, #deploy).dev-touch kbd.gl { display: none; }
+:is(#overlay.card-menu, #overlay.card-roundover, #overlay.card-pause, #loadout, #settings, #lobby, #deploy) kbd.gl::before { content: attr(data-k); }
+:is(#overlay.card-menu, #overlay.card-roundover, #overlay.card-pause, #loadout, #settings, #lobby, #deploy).dev-pad kbd.gl::before { content: attr(data-p); }
+:is(#overlay.card-menu, #overlay.card-roundover, #overlay.card-pause, #loadout, #settings, #lobby, #deploy).dev-kbm kbd.gl:not([data-k]),
+:is(#overlay.card-menu, #overlay.card-roundover, #overlay.card-pause, #loadout, #settings, #lobby, #deploy).dev-pad kbd.gl:not([data-p]),
+:is(#overlay.card-menu, #overlay.card-roundover, #overlay.card-pause, #loadout, #settings, #lobby, #deploy).dev-touch kbd.gl { display: none; }
 /* A pad's face buttons are drawn as the buttons are — round, and in the four
    colours the controller itself prints — because a prompt is read by the
    hand, and the hand knows the green one. The bumpers are a tab. */
-:is(#overlay.card-menu, #overlay.card-roundover, #loadout, #settings, #lobby, #deploy).dev-pad kbd.gl:is([data-p="A"], [data-p="B"], [data-p="X"], [data-p="Y"]) {
+:is(#overlay.card-menu, #overlay.card-roundover, #overlay.card-pause, #loadout, #settings, #lobby, #deploy).dev-pad kbd.gl:is([data-p="A"], [data-p="B"], [data-p="X"], [data-p="Y"]) {
   width: max(20px, calc(28 * var(--u)));
   min-width: 0;
   padding: 0;
@@ -418,11 +388,11 @@ body { font-family: "Segoe UI", "Helvetica Neue", Arial, sans-serif; }
   color: #0b0d12;
   box-shadow: inset 0 -2px 0 rgba(0, 0, 0, 0.25);
 }
-:is(#overlay.card-menu, #overlay.card-roundover, #loadout, #settings, #lobby, #deploy).dev-pad kbd.gl[data-p="A"] { background: #6fdc6a; }
-:is(#overlay.card-menu, #overlay.card-roundover, #loadout, #settings, #lobby, #deploy).dev-pad kbd.gl[data-p="B"] { background: #ff6b5e; }
-:is(#overlay.card-menu, #overlay.card-roundover, #loadout, #settings, #lobby, #deploy).dev-pad kbd.gl[data-p="X"] { background: #5ca8ff; }
-:is(#overlay.card-menu, #overlay.card-roundover, #loadout, #settings, #lobby, #deploy).dev-pad kbd.gl[data-p="Y"] { background: #ffd24a; }
-:is(#overlay.card-menu, #overlay.card-roundover, #loadout, #settings, #lobby, #deploy).dev-pad kbd.gl:is([data-p="LB"], [data-p="RB"]) {
+:is(#overlay.card-menu, #overlay.card-roundover, #overlay.card-pause, #loadout, #settings, #lobby, #deploy).dev-pad kbd.gl[data-p="A"] { background: #6fdc6a; }
+:is(#overlay.card-menu, #overlay.card-roundover, #overlay.card-pause, #loadout, #settings, #lobby, #deploy).dev-pad kbd.gl[data-p="B"] { background: #ff6b5e; }
+:is(#overlay.card-menu, #overlay.card-roundover, #overlay.card-pause, #loadout, #settings, #lobby, #deploy).dev-pad kbd.gl[data-p="X"] { background: #5ca8ff; }
+:is(#overlay.card-menu, #overlay.card-roundover, #overlay.card-pause, #loadout, #settings, #lobby, #deploy).dev-pad kbd.gl[data-p="Y"] { background: #ffd24a; }
+:is(#overlay.card-menu, #overlay.card-roundover, #overlay.card-pause, #loadout, #settings, #lobby, #deploy).dev-pad kbd.gl:is([data-p="LB"], [data-p="RB"]) {
   clip-path: none;
   border-radius: 7px 7px 3px 3px;
   color: #0b0d12;
@@ -431,7 +401,7 @@ body { font-family: "Segoe UI", "Helvetica Neue", Arial, sans-serif; }
 }
 /* Start is the small oval between the sticks on every pad. It keeps the
    plate's own colours, so it sits on Deploy's hot fill as a key cap does. */
-:is(#overlay.card-menu, #overlay.card-roundover, #loadout, #settings, #lobby, #deploy).dev-pad kbd.gl[data-p="Start"] {
+:is(#overlay.card-menu, #overlay.card-roundover, #overlay.card-pause, #loadout, #settings, #lobby, #deploy).dev-pad kbd.gl[data-p="Start"] {
   clip-path: none;
   border-radius: 999px;
 }

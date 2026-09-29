@@ -22,8 +22,9 @@
  * shaped like the layout: dark behind the column, the foot and the intel, and
  * thin in the middle.
  *
- * `--ov-scale` (base.css) does not reach this screen: its floors are what it
- * is laid out at on a phone, and a scaled screen is a scaled 44 px target.
+ * Nothing scales this screen down on a short viewport (base.css): its floors
+ * are what it is laid out at on a phone, and a scaled screen is a scaled
+ * 44 px target.
  */
 
 /* =====================================================================

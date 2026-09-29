@@ -514,9 +514,11 @@ exactly as a gamepad is, so nothing in gameplay has heard of it.
 **Every screen is a LIST, and a list whose rows can change under the cursor keeps
 its place by IDENTITY rather than by index** (the lobby is the one that can), and
 **the way OUT is a fixed place, never a row in its own list** — the system
-CORNER, top right. Every one of them is a TITLE SCREEN laid out as the menu is
-(the SHELL they were once framed in is retired), **sized off one unit over
-`vmin` with `--ov-scale` a safety valve only the pause still takes**. **A screen over another SCREEN is opaque and a screen over the SCENE is
+CORNER, top right; the pause alone comes back by its FIRST plate, Resume, being
+the one screen whose way back is also what a confirm on arrival must do. Every
+one of them is a TITLE SCREEN laid out as the menu is (the SHELL they were once
+framed in is retired), **sized off one unit over `vmin`, and nothing is scaled
+to a short viewport** — a screen fits a phone by its floors. **A screen over another SCREEN is opaque and a screen over the SCENE is
 not**, and **the PAUSE is the one card that does not take the screen**. **A ROW
 OF PICKS IS A GRID OF EQUAL SHARES, NEVER A WRAPPING FLEX ROW** — a flex row
 cannot be squeezed below its own longest word, so where it breaks is a
@@ -545,7 +547,9 @@ HUD's gameplay chrome off (`#hud.deploying`), because it draws the tickets and
 the flags itself; a new gauge that must be read between lives owes that list
 a look. The ROUND-OVER card is the sixth, in the menu's own frame: the RESULT
 the title in the winner's colour, the top of the board its intel, and Main
-menu / Leave match in its corner — it had no way off at all. **A front-end lid raised over other SCREENS takes them off the glass**
+menu / Leave match in its corner — it had no way off at all. The PAUSE is the
+seventh: the MAP the round is on the title (Paused offline, Match live in one),
+one column anchored left over the round it holds rather than a photograph. **A front-end lid raised over other SCREENS takes them off the glass**
 (`#hud.kitting`, `#hud.setting`, `#hud.lobbying` — `visibility`, so they
 return unredrawn) and is laid over the SCENE, so a new child of `#hud` that
 must survive one is carved out of every such rule by name, as `#hud-fps` is.
@@ -1638,7 +1642,7 @@ five to ten refreshes.
 → **[`docs/pwa.md`](docs/pwa.md)** — the version hash over names *and* contents,
 the `no-cache` requirement, the two assumptions that made a deploy take five
 launches, and the phone-shaped details (fullscreen on the document element,
-`--ov-scale`, why `#loadout` is excluded from it).
+and why no screen is scaled to a short viewport any more).
 
 ### Multiplayer: the server is the authority, and a slot is a slot
 

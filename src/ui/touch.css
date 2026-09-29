@@ -23,11 +23,11 @@
   inset: 0;
   pointer-events: none;
   /* The cluster is authored at the size a tablet wants and scaled down for a
-     phone held sideways, exactly as `--ov-scale` does for the menu — a 350px
+     phone held sideways, as the menu once was — a 350px
      tall viewport has no room for a 96px trigger and three columns above it.
      Each group scales about its own anchored corner, so nothing drifts off
      the edge it was pinned to.
-     It stops WELL short of `--ov-scale`'s 0.45, and that is the constraint
+     It stops WELL short of the 0.45 the menu was once drawn at, and that is the constraint
      this ladder is really written against: a control smaller than about 44 CSS
      px is one a thumb misses, so past this point the room has to come from
      somewhere else. It does — `#hud.touching` in base.css takes a fifth off

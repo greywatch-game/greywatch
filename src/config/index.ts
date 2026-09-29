@@ -31,7 +31,7 @@ import { touch } from "./touch";
 import { audio } from "./audio";
 import { mix } from "./mix";
 import { graphics, effects } from "./graphics";
-import { minimap, damageIndicator } from "./hud";
+import { minimap, damageIndicator, pauseCard } from "./hud";
 import { net } from "./net";
 import { profiling } from "./profiling";
 import { lighting } from "./lighting";
@@ -83,6 +83,7 @@ export const CONFIG = {
   graphics,
   minimap,
   damageIndicator,
+  pauseCard,
   net,
   profiling,
   lighting,

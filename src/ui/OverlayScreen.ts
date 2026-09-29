@@ -12,8 +12,8 @@
  * Invariants: only one card is up at a time and `hide()` is the single way down
  * from any of them. The menu is BUILT when it is raised and PATCHED on every
  * later `showMenu` — the other three are rewritten whole by each `show*`, the
- * building card patching only its bar and the words over it and the round-over
- * card only its ballot.
+ * building card patching only its bar and the words over it, the round-over
+ * card only its ballot and the pause only its two live figures.
  *
  * One class rather than four because the cards are one element, not four
  * screens that happen to overlap: they share the element, the veil and,
@@ -23,8 +23,9 @@
  * own state — a settings screen with rows to edit, a map picker — has earned a
  * file of its own; a card that is markup and a button has not. The building
  * card and the round-over card both stand in the menu's frame — its lockup,
- * its hero, its backdrop and its intel plate — which is the reason they are
- * here.
+ * its hero, its backdrop and its intel plate — and the pause takes its hero,
+ * its Deploy plate and the round-over card's own-round plate, which is the
+ * reason all three are here.
  *
  * **The round-over card's map BALLOT is the near miss, and it stays for a
  * reason worth stating.** It is a row of buttons and a cursor, which is the
@@ -70,22 +71,52 @@ import { glyph, guessDevice, type InputDevice } from "./prompts";
  */
 export type PauseAction = "resume" | "settings" | "restart" | "quit";
 /**
- * The pause card's rows, and the one of them that is not always offered.
+ * The pause card's column, in screen order: which ACTS are offered in which
+ * round. The words on each plate are `pausePlate`'s, since they name the map.
  *
- * `solo` is the third field: "Restart round" is a thing only the side running
- * the simulation may do, and in a match that is not this one. Left in, it read
- * as a way out of a round that was going badly and was instead a client tearing
+ * "Restart round" is offline only: it is a thing only the side running the
+ * simulation may do, and in a match that is not this one. Left in, it read as
+ * a way out of a round that was going badly and was instead a client tearing
  * its own world down under an authority that had not heard the key — the same
- * act the round-over card used to offer, arriving through a second door. Quit
- * to menu is the honest version of what that button was reaching for, and it is
- * on this list in both rounds.
+ * act the round-over card used to offer, arriving through a second door.
+ * Leaving is the honest version of what that button was reaching for, and it
+ * is on this list in both rounds.
  */
-const PAUSE_ITEMS: readonly [PauseAction, string, boolean][] = [
-  ["resume", "Resume", false],
-  ["settings", "Settings", false],
-  ["restart", "Restart round", true],
-  ["quit", "Quit to menu", false],
-];
+function pauseActions(solo: boolean): PauseAction[] {
+  return solo
+    ? ["resume", "settings", "restart", "quit"]
+    : ["resume", "settings", "quit"];
+}
+
+/**
+ * Everything the pause card draws itself from — the ROUND it is a pause in.
+ *
+ * `MenuState`'s shape and reason: an object, so the two flag counts and the
+ * board cannot be swapped for each other and still typecheck.
+ */
+export interface PauseState {
+  /** The map the round is on: the card's title, and its number behind it. */
+  map: MapDef;
+  index: number;
+  /** Whether this client runs the round — offline — or is a seat in a match. */
+  solo: boolean;
+  /** The enemy tier's name offline; null in a match, where it decides nothing. */
+  enemy: string | null;
+  /** Flags held by the viewer's side, of the map's own count. */
+  flagsMine: number;
+  /** Every body in the round, unsorted — the card ranks it as the board does. */
+  board: readonly BoardRow[];
+}
+
+/** The pause card's patchable parts, live only while it is up. */
+interface PauseRefs {
+  /** The hero's fact strip and the Your round plate — the two live figures. */
+  facts: HTMLElement;
+  you: HTMLElement;
+  /** What each was last written with, so a patch that moved nothing writes nothing. */
+  shownFacts: string;
+  shownYou: string;
+}
 
 /**
  * What the main menu's cursor can rest on.
@@ -295,8 +326,11 @@ const GITHUB_MARK = `<svg viewBox="0 0 16 16" aria-hidden="true"><path fill="cur
 const ICON_ONLINE = `<svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="square"><path d="M12 11v10M8 21h8"/><circle cx="12" cy="9" r="2"/><path d="M7.8 13.2a6 6 0 0 1 0-8.4M16.2 4.8a6 6 0 0 1 0 8.4M4.9 16.1a10 10 0 0 1 0-14.2M19.1 1.9a10 10 0 0 1 0 14.2"/></svg>`;
 const ICON_SETTINGS = `<svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="square"><circle cx="12" cy="12" r="3.2"/><path d="M12 2.5v3M12 18.5v3M2.5 12h3M18.5 12h3M5.3 5.3l2.1 2.1M16.6 16.6l2.1 2.1M5.3 18.7l2.1-2.1M16.6 7.4l2.1-2.1"/></svg>`;
 
+/** The pause's Restart round: the round going back round to its start. */
+const ICON_RESTART = `<svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="square"><path d="M4.5 12a7.5 7.5 0 1 0 2.2-5.3"/><path d="M4 3.5v4.5h4.5"/></svg>`;
+
 /** The way OUT, as the kit, settings and lobby screens draw their Back. */
-const ICON_BACK = `<svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="square"><path d="M15 5l-7 7 7 7"/></svg>`;
+const ICON_BACK =`<svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="square"><path d="M15 5l-7 7 7 7"/></svg>`;
 
 /**
  * How many lines of the board the round-over card's intel plate ranks. The
@@ -362,9 +396,16 @@ interface MenuRefs {
 
 export class OverlayScreen {
   private root: HTMLElement;
-  /** Live only while the pause card is up — the buttons die with its markup. */
-  private pauseButtons: HTMLElement[] = [];
+  /**
+   * The pause card's column, live only while it is up — the rows die with its
+   * markup. Each is the UNCLIPPED wrapper the cursor's brackets hang on, in
+   * the order of `pauseActs`.
+   */
+  private pauseRows: HTMLElement[] = [];
+  private pauseActs: PauseAction[] = [];
   private pauseIndex = 0;
+  /** The pause card's live figures, same lifetime. */
+  private pauseRefs: PauseRefs | null = null;
   /** Live only while the menu card is up, for the same reason. */
   private menuEls = new Map<MenuItem, HTMLElement>();
   private menuIndex = MENU_DEFAULT;
@@ -1141,7 +1182,7 @@ export class OverlayScreen {
   setInputDevice(device: InputDevice): void {
     if (device === this.device) return;
     this.device = device;
-    if (this.card !== "menu" && this.card !== "roundover") return;
+    if (this.card !== "menu" && this.card !== "roundover" && this.card !== "pause") return;
     for (const d of ["kbm", "pad", "touch"] as const) {
       this.root.classList.toggle(`dev-${d}`, d === device);
     }
@@ -1406,19 +1447,26 @@ export class OverlayScreen {
    * a player with no line on the board.
    */
   private yourRound(board: readonly BoardRow[]): string {
+    const inner = this.yourRoundInner(board, "Your round");
+    return inner ? `<div class="ro-plate ro-you">${inner}</div>` : "";
+  }
+
+  /**
+   * What is ON that plate, which the pause card draws too — the same round,
+   * asked about while it is still going. Empty for a player with no line.
+   */
+  private yourRoundInner(board: readonly BoardRow[], caption: string): string {
     const ranked = this.rankBoard(board);
     const at = ranked.findIndex((r) => r.you);
     if (at < 0) return "";
     const you = ranked[at];
     return `
-      <div class="ro-plate ro-you">
-        <div class="ro-cap"><span>Your round</span><b class="place">${ordinal(at + 1)} of ${ranked.length}</b></div>
+        <div class="ro-cap"><span>${caption}</span><b class="place">${ordinal(at + 1)} of ${ranked.length}</b></div>
         <div class="ro-figs">
           <div><b>${you.score}</b><span>Points</span></div>
           <div><b>${you.kills}</b><span>Kills</span></div>
           <div><b>${you.deaths}</b><span>Deaths</span></div>
-        </div>
-      </div>`;
+        </div>`;
   }
 
   /**
@@ -1818,96 +1866,189 @@ export class OverlayScreen {
   }
 
   /**
-   * The pause menu: a short action list and nothing else.
+   * The pause card — a title screen for the ROUND it holds.
    *
-   * It deliberately does NOT call `setOverlaid`. The menu and the round-over
-   * card hide the gameplay chrome because what is under them is last round's
-   * and no longer true; under a pause everything on screen is this round's and
-   * frozen exactly as it stood, so the tickets, the flags and your own vitals
-   * are worth reading. `#hud.paused` — which the HUD raises, not this — takes
-   * away only the things that would be lying.
+   * **The title is the MAP the round is on**, set where the menu and the
+   * building card set it, with its number hollow behind: the round is what a
+   * pause is about, and the old heading's largest word was the card's own name
+   * ("PAUSED"), which is what a form says. What the card IS goes in the
+   * eyebrow over the title, and that is the one line that has to differ
+   * between the two rounds: offline the world is HELD, and in a match nothing
+   * is (`docs/states.md`), so the card says the match is live rather than
+   * promising a hold that is not happening.
    *
-   * The action list is the one part of the overlay that takes pointer events,
-   * the same carve-out the difficulty row gets. Selection is a class on a
-   * button that already exists rather than a re-render, so arrowing down the
-   * list does not restart the prompt's animation or drop the hover state.
+   * **It still does not take the screen.** It deliberately does NOT call
+   * `setOverlaid`, and its scrim falls off from the left before the middle of
+   * the window: the menu and the round-over card hide the gameplay chrome
+   * because what is under them is last round's, and under a pause everything
+   * on screen is this round's — the tickets, the flags, the body you were
+   * lining up. `#hud.paused`, which the HUD raises and not this, takes away
+   * only what would be lying.
    *
-   * `solo` as `showRoundOver` means it, and it decides one row — see
-   * `PAUSE_ITEMS`.
+   * **The column is the round, then what you can do about it**: the hero's
+   * figures (flags held, the enemy), the player's own round as the round-over
+   * card draws it, then the acts. Resume is first and is the hot plate — it is
+   * what Esc and B do from anywhere, and what a confirm on arrival must do —
+   * then Settings, the one act you come back from, then the two that end the
+   * round. Resume is the way BACK and it is a row rather than a system corner,
+   * the one place this card differs from the others (`docs/ui.md` says why).
+   *
+   * Built on the raise, with the entrance; the two live figures are patched
+   * after (`setPauseRound`), which only a match has any reason to call.
    */
-  showPause(solo: boolean): void {
-    this.setCardClass("pause");
+  showPause(state: PauseState): void {
+    this.setCardClass("pause", true);
     this.card = "pause";
     this.clearShot();
     this.menuEls.clear();
     this.detailEl = null;
     this.build = null;
     this.clearVote();
-    const items = PAUSE_ITEMS.filter(([, , soloOnly]) => solo || !soloOnly)
-      .map(
-        ([action, label]) =>
-          `<button class="pact" data-action="${action}">${label}</button>`,
-      )
-      .join("");
-    // Anchored to the LEFT and scrimmed from that side only, which is the one
-    // place in this file a card deliberately does not take the screen. The
-    // round under a pause is this round, frozen where it stood: the flags
-    // along the top, your own vitals, the body you were about to shoot. A
-    // full-bleed veil over that is a card hiding the thing it is a pause IN,
-    // and `setOverlaid` is not called here for exactly the same reason.
+    const { map, solo } = state;
+    const per = perTeamOf(map.layout);
+    this.pauseActs = pauseActions(solo);
     this.root.innerHTML = `
-      <div class="ov-pause">
-        <span class="ui-eyebrow">Round held</span>
-        <h1 class="pause-title">PAUSED</h1>
-        <p class="tagline">Nothing moves until you resume</p>
-        <div class="pause-actions">${items}</div>
-        <p class="prompt">Esc &middot; Start &middot; B to resume</p>
+      <div class="mm-hero ps-hero">
+        <div class="mm-hero-in${solo ? "" : " live"}">
+          <span class="mm-index" aria-hidden="true">${twoDigits(state.index + 1)}</span>
+          <span class="mm-mode">${solo ? "Paused" : "Match live"} &middot; Conquest &middot; ${per} v ${per}</span>
+          <h1 class="mm-title">${map.name}</h1>
+          <p class="mm-blurb">${
+            solo
+              ? "The round is held where it stood. Nothing moves until you resume."
+              : "A match does not stop for a menu. The round goes on around you while this is up."
+          }</p>
+          <div class="mm-facts"></div>
+        </div>
+      </div>
+      <div class="ro-plate ro-you ps-you"></div>
+      <div class="ps-list">${this.pauseActs.map((a) => this.pausePlate(a, state)).join("")}</div>
+      <div class="mm-foot ps-foot">
+        <span data-dev="kbm"><kbd>&uarr;</kbd><kbd>&darr;</kbd> Choose</span>
+        <span data-dev="kbm"><kbd>Enter</kbd> Select</span>
+        <span data-dev="pad"><kbd class="pd">D-pad</kbd> Choose</span>
+        <span data-dev="pad"><kbd class="pd face-a">A</kbd> Select</span>
       </div>
     `;
-    this.pauseButtons = [];
-    this.root
-      .querySelectorAll<HTMLElement>("button.pact")
-      .forEach((btn, i) => {
-        btn.onclick = () => this.onPauseAction(btn.dataset.action as PauseAction);
-        // Hovering moves the keyboard selection with it, so the highlighted
-        // item and the one a click is about to fire can never disagree.
-        btn.onmouseenter = () => this.setPauseSelection(i);
-        this.pauseButtons.push(btn);
-      });
+    this.pauseRefs = {
+      facts: this.root.querySelector<HTMLElement>(".ps-hero .mm-facts")!,
+      you: this.root.querySelector<HTMLElement>(".ps-you")!,
+      shownFacts: "",
+      shownYou: "",
+    };
+    this.setPauseRound(state);
+    this.pauseRows = Array.from(this.root.querySelectorAll<HTMLElement>(".ps-row"));
+    this.pauseRows.forEach((row, i) => {
+      const btn = row.querySelector<HTMLElement>("button")!;
+      // A CLICK, not a pointer-down: none of these takes the pointer lock in
+      // the same press (Resume asks for it through `Game.resume`, which waits
+      // for the button to come up), and a click is what a phone raises only
+      // for a tap and never for a drag.
+      btn.onclick = () => this.onPauseAction(this.pauseActs[i]);
+      // Hovering moves the cursor with it, so the plate under the brackets and
+      // the one a click is about to fire can never disagree. Safe here where
+      // the kit screen's slots are not: the column is the only thing on the
+      // card, so the mouse crosses nothing else on its way to a plate.
+      btn.onmouseenter = () => this.setPauseSelection(i);
+    });
     this.setPauseSelection(0);
   }
 
-  /** Steps the pause selection, wrapping at both ends. */
+  /**
+   * One plate of the pause's column. Resume is the menu's Deploy plate — hot,
+   * with its prompt on it — and the others are dark plates with an icon, the
+   * act's name and what it does to THIS round. Never the map's name: it is the
+   * title already, and "Cinderhaven" is what would push a line off its plate.
+   */
+  private pausePlate(action: PauseAction, state: PauseState): string {
+    if (action === "resume") {
+      return `
+        <div class="mm-go ps-row ps-resume">
+          <button class="mm-deploy">
+            <span class="mm-deploy-t"><b>Resume</b><i>${state.solo ? "Round held" : "Back into the match"}</i></span>
+            ${glyph("Esc", "B")}
+          </button>
+        </div>`;
+    }
+    const [icon, label, note] =
+      action === "settings"
+        ? [ICON_SETTINGS, "Settings", "Controls &middot; display &middot; detail"]
+        : action === "restart"
+          ? [ICON_RESTART, "Restart round", `From the top &middot; ${CONFIG.conquest.tickets} a side`]
+          : state.solo
+            ? [ICON_BACK, "Quit to menu", "This round is not kept"]
+            : [ICON_BACK, "Leave match", "Your slot goes back to a bot"];
+    return `
+      <div class="ps-row ps-${action}">
+        <button class="ps-act">${icon}<span class="ps-t"><b>${label}</b><i>${note}</i></span></button>
+      </div>`;
+  }
+
+  /**
+   * The pause card's two live figures — the flags held and the player's own
+   * round — written only where they changed.
+   *
+   * Offline nothing moves under a pause, so the raise is the only call. In a
+   * match the round goes on under the card, and `Game` pushes it again on a
+   * slow cadence rather than every frame, since the board is assembled to do
+   * it. Both strings are this build's own words and numbers — no name a
+   * person typed is on either — which is what makes writing them as markup
+   * safe.
+   */
+  setPauseRound(state: PauseState): void {
+    const refs = this.pauseRefs;
+    if (!refs || this.card !== "pause") return;
+    const flags = state.map.layout.controlPoints.length;
+    const facts = `
+      <span><b>${state.flagsMine} of ${flags}</b> flags held</span>
+      <span><b>${state.enemy ?? "Online"}</b> ${state.enemy ? "enemy" : "match"}</span>`;
+    if (facts !== refs.shownFacts) {
+      refs.shownFacts = facts;
+      refs.facts.innerHTML = facts;
+    }
+    const you = this.yourRoundInner(state.board, "Your round so far");
+    if (you !== refs.shownYou) {
+      refs.shownYou = you;
+      refs.you.innerHTML = you;
+    }
+  }
+
+  /** Steps the pause cursor, wrapping at both ends. */
   movePauseSelection(delta: number): void {
-    const n = this.pauseButtons.length;
+    const n = this.pauseRows.length;
     if (n === 0) return;
     this.setPauseSelection((this.pauseIndex + delta + n) % n);
   }
 
-  /** Fires the selected pause item — Enter / gamepad A. */
+  /** Fires the plate under the cursor — Enter / gamepad A. */
   activatePause(): void {
-    const btn = this.pauseButtons[this.pauseIndex];
-    if (btn) this.onPauseAction(btn.dataset.action as PauseAction);
+    const action = this.pauseActs[this.pauseIndex];
+    if (action && this.card === "pause") this.onPauseAction(action);
   }
 
+  /**
+   * The cursor: the sight brackets on the row's wrapper, and on Resume the
+   * glow and the sheen the menu's Deploy wears under it. A class on a row that
+   * already exists rather than a re-render, so arrowing down the column does
+   * not restart the sheen or drop the hover state.
+   */
   private setPauseSelection(i: number): void {
     this.pauseIndex = i;
-    this.pauseButtons.forEach((b, k) => b.classList.toggle("on", k === i));
+    this.pauseRows.forEach((r, k) => r.classList.toggle("sel", k === i));
   }
 
   /**
    * Which card is up, as a class on the root.
    *
-   * Three of the four are laid out as the front end, on a grid of their own
-   * over a photograph with a scrim shaped like that layout
-   * (`#overlay:is(.card-menu, .card-building, .card-roundover)` in
-   * `overlay.css`). The menu and the round-over card carry the prompt device
-   * (`dev-*`) because every prompt on them is picked by the stylesheet; the
-   * BUILDING card has no prompt on it to pick. The pause is anchored to one
-   * side and scrimmed from that side only, being a lid over a live round the
-   * player is coming back to. Setting `className` outright rather than
-   * toggling is what stops the previous card's modifier surviving into the
-   * next one.
+   * All four are laid out as the front end, in one frame sized off one unit
+   * (`#overlay:is(.card-menu, .card-building, .card-roundover, .card-pause)`
+   * in `overlay.css`), each on a grid of its own; three stand over a
+   * photograph and the pause over the round it holds, scrimmed from its own
+   * side only. The menu, the round-over card and the pause carry the prompt
+   * device (`dev-*`) because every prompt on them is picked by the
+   * stylesheet; the BUILDING card has no prompt on it to pick. Setting
+   * `className` outright rather than toggling is what stops the previous
+   * card's modifier surviving into the next one.
    *
    * `raised` is the entrance and nothing else: the class has to be on the
    * ROOT before the markup is written, because what animates are elements
@@ -1920,12 +2061,12 @@ export class OverlayScreen {
     // Every card but the menu writes over the menu's markup, so the patch
     // path's references die here rather than at each of the three callers.
     if (card !== "menu") this.refs = null;
-    const device = card === "menu" || card === "roundover" ? ` dev-${this.device}` : "";
-    this.root.className =
-      card === "pause" ? "card-pause" : `card-${card}${device}${raised ? " enter" : ""}`;
+    if (card !== "pause") this.pauseRefs = null;
+    const device = card === "building" ? "" : ` dev-${this.device}`;
+    this.root.className = `card-${card}${device}${raised ? " enter" : ""}`;
   }
 
-  /** Takes whichever card is up back down. The single way off all three. */
+  /** Takes whichever card is up back down. The single way off all four. */
   hide(): void {
     this.root.className = "hidden";
     this.setOverlaid(false);
@@ -1934,9 +2075,11 @@ export class OverlayScreen {
     this.build = null;
     this.clearVote();
     this.refs = null;
-    // The buttons live in the card's markup, so they die with it.
-    this.pauseButtons = [];
+    // The rows live in the card's markup, so they die with it.
+    this.pauseRows = [];
+    this.pauseActs = [];
     this.pauseIndex = 0;
+    this.pauseRefs = null;
     this.menuEls.clear();
     this.card = "none";
   }

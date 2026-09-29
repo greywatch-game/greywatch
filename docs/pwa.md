@@ -137,19 +137,16 @@ Details about the phone, each of which was a visible bug first:
   latched into `confirmPressed` (the masks are held state and a tap has no hold) so
   that the title screen could be got past at all; that latch deployed the player off
   the menu's map and difficulty rows on the way, and went with the mouse.
-- **`--ov-scale` scales `#overlay` on short viewports** by growing the
-  box to `100%/s` and scaling by `s` about the top-left, so the backdrop stays
-  full-bleed and the desktop (s = 1) is untouched. Nothing in this HUD scrolls, and a
-  landscape phone is ~350px tall against screens authored for 720p. **`#loadout` is
-  deliberately excluded**: its stage is a hole the 3D turntable is placed through,
-  back-projected from the same viewport fractions the CSS uses, so a transform would
-  move the hole and leave the weapon behind it — which is also why it is the one screen
-  carrying a short-viewport media query of its own.
-- **Inside a scaled box, `vh` and `vw` are still the VIEWPORT's**, so a length written
-  in them is scaled a second time on the way out. `#deploy`'s map is `calc(min(56vh,
-  60vw) / var(--ov-scale))` for exactly that reason: at s = 0.45 the raw form rendered
-  the map at a quarter of the height it asked for, and the divide is the identity on
-  every desktop.
+- **No screen is scaled to a short viewport any more.** `--ov-scale` used to
+  grow `#overlay` to `100%/s` and scale it by `s` about the top-left, which gave a
+  ~350 px landscape phone a miniature of a desktop layout; every screen is now laid
+  out for a phone by the pixel floors under the front end's unit (`docs/ui.md`), and
+  the pause card was the last to leave the ladder. **Two lessons from it still hold
+  for anything scaled by a transform** (the touch clusters' `--tscale`, the
+  scoreboard): the kit screen could never have taken one, its stage being a hole the
+  3D turntable is placed through, back-projected from the same viewport fractions
+  the CSS uses; and **inside a scaled box `vh` and `vw` are still the VIEWPORT's**,
+  so a length written in them is scaled a second time on the way out.
 
 ## The second navigable document
 
@@ -244,7 +241,7 @@ What belongs here is the part that is about **the phone rather than the game**:
   carries the safe-area padding, so an absolutely positioned layer would put the
   ring one notch's width from the thumb holding it. The three button groups take
   their own `env(safe-area-inset-*)` back, and scale on short viewports through
-  `--tscale` — the same trick `--ov-scale` plays for the menu, one transform per
+  `--tscale` — the trick the retired `--ov-scale` played for the menu, one transform per
   group about the corner that group is pinned to. **The ladder answers to
   whichever side of the viewport is the SHORT one**, height held sideways and
   width held upright, because a 260 px cluster on a 390 px-wide screen is two

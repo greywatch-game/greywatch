@@ -242,7 +242,7 @@ rather than a hang.
 confirm tail fires on Enter, pad A and Start for both cards it draws; the
 round-over card's own Another round plate is the second; the pause menu's "Restart
 round" is the third. All three now ask `!this.net`, and the two that are drawn ask
-it in the DRAWING as well — `showRoundOver` and `showPause` take a `solo` flag, so
+it in the DRAWING as well — `showRoundOver` and `showPause` are told `solo`, so
 in a match the button is ABSENT rather than dimmed and the card says the server is
 choosing. The handler guards stay because the markup is what a handler is bound
 to and the markup outlives none of these transitions. The keyboard door is the one
@@ -281,7 +281,9 @@ still running with the CLICK hint up and the next click gets it.
 
 `#hud.paused` is deliberately **not** `.overlaid`: the menu and round-over card
 hide the gauges because what is under them is last round's, while under a pause the
-tickets, flags and vitals are current and frozen with the scene. It hides what
+tickets, flags and vitals are current and frozen with the scene — which is also
+why the card is one column anchored left rather than a screen, and why in a match
+its eyebrow says the match is live rather than paused (`docs/ui.md`). It hides what
 would be lying — hitmarker, damage arcs, capture panel, mouse hint. It is also the one
 overlay taking pointer events across its whole area, because the deploy screen
 underneath takes them too and a click through the backdrop would land on its map or

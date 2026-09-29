@@ -181,6 +181,7 @@ import {
 import {
   OverlayScreen,
   type BuildingState,
+  type PauseState,
   type VoteView,
 } from "../ui/OverlayScreen";
 import { kitLabel, LoadoutScreen } from "../ui/LoadoutScreen";
@@ -795,6 +796,12 @@ export class Game {
   private map: GameMap | null = null;
   /** Small delay so overlay confirms aren't triggered by held buttons. */
   private overlayT = 0;
+  /**
+   * Seconds until the pause card is handed the round again. A match's round
+   * goes on under the card, and its two figures are refreshed on this rather
+   * than every frame, because the board is assembled to do it.
+   */
+  private pauseRoundT = 0;
   /**
    * Selected enemy-skill tier, applied on every round start. Persisted, because
    * re-picking it after each reload is exactly the friction that makes people
@@ -3250,7 +3257,7 @@ export class Game {
       // `state === "playing"`, so being paused is already indistinguishable on
       // the wire from standing still.
       case "paused":
-        this.updatePauseMenu();
+        this.updatePauseMenu(dt);
         break;
       case "playing":
         if (this.input.pausePressed) {
@@ -3826,7 +3833,22 @@ export class Game {
    * The pause list. Nothing simulates while it is up; this only moves the
    * cursor and takes the choice.
    */
-  private updatePauseMenu(): void {
+  private updatePauseMenu(dt: number): void {
+    // Which device's prompts the card draws — the menu card's rule.
+    if (this.input.anyDeviceUsed) {
+      this.overlayScreen.setInputDevice(
+        this.input.padInHand ? "pad" : this.input.touchActive ? "touch" : "kbm",
+      );
+    }
+    // Offline the round under a pause is held, so what the card was raised
+    // with stays true; in a match it is not held at all.
+    if (this.net) {
+      this.pauseRoundT -= dt;
+      if (this.pauseRoundT <= 0) {
+        this.pauseRoundT = CONFIG.pauseCard.refresh;
+        this.overlayScreen.setPauseRound(this.pauseState());
+      }
+    }
     // Pause is checked first and breaks: Start raises `pausePressed` and
     // `confirmPressed` on the same frame, and resuming must not also fire
     // whichever item the selection happens to be on.
@@ -3888,7 +3910,8 @@ export class Game {
     // out from under the menu it just raised.
     this.lockPending = false;
     this.hud.setPaused(true);
-    this.overlayScreen.showPause(!this.net);
+    this.overlayScreen.showPause(this.pauseState());
+    this.pauseRoundT = CONFIG.pauseCard.refresh;
     // Suspends the audio clock, so the tail of the last shot is still there
     // when the round starts again instead of ringing out over the menu.
     //
@@ -4658,6 +4681,30 @@ export class Game {
    * carry (`OverlayScreen.showBuilding`). The enemy tier is this machine's
    * only offline: in a match the authority fields the bots.
    */
+  /**
+   * The round as the pause card draws it: the map, the flags the viewer's
+   * side holds and the board, in SIDES rather than teams as the round-over
+   * card is handed them (`endRound`).
+   */
+  private pauseState(): PauseState {
+    const us = this.player.team;
+    return {
+      map: this.mapDef,
+      index: MAPS.indexOf(this.mapDef),
+      solo: !this.net,
+      enemy: this.net ? null : (difficultyNames()[this.difficulty] ?? "Bots"),
+      flagsMine: this.conquest.flagsHeld(us),
+      board: this.scoreRows().map((r) => ({
+        name: r.name,
+        mine: r.team === us,
+        kills: r.kills,
+        deaths: r.deaths,
+        score: r.score,
+        you: r.you,
+      })),
+    };
+  }
+
   private buildingCard(): BuildingState {
     return {
       map: this.mapDef,

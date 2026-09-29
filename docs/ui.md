@@ -18,14 +18,16 @@ here.
 ## The front end, and the shell it replaced
 
 **Every screen between the title and the world is a TITLE SCREEN now, laid out
-the way the main menu is**: the menu, the round-over card, the kit screen, the
-settings screen, the lobby and the deploy screen. Each is a grid of NAMED AREAS
-of its own over a picture of the thing it is about — a map's photograph, the
-weapon, the map's plan — with a title that is that thing's NAME, a column of
-plates the cursor walks, an intel plate that is the first thing a small viewport
-drops, and the way out in a SYSTEM CORNER. What they share is stated once, in
-`base.css`'s `:is(#overlay.card-menu, #overlay.card-roundover, #loadout,
-#settings, #lobby, #deploy)` block and `prompts.ts`: the unit `--u` (one pixel
+the way the main menu is**: the menu, the round-over card, the pause, the kit
+screen, the settings screen, the lobby and the deploy screen. Each is a grid of
+NAMED AREAS of its own over a picture of the thing it is about — a map's
+photograph, the weapon, the map's plan, the round itself — with a title that is
+that thing's NAME, a column of plates the cursor walks, an intel plate that is
+the first thing a small viewport drops, and the way out in a SYSTEM CORNER (the
+pause's is its first row, for a reason its own section gives). What they share
+is stated once, in `base.css`'s `:is(#overlay.card-menu,
+#overlay.card-roundover, #overlay.card-pause, #loadout, #settings, #lobby,
+#deploy)` block and `prompts.ts`: the unit `--u` (one pixel
 of a 1080-line screen), the `--t-*` type scale, the plate, the chamfer, `--hit`
 and the prompts drawn on their controls. The building card takes the unit and
 none of the prompts, having nothing on it to press. A new screen copies one of
@@ -66,12 +68,13 @@ through with it, which reads as two screens up at once; the shell answered
 that with an opaque variant of its veil (`.ui-solid`), and the answer outlived
 it by being turned round.
 
-**`--ov-scale` is a safety valve, not the layout, and only the pause takes
-it.** It draws a screen at the size it was authored for and scales it down,
-and at the old 0.45 a landscape phone got a legible desktop menu rendered at
-45%. Every front-end screen opts out — a scaled screen is a scaled 44 px target
-— so the ladder is 1 until a viewport is shorter than anything the clamp
-minimums fit in (380 px), and gentle when it does engage.
+**Nothing under `#hud` is scaled to a short viewport any more.** `--ov-scale`
+drew a screen at the size it was authored for and scaled it down, and at its
+old 0.45 a landscape phone got a legible desktop menu rendered at 45%. Each
+front-end screen opted out as it was laid out for a phone by its own floors — a
+scaled screen is a scaled 44 px target — and the pause was the last one on it,
+so the ladder went with it. A new screen fits a phone by its floors, never by a
+transform.
 
 **The boot screen is the one piece of interface that is not in this directory**,
 and the exception is what defines it: it covers the stretch before any module
@@ -139,10 +142,10 @@ share the menu's frame, its lockup, its hero and its intel plate. The bar for a 
 *state*: the deploy map has a selection and a canvas, the kit screen has four
 slots and a turntable; a card that is markup plus a button has not earned one.
 
-**Three of the four take the screen and the PAUSE does not.** `setCardClass` is
-what decides it: the menu, the building card and the round-over card stand in
-one frame over the map's photograph, and the pause gets a left-anchored column over a scrim that
-fades out before the middle of the window. The round under a pause is this
+**Three of the four take the screen and the PAUSE does not.** All four stand in
+one frame, but the menu, the building card and the round-over card stand over
+the map's photograph, and the pause is one left-anchored column over a scrim
+that fades out before the middle of the window. The round under a pause is this
 round, frozen where it stood — the flag strip along the top, your own vitals,
 the body you were lining up — so a full-bleed veil over it hides the thing the
 pause is *in*. It is the same argument that keeps `setOverlaid` out of
@@ -183,13 +186,13 @@ thread blocked for 11 s and a screencast kept receiving frames about every
 16 ms, the bar sweeping and the picture drifting through all of it.
 
 **The key-cap table is no longer one of the things they share, and that is the
-whole reason it moved.** It hung under the menu's title and under the pause list,
+whole reason it moved.** It hung under the menu's title and under the pause's list,
 drawn from one table by one loop, which was right while the settings screen was
 two toggles no pad could reach. Once that screen became a list a cursor lands on
 from both places, the table belonged in it: the menu is five decisions and a
 Deploy button, and a dozen rows of reference under them made the longest block on
-the card the one nobody reads twice. It is one row of the menu and one item of
-the pause list away, and the settings screen opens on the page that carries it.
+the card the one nobody reads twice. It is one row of the menu and one plate of
+the pause away, and the settings screen opens on the page that carries it.
 
 **The building card is the fourth, and it is the only one the player cannot
 act on.** It stands over the ~0.7 s of merges, occlusion bake and nav grid that
@@ -404,9 +407,9 @@ kills says the opposite in the one place everybody looks. The number is the
 `ScoreBook`'s (`config/score.ts` is the table it spends), the team's own total
 is drawn in that team's colour because it is the summary of the whole round, and
 the figures are tabular because a sorted column of proportional digits does not
-look sorted. The panel's `min-width` grew with the column: `#scoreboard` is
-inside `#hud` and so is NOT scaled by `--ov-scale`, which makes that width a
-promise to the shortest viewport the game runs on.
+look sorted. The panel's `min-width` grew with the column: nothing under `#hud`
+is scaled to a short viewport, which makes that width a promise to the shortest
+viewport the game runs on.
 
 **The score FEED is where a player actually learns the scoring system**, and it
 is a separate thing from the board: the board is behind Tab and shows a total,
@@ -630,8 +633,7 @@ break; the editor's ~170 lines shipped in every production build; and a CSS-only
 change moved no content-hashed filename. Three rules keep it that way:
 
 - **`base.css` is for what two or more screens share** — the reset, the canvas, the
-  `#hud` root, `.frame`, `.brackets`, `.hidden`, the `--ov-scale` short-viewport
-  block, `@keyframes pulse`, the kit button, the design tokens and the two
+  `#hud` root, `.frame`, `.brackets`, `.hidden`, `@keyframes pulse`, the kit button, the design tokens and the two
   pieces of vocabulary left from the shell (`.ui-eyebrow`, `.ui-facts`), and
   THE FRONT END's unit, type scale, plate and prompts, which every title
   screen is measured in. A rule only one screen uses
@@ -947,10 +949,9 @@ worth knowing about rather than re-deriving:
   decoration: the weapon on the turntable is drawn by the SCENE through a hole
   the kit screen leaves in the middle of itself, so a full-bleed picture left
   standing at z-index 9 would be what you saw in the hole instead of the gun.
-- It is deliberately NOT in the `--ov-scale` rule in `base.css` beside
-  `#overlay`, the one screen left on it. That ladder draws a screen at
-  the size it was authored for and scales it down; a photograph has no authored
-  size to be scaled from, and `inset: 0` with `background-size: cover` already
+- It is never scaled to a viewport, and was not when `#overlay` still was:
+  a photograph has no authored size to be scaled from, and `inset: 0` with
+  `background-size: cover` already
   fills whatever viewport it is given — including a portrait phone, which crops
   the 16:9 shot rather than letterboxing the menu.
 
@@ -1129,9 +1130,8 @@ The right-hand side is an INTEL plate on whatever the cursor rests on.
   get a Deploy button half a metre wide, with the photograph cropped into the
   space above it. Under 560 px wide the system bar keeps its marks and loses
   its words.
-- **The card opts out of `--ov-scale`.** That ladder scales `#overlay` down
-  under 380 px of height; this card is laid out for those viewports by its
-  floors, and a scaled card is a scaled 44 px target.
+- **Nothing scales the card on a short viewport**: it is laid out for those
+  viewports by its floors, and a scaled card is a scaled 44 px target.
 
 - **The intel's schematic is never drawn from a BUILT map**
   ([`MapThumb.ts`](../src/ui/MapThumb.ts)). The deploy screen draws out of the
@@ -1261,7 +1261,8 @@ beside it, and a hint line naming three devices along the bottom.
   right under the thumb, the plates two across so six positions are three rows
   (one across under 740 wide, where two would ellipsize every name); an
   upright phone as a fallback, the map between the title and the plates.
-- **It opts out of `--ov-scale`**, as the other front-end screens did.
+- **Nothing scales it on a short viewport**, as nothing scales the other
+  front-end screens.
 
 **The menu's `Deploy` button is the only thing on it a pointer can deploy
 with** (`bindMenu` → `Game.onStart`). It began as a redundant target beside a
@@ -1393,6 +1394,63 @@ which is still exactly what is happening.
   the DOM.
 - **The foot is the ballot's cursor verbs for the device in hand**, and a card
   with no ballot has no hint line at all: one button needs none.
+
+## The pause card
+
+**A title screen for the ROUND it holds, and the one card that does not take
+the screen** (`OverlayScreen.showPause`). It read as a web dialog: "PAUSED" in
+hot capitals over a column of four filled buttons, and a hint line naming three
+devices — the card's largest word was its own name, which is what a form says.
+
+- **The title is the MAP the round is on**, set where the menu and the building
+  card set it, because the round is what a pause is about. What the card IS
+  goes in the eyebrow over it, and that line is the one that must differ
+  between the two rounds: offline it says **Paused** in the hot colour, and in
+  a match it says **Match live**, cold, with a pulsing dot — a match holds
+  nothing under a pause (`docs/states.md`), and a card promising a hold over a
+  round that is still being fought is the one lie this card could tell. The
+  blurb under the title says the same in words, and its facts are the flags the
+  viewer's side holds and the enemy tier (or "Online", where this machine's tier
+  decides nothing). **No hollow numeral** behind the title: over a round rather
+  than a photograph it lands on the minimap.
+- **It stays anchored left and does not take the screen.** One column over a
+  scrim measured from the column (as the menu's is) and gone before the middle
+  of the window, centred down it so it clears the minimap above and the vitals
+  below. No lockup, no system corner and no intel plate: nothing on it is a
+  place to go INSTEAD, and what is read on it is in the column.
+- **The column is the round, then what you can do about it**: the round-over
+  card's Your round plate (`yourRoundInner`, one markup for both) asked
+  mid-round — place, points, kills, deaths — then the acts. **Resume is first
+  and is the menu's Deploy plate**, hot, with its prompt (Esc / B) on it; then
+  Settings, the one act you come back from; then Restart round (offline only,
+  `pauseActions`) and Quit to menu — **Leave match** in one, the round-over
+  card's word for the same act. Each dark plate carries an icon, the act and
+  what it does to THIS round ("From the top · 400 a side", "Your slot goes back
+  to a bot"), so the two that end the round say so before they are pressed —
+  and never the map's name, which is the title already and is what pushed a
+  line off its plate on a tablet.
+- **The way back is a ROW, the one place the pause differs from every other
+  screen's system corner.** Resume is not a way out to another screen but the
+  card's primary act: it is what Esc, Start and B do from anywhere, it is what a
+  confirm on arrival must do, and a list whose length never changes puts row 0
+  in a fixed place. A corner button over a live round would sit on the killfeed
+  and be the one control a hand never reaches for first.
+- **The cursor is the menu's sight brackets** on each row's unclipped wrapper,
+  and on Resume the Deploy plate's glow and sheen besides; hover moves it, which
+  is safe here because the column is the only thing on the card. The plates
+  fire on a CLICK — none takes the pointer lock in the same press, `resume`
+  asking for it once the button is up.
+- **In a match the figures move**, so `Game` hands the card the round again every
+  `CONFIG.pauseCard.refresh` seconds (`setPauseRound`, compared before it
+  writes); offline the raise is the only call, the round being held.
+- **Four templates, all one column**, so they are about HEIGHT: under 620 tall
+  the blurb and the Your round plate go (and their grid rows with them — a gap
+  is spent between empty tracks too); a phone held sideways brings the title
+  down and drops the hint line; an upright phone runs the column across the
+  glass with the scrim rising from the foot. The entrance is the menu's, dealt
+  down the column, and QUICKER — a pause is raised on a key pressed every few
+  minutes, and an entrance waited through each time is a slow pause menu.
+- **It was the last screen on `--ov-scale`**, and that ladder went with it.
 
 ## The kit screen
 

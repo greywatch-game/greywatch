@@ -34,9 +34,12 @@ Think like a game UI designer, not a web one:
   in it left as it found its TITLE: the lobby once each match was its map's
   name over its photograph, the deploy screen once the POSITION under the
   cursor was, and the round-over card last, once the RESULT was set where the
-  menu sets a map's name. A screen that looks like "just a list" has a title
-  too; find it rather than bringing the shell back.
-- **The front end** (`:is(#overlay.card-menu, #overlay.card-building, #overlay.card-roundover, #loadout, #settings, #lobby, #deploy)` in
+  menu sets a map's name. The pause, which was never in the shell, followed
+  once the MAP its round is on was its title. A screen that looks like "just
+  a list" has a title too; find it rather than bringing the shell back.
+- **Nothing is scaled to a short viewport.** `--ov-scale` is retired with its
+  last user, the pause; a screen fits a phone by its own floors.
+- **The front end** (`:is(#overlay.card-menu, #overlay.card-building, #overlay.card-roundover, #overlay.card-pause, #loadout, #settings, #lobby, #deploy)` in
   `base.css`, plus `prompts.ts`) is for a screen whose job is to SHOW
   something — or a list the player browses like a title screen rather than
   fills in like a form (the settings: the PAGE is the title, the pages a tab
@@ -46,9 +49,13 @@ Think like a game UI designer, not a web one:
   screen adds its root to that `:is(...)` list rather than copying the block, and its Back
   goes in the SYSTEM CORNER (top right), where the menu keeps Online and
   Settings. A card on `#overlay` that stands in the MENU's frame (the
-  building card, the round-over card) adds itself to overlay.css's
-  `#overlay:is(.card-menu, .card-building, .card-roundover)` instead, and
-  gets the lockup, the system corner, the hero and the intel plate as well.
+  building card, the round-over card, the pause) adds itself to overlay.css's
+  `#overlay:is(.card-menu, .card-building, .card-roundover, .card-pause)`
+  instead, and gets the lockup, the system corner, the hero and the intel
+  plate as well — taking only what it needs: the pause stands over the ROUND
+  rather than a photograph, so it is one column anchored left with a scrim
+  from that side, no lockup and no corner, and its way back is its first
+  plate (Resume, what a confirm on arrival must do).
 - **A front-end screen raised over OTHER screens hides them** (`#hud.kitting`,
   `#hud.setting`, `#hud.lobbying`: `visibility`, so they come back unredrawn)
   and lays a scrim shaped like its own layout over the scene, instead of an

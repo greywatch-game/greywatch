@@ -88,3 +88,14 @@ export const damageIndicator = {
   minOpacity: 0.55,
   maxOpacity: 0.95,
 } as const;
+
+/**
+ * The pause card over a MATCH, whose round goes on under it (offline the round
+ * is held and the card is drawn once). Its two live figures — the flags held
+ * and the player's own round — are handed to it again on this cadence rather
+ * than every frame, because the board is assembled to do it.
+ */
+export const pauseCard = {
+  /** Seconds between two refreshes of the card's figures. */
+  refresh: 1,
+} as const;
