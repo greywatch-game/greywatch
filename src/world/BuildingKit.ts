@@ -262,7 +262,11 @@ export type BuilderKind = keyof typeof BUILDERS;
  * seeds its lattice, what stands before each bay, its signboard, its Shōki,
  * its loft window, its smoke vent, its back door and the mark on its noren
  * off where it stands, and carries its plinth, its step and its bamboo fence
- * down to the ground.
+ * down to the ground. The minka seeds which end is stacked with firewood,
+ * whether persimmons are drying over it, whether its smoke gables are open or
+ * plastered with the fire charm, its back door's bay and its door's wicket off
+ * where it stands, and carries its plinth, the stones under its engawa and its
+ * two steps down to the ground.
  */
 export const CONFORMS_TO_TERRAIN: ReadonlySet<BuilderKind> = new Set([
   "road",
@@ -288,4 +292,5 @@ export const CONFORMS_TO_TERRAIN: ReadonlySet<BuilderKind> = new Set([
   "kiln",
   "kura",
   "machiya",
+  "minka",
 ] as const);
