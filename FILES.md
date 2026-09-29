@@ -1059,14 +1059,21 @@ src/
                         #   Also the menu reel's THUMBNAILS, downscaled once a
                         #   session on the client rather than committed — which
                         #   the lobby's match plates wear too
-    DeployScreen.ts     # Top-down deploy map, with the orders panel beside it
-      deploy.css        #   rather than under it. The plan is mapPaint's,
-                        #   PRERENDERED once per map and blitted — this screen
-                        #   redraws every frame and Cinderhaven is 3,700
-                        #   colliders — and it is the one of the three that
-                        #   letters its grid. The offer is live, so the
-                        #   highlight is held by IDENTITY; in a netplay round a
-                        #   confirm is a REQUEST and says so
+    DeployScreen.ts     # The between-lives screen, a TITLE SCREEN for the
+      deploy.css        #   POSITION the cursor is on: its name set large over
+                        #   the round's tickets and flags, a column of position
+                        #   plates, the kit plate (L/Y) and a Deploy plate that
+                        #   fills over the reinforcement clock, the map's PLAN
+                        #   as the stage, an intel plate (the position and the
+                        #   round), Pause in the system corner. The plan is
+                        #   mapPaint's, PRERENDERED once per map and blitted —
+                        #   this screen redraws every frame and Cinderhaven is
+                        #   3,700 colliders — and the one of the three that
+                        #   letters its grid. The offer is live, so the cursor
+                        #   is held by IDENTITY; a plate or a marker PICKS and
+                        #   Deploy fires; #hud.deploying takes the HUD's chrome
+                        #   off; in a netplay round a confirm is a REQUEST and
+                        #   says so
     LoadoutScreen.ts    # Kit screen, laid out as the MENU is and consistent
       loadout.css       #   with it alone: the weapon's name as the title, a
                         #   bottom-anchored column of SLOT plates (up/down),

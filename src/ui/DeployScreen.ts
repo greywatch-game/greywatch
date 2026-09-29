@@ -1,21 +1,37 @@
 /**
- * DeployScreen.ts — Top-down deploy map: paints the shared plan of the built
- * world (`mapPlan.ts`/`mapPaint.ts`), draws the live flags and the spawn
- * options over it, hit-tests clicks, steps the selection for the keyboard/pad
- * (moveSelection), and fires onDeploy (wired in Game) when a selection is
- * confirmed.
+ * DeployScreen.ts — The between-lives screen: a title screen for the POSITION
+ * the cursor is on, laid out the way the main menu, the kit screen, the
+ * settings screen and the lobby are. Paints the shared plan of the built world
+ * (`mapPlan.ts`/`mapPaint.ts`) as the screen's stage, draws the live flags and
+ * the spawn options over it, keeps the cursor on a spawn, and fires onDeploy
+ * (wired in Game) when a selection is confirmed.
+ * Owns `#deploy`, its cursor, and the `#hud.deploying` flag that takes the
+ * gameplay chrome off the glass while it is up (the tickets and the flags are
+ * drawn HERE now, so the HUD's copies under the scrim would be a second,
+ * unreadable statement of the same thing).
  * Invariants: the plan is PRERENDERED and blitted — this screen redraws every
  * frame and the biggest map is 3,700 colliders — so anything added to the
  * static ground belongs in the painter and anything that changes inside a
- * round belongs in `draw`. CSS contract — #hud is pointer-events:none and this overlay
- * opts back in; don't break that or gameplay clicks die. Re-checks map/
- * conquest readiness every update; the 3D scene renders live behind it. The
- * offer is derived from flag ownership and changes UNDER the cursor, so the
- * highlight is held by identity (`selectedSpawn`) and never as an index. What
+ * round belongs in `draw`. The offer is derived from flag ownership and changes
+ * UNDER the cursor, so the cursor is held by identity (`selectedSpawn`) and
+ * never as an index. Every per-frame write is compared before it is made. What
  * `onDeploy` means is the caller's: offline Game deploys, in a netplay round it
- * sends a request and `setPending` is how this screen says so.
+ * sends a request and `setPending` is how this screen says so. Reads no input:
+ * `Game` calls the verbs (`moveSelection`, `confirm`) and pushes the device.
+ *
+ * **IT IS A FRONT END, NOT A FORM.** It read as one: a heading reading "Select
+ * deployment" over a square map in a black veil, a status box, a Deploy button
+ * and a loadout bar floating in a column beside it, and a hint line naming
+ * three devices along the bottom. Now the POSITION is the title — the name of
+ * the place you are about to stand in, set large, with the flag's letter hollow
+ * behind it and the round's standing under it. The map is the STAGE, the one
+ * thing on this screen a player reads a decision off. The positions are a
+ * column of plates the cursor walks, with the kit and Deploy closing the column
+ * as they do on the menu; an INTEL plate says what the cursor's position is
+ * like right now and how the round stands; Pause is the system corner.
  */
 import "./deploy.css";
+import { CONFIG } from "../config";
 import { OTHER_TEAM, type Team } from "../entities/Combatant";
 import { teamLook } from "../core/teamView";
 import {
@@ -27,44 +43,101 @@ import {
   type PlanView,
 } from "./mapPaint";
 import { planFromWorld } from "./mapPlan";
-import type { ConquestSystem } from "../systems/ConquestSystem";
+import { glyph, guessDevice, type InputDevice } from "./prompts";
+import type { ControlPoint, ConquestSystem } from "../systems/ConquestSystem";
 import type { EnvironmentSpec } from "../world/environment";
 import type { GameMap, SpawnPointDef } from "../world/MapBuilder";
 
+/** Line icons in the menu's own drawing: a 24-unit box, square caps, no fill. */
+const svg = (d: string) =>
+  `<svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="square" stroke-linejoin="miter">${d}</svg>`;
+const ICON_PAUSE = svg(`<path d="M8 5v14M16 5v14"/>`);
+
 /**
- * The between-lives screen: a top-down view of the map with the flags you
- * hold, where you can pick a spawn and drop back in — and a way through to the
- * loadout screen before you do. Waiting out a respawn is the natural moment to
- * reconsider the kit, and it is the only moment inside a round when changing
- * it costs nothing: the weapon is already put away.
- *
- * The map is drawn straight from the collider boxes rather than from a separate
- * authored minimap. That keeps the two from ever disagreeing — if a building
- * blocks movement it appears here, and nothing has to be updated twice when the
- * layout changes. It is the same drawing the corner minimap and the menu's
- * intel plate make of the same place, at three magnifications; see
- * `mapPaint.ts` for what that buys and `docs/ui.md` for what it replaced.
- *
- * Note the CSS contract: `#hud` is `pointer-events: none` so the HUD never eats
- * a click meant for the game, which means this overlay has to opt back in.
+ * What one offered position is right now, read off the conquest state once a
+ * frame and shared by the plate, the title and the intel so the three cannot
+ * describe the same place three ways.
  */
+interface Position {
+  spawn: SpawnPointDef;
+  /** The flag it belongs to, or null for the home base. */
+  point: ControlPoint | null;
+  name: string;
+  /** The flag's letter, or "HQ" for the home base. */
+  letter: string;
+  /**
+   * `home` is always offered; `held` is a flag of ours with nobody else in it;
+   * `attack` is a flag of ours the enemy is standing in alone — still offered,
+   * because it is still ours until the meter crosses zero, and the one state a
+   * player most needs told before they drop into it. (A CONTESTED flag is not
+   * offered at all — `ConquestSystem.flagSpawnsFor`.)
+   */
+  state: "home" | "held" | "attack";
+  /** 0..1, how far the meter stands toward our side. */
+  control: number;
+  friends: number;
+  foes: number;
+}
+
+const STATE_WORD: Record<Position["state"], string> = {
+  home: "Always open",
+  held: "Held",
+  attack: "Under attack",
+};
+
+/** What deploying at a position MEANS, in a sentence — the intel's paragraph. */
+function positionBlurb(p: Position): string {
+  if (p.state === "home") {
+    return "Your side's own ground at the edge of the map. It can never be taken, so it is always offered — and it is the longest walk to the fight.";
+  }
+  if (p.state === "attack") {
+    return "The enemy is inside the zone and the meter is falling toward them. Deploying here puts you straight into its defence.";
+  }
+  return p.control < 0.999
+    ? "Held by your side and quiet, with the meter still climbing back. You come back on the flag itself."
+    : "Held by your side and quiet. You come back on the flag itself, a short run from wherever the fight has moved.";
+}
+
+/** A 1-based index as two digits: the title's counter. */
+const twoDigits = (n: number) => String(n).padStart(2, "0");
+
+/** What `update` last put on screen, so it can patch rather than rewrite. */
+interface Shown {
+  /** Every option's identity, in order — the list's SHAPE. */
+  keys: string;
+  heroKey: string;
+  intelKey: string;
+  facts: string;
+}
+
 export class DeployScreen {
   private root: HTMLElement;
+  private kickerEl: HTMLElement;
+  private heroEl: HTMLElement;
+  private listEl: HTMLElement;
+  private kitW: HTMLElement;
+  private kitS: HTMLElement;
+  /** The confirm button; drawn waiting until the reinforcement clock runs out. */
+  private goBtn: HTMLElement;
+  private goSub: HTMLElement;
+  private goNum: HTMLElement;
+  private goFill: HTMLElement;
+  private intelPos: HTMLElement;
+  private roundEl: HTMLElement;
   private canvas: HTMLCanvasElement;
   private ctx: CanvasRenderingContext2D;
-  private statusEl: HTMLElement;
-  /** The status line's two halves: what the clock says, and where. */
-  private stateEl!: HTMLElement;
-  private spawnEls: HTMLElement[] = [];
-  /** The kit button's caption; rewritten when the fit changes. */
-  private kitEl: HTMLElement;
-  /** The confirm button; greyed until the reinforcement wait is over. */
-  private goBtn!: HTMLElement;
+  private device: InputDevice = guessDevice();
 
   /** Wired by Game. */
   onDeploy: (spawn: SpawnPointDef) => void = () => {};
   /** Wired by Game: the player wants the loadout screen before dropping in. */
   onOpenLoadout: () => void = () => {};
+  /**
+   * Wired by Game: the system corner's Pause. A phone has no Escape key and the
+   * touch controls' own pause button is not up on this screen, so without it
+   * there is no way off a round from here under a finger at all.
+   */
+  onPause: () => void = () => {};
 
   private map: GameMap | null = null;
   private conquest: ConquestSystem | null = null;
@@ -81,18 +154,19 @@ export class DeployScreen {
   private env!: EnvironmentSpec;
   private team: Team = 0;
   private options: SpawnPointDef[] = [];
+  private positions: Position[] = [];
   private selected = 0;
   /**
-   * The spawn the highlight is ON, as an object rather than as a position in
-   * the list.
+   * The spawn the cursor is ON, as an object rather than as a position in the
+   * list.
    *
    * The list is derived from flag ownership and re-derived every frame, so in a
    * networked round it changes UNDER the cursor: a flag falling two hundred
    * metres away removes a row, everything below it shifts up, and a carried
    * index quietly becomes a different place — which the player then deploys to
-   * with their hand already on Enter. Identity is what keeps the highlight on
-   * what it was put on; when that spawn stops being offered the highlight falls
-   * back to the home gatehouse, which is the one row that can never disappear.
+   * with their hand already on Enter. Identity is what keeps the cursor on what
+   * it was put on; when that spawn stops being offered it falls back to the
+   * home base, which is the one row that can never disappear.
    */
   private selectedSpawn: SpawnPointDef | null = null;
   /** Screen-space hit targets, rebuilt every draw. */
@@ -108,90 +182,102 @@ export class DeployScreen {
   /** Where the world lands on the canvas. Written by `buildBase`. */
   private view: PlanView = { scale: 1, ox: 0, oy: 0 };
   private ready = false;
+  /**
+   * How long the wait was when this screen was raised, so the Deploy plate can
+   * fill over it. The longest `remaining` seen since `show`: the first update
+   * after a death is the clock's full length less what the death cam spent.
+   */
+  private waitFor = 0;
   /** The spawn a networked deploy has been requested at, until it is granted. */
-  private pendingLabel: string | null = null;
+  private pendingSpawn: SpawnPointDef | null = null;
+  /** The clock's last reading, so a pick made by the pointer can redraw at once. */
+  private lastRemaining = 0;
+  private shown: Shown | null = null;
 
   constructor() {
     this.root = document.createElement("div");
     this.root.id = "deploy";
-    // The shell's frame and its veil, but NOT `.ui-solid`: this screen stands
-    // over a round that is still being fought, and the map behind it is what
-    // the player is deciding against.
-    this.root.className = "ui-screen ui-veil hidden";
-    // `.map-wrap` exists only to hang the chamfered hull and the corner
-    // brackets on — a canvas cannot draw its own chrome.
-    //
-    // THE MAP IS THE SCREEN and the orders are the column beside it. Both used
-    // to be one centred stack, which capped the map at whatever the status
-    // line, a hint row and two buttons left of the window's height — about
-    // 56vh. Beside them it takes the whole body row, and the panel's own
-    // height stops mattering at all.
-    //
-    // Every input hint lives in the frame's foot, which is the one row this
-    // screen has for them; the buttons carry only what they do.
+    this.root.className = `hidden dev-${this.device}`;
+    // Every block is a named grid AREA, so a phone's layout is a change of
+    // template in the stylesheet rather than a second copy of this markup —
+    // the rule every front-end screen here keeps.
     this.root.innerHTML = `
-      <div class="ui-head">
-        <div class="ui-titles">
-          <span class="ui-eyebrow">Reinforcement</span>
-          <h2>Select deployment</h2>
+      <div class="dp-top">
+        <div class="dp-brand">
+          <span class="dp-kicker"></span>
+          <span class="dp-word">Deploy</span>
         </div>
-        <div class="ui-meta">
-          <span>Position</span>
-          <b class="dp-spawn"></b>
-        </div>
-      </div>
-      <div class="ui-body dp-body">
-        <div class="map-wrap brackets">
-          <div class="hull"></div>
-          <canvas id="deploy-map" width="620" height="620"></canvas>
-        </div>
-        <div class="ui-panel dp-orders">
-          <div id="deploy-status">
-            <span class="dp-state"></span>
-            <b class="dp-spawn"></b>
-          </div>
-          <div id="deploy-actions">
-            <button id="deploy-go"><b>Deploy</b><i>Enter &middot; A</i></button>
-            <button id="deploy-kit"><span class="lbl">Loadout</span><b></b></button>
-          </div>
+        <div class="dp-sys">
+          <button class="dp-sysbtn dp-pause">${ICON_PAUSE}<b>Pause</b>${glyph("Esc", "Start")}</button>
         </div>
       </div>
-      <p class="ui-foot">
-        <span><kbd>&larr;</kbd><kbd>&rarr;</kbd><kbd class="pad">Stick / D-pad</kbd> choose position</span>
-        <span><kbd>Enter</kbd><kbd class="pad">A</kbd> deploy</span>
-        <span><kbd>L</kbd><kbd class="pad">Y</kbd> loadout</span>
-      </p>
+      <div class="dp-hero"></div>
+      <div class="dp-list"></div>
+      <div class="dp-kitrow">
+        <button class="dp-kit">
+          <span class="dp-kit-cap">Loadout</span>
+          <b class="dp-kit-w"></b>
+          <i class="dp-kit-s"></i>
+          ${glyph("L", "Y")}
+        </button>
+      </div>
+      <div class="dp-gorow">
+        <button class="dp-go">
+          <span class="dp-fill"></span>
+          <span class="dp-go-t"><b>Deploy</b><i class="dp-go-sub"></i></span>
+          <em class="dp-go-n"></em>
+          ${glyph("Enter", "A")}
+        </button>
+      </div>
+      <div class="dp-stage">
+        <div class="dp-mapwrap">
+          <div class="dp-hull"></div>
+          <canvas width="620" height="620"></canvas>
+        </div>
+      </div>
+      <aside class="dp-intel">
+        <div class="dp-intel-pos"></div>
+        <div class="dp-round"></div>
+      </aside>
+      <div class="dp-foot">
+        <span data-dev="kbm"><kbd>&uarr;</kbd><kbd>&darr;</kbd> Position</span>
+        <span data-dev="pad"><kbd class="pd">D-pad</kbd> Position</span>
+        <span data-dev="kbm"><kbd>Tab</kbd> Scores</span>
+        <span data-dev="pad"><kbd class="pd">View</kbd> Scores</span>
+      </div>
     `;
     document.getElementById("hud")!.appendChild(this.root);
-    this.canvas = this.root.querySelector("#deploy-map")!;
+    const q = <T extends HTMLElement>(sel: string) => this.root.querySelector<T>(sel)!;
+    this.kickerEl = q(".dp-kicker");
+    this.heroEl = q(".dp-hero");
+    this.listEl = q(".dp-list");
+    this.kitW = q(".dp-kit-w");
+    this.kitS = q(".dp-kit-s");
+    this.goBtn = q(".dp-go");
+    this.goSub = q(".dp-go-sub");
+    this.goNum = q(".dp-go-n");
+    this.goFill = q(".dp-fill");
+    this.intelPos = q(".dp-intel-pos");
+    this.roundEl = q(".dp-round");
+    this.canvas = q<HTMLCanvasElement>("canvas");
     this.ctx = this.canvas.getContext("2d")!;
-    this.statusEl = this.root.querySelector("#deploy-status")!;
-    this.stateEl = this.statusEl.querySelector(".dp-state")!;
-    // Two of them: the panel's own, and the head's — the name of the place you
-    // are about to stand in is the one fact this screen is FOR, so it is read
-    // back both beside the button that spends it and in the frame's own
-    // right-hand slot. `Array.from` rather than a spread: the root tsconfig's
-    // `lib` has DOM but not DOM.Iterable.
-    this.spawnEls = Array.from(
-      this.root.querySelectorAll<HTMLElement>(".dp-spawn"),
-    );
-    const kitBtn = this.root.querySelector<HTMLElement>("#deploy-kit")!;
-    this.kitEl = kitBtn.querySelector("b")!;
-    // Pointerdown rather than click, for the same reason the menu's kit button
-    // uses it: the deploy confirm is a mouse-down anywhere, read a tick later,
-    // so the state has to change on the down edge or the click that opened the
-    // loadout also drops the player into the map behind it.
-    kitBtn.onpointerdown = () => this.onOpenLoadout();
 
-    // The deploy confirm is Enter / pad A and deliberately not the mouse, so
-    // without this there is no pointer route off this screen except hitting one
-    // of the markers — which on a phone, where the marker is 11 px on a map
-    // scaled to the viewport, is not a target. Pointerdown for the reason the
-    // markers use it: the same event goes on to take the pointer lock, and it
-    // can only do that once `spawnPlayer` has put the state into `playing`.
-    this.goBtn = this.root.querySelector<HTMLElement>("#deploy-go")!;
+    // Pointerdown rather than click, for the reason the menu's kit plate uses
+    // it: the press changes the state on its down edge, so nothing later in the
+    // same gesture can land on whatever this screen was covering.
+    q(".dp-kit").onpointerdown = () => this.onOpenLoadout();
+    // The confirm is Enter / pad A and deliberately not the mouse, so this
+    // button is the pointer's one way off this screen. Pointerdown because the
+    // same event goes on to take the pointer lock, which it can only do once
+    // `spawnPlayer` has put the state into `playing`.
     this.goBtn.onpointerdown = () => this.confirm();
+    q(".dp-pause").onclick = () => this.onPause();
 
+    // The map PICKS and never fires: a click on a marker moves the cursor onto
+    // it, and Deploy spends it. It used to deploy on the spot, which is a row
+    // that picks behaving as a row that fires — on a phone, where the marker is
+    // a few pixels on a map scaled to the viewport, a tap meant to read a flag
+    // dropped the player on it.
     this.canvas.addEventListener("pointerdown", (e) => this.click(e));
     // The ELEMENT is what is watched and not the window, so the map follows
     // its box however that moved. Setting `width` from inside the callback
@@ -205,8 +291,21 @@ export class DeployScreen {
    * the loadout, never straight from the screen that asked for the change —
    * so the caption cannot get ahead of the weapon.
    */
-  setKit(label: string): void {
-    this.kitEl.textContent = label;
+  setKit(weapon: string, sight: string): void {
+    if (this.kitW.textContent !== weapon) this.kitW.textContent = weapon;
+    if (this.kitS.textContent !== sight) this.kitS.textContent = sight;
+  }
+
+  /**
+   * Which device's prompts to draw. A class on the root, compared before it is
+   * written, so `Game` can push it every frame.
+   */
+  setInputDevice(device: InputDevice): void {
+    if (device === this.device) return;
+    this.device = device;
+    for (const d of ["kbm", "pad", "touch"] as const) {
+      this.root.classList.toggle(`dev-${d}`, d === device);
+    }
   }
 
   show(
@@ -214,6 +313,7 @@ export class DeployScreen {
     conquest: ConquestSystem,
     team: Team,
     env: EnvironmentSpec,
+    mapName: string,
   ): void {
     this.map = map;
     this.conquest = conquest;
@@ -222,8 +322,21 @@ export class DeployScreen {
     this.selected = 0;
     this.selectedSpawn = null;
     this.ready = false;
-    this.pendingLabel = null;
+    this.waitFor = 0;
+    this.pendingSpawn = null;
+    this.kickerEl.textContent = `${mapName} · ${teamLook(team).name}`;
     this.root.classList.remove("hidden");
+    // The ENTRANCE, replayed on every raise and never on a patch — the menu's
+    // `.enter`. Taking the class off and reading a layout property is what
+    // restarts animations that already ran on the last death.
+    this.root.classList.remove("enter");
+    void this.root.offsetWidth;
+    this.root.classList.add("enter");
+    document.getElementById("hud")!.classList.add("deploying");
+    // The flag row in the intel is built per show, since it is the map's flags
+    // and a side change re-shows; everything in it after this is a patch.
+    this.buildRound(conquest);
+    this.shown = null;
     // Measured HERE and not left to the observer, because a hidden screen is
     // `display: none` and measures nothing: the first frame after a show would
     // otherwise draw the plan at whatever store the canvas last carried, and
@@ -238,22 +351,24 @@ export class DeployScreen {
    * case, where confirming sends a request and the authority answers a round
    * trip later by putting the body in the world.
    *
-   * The caption it raises names the spawn that was requested rather than the
-   * one under the cursor, and stays up while the cursor moves: the two can
-   * differ, because a player may keep looking around after confirming, and a
-   * line that followed the highlight would claim they were deploying somewhere
-   * they had not asked for. Confirming again replaces both.
+   * What it raises names the spawn that was requested rather than the one under
+   * the cursor, and stays up while the cursor moves: the two can differ,
+   * because a player may keep looking around after confirming, and a line that
+   * followed the cursor would claim they were deploying somewhere they had not
+   * asked for. Confirming again replaces it.
    *
    * Nothing else changes. The Deploy button stays live on purpose — a re-confirm
    * is a new request, which is the whole of what a player can do about a server
    * that has not answered yet.
    */
   setPending(): void {
-    this.pendingLabel = this.spawnLabel(this.options[this.selected]);
+    this.pendingSpawn = this.options[this.selected] ?? null;
   }
 
   hide(): void {
     this.root.classList.add("hidden");
+    this.root.classList.remove("enter");
+    document.getElementById("hud")!.classList.remove("deploying");
   }
 
   get visible(): boolean {
@@ -262,54 +377,48 @@ export class DeployScreen {
 
   /** Redraws and refreshes the countdown. `remaining` is seconds until deploy. */
   update(remaining: number): void {
-    if (!this.map || !this.conquest) return;
-    this.options = this.conquest.deployOptions(this.team);
+    const conquest = this.conquest;
+    if (!this.map || !conquest) return;
+    this.options = conquest.deployOptions(this.team);
     // Re-found by identity, not carried as an index — see `selectedSpawn`. A
-    // spawn that has stopped being offered drops the highlight to the home
-    // spawn rather than onto whatever inherited its row.
+    // spawn that has stopped being offered drops the cursor to the home base
+    // rather than onto whatever inherited its row.
     const at = this.selectedSpawn ? this.options.indexOf(this.selectedSpawn) : -1;
     this.selected = at >= 0 ? at : 0;
     this.selectedSpawn = this.options[this.selected] ?? null;
     this.ready = remaining <= 0;
+    this.waitFor = Math.max(this.waitFor, remaining);
+    this.positions = this.options.map((s) => this.describe(s));
 
-    const name = this.spawnLabel(this.options[this.selected]);
-    // The name is the selection read back. It is on this line rather than only
-    // on the map because a marker highlighted 300 px away is not a label, and
-    // stepping through spawns with a d-pad is exactly the case where nothing
-    // else tells you what you just moved onto.
-    //
-    // A pending request outranks both: it is the one state in which this screen
-    // is waiting on somebody else, and a line reading READY while the player has
-    // already pressed the button says nothing happened.
-    this.stateEl.textContent = this.pendingLabel
-      ? "Deploying"
-      : this.ready
-        ? "Ready to deploy"
-        : `Reinforcements in ${Math.ceil(remaining)}`;
-    const where = this.pendingLabel ?? name;
-    for (const el of this.spawnEls) {
-      // Guarded like every per-frame write in `HUD`: this runs every frame the
-      // screen is up, and the name changes only when the cursor moves.
-      if (el.textContent !== where) el.textContent = where;
+    const was = this.shown;
+    const keys = this.options.map((s) => conquest.spawnIndex(s)).join("|");
+    if (!was || was.keys !== keys) this.buildList(was ? was.keys : null);
+    this.patchRows();
+
+    const focus = this.positions[this.selected] ?? null;
+    const heroKey = focus ? String(conquest.spawnIndex(focus.spawn)) : "none";
+    if (!was || was.heroKey !== heroKey) this.writeHero(focus, was !== null);
+    const facts = this.patchHero(focus);
+
+    // The intel's position half is rewritten when the cursor moves or what it
+    // is on changes KIND (quiet to under attack), never for a meter creeping.
+    const intelKey = focus ? `${heroKey}:${focus.state}:${focus.control < 0.999}` : "none";
+    if (!was || was.intelKey !== intelKey) {
+      this.writeIntel(focus, !was || was.heroKey !== heroKey);
     }
-    this.statusEl.classList.toggle("ready", this.ready);
-    // `confirm()` is a no-op until the wait is over, so the button must not
-    // look live before then — a control that answers nothing is worse than one
-    // that is visibly not yet yours.
-    this.goBtn.classList.toggle("waiting", !this.ready);
+    this.patchIntel(focus);
+    this.patchRound(conquest);
+    this.patchGo(remaining);
+
+    this.shown = { keys, heroKey, intelKey, facts };
     this.draw();
   }
 
   /**
-   * Steps the highlighted spawn, wrapping at both ends — the keyboard's arrows
-   * and the pad's d-pad. The mouse picks a marker directly; without this there
-   * was no way to change position at all without one, which made the pad's
-   * confirm a deploy at whatever the list happened to start on.
-   *
-   * It only moves the index. `update()` runs every frame in this state and
-   * redraws from it, so there is nothing to repaint here — and it is called
-   * before that update, so the marker and the status line change on the same
-   * frame the key was pressed.
+   * Steps the cursor, wrapping at both ends — the keyboard's arrows and the
+   * pad's d-pad. It only moves the index: `update()` runs every frame in this
+   * state and is called after this, so the plate, the title and the marker all
+   * move on the frame the key was pressed.
    */
   moveSelection(delta: number): void {
     const n = this.options.length;
@@ -318,18 +427,313 @@ export class DeployScreen {
     this.selectedSpawn = this.options[this.selected];
   }
 
-  /** Deploys at the current selection. Used by the keyboard/gamepad confirm. */
+  /** Deploys at the cursor's position. The keyboard/pad confirm and the button. */
   confirm(): void {
     if (!this.ready) return;
     const spawn = this.options[this.selected];
     if (spawn) this.onDeploy(spawn);
   }
 
-  private spawnLabel(spawn: SpawnPointDef | undefined): string {
-    if (!spawn) return "NO POSITION";
-    if (!spawn.controlPoint) return teamLook(this.team).name.toUpperCase();
-    const p = this.conquest?.pointById(spawn.controlPoint);
-    return (p?.def.name ?? spawn.controlPoint).toUpperCase();
+  /** Puts the cursor on a position by its place in the offer, and redraws. */
+  private pick(index: number): void {
+    const spawn = this.options[index];
+    if (!spawn) return;
+    this.selected = index;
+    this.selectedSpawn = spawn;
+    this.update(this.lastRemaining);
+  }
+
+  /** One offered spawn, read off the conquest state. */
+  private describe(spawn: SpawnPointDef): Position {
+    const point = spawn.controlPoint
+      ? (this.conquest?.pointById(spawn.controlPoint) ?? null)
+      : null;
+    if (!point) {
+      return {
+        spawn,
+        point: null,
+        name: "Home base",
+        letter: "HQ",
+        state: "home",
+        control: 1,
+        friends: 0,
+        foes: 0,
+      };
+    }
+    const toward = this.team === 0 ? -1 : 1;
+    const foes = point.present[OTHER_TEAM[this.team]];
+    return {
+      spawn,
+      point,
+      name: point.def.name,
+      letter: point.def.id,
+      state: foes > 0 ? "attack" : "held",
+      control: Math.max(0, Math.min(1, point.meter * toward)),
+      friends: point.present[this.team],
+      foes,
+    };
+  }
+
+  /**
+   * The plates from nothing, when the SET of offered positions changed — a flag
+   * taken or lost. `before` is the set that was on screen, so a position that
+   * has just been OFFERED deals itself in while the others hold still.
+   */
+  private buildList(before: string | null): void {
+    const conquest = this.conquest!;
+    const old = before === null ? null : new Set(before.split("|"));
+    this.listEl.innerHTML = this.positions
+      .map((p, i) => {
+        const key = String(conquest.spawnIndex(p.spawn));
+        const fresh = old !== null && !old.has(key);
+        const mark =
+          p.state === "home"
+            ? `<span class="dp-mark home"><i></i></span>`
+            : `<span class="dp-mark"><b>${p.letter}</b></span>`;
+        return `<div class="dp-rowwrap${fresh ? " fresh" : ""}" data-row="${i}" style="--i:${i + 1}">
+          <button class="dp-row">
+            ${mark}
+            <span class="dp-name"><b></b><i class="dp-state"></i></span>
+            <span class="dp-meter"><s></s></span>
+          </button>
+        </div>`;
+      })
+      .join("");
+    this.listEl.querySelectorAll<HTMLElement>(".dp-rowwrap").forEach((wrap) => {
+      const index = Number(wrap.dataset.row);
+      // CLICKED, never hovered: Deploy is under the list, so the pointer
+      // crosses every plate below the one it chose on its way down to it, and
+      // a cursor that followed the hover would deploy the player at the last
+      // plate it crossed. A plate PICKS; Deploy fires.
+      wrap.onclick = () => this.pick(index);
+    });
+  }
+
+  /** Every plate's changing text, meter and classes, written in place. */
+  private patchRows(): void {
+    const pendingKey = this.pendingSpawn;
+    this.listEl.querySelectorAll<HTMLElement>(".dp-rowwrap").forEach((wrap) => {
+      const i = Number(wrap.dataset.row);
+      const p = this.positions[i];
+      if (!p) return;
+      const name = wrap.querySelector<HTMLElement>(".dp-name b")!;
+      if (name.textContent !== p.name) name.textContent = p.name;
+      const pending = pendingKey === p.spawn;
+      const word = pending ? "Deploying…" : STATE_WORD[p.state];
+      const state = wrap.querySelector<HTMLElement>(".dp-state")!;
+      if (state.textContent !== word) state.textContent = word;
+      wrap.classList.toggle("sel", i === this.selected);
+      wrap.classList.toggle("attack", p.state === "attack");
+      wrap.classList.toggle("home", p.state === "home");
+      wrap.classList.toggle("busy", pending);
+      // The meter as a transform, so a creeping capture is the compositor's.
+      const scale = `scaleX(${p.control.toFixed(3)})`;
+      const s = wrap.querySelector<HTMLElement>(".dp-meter s")!;
+      if (s.style.transform !== scale) s.style.transform = scale;
+    });
+  }
+
+  /**
+   * The title: the flag's letter hollow behind, an eyebrow, the NAME, and a
+   * strip of figures under it. Rewritten only when the cursor's position
+   * changes, because replacing it is how `.swap` replays the wipe.
+   */
+  private writeHero(focus: Position | null, swap: boolean): void {
+    const index = focus ? `<span class="dp-index" aria-hidden="true">${focus.letter}</span>` : "";
+    this.heroEl.innerHTML = `<div class="dp-hero-in${swap ? " swap" : ""}">
+        ${index}
+        <span class="dp-mode"></span>
+        <h2 class="dp-title"></h2>
+        <div class="dp-facts"></div>
+      </div>`;
+    this.heroEl.querySelector(".dp-title")!.textContent = focus ? focus.name : "No position";
+  }
+
+  /**
+   * The eyebrow and the figure strip, which move under a title that does not:
+   * which position of how many and what state it is in, then the round — both
+   * sides' tickets and the flags held. The strip is ALWAYS one line, so the
+   * list under the title never moves as the round does. Returns its signature.
+   */
+  private patchHero(focus: Position | null): string {
+    const mode = this.heroEl.querySelector<HTMLElement>(".dp-mode");
+    const factsEl = this.heroEl.querySelector<HTMLElement>(".dp-facts");
+    const conquest = this.conquest;
+    if (!mode || !factsEl || !conquest) return "";
+    const n = this.options.length;
+    const eyebrow = focus
+      ? `Position ${twoDigits(this.selected + 1)} / ${twoDigits(n)} · ${
+          this.pendingSpawn ? "Deploying" : STATE_WORD[focus.state]
+        }`
+      : "Reinforcement";
+    if (mode.textContent !== eyebrow) mode.textContent = eyebrow;
+    mode.classList.toggle("attack", focus?.state === "attack");
+    const other = OTHER_TEAM[this.team];
+    const facts: [string, string, string][] = [
+      [String(Math.ceil(conquest.tickets[this.team])), teamLook(this.team).name, "mine"],
+      [String(Math.ceil(conquest.tickets[other])), teamLook(other).name, "theirs"],
+      [`${conquest.flagsHeld(this.team)} / ${conquest.points.length}`, "Flags", ""],
+    ];
+    const sig = JSON.stringify(facts);
+    if (factsEl.dataset.sig !== sig) {
+      factsEl.dataset.sig = sig;
+      factsEl.replaceChildren(
+        ...facts.map(([v, l, cls]) => {
+          const span = document.createElement("span");
+          if (cls) span.className = cls;
+          const b = document.createElement("b");
+          b.textContent = v;
+          const i = document.createElement("i");
+          i.textContent = l;
+          span.append(b, i);
+          return span;
+        }),
+      );
+    }
+    return sig;
+  }
+
+  /**
+   * The intel's position half — what the cursor's position IS, described.
+   * `fresh` fades it in, for the cursor arriving on something new rather than
+   * the same place changing state under it.
+   */
+  private writeIntel(focus: Position | null, fresh: boolean): void {
+    if (!focus) {
+      this.intelPos.innerHTML = "";
+      return;
+    }
+    const eyebrow = focus.point ? `Flag ${focus.letter}` : teamLook(this.team).name;
+    const figures = focus.point
+      ? `<div class="dp-ifacts">
+           <span><b class="dp-f-ctl"></b><i>Control</i></span>
+           <span class="mine"><b class="dp-f-fr"></b><i>Friendlies</i></span>
+           <span class="theirs"><b class="dp-f-foe"></b><i>Hostiles</i></span>
+         </div>`
+      : this.nearestFlag(focus.spawn);
+    this.intelPos.innerHTML = `<div class="dp-intel-in${fresh ? " fade" : ""}">
+        <div class="dp-intel-head"><span class="dp-eyebrow-s"></span><h3></h3></div>
+        ${figures}
+        <p class="dp-blurb"></p>
+      </div>`;
+    this.intelPos.querySelector(".dp-eyebrow-s")!.textContent =
+      `${eyebrow} · ${STATE_WORD[focus.state]}`;
+    this.intelPos.querySelector("h3")!.textContent = focus.name;
+    this.intelPos.querySelector(".dp-blurb")!.textContent = positionBlurb(focus);
+    this.intelPos.classList.toggle("attack", focus.state === "attack");
+  }
+
+  /**
+   * The home base's figures: which flag is nearest it and how far — the one
+   * thing worth knowing about a place that never changes hands, since it is
+   * the walk a player choosing it is signing up for.
+   */
+  private nearestFlag(spawn: SpawnPointDef): string {
+    let best: ControlPoint | null = null;
+    let bestD = Infinity;
+    for (const p of this.conquest?.points ?? []) {
+      const d = Math.hypot(p.def.pos.x - spawn.pos.x, p.def.pos.z - spawn.pos.z);
+      if (d < bestD) {
+        bestD = d;
+        best = p;
+      }
+    }
+    if (!best) return "";
+    return `<div class="dp-ifacts">
+        <span><b>${best.def.id}</b><i>Nearest flag</i></span>
+        <span><b>${Math.round(bestD)} m</b><i>Walk to it</i></span>
+      </div>`;
+  }
+
+  /** The intel's live figures, patched as the meter and the zone's bodies move. */
+  private patchIntel(focus: Position | null): void {
+    if (!focus?.point) return;
+    const set = (sel: string, text: string) => {
+      const el = this.intelPos.querySelector<HTMLElement>(sel);
+      if (el && el.textContent !== text) el.textContent = text;
+    };
+    set(".dp-f-ctl", `${Math.round(focus.control * 100)}%`);
+    set(".dp-f-fr", String(focus.friends));
+    set(".dp-f-foe", String(focus.foes));
+  }
+
+  /**
+   * The intel's round half, built once per raise: both sides' tickets as bars,
+   * and every flag on the map as the hexagon the whole interface names one
+   * with — the HUD's own strip, which is off the glass while this is up.
+   */
+  private buildRound(conquest: ConquestSystem): void {
+    const other = OTHER_TEAM[this.team];
+    const flags = conquest.points
+      .map((p) => `<span class="dp-flag" data-id="${p.def.id}"><i></i><b>${p.def.id}</b></span>`)
+      .join("");
+    this.roundEl.innerHTML = `
+      <span class="dp-round-cap">The round</span>
+      <div class="dp-tix mine"><span class="dp-tix-n"></span><b></b><em><s></s></em></div>
+      <div class="dp-tix theirs"><span class="dp-tix-n"></span><b></b><em><s></s></em></div>
+      <div class="dp-flags">${flags}</div>`;
+    const [mineRow, theirsRow] = Array.from(this.roundEl.querySelectorAll<HTMLElement>(".dp-tix"));
+    mineRow.querySelector(".dp-tix-n")!.textContent = teamLook(this.team).name;
+    theirsRow.querySelector(".dp-tix-n")!.textContent = teamLook(other).name;
+  }
+
+  private patchRound(conquest: ConquestSystem): void {
+    const other = OTHER_TEAM[this.team];
+    const rows = this.roundEl.querySelectorAll<HTMLElement>(".dp-tix");
+    [this.team, other].forEach((t, k) => {
+      const row = rows[k];
+      if (!row) return;
+      const n = String(Math.ceil(conquest.tickets[t]));
+      const b = row.querySelector("b")!;
+      if (b.textContent !== n) b.textContent = n;
+      const scale = `scaleX(${Math.max(0, Math.min(1, conquest.tickets[t] / CONFIG.conquest.tickets)).toFixed(3)})`;
+      const s = row.querySelector<HTMLElement>("s")!;
+      if (s.style.transform !== scale) s.style.transform = scale;
+    });
+    const toward = this.team === 0 ? -1 : 1;
+    this.roundEl.querySelectorAll<HTMLElement>(".dp-flag").forEach((el) => {
+      const p = conquest.pointById(el.dataset.id ?? "");
+      if (!p) return;
+      const owner = p.owner === null ? "" : p.owner === this.team ? "mine" : "theirs";
+      const cls = `dp-flag${owner ? ` ${owner}` : ""}${p.contested ? " contested" : ""}`;
+      if (el.className !== cls) el.className = cls;
+      // The fill is how far the meter leans, in the colour it leans to — the
+      // HUD strip's reading exactly.
+      const lean = p.meter * toward;
+      const fill = el.querySelector<HTMLElement>("i")!;
+      const scale = `scaleY(${Math.abs(lean).toFixed(3)})`;
+      if (fill.style.transform !== scale) fill.style.transform = scale;
+      const side = lean >= 0 ? "mine" : "theirs";
+      if (fill.className !== side) fill.className = side;
+    });
+  }
+
+  /**
+   * The Deploy plate: filling over the reinforcement wait with the seconds left
+   * set large beside the word, then hot and live once it is over, then naming
+   * the position a networked request was made for until the authority answers.
+   */
+  private patchGo(remaining: number): void {
+    this.lastRemaining = remaining;
+    const pending = this.pendingSpawn ? this.describe(this.pendingSpawn) : null;
+    const focus = this.positions[this.selected];
+    const where = focus ? focus.name : "";
+    const sub = pending
+      ? `Deploying at ${pending.name}…`
+      : this.ready
+        ? `At ${where}`
+        : "Reinforcements inbound";
+    if (this.goSub.textContent !== sub) this.goSub.textContent = sub;
+    const secs = this.ready ? "" : String(Math.ceil(remaining));
+    if (this.goNum.textContent !== secs) this.goNum.textContent = secs;
+    // `confirm()` is a no-op until the wait is over, so the button must not
+    // look live before then — a control that answers nothing is worse than one
+    // that is visibly not yet yours.
+    this.goBtn.classList.toggle("waiting", !this.ready);
+    this.goBtn.classList.toggle("pending", pending !== null);
+    const p = this.ready || this.waitFor <= 0 ? 1 : 1 - remaining / this.waitFor;
+    const scale = `scaleX(${Math.max(0, Math.min(1, p)).toFixed(3)})`;
+    if (this.goFill.style.transform !== scale) this.goFill.style.transform = scale;
   }
 
   private click(e: PointerEvent): void {
@@ -340,10 +744,7 @@ export class DeployScreen {
       const dx = h.x - x;
       const dy = h.y - y;
       if (dx * dx + dy * dy < h.r * h.r) {
-        this.selected = h.index;
-        this.selectedSpawn = this.options[this.selected];
-        this.update(this.ready ? 0 : 1);
-        if (this.ready) this.confirm();
+        this.pick(h.index);
         return;
       }
     }
@@ -353,11 +754,11 @@ export class DeployScreen {
    * Matches the backing store to the box the stylesheet gave the canvas, and
    * drops the prerendered plan so the next draw builds it at the new scale.
    *
-   * The canvas used to carry a fixed 620 x 620 store and be stretched to
-   * `--map` by CSS, which on a 1440p monitor is a 900 px map drawn at 620 and
-   * resampled — soft hairlines on the one screen in the game that is nothing
-   * but hairlines — and on a phone at 2x the same map drawn at a third of the
-   * resolution it is shown at.
+   * The canvas used to carry a fixed 620 x 620 store and be stretched by CSS,
+   * which on a 1440p monitor is a 900 px map drawn at 620 and resampled — soft
+   * hairlines on the one screen in the game that is nothing but hairlines —
+   * and on a phone at 2x the same map drawn at a third of the resolution it is
+   * shown at.
    */
   private resize(): void {
     const box = this.canvas.clientWidth;
@@ -395,7 +796,7 @@ export class DeployScreen {
     paintPlan(c, planFromWorld(map, this.env), this.view, {
       bounds: { x: 0, y: 0, w: size, h: size },
       // The one of the three maps that letters its grid. It is the whole
-      // window, and it is the map a player reads a position OFF — "the barn in
+      // stage, and it is the map a player reads a position OFF — "the barn in
       // D4" is a thing two people can say to each other, and neither the
       // menu's intel plate nor a turning corner map can carry it.
       grid: "labelled",
@@ -431,7 +832,7 @@ export class DeployScreen {
     // Flags: the zone at its real radius, the hexagon the whole interface
     // names a control point with, and the point's NAME under it — this is the
     // one map in the game with room for the word, and "Chapel" is what the
-    // orders panel beside it is about to read back.
+    // plates beside it read back.
     for (const p of conquest.points) {
       const x = px(view, p.def.pos.x);
       const y = py(view, p.def.pos.z);
@@ -458,10 +859,10 @@ export class DeployScreen {
       c.restore();
     }
 
-    // Deployment markers. The selection is drawn LAST and on its own, so it is
-    // never partly under a neighbour — two spawns behind the same flag land
-    // within a marker's width of each other at this scale, and a selection you
-    // have to look for is the one thing this screen cannot afford.
+    // Deployment markers. The cursor's is drawn LAST and on its own, so it is
+    // never partly under a neighbour — a spawn behind a flag lands within a
+    // marker's width of the flag at this scale, and a selection you have to
+    // look for is the one thing this screen cannot afford.
     //
     // The hit radius is the same for every marker whatever it is drawn at:
     // shrinking the unselected ones is a legibility decision, and it must not
@@ -503,13 +904,14 @@ export class DeployScreen {
   }
 
   /**
-   * The selection, in the screen's own accent rather than in the team's: what
-   * it has to be distinct from is the other markers, which are all in the
+   * The cursor's spawn, in the screen's own accent rather than in the team's:
+   * what it has to be distinct from is the other markers, which are all in the
    * team's colour — so a difference in fill and line width is the one
-   * distinction it cannot use, and that is what it was. It now reads as
-   * selected four ways over — brighter hue, larger, four ticks aimed at it,
-   * and a halo that breathes — because a d-pad step has to be visible from
-   * wherever on the map the eye happens to be.
+   * distinction it cannot use. It reads as selected four ways over — brighter
+   * hue, larger, four ticks aimed at it, and a halo that breathes — because a
+   * d-pad step has to be visible from wherever on the map the eye happens to
+   * be. The ticks are the plates' sight brackets drawn on the map: the same
+   * cursor in both places.
    *
    * The pulse is drawn from the wall clock rather than from an accumulated dt:
    * this screen's only job is to be looked at, so a phase that survives across

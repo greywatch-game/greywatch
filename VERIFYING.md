@@ -874,7 +874,7 @@ is one machine's:
   a `.tb-fire` lookup that reads as "the button is missing" usually means
   `input.touchActive` is false — check that first.
 - **Getting into a round by finger** is a tap on `#overlay .ov-start` and then on
-  `#deploy-go`, with a wait between: the same `overlayT > 0.5` gate the keyboard
+  `#deploy .dp-go`, with a wait between: the same `overlayT > 0.5` gate the keyboard
   path has applies, so tap until `state === "playing"`.
 - **A locked pointer emits a zero-delta `pointermove` every frame in headless**,
   which is what the movement gate in `InputManager`'s handler exists for. If you

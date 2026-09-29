@@ -30,12 +30,14 @@ Think like a game UI designer, not a web one:
 ## Which frame
 
 - **The shell** (`.ui-screen` in `base.css`: head, body, foot; a rail and a
-  panel) is for a screen whose job is its LIST and nothing else — the deploy
-  screen is the one left. A new list screen goes there and gets
+  panel) is for a screen whose job is its LIST and nothing else — only the
+  round-over card is left in it. A new list screen goes there and gets
   `.ui-foot`/`.ui-back` for free. (The lobby was one and left: a list of
   matches reads as a front end once each match is a TITLE — its map's name
-  over its photograph.)
-- **The front end** (`:is(#overlay.card-menu, #loadout, #settings, #lobby)` in
+  over its photograph. So did the deploy screen: a list of spawns reads as
+  one once the POSITION under the cursor is the title and the map's plan is
+  the stage.)
+- **The front end** (`:is(#overlay.card-menu, #loadout, #settings, #lobby, #deploy)` in
   `base.css`, plus `prompts.ts`) is for a screen whose job is to SHOW
   something — or a list the player browses like a title screen rather than
   fills in like a form (the settings: the PAGE is the title, the pages a tab
@@ -150,6 +152,14 @@ Keyed on what actually runs out, in this order in the stylesheet:
   match plates join on `click`, which a browser never raises after a scroll;
   pointer-down is for a control whose press must go on to take the pointer
   lock (the deploy screen's), which a join does not.
+- **A plate that PICKS sits above the button that FIRES, so it is clicked
+  and never hovered** — the deploy screen's positions are over its Deploy
+  plate, and a hover cursor would move to the last plate the pointer crossed
+  on its way down to the button. The same goes for a map marker: it picks.
+- **A square STAGE sizes itself off its own area, not the viewport** — the
+  deploy map is `min(100cqw, 100cqh)` inside a `container-type: size` grid
+  area, so every template gets the biggest square its layout leaves without
+  a per-template `vh`/`vw` guess (which is what the old `--map` was).
 - **A block with no patch path must be in the list's SHAPE key.** The lobby's
   empty state lives inside the list and is rebuilt only when the list is, so
   its sentence is part of the key; left out, it said "Searching" forever

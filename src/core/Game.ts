@@ -2124,6 +2124,12 @@ export class Game {
     // standing behind it.
     this.overlayScreen.onVote = (index) => this.net?.sendVote(index);
     this.deployScreen.onOpenLoadout = () => this.openLoadout();
+    // The deploy screen's system corner. Guarded on the state for `onStart`'s
+    // reason: the button outlives no transition, and `pause` from anywhere but
+    // the deploy screen or a round is a lid over the wrong thing.
+    this.deployScreen.onPause = () => {
+      if (this.state === "deploy") this.pause();
+    };
     this.loadoutScreen.onWeapon = (id) => this.setWeapon(id);
     this.loadoutScreen.onSight = (id) => this.setSight(id);
     this.loadoutScreen.onFinish = (id) => this.setFinish(id);
@@ -2995,8 +3001,10 @@ export class Game {
     // other four are repainted the moment the weapon row steps onto them.
     this.player.setFinish(this.weapon, this.finishes[this.weapon]);
     this.applyCarry();
-    const label = kitLabel(this.weapon, this.sight);
-    this.deployScreen.setKit(label);
+    this.deployScreen.setKit(
+      carriedSetup(this.weapon).name,
+      CONFIG.sights[this.sight].name,
+    );
     this.loadoutScreen.setFit(
       this.weapon,
       this.sight,
@@ -3612,7 +3620,7 @@ export class Game {
     // run when this arm is reached, which is what leaves this method with only
     // the clock and the input that are its own.
     //
-    // Stepped before the redraw, so the marker and the status line move on
+    // Stepped before the redraw, so the marker, the plate and the title move on
     // the frame the key was pressed. Both axes step the same list — the
     // spawns are a handful of points scattered over a map rather than a
     // row or a column, so there is no axis that "means" anything, and a
@@ -3623,6 +3631,13 @@ export class Game {
     }
     if (this.input.menuLeftPressed || this.input.menuUpPressed) {
       this.deployScreen.moveSelection(-1);
+    }
+    // Which device's prompts the screen draws, pushed as every front-end
+    // screen's is: only once a device has spoken.
+    if (this.input.anyDeviceUsed) {
+      this.deployScreen.setInputDevice(
+        this.input.padInHand ? "pad" : this.input.touchActive ? "touch" : "kbm",
+      );
     }
     this.deployScreen.update(this.respawnT);
     // Enter / gamepad A deploys at the current selection; the map takes its
@@ -5008,7 +5023,13 @@ export class Game {
     // that changed UNDER a standing deploy screen has to go back through
     // `show`, because the spawn list it is offering belongs to the other side.
     if (this.deployScreen.visible) {
-      this.deployScreen.show(map, this.conquest, team, this.mapDef.environment);
+      this.deployScreen.show(
+        map,
+        this.conquest,
+        team,
+        this.mapDef.environment,
+        this.mapDef.name,
+      );
     }
   }
 
@@ -8723,6 +8744,7 @@ export class Game {
         this.conquest,
         this.player.team,
         this.mapDef.environment,
+        this.mapDef.name,
       );
     }
     this.deployScreen.update(this.respawnT);

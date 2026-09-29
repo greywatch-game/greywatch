@@ -1,90 +1,751 @@
 /**
- * deploy.css — The between-lives deploy screen: the map, the orders panel
- * beside it, and the two action buttons in it.
- * Owns: #deploy and everything under it. The one screen inside #hud that opts
- * back into pointer events, because its map and buttons take their own clicks.
- * Drawn in the shell (`.ui-screen` / `.ui-veil` in base.css) and deliberately
- * NOT `.ui-solid` — the round behind this one is still being fought.
+ * deploy.css — The between-lives screen: a title screen for the position the
+ * cursor is on.
+ * Owns: #deploy — its top bar and system corner, the position's title, the
+ * column of position plates, the kit plate and the Deploy plate, the map's
+ * stage, the intel plate, the hint line — and the #hud.deploying rule that
+ * takes the gameplay chrome off the glass while it is up.
+ *
+ * **IT IS LAID OUT THE WAY THE MENU, THE KIT SCREEN, THE SETTINGS SCREEN AND
+ * THE LOBBY ARE, AND ON PURPOSE.** The menu is a map's name over its
+ * photograph; this is the name of the place you are about to stand in, beside
+ * the PLAN of the map you are standing in, with the positions a column under
+ * the title and the kit and Deploy closing it as they close the menu's. The
+ * unit (`--u`), the type scale, the plate, the chamfer and the prompts are
+ * `base.css`'s, shared by all five. Every block is a named grid AREA, so each
+ * viewport below is a change of TEMPLATE rather than a second copy of the
+ * markup.
+ *
+ * **It stands over the ROUND, which is still being fought**, so the scrim is
+ * shaped rather than a veil: dark behind the column and the intel, thinner
+ * round the map, and the scene behind is dimmed but not painted out.
+ *
+ * `--ov-scale` (base.css) does not reach this screen: its floors are what it
+ * is laid out at on a phone, and a scaled screen is a scaled 44 px target.
  */
 
-/* --- deploy screen --- */
-/* #hud is pointer-events:none so the HUD never eats a game click; this
-   overlay is the one thing that has to opt back in. */
+/* =====================================================================
+   THE FRAME
+   ---------------------------------------------------------------------
+     top: DEPLOY ────────────────────────────────────────── (Pause)
+                              ┌──────────────┐          │ intel
+     TITLE (the position)     │   the map    │          │ plate
+     position plates          │              │          │
+     [ Loadout ]              │              │          │
+     [ DEPLOY  07 ]           └──────────────┘          │
+     ──────────────────────────────────────────────── hints
+
+   Takes the default z-index, UNDER every lid: the pause card, the kit screen
+   and the settings screen are all raised over it, and the scoreboard (9) is
+   read over it. It takes pointer events across its whole area, because its
+   map, its plates and its buttons take their own clicks and the empty middle
+   of it must not reach the round behind.
+   ===================================================================== */
 #deploy {
+  --col: clamp(320px, 30vw, calc(560 * var(--u)));
+  --intel: clamp(260px, 20vw, calc(400 * var(--u)));
+  --gap-x: clamp(16px, calc(48 * var(--u)), 110px);
+
   position: absolute;
   inset: 0;
   pointer-events: auto;
+  display: grid;
+  grid-template-columns: minmax(0, var(--col)) minmax(0, 1fr) minmax(0, var(--intel));
+  /* BOTTOM-anchored, as the menu's column is: the spare height is the row
+     ABOVE the title, so the title, the positions, the kit and Deploy stand
+     together at the foot of the column and read down into the button that
+     spends them. The list's track grows to its content and no further, and
+     only SHRINKS (and scrolls) once that spare row is spent. The title does
+     move when a flag changes hands under the screen — the lobby anchors to
+     the top because its list is whatever the servers say; this one is one to
+     six plates and changes when a flag does. */
+  grid-template-rows: auto minmax(0, 1fr) auto minmax(0, max-content) auto auto auto;
+  grid-template-areas:
+    "top  top   top"
+    ".    stage intel"
+    "hero stage intel"
+    "list stage intel"
+    "kit  stage intel"
+    "go   stage intel"
+    "foot foot  foot";
+  column-gap: var(--gap-x);
+  row-gap: clamp(8px, calc(16 * var(--u)), 30px);
+  padding: max(var(--gy), env(safe-area-inset-top))
+    max(var(--gx), env(safe-area-inset-right))
+    max(var(--gy), env(safe-area-inset-bottom))
+    max(var(--gx), env(safe-area-inset-left));
+  color: #fff;
+  background:
+    linear-gradient(
+      90deg,
+      rgba(3, 5, 11, 0.9) 0,
+      rgba(3, 5, 11, 0.8) calc(var(--gx) + var(--col)),
+      rgba(3, 5, 11, 0.5) calc(var(--gx) + var(--col) + var(--gap-x) * 2),
+      rgba(3, 5, 11, 0.5) calc(100% - var(--gx) - var(--intel) - var(--gap-x) * 2),
+      rgba(3, 5, 11, 0.84) calc(100% - var(--gx) - var(--intel)),
+      rgba(3, 5, 11, 0.9) 100%
+    ),
+    linear-gradient(0deg, rgba(2, 3, 8, 0.7) 0%, rgba(2, 3, 8, 0) 22%),
+    linear-gradient(180deg, rgba(2, 3, 8, 0.6) 0%, rgba(2, 3, 8, 0) 20%),
+    radial-gradient(120% 90% at 4% 110%, rgba(255, 230, 128, 0.1), transparent 56%),
+    radial-gradient(90% 72% at 97% -14%, rgba(53, 240, 255, 0.08), transparent 54%),
+    repeating-linear-gradient(to bottom, rgba(255, 255, 255, 0.012) 0 1px, transparent 1px 3px);
+}
+#deploy .dp-top { grid-area: top; }
+#deploy .dp-hero { grid-area: hero; }
+#deploy .dp-list { grid-area: list; }
+#deploy .dp-kitrow { grid-area: kit; }
+#deploy .dp-gorow { grid-area: go; }
+#deploy .dp-stage { grid-area: stage; }
+#deploy .dp-intel { grid-area: intel; }
+#deploy .dp-foot { grid-area: foot; }
+
+#deploy .dp-top,
+#deploy .dp-hero,
+#deploy .dp-foot {
+  text-shadow: 0 2px 8px rgba(0, 0, 0, 0.9), 0 0 2px rgba(0, 0, 0, 0.8);
+}
+#deploy button {
+  font: inherit;
+  border: 0;
 }
 
-/* THE MAP IS THE SCREEN. It takes the body row's whole height and the
-   orders take the column beside it — which is the change that made the map
-   big. Stacked under a status line, a hint row and two buttons it was
-   capped at `min(56vh, 60vw)`, because everything below it came out of the
-   same height; beside them there is nothing under it to give way to.
+/* While the deploy screen is up, the gameplay chrome under it goes. The
+   tickets and the flags are drawn ON this screen now — on the title's figure
+   strip and in the intel — so the HUD's own copies under the scrim would be a
+   second, unreadable statement of the same thing, and the vitals and the
+   ammunition belong to a body that is not in the world. Visibility, so they
+   come back on the deploy exactly as they were. The scoreboard is untouched:
+   a player waiting out a reinforcement is exactly who holds Tab. */
+#hud.deploying :is(#ticket-bar, #flag-strip, #capture-status, #hitmarker, #damage-dirs,
+  #hud-bottom, #killfeed, #scorefeed, #message, #toasts) { visibility: hidden; }
 
-   The map track is sized by the map: `min-content` measures the square,
-   which is height-led (see `#deploy-map`), so the orders take the rest.
-   `align-items: center` rather than the shell's `stretch`, because the
-   square must not be told to be a rectangle. */
-#deploy .dp-body {
-  /* The orders column is BOUNDED, and the pair is centred as one. Given
-     `1fr` the panel takes everything the map leaves, which on a wide window
-     is a Deploy button a foot across with its caption lost in the middle of
-     it — and it also pushed the map off centre, since the two together no
-     longer measured the viewport. */
-  grid-template-columns: min-content minmax(240px, 430px);
+/* =====================================================================
+   THE TOP BAR — where this screen is, and the SYSTEM CORNER.
+   ---------------------------------------------------------------------
+   Pause is a fixed place with its key on it (Esc / Start), and it is the
+   only way off this screen under a finger: a phone has no Escape, and the
+   touch controls' own pause button is not up between lives.
+   ===================================================================== */
+#deploy .dp-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: calc(24 * var(--u));
+  min-width: 0;
+}
+#deploy .dp-brand {
+  display: flex;
+  flex-direction: column;
+  gap: max(2px, calc(4 * var(--u)));
+  padding-left: max(8px, calc(14 * var(--u)));
+  border-left: 2px solid var(--hot);
+  min-width: 0;
+}
+#deploy .dp-kicker {
+  font-size: var(--t-cap);
+  font-weight: 700;
+  letter-spacing: 0.42em;
+  text-transform: uppercase;
+  color: rgba(255, 230, 128, 0.72);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+#deploy .dp-word {
+  font-size: max(17px, calc(32 * var(--u)));
+  font-weight: 900;
+  letter-spacing: 0.18em;
+  line-height: 1;
+  text-transform: uppercase;
+  color: var(--hot);
+  text-shadow: 3px 3px 0 #000, -1px -1px 0 #35f0ff, 0 3px 16px rgba(0, 0, 0, 0.8);
+  white-space: nowrap;
+}
+#deploy .dp-sys {
+  display: flex;
+  gap: max(6px, calc(10 * var(--u)));
+  flex: none;
+}
+#deploy .dp-sysbtn {
+  display: inline-flex;
   align-items: center;
   justify-content: center;
-  gap: clamp(16px, 3vw, 56px);
+  min-width: var(--hit);
+  min-height: var(--hit);
+  gap: max(7px, calc(10 * var(--u)));
+  padding: max(7px, calc(10 * var(--u))) max(11px, calc(18 * var(--u)));
+  color: #d7dde7;
+  background: var(--plate-mm);
+  box-shadow: var(--plate-edge);
+  cursor: pointer;
+  clip-path: polygon(var(--cut) 0, 100% 0, 100% calc(100% - var(--cut)), calc(100% - var(--cut)) 100%, 0 100%, 0 var(--cut));
+  transition: background 0.14s, color 0.14s;
 }
-#deploy .dp-orders {
-  justify-content: center;
-  gap: clamp(12px, 2.4vh, 26px);
+#deploy .dp-sysbtn svg {
+  width: max(16px, calc(22 * var(--u)));
+  height: max(16px, calc(22 * var(--u)));
+  flex: none;
+}
+#deploy .dp-sysbtn b {
+  font-size: var(--t-cap);
+  font-weight: 800;
+  letter-spacing: 0.24em;
+  text-transform: uppercase;
+  text-shadow: none;
+}
+#deploy .dp-sysbtn:hover {
+  color: var(--hot);
+  background: rgba(255, 230, 128, 0.14);
 }
 
-/* Same hull-behind-canvas trick as the minimap, and for the same reason:
-   a canvas cannot draw its own chamfered edge or corner brackets. */
-#deploy .map-wrap {
+/* =====================================================================
+   THE TITLE — the position the cursor is on.
+   ---------------------------------------------------------------------
+   The flag's letter hollow and enormous behind it (HQ for the home base),
+   an eyebrow saying which position of how many and what state it is in, and
+   a strip of figures under it that is ALWAYS one line — both sides' tickets
+   and the flags held — so the round moving never moves the list under it.
+   Sized off its own box and never wrapped: "The Farmstead" and "The Bog
+   Docks" are what decide the width, not an edge case.
+   ===================================================================== */
+#deploy .dp-hero {
+  min-width: 0;
+  padding-top: max(4px, calc(20 * var(--u)));
+  container-type: inline-size;
+}
+#deploy .dp-hero-in {
+  --t: max(26px, min(calc(96 * var(--u)), 12cqw));
+  position: relative;
+  isolation: isolate;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  min-width: 0;
+}
+#deploy .dp-index {
+  position: absolute;
+  z-index: -1;
+  right: 0;
+  top: calc(var(--t) * -0.5);
+  font-size: calc(var(--t) * 2.2);
+  font-weight: 900;
+  line-height: 1;
+  letter-spacing: -0.02em;
+  color: transparent;
+  -webkit-text-stroke: 1px rgba(255, 230, 128, 0.14);
+  text-shadow: none;
+  pointer-events: none;
+}
+#deploy .dp-mode {
+  min-height: 1em;
+  font-size: var(--t-cap);
+  font-weight: 700;
+  letter-spacing: 0.32em;
+  text-transform: uppercase;
+  color: var(--hot);
+  white-space: nowrap;
+}
+#deploy .dp-mode.attack { color: var(--theirs); }
+/* The line box is tighter than the capitals, so the clip is given the
+   capitals' own height back as padding and the margins take it away again —
+   otherwise the clip shaves the tops off every title. */
+#deploy .dp-title {
+  max-width: 100%;
+  margin: calc(max(4px, calc(8 * var(--u))) - 0.14em) 0 calc(max(6px, calc(12 * var(--u))) - 0.14em);
+  padding: 0.14em 0.06em 0.14em 0;
+  font-size: var(--t);
+  font-weight: 900;
+  letter-spacing: 0.05em;
+  line-height: 0.92;
+  text-transform: uppercase;
+  color: #fff;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  text-shadow: 0.04em 0.045em 0 #000, 0 0.08em 0.6em rgba(0, 0, 0, 0.55);
+}
+#deploy .dp-facts {
+  display: flex;
+  gap: max(3px, calc(6 * var(--u))) max(14px, calc(30 * var(--u)));
+  max-width: 100%;
+  min-height: 1.3em;
+  overflow: hidden;
+  white-space: nowrap;
+}
+#deploy .dp-facts span {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 0.5em;
+  min-width: 0;
+}
+#deploy .dp-facts b {
+  font-size: var(--t-row);
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  font-variant-numeric: tabular-nums;
+}
+#deploy .dp-facts i {
+  font-style: normal;
+  font-size: var(--t-cap);
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  color: rgba(255, 255, 255, 0.52);
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+#deploy .dp-facts .mine b { color: var(--mine); }
+#deploy .dp-facts .theirs b { color: var(--theirs); }
+/* A CHANGE of position: the new name wipes in from the left while the block
+   slides the last few units home. Only on a title written by a change — a
+   raise leaves the arrival to the screen's entrance. */
+#deploy .dp-hero-in.swap {
+  animation: dp-swap 0.45s cubic-bezier(0.16, 0.84, 0.36, 1) both;
+}
+#deploy .dp-hero-in.swap .dp-title {
+  animation: dp-wipe 0.55s cubic-bezier(0.6, 0, 0.2, 1) both;
+}
+@keyframes dp-swap {
+  from { opacity: 0; transform: translate3d(calc(-28 * var(--u)), 0, 0); }
+  to { opacity: 1; transform: none; }
+}
+@keyframes dp-wipe {
+  from { clip-path: inset(-20% 100% -20% 0); }
+  to { clip-path: inset(-20% -5% -20% 0); }
+}
+
+/* =====================================================================
+   THE POSITIONS — one plate per place this side may come back.
+   ---------------------------------------------------------------------
+   The home base first and then every flag held and not contested
+   (`ConquestSystem.deployOptions`), so the list is one plate at the start of
+   a round and six at the most. Each carries the mark the plan beside it
+   draws — the flag's hexagon with its letter, or the spawn marker's disc and
+   chevron for the home base — its name, its state, and a hairline meter of
+   how far the flag's capture meter stands toward this side. A flag the enemy
+   is standing in alone is still ours and still offered, and it is drawn in
+   the enemy's colour so nobody drops into it unwarned.
+
+   Room for the cursor's brackets is made inside the scroller's own clip and
+   NOT taken back at the bottom, where a negative margin would let a plate
+   scrolled past paint over the kit plate under it.
+   ===================================================================== */
+#deploy .dp-list {
+  display: flex;
+  flex-direction: column;
+  gap: max(6px, calc(10 * var(--u)));
+  min-width: 0;
+  min-height: 0;
+  margin: -12px -14px 0;
+  padding: 12px 14px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-width: none;
+}
+#deploy .dp-list::-webkit-scrollbar { display: none; }
+#deploy .dp-rowwrap {
+  position: relative;
+  flex: none;
+  min-width: 0;
+}
+#deploy .dp-row {
+  position: relative;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: center;
+  column-gap: max(12px, calc(20 * var(--u)));
+  width: 100%;
+  min-height: max(var(--hit), calc(72 * var(--u)));
+  padding: max(8px, calc(12 * var(--u))) max(12px, calc(18 * var(--u)));
+  text-align: left;
+  color: #fff;
+  background: var(--plate-mm);
+  box-shadow: var(--plate-edge);
+  cursor: pointer;
+  clip-path: polygon(var(--cut) 0, 100% 0, 100% calc(100% - var(--cut)), calc(100% - var(--cut)) 100%, 0 100%, 0 var(--cut));
+  transition: background 0.12s, box-shadow 0.12s;
+}
+#deploy .dp-row:hover { background: rgba(255, 230, 128, 0.08); }
+#deploy .dp-rowwrap.sel .dp-row {
+  background: rgba(255, 230, 128, 0.1);
+  box-shadow: inset 0 0 0 1px rgba(255, 230, 128, 0.6);
+}
+#deploy .dp-rowwrap.attack.sel .dp-row {
+  background: rgba(255, 90, 79, 0.1);
+  box-shadow: inset 0 0 0 1px rgba(255, 90, 79, 0.6);
+}
+
+/* The mark: the HUD strip's hexagon, its hull in this side's colour and a
+   dark core inset so a 2 px rim is left — `clip-path` clips a border away,
+   so the coloured hull IS the outer element. The home base is a disc with the
+   plan's own spawn chevron in it. */
+#deploy .dp-mark {
+  --hex: polygon(50% 0, 100% 26%, 100% 74%, 50% 100%, 0 74%, 0 26%);
+  position: relative;
+  display: grid;
+  place-items: center;
+  width: max(26px, calc(40 * var(--u)));
+  height: max(30px, calc(46 * var(--u)));
+  clip-path: var(--hex);
+  background: var(--mine);
+}
+#deploy .dp-mark::before {
+  content: "";
+  position: absolute;
+  inset: 2px;
+  clip-path: var(--hex);
+  background: rgba(6, 8, 13, 0.9);
+}
+#deploy .dp-mark b {
+  position: relative;
+  font-size: var(--t-row);
+  font-weight: 800;
+  color: var(--mine);
+}
+#deploy .dp-mark.home {
+  width: max(26px, calc(40 * var(--u)));
+  height: max(26px, calc(40 * var(--u)));
+  clip-path: none;
+  border-radius: 50%;
+}
+#deploy .dp-mark.home::before { clip-path: none; border-radius: 50%; }
+#deploy .dp-mark.home i {
+  position: relative;
+  width: 42%;
+  height: 34%;
+  margin-top: 8%;
+  background: var(--mine);
+  clip-path: polygon(0 0, 100% 0, 50% 100%);
+}
+#deploy .dp-rowwrap.attack .dp-mark { animation: dp-alarm 0.7s ease-in-out infinite alternate; }
+@keyframes dp-alarm {
+  from { opacity: 1; }
+  to { opacity: 0.55; }
+}
+#deploy .dp-name {
+  display: flex;
+  flex-direction: column;
+  gap: max(2px, calc(5 * var(--u)));
+  min-width: 0;
+}
+#deploy .dp-name b {
+  font-size: var(--t-row);
+  font-weight: 800;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  transition: color 0.14s;
+}
+#deploy .dp-rowwrap.sel .dp-name b { color: var(--hot); }
+#deploy .dp-state {
+  font-style: normal;
+  font-size: var(--t-cap);
+  font-weight: 700;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  white-space: nowrap;
+  color: rgba(255, 255, 255, 0.5);
+}
+#deploy .dp-rowwrap.attack .dp-state { color: var(--theirs); }
+#deploy .dp-rowwrap.busy .dp-state {
+  color: var(--hot);
+  animation: pulse 0.9s ease-in-out infinite;
+}
+/* The meter: a hairline along the plate's foot, scaled rather than sized so
+   a capture creeping back is the compositor's. */
+#deploy .dp-meter {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: max(2px, calc(3 * var(--u)));
+  background: rgba(255, 255, 255, 0.07);
+}
+#deploy .dp-meter s {
+  display: block;
+  height: 100%;
+  background: var(--mine);
+  transform-origin: left center;
+  transition: transform 0.15s linear;
+}
+#deploy .dp-rowwrap.attack .dp-meter s { background: var(--theirs); }
+#deploy .dp-rowwrap.home .dp-meter { display: none; }
+
+/* --- the cursor: sight brackets on a plate's corners ---
+   On the WRAPPER, which is not clipped, because the plate is cut by a
+   clip-path that would take them off with its corner. The map draws the same
+   cursor as four ticks round the marker. */
+#deploy .dp-rowwrap::before,
+#deploy .dp-rowwrap::after {
+  content: "";
+  position: absolute;
+  z-index: 1;
+  width: max(10px, calc(16 * var(--u)));
+  height: max(10px, calc(16 * var(--u)));
+  border: 2px solid var(--hot);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.14s, transform 0.22s cubic-bezier(0.16, 0.84, 0.36, 1);
+}
+#deploy .dp-rowwrap::before {
+  top: calc(-5 * var(--u) - 3px);
+  left: calc(-7 * var(--u) - 3px);
+  border-right: 0;
+  border-bottom: 0;
+  transform: translate(-6px, -6px);
+}
+#deploy .dp-rowwrap::after {
+  bottom: calc(-5 * var(--u) - 3px);
+  right: calc(-7 * var(--u) - 3px);
+  border-left: 0;
+  border-top: 0;
+  transform: translate(6px, 6px);
+}
+#deploy .dp-rowwrap.sel::before,
+#deploy .dp-rowwrap.sel::after {
+  opacity: 1;
+  transform: none;
+}
+#deploy .dp-rowwrap.attack::before,
+#deploy .dp-rowwrap.attack::after { border-color: var(--theirs); }
+
+/* =====================================================================
+   THE KIT — what is in your hands, and the way to change it.
+   ---------------------------------------------------------------------
+   The menu's loadout plate: the weapon loud, the optic a caption beside it,
+   and the prompt and a chevron at the far end, which together say that this
+   one OPENS something rather than stepping. The wait for reinforcements is
+   the one moment inside a round when changing it costs nothing.
+   ===================================================================== */
+#deploy .dp-kit {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto auto;
+  grid-template-areas:
+    "cap cap gl chev"
+    "w   s   gl chev";
+  align-items: baseline;
+  column-gap: max(10px, calc(14 * var(--u)));
+  row-gap: max(2px, calc(4 * var(--u)));
+  width: 100%;
+  min-height: var(--hit);
+  padding: max(9px, calc(13 * var(--u))) max(12px, calc(18 * var(--u)));
+  text-align: left;
+  color: #fff;
+  background: var(--plate-mm);
+  box-shadow: var(--plate-edge);
+  cursor: pointer;
+  clip-path: polygon(var(--cut) 0, 100% 0, 100% calc(100% - var(--cut)), calc(100% - var(--cut)) 100%, 0 100%, 0 var(--cut));
+  transition: background 0.12s;
+}
+#deploy .dp-kit-cap {
+  grid-area: cap;
+  font-size: var(--t-cap);
+  font-weight: 700;
+  letter-spacing: 0.3em;
+  text-transform: uppercase;
+  color: rgba(255, 255, 255, 0.5);
+}
+#deploy .dp-kit-w {
+  grid-area: w;
+  font-size: var(--t-row);
+  font-weight: 800;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+#deploy .dp-kit-s {
+  grid-area: s;
+  min-width: 0;
+  font-style: normal;
+  font-size: var(--t-cap);
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  color: rgba(255, 255, 255, 0.55);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+#deploy .dp-kit .gl { grid-area: gl; align-self: center; }
+#deploy .dp-kit::after {
+  grid-area: chev;
+  align-self: center;
+  content: "\203A";
+  font-size: var(--t-big);
+  font-weight: 700;
+  line-height: 0.8;
+  color: rgba(255, 255, 255, 0.3);
+  transition: color 0.14s, transform 0.14s;
+}
+#deploy .dp-kit:hover { background: rgba(255, 230, 128, 0.12); }
+#deploy .dp-kit:hover::after { color: var(--hot); transform: translateX(3px); }
+
+/* =====================================================================
+   DEPLOY — the one control on the screen that is the action.
+   ---------------------------------------------------------------------
+   While the reinforcement clock runs it is a dark plate FILLING with the
+   accent, the seconds left set large at its far end: still there, still
+   readable, visibly not yet yours. Once the clock is out it is the menu's
+   Deploy plate — filled hot, the biggest target on the screen, glowing and
+   crossed by a sheen, naming the position it will spend. Its prompt is Enter
+   and A, which deploy at the cursor's position wherever the cursor is,
+   because the cursor is always ON a position.
+   ===================================================================== */
+#deploy .dp-gorow {
+  margin-top: max(2px, calc(6 * var(--u)));
+  transition: filter 0.2s;
+}
+#deploy .dp-gorow:has(.dp-go:not(.waiting)) {
+  filter: drop-shadow(0 0 calc(18 * var(--u)) rgba(255, 230, 128, 0.42));
+}
+#deploy .dp-go {
+  --dcut: max(10px, calc(18 * var(--u)));
+  position: relative;
+  isolation: isolate;
+  display: flex;
+  align-items: center;
+  gap: max(10px, calc(16 * var(--u)));
+  width: 100%;
+  min-height: max(52px, calc(88 * var(--u)));
+  padding: max(10px, calc(16 * var(--u))) max(16px, calc(30 * var(--u)));
+  text-align: left;
+  color: #12141a;
+  background: var(--hot);
+  cursor: pointer;
+  clip-path: polygon(var(--dcut) 0, 100% 0, 100% calc(100% - var(--dcut)), calc(100% - var(--dcut)) 100%, 0 100%, 0 var(--dcut));
+  transition: background 0.2s, color 0.2s;
+  overflow: hidden;
+}
+#deploy .dp-go:not(.waiting):hover { background: #fff3c4; }
+#deploy .dp-go-t {
+  flex: 1 1 auto;
+  display: flex;
+  flex-direction: column;
+  gap: max(2px, calc(4 * var(--u)));
+  min-width: 0;
+}
+#deploy .dp-go-t b {
+  font-size: var(--t-big);
+  font-weight: 900;
+  letter-spacing: 0.3em;
+  line-height: 1;
+  text-transform: uppercase;
+}
+#deploy .dp-go-sub {
+  font-style: normal;
+  font-size: var(--t-cap);
+  font-weight: 700;
+  letter-spacing: 0.22em;
+  text-transform: uppercase;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  color: rgba(18, 20, 26, 0.6);
+}
+#deploy .dp-go-n {
+  flex: none;
+  font-style: normal;
+  font-size: calc(var(--t-big) * 1.5);
+  font-weight: 900;
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+  color: var(--hot);
+}
+#deploy .dp-go-n:empty { display: none; }
+#deploy .dp-go kbd.gl {
+  color: #12141a;
+  background: rgba(18, 20, 26, 0.1);
+  box-shadow: inset 0 0 0 1px rgba(18, 20, 26, 0.4);
+}
+/* The fill: behind the words, scaled over the wait. */
+#deploy .dp-fill {
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  background: linear-gradient(90deg, rgba(255, 230, 128, 0.1), rgba(255, 230, 128, 0.26));
+  transform-origin: left center;
+  opacity: 0;
+}
+#deploy .dp-go.waiting {
+  color: rgba(255, 255, 255, 0.78);
+  background: var(--plate-mm);
+  box-shadow: var(--plate-edge);
+  cursor: default;
+}
+#deploy .dp-go.waiting .dp-fill { opacity: 1; }
+#deploy .dp-go.waiting .dp-go-sub { color: rgba(255, 255, 255, 0.5); }
+#deploy .dp-go.waiting kbd.gl {
+  color: rgba(255, 255, 255, 0.5);
+  background: rgba(255, 255, 255, 0.05);
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.18);
+}
+#deploy .dp-go.pending .dp-go-sub { animation: pulse 0.9s ease-in-out infinite; }
+#deploy .dp-go::after {
+  content: "";
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: -34%;
+  width: 26%;
+  background: linear-gradient(100deg, transparent, rgba(255, 255, 255, 0.62), transparent);
+  opacity: 0;
+  pointer-events: none;
+}
+#deploy .dp-go:not(.waiting)::after {
+  opacity: 1;
+  animation: dp-sheen 3.4s ease-in-out infinite;
+}
+@keyframes dp-sheen {
+  0%, 55% { transform: translateX(0); }
+  100% { transform: translateX(560%); }
+}
+
+/* =====================================================================
+   THE STAGE — the map, and the one thing on the screen a player reads a
+   decision off.
+   ---------------------------------------------------------------------
+   A square as big as its area allows, sized off the area itself (`size`
+   containment and `cq*` units) rather than off the viewport, so every
+   template below gets the biggest square its own layout leaves — the old
+   screen measured `min(70vh, 46vw)` and had to be told about `--ov-scale`.
+   A canvas cannot draw its own chamfered edge, so a hull stands behind it.
+   ===================================================================== */
+#deploy .dp-stage {
+  min-width: 0;
+  min-height: 0;
+  container-type: size;
+  display: grid;
+  place-items: center;
+}
+#deploy .dp-mapwrap {
   position: relative;
   z-index: 0;
+  width: min(100cqw, 100cqh);
+  height: min(100cqw, 100cqh);
   line-height: 0;
-  /* The map's side, and the one number the rest of this screen measures
-     against. HEIGHT-LED, because the body row is exactly as tall as the
-     window less the head and the foot, and the width has a whole orders
-     panel to share with — so height is what binds. The `vw` term is what
-     keeps it from eating that panel on a short, narrow window.
-
-     Divided by `--ov-scale` because `vh` is the VIEWPORT's, while this box
-     is `100% / scale` across and then scaled back down — so on a short
-     viewport a raw `78vh` was scaled a second time and the map came out at
-     a fraction of the height it asked for. At scale 1, which is every
-     desktop, the divide is the identity. */
-  --map: calc(min(70vh, 46vw) / var(--ov-scale));
 }
-#deploy-map {
-  width: var(--map);
-  height: var(--map);
+#deploy .dp-mapwrap canvas {
   display: block;
+  width: 100%;
+  height: 100%;
   /* The UA's own `crosshair` is thin dark lines with a hairline light edge,
      which is a shape drawn for a light page: over this map's near-black paper
-     it disappears entirely, and the pointer is the only thing on the screen
-     the player is moving. So it is drawn here instead — the interface's accent
-     over a heavy dark casing, which reads over both the paper and the mid-grey
-     of a building footprint. The hotspot is the centre (13 13), and it must
-     stay there: the map hit-tests markers at the pointer's own coordinates.
-     `crosshair` is kept as the fallback for anything that refuses an SVG
-     cursor. `%23` is a literal `#` — unencoded it ends the data URI. */
+     it disappears entirely. So it is drawn here instead — the interface's
+     accent over a heavy dark casing. The hotspot is the centre (13 13), and it
+     must stay there: the map hit-tests markers at the pointer's own
+     coordinates. `%23` is a literal `#` — unencoded it ends the data URI. */
   cursor:
     url('data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" width="26" height="26"><g fill="none" stroke="%23000" stroke-opacity=".8" stroke-width="4.5" stroke-linecap="round"><path d="M13 2.5v6.5M13 17v6.5M2.5 13h6.5M17 13h6.5"/></g><g fill="none" stroke="%23ffe680" stroke-width="1.8" stroke-linecap="round"><path d="M13 2.5v6.5M13 17v6.5M2.5 13h6.5M17 13h6.5"/></g><circle cx="13" cy="13" r="1.6" fill="%23ffe680" stroke="%23000" stroke-opacity=".8" stroke-width="1"/></svg>')
       13 13,
     crosshair;
-  image-rendering: auto;
   clip-path: polygon(
     22px 0, 100% 0, 100% calc(100% - 22px),
     calc(100% - 22px) 100%, 0 100%, 0 22px
   );
 }
-#deploy .map-wrap .hull {
+#deploy .dp-hull {
   position: absolute;
   inset: -1px;
   z-index: -1;
@@ -94,196 +755,500 @@
     calc(100% - 23px) 100%, 0 100%, 0 23px
   );
 }
-/* The status: what the reinforcement clock says, over WHERE the cursor is.
-   Two lines rather than one, because they are two different facts and the
-   panel finally has the room to say so — the clock changes every second and
-   the place changes when the player moves the highlight, and running them
-   together on one line made the name of the spawn jitter beside a counting
-   number. */
-#deploy-status {
+/* Corner ticks on the map's two open corners — the plate's sight brackets at
+   the stage's scale, saying the square is the thing being looked at. */
+#deploy .dp-mapwrap::before,
+#deploy .dp-mapwrap::after {
+  content: "";
+  position: absolute;
+  width: max(14px, calc(26 * var(--u)));
+  height: max(14px, calc(26 * var(--u)));
+  border: 2px solid rgba(255, 230, 128, 0.55);
+  pointer-events: none;
+}
+#deploy .dp-mapwrap::before {
+  top: calc(-10 * var(--u) - 2px);
+  right: calc(-10 * var(--u) - 2px);
+  border-left: 0;
+  border-bottom: 0;
+}
+#deploy .dp-mapwrap::after {
+  bottom: calc(-10 * var(--u) - 2px);
+  left: calc(-10 * var(--u) - 2px);
+  border-right: 0;
+  border-top: 0;
+}
+
+/* =====================================================================
+   THE INTEL — the cursor's position described, and the round.
+   ---------------------------------------------------------------------
+   The top half is rewritten when the cursor moves: which flag, its state,
+   how much of its meter is ours and who is standing in it, and what
+   deploying there means. The bottom half is the round, patched every frame
+   — both sides' tickets as bars and every flag on the map as the HUD strip's
+   hexagon, filled as far as its meter leans. It is the first thing a small
+   viewport drops, and the tickets and flags it carried are on the title's
+   figure strip there.
+   ===================================================================== */
+#deploy .dp-intel {
+  align-self: start;
   display: flex;
   flex-direction: column;
-  gap: 3px;
-  padding: clamp(8px, 1.4vh, 14px) clamp(12px, 1.2vw, 20px);
-  border-left: 2px solid rgba(255, 255, 255, 0.2);
-  background: rgba(255, 255, 255, 0.04);
+  gap: max(14px, calc(26 * var(--u)));
+  min-width: 0;
+  max-height: 100%;
+  overflow-y: auto;
+  scrollbar-width: none;
+  padding: max(14px, calc(26 * var(--u)));
+  background: linear-gradient(170deg, rgba(10, 13, 21, 0.86), rgba(4, 6, 12, 0.8));
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.09);
+  clip-path: polygon(16px 0, 100% 0, 100% calc(100% - 16px), calc(100% - 16px) 100%, 0 100%, 0 16px);
 }
-#deploy-status .dp-state {
-  font-size: var(--ui-cap);
+#deploy .dp-intel::-webkit-scrollbar { display: none; }
+#deploy .dp-intel-in {
+  display: flex;
+  flex-direction: column;
+  gap: max(12px, calc(20 * var(--u)));
+}
+#deploy .dp-intel-in.fade { animation: dp-fade 0.28s ease both; }
+@keyframes dp-fade {
+  from { opacity: 0; transform: translate3d(0, 4px, 0); }
+  to { opacity: 1; transform: none; }
+}
+#deploy .dp-intel-head {
+  display: flex;
+  flex-direction: column;
+  gap: max(3px, calc(6 * var(--u)));
+  min-width: 0;
+  padding-bottom: max(7px, calc(12 * var(--u)));
+  border-bottom: 1px solid var(--rule);
+}
+#deploy .dp-intel-head::after {
+  content: "";
+  display: block;
+  width: max(26px, calc(48 * var(--u)));
+  height: 2px;
+  margin-top: max(6px, calc(10 * var(--u)));
+  margin-bottom: calc(-1 * max(7px, calc(12 * var(--u))) - 1px);
+  background: var(--hot);
+}
+#deploy .dp-eyebrow-s {
+  font-size: var(--t-cap);
   font-weight: 700;
-  letter-spacing: 0.28em;
+  letter-spacing: 0.3em;
   text-transform: uppercase;
-  color: var(--dim);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  color: var(--hot);
 }
-#deploy-status .dp-spawn {
-  font-size: clamp(15px, 2.4vmin, 26px);
+#deploy .dp-intel-pos.attack .dp-eyebrow-s { color: var(--theirs); }
+#deploy .dp-intel-pos.attack .dp-intel-head::after { background: var(--theirs); }
+#deploy .dp-intel h3 {
+  font-size: max(17px, calc(30 * var(--u)));
   font-weight: 800;
-  letter-spacing: 0.14em;
+  letter-spacing: 0.12em;
+  line-height: 1.05;
   text-transform: uppercase;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
   color: #fff;
 }
-#deploy-status.ready {
-  border-left-color: var(--hot);
-  background: rgba(255, 230, 128, 0.1);
+#deploy .dp-ifacts {
+  display: grid;
+  grid-auto-flow: column;
+  grid-auto-columns: minmax(0, 1fr);
+  gap: max(8px, calc(14 * var(--u)));
 }
-#deploy-status.ready .dp-state {
-  color: var(--hot);
-  animation: pulse 1.4s ease-in-out infinite;
-}
-/* STACKED, now that they are in a column rather than under the map.
-   They were a wrapping row because the map's width was all they had and
-   the longest kit ("Marksman rifle · Scope") did not fit beside a Deploy
-   button on a 768-tall laptop — so the row broke and gave two full-width
-   buttons anyway. In the orders panel that is simply the layout: the
-   action first, the way to the kit screen under it. */
-#deploy-actions {
+#deploy .dp-ifacts span {
   display: flex;
   flex-direction: column;
-  align-items: stretch;
-  gap: 8px;
+  gap: max(2px, calc(4 * var(--u)));
+  min-width: 0;
 }
-#deploy-go {
-  font: inherit;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  gap: 2px;
-  padding: clamp(10px, 1.6vh, 17px) 26px;
-  color: #12141a;
-  background: var(--hot);
-  border: 0;
-  cursor: pointer;
-  clip-path: polygon(8px 0, 100% 0, 100% calc(100% - 8px), calc(100% - 8px) 100%, 0 100%, 0 8px);
-  transition: background 0.12s;
-}
-#deploy-go b {
-  font-size: clamp(13px, 1.9vmin, 19px);
+#deploy .dp-ifacts b {
+  font-size: max(15px, calc(26 * var(--u)));
   font-weight: 800;
-  letter-spacing: 0.24em;
-  text-indent: 0.24em;
+  line-height: 1.05;
+  letter-spacing: 0.04em;
   text-transform: uppercase;
+  font-variant-numeric: tabular-nums;
+  color: var(--hot);
 }
-#deploy-go i {
+#deploy .dp-ifacts .mine b { color: var(--mine); }
+#deploy .dp-ifacts .theirs b { color: var(--theirs); }
+#deploy .dp-ifacts i {
   font-style: normal;
-  font-size: var(--ui-cap);
+  font-size: var(--t-cap);
+  letter-spacing: 0.16em;
+  line-height: 1.3;
+  text-transform: uppercase;
+  color: rgba(255, 255, 255, 0.52);
+}
+#deploy .dp-blurb {
+  font-size: var(--t-body);
+  line-height: 1.55;
+  color: rgba(255, 255, 255, 0.66);
+}
+#deploy .dp-round {
+  display: flex;
+  flex-direction: column;
+  gap: max(8px, calc(12 * var(--u)));
+  padding-top: max(12px, calc(20 * var(--u)));
+  border-top: 1px solid var(--rule);
+}
+#deploy .dp-round-cap {
+  font-size: var(--t-cap);
+  font-weight: 700;
+  letter-spacing: 0.3em;
+  text-transform: uppercase;
+  color: rgba(255, 255, 255, 0.5);
+}
+#deploy .dp-tix {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-areas: "n b" "bar bar";
+  align-items: baseline;
+  row-gap: max(4px, calc(6 * var(--u)));
+}
+#deploy .dp-tix-n {
+  grid-area: n;
+  font-size: var(--t-cap);
+  font-weight: 700;
+  letter-spacing: 0.22em;
+  text-transform: uppercase;
+  color: rgba(255, 255, 255, 0.7);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+#deploy .dp-tix b {
+  grid-area: b;
+  font-size: max(15px, calc(24 * var(--u)));
+  font-weight: 800;
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+}
+#deploy .dp-tix em {
+  grid-area: bar;
+  display: block;
+  height: max(3px, calc(5 * var(--u)));
+  background: rgba(255, 255, 255, 0.07);
+}
+#deploy .dp-tix s {
+  display: block;
+  height: 100%;
+  transform-origin: left center;
+  transition: transform 0.3s ease-out;
+}
+#deploy .dp-tix.mine b { color: var(--mine); }
+#deploy .dp-tix.mine s { background: var(--mine); }
+#deploy .dp-tix.theirs b { color: var(--theirs); }
+#deploy .dp-tix.theirs s { background: var(--theirs); }
+#deploy .dp-flags {
+  display: grid;
+  grid-auto-flow: column;
+  grid-auto-columns: minmax(0, 1fr);
+  justify-items: center;
+  gap: max(4px, calc(8 * var(--u)));
+  margin-top: max(2px, calc(6 * var(--u)));
+}
+#deploy .dp-flag {
+  --hex: polygon(50% 0, 100% 26%, 100% 74%, 50% 100%, 0 74%, 0 26%);
+  position: relative;
+  display: grid;
+  place-items: center;
+  width: max(24px, calc(38 * var(--u)));
+  height: max(28px, calc(44 * var(--u)));
+  clip-path: var(--hex);
+  background: var(--neutral);
+}
+#deploy .dp-flag.mine { background: var(--mine); }
+#deploy .dp-flag.theirs { background: var(--theirs); }
+#deploy .dp-flag::before {
+  content: "";
+  position: absolute;
+  inset: 2px;
+  clip-path: var(--hex);
+  background: rgba(6, 8, 13, 0.9);
+}
+#deploy .dp-flag i {
+  position: absolute;
+  inset: 2px;
+  clip-path: var(--hex);
+  opacity: 0.5;
+  transform-origin: center bottom;
+  transition: transform 0.15s linear;
+}
+#deploy .dp-flag i.mine { background: var(--mine); }
+#deploy .dp-flag i.theirs { background: var(--theirs); }
+#deploy .dp-flag b {
+  position: relative;
+  font-size: var(--t-cap);
+  font-weight: 800;
+  color: #d3d9e2;
+}
+#deploy .dp-flag.mine b { color: var(--mine); }
+#deploy .dp-flag.theirs b { color: var(--theirs); }
+#deploy .dp-flag.contested { animation: dp-alarm 0.7s ease-in-out infinite alternate; }
+
+/* =====================================================================
+   THE FOOT — the cursor's verbs, for the device in hand, and absent under a
+   finger. Deploy, the kit and Pause carry their own keys, so the foot names
+   none of them again.
+   ===================================================================== */
+#deploy .dp-foot {
+  justify-self: end;
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 6px max(12px, calc(22 * var(--u)));
+  font-size: var(--t-cap);
   letter-spacing: 0.2em;
   text-transform: uppercase;
-  color: rgba(18, 20, 26, 0.6);
-}
-#deploy-go:hover { background: #fff3c4; }
-/* Still there, still readable, visibly not yet yours — the reinforcement
-   countdown is on the status line right above it. */
-#deploy-go.waiting {
   color: rgba(255, 255, 255, 0.42);
-  background: rgba(255, 255, 255, 0.06);
-  cursor: default;
 }
-#deploy-go.waiting i { color: rgba(255, 255, 255, 0.25); }
-#deploy-go.waiting:hover { background: rgba(255, 255, 255, 0.06); }
-
-/* CENTRED, alone among the four screens with a foot. The frame's foot runs
-   the width of the viewport, and this is the one screen drawn over a HUD
-   that is still up — the vitals are in the bottom-left corner and the
-   ammunition column is in the bottom-right, which are exactly the two ends
-   a foot puts its hints and its button on. The middle of that edge is the
-   one part of it the HUD leaves empty. */
-#deploy .ui-foot { justify-content: center; }
-
-/* --- one column ---
-   The orders go under the map rather than beside it, and the map gives up
-   the height they take. `.ui-optional` is not used here: the panel holds
-   the Deploy button, which is the pointer's only way off this screen.
-
-   **WIDTH ONLY**, unlike every other screen's one-column rule. Those collapse
-   on height as well, because a rail and a panel side by side in a short window
-   have the room and not the height. This screen's second column is 240 px of
-   buttons beside a map that is HEIGHT-led — so a short window is exactly where
-   the two belong side by side, and stacking them there takes the map's height
-   away to spend on the thing that did not need it. A landscape phone keeps the
-   two columns; a portrait one is what this rule is for. */
-@media (max-width: 760px) {
-  #deploy .dp-body {
-    grid-template-columns: minmax(0, 1fr);
-    grid-auto-rows: min-content;
-    /* Both axes: `justify-items` centres the stack across, `align-content`
-       centres it down. Without the second the pair sits at the top of a body
-       row that is the height of a portrait phone, with the whole lower half
-       of the screen empty under the Deploy button. */
-    align-content: center;
-    justify-items: center;
-    gap: clamp(8px, 1.6vh, 16px);
-  }
-  #deploy .map-wrap { --map: calc(min(52vh, 62vw) / var(--ov-scale)); }
-  #deploy .dp-orders {
-    width: min(100%, 420px);
-    padding: 0;
-    border-left: 0;
-    gap: 8px;
-  }
-  #deploy #deploy-actions { flex-direction: row; }
-  #deploy #deploy-go, #deploy #deploy-kit { flex: 1 1 auto; }
-}
-
-/* --- the kit button beside the deploy map ---
-   Opens the kit screen from the orders panel: a label, what is currently
-   chosen, and the key that gets there, spread across the panel's width
-   rather than hugging its text — left to shrink-wrap it was a small box
-   adrift in a large gap. `nowrap` because the widest kit ("Marksman rifle ·
-   Scope") is within a few pixels of the space, and a wrapped caption makes
-   the button taller than the Deploy button beside it.
-
-   It was one of four such openers in `base.css` while the main menu drew
-   three of its own in the same shape; the menu's are its own now
-   (`overlay.css`), so this is one screen's rule and lives in that screen's
-   sheet. `#deploy` opts into pointer events for its whole area, which is
-   why it needs no carve-out of its own. */
-#deploy-kit {
+#deploy .dp-foot span { display: inline-flex; align-items: center; gap: 5px; }
+#deploy .dp-foot kbd {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: max(20px, calc(24 * var(--u)));
+  height: max(20px, calc(24 * var(--u)));
+  padding: 0 6px;
   font: inherit;
-  pointer-events: auto;
-  display: flex;
-  flex-direction: column;
-  align-items: flex-start;
-  gap: 2px;
-  padding: clamp(7px, 1.1vh, 12px) clamp(12px, 1.4vw, 22px);
-  color: #cdd6e6;
-  background: var(--plate);
-  border: 0;
-  cursor: pointer;
-  text-align: left;
-  clip-path: polygon(8px 0, 100% 0, 100% calc(100% - 8px), calc(100% - 8px) 100%, 0 100%, 0 8px);
-  transition: background 0.12s, color 0.12s;
-}
-#deploy-kit b {
-  font-size: var(--ui-row);
+  font-size: var(--t-cap);
   font-weight: 700;
-  letter-spacing: 0.16em;
-  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  text-shadow: none;
+  color: #cfd6e2;
+  background: rgba(255, 255, 255, 0.07);
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.14);
+  clip-path: polygon(4px 0, 100% 0, 100% calc(100% - 4px), calc(100% - 4px) 100%, 0 100%, 0 4px);
 }
-#deploy-kit i {
-  font-style: normal;
-  font-size: var(--ui-cap);
-  letter-spacing: 0.14em;
-  text-transform: uppercase;
-  color: var(--dim);
+#deploy .dp-foot kbd.pd { color: var(--hot); box-shadow: inset 0 0 0 1px rgba(255, 230, 128, 0.35); }
+#deploy.dev-kbm .dp-foot [data-dev="pad"],
+#deploy.dev-pad .dp-foot [data-dev="kbm"],
+#deploy.dev-touch .dp-foot { display: none; }
+
+/* --- the screen arriving, and a position being offered ---
+   Staggered, and every block is opacity and a transform so the whole thing
+   is the compositor's. `.enter` is put on the root by `show` on a RAISE
+   only — which is every death; `.fresh` on a plate a flag taken has just
+   added, so the plates already there hold still. */
+@keyframes dp-rise {
+  from { opacity: 0; transform: translate3d(0, calc(18 * var(--u)), 0); }
+  to { opacity: 1; transform: none; }
 }
-#deploy-kit:hover {
-  background: rgba(255, 230, 128, 0.18);
-  color: var(--hot);
+@keyframes dp-from-left {
+  from { opacity: 0; transform: translate3d(calc(-36 * var(--u)), 0, 0); }
+  to { opacity: 1; transform: none; }
 }
-#deploy-kit {
-  flex-direction: row;
-  align-items: baseline;
-  justify-content: space-between;
-  gap: 14px;
+@keyframes dp-drop {
+  from { opacity: 0; transform: translate3d(0, calc(-12 * var(--u)), 0); }
+  to { opacity: 1; transform: none; }
 }
-#deploy-kit b,
-#deploy-kit i,
-#deploy-kit .lbl { white-space: nowrap; }
-#deploy-kit { padding: 8px 16px; }
-#deploy-kit .lbl {
-  font-size: 10px;
-  letter-spacing: 0.24em;
-  text-transform: uppercase;
-  color: rgba(255, 255, 255, 0.42);
+@keyframes dp-arrive {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+@keyframes dp-zoom {
+  from { opacity: 0; transform: scale(0.96); }
+  to { opacity: 1; transform: none; }
+}
+#deploy.enter .dp-top { animation: dp-drop 0.5s ease both; }
+#deploy.enter .dp-hero {
+  animation: dp-from-left 0.7s cubic-bezier(0.16, 0.84, 0.36, 1) 0.05s both;
+}
+#deploy.enter .dp-list > * {
+  animation: dp-rise 0.5s cubic-bezier(0.16, 0.84, 0.36, 1) both;
+  animation-delay: calc(0.1s + var(--i, 1) * 0.04s);
+}
+#deploy.enter .dp-kitrow { animation: dp-rise 0.5s cubic-bezier(0.16, 0.84, 0.36, 1) 0.2s both; }
+#deploy.enter .dp-gorow { animation: dp-rise 0.5s cubic-bezier(0.16, 0.84, 0.36, 1) 0.26s both; }
+#deploy.enter .dp-mapwrap { animation: dp-zoom 0.6s cubic-bezier(0.16, 0.84, 0.36, 1) 0.08s both; }
+#deploy.enter .dp-intel { animation: dp-arrive 0.6s ease 0.3s both; }
+#deploy.enter .dp-foot { animation: dp-arrive 0.6s ease 0.4s both; }
+#deploy .dp-list > .fresh {
+  animation: dp-deal 0.36s cubic-bezier(0.16, 0.84, 0.36, 1) both;
+}
+@keyframes dp-deal {
+  from { opacity: 0; transform: translate3d(0, calc(14 * var(--u)), 0); }
+  to { opacity: 1; transform: none; }
+}
+
+/* =====================================================================
+   THE SCREEN AT EVERY VIEWPORT
+   ---------------------------------------------------------------------
+   Four templates over the same areas:
+   - WIDE (the default): column, the map, intel.
+   - NO INTEL: under 1240 px wide or 620 tall. The intel goes and the map
+     takes its width; the tickets and flags are on the title's strip. 1240
+     rather than the menu's 1100 because the map is square and HEIGHT-led, so
+     a third column on a tablet is taken out of the map's side, not its air.
+   - SHORT LANDSCAPE: a phone held sideways, which is THE phone layout. The
+     map is a square down the left as tall as the glass; the title, the
+     positions, the kit and Deploy are the right-hand column under the right
+     thumb, with Pause in the top corner beside the title.
+   - PORTRAIT: a fallback that must not break. One column, the map a square
+     between the title and the positions.
+   ===================================================================== */
+@media (max-width: 1239px), (max-height: 619px) {
+  #deploy {
+    --col: clamp(300px, 36vw, calc(560 * var(--u)));
+    grid-template-columns: minmax(0, var(--col)) minmax(0, 1fr);
+    grid-template-areas:
+      "top  top"
+      ".    stage"
+      "hero stage"
+      "list stage"
+      "kit  stage"
+      "go   stage"
+      "foot foot";
+    background:
+      linear-gradient(
+        90deg,
+        rgba(3, 5, 11, 0.9) 0,
+        rgba(3, 5, 11, 0.8) calc(var(--gx) + var(--col)),
+        rgba(3, 5, 11, 0.55) calc(var(--gx) + var(--col) + var(--gap-x) * 2)
+      ),
+      linear-gradient(0deg, rgba(2, 3, 8, 0.7) 0%, rgba(2, 3, 8, 0) 22%),
+      linear-gradient(180deg, rgba(2, 3, 8, 0.6) 0%, rgba(2, 3, 8, 0) 20%),
+      repeating-linear-gradient(to bottom, rgba(255, 255, 255, 0.012) 0 1px, transparent 1px 3px);
+  }
+  #deploy .dp-intel { display: none; }
+}
+
+@media (orientation: landscape) and (max-height: 560px) {
+  #deploy {
+    --gy: 10px;
+    --gap-x: clamp(12px, 2.4vw, 24px);
+    /* The map's side: the glass's height less the frame, and never more than
+       half the width, so the column keeps room for "The Farmstead". */
+    --side: min(calc(100vh - 2 * max(var(--gy), env(safe-area-inset-top))), 50vw);
+    grid-template-columns: var(--side) minmax(0, 1fr) auto;
+    grid-template-rows: auto minmax(0, max-content) minmax(0, 1fr) auto auto;
+    grid-template-areas:
+      "stage hero top"
+      "stage list list"
+      "stage .    ."
+      "stage kit  kit"
+      "stage go   go";
+    row-gap: 6px;
+    background:
+      linear-gradient(270deg, rgba(3, 5, 11, 0.9) 0, rgba(3, 5, 11, 0.8) 60%, rgba(3, 5, 11, 0.55) 100%),
+      repeating-linear-gradient(to bottom, rgba(255, 255, 255, 0.012) 0 1px, transparent 1px 3px);
+  }
+  /* Top: only the system corner. The screen's name is the one thing a player
+     who has just died does not need told. */
+  #deploy .dp-top { align-self: start; }
+  #deploy .dp-brand,
+  #deploy .dp-foot,
+  #deploy .dp-index { display: none; }
+  #deploy .dp-sysbtn { padding-inline: 12px; }
+  #deploy .dp-hero { padding-top: 0; }
+  #deploy .dp-hero-in { --t: max(20px, min(8vh, 11cqw)); }
+  #deploy .dp-title { margin: 2px 0 2px; }
+  #deploy .dp-facts b { font-size: 12px; }
+  #deploy .dp-facts i { font-size: 9px; }
+  /* Two columns of plates where the glass is wide enough, so six positions
+     are three rows rather than a list that scrolls under the thumb. */
+  #deploy .dp-list {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    align-content: start;
+    gap: 6px;
+  }
+  #deploy .dp-row {
+    min-height: var(--hit);
+    padding: 4px 10px;
+    column-gap: 10px;
+  }
+  #deploy .dp-rowwrap::before { top: -3px; left: -4px; }
+  #deploy .dp-rowwrap::after { bottom: -3px; right: -4px; }
+  #deploy .dp-mark { width: 24px; height: 28px; }
+  #deploy .dp-mark.home { width: 26px; height: 26px; }
+  #deploy .dp-mark b { font-size: 12px; }
+  #deploy .dp-name { gap: 1px; }
+  #deploy .dp-name b { font-size: 12px; letter-spacing: 0.08em; }
+  #deploy .dp-state { font-size: 9px; letter-spacing: 0.1em; }
+  #deploy .dp-kit { padding-block: 6px; }
+  #deploy .dp-kit-cap { display: none; }
+  #deploy .dp-kit { grid-template-areas: "w s gl chev"; }
+  #deploy .dp-go { min-height: 52px; }
+  #deploy .dp-go-t b { font-size: 17px; }
+  #deploy .dp-go-n { font-size: 24px; }
+  #deploy .dp-gorow { margin-top: 0; }
+  #deploy .dp-mapwrap canvas {
+    clip-path: polygon(14px 0, 100% 0, 100% calc(100% - 14px), calc(100% - 14px) 100%, 0 100%, 0 14px);
+  }
+  #deploy .dp-hull {
+    clip-path: polygon(15px 0, 100% 0, 100% calc(100% - 15px), calc(100% - 15px) 100%, 0 100%, 0 15px);
+  }
+  #deploy .dp-mapwrap::before,
+  #deploy .dp-mapwrap::after { display: none; }
+}
+/* The smallest phones (a 667x375 and down): the system corner's label goes
+   and its mark stays, as the menu's system bar does, and the plates go back
+   to one column — two would ellipsize every name on the map. */
+@media (orientation: landscape) and (max-height: 560px) and (max-width: 740px) {
+  #deploy .dp-sysbtn b { display: none; }
+  /* The two sides' names go from the figure strip and their colours carry
+     it, as they do on the HUD's own ticket bar; "Flags" stays, having no
+     colour to be told by. */
+  #deploy .dp-facts :is(.mine, .theirs) i { display: none; }
+  #deploy .dp-list { grid-template-columns: minmax(0, 1fr); }
+}
+
+@media (orientation: portrait) {
+  #deploy {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: auto auto auto minmax(0, max-content) minmax(0, 1fr) auto auto;
+    grid-template-areas: "top" "hero" "stage" "list" "." "kit" "go";
+    row-gap: max(8px, calc(14 * var(--u)));
+    background:
+      linear-gradient(rgba(3, 5, 11, 0.8), rgba(3, 5, 11, 0.8)),
+      repeating-linear-gradient(to bottom, rgba(255, 255, 255, 0.012) 0 1px, transparent 1px 3px);
+  }
+  #deploy .dp-intel,
+  #deploy .dp-index,
+  #deploy .dp-foot { display: none; }
+  #deploy .dp-sysbtn b { display: none; }
+  #deploy .dp-facts { flex-wrap: wrap; white-space: normal; }
+  /* The stage's `size` containment gives it no height of its own, which an
+     `auto` row reads as zero — so the map stood over the plates. Here the
+     row IS the map, so the square is sized directly and the stage is an
+     ordinary box round it. */
+  #deploy .dp-stage { container-type: normal; }
+  /* The list's room for the brackets is taken inside its own clip, not out
+     of the gap above it, or a plate scrolled past shows over the map. */
+  #deploy .dp-list { margin-top: 0; }
+  #deploy .dp-mapwrap {
+    width: min(100%, 40vh);
+    height: auto;
+    aspect-ratio: 1;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  #deploy.enter .dp-top,
+  #deploy.enter .dp-hero,
+  #deploy.enter .dp-list > *,
+  #deploy.enter .dp-kitrow,
+  #deploy.enter .dp-gorow,
+  #deploy.enter .dp-mapwrap,
+  #deploy.enter .dp-intel,
+  #deploy.enter .dp-foot,
+  #deploy .dp-hero-in.swap,
+  #deploy .dp-hero-in.swap .dp-title,
+  #deploy .dp-intel-in.fade,
+  #deploy .dp-list > .fresh,
+  #deploy .dp-rowwrap.attack .dp-mark,
+  #deploy .dp-rowwrap.busy .dp-state,
+  #deploy .dp-go.pending .dp-go-sub,
+  #deploy .dp-go::after,
+  #deploy .dp-flag.contested {
+    animation: none;
+  }
 }

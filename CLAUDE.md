@@ -540,7 +540,11 @@ The SETTINGS screen is the third: the PAGE's name the title, the pages a tab
 strip that is row 0 of the cursor's list and that the bumpers turn from
 anywhere, the rows plates. The LOBBY is the fourth: the MATCH under the cursor
 the title, over its own map's photograph, on two pages (join, new match).
-**A front-end lid raised over other SCREENS takes them off the glass**
+The DEPLOY screen is the fifth: the POSITION under the cursor the title, the
+map's plan the stage — and being a STATE rather than a lid, it takes only the
+HUD's gameplay chrome off (`#hud.deploying`), because it draws the tickets and
+the flags itself; a new gauge that must be read between lives owes that list
+a look. **A front-end lid raised over other SCREENS takes them off the glass**
 (`#hud.kitting`, `#hud.setting`, `#hud.lobbying` — `visibility`, so they
 return unredrawn) and is laid over the SCENE, so a new child of `#hud` that
 must survive one is carved out of every such rule by name, as `#hud-fps` is.

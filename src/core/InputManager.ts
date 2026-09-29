@@ -588,7 +588,7 @@ export class InputManager {
     // deployed the player off the menu's map and difficulty rows on the way
     // (see `confirmPressed`). Every screen a phone meets carries its own
     // button — the menu's and the round-over card's Deploy, the deploy
-    // screen's map and `#deploy-go`, the kit screen's — each listening for its
+    // screen's Deploy plate (`.dp-go`), the kit screen's — each listening for its
     // own `pointerdown`, which a finger raises like any other pointer.
     //
     // What a touch DOES do here is say which device is in the player's hands,

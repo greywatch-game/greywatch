@@ -132,12 +132,12 @@ Details about the phone, each of which was a visible bug first:
   immersing.
 - **A touch is felt nowhere in `InputManager`, and every screen a phone meets
   carries its own button** — the menu's and the round-over card's Deploy, the deploy
-  screen's map and `#deploy-go`, the kit screen's — each listening for its own
+  screen's Deploy plate (`.dp-go`), the kit screen's — each listening for its own
   `pointerdown`, which a finger raises like any other pointer. A tap used to be
   latched into `confirmPressed` (the masks are held state and a tap has no hold) so
   that the title screen could be got past at all; that latch deployed the player off
   the menu's map and difficulty rows on the way, and went with the mouse.
-- **`--ov-scale` scales `#overlay` and `#deploy` on short viewports** by growing the
+- **`--ov-scale` scales `#overlay` on short viewports** by growing the
   box to `100%/s` and scaling by `s` about the top-left, so the backdrop stays
   full-bleed and the desktop (s = 1) is untouched. Nothing in this HUD scrolls, and a
   landscape phone is ~350px tall against screens authored for 720p. **`#loadout` is

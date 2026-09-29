@@ -1539,9 +1539,12 @@
 /* --- behind a full-screen overlay ---
    The menu and the round-over card sit over a live scene, so last
    round's gauges and killfeed read through them and make the HUD look
-   like it is still running. HUD.setOverlaid() puts .overlaid on #hud;
-   the deploy screen deliberately does not use it — tickets and flags are
-   what you are picking a spawn against. */
+   like it is still running. HUD.setOverlaid() puts .overlaid on #hud.
+   The deploy screen takes the same chrome off with a class of its own
+   (`#hud.deploying`, deploy.css) rather than this one: it is not last
+   round's — the tickets and the flags are what a spawn is picked against —
+   but the deploy screen draws them itself now, and the HUD's copies under
+   its scrim would say it twice. */
 #hud.overlaid #ticket-bar,
 #hud.overlaid #flag-strip,
 #hud.overlaid #capture-status,
@@ -1566,9 +1569,9 @@
    empty half of a pause screen must not deploy the player. */
 #hud.paused #overlay { pointer-events: auto; }
 /* A pause taken while waiting out a respawn lands on top of the deploy
-   screen, and that screen is a full column of its own headed chrome —
-   "SELECT DEPLOYMENT" landed across "PAUSED" and its Deploy button sat
-   under the resume prompt. Dimmed rather than hidden: the map behind a
+   screen, and that screen is a full title screen of its own — its position's
+   name landed across "PAUSED" and its Deploy plate sat under the resume
+   prompt. Dimmed rather than hidden: the map behind a
    pause is still context worth having, it just is not the thing being
    read. The overlay above it already swallows the clicks. */
 #hud.paused #deploy { opacity: 0.18; }

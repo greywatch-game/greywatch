@@ -69,9 +69,9 @@ is the screen and the controls are laid on it. It has a grid of its own — name
 areas, four templates, one unit — described under *The main menu* below, and
 what it keeps from the shell is the vocabulary (`.ui-eyebrow`, `.ui-facts`, the
 tokens), not the frame. A new screen whose job is a list it is FILLED IN from
-goes in the shell (the deploy screen is the one left there); one that shows
+goes in the shell (only the round-over card is left there); one that shows
 something, or a list browsed like a title screen, copies the kit screen, the
-settings screen or the lobby rather than the menu.
+settings screen, the lobby or the deploy screen rather than the menu.
 
 **A screen over another SCREEN is opaque; a screen over the SCENE is not.**
 `.ui-veil` is the backdrop — a warm glow off the lower-left corner and a cold one
@@ -96,11 +96,12 @@ legible desktop menu rendered at 45%. Raising it back toward those numbers undoe
 the responsive layout wholesale.
 
 **The kit screen is the second screen NOT in the shell, the settings screen
-the third and the lobby the fourth; all are laid out the way the menu is** — see *The kit screen* below. Its middle is a hole the 3D
+the third, the lobby the fourth and the deploy screen the fifth; all are laid
+out the way the menu is** — see *The kit screen* below. Its middle is a hole the 3D
 turntable is placed through, and a title screen for a weapon is the shape that
 hole wants: what it shares with the menu is the unit, the type scale, the plate
-and the prompts (`base.css`'s `:is(#overlay.card-menu, #loadout, #settings)` block and
-`prompts.ts`), not the shell's frame.
+and the prompts (`base.css`'s `:is(#overlay.card-menu, #loadout, #settings, #lobby, #deploy)`
+block and `prompts.ts`), not the shell's frame.
 
 **The boot screen is the one piece of interface that is not in this directory**,
 and the exception is what defines it: it covers the stretch before any module
@@ -953,8 +954,8 @@ worth knowing about rather than re-deriving:
   decoration: the weapon on the turntable is drawn by the SCENE through a hole
   the kit screen leaves in the middle of itself, so a full-bleed picture left
   standing at z-index 9 would be what you saw in the hole instead of the gun.
-- It is deliberately NOT in the `--ov-scale` list in `base.css` beside
-  `#overlay`, `#deploy`, `#settings` and `#lobby`. That ladder draws a screen at
+- It is deliberately NOT in the `--ov-scale` rule in `base.css` beside
+  `#overlay`, the one screen left on it. That ladder draws a screen at
   the size it was authored for and scales it down; a photograph has no authored
   size to be scaled from, and `inset: 0` with `background-size: cover` already
   fills whatever viewport it is given — including a portrait phone, which crops
@@ -1029,8 +1030,6 @@ RB is the grenade and E is the vehicle verb there.
 screen-local is what only that screen has.** `--col` is gone from the shell —
 the one content width every block measured to was what made these screens a
 column in the middle of a window (see the shell, at the top of this file).
-`#deploy` still declares `--map`, because the map's side is genuinely the number
-the orders panel beside it is measured against.
 
 ## The main menu
 
@@ -1202,25 +1201,74 @@ The right-hand side is an INTEL plate on whatever the cursor rests on.
 
 ## After the menu: the deploy screen
 
-- **`#deploy-actions` is a column**, now that the buttons are in an orders panel
-  beside the map rather than under it. They were a wrapping row because the
-  map's width was all they had, and on a 768-tall laptop the longest kit
-  ("Marksman rifle · Scope") did not fit beside a Deploy button — so the row
-  broke and gave two full-width buttons anyway. Every input hint is in the
-  frame's foot, which is the one row this screen has for them.
-- **The deploy screen's foot is the only one CENTRED**, and the HUD is why. It
-  is the one screen here drawn over gameplay chrome that is still up: the vitals
-  are in the bottom-left corner and the ammunition column is in the
-  bottom-right, which are exactly the two ends a full-width foot puts its hints
-  and its button on. The middle of that edge is the one part of it the HUD
-  leaves empty.
-- **Its one-column rule is keyed on WIDTH alone**, unlike every other screen's.
-  Those collapse on height as well, because a rail and a panel side by side in a
-  short window have the room and not the height. This screen's second column is
-  240 px of buttons beside a map that is height-led — so a short window is
-  exactly where the two belong side by side, and stacking them there takes the
-  map's height away to spend on the thing that did not need it. A landscape
-  phone keeps both columns; a portrait one is what the rule is for.
+**The deploy screen is a title screen for the POSITION the cursor is on**, the
+fifth front-end screen and laid out as the menu is — a column down the left
+anchored to the foot, a stage beside it, an intel plate on the right. It read
+as a form: a heading reading "Select deployment" over a square map in a black
+veil, a status box, a Deploy button and a loadout bar floating in a column
+beside it, and a hint line naming three devices along the bottom.
+
+- **The title is WHERE YOU ARE ABOUT TO STAND.** The position's name set large
+  (the flag's letter hollow behind it, HQ for the home base), an eyebrow
+  saying which of how many and in what state, and a figure strip that is the
+  ROUND — both sides' tickets in their colours and the flags held — always one
+  line, so the round moving never moves the plates under it. It wipes when
+  the cursor moves and is patched as the round does.
+- **The MAP is the stage**, the plan `mapPaint` draws for all three maps,
+  prerendered and blitted: the one thing on this screen a player reads a
+  decision off. It is the biggest square its grid area leaves — sized off the
+  area itself (`container-type: size`, `min(100cqw, 100cqh)`) rather than off
+  the viewport, which is what let the old `--map` and its `--ov-scale` divide
+  go. The cursor's spawn is drawn with four ticks aimed at it, which are the
+  plates' sight brackets at the map's scale: one cursor, drawn twice.
+- **The positions are a column of plates** — the home base and every flag held
+  and not contested (`ConquestSystem.deployOptions`), so one plate at the start
+  of a round and six at most. Each wears the mark the plan draws (the HUD
+  strip's hexagon with the flag's letter, or the spawn marker's disc and
+  chevron), its name, its state and a hairline of how far its meter stands
+  toward this side. **A flag the enemy is standing in alone is still ours and
+  still offered**, and it is drawn in THEIR colour, alarmed, with its meter
+  falling: the one state a player most needs told before dropping into it.
+- **The cursor is ON a position, always**, which is what lets Deploy carry
+  Enter and A honestly: the confirm fires the cursor's row, and every row is a
+  place to deploy. Up/down (and left/right, since the spawns are points on a
+  map rather than a row or a column) walk the plates; the kit plate carries
+  L/Y and Pause carries Esc/Start, each firing wherever the cursor is; the
+  foot holds only the cursor's verb and the scoreboard's.
+- **A plate or a marker PICKS and Deploy FIRES, and a plate is CLICKED, never
+  hovered.** The plates stand over the Deploy plate, so a cursor that followed
+  the hover would move to the last plate the pointer crossed on its way down to
+  the button. A marker used to deploy on the spot, which on a phone — a few
+  pixels on a map scaled to the viewport — dropped a player onto a flag they
+  had tapped to read.
+- **The Deploy plate FILLS over the reinforcement clock**, the seconds left set
+  large at its end: dark and visibly not yet yours while `confirm()` is a
+  no-op, then the menu's hot plate with its glow and sheen, naming the
+  position it will spend — and in a match, the position a REQUEST was made
+  for, which may not be the cursor's.
+- **The intel is the position and the ROUND.** Its top half is rewritten when
+  the cursor moves or its position changes KIND (quiet to under attack): the
+  meter as a percentage, who is standing in the zone, and what deploying there
+  means — for the home base, which flag is nearest and how far, the walk a
+  player choosing it is signing up for. Its bottom half is patched every frame:
+  both sides' tickets as bars, every flag as the HUD strip's hexagon filled as
+  far as its meter leans. It is the first block a viewport drops; the tickets
+  and flags are on the title's strip there.
+- **It takes the HUD's gameplay chrome off** (`#hud.deploying`, the same list
+  `.overlaid` hides, by `visibility`), because it draws the tickets and the
+  flags itself and the HUD's copies under the scrim would say them twice. The
+  scoreboard stays: a player waiting out a reinforcement is who holds Tab.
+- **Pause is the system corner, and it is a phone's only way off the round from
+  here** — there is no Escape under a finger, and the touch controls' pause is
+  not up between lives.
+- **Four templates**, the menu's: wide with the intel; under 1240 wide or 620
+  tall without it (1240 because the map is square and height-led, so a third
+  column on a tablet comes out of the map's side); a phone held sideways with
+  the map a square down the left as tall as the glass and the column on the
+  right under the thumb, the plates two across so six positions are three rows
+  (one across under 740 wide, where two would ellipsize every name); an
+  upright phone as a fallback, the map between the title and the plates.
+- **It opts out of `--ov-scale`**, as the other front-end screens did.
 
 **The menu and round-over card carry a `Deploy` button**
 (`OverlayScreen.bindStart` → `Game.onStart`), and it is the **only** thing on either
@@ -1285,13 +1333,14 @@ directions in `Game`'s `deploy` branch, so the stick steps it too). Both axes st
 the same list: the spawns are points scattered over a map rather than a row or
 column, so no direction *means* anything, and a direction that does nothing reads as
 a screen ignoring the pad. The selection is stepped *before* `update()` redraws, so
-the marker and the status line — which names the selection, because a highlight
-300 px away is not a label — move on the frame the key was pressed.
+the marker, the plate and the title — which names the selection, because a
+highlight 300 px away is not a label — move on the frame the key was pressed.
 
-**`#deploy-go` is the pointer's way off that screen**, since the confirm no longer
-takes a click. Pointerdown, like the map's markers: the same event goes on to take
-the pointer lock, which it can only do once `spawnPlayer` has moved the state to
-`playing`. It greys itself (`.waiting`) while `confirm()` is still a no-op.
+**The Deploy plate (`.dp-go`) is the pointer's way off that screen**, since the
+confirm takes no click and a plate or a marker only picks. Pointerdown: the same
+event goes on to take the pointer lock, which it can only do once `spawnPlayer` has
+moved the state to `playing`. It is drawn waiting (`.waiting`) while `confirm()` is
+still a no-op.
 
 ## The kit screen
 

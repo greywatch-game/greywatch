@@ -255,7 +255,7 @@ body { font-family: "Segoe UI", "Helvetica Neue", Arial, sans-serif; }
   --hud-trim: 0.78;
   --hud-trim-cap: 0.94;
 }
-#overlay, #deploy {
+#overlay {
   width: calc(100% / var(--ov-scale));
   height: calc(100% / var(--ov-scale));
   transform: scale(var(--ov-scale));
@@ -266,9 +266,9 @@ body { font-family: "Segoe UI", "Helvetica Neue", Arial, sans-serif; }
    THE SHELL — the frame every screen between the title and the world is
    built in.
    ---------------------------------------------------------------------
-   One shape, and the screen whose job is its LIST: the deploy screen
-   (the menu, the kit screen, the settings screen and the lobby left it
-   for THE FRONT END below). A brand block in the top-left, a
+   One shape, and the card whose job is its LIST: the round-over card
+   (the menu, the kit screen, the settings screen, the lobby and the
+   deploy screen left it for THE FRONT END below). A brand block in the top-left, a
    meta slot opposite it, a body split into a LIST and the PANEL that
    says what the list's cursor is resting on, and a rail along the bottom
    carrying the input hints and the way out.
@@ -344,8 +344,9 @@ body { font-family: "Segoe UI", "Helvetica Neue", Arial, sans-serif; }
 .ui-veil {
   /* Dense enough that a lit street behind it cannot take a caption off it.
      0.7 was the old menu card's, tuned against a menu that stands over
-     nothing; the deploy screen stands over a village with lamps in it, and
-     a panel of small text over that is the case this has to hold up in. */
+     nothing; a card that stands over a village with lamps in it carries a
+     panel of small text over that, which is the case this has to hold up
+     in. */
   --veil-in: 0.84;
   --veil-out: 0.98;
   background:
@@ -360,7 +361,7 @@ body { font-family: "Segoe UI", "Helvetica Neue", Arial, sans-serif; }
     repeating-linear-gradient(to bottom, rgba(255, 255, 255, 0.022) 0 1px, transparent 1px 3px);
 }
 /* **A screen over another SCREEN is opaque; a screen over the SCENE is not.**
-   The menu, the round-over card and the deploy screen all stand over a live
+   The round-over card and the front-end screens all stand over a live
    3D view that is worth seeing a village through. A shell screen raised
    over another SCREEN — DOM over DOM — owes this, because a veil tuned to
    let a scene through lets a wordmark and a rail of buttons through with
@@ -511,8 +512,7 @@ body { font-family: "Segoe UI", "Helvetica Neue", Arial, sans-serif; }
   margin: 0 auto;
   min-height: 0;
 }
-/* One column: a screen whose panel is the whole of it (the deploy map is
-   its own case and declares its own tracks). */
+/* One column: a screen whose panel is the whole of it. */
 .ui-body.solo { grid-template-columns: minmax(0, 1fr); }
 .ui-rail {
   display: flex;
@@ -590,7 +590,7 @@ body { font-family: "Segoe UI", "Helvetica Neue", Arial, sans-serif; }
    half a panel says less than none and takes the rail's room to say it.
 
    `--ui-lean` is what a screen reads to leave its own optional matter
-   out — the deploy screen's hint row, the menu's tagline — and it is a
+   out — a card's hint row, a tagline — and it is a
    custom property rather than each sheet re-stating these two queries. */
 #hud { --ui-lean: 0; }
 @media (max-width: 900px), (max-height: 460px) {
@@ -704,12 +704,12 @@ body { font-family: "Segoe UI", "Helvetica Neue", Arial, sans-serif; }
 .ui-foot button.ui-back:hover { background: rgba(255, 230, 128, 0.22); }
 
 /* =====================================================================
-   THE FRONT END — the four screens laid out like a console title screen
+   THE FRONT END — the five screens laid out like a console title screen
    rather than in the shell: the main menu (`#overlay.card-menu`), the kit
-   screen (`#loadout`), the settings screen (`#settings`) and the lobby
-   (`#lobby`). All four are sized off one unit and draw their prompts on
-   their controls, so the unit and the prompt are stated once, here, for
-   all of them.
+   screen (`#loadout`), the settings screen (`#settings`), the lobby
+   (`#lobby`) and the deploy screen (`#deploy`). All five are sized off one
+   unit and draw their prompts on their controls, so the unit and the
+   prompt are stated once, here, for all of them.
    ---------------------------------------------------------------------
    **`--u` is one pixel of a 1080-line screen.** A console front end scales
    with the vertical resolution and so do these: a 1440p monitor gets the
@@ -725,7 +725,7 @@ body { font-family: "Segoe UI", "Helvetica Neue", Arial, sans-serif; }
    and centres it, so 21:9 is used edge to edge and 32:9 keeps the
    composition together.
    ===================================================================== */
-:is(#overlay.card-menu, #loadout, #settings, #lobby) {
+:is(#overlay.card-menu, #loadout, #settings, #lobby, #deploy) {
   --u: clamp(0.5px, calc(100vmin / 1080), 2.4px);
   --hit: 0px;
   --gx: max(clamp(16px, 3.4vw, 104px), calc((100% - 240vh) / 2));
@@ -739,7 +739,7 @@ body { font-family: "Segoe UI", "Helvetica Neue", Arial, sans-serif; }
   --cut: max(6px, calc(10 * var(--u)));
 }
 @media (pointer: coarse) {
-  :is(#overlay.card-menu, #loadout, #settings, #lobby) { --hit: 44px; }
+  :is(#overlay.card-menu, #loadout, #settings, #lobby, #deploy) { --hit: 44px; }
 }
 
 /* --- the prompts (`prompts.ts`) ---
@@ -748,7 +748,7 @@ body { font-family: "Segoe UI", "Helvetica Neue", Arial, sans-serif; }
    turns every prompt on the screen over in one class write. A prompt with no
    label for the device in hand is not drawn, and under a finger none are —
    the control under the thumb is its own prompt. */
-:is(#overlay.card-menu, #loadout, #settings, #lobby) kbd.gl {
+:is(#overlay.card-menu, #loadout, #settings, #lobby, #deploy) kbd.gl {
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -768,15 +768,15 @@ body { font-family: "Segoe UI", "Helvetica Neue", Arial, sans-serif; }
   box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.26);
   clip-path: polygon(4px 0, 100% 0, 100% calc(100% - 4px), calc(100% - 4px) 100%, 0 100%, 0 4px);
 }
-:is(#overlay.card-menu, #loadout, #settings, #lobby) kbd.gl::before { content: attr(data-k); }
-:is(#overlay.card-menu, #loadout, #settings, #lobby).dev-pad kbd.gl::before { content: attr(data-p); }
-:is(#overlay.card-menu, #loadout, #settings, #lobby).dev-kbm kbd.gl:not([data-k]),
-:is(#overlay.card-menu, #loadout, #settings, #lobby).dev-pad kbd.gl:not([data-p]),
-:is(#overlay.card-menu, #loadout, #settings, #lobby).dev-touch kbd.gl { display: none; }
+:is(#overlay.card-menu, #loadout, #settings, #lobby, #deploy) kbd.gl::before { content: attr(data-k); }
+:is(#overlay.card-menu, #loadout, #settings, #lobby, #deploy).dev-pad kbd.gl::before { content: attr(data-p); }
+:is(#overlay.card-menu, #loadout, #settings, #lobby, #deploy).dev-kbm kbd.gl:not([data-k]),
+:is(#overlay.card-menu, #loadout, #settings, #lobby, #deploy).dev-pad kbd.gl:not([data-p]),
+:is(#overlay.card-menu, #loadout, #settings, #lobby, #deploy).dev-touch kbd.gl { display: none; }
 /* A pad's face buttons are drawn as the buttons are — round, and in the four
    colours the controller itself prints — because a prompt is read by the
    hand, and the hand knows the green one. The bumpers are a tab. */
-:is(#overlay.card-menu, #loadout, #settings, #lobby).dev-pad kbd.gl:is([data-p="A"], [data-p="B"], [data-p="X"], [data-p="Y"]) {
+:is(#overlay.card-menu, #loadout, #settings, #lobby, #deploy).dev-pad kbd.gl:is([data-p="A"], [data-p="B"], [data-p="X"], [data-p="Y"]) {
   width: max(20px, calc(28 * var(--u)));
   min-width: 0;
   padding: 0;
@@ -785,11 +785,11 @@ body { font-family: "Segoe UI", "Helvetica Neue", Arial, sans-serif; }
   color: #0b0d12;
   box-shadow: inset 0 -2px 0 rgba(0, 0, 0, 0.25);
 }
-:is(#overlay.card-menu, #loadout, #settings, #lobby).dev-pad kbd.gl[data-p="A"] { background: #6fdc6a; }
-:is(#overlay.card-menu, #loadout, #settings, #lobby).dev-pad kbd.gl[data-p="B"] { background: #ff6b5e; }
-:is(#overlay.card-menu, #loadout, #settings, #lobby).dev-pad kbd.gl[data-p="X"] { background: #5ca8ff; }
-:is(#overlay.card-menu, #loadout, #settings, #lobby).dev-pad kbd.gl[data-p="Y"] { background: #ffd24a; }
-:is(#overlay.card-menu, #loadout, #settings, #lobby).dev-pad kbd.gl:is([data-p="LB"], [data-p="RB"]) {
+:is(#overlay.card-menu, #loadout, #settings, #lobby, #deploy).dev-pad kbd.gl[data-p="A"] { background: #6fdc6a; }
+:is(#overlay.card-menu, #loadout, #settings, #lobby, #deploy).dev-pad kbd.gl[data-p="B"] { background: #ff6b5e; }
+:is(#overlay.card-menu, #loadout, #settings, #lobby, #deploy).dev-pad kbd.gl[data-p="X"] { background: #5ca8ff; }
+:is(#overlay.card-menu, #loadout, #settings, #lobby, #deploy).dev-pad kbd.gl[data-p="Y"] { background: #ffd24a; }
+:is(#overlay.card-menu, #loadout, #settings, #lobby, #deploy).dev-pad kbd.gl:is([data-p="LB"], [data-p="RB"]) {
   clip-path: none;
   border-radius: 7px 7px 3px 3px;
   color: #0b0d12;
@@ -798,7 +798,7 @@ body { font-family: "Segoe UI", "Helvetica Neue", Arial, sans-serif; }
 }
 /* Start is the small oval between the sticks on every pad. It keeps the
    plate's own colours, so it sits on Deploy's hot fill as a key cap does. */
-:is(#overlay.card-menu, #loadout, #settings, #lobby).dev-pad kbd.gl[data-p="Start"] {
+:is(#overlay.card-menu, #loadout, #settings, #lobby, #deploy).dev-pad kbd.gl[data-p="Start"] {
   clip-path: none;
   border-radius: 999px;
 }
