@@ -1,313 +1,1317 @@
 /**
- * lobby.css — The match browser: the list of matches and the three picker rows
- * under it.
- * Owns #lobby and nothing else. Drawn in the shell (`.ui-screen` / `.ui-veil`
- * / `.ui-solid` in base.css) — the head carries the title and the status line,
- * the foot carries the hints and Back, and what is here is the list.
- * Still in --ov-scale's selector list (base.css) as the safety valve of last
- * resort — like #settings and unlike #loadout, this screen has no hole in it
- * for the 3D scene, so a transform is safe.
+ * lobby.css — The match browser: a title screen for the match the cursor is on.
+ * Owns: #lobby — its top bar and system corner, the match's title, the tab
+ * strip, the match plates, the empty state, the new-match pickers and the
+ * button that spends them, the intel plate, the hint line — and the
+ * #hud.lobbying rule that takes the menu off the glass while it is up.
+ *
+ * **IT IS LAID OUT THE WAY THE MENU, THE KIT SCREEN AND THE SETTINGS SCREEN
+ * ARE, AND ON PURPOSE.** The menu is a map's name over its photograph; this is
+ * the name of the map a MATCH is running over that map's photograph, with a
+ * column of the matches under it and the same intel plate on the right. The
+ * unit (`--u`), the type scale, the plate, the chamfer and the prompts are
+ * `base.css`'s, shared by all four. Every block is a named grid AREA, so each
+ * viewport below is a change of TEMPLATE rather than a second copy of the
+ * markup; the areas and the four templates are the settings screen's, because
+ * the two are the same shape — a title, a strip of pages, a list, an intel.
+ *
+ * **Nothing here darkens the whole screen.** What is behind it is the
+ * photograph of the map the cursor is on (the menu's `#menu-shot`, driven by
+ * `LobbyScreen.onBackdrop`), and a match browser over a picture of the place
+ * the match is being fought is the screen's whole claim. So the scrim is
+ * shaped like the layout: dark behind the column, the foot and the intel, and
+ * thin in the middle.
+ *
+ * `--ov-scale` (base.css) does not reach this screen: its floors are what it
+ * is laid out at on a phone, and a scaled screen is a scaled 44 px target.
  */
 
-/* Level with #loadout at 11 rather than above it: both are lids raised
-   from the main menu and the two can never be up together. It takes
-   pointer events across its whole area for the reason the pause card
-   does — the menu underneath confirms on mouse-DOWN, so a click on the
-   empty half of this screen would otherwise deploy a single-player
-   round out from under it. */
+/* =====================================================================
+   THE FRAME
+   ---------------------------------------------------------------------
+     top ──────────────────────────────── (Refresh) (Back)
+     TITLE (the match's map)
+     [‹ Join | New match ›]                     │ intel
+     match plates / pickers                     │ plate
+     ──────────────────────────────────────── hints
+
+   Top-anchored, like the settings screen and for its reason: the two pages
+   are different lengths, and the JOIN page's is whatever the servers are
+   running, so a column anchored to the bottom would carry the title up and
+   down the glass as matches came and went.
+
+   Level with #loadout at 11: both are lids raised from the main menu and the
+   two can never be up together. It takes pointer events across its whole
+   area for the reason the pause card does — the menu underneath confirms on
+   mouse-DOWN, so a click on the empty middle of this screen would otherwise
+   deploy a single-player round out from under it.
+   ===================================================================== */
 #lobby {
+  --col: clamp(340px, 42vw, calc(820 * var(--u)));
+  --intel: clamp(270px, 24vw, calc(440 * var(--u)));
+  /* The picker's control column. Its floor is the longest value on any
+     stepper ("Players only", "Cinderhaven") between two finger-sized arrows. */
+  --ctl: clamp(220px, 18vw, calc(340 * var(--u)));
+  --gap-x: clamp(16px, calc(48 * var(--u)), 110px);
+
   position: absolute;
   inset: 0;
   z-index: 11;
   pointer-events: auto;
+  display: grid;
+  grid-template-columns: minmax(0, var(--col)) minmax(0, 1fr) minmax(0, var(--intel));
+  /* The list's track grows to its content and no further, and the spare
+     height is the row after the say line — the settings screen's rule, so
+     the sentence stays under the rows and the list only SHRINKS (and
+     scrolls) when the viewport genuinely cannot hold it. */
+  grid-template-rows: auto auto auto minmax(0, max-content) auto minmax(0, 1fr) auto;
+  grid-template-areas:
+    "top  top  top"
+    "hero hero ."
+    "tabs .    intel"
+    "list .    intel"
+    "say  .    intel"
+    ".    .    intel"
+    "foot foot foot";
+  column-gap: var(--gap-x);
+  row-gap: clamp(8px, calc(16 * var(--u)), 30px);
+  padding: max(var(--gy), env(safe-area-inset-top))
+    max(var(--gx), env(safe-area-inset-right))
+    max(var(--gy), env(safe-area-inset-bottom))
+    max(var(--gx), env(safe-area-inset-left));
+  color: #fff;
+  background:
+    linear-gradient(
+      90deg,
+      rgba(3, 5, 11, 0.9) 0,
+      rgba(3, 5, 11, 0.76) calc(var(--gx) + var(--col) * 0.7),
+      rgba(3, 5, 11, 0.3) calc(var(--gx) + var(--col) * 1.15),
+      rgba(3, 5, 11, 0) calc(var(--gx) + var(--col) * 1.5)
+    ),
+    linear-gradient(0deg, rgba(2, 3, 8, 0.8) 0%, rgba(2, 3, 8, 0) 26%),
+    linear-gradient(180deg, rgba(2, 3, 8, 0.72) 0%, rgba(2, 3, 8, 0) 24%),
+    linear-gradient(270deg, rgba(3, 5, 11, 0.62) 0%, rgba(3, 5, 11, 0) 34%),
+    linear-gradient(rgba(2, 3, 8, 0.28), rgba(2, 3, 8, 0.28)),
+    radial-gradient(120% 90% at 4% 110%, rgba(255, 230, 128, 0.1), transparent 56%),
+    radial-gradient(90% 72% at 97% -14%, rgba(53, 240, 255, 0.08), transparent 54%),
+    repeating-linear-gradient(to bottom, rgba(255, 255, 255, 0.012) 0 1px, transparent 1px 3px);
+}
+#lobby .lb-top { grid-area: top; }
+#lobby .lb-hero { grid-area: hero; }
+#lobby .lb-tabsrow { grid-area: tabs; }
+#lobby .lb-list { grid-area: list; }
+#lobby .lb-say { grid-area: say; }
+#lobby .lb-intel { grid-area: intel; }
+#lobby .lb-foot { grid-area: foot; }
+
+/* Everything standing straight on the photograph carries its own separation
+   from it, the rule the menu states for type over its picture. */
+#lobby .lb-top,
+#lobby .lb-hero,
+#lobby .lb-say,
+#lobby .lb-foot {
+  text-shadow: 0 2px 8px rgba(0, 0, 0, 0.9), 0 0 2px rgba(0, 0, 0, 0.8);
+}
+#lobby button {
+  font: inherit;
+  border: 0;
 }
 
-#lobby.hidden { display: none; }
+/* While the lobby is up, the menu card under it goes dark — it is laid over
+   the PHOTOGRAPH, and a menu left standing under it is two screens up at
+   once. Visibility rather than display, so the menu comes back on the close
+   exactly as it was. Two carve-outs: `#menu-shot`, the photograph this screen
+   stands on and drives, and `#hud-fps`, an instrument rather than chrome. */
+#hud.lobbying > *:not(#lobby):not(#hud-fps):not(#menu-shot) { visibility: hidden; }
 
-/* The list's own width, and the one thing on this screen that is capped
-   rather than fluid. A match row is five short cells — a region, a map, a
-   state, a count and a ping — and spread across an ultrawide the count ends
-   up a foot away from the name it belongs to, which is a table nobody can
-   read across. `.lb-panel` also survives as what the row grids are scoped
-   to: `.multi` on it is what turns the three-column screen into the
-   five-column one. */
-#lobby .lb-panel {
-  width: 100%;
-  max-width: min(100%, 1080px);
-  margin: 0 auto;
-  align-self: center;
+/* =====================================================================
+   THE TOP BAR — where this screen is, and the SYSTEM CORNER.
+   ---------------------------------------------------------------------
+   Refresh and Back are a fixed place, never rows in a list whose length is
+   whatever the servers are running. Each carries its key (R / X, Esc / B),
+   and each key fires its button wherever the cursor is.
+   ===================================================================== */
+#lobby .lb-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: calc(24 * var(--u));
+  min-width: 0;
 }
-
-/* The status line, in the head's right-hand slot: how many matches, or why
-   there are none to show. It holds its height when empty so the head does
-   not shift between a fetch and its answer. */
-#lobby .lb-status { min-height: 1em; }
-
-/* The round trip to this server, on the status line rather than in a row of
-   its own: with ONE region it is one fact about the machine every row is
-   running on, and the line above the list is where the screen already talks
-   about the server as a whole. Empty when the fetch failed — or whenever there
-   is more than one region, which moves the reading into the rows, where two of
-   them can be compared — and the gap collapses with it. */
-#lobby .lb-ping {
-  font-variant-numeric: tabular-nums;
-  color: rgba(255, 255, 255, 0.5);
-}
-#lobby .ui-meta .lb-ping:empty { display: none; }
-/* A good connection is the ordinary case and says nothing; the two that are
-   worth a player's attention are the two that are coloured. Shared by the
-   status line and the per-row column, because `ui/ping.ts` exists so that two
-   readings of one number cannot say different things. */
-#lobby .lb-ping.fair,
-#lobby .lb-lat.fair { color: var(--hot); }
-#lobby .lb-ping.poor,
-#lobby .lb-lat.poor { color: var(--theirs); }
-
-#lobby .lb-body {
+#lobby .lb-brand {
   display: flex;
   flex-direction: column;
-  gap: 3px;
-  width: 100%;
-  /* Bounded so a server running many matches scrolls rather than pushing
-     the foot off a short viewport. The frame's body row is already
-     `minmax(0, 1fr)`, so this is the second line of defence and the one that
-     decides WHERE the overflow goes. */
-  max-height: 62vh;
-  overflow-y: auto;
+  gap: max(2px, calc(4 * var(--u)));
+  padding-left: max(8px, calc(14 * var(--u)));
+  border-left: 2px solid var(--hot);
+  min-width: 0;
 }
-
-/* THREE COLUMNS, and every row states the same template so the map
-   names, the states and the counts line up down the panel. Unlike the
-   settings rows these are real boxes rather than `display: contents`,
-   because each one is a target — it takes a hover and a click, and a
-   row with no box of its own has nothing to hit. */
-#lobby .lb-row {
-  display: grid;
-  /* Two proportional tracks and a fixed one, rather than the `1fr auto 74px`
-     this was while the panel was 640px wide. A shrink-to-fit middle column is
-     pinned to whatever is on its right, so on a list given the width of a
-     window the state ends up against the count with a hand's width of nothing
-     between it and the name it describes. */
-  grid-template-columns: minmax(0, 1.15fr) minmax(0, 1fr) 74px;
+#lobby .lb-kicker {
+  font-size: var(--t-cap);
+  font-weight: 700;
+  letter-spacing: 0.42em;
+  text-transform: uppercase;
+  color: rgba(255, 230, 128, 0.72);
+  white-space: nowrap;
+}
+#lobby .lb-word {
+  font-size: max(17px, calc(32 * var(--u)));
+  font-weight: 900;
+  letter-spacing: 0.18em;
+  line-height: 1;
+  text-transform: uppercase;
+  color: var(--hot);
+  text-shadow: 3px 3px 0 #000, -1px -1px 0 #35f0ff, 0 3px 16px rgba(0, 0, 0, 0.8);
+  white-space: nowrap;
+}
+#lobby .lb-sys {
+  display: flex;
+  gap: max(6px, calc(10 * var(--u)));
+  flex: none;
+}
+#lobby .lb-sysbtn {
+  display: inline-flex;
   align-items: center;
-  gap: 0 clamp(10px, 1.4vw, 24px);
-  padding: clamp(8px, 1.2vh, 14px) clamp(10px, 1vw, 18px);
-  border-left: 2px solid transparent;
-  background: rgba(255, 255, 255, 0);
-  transition: background 0.12s, border-color 0.12s;
+  justify-content: center;
+  min-width: var(--hit);
+  min-height: var(--hit);
+  gap: max(7px, calc(10 * var(--u)));
+  padding: max(7px, calc(10 * var(--u))) max(11px, calc(18 * var(--u)));
+  color: #d7dde7;
+  background: var(--plate-mm);
+  box-shadow: var(--plate-edge);
   cursor: pointer;
+  clip-path: polygon(var(--cut) 0, 100% 0, 100% calc(100% - var(--cut)), calc(100% - var(--cut)) 100%, 0 100%, 0 var(--cut));
+  transition: background 0.14s, color 0.14s;
 }
-#lobby .lb-row.sel {
-  background: rgba(255, 255, 255, 0.05);
-  border-left-color: var(--hot);
+#lobby .lb-sysbtn svg {
+  width: max(16px, calc(22 * var(--u)));
+  height: max(16px, calc(22 * var(--u)));
+  flex: none;
 }
-
-/* FIVE COLUMNS once there is a choice of server: which region, then the same
-   three, then what the round trip to that region measured. The template is
-   declared on the rows inside a multi-region panel rather than always, so a
-   single-server deployment — an untouched regions.json — keeps the three-column
-   screen it has always had instead of a five-column one with two blanks in it.
-   Each row is its own grid, so this is the whole of the change. */
-#lobby .lb-panel.multi .lb-row {
-  /* The name column has a FLOOR, which the three-column form does not need.
-     An item that clips contributes nothing to its track's minimum, so with a
-     region column and a ping column taking width off either end, a long hint
-     beside it ("Start a fresh round on Hollowmere") wins the whole row and
-     "New match" clips to "Ne…". The floor fits the longest label this screen
-     has; a hostile map id still clips, which is what that cell is for. */
-  grid-template-columns: 88px minmax(104px, 1.15fr) minmax(0, 1fr) 74px 44px;
-}
-
-/* A picker row's buttons take everything past the label instead of squeezing
-   into the column the states share. With a region column and a ping column
-   either side there is not enough left between them for three choices, and what
-   a grid does about that is wrap the labels inside the buttons onto two lines —
-   so the picker rows say outright that nothing follows their buttons. */
-#lobby .lb-panel.multi .lb-pickline {
-  grid-template-columns: 88px auto 1fr;
-}
-/* And the same for the three-column screen. A picker's buttons belong beside
-   the word that names them: left in the row's first proportional track they
-   would sit halfway across the list, which reads as a control for the column
-   it has drifted into rather than for its own row. */
-#lobby .lb-pickline { grid-template-columns: minmax(72px, auto) 1fr auto; }
-/* The labels ("Map", "Region") clip like every other first cell, and an item
-   that clips contributes NOTHING to its column's minimum — so a wide enough row
-   of buttons collapses the label to zero width and the row loses its name with
-   nothing to say it has. This floor is what stops that. */
-#lobby .lb-pickline .lb-id { min-width: 72px; }
-
-/* Which server a row is on. Narrow on purpose — it is a label repeated down a
-   column and read by shape after the first glance, so it wants to be the
-   quietest thing in the row and to clip rather than to push the map name
-   about. A deploy-time file writes this string, so it can be any length. */
-#lobby .lb-region {
-  font-size: var(--ui-cap);
-  font-weight: 700;
-  letter-spacing: 0.14em;
+#lobby .lb-sysbtn b {
+  font-size: var(--t-cap);
+  font-weight: 800;
+  letter-spacing: 0.24em;
   text-transform: uppercase;
-  color: rgba(255, 255, 255, 0.38);
+  text-shadow: none;
+}
+#lobby .lb-sysbtn:hover {
+  color: var(--hot);
+  background: rgba(255, 230, 128, 0.14);
+}
+
+/* =====================================================================
+   THE TITLE — the match's map, as the title of the screen.
+   ---------------------------------------------------------------------
+   With the match's number hollow and enormous behind it, an eyebrow saying
+   which match of how many and where, and a strip of figures under it that is
+   ALWAYS one line — the seats, the round trip and the state — so moving the
+   cursor never moves the list under the title. The same block names the map
+   a NEW match would be built on, on the other page, and the list's own state
+   ("Searching", "Offline") when there is nothing to be about.
+   ===================================================================== */
+#lobby .lb-hero {
+  min-width: 0;
+  padding-top: max(4px, calc(28 * var(--u)));
+  container-type: inline-size;
+}
+#lobby .lb-hero-in {
+  --t: max(26px, min(calc(112 * var(--u)), 11cqw));
+  position: relative;
+  isolation: isolate;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  min-width: 0;
+}
+#lobby .lb-index {
+  position: absolute;
+  z-index: -1;
+  left: calc(var(--col) * 0.62);
+  top: calc(var(--t) * -0.42);
+  font-size: calc(var(--t) * 2.1);
+  font-weight: 900;
+  line-height: 1;
+  letter-spacing: -0.02em;
+  color: transparent;
+  -webkit-text-stroke: 1px rgba(255, 230, 128, 0.14);
+  text-shadow: none;
+  pointer-events: none;
+}
+#lobby .lb-mode {
+  min-height: 1em;
+  font-size: var(--t-cap);
+  font-weight: 700;
+  letter-spacing: 0.32em;
+  text-transform: uppercase;
+  color: var(--hot);
+  white-space: nowrap;
+}
+/* A map id this build has never heard of is shown VERBATIM, so the title can
+   be handed an arbitrary string off the wire. It clips rather than wrapping,
+   which keeps a hostile-length name from pushing the list off the glass.
+   The line box is tighter than the capitals, so the clip is given the
+   capitals' own height back as padding and the margins take it away again —
+   otherwise the clip shaves the tops off every title. */
+#lobby .lb-title {
+  max-width: 100%;
+  margin: calc(max(4px, calc(8 * var(--u))) - 0.14em) 0 calc(max(6px, calc(12 * var(--u))) - 0.14em);
+  padding: 0.14em 0.06em 0.14em 0;
+  font-size: var(--t);
+  font-weight: 900;
+  letter-spacing: 0.05em;
+  line-height: 0.92;
+  text-transform: uppercase;
+  color: #fff;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  text-shadow: 0.04em 0.045em 0 #000, 0 0.08em 0.6em rgba(0, 0, 0, 0.55);
+}
+#lobby .lb-facts {
+  display: flex;
+  gap: max(3px, calc(6 * var(--u))) max(14px, calc(30 * var(--u)));
+  max-width: 100%;
+  min-height: 1.3em;
   overflow: hidden;
   white-space: nowrap;
-  text-overflow: ellipsis;
 }
-#lobby .lb-row.sel .lb-region { color: rgba(255, 255, 255, 0.6); }
-
-/* The ping column: the number that the whole screen is here to be compared on.
-   Tabular figures so two rows' digits line up vertically, which is what makes
-   a column of them readable at a glance rather than one at a time. */
-#lobby .lb-lat {
-  text-align: right;
-  font-size: var(--ui-cap);
+#lobby .lb-facts span {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 0.5em;
+  min-width: 0;
+}
+#lobby .lb-facts b {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-size: var(--t-row);
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
   font-variant-numeric: tabular-nums;
-  color: rgba(255, 255, 255, 0.45);
 }
-
-/* A line about a region rather than a round in one: it is being asked, it has
-   nothing to list, or it did not answer. Dimmer than a match row and not a
-   target — the cursor still lands on it (it is a row like any other) and the
-   confirm is refused in `activate`. */
-#lobby .lb-note {
-  cursor: default;
-}
-#lobby .lb-note .lb-id {
-  font-size: var(--ui-cap);
-  font-weight: 600;
-  letter-spacing: 0.1em;
-  text-transform: none;
-  color: rgba(255, 255, 255, 0.32);
-}
-#lobby .lb-note.sel .lb-id { color: rgba(255, 255, 255, 0.5); }
-
-#lobby .lb-id {
-  font-size: var(--ui-row);
-  font-weight: 700;
-  letter-spacing: 0.14em;
-  text-transform: uppercase;
-  color: #cdd6e6;
-  /* A map id this build has never heard of is shown verbatim, so this
-     cell can be handed an arbitrary string off the wire. It clips rather
-     than wrapping, which keeps a hostile-length name from making one row
-     as tall as the panel. */
-  overflow: hidden;
-  white-space: nowrap;
-  text-overflow: ellipsis;
-}
-#lobby .lb-row.sel .lb-id { color: #fff; }
-
-#lobby .lb-state {
-  font-size: var(--ui-cap);
-  font-weight: 700;
+#lobby .lb-facts i {
+  font-style: normal;
+  font-size: var(--t-cap);
   letter-spacing: 0.2em;
   text-transform: uppercase;
-  color: rgba(255, 255, 255, 0.34);
+  color: rgba(255, 255, 255, 0.52);
+}
+/* The round trip's band colours its figure, as the plates' column does — one
+   number, one reading (`ui/ping.ts`). */
+#lobby .lb-facts .fair b { color: var(--hot); }
+#lobby .lb-facts .poor b { color: var(--theirs); }
+/* A CHANGE of what the title is about: the new name wipes in from the left
+   while the block slides the last few units home. Only on a title written by
+   a change — a raise leaves the arrival to the screen's entrance. */
+#lobby .lb-hero-in.swap {
+  animation: lb-swap 0.45s cubic-bezier(0.16, 0.84, 0.36, 1) both;
+}
+#lobby .lb-hero-in.swap .lb-title {
+  animation: lb-wipe 0.55s cubic-bezier(0.6, 0, 0.2, 1) both;
+}
+@keyframes lb-swap {
+  from { opacity: 0; transform: translate3d(calc(-28 * var(--u)), 0, 0); }
+  to { opacity: 1; transform: none; }
+}
+@keyframes lb-wipe {
+  from { clip-path: inset(-20% 100% -20% 0); }
+  to { clip-path: inset(-20% -5% -20% 0); }
 }
 
-#lobby .lb-count {
-  text-align: right;
-  font-size: var(--ui-cap);
-  letter-spacing: 0.1em;
-  color: rgba(255, 255, 255, 0.4);
+/* =====================================================================
+   THE TAB STRIP — the two pages, and row 0 of the cursor's list.
+   ---------------------------------------------------------------------
+   The settings screen's strip: equal shares, the chosen one filled hot, the
+   bumpers drawn at the two ends where they turn it, and the cursor on the
+   strip is the sight brackets on its corners. The JOIN tab carries how many
+   matches there are, so the other page says so too.
+   ===================================================================== */
+#lobby .lb-tabsrow {
+  position: relative;
+  display: flex;
+  align-items: stretch;
+  gap: max(4px, calc(6 * var(--u)));
+  min-width: 0;
 }
-#lobby .lb-count b {
-  font-size: 14px;
+#lobby .lb-tabs {
+  flex: 1 1 auto;
+  display: grid;
+  grid-auto-flow: column;
+  grid-auto-columns: minmax(0, 1fr);
+  gap: max(4px, calc(6 * var(--u)));
+  min-width: 0;
+}
+#lobby .lb-tab {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: max(6px, calc(10 * var(--u)));
+  min-width: 0;
+  min-height: max(var(--hit), calc(60 * var(--u)));
+  padding: max(8px, calc(12 * var(--u))) max(6px, calc(10 * var(--u)));
+  color: #d8dee8;
+  background: var(--plate-mm);
+  box-shadow: var(--plate-edge);
+  cursor: pointer;
+  clip-path: polygon(var(--cut) 0, 100% 0, 100% calc(100% - var(--cut)), calc(100% - var(--cut)) 100%, 0 100%, 0 var(--cut));
+  transition: background 0.12s, color 0.12s;
+}
+#lobby .lb-tab svg {
+  flex: none;
+  width: max(16px, calc(24 * var(--u)));
+  height: max(16px, calc(24 * var(--u)));
+}
+#lobby .lb-tab b {
+  min-width: 0;
+  font-size: var(--t-cap);
   font-weight: 800;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+#lobby .lb-count {
+  flex: none;
+  font-style: normal;
+  font-size: var(--t-cap);
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+  padding: 1px max(5px, calc(7 * var(--u)));
+  color: #12141a;
+  background: rgba(255, 230, 128, 0.85);
+}
+#lobby .lb-count:empty { display: none; }
+#lobby .lb-tab.on .lb-count { color: var(--hot); background: #12141a; }
+#lobby .lb-tab:hover {
+  color: var(--hot);
+  background: rgba(255, 230, 128, 0.16);
+}
+#lobby .lb-tab.on {
+  color: #12141a;
+  background: var(--hot);
+}
+#lobby .lb-nav {
+  flex: none;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: max(3px, calc(6 * var(--u)));
+  width: max(var(--hit), 40px, calc(52 * var(--u)));
+  padding: 0;
+  color: #fff;
+  background: var(--plate-mm);
+  box-shadow: var(--plate-edge);
+  cursor: pointer;
+  clip-path: polygon(var(--cut) 0, 100% 0, 100% calc(100% - var(--cut)), calc(100% - var(--cut)) 100%, 0 100%, 0 var(--cut));
+  transition: background 0.12s, opacity 0.12s;
+}
+#lobby .lb-nav::before {
+  font-size: var(--t-big);
+  font-weight: 700;
+  line-height: 0.8;
   color: var(--hot);
 }
+#lobby .lb-nav.prev::before { content: "\2039"; }
+#lobby .lb-nav.next::before { content: "\203A"; }
+#lobby .lb-nav.next { order: 2; }
+#lobby .lb-nav:hover { background: rgba(255, 230, 128, 0.16); }
+#lobby .lb-nav.off { opacity: 0.28; cursor: default; }
+#lobby .lb-nav.off:hover { background: var(--plate-mm); }
+/* Under a finger the tabs are the control and the arrows a second copy. */
+#lobby.dev-touch .lb-nav { display: none; }
 
-/* A full match stays in the list and stops being a target — knowing a
-   round is there and full is worth more than a shorter list. The cursor
-   still lands on it (it is a row like any other) and the confirm is
-   refused in `activate`. */
-#lobby .lb-row.full {
-  opacity: 0.42;
-  cursor: default;
+/* --- the cursor: sight brackets on a row's corners ---
+   On the strip and on every row's WRAPPER, which is not clipped, because a
+   plate is cut by a clip-path that would take them off with its corner. */
+#lobby .lb-tabsrow::before,
+#lobby .lb-tabsrow::after,
+#lobby .lb-rowwrap::before,
+#lobby .lb-rowwrap::after {
+  content: "";
+  position: absolute;
+  z-index: 1;
+  width: max(10px, calc(16 * var(--u)));
+  height: max(10px, calc(16 * var(--u)));
+  border: 2px solid var(--hot);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.14s, transform 0.22s cubic-bezier(0.16, 0.84, 0.36, 1);
 }
-#lobby .lb-row.full .lb-count b { color: var(--theirs); }
-
-/* The row a join is in flight on. */
-#lobby .lb-row.busy .lb-state { color: var(--hot); }
-
-/* The actions under the matches, separated by a rule rather than a gap so
-   they read as a different KIND of row without needing a heading to say
-   so. The adjacent-sibling selector is the whole rule and deliberately so:
-   the divider exists to separate the actions FROM the list, so with nothing
-   listed there is nothing to divide and the rule must not draw.
-   `:first-of-type` was wrong here — it selects on the element type (every
-   row is a div), so it matched the first action whether or not any match
-   preceded it, and an empty lobby drew a line under its own subtitle.
-   A note counts as list: a region saying it has no matches is still a line
-   about a server, and the actions below it are still a different kind of row. */
-#lobby :is(.lb-match, .lb-note) + .lb-action {
-  margin-top: 8px;
-  border-top: 1px solid rgba(255, 255, 255, 0.07);
+#lobby .lb-tabsrow::before,
+#lobby .lb-rowwrap::before {
+  top: calc(-5 * var(--u) - 3px);
+  left: calc(-7 * var(--u) - 3px);
+  border-right: 0;
+  border-bottom: 0;
+  transform: translate(-6px, -6px);
 }
-#lobby .lb-action .lb-id { color: #aeb6c2; }
-#lobby .lb-action.sel .lb-id { color: var(--hot); }
+#lobby .lb-tabsrow::after,
+#lobby .lb-rowwrap::after {
+  bottom: calc(-5 * var(--u) - 3px);
+  right: calc(-7 * var(--u) - 3px);
+  border-left: 0;
+  border-top: 0;
+  transform: translate(6px, 6px);
+}
+#lobby .lb-tabsrow.sel::before,
+#lobby .lb-tabsrow.sel::after,
+#lobby .lb-rowwrap.sel::before,
+#lobby .lb-rowwrap.sel::after {
+  opacity: 1;
+  transform: none;
+}
 
-/* The three picker rows — the map a new match starts on, the region it starts
-   in, and whether it fields bots — one button per choice in the middle column
-   the states and hints share. The third needed no rule of its own, which is the
-   strip working: a picker is a row of choices whatever it is choosing between,
-   and two buttons is a list of two. Their own strip rather than the overlay's `.tier` — those
-   rules are scoped to #overlay, and a shared class between two screens that
-   are never on together would be a shared constraint for nothing. */
-#lobby .lb-picks {
+/* =====================================================================
+   THE LIST — one plate per match, per region line, per picker.
+   ---------------------------------------------------------------------
+   Scrolls as the last resort it is: a server running more matches than the
+   column holds, or a landscape phone. Room for the cursor's brackets is made
+   inside the scroller's own clip and NOT taken back at the bottom, where a
+   negative margin would let a row scrolled past paint over the say line.
+   ===================================================================== */
+#lobby .lb-list {
   display: flex;
-  gap: 6px;
+  flex-direction: column;
+  gap: max(6px, calc(10 * var(--u)));
+  min-width: 0;
+  min-height: 0;
+  margin: -12px -14px 0;
+  padding: 12px 14px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-width: none;
 }
-/* The rows whose BODY is not a target — they pick rather than fire, so
-   only the buttons in them take a click and the row must not offer a hand
-   across the rest of its width. */
-#lobby .lb-pickline { cursor: default; }
-#lobby button.lb-pick {
-  font: inherit;
-  font-size: var(--ui-cap);
+#lobby .lb-list::-webkit-scrollbar { display: none; }
+#lobby .lb-rowwrap {
+  position: relative;
+  flex: none;
+  min-width: 0;
+}
+#lobby .lb-row {
+  position: relative;
+  display: grid;
+  align-items: center;
+  column-gap: max(12px, calc(24 * var(--u)));
+  min-height: max(var(--hit), calc(76 * var(--u)));
+  padding: max(8px, calc(12 * var(--u))) max(12px, calc(18 * var(--u))) max(8px, calc(12 * var(--u))) max(14px, calc(22 * var(--u)));
+  background: var(--plate-mm);
+  box-shadow: var(--plate-edge);
+  clip-path: polygon(var(--cut) 0, 100% 0, 100% calc(100% - var(--cut)), calc(100% - var(--cut)) 100%, 0 100%, 0 var(--cut));
+  transition: background 0.12s, box-shadow 0.12s;
+}
+#lobby .lb-rowwrap.sel .lb-row {
+  background: rgba(255, 230, 128, 0.1);
+  box-shadow: inset 0 0 0 1px rgba(255, 230, 128, 0.6);
+}
+
+/* --- a MATCH: its map's picture, its name and state, the seats, where ---
+   The picture is a slice of the map's own photograph, the menu reel's card
+   in another guise — the thing that tells two rows apart before a word is
+   read. The seats are the one figure a row is compared on, so they are the
+   largest thing after the name, and full is coloured as the enemy is. */
+#lobby .lb-match {
+  grid-template-columns: max(64px, calc(128 * var(--u))) minmax(0, 1fr) auto;
+  padding-left: 0;
+  cursor: pointer;
+}
+#lobby .lb-match.multi {
+  grid-template-columns: max(64px, calc(128 * var(--u))) minmax(0, 1fr) auto max(64px, calc(104 * var(--u)));
+}
+#lobby .lb-art {
+  align-self: stretch;
+  margin: calc(-1 * max(8px, calc(12 * var(--u)))) 0;
+  background-color: rgba(255, 255, 255, 0.04);
+  background-position: center;
+  background-size: cover;
+  /* A photograph under a plate's hairline, fading into the plate so the
+     name beside it reads against the fill rather than against the picture. */
+  -webkit-mask-image: linear-gradient(90deg, #000 55%, transparent);
+  mask-image: linear-gradient(90deg, #000 55%, transparent);
+  opacity: 0.85;
+  transition: opacity 0.14s;
+}
+#lobby .lb-rowwrap.sel .lb-art { opacity: 1; }
+#lobby .lb-name {
+  display: flex;
+  flex-direction: column;
+  gap: max(2px, calc(5 * var(--u)));
+  min-width: 0;
+}
+#lobby .lb-mn {
+  min-width: 0;
+  font-size: var(--t-row);
+  font-weight: 800;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  transition: color 0.14s;
+}
+#lobby .lb-rowwrap.sel .lb-mn { color: var(--hot); }
+#lobby .lb-state {
+  font-style: normal;
+  font-size: var(--t-cap);
   font-weight: 700;
   letter-spacing: 0.16em;
   text-transform: uppercase;
-  /* Never two lines. A region's name comes out of a deploy-time file and can be
-     any length, and a button that wraps takes its whole row's height with it. */
   white-space: nowrap;
-  padding: 5px 12px;
+  overflow: hidden;
+  text-overflow: ellipsis;
   color: rgba(255, 255, 255, 0.5);
-  background: rgba(255, 255, 255, 0.05);
-  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.09);
-  cursor: pointer;
-  clip-path: polygon(5px 0, 100% 0, 100% calc(100% - 5px), calc(100% - 5px) 100%, 0 100%, 0 5px);
-  transition: color 0.12s, background 0.12s;
 }
-#lobby button.lb-pick:hover { color: #fff; background: rgba(255, 255, 255, 0.11); }
-#lobby button.lb-pick.on {
-  color: #0a0d14;
+#lobby .lb-seats {
+  display: flex;
+  align-items: baseline;
+  gap: 0.3em;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+#lobby .lb-seats b {
+  font-size: var(--t-big);
+  font-weight: 800;
+  line-height: 1;
+  color: var(--hot);
+}
+#lobby .lb-seats i {
+  font-style: normal;
+  font-size: var(--t-cap);
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  color: rgba(255, 255, 255, 0.45);
+}
+/* Which server, and the round trip to it — only when there is a choice of
+   server, and stacked so the column stays narrow. A deploy-time file writes
+   the name, so it clips rather than pushing the map's name about. */
+#lobby .lb-where {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: max(2px, calc(4 * var(--u)));
+  min-width: 0;
+}
+#lobby .lb-rn {
+  max-width: 100%;
+  font-size: var(--t-cap);
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  color: rgba(255, 255, 255, 0.55);
+}
+#lobby .lb-lat {
+  font-size: var(--t-cap);
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  font-variant-numeric: tabular-nums;
+  color: rgba(255, 255, 255, 0.7);
+}
+#lobby .lb-lat:not(:empty)::after { content: " ms"; font-weight: 700; opacity: 0.6; }
+#lobby .lb-lat.none::after { content: none; }
+/* A good connection is the ordinary case and says nothing; the two worth a
+   player's attention are coloured. */
+#lobby .lb-lat.fair { color: var(--hot); }
+#lobby .lb-lat.poor { color: var(--theirs); }
+/* A full match stays in the list and stops being a target — knowing a round
+   is there and full is worth more than a shorter list. The cursor still lands
+   on it and the confirm is refused in `activate`. */
+#lobby .lb-rowwrap.full .lb-row { cursor: default; }
+#lobby .lb-rowwrap.full .lb-art,
+#lobby .lb-rowwrap.full .lb-name { opacity: 0.45; }
+#lobby .lb-rowwrap.full .lb-seats b { color: var(--theirs); }
+#lobby .lb-rowwrap.botless .lb-state { color: #9fd9e6; }
+/* The row a join is in flight on. */
+#lobby .lb-rowwrap.busy .lb-state {
+  color: var(--hot);
+  animation: pulse 0.9s ease-in-out infinite;
+}
+
+/* --- a region's line: asking, empty, or unreachable ---
+   Dimmer than a match and not a target; the cursor lands on it so the text
+   can be read on a pad. */
+#lobby .lb-row.lb-note {
+  grid-template-columns: minmax(0, 1fr) auto;
+  min-height: max(var(--hit), calc(60 * var(--u)));
+  background: rgba(10, 13, 20, 0.55);
+}
+#lobby .lb-row.lb-note .lb-mn { color: rgba(255, 255, 255, 0.72); }
+#lobby .lb-row.lb-note .lb-state {
+  text-transform: none;
+  letter-spacing: 0.04em;
+  font-weight: 600;
+}
+
+/* --- nothing to join ---
+   What the servers said, and the way to the other page. Not a row: the
+   cursor has nothing to do here that the strip cannot, and the button's
+   prompt is the bumper that does the same. */
+#lobby .lb-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: max(10px, calc(16 * var(--u)));
+  padding: max(14px, calc(26 * var(--u))) max(14px, calc(22 * var(--u)));
+  background: linear-gradient(170deg, rgba(10, 13, 21, 0.78), rgba(4, 6, 12, 0.6));
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.07);
+  clip-path: polygon(var(--cut) 0, 100% 0, 100% calc(100% - var(--cut)), calc(100% - var(--cut)) 100%, 0 100%, 0 var(--cut));
+}
+#lobby .lb-empty-cap {
+  font-size: var(--t-cap);
+  font-weight: 700;
+  letter-spacing: 0.3em;
+  text-transform: uppercase;
+  color: var(--hot);
+}
+#lobby .lb-empty.searching .lb-empty-cap { animation: pulse 1.2s ease-in-out infinite; }
+#lobby .lb-empty p {
+  font-size: var(--t-body);
+  line-height: 1.5;
+  color: rgba(255, 255, 255, 0.72);
+}
+#lobby .lb-go {
+  display: inline-flex;
+  align-items: center;
+  gap: max(8px, calc(12 * var(--u)));
+  min-height: max(var(--hit), calc(52 * var(--u)));
+  padding: 0 max(12px, calc(18 * var(--u)));
+  color: #12141a;
   background: var(--hot);
+  cursor: pointer;
+  clip-path: polygon(var(--cut) 0, 100% 0, 100% calc(100% - var(--cut)), calc(100% - var(--cut)) 100%, 0 100%, 0 var(--cut));
+  transition: filter 0.12s;
+}
+#lobby .lb-go svg { width: max(16px, calc(22 * var(--u))); height: max(16px, calc(22 * var(--u))); }
+#lobby .lb-go b {
+  font-size: var(--t-cap);
+  font-weight: 800;
+  letter-spacing: 0.24em;
+  text-transform: uppercase;
+}
+#lobby .lb-go:hover { filter: brightness(1.08); }
+#lobby .lb-go kbd.gl { color: #12141a; background: rgba(0, 0, 0, 0.1); box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.3); }
+
+/* --- a PICKER: the settings screen's stepper ---
+   The value between two chevrons with a pip per option, and under the label
+   what the value comes to (the round trip, the size of the fight). Left and
+   right CLAMP, so a spent arrow is drawn spent; the value itself is Enter
+   under a pointer — one step on, and round. */
+#lobby .lb-pick {
+  grid-template-columns: minmax(0, 1fr) var(--ctl);
+  grid-template-areas:
+    "label ctl"
+    "note  ctl";
+  align-content: center;
+}
+#lobby .lb-label {
+  grid-area: label;
+  min-width: 0;
+  font-size: var(--t-row);
+  font-weight: 800;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  white-space: nowrap;
+  transition: color 0.14s;
+}
+#lobby .lb-rowwrap.sel .lb-label { color: var(--hot); }
+#lobby .lb-pnote {
+  grid-area: note;
+  min-width: 0;
+  margin-top: max(2px, calc(4 * var(--u)));
+  font-style: normal;
+  font-size: var(--t-cap);
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  color: rgba(255, 255, 255, 0.5);
+}
+#lobby .lb-pnote.fair { color: var(--hot); }
+#lobby .lb-pnote.poor { color: var(--theirs); }
+#lobby .lb-step {
+  grid-area: ctl;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: stretch;
+  gap: max(3px, calc(5 * var(--u)));
+  min-height: max(var(--hit), calc(52 * var(--u)));
+}
+#lobby .lb-arr {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: max(var(--hit), max(30px, calc(44 * var(--u))));
+  padding: 0;
+  color: var(--hot);
+  background: rgba(255, 255, 255, 0.05);
+  cursor: pointer;
+  clip-path: polygon(var(--cut) 0, 100% 0, 100% calc(100% - var(--cut)), calc(100% - var(--cut)) 100%, 0 100%, 0 var(--cut));
+  transition: background 0.12s, opacity 0.12s;
+}
+#lobby .lb-arr::before {
+  font-size: var(--t-big);
+  font-weight: 700;
+  line-height: 0.8;
+}
+#lobby .lb-arr.prev::before { content: "\2039"; }
+#lobby .lb-arr.next::before { content: "\203A"; }
+#lobby .lb-arr:hover { background: rgba(255, 230, 128, 0.16); }
+#lobby .lb-arr.off { opacity: 0.25; cursor: default; }
+#lobby .lb-arr.off:hover { background: rgba(255, 255, 255, 0.05); }
+#lobby .lb-val {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: max(4px, calc(7 * var(--u)));
+  min-width: 0;
+  padding: 0 max(4px, calc(8 * var(--u)));
+  color: #fff;
+  background: none;
+  cursor: pointer;
+}
+#lobby .lb-val b {
+  max-width: 100%;
+  font-size: var(--t-row);
+  font-weight: 800;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+#lobby .lb-rowwrap.sel .lb-val b { color: var(--hot); }
+#lobby .lb-val i {
+  display: grid;
+  grid-auto-flow: column;
+  grid-auto-columns: minmax(0, max(6px, calc(14 * var(--u))));
+  gap: max(3px, calc(4 * var(--u)));
+}
+#lobby .lb-val s {
+  display: block;
+  height: max(3px, calc(4 * var(--u)));
+  background: rgba(255, 255, 255, 0.2);
+  transition: background 0.14s;
+}
+#lobby .lb-val s.lit { background: var(--hot); }
+
+/* --- the button that spends the pickers ---
+   The menu's Deploy plate: hot, heavy and the last thing in the column, with
+   what it would spend written under its word. It is a ROW — the cursor walks
+   onto it and Enter fires it — so its cursor is the brackets like any other. */
+#lobby .lb-rowwrap .lb-create {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: flex-start;
+  gap: max(3px, calc(6 * var(--u)));
+  min-height: max(var(--hit), calc(92 * var(--u)));
+  padding-left: max(18px, calc(32 * var(--u)));
+  color: #12141a;
+  background: linear-gradient(100deg, var(--hot) 0%, var(--hot) 45%, rgba(255, 244, 196, 0.96) 70%, var(--hot) 100%);
+  box-shadow: none;
+  cursor: pointer;
+}
+#lobby .lb-rowwrap.sel .lb-create {
+  background: linear-gradient(100deg, #fff1a8 0%, var(--hot) 55%, #fff6cc 100%);
   box-shadow: none;
 }
-
-/* A region button carries its ping beside its name, because this row is where
-   the choice is actually made — a player stepping across it is reading the two
-   numbers, and making them look up at the column above to find the one for the
-   row they are on would be a picker that hid its own answer. */
-#lobby button.lb-pick {
-  display: inline-flex;
-  align-items: baseline;
-  gap: 7px;
+#lobby .lb-rowwrap:has(.lb-create) {
+  margin-top: max(4px, calc(10 * var(--u)));
+  filter: drop-shadow(0 0 calc(18 * var(--u)) rgba(255, 230, 128, 0.35));
 }
-#lobby button.lb-pick .lb-lat {
-  font-size: 10px;
+#lobby .lb-cword {
+  font-size: var(--t-big);
+  font-weight: 900;
+  letter-spacing: 0.26em;
+  line-height: 1;
+  text-transform: uppercase;
+}
+#lobby .lb-csub {
+  font-size: var(--t-cap);
+  font-weight: 700;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  color: rgba(18, 20, 26, 0.66);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 100%;
+}
+
+/* =====================================================================
+   THE SAY LINE — the cursor's sentence, where the intel has no room.
+   ===================================================================== */
+#lobby .lb-say {
+  display: none;
+  min-height: 3em;
+  font-size: var(--t-body);
+  line-height: 1.5;
+  color: rgba(255, 255, 255, 0.7);
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+/* =====================================================================
+   THE INTEL — a plate on whatever the cursor is resting on.
+   ---------------------------------------------------------------------
+   On a match: its seats as a strip of pips (a person lit, a bot dim, an open
+   seat in a botless round an outline), the round trip and the state, the
+   map's PLAN — the menu's schematic, the same drawing as the deploy map —
+   and what joining it means. On a picker: every option with the chosen one
+   lit. On the strip: the page, and what is on it.
+   ===================================================================== */
+#lobby .lb-intel {
+  align-self: start;
+  min-width: 0;
+  max-height: 100%;
+  overflow-y: auto;
+  scrollbar-width: none;
+  padding: max(14px, calc(26 * var(--u)));
+  background: linear-gradient(170deg, rgba(10, 13, 21, 0.86), rgba(4, 6, 12, 0.8));
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.09);
+  clip-path: polygon(16px 0, 100% 0, 100% calc(100% - 16px), calc(100% - 16px) 100%, 0 100%, 0 16px);
+}
+#lobby .lb-intel::-webkit-scrollbar { display: none; }
+#lobby .lb-intel-in {
+  display: flex;
+  flex-direction: column;
+  gap: max(12px, calc(20 * var(--u)));
+}
+#lobby .lb-intel-in.fade { animation: lb-fade 0.28s ease both; }
+@keyframes lb-fade {
+  from { opacity: 0; transform: translate3d(0, 4px, 0); }
+  to { opacity: 1; transform: none; }
+}
+#lobby .lb-intel-head {
+  display: flex;
+  flex-direction: column;
+  gap: max(3px, calc(6 * var(--u)));
+  min-width: 0;
+  padding-bottom: max(7px, calc(12 * var(--u)));
+  border-bottom: 1px solid var(--rule);
+}
+#lobby .lb-intel-head::after {
+  content: "";
+  display: block;
+  width: max(26px, calc(48 * var(--u)));
+  height: 2px;
+  margin-top: max(6px, calc(10 * var(--u)));
+  margin-bottom: calc(-1 * max(7px, calc(12 * var(--u))) - 1px);
+  background: var(--hot);
+}
+#lobby .lb-eyebrow-s {
+  font-size: var(--t-cap);
+  font-weight: 700;
+  letter-spacing: 0.3em;
+  text-transform: uppercase;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  color: var(--hot);
+}
+#lobby .lb-intel h3 {
+  font-size: max(17px, calc(30 * var(--u)));
+  font-weight: 800;
+  letter-spacing: 0.12em;
+  line-height: 1.05;
+  text-transform: uppercase;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  color: #fff;
+}
+#lobby .lb-seatstrip {
+  display: flex;
+  flex-direction: column;
+  gap: max(6px, calc(9 * var(--u)));
+}
+#lobby .lb-pips {
+  display: grid;
+  grid-auto-flow: column;
+  grid-auto-columns: minmax(0, 1fr);
+  gap: max(2px, calc(4 * var(--u)));
+}
+#lobby .lb-pips s {
+  display: block;
+  height: max(10px, calc(18 * var(--u)));
+  clip-path: polygon(3px 0, 100% 0, 100% calc(100% - 3px), calc(100% - 3px) 100%, 0 100%, 0 3px);
+}
+#lobby :is(.lb-pips s, .lb-seatkey i).p { background: var(--hot); }
+#lobby :is(.lb-pips s, .lb-seatkey i).b { background: rgba(255, 255, 255, 0.2); }
+#lobby :is(.lb-pips s, .lb-seatkey i).o { box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.3); }
+#lobby .lb-seatkey {
+  display: flex;
+  gap: max(12px, calc(20 * var(--u)));
+  font-size: var(--t-cap);
+  font-weight: 700;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: rgba(255, 255, 255, 0.6);
+}
+#lobby .lb-seatkey span { display: inline-flex; align-items: center; gap: 6px; }
+#lobby .lb-seatkey i { display: inline-block; width: 10px; height: 10px; }
+#lobby .lb-ifacts {
+  display: grid;
+  grid-auto-flow: column;
+  grid-auto-columns: minmax(0, 1fr);
+  gap: max(8px, calc(14 * var(--u)));
+}
+#lobby .lb-ifacts span {
+  display: flex;
+  flex-direction: column;
+  gap: max(2px, calc(4 * var(--u)));
+  min-width: 0;
+}
+#lobby .lb-ifacts b {
+  font-size: max(15px, calc(26 * var(--u)));
+  font-weight: 800;
+  line-height: 1.05;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  font-variant-numeric: tabular-nums;
+  color: var(--hot);
+}
+#lobby .lb-ifacts .poor b { color: var(--theirs); }
+#lobby .lb-ifacts i {
+  font-style: normal;
+  font-size: var(--t-cap);
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  color: rgba(255, 255, 255, 0.52);
+}
+/* The plan: wider than tall so the plate stays inside a 1080-line screen with
+   the seats and the sentence above and below it; the schematic is fitted into
+   whatever box it is given. */
+#lobby .lb-thumb {
+  width: 100%;
+  aspect-ratio: 5 / 4;
+  background: rgba(0, 0, 0, 0.35);
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.08);
+  clip-path: polygon(14px 0, 100% 0, 100% calc(100% - 14px), calc(100% - 14px) 100%, 0 100%, 0 14px);
+}
+#lobby .lb-thumb canvas {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+/* Every option, the chosen one filled — the stepper shows one at a time. */
+#lobby .lb-ladder {
+  display: grid;
+  grid-auto-flow: column;
+  grid-auto-columns: minmax(0, 1fr);
+  gap: max(3px, calc(4 * var(--u)));
+}
+#lobby .lb-ladder span {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 3px;
+  min-width: 0;
+  padding: max(6px, calc(9 * var(--u))) 2px;
+  font-size: var(--t-cap);
+  font-weight: 800;
   letter-spacing: 0.06em;
+  text-transform: uppercase;
+  text-align: center;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  color: rgba(255, 255, 255, 0.55);
+  background: rgba(255, 255, 255, 0.05);
 }
-/* The lit button is a light plate with dark text on it, where the quality
-   colours are tuned against the dark panel — so the chosen region's ping takes
-   the plate's own ink rather than a yellow that vanishes into it. Its band is
-   still readable: it is the one the row above is coloured by. */
-#lobby button.lb-pick.on .lb-lat {
-  color: inherit;
-  opacity: 0.6;
+#lobby .lb-ladder span.on { color: #12141a; background: var(--hot); }
+#lobby .lb-ladder em { font-style: normal; }
+#lobby .lb-ladder span.on .lb-lat { color: inherit; opacity: 0.7; }
+#lobby .lb-blurb {
+  font-size: var(--t-body);
+  line-height: 1.55;
+  color: rgba(255, 255, 255, 0.66);
+}
+#lobby .lb-sums {
+  display: flex;
+  flex-direction: column;
+}
+#lobby .lb-sum {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  align-items: baseline;
+  gap: 12px;
+  padding: max(5px, calc(9 * var(--u))) 0;
+  border-top: 1px solid var(--rule);
+  font-size: var(--t-cap);
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+}
+#lobby .lb-sum > span { color: rgba(255, 255, 255, 0.55); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+#lobby .lb-sum em { font-style: normal; color: rgba(255, 255, 255, 0.7); white-space: nowrap; }
+#lobby .lb-sum b {
+  font-weight: 800;
+  letter-spacing: 0.1em;
+  color: #fff;
+  white-space: nowrap;
+}
+#lobby .lb-sum b.lb-lat::after { content: none; }
+
+/* =====================================================================
+   THE FOOT — the cursor's verbs, for the device in hand, and absent under a
+   finger. The bumpers are on the strip's ends and Refresh and Back on their
+   own buttons, so the foot names none of them again.
+   ===================================================================== */
+#lobby .lb-foot {
+  justify-self: end;
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 6px max(12px, calc(22 * var(--u)));
+  font-size: var(--t-cap);
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  color: rgba(255, 255, 255, 0.42);
+}
+#lobby .lb-foot span { display: inline-flex; align-items: center; gap: 5px; }
+#lobby .lb-foot kbd {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: max(20px, calc(24 * var(--u)));
+  height: max(20px, calc(24 * var(--u)));
+  padding: 0 6px;
+  font: inherit;
+  font-size: var(--t-cap);
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-shadow: none;
+  color: #cfd6e2;
+  background: rgba(255, 255, 255, 0.07);
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.14);
+  clip-path: polygon(4px 0, 100% 0, 100% calc(100% - 4px), calc(100% - 4px) 100%, 0 100%, 0 4px);
+}
+#lobby .lb-foot kbd.pd { color: var(--hot); box-shadow: inset 0 0 0 1px rgba(255, 230, 128, 0.35); }
+#lobby.dev-kbm .lb-foot [data-dev="pad"],
+#lobby.dev-pad .lb-foot [data-dev="kbm"],
+#lobby.dev-touch .lb-foot { display: none; }
+
+/* --- the screen arriving, a page turning, and a match appearing ---
+   Staggered, and every block is opacity and a transform so the whole thing
+   is the compositor's. `.enter` is put on the root by `show` on a RAISE
+   only; `.deal` on the list by a page TURN only; `.fresh` on a row a
+   server's answer has just added, so the rows already there hold still. */
+@keyframes lb-rise {
+  from { opacity: 0; transform: translate3d(0, calc(18 * var(--u)), 0); }
+  to { opacity: 1; transform: none; }
+}
+@keyframes lb-from-left {
+  from { opacity: 0; transform: translate3d(calc(-36 * var(--u)), 0, 0); }
+  to { opacity: 1; transform: none; }
+}
+@keyframes lb-drop {
+  from { opacity: 0; transform: translate3d(0, calc(-12 * var(--u)), 0); }
+  to { opacity: 1; transform: none; }
+}
+@keyframes lb-arrive {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+#lobby.enter .lb-top { animation: lb-drop 0.5s ease both; }
+#lobby.enter .lb-hero {
+  animation: lb-from-left 0.7s cubic-bezier(0.16, 0.84, 0.36, 1) 0.05s both;
+}
+#lobby.enter .lb-tabsrow {
+  animation: lb-rise 0.5s cubic-bezier(0.16, 0.84, 0.36, 1) 0.1s both;
+}
+#lobby.enter .lb-list > * {
+  animation: lb-rise 0.5s cubic-bezier(0.16, 0.84, 0.36, 1) both;
+  animation-delay: calc(0.12s + var(--i, 1) * 0.04s);
+}
+#lobby.enter .lb-intel { animation: lb-arrive 0.6s ease 0.3s both; }
+#lobby.enter .lb-foot { animation: lb-arrive 0.6s ease 0.4s both; }
+#lobby .lb-list.deal > *,
+#lobby .lb-list > .fresh {
+  animation: lb-deal 0.36s cubic-bezier(0.16, 0.84, 0.36, 1) both;
+  animation-delay: calc(var(--i, 1) * 28ms);
+}
+@keyframes lb-deal {
+  from { opacity: 0; transform: translate3d(0, calc(14 * var(--u)), 0); }
+  to { opacity: 1; transform: none; }
 }
 
-/* The footer — the hint line and the Back button at the end of it — is
-   `.ui-foot` / `.ui-back` in base.css, shared with the settings and kit
-   screens. Back is a button THERE rather than a row in the list above,
-   which is the whole reason that block exists: see base.css. This screen
-   adds nothing to it. */
+/* =====================================================================
+   THE SCREEN AT EVERY VIEWPORT
+   ---------------------------------------------------------------------
+   The settings screen's four templates over the same areas:
+   - WIDE (the default): column, the photograph, intel.
+   - NO INTEL: under 1100 px wide or 620 tall. The intel goes and the say
+     line takes back its sentence; the figures it gave are on the title.
+   - SHORT LANDSCAPE: a phone held sideways, which is THE phone layout. The
+     two pages run the full height under the left thumb, the title, the
+     plates and the sentence share the right, and Refresh and Back are the
+     top-right corner.
+   - PORTRAIT: a fallback that must not break. One column, the pages a row of
+     tabs.
+   ===================================================================== */
+@media (max-width: 1099px), (max-height: 619px) {
+  #lobby {
+    --col: clamp(340px, 64vw, calc(820 * var(--u)));
+    grid-template-columns: minmax(0, var(--col)) minmax(0, 1fr);
+    grid-template-areas:
+      "top  top"
+      "hero hero"
+      "tabs ."
+      "list ."
+      "say  ."
+      ".    ."
+      "foot foot";
+  }
+  #lobby .lb-intel { display: none; }
+  #lobby .lb-say { display: -webkit-box; }
+}
+
+@media (orientation: landscape) and (max-height: 560px) {
+  #lobby {
+    --gy: 10px;
+    --tabcol: clamp(120px, 21vw, 190px);
+    --ctl: clamp(190px, 30vw, 250px);
+    --gap-x: clamp(12px, 2.4vw, 24px);
+    grid-template-columns: minmax(0, var(--tabcol)) minmax(0, 1fr) auto;
+    grid-template-rows: auto minmax(0, max-content) auto minmax(0, 1fr);
+    grid-template-areas:
+      "tabs hero top"
+      "tabs list list"
+      "tabs say  say"
+      "tabs .    .";
+    row-gap: 6px;
+    background:
+      linear-gradient(90deg, rgba(3, 5, 11, 0.9) 0, rgba(3, 5, 11, 0.72) 70%, rgba(3, 5, 11, 0.45) 100%),
+      repeating-linear-gradient(to bottom, rgba(255, 255, 255, 0.012) 0 1px, transparent 1px 3px);
+  }
+  /* Top: only the system corner. The screen's name is the one thing a
+     player who just pressed the button to open it does not need told. */
+  #lobby .lb-top { align-self: start; }
+  #lobby .lb-brand,
+  #lobby .lb-foot,
+  #lobby .lb-index,
+  #lobby .lb-nav { display: none; }
+  #lobby .lb-sysbtn { padding-inline: 12px; }
+  #lobby .lb-hero { padding-top: 0; }
+  #lobby .lb-hero-in { --t: max(20px, min(8vh, 9cqw)); }
+  #lobby .lb-title { margin: 2px 0 2px; }
+  #lobby .lb-facts b { font-size: 12px; }
+  #lobby .lb-facts i { font-size: 9px; }
+  /* The pages fill the height as equal plates — a thumb's target each. */
+  #lobby .lb-tabsrow { align-self: stretch; }
+  #lobby .lb-tabs {
+    grid-auto-flow: row;
+    grid-auto-rows: minmax(0, 1fr);
+    gap: 6px;
+  }
+  #lobby .lb-tab {
+    justify-content: flex-start;
+    min-height: 0;
+    padding: 6px 12px;
+  }
+  #lobby .lb-tabsrow::before { top: -3px; left: -4px; }
+  #lobby .lb-tabsrow::after { bottom: -3px; right: -4px; }
+  #lobby .lb-list { gap: 6px; }
+  #lobby .lb-row {
+    min-height: var(--hit);
+    padding-top: 4px;
+    padding-bottom: 4px;
+    column-gap: 10px;
+  }
+  #lobby .lb-art { margin: -4px 0; }
+  #lobby .lb-match { grid-template-columns: 72px minmax(0, 1fr) auto; }
+  #lobby .lb-match.multi { grid-template-columns: 72px minmax(0, 1fr) auto 64px; }
+  #lobby .lb-pick { padding-top: 0; padding-bottom: 0; padding-right: 0; }
+  #lobby .lb-rowwrap::before { top: -3px; left: -4px; }
+  #lobby .lb-rowwrap::after { bottom: -3px; right: -4px; }
+  #lobby .lb-mn,
+  #lobby .lb-label { font-size: 13px; letter-spacing: 0.08em; }
+  #lobby .lb-state,
+  #lobby .lb-pnote { margin-top: 0; font-size: 9px; letter-spacing: 0.1em; }
+  #lobby .lb-seats b { font-size: 18px; }
+  #lobby .lb-step { min-height: var(--hit); }
+  #lobby .lb-val b { font-size: 13px; }
+  #lobby .lb-rowwrap .lb-create { min-height: 52px; }
+  #lobby .lb-rowwrap:has(.lb-create) { margin-top: 2px; }
+  #lobby .lb-cword { font-size: 17px; }
+  #lobby .lb-empty { padding: 12px 14px; gap: 8px; }
+  #lobby .lb-say {
+    min-height: 0;
+    font-size: 11px;
+    line-height: 1.4;
+  }
+}
+/* The shortest phones (a 667x375 and down): the system corner's labels go
+   and the marks stay, as the menu's system bar does, and the tabs keep their
+   words and lose their marks. */
+@media (orientation: landscape) and (max-height: 560px) and (max-width: 740px) {
+  #lobby .lb-sysbtn b { display: none; }
+  #lobby .lb-tab svg { display: none; }
+  #lobby .lb-tab { justify-content: center; padding-inline: 6px; }
+  #lobby .lb-tab b { letter-spacing: 0.12em; }
+  #lobby .lb-match { grid-template-columns: 52px minmax(0, 1fr) auto; }
+}
+
+@media (orientation: portrait) {
+  #lobby {
+    --ctl: clamp(180px, 48vw, 240px);
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: auto auto auto minmax(0, max-content) auto minmax(0, 1fr) auto;
+    grid-template-areas: "top" "hero" "tabs" "list" "say" "." "foot";
+    row-gap: max(8px, calc(14 * var(--u)));
+    background:
+      linear-gradient(rgba(3, 5, 11, 0.78), rgba(3, 5, 11, 0.78)),
+      repeating-linear-gradient(to bottom, rgba(255, 255, 255, 0.012) 0 1px, transparent 1px 3px);
+  }
+  #lobby .lb-intel,
+  #lobby .lb-index,
+  #lobby .lb-nav { display: none; }
+  #lobby .lb-say { display: -webkit-box; -webkit-line-clamp: 4; }
+  #lobby .lb-facts { flex-wrap: wrap; white-space: normal; }
+  #lobby .lb-sysbtn b { display: none; }
+  /* The pages as a row of TABS: equal shares, an icon over a word. */
+  #lobby .lb-tab {
+    flex-direction: column;
+    gap: 4px;
+    padding: 8px 4px;
+  }
+  #lobby .lb-tab b { font-size: 10px; letter-spacing: 0.12em; }
+  #lobby .lb-match,
+  #lobby .lb-match.multi { grid-template-columns: 56px minmax(0, 1fr) auto; }
+  #lobby .lb-match.multi .lb-where { display: none; }
+  /* A picker's stepper under its label rather than beside it: a column this
+     narrow has no room for "Hollowmere" between two finger-sized arrows AND
+     for the label beside them. */
+  #lobby .lb-pick {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-areas: "label" "note" "ctl";
+    row-gap: 6px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  #lobby.enter .lb-top,
+  #lobby.enter .lb-hero,
+  #lobby.enter .lb-tabsrow,
+  #lobby.enter .lb-list > *,
+  #lobby.enter .lb-intel,
+  #lobby.enter .lb-foot,
+  #lobby .lb-hero-in.swap,
+  #lobby .lb-hero-in.swap .lb-title,
+  #lobby .lb-intel-in.fade,
+  #lobby .lb-list.deal > *,
+  #lobby .lb-list > .fresh,
+  #lobby .lb-rowwrap.busy .lb-state,
+  #lobby .lb-empty.searching .lb-empty-cap {
+    animation: none;
+  }
+}

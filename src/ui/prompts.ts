@@ -6,11 +6,11 @@
  * each screen that draws prompts, and the screen writes it as a `dev-*` class on
  * its own root. The stylesheet does the rest (`kbd.gl` in `base.css`).
  *
- * Shared by the three screens that are laid out like a console front end
+ * Shared by the four screens that are laid out like a console front end
  * rather than in the shell: the main menu (`OverlayScreen`), the kit screen
- * (`LoadoutScreen`) and the settings screen (`SettingsScreen`). A fourth
- * screen drawing prompts imports these and adds its root to the `:is(...)`
- * list in `base.css`; it does not write another copy.
+ * (`LoadoutScreen`), the settings screen (`SettingsScreen`) and the lobby
+ * (`LobbyScreen`). A fifth screen drawing prompts imports these and adds its
+ * root to the `:is(...)` list in `base.css`; it does not write another copy.
  */
 
 /**

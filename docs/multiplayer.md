@@ -1908,8 +1908,8 @@ somebody else started says nothing about where this player wants to start one.
 **One region collapses the screen to what it was.** The region column, the ping
 column and the region row appear only when the file names more than one, so an
 untouched `regions.json` — a single-box deployment, and every dev client running
-`?server=` — gets the three-column lobby with one reading on its status line,
-which is the screen this all replaced.
+`?server=` — gets a lobby with no region column on its plates and no region
+picker, which is the screen this all replaced.
 
 **What regions do NOT buy is two processes behind one hostname.** That is still
 the thing that would break: matches live in memory, so a load balancer in front
@@ -2122,8 +2122,8 @@ at a real spawn reads `alive: true` while it holds the slot and
 
 **The lobby is where it is chosen and where it is READ BACK.** The Bots row is
 the third picker on that screen, beside the map and the region and under both —
-the rows are the sentence the New match button spends, WHERE then WHAT then WHO
-— and the create row's hint names both parameters, because a row that named only
+the rows are the sentence the Start match button spends, WHERE then WHAT then
+WHO — and that button reads all three back under its word, because a row that named only
 the map would be silent about the one choice whose wrong answer is invisible
 until the round is standing. It is deliberately NOT remembered across sessions
 where the map is: the map is a preference and is what the menu offers you again

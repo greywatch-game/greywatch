@@ -1057,7 +1057,8 @@ src/
                         #   map with no row here simply has no backdrop. Not a
                         #   field on MapDef, because the SERVER imports those.
                         #   Also the menu reel's THUMBNAILS, downscaled once a
-                        #   session on the client rather than committed
+                        #   session on the client rather than committed — which
+                        #   the lobby's match plates wear too
     DeployScreen.ts     # Top-down deploy map, with the orders panel beside it
       deploy.css        #   rather than under it. The plan is mapPaint's,
                         #   PRERENDERED once per map and blitted — this screen
@@ -1094,19 +1095,23 @@ src/
                         #   scene: #hud.setting hides every other screen.
                         #   Owns no setting: picks leave through onChange and
                         #   return as setValues
-    LobbyScreen.ts      # The match browser: every region's matches in one list
-      lobby.css         #   with a region column and a ping per row, plus
-                        #   region/map/new/refresh/back. Rows are DERIVED from
-                        #   the results, and everything off a network is written
-                        #   with textContent. Fetches nothing — Game hands it a
-                        #   region list and each region's answer as it lands,
-                        #   and takes onJoin/onCreate/onPickRegion/onPickMap
-                        #   back. A match row is a REGION and an id (ids are
-                        #   minted per process, so every region has an m1). The
-                        #   Region and Map rows are what a match CREATED here
-                        #   starts in and on; joining one takes that match's
-                        #   server and map, and onJoin carries both. One region
-                        #   collapses it to the three-column screen it was
+    LobbyScreen.ts      # The match browser, a TITLE SCREEN for the match the
+      lobby.css         #   cursor is on: its map's name over its photograph
+                        #   (the menu's #menu-shot, via onBackdrop), two pages
+                        #   on a tab strip the bumpers turn — JOIN (a plate per
+                        #   match, with a slice of its map's picture) and NEW
+                        #   MATCH (region/map/bots steppers and Start match) —
+                        #   an intel plate with the seats and the map's plan,
+                        #   Refresh (R/X) and Back in the system corner. Rows
+                        #   are DERIVED from the results and kept by IDENTITY;
+                        #   everything off a network is written with
+                        #   textContent (`Fill`). Fetches nothing — Game hands
+                        #   it the regions and each answer as it lands. A match
+                        #   row is a REGION and an id (every region has an m1).
+                        #   The pickers are what a match CREATED here is built
+                        #   with; joining takes that match's server and map.
+                        #   One region drops the region column and picker.
+                        #   #hud.lobbying takes the menu off the glass
     Minimap.ts          # Corner minimap, player-centred and heading-up: flags,
       minimap.css       #   friendlies, firing enemies, and a rim marker for
                         #   every control point the zoomed view does not reach.

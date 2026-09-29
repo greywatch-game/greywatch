@@ -6,8 +6,10 @@
  * url and `scripts/capture-map-shots.mjs` reads the vantage.
  * Invariants: a map with no row here is not a broken screen — the menu falls
  * back to its veil over the live scene, exactly as it looked before there were
- * shots at all. Never import this from anything but the menu: the images are
- * ~250 KB each and nothing else on any screen wants them.
+ * shots at all. Never import this from anything but the menu and the lobby
+ * (the two title screens that stand on a map's picture — the lobby's match
+ * plates wear the reel's thumbnails): the images are ~250 KB each and nothing
+ * else on any screen wants them.
  *
  * **The vantage lives here, beside the image, because it is the only thing
  * that can regenerate it.** A screenshot is an opaque 200 KB rectangle: there

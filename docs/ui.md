@@ -69,19 +69,23 @@ is the screen and the controls are laid on it. It has a grid of its own — name
 areas, four templates, one unit — described under *The main menu* below, and
 what it keeps from the shell is the vocabulary (`.ui-eyebrow`, `.ui-facts`, the
 tokens), not the frame. A new screen whose job is a list it is FILLED IN from
-(the lobby) goes in the shell; one that shows something, or a list browsed like
-a title screen, copies the kit screen or the settings screen rather than the
-menu.
+goes in the shell (the deploy screen is the one left there); one that shows
+something, or a list browsed like a title screen, copies the kit screen, the
+settings screen or the lobby rather than the menu.
 
 **A screen over another SCREEN is opaque; a screen over the SCENE is not.**
 `.ui-veil` is the backdrop — a warm glow off the lower-left corner and a cold one
 off the upper-right (the friend/foe pair the whole HUD is coloured by, and what
 gives the frame a direction to be lit from), a vignette, a diagonal hatch, and
 the scanlines every card here already had. The menu, the round-over card and the
-deploy screen stand over a live 3D view and let it through. The lobby stands
-over the MENU — DOM over DOM — and adds `.ui-solid`, which closes
-the vignette: a veil tuned to let a village through lets a wordmark and a rail of
-buttons through with it, which reads as two screens up at once.
+deploy screen stand over a live 3D view and let it through. A shell screen
+raised over another SCREEN — DOM over DOM — adds `.ui-solid`, which closes the
+vignette: a veil tuned to let a village through lets a wordmark and a rail of
+buttons through with it, which reads as two screens up at once. (The lobby wore
+it until it left the shell. The front-end lids answer the same question the
+other way: they take what they cover off the glass — `#hud.kitting`,
+`.setting`, `.lobbying` — and lay a scrim shaped like their own layout over
+what is left.)
 
 **`--ov-scale` is a safety valve now, not the layout.** It is still the mechanism
 described further down — draw the screen at the size it was authored for and
@@ -91,8 +95,8 @@ is 1 until a viewport is shorter than anything the clamp minimums fit in
 legible desktop menu rendered at 45%. Raising it back toward those numbers undoes
 the responsive layout wholesale.
 
-**The kit screen is the second screen NOT in the shell, and the settings screen
-the third; both are laid out the way the menu is** — see *The kit screen* below. Its middle is a hole the 3D
+**The kit screen is the second screen NOT in the shell, the settings screen
+the third and the lobby the fourth; all are laid out the way the menu is** — see *The kit screen* below. Its middle is a hole the 3D
 turntable is placed through, and a title screen for a weapon is the shape that
 hole wants: what it shares with the menu is the unit, the type scale, the plate
 and the prompts (`base.css`'s `:is(#overlay.card-menu, #loadout, #settings)` block and
@@ -129,23 +133,24 @@ matches an action by kind and a match by id, never by anything that changes
 because its rows are a static table.
 
 **A row that PICKS is not a row that FIRES, and the pointer has to tell them
-apart.** The lobby's rows fire on pointer-DOWN — that is the edge everything
-which leaves a screen uses — but its Map row only steps a choice, and the map
-buttons inside it take ordinary clicks on the way UP, exactly as the menu's own
-map and difficulty rows do. Firing the row on the down edge as well would cycle
-the choice under the finger and then set the clicked one, which lands in the
-right place by luck and flickers getting there. The row is above **New match**
-rather than below it for the reason the menu puts Map above Deploy: the
-parameter, then the button that spends it. It is the map a match this client
-CREATES will be started on and says nothing about the matches listed above it —
+apart.** The lobby's match plates and its Start match button fire on a CLICK;
+its three pickers only step a choice, on their arrows and their value, exactly
+as the settings screen's steppers do. The plates used to fire on pointer-DOWN,
+the edge a control that leaves a screen takes when the same press must go on to
+take the pointer lock — and a join takes no lock, while the list it sits in
+scrolls under a thumb on a phone, so a drag begun on a plate would have joined
+the round under it. A click is never raised after a scroll. The pickers are
+above **Start match** for the reason the menu puts Map above Deploy: the
+parameters, then the button that spends them. They are what a match this client
+CREATES will be built with and say nothing about the matches on the other page —
 see [`docs/multiplayer.md`](multiplayer.md) for why joining one takes that
 match's map instead.
 
 **THE WAY OUT OF A SCREEN IS A BUTTON IN ITS FOOTER, never a row in its own
-list.** The lobby ends on that
+list** — or, off the shell, in the SYSTEM CORNER. A shell screen ends on that
 line — what the keys and the stick do, then Back at the right-hand end of it —
 and it is `.ui-foot` / `.ui-back` in `base.css` rather than three copies, so a
-fourth list-shaped screen gets the whole convention by naming it. The lobby's
+list-shaped screen gets the whole convention by naming it. The lobby's
 Back was a row for a while and it was the wrong shape twice over: it sat under a
 list whose length is whatever the servers happen to be running, so the one
 control every visitor eventually wants was the one whose position nothing could
@@ -163,7 +168,8 @@ place, never a row in a list. Every one of them applies a pick the moment it is 
 so there is nothing on any of them to be finished with, and two screens that
 leave the same way must not use two words for it. Where the keys genuinely
 differ, the screen's own hints say so, and only the pair that works everywhere
-is on the button. The settings screen's Back went to the corner with it.
+is on the button. The settings screen's Back went to the corner with it, and
+the lobby's, beside its Refresh, when it left the shell.
 
 **The four cards are one class because they are one element** — they share the
 shell, the title block and the Deploy button. The bar for a screen of its own is
@@ -1435,6 +1441,78 @@ teardown — screen, pose and lamps — and all four exits go through it, becaus
 carried light nobody removes survives `lighting.clear()` and follows the player into
 the round.
 
+
+## The lobby
+
+**The lobby is a title screen for the MATCH the cursor is on**, the fourth
+front-end screen and laid out as the settings screen is — the same named areas,
+the same four templates, the same tab strip. It read as a web form: a heading,
+five columns of small caps floating in the middle of a black page, and three
+rows of chips under them, the map row's eight names running off its own edge.
+
+**The match is the title.** The map it is running is set large, with its number
+among the matches hollow behind it, an eyebrow saying which match of how many
+and where, and a figure strip — the seats, the round trip, the state — that is
+always one line, so moving the cursor never moves the list. On the strip the
+title is the FIRST match, because the strip is where the screen opens and the
+title of a screen full of matches should be one of them; with nothing listed it
+is the list's own state in one word (*Searching*, *No matches*, *Offline*,
+*Full*); on the other page it is the map a new match would be built on.
+
+**The photograph behind it is that map's, and it is the MENU's photograph.**
+`LobbyScreen.onBackdrop` names a map id and `Game` hands it to
+`OverlayScreen.showBackdrop`, which cross-fades `#menu-shot` exactly as a map
+step on the menu does. One backdrop rather than a copy here, because the lobby
+is only ever raised over the menu and the picture is already up behind it; the
+menu puts its own map back when `closeLobby` redraws it. `#hud.lobbying` takes
+the menu card off the glass (visibility, so it returns unredrawn) and carves out
+`#menu-shot` and `#hud-fps`, the settings screen's `.setting` rule. A map id
+this build has never heard of has no picture, and the backdrop fades out rather
+than leaving another map's up.
+
+**Two pages, because the list was two kinds of thing.** JOIN is a plate per
+match, each carrying a slice of its map's photograph (the reel's thumbnails,
+`shotThumbUrl`), the state under the name, the seats as the figure a row is
+compared on, and — with more than one region — which server and the round trip
+to it. NEW MATCH is the three pickers as the settings screen's steppers (region
+only where there is a choice, map, bots) and **Start match**, a Deploy-weight
+plate reading back what it would spend. The tab strip is row 0 of the cursor's
+list, so a pad reaches both pages through the list alone; the bumpers (LB/RB,
+Q/E) turn the page from anywhere and clamp, Enter on the strip wraps. The JOIN
+tab carries the match count once any server has ANSWERED — a zero on a screen
+that reached nobody is a measurement nobody took. An empty JOIN page is not an
+empty column: it says what the servers said and offers **New match**, carrying
+the bumper that does the same.
+
+**Refresh and Back are the SYSTEM CORNER**, each with its key (R / the pad's X,
+Esc / B), and each key fires its button wherever the cursor is. Neither is a
+row: a control under a list whose length is whatever the servers are running is
+one whose position nothing can predict. X is a reload only while a seat is
+offered, and nothing is offered in a menu, so `reloadPressed` is both.
+
+**The intel plate is what joining MEANS.** On a match: the seats as a strip of
+pips (a person lit, a seat a bot is holding dim, and in a botless round an open
+seat as an outline, because there it is genuinely empty), the round trip and the
+state, the map's PLAN — `drawMapThumb`, the menu's schematic and the same
+drawing as the deploy map — and a sentence per state. On a picker: every option
+with the chosen one lit. On the strip: the page, and on JOIN each region with
+what it answered and its round trip. Where a viewport has no room for the plate
+the sentence comes back as the say line under the list.
+
+**It is built on a raise and patched after, and the patch is what keeps it
+usable while servers answer.** The rows are rebuilt only when their SET changes
+— the identity keys, plus the empty state's sentence, which has no patch path of
+its own — and a row that has just arrived deals itself in while the rows already
+there hold still; counts, states and pings are patched in place. The cursor is
+re-found by identity across every rebuild (above). The title is rewritten, with
+its wipe, only when what it is ABOUT changes; the intel is rewritten when its
+contents change, and fades only when the CURSOR moved. Every string off a
+network — a map id, a region's name, a server's error — goes in through
+`textContent` (`Fill`), including in the title and the intel.
+
+**The match plates join on a CLICK** (see the pick/fire paragraph above), and
+the whole root takes pointer events for the pause card's reason: the menu under
+it confirms on mouse-DOWN.
 
 ## The controls a phone plays with
 

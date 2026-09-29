@@ -30,21 +30,28 @@ Think like a game UI designer, not a web one:
 ## Which frame
 
 - **The shell** (`.ui-screen` in `base.css`: head, body, foot; a rail and a
-  panel) is for a screen whose job is its LIST — the lobby, the deploy
-  screen. A new list screen goes there and gets `.ui-foot`/`.ui-back` for
-  free.
-- **The front end** (`:is(#overlay.card-menu, #loadout, #settings)` in
+  panel) is for a screen whose job is its LIST and nothing else — the deploy
+  screen is the one left. A new list screen goes there and gets
+  `.ui-foot`/`.ui-back` for free. (The lobby was one and left: a list of
+  matches reads as a front end once each match is a TITLE — its map's name
+  over its photograph.)
+- **The front end** (`:is(#overlay.card-menu, #loadout, #settings, #lobby)` in
   `base.css`, plus `prompts.ts`) is for a screen whose job is to SHOW
   something — or a list the player browses like a title screen rather than
   fills in like a form (the settings: the PAGE is the title, the pages a tab
-  strip the bumpers turn, the rows plates). It is a grid of named areas of the
-  screen's own, sized off the shared unit. A fourth front-end screen adds its
+  strip the bumpers turn, the rows plates; the lobby: the MATCH under the
+  cursor is the title, over its own map's photograph). It is a grid of named
+  areas of the screen's own, sized off the shared unit. A fifth front-end
+  screen adds its
   root to that `:is(...)` list rather than copying the block, and its Back
   goes in the SYSTEM CORNER (top right), where the menu keeps Online and
   Settings.
 - **A front-end screen raised over OTHER screens hides them** (`#hud.kitting`,
-  `#hud.setting`: `visibility`, so they come back unredrawn) and lays a scrim
-  shaped like its own layout over the scene, instead of an opaque veil.
+  `#hud.setting`, `#hud.lobbying`: `visibility`, so they come back unredrawn)
+  and lays a scrim shaped like its own layout over the scene, instead of an
+  opaque veil. One raised over the MENU may drive the menu's photograph
+  (`OverlayScreen.showBackdrop`) rather than keep a second copy of it; the
+  menu puts its own map back when it is redrawn on the way out.
 
 ## The shared vocabulary (front end)
 
@@ -138,3 +145,12 @@ Keyed on what actually runs out, in this order in the stylesheet:
   `hasTouch`/`isMobile` on the context — `lib.mjs` sets both for the phone and
   tablet views, which is why `--hit` shows up there and not on the desktop
   ones.
+- **A list that scrolls on a phone must not fire on pointer-DOWN.** A drag
+  that starts on a row to scroll the list would fire the row. The lobby's
+  match plates join on `click`, which a browser never raises after a scroll;
+  pointer-down is for a control whose press must go on to take the pointer
+  lock (the deploy screen's), which a join does not.
+- **A block with no patch path must be in the list's SHAPE key.** The lobby's
+  empty state lives inside the list and is rebuilt only when the list is, so
+  its sentence is part of the key; left out, it said "Searching" forever
+  after the server had answered.

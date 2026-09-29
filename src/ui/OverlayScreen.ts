@@ -969,7 +969,8 @@ export class OverlayScreen {
    */
   private setShot(map: MapDef | undefined): void {
     // Raised by the fact of being called: the menu card is the only thing that
-    // calls this, and every other card calls `clearShot`.
+    // calls this (the lobby reaches it through `showBackdrop`, over the menu),
+    // and every other card calls `clearShot`.
     this.shotRoot.classList.add("on");
     const url = map ? mapShotUrl(map.id) : undefined;
     if (url === this.shotUrl) return;
@@ -994,6 +995,22 @@ export class OverlayScreen {
     // fall back TO but the scrim the picture is already under — so the last
     // backdrop stays and the screen is the one it was before shots existed.
     img.decode().then(raise, () => {});
+  }
+
+  /**
+   * The backdrop, asked for by the LOBBY: the photograph of the map the lobby's
+   * cursor is on, cross-faded exactly as a map step on the menu is.
+   *
+   * Public because the lobby is the one other screen that stands on the
+   * picture — it is only ever raised over the menu, whose backdrop is already
+   * up behind it — and one backdrop with one cross-fade is the whole reason
+   * this is a call rather than a second copy of the layers. It raises nothing
+   * the menu had not raised, and it is undone for free: the menu is redrawn on
+   * the lobby's way out, and `showMenu` puts its own map back.
+   */
+  showBackdrop(map: MapDef | undefined): void {
+    if (this.card !== "menu") return;
+    this.setShot(map);
   }
 
   /**

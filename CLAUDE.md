@@ -514,7 +514,7 @@ exactly as a gamepad is, so nothing in gameplay has heard of it.
 **Every screen is a LIST, and a list whose rows can change under the cursor keeps
 its place by IDENTITY rather than by index** (the lobby is the one that can), and
 **the way OUT is a button in its footer, never a row in its own list**
-(`.ui-foot` / `.ui-back`) — or, on the three screens off the shell, in the
+(`.ui-foot` / `.ui-back`) — or, on the four screens off the shell, in the
 system CORNER, which is fixed for the same reason. They are drawn in ONE FRAME anchored to the VIEWPORT,
 **sized in `clamp()` over `vmin` with `--ov-scale` a safety valve rather than the
 layout**. **A screen over another SCREEN is opaque and a screen over the SCENE is
@@ -538,10 +538,16 @@ the weapon's name the title, a column of slot plates, a RAIL of the cursor
 slot's options under the weapon, the bumpers turning the WEAPON from anywhere.
 The SETTINGS screen is the third: the PAGE's name the title, the pages a tab
 strip that is row 0 of the cursor's list and that the bumpers turn from
-anywhere, the rows plates. **A front-end lid raised over other SCREENS takes
-them off the glass** (`#hud.kitting`, `#hud.setting` — `visibility`, so they
+anywhere, the rows plates. The LOBBY is the fourth: the MATCH under the cursor
+the title, over its own map's photograph, on two pages (join, new match).
+**A front-end lid raised over other SCREENS takes them off the glass**
+(`#hud.kitting`, `#hud.setting`, `#hud.lobbying` — `visibility`, so they
 return unredrawn) and is laid over the SCENE, so a new child of `#hud` that
-must survive one is carved out of both rules by name, as `#hud-fps` is.
+must survive one is carved out of every such rule by name, as `#hud-fps` is.
+**The lobby DRIVES the menu's photograph** (`OverlayScreen.showBackdrop`)
+rather than keeping a copy, and the menu puts its own map back on the redraw
+the lobby's close already does — so `#menu-shot` must stay a root of its own
+that a card rewrite leaves standing.
 
 **The MENU is the first title screen, and the one the others copy**: the
 chosen map's PHOTOGRAPH is the screen (`#menu-shot`, a root of its OWN at z-index

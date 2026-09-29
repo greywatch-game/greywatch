@@ -2172,6 +2172,11 @@ export class Game {
     this.lobbyScreen.onPickMap = (index) => this.setMap(index);
     this.lobbyScreen.onPickBots = (bots) => this.setLobbyBots(bots);
     this.lobbyScreen.onRefresh = () => void this.refreshLobby();
+    // The photograph behind the lobby is the map its cursor is on — the menu's
+    // backdrop, since the lobby is only ever raised over the menu. An id this
+    // build has never heard of has no picture, and the backdrop fades out.
+    this.lobbyScreen.onBackdrop = (mapId) =>
+      this.overlayScreen.showBackdrop(MAPS.find((m) => m.id === mapId));
     this.lobbyScreen.onClose = () => this.closeLobby();
     this.overlayScreen.onPauseAction = (action) => {
       // Restart needs nothing put back by hand: `startRound` lifts the lid,
@@ -3728,12 +3733,13 @@ export class Game {
   }
 
   /**
-   * The lobby. A list like the settings screen, and with one row that steps:
-   * the map a new match would be started on. Left/right is spent there and
-   * NOWHERE else — a horizontal nudge on a match row has nothing to change,
-   * because that match's map is the authority's, and a nudge that did something
-   * anyway would make the cursor's own edges feel like traps (the reasoning
-   * `stepMenuItem` states next door).
+   * The lobby. Two pages like the settings screen — the matches, and the match
+   * this client would make — with the tab strip as row 0 and the bumpers
+   * turning the page from anywhere. Left/right is spent on the strip and on the
+   * NEW MATCH page's three pickers and NOWHERE else — a horizontal nudge on a
+   * match row has nothing to change, because that match's map is the
+   * authority's, and a nudge that did something anyway would make the cursor's
+   * own edges feel like traps (the reasoning `stepMenuItem` states next door).
    */
   private updateLobbyScreen(): void {
     // B and Escape leave, matching the settings screen's two ways out.
@@ -3754,6 +3760,18 @@ export class Game {
     if (this.input.menuLeftPressed) this.lobbyScreen.stepRow(-1);
     if (this.input.menuRightPressed) this.lobbyScreen.stepRow(1);
     if (this.input.menuConfirmPressed) this.lobbyScreen.activate();
+    if (this.input.menuPrevPressed) this.lobbyScreen.stepPage(-1);
+    if (this.input.menuNextPressed) this.lobbyScreen.stepPage(1);
+    // Refresh is drawn in the system corner with R and the pad's X on it, and a
+    // prompt on a control is a key that fires that control wherever the cursor
+    // is. `reloadPressed` is both: X is a reload only while no seat is offered,
+    // and nothing is offered in a menu.
+    if (this.input.reloadPressed) this.lobbyScreen.refresh();
+    if (this.input.anyDeviceUsed) {
+      this.lobbyScreen.setInputDevice(
+        this.input.padInHand ? "pad" : this.input.touchActive ? "touch" : "kbm",
+      );
+    }
   }
 
   /**
