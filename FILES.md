@@ -1000,8 +1000,10 @@ src/
                         #   screen between the title and the world is framed
                         #   in: .ui-screen (head / body / foot, edge-anchored,
                         #   fluid), .ui-veil (+.ui-solid over another screen),
-                        #   .ui-rail, .ui-panel, .ui-facts, .ui-foot.
-                        #   Imported by main.ts
+                        #   .ui-rail, .ui-panel, .ui-facts, .ui-foot — and the
+                        #   FRONT END's unit (`--u`, the `--t-*` scale) and
+                        #   prompt glyphs, shared by the menu and the kit
+                        #   screen. Imported by main.ts
     HUD.ts/hud.css      # Gameplay chrome ONLY: tickets, flags, capture panel,
                         #   vitals, ammo, the stowed slot, hitmarker, killfeed,
                         #   score feed, scoreboard, damage arcs, +
@@ -1064,12 +1066,21 @@ src/
                         #   letters its grid. The offer is live, so the
                         #   highlight is held by IDENTITY; in a netplay round a
                         #   confirm is a REQUEST and says so
-    LoadoutScreen.ts    # Kit screen: four slots, a stat chart derived from
-      loadout.css       #   CONFIG.weapons, and the bay the turntable stands
-                        #   in — which it MEASURES and reports every frame
-                        #   (stageBay), so the layout is free and the weapon
-                        #   follows the hole. A strip, three columns, and a
-                        #   band across the top of a phone
+    LoadoutScreen.ts    # Kit screen, laid out as the MENU is and consistent
+      loadout.css       #   with it alone: the weapon's name as the title, a
+                        #   bottom-anchored column of SLOT plates (up/down),
+                        #   a RAIL of the cursor slot's options under the
+                        #   weapon (left/right, applied), the bumpers turning
+                        #   the weapon from anywhere, an INTEL plate with the
+                        #   chart DERIVED from CONFIG.weapons, Back in the
+                        #   system corner. Built once, PATCHED after; the bay
+                        #   the turntable stands in is MEASURED every frame
+                        #   (stageBay), so nothing sharing its column may
+                        #   change height. Four templates; phones are LANDSCAPE
+    prompts.ts          # The prompt drawn ON a control for the device in hand
+                        #   (`glyph`, `InputDevice`, `guessDevice`) — shared by
+                        #   the menu and the kit screen; the kbd.gl rules and
+                        #   the shared `--u` unit are base.css's
     SettingsScreen.ts   # Controls built from a ROW TABLE, in PAGES — a button
       settings.css      #   group, or a slider where the ladder is too long for
                         #   one (the thumb picks an option INDEX, so both are

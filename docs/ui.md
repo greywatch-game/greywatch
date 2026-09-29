@@ -89,13 +89,12 @@ is 1 until a viewport is shorter than anything the clamp minimums fit in
 legible desktop menu rendered at 45%. Raising it back toward those numbers undoes
 the responsive layout wholesale.
 
-**The kit screen carries the head without the frame**, and it is the one
-exception. Its middle is a hole the 3D turntable is placed through, so it
-declares a grid of its own — head band, weapon strip, three columns, foot band —
-and takes `.ui-head` and `.ui-foot` as full-bleed rows in it. Both bands are
-above the hole rather than across it, which is what `.ui-screen`'s own grid
-could not have arranged. That is why the title rule is scoped to `.ui-head`
-rather than to `.ui-screen`.
+**The kit screen is the second screen NOT in the shell, and it is laid out the
+way the menu is** — see *The kit screen* below. Its middle is a hole the 3D
+turntable is placed through, and a title screen for a weapon is the shape that
+hole wants: what it shares with the menu is the unit, the type scale, the plate
+and the prompts (`base.css`'s `:is(#overlay.card-menu, #loadout)` block and
+`prompts.ts`), not the shell's frame.
 
 **The boot screen is the one piece of interface that is not in this directory**,
 and the exception is what defines it: it covers the stretch before any module
@@ -154,8 +153,11 @@ never needed the row — Esc and B leave all three screens through `Game`, which
 is what the chips on the button say — so what it cost a pointer to reach was the
 whole of what it bought.
 
-The label is **Back** on all three, including the kit screen, which said "Done"
-until this was shared. Every one of them applies a pick the moment it is made,
+The label is **Back** on all of them, including the kit screen, which said
+"Done" until this was shared — and whose Back now stands in the SYSTEM CORNER,
+where the menu keeps Online and Settings, because it is off the shell and has no
+foot of its own to end on. The rule the footer served is unchanged: a fixed
+place, never a row in a list. Every one of them applies a pick the moment it is made,
 so there is nothing on any of them to be finished with, and two screens that
 leave the same way must not use two words for it. Where the keys genuinely
 differ, the screen's own hints say so: Enter changes a settings row and closes
@@ -1238,6 +1240,8 @@ takes a click. Pointerdown, like the map's markers: the same event goes on to ta
 the pointer lock, which it can only do once `spawnPlayer` has moved the state to
 `playing`. It greys itself (`.waiting`) while `confirm()` is still a no-op.
 
+## The kit screen
+
 **The MIDDLE of the kit screen is a turntable carrying the real viewmodel.** It
 is not a second model, not a render target and not a second camera: `ViewModel`
 simply has a pose that is not the carried one (`beginInspect` / `spinInspect` /
@@ -1292,97 +1296,74 @@ and drawn in `VIEWMODEL_GROUP`.
   weapon and as a severed arm on a bench, so `ViewModel` hides the arm meshes for
   the duration — one place writes mesh visibility.
 
-**THE LAYOUT IS THREE ZONES AND A STRIP, split by what each thing IS rather than
-by what fits where.** Head and foot are full-bleed bands; between them, a WEAPON
-strip of six cards across the top (the decision the other three depend on, so it
-gets the width), a column of the things FITTED to it down the left (optic,
-anti-vehicle, throwable, finish — the throwable on every map, the anti-vehicle
-row only on one with armour), the BAY in the middle, and the CHART and the copy down the
-right — the only things on this screen that are read rather than pressed. The
-three columns share one top line under the strip (`justify-content: flex-start`,
-deliberately, because two left-aligned stacks starting at two different y is the
-misalignment the eye picks out of any layout), and both side columns SCROLL, which
-is the fix for the one failure the old screen had at every size: a column that ran
-out of room simply put its last row under the bottom edge with no way to reach it.
+**A title screen for the weapon in your hands, laid out as the main menu is — and
+consistent with the menu alone, on purpose.** The weapon's NAME is the title
+across the top, with its number in the kit hollow and enormous behind it and its
+figures in a strip under it; the SLOTS are a column of plates down the left,
+anchored to the bottom as the menu's rows are; the options for the slot the
+cursor is on are a RAIL under the weapon, the menu's reel in another guise; an
+INTEL plate on the right describes the pick; Back is the system corner; the
+hint line is the foot. Every block is a named grid area and the viewports are
+four templates over them.
 
-- **A ROW OF PICKS IS A GRID OF EQUAL SHARES, NEVER A WRAPPING FLEX ROW.** This
-  is the rule that deleted the most from this section, and it is a correctness
-  rule rather than a style. A flex row cannot be squeezed below its own longest
-  word, so it breaks — and *where* it breaks was decided by a `flex-basis` tuned
-  per viewport across four media queries, with a standing instruction to MEASURE
-  the break by hand whenever a weapon or an optic was added, because a stranded
-  button (five on a line and one alone underneath at the column's full width) is
-  invisible to a typecheck, to a review of the diff, and to anyone not looking at
-  that viewport. Two regressions were found that way and neither would have been
-  found any other way. `grid-auto-flow: column` with `1fr` columns cannot strand:
-  six items are six equal shares at every width there is, and a narrow viewport
-  changes the COUNT of columns rather than the break. Nothing here needs
-  measuring when a weapon is added any more.
-- **Where a grid does wrap, it wraps into ALIGNED columns.** The portrait tier's
-  weapon strip is `repeat(auto-fit, minmax(118px, 1fr))`, so a seventh card sits
-  under the first at the same width — which is what a grid should look like when
-  a table stops being a round number, rather than one item alone at full width.
-- **Names WRAP; nothing is truncated.** Two names in this kit are long enough to
-  overrun a narrow column — "Submachine Gun" and "Anti-Vehicle Mines" — and
-  "ANTI-VEHICLE MI…" says less than the caption above it already does. Every list
-  here is a grid, so a row whose tallest cell has wrapped stretches the rest to
-  match and the column keeps its rhythm.
-- **The four picks are one control drawn four ways.** `.lo-block` is a `.frame`
-  hull with a caption over a list, and the ACTIVE block — the one the arrow keys
-  are stepping — says so by taking the hot colour as its `--frame-edge` and
-  lifting its `--frame-fill`. Two custom properties are the whole of the
-  selection treatment, which is why a fifth slot would need no new styling.
-- **The FINISH is the one pick on this screen that is not a trade, and the one
-  row that is not drawn like the others.** Every other choice here costs
-  something — a magnification is a field of view, a burst is four tenths of a
-  second — and a finish costs nothing, so it gets no bar on the chart and never
-  moves one. What it has instead is the bay: its NAME and its description are
-  written under the weapon rather than beside the bars, because it is the one
-  pick whose whole effect is the thing already turning on the turntable.
-- **All sixteen finishes are offered on every gun, and sixteen is what took the
-  NAMES off the buttons.** A finish says what it does with COLOUR because its
-  name cannot — "Verdigris" and "Oxblood" are words you would otherwise try one
-  at a time — so the button IS the swatch: three flat stops in the order the eye
-  reads a weapon (furniture, receiver, fittings), in a grid of `.lo-swatch`
-  rather than a row of `.lo-opt`. **Eight columns rather than `auto-fit`**,
-  because the table is sixteen and eight is two full lines with nothing stranded
-  on a short one.
-- **The name of the lit swatch is written in the BLOCK'S CAPTION**, in the hot
-  colour beside the dim "Finish" label, and described in full by the bay's
-  paragraph. Both, not either: the paragraph is the first thing a short viewport
-  drops, and a grid of unnamed colours with no name anywhere on the screen is
-  exactly the row-you-try-one-at-a-time the swatches exist to avoid. A `title`
-  covers the fifteen that are not lit, for the pointer that has one.
-- **The selected swatch is RINGED rather than filled**, which is the one place
-  `.on` changes its mind on this screen: every other button says it is chosen by
-  taking the hot colour as its background, and a swatch that did that would
-  paint over the only thing it has to say. The ring is inset (a `clip-path` cuts
-  an outer shadow off) with a dark line inside it, which also keeps two pale
-  schemes — `whitewash`, `frostbite` — from melting into each other and into the
-  plate behind them.
-- **It gives way in three tiers, and each is keyed on the thing that actually
-  runs out.** Below **1180 px** nothing changes — three columns hold, because
-  the side tracks' minimums are `clamp()`ed and a word set at a size that falls
-  with the viewport needs less room on the viewport where there is less. At
-  **`max-height: 620px`** — a phone held sideways — the side columns are given
-  MORE of the width and the lists go two-up as CARDS, a name over its figure
-  rather than beside it, which is what makes two columns fit in a track that
-  held one; the head and all the prose go, for the reason they always did. At
-  **`max-width: 720px`** the screen becomes one column: the bay is a band across
-  the top at `clamp(150px, 30vh, 300px)` and everything else scrolls underneath
-  it, with the weapon pinned in its band while the list moves — which works only
-  because the bay is measured rather than assumed.
-- **`.lo-choices` is `display: contents` at every width above that, and a real
-  scrolling box below it.** One element with two jobs: `display: contents` makes
-  `.lo-pick`, `.lo-fit` and `.lo-read` grid items of `#loadout` itself, placeable
-  anywhere in the frame; a phone turns the same element into the box that does
-  the scrolling. The alternative is a second copy of the markup for the narrow
-  case.
-- **`--ov-scale` still does not reach this screen, but the reason it could not
-  has gone.** The old note said a transform would move the hole and leave the
-  weapon behind it; a measured rect moves with the transform, so it would follow
-  now. It is left out because the layout fits the viewports it is given on its
-  own, which is the better answer.
+- **Two axes and a page, the menu's own grammar.** Up and down walk the slots,
+  left and right walk the rail — each step APPLIED, as every pick here always
+  was — and the bumpers (LB/RB, Q/E) turn the WEAPON from wherever the cursor
+  is, because the weapon is this screen's page the way the map is the menu's.
+  The same bumpers are drawn as the chevrons either side of the title's
+  eyebrow, where the pointer and the finger can use them.
+- **A pointer CLICKS a slot open; it does not hover one open.** The rail is
+  under the stage and the column is to its left, so a hover rule re-opens every
+  slot the mouse crosses on its way down to the rail. The old screen could move
+  its cursor on hover because every block carried its own options.
+- **NOTHING SHARING THE BAY'S COLUMN MAY CHANGE HEIGHT AS THE CURSOR MOVES.**
+  The bay is measured, so a rail that grew for sixteen swatches or a title that
+  wrapped on "Submachine Gun" would rescale the weapon under the player. The
+  title is sized off its own box (`cqw`) and never wraps, the fact strip never
+  wraps, and the rail is ONE height (`--rail-h`) for every kind of option.
+- **A ROW OF PICKS IS A ROW OF EQUAL SHARES THAT NEVER WRAPS.** Each card is
+  `flex: 1 1 0` between a floor and a cap stated per kind; with room they stop
+  at the cap and auto margins on the end cards centre them under the weapon,
+  without it they shrink together, and past the floor the rail SCROLLS —
+  `pan-x` under a thumb, a wheel under the mouse, the lit card kept centred
+  under a pad — with its edges faded on the side there is more. A row that
+  cannot wrap cannot strand a card, which is this file's rule about rows of
+  picks restated for a row that has to be one line.
+- **The weapon cards carry the SHORT name** (`short` in `CONFIG.weapons`): the
+  full one is the title over the rail, and six of "Submachine Gun" do not fit
+  under a weapon. An optic card leads with its MAGNIFICATION — the names are
+  words, the number is the choice.
+- **The FINISH is the one slot that is not a trade, and the one rail that is a
+  GRID**: sixteen swatches as eight columns of two inside the same height, so
+  the slot with the most options is the one that never scrolls. A finish says
+  what it is with colour because "Verdigris" and "Oxblood" are words you would
+  otherwise try one at a time, so each option IS a swatch — three flat stops,
+  furniture, receiver, fittings — and the name is on the rail's caption, the
+  plate and the intel. The lit swatch is RINGED rather than filled (a hot fill
+  would paint over the only thing it has to say), inset because the clip-path
+  cuts an outer ring off.
+- **The intel describes the cursor's slot**: the weapon's chart (six SEGMENTED
+  bars, each a share of the best in the kit), an optic's zoom and aim speed, a
+  pouch's counts, a finish's colours with a line saying it changes nothing. It
+  is the first block a viewport short of room drops, and the title's strip
+  takes back the two figures (`.x`) it was carrying in its bars.
+- **The sidearm is named once, under the plates, as the one line of the kit
+  nobody chooses** — no plate, no cursor, no rail. The kit screen is the only
+  place the whole kit is shown, and a second weapon nobody knows about is one
+  nobody draws.
+- **It is BUILT once and PATCHED** (`draw`): the slot plates on an armour
+  change, the title when the weapon changes (which is how `.swap` replays its
+  wipe), the rail when the slot changes (and its cards DEAL in), the intel on a
+  pick — except the weapon's own chart, whose bars are moved in place so they
+  SLIDE. The entrance is keyed to `show`, the menu's `.enter`.
+- **Four templates**, keyed on the two things that run out. WIDE is column,
+  stage, intel. Under 1240 px wide or 620 tall the intel goes (later than the
+  menu's 1100, because this rail needs six cards' width beside the column). A
+  phone held SIDEWAYS — the phone layout, since the game asks for landscape
+  everywhere it can — is the slot column full-height under the left thumb as
+  equal plates, the title and the rail on the right, Back in the top corner and
+  no hint line. A phone held upright is not a layout but must not break: one
+  column, the slots a row of icon tabs.
 
 `Game.updateKitStage` drives it, because `loadout` is the one lid state showing live
 3D and owes by hand the per-frame pushes only `updateGameplay` makes. The camera

@@ -514,7 +514,8 @@ exactly as a gamepad is, so nothing in gameplay has heard of it.
 **Every screen is a LIST, and a list whose rows can change under the cursor keeps
 its place by IDENTITY rather than by index** (the lobby is the one that can), and
 **the way OUT is a button in its footer, never a row in its own list**
-(`.ui-foot` / `.ui-back`). They are drawn in ONE FRAME anchored to the VIEWPORT,
+(`.ui-foot` / `.ui-back`) — or, on the two screens off the shell, in the
+system CORNER, which is fixed for the same reason. They are drawn in ONE FRAME anchored to the VIEWPORT,
 **sized in `clamp()` over `vmin` with `--ov-scale` a safety valve rather than the
 layout**. **A screen over another SCREEN is opaque and a screen over the SCENE is
 not**, and **the PAUSE is the one card that does not take the screen**. **A ROW
@@ -530,7 +531,11 @@ hole every frame and `ViewModel` fits the weapon to what it is told, where the
 weapon used to be placed from a constant that had to agree with a percentage in
 a stylesheet — one possible layout, everything else squeezed beside it.
 **Anything else that wants to place a 3D object against the interface owes the
-same shape.**
+same shape** — and its converse: **nothing sharing the bay's column may change
+height as the cursor moves**, or the weapon rescales under the player. The kit
+screen is the second screen laid out as the MENU is rather than in the shell:
+the weapon's name the title, a column of slot plates, a RAIL of the cursor
+slot's options under the weapon, the bumpers turning the WEAPON from anywhere.
 
 **The MENU is a title screen and the one screen NOT drawn in the shell**: the
 chosen map's PHOTOGRAPH is the screen (`#menu-shot`, a root of its OWN at z-index
@@ -541,7 +546,8 @@ it on a grid of named areas with four templates. **A map with no row in
 of names read `HOLLO…` at every viewport and a stepper hid how many there were —
 turned from anywhere by the BUMPERS (LB/RB, Q/E). **Every prompt is drawn on its
 control for the device in hand**, picked by a `dev-*` class the stylesheet reads,
-and none under a finger. **It is BUILT on a raise and PATCHED after**, which is
+and none under a finger — `ui/prompts.ts` and `base.css`, shared with the kit
+screen, as is the unit `--u`. **It is BUILT on a raise and PATCHED after**, which is
 what lets a map change animate, and the entrance is keyed to the RAISE.
 
 **THERE ARE THREE MAPS OF THE SAME PLACE HERE AND THEY ARE ONE DRAWING** — the

@@ -54,6 +54,7 @@ import {
 import { WEAPON_BLURBS } from "./LoadoutScreen";
 import { mapShotUrl, shotThumbUrl } from "./mapShots";
 import { drawMapThumb } from "./MapThumb";
+import { glyph, guessDevice, type InputDevice } from "./prompts";
 
 /**
  * What the pause menu can do, and the label for each. In screen order.
@@ -80,13 +81,6 @@ const PAUSE_ITEMS: readonly [PauseAction, string, boolean][] = [
   ["restart", "Restart round", true],
   ["quit", "Quit to menu", false],
 ];
-
-/**
- * Which device the player has in hand, as far as the prompts drawn on the
- * menu are concerned. `Game` pushes it (`setInputDevice`); this screen never
- * reads `InputManager`.
- */
-export type InputDevice = "kbm" | "pad" | "touch";
 
 /**
  * What the main menu's cursor can rest on.
@@ -258,20 +252,6 @@ function detailBlock(eyebrow: string, title: string, blurb: string): string {
   return `${detailHead(eyebrow, title)}<p class="ov-blurb">${blurb}</p>`;
 }
 
-/**
- * A PROMPT: the key or the button that reaches a control, drawn ON the control
- * the way a console front end draws one, for whichever device is in hand.
- *
- * Both labels are written into the markup and the STYLESHEET picks one, off
- * the `dev-*` class on the card — so the player picking up a pad turns every
- * prompt on the screen over in one class write, without a redraw, and a
- * prompt with no label for the device in hand is simply not drawn. Touch gets
- * none at all: the control under the finger is its own prompt.
- */
-function glyph(key: string | null, pad: string | null): string {
-  return `<kbd class="gl"${key ? ` data-k="${key}"` : ""}${pad ? ` data-p="${pad}"` : ""}></kbd>`;
-}
-
 /** The references the patch path writes through, held from the build. */
 interface MenuRefs {
   hero: HTMLElement;
@@ -328,11 +308,7 @@ export class OverlayScreen {
    * nothing, and prompting it for Enter would be the one wrong answer — and
    * then whatever `Game` says is in hand.
    */
-  private device: InputDevice =
-    typeof matchMedia === "function" &&
-    matchMedia("(hover: none) and (pointer: coarse)").matches
-      ? "touch"
-      : "kbm";
+  private device: InputDevice = guessDevice();
   /**
    * The building card's progress bar, live only while that card is up. Held
    * rather than re-queried because it is written on a frame the main thread is

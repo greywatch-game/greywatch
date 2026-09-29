@@ -713,21 +713,13 @@
    of its own, and runs to the glass whatever the card does.
    ===================================================================== */
 #overlay.card-menu {
-  --u: clamp(0.5px, calc(100vmin / 1080), 2.4px);
-  --hit: 0px;
-  --gx: max(clamp(16px, 3.4vw, 104px), calc((100% - 240vh) / 2));
-  --gy: clamp(12px, calc(38 * var(--u)), 76px);
+  /* `--u`, `--hit`, `--gx`, `--gy`, the `--t-*` scale and the plate are
+     `base.css`'s now, shared with the kit screen, which is laid out the same
+     way. What is left here is what only this card measures. */
   --col: clamp(300px, 38vw, calc(700 * var(--u)));
   --intel: clamp(260px, 25vw, calc(430 * var(--u)));
   --t-title: clamp(28px, calc(112 * var(--u)), 9.4vw);
   --t-word: max(17px, calc(32 * var(--u)));
-  --t-big: max(18px, calc(32 * var(--u)));
-  --t-row: max(13px, calc(19 * var(--u)));
-  --t-body: max(12px, calc(17 * var(--u)));
-  --t-cap: max(10px, calc(13 * var(--u)));
-  --plate-mm: rgba(16, 20, 30, 0.74);
-  --plate-edge: inset 0 0 0 1px rgba(255, 255, 255, 0.09);
-  --cut: max(6px, calc(10 * var(--u)));
 
   /* The short-viewport ladder in `base.css` scales `#overlay` down under
      380 px of height. This card fits those viewports on its own — the floors
@@ -785,9 +777,6 @@
     radial-gradient(90% 72% at 97% -14%, rgba(53, 240, 255, 0.09), transparent 54%),
     repeating-linear-gradient(to bottom, rgba(255, 255, 255, 0.012) 0 1px, transparent 1px 3px);
 }
-@media (pointer: coarse) {
-  #overlay.card-menu { --hit: 44px; }
-}
 
 /* Everything that stands on the photograph carries its own separation from
    it — the rule `base.css` states for the gameplay chrome, for the same
@@ -800,40 +789,10 @@
 }
 
 /* --- the prompts ---
-   Both labels are in the markup (`data-k` a key, `data-p` a pad button) and
-   the card's `dev-*` class picks which one is drawn, so picking up a pad
-   turns every prompt on the screen over in one class write. A prompt with no
-   label for the device in hand is not drawn, and under a finger none are —
-   the control under the thumb is its own prompt. */
-#overlay.card-menu kbd.gl {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  flex: none;
-  min-width: max(20px, calc(28 * var(--u)));
-  height: max(20px, calc(28 * var(--u)));
-  padding: 0 max(5px, calc(8 * var(--u)));
-  font: inherit;
-  font-size: var(--t-cap);
-  font-weight: 800;
-  letter-spacing: 0.06em;
-  line-height: 1;
-  text-shadow: none;
-  color: #dfe5ee;
-  background: rgba(255, 255, 255, 0.08);
-  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.26);
-  clip-path: polygon(4px 0, 100% 0, 100% calc(100% - 4px), calc(100% - 4px) 100%, 0 100%, 0 4px);
-}
-#overlay.card-menu kbd.gl::before { content: attr(data-k); }
-#overlay.card-menu.dev-pad kbd.gl::before { content: attr(data-p); }
-#overlay.card-menu.dev-kbm kbd.gl:not([data-k]),
-#overlay.card-menu.dev-pad kbd.gl:not([data-p]),
-#overlay.card-menu.dev-touch kbd.gl { display: none; }
-/* A pad's face buttons are drawn as the buttons are — round, and in the four
-   colours the controller itself prints — because a prompt is read by the
-   hand, and the hand knows the green one. The bumpers are a tab. */
-#overlay.card-menu.dev-pad kbd.gl[data-p="A"],
-#overlay.card-menu.dev-pad kbd.gl[data-p="Y"],
+   The glyph itself — both labels, the `dev-*` switch and the pad's own
+   colours — is `base.css`'s, shared with the kit screen. What is left here is
+   the foot's A, which is drawn as the pad's button whatever the device, since
+   it only appears on the pad's half of the hint line. */
 #overlay.card-menu .mm-foot kbd.face-a {
   width: max(20px, calc(28 * var(--u)));
   min-width: 0;
@@ -841,18 +800,8 @@
   border-radius: 50%;
   clip-path: none;
   color: #0b0d12;
+  background: #6fdc6a;
   box-shadow: inset 0 -2px 0 rgba(0, 0, 0, 0.25);
-}
-#overlay.card-menu.dev-pad kbd.gl[data-p="A"],
-#overlay.card-menu .mm-foot kbd.face-a { background: #6fdc6a; }
-#overlay.card-menu.dev-pad kbd.gl[data-p="Y"] { background: #ffd24a; }
-#overlay.card-menu.dev-pad kbd.gl[data-p="LB"],
-#overlay.card-menu.dev-pad kbd.gl[data-p="RB"] {
-  clip-path: none;
-  border-radius: 7px 7px 3px 3px;
-  color: #0b0d12;
-  background: #dfe5ee;
-  box-shadow: none;
 }
 
 /* =====================================================================

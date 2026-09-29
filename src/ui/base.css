@@ -696,6 +696,98 @@ body { font-family: "Segoe UI", "Helvetica Neue", Arial, sans-serif; }
 }
 .ui-foot button.ui-back:hover { background: rgba(255, 230, 128, 0.22); }
 
+/* =====================================================================
+   THE FRONT END — the two screens laid out like a console title screen
+   rather than in the shell: the main menu (`#overlay.card-menu`) and the kit
+   screen (`#loadout`). Both are sized off one unit and draw their prompts on
+   their controls, so the unit and the prompt are stated once, here, for both.
+   ---------------------------------------------------------------------
+   **`--u` is one pixel of a 1080-line screen.** A console front end scales
+   with the vertical resolution and so do these: a 1440p monitor gets the
+   1080p layout a third bigger rather than the same pixels with more
+   emptiness round them. `vmin` rather than `vh` because a phone held upright
+   is short across. Every size that is READ — type, a prompt, a hit area — is
+   a `max()` of that and a FLOOR in pixels, because a phone's unit is a third
+   of a pixel and a caption set to scale there is a caption nobody can read. A
+   SHAPE (a gap, a chamfer) follows the unit down with no floor.
+
+   `--hit` is a finger: 44 px under a coarse pointer and nothing otherwise,
+   put under every control as a `min-height`. `--gx` caps the frame at 2.4:1
+   and centres it, so 21:9 is used edge to edge and 32:9 keeps the
+   composition together.
+   ===================================================================== */
+:is(#overlay.card-menu, #loadout) {
+  --u: clamp(0.5px, calc(100vmin / 1080), 2.4px);
+  --hit: 0px;
+  --gx: max(clamp(16px, 3.4vw, 104px), calc((100% - 240vh) / 2));
+  --gy: clamp(12px, calc(38 * var(--u)), 76px);
+  --t-big: max(18px, calc(32 * var(--u)));
+  --t-row: max(13px, calc(19 * var(--u)));
+  --t-body: max(12px, calc(17 * var(--u)));
+  --t-cap: max(10px, calc(13 * var(--u)));
+  --plate-mm: rgba(16, 20, 30, 0.74);
+  --plate-edge: inset 0 0 0 1px rgba(255, 255, 255, 0.09);
+  --cut: max(6px, calc(10 * var(--u)));
+}
+@media (pointer: coarse) {
+  :is(#overlay.card-menu, #loadout) { --hit: 44px; }
+}
+
+/* --- the prompts (`prompts.ts`) ---
+   Both labels are in the markup (`data-k` a key, `data-p` a pad button) and
+   the root's `dev-*` class picks which one is drawn, so picking up a pad
+   turns every prompt on the screen over in one class write. A prompt with no
+   label for the device in hand is not drawn, and under a finger none are —
+   the control under the thumb is its own prompt. */
+:is(#overlay.card-menu, #loadout) kbd.gl {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  min-width: max(20px, calc(28 * var(--u)));
+  height: max(20px, calc(28 * var(--u)));
+  padding: 0 max(5px, calc(8 * var(--u)));
+  font: inherit;
+  font-size: var(--t-cap);
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  line-height: 1;
+  text-shadow: none;
+  text-transform: none;
+  color: #dfe5ee;
+  background: rgba(255, 255, 255, 0.08);
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.26);
+  clip-path: polygon(4px 0, 100% 0, 100% calc(100% - 4px), calc(100% - 4px) 100%, 0 100%, 0 4px);
+}
+:is(#overlay.card-menu, #loadout) kbd.gl::before { content: attr(data-k); }
+:is(#overlay.card-menu, #loadout).dev-pad kbd.gl::before { content: attr(data-p); }
+:is(#overlay.card-menu, #loadout).dev-kbm kbd.gl:not([data-k]),
+:is(#overlay.card-menu, #loadout).dev-pad kbd.gl:not([data-p]),
+:is(#overlay.card-menu, #loadout).dev-touch kbd.gl { display: none; }
+/* A pad's face buttons are drawn as the buttons are — round, and in the four
+   colours the controller itself prints — because a prompt is read by the
+   hand, and the hand knows the green one. The bumpers are a tab. */
+:is(#overlay.card-menu, #loadout).dev-pad kbd.gl:is([data-p="A"], [data-p="B"], [data-p="X"], [data-p="Y"]) {
+  width: max(20px, calc(28 * var(--u)));
+  min-width: 0;
+  padding: 0;
+  border-radius: 50%;
+  clip-path: none;
+  color: #0b0d12;
+  box-shadow: inset 0 -2px 0 rgba(0, 0, 0, 0.25);
+}
+:is(#overlay.card-menu, #loadout).dev-pad kbd.gl[data-p="A"] { background: #6fdc6a; }
+:is(#overlay.card-menu, #loadout).dev-pad kbd.gl[data-p="B"] { background: #ff6b5e; }
+:is(#overlay.card-menu, #loadout).dev-pad kbd.gl[data-p="X"] { background: #5ca8ff; }
+:is(#overlay.card-menu, #loadout).dev-pad kbd.gl[data-p="Y"] { background: #ffd24a; }
+:is(#overlay.card-menu, #loadout).dev-pad kbd.gl:is([data-p="LB"], [data-p="RB"]) {
+  clip-path: none;
+  border-radius: 7px 7px 3px 3px;
+  color: #0b0d12;
+  background: #dfe5ee;
+  box-shadow: none;
+}
+
 @keyframes pulse {
   0%, 100% { opacity: 1; }
   50% { opacity: 0.4; }

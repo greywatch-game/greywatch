@@ -3643,8 +3643,9 @@ export class Game {
   }
 
   /**
-   * The kit screen. Two axes for two slots, and every way out closes it —
-   * there is nothing to confirm, each pick is already on the weapon behind.
+   * The kit screen. Two axes and a page — up/down the slots, left/right the
+   * cursor slot's options, the bumpers the weapon — and every way out closes
+   * it: there is nothing to confirm, each pick is already on the weapon behind.
    */
   private updateLoadoutScreen(dt: number): void {
     // The lid that hides the most — the scrim is opaque except for the stage the
@@ -3653,8 +3654,8 @@ export class Game {
     // still running down. `updateRoundBehind` has already stepped both, on this
     // screen's own say-so (`ScreenSpec.roundBehind`).
     //
-    // Two axes, two slots: up/down chooses which half of the kit is being
-    // edited, left/right steps through it. Back, confirm and pause all
+    // Up/down chooses which slot of the kit is being edited, left/right
+    // steps through it. Back, confirm and pause all
     // close — there is nothing to confirm here, every pick has already been
     // applied to the weapon behind the screen, so B and A do the same
     // thing and B is the one a pad player will reach for. The mouse is left
@@ -3674,6 +3675,17 @@ export class Game {
     if (this.input.menuDownPressed) this.loadoutScreen.moveSlot(1);
     if (this.input.menuLeftPressed) this.loadoutScreen.cycle(-1);
     if (this.input.menuRightPressed) this.loadoutScreen.cycle(1);
+    // The bumpers turn the WEAPON wherever the cursor is resting — this
+    // screen's page, as the map is the menu's.
+    if (this.input.menuPrevPressed) this.loadoutScreen.stepWeapon(-1);
+    if (this.input.menuNextPressed) this.loadoutScreen.stepWeapon(1);
+    // Which device's prompts the screen draws, pushed exactly as the menu's
+    // is and for the menu's reason: only once a device has spoken.
+    if (this.input.anyDeviceUsed) {
+      this.loadoutScreen.setInputDevice(
+        this.input.padInHand ? "pad" : this.input.touchActive ? "touch" : "kbm",
+      );
+    }
     this.updateKitStage(dt);
   }
 
