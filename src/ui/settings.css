@@ -1,131 +1,626 @@
 /**
- * settings.css — The settings screen: a list of choices, the panel that says
- * what the cursor is on, and the key-cap table one page carries.
- * Owns #settings and nothing else. Drawn in the shell (`.ui-screen` /
- * `.ui-veil` in base.css); what is here is the list itself.
- * Still in --ov-scale's selector list (base.css) as the safety valve of last
- * resort — unlike #loadout, this screen has no hole in it for the 3D scene to
- * show through, so a transform is safe.
+ * settings.css — The settings screen: a title screen for the page of settings
+ * the player is on.
+ * Owns: #settings — its top bar, the page's title, the tab strip, the rows and
+ * their two controls, the reference table, the intel plate, the hint line —
+ * and the #hud.setting rule that takes every other screen off the glass while
+ * it is up.
+ *
+ * **IT IS LAID OUT THE WAY THE MAIN MENU AND THE KIT SCREEN ARE, AND ON
+ * PURPOSE.** The menu is a map's name over its photograph with a column of what
+ * the round is made of; the kit is a weapon's name over the weapon with a
+ * column of what the kit is made of; this is a page's name over the world with
+ * a column of what the page holds, and the same intel plate on the right. The
+ * unit (`--u`), the type scale, the plate, the chamfer and the prompts are
+ * `base.css`'s, shared by all three, so they are one piece of software at
+ * every viewport. Every block is a named grid AREA, which is what lets each
+ * viewport below be a change of TEMPLATE rather than a second copy of the
+ * markup.
+ *
+ * **Nothing here darkens the whole screen.** What is behind it — the map's
+ * photograph over the menu, the world over a pause or the deploy map — is worth
+ * seeing, and on the Display and Detail pages it is the thing being changed. So
+ * the scrim is shaped like the layout: dark behind the column, the foot and the
+ * intel, and thin in the middle.
+ *
+ * `--ov-scale` (base.css) does not reach this screen: its floors are what it
+ * is laid out at on a phone, and a scaled screen is a scaled 44 px target.
  */
 
-/* Above #loadout's 11, and that is load-bearing rather than tidy: this
-   screen is reachable from the PAUSE lid as well as the menu, so it can
-   be raised over a pause card that is itself over the deploy map. It
-   takes pointer events for its whole area for the same reason the pause
-   card does — a click on the empty half must not fall through to the
-   deploy map's markers or the menu's mouse-down confirm underneath. */
+/* =====================================================================
+   THE FRAME
+   ---------------------------------------------------------------------
+     top ────────────────────────────────────── (Back)
+     TITLE (the page's name)
+     [‹ tabs ›]                                 │ intel
+     row plates                                 │ plate
+     (reference table, on Input)                │
+     ──────────────────────────────────────── hints
+
+   Top-anchored, where the menu and the kit anchor to the bottom: the pages
+   are different lengths, and a column anchored to the bottom would carry the
+   title up and down the glass as the bumpers turned them.
+
+   Above #loadout's 11, and that is load-bearing rather than tidy: this
+   screen is reachable from the PAUSE lid as well as the menu, so it can be
+   raised over a pause card that is itself over the deploy map. It takes
+   pointer events for its whole area for the same reason — a click on the
+   empty middle must not fall through to whatever is under it.
+   ===================================================================== */
 #settings {
+  --col: clamp(320px, 42vw, calc(820 * var(--u)));
+  --intel: clamp(260px, 24vw, calc(440 * var(--u)));
+  /* The control column. Its floor is the longest option on any stepper
+     ("Floating", "Medium") between two finger-sized arrows. */
+  --ctl: clamp(200px, 17vw, calc(320 * var(--u)));
+  --gap-x: clamp(16px, calc(48 * var(--u)), 110px);
+
   position: absolute;
   inset: 0;
   z-index: 12;
   pointer-events: auto;
+  display: grid;
+  grid-template-columns: minmax(0, var(--col)) minmax(0, 1fr) minmax(0, var(--intel));
+  /* The list's track grows to its content and no further, and the spare
+     height is the row after the say line: so the sentence stays under the
+     rows it describes, and the list only ever SHRINKS (and scrolls) when
+     the viewport genuinely cannot hold it. */
+  grid-template-rows: auto auto auto minmax(0, max-content) auto minmax(0, 1fr) auto;
+  grid-template-areas:
+    "top  top  top"
+    "hero hero ."
+    "tabs .    intel"
+    "list .    intel"
+    "say  .    intel"
+    ".    .    intel"
+    "foot foot foot";
+  column-gap: var(--gap-x);
+  row-gap: clamp(8px, calc(16 * var(--u)), 30px);
+  padding: max(var(--gy), env(safe-area-inset-top))
+    max(var(--gx), env(safe-area-inset-right))
+    max(var(--gy), env(safe-area-inset-bottom))
+    max(var(--gx), env(safe-area-inset-left));
+  color: #fff;
+  /* The scrim, shaped like the layout: the column's darkness measured from
+     the COLUMN, a band under the foot, a band over the title, the intel's
+     edge, and a thin wash over everything so a lit street cannot take a
+     caption off a plate — then the friend/foe glow pair and the scanlines
+     every screen here is lit and textured by. */
+  background:
+    linear-gradient(
+      90deg,
+      rgba(3, 5, 11, 0.9) 0,
+      rgba(3, 5, 11, 0.76) calc(var(--gx) + var(--col) * 0.7),
+      rgba(3, 5, 11, 0.3) calc(var(--gx) + var(--col) * 1.15),
+      rgba(3, 5, 11, 0) calc(var(--gx) + var(--col) * 1.5)
+    ),
+    linear-gradient(0deg, rgba(2, 3, 8, 0.8) 0%, rgba(2, 3, 8, 0) 26%),
+    linear-gradient(180deg, rgba(2, 3, 8, 0.72) 0%, rgba(2, 3, 8, 0) 24%),
+    linear-gradient(270deg, rgba(3, 5, 11, 0.62) 0%, rgba(3, 5, 11, 0) 34%),
+    linear-gradient(rgba(2, 3, 8, 0.28), rgba(2, 3, 8, 0.28)),
+    radial-gradient(120% 90% at 4% 110%, rgba(255, 230, 128, 0.1), transparent 56%),
+    radial-gradient(90% 72% at 97% -14%, rgba(53, 240, 255, 0.08), transparent 54%),
+    repeating-linear-gradient(to bottom, rgba(255, 255, 255, 0.012) 0 1px, transparent 1px 3px);
+}
+#settings .se-top { grid-area: top; }
+#settings .se-hero { grid-area: hero; }
+#settings .se-tabsrow { grid-area: tabs; }
+#settings .se-list { grid-area: list; }
+#settings .se-say { grid-area: say; }
+#settings .se-intel { grid-area: intel; }
+#settings .se-foot { grid-area: foot; }
+
+/* Everything standing straight on the scene carries its own separation from
+   it, the rule the menu states for type over its photograph. */
+#settings .se-top,
+#settings .se-hero,
+#settings .se-say,
+#settings .se-ref-cap,
+#settings .se-foot {
+  text-shadow: 0 2px 8px rgba(0, 0, 0, 0.9), 0 0 2px rgba(0, 0, 0, 0.8);
+}
+#settings button {
+  font: inherit;
+  border: 0;
 }
 
-/* --- the list ---
-   TWO COLUMNS, and the row is `display: contents` so they are the grid's,
-   not the row's — a row centred on its own contents puts its label and
-   its control at an x nothing else on the screen shares, which is what
-   reads as a pile rather than as a panel.
+/* While the settings are up, everything else under #hud goes dark — the menu
+   card, the deploy map, the pause card, the gauges. This screen is laid over
+   the SCENE, and a screen left standing under it is two screens up at once.
+   Visibility rather than display, so what it covered comes back on the close
+   exactly as it was, with nothing redrawn.
 
-   The control column is fixed rather than `1fr` so a long label cannot
-   push the toggles around, and its width is set by the SLIDER rows: the
-   whole option ladder is laid along that track, and sixteen rungs over
-   150px is under ten pixels a rung.
+   Two carve-outs: `#menu-shot`, the map's photograph, which is what the menu
+   stood on and is what this screen stands on when it is raised from there;
+   and `#hud-fps`, an instrument rather than chrome, which the Display page
+   switches on and a player will want to watch while choosing a render scale. */
+#hud.setting > *:not(#settings):not(#hud-fps):not(#menu-shot) { visibility: hidden; }
 
-   The HINT was a third column here and is the panel's now. It stays in
-   the markup because the one-column layout at the bottom of this file
-   brings it back — a screen too narrow for the panel is a screen that
-   still owes the player the sentence. */
-#settings .se-body {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) clamp(150px, 17vw, 230px);
+/* =====================================================================
+   THE TOP BAR — where this screen is, and the way out of it.
+   ---------------------------------------------------------------------
+   Back is in the SYSTEM CORNER, where the menu keeps Online and Settings and
+   the kit screen its own Back: a fixed place, never a row in a list. Esc and
+   B leave through `Game` whatever is focused; the prompt names them.
+   ===================================================================== */
+#settings .se-top {
+  display: flex;
   align-items: center;
-  align-content: center;
-  gap: 0 clamp(12px, 1.6vw, 26px);
+  justify-content: space-between;
+  gap: calc(24 * var(--u));
   min-width: 0;
 }
-#settings .se-row { display: contents; }
-#settings .se-row > .se-hint { display: none; }
-/* The page selector is a row like any other — same grid, same highlight,
-   same left/right — so what marks it as chrome rather than as a setting is
-   a rule under it. It has to be drawn on the CELLS, because the row is
-   `display: contents` and has no box of its own; the same reason the
-   highlight is. */
-#settings .se-row.se-tabs > * {
-  padding-bottom: clamp(9px, 1.4vh, 15px);
-  margin-bottom: clamp(6px, 1vh, 11px);
-  border-bottom: 1px solid var(--rule);
+#settings .se-brand {
+  display: flex;
+  flex-direction: column;
+  gap: max(2px, calc(4 * var(--u)));
+  padding-left: max(8px, calc(14 * var(--u)));
+  border-left: 2px solid var(--hot);
+  min-width: 0;
 }
-/* The highlight has to be painted on the CELLS, because the row itself
-   is `display: contents` and therefore has no box of its own to fill.
-   Two rules rather than one, so the bar lands only on the left edge. */
-#settings .se-row > * {
-  padding: clamp(7px, 1.1vh, 12px) 0;
-  transition: background 0.12s;
+#settings .se-kicker {
+  font-size: var(--t-cap);
+  font-weight: 700;
+  letter-spacing: 0.42em;
+  text-transform: uppercase;
+  color: rgba(255, 230, 128, 0.72);
+  white-space: nowrap;
 }
-#settings .se-row.active > * { background: rgba(255, 255, 255, 0.05); }
-#settings .se-row > .se-label {
-  padding-left: 12px;
-  border-left: 2px solid transparent;
-  font-size: var(--ui-row);
+#settings .se-word {
+  font-size: max(17px, calc(32 * var(--u)));
+  font-weight: 900;
+  letter-spacing: 0.18em;
+  line-height: 1;
+  text-transform: uppercase;
+  color: var(--hot);
+  text-shadow: 3px 3px 0 #000, -1px -1px 0 #35f0ff, 0 3px 16px rgba(0, 0, 0, 0.8);
+  white-space: nowrap;
+}
+#settings .se-back {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: var(--hit);
+  min-height: var(--hit);
+  gap: max(7px, calc(10 * var(--u)));
+  padding: max(7px, calc(10 * var(--u))) max(11px, calc(18 * var(--u)));
+  color: #d7dde7;
+  background: var(--plate-mm);
+  box-shadow: var(--plate-edge);
+  cursor: pointer;
+  clip-path: polygon(var(--cut) 0, 100% 0, 100% calc(100% - var(--cut)), calc(100% - var(--cut)) 100%, 0 100%, 0 var(--cut));
+  transition: background 0.14s, color 0.14s;
+}
+#settings .se-back svg {
+  width: max(16px, calc(22 * var(--u)));
+  height: max(16px, calc(22 * var(--u)));
+  flex: none;
+}
+#settings .se-back b {
+  font-size: var(--t-cap);
+  font-weight: 800;
+  letter-spacing: 0.24em;
+  text-transform: uppercase;
+  text-shadow: none;
+}
+#settings .se-back:hover {
+  color: var(--hot);
+  background: rgba(255, 230, 128, 0.14);
+}
+
+/* =====================================================================
+   THE TITLE — the page's name, as the title of the screen.
+   ---------------------------------------------------------------------
+   With its number hollow and enormous behind it, an eyebrow counting the
+   pages, and a strip of figures under it that is ALWAYS one line — the
+   machine's own figures on Display, a sentence everywhere else — so turning
+   a page never moves the list under the title.
+   ===================================================================== */
+#settings .se-hero {
+  min-width: 0;
+  padding-top: max(4px, calc(28 * var(--u)));
+  container-type: inline-size;
+}
+#settings .se-hero-in {
+  --t: max(26px, min(calc(112 * var(--u)), 12cqw));
+  position: relative;
+  isolation: isolate;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  min-width: 0;
+}
+#settings .se-index {
+  position: absolute;
+  z-index: -1;
+  left: calc(var(--col) * 0.62);
+  top: calc(var(--t) * -0.42);
+  font-size: calc(var(--t) * 2.1);
+  font-weight: 900;
+  line-height: 1;
+  letter-spacing: -0.02em;
+  color: transparent;
+  -webkit-text-stroke: 1px rgba(255, 230, 128, 0.14);
+  text-shadow: none;
+  pointer-events: none;
+}
+#settings .se-mode {
+  font-size: var(--t-cap);
+  font-weight: 700;
+  letter-spacing: 0.32em;
+  text-transform: uppercase;
+  color: var(--hot);
+  white-space: nowrap;
+}
+#settings .se-title {
+  margin: max(4px, calc(8 * var(--u))) 0 max(6px, calc(12 * var(--u)));
+  font-size: var(--t);
+  font-weight: 900;
+  letter-spacing: 0.05em;
+  line-height: 0.92;
+  text-transform: uppercase;
+  color: #fff;
+  white-space: nowrap;
+  text-shadow: 0.04em 0.045em 0 #000, 0 0.08em 0.6em rgba(0, 0, 0, 0.55);
+}
+#settings .se-facts {
+  display: flex;
+  gap: max(3px, calc(6 * var(--u))) max(14px, calc(30 * var(--u)));
+  max-width: 100%;
+  overflow: hidden;
+  white-space: nowrap;
+}
+#settings .se-facts span {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 0.5em;
+}
+#settings .se-facts b {
+  font-size: var(--t-row);
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  font-variant-numeric: tabular-nums;
+}
+#settings .se-facts i {
+  font-style: normal;
+  font-size: var(--t-cap);
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  color: rgba(255, 255, 255, 0.52);
+}
+/* A page TURN: the new name wipes in from the left while the block slides
+   the last few units home. `.swap` is only on a title written by a turn — a
+   raise leaves the arrival to the screen's entrance. */
+#settings .se-hero-in.swap {
+  animation: se-swap 0.45s cubic-bezier(0.16, 0.84, 0.36, 1) both;
+}
+#settings .se-hero-in.swap .se-title {
+  animation: se-wipe 0.55s cubic-bezier(0.6, 0, 0.2, 1) both;
+}
+@keyframes se-swap {
+  from { opacity: 0; transform: translate3d(calc(-28 * var(--u)), 0, 0); }
+  to { opacity: 1; transform: none; }
+}
+@keyframes se-wipe {
+  from { clip-path: inset(-20% 100% -20% 0); }
+  to { clip-path: inset(-20% -5% -20% 0); }
+}
+
+/* =====================================================================
+   THE TAB STRIP — the pages, and row 0 of the cursor's list.
+   ---------------------------------------------------------------------
+   The menu's reel in another guise: every page on screen at once as equal
+   shares (a grid, so no width ever strands a tab on a line of its own), the
+   chosen one filled hot, and the bumpers drawn at the two ends where they
+   turn it. The cursor on the strip is the menu's sight brackets on the
+   strip's corners.
+   ===================================================================== */
+#settings .se-tabsrow {
+  position: relative;
+  display: flex;
+  align-items: stretch;
+  gap: max(4px, calc(6 * var(--u)));
+  min-width: 0;
+}
+#settings .se-tabs {
+  flex: 1 1 auto;
+  display: grid;
+  grid-auto-flow: column;
+  grid-auto-columns: minmax(0, 1fr);
+  gap: max(4px, calc(6 * var(--u)));
+  min-width: 0;
+}
+#settings .se-tab {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: max(6px, calc(10 * var(--u)));
+  min-width: 0;
+  min-height: max(var(--hit), calc(60 * var(--u)));
+  padding: max(8px, calc(12 * var(--u))) max(6px, calc(10 * var(--u)));
+  color: #d8dee8;
+  background: var(--plate-mm);
+  box-shadow: var(--plate-edge);
+  cursor: pointer;
+  clip-path: polygon(var(--cut) 0, 100% 0, 100% calc(100% - var(--cut)), calc(100% - var(--cut)) 100%, 0 100%, 0 var(--cut));
+  transition: background 0.12s, color 0.12s;
+}
+#settings .se-tab svg {
+  flex: none;
+  width: max(16px, calc(24 * var(--u)));
+  height: max(16px, calc(24 * var(--u)));
+}
+#settings .se-tab b {
+  min-width: 0;
+  font-size: var(--t-cap);
+  font-weight: 800;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+#settings .se-tab:hover {
+  color: var(--hot);
+  background: rgba(255, 230, 128, 0.16);
+}
+#settings .se-tab.on {
+  color: #12141a;
+  background: var(--hot);
+}
+#settings .se-nav {
+  flex: none;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: max(3px, calc(6 * var(--u)));
+  width: max(var(--hit), 40px, calc(52 * var(--u)));
+  padding: 0;
+  color: #fff;
+  background: var(--plate-mm);
+  box-shadow: var(--plate-edge);
+  cursor: pointer;
+  clip-path: polygon(var(--cut) 0, 100% 0, 100% calc(100% - var(--cut)), calc(100% - var(--cut)) 100%, 0 100%, 0 var(--cut));
+  transition: background 0.12s, opacity 0.12s;
+}
+#settings .se-nav::before {
+  font-size: var(--t-big);
+  font-weight: 700;
+  line-height: 0.8;
+  color: var(--hot);
+}
+#settings .se-nav.prev::before { content: "\2039"; }
+#settings .se-nav.next::before { content: "\203A"; }
+#settings .se-nav.next { order: 2; }
+#settings .se-nav:hover { background: rgba(255, 230, 128, 0.16); }
+#settings .se-nav.off { opacity: 0.28; cursor: default; }
+#settings .se-nav.off:hover { background: var(--plate-mm); }
+/* Under a finger the tabs are the control and the arrows are a second copy
+   of them — the menu's reel drops its own for the same reason. */
+#settings.dev-touch .se-nav { display: none; }
+
+/* --- the cursor: sight brackets on a row's corners ---
+   On the strip and on every row's WRAPPER, which is not clipped, because a
+   plate is cut by a clip-path that would take them off with its corner. */
+#settings .se-tabsrow::before,
+#settings .se-tabsrow::after,
+#settings .se-rowwrap::before,
+#settings .se-rowwrap::after {
+  content: "";
+  position: absolute;
+  width: max(10px, calc(16 * var(--u)));
+  height: max(10px, calc(16 * var(--u)));
+  border: 2px solid var(--hot);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.14s, transform 0.22s cubic-bezier(0.16, 0.84, 0.36, 1);
+}
+#settings .se-tabsrow::before,
+#settings .se-rowwrap::before {
+  top: calc(-5 * var(--u) - 3px);
+  left: calc(-7 * var(--u) - 3px);
+  border-right: 0;
+  border-bottom: 0;
+  transform: translate(-6px, -6px);
+}
+#settings .se-tabsrow::after,
+#settings .se-rowwrap::after {
+  bottom: calc(-5 * var(--u) - 3px);
+  right: calc(-7 * var(--u) - 3px);
+  border-left: 0;
+  border-top: 0;
+  transform: translate(6px, 6px);
+}
+#settings .se-tabsrow.sel::before,
+#settings .se-tabsrow.sel::after,
+#settings .se-rowwrap.sel::before,
+#settings .se-rowwrap.sel::after {
+  opacity: 1;
+  transform: none;
+}
+
+/* =====================================================================
+   THE ROWS — one plate per setting.
+   ---------------------------------------------------------------------
+   The setting's name, and under it what the chosen value COMES TO on this
+   machine where there is such a thing (the pixels a render scale lands on,
+   the sweep a look speed buys, what the gyro is doing) — on the plate rather
+   than only in the intel, because that is the line a viewport with no room
+   for the intel still owes the player. The control is a fixed column at the
+   far end, so every stepper and every track starts at one x.
+
+   The list scrolls only as the last resort it is on a landscape phone with a
+   pad in hand, where the reference table stands under the rows.
+   ===================================================================== */
+#settings .se-list {
+  display: flex;
+  flex-direction: column;
+  gap: max(6px, calc(10 * var(--u)));
+  min-width: 0;
+  min-height: 0;
+  /* Room for the cursor's brackets inside the scroller's own clip. Not
+     taken back at the bottom: a negative margin there would let a row the
+     list is scrolling past paint over the say line under it. */
+  margin: -12px -14px 0;
+  padding: 12px 14px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-width: none;
+}
+#settings .se-list::-webkit-scrollbar { display: none; }
+#settings .se-rowwrap {
+  position: relative;
+  flex: none;
+  min-width: 0;
+}
+#settings .se-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) var(--ctl);
+  grid-template-areas:
+    "label ctl"
+    "note  ctl";
+  align-items: center;
+  align-content: center;
+  column-gap: max(12px, calc(24 * var(--u)));
+  min-height: max(var(--hit), calc(76 * var(--u)));
+  padding: max(8px, calc(12 * var(--u))) max(10px, calc(14 * var(--u))) max(8px, calc(12 * var(--u))) max(14px, calc(22 * var(--u)));
+  background: var(--plate-mm);
+  box-shadow: var(--plate-edge);
+  clip-path: polygon(var(--cut) 0, 100% 0, 100% calc(100% - var(--cut)), calc(100% - var(--cut)) 100%, 0 100%, 0 var(--cut));
+  transition: background 0.12s, box-shadow 0.12s;
+}
+#settings .se-rowwrap:not(.noted) .se-row { grid-template-areas: "label ctl" "label ctl"; }
+#settings .se-rowwrap.sel .se-row {
+  background: rgba(255, 230, 128, 0.1);
+  box-shadow: inset 0 0 0 1px rgba(255, 230, 128, 0.6);
+}
+#settings .se-label {
+  grid-area: label;
+  min-width: 0;
+  font-size: var(--t-row);
+  font-weight: 800;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  transition: color 0.14s;
+}
+#settings .se-rowwrap.sel .se-label { color: var(--hot); }
+#settings .se-note {
+  grid-area: note;
+  min-width: 0;
+  margin-top: max(2px, calc(4 * var(--u)));
+  font-style: normal;
+  font-size: var(--t-cap);
   font-weight: 700;
   letter-spacing: 0.14em;
   text-transform: uppercase;
-  color: #cdd6e6;
-}
-#settings .se-row.active > .se-label {
-  border-left-color: var(--hot);
-  color: var(--hot);
-}
-#settings .se-row > .se-hint {
-  padding-right: 12px;
-  font-size: var(--ui-cap);
-  letter-spacing: 0.1em;
-  color: var(--dimmer);
-}
-
-#settings .se-choice { display: flex; gap: 5px; }
-#settings button.se-opt {
-  font: inherit;
-  flex: 1 1 0;
-  min-width: 0;
-  font-size: var(--ui-cap);
-  font-weight: 700;
-  letter-spacing: 0.18em;
-  text-transform: uppercase;
-  padding: clamp(6px, 0.9vh, 10px) 0;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
   color: rgba(255, 255, 255, 0.5);
-  background: var(--plate);
-  border: 0;
-  cursor: pointer;
-  clip-path: polygon(6px 0, 100% 0, 100% calc(100% - 6px), calc(100% - 6px) 100%, 0 100%, 0 6px);
-  transition: background 0.12s, color 0.12s;
 }
-#settings button.se-opt:hover { background: var(--plate-hi); }
-#settings button.se-opt.on {
-  color: #10131b;
-  background: var(--hot);
-}
+#settings .se-rowwrap:not(.noted) .se-note { display: none; }
 
-/* The slider a long option list is laid along — see `SettingsScreen`'s
-   `style`. The whole ladder is on the track, one rung per equal share of
-   it, which is why the control column is wider than a toggle needs: a
-   sixteen-rung ladder over 146px is ~10px a rung, and under that the
-   thumb lands somewhere the player did not aim. */
-#settings .se-choice.slider { align-items: center; gap: 10px; }
+/* --- the STEPPER: the chosen value between two chevrons ---
+   The console idiom for a short list, and it shows ONE option at a time —
+   the intel names them all. The pips under the value are the list's length
+   and the value's place on it, so an Off/On reads as two and a shadow tier
+   as five without a word being read. Left and right CLAMP, so a spent arrow
+   is drawn spent; the value itself is Enter under a pointer — one step on,
+   and round. */
+#settings .se-step {
+  grid-area: ctl;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: stretch;
+  gap: max(3px, calc(5 * var(--u)));
+  min-height: max(var(--hit), calc(52 * var(--u)));
+}
+#settings .se-arr {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: max(var(--hit), max(30px, calc(44 * var(--u))));
+  padding: 0;
+  color: var(--hot);
+  background: rgba(255, 255, 255, 0.05);
+  cursor: pointer;
+  clip-path: polygon(var(--cut) 0, 100% 0, 100% calc(100% - var(--cut)), calc(100% - var(--cut)) 100%, 0 100%, 0 var(--cut));
+  transition: background 0.12s, opacity 0.12s;
+}
+#settings .se-arr::before {
+  font-size: var(--t-big);
+  font-weight: 700;
+  line-height: 0.8;
+}
+#settings .se-arr.prev::before { content: "\2039"; }
+#settings .se-arr.next::before { content: "\203A"; }
+#settings .se-arr:hover { background: rgba(255, 230, 128, 0.16); }
+#settings .se-arr.off { opacity: 0.25; cursor: default; }
+#settings .se-arr.off:hover { background: rgba(255, 255, 255, 0.05); }
+#settings .se-val {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: max(4px, calc(7 * var(--u)));
+  min-width: 0;
+  padding: 0 max(4px, calc(8 * var(--u)));
+  color: #fff;
+  background: none;
+  cursor: pointer;
+}
+#settings .se-val b {
+  max-width: 100%;
+  font-size: var(--t-row);
+  font-weight: 800;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+#settings .se-rowwrap.sel .se-val b { color: var(--hot); }
+#settings .se-val i {
+  display: grid;
+  grid-auto-flow: column;
+  grid-auto-columns: minmax(0, max(8px, calc(18 * var(--u))));
+  gap: max(3px, calc(4 * var(--u)));
+}
+#settings .se-val s {
+  display: block;
+  height: max(3px, calc(4 * var(--u)));
+  background: rgba(255, 255, 255, 0.2);
+  transition: background 0.14s;
+}
+#settings .se-val s.lit { background: var(--hot); }
+
+/* --- the TRACK: a long ladder laid along a line ---
+   The whole ladder is on the track, one rung per equal share of it. */
+#settings .se-slide {
+  grid-area: ctl;
+  display: flex;
+  align-items: center;
+  gap: max(8px, calc(14 * var(--u)));
+  min-height: max(var(--hit), calc(52 * var(--u)));
+  min-width: 0;
+}
 #settings .se-slider {
   /* The thumb's size is declared HERE and nowhere else. The script reads it
      back off the DOM to turn a pointer into a rung, so the hit maths and the
      paint cannot drift apart the way two copies of a number would. */
-  --thumb: 13px;
+  --thumb: max(14px, calc(22 * var(--u)));
+  --t: 0;
   position: relative;
   flex: 1 1 auto;
   /* Taller than the line it draws: this is the grab target, and a 3px one
      is a target you miss. */
-  height: 20px;
+  height: max(var(--hit), max(26px, calc(40 * var(--u))));
   cursor: pointer;
-  /* Without this a touch drag scrolls the panel instead of moving the
-     thumb — the browser claims the gesture before the first pointermove. */
+  /* Without this a touch drag scrolls the list instead of moving the thumb —
+     the browser claims the gesture before the first pointermove. */
   touch-action: none;
   user-select: none;
 }
@@ -133,21 +628,22 @@
 #settings .se-fill {
   position: absolute;
   top: 50%;
-  height: 3px;
+  height: max(3px, calc(5 * var(--u)));
   transform: translateY(-50%);
   pointer-events: none;
 }
 #settings .se-track {
   left: 0;
   right: 0;
-  background: rgba(255, 255, 255, 0.1);
+  background: rgba(255, 255, 255, 0.12);
 }
 /* Ends under the thumb's centre rather than at its leading edge, so the
    filled part reads as "up to here" at both ends of the travel. */
 #settings .se-fill {
   left: 0;
   width: calc(var(--t) * (100% - var(--thumb)) + var(--thumb) / 2);
-  background: rgba(255, 230, 128, 0.5);
+  background: rgba(255, 230, 128, 0.6);
+  transition: width 0.12s;
 }
 #settings .se-thumb {
   position: absolute;
@@ -161,140 +657,515 @@
   background: var(--hot);
   pointer-events: none;
   clip-path: polygon(4px 0, 100% 0, 100% calc(100% - 4px), calc(100% - 4px) 100%, 0 100%, 0 4px);
+  transition: left 0.12s;
 }
-#settings .se-slider:hover .se-thumb,
-#settings .se-row.active .se-thumb {
-  box-shadow: 0 0 0 3px rgba(255, 230, 128, 0.16);
-}
-#settings .se-choice > .se-value {
+#settings .se-value {
   /* Fixed and right-aligned, so the track's right edge is the same x on
      every slider row and the number does not shove it about as it steps. */
-  flex: 0 0 42px;
+  flex: 0 0 max(46px, calc(66 * var(--u)));
   text-align: right;
-  font-size: var(--ui-cap);
-  font-weight: 700;
-  letter-spacing: 0.06em;
+  font-size: var(--t-row);
+  font-weight: 800;
+  letter-spacing: 0.04em;
   color: var(--hot);
   /* The one figure on this screen that changes under a held key or a drag:
      proportional digits make it jitter on its own baseline. */
   font-variant-numeric: tabular-nums;
 }
 
-/* --- the panel beside the list --- */
-/* Centred, not top-aligned: the panel is the full height of the body and
-   what it holds is between two lines and a key table, so hugging the top
-   leaves the short pages reading as a heading marooned in a column. */
-#settings .se-side { justify-content: center; }
-#settings .se-side-head {
+/* =====================================================================
+   THE REFERENCE TABLE — every control, for the device in hand.
+   ---------------------------------------------------------------------
+   Under the Input page's rows, as what that page is ABOUT. Both halves are
+   prompts (`glyph`), so the root's `dev-*` class draws the keyboard's caps
+   or the pad's own buttons and never both; under a finger it gives way to a
+   sentence. Two columns read DOWN, so the dozen rows cost half their height.
+   ===================================================================== */
+#settings .se-ref {
+  flex: none;
+  margin-top: max(8px, calc(18 * var(--u)));
+}
+#settings .se-ref-cap {
+  display: flex;
+  align-items: baseline;
+  gap: max(10px, calc(16 * var(--u)));
+  padding-bottom: max(6px, calc(10 * var(--u)));
+  margin-bottom: max(6px, calc(10 * var(--u)));
+  border-bottom: 1px solid var(--rule);
+  font-size: var(--t-cap);
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+#settings .se-ref-cap span {
+  font-weight: 700;
+  letter-spacing: 0.3em;
+  color: var(--hot);
+}
+#settings .se-ref-cap b {
+  font-weight: 700;
+  letter-spacing: 0.2em;
+  color: rgba(255, 255, 255, 0.7);
+}
+#settings.dev-kbm .se-ref-cap b:not([data-dev="kbm"]),
+#settings.dev-pad .se-ref-cap b:not([data-dev="pad"]),
+#settings.dev-touch .se-ref-cap b { display: none; }
+#settings .se-binds {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-rows: repeat(7, auto);
+  grid-auto-flow: column;
+  column-gap: max(18px, calc(40 * var(--u)));
+  row-gap: max(3px, calc(6 * var(--u)));
+}
+#settings .se-bind {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: max(8px, calc(12 * var(--u)));
+  min-width: 0;
+  padding: max(2px, calc(3 * var(--u))) 0;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+}
+#settings .se-bind > span:first-child {
+  min-width: 0;
+  font-size: var(--t-cap);
+  font-weight: 700;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  white-space: nowrap;
+  color: #dfe5ee;
+}
+#settings .se-caps {
+  display: flex;
+  flex: none;
+  gap: max(3px, calc(4 * var(--u)));
+}
+#settings .se-ref-touch {
+  display: none;
+  font-size: var(--t-body);
+  line-height: 1.5;
+  color: rgba(255, 255, 255, 0.6);
+}
+#settings.dev-touch .se-binds { display: none; }
+#settings.dev-touch .se-ref-touch { display: block; }
+
+/* =====================================================================
+   THE SAY LINE — the cursor's sentence, where the intel has no room.
+   Absent while the intel is up; two lines at most, so the list above it
+   keeps its height.
+   ===================================================================== */
+#settings .se-say {
+  display: none;
+  min-height: 3em;
+  font-size: var(--t-body);
+  line-height: 1.5;
+  color: rgba(255, 255, 255, 0.7);
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+/* =====================================================================
+   THE INTEL — a plate on whatever the cursor is resting on.
+   ---------------------------------------------------------------------
+   The menu's and the kit's plate: a head (the page, the row), then what the
+   pick IS — its value large and what it comes to, the whole list of options
+   with the chosen one lit, or on the strip every row of the page with its
+   value — and a paragraph on what it is FOR. Not a control, and the first
+   thing a viewport short of room drops.
+   ===================================================================== */
+#settings .se-intel {
+  align-self: start;
+  min-width: 0;
+  max-height: 100%;
+  overflow-y: auto;
+  scrollbar-width: none;
+  padding: max(14px, calc(26 * var(--u)));
+  background: linear-gradient(170deg, rgba(10, 13, 21, 0.86), rgba(4, 6, 12, 0.8));
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.09);
+  clip-path: polygon(16px 0, 100% 0, 100% calc(100% - 16px), calc(100% - 16px) 100%, 0 100%, 0 16px);
+}
+#settings .se-intel::-webkit-scrollbar { display: none; }
+#settings .se-intel-in {
   display: flex;
   flex-direction: column;
-  gap: 3px;
+  gap: max(12px, calc(20 * var(--u)));
+  animation: se-fade 0.28s ease both;
 }
-#settings .se-side h3 {
-  font-size: clamp(15px, 2.4vmin, 26px);
+@keyframes se-fade {
+  from { opacity: 0; transform: translate3d(0, 4px, 0); }
+  to { opacity: 1; transform: none; }
+}
+#settings .se-intel-head {
+  display: flex;
+  flex-direction: column;
+  gap: max(3px, calc(6 * var(--u)));
+  padding-bottom: max(7px, calc(12 * var(--u)));
+  border-bottom: 1px solid var(--rule);
+}
+#settings .se-intel-head::after {
+  content: "";
+  display: block;
+  width: max(26px, calc(48 * var(--u)));
+  height: 2px;
+  margin-top: max(6px, calc(10 * var(--u)));
+  margin-bottom: calc(-1 * max(7px, calc(12 * var(--u))) - 1px);
+  background: var(--hot);
+}
+#settings .se-eyebrow-s {
+  font-size: var(--t-cap);
+  font-weight: 700;
+  letter-spacing: 0.3em;
+  text-transform: uppercase;
+  color: var(--hot);
+}
+#settings .se-intel h3 {
+  font-size: max(17px, calc(30 * var(--u)));
   font-weight: 800;
-  letter-spacing: 0.16em;
+  letter-spacing: 0.12em;
+  line-height: 1.05;
   text-transform: uppercase;
   color: #fff;
 }
-#settings .se-side-hint {
-  max-width: 46ch;
-  font-size: clamp(11px, 1.45vmin, 14px);
-  line-height: 1.55;
-  color: rgba(255, 255, 255, 0.58);
-}
-
-/* --- the key-cap table ---
-   It is what the Controls page is ABOUT, which is why it is in the panel
-   rather than under the list: a dozen rows under a list of three sliders is
-   the longest block on the screen and the thing that used to decide the
-   panel's height. Beside the list it costs that list nothing at all, and
-   the cursor never had anything to do with it — there is nothing here to
-   pick.
-
-   Its own three columns are action / keyboard / pad, set independently of
-   the list's: an action name is short where a setting's label is long, and
-   matching the two would leave the key chips stranded mid-panel with the
-   pad column adrift at the far edge. */
-#settings .se-binds {
-  margin-top: clamp(6px, 1.4vh, 16px);
-  padding-top: clamp(6px, 1.2vh, 14px);
-  border-top: 1px solid var(--rule);
-}
-#settings .se-bind-head,
-#settings .se-bind {
+#settings .se-ifacts {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) auto auto;
-  align-items: center;
-  gap: clamp(8px, 1.2vw, 20px);
+  grid-auto-flow: column;
+  grid-auto-columns: minmax(0, 1fr);
+  gap: max(8px, calc(14 * var(--u)));
 }
-#settings .se-bind-head {
-  padding-bottom: 6px;
-  margin-bottom: 5px;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.12);
-  font-size: var(--ui-cap);
-  font-weight: 700;
+#settings .se-ifacts span {
+  display: flex;
+  flex-direction: column;
+  gap: max(2px, calc(4 * var(--u)));
+  min-width: 0;
+}
+#settings .se-ifacts b {
+  font-size: max(18px, calc(30 * var(--u)));
+  font-weight: 800;
+  line-height: 1;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  color: var(--hot);
+}
+#settings .se-ifacts i {
+  font-style: normal;
+  font-size: var(--t-cap);
   letter-spacing: 0.2em;
   text-transform: uppercase;
-  color: var(--dim);
+  color: rgba(255, 255, 255, 0.52);
 }
-#settings .se-bind-head span:not(:first-child),
-#settings .se-bind-pad { justify-self: end; }
-#settings .se-bind { padding: clamp(1px, 0.35vh, 4px) 0; }
-#settings .se-bind-act {
-  font-size: var(--ui-cap);
-  font-weight: 700;
-  letter-spacing: 0.14em;
+/* The whole list, the chosen one filled — the stepper shows one at a time,
+   and this is where the rest are named. Equal shares that never wrap. */
+#settings .se-ladder {
+  display: grid;
+  grid-auto-flow: column;
+  grid-auto-columns: minmax(0, 1fr);
+  gap: max(3px, calc(4 * var(--u)));
+}
+#settings .se-ladder span {
+  padding: max(6px, calc(9 * var(--u))) 2px;
+  text-align: center;
+  font-size: var(--t-cap);
+  font-weight: 800;
+  letter-spacing: 0.06em;
   text-transform: uppercase;
-  color: #dfe5ee;
+  white-space: nowrap;
+  overflow: hidden;
+  color: rgba(255, 255, 255, 0.55);
+  background: rgba(255, 255, 255, 0.05);
 }
-#settings .se-bind-keys,
-#settings .se-bind-pad { display: flex; gap: 4px; }
-/* The list's own hints and the footer's chips are base.css's; these are the
-   plates the table is made of. */
-#settings .se-binds kbd {
+#settings .se-ladder span.on {
+  color: #12141a;
+  background: var(--hot);
+}
+/* A long ladder is its two ends and a bar between them. */
+#settings .se-range {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: max(8px, calc(12 * var(--u)));
+  font-size: var(--t-cap);
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  font-variant-numeric: tabular-nums;
+  color: rgba(255, 255, 255, 0.52);
+}
+#settings .se-range u {
+  display: block;
+  height: max(5px, calc(7 * var(--u)));
+  background: rgba(255, 255, 255, 0.09);
+}
+#settings .se-range s {
+  display: block;
+  height: 100%;
+  background: var(--hot);
+}
+#settings .se-blurb {
+  font-size: var(--t-body);
+  line-height: 1.55;
+  color: rgba(255, 255, 255, 0.66);
+}
+/* On the strip: every row of the page with its value — what each page
+   holds, read without walking down into it. */
+#settings .se-sums {
+  display: flex;
+  flex-direction: column;
+}
+#settings .se-sum {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  padding: max(5px, calc(9 * var(--u))) 0;
+  border-top: 1px solid var(--rule);
+  font-size: var(--t-cap);
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+}
+#settings .se-sum span { color: rgba(255, 255, 255, 0.55); }
+#settings .se-sum b {
+  font-weight: 800;
+  letter-spacing: 0.1em;
+  color: #fff;
+  white-space: nowrap;
+}
+
+/* =====================================================================
+   THE FOOT — the cursor's verbs, for the device in hand, and absent under
+   a finger: a hint line naming keys to a phone is a line of lies. The
+   bumpers are drawn on the strip's ends and Back on its own button, so the
+   foot names neither again.
+   ===================================================================== */
+#settings .se-foot {
+  justify-self: end;
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 6px max(12px, calc(22 * var(--u)));
+  font-size: var(--t-cap);
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  color: rgba(255, 255, 255, 0.42);
+}
+#settings .se-foot span { display: inline-flex; align-items: center; gap: 5px; }
+#settings .se-foot kbd {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: max(20px, calc(24 * var(--u)));
+  height: max(20px, calc(24 * var(--u)));
+  padding: 0 6px;
   font: inherit;
-  font-size: var(--ui-cap);
+  font-size: var(--t-cap);
   font-weight: 700;
   letter-spacing: 0.1em;
-  padding: 3px 7px;
-  min-width: 24px;
-  text-align: center;
+  text-shadow: none;
   color: #cfd6e2;
   background: rgba(255, 255, 255, 0.07);
   box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.14);
   clip-path: polygon(4px 0, 100% 0, 100% calc(100% - 4px), calc(100% - 4px) 100%, 0 100%, 0 4px);
 }
-/* Pad glyphs are tinted, the same tell the footer's hints use, so the two
-   halves of a binding read as alternatives rather than as a chord. */
-#settings .se-binds kbd.pad {
-  color: var(--hot);
-  box-shadow: inset 0 0 0 1px rgba(255, 230, 128, 0.3);
+#settings .se-foot kbd.pd { color: var(--hot); box-shadow: inset 0 0 0 1px rgba(255, 230, 128, 0.35); }
+#settings.dev-kbm .se-foot [data-dev="pad"],
+#settings.dev-pad .se-foot [data-dev="kbm"],
+#settings.dev-touch .se-foot { display: none; }
+
+/* --- the screen arriving, and a page turning ---
+   Staggered, and every block is opacity and a transform so the whole thing
+   is the compositor's. `.enter` is put on the root by `show` on a RAISE
+   only; `.deal` on the list by a page TURN only. */
+@keyframes se-rise {
+  from { opacity: 0; transform: translate3d(0, calc(18 * var(--u)), 0); }
+  to { opacity: 1; transform: none; }
+}
+@keyframes se-from-left {
+  from { opacity: 0; transform: translate3d(calc(-36 * var(--u)), 0, 0); }
+  to { opacity: 1; transform: none; }
+}
+@keyframes se-drop {
+  from { opacity: 0; transform: translate3d(0, calc(-12 * var(--u)), 0); }
+  to { opacity: 1; transform: none; }
+}
+@keyframes se-arrive {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+#settings.enter .se-top { animation: se-drop 0.5s ease both; }
+#settings.enter .se-hero {
+  animation: se-from-left 0.7s cubic-bezier(0.16, 0.84, 0.36, 1) 0.05s both;
+}
+#settings.enter .se-tabsrow {
+  animation: se-rise 0.5s cubic-bezier(0.16, 0.84, 0.36, 1) 0.1s both;
+}
+#settings.enter .se-rowwrap,
+#settings.enter .se-ref {
+  animation: se-rise 0.5s cubic-bezier(0.16, 0.84, 0.36, 1) both;
+  animation-delay: calc(0.12s + var(--i, 6) * 0.04s);
+}
+#settings.enter .se-intel { animation: se-arrive 0.6s ease 0.3s both; }
+#settings.enter .se-foot { animation: se-arrive 0.6s ease 0.4s both; }
+#settings .se-list.deal > * {
+  animation: se-deal 0.36s cubic-bezier(0.16, 0.84, 0.36, 1) both;
+  animation-delay: calc(var(--i, 6) * 28ms);
+}
+@keyframes se-deal {
+  from { opacity: 0; transform: translate3d(0, calc(14 * var(--u)), 0); }
+  to { opacity: 1; transform: none; }
 }
 
-/* The footer — the hint line and the Back button at the end of it — is
-   `.ui-foot` / `.ui-back` in base.css, shared with the kit screen and the
-   lobby. This screen adds nothing to it. */
-
-/* --- one column ---
-   `.ui-optional` has taken the panel away (base.css), so the hint comes back
-   into the list as its third column: a viewport this size still owes the
-   player the sentence, and the list is the only place left to put it.
-
-   The key-cap table goes with the panel, and that is the one thing on this
-   screen a small viewport loses. It is the right thing to lose: a window
-   narrow enough to reach this rule is a phone held sideways, the table names
-   a keyboard and a pad, and the game on that device is played with the touch
-   controls — which are drawn on screen and name themselves. */
-@media (max-width: 900px), (max-height: 460px) {
-  #settings .se-body {
-    grid-template-columns: minmax(0, 1fr) clamp(140px, 30vw, 200px) minmax(0, 1.1fr);
+/* =====================================================================
+   THE SCREEN AT EVERY VIEWPORT
+   ---------------------------------------------------------------------
+   Four templates over one set of areas, the menu's and the kit's four:
+   - WIDE (the default): column, the scene, intel.
+   - NO INTEL: under 1100 px wide or 620 tall. The intel is the one block
+     that is not a control, so it goes, and the say line under the list
+     takes back its sentence; the figure it gave is already on the plate.
+   - SHORT LANDSCAPE: a phone held sideways, which is THE phone layout. The
+     pages run the full height under the left thumb as plates tall enough to
+     hit, the title, the rows and the sentence share the right, and Back is
+     the top-right corner.
+   - PORTRAIT: not a layout, a layout worth not being broken. One column,
+     the pages a row of icon tabs.
+   ===================================================================== */
+@media (max-width: 1099px), (max-height: 619px) {
+  #settings {
+    --col: clamp(320px, 64vw, calc(820 * var(--u)));
+    grid-template-columns: minmax(0, var(--col)) minmax(0, 1fr);
+    grid-template-areas:
+      "top  top"
+      "hero hero"
+      "tabs ."
+      "list ."
+      "say  ."
+      ".    ."
+      "foot foot";
   }
-  #settings .se-row > .se-hint { display: block; }
+  #settings .se-intel { display: none; }
+  #settings .se-say { display: -webkit-box; }
 }
-@media (max-width: 620px) {
-  #settings .se-body {
-    grid-template-columns: minmax(0, 1fr) clamp(130px, 40vw, 190px);
+
+@media (orientation: landscape) and (max-height: 560px) {
+  #settings {
+    --gy: 10px;
+    --tabcol: clamp(120px, 21vw, 190px);
+    --ctl: clamp(190px, 30vw, 250px);
+    --gap-x: clamp(12px, 2.4vw, 24px);
+    grid-template-columns: minmax(0, var(--tabcol)) minmax(0, 1fr) auto;
+    grid-template-rows: auto minmax(0, max-content) auto minmax(0, 1fr);
+    grid-template-areas:
+      "tabs hero top"
+      "tabs list list"
+      "tabs say  say"
+      "tabs .    .";
+    row-gap: 6px;
+    background:
+      linear-gradient(90deg, rgba(3, 5, 11, 0.9) 0, rgba(3, 5, 11, 0.72) 70%, rgba(3, 5, 11, 0.45) 100%),
+      repeating-linear-gradient(to bottom, rgba(255, 255, 255, 0.012) 0 1px, transparent 1px 3px);
   }
-  #settings .se-row > .se-hint { display: none; }
+  /* Top: only the way out. The screen's name is the one thing a player who
+     just pressed the button to open it does not need told. */
+  #settings .se-top { align-self: start; }
+  #settings .se-brand,
+  #settings .se-foot,
+  #settings .se-index,
+  #settings .se-facts,
+  #settings .se-nav { display: none; }
+  #settings .se-hero { padding-top: 0; }
+  #settings .se-hero-in { --t: max(20px, min(8vh, 9cqw)); }
+  #settings .se-title { margin: 2px 0 0; }
+  /* The pages fill the height as equal plates — a thumb's target each. */
+  #settings .se-tabsrow { align-self: stretch; }
+  #settings .se-tabs {
+    grid-auto-flow: row;
+    grid-auto-rows: minmax(0, 1fr);
+    gap: 6px;
+  }
+  #settings .se-tab {
+    justify-content: flex-start;
+    min-height: 0;
+    padding: 6px 12px;
+  }
+  #settings .se-tabsrow::before { top: -3px; left: -4px; }
+  #settings .se-tabsrow::after { bottom: -3px; right: -4px; }
+  #settings .se-list { gap: 6px; }
+  #settings .se-row {
+    min-height: var(--hit);
+    padding: 0 0 0 12px;
+    column-gap: 10px;
+  }
+  #settings .se-rowwrap::before { top: -3px; left: -4px; }
+  #settings .se-rowwrap::after { bottom: -3px; right: -4px; }
+  #settings .se-label { font-size: 13px; letter-spacing: 0.08em; }
+  #settings .se-note { margin-top: 1px; font-size: 9px; letter-spacing: 0.1em; }
+  #settings .se-step,
+  #settings .se-slide { min-height: var(--hit); }
+  #settings .se-val b { font-size: 13px; }
+  #settings .se-back { padding-inline: 12px; }
+  #settings .se-say {
+    min-height: 0;
+    font-size: 11px;
+    line-height: 1.4;
+  }
+  #settings .se-ref { margin-top: 4px; }
+  #settings .se-binds { row-gap: 2px; }
+}
+/* The shortest phones (a 667x375 and down): the Back label goes and the
+   mark stays, as the menu's system bar does, and the tabs keep their words
+   and lose their marks. */
+@media (orientation: landscape) and (max-height: 560px) and (max-width: 740px) {
+  #settings .se-back b { display: none; }
+  #settings .se-tab svg { display: none; }
+  #settings .se-tab { justify-content: center; padding-inline: 6px; }
+  #settings .se-tab b { letter-spacing: 0.12em; }
+}
+
+@media (orientation: portrait) {
+  #settings {
+    --ctl: clamp(180px, 48vw, 240px);
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: auto auto auto minmax(0, max-content) auto minmax(0, 1fr) auto;
+    grid-template-areas: "top" "hero" "tabs" "list" "say" "." "foot";
+    row-gap: max(8px, calc(14 * var(--u)));
+    background:
+      linear-gradient(rgba(3, 5, 11, 0.78), rgba(3, 5, 11, 0.78)),
+      repeating-linear-gradient(to bottom, rgba(255, 255, 255, 0.012) 0 1px, transparent 1px 3px);
+  }
+  #settings .se-intel,
+  #settings .se-index,
+  #settings .se-nav { display: none; }
+  /* Upright there is height to spare under the list, and no intel. */
+  #settings .se-say { display: -webkit-box; -webkit-line-clamp: 4; }
+  #settings .se-facts { flex-wrap: wrap; white-space: normal; }
+  /* The pages as a row of TABS: equal shares, an icon over a word. */
+  #settings .se-tab {
+    flex-direction: column;
+    gap: 4px;
+    padding: 8px 4px;
+  }
+  #settings .se-tab b { font-size: 10px; letter-spacing: 0.12em; }
+  #settings .se-binds {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: none;
+    grid-auto-flow: row;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  #settings.enter .se-top,
+  #settings.enter .se-hero,
+  #settings.enter .se-tabsrow,
+  #settings.enter .se-rowwrap,
+  #settings.enter .se-ref,
+  #settings.enter .se-intel,
+  #settings.enter .se-foot,
+  #settings .se-hero-in.swap,
+  #settings .se-hero-in.swap .se-title,
+  #settings .se-intel-in,
+  #settings .se-list.deal > * {
+    animation: none;
+  }
+  #settings .se-fill,
+  #settings .se-thumb { transition: none; }
 }

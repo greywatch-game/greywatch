@@ -3712,6 +3712,19 @@ export class Game {
     if (this.input.menuLeftPressed) this.settingsScreen.stepRow(-1, false);
     if (this.input.menuRightPressed) this.settingsScreen.stepRow(1, false);
     if (this.input.menuConfirmPressed) this.settingsScreen.stepRow(1, true);
+    // The bumpers turn the PAGE wherever the cursor is resting — this
+    // screen's page, as the map is the menu's and the weapon the kit's. The
+    // strip at the top of the list reaches the same pages without them.
+    if (this.input.menuPrevPressed) this.settingsScreen.stepPage(-1);
+    if (this.input.menuNextPressed) this.settingsScreen.stepPage(1);
+    // Which device's prompts — and which half of the reference table — the
+    // screen draws, pushed as the menu's and the kit's are: only once a
+    // device has spoken.
+    if (this.input.anyDeviceUsed) {
+      this.settingsScreen.setInputDevice(
+        this.input.padInHand ? "pad" : this.input.touchActive ? "touch" : "kbm",
+      );
+    }
   }
 
   /**

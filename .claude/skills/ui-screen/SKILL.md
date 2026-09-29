@@ -5,12 +5,13 @@ description: Design, redesign or fix an interface screen under src/ui/ so it rea
 
 # Designing an interface screen
 
-The main menu (`c2c58eb`) and the kit screen (`5e61fbc`) were each redesigned
-from a form into a front end by the procedure below, and those two commits are
-the worked examples — read both messages before starting, and read the menu's
-and the kit screen's sources as the reference implementations
+The main menu (`c2c58eb`), the kit screen (`5e61fbc`) and the settings screen
+were each redesigned from a form into a front end by the procedure below, and
+those commits are the worked examples — read their messages before starting,
+and read the sources as the reference implementations
 (`OverlayScreen.showMenu`/`buildMenu`/`patchMenu` + `overlay.css`'s menu
-block; `LoadoutScreen.ts` + `loadout.css`).
+block; `LoadoutScreen.ts` + `loadout.css`; `SettingsScreen.ts` +
+`settings.css`, the one to copy for a LIST that belongs in the front end).
 
 Read before touching anything:
 - `docs/ui.md` — the contract for everything under `src/ui/`: the shell, the

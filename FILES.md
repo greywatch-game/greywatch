@@ -1079,15 +1079,19 @@ src/
                         #   change height. Four templates; phones are LANDSCAPE
     prompts.ts          # The prompt drawn ON a control for the device in hand
                         #   (`glyph`, `InputDevice`, `guessDevice`) — shared by
-                        #   the menu and the kit screen; the kbd.gl rules and
+                        #   the menu, the kit and the settings; the kbd.gl rules and
                         #   the shared `--u` unit are base.css's
-    SettingsScreen.ts   # Controls built from a ROW TABLE, in PAGES — a button
-      settings.css      #   group, or a slider where the ladder is too long for
-                        #   one (the thumb picks an option INDEX, so both are
-                        #   the same choice). Row 0 is the page selector, which
-                        #   is why tabs need no key of their own; the Controls
-                        #   page carries the key-cap table the menu used to,
-                        #   and the Touch page the phone's five rows.
+    SettingsScreen.ts   # A title screen for the PAGE of settings, laid out as
+      settings.css      #   the menu and the kit are: the page's name is the
+                        #   title, the pages a tab strip the bumpers turn, the
+                        #   rows plates built from a ROW TABLE — a stepper, or
+                        #   a slider where the ladder is too long for one (the
+                        #   thumb picks an option INDEX, so both are the same
+                        #   choice) — an intel plate, Back in the corner. Row 0
+                        #   is the tab strip, so a pad reaches every page
+                        #   through the list; the Input page carries the
+                        #   bindings for the device in hand. Laid over the
+                        #   scene: #hud.setting hides every other screen.
                         #   Owns no setting: picks leave through onChange and
                         #   return as setValues
     LobbyScreen.ts      # The match browser: every region's matches in one list

@@ -30,14 +30,21 @@ Think like a game UI designer, not a web one:
 ## Which frame
 
 - **The shell** (`.ui-screen` in `base.css`: head, body, foot; a rail and a
-  panel) is for a screen whose job is its LIST — settings, the lobby. A new
-  list screen goes there and gets `.ui-foot`/`.ui-back` for free.
-- **The front end** (`:is(#overlay.card-menu, #loadout)` in `base.css`, plus
-  `prompts.ts`) is for a screen whose job is to SHOW something. It is a grid
-  of named areas of the screen's own, sized off the shared unit. A third
-  front-end screen adds its root to that `:is(...)` list rather than copying
-  the block, and its Back goes in the SYSTEM CORNER (top right), where the
-  menu keeps Online and Settings.
+  panel) is for a screen whose job is its LIST — the lobby, the deploy
+  screen. A new list screen goes there and gets `.ui-foot`/`.ui-back` for
+  free.
+- **The front end** (`:is(#overlay.card-menu, #loadout, #settings)` in
+  `base.css`, plus `prompts.ts`) is for a screen whose job is to SHOW
+  something — or a list the player browses like a title screen rather than
+  fills in like a form (the settings: the PAGE is the title, the pages a tab
+  strip the bumpers turn, the rows plates). It is a grid of named areas of the
+  screen's own, sized off the shared unit. A fourth front-end screen adds its
+  root to that `:is(...)` list rather than copying the block, and its Back
+  goes in the SYSTEM CORNER (top right), where the menu keeps Online and
+  Settings.
+- **A front-end screen raised over OTHER screens hides them** (`#hud.kitting`,
+  `#hud.setting`: `visibility`, so they come back unredrawn) and lays a scrim
+  shaped like its own layout over the scene, instead of an opaque veil.
 
 ## The shared vocabulary (front end)
 
@@ -114,6 +121,13 @@ Keyed on what actually runs out, in this order in the stylesheet:
   `:is(#overlay.card-menu, #loadout)` keeps the ID weight the menu's own
   rules had, so the menu's later overrides still win. Photograph the menu
   before and after.
+- **A list whose length varies must not be a `1fr` track**, or the line
+  under it (the settings' say line) is stranded at the foot on a short page.
+  Size it `minmax(0, max-content)` with a `1fr` spacer row after: it grows to
+  its content, and only shrinks (and scrolls) when the glass cannot hold it.
+- **A scroller that gives its cursor brackets room with a negative margin
+  must not take the BOTTOM back**, or a row scrolled past paints over the
+  block under the list.
 - **Touch is guessed until a device is used** (`guessDevice`), and `Game`
   pushes the real one only once `input.anyDeviceUsed` — a phone's first frame
   has touched nothing and would otherwise be prompted for Enter.

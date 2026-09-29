@@ -61,23 +61,25 @@ than shrinking (`.ui-optional`), because half a panel says less than none and
 takes the rail's room to say it. `--ui-lean` is the same pair of queries as a
 custom property, for the screens that drop optional matter of their own.
 
-**The MENU is the one screen between the title and the world that is NOT drawn
-in the shell**, and the reason is its job. The shell is a frame round a list and
+**The MENU was the first screen between the title and the world NOT drawn in
+the shell** (the kit and the settings followed it), and the reason is its job. The shell is a frame round a list and
 the panel that describes it, which is right for a screen whose job is its list;
 the menu's job is to say what the game looks like, so the photograph of the map
 is the screen and the controls are laid on it. It has a grid of its own — named
 areas, four templates, one unit — described under *The main menu* below, and
 what it keeps from the shell is the vocabulary (`.ui-eyebrow`, `.ui-facts`, the
-tokens), not the frame. A new screen goes in the shell; the menu is not the
-pattern to copy.
+tokens), not the frame. A new screen whose job is a list it is FILLED IN from
+(the lobby) goes in the shell; one that shows something, or a list browsed like
+a title screen, copies the kit screen or the settings screen rather than the
+menu.
 
 **A screen over another SCREEN is opaque; a screen over the SCENE is not.**
 `.ui-veil` is the backdrop — a warm glow off the lower-left corner and a cold one
 off the upper-right (the friend/foe pair the whole HUD is coloured by, and what
 gives the frame a direction to be lit from), a vignette, a diagonal hatch, and
 the scanlines every card here already had. The menu, the round-over card and the
-deploy screen stand over a live 3D view and let it through. The settings list and
-the lobby stand over the MENU — DOM over DOM — and add `.ui-solid`, which closes
+deploy screen stand over a live 3D view and let it through. The lobby stands
+over the MENU — DOM over DOM — and adds `.ui-solid`, which closes
 the vignette: a veil tuned to let a village through lets a wordmark and a rail of
 buttons through with it, which reads as two screens up at once.
 
@@ -89,11 +91,11 @@ is 1 until a viewport is shorter than anything the clamp minimums fit in
 legible desktop menu rendered at 45%. Raising it back toward those numbers undoes
 the responsive layout wholesale.
 
-**The kit screen is the second screen NOT in the shell, and it is laid out the
-way the menu is** — see *The kit screen* below. Its middle is a hole the 3D
+**The kit screen is the second screen NOT in the shell, and the settings screen
+the third; both are laid out the way the menu is** — see *The kit screen* below. Its middle is a hole the 3D
 turntable is placed through, and a title screen for a weapon is the shape that
 hole wants: what it shares with the menu is the unit, the type scale, the plate
-and the prompts (`base.css`'s `:is(#overlay.card-menu, #loadout)` block and
+and the prompts (`base.css`'s `:is(#overlay.card-menu, #loadout, #settings)` block and
 `prompts.ts`), not the shell's frame.
 
 **The boot screen is the one piece of interface that is not in this directory**,
@@ -140,7 +142,7 @@ see [`docs/multiplayer.md`](multiplayer.md) for why joining one takes that
 match's map instead.
 
 **THE WAY OUT OF A SCREEN IS A BUTTON IN ITS FOOTER, never a row in its own
-list.** The settings screen, the kit screen and the lobby all end on the same
+list.** The lobby ends on that
 line — what the keys and the stick do, then Back at the right-hand end of it —
 and it is `.ui-foot` / `.ui-back` in `base.css` rather than three copies, so a
 fourth list-shaped screen gets the whole convention by naming it. The lobby's
@@ -160,8 +162,8 @@ foot of its own to end on. The rule the footer served is unchanged: a fixed
 place, never a row in a list. Every one of them applies a pick the moment it is made,
 so there is nothing on any of them to be finished with, and two screens that
 leave the same way must not use two words for it. Where the keys genuinely
-differ, the screen's own hints say so: Enter changes a settings row and closes
-the kit screen, and only the pair that works everywhere is on the button.
+differ, the screen's own hints say so, and only the pair that works everywhere
+is on the button. The settings screen's Back went to the corner with it.
 
 **The four cards are one class because they are one element** — they share the
 shell, the title block and the Deploy button. The bar for a screen of its own is
@@ -218,66 +220,109 @@ it and the boot screen's is a single uninterruptible call, so there is no
 progress to read even in principle, and an invented percentage always ends up
 stuck at 90 while the real work finishes.
 
+**The settings screen is the third title screen, and the one that shows a
+list can belong in the front end.** It was drawn in the shell — a heading, a
+strip of four tabs, two sliders floating in the middle of a black page beside a
+key table, a hint line naming three devices — and it read as a form. It is laid
+out the way the menu and the kit screen are now: the PAGE's name is the title,
+set large with its number hollow behind it and a strip of figures under it; the
+pages are a tab strip the bumpers turn, the menu's reel in another guise; the
+rows are a column of plates under it wearing the menu's sight brackets; an
+INTEL plate on the right says what the cursor's row does and what it comes to
+on this machine; Back is the system corner; the prompts are drawn on their
+controls for the device in hand. Every block is a named grid area over four
+templates, as on the other two.
+
+- **It stands over the SCENE, not over a black veil.** Everything it can be
+  raised over — the menu, the deploy map, the pause card — is DOM, so it takes
+  them off the glass while it is up (`#hud.setting`, the kit screen's
+  `.kitting` for the kit screen's reason: `visibility`, so what it covered
+  comes back unredrawn) and lays a scrim shaped like its layout over what is
+  left. Over the menu that is the map's photograph (`#menu-shot` is carved out);
+  over a pause it is the round, and **a render scale, a shadow tier or the paper
+  grain chosen there is SEEN changing behind the plate that chose it.**
+  `#hud-fps` is carved out too — the Display page switches it on.
+- **Two axes and a page.** Up and down walk the rows, left and right step the
+  row's value, and the bumpers (LB/RB, Q/E) turn the page from anywhere. **The
+  tab strip is ROW 0 of the cursor's list**, so the bumpers are an accelerator
+  and never the only way in (this file's rule for every screen here): a pad
+  player who never thinks to press one still walks up onto the strip and steps
+  it with left and right. Turning a page from the strip leaves the cursor on the
+  strip; from a row it goes to the TOP of the new page — row 3 of Display is not
+  row 3 of anything else. The bumpers and the strip both CLAMP, being one choice
+  reached by two keys.
+- **Left/right clamp; Enter wraps.** Left on the lowest rung has to stay put, or
+  a player stepping down a resolution list lands back at the top and reads it
+  as the setting having refused; Enter is one key asked to reach every value, so
+  it comes round. The stepper's arrows are drawn spent at the ends for the same
+  reason, and a click on its VALUE is Enter under a pointer.
+- **Hover moves the cursor here, where it does not on the kit screen.** The
+  kit's rail is somewhere else and the mouse crosses other slots to reach it;
+  here every row carries its own control, so the row under the pointer is
+  always the one it is about to use. A press on a control also takes the cursor
+  — there is no hover on glass.
+- **`show()` resets the page as well as the row**, for the reason the kit screen
+  resets its cursor — and because a screen that opens on Display because that
+  is where you were last week hides the bindings from the player who came
+  looking for them.
+- **It is BUILT on a raise and PATCHED after**: the title on a page turn (which
+  is how its wipe replays), the rows on a page turn (and they DEAL in), the
+  values on a pick, the brackets and the intel on a cursor move. A slider
+  patched rather than rebuilt is also what keeps a drag alive across the rungs
+  it crosses.
+
 **The settings list is a ROW TABLE, and every row is the same thing: a labelled
 choice over one field of `Settings`.** A toggle is a two-option choice, so Off/On
 and a three-rung resolution ladder go through one renderer, one key handler and
-one hit-testing path. What a longer list changes is only how the cell is DRAWN:
-the control column is fixed, which is ~60 px a button for three options and 10 px
-for sixteen — narrower than one character — so a row can ask for
-`style: "slider"` and be laid along a track instead.
-
-**It is split into PAGES, and the page selector is ROW 0 rather than a key of its
-own.** That is the whole tab mechanism: up and down reach the row, left and right
-step it, Enter wraps it — exactly what every other row on the screen already
-reads, so a pad needs no bumper nobody would think to press and the screen needs
-no second hit-testing path (the tabs are `.se-opt` buttons like any short option
-list). It is not in `Settings` and not in a page's rows because what it changes is
-on this screen rather than in the store. Switching pages puts the cursor back on
-the selector: row 3 of Display is not row 3 of anything else, and the row the
-player is standing on is the one they just used. `show()` resets the page as well
-as the row, for the reason the kit screen resets its cursor — and because a
-screen that opens on Display because that is where you were last week hides the
-key table from the player who came looking for it.
+one hit-testing path. What a longer list changes is only how the cell is DRAWN.
+A short list is a STEPPER — the console idiom, the chosen value between two
+chevrons with a pip per option under it, so an Off/On reads as two and a shadow
+tier as five without a word being read; it shows ONE option at a time and the
+intel names them all. A row can ask for `style: "slider"` and be laid along a
+track instead, because sixteen pips under a word are a ruler nobody reads.
 
 **A page is what this list GROUPS by, and it replaced a heading row for a reason
-that is about height.** Nothing in this HUD scrolls, so a list that outgrows its
-panel does not get a scrollbar, it gets a foot the player cannot see. A heading
-buys an inch of separation and spends the same height as a row; a page buys the
-whole rest of the list back. The split rule is the mechanical one — a page that
-outgrows the panel splits into another page, exactly as a section would have
-split into another heading.
+that is about height.** A list that outgrows its column does not get a scrollbar
+anyone looks for, it gets a row nobody sees. A heading buys an inch of separation
+and spends the same height as a row; a page buys the whole rest of the list
+back. The split rule is the mechanical one — a page that outgrows the column on
+a landscape phone splits into another page, exactly as a section would have
+split into another heading. (The list does scroll, as the last resort it is:
+a pad on a landscape phone puts the bindings under the Input page's rows, and
+the cursor's row is kept on the glass.)
 
-**The key-cap table is the one thing on the screen that is not a choice, and it
-is in the PANEL beside the list rather than under it.** It carries no
-`data-row`, so the cursor steps straight past it — it is not a row, it is what
-the Input page is *about*. A dozen rows under a list of three sliders was the
-longest block on the screen and the thing that decided the panel's height;
-beside that list it costs it nothing. Its own three columns (action / keyboard /
-pad) are set independently of the list's, because an action name is short where
-a setting's label is long and matching the two would leave the key chips
-stranded mid-panel with the pad column adrift at the far edge.
+**The bindings are drawn for the device IN HAND, under the Input page's rows.**
+Both halves of every binding are prompts (`glyph`), so the root's `dev-*` class
+draws the keyboard's caps or the pad's own buttons — the green A, the bumper
+tab — and never both; a column of pad names beside a column of keys the player
+is not holding was a table read by halves. Under a finger it gives way to a
+sentence: the controls are drawn on the glass and name themselves. It carries
+no `data-row`, so the cursor steps straight past it; it is in the column rather
+than the intel because the intel is the first thing a small viewport drops, and
+a 1280x720 laptop with a keyboard is not a viewport that should lose the
+controls table.
 
-**The row HINT moved into that panel with it, and the list is two columns now.**
-A hint is a sentence of prose, and it was in a cell as wide as a control, set at
-10 px, clipped whenever the panel narrowed. One row's hint at a time, given a
-column of its own, is both more of it and less of it on screen: the row you are
-standing on gets a heading and a readable line, and the four you are not stop
-competing with their own controls for width. The page selector is answered there
-like any other row, which is the same argument that made it a row at all.
+**A row says what its value WORKS OUT TO, and that is computed rather than
+written in the table.** "75%" and "1.25x" are both numbers over something the
+screen never shows — a panel's pixel count, a rate in radians — so `figureFor`
+resolves each against the machine (`1280x800`) or against `CONFIG.camera`
+(`202° per 1000 px`, `160°/s at full stick`), and the gyro row reports what the
+SENSOR is doing. A player comparing this game against the shooter they came
+from is comparing sweeps, not multipliers. The figure is on the row's own PLATE
+as well as in the intel, because that is the line a viewport with no room for
+the intel still owes the player; the row's sentence comes back as the SAY line
+under the list for the same reason.
 
-**The Display page's panel carries a `facts` block instead of a table**, and it
-is a function rather than a string because every figure in it is measured when
-it is drawn — the window, the pixel ratio, what the ladder above actually comes
-to on this machine. A settings screen reporting the size the window was when the
-bundle loaded is worse than one reporting nothing. It is also what keeps that
-page's panel from being a heading and one sentence in a column the height of the
-screen.
+**The Display page's title strip is the MACHINE** — the window, the pixel ratio,
+the native size — and it is a function rather than a string because every figure
+in it is measured when it is drawn (and redrawn on a resize while the screen is
+up). A settings screen reporting the size the window was when the bundle loaded
+is worse than one reporting nothing. Every other page's strip is one sentence,
+so a page turn never moves the list under the title.
 
-**A viewport too narrow for the panel gets the hint back as a third column and
-loses the key table**, and that is the right thing to lose. A window that narrow
-is a phone held sideways; the table names a keyboard and a pad, and the game on
-that device is played with the touch controls, which are drawn on screen and
-name themselves.
+**The list's grid track is `minmax(0, max-content)` with a `1fr` row after the
+say line**, not a `1fr` of its own: a short page would otherwise strand the say
+line at the foot, a screen away from the row it describes.
 
 - **The slider is positioned by option INDEX, not by value**, one rung per equal
   share of the track. That is what keeps it a choice over the same `options` the
@@ -285,32 +330,23 @@ name themselves.
   on a value a keypress could not reach. It also preserves a ladder's spacing —
   `CONFIG.camera.lookScales` is geometric, so an inch of drag is the same *ratio*
   of look speed wherever it is taken.
-- **The drag lives on the WINDOW and its geometry is captured at the press**,
-  because `draw` rebuilds `innerHTML` wholesale: the element under the finger is
-  destroyed and replaced the first time the value crosses a rung, and a listener
-  or a pointer capture bound to it dies one rung in. The track's box is measured
-  once — nothing about the row's layout depends on the value — so a drag survives
-  the redraw, leaving the row, and running off the end of the screen.
+- **The drag lives on the WINDOW and its geometry is captured at the press**, so
+  a drag that runs off the track, over another row or off the screen keeps
+  moving the thumb it started on. The track's box is measured once — nothing
+  about the row's layout depends on the value.
 - **The thumb's size is declared in CSS and read back off the DOM**, never
   restated in the script. Both the paint (`left: calc(var(--t) * (100% -
   var(--thumb)))`) and the hit maths need it, and two copies of that number are
   two things that drift into a thumb sitting where the value is not. The script
   writes `--t` and nothing else.
-- **Hover does not move the selection while a slider is held.** The redraw a drag
-  causes lands a fresh row under a pointer that has not moved between rows, and
-  taking the selection from it would walk the highlight onto a slider the player
-  is not dragging.
-
-**A hint says what the value WORKS OUT TO, and that is why hints are computed
-rather than written in the table.** "75%" and "1.25x" are both numbers over
-something the screen never shows — a panel's pixel count, a rate in radians —
-so `hintFor` resolves each against the machine (`1280x800`) or against
-`CONFIG.camera` (`202° per 1000 px`, `160°/s at full stick`). A player comparing
-this game against the shooter they came from is comparing sweeps, not
-multipliers.
+- **Hover does not move the selection while a slider is held.** The drag is on
+  the window, so the pointer wanders over other rows mid-drag, and taking the
+  selection from one would walk the highlight onto a row the drag is not
+  changing.
 
 **A class on `#hud` belongs to whoever raises it.** `OverlayScreen` sets
-`.overlaid`, `LoadoutScreen` sets `.kitting`, `HUD` sets `.paused`, `.editing` and
+`.overlaid`, `LoadoutScreen` sets `.kitting`, `SettingsScreen` sets
+`.setting`, `HUD` sets `.paused`, `.editing` and
 `.dying`. That is why a pause is two calls from `Game` rather than one: the card
 goes up and the HUD's own aiming chrome comes down, and they are not the same
 decision — `.overlaid` would take the tickets and vitals with it, which under a
@@ -1508,8 +1544,8 @@ What belongs *here*, with the other screens:
   It draws nothing and owns no finger, so it lives in core and is polled by
   `InputManager` (`setGyroSource`) into a fourth look path, `gyroYaw/Pitch`,
   which only the two cameras read. What a player needs to know about it is
-  what the settings screen tells them: the row's hint carries the sensor's
-  real state (`setGyroStatus`), and the speed row resolves to degrees of view
+  what the settings screen tells them: the row's plate and its sentence carry
+  the sensor's real state (`setGyroStatus`), and the speed row resolves to degrees of view
   per 90 degrees of phone. Three rules reach outside the file:
   - **It is PLAYER SPACE**: yaw is the turn about GRAVITY and pitch the tilt
     about the screen's horizontal, so a phone held tilted back turns cleanly.
