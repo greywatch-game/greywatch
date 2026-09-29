@@ -525,10 +525,8 @@ export class LoadoutScreen {
       <div class="lo-foot">
         <span data-dev="kbm"><kbd>&uarr;</kbd><kbd>&darr;</kbd> Slot</span>
         <span data-dev="kbm"><kbd>&larr;</kbd><kbd>&rarr;</kbd> Change</span>
-        <span data-dev="kbm"><kbd>Q</kbd><kbd>E</kbd> Weapon</span>
         <span data-dev="kbm"><kbd>Drag</kbd> Turn</span>
         <span data-dev="pad"><kbd class="pd">D-pad</kbd> Navigate</span>
-        <span data-dev="pad"><kbd class="pd">LB</kbd><kbd class="pd">RB</kbd> Weapon</span>
         <span data-dev="pad"><kbd class="pd">RS</kbd> Turn</span>
       </div>
     `;

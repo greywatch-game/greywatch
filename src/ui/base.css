@@ -787,6 +787,12 @@ body { font-family: "Segoe UI", "Helvetica Neue", Arial, sans-serif; }
   background: #dfe5ee;
   box-shadow: none;
 }
+/* Start is the small oval between the sticks on every pad. It keeps the
+   plate's own colours, so it sits on Deploy's hot fill as a key cap does. */
+:is(#overlay.card-menu, #loadout).dev-pad kbd.gl[data-p="Start"] {
+  clip-path: none;
+  border-radius: 999px;
+}
 
 @keyframes pulse {
   0%, 100% { opacity: 1; }

@@ -3540,14 +3540,6 @@ export class Game {
         this.openLoadout();
         return;
       }
-      if (this.input.settingsPressed) {
-        this.openSettings();
-        return;
-      }
-      if (this.input.multiplayerPressed) {
-        this.openLobby();
-        return;
-      }
     }
     // The ballot, which is the one control a round-over card has in a match:
     // left and right along the row, confirm to cast. It is the same three
@@ -3583,8 +3575,9 @@ export class Game {
     // match on the way in), but `roundover` in a match is a WAIT on the
     // authority's rotation, and this line was the widest of the three doors
     // into starting a round nobody else was playing. It is also the one a
-    // player is most likely to fall through, because the kit screen closes on
-    // this very key and the round-over card arrives under their fingers.
+    // player is most likely to fall through, because pad Start closes the kit
+    // screen and is this very key, and the round-over card arrives under their
+    // fingers.
     if (this.input.confirmPressed && this.overlayT > 0.5 && !this.net) {
       this.startRound();
     }
@@ -3604,10 +3597,6 @@ export class Game {
     // the weapon is already put away.
     if (this.input.loadoutPressed) {
       this.openLoadout();
-      return;
-    }
-    if (this.input.settingsPressed) {
-      this.openSettings();
       return;
     }
     this.respawnT -= dt;
@@ -3644,8 +3633,9 @@ export class Game {
 
   /**
    * The kit screen. Two axes and a page — up/down the slots, left/right the
-   * cursor slot's options, the bumpers the weapon — and every way out closes
-   * it: there is nothing to confirm, each pick is already on the weapon behind.
+   * cursor slot's options, the bumpers the weapon — and Back, pause or `L`/Y
+   * close it: there is nothing to confirm, each pick is already on the weapon
+   * behind, and the confirm itself is not an exit.
    */
   private updateLoadoutScreen(dt: number): void {
     // The lid that hides the most — the scrim is opaque except for the stage the
@@ -3655,17 +3645,15 @@ export class Game {
     // screen's own say-so (`ScreenSpec.roundBehind`).
     //
     // Up/down chooses which slot of the kit is being edited, left/right
-    // steps through it. Back, confirm and pause all
-    // close — there is nothing to confirm here, every pick has already been
-    // applied to the weapon behind the screen, so B and A do the same
-    // thing and B is the one a pad player will reach for. The mouse is left
-    // out of the confirm (`menuConfirmPressed`) because a click on the
-    // empty half of the screen is not a choice, the same rule the pause
-    // menu follows.
+    // steps through it. Back, pause and the kit's own key close it — every
+    // pick has already been applied to the weapon behind the screen, so there
+    // is nothing to confirm on the way out. **The CONFIRM is deliberately not
+    // a way out**: A and Enter are what a player presses on an option they
+    // mean to pick, and a screen that closed on them threw a pad player out
+    // mid-choice. Back is the one drawn exit, and it says B and Esc.
     if (
       this.input.menuBackPressed ||
       this.input.pausePressed ||
-      this.input.menuConfirmPressed ||
       this.input.loadoutPressed
     ) {
       this.closeLoadout();
@@ -3706,13 +3694,9 @@ export class Game {
     // NOT an exit here, which is the one place this screen departs from the
     // kit screen's shape: a boolean has nothing to step through, so A and
     // Enter are the natural "toggle this" and spending them on closing
-    // would leave a pad with no way to change a setting at all. B, Escape
-    // and `O` are the ways out, and every pick is already applied.
-    if (
-      this.input.menuBackPressed ||
-      this.input.pausePressed ||
-      this.input.settingsPressed
-    ) {
+    // would leave a pad with no way to change a setting at all. B and
+    // Escape are the ways out, and every pick is already applied.
+    if (this.input.menuBackPressed || this.input.pausePressed) {
       // B is the pad's crouch toggle as well; the press that closed this
       // screen has already flipped the latch behind it. Same correction the
       // pause branch and `spawnPlayer` make, and for the same reason.
@@ -3739,13 +3723,9 @@ export class Game {
    * `stepMenuItem` states next door).
    */
   private updateLobbyScreen(): void {
-    // B, Escape and `M` all leave, matching the settings screen's three ways
-    // out. Enter is spent on joining, which is what the screen is for.
-    if (
-      this.input.menuBackPressed ||
-      this.input.pausePressed ||
-      this.input.multiplayerPressed
-    ) {
+    // B and Escape leave, matching the settings screen's two ways out.
+    // Enter is spent on joining, which is what the screen is for.
+    if (this.input.menuBackPressed || this.input.pausePressed) {
       // B is the pad's crouch toggle as well; the press that closed this screen
       // has already flipped the latch behind it. The same correction the pause
       // and settings branches make.
@@ -3781,13 +3761,6 @@ export class Game {
       // deliberately crouched behind cover.
       if (this.input.menuBackPressed) this.input.clearCrouchToggle();
       this.resume();
-      return;
-    }
-    // The one lid that can be raised over another. Checked after the
-    // resume, so a frame carrying both keys ends the pause rather than
-    // opening a screen over a round that is about to un-hold.
-    if (this.input.settingsPressed) {
-      this.openSettings();
       return;
     }
     if (this.input.menuUpPressed) this.overlayScreen.movePauseSelection(-1);

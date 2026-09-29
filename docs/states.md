@@ -247,9 +247,9 @@ it in the DRAWING as well — `showRoundOver` and `showPause` take a `solo` flag
 in a match the button is ABSENT rather than dimmed and the card says the server is
 choosing. The handler guards stay because the markup is what a handler is bound
 to and the markup outlives none of these transitions. The keyboard door is the one
-that was actually being fallen through: the kit screen closes on that very key,
-and when a round ends under it the round-over card arrives beneath the player's
-fingers.
+that was actually being fallen through: pad Start closes the kit screen and is
+that very key, and when a round ends under it the round-over card arrives beneath
+the player's fingers.
 
 ## The pointer lock
 

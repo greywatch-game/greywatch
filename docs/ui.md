@@ -931,8 +931,10 @@ playing` cycle, differing only in whether `Game.net` exists.
 replaced a screen per verb — left/right for difficulty, `L`/Y for the kit, `O` for
 settings — which is a keyboard's idea of a menu: every action needs its own button,
 and an action nobody found a button for is one a pad cannot reach (the settings
-screen was exactly that). The dedicated keys survive as accelerators; none is the
-only way in.
+screen was exactly that). `L`/Y and the bumpers survive as accelerators; none is
+the only way in. `O` and `M` did not: Settings and Online are the system bar a
+mouse clicks and the cursor reaches, and a letter matching neither label was a
+prompt nobody could guess.
 
 - **The cursor is `OverlayScreen`'s, and it is a class on rows that already
   exist.** `MENU_ITEMS` is the list, `activateMenu` is what A fires, and the mark
@@ -1035,6 +1037,15 @@ The right-hand side is an INTEL plate on whatever the cursor rests on.
   prompted for Enter; until then the card keeps its own guess off
   `(hover: none) and (pointer: coarse)`. The foot's hint line follows the same
   class and is absent under a finger.
+- **A prompt ON a control is a key that fires THAT control wherever the cursor
+  is; the foot holds the cursor's verbs, and nothing is said in both.** Deploy
+  carried Enter and A, which fire the CURSOR's row — and the cursor follows the
+  mouse, so once the pointer had crossed the reel, Enter beside Deploy cycled
+  the map. It carries the pad's Start now (which does deploy from anywhere) and
+  no key, and the foot's "Enter Select" is the honest line. The bumpers are
+  drawn on the reel's chevrons and the kit title's, so neither foot names them
+  again. The same test holds on the kit screen, and on any screen that draws
+  prompts next.
 - **The card is BUILT on a raise and PATCHED after** (`buildMenu`,
   `patchMenu`), and that is what lets a map change ANIMATE: the chosen card
   opens, the hero wipes the new name in (`.swap`), and the photograph
@@ -1312,6 +1323,11 @@ four templates over them.
   is, because the weapon is this screen's page the way the map is the menu's.
   The same bumpers are drawn as the chevrons either side of the title's
   eyebrow, where the pointer and the finger can use them.
+- **Back, Start/Escape and `L`/Y close it, and the CONFIRM does not.** Every
+  pick is applied the moment it is made, so there is nothing to finish; A and
+  Enter are what a player presses on an option they mean to pick, and a screen
+  that closed on them threw a pad player out mid-choice. Back is the one drawn
+  exit.
 - **A pointer CLICKS a slot open; it does not hover one open.** The rail is
   under the stage and the column is to its left, so a hover rule re-opens every
   slot the mouse crosses on its way down to the rail. The old screen could move

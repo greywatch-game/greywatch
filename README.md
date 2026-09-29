@@ -216,7 +216,6 @@ either way round, with no setting to find.
 | Climb / descend     | A / B (flying)              | Space / Ctrl (flying)  |
 | Scoreboard          | Back / Share                | Tab                    |
 | Loadout             | Y / △ (menus)               | L (menus)              |
-| Settings            | —                           | O                      |
 | Pause               | Start / Options             | Esc                    |
 | Confirm             | A or Start                  | Enter / Click          |
 | Back                | B / ○                       | Backspace              |

@@ -393,26 +393,6 @@ export class InputManager {
    * kit out of reach inside a round you are already standing in.
    */
   loadoutPressed = false;
-  /**
-   * Edge-triggered "open the settings" (O). Keyboard only, deliberately: the
-   * face buttons are all spoken for (A confirms, B backs out and crouches, X
-   * reloads, Y opens the kit), and a pad reaches the screen by putting the
-   * menu's cursor on its row and pressing A, or through the pause list. That
-   * cursor is why this being keyboard-only is now a shortcut rather than a
-   * hole — before it, the settings screen was the one thing on the menu no
-   * pad could open at all. Read in the menu, deploy and paused states —
-   * settings are reachable from a held round where the kit is not, because
-   * turning the blur off is a thing you judge against a live scene.
-   */
-  settingsPressed = false;
-  /**
-   * The multiplayer lobby's key, `M`. Keyboard-only for the same reason
-   * `settingsPressed` is: the menu cursor reaches the row, so a dedicated key
-   * is an accelerator rather than the only way in, and a pad has no button
-   * spare that is not already a menu verb. Read in the `menu` state alone —
-   * the lobby is a lid over the title card and nowhere else.
-   */
-  multiplayerPressed = false;
   pointerLocked = false;
   gamepadConnected = false;
   /**
@@ -539,8 +519,6 @@ export class InputManager {
    */
   private useOffered = false;
   private prevLoadout = false;
-  private prevSettings = false;
-  private prevMultiplayer = false;
   private prevPadSprint = false;
   private prevCrouchToggle = false;
   /** Latched L3 sprint state — toggled on each L3 press, cleared on blur. */
@@ -1011,16 +989,6 @@ export class InputManager {
     const loadoutNow = this.keys.has("KeyL") || padLoadout;
     this.loadoutPressed = loadoutNow && !this.prevLoadout;
     this.prevLoadout = loadoutNow;
-
-    // The settings screen's key. No pad binding — see the field's note.
-    const settingsNow = this.keys.has("KeyO");
-    this.settingsPressed = settingsNow && !this.prevSettings;
-    this.prevSettings = settingsNow;
-
-    // The lobby's key. No pad binding, same reason.
-    const multiplayerNow = this.keys.has("KeyM");
-    this.multiplayerPressed = multiplayerNow && !this.prevMultiplayer;
-    this.prevMultiplayer = multiplayerNow;
   }
 
   /**
@@ -1215,9 +1183,6 @@ const BOUND_CODES = new Set([
   "Digit1",
   "Digit2",
   "Digit3",
-  // Ctrl+O is the file-open dialog, and crouch is Ctrl — exactly the accident
-  // the note above describes, so the settings key has to be suppressed too.
-  "KeyO",
   "Space",
   "Tab",
   "Backspace",

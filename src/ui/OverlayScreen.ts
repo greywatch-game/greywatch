@@ -86,9 +86,12 @@ const PAUSE_ITEMS: readonly [PauseAction, string, boolean][] = [
  * What the main menu's cursor can rest on.
  *
  * The menu is a LIST a pad steps through — up and down move, left and right
- * change the row the cursor is on, A fires it — and every dedicated key
- * (`L`/Y, `O`, `M`, the bumpers) is an accelerator rather than the only way
- * in, which is what lets a pad reach every row on this screen.
+ * change the row the cursor is on, A fires it — and the two dedicated keys
+ * (`L`/Y for the kit, the bumpers for the map) are accelerators rather than
+ * the only way in, which is what lets a pad reach every row on this screen.
+ * Online and Settings have NO key: they are the system bar a mouse clicks and
+ * the cursor reaches, and a letter that matched neither label (`M`, `O`) was
+ * a prompt nobody could guess.
  */
 type MenuItem =
   | "multiplayer"
@@ -464,7 +467,11 @@ export class OverlayScreen {
    * **Every prompt is drawn ON its control, for the device in hand** — a key
    * cap, a pad's face button, or nothing under a finger (`glyph`,
    * `setInputDevice`). A line of hints naming three devices at once made every
-   * player work out which of them was theirs.
+   * player work out which of them was theirs. **A prompt ON a control is a key
+   * that fires THAT control wherever the cursor is**, and the cursor's own verbs
+   * (move, change, select) are the foot's — so Deploy carries the pad's Start
+   * and no key at all, because Enter and A fire the CURSOR's row, and the cursor
+   * follows the mouse onto whatever it crosses.
    *
    * **It is BUILT on a raise and PATCHED after**, which is what lets a map
    * change ANIMATE: the chosen card opens, the hero slides the new name in and
@@ -550,8 +557,8 @@ export class OverlayScreen {
           <span class="mm-word">GREYWATCH</span>
         </div>
         <div class="mm-sys">
-          <button class="mm-sysbtn" data-menu="multiplayer">${ICON_ONLINE}<b>Online</b>${glyph("M", null)}</button>
-          <button class="mm-sysbtn" data-menu="settings">${ICON_SETTINGS}<b>Settings</b>${glyph("O", null)}</button>
+          <button class="mm-sysbtn" data-menu="multiplayer">${ICON_ONLINE}<b>Online</b></button>
+          <button class="mm-sysbtn" data-menu="settings">${ICON_SETTINGS}<b>Settings</b></button>
           <a class="mm-source" href="${SOURCE_URL}" target="_blank" rel="noopener noreferrer"
              title="Source on GitHub" aria-label="Source on GitHub">${GITHUB_MARK}</a>
         </div>
@@ -580,17 +587,15 @@ export class OverlayScreen {
       <div class="mm-row mm-go" data-menu="start">
         <button class="mm-deploy">
           <span class="mm-deploy-t"><b>Deploy</b><i>Conquest &middot; vs bots</i></span>
-          ${glyph("Enter", "A")}
+          ${glyph(null, "Start")}
         </button>
       </div>
       <aside class="mm-intel"></aside>
       <div class="mm-foot">
         <span data-dev="kbm"><kbd>&uarr;</kbd><kbd>&darr;</kbd> Move</span>
         <span data-dev="kbm"><kbd>&larr;</kbd><kbd>&rarr;</kbd> Change</span>
-        <span data-dev="kbm"><kbd>Q</kbd><kbd>E</kbd> Map</span>
         <span data-dev="kbm"><kbd>Enter</kbd> Select</span>
         <span data-dev="pad"><kbd class="pd">D-pad</kbd> Navigate</span>
-        <span data-dev="pad"><kbd class="pd">LB</kbd><kbd class="pd">RB</kbd> Map</span>
         <span data-dev="pad"><kbd class="pd face-a">A</kbd> Select</span>
       </div>
     `;
