@@ -64,6 +64,18 @@ export const SCREENS = {
   // RAISED here rather than reached: the step and the card, with no build
   // behind them, which holds it still for as long as a picture takes.
   building: { open: "g.go('loading'); g.overlayScreen.showBuilding(g.buildingCard());", root: "#overlay" },
+  // A round ENDED rather than played out: the player is spawned, a few rows
+  // of the board are paid so it has something to rank, and the enemy's
+  // tickets are taken to nothing — the offline card, with its Another round.
+  roundover: {
+    open:
+      "g.startRound(); await until(() => g.state === 'deploy'); g.spawnPlayer(); await wait(300);" +
+      " const s = g.battle.playerSlot; for (let i = 0; i < 6; i++) g.scores.award(s, 'kill');" +
+      " for (let i = 0; i < 9; i++) g.scores.award((i * 5) % g.battle.bots.length, 'kill');" +
+      " g.scores.registerDeath(s); g.scores.registerDeath(s);" +
+      " g.conquest.tickets[1 - g.player.team] = 0; g.endRound(g.player.team);",
+    root: "#overlay",
+  },
   pause: {
     open: "g.startRound(); await until(() => g.state === 'deploy'); g.spawnPlayer(); await wait(300); g.pause();",
     root: "#overlay",

@@ -996,14 +996,11 @@ src/
                               #   nothing measured on it is hidden by weather
   ui/                   # One .css beside each module that writes markup
     base.css            #   Reset, canvas, #hud root, and ONLY primitives two
-                        #   or more screens share — including THE SHELL every
-                        #   screen between the title and the world is framed
-                        #   in: .ui-screen (head / body / foot, edge-anchored,
-                        #   fluid), .ui-veil (+.ui-solid over another screen),
-                        #   .ui-rail, .ui-panel, .ui-facts, .ui-foot — and the
-                        #   FRONT END's unit (`--u`, the `--t-*` scale) and
-                        #   prompt glyphs, shared by the menu and the kit
-                        #   screen. Imported by main.ts
+                        #   or more screens share — the tokens, .ui-eyebrow and
+                        #   .ui-facts (all that is left of the retired SHELL),
+                        #   and THE FRONT END's unit (`--u`, the `--t-*` scale)
+                        #   and prompt glyphs, shared by every title screen.
+                        #   Imported by main.ts
     HUD.ts/hud.css      # Gameplay chrome ONLY: tickets, flags, capture panel,
                         #   vitals, ammo, the stowed slot, hitmarker, killfeed,
                         #   score feed, scoreboard, damage arcs, +
@@ -1013,9 +1010,8 @@ src/
       overlay.css       #   the .overlaid class they raise, and #menu-shot, the
                         #   map photograph the menu stands on: a second root of
                         #   its own so it survives the card being rewritten and
-                        #   stays UNDER the scrim, drifting. The menu is the
-                        #   one screen NOT in the shell: a title screen on its
-                        #   own grid of named areas (four templates, one unit,
+                        #   stays UNDER the scrim, drifting. The menu is a
+                        #   title screen on its own grid of named areas (four templates, one unit,
                         #   `--u`), the map's name as the hero, a column of the
                         #   round's decisions — a REEL of map photographs, the
                         #   enemy, the kit, Deploy — a system bar, and an INTEL
@@ -1026,6 +1022,13 @@ src/
                         #   hero and photograph, a load plate where Deploy was,
                         #   a briefing plate and a field note — and nothing
                         #   that needs a frame after the build starts. The
+                        #   ROUND-OVER card stands in it too: the RESULT as the
+                        #   title in the winner's colour over the map's
+                        #   photograph, a column of the reinforcements, your
+                        #   own round and Another round (a ballot of map
+                        #   plates, or a wait plate, in a match), the top of
+                        #   the board as the intel, and Main menu / Leave
+                        #   match in the system corner. The
                         #   pause is the one card that
                         #   does not take the screen — left-anchored over a
                         #   round that is still worth seeing

@@ -240,7 +240,7 @@ rather than a hang.
 
 **There were three doors into it and the widest was a key.** `updateMenuCard`'s
 confirm tail fires on Enter, pad A and Start for both cards it draws; the
-round-over card's own `ov-start` button is the second; the pause menu's "Restart
+round-over card's own Another round plate is the second; the pause menu's "Restart
 round" is the third. All three now ask `!this.net`, and the two that are drawn ask
 it in the DRAWING as well — `showRoundOver` and `showPause` take a `solo` flag, so
 in a match the button is ABSENT rather than dimmed and the card says the server is

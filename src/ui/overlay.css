@@ -1,10 +1,12 @@
 /**
  * overlay.css — The four full-screen cards: the menu, the round-over result,
  * the pause list and the one that stands over a map being built.
- * Owns: #overlay and everything under it — the menu's rail and its detail
- * panel, the Deploy button, the result plate, the pause list and the building
- * bar. The FRAME the first three are drawn in is `.ui-screen` in base.css; what
- * is here is what only this screen puts in it.
+ * Owns: #overlay and everything under it — the menu's column and its intel
+ * plate, the round-over card's result, board and ballot, the building card's
+ * load plate and bar, and the pause list. Three of the four are laid out as
+ * the front end, in ONE frame they share (`#overlay:is(.card-menu,
+ * .card-building, .card-roundover)` below, sized off `base.css`'s unit); the
+ * pause alone is a lid anchored to one side.
  * The key-cap table these cards used to carry is the settings screen's now, and
  * so are its rules; what is left of `kbd` here is the foot's hints.
  * The state rules keyed on #hud (.overlaid, and the pause's pointer-events
@@ -22,9 +24,8 @@
      through a map is not an overlay. */
   z-index: 10;
 }
-/* The round-over card takes the shell's grid and its veil (`.ui-screen
-   .ui-veil`, set by `setCardClass`); the menu and the building card are laid
-   out as the front end, below. */
+/* The menu, the building card and the round-over card are laid out as the
+   front end, below; the pause is the one card that does not take the screen. */
 
 /* =====================================================================
    THE MENU'S BACKDROP — the photograph of the chosen map.
@@ -84,10 +85,10 @@
   transform: scale(1);
 }
 
-/* --- the heading on the round-over card and the pause ---
+/* --- the pause's heading ---
    The hard offset shadow pair is the cel look stated in type: a black drop
-   and a one-pixel cyan lift, no blur on either. The menu's own title is a
-   map's name over its photograph and overrides all of it (`.mm-title`). */
+   and a one-pixel cyan lift, no blur on either. The three front-end cards'
+   titles are set over a photograph and override all of it (`.mm-title`). */
 #overlay h1 {
   font-size: var(--ui-h1);
   font-weight: 900;
@@ -103,8 +104,6 @@
   text-transform: uppercase;
   color: var(--dim);
 }
-#overlay h1.dead { color: var(--theirs); text-shadow: 4px 4px 0 #000; }
-#overlay h1.win { color: var(--good); text-shadow: 4px 4px 0 #000; }
 #overlay .prompt {
   font-size: var(--ui-cap);
   font-weight: 700;
@@ -114,54 +113,6 @@
   animation: pulse 1.4s ease-in-out infinite;
 }
 
-/* --- the deploy button, on the menu and on the round-over card ---
-   The one control on either screen that is the action rather than a
-   setting, so it is the only one painted in the hot colour filled in
-   rather than outlined. Same pointer-events carve-out as the tier row:
-   the overlay around it stays inert. The glyph line names all three
-   inputs, which is what it replaced — a line of prose telling a pad
-   player to click.
-
-   On the menu it is the last thing in the rail with air over it, which is
-   the only separation on that column that is not a hairline: the rows
-   above are parameters and this is what spends them, and a gap says that
-   without a rule anybody has to look at. */
-#overlay button.ov-start {
-  position: relative;
-  font: inherit;
-  pointer-events: auto;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 2px;
-  width: 100%;
-  margin-top: clamp(12px, 2.4vh, 30px);
-  padding: clamp(11px, 1.9vh, 20px) 24px;
-  color: #12141a;
-  background: var(--hot);
-  border: 0;
-  cursor: pointer;
-  clip-path: polygon(14px 0, 100% 0, 100% calc(100% - 14px), calc(100% - 14px) 100%, 0 100%, 0 14px);
-  transition: background 0.12s, transform 0.12s;
-}
-#overlay button.ov-start b {
-  font-size: clamp(15px, 2.3vmin, 24px);
-  font-weight: 800;
-  letter-spacing: 0.3em;
-  text-indent: 0.3em;
-  text-transform: uppercase;
-}
-#overlay button.ov-start i {
-  font-style: normal;
-  font-size: var(--ui-cap);
-  letter-spacing: 0.22em;
-  text-transform: uppercase;
-  color: rgba(18, 20, 26, 0.62);
-}
-#overlay button.ov-start:hover {
-  background: #fff3c4;
-  transform: translateY(-1px);
-}
 /* The sheen the menu's Deploy button carries under the cursor. Held at the
    far end for the back half of the cycle: a sweep that restarted the moment
    it left would be a strobe rather than a highlight. */
@@ -264,222 +215,6 @@
   text-transform: uppercase;
   color: var(--dimmer);
 }
-
-/* =====================================================================
-   THE ROUND-OVER CARD
-   ---------------------------------------------------------------------
-   Two sides facing each other across the margin they finished on. The
-   result plate is capped rather than full-bleed: it is four numbers and
-   a bar, and stretched across an ultrawide the two counts end up a metre
-   apart with the bar between them saying nothing.
-   ===================================================================== */
-#overlay .ov-outcome {
-  display: flex;
-  flex-direction: column;
-  justify-content: center;
-  align-items: center;
-  gap: clamp(14px, 3vh, 34px);
-  width: 100%;
-  height: 100%;
-}
-#overlay .ov-result {
-  --cham: 16px;
-  display: flex;
-  flex-direction: column;
-  gap: clamp(10px, 1.6vh, 18px);
-  width: min(760px, 100%);
-  padding: clamp(16px, 2.6vmin, 30px) clamp(18px, 3vmin, 36px);
-}
-#overlay .ov-result .lbl {
-  font-size: var(--ui-cap);
-  font-weight: 700;
-  letter-spacing: 0.24em;
-  text-transform: uppercase;
-  color: var(--dim);
-}
-#overlay .ov-sides {
-  display: grid;
-  grid-template-columns: max-content minmax(40px, 1fr) max-content;
-  align-items: center;
-  gap: clamp(12px, 2vw, 28px);
-}
-#overlay .ov-sides .side {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-}
-#overlay .ov-sides .side.theirs { text-align: right; }
-#overlay .ov-sides .side span {
-  font-size: var(--ui-cap);
-  letter-spacing: 0.2em;
-  text-transform: uppercase;
-  color: var(--dimmer);
-}
-#overlay .ov-sides .side b {
-  font-size: clamp(26px, 5vmin, 54px);
-  font-weight: 800;
-  line-height: 1;
-}
-#overlay .ov-sides .side.mine b { color: var(--mine); }
-#overlay .ov-sides .side.theirs b { color: var(--theirs); }
-/* The margin, as one bar in two colours. A side that finished at zero
-   gets no segment at all, which is the correct drawing of it. */
-#overlay .ov-split { display: flex; height: 6px; gap: 2px; }
-#overlay .ov-split i.mine { background: var(--mine); }
-#overlay .ov-split i.theirs { background: var(--theirs); }
-#overlay .ov-outcome button.ov-start {
-  width: min(420px, 100%);
-  margin-top: 0;
-}
-/* …and what stands in the button's place in a MATCH, where the next round is
-   the authority's rotation rather than anything this card can ask for. Sized
-   and spaced like the button it replaces so the result block above it does not
-   move between an offline round and a networked one, and deliberately quiet:
-   it is a status line, and a line that looked like a control would be the
-   button all over again. */
-#overlay .ov-outcome .ov-wait {
-  width: min(420px, 100%);
-  padding: clamp(11px, 1.6vh, 16px) 0;
-  text-align: center;
-  font-size: var(--ui-cap);
-  font-weight: 700;
-  letter-spacing: 0.22em;
-  text-transform: uppercase;
-  color: var(--dim);
-}
-
-/* --- the ballot, where the wait line used to be alone ---
-   The next map is the players' in a match, so the block under the result is a
-   row of candidates rather than a sentence about somebody else choosing. It
-   keeps the wait line's width and its place, because a card that changed shape
-   between a server that runs a vote and one that does not would move the
-   result plate above it for no reason a player could name. */
-#overlay .ov-outcome .ov-next {
-  display: flex;
-  flex-direction: column;
-  gap: clamp(6px, 1vh, 12px);
-  width: min(760px, 100%);
-}
-#overlay .ov-vote .vote-head {
-  display: flex;
-  align-items: baseline;
-  justify-content: space-between;
-  gap: 12px;
-}
-#overlay .ov-vote .vote-head .lbl {
-  font-size: var(--ui-cap);
-  font-weight: 700;
-  letter-spacing: 0.24em;
-  text-transform: uppercase;
-  color: var(--dim);
-}
-/* The countdown. Tabular figures and a fixed box, or the row beside it steps
-   sideways every time the number narrows from 8 to 7 — it is redrawn once a
-   second, which is exactly the cadence at which a shifting label is read as a
-   fault. */
-#overlay .ov-vote .vote-clock {
-  min-width: 1.6em;
-  text-align: right;
-  font-variant-numeric: tabular-nums;
-  font-size: var(--ui-row);
-  font-weight: 800;
-  line-height: 1;
-  color: var(--hot);
-}
-/* A ROW OF PICKS IS A GRID OF EQUAL SHARES, NEVER A WRAPPING FLEX ROW — see
-   `docs/ui.md`. Three candidates are three equal columns at every width the
-   card is drawn at, and the narrow rule at the bottom of this file changes the
-   COUNT (to one) rather than letting a long map name decide where the row
-   breaks. */
-#overlay .ov-vote .vote-row {
-  display: grid;
-  grid-auto-flow: column;
-  grid-auto-columns: 1fr;
-  gap: clamp(6px, 1vw, 12px);
-}
-/* One candidate: what it is, how it is doing, and how many said so. The plate
-   is the tier button's, cut with the same chamfer as everything else on this
-   card, and the whole button is the hit area — the bar inside it is a readout
-   and not a control. */
-#overlay .ov-vote button.cand {
-  pointer-events: auto;
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) max-content;
-  grid-template-areas: "name count" "bar bar";
-  align-items: center;
-  gap: 6px clamp(6px, 1vw, 12px);
-  font: inherit;
-  padding: clamp(8px, 1.2vh, 14px) clamp(10px, 1.4vw, 18px);
-  background: var(--plate);
-  border: 0;
-  cursor: pointer;
-  clip-path: polygon(9px 0, 100% 0, 100% calc(100% - 9px), calc(100% - 9px) 100%, 0 100%, 0 9px);
-  transition: background 0.12s, color 0.12s;
-}
-#overlay .ov-vote button.cand .nm {
-  grid-area: name;
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  text-align: left;
-  font-size: var(--ui-cap);
-  font-weight: 800;
-  letter-spacing: 0.16em;
-  text-transform: uppercase;
-  color: #cdd6e6;
-}
-#overlay .ov-vote button.cand .ct {
-  grid-area: count;
-  font-variant-numeric: tabular-nums;
-  font-size: var(--ui-cap);
-  font-weight: 800;
-  color: var(--dimmer);
-}
-/* The share of the votes cast, on the same 6 px rail the result's margin bar
-   above it uses — one reading of "who is ahead" per card, drawn one way. */
-#overlay .ov-vote button.cand .bar {
-  grid-area: bar;
-  display: block;
-  height: 4px;
-  background: rgba(255, 255, 255, 0.12);
-}
-#overlay .ov-vote button.cand .bar b {
-  display: block;
-  width: 0;
-  height: 100%;
-  background: rgba(255, 255, 255, 0.34);
-  transition: width 0.2s;
-}
-#overlay .ov-vote button.cand:hover { background: rgba(255, 255, 255, 0.11); }
-/* WHERE THE CURSOR IS, WHAT THIS PLAYER VOTED FOR, AND WHAT IS WINNING ARE
-   THREE DIFFERENT FACTS AND THEY ARE DRAWN THREE DIFFERENT WAYS — a player
-   whose own vote is losing has to be able to see both at once, and a single
-   highlight would say one of the three and imply the other two.
-   `sel` is the cursor: a hot rule down the leading edge, the same mark the
-   menu's rows take. */
-#overlay .ov-vote button.cand.sel {
-  box-shadow: inset 2px 0 0 var(--hot);
-}
-#overlay .ov-vote button.cand.sel .nm { color: #fff; }
-/* `lead` is what will actually be built if nothing else moves, and it is the
-   quietest of the three on purpose: it is a fact about the tally rather than
-   anything the player has done, and the tally is already drawn in the bar
-   under it. It is stated BEFORE `on` below rather than after it, which is the
-   whole of what makes the two composable: a player whose own vote is also the
-   leader should read as the player's, and the two rules carry the same weight
-   so the later one is what wins. A tie and an empty ballot both lead with the
-   first candidate, which is the map the rotation would have picked anyway — see
-   `server/MapVote.ts`. */
-#overlay .ov-vote button.cand.lead .ct { color: #fff; }
-/* `on` is this player's own vote — filled, because it is the one thing on the
-   row this player did. */
-#overlay .ov-vote button.cand.on {
-  background: rgba(255, 230, 128, 0.16);
-}
-#overlay .ov-vote button.cand.on .nm,
-#overlay .ov-vote button.cand.on .ct { color: var(--hot); }
-#overlay .ov-vote button.cand.on .bar b { background: var(--hot); }
 
 /* =====================================================================
    THE BUILDING CARD'S BAR — the card itself is laid out with the menu,
@@ -661,10 +396,8 @@
    is laid out, and the layout is the part that has to hold from a 32:9
    monitor to a phone held upright.
 
-   **It is NOT drawn in the shell.** `.ui-screen` is a head, a body and a
-   foot around a list and a panel, which is the right frame for a screen
-   whose job is its list. The menu's job is to say what the game looks like,
-   so it has a grid of its own: the photograph is the screen, the round's
+   **It has a grid of its own**, because its job is to say what the game
+   looks like: the photograph is the screen, the round's
    decisions are one column down the left, the system bar is a corner, and
    the intel is a plate on the right. Every one of those is a named AREA,
    which is what lets the phone layouts below be a change of template rather
@@ -695,7 +428,7 @@
 /* The FRAME the menu shares with the building card, which is a title screen
    for the same map laid out in the same place — so its title, its scrim and
    its measures are these, and only its grid is its own. */
-#overlay:is(.card-menu, .card-building) {
+#overlay:is(.card-menu, .card-building, .card-roundover) {
   /* `--u`, `--hit`, `--gx`, `--gy`, the `--t-*` scale and the plate are
      `base.css`'s now, shared with the kit screen, which is laid out the same
      way. What is left here is what only these two cards measure. */
@@ -727,8 +460,8 @@
      out before it reaches them. The bottom band carries the column's lower
      half and the foot; the top band carries the wordmark and the system bar,
      since a photograph's sky is the brightest thing in it; the right edge is
-     the intel's. The friend/foe glow pair and the scanlines are the shell's,
-     so the menu is lit from the same two corners as every other screen. */
+     the intel's. The friend/foe glow pair and the scanlines are
+     the ones the whole interface is lit by, from the same two corners. */
   background:
     linear-gradient(
       90deg,
@@ -766,10 +499,10 @@
 /* Everything that stands on the photograph carries its own separation from
    it — the rule `base.css` states for the gameplay chrome, for the same
    reason: small type over a picture that is not ours to choose. */
-#overlay:is(.card-menu, .card-building) .mm-top,
-#overlay:is(.card-menu, .card-building) .mm-hero,
-#overlay:is(.card-menu, .card-building) .mm-cap,
-#overlay:is(.card-menu, .card-building) .mm-foot {
+#overlay:is(.card-menu, .card-building, .card-roundover) .mm-top,
+#overlay:is(.card-menu, .card-building, .card-roundover) .mm-hero,
+#overlay:is(.card-menu, .card-building, .card-roundover) .mm-cap,
+#overlay:is(.card-menu, .card-building, .card-roundover) .mm-foot {
   text-shadow: 0 2px 8px rgba(0, 0, 0, 0.9), 0 0 2px rgba(0, 0, 0, 0.8);
 }
 
@@ -778,7 +511,7 @@
    colours — is `base.css`'s, shared with the kit screen. What is left here is
    the foot's A, which is drawn as the pad's button whatever the device, since
    it only appears on the pad's half of the hint line. */
-#overlay:is(.card-menu, .card-building) .mm-foot kbd.face-a {
+#overlay:is(.card-menu, .card-building, .card-roundover) .mm-foot kbd.face-a {
   width: max(20px, calc(28 * var(--u)));
   min-width: 0;
   padding: 0;
@@ -792,7 +525,7 @@
 /* =====================================================================
    THE TOP BAR — the wordmark, and the two places you can go instead.
    ===================================================================== */
-#overlay:is(.card-menu, .card-building) .mm-top {
+#overlay:is(.card-menu, .card-building, .card-roundover) .mm-top {
   grid-area: top;
   display: flex;
   align-items: center;
@@ -803,7 +536,7 @@
 /* The wordmark is a LOCKUP in the corner now rather than the title of the
    screen — the map is that. It keeps the cel look stated in type: a hard
    black drop and a one-pixel cyan lift, no blur on either. */
-#overlay:is(.card-menu, .card-building) .mm-brand {
+#overlay:is(.card-menu, .card-building, .card-roundover) .mm-brand {
   display: flex;
   flex-direction: column;
   gap: max(2px, calc(4 * var(--u)));
@@ -811,7 +544,7 @@
   border-left: 2px solid var(--hot);
   min-width: 0;
 }
-#overlay:is(.card-menu, .card-building) .mm-kicker {
+#overlay:is(.card-menu, .card-building, .card-roundover) .mm-kicker {
   font-size: var(--t-cap);
   font-weight: 700;
   letter-spacing: 0.42em;
@@ -819,7 +552,7 @@
   color: rgba(255, 230, 128, 0.72);
   white-space: nowrap;
 }
-#overlay:is(.card-menu, .card-building) .mm-word {
+#overlay:is(.card-menu, .card-building, .card-roundover) .mm-word {
   font-size: var(--t-word);
   font-weight: 900;
   letter-spacing: 0.18em;
@@ -828,12 +561,12 @@
   text-shadow: 3px 3px 0 #000, -1px -1px 0 #35f0ff, 0 3px 16px rgba(0, 0, 0, 0.8);
   white-space: nowrap;
 }
-#overlay:is(.card-menu, .card-building) .mm-sys {
+#overlay:is(.card-menu, .card-building, .card-roundover) .mm-sys {
   display: flex;
   align-items: center;
   gap: max(6px, calc(10 * var(--u)));
 }
-#overlay:is(.card-menu, .card-building) .mm-sysbtn {
+#overlay:is(.card-menu, .card-building, .card-roundover) .mm-sysbtn {
   pointer-events: auto;
   display: inline-flex;
   align-items: center;
@@ -849,31 +582,31 @@
   clip-path: polygon(var(--cut) 0, 100% 0, 100% calc(100% - var(--cut)), calc(100% - var(--cut)) 100%, 0 100%, 0 var(--cut));
   transition: background 0.14s, color 0.14s, box-shadow 0.14s;
 }
-#overlay:is(.card-menu, .card-building) .mm-sysbtn svg {
+#overlay:is(.card-menu, .card-building, .card-roundover) .mm-sysbtn svg {
   width: max(16px, calc(22 * var(--u)));
   height: max(16px, calc(22 * var(--u)));
   flex: none;
 }
-#overlay:is(.card-menu, .card-building) .mm-sysbtn b {
+#overlay:is(.card-menu, .card-building, .card-roundover) .mm-sysbtn b {
   font-size: var(--t-cap);
   font-weight: 800;
   letter-spacing: 0.24em;
   text-transform: uppercase;
   white-space: nowrap;
 }
-#overlay:is(.card-menu, .card-building) .mm-sysbtn:hover {
+#overlay:is(.card-menu, .card-building, .card-roundover) .mm-sysbtn:hover {
   color: var(--hot);
   background: rgba(255, 230, 128, 0.14);
 }
 /* The cursor on the system bar: the hot ring every chamfered control takes
    (INSET, because a clip-path cuts an outer one off with the corner) and a
    bar along the bottom edge, which is the tab's own mark. */
-#overlay:is(.card-menu, .card-building) .mm-sysbtn.sel {
+#overlay:is(.card-menu, .card-building, .card-roundover) .mm-sysbtn.sel {
   color: var(--hot);
   background: rgba(255, 230, 128, 0.12);
   box-shadow: inset 0 0 0 1px rgba(255, 230, 128, 0.7), inset 0 -3px 0 var(--hot);
 }
-#overlay:is(.card-menu, .card-building) a.mm-source {
+#overlay:is(.card-menu, .card-building, .card-roundover) a.mm-source {
   pointer-events: auto;
   display: inline-flex;
   padding: 4px;
@@ -881,9 +614,9 @@
   color: rgba(255, 255, 255, 0.34);
   transition: color 0.15s ease;
 }
-#overlay:is(.card-menu, .card-building) a.mm-source:hover,
-#overlay:is(.card-menu, .card-building) a.mm-source:focus-visible { color: var(--hot); }
-#overlay:is(.card-menu, .card-building) a.mm-source svg {
+#overlay:is(.card-menu, .card-building, .card-roundover) a.mm-source:hover,
+#overlay:is(.card-menu, .card-building, .card-roundover) a.mm-source:focus-visible { color: var(--hot); }
+#overlay:is(.card-menu, .card-building, .card-roundover) a.mm-source svg {
   width: max(16px, calc(22 * var(--u)));
   height: max(16px, calc(22 * var(--u)));
 }
@@ -891,12 +624,12 @@
 /* =====================================================================
    THE HERO — the chosen map's name, as the title of the screen.
    ===================================================================== */
-#overlay:is(.card-menu, .card-building) .mm-hero {
+#overlay:is(.card-menu, .card-building, .card-roundover) .mm-hero {
   grid-area: hero;
   align-self: end;
   min-width: 0;
 }
-#overlay:is(.card-menu, .card-building) .mm-hero-in {
+#overlay:is(.card-menu, .card-building, .card-roundover) .mm-hero-in {
   position: relative;
   isolation: isolate;
   display: flex;
@@ -906,7 +639,7 @@
 /* The map's number in the rotation, set enormous and hollow behind its
    name: the one thing on the card that is pure decoration, and what makes
    the name read as a title card rather than as a label. */
-#overlay:is(.card-menu, .card-building) .mm-index {
+#overlay:is(.card-menu, .card-building, .card-roundover) .mm-index {
   position: absolute;
   z-index: -1;
   left: -0.06em;
@@ -920,7 +653,7 @@
   text-shadow: none;
   pointer-events: none;
 }
-#overlay:is(.card-menu, .card-building) .mm-mode {
+#overlay:is(.card-menu, .card-building, .card-roundover) .mm-mode {
   max-width: 100%;
   font-size: var(--t-cap);
   font-weight: 700;
@@ -934,7 +667,7 @@
 /* The title. `#overlay h1` is the round-over card's and the pause's heading
    and is hot, tracked wide and shadowed hard; this overrides all three,
    because a map's name over its own photograph is white and set tight. */
-#overlay:is(.card-menu, .card-building) .mm-title {
+#overlay:is(.card-menu, .card-building, .card-roundover) .mm-title {
   margin: max(2px, calc(6 * var(--u))) 0 max(6px, calc(12 * var(--u)));
   font-size: var(--t-title);
   font-weight: 900;
@@ -945,7 +678,7 @@
   white-space: nowrap;
   text-shadow: 0.04em 0.045em 0 #000, 0 0.08em 0.6em rgba(0, 0, 0, 0.55);
 }
-#overlay:is(.card-menu, .card-building) .mm-blurb {
+#overlay:is(.card-menu, .card-building, .card-roundover) .mm-blurb {
   max-width: 46ch;
   font-size: var(--t-body);
   line-height: 1.5;
@@ -955,7 +688,7 @@
   -webkit-box-orient: vertical;
   overflow: hidden;
 }
-#overlay:is(.card-menu, .card-building) .mm-facts {
+#overlay:is(.card-menu, .card-building, .card-roundover) .mm-facts {
   display: flex;
   flex-wrap: wrap;
   /* Spaced rather than ruled: a divider is a mark between two figures, and
@@ -968,13 +701,13 @@
   text-transform: uppercase;
   color: rgba(255, 255, 255, 0.52);
 }
-#overlay:is(.card-menu, .card-building) .mm-facts span {
+#overlay:is(.card-menu, .card-building, .card-roundover) .mm-facts span {
   display: inline-flex;
   align-items: baseline;
   gap: 0.5em;
   white-space: nowrap;
 }
-#overlay:is(.card-menu, .card-building) .mm-facts b {
+#overlay:is(.card-menu, .card-building, .card-roundover) .mm-facts b {
   font-size: var(--t-row);
   font-weight: 800;
   letter-spacing: 0.06em;
@@ -983,10 +716,10 @@
 /* A map CHANGE: the new name wipes in from the left while the block slides
    the last few units home. `.swap` is only on a hero written by a patch — a
    raise leaves the arrival to the card's entrance. */
-#overlay:is(.card-menu, .card-building) .mm-hero-in.swap {
+#overlay:is(.card-menu, .card-building, .card-roundover) .mm-hero-in.swap {
   animation: mm-swap 0.45s cubic-bezier(0.16, 0.84, 0.36, 1) both;
 }
-#overlay:is(.card-menu, .card-building) .mm-hero-in.swap .mm-title {
+#overlay:is(.card-menu, .card-building, .card-roundover) .mm-hero-in.swap .mm-title {
   animation: mm-wipe 0.55s cubic-bezier(0.6, 0, 0.2, 1) both;
 }
 @keyframes mm-swap {
@@ -1047,7 +780,7 @@
   opacity: 1;
   transform: none;
 }
-#overlay.card-menu .mm-cap {
+#overlay:is(.card-menu, .card-roundover) .mm-cap {
   display: flex;
   align-items: baseline;
   justify-content: space-between;
@@ -1057,12 +790,12 @@
   letter-spacing: 0.3em;
   text-transform: uppercase;
 }
-#overlay.card-menu .mm-cap span {
+#overlay:is(.card-menu, .card-roundover) .mm-cap span {
   font-weight: 700;
   color: rgba(255, 255, 255, 0.5);
   transition: color 0.14s;
 }
-#overlay.card-menu .mm-cap b {
+#overlay:is(.card-menu, .card-roundover) .mm-cap b {
   font-weight: 700;
   letter-spacing: 0.2em;
   color: rgba(255, 255, 255, 0.72);
@@ -1331,10 +1064,10 @@
   margin-top: max(4px, calc(10 * var(--u)));
   transition: filter 0.2s;
 }
-#overlay.card-menu .mm-go.sel {
+#overlay:is(.card-menu, .card-roundover) .mm-go.sel {
   filter: drop-shadow(0 0 calc(18 * var(--u)) rgba(255, 230, 128, 0.42));
 }
-#overlay.card-menu .mm-deploy {
+#overlay:is(.card-menu, .card-roundover) .mm-deploy {
   --dcut: max(10px, calc(18 * var(--u)));
   pointer-events: auto;
   position: relative;
@@ -1354,20 +1087,20 @@
   clip-path: polygon(var(--dcut) 0, 100% 0, 100% calc(100% - var(--dcut)), calc(100% - var(--dcut)) 100%, 0 100%, 0 var(--dcut));
   transition: background 0.12s;
 }
-#overlay.card-menu .mm-deploy:hover { background: #fff3c4; }
-#overlay.card-menu .mm-deploy-t {
+#overlay:is(.card-menu, .card-roundover) .mm-deploy:hover { background: #fff3c4; }
+#overlay:is(.card-menu, .card-roundover) .mm-deploy-t {
   display: flex;
   flex-direction: column;
   gap: max(2px, calc(3 * var(--u)));
 }
-#overlay.card-menu .mm-deploy-t b {
+#overlay:is(.card-menu, .card-roundover) .mm-deploy-t b {
   font-size: var(--t-big);
   font-weight: 900;
   letter-spacing: 0.3em;
   line-height: 1;
   text-transform: uppercase;
 }
-#overlay.card-menu .mm-deploy-t i {
+#overlay:is(.card-menu, .card-roundover) .mm-deploy-t i {
   font-style: normal;
   font-size: var(--t-cap);
   font-weight: 700;
@@ -1375,12 +1108,12 @@
   text-transform: uppercase;
   color: rgba(18, 20, 26, 0.58);
 }
-#overlay.card-menu .mm-deploy kbd.gl {
+#overlay:is(.card-menu, .card-roundover) .mm-deploy kbd.gl {
   color: #12141a;
   background: rgba(18, 20, 26, 0.1);
   box-shadow: inset 0 0 0 1px rgba(18, 20, 26, 0.4);
 }
-#overlay.card-menu .mm-deploy::after {
+#overlay:is(.card-menu, .card-roundover) .mm-deploy::after {
   content: "";
   position: absolute;
   top: 0;
@@ -1391,7 +1124,7 @@
   opacity: 0;
   pointer-events: none;
 }
-#overlay.card-menu .mm-go.sel .mm-deploy::after {
+#overlay:is(.card-menu, .card-roundover) .mm-go.sel .mm-deploy::after {
   opacity: 1;
   animation: ov-sheen 3.4s ease-in-out infinite;
 }
@@ -1406,7 +1139,7 @@
    room drops (see the layouts below). Its content is rewritten on every
    cursor move and fades in, which a rewrite cannot interrupt.
    ===================================================================== */
-#overlay:is(.card-menu, .card-building) .mm-intel {
+#overlay:is(.card-menu, .card-building, .card-roundover) .mm-intel {
   grid-area: intel;
   align-self: end;
   min-width: 0;
@@ -1415,7 +1148,7 @@
   box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.09);
   clip-path: polygon(16px 0, 100% 0, 100% calc(100% - 16px), calc(100% - 16px) 100%, 0 100%, 0 16px);
 }
-#overlay:is(.card-menu, .card-building) .mm-intel-in {
+#overlay:is(.card-menu, .card-building, .card-roundover) .mm-intel-in {
   display: flex;
   flex-direction: column;
   gap: max(10px, calc(16 * var(--u)));
@@ -1425,11 +1158,11 @@
   from { opacity: 0; transform: translate3d(0, 4px, 0); }
   to { opacity: 1; transform: none; }
 }
-#overlay:is(.card-menu, .card-building) .mm-intel .ov-detail-head {
+#overlay:is(.card-menu, .card-building, .card-roundover) .mm-intel .ov-detail-head {
   padding-bottom: max(7px, calc(12 * var(--u)));
   border-bottom: 1px solid var(--rule);
 }
-#overlay:is(.card-menu, .card-building) .mm-intel .ov-detail-head::after {
+#overlay:is(.card-menu, .card-building, .card-roundover) .mm-intel .ov-detail-head::after {
   content: "";
   display: block;
   width: max(26px, calc(48 * var(--u)));
@@ -1438,20 +1171,20 @@
   margin-bottom: calc(-1 * max(7px, calc(12 * var(--u))) - 1px);
   background: var(--hot);
 }
-#overlay:is(.card-menu, .card-building) .mm-intel .ui-eyebrow { font-size: var(--t-cap); }
-#overlay:is(.card-menu, .card-building) .mm-intel h3 {
+#overlay:is(.card-menu, .card-building, .card-roundover) .mm-intel .ui-eyebrow { font-size: var(--t-cap); }
+#overlay:is(.card-menu, .card-building, .card-roundover) .mm-intel h3 {
   font-size: max(17px, calc(30 * var(--u)));
   letter-spacing: 0.12em;
 }
-#overlay:is(.card-menu, .card-building) .mm-intel .ov-blurb {
+#overlay:is(.card-menu, .card-building, .card-roundover) .mm-intel .ov-blurb {
   font-size: var(--t-body);
   color: rgba(255, 255, 255, 0.66);
 }
-#overlay:is(.card-menu, .card-building) .mm-intel .ui-facts b { font-size: max(15px, calc(26 * var(--u))); }
-#overlay:is(.card-menu, .card-building) .mm-intel .ui-facts span,
-#overlay:is(.card-menu, .card-building) .mm-intel .ov-slot i { font-size: var(--t-cap); }
-#overlay:is(.card-menu, .card-building) .mm-intel .ov-slot b { font-size: var(--t-row); }
-#overlay:is(.card-menu, .card-building) .mm-intel .ov-thumb { max-width: 100%; }
+#overlay:is(.card-menu, .card-building, .card-roundover) .mm-intel .ui-facts b { font-size: max(15px, calc(26 * var(--u))); }
+#overlay:is(.card-menu, .card-building, .card-roundover) .mm-intel .ui-facts span,
+#overlay:is(.card-menu, .card-building, .card-roundover) .mm-intel .ov-slot i { font-size: var(--t-cap); }
+#overlay:is(.card-menu, .card-building, .card-roundover) .mm-intel .ov-slot b { font-size: var(--t-row); }
+#overlay:is(.card-menu, .card-building, .card-roundover) .mm-intel .ov-thumb { max-width: 100%; }
 /* The key to the plan's two marks that are not self-evident — whose deploy
    point is whose — and to the flag, which is the same hexagon on every map
    in the game and is named once here. */
@@ -1481,7 +1214,7 @@
 /* --- the foot: how to drive the card, for the device in hand ---
    Right-aligned under the intel, clear of the column, and absent under a
    finger: a hint line naming keys to a phone is a line of lies. */
-#overlay.card-menu .mm-foot {
+#overlay:is(.card-menu, .card-roundover) .mm-foot {
   grid-area: foot;
   justify-self: end;
   display: flex;
@@ -1493,8 +1226,8 @@
   text-transform: uppercase;
   color: rgba(255, 255, 255, 0.42);
 }
-#overlay.card-menu .mm-foot span { display: inline-flex; align-items: center; gap: 5px; }
-#overlay.card-menu .mm-foot kbd {
+#overlay:is(.card-menu, .card-roundover) .mm-foot span { display: inline-flex; align-items: center; gap: 5px; }
+#overlay:is(.card-menu, .card-roundover) .mm-foot kbd {
   min-width: max(20px, calc(24 * var(--u)));
   height: max(20px, calc(24 * var(--u)));
   display: inline-flex;
@@ -1504,11 +1237,11 @@
   font-size: var(--t-cap);
   text-shadow: none;
 }
-#overlay.card-menu .mm-foot kbd.pd { color: var(--hot); box-shadow: inset 0 0 0 1px rgba(255, 230, 128, 0.35); }
-#overlay.card-menu .mm-foot kbd.face-a { color: #0b0d12; }
-#overlay.card-menu.dev-kbm .mm-foot [data-dev="pad"],
-#overlay.card-menu.dev-pad .mm-foot [data-dev="kbm"],
-#overlay.card-menu.dev-touch .mm-foot { display: none; }
+#overlay:is(.card-menu, .card-roundover) .mm-foot kbd.pd { color: var(--hot); box-shadow: inset 0 0 0 1px rgba(255, 230, 128, 0.35); }
+#overlay:is(.card-menu, .card-roundover) .mm-foot kbd.face-a { color: #0b0d12; }
+#overlay:is(.card-menu, .card-roundover).dev-kbm .mm-foot [data-dev="pad"],
+#overlay:is(.card-menu, .card-roundover).dev-pad .mm-foot [data-dev="kbm"],
+#overlay:is(.card-menu, .card-roundover).dev-touch .mm-foot { display: none; }
 
 /* --- the card arriving ---
    Staggered, and every block is opacity and a transform so the whole
@@ -1782,6 +1515,564 @@
 }
 
 /* =====================================================================
+   THE ROUND-OVER CARD — a title screen for the result.
+   ---------------------------------------------------------------------
+   `OverlayScreen.showRoundOver` says what it is and why. It stands in the
+   MENU's frame (the shared block above: the unit, the scrim, the lockup,
+   the system corner, the hero and the intel plate are the menu's own
+   rules), so the result is set where the menu sets a map's name, over the
+   photograph of the ground the round was fought on — which is also what
+   the building card for another round on it stands on, so pressing the
+   button leaves the picture and the lockup where they are.
+
+   The column is what the round came to, read top to bottom — the two
+   sides' reinforcements, the player's own round, and what happens next,
+   which is the one control on the card and stands where the menu's Deploy
+   stands. The intel plate is the top of the board.
+   ===================================================================== */
+#overlay.card-roundover {
+  /* Wider than the menu's intel: the board is a name and three figures a
+     line, and a name may be twenty characters a person typed. */
+  --intel: clamp(300px, 29vw, calc(480 * var(--u)));
+  grid-template-columns: minmax(0, var(--col)) minmax(0, 1fr) var(--intel);
+  grid-template-rows: auto minmax(0, 1fr) auto auto auto auto auto;
+  grid-template-areas:
+    "top    top  top"
+    ".      .    intel"
+    "hero   hero intel"
+    "result .    intel"
+    "you    .    intel"
+    "next   .    intel"
+    "foot   foot foot";
+}
+
+/* --- the result ---
+   The menu's title rule, in the colour of the side that holds the ground:
+   the one saturated word on the card, because colour means ownership. The
+   hollow numeral behind it is the map's number, as the menu and the
+   building card draw it. */
+#overlay.card-roundover .ro-hero.won .mm-title { color: var(--mine); }
+#overlay.card-roundover .ro-hero.lost .mm-title { color: var(--theirs); }
+#overlay.card-roundover .ro-hero.lost .mm-mode { color: rgba(255, 150, 140, 0.92); }
+#overlay.card-roundover .ro-hero.lost .mm-index {
+  -webkit-text-stroke-color: rgba(255, 90, 79, 0.2);
+}
+
+/* --- the two read plates ---
+   What the round came to: dark plates in the menu's own chamfer, a caption
+   over each with a figure at its far end, and nothing on either a pointer
+   can do anything with. */
+#overlay.card-roundover .ro-plate {
+  min-width: 0;
+  padding: max(10px, calc(16 * var(--u))) max(14px, calc(24 * var(--u)));
+  background: linear-gradient(100deg, rgba(14, 18, 28, 0.88), rgba(10, 13, 21, 0.74));
+  box-shadow: var(--plate-edge);
+  clip-path: polygon(var(--cut) 0, 100% 0, 100% calc(100% - var(--cut)), calc(100% - var(--cut)) 100%, 0 100%, 0 var(--cut));
+}
+#overlay.card-roundover .ro-result { grid-area: result; }
+#overlay.card-roundover .ro-you { grid-area: you; }
+#overlay.card-roundover .ro-cap {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: max(6px, calc(10 * var(--u)));
+  font-size: var(--t-cap);
+  letter-spacing: 0.3em;
+  text-transform: uppercase;
+}
+#overlay.card-roundover .ro-cap span {
+  font-weight: 700;
+  color: rgba(255, 255, 255, 0.5);
+  white-space: nowrap;
+}
+#overlay.card-roundover .ro-cap b {
+  font-weight: 800;
+  letter-spacing: 0.16em;
+  color: rgba(255, 255, 255, 0.78);
+  white-space: nowrap;
+}
+#overlay.card-roundover .ro-cap b.place { color: var(--hot); }
+#overlay.card-roundover .ro-cap b.up { color: var(--mine); }
+#overlay.card-roundover .ro-cap b.down { color: var(--theirs); }
+
+/* The two sides facing each other across the margin, each in its own
+   colour. A side that finished at zero gets no segment of the bar at all,
+   which is the correct drawing of it. */
+#overlay.card-roundover .ro-sides {
+  display: grid;
+  grid-template-columns: max-content minmax(24px, 1fr) max-content;
+  align-items: end;
+  gap: max(10px, calc(20 * var(--u)));
+}
+#overlay.card-roundover .ro-sides .side {
+  display: flex;
+  flex-direction: column;
+  gap: max(2px, calc(4 * var(--u)));
+}
+#overlay.card-roundover .ro-sides .side.theirs { text-align: right; }
+#overlay.card-roundover .ro-sides .side span {
+  font-size: var(--t-cap);
+  font-weight: 700;
+  letter-spacing: 0.24em;
+  text-transform: uppercase;
+  color: rgba(255, 255, 255, 0.55);
+}
+#overlay.card-roundover .ro-sides .side b {
+  font-size: max(24px, calc(50 * var(--u)));
+  font-weight: 900;
+  line-height: 0.95;
+  font-variant-numeric: tabular-nums;
+}
+#overlay.card-roundover .ro-sides .side.mine b { color: var(--mine); }
+#overlay.card-roundover .ro-sides .side.theirs b { color: var(--theirs); }
+#overlay.card-roundover .ro-split {
+  display: flex;
+  gap: 2px;
+  height: max(4px, calc(6 * var(--u)));
+  margin-bottom: max(6px, calc(10 * var(--u)));
+  background: rgba(255, 255, 255, 0.08);
+}
+#overlay.card-roundover .ro-split i.mine { background: var(--mine); }
+#overlay.card-roundover .ro-split i.theirs { background: var(--theirs); }
+
+/* The player's own line: where they finished, in the hot colour at the
+   caption's far end, over three figures in equal shares. */
+#overlay.card-roundover .ro-figs {
+  display: grid;
+  grid-auto-flow: column;
+  grid-auto-columns: minmax(0, 1fr);
+  gap: max(8px, calc(14 * var(--u)));
+}
+#overlay.card-roundover .ro-figs div {
+  display: flex;
+  flex-direction: column;
+  gap: max(2px, calc(4 * var(--u)));
+  min-width: 0;
+}
+#overlay.card-roundover .ro-figs b {
+  font-size: max(18px, calc(34 * var(--u)));
+  font-weight: 900;
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+  color: #fff;
+}
+#overlay.card-roundover .ro-figs span {
+  font-size: var(--t-cap);
+  font-weight: 700;
+  letter-spacing: 0.22em;
+  text-transform: uppercase;
+  color: rgba(255, 255, 255, 0.5);
+}
+
+/* --- what happens next ---
+   Offline, Another round: the menu's Deploy plate, and always under the
+   cursor, because it is the one thing on the card the confirm fires. In a
+   match, the ballot or the wait plate standing in for one. */
+#overlay.card-roundover .ro-next {
+  grid-area: next;
+  min-width: 0;
+  margin-top: max(4px, calc(10 * var(--u)));
+}
+#overlay.card-roundover .ro-wait {
+  --dcut: max(10px, calc(18 * var(--u)));
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: max(2px, calc(4 * var(--u)));
+  min-height: max(52px, calc(82 * var(--u)));
+  padding: max(10px, calc(16 * var(--u))) max(16px, calc(30 * var(--u)));
+  background: linear-gradient(100deg, rgba(14, 18, 28, 0.9), rgba(10, 13, 21, 0.78));
+  box-shadow: var(--plate-edge);
+  clip-path: polygon(var(--dcut) 0, 100% 0, 100% calc(100% - var(--dcut)), calc(100% - var(--dcut)) 100%, 0 100%, 0 var(--dcut));
+}
+#overlay.card-roundover .ro-wait b {
+  font-size: var(--t-big);
+  font-weight: 900;
+  letter-spacing: 0.3em;
+  line-height: 1;
+  text-transform: uppercase;
+  color: #fff;
+}
+#overlay.card-roundover .ro-wait i {
+  font-style: normal;
+  font-size: var(--t-cap);
+  font-weight: 700;
+  letter-spacing: 0.24em;
+  text-transform: uppercase;
+  color: rgba(255, 255, 255, 0.5);
+}
+
+/* --- the ballot ---
+   A caption with the countdown at its far end, over the candidates as
+   plates carrying a slice of their map's photograph — the menu's reel and
+   the lobby's plates draw a map the same way. A ROW OF PICKS IS A GRID OF
+   EQUAL SHARES (`docs/ui.md`), and the narrow rule below changes the COUNT
+   rather than letting the longest name decide where the row breaks.
+
+   WHERE THE CURSOR IS, WHAT THIS PLAYER VOTED FOR, AND WHAT IS WINNING ARE
+   THREE DIFFERENT FACTS AND THEY ARE DRAWN THREE DIFFERENT WAYS — a player
+   whose own vote is losing has to see both at once. The cursor is the
+   menu's sight brackets, on the unclipped wrapper; the vote is the hot fill
+   of the bar, the name and a tag; the leader is the count set white. */
+#overlay.card-roundover .ro-vote .vote-clock {
+  min-width: 3ch;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  color: var(--hot);
+}
+#overlay.card-roundover .ro-cands {
+  display: grid;
+  grid-auto-flow: column;
+  grid-auto-columns: minmax(0, 1fr);
+  gap: max(6px, calc(10 * var(--u)));
+}
+#overlay.card-roundover .ro-cand-w {
+  position: relative;
+  min-width: 0;
+}
+#overlay.card-roundover .ro-cand-w::before,
+#overlay.card-roundover .ro-cand-w::after {
+  content: "";
+  position: absolute;
+  z-index: 1;
+  width: max(9px, calc(14 * var(--u)));
+  height: max(9px, calc(14 * var(--u)));
+  border: 2px solid var(--hot);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.14s, transform 0.22s cubic-bezier(0.16, 0.84, 0.36, 1);
+}
+#overlay.card-roundover .ro-cand-w::before {
+  top: -5px;
+  left: -5px;
+  border-right: 0;
+  border-bottom: 0;
+  transform: translate(-5px, -5px);
+}
+#overlay.card-roundover .ro-cand-w::after {
+  bottom: -5px;
+  right: -5px;
+  border-left: 0;
+  border-top: 0;
+  transform: translate(5px, 5px);
+}
+#overlay.card-roundover .ro-cand-w.sel::before,
+#overlay.card-roundover .ro-cand-w.sel::after {
+  opacity: 1;
+  transform: none;
+}
+#overlay.card-roundover .ro-cand {
+  pointer-events: auto;
+  position: relative;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) max-content;
+  /* The count sits on the tag's line rather than beside the name, so the
+     name has the plate's whole width: three candidates across a laptop's
+     column is three plates of about 140 px. */
+  grid-template-areas:
+    "tag  count"
+    "name name";
+  align-content: end;
+  row-gap: max(2px, calc(4 * var(--u)));
+  column-gap: 8px;
+  width: 100%;
+  min-height: max(58px, calc(96 * var(--u)));
+  padding: max(8px, calc(12 * var(--u))) max(10px, calc(14 * var(--u))) max(12px, calc(16 * var(--u)));
+  font: inherit;
+  text-align: left;
+  color: #fff;
+  border: 0;
+  cursor: pointer;
+  /* The picture under a floor of dark, so the name over it reads whatever
+     the sky was doing; a map with no photograph is the plate alone. */
+  background: #151a24 center / cover no-repeat;
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.14);
+  clip-path: polygon(var(--cut) 0, 100% 0, 100% calc(100% - var(--cut)), calc(100% - var(--cut)) 100%, 0 100%, 0 var(--cut));
+  transition: box-shadow 0.14s;
+}
+#overlay.card-roundover .ro-cand::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(to top, rgba(4, 6, 12, 0.92) 0%, rgba(4, 6, 12, 0.5) 55%, rgba(4, 6, 12, 0.2) 100%);
+  pointer-events: none;
+  transition: background 0.14s;
+}
+#overlay.card-roundover .ro-cand > * { position: relative; }
+#overlay.card-roundover .ro-cand:hover::before {
+  background: linear-gradient(to top, rgba(4, 6, 12, 0.82) 0%, rgba(4, 6, 12, 0.3) 60%, rgba(4, 6, 12, 0) 100%);
+}
+#overlay.card-roundover .ro-cand .nm {
+  grid-area: name;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: var(--t-body);
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: #dfe5ee;
+  text-shadow: 0 1px 4px rgba(0, 0, 0, 0.9);
+}
+#overlay.card-roundover .ro-cand .ct {
+  grid-area: count;
+  font-size: var(--t-row);
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+  color: rgba(255, 255, 255, 0.5);
+}
+#overlay.card-roundover .ro-cand .tag {
+  grid-area: tag;
+  justify-self: start;
+  font-style: normal;
+  font-size: var(--t-cap);
+  font-weight: 800;
+  letter-spacing: 0.22em;
+  text-transform: uppercase;
+  color: var(--hot);
+  visibility: hidden;
+}
+/* The share of the votes cast, along the plate's bottom edge as the
+   building card's bar runs along its plate. A transform, so a new tally
+   slides on the compositor. */
+#overlay.card-roundover .ro-cand .bar {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: max(3px, calc(4 * var(--u)));
+  background: rgba(255, 255, 255, 0.1);
+}
+#overlay.card-roundover .ro-cand .bar b {
+  display: block;
+  height: 100%;
+  background: rgba(255, 255, 255, 0.45);
+  transform: scaleX(0);
+  transform-origin: left;
+  transition: transform 0.3s cubic-bezier(0.2, 0.8, 0.3, 1);
+}
+#overlay.card-roundover .ro-cand-w.lead .ct { color: #fff; }
+#overlay.card-roundover .ro-cand-w.sel .ro-cand { box-shadow: inset 0 0 0 1px rgba(255, 230, 128, 0.55); }
+#overlay.card-roundover .ro-cand-w.sel .nm { color: #fff; }
+#overlay.card-roundover .ro-cand-w.on .ro-cand { box-shadow: inset 0 0 0 2px var(--hot); }
+#overlay.card-roundover .ro-cand-w.on .nm,
+#overlay.card-roundover .ro-cand-w.on .ct { color: var(--hot); }
+#overlay.card-roundover .ro-cand-w.on .tag { visibility: visible; }
+#overlay.card-roundover .ro-cand-w.on .bar b { background: var(--hot); }
+
+/* --- the board ---
+   The top of the round's board, ranked by points as the Tab board is, each
+   line marked with its side's colour down its leading edge and the player's
+   own line picked out hot. Figures are tabular so the columns hold. */
+#overlay.card-roundover .ro-board {
+  display: flex;
+  flex-direction: column;
+  gap: max(2px, calc(3 * var(--u)));
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+#overlay.card-roundover .ro-board li {
+  display: grid;
+  grid-template-columns: 1.6em 3px minmax(0, 1fr) 1.8em 1.8em 3em;
+  align-items: center;
+  column-gap: max(6px, calc(8 * var(--u)));
+  min-height: max(22px, calc(34 * var(--u)));
+  padding: 0 max(8px, calc(12 * var(--u))) 0 max(4px, calc(8 * var(--u)));
+  font-size: var(--t-body);
+  font-variant-numeric: tabular-nums;
+  color: rgba(255, 255, 255, 0.72);
+  background: rgba(255, 255, 255, 0.035);
+}
+#overlay.card-roundover .ro-board li > span { text-align: right; }
+#overlay.card-roundover .ro-board li .rk {
+  text-align: right;
+  font-weight: 800;
+  color: rgba(255, 255, 255, 0.45);
+}
+#overlay.card-roundover .ro-board li > i {
+  align-self: stretch;
+  margin: 5px 0;
+}
+#overlay.card-roundover .ro-board li.mine > i { background: var(--mine); }
+#overlay.card-roundover .ro-board li.theirs > i { background: var(--theirs); }
+#overlay.card-roundover .ro-board li .nm {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: 700;
+  /* A person's name as they typed it, up to `MAX_NAME_LENGTH`, and not
+     tracked out: twenty tracked capitals do not fit a plate this wide, and a
+     name is the one thing on the board nobody can guess from what is left. */
+  letter-spacing: 0.02em;
+  color: #e6ebf2;
+}
+#overlay.card-roundover .ro-board li .pts { font-weight: 800; color: #fff; }
+#overlay.card-roundover .ro-board li.head {
+  min-height: 0;
+  padding-bottom: max(3px, calc(5 * var(--u)));
+  font-size: var(--t-cap);
+  font-weight: 700;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  color: rgba(255, 255, 255, 0.42);
+  background: none;
+}
+#overlay.card-roundover .ro-board li.head b { font-weight: 700; }
+#overlay.card-roundover .ro-board li.head .pts { font-weight: 700; color: rgba(255, 255, 255, 0.42); }
+#overlay.card-roundover .ro-board li.gap {
+  min-height: max(6px, calc(10 * var(--u)));
+  background: none;
+  border-top: 1px dashed rgba(255, 255, 255, 0.14);
+  margin-top: max(3px, calc(5 * var(--u)));
+}
+#overlay.card-roundover .ro-board li.you {
+  background: rgba(255, 230, 128, 0.12);
+  box-shadow: inset 0 0 0 1px rgba(255, 230, 128, 0.4);
+}
+#overlay.card-roundover .ro-board li.you .nm,
+#overlay.card-roundover .ro-board li.you .rk { color: var(--hot); }
+
+/* The way out, which loses its label on a narrow viewport and must stay a
+   thumb's width when it is only the mark. */
+#overlay.card-roundover .ro-leave { min-width: var(--hit); justify-content: center; }
+
+/* --- the foot: the ballot's cursor verbs, and nothing without one --- */
+#overlay.card-roundover .mm-foot { grid-area: foot; }
+
+/* --- the card arriving ---
+   The menu's entrance, dealt in the column's order, and the result WIPED in
+   as the menu wipes in a new map's name. The margin bar grows from the
+   left once its plate has landed. Opacity and transforms only. */
+#overlay.card-roundover.enter .mm-top { animation: mm-drop 0.5s ease both; }
+#overlay.card-roundover.enter .mm-hero {
+  animation: mm-from-left 0.7s cubic-bezier(0.16, 0.84, 0.36, 1) 0.05s both;
+}
+#overlay.card-roundover.enter .mm-title {
+  animation: mm-wipe 0.7s cubic-bezier(0.6, 0, 0.2, 1) 0.12s both;
+}
+#overlay.card-roundover.enter :is(.ro-result, .ro-you, .ro-next) {
+  animation: mm-rise 0.5s cubic-bezier(0.16, 0.84, 0.36, 1) both;
+}
+#overlay.card-roundover.enter .ro-result { animation-delay: 0.16s; }
+#overlay.card-roundover.enter .ro-you { animation-delay: 0.22s; }
+#overlay.card-roundover.enter .ro-next { animation-delay: 0.28s; }
+#overlay.card-roundover.enter .ro-split {
+  transform-origin: left;
+  animation: ro-grow 0.7s cubic-bezier(0.2, 0.8, 0.3, 1) 0.4s both;
+}
+#overlay.card-roundover.enter .mm-intel { animation: ov-arrive 0.6s ease 0.32s both; }
+#overlay.card-roundover.enter .mm-foot { animation: ov-arrive 0.6s ease 0.42s both; }
+@keyframes ro-grow {
+  from { transform: scaleX(0); }
+  to { transform: none; }
+}
+
+/* --- the round-over card at every viewport ---
+   The menu's four templates over the card's own areas. The board goes with
+   the menu's intel at the same widths; the player's own line never goes,
+   since it is in the column rather than on the board. */
+@media (max-width: 1099px), (max-height: 619px) {
+  #overlay.card-roundover {
+    --col: clamp(300px, 58vw, calc(720 * var(--u)));
+    grid-template-columns: minmax(0, var(--col)) minmax(0, 1fr);
+    grid-template-areas:
+      "top    top"
+      ".      ."
+      "hero   hero"
+      "result ."
+      "you    ."
+      "next   ."
+      "foot   foot";
+  }
+  #overlay.card-roundover .mm-intel { display: none; }
+}
+/* A phone held sideways: the result down the left, and the column under
+   the right thumb — the ballot across the whole foot, where three names
+   have the width to be read. */
+@media (orientation: landscape) and (max-height: 560px) {
+  #overlay.card-roundover {
+    --gy: 10px;
+    grid-template-columns: minmax(0, 1fr) minmax(0, clamp(250px, 48%, 460px));
+    grid-template-rows: auto minmax(0, 1fr) auto auto auto auto;
+    grid-template-areas:
+      "top  top"
+      ".    ."
+      "hero result"
+      "hero you"
+      "hero next"
+      "foot foot";
+    column-gap: clamp(14px, 3vw, 32px);
+    row-gap: 8px;
+    background:
+      linear-gradient(0deg, rgba(2, 3, 8, 0.94) 0%, rgba(2, 3, 8, 0.62) 42%, rgba(2, 3, 8, 0) 72%),
+      linear-gradient(180deg, rgba(2, 3, 8, 0.72) 0%, rgba(2, 3, 8, 0) 26%),
+      linear-gradient(90deg, rgba(3, 5, 11, 0.55) 0%, rgba(3, 5, 11, 0) 60%);
+  }
+  #overlay.card-roundover:has(.ro-vote) {
+    grid-template-areas:
+      "top  top"
+      ".    ."
+      "hero result"
+      "hero you"
+      "next next"
+      "foot foot";
+  }
+  #overlay.card-roundover .mm-kicker,
+  #overlay.card-roundover .mm-index { display: none; }
+  #overlay.card-roundover .mm-hero { align-self: end; }
+  #overlay.card-roundover .mm-title {
+    margin-bottom: 4px;
+    font-size: clamp(28px, 7vw, 60px);
+  }
+  #overlay.card-roundover .mm-facts { margin-top: 4px; }
+  #overlay.card-roundover .ro-next { margin-top: 0; }
+  #overlay.card-roundover .ro-plate { padding: 7px 12px; }
+  #overlay.card-roundover .ro-cap { margin-bottom: 4px; }
+  #overlay.card-roundover .ro-cand { min-height: 48px; }
+}
+@media (orientation: landscape) and (max-height: 560px) and (max-width: 740px) {
+  #overlay.card-roundover .mm-blurb { display: none; }
+  #overlay.card-roundover .mm-sysbtn b { display: none; }
+}
+@media (orientation: portrait) {
+  #overlay.card-roundover {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: auto minmax(0, 1fr) auto auto auto auto auto;
+    grid-template-areas: "top" "." "hero" "result" "you" "next" "foot";
+    row-gap: max(10px, calc(18 * var(--u)));
+    background:
+      linear-gradient(0deg, rgba(2, 3, 8, 0.95) 0%, rgba(2, 3, 8, 0.8) 42%, rgba(2, 3, 8, 0.2) 68%, rgba(2, 3, 8, 0) 80%),
+      linear-gradient(180deg, rgba(2, 3, 8, 0.78) 0%, rgba(2, 3, 8, 0) 18%),
+      radial-gradient(120% 60% at 0% 100%, rgba(255, 230, 128, 0.1), transparent 60%),
+      repeating-linear-gradient(to bottom, rgba(255, 255, 255, 0.012) 0 1px, transparent 1px 3px);
+  }
+  #overlay.card-roundover > :is(.mm-hero, .ro-plate, .ro-next) {
+    width: 100%;
+    max-width: 680px;
+  }
+  #overlay.card-roundover .mm-intel { display: none; }
+}
+/* The ballot's COUNT, not its break: three names across 560 px of glass is
+   three ellipses, and a map you cannot read is not one you can vote for. */
+@media (max-width: 560px) {
+  #overlay.card-roundover .mm-kicker { display: none; }
+  #overlay.card-roundover .mm-sysbtn b { display: none; }
+  #overlay.card-roundover .mm-mode { letter-spacing: 0.22em; }
+  #overlay.card-roundover .ro-cands { grid-auto-flow: row; }
+  #overlay.card-roundover .ro-cand { min-height: 44px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  #overlay.card-roundover.enter :is(.mm-top, .mm-hero, .mm-title, .ro-result, .ro-you, .ro-next, .ro-split, .mm-intel, .mm-foot) {
+    animation: none;
+  }
+  #overlay.card-roundover .mm-go.sel .mm-deploy::after { animation: none; opacity: 0; }
+}
+
+/* =====================================================================
    THE MENU AT EVERY VIEWPORT
    ---------------------------------------------------------------------
    Four templates over one set of areas, and which one a viewport gets is
@@ -1900,18 +2191,13 @@
   #overlay.card-menu .mm-hero-in.swap,
   #overlay.card-menu .mm-hero-in.swap .mm-title,
   #overlay.card-menu .mm-intel-in,
-  #overlay.card-menu .mm-go.sel .mm-deploy::after {
+  #overlay:is(.card-menu, .card-roundover) .mm-go.sel .mm-deploy::after {
     animation: none;
   }
-  #overlay.card-menu .mm-go.sel .mm-deploy::after { opacity: 0; }
+  #overlay:is(.card-menu, .card-roundover) .mm-go.sel .mm-deploy::after { opacity: 0; }
   #overlay.card-menu .mm-card { transition: filter 0.25s; }
 }
 
-/* The ballot's COUNT, not its break: three names across 560 px of glass is
-   three ellipses, and a map you cannot read is not one you can vote for. */
-@media (max-width: 560px) {
-  #overlay .ov-vote .vote-row { grid-auto-flow: row; }
-}
 /* The backdrop's drift is decoration over a screen that works without it.
    Its cross-fade is left alone: that is a TRANSITION, and what stops a map
    change being a jump cut. */

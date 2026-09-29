@@ -2127,6 +2127,12 @@ export class Game {
     // on a card the wire raised, and `sendVote` refuses a press with no ballot
     // standing behind it.
     this.overlayScreen.onVote = (index) => this.net?.sendVote(index);
+    // The round-over card's system corner. Guarded on the state for
+    // `onStart`'s reason — the button outlives no transition — and it is
+    // `enterMenu` in a match as well, which is what leaves one.
+    this.overlayScreen.onLeave = () => {
+      if (this.state === "roundover") this.enterMenu();
+    };
     this.deployScreen.onOpenLoadout = () => this.openLoadout();
     // The deploy screen's system corner. Guarded on the state for `onStart`'s
     // reason: the button outlives no transition, and `pause` from anywhere but
@@ -3516,10 +3522,19 @@ export class Game {
    *
    * The menu is a LIST — the cursor keys move and step it, and the dedicated
    * keys are accelerators rather than the only way to reach a row. The
-   * round-over card has no cursor, so it only takes the confirm.
+   * round-over card has a cursor only on a match's ballot, so offline it takes
+   * the confirm and the way out and nothing else.
    */
   private updateMenuCard(dt: number): void {
     this.overlayT += dt;
+    // Which device's prompts the card draws — both cards carry them. Pushed
+    // rather than read, the screen knowing nothing about `InputManager`; it
+    // compares before it touches the DOM, so this is a string compare a frame.
+    if (this.input.anyDeviceUsed) {
+      this.overlayScreen.setInputDevice(
+        this.input.padInHand ? "pad" : this.input.touchActive ? "touch" : "kbm",
+      );
+    }
     // Menu only: `roundover` shares the overlay element but shows the
     // victory text, and redrawing the picker over it would wipe the result.
     if (this.state === "menu") {
@@ -3536,14 +3551,6 @@ export class Game {
       // this screen is about, and the console idiom for turning one.
       if (this.input.menuPrevPressed) this.overlayScreen.stepMap(-1);
       if (this.input.menuNextPressed) this.overlayScreen.stepMap(1);
-      // Which device's prompts the card draws. Pushed rather than read, the
-      // screen knowing nothing about `InputManager`; it compares before it
-      // touches the DOM, so this is a string compare a frame.
-      if (this.input.anyDeviceUsed) {
-        this.overlayScreen.setInputDevice(
-          this.input.padInHand ? "pad" : this.input.touchActive ? "touch" : "kbm",
-        );
-      }
       // Enter and pad A fire the cursor's row, and BREAK — they raise
       // `confirmPressed` on the same frame, and the fall-through below
       // would otherwise start the round out from under whichever screen
@@ -3557,6 +3564,28 @@ export class Game {
         this.openLoadout();
         return;
       }
+    }
+    // The round-over card's way OUT, which its system corner draws on Esc and
+    // B: the main menu offline, and out of the MATCH in one — the pause list's
+    // Quit to menu, since that is what `enterMenu` is from here too. Behind
+    // the same half second as the confirm, so a player who pressed Escape for
+    // a pause on the frame the round ended is not thrown out of it.
+    //
+    // ESCAPE and not Start, though both raise `pausePressed`: the pad's Start
+    // is also a CONFIRM, and on this card it is Another round (below). Start
+    // is the one key raising both edges on one frame, so a pause edge with no
+    // confirm beside it is Escape.
+    if (
+      this.state === "roundover" &&
+      this.overlayT > 0.5 &&
+      (this.input.menuBackPressed ||
+        (this.input.pausePressed && !this.input.confirmPressed))
+    ) {
+      // B is the pad's crouch toggle as well; the press has already flipped
+      // the latch. Same correction every other Back makes.
+      if (this.input.menuBackPressed) this.input.clearCrouchToggle();
+      this.enterMenu();
+      return;
     }
     // The ballot, which is the one control a round-over card has in a match:
     // left and right along the row, confirm to cast. It is the same three
@@ -8803,6 +8832,7 @@ export class Game {
   private voteView(vote: MapVoteMessage): VoteView {
     return {
       maps: vote.maps.map((id) => MAPS.find((m) => m.id === id)?.name ?? id),
+      ids: vote.maps,
       tally: vote.tally,
       choice: vote.choice,
       seconds: Math.max(0, Math.ceil(vote.ms / 1000)),
@@ -8846,12 +8876,30 @@ export class Game {
     // reading their own reinforcements out of the enemy's slot, in the enemy's
     // colour, before the side became a thing the whole round is painted from.
     const vote = this.net?.mapVote ?? null;
+    const us = this.player.team;
+    const them = OTHER_TEAM[us];
     this.overlayScreen.showRoundOver({
+      map: this.mapDef,
+      index: MAPS.indexOf(this.mapDef),
       winnerName: teamLook(winner).name,
+      loserName: teamLook(OTHER_TEAM[winner]).name,
       playerWon: won,
-      ticketsMine: this.conquest.tickets[this.player.team],
-      ticketsTheirs: this.conquest.tickets[OTHER_TEAM[this.player.team]],
-      mapName: this.mapDef.name,
+      ticketsMine: this.conquest.tickets[us],
+      ticketsTheirs: this.conquest.tickets[them],
+      flagsMine: this.conquest.flagsHeld(us),
+      flagsTheirs: this.conquest.flagsHeld(them),
+      // The same rows the Tab board is drawn from — this client's ledger
+      // offline and the authority's in a match — read ONCE, because the round
+      // is over and nothing on this card is a live figure. SIDES, not teams:
+      // the card draws mine and theirs, as the ticket pair above does.
+      board: this.scoreRows().map((r) => ({
+        name: r.name,
+        mine: r.team === us,
+        kills: r.kills,
+        deaths: r.deaths,
+        score: r.score,
+        you: r.you,
+      })),
       // Whether this card is a MENU or a WAIT. Offline the next round is the
       // player's to ask for; in a match it is the authority's rotation, and
       // the card says so instead of offering a button that must not work.
@@ -9203,7 +9251,8 @@ export class Game {
    * (`Roster.fielded`), so its own index is dense, team-blocked and identical
    * to the offline one — INDIA against INDIA-2 on the same map.
    *
-   * Assembled only while Tab is held — see the caller.
+   * Assembled only while Tab is held, and once more when a round ends, for
+   * the round-over card's own board — see the two callers.
    */
   private scoreRows(): ScoreRow[] {
     const rows: ScoreRow[] = [];

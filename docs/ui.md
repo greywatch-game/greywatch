@@ -15,93 +15,63 @@ chrome. `TouchControls` is in the directory and is deliberately not in that
 count — it draws like a screen and answers like a gamepad; see the last section
 here.
 
-## The shell
+## The front end, and the shell it replaced
 
-**Every screen between the title and the world is drawn in one frame, and the
-frame is anchored to the VIEWPORT rather than centred in it.** `.ui-screen` in
-[`base.css`](../src/ui/base.css) is three grid rows — a head, a body, a foot —
-with fluid gutters: the head carries the screen's name on the left and a meta
-slot on the right under a hairline, the foot carries the input hints and the
-way out along the bottom edge, and the body takes everything between them.
+**Every screen between the title and the world is a TITLE SCREEN now, laid out
+the way the main menu is**: the menu, the round-over card, the kit screen, the
+settings screen, the lobby and the deploy screen. Each is a grid of NAMED AREAS
+of its own over a picture of the thing it is about — a map's photograph, the
+weapon, the map's plan — with a title that is that thing's NAME, a column of
+plates the cursor walks, an intel plate that is the first thing a small viewport
+drops, and the way out in a SYSTEM CORNER. What they share is stated once, in
+`base.css`'s `:is(#overlay.card-menu, #overlay.card-roundover, #loadout,
+#settings, #lobby, #deploy)` block and `prompts.ts`: the unit `--u` (one pixel
+of a 1080-line screen), the `--t-*` type scale, the plate, the chamfer, `--hit`
+and the prompts drawn on their controls. The building card takes the unit and
+none of the prompts, having nothing on it to press. A new screen copies one of
+them — the settings screen for a list browsed like a title screen, the lobby
+for one whose rows come and go — and adds its root to that `:is(...)` list.
 
-What it replaced is the reason it exists. Every one of these screens used to be
-a ~600 px column floating in the middle of the window — `--col` on `#overlay`,
-a 680 px `.se-panel`, a 640 px `.lb-panel`. On a 2560-wide monitor that is a
-quarter of the width in use and nothing within 500 px of an edge, which is what
-makes a screen read as a dialog box laid over a game rather than as the game's
-own front end. The head and the foot now run to the glass; `--ui-max` (1680 px)
-caps the BODY, so an ultrawide gets a wide composition rather than a stretched
-one. That split is the whole trick — the chrome touches the edges, the reading
-matter does not.
-
-**The body is a LIST and the PANEL that says what the list's cursor is on.**
-`.ui-rail` is the list column and `.ui-panel` the one beside it, and the second
-is what turns leftover window into a reason to have it: which map, drawn and
-described; which enemy, and what that tier is like to fight; what is in your
-hands and what it does. A wide screen that puts the same six rows in the middle
-of more emptiness has not used the space, it has just left more of it.
-
-`.ui-panel` is an OPEN column with a rule down its edge, not a box. It was a
-chamfered plate first and the plate was the wrong shape: the panel is full
-height because it is one side of the screen, while what it holds runs from four
-lines to a schematic — so on the short rows a box read as an oversized empty
-container. A screen that wants a plate adds `.frame` and the rule steps aside.
+**They replaced THE SHELL, and what the shell was for is still the argument.**
+`.ui-screen` was a head, a body of a LIST and the PANEL describing the list's
+cursor, and a foot carrying the hints and Back, anchored to the viewport rather
+than centred in it: every one of these screens had been a ~600 px column
+floating in the middle of the window, which on a 2560-wide monitor is a quarter
+of the width in use and nothing within 500 px of an edge — a dialog box laid
+over a game rather than the game's own front end. The shell fixed that and got
+the rest wrong in the same way each time: its largest text was the screen's
+OWN name ("LOADOUT", "SETTINGS", "VICTORY" in a corner), its panel was an open
+column of leftover window, and its foot was a line of hints naming three
+devices. Each screen left it as it became a title screen, the round-over card
+last, and the frame was deleted with it. What survives from it is the
+vocabulary (`.ui-eyebrow`, `.ui-facts`, the `#hud` tokens) and three of its
+rules, below.
 
 **Everything is sized in `clamp()` over `vmin`, and the reason is the phone.**
-A menu drawn at one size and scaled down is a miniature of a desktop layout:
+A screen drawn at one size and scaled down is a miniature of a desktop layout:
 right proportions, unreadable type, a title bigger than the list under it. Sized
 fluidly, the same markup is a phone layout at 390 px tall and a cinema layout at
 1440. `vmin` rather than `vw`, because an ultrawide is short for its width and a
 title scaled by width alone on a 2560x1080 is taller than the rows it heads.
+The front end's `--u` is that rule as a unit, with a FLOOR in pixels under
+every size that is read, so a phone's third-of-a-pixel unit does not set a
+caption nobody can read.
 
-**One column when there are not two columns' worth of room**, keyed on width AND
-on aspect — a narrow window has no room for a panel beside a rail, and a nearly
-square one has room and no HEIGHT to spend on stacking. The panel GOES rather
-than shrinking (`.ui-optional`), because half a panel says less than none and
-takes the rail's room to say it. `--ui-lean` is the same pair of queries as a
-custom property, for the screens that drop optional matter of their own.
+**A screen over another SCREEN hides it; a screen over the SCENE does not.** A
+front-end lid raised over other screens takes them off the glass —
+`#hud.kitting`, `.setting`, `.lobbying`, by `visibility` so they come back
+unredrawn — and lays a scrim shaped like its own layout over what is left. A
+veil tuned to let a village through lets a wordmark and a rail of buttons
+through with it, which reads as two screens up at once; the shell answered
+that with an opaque variant of its veil (`.ui-solid`), and the answer outlived
+it by being turned round.
 
-**The MENU was the first screen between the title and the world NOT drawn in
-the shell** (the kit and the settings followed it), and the reason is its job. The shell is a frame round a list and
-the panel that describes it, which is right for a screen whose job is its list;
-the menu's job is to say what the game looks like, so the photograph of the map
-is the screen and the controls are laid on it. It has a grid of its own — named
-areas, four templates, one unit — described under *The main menu* below, and
-what it keeps from the shell is the vocabulary (`.ui-eyebrow`, `.ui-facts`, the
-tokens), not the frame. A new screen whose job is a list it is FILLED IN from
-goes in the shell (only the round-over card is left there); one that shows
-something, or a list browsed like a title screen, copies the kit screen, the
-settings screen, the lobby or the deploy screen rather than the menu.
-
-**A screen over another SCREEN is opaque; a screen over the SCENE is not.**
-`.ui-veil` is the backdrop — a warm glow off the lower-left corner and a cold one
-off the upper-right (the friend/foe pair the whole HUD is coloured by, and what
-gives the frame a direction to be lit from), a vignette, a diagonal hatch, and
-the scanlines every card here already had. The menu, the round-over card and the
-deploy screen stand over a live 3D view and let it through. A shell screen
-raised over another SCREEN — DOM over DOM — adds `.ui-solid`, which closes the
-vignette: a veil tuned to let a village through lets a wordmark and a rail of
-buttons through with it, which reads as two screens up at once. (The lobby wore
-it until it left the shell. The front-end lids answer the same question the
-other way: they take what they cover off the glass — `#hud.kitting`,
-`.setting`, `.lobbying` — and lay a scrim shaped like their own layout over
-what is left.)
-
-**`--ov-scale` is a safety valve now, not the layout.** It is still the mechanism
-described further down — draw the screen at the size it was authored for and
-scale it down — but the fluid frame fits the viewport it is given, so the ladder
-is 1 until a viewport is shorter than anything the clamp minimums fit in
-(380 px), and gentle when it does engage. At the old 0.45 a landscape phone got a
-legible desktop menu rendered at 45%. Raising it back toward those numbers undoes
-the responsive layout wholesale.
-
-**The kit screen is the second screen NOT in the shell, the settings screen
-the third, the lobby the fourth and the deploy screen the fifth; all are laid
-out the way the menu is** — see *The kit screen* below. Its middle is a hole the 3D
-turntable is placed through, and a title screen for a weapon is the shape that
-hole wants: what it shares with the menu is the unit, the type scale, the plate
-and the prompts (`base.css`'s `:is(#overlay.card-menu, #loadout, #settings, #lobby, #deploy)`
-block and `prompts.ts`), not the shell's frame.
+**`--ov-scale` is a safety valve, not the layout, and only the pause takes
+it.** It draws a screen at the size it was authored for and scales it down,
+and at the old 0.45 a landscape phone got a legible desktop menu rendered at
+45%. Every front-end screen opts out — a scaled screen is a scaled 44 px target
+— so the ladder is 1 until a viewport is shorter than anything the clamp
+minimums fit in (380 px), and gentle when it does engage.
 
 **The boot screen is the one piece of interface that is not in this directory**,
 and the exception is what defines it: it covers the stretch before any module
@@ -147,40 +117,31 @@ CREATES will be built with and say nothing about the matches on the other page �
 see [`docs/multiplayer.md`](multiplayer.md) for why joining one takes that
 match's map instead.
 
-**THE WAY OUT OF A SCREEN IS A BUTTON IN ITS FOOTER, never a row in its own
-list** — or, off the shell, in the SYSTEM CORNER. A shell screen ends on that
-line — what the keys and the stick do, then Back at the right-hand end of it —
-and it is `.ui-foot` / `.ui-back` in `base.css` rather than three copies, so a
-list-shaped screen gets the whole convention by naming it. The lobby's
-Back was a row for a while and it was the wrong shape twice over: it sat under a
-list whose length is whatever the servers happen to be running, so the one
-control every visitor eventually wants was the one whose position nothing could
-predict; and it wore the same highlight and the same Enter as *join this match*,
-when leaving and joining are not the same kind of act. The pad and the keyboard
-never needed the row — Esc and B leave all three screens through `Game`, which
-is what the chips on the button say — so what it cost a pointer to reach was the
-whole of what it bought.
+**THE WAY OUT OF A SCREEN IS A FIXED PLACE, never a row in its own list** —
+the SYSTEM CORNER, top right, where the menu keeps Online and Settings. It was
+the shell's footer first (`.ui-back`, at the right-hand end of the hint line),
+and the lobby's Back was a row for a while, which was the wrong shape twice
+over: it sat under a list whose length is whatever the servers happen to be
+running, so the one control every visitor eventually wants was the one whose
+position nothing could predict; and it wore the same highlight and the same
+Enter as *join this match*, when leaving and joining are not the same kind of
+act. The pad and the keyboard never needed the row — Esc and B leave every one
+of these screens through `Game`, which is what the prompt on the button says —
+so what it cost a pointer to reach was the whole of what it bought.
 
-The label is **Back** on all of them, including the kit screen, which said
-"Done" until this was shared — and whose Back now stands in the SYSTEM CORNER,
-where the menu keeps Online and Settings, because it is off the shell and has no
-foot of its own to end on. The rule the footer served is unchanged: a fixed
-place, never a row in a list. Every one of them applies a pick the moment it is made,
-so there is nothing on any of them to be finished with, and two screens that
-leave the same way must not use two words for it. Where the keys genuinely
-differ, the screen's own hints say so, and only the pair that works everywhere
-is on the button. The settings screen's Back went to the corner with it, and
-the lobby's, beside its Refresh, when it left the shell.
+The label is **Back** on every screen that returns to the one under it, and two
+screens that leave the same way must not use two words for it. The round-over
+card is the exception that proves it: it does not go BACK to anything, so its
+corner says where it goes — **Main menu** offline, **Leave match** in one.
 
-**The four cards are one class because they are one element** — they share the
-shell, the title block and the Deploy button. The bar for a screen of its own is
+**The four cards are one class because they are one element** — three of them
+share the menu's frame, its lockup, its hero and its intel plate. The bar for a screen of its own is
 *state*: the deploy map has a selection and a canvas, the kit screen has four
 slots and a turntable; a card that is markup plus a button has not earned one.
 
 **Three of the four take the screen and the PAUSE does not.** `setCardClass` is
-what decides it: the round-over card gets the shell's frame and its veil, the
-menu and the building card a frame of their own over the map's photograph, and
-the pause gets a left-anchored column over a scrim that
+what decides it: the menu, the building card and the round-over card stand in
+one frame over the map's photograph, and the pause gets a left-anchored column over a scrim that
 fades out before the middle of the window. The round under a pause is this
 round, frozen where it stood — the flag strip along the top, your own vitals,
 the body you were lining up — so a full-bleed veil over it hides the thing the
@@ -191,7 +152,8 @@ and because the middle of the screen is where the shot it interrupted was being
 lined up.
 
 **The building card is a title screen for the MAP being built, and it stands in
-the MENU's frame** — `#overlay:is(.card-menu, .card-building)` in `overlay.css`
+the MENU's frame** — `#overlay:is(.card-menu, .card-building,
+.card-roundover)` in `overlay.css`
 is the unit, the scrim, the lockup, the hero and the intel plate, and only the
 grid is each card's own. The title is the menu's hero exactly (`heroMarkup`), so
 a player who pressed Deploy watches the column of decisions go and the same
@@ -669,11 +631,10 @@ change moved no content-hashed filename. Three rules keep it that way:
 
 - **`base.css` is for what two or more screens share** — the reset, the canvas, the
   `#hud` root, `.frame`, `.brackets`, `.hidden`, the `--ov-scale` short-viewport
-  block, `@keyframes pulse`, the kit button, the whole SHELL (`.ui-screen`,
-  `.ui-veil`/`.ui-solid`, `.ui-head`/`.ui-eyebrow`/`.ui-meta`, `.ui-body`,
-  `.ui-rail`, `.ui-panel`, `.ui-facts`, and the design tokens the five screens
-  are measured and coloured in), and `.ui-foot`/`.ui-back` (the hint line and
-  the Back button three screens end with). A rule only one screen uses
+  block, `@keyframes pulse`, the kit button, the design tokens and the two
+  pieces of vocabulary left from the shell (`.ui-eyebrow`, `.ui-facts`), and
+  THE FRONT END's unit, type scale, plate and prompts, which every title
+  screen is measured in. A rule only one screen uses
   belongs in that screen's sheet however tempting the shared file is.
 - **A screen's state rules go with whoever sets the class**, not whoever owns the
   element: `#hud.paused #deploy { opacity: 0.18 }` is in `hud.css` because
@@ -772,7 +733,7 @@ one wash.
 
 ## The gauges' metric: one authored pixel, four rates
 
-The shell above is the SCREENS. The chrome — the minimap, the reinforcement
+The front end above is the SCREENS. The chrome — the minimap, the reinforcement
 gauge, the flag strip, the vitals, the ammunition, the killfeed, the driver's
 band — is a different problem with a different answer, and this is it.
 
@@ -802,7 +763,7 @@ can be several units, and the HUD's three jobs want three of them:
 All four are `clamp()` over `vmin` against a reference of 800, so **a desktop
 and a laptop are untouched** — a 1366x768 window lands at 0.96 and a 1080p one
 saturates at 1 — and it is the phone the ramp is really for. `vmin` and not
-`vh`, for the shell's own reason: an ultrawide is short for its width, and a
+`vh`, for the front end's own reason: an ultrawide is short for its width, and a
 phone held upright is not a tall screen with room to spare.
 
 **`--hud-map` is the minimap and is a SIZE rather than a unit**, because it is
@@ -936,11 +897,11 @@ both halves of that are load-bearing.**
   it readable.
 
 So the backdrop needs no scrim of its own: the card in front of it is the
-scrim. **What the menu does NOT take is the shell's veil**, and that is the
+scrim. **What the menu did NOT take was the shell's veil**, and that is the
 change that turned this card from a form into a front end.
 
 **The scrim is shaped like the LAYOUT rather than like a frame.** The shell's
-veil is an ellipse — dense at the edges, lighter in the middle, the same in every
+veil was an ellipse — dense at the edges, lighter in the middle, the same in every
 direction — which is right for a screen whose reading matter is in the middle of
 it and wrong for a card whose controls are a column down one side. Tuned dense
 enough to hold small type over Coldharbour's dusk sky it put the whole
@@ -1058,10 +1019,10 @@ the only way to reach it: a player on Deploy can look through every map without
 leaving the button they are about to press. Nothing in a round reads these —
 RB is the grenade and E is the vehicle verb there.
 
-**Each screen but the menu hangs off the SHELL's tracks, and what is left
-screen-local is what only that screen has.** `--col` is gone from the shell —
-the one content width every block measured to was what made these screens a
-column in the middle of a window (see the shell, at the top of this file).
+**Every screen measures itself, and what is left screen-local is what only that
+screen has.** `--col` is a TRACK of the menu's own grid rather than the one
+content width every block measured to — which was what made these screens a
+column in the middle of a window (see the front end, at the top of this file).
 
 ## The main menu
 
@@ -1302,56 +1263,14 @@ beside it, and a hint line naming three devices along the bottom.
   upright phone as a fallback, the map between the title and the plates.
 - **It opts out of `--ov-scale`**, as the other front-end screens did.
 
-**The menu and round-over card carry a `Deploy` button**
-(`OverlayScreen.bindStart` → `Game.onStart`), and it is the **only** thing on either
-card a pointer can deploy with. It began as a redundant target beside a
-click-anywhere confirm, which is why it exists at all: an instruction in prose is not
-a target, and "click, press Enter, or press Start" made a pad player work out which
-was theirs. It now carries the mouse and the finger by itself. It is also where the
-menu's cursor starts, keeping Enter and A meaning "start the round" the moment the
-title appears.
-
-**In a MATCH that button is a BALLOT instead**, and the block it stands in
-(`.ov-next`) is the only part of the round-over card that differs between an
-offline round and a networked one. Offline the next round is the player's to
-ask for; in a match the next MAP is the players' and the round is the
-authority's, so what is drawn there is three candidates, a tally and a
-countdown — and against a server that runs no vote, the wait line that was
-there before ("the server is choosing"), which is still exactly what is
-happening. The block keeps the button's width and its place in all three, so
-the result plate above it does not move depending on who you are playing
-against.
-
-- **The ballot is a GRID OF EQUAL SHARES**, which is this file's rule about a
-  row of picks, and the narrow rule changes the COUNT rather than the break —
-  under 560 px it is one column, because three map names across a phone is
-  three ellipses and a map you cannot read is not one you can vote for.
-- **WHERE THE CURSOR IS, WHAT YOU VOTED FOR AND WHAT IS WINNING ARE THREE
-  FACTS AND THEY ARE DRAWN THREE WAYS.** `.sel` is the cursor (a hot rule down
-  the leading edge, the menu's own mark), `.on` is this player's vote (filled,
-  because it is the one thing on the row the player did), and `.lead` is what
-  will actually be built if nothing moves (the quietest, because it is a fact
-  about the tally and the tally is already in the bars). A player whose own
-  vote is losing has to be able to see both at once, and one highlight would
-  say one of the three and imply the other two.
-- **The tally is the authority's and the cursor is not**, which is why the two
-  are separate fields on the screen as well as separate classes: arrowing
-  along the row would otherwise cast four votes, and a locally-lit button under
-  a tally that does not count it is the failure `docs/multiplayer.md` argues
-  the addressed `choice` field out of.
-- **The pointer votes and takes the cursor with it**, so a player who clicks and
-  then reaches for the keyboard carries on from where they clicked. It is the
-  same pointer-events carve-out the tier row and Deploy have: the candidates opt
-  in, the card around them stays inert.
-- **The map NAMES go in with `textContent`**, alone on this card among strings
-  that are written as markup — a candidate this build has no row for is drawn as
-  the id the authority sent, which is a string chosen by whatever is on the far
-  end of the socket.
-- **The countdown is `tabular-nums` in a fixed box.** It is rewritten once a
-  second, which is exactly the cadence at which a label that steps sideways as
-  the number narrows reads as a fault; and it is written once a second rather
-  than once a frame because `Game` compares the whole second before it touches
-  the DOM.
+**The menu's `Deploy` button is the only thing on it a pointer can deploy
+with** (`bindMenu` → `Game.onStart`). It began as a redundant target beside a
+click-anywhere confirm, which is why it exists at all: an instruction in prose is
+not a target, and "click, press Enter, or press Start" made a pad player work out
+which was theirs. It now carries the mouse and the finger by itself. It is also
+where the menu's cursor starts, keeping Enter and A meaning "start the round" the
+moment the title appears. The round-over card's **Another round** is the same
+plate and the same rule.
 
 **That button is why the deploy screen's confirm is `menuConfirmPressed`.** It
 changes state on the down edge, which puts the `deploy` branch in front of the very
@@ -1373,6 +1292,107 @@ confirm takes no click and a plate or a marker only picks. Pointerdown: the same
 event goes on to take the pointer lock, which it can only do once `spawnPlayer` has
 moved the state to `playing`. It is drawn waiting (`.waiting`) while `confirm()` is
 still a no-op.
+
+## The round-over card
+
+**A title screen for the RESULT, standing in the menu's frame**
+(`OverlayScreen.showRoundOver`). It was the shell's last screen: a green VICTORY
+in the corner of a black veil, the reinforcements in a box in the middle of it,
+one button, and a hint line naming two devices — a dialog telling the player
+what a game should be SHOWING them.
+
+- **The result is the TITLE**, set where the menu sets a map's name, over the
+  photograph of the ground the round was fought on, with that map's number
+  hollow behind it. It is in the colour of the side that holds the ground —
+  VICTORY amber, DEFEAT red — the one saturated word on the card, because colour
+  means ownership. The hero's line says who ran out and who holds the map, and
+  its facts are the flags held at the end and each side's kills.
+- **The column is what the round came to, read top to bottom**: the two sides'
+  reinforcements facing each other across the margin they finished on (the bar
+  is the two counts against each other, not against the pool, so a 142–0 and a
+  12–0 are drawn as different rounds), then the player's OWN round — where they
+  placed, in hot at the caption's end, over points, kills and deaths — then what
+  happens NEXT, where the menu keeps Deploy.
+- **The intel plate is the top of the BOARD**, ranked by points as the Tab board
+  is, eight lines with the player's own under a break when it did not make the
+  cut. The Tab board belongs to the ROUND (`ScreenStack`'s `inRound`), so this
+  is the one screen after it that can say who did the work. `Game.endRound`
+  reads `scoreRows` once — the ledger offline, the authority's table in a match
+  — and hands the card SIDES rather than teams. **A name may be twenty
+  characters a person typed** (`MAX_NAME_LENGTH`), so the names go in by
+  `textContent`, are not tracked out, and the plate is wider than the menu's
+  intel so that a full-length one fits at every viewport the plate is drawn at.
+- **The photograph is the building card's too.** Another round raises the
+  building card for the same map, so pressing the button leaves the picture,
+  the lockup and the frame where they stand and swaps the column for the load
+  plate. A different map's picture has to decode first, and until it has the
+  front layer comes down rather than leaving the last map's behind this result.
+- **The way OUT is the system corner, in both rounds** — Main menu offline,
+  Leave match in one, on Esc and B (`Game.updateMenuCard`, behind the confirm's
+  half second, so an Escape pressed for a pause as the round ended does not
+  throw the player out). The card had NO way off it: offline the only door was
+  another round, and a phone could not leave a match from here at all. Escape
+  is told from the pad's Start by the confirm edge beside it — Start raises both
+  `pausePressed` and `confirmPressed`, and on this card it is Another round.
+- **Four templates**, the menu's: wide with the board; under 1100 wide or 620
+  tall without it; a phone held sideways with the result down the left and the
+  column under the right thumb — the ballot across the whole foot, where three
+  names have the width to be read (`:has(.ro-vote)`); an upright phone as a
+  fallback.
+- **Built on the raise and never rewritten.** The entrance deals the column in,
+  wipes the result in as the menu wipes a map's name, and grows the margin bar
+  from the left once its plate has landed. The ballot is the one block patched
+  under it (`setVote`).
+
+**In a MATCH the button is a BALLOT instead**, and the block it stands in
+(`.ro-next`) is the only part of the round-over card that differs between an
+offline round and a networked one. Offline the next round is the player's to
+ask for; in a match the next MAP is the players' and the round is the
+authority's, so what is drawn there is three candidates, a tally and a
+countdown — and against a server that runs no vote, a dark WAIT plate in the
+building card's load-plate shape ("Next round · the server is choosing"),
+which is still exactly what is happening.
+
+- **The ballot is a GRID OF EQUAL SHARES**, which is this file's rule about a
+  row of picks, and the narrow rule changes the COUNT rather than the break —
+  under 560 px it is one column, because three map names across a phone is
+  three ellipses and a map you cannot read is not one you can vote for. The
+  count sits on the tag's line rather than beside the name, so on a laptop's
+  column the name has the plate's whole width.
+- **A candidate is a PLATE carrying its map's photograph**, as the menu's reel
+  and the lobby's plates draw a map (`VoteView.ids`, for the pictures and
+  nothing else): a picture needs no label to be told apart, and the name is
+  still on it for the map nobody has photographed.
+- **WHERE THE CURSOR IS, WHAT YOU VOTED FOR AND WHAT IS WINNING ARE THREE
+  FACTS AND THEY ARE DRAWN THREE WAYS.** `.sel` is the cursor (the menu's sight
+  brackets, on an UNCLIPPED wrapper round the plate, since the plate's
+  `clip-path` would take them off with its corner), `.on` is this player's vote
+  (a hot ring, a hot bar, and a YOUR VOTE tag — the one thing on the row the
+  player did), and `.lead` is what will actually be built if nothing moves (the
+  count set white, the quietest, because it is a fact about the tally and the
+  tally is already in the bars). A player whose own vote is losing has to be
+  able to see both at once, and one highlight would say one of the three and
+  imply the other two.
+- **The tally is the authority's and the cursor is not**, which is why the two
+  are separate fields on the screen as well as separate classes: arrowing
+  along the row would otherwise cast four votes, and a locally-lit button under
+  a tally that does not count it is the failure `docs/multiplayer.md` argues
+  the addressed `choice` field out of.
+- **The pointer votes and takes the cursor with it**, so a player who clicks and
+  then reaches for the keyboard carries on from where they clicked. A click
+  rather than a pointer-down: a vote changes a value on the card and leaves
+  nothing.
+- **The map NAMES go in with `textContent`**, as the board's player names do —
+  a candidate this build has no row for is drawn as the id the authority sent,
+  which is a string chosen by whatever is on the far end of the socket.
+- **The bars are a `scaleX`**, so a new tally slides on the compositor, and
+  **the countdown is `tabular-nums` in a fixed box**: it is rewritten once a
+  second, which is exactly the cadence at which a label that steps sideways as
+  the number narrows reads as a fault, and it is written once a second rather
+  than once a frame because `Game` compares the whole second before it touches
+  the DOM.
+- **The foot is the ballot's cursor verbs for the device in hand**, and a card
+  with no ballot has no hint line at all: one button needs none.
 
 ## The kit screen
 

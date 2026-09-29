@@ -14,8 +14,8 @@ block; `LoadoutScreen.ts` + `loadout.css`; `SettingsScreen.ts` +
 `settings.css`, the one to copy for a LIST that belongs in the front end).
 
 Read before touching anything:
-- `docs/ui.md` — the contract for everything under `src/ui/`: the shell, the
-  main menu, the kit screen, getting into a round (the list model, the
+- `docs/ui.md` — the contract for everything under `src/ui/`: the front end,
+  the main menu, the kit screen, getting into a round (the list model, the
   pointer's one way into a round, the bumpers). This skill does not restate it;
   it points at it.
 - CLAUDE.md's "The interface is five screens and the chrome" section, and
@@ -66,9 +66,8 @@ A front end is organised by what each thing is, not by what fits where. Name:
   the first thing a small viewport drops;
 - **the way out** — a fixed place, never a row in a list.
 
-Then pick the shell or the front end (craft.md, "Which frame"). Most screens
-belong in the shell; one whose job is to SHOW something belongs in the front
-end with the menu and the kit.
+Then read craft.md's "Which frame": there is one frame now, the front end,
+and the round-over card was the last screen to leave the shell for it.
 
 ### 3. Lay it out as named areas, then write the templates
 
@@ -114,7 +113,7 @@ the cursor moved, the screen closed, the state is right after Back.
 ### 7. Docs, gates, commit
 
 - `docs/ui.md` — the screen's section says what it is and why, argued; the
-  shell/front-end paragraph at the top stays true.
+  front-end paragraph at the top stays true.
 - CLAUDE.md's interface section — only what someone NOT editing this screen
   could break (per-section cap: see CLAUDE.md's own head).
 - `FILES.md` — a line per new file; the screen's line rewritten.

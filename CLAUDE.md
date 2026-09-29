@@ -513,11 +513,10 @@ exactly as a gamepad is, so nothing in gameplay has heard of it.
 
 **Every screen is a LIST, and a list whose rows can change under the cursor keeps
 its place by IDENTITY rather than by index** (the lobby is the one that can), and
-**the way OUT is a button in its footer, never a row in its own list**
-(`.ui-foot` / `.ui-back`) — or, on the four screens off the shell, in the
-system CORNER, which is fixed for the same reason. They are drawn in ONE FRAME anchored to the VIEWPORT,
-**sized in `clamp()` over `vmin` with `--ov-scale` a safety valve rather than the
-layout**. **A screen over another SCREEN is opaque and a screen over the SCENE is
+**the way OUT is a fixed place, never a row in its own list** — the system
+CORNER, top right. Every one of them is a TITLE SCREEN laid out as the menu is
+(the SHELL they were once framed in is retired), **sized off one unit over
+`vmin` with `--ov-scale` a safety valve only the pause still takes**. **A screen over another SCREEN is opaque and a screen over the SCENE is
 not**, and **the PAUSE is the one card that does not take the screen**. **A ROW
 OF PICKS IS A GRID OF EQUAL SHARES, NEVER A WRAPPING FLEX ROW** — a flex row
 cannot be squeezed below its own longest word, so where it breaks is a
@@ -533,7 +532,7 @@ a stylesheet — one possible layout, everything else squeezed beside it.
 **Anything else that wants to place a 3D object against the interface owes the
 same shape** — and its converse: **nothing sharing the bay's column may change
 height as the cursor moves**, or the weapon rescales under the player. The kit
-screen is the second screen laid out as the MENU is rather than in the shell:
+screen is the second screen laid out as the MENU is:
 the weapon's name the title, a column of slot plates, a RAIL of the cursor
 slot's options under the weapon, the bumpers turning the WEAPON from anywhere.
 The SETTINGS screen is the third: the PAGE's name the title, the pages a tab
@@ -544,7 +543,9 @@ The DEPLOY screen is the fifth: the POSITION under the cursor the title, the
 map's plan the stage — and being a STATE rather than a lid, it takes only the
 HUD's gameplay chrome off (`#hud.deploying`), because it draws the tickets and
 the flags itself; a new gauge that must be read between lives owes that list
-a look. **A front-end lid raised over other SCREENS takes them off the glass**
+a look. The ROUND-OVER card is the sixth, in the menu's own frame: the RESULT
+the title in the winner's colour, the top of the board its intel, and Main
+menu / Leave match in its corner — it had no way off at all. **A front-end lid raised over other SCREENS takes them off the glass**
 (`#hud.kitting`, `#hud.setting`, `#hud.lobbying` — `visibility`, so they
 return unredrawn) and is laid over the SCENE, so a new child of `#hud` that
 must survive one is carved out of every such rule by name, as `#hud-fps` is.
@@ -603,7 +604,8 @@ the viewport, which is the only thing that gets a TABLET right; and **the
 minimap is the one canvas that resizes itself**, redrawn at its box times the
 device ratio rather than resampled.
 
-→ **[`docs/ui.md`](docs/ui.md)** — the shell, the four cards as one class, the
+→ **[`docs/ui.md`](docs/ui.md)** — the front end and the shell it replaced, the
+four cards as one class, the round-over card and its ballot, the
 menu's rail, the three maps as one drawing (the plan/paint split, the mass
 layer's three failed readings, the scale gates and the prerender), why **the pointer deploys
 only through the Deploy button**, the deploy map, the kit screen's MEASURED bay

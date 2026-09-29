@@ -1554,7 +1554,8 @@
 #hud.overlaid #killfeed,
 #hud.overlaid #scorefeed,
 #hud.overlaid #message,
-#hud.overlaid #toasts { display: none; }
+#hud.overlaid #toasts,
+#hud.overlaid #lock-hint { display: none; }
 
 /* --- paused ---
    Unlike .overlaid, this keeps the gauges, the flag strip and the vitals:

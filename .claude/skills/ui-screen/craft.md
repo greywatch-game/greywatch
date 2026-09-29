@@ -29,25 +29,26 @@ Think like a game UI designer, not a web one:
 
 ## Which frame
 
-- **The shell** (`.ui-screen` in `base.css`: head, body, foot; a rail and a
-  panel) is for a screen whose job is its LIST and nothing else — only the
-  round-over card is left in it. A new list screen goes there and gets
-  `.ui-foot`/`.ui-back` for free. (The lobby was one and left: a list of
-  matches reads as a front end once each match is a TITLE — its map's name
-  over its photograph. So did the deploy screen: a list of spawns reads as
-  one once the POSITION under the cursor is the title and the map's plan is
-  the stage.)
-- **The front end** (`:is(#overlay.card-menu, #overlay.card-building, #loadout, #settings, #lobby, #deploy)` in
+- **There is ONE frame now, the front end.** The shell (`.ui-screen`: a
+  head, a list and a panel, a foot with Back in it) is retired — every screen
+  in it left as it found its TITLE: the lobby once each match was its map's
+  name over its photograph, the deploy screen once the POSITION under the
+  cursor was, and the round-over card last, once the RESULT was set where the
+  menu sets a map's name. A screen that looks like "just a list" has a title
+  too; find it rather than bringing the shell back.
+- **The front end** (`:is(#overlay.card-menu, #overlay.card-building, #overlay.card-roundover, #loadout, #settings, #lobby, #deploy)` in
   `base.css`, plus `prompts.ts`) is for a screen whose job is to SHOW
   something — or a list the player browses like a title screen rather than
   fills in like a form (the settings: the PAGE is the title, the pages a tab
   strip the bumpers turn, the rows plates; the lobby: the MATCH under the
   cursor is the title, over its own map's photograph). It is a grid of named
-  areas of the screen's own, sized off the shared unit. A fifth front-end
-  screen adds its
-  root to that `:is(...)` list rather than copying the block, and its Back
+  areas of the screen's own, sized off the shared unit. A new front-end
+  screen adds its root to that `:is(...)` list rather than copying the block, and its Back
   goes in the SYSTEM CORNER (top right), where the menu keeps Online and
-  Settings.
+  Settings. A card on `#overlay` that stands in the MENU's frame (the
+  building card, the round-over card) adds itself to overlay.css's
+  `#overlay:is(.card-menu, .card-building, .card-roundover)` instead, and
+  gets the lockup, the system corner, the hero and the intel plate as well.
 - **A front-end screen raised over OTHER screens hides them** (`#hud.kitting`,
   `#hud.setting`, `#hud.lobbying`: `visibility`, so they come back unredrawn)
   and lays a scrim shaped like its own layout over the scene, instead of an
