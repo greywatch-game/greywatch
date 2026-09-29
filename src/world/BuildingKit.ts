@@ -277,7 +277,9 @@ export type BuilderKind = keyof typeof BUILDERS;
  * its back off where it stands, and carries its granite base and its steps
  * down to the ground. The torii seeds the characters on its plaque or its
  * posts and the twist of its rope off where it stands, and carries each
- * post's plinth down to the ground under it.
+ * post's plinth down to the ground under it. The garden wall seeds the lengths
+ * of its kerb stones off where it stands, and carries each stone down to the
+ * ground under it.
  */
 export const CONFORMS_TO_TERRAIN: ReadonlySet<BuilderKind> = new Set([
   "road",
@@ -308,4 +310,5 @@ export const CONFORMS_TO_TERRAIN: ReadonlySet<BuilderKind> = new Set([
   "teahouse",
   "templeHall",
   "torii",
+  "gardenWall",
 ] as const);
