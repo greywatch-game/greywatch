@@ -307,6 +307,13 @@ export interface BuildParams {
    * "neon ~.9" stays unused until something can afford a slot for it.
    */
   sign?: string;
+  /**
+   * Torii: a gate GIVEN rather than built by the shrine — one of the close-set
+   * run up an Inari approach. It wears the Inari collar under its lintel,
+   * carries its donor's inscription down the back of both posts, and has no
+   * plaque and no rope, which belong to the gate that marks the precinct.
+   */
+  votive?: boolean;
 }
 
 /**

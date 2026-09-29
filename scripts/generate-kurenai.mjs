@@ -755,11 +755,13 @@ section(placements, "D: Inari Shrine");
   must("templeHall", cx, cz - 20, 2, 15.2, 12.2, { width: 12, depth: 9, litWindows: true }, { pad: 0.4 });
   // The tunnel of torii: close-set gates up the whole of the stone approach.
   // Each straddles the path across the slope, so both posts stand on one
-  // contour whatever the grade is.
+  // contour whatever the grade is. Every gate faces NORTH, down the approach,
+  // so a gate's front is the side a worshipper walks up to — and the votive
+  // gates' inscriptions, on their backs, face the shrine.
   for (let z = SANDO.z0 - 3; z >= SANDO.z1 + 1; z -= 3.2) {
-    must("torii", cx, z, 0, 5.6, 0.8, { width: 3.4, height: 4.2 }, { force: true, noClaim: true });
+    must("torii", cx, z, FACES.north, 5.6, 0.8, { width: 3.4, height: 4.2, votive: true }, { force: true, noClaim: true });
   }
-  must("torii", cx, SANDO.z1 - 1.5, 0, 9, 1, { width: 5.2, height: 6.4 }, { force: true });
+  must("torii", cx, SANDO.z1 - 1.5, FACES.north, 9, 1, { width: 5.2, height: 6.4 }, { force: true });
   for (const [x, z] of [[cx - 6, cz + 9], [cx + 6, cz + 9], [cx - 9, cz - 9], [cx + 9, cz - 9]]) {
     must("toro", x, z, 0, 1.1, 1.1, { litWindows: true }, { force: true });
   }
@@ -916,8 +918,8 @@ hamlet(86, 104, 12, 40);
 hamlet(-56, -30, -104, -70);
 hamlet(-34, 30, 100, 108);
 
-// Wayside torii on the lanes out of town.
-for (const [x, z, turn] of [[-40, 33.5, 1], [40, 37, 1]]) {
+// Wayside torii on the lanes out of town, each facing out along its lane.
+for (const [x, z, turn] of [[-40, 33.5, FACES.west], [40, 37, FACES.east]]) {
   place("torii", x, z, turn, 7, 1, { width: 5.4, height: 4.6 }, { force: true, noClaim: true });
 }
 

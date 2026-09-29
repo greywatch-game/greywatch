@@ -275,7 +275,9 @@ export type BuilderKind = keyof typeof BUILDERS;
  * stepping stones down to the ground. The temple hall seeds the lengths of its
  * stones and boards, the characters on its plaque and whether lanterns hang at
  * its back off where it stands, and carries its granite base and its steps
- * down to the ground.
+ * down to the ground. The torii seeds the characters on its plaque or its
+ * posts and the twist of its rope off where it stands, and carries each
+ * post's plinth down to the ground under it.
  */
 export const CONFORMS_TO_TERRAIN: ReadonlySet<BuilderKind> = new Set([
   "road",
@@ -305,4 +307,5 @@ export const CONFORMS_TO_TERRAIN: ReadonlySet<BuilderKind> = new Set([
   "pagoda",
   "teahouse",
   "templeHall",
+  "torii",
 ] as const);

@@ -489,6 +489,7 @@ export const PARAMS: Record<BuilderKind, ParamSpec[]> = {
       def: "#b23a22",
       options: ["#b23a22", "#2f2620", "#7a766d"],
     },
+    bool("votive", "votive"),
   ],
   toro: [num("height", "height", 2.3, 1.2, 3.5, 0.1), bool("litWindows", "lit")],
   stonePagoda: [num("height", "height", 4.4, 2, 7, 0.1)],
