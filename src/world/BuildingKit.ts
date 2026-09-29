@@ -266,7 +266,9 @@ export type BuilderKind = keyof typeof BUILDERS;
  * whether persimmons are drying over it, whether its smoke gables are open or
  * plastered with the fire charm, its back door's bay and its door's wicket off
  * where it stands, and carries its plinth, the stones under its engawa and its
- * two steps down to the ground.
+ * two steps down to the ground. The pagoda seeds the lengths of its podium's
+ * stones and its flags off where it stands, and carries its podium and the
+ * flight on each face down to the ground.
  */
 export const CONFORMS_TO_TERRAIN: ReadonlySet<BuilderKind> = new Set([
   "road",
@@ -293,4 +295,5 @@ export const CONFORMS_TO_TERRAIN: ReadonlySet<BuilderKind> = new Set([
   "kura",
   "machiya",
   "minka",
+  "pagoda",
 ] as const);
