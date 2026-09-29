@@ -4977,9 +4977,10 @@ const TERA: readonly (readonly [number, number, number, number])[] = [
  *
  * `tint` recolours the timber (vermilion for a shrine, cypress for a temple —
  * the default); the plaster, the stone and the tile stay what they are. It is
- * in `CONFORMS_TO_TERRAIN`: the stones' and flags' lengths, the characters on
- * the plaque and the lantern and the pilgrim slips are seeded off where it
- * stands, and the platform and both steps are carried down to the ground.
+ * in `CONFORMS_TO_TERRAIN`: the stones' and flags' lengths, the plaque's
+ * first two characters (the third is always 寺, as the lantern's is) and
+ * the pilgrim slips are seeded off where it stands, and the platform and
+ * both steps are carried down to the ground.
  *
  * **The colliders are the ones it always had, in the same order**: the six
  * posts and each side bay (its retired `wall` spelled out as a block), then
