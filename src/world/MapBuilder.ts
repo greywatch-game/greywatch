@@ -755,8 +755,10 @@ interface PropBody {
  * through a silhouette; too large costs shots that visibly should have landed.
  */
 const PROP_BODIES: Record<ScatterSpec["prop"], PropBody> = {
-  // Trunk only, at roughly its width around chest height (it tapers 0.85 ->
-  // 0.32 over 5.2 m). The branches are 4 cm twigs — nothing should stop on one.
+  // Trunk only, at roughly its width around chest height (a 0.26 m radius,
+  // furrows and lean inside the box to head height — see `buildDeadTree`).
+  // The limbs leave it overhead and the twigs are a centimetre or two thick —
+  // nothing should stop on one.
   deadTree: { w: 0.7, d: 0.7, h: 5.2, visualTop: 5.4, rooted: true },
   // The bole only, at the width it presents around chest height — it tapers
   // 0.68 -> 0.44 over 7.6 to 9.2 m, and the frond scars stand 0.05 m proud of
