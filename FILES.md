@@ -47,12 +47,17 @@ server/               # The authoritative match server. Node, NullEngine, no
 ```
 index.html          # The head, and NO interface CSS beyond the two things shown
                     #   while there IS no interface: a black background (so a
-                    #   dev reload does not flash white) and the boot screen.
+                    #   dev reload does not flash white) and the boot screen —
+                    #   a title screen for the game in the menu's frame, its
+                    #   unit and plates COPIED from base.css/overlay.css, over
+                    #   a painted horizon (the map shots are hashed).
 main.ts             # Bootstrap. Imports src/ui/base.css FIRST. Awaits the two
                     #   things the game cannot start without — the WebGPU device
                     #   and the Havok WASM — then builds the Game, which takes
-                    #   both as arguments. Owns the boot screen: down on the
-                    #   first drawn frame, or one of the three failure messages.
+                    #   both as arguments. Owns the boot screen: names each
+                    #   await on its load plate, paints before the constructor,
+                    #   fades it on the first drawn frame, or fills plate and
+                    #   note with one of the four failures.
 public/             # Copied to dist/ VERBATIM — unhashed URLs named by hand
                     #   (manifest.webmanifest, icons/ from `npm run icons`).
   profile_viewer.html # Where a frame-profiler capture is READ: paste or drop a

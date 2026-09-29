@@ -37,6 +37,13 @@ Think like a game UI designer, not a web one:
   menu sets a map's name. The pause, which was never in the shell, followed
   once the MAP its round is on was its title. A screen that looks like "just
   a list" has a title too; find it rather than bringing the shell back.
+- **The boot screen is in the frame too, from outside `src/ui/`** — markup
+  and styles in `index.html`, the game's name as the title, a load plate
+  where Deploy will stand. It copies the unit and the plates rather than
+  sharing them (nothing has loaded when it paints), so a change to `--u`, the
+  gutters or the title clamp owes that copy a look. `scripts/` cannot reach
+  it; photograph it from the markup with the entry script stripped, and
+  prove the live path with a CDP capture (VERIFYING.md).
 - **Nothing is scaled to a short viewport.** `--ov-scale` is retired with its
   last user, the pause; a screen fits a phone by its own floors.
 - **The front end** (`:is(#overlay.card-menu, #overlay.card-building, #overlay.card-roundover, #overlay.card-pause, #loadout, #settings, #lobby, #deploy)` in

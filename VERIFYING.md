@@ -468,7 +468,9 @@ is one machine's:
   keeping the constructor synchronous: `g.engine`, `g.physics.plugin` and both
   pools are non-null on the FIRST evaluate, so nothing has to wait for anything
   separately. To exercise the failure branch, `page.route("**/*.wasm", r
-  => r.abort())` before `goto` and assert on `#boot.failed`'s message; the game
+  => r.abort())` before `goto` and assert on `#boot.failed`'s message — the
+  sentence is `#boot-msg` and the cause `#boot-stage`, which `main.ts` also
+  writes on every step of a boot that works; the game
   is never constructed, so there is no handle at all on that path.
 - **A frozen vantage holds NO SHADOWED PIXEL until the shadow window is pushed
   to it, and every shadow reading then comes back 0.000%.** The window follows

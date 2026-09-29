@@ -22,10 +22,11 @@
  * builds a scene and every pool in the game, which together is seconds of a
  * black page on a phone. It is markup in `index.html` (see the comment on the
  * `<style>` block there) and this is the only code that ever touches it —
- * taken down on the first rendered frame, or turned into the failure message
- * on a machine that cannot run the game at all. That message is the second
- * half of the same job: without it, "no WebGPU" and "still loading" are the
- * same black screen forever.
+ * told which of its awaits it is waiting on (`bootStage`), faded down after
+ * the first rendered frame, or turned into the failure message on a machine
+ * that cannot run the game at all. That message is the second half of the
+ * same job: without it, "no WebGPU" and "still loading" are the same screen
+ * forever.
  *
  * **There are TWO things the game cannot start without, and they are checked
  * here for the same reason.** The GPU is one; Havok is the other. The physics
@@ -145,13 +146,48 @@ async function checkWebGPU(): Promise<GpuVerdict> {
   }
 }
 
-/** Leaves the boot screen up and says why the game is not coming. */
-function bootFailed(message: string): void {
+/** Writes one of the boot screen's four ids, if the screen is still up. */
+function bootText(id: string, text: string): void {
+  const el = document.getElementById(id);
+  if (el) el.textContent = text;
+}
+
+/**
+ * Names the step the boot screen's load plate is waiting on. A NAME and never
+ * a figure: each step is one await or one synchronous block, and nothing in
+ * any of them reports how far through it is (the bar's own argument, in
+ * `index.html`).
+ */
+function bootStage(stage: string): void {
+  bootText("boot-stage", stage);
+}
+
+/**
+ * Leaves the boot screen up and says why the game is not coming: the load
+ * plate names the CAUSE in a few words and the note beside it carries the
+ * sentence, which is the part a player can act on.
+ */
+function bootFailed(cause: string, message: string): void {
   const boot = document.getElementById("boot");
   if (!boot) return;
   boot.classList.add("failed");
-  const note = boot.querySelector("p");
-  if (note) note.textContent = message;
+  bootText("boot-word", "Cannot start");
+  bootStage(cause);
+  bootText("boot-cap", "Why");
+  bootText("boot-msg", message);
+}
+
+/**
+ * Resolves once the page has PAINTED what was written before it. A rAF
+ * callback runs before the frame it belongs to is drawn, so the timeout after
+ * it is what lands on the far side of that paint. The constructor is one
+ * synchronous block of seconds on a phone, and a stage name written just
+ * before it would otherwise never reach the glass.
+ */
+function painted(): Promise<void> {
+  return new Promise((resolve) =>
+    requestAnimationFrame(() => setTimeout(resolve, 0)),
+  );
 }
 
 /**
@@ -163,10 +199,20 @@ function bootFailed(message: string): void {
  * flash. Two frames of grace — Babylon queues its first tick from inside the
  * constructor, so it is already ahead of the first callback below, and the
  * second is there so this never rests on that ordering.
+ *
+ * Then a FADE rather than a cut (`#boot.done`, which also stops it taking the
+ * pointer at once), so the menu's own entrance is what the eye lands on. The
+ * removal is on a timer rather than `transitionend`, which never fires under
+ * `prefers-reduced-motion` where the transition is switched off.
  */
 function bootDone(): void {
   requestAnimationFrame(() =>
-    requestAnimationFrame(() => document.getElementById("boot")?.remove()),
+    requestAnimationFrame(() => {
+      const boot = document.getElementById("boot");
+      if (!boot) return;
+      boot.classList.add("done");
+      setTimeout(() => boot.remove(), 350);
+    }),
   );
 }
 
@@ -175,9 +221,11 @@ window.addEventListener("DOMContentLoaded", async () => {
   // FIRST, and before the physics download: a machine with no WebGPU should
   // not spend 2 MB to be told no. It is also the cheapest of the three checks
   // — no canvas, no file, one round trip to the browser's own GPU service.
+  bootStage("Finding a GPU");
   const verdict = await checkWebGPU();
   if (verdict !== "ok") {
     bootFailed(
+      verdict === "insecure" ? "Not a secure origin" : "No WebGPU",
       verdict === "insecure"
         ? "This page is not on a secure origin, so the browser will not offer " +
             "WebGPU to it — and the game needs WebGPU. The machine is probably " +
@@ -197,10 +245,12 @@ window.addEventListener("DOMContentLoaded", async () => {
   // `optimizeDeps.exclude` note in CLAUDE.md), and telling the player to reload
   // would be advice that cannot work.
   let havok;
+  bootStage("Physics engine");
   try {
     havok = await loadHavok();
   } catch (err) {
     bootFailed(
+      "No physics engine",
       "The physics engine could not be loaded, so the game cannot start. " +
         "Check the connection and reload; if it keeps happening, the build is " +
         "missing a file.",
@@ -279,6 +329,7 @@ window.addEventListener("DOMContentLoaded", async () => {
   }
 
   let engine;
+  bootStage("Graphics device");
   try {
     engine = new WebGPUEngine(canvas, {
       antialias: false,
@@ -325,18 +376,27 @@ window.addEventListener("DOMContentLoaded", async () => {
     engine.compatibilityMode = false;
   } catch (err) {
     bootFailed(
+      "No graphics device",
       "This browser has WebGPU but could not start a graphics device, so the " +
         "game cannot run. Check that hardware acceleration is switched on and " +
         "that the graphics driver is up to date.",
     );
     throw err;
   }
+  // The constructor is the longest step on a phone and a single synchronous
+  // block, so its name has to be PAINTED before it starts or it is never seen:
+  // the plate would say "graphics device" through seconds of building a world.
+  bootStage("Building the world");
+  await painted();
   try {
     new Game(canvas, havok, engine);
   } catch (err) {
     // Re-thrown: the message is for the player, the console is for whoever
     // has to work out which of a hundred systems failed to construct.
-    bootFailed("Something went wrong starting the game. Reloading may fix it.");
+    bootFailed(
+      "Start-up failed",
+      "Something went wrong starting the game. Reloading may fix it.",
+    );
     throw err;
   }
   bootDone();

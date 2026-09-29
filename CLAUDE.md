@@ -507,7 +507,9 @@ appends it to `#hud`, so construction order matters exactly once: `HUD` writes
 `#hud.innerHTML` and is built first. **A class on `#hud` belongs to whoever
 raises it.** **One stylesheet per module that writes markup, imported by that
 module**, and `index.html` gets no interface CSS beyond the black background and
-the boot screen. **A phone gets a sixth thing on `#hud`, and it is a DEVICE
+the boot screen — which stands in the menu's frame by COPYING its unit, gutters
+and title clamp (nothing has loaded when it paints), so a change to those owes
+that copy a look. **A phone gets a sixth thing on `#hud`, and it is a DEVICE
 rather than a screen**: `TouchControls` is polled by `InputManager` once a frame
 exactly as a gamepad is, so nothing in gameplay has heard of it.
 

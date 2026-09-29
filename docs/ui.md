@@ -80,14 +80,40 @@ transform.
 and the exception is what defines it: it covers the stretch before any module
 has evaluated, so `src/ui/` could not draw it — the bundle it would be drawn by
 is what the player is waiting for. It is markup in `index.html` with its styles
-in that file's `<style>` block, and `main.ts` is the only code that touches it:
-taken down two frames after the `Game` constructor returns, or turned into one
-of the three failure messages when the game cannot start at all — "needs
-WebGPU", "no graphics device" or "no physics engine". It is self-contained
-by necessity — in DEV `base.css` is injected from JS and has not arrived either,
-so it may not use `--font`, `.frame`, or anything else the interface shares.
-Nothing that reacts to game state may be added to it; that is an interface, and
-it belongs here with a stylesheet of its own.
+in that file's `<style>` block, and `main.ts` is the only code that touches it.
+It is self-contained by necessity — in DEV `base.css` is injected from JS and
+has not arrived either, so it may not use `--font`, `.frame`, or anything else
+the interface shares. Nothing that reacts to game state may be added to it; that
+is an interface, and it belongs here with a stylesheet of its own.
+
+**It is nonetheless a TITLE SCREEN FOR THE GAME, standing in the menu's frame**,
+because the menu is what it turns into. The title is GREYWATCH, set where the
+menu sets a map's name and at the menu's scale — the one thing the screen is
+about before there is a map to name; a load plate stands where Deploy will,
+dark (the building card's plate exactly, bar along its bottom edge, so the
+game's two waits read as one instrument); and a note on the right says what the
+game plays on. **Its unit, gutters, type ladder and title clamp are COPIED from
+`base.css` and `overlay.css`, not shared** — so a change to one of those owes
+this copy a look, or the hand-off shifts the composition under the player.
+**There is no photograph and there cannot be one**: the shots are hashed by
+Vite and `index.html` may name nothing the build renames, so the horizon is
+PAINTED — a night sky, a moon and two inked ridges in gradients and polygons,
+drifting on a transform like the menu's photograph. The menu's four templates,
+at the menu's breakpoints.
+
+**The plate NAMES each await as it begins and never counts one** (`bootStage`:
+fetching, finding a GPU, the physics engine, the graphics device, building the
+world), because each is one await or one synchronous block with nothing inside
+it to report. The last is the constructor, which on a phone is seconds of a
+blocked main thread, so `main.ts` waits for a PAINT (`painted`) before starting
+it — without that the plate said "graphics device" through the whole build. On
+the way out it FADES (`#boot.done`, off the pointer at once) and is removed on
+a timer, since `transitionend` never fires with the transition switched off
+under reduced motion. **A failure fills both halves** (`bootFailed(cause,
+message)`): the plate turns to "Cannot start" over the cause in a few words,
+the bar goes and the edge turns red, and the note becomes the sentence a player
+can act on — "not a secure origin", "no WebGPU", "no graphics device", "no
+physics engine" or "start-up failed".
 
 Each screen builds its own root element and appends it to `#hud`, which is why
 construction order in `Game`'s constructor matters exactly once: `HUD` writes

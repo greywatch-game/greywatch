@@ -51,20 +51,73 @@
         background: #000;
       }
 
-      /* Full-bleed and above the canvas, because until the Game's constructor
-         returns the canvas is an empty black rectangle anyway. Removed from
-         the DOM outright by `main.ts` — not hidden, since a fixed layer over
-         a first-person shooter that is merely transparent still eats the
-         pointer. */
+      /* =================================================================
+         THE BOOT SCREEN — a title screen for the game itself.
+         -----------------------------------------------------------------
+         It stands in the MAIN MENU's frame, because the menu is what it
+         turns into: the same unit, the same gutters, the same title scale
+         and the same chamfered plates, so the first thing a player sees is
+         already the front end rather than a splash in front of it. The
+         title is the one thing this screen is ABOUT — the game, before
+         there is a map to name — set where the menu sets a map's; the LOAD
+         PLATE stands where Deploy will, dark because there is nothing to
+         press; the note on the right is what a first-time player can use
+         while they wait, and on a machine that cannot run the game it is
+         the reason.
+
+         **Every number below is COPIED from `base.css` and `overlay.css`,
+         never shared**, for the reason the whole block is here at all: in
+         DEV neither stylesheet has arrived when this is painted. `--u`,
+         `--gx`, `--gy`, the `--t-*` ladder and the title's clamp are the
+         menu's exactly, which is what keeps the hand-off from shifting the
+         composition; change one there and this copy owes a look.
+
+         **There is no photograph, and there cannot be one**: the menu's
+         pictures are content-hashed by Vite and this file may name nothing
+         the build renames. The horizon behind the title is PAINTED instead
+         — a night sky, a moon and two inked ridges, in gradients and
+         polygons — which is the game's own look stated in CSS, and costs
+         no request.
+
+         Full-bleed and above the canvas, because until the Game's
+         constructor returns the canvas is an empty black rectangle anyway.
+         Faded and then removed from the DOM outright by `main.ts` — not
+         merely hidden, since a fixed layer over a first-person shooter that
+         is transparent still eats the pointer.
+         ================================================================= */
       #boot {
+        --u: clamp(0.5px, calc(100vmin / 1080), 2.4px);
+        --gx: max(clamp(16px, 3.4vw, 104px), calc((100% - 240vh) / 2));
+        --gy: clamp(12px, calc(38 * var(--u)), 76px);
+        --col: clamp(300px, 38vw, calc(700 * var(--u)));
+        --intel: clamp(260px, 25vw, calc(430 * var(--u)));
+        --t-title: clamp(28px, calc(112 * var(--u)), 9.4vw);
+        --t-big: max(18px, calc(32 * var(--u)));
+        --t-body: max(12px, calc(17 * var(--u)));
+        --t-cap: max(10px, calc(13 * var(--u)));
+        --hot: #ffe680;
+        --cold: #35f0ff;
+        --bad: #ff5a4f;
+        --dcut: max(10px, calc(18 * var(--u)));
+
         position: fixed;
         inset: 0;
         z-index: 100;
-        display: flex;
-        flex-direction: column;
-        align-items: center;
-        justify-content: center;
-        gap: 18px;
+        overflow: hidden;
+        display: grid;
+        grid-template-columns: minmax(0, var(--col)) minmax(0, 1fr) var(--intel);
+        grid-template-rows: minmax(0, 1fr) auto auto;
+        grid-template-areas:
+          ".    .    ."
+          "hero hero ."
+          "load .    note";
+        column-gap: clamp(16px, calc(48 * var(--u)), 120px);
+        row-gap: clamp(8px, calc(16 * var(--u)), 30px);
+        padding: max(var(--gy), env(safe-area-inset-top))
+          max(var(--gx), env(safe-area-inset-right))
+          max(var(--gy), env(safe-area-inset-bottom))
+          max(var(--gx), env(safe-area-inset-left));
+        color: #fff;
         background: #05070b;
         /* The HUD's stack, repeated rather than shared: `--font` is declared
            on #hud by base.css, which in dev has not loaded yet. */
@@ -72,57 +125,222 @@
           "Roboto Condensed", "Oswald", "Ubuntu Condensed",
           "Franklin Gothic Medium", "Arial Narrow", "Liberation Sans Narrow",
           "Nimbus Sans Narrow", "DejaVu Sans Condensed", "Segoe UI", sans-serif;
-        text-align: center;
-        padding: 24px;
         user-select: none;
+        transition: opacity 0.3s ease;
       }
-      #boot h1 {
-        margin: 0;
-        font-size: clamp(34px, 9vw, 64px);
-        font-weight: 900;
-        letter-spacing: 0.22em;
-        text-indent: 0.22em;
-        color: #ffe680;
-        text-shadow: 4px 4px 0 #000, -2px -2px 0 #35f0ff;
+      #boot * { margin: 0; box-sizing: border-box; }
+      /* The way off: `main.ts` fades it before removing it, so the menu's
+         own entrance is what the eye lands on rather than a cut. It stops
+         taking the pointer the moment the fade starts. */
+      #boot.done {
+        opacity: 0;
+        pointer-events: none;
       }
-      #boot p {
-        margin: 0;
-        font-size: 12px;
+
+      /* --- the painted horizon ---
+         Night, because most of the maps are: a sky that falls from a cold
+         blue to the page's black, one moon, and two ridges cut as polygons
+         with a black copy stood 2 px higher behind each — the ink line the
+         cel look draws on every silhouette, in the only way CSS can draw
+         one on a clipped shape. They drift as the menu's photograph does, on
+         a transform, so the compositor keeps them moving through the
+         constructor's long synchronous block exactly as it keeps the bar. */
+      #boot .boot-sky {
+        position: absolute;
+        inset: 0;
+        z-index: 0;
+        pointer-events: none;
+        background:
+          radial-gradient(circle at 74% 24%, #efe8cf 0, #efe8cf calc(26 * var(--u)), rgba(239, 232, 207, 0.22) calc(30 * var(--u)), rgba(170, 190, 220, 0.08) calc(140 * var(--u)), transparent calc(420 * var(--u))),
+          radial-gradient(1.4px 1.4px at 18% 16%, rgba(255, 255, 255, 0.7), transparent),
+          radial-gradient(1.2px 1.2px at 33% 9%, rgba(255, 255, 255, 0.5), transparent),
+          radial-gradient(1.6px 1.6px at 48% 22%, rgba(255, 255, 255, 0.6), transparent),
+          radial-gradient(1.2px 1.2px at 61% 7%, rgba(255, 255, 255, 0.45), transparent),
+          radial-gradient(1.4px 1.4px at 88% 13%, rgba(255, 255, 255, 0.6), transparent),
+          radial-gradient(1.2px 1.2px at 93% 34%, rgba(255, 255, 255, 0.4), transparent),
+          radial-gradient(1.2px 1.2px at 8% 31%, rgba(255, 255, 255, 0.45), transparent),
+          linear-gradient(180deg, #0c1626 0%, #0a1220 38%, #070b14 62%, #05070b 100%);
+      }
+      #boot .boot-ridge {
+        position: absolute;
+        left: -4%;
+        right: -4%;
+        bottom: 0;
+        z-index: 0;
+        pointer-events: none;
+        will-change: transform;
+        animation: boot-drift 38s ease-in-out infinite alternate;
+      }
+      #boot .boot-ridge::before,
+      #boot .boot-ridge::after {
+        content: "";
+        position: absolute;
+        inset: 0;
+        clip-path: var(--shape);
+      }
+      #boot .boot-ridge::before { background: #000; transform: translateY(-2px); }
+      #boot .boot-ridge.far {
+        top: 44%;
+        --rh: 56vh;
+        --shape: polygon(0 calc(var(--rh) * 0.58), 7% calc(var(--rh) * 0.44), 13% calc(var(--rh) * 0.5), 21% calc(var(--rh) * 0.3), 27% calc(var(--rh) * 0.38), 34% calc(var(--rh) * 0.22), 41% calc(var(--rh) * 0.34), 47% calc(var(--rh) * 0.28), 55% calc(var(--rh) * 0.46), 63% calc(var(--rh) * 0.26), 70% calc(var(--rh) * 0.12), 76% calc(var(--rh) * 0.24), 83% calc(var(--rh) * 0.2), 90% calc(var(--rh) * 0.36), 96% calc(var(--rh) * 0.3), 100% calc(var(--rh) * 0.4), 100% 100%, 0 100%);
+        animation-duration: 46s;
+      }
+      #boot .boot-ridge.far::after {
+        background: linear-gradient(180deg, #1a2638 0%, #111a28 40%, #0a0f18 100%);
+      }
+      #boot .boot-ridge.near {
+        top: 62%;
+        --rh: 38vh;
+        --shape: polygon(0 calc(var(--rh) * 0.34), 9% calc(var(--rh) * 0.22), 18% calc(var(--rh) * 0.4), 26% calc(var(--rh) * 0.3), 36% calc(var(--rh) * 0.52), 47% calc(var(--rh) * 0.44), 58% calc(var(--rh) * 0.58), 68% calc(var(--rh) * 0.4), 76% calc(var(--rh) * 0.46), 84% calc(var(--rh) * 0.24), 90% calc(var(--rh) * 0.3), 100% calc(var(--rh) * 0.18), 100% 100%, 0 100%);
+        animation-direction: alternate-reverse;
+      }
+      #boot .boot-ridge.near::after {
+        background: linear-gradient(180deg, #0e1520 0%, #080c13 45%, #05070b 100%);
+      }
+      @keyframes boot-drift {
+        from { transform: translate3d(-1.5%, 0, 0); }
+        to { transform: translate3d(1.5%, 0, 0); }
+      }
+
+      /* --- the scrim ---
+         The menu's, shaped like the layout and dark only where there is
+         type, with the friend/foe glow pair and the scanlines the whole
+         interface is lit by. Its own layer rather than #boot's background,
+         because the horizon has to sit between the two. */
+      #boot .boot-scrim {
+        position: absolute;
+        inset: 0;
+        z-index: 0;
+        pointer-events: none;
+        background:
+          linear-gradient(90deg, rgba(3, 5, 11, 0.86) 0, rgba(3, 5, 11, 0.62) calc(var(--gx) + var(--col) * 0.55), rgba(3, 5, 11, 0.2) calc(var(--gx) + var(--col) * 1.1), rgba(3, 5, 11, 0) calc(var(--gx) + var(--col) * 1.55)),
+          linear-gradient(0deg, rgba(2, 3, 8, 0.9) 0%, rgba(2, 3, 8, 0.5) 22%, rgba(2, 3, 8, 0) 50%),
+          linear-gradient(270deg, rgba(3, 5, 11, 0.55) 0%, rgba(3, 5, 11, 0) 34%),
+          radial-gradient(120% 90% at 4% 110%, rgba(255, 230, 128, 0.12), transparent 56%),
+          radial-gradient(90% 72% at 97% -14%, rgba(53, 240, 255, 0.09), transparent 54%),
+          repeating-linear-gradient(to bottom, rgba(255, 255, 255, 0.012) 0 1px, transparent 1px 3px);
+      }
+
+      /* Everything that stands on the picture carries its own separation. */
+      #boot .boot-hero,
+      #boot .boot-note {
+        position: relative;
+        z-index: 1;
+        min-width: 0;
+        text-shadow: 0 2px 8px rgba(0, 0, 0, 0.9), 0 0 2px rgba(0, 0, 0, 0.8);
+      }
+
+      /* --- the title --- */
+      #boot .boot-hero {
+        grid-area: hero;
+        align-self: end;
+      }
+      #boot .boot-mode {
+        font-size: var(--t-cap);
         font-weight: 700;
-        letter-spacing: 0.3em;
+        letter-spacing: 0.32em;
         text-transform: uppercase;
-        color: #35f0ff;
-        animation: boot-pulse 1.4s ease-in-out infinite;
+        color: var(--hot);
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+      }
+      /* The menu's title, and the wordmark's two marks on it: white and set
+         tight like a map's name, with the lockup's hard black drop and its
+         one-pixel cyan lift, since here the name of the game IS the title. */
+      #boot h1 {
+        margin: max(2px, calc(6 * var(--u))) 0 max(6px, calc(12 * var(--u)));
+        font-size: var(--t-title);
+        font-weight: 900;
+        letter-spacing: 0.05em;
+        line-height: 0.92;
+        text-transform: uppercase;
+        color: #fff;
+        white-space: nowrap;
+        text-shadow: 0.04em 0.045em 0 #000, -0.012em -0.012em 0 var(--cold),
+          0 0.08em 0.6em rgba(0, 0, 0, 0.55);
+      }
+      #boot .boot-blurb {
+        max-width: 46ch;
+        font-size: var(--t-body);
+        line-height: 1.5;
+        color: rgba(255, 255, 255, 0.76);
+      }
+
+      /* --- the load plate ---
+         Where Deploy will stand and the same shape, but DARK: nothing here
+         is to be pressed, and a hot fill is how this interface says that
+         something is. The building card's plate exactly, so the two waits
+         in the game look like one instrument. The bar is its bottom edge. */
+      #boot .boot-load {
+        grid-area: load;
+        position: relative;
+        z-index: 1;
+        align-self: end;
+        display: flex;
+        flex-direction: column;
+        justify-content: center;
+        gap: max(2px, calc(3 * var(--u)));
+        min-width: 0;
+        min-height: max(52px, calc(82 * var(--u)));
+        margin-top: max(4px, calc(10 * var(--u)));
+        padding: max(10px, calc(16 * var(--u))) max(16px, calc(30 * var(--u)));
+        background: linear-gradient(100deg, rgba(14, 18, 28, 0.9), rgba(10, 13, 21, 0.78));
+        box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.09);
+        clip-path: polygon(var(--dcut) 0, 100% 0, 100% calc(100% - var(--dcut)), calc(100% - var(--dcut)) 100%, 0 100%, 0 var(--dcut));
+      }
+      #boot .boot-word {
+        font-size: var(--t-big);
+        font-weight: 900;
+        letter-spacing: 0.3em;
+        line-height: 1;
+        text-transform: uppercase;
+        color: #fff;
+        white-space: nowrap;
+      }
+      /* What is being waited on, written by `main.ts` as each of its awaits
+         begins — four honest names for four real steps, never a figure. */
+      #boot .boot-stage {
+        font-size: var(--t-cap);
+        font-weight: 700;
+        letter-spacing: 0.24em;
+        text-transform: uppercase;
+        color: rgba(255, 255, 255, 0.5);
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
       }
       /* An INDETERMINATE bar, and it has to be: there is no progress to
-         report. The bundle arrives as one module script — nothing observes it
-         part-way — and the constructor behind it is a single synchronous
-         block. A percentage here would be invented, and an invented one always
-         sticks at 90% while the real work finishes. A sweep says "still
-         working" without claiming to know how much is left, which is the whole
-         of what can honestly be said. */
-      #boot-bar {
-        position: relative;
-        width: min(300px, 60vw);
-        height: 3px;
+         report. The bundle arrives as one module script — nothing observes
+         it part-way — and the constructor behind it is a single synchronous
+         block. A percentage here would be invented, and an invented one
+         always sticks at 90% while the real work finishes. A sweep says
+         "still working" without claiming to know how much is left, which is
+         the whole of what can honestly be said. */
+      #boot .boot-bar {
+        position: absolute;
+        left: 0;
+        right: 0;
+        bottom: 0;
+        height: max(3px, calc(4 * var(--u)));
         overflow: hidden;
-        background: rgba(255, 255, 255, 0.1);
+        background: rgba(255, 255, 255, 0.08);
       }
       /* TRANSFORM ONLY — see the note in overlay.css on `.ov-bar i`, which is
          the same rule for the harder case. Animating `width` or `left` here
-         would put every frame of it through layout on the main thread. */
-      #boot-bar i {
+         would put every frame of it through layout on the main thread, and
+         the constructor gives the main thread no frames at all. */
+      #boot .boot-bar i {
         position: absolute;
-        /* `left: 0` is NOT decoration. Without it an absolutely positioned box
-           falls back to its STATIC position, which `#boot`'s `text-align:
-           center` puts in the middle of the track — so the segment began at
-           the centre and swept off the right-hand end, leaving an empty track
-           for most of every cycle. */
+        /* `left: 0` is NOT decoration. Without it an absolutely positioned
+           box falls back to its STATIC position, which a `text-align` on any
+           ancestor decides — the old boot screen's segment began at the
+           centre of its track and swept off the right-hand end. */
         left: 0;
         top: 0;
         bottom: 0;
         width: 34%;
-        background: #35f0ff;
+        background: var(--cold);
         box-shadow: 0 0 12px 1px rgba(53, 240, 255, 0.85),
           0 0 32px rgba(53, 240, 255, 0.4);
         will-change: transform;
@@ -139,25 +357,133 @@
         from { transform: translateX(0); }
         to { transform: translateX(194%); }
       }
-      /* The failure text is prose, not a status line: it has to be readable
-         rather than stylish, and it must not pulse — a message that throbs
-         reads as something still in progress. The bar goes for the same
-         reason, and it is the louder half of it: a loading bar still sweeping
-         under an error message says the game is coming when it is not. */
-      #boot.failed #boot-bar { display: none; }
-      #boot.failed p {
-        animation: none;
-        color: #ff5a4f;
-        max-width: 34em;
-        font-size: 15px;
-        font-weight: 400;
-        letter-spacing: 0.04em;
-        text-transform: none;
-        line-height: 1.5;
+
+      /* --- the note ---
+         Set as the building card's field note is — a rule down its left
+         edge in the cold accent, the machine talking rather than the game.
+         While loading it says what the game plays on; on a failure it is
+         the reason, which is why it is the one read block every template
+         keeps. */
+      #boot .boot-note {
+        grid-area: note;
+        align-self: end;
+        display: flex;
+        flex-direction: column;
+        gap: max(4px, calc(8 * var(--u)));
+        padding-left: max(8px, calc(14 * var(--u)));
+        border-left: 2px solid rgba(53, 240, 255, 0.8);
       }
-      @keyframes boot-pulse {
-        0%, 100% { opacity: 1; }
-        50% { opacity: 0.35; }
+      #boot .boot-note-cap {
+        font-size: var(--t-cap);
+        font-weight: 700;
+        letter-spacing: 0.32em;
+        text-transform: uppercase;
+        color: rgba(53, 240, 255, 0.85);
+      }
+      #boot .boot-note p {
+        max-width: 46ch;
+        font-size: var(--t-body);
+        line-height: 1.5;
+        color: rgba(255, 255, 255, 0.82);
+      }
+
+      /* --- the failure ---
+         The plate stops being a wait and says so: the bar goes (a loading
+         bar still sweeping under an error says the game is coming when it is
+         not), the word turns, the stage names the cause, and the edge goes
+         red. The note becomes the prose — readable rather than stylish, and
+         it must not animate, since a message that moves reads as something
+         still in progress. */
+      #boot.failed .boot-bar { display: none; }
+      #boot.failed .boot-load {
+        box-shadow: inset 0 0 0 1px rgba(255, 90, 79, 0.45), inset 0 -3px 0 var(--bad);
+      }
+      #boot.failed .boot-stage { color: var(--bad); }
+      #boot.failed .boot-note { border-left-color: var(--bad); }
+      #boot.failed .boot-note-cap { color: var(--bad); }
+      #boot.failed .boot-note p { color: #fff; }
+
+      /* --- the arrival ---
+         On the parse, which is the only raise this screen has. Opacity and
+         transform only, and short: on a fast machine the whole screen may be
+         up for well under a second. */
+      #boot .boot-hero { animation: boot-rise 0.5s cubic-bezier(0.16, 0.84, 0.36, 1) both; }
+      #boot .boot-load { animation: boot-rise 0.5s cubic-bezier(0.16, 0.84, 0.36, 1) 0.08s both; }
+      #boot .boot-note { animation: boot-arrive 0.6s ease 0.2s both; }
+      @keyframes boot-rise {
+        from { opacity: 0; transform: translate3d(0, calc(18 * var(--u)), 0); }
+        to { opacity: 1; transform: none; }
+      }
+      @keyframes boot-arrive {
+        from { opacity: 0; }
+        to { opacity: 1; }
+      }
+
+      /* --- the four templates, the menu's own breakpoints ---
+         Without the intel plate the note stands beside the load plate; on a
+         phone held sideways the title runs across and the two sit under it;
+         upright, one column. */
+      @media (max-width: 1099px), (max-height: 619px) {
+        #boot {
+          --col: clamp(300px, 58vw, calc(720 * var(--u)));
+          grid-template-columns: minmax(0, var(--col)) minmax(0, 1fr);
+          grid-template-areas:
+            ".    ."
+            "hero hero"
+            "load note";
+        }
+      }
+      @media (orientation: landscape) and (max-height: 560px) {
+        #boot {
+          --gy: 10px;
+          grid-template-columns: minmax(0, 1fr) minmax(0, clamp(250px, 45%, 440px));
+          column-gap: clamp(14px, 3vw, 32px);
+          row-gap: 8px;
+        }
+        #boot .boot-scrim {
+          background:
+            linear-gradient(0deg, rgba(2, 3, 8, 0.94) 0%, rgba(2, 3, 8, 0.62) 42%, rgba(2, 3, 8, 0) 72%),
+            linear-gradient(90deg, rgba(3, 5, 11, 0.55) 0%, rgba(3, 5, 11, 0) 60%);
+        }
+        #boot h1 {
+          margin-bottom: 4px;
+          font-size: clamp(26px, min(7.2vw, 13vh), 60px);
+        }
+        #boot .boot-load { margin-top: 0; }
+        #boot .boot-note p { font-size: 12px; }
+      }
+      @media (orientation: landscape) and (max-height: 560px) and (max-width: 740px) {
+        #boot .boot-blurb { display: none; }
+      }
+      @media (orientation: portrait) {
+        #boot {
+          grid-template-columns: minmax(0, 1fr);
+          grid-template-rows: minmax(0, 1fr) auto auto auto;
+          grid-template-areas: "." "hero" "load" "note";
+          row-gap: max(12px, calc(20 * var(--u)));
+        }
+        #boot .boot-scrim {
+          background:
+            linear-gradient(0deg, rgba(2, 3, 8, 0.95) 0%, rgba(2, 3, 8, 0.8) 42%, rgba(2, 3, 8, 0.2) 68%, rgba(2, 3, 8, 0) 80%),
+            radial-gradient(120% 60% at 0% 100%, rgba(255, 230, 128, 0.1), transparent 60%),
+            repeating-linear-gradient(to bottom, rgba(255, 255, 255, 0.012) 0 1px, transparent 1px 3px);
+        }
+        #boot > :is(.boot-hero, .boot-load, .boot-note) {
+          width: 100%;
+          max-width: 680px;
+        }
+        /* Upright, a profile as tall as its box is a row of needles: the
+           profile keeps a landscape's proportions off the WIDTH and the
+           fill under it runs on to the floor. */
+        #boot .boot-ridge.far { top: 36%; --rh: 34vw; }
+        #boot .boot-ridge.near { top: 47%; --rh: 24vw; }
+      }
+      @media (max-width: 560px) {
+        #boot .boot-mode { letter-spacing: 0.22em; }
+      }
+      @media (prefers-reduced-motion: reduce) {
+        #boot :is(.boot-hero, .boot-load, .boot-note, .boot-ridge) { animation: none; }
+        #boot { transition: none; }
       }
     </style>
   </head>
@@ -165,11 +491,34 @@
     <canvas id="game-canvas"></canvas>
     <div id="hud"></div>
     <!-- Deliberately NOT inside #hud: the HUD writes `#hud.innerHTML` on
-         construction and would wipe this on its way past. -->
+         construction and would wipe this on its way past. `main.ts` is the
+         only code that touches it, and writes only its four ids. -->
     <div id="boot">
-      <h1>GREYWATCH</h1>
-      <p>Loading</p>
-      <div id="boot-bar"><i></i></div>
+      <div class="boot-sky"></div>
+      <div class="boot-ridge far"></div>
+      <div class="boot-ridge near"></div>
+      <div class="boot-scrim"></div>
+      <div class="boot-hero">
+        <div class="boot-mode">Cel-shaded conquest</div>
+        <h1>Greywatch</h1>
+        <p class="boot-blurb">
+          Five flags and two sides, and a reinforcement count that bleeds for
+          whoever holds fewer of them. Take them, hold them, and deploy again.
+        </p>
+      </div>
+      <div class="boot-load">
+        <b class="boot-word" id="boot-word">Loading</b>
+        <span class="boot-stage" id="boot-stage">Fetching the game</span>
+        <div class="boot-bar"><i></i></div>
+      </div>
+      <div class="boot-note">
+        <span class="boot-note-cap" id="boot-cap">Plays on</span>
+        <p id="boot-msg">
+          A pad, a mouse and keyboard, or a phone held sideways. Install it
+          from the browser and it runs full screen, and offline once it has
+          loaded.
+        </p>
+      </div>
     </div>
     <script type="module" src="/main.ts"></script>
   </body>
