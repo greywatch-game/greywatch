@@ -357,20 +357,6 @@ function roofHeight(o: RoofSpec, x: number, z: number, under = false): number {
   return o.y + o.rise * Math.pow(t, o.curve ?? 1.6) + (o.raise ?? 0) + lift - (under ? (o.thick ?? 0.3) : 0);
 }
 
-/**
- * The ridge over a curved roof: a tile ridge along X and a raised end tile at
- * each end — the one line on a Japanese roof that is straight, and the one
- * thing that says where its top is from across the valley.
- */
-function ridge(b: Build, halfLen: number, y: number, z = 0, x = 0): void {
-  b.box(halfLen * 2 + 0.4, 0.42, 0.55, x, y + 0.12, z, KAWARA_DARK);
-  for (const s of [-1, 1]) {
-    b.box(0.5, 0.95, 0.62, x + s * (halfLen + 0.2), y + 0.4, z, KAWARA_DARK, {
-      z: -s * 0.18,
-    });
-  }
-}
-
 // --- the gate everyone walks through ---------------------------------------------
 
 /**
@@ -678,6 +664,9 @@ type TubePoint = [number, number, number, number];
  * hundreds of meshes for the merge to build and throw away. The methods are
  * arrow properties, so a builder destructures the ones it uses.
  */
+/** A maple leaf's five lobes, the middle one longest. */
+const LEAF_LOBES = [1, 0.82, 0.5, 0.5, 0.82];
+
 class Lapidary {
   readonly sb = new StoneBatch();
   private readonly meshers = new Map<string, Mesher>();
@@ -908,6 +897,32 @@ class Lapidary {
           return at(fc + rf * k * Math.sin(a), uc + ru * k * Math.cos(a), w);
         });
       this.solid(GRANITE, ring(back), ring(0.005 + j * 0.002), true);
+    }
+  };
+
+  /**
+   * A fallen maple leaf lying on a slope (`at`, `L` long) at (`d` along it,
+   * `u` across): five lobes, the middle one longest, turned by `turn`, in the
+   * litter's red or its orange.
+   */
+  leaf = (
+    rnd: () => number,
+    at: (f: number, u: number, w: number) => V3,
+    L: number,
+    d: number,
+    u: number,
+    size: number,
+    turn: number,
+    w0: number,
+  ): void => {
+    const color = rnd() < 0.55 ? MOMIJI : KAKI;
+    const P = (r: number, a: number, w: number): V3 => at((d + r * Math.cos(a)) / L, u + r * Math.sin(a), w);
+    for (let k = 0; k < 5; k++) {
+      const a = turn + (k * TAU) / 5;
+      const half = TAU / 10;
+      const r = size * LEAF_LOBES[k];
+      const outline = (w: number): V3[] => [P(0, 0, w), P(size * 0.3, a - half, w), P(r, a, w), P(size * 0.3, a + half, w)];
+      this.solid(color, outline(w0), outline(w0 + 0.005), true);
     }
   };
 
@@ -1321,7 +1336,7 @@ export function buildStonePagoda(
     const sin = Math.sin(ctx.rotY);
     return (ctx.terrain.surfaceAt(ctx.x + (lx * cos + lz * sin) * s, ctx.z + (-lx * sin + lz * cos) * s) - ctx.y) / s;
   };
-  const { sb, mesher, scaled, solid, lathe, slope, petals, leafRow, faceAt, onFace, tube, lichen, flush } = new Lapidary(s);
+  const { sb, mesher, scaled, solid, lathe, slope, petals, leafRow, faceAt, onFace, tube, lichen, leaf, flush } = new Lapidary(s);
   const Q = Math.PI / 2;
   const SQ2 = Math.SQRT2;
   /** The faces' bearings: +X, the back (+Z), -X and the front (-Z). */
@@ -1382,22 +1397,6 @@ export function buildStonePagoda(
         1,
         false,
       );
-    }
-  };
-  /**
-   * A maple leaf lying on a slope (`at`, `L` long) at (`d` along it, `u`
-   * across): five lobes, the middle one longest, turned by `turn`.
-   */
-  const LOBES = [1, 0.82, 0.5, 0.5, 0.82];
-  const leaf = (at: (f: number, u: number, w: number) => V3, L: number, d: number, u: number, size: number, turn: number, w0: number): void => {
-    const color = rnd() < 0.55 ? MOMIJI : KAKI;
-    const P = (r: number, a: number, w: number): V3 => at((d + r * Math.cos(a)) / L, u + r * Math.sin(a), w);
-    for (let k = 0; k < 5; k++) {
-      const a = turn + (k * TAU) / 5;
-      const half = TAU / 10;
-      const r = size * LOBES[k];
-      const outline = (w: number): V3[] => [P(0, 0, w), P(size * 0.3, a - half, w), P(r, a, w), P(size * 0.3, a + half, w)];
-      solid(color, outline(w0), outline(w0 + 0.005), true);
     }
   };
 
@@ -1591,7 +1590,7 @@ export function buildStonePagoda(
         const th = FACES[Math.floor(rnd() * 4)];
         const at = slope(half(0.1), rise(0.1), half(0.45), rise(0.45), th);
         const L = Math.hypot(half(0.45) - half(0.1), rise(0.45) - rise(0.1));
-        leaf(at, L, L * (0.25 + rnd() * 0.5), (rnd() - 0.5) * 0.8 * E, 0.04 + rnd() * 0.015, rnd() * TAU, -0.006);
+        leaf(rnd, at, L, L * (0.25 + rnd() * 0.5), (rnd() - 0.5) * 0.8 * E, 0.04 + rnd() * 0.015, rnd() * TAU, -0.006);
       }
     }
 
@@ -1737,7 +1736,7 @@ export function buildStonePagoda(
     }
     for (let j = 5 + Math.floor(rnd() * 5); j > 0; j--) {
       const th = FACES[Math.floor(rnd() * 4)];
-      leaf(ledge(th), LL, 0.04 + rnd() * 0.05, (rnd() - 0.5) * 1.4, 0.032 + rnd() * 0.014, rnd() * TAU, -0.002);
+      leaf(rnd, ledge(th), LL, 0.04 + rnd() * 0.05, (rnd() - 0.5) * 1.4, 0.032 + rnd() * 0.014, rnd() * TAU, -0.002);
     }
   }
 
@@ -5958,6 +5957,334 @@ const TERA: readonly (readonly [number, number, number, number])[] = [
 ];
 
 /**
+ * The CARPENTRY of a small temple building under a curved tiled HIP — the
+ * words the temple gate and the bell tower both build with, and why they
+ * are here rather than in either builder: members laid on a face or from
+ * point to point, a beam's slant-cut end, a bracket's arm, bearing blocks and
+ * small blocks, purlins cut to the rafters over them, two layers of rafters
+ * under a board lining, the hip beams with their wind bells, and the tiles —
+ * round-tile rows on an eave lip, a ridge banded in white with a demon tile
+ * at each end, and a hip ridge down each corner.
+ *
+ * Everything is cut to one `RoofSpec`, a hip whose ridge runs along X
+ * (`tx` its half length, `tz` 0), through `roofHeight`, so a rafter hangs
+ * under the lining and a tile lies on the sheet wherever the sheet is. The
+ * laid members go into `sb`, which the builder flushes when it has emitted
+ * what they hide; the slant-cut ends, the arms, the bells and the ridge's
+ * round cap are parts of their own, emitted as they are called, exactly as
+ * they were when this was the gate's own closures.
+ */
+class Joinery {
+  readonly sb = new StoneBatch();
+  /** The ridge's half length, and the eave ring's half extents. */
+  readonly rx: number;
+  readonly ex: number;
+  readonly ez: number;
+  /** A base rafter's depth, a flying rafter's, and a purlin's. */
+  readonly RB = 0.15;
+  readonly RF = 0.12;
+  readonly KD = 0.26;
+
+  constructor(
+    private readonly b: Build,
+    private readonly color: string,
+    readonly roof: RoofSpec,
+  ) {
+    this.rx = roof.tx;
+    this.ex = roof.ex;
+    this.ez = roof.ez;
+  }
+
+  /** Plan point `n` out from the centre on side `s`, `u` along it. */
+  at = (s: Side, u: number, n: number): [number, number] => (runsAlongX(s) ? [u, outward(s) * n] : [outward(s) * n, u]);
+
+  /** A member centred `out` off plane `plane` of side `s`. */
+  on = (s: Side, plane: number, u: number, y: number, along: number, tall: number, thick: number, out: number, c: string, tilt = 0, hide = 0): void =>
+    this.sb.onFace(s, plane, u, y, along, tall, thick, out, c, tilt, 0, hide);
+
+  member = (a: Point3, c: Point3, wide: number, deep: number, col: string, hide = 0): void => {
+    const o = orient(a, c);
+    this.sb.box(wide, deep, o.len, o.mid[0], o.mid[1], o.mid[2], col, o.rot, hide);
+  };
+
+  /** An end face 1.5 cm past `c`, square to the member from `a` — a tile's, or a rafter's paint. */
+  endFace = (a: Point3, c: Point3, wide: number, deep: number, col: string): void => {
+    const o = orient(a, c);
+    const k = 0.015 / o.len;
+    this.sb.box(wide, deep, 0.01, c[0] + (c[0] - a[0]) * k, c[1] + (c[1] - a[1]) * k, c[2] + (c[2] - a[2]) * k, col, o.rot, 63 & ~J_END);
+  };
+
+  /**
+   * A beam's end run on past a post, its underside cut up on a slant to the
+   * tip (a kibana): from `a0` along the beam's axis for `len` the way `sgn`
+   * says, the beam centred `c` across it.
+   */
+  nose = (alongX: boolean, c: number, a0: number, sgn: number, len: number, yb: number, yt: number, th: number): void => {
+    const a1 = a0 + sgn * len;
+    const prof = (q: number): Point3[] => {
+      const P = (a: number, y: number): Point3 => (alongX ? [a, y, q] : [q, y, a]);
+      return [P(a0, yb), P(a1 - sgn * 0.14, yb), P(a1, yb + (yt - yb) * 0.45), P(a1, yt), P(a0, yt)];
+    };
+    convexSolid(this.b, prof(c - th / 2), prof(c + th / 2), this.color);
+  };
+
+  /** A bracket arm (hijiki): a beam `len` long centred at `uc` along its axis, its ends' undersides rounded up. */
+  arm = (alongX: boolean, uc: number, c: number, len: number, yb: number, yt: number, th: number): void => {
+    const dy = yt - yb;
+    const L = len / 2;
+    const prof = (q: number): Point3[] => {
+      const P = (a: number, y: number): Point3 => (alongX ? [uc + a, y, q] : [q, y, uc + a]);
+      return [P(-L, yt), P(L, yt), P(L, yt - dy * 0.45), P(L - 0.16, yb), P(-L + 0.16, yb), P(-L, yt - dy * 0.45)];
+    };
+    convexSolid(this.b, prof(c - th / 2), prof(c + th / 2), this.color);
+  };
+
+  /** A bearing block of `size` on a post head at (x, z), from `y0` to `y1`. */
+  block = (x: number, z: number, size: number, y0: number, y1: number): void => {
+    this.sb.box(size, y1 - y0 - 0.04, size, x, (y0 + y1 - 0.04) / 2, z, this.color, undefined, HIDE_UNDER);
+    this.sb.box(size - 0.08, 0.04, size - 0.08, x, y1 - 0.02, z, this.color, undefined, HIDE_UNDER);
+  };
+
+  /** Three small blocks along an arm, from `y0` to `y1`. */
+  makito = (alongX: boolean, x: number, z: number, spread: number, y0: number, y1: number): void => {
+    for (const du of [-spread, 0, spread]) {
+      if (alongX) this.sb.box(0.22, y1 - y0, 0.22, x + du, (y0 + y1) / 2, z, this.color, undefined, J_TOP);
+      else this.sb.box(0.22, y1 - y0, 0.22, x, (y0 + y1) / 2, z + du, this.color, undefined, J_TOP);
+    }
+  };
+
+  /** The underside of the board lining, which the rafters hang under. */
+  soffit = (x: number, z: number): number => roofHeight(this.roof, x, z, true) - 0.03;
+
+  /** The underside of the base rafters over (u, n) on side `s`. */
+  underAt = (s: Side, u: number, n: number): number => {
+    const [x, z] = this.at(s, u, n);
+    return this.soffit(x, z) - this.RB;
+  };
+
+  /** Where the hip crosses the row `u` of side `s`, as a distance out from the centre. */
+  nHip = (s: Side, u: number): number => {
+    const { rx, ex, ez } = this;
+    return runsAlongX(s) ? (ez * (Math.abs(u) - rx)) / (ex - rx) : ex - ((ex - rx) * (ez - Math.abs(u))) / ez;
+  };
+
+  /**
+   * A purlin along side `s`, `n` out and `half` either way, its top at
+   * `top(u)` — cut to the rafters over it, so it follows the eave where the
+   * hip comes down over its run-on end.
+   */
+  purlin = (s: Side, n: number, half: number, top: (u: number) => number): void => {
+    const NS = 8;
+    const KD = this.KD;
+    for (let i = 0; i < NS; i++) {
+      const ua = -half + (2 * half * i) / NS;
+      const uc = -half + (2 * half * (i + 1)) / NS;
+      const [xa, za] = this.at(s, ua, n);
+      const [xc, zc] = this.at(s, uc, n);
+      this.member([xa, top(ua) - KD / 2, za], [xc, top(uc) - KD / 2, zc], 0.24, KD, this.color, (i > 0 ? J_START : 0) | (i < NS - 1 ? J_END : 0));
+    }
+  };
+
+  /**
+   * A frog-leg strut (kaerumata) in the middle of side `s`'s bay, `n` out: a
+   * sill on the tie at `y0`, two splayed legs with a boss between them, a
+   * block, and an arm under the purlin whose underside is `y1`.
+   */
+  frogLeg = (s: Side, n: number, y0: number, y1: number): void => {
+    const { on, color } = this;
+    const legH = (y1 - y0) * 0.5;
+    on(s, n, 0, y0 + 0.05, 0.86, 0.1, 0.18, 0, color, 0, J_TOP);
+    for (const e of [-1, 1]) on(s, n, e * 0.24, y0 + 0.1 + legH / 2, 0.1, legH, 0.15, 0, color, e * 0.62);
+    on(s, n, 0, y0 + 0.1 + legH * 0.42, 0.18, 0.24, 0.11, 0, color);
+    const yb = y0 + 0.1 + legH;
+    on(s, n, 0, yb + 0.06, 0.42, 0.12, 0.2, 0, color);
+    on(s, n, 0, yb + 0.12 + (y1 - 0.2 - yb - 0.12) / 2, 0.24, y1 - 0.2 - yb - 0.12, 0.22, 0, color, 0, J_TOP);
+    this.arm(runsAlongX(s), 0, outward(s) * n, 1.1, y1 - 0.2, y1, 0.2);
+  };
+
+  /**
+   * The eave's rafters in two layers on every side: the base rafters from
+   * `from` out (or the hip) to 0.9 past the side's purlin line `purlinAt(s)`,
+   * the flying rafters from 0.7 past it to the eave, their ends painted white.
+   */
+  rafters = (purlinAt: (s: Side) => number, from = 0.14): void => {
+    const { ex, ez } = this;
+    for (const s of J_SIDES) {
+      const along = runsAlongX(s) ? ex : ez;
+      const nEave = runsAlongX(s) ? ez : ex;
+      const N = purlinAt(s);
+      const nB = N + 0.9;
+      const nF = N + 0.7;
+      const SP = 0.32;
+      const K = Math.floor((along - 0.15) / SP);
+      for (let k = -K; k <= K; k++) {
+        const u = k * SP;
+        const n0 = Math.max(from, this.nHip(s, u) + 0.12);
+        const lay = (na: number, nc: number, wide: number, deep: number, cap: string | null): void => {
+          if (nc - na < 0.15) return;
+          const [xa, za] = this.at(s, u, na);
+          const [xc, zc] = this.at(s, u, nc);
+          const a: Point3 = [xa, this.soffit(xa, za) - deep / 2, za];
+          const c: Point3 = [xc, this.soffit(xc, zc) - deep / 2, zc];
+          this.member(a, c, wide, deep, this.color, J_TOP | J_START);
+          if (cap) this.endFace(a, c, wide + 0.01, deep + 0.01, cap);
+        };
+        lay(n0, nB, 0.12, this.RB, null);
+        lay(Math.max(nF, n0), nEave - 0.04, 0.1, this.RF, SHIKKUI);
+      }
+    }
+  };
+
+  /** A hip beam into each corner, its end capped in bronze and a wind bell hung from it. */
+  hipBeams = (): void => {
+    const { rx, ex, ez, sb } = this;
+    J_CORNERS.forEach(([sx, sz]) => {
+      const H = (f: number, deep: number): Point3 => {
+        const x = sx * (rx + f * (ex - rx));
+        const z = sz * f * ez;
+        return [x, this.soffit(x, z) - deep / 2, z];
+      };
+      this.member(H(0.03, 0.3), H(0.82, 0.3), 0.26, 0.3, this.color, J_TOP | J_START);
+      const a = H(0.74, 0.24);
+      const c = H(0.995, 0.24);
+      this.member(a, c, 0.22, 0.24, this.color, J_TOP | J_START);
+      this.endFace(a, c, 0.24, 0.26, BRONZE);
+      const [bx, by0, bz] = c;
+      const by = by0 - 0.12;
+      sb.box(0.025, 0.16, 0.025, bx, by - 0.08, bz, BRONZE);
+      this.b.cyl(0.28, 0.12, 0.22, 8, bx, by - 0.3, bz, BRONZE);
+      sb.box(0.02, 0.16, 0.02, bx, by - 0.52, bz, BRONZE);
+      sb.box(0.13, 0.2, 0.012, bx, by - 0.7, bz, BRONZE, { y: Math.atan2(sx, sz) + Math.PI / 2 });
+    });
+  };
+
+  /**
+   * The tiles: round-tile rows, end tiles, the eave lip, the ridges and the
+   * demon tiles. A pyramid (`tx` 0) has no main `ridge`, and whoever builds
+   * one caps its apex instead.
+   */
+  tiles = (ridge = true): void => {
+    const { roof, rx, ex, ez, sb, member, endFace, at } = this;
+    const eave = roof.y;
+    const RSP = 0.42;
+    const RH = 0.12;
+    const segLen = 0.9;
+    const topAt = (x: number, z: number): number => roofHeight(roof, x, z);
+    const row = (s: Side, u: number, n0: number, n1: number): void => {
+      if (n1 - n0 < 0.2) return;
+      const segs = Math.max(1, Math.ceil((n1 - n0) / segLen));
+      for (let j = 0; j < segs; j++) {
+        const na = n0 + ((n1 - n0) * j) / segs - (j > 0 ? 0.03 : 0);
+        const nb = n0 + ((n1 - n0) * (j + 1)) / segs + (j < segs - 1 ? 0.03 : 0);
+        const [xa, za] = at(s, u, na);
+        const [xc, zc] = at(s, u, nb);
+        const a: Point3 = [xa, topAt(xa, za) + RH / 2 - 0.025, za];
+        const c: Point3 = [xc, topAt(xc, zc) + RH / 2 - 0.025, zc];
+        const last = j === segs - 1;
+        member(a, c, 0.15, RH, KAWARA_DARK, HIDE_UNDER | J_START | (last ? 0 : J_END));
+        if (last) endFace(a, c, 0.17, 0.17, KAWARA_DARK);
+      }
+    };
+    // The eave tiles' lip along every eave, swept up with the corners.
+    for (const s of J_SIDES) {
+      const half = runsAlongX(s) ? ex : ez;
+      const nEave = runsAlongX(s) ? ez : ex;
+      const NL = 14;
+      const pt = (i: number): Point3 => {
+        const [x, z] = at(s, -half + (2 * half * i) / NL, nEave);
+        return [x, topAt(x, z) - 0.02, z];
+      };
+      for (let i = 0; i < NL; i++) member(pt(i), pt(i + 1), 0.05, 0.11, KAWARA_DARK, (i > 0 ? J_START : 0) | (i < NL - 1 ? J_END : 0));
+    }
+    for (const s of J_SIDES) {
+      const along = runsAlongX(s) ? ex : ez;
+      const nEave = runsAlongX(s) ? ez : ex;
+      const K = Math.floor((along - 0.3) / RSP - 0.5);
+      for (let k = -K - 1; k <= K; k++) {
+        const u = (k + 0.5) * RSP;
+        const n0 = runsAlongX(s) && Math.abs(u) <= rx - 0.1 ? 0.32 : this.nHip(s, u) + 0.2;
+        row(s, u, n0, nEave + 0.02);
+      }
+    }
+    /** A demon tile of scale `k` standing at `p0`, turned to `yaw`. */
+    const oni = (p0: Point3, yaw: number, k: number): void => {
+      sb.box(0.5 * k, 0.6 * k, 0.14 * k, p0[0], p0[1] + 0.3 * k, p0[2], KAWARA_DARK, { y: yaw });
+      sb.box(0.34 * k, 0.32 * k, 0.22 * k, p0[0], p0[1] + 0.3 * k, p0[2], KAWARA_DARK, { y: yaw });
+      sb.box(0.16 * k, 0.16 * k, 0.12 * k, p0[0], p0[1] + 0.66 * k, p0[2], KAWARA_DARK, { y: yaw, z: Math.PI / 4 });
+      const c = Math.cos(yaw);
+      const sn = Math.sin(yaw);
+      for (const e of [-1, 1]) {
+        sb.box(0.1 * k, 0.3 * k, 0.1 * k, p0[0] + e * 0.2 * k * c, p0[1] + 0.68 * k, p0[2] - e * 0.2 * k * sn, KAWARA_DARK, { y: yaw, z: -e * 0.35 });
+      }
+    };
+    if (ridge) {
+      // The main ridge: a base, courses banded in white, a round cap, a demon tile each end.
+      const RL = 2 * rx + 0.6;
+      const ry0 = eave + roof.rise - 0.05;
+      sb.box(RL, 0.32, 0.72, 0, ry0 - 0.1, 0, KAWARA_DARK, undefined, HIDE_UNDER);
+      let ridgeY = ry0 + 0.06;
+      for (let i = 0; i < 3; i++) {
+        const depth = 0.64 - i * 0.07;
+        sb.box(RL, 0.1, depth, 0, ridgeY + 0.05, 0, KAWARA_DARK, undefined, HIDE_UNDER);
+        ridgeY += 0.1;
+        if (i < 2) {
+          sb.box(RL - 0.05, 0.03, depth - 0.06, 0, ridgeY + 0.015, 0, SHIKKUI, undefined, HIDE_UNDER);
+          ridgeY += 0.03;
+        }
+      }
+      this.b.cyl(RL, 0.32, 0.32, 8, 0, ridgeY + 0.1, 0, KAWARA_DARK, { z: Math.PI / 2 });
+      for (const sx of [-1, 1]) {
+        oni([sx * (RL / 2 + 0.04), ry0 - 0.16, 0], Math.PI / 2, 1.5);
+        sb.box(0.24, 0.24, 0.24, sx * (RL / 2 - 0.2), ridgeY + 0.3, 0, KAWARA_DARK, { y: Math.PI / 4 });
+      }
+    }
+    /** A ridge from `a` to `c`: a body, a white band and a cap. */
+    const ridgeRun = (a: Point3, c: Point3): void => {
+      const up = (p0: Point3, dy: number): Point3 => [p0[0], p0[1] + dy, p0[2]];
+      member(up(a, 0.12), up(c, 0.12), 0.38, 0.26, KAWARA_DARK, HIDE_UNDER | J_START | J_END);
+      member(up(a, 0.11), up(c, 0.11), 0.42, 0.03, SHIKKUI, J_START | J_END | J_TOP | HIDE_UNDER);
+      member(up(a, 0.3), up(c, 0.3), 0.22, 0.12, KAWARA_DARK, HIDE_UNDER | J_START | J_END);
+    };
+    for (const [sx, sz] of J_CORNERS) {
+      const Hp = (f: number, lift: number): Point3 => {
+        const x = sx * (rx + f * (ex - rx));
+        const z = sz * f * ez;
+        return [x, topAt(x, z) + lift, z];
+      };
+      const f0 = 0.06;
+      const fOni = 1 - 0.8 / Math.hypot(ex - rx, ez);
+      const nr = 4;
+      for (let j = 0; j < nr; j++) ridgeRun(Hp(f0 + ((fOni - f0) * j) / nr, 0), Hp(f0 + ((fOni - f0) * (j + 1)) / nr, 0));
+      oni(Hp(fOni + 0.01, 0), Math.atan2(sx * (ex - rx), sz * ez), 1.05);
+      const a = Hp(fOni + 0.02, 0.07);
+      const c = Hp(1.0, 0.07);
+      member(a, c, 0.22, 0.18, KAWARA_DARK, HIDE_UNDER | J_START);
+      endFace(a, c, 0.24, 0.22, KAWARA_DARK);
+    }
+  };
+
+  /** The roof itself: the board lining the rafters hang under, then the sheet. */
+  sheet = (): void => {
+    const TH = this.roof.thick ?? 0.3;
+    curvedRoof(this.b, CEDAR, { ...this.roof, raise: -TH - 0.004, thick: 0.02 });
+    curvedRoof(this.b, KAWARA, this.roof);
+  };
+}
+
+/** The four sides and the four corners, in the order `Joinery` walks them. */
+const J_SIDES: readonly Side[] = ["-z", "+z", "-x", "+x"];
+const J_CORNERS = [
+  [-1, -1],
+  [1, -1],
+  [1, 1],
+  [-1, 1],
+] as const;
+/** The faces a member laid from `a` to `c` along its own Z may hide. */
+const J_TOP = 1 << 2;
+const J_START = 1 << 5;
+const J_END = 1 << 4;
+
+/**
  * The TEMPLE GATE — the SHIKYAKUMON, the "four-legged gate" an Edo temple
  * sets in its precinct wall: two great pillars in the wall's line carrying
  * the ridge, four lesser posts before and behind them carrying the eaves, and
@@ -6069,76 +6396,15 @@ export function buildTempleGate(
   }
   foot -= 0.08;
 
-  const sb = new StoneBatch();
-  const SIDES: Side[] = ["-z", "+z", "-x", "+x"];
-  const CORNERS = [
-    [-1, -1],
-    [1, -1],
-    [1, 1],
-    [-1, 1],
-  ] as const;
-  // A member laid from `a` to `c` along its own Z hides these faces.
-  const TOP = 1 << 2;
-  const START = 1 << 5;
-  const END = 1 << 4;
-  /** Plan point `n` out from the centre on side `s`, `u` along it. */
-  const at = (s: Side, u: number, n: number): [number, number] =>
-    runsAlongX(s) ? [u, outward(s) * n] : [outward(s) * n, u];
-  /** A member centred `out` off plane `plane` of side `s`. */
-  const on = (s: Side, plane: number, u: number, y: number, along: number, tall: number, thick: number, out: number, c: string, tilt = 0, hide = 0): void =>
-    sb.onFace(s, plane, u, y, along, tall, thick, out, c, tilt, 0, hide);
-  const member = (a: Point3, c: Point3, wide: number, deep: number, col: string, hide = 0): void => {
-    const o = orient(a, c);
-    sb.box(wide, deep, o.len, o.mid[0], o.mid[1], o.mid[2], col, o.rot, hide);
-  };
-  /** An end face 1.5 cm past `c`, square to the member from `a` — a tile's, or a rafter's paint. */
-  const endFace = (a: Point3, c: Point3, wide: number, deep: number, col: string): void => {
-    const o = orient(a, c);
-    const k = 0.015 / o.len;
-    sb.box(wide, deep, 0.01, c[0] + (c[0] - a[0]) * k, c[1] + (c[1] - a[1]) * k, c[2] + (c[2] - a[2]) * k, col, o.rot, 63 & ~END);
-  };
-  /**
-   * A beam's end run on past a post, its underside cut up on a slant to the
-   * tip (a kibana): from `a0` along the beam's axis for `len` the way `sgn`
-   * says, the beam centred `c` across it.
-   */
-  const nose = (alongX: boolean, c: number, a0: number, sgn: number, len: number, yb: number, yt: number, th: number): void => {
-    const a1 = a0 + sgn * len;
-    const prof = (q: number): Point3[] => {
-      const P = (a: number, y: number): Point3 => (alongX ? [a, y, q] : [q, y, a]);
-      return [P(a0, yb), P(a1 - sgn * 0.14, yb), P(a1, yb + (yt - yb) * 0.45), P(a1, yt), P(a0, yt)];
-    };
-    convexSolid(b, prof(c - th / 2), prof(c + th / 2), color);
-  };
-  /** A bracket arm (hijiki): a beam `len` long centred at `uc` along its axis, its ends' undersides rounded up. */
-  const arm = (alongX: boolean, uc: number, c: number, len: number, yb: number, yt: number, th: number): void => {
-    const dy = yt - yb;
-    const L = len / 2;
-    const prof = (q: number): Point3[] => {
-      const P = (a: number, y: number): Point3 => (alongX ? [uc + a, y, q] : [q, y, uc + a]);
-      return [P(-L, yt), P(L, yt), P(L, yt - dy * 0.45), P(L - 0.16, yb), P(-L + 0.16, yb), P(-L, yt - dy * 0.45)];
-    };
-    convexSolid(b, prof(c - th / 2), prof(c + th / 2), color);
-  };
-
   // --- the roof's own geometry, which everything under and on it is cut to ------
   const RISE = 2.9;
   const TH = 0.32;
   const rx = w / 2 - 1.0;
   const roof: RoofSpec = { y: eave, ex, ez, tx: rx, tz: 0, rise: RISE, curve: 1.6, upturn: 0.55, thick: TH, rings: 6, seg: 8 };
-  /** The underside of the board lining, which the rafters hang under. */
-  const soffit = (x: number, z: number): number => roofHeight(roof, x, z, true) - 0.03;
-  const RB = 0.15;
-  const RF = 0.12;
-  /** The underside of the base rafters over (u, n) on side `s`. */
-  const underAt = (s: Side, u: number, n: number): number => {
-    const [x, z] = at(s, u, n);
-    return soffit(x, z) - RB;
-  };
-  /** Where the hip crosses the row `u` of side `s`, as a distance out from the centre. */
-  const nHip = (s: Side, u: number): number =>
-    runsAlongX(s) ? (ez * (Math.abs(u) - rx)) / (ex - rx) : ex - ((ex - rx) * (ez - Math.abs(u))) / ez;
-
+  const j = new Joinery(b, color, roof);
+  const { sb, at, on, member, nose, arm, block, underAt, KD } = j;
+  // A member laid from `a` to `c` along its own Z hides these faces.
+  const TOP = 1 << 2;
   // --- the heights of the frame --------------------------------------------------
   /** The ties along each post line, and along the front and back rows. */
   const ZT0 = h - 0.88;
@@ -6152,7 +6418,6 @@ export function buildTempleGate(
   const DAI = h + 0.22;
   const ARM1 = DAI + 0.18;
   const MAK = ARM1 + 0.13;
-  const KD = 0.26;
   /** The eave purlins' underside along the front and back rows. */
   const ketaBot = (s: Side, u: number): number => underAt(s, u, ZP) - KD;
   /** The end purlins, carried on each side bay's outrigger. */
@@ -6255,26 +6520,14 @@ export function buildTempleGate(
   sb.box(w, MB1 - MB0, 0.3, 0, (MB0 + MB1) / 2, 0, color);
 
   // --- the bracket sets and the purlins -------------------------------------------
-  /** A bearing block of `size` on a post head at (x, z), from `y0` to `y1`. */
-  const block = (x: number, z: number, size: number, y0: number, y1: number): void => {
-    sb.box(size, y1 - y0 - 0.04, size, x, (y0 + y1 - 0.04) / 2, z, color, undefined, HIDE_UNDER);
-    sb.box(size - 0.08, 0.04, size - 0.08, x, y1 - 0.02, z, color, undefined, HIDE_UNDER);
-  };
-  /** Three small blocks along an arm, from ARM1 to MAK. */
-  const makito = (alongX: boolean, x: number, z: number, spread: number): void => {
-    for (const du of [-spread, 0, spread]) {
-      if (alongX) sb.box(0.22, MAK - ARM1, 0.22, x + du, (ARM1 + MAK) / 2, z, color, undefined, TOP);
-      else sb.box(0.22, MAK - ARM1, 0.22, x, (ARM1 + MAK) / 2, z + du, color, undefined, TOP);
-    }
-  };
   // On each lesser post: a block, an arm along the row, small blocks, a second arm under the purlin.
-  for (const [sx, sz] of CORNERS) {
+  for (const [sx, sz] of J_CORNERS) {
     const s: Side = sz < 0 ? "-z" : "+z";
     const x = sx * XP;
     const z = sz * ZP;
     block(x, z, 0.44, h, DAI);
     arm(true, x, z, 1.2, DAI, ARM1, 0.2);
-    makito(true, x, z, 0.42);
+    j.makito(true, x, z, 0.42, ARM1, MAK);
     arm(true, x, z, 1.8, MAK, ketaBot(s, x), 0.2);
   }
   // On each side bay's end post: a block, the outrigger along Z, and over its
@@ -6291,34 +6544,12 @@ export function buildTempleGate(
     arm(false, 0, x + sx * 0.08, 1.4, MAK, endBot(se, 0), 0.2);
   }
   // The eave purlins along the front and back, and the end purlins along the
-  // ends — each cut to the rafters over it, so it follows the eave where the
-  // hip comes down over its run-on end.
-  const purlin = (s: Side, n: number, half: number, top: (u: number) => number): void => {
-    const NS = 8;
-    for (let i = 0; i < NS; i++) {
-      const ua = -half + (2 * half * i) / NS;
-      const uc = -half + (2 * half * (i + 1)) / NS;
-      const [xa, za] = at(s, ua, n);
-      const [xc, zc] = at(s, uc, n);
-      member([xa, top(ua) - KD / 2, za], [xc, top(uc) - KD / 2, zc], 0.24, KD, color, (i > 0 ? START : 0) | (i < NS - 1 ? END : 0));
-    }
-  };
-  for (const s of ["-z", "+z"] as const) purlin(s, ZP, XEP + 0.28, (u) => underAt(s, u, ZP));
-  for (const s of ["-x", "+x"] as const) purlin(s, XEP, ZP + 0.24, (u) => underAt(s, u, XEP));
+  // ends.
+  for (const s of ["-z", "+z"] as const) j.purlin(s, ZP, XEP + 0.28, (u) => underAt(s, u, ZP));
+  for (const s of ["-x", "+x"] as const) j.purlin(s, XEP, ZP + 0.24, (u) => underAt(s, u, XEP));
 
   // --- the frog-leg struts over the front and back bays ------------------------------
-  for (const s of ["-z", "+z"] as const) {
-    const y0 = NK1;
-    const y1 = ketaBot(s, 0);
-    const legH = (y1 - y0) * 0.5;
-    on(s, ZP, 0, y0 + 0.05, 0.86, 0.1, 0.18, 0, color, 0, TOP);
-    for (const e of [-1, 1]) on(s, ZP, e * 0.24, y0 + 0.1 + legH / 2, 0.1, legH, 0.15, 0, color, e * 0.62);
-    on(s, ZP, 0, y0 + 0.1 + legH * 0.42, 0.18, 0.24, 0.11, 0, color);
-    const yb = y0 + 0.1 + legH;
-    on(s, ZP, 0, yb + 0.06, 0.42, 0.12, 0.2, 0, color);
-    on(s, ZP, 0, yb + 0.12 + (y1 - 0.2 - yb - 0.12) / 2, 0.24, y1 - 0.2 - yb - 0.12, 0.22, 0, color, 0, TOP);
-    arm(true, 0, outward(s) * ZP, 1.1, y1 - 0.2, y1, 0.2);
-  }
+  for (const s of ["-z", "+z"] as const) j.frogLeg(s, ZP, NK1, ketaBot(s, 0));
 
   // --- the main pillars: the cambered beams, the king struts, the ridge beam -------
   const ridgeBot = underAt("-z", 0, 0) - 0.3;
@@ -6328,8 +6559,8 @@ export function buildTempleGate(
     const y0 = h + 0.26;
     const y1 = y0 + 0.4;
     const zE = ZP + 0.12;
-    member([x, (y0 + y1) / 2, -zE], [x, (y0 + y1) / 2 + 0.07, 0], 0.24, y1 - y0, color, END);
-    member([x, (y0 + y1) / 2 + 0.07, 0], [x, (y0 + y1) / 2, zE], 0.24, y1 - y0, color, START);
+    member([x, (y0 + y1) / 2, -zE], [x, (y0 + y1) / 2 + 0.07, 0], 0.24, y1 - y0, color, J_END);
+    member([x, (y0 + y1) / 2 + 0.07, 0], [x, (y0 + y1) / 2, zE], 0.24, y1 - y0, color, J_START);
     for (const sz of [-1, 1]) nose(false, x, sz * zE, sz, 0.3, y0, y1, 0.24);
     // The king strut, braced from the beam, a block and an arm under the ridge beam.
     const sTop = ridgeBot - 0.34;
@@ -6342,48 +6573,8 @@ export function buildTempleGate(
   sb.box(2 * rx + 0.1, 0.3, 0.26, 0, ridgeBot + 0.15, 0, color, undefined, TOP);
 
   // --- the eave: rafters in two layers, the hip beams, the wind bells ---------------
-  for (const s of SIDES) {
-    const along = runsAlongX(s) ? ex : ez;
-    const nEave = runsAlongX(s) ? ez : ex;
-    const N = runsAlongX(s) ? ZP : XEP;
-    const nB = N + 0.9;
-    const nF = N + 0.7;
-    const SP = 0.32;
-    const K = Math.floor((along - 0.15) / SP);
-    for (let k = -K; k <= K; k++) {
-      const u = k * SP;
-      const n0 = Math.max(0.14, nHip(s, u) + 0.12);
-      const lay = (na: number, nc: number, wide: number, deep: number, cap: string | null): void => {
-        if (nc - na < 0.15) return;
-        const [xa, za] = at(s, u, na);
-        const [xc, zc] = at(s, u, nc);
-        const a: Point3 = [xa, soffit(xa, za) - deep / 2, za];
-        const c: Point3 = [xc, soffit(xc, zc) - deep / 2, zc];
-        member(a, c, wide, deep, color, TOP | START);
-        if (cap) endFace(a, c, wide + 0.01, deep + 0.01, cap);
-      };
-      lay(n0, nB, 0.12, RB, null);
-      lay(Math.max(nF, n0), nEave - 0.04, 0.1, RF, SHIKKUI);
-    }
-  }
-  CORNERS.forEach(([sx, sz]) => {
-    const H = (f: number, deep: number): Point3 => {
-      const x = sx * (rx + f * (ex - rx));
-      const z = sz * f * ez;
-      return [x, soffit(x, z) - deep / 2, z];
-    };
-    member(H(0.03, 0.3), H(0.82, 0.3), 0.26, 0.3, color, TOP | START);
-    const a = H(0.74, 0.24);
-    const c = H(0.995, 0.24);
-    member(a, c, 0.22, 0.24, color, TOP | START);
-    endFace(a, c, 0.24, 0.26, BRONZE);
-    const [bx, by0, bz] = c;
-    const by = by0 - 0.12;
-    sb.box(0.025, 0.16, 0.025, bx, by - 0.08, bz, BRONZE);
-    b.cyl(0.28, 0.12, 0.22, 8, bx, by - 0.3, bz, BRONZE);
-    sb.box(0.02, 0.16, 0.02, bx, by - 0.52, bz, BRONZE);
-    sb.box(0.13, 0.2, 0.012, bx, by - 0.7, bz, BRONZE, { y: Math.atan2(sx, sz) + Math.PI / 2 });
-  });
+  j.rafters((s) => (runsAlongX(s) ? ZP : XEP));
+  j.hipBeams();
 
   // --- the side bays: sill, rails, skirt, the window; the leaves folded back -------
   {
@@ -6546,101 +6737,7 @@ export function buildTempleGate(
   }
 
   // --- the tiles: round-tile rows, end tiles, the ridges and demon tiles ------------
-  {
-    const RSP = 0.42;
-    const RH = 0.12;
-    const segLen = 0.9;
-    const topAt = (x: number, z: number): number => roofHeight(roof, x, z);
-    const row = (s: Side, u: number, n0: number, n1: number): void => {
-      if (n1 - n0 < 0.2) return;
-      const segs = Math.max(1, Math.ceil((n1 - n0) / segLen));
-      for (let j = 0; j < segs; j++) {
-        const na = n0 + ((n1 - n0) * j) / segs - (j > 0 ? 0.03 : 0);
-        const nb = n0 + ((n1 - n0) * (j + 1)) / segs + (j < segs - 1 ? 0.03 : 0);
-        const [xa, za] = at(s, u, na);
-        const [xc, zc] = at(s, u, nb);
-        const a: Point3 = [xa, topAt(xa, za) + RH / 2 - 0.025, za];
-        const c: Point3 = [xc, topAt(xc, zc) + RH / 2 - 0.025, zc];
-        const last = j === segs - 1;
-        member(a, c, 0.15, RH, KAWARA_DARK, HIDE_UNDER | START | (last ? 0 : END));
-        if (last) endFace(a, c, 0.17, 0.17, KAWARA_DARK);
-      }
-    };
-    // The eave tiles' lip along every eave, swept up with the corners.
-    for (const s of SIDES) {
-      const half = runsAlongX(s) ? ex : ez;
-      const nEave = runsAlongX(s) ? ez : ex;
-      const NL = 14;
-      const pt = (i: number): Point3 => {
-        const [x, z] = at(s, -half + (2 * half * i) / NL, nEave);
-        return [x, topAt(x, z) - 0.02, z];
-      };
-      for (let i = 0; i < NL; i++) member(pt(i), pt(i + 1), 0.05, 0.11, KAWARA_DARK, (i > 0 ? START : 0) | (i < NL - 1 ? END : 0));
-    }
-    for (const s of SIDES) {
-      const along = runsAlongX(s) ? ex : ez;
-      const nEave = runsAlongX(s) ? ez : ex;
-      const K = Math.floor((along - 0.3) / RSP - 0.5);
-      for (let k = -K - 1; k <= K; k++) {
-        const u = (k + 0.5) * RSP;
-        const n0 = runsAlongX(s) && Math.abs(u) <= rx - 0.1 ? 0.32 : nHip(s, u) + 0.2;
-        row(s, u, n0, nEave + 0.02);
-      }
-    }
-    // The main ridge: a base, courses banded in white, a round cap, a demon tile each end.
-    const RL = 2 * rx + 0.6;
-    const ry0 = eave + RISE - 0.05;
-    sb.box(RL, 0.32, 0.72, 0, ry0 - 0.1, 0, KAWARA_DARK, undefined, HIDE_UNDER);
-    let ridgeY = ry0 + 0.06;
-    for (let i = 0; i < 3; i++) {
-      const depth = 0.64 - i * 0.07;
-      sb.box(RL, 0.1, depth, 0, ridgeY + 0.05, 0, KAWARA_DARK, undefined, HIDE_UNDER);
-      ridgeY += 0.1;
-      if (i < 2) {
-        sb.box(RL - 0.05, 0.03, depth - 0.06, 0, ridgeY + 0.015, 0, SHIKKUI, undefined, HIDE_UNDER);
-        ridgeY += 0.03;
-      }
-    }
-    b.cyl(RL, 0.32, 0.32, 8, 0, ridgeY + 0.1, 0, KAWARA_DARK, { z: Math.PI / 2 });
-    /** A demon tile of scale `k` standing at `p0`, turned to `yaw`. */
-    const oni = (p0: Point3, yaw: number, k: number): void => {
-      sb.box(0.5 * k, 0.6 * k, 0.14 * k, p0[0], p0[1] + 0.3 * k, p0[2], KAWARA_DARK, { y: yaw });
-      sb.box(0.34 * k, 0.32 * k, 0.22 * k, p0[0], p0[1] + 0.3 * k, p0[2], KAWARA_DARK, { y: yaw });
-      sb.box(0.16 * k, 0.16 * k, 0.12 * k, p0[0], p0[1] + 0.66 * k, p0[2], KAWARA_DARK, { y: yaw, z: Math.PI / 4 });
-      const c = Math.cos(yaw);
-      const sn = Math.sin(yaw);
-      for (const e of [-1, 1]) {
-        sb.box(0.1 * k, 0.3 * k, 0.1 * k, p0[0] + e * 0.2 * k * c, p0[1] + 0.68 * k, p0[2] - e * 0.2 * k * sn, KAWARA_DARK, { y: yaw, z: -e * 0.35 });
-      }
-    };
-    for (const sx of [-1, 1]) {
-      oni([sx * (RL / 2 + 0.04), ry0 - 0.16, 0], Math.PI / 2, 1.5);
-      sb.box(0.24, 0.24, 0.24, sx * (RL / 2 - 0.2), ridgeY + 0.3, 0, KAWARA_DARK, { y: Math.PI / 4 });
-    }
-    /** A ridge from `a` to `c`: a body, a white band and a cap. */
-    const ridgeRun = (a: Point3, c: Point3): void => {
-      const up = (p0: Point3, dy: number): Point3 => [p0[0], p0[1] + dy, p0[2]];
-      member(up(a, 0.12), up(c, 0.12), 0.38, 0.26, KAWARA_DARK, HIDE_UNDER | START | END);
-      member(up(a, 0.11), up(c, 0.11), 0.42, 0.03, SHIKKUI, START | END | TOP | HIDE_UNDER);
-      member(up(a, 0.3), up(c, 0.3), 0.22, 0.12, KAWARA_DARK, HIDE_UNDER | START | END);
-    };
-    for (const [sx, sz] of CORNERS) {
-      const Hp = (f: number, lift: number): Point3 => {
-        const x = sx * (rx + f * (ex - rx));
-        const z = sz * f * ez;
-        return [x, topAt(x, z) + lift, z];
-      };
-      const f0 = 0.06;
-      const fOni = 1 - 0.8 / Math.hypot(ex - rx, ez);
-      const nr = 4;
-      for (let j = 0; j < nr; j++) ridgeRun(Hp(f0 + ((fOni - f0) * j) / nr, 0), Hp(f0 + ((fOni - f0) * (j + 1)) / nr, 0));
-      oni(Hp(fOni + 0.01, 0), Math.atan2(sx * (ex - rx), sz * ez), 1.05);
-      const a = Hp(fOni + 0.02, 0.07);
-      const c = Hp(1.0, 0.07);
-      member(a, c, 0.22, 0.18, KAWARA_DARK, HIDE_UNDER | START);
-      endFace(a, c, 0.24, 0.22, KAWARA_DARK);
-    }
-  }
+  j.tiles();
 
   sb.flush(b);
 
@@ -6657,59 +6754,582 @@ export function buildTempleGate(
   b.box(2 * PX - 0.1, PT - 0.06 - foot, 2 * PZ - 0.1, 0, (PT - 0.06 + foot) / 2, 0, GRANITE_DARK);
 
   // --- the roof: the lining under the rafters, then the sheet ---------------------------
-  curvedRoof(b, CEDAR, { ...roof, raise: -TH - 0.004, thick: 0.02 });
-  curvedRoof(b, KAWARA, roof);
+  j.sheet();
   return b;
 }
 
 /**
- * The BELL TOWER (shoro): four splayed posts on a granite plinth, a curved
- * roof, and the bronze bell hung in the middle with the striking log beside
- * it. A precinct's second silhouette after its hall.
+ * The BELL TOWER — a SHŌRŌ, the open bell house an Edo temple stands in its
+ * precinct: four splayed posts on a stone platform under a tiled pyramid,
+ * the great bronze bell hung in the middle and the striking log hung beside
+ * it. After the hall and the pagoda it is the precinct's third silhouette,
+ * and the one of the three a player walks under and looks up into.
+ *
+ * **It was four posts on a slab under a smooth grey hat**, with a bronze
+ * tube for a bell and a slotted block for a ridge. It is drawn as one is
+ * built:
+ *
+ * - **The platform (kidan)**: face stones in two courses carried down to the
+ *   ground, a coping round the top, flags in running bond inside it, a step
+ *   before the front and one on the side facing the hall, and maple leaves
+ *   blown onto it.
+ * - **The posts**: chamfered square cypress, splayed out toward the foot
+ *   (uchikorobi) as a bell house's are, each on a round granite base in a
+ *   bronze root sleeve.
+ * - **The frame**: a flying tie through the posts each way — the two at
+ *   different heights, so they pass — and a head tie over them, every end run
+ *   on and cut on a slant; a bracket set both ways on every post head; a
+ *   frog-leg strut in the middle of every side; and between the head tie and
+ *   the purlins a band of white plaster (kokabe) the brackets are half buried
+ *   in, as a temple's are.
+ * - **Inside**: a coffered ceiling, black ribs over cedar boards inside a
+ *   cornice, and under it the bell beam resting on the side head ties.
+ * - **The eave and the roof**: two layers of rafters under a board lining,
+ *   hip beams with wind bells, and a PYRAMID (hōgyō) of round-tile rows on an
+ *   eave lip with a hip ridge and a demon tile down each corner, capped by a
+ *   bronze dew basin, an inverted bowl and the jewel. **It is a pyramid and
+ *   not a hip because the plan is square**: `curvedRoof` lerps its rings, so
+ *   a ridge over a square plan pitches its ends steeper than its sides and no
+ *   purlin under them can run level.
+ * - **The bell (bonshō)**: cast with a rolled lip, its upper, middle and
+ *   lower bands and the four vertical ones (kesa-dasuki); eighty nipples
+ *   (chi) in four framed panels under the upper band; a lotus striking seat
+ *   (tsukiza) either side where the middle band crosses a vertical one; and a
+ *   crown (ryūzu) of two dragons back to back with the jewel between them,
+ *   hung on an iron hook from the bell beam.
+ * - **The striking log (shumoku)**: bound in iron at both ends, hung level in
+ *   two rope slings from the bell beam, its end tethered to a post with the
+ *   tail of the rope run down the post's face; and on the front post a board
+ *   of the hours under a little roof.
+ *
+ * It is in `CONFORMS_TO_TERRAIN`: the lengths of the stones, the flags and
+ * the steps, where the leaves lie and the characters on the board are seeded
+ * off where it stands, and the platform's face and both steps are carried
+ * down to the ground.
+ *
+ * **The colliders are the ones it always had, in the same order**: the
+ * platform, the four posts, the bell and the roof slab at the eave.
+ * Everything drawn obeys the kit's three rules. The steps are under 0.3 m;
+ * the bases, the sleeves and the board hug their posts; the rope's tail is
+ * on a post's face. Everything between the posts is overhead: the lowest tie
+ * clears the floor by 2.7 m and the log and its tether by 2.4, and the old
+ * waist tie — a beam a metre over the floor between two posts, where nothing
+ * stopped a body walking through it — is gone. The bell fills its box, and
+ * the ceiling is drawn at the roof slab's underside, so a round fired
+ * straight up inside stops on the ceiling it strikes.
  */
-export function buildBellTower(scene: Scene, mats: CelMaterialFactory): Structure {
+export function buildBellTower(scene: Scene, mats: CelMaterialFactory, _p: BuildParams = {}, ctx?: BuildCtx): Structure {
   const b = new Build(scene, mats, "shoro");
   const plinthH = 0.55;
-  b.box(5.2, plinthH, 5.2, 0, plinthH / 2, 0, GRANITE);
-  b.block({ w: 5.2, h: plinthH, d: 5.2, x: 0, y: plinthH / 2, z: 0 });
   const postH = 4.4;
+  const bellY = plinthH + postH - 1.9;
+  const eave = plinthH + postH + 0.1;
+
+  // --- colliders, exactly as they were: the platform, the posts, the bell, the roof slab.
+  b.block({ w: 5.2, h: plinthH, d: 5.2, x: 0, y: plinthH / 2, z: 0 });
   for (const sx of [-1, 1]) {
     for (const sz of [-1, 1]) {
       const x = sx * 1.55;
       const z = sz * 1.55;
-      b.cyl(postH, 0.34, 0.42, 8, x, plinthH + postH / 2, z, HINOKI, {
-        x: -sz * 0.05,
-        z: sx * 0.05,
-      });
       b.block({ w: 0.36, h: postH, d: 0.36, x, y: plinthH + postH / 2, z });
     }
   }
-  for (const s of [-1, 1]) {
-    b.box(3.8, 0.3, 0.3, 0, plinthH + postH - 0.2, s * 1.5, SUMI);
-    b.box(0.3, 0.3, 3.8, s * 1.5, plinthH + postH - 0.2, 0, SUMI);
-    b.box(3.6, 0.2, 0.2, 0, plinthH + 1.0, s * 1.58, HINOKI);
-  }
-  // The bell and its log.
-  const bellY = plinthH + postH - 1.9;
-  b.cyl(1.7, 1.05, 1.22, 14, 0, bellY, 0, BRONZE);
-  b.cyl(0.25, 0.6, 1.05, 14, 0, bellY + 0.97, 0, BRONZE);
-  b.box(0.25, 0.7, 0.25, 0, bellY + 1.45, 0, SUMI);
-  b.cyl(1.8, 0.2, 0.22, 8, 1.4, bellY + 0.1, 0, CEDAR, { z: Math.PI / 2 });
   b.block({ w: 1.1, h: 1.7, d: 1.1, x: 0, y: bellY, z: 0 });
-  const eave = plinthH + postH + 0.1;
-  curvedRoof(b, KAWARA, {
-    y: eave,
-    ex: 3.3,
-    ez: 3.3,
-    tx: 0.8,
-    tz: 0,
-    rise: 2.5,
-    curve: 1.6,
-    upturn: 0.55,
-    thick: 0.3,
-  });
-  ridge(b, 0.8, eave + 2.5);
   b.block({ w: 6.6, h: 0.3, d: 6.6, x: 0, y: eave, z: 0 });
+
+  // --- everything below is drawing -------------------------------------------
+  const rnd = mulberry32(streetSeed(5.2, 5.2, postH, ctx));
+  const ground = (lx: number, lz: number): number => {
+    if (!ctx) return 0;
+    const cos = Math.cos(ctx.rotY);
+    const sin = Math.sin(ctx.rotY);
+    return ctx.terrain.surfaceAt(ctx.x + lx * cos + lz * sin, ctx.z - lx * sin + lz * cos) - ctx.y;
+  };
+  const color = HINOKI;
+  /** The floor, and the platform's half width. */
+  const F = plinthH;
+  const P = 2.6;
+  let foot = 0;
+  for (const gx of [-1, -0.5, 0, 0.5, 1]) {
+    for (const gz of [-1, -0.5, 0, 0.5, 1]) foot = Math.min(foot, ground(gx * (P + 0.5), gz * (P + 0.5)));
+  }
+  foot -= 0.08;
+
+  const roof: RoofSpec = { y: eave, ex: 3.3, ez: 3.3, tx: 0, tz: 0, rise: 2.5, curve: 1.6, upturn: 0.55, thick: 0.24, rings: 6, seg: 8 };
+  const j = new Joinery(b, color, roof);
+  const { sb, at, on, member, nose, arm, block, underAt, KD } = j;
+  const lap = new Lapidary(1);
+  const TOP = 1 << 2;
+
+  // --- the heights of the frame ---------------------------------------------------
+  /** The post line at the head: the purlins, the plaster and the brackets stand on it. */
+  const N = 1.5;
+  /** The posts' drawn head; the bearing blocks stand on it. */
+  const PTOP = 4.6;
+  /** Where a post's axis stands at height `y`: 10 cm further out at the floor than at the head. */
+  const postAt = (y: number): number => N + (0.1 * (PTOP - y)) / (PTOP - F);
+  /** A post's half width at height `y`, tapering a centimetre to its head. */
+  const halfAt = (y: number): number => 0.16 - (0.01 * (y - F)) / (PTOP - F);
+  const BASE = F + 0.1;
+  /** The flying ties, along X and (lower, to pass them) along Z; then the head ties. */
+  const XT0 = 3.52;
+  const XT1 = 3.72;
+  const ZT0 = 3.28;
+  const ZT1 = 3.48;
+  const KT0 = 4.32;
+  const KT1 = 4.56;
+  /** A bracket set: block, arm, small blocks; the second arm is cut to its purlin. */
+  const DAI = PTOP + 0.2;
+  const ARM1 = DAI + 0.16;
+  const MAK = ARM1 + 0.12;
+  /** A purlin's underside along side `s`, held level past the corner posts. */
+  const clampU = (u: number): number => Math.max(-N, Math.min(N, u));
+  const ketaBot = (s: Side, u: number): number => underAt(s, clampU(u), N) - KD;
+  /** The roof slab's underside, which the ceiling is drawn at. */
+  const CEIL = eave - 0.15;
+  /** The bell beam, on the side head ties. */
+  const BB0 = KT1;
+  const BB1 = KT1 + 0.28;
+  /** The plaster's inner face. */
+  const C = N - 0.07;
+
+  // --- the platform: two courses of face stones, a coping, flags, two steps --------
+  {
+    const KW = 0.22;
+    const CW = 0.34;
+    /** A course of face stones along side `s`, `run` either way, from `y0` (the ground, if null) to `y1`. */
+    const course = (s: Side, run: number, y0: number | null, y1: number, first: number): void => {
+      let u = -run;
+      let len = first;
+      while (run - u > 0.05) {
+        if (run - (u + len) < 0.45) len = run - u;
+        const c = u + len / 2;
+        let yb = y0 ?? 0;
+        if (y0 === null) {
+          const [gx, gz] = at(s, c, P);
+          yb = Math.min(foot, ground(gx, gz) - 0.1);
+        }
+        on(s, P, c, (yb + y1) / 2, len - 0.02, y1 - yb, KW, -KW / 2, GRANITE, 0, hideBack(s));
+        u += len;
+        len = 0.8 + rnd() * 0.6;
+      }
+    };
+    /** The coping along side `s`, `run` either way, standing 3 cm proud of the face. */
+    const coping = (s: Side, run: number): void => {
+      let u = -run;
+      while (run - u > 0.05) {
+        let len = 0.9 + rnd() * 0.5;
+        if (run - (u + len) < 0.5) len = run - u;
+        on(s, P, u + len / 2, F - 0.0375, len - 0.02, 0.075, CW, -CW / 2 + 0.03, GRANITE, 0, HIDE_UNDER);
+        u += len;
+      }
+    };
+    for (const s of J_SIDES) {
+      const run = runsAlongX(s) ? P : P - KW;
+      course(s, run, null, 0.29, 0.8 + rnd() * 0.6);
+      course(s, run, 0.31, 0.455, 0.35 + rnd() * 0.4);
+      coping(s, runsAlongX(s) ? P + 0.03 : P + 0.03 - CW);
+    }
+    // The flags inside the coping, in running bond.
+    const IN = P + 0.03 - CW;
+    const rows = 10;
+    const rw = (2 * IN) / rows;
+    for (let r = 0; r < rows; r++) {
+      const z = -IN + (r + 0.5) * rw;
+      let x = -IN;
+      let len = r % 2 ? 0.3 + rnd() * 0.3 : 0.6 + rnd() * 0.4;
+      while (IN - x > 0.05) {
+        if (IN - (x + len) < 0.35) len = IN - x;
+        sb.box(len - 0.02, 0.06, rw - 0.02, x + len / 2, F - 0.03, z, GRANITE, undefined, HIDE_UNDER);
+        x += len;
+        len = 0.6 + rnd() * 0.4;
+      }
+    }
+    // A step before the front and on the side toward the hall: two stones
+    // on a darker core carried down to the ground.
+    const flat =
+      (y: number) =>
+      (f: number, u: number, w: number): V3 => [f, y + w, u];
+    for (const s of ["-z", "-x"] as const) {
+      const top = 0.29;
+      const split = -0.95 + 0.7 + rnd() * 0.5;
+      for (const [a, c] of [
+        [-0.95, split],
+        [split, 0.95],
+      ]) {
+        on(s, P, (a + c) / 2, top - 0.05, c - a - 0.02, 0.1, 0.46, 0.23, GRANITE, 0, HIDE_UNDER);
+      }
+      let bot = foot;
+      for (const u of [-0.9, 0, 0.9]) {
+        const [gx, gz] = at(s, u, P + 0.4);
+        bot = Math.min(bot, ground(gx, gz) - 0.05);
+      }
+      const [cx, cz] = at(s, 0, P + 0.23);
+      b.box(runsAlongX(s) ? 1.86 : 0.42, top - 0.1 - bot, runsAlongX(s) ? 0.42 : 1.86, cx, (top - 0.1 + bot) / 2, cz, GRANITE_DARK);
+      {
+        const [lx, lz] = at(s, (rnd() - 0.5) * 1.6, P + 0.1 + rnd() * 0.26);
+        lap.leaf(rnd, flat(top), 1, lx, lz, 0.04 + rnd() * 0.02, rnd() * TAU, -0.002);
+      }
+    }
+    // Leaves blown in over the flags.
+    for (let k = 0; k < 9; k++) {
+      const lx = (rnd() * 2 - 1) * (IN - 0.12);
+      const lz = (rnd() * 2 - 1) * (IN - 0.12);
+      lap.leaf(rnd, flat(F), 1, lx, lz, 0.045 + rnd() * 0.02, rnd() * TAU, -0.002);
+    }
+  }
+
+  // --- the posts' bases and root sleeves --------------------------------------------
+  /** A chamfered square section of half width `h` round (cx, cz) at height `y`. */
+  const oct = (cx: number, cz: number, y: number, h: number, ch: number): Point3[] => [
+    [cx + h, y, cz - h + ch],
+    [cx + h, y, cz + h - ch],
+    [cx + h - ch, y, cz + h],
+    [cx - h + ch, y, cz + h],
+    [cx - h, y, cz + h - ch],
+    [cx - h, y, cz - h + ch],
+    [cx - h + ch, y, cz - h],
+    [cx + h - ch, y, cz - h],
+  ];
+  /** Post (sx, sz)'s section at height `y`, grown by `grow`. */
+  const section = (sx: number, sz: number, y: number, grow: number): Point3[] =>
+    oct(sx * postAt(y), sz * postAt(y), y, halfAt(y) + grow, 0.04 + grow * 0.5);
+  for (const [sx, sz] of J_CORNERS) {
+    b.cyl(0.1, 0.56, 0.64, 12, sx * postAt(F), F + 0.05, sz * postAt(F), GRANITE);
+    convexSolid(b, section(sx, sz, BASE, 0.03), section(sx, sz, BASE + 0.04, 0.03), BRONZE);
+    convexSolid(b, section(sx, sz, BASE + 0.04, 0.018), section(sx, sz, BASE + 0.27, 0.018), BRONZE);
+    convexSolid(b, section(sx, sz, BASE + 0.27, 0.03), section(sx, sz, BASE + 0.31, 0.03), BRONZE);
+  }
+
+  // --- the ties ----------------------------------------------------------------------
+  /** A tie through the posts on both rows along X (or Z), run on past them and cut on a slant. */
+  const tie = (alongX: boolean, y0: number, y1: number, run: number): void => {
+    const c = postAt((y0 + y1) / 2);
+    for (const e of [-1, 1]) {
+      if (alongX) sb.box(2 * c, y1 - y0, 0.18, 0, (y0 + y1) / 2, e * c, color);
+      else sb.box(0.18, y1 - y0, 2 * c, e * c, (y0 + y1) / 2, 0, color);
+      for (const g of [-1, 1]) nose(alongX, e * c, g * c, g, run, y0, y1, 0.18);
+    }
+  };
+  tie(true, XT0, XT1, 0.36);
+  tie(false, ZT0, ZT1, 0.36);
+  tie(true, KT0, KT1, 0.42);
+  tie(false, KT0, KT1, 0.42);
+
+  // --- the bracket sets, the purlins, the frog-leg struts, the plaster -------------
+  for (const [sx, sz] of J_CORNERS) {
+    const x = sx * N;
+    const z = sz * N;
+    const sX: Side = sz < 0 ? "-z" : "+z";
+    const sZ: Side = sx < 0 ? "-x" : "+x";
+    block(x, z, 0.42, PTOP, DAI);
+    arm(true, x, z, 1.3, DAI, ARM1, 0.2);
+    arm(false, z, x, 1.3, DAI, ARM1, 0.2);
+    j.makito(true, x, z, 0.4, ARM1, MAK);
+    j.makito(false, x, z, 0.4, ARM1, MAK);
+    arm(true, x, z, 1.3, MAK, ketaBot(sX, x), 0.2);
+    arm(false, z, x, 1.3, MAK, ketaBot(sZ, z), 0.2);
+  }
+  for (const s of J_SIDES) {
+    j.purlin(s, N, N + 0.3, (u) => underAt(s, clampU(u), N));
+    j.frogLeg(s, N, KT1, ketaBot(s, 0));
+    // The plaster band, in strips so its head follows the purlin's sweep.
+    const half = N - 0.21;
+    const K = 5;
+    for (let k = 0; k < K; k++) {
+      const ua = -half + (2 * half * k) / K;
+      const uc = ua + (2 * half) / K;
+      const top = Math.max(ketaBot(s, ua), ketaBot(s, uc)) + 0.04;
+      on(s, N, (ua + uc) / 2, (KT1 + top) / 2, uc - ua, top - KT1, 0.06, -0.04, SHIKKUI);
+    }
+  }
+
+  // --- the ceiling and the bell beam --------------------------------------------------
+  sb.box(2 * C, 0.02, 2 * C, 0, CEIL + 0.07, 0, CEDAR, undefined, TOP);
+  {
+    const cells = 6;
+    for (let k = 0; k <= cells; k++) {
+      const u = -C + 0.06 + ((2 * C - 0.12) * k) / cells;
+      sb.box(0.06, 0.06, 2 * C, u, CEIL + 0.03, 0, SUMI, undefined, TOP);
+      sb.box(2 * C, 0.06, 0.06, 0, CEIL + 0.03, u, SUMI, undefined, TOP);
+    }
+  }
+  for (const s of J_SIDES) on(s, C, 0, CEIL + 0.02, 2 * C, 0.12, 0.1, -0.05, SUMI, 0, TOP);
+  sb.box(2 * C, BB1 - BB0, 0.28, 0, (BB0 + BB1) / 2, 0, color);
+
+  // --- the bell -------------------------------------------------------------------
+  /** The lip, and the bell's profile over it: down the inside, round the lip, up the outside. */
+  const Y0 = bellY - 0.85;
+  const BELL: [number, number][] = [
+    [0, 1.58],
+    [0.3, 1.56],
+    [0.42, 1.49],
+    [0.455, 1.36],
+    [0.462, 0.08],
+    [0.472, 0],
+    [0.545, 0],
+    [0.556, 0.035],
+    [0.556, 0.095],
+    [0.532, 0.135],
+    [0.518, 0.22],
+    [0.506, 0.6],
+    [0.5, 1.0],
+    [0.497, 1.4],
+    [0.49, 1.5],
+    [0.462, 1.585],
+    [0.4, 1.645],
+    [0.3, 1.69],
+    [0.16, 1.715],
+    [0, 1.725],
+  ];
+  lap.lathe(
+    BRONZE,
+    BELL.map(([r, y]) => [r, Y0 + y]),
+    32,
+    0,
+  );
+  /** The body's radius `y` over the lip, from the lower band to the shoulder. */
+  const BODY = BELL.slice(9, 15);
+  const rAt = (y: number): number => {
+    for (let i = 0; i + 1 < BODY.length; i++) {
+      const [ra, ya] = BODY[i];
+      const [rc, yc] = BODY[i + 1];
+      if (y <= yc || i + 2 === BODY.length) return ra + ((rc - ra) * (y - ya)) / (yc - ya);
+    }
+    return BODY[0][0];
+  };
+  /** A band round the body from `y0` to `y1` over the lip, standing `proud`. */
+  const band = (y0: number, y1: number, proud: number): void => {
+    const r = rAt((y0 + y1) / 2);
+    const prof: [number, number][] = [
+      [r - 0.006, Y0 + y0],
+      [r + proud, Y0 + y0],
+      [r + proud, Y0 + y1],
+      [r - 0.006, Y0 + y1],
+    ];
+    lap.lathe(BRONZE, prof, 32, 0);
+  };
+  band(0.14, 0.26, 0.022);
+  band(0.835, 0.853, 0.016);
+  band(0.885, 0.903, 0.016);
+  band(1.12, 1.14, 0.014);
+  band(1.38, 1.46, 0.022);
+  /** A line down the body at bearing `a`, `u` round from it, from `y0` to `y1` over the lip. */
+  const line = (a: number, u: number, y0: number, y1: number): void => {
+    const ym = (y0 + y1) / 2;
+    lap.onFace(a, rAt(ym), u, Y0 + ym, 0.006, 0.02, y1 - y0, 0.02, BRONZE);
+  };
+  for (let q = 0; q < 4; q++) {
+    const a = (q * Math.PI) / 2;
+    for (const [y0, y1] of [
+      [0.26, 0.55],
+      [0.55, 0.835],
+      [0.903, 1.12],
+      [1.14, 1.38],
+    ]) {
+      for (const e of [-1, 1]) line(a, e * 0.035, y0, y1);
+    }
+  }
+  /**
+   * A round boss on the body at bearing `a`, `y` high and `du` round from it:
+   * `r0` at its foot, `r1` at its face, standing `h` out of a foot sunk
+   * `sink` into the bronze.
+   */
+  const boss = (a: number, y: number, du: number, r0: number, r1: number, h: number, n: number, sink: number): void => {
+    const m = lap.mesher(BRONZE);
+    const R = rAt(y - Y0) - sink;
+    const d: V3 = [Math.cos(a), 0, Math.sin(a)];
+    const t: V3 = [-Math.sin(a), 0, Math.cos(a)];
+    const c0: V3 = [R * d[0] + du * t[0], y, R * d[2] + du * t[2]];
+    const Q = (r: number, off: number, k: number): V3 => {
+      const ph = (k / n) * TAU;
+      const ct = Math.cos(ph) * r;
+      return [c0[0] + d[0] * off + t[0] * ct, c0[1] + Math.sin(ph) * r, c0[2] + d[2] * off + t[2] * ct];
+    };
+    const face: V3 = [c0[0] + d[0] * h, c0[1], c0[2] + d[2] * h];
+    for (let k = 0; k < n; k++) {
+      const ph = ((k + 0.5) / n) * TAU;
+      const out: V3 = [t[0] * Math.cos(ph), Math.sin(ph), t[2] * Math.cos(ph)];
+      m.quad(Q(r0, 0, k), Q(r0, 0, k + 1), Q(r1, h, k + 1), Q(r1, h, k), out);
+      m.tri(face, Q(r1, h, k), Q(r1, h, k + 1), d);
+    }
+  };
+  // The nipples: four panels of four rows of five under the upper band, each framed.
+  for (let q = 0; q < 4; q++) {
+    const a0 = Math.PI / 4 + (q * Math.PI) / 2;
+    for (let row = 0; row < 4; row++) {
+      for (let col = 0; col < 5; col++) boss(a0 + (col - 2) * 0.14, Y0 + 1.175 + row * 0.05, 0, 0.02, 0.01, 0.034, 6, 0.004);
+    }
+    for (const e of [-1, 1]) line(a0 + e * 0.37, 0, 1.14, 1.38);
+  }
+  // The striking seats: a lotus on a disc where the middle band crosses a vertical one.
+  for (const a of [0, Math.PI]) {
+    const y = Y0 + 0.87;
+    boss(a, y, 0, 0.125, 0.12, 0.04, 16, 0.018);
+    for (let k = 0; k < 8; k++) {
+      const ph = (k / 8) * TAU;
+      boss(a, y + Math.sin(ph) * 0.078, Math.cos(ph) * 0.078, 0.03, 0.02, 0.05, 6, 0.012);
+    }
+    boss(a, y, 0, 0.045, 0.032, 0.066, 10, 0.004);
+  }
+  // The crown: a collar, two dragons' bodies arched back to back across the
+  // bell, their heads biting the shoulder, and the jewel between them.
+  const TOPY = Y0 + 1.725;
+  lap.lathe(
+    BRONZE,
+    [
+      [0, TOPY - 0.01],
+      [0.21, TOPY - 0.01],
+      [0.19, TOPY + 0.045],
+      [0, TOPY + 0.045],
+    ],
+    16,
+    0,
+  );
+  const loop: TubePoint[] = [[0.15, TOPY + 0.03, 0.07, 0.085]];
+  for (let k = 0; k <= 10; k++) {
+    const th = (k / 10) * Math.PI;
+    loop.push([0.15 * Math.cos(th), TOPY + 0.07 + 0.24 * Math.sin(th), 0.07, 0.085]);
+  }
+  loop.push([-0.15, TOPY + 0.03, 0.07, 0.085]);
+  lap.tube(BRONZE, loop, Math.PI / 2);
+  for (const e of [-1, 1]) {
+    lap.sb.box(0.12, 0.1, 0.16, 0, TOPY + 0.1, e * 0.21, BRONZE, { x: e * 0.35 });
+    lap.sb.box(0.08, 0.06, 0.13, 0, TOPY + 0.055, e * 0.3, BRONZE, { x: e * 0.55 });
+    lap.sb.box(0.1, 0.04, 0.1, 0, TOPY + 0.155, e * 0.19, BRONZE, { x: -e * 0.3 });
+    for (const g of [-1, 1]) lap.sb.box(0.02, 0.13, 0.02, g * 0.04, TOPY + 0.2, e * 0.15, BRONZE, { x: -e * 0.55 });
+  }
+  lap.lathe(
+    BRONZE,
+    [
+      [0, TOPY + 0.34],
+      [0.045, TOPY + 0.35],
+      [0.06, TOPY + 0.39],
+      [0.05, TOPY + 0.43],
+      [0.02, TOPY + 0.47],
+      [0, TOPY + 0.49],
+    ],
+    10,
+    0,
+  );
+  // The iron hook, down from a plate under the bell beam and through the crown.
+  {
+    const HX = 0.13;
+    const hy = TOPY + 0.2425;
+    sb.box(0.05, BB0 - 0.03 - hy, 0.05, HX, (BB0 - 0.03 + hy) / 2, 0, SUMI);
+    sb.box(HX + 0.125, 0.05, 0.05, (HX - 0.1) / 2, hy, 0, SUMI);
+    sb.box(0.05, 0.1, 0.05, -0.1, hy + 0.045, 0, SUMI);
+    sb.box(0.2, 0.03, 0.3, HX, BB0 - 0.015, 0, SUMI);
+  }
+
+  // --- the striking log, its slings and its tether; the board of the hours --------
+  {
+    const LOG_Y = 3.08;
+    const L0 = 0.62;
+    const L1 = 1.95;
+    b.cyl(L1 - L0, 0.24, 0.24, 8, (L0 + L1) / 2, LOG_Y, 0, CEDAR, { z: Math.PI / 2 });
+    for (const x of [L0 + 0.06, L1 - 0.06]) b.cyl(0.05, 0.256, 0.256, 8, x, LOG_Y, 0, SUMI, { z: Math.PI / 2 });
+    for (const x of [0.9, 1.3]) {
+      b.cyl(0.05, 0.27, 0.27, 8, x, LOG_Y, 0, KAYA, { z: Math.PI / 2 });
+      for (const e of [-1, 1]) member([x, LOG_Y + 0.1, e * 0.1], [x, BB0, e * 0.06], 0.035, 0.035, KAYA);
+    }
+    // The tether: from the log's end to the post on its right, twice round
+    // it, and the tail run down the post's outer face to a knot.
+    const pY = 2.99;
+    const pc = postAt(pY);
+    const ph = halfAt(pY) + 0.018;
+    member([L1 - 0.1, LOG_Y - 0.05, -0.1], [pc, pY, -pc + ph], 0.035, 0.035, KAYA);
+    for (const y of [pY, pY - 0.045]) {
+      for (const e of [-1, 1]) {
+        sb.box(2 * ph + 0.035, 0.035, 0.035, pc, y, -pc + e * ph, KAYA);
+        sb.box(0.035, 0.035, 2 * ph + 0.035, pc + e * ph, y, -pc, KAYA);
+      }
+    }
+    const tail = (y: number): Point3 => [postAt(y) + halfAt(y) + 0.018, y, -postAt(y) + 0.06];
+    member(tail(pY - 0.06), tail(F + 1.3), 0.035, 0.035, KAYA);
+    const [kx, ky, kz] = tail(F + 1.28);
+    sb.box(0.06, 0.07, 0.06, kx, ky, kz, KAYA);
+    sb.box(0.03, 0.14, 0.03, kx, ky - 0.1, kz, KAYA);
+
+    // The board of the hours on the front of the front left post.
+    const y0 = F + 1.05;
+    const y1 = F + 1.7;
+    const ym = (y0 + y1) / 2;
+    const bx = -postAt(ym);
+    const bz = -(postAt(ym) + halfAt(ym)) - 0.0085;
+    sb.box(0.26, y1 - y0, 0.025, bx, ym, bz, CEDAR);
+    for (const e of [-1, 1]) sb.box(0.17, 0.02, 0.07, bx + e * 0.068, y1 + 0.04, bz - 0.02, SUMI, { z: -e * 0.45 });
+    const front = bz - 0.0145;
+    // Two columns of brushed characters, the first of each larger: every
+    // character a handful of strokes, some of them dots, none quite square.
+    for (let col = 0; col < 2; col++) {
+      for (let ch = 0; ch < 6; ch++) {
+        const size = ch === 0 ? 0.07 : 0.045;
+        const cy = y1 - 0.07 - (ch === 0 ? 0 : 0.03 + ch * 0.083);
+        const cx = bx + (col === 0 ? 0.055 : -0.055);
+        const strokes = 4 + Math.floor(rnd() * 3);
+        for (let k = 0; k < strokes; k++) {
+          const dot = rnd() < 0.2;
+          const horiz = rnd() < 0.5;
+          const len = dot ? 0.016 : size * (0.3 + rnd() * 0.7);
+          const x = cx + (rnd() - 0.5) * (horiz ? size * 0.4 : size * 0.9);
+          const y = cy + (rnd() - 0.5) * (horiz ? size * 0.9 : size * 0.4);
+          const slant = dot ? 0.8 : (rnd() - 0.5) * 0.7;
+          sb.box(horiz ? len : 0.009, horiz ? 0.009 : len, 0.004, x, y, front, SUMI, { z: slant });
+        }
+      }
+    }
+  }
+
+  // --- the eave, the tiles and the finial -----------------------------------------------
+  j.rafters(() => N, 1.35);
+  j.hipBeams();
+  j.tiles(false);
+  {
+    const A = eave + roof.rise;
+    sb.box(0.62, 0.5, 0.62, 0, A - 0.05, 0, KAWARA_DARK, undefined, HIDE_UNDER);
+    sb.box(0.56, 0.18, 0.56, 0, A + 0.29, 0, BRONZE, undefined, HIDE_UNDER);
+    sb.box(0.62, 0.04, 0.62, 0, A + 0.4, 0, BRONZE, undefined, HIDE_UNDER);
+    lap.lathe(
+      BRONZE,
+      [
+        [0, A + 0.42],
+        [0.22, A + 0.42],
+        [0.21, A + 0.5],
+        [0.16, A + 0.57],
+        [0.08, A + 0.61],
+        [0, A + 0.62],
+      ],
+      12,
+      0,
+    );
+    lap.lathe(
+      BRONZE,
+      [
+        [0, A + 0.61],
+        [0.05, A + 0.62],
+        [0.05, A + 0.66],
+        [0.14, A + 0.69],
+        [0.17, A + 0.76],
+        [0.16, A + 0.84],
+        [0.11, A + 0.92],
+        [0.05, A + 0.99],
+        [0, A + 1.04],
+      ],
+      12,
+      0,
+    );
+  }
+
+  sb.flush(b);
+  lap.flush(b);
+
+  // --- the cores, emitted after what hides them -----------------------------------------
+  for (const [sx, sz] of J_CORNERS) convexSolid(b, section(sx, sz, BASE, 0), section(sx, sz, PTOP, 0), color);
+  b.box(2 * (P - 0.05), F - 0.06 - foot, 2 * (P - 0.05), 0, (F - 0.06 + foot) / 2, 0, GRANITE_DARK);
+
+  // --- the roof: the lining under the rafters, then the sheet ---------------------------
+  j.sheet();
   return b;
 }
 

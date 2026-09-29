@@ -203,5 +203,10 @@ hung down a face), plus `FIG_*`;
 `DOOR_PAINTS`. In `buildings.ts` (file-local, move to core.ts if a second
 file needs one): `offFace`, `casement`, `doorway`, `framing`, `facePoly`, `archRing`, `lancet`, `buttress`, `renderFace`, `wallHead`,
 `toothing`, `quoins`. In `structures.ts`: the temple's `flat`,
-`courses`, `hang`, `moss`, `fallen`, `devata`. Moving a helper to core.ts is
+`courses`, `hang`, `moss`, `fallen`, `devata`. In `japan.ts`: `curvedRoof`
+and `roofHeight`; `Lapidary` (granite carving, one surface per colour —
+`solid`, `lathe`, `petals`, `leafRow`, `tube`, `lichen`, `leaf`); and
+`Joinery` (the carpentry under a tiled curved hip — brackets, purlins, a
+frog-leg strut, two layers of rafters, hip beams with wind bells, the tiles
+and ridges, the sheet), which the temple gate and the bell tower share. Moving a helper to core.ts is
 the right fix for a second caller; a copy is not.

@@ -287,7 +287,10 @@ export type BuilderKind = keyof typeof BUILDERS;
  * stands, and carries its foundation stone down to the ground. The stone
  * pagoda seeds the lengths of its kerb stones, the lichen on its roofs and
  * the maple leaves lying on it off where it stands, and carries its kerb down
- * to the ground.
+ * to the ground. The bell tower seeds the lengths of its platform's stones,
+ * flags and steps, the leaves blown onto it and the characters on its board
+ * of the hours, and carries its platform's face and its steps down to the
+ * ground.
  */
 export const CONFORMS_TO_TERRAIN: ReadonlySet<BuilderKind> = new Set([
   "road",
@@ -322,4 +325,5 @@ export const CONFORMS_TO_TERRAIN: ReadonlySet<BuilderKind> = new Set([
   "gardenWall",
   "toro",
   "stonePagoda",
+  "bellTower",
 ] as const);
