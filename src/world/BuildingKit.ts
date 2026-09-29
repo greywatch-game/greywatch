@@ -268,7 +268,11 @@ export type BuilderKind = keyof typeof BUILDERS;
  * where it stands, and carries its plinth, the stones under its engawa and its
  * two steps down to the ground. The pagoda seeds the lengths of its podium's
  * stones and its flags off where it stands, and carries its podium and the
- * flight on each face down to the ground.
+ * flight on each face down to the ground. The teahouse seeds which end has
+ * the round window, its gable's finish, its tokonoma's bay, its lanterns, its
+ * blinds, its wind bell, the sandals on its step and the mark on its noren off
+ * where it stands, and carries its footings, its underfloor, its step and its
+ * stepping stones down to the ground.
  */
 export const CONFORMS_TO_TERRAIN: ReadonlySet<BuilderKind> = new Set([
   "road",
@@ -296,4 +300,5 @@ export const CONFORMS_TO_TERRAIN: ReadonlySet<BuilderKind> = new Set([
   "machiya",
   "minka",
   "pagoda",
+  "teahouse",
 ] as const);
