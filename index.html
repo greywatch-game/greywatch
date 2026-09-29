@@ -74,10 +74,9 @@
 
          **There is no photograph, and there cannot be one**: the menu's
          pictures are content-hashed by Vite and this file may name nothing
-         the build renames. The horizon behind the title is PAINTED instead
-         — a night sky, a moon and two inked ridges, in gradients and
-         polygons — which is the game's own look stated in CSS, and costs
-         no request.
+         the build renames. Nor is one PAINTED in its place — an illustrated
+         night horizon was tried and read as clip art — so the screen stands
+         on the interface's own light and nothing else.
 
          Full-bleed and above the canvas, because until the Game's
          constructor returns the canvas is an empty black rectangle anyway.
@@ -137,91 +136,26 @@
         pointer-events: none;
       }
 
-      /* --- the painted horizon ---
-         Night, because most of the maps are: a sky that falls from a cold
-         blue to the page's black, one moon, and two ridges cut as polygons
-         with a black copy stood 2 px higher behind each — the ink line the
-         cel look draws on every silhouette, in the only way CSS can draw
-         one on a clipped shape. They drift as the menu's photograph does, on
-         a transform, so the compositor keeps them moving through the
-         constructor's long synchronous block exactly as it keeps the bar. */
-      #boot .boot-sky {
+      /* --- the ground ---
+         What the front end is lit by when there is no picture under it: the
+         friend/foe glow pair from the same two corners as the menu's scrim
+         (warm from the foot of the column, cold from over the note) and the
+         scanlines, on the page's black. No scene, no shapes: every screen in
+         the interface decorates with type, plates and light, and a drawing
+         here would be the only illustration in the game. */
+      #boot .boot-ground {
         position: absolute;
         inset: 0;
         z-index: 0;
         pointer-events: none;
         background:
-          radial-gradient(circle at 74% 24%, #efe8cf 0, #efe8cf calc(26 * var(--u)), rgba(239, 232, 207, 0.22) calc(30 * var(--u)), rgba(170, 190, 220, 0.08) calc(140 * var(--u)), transparent calc(420 * var(--u))),
-          radial-gradient(1.4px 1.4px at 18% 16%, rgba(255, 255, 255, 0.7), transparent),
-          radial-gradient(1.2px 1.2px at 33% 9%, rgba(255, 255, 255, 0.5), transparent),
-          radial-gradient(1.6px 1.6px at 48% 22%, rgba(255, 255, 255, 0.6), transparent),
-          radial-gradient(1.2px 1.2px at 61% 7%, rgba(255, 255, 255, 0.45), transparent),
-          radial-gradient(1.4px 1.4px at 88% 13%, rgba(255, 255, 255, 0.6), transparent),
-          radial-gradient(1.2px 1.2px at 93% 34%, rgba(255, 255, 255, 0.4), transparent),
-          radial-gradient(1.2px 1.2px at 8% 31%, rgba(255, 255, 255, 0.45), transparent),
-          linear-gradient(180deg, #0c1626 0%, #0a1220 38%, #070b14 62%, #05070b 100%);
-      }
-      #boot .boot-ridge {
-        position: absolute;
-        left: -4%;
-        right: -4%;
-        bottom: 0;
-        z-index: 0;
-        pointer-events: none;
-        will-change: transform;
-        animation: boot-drift 38s ease-in-out infinite alternate;
-      }
-      #boot .boot-ridge::before,
-      #boot .boot-ridge::after {
-        content: "";
-        position: absolute;
-        inset: 0;
-        clip-path: var(--shape);
-      }
-      #boot .boot-ridge::before { background: #000; transform: translateY(-2px); }
-      #boot .boot-ridge.far {
-        top: 44%;
-        --rh: 56vh;
-        --shape: polygon(0 calc(var(--rh) * 0.58), 7% calc(var(--rh) * 0.44), 13% calc(var(--rh) * 0.5), 21% calc(var(--rh) * 0.3), 27% calc(var(--rh) * 0.38), 34% calc(var(--rh) * 0.22), 41% calc(var(--rh) * 0.34), 47% calc(var(--rh) * 0.28), 55% calc(var(--rh) * 0.46), 63% calc(var(--rh) * 0.26), 70% calc(var(--rh) * 0.12), 76% calc(var(--rh) * 0.24), 83% calc(var(--rh) * 0.2), 90% calc(var(--rh) * 0.36), 96% calc(var(--rh) * 0.3), 100% calc(var(--rh) * 0.4), 100% 100%, 0 100%);
-        animation-duration: 46s;
-      }
-      #boot .boot-ridge.far::after {
-        background: linear-gradient(180deg, #1a2638 0%, #111a28 40%, #0a0f18 100%);
-      }
-      #boot .boot-ridge.near {
-        top: 62%;
-        --rh: 38vh;
-        --shape: polygon(0 calc(var(--rh) * 0.34), 9% calc(var(--rh) * 0.22), 18% calc(var(--rh) * 0.4), 26% calc(var(--rh) * 0.3), 36% calc(var(--rh) * 0.52), 47% calc(var(--rh) * 0.44), 58% calc(var(--rh) * 0.58), 68% calc(var(--rh) * 0.4), 76% calc(var(--rh) * 0.46), 84% calc(var(--rh) * 0.24), 90% calc(var(--rh) * 0.3), 100% calc(var(--rh) * 0.18), 100% 100%, 0 100%);
-        animation-direction: alternate-reverse;
-      }
-      #boot .boot-ridge.near::after {
-        background: linear-gradient(180deg, #0e1520 0%, #080c13 45%, #05070b 100%);
-      }
-      @keyframes boot-drift {
-        from { transform: translate3d(-1.5%, 0, 0); }
-        to { transform: translate3d(1.5%, 0, 0); }
+          radial-gradient(120% 90% at 4% 110%, rgba(255, 230, 128, 0.14), transparent 56%),
+          radial-gradient(90% 72% at 97% -14%, rgba(53, 240, 255, 0.11), transparent 54%),
+          repeating-linear-gradient(to bottom, rgba(255, 255, 255, 0.014) 0 1px, transparent 1px 3px);
       }
 
-      /* --- the scrim ---
-         The menu's, shaped like the layout and dark only where there is
-         type, with the friend/foe glow pair and the scanlines the whole
-         interface is lit by. Its own layer rather than #boot's background,
-         because the horizon has to sit between the two. */
-      #boot .boot-scrim {
-        position: absolute;
-        inset: 0;
-        z-index: 0;
-        pointer-events: none;
-        background:
-          linear-gradient(90deg, rgba(3, 5, 11, 0.86) 0, rgba(3, 5, 11, 0.62) calc(var(--gx) + var(--col) * 0.55), rgba(3, 5, 11, 0.2) calc(var(--gx) + var(--col) * 1.1), rgba(3, 5, 11, 0) calc(var(--gx) + var(--col) * 1.55)),
-          linear-gradient(0deg, rgba(2, 3, 8, 0.9) 0%, rgba(2, 3, 8, 0.5) 22%, rgba(2, 3, 8, 0) 50%),
-          linear-gradient(270deg, rgba(3, 5, 11, 0.55) 0%, rgba(3, 5, 11, 0) 34%),
-          radial-gradient(120% 90% at 4% 110%, rgba(255, 230, 128, 0.12), transparent 56%),
-          radial-gradient(90% 72% at 97% -14%, rgba(53, 240, 255, 0.09), transparent 54%),
-          repeating-linear-gradient(to bottom, rgba(255, 255, 255, 0.012) 0 1px, transparent 1px 3px);
-      }
-
-      /* Everything that stands on the picture carries its own separation. */
+      /* The menu's separation from its picture, kept so the type is the same
+         type when the menu replaces this. */
       #boot .boot-hero,
       #boot .boot-note {
         position: relative;
@@ -440,11 +374,6 @@
           column-gap: clamp(14px, 3vw, 32px);
           row-gap: 8px;
         }
-        #boot .boot-scrim {
-          background:
-            linear-gradient(0deg, rgba(2, 3, 8, 0.94) 0%, rgba(2, 3, 8, 0.62) 42%, rgba(2, 3, 8, 0) 72%),
-            linear-gradient(90deg, rgba(3, 5, 11, 0.55) 0%, rgba(3, 5, 11, 0) 60%);
-        }
         #boot h1 {
           margin-bottom: 4px;
           font-size: clamp(26px, min(7.2vw, 13vh), 60px);
@@ -462,27 +391,16 @@
           grid-template-areas: "." "hero" "load" "note";
           row-gap: max(12px, calc(20 * var(--u)));
         }
-        #boot .boot-scrim {
-          background:
-            linear-gradient(0deg, rgba(2, 3, 8, 0.95) 0%, rgba(2, 3, 8, 0.8) 42%, rgba(2, 3, 8, 0.2) 68%, rgba(2, 3, 8, 0) 80%),
-            radial-gradient(120% 60% at 0% 100%, rgba(255, 230, 128, 0.1), transparent 60%),
-            repeating-linear-gradient(to bottom, rgba(255, 255, 255, 0.012) 0 1px, transparent 1px 3px);
-        }
         #boot > :is(.boot-hero, .boot-load, .boot-note) {
           width: 100%;
           max-width: 680px;
         }
-        /* Upright, a profile as tall as its box is a row of needles: the
-           profile keeps a landscape's proportions off the WIDTH and the
-           fill under it runs on to the floor. */
-        #boot .boot-ridge.far { top: 36%; --rh: 34vw; }
-        #boot .boot-ridge.near { top: 47%; --rh: 24vw; }
       }
       @media (max-width: 560px) {
         #boot .boot-mode { letter-spacing: 0.22em; }
       }
       @media (prefers-reduced-motion: reduce) {
-        #boot :is(.boot-hero, .boot-load, .boot-note, .boot-ridge) { animation: none; }
+        #boot :is(.boot-hero, .boot-load, .boot-note) { animation: none; }
         #boot { transition: none; }
       }
     </style>
@@ -494,10 +412,7 @@
          construction and would wipe this on its way past. `main.ts` is the
          only code that touches it, and writes only its four ids. -->
     <div id="boot">
-      <div class="boot-sky"></div>
-      <div class="boot-ridge far"></div>
-      <div class="boot-ridge near"></div>
-      <div class="boot-scrim"></div>
+      <div class="boot-ground"></div>
       <div class="boot-hero">
         <div class="boot-mode">Cel-shaded conquest</div>
         <h1>Greywatch</h1>

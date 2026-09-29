@@ -49,8 +49,9 @@ index.html          # The head, and NO interface CSS beyond the two things shown
                     #   while there IS no interface: a black background (so a
                     #   dev reload does not flash white) and the boot screen —
                     #   a title screen for the game in the menu's frame, its
-                    #   unit and plates COPIED from base.css/overlay.css, over
-                    #   a painted horizon (the map shots are hashed).
+                    #   unit and plates COPIED from base.css/overlay.css, on
+                    #   the interface's own glows (no picture: the map shots
+                    #   are hashed, and a drawn one read as clip art).
 main.ts             # Bootstrap. Imports src/ui/base.css FIRST. Awaits the two
                     #   things the game cannot start without — the WebGPU device
                     #   and the Havok WASM — then builds the Game, which takes

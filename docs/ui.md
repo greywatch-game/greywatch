@@ -96,10 +96,13 @@ game plays on. **Its unit, gutters, type ladder and title clamp are COPIED from
 `base.css` and `overlay.css`, not shared** — so a change to one of those owes
 this copy a look, or the hand-off shifts the composition under the player.
 **There is no photograph and there cannot be one**: the shots are hashed by
-Vite and `index.html` may name nothing the build renames, so the horizon is
-PAINTED — a night sky, a moon and two inked ridges in gradients and polygons,
-drifting on a transform like the menu's photograph. The menu's four templates,
-at the menu's breakpoints.
+Vite and `index.html` may name nothing the build renames. **Nor is a picture
+DRAWN in its place**: a night horizon painted in gradients and polygons (a
+moon, two inked ridges) was tried and read as clip art, the one illustration
+in an interface that decorates only with type, plates and light. So the screen
+stands on the page's black under the front end's own lighting — the warm and
+cold glows from the menu scrim's two corners, and the scanlines. The menu's
+four templates, at the menu's breakpoints.
 
 **The plate NAMES each await as it begins and never counts one** (`bootStage`:
 fetching, finding a GPU, the physics engine, the graphics device, building the
