@@ -56,6 +56,10 @@ const ASH_BARK = "#6b6553";
 // and the same grey at two hundred.
 const ASH_LEAF = "#35602f";
 const ASH_LEAF_LIT = "#57893c";
+// Ivy on a hedgerow bole: darker and bluer than the ash's own leaf, as ivy is
+// against anything deciduous, so the climber reads as a second plant on the
+// tree rather than as the crown leaking down it.
+const IVY = "#2a3f2b";
 
 // Jungle hardwood: paler and greyer than the valley's dead bark — a wet trunk
 // under a bright sky, not a charred one under a moon.
@@ -215,10 +219,19 @@ export function buildPine(
 }
 
 /**
- * Hedgerow ash: a pale bole running clear to head height and above it, a
- * spreading crown of broad leaf carried on three short limbs — the temperate
- * BROADLEAF, and the counterpart to the pine in the same way the jungle
- * hardwood is the counterpart to nothing.
+ * How many draws `buildAshTree` takes from the shared scatter stream — the
+ * number the plate crown it replaced took, and fixed there, so redrawing the
+ * tree moved no prop on the map. See its header.
+ */
+const ASH_SHARED_DRAWS = 56;
+
+/**
+ * Hedgerow ash: a pale, faintly ridged bole on a flare of root knees, forking
+ * a little over head height into three or four boughs that reach out and then
+ * sweep UP, each ending in a cluster of leaf with pointed sprays breaking its
+ * edge — an open, domed crown with sky and boughs showing through it. The
+ * temperate BROADLEAF, and the counterpart to the pine in the same way the
+ * jungle hardwood is the counterpart to nothing. A third of them carry ivy.
  *
  * **Why a farming valley needed a second tree at all.** A vale dressed in one
  * conifer is a plantation, not farmland: every stand reads as the same dark
@@ -230,39 +243,54 @@ export function buildPine(
  * The bark and leaf tones (`ASH_BARK`, `ASH_LEAF`) are the second and third
  * differences and both were chosen against the pine's, not on their own.
  *
- * Three things about the shape are load-bearing rather than decorative:
+ * **It was four tiers of boxes centred on the axis** and read as a stack of
+ * green crates on a hexagonal pole, one black cube from underneath. The crown
+ * is CLUSTERS AT THE ENDS OF BOUGHS now, which is what an ash's crown is: the
+ * maple's measured lesson (a tier is a rosette at one height, so its
+ * silhouette is horizontal edges one over another) drawn in the jungle
+ * hardwood's vocabulary — lozenge plates and pointed blades (`prism`), lofted
+ * wood (`loft`), all flat-shaded outline the bands and the ink find. NOT smooth
+ * puffs: a smooth-shaded crown was tried on this tree and thrown out.
  *
- * - **The lowest leaf hangs at ~3.6 m**, twice clear of the 1.7 m hit sphere.
- *   The collider is the trunk only (see `PROP_BODIES`) — the pine's rule, and
- *   the reason the crown is carried high on a bole rather than skirted down
- *   toward the grass where it would be foliage rounds pass straight through.
- *   That figure is the worst CORNER rather than the tier: the skirt's slabs
- *   are centred at 5.8 m, and one rolled and tipped to its limits puts a
- *   corner 2.2 m under its own middle. It survives scaling, since the whole
- *   crown is `3.6 * scale` — a region has to be dragged under ~0.47 before
- *   leaf reaches the sphere, and the layout's floor is 0.8.
- * - **The crown is PLATES CENTRED ON THE AXIS**, four tiers of them, which is
- *   `buildJungleTree`'s measured result taken at face value: a plate covers
- *   about four times the sky per triangle that a radiating blade does, and a
- *   crown is mass before it is edge. What the tiers buy over one rosette is
- *   the ROUNDNESS — each is narrower and shorter than the one below, so the
- *   silhouette closes toward the top instead of ending in a parasol's rim.
- * - **The limbs stop INSIDE the leaf**, and the two numbers are set against
- *   each other rather than eyeballed. A tip reaches 1.39 m from the axis, at
- *   the height the skirt's slabs pass through; a slab is 3.6 m deep and the
- *   per-plate variation below floors that at 3.1, so the inscribed circle of
- *   the SMALLEST one is 1.55 m and a tip is inside it by 0.16 m — against the
- *   0.12 m the crown drifts in the wind at that height. That is what makes it
- *   safe for the crown to sway while the limbs holding it do not: the join
- *   cannot come out of the leaf. Cut the depth or lengthen a limb and it can.
- *   See `world/sway.ts` for why the limbs are not marked themselves — a limb
- *   is a long thin thing lying along the ramp, which is the one shape a vertex
- *   ramp cannot bend honestly, and it is the trunk's argument at half the
- *   length.
+ * Four things about the shape are load-bearing rather than decorative:
+ *
+ * - **The lowest leaf hangs at ~3.5 m**, twice clear of the 1.7 m hit sphere.
+ *   The collider is the bole only (see `PROP_BODIES`) — the pine's rule, and
+ *   the reason the crown is carried high rather than skirted down toward the
+ *   grass where it would be foliage rounds pass straight through. That is the
+ *   worst CORNER: a side branch's cluster is never centred under 4.5 m, a
+ *   plate sits at most 0.25 m under its cluster, and one tipped to its limits
+ *   drops a corner ~0.5 m more. It survives scaling, since the whole tree is
+ *   scaled — a region has to be dragged under ~0.5 before leaf reaches the
+ *   sphere, and the layout's floor is 0.8. The crown tops out under 9.7 m,
+ *   inside `PROP_BODIES.ashTree.visualTop`, which is frozen.
+ * - **Every bough ends BURIED in leaf**, and the geometry is what makes it so
+ *   rather than luck: each cluster's first plate is centred exactly on the tip
+ *   of the bough carrying it and is over a metre across, against the ~0.17 m
+ *   the crown drifts at that height. That is what makes it safe for the leaf
+ *   to sway while the wood holding it does not — see `world/sway.ts` for why
+ *   no bough is marked (a long thin thing lying along the ramp is the one
+ *   shape a vertex ramp cannot bend honestly). The sprays start at a cluster's
+ *   centre height, most of a metre inside its plate, and sway with it.
+ * - **The bole stays inside the collider's 0.34 m half-width** from 0.3 m up,
+ *   flutes and bend included, so the column a round stops on is the column
+ *   you see. The root knees are what is outside it, and they are under 0.4 m
+ *   there and fall to a few centimetres — a thing a boot steps over. The ivy is
+ *   pressed to the bark, a few centimetres proud of it.
+ * - **Its detail comes from a stream of its OWN.** `rng` is the map's shared
+ *   scatter stream and every draw from it moves every prop after this one, so
+ *   this takes exactly `ASH_SHARED_DRAWS` from it — the first the lean and
+ *   the seed of `own`, the rest taken and not spent. Everything else is
+ *   `own`'s: distinct per tree, fixed per layout, invisible to the map.
+ *
+ * Budgeted as DRESSING: some three hundred stand on Harrowmead, so a vertex
+ * here is three hundred in the scene. Built from parts (`world/parts.ts`), so
+ * none of it is uploaded to the device on its way to the merge, and in the
+ * three materials the plate crown wore plus the ivy's two matte colours, which
+ * go into the block's palette rather than a draw call of their own.
  *
  * Nothing here is scaled non-uniformly, for the reason `buildJungleTree`
- * states: `renderOutline` extrudes along vertex normals without renormalising
- * them, so a squashed part grows a lopsided ink shell.
+ * states: a squashed part's normals are not renormalised by the merge.
  */
 export function buildAshTree(
   scene: Scene,
@@ -270,95 +298,309 @@ export function buildAshTree(
   rng: () => number = Math.random,
 ): Mesh {
   const bark = mats.get(ASH_BARK);
-  const trunk = MeshBuilder.CreateCylinder(
-    "ash-trunk",
-    { height: 8.6, diameterTop: 0.3, diameterBottom: 0.76, tessellation: 6 },
-    scene,
-  );
-  trunk.position.y = 4.3;
-  trunk.material = bark;
+  const leaf = mats.getTranslucent(ASH_LEAF, CONFIG.graphics.translucency.canopy);
+  const leafLit = mats.getTranslucent(ASH_LEAF_LIT, CONFIG.graphics.translucency.canopy);
   // A standard left in a hedge grows up rather than out — the pine's lean, and
   // for the pine's reason: the silhouette is the crown, so a tilted bole reads
-  // as a tree coming down rather than as one with character.
-  trunk.rotation.z = (rng() - 0.5) * 0.05;
+  // as a tree coming down rather than as one with character. The first shared
+  // draw, and the seed of this tree's own stream (see the header).
+  const lean = rng();
+  const own = mulberry32(Math.floor(lean * 4294967296) ^ 0x5a17e3b1);
+  // The rest of the fifty-six the plate crown took, taken and not spent: the
+  // scatter stream draws each tree's yaw and the next tree's spot straight
+  // after this returns, so a draw fewer here moves every prop on Harrowmead.
+  for (let i = 1; i < ASH_SHARED_DRAWS; i++) rng();
 
-  // The fork: three limbs leaving the bole at 3.6 m and spreading to 1.39 m
-  // off the axis. Short on purpose (see the header) — what is meant to be
-  // visible is the metre and a half of each one below the skirt, which is what
-  // says the crown is carried rather than stacked.
-  const limbs = 3;
-  const limbTurn = rng() * Math.PI * 2;
-  for (let i = 0; i < limbs; i++) {
-    const a = (i / limbs) * Math.PI * 2 + limbTurn + (rng() - 0.5) * 0.3;
-    const tilt = 0.5 + rng() * 0.1;
-    const len = 2.6;
-    const limb = MeshBuilder.CreateBox(
-      `ash-limb${i}`,
-      { width: 0.3, height: len, depth: 0.26 },
+  // Everything below is in the trunk's own frame, whose origin is 4.3 m up
+  // (MapBuilder scales that and stands it on the ground), so a height above
+  // the FOOT is `h + FOOT`.
+  const FOOT = -4.3;
+  // The bole's girth, as [height above the foot, radius]: a flare into the
+  // roots, the column, and the leader running on up the middle of the crown to
+  // die inside the top cluster. Inside the collider's 0.34 m half-width from
+  // 0.3 m up, flutes and bend included — 0.30 at chest height.
+  const GIRTH: readonly Flat[] = [
+    [-0.5, 0.46],
+    [0, 0.44],
+    [0.3, 0.34],
+    [0.9, 0.3],
+    [2.2, 0.28],
+    [3.4, 0.25],
+    [4.6, 0.2],
+    [6.0, 0.14],
+    [7.8, 0.07],
+  ];
+  const bendAmp = 0.04 + own() * 0.05;
+  const bendRate = 0.4 + own() * 0.3;
+  const bendPhase = own() * Math.PI * 2;
+  const bendDir = own() * Math.PI * 2;
+  const bole = (h: number): Ring => {
+    let r = GIRTH[GIRTH.length - 1][1];
+    for (let i = 1; i < GIRTH.length; i++) {
+      if (h <= GIRTH[i][0]) {
+        const [h0, r0] = GIRTH[i - 1];
+        const [h1, r1] = GIRTH[i];
+        r = r0 + ((r1 - r0) * (h - h0)) / (h1 - h0);
+        break;
+      }
+    }
+    const w = bendAmp * Math.sin(h * bendRate + bendPhase) * Math.min(1, Math.max(0, h - 1.5) / 3);
+    return { x: Math.cos(bendDir) * w, y: h + FOOT, z: Math.sin(bendDir) * w, r };
+  };
+  const SIDES = 7;
+  // Shallow flutes: an old ash's bark is ridged, and a section a few per cent
+  // out of round is what the bands find as ridges running up the column.
+  const flute = Array.from({ length: SIDES }, () => (own() - 0.5) * 0.08);
+  const trunk = loft("ash-trunk", GIRTH.map(([h]) => bole(h)), SIDES, scene, flute);
+  trunk.position.y = -FOOT;
+  trunk.material = bark;
+  trunk.rotation.z = (lean - 0.5) * 0.05;
+
+  // Root knees: the flare breaking into four or five low spurs where the bole
+  // meets the ground — the thing that says a tree GREW here rather than was
+  // stood here. Under 0.4 m where they leave the collider and falling to a few
+  // centimetres, so each is something a boot steps over; sunk 0.4 m under the
+  // foot so a slope the tree does not know it stands on cannot lift one out.
+  const knees = own() < 0.5 ? 4 : 5;
+  const kneeTurn = own() * Math.PI * 2;
+  for (let i = 0; i < knees; i++) {
+    const a = (i / knees) * Math.PI * 2 + kneeTurn + (own() - 0.5) * 0.6;
+    const end = 0.62 + own() * 0.3;
+    const knee = prism(
+      `ash-knee${i}`,
+      [
+        [0.1, -0.4],
+        [0.1, 0.55],
+        [0.3, 0.38],
+        [0.46, 0.16],
+        [end, 0.04],
+        [end - 0.06, -0.4],
+      ],
+      [0.2, 0.2, 0.18, 0.13, 0.07, 0.07],
       scene,
+      // Inside the bole, and under the ground.
+      { skip: [0, 5] },
     );
-    limb.parent = trunk;
-    // Local to the trunk's centre: -0.7 puts the foot at 3.6 m. `rotation.y`
-    // turns the limb's own +Z out along the bearing, and `rotation.x` then
-    // leans its top that way, so the two are read in the limb's frame — the
-    // canopy plates' convention, one level down.
-    const rc = 0.14 + Math.sin(tilt) * (len / 2);
-    limb.position.set(
-      Math.sin(a) * rc,
-      -0.7 + Math.cos(tilt) * (len / 2),
-      Math.cos(a) * rc,
-    );
-    limb.rotation.y = a;
-    limb.rotation.x = tilt;
-    limb.material = bark;
+    knee.parent = trunk;
+    knee.position.y = FOOT;
+    knee.rotation.y = a;
+    knee.material = bark;
   }
 
-  // The crown: four tiers narrowing upward. Count, height on the trunk, width,
-  // depth, thickness — the widest is the SKIRT the limbs die inside, and the
-  // 1-plate cap is what stops the top being a flat lid.
-  const tiers: [number, number, number, number, number][] = [
-    [4, 1.5, 6.8, 3.6, 1.5],
-    [3, 2.8, 5.6, 3.0, 1.5],
-    [3, 4.0, 4.0, 2.4, 1.3],
-    [1, 4.9, 2.6, 2.0, 1.0],
-  ];
-  tiers.forEach(([count, y, width, depth, thick], tier) => {
-    const turn = rng() * Math.PI * 2;
-    for (let i = 0; i < count; i++) {
-      const a = (i / count) * Math.PI * 2 + turn + rng() * 0.3;
-      // Per PLATE rather than per tier, and this is what stops the crown
-      // reading as a stack of slabs: four identical boxes at four bearings
-      // draw one silhouette with four straight edges in it, and a sixth of
-      // variation in each is enough to break every one of them.
-      const vary = 0.86 + rng() * 0.28;
-      const plate = MeshBuilder.CreateBox(
-        `ash-leaf${tier}-${i}`,
-        { width: width * vary, height: thick, depth: depth * vary },
+  // A cluster of leaf: overlapping lozenge plates, turned and tipped each its
+  // own way, the first centred exactly where the limb carrying it ends so the
+  // tip is buried in the middle of a plate (see the header). `size` scales the
+  // whole cluster; a limb's own is a metre and a half across, a side branch's
+  // a little smaller.
+  const cluster = (cx: number, cy: number, cz: number, count: number, size: number, out: number): void => {
+    for (let k = 0; k < count; k++) {
+      const off = k === 0 ? 0 : 0.35 + own() * 0.45;
+      const b = out + (own() - 0.5) * 2.4;
+      const up = k === 0 ? 0 : (own() - 0.35) * 0.7;
+      const A = (size * (2.3 + own() * 0.7)) / 2;
+      const B = (size * (1.4 + own() * 0.5)) / 2;
+      const j = () => 1 + (own() - 0.5) * 0.16;
+      const plate = prism(
+        "ash-leaf",
+        [
+          [1.18 * A * j(), (own() - 0.5) * 0.5 * B],
+          [0.58 * A * j(), 1.12 * B * j()],
+          [-0.52 * A * j(), 1.08 * B * j()],
+          [-1.18 * A * j(), (own() - 0.5) * 0.5 * B],
+          [-0.58 * A * j(), -1.12 * B * j()],
+          [0.52 * A * j(), -1.08 * B * j()],
+        ],
+        0.42 + own() * 0.14,
         scene,
+        { plane: "xz" },
       );
       plate.parent = trunk;
-      // Centred ON the axis rather than out from it, so a tier is a rosette
-      // with no hole in its middle and a limb tip lands inside one whatever
-      // bearing it left on.
-      plate.position.y = y;
-      plate.rotation.y = a;
-      // Relief, in the plate's own frame after the yaw: `z` rolls it about its
-      // long axis and `x` tips it along its depth. The skirt gets the most of
-      // both — a drooping lower tier is most of what separates a hardwood
-      // crown from a hedge on a stick.
-      plate.rotation.z = (rng() - 0.5) * (tier === 0 ? 0.56 : 0.4);
-      plate.rotation.x = (rng() - 0.5) * (tier === 0 ? 0.4 : 0.28);
-      // The lit green upward, the shaded green under — a crown never shows the
-      // ground what it shows the sky. Split by TIER rather than by index, so
-      // the two lower ones read as the mass and the two upper as what the sun
-      // is actually on.
-      plate.material = mats.getTranslucent(
-        tier < 2 ? ASH_LEAF : ASH_LEAF_LIT,
-        CONFIG.graphics.translucency.canopy,
-      );
+      plate.position.set(cx + Math.sin(b) * off, cy + up, cz + Math.cos(b) * off);
+      plate.rotation.y = own() * Math.PI * 2;
+      plate.rotation.z = (own() - 0.5) * 0.8;
+      plate.rotation.x = (own() - 0.5) * 0.7;
+      // The sun is on the top of the crown and the top of each cluster; the
+      // undersides and the heart are the shade — with a few exceptions,
+      // because a real crown is not banded (the maple's rule).
+      const sunny = cy + up - FOOT > 6.4 || up > 0.12;
+      plate.material = sunny !== own() < 0.15 ? leafLit : leaf;
       marksSway(plate, "canopy");
     }
-  });
+  };
+
+  // A spray breaking the crown's edge: one pointed blade of leaf leaving a
+  // cluster outward and down, its inner end at the cluster's centre height and
+  // most of a metre inside the plate there. The ash's pinnate leaf read at the
+  // size of a bough, and what makes the silhouette LEAF rather than lozenges.
+  const spray = (cx: number, cy: number, cz: number, b: number): void => {
+    const len = 1.5 + own() * 0.5;
+    const w = 0.34 + own() * 0.1;
+    const l = len / 2;
+    const droop = 0.18 + own() * 0.26;
+    const blade = prism(
+      "ash-spray",
+      [
+        [-0.35 * w, -l],
+        [0.35 * w, -l],
+        [w, 0.05 * len],
+        [0, l],
+        [-w, 0.05 * len],
+      ],
+      0.12,
+      scene,
+      { plane: "xz" },
+    );
+    blade.parent = trunk;
+    const reach = 0.75 + l * Math.cos(droop);
+    blade.position.set(cx + Math.sin(b) * reach, cy - Math.sin(droop) * l, cz + Math.cos(b) * reach);
+    blade.rotation.y = b;
+    blade.rotation.x = droop;
+    blade.material = own() < 0.5 ? leafLit : leaf;
+    marksSway(blade, "canopy");
+  };
+
+  // The LIMBS: three or four, leaving the bole at staggered heights through a
+  // metre above head height, reaching out and then sweeping UP at the end —
+  // the ash's habit, and the one thing about its branching anybody knows.
+  //
+  // The crown they carry is a DOME in three storeys, and the storeys are what
+  // stop it reading as a savanna acacia — which is what one storey of
+  // clusters at the bough ends came out as, a flat green shelf on bare sticks.
+  // Each bough ends in a cluster; each throws a side branch off its first bend
+  // to a cluster lower and wider, the skirt that hides most of the bare wood;
+  // and over each bough's end, inward, a cluster of the upper crown that
+  // closes the shoulder of the dome toward the leader's own at the top. The
+  // upper storey carries no wood of its own: it overlaps the storey under it
+  // and the top, sways with both, and a bough into it would be inside leaf the
+  // whole way. The dome is still OPEN — the clusters are separate masses, and
+  // the sky and the boughs seen between them are half of what an ash is.
+  const limbs = own() < 0.5 ? 4 : 3;
+  const limbTurn = own() * Math.PI * 2;
+  for (let i = 0; i < limbs; i++) {
+    const a = (i / limbs) * Math.PI * 2 + limbTurn + (own() - 0.5) * 0.5;
+    const fork = 2.9 + (i / limbs) * 0.8 + own() * 0.3;
+    const from = bole(fork);
+    const reach = 2.0 + own() * 0.5;
+    const tip = {
+      x: from.x + Math.sin(a) * reach,
+      y: 5.2 + (fork - 2.9) * 0.5 + own() * 0.6 + FOOT,
+      z: from.z + Math.cos(a) * reach,
+    };
+    const along = (f: number, rise: number, r: number): Ring => ({
+      x: from.x + (tip.x - from.x) * f,
+      y: from.y + (tip.y - from.y) * rise,
+      z: from.z + (tip.z - from.z) * f,
+      r,
+    });
+    // Out first and up last: the horizontal runs ahead of the rise until the
+    // last stretch, where the bough turns up into its leaf.
+    const path = [along(0, 0, 0.15), along(0.45, 0.3, 0.12), along(0.85, 0.66, 0.085), along(1, 1, 0.06)];
+    const limb = loft(`ash-limb${i}`, path, 6, scene);
+    limb.parent = trunk;
+    limb.material = bark;
+    cluster(tip.x, tip.y, tip.z, 3 + (own() < 0.5 ? 1 : 0), 1.1, a);
+    for (let s = own() < 0.5 ? 2 : 1; s > 0; s--) {
+      spray(tip.x, tip.y, tip.z, a + (own() - 0.5) * 1.4);
+    }
+    const ub = a + (own() - 0.5) * 0.7;
+    const ur = reach * (0.5 + own() * 0.15);
+    cluster(from.x + Math.sin(ub) * ur, tip.y + 1.3 + own() * 0.4, from.z + Math.cos(ub) * ur, 2, 1.1, ub);
+
+    if (own() < 0.85) {
+      const base = path[1];
+      const side = a + (own() < 0.5 ? -1 : 1) * (0.7 + own() * 0.3);
+      const sr = reach * (0.95 + own() * 0.2);
+      const end = {
+        x: from.x + Math.sin(side) * sr,
+        // Never under 4.3 m, which is what holds the lowest leaf where the
+        // header says it is.
+        y: Math.max(tip.y - 0.9 - own() * 0.5, 4.3 + FOOT),
+        z: from.z + Math.cos(side) * sr,
+      };
+      // Out of the limb's first bend, where it is still thick enough to bury
+      // a branch half its girth.
+      const twig = loft(
+        `ash-branch${i}`,
+        [
+          { ...base, r: 0.075 },
+          { x: (base.x + end.x) / 2, y: base.y + (end.y - base.y) * 0.45, z: (base.z + end.z) / 2, r: 0.055 },
+          { ...end, r: 0.04 },
+        ],
+        5,
+        scene,
+      );
+      twig.parent = trunk;
+      twig.material = bark;
+      cluster(end.x, end.y, end.z, 2, 0.95, side);
+      if (own() < 0.5) spray(end.x, end.y, end.z, side + (own() - 0.5) * 0.8);
+    }
+  }
+
+  // The top: the leader's own cluster, over the middle, and what rounds the
+  // dome off instead of leaving a ring of clusters round a hole. The leader
+  // stops a fifth of a metre under its centre.
+  const top = bole(8.0);
+  cluster(top.x, top.y, top.z, 3, 1.15, own() * Math.PI * 2);
+
+  // IVY on some of the boles — the hedgerow's own climber, and the one detail
+  // on this tree at the height a player actually looks. A dark stem winding up
+  // the bark with small leaves pressed flat to it, never a hand's breadth off
+  // the bark. Plain matte and NOT marked, for the jungle climber's reason: a
+  // leaf flat on bark has no sky behind it to glow against and may not drift
+  // off the trunk it grips, and a matte colour goes into the block's palette
+  // with the bark and costs nothing but its vertices.
+  if (own() < 0.35) {
+    const from = 0.1;
+    const to = 2.6 + own() * 1.8;
+    const turns = (0.8 + own() * 0.7) * (own() < 0.5 ? 1 : -1);
+    const phase = own() * Math.PI * 2;
+    const wind = (t: number, off: number): Ring & { th: number } => {
+      const b = bole(from + (to - from) * t);
+      const th = phase + turns * Math.PI * 2 * t;
+      const r = b.r * 1.04 + off;
+      return { x: b.x + Math.sin(th) * r, y: b.y, z: b.z + Math.cos(th) * r, r: 0, th };
+    };
+    const steps = 8;
+    const stem = loft(
+      "ash-ivy",
+      Array.from({ length: steps }, (_, i) => ({
+        ...wind(i / (steps - 1), 0.025),
+        r: 0.03 - (0.015 * i) / (steps - 1),
+      })),
+      4,
+      scene,
+    );
+    stem.parent = trunk;
+    stem.material = mats.get(VINE);
+    const dark = mats.get(IVY);
+    const vine = mats.get(VINE);
+    const count = 12 + Math.floor(own() * 8);
+    for (let k = 0; k < count; k++) {
+      const at = wind((k + 0.5 + (own() - 0.5) * 0.8) / count, 0.03);
+      // Offset round the stem a little either side, so the leaves read as a
+      // growth on the bark rather than beads on a string.
+      const s = 0.8 + own() * 0.5;
+      const ivy = prism(
+        "ash-ivy-leaf",
+        [
+          [0, 0.02 * s],
+          [0.09 * s, -0.05 * s],
+          [0.05 * s, -0.12 * s],
+          [0, -0.17 * s],
+          [-0.05 * s, -0.12 * s],
+          [-0.09 * s, -0.05 * s],
+        ],
+        0.025,
+        scene,
+      );
+      ivy.parent = trunk;
+      ivy.position.set(at.x, at.y + (own() - 0.5) * 0.1, at.z);
+      ivy.rotation.y = at.th + (own() - 0.5) * 0.35;
+      ivy.rotation.z = (own() - 0.5) * 1.6;
+      ivy.rotation.x = -(0.15 + own() * 0.25);
+      ivy.material = own() < 0.3 ? vine : dark;
+    }
+  }
   return trunk;
 }
 
