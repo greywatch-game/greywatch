@@ -178,8 +178,9 @@ shell, the title block and the Deploy button. The bar for a screen of its own is
 slots and a turntable; a card that is markup plus a button has not earned one.
 
 **Three of the four take the screen and the PAUSE does not.** `setCardClass` is
-what decides it: the menu, the round-over card and the building card get the
-frame and the veil, and the pause gets a left-anchored column over a scrim that
+what decides it: the round-over card gets the shell's frame and its veil, the
+menu and the building card a frame of their own over the map's photograph, and
+the pause gets a left-anchored column over a scrim that
 fades out before the middle of the window. The round under a pause is this
 round, frozen where it stood — the flag strip along the top, your own vitals,
 the body you were lining up — so a full-bleed veil over it hides the thing the
@@ -189,10 +190,35 @@ because that is the side a pause menu has been on since consoles had two sticks,
 and because the middle of the screen is where the shot it interrupted was being
 lined up.
 
-**The building card is the one that stays centred and bare**, and the freeze it
-covers is why. Everything on it has to be PAINTED before the main thread stops,
-so a panel with a canvas in it would be a schematic drawn on the frame the
-player was already waiting through. A name, a word, and a bar.
+**The building card is a title screen for the MAP being built, and it stands in
+the MENU's frame** — `#overlay:is(.card-menu, .card-building)` in `overlay.css`
+is the unit, the scrim, the lockup, the hero and the intel plate, and only the
+grid is each card's own. The title is the menu's hero exactly (`heroMarkup`), so
+a player who pressed Deploy watches the column of decisions go and the same
+title stay where it stood, with a LOAD PLATE where Deploy was: dark rather than
+hot, because it is not a thing to press, its bar running along its bottom edge
+as its hairline. The rest of the glass is spent on what a player WAITING can
+read — a briefing plate (the rules with their numbers, the flags, the bodies a
+side, the kit, and the enemy tier offline or "Online" in a match, where this
+machine's tier decides nothing) and one FIELD NOTE (`fieldNotes.ts`), a line
+about how this game plays, picked per load, never the last one, and never about
+armour on a map that has none. The briefing goes where the menu's intel goes;
+the note is the one read thing every template keeps, since a phone waits as
+long as a monitor.
+
+**What may be on it is decided by the freeze, not by taste.** Everything on it
+has to be PAINTED in the two frames `Game.startRound` waits, because after them
+the main thread is inside the build — so nothing that needs a later frame may be
+part of what it says: no canvas (the menu's plan is not on it), no fetch, and
+the photograph only when it is already decoded. The layers the menu stood on
+still hold it when the player came from the menu on the same map; any other
+map's picture has to decode first, and until it has, the front layer comes down
+rather than leaving the last map's picture behind this one's name. And what
+MOVES through the freeze is what the compositor moves alone: the bar, the
+photograph's drift, and an entrance of `opacity` and `transform` short enough
+to have landed before the build begins. Measured on Cinderhaven: the main
+thread blocked for 11 s and a screencast kept receiving frames about every
+16 ms, the bar sweeping and the picture drifting through all of it.
 
 **The key-cap table is no longer one of the things they share, and that is the
 whole reason it moved.** It hung under the menu's title and under the pause list,
@@ -210,8 +236,10 @@ from the outside — before it, the card the player had just confirmed simply
 stopped where it stood for the whole build. `Game.startRound` is what actually
 buys it the frame it needs to be drawn in; see the state machine's `loading` in
 [`CLAUDE.md`](../CLAUDE.md), and note that the rule there is **two**
-`requestAnimationFrame`s, not one. It takes itself down at the end of
-`Game.buildRound` rather than waiting to be dismissed.
+`requestAnimationFrame`s, not one. It takes itself down in
+`Game.finishBakeWait` rather than waiting to be dismissed, and `buildRound`
+shows it again once the map is settled — a no-op for the same map, and a
+rewrite without the entrance when a match's welcome moved the map under it.
 
 **Its bar may only be animated with `transform` or `opacity`** — the one place
 in this directory where the choice of animated property is a correctness
@@ -222,10 +250,14 @@ needs neither layout nor paint. A bar animated on `width` or `left` renders
 perfectly in every test and then stands still for the one second it exists for,
 which reads as a hung game rather than a loading one. Measured: with a 5 s
 block forced, the bar keeps producing distinct frames throughout and drops
-none. The bar is also **indeterminate**, and honestly so — the work behind both
-it and the boot screen's is a single uninterruptible call, so there is no
-progress to read even in principle, and an invented percentage always ends up
-stuck at 90 while the real work finishes.
+none. The bar is also **indeterminate through the build**, and honestly so —
+that work, like the boot screen's, is a single uninterruptible call, so there is
+no progress to read even in principle, and an invented percentage always ends
+up stuck at 90 while the real work finishes. The reflection bake after it DOES
+have frames, so `setBuildProgress` turns the plate's words from BUILDING to
+LIGHTING on its first call and gives the bar a figure on the first one that is
+not zero — a bake always arrives reporting none of itself done, and a bar
+stopped to show "0%" stands still over work that is happening.
 
 **The settings screen is the third title screen, and the one that shows a
 list can belong in the front end.** It was drawn in the shell — a heading, a

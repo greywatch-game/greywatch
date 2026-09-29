@@ -22,13 +22,9 @@
      through a map is not an overlay. */
   z-index: 10;
 }
-/* The three cards that ARE the screen take the shell's grid and its veil
-   (`.ui-screen .ui-veil`, set by `setCardClass`). The building card is the
-   exception in the other direction — it has one block on it and centres it. */
-#overlay.card-building {
-  grid-template-rows: minmax(0, 1fr);
-  place-items: center;
-}
+/* The round-over card takes the shell's grid and its veil (`.ui-screen
+   .ui-veil`, set by `setCardClass`); the menu and the building card are laid
+   out as the front end, below. */
 
 /* =====================================================================
    THE MENU'S BACKDROP — the photograph of the chosen map.
@@ -486,26 +482,10 @@
 #overlay .ov-vote button.cand.on .bar b { background: var(--hot); }
 
 /* =====================================================================
-   THE BUILDING CARD
+   THE BUILDING CARD'S BAR — the card itself is laid out with the menu,
+   further down (THE BUILDING CARD); this is the one part of it with a
+   constraint rather than a style.
    ===================================================================== */
-#overlay .ov-build {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: clamp(8px, 1.6vh, 18px);
-  text-align: center;
-}
-/* The map's name, not the game's, so it is set at the size a subtitle wants
-   rather than the wordmark's — and in the neutral ink, because nothing has
-   been won or lost yet. The card is on screen for well under a second:
-   anything that animates in would still be arriving when it goes. */
-#overlay h1.building-title {
-  font-size: clamp(24px, 4.6vmin, 52px);
-  letter-spacing: 0.2em;
-  color: #fff;
-  text-shadow: 4px 4px 0 #000;
-}
-
 /* The building card's bar, and the one animation in this file that runs while
    the main thread is DEAD.
 
@@ -712,10 +692,13 @@
    read against. The PHOTOGRAPH is not capped — it is `#menu-shot`, a root
    of its own, and runs to the glass whatever the card does.
    ===================================================================== */
-#overlay.card-menu {
+/* The FRAME the menu shares with the building card, which is a title screen
+   for the same map laid out in the same place — so its title, its scrim and
+   its measures are these, and only its grid is its own. */
+#overlay:is(.card-menu, .card-building) {
   /* `--u`, `--hit`, `--gx`, `--gy`, the `--t-*` scale and the plate are
      `base.css`'s now, shared with the kit screen, which is laid out the same
-     way. What is left here is what only this card measures. */
+     way. What is left here is what only these two cards measure. */
   --col: clamp(300px, 38vw, calc(700 * var(--u)));
   --intel: clamp(260px, 25vw, calc(430 * var(--u)));
   --t-title: clamp(28px, calc(112 * var(--u)), 9.4vw);
@@ -730,17 +713,6 @@
   transform: none;
 
   display: grid;
-  grid-template-columns: minmax(0, var(--col)) minmax(0, 1fr) var(--intel);
-  grid-template-rows: auto minmax(0, 1fr) auto auto auto auto auto auto;
-  grid-template-areas:
-    "top   top   top"
-    ".     .     ."
-    "hero  hero  intel"
-    "maps  .     intel"
-    "enemy .     intel"
-    "kit   .     intel"
-    "go    .     intel"
-    "foot  foot  foot";
   column-gap: clamp(16px, calc(48 * var(--u)), 120px);
   row-gap: clamp(8px, calc(16 * var(--u)), 30px);
   padding: max(var(--gy), env(safe-area-inset-top))
@@ -777,14 +749,27 @@
     radial-gradient(90% 72% at 97% -14%, rgba(53, 240, 255, 0.09), transparent 54%),
     repeating-linear-gradient(to bottom, rgba(255, 255, 255, 0.012) 0 1px, transparent 1px 3px);
 }
+#overlay.card-menu {
+  grid-template-columns: minmax(0, var(--col)) minmax(0, 1fr) var(--intel);
+  grid-template-rows: auto minmax(0, 1fr) auto auto auto auto auto auto;
+  grid-template-areas:
+    "top   top   top"
+    ".     .     ."
+    "hero  hero  intel"
+    "maps  .     intel"
+    "enemy .     intel"
+    "kit   .     intel"
+    "go    .     intel"
+    "foot  foot  foot";
+}
 
 /* Everything that stands on the photograph carries its own separation from
    it — the rule `base.css` states for the gameplay chrome, for the same
    reason: small type over a picture that is not ours to choose. */
-#overlay.card-menu .mm-top,
-#overlay.card-menu .mm-hero,
-#overlay.card-menu .mm-cap,
-#overlay.card-menu .mm-foot {
+#overlay:is(.card-menu, .card-building) .mm-top,
+#overlay:is(.card-menu, .card-building) .mm-hero,
+#overlay:is(.card-menu, .card-building) .mm-cap,
+#overlay:is(.card-menu, .card-building) .mm-foot {
   text-shadow: 0 2px 8px rgba(0, 0, 0, 0.9), 0 0 2px rgba(0, 0, 0, 0.8);
 }
 
@@ -793,7 +778,7 @@
    colours — is `base.css`'s, shared with the kit screen. What is left here is
    the foot's A, which is drawn as the pad's button whatever the device, since
    it only appears on the pad's half of the hint line. */
-#overlay.card-menu .mm-foot kbd.face-a {
+#overlay:is(.card-menu, .card-building) .mm-foot kbd.face-a {
   width: max(20px, calc(28 * var(--u)));
   min-width: 0;
   padding: 0;
@@ -807,7 +792,7 @@
 /* =====================================================================
    THE TOP BAR — the wordmark, and the two places you can go instead.
    ===================================================================== */
-#overlay.card-menu .mm-top {
+#overlay:is(.card-menu, .card-building) .mm-top {
   grid-area: top;
   display: flex;
   align-items: center;
@@ -818,7 +803,7 @@
 /* The wordmark is a LOCKUP in the corner now rather than the title of the
    screen — the map is that. It keeps the cel look stated in type: a hard
    black drop and a one-pixel cyan lift, no blur on either. */
-#overlay.card-menu .mm-brand {
+#overlay:is(.card-menu, .card-building) .mm-brand {
   display: flex;
   flex-direction: column;
   gap: max(2px, calc(4 * var(--u)));
@@ -826,7 +811,7 @@
   border-left: 2px solid var(--hot);
   min-width: 0;
 }
-#overlay.card-menu .mm-kicker {
+#overlay:is(.card-menu, .card-building) .mm-kicker {
   font-size: var(--t-cap);
   font-weight: 700;
   letter-spacing: 0.42em;
@@ -834,7 +819,7 @@
   color: rgba(255, 230, 128, 0.72);
   white-space: nowrap;
 }
-#overlay.card-menu .mm-word {
+#overlay:is(.card-menu, .card-building) .mm-word {
   font-size: var(--t-word);
   font-weight: 900;
   letter-spacing: 0.18em;
@@ -843,12 +828,12 @@
   text-shadow: 3px 3px 0 #000, -1px -1px 0 #35f0ff, 0 3px 16px rgba(0, 0, 0, 0.8);
   white-space: nowrap;
 }
-#overlay.card-menu .mm-sys {
+#overlay:is(.card-menu, .card-building) .mm-sys {
   display: flex;
   align-items: center;
   gap: max(6px, calc(10 * var(--u)));
 }
-#overlay.card-menu .mm-sysbtn {
+#overlay:is(.card-menu, .card-building) .mm-sysbtn {
   pointer-events: auto;
   display: inline-flex;
   align-items: center;
@@ -864,31 +849,31 @@
   clip-path: polygon(var(--cut) 0, 100% 0, 100% calc(100% - var(--cut)), calc(100% - var(--cut)) 100%, 0 100%, 0 var(--cut));
   transition: background 0.14s, color 0.14s, box-shadow 0.14s;
 }
-#overlay.card-menu .mm-sysbtn svg {
+#overlay:is(.card-menu, .card-building) .mm-sysbtn svg {
   width: max(16px, calc(22 * var(--u)));
   height: max(16px, calc(22 * var(--u)));
   flex: none;
 }
-#overlay.card-menu .mm-sysbtn b {
+#overlay:is(.card-menu, .card-building) .mm-sysbtn b {
   font-size: var(--t-cap);
   font-weight: 800;
   letter-spacing: 0.24em;
   text-transform: uppercase;
   white-space: nowrap;
 }
-#overlay.card-menu .mm-sysbtn:hover {
+#overlay:is(.card-menu, .card-building) .mm-sysbtn:hover {
   color: var(--hot);
   background: rgba(255, 230, 128, 0.14);
 }
 /* The cursor on the system bar: the hot ring every chamfered control takes
    (INSET, because a clip-path cuts an outer one off with the corner) and a
    bar along the bottom edge, which is the tab's own mark. */
-#overlay.card-menu .mm-sysbtn.sel {
+#overlay:is(.card-menu, .card-building) .mm-sysbtn.sel {
   color: var(--hot);
   background: rgba(255, 230, 128, 0.12);
   box-shadow: inset 0 0 0 1px rgba(255, 230, 128, 0.7), inset 0 -3px 0 var(--hot);
 }
-#overlay.card-menu a.mm-source {
+#overlay:is(.card-menu, .card-building) a.mm-source {
   pointer-events: auto;
   display: inline-flex;
   padding: 4px;
@@ -896,9 +881,9 @@
   color: rgba(255, 255, 255, 0.34);
   transition: color 0.15s ease;
 }
-#overlay.card-menu a.mm-source:hover,
-#overlay.card-menu a.mm-source:focus-visible { color: var(--hot); }
-#overlay.card-menu a.mm-source svg {
+#overlay:is(.card-menu, .card-building) a.mm-source:hover,
+#overlay:is(.card-menu, .card-building) a.mm-source:focus-visible { color: var(--hot); }
+#overlay:is(.card-menu, .card-building) a.mm-source svg {
   width: max(16px, calc(22 * var(--u)));
   height: max(16px, calc(22 * var(--u)));
 }
@@ -906,12 +891,12 @@
 /* =====================================================================
    THE HERO — the chosen map's name, as the title of the screen.
    ===================================================================== */
-#overlay.card-menu .mm-hero {
+#overlay:is(.card-menu, .card-building) .mm-hero {
   grid-area: hero;
   align-self: end;
   min-width: 0;
 }
-#overlay.card-menu .mm-hero-in {
+#overlay:is(.card-menu, .card-building) .mm-hero-in {
   position: relative;
   isolation: isolate;
   display: flex;
@@ -921,7 +906,7 @@
 /* The map's number in the rotation, set enormous and hollow behind its
    name: the one thing on the card that is pure decoration, and what makes
    the name read as a title card rather than as a label. */
-#overlay.card-menu .mm-index {
+#overlay:is(.card-menu, .card-building) .mm-index {
   position: absolute;
   z-index: -1;
   left: -0.06em;
@@ -935,7 +920,7 @@
   text-shadow: none;
   pointer-events: none;
 }
-#overlay.card-menu .mm-mode {
+#overlay:is(.card-menu, .card-building) .mm-mode {
   max-width: 100%;
   font-size: var(--t-cap);
   font-weight: 700;
@@ -949,7 +934,7 @@
 /* The title. `#overlay h1` is the round-over card's and the pause's heading
    and is hot, tracked wide and shadowed hard; this overrides all three,
    because a map's name over its own photograph is white and set tight. */
-#overlay.card-menu .mm-title {
+#overlay:is(.card-menu, .card-building) .mm-title {
   margin: max(2px, calc(6 * var(--u))) 0 max(6px, calc(12 * var(--u)));
   font-size: var(--t-title);
   font-weight: 900;
@@ -960,7 +945,7 @@
   white-space: nowrap;
   text-shadow: 0.04em 0.045em 0 #000, 0 0.08em 0.6em rgba(0, 0, 0, 0.55);
 }
-#overlay.card-menu .mm-blurb {
+#overlay:is(.card-menu, .card-building) .mm-blurb {
   max-width: 46ch;
   font-size: var(--t-body);
   line-height: 1.5;
@@ -970,7 +955,7 @@
   -webkit-box-orient: vertical;
   overflow: hidden;
 }
-#overlay.card-menu .mm-facts {
+#overlay:is(.card-menu, .card-building) .mm-facts {
   display: flex;
   flex-wrap: wrap;
   /* Spaced rather than ruled: a divider is a mark between two figures, and
@@ -983,13 +968,13 @@
   text-transform: uppercase;
   color: rgba(255, 255, 255, 0.52);
 }
-#overlay.card-menu .mm-facts span {
+#overlay:is(.card-menu, .card-building) .mm-facts span {
   display: inline-flex;
   align-items: baseline;
   gap: 0.5em;
   white-space: nowrap;
 }
-#overlay.card-menu .mm-facts b {
+#overlay:is(.card-menu, .card-building) .mm-facts b {
   font-size: var(--t-row);
   font-weight: 800;
   letter-spacing: 0.06em;
@@ -998,10 +983,10 @@
 /* A map CHANGE: the new name wipes in from the left while the block slides
    the last few units home. `.swap` is only on a hero written by a patch — a
    raise leaves the arrival to the card's entrance. */
-#overlay.card-menu .mm-hero-in.swap {
+#overlay:is(.card-menu, .card-building) .mm-hero-in.swap {
   animation: mm-swap 0.45s cubic-bezier(0.16, 0.84, 0.36, 1) both;
 }
-#overlay.card-menu .mm-hero-in.swap .mm-title {
+#overlay:is(.card-menu, .card-building) .mm-hero-in.swap .mm-title {
   animation: mm-wipe 0.55s cubic-bezier(0.6, 0, 0.2, 1) both;
 }
 @keyframes mm-swap {
@@ -1421,7 +1406,7 @@
    room drops (see the layouts below). Its content is rewritten on every
    cursor move and fades in, which a rewrite cannot interrupt.
    ===================================================================== */
-#overlay.card-menu .mm-intel {
+#overlay:is(.card-menu, .card-building) .mm-intel {
   grid-area: intel;
   align-self: end;
   min-width: 0;
@@ -1430,7 +1415,7 @@
   box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.09);
   clip-path: polygon(16px 0, 100% 0, 100% calc(100% - 16px), calc(100% - 16px) 100%, 0 100%, 0 16px);
 }
-#overlay.card-menu .mm-intel-in {
+#overlay:is(.card-menu, .card-building) .mm-intel-in {
   display: flex;
   flex-direction: column;
   gap: max(10px, calc(16 * var(--u)));
@@ -1440,11 +1425,11 @@
   from { opacity: 0; transform: translate3d(0, 4px, 0); }
   to { opacity: 1; transform: none; }
 }
-#overlay.card-menu .mm-intel .ov-detail-head {
+#overlay:is(.card-menu, .card-building) .mm-intel .ov-detail-head {
   padding-bottom: max(7px, calc(12 * var(--u)));
   border-bottom: 1px solid var(--rule);
 }
-#overlay.card-menu .mm-intel .ov-detail-head::after {
+#overlay:is(.card-menu, .card-building) .mm-intel .ov-detail-head::after {
   content: "";
   display: block;
   width: max(26px, calc(48 * var(--u)));
@@ -1453,20 +1438,20 @@
   margin-bottom: calc(-1 * max(7px, calc(12 * var(--u))) - 1px);
   background: var(--hot);
 }
-#overlay.card-menu .mm-intel .ui-eyebrow { font-size: var(--t-cap); }
-#overlay.card-menu .mm-intel h3 {
+#overlay:is(.card-menu, .card-building) .mm-intel .ui-eyebrow { font-size: var(--t-cap); }
+#overlay:is(.card-menu, .card-building) .mm-intel h3 {
   font-size: max(17px, calc(30 * var(--u)));
   letter-spacing: 0.12em;
 }
-#overlay.card-menu .mm-intel .ov-blurb {
+#overlay:is(.card-menu, .card-building) .mm-intel .ov-blurb {
   font-size: var(--t-body);
   color: rgba(255, 255, 255, 0.66);
 }
-#overlay.card-menu .mm-intel .ui-facts b { font-size: max(15px, calc(26 * var(--u))); }
-#overlay.card-menu .mm-intel .ui-facts span,
-#overlay.card-menu .mm-intel .ov-slot i { font-size: var(--t-cap); }
-#overlay.card-menu .mm-intel .ov-slot b { font-size: var(--t-row); }
-#overlay.card-menu .mm-intel .ov-thumb { max-width: 100%; }
+#overlay:is(.card-menu, .card-building) .mm-intel .ui-facts b { font-size: max(15px, calc(26 * var(--u))); }
+#overlay:is(.card-menu, .card-building) .mm-intel .ui-facts span,
+#overlay:is(.card-menu, .card-building) .mm-intel .ov-slot i { font-size: var(--t-cap); }
+#overlay:is(.card-menu, .card-building) .mm-intel .ov-slot b { font-size: var(--t-row); }
+#overlay:is(.card-menu, .card-building) .mm-intel .ov-thumb { max-width: 100%; }
 /* The key to the plan's two marks that are not self-evident — whose deploy
    point is whose — and to the flag, which is the same hexagon on every map
    in the game and is named once here. */
@@ -1559,6 +1544,241 @@
 @keyframes ov-arrive {
   from { opacity: 0; }
   to { opacity: 1; }
+}
+
+/* =====================================================================
+   THE BUILDING CARD — a title screen for the map being built.
+   ---------------------------------------------------------------------
+   `OverlayScreen.showBuilding` says what it is and why. It stands in the
+   MENU's frame (the shared block above: the unit, the scrim, the lockup,
+   the hero and the intel plate are the menu's own rules), so a player who
+   pressed Deploy watches the column of decisions go and the same title
+   stay where it was, with the LOAD PLATE standing where Deploy stood. The
+   right-hand side is spent on what a player waiting can read: a briefing
+   plate and one field note.
+
+   **Nothing on it may need the main thread to move.** For most of its life
+   on screen the main thread is inside the build, so what moves here is
+   what the compositor can move alone — the bar (below, with its own
+   argument), the photograph's drift, and an entrance of `opacity` and
+   `transform` short enough to have landed before the build starts.
+   ===================================================================== */
+#overlay.card-building {
+  grid-template-columns: minmax(0, var(--col)) minmax(0, 1fr) var(--intel);
+  grid-template-rows: auto minmax(0, 1fr) auto auto;
+  grid-template-areas:
+    "top   .     ."
+    ".     .     intel"
+    "hero  hero  intel"
+    "load  .     note";
+}
+
+/* The map's line in full. The menu clamps it to two because the column
+   under it is decisions; here nothing is under it but the wait, and the
+   wait is what a whole paragraph is for. */
+#overlay.card-building .mm-blurb {
+  -webkit-line-clamp: unset;
+  display: block;
+}
+
+/* --- the load plate ---
+   Where Deploy stood on the menu and the same shape, but DARK: it is not a
+   thing to press, and a hot fill is what this interface uses to say that
+   something is. The bar runs along its bottom edge and is the plate's
+   hairline, so the plate reads as one instrument rather than a box with a
+   progress bar under it. The words say which of the two kinds of work is
+   being waited on — see `OverlayScreen.setBuildProgress`. */
+#overlay.card-building .bd-load {
+  --dcut: max(10px, calc(18 * var(--u)));
+  grid-area: load;
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  min-width: 0;
+  min-height: max(52px, calc(82 * var(--u)));
+  margin-top: max(4px, calc(10 * var(--u)));
+  padding: max(10px, calc(16 * var(--u))) max(16px, calc(30 * var(--u)));
+  background: linear-gradient(100deg, rgba(14, 18, 28, 0.9), rgba(10, 13, 21, 0.78));
+  box-shadow: var(--plate-edge);
+  clip-path: polygon(var(--dcut) 0, 100% 0, 100% calc(100% - var(--dcut)), calc(100% - var(--dcut)) 100%, 0 100%, 0 var(--dcut));
+}
+#overlay.card-building .bd-load-t {
+  display: flex;
+  flex-direction: column;
+  gap: max(2px, calc(3 * var(--u)));
+  min-width: 0;
+}
+#overlay.card-building .bd-word {
+  font-size: var(--t-big);
+  font-weight: 900;
+  letter-spacing: 0.3em;
+  line-height: 1;
+  text-transform: uppercase;
+  color: #fff;
+}
+#overlay.card-building .bd-stage {
+  font-style: normal;
+  font-size: var(--t-cap);
+  font-weight: 700;
+  letter-spacing: 0.24em;
+  text-transform: uppercase;
+  color: rgba(255, 255, 255, 0.5);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+/* The figure, once there is one: cold, because the cyan is this
+   interface's "working" colour and the hot one means chosen. Empty (and
+   so nothing) while the bar sweeps. */
+#overlay.card-building .bd-pct {
+  font-size: var(--t-big);
+  font-weight: 900;
+  letter-spacing: 0.04em;
+  line-height: 1;
+  color: #35f0ff;
+  text-shadow: 0 0 calc(14 * var(--u)) rgba(53, 240, 255, 0.45);
+}
+#overlay.card-building .bd-load .ov-bar {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  width: auto;
+  height: max(3px, calc(4 * var(--u)));
+  background: rgba(255, 255, 255, 0.08);
+}
+
+/* --- the briefing's two slots, side by side ---
+   Two names under captions (the kit, the opposition), and equal shares so a
+   long weapon name and a short tier sit on one rhythm. */
+#overlay.card-building .bd-slots {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: max(10px, calc(18 * var(--u)));
+}
+#overlay.card-building .bd-slots .ov-slot { min-width: 0; }
+#overlay.card-building .bd-slots .ov-slot .ui-eyebrow {
+  margin-bottom: max(2px, calc(4 * var(--u)));
+}
+
+/* --- the field note ---
+   One sentence about how this game plays, picked per load (`fieldNotes.ts`)
+   and set as the brand lockup is — a rule down its left edge — but in the
+   cold accent, because it is the machine talking rather than the game's
+   name. It is the one READ thing the smaller templates keep: a player on a
+   phone waits exactly as long as one on a monitor. */
+#overlay.card-building .bd-note {
+  grid-area: note;
+  align-self: end;
+  display: flex;
+  flex-direction: column;
+  gap: max(4px, calc(8 * var(--u)));
+  min-width: 0;
+  padding-left: max(8px, calc(14 * var(--u)));
+  border-left: 2px solid rgba(53, 240, 255, 0.8);
+  text-shadow: 0 2px 8px rgba(0, 0, 0, 0.9), 0 0 2px rgba(0, 0, 0, 0.8);
+}
+#overlay.card-building .bd-note-cap {
+  font-size: var(--t-cap);
+  font-weight: 700;
+  letter-spacing: 0.32em;
+  text-transform: uppercase;
+  color: rgba(53, 240, 255, 0.85);
+}
+#overlay.card-building .bd-note p {
+  max-width: 46ch;
+  font-size: var(--t-body);
+  line-height: 1.5;
+  color: rgba(255, 255, 255, 0.82);
+}
+
+/* --- the card arriving ---
+   Only what the MENU did not have: the hero and the lockup are the menu's
+   own and stay where they stood, so the hand-off from Deploy is the column
+   leaving and three blocks arriving. Short and compositor-only, because the
+   main thread stops two frames after this starts. */
+#overlay.card-building.enter .bd-load {
+  animation: mm-rise 0.4s cubic-bezier(0.16, 0.84, 0.36, 1) both;
+}
+#overlay.card-building.enter .mm-intel { animation: ov-arrive 0.45s ease 0.06s both; }
+#overlay.card-building.enter .bd-note { animation: ov-arrive 0.45s ease 0.12s both; }
+
+/* --- the building card at every viewport ---
+   The menu's four templates over the card's own areas. Without controls to
+   fit there is room to spare everywhere, so what gives is only ever the
+   briefing: it goes with the menu's intel, at the same widths, and the
+   field note stands beside the plate — under it only when the glass is
+   upright. */
+@media (max-width: 1099px), (max-height: 619px) {
+  #overlay.card-building {
+    --col: clamp(300px, 58vw, calc(720 * var(--u)));
+    grid-template-columns: minmax(0, var(--col)) minmax(0, 1fr);
+    grid-template-rows: auto minmax(0, 1fr) auto auto;
+    grid-template-areas:
+      "top   ."
+      ".     ."
+      "hero  hero"
+      "load  note";
+  }
+  #overlay.card-building .mm-intel { display: none; }
+}
+@media (orientation: landscape) and (max-height: 560px) {
+  #overlay.card-building {
+    --gy: 10px;
+    grid-template-columns: minmax(0, 1fr) minmax(0, clamp(250px, 45%, 440px));
+    grid-template-rows: auto minmax(0, 1fr) auto auto;
+    grid-template-areas:
+      "top  ."
+      ".    ."
+      "hero hero"
+      "load note";
+    column-gap: clamp(14px, 3vw, 32px);
+    row-gap: 8px;
+    background:
+      linear-gradient(0deg, rgba(2, 3, 8, 0.94) 0%, rgba(2, 3, 8, 0.62) 42%, rgba(2, 3, 8, 0) 72%),
+      linear-gradient(180deg, rgba(2, 3, 8, 0.72) 0%, rgba(2, 3, 8, 0) 26%),
+      linear-gradient(90deg, rgba(3, 5, 11, 0.55) 0%, rgba(3, 5, 11, 0) 60%);
+  }
+  #overlay.card-building .mm-index { display: none; }
+  /* Sized off the width as the menu's is, but the hero has the whole width
+     here rather than sharing it with a thumb's column. */
+  #overlay.card-building .mm-title {
+    margin-bottom: 4px;
+    font-size: clamp(26px, min(7.2vw, 13vh), 60px);
+  }
+  #overlay.card-building .mm-facts { margin-top: 4px; }
+  #overlay.card-building .bd-load { margin-top: 0; align-self: end; }
+  #overlay.card-building .bd-note p { font-size: 12px; }
+}
+@media (orientation: landscape) and (max-height: 560px) and (max-width: 740px) {
+  #overlay.card-building .mm-blurb { display: none; }
+}
+@media (orientation: portrait) {
+  #overlay.card-building {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: auto minmax(0, 1fr) auto auto auto;
+    grid-template-areas: "top" "." "hero" "load" "note";
+    row-gap: max(12px, calc(20 * var(--u)));
+    background:
+      linear-gradient(0deg, rgba(2, 3, 8, 0.95) 0%, rgba(2, 3, 8, 0.8) 42%, rgba(2, 3, 8, 0.2) 68%, rgba(2, 3, 8, 0) 80%),
+      linear-gradient(180deg, rgba(2, 3, 8, 0.78) 0%, rgba(2, 3, 8, 0) 18%),
+      radial-gradient(120% 60% at 0% 100%, rgba(255, 230, 128, 0.1), transparent 60%),
+      repeating-linear-gradient(to bottom, rgba(255, 255, 255, 0.012) 0 1px, transparent 1px 3px);
+  }
+  #overlay.card-building > :is(.mm-hero, .bd-load, .bd-note) {
+    width: 100%;
+    max-width: 680px;
+  }
+  #overlay.card-building .mm-intel { display: none; }
+}
+@media (max-width: 560px) {
+  #overlay.card-building .mm-kicker { display: none; }
+  #overlay.card-building .mm-mode { letter-spacing: 0.22em; }
+}
+@media (prefers-reduced-motion: reduce) {
+  #overlay.card-building.enter :is(.bd-load, .mm-intel, .bd-note) { animation: none; }
 }
 
 /* =====================================================================

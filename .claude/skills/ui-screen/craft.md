@@ -37,7 +37,7 @@ Think like a game UI designer, not a web one:
   over its photograph. So did the deploy screen: a list of spawns reads as
   one once the POSITION under the cursor is the title and the map's plan is
   the stage.)
-- **The front end** (`:is(#overlay.card-menu, #loadout, #settings, #lobby, #deploy)` in
+- **The front end** (`:is(#overlay.card-menu, #overlay.card-building, #loadout, #settings, #lobby, #deploy)` in
   `base.css`, plus `prompts.ts`) is for a screen whose job is to SHOW
   something — or a list the player browses like a title screen rather than
   fills in like a form (the settings: the PAGE is the title, the pages a tab
@@ -95,6 +95,14 @@ Keyed on what actually runs out, in this order in the stylesheet:
    row of icon tabs.
 
 ## Traps that have already cost time
+
+- **A screen raised over a FREEZE gets the frames before it and no more.**
+  The building card is painted in the two frames `Game.startRound` waits and
+  then the main thread is inside the build, for 11 s on Cinderhaven: nothing
+  on it may need a later frame (no canvas, no fetch, no decode), and only
+  `opacity`/`transform` animations keep moving. It is proved with a CDP
+  screencast across a real `startRound`, never with a screenshot, which waits
+  for the main thread and so photographs either side of the freeze.
 
 - **A control that did not opt into `pointer-events: auto` is dead under the
   mouse and perfect under a pad**, because `#hud` is `pointer-events: none`

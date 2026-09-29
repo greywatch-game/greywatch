@@ -60,6 +60,10 @@ export const SCREENS = {
     open: "g.startRound(); await until(() => g.state === 'deploy'); g.openLoadout();",
     root: "#loadout",
   },
+  // The building card is up for well under a second on most maps, so it is
+  // RAISED here rather than reached: the step and the card, with no build
+  // behind them, which holds it still for as long as a picture takes.
+  building: { open: "g.go('loading'); g.overlayScreen.showBuilding(g.buildingCard());", root: "#overlay" },
   pause: {
     open: "g.startRound(); await until(() => g.state === 'deploy'); g.spawnPlayer(); await wait(300); g.pause();",
     root: "#overlay",

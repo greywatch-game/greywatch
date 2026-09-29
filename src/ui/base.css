@@ -709,7 +709,9 @@ body { font-family: "Segoe UI", "Helvetica Neue", Arial, sans-serif; }
    screen (`#loadout`), the settings screen (`#settings`), the lobby
    (`#lobby`) and the deploy screen (`#deploy`). All five are sized off one
    unit and draw their prompts on their controls, so the unit and the
-   prompt are stated once, here, for all of them.
+   prompt are stated once, here, for all of them. The building card
+   (`#overlay.card-building`) takes the unit and none of the prompts: it
+   stands in the menu's frame and has nothing on it to press.
    ---------------------------------------------------------------------
    **`--u` is one pixel of a 1080-line screen.** A console front end scales
    with the vertical resolution and so do these: a 1440p monitor gets the
@@ -725,7 +727,7 @@ body { font-family: "Segoe UI", "Helvetica Neue", Arial, sans-serif; }
    and centres it, so 21:9 is used edge to edge and 32:9 keeps the
    composition together.
    ===================================================================== */
-:is(#overlay.card-menu, #loadout, #settings, #lobby, #deploy) {
+:is(#overlay.card-menu, #overlay.card-building, #loadout, #settings, #lobby, #deploy) {
   --u: clamp(0.5px, calc(100vmin / 1080), 2.4px);
   --hit: 0px;
   --gx: max(clamp(16px, 3.4vw, 104px), calc((100% - 240vh) / 2));
@@ -739,7 +741,7 @@ body { font-family: "Segoe UI", "Helvetica Neue", Arial, sans-serif; }
   --cut: max(6px, calc(10 * var(--u)));
 }
 @media (pointer: coarse) {
-  :is(#overlay.card-menu, #loadout, #settings, #lobby, #deploy) { --hit: 44px; }
+  :is(#overlay.card-menu, #overlay.card-building, #loadout, #settings, #lobby, #deploy) { --hit: 44px; }
 }
 
 /* --- the prompts (`prompts.ts`) ---

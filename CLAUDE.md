@@ -565,6 +565,12 @@ control for the device in hand**, picked by a `dev-*` class the stylesheet reads
 and none under a finger — `ui/prompts.ts` and `base.css`, shared with the kit
 screen, as is the unit `--u`. **It is BUILT on a raise and PATCHED after**, which is
 what lets a map change animate, and the entrance is keyed to the RAISE.
+**The BUILDING card stands in the menu's frame over the map being built** — the
+same hero, a load plate where Deploy was — **and what may be on it is decided
+by the freeze under it**: it gets the two frames `startRound` waits, so nothing
+needing a later one (a canvas, a fetch, an undecoded photograph) may be part of
+what it says, and only what the compositor animates alone moves through the
+build.
 
 **THERE ARE THREE MAPS OF THE SAME PLACE HERE AND THEY ARE ONE DRAWING** — the
 menu's intel plate, the deploy screen and the corner minimap. `ui/mapPlan.ts` is

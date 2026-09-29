@@ -87,9 +87,8 @@ consequences:
 - **The building card can finally say how far along it is.** The build itself
   has no frames to report from — it is one task — but the bake has one per
   batch, so `OverlayScreen.setBuildProgress` swaps the indeterminate sweep for
-  a measured fill the first time a frame goes by with the bake still
-  outstanding. Every shipped map drains on the first frame and never reaches
-  that call.
+  a measured fill once a frame goes by with some of the bake done. Most maps
+  drain on the first frame and never reach that call.
 
 **News from the authority that needs a world is HELD across `buildPending`, not
 applied and not dropped**, and there are two of them for the same reason.

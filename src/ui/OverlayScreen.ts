@@ -11,7 +11,8 @@
  * beyond what it is handed.
  * Invariants: only one card is up at a time and `hide()` is the single way down
  * from any of them. The menu is BUILT when it is raised and PATCHED on every
- * later `showMenu` — the other three are rewritten whole by each `show*`.
+ * later `showMenu` — the other three are rewritten whole by each `show*`, the
+ * building card patching only its bar and the words over it.
  *
  * One class rather than four because the cards are one element, not four
  * screens that happen to overlap: they share the element, the veil and,
@@ -20,7 +21,8 @@
  * the cost of a base class or a duplicated stylesheet. A card that grows its
  * own state — a settings screen with rows to edit, a map picker — has earned a
  * file of its own; a card that is markup and a button has not, and the building
- * card is markup and not even that.
+ * card is markup and not even a button: it shares the menu's hero, its
+ * backdrop and its intel plate, which is the reason it is here.
  *
  * **The round-over card's map BALLOT is the near miss, and it stays for a
  * reason worth stating.** It is a row of buttons and a cursor, which is the
@@ -51,6 +53,7 @@ import {
   loadHeights,
   type MapDef,
 } from "../world/maps";
+import { pickFieldNote } from "./fieldNotes";
 import { WEAPON_BLURBS } from "./LoadoutScreen";
 import { mapShotUrl, shotThumbUrl } from "./mapShots";
 import { drawMapThumb } from "./MapThumb";
@@ -170,6 +173,37 @@ export interface RoundOverState {
 }
 
 /**
+ * What the building card is told about the round it stands over. Everything
+ * on it is known BEFORE the build starts — which is the only kind of thing the
+ * card may carry, since it is painted on the frames before the main thread
+ * stops (`showBuilding`).
+ */
+export interface BuildingState {
+  /** The map being built — its name is the card's title. */
+  map: MapDef;
+  /** Its place in the rotation, drawn hollow behind the name as the menu does. */
+  index: number;
+  weapon: PrimaryWeaponId;
+  sight: SightId;
+  /**
+   * The enemy tier's name offline, and null in a match, where the bots are the
+   * authority's to field and the tier on this machine's menu decides nothing.
+   */
+  enemy: string | null;
+}
+
+/** The building card's patchable parts, live only while it is up. */
+interface BuildRefs {
+  map: MapDef;
+  bar: HTMLElement;
+  word: HTMLElement;
+  stage: HTMLElement;
+  pct: HTMLElement;
+  /** The last figure written, so a frame that moved nothing writes nothing. */
+  shown: number;
+}
+
+/**
  * The cursor's order, and it is a RING: up from the map reel is the system bar
  * along the top of the screen, and down from Deploy wraps back up to it.
  *
@@ -251,6 +285,11 @@ function facts(rows: readonly [string, string][]): string {
     .join("")}</div>`;
 }
 
+/** A named pick under a caption — the optic under a weapon, a side's kit. */
+function slot(eyebrow: string, name: string, note: string): string {
+  return `<div class="ov-slot"><span class="ui-eyebrow">${eyebrow}</span><b>${name}</b><i>${note}</i></div>`;
+}
+
 function detailBlock(eyebrow: string, title: string, blurb: string): string {
   return `${detailHead(eyebrow, title)}<p class="ov-blurb">${blurb}</p>`;
 }
@@ -313,11 +352,13 @@ export class OverlayScreen {
    */
   private device: InputDevice = guessDevice();
   /**
-   * The building card's progress bar, live only while that card is up. Held
-   * rather than re-queried because it is written on a frame the main thread is
-   * otherwise spending on the bake — see `setBuildProgress`.
+   * The building card's bar and its stage line, live only while that card is
+   * up. Held rather than re-queried because they are written on a frame the
+   * main thread is otherwise spending on the bake — see `setBuildProgress`.
    */
-  private buildBar: HTMLElement | null = null;
+  private build: BuildRefs | null = null;
+  /** The field note the last building card told, so the next one differs. */
+  private lastNote: string | null = null;
   /**
    * The menu's BACKDROP: a photograph of the map that is chosen, under the
    * card, cross-faded when the choice changes.
@@ -968,9 +1009,9 @@ export class OverlayScreen {
    * fighting it for the front layer.
    */
   private setShot(map: MapDef | undefined): void {
-    // Raised by the fact of being called: the menu card is the only thing that
-    // calls this (the lobby reaches it through `showBackdrop`, over the menu),
-    // and every other card calls `clearShot`.
+    // Raised by the fact of being called: the menu card and the building card
+    // are the only two that call this (the lobby reaches it through
+    // `showBackdrop`, over the menu), and every other card calls `clearShot`.
     this.shotRoot.classList.add("on");
     const url = map ? mapShotUrl(map.id) : undefined;
     if (url === this.shotUrl) return;
@@ -1018,7 +1059,8 @@ export class OverlayScreen {
    * the menu on the same map brings the same picture back without re-decoding
    * or re-fading it.
    *
-   * Every card but the menu calls this, including the pause: what a pause
+   * Every card but the menu and the building card calls this, including the
+   * pause: what a pause
    * stands over is a live round, and a photograph of a map behind the round
    * you are playing on it is two of the same place at once.
    */
@@ -1187,7 +1229,7 @@ export class OverlayScreen {
     this.clearShot();
     this.menuEls.clear();
     this.detailEl = null;
-    this.buildBar = null;
+    this.build = null;
     this.clearVote();
     // The bar is the two counts against each other rather than against the
     // ticket pool they started from: a round that ends 142-0 and one that ends
@@ -1426,50 +1468,121 @@ export class OverlayScreen {
   }
 
   /**
-   * The card that stands over a map being built.
+   * The card that stands over a map being built — a title screen for the MAP,
+   * laid out as the menu is.
    *
    * It exists because building one is ~0.7 s of merges, an occlusion bake and
-   * a nav grid on a single frame, and until there was something to put up, the
-   * card the player had just confirmed simply froze where it stood and the
-   * deploy screen appeared out of it. A hang and a load look identical; the
-   * only thing that separates them is whether the game said which it was.
+   * a nav grid on a single frame (several on the two big maps, with the floor's
+   * fetch in front of it), and until there was something to put up, the card
+   * the player had just confirmed simply froze where it stood and the deploy
+   * screen appeared out of it. A hang and a load look identical; the only thing
+   * that separates them is whether the game said which it was.
+   *
+   * **The map is the title, over its own photograph, and it is the MENU's hero
+   * exactly** (`heroMarkup`): a player who pressed Deploy on the menu watches
+   * the column of decisions go and the same title stay, with the load plate
+   * standing where Deploy was. What the rest of the screen is spent on is what
+   * a player waiting can READ — a briefing on the round (the rules, their kit,
+   * what they are up against) and one field note — because a wait is the one
+   * time a front end has the player's attention and nothing for them to do.
+   *
+   * **Everything on it is PAINTED before the main thread stops, and that is
+   * the rule deciding what may be on it at all.** The two frames
+   * `Game.startRound` waits are all this card gets: nothing that needs a later
+   * frame — a canvas, a decode, a fetch — may be part of what it says. So the
+   * intel is text and figures and no schematic, the photograph is only drawn
+   * once it is decoded (which it already is when the player came from the
+   * menu on the same map), and what moves through the freeze moves on the
+   * compositor alone: the bar, the photograph's drift, and nothing else.
    *
    * `setOverlaid` for the same reason the menu calls it — what is under this
    * is either last round's HUD or nothing at all.
    *
    * No button, no cursor, no callbacks: this is the one card the player cannot
-   * act on, and it takes itself down (`Game.buildRound` does) rather than
-   * waiting to be dismissed.
-   *
-   * The bar is indeterminate and has to be — the work it covers is one
-   * synchronous call, so there is no progress to read even in principle — and
-   * it is the one thing on any of these cards that must keep moving with the
-   * main thread stopped dead. See `.ov-bar i` in `overlay.css`: that is a
-   * constraint on which CSS properties may animate it, not a style choice.
+   * act on, and it takes itself down (`Game.finishBakeWait` does) rather than
+   * waiting to be dismissed. **Called again for the SAME map it is a no-op**,
+   * and for a different one — a match whose map moved under the build — it is
+   * rewritten without its entrance, because the card was already up.
    */
-  showBuilding(mapName: string): void {
-    this.setCardClass("building");
+  showBuilding(state: BuildingState): void {
+    const { map } = state;
+    if (this.card === "building" && this.build?.map === map) return;
+    const raised = this.card !== "building";
+    this.setCardClass("building", raised);
     this.setOverlaid(true);
     this.card = "building";
-    this.clearShot();
     this.menuEls.clear();
     this.detailEl = null;
-    this.buildBar = null;
     this.clearVote();
-    // Centred and deliberately bare. Everything else in this file grew a
-    // second column while this card did not, and the reason is the freeze it
-    // covers: whatever is on it has to be PAINTED before the main thread stops,
-    // so a panel with a canvas in it would be a schematic drawn on the frame
-    // the player was already waiting through. A name, a word and a bar.
+    // The backdrop. A picture the layers are already holding (the menu's, on
+    // the same map) goes straight back up; any other has to decode first, and
+    // until it has, the LAST map's photograph must not stand behind this one's
+    // name — so the front layer comes down and the scrim stands over the scene.
+    if (mapShotUrl(map.id) !== this.shotUrl) {
+      this.shotLayers[this.shotFront].classList.remove("on");
+    }
+    this.setShot(map);
+    const weapon = CONFIG.weapons[state.weapon];
+    const sight = CONFIG.sights[state.sight];
+    const rules = CONFIG.conquest;
+    const per = perTeamOf(map.layout);
+    const note = pickFieldNote(map, this.lastNote);
+    this.lastNote = note;
+    // Offline the enemy is a TIER this player chose; in a match it is whoever
+    // the authority fields, and a tier read off this machine's menu would be
+    // a claim about a round it decides nothing in.
+    const versus =
+      state.enemy === null
+        ? slot("Match", "Online", "Empty seats are bots")
+        : slot("Enemy", state.enemy, "Bots");
     this.root.innerHTML = `
-      <div class="ov-build">
-        <span class="ui-eyebrow">Building</span>
-        <h1 class="building-title">${mapName}</h1>
-        <p class="prompt">Stand by</p>
+      <div class="mm-top">
+        <div class="mm-brand">
+          <span class="mm-kicker">Cel-shaded conquest</span>
+          <span class="mm-word">GREYWATCH</span>
+        </div>
+      </div>
+      <div class="mm-hero">${this.heroMarkup(map, state.index, false)}</div>
+      <div class="bd-load">
+        <div class="bd-load-t">
+          <b class="bd-word">Building</b>
+          <i class="bd-stage">Terrain &middot; structures &middot; routes</i>
+        </div>
+        <span class="bd-pct"></span>
         <div class="ov-bar"><i></i></div>
       </div>
+      <aside class="mm-intel">
+        <div class="mm-intel-in">
+          ${detailHead("Briefing", "Conquest")}
+          <p class="ov-blurb">Hold more flags than the enemy and their tickets
+            bleed &mdash; ${rules.bleedPerFlagDeficit} every ${rules.bleedInterval} s
+            for each flag they are behind. Every death costs a ticket, and the
+            side that runs out first loses.</p>
+          ${facts([
+            [`${rules.tickets}`, "Tickets"],
+            [`${map.layout.controlPoints.length}`, "Flags"],
+            [`${per} v ${per}`, "Bodies"],
+          ])}
+          <div class="bd-slots">
+            ${slot("Loadout", weapon.name, `${sight.name} &middot; ${sight.magnification.toFixed(1)}&times;`)}
+            ${versus}
+          </div>
+        </div>
+      </aside>
+      <div class="bd-note">
+        <span class="bd-note-cap">Field note</span>
+        <p>${note}</p>
+      </div>
     `;
-    this.buildBar = this.root.querySelector(".ov-bar i");
+    const q = <T extends HTMLElement>(sel: string) => this.root.querySelector<T>(sel)!;
+    this.build = {
+      map,
+      bar: q(".ov-bar i"),
+      word: q(".bd-word"),
+      stage: q(".bd-stage"),
+      pct: q(".bd-pct"),
+      shown: -1,
+    };
   }
 
   /**
@@ -1482,17 +1595,34 @@ export class OverlayScreen {
    * measured against the build would be painted once at 0 and once at 1. What
    * this measures is the tail the card now also covers: the reflection bake,
    * which is spent a budget of draws per FRAME and therefore has frames to be
-   * painted on. See `Game.bakeWait`.
+   * painted on. See `Game.bakeWait`. So the plate says so — its words turn
+   * from the build to the LIGHT the moment a figure exists, because a
+   * percentage under "Building" would be a claim about the wrong work.
    *
-   * The sweep is dropped on the first call rather than at `showBuilding`,
-   * because a map whose bake lands in one frame — all four of the shipped ones
-   * — never gets here at all and should not flash a bar at 0 on its way past.
+   * The sweep is dropped on the first FIGURE rather than at `showBuilding` or
+   * on the first call, because a map whose bake lands in one frame never gets
+   * here at all, and one that does always arrives reporting nothing done yet —
+   * neither should stop the bar to show a zero on its way past.
    */
   setBuildProgress(done: number): void {
-    const bar = this.buildBar;
-    if (!bar || this.card !== "building") return;
-    bar.parentElement?.classList.add("measured");
-    bar.style.width = `${Math.round(Math.min(1, Math.max(0, done)) * 100)}%`;
+    const build = this.build;
+    if (!build || this.card !== "building") return;
+    const pct = Math.round(Math.min(1, Math.max(0, done)) * 100);
+    if (pct === build.shown) return;
+    // The words turn on the first call, because the work has; the FIGURE
+    // waits for one that is not zero. The first frame of a bake always
+    // reports none of it done, and a probe can take several frames — so a
+    // bar that stopped sweeping to show "0%" would stand still over work that
+    // is going on, which is the look this card exists to avoid.
+    if (build.shown < 0) {
+      build.word.textContent = "Lighting";
+      build.stage.textContent = "Reflections";
+    }
+    build.shown = pct;
+    if (pct === 0) return;
+    build.bar.parentElement?.classList.add("measured");
+    build.bar.style.width = `${pct}%`;
+    build.pct.textContent = `${pct}%`;
   }
 
   /**
@@ -1519,7 +1649,7 @@ export class OverlayScreen {
     this.clearShot();
     this.menuEls.clear();
     this.detailEl = null;
-    this.buildBar = null;
+    this.build = null;
     this.clearVote();
     const items = PAUSE_ITEMS.filter(([, , soloOnly]) => solo || !soloOnly)
       .map(
@@ -1576,18 +1706,20 @@ export class OverlayScreen {
   /**
    * Which card is up, as a class on the root — and what BACKDROP it gets.
    *
-   * The round-over card and the building card are full-bleed screens over a
-   * scene that is either last round's or nothing at all, and they take the
-   * shell's frame and its veil. The MENU takes neither: it is laid out on a
-   * grid of its own over a photograph, with a scrim shaped like that layout
-   * (`#overlay.card-menu` in `overlay.css`), and it carries the prompt device
-   * (`dev-*`) because every prompt on it is picked by the stylesheet. The
+   * The round-over card is a full-bleed screen over a scene that is either
+   * last round's or nothing at all, and it takes the shell's frame and its
+   * veil. The MENU takes neither: it is laid out on a grid of its own over a
+   * photograph, with a scrim shaped like that layout (`#overlay.card-menu` in
+   * `overlay.css`), and it carries the prompt device (`dev-*`) because every
+   * prompt on it is picked by the stylesheet. The BUILDING card is the menu's
+   * frame without the device, having no prompt on it to pick. The
    * pause is anchored to one side and scrimmed from that side only, being a
    * lid over a live round the player is coming back to. Setting `className`
    * outright rather than toggling is what stops the previous card's modifier
    * surviving into the next one.
    *
-   * `raised` is the menu's entrance and nothing else: the class has to be on
+   * `raised` is the menu's and the building card's entrance and nothing
+   * else: the class has to be on
    * the ROOT before the markup is written, because what animates are
    * elements that do not exist yet.
    */
@@ -1603,7 +1735,9 @@ export class OverlayScreen {
         ? "card-pause"
         : card === "menu"
           ? `card-menu dev-${this.device}${raised ? " enter" : ""}`
-          : `ui-screen ui-veil card-${card}`;
+          : card === "building"
+            ? `card-building${raised ? " enter" : ""}`
+            : `ui-screen ui-veil card-${card}`;
   }
 
   /** Takes whichever card is up back down. The single way off all three. */
@@ -1612,7 +1746,7 @@ export class OverlayScreen {
     this.setOverlaid(false);
     this.clearShot();
     this.detailEl = null;
-    this.buildBar = null;
+    this.build = null;
     this.clearVote();
     this.refs = null;
     // The buttons live in the card's markup, so they die with it.

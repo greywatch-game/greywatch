@@ -178,7 +178,11 @@ import {
   type ScoreRow,
   type VehicleChair,
 } from "../ui/HUD";
-import { OverlayScreen, type VoteView } from "../ui/OverlayScreen";
+import {
+  OverlayScreen,
+  type BuildingState,
+  type VoteView,
+} from "../ui/OverlayScreen";
 import { kitLabel, LoadoutScreen } from "../ui/LoadoutScreen";
 import { SettingsScreen } from "../ui/SettingsScreen";
 import { LobbyScreen } from "../ui/LobbyScreen";
@@ -4613,10 +4617,26 @@ export class Game {
     // straight from the pause menu ("Restart round"). The menu's own card goes
     // with them: it is not a lid, and `go` takes it down anyway — see there.
     this.go("loading");
-    this.overlayScreen.showBuilding(this.mapDef.name);
+    this.overlayScreen.showBuilding(this.buildingCard());
     requestAnimationFrame(() =>
       requestAnimationFrame(() => void this.buildRound()),
     );
+  }
+
+  /**
+   * What the building card says about the round it stands over — all of it
+   * known before the build, which is the only kind of thing that card may
+   * carry (`OverlayScreen.showBuilding`). The enemy tier is this machine's
+   * only offline: in a match the authority fields the bots.
+   */
+  private buildingCard(): BuildingState {
+    return {
+      map: this.mapDef,
+      index: MAPS.indexOf(this.mapDef),
+      weapon: this.weapon,
+      sight: this.sight,
+      enemy: this.net ? null : (difficultyNames()[this.difficulty] ?? "Bots"),
+    };
   }
 
   /**
@@ -4675,6 +4695,9 @@ export class Game {
         break;
       }
     }
+    // The card went up naming the map the player chose; a welcome that moved
+    // it names another. A no-op for the same map, which is every offline round.
+    this.overlayScreen.showBuilding(this.buildingCard());
     // The side, resolved ONCE and before a single body is built, because it is
     // what every one of them is PAINTED from: from behind the player's own eyes
     // their team is amber Valeguard against red Redline, whichever slot

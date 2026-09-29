@@ -5,7 +5,7 @@
 //
 // usage:
 //   node .claude/skills/ui-screen/scripts/shoot.mjs --out <dir> [--tag before]
-//     [--screen menu|kit|settings|lobby|deploy|kit-deploy|pause]   default menu
+//     [--screen menu|kit|settings|lobby|deploy|kit-deploy|pause|building]   default menu
 //     [--views all|phones|desk|844x390,1920x1080,...]            default all
 //     [--pad]                also shoot each state with the PAD's prompts
 //     [--steps steps.json]   [{ "name": "optic", "js": "g.loadoutScreen.moveSlot(1)" }]

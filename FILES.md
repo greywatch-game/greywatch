@@ -1022,9 +1022,17 @@ src/
                         #   plate on whatever the cursor rests on. MENU_ITEMS
                         #   is a RING; prompts are per DEVICE (`dev-*`); the
                         #   card is BUILT on a raise and PATCHED after. The
+                        #   BUILDING card stands in the menu's frame: the same
+                        #   hero and photograph, a load plate where Deploy was,
+                        #   a briefing plate and a field note — and nothing
+                        #   that needs a frame after the build starts. The
                         #   pause is the one card that
                         #   does not take the screen — left-anchored over a
                         #   round that is still worth seeing
+    fieldNotes.ts       # The building card's one line of advice: a table of
+                        #   notes about how this game plays, numbers read off
+                        #   CONFIG, armour notes only on armoured maps, never
+                        #   the one told last time, and no key named
     mapPlan.ts          # WHAT all three of this interface's maps draw, as one
                         #   description: the floor, the water, the
                         #   carriageways and the masses standing on them — and

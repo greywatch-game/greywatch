@@ -796,8 +796,9 @@ is one machine's:
   calls it and reads the world on the next line gets last round's (or nothing at
   all). Wait for `state === "deploy"` rather than for the call to return, and
   time the build around `buildRound` if that is what you are measuring. To hold
-  the building card still for a screenshot, replace `g.buildRound` with a no-op
-  before calling `startRound`.
+  the building card still for a screenshot, raise it with no build behind it —
+  `g.go("loading"); g.overlayScreen.showBuilding(g.buildingCard())`, which is
+  the ui-screen skill's `building` screen.
 - **From `deploy` into `playing` is one call, and it beats pressing keys at
   the screen**: `g.deployScreen.onDeploy(spawn)` is the callback the Deploy
   button raises, `Game` wires it to `spawnPlayer`, and any

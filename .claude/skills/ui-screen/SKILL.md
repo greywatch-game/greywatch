@@ -32,7 +32,7 @@ and the traps. Always.
 
 ```bash
 node .claude/skills/ui-screen/scripts/shoot.mjs --out <scratchpad>/shots --tag before \
-  --screen <menu|kit|settings|lobby|deploy|kit-deploy|pause> [--pad]
+  --screen <menu|kit|settings|lobby|deploy|kit-deploy|pause|building> [--pad]
 node .claude/skills/ui-screen/scripts/audit.mjs --screen <same>
 ```
 
