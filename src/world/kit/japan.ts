@@ -4918,14 +4918,83 @@ export function buildPagoda(
 }
 
 /**
- * The TEMPLE GATE: a roofed gateway four and a half metres wide, with plastered
- * wings either side for the precinct wall to run into. `tint` recolours the
- * posts (vermilion for a shrine, cypress for a temple — the default).
+ * 寺, "temple" — the last character of every temple's name — as strokes in
+ * glyph units, x to the right and y up in the square ±0.5: a gate's plaque
+ * ends in it and its lantern carries it.
+ */
+const TERA: readonly (readonly [number, number, number, number])[] = [
+  [-0.26, 0.36, 0.26, 0.36],
+  [0, 0.5, 0, 0.16],
+  [-0.42, 0.16, 0.42, 0.16],
+  [-0.48, -0.04, 0.48, -0.04],
+  [0.18, 0.1, 0.18, -0.46],
+  [0.18, -0.46, 0.04, -0.37],
+  [-0.24, -0.17, -0.12, -0.29],
+];
+
+/**
+ * The TEMPLE GATE — the SHIKYAKUMON, the "four-legged gate" an Edo temple
+ * sets in its precinct wall: two great pillars in the wall's line carrying
+ * the ridge, four lesser posts before and behind them carrying the eaves, and
+ * a plastered side bay either way for the precinct wall to run into. It is
+ * the one door into Koyo-ji, and everybody who takes the flag in there comes
+ * through it or over the wall beside it.
+ *
+ * **It was a plaster box with a doorway cut through it under one smooth grey
+ * hip**: a plank slab where the brackets should be and a slotted block for a
+ * ridge. What makes a gate one is that it is ALL frame and nothing hides it —
+ * there is no ceiling, so everything overhead is looked up at by everyone who
+ * walks through — and that is where this spends its vertices:
+ *
+ * - **The base** is a granite platform: a kerb of dressed stones round it,
+ *   carried down to the ground, flags laid in running bond inside it, and a
+ *   granite step before and behind the passage.
+ * - **The posts**: the two main pillars are round, on granite bases, in
+ *   bronze root sleeves; the four lesser posts are chamfered square on bases
+ *   of their own. Paper pilgrim slips (senja-fuda) are pasted up them.
+ * - **The frame**: a tie through the posts along each row and through each
+ *   post line, its ends run on past the posts and cut on a slant; the main
+ *   row's head beam runs on over the side bays. On each lesser post a
+ *   bracket set — a bearing block, an arm, three small blocks, a second arm
+ *   — carries the eave purlin, and a frog-leg strut stands in the middle of
+ *   the front and back bays. On each main pillar a cambered beam runs out to
+ *   both purlins, and a king strut braced on it carries the ridge beam. Each
+ *   side bay's end post carries an outrigger that the purlins' ends and an
+ *   end purlin rest on, and a hip beam runs into each corner with a wind bell
+ *   hung at its end.
+ * - **The eave** is two layers of rafters, base and flying, their ends
+ *   painted white, under a board lining — seen whole from underneath.
+ * - **The roof** is the hip it always was, tiled in rows of round tiles on an
+ *   eave lip, under a ridge banded in white with a demon tile at each end and
+ *   a hip ridge down each corner ending on its own.
+ * - **The side bays** are plaster in a frame of sill, waist rail and head
+ *   rails over a skirt of boards, with a barred window (renji) in the front;
+ *   on the back, the gate's two plank leaves stand folded back flat against
+ *   them.
+ * - **The front** hangs the temple's name on a framed plaque before the
+ *   frog-leg strut, and the passage hangs a great paper lantern (chōchin)
+ *   under the main row's head beam, its foot 2.4 m over the platform.
+ *
+ * `tint` recolours the timber (vermilion for a shrine, cypress for a temple —
+ * the default); the plaster, the stone and the tile stay what they are. It is
+ * in `CONFORMS_TO_TERRAIN`: the stones' and flags' lengths, the characters on
+ * the plaque and the lantern and the pilgrim slips are seeded off where it
+ * stands, and the platform and both steps are carried down to the ground.
+ *
+ * **The colliders are the ones it always had, in the same order**: the six
+ * posts and each side bay (its retired `wall` spelled out as a block), then
+ * the roof slab at the eave. Everything drawn obeys the kit's three rules:
+ * the skirt, the rails, the window and the folded leaves are on a side bay's
+ * face (none more than 0.13 m proud); the platform and the steps are under
+ * 0.3 m; the bases hug their posts; and everything from the ties up is
+ * overhead — the lowest, the ties through the post lines, clear the platform
+ * by 3.4 m, and the lantern by 2.4.
  */
 export function buildTempleGate(
   scene: Scene,
   mats: CelMaterialFactory,
   p: BuildParams = {},
+  ctx?: BuildCtx,
 ): Structure {
   const b = new Build(scene, mats, "sanmon");
   const opening = 4.6;
@@ -4934,44 +5003,636 @@ export function buildTempleGate(
   const d = 4.2;
   const h = 4.6;
   const color = p.tint ?? HINOKI;
-  b.box(w + 0.6, 0.3, d, 0, 0.15, 0, GRANITE_DARK);
+
+  // --- colliders, exactly as they were: the posts and each wing (the old
+  // `wall` call), then the roof slab at the eave.
   for (const sx of [-1, 1]) {
     for (const sz of [-1, 0, 1]) {
       const x = (sx * opening) / 2;
       const z = (sz * (d - 0.8)) / 2;
       const dia = sz === 0 ? 0.62 : 0.44;
-      b.cyl(h, dia, dia, 10, x, h / 2, z, color);
       b.block({ w: dia * 0.85, h, d: dia * 0.85, x, y: h / 2, z });
     }
-    // The wing: plaster between a post and the corner.
     const wx = sx * (opening / 2 + wing / 2);
-    b.wall(wing, h - 0.4, 0.5, wx, (h - 0.4) / 2, 0, SHIKKUI);
-    b.box(0.3, h, 0.6, sx * (w / 2 - 0.15), h / 2, 0, color);
-    b.box(wing, 0.25, 0.56, wx, h - 0.55, 0, SUMI);
-    b.box(wing, 0.5, 0.56, wx, 0.25, 0, SUMI);
+    b.block({ w: wing, h: h - 0.4, d: 0.5, x: wx, y: (h - 0.4) / 2, z: 0 });
   }
-  // Lintels and tie beams.
-  for (const sz of [-1, 0, 1]) {
-    b.box(w, 0.36, 0.3, 0, h - 0.2, (sz * (d - 0.8)) / 2, color);
-  }
-  for (const sx of [-1, 1]) b.box(0.3, 0.36, d, (sx * opening) / 2, h - 0.6, 0, color);
-  b.box(w + 0.6, 0.5, d + 0.4, 0, h + 0.2, 0, HINOKI);
   const eave = h + 0.45;
   const ex = w / 2 + 1.3;
   const ez = d / 2 + 1.5;
-  curvedRoof(b, KAWARA, {
-    y: eave,
-    ex,
-    ez,
-    tx: w / 2 - 1.0,
-    tz: 0,
-    rise: 2.9,
-    curve: 1.6,
-    upturn: 0.55,
-    thick: 0.32,
-  });
-  ridge(b, w / 2 - 1.0, eave + 2.9);
   b.block({ w: ex * 2, h: 0.3, d: ez * 2, x: 0, y: eave, z: 0 });
+
+  // --- everything below is drawing -------------------------------------------
+  const rnd = mulberry32(streetSeed(w, d, h, ctx));
+  const ground = (lx: number, lz: number): number => {
+    if (!ctx) return 0;
+    const cos = Math.cos(ctx.rotY);
+    const sin = Math.sin(ctx.rotY);
+    return ctx.terrain.surfaceAt(ctx.x + lx * cos + lz * sin, ctx.z - lx * sin + lz * cos) - ctx.y;
+  };
+  /** The post lines, the front and back rows, and each side bay's end post. */
+  const XP = opening / 2;
+  const ZP = (d - 0.8) / 2;
+  const XE = w / 2 - 0.15;
+  /** The platform: its half extents and its top. */
+  const PX = w / 2 + 0.15;
+  const PZ = d / 2;
+  const PT = 0.3;
+  let foot = 0;
+  for (const gx of [-1, -0.5, 0, 0.5, 1]) {
+    for (const gz of [-1, 0, 1]) foot = Math.min(foot, ground(gx * PX, gz * PZ));
+  }
+  foot -= 0.08;
+
+  const sb = new StoneBatch();
+  const SIDES: Side[] = ["-z", "+z", "-x", "+x"];
+  const CORNERS = [
+    [-1, -1],
+    [1, -1],
+    [1, 1],
+    [-1, 1],
+  ] as const;
+  // A member laid from `a` to `c` along its own Z hides these faces.
+  const TOP = 1 << 2;
+  const START = 1 << 5;
+  const END = 1 << 4;
+  /** Plan point `n` out from the centre on side `s`, `u` along it. */
+  const at = (s: Side, u: number, n: number): [number, number] =>
+    runsAlongX(s) ? [u, outward(s) * n] : [outward(s) * n, u];
+  /** A member centred `out` off plane `plane` of side `s`. */
+  const on = (s: Side, plane: number, u: number, y: number, along: number, tall: number, thick: number, out: number, c: string, tilt = 0, hide = 0): void =>
+    sb.onFace(s, plane, u, y, along, tall, thick, out, c, tilt, 0, hide);
+  const member = (a: Point3, c: Point3, wide: number, deep: number, col: string, hide = 0): void => {
+    const o = orient(a, c);
+    sb.box(wide, deep, o.len, o.mid[0], o.mid[1], o.mid[2], col, o.rot, hide);
+  };
+  /** An end face 1.5 cm past `c`, square to the member from `a` — a tile's, or a rafter's paint. */
+  const endFace = (a: Point3, c: Point3, wide: number, deep: number, col: string): void => {
+    const o = orient(a, c);
+    const k = 0.015 / o.len;
+    sb.box(wide, deep, 0.01, c[0] + (c[0] - a[0]) * k, c[1] + (c[1] - a[1]) * k, c[2] + (c[2] - a[2]) * k, col, o.rot, 63 & ~END);
+  };
+  /**
+   * A beam's end run on past a post, its underside cut up on a slant to the
+   * tip (a kibana): from `a0` along the beam's axis for `len` the way `sgn`
+   * says, the beam centred `c` across it.
+   */
+  const nose = (alongX: boolean, c: number, a0: number, sgn: number, len: number, yb: number, yt: number, th: number): void => {
+    const a1 = a0 + sgn * len;
+    const prof = (q: number): Point3[] => {
+      const P = (a: number, y: number): Point3 => (alongX ? [a, y, q] : [q, y, a]);
+      return [P(a0, yb), P(a1 - sgn * 0.14, yb), P(a1, yb + (yt - yb) * 0.45), P(a1, yt), P(a0, yt)];
+    };
+    convexSolid(b, prof(c - th / 2), prof(c + th / 2), color);
+  };
+  /** A bracket arm (hijiki): a beam `len` long centred at `uc` along its axis, its ends' undersides rounded up. */
+  const arm = (alongX: boolean, uc: number, c: number, len: number, yb: number, yt: number, th: number): void => {
+    const dy = yt - yb;
+    const L = len / 2;
+    const prof = (q: number): Point3[] => {
+      const P = (a: number, y: number): Point3 => (alongX ? [uc + a, y, q] : [q, y, uc + a]);
+      return [P(-L, yt), P(L, yt), P(L, yt - dy * 0.45), P(L - 0.16, yb), P(-L + 0.16, yb), P(-L, yt - dy * 0.45)];
+    };
+    convexSolid(b, prof(c - th / 2), prof(c + th / 2), color);
+  };
+
+  // --- the roof's own geometry, which everything under and on it is cut to ------
+  const RISE = 2.9;
+  const TH = 0.32;
+  const rx = w / 2 - 1.0;
+  const roof: RoofSpec = { y: eave, ex, ez, tx: rx, tz: 0, rise: RISE, curve: 1.6, upturn: 0.55, thick: TH, rings: 6, seg: 8 };
+  /** The underside of the board lining, which the rafters hang under. */
+  const soffit = (x: number, z: number): number => roofHeight(roof, x, z, true) - 0.03;
+  const RB = 0.15;
+  const RF = 0.12;
+  /** The underside of the base rafters over (u, n) on side `s`. */
+  const underAt = (s: Side, u: number, n: number): number => {
+    const [x, z] = at(s, u, n);
+    return soffit(x, z) - RB;
+  };
+  /** Where the hip crosses the row `u` of side `s`, as a distance out from the centre. */
+  const nHip = (s: Side, u: number): number =>
+    runsAlongX(s) ? (ez * (Math.abs(u) - rx)) / (ex - rx) : ex - ((ex - rx) * (ez - Math.abs(u))) / ez;
+
+  // --- the heights of the frame --------------------------------------------------
+  /** The ties along each post line, and along the front and back rows. */
+  const ZT0 = h - 0.88;
+  const ZT1 = h - 0.6;
+  const NK0 = h - 0.58;
+  const NK1 = h - 0.28;
+  /** The main row's head beam, over the side bays too. */
+  const MB0 = h - 0.38;
+  const MB1 = h - 0.02;
+  /** A bracket set, from the post's head up: block, arm, small blocks; the second arm is cut to its purlin. */
+  const DAI = h + 0.22;
+  const ARM1 = DAI + 0.18;
+  const MAK = ARM1 + 0.13;
+  const KD = 0.26;
+  /** The eave purlins' underside along the front and back rows. */
+  const ketaBot = (s: Side, u: number): number => underAt(s, u, ZP) - KD;
+  /** The end purlins, carried on each side bay's outrigger. */
+  const XEP = XE + 0.15;
+  const endBot = (s: Side, u: number): number => underAt(s, u, XEP) - KD;
+
+  // --- the platform: a kerb of dressed stones, flags inside it, the two steps ----
+  {
+    const KW = 0.24;
+    const kerb = (s: Side, run: number): void => {
+      const plane = runsAlongX(s) ? PZ : PX;
+      let u = -run;
+      while (run - u > 0.05) {
+        let len = 0.8 + rnd() * 0.6;
+        if (run - (u + len) < 0.45) len = run - u;
+        const c = u + len / 2;
+        const [gx, gz] = at(s, c, plane);
+        const yb = Math.min(foot, ground(gx, gz) - 0.1);
+        on(s, plane, c, (yb + PT) / 2, len - 0.02, PT - yb, KW, -KW / 2 + 0.02, GRANITE, 0, hideBack(s));
+        u += len;
+      }
+    };
+    kerb("-z", PX + 0.02);
+    kerb("+z", PX + 0.02);
+    kerb("-x", PZ - KW + 0.02);
+    kerb("+x", PZ - KW + 0.02);
+    // The flags, in running bond across the passage, not laid under the side bays.
+    const rows = Math.round((2 * (PZ - KW)) / 0.55);
+    const rw = (2 * (PZ - KW)) / rows;
+    for (let r = 0; r < rows; r++) {
+      const z = -(PZ - KW) + (r + 0.5) * rw;
+      const cuts: [number, number][] = Math.abs(z) < 0.25 + rw / 2 ? [[-PX, -XP], [XP, PX]] : [];
+      for (const [a, c] of carve(-(PX - KW + 0.02), PX - KW + 0.02, cuts)) {
+        let x = a + (r % 2 ? 0.35 : 0);
+        if (r % 2) sb.box(0.33, 0.06, rw - 0.02, a + 0.165, PT - 0.03, z, GRANITE, undefined, HIDE_UNDER);
+        while (c - x > 0.05) {
+          let len = 0.7 + rnd() * 0.5;
+          if (c - (x + len) < 0.35) len = c - x;
+          sb.box(len - 0.02, 0.06, rw - 0.02, x + len / 2, PT - 0.03, z, GRANITE, undefined, HIDE_UNDER);
+          x += len;
+        }
+      }
+    }
+    // A step before and behind the passage, its stones carried to the ground.
+    for (const sz of [-1, 1]) {
+      const z = sz * (PZ + 0.27);
+      const sTop = PT / 2;
+      const sBot = Math.min(foot, ground(0, z) - 0.05);
+      let u = -1.9;
+      while (1.9 - u > 0.05) {
+        let len = 1.1 + rnd() * 0.7;
+        if (1.9 - (u + len) < 0.6) len = 1.9 - u;
+        sb.box(len - 0.02, 0.1, 0.5, u + len / 2, sTop - 0.05, z, GRANITE, undefined, HIDE_UNDER);
+        u += len;
+      }
+      b.box(3.76, sTop - 0.1 - sBot, 0.46, 0, (sTop - 0.1 + sBot) / 2, z, GRANITE_DARK);
+    }
+  }
+
+  // --- the posts: bases, root sleeves, the pilgrims' slips -------------------------
+  for (const sx of [-1, 1]) {
+    for (const sz of [-1, 0, 1]) {
+      const x = sx * XP;
+      const z = sz * ZP;
+      const main = sz === 0;
+      const r = main ? 0.31 : 0.22 * Math.cos(Math.PI / 8);
+      if (main) {
+        b.cyl(0.12, 0.9, 0.96, 12, x, PT + 0.06, z, GRANITE);
+        b.cyl(0.3, 0.68, 0.7, 12, x, PT + 0.27, z, BRONZE);
+        b.cyl(0.04, 0.72, 0.72, 12, x, PT + 0.4, z, BRONZE);
+      } else {
+        b.cyl(0.1, 0.66, 0.72, 8, x, PT + 0.05, z, GRANITE, { y: Math.PI / 8 });
+        b.cyl(0.2, 0.5, 0.5, 8, x, PT + 0.2, z, BRONZE, { y: Math.PI / 8 });
+      }
+      const n = Math.floor(rnd() * 4.2);
+      for (let k = 0; k < n; k++) {
+        let ang = rnd() * Math.PI * 2;
+        if (!main) ang = Math.round(ang / (Math.PI / 4)) * (Math.PI / 4);
+        const y = 1.3 + rnd() * 1.4;
+        sb.box(0.075, 0.21, 0.006, x + Math.sin(ang) * (r + 0.004), y, z + Math.cos(ang) * (r + 0.004), PAPER, { y: ang, z: (rnd() - 0.5) * 0.14 });
+      }
+    }
+    // The side bay's end post, capping the plaster.
+    sb.box(0.3, h - PT, 0.6, sx * XE, (PT + h) / 2, 0, color, undefined, HIDE_UNDER);
+  }
+
+  // --- the ties and the head beam ------------------------------------------------
+  for (const sz of [-1, 1]) {
+    // Along each row, through the lesser posts, run on past them.
+    const z = sz * ZP;
+    sb.box(2 * XP, NK1 - NK0, 0.2, 0, (NK0 + NK1) / 2, z, color);
+    for (const sx of [-1, 1]) nose(true, z, sx * XP, sx, 0.5, NK0, NK1, 0.2);
+  }
+  for (const sx of [-1, 1]) {
+    // Along each post line, through all three, run on past the front and back.
+    const x = sx * XP;
+    sb.box(0.2, ZT1 - ZT0, 2 * ZP, x, (ZT0 + ZT1) / 2, 0, color);
+    for (const sz of [-1, 1]) nose(false, x, sz * ZP, sz, 0.5, ZT0, ZT1, 0.2);
+  }
+  sb.box(w, MB1 - MB0, 0.3, 0, (MB0 + MB1) / 2, 0, color);
+
+  // --- the bracket sets and the purlins -------------------------------------------
+  /** A bearing block of `size` on a post head at (x, z), from `y0` to `y1`. */
+  const block = (x: number, z: number, size: number, y0: number, y1: number): void => {
+    sb.box(size, y1 - y0 - 0.04, size, x, (y0 + y1 - 0.04) / 2, z, color, undefined, HIDE_UNDER);
+    sb.box(size - 0.08, 0.04, size - 0.08, x, y1 - 0.02, z, color, undefined, HIDE_UNDER);
+  };
+  /** Three small blocks along an arm, from ARM1 to MAK. */
+  const makito = (alongX: boolean, x: number, z: number, spread: number): void => {
+    for (const du of [-spread, 0, spread]) {
+      if (alongX) sb.box(0.22, MAK - ARM1, 0.22, x + du, (ARM1 + MAK) / 2, z, color, undefined, TOP);
+      else sb.box(0.22, MAK - ARM1, 0.22, x, (ARM1 + MAK) / 2, z + du, color, undefined, TOP);
+    }
+  };
+  // On each lesser post: a block, an arm along the row, small blocks, a second arm under the purlin.
+  for (const [sx, sz] of CORNERS) {
+    const s: Side = sz < 0 ? "-z" : "+z";
+    const x = sx * XP;
+    const z = sz * ZP;
+    block(x, z, 0.44, h, DAI);
+    arm(true, x, z, 1.2, DAI, ARM1, 0.2);
+    makito(true, x, z, 0.42);
+    arm(true, x, z, 1.8, MAK, ketaBot(s, x), 0.2);
+  }
+  // On each side bay's end post: a block, the outrigger along Z, and over its
+  // ends and middle the second arms under the purlins.
+  for (const sx of [-1, 1]) {
+    const x = sx * XE;
+    const se: Side = sx < 0 ? "-x" : "+x";
+    block(x, 0, 0.36, h, DAI);
+    sb.box(0.24, MAK - DAI, 2 * ZP, x, (DAI + MAK) / 2, 0, color, undefined, TOP);
+    for (const sz of [-1, 1]) {
+      nose(false, x, sz * ZP, sz, 0.42, DAI, MAK, 0.24);
+      arm(true, x - sx * 0.2, sz * ZP, 1.0, MAK, ketaBot(sz < 0 ? "-z" : "+z", x), 0.2);
+    }
+    arm(false, 0, x + sx * 0.08, 1.4, MAK, endBot(se, 0), 0.2);
+  }
+  // The eave purlins along the front and back, and the end purlins along the
+  // ends — each cut to the rafters over it, so it follows the eave where the
+  // hip comes down over its run-on end.
+  const purlin = (s: Side, n: number, half: number, top: (u: number) => number): void => {
+    const NS = 8;
+    for (let i = 0; i < NS; i++) {
+      const ua = -half + (2 * half * i) / NS;
+      const uc = -half + (2 * half * (i + 1)) / NS;
+      const [xa, za] = at(s, ua, n);
+      const [xc, zc] = at(s, uc, n);
+      member([xa, top(ua) - KD / 2, za], [xc, top(uc) - KD / 2, zc], 0.24, KD, color, (i > 0 ? START : 0) | (i < NS - 1 ? END : 0));
+    }
+  };
+  for (const s of ["-z", "+z"] as const) purlin(s, ZP, XEP + 0.28, (u) => underAt(s, u, ZP));
+  for (const s of ["-x", "+x"] as const) purlin(s, XEP, ZP + 0.24, (u) => underAt(s, u, XEP));
+
+  // --- the frog-leg struts over the front and back bays ------------------------------
+  for (const s of ["-z", "+z"] as const) {
+    const y0 = NK1;
+    const y1 = ketaBot(s, 0);
+    const legH = (y1 - y0) * 0.5;
+    on(s, ZP, 0, y0 + 0.05, 0.86, 0.1, 0.18, 0, color, 0, TOP);
+    for (const e of [-1, 1]) on(s, ZP, e * 0.24, y0 + 0.1 + legH / 2, 0.1, legH, 0.15, 0, color, e * 0.62);
+    on(s, ZP, 0, y0 + 0.1 + legH * 0.42, 0.18, 0.24, 0.11, 0, color);
+    const yb = y0 + 0.1 + legH;
+    on(s, ZP, 0, yb + 0.06, 0.42, 0.12, 0.2, 0, color);
+    on(s, ZP, 0, yb + 0.12 + (y1 - 0.2 - yb - 0.12) / 2, 0.24, y1 - 0.2 - yb - 0.12, 0.22, 0, color, 0, TOP);
+    arm(true, 0, outward(s) * ZP, 1.1, y1 - 0.2, y1, 0.2);
+  }
+
+  // --- the main pillars: the cambered beams, the king struts, the ridge beam -------
+  const ridgeBot = underAt("-z", 0, 0) - 0.3;
+  for (const sx of [-1, 1]) {
+    const x = sx * XP;
+    block(x, 0, 0.56, h, h + 0.26);
+    const y0 = h + 0.26;
+    const y1 = y0 + 0.4;
+    const zE = ZP + 0.12;
+    member([x, (y0 + y1) / 2, -zE], [x, (y0 + y1) / 2 + 0.07, 0], 0.24, y1 - y0, color, END);
+    member([x, (y0 + y1) / 2 + 0.07, 0], [x, (y0 + y1) / 2, zE], 0.24, y1 - y0, color, START);
+    for (const sz of [-1, 1]) nose(false, x, sz * zE, sz, 0.3, y0, y1, 0.24);
+    // The king strut, braced from the beam, a block and an arm under the ridge beam.
+    const sTop = ridgeBot - 0.34;
+    const sBot = y1 + 0.07;
+    sb.box(0.22, sTop - sBot, 0.22, x, (sTop + sBot) / 2, 0, color);
+    for (const sz of [-1, 1]) member([x, sBot, sz * 0.62], [x, sBot + 0.62, sz * 0.1], 0.14, 0.14, color);
+    block(x, 0, 0.34, sTop, sTop + 0.18);
+    arm(false, 0, x, 1.2, sTop + 0.18, ridgeBot, 0.2);
+  }
+  sb.box(2 * rx + 0.1, 0.3, 0.26, 0, ridgeBot + 0.15, 0, color, undefined, TOP);
+
+  // --- the eave: rafters in two layers, the hip beams, the wind bells ---------------
+  for (const s of SIDES) {
+    const along = runsAlongX(s) ? ex : ez;
+    const nEave = runsAlongX(s) ? ez : ex;
+    const N = runsAlongX(s) ? ZP : XEP;
+    const nB = N + 0.9;
+    const nF = N + 0.7;
+    const SP = 0.32;
+    const K = Math.floor((along - 0.15) / SP);
+    for (let k = -K; k <= K; k++) {
+      const u = k * SP;
+      const n0 = Math.max(0.14, nHip(s, u) + 0.12);
+      const lay = (na: number, nc: number, wide: number, deep: number, cap: string | null): void => {
+        if (nc - na < 0.15) return;
+        const [xa, za] = at(s, u, na);
+        const [xc, zc] = at(s, u, nc);
+        const a: Point3 = [xa, soffit(xa, za) - deep / 2, za];
+        const c: Point3 = [xc, soffit(xc, zc) - deep / 2, zc];
+        member(a, c, wide, deep, color, TOP | START);
+        if (cap) endFace(a, c, wide + 0.01, deep + 0.01, cap);
+      };
+      lay(n0, nB, 0.12, RB, null);
+      lay(Math.max(nF, n0), nEave - 0.04, 0.1, RF, SHIKKUI);
+    }
+  }
+  CORNERS.forEach(([sx, sz]) => {
+    const H = (f: number, deep: number): Point3 => {
+      const x = sx * (rx + f * (ex - rx));
+      const z = sz * f * ez;
+      return [x, soffit(x, z) - deep / 2, z];
+    };
+    member(H(0.03, 0.3), H(0.82, 0.3), 0.26, 0.3, color, TOP | START);
+    const a = H(0.74, 0.24);
+    const c = H(0.995, 0.24);
+    member(a, c, 0.22, 0.24, color, TOP | START);
+    endFace(a, c, 0.24, 0.26, BRONZE);
+    const [bx, by0, bz] = c;
+    const by = by0 - 0.12;
+    sb.box(0.025, 0.16, 0.025, bx, by - 0.08, bz, BRONZE);
+    b.cyl(0.28, 0.12, 0.22, 8, bx, by - 0.3, bz, BRONZE);
+    sb.box(0.02, 0.16, 0.02, bx, by - 0.52, bz, BRONZE);
+    sb.box(0.13, 0.2, 0.012, bx, by - 0.7, bz, BRONZE, { y: Math.atan2(sx, sz) + Math.PI / 2 });
+  });
+
+  // --- the side bays: sill, rails, skirt, the window; the leaves folded back -------
+  {
+    const WF = 0.25;
+    for (const sx of [-1, 1]) {
+      const mid = sx * (XP + wing / 2);
+      const a = XP + 0.32;
+      const c = XE - 0.15;
+      const uc = (sx * (a + c)) / 2;
+      const uw = c - a;
+      for (const s of ["-z", "+z"] as const) {
+        const f = (u: number, y: number, along: number, tall: number, thick: number, out: number, col: string, tilt = 0): void =>
+          on(s, WF, u, y, along, tall, thick, out, col, tilt, hideBack(s));
+        f(mid, PT + 0.08, wing, 0.16, 0.1, 0.05, color);
+        f(mid, 3.71, wing, 0.18, 0.1, 0.05, color);
+        f(mid, MB0 - 0.08, wing, 0.14, 0.08, 0.04, color);
+        if (s === "-z") {
+          // A skirt of lapped boards under the waist rail.
+          const nb = Math.max(3, Math.round(uw / 0.26));
+          for (let k = 0; k < nb; k++) {
+            f(uc - uw / 2 + ((k + 0.5) * uw) / nb, (PT + 0.16 + 1.35) / 2, uw / nb - 0.01, 1.35 - PT - 0.16, 0.03, 0.02 + (k % 2) * 0.014, color);
+          }
+          f(mid, 1.42, wing, 0.14, 0.1, 0.05, color);
+          // The barred window: a dark ground, bars turned on the diagonal, a frame.
+          const WW = 1.1;
+          const WH = 1.25;
+          const wy = 2.62;
+          f(uc, wy, WW, WH, 0.02, 0.01, SUMI);
+          const nBar = Math.round(WW / 0.12);
+          for (let k = 1; k < nBar; k++) {
+            sb.onFace(s, WF, uc - WW / 2 + (WW * k) / nBar, wy, 0.05, WH, 0.05, 0.04, color, 0, Math.PI / 4, TOP | HIDE_UNDER);
+          }
+          for (const e of [-1, 1]) f(uc + e * (WW / 2 + 0.05), wy, 0.1, WH + 0.2, 0.1, 0.05, color);
+          f(uc, wy + WH / 2 + 0.05, WW, 0.1, 0.1, 0.05, color);
+          f(uc, wy - WH / 2 - 0.06, WW + 0.24, 0.12, 0.13, 0.065, color);
+        } else {
+          // The leaf, folded back flat against the bay: boards on a dark
+          // ground, battens across them studded in bronze, a stile each edge,
+          // straps at the hinge and a ring pull.
+          const y0 = PT + 0.17;
+          const y1 = 3.6;
+          const ym = (y0 + y1) / 2;
+          f(uc, ym, uw, y1 - y0, 0.02, 0.02, SUMI);
+          const nb = 5;
+          for (let k = 0; k < nb; k++) f(uc - uw / 2 + ((k + 0.5) * uw) / nb, ym, uw / nb - 0.012, y1 - y0, 0.03, 0.045 + (k % 2) * 0.008, color);
+          for (const e of [-1, 1]) f(uc + e * (uw / 2 - 0.05), ym, 0.1, y1 - y0, 0.05, 0.075, color);
+          for (const fy of [0.08, 0.37, 0.64, 0.92]) {
+            const y = y0 + (y1 - y0) * fy;
+            f(uc, y, uw - 0.2, 0.12, 0.05, 0.085, color);
+            for (let k = 0; k < nb; k++) f(uc - uw / 2 + ((k + 0.5) * uw) / nb, y, 0.045, 0.045, 0.02, 0.12, BRONZE);
+          }
+          const hinge = sx * a;
+          for (const fy of [0.08, 0.92]) f(hinge + sx * 0.22, y0 + (y1 - y0) * fy, 0.42, 0.08, 0.02, 0.12, BRONZE);
+          const pull = sx * (c - 0.28);
+          b.cyl(0.02, 0.16, 0.16, 10, pull, y0 + (y1 - y0) * 0.5, WF + 0.12, BRONZE, { x: Math.PI / 2 });
+          f(pull, y0 + (y1 - y0) * 0.5 + 0.09, 0.05, 0.05, 0.03, 0.115, BRONZE);
+        }
+      }
+    }
+  }
+
+  // --- the plaque on the front, the lantern in the passage -----------------------
+  {
+    const PW = 0.9;
+    const PHt = 0.94;
+    const pzP = -(ZP + 0.3);
+    const pyC = NK1 + 0.02 + PHt / 2;
+    const kb = ketaBot("-z", 0);
+    for (const e of [-1, 1]) {
+      sb.box(0.05, kb - (pyC + PHt / 2) + 0.02, 0.04, e * 0.26, (kb + pyC + PHt / 2) / 2, pzP + 0.02, BRONZE);
+      sb.box(0.05, 0.05, 0.2, e * 0.26, kb - 0.04, pzP + 0.14, BRONZE);
+    }
+    sb.box(PW - 0.1, PHt - 0.1, 0.05, 0, pyC, pzP, SUMI);
+    for (const e of [-1, 1]) {
+      sb.box(PW + 0.1, 0.1, 0.09, 0, pyC + e * (PHt / 2 - 0.02), pzP - 0.02, color);
+      sb.box(0.1, PHt, 0.09, e * (PW / 2 - 0.02), pyC, pzP - 0.02, color);
+    }
+    // Three characters stacked down it in bronze, the temple's name ending in 寺.
+    for (const [x0, y0, x1, y1] of TERA) {
+      const S = 0.24;
+      const len = Math.hypot(x1 - x0, y1 - y0) * S;
+      const y = pyC - 0.27 + ((y0 + y1) / 2) * S;
+      sb.box(len + 0.04, 0.04, 0.02, ((x0 + x1) / 2) * S, y, pzP - 0.035, BRONZE, { z: Math.atan2(y1 - y0, x1 - x0) });
+    }
+    for (let g = 0; g < 2; g++) {
+      const gy = pyC + (1 - g) * 0.27;
+      for (let k = 0; k < 5; k++) {
+        const horiz = rnd() < 0.5;
+        const len = 0.1 + rnd() * 0.2;
+        const x = (rnd() - 0.5) * (horiz ? 0.16 : 0.34);
+        const y = gy + (rnd() - 0.5) * (horiz ? 0.18 : 0.08);
+        sb.box(horiz ? len : 0.04, horiz ? 0.04 : Math.min(len, 0.22), 0.02, x, y, pzP - 0.035, BRONZE, { z: (rnd() - 0.5) * 0.5 });
+      }
+    }
+  }
+  {
+    // The great paper lantern, hung from the head beam over the passage: a
+    // lacquered cap and foot, and between them paper on bamboo ribs, swelling
+    // to its waist, with the temple's character 寺 painted on each face.
+    const top = MB0;
+    sb.box(0.04, 0.12, 0.04, 0, top - 0.06, 0, BRONZE);
+    const capT = top - 0.12;
+    b.cyl(0.12, 0.56, 0.62, 16, 0, capT - 0.06, 0, SUMI);
+    /** The paper's profile, top to bottom: heights under the cap and diameters. */
+    const prof: [number, number][] = [
+      [0, 0.64],
+      [0.2, 0.84],
+      [0.5, 0.92],
+      [0.8, 0.84],
+      [1.0, 0.64],
+    ];
+    const b0 = capT - 0.12;
+    const Y = (f: number): number => b0 - f * 1.1;
+    for (let i = 0; i + 1 < prof.length; i++) {
+      const [fa, da] = prof[i];
+      const [fc, dc] = prof[i + 1];
+      b.cyl(Y(fa) - Y(fc), da, dc, 16, 0, (Y(fa) + Y(fc)) / 2, 0, PAPER);
+    }
+    b.cyl(0.12, 0.62, 0.56, 16, 0, Y(1) - 0.06, 0, SUMI);
+    /** The paper's radius at height `y`. */
+    const radius = (y: number): number => {
+      const f = Math.min(1, Math.max(0, (b0 - y) / 1.1));
+      for (let i = 0; i + 1 < prof.length; i++) {
+        const [fa, da] = prof[i];
+        const [fc, dc] = prof[i + 1];
+        if (f <= fc) return (da + ((dc - da) * (f - fa)) / (fc - fa)) / 2;
+      }
+      return prof[prof.length - 1][1] / 2;
+    };
+    // The ribs, a line round the paper every few centimetres.
+    for (let k = 1; k < 12; k++) {
+      const y = Y(k / 12);
+      const dia = 2 * radius(y) + 0.008;
+      b.cyl(0.012, dia, dia, 16, 0, y, 0, CEDAR);
+    }
+    // 寺, a stroke at a time, each laid on the paper in short pieces turned to
+    // face out where they lie, so a stroke across the swell stays on it.
+    const S = 0.54;
+    const ym = Y(0.5);
+    for (const sz of [-1, 1]) {
+      for (const [x0, y0, x1, y1] of TERA) {
+        // Seen from the back the character is mirrored in world X.
+        const ax = -sz * x0 * S;
+        const cx = -sz * x1 * S;
+        const ay = ym + y0 * S;
+        const cy = ym + y1 * S;
+        const len = Math.hypot(cx - ax, cy - ay);
+        const n = Math.max(1, Math.ceil(len / 0.07));
+        const phi = Math.atan2(cy - ay, cx - ax);
+        for (let k = 0; k < n; k++) {
+          const f = (k + 0.5) / n;
+          const x = ax + (cx - ax) * f;
+          const y = ay + (cy - ay) * f;
+          const r = radius(y);
+          const z = Math.sqrt(Math.max(0, r * r - x * x)) - 0.004;
+          sb.box(len / n + 0.012, 0.05, 0.03, x, y, sz * z, SUMI, { y: sz * Math.asin(x / r), z: phi });
+        }
+      }
+    }
+  }
+
+  // --- the tiles: round-tile rows, end tiles, the ridges and demon tiles ------------
+  {
+    const RSP = 0.42;
+    const RH = 0.12;
+    const segLen = 0.9;
+    const topAt = (x: number, z: number): number => roofHeight(roof, x, z);
+    const row = (s: Side, u: number, n0: number, n1: number): void => {
+      if (n1 - n0 < 0.2) return;
+      const segs = Math.max(1, Math.ceil((n1 - n0) / segLen));
+      for (let j = 0; j < segs; j++) {
+        const na = n0 + ((n1 - n0) * j) / segs - (j > 0 ? 0.03 : 0);
+        const nb = n0 + ((n1 - n0) * (j + 1)) / segs + (j < segs - 1 ? 0.03 : 0);
+        const [xa, za] = at(s, u, na);
+        const [xc, zc] = at(s, u, nb);
+        const a: Point3 = [xa, topAt(xa, za) + RH / 2 - 0.025, za];
+        const c: Point3 = [xc, topAt(xc, zc) + RH / 2 - 0.025, zc];
+        const last = j === segs - 1;
+        member(a, c, 0.15, RH, KAWARA_DARK, HIDE_UNDER | START | (last ? 0 : END));
+        if (last) endFace(a, c, 0.17, 0.17, KAWARA_DARK);
+      }
+    };
+    // The eave tiles' lip along every eave, swept up with the corners.
+    for (const s of SIDES) {
+      const half = runsAlongX(s) ? ex : ez;
+      const nEave = runsAlongX(s) ? ez : ex;
+      const NL = 14;
+      const pt = (i: number): Point3 => {
+        const [x, z] = at(s, -half + (2 * half * i) / NL, nEave);
+        return [x, topAt(x, z) - 0.02, z];
+      };
+      for (let i = 0; i < NL; i++) member(pt(i), pt(i + 1), 0.05, 0.11, KAWARA_DARK, (i > 0 ? START : 0) | (i < NL - 1 ? END : 0));
+    }
+    for (const s of SIDES) {
+      const along = runsAlongX(s) ? ex : ez;
+      const nEave = runsAlongX(s) ? ez : ex;
+      const K = Math.floor((along - 0.3) / RSP - 0.5);
+      for (let k = -K - 1; k <= K; k++) {
+        const u = (k + 0.5) * RSP;
+        const n0 = runsAlongX(s) && Math.abs(u) <= rx - 0.1 ? 0.32 : nHip(s, u) + 0.2;
+        row(s, u, n0, nEave + 0.02);
+      }
+    }
+    // The main ridge: a base, courses banded in white, a round cap, a demon tile each end.
+    const RL = 2 * rx + 0.6;
+    const ry0 = eave + RISE - 0.05;
+    sb.box(RL, 0.32, 0.72, 0, ry0 - 0.1, 0, KAWARA_DARK, undefined, HIDE_UNDER);
+    let ridgeY = ry0 + 0.06;
+    for (let i = 0; i < 3; i++) {
+      const depth = 0.64 - i * 0.07;
+      sb.box(RL, 0.1, depth, 0, ridgeY + 0.05, 0, KAWARA_DARK, undefined, HIDE_UNDER);
+      ridgeY += 0.1;
+      if (i < 2) {
+        sb.box(RL - 0.05, 0.03, depth - 0.06, 0, ridgeY + 0.015, 0, SHIKKUI, undefined, HIDE_UNDER);
+        ridgeY += 0.03;
+      }
+    }
+    b.cyl(RL, 0.32, 0.32, 8, 0, ridgeY + 0.1, 0, KAWARA_DARK, { z: Math.PI / 2 });
+    /** A demon tile of scale `k` standing at `p0`, turned to `yaw`. */
+    const oni = (p0: Point3, yaw: number, k: number): void => {
+      sb.box(0.5 * k, 0.6 * k, 0.14 * k, p0[0], p0[1] + 0.3 * k, p0[2], KAWARA_DARK, { y: yaw });
+      sb.box(0.34 * k, 0.32 * k, 0.22 * k, p0[0], p0[1] + 0.3 * k, p0[2], KAWARA_DARK, { y: yaw });
+      sb.box(0.16 * k, 0.16 * k, 0.12 * k, p0[0], p0[1] + 0.66 * k, p0[2], KAWARA_DARK, { y: yaw, z: Math.PI / 4 });
+      const c = Math.cos(yaw);
+      const sn = Math.sin(yaw);
+      for (const e of [-1, 1]) {
+        sb.box(0.1 * k, 0.3 * k, 0.1 * k, p0[0] + e * 0.2 * k * c, p0[1] + 0.68 * k, p0[2] - e * 0.2 * k * sn, KAWARA_DARK, { y: yaw, z: -e * 0.35 });
+      }
+    };
+    for (const sx of [-1, 1]) {
+      oni([sx * (RL / 2 + 0.04), ry0 - 0.16, 0], Math.PI / 2, 1.5);
+      sb.box(0.24, 0.24, 0.24, sx * (RL / 2 - 0.2), ridgeY + 0.3, 0, KAWARA_DARK, { y: Math.PI / 4 });
+    }
+    /** A ridge from `a` to `c`: a body, a white band and a cap. */
+    const ridgeRun = (a: Point3, c: Point3): void => {
+      const up = (p0: Point3, dy: number): Point3 => [p0[0], p0[1] + dy, p0[2]];
+      member(up(a, 0.12), up(c, 0.12), 0.38, 0.26, KAWARA_DARK, HIDE_UNDER | START | END);
+      member(up(a, 0.11), up(c, 0.11), 0.42, 0.03, SHIKKUI, START | END | TOP | HIDE_UNDER);
+      member(up(a, 0.3), up(c, 0.3), 0.22, 0.12, KAWARA_DARK, HIDE_UNDER | START | END);
+    };
+    for (const [sx, sz] of CORNERS) {
+      const Hp = (f: number, lift: number): Point3 => {
+        const x = sx * (rx + f * (ex - rx));
+        const z = sz * f * ez;
+        return [x, topAt(x, z) + lift, z];
+      };
+      const f0 = 0.06;
+      const fOni = 1 - 0.8 / Math.hypot(ex - rx, ez);
+      const nr = 4;
+      for (let j = 0; j < nr; j++) ridgeRun(Hp(f0 + ((fOni - f0) * j) / nr, 0), Hp(f0 + ((fOni - f0) * (j + 1)) / nr, 0));
+      oni(Hp(fOni + 0.01, 0), Math.atan2(sx * (ex - rx), sz * ez), 1.05);
+      const a = Hp(fOni + 0.02, 0.07);
+      const c = Hp(1.0, 0.07);
+      member(a, c, 0.22, 0.18, KAWARA_DARK, HIDE_UNDER | START);
+      endFace(a, c, 0.24, 0.22, KAWARA_DARK);
+    }
+  }
+
+  sb.flush(b);
+
+  // --- the cores, emitted after what hides them ------------------------------------
+  for (const sx of [-1, 1]) {
+    for (const sz of [-1, 0, 1]) {
+      const x = sx * XP;
+      const z = sz * ZP;
+      if (sz === 0) b.cyl(h - PT - 0.42, 0.6, 0.64, 12, x, (PT + 0.42 + h) / 2, z, color);
+      else b.cyl(h - PT - 0.3, 0.44, 0.44, 8, x, (PT + 0.3 + h) / 2, z, color, { y: Math.PI / 8 });
+    }
+    b.box(wing, MB0 + 0.02, 0.5, sx * (opening / 2 + wing / 2), (MB0 + 0.02) / 2, 0, SHIKKUI);
+  }
+  b.box(2 * PX - 0.1, PT - 0.06 - foot, 2 * PZ - 0.1, 0, (PT - 0.06 + foot) / 2, 0, GRANITE_DARK);
+
+  // --- the roof: the lining under the rafters, then the sheet ---------------------------
+  curvedRoof(b, CEDAR, { ...roof, raise: -TH - 0.004, thick: 0.02 });
+  curvedRoof(b, KAWARA, roof);
   return b;
 }
 
