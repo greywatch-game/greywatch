@@ -258,7 +258,11 @@ export type BuilderKind = keyof typeof BUILDERS;
  * stands, and carries its plinth down to the lowest ground round the drum.
  * The kura seeds its crest, which of its doors and shutters are open, which
  * windows it has and where its plaster has spalled off where it stands, and
- * carries its granite plinth and its door step down to the ground.
+ * carries its granite plinth and its door step down to the ground. The machiya
+ * seeds its lattice, what stands before each bay, its signboard, its Shōki,
+ * its loft window, its smoke vent, its back door and the mark on its noren
+ * off where it stands, and carries its plinth, its step and its bamboo fence
+ * down to the ground.
  */
 export const CONFORMS_TO_TERRAIN: ReadonlySet<BuilderKind> = new Set([
   "road",
@@ -283,4 +287,5 @@ export const CONFORMS_TO_TERRAIN: ReadonlySet<BuilderKind> = new Set([
   "jetty",
   "kiln",
   "kura",
+  "machiya",
 ] as const);
