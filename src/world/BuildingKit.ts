@@ -272,7 +272,10 @@ export type BuilderKind = keyof typeof BUILDERS;
  * the round window, its gable's finish, its tokonoma's bay, its lanterns, its
  * blinds, its wind bell, the sandals on its step and the mark on its noren off
  * where it stands, and carries its footings, its underfloor, its step and its
- * stepping stones down to the ground.
+ * stepping stones down to the ground. The temple hall seeds the lengths of its
+ * stones and boards, the characters on its plaque and whether lanterns hang at
+ * its back off where it stands, and carries its granite base and its steps
+ * down to the ground.
  */
 export const CONFORMS_TO_TERRAIN: ReadonlySet<BuilderKind> = new Set([
   "road",
@@ -301,4 +304,5 @@ export const CONFORMS_TO_TERRAIN: ReadonlySet<BuilderKind> = new Set([
   "minka",
   "pagoda",
   "teahouse",
+  "templeHall",
 ] as const);
