@@ -5,7 +5,7 @@
  * All follow the contract in kit/core.ts (origin-local geometry, no
  * solid/pickable/collisions metadata).
  */
-import { Matrix, Quaternion, Scene, Vector3, VertexData } from "@babylonjs/core";
+import { Scene } from "@babylonjs/core";
 import { CONFIG } from "../../config";
 import type { CelMaterialFactory } from "../../shaders/CelShader";
 import { mulberry32 } from "../rng";
@@ -18,6 +18,9 @@ import {
   type Point3,
   type Structure,
   streetSeed,
+  StoneBatch,
+  HIDE_UNDER,
+  hideBack,
   carve,
   convexSolid,
   curtain,
@@ -2219,125 +2222,6 @@ const RUBBLE_BACK = 0.04;
 const RUBBLE_DEEP = 0.08;
 /** The mortar joint between two stones, bed and perpend alike. */
 const RUBBLE_JOINT = 0.025;
-
-/** A box's six faces, as the axis each faces along and which way: +x -x +y -y +z -z. */
-const BOX_FACES = [
-  [0, 1],
-  [0, -1],
-  [1, 1],
-  [1, -1],
-  [2, 1],
-  [2, -1],
-] as const;
-/** The bit that leaves a stone's UNDERSIDE out, which nothing looks up at. */
-const HIDE_UNDER = 1 << 3;
-/** The bit that leaves out the face a stone on side `s` turns to the wall. */
-const hideBack = (s: Side): number => (s === "+x" ? 1 << 1 : s === "-x" ? 1 : s === "+z" ? 1 << 5 : 1 << 4);
-
-/**
- * Stones by the thousand, as ONE surface per colour rather than a part each.
- * A burnt cottage is some fifteen hundred stones, and as `Build.box` parts
- * that was 1,600 meshes and 39 k vertices a placement for the merge to build
- * and throw away; batched it is 73 parts and 29 k (9 by 7). Here a
- * stone is a box's faces written straight into its colour's arrays, turned
- * exactly as `Build.box` turns a part (Babylon's Z, then X, then Y), and a
- * stone laid on a face may leave out the two faces nobody sees: its back,
- * buried in the core, and its underside.
- *
- * `flush` hands each colour to `Build.surface`, so everything after it —
- * the cores — is emitted after the stones that hide it.
- */
-class StoneBatch {
-  private readonly sets = new Map<string, { pos: number[]; nrm: number[]; uv: number[]; idx: number[] }>();
-  private readonly q = new Quaternion();
-  private readonly m = new Matrix();
-  private readonly v = new Vector3();
-  private readonly at = new Vector3();
-  private readonly one = Vector3.One();
-
-  box(
-    w: number,
-    h: number,
-    d: number,
-    x: number,
-    y: number,
-    z: number,
-    color: string,
-    rot?: { x?: number; y?: number; z?: number },
-    hide = 0,
-  ): void {
-    let set = this.sets.get(color);
-    if (!set) this.sets.set(color, (set = { pos: [], nrm: [], uv: [], idx: [] }));
-    Quaternion.RotationYawPitchRollToRef(rot?.y ?? 0, rot?.x ?? 0, rot?.z ?? 0, this.q);
-    this.at.set(x, y, z);
-    Matrix.ComposeToRef(this.one, this.q, this.at, this.m);
-    const half = [w / 2, h / 2, d / 2];
-    const l = [0, 0, 0];
-    const n = [0, 0, 0];
-    for (let f = 0; f < 6; f++) {
-      if (hide & (1 << f)) continue;
-      const [a, sg] = BOX_FACES[f];
-      const b1 = (a + 1) % 3;
-      const b2 = (a + 2) % 3;
-      const base = set.pos.length / 3;
-      n[0] = n[1] = n[2] = 0;
-      n[a] = sg;
-      Vector3.TransformNormalFromFloatsToRef(n[0], n[1], n[2], this.m, this.v);
-      const [nx, ny, nz] = [this.v.x, this.v.y, this.v.z];
-      for (const [p, r] of [
-        [-1, -1],
-        [1, -1],
-        [1, 1],
-        [-1, 1],
-      ]) {
-        l[a] = sg * half[a];
-        l[b1] = p * half[b1];
-        l[b2] = r * half[b2];
-        Vector3.TransformCoordinatesFromFloatsToRef(l[0], l[1], l[2], this.m, this.v);
-        set.pos.push(this.v.x, this.v.y, this.v.z);
-        set.nrm.push(nx, ny, nz);
-        set.uv.push((p + 1) / 2, (r + 1) / 2);
-      }
-      // Walked (-,-) (+,-) (+,+) round (b1, b2), the first triangle's cross
-      // product is +a; a front face's must point INTO the solid
-      // (`convexSolid`'s rule), so a face looking along +a is wound back.
-      if (sg > 0) set.idx.push(base, base + 2, base + 1, base, base + 3, base + 2);
-      else set.idx.push(base, base + 1, base + 2, base, base + 2, base + 3);
-    }
-  }
-
-  /** `onFace`, into the batch — with a turn about the vertical, and faces to leave out. */
-  onFace(
-    s: Side,
-    plane: number,
-    u: number,
-    y: number,
-    along: number,
-    tall: number,
-    thick: number,
-    out: number,
-    color: string,
-    tilt = 0,
-    yaw = 0,
-    hide = 0,
-  ): void {
-    const c = outward(s) * (plane + out);
-    if (runsAlongX(s)) this.box(along, tall, thick, u, y, c, color, { y: yaw, z: tilt }, hide);
-    else this.box(thick, tall, along, c, y, u, color, { x: -tilt, y: yaw }, hide);
-  }
-
-  flush(b: Build): void {
-    for (const [color, set] of this.sets) {
-      const data = new VertexData();
-      data.positions = set.pos;
-      data.normals = set.nrm;
-      data.uvs = set.uv;
-      data.indices = set.idx;
-      b.surface(data, color);
-    }
-    this.sets.clear();
-  }
-}
 
 /**
  * Courses from `y0` to `y1`, each `h0` plus up to `hs` high and the last one
