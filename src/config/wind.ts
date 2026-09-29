@@ -41,7 +41,7 @@ const foliageLayers = {
   /**
    * The understory: fern blades and their drooping tips, ankle to knee.
    *
-   * `reach` is a fern's own height — its tips top out around 0.75 m — so its
+   * `reach` is a fern's own height — its young fronds top out around 0.85 m — so its
    * roots are planted and its tips travel, the same shape the grass shader
    * gives a blade and for the same reason. Half the canopy's `amount` because
    * these are small stiff leaves close to the ground rather than a crown

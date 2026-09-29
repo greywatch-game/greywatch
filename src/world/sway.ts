@@ -36,8 +36,8 @@
  * marked mesh moves and its unmarked neighbour does not, so a mark is only safe
  * where the join is buried: a canopy plate is centred on the trunk axis and
  * metres across, so 0.29 m of drift is spent inside its own overlap of the
- * bole; a fern blade leaves its crown at 0.42 m where the ramp has given it
- * four centimetres, against a crown 0.3 m across. Marking something whose join
+ * bole; a fern frond leaves its rootstock at 0.1 m where the ramp has given it
+ * a few millimetres, inside a stock 0.15 m across. Marking something whose join
  * is neither buried nor near the foot of the ramp is what tears — the liana's
  * collar is left out for exactly that reason.
  *
