@@ -15,7 +15,8 @@
 //
 // usage:
 //   node .claude/skills/ui-screen/scripts/audit.mjs
-//     [--screen menu|kit|settings|lobby|deploy|kit-deploy|pause|building|roundover]   default menu
+//     [--screen menu|kit|settings|lobby|deploy|kit-deploy|pause|building|roundover|
+//                 scoreboard|scoreboard-deploy|scoreboard-net]   default menu
 //     [--views all|phones|desk|844x390,...]                      default all
 //     [--js "g.loadoutScreen.moveSlot(1)"]   a snippet to run before auditing
 //     [--map <index>]

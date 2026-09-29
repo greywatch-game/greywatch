@@ -80,6 +80,42 @@ export const SCREENS = {
     open: "g.startRound(); await until(() => g.state === 'deploy'); g.spawnPlayer(); await wait(300); g.pause();",
     root: "#overlay",
   },
+  // The Tab board over a live round, held rather than pressed: `scoreboard` is
+  // recomputed from the keys every frame, so the instance property is replaced
+  // by one that always reads held. A few rows are paid so the sort has
+  // something to order. `--map 4` (Sarab) is the deep, two-up roster.
+  scoreboard: {
+    open:
+      "g.startRound(); await until(() => g.state === 'deploy'); g.spawnPlayer(); await wait(300);" +
+      " const s = g.battle.playerSlot; for (let i = 0; i < 5; i++) g.scores.award(s, 'kill');" +
+      " for (let i = 0; i < 14; i++) g.scores.award((i * 5) % g.battle.bots.length, 'kill');" +
+      " g.scores.registerDeath(s);" +
+      " Object.defineProperty(g.input, 'scoreboard', { get: () => true, set() {}, configurable: true });",
+    root: "#scoreboard",
+  },
+  // The same board over the DEPLOY screen, which is where a player waiting
+  // out a reinforcement clock reads it.
+  "scoreboard-deploy": {
+    open:
+      "g.startRound(); await until(() => g.state === 'deploy');" +
+      " Object.defineProperty(g.input, 'scoreboard', { get: () => true, set() {}, configurable: true });",
+    root: "#scoreboard",
+  },
+  // A MATCH's board, faked offline: the ping column forced on, a spread of
+  // readings and dashes, and two names at `MAX_NAME_LENGTH` — the width a
+  // stranger's name can actually take.
+  "scoreboard-net": {
+    open:
+      "g.startRound(); await until(() => g.state === 'deploy'); g.spawnPlayer(); await wait(300);" +
+      " const s = g.battle.playerSlot; for (let i = 0; i < 5; i++) g.scores.award(s, 'kill');" +
+      " for (let i = 0; i < 14; i++) g.scores.award((i * 5) % g.battle.bots.length, 'kill');" +
+      " const f = g.hud.setScoreboard.bind(g.hud);" +
+      " g.hud.setScoreboard = (v, r) => f(v, r && { ...r, pings: true, rows: r.rows.map((x, i) => ({ ...x," +
+      "   name: i === 3 ? 'WWWWWWWWWWWWWWWWWWWW' : i === 12 ? 'The_Longest_Callsign' : x.name," +
+      "   ping: i % 4 === 0 ? -1 : [28, 64, 131, 212][i % 4] })) });" +
+      " Object.defineProperty(g.input, 'scoreboard', { get: () => true, set() {}, configurable: true });",
+    root: "#scoreboard",
+  },
 };
 
 /** Runs a snippet in the page with `g` (the game), `wait` and `until` in scope. */

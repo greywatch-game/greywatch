@@ -9247,11 +9247,9 @@ export class Game {
     // number that is wrong and one that is right is worse than two that are
     // wrong together, because nothing on screen shows which is which.
     const kills: [number, number] = [0, 0];
-    const deaths: [number, number] = [0, 0];
     const score: [number, number] = [0, 0];
     for (const r of rows) {
       kills[r.team] += r.kills;
-      deaths[r.team] += r.deaths;
       score[r.team] += r.score;
     }
     this.hud.setScoreboard(true, {
@@ -9259,8 +9257,8 @@ export class Game {
       teams: [teamLook(0).name, teamLook(1).name],
       tickets: this.conquest.tickets,
       flags: [this.conquest.flagsHeld(0), this.conquest.flagsHeld(1)],
+      flagCount: this.conquest.points.length,
       kills,
-      deaths,
       score,
       playerTeam: this.player.team,
       // Whether there is a connection to report at all, which is a fact about

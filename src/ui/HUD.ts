@@ -250,12 +250,30 @@ const RING_TO = 1.5;
  * two-up instead of as one column.
  *
  * 24 is chosen against the rosters that exist rather than against a pixel
- * count: every map but Sarab fields sixteen and must draw exactly as it always
- * did, and Sarab's forty-eight is the only thing on the far side of it. A
- * netplay round is sixteen slots on every map, so the online board never goes
- * two-up and never has to reconcile that with the ping column.
+ * count: five maps field sixteen, and Sarab's and Cinderhaven's forty-eight are
+ * the only rosters on the far side of it. They field forty-eight in a MATCH
+ * too (`setFielded`), so a deep board can carry the ping column, and
+ * `hud.css` takes the deaths and then the place off a deep line to keep a
+ * name readable beside it.
  */
 const DEEP_ROSTER = 24;
+
+/** The Tab board's frame, looked up once when it is built. */
+interface ScoreboardParts {
+  eyebrow: HTMLElement;
+  /** Left (the player's own side) and right, never team 0 and team 1. */
+  sides: {
+    team: HTMLElement;
+    tickets: HTMLElement;
+    flags: HTMLElement;
+    score: HTMLElement;
+    kills: HTMLElement;
+  }[];
+  margin: HTMLElement;
+  split: [HTMLElement, HTMLElement];
+  /** The box each side's lists are rebuilt into. */
+  lists: [HTMLElement, HTMLElement];
+}
 
 /**
  * One combatant's line on the scoreboard.
@@ -527,6 +545,8 @@ export class HUD {
   private killfeed: HTMLElement;
   private scorefeed: HTMLElement;
   private scoreboard: HTMLElement;
+  /** The board's standing parts, built once — see `buildScoreboard`. */
+  private sb: ScoreboardParts;
   private capture: HTMLElement;
   /** The capture panel's parts, looked up once — it is written every frame. */
   private captureParts: {
@@ -666,6 +686,7 @@ export class HUD {
   private lastFlagFill: string[] = [];
   private lastCaptureKey = "";
   private lastScoreboardVisible = false;
+  private lastScoreboardHead = "";
   private lastScoreboardKey = "";
   private lastLockHint = false;
   private lastTouching = false;
@@ -712,7 +733,7 @@ export class HUD {
       <div id="toasts"></div>
       <div id="killfeed"></div>
       <div id="scorefeed"></div>
-      <div id="scoreboard" class="frame hidden"></div>
+      <div id="scoreboard" class="hidden"></div>
       <div id="lock-hint" class="hidden"><b>CLICK</b> TO CAPTURE THE MOUSE</div>
       <div id="gun-marker" class="hidden">
         <i class="t"></i><i class="r"></i><i class="b"></i><i class="l"></i>
@@ -832,6 +853,7 @@ export class HUD {
     this.killfeed = document.getElementById("killfeed")!;
     this.scorefeed = document.getElementById("scorefeed")!;
     this.scoreboard = document.getElementById("scoreboard")!;
+    this.sb = this.buildScoreboard();
     this.capture = document.getElementById("capture-status")!;
     this.captureParts = {
       id: this.capture.querySelector(".cap-id") as HTMLElement,
@@ -1722,6 +1744,23 @@ export class HUD {
     setTimeout(() => el.remove(), 2100);
   }
 
+  /**
+   * The Tab board: a title screen for the STANDING, held over the round.
+   *
+   * **The title is the two reinforcement counts facing each other**, in the
+   * colours of the sides that own them, across the margin between them drawn
+   * as the round-over card draws it — because that is the question a player
+   * holding Tab is asking, and it is the one thing on the board that says
+   * whether the round is being won. Under it each side's list is the
+   * round-over card's board, line for line: a place, the side's mark down the
+   * leading edge, the name, kills, deaths and the points it is ranked by, the
+   * player's own line picked out hot. The card that ends the round shows the
+   * top of this board, and the two are one drawing so a player learns it once.
+   *
+   * The FRAME is built once (`buildScoreboard`) and patched by text; the
+   * lists are the one markup rebuild left in the file, and they are KEYED —
+   * see below.
+   */
   setScoreboard(
     visible: boolean,
     rows?: {
@@ -1730,9 +1769,10 @@ export class HUD {
       teams: readonly string[];
       tickets: readonly number[];
       flags: readonly number[];
+      /** How many flags the map has, which the held counts are read against. */
+      flagCount: number;
       kills: readonly number[];
-      deaths: readonly number[];
-      /** Team totals, summed from the rows by the caller like the two above. */
+      /** Team totals, summed from the rows by the caller like the one above. */
       score: readonly number[];
       playerTeam: number;
       /**
@@ -1757,34 +1797,44 @@ export class HUD {
     if (visible !== this.lastScoreboardVisible) {
       this.lastScoreboardVisible = visible;
       this.scoreboard.classList.toggle("hidden", !visible);
-      // Force the rebuild below on the frame it comes up, whatever the numbers
-      // were when it was last down.
+      // Force both writes below on the frame it comes up, whatever the numbers
+      // were when it was last down — and replay the entrance, which is keyed
+      // to the RAISE and never to a patch.
+      this.lastScoreboardHead = "";
       this.lastScoreboardKey = "";
+      if (visible) {
+        this.scoreboard.classList.remove("enter");
+        void this.scoreboard.offsetWidth;
+        this.scoreboard.classList.add("enter");
+      }
     }
     if (!visible || !rows) return;
+    const sides = [rows.playerTeam, 1 - rows.playerTeam];
+    const head =
+      `${rows.map}|${rows.playerTeam}|${rows.teams}|${rows.tickets}|` +
+      `${rows.flags}|${rows.flagCount}|${rows.kills}|${rows.score}|${rows.rows.length}`;
+    if (head !== this.lastScoreboardHead) {
+      this.lastScoreboardHead = head;
+      this.patchScoreHead(rows, sides);
+    }
     // THE ONE MARKUP REBUILD LEFT IN THE FILE, AND IT IS KEYED.
     //
     // Tab is a HELD key, so `Game.updateHud` calls this on every frame the
-    // board is up — and this method used to answer by assigning a twenty-element
-    // template literal to `innerHTML`, tearing down and reparsing the whole
-    // panel sixty times a second for as long as a player looked at it. The
-    // file header has always said this call "fires on a state change instead";
-    // the key is what makes that true rather than aspirational.
+    // board is up — and this method used to answer by tearing down and
+    // reparsing the whole panel sixty times a second for as long as a player
+    // looked at it. The key is what makes it a rebuild per CHANGE.
     //
-    // Everything the markup interpolates is in the key, so a ticket ticking
-    // down or a kill landing still redraws on the frame it happens. The rows
-    // are in it whole: a kill anywhere on the roster moves one of their numbers
-    // and reorders the column it is in, and a board that redraws only when the
-    // TOTALS move would sit there showing the wrong order for the rest of the
-    // round every time two people traded.
+    // The rows are in it whole: a kill anywhere on the roster moves one of
+    // their numbers and reorders the column it is in, and a board that redraws
+    // only when the TOTALS move would sit there showing the wrong order for the
+    // rest of the round every time two people traded.
     //
     // The pings are in it too, which is a rebuild about once a second for as
     // long as Tab is held — the cadence the authority measures them on, and the
     // same cost as a kill landing. A column left out of the key would be a
     // column frozen at whatever it read when somebody last died.
     const key =
-      `${rows.map}|${rows.playerTeam}|${rows.teams}|${rows.tickets}|` +
-      `${rows.flags}|${rows.kills}|${rows.deaths}|${rows.score}|${rows.pings}|` +
+      `${rows.playerTeam}|${rows.teams}|${rows.pings}|` +
       rows.rows
         .map(
           (r) =>
@@ -1793,120 +1843,181 @@ export class HUD {
         .join(",");
     if (key === this.lastScoreboardKey) return;
     this.lastScoreboardKey = key;
-    const max = CONFIG.conquest.tickets;
-    const row = (t: number) => {
-      const frac = Math.max(0, Math.min(1, rows.tickets[t] / max));
-      return `
-      <div class="sb-row ${t === rows.playerTeam ? "mine" : "theirs"}">
-        <span class="sb-name">${rows.teams[t].toUpperCase()}</span>
-        <span class="sb-tickets">
-          <b>${rows.tickets[t]}</b>
-          <i class="sb-gauge"><u style="width:${(frac * 100).toFixed(1)}%"></u></i>
-        </span>
-        <span class="sb-n">${rows.flags[t]}</span>
-        <span class="sb-n sb-score">${rows.score[t]}</span>
-        <span class="sb-n">${rows.kills[t]}</span>
-        <span class="sb-n">${rows.deaths[t]}</span>
-      </div>`;
-    };
-    // The frame, which interpolates nothing a player typed: the map's own name,
-    // the two team names out of CONFIG, and numbers. The per-body rows are
-    // built as ELEMENTS below rather than joined into this string, because one
-    // of their fields is a name somebody else chose — see `ScoreRow.name`.
-    this.scoreboard.innerHTML = `
-      <div class="sb-head">
-        <span class="sb-mode">CONQUEST</span>
-        <span class="sb-map">${rows.map.toUpperCase()}</span>
-      </div>
-      <div class="sb-cols">
-        <span></span><span>REINFORCEMENTS</span><span>FLAGS</span>
-        <span>SCORE</span><span>KILLS</span><span>LOSSES</span>
-      </div>
-      ${row(rows.playerTeam)}${row(1 - rows.playerTeam)}
-      <div class="sb-teams">
-        <div class="sb-col" data-side="mine"></div>
-        <div class="sb-col" data-side="theirs"></div>
-      </div>
-    `;
     // The column's width lives in CSS, so whether there IS one is a class on
-    // the panel rather than a template branch per row. Set after the rebuild
-    // because the rebuild does not touch the root's own classes, and read by
-    // every `.sb-prow` inside it.
+    // the panel rather than a template branch per row.
     this.scoreboard.classList.toggle("pinged", rows.pings);
     // A DEEP roster is laid out two-up inside each side's column rather than as
     // one list twice as long.
     //
     // The board draws every body in the round and not only the people in it, so
     // its height is the ROSTER's — eight a side is a panel a player reads at a
-    // glance and twenty-four a side is six hundred pixels of it, off the bottom
-    // of every short viewport the game runs on. `MapLayout.perTeam` is what made
-    // that reachable; this is the one thing on screen that had to answer.
+    // glance and twenty-four a side is off the bottom of every short viewport
+    // the game runs on. `MapLayout.perTeam` is what made that reachable.
     //
-    // A class rather than a second template, for the reason the ping column is
-    // one: the layout is CSS's, and the only thing this file knows is how many
-    // rows there are. The threshold is a whole roster rather than a side's,
-    // since a side is always half of it.
-    this.scoreboard.classList.toggle("deep", rows.rows.length > DEEP_ROSTER);
-    const columns = this.scoreboard.querySelectorAll<HTMLElement>(".sb-col");
+    // Two LISTS rather than one list flowed into CSS columns: the side is
+    // SORTED, so it is split in rank order — the top half down the left, the
+    // rest down the right, each read downward — and each list carries its own
+    // heading, so the right-hand one is never a column of unlabelled figures.
+    const deep = rows.rows.length > DEEP_ROSTER;
+    this.scoreboard.classList.toggle("deep", deep);
     // Your side on the left, always — the board is read from where you are
     // standing, and a column that swaps ends with the team you were seated
     // onto is one a player has to find before they can read it.
-    const sides = [rows.playerTeam, 1 - rows.playerTeam];
     for (let i = 0; i < sides.length; i++) {
       const team = sides[i];
-      const column = columns[i];
-      const mine = team === rows.playerTeam;
-      column.classList.add(mine ? "mine" : "theirs");
-      column.appendChild(
-        this.scoreHeading(rows.teams[team].toUpperCase(), rows.pings),
-      );
-      // The rows sit in a box of their own under the heading, so a deep roster
-      // can flow them into two sub-columns without taking the heading into the
-      // flow with them and leaving the right-hand one unlabelled. Plain block
-      // otherwise, which is what every roster up to `DEEP_ROSTER` draws as and
-      // is why nothing about the ordinary board moved.
-      const list = document.createElement("div");
-      list.className = "sb-rows";
-      column.appendChild(list);
+      const lists = this.sb.lists[i];
       // Sorted by SCORE, then by kills, then by the fewer deaths. Score first
-      // because it is what the board is now for: the player who has been
-      // taking flags outranks the one who has been shooting people away from
-      // them, which is the whole reason there is a column beside the kills.
-      // `sort` is stable, so bodies level on all three keep roster order and a
-      // row does not jitter between two places while a player is looking at it.
+      // because it is what the board is for: the player who has been taking
+      // flags outranks the one who has been shooting people away from them,
+      // which is the whole reason there is a column beside the kills. `sort`
+      // is stable, so bodies level on all three keep roster order and a row
+      // does not jitter between two places while a player is looking at it.
       const side = rows.rows
         .filter((r) => r.team === team)
         .sort(
           (a, b) => b.score - a.score || b.kills - a.kills || a.deaths - b.deaths,
         );
-      for (const r of side) list.appendChild(this.scoreRow(r, rows.pings));
+      const per = deep ? Math.ceil(side.length / 2) : side.length;
+      const parts = deep ? [side.slice(0, per), side.slice(per)] : [side];
+      const built: HTMLElement[] = [];
+      for (let p = 0; p < parts.length; p++) {
+        const list = document.createElement("ol");
+        list.className = "sb-list";
+        list.appendChild(
+          this.scoreHeading(p === 0 ? rows.teams[team] : "", rows.pings),
+        );
+        for (let j = 0; j < parts[p].length; j++) {
+          list.appendChild(
+            this.scoreRow(parts[p][j], p * per + j + 1, rows.pings),
+          );
+        }
+        built.push(list);
+      }
+      lists.replaceChildren(...built);
     }
   }
 
-  /** The column header over one team's rows. */
+  /**
+   * The board's frame, built once and never rewritten: the eyebrow, the two
+   * sides facing each other across the margin, and a box per side that the
+   * lists are rebuilt into. Everything in it is a number or a name out of
+   * `CONFIG`, and it is still written by `textContent` below, so nothing a
+   * player typed is ever parsed as markup here.
+   */
+  private buildScoreboard(): ScoreboardParts {
+    const side = (which: "mine" | "theirs") => `
+      <div class="sb-side ${which}">
+        <span class="sb-team"></span>
+        <b class="sb-n"></b>
+        <span class="sb-facts"><span><b></b> flags</span><span><b></b> pts</span><span><b></b> kills</span></span>
+      </div>`;
+    this.scoreboard.innerHTML = `
+      <div class="sb-in">
+        <header class="sb-hero">
+          <span class="sb-eyebrow"></span>
+          <div class="sb-face">
+            ${side("mine")}
+            <div class="sb-mid">
+              <b class="sb-margin"></b>
+              <div class="sb-split"><i class="mine"></i><i class="theirs"></i></div>
+              <span class="sb-mcap">Reinforcements</span>
+            </div>
+            ${side("theirs")}
+          </div>
+        </header>
+        <div class="sb-teams">
+          <section class="sb-col mine"></section>
+          <section class="sb-col theirs"></section>
+        </div>
+      </div>
+    `;
+    const q = (sel: string) => this.scoreboard.querySelector(sel) as HTMLElement;
+    const sideParts = (which: string) => {
+      const el = q(`.sb-side.${which}`);
+      const facts = el.querySelectorAll<HTMLElement>(".sb-facts b");
+      return {
+        team: el.querySelector(".sb-team") as HTMLElement,
+        tickets: el.querySelector(".sb-n") as HTMLElement,
+        flags: facts[0],
+        score: facts[1],
+        kills: facts[2],
+      };
+    };
+    return {
+      eyebrow: q(".sb-eyebrow"),
+      sides: [sideParts("mine"), sideParts("theirs")],
+      margin: q(".sb-margin"),
+      split: [q(".sb-split .mine"), q(".sb-split .theirs")],
+      lists: [q(".sb-col.mine"), q(".sb-col.theirs")],
+    };
+  }
+
+  /** Writes the standing into the frame: the eyebrow, both sides, the margin. */
+  private patchScoreHead(
+    rows: NonNullable<Parameters<HUD["setScoreboard"]>[1]>,
+    sides: readonly number[],
+  ): void {
+    let per = 0;
+    for (const team of sides) {
+      let n = 0;
+      for (const r of rows.rows) if (r.team === team) n++;
+      per = Math.max(per, n);
+    }
+    this.sb.eyebrow.textContent = `Conquest · ${rows.map} · ${per} v ${per}`;
+    for (let i = 0; i < sides.length; i++) {
+      const t = sides[i];
+      const parts = this.sb.sides[i];
+      parts.team.textContent = rows.teams[t];
+      parts.tickets.textContent = String(rows.tickets[t]);
+      parts.flags.textContent = `${rows.flags[t]}/${rows.flagCount}`;
+      parts.score.textContent = String(rows.score[t]);
+      parts.kills.textContent = String(rows.kills[t]);
+    }
+    // The bar is the two counts against each other rather than against the
+    // pool, as the round-over card draws it: the HUD's own gauge over the top
+    // of the screen already says how far each side has fallen, and what the
+    // board adds is who is AHEAD, which is the margin.
+    const mine = Math.max(0, rows.tickets[sides[0]]);
+    const theirs = Math.max(0, rows.tickets[sides[1]]);
+    const total = Math.max(1, mine + theirs);
+    this.sb.split[0].style.flexGrow = (mine / total).toFixed(4);
+    this.sb.split[1].style.flexGrow = (theirs / total).toFixed(4);
+    const margin = mine - theirs;
+    this.sb.margin.textContent =
+      margin === 0 ? "Even" : `${margin > 0 ? "+" : "−"}${Math.abs(margin)}`;
+    this.sb.margin.className = `sb-margin ${margin > 0 ? "up" : margin < 0 ? "down" : ""}`;
+  }
+
+  /** The heading over one list — the side's name over the first, blank over a second. */
   private scoreHeading(team: string, pings: boolean): HTMLElement {
-    const el = document.createElement("div");
-    el.className = "sb-prow sb-phead";
-    const name = document.createElement("span");
-    name.className = "sb-pname";
+    const el = document.createElement("li");
+    el.className = "head";
+    const rk = document.createElement("span");
+    rk.className = "rk";
+    rk.textContent = "#";
+    const name = document.createElement("b");
+    name.className = "nm";
     name.textContent = team;
-    const s = document.createElement("span");
-    s.textContent = "PTS";
     const k = document.createElement("span");
+    k.className = "k";
     k.textContent = "K";
     const d = document.createElement("span");
+    d.className = "d";
     d.textContent = "D";
-    el.append(name, s, k, d);
+    const s = document.createElement("span");
+    s.className = "pts";
+    s.textContent = "Pts";
+    el.append(rk, document.createElement("i"), name, k, d, s);
     if (pings) {
       const ms = document.createElement("span");
-      ms.textContent = "MS";
+      ms.textContent = "Ms";
       el.append(ms);
     }
     return el;
   }
 
   /**
-   * One body's row.
+   * One body's line, laid out as the round-over card lays its board.
    *
    * Built rather than interpolated, and that is a rule and not a preference:
    * `name` is a string another player typed on a machine this one has never
@@ -1914,28 +2025,32 @@ export class HUD {
    * other screen in the game writes one. The server bounds its length; nothing
    * bounds its contents.
    */
-  private scoreRow(r: ScoreRow, pings: boolean): HTMLElement {
-    const el = document.createElement("div");
-    el.className = r.you ? "sb-prow sb-pyou" : "sb-prow";
-    const name = document.createElement("span");
-    name.className = "sb-pname";
+  private scoreRow(r: ScoreRow, place: number, pings: boolean): HTMLElement {
+    const el = document.createElement("li");
+    if (r.you) el.className = "you";
+    const rk = document.createElement("span");
+    rk.className = "rk";
+    rk.textContent = String(place);
+    const name = document.createElement("b");
+    name.className = "nm";
     name.textContent = r.name;
-    const score = document.createElement("span");
-    score.className = "sb-ps";
-    score.textContent = String(r.score);
     const kills = document.createElement("span");
+    kills.className = "k";
     kills.textContent = String(r.kills);
     const deaths = document.createElement("span");
-    deaths.className = "sb-pd";
+    deaths.className = "d";
     deaths.textContent = String(r.deaths);
-    el.append(name, score, kills, deaths);
+    const score = document.createElement("span");
+    score.className = "pts";
+    score.textContent = String(r.score);
+    el.append(rk, document.createElement("i"), name, kills, deaths, score);
     // The connection behind the row, in the band that says how bad it is. A
     // bot's is an em dash rather than a zero — it has no connection at all, and
     // a zero would read as the best one on the board. Both the number and the
     // band come from `ui/ping.ts`, which the lobby's reading also goes through.
     if (pings) {
       const ping = document.createElement("span");
-      ping.className = `sb-ping ${pingQuality(r.ping)}`;
+      ping.className = `ms ${pingQuality(r.ping)}`;
       ping.textContent = pingText(r.ping);
       el.append(ping);
     }

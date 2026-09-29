@@ -184,246 +184,363 @@
   from { opacity: 0; transform: translateX(14px); }
 }
 
-/* --- scoreboard (hold Tab) --- */
+/* --- scoreboard (hold Tab) ---
+   A title screen for the STANDING, held over the round: the two
+   reinforcement counts facing each other are the title, across the margin
+   between them, and each side's list under it is the round-over card's board
+   line for line — so the board that ends a round and the one a player held
+   through it are one drawing. `HUD.setScoreboard` has the argument.
+
+   It is sized on the FRONT END's unit (`--u` and the `--t-*` type, from the
+   `:is(...)` list in base.css) rather than on the HUD's ladder, because it is
+   laid out as the front end is: a 1440p monitor gets the 1080p board a third
+   bigger, and a phone gets it at the floors. Nothing here is scaled to a
+   short viewport; a phone gets a template of its own below.
+
+   Above the DEPLOY SCREEN and below everything else that covers a round.
+   `#hud` is written first and every screen appends itself after, so DOM
+   order alone would put this under a screen it is meant to be read over —
+   and the deploy screen is the one place a player sits and reads it. The
+   number is chosen against the other roots rather than plucked: `#overlay`
+   is 10, the loadout and lobby 11, settings 12. Those are all lids the
+   player asked for, and the board is not pushed under any of them; this only
+   has to beat `#deploy`, which takes the default. */
 #scoreboard {
   position: absolute;
-  top: 50%;
-  left: 50%;
-  transform: translate(-50%, -50%);
-  /* Above the DEPLOY SCREEN and below everything else that covers a round.
-     `#hud` is written first and every screen appends itself after, so DOM
-     order alone would put this under a screen it is meant to be read over —
-     and the deploy screen is the one place a player sits and reads it. The
-     number is chosen against the other roots rather than plucked: `#overlay`
-     is 10, the loadout and lobby 11, settings 12. Those are all lids the
-     player asked for, and the board is not pushed under any of them; this
-     only has to beat `#deploy`, which takes the default. */
+  inset: 0;
   z-index: 9;
-  --cham: 20px;
-  --frame-fill: rgba(6, 8, 13, 0.94);
-  /* Wide enough for the score column on both sides of the panel and the
-     ping column beside it, and no wider: nothing under #hud is scaled to a
-     short viewport (see base.css), which makes the width a promise to
-     the shortest viewport the game runs on rather than a layout preference. */
-  min-width: 700px;
-  padding: 0 0 15px;
+  display: grid;
+  place-items: center;
+  padding: var(--gy) var(--gx);
+  /* The round goes DOWN behind the board rather than away: it is still being
+     fought, and the board is read with one eye on it. */
+  background: radial-gradient(ellipse 70% 65% at 50% 50%, rgba(3, 5, 10, 0.62), rgba(3, 5, 10, 0.3));
 }
-#scoreboard .sb-head {
+#scoreboard .sb-in {
   display: flex;
-  align-items: baseline;
-  gap: 12px;
-  padding: 14px 26px 12px;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.12);
+  flex-direction: column;
+  gap: max(10px, calc(22 * var(--u)));
+  width: min(100%, max(720px, calc(1120 * var(--u))));
+  max-height: 100%;
+  min-height: 0;
+  padding: max(14px, calc(28 * var(--u))) max(14px, calc(32 * var(--u)));
+  background: linear-gradient(170deg, rgba(10, 13, 21, 0.9), rgba(4, 6, 12, 0.86));
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.09);
+  clip-path: polygon(var(--cut) 0, 100% 0, 100% calc(100% - var(--cut)), calc(100% - var(--cut)) 100%, 0 100%, 0 var(--cut));
 }
-#scoreboard .sb-mode {
-  font-size: 20px;
-  font-weight: 800;
-  letter-spacing: 0.32em;
-  color: var(--hot);
+#scoreboard.deep .sb-in { width: min(100%, max(980px, calc(1560 * var(--u)))); }
+
+/* --- the title: two sides facing each other across the margin --- */
+#scoreboard .sb-hero {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: max(6px, calc(12 * var(--u)));
+  padding-bottom: max(10px, calc(20 * var(--u)));
+  border-bottom: 1px solid var(--rule);
 }
-#scoreboard .sb-map {
-  font-size: 11px;
+#scoreboard .sb-eyebrow {
+  font-size: var(--t-cap);
+  font-weight: 700;
   letter-spacing: 0.3em;
+  text-transform: uppercase;
+  color: var(--hot);
+  white-space: nowrap;
+}
+#scoreboard .sb-face {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(140px, calc(340 * var(--u))) minmax(0, 1fr);
+  align-items: center;
+  gap: max(12px, calc(32 * var(--u)));
+  width: 100%;
+}
+#scoreboard .sb-side {
+  display: grid;
+  grid-template-areas: "team" "n" "facts";
+  justify-items: end;
+  text-align: right;
+  min-width: 0;
+}
+#scoreboard .sb-side.theirs { justify-items: start; text-align: left; }
+#scoreboard .sb-side.mine { color: var(--mine); }
+#scoreboard .sb-side.theirs { color: var(--theirs); }
+#scoreboard .sb-team {
+  grid-area: team;
+  font-size: var(--t-cap);
+  font-weight: 800;
+  letter-spacing: 0.3em;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+/* The title. White-hot numerals would say nothing about whose they are, so
+   each is in its own side's colour — the one place on the board a colour is
+   spent at size, because colour means ownership and these are the two
+   things each side owns. */
+#scoreboard .sb-n {
+  grid-area: n;
+  font-size: max(30px, calc(76 * var(--u)));
+  font-weight: 900;
+  line-height: 1;
+  letter-spacing: 0.02em;
+  font-variant-numeric: tabular-nums;
+  text-shadow: 0.04em 0.045em 0 #000, 0 0.08em 0.6em rgba(0, 0, 0, 0.55);
+}
+#scoreboard .sb-facts {
+  grid-area: facts;
+  display: flex;
+  gap: max(8px, calc(16 * var(--u)));
+  margin-top: max(3px, calc(6 * var(--u)));
+  font-size: var(--t-cap);
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: rgba(255, 255, 255, 0.42);
+  white-space: nowrap;
+}
+#scoreboard .sb-facts b {
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  font-variant-numeric: tabular-nums;
+  color: #e6ebf2;
+}
+#scoreboard .sb-mid {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: max(5px, calc(9 * var(--u)));
+  text-align: center;
+}
+#scoreboard .sb-margin {
+  font-size: var(--t-row);
+  font-weight: 800;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  font-variant-numeric: tabular-nums;
+  color: rgba(255, 255, 255, 0.78);
+}
+#scoreboard .sb-margin.up { color: var(--mine); }
+#scoreboard .sb-margin.down { color: var(--theirs); }
+/* The margin as the round-over card draws it: the two counts against each
+   other, so a side at zero has no segment at all. */
+#scoreboard .sb-split {
+  display: flex;
+  gap: 2px;
+  height: max(4px, calc(6 * var(--u)));
+  background: rgba(255, 255, 255, 0.08);
+}
+#scoreboard .sb-split i { flex: 1 1 0; }
+#scoreboard .sb-split i.mine { background: var(--mine); }
+#scoreboard .sb-split i.theirs { background: var(--theirs); }
+#scoreboard .sb-mcap {
+  font-size: var(--t-cap);
+  font-weight: 700;
+  letter-spacing: 0.3em;
+  text-transform: uppercase;
   color: rgba(255, 255, 255, 0.4);
 }
-#scoreboard .sb-cols,
-#scoreboard .sb-row {
-  display: grid;
-  grid-template-columns: 1fr 190px 74px 74px 74px 74px;
-  align-items: center;
-  gap: 10px;
-  padding: 0 26px;
-}
-#scoreboard .sb-cols {
-  padding-top: 11px;
-  padding-bottom: 5px;
-  font-size: 10px;
-  font-weight: 700;
-  letter-spacing: 0.2em;
-  color: rgba(255, 255, 255, 0.38);
-  text-align: right;
-}
-#scoreboard .sb-row {
-  position: relative;
-  padding-top: 9px;
-  padding-bottom: 9px;
-  font-size: 17px;
-  font-weight: 700;
-  text-align: right;
-}
-/* A colour flag down the left of the row, the way a team is marked in a
-   real scoreboard — the row itself stays neutral so the numbers read. */
-#scoreboard .sb-row::before {
-  content: "";
-  position: absolute;
-  left: 0;
-  top: 2px;
-  bottom: 2px;
-  width: 4px;
-  background: currentColor;
-}
-#scoreboard .sb-row.mine { color: var(--mine); }
-#scoreboard .sb-row.theirs { color: var(--theirs); }
-#scoreboard .sb-row.mine { background: rgba(255, 196, 107, 0.06); }
-#scoreboard .sb-row.theirs { background: rgba(255, 90, 79, 0.06); }
-#scoreboard .sb-name {
-  text-align: left;
-  font-size: 15px;
-  font-weight: 800;
-  letter-spacing: 0.16em;
-}
-#scoreboard .sb-n { color: #dfe5ee; }
-/* The team's points, in the row's own team colour rather than the neutral
-   the other counts take: it is the column the bodies below are ordered by,
-   and the one number on the panel that is a summary of the whole round. */
-#scoreboard .sb-score { color: currentColor; }
-#scoreboard .sb-tickets {
-  display: flex;
-  align-items: center;
-  justify-content: flex-end;
-  gap: 9px;
-}
-#scoreboard .sb-gauge {
-  display: block;
-  width: 108px;
-  height: 6px;
-  background: rgba(255, 255, 255, 0.1);
-  transform: skewX(-20deg);
-}
-#scoreboard .sb-gauge u { display: block; height: 100%; background: currentColor; }
-/* --- the two columns of bodies ---
-   One row per combatant, bots included: the round is 8v8 whoever is driving,
-   so a board that listed only the people in it would be reporting a fraction
-   of the fight. Your side is always the left column — see `setScoreboard`. */
+
+/* --- the two sides' lists ---
+   One line per combatant, bots included: the round is 8v8 whoever is
+   driving, so a board that listed only the people in it would be reporting a
+   fraction of the fight. Your side is always the left column — see
+   `setScoreboard`. A DEEP roster puts two lists in each column, split in rank
+   order, each with its own heading. */
 #scoreboard .sb-teams {
   display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 0 26px;
-  margin: 12px 26px 0;
-  padding-top: 10px;
-  border-top: 1px solid rgba(255, 255, 255, 0.12);
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: max(14px, calc(40 * var(--u)));
+  min-height: 0;
 }
-#scoreboard .sb-col.mine { color: var(--mine); }
-#scoreboard .sb-col.theirs { color: var(--theirs); }
-#scoreboard .sb-prow {
+#scoreboard .sb-col {
   display: grid;
-  grid-template-columns: 1fr 52px 34px 34px;
-  align-items: baseline;
-  gap: 8px;
-  padding: 3px 8px;
-  font-size: 13px;
-  font-weight: 700;
-  text-align: right;
-  /* The rows are neutral and the team's colour is spent on the heading and on
-     your own line — sixteen coloured rows is a wash of two hues with the one
-     row that matters lost in it. */
-  color: #cfd6e2;
+  grid-auto-flow: column;
+  grid-auto-columns: minmax(0, 1fr);
+  gap: max(8px, calc(16 * var(--u)));
+  align-items: start;
+  min-width: 0;
 }
-#scoreboard .sb-pname {
-  text-align: left;
-  letter-spacing: 0.1em;
-  /* A name is up to MAX_NAME_LENGTH characters of somebody else's choosing, so
-     the column clips rather than growing the panel around it. */
+#scoreboard .sb-list {
+  display: flex;
+  flex-direction: column;
+  gap: max(2px, calc(3 * var(--u)));
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  min-width: 0;
+}
+/* The round-over card's board line (`.ro-board` in overlay.css): a place,
+   the side's mark, the name, kills, deaths, and the points it is ranked by
+   last and brightest. Tabular figures, because it is four digits by the end
+   of a round and a proportional font makes a sorted column look unsorted. */
+#scoreboard .sb-list li {
+  display: grid;
+  grid-template-columns: 1.6em 3px minmax(0, 1fr) 2em 2em 3.2em;
+  align-items: center;
+  column-gap: max(6px, calc(10 * var(--u)));
+  min-height: max(22px, calc(34 * var(--u)));
+  padding: 0 max(8px, calc(12 * var(--u))) 0 max(4px, calc(8 * var(--u)));
+  font-size: var(--t-body);
+  font-variant-numeric: tabular-nums;
+  color: rgba(255, 255, 255, 0.72);
+  background: rgba(255, 255, 255, 0.035);
+}
+/* The ping column exists only in a match — offline there is no server to be
+   any distance from — so the track is added by a class on the panel rather
+   than sitting empty in every single-player round. */
+#scoreboard.pinged .sb-list li { grid-template-columns: 1.6em 3px minmax(0, 1fr) 2em 2em 3.2em 2.6em; }
+#scoreboard .sb-list li > span { text-align: right; }
+#scoreboard .sb-list li .rk {
+  font-weight: 800;
+  color: rgba(255, 255, 255, 0.45);
+}
+#scoreboard .sb-list li > i {
+  align-self: stretch;
+  margin: 5px 0;
+}
+#scoreboard .sb-col.mine li > i { background: var(--mine); }
+#scoreboard .sb-col.theirs li > i { background: var(--theirs); }
+#scoreboard .sb-list li .nm {
+  min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  font-weight: 700;
+  /* A person's name as they typed it, up to `MAX_NAME_LENGTH`, and not
+     tracked out: a name is the one thing on the board nobody can guess from
+     what is left of it. */
+  letter-spacing: 0.02em;
+  color: #e6ebf2;
 }
-/* Points lead the row and kills follow them, so the eye goes down the
-   column the board is sorted by. Tabular figures because it is four digits
-   by the end of a round and a proportional font makes a sorted column look
-   unsorted. */
-#scoreboard .sb-ps {
-  color: #f2f5fa;
-  font-variant-numeric: tabular-nums;
+#scoreboard .sb-list li .d { color: rgba(255, 255, 255, 0.45); }
+#scoreboard .sb-list li .pts { font-weight: 800; color: #fff; }
+#scoreboard .sb-list li.head {
+  min-height: 0;
+  padding-bottom: max(3px, calc(5 * var(--u)));
+  font-size: var(--t-cap);
+  font-weight: 700;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  color: rgba(255, 255, 255, 0.42);
+  background: none;
 }
-#scoreboard .sb-pd { color: rgba(255, 255, 255, 0.45); }
-/* The ping column exists only in a match — offline there is no server to be
-   any distance from — so the fourth track is added by a class on the panel
-   rather than sitting empty in every single-player round. */
-#scoreboard.pinged .sb-prow { grid-template-columns: 1fr 52px 34px 34px 46px; }
-/* A DEEP roster — a map fielding more than `DEEP_ROSTER` bodies, which today is
-   Sarab's 24 a side and nothing else — flows each side's list into two
-   sub-columns instead of running one of them off the bottom of the screen.
-
-   `columns` and not a two-track grid, because a grid fills row-major and would
-   put the second-placed body beside the first instead of under it: the board is
-   SORTED, and a sorted column that has to be read left-right-left-right is not
-   one. Multi-column fills top to bottom and then moves across, so each column
-   is still read downward and the whole side is still in rank order.
-
-   The heading stays outside the flow (it is a sibling of `.sb-rows`, not a row
-   in it), or the right-hand column would be twelve unlabelled numbers.
-
-   The panel widens for it, and the ceiling is the VIEWPORT rather than a
-   number: `min-width` above is a promise to the shortest screen the game runs
-   on, and four sub-columns of names cannot keep that promise at a fixed 980. */
-#scoreboard.deep {
-  min-width: min(980px, 96vw);
-  max-width: 96vw;
+#scoreboard .sb-list li.head > i { background: none; }
+#scoreboard .sb-list li.head .rk,
+#scoreboard .sb-list li.head .pts { font-weight: 700; color: rgba(255, 255, 255, 0.42); }
+/* The side's name over its list, in its colour: the heading is where the
+   colour goes, and the rows stay neutral so the one hot line stands out. */
+#scoreboard .sb-list li.head .nm { font-weight: 800; letter-spacing: 0.24em; }
+#scoreboard .sb-col.mine li.head .nm { color: var(--mine); }
+#scoreboard .sb-col.theirs li.head .nm { color: var(--theirs); }
+/* Your own line, in the colour the interface keeps for you and nothing else. */
+#scoreboard .sb-list li.you {
+  background: rgba(255, 230, 128, 0.12);
+  box-shadow: inset 0 0 0 1px rgba(255, 230, 128, 0.4);
 }
-#scoreboard.deep .sb-rows {
-  columns: 2;
-  column-gap: 18px;
-}
-/* A row is one line and must never be split across the column break. The
-   numeric tracks tighten with it: a sub-column is half the width the single
-   list had, and at the ordinary 52/34/34 a ten-character callsign
-   (NOVEMBER-2) clips to an ellipsis in the one column that is a NAME. */
-#scoreboard.deep .sb-prow {
-  break-inside: avoid;
-  font-size: 12px;
-  padding: 2px 4px;
-  grid-template-columns: 1fr 40px 26px 26px;
-  gap: 6px;
-}
-#scoreboard.deep .sb-pname { letter-spacing: 0.04em; }
-/* Twenty-four rows two-up is ~430 px of panel, and a landscape phone is 390.
-   This is the one place the board scales itself, and it is deliberately a
-   TRANSFORM of its own: nothing else under `#hud` is scaled to a viewport
-   (see base.css), and the whole reason its width
-   is a fixed promise is that the layout must not move under a viewport. A
-   panel that is simply too tall for the screen is the one case where nothing
-   about the layout is wrong and the only honest answer is to draw it smaller —
-   the alternative is a third sub-column that clips the names, or rows scrolled
-   out of a board whose entire job is to list every body in the round. Only
-   `.deep`, so no 8v8 board on any device is affected. */
-@media (max-height: 470px) {
-  #scoreboard.deep {
-    transform: translate(-50%, -50%) scale(0.8);
-    /* The width cap is stated in the UNSCALED units the box is laid out in, so
-       it has to be divided by the scale to mean the same thing on screen:
-       0.8 x 120vw is the same 96vw the rule above promises. Without this the
-       panel is capped at 96vw and THEN shrunk to 77, and the columns the names
-       have to fit in are narrower on the small screen than on the large one —
-       which is the wrong way round. Both bounds, because it is `min-width`
-       that binds at this size and not `max-width`. */
-    min-width: min(980px, 120vw);
-    max-width: 120vw;
-  }
-}
-#scoreboard .sb-ping {
-  font-variant-numeric: tabular-nums;
-  color: rgba(255, 255, 255, 0.45);
-}
+#scoreboard .sb-list li.you .nm,
+#scoreboard .sb-list li.you .rk { color: var(--hot); }
+#scoreboard .sb-list li .ms { color: rgba(255, 255, 255, 0.45); }
 /* Three bands and one of them is silence: a good connection is the ordinary
    case and shouting it in green would put sixteen coloured numbers on a board
    whose whole job is that the one bad row stands out. */
-#scoreboard .sb-ping.fair { color: var(--hot); }
-#scoreboard .sb-ping.poor { color: var(--theirs); }
-#scoreboard .sb-ping.none { color: rgba(255, 255, 255, 0.22); }
-#scoreboard .sb-phead {
-  color: inherit;
-  font-size: 10px;
-  letter-spacing: 0.2em;
-  padding-bottom: 4px;
-  margin-bottom: 2px;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+#scoreboard .sb-list li .ms.fair { color: var(--hot); }
+#scoreboard .sb-list li .ms.poor { color: var(--theirs); }
+#scoreboard .sb-list li .ms.none { color: rgba(255, 255, 255, 0.22); }
+
+/* A deep roster's lines are a quarter of the board, and the name is the
+   column that must not give: NOVEMBER-3 is what every bot past the twelfth
+   is called. So the DEATHS go first — the column the board is least often
+   read for — and in a match, where the ping column takes a track, the place
+   goes with them, the list being in rank order without it. */
+#scoreboard.deep .sb-list li {
+  grid-template-columns: 1.5em 3px minmax(0, 1fr) 1.7em 2.8em;
+  column-gap: max(5px, calc(8 * var(--u)));
+  min-height: max(20px, calc(30 * var(--u)));
 }
-#scoreboard .sb-phead .sb-pname { letter-spacing: 0.22em; }
-/* Your own line, in the colour the HUD keeps for you and nothing else. */
-#scoreboard .sb-pyou {
-  color: var(--hot);
-  background: rgba(255, 196, 107, 0.1);
+#scoreboard.deep .sb-list li .d { display: none; }
+#scoreboard.deep.pinged .sb-list li {
+  grid-template-columns: 3px minmax(0, 1fr) 1.7em 2.8em 2.3em;
+  padding-left: max(3px, calc(6 * var(--u)));
+}
+#scoreboard.deep.pinged .sb-list li .rk { display: none; }
+
+/* --- entrance: on the RAISE, never on a patch ---
+   Quick, because the board is a held key read between two shots: a fade and
+   a short rise, and the margin bar growing in from the centre. */
+#scoreboard.enter { animation: sb-scrim 0.16s ease-out both; }
+#scoreboard.enter .sb-in { animation: sb-rise 0.2s cubic-bezier(0.2, 0.8, 0.3, 1) both; }
+#scoreboard.enter .sb-split { animation: sb-grow 0.35s cubic-bezier(0.2, 0.8, 0.3, 1) 0.08s both; }
+@keyframes sb-scrim { from { opacity: 0; } }
+@keyframes sb-rise { from { opacity: 0; transform: translate3d(0, calc(10 * var(--u)), 0); } }
+@keyframes sb-grow { from { transform: scaleX(0); } }
+@media (prefers-reduced-motion: reduce) {
+  #scoreboard.enter,
+  #scoreboard.enter :is(.sb-in, .sb-split) { animation: none; }
+}
+
+/* --- a phone held sideways ---
+   The same board at the floors, with the title brought down to one band: the
+   sides' numerals smaller, the caption under the bar gone (the eyebrow says
+   what is being counted), and the lines tightened so twenty-four a side still
+   fits a 375-line screen. */
+@media (orientation: landscape) and (max-height: 560px) {
+  #scoreboard { padding: 8px 16px; }
+  #scoreboard .sb-in { width: 100%; gap: 8px; padding: 10px 14px 12px; }
+  #scoreboard .sb-hero { gap: 4px; padding-bottom: 8px; }
+  #scoreboard .sb-n { font-size: 30px; }
+  #scoreboard .sb-facts { margin-top: 2px; }
+  #scoreboard .sb-mcap { display: none; }
+  #scoreboard .sb-list li { min-height: 22px; }
+  #scoreboard.deep .sb-hero { flex-direction: row; justify-content: center; }
+  #scoreboard.deep .sb-eyebrow { display: none; }
+  #scoreboard.deep .sb-n { font-size: 24px; }
+  #scoreboard.deep .sb-side { grid-template-areas: "team n" "facts facts"; column-gap: 10px; align-items: baseline; }
+  #scoreboard.deep .sb-side.theirs { grid-template-areas: "n team" "facts facts"; }
+  /* Four lists across a phone is ~150 px a list, which is a name cut to
+     three letters if every column stays. The place goes as well as the
+     deaths, and so does the side's name over its lists, which the hero and
+     the mark down every line already say: what is left is WHO, their kills
+     and the points they are ranked by. */
+  #scoreboard.deep .sb-list li {
+    grid-template-columns: 3px minmax(0, 1fr) 1.5em 2.6em;
+    min-height: 17px;
+    font-size: 11px;
+    column-gap: 5px;
+    padding: 0 5px 0 3px;
+  }
+  /* …and in a match the ping column takes the kills' track as well: on a
+     forty-eight-body board on a phone, the connection that is failing is
+     the one thing a player cannot read anywhere else. */
+  #scoreboard.deep.pinged .sb-list li { grid-template-columns: 3px minmax(0, 1fr) 2.6em 2.3em; }
+  #scoreboard.deep.pinged .sb-list li .k { display: none; }
+  #scoreboard.deep .sb-list li .rk { display: none; }
+  #scoreboard.deep .sb-list li.head .nm { visibility: hidden; }
+  #scoreboard.deep .sb-list li.head { font-size: 9px; letter-spacing: 0.12em; }
+  #scoreboard.deep .sb-teams { gap: 12px; }
+  #scoreboard.deep .sb-col { gap: 6px; }
+}
+
+/* The smallest phones, where a twenty-character name in a match (the ping
+   column beside it) is what runs out first: the place goes, as it already
+   has on a deep board, because the list is in rank order without it. */
+@media (orientation: landscape) and (max-height: 560px) and (max-width: 740px) {
+  #scoreboard .sb-list li { grid-template-columns: 3px minmax(0, 1fr) 2em 2em 3.2em; padding-left: 3px; }
+  #scoreboard.pinged .sb-list li { grid-template-columns: 3px minmax(0, 1fr) 2em 2em 3.2em 2.6em; }
+  #scoreboard .sb-list li .rk { display: none; }
+}
+
+/* --- upright: a fallback that must not break ---
+   The two sides stack over the margin and the lists stack under it, one
+   list to a row, and the board scrolls rather than running off the glass;
+   nothing under #hud is laid out for a phone held this way. */
+@media (orientation: portrait) {
+  #scoreboard { padding: 12px; }
+  #scoreboard .sb-in { width: 100%; overflow-y: auto; padding: 12px; }
+  #scoreboard .sb-face { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); row-gap: 8px; }
+  #scoreboard .sb-mid { grid-column: 1 / -1; grid-row: 2; }
+  #scoreboard :is(.sb-side, .sb-side.theirs) { justify-items: center; text-align: center; }
+  #scoreboard .sb-n { font-size: 34px; }
+  #scoreboard .sb-facts { flex-wrap: wrap; justify-content: center; column-gap: 8px; row-gap: 0; }
+  #scoreboard .sb-teams { grid-template-columns: minmax(0, 1fr); }
+  #scoreboard .sb-col { grid-auto-flow: row; }
 }
 
 /* --- conquest: the reinforcement gauge ---

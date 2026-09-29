@@ -44,6 +44,14 @@ Think like a game UI designer, not a web one:
   gutters or the title clamp owes that copy a look. `scripts/` cannot reach
   it; photograph it from the markup with the entry script stripped, and
   prove the live path with a CDP capture (VERIFYING.md).
+- **The Tab board is in the frame too, from inside the HUD.** It is on
+  `base.css`'s token list for `--u` and the type, and on no prompt list,
+  because nothing on it is pressed; its title is the STANDING (the two
+  reinforcement counts facing each other) and its lines are the round-over
+  card's board. `--screen scoreboard` photographs it held over a round
+  (`--map 4` for the deep, two-lists-a-side roster), `scoreboard-deploy` over
+  the deploy screen, and `scoreboard-net` with the ping column and two
+  twenty-character names forced on — the case every width there is set by.
 - **Nothing is scaled to a short viewport.** `--ov-scale` is retired with its
   last user, the pause; a screen fits a phone by its own floors.
 - **The front end** (`:is(#overlay.card-menu, #overlay.card-building, #overlay.card-roundover, #overlay.card-pause, #loadout, #settings, #lobby, #deploy)` in

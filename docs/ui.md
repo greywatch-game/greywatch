@@ -385,21 +385,60 @@ goes up and the HUD's own aiming chrome comes down, and they are not the same
 decision — `.overlaid` would take the tickets and vitals with it, which under a
 pause are still true.
 
-**The scoreboard is the one markup rebuild left in `HUD`, and its rows are BUILT
-rather than interpolated.** Tab is a held key, so `Game.updateHud` pushes the
-panel on every frame it is up; a key over everything the markup says is what
-keeps that to a rebuild per change, and the per-body rows are in that key
-because a kill anywhere reorders the column it lands in. The team summary is a
-template literal — a map name and two names out of `CONFIG` — while every row
-under it goes through `document.createElement` and `textContent`, because one of
-its fields is **a name another player typed**. The server bounds that string's
+**The Tab board is a title screen for the STANDING, held over the round.** It
+read as a web table in a dialog — CONQUEST the largest word on it, a
+spreadsheet of team totals, two small grids of rows — and it is laid out as the
+front end is now. **The title is the two reinforcement counts facing each
+other**, each in its own side's colour, across the margin between them drawn
+as the round-over card draws it (the two counts against each other, not
+against the pool: the HUD's own gauge over the top of the screen already says
+how far each side has fallen, and what the board adds is who is AHEAD). Each
+side's flags, points and kills sit under its numeral, and an eyebrow says what
+is being played. **Each side's list is the round-over card's board line for
+line** — a place, the side's mark down the leading edge, the name, kills,
+deaths and the points it is ranked by, last and brightest, the player's own
+line hot — because the card that ends a round shows the top of this board, and
+two drawings of one board is a board a player learns twice. The round goes
+DOWN behind it under a scrim rather than away, and the entrance (a fade and a
+short rise, the margin bar growing in) is keyed to the RAISE, never to a patch.
+
+**It is sized on the FRONT END's unit rather than on the HUD's ladder** —
+`#scoreboard` is on `base.css`'s `:is(...)` token list, so `--u`, the `--t-*`
+type and `--cut` reach it, and it takes none of the prompts because nothing
+on it is pressed. A 1440p monitor gets the 1080p board a third bigger and a
+phone gets it at the floors; nothing is scaled to a short viewport (the old
+`scale(0.8)` for a deep board on a phone is gone). **Its templates are the
+front end's**: wide; a phone held sideways, where the title comes down to one
+band and the caption under the bar goes; a smallest-phone rung that drops the
+place column, the thing a twenty-character name in a match runs out of room
+beside; and an upright fallback that stacks the sides and scrolls.
+
+**A DEEP roster (over `DEEP_ROSTER`, 24 bodies: Sarab and Cinderhaven, offline
+AND in a match) splits each side into two LISTS in rank order**, the top half
+down the left and the rest down the right, each with its own heading. It used
+to flow one list into CSS `columns`, which left the right-hand column's figures
+unlabelled. **The name is the column that must not give**, since NOVEMBER-3 is
+what every bot past the twelfth is called, so a deep line gives up the DEATHS
+first, the PLACE next in a match (the ping column taking a track), and on a
+phone the place always and, in a match, the kills. What is left on the
+smallest phone in a 48-body match is who, their points and their connection.
+
+**The board's frame is built once and patched by text; its LISTS are the one
+markup rebuild left in `HUD`, and their rows are BUILT rather than
+interpolated.** Tab is a held key, so `Game.updateHud` pushes the panel on
+every frame it is up; a key over everything the lists say is what keeps that
+to a rebuild per change, and the per-body rows are in that key because a kill
+anywhere reorders the column it lands in. The standing has a key of its own
+and is written into the frame by `textContent`, while every row goes through
+`document.createElement` and `textContent`, because one of its fields is **a
+name another player typed**. The server bounds that string's
 length; nothing bounds what is in it, and this file is where it is finally
 drawn. A bot's name is not on the wire at all: `entities/callsigns.ts` derives
 one from the roster index, which is the same number on every screen.
 
 **The ping column exists only in a match, and whether it does is TOLD rather
 than derived.** Offline there is no server to be any distance from, so the
-column is not there at all — a fourth grid track added by a class on the panel.
+column is not there at all — a grid track added by a class on the panel.
 In a match it is there from the first frame, because the authority's first table
 arrives a second into the round and a column that grew when the first number
 landed would reflow every name on the board under a player already reading them.
@@ -429,16 +468,13 @@ by SCORE, then by kills, then by fewer deaths, on a stable sort, so bodies level
 on all three keep roster order instead of trading places while somebody is
 looking at them.
 
-**Score leads the row, and that is the reason the column exists.** A round is
-won on flags and lost on tickets, so the player who took three of them has done
-more for the win than the one with four more kills — and a board ordered by
-kills says the opposite in the one place everybody looks. The number is the
-`ScoreBook`'s (`config/score.ts` is the table it spends), the team's own total
-is drawn in that team's colour because it is the summary of the whole round, and
-the figures are tabular because a sorted column of proportional digits does not
-look sorted. The panel's `min-width` grew with the column: nothing under `#hud`
-is scaled to a short viewport, which makes that width a promise to the shortest
-viewport the game runs on.
+**Points rank the board, and that is the reason the column exists.** A round
+is won on flags and lost on tickets, so the player who took three of them has
+done more for the win than the one with four more kills — and a board ordered
+by kills says the opposite in the one place everybody looks. The number is the
+`ScoreBook`'s (`config/score.ts` is the table it spends); it closes the line,
+brightest, where the round-over card puts it, and the figures are tabular
+because a sorted column of proportional digits does not look sorted.
 
 **The score FEED is where a player actually learns the scoring system**, and it
 is a separate thing from the board: the board is behind Tab and shows a total,
@@ -822,9 +858,9 @@ Two rules for anything added to `hud.css`:
   the screen.** `#gun-marker` is where the barrel points and `#hitmarker` is a
   confirmation drawn at the point of aim. Neither is a design decision that a
   smaller screen should scale, and both are left in pixels on purpose.
-  `#scoreboard` is exempt for its own reason, written down beside it: its width
-  is a promise to the shortest viewport the game runs on, and it already scales
-  the one case that cannot keep it.
+  `#scoreboard` is exempt because it is not on this ladder at all: it is laid
+  out as the front end is, on `--u` and the `--t-*` type, with templates of its
+  own (see the board's section above).
 
 **THERE IS NO `#crosshair`, and the empty middle of the screen is the aiming
 model rather than a gauge that went missing.** This HUD draws nothing at the

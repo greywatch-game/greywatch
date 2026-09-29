@@ -328,7 +328,7 @@ body { font-family: "Segoe UI", "Helvetica Neue", Arial, sans-serif; }
    and centres it, so 21:9 is used edge to edge and 32:9 keeps the
    composition together.
    ===================================================================== */
-:is(#overlay.card-menu, #overlay.card-building, #overlay.card-roundover, #overlay.card-pause, #loadout, #settings, #lobby, #deploy) {
+:is(#overlay.card-menu, #overlay.card-building, #overlay.card-roundover, #overlay.card-pause, #loadout, #settings, #lobby, #deploy, #scoreboard) {
   --u: clamp(0.5px, calc(100vmin / 1080), 2.4px);
   --hit: 0px;
   --gx: max(clamp(16px, 3.4vw, 104px), calc((100% - 240vh) / 2));

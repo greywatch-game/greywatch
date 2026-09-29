@@ -1010,9 +1010,13 @@ src/
                         #   Imported by main.ts
     HUD.ts/hud.css      # Gameplay chrome ONLY: tickets, flags, capture panel,
                         #   vitals, ammo, the stowed slot, hitmarker, killfeed,
-                        #   score feed, scoreboard, damage arcs, +
+                        #   score feed, damage arcs, +
                         #   .paused/.editing/.dying. NO crosshair: the fitted
-                        #   sight is the only aim mark in the game
+                        #   sight is the only aim mark in the game. And the
+                        #   Tab board, the one piece set on the FRONT END's
+                        #   unit: the two reinforcement counts facing each
+                        #   other as its title, each side's list the
+                        #   round-over card's board line for line
     OverlayScreen.ts    # The four cards — menu, round-over, pause, building —
       overlay.css       #   the .overlaid class they raise, and #menu-shot, the
                         #   map photograph the menu stands on: a second root of
