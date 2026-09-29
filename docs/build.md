@@ -62,7 +62,7 @@ unless explicitly asked. Five exceptions, each with a generator in
   precisely because it has a generator, so what that generator costs to run is
   part of the bargain and belongs written down here.
 
-- `audio/` (71.1 KB shipped, seventeen sounds off thirteen masters) — one
+- `audio/` (72.3 KB shipped, seventeen sounds off thirteen masters) — one
   report per weapon in the kit, the hulls' mounted gun, the AT launcher, the two
   halves of a magazine change, the four beats of a bolt cycle and the two
   blasts, and **the only

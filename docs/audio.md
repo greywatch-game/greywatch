@@ -27,7 +27,7 @@ cupola gun all three hulls mount, the shoulder tube the third slot carries, the
 two halves of the player's own magazine change, the four beats of a bolt cycle
 and the two BLASTS — the one explosion this game has and the tank gun that is
 the same physics at the other end. Nothing else in the game is recorded at
-all.** 71.1 KB downloaded once, 4.52 of the 44 mono-seconds the budget below
+all.** 72.3 KB downloaded once, 4.61 of the 44 mono-seconds the budget below
 allows.
 
 **That boundary is a decision and not a waiting list**, and the six mechanism
@@ -211,8 +211,9 @@ slots rather than memory.
    the replacement was dual-mono through the whole of the cut — r = 0.99–1.00,
    side 16.2 dB under the mid at peak and 27.0 in RMS — so the row went mono
    and the seventeen are six-eleven rather than seven-nine. (It has been
-   replaced again since, and the third take is narrower still: r = 1.00, 18.9
-   and 29.6.) Nothing about the game changed and
+   replaced twice since: the third take was narrower still, r = 1.00, 18.9
+   and 29.6, and the fourth is r = 1.00, 14.5 and 26.2.) Nothing about the
+   game changed and
    nothing about the rule did; what changed is the file the rule was measured
    against. **A row's shape is a claim about ITS master, so a replaced master
    re-opens every one of these questions and not only the trim.**
@@ -1062,7 +1063,7 @@ re-download-every-deploy pile, for no benefit at all.
   serve every sample if they all arrive at a comparable level. The fix for a
   quiet recording is the recording.
 - **Leave ~1 dB of headroom if you can.** A lossy encoder overshoots: the
-  rifle's master peaks at −0.03 dBFS and its Opus decodes at **1.056**. WebAudio
+  rifle's master peaks at −0.03 dBFS and its Opus decodes at **1.067**. WebAudio
   is float and the master soft clip absorbs it, so this is a note rather than a
   rule.
 - Downmixing is `pan=mono|c0=0.5*c0+0.5*c1`, not `-ac 1` — ffmpeg's own matrix
@@ -1090,7 +1091,7 @@ bought for.
 ## What each trim is, and why they are all that short
 
 Thirteen masters and seventeen cuts. Ten of the masters are 1.0 s of 48 kHz
-stereo as delivered: eight are reports and their cuts run 75 to 180 ms, one is
+stereo as delivered: eight are reports and their cuts run 96 to 180 ms, one is
 the launcher's, cut to 326, and one is the tank gun, cut to 210 for a reason of
 its own below. `explosion.wav` is 2.0 s and is cut to 950. The two 3.0 s files
 are `reload.wav`, which two rows are cut from, and `bolt-cycle.wav`, which four
@@ -1101,9 +1102,9 @@ all four are instructive rather than a lapse — see below.
 
 ### The assault rifle, which is the reference
 
-The master is 1.0 s. **The shipped cut is 75 ms**, from 2 to 77, and what the
-other 925 ms is has changed TWICE — which is the most useful thing about this
-row.
+The master is 1.0 s. **The shipped cut is 161 ms**, from 0 to 161, and what the
+other 839 ms is has changed THREE times — which is the most useful thing about
+this row.
 
 **The master this row was written for** was one round with a room on it: the
 report to 130 ms, a 15 dB cliff, a nearly flat plateau at −18 to −24 dB out to
@@ -1124,44 +1125,61 @@ above 4 kHz. It was cut 21–111, the trough in front of the first round to the
 trough in front of the second — the carbine's rule arriving on the reference
 gun.
 
-**The master in the tree now is a CRACK and then a BOOM**, and what it is
-fighting is neither a room nor a lead:
+**The third master was a CRACK and then a BOOM**, 14 ms apart after 3 ms of
+silence, and it was cut 2–77: in front of two high-band arrivals at 79 and 104
+ms, the second BRIGHTER above 8 kHz than the crack it followed. A reflection
+cannot come back brighter than its direct sound, so neither was the room.
 
-- 0–3 ms — silence, −76 dB at its quietest, under `Sfx`'s −54 dBFS floor.
-- 3–16 ms — **the crack**, all of it above 1 kHz; under 150 Hz is still at
-  −60 dB.
-- 17–74 ms — **the boom**, at full scale by 24 and held there as a heavy
-  flutter while the band above 8 kHz decays from −22 to −48.
-- 77 ms — a zero crossing of that flutter, −24 dB peak in its half
-  millisecond. **The cut ends here.**
-- 79 ms — the band above 8 kHz steps **22 dB in one millisecond**.
-- 104–106 ms — it steps **27 dB again, to −20.7**, which is BRIGHTER than the
-  first crack.
-- ~150 ms on — a −20 to −25 dB plateau with the channels at r 0.6–0.8, and a
-  late field from 280 (r < 0.6): the room.
+**The master in the tree now is a CRACK RIDING a BOOM**, and it is the first
+cut here that was set by EAR against the measurement rather than by it:
 
-A reflection cannot come back brighter than its direct sound, so the two
-arrivals are not the room. They are 75 ms apart from the first, which is not
-this weapon's 106, so they are either further rounds at somebody else's rate or
-the action cycling — and **both readings cut in the same place**, which is why
-the row does not have to decide between them. A second round is the burst rule;
-a mechanism is the SMG's rule, `actionPitch`/`actionVol` already playing the
-action and a recorded one playing it twice. The fade is 15 ms over the last two
-half-cycles of the flutter, so the body tapers rather than stops, and the rest
-of the boom is `report.weight` and `length`'s job, as it is on the LMG's row.
+- 0 ms — **the file opens on the shot.** The first millisecond is already over
+  `Sfx`'s −54 dBFS floor and the first sample is −42 dB, so there is no lead to
+  cut and no trough to cut in, and none is needed: a −42 dB first sample
+  cannot click under a report at full scale 2 ms later.
+- 0–30 ms — **the crack**, the band above 8 kHz at −14 to −18 dB, while the
+  band under 150 Hz arrives from ~16 ms.
+- 16–146 ms — **the boom**, at full scale by 38 and held there as a heavy
+  flutter of ~8.5 ms half-cycles, while above 8 kHz the report decays to −58
+  by 58.5.
+- 59.2 ms — a zero crossing of that flutter, −22 dB peak in its half
+  millisecond, with the 8 kHz band in its trough. **The measured cut ended
+  here.**
+- 59–64 ms — the band above 8 kHz climbs 20 dB, then at 67 it steps **13 dB in
+  half a millisecond**, to −18 by 69: within 4 dB of the crack it follows,
+  after 40 dB of decay.
+- 161.2 ms — the flutter's last zero crossing, −27 dB peak in its half
+  millisecond. **The shipped cut ends here.**
+- ~160 ms on — the waveform goes irregular and the channels come apart (r 0.49
+  at 160, a late field by 180) under a −12 to −20 dB tail: the room.
 
-Octave for octave this take is 7.5 dB up on the last at 63 Hz and 10.7 at 125,
-and 3 dB down from 500 Hz to 2 kHz — a darker, heavier rifle — and its level
-lands where the last cut's did: 0.518 RMS mono over the cut against 0.483,
-measured the same way, so `SAMPLE_LEVEL` does not move.
+The arrival is 67 ms after the crack, which is not this weapon's 106, so it is
+either a further round at somebody else's rate or the action cycling — and by
+rules 1 and 2 below both readings cut in front of it, at 59. **That cut shipped
+and sounded CUT OFF in a live round**: its fade landed in the middle of a body
+still at full scale, which is a gun with its low end amputated rather than a
+short report. So the row keeps the arrival — the one report here that does —
+and ends where the BOOM ends, at the flutter's last zero crossing, with a
+30 ms fade over its last three half-cycles from 131, where it is already
+falling. **If sustained fire ever reads as a double tap, that arrival is the
+cause and 59 is the fallback.** The rules below are the default and the ear is
+allowed to overrule one; what it may not do is overrule it silently, which is
+why the measurement is still written down here.
 
-**The general rule survived both replacements and the row's own numbers did
-not: a sample is the DIRECT sound, the room is the game's, and what a sample
-may contain is one call's worth of sound.** A master is a fact about a file
-rather than about a weapon, so a replaced one re-opens the trim, the channel
-count and the level together — the first swap took this row from stereo to
-mono, for the reason under rule 1 above, and the second from a 23 ms lead to
-none.
+Octave for octave over the cut, each against its own RMS, this take is 2–3 dB
+up on the last from 1 to 4 kHz, 5 at 8k and 11.5 at 16k, and 2–4 dB down under
+63 Hz — a brighter, harder crack on a body of about the same weight — and its
+level lands inside the spread the last cuts shipped at: 0.547 RMS mono over
+the cut against 0.518 and 0.483, measured the same way, so `SAMPLE_LEVEL` does
+not move.
+
+**The general rule survived all three replacements and the row's own numbers
+did not: a sample is the DIRECT sound, the room is the game's, and what a
+sample may contain is one call's worth of sound.** A master is a fact about a
+file rather than about a weapon, so a replaced one re-opens the trim, the
+channel count and the level together — the first swap took this row from
+stereo to mono, for the reason under rule 1 above, the second from a 23 ms lead
+to none, and the third from 75 ms to 161.
 
 ### The other six, and the three rules they added
 
@@ -1173,7 +1191,7 @@ broke two of the three itself, which is why its row above reads like theirs.)
 
 | id | weapon | cut | of master | what the trim is fighting |
 | --- | --- | --- | --- | --- |
-| `assaultRifle` | rifle | 2 – 77 ms | 8% | **two brighter arrivals** at 79 and 104, then the boom |
+| `assaultRifle` | rifle | 0 – 161 ms | 16% | the room from ~160 — **by ear**: it KEEPS a bright arrival at 67 |
 | `burstRifle` | carbine | 24 – 120 ms | 10% | **a second and third ROUND**, and a 32 ms lead |
 | `smg` | SMG | 0 – 140 ms | 14% | a discrete arrival at 152 ms |
 | `dmr` | DMR | 0 – 180 ms | 18% | an early field from 160, a late arrival at 224 |
@@ -1198,15 +1216,17 @@ burst fires nine shots for every three. The carbine's second round is on its
 master at 216 ms at −4 dB and a third rides the tail out past 330; the cut ends
 at 120 and none of that is a matter of taste. **The assault rifle's second
 master took this rule too** — three rounds 90 ms apart, the same arithmetic on a
-weapon whose trigger is not the reason for it — and its third is cut in front of
-two bright arrivals at 79 and 104 ms that are either this rule or rule 2, the
-cut being the same whichever they are. This
+weapon whose trigger is not the reason for it — and its third was cut in front
+of a bright arrival at 79 ms that was either this rule or rule 2, the cut being
+the same whichever it was. (Its fourth has one at 67 and keeps it, by ear; see
+the rifle's own section for why and what to do if that ever reads as a double
+tap.) This
 is the one rule here that is about CORRECTNESS rather than about a room, and it
 generalises: what a sample may contain is one call's worth of sound.
 
 **2. A mechanism on the tape is cut whichever end it is on, and the front end
 is the expensive one.** Three of the eight masters lead with one (the assault
-rifle's second did, 23 ms, and its third does not). The carbine's
+rifle's second did, 23 ms, and its third and fourth do not). The carbine's
 report starts 32 ms into its master, the
 LMG's 50 ms into its, and the mounted
 gun's 40 ms into its — that last is the plainest of the three, a discrete clack
@@ -1218,7 +1238,8 @@ cannot be recovered downstream, because
 `Sfx`'s own `trimSample` only skips what is under −54 dBFS and every one of
 these is far louder than that. **Every start point sits in a TROUGH rather than
 hard against the onset** (−41 dB at 24 ms on the carbine, −50 at 40 on the
-mounted gun, −76 at 2 on the rifle), which is what lets the pipeline stay a
+mounted gun; the rifle's fourth take opens on its onset and starts at 0, on a
+−42 dB first sample), which is what lets the pipeline stay a
 start/end/fade with no fade-in in it: a cut made at a trough cannot click, and
 the transient keeps a foot.
 
@@ -1226,10 +1247,10 @@ The back end is the same rule and is cheaper to get wrong. The SMG's master has
 a bolt-shaped event at 152 ms, 40 dB up on the trough in front of it; that
 weapon's `actionVol` is **1.55, the highest in the kit**, precisely because a
 blowback SMG is mostly the sound of its own bolt — so shipping the recorded one
-plays the mechanism twice. Cut at 140. The rifle's third master is the same
-cut made earlier and for a stronger reason: its arrivals at 79 and 104 ms are
-BRIGHTER above 8 kHz than the report in front of them, so they are the gun and
-not the room, and one call's worth of report ends at 77.
+plays the mechanism twice. Cut at 140. The rifle's third master was the same
+cut made earlier and for a stronger reason: its arrivals at 79 and 104 ms were
+BRIGHTER above 8 kHz than the report in front of them, so they were the gun and
+not the room, and one call's worth of report ended at 77.
 
 **3. A master with no cliff is cut with a FADE, and the fade is measured off
 the HIGH BAND.** The sniper's file is one long boom: still only 6 dB down at
@@ -1258,10 +1279,11 @@ carbine's 96 ms is the shortest but one in the table because three of its rounds
 leave in 0.1 s, which is the same argument `report.length: 0.75` already makes
 for it in `config/weapons.ts`. A cut that runs past the next round is a burst
 you cannot count. **The rifle is the case where the MASTER decided this instead
-of the weapon**: 75 ms against a 106 ms gap is the only report row that does not
-overlap its own next round, because the recording's second arrival is where the
-cut had to end — on this master and on the one before it. Sustained fire is therefore the one place the two masters read
-differently, and what fills the gap is the convolver's tail off `report.tail` —
+of the weapon** on its second and third masters: 90 and 75 ms against a 106 ms gap
+were the only report rows that did not overlap their own next round, because
+the recording's second arrival was where the cut had to end. The fourth keeps
+its arrival and runs 161 ms, 55 past the next round, as the SMG does. Where a
+cut stops short of the next round, what fills the gap is the convolver's tail off `report.tail` —
 the game's room rather than the recording's.
 
 **4. A master that is a PERFORMANCE is cut to the game's BEATS, and the thing
