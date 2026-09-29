@@ -284,7 +284,10 @@ export type BuilderKind = keyof typeof BUILDERS;
  * of its kerb stones off where it stands, and carries each stone down to the
  * ground under it. The stone lantern seeds the characters on its shaft, which
  * of its deer is the stag and where lichen grows on its cap off where it
- * stands, and carries its foundation stone down to the ground.
+ * stands, and carries its foundation stone down to the ground. The stone
+ * pagoda seeds the lengths of its kerb stones, the lichen on its roofs and
+ * the maple leaves lying on it off where it stands, and carries its kerb down
+ * to the ground.
  */
 export const CONFORMS_TO_TERRAIN: ReadonlySet<BuilderKind> = new Set([
   "road",
@@ -318,4 +321,5 @@ export const CONFORMS_TO_TERRAIN: ReadonlySet<BuilderKind> = new Set([
   "torii",
   "gardenWall",
   "toro",
+  "stonePagoda",
 ] as const);
