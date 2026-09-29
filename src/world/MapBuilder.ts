@@ -832,12 +832,13 @@ const PROP_BODIES: Record<ScatterSpec["prop"], PropBody> = {
   rubble: { w: 1.9, d: 1.7, h: 1.05, visualTop: 1.5 },
   // The drum. NOT the flame above it, which is emissive and 0.85 m tall.
   fireDrum: { w: 0.95, d: 0.95, h: 1.25, visualTop: 2.1 },
-  // The one prop that was already too *small*, and stays generous: measured,
-  // a boulder is 2.4 m across the waist and 2.2 m tall, because
-  // `CreatePolyhedron`'s `size: 0.8` is not a radius — it yields a 2.26 m
-  // shape before the builder's own 1.3-1.7x stretch. The old clearance-derived
-  // 2.0 m box already let rounds through visible rock. Height stays near it so
-  // a large boulder still bakes as hard cover (CoverMap's 1.7 m).
+  // Oriented, along the stone's own X and Z. The stone is DRAWN to this box
+  // rather than the box measured off the stone (see `buildBoulder`): its
+  // chiselled waist is ON these half-widths at the median and past them by
+  // under 0.16 m in nine in ten (the octahedron stood 0.15 m past them every
+  // time), and its top is held at or over `h`, so a round stops on rock and
+  // never on air over it. Height stays where it was so a large boulder still bakes as hard
+  // cover (CoverMap's 1.7 m).
   boulder: { w: 2.1, d: 1.9, h: 1.45, visualTop: 1.4 },
   bramble: { w: 0.8, d: 0.8, h: 1.2, visualTop: 1.6, rooted: true },
   barrel: { w: 0.88, d: 0.88, h: 1.25, visualTop: 1.3 },
