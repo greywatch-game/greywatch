@@ -29,7 +29,8 @@
     "greyfen": "node scripts/generate-greyfen.mjs",
     "hollowmere": "node scripts/generate-hollowmere.mjs",
     "audio": "node scripts/encode-audio.mjs",
-    "audio:measure": "node scripts/measure-audio.mjs"
+    "audio:measure": "node scripts/measure-audio.mjs",
+    "loc": "node scripts/loc.mjs"
   },
   "dependencies": {
     "@babylonjs/core": "^9.28.0",

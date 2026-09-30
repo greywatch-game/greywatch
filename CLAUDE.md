@@ -244,6 +244,9 @@ npm run audio:measure # where the numbers in a `trim` come from: envelope,
                    #   bands, width, sum, onset, room. `-- --row <id>` for a
                    #   shipped row, `-- --all` for the directory on one basis,
                    #   `-- --decode` to prove the browser decodes them
+npm run loc        # how big the project is: hand-written code split into
+                   #   code/comment/blank, apart from the generated bakes and
+                   #   the map data. `-- --files 20`, `-- --json`
 npm run shots      # re-photograph the maps for the menu backdrop (committed).
                    #   The ONE script here that needs a real GPU — docs/build.md
 npm run proving    # regenerate the DEV-ONLY proving ground (committed source).
