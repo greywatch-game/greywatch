@@ -42,6 +42,17 @@
  * dispose of a UniformBuffer, which Babylon tolerates (it is not in the list,
  * and a buffer's refcount only destroys at zero) — so check for that before
  * deleting it, rather than because it broke.
+ *
+ * **Still unfixed upstream as of 9.28.0** (checked 2026-09-29):
+ * `_deletePipelineContext` and `webgpuCacheBindGroups.js` are unchanged, and
+ * no issue or PR names either leak. **An upgrade past ~9.26 brings PR #18880
+ * with it**, on by default (`_useOwnerKeyedUniformBufferSlots`): the
+ * `leftOver` pools are keyed per DRAW CONTEXT rather than per draw order,
+ * which frees a slot only when its UBO is disposed — so (1) is still needed
+ * and the pool it leaks may be LARGER (the PR's own example is 1,200 buffers
+ * against 3) — and it states outright that it adds no bind-group eviction, so
+ * (2) is still needed too. Re-measure both before trusting either across that
+ * upgrade.
  */
 import { type WebGPUEngine, WebGPUCacheBindGroups } from "@babylonjs/core";
 
