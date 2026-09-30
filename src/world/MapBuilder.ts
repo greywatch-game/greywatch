@@ -1047,6 +1047,29 @@ export class MapBuilder {
    * one holding it by the time there is anything to build. `undefined` is a
    * level floor, exactly as an absent field always was.
    */
+  /**
+   * Drops everything the last build left in this builder's own fields — the
+   * boxes, the panes, the groups, the roads, the box index — which `build`
+   * hands to the `GameMap` and would otherwise keep until the next one resets
+   * them. `Game.teardownMap`, for the menu.
+   */
+  release(): void {
+    this.boxes = [];
+    this.boxAlbedo = [];
+    this.partBoxes = [];
+    this.rayGroups = [];
+    this.boxGroups = [];
+    this.pendingCluster = [];
+    this.paletteColors = [];
+    this.paletteSlots.clear();
+    this.keepClear = [];
+    this.panes = [];
+    this.paneGroups = [];
+    this.roads = roadFootprint([], []);
+    this.boxIndex = emptyBoxIndex(CONFIG.map.size, 0);
+    this.item = null;
+  }
+
   build(
     layout: MapLayout,
     env: EnvironmentSpec,

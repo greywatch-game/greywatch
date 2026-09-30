@@ -574,6 +574,21 @@ export class LocalShadows {
   }
 
   /**
+   * No world at all: `Game.teardownMap`, for the menu. Every tile is given
+   * up and nothing of the disposed map is held; `update` finds no index and
+   * releases, as it does before the first `setWorld`.
+   */
+  clearWorld(): void {
+    this.releaseAll();
+    this.index = null;
+    this.boxes = [];
+    this.boxMatrices = new Float32Array(0);
+    this.boxBounds = new Float32Array(0);
+    this.boxStamp.length = 0;
+    this.visuals = [];
+  }
+
+  /**
    * Chooses this frame's shadowed lights, lays out their tiles and packs what
    * the passes will draw. Runs after `LightingSystem.update`, whose winning
    * slots are `active`; the draw itself is `render`, from the scene.

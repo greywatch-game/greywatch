@@ -325,9 +325,13 @@ consumes a `GameMap` or an `EnvironmentSpec` goes in `installMap`.**
 
 `Game`'s state machine is `menu -> loading -> deploy -> playing -> dying ->
 deploy`, with `roundover` when a side runs out of tickets. **The 3D scene renders
-in every state**, which is what lets the deploy screen and the menu sit over a
-live view, and `loading` and `dying` are **STEPS, not lids**: `updateWorld` runs
-in full under the death cam, and nothing may simulate under the building card.
+in every state**, which is what lets the deploy screen sit over a live view,
+and `loading` and `dying` are **STEPS, not lids**: `updateWorld` runs in full
+under the death cam, and nothing may simulate under the building card. **The
+menu has NO map behind it**: it stands on a photograph, so leaving a round goes
+through `Game.teardownMap` — `installMap`'s other half, and the one place a map
+is torn down — and anything new that `installMap` hands a map to owes a line
+there that takes it back.
 
 **A LID is a screen laid over a state, which taking it off puts back rather than
 moving the game on — and which state is which, and what each one owes, is

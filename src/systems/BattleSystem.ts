@@ -656,6 +656,20 @@ export class BattleSystem {
   }
 
   /**
+   * No map at all: `Game.teardownMap`, for the menu. `update` returns on its
+   * first line without a nav graph, and the target scratch lists are emptied
+   * so no body from the last round — a hull above all — is held through them.
+   */
+  clearMap(): void {
+    this.nav = null;
+    this.cover = null;
+    this.obstacles = null;
+    this.terrain = null;
+    this.rays = null;
+    for (const list of this.hittableScratch) list.length = 0;
+  }
+
+  /**
    * How far bodies are worth drawing on this map. See `viewDistance`; pushed
    * from `Game.installMap` alongside the environment it comes out of.
    */

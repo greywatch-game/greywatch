@@ -224,7 +224,7 @@ export class RotorWash {
       this.disposeRings();
       this.palette = palette;
     }
-    this.pools.length = 0;
+    this.clear();
     for (const r of water) {
       this.pools.push({
         minX: r.x - r.width / 2,
@@ -235,13 +235,6 @@ export class RotorWash {
       });
     }
 
-    for (const wash of this.washes) {
-      wash.hull = null;
-      this.silence(wash);
-      wash.dust.reset();
-      wash.spray?.reset();
-    }
-    this.washCount = 0;
     let i = 0;
     for (const hull of hulls) {
       // **`flies` and not a wash-shaped flag of its own.** A rotor is what
@@ -609,6 +602,22 @@ export class RotorWash {
     system.addColorGradient(0, light(0), dark(0));
     system.addColorGradient(w.fadeIn, light(peak), dark(peak * 0.72));
     system.addColorGradient(1, light(0), dark(0));
+  }
+
+  /**
+   * Lets go of every hull and every pool, keeping the rings: the top of
+   * `build`, and `Game.teardownMap` on its own when no fleet follows — a ring
+   * still pointed at a disposed hull would go on asking it for a wash.
+   */
+  clear(): void {
+    this.pools.length = 0;
+    for (const wash of this.washes) {
+      wash.hull = null;
+      this.silence(wash);
+      wash.dust.reset();
+      wash.spray?.reset();
+    }
+    this.washCount = 0;
   }
 
   private disposeRings(): void {

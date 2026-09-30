@@ -305,15 +305,7 @@ export class ReflectionSystem {
     // get another one. This is what the editor's skip below leans on: it is
     // above the return, so a probe left over from the round the editor was
     // opened from is emptied rather than left holding a disposed map.
-    for (const probe of this.probes) probe.cubeTexture.renderList = [];
-    // And the queue with them. `build` is the top of an install, so this
-    // empties the WHOLE of it, water included: a queued probe is one holding a
-    // render list of meshes this line's caller has just disposed. The water
-    // pool is queued later in the same install (`bakeWater`, called from
-    // inside `WaterSystem.build`), which is what makes emptying everything
-    // here safe rather than merely convenient.
-    this.queue.length = 0;
-    this.inFlight.length = 0;
+    this.clear();
     if (editor || map.paneGroups.length === 0) return;
 
     const opaque = opaqueWorld(map);
@@ -466,6 +458,24 @@ export class ReflectionSystem {
    * sky half of its mirror. A bake is a build step because the world is static,
    * and the editor is the one place it is not.
    */
+  /**
+   * Parks every probe, both pools, and empties the bake queue: the state
+   * before any map was built. The top of `build`, and `Game.teardownMap` on
+   * its own when no map follows — the menu, which stands on a photograph.
+   *
+   * The WHOLE queue, water included: a queued probe is one holding a render
+   * list of meshes the caller has just disposed. On an install the water pool
+   * is queued again later (`bakeWater`, from inside `WaterSystem.build`),
+   * which is what makes emptying everything here safe rather than merely
+   * convenient.
+   */
+  clear(): void {
+    for (const probe of this.probes) probe.cubeTexture.renderList = [];
+    for (const probe of this.waterProbes) probe.cubeTexture.renderList = [];
+    this.queue.length = 0;
+    this.inFlight.length = 0;
+  }
+
   bakeWater(
     sites: readonly Vector3[],
     map: GameMap,

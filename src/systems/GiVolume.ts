@@ -276,6 +276,15 @@ export class GiVolume {
   }
 
   /**
+   * No map at all: `Game.teardownMap`, for the menu. Drops the traced world's
+   * buffers, and `update` returns on its first line until the next `setMap`.
+   */
+  clearMap(): void {
+    this.map = null;
+    this.disposeMapBuffers();
+  }
+
+  /**
    * The standing map's boxes moved in place — the editor's drag, released.
    * Re-uploads them and starts the history again, as a fresh install does;
    * the boxes are copied to the GPU at `setMap`, so nothing else would notice.

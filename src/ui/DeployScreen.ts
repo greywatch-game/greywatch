@@ -365,6 +365,22 @@ export class DeployScreen {
     this.pendingSpawn = this.options[this.selected] ?? null;
   }
 
+  /**
+   * Lets go of the map, its prerendered plan and the positions offered on it:
+   * `Game.teardownMap`, for the menu. `show` hands it everything again.
+   */
+  clearMap(): void {
+    this.map = null;
+    this.base = null;
+    this.baseFor = null;
+    this.baseSize = 0;
+    this.options = [];
+    this.positions = [];
+    this.hotspots = [];
+    this.selectedSpawn = null;
+    this.pendingSpawn = null;
+  }
+
   hide(): void {
     this.root.classList.add("hidden");
     this.root.classList.remove("enter");

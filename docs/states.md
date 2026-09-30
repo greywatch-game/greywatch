@@ -29,8 +29,13 @@ inside and taken that away. `VERIFYING.md` says how to wait for it from a script
 
 `Game`'s state machine is `menu -> loading -> deploy -> playing -> dying ->
 deploy`, with `roundover` when a side runs out of tickets. The 3D scene renders
-in **every** state, which is what lets the deploy screen and the menu sit over a
-live view.
+in **every** state, which is what lets the deploy screen sit over a live view.
+The menu does NOT: it stands on a photograph of the chosen map, and entering it
+tears the round's map down (`Game.teardownMap`, `installMap`'s other half), so
+nothing of an abandoned round is drawn, heard or simulated behind the title
+card. It used to be left standing as a live backdrop, from before the menu had
+photographs, and the cost was a city rendered every frame under a picture of
+another one with its fires and its shore still playing.
 
 **`loading` is the map being built, and the split that creates it is the whole
 feature.** Building one is the better part of a second of synchronous work —

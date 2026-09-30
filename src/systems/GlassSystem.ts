@@ -162,6 +162,18 @@ export class GlassSystem {
     this.buckets = bucketPanes(map.panes);
   }
 
+  /**
+   * No map at all: `Game.teardownMap`, for the menu. Every pane reads as
+   * broken (out of range) and no disposed collider is held.
+   */
+  clearMap(): void {
+    this.map = null;
+    this.panes = [];
+    this.broken = new Uint8Array(0);
+    this.colliders.clear();
+    this.buckets = [];
+  }
+
   /** Whether a pane is still standing. Out-of-range reads as broken. */
   intact(pane: number): boolean {
     return pane >= 0 && pane < this.broken.length && this.broken[pane] === 0;

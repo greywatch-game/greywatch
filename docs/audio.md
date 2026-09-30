@@ -312,10 +312,11 @@ hull's voice is driven by a load that a lid freezes — a stopped fleet droning 
 a throttle nobody is holding — so `Game.fleetStepped` stands those down and a
 frame that did not step the fleet owes them silence. A fire is driven by
 nothing at all. It is a property of the map being installed and the ear being
-somewhere, and both of those are true of a menu or a deploy card over a live
-view. **A village does not go quiet because a kit screen is up**, so
+somewhere, and both of those are true of a deploy card over a live view.
+**A village does not go quiet because a kit screen is up**, so
 `Game.pushAmbience` runs in every state that renders and `ambienceAllOff` is
-owed by exactly one caller, the teardown. The offline pause is the one held
+owed by exactly one caller, the teardown (`Game.teardownMap`) — which the menu
+now runs too, so a quit leaves no map behind the title card to be heard. The offline pause is the one held
 world that reaches it, and not from here: that card suspends the audio context,
 which holds the graph exactly as it holds the tail of the last shot.
 

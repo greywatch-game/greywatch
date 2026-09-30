@@ -1736,6 +1736,15 @@ export class Player implements Combatant {
     this.collidables = collidables;
   }
 
+  /**
+   * No ground at all: `Game.teardownMap`, for the menu. The body stands on a
+   * flat empty field — what it had before any map was installed — and holds
+   * nothing of the last one.
+   */
+  clearGround(): void {
+    this.setGround(new TerrainField(), null, null, null);
+  }
+
 
   update(dt: number, input: InputManager, cam: CameraSystem): PlayerEvents {
     const p = CONFIG.player;

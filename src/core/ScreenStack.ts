@@ -192,8 +192,9 @@ export type ScreenSpec = {
  * fails to compile until it is described here, which is the point of the table.
  */
 const SCREENS: Record<GameState, ScreenSpec> = {
-  // Nothing behind the title card but the last round's scene, and no match
-  // either — `enterMenu` closes the session on the way in.
+  // Nothing behind the title card — the round's map is torn down on the way
+  // in (`Game.teardownMap`) — and no match either: `enterMenu` closes the
+  // session on the way in.
   menu: { covers: null, holdsWorld: false, roundBehind: false, inRound: false },
   // There is no map yet. Anything given to this state is something that could
   // run against a world that is half torn down.

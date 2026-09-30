@@ -99,6 +99,37 @@ disagree about: the round applies the environment and repaints the sky while the
 editor drives `applyEnvironment` itself so it can toggle its work light, and the
 round alone owns what is about a *fight* — battle, conquest, flag markers, minimap.
 
+**Its disposal half is a method of its own, `teardownMap`, and the MENU calls it
+alone.** It puts every system `installMap` hands a map to back as it was at
+boot: the map disposed and `Game.map` null, the fleet, crews and rotor rings let
+go, the water and grass disposed, the reflection probes parked, the mote field
+stopped, both shadow maps' casters and the lamps' atlas emptied, the bodies' blob shadows hidden, the traced
+bounce's buffers dropped, the candidate list and the physics world cleared (with
+their corpses, shards and rubble), and the fires' voices and the storm's thunder
+silenced. The menu used to leave the round's map standing as a live backdrop,
+which stopped being a backdrop when the menu started standing on a photograph —
+from then on it was a whole city rendered under a picture of another one, with
+its fires and its shore still audible. **So the rule has a second half: anything
+new that `installMap` hands a map to owes a line in `teardownMap` that takes it
+back**, or it outlives the round under the title card. It is idempotent and safe
+with nothing standing, which the boot and a build that failed its floor fetch
+both rely on.
+
+**It also lets go of the map's DATA, and that half is proved rather than
+reviewed.** `BattleSystem`'s nav and cover, `Player`'s ground, the `rays` six
+systems were handed, `GlassSystem`'s panes, the deploy screen's and the
+minimap's copies, `MapBuilder`'s own build scratch and `WorldCulling`'s
+candidate array all held the last map through the menu; none of them was
+stepped, drawn or heard there, so what they cost was memory — the whole map,
+until the next one was built over it. They were found by holding a `WeakRef`
+to each part of a map through a quit and asking a heap snapshot for every
+direct holder, and after `teardownMap` every one of them is collected in the
+menu. **One of them is a trap worth knowing on its own**: V8 gives every
+closure made in one call a single shared scope, so an arrow written inline in
+`installMap` keeps THAT call's `map` alive for as long as anything holds the
+arrow. That is why `Game.deckAt` is a field. What still grows across rounds is
+Babylon's and not the game's (`FINDINGS.md` 47).
+
 **It is one SYNCHRONOUS turn and that is why the map's floor is resolved before
 it rather than inside it.** A heightfield is a lazy `import()` now
 (`MapDef.heights`, ENGINE_UPGRADE.md S7), so the two doors into a build each

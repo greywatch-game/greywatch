@@ -171,6 +171,7 @@ import type { EditorSession } from "../editor";
 import type { MixerSession } from "../dev/mixer";
 import { MAPS, loadHeights, type MapDef } from "../world/maps";
 import { MapBuilder, type BuildOptions, type GameMap } from "../world/MapBuilder";
+import { TerrainField } from "../world/TerrainField";
 import { DeployScreen } from "../ui/DeployScreen";
 import {
   HUD,
@@ -794,6 +795,16 @@ export class Game {
   private lockPendingT = 0;
   private lockRetryT = 0;
   private map: GameMap | null = null;
+  /**
+   * The hulls' decks, as the ground `Player` probes beside the terrain — see
+   * `installMap`'s `setGround`. A FIELD, bound once, and not an arrow written
+   * inline there: V8 gives every closure made in one function call a single
+   * shared scope, so an arrow minted inside `installMap` kept that call's
+   * `map` alive for as long as the player held it, which after a quit to the
+   * menu was the whole of the last map (`teardownMap`).
+   */
+  private readonly deckAt = (x: number, z: number, ceiling: number, floor: number) =>
+    this.vehicles.deckAt(x, z, ceiling, floor);
   /** Small delay so overlay confirms aren't triggered by held buttons. */
   private overlayT = 0;
   /**
@@ -3428,8 +3439,9 @@ export class Game {
     this.prof.end(P.culling);
     // The irradiance volume, around the eye, in EVERY state and on the cull
     // span's terms: every state renders, so a building card, a deploy screen
-    // or a menu with the map behind it is a picture the bounce is owed — and
-    // it is also what lets the volume CONVERGE behind the loading card, while
+    // or a round-over card with the map behind it is a picture the bounce is
+    // owed — and it is also what lets the volume CONVERGE behind the loading
+    // card, while
     // the reflection bake drains, instead of fading in across the first second
     // of a spawn. After `lighting.update` on the frames that run one, because
     // its point-light visibility is written per SLOT and the slots are that
@@ -4003,13 +4015,12 @@ export class Game {
    * result: the round is abandoned rather than finished, so there is no winner
    * to show and nothing to keep.
    *
-   * The map is deliberately left standing. `startRound` rebuilds it anyway,
-   * and disposing it here would only trade a live backdrop for an empty one.
-   * That is exactly why the death cam has to be told: the body is standing in
-   * the backdrop this leaves up, so a round abandoned from a pause taken over
-   * `dying` would put the main menu over the player's own frozen corpse, with
-   * `.dying` still on the HUD and a ragdoll slot still held until the next
-   * round's `enterDeploy` happened to clear both.
+   * The map goes with it (`teardownMap`). It used to be left standing as the
+   * menu's live backdrop, but the menu stands on a photograph now, so all it
+   * bought was a city rendered under a picture and a round still audible
+   * behind the title card. The death cam is still told on its own: a round
+   * abandoned from a pause taken over `dying` would otherwise leave `.dying`
+   * on the HUD and the camera handed to a body that no longer exists.
    */
   private enterMenu(): void {
     // Takes down the pause card, the kit screen and the settings with it —
@@ -4036,20 +4047,16 @@ export class Game {
     this.deathCam.stop();
     this.hud.setDeathCam(false);
     this.minimap.setVisible(false);
-    // The seat, for the reason `endRound` gives up its own and with the same
-    // ordering: this is a way of LEAVING a round, and a round abandoned from
-    // inside a hull is one whose driver never got out. The map is deliberately
-    // left standing here, so nothing downstream disposes the fleet and nothing
-    // else ever calls this — `installMap` does, but only on the frame the NEXT
-    // round is built, which is a whole visit to the menu later. What that
-    // silence was worth: `engineOff` is the player's OWN unpanned voice, and
-    // `pushHullEngines` cannot stand it down for them — it skips the hull the
-    // player is sitting in, and a held world reaches `enginesOff`, which is
-    // every OTHER hull — so a helicopter quit out of kept its rotor running
-    // under the main menu. It is also what puts the body back in
-    // `battle.humans` and takes the invulnerability off it, and it must stay
-    // ABOVE the line below because giving up a seat puts the viewmodel back.
-    this.clearVehicle();
+    // The map, and everything built off it — the fleet, the water, the grass,
+    // the fires' voices, the storm, the corpses. It gives up the SEAT first
+    // (`clearVehicle`), which is what stands down the player's own unpanned
+    // engine: `pushHullEngines` skips the hull the player is sitting in, so a
+    // helicopter quit out of once kept its rotor running under the main menu.
+    // The seat is also what puts the body back in `battle.humans` and takes the
+    // invulnerability off it, and this must stay ABOVE the line below because
+    // giving up a seat puts the viewmodel back. And above `battle.reset`, for
+    // the crews' reason in `teardownMap`.
+    this.teardownMap();
     this.player.setBodyHidden(true);
     this.hud.clearDamageDirections();
     this.hud.setCapture(null);
@@ -4278,6 +4285,105 @@ export class Game {
   }
 
   /**
+   * Throws the standing map away and puts every system that was handed it
+   * back as it was before any map was built: nothing drawn, nothing sounding,
+   * nothing simulated, nothing holding a disposed mesh.
+   *
+   * THE ONE PLACE A MAP IS TORN DOWN, and `installMap`'s other half — it is the
+   * top of that method, and the menu calls it on its own (`enterMenu`). The
+   * menu used to leave the round's map standing, back when it was a veil over
+   * a live view; it is a PHOTOGRAPH now, so the map behind it was a whole city
+   * rendered every frame under a picture of another one, its fires and its
+   * shore still playing, and a list of special cases in `enterMenu` for the
+   * things that visibly outlived it. Anything new that `installMap` hands a
+   * map to owes a line here that takes it back.
+   *
+   * Idempotent, and safe with no map standing: the boot has none, and a build
+   * that failed before it installed anything reaches the menu through here.
+   */
+  private teardownMap(): void {
+    // Before a single thing is disposed: the seat, because the hull it belongs
+    // to is about to stop existing.
+    this.clearVehicle();
+    // The graphs the OLD map's fires were holding open. `dispose` below clears
+    // the emitter registry, and the two have to happen together: an emitter's
+    // index is the key `Sfx` holds its voice on, so a registry emptied without
+    // this leaves a fire crackling at a coordinate on a map that no longer
+    // exists, under whatever the new one builds there — or under the menu.
+    this.sfx.ambienceAllOff();
+    this.map?.dispose();
+    this.map = null;
+    this.combat.clearTransient();
+    // A grenade whose fuse outlived the map it was thrown across would go off
+    // over terrain that no longer exists — and, in the editor, in the middle
+    // of a rebuild.
+    this.grenades.reset();
+    // …and everything the AT kit has left lying about. A mine that outlived
+    // its map would be waiting under a street that no longer exists, which is
+    // the same failure a live fuse would be.
+    this.antiTank.reset();
+    // The flag markers are geometry hung off the old map's terrain. The editor
+    // draws proxies of its own and would double every ring; a round rebuilds
+    // them. Either way they cannot survive the map they were placed on.
+    this.zones.dispose();
+    // The storm, and the thunder it still owes: the next map's weather is
+    // its own, and the menu has none.
+    this.lightning.setSpec(null, 0);
+    this.sfx.thunderAllOff();
+    // Everybody out BEFORE the fleet is torn down, and before `battle.reset()`
+    // kills the roster: a crew left holding a disposed hull is the same stale
+    // pointer `clearVehicle` is called from here to prevent, and one holding a
+    // bot the reset has just killed would steer a tank with a corpse in it.
+    this.crew.clear();
+    this.crew.setMap(null);
+    // Out of the fight's target list before they stop existing: `buildRound`
+    // put every hull there (`addHuman`), and nothing else takes one out.
+    for (const tank of this.vehicles.hulls) this.battle.removeHuman(tank);
+    this.vehicles.dispose();
+    // The dust rings under that fleet, which would otherwise go on asking the
+    // hulls just disposed for a wash.
+    this.rotorWash.clear();
+    // What the systems built OFF the map's geometry: its water, its grass, the
+    // cubes baked of it, the mote field, the casters of both shadow maps, the
+    // lamps' atlas, the traced bounce, the candidate list and the static
+    // physics world (which clears its corpses, shards and rubble with it).
+    this.water.dispose();
+    this.grass.dispose();
+    this.reflections.clear();
+    this.atmosphere.apply(undefined, 0, 0);
+    this.shadows.setCasters([]);
+    // …and the bodies' blobs, which only a simulating frame places, so each
+    // would stay lit on a floor that is no longer there.
+    this.shadows.hideBlobs();
+    this.localShadows.clearWorld();
+    this.gi.clearMap();
+    this.culling.setMap(null, 0);
+    this.physics.setMap(null, false);
+    // And every JS reference to the map's DATA — the nav graph, the cover
+    // map, the ray world, the floor, the colliders, the panes — so the collector
+    // can have the last map back while the menu is up, rather than when the
+    // next one is installed over it. Found by holding a `WeakRef` to each
+    // part through a quit and asking a heap snapshot who kept it: these are
+    // every holder that answer named. What they cost was memory rather than
+    // behaviour, which is why nothing had ever noticed — a Cinderhaven's worth
+    // of it, sitting under a photograph.
+    this.battle.clearMap();
+    this.player.clearGround();
+    this.combat.setWorld(null);
+    this.grenades.setWorld(null);
+    this.grenades.setTerrain(new TerrainField());
+    this.antiTank.setWorld(null);
+    this.antiTank.setTerrain(new TerrainField());
+    this.aimAssist.setWorld(null);
+    this.deathCam.setWorld(null);
+    this.vehicleCam.setWorld(null);
+    this.glass.clearMap();
+    this.deployScreen.clearMap();
+    this.minimap.clearMap();
+    this.mapBuilder.release();
+  }
+
+  /**
    * Throws the standing map away, builds `this.mapDef` afresh, and hands the
    * result to everything that reads geometry or environment off it.
    *
@@ -4320,29 +4426,9 @@ export class Game {
     // is fetched rather than bundled — see the field, and `MapDef.heights`.
     // Both doors into this method resolve it first; nothing here may wait.
     const heights = this.floor ?? undefined;
-    // Before a single thing is disposed: the seat, because the hull it belongs
-    // to is about to stop existing. See the vehicle build at the bottom.
-    this.clearVehicle();
-    // The graphs the OLD map's fires were holding open. `dispose` below clears
-    // the emitter registry, and the two have to happen together: an emitter's
-    // index is the key `Sfx` holds its voice on, so a registry emptied without
-    // this leaves a fire crackling at a coordinate on a map that no longer
-    // exists, under whatever the new one builds there.
-    this.sfx.ambienceAllOff();
-    this.map?.dispose();
-    this.combat.clearTransient();
-    // A grenade whose fuse outlived the map it was thrown across would go off
-    // over terrain that no longer exists — and, in the editor, in the middle
-    // of a rebuild.
-    this.grenades.reset();
-    // …and everything the AT kit has left lying about. A mine that outlived
-    // its map would be waiting under a street that no longer exists, which is
-    // the same failure a live fuse would be.
-    this.antiTank.reset();
-    // The flag markers are geometry hung off the old map's terrain. The editor
-    // draws proxies of its own and would double every ring; a round rebuilds
-    // them below. Either way they cannot survive the map they were placed on.
-    this.zones.dispose();
+    // The old map, gone whole — the other half of this method, and the half
+    // the menu owes on its own. See `teardownMap`.
+    this.teardownMap();
     const map = this.mapBuilder.build(layout, environment, heights, opts);
     this.map = map;
     // The shadow camera follows the environment's key light, and its casters
@@ -4351,8 +4437,6 @@ export class Game {
     // The storm, seeded off the map's id so its schedule is the map's own and
     // the same on every client in a match (see `LightningStrikes`).
     this.lightning.setSpec(environment.lightning ?? null, hashId(this.mapDef.id));
-    // The last map's storm owes this one no thunder.
-    this.sfx.thunderAllOff();
     if (environment.lightning) {
       this.flashColor.copyFrom(Color3.FromHexString(environment.lightning.color));
     }
@@ -4472,7 +4556,7 @@ export class Game {
     this.player.setGround(
       map.terrain,
       map.obstacles,
-      (x, z, ceiling, floor) => this.vehicles.deckAt(x, z, ceiling, floor),
+      this.deckAt,
       // …and the same colliders as MESHES, which is the OTHER question a body
       // asks of them: not what it stands on but what it walks into.
       // `moveWithCollisions` was the last thing in the frame still asking that
@@ -4548,14 +4632,9 @@ export class Game {
     // Nothing is built for the EDITOR: a vehicle is not level data to be
     // authored — the hardstanding is, and that is a layout entry — and a
     // solid, pickable mesh with no `SelectionRef` behind it is something the
-    // centre-screen pick can land on and fail to resolve.
-    // Everybody out BEFORE the fleet is torn down, and before `battle.reset()`
-    // kills the roster: a crew left holding a disposed hull is the same stale
-    // pointer `clearVehicle` is called from here to prevent, and one holding a
-    // bot the reset has just killed would steer a tank with a corpse in it.
-    this.crew.clear();
-    if (opts?.editor === true) this.vehicles.dispose();
-    else this.vehicles.build(map, this.net !== null);
+    // centre-screen pick can land on and fail to resolve. The last map's fleet
+    // and its crews are already gone — `teardownMap`, at the top.
+    if (opts?.editor !== true) this.vehicles.build(map, this.net !== null);
     // The bearing half of a driver's steering. Null in the editor, and null in
     // a NETPLAY round for a different reason worth stating: the hulls are
     // there, but the crews inside them are the authority's — this client runs
@@ -6521,9 +6600,10 @@ export class Game {
    * driven by a load a held world freezes, and one left running under the
    * deploy card is a tank droning in a street where nothing moves. A fire is
    * driven by nothing at all — it is a property of the map being installed and
-   * the ear being somewhere, and both of those are true of a menu over a live
-   * view. So this one is owed by every state, and a village does not go quiet
-   * because a kit screen is up.
+   * the ear being somewhere, and both of those are true of a deploy card over
+   * a live view. So this one is owed by every state, and a village does not go
+   * quiet because a kit screen is up. (The menu has no map to hear:
+   * `teardownMap`.)
    *
    * The pause is the one held world that reaches it, and not from here: the
    * offline pause card suspends the audio context, which holds this graph

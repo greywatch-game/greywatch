@@ -310,6 +310,13 @@ export class WorldCulling {
     this.stats.hidden = 0;
     this.stats.blocked = 0;
     this.stats.cells = 0;
+    // The lists handed to Babylon, emptied rather than only marked dirty:
+    // `offer` rewrites `candidates` by LENGTH, so everything past it is last
+    // build's meshes, disposed and kept alive by this array alone.
+    this.candidates.data.length = 0;
+    this.candidates.length = 0;
+    this.eligible.length = 0;
+    this.gateOf = new Map();
     if (!map) {
       this.onSq = Number.POSITIVE_INFINITY;
       this.offSq = Number.POSITIVE_INFINITY;

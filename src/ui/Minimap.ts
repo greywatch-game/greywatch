@@ -255,6 +255,17 @@ export class Minimap {
     }
   }
 
+  /**
+   * Lets go of the map and its prerender: `Game.teardownMap`, for the menu.
+   * `update` draws nothing without a base, and the next `setMap` builds one.
+   */
+  clearMap(): void {
+    this.lastMap = null;
+    this.lastEnv = null;
+    this.base = null;
+    this.revealed.clear();
+  }
+
   setVisible(visible: boolean): void {
     this.frame.classList.toggle("hidden", !visible);
   }

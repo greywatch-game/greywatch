@@ -502,6 +502,10 @@ export class VehicleCrew {
       this.remove(crew);
       crew.bot.setEnabled(crew.bot.alive);
     }
+    // The sweep's copy too: it is only rewritten by the next `update`, and
+    // until then it holds every crew — and through them every hull — it last
+    // stepped.
+    this.sweep.length = 0;
     this.boardT = 0;
   }
 

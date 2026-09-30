@@ -740,6 +740,16 @@ export class ShadowSystem {
     for (const bot of bots) this.updateBlob(bot, camPos, bot.position.y);
   }
 
+  /**
+   * Switches every blob off, keeping them: `Game.teardownMap`. A blob is only
+   * placed by a frame that simulates, so without this each one stays lit at
+   * the feet of a body on a floor that no longer exists. The next
+   * `updateBlobs` puts back whichever are owed.
+   */
+  hideBlobs(): void {
+    for (const blob of this.blobs.values()) blob.setEnabled(false);
+  }
+
   private updateBlob(cbt: Combatant, camPos: Vector3, groundY: number): void {
     const blob = this.blobFor(cbt);
     // A dead combatant normally has no shadow, and for the 0.9 s the collapse
