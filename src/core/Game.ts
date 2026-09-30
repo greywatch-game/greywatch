@@ -230,6 +230,7 @@ import {
 } from "./settings";
 import { Sfx } from "./Sfx";
 import { setViewerTeam, teamLook } from "./teamView";
+import { forgetBindGroups } from "./webgpuLeaks";
 
 /** Grass bends around combatants; in the editor there are none. */
 const EMPTY_PUSHERS: readonly Combatant[] = [];
@@ -4381,6 +4382,10 @@ export class Game {
     this.deployScreen.clearMap();
     this.minimap.clearMap();
     this.mapBuilder.release();
+    // And what BABYLON kept of it, which the lines above cannot reach: every
+    // bind group cached against the map's buffers and textures, ~15k a
+    // Coldharbour, none of which can ever be hit again (`webgpuLeaks.ts`).
+    forgetBindGroups();
   }
 
   /**

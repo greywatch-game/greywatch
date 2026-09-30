@@ -48,6 +48,7 @@
 import "./src/ui/base.css";
 import { WebGPUEngine } from "@babylonjs/core";
 import { Game } from "./src/core/Game";
+import { disposeReleasedPipelines } from "./src/core/webgpuLeaks";
 import { loadHavok } from "./src/systems/PhysicsWorld";
 import { registerServiceWorker } from "./src/pwa/register";
 
@@ -374,6 +375,11 @@ window.addEventListener("DOMContentLoaded", async () => {
     // it and reporting the same thing. If a rendering bug ever appears that
     // only shows while something is MOVING, this is the first line to flip.
     engine.compatibilityMode = false;
+    // Babylon's WebGPU arm never disposes a released effect's pipeline
+    // context, so every map build left its uniform-buffer pools — ~28 MB of
+    // GPU buffers on Coldharbour — behind for the life of the tab.
+    // `core/webgpuLeaks.ts`; the flush that goes with it is in `teardownMap`.
+    disposeReleasedPipelines(engine);
   } catch (err) {
     bootFailed(
       "No graphics device",

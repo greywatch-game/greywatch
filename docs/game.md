@@ -127,8 +127,12 @@ direct holder, and after `teardownMap` every one of them is collected in the
 menu. **One of them is a trap worth knowing on its own**: V8 gives every
 closure made in one call a single shared scope, so an arrow written inline in
 `installMap` keeps THAT call's `map` alive for as long as anything holds the
-arrow. That is why `Game.deckAt` is a field. What still grows across rounds is
-Babylon's and not the game's (`FINDINGS.md` 47).
+arrow. That is why `Game.deckAt` is a field. **What BABYLON kept of a map is
+the last line of it** (`forgetBindGroups`), with its twin installed on the
+engine at boot: Babylon's WebGPU arm never frees a released effect's
+uniform-buffer pools nor prunes its bind-group cache, which was ~30 MB of heap
+and ~28 MB of GPU buffers per Coldharbour build, kept for the life of the tab
+(`core/webgpuLeaks.ts` has the mechanism and the measurement).
 
 **It is one SYNCHRONOUS turn and that is why the map's floor is resolved before
 it rather than inside it.** A heightfield is a lazy `import()` now

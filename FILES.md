@@ -248,6 +248,11 @@ src/
                         #   packed as thin-instance matrices. RAGDOLL_BONES and
                         #   the collider, shared by BodyShadows and LocalShadows
                         #   so a body throws one silhouette under every light
+    webgpuLeaks.ts      # What Babylon's WebGPU arm never gives back of a map:
+                        #   a released effect's uniform-buffer pools (patched
+                        #   onto the engine once, in main.ts) and the bind-group
+                        #   cache (flushed by Game.teardownMap). ~30 MB heap +
+                        #   ~28 MB GPU a Coldharbour build, before
     teamView.ts         # Which side the player is LOOKING from: the one remap
                         #   between the authority's team INDEX and the team a
                         #   body is DRAWN and NAMED as, so every player sees
