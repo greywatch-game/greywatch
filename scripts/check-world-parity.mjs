@@ -85,6 +85,20 @@ function serverFingerprints() {
 const READY_TIMEOUT_MS = 30_000;
 
 /**
+ * How long a map gets to go from `startRound` to the deploy screen.
+ *
+ * **A page that has stopped rendering must FAIL rather than hang**, and both
+ * waits below used to hang: each is a poll or an observer inside the page with
+ * no clock of its own outside it, so a device lost mid-bake — the proving
+ * ground on `ID3D12Device::CreateDescriptorHeap`, which is a resource ceiling
+ * and not a slow frame — left `loading` up forever and the script sat on an
+ * `evaluate` that would never return. The proving ground is the slow one and
+ * reaches deploy in ~35 s on the Windows box; this is generous on purpose,
+ * for the reason `READY_TIMEOUT_MS` is.
+ */
+const DEPLOY_TIMEOUT_MS = 300_000;
+
+/**
  * What a browser has to say about one map: the nav-graph fingerprint, and
  * whether the scene ever finished compiling.
  *
@@ -121,64 +135,94 @@ const READY_TIMEOUT_MS = 30_000;
  */
 async function inspectClient(browser, url, id) {
   const page = await browser.newPage();
-  page.on("pageerror", (e) => console.error(`  [page] ${e.message}`));
-  await page.addInitScript(
-    ([key, value]) => window.localStorage.setItem(key, value),
-    [MAP_KEY, id],
-  );
-  await page.goto(url, { waitUntil: "domcontentloaded" });
-  await page.waitForFunction(() => Boolean(window.__celshock), null, { timeout: 60_000 });
+  try {
+    page.on("pageerror", (e) => console.error(`  [page] ${e.message}`));
+    await page.addInitScript(
+      ([key, value]) => window.localStorage.setItem(key, value),
+      [MAP_KEY, id],
+    );
+    await page.goto(url, { waitUntil: "domcontentloaded" });
+    await page.waitForFunction(() => Boolean(window.__celshock), null, { timeout: 60_000 });
 
-  const fingerprint = await page.evaluate(async () => {
-    const g = window.__celshock;
-    g.startRound();
-    await new Promise((resolve) => {
-      const poll = () => (g.state === "deploy" ? resolve() : setTimeout(poll, 50));
-      poll();
-    });
-    // Imported through the app's own module graph so the browser and the server
-    // run the SAME fingerprint function — two copies of it could agree with
-    // each other while both were wrong about the map.
-    const { worldFingerprint } = await import("/src/world/fingerprint.ts");
-    return worldFingerprint(g.map);
-  });
-
-  const readiness = await page.evaluate(
-    (deadlineMs) =>
-      new Promise((resolve) => {
-        const s = window.__celshock.scene;
-        const until = performance.now() + deadlineMs;
-        let frames = 0;
-        const seen = s.onAfterRenderObservable.add(() => {
-          frames++;
-          if (s.isReady()) {
-            s.onAfterRenderObservable.remove(seen);
-            resolve({ ready: true, frames });
-            return;
+    const fingerprint = await page.evaluate(async (deadlineMs) => {
+      const g = window.__celshock;
+      g.startRound();
+      const until = performance.now() + deadlineMs;
+      await new Promise((resolve, reject) => {
+        const poll = () => {
+          if (g.state === "deploy") return resolve();
+          if (performance.now() > until) {
+            return reject(
+              new Error(
+                `never reached deploy in ${deadlineMs / 1000} s (state ` +
+                  `"${g.state}", frame ${g.scene.getFrameId()})`,
+              ),
+            );
           }
-          if (performance.now() < until) return;
-          s.onAfterRenderObservable.remove(seen);
-          // Name the offenders, with the material each one's first submesh
-          // actually resolves to — a mesh carrying none answers with the
-          // scene's default, and which of the two it is decides where to look.
-          resolve({
-            ready: false,
-            frames,
-            blocking: s.meshes
-              .filter((m) => m.subMeshes && m.subMeshes.length && !m.isReady(true))
-              .slice(0, 8)
-              .map((m) => {
-                const mat = m.subMeshes[0].getMaterial();
-                return `${m.name} [${m.material ? mat.name : `default: ${mat?.name}`}]`;
-              }),
-          });
-        });
-      }),
-    READY_TIMEOUT_MS,
-  );
+          setTimeout(poll, 50);
+        };
+        poll();
+      });
+      // Imported through the app's own module graph so the browser and the server
+      // run the SAME fingerprint function — two copies of it could agree with
+      // each other while both were wrong about the map.
+      const { worldFingerprint } = await import("/src/world/fingerprint.ts");
+      return worldFingerprint(g.map);
+    }, DEPLOY_TIMEOUT_MS);
 
-  await page.close();
-  return { fingerprint, readiness };
+    const readiness = await page.evaluate(
+      (deadlineMs) =>
+        new Promise((resolve) => {
+          const s = window.__celshock.scene;
+          const until = performance.now() + deadlineMs;
+          let frames = 0;
+          // The deadline below is only ever read FROM a frame, so a page that
+          // has stopped drawing would never reach it. This is the clock that
+          // does not need one.
+          const stalled = setTimeout(() => {
+            s.onAfterRenderObservable.remove(seen);
+            resolve({
+              ready: false,
+              frames,
+              blocking: ["(no frame rendered — device lost?)"],
+            });
+          }, deadlineMs + 5_000);
+          const seen = s.onAfterRenderObservable.add(() => {
+            frames++;
+            if (s.isReady()) {
+              clearTimeout(stalled);
+              s.onAfterRenderObservable.remove(seen);
+              resolve({ ready: true, frames });
+              return;
+            }
+            if (performance.now() < until) return;
+            clearTimeout(stalled);
+            s.onAfterRenderObservable.remove(seen);
+            // Name the offenders, with the material each one's first submesh
+            // actually resolves to — a mesh carrying none answers with the
+            // scene's default, and which of the two it is decides where to look.
+            resolve({
+              ready: false,
+              frames,
+              blocking: s.meshes
+                .filter((m) => m.subMeshes && m.subMeshes.length && !m.isReady(true))
+                .slice(0, 8)
+                .map((m) => {
+                  const mat = m.subMeshes[0].getMaterial();
+                  return `${m.name} [${m.material ? mat.name : `default: ${mat?.name}`}]`;
+                }),
+            });
+          });
+        }),
+      READY_TIMEOUT_MS,
+    );
+
+    return { fingerprint, readiness };
+  } finally {
+    // Closed on the way out of a failure too, or a map that never deploys
+    // leaves its page holding a GPU device for the rest of the run.
+    await page.close();
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -190,15 +234,22 @@ const vite = await startDevServer(root);
 let browser;
 let failures = 0;
 let unready = 0;
+let unbuilt = 0;
 try {
   browser = await launchClient();
 
   for (const { id } of [...MAPS, ...DEV_MAPS]) {
-    const { fingerprint: client, readiness } = await inspectClient(
-      browser,
-      vite.url,
-      id,
-    );
+    let inspected;
+    try {
+      inspected = await inspectClient(browser, vite.url, id);
+    } catch (e) {
+      // One map that cannot be built is a verdict on that map, not on the run:
+      // the rest are still worth an answer.
+      unbuilt++;
+      console.error(`FAIL  ${id}: ${e.message.split("\n")[0]}`);
+      continue;
+    }
+    const { fingerprint: client, readiness } = inspected;
     const mine = server[id];
     const keys = Object.keys(client);
     const bad = keys.filter((k) => String(client[k]) !== String(mine?.[k]));
@@ -251,5 +302,13 @@ if (unready > 0) {
       "the meshes named above are where to look, and VERIFYING.md has the hunt.\n",
   );
 }
-if (failures > 0 || unready > 0) process.exit(1);
+if (unbuilt > 0) {
+  console.error(
+    "\nA map that never reached the deploy screen was not compared at all —\n" +
+      "that is the CLIENT failing to build or bake it, not a parity verdict.\n" +
+      "The [page] lines above are where to look; a lost device during the\n" +
+      "reflection bake is the one this has caught (ReflectionSystem.forgetPasses).\n",
+  );
+}
+if (failures > 0 || unready > 0 || unbuilt > 0) process.exit(1);
 console.log("\nserver and client agree on every map, and every scene compiles\n");

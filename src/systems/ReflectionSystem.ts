@@ -36,6 +36,11 @@
  *   so a probe used to draw its whole render list six times over; this is the
  *   only reduction to the bake in the file that cannot move a pixel, and the
  *   queue's budget is deliberately not told about it.
+ * - **A baked probe gives back its passes' draw wrappers** (`forgetPasses`),
+ *   because on Babylon 9.28 every one holds a uniform buffer and a bind group
+ *   of its own until it is disposed, and a bake that kept them all lost the
+ *   device on the proving ground. It is what keeps the pool bounded by
+ *   `drawsPerFrame` rather than by the whole bake.
  * - **The probe count has a ceiling and it is stated in MEMORY**, because the
  *   count is the map's glazing and glazing has no natural bound: past
  *   `poolBudgetMiB` glazed blocks are grouped in twos, then fours, until the
@@ -569,6 +574,7 @@ export class ReflectionSystem {
       const held = this.inFlight[i];
       if (held.probe.cubeTexture.currentRefreshId !== -1) {
         this.inFlight.splice(i, 1);
+        this.forgetPasses(held.probe);
         continue;
       }
       spent += held.draws;
@@ -615,6 +621,47 @@ export class ReflectionSystem {
       this.scene.customRenderTargets.push(rtt);
     }
     rtt.resetRefreshCounter();
+  }
+
+  /**
+   * Gives back what a BAKED probe's six passes minted on every mesh it drew:
+   * one draw wrapper per submesh per face, each holding a draw context.
+   *
+   * **On Babylon 9.28 that is a GPU buffer per draw, and the proving ground
+   * lost the device to it.** PR #18880 (`_useOwnerKeyedUniformBufferSlots`,
+   * on by default) gives every draw CONTEXT a leftover-uniform slot of its
+   * own and frees it only when the context is disposed — and a probe face is
+   * a render pass, so a bake mints a context for every mesh it draws on
+   * every face and a refresh-once target never draws with any of them again.
+   * On 9.19.1 those draws shared one pool sized by the busiest frame; on
+   * 9.28 each kept its own buffer and its own bind group, and the 900 m
+   * proving ground's ~284,000 bake draws took the D3D12 device on
+   * `CreateDescriptorHeap` (E_OUTOFMEMORY) a third of the way through. With
+   * the passes given back as each probe finishes, a freed slot is taken by
+   * the next probe's draws and the pool is bounded by one frame's budget
+   * (`drawsPerFrame`), which is what 9.19.1 had.
+   *
+   * It is `AbstractEngine.releaseRenderPassId` narrowed to the render list,
+   * and without releasing the ids: that walks every mesh in the scene, which
+   * is the walk `newProbe` exists to avoid, and the probe still needs its ids
+   * for the next install's bake, which simply mints the wrappers again. The
+   * effects are refcounted per wrapper (`ShaderMaterial` stores its effect on
+   * the submesh, one `createEffect` per pass), and the dispose is Babylon's
+   * deferred one, so the main pass's own wrapper keeps every effect alive.
+   */
+  private forgetPasses(probe: ReflectionProbe): void {
+    const rtt = probe.cubeTexture;
+    const list = rtt.renderList;
+    if (!list || list.length === 0) return;
+    const ids = rtt.renderPassIds;
+    for (const mesh of list) {
+      for (const id of ids) mesh._releaseRenderPassId(id);
+      const subs = mesh.subMeshes;
+      if (!subs) continue;
+      for (const sub of subs) {
+        for (const id of ids) sub._removeDrawWrapper(id);
+      }
+    }
   }
 
   /** The water probe in a slot, built on first use and kept for the process. */
