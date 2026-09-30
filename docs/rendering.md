@@ -207,7 +207,7 @@ arriving as one flat tone. It is keyed on position rather than on anything
 per-object because that survives the merge for free — and it is gated because a
 world-keyed term on a *moving* mesh makes it shimmer as it walks.
 
-### Frozen materials: the define set is the material's, not the mesh's
+### Frozen materials: the define set is pinned per submesh, per pass
 
 **Every material `CelMaterialFactory` hands out is frozen, and `remember` is
 the one door into the cache** — the six creation paths all file through it, so
@@ -244,9 +244,9 @@ guards morph-target influences and baked vertex animation, and this game has
 neither: the soldier rig is `TransformNode` joints driving separate meshes, not
 GPU skinning.
 
-**Why it cannot pin the wrong effect, and what would break that.** The defines
-`isReady` rebuilds are not constant across meshes — they vary on exactly four
-counts, all of them read off the mesh rather than the material:
+**What it pins is ONE SUBMESH's effect in ONE pass, and what would break that.**
+The defines `isReady` rebuilds are not constant across meshes — they vary on
+exactly four counts, all of them read off the mesh rather than the material:
 
 | what varies | the define it adds |
 | --- | --- |
@@ -255,17 +255,30 @@ counts, all of them read off the mesh rather than the material:
 | bones (`useBones && computeBonesUsingShaders && skeleton`) | `NUM_BONE_INFLUENCERS`, `BONETEXTURE` / `BonesPerMesh` |
 | morph targets | the influencer count |
 
-These materials do **not** store their effect per submesh, so one draw wrapper
-serves every mesh wearing the material. A material worn by two meshes that
-disagreed about any row above would, frozen, hand the second mesh the effect
-the first compiled — a silently wrong draw rather than a crash. It is safe here
-because the cache key is already fine enough that this never happens: measured
-over every `ShaderMaterial` in the scene on the four big maps, **0 of 35 / 113
-/ 95 / 83 were worn across a disagreement**. That is a property of the KEYING
-and nothing enforces it, so **widening a cache key owes that measurement
-again.** The vertex-colour row is the live one — the world carries a colour
-buffer and the rigs, the viewmodel and the effect meshes carry none, so a key
-that let a world material reach a rig would break it.
+**These materials store their effect PER SUBMESH, and that is what makes
+sharing one safe.** `ShaderMaterial`'s constructor defaults
+`storeEffectOnSubMeshes` to true (in 9.19.1 as in 9.28.0) and nothing in
+`src/` passes false, so the frozen fast path reads `subMesh._drawWrapper` — a
+wrapper per submesh per render pass — and `bind` draws with `subMesh.effect`.
+Two meshes wearing one frozen material that disagree about a row above each
+compile their own effect on their own first draw, and neither can be handed
+the other's. **The width of the cache key is therefore NOT a correctness
+question for the freeze**: a key that let a world material reach a rig would
+compile a second effect for the rig, not mis-draw it. (An earlier version of
+this section said the opposite — one wrapper per material — and measured the
+four big maps to show no material was worn across a disagreement, 0 of 35 /
+113 / 95 / 83. The measurement was true and the premise it guarded was not.)
+
+**What CAN go wrong is one mesh changing under its own wrapper.** Once a
+submesh's wrapper has been ready in a pass, the fast path answers from it
+without looking at the mesh again, so a mesh that GAINS or LOSES a colour
+buffer, bones or morph targets after its first draw keeps the effect it
+compiled first — a silently wrong draw rather than a crash. The one row the
+fast path does re-check is instancing, thin instances included
+(`_wasPreviouslyUsingInstances`). Nothing here does any of the rest today:
+`vertexShading` bakes the colour buffer after the merge and before any frame
+draws the mesh. A mesh that must change one of those after it has been drawn
+owes `resetDrawCache()` on it, which throws its wrappers away.
 
 **Freezing at creation is deliberate.** The fast path also requires the wrapper
 to have been ready at least once, so a material frozen before its first compile
@@ -1325,7 +1338,7 @@ sees out in every direction its own panes face. For the shopfront that is free
 — the office behind it is behind the probe too. For the tower it is what the
 enclosure rule below is for.
 
-Seven things about it are load-bearing:
+Eight things about it are load-bearing:
 
 - **A probe's bake leaves out whatever ENCLOSES it, and it asks the BLOCK KEY
   rather than measuring anything.** A mesh is dropped from a probe's render
@@ -1381,6 +1394,35 @@ Seven things about it are load-bearing:
 - **Probes are pooled and never disposed**, like the bot rigs: one is six scene
   uniform buffers and a cube. A map with fewer glazed blocks than the last
   leaves the spare probes parked with an empty render list.
+- **A baked probe gives back the draw wrappers its passes minted**
+  (`ReflectionSystem.forgetPasses`, called as `releaseBatch` sees a probe's
+  refresh counter move past -1). A probe face is a render pass, so a bake
+  creates a draw wrapper on every submesh it draws, per face — and on Babylon
+  9.28, PR #18880 (`_useOwnerKeyedUniformBufferSlots`, on by default) gives
+  every one of those wrappers' draw contexts a leftover-uniform slot and a bind
+  group of its OWN, freed only when the context is disposed. A refresh-once
+  target never draws with them again, so a bake that kept them all held a GPU
+  buffer per bake draw: the 900 m proving ground's ~284,000 lost the D3D12
+  device on `CreateDescriptorHeap` (E_OUTOFMEMORY) a third of the way through,
+  where 9.19.1 — one pool sized by the busiest frame — baked it clean. Released
+  as each probe finishes, a freed slot is taken by the next probe's draws, and
+  the pool is bounded by `drawsPerFrame` again: on Coldharbour 1,821 live draw
+  wrappers against 20,156 and 502 owned slots against 18,837, the same 27
+  compiled effects. **It releases the WRAPPERS and never the pass IDS** —
+  `AbstractEngine.releaseRenderPassId` would, but it walks every mesh in the
+  scene, which is the walk `newProbe` exists to avoid, and the probe needs its
+  ids for the next install's bake, which simply mints the wrappers again.
+  **It cannot free an effect the main pass is drawing with**: a cel material
+  stores its effect per submesh (see the frozen-materials section), each fresh
+  wrapper took one reference through `createEffect`, `DrawWrapper.dispose`
+  returns exactly one and defers it to the end of the frame, and the main
+  pass's own wrapper holds its own. `clear` drops `inFlight` without calling
+  it, and that is safe: what a probe baked just before a teardown still holds
+  is released with the meshes it was minted on, and a mesh that outlives the
+  map is re-baked under the same ids, so its wrappers are reused rather than
+  added to. **Both calls are Babylon internals** (`Mesh._releaseRenderPassId`,
+  `SubMesh._removeDrawWrapper`), so a Babylon upgrade owes this a look exactly
+  as it owes `core/webgpuLeaks.ts` one.
 - **An EDITOR build parks every probe and bakes nothing**, which is not a
   saving so much as the feature's own premise being withdrawn. A bake is
   affordable because it is a BUILD STEP over a static world, and the editor is

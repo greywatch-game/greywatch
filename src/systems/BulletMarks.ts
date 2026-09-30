@@ -34,15 +34,12 @@
  * field of view and there is no one number for it. The pool's whole draw cost
  * is therefore the marks in the room you are standing in.
  *
- * WHY THE CACHE KEY IS SAFE. `CelMaterialFactory`'s cache is keyed finely
- * enough that no material is ever worn by two meshes that disagree about a
- * vertex COLOUR buffer, instancing, bones or morph targets — the four things
- * the frozen define set varies with, and a disagreement is a mesh silently
- * drawn with the effect another mesh compiled. A mark carries no colour
- * buffer, and what PROVES it shares with nothing that does is the depth bias:
- * `get(hex, units)` keys on the pair, and `MARK_DEPTH_UNITS` is a value no
- * other caller asks for (the only other one is a road's -8). So these two
- * materials are this pool's alone by construction rather than by inspection.
+ * THESE TWO MATERIALS ARE THIS POOL'S ALONE. `get(hex, units)` keys on the
+ * pair, and `MARK_DEPTH_UNITS` is a value no other caller asks for (the only
+ * other one is a road's -8), so by construction rather than by inspection.
+ * That is not what keeps a mark drawn right beside a mesh that carries a
+ * colour buffer when it has none — a frozen material stores its effect per
+ * submesh, so each compiles its own (CelShader's `remember`).
  *
  * WHY THERE IS NO TIMER. A mark does not fade, does not shrink and is not
  * aged: it stands until the ring comes round to its slot and takes it, which

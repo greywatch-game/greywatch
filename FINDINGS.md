@@ -4951,13 +4951,20 @@ frame. The only other `isFrozen` read on this path guards morph targets and
 baked vertex animation, neither of which exists here.
 
 **The defines vary with the MESH on four counts** — a vertex `color` buffer,
-instancing, bones and morph targets — so a material shared across a
-disagreement about any of them would be pinned to whichever mesh compiled
-first and would render the others with the wrong effect, silently. Measured
-over every `ShaderMaterial` in the scene on the four big maps: **0 of 35 / 113
-/ 95 / 83 were mixed.** The cache is keyed finely enough that this cannot
-happen today; **re-run that check before widening a cache key**, because
-nothing enforces it.
+instancing, bones and morph targets — **and the effect is stored PER
+SUBMESH**, so what freezing pins is one submesh's effect in one pass. This
+entry first argued the opposite: that one wrapper served every mesh wearing a
+material, so a material shared across a disagreement would render the others
+with the first mesh's effect, and it measured **0 of 35 / 113 / 95 / 83** mixed
+materials on the four big maps to show that could not happen. The measurement
+was true and the premise was not — `ShaderMaterial` defaults
+`storeEffectOnSubMeshes` to true (9.19.1 and 9.28.0 both) and nothing here
+passes false — so widening a cache key is safe as far as the freeze goes.
+**What it cannot survive is a mesh changing under its own wrapper**: one that
+gains or loses a colour buffer, bones or morph targets after its first draw
+keeps the effect it compiled first, instancing being the one row re-checked.
+Nothing does that today;
+`docs/rendering.md`'s frozen-materials section says what a mesh that must owes.
 
 Freezing at CREATION rather than at first-ready costs nothing, and is why
 `remember` is the one door into the cache: the fast path also requires the

@@ -27,11 +27,11 @@
  * only through `remember`, which files it FROZEN: `ShaderMaterial.isReady`
  * otherwise rebuilds the whole define set for every submesh of every pass and
  * throws it away, a fifth of everything the game allocates, and `isFrozen`
- * skips exactly that while leaving the uniform push alone. That is only safe
- * while no material is worn by two meshes that DISAGREE about a vertex colour
- * buffer, instancing, bones or morph targets — the four things those defines
- * vary with — so WIDENING A CACHE KEY owes that check again (docs/rendering.md,
- * FINDINGS 36). A NEW material is seeded with
+ * skips exactly that while leaving the uniform push alone. It pins ONE
+ * SUBMESH's effect in one pass — the effect is stored per submesh — so a mesh
+ * must not gain or lose a vertex colour buffer, bones or morph targets after
+ * its first draw without `resetDrawCache()` (docs/rendering.md, FINDINGS 36).
+ * A NEW material is seeded with
  * every piece of shared state on the spot (applyCamera/applyEnvironment/
  * applyPointLights/applyShadow): the per-frame walks are guarded on change and
  * skip a still frame entirely, so what a material is born with is what it keeps
@@ -2180,15 +2180,17 @@ export class CelMaterialFactory {
    * `updateWind` and `updateCamera` above walk this same cache every frame and
    * are unaffected.
    *
-   * **It is safe because a define set here is a property of the MATERIAL and
-   * not of the mesh wearing it.** The defines `isReady` would rebuild vary with
-   * the mesh on exactly four counts — a vertex COLOUR buffer, instancing, bones
-   * and morph targets — and this cache is keyed finely enough that no material
-   * is ever shared across a disagreement about any of them: measured over every
-   * `ShaderMaterial` in the scene on all four of the big maps, **0 of 35/113/
-   * 95/83 were mixed**. Re-run that check before widening a cache key, because
-   * the failure it guards against is silent — a mesh drawn with the effect
-   * another mesh compiled.
+   * **What it pins is ONE SUBMESH's effect in ONE pass.** The defines
+   * `isReady` would rebuild vary with the mesh on exactly four counts — a
+   * vertex COLOUR buffer, instancing, bones and morph targets — but
+   * `ShaderMaterial` stores its effect per submesh (`storeEffectOnSubMeshes`
+   * defaults to true and nothing here passes false), so two meshes sharing a
+   * material each compile their own and the width of this cache's key is not
+   * a correctness question for the freeze. What it cannot survive is a mesh
+   * that gains or loses a colour buffer, bones or morph targets AFTER its
+   * first draw: that keeps the effect it compiled first, silently, unless it
+   * is given `resetDrawCache()` (instancing is the one row the fast path
+   * re-checks). Nothing does today.
    *
    * Freezing at CREATION rather than once the effect is ready is deliberate and
    * costs nothing: the fast path also requires the wrapper to have been ready
@@ -2271,8 +2273,7 @@ export class CelMaterialFactory {
 
   /**
    * The ONE matte cel material every SOLDIER RIG wears — `getWorldCel`'s twin
-   * for bodies, and separate from it for two reasons that are both
-   * load-bearing.
+   * for bodies, and separate from it for one load-bearing reason.
    *
    * **The palette is its OWN** (`ownPalettes`, and see `setPalette`). The
    * world's is discovered by `MapBuilder`'s merge and republished per install;
@@ -2280,14 +2281,10 @@ export class CelMaterialFactory {
    * the map's table would put the rigs' albedo at the mercy of a rebuild and
    * spend map slots on colours no map paints with.
    *
-   * **And the two could never be ONE material anyway, whatever the tables
-   * did.** The define set `ShaderMaterial.isReady` rebuilds varies with
-   * whether the MESH carries a vertex COLOUR buffer, and this cache is keyed
-   * so that no material is ever worn across a disagreement about one — see
-   * `remember`, which is where that rule and its measurement are written down.
-   * Every world mesh has a colour buffer (`vertexShading` bakes it after the
-   * merge) and no rig has one at all, so a shared material would be exactly
-   * the silent mis-draw that rule exists to prevent.
+   * Sharing one would not mis-draw, for the record: every world mesh has a
+   * colour buffer and no rig has one, but the effect is stored per submesh,
+   * so a rig would compile an effect of its own (see `remember`). The reason
+   * the two are apart is the palette above and nothing else.
    *
    * What it buys is the rig's draw COUNT and its material SWITCHES together:
    * a segment used to split once per paint colour, so a torso was three

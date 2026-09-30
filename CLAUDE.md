@@ -635,12 +635,14 @@ the exact opposite, where unwritten reads as zeros.
 **Every cel material is FROZEN, and `CelMaterialFactory.remember` is the one
 door into the cache so that none can be filed otherwise.** Freezing skips
 `ShaderMaterial.isReady`'s rebuild of the define set; the uniform push is
-`_mustRebind`'s and keeps flowing. **What makes it safe is that the cache is
-keyed so no material is ever worn by two meshes that disagree about a vertex
-COLOUR buffer, instancing, bones or morph targets** — the four things those
-defines vary with. **Widening a cache key owes that check again**
-(`FINDINGS.md` 36): the failure is a mesh silently drawn with the effect another
-mesh compiled.
+`_mustRebind`'s and keeps flowing. **What it pins is ONE SUBMESH's effect in
+ONE pass** — `ShaderMaterial` stores its effect per submesh, so two meshes
+sharing a material compile their own and the cache key's width is not a
+correctness question for the freeze. **What breaks it is a mesh that GAINS or
+LOSES a vertex COLOUR buffer, bones or morph targets after its first draw**
+— the things those defines vary with, instancing being the one the fast path
+re-checks: it keeps the effect it compiled first, silently, unless it is given
+`resetDrawCache()`.
 
 Cel materials carry their own light as uniforms — key, ambient, sky fill and a
 packed array of up to `MAX_POINT_LIGHTS` (16) point lights — and `LightingSystem`
@@ -833,7 +835,7 @@ the ink's tint and its NIB, the wind's two bounds, the fire (one material, its
 UV vocabulary, and the mask twin a moving emissive owes the glow), the muzzle-flash budget, the
 fog split, the shadow window, the bodies' map (its own window, the back faces,
 the two terms' `min`, what does not cast and what it all measured), the
-reflection bake's seven load-bearing details, the candidate list's four classes
+reflection bake's eight load-bearing details, the candidate list's four classes
 and what the cull measured, the glow's own measurement, the painted sky, the
 shafts and the map's own air, the shadow rungs, the lamps' atlas (one pass
 over many tiles, the clear sheet, the ranking, what it cost), lightning, and the
