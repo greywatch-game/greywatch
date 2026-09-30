@@ -142,7 +142,8 @@ of what the optional version cost, are in [`deaths.md`](deaths.md).
 Havok's is the one binary that ships. There are two more the ENGINE will fetch
 at runtime if anything lets it, and they are the reason a shader language is a
 build contract rather than a rendering detail: **glslang and twgsl, four files
-off `cdn.babylonjs.com/v9.19.1/`** — `glslang/glslang.{js,wasm}` and
+off `cdn.babylonjs.com/v9.28.0/`** (the installed version, which Babylon
+writes into the path itself) — `glslang/glslang.{js,wasm}` and
 `twgsl/twgsl.{js,wasm}`. `WebGPUEngine` builds them lazily, inside
 `prepareGlslangAndTintAsync`, the first time a shader reaching the backend is
 GLSL rather than WGSL; it is how the WebGPU port compiled the tree's GLSL under

@@ -919,7 +919,8 @@ register("celDither", DITHER_WGSL);
  * which is only an enforceable rule because these exist.
  *
  * **They mirror `ShadersWGSL/ShadersInclude/instances{Declaration,Vertex}.js`
- * of `@babylonjs/core` 9.19.1**, minus the branches nothing in this game
+ * of `@babylonjs/core` 9.28.0**, byte-identical to 9.19.1's where they were
+ * first ported, minus the branches nothing in this game
  * compiles: `INSTANCESCOLOR` (no instance colour buffer anywhere),
  * `WORLD_UBO` (a `ShaderMaterial` never defines it) and the four velocity
  * defines (no prepass). Anything that starts using one of those does not get

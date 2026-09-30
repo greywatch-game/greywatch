@@ -13,7 +13,7 @@
  * after a forced GC in the menu: 127 → 200 MB of heap and 0 → 91 MB of live
  * `GPUBuffer`s over four rounds; with both of these, 103 → 113 MB and 5 MB
  * flat). Neither is the game holding a map — `teardownMap` releases every
- * reference to one. Both are Babylon 9.19.1:
+ * reference to one. Both are Babylon's, in 9.19.1 and still in 9.28.0:
  *
  * **1. A released effect's pipeline context is never disposed on WebGPU.**
  * `Effect.dispose` at refcount 0 reaches `_deletePipelineContext`, which on
@@ -45,14 +45,16 @@
  *
  * **Still unfixed upstream as of 9.28.0** (checked 2026-09-29):
  * `_deletePipelineContext` and `webgpuCacheBindGroups.js` are unchanged, and
- * no issue or PR names either leak. **An upgrade past ~9.26 brings PR #18880
- * with it**, on by default (`_useOwnerKeyedUniformBufferSlots`): the
- * `leftOver` pools are keyed per DRAW CONTEXT rather than per draw order,
- * which frees a slot only when its UBO is disposed — so (1) is still needed
- * and the pool it leaks may be LARGER (the PR's own example is 1,200 buffers
- * against 3) — and it states outright that it adds no bind-group eviction, so
- * (2) is still needed too. Re-measure both before trusting either across that
- * upgrade.
+ * no issue or PR names either leak. **9.28.0 also brings PR #18880**, on by
+ * default (`_useOwnerKeyedUniformBufferSlots`): a `leftOver` pool keeps one
+ * slot per DRAW CONTEXT rather than one per draw in the busiest frame, and
+ * frees them only when its UBO is disposed — which is (1) — and adds no
+ * bind-group eviction, which is (2). Measured on 9.28.0, same four rounds:
+ * without either, each Coldharbour build now leaks ~40 MB of GPU buffers and
+ * ~45 MB of heap (it was ~28 and ~33); with both, the menu holds ~6,500 pooled
+ * buffers and 11 MB flat (it was ~1,300 and 5.5), because a pool that
+ * survives a map keeps its peak. What #18880 buys for that is bind groups
+ * that stop being created in play (0-1 in eight seconds, against 200-500).
  */
 import { type WebGPUEngine, WebGPUCacheBindGroups } from "@babylonjs/core";
 

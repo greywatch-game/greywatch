@@ -289,7 +289,8 @@ window.addEventListener("DOMContentLoaded", async () => {
   // **`WebGPUEngine.CreateAsync` is NOT used, and that is not a style choice.**
   // It is `new WebGPUEngine(...)` followed by `initAsync()` wrapped in `new
   // Promise((resolve) => ...)` — with no `reject`
-  // (`webgpuEngine.pure.js:234-237`, Babylon 9.19.1). So when `initAsync`
+  // (`webgpuEngine.pure.js:235-241`, Babylon 9.28.0, and the same in 9.19.1).
+  // So when `initAsync`
   // rejects, the promise it hands back never settles: `await` on it waits
   // forever, this `catch` is unreachable, and the failure surfaces as an
   // unhandled rejection in the console behind a boot screen that says
