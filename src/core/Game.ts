@@ -3442,9 +3442,8 @@ export class Game {
     // span's terms: every state renders, so a building card, a deploy screen
     // or a round-over card with the map behind it is a picture the bounce is
     // owed — and it is also what lets the volume CONVERGE behind the loading
-    // card, while
-    // the reflection bake drains, instead of fading in across the first second
-    // of a spawn. After `lighting.update` on the frames that run one, because
+    // card, while the reflection bake drains, instead of fading in across the
+    // first second of a spawn. After `lighting.update` on the frames that run one, because
     // its point-light visibility is written per SLOT and the slots are that
     // frame's; on the frames that do not, they are simply the last ones
     // chosen. All compute — no draw call — so what this span measures is the
@@ -4672,10 +4671,11 @@ export class Game {
    * The editor's rebuild. Called on entry and again whenever it changes
    * something the builders read — a param, a kind, an added or deleted entry.
    *
-   * Deliberately does NOT re-point battle/conquest/minimap: those keep pointing
-   * at a map that is now disposed, which is safe only because leaving the
-   * editor always runs `startRound` and hands them a fresh, properly merged
-   * build.
+   * Deliberately does NOT re-point battle/conquest/minimap: `teardownMap` at
+   * the top of `installMap` has let go of the last map in battle and the
+   * minimap, and conquest keeps only its flags' definitions, none of which an
+   * editor frame steps. That is safe only because leaving the editor always
+   * runs `startRound` and hands them a fresh, properly merged build.
    */
   private buildEditorMap(): GameMap {
     return this.installMap({ editor: true });

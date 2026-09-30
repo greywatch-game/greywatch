@@ -423,6 +423,24 @@ export class ReflectionSystem {
   }
 
   /**
+   * Parks every probe, both pools, and empties the bake queue: the state
+   * before any map was built. The top of `build`, and `Game.teardownMap` on
+   * its own when no map follows — the menu, which stands on a photograph.
+   *
+   * The WHOLE queue, water included: a queued probe is one holding a render
+   * list of meshes the caller has just disposed. On an install the water pool
+   * is queued again later (`bakeWater`, from inside `WaterSystem.build`),
+   * which is what makes emptying everything here safe rather than merely
+   * convenient.
+   */
+  clear(): void {
+    for (const probe of this.probes) probe.cubeTexture.renderList = [];
+    for (const probe of this.waterProbes) probe.cubeTexture.renderList = [];
+    this.queue.length = 0;
+    this.inFlight.length = 0;
+  }
+
+  /**
    * Bakes what the map's WATER reflects — one cube per body, taken from a
    * point on that body's own surface — and hands back one `ProbeReflection`
    * per site, in the order the sites arrived.
@@ -458,24 +476,6 @@ export class ReflectionSystem {
    * sky half of its mirror. A bake is a build step because the world is static,
    * and the editor is the one place it is not.
    */
-  /**
-   * Parks every probe, both pools, and empties the bake queue: the state
-   * before any map was built. The top of `build`, and `Game.teardownMap` on
-   * its own when no map follows — the menu, which stands on a photograph.
-   *
-   * The WHOLE queue, water included: a queued probe is one holding a render
-   * list of meshes the caller has just disposed. On an install the water pool
-   * is queued again later (`bakeWater`, from inside `WaterSystem.build`),
-   * which is what makes emptying everything here safe rather than merely
-   * convenient.
-   */
-  clear(): void {
-    for (const probe of this.probes) probe.cubeTexture.renderList = [];
-    for (const probe of this.waterProbes) probe.cubeTexture.renderList = [];
-    this.queue.length = 0;
-    this.inFlight.length = 0;
-  }
-
   bakeWater(
     sites: readonly Vector3[],
     map: GameMap,

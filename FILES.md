@@ -252,7 +252,8 @@ src/
                         #   a released effect's uniform-buffer pools (patched
                         #   onto the engine once, in main.ts) and the bind-group
                         #   cache (flushed by Game.teardownMap). ~30 MB heap +
-                        #   ~28 MB GPU a Coldharbour build, before
+                        #   ~28 MB GPU a Coldharbour build, kept for the life
+                        #   of the tab before these
     teamView.ts         # Which side the player is LOOKING from: the one remap
                         #   between the authority's team INDEX and the team a
                         #   body is DRAWN and NAMED as, so every player sees

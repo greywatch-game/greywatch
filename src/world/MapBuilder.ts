@@ -1039,15 +1039,6 @@ export class MapBuilder {
   }
 
   /**
-   * Builds a map. The layout, the environment and the FLOOR are arguments, not
-   * imports: a second map is a second layout file and nothing here changes.
-   *
-   * `heights` is separate from `layout` because it no longer travels on one —
-   * it is fetched rather than bundled (`MapDef.heights`), so the caller is the
-   * one holding it by the time there is anything to build. `undefined` is a
-   * level floor, exactly as an absent field always was.
-   */
-  /**
    * Drops everything the last build left in this builder's own fields — the
    * boxes, the panes, the groups, the roads, the box index — which `build`
    * hands to the `GameMap` and would otherwise keep until the next one resets
@@ -1070,6 +1061,15 @@ export class MapBuilder {
     this.item = null;
   }
 
+  /**
+   * Builds a map. The layout, the environment and the FLOOR are arguments, not
+   * imports: a second map is a second layout file and nothing here changes.
+   *
+   * `heights` is separate from `layout` because it no longer travels on one —
+   * it is fetched rather than bundled (`MapDef.heights`), so the caller is the
+   * one holding it by the time there is anything to build. `undefined` is a
+   * level floor, exactly as an absent field always was.
+   */
   build(
     layout: MapLayout,
     env: EnvironmentSpec,
