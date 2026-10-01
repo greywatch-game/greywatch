@@ -241,6 +241,17 @@ export const sky = {
        */
       lit: 0.45,
       /**
+       * Half-width of the shadow's soft edge, in FIELD units (`cloudShadow.ts`:
+       * a lobe's field runs 0.5 * (1 - r) about its outline, r in its own
+       * shadow radii), so the penumbra is ±2x this of the lobe's radius — about
+       * ±25-35 m under a lobe a few hundred metres across, and longer along a
+       * low sun, which stretches the lobe's shadow. A cloud's edge is a thinning
+       * of vapour rather than a surface, so its shadow fades in rather than
+       * cutting. 0 is the one-pixel cel cut. Keep it under ~0.2: the field is
+       * only written out to 1.5 radii (0.25 below the outline).
+       */
+      softness: 0.12,
+      /**
        * How far ahead, in seconds of drift, each field is written: the
        * crossfade runs between two fields this far apart, and the next is
        * written a slice a frame over this long. At 0.15 degrees a second a

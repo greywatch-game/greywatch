@@ -593,8 +593,7 @@ fn volumeAt(p: vec3f, n: vec3f) -> vec3f {
 // letter, read off rows 13 and 14 rather than uniforms, so a wall a probe sees
 // under a cloud hands on the key it is actually lit by — without it a patch
 // under a cloud's shadow read a bounce off sunlit walls that were not sunlit.
-// A hard step, as the air's march takes it: a hit is one sample of many, and
-// the probe's average is what softens it.
+// The same penumbra as the air's march, ray.w wide in the field.
 fn cloudLitAt(p: vec3f) -> f32 {
   let area = P[SC + 13u];
   if (area.w >= 1.0) {
@@ -606,7 +605,8 @@ fn cloudLitAt(p: vec3f) -> f32 {
   let two = textureSampleLevel(cloudField, cloudFieldSampler, uv, 0.0).rg;
   let field = mix(two.x, two.y, ray.z) - 0.5;
   let edge = min(min(uv.x, 1.0 - uv.x), min(uv.y, 1.0 - uv.y));
-  return mix(1.0, area.w, step(0.0, field) * smoothstep(0.0, 0.05, edge));
+  let w = max(ray.w, 1e-4);
+  return mix(1.0, area.w, smoothstep(-w, w, field) * smoothstep(0.0, 0.05, edge));
 }
 
 // The light leaving whatever a ray from o along d meets, toward o. w is 1 for

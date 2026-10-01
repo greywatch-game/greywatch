@@ -3631,9 +3631,9 @@ shape) and `shaders/CloudShader.ts` is the light.
 
 **The ring is laid out in real metres a few hundred up, so a cloud between the
 map and a low sun really does stand in the light's path** — and its shadow is
-computed rather than faked: a patch the shape of the cloud, crisp-edged like
-every other cel edge, sliding over fields and rooftops at the ring's drift (a
-few metres a second). The cloud a player sees crossing the disc is the one
+computed rather than faked: a patch the shape of the cloud, fading in over a
+soft edge, sliding over fields and rooftops at the ring's drift (a few metres a
+second). The cloud a player sees crossing the disc is the one
 whose shadow they are standing in, because it is the same ray.
 `systems/cloudShadow.ts` is the arithmetic, `Sky` drives it, and `celCloud`
 (`wgsl/includes.ts`) is how every lit surface reads it.
@@ -3655,9 +3655,18 @@ whose shadow they are standing in, because it is the same ray.
   to a blunter shape, so a flat belly's corners are the one part it rounds.
 - **What is stored is a FIELD, not coverage** — 0.5 on each lobe's outline,
   rising inside, MAX over lobes — so a 2-9 m texel still cuts a clean outline:
-  bilinear interpolation of a smooth field moves the 0.5 contour smoothly, and
-  the shader cuts it one pixel wide with `fwidth` like every other edge.
+  bilinear interpolation of a smooth field moves the 0.5 contour smoothly.
   Coverage would have been a staircase at the texel's scale.
+- **The edge is a PENUMBRA, not a cel cut.** It was cut one pixel wide with
+  `fwidth` like every other edge, and a hard line sweeping across the whole map
+  read as a wipe rather than weather: a cloud's edge is thinning vapour, not a
+  surface. `shadow.softness` (0.12, carried in `cloudShadowRay.w`) is a
+  half-width in FIELD units, so the fade is a share of each lobe's own radius
+  (±2x it — about ±25-35 m under the default ring, stretched along a low sun as
+  the lobe's shadow is) rather than a fixed number of metres, and `fwidth`
+  stays its floor so a far edge never aliases. The surfaces, the shafts'
+  march and the GI trace all take the same band. It must stay under ~0.2: the
+  field is only written out to 1.5 radii, 0.25 below the outline.
 - **The field covers the ground a player can SEE**, the play square plus
   `shadow.reach` (450 m) or the map's `fogEnd`, whichever is nearer, at a
   fixed 256 texels — so 2 m a texel on Greyfen and 9 m on Cinderhaven — and

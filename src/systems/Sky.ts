@@ -413,7 +413,7 @@ export class Sky {
     const half = mapSize / 2 + Math.min(cfg.shadow.reach, fogEnd);
     this.shadowArea = { originX: -half, originZ: -half, extent: half * 2 };
     this.cloudShadowArea.set(-half, -half, 1 / (half * 2), cfg.shadow.lit);
-    this.cloudShadowRay.set(toLight.x / toLight.y, toLight.z / toLight.y, 0, 0);
+    this.cloudShadowRay.set(toLight.x / toLight.y, toLight.z / toLight.y, 0, cfg.shadow.softness);
     this.shadowLobes = new Float32Array(geo.lumpFirst.length * LOBE_STRIDE);
     this.shadowStep = cfg.driftDegPerSec * (Math.PI / 180) * cfg.shadow.stepSeconds;
     this.shadowOn = true;

@@ -168,7 +168,8 @@ register(
 // w: how LIT a point wholly inside a cloud's shadow is; 1 turns the term off.
 uniform cloudShadow: vec4f;
 // x, y: the light's toward vector as s.xz / s.y, so a point's key is
-// posW.xz - xy * posW.y; z: the crossfade from the field in R to the one in G.
+// posW.xz - xy * posW.y; z: the crossfade from the field in R to the one in G;
+// w: the soft edge's half-width in field units (CONFIG's shadow.softness).
 uniform cloudShadowRay: vec4f;
 var cloudShadowMapSampler: sampler;
 var cloudShadowMap: texture_2d<f32>;
@@ -188,19 +189,23 @@ fn cloudShadowAt(p: vec3f) -> vec2f {
 }
 
 // How lit a SURFACE is by the clouds: 1 in the open, cloudShadow.w inside a
-// cloud's shadow, and the outline one pixel wide at every distance — the cel
-// cut every other edge in the frame has. Branch-free, so the derivative is
-// taken in whatever control flow its caller is in.
+// cloud's shadow, and the outline a PENUMBRA cloudShadowRay.w wide in the
+// field — a cloud's edge is thinning vapour, so its shadow fades in over tens
+// of metres rather than cutting — never narrower than one pixel, so a far
+// shadow is not aliased. Branch-free, so the derivative is taken in whatever
+// control flow its caller is in.
 fn cloudLit(p: vec3f) -> f32 {
   let c = cloudShadowAt(p);
-  let w = max(fwidth(c.x), 1e-4);
+  let w = max(max(fwidth(c.x), uniforms.cloudShadowRay.w), 1e-4);
   return mix(1.0, uniforms.cloudShadow.w, smoothstep(-w, w, c.x) * c.y);
 }
 
-// The same for the AIR: a hard step, no derivative — the march integrates it.
+// The same for the AIR: the same penumbra, no derivative — the march
+// integrates it.
 fn cloudLitAir(p: vec3f) -> f32 {
   let c = cloudShadowAt(p);
-  return mix(1.0, uniforms.cloudShadow.w, step(0.0, c.x) * c.y);
+  let w = max(uniforms.cloudShadowRay.w, 1e-4);
+  return mix(1.0, uniforms.cloudShadow.w, smoothstep(-w, w, c.x) * c.y);
 }
 `,
 );

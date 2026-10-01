@@ -24,7 +24,7 @@
  * texel draw a shadow edge as clean as the cel shader's own. Coverage sampled
  * bilinearly is a staircase at the texel's scale; a field that runs smoothly
  * through the outline is interpolated into a smooth outline, and the shader
- * cuts it at one pixel wide wherever it lands. For one lobe it is
+ * fades it over a penumbra (`shadow.softness`) wherever it lands. For one lobe it is
  * `0.5 + 0.5 * (1 - sqrt(q))`, q being the texel's squared radius in the
  * lobe's own shadow ellipse — 0.5 on the outline, rising inside and falling
  * outside — written only out to `MARGIN` radii, past which the background's
