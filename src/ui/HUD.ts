@@ -1596,8 +1596,12 @@ export class HUD {
     // did not change.
     this.hitPop = HIT_POP;
     // The longer of the two, so an upgrade extends the marker and a lesser
-    // round can neither cut a kill short nor stretch a body hit out.
-    this.hitLife = Math.max(this.hitT, HIT_LIFE[this.hitRank]);
+    // round can neither cut a kill short nor stretch it out. The life is the
+    // ROUND's and never the marker's: read off the standing rank, a body hit
+    // landing under a kill marker restarted the kill's whole 420 ms, so a
+    // string of hits on the NEXT man kept it red for as long as they kept
+    // landing.
+    this.hitLife = Math.max(this.hitT, HIT_LIFE[rank]);
     this.hitT = this.hitLife;
     this.hitmarker.classList.remove("hidden");
   }
