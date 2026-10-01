@@ -62,6 +62,28 @@ tested by a sound whose problem is its TIMBRE.
 the SNAP always plays. A cue that gets LONGER owes this question; one that
 only gets a different filter does not.
 
+**`Sfx.playerHurt` is the second, and it answered both questions the same
+way.** A ROUND landing on the player (`DamageKind` `"bullet"` only — never a
+burn, a blast, a shell or a crush) was one sawtooth; it is now five layers
+fitted to a recorded hit — a held smack, a sine sliding from ~100 Hz through
+the floor under a hard clip, a rumble under its tail and a second of crackle
+— with the measurements in the method and the reference again untracked. The
+fit was made by RENDERING rather than by ear: the graph run in an
+`OfflineAudioContext` in headless Chromium and compared with the recording in
+20 ms windows per band, which is how the body's sweep came to be solved
+against Chromium's own output (integrating the rows by hand put every zero
+crossing ~20 ms early). It is a second-long cue fired on every hit, so it
+owes the voice question in full: `audio.hurt.interval` drops the three long
+layers and never the smack, exactly as `nearMissInterval` does.
+
+**It also makes the one departure a fit here should make on purpose: it
+leaves out what nobody can HEAR.** Most of the recording's energy is a 5–9 Hz
+swing at -6 dB for a third of a second — inaudible, but not harmless, because
+in this graph it would ride the master soft clip and pump everything else
+with it. A 20 Hz highpass on the body keeps the clip's edges, which are the
+thumps, and drops the swing. **A fit is to what reaches an ear, and a
+reference recorded for a cinema's subwoofer is not.**
+
 **The two BLAST rows are the cheapest answer that boundary has ever given to
 "one more sound", and they are cheap for a structural reason rather than a
 lucky one.** There is ONE blast in this game — `blastAt` takes a `power`, the

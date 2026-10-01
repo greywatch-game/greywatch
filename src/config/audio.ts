@@ -156,6 +156,24 @@ export const audio = {
   nearMissInterval: 0.2,
 
   /**
+   * A hit landing on the player (`Sfx.playerHurt`) — a clipped sub-drop under
+   * a smack, fitted to a recording.
+   *
+   * `level` is the peak of the clipped BODY, the loudest thing in the cue;
+   * every other layer is fitted relative to it, so this is the one number
+   * that moves the whole cue. 0.28 sits it a little under the player's own
+   * report (`SAMPLE_LEVEL` 0.5 at peak) — a square wave's RMS is its peak, so
+   * this is not a quiet sound at 0.28.
+   *
+   * `interval` is `nearMissInterval`'s argument for the same reason: the body,
+   * the rumble and the crackle run to a second, and an SMG emptied into the
+   * player lands eleven hits a second. Past this only the SMACK plays — two
+   * noise layers, ~0.24 s — so every hit is still heard landing and the drop
+   * under it is not stacked into a drone.
+   */
+  hurt: { level: 0.28, interval: 0.35 },
+
+  /**
    * How close somebody else's weapon has to be for its low roll to be built at
    * all — the third layer of `Sfx.botShot`, and the one that makes a rifle
    * going off across the street a physical event rather than a noise.

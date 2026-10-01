@@ -687,6 +687,30 @@ const SPARK_CURVE_POINTS = 32768;
  * Clamped well short of 1 so a badly-stated row is a busy fire rather than a
  * table with no events in it at all.
  */
+/**
+ * `playerHurt`'s body: where its sine is, in seconds from the hit and hertz,
+ * exponential between rows from 160 Hz at the hit itself.
+ *
+ * **SOLVED FOR CHROMIUM'S OUTPUT, not for the arithmetic.** These are fitted
+ * so the rendered zero crossings land on the recording's (see `playerHurt`),
+ * and integrating the same rows by hand put every crossing past 100 ms some
+ * 20 ms early — so the rows were tuned against an offline render, which is
+ * the only oracle that matters. Move one and re-render rather than
+ * re-deriving.
+ */
+const HURT_SWEEP: readonly (readonly [number, number])[] = [
+  [0.01, 100], [0.033, 85], [0.043, 50], [0.055, 30], [0.063, 14],
+  [0.078, 9.6], [0.143, 8.6], [0.203, 8], [0.273, 6.9], [0.353, 5.1],
+];
+
+/**
+ * How hard `hurtShape` bends: `tanh(k·x)` over the curve's [-1, 1]. 4 is past
+ * where a sine reads as a square — the recording is pinned flat at full scale
+ * — and it is ALSO the curve's small-signal gain, which is why `playerHurt`
+ * divides its late drive by it.
+ */
+const HURT_CLIP = 4;
+
 function sparkThreshold(hz: number, sampleRate: number, rate: number): number {
   const share = hz / Math.max(1, sampleRate * rate);
   return Math.min(0.9999, Math.max(0, 1 - share));
@@ -885,6 +909,13 @@ export class Sfx {
    * limit drops its three supporting layers and never its snap.
    */
   private lastNearMiss = 0;
+  /**
+   * Audio-clock time of the last FULL `playerHurt` — the smack always plays,
+   * the drop under it at most once per `CONFIG.audio.hurt.interval`.
+   */
+  private lastHurt = -Infinity;
+  /** The hurt body's hard clip, built on first use — see `hurtShape`. */
+  private hurtCurve: Float32Array<ArrayBuffer> | null = null;
 
   unlock(): void {
     if (!this.ctx) {
@@ -1386,9 +1417,199 @@ export class Sfx {
     this.tone(bus, 300, 0.25, "sawtooth", 0.06, 0.3);
   }
 
+  /**
+   * A ROUND landing on the player: a smack, a clipped sub-drop under it, a
+   * rumble and a second of crackle settling. `Game` rings it for
+   * `DamageKind` `"bullet"` and nothing else — a burn, a blast, a shell or a
+   * crush is not a bullet striking a body. Unpanned and unsent — it happens
+   * INSIDE the listener, so it has no bearing to give (the HUD's arc does
+   * that) and no room to answer it.
+   *
+   * **FITTED TO A RECORDED HIT, as `nearMiss` is fitted to a flyby**, and the
+   * reference is untracked, so what it measured is written down here. One
+   * second, normalised to full scale:
+   *
+   * - 15–60 ms, a broadband SMACK — the mid band (300–3500 Hz) within 7 dB of
+   *   the peak and crossing at 600–850 Hz, the top over 3.5 kHz 11 dB down and
+   *   falling ~26 dB by 100 ms.
+   * - a sine SLIDING THROUGH THE FLOOR, hard-clipped into a square: ~100 Hz
+   *   to 55 ms, one cycle near 40, then 9.8 → 8.8 → 8.1 → 7.1 → 5.4 Hz,
+   *   pinned at full scale until ~170 ms and coming out of the clip onto a
+   *   clean sine at half scale, gone by 520. The zero crossings are matched
+   *   to within 3 ms — 82, 133, 190, 252, 322 and 414 ms — and they matter,
+   *   because each edge of that square is a THUMP and the gaps between them
+   *   are the pulse the ear counts.
+   * - under the tail, an irregular RUMBLE at 20–90 Hz, -20 to -35 dB, to 500 ms.
+   * - a CRACKLE, not a hiss — its 4–8 kHz band has a crest factor of 15–25 dB
+   *   where white noise is 11 — at -35 to -45 dB through 670 ms, a gap, a
+   *   second spurt near 790 and silence by a second.
+   *
+   * Rendered offline and compared in 20 ms windows through a 20 Hz highpass,
+   * the low band tracks the recording to 2.4 dB on average and the whole cue
+   * to 4.4, the rest being the recording's own randomness in the crackle.
+   *
+   * **The one deliberate departure is the INFRASOUND, and it is why that
+   * highpass is on the body.** Below ~20 Hz that sine is most of the
+   * recording's energy — a 5–9 Hz swing at -6 dB for 300 ms — and none of it
+   * is heard: what is heard is the clip's EDGES and the harmonics they carry.
+   * Played as recorded, the swing would ride the master soft clip
+   * (`SOFT_CLIP_DRIVE`) for a third of a second and pump every other sound in
+   * the game with it. The highpass keeps the edges and takes the swing.
+   *
+   * **The SMACK is never rate-limited and the rest always is**, `nearMiss`'s
+   * rule for `nearMiss`'s reason — see `CONFIG.audio.hurt.interval`. The two
+   * smack layers obey the voice cap like any other noise; the three gated
+   * layers are exempt from it, bounded by that interval to at most nine held
+   * voices, because a firefight saturating the cap is exactly when the
+   * player most needs to hear they are being hit.
+   */
   playerHurt(): void {
     const bus = this.bus("playerHurt", "feedback");
-    this.tone(bus, 110, 0.2, "sawtooth", 0.08, 0.7);
+    const ctx = this.ctx;
+    const noise = this.noiseBuffer;
+    if (!ctx || !bus || !noise) return;
+    const h = CONFIG.audio.hurt;
+    const L = h.level;
+    const t0 = ctx.currentTime;
+    const full = t0 - this.lastHurt >= h.interval;
+    if (full) this.lastHurt = t0;
+    const track = (src: AudioScheduledSourceNode): void => {
+      this.voices += 1;
+      src.onended = () => {
+        this.voices -= 1;
+      };
+    };
+    // A noise layer that HOLDS before it falls. `burst`'s two-stage decay is
+    // 15 dB down inside the first seventh of its length, and the recording's
+    // smack sits within a few dB of its peak for 30 ms — which is the
+    // difference between a blow and a tick.
+    const slab = (
+      type: BiquadFilterType, freq: number, q: number, vol: number,
+      at: number, hold: number, fall: number, dur: number,
+    ): void => {
+      if (this.voices >= CONFIG.audio.maxVoices) return;
+      const src = ctx.createBufferSource();
+      src.buffer = noise;
+      const f = ctx.createBiquadFilter();
+      f.type = type;
+      f.frequency.value = freq;
+      f.Q.value = q;
+      const g = ctx.createGain();
+      const t = t0 + at;
+      g.gain.setValueAtTime(vol, t);
+      g.gain.exponentialRampToValueAtTime(vol * 0.5, t + hold);
+      g.gain.exponentialRampToValueAtTime(vol * 0.06, t + fall);
+      g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+      src.connect(f).connect(g).connect(bus.dry);
+      track(src);
+      src.start(t, Math.random() * (noise.duration - dur), dur + 0.01);
+    };
+    try {
+      // 1. THE SMACK. The top lands 5 ms after the middle, as recorded, and
+      //    the middle is where the recording's 600–850 Hz crossings are.
+      slab("bandpass", 700, 0.8, 4 * L, 0.003, 0.035, 0.1, 0.24);
+      slab("highpass", 2500, 0.7, 0.85 * L, 0.008, 0.03, 0.075, 0.14);
+      if (!full) return;
+
+      // 2. THE BLOW. A sine whose sweep is solved for the recording's zero
+      //    crossings, driven through a hard clip while it is pinned and eased
+      //    back to a clean half-scale sine as it comes out. The drive is
+      //    stated as an OUTPUT amplitude over the clip's small-signal gain
+      //    (`HURT_CLIP`), so the late figures are the recording's own.
+      const osc = ctx.createOscillator();
+      osc.type = "sine";
+      const fq = osc.frequency;
+      fq.setValueAtTime(160, t0);
+      for (const [at, hz] of HURT_SWEEP) {
+        fq.exponentialRampToValueAtTime(hz, t0 + at);
+      }
+      const drive = ctx.createGain();
+      const d = drive.gain;
+      const late = (a: number): number => a / HURT_CLIP;
+      d.setValueAtTime(0.0001, t0);
+      d.exponentialRampToValueAtTime(1.2, t0 + 0.015);
+      d.setValueAtTime(1.2, t0 + 0.148);
+      d.exponentialRampToValueAtTime(late(0.52), t0 + 0.183);
+      d.exponentialRampToValueAtTime(late(0.42), t0 + 0.283);
+      d.exponentialRampToValueAtTime(late(0.3), t0 + 0.403);
+      d.exponentialRampToValueAtTime(late(0.12), t0 + 0.473);
+      d.exponentialRampToValueAtTime(late(0.015), t0 + 0.508);
+      d.exponentialRampToValueAtTime(0.00001, t0 + 0.553);
+      const clip = ctx.createWaveShaper();
+      clip.curve = this.hurtShape();
+      clip.oversample = "2x";
+      const floor = ctx.createBiquadFilter();
+      floor.type = "highpass";
+      floor.frequency.value = 20;
+      floor.Q.value = 0.6;
+      const body = ctx.createGain();
+      body.gain.value = L;
+      osc.connect(drive).connect(clip).connect(floor).connect(body).connect(bus.dry);
+      track(osc);
+      osc.start(t0);
+      osc.stop(t0 + 0.563);
+
+      // 3. THE RUMBLE. Twice-lowpassed noise, because what is under the
+      //    recording's tail is not that sine's harmonics but something
+      //    irregular at 20–90 Hz — and a clean sine with nothing beside it
+      //    falls 20 dB under the recording from 290 ms on.
+      const rumble = ctx.createBufferSource();
+      rumble.buffer = noise;
+      rumble.loop = true;
+      const lp1 = ctx.createBiquadFilter();
+      const lp2 = ctx.createBiquadFilter();
+      for (const lp of [lp1, lp2]) {
+        lp.type = "lowpass";
+        lp.frequency.value = 70;
+        lp.Q.value = 0.7;
+      }
+      const rg = ctx.createGain();
+      const rv = 1.8 * L;
+      rg.gain.setValueAtTime(0.0001, t0 + 0.163);
+      rg.gain.exponentialRampToValueAtTime(rv, t0 + 0.233);
+      rg.gain.exponentialRampToValueAtTime(rv * 0.6, t0 + 0.403);
+      rg.gain.exponentialRampToValueAtTime(rv * 0.15, t0 + 0.483);
+      rg.gain.exponentialRampToValueAtTime(rv * 0.0005, t0 + 0.543);
+      rumble.connect(lp1).connect(lp2).connect(rg).connect(bus.dry);
+      track(rumble);
+      rumble.start(t0 + 0.163, Math.random() * noise.duration);
+      rumble.stop(t0 + 0.553);
+
+      // 4. THE CRACKLE — the ambience's spark (`sparkShape`, at ~500 events
+      //    a second) rung at the recording's 4–8 kHz, not filtered hiss: the
+      //    crest factor is what says grit rather than air.
+      const grit = ctx.createBufferSource();
+      grit.buffer = noise;
+      grit.loop = true;
+      const spark = ctx.createWaveShaper();
+      // No oversampling, for the reason `buildAmbience` states: it would
+      // round off the single-sample impulse the layer is built on.
+      spark.oversample = "none";
+      spark.curve = this.sparkShape(sparkThreshold(500, ctx.sampleRate, 1));
+      const ring = ctx.createBiquadFilter();
+      ring.type = "bandpass";
+      ring.frequency.value = 6500;
+      ring.Q.value = 1.2;
+      const gg = ctx.createGain();
+      const gv = 1.5 * L;
+      const gt = gg.gain;
+      gt.setValueAtTime(gv * 0.08, t0 + 0.083);
+      gt.linearRampToValueAtTime(gv * 0.2, t0 + 0.223);
+      gt.setValueAtTime(gv * 0.2, t0 + 0.483);
+      gt.linearRampToValueAtTime(gv * 0.35, t0 + 0.533);
+      gt.setValueAtTime(gv * 0.35, t0 + 0.643);
+      gt.exponentialRampToValueAtTime(gv * 0.06, t0 + 0.673);
+      gt.setValueAtTime(gv * 0.06, t0 + 0.733);
+      gt.linearRampToValueAtTime(gv * 0.25, t0 + 0.773);
+      gt.setValueAtTime(gv * 0.25, t0 + 0.793);
+      gt.exponentialRampToValueAtTime(gv * 0.01, t0 + 0.953);
+      grit.connect(spark).connect(ring).connect(gg).connect(bus.dry);
+      track(grit);
+      grit.start(t0 + 0.083, Math.random() * noise.duration);
+      grit.stop(t0 + 0.963);
+    } catch {
+      // audio is non-critical; ignore failures
+    }
   }
 
   /**
@@ -3566,6 +3787,25 @@ export class Sfx {
     }
     for (let i = 0; i < curve.length; i++) curve[i] /= peak;
     this.growlCurve = curve;
+    return curve;
+  }
+
+  /**
+   * `playerHurt`'s clip: a symmetric `tanh` at `HURT_CLIP`, normalised to
+   * reach ±1 at the table's ends. Symmetric where `growlShape` is not,
+   * because what is being imitated is a signal pinned at both rails rather
+   * than an engine's even harmonics — and an asymmetric curve would put back
+   * the DC the 20 Hz highpass after it exists to take out.
+   */
+  private hurtShape(): Float32Array<ArrayBuffer> {
+    if (this.hurtCurve) return this.hurtCurve;
+    const curve = new Float32Array(1024);
+    const top = Math.tanh(HURT_CLIP);
+    for (let i = 0; i < curve.length; i++) {
+      const u = (i / (curve.length - 1)) * 2 - 1;
+      curve[i] = Math.tanh(HURT_CLIP * u) / top;
+    }
+    this.hurtCurve = curve;
     return curve;
   }
 

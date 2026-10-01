@@ -9077,7 +9077,11 @@ export class Game {
       );
     }
     this.post.flashDamage();
-    this.sfx.playerHurt();
+    // A ROUND, and only a round — a hull's machine gun included, since its
+    // shots carry the default kind. A burn, a blast, a shell and a hull
+    // rolling over you each have a sound of their own already, and none of
+    // them is a bullet striking a body.
+    if (kind === "bullet") this.sfx.playerHurt();
     const haptic = CONFIG.rumble;
     this.input.rumble(
       died ? haptic.deathStrong : haptic.hurtStrong,
