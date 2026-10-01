@@ -3397,6 +3397,26 @@ export class Game {
     // it cannot: `updateCamera` guards on the position, so a still camera in
     // any state costs one comparison and no walk.
     this.mats.updateCamera(this.cameraSys.camera.position);
+    // And the water: its wave grid stands under the eye and its Fresnel is
+    // asked of it, and a deploy screen over the bay is a live view of both.
+    // Nothing here advances its clock — see `WaterSystem.follow`.
+    this.water.follow(this.cameraSys.camera.position);
+    // And the grass, whose patches are chosen around the eye and inside the
+    // frustum: a deploy screen over a meadow is a live view of it too. Nothing
+    // here advances its clock — see `GrassSystem.follow`.
+    //
+    // **Both of these come BEFORE the cull, because both decide `isVisible`
+    // on their own meshes and the cull's `offer` reads it.** The grass hides a
+    // patch mesh with no patches this frame and the water swaps a body's grid
+    // for its quad by distance; with the cull first, a mesh switched ON here
+    // was not offered and dropped out for exactly one frame. Running down a
+    // meadow that was an 8 m patch blinking out 13–26 m ahead about three
+    // times a second — the middle LOD rings are narrower than a patch, so one
+    // empties and refills every few strides. The water's live frames were
+    // safe only because the camera tail's `water.update` follows first; in a
+    // state with no tail it lost its near surface on the frame the eye came
+    // within the grid's reach.
+    this.grass.follow(this.cameraSys.camera);
     // And on the same terms and for the same reason: the map around the eye,
     // rather than the map. Every state renders and only some of them simulate,
     // so a menu, a building card or a deploy screen with a live view behind it
@@ -3408,14 +3428,6 @@ export class Game {
     // the eye rather than over the whole square (`ParticleSpec.volume`). A
     // no-op for every map that states none, which is all of them but one.
     this.atmosphere.update(this.cameraSys.camera.position);
-    // And the water: its wave grid stands under the eye and its Fresnel is
-    // asked of it, and a deploy screen over the bay is a live view of both.
-    // Nothing here advances its clock — see `WaterSystem.follow`.
-    this.water.follow(this.cameraSys.camera.position);
-    // And the grass, whose patches are chosen around the eye and inside the
-    // frustum: a deploy screen over a meadow is a live view of it too. Nothing
-    // here advances its clock — see `GrassSystem.follow`.
-    this.grass.follow(this.cameraSys.camera);
     // The dust under the rotors, on the fleet's terms rather than the eye's: a
     // held world is a machine frozen over a street, and one still boiling that
     // street is the droning-engine lie with a picture instead of a sound. In

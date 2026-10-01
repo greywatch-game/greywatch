@@ -2165,7 +2165,14 @@ Before this a field under Harrowmead's 14-degree sun stood in its own shade.
 - **`follow` is pushed from `tick` in EVERY state**, beside the water's, and
   `update` (the clock, the lamps, the pushers) is the camera tail. A field
   chosen only in the tail is a deploy screen over bare ground — which is how
-  the rule was found.
+  the rule was found. **And it is pushed BEFORE `WorldCulling.update`**,
+  because `follow` is what sets each patch mesh's `isVisible` and the cull's
+  `offer` drops anything not visible: after it, a mesh that gained its first
+  patch this frame was not offered and blinked out for one frame. The middle
+  LOD rings are narrower than a patch, so running down a meadow emptied and
+  refilled one every few strides — an 8 m patch 13–26 m ahead flickering about
+  three times a second. The water's `follow` stands beside it for the same
+  reason (its grid/quad swap).
 - **A patch mesh with no patches this frame is made INVISIBLE, never merely
   emptied.** Babylon draws a thin-instanced mesh at a count of zero as one
   plain copy at its own origin, and this mesh's origin is a 1 m patch of grass
