@@ -816,9 +816,27 @@ src/
       jungleRuin.ts     #   buildJungleRuin — the house the forest took back
     kit/manor.ts        #   manor — the two-storey colonial house with the
                         #   wrap-around gallery, in a file of its own
-    kit/structures.ts   #   silo, well, stall, fence, stoneWall, bridge,
-                        #   trestleBridge, templeRuin, haystack, lamp, cart,
-                        #   crates, woodpile, shed, trough, shrine, kiln
+    kit/structures/     #   small standalone structures and cover: a file per
+                        #   builder big enough to argue for itself
+      index.ts          #   The set's header and barrel: the cover heights a
+                        #   layout picks from, and a ROUND prop's collider sized
+                        #   off its silhouette rather than its circumdiameter
+      small.ts          #   silo, fence, stoneWall, haystack, lamp, crates,
+                        #   trough, shrine — a few dozen lines apiece
+      cartParts.ts      #   reframe/about, and the cart's wheel, sack, fork and
+                        #   cask; the stall borrows the sack and reframe
+      templeStone.ts    #   The temple ruin's sandstone and laterite, and its
+                        #   words: flat, courses, hang, moss, fallen, devata
+      well.ts           #   buildWell — the draw-well and its head frame
+      stall.ts          #   buildStall — the market stall and its wares
+      bridge.ts         #   buildBridge — the pile-and-stringer footbridge
+      trestleBridge.ts  #   buildTrestleBridge — the trestle and its approaches
+      templeRuin.ts     #   buildTempleRuin — the stepped platform; carries the
+                        #   per-cell nav budget table docs/bots.md points at
+      cart.ts           #   buildCart — the farm wagon, whole or ruined
+      woodpile.ts       #   buildWoodpile — a cord of split firewood
+      shed.ts           #   buildShed — the boarded pent shed
+      kiln.ts           #   buildKiln — the brick bottle kiln
     kit/terrain.ts      #   terrace, ramp, road (and a cobbled street's kerb
                         #   course), jetty, boardwalk, stairs
     kit/harbour.ts      #   smelter, lighthouse, crane, fishRack, careenedHull,

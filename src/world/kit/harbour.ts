@@ -278,7 +278,7 @@ export function buildSmelter(scene: Scene, mats: CelMaterialFactory): Structure 
   b.glow(4.9, 0.6, 4.9, FURN_X, sy - 0.7, 0, EMBER);
   b.cyl(1.0, 4.9, 4.4, 8, FURN_X, sy + 0.5, 0, RUST);
   // ONE box for the whole shaft, sized off the SILHOUETTE across the middle
-  // drum rather than off its circumdiameter — kit/structures.ts's rule, and a
+  // drum rather than off its circumdiameter — kit/structures/'s rule, and a
   // box taking the 7.6 at the foot would stop rounds a metre off drawn stone.
   b.block({ w: 5.8, h: sy + 1 - stackY, d: 5.8, x: FURN_X, y: (stackY + sy + 1) / 2, z: 0 });
 

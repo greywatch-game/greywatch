@@ -40,7 +40,7 @@ therefore loses its TOP tier, the one thing anyone climbs it for. The fix is tha
 centre falls inside exactly one: `topFaceHeight` returns null outside a box's own
 XZ footprint and `rasterize` skips on null. The visuals stay nested solid boxes,
 which is also what satisfies the thick-box rule. `buildTempleRuin` in
-`kit/structures.ts` is the worked example and carries the per-cell budget as a
+`kit/structures/templeRuin.ts` is the worked example and carries the per-cell budget as a
 table; `buildStiltHut` is the other end of it, sitting at exactly three (terrain,
 platform, roof block) and forbidding a second floor slab in its header.
 

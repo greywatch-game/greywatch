@@ -16,7 +16,7 @@ Read before touching anything:
 - the builder's own header comment (it owns its argument — nav budget, cover
   heights, what was tried first);
 - `src/world/kit/core.ts`'s header (the builder contract) and the kit file's
-  own header (`structures.ts`, `city.ts`, `desert.ts`, `harbour.ts`,
+  own header (`structures/index.ts`, `city.ts`, `desert.ts`, `harbour.ts`,
   `japan/index.ts` each carry rules for their set);
 - CLAUDE.md's "Visual meshes and collider proxies" and "Mesh metadata"
   sections, and `docs/world.md` / `docs/rendering.md` where the task touches
@@ -217,8 +217,9 @@ hung down a face), plus `FIG_*`;
 set needs one): `offFace`, `casement`, `doorway`, `framing` (`village.ts`),
 `facePoly`, `archRing`, `lancet`, `buttress` (`gothic.ts`), the rubble words
 (`rubble.ts`), and `renderFace`, `wallHead`, `toothing`, `quoins`
-(`render.ts`). In `structures.ts`: the temple's `flat`,
-`courses`, `hang`, `moss`, `fallen`, `devata`. In `japan/`, each in a file of its
+(`render.ts`). In `structures/`: the temple's `flat`,
+`courses`, `hang`, `moss`, `fallen`, `devata` (`templeStone.ts`), and the
+cart's `reframe` and its wheel, sack, fork and cask (`cartParts.ts`). In `japan/`, each in a file of its
 own: `curvedRoof` and `roofHeight` (`roof.ts`); `Lapidary` (`lapidary.ts`,
 granite carving, one surface per colour — `solid`, `lathe`, `petals`,
 `leafRow`, `tube`, `lichen`, `leaf`); and `Joinery` (`joinery.ts`, the carpentry under a tiled curved hip — brackets, purlins, a
