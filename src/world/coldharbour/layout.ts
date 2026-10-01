@@ -785,10 +785,10 @@ const water: WaterRect[] = [
 ];
 
 const grass: GrassRect[] = [
-  { x: 17, z: 17, width: 26, depth: 26, height: 0.45, edge: 0 },
-  { x: -17, z: 17, width: 26, depth: 26, height: 0.45, edge: 0 },
-  { x: -17, z: -17, width: 26, depth: 26, height: 0.45, edge: 0 },
-  { x: 17, z: -17, width: 26, depth: 26, height: 0.45, edge: 0 },
+  { x: 17, z: 17, width: 26, depth: 26, height: 0.75, edge: 0 },
+  { x: -17, z: 17, width: 26, depth: 26, height: 0.75, edge: 0 },
+  { x: -17, z: -17, width: 26, depth: 26, height: 0.75, edge: 0 },
+  { x: 17, z: -17, width: 26, depth: 26, height: 0.75, edge: 0 },
 ];
 
 export const ColdharbourLayout: MapLayout = {
