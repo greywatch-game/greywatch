@@ -450,15 +450,23 @@ subsystem under [`docs/`](docs/) and a one-line-per-file module map in
 
 ## License
 
-[MIT](LICENSE) — do what you like with it, including commercially, as long as
-the copyright notice travels with the copy.
+Copyright (c) 2026 Chris Brower. [GNU AGPL v3.0 or later](LICENSE) — use it,
+change it, sell it, host it, as long as what you hand on stays open under the
+same terms. That includes a HOSTED fork: anyone who lets people play a modified
+version over a network, a match server included, owes those players its source
+(section 13), not only whoever receives a copy.
+
+Versions of this repository published before the switch were released under
+MIT and remain available under those terms; everything after is AGPL.
 
 One license covers the whole repository. Almost nothing in it is art: every
 mesh is built from Babylon primitives at runtime and nearly all audio is
 synthesized. The exception is the seventeen samples in `audio/` and the masters
 they are cut from in `audio/src/`, which were generated with Adobe Firefly on a
 paid account and are distributed under the same license.
-The dependencies are permissive and compatible — Babylon.js is Apache-2.0, and
-the Havok physics build pulled in by `@babylonjs/havok` (the one binary that
-ships, for the ragdolls, glass and rubble) carries its own MIT terms from
-Babylon.js.
+The dependencies are permissive and keep their own terms — Babylon.js is
+Apache-2.0, `ws` is MIT, and the Havok physics build pulled in by
+`@babylonjs/havok` (the one binary that ships, for the ragdolls, glass and
+rubble) carries its own MIT terms from Babylon.js. All three are compatible
+with AGPL v3; Apache-2.0 is not compatible with a v2-only GPL, which is why
+this is v3.

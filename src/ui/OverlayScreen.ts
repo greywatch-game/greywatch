@@ -313,6 +313,11 @@ const CARD_WIDE = 16 / 9;
  * The project's source, linked from the system bar. A link rather than a row
  * in `MENU_ITEMS`: it leaves the game rather than choosing anything in it, so
  * the cursor never lands on it and Enter can never open a tab by accident.
+ *
+ * It is also the AGPL's section 13 offer: a MODIFIED version that people play
+ * over a network owes them ITS source. A fork must point this at its own
+ * repository, or its players are offered code that is not what they are
+ * playing.
  */
 const SOURCE_URL = "https://github.com/greywatch-game/greywatch";
 /** GitHub's mark, inline so the menu stays asset-free; filled from `currentColor`. */
@@ -708,7 +713,7 @@ export class OverlayScreen {
           <button class="mm-sysbtn" data-menu="multiplayer">${ICON_ONLINE}<b>Online</b></button>
           <button class="mm-sysbtn" data-menu="settings">${ICON_SETTINGS}<b>Settings</b></button>
           <a class="mm-source" href="${SOURCE_URL}" target="_blank" rel="noopener noreferrer"
-             title="Source on GitHub" aria-label="Source on GitHub">${GITHUB_MARK}</a>
+             title="Source (AGPL-3.0)" aria-label="Source code (AGPL-3.0)">${GITHUB_MARK}</a>
         </div>
       </div>
       <div class="mm-hero"></div>
