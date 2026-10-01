@@ -436,6 +436,15 @@ function laneFlight(o: {
  * choosing anyway for the skyline drives every roll below as well — which crown
  * it wears, which flank carries the fire escape, where the entrance sits along
  * its frontage, and which floors have their lights on.
+ *
+ * **The FINALISER is what makes that true, and for a long time it was
+ * missing.** The combine step moves mostly LOW bits — a small integer XORed
+ * and added in — and the result is read off the HIGH twenty-four, so without
+ * a mix at the end nothing but the first input reached the answer: every
+ * 26 x 26 tower rolled 0.89 for every salt at every height, and so wore the
+ * same crown, the same entrance, the same spine flank, the same fire escape
+ * and the same lit floors as every other. `fmix32` (MurmurHash3's) avalanches
+ * every input bit across the whole word before the read.
  */
 function towerRoll(...ns: number[]): number {
   let hash = 0x9e3779b9;
@@ -443,6 +452,11 @@ function towerRoll(...ns: number[]): number {
     hash ^= Math.round(n * 64) + 0x9e3779b9 + (hash << 6) + (hash >>> 2);
     hash = hash >>> 0;
   }
+  hash ^= hash >>> 16;
+  hash = Math.imul(hash, 0x85ebca6b);
+  hash ^= hash >>> 13;
+  hash = Math.imul(hash, 0xc2b2ae35);
+  hash ^= hash >>> 16;
   return (hash >>> 8) / 0x1000000;
 }
 
@@ -1731,9 +1745,8 @@ function drawOffice(
   const sb = new StoneBatch();
   const lamps = new StoneBatch();
   // Seeded off the params, as `towerRoll` is and for its reason — but drawn
-  // from a stream, because `towerRoll` barely moves between neighbouring
-  // salts, and a roll per bay off it put a blind in every bay of one office
-  // and in none of the next.
+  // from a stream, because a few hundred per-bay decisions read in one fixed
+  // order are what a stream is for, where a salt per bay is bookkeeping.
   const rnd = mulberry32(streetSeed(w, d, floors));
   const SIDES: readonly Side[] = ["-z", "+z", "-x", "+x"];
   /** An elevation's OUTER face plane, from the centre. */
