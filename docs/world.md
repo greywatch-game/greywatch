@@ -1924,14 +1924,16 @@ cost one: glass breaks where there is enterable space behind it.** A sheet hung
 on something solid stops nothing — the round has always ended on the concrete —
 so breaking it changes nothing you can play with, and it costs the building the
 one thing an elevation was saying: a street-level shopfront that shatters into a
-blank grey shaft is a building admitting it is a box. Coldharbour draws **4,458
+blank grey shaft is a building admitting it is a box. Coldharbour draws **2,550
 sheets and twenty-four of them break**, all twenty-four SHOPFRONT bays — twelve
 on the two offices and twelve on the eight shophouses. (It was 6,139 before the
 towers got a podium: a curtain wall that starts at a base's coping rather than
 at the kerb is two storeys of glazing a tower no longer draws, and the podium
-glazing and the lobby front that replaced them are a fraction of that. The
-figure is the merged glazing's own vertex count over the 24 a sheet carries —
-nothing keeps the raw count after the merge.)
+glazing and the lobby front that replaced them are a fraction of that. It was
+4,458 until a tower glazed a sheet per storey per side rather than per bay —
+its drawn mullions and fins are what divide the glass now. The figure is the
+merged glazing's own vertex count over the 24 a sheet carries — nothing keeps
+the raw count after the merge.)
 The curtain walls (4 cm off a solid shaft), the punched windows drawn on the
 same shaft, the shophouses' sash windows drawn on their own shells and the cars'
 greenhouses (a cabin nobody gets into) stay whole. The
@@ -1965,9 +1967,10 @@ rasterizes nothing, and the cost is one `updateVerticesData` on one small
 buffer. Only the eight blocks that hold a breakable pane keep an updatable
 position buffer at all; the other 32 are immutable for the life of the map.
 
-That is what makes the glazing unit a free choice — a tower is cut into bays
-because a curtain wall's whole appearance is the grid it is divided by, and the
-cut costs nothing the renderer pays per frame.
+That is what makes the glazing unit a free choice — a curtain wall's whole
+appearance is the grid it is divided by, and the tower draws that grid as
+members standing over one sheet a storey, so the unit is chosen for nothing
+the renderer pays per frame.
 
 What makes that collapse the whole of a break rather than the first half of one
 is that a pane owns nothing else to take down with it: it carries no outline and

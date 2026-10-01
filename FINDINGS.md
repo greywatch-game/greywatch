@@ -3818,7 +3818,12 @@ its own):
 
 **The builders are 3,619 ms and they are all one function.** `buildTower` is
 89.7% `glaze`, `glaze` is 85.7% `cut`, and `cut` is two lambdas that do nothing
-but call `Build.pane` — 1,744 ms of the tower is panes. Every builder bottoms
+but call `Build.pane` — 1,744 ms of the tower is panes. (Since 2026-09-30 a
+tower glazes a sheet per storey per side and batches its boxes through
+`StoneBatch`: Coldharbour's 37 emit 2,325 sheets where they emitted 4,233, and
+~31 parts each where they emitted ~245. This profile predates that and was not
+re-taken — the proving ground's install fell 32.3 -> 31.3 s across the change.)
+Every builder bottoms
 out in `partBox`, and aggregated over the whole install that is **3,465 ms,
 18.5%**, in two almost equal halves:
 

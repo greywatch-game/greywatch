@@ -1289,9 +1289,9 @@ export class Build implements Structure {
    * `glow` for finished vertices: a batch of lenses as one emissive surface
    * (`StoneBatch.flushGlow`) — `surface` is to `box` what this is to `glow`.
    */
-  glowSurface(data: VertexData, color: string): Mesh {
+  glowSurface(data: VertexData, color: string, opts?: { overGlass?: true }): Mesh {
     const m = partSurface(`${this.tag}-glows${this.meshes.length}`, data, this.scene);
-    m.material = this.mats.getEmissive(color);
+    m.material = opts?.overGlass ? this.mats.getEmissive(color, true) : this.mats.getEmissive(color);
     m.metadata = { noInk: true };
     this.meshes.push(m);
     this.freeform.add(m);
@@ -1839,10 +1839,11 @@ export class StoneBatch {
   /**
    * `flush` for a batch of LENSES: each colour becomes one `Build.glowSurface`
    * rather than one cel surface, so a ceiling of fittings is one emissive mesh
-   * and not a part per fitting.
+   * and not a part per fitting. `overGlass` is `Build.glow`'s, owed by a batch
+   * of lit rooms hung in front of `backed` sheets.
    */
-  flushGlow(b: Build): void {
-    for (const [color, data] of this.drain()) b.glowSurface(data, color);
+  flushGlow(b: Build, opts?: { overGlass?: true }): void {
+    for (const [color, data] of this.drain()) b.glowSurface(data, color, opts);
   }
 
   private drain(): [string, VertexData][] {
