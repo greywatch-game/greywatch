@@ -1286,6 +1286,19 @@ export class Build implements Structure {
   }
 
   /**
+   * `glow` for finished vertices: a batch of lenses as one emissive surface
+   * (`StoneBatch.flushGlow`) — `surface` is to `box` what this is to `glow`.
+   */
+  glowSurface(data: VertexData, color: string): Mesh {
+    const m = partSurface(`${this.tag}-glows${this.meshes.length}`, data, this.scene);
+    m.material = this.mats.getEmissive(color);
+    m.metadata = { noInk: true };
+    this.meshes.push(m);
+    this.freeform.add(m);
+    return m;
+  }
+
+  /**
    * An open fire, its bed at (x, y, z): animated tongues, a core and embers
    * (`world/flame.ts`). No light and no sound — a fire that throws either says
    * so beside this with `light` and `sound`, at the flame, as the brazier does.
@@ -1820,15 +1833,30 @@ export class StoneBatch {
   }
 
   flush(b: Build): void {
+    for (const [color, data] of this.drain()) b.surface(data, color);
+  }
+
+  /**
+   * `flush` for a batch of LENSES: each colour becomes one `Build.glowSurface`
+   * rather than one cel surface, so a ceiling of fittings is one emissive mesh
+   * and not a part per fitting.
+   */
+  flushGlow(b: Build): void {
+    for (const [color, data] of this.drain()) b.glowSurface(data, color);
+  }
+
+  private drain(): [string, VertexData][] {
+    const out: [string, VertexData][] = [];
     for (const [color, set] of this.sets) {
       const data = new VertexData();
       data.positions = set.pos;
       data.normals = set.nrm;
       data.uvs = set.uv;
       data.indices = set.idx;
-      b.surface(data, color);
+      out.push([color, data]);
     }
     this.sets.clear();
+    return out;
   }
 }
 
