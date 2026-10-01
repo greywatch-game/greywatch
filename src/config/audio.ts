@@ -157,7 +157,7 @@ export const audio = {
 
   /**
    * A hit landing on the player (`Sfx.playerHurt`) — a clipped sub-drop under
-   * a smack, fitted to a recording.
+   * a low thump, fitted to a recording but for the thump.
    *
    * `level` is the peak of the clipped BODY, the loudest thing in the cue;
    * every other layer is fitted relative to it, so this is the one number
@@ -167,8 +167,8 @@ export const audio = {
    *
    * `interval` is `nearMissInterval`'s argument for the same reason: the body,
    * the rumble and the crackle run to a second, and an SMG emptied into the
-   * player lands eleven hits a second. Past this only the SMACK plays — two
-   * noise layers, ~0.24 s — so every hit is still heard landing and the drop
+   * player lands eleven hits a second. Past this only the THUMP plays — three
+   * noise layers and a short sine, ~0.24 s — so every hit is still heard landing and the drop
    * under it is not stacked into a drone.
    */
   hurt: { level: 0.28, interval: 0.35 },

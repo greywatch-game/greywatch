@@ -74,7 +74,7 @@ fit was made by RENDERING rather than by ear: the graph run in an
 against Chromium's own output (integrating the rows by hand put every zero
 crossing ~20 ms early). It is a second-long cue fired on every hit, so it
 owes the voice question in full: `audio.hurt.interval` drops the three long
-layers and never the smack, exactly as `nearMissInterval` does.
+layers and never the thump, exactly as `nearMissInterval` does.
 
 **It also makes the one departure a fit here should make on purpose: it
 leaves out what nobody can HEAR.** Most of the recording's energy is a 5–9 Hz
@@ -83,6 +83,14 @@ in this graph it would ride the master soft clip and pump everything else
 with it. A 20 Hz highpass on the body keeps the clip's edges, which are the
 thumps, and drops the swing. **A fit is to what reaches an ear, and a
 reference recorded for a cinema's subwoofer is not.**
+
+**And it makes a second departure, by ear: the SMACK.** Fitted as recorded
+(noise crossing at 600–850 Hz, a 2.5 kHz top) it read in a round as a SLAP —
+a hand on a table rather than a blow to the body. The weight moved under
+260 Hz, the mid and top were cut to a trace, a clean 120 → 42 Hz sine
+punches under it on every hit, and the body's clipped edges are rounded by a
+320 Hz lowpass. Rendered, the first 60 ms gained 5.6 dB under 400 Hz and lost
+10.5 over 1.5 kHz; the peak after the soft clip went from 0.60 to 0.72.
 
 **The two BLAST rows are the cheapest answer that boundary has ever given to
 "one more sound", and they are cheap for a structural reason rather than a

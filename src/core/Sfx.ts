@@ -1418,7 +1418,7 @@ export class Sfx {
   }
 
   /**
-   * A ROUND landing on the player: a smack, a clipped sub-drop under it, a
+   * A ROUND landing on the player: a thump, a clipped sub-drop under it, a
    * rumble and a second of crackle settling. `Game` rings it for
    * `DamageKind` `"bullet"` and nothing else — a burn, a blast, a shell or a
    * crush is not a bullet striking a body. Unpanned and unsent — it happens
@@ -1448,7 +1448,7 @@ export class Sfx {
    * the low band tracks the recording to 2.4 dB on average and the whole cue
    * to 4.4, the rest being the recording's own randomness in the crackle.
    *
-   * **The one deliberate departure is the INFRASOUND, and it is why that
+   * **The first deliberate departure is the INFRASOUND, and it is why that
    * highpass is on the body.** Below ~20 Hz that sine is most of the
    * recording's energy — a 5–9 Hz swing at -6 dB for 300 ms — and none of it
    * is heard: what is heard is the clip's EDGES and the harmonics they carry.
@@ -1456,9 +1456,17 @@ export class Sfx {
    * (`SOFT_CLIP_DRIVE`) for a third of a second and pump every other sound in
    * the game with it. The highpass keeps the edges and takes the swing.
    *
-   * **The SMACK is never rate-limited and the rest always is**, `nearMiss`'s
-   * rule for `nearMiss`'s reason — see `CONFIG.audio.hurt.interval`. The two
-   * smack layers obey the voice cap like any other noise; the three gated
+   * **The second is the SMACK, and it was asked for by EAR rather than
+   * measured.** Fitted as recorded — noise crossing at 600–850 Hz with a
+   * 2.5 kHz top — it read in the game as a SLAP rather than a blow, so the
+   * weight moved under 260 Hz, the mid and the top were cut to a trace and
+   * a clean 120 → 42 Hz sine punches under it; the body's edges are rounded
+   * by a 320 Hz lowpass for the same reason. Rendered against the fit, the
+   * first 60 ms gained 5.6 dB under 400 Hz and lost 10.5 over 1.5 kHz.
+   *
+   * **The THUMP is never rate-limited and the rest always is**, `nearMiss`'s
+   * rule for `nearMiss`'s reason — see `CONFIG.audio.hurt.interval`. The
+   * thump's four layers obey the voice cap like any other noise; the three gated
    * layers are exempt from it, bounded by that interval to at most nine held
    * voices, because a firefight saturating the cap is exactly when the
    * player most needs to hear they are being hit.
@@ -1505,10 +1513,31 @@ export class Sfx {
       src.start(t, Math.random() * (noise.duration - dur), dur + 0.01);
     };
     try {
-      // 1. THE SMACK. The top lands 5 ms after the middle, as recorded, and
-      //    the middle is where the recording's 600–850 Hz crossings are.
-      slab("bandpass", 700, 0.8, 4 * L, 0.003, 0.035, 0.1, 0.24);
-      slab("highpass", 2500, 0.7, 0.85 * L, 0.008, 0.03, 0.075, 0.14);
+      // 1. THE THUMP. Deliberately NOT the recording's smack, which crossed at
+      //    600–850 Hz and read in the game as a SLAP: the weight is a dull
+      //    low thud (noise under 260 Hz) with only a little skin contact
+      //    over it, and a clean sine dropping 120 → 42 Hz under both — so a
+      //    rate-limited hit, which gets this layer alone, is still a blow
+      //    to the body rather than a hand on a table.
+      slab("lowpass", 260, 0.7, 3.2 * L, 0.002, 0.045, 0.12, 0.24);
+      slab("bandpass", 650, 0.9, 0.9 * L, 0.003, 0.02, 0.06, 0.14);
+      slab("highpass", 2500, 0.7, 0.18 * L, 0.006, 0.015, 0.04, 0.09);
+      if (this.voices < CONFIG.audio.maxVoices) {
+        const punch = ctx.createOscillator();
+        punch.type = "sine";
+        punch.frequency.setValueAtTime(120, t0);
+        punch.frequency.exponentialRampToValueAtTime(42, t0 + 0.09);
+        const pg = ctx.createGain();
+        const pv = 2.2 * L;
+        pg.gain.setValueAtTime(0.0001, t0);
+        pg.gain.exponentialRampToValueAtTime(pv, t0 + 0.006);
+        pg.gain.exponentialRampToValueAtTime(pv * 0.4, t0 + 0.06);
+        pg.gain.exponentialRampToValueAtTime(0.0001, t0 + 0.16);
+        punch.connect(pg).connect(bus.dry);
+        track(punch);
+        punch.start(t0);
+        punch.stop(t0 + 0.17);
+      }
       if (!full) return;
 
       // 2. THE BLOW. A sine whose sweep is solved for the recording's zero
@@ -1542,9 +1571,17 @@ export class Sfx {
       floor.type = "highpass";
       floor.frequency.value = 20;
       floor.Q.value = 0.6;
+      // The square's edges are the thumps, but unrounded they carry odd
+      // harmonics up through the smack's band and click. A lowpass keeps
+      // the crossings where they are and makes each one a thud.
+      const round = ctx.createBiquadFilter();
+      round.type = "lowpass";
+      round.frequency.value = 320;
+      round.Q.value = 0.5;
       const body = ctx.createGain();
       body.gain.value = L;
-      osc.connect(drive).connect(clip).connect(floor).connect(body).connect(bus.dry);
+      osc.connect(drive).connect(clip).connect(floor).connect(round)
+        .connect(body).connect(bus.dry);
       track(osc);
       osc.start(t0);
       osc.stop(t0 + 0.563);
