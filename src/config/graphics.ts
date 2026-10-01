@@ -47,8 +47,10 @@ export const graphics = {
   glowKernel: 56,
   /**
    * An open fire (`shaders/FlameShader.ts`, geometry in `world/flame.ts`).
-   * Distances are metres at the tip of a tongue, where the motion is whole;
-   * the root of every tongue stays planted.
+   * Every distance is a SHARE OF THE FIRE'S HEIGHT, measured at the tip of a
+   * tongue where the motion is whole — so a candle and a burning drum move
+   * alike instead of a 7 cm wick writhing 10 cm. The root of every tongue
+   * stays planted.
    *
    * `fps` is how many DRAWINGS a second the boil is on — 12 is animating on
    * twos, which is what makes it read as a drawn fire rather than a simulated
@@ -57,16 +59,31 @@ export const graphics = {
   flame: {
     fps: 12,
     /** How far a tongue's tip writhes about its own axis. */
-    writhe: 0.1,
+    writhe: 0.13,
     /** How far the tip leans downwind, along `CONFIG.wind.dir`. */
-    lean: 0.1,
+    lean: 0.12,
     /** How far a tongue's tip stretches up at the top of a lick. */
-    lick: 0.16,
+    lick: 0.22,
+    /**
+     * How far the last quarter of a tongue curls over — the HOOK a drawn
+     * flame's tip is finished with, turning slowly so the curl reads as a
+     * gesture rather than as a wobble.
+     */
+    hook: 0.12,
     /** How much the noise eats the tongues (0 = clean cones, ~1 = shreds). */
-    ragged: 0.95,
+    ragged: 1.25,
+    /**
+     * How hard the silhouette is bitten toward the tip, so a tongue narrows to
+     * a brush POINT through the noise rather than ending on its polygon.
+     */
+    bite: 1.1,
     /** How fast the eating climbs, in noise cells a second. */
     climb: 2.6,
-    embers: { rise: 1.9, rate: 0.55, drift: 0.2, radius: 0.035 },
+    /**
+     * `rise` and `drift` are shares of the height too; `radius` is metres, and
+     * `stretch` is how far a spark is drawn out along its climb into a stroke.
+     */
+    embers: { rise: 2.0, rate: 0.55, drift: 0.22, radius: 0.016, stretch: 2.6 },
   },
   /**
    * The paper grain pass (`PaperGrain`): vignette, paper grain and chromatic

@@ -979,9 +979,29 @@ reach outside it:
 
 - **It is merged like any other part, so everything it needs per vertex is in
   its UVs** — layer in `uv.x`'s whole part (outer tongue, core, ember, bounds
-  marker), a seed in its fraction, height up the tongue in `uv.y`. The phase of
-  the motion is taken off WORLD position, which is the one thing a merge keeps,
-  so no two fires in a street move together and no rng is spent building one.
+  marker), a seed in its fraction, and in `uv.y` the height up the tongue PLUS
+  four times the whole fire's height in centimetres. The phase of the motion is
+  taken off WORLD position, which is the one thing a merge keeps, so no two
+  fires in a street move together and no rng is spent building one.
+- **Every distance in its motion is a SHARE OF THE FIRE'S HEIGHT**
+  (`CONFIG.graphics.flame`), and so is the scale of the noise that eats it —
+  which is what the height in `uv.y` is for. In metres, a 7 cm chapel candle
+  writhed 10 cm and was never eaten at all.
+- **Every phase and the noise field are taken in the fire's REST frame** — the
+  vertex before the mesh's own transform, over the authored height, plus where
+  the mesh stands — and never off the world position divided by the live size.
+  A molotov's flames are SCALED to grow and die, and a field scaled about the
+  world origin slid metres a frame as they shrank, so a dying fire boiled at a
+  race. The amplitudes still follow the live size (the mesh's vertical
+  stretch), which is what makes a sinking flame writhe less rather than
+  faster.
+- **Its pen line is `fwidth`-footed, so every derivative is taken before the
+  fragment stage's first branch on the layer.** WGSL defines a derivative
+  only in uniform control flow, and the layer is a varying: a `fwidth` moved
+  inside a branch fails to compile, and the draw is lost.
+- **It has NO SMOKE, and that was tried.** A plume in this material is opaque
+  and unlit, and every cut of it read as floating leather or black rock; the
+  molotov's own smoke is `GrenadeSystem`'s cloud pool, which is translucent.
 - **It is never a shadow caster** (`noShadowCaster`), for the world shadow
   map's rule: an animated caster is a per-frame redraw of the map.
 - **It takes no vertex colour buffer** — `vertexShading` skips it by
@@ -1001,7 +1021,13 @@ reach outside it:
 - **Its bloom is per band**, through the mask twin above, so the white heart
   blooms and a red lick barely does — at full bloom the bands wash to one yellow.
   With the mask that dim at the rim, the ink draws a thin contour round the
-  licks in daylight, which is the look and not a leak.
+  licks in daylight, which is the look and not a leak; the shader's own
+  oxblood pen line (glow 0.05) is the same thing on the edges the noise eats.
+- **What stops it reading as a cartoon is the SILHOUETTE, not the palette.** A
+  six-sided cone read as a cut crystal and a ring splayed outward as a lotus;
+  what reads as a drawn fire is tall tongues standing nearly upright, bitten at
+  the silhouette harder toward the tip (`bite`) so each ends on a brush point,
+  hooked over (`hook`), and torn at the top into licks that part and rise.
 
 ## The glazing: the one thing here that is not opaque
 
