@@ -476,12 +476,14 @@ src/
                         #   quads, cel-lit so a mark belongs to the wall on
                         #   every map, and stood on the STATIC world only
     CombatSystem.ts     # Hitscan, fall-off, the head zone; pooled tracers, sparks, impacts
-    GrenadeSystem.ts    # The one thing that isn't hitscan, and six of the
-                        #   eight layers a blast is drawn as: the flash, the
-                        #   fireball's lobes, the shock ring, the embers, and
-                        #   BlastDust built TWICE — the low dust and the smoke
-                        #   column. `blastAt` is the one blast in the game and
-                        #   `drawBlast` the one place one is drawn
+    GrenadeSystem.ts    # The one thing that isn't hitscan: the flight, the
+                        #   fuse, the molotov's fire, and the ground probe
+                        #   under a blast. `blastAt` is the one blast in the
+                        #   game and `drawBlast` the one place one is drawn
+    BlastFx.ts          # Six of a blast's eight layers, DRAWN: flash,
+                        #   fireball, surge, sparks, burning trails and column,
+                        #   every one a billow in BlastShader. One thin-instanced
+                        #   mesh per blast, motion in closed form. Client only
     AntiTankSystem.ts   # The AT kit in the world: the rocket pool (the SECOND
                         #   thing that isn't hitscan), the mine pool, the arm
                         #   clocks and the hull trigger. Owns no blast and has
@@ -519,11 +521,9 @@ src/
                         #   concentrics across them, clipped to the frame. Pure
                         #   arithmetic — no Babylon, no state
     puffTexture.ts      # The one puff in the game, drawn at runtime: three
-                        #   overlapping gradients, no image file. Shared by the
-                        #   blast's two clouds and the rotor's ring — what tells
-                        #   those apart is size, colour and count, never the
-                        #   sprite. Needs a canvas, so nothing on the server
-                        #   reaches it
+                        #   overlapping gradients, no image file. The rotor's
+                        #   ring is its one user now the blast is billows.
+                        #   Needs a canvas, so nothing on the server reaches it
     RotorWash.ts        # What a helicopter does to the surface when it comes
                         #   down: TWO standing GPU emitters per rotor on the
                         #   field — dust and SPRAY — with `emitRate` driven off
@@ -1360,6 +1360,11 @@ src/
                         #   that boil on twos in hard bands, embers on the
                         #   smooth clock, and the glow-mask TWIN that runs the
                         #   same vertex stage so the bloom ties its depth. WGSL
+    BlastShader.ts      # A BLAST's billow: lumpy (billow noise) sphere that is
+                        #   fire in the flame's inks while hot, eaten from its
+                        #   rim by LIT smoke as it cools, dissolved into wisps
+                        #   at the end. Opaque, so the ink draws between
+                        #   billows; thin-instanced; own glow-mask twin. WGSL
     Volumetrics.ts      # Light shafts: raymarched through the shadow volume,
                         #   capped at the light's colour and SCREENED onto the
                         #   frame so a thick map's glare stays gold. WGSL

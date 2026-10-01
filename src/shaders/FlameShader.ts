@@ -82,12 +82,23 @@ import {
 import { CONFIG } from "../config";
 import type { SelfMasking } from "./GlowPass";
 
-/** The inks a fire is painted in, coolest first. Art, not tuning. */
-const CHAR = "#4a0c07";
-const DEEP = "#a8190c";
-const MID = "#f5541a";
-const HOT = "#ffb12e";
-const CORE = "#fff5d8";
+/**
+ * The inks a fire is painted in, coolest first. Art, not tuning — and
+ * exported, because a blast's fireball (`BlastShader`) is painted in the same
+ * five: one fire in this world, whether it is a brazier or a grenade.
+ */
+export const FIRE_INKS = {
+  char: "#4a0c07",
+  deep: "#a8190c",
+  mid: "#f5541a",
+  hot: "#ffb12e",
+  core: "#fff5d8",
+} as const;
+const CHAR = FIRE_INKS.char;
+const DEEP = FIRE_INKS.deep;
+const MID = FIRE_INKS.mid;
+const HOT = FIRE_INKS.hot;
+const CORE = FIRE_INKS.core;
 
 /**
  * What the glow reads as this material's colour — the orange of the body of

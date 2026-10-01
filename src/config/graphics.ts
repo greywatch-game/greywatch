@@ -86,6 +86,66 @@ export const graphics = {
     embers: { rise: 2.0, rate: 0.55, drift: 0.22, radius: 0.016, stretch: 2.6 },
   },
   /**
+   * How a blast's BILLOWS are drawn (`BlastShader`): every fire, smoke and dust
+   * shape a detonation puts in the air is one lumpy sphere in this material,
+   * and these are the numbers of its DRAWING rather than of the blast — how
+   * big a blast is and how long each layer lasts are `CONFIG.grenade`'s.
+   *
+   * Every distance here is a share of the billow's own radius (the noise is
+   * taken in its object space), so a spark, a trail puff and a tank shell's
+   * column are drawn in one hand at three sizes.
+   */
+  blast: {
+    /**
+     * The drawing's frame rate: the silhouette and the bands are redrawn this
+     * many times a second, and the billow MOVES on the smooth clock between
+     * — the flame's `fps` and the flame's reason, an animated drawing rather
+     * than a simulation.
+     */
+    fps: 12,
+    /**
+     * How far the silhouette is pushed in and out of the sphere, as a share
+     * of the radius. This is what turns a ball into a CAULIFLOWER; much over
+     * 0.3 and the lumps read as separate blobs glued on.
+     */
+    lump: 0.2,
+    /**
+     * How many lumps round the sphere (noise cells per radius). Under about
+     * 2.5 a billow has three or four broad bumps and reads as a boulder; a
+     * cloud is outlined in many small ones.
+     */
+    lumpScale: 3.1,
+    /** How far the lumps drift between two drawings, in noise cells. */
+    drift: 0.09,
+    /** The fire's eating field: its cells per radius and its climb per second. */
+    grain: 2.3,
+    climb: 1.6,
+    /**
+     * How much that field breaks the fire's bands up (the flame's `ragged`).
+     * The heat a billow is handed spans about 0..1.6, so 0.5 is a band edge
+     * that wanders across a third of the billow.
+     */
+    ragged: 0.5,
+    /**
+     * The erosion field a billow DISSOLVES through, cells per radius. Coarser
+     * than the grain, so a dying cloud breaks into a few wisps rather than
+     * into lace.
+     */
+    erode: 1.35,
+    /**
+     * How much of the map's mist a billow of smoke or dust is mixed toward
+     * before the fog: the air it hangs in. At 0 a cloud is exactly as
+     * contrasty as a wall, which is what makes one read as a lump of rock.
+     */
+    air: 0.3,
+    /**
+     * How hard the OUTLINE is bitten by the erosion field at every age, so a
+     * billow's edge is torn from birth rather than only as it dies. 0 is a
+     * clean silhouette, which is what a solid body has.
+     */
+    rim: 0.55,
+  },
+  /**
    * The paper grain pass (`PaperGrain`): vignette, paper grain and chromatic
    * aberration. `grain` is the paper's strength; the map may restate all three
    * (`EnvironmentSpec.grade`).

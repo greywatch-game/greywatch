@@ -1,11 +1,10 @@
 /**
  * GrenadeSystem.ts — Thrown grenades and molotovs: the flight, the bounces, the
- * fuse, the blast and the fire, plus six of the eight layers a blast is drawn as.
- * Owns: the grenade pool (a frag and a bottle per slot), the blast pool (a
- * flash, a cluster of fireball lobes and a shock ring per slot), the fire pool
- * a broken bottle burns in, the ember pool, and the two `BlastDust` clouds —
- * the low dust and the smoke column. All FIXED SIZE and allocated once — this
- * is the same rule CombatSystem's tracers follow, and for the same reason: a
+ * fuse, the blast and the fire.
+ * Owns: the grenade pool (a frag and a bottle per slot), the fire pool a broken
+ * bottle burns in, the ground probe under a blast, and the `BlastFx` that draws
+ * six of a blast's eight layers. All FIXED SIZE and allocated once — this is
+ * the same rule CombatSystem's tracers follow, and for the same reason: a
  * firefight must not allocate.
  *
  * This is the one thing in the game that is not hitscan, and everything here is
@@ -23,14 +22,15 @@
  * - Damage needs line of sight from the blast centre: one ray per victim inside
  *   the radius, which is bounded by how few things are ever that close.
  *
- * ## The blast is EIGHT layers and this file owns six of them
+ * ## The blast is EIGHT layers and this file's `BlastFx` draws six of them
  *
- * `CONFIG.grenade`'s "The blast, as a picture" is the table; what is here is
- * the machinery under it. Six layers are drawn from this file — the flash, the
- * fireball's lobes, the shock ring, the embers, the dust and the smoke — and
- * two are not: the chunks a blast tears out of the ground and the mark it
- * leaves are `BlastDebrisSystem`'s, because they are under Havok and this
- * system runs on a server that has no physics world and no canvas.
+ * `CONFIG.grenade`'s "The blast, as a picture" is the table. Six layers — the
+ * flash, the fireball, the surge, the sparks, the burning fragments' trails
+ * and the column — are billows drawn by `BlastFx`, which this system owns and
+ * the server never builds. Two are not: the chunks a blast tears out of the
+ * ground and the mark it leaves are `BlastDebrisSystem`'s, because they are
+ * under Havok and this system runs on a server that has no physics world and
+ * no canvas.
  *
  * Three rules hold the whole picture together:
  *
@@ -44,8 +44,8 @@
  *   its own smoke column was already up, and the ORDER the layers arrive in is
  *   what the effect is made of.
  * - **What the blast went off ON is answered once**, by a single downward ray
- *   in `probeGround`, and handed to everything that needs it: the shock ring
- *   lies flat to that surface and `BlastDebrisSystem` throws that surface's own
+ *   in `probeGround`, and handed to everything that needs it: the surge rolls
+ *   out flat to that surface and `BlastDebrisSystem` throws that surface's own
  *   rubble. It reads the same `metadata.surface` a bullet's impact reads, so a
  *   new floor material is one row in `CombatSystem`'s table and nothing here.
  *
@@ -60,7 +60,7 @@
  * time, against the thrower's target list fetched on every tick, exactly as a
  * blast fetches it at the detonation. It is drawn in the world's one fire
  * material (`FlameMaterial`), and its ignition is the one blast's own flash
- * and lobes at a fraction of a frag, with the shock ring left off.
+ * and fireball at a fraction of a frag, with the surge left off.
  *
  * **A fire drawn off the wire is a fire with no RULES** (`Fire.rules`): in a
  * match the burn is the authority's, arrives as a `blaze` event, and a client
@@ -74,19 +74,7 @@
  * for a fire's light, noise, mark and kills. This system imports no other
  * system.
  */
-import {
-  Color3,
-  Color4,
-  CylinderParticleEmitter,
-  DynamicTexture,
-  GPUParticleSystem,
-  Mesh,
-  MeshBuilder,
-  Quaternion,
-  Scene,
-  StandardMaterial,
-  Vector3,
-} from "@babylonjs/core";
+import { Mesh, Scene, Vector3 } from "@babylonjs/core";
 import { CONFIG } from "../config";
 import type { Combatant, Team } from "../entities/Combatant";
 import { buildGrenade, pipLit } from "../entities/GrenadeModel";
@@ -101,7 +89,7 @@ import type { EnvironmentSpec } from "../world/environment";
 import { TerrainField } from "../world/TerrainField";
 import { flameData } from "../world/flame";
 import { newRayHit, type RayWorld } from "../world/RayWorld";
-import { buildPuffTexture } from "./puffTexture";
+import { BlastFx } from "./BlastFx";
 import type { DamageKind, Hittable } from "./CombatSystem";
 
 /**
@@ -162,53 +150,6 @@ interface Grenade {
 }
 
 /**
- * One lobe of a fireball: a sphere with its own offset, size and start delay.
- *
- * The offset is a DIRECTION and a distance rather than a point, because a lobe
- * travels out along it as it grows — a cluster of spheres that merely sat where
- * they were born would be a lumpy balloon instead of a churning one.
- */
-interface Lobe {
-  mesh: Mesh;
-  /** Unit direction out of the detonation, and how far along it the lobe ends. */
-  dir: Vector3;
-  reach: number;
-  /** Drawn radius at full expansion, before `power`. */
-  size: number;
-  /** Seconds after the detonation this lobe appears. */
-  delay: number;
-  /** Which rung of `FIRE_LADDER` it currently wears; -1 while parked. */
-  rung: number;
-}
-
-/**
- * One drawn blast: the flash at the point, the lobes around it, and the ring
- * running out along the ground.
- *
- * All three are one slot because they are one event — a pool that could hand
- * out a fireball with no ring behind it, or claim a ring for the next blast
- * while this one's lobes were still burning, would be three pools kept in step
- * by hand.
- */
-interface Blast {
-  flash: Mesh;
-  lobes: Lobe[];
-  ring: Mesh;
-  /** Seconds since the detonation; < 0 while the slot is free. */
-  t: number;
-  /** How big this one is, with the grenade as 1. */
-  power: number;
-  /** Where it went off — the slot's own copy, since the caller's is scratch. */
-  at: Vector3;
-  /**
-   * Whether the ring runs out along the ground. True for every blast; false
-   * for a molotov's ignition, which is a whoosh of petrol and not a pressure
-   * wave — and whose fire already draws its own edge.
-   */
-  shock: boolean;
-}
-
-/**
  * One patch of burning ground, and the second pool in this file.
  *
  * **It is a PLACE with a clock, where a blast is an event with a picture**, so
@@ -251,13 +192,6 @@ interface Flame {
   on: boolean;
 }
 
-/** One ember flung out of a blast. */
-interface Ember {
-  mesh: Mesh;
-  vel: Vector3;
-  t: number;
-}
-
 /**
  * What a blast went off ON: the surface kind and which way it faces.
  *
@@ -274,50 +208,6 @@ export interface BlastGround {
   surface: "ground" | "hard";
   normal: Vector3;
 }
-
-/**
- * The fireball's colour, as four SHARED materials rather than one animated one.
- *
- * `CelMaterialFactory.getEmissive` hands out one material per colour to the
- * whole game, so a lobe that wrote its own `emissiveColor` would repaint every
- * brazier, tracer and lit window that happened to share the hex. A lobe swaps
- * material as it ages instead: four steps, each a property write, and the fade
- * to nothing on top of it is `mesh.visibility`, which IS per mesh.
- *
- * `at` is the fraction of the lobe's life the rung starts at. White for the
- * first eighth — a real fireball is only ever white in the frames the eye
- * cannot resolve — then the orange it is mostly seen as, then the deep red of
- * it going out, then the char that hands over to the smoke.
- */
-const FIRE_LADDER: { at: number; hex: string }[] = [
-  { at: 0, hex: "#fff4d6" },
-  { at: 0.12, hex: "#ffc247" },
-  { at: 0.34, hex: "#f2701a" },
-  { at: 0.62, hex: "#7d2a10" },
-];
-
-/**
- * The shock ring: warm-pale, and the one layer that is never orange.
- *
- * Deliberately UNDER white. It is unlit emissive and it is in the glow layer,
- * so a ring at `#ffe4bc`-and-above blooms into a solid band of light lying on
- * the street — a magic circle rather than a pressure wave. The peak visibility
- * in `poseRing` is the other half of the same restraint.
- */
-const SHOCK_COLOR = "#ffd2a0";
-
-/**
- * How long a blast slot is held, in seconds: the last lobe's delay plus its
- * life, which is the longest of the three layers in it.
- *
- * Derived rather than declared, because it is not a choice — a slot released
- * early takes a burning lobe off the screen, and one held late is a slot the
- * next blast has to steal. It is a `const` over `CONFIG` at module scope, which
- * is safe here for the reason `CONFIG` is `as const`: nothing can move these at
- * runtime.
- */
-const BLAST_SLOT_LIFE =
-  CONFIG.grenade.fireball.stagger + CONFIG.grenade.fireball.life;
 
 /**
  * The ground probe: how far ABOVE the blast the ray starts, and how far it
@@ -370,8 +260,7 @@ const _normal = new Vector3();
 const _tangent = new Vector3();
 const _launch = new Vector3();
 /**
- * The blast's own scratch: what it went off on, the torus's own axis, and one
- * spare for posing the ring.
+ * The blast's own scratch: what it went off on.
  *
  * Separate from `_step` deliberately. `_step` belongs to the flight, which is
  * mid-loop when a fuse runs out — a detonation borrowing it would be writing
@@ -387,30 +276,26 @@ const _down = new Vector3(0, -1, 0);
 /** A fire's own point of view for its burn's line of sight, and a flame's floor probe. */
 const _flameTop = new Vector3();
 const _flameProbe = new Vector3();
-const _up = new Vector3(0, 1, 0);
-const _lift = new Vector3();
 
 /** Construction-time choices. Today: whether this instance can draw. */
 export interface GrenadeOptions {
   /**
-   * Build the blast's two GPU clouds — the dust and the smoke. Default true;
-   * the multiplayer server passes false because a NullEngine has neither a
-   * canvas nor a GPU device, and both need both. Nothing about where a grenade
-   * goes or what it hurts depends on either.
+   * Build the blast's picture (`BlastFx`) and the molotov's flames. Default
+   * true; the multiplayer server passes false because a NullEngine has no GPU
+   * device to compile their WGSL on. Nothing about where a grenade goes or
+   * what it hurts depends on either. Named for the dust it once guarded, and
+   * kept: `HeadlessGame` and `docs/multiplayer.md` both spell it.
    */
   dust?: boolean;
 }
 
 export class GrenadeSystem {
   private grenades: Grenade[] = [];
-  private blasts: Blast[] = [];
-  private embers: Ember[] = [];
-  /** The low cloud a blast lifts off the ground — see `BlastDust`. */
-  private dust: BlastDust | null;
-  /** The column it sends up. The same class, different numbers — see `smoke`. */
-  private smoke: BlastDust | null;
-  /** The fireball's four rungs, resolved once — see `FIRE_LADDER`. */
-  private readonly fireMats: StandardMaterial[];
+  /**
+   * The blast's picture — six of its eight layers (`BlastFx`). Null on the
+   * authority, which draws nothing: see `GrenadeOptions.dust`.
+   */
+  private readonly fx: BlastFx | null;
   /** Reused by the flight and the line-of-sight tests alike. */
   /**
    * The solid world as a segment query, and the result buffer the flight, the
@@ -515,21 +400,13 @@ export class GrenadeSystem {
     opts?: GrenadeOptions,
   ) {
     const g = CONFIG.grenade;
-    // The dust is the one part of this system that cannot exist without a
-    // renderer: it builds a `DynamicTexture` (which needs a canvas) and a
-    // `GPUParticleSystem` (which under WebGPU is a compute shader and needs a
-    // device), and under Babylon's NullEngine the first of those throws
-    // `OffscreenCanvas is not defined` before the constructor returns. The
-    // multiplayer server runs the BALLISTICS — where a grenade lands and who it
-    // hurts is a rule, not a picture — so it asks for the system without the
-    // dust. Everything else here is spheres and materials, which are inert
-    // without a renderer and cost nothing to keep.
+    // The blast's picture is the one part of this system that cannot exist
+    // without a renderer: its WGSL has no device to compile on under Babylon's
+    // NullEngine. The multiplayer server runs the BALLISTICS — where a grenade
+    // lands and who it hurts is a rule, not a picture — so it asks for the
+    // system without it.
     const draws = opts?.dust !== false;
-    this.dust = draws ? new BlastDust(scene, "blastDust", g.dust) : null;
-    this.smoke = draws ? new BlastDust(scene, "blastSmoke", g.smoke) : null;
-    this.fireMats = FIRE_LADDER.map((rung) => mats.getEmissive(rung.hex));
-    const shockMat = mats.getEmissive(SHOCK_COLOR);
-    const emberMat = mats.getEmissive("#ffd07a");
+    this.fx = draws ? new BlastFx(scene, mats) : null;
 
     for (let i = 0; i < g.poolSize; i++) {
       const { mesh, pip } = buildGrenade(scene, mats, `grenade${i}`);
@@ -545,88 +422,6 @@ export class GrenadeSystem {
         team: 0,
         by: null,
         resting: false,
-      });
-    }
-
-    // One fireball per grenade would be a pool nobody can exhaust; a handful is
-    // what "two blasts close together" actually needs. Each slot is a flash, a
-    // cluster of lobes and a ring — see `Blast`.
-    for (let i = 0; i < g.blastSlots; i++) {
-      const flash = MeshBuilder.CreateSphere(
-        `blastFlash${i}`,
-        { diameter: 2, segments: 10 },
-        scene,
-      );
-      flash.material = this.fireMats[0];
-      flash.metadata = { noInk: true };
-      flash.isVisible = false;
-      flash.isPickable = false;
-
-      // **The lobes' shape is decided HERE and not at the detonation**, which
-      // is what makes a burst free: a slot's five lobes get their directions,
-      // sizes and delays once, drawn off the golden angle so the cluster is
-      // spread rather than clumped, and every blast that claims the slot wears
-      // the same arrangement at whatever `power` it came with. Four slots is
-      // four arrangements, which is more variety than an eye gets out of an
-      // event lasting half a second.
-      const lobes: Lobe[] = [];
-      for (let j = 0; j < g.fireball.lobes; j++) {
-        const mesh = MeshBuilder.CreateSphere(
-          `blastLobe${i}-${j}`,
-          { diameter: 2, segments: 8 },
-          scene,
-        );
-        mesh.material = this.fireMats[0];
-        mesh.metadata = { noInk: true };
-        mesh.isVisible = false;
-        mesh.isPickable = false;
-        // The golden angle around the vertical and a lift that walks up it:
-        // an even spread with no two lobes on the same bearing, and no call to
-        // `Math.random()` in a constructor the server also runs.
-        const yaw = j * 2.399963;
-        const lift = -0.15 + (j / Math.max(1, g.fireball.lobes - 1)) * 0.95;
-        const flat = Math.sqrt(Math.max(0, 1 - lift * lift));
-        lobes.push({
-          mesh,
-          dir: new Vector3(Math.cos(yaw) * flat, lift, Math.sin(yaw) * flat),
-          reach: g.fireball.spread * (0.45 + 0.55 * ((j * 7) % 5) / 4),
-          size: g.fireball.radius * (0.55 + 0.45 * ((j * 3) % 4) / 3),
-          delay: (j / g.fireball.lobes) * g.fireball.stagger,
-          rung: -1,
-        });
-      }
-
-      // Built at diameter 2 so a uniform scale of `r` IS a ring of radius `r`,
-      // and the tube is quoted as a fraction of that — it widens in proportion
-      // as the ring runs out, which is what a wave front does. `squash` is the
-      // one axis that does not scale with the rest, and is what keeps the ring
-      // lying on the ground rather than standing up as a doughnut.
-      const ring = MeshBuilder.CreateTorus(
-        `blastRing${i}`,
-        { diameter: 2, thickness: 0.095, tessellation: 28 },
-        scene,
-      );
-      ring.material = shockMat;
-      // **`noGlow` is the ring's, and it is the one layer here that opts out.**
-      // The flash and the lobes are FIRE and want the bloom; the ring is a thin
-      // pale band lying on the street, and the glow layer turns a thin pale
-      // band into a solid halo of light — a magic circle, drawn at full
-      // strength in daylight where the fireball behind it is not. It is not
-      // inert: this system is built before `Game`'s construction-time
-      // glow-exclusion scan, the same ordering `DebrisSystem`'s pool relies on.
-      ring.metadata = { noInk: true, noGlow: true };
-      ring.isVisible = false;
-      ring.isPickable = false;
-      ring.rotationQuaternion = Quaternion.Identity();
-
-      this.blasts.push({
-        flash,
-        lobes,
-        ring,
-        t: -1,
-        power: 1,
-        at: new Vector3(),
-        shock: true,
       });
     }
 
@@ -656,7 +451,8 @@ export class GrenadeSystem {
         // The first flame stands in the middle and the rest walk out on the
         // golden angle to most of the radius, so the disc reads as burning to
         // its edge rather than as one fire with a halo. Deterministic, for
-        // the lobes' reason: nothing in this constructor may draw a random.
+        // the flight's reason: nothing in this constructor, which the server
+        // also runs, may draw a random.
         const r =
           j === 0 ? 0 : m.fire.radius * (0.3 + 0.55 * Math.sqrt(j / (m.flames - 1)));
         const a = j * 2.399963 + i * 0.7;
@@ -678,19 +474,6 @@ export class GrenadeSystem {
         rules: true,
         flames,
       });
-    }
-
-    for (let i = 0; i < g.emberCount * 3; i++) {
-      const mesh = MeshBuilder.CreateBox(
-        `ember${i}`,
-        { width: 0.09, height: 0.09, depth: 0.22 },
-        scene,
-      );
-      mesh.material = emberMat;
-      mesh.metadata = { noInk: true };
-      mesh.isVisible = false;
-      mesh.isPickable = false;
-      this.embers.push({ mesh, vel: new Vector3(), t: 0 });
     }
   }
 
@@ -714,8 +497,7 @@ export class GrenadeSystem {
    * against.
    */
   setEnvironment(env: EnvironmentSpec): void {
-    this.dust?.setEnvironment(env);
-    this.smoke?.setEnvironment(env);
+    this.fx?.setEnvironment(env);
   }
 
   /**
@@ -950,7 +732,7 @@ export class GrenadeSystem {
     }
 
     this.updateFires(dt);
-    this.updateEffects(dt);
+    this.fx?.update(dt);
   }
 
   /**
@@ -1102,7 +884,7 @@ export class GrenadeSystem {
     this.poseFire(slot);
 
     const ground = this.probeGround(c);
-    this.igniteFx(c, ground);
+    this.igniteFx(c);
     this.onIgnited(slot.id, c, ground);
   }
 
@@ -1116,16 +898,15 @@ export class GrenadeSystem {
   }
 
   /**
-   * The ignition: the one blast's own flash and lobes at `molotov.ignition`
-   * of a frag, the embers on the same scale, and the smoke column — but no
-   * ring and no ground dust, because petrol going up is a whoosh and not a
-   * pressure wave.
+   * The ignition: the one blast's own flash and fireball at
+   * `molotov.ignition` of a frag, its sparks on the same scale, and a column
+   * at `molotov.smoke` — but no surge and no burning fragments, because petrol
+   * going up is a whoosh and not a pressure wave. Not told what it went off
+   * on: the one layer that would care is the surge.
    */
-  private igniteFx(at: Vector3, ground: BlastGround): void {
+  private igniteFx(at: Vector3): void {
     const m = CONFIG.molotov;
-    this.startFireball(at, m.ignition, ground, false);
-    this.smoke?.burst(at, m.smoke);
-    this.throwEmbers(at, m.ignition);
+    this.fx?.ignite(at, m.ignition, m.smoke);
   }
 
   /** Takes a fire away, and tells `Game` so its light and sound go with it. */
@@ -1220,7 +1001,7 @@ export class GrenadeSystem {
    * **The second caller is why this is a method rather than the body of
    * `detonate`, and the alternative was worse than the coupling looks.** A tank
    * shell wants exactly this — a falloff, a fragment ray per victim, the
-   * fireball, the dust, the embers, the light and the noise — with three
+   * fireball, the surge, the sparks, the light and the noise — with three
    * different numbers and a different `DamageKind`. Written again in the
    * vehicle system it would have been the second copy of a five-line falloff
    * and a nine-line LOS test, and this codebase has already paid once for two
@@ -1284,7 +1065,7 @@ export class GrenadeSystem {
    */
   drawBlast(at: Vector3, power: number): BlastGround {
     const ground = this.probeGround(at);
-    this.spawnBlast(at, power, ground);
+    this.fx?.blast(at, power, ground);
     return ground;
   }
 
@@ -1303,14 +1084,14 @@ export class GrenadeSystem {
    * A blast in mid-air (a shell into a wall high up, a grenade that went off
    * over a stairwell) finds nothing within `PROBE_REACH` and is told the ground
    * is level earth beneath it. That is the right answer for the two consumers:
-   * the ring lies flat and the chunks fall, which is what an airburst does.
+   * the surge lies flat and the chunks fall, which is what an airburst does.
    */
   private probeGround(at: Vector3): BlastGround {
     _lifted.copyFrom(at);
     _lifted.y += PROBE_LIFT;
     if (this.rays?.castRound(_lifted, _down, PROBE_REACH, this.hit)) {
       _ground.normal.copyFrom(this.hit.normal);
-      // A collider's back face points down, and a ring turned onto it is a ring
+      // A collider's back face points down, and a surge laid onto it is a surge
       // drawn under the floor. The flight flips a normal for the same reason.
       if (_ground.normal.y < 0) _ground.normal.scaleInPlace(-1);
       _ground.surface = this.hit.surface;
@@ -1338,233 +1119,6 @@ export class GrenadeSystem {
   }
 
   /**
-   * Claims a blast slot and starts all six layers on the same frame.
-   *
-   * **The slot is claimed by AGE and never refused**, which is the dust's rule
-   * rather than the grenade pool's and for the dust's reason: nothing is spent
-   * on a fireball, so a blast with no fire in it is a worse lie than a
-   * half-second-old one cut short.
-   */
-  private spawnBlast(at: Vector3, power: number, ground: BlastGround): void {
-    this.startFireball(at, power, ground, true);
-
-    // The dust goes up with the flash and outlives it by a second — the
-    // fireball is the event and the cloud is what the event left behind — and
-    // the smoke column outlives THAT by another two.
-    this.dust?.burst(at, power);
-    this.smoke?.burst(at, power);
-    this.throwEmbers(at, power);
-  }
-
-  /**
-   * The blast-slot half of a blast: the flash, the lobes and — when `shock` —
-   * the ring. Split out of `spawnBlast` for the molotov's ignition, which is
-   * this same fire at a fraction of the size with the ring left off.
-   */
-  private startFireball(
-    at: Vector3,
-    power: number,
-    ground: BlastGround,
-    shock: boolean,
-  ): void {
-    let slot = this.blasts[0];
-    for (const b of this.blasts) {
-      if (b.t < 0) {
-        slot = b;
-        break;
-      }
-      if (b.t > slot.t) slot = b;
-    }
-    slot.t = 0;
-    slot.power = power;
-    slot.shock = shock;
-    slot.at.copyFrom(at);
-
-    slot.flash.position.copyFrom(at);
-    slot.flash.material = this.fireMats[0];
-    for (const lobe of slot.lobes) {
-      // Parked until its delay is up. Its rung is cleared so the first pose
-      // reassigns the material rather than trusting what the last blast left.
-      lobe.mesh.isVisible = false;
-      lobe.rung = -1;
-    }
-
-    // The ring lies flat to whatever the blast went off on. `FromUnitVectorsTo`
-    // is the shortest turn from the torus's own axis onto that normal, which
-    // for the overwhelmingly common flat-earth case is the identity.
-    Quaternion.FromUnitVectorsToRef(_up, ground.normal, slot.ring.rotationQuaternion!);
-    slot.ring.position.copyFrom(at);
-    // Off the surface by the same trick a bullet's dust disc uses: a coplanar
-    // ring z-fights with the floor it is expanding across.
-    slot.ring.position.addInPlace(_lift.copyFrom(ground.normal).scaleInPlace(0.06));
-
-    // **Posed HERE and not left to the next frame**, which is the one thing
-    // about this that has to be said out loud: a slot is reused, so a mesh made
-    // visible without being posed is drawn for one frame at whatever size and
-    // brightness the LAST blast in this slot ended on — a fireball that flashes
-    // full-size and dark before it starts. At `t = 0` these three are the birth
-    // pose and nothing about them is a special case.
-    this.poseFlash(slot);
-    this.poseLobes(slot);
-    this.poseRing(slot);
-  }
-
-  /**
-   * Embers, thrown out of the blast on an even-ish spread rather than a
-   * random one — a handful of random directions clumps, and a clump reads as
-   * one lump of debris instead of as a burst.
-   */
-  private throwEmbers(at: Vector3, power: number): void {
-    const g = CONFIG.grenade;
-    const wanted = Math.round(g.emberCount * power);
-    let spawned = 0;
-    for (const e of this.embers) {
-      if (spawned >= wanted) break;
-      if (e.t > 0) continue;
-      const yaw = ((spawned + Math.random()) / wanted) * Math.PI * 2;
-      const lift = 0.25 + Math.random() * 0.9;
-      const speed = g.emberSpeed * power * (0.5 + Math.random() * 0.7);
-      e.vel
-        .set(Math.sin(yaw), lift, Math.cos(yaw))
-        .normalize()
-        .scaleInPlace(speed);
-      e.mesh.position.copyFrom(at);
-      e.mesh.isVisible = true;
-      e.t = g.emberLife * (0.6 + Math.random() * 0.6);
-      spawned++;
-    }
-  }
-
-  private updateEffects(dt: number): void {
-    const g = CONFIG.grenade;
-    this.dust?.update(dt);
-    this.smoke?.update(dt);
-    for (const b of this.blasts) {
-      if (b.t < 0) continue;
-      b.t += dt;
-      if (b.t > BLAST_SLOT_LIFE) {
-        this.parkBlast(b);
-        continue;
-      }
-      this.poseFlash(b);
-      this.poseLobes(b);
-      this.poseRing(b);
-    }
-    for (const e of this.embers) {
-      if (e.t <= 0) continue;
-      e.t -= dt;
-      if (e.t <= 0) {
-        e.mesh.isVisible = false;
-        continue;
-      }
-      e.vel.y -= g.emberGravity * dt;
-      e.mesh.position.addInPlace(_step.copyFrom(e.vel).scaleInPlace(dt));
-      e.mesh.rotation.x += dt * 9;
-      e.mesh.visibility = Math.min(1, e.t / (g.emberLife * 0.4));
-    }
-  }
-
-  /**
-   * The core: already large on the frame it appears, gone two frames later.
-   *
-   * It expands hardly at all — from 55% to full — because this is the layer
-   * that FIXES the detonation point for the eye. The lobes are scattered and
-   * the clouds are lifted, so a flash that grew from nothing would leave the
-   * first frame of a blast with nothing at its middle.
-   */
-  private poseFlash(b: Blast): void {
-    const f = b.t / CONFIG.grenade.flash.life;
-    if (f >= 1) {
-      b.flash.isVisible = false;
-      return;
-    }
-    b.flash.scaling.setAll(CONFIG.grenade.flash.radius * b.power * (0.55 + 0.45 * f));
-    // Squared, so most of the flash is spent at nearly full brightness and the
-    // fall-off is the last third rather than a linear dim across the whole of it.
-    b.flash.visibility = (1 - f) * (1 - f);
-    b.flash.isVisible = true;
-  }
-
-  /**
-   * The cluster: each lobe out along its own bearing, growing on a square root
-   * so it arrives fast and settles, climbing on `rise`, and stepping down
-   * `FIRE_LADDER` as it goes.
-   */
-  private poseLobes(b: Blast): void {
-    const fb = CONFIG.grenade.fireball;
-    for (const lobe of b.lobes) {
-      const age = b.t - lobe.delay;
-      const f = age / fb.life;
-      if (age < 0 || f >= 1) {
-        if (lobe.mesh.isVisible) lobe.mesh.isVisible = false;
-        continue;
-      }
-      const grown = Math.sqrt(f);
-      lobe.mesh.scaling.setAll(lobe.size * b.power * (0.3 + 0.7 * grown));
-      lobe.mesh.position
-        .copyFrom(lobe.dir)
-        .scaleInPlace(lobe.reach * b.power * (0.35 + 0.65 * grown))
-        .addInPlace(b.at);
-      lobe.mesh.position.y += fb.rise * age;
-      // Held solid for the first half and faded over the second — the ladder
-      // is already darkening it, and fading from the first frame would take the
-      // fireball out before the colour had anywhere to go.
-      lobe.mesh.visibility = f < 0.5 ? 1 : 1 - (f - 0.5) * 2;
-      // The rung, and it is only WRITTEN when it changes: a material assignment
-      // that is already the material it was is still a property write Babylon
-      // dirties a sub-mesh over.
-      let rung = 0;
-      for (let i = FIRE_LADDER.length - 1; i >= 0; i--) {
-        if (f >= FIRE_LADDER[i].at) {
-          rung = i;
-          break;
-        }
-      }
-      if (rung !== lobe.rung) {
-        lobe.rung = rung;
-        lobe.mesh.material = this.fireMats[rung];
-      }
-      lobe.mesh.isVisible = true;
-    }
-  }
-
-  /**
-   * The ring: out to `shock.radius` inside `shock.life`, widening as it goes.
-   *
-   * Its expansion EASES OUT (`1 - (1-f)^2`) rather than running linearly,
-   * which is the difference between a pressure wave and a hoop rolling away
-   * from the blast: most of the distance is covered in the first third.
-   */
-  private poseRing(b: Blast): void {
-    const sh = CONFIG.grenade.shock;
-    const f = b.t / sh.life;
-    if (f >= 1 || !b.shock) {
-      b.ring.isVisible = false;
-      return;
-    }
-    const out = 1 - (1 - f) * (1 - f);
-    // The torus is built at diameter 2, so a scale of r is a ring of radius r.
-    const r = sh.radius * b.power * (0.08 + 0.92 * out);
-    b.ring.scaling.set(r, r * sh.squash, r);
-    // `peak` is a cap and not a taste: this is unlit emissive inside the glow
-    // layer, so a ring drawn at full alpha blooms into a solid band of light on
-    // the street. See `SHOCK_COLOR`.
-    b.ring.visibility = sh.peak * (1 - f) * (1 - f);
-    b.ring.isVisible = true;
-  }
-
-  /** Puts a blast's three layers away and frees the slot. */
-  private parkBlast(b: Blast): void {
-    b.t = -1;
-    b.flash.isVisible = false;
-    b.ring.isVisible = false;
-    for (const lobe of b.lobes) {
-      lobe.mesh.isVisible = false;
-      lobe.rung = -1;
-    }
-  }
-
-  /**
    * Drops everything in flight, and every cloud standing over it. Called
    * wherever the map under it is thrown away — a grenade whose fuse survives a
    * round change would go off in the next one, over terrain that no longer
@@ -1582,19 +1136,13 @@ export class GrenadeSystem {
       // is the one thing in here that would outlive it.
       n.by = null;
     }
-    for (const b of this.blasts) this.parkBlast(b);
     // Through `putOut`, so every fire's light and held-open sound is taken
     // away by the same door a burn-out uses — a fire that survived a map
     // change would light and crackle over a street that no longer exists.
     for (const f of this.fires) {
       if (f.t >= 0) this.putOut(f);
     }
-    for (const e of this.embers) {
-      e.t = 0;
-      e.mesh.isVisible = false;
-    }
-    this.dust?.reset();
-    this.smoke?.reset();
+    this.fx?.reset();
   }
 }
 
@@ -1613,257 +1161,4 @@ function fireStrength(t: number): number {
   const up = Math.min(1, t / fc.grow);
   const down = Math.min(1, Math.max(0, (fc.life - t) / fc.fade));
   return (1 - (1 - up) * (1 - up)) * down;
-}
-
-/** One blast's dust: the GPU system holding it, and when it goes quiet. */
-interface DustCloud {
-  system: GPUParticleSystem;
-  /** Seconds until the last puff has faded; <= 0 while the slot is free. */
-  t: number;
-}
-
-/**
- * What one cloud is made of. `CONFIG.grenade.dust` and `.smoke` are both this.
- *
- * Spelled out rather than taken as `typeof CONFIG.grenade.dust`, which would
- * be `as const`'s LITERAL types — a spec whose `puffs` is the type `34` accepts
- * exactly one of the two clouds this file builds.
- */
-interface CloudSpec {
-  readonly clouds: number;
-  readonly puffs: number;
-  readonly life: number;
-  readonly radius: number;
-  readonly height: number;
-  readonly lift: number;
-  readonly speed: number;
-  readonly settle: number;
-  readonly rise: number;
-  readonly sizeStart: number;
-  readonly sizeEnd: number;
-  readonly sizeSpread: number;
-  readonly opacity: number;
-  readonly lit: number;
-}
-
-/**
- * A cloud a blast throws: `spec.puffs` soft quads out of a flat disc at the
- * detonation, expanding, slowing and fading over `spec.life`. Not emissive and
- * not the flame — `BLENDMODE_STANDARD`, tinted from the map's own mist toward
- * its key light, so it occludes what is behind it rather than adding to it.
- *
- * **Two of these are built and they are the same class with different
- * numbers**: `CONFIG.grenade.dust` is the low cloud a blast lifts off the
- * ground, and `.smoke` is the column it sends up — fewer puffs, much bigger,
- * much longer-lived, a real `rise` and a `lit` near zero. A second
- * implementation would be a second place the four Babylon constraints below
- * have to be remembered, and they are the whole of what is hard about this.
- *
- * Owned by `GrenadeSystem` and constructed by it. It is in this file rather
- * than in one of its own because it is the blast's own visuals, which is where
- * the rest of them already live; nothing in `Game` wires it, and it is not a
- * system in that sense.
- *
- * **It is a pool of GPU systems, not one system holding every cloud, and that
- * is Babylon's constraint rather than a preference.** In emit-rate-controlled
- * mode a `GPUParticleSystem` re-emits into a ring of
- * `max(emitRate * maxLifeTime, this frame's emission)` slots from a circular
- * write pointer. `emitRate` is zero here — that is what makes this a burst
- * rather than a field — so the ring is exactly one `manualEmitCount`, and a
- * second blast inside the first cloud's life would write over the first
- * cloud's slots and pop it off the screen mid-fade. One ring per cloud is what
- * keeps two blasts apart, for the same reason there is a pool of fireball slots
- * and not one. (`Atmosphere` documents the other side of the same invariant:
- * there the ring is sized so the pointer comes round exactly as the oldest
- * mote dies.)
- *
- * Two more things about that mode are load-bearing:
- *
- * - **A stopped system refuses manual emissions too.** The update shader gates
- *   its emit branch on `stopFactor != 0`, so `stop()` is not a way to hold a
- *   burst system idle between blasts. Every system here is started once at
- *   construction and left started; with `emitRate` at zero an idle one emits
- *   nothing, and `_render` returns before doing any work while its ring is
- *   still empty.
- * - **`updateSpeed` is `1/60` so the numbers mean what they say.** The GPU
- *   clock advances by `updateSpeed * scene.getAnimationRatio()` per frame, and
- *   that ratio is `dt * 60`, so at `1/60` a lifetime is seconds and an emit
- *   power is metres per second — the units the rest of `CONFIG.grenade` is
- *   written in. (`Atmosphere`'s 0.012 is deliberately not that: its mote lives
- *   are in its own clock.)
- */
-class BlastDust {
-  private clouds: DustCloud[] = [];
-  private texture: DynamicTexture;
-
-  constructor(
-    scene: Scene,
-    name: string,
-    private readonly d: CloudSpec,
-  ) {
-    this.texture = buildPuffTexture(scene, name);
-
-    for (let i = 0; i < d.clouds; i++) {
-      const system = new GPUParticleSystem(
-        `${name}${i}`,
-        {
-          capacity: d.puffs,
-          emitRateControl: true,
-          // The default is the engine's max texture size, which is 16k random
-          // vec4s generated with `Math.random()` per system at construction —
-          // ~131,000 calls and half a megabyte of VRAM each, to seed a few
-          // dozen puffs, and paid once per cloud in the pool. This is variety
-          // enough that no two puffs in a cloud share a seed.
-          randomTextureSize: 4096,
-        },
-        scene,
-      );
-      system.particleTexture = this.texture;
-      system.emitter = new Vector3();
-      system.blendMode = GPUParticleSystem.BLENDMODE_STANDARD;
-      system.updateSpeed = 1 / 60;
-      // Zero, and it must stay zero: a rate is what would turn this from a
-      // burst into a fountain standing wherever the last grenade went off.
-      system.emitRate = 0;
-      system.minLifeTime = d.life * 0.7;
-      system.maxLifeTime = d.life;
-      // Born radially out of a flat disc, so the cloud spreads along the
-      // ground. The randomizer is what stops it reading as a ring.
-      system.createCylinderEmitter(d.radius, d.height, 1, 0.55);
-      system.minEmitPower = d.speed * 0.45;
-      system.maxEmitPower = d.speed;
-      system.gravity = new Vector3(0, d.rise, 0);
-      // Thrown out hard, then stopping in the air. Read against the particle's
-      // own age, so it is per puff rather than per system.
-      system.addVelocityGradient(0, 1);
-      system.addVelocityGradient(0.25, 0.4);
-      system.addVelocityGradient(1, d.settle);
-      // A puff grows as it goes: this is what separates dust from debris. The
-      // pair at each stop is a per-particle range, so the cloud is not three
-      // dozen quads breathing in step.
-      system.addSizeGradient(0, d.sizeStart, d.sizeStart * (1 + d.sizeSpread));
-      system.addSizeGradient(1, d.sizeEnd, d.sizeEnd * (1 + d.sizeSpread));
-      // A billboard that never turns is a decal; these are one texture seen
-      // three dozen times in one place.
-      system.minInitialRotation = 0;
-      system.maxInitialRotation = Math.PI * 2;
-      system.minAngularSpeed = -0.5;
-      system.maxAngularSpeed = 0.5;
-      system.start();
-      this.clouds.push({ system, t: 0 });
-    }
-  }
-
-  /**
-   * Dust is the ground it came off and the air it hangs in, so its colour is
-   * the map's rather than this system's: `mistColor` lifted toward the key
-   * light by `dust.lit`. Called from `installMap` with the environment the map
-   * was built against — a cloud is only ever seen against that map's night.
-   */
-  setEnvironment(env: EnvironmentSpec): void {
-    const d = this.d;
-    const tint = Color3.Lerp(
-      Color3.FromHexString(env.mistColor),
-      Color3.FromHexString(env.lighting.color),
-      d.lit,
-    );
-    for (const cloud of this.clouds) {
-      cloud.system.color1 = new Color4(tint.r, tint.g, tint.b, d.opacity);
-      // The other end of one puff's colour, darker and thinner: a cloud of a
-      // single tone is a shape, and the shaded half is what gives it a body.
-      // Each puff picks its own place between the two from its seed.
-      cloud.system.color2 = new Color4(
-        tint.r * 0.5,
-        tint.g * 0.5,
-        tint.b * 0.58,
-        d.opacity * 0.72,
-      );
-      // Alpha runs LINEARLY from `color1`/`color2` to this over the puff's
-      // life, and that is the whole fade — there is no curve on it.
-      //
-      // A colour gradient is what would buy one (hold, then go), and it is not
-      // usable HERE: `addColorGradient` on a GPU system in Babylon 9.19.1
-      // throws on the next render and takes the entire scene's rendering down
-      // with it, black frame and all, rather than failing to the ungraded
-      // colours. Size and velocity gradients on the same system are fine. So
-      // the fade is bought with the numbers instead: `opacity` is set for how
-      // the cloud reads at half life rather than at birth, and `life` for
-      // where linear decay puts the tail.
-      //
-      // **The rule under that is narrower than it looks, and `RotorWash.paint`
-      // is the file that spends the difference.** A gradient texture changes
-      // the vertex buffer LAYOUT, and those buffers are built on a system's
-      // FIRST RENDER and never again — so what is fatal is adding one to a
-      // system that has already drawn, which is every system in this pool by
-      // the time an environment arrives. These are built in the `Game`'s
-      // constructor and re-tinted per map install; a class that colours its
-      // systems before they have ever been offered to a frame can have the
-      // curve this comment says is unavailable.
-      cloud.system.colorDead = new Color4(tint.r, tint.g, tint.b, 0);
-    }
-  }
-
-  /**
-   * One cloud at a detonation.
-   *
-   * An exhausted pool takes the OLDEST cloud rather than refusing, which is
-   * the opposite of the grenade pool's rule and for the opposite reason:
-   * nothing is spent on a cloud, so a blast with no dust is a worse lie than a
-   * second-old cloud cut short. `manualEmitCount` is consumed by the next
-   * render, so the puffs appear on the same frame as the fireball.
-   */
-  burst(at: Vector3, power: number): void {
-    const d = this.d;
-    let slot = this.clouds[0];
-    for (const cloud of this.clouds) {
-      if (cloud.t <= 0) {
-        slot = cloud;
-        break;
-      }
-      if (cloud.t < slot.t) slot = cloud;
-    }
-    // Lifted off the detonation — see `dust.lift`. The blast itself is
-    // resolved at `at` and only the cloud stands above it.
-    (slot.system.emitter as Vector3).copyFrom(at).y += d.lift * power;
-    // **`power` is applied HERE and not in the constructor**, because these are
-    // the three properties the GPU update shader reads inside its EMISSION
-    // branch — `scaleRange`, `emitPower` and the emitter's own extents — and
-    // that branch runs only for a particle being born. So a burst may change
-    // them freely: the puffs already in the ring were sized when they were
-    // emitted and are not resized under a later blast.
-    //
-    // A size GRADIENT could not do this: those are baked into a texture at
-    // `start()` and are shared by everything in the ring.
-    slot.system.minScaleX = power;
-    slot.system.maxScaleX = power;
-    slot.system.minScaleY = power;
-    slot.system.maxScaleY = power;
-    slot.system.minEmitPower = d.speed * 0.45 * power;
-    slot.system.maxEmitPower = d.speed * power;
-    const shape = slot.system.particleEmitterType as CylinderParticleEmitter;
-    shape.radius = d.radius * power;
-    shape.height = d.height * power;
-    slot.system.manualEmitCount = Math.round(d.puffs * Math.min(2, power));
-    slot.t = d.life;
-  }
-
-  /** Ages the clouds. Only bookkeeping — the puffs are simulated on the GPU. */
-  update(dt: number): void {
-    for (const cloud of this.clouds) {
-      if (cloud.t > 0) cloud.t -= dt;
-    }
-  }
-
-  /**
-   * Drops every cloud, the same way the grenade pool is dropped and for the
-   * same reason: a cloud standing over terrain that no longer exists is what
-   * an editor rebuild would otherwise leave hanging in the air. `reset()`
-   * releases the GPU buffers, which the next burst re-creates.
-   */
-  reset(): void {
-    for (const cloud of this.clouds) {
-      cloud.system.reset();
-      cloud.t = 0;
-    }
-  }
 }

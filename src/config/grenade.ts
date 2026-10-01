@@ -145,52 +145,64 @@ export const grenade = {
    * shell is `CONFIG.vehicles.tank.gun.blastPower` of this and nothing else —
    * there is one blast in this game and one set of numbers describing it.
    *
-   * It is EIGHT layers over about four seconds, with a mark that outlives them
-   * by ten, listed here in the order the eye gets them — because that ordering
-   * IS the effect:
+   * **It is DRAWN, not composited** (`systems/BlastFx.ts`, `BlastShader`):
+   * every shape in the air is a lumpy billow in one material that is fire
+   * while it is hot and smoke once it is not, lit by the map's own key light,
+   * edged by the frame's own ink, and broken into wisps at the end rather than
+   * faded. It is EIGHT layers over about four seconds, with a mark that
+   * outlives them by ten, listed here in the order the eye gets them —
+   * because that ordering IS the effect:
    *
    * | layer | when | what it says |
    * | --- | --- | --- |
    * | `flash` | 0 – 0.14 s | something detonated HERE |
-   * | `fireball` | 0 – 0.6 s | and it was this big |
-   * | `shock` | 0 – 0.34 s | and it reached this far along the ground |
-   * | embers | 0 – 0.8 s | and it threw hot metal |
+   * | `fireball` | 0 – 0.6 s | and it was this big — and then it is smoke |
+   * | `surge` | 0 – 1.6 s | and it reached this far along the ground |
+   * | `sparks` | 0 – 0.7 s | and it threw hot metal |
+   * | `trails` | 0 – 1.7 s | some of which is still burning as it falls |
    * | `debris` | 0 – 6 s | out of THIS ground (`BlastDebrisSystem`) |
-   * | `dust` | 0 – 2.4 s | which is still hanging in the air |
-   * | `smoke` | 0 – 4 s | and is now a column you can see from the flag |
+   * | `column` | 0 – 4.2 s | and is now a column you can see from the flag |
    * | `scorch` | 0 – 15 s | and this is where it happened |
    *
-   * **The single most load-bearing thing about the list is that the top of it
-   * is SHORT.** The flash and the fireball are over inside two-thirds of a
-   * second between them; what makes a blast read as violent is not how long the
-   * fire lasts but how fast it arrives and how much is still going on after it
-   * has gone. Lengthening the fireball is the first thing anybody reaches for
+   * **The single most load-bearing thing about the list is that the FIRE is
+   * SHORT.** The flash and the fireball's fire are over inside two-thirds of a
+   * second between them; what makes a blast read as violent is not how long
+   * the fire lasts but how fast it arrives and how much is still going on after
+   * it has gone. Lengthening the fire is the first thing anybody reaches for
    * and it is the one change that makes the whole thing read as a special
-   * effect rather than as an explosion.
+   * effect rather than as an explosion. The fireball's billows LIVE on as
+   * smoke, which is not the same thing: what outlasts the fire is its shape.
+   *
+   * Every figure below is metres, seconds or m/s at a `power` of 1. `power`
+   * scales every size, reach and speed and every COUNT, and never a time.
    */
 
   /**
-   * Concurrent blasts drawn at once. Each slot is a flash, `fireball.lobes`
-   * lobes and a shock ring — 4 x 7 = 28 meshes, built once and invisible
-   * between detonations, exactly as the fireball's six spheres always were.
-   *
-   * Four rather than six because a blast is now three layers of mesh instead of
-   * one, and because it is the same number as `dust.clouds`: the two pools are
-   * claimed together and a fifth fireball over four clouds would be a bang with
-   * nothing hanging in the air after it.
+   * Concurrent blasts drawn at once. A slot is ONE mesh — a unit sphere
+   * thin-instanced once per billow — so a blast is one draw call however many
+   * billows it holds, and a slot's life is its longest billow's, about four
+   * seconds.
    */
   blastSlots: 4,
+  /**
+   * Billows one slot can hold. A grenade uses about 30 and a tank shell (1.85)
+   * about 50; the rest is headroom, since a billow that does not fit is simply
+   * not drawn.
+   */
+  blastBillows: 64,
 
   /**
    * The white-hot core: the first frame and the two after it.
    *
-   * A sphere that arrives already large and is gone before the eye has resolved
-   * it, which is what fixes the position of everything else — the fireball's
-   * lobes are deliberately scattered and the dust is deliberately lifted, so
-   * without this there is nothing at the detonation point itself.
+   * One billow that arrives already large and is gone before the eye has
+   * resolved it, which is what fixes the position of everything else — the
+   * fireball's billows are deliberately scattered and the column is
+   * deliberately lifted, so without this there is nothing at the detonation
+   * point itself.
    *
    * `radius` is the DRAWN radius at full expansion and it is bigger than the
-   * fireball's own lobes on purpose: it is the part that overexposes.
+   * fireball's own billows on purpose: it is the part that overexposes.
+   * `BlastDebrisSystem` reads it too, for where its chunks start.
    */
   flash: {
     radius: 3.4,
@@ -198,191 +210,128 @@ export const grenade = {
   },
 
   /**
-   * The fireball, which is a CLUSTER and not a ball.
+   * The fireball, which is a CLUSTER of billows and not a ball.
    *
-   * One expanding sphere is a balloon: it is perfectly round, it grows at one
-   * rate, and the eye reads the silhouette as a primitive because that is what
-   * it is. `lobes` spheres, each born at its own offset inside `spread`, each
-   * with its own size and its own start delay inside `stagger`, churn instead —
-   * the outline changes shape while it grows, which is the whole of what
-   * separates fire from a sphere.
+   * One expanding sphere is a balloon; `billows` of them, each out along its
+   * own bearing off the golden angle, each with its own size and its own start
+   * inside `stagger`, churn instead — the outline changes shape while it grows.
    *
-   * **Colour is a LADDER of four shared materials rather than an animated
-   * one**, and that is `CelMaterialFactory.getEmissive`'s doing rather than a
-   * saving: it hands out one material per colour to the whole game, so a lobe
-   * that animated its own `emissiveColor` would repaint every brazier flame and
-   * tracer that happened to share the hex. A lobe swaps material as it ages
-   * instead, which is four steps down `FIRE_LADDER` and costs nothing.
+   * **Each is handed `heat` at birth and loses it over `life`**, and the
+   * material does the rest: at full heat a billow is fire to its rim with a
+   * white heart, and as the heat falls the smoke closes over it FROM THE
+   * OUTLINE INWARD, an oxblood pen line where the two meet, until what is
+   * left at `life` is a billow of soot. That billow then hangs on for `smoke`
+   * more seconds, growing to `grow` times its fire size and climbing toward
+   * `rise`, before it breaks into wisps — so the fireball's smoke is the
+   * fireball's own shape, where it used to be a second effect laid over it.
    *
-   * `rise` is small and matters more than it looks: a fireball that does not
-   * climb at all sits in the ground like a light being switched on, and one
-   * that climbs like the smoke does turns into a mushroom two seconds early.
+   * `spread` is how far a billow travels out of the detonation, most of it in
+   * the first quarter of a second (`drag`); `rise` is its climb, and matters
+   * more than it looks — a fireball that does not climb at all sits in the
+   * ground like a light being switched on.
    */
   fireball: {
-    lobes: 5,
-    radius: 2.9,
-    spread: 0.9,
+    billows: 9,
+    radius: 1.55,
+    spread: 1.6,
+    drag: 7,
     stagger: 0.13,
     life: 0.6,
+    heat: 1.6,
     rise: 2.4,
+    smoke: 2.0,
+    grow: 1.2,
   },
 
   /**
-   * The ring the pressure wave drives out along the ground: born at the
-   * detonation, flat to whatever the blast went off ON, out to `radius` inside
-   * `life` and gone.
+   * The COLUMN: the billows a blast throws straight up, and the layer that
+   * makes a blast legible from the other end of the map.
    *
-   * It is the only layer that says how far the blast REACHED, and it is a
-   * ground-plane cue on purpose — the fireball and the smoke are both read
-   * against the sky, so neither of them tells a player standing thirty metres
-   * away whether they were inside it. This does, in a third of a second,
-   * without a number on the HUD.
-   *
-   * `radius` is deliberately under `blastRadius`: it is where the ring has
-   * faded to nothing rather than where the damage stops, and a ring drawn at
-   * the true 8.5 m would be a promise the falloff does not keep.
+   * Born over the first `delay` seconds a little above the detonation
+   * (`lift`), thrown up at `speed` and slowed by `drag` toward the climb their
+   * own buoyancy holds (`rise`), so they arrive stacked rather than as one
+   * ball. The first are still hot when they leave (`heat`), which is what
+   * joins the column to the fire under it. They are soot, like the fireball's
+   * smoke, and each dissolves over the last `1 - fade` of its life.
    */
-  shock: {
-    radius: 6.2,
-    life: 0.34,
-    /** How flat the ring lies. 1 is a torus; this is a wave, not a doughnut. */
-    squash: 0.35,
-    /**
-     * Alpha at birth. Capped well under 1 because the ring is unlit emissive
-     * and inside the glow layer — at full alpha it blooms into a solid band of
-     * light lying on the street, which reads as a magic circle rather than as
-     * a pressure wave. See `GrenadeSystem.poseRing`.
-     */
-    peak: 0.5,
-  },
-
-  /** Embers flung out of the blast: count, speed, lifetime, gravity. */
-  emberCount: 18,
-  emberSpeed: 15,
-  emberLife: 0.8,
-  emberGravity: 16,
-
-  /**
-   * The dust the blast throws up: a low cloud that expands out of the crater
-   * and hangs on well after the light has gone. The embers read as debris
-   * and are what a blast throws OUT; this is what it lifts off the ground,
-   * and it is the half that makes a grenade in a cobbled square leave
-   * something behind it.
-   *
-   * It is a GPU burst rather than a pooled mesh, which is affordable for
-   * exactly the reason the blast light is exempt from the muzzle-light
-   * budget: there are seconds between detonations. A per-shot effect could
-   * not be built this way (see the note on muzzle smoke in
-   * `spec_visuals.md`).
-   *
-   * Colour is NOT here. Dust is the ground and the air it hangs in, so it is
-   * tinted from the map's own `mistColor` and key light — see
-   * `BlastDust.setEnvironment`.
-   */
-  dust: {
-    /**
-     * Concurrent clouds, and puffs in one. `clouds` is a count of GPU
-     * systems rather than of slots in a pool, and it cannot be folded into
-     * one system holding `clouds * puffs` — see `BlastDust`.
-     */
-    clouds: 4,
-    puffs: 34,
-    /**
-     * Seconds from the blast to the last puff fading out. Long, and that is
-     * the point of the whole effect: the fireball is 0.6 s, so anything
-     * under about two seconds here is over while the light is still in the
-     * frame and the blast leaves nothing behind it.
-     */
-    life: 2.4,
-    /**
-     * The disc the puffs are born in: about the fireball's own first radius,
-     * and flat, so the cloud starts as something lying on the ground rather
-     * than as a ball in the air.
-     */
-    radius: 1.1,
-    height: 0.6,
-    /**
-     * How far above the detonation that disc sits. A puff is a BILLBOARD
-     * metres across, so one centred where the grenade actually went off —
-     * which is a radius above the floor — has its whole lower half under the
-     * cobbles, and the cloud reads as a flat smear painted on the street
-     * rather than as something standing in it. This lifts the disc to about
-     * knee height, which is what a quad this size needs to clear the ground
-     * it is rising off. It is not the blast's own height: the damage, the
-     * light and the embers all still resolve where the grenade was.
-     */
-    lift: 0.75,
-    /**
-     * How fast a puff leaves the centre (m/s), and the fraction of that it
-     * still has at the end of its life. Dust is thrown out hard and then
-     * stops in the air — a cloud that expands at a constant rate reads as a
-     * shockwave, and one that never slows walks off the map.
-     */
-    speed: 3.4,
-    settle: 0.06,
-    /**
-     * Upward acceleration (m/s^2). Small: this is a cloud lifting as it
-     * spreads, not a mushroom.
-     */
-    rise: 0.8,
-    /** Puff diameter (m) at birth and at the end, and the spread over both. */
-    sizeStart: 1.4,
-    sizeEnd: 3.1,
-    sizeSpread: 0.45,
-    /**
-     * Alpha of one puff at birth, falling linearly to nothing at the end of
-     * its life. Dust occludes rather than glows (`BLENDMODE_STANDARD`), so
-     * this is how much of the world behind it a single quad takes away, and
-     * three dozen of them overlap.
-     *
-     * It is set for how the cloud reads at HALF life rather than at birth:
-     * the fade is linear and cannot be curved (see `BlastDust`), so a
-     * number chosen to look right on the first frame leaves nothing by the
-     * time the fireball is out — which is the half this exists for.
-     */
-    opacity: 0.7,
-    /**
-     * How far the tint is lifted from the map's mist toward its key light.
-     * At 0 the cloud is the colour of the air it hangs in, which on a night
-     * map is very nearly black; at 1 it is the moon. Dust is lit by the
-     * moon and made of the ground, so it sits between them.
-     */
-    lit: 0.5,
+  column: {
+    billows: 10,
+    delay: 0.45,
+    lift: 0.9,
+    speed: 9,
+    drag: 1.6,
+    rise: 1.7,
+    from: 0.5,
+    to: 1.35,
+    life: 3.8,
+    heat: 0.95,
+    fade: 0.4,
   },
 
   /**
-   * The column that goes UP, and the layer that makes a blast legible from the
-   * other end of the map.
+   * The SURGE: the ring of low dust the pressure wave rolls out along the
+   * ground, and the one layer that says how far the blast REACHED.
    *
-   * The same `BlastDust` class and the same eighteen keys — a cloud is a cloud,
-   * and a second implementation of one would be a second place the GPU burst's
-   * four Babylon constraints have to be remembered. What makes it smoke rather
-   * than dust is entirely in the numbers: fewer puffs, much bigger, much
-   * longer-lived, a real `rise` instead of a nudge, and a `lit` near zero so it
-   * reads as the dark side of the fire rather than as more of the ground.
+   * It is a ground-plane cue on purpose — the fireball and the column are both
+   * read against the sky, so neither tells a player standing thirty metres
+   * away whether they were inside it. The billows run out flat to whatever
+   * the blast went off on, most of the way in the first third of a second
+   * (`drag`), so the ring's edge arrives as a pressure wave does and then
+   * hangs as a skirt of dust. They are the map's FLOOR, lit — see `BlastFx`.
    *
-   * **It is drawn as well as the dust and not instead of it**, and the pair is
-   * the whole point: the dust is what a body standing next to the blast sees
-   * and the smoke is what everybody else does. Costed as fill — 14 puffs at up
-   * to 6 m against the dust's 34 at up to 3.1 — this is the cheaper of the two.
+   * `reach` is deliberately under `blastRadius`: it is where the outermost
+   * billow comes to rest, not where the damage stops, and a ring drawn at the
+   * true 8.5 m would be a promise the falloff does not keep. `squash` is how
+   * flat a billow is along the ground's normal, which is what keeps a skirt of
+   * dust from reading as a ring of boulders.
    */
-  smoke: {
-    clouds: 4,
-    puffs: 14,
-    life: 4,
-    radius: 0.8,
-    height: 1,
-    lift: 1.6,
-    speed: 1.7,
-    settle: 0.05,
-    /** The one number that makes this a column: it climbs the whole time. */
-    rise: 2.9,
-    sizeStart: 2.2,
-    sizeEnd: 6,
-    sizeSpread: 0.5,
-    opacity: 0.4,
-    /** Near zero — smoke is the fire's shadow, not the ground's colour. */
-    lit: 0.12,
+  surge: {
+    billows: 14,
+    reach: 6.2,
+    drag: 4.5,
+    rise: 0.9,
+    from: 0.35,
+    to: 1.25,
+    squash: 0.7,
+    life: 1.4,
+    fade: 0.04,
+  },
+
+  /**
+   * Hot metal: strokes flung out on an even-ish spread (a handful of random
+   * directions clumps, and a clump reads as one lump of debris), each drawn
+   * out along its own flight by `stretch` seconds of travel so it reads as a
+   * streak rather than as a dot.
+   */
+  sparks: {
+    count: 22,
+    speed: 17,
+    life: 0.7,
+    gravity: 16,
+    width: 0.05,
+    stretch: 0.045,
+  },
+
+  /**
+   * The few fragments that go on BURNING: `streamers` heavier pieces thrown
+   * out and up, each laying a trail of small billows every `every` seconds for
+   * `life` — hot at the head, soot a moment later — so a blast throws arcs of
+   * smoke that hang where the metal went. The single most drawn-looking thing
+   * about an explosion, and the cheapest: each puff is a billow in one shared
+   * mesh.
+   */
+  trails: {
+    streamers: 4,
+    speed: 14,
+    gravity: 13,
+    drag: 0.8,
+    life: 0.5,
+    every: 0.03,
+    from: 0.12,
+    to: 0.55,
+    puffLife: 1.2,
+    heat: 1.35,
+    hot: 0.14,
   },
 
   /**

@@ -133,10 +133,10 @@ export const molotov = {
 
   /**
    * The ignition, as a share of the one blast in the game (`blastAt`'s
-   * `power`, the frag being 1) — the flash and the fireball's lobes and the
-   * embers, without the shock ring: petrol going up is a WHOOSH, not a
-   * pressure wave, and the ring is the one layer that says "this far and no
-   * further", which here is the fire's own edge.
+   * `power`, the frag being 1) — the flash, the fireball and the sparks,
+   * without the surge: petrol going up is a WHOOSH, not a pressure wave, and
+   * the surge is the one layer that says "this far and no further", which here
+   * is the fire's own edge.
    */
   ignition: 0.45,
   /** The smoke column it sends up, on the same scale. Darker and longer is the fire. */

@@ -80,6 +80,7 @@ import {
 import { CONFIG } from "../config";
 import { attachEmissiveFog, setEmissiveFog } from "./EmissiveFog";
 import { FlameMaterial } from "./FlameShader";
+import { BlastMaterial } from "./BlastShader";
 // The shared includes self-register in the IncludesShadersStoreWGSL; import
 // them explicitly so the #include<cel...> lines below can never be tree-shaken
 // away, and so registration is provably before the first effect COMPILE rather
@@ -2792,6 +2793,36 @@ export class CelMaterialFactory {
 
   private flame: FlameMaterial | null = null;
 
+  /**
+   * The one material every blast's billows wear (`BlastShader`), created on
+   * first ask and held outside `cache` for the flame's reason. It shares more
+   * with the cel materials than the flame does — it is LIT, by the same key,
+   * ambient, sky fill and mist — so `setEnvironment` hands it those too, off
+   * the very objects it has just written.
+   */
+  getBlast(): BlastMaterial {
+    if (!this.blast) {
+      this.blast = new BlastMaterial(this.scene);
+      this.blast.setClock(this.windTime);
+      this.blast.setFog(fogState.color, fogState.start, fogState.end);
+      this.blast.setOpaqueAlpha(this.opaqueAlpha);
+      this.pushBlastLight();
+    }
+    return this.blast;
+  }
+
+  private blast: BlastMaterial | null = null;
+
+  private pushBlastLight(): void {
+    this.blast?.setLight({
+      lightDir: this.lightDir,
+      lightColor: this.lightColor,
+      ambientColor: this.ambientColor,
+      skyLightColor: this.skyLightColor,
+      mistColor: this.mistColor,
+    });
+  }
+
   /** Applies a theme's lighting/atmosphere to every cel material. */
   setEnvironment(env: {
     lightDir: Vector3;
@@ -2829,11 +2860,13 @@ export class CelMaterialFactory {
     // materials behind every window, flame and tracer.
     setEmissiveFog(fogState.color, fogState.start, fogState.end);
     this.flame?.setFog(fogState.color, fogState.start, fogState.end);
+    this.blast?.setFog(fogState.color, fogState.start, fogState.end);
     this.mistColor = env.mistColor;
     this.mistParams.set(env.mistHeight, env.mistStrength);
     this.wearColor = env.wearColor;
     this.wearAmount = env.wearAmount;
     this.cache.forEach((mat) => this.applyEnvironment(mat));
+    this.pushBlastLight();
   }
 
   /**
@@ -2942,6 +2975,7 @@ export class CelMaterialFactory {
     this.windTime += dt;
     this.cache.forEach((mat) => mat.setFloat("windTime", this.windTime));
     this.flame?.setClock(this.windTime);
+    this.blast?.setClock(this.windTime);
   }
 
   updateCamera(camPos: Vector3): void {
@@ -2969,6 +3003,7 @@ export class CelMaterialFactory {
     this.opaqueAlpha = alpha;
     this.cache.forEach((mat) => mat.setFloat("opaqueAlpha", alpha));
     this.flame?.setOpaqueAlpha(alpha);
+    this.blast?.setOpaqueAlpha(alpha);
   }
 
   /**

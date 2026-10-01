@@ -1484,10 +1484,10 @@ panes.
 
 ## Grenades
 
-Ballistics and damage are the server's; the dust is not. `GrenadeSystem` takes
-`{ dust: false }` there, because `BlastDust` builds a `DynamicTexture` and a
-`GPUParticleSystem` and neither exists without GL. Everything else in that file
-is spheres and materials, which are inert without a renderer.
+Ballistics and damage are the server's; the picture is not. `GrenadeSystem`
+takes `{ dust: false }` there, which leaves out `BlastFx` (the blast's billows)
+and the molotov's flames — both WGSL, and a NullEngine has no device to compile
+them on. The flag is named for the sprite dust it first guarded.
 
 The pouch is the server's count. There is no resupply in this game — death is
 the only refill — so the ammunition IS the limit, and a client tracking its own

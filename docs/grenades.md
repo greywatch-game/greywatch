@@ -71,8 +71,8 @@ second thing says only how it differs. A tank shell is
 `CONFIG.vehicles.tank.gun.blastPower` (1.85) of exactly these eight layers and
 declares nothing else about its own explosion — no second fireball, no second
 dust cloud, no second set of numbers to keep in step. `CONFIG.grenade`'s "The
-blast, as a picture" is the table; six of the layers are drawn from
-`GrenadeSystem` and two from `BlastDebrisSystem`.
+blast, as a picture" is the table; six of the layers are drawn by `BlastFx`
+(owned by `GrenadeSystem`) and two by `BlastDebrisSystem`.
 
 **The SOUND makes the same bargain, and one recording is every explosion in the
 game.** `Sfx.explosion` plays `audio/grenade.webm` — a grenade going off, so
@@ -85,36 +85,41 @@ See [`docs/audio.md`](audio.md).
 
 | layer | when | what it says | owner |
 | --- | --- | --- | --- |
-| `flash` | 0 – 0.14 s | something detonated HERE | `GrenadeSystem` |
-| `fireball` | 0 – 0.6 s | and it was this big | `GrenadeSystem` |
-| `shock` | 0 – 0.34 s | and it reached this far along the ground | `GrenadeSystem` |
-| embers | 0 – 0.8 s | and it threw hot metal | `GrenadeSystem` |
+| `flash` | 0 – 0.14 s | something detonated HERE | `BlastFx` |
+| `fireball` | 0 – 0.6 s, then smoke to ~3 s | and it was this big | `BlastFx` |
+| `surge` | 0 – 1.6 s | and it reached this far along the ground | `BlastFx` |
+| `sparks` | 0 – 0.7 s | and it threw hot metal | `BlastFx` |
+| `trails` | 0 – 1.7 s | some of which is still burning as it falls | `BlastFx` |
 | `debris` | 0 – 7 s | out of THIS ground | `BlastDebrisSystem` |
-| `dust` | 0 – 2.4 s | which is still hanging in the air | `GrenadeSystem` |
-| `smoke` | 0 – 4 s | and is now a column you can see from the flag | `GrenadeSystem` |
+| `column` | 0 – 4.2 s | and is now a column you can see from the flag | `BlastFx` |
 | `scorch` | 0 – 15 s | and this is where it happened | `BlastDebrisSystem` |
 
 Four rules hold the picture together, and each of them is a thing that was got
 wrong first:
 
-- **The top of the list is SHORT.** The flash and the fireball are over inside
+- **The FIRE is SHORT.** The flash and the fireball's fire are over inside
   two-thirds of a second between them. What makes a blast read as violent is
   how fast it arrives and how much is still going on after it has gone, not how
-  long the fire lasts — lengthening the fireball is the first thing anybody
+  long the fire lasts — lengthening the fire is the first thing anybody
   reaches for and the one change that turns the whole thing into a special
-  effect.
+  effect. The fireball's billows live on as SMOKE, which is not the same thing:
+  what outlasts the fire is its shape, not its colour.
 - **`power` scales SIZE and COUNT, never TIME.** A blast that lasted longer
   because it was bigger would leave the tank's fireball still burning while its
   own smoke column was already up, and the ORDER the layers arrive in is what
-  the effect is made of.
+  the effect is made of. Two layers take their size on a ROOT of `power` and
+  their count on the rest (`surge`, `column`): a tank shell's column is more
+  billows rather than bigger ones, because one billow the size of a house is a
+  boulder.
 - **What the blast went off ON is answered once.** `GrenadeSystem.probeGround`
   casts a single downward `RayWorld.castRound` (debris comes off things that
   stop rounds, so a fence's coarse run is not one), and reads the same
   `RayHit.surface` a bullet's impact reads. The answer is a `BlastGround` —
   the surface kind and its normal — and it is the SYSTEM's scratch: valid for
   the length of the call and no longer, exactly as `forEachLive`'s position is.
-  A blast in open air finds nothing and is told it is over level earth, which is
-  the right answer for both consumers.
+  The surge rolls out flat to that normal; a blast in open air finds nothing
+  and is told it is over level earth, which is the right answer for every
+  consumer.
 - **`drawBlast` is public, because there are two ways a blast can happen and
   only one of them is a rule.** Offline `blastAt` resolves the damage and then
   draws. In a netplay round the damage is the authority's and arrives as an
@@ -123,97 +128,81 @@ wrong first:
   event that used to arrive as a light and a bang with nothing burning in the
   middle of it.
 
-### The fireball is a CLUSTER, and its colour is a ladder of shared materials
+### The blast is DRAWN: billows in one material
 
-One expanding sphere is a balloon: perfectly round, growing at one rate, and the
-eye reads the silhouette as the primitive it is. `fireball.lobes` spheres churn
-instead — each with its own bearing off the golden angle, its own size, its own
-reach and its own start delay inside `stagger`, so the outline changes shape
-while it grows.
+**Every shape a detonation puts in the air is a BILLOW** — a unit icosphere,
+lumped in its vertex stage, in `BlastShader` — and a billow is fire while it is
+hot and smoke once it is not. It replaced five flat emissive spheres stepping a
+four-rung colour ladder, a glowing torus, and two pools of soft gradient
+sprites: a photograph's smoke in a frame of flat fills and ink, the mismatch
+the water was once reworked for. `systems/BlastFx.ts` owns the six layers and
+their motion; `GrenadeSystem` owns the rules and calls it, and **the authority
+never builds one** (`GrenadeOptions.dust`), because nothing in it is a rule.
 
-**A lobe's arrangement is decided at CONSTRUCTION and not at the detonation.**
-Four slots is four arrangements, which is more variety than an eye gets out of
-an event lasting half a second, and it means a burst is property writes and no
-arithmetic. It is also what keeps the server honest: nothing in that
-constructor calls `Math.random()`.
+- **A billow is four numbers the shader reads** — heat, dissolve, a seed, and
+  how much of it is dust rather than soot — plus the WARMTH of the fire under
+  it, as two thin-instance attributes. **The HEAT of a pixel** is the billow's,
+  weighted up where the surface faces the eye and down at its outline, broken
+  by a climbing noise field: at full heat a billow is fire to its rim with a
+  white heart, and as it cools the smoke closes over it FROM THE OUTLINE
+  INWARD, with the flame's own oxblood pen line where the two meet. It is
+  painted in the flame's five inks (`FIRE_INKS`), because there is one fire in
+  this world, whether it is a brazier or a grenade.
+- **It is OPAQUE, cut with `discard`, and writes depth**, so the screen-space
+  ink finds the edges BETWEEN billows and draws them — that is most of what
+  makes a cloud of these read as drawn. It is never blended and never a shadow
+  caster.
+- **It is LIT, which is why it works where the flame's soot plume did not.**
+  That plume was opaque and unlit, and read as floating leather; a billow of
+  smoke takes the map's own key, ambient, sky fill and mist, pushed by
+  `CelMaterialFactory` beside the cel materials' own, in two tones and a thin
+  third — so its top catches the moon, its underside is dark, and while the fire
+  is still under it that underside glows (`warmth`). **The terminator is taken
+  off a normal part way between the round billow and its lumps**: shaded off
+  the lumps alone, every lump cast its own blotch and a cloud was mottled like
+  granite.
+- **What stops a billow reading as a ROCK is its SILHOUETTE, and it cost three
+  photographs to find.** The lumps are BILLOW noise (`|2n - 1|`) — round on
+  every bump, creased in every valley, the cauliflower a drawn cloud is outlined
+  as — at `lumpScale` ≥ ~2.5 cells a radius; under that a billow has three broad
+  facets and is a boulder, on every map, in the map's own colours (blue cobble
+  at night, sandstone on Sarab). And **the outline is bitten at every age**
+  (`graphics.blast.rim`), because a clean round edge is what a solid body has.
+- **It DISSOLVES rather than fading**: an erosion field coarser than the grain
+  eats it from the outline inward over the last share of its life, so a dying
+  cloud breaks into wisps. There is no alpha anywhere to fade.
+- **It is drawn on twos** (`graphics.blast.fps`, 12): the lumps and the bands
+  change a dozen times a second while the billow travels on the smooth clock,
+  the flame's bargain. The clock is the world's, so a pause holds the cloud.
+- **The dust is the map's FLOOR, lit** — `floorColor` pulled a little under
+  half way to a pale dust, as an ALBEDO the shader multiplies by the map's light
+  exactly as the ground under it is, so a night map's dust is as dark as its
+  street without being told. Smoke is soot on every map.
 
-**Colour is four SHARED materials rather than one animated one**, and that is
-`CelMaterialFactory.getEmissive`'s doing rather than a saving — it hands out one
-material per colour to the whole game, so a lobe writing its own `emissiveColor`
-would repaint every brazier flame, tracer and lit window that happened to share
-the hex. `FIRE_LADDER` is white for the first eighth (a real fireball is only
-white in the frames the eye cannot resolve), then the orange it is mostly seen
-as, then the deep red of it going out, then the char that hands over to the
-smoke. A lobe steps down the ladder and fades on `mesh.visibility`, which IS per
-mesh.
+**A slot is ONE MESH** — the icosphere thin-instanced once per billow, so a
+blast is one draw call (and one glow-mask draw) however many billows it holds,
+where the old slot was seven meshes and each ember one more. It has to be one
+mesh PER BLAST rather than one for all of them, because the glow fades a mesh's
+bloom with the distance to its bounding sphere's centre (`GlowRules.colour`);
+the bounds are therefore set by hand each frame from the billows drawn
+(`doNotSyncBoundingInfo`). The sparks and the trails share one more mesh across
+every blast. **A slot is claimed by AGE and never refused**, and **a new blast
+is posed on the frame it is raised** — a reused slot left alone holds whatever
+its last blast ended on.
 
-**The shock ring is the only layer that says how far the blast REACHED**, and it
-is a ground-plane cue on purpose: the fireball and the smoke are both read
-against the sky, so neither tells a player standing thirty metres away whether
-they were inside it. It is a torus built at diameter 2 so a uniform scale of `r`
-IS a ring of radius `r`, with its tube quoted as a fraction of that — so the band
-widens in proportion as the ring runs out, which is what a wave front does —
-turned onto the surface normal, and easing out so most of the distance is
-covered in the first third. `squash` is the one axis that does not scale with the
-rest, and is what keeps it lying on the ground rather than standing up. `shock.radius` is deliberately under `blastRadius`:
-it is where the ring has faded to nothing, not where the damage stops, and a
-ring drawn at the true 8.5 m is a promise the falloff does not keep. **`peak` is
-a cap and not a taste**: it is unlit emissive inside the glow layer, and at full
-alpha it blooms into a solid band of light lying on the street.
+**A billow's motion is CLOSED FORM** — launched, slowed by linear drag toward a
+terminal climb — so where it is at any age is one expression rather than a state
+integrated per frame. That is what lets a burning fragment lay its trail at the
+exact instants its clock passed, whatever the frame rate.
 
-### The dust and the smoke are the same class twice
-
-**`BlastDust` is built twice with different numbers**, and what makes one of
-them smoke is entirely in those numbers: fewer puffs, much bigger, much
-longer-lived, a real `rise` instead of a nudge, and a `lit` near zero so it
-reads as the dark side of the fire rather than as more of the ground. A second
-implementation would be a second place the four Babylon constraints below have
-to be remembered, and they are the whole of what is hard about this.
-
-**They are drawn together and not instead of one another**: the dust is what a
-body standing next to the blast sees and the smoke is what everybody else does.
-As fill it is the cheaper of the two — fourteen puffs against thirty-four.
-
-**This is the one place a GPU particle system may be spawned per event** — the
-rule against it (muzzle smoke, brass) is about per-shot effects at eighty shots
-a second; there are seconds between detonations. Four of these six are Babylon's
-rather than the game's:
-
-- **It is a POOL of GPU systems, one per concurrent cloud.** In
-  emit-rate-controlled mode a `GPUParticleSystem` re-emits into a ring of
-  `max(emitRate * maxLifeTime, this frame's emission)` slots from a circular write
-  pointer. `emitRate` is zero here — that is what makes it a burst — so the ring is
-  exactly one `manualEmitCount`, and a second blast inside the first cloud's life
-  would overwrite its slots and pop a standing cloud off the screen. `Atmosphere`
-  documents the other side of this invariant.
-- **A stopped system refuses manual emissions too** (the update shader gates its
-  emit branch on `stopFactor != 0`), so `stop()` is not a way to hold a burst system
-  idle. Each is started once and left started; with `emitRate` zero an idle one emits
-  nothing and costs nothing.
-- **`updateSpeed` is `1/60`**, which is what makes the numbers mean what they say:
-  the GPU clock advances by `updateSpeed * scene.getAnimationRatio()` and that ratio
-  is `dt * 60`, so a lifetime is seconds and an emit power is m/s. (`Atmosphere`'s
-  0.012 is deliberately not that.)
-- **The fade cannot be curved.** `addColorGradient` on a GPU system in Babylon
-  9.19.1 throws on the next render and takes the whole scene's rendering down with it
-  — a black frame, not a fallback. Size and velocity gradients are fine. So alpha runs
-  linearly from `color1`/`color2` to `colorDead`, and `opacity` is set for how
-  the cloud reads at half life rather than at birth.
-- **The cloud is lifted off the detonation** (`lift`). A puff is a billboard
-  metres across, so one centred where the grenade went off has its lower half under
-  the cobbles and reads as a smear painted on the street. Only the cloud moves —
-  damage, light and embers still resolve at the blast.
-- **Its colour is the map's, through `installMap`** (`grenades.setEnvironment`) —
-  the same place `grenades.reset()` clears the standing clouds and the grenades. A
-  fuse that outlived its map would go off over terrain that no longer exists.
-
-**`power` reaches a cloud through the three properties the update shader reads
-inside its EMISSION branch** — `scaleRange` (`minScaleX`/`maxScaleX`/…),
-`emitPower`, and the emitter's own radius and height — and that branch runs only
-for a particle being born. So a burst may change them freely: the puffs already
-in the ring were sized when they were emitted and are not resized under a later
-blast. A size GRADIENT could not do this, because gradients are baked at
-`start()` and shared by everything in the ring.
+**The surge is the only layer that says how far the blast REACHED**, and it is a
+ground-plane cue on purpose: the fireball and the column are both read against
+the sky, so neither tells a player standing thirty metres away whether they were
+inside it. Its billows run out flat to the ground's normal, most of the way in
+the first third of a second, and tear apart. `surge.reach` is deliberately under
+`blastRadius`: it is where the outermost billow comes to rest, not where the
+damage stops, and a ring drawn at the true 8.5 m is a promise the falloff does
+not keep.
 
 **The player's throw is a GESTURE with a release inside it**, which is what stops
 it reading as a second trigger. It was once an event — the button spent a grenade,
@@ -410,12 +399,12 @@ burn-out take the new fire's light away.
   tells a player where they may walk. **They are built only where something
   draws** (`dust !== false`): the authority has no device to compile the WGSL
   on, and the fire's SLOTS, which are rules, exist on both sides.
-- **The ignition is the one blast's own flash and lobes** at
-  `molotov.ignition` of a frag, with its embers and the smoke column — and no
-  ring and no ground dust, because petrol going up is a whoosh and not a
-  pressure wave. `Blast.shock` is what leaves the ring off; `spawnBlast` is now
-  `startFireball` + the two clouds + `throwEmbers`, so the ignition reuses the
-  parts rather than restating them.
+- **The ignition is the one blast's own flash and fireball** at
+  `molotov.ignition` of a frag, with its sparks and a column at
+  `molotov.smoke` — and no surge and no burning fragments, because petrol going
+  up is a whoosh and not a pressure wave, and there is no metal in it.
+  `BlastFx.ignite` is `blast` with those two layers left out, so the ignition
+  reuses the parts rather than restating them.
 - **The light is a FIXTURE added and removed** — `LightingSystem.add`/`remove`,
   whose own notes were written for "a thrown fire" — `fast` because it burns up
   and dies down faster than the irradiance volume's sweep, added at zero and

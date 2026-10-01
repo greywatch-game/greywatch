@@ -2084,9 +2084,19 @@ one by the economy — two grenades a life, a 3.6 s tank reload.
 
 **What would settle it** is a frame capture on real hardware with two blasts
 overlapping at close range on Coldharbour, against the same scene with
-`grenade.smoke.puffs` at 0 — the smoke is the single largest new fill term and
-the one designed to be turned off first if a graphics-quality preset ever
-exists. Ranked against finding 5's list, it belongs after the ash field and
+`grenade.column.billows` at 0 — the column is the single largest term and the
+one designed to be turned off first if a graphics-quality preset ever exists.
+(Since 2026-09-30 the smoke is opaque billows (`BlastFx`) rather than blended
+sprites, so the cost moved from FILL to vertices: a tank shell is ~50 billows of
+1,280 triangles in one draw, plus ~150 small ones of 320, each drawn twice —
+the frame and the glow mask — with six value-noise lookups per vertex.
+Measured on the Windows box, Hollowmere, uncapped, a 1.85-power blast every
+0.6 s so all four slots stay live, run order controlled: idle 408 fps both
+builds, under the storm 366 fps before and 302 after — about 0.2 ms a frame for
+the old spheres and sprites against 0.7 ms for the billows. Draw calls went the
+other way (one per blast against seven meshes a slot plus one per ember). The
+first lever is `BlastFx`'s icosphere subdivision (8); under ~7 the lumps start
+to lose the cauliflower silhouette that keeps them from reading as rock.) Ranked against finding 5's list, it belongs after the ash field and
 before the render scale.
 
 ---

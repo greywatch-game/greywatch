@@ -520,7 +520,8 @@ export const vehicles = {
    * are a picture, and a picture stated once cannot drift between two kinds
    * that are both throwing up the same street.
    *
-   * The numbers started as `CONFIG.grenade.dust`'s and every one of them that
+   * The numbers started as the blast's old sprite dust's (it is billows now,
+   * `BlastFx`) and every one of them that
    * moved, moved for the same reason: this is a cloud pinned to the GROUND
    * under a machine that is still pushing it, where that one is a cloud thrown
    * up once and left to drift. So the ring is born the width of the disc

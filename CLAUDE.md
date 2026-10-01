@@ -502,12 +502,15 @@ what the effect is. **What a blast throws is
 keyed on what it went off ON** — one downward ray reading the same
 `metadata.surface` a bullet's impact reads — and `drawBlast` is the one place a
 blast is DRAWN, public because the authority raises one with nothing but a
-position on it.
+position on it. **Six of the layers are DRAWN** (`systems/BlastFx.ts`,
+`BlastShader`): every shape in the air is an opaque, lit, thin-instanced billow
+that is fire while hot and smoke once not, so the ink draws between billows —
+one draw call per blast, never built on the authority.
 
 → **[`docs/grenades.md`](docs/grenades.md)** — the bounce, resting and terrain
 backstop rules, the eight layers and the four rules holding them together, the
-GPU cloud pool built twice (the one place a particle system may be spawned per
-event), the throw timeline, the bots' range band, and the molotov — the break,
+billow (its heat, why it is lit, why its silhouette decides cloud or boulder,
+the dissolve, one mesh per blast), the throw timeline, the bots' range band, and the molotov — the break,
 the floor under it, the fire pool, the burn and the bots' reflex out of it.
 
 ### The interface is five screens and the chrome

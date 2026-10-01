@@ -4657,7 +4657,8 @@ export class Game {
     // particle system's first render, so a ring is COLOURED WHEN IT IS BUILT
     // and a map whose dust is a different colour gets new rings. See
     // `RotorWash.paint`, which carries why that is safe here and is not safe
-    // on the clouds `BlastDust` has been holding since the `Game` was made.
+    // on the clouds the blast's retired `BlastDust` held from the `Game`'s
+    // construction on.
     this.rotorWash.build(
       this.vehicles.hulls,
       map.water,

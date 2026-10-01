@@ -1,10 +1,10 @@
 /**
  * puffTexture.ts — The one puff in the game: a soft blob with a lumpy edge,
  * generated so the game still ships no image files.
- * Owns: the drawing and nothing else. Every cloud in the game is this texture
- * seen a few dozen times in one place — a blast's dust and its smoke column
- * (`GrenadeSystem`'s `BlastDust`) and a rotor's downwash (`RotorWash`) — and
- * what tells them apart is size, rotation, colour and count, never the sprite.
+ * Owns: the drawing and nothing else. A rotor's downwash (`RotorWash`) is this
+ * texture seen a few dozen times in one place; a blast's dust and smoke were
+ * too, until they became drawn billows (`BlastFx`). Size, rotation, colour and
+ * count are what vary a cloud, never the sprite.
  * Invariants: no state that outlives the call. It is a function rather than a
  * shared instance because a `DynamicTexture` belongs to a scene, and an editor
  * rebuild disposes one; each system holds its own and disposes it with itself.

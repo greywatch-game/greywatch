@@ -2618,15 +2618,42 @@ near it**, and `RotorWash` is the whole of that: one standing GPU emitter per
 rotor on the field, a ring of puffs the width of the disc, sitting on whatever
 is underneath the machine.
 
-**It is `BlastDust`'s FOUNTAIN twin, and that is the shape of the file rather
-than a remark about it.** `GrenadeSystem`'s clouds pin `emitRate` at zero and
-spend `manualEmitCount` puffs at a detonation, because a rate is exactly what
-would leave a fountain standing wherever the last grenade went off. A downwash
+**It was `BlastDust`'s FOUNTAIN twin, and that is the shape of the file rather
+than a remark about it.** `BlastDust` was the blast's dust and smoke, retired
+when the blast became drawn billows (`BlastFx`, `docs/grenades.md`); every
+mention of it below and in `RotorWash.ts` is of that class as it was, and the
+Babylon rules it established are kept in the next section because this file is
+now the one standing on them. Its clouds pinned `emitRate` at zero and spent
+`manualEmitCount` puffs at a detonation, because a rate is exactly what would
+leave a fountain standing wherever the last grenade went off. A downwash
 IS that fountain — the one dust in this game with no event behind it — so the
 systems here are started once, never stopped, and a machine that is high, dead,
 spooled down or has no rotor at all is one whose emitter is running at a rate of
 zero. Nothing is spawned and nothing is scheduled, which is `Sfx`'s rule for the
 held-open ambience voices arriving in the other half of the frame.
+
+### What a GPU particle system here may and may not do
+
+These were `BlastDust`'s, recorded in `docs/grenades.md` while that class
+existed, and are Babylon's rather than the game's. Moved here verbatim when the
+blast stopped using particles, because a GPU emitter is still built here:
+
+- **A stopped system refuses manual emissions too** (the update shader gates its
+  emit branch on `stopFactor != 0`), so `stop()` is not a way to hold a burst system
+  idle. Each is started once and left started; with `emitRate` zero an idle one emits
+  nothing and costs nothing.
+- **`updateSpeed` is `1/60`**, which is what makes the numbers mean what they say:
+  the GPU clock advances by `updateSpeed * scene.getAnimationRatio()` and that ratio
+  is `dt * 60`, so a lifetime is seconds and an emit power is m/s. (`Atmosphere`'s
+  0.012 is deliberately not that.)
+- **A colour gradient may only be added BEFORE a system's first render** — the
+  narrower rule under what `BlastDust` stated as "the fade cannot be curved"; see
+  below for how `RotorWash` spends it.
+- **In emit-rate-controlled mode a `GPUParticleSystem` re-emits into a ring of
+  `max(emitRate * maxLifeTime, this frame's emission)` slots from a circular write
+  pointer**, so a burst system's ring is exactly one `manualEmitCount`, and a second
+  burst inside the first's life overwrites its slots. `Atmosphere` documents the
+  other side of this invariant.
 
 ### The hull answers, exactly as it does for the voice
 

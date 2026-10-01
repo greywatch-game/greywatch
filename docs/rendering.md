@@ -1001,7 +1001,9 @@ reach outside it:
   inside a branch fails to compile, and the draw is lost.
 - **It has NO SMOKE, and that was tried.** A plume in this material is opaque
   and unlit, and every cut of it read as floating leather or black rock; the
-  molotov's own smoke is `GrenadeSystem`'s cloud pool, which is translucent.
+  molotov's own smoke is the blast's billows (`BlastShader`), which get away
+  with being opaque because they are LIT and their silhouette is a cauliflower
+  rather than a slab — see `docs/grenades.md`.
 - **It is never a shadow caster** (`noShadowCaster`), for the world shadow
   map's rule: an animated caster is a per-frame redraw of the map.
 - **It takes no vertex colour buffer** — `vertexShading` skips it by

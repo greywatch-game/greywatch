@@ -634,8 +634,9 @@ class ScorchMarks {
 
   /**
    * One mark at a blast. An exhausted pool takes the OLDEST rather than
-   * refusing — `BlastDust`'s rule and for its reason: nothing is spent on a
-   * mark, so a blast with no scorch is a worse lie than an old one cut short.
+   * refusing — the blast slots' rule (`BlastFx`) and for their reason:
+   * nothing is spent on a mark, so a blast with no scorch is a worse lie than
+   * an old one cut short.
    */
   mark(at: Vector3, power: number, ground: BlastGround): void {
     const s = CONFIG.grenade.scorch;
