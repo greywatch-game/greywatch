@@ -153,6 +153,19 @@ params in the layout, shoot, and `git checkout` the layout.
 
 ### 7. Verify
 
+Take a fingerprint of the kind BEFORE the first edit, and check against it at
+the end: every placement in every layout, the drawing and the colliders hashed
+apart, in a minute or less.
+
+```bash
+npm run kit:hash -- --kinds <kind> --out <scratch>/before.json   # before editing
+npm run kit:hash -- --kinds <kind> --against <scratch>/before.json
+```
+
+A rework that keeps its colliders must report `colliders changed 0` — that is
+the "byte for byte" claim a header makes, checked rather than asserted. A pure
+refactor must report nothing changed at all. Then:
+
 ```bash
 npm run typecheck
 npm run collision -- <map>      # for each map the kind stands on

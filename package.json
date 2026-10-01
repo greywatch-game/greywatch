@@ -30,7 +30,8 @@
     "hollowmere": "node scripts/generate-hollowmere.mjs",
     "audio": "node scripts/encode-audio.mjs",
     "audio:measure": "node scripts/measure-audio.mjs",
-    "loc": "node scripts/loc.mjs"
+    "loc": "node scripts/loc.mjs",
+    "kit:hash": "node scripts/kit-hash.mjs"
   },
   "dependencies": {
     "@babylonjs/core": "^9.28.0",
