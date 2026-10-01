@@ -1572,10 +1572,19 @@ export function buildOffice(
   // gallery is for; the header is what stops the band reading as a missing
   // wall. Both are ordinary colliders — a body must not walk out of a window,
   // and the round that goes through the band is meant to.
+  //
+  // **The spandrel hangs from the SOFFIT, over the slab's edge, not from the
+  // floor.** The slab stops at the wall's centreline, so a spandrel standing on
+  // it left the floor line closed only by that edge — and over a stair lane
+  // there is no slab: a 0.5 m slot through the elevation the length of the
+  // void, open to the street and to rounds. Hung from the storey below's
+  // header (the ground floor's wall head, for level 1), the elevation is
+  // continuous whether a floor is behind it or not.
   for (let s = 1; s < floors; s++) {
     const y = levelY(s);
     const ceil = (s + 1) * STOREY - SLAB;
     const headH = ceil - (y + HEAD);
+    const spanH = SPANDREL + SLAB;
     const sides: [number, number, number, number][] = [
       // [width along X, depth along Z, x, z]
       [w, WALL, 0, -d / 2],
@@ -1584,7 +1593,7 @@ export function buildOffice(
       [WALL, d, w / 2, 0],
     ];
     for (const [bw, bd, bx, bz] of sides) {
-      b.wall(bw, SPANDREL, bd, bx, y + SPANDREL / 2, bz, CONCRETE);
+      b.wall(bw, spanH, bd, bx, y + SPANDREL - spanH / 2, bz, CONCRETE);
       if (headH > 0.05) {
         b.wall(bw, headH, bd, bx, y + HEAD + headH / 2, bz, CONCRETE);
       }
@@ -1992,10 +2001,14 @@ function drawOffice(
       for (let i = 0; i <= n; i++) {
         face(sd, -inner / 2 + i * bay, y + HEAD - 0.08, 0.06, 0.16, 0.44, 0.25, ALLOY);
       }
-      // The header's corners, over the notch the two walls leave between them.
+      // The header's corners, and the floor line's under the spandrel, over the
+      // notch the two walls leave between them.
       if (si === 0 || si === 1) {
         for (const k of [-1, 1]) {
-          sb.box(WALL / 2, ceil - (y + HEAD), WALL / 2, k * (w / 2 + WALL / 4), (ceil + y + HEAD) / 2, outward(sd) * (d / 2 + WALL / 4), CONCRETE);
+          const cx = k * (w / 2 + WALL / 4);
+          const cz = outward(sd) * (d / 2 + WALL / 4);
+          sb.box(WALL / 2, ceil - (y + HEAD), WALL / 2, cx, (ceil + y + HEAD) / 2, cz, CONCRETE);
+          sb.box(WALL / 2, SLAB, WALL / 2, cx, y - SLAB / 2, cz, CONCRETE);
         }
       }
 
