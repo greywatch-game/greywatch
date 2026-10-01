@@ -20,7 +20,7 @@ before choosing a colour; a colour a setting lacks goes in that file's palette
 | **Downtown** | `city.ts` | Coldharbour | `CONCRETE`, `DARK_CONCRETE`, `ASPHALT`, `GLASS`, `ALLOY`, `CITY_BRICK`, `ASHLAR`, `RENDER`, `ENAMEL`, `AWNING` | grime and wear (`EnvironmentSpec.wear`), not ruin | a low sun on pale stone; the read is VALUE — pale spandrel, dark reveal |
 | **Desert town** | `desert.ts` | Sarab | ten colours: mud brick and its shade, whitewash, roof mud, palm beam, window void, sandbag, scorch, cloth — and `TILE_BLUE`, the one chroma, for domes | war: shelling, scorch, sandbags; blown dust is LIGHTER than the wall | a hot high sun; walked flat roofs are half the town |
 | **Volcanic harbour** | `harbour.ts` | Cinderhaven | three materials: `BASALT`, `PITCH`ed timber, `RUST` — stained by `SULPHUR` and `SLAG` | salt, tar and rust on a schedule of weeks | night, lit by the volcano and lamps |
-| **Temple town** | `japan.ts` | Kurenai | stained and aged timber, lime and earthen plaster, fired tile, thatch, granite; vermilion (`SHU`) ONLY on what is sacred or crossed | moss on stone, weathered timber; nothing ruined | a 14° gold key — colours a shade darker and greyer, never warmed twice |
+| **Temple town** | `japan/palette.ts` | Kurenai | stained and aged timber, lime and earthen plaster, fired tile, thatch, granite; vermilion (`SHU`) ONLY on what is sacred or crossed | moss on stone, weathered timber; nothing ruined | a 14° gold key — colours a shade darker and greyer, never warmed twice |
 
 Across all of them: **few tones differing in value beat many differing in
 hue** (the cel bands posterise saturation into stripes), and a setting gets at

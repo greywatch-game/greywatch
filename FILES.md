@@ -807,15 +807,38 @@ src/
                         #   owns why a landmark has to be worth walking INTO,
                         #   the three materials the whole set is made of, and
                         #   why nothing else in it is climbable
-    kit/japan.ts        #   pagoda, templeHall, templeGate, bellTower, machiya,
-                        #   minka, teahouse, kura, torii, toro, stonePagoda,
-                        #   gardenWall, archBridge — the temple-town set, built
-                        #   for Kurenai. Owns the kit's one CURVED ROOF
-                        #   (`curvedRoof`: rings from eave to ridge on a power
-                        #   curve, corners swept up, a closed solid wound per
-                        #   triangle against an outward hint), the shoji
-                        #   lattice, and the rule that vermilion is spent on
-                        #   the sacred and the crossed alone
+    kit/japan/          #   the temple-town set, built for Kurenai: one file
+                        #   per builder, and one per word two builders share
+      index.ts          #   The set's header and barrel: why it is a set, the
+                        #   curved roof's argument, and the rules it adds to
+                        #   the kit contract — vermilion on the sacred and the
+                        #   crossed alone, walked-first collider order, nothing
+                        #   tall climbable
+      palette.ts        #   The five materials and the one accent, the paper's
+                        #   glows, and the two fallen-leaf colours
+      roof.ts           #   The kit's one CURVED ROOF: `Mesher` (triangles wound
+                        #   per triangle against an outward hint), `curvedRoof`
+                        #   (rings from eave to ridge on a power curve, corners
+                        #   swept up, a closed solid) and `roofHeight`
+      lapidary.ts       #   `Lapidary`, the mason the toro, the stone pagoda,
+                        #   the bell tower and the bridge carve with
+      joinery.ts        #   `Joinery`, the carpentry under a tiled hip the
+                        #   temple gate and the bell tower build with
+      torii.ts          #   buildTorii — the myōjin gate and the votive gate
+      toro.ts           #   buildToro — the Kasuga stone lantern
+      stonePagoda.ts    #   buildStonePagoda — the granite gojū-sekitō
+      machiya.ts        #   buildMachiya — the lattice-fronted townhouse, in
+                        #   the three lattices a street really had
+      minka.ts          #   buildMinka — the thatched farmhouse
+      kura.ts           #   buildKura — the storehouse, and `KURA_CRESTS`, the
+                        #   merchant's marks two other noren borrow
+      teahouse.ts       #   buildTeahouse — the sukiya teahouse on its engawa
+      templeHall.ts     #   buildTempleHall — the hondō
+      pagoda.ts         #   buildPagoda — the painted five-storey landmark
+      templeGate.ts     #   buildTempleGate — the shikyakumon, and `TERA`
+      bellTower.ts      #   buildBellTower — the shōrō
+      gardenWall.ts     #   buildGardenWall — the tsuijibei
+      archBridge.ts     #   buildArchBridge — the vermilion taikobashi
     kit/city.ts         #   tower, office, shophouse, depot, parkade, planter,
                         #   barrier, car, streetLight, monument — the downtown
                         #   set, and the first builders that stack WALKED floors.

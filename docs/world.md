@@ -290,7 +290,7 @@ new here rather than borrowed, and each is written up where it belongs:
 against a REFERENCE FRAME rather than against a place
 (`reference-media/new-map.jpg`: a stone path under red maples, a torii, a
 stone lantern and a paper-walled hall glowing in a peach haze), and what that
-took was a kit (`kit/japan.ts`) and three props, and nothing else in the
+took was a kit (`kit/japan/`) and three props, and nothing else in the
 engine. Seven things came out of building it and all of them outlive it:
 
 - **A map's SIZE is its density and its frame cost at once, and both are

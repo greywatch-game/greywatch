@@ -270,7 +270,7 @@ export const CINDERHAVEN: MapDef = {
  * It is the first map built against a REFERENCE FRAME rather than against a
  * place (`reference-media/new-map.jpg`): a stone path under red maples, a
  * torii, a stone lantern and a paper-walled hall glowing in a peach haze. What
- * it needed for that is a kit of its own (`kit/japan.ts`, whose curved roof is
+ * it needed for that is a kit of its own (`kit/japan/`, whose curved roof is
  * the one new shape) and three props (`buildMaple`, `buildLeafLitter`,
  * `buildBamboo`), and nothing else about the engine.
  *

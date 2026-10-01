@@ -17,7 +17,7 @@ Read before touching anything:
   heights, what was tried first);
 - `src/world/kit/core.ts`'s header (the builder contract) and the kit file's
   own header (`structures.ts`, `city.ts`, `desert.ts`, `harbour.ts`,
-  `japan.ts` each carry rules for their set);
+  `japan/index.ts` each carry rules for their set);
 - CLAUDE.md's "Visual meshes and collider proxies" and "Mesh metadata"
   sections, and `docs/world.md` / `docs/rendering.md` where the task touches
   them.
@@ -203,10 +203,10 @@ hung down a face), plus `FIG_*`;
 `DOOR_PAINTS`. In `buildings.ts` (file-local, move to core.ts if a second
 file needs one): `offFace`, `casement`, `doorway`, `framing`, `facePoly`, `archRing`, `lancet`, `buttress`, `renderFace`, `wallHead`,
 `toothing`, `quoins`. In `structures.ts`: the temple's `flat`,
-`courses`, `hang`, `moss`, `fallen`, `devata`. In `japan.ts`: `curvedRoof`
-and `roofHeight`; `Lapidary` (granite carving, one surface per colour —
-`solid`, `lathe`, `petals`, `leafRow`, `tube`, `lichen`, `leaf`); and
-`Joinery` (the carpentry under a tiled curved hip — brackets, purlins, a
+`courses`, `hang`, `moss`, `fallen`, `devata`. In `japan/`, each in a file of its
+own: `curvedRoof` and `roofHeight` (`roof.ts`); `Lapidary` (`lapidary.ts`,
+granite carving, one surface per colour — `solid`, `lathe`, `petals`,
+`leafRow`, `tube`, `lichen`, `leaf`); and `Joinery` (`joinery.ts`, the carpentry under a tiled curved hip — brackets, purlins, a
 frog-leg strut, two layers of rafters, hip beams with wind bells, the tiles
 and ridges, the sheet), which the temple gate and the bell tower share. Moving a helper to core.ts is
 the right fix for a second caller; a copy is not.

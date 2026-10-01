@@ -2,7 +2,7 @@
  * BuildingKit.ts — Facade for the parametric structure builders. Re-exports
  * the shared types and the BUILDERS registry; the implementation lives in
  * kit/ (core.ts = Build accumulator + palette + contract, buildings.ts,
- * city.ts, desert.ts, harbour.ts, japan.ts, manor.ts, structures.ts,
+ * city.ts, desert.ts, harbour.ts, japan/, manor.ts, structures.ts,
  * terrain.ts).
  * Invariants: builders assemble AT THE ORIGIN, UNROTATED and NEVER set
  * metadata.solid, checkCollisions, or isPickable — MapBuilder owns the
@@ -10,7 +10,8 @@
  * about to land in (the road bends onto the ground), but still returns
  * origin-local geometry. Collider top faces must stay within
  * CONFIG.nav.stepHeight of adjacent ground; ramp colliders need rotX.
- * New builders: write them in the kit/ file they belong to, register here.
+ * New builders: write them in the kit/ file (or set directory) they belong
+ * to, register here.
  * No Hollowmere special-casing.
  */
 export type {
@@ -195,7 +196,7 @@ export const BUILDERS = {
   careenedHull: buildCareenedHull,
   netLoft: buildNetLoft,
   saltPan: buildSaltPan,
-  // The temple town — see kit/japan.ts, whose header owns the curved roof and
+  // The temple town — see kit/japan/index.ts, whose header owns the curved roof and
   // the rule that vermilion is spent on the sacred and the crossed alone.
   pagoda: buildPagoda,
   templeHall: buildTempleHall,

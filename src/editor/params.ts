@@ -433,7 +433,7 @@ export const PARAMS: Record<BuilderKind, ParamSpec[]> = {
     num("depth", "depth", 14, 5, 40, 1),
   ],
 
-  // The temple town — kit/japan.ts.
+  // The temple town — kit/japan/.
   templeHall: [
     num("width", "width", 20, 10, 30),
     num("depth", "depth", 15, 8, 24),
