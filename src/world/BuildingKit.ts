@@ -1,7 +1,7 @@
 /**
  * BuildingKit.ts — Facade for the parametric structure builders. Re-exports
  * the shared types and the BUILDERS registry; the implementation lives in
- * kit/ (core.ts = Build accumulator + palette + contract, buildings.ts,
+ * kit/ (core.ts = Build accumulator + palette + contract, buildings/,
  * city.ts, desert.ts, harbour.ts, japan/, manor.ts, structures.ts,
  * terrain.ts).
  * Invariants: builders assemble AT THE ORIGIN, UNROTATED and NEVER set

@@ -200,9 +200,11 @@ chain — roots, stems, cables), `heading`, `stepAlong`, `fern`, `curtain` (cree
 hung down a face), plus `FIG_*`;
 `convexSolid` (a solid between two matching faces), and the elevations' words
 `onFace` (a member laid on one of four faces), `Side`, `Hole`, `CASEMENT` and
-`DOOR_PAINTS`. In `buildings.ts` (file-local, move to core.ts if a second
-file needs one): `offFace`, `casement`, `doorway`, `framing`, `facePoly`, `archRing`, `lancet`, `buttress`, `renderFace`, `wallHead`,
-`toothing`, `quoins`. In `structures.ts`: the temple's `flat`,
+`DOOR_PAINTS`. In `buildings/` (set-local, move to core.ts if a second
+set needs one): `offFace`, `casement`, `doorway`, `framing` (`village.ts`),
+`facePoly`, `archRing`, `lancet`, `buttress` (`gothic.ts`), the rubble words
+(`rubble.ts`), and `renderFace`, `wallHead`, `toothing`, `quoins`
+(`render.ts`). In `structures.ts`: the temple's `flat`,
 `courses`, `hang`, `moss`, `fallen`, `devata`. In `japan/`, each in a file of its
 own: `curvedRoof` and `roofHeight` (`roof.ts`); `Lapidary` (`lapidary.ts`,
 granite carving, one surface per colour — `solid`, `lathe`, `petals`,

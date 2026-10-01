@@ -1492,7 +1492,7 @@ const CORE_BACK = 0.05;
  * `plane` is the face's own coordinate and `sgn` which way is out of it. `tilt`
  * leans it in the face's plane, rising toward +u — with the opposite rotation
  * sign on each axis for the same lean, which is `onFace`'s argument in
- * buildings.ts.
+ * core.ts.
  */
 function flat(
   b: Build,

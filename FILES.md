@@ -786,12 +786,36 @@ src/
                         #   palette, builder contract, and the forest's
                         #   drawing words (limb/rope/slab/fern/curtain) the
                         #   jungle ruin, the temple and the manor grow from
-    kit/buildings.ts    #   cottage, townhouse, tavern, smithy, ruin,
-                        #   watchtower, chapel, barn, mill, boathouse,
-                        #   gatehouse, stiltHut, jungleRuin
+    kit/buildings/      #   the big enterable and landmark buildings: one file
+                        #   per builder, and one per set of drawing words
+      index.ts          #   The set's header and barrel
+      village.ts        #   The elevations' members (offFace, casement,
+                        #   doorway, framing, boardUp), the lamplit colours, and
+                        #   the thatch/slate pitches and weatherboard the houses
+                        #   share. Visual only
+      rubble.ts         #   The burnt cottage's words: coursed rubble over a
+                        #   set-back core, ashlar, wall heads, heap, ivy
+      gothic.ts         #   The chapel's words: face points and polygons, the
+                        #   pointed arch, the lancet, the buttress, the spire's
+                        #   pyramid, and `inside`, which the stilt hut borrows
+      render.ts         #   The jungle ruin's words: render over brick, spalls,
+                        #   wall heads, toothing, quoins
+      cottage.ts        #   buildCottage — the thatched timber-framed house
+      townhouse.ts      #   buildTownhouse — jettied, slate, brick stack; its
+                        #   header owns the masses-carry-the-colliders rule
+      tavern.ts         #   buildTavern — the coaching inn, floored and furnished
+      smithy.ts         #   buildSmithy — the open stone shop and its forge
+      ruin.ts           #   buildRuin — the stone cottage that burnt
+      watchtower.ts     #   buildWatchtower — the timber lookout and its ramp
+      chapel.ts         #   buildChapel — the parish church, tower and spire
+      barn.ts           #   buildBarn — the open barn and its ramped hayloft
+      mill.ts           #   buildMill — stone under weatherboard under slate
+      boathouse.ts      #   buildBoathouse — the tarred shed on piles
+      gatehouse.ts      #   buildGatehouse — the home-spawn arch
+      stiltHut.ts       #   buildStiltHut — Greyfen's dwelling on its platform
+      jungleRuin.ts     #   buildJungleRuin — the house the forest took back
     kit/manor.ts        #   manor — the two-storey colonial house with the
-                        #   wrap-around gallery. Its own file: bigger than the
-                        #   rest of buildings.ts together
+                        #   wrap-around gallery, in a file of its own
     kit/structures.ts   #   silo, well, stall, fence, stoneWall, bridge,
                         #   trestleBridge, templeRuin, haystack, lamp, cart,
                         #   crates, woodpile, shed, trough, shrine, kiln

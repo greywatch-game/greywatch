@@ -2,8 +2,8 @@
  * kit/manor.ts — buildJungleManor: a two-storey colonial manor with a
  * wrap-around veranda on both levels, and the largest single structure in the
  * kit. Follows the contract in kit/core.ts (origin-local geometry, no
- * solid/pickable/collisions metadata); it gets a file of its own only because
- * it is bigger than the rest of buildings.ts put together.
+ * solid/pickable/collisions metadata); it has a file of its own, as every
+ * builder in kit/buildings/ now does.
  *
  * ## What it is for
  *

@@ -1875,7 +1875,7 @@ a block is well inside the 78 m fog wall. Outlines still trace each building,
 because `renderOutline` expands vertices along their own normals.
 
 **There are FOUR vernaculars in the kit and each is a shape before it is a
-palette**: `kit/buildings.ts` and `kit/structures.ts` are the wet northern
+palette**: `kit/buildings/` and `kit/structures.ts` are the wet northern
 village, `kit/manor.ts` and the jungle props are Greyfen's, `kit/city.ts` is the
 downtown, and `kit/desert.ts` is Sarab's. The last one exists for one geometric
 reason and its header owns the argument: its ROOF is flat and WALKED, which
