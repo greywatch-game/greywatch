@@ -241,10 +241,6 @@ const HIT_POP_GAIN = 0.55;
  */
 const HIT_FADE = 0.45;
 
-/** The kill ring's travel, as a multiple of its drawn radius. */
-const RING_FROM = 0.45;
-const RING_TO = 1.5;
-
 /**
  * Bodies in the round above which the scoreboard lays each side's list out
  * two-up instead of as one column.
@@ -504,8 +500,6 @@ export class HUD {
    * writes its position.
    */
   private hitmarker: HTMLElement;
-  /** The kill ring inside the marker, driven per frame like the ticks. */
-  private hitRing: HTMLElement;
   private vignette: HTMLElement;
   private damageDirs: HTMLElement;
   private message: HTMLElement;
@@ -564,16 +558,6 @@ export class HUD {
   private hitLife = 0;
   /** The per-round pop, restarted by every flash including a repeat one. */
   private hitPop = 0;
-  /**
-   * The kill ring's own clock, deliberately not the marker's.
-   *
-   * A body hit landing on a man who is already going down extends the marker
-   * (it is a round that landed, and it re-pops), and if the ring rode that
-   * clock it would be thrown out a second time by a round that killed nobody
-   * — the one statement the ring exists to make, made about the wrong bullet.
-   */
-  private hitRingT = 0;
-  private hitRingLife = 0;
   private vignetteT = 0;
   private messageT = 0;
   /**
@@ -725,7 +709,6 @@ export class HUD {
       <div id="flag-strip"></div>
       <div id="hitmarker" class="hidden">
         <i><b></b></i><i><b></b></i><i><b></b></i><i><b></b></i>
-        <span class="ring"></span>
       </div>
       <div id="vignette"></div>
       <div id="damage-dirs"></div>
@@ -825,7 +808,6 @@ export class HUD {
     };
     this.flagStrip = document.getElementById("flag-strip")!;
     this.hitmarker = document.getElementById("hitmarker")!;
-    this.hitRing = this.hitmarker.querySelector(".ring") as HTMLElement;
     this.vignette = document.getElementById("vignette")!;
     this.damageDirs = document.getElementById("damage-dirs")!;
     this.message = document.getElementById("message")!;
@@ -896,20 +878,6 @@ export class HUD {
         const fade = Math.min(1, this.hitT / (this.hitLife * HIT_FADE));
         this.hitmarker.style.opacity = fade.toFixed(3);
       }
-    }
-    // The ring is the kill's own mark and the slow half of the cue — what
-    // makes a kill a different SHAPE and not merely a redder one. Its clock
-    // is stepped beside the marker's rather than inside it, because the two
-    // genuinely can outlive each other: `dropHitmarker` takes both, and a
-    // later body hit extends the marker without re-throwing the ring.
-    if (this.hitRingT > 0) {
-      this.hitRingT -= dt;
-      const t = Math.min(1, 1 - this.hitRingT / this.hitRingLife);
-      // Eased out: the ring leaves fast and settles, which is what makes it
-      // read as thrown off the body rather than as a circle growing.
-      const r = RING_FROM + (RING_TO - RING_FROM) * (1 - (1 - t) * (1 - t));
-      this.hitRing.style.transform = `scale(${r.toFixed(3)})`;
-      this.hitRing.style.opacity = (1 - t).toFixed(3);
     }
     if (this.vignetteT > 0) {
       this.vignetteT -= dt;
@@ -1589,7 +1557,7 @@ export class HUD {
    * lost outright to a kill, on the reasoning that "stop shooting" is the more
    * urgent of the two things to say and the ding is where the headshot read
    * actually lands. The urgency ordering is right and is kept — a kill still
-   * decides the COLOUR and still brings the ring with it — but the ticks now
+   * decides the COLOUR and is the BIGGEST mark of the four — but the ticks now
    * carry length as a second, independent axis, so a headshot that killed is
    * the kill marker drawn long instead of the headshot being thrown away. Two
    * statements, two properties, no arbitration. `hud.css` holds the four
@@ -1622,20 +1590,6 @@ export class HUD {
       this.hitRank = rank;
       this.hitmarker.classList.toggle("kill", killed);
       this.hitmarker.classList.toggle("head", headshot);
-      // The ring is written by its own clock and by nothing else, so a kill
-      // followed by a plain hit would otherwise leave the last frame of the
-      // old ring standing on the new marker.
-      if (!killed) {
-        this.hitRingT = 0;
-        this.hitRing.style.opacity = "0";
-      }
-    }
-    // Thrown by the kill itself, and only ever by a kill — including a second
-    // kill inside the first's life, which is a fresh statement about a fresh
-    // body and deserves a fresh ring.
-    if (killed) {
-      this.hitRingLife = HIT_LIFE[rank];
-      this.hitRingT = this.hitRingLife;
     }
     // Whatever it says, this round says it again: the pop is the confirmation
     // that a SECOND bullet landed, and it is restarted even when the flavour
@@ -1663,8 +1617,6 @@ export class HUD {
     this.hitT = 0;
     this.hitPop = 0;
     this.hitRank = 0;
-    this.hitRingT = 0;
-    this.hitRing.style.opacity = "0";
     this.hitmarker.classList.add("hidden");
   }
 

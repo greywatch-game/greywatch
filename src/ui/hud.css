@@ -1120,9 +1120,8 @@
    transform: the transform is the pop, written every frame. */
 
 /* --- hitmarker ---
-   Four diagonal ticks, the shooter convention, plus a ring the kill
-   brings with it. The pop, the fade and the ring's travel are all written
-   as transforms by HUD.update rather than run as keyframes: at full auto
+   Four diagonal ticks, the shooter convention. The pop and the fade are
+   written by HUD.update rather than run as keyframes: at full auto
    the mark re-triggers several times a second, and restarting a CSS
    animation needs a forced reflow each time.
 
@@ -1172,8 +1171,8 @@
      ticks are not their border box — it would hang a rectangular smudge
      behind every wedge. `drop-shadow` works off the clipped silhouette, so
      it follows the taper, and one on the container does the whole mark
-     (ticks and ring alike) instead of nine. The hard half is the ink
-     element under each tick, below. */
+     instead of eight. The hard half is the ink element under each tick,
+     below. */
   filter: drop-shadow(0 0 3px rgba(0, 0, 0, 0.85));
 }
 /* A head hit: longer, thicker ticks in a warm tone, standing further off
@@ -1189,20 +1188,19 @@
   --gap: 7px;
 }
 /* The kill. Red is the colour this HUD already uses for the other side,
-   and the ring below is the part that does not depend on the player
-   having seen a colour. Shorter than the head's ticks and thicker: a
-   kill is a HEAVIER mark rather than a bigger one, which keeps the two
-   apart when both are on the same mark. */
+   and SIZE is the part that does not depend on the player having seen a
+   colour: the kill is the biggest mark on the ladder, reaching a few
+   pixels past the head hit's ticks and heavier at the base. */
 #hitmarker.kill {
   --tick: var(--theirs);
-  --len: 20px;
+  --len: 24px;
   --thick: 4px;
-  --gap: 5px;
+  --gap: 8px;
 }
-/* A headshot that killed: the kill's colour and its ring, drawn at the
-   head hit's reach. Both statements, and the urgent one still decides
-   what colour the player sees. */
-#hitmarker.kill.head { --len: 25px; }
+/* A headshot that killed: the kill's colour, drawn longer again. Both
+   statements, and the urgent one still decides what colour the player
+   sees. */
+#hitmarker.kill.head { --len: 27px; }
 
 /* Each tick is TWO elements, and the outer one is the drawn edge. A tick
    is white and the world behind it is not reliably dark — a snow-lit
@@ -1239,24 +1237,6 @@
 #hitmarker i:nth-of-type(2) { --a: 135deg; }
 #hitmarker i:nth-of-type(3) { --a: 225deg; }
 #hitmarker i:nth-of-type(4) { --a: 315deg; }
-
-/* The kill's ring: thrown out from the centre over the whole life of the
-   mark while the ticks are still settling from their pop, so the kill has
-   a SHAPE nothing else on the marker has and a duration nothing else
-   has either. Driven by HUD.update, which is also the only thing that
-   ever gives it an opacity — every other flavour leaves it at 0. */
-#hitmarker .ring {
-  position: absolute;
-  width: 34px;
-  height: 34px;
-  margin: -17px 0 0 -17px;
-  border: 2px solid var(--theirs);
-  border-radius: 50%;
-  opacity: 0;
-  /* Its own drawn edge, for the ticks' reason. The soft lift comes from
-     the container's filter, which is why there is only one shadow here. */
-  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.45);
-}
 
 /* --- damage vignette --- */
 #vignette {
