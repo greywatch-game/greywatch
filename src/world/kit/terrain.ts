@@ -652,7 +652,7 @@ const WALK_DECK = 0.5;
  * grazing angle you see a walked surface from, the shell's underside wins the
  * depth test unless there is real depth behind the top face — which paints the
  * deck flat in its own ink. The manor's 0.14 m board deck is the worked failure
- * (see CLAUDE.md); `boardDeck` in kit/manor.ts is the worked fix. Everything
+ * (see CLAUDE.md); `boardDeck` in kit/buildings/manor.ts is the worked fix. Everything
  * else the boardwalk draws hangs BELOW this box, because a batten laid on top
  * of the walked surface would be a thin slab again with nothing behind it.
  */

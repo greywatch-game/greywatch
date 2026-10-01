@@ -40,7 +40,7 @@
  *   and the grid keeps `maxSurfaces` of them per cell with the overflow
  *   DROPPED rather than sorted in. So the order colliders are declared in is
  *   part of the design: floors and ramps first, cover and parapets next, roofs
- *   LAST. That is `kit/manor.ts`'s rule generalised — it emits its roofs last
+ *   LAST. That is `kit/buildings/manor.ts`'s rule generalised — it emits its roofs last
  *   for exactly this reason — and it is what lets a three-storey block keep all
  *   three of its storeys in the graph while spending its last slot on a
  *   spandrel rather than on a roof nothing can reach. Measured on Coldharbour:
@@ -1462,7 +1462,7 @@ export function buildOffice(
   // --- enclosure ------------------------------------------------------------
 
   // Ground floor: solid, with a doorway on -Z and one on +X. Two ways in, for
-  // `kit/manor.ts`'s reason — one entrance is a choke a squad can hold with a
+  // `kit/buildings/manor.ts`'s reason — one entrance is a choke a squad can hold with a
   // single body, and what makes a building worth taking is that it cannot be.
   const g0 = GROUND;
   const gh = STOREY - SLAB - g0;

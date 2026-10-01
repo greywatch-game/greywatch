@@ -814,8 +814,8 @@ src/
       gatehouse.ts      #   buildGatehouse — the home-spawn arch
       stiltHut.ts       #   buildStiltHut — Greyfen's dwelling on its platform
       jungleRuin.ts     #   buildJungleRuin — the house the forest took back
-    kit/manor.ts        #   manor — the two-storey colonial house with the
-                        #   wrap-around gallery, in a file of its own
+      manor.ts          #   buildJungleManor — the two-storey colonial house
+                        #   with the wrap-around gallery, the kit's largest
     kit/structures/     #   small standalone structures and cover: a file per
                         #   builder big enough to argue for itself
       index.ts          #   The set's header and barrel: the cover heights a

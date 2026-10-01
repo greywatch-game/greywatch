@@ -6,12 +6,12 @@ server's bake — follows from what the builder declares.
 
 ## 1. Where it goes and what it looks like
 
-- **File by set, not by map.** `kit/buildings/` (village buildings),
-  `kit/structures/` (small structures and cover), `kit/city.ts`,
-  `kit/desert.ts`, `kit/harbour.ts`, `kit/japan/`, `kit/manor.ts` (one
-  building in a file of its own), `kit/terrain.ts` (walked ground:
-  roads, ramps, decks). A set that has outgrown one file is a DIRECTORY, as
-  `kit/japan/`, `kit/buildings/` and `kit/structures/` are: one file per builder, what two builders share in a file
+- **File by set, not by map.** `kit/buildings/` (the big enterable and
+  landmark buildings), `kit/structures/` (small structures and cover),
+  `kit/city.ts`, `kit/desert.ts`, `kit/harbour.ts`, `kit/japan/`,
+  `kit/terrain.ts` (walked ground: roads, ramps, decks). A set that has
+  outgrown one file is a DIRECTORY, as `kit/japan/`, `kit/buildings/` and
+  `kit/structures/` are: one file per builder, what two builders share in a file
   of its own (its palette, its roof, its mason), and an `index.ts` that is
   the set's header and the barrel `BuildingKit.ts` imports — so a new
   builder in it is a new file plus a line there. The kit is map-agnostic — **nothing in a builder may

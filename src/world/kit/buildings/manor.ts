@@ -1,9 +1,9 @@
 /**
- * kit/manor.ts — buildJungleManor: a two-storey colonial manor with a
- * wrap-around veranda on both levels, and the largest single structure in the
- * kit. Follows the contract in kit/core.ts (origin-local geometry, no
- * solid/pickable/collisions metadata); it has a file of its own, as every
- * builder in kit/buildings/ now does.
+ * kit/buildings/manor.ts — buildJungleManor: a two-storey colonial manor
+ * with a wrap-around veranda on both levels, and the largest single structure
+ * in the kit. Follows the contract in kit/core.ts (origin-local geometry, no
+ * solid/pickable/collisions metadata); part of the buildings set, whose files
+ * are listed in `./index.ts`.
  *
  * ## What it is for
  *
@@ -132,8 +132,8 @@
  * and the growth is drawn from one fixed seed rather than a placement's.
  */
 import { Scene, VertexData } from "@babylonjs/core";
-import type { CelMaterialFactory } from "../../shaders/CelShader";
-import { mulberry32 } from "../rng";
+import type { CelMaterialFactory } from "../../../shaders/CelShader";
+import { mulberry32 } from "../../rng";
 import {
   Build,
   type BuildParams,
@@ -163,7 +163,7 @@ import {
   STUCCO,
   TEAK,
   VERDIGRIS,
-} from "./core";
+} from "../core";
 
 // --- the section everything else is measured from --------------------------
 

@@ -1,11 +1,11 @@
 /**
  * kit/buildings/index.ts — The big enterable/landmark buildings: cottage,
  * townhouse, tavern, smithy, ruin, watchtower, chapel, barn, mill, boathouse,
- * gatehouse, stiltHut, jungleRuin.
+ * gatehouse, stiltHut, jungleRuin, manor.
  * All follow the contract in kit/core.ts (origin-local geometry, no
  * solid/pickable/collisions metadata).
  *
- * This file is the set's barrel: `BuildingKit.ts` imports the thirteen
+ * This file is the set's barrel: `BuildingKit.ts` imports the fourteen
  * builders from here, and each is a file of its own beside it. The words
  * they are drawn in are files of their own too — `village.ts` (the
  * elevations' members, the lamplit colours, and the roof and board numbers
@@ -27,3 +27,4 @@ export { buildBoathouse } from "./boathouse";
 export { buildGatehouse } from "./gatehouse";
 export { buildStiltHut } from "./stiltHut";
 export { buildJungleRuin } from "./jungleRuin";
+export { buildJungleManor } from "./manor";

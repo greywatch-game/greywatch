@@ -2,7 +2,7 @@
  * BuildingKit.ts — Facade for the parametric structure builders. Re-exports
  * the shared types and the BUILDERS registry; the implementation lives in
  * kit/ (core.ts = Build accumulator + palette + contract, buildings/,
- * city.ts, desert.ts, harbour.ts, japan/, manor.ts, structures/,
+ * city.ts, desert.ts, harbour.ts, japan/, structures/,
  * terrain.ts).
  * Invariants: builders assemble AT THE ORIGIN, UNROTATED and NEVER set
  * metadata.solid, checkCollisions, or isPickable — MapBuilder owns the
@@ -37,6 +37,7 @@ import {
   buildGatehouse,
   buildStiltHut,
   buildJungleRuin,
+  buildJungleManor,
 } from "./kit/buildings";
 import {
   buildBarrier,
@@ -90,7 +91,6 @@ import {
   buildToro,
   buildTorii,
 } from "./kit/japan";
-import { buildJungleManor } from "./kit/manor";
 import {
   buildSilo,
   buildWell,

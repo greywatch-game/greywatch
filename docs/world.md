@@ -1876,7 +1876,7 @@ because `renderOutline` expands vertices along their own normals.
 
 **There are FOUR vernaculars in the kit and each is a shape before it is a
 palette**: `kit/buildings/` and `kit/structures/` are the wet northern
-village, `kit/manor.ts` and the jungle props are Greyfen's, `kit/city.ts` is the
+village, `kit/buildings/manor.ts` and the jungle props are Greyfen's, `kit/city.ts` is the
 downtown, and `kit/desert.ts` is Sarab's. The last one exists for one geometric
 reason and its header owns the argument: its ROOF is flat and WALKED, which
 nothing else in the kit has, so a terrace of its houses is a second storey of
