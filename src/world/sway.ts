@@ -34,10 +34,10 @@
  * WHERE MARKED MEETS UNMARKED THERE IS A STEP, and that is what makes the
  * choice of what to mark a geometric argument rather than a taste one. A
  * marked mesh moves and its unmarked neighbour does not, so a mark is only safe
- * where the join is buried: a canopy plate is centred on the trunk axis and
- * metres across, so 0.29 m of drift is spent inside its own overlap of the
- * bole; a fern frond leaves its rootstock at 0.1 m where the ramp has given it
- * a few millimetres, inside a stock 0.15 m across. Marking something whose join
+ * where the join is buried: a jungle palm's frond starts on the trunk axis
+ * inside a crown head that is not marked, so 0.29 m of drift is spent inside
+ * the head; a fern frond leaves its rootstock at 0.1 m where the ramp has
+ * given it a few millimetres, inside a stock 0.15 m across. Marking something whose join
  * is neither buried nor near the foot of the ramp is what tears — the liana's
  * collar is left out for exactly that reason.
  *

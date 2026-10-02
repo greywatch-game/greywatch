@@ -1219,6 +1219,193 @@ function tri(
   else indices.push(a, b, c);
 }
 
+/** A point or a direction in a part's own frame — see `Sheet`. */
+type V3 = readonly [number, number, number];
+const v3add = (a: V3, b: V3, k = 1): V3 => [a[0] + b[0] * k, a[1] + b[1] * k, a[2] + b[2] * k];
+const v3cross = (a: V3, b: V3): V3 => [
+  a[1] * b[2] - a[2] * b[1],
+  a[2] * b[0] - a[0] * b[2],
+  a[0] * b[1] - a[1] * b[0],
+];
+const v3unit = (a: V3): V3 => {
+  const l = Math.hypot(a[0], a[1], a[2]) || 1;
+  return [a[0] / l, a[1] / l, a[2] / l];
+};
+const v3dist = (a: V3, b: V3): number => Math.hypot(a[0] - b[0], a[1] - b[1], a[2] - b[2]);
+const v3lerp = (p: V3, q: V3, u: number): V3 => [
+  p[0] + (q[0] - p[0]) * u,
+  p[1] + (q[1] - p[1]) * u,
+  p[2] + (q[2] - p[2]) * u,
+];
+
+/**
+ * A surface laid vertex by vertex, for a builder whose leaf is too fine to be
+ * a part per piece — the fern's fronds, the jungle tree's pinnae. One sheet
+ * per colour, merged into one part at the end (`sheetData`), so a crown of
+ * three hundred leaflets costs the merge two meshes rather than three hundred.
+ */
+interface Sheet {
+  positions: number[];
+  normals: number[];
+  uvs: number[];
+  indices: number[];
+}
+const newSheet = (): Sheet => ({ positions: [], normals: [], uvs: [], indices: [] });
+/** A vertex at `p` facing `n` (normalised here); returns its index. */
+function sheetVert(s: Sheet, p: V3, n: V3): number {
+  const l = Math.hypot(n[0], n[1], n[2]) || 1;
+  s.positions.push(p[0], p[1], p[2]);
+  s.normals.push(n[0] / l, n[1] / l, n[2] / l);
+  s.uvs.push(p[0], p[1] + p[2]);
+  return s.positions.length / 3 - 1;
+}
+/** A triangle, wound off its first vertex's normal (see `tri`). */
+function sheetFace(s: Sheet, a: number, b: number, c: number): void {
+  tri(s.indices, s.positions, a, b, c, s.normals.slice(a * 3, a * 3 + 3));
+}
+function sheetData(s: Sheet): VertexData {
+  const data = new VertexData();
+  data.positions = s.positions;
+  data.normals = s.normals;
+  data.uvs = s.uvs;
+  data.indices = s.indices;
+  return data;
+}
+
+/** One station of a rachis: along it, across the blade, and out of its face. */
+interface RachisFrame {
+  t: V3;
+  side: V3;
+  up: V3;
+}
+
+/**
+ * The frames of a rachis heading out on bearing `a`: across the blade is
+ * level, rolled by `roll` so one half of the frond faces up more than the
+ * other. The fern's fronds and the jungle palm's.
+ */
+function rachisFrames(pts: readonly V3[], a: number, roll: number): RachisFrame[] {
+  const S = pts.length - 1;
+  const flat: V3 = [Math.cos(a), 0, -Math.sin(a)];
+  return pts.map((_, i) => {
+    const t = v3unit(v3add(pts[Math.min(S, i + 1)], pts[Math.max(0, i - 1)], -1));
+    const side = v3unit(v3add(v3add([0, 0, 0], flat, Math.cos(roll)), v3cross(t, flat), Math.sin(roll)));
+    return { t, side, up: v3unit(v3cross(t, side)) };
+  });
+}
+
+/** A point `f` of the way along a rachis, and its frame. */
+function rachisAt(pts: readonly V3[], frames: readonly RachisFrame[], f: number): RachisFrame & { p: V3 } {
+  const S = pts.length - 1;
+  const x = Math.min(S - 1e-6, f * S);
+  const i = Math.floor(x);
+  const u = x - i;
+  const A = frames[i];
+  const B = frames[i + 1];
+  return {
+    p: v3lerp(pts[i], pts[i + 1], u),
+    t: v3unit(v3lerp(A.t, B.t, u)),
+    side: v3unit(v3lerp(A.side, B.side, u)),
+    up: v3unit(v3lerp(A.up, B.up, u)),
+  };
+}
+
+/** How `pinnateBlade` cuts and folds a blade. */
+interface BladeCut {
+  /** The blade's half-width a fraction `f` of the way along the rachis. */
+  width: (f: number) => number;
+  /** How far each half falls from the rib, per metre of its own width. */
+  fold: number;
+  /** How much further a pinna's point droops below the fold, per metre. */
+  droop: number;
+  /** How far in toward the rib the cut between two pinnae runs, as a share
+   *  of the half-width (small is deep). */
+  notch: number;
+  /** How far forward a pinna's point is swept, in metres. */
+  sweep: number;
+  /** How far under the top's rib the underside's runs, at the stalk. */
+  thick: number;
+  /** How far the two sides' pinnae are staggered, in intervals. */
+  stagger: number;
+  /** Extra droop per point, `[side][pinna]`, for a fringe that is not ruled. */
+  ragged?: readonly (readonly number[])[];
+  /**
+   * ROUNDS each pinna's end: the point becomes two, this share of an
+   * interval apart along the rachis and drawn a little way back toward the
+   * rib, so the end is blunt where it was a spike. One vertex a pinna more.
+   * Absent is pointed, the fern's.
+   */
+  blunt?: number;
+}
+
+/**
+ * A PINNATE blade along a rachis, one pinna per interval a side — the fern's
+ * frond and the jungle palm's.
+ *
+ * Each half is FOLDED down from the rib, so the bands put a lit half and a
+ * shade half on every blade and the ink draws the rib where they meet; its
+ * edge runs out to a point and back in to a notch once per pinna, the two
+ * sides staggered. Every blade is a CLOSED lens — a flatter fold under the
+ * top one meeting it at the points and the notches — because the world's
+ * shadow map records back faces and the translucency term measures a crown's
+ * thickness off its front ones. Smooth along the blade, creased at the rib.
+ */
+function pinnateBlade(
+  pts: readonly V3[],
+  frames: readonly RachisFrame[],
+  cut: BladeCut,
+  top: Sheet,
+  under: Sheet,
+): void {
+  const S = pts.length - 1;
+  const { width, fold, droop, notch, sweep, thick, stagger, ragged, blunt } = cut;
+  [-1, 1].forEach((s, k) => {
+    // The top half and the underside, which meet at the notches and the
+    // points; the underside's rib is the blade's thickness under the top's.
+    for (const below of [false, true]) {
+      const into = below ? under : top;
+      const normal = (side: V3, up: V3, fall: number): V3 =>
+        below ? v3add(v3add([0, 0, 0], up, -1), side, -s * fold * 0.6) : v3add(up, side, s * fall);
+      const ribs: number[] = [];
+      const notches: number[] = [];
+      for (let i = 0; i <= S; i++) {
+        const { side, up } = frames[i];
+        const w = width(i / S) * notch;
+        const n = normal(side, up, fold);
+        ribs.push(sheetVert(into, below ? v3add(pts[i], up, -thick * (1 - 0.6 * (i / S))) : pts[i], n));
+        notches.push(sheetVert(into, v3add(v3add(pts[i], side, s * w), up, -fold * w), n));
+      }
+      for (let i = 0; i < S; i++) {
+        const f = (i + 0.5 + s * stagger) / S;
+        const { p, t, side, up } = rachisAt(pts, frames, f);
+        const w = width(f);
+        const fall = ragged ? fold + droop + ragged[k][i] : fold + droop;
+        const tip = v3add(v3add(v3add(p, side, s * w), up, -fall * w), t, sweep);
+        const n = normal(side, up, fall);
+        if (!blunt) {
+          const point = sheetVert(into, tip, n);
+          sheetFace(into, ribs[i], notches[i], point);
+          sheetFace(into, ribs[i], point, ribs[i + 1]);
+          sheetFace(into, ribs[i + 1], point, notches[i + 1]);
+          continue;
+        }
+        // Back from the point along the pinna, toward the middle of its foot,
+        // and either side of that along the rachis: a short square end, which
+        // the bands and the ink draw as a round one at any range it is seen at.
+        const half = (blunt * v3dist(pts[i], pts[i + 1])) / 2;
+        const foot = v3add(v3add(p, side, s * w * notch), up, -fold * w * notch);
+        const end = v3lerp(tip, foot, 0.07);
+        const back = sheetVert(into, v3add(end, t, -half), n);
+        const front = sheetVert(into, v3add(end, t, half), n);
+        sheetFace(into, ribs[i], notches[i], back);
+        sheetFace(into, ribs[i], back, front);
+        sheetFace(into, ribs[i], front, ribs[i + 1]);
+        sheetFace(into, ribs[i + 1], front, notches[i + 1]);
+      }
+    }
+  });
+}
+
 /**
  * A flat-sided solid cut from an OUTLINE — a leaf, a frond, a buttress — at a
  * box's price or near it. `outline` lies in the part's own XY plane, stood
@@ -1414,20 +1601,36 @@ function loftData(rings: readonly Ring[], sides: number, flute?: readonly number
 }
 
 /**
- * Jungle hardwood: a buttressed, fluted bole running bare for two storeys and
- * then forking into a canopy of broad leaf and fronds. The tall counterpart
- * to the pine — where a pine is a cone you see the whole of, this is a column
- * with the foliage held above the fight, so a stand of them closes the sky
+ * Jungle palm: a buttressed, fluted bole running bare for two storeys into a
+ * crown head, and a fountain of FEATHER FRONDS out of it — the young ones
+ * standing up out of the middle and arching over, the old ones spread round
+ * them and hanging, each a rachis fringed with pinnae. The tall counterpart to
+ * the pine — where a pine is a cone you see the whole of, this is a column
+ * with the foliage held above the fight, so a stand of them roofs the sky
  * without closing the sight lines under it.
+ *
+ * **It was a hardwood crowned with slabs** — two tiers of lozenge plates under
+ * rings of two-segment blades, carried on limbs — and from every distance a
+ * player sees it from it read as green boards stacked on a post. The look this
+ * game is drawn in finds an edge where depth steps or bends and gives a face
+ * one value per band, so a slab is one shape and one tone however big it is.
+ * A frond is the opposite: a broad blade hanging either side of its rib
+ * like a wet feather, creased down the middle into a lit half and a shade
+ * half and cut at its edge into a ragged fringe of hanging pinnae — strokes
+ * the ink and the bands can find, made of geometry, which is the only way
+ * this look can have them (`reference-media/jungletrees.jpg` is the target).
+ * The crown still closes most of the sky, and lets it through at the fringes,
+ * so the forest floor is dappled rather than shut.
  *
  * Four things about the shape are load-bearing rather than decorative:
  *
- * - **The lowest leaf hangs at ~9 m**, five times clear of the 1.7 m hit
- *   sphere. The collider is the trunk and its buttress core only (see
- *   `PROP_BODIES`), so anything at chest height would be foliage rounds pass
- *   straight through — the pine's rule, and a canopy tree has far more leaf to
- *   get it wrong with. The climber below is the one leaf under it, and it is
- *   pressed flat on the bark.
+ * - **The lowest leaf hangs at ~6.5 m** on a scale-1 tree (5.5 m at the
+ *   region's 0.85), three times clear of the 1.7 m hit sphere — the oldest
+ *   frond's tip and the pinnae hanging off it. The collider is the trunk and
+ *   its buttress core only (see `PROP_BODIES`), so anything at chest height
+ *   would be foliage rounds pass straight through — the pine's rule. The
+ *   climber below is the one leaf under the crown, and it is pressed flat on
+ *   the bark.
  * - **The bole stays inside the collider's 0.5 m half-width up to the crown**
  *   — flare, flutes and bend together — so the column a round stops on is the
  *   column you see. The BUTTRESSES do not, and are shaped so that what is
@@ -1435,24 +1638,22 @@ function loftData(rings: readonly Ring[], sides: number, flute?: readonly number
  *   high at the box's corner and a surface root under 0.3 m past it. They are
  *   what makes the trunk read as tropical at all; a bare cylinder of this
  *   height is a telegraph pole.
- * - **The fronds are two segments, not one**, and the outer one droops harder.
- *   A single straight blade reads as a plank at any distance the fog leaves
- *   visible; the break is where the whole silhouette comes from. Both are cut
- *   to a LEAF's outline — narrow at the stalk, pointed at the tip — rather than
- *   boxed, at the box's price (see `prism`).
- * - **The shade is the PLATES' and the silhouette is the FRONDS'**, and the
- *   split is what makes a closed canopy affordable at all. See the crown
- *   below, which carries the measurement that forced it.
+ * - **The fronds sway and the crown head does not**, and every frond's root is
+ *   inside it: `buildPalm`'s rule, for `world/sway.ts`'s reason.
+ * - **The crown stays under 11.6 m**, the frozen
+ *   `PROP_BODIES.jungleTree.visualTop` — the youngest frond's arch is what
+ *   reaches it.
  *
  * **Its detail comes from a stream of its OWN, and neither of the two it is
  * handed.** `rng` is the map's shared scatter stream and every draw from it
  * moves every tree, fern and flag walk after this one, so this takes exactly
  * the forty-eight draws it always took, in the same order; `sub` is the veil's
  * (below), and a draw taken from it would re-hang every curtain on the map.
- * So the flutes, the bend, the extra buttresses, the limbs, the leaf outlines
- * and the climber are drawn from `own`, a generator keyed off this tree's
- * first shared draw — distinct per tree, fixed per layout, and invisible to
- * both of the others.
+ * So the flutes, the bend, the extra buttresses, the fronds, every pinna and
+ * the climber are drawn from `own`, a generator keyed off this tree's first
+ * shared draw — distinct per tree, fixed per layout, and invisible to both of
+ * the others. Most of the forty-eight are taken and thrown away now (see the
+ * crown).
  *
  * **Some of them carry the belt's mid-story, and it is a CHILD of the trunk
  * rather than a prop placed near one.** `buildLianaVeil` is the curtain and
@@ -1478,9 +1679,12 @@ function loftData(rings: readonly Ring[], sides: number, flute?: readonly number
  * hundred on Greyfen — so it is budgeted as dressing, a vertex here being
  * fourteen hundred in the scene. That is what the shapes below are chosen
  * against: an outline where a box read as a board, a loft where a cylinder
- * read as a pole, and nothing that only the far side of a leaf could see.
- * Built from parts (`world/parts.ts`), like the maple, so none of it is
- * uploaded to the device on its way to the merge.
+ * read as a pole, a pinna at three vertices a face, and nothing that only the
+ * far side of a leaf could see — about 2,950 vertices a tree on average, most
+ * of them fronds. Built from parts (`world/parts.ts`), like the maple, so none
+ * of it is uploaded to the device on its way to the merge, and the whole
+ * crown is three of them (`Sheet`): the lit green, the shade green and the
+ * dead fronds.
  *
  * Nothing here is scaled non-uniformly — `renderOutline` extrudes along vertex
  * normals and `VertexData.transform` does not re-normalise them, so a squashed
@@ -1598,234 +1802,191 @@ export function buildJungleTree(
     fin.material = bark;
   }
 
-  // The crown's MASS, and the one thing on this tree that decides whether a
-  // belt of them reads as jungle at all.
-  //
-  // It was a single cylinder 2.3 m across — "filling the middle the fronds
-  // radiate out of" — and the middle was never what was open. Measured over
-  // the shipped valley, a ray fired straight up from head height inside the
-  // THICKEST belt found leaf 24% of the time; the other three quarters of the
-  // sky came down between the crowns, which is what made five belts of
-  // hardwoods read as columns in a park.
-  //
-  // The fix is not more fronds, and the arithmetic is why. A frond is a
-  // 12-triangle box whose blade is 1.5 m wide, so it covers ~4 m2 of sky; the
-  // same twelve triangles as a plate 6 m across cover ~15. Closing a canopy
-  // out of fronds costs four times what closing it out of leaf mass does, and
-  // that ratio is the whole reason the old crown could not afford to close.
-  // So the mass is broad overlapping plates and the fronds are what break its
-  // edge — the silhouette stays theirs, the shade becomes the plates'.
-  //
-  // Two tiers, because one rosette of plates is a parasol: the upper tier sits
-  // 0.8 m higher and is turned off the lower one's spokes, so the gaps in each
-  // sit over the other's leaf and the mass has depth when you stand under it.
-  //
-  // Each plate is a LOZENGE rather than a rectangle: pointed at both ends of
-  // its length and irregular along its sides, stated as fractions of the box
-  // it replaced and sized to within a few per cent of its area, so the sky it
-  // closes is the sky the box closed. A rosette of rectangles is a stack of
-  // boards from underneath; the same rosette of lozenges is a star of leaf.
-  const plates: [number, number, number, number, number][] = [
-    // count, height on the trunk, width, depth, thickness
-    [4, 4.35, 7.6, 3.0, 0.55],
-    [3, 5.15, 5.6, 2.5, 0.45],
-  ];
-  // The lower tier as it was laid, for the limbs that carry it.
-  const lower: { a: number; roll: number; pitch: number }[] = [];
-  plates.forEach(([count, y, width, depth, thick], tier) => {
-    const turn = rng() * Math.PI * 2;
-    for (let i = 0; i < count; i++) {
-      const a = (i / count) * Math.PI * 2 + turn + rng() * 0.3;
-      // Relief, so the mass is not a flat lid. `roll` turns the plate about
-      // its own long axis and `pitch` tips it along its depth — both after
-      // the yaw, so both are in the plate's own frame.
-      const roll = (rng() - 0.5) * 0.26;
-      const pitch = (rng() - 0.5) * 0.18;
-      const A = width / 2;
-      const B = depth / 2;
-      const j = () => 1 + (own() - 0.5) * 0.14;
-      const plate = prism(
-        `jungle-leaf${tier}-${i}`,
-        [
-          [1.18 * A * j(), (own() - 0.5) * 0.5 * B],
-          [0.58 * A * j(), 1.12 * B * j()],
-          [-0.52 * A * j(), 1.08 * B * j()],
-          [-1.18 * A * j(), (own() - 0.5) * 0.5 * B],
-          [-0.58 * A * j(), -1.12 * B * j()],
-          [0.52 * A * j(), -1.08 * B * j()],
-        ],
-        thick,
-        scene,
-        { plane: "xz" },
-      );
-      plate.parent = trunk;
-      // Centred ON the axis rather than out from it: a plate is a slab of
-      // canopy the trunk holds up through its middle, so four of them at
-      // 90 degrees are a rosette with no hole in it. Fronds are what sit out
-      // at a radius, below.
-      plate.position.y = y;
-      plate.rotation.y = a;
-      plate.rotation.z = roll;
-      plate.rotation.x = pitch;
-      // The lit green goes up, the shaded green goes down: what a canopy shows
-      // the sky is never what it shows the ground beneath it.
-      plate.material = tier === 0 ? leaf : leafLit;
-      // The whole crown is what the wind moves, and the trunk under it is not
-      // — `world/sway.ts` carries the argument, and the geometry that makes it
-      // safe is here: a plate is centred on the axis and metres across, so the
-      // third of a metre it drifts is inside its own overlap of the bole.
-      marksSway(plate, "canopy");
-      if (tier === 0) lower.push({ a, roll, pitch });
-    }
-  });
+  // The rest of the shared stream's forty-eight. The crown they used to place
+  // — two tiers of plates and two rings of blades — is gone, and these are
+  // taken and not spent (bar the first, which turns the crown) so every tree,
+  // fern and flag walk sown after this one stays where it was.
+  const crownTurn = rng() * Math.PI * 2;
+  for (let i = 0; i < 42; i++) rng();
 
-  // The LIMBS, forking out of the bole two metres under the crown and each
-  // running up into the long arm of a lower plate. From underneath, which is
-  // where anybody on this map looks at a canopy from, they are what says the
-  // crown is CARRIED — without them it was a lid balanced on a post.
+  // The CROWN HEAD: the knot of frond bases the bole runs up into and every
+  // frond leaves from. Unmarked, because it is what buries the fronds' roots
+  // while they sway — `buildPalm`'s boss, for its reason. It starts inside the
+  // bole, so it rises out of the trunk rather than sitting on it as a cap, and
+  // its flutes are the old leaf bases standing proud.
+  const HEAD: readonly Flat[] = [
+    [9.55, 0.19],
+    [9.95, 0.3],
+    [10.35, 0.37],
+    [10.75, 0.33],
+    [11.0, 0.2],
+    [11.12, 0.04],
+  ];
+  const boss = loft(
+    "jungle-boss",
+    HEAD.map(([h, r]) => ({ ...bole(h), r })),
+    7,
+    scene,
+    Array.from({ length: 7 }, () => (own() - 0.5) * 0.24),
+  );
+  boss.parent = trunk;
+  boss.material = vine;
+
+  // The FRONDS, and the whole of what this tree is drawn by now. It was a
+  // crown of slabs — two tiers of lozenge plates under rings of two-segment
+  // blades — and at every distance a player sees it from it read as green
+  // boards stacked on a post: one value per slab, and a silhouette of a dozen
+  // straight edges. A frond here is a feather: a broad PINNATE blade either
+  // side of the rachis (`pinnateBlade`, the fern's), each half hanging from
+  // the rib like the two slopes of a tent and cut at its edge into a fringe of
+  // long hanging pinnae.
   //
-  // Each ends at the middle of its plate's thickness, a metre and a half or
-  // so out along the arm — computed through the plate's own roll and pitch,
-  // not guessed at — and that is the ash's rule for its reason: the crown
-  // sways and the limb does not (a limb is a long thin thing lying along the
-  // ramp, the trunk's argument at a shorter length), so the join has to be
-  // BURIED. The arm is over three metres across there against the third of a
-  // metre the plate drifts, and a tip ~0.1 m thick sits inside a slab 0.55 m
-  // deep with its roll already accounted for.
-  const limbs = own() < 0.45 ? 4 : 3;
-  const bare = limbs === 4 ? -1 : Math.floor(own() * 4);
-  lower.forEach((p, k) => {
-    if (k === bare) return;
-    const reach = new Vector3(1.4 + own() * 0.4, 0, (own() - 0.5) * 0.6);
-    const tip = Vector3.TransformCoordinates(reach, Matrix.RotationYawPitchRoll(p.a, p.pitch, p.roll));
-    tip.y += plates[0][1];
-    const from = bole(7.7 + own() * 0.7);
-    const along = (f: number, rise: number, r: number): Ring => ({
-      x: from.x + (tip.x - from.x) * f,
-      y: from.y + (tip.y - from.y) * rise,
-      z: from.z + (tip.z - from.z) * f,
-      r,
-    });
-    // Steep out of the fork and flattening into the leaf.
-    const limb = loft(
-      `jungle-limb${k}`,
-      [along(0, 0, 0.22), along(0.45, 0.72, 0.16), along(1, 1, 0.1)],
-      6,
-      scene,
+  // **It is a BLADE cut into pinnae and not a row of separate pinnae**, and
+  // that was measured by eye rather than argued. Built as loose triangles
+  // strung along a stalk, the crown came back as combs of spikes — thin,
+  // hard and see-through, a frond's worth of teeth with sky between every
+  // one. What makes a frond read as THICK is the solid band of leaf along
+  // the rib that the cut stops short of; what makes it read as SOFT is that
+  // the blade is smooth-shaded along its length and drapes, so the bands run
+  // across it as curves rather than one hard value per spike; and what makes
+  // it read as DRAWN is still geometry the ink can find — the rib creases
+  // the blade into a lit half and a shade half, every pinna is a fold
+  // between two notches, and the fringe is ragged, each point falling its
+  // own way, so no two strokes are ruled.
+  //
+  // Each frond leaves the crown head on the axis, climbs and arches over, and
+  // the OLDER it is the lower it leaves, the harder it falls and the steeper
+  // its two halves hang: the young ones stand up out of the middle of the
+  // crown nearly flat and the old ones spread round them like wet feathers,
+  // so the crown is a fountain rather than a parasol. Turned by the golden
+  // angle, so no two neighbours lie over each other.
+  //
+  // **The lowest leaf hangs at ~6.5 m on a scale-1 tree** (5.5 at the
+  // region's 0.85), measured over two hundred seeds — an old frond's fringe hanging
+  // off its drooping far end. Three times the hit sphere's 1.7 m, so nothing
+  // a round can find is up here. Hang the old fronds harder and that is the
+  // number that moves.
+  //
+  // **The top is ~11.6 m**, the youngest frond's arch, at the frozen
+  // `PROP_BODIES.jungleTree.visualTop`.
+  //
+  // Budget: some fourteen hundred of these stand on Greyfen, so a pinna is
+  // fourteen hundred in the scene and they are counted — six vertices a
+  // pinna a side (a notch and a ROUNDED end of two, top and underside),
+  // fourteen a side on nine to eleven fronds: FEWER fronds and more pinnae,
+  // because a blade this broad fills a crown on its own and it is the pinna
+  // count that decides whether the fringe reads as leaflets or as the teeth
+  // of a saw. The ends are blunted (`BladeCut.blunt`) because a fringe of
+  // single-vertex points read as spikes, hard against the soft blade, and
+  // the vertex that costs was paid for with two pinnae a side. Measured
+  // against the plate crown it replaced, ~5% of the frame rate standing in
+  // the forest and ~1% from the air; a first cut of loose pinnae at ~3,000
+  // vertices a tree cost 13% from the air.
+  const lit = newSheet();
+  const shade = newSheet();
+  const dry = newSheet();
+  // Where along a frond the bare stalk gives way to the blade.
+  const STIPE = 0.14;
+  // One frond out along bearing `a` from `from`, `pinnae` a side: the rachis
+  // climbing at `e0` and falling to `e1`, `W` the widest half-width, `fold`
+  // and `droop` how hard the halves and the points hang, `roll` the blade's
+  // turn about its rachis. Returns the rachis.
+  const frond = (
+    a: number,
+    from: V3,
+    len: number,
+    e0: number,
+    e1: number,
+    pinnae: number,
+    W: number,
+    fold: number,
+    droop: number,
+    roll: number,
+    top: Sheet,
+    under: Sheet,
+  ): V3[] => {
+    const pts: V3[] = [from];
+    for (let i = 1; i <= pinnae; i++) {
+      const e = e0 + ((e1 - e0) * (i - 0.5)) / pinnae;
+      const p = pts[i - 1];
+      const d = len / pinnae;
+      pts.push([
+        p[0] + Math.sin(a) * Math.cos(e) * d,
+        p[1] + Math.sin(e) * d,
+        p[2] + Math.cos(a) * Math.cos(e) * d,
+      ]);
+    }
+    // A strap of stalk, then the blade — longest a little past its middle and
+    // still long at its foot, which is what gives a palm frond its weight
+    // close in where a fern's tapers to nothing.
+    const width = (f: number): number => {
+      if (f <= STIPE) return 0.035;
+      const u = (f - STIPE) / (1 - STIPE);
+      return Math.max(0.035, W * Math.pow(Math.sin(Math.PI * (0.08 + 0.84 * u)), 0.55));
+    };
+    const ragged = [0, 1].map(() => Array.from({ length: pinnae }, () => (own() - 0.5) * 0.4));
+    pinnateBlade(
+      pts,
+      rachisFrames(pts, a, roll),
+      { width, fold, droop, notch: 0.36, sweep: (len / pinnae) * 0.3, thick: 0.04, stagger: 0.2, ragged, blunt: 0.22 },
+      top,
+      under,
     );
-    limb.parent = trunk;
-    limb.material = bark;
-  });
+    return pts;
+  };
 
-  // Two rings of fronds, offset from each other so the gaps in one sit over the
-  // blades of the other. Inner blade out from the plates, outer blade drooping
-  // off its tip. FEWER and BIGGER than they were (six and five 0.95 m blades,
-  // against four and three at 1.7 and 1.5): the plates took over the shading, so
-  // what is left for a frond is the EDGE of the crown, and an edge is drawn
-  // better by long blades with sky between them than by short ones packed.
-  //
-  // The count is a budget as much as a shape. A canopy tree is the most-drawn
-  // object on this map by a wide margin — there are around fourteen hundred of
-  // them — so a frond costs 1,400 blades wherever it is added, and the ring
-  // counts were cut to the point where taking one more measurably opened the
-  // sky (see the closure figures in `greyfen/layout.ts`).
-  const rings: [number, number, number, number, number][] = [
-    // count, height on the trunk, blade length, blade width, droop
-    [4, 4.15, 3.6, 1.7, 0.34],
-    [3, 5.0, 3.0, 1.5, 0.18],
-  ];
-  // Where the lowest ring's blades ended up. A liana hangs from foliage that
-  // EXISTS rather than from a radius that hopes to be under some — see the
-  // hang points below, and `buildLianaVeil` for why that matters.
-  const boughs: { a: number; tilt: number }[] = [];
-  rings.forEach(([count, y, len, width, droop], ring) => {
-    const turn = rng() * Math.PI * 2;
-    for (let i = 0; i < count; i++) {
-      const a = (i / count) * Math.PI * 2 + turn + rng() * 0.25;
-      const tilt = droop + rng() * 0.16;
-      // Narrow at the stalk and widening to the break, where the tip takes
-      // over — or, on the upper ring, which has no tip, pointed there itself.
-      const w = width / 2;
-      const l = len / 2;
-      const blade = prism(
-        `jungle-frond${ring}-${i}`,
-        ring === 0
-          ? [
-              [-0.4 * w, -l],
-              [0.4 * w, -l],
-              [0.96 * w, l],
-              [-0.96 * w, l],
-            ]
-          : [
-              [-0.4 * w, -l],
-              [0.4 * w, -l],
-              [w, 0.1 * len],
-              [0, l],
-              [-w, 0.1 * len],
-            ],
-        0.14,
-        scene,
-        { plane: "xz" },
-      );
-      blade.parent = trunk;
-      blade.position.set(
-        Math.sin(a) * (len / 2 + 0.5),
-        y,
-        Math.cos(a) * (len / 2 + 0.5),
-      );
-      blade.rotation.y = a;
-      blade.rotation.x = tilt;
-      // The lit green goes on the upper ring, for the reason the plates split
-      // the same way.
-      blade.material = ring === 0 ? leaf : leafLit;
-      // With the plates, and at the same height, so the crown travels as one
-      // piece rather than the fronds shearing off the mass they break the edge
-      // of. The tip below inherits it for the same reason.
-      marksSway(blade, "canopy");
+  // Where the older fronds ended up, for the veil's hang points below: a
+  // liana hangs from foliage that EXISTS rather than from a radius that hopes
+  // to be under some.
+  const boughs: { a: number; pts: V3[] }[] = [];
+  const fronds = 9 + Math.floor(own() * 3);
+  for (let k = 0; k < fronds; k++) {
+    // 0 the youngest, upright in the middle; 1 the oldest, low and drooping.
+    const age = k / (fronds - 1);
+    const a = crownTurn + k * 2.39996 + (own() - 0.5) * 0.3;
+    const len = 4.6 + age * 0.6 + own() * 0.6;
+    const e0 = 0.6 - age * 0.62 + (own() - 0.5) * 0.1;
+    const e1 = e0 - 1.0 - age * 0.15 - own() * 0.1;
+    // On the axis, a hand behind it, inside the head: the root is buried by
+    // the head's radius plus that, against the third of a metre it drifts.
+    const root = bole(10.6 - age * 0.4);
+    const from: V3 = [root.x - Math.sin(a) * 0.1, root.y, root.z - Math.cos(a) * 0.1];
+    // Young fronds are the fresh green, old ones the dark.
+    const top = own() < 0.95 - age * 0.75 ? lit : shade;
+    const W = len * (0.24 + own() * 0.04);
+    const roll = (own() - 0.5) * 0.4;
+    const pts = frond(a, from, len, e0, e1, 14, W, 0.3 + age * 0.45, 0.35 + age * 0.2, roll, top, shade);
+    if (age >= 0.5) boughs.push({ a, pts });
+  }
 
-      // The drooping tip, hung off the blade's own far end so it rides the
-      // parent's yaw and tilt, and pointed. Its centre is derived from its own
-      // break angle rather than authored: a fixed offset leaves the joint open
-      // at one angle and the two segments overlapping at another.
-      //
-      // **Only on the LOWER ring**, which is the one break in the "two
-      // segments, not one" rule and is a fact about where the ring sits rather
-      // than a saving taken off it. The upper ring is 0.85 m higher and its
-      // blades are shorter, so its tip breaks over INSIDE the mass the lower
-      // ring and the plates already make: it is drawn against leaf from below
-      // and against leaf from above, and the only silhouette it was ever in is
-      // the lower ring's. Fourteen hundred trees, so that is 1,400 blades drawn
-      // for an edge nothing can see.
-      if (ring === 0) {
-        const brk = 0.5 + rng() * 0.3;
-        const tipLen = len * 0.8;
-        const t = tipLen / 2;
-        const tip = prism(
-          `jungle-tip${ring}-${i}`,
-          [
-            [-0.88 * w, -t],
-            [0.88 * w, -t],
-            [0.8 * w, 0.05 * tipLen],
-            [0, t],
-            [-0.8 * w, 0.05 * tipLen],
-          ],
-          0.12,
-          scene,
-          { plane: "xz" },
-        );
-        tip.parent = blade;
-        tip.rotation.x = brk;
-        tip.position.set(
-          0,
-          (-Math.sin(brk) * tipLen) / 2,
-          len / 2 + (Math.cos(brk) * tipLen) / 2,
-        );
-        tip.material = blade.material;
-        marksSway(tip, "canopy");
-        boughs.push({ a, tilt });
-      }
-    }
-  });
+  // DEAD FRONDS on some, hanging down the bole under the crown in the bark's
+  // colour — the skirt of old leaf a palm carries until it falls, and the
+  // one part of the crown that says what it is in silhouette against the
+  // sky. Limp and narrow, and turned over (`roll` of a half turn) so its
+  // halves fall AWAY from the bole it hangs down rather than into it. Not
+  // marked — a dead
+  // frond hangs stiff while the crown above it moves, and its root is inside
+  // the head, which does not move either.
+  const dead = own() < 0.45 ? 0 : own() < 0.6 ? 1 : 2;
+  for (let k = 0; k < dead; k++) {
+    const a = own() * Math.PI * 2;
+    const root = bole(10.1 - own() * 0.3);
+    const e0 = -0.85 - own() * 0.2;
+    frond(a, [root.x, root.y, root.z], 3.0 + own() * 0.8, e0, e0 - 0.4, 8, 0.45, 0.9, 0.3, Math.PI, dry, dry);
+  }
+
+  const crown = (name: string, s: Sheet, material: typeof leaf, sways: boolean): void => {
+    if (!s.indices.length) return;
+    const mesh = partSurface(name, sheetData(s), scene);
+    mesh.parent = trunk;
+    mesh.material = material;
+    // The live crown travels as one piece; see `world/sway.ts`, and the head
+    // above for where the join is buried.
+    if (sways) marksSway(mesh, "canopy");
+  };
+  crown("jungle-fronds-lit", lit, leafLit, true);
+  crown("jungle-fronds", shade, leaf, true);
+  crown("jungle-fronds-dead", dry, bark, false);
 
   // A CLIMBER on some of them — a vine winding up the bole with broad leaves
   // pressed flat to the bark, the aroid every rainforest trunk carries. It is
@@ -1915,33 +2076,38 @@ export function buildJungleTree(
   // worth getting right twice over.
   if (sub() < 0.16) {
     // The collar hangs at 4.05 above the trunk's own centre — 9.65 m up a
-    // scale-1 tree, which is just under the lower plate tier (4.07 to 4.63 in
-    // the same frame), so it emerges from the foliage rather than floating
-    // under it. Every hang below is stated relative to that line.
+    // scale-1 tree, just under the crown head (9.55 to 11.1 in the same
+    // frame's heights above the foot), so it is gathered where the fronds
+    // leave the bole rather than floating under them. Every hang below is
+    // stated relative to that line.
     const hangs: LianaHang[] = [];
     // One on the bole, so the collar is visibly holding something. Everything
-    // else is out under a blade.
+    // else is out under a frond.
     hangs.push({ a: sub() * Math.PI * 2, r: 0.55, y: 0.02 });
-    // The rest, each under a blade of the lowest ring, taken in turn from a
+    // The rest, each under one of the older fronds, taken in turn from a
     // random start so no two trees drape the same way. `r` is where along the
-    // blade the vine took hold and `y` follows the blade's own droop down to
-    // it, which is what puts the strand's top under leaf instead of beside it.
+    // frond the vine took hold and `y` is the rachis's own height there, which
+    // is what puts the strand's top in the fringe instead of beside it.
     const first = Math.floor(sub() * boughs.length);
     for (let i = 0; i < 4; i++) {
       const b = boughs[(first + i) % boughs.length];
-      // Out under the blade, and BOUNDED there rather than run to its tip:
-      // the ring's blades are 3.4 m now, and a hang taken from the drooping
-      // far end starts lower, which comes straight off the clearance
-      // `buildLianaVeil` derives its hem against. 3.1 m keeps the worst case
-      // at the 2.85 m it was measured at before the blades grew.
+      // Out under the frond and BOUNDED there rather than run to its tip,
+      // which falls further than `buildLianaVeil`'s hem may start.
       const r = 1.5 + sub() * 1.6;
+      const at = b.pts.findIndex((p) => Math.hypot(p[0], p[2]) >= r);
+      const p0 = b.pts[Math.max(0, at - 1)];
+      const p1 = b.pts[at < 0 ? b.pts.length - 1 : at];
+      const r0 = Math.hypot(p0[0], p0[2]);
+      const r1 = Math.hypot(p1[0], p1[2]);
+      const under = p0[1] + ((p1[1] - p0[1]) * (r - r0)) / (r1 - r0 || 1) - 0.06;
       hangs.push({
         a: b.a + (sub() - 0.5) * 0.3,
         r,
-        // 4.15 is the ring's height on the trunk, 2.2 is where along it the
-        // blade's own centre sits, and 0.07 is half a blade's thickness; the
-        // sine is how far the blade has drooped by `r`.
-        y: 4.15 - Math.sin(b.tilt) * (r - 2.2) - 0.07 - 4.05,
+        // FLOORED at -0.4 — 9.25 m up a scale-1 tree, the lowest a hang may
+        // start and the number the veil's hem is derived against (see
+        // `buildLianaVeil`). Where an old frond has already fallen below
+        // that by `r`, the strand starts inside its fringe instead.
+        y: Math.max(-0.4, under - 4.05),
       });
     }
     const veil = buildLianaVeil(scene, mats, sub, hangs);
@@ -2004,10 +2170,10 @@ export function buildJungleTree(
  * within the trunk's own silhouette, so at the twenty metres a belt is read
  * across they thicken the column instead of filling the gap between columns,
  * and the eight metres of clear air the veil exists to close is still clear.
- * The blades of the lowest frond ring reach 3.9 m and the ring is already
- * built, so `buildJungleTree` hands over the blades it actually made and a
- * strand hangs UNDER one — out where the curtain is between the trunks rather
- * than on them, and under leaf rather than beside it. That is the whole reason
+ * The older fronds reach four metres and more and are already built, so
+ * `buildJungleTree` hands over the fronds it actually made and a strand hangs
+ * from one — out where the curtain is between the trunks rather than on them,
+ * and in leaf rather than beside it. That is the whole reason
  * this takes `hangs` instead of picking a radius.
  *
  * The collar is the one part meant to be seen at the top — the woody mass a
@@ -2129,9 +2295,10 @@ export function buildLianaVeil(
 
     // Leaves down the strand, and they are what the layer is actually SEEN by:
     // a 13 cm vine is under a pixel at the range a belt is read across, so the
-    // foliage on it is the mid-story as far as the eye is concerned. Narrower
-    // and longer than they were hung off a bough — a wide flat blade at this
-    // size reads as a plank nailed to the trunk rather than as leaf.
+    // foliage on it is the mid-story as far as the eye is concerned. Each is a
+    // pointed blade HANGING from its stalk, cut to a leaf's outline: they were
+    // boxes, and next to the crown's pinnae a box on a vine read as a block
+    // threaded on a string rather than as leaf.
     //
     // The lowest sits a clear margin above the hem so the bottom of the veil is
     // vine rather than foliage: a leaf is the widest thing here and the hem is
@@ -2140,16 +2307,26 @@ export function buildLianaVeil(
     for (let j = 0; j < leaves; j++) {
       const t = 0.22 + (j / leaves) * 0.62;
       const at = radial(t, t);
-      const blade = MeshBuilder.CreateBox(
+      const s = 0.85 + rng() * 0.5;
+      const blade = prism(
         "liana-leaf",
-        { width: 0.5 + rng() * 0.28, height: 0.09, depth: 0.4 },
+        [
+          [0, 0],
+          [0.13 * s, -0.16 * s],
+          [0.04 * s, -0.42 * s],
+          [0, -0.56 * s],
+          [-0.04 * s, -0.42 * s],
+          [-0.13 * s, -0.16 * s],
+        ],
+        0.03,
         scene,
       );
       blade.parent = collar;
       blade.position.set(at.x, top - drop * t, at.z);
       blade.rotation.y = rng() * Math.PI;
-      // Drooping, never level: a horizontal blade at this size reads as a shelf.
-      blade.rotation.z = 0.5 + rng() * 0.5;
+      // Hanging off the vine, never plumb: a leaf straight down the strand is
+      // lost in it, and one held level reads as a shelf.
+      blade.rotation.x = -(0.25 + rng() * 0.5);
       blade.material = j === 0 ? leafLitMat : leafMat;
       marksSway(blade, "canopy");
     }
@@ -2255,36 +2432,8 @@ export function buildFernClump(
   // One sheet per colour. Every frond half is its own run of vertices — the
   // rib is a crease, so the two halves cannot share one — smooth along its
   // length, with each triangle wound off its own vertex normal.
-  type V3 = readonly [number, number, number];
-  interface Sheet {
-    positions: number[];
-    normals: number[];
-    uvs: number[];
-    indices: number[];
-  }
-  const sheet = (): Sheet => ({ positions: [], normals: [], uvs: [], indices: [] });
-  const lit = sheet();
-  const shade = sheet();
-  const vert = (s: Sheet, p: V3, n: V3): number => {
-    const l = Math.hypot(n[0], n[1], n[2]) || 1;
-    s.positions.push(p[0], p[1], p[2]);
-    s.normals.push(n[0] / l, n[1] / l, n[2] / l);
-    s.uvs.push(p[0], p[1] + p[2]);
-    return s.positions.length / 3 - 1;
-  };
-  const face = (s: Sheet, a: number, b: number, c: number): void =>
-    tri(s.indices, s.positions, a, b, c, s.normals.slice(a * 3, a * 3 + 3));
-  const add = (a: V3, b: V3, k = 1): V3 => [a[0] + b[0] * k, a[1] + b[1] * k, a[2] + b[2] * k];
-  const cross = (a: V3, b: V3): V3 => [
-    a[1] * b[2] - a[2] * b[1],
-    a[2] * b[0] - a[0] * b[2],
-    a[0] * b[1] - a[1] * b[0],
-  ];
-  const unit = (a: V3): V3 => {
-    const l = Math.hypot(a[0], a[1], a[2]) || 1;
-    return [a[0] / l, a[1] / l, a[2] / l];
-  };
-  const lerp = (p: V3, q: V3, u: number): V3 => [p[0] + (q[0] - p[0]) * u, p[1] + (q[1] - p[1]) * u, p[2] + (q[2] - p[2]) * u];
+  const lit = newSheet();
+  const shade = newSheet();
 
   // Stations along a frond. Nine intervals is nine pinna pairs a side: a
   // real frond has twenty, and at the range a clump is read from nine
@@ -2336,76 +2485,20 @@ export function buildFernClump(
         p[2] + Math.cos(a) * Math.cos(e) * d,
       ]);
     }
-    // Each station's frame: along the rachis, across the blade (rolled a
-    // little, so one half of the frond faces up more than the other) and out
-    // of its face.
-    const flat: V3 = [Math.cos(a), 0, -Math.sin(a)];
-    const frames = pts.map((_, i) => {
-      const t = unit(add(pts[Math.min(S, i + 1)], pts[Math.max(0, i - 1)], -1));
-      const side = unit(add(add([0, 0, 0], flat, Math.cos(roll)), cross(t, flat), Math.sin(roll)));
-      return { t, side, up: unit(cross(t, side)) };
-    });
-    // A point `f` of the way along the frond, and its frame.
-    const along = (f: number) => {
-      const x = Math.min(S - 1e-6, f * S);
-      const i = Math.floor(x);
-      const u = x - i;
-      const A = frames[i];
-      const B = frames[i + 1];
-      return {
-        p: lerp(pts[i], pts[i + 1], u),
-        t: unit(lerp(A.t, B.t, u)),
-        side: unit(lerp(A.side, B.side, u)),
-        up: unit(lerp(A.up, B.up, u)),
-      };
-    };
     // Young fronds are the fresh green, old ones the dark.
     const top = own() < 0.9 - age * 0.6 ? lit : shade;
-    const step = len / S;
-
-    for (const s of [-1, 1]) {
-      // The top half and the underside, which meet at the notches and the
-      // points; the underside's rib is the frond's thickness under the top's.
-      for (const under of [false, true]) {
-        const into = under ? shade : top;
-        const normal = (side: V3, up: V3, fall: number): V3 =>
-          under ? add(add([0, 0, 0], up, -1), side, -s * FOLD * 0.6) : add(up, side, s * fall);
-        const ribs: number[] = [];
-        const notches: number[] = [];
-        for (let i = 0; i <= S; i++) {
-          const { side, up } = frames[i];
-          const w = width(i / S) * NOTCH;
-          const thick = 0.02 * (1 - 0.6 * (i / S));
-          const n = normal(side, up, FOLD);
-          ribs.push(vert(into, under ? add(pts[i], up, -thick) : pts[i], n));
-          notches.push(vert(into, add(add(pts[i], side, s * w), up, -FOLD * w), n));
-        }
-        for (let i = 0; i < S; i++) {
-          // Staggered: the two sides' pinnae alternate along the rib.
-          const f = (i + 0.5 + s * 0.14) / S;
-          const { p, t, side, up } = along(f);
-          const w = width(f);
-          const point = vert(
-            into,
-            add(add(add(p, side, s * w), up, -(FOLD + DROOP) * w), t, step * SWEEP),
-            normal(side, up, FOLD + DROOP),
-          );
-          face(into, ribs[i], notches[i], point);
-          face(into, ribs[i], point, ribs[i + 1]);
-          face(into, ribs[i + 1], point, notches[i + 1]);
-        }
-      }
-    }
+    pinnateBlade(
+      pts,
+      rachisFrames(pts, a, roll),
+      { width, fold: FOLD, droop: DROOP, notch: NOTCH, sweep: (len / S) * SWEEP, thick: 0.02, stagger: 0.14 },
+      top,
+      shade,
+    );
   }
 
   const surface = (name: string, s: Sheet, material: typeof frondLit): void => {
     if (!s.indices.length) return;
-    const data = new VertexData();
-    data.positions = s.positions;
-    data.normals = s.normals;
-    data.uvs = s.uvs;
-    data.indices = s.indices;
-    const mesh = partSurface(name, data, scene);
+    const mesh = partSurface(name, sheetData(s), scene);
     mesh.parent = stock;
     mesh.position.y = -stock.position.y;
     mesh.material = material;

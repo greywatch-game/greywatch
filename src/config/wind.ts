@@ -27,15 +27,16 @@
 /** Foliage layers, keyed by how far above the ground the layer's mass sits. */
 const foliageLayers = {
   /**
-   * The canopy: a jungle tree's leaf plates, its fronds and what hangs off
-   * them, nine to eleven metres up.
+   * The canopy: a jungle palm's fronds and what hangs off them, six to
+   * twelve metres up.
    *
    * `reach` is the height at which the ramp reaches full travel, and 11 is
    * the canopy tree's own height — so the crown moves nearly the whole
    * `travel` and everything below it moves proportionally less. That is what
-   * lets a trunk stay rigid without the crown sliding off it: the plates are
-   * centred ON the trunk axis and overlap it by metres, so a third of a metre
-   * of drift is inside the overlap and reads as leaf moving over a bough.
+   * lets a trunk stay rigid without the crown sliding off it: every frond
+   * starts ON the trunk axis inside a crown head that does not move, so a
+   * third of a metre of drift is spent inside the head and reads as the
+   * fronds moving over it.
    */
   canopy: { reach: 11, amount: 1 },
   /**

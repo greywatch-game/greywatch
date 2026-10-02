@@ -930,7 +930,7 @@ a cosine. Not the water, which takes the sun as a reflection.
 than a matrix.** `getGlossy` adds the toon specular (`specColor`/`specShininess`)
 and `getTranslucent` the translucency band (`transColor`) — the key light coming
 *through* a thin surface, for stall awnings and for every crown in the game —
-a pine's needle tiers, a jungle canopy's plates, a hedgerow ash's leaf. Both default to a
+a pine's needle tiers, a jungle palm's pinnae, a hedgerow ash's leaf. Both default to a
 **black colour**, which is what makes them free on materials that skip them: every
 cel material carries both uniforms and zero multiplies the term out. A material is
 matte, glossy *or* translucent — never two — because the cache is per colour and an

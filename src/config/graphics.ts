@@ -987,7 +987,7 @@ export const graphics = {
     foliage: { color: "#61906f", intensity: 0.3, depth: 1.5 },
     /**
      * Jungle canopy: warmer, yellower and brighter than the pine's. A frond
-     * is one broad blade rather than a crown many needles deep, so far more
+     * is one layer of pinnae rather than a crown many needles deep, so far more
      * gets through it — and what gets through a leaf that size arrives
      * carrying the leaf's own colour rather than merely dimmed.
      */
