@@ -410,7 +410,7 @@ export interface BuildOptions {
    * resolved through `CONFIG.graphics.foliage`, handed to every scatter
    * builder as its fifth argument. Absent is 1, the full crown. It moves no
    * prop and no collider: what it thins is drawn from streams the shared
-   * scatter stream never sees (`buildAshTree`).
+   * scatter stream never sees (`buildAshTree`, `buildMaple`).
    */
   foliage?: number;
 }
@@ -623,9 +623,10 @@ export interface GameMap {
  * `buildJungleTree` reads `sub`, and a `Record` of the builders as written
  * would be a UNION of their signatures — which a four-argument call cannot
  * satisfy, because most members declare three. The fifth is the same story
- * for `buildAshTree`, the one reader of `foliage`. Widening the whole table
- * instead is free: a builder that ignores the stream is assignable to a type
- * that offers it, and a builder that wants one now has a place to say so.
+ * for `buildAshTree` and `buildMaple`, the readers of `foliage`. Widening the
+ * whole table instead is free: a builder that ignores the stream is
+ * assignable to a type that offers it, and a builder that wants one now has a
+ * place to say so.
  */
 type ScatterBuilder = (
   scene: Scene,
@@ -800,10 +801,12 @@ const PROP_BODIES: Record<ScatterSpec["prop"], PropBody> = {
   // height, so a hedgerow standard bakes as hard cover (CoverMap's 1.7 m) the
   // way a wall does. `visualTop` clears the cap plate.
   ashTree: { w: 0.68, d: 0.68, h: 8.6, visualTop: 9.9, rooted: true },
-  // The bole to the fork, at its width around chest height (0.52 -> 0.28 over
-  // 3.4 m). The crown is three and a half metres of leaf from 2.3 m up and is
-  // outside this for the ash's reason. 3.4 m clears CoverMap's 1.7 m, so a
-  // maple bakes as hard cover the way every other tree does.
+  // The bole to the fork, at its width around chest height (0.42 -> 0.38 from
+  // 0.25 to 1.6 m, inside the box with its lean). The crown is three and a
+  // half metres of leaf from 2.6 m up and is outside this for the ash's reason;
+  // the limbs leave the box at the fork, over every head. 3.4 m clears
+  // CoverMap's 1.7 m, so a maple bakes as hard cover the way every other tree
+  // does.
   maple: { w: 0.46, d: 0.46, h: 3.4, visualTop: 7.2, rooted: true },
   // Never blocking — a drift of leaves is 3 cm deep — so w/d/h are never read
   // and are filled honestly for the fern's reason. `visualTop` IS read. NOT

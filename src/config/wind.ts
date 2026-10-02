@@ -113,7 +113,8 @@ const foliageLayers = {
    */
   frond: { rig: 1 },
   /**
-   * The hedgerow ash's crown (`buildAshTree`) — its boughs, the clumps of
+   * A broadleaf crown, the hedgerow ash's (`buildAshTree`) and the Japanese
+   * maple's (`buildMaple`), which share this motion — its boughs, the clumps of
    * leaf they carry and every leaflet on them, RIGGED like the frond and for
    * the frond's reason: every clump in an ash crown is five to nine metres
    * up, so a ramp hands them all the same travel and the crown slides as one

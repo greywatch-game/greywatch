@@ -939,6 +939,9 @@ nothing else, so a bough and the billow it buries itself in compute one
 displacement where they meet; the beats differ only between boughs, and every
 bough meets the next at the fork, where the bend is 0. That is what lets the
 WOOD move — the boughs bend from the fork, which a ramp could never draw.
+**Kurenai's Japanese maple is the same crown** (`skinBillows`, a different
+leaf on the same stalk) and rides the same layer and the same numbers: a
+second tree on `bough` is a builder writing the rig, never a third layer.
 
 **The ash's leaf RUSTLES rather than flutters, and the difference is the one
 thing a bough packs that a frond does not** (`boughRig`). The frond's flutter

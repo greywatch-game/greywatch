@@ -664,8 +664,9 @@ export const graphics = {
    */
   /**
    * How full a broadleaf CROWN is, per rung of `Settings.foliage` — today the
-   * hedgerow ash's (`buildAshTree`), whose crown is billows skinned in leaf
-   * clusters. `detail` is the share of a billow's full skin it is laid with.
+   * hedgerow ash's (`buildAshTree`) and the Japanese maple's (`buildMaple`),
+   * both crowns of billows skinned in leaf (`skinBillows`). `detail` is the
+   * share of a billow's full skin it is laid with.
    *
    * **It is the one graphics setting decided at BUILD time.** A cluster is
    * geometry merged into the block it stands in, so a rung is a different
@@ -683,6 +684,11 @@ export const graphics = {
    * builds ~3 s and ~1.3 s slower. Each cluster grows a little to cover for
    * the ones a lower rung leaves out, and no more than `maxGrow`: past that
    * the clusters read as a few big leaves rather than a full crown.
+   *
+   * The maple's is Kurenai's few hundred trees: ~6.6 k a tree at `high`
+   * (+2.6 M on the map), ~5.4 k at `medium` and ~4.1 k at `low`; `high`
+   * measured 0-7% of the frame against the crown of slabs it replaced, at four
+   * vantages round the valley's densest stand, and ~3.5 s of build.
    */
   foliage: {
     tiers: {
