@@ -169,3 +169,37 @@ export function swayRig(bend: number, phase: number, edge: number): [number, num
   const p = phase - Math.floor(phase);
   return [bend, e + Math.min(p, 0.999)];
 }
+
+/** How finely `boughRig` stores a bend: 1024 steps of the crown's rim travel. */
+const BEND_STEPS = 1023;
+/** How finely `boughRig` stores a tilt: 31 steps each side of the stalk. */
+const TILT_STEPS = 31;
+
+/**
+ * One vertex of a RIGGED ash bough (`buildAshTree`), packed into `uv` — the
+ * frond's rig with one more number in it, because a leaf cluster has to RUSTLE
+ * and not ripple.
+ *
+ * `bend` and `phase` are the frond's: how much of the crown's rim travel this
+ * vertex takes, and its bough's beat. `tilt` is where the vertex sits across
+ * its own LEAF CLUSTER, signed, -1..1 along an axis through the stalk, and
+ * `leaf` is that cluster's own phase. The shader tips every vertex of a
+ * cluster by `tilt` times one number per cluster, so a cluster turns WHOLE on
+ * its stalk: the displacement is linear across it, which is a rigid tilt for
+ * the small angles a leaf turns through. The frond's flutter was a wave
+ * travelling through world space instead, so the points of one cluster moved
+ * on different phases and the leaf warped — which read as heat haze over the
+ * crown rather than as leaves in a wind.
+ *
+ * `u` is the bend in its whole part (`BEND_STEPS`) and the leaf's phase in its
+ * fraction; `v` the tilt in its whole part (`TILT_STEPS` either side of 31, so
+ * the stalk is exactly 0) and the bough's phase in its fraction. Float32 keeps
+ * the fraction to ~1e-4 under 1023, which is a phase, not a position.
+ */
+export function boughRig(bend: number, phase: number, tilt: number, leaf: number): [number, number] {
+  const b = Math.round(Math.min(1, Math.max(0, bend)) * BEND_STEPS);
+  const t = Math.round((Math.min(1, Math.max(-1, tilt)) + 1) * TILT_STEPS);
+  const p = phase - Math.floor(phase);
+  const l = leaf - Math.floor(leaf);
+  return [b + Math.min(l, 0.999), t + Math.min(p, 0.999)];
+}

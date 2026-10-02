@@ -382,8 +382,10 @@ uniform windParams: vec3f;
 // rad/s, flutter rad/s, flutter wavenumber).
 uniform windFrond: vec4f;
 uniform windFrondRate: vec4f;
-// The ash bough's answer (CONFIG.wind.bough), in the same two layouts, and
-// windBoughFade the (start, end) metres from the eye its flutter fades over.
+// The ash bough's answer (CONFIG.wind.bough): windBough is the frond's layout
+// with w the leaf's TIP at a cluster's rim, windBoughRate (calm share, flap
+// rad/s, leaf rad/s, swell rad/s), and windBoughFade the (start, end) metres
+// from the eye the leaf's rustle fades over.
 // The red channel picks which pair a rigged vertex reads: -1 a frond, -2 a
 // bough.
 uniform windBough: vec4f;
@@ -450,13 +452,17 @@ fn main(input: VertexInputs) -> FragmentInputs {
     } else {
       // The RIG (world/sway.ts): this vertex knows where it is on its own
       // frond, so the frond bends from its root and no two move as one.
-      let bend = vertexInputs.uv.x;
-      let edge = floor(vertexInputs.uv.y) / 63.0;
-      let tau = fract(vertexInputs.uv.y) * 6.2831853;
-      // Which rigged layer: -1 a palm's frond, -2 an ash's bough. One
-      // motion, two sets of numbers, and coherent per draw like the branch
-      // above, the layer being in the merge key.
+      //
+      // Which rigged layer: -1 a palm's frond, -2 an ash's bough — coherent
+      // per draw like the branch above, the layer being in the merge key. A
+      // bough packs one number more (\`boughRig\`): its bend is in u's whole
+      // part with its leaf cluster's phase in the fraction, and v's whole
+      // part is a SIGNED tilt across that cluster rather than a frond's edge.
       let bough = vertexInputs.color.r < -1.5;
+      let bend = select(vertexInputs.uv.x, floor(vertexInputs.uv.x) / 1023.0, bough);
+      let edge = select(floor(vertexInputs.uv.y) / 63.0,
+        (floor(vertexInputs.uv.y) - 31.0) / 31.0, bough);
+      let tau = fract(vertexInputs.uv.y) * 6.2831853;
       let rig = select(uniforms.windFrond, uniforms.windBough, bough);
       let rigRate = select(uniforms.windFrondRate, uniforms.windBoughRate, bough);
       // The same gust as the ramp's, read as PRESSURE: 0 in a lull, 1 at the
@@ -475,23 +481,44 @@ fn main(input: VertexInputs) -> FragmentInputs {
       let across = rig.z * swing * stir;
       let crosswind = vec2f(-uniforms.windDir.y, uniforms.windDir.x);
       let sway = (uniforms.windDir * down + crosswind * across) * bend;
-      // The pinnae: a ripple running along the frond on a short wave, so the
-      // fringe flutters rather than shivers in unison — nothing at the rib,
-      // most at a pinna's point, and more out along the frond than near it.
-      // A bough's leaflets fade out with distance (CONFIG.wind.bough's
-      // header): a pixel-wide leaflet crossing a band is a twinkle.
-      let ripple = sin(t * rigRate.z
-        - dot(worldPos.xyz, vec3f(0.71, 0.45, 0.54)) * rigRate.w
-        + tau * 7.0);
-      let near = select(1.0,
-        1.0 - smoothstep(uniforms.windBoughFade.x, uniforms.windBoughFade.y,
-          distance(worldPos.xyz, uniforms.camPos)),
-        bough);
-      let flutter = rig.w * edge * (0.3 + 0.7 * bend)
-        * (0.35 + 0.65 * press) * ripple * near;
       worldPos.x += sway.x;
       worldPos.z += sway.y;
-      worldPos.y += rig.y * flap * stir * bend + flutter;
+      worldPos.y += rig.y * flap * stir * bend;
+      if (bough) {
+        // The LEAF: every cluster TIPS whole on its stalk — the same number
+        // for all of its vertices, times how far across it each one sits
+        // (\`edge\`, signed), so the displacement is linear across a cluster
+        // and the cluster turns without changing shape. Each cluster on its
+        // own phase and rate (+-25%), three incommensurate partials so no
+        // beat repeats, and a slow SWELL of its own on top of the gust, so
+        // the crown rustles in patches — some clusters busy, some nearly
+        // still — and harder as a gust arrives. Tipped up and a little
+        // downwind, so a cluster facing the wind turns out of its face too.
+        // It fades out with distance (CONFIG.wind.bough's header): a
+        // pixel-wide cluster crossing a band is a twinkle.
+        let leafTau = fract(vertexInputs.uv.x) * 6.2831853;
+        let lr = rigRate.z * (0.75 + 0.5 * fract(leafTau * 2.618));
+        let wob = (sin(t * lr + leafTau)
+          + 0.55 * sin(t * lr * 1.73 + leafTau * 2.3)
+          + 0.3 * sin(t * lr * 2.91 + leafTau * 4.1)) / 1.85;
+        let swell = 0.5 + 0.5 * sin(t * rigRate.w * (0.8 + 0.4 * fract(leafTau * 1.618)) + leafTau * 3.0);
+        let near = 1.0 - smoothstep(uniforms.windBoughFade.x, uniforms.windBoughFade.y,
+          distance(worldPos.xyz, uniforms.camPos));
+        let rustle = rig.w * edge * wob * (0.15 + 0.85 * press) * (0.35 + 0.65 * swell) * near;
+        worldPos.y += rustle;
+        worldPos.x += uniforms.windDir.x * rustle * 0.5;
+        worldPos.z += uniforms.windDir.y * rustle * 0.5;
+      } else {
+        // The pinnae: a ripple running along the frond on a short wave, so
+        // the fringe flutters rather than shivers in unison — nothing at the
+        // rib, most at a pinna's point, and more out along the frond than
+        // near it.
+        let ripple = sin(t * rigRate.z
+          - dot(worldPos.xyz, vec3f(0.71, 0.45, 0.54)) * rigRate.w
+          + tau * 7.0);
+        worldPos.y += rig.w * edge * (0.3 + 0.7 * bend)
+          * (0.35 + 0.65 * press) * ripple;
+      }
     }
   }
 
@@ -3622,12 +3649,12 @@ export class CelMaterialFactory {
       new Vector4(f.calm, f.flapRate, f.flutterRate, (Math.PI * 2) / f.flutterWave),
     );
     const b = w.bough;
-    mat.setVector4("windBough", new Vector4(b.lean, b.flap, b.swing, b.flutter));
+    mat.setVector4("windBough", new Vector4(b.lean, b.flap, b.swing, b.rustle));
     mat.setVector4(
       "windBoughRate",
-      new Vector4(b.calm, b.flapRate, b.flutterRate, (Math.PI * 2) / b.flutterWave),
+      new Vector4(b.calm, b.flapRate, b.rustleRate, b.swellRate),
     );
-    mat.setVector2("windBoughFade", new Vector2(b.flutterFade[0], b.flutterFade[1]));
+    mat.setVector2("windBoughFade", new Vector2(b.rustleFade[0], b.rustleFade[1]));
   }
 
   private applyPointLights(mat: ShaderMaterial): void {

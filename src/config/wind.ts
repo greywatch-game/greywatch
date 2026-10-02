@@ -205,28 +205,32 @@ export const wind = {
     flutterWave: 1.4,
   },
   /**
-   * What a RIGGED ash bough does (`layers.bough`) — the frond's three motions
-   * over the same gust, every distance in metres at the crown's outermost
-   * leaf, and tuned to a different tree. A bough is wood: it leans less than
-   * a frond and bobs slower and shorter (`flap` at `flapRate`), because what
-   * moves an ash crown in a breeze is not the boughs but the LEAF on them.
+   * What a RIGGED ash bough does (`layers.bough`) — the frond's sway over the
+   * same gust, every distance in metres at the crown's outermost leaf, and
+   * tuned to a different tree. A bough is wood: it leans less than a frond and
+   * bobs slower and shorter (`flap` at `flapRate`), because what moves an ash
+   * crown in a breeze is not the boughs but the LEAF on them.
    *
-   * **So the flutter is the motion, and it is four times the frond's.** An ash
-   * leaflet hangs on a stalk a few millimetres thick and turns in any air at
-   * all, and that shimmer across a crown is what makes a broadleaf read as
-   * alive. `flutter` is the tip of a leaflet's travel, at `flutterRate` rad/s
-   * on a `flutterWave` metre ripple — short, so the leaflets of one cluster
-   * turn out of step with each other and the shimmer runs through a clump
-   * rather than the clump nodding. The cel shader takes its facets off the
-   * displaced position, so a turning leaflet crosses a band and catches the
-   * light: that is the shimmer, and no normal is moved for it.
+   * **The leaf RUSTLES: each cluster tips WHOLE on its stalk**, `rustle` at
+   * its rim, on a phase and a rate of its own (`rustleRate` ±25%, three
+   * incommensurate partials), under a slow SWELL of its own (`swellRate`) and
+   * the passing gust — so the crown is busy in patches, some clusters turning
+   * hard while their neighbours are nearly still, and all of it harder as a
+   * gust arrives. That is what leaves in a wind look like, and it is not what
+   * the frond's flutter is: a frond's ripple is a wave travelling through
+   * world space, which across a cluster puts every leaf point on a different
+   * phase, and the cluster WARPS — over a whole crown that read as heat haze.
+   * A tip is one number per cluster times where each vertex sits across it
+   * (`boughRig`), linear across the cluster and therefore a rigid turn, and the
+   * cel shader's facets come off the displaced position, so a turning cluster
+   * catches the light as one leaf would. No normal is moved for it.
    *
-   * **And it fades out with distance, over `flutterFade` metres from the eye**,
-   * which the frond's does not. A palm's pinnae are four to a metre of rib; an
-   * ash crown is three hundred leaflets in fifteen metres, and past ~60 m each
-   * is a pixel or two, so a band flipping on each is a twinkle with no shape
-   * to it — self-driven sparkle on a still surface, the thing the water had to
-   * lose. The bough's own sway carries on to the horizon.
+   * **And it fades out with distance, over `rustleFade` metres from the eye**,
+   * which the frond's does not: an ash crown is three hundred clusters in
+   * fifteen metres, and past ~60 m each is a pixel or two, so a band flipping
+   * on each is a twinkle with no shape to it — self-driven sparkle on a still
+   * surface, the thing the water had to lose. The bough's own sway carries on
+   * to the horizon.
    */
   bough: {
     lean: 0.24,
@@ -234,10 +238,10 @@ export const wind = {
     flap: 0.06,
     flapRate: 2.2,
     swing: 0.09,
-    flutter: 0.11,
-    flutterRate: 15,
-    flutterWave: 0.8,
-    flutterFade: [30, 70],
+    rustle: 0.07,
+    rustleRate: 10,
+    swellRate: 0.9,
+    rustleFade: [30, 70],
   },
   /**
    * The flags over the control points (`systems/FlagCloth.ts`) — the one

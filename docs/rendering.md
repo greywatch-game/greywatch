@@ -938,15 +938,27 @@ span, and the beat of the bough it grows on. Bend is a function of POSITION and
 nothing else, so a bough and the billow it buries itself in compute one
 displacement where they meet; the beats differ only between boughs, and every
 bough meets the next at the fork, where the bend is 0. That is what lets the
-WOOD move — the boughs bend from the fork, which a ramp could never draw. Every
-point of a leaf cluster is written `edge` 1, and `CONFIG.wind.bough` spends
-four times the frond's flutter on it: an ash crown shimmering in any air at
-all is what makes it read as a broadleaf. **That flutter fades out between 30
-and 70 m from the eye** (`flutterFade`, the vertex stage's one read of
-`camPos`), which the frond's does not: past it a leaf cluster is a pixel or
-two, and a band flipping on each is a twinkle with no shape. The red
-channel's magnitude picks the layer, so the two share one branch and one
-motion with two sets of numbers.
+WOOD move — the boughs bend from the fork, which a ramp could never draw.
+
+**The ash's leaf RUSTLES rather than flutters, and the difference is the one
+thing a bough packs that a frond does not** (`boughRig`). The frond's flutter
+is a ripple whose phase runs through WORLD space, and on the ash's first cut it
+was spent on every leaf point: across one cluster each point was on its own
+phase, so the cluster warped, and over a whole crown that read as HEAT HAZE.
+A bough vertex carries its leaf cluster's own phase and a SIGNED tilt — where
+it sits across the cluster along a level axis through the stalk — and the
+shader tips it by that tilt times ONE number per cluster: linear across the
+cluster, which is a rigid turn at the angles a leaf turns through. The number
+is three incommensurate partials at the cluster's own rate (±25%), under a slow
+swell of its own and the passing gust, so the crown is busy in patches and
+harder as a gust arrives; the facets come off the displaced position, so a
+turning cluster catches the light as one leaf would. To fit it, the bend is
+stored to 1/1023 in u's whole part with the leaf's phase in its fraction.
+**The rustle fades out between 30 and 70 m from the eye** (`rustleFade`, the
+vertex stage's one read of `camPos`), which the frond's flutter does not:
+past it a leaf cluster is a pixel or two, and a band flipping on each is a
+twinkle with no shape. The red channel's magnitude picks the layer, so the two
+share one branch, one sway and one decode with two sets of numbers.
 
 **The other layers stay on the ramp, and a builder that moves one across owes
 the rig on every vertex of every mesh it marks**, the merge key keeping a rigged

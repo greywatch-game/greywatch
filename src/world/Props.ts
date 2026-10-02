@@ -31,7 +31,7 @@ import type { CelMaterialFactory } from "../shaders/CelShader";
 import { flameData } from "./flame";
 import { partBox, partCylinder, partSurface } from "./parts";
 import { mulberry32 } from "./rng";
-import { frondBend, marksSway, rigPhase, swayRig } from "./sway";
+import { boughRig, frondBend, marksSway, rigPhase, swayRig } from "./sway";
 
 /**
  * Scatter props for Hollowmere — the loose dressing that fills space between
@@ -876,12 +876,13 @@ interface AshClump {
  * is what turned a cloud of stars into a mass of leaf.
  *
  * **The whole crown is RIGGED** (the `bough` layer, `world/sway.ts`), and that
- * is what lets the leaf FLUTTER rather than slide. Every vertex above the fork
- * — wood, heart and leaflet alike — is written how far it is from the FORK
+ * is what lets the leaf RUSTLE rather than slide. Every vertex above the fork
+ * — wood, heart and leaf alike — is written how far it is from the FORK
  * (`frondBend` of the distance, so the crown is stiff at the fork and free at
- * its rim) and the beat of the bough it grows on; every leaflet's point is
- * written how far out on the leaflet it is, which is what
- * `CONFIG.wind.bough.flutter` is spent on. Bend is a function of POSITION
+ * its rim) and the beat of the bough it grows on; every vertex of a leaf
+ * cluster is also written where it sits across that cluster and the
+ * cluster's own phase (`boughRig`), so each cluster TIPS whole on its stalk
+ * (`CONFIG.wind.bough.rustle`). Bend is a function of POSITION
  * alone, so a bough and the billow it buries itself in agree where they meet
  * and nothing tears; the beats differ only between boughs, and every bough
  * meets the next at the fork, where the bend is zero. So the boughs are drawn
@@ -1008,8 +1009,10 @@ export function buildAshTree(
   // How far from the fork the crown's rim is, the distance a vertex's bend
   // is measured against: 1 there, a cantilever's curve inside it.
   const SPAN = 4.6;
-  const rigAt = (p: V3, phase: number, edge = 0): [number, number] =>
-    swayRig(frondBend(v3dist(p, fork) / SPAN), phase, edge);
+  // `tilt` and `leaf` are a leaf cluster's: where across it the vertex is
+  // and the cluster's own phase (`boughRig`) — 0 for wood and hearts.
+  const rigAt = (p: V3, phase: number, tilt = 0, leaf = 0): [number, number] =>
+    boughRig(frondBend(v3dist(p, fork) / SPAN), phase, tilt, leaf);
   // Writes `rigAt` over every vertex of `data`, for a part the bough carries
   // whole — wood, a heart.
   const rigged = (data: VertexData, phase: number): VertexData => {
@@ -1276,8 +1279,11 @@ export function buildAshTree(
       // the sky as a plate rather than lying over the cluster below it.
       const crest = Math.max(0, out[1]) ** 2;
       const sunny = out[1] + storey * 0.6 + 0.05 + tone * 0.6 > 0;
-      ashCluster(sunny ? lit : shade, p, out, L, lift * (1 - 0.7 * crest), leafRng, (q, edge) =>
-        rigAt(q, k.phase, edge),
+      // The cluster's own phase, hashed from where it is rather than drawn,
+      // so it re-cuts nothing after it.
+      const leaf = rigPhase(p[0] * 3.7 + p[2] * 1.3, p[1] + ci);
+      ashCluster(sunny ? lit : shade, p, out, L, lift * (1 - 0.7 * crest), leafRng, (q, tilt) =>
+        rigAt(q, k.phase, tilt, leaf),
       );
     }
   });
@@ -1385,8 +1391,10 @@ export function buildAshTree(
  * SHARING every rim vertex, and each rim vertex given its own direction out
  * from the stalk as its normal — which lies in both faces it bounds on each
  * side, so the stalk's vertex alone decides which way a face looks.
- * `2 + 2 * ASH_TIPS` vertices a cluster. `rig` is each vertex's sway rig,
- * from where it is and how far out on the cluster (`edge`, 1 at a point).
+ * `2 + 2 * ASH_TIPS` vertices a cluster. `rig` is each vertex's sway rig, from
+ * where it is and where it sits across the cluster's tipping axis (`tilt`,
+ * -1..1 through the stalk), so the cluster RUSTLES — turns whole on its stalk —
+ * rather than warping (`boughRig`).
  */
 function ashCluster(
   into: Sheet,
@@ -1411,9 +1419,20 @@ function ashCluster(
   // so the cluster grows out of the billow rather than being stuck on it.
   const cup = L * (0.2 + rnd() * 0.12);
   const base = v3add(v3add(p, out, -0.04), m, cup);
+  // The axis the cluster TIPS across: level and in its own face, so a cluster
+  // lying on a billow's crown flips about a line through its stalk and one
+  // standing on its flank turns in its face — either way whole, every vertex
+  // tipped by how far along this it is from the stalk (`boughRig`). Near the
+  // crest, where the face is level, any bearing will do.
+  let tip: V3 = v3cross([0, 1, 0], m);
+  if (Math.hypot(tip[0], tip[1], tip[2]) < 0.25) tip = side;
+  tip = v3unit(tip);
+  const reach = L * 1.25 * 1.14;
+  const tilt = (q: V3): number =>
+    ((q[0] - base[0]) * tip[0] + (q[1] - base[1]) * tip[1] + (q[2] - base[2]) * tip[2]) / reach;
   const top = sheetVert(into, base, m, rig(base, 0));
   const ub = v3add(base, m, -Math.min(0.06, cup * 0.6));
-  const under = sheetVert(into, ub, v3add([0, 0, 0], m, -1), rig(ub, 0));
+  const under = sheetVert(into, ub, v3add([0, 0, 0], m, -1), rig(ub, tilt(ub)));
   // The rim, pushed DOWN-slope of the stalk (the downslope points longest),
   // so the cluster hangs from its stalk as a leaf cluster does.
   const turn = rnd() * Math.PI * 2;
@@ -1428,7 +1447,7 @@ function ashCluster(
     const dir = v3unit(v3add(v3add([0, 0, 0], fwd, ca), side, sa));
     // A point falls a little further than a notch, so each leaf curls.
     const q = v3add(v3add(base, dir, r), m, -cup * (point ? 1.15 : 0.85));
-    rim.push(sheetVert(into, q, dir, rig(q, point ? 1 : 0.55)));
+    rim.push(sheetVert(into, q, dir, rig(q, tilt(q))));
   }
   for (let k = 0; k < rim.length; k++) {
     const a = rim[k];
