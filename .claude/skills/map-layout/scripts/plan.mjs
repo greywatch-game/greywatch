@@ -1,6 +1,6 @@
 // Draw a map's layout as a plan: the floor shaded by height with a contour
 // every metre, the water, the carriageways as the network lays them, every
-// village-kit footprint with a tick on its front door, the flags' rings, the
+// kit footprint with a tick on its front door, the flags' rings, the
 // spawns and (optionally) the scatter regions. The one picture that shows
 // whether a place makes SENSE — doors to streets, streets that join, a village
 // that reads as one — before anything is photographed.
@@ -23,7 +23,7 @@
 import { writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
-import { BUILDINGS, FOOT, corners, rotate } from "./footprints.mjs";
+import { BUILDINGS, FOOT, corners, frontOf, rotate } from "./footprints.mjs";
 import { ROOT, loadMap } from "./load.mjs";
 
 const args = process.argv.slice(2);
@@ -70,6 +70,9 @@ const COL = {
   barn: "#a04632", mill: "#78a0c8", ruin: "#6e5a50", silo: "#969696", watchtower: "#8c6e46",
   gatehouse: "#e63c3c", shed: "#826e50", boathouse: "#5a7870", stoneWall: "#7a7a6e", fence: "#96785a",
   bridge: "#b4966e", jetty: "#a08262", kiln: "#b4643c", lamp: "#ffd060",
+  tower: "#8a94a6", office: "#5e86b4", shophouse: "#c08a6a", depot: "#8a7a5e", parkade: "#7a8a8a",
+  monument: "#d8d8d0", quay: "#9a9a92", lighthouse: "#f0f0e8", crane: "#c0603a", netLoft: "#6a5a46",
+  car: "#405060", streetLight: "#ffd060", planter: "#5a7a4a", barrier: "#a0a098",
 };
 const shapes = [];
 for (const p of layout.placements) {
@@ -79,9 +82,9 @@ for (const p of layout.placements) {
   if (c) {
     let tick = null;
     if (BUILDINGS.has(p.kind) && !["silo", "gatehouse", "watchtower"].includes(p.kind)) {
-      const [, , z0] = FOOT[p.kind](p.params ?? {});
+      const [z0, sign] = frontOf(p);
       const [ax, az] = rotate(0, z0, p.rotY ?? 0);
-      const [fx, fz] = rotate(0, -2.5, p.rotY ?? 0);
+      const [fx, fz] = rotate(0, 2.5 * sign, p.rotY ?? 0);
       tick = [p.x + ax, p.z + az, p.x + ax + fx, p.z + az + fz];
     }
     shapes.push({ c, col: COL[p.kind] ?? "#c8c878", burnt, tick, lamp: p.kind === "lamp" });

@@ -27,6 +27,7 @@
     "kurenai": "node scripts/generate-kurenai.mjs",
     "harrowmead": "node scripts/generate-harrowmead.mjs",
     "greyfen": "node scripts/generate-greyfen.mjs",
+    "coldharbour": "node scripts/generate-coldharbour.mjs",
     "hollowmere": "node scripts/generate-hollowmere.mjs",
     "audio": "node scripts/encode-audio.mjs",
     "audio:measure": "node scripts/measure-audio.mjs",

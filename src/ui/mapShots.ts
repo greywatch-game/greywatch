@@ -59,8 +59,8 @@ export interface MapVantage {
   /**
    * Vertical field of view, in degrees. Omitted means the game's own hip FOV
    * — which is what a map should use unless the frame genuinely needs to be
-   * wider, and Coldharbour's does: it is the one shot whose subject is a
-   * skyline rather than a building.
+   * wider, and Coldharbour's does: it is the one shot whose subject is a bay
+   * rather than a building.
    */
   fov?: number;
 }
@@ -95,13 +95,16 @@ export const MAP_SHOTS: Readonly<Record<string, MapShot>> = {
     url: greyfenShot,
     vantage: { pos: [68, 3.6, 10], target: [81, 5.6, 32] },
   },
-  // The central square from the avenue, looking south-west down the sun's
-  // bearing (225) so the towers either side are rim-lit and the glass has
-  // something to hold. Wider than the others because the subject is the
-  // skyline.
+  // Over the square's east terrace, looking south-west down the harbour into
+  // the sun (azimuth 225): the boats on the mud, the quays, the old town on
+  // the west shore and the harbour light on the pier head against the open
+  // sea. **The frame to preserve is the harbour and the light together** —
+  // they are what the town is laid out round, and the one frame on this map
+  // that says it is a harbour town rather than a city block. Wider than the
+  // others because the subject is the bay.
   coldharbour: {
     url: coldharbourShot,
-    vantage: { pos: [40, 10, 48], target: [2.5, 12, 2.5], fov: 58 },
+    vantage: { pos: [26, 24, 2], target: [-48, -2, -130], fov: 58 },
   },
   // The market green from over East Lane — into the sunset, looking across the
   // stalls and the well to the church and the coaching inn on North Street,

@@ -287,6 +287,10 @@ npm run greyfen    # RE-SEED Greyfen's layout and heights (committed source).
                    #   Same rules and warning; owes `npm run collision --
                    #   greyfen`. `-- --at x0,z0,x1,z1` / `--point x,z` print
                    #   the floor, `--stands` how the forest fitted
+npm run coldharbour # RE-SEED Coldharbour's layout and heights (committed
+                   #   source). Same rules and warning; owes `npm run
+                   #   collision -- coldharbour`. `-- --probe` prints the
+                   #   floor, `--refusals` every plot refused and why
 ```
 
 No test suite, no linter. `npm run typecheck` is the only automated gate — run it
@@ -920,9 +924,9 @@ its whole horizon costs 180 m of margin because `fogEnd` is 78 — that number i
 the FOG's, not the map's), **Greyfen** (a jungle valley; no wall and no rim
 either, on the same 180 m for the same `fogEnd`, and the map where a river runs
 out through the margin), **Coldharbour** (a
-business district on a COAST — `size: 320` inside 180 m of ground, hills on
-three sides and the open sea across the fourth, and what the first three
-overrides exist for), **Harrowmead**
+harbour town on a BAY — `size: 320` inside 180 m of ground, hills on three
+sides and the open sea across the fourth, a wadeable low-water harbour cut
+into the middle of it, and what the first three overrides exist for), **Harrowmead**
 (`size: 400` inside 1600 m of ground, no wall and no rim — the country runs out
 into the fog), **Sarab**
 (`size: 900` inside 1500 m of ground — a desert town, and the map
@@ -935,10 +939,10 @@ down from 750 m because the same kit over three times the side read as
 sparse and cost 88 fps where it now runs 154). **Coldharbour, Harrowmead,
 Sarab and Cinderhaven are the four with vehicles on them**; **Sarab and
 Cinderhaven are the two with all THREE KINDS and the two that are not 8v8** —
-24 a side, online and off. Those two, Kurenai, Harrowmead, Hollowmere and
-Greyfen are **SEEDED by a generator** (`npm run sarab`, `npm run cinderhaven`,
-`npm run kurenai`, `npm run harrowmead`, `npm run hollowmere`,
-`npm run greyfen`) rather than typed — Harrowmead and Hollowmere were typed until their layouts and floors
+24 a side, online and off. **Every shipped map is SEEDED by a generator**
+(`npm run sarab`, `npm run cinderhaven`, `npm run kurenai`, `npm run
+harrowmead`, `npm run hollowmere`, `npm run greyfen`, `npm run coldharbour`)
+rather than typed — Harrowmead and Hollowmere were typed until their layouts and floors
 had drifted apart (a church in the stream, doors onto hedges, relief built out
 of terrace boxes on a flat floor), and each generator now CHECKS that every
 front door opens onto a street, a yard or the green — and the emitted `layout.ts` is an

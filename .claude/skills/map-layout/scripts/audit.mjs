@@ -9,12 +9,12 @@
 //
 // No browser. It reads layout.ts and heights.ts as they are on disk, so run
 // the generator (or save in the editor) first. Only the kinds in
-// footprints.mjs are checked — the village kit; a city, desert, harbour or
-// temple kind is counted as "not checked" rather than guessed at.
+// footprints.mjs are checked — the village, jungle, city and harbour kits; a
+// desert or temple kind is counted as "not checked" rather than guessed at.
 //
 // ERROR is a mistake: fix it. WARN is worth a look: a door with no street in
 // reach may still open onto a yard the check cannot see.
-import { BUILDINGS, DOORS, FOOT, bounds, inside, rotate } from "./footprints.mjs";
+import { BUILDINGS, DOORS, FOOT, bounds, frontOf, inside, rotate } from "./footprints.mjs";
 import { loadMap, mapIds } from "./load.mjs";
 
 const args = process.argv.slice(2);
@@ -26,8 +26,10 @@ if (!ids.length) {
 }
 
 /** Pieces that may reach over the water on purpose, and pieces that are the road or stand on its kerb. */
-const WET_OK = new Set(["mill", "boathouse", "jetty", "bridge", "ramp"]);
-const ROAD_OK = new Set(["lamp", "bridge", "stall", "well", "cart", "crates", "trough", "barrel", "gatehouse"]);
+const WET_OK = new Set(["mill", "boathouse", "jetty", "bridge", "ramp", "quay", "careenedHull"]);
+const ROAD_OK = new Set(["lamp", "bridge", "stall", "well", "cart", "crates", "trough", "barrel", "gatehouse", "car", "streetLight"]);
+/** Kerb furniture a body steps round: it does not block a door. */
+const FURNITURE = new Set(["lamp", "streetLight", "car", "planter", "barrier", "crates", "stall", "cart", "trough", "barrel"]);
 /**
  * Kinds that carry their own footings, plinths or first course down to the
  * ground under them (`CONFORMS_TO_TERRAIN`), so a slope under them is drawn
@@ -47,7 +49,8 @@ for (const id of ids) {
   const { layout, floorAt, wet, onRoadAt, half } = m;
   const placed = layout.placements.filter((p) => p.kind !== "road");
   const checked = placed.filter((p) => FOOT[p.kind]);
-  const solid = checked.filter((p) => !["lamp", "fence", "stoneWall", "bridge", "jetty", "ramp"].includes(p.kind));
+  const solid = checked.filter((p) => !["lamp", "fence", "stoneWall", "bridge", "jetty", "ramp", "quay"].includes(p.kind));
+  const blocking = solid.filter((p) => !FURNITURE.has(p.kind));
   const out = { ERROR: [], WARN: [] };
   const say = (level, p, what) =>
     out[level].push(`${level.padEnd(5)} ${p.kind} (${p.x.toFixed(1)}, ${p.z.toFixed(1)}) rotY ${(p.rotY ?? 0).toFixed(2)}: ${what}`);
@@ -103,8 +106,8 @@ for (const id of ids) {
 
   // Doors: walk out of the front face and find a street before anything solid.
   for (const p of checked.filter((q) => DOORS.has(q.kind))) {
-    const [, , z0] = FOOT[p.kind](p.params ?? {});
-    const [fx, fz] = rotate(0, -1, p.rotY ?? 0);
+    const [z0, sign] = frontOf(p);
+    const [fx, fz] = rotate(0, sign, p.rotY ?? 0);
     const [sx, sz] = rotate(0, z0, p.rotY ?? 0);
     let verdict = `no street within ${REACH} m of the door`;
     let level = "WARN";
@@ -115,7 +118,7 @@ for (const id of ids) {
         verdict = null;
         break;
       }
-      const hit = solid.find((q) => q !== p && inside(q, x, z));
+      const hit = blocking.find((q) => q !== p && inside(q, x, z));
       if (hit) {
         verdict = `door opens onto the ${hit.kind} at (${hit.x.toFixed(1)}, ${hit.z.toFixed(1)}), ${t.toFixed(1)} m out`;
         level = "ERROR";

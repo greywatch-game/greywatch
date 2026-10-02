@@ -26,7 +26,7 @@ the registry
 and `DEFAULT_MAP` is the fallback. `Game` holds one `mapDef` field (`Game.mapDef`) and
 reads both halves off it. Nothing outside `maps.ts` may import a map's own modules.
 The shipped maps are **Hollowmere** (night), **Greyfen** (a jungle morning, sun
-through the canopy), **Coldharbour** (a city before dusk), **Harrowmead** (a
+through the canopy), **Coldharbour** (a harbour town on a bay before dusk), **Harrowmead** (a
 farming vale at sunset in high summer), **Sarab** (a desert town an hour
 before noon), **Cinderhaven** (a harbour town on a volcanic island, at
 night) and **Kurenai** (a temple town in a mountain valley as the maples turn,
@@ -35,7 +35,9 @@ was forked from Hollowmere's layout, cleared back to a blank valley and rebuilt
 as a jungle one — first as the **manor** on flag C and a forest over everything
 else, and now SEEDED (below) as a valley with places in it.
 Coldharbour was written from nothing and is the one that pushed on what a map is
-allowed to be — see the next section. **Harrowmead** is the fourth and the
+allowed to be — see the next section — and has since been RE-LAID by a
+generator (`npm run coldharbour`) from a 5 x 5 grid of avenues into a harbour
+town round a low-water bay; see **Coldharbour's bay** below. **Harrowmead** is the fourth and the
 largest: 400 m of rolling, hedged country written
 from nothing on Coldharbour's precedents — its own `size`, a `fogEnd` past its
 own diagonal, a `shadowWindow` of its own — with the sightline work done by
@@ -354,6 +356,47 @@ engine. Seven things came out of building it and all of them outlive it:
   core by a few metres, because a wall on the core's edge is a wall on the
   skirt and `FLAT` refuses it (`npm run kurenai -- --probe` prints the floor
   as a plan, `-- --plan` the claim list).
+
+**Coldharbour's bay** is the re-lay of the third map, seeded by `npm run
+coldharbour` on Hollowmere's generator's shape, and four things about it are
+general rather than details of that map:
+
+- **A harbour inside the play square is WADEABLE, and that is decided by the
+  bed rather than by the shore.** This engine has no swimming and no slope a
+  player cannot walk down, so a body reaches the bed of any water it can reach
+  the edge of; a parapet is 1.0 m and a jump clears 1.6. So the whole harbour
+  inside the pier is cut to low water — 0.7 m at the head, 1.1 at the mouth,
+  and the generator refuses to write a floor deeper than 1.35 m anywhere a body
+  can stand inside the square — and the deep water is only past the pier and
+  the dock front, in the last cell before the play edge, where the leash
+  already owns the question. What the shallow bed buys is the picture: the
+  boats (`careenedHull`) lie over on the mud beside the quays, which is what a
+  tidal harbour at low water is.
+- **A quay is a CLIFF the floor is cut on, and the cut and the wall are laid
+  from ONE list.** `buildQuay` hangs down from the ground at its origin and
+  its deck covers the 4 m cell outboard of it, so the floor has to be land on
+  the quay's line and harbour bed one vertex out — on a 4 m grid, that is a
+  line ON the grid. The generator's `QUAYS` is every wall's land line, axis,
+  span and water side; `heightAt` cuts against it and the placements are laid
+  from it, so moving a wall moves its cliff. Where two walls meet, the deck of
+  one covers the corner; where a wall ENDS against a natural shore the cell
+  beside its end is a short cliff too, and the gradient check exempts the
+  cells within 6 m of a deck and nothing else.
+- **A quay is a cliff the nav graph severs, so a harbour walled all the way
+  round is a MOAT.** The first pass quayed the east side to the play edge and
+  every bot bound for the far shore walked round the head. Two natural
+  foreshores — the Strand on the west, the Hard on the east — make the mouth
+  of the harbour a wade, and that is a balance decision as much as a picture:
+  it is what keeps team 1's walk to the old town level with team 0's to the
+  station.
+- **The city kit's street front is +Z** (the shophouse's shopfront, the
+  tower's lobby, the depot's bays) where every other kit's is -Z, and the
+  OFFICE's main door is -Z. The generator and this skill's `footprints.mjs`
+  both carry that per kind (`FRONT_PLUS_Z`), and a terrace is laid by turning
+  the front at the street rather than by a rotation. **A shophouse's plate
+  must be 15.6 m deep at three storeys** (`laneFlight` throws in a dev build
+  below it: a 10.3 m flight and its 2.4 m landing in half the depth less a
+  wall), so a plot too shallow for one is given the low brick tower instead.
 
 No two maps share a module in any direction.
 

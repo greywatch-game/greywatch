@@ -9,8 +9,8 @@
 import type { EnvironmentSpec } from "../environment";
 
 /**
- * Coldharbour: the business district of a city, an hour before dusk, with the
- * fighting in the streets.
+ * Coldharbour: a harbour town on a bay, an hour before dusk, with the fighting
+ * in its streets.
  *
  * ## The fog, which is what this map is built around
  *
@@ -63,10 +63,11 @@ import type { EnvironmentSpec } from "../environment";
  * - **Sound and bot perception still did NOT move with the fog.**
  *   `audio.maxDistance` is 70 m and `bots.perception.engageRange` 55, so you
  *   can see far further than a bot will start shooting and further than you can
- *   hear one. That is deliberate and the LAYOUT is what makes it play: the
- *   avenues are broken by parked traffic, barriers and setbacks so that a clear
- *   line down one is ~110 m rather than the 320 the map is wide. This is the
- *   one of the three that the new hour leaves exactly as it was.
+ *   hear one. That is deliberate and the LAYOUT is what makes it play: no
+ *   street runs the width of the town — each jogs at its junctions — so a
+ *   clear line down one is ~100 m rather than the 320 the map is wide, and the
+ *   long looks left are across the harbour. This is the one of the three that
+ *   the new hour leaves exactly as it was.
  */
 export const ColdharbourEnvironment: EnvironmentSpec = {
   /**
@@ -458,10 +459,11 @@ export const ColdharbourEnvironment: EnvironmentSpec = {
    *
    * **Correcting a claim this file used to make: the sheen never touches the
    * roadway.** The sheen is opted into per carriageway by `Build
-   * .groundMaterial`, and only the cobbled street asks for it — every avenue on
-   * this map states `asphalt`, which is world-mapped and bumped like the street
-   * but MATTE. The only cobble on Coldharbour is the four 4 x 27 m paths across
-   * the civic square: 432 m², not "the roadway".
+   * .groundMaterial`, and only the cobbled street asks for it — every through
+   * road on this map states `asphalt`, which is world-mapped and bumped like
+   * the street but MATTE. The cobble on Coldharbour is the old town's three
+   * lanes and the four paths across the civic square: about 2,000 m², under
+   * the eaves of the fishermen's houses, and not "the roadway".
    *
    * **That was the free half of the claim once and is now a decision, so it is
    * stated in two places on purpose.** Until the carriageways were textured,
@@ -474,7 +476,9 @@ export const ColdharbourEnvironment: EnvironmentSpec = {
    * That is what makes a low sun affordable here. The term explodes as the key
    * light drops — the half-vector converges on the ground's own normal — and at
    * 24 degrees looking toward the sun it would be a sheet of white if it
-   * reached the avenues. Over 432 m² of path it is a streak on the square.
+   * reached the through roads. Over the lanes and the paths it is a streak
+   * down a wet lane in the old town, which is exactly the claim a harbour
+   * town's cobbles at this hour should make.
    * Shininess 20 -> 34 to keep it a streak rather than a wash, and the
    * intensity is HELD: this is one of only two things in the frame added past
    * the shader's soft shoulder, which makes it the god rays' problem as much as
@@ -482,22 +486,23 @@ export const ColdharbourEnvironment: EnvironmentSpec = {
    */
   groundSpec: { color: "#ffdcae", intensity: 0.05, shininess: 34 },
   /**
-   * THE SEA, which this map now has and which is the whole southern horizon.
+   * THE HARBOUR AND THE SEA: the bay the town is built round, and the whole
+   * southern horizon past it.
    *
-   * **Every one of these is judged against the fact that almost none of it is
-   * ever seen NEAR.** The shore is the quay's own face, the water starts two
-   * metres below the coping and the next thing out there is 2,700 m of open
-   * water under `fogStart` 130 — so what this palette mostly decides is what a
-   * band across the bottom of the frame looks like at half fog and beyond, not
-   * what a reach looks like from a bank.
+   * **Two waters with one palette, and they ask opposite things of it.** The
+   * open sea is 2,700 m of water under `fogStart` 130 and is mostly a band
+   * across the bottom of the frame at half fog, so `deepColor` is dark and cold
+   * against a sky and a fog that are both warm: a sea that met this haze at its
+   * own value would vanish into it and take the horizon line with it.
    *
-   * `deepColor` is therefore the number that matters and it is dark and cold,
-   * against a sky and a fog that are both warm: a sea that met this haze at
-   * its own value would vanish into it and take the horizon line with it,
-   * which is the one thing the water is here to draw. `shallowColor` is nearly
-   * unreachable — the bed is 3.8 m down everywhere and `CONFIG.water.depthMax`
-   * is 1.5 — and is set as the colour the body grades toward under the quay
-   * rather than as a shoal anybody will stand in.
+   * **The harbour is the other one, and it is SHALLOW on purpose** — cut to low
+   * water, 0.7 m at the head and 1.1 at the mouth (see `heights.ts`), because
+   * this engine has no swimming and a body walks on whatever bed there is. So
+   * `CONFIG.water.depthMax` (1.5) is never reached inside the pier and what a
+   * player sees there is `shallowColor` over `bedColor`: green-grey water over
+   * dark mud, with the boats lying over on it. That is the read a tidal
+   * harbour at low water should give, and both are held dark so the mud never
+   * reads as dry ground from the quay.
    *
    * **`glint` is the field to be careful with on this map and it is held
    * under 1.** The sun is 24 degrees at azimuth 225, which puts it straight
@@ -511,8 +516,9 @@ export const ColdharbourEnvironment: EnvironmentSpec = {
    */
   water: {
     /**
-     * Open sea on the fourth side, so the harbour rolls: a 13 m swell
-     * at 60 cm, which the quay's bed depth lets run right up to the wall.
+     * Open sea on the fourth side, so the water rolls: a 13 m swell at 60 cm,
+     * which reads as weather on the sea and as a slop against the quay walls
+     * inside the pier.
      */
     swell: 0.6,
     deepColor: "#33433f",
@@ -523,13 +529,10 @@ export const ColdharbourEnvironment: EnvironmentSpec = {
     glint: 0.7,
   },
   /**
-   * The civic square's lawn, and the one green thing on the map.
-   *
-   * This file used to say "no water and no grass ... which is what a downtown
-   * is", and the second half of that was wrong about downtowns rather than
-   * about this one: a business district has exactly one planted place in it,
-   * and it is the square everybody walks through. The rest of the city is
-   * still bald, because `GrassSystem` grows only what the rects ask for.
+   * The town's lawns: the civic square at the head of the harbour, the
+   * Exchange's garden, the churchyard and the rough ground of the Ness. The
+   * rest of the town is pavement and cobble, because `GrassSystem` grows only
+   * what the rects ask for.
    *
    * Tuned brighter and greener than either valley — Hollowmere's field is dead
    * and Greyfen's is jungle understorey, and both are lit by something far

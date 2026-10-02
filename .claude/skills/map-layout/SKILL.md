@@ -152,6 +152,8 @@ All in `.claude/skills/map-layout/scripts/`, each with a usage header:
 | `physdiff.mjs <map> [--rev r]` | after a re-bank: which oracle bodies moved and what they rest on then/now | Node + git |
 | `footprints.mjs`, `load.mjs` | the footprint table and the map loader the others share | — |
 
-`footprints.mjs` covers the village kit only; a city, desert, harbour or
-temple kind is reported as "not checked". Adding one is a row in `FOOT` (and
-in the generators' own tables — see generator.md).
+`footprints.mjs` covers the village, jungle, city and harbour kits; a desert
+or temple kind is reported as "not checked". Adding one is a row in `FOOT` (and
+in the generators' own tables — see generator.md). The city kit's street front
+is +Z for the kinds in `FRONT_PLUS_Z`, so a door check or a plan tick asks
+`frontOf(p)` rather than assuming -Z.

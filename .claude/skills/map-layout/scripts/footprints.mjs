@@ -1,12 +1,13 @@
-// The ground each village-kit and jungle-kit kind takes, and which way it faces — shared by
+// The ground each village-, jungle-, city- and harbour-kit kind takes, and which way it faces — shared by
 // audit.mjs and plan.mjs.
 //
 // A mirror of the FOOT tables in scripts/generate-harrowmead.mjs and
 // scripts/generate-hollowmere.mjs (each generator still carries its own). If a
 // builder's footprint changes, change it in the generators and here.
 //
-// Every builder's front is its local -Z (the shophouse and the depot are the
-// two in the kit that face +Z). `rotY` of π/2 takes local -Z to world -X.
+// Every builder's front is its local -Z but the three in `FRONT_PLUS_Z` (the
+// city kit's tower, shophouse and depot face their street on +Z). `rotY` of
+// π/2 takes local -Z to world -X.
 
 /** `[x0, x1, z0, z1]` in the builder's own frame, front at -Z. Eaves, porches, ramps and wheels included. */
 export const FOOT = {
@@ -73,13 +74,43 @@ export const FOOT = {
   fishRack: (p) => [-(p.length ?? 9) / 2 - 0.2, (p.length ?? 9) / 2 + 0.2, -1.1, 1.1],
   careenedHull: (p) => [-1.9, 1.9, -(p.length ?? 11) / 2 - 0.3, (p.length ?? 11) / 2 + 0.3],
   sandbags: (p) => [-(p.length ?? 6) / 2 - 0.1, (p.length ?? 6) / 2 + 0.1, -0.5, 0.5],
+  // The city kit (Coldharbour) — mirrored from scripts/generate-coldharbour.mjs.
+  // Its street front is +Z for the three in `FRONT_PLUS_Z`; the office's main
+  // door is on -Z like everything else.
+  tower: (p) => [-(p.width ?? 18) / 2 - 0.4, (p.width ?? 18) / 2 + 0.4, -(p.depth ?? 16) / 2 - 0.4, (p.depth ?? 16) / 2 + 0.4],
+  office: (p) => [-(p.width ?? 22) / 2 - 0.3, (p.width ?? 22) / 2 + 0.3, -(p.depth ?? 18) / 2 - 0.3, (p.depth ?? 18) / 2 + 0.3],
+  shophouse: (p) => [-(p.width ?? 13) / 2 - 0.2, (p.width ?? 13) / 2 + 0.2, -(p.depth ?? 16) / 2 - 0.2, (p.depth ?? 16) / 2 + 0.4],
+  depot: (p) => [-(p.width ?? 28) / 2 - 0.45, (p.width ?? 28) / 2 + 0.45, -(p.depth ?? 16) / 2 - 0.35, (p.depth ?? 16) / 2 + 0.4],
+  parkade: (p) => [-(p.width ?? 32) / 2 - 0.3, (p.width ?? 32) / 2 + 0.3, -(p.depth ?? 24) / 2 - 0.3, (p.depth ?? 24) / 2 + 0.3],
+  monument: (p) => [-(p.width ?? 11) / 2, (p.width ?? 11) / 2, -(p.width ?? 11) / 2, (p.width ?? 11) / 2],
+  planter: (p) => [-(p.width ?? 2.6) / 2, (p.width ?? 2.6) / 2, -(p.depth ?? 1.4) / 2, (p.depth ?? 1.4) / 2],
+  barrier: (p) => [-0.31, 0.31, -(p.length ?? 6) / 2, (p.length ?? 6) / 2],
+  car: () => [-2.25, 2.25, -1.0, 1.0],
+  streetLight: () => [-0.3, 0.3, -0.3, 0.3],
+  quay: (p) => [-(p.length ?? 40) / 2, (p.length ?? 40) / 2, -4.44, 0],
+  // The harbour kit (Cinderhaven, Coldharbour).
+  lighthouse: () => [-5.7, 5.7, -11.2, 5.7],
+  crane: () => [-4.2, 4.2, -4.0, 5.6],
+  netLoft: (p) => [-(p.width ?? 9) / 2 - 0.45, (p.width ?? 9) / 2 + 0.45, -(p.depth ?? 7) / 2 - 0.45, (p.depth ?? 7) / 2 + 0.45],
 };
 
+/** Kinds whose street FRONT is local +Z rather than -Z: the city kit's shopfront, lobby and loading bays. */
+export const FRONT_PLUS_Z = new Set(["tower", "shophouse", "depot"]);
+
+/** A kind's front face, as `[localZ, sign]`: where it stands in the builder's frame and which way it looks. */
+export function frontOf(p) {
+  const [, , z0, z1] = FOOT[p.kind](p.params ?? {});
+  return FRONT_PLUS_Z.has(p.kind) ? [z1, 1] : [z0, -1];
+}
+
 /** Kinds with a front door that has to open onto a street, a yard or open ground. */
-export const DOORS = new Set(["cottage", "townhouse", "tavern", "smithy", "chapel", "mill", "barn", "boathouse", "ruin", "jungleRuin", "stiltHut"]);
+export const DOORS = new Set([
+  "cottage", "townhouse", "tavern", "smithy", "chapel", "mill", "barn", "boathouse", "ruin", "jungleRuin", "stiltHut",
+  "tower", "office", "shophouse", "depot", "netLoft", "lighthouse",
+]);
 
 /** Kinds that are buildings: the ones a slope check applies to strictly. */
-export const BUILDINGS = new Set([...DOORS, "silo", "watchtower", "gatehouse", "shed", "kiln"]);
+export const BUILDINGS = new Set([...DOORS, "silo", "watchtower", "gatehouse", "shed", "kiln", "parkade", "crane", "monument"]);
 
 /** The world offset of a local one under a placement's `rotY` (Babylon's rotation.y). */
 export function rotate(lx, lz, rotY = 0) {

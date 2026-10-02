@@ -2878,10 +2878,10 @@ nothing is unaffected — `VehicleSystem` builds nothing, costs nothing and is
 never asked anything. Coldharbour and Harrowmead state two each, one per team;
 Sarab states SIX, a tank, a gun truck and a helicopter a side. What a map owes to be able to:
 
-- **Ground a seven-metre hull can get off.** On Coldharbour the two corner yards
-  are the only 32 m squares on the map with nothing in them, which is also why
-  the home spawns are there; everywhere else is a 26 m tower footprint or a 16 m
-  avenue. On Harrowmead it is the flat pad each home yard was already levelled
+- **Ground a seven-metre hull can get off.** On Coldharbour it is the two home
+  yards the generator claims before anything is built — the Heights at the top
+  of the West Road and the goods yard at the end of the docks — each with its
+  hardstanding 12 m or more from the nearest infantry spawn. On Harrowmead it is the flat pad each home yard was already levelled
   to — 2.2 over x -172..-140, z -172..-140 in the south-west and 2.0 over the
   mirrored square in the north-east — which is what makes a hull arrive with its
   ten track contacts inside 8 cm of one plane instead of standing on a slope.
@@ -2892,11 +2892,12 @@ Sarab states SIX, a tank, a gun truck and a helicopter a side. What a map owes t
 - **Room to turn, and it is the KIND's number.** `collideRadius` sets the
   narrowest gap a vehicle can drive through at twice itself — the sphere rides
   at the leading end but keeps its radius — which is 4.4 m for the tank and
-  3.2 m for the truck. Coldharbour's avenues are 16; Sarab's old-town alleys
-  are seven, which is what makes them a truck's ground and not a tank's.
+  3.2 m for the truck. Coldharbour's through roads are 11 m and its old-town
+  lanes six; Sarab's old-town alleys are seven, which is what makes them a
+  truck's ground and not a tank's.
 - **Somewhere to GO, which the city answered with a road and the vale cannot.**
-  Coldharbour's heading points a fresh hull down an avenue; Harrowmead has no
-  avenue, so what was checked instead is the GROUND along the bearing. Both its
+  Coldharbour's heading points a fresh hull at its home road — the West Road
+  or the Station Road, a hull-length away; Harrowmead has no such road, so what was checked instead is the GROUND along the bearing. Both its
   departures climb — the knoll north-east of the south-west yard at a 0.28
   gradient, the orchard hill's shoulder south-west of the north-east yard at
   0.24 — and both are well inside the band `climbHeight` accepts a surface from,
@@ -2955,8 +2956,8 @@ about `NavGrid`. It was wrong about what a driver needs.
 
 **A driver does not need a route. It needs a bearing and an answer to "is that
 way a wall".** The first is what a body's flow field already gives at map
-scale — Coldharbour's avenues are 16 m wide and the field runs down the middle
-of them; what it gets wrong is the last few metres, where it offers a 1.6 m
+scale — Coldharbour's through roads are 11 m wide and the field runs down the
+middle of them; what it gets wrong is the last few metres, where it offers a 1.6 m
 doorway. The second is `Vehicle.rideableAt`, which is the analytic climb-band query
 this vehicle has been answering ten times a frame since it learned to stand on
 its tracks, spent on where the hull is ABOUT to be instead of where it is. A fan
