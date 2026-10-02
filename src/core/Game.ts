@@ -4454,7 +4454,7 @@ export class Game {
     // the menu owes on its own. See `teardownMap`.
     this.teardownMap();
     // The crowns are the one picture setting decided HERE rather than live: a
-    // cluster of leaf is geometry merged into its block, so the rung is read
+    // cluster of leaf or a palm's leaflet is geometry merged into its block, so the rung is read
     // as the world is built and a change waits for the next one
     // (`CONFIG.graphics.foliage`).
     const foliage = CONFIG.graphics.foliage.tiers[this.settings.foliage].detail;

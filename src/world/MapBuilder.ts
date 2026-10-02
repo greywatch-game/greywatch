@@ -406,11 +406,12 @@ export interface BuildOptions {
    */
   editor?: boolean;
   /**
-   * How full a broadleaf crown is, 0..1 — the player's `Settings.foliage`
+   * How full a tree's crown is, 0..1 — the player's `Settings.foliage`
    * resolved through `CONFIG.graphics.foliage`, handed to every scatter
    * builder as its fifth argument. Absent is 1, the full crown. It moves no
    * prop and no collider: what it thins is drawn from streams the shared
-   * scatter stream never sees (`buildAshTree`, `buildMaple`).
+   * scatter stream never sees (`buildAshTree`, `buildMaple`,
+   * `buildJungleTree`).
    */
   foliage?: number;
 }
@@ -623,10 +624,10 @@ export interface GameMap {
  * `buildJungleTree` reads `sub`, and a `Record` of the builders as written
  * would be a UNION of their signatures — which a four-argument call cannot
  * satisfy, because most members declare three. The fifth is the same story
- * for `buildAshTree` and `buildMaple`, the readers of `foliage`. Widening the
- * whole table instead is free: a builder that ignores the stream is
- * assignable to a type that offers it, and a builder that wants one now has a
- * place to say so.
+ * for `buildAshTree`, `buildMaple` and `buildJungleTree`, the readers of
+ * `foliage`. Widening the whole table instead is free: a builder that ignores
+ * the stream is assignable to a type that offers it, and a builder that wants
+ * one now has a place to say so.
  */
 type ScatterBuilder = (
   scene: Scene,
@@ -1034,7 +1035,7 @@ export class MapBuilder {
   private propSeed = 0;
 
   /**
-   * How full a broadleaf crown is in this build — `BuildOptions.foliage`, set
+   * How full a tree's crown is in this build — `BuildOptions.foliage`, set
    * at the top of every `build` and handed to every scatter builder.
    */
   private foliage = 1;

@@ -663,10 +663,12 @@ export const graphics = {
    * it buys is a rim of light on a crown two hundred pixels tall.
    */
   /**
-   * How full a broadleaf CROWN is, per rung of `Settings.foliage` — today the
+   * How full a tree's CROWN is, per rung of `Settings.foliage` — today the
    * hedgerow ash's (`buildAshTree`) and the Japanese maple's (`buildMaple`),
-   * both crowns of billows skinned in leaf (`skinBillows`). `detail` is the
-   * share of a billow's full skin it is laid with.
+   * both crowns of billows skinned in leaf (`skinBillows`), and the jungle
+   * palm's (`buildJungleTree`), a crown of feather fronds. `detail` is the
+   * share of a billow's full skin it is laid with, and of a frond's full
+   * count of leaflets a side.
    *
    * **It is the one graphics setting decided at BUILD time.** A cluster is
    * geometry merged into the block it stands in, so a rung is a different
@@ -689,6 +691,15 @@ export const graphics = {
    * (+2.6 M on the map), ~5.4 k at `medium` and ~4.1 k at `low`; `high`
    * measured 0-7% of the frame against the crown of slabs it replaced, at four
    * vantages round the valley's densest stand, and ~3.5 s of build.
+   *
+   * The palm's is Greyfen's fourteen hundred, the most-placed model in the
+   * game: twenty-six leaflets a side at `high` (~4.3 k a tree), twenty at
+   * `medium` (~3.5 k) and fourteen at `low` (~2.7 k), each leaflet widened by
+   * its longer share of the rib rather than by `maxGrow` (see the tree).
+   * That is 6.21 M, 5.39 M and 4.56 M scene vertices on the map; measured on
+   * a desktop GPU at six vantages in and over the forest, `low` drew 4-7%
+   * more frames than `high` at every one of them (two runs each, agreeing to
+   * half a percent) and built the round ~3.2 s sooner.
    */
   foliage: {
     tiers: {

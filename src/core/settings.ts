@@ -61,7 +61,7 @@ export type ShadowQuality = keyof typeof CONFIG.graphics.shadowTiers;
 export type GrassQuality = keyof typeof CONFIG.grass.tiers;
 
 /**
- * How full the broadleaf crowns are, as one of `CONFIG.graphics.foliage.tiers`.
+ * How full the trees' crowns are, as one of `CONFIG.graphics.foliage.tiers`.
  * Derived from that table for `RenderScale`'s reason. The one picture setting
  * applied when a map is BUILT rather than live — see the table for why.
  */
@@ -155,7 +155,8 @@ export type Settings = {
    */
   grass: GrassQuality;
   /**
-   * Trees — how full a broadleaf crown is. Derived per MACHINE on a fresh
+   * Trees — how full a crown is: the broadleafs' leaf and the jungle palm's
+   * leaflets. Derived per MACHINE on a fresh
    * install: see `defaultFoliageQuality`. Takes effect from the next map
    * built, being geometry merged into the world.
    */
@@ -347,8 +348,9 @@ export function defaultGrassQuality(): GrassQuality {
  */
 /**
  * The crowns a fresh install gets, on the grass's test and for its reason: a
- * full crown is VERTICES, three hundred trees of them on one map, which is
- * the work a phone pays ~2.4x a desktop's price for.
+ * full crown is VERTICES — three hundred broadleafs on Harrowmead, fourteen
+ * hundred palms on Greyfen — which is the work a phone pays ~2.4x a
+ * desktop's price for.
  */
 export function defaultFoliageQuality(): FoliageQuality {
   const coarse =

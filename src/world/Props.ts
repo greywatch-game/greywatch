@@ -2263,7 +2263,8 @@ function loftData(rings: readonly Ring[], sides: number, flute?: readonly number
  * against: an outline where a box read as a board, a loft where a cylinder
  * read as a pole, a leaflet at four vertices that its top and its underside
  * SHARE, and nothing that only the far side of a leaf could see — about 4,300
- * vertices a tree on average, most of them fronds. Built from parts
+ * vertices a tree on average, most of them fronds, at the Trees setting's
+ * `high`; `low` lays fewer leaflets a side for ~2,700 (see the fronds). Built from parts
  * (`world/parts.ts`), like the maple, so none of it is uploaded to the device
  * on its way to the merge, and the whole crown is three of them (`Sheet`):
  * the lit sage, the shade sage and the dead fronds.
@@ -2277,6 +2278,7 @@ export function buildJungleTree(
   mats: CelMaterialFactory,
   rng: () => number = Math.random,
   sub: () => number = rng,
+  detail = 1,
 ): Mesh {
   const bark = mats.get(JUNGLE_BARK);
   const vine = mats.get(VINE);
@@ -2462,12 +2464,28 @@ export function buildJungleTree(
   // four vantages in the southern forest, the frame rate is inside the
   // run-to-run spread; what it costs is ~1.5 M scene vertices and ~3 s of
   // round install, and leaflets a side are the lever for both.
+  //
+  // **That lever is the foliage setting's** (`detail`, `CONFIG.graphics.
+  // foliage`): a lower rung lays fewer leaflets a side on a rachis cut into
+  // as many intervals, so the rib's stations go with them — a leaflet and its
+  // share of the rib are ~10 vertices a frond. Each leaflet is footed across
+  // its own interval, so a longer interval is a WIDER leaflet and the blade
+  // stays as full as it was without anybody growing it. That is deliberately
+  // NOT capped as the broadleaf's `maxGrow` caps a cluster: a frond held to
+  // its full-detail leaflet width is a comb with sky between the teeth, and
+  // fewer, broader leaflets read as the same full feather from anywhere past
+  // a few metres. Nothing about where a frond goes moves: the rachis is the
+  // same curve sampled more coarsely, and every frond draws the full count of
+  // `ragged` whatever it lays, so every draw after it in `own` is the one it
+  // always was. High is the tree it was, vertex for vertex.
+  const pinnaeAt = (full: number): number => Math.max(6, Math.round(full * detail));
   const lit = newSheet();
   const shade = newSheet();
   const dry = newSheet();
   const stalkRing: number[] = [];
   // One frond out along bearing `a` from `from`, into `sheet`: a bare STALK
-  // `stalk` metres long, then a blade `len` long with `pinnae` leaflets a side,
+  // `stalk` metres long, then a blade `len` long with `full` leaflets a side
+  // at full detail and `pinnaeAt(full)` on this rung,
   // the rachis leaving at elevation `e0` and turning to `e1` at the tip, the
   // turn gathered toward the tip by `curl` (1 is a circular arc). `W` is the
   // longest leaflet's reach square to the rachis, `fold` how hard the leaflets
@@ -2481,7 +2499,7 @@ export function buildJungleTree(
     e0: number,
     e1: number,
     curl: number,
-    pinnae: number,
+    full: number,
     W: number,
     fold: number,
     roll: number,
@@ -2491,6 +2509,7 @@ export function buildJungleTree(
     limp = false,
   ): V3[] => {
     const K = 3;
+    const pinnae = pinnaeAt(full);
     const total = stalk + len;
     const pts: V3[] = [from];
     let run = 0;
@@ -2541,6 +2560,8 @@ export function buildJungleTree(
     // The blade: its longest leaflets a third of the way out, long still at
     // its foot and running out to a short point — the feather's outline.
     const blade = pts.slice(K);
+    // Drawn at the full count and laid at this rung's — see `pinnaeAt`.
+    const ragged = [0, 1].map(() => Array.from({ length: full }, () => (own() - 0.5) * 0.3).slice(0, pinnae));
     featherBlade(
       blade,
       frames.slice(K),
@@ -2552,7 +2573,7 @@ export function buildJungleTree(
         girth: limp ? 0.7 : 1.3,
         shingle: 0.45,
         thick: 0.04,
-        ragged: [0, 1].map(() => Array.from({ length: pinnae }, () => (own() - 0.5) * 0.3)),
+        ragged,
         rig: phase === undefined ? undefined : { phase, reach: W, from: along },
       },
       sheet,
