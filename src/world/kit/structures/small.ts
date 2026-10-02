@@ -5,11 +5,14 @@
  * Part of the structures set: follows the contract in kit/core.ts, and the
  * cover heights and round-collider rule in `./index.ts`.
  */
-import { Scene } from "@babylonjs/core";
+import { Matrix, Scene } from "@babylonjs/core";
 import type { CelMaterialFactory } from "../../../shaders/CelShader";
+import { caskData } from "../../Props";
+import { mulberry32 } from "../../rng";
 import {
   Build,
   groundRun,
+  streetSeed,
   type BuildCtx,
   type BuildParams,
   type Structure,
@@ -189,18 +192,47 @@ export function buildLampPost(
   return b;
 }
 
-/** Stack of crates and barrels — waist-to-chest cover for yards and docks. */
-export function buildCrates(scene: Scene, mats: CelMaterialFactory): Structure {
+/**
+ * Stack of crates and a barrel — waist-to-chest cover for yards and docks.
+ *
+ * The barrel stood against the stack is the scatter's cask (`caskData` in
+ * `Props.ts`), so it is the same barrel as the ones lying loose in the yard
+ * round it — staves, hoops, a board head and whatever has happened to it —
+ * painted from this kit's palette: the plank it always was, the crates'
+ * timber for its head and the iron its hoops always were. Seeded off where
+ * the stack stands (`streetSeed`) and stood on the ground under it, which is
+ * what puts `crates` in `CONFORMS_TO_TERRAIN`; an open one's lost hoop lies on
+ * the side away from the crates.
+ *
+ * The collider is unchanged and the cask stays inside it but for the hoop,
+ * 4.5 cm high on the ground.
+ */
+export function buildCrates(
+  scene: Scene,
+  mats: CelMaterialFactory,
+  _p: BuildParams = {},
+  ctx?: BuildCtx,
+): Structure {
   const b = new Build(scene, mats, "crates");
   b.box(1.5, 1.2, 1.4, -0.6, 0.6, 0, PLANK);
   b.box(1.3, 1.1, 1.3, 0.8, 0.55, 0.3, TIMBER);
   b.box(1.2, 1.0, 1.1, -0.35, 1.7, -0.15, TIMBER, { y: 0.4 });
-  // Barrel leaning against the stack.
-  b.cyl(1.3, 0.85, 0.95, 8, 0.9, 0.65, -0.9, PLANK);
-  for (const y of [0.35, 0.95]) {
-    b.cyl(0.12, 0.99, 0.99, 8, 0.9, y, -0.9, IRON);
-  }
   b.block({ w: 3.2, h: 2.3, d: 2.6, x: 0.1, y: 1.15, z: 0 });
+
+  // The barrel stood against the stack, on the ground where it stands.
+  const bx = 0.9;
+  const bz = -0.9;
+  let foot = 0;
+  if (ctx) {
+    const cos = Math.cos(ctx.rotY);
+    const sin = Math.sin(ctx.rotY);
+    foot = ctx.terrain.surfaceAt(ctx.x + bx * cos + bz * sin, ctx.z - bx * sin + bz * cos) - ctx.y;
+  }
+  const cask = caskData(mulberry32(streetSeed(3.2, 2.6, 2.3, ctx)), { a: Math.atan2(bx - 0.1, bz), spread: 1.4 });
+  const at = Matrix.Translation(bx, foot, bz);
+  b.surface(cask.wood.transform(at), PLANK);
+  b.surface(cask.head.transform(at), TIMBER);
+  b.surface(cask.iron.transform(at), IRON);
   return b;
 }
 

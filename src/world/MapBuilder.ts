@@ -864,6 +864,8 @@ const PROP_BODIES: Record<ScatterSpec["prop"], PropBody> = {
   // cover (CoverMap's 1.7 m).
   boulder: { w: 2.1, d: 1.9, h: 1.45, visualTop: 1.4 },
   bramble: { w: 0.8, d: 0.8, h: 1.2, visualTop: 1.6, rooted: true },
+  // The cask's bilge, to a centimetre. NOT the hoop an open one has lost,
+  // lying 4.5 cm high on the ground beside it (`buildBarrel`).
   barrel: { w: 0.88, d: 0.88, h: 1.25, visualTop: 1.3 },
   // The skip is the one prop in this table that needs no compromise: it IS a
   // rectangular prism, so the box is the shape rather than an approximation of
