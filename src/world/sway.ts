@@ -51,7 +51,7 @@
  *
  * **And it gets a PALM CROWN wrong outright, which is why a layer may be
  * RIGGED instead.** Every frond on a jungle palm leaves the head between nine
- * and eleven metres up, so the ramp handed all of them very nearly the same
+ * and ten metres up, so the ramp handed all of them very nearly the same
  * travel and the whole crown slid back and forth as one piece over a head and
  * a bole that stood still. A rigged layer (`rig: true` in `CONFIG.wind`) takes
  * no ramp at all: the BUILDER, which still knows where each frond's root is,

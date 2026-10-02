@@ -869,7 +869,7 @@ Two consequences are worth stating plainly, because both look like bugs:
 
 **The ramp cannot draw a PALM CROWN, and it failed in the most visible way it
 could.** Every frond on a jungle palm leaves the crown head between nine and
-eleven metres up, and a ramp in height hands every one of them very nearly the
+ten metres up, and a ramp in height hands every one of them very nearly the
 same travel — so the whole crown slid back and forth as one piece over a head
 and a bole that stood still. That is the ramp's whole premise (one number per
 vertex, from where it ended up) meeting a shape whose motion is decided by
@@ -877,7 +877,7 @@ where each leaf is ATTACHED, which the merge throws away.
 
 **So a layer may be RIGGED instead (`frond`, `rig: true`), and the anchor the
 merge throws away is written BEFORE it.** The builder still knows each frond's
-root, so `pinnateBlade` writes every vertex's place on its own frond into the
+root, so `featherBlade` writes every vertex's place on its own frond into the
 `uv` buffer (`swayRig`): how much of the tip's travel it takes (`frondBend`, a
 uniformly loaded cantilever's deflection — zero with zero slope at the root),
 the frond's phase, and how far out from the rib to a pinna's point it is. That

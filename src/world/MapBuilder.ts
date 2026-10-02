@@ -799,7 +799,7 @@ const PROP_BODIES: Record<ScatterSpec["prop"], PropBody> = {
   // the box's 0.5 m half-width from 0.4 m up, and what of the buttresses is
   // outside it is LOW — under a metre at the box's corner and a surface root
   // under 0.3 m past it, out to ~1.6 m (see `buildJungleTree`). The crown is
-  // fronds from 11.6 m down to ~6.5 m and five out, and is not in this —
+  // fronds from ~11.35 m down to ~6.5 m and six out, and is not in this —
   // there is nothing to shoot up there, and a box that held it would stop
   // rounds through open air across the whole stand. Full trunk height, so a
   // jungle tree bakes as hard cover (CoverMap's 1.7 m) the way a wall does.
