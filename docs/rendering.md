@@ -894,8 +894,9 @@ together:
   Every part in the world carries filler UVs (the merge's all-or-nothing rule),
   so a rig costs no memory and no new buffer; the cel shader declares `uv` on
   every material and reads it only behind a NEGATIVE red channel, which only a
-  rigged layer's bake writes (`RIGGED`). A ramp is never negative, so the
-  vertex stage's branch stays coherent per draw and 0 still means planted.
+  rigged layer's bake writes (the negative of its `rig` index, -1 a frond and
+  -2 an ash bough). A ramp is never negative, so the vertex stage's branch
+  stays coherent per draw and 0 still means planted.
 - **A rigged layer takes no ramp at all.** The head and the bole do not move,
   so any ramp on a frond is a slide at its root. Every frond's root has a bend
   of 0, and the crown cannot come off the head whatever the numbers say.
@@ -928,11 +929,29 @@ canopy, 471.2/468.2 against 458.8/471.4 across the stand — inside the run to
 run spread — and 484.2/486.4 against 434.6/434.8 from a high oblique, faster
 both times for a reason not chased down.
 
+**The hedgerow ash is the second rigged layer, `bough`, and it rigs a whole
+crown rather than a ring of fronds.** Its billows are five to nine metres up,
+so the ramp slid the crown as one piece for exactly the palm's reason; the
+builder writes every vertex above the FORK — leaf, the billow's dark heart and
+the wood alike — `frondBend` of its distance from the fork over the crown's
+span, and the beat of the bough it grows on. Bend is a function of POSITION and
+nothing else, so a bough and the billow it buries itself in compute one
+displacement where they meet; the beats differ only between boughs, and every
+bough meets the next at the fork, where the bend is 0. That is what lets the
+WOOD move — the boughs bend from the fork, which a ramp could never draw. Every
+point of a leaf cluster is written `edge` 1, and `CONFIG.wind.bough` spends
+four times the frond's flutter on it: an ash crown shimmering in any air at
+all is what makes it read as a broadleaf. **That flutter fades out between 30
+and 70 m from the eye** (`flutterFade`, the vertex stage's one read of
+`camPos`), which the frond's does not: past it a leaf cluster is a pixel or
+two, and a band flipping on each is a twinkle with no shape. The red
+channel's magnitude picks the layer, so the two share one branch and one
+motion with two sets of numbers.
+
 **The other layers stay on the ramp, and a builder that moves one across owes
 the rig on every vertex of every mesh it marks**, the merge key keeping a rigged
-group apart from a ramped one. The pine's whorls, the ash's crown and the date
-palm's fronds are all candidates; the hung cloth is the case `FINDINGS.md` 33
-was waiting for.
+group apart from a ramped one. The pine's whorls and the date palm's fronds are
+candidates; the hung cloth is the case `FINDINGS.md` 33 was waiting for.
 
 The clock is `CelMaterialFactory.updateWind`, advanced from
 `updateCameraAndLighting` beside the grass field's rather than from `Game.tick`

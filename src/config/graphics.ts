@@ -662,6 +662,36 @@ export const graphics = {
    * finer than the world's. The foliage map is what goes, because the effect
    * it buys is a rim of light on a crown two hundred pixels tall.
    */
+  /**
+   * How full a broadleaf CROWN is, per rung of `Settings.foliage` — today the
+   * hedgerow ash's (`buildAshTree`), whose crown is billows skinned in leaf
+   * clusters. `detail` is the share of a billow's full skin it is laid with.
+   *
+   * **It is the one graphics setting decided at BUILD time.** A cluster is
+   * geometry merged into the block it stands in, so a rung is a different
+   * WORLD rather than a different pass, and it takes effect when the next map
+   * is built (`Game.installMap` hands it to `MapBuilder.build`). Nothing about
+   * the tree's SHAPE moves with it — the boughs and billows come off the
+   * tree's own stream and each billow's clusters off a stream of their own —
+   * so a phone and a desktop see the same tree, one with the gaps between its
+   * clusters showing the dark heart.
+   *
+   * What a rung costs is VERTICES, three hundred trees' worth on Harrowmead:
+   * measured on a desktop GPU at four vantages in its densest stand, `high`
+   * (~6.5 k a tree, +2.8 M on the map) costs ~10% of the frame against the
+   * crown of lozenge plates it replaced and `low` (~4 k) ~6%, and the round
+   * builds ~3 s and ~1.3 s slower. Each cluster grows a little to cover for
+   * the ones a lower rung leaves out, and no more than `maxGrow`: past that
+   * the clusters read as a few big leaves rather than a full crown.
+   */
+  foliage: {
+    tiers: {
+      low: { detail: 0.55 },
+      medium: { detail: 0.78 },
+      high: { detail: 1 },
+    },
+    maxGrow: 1.15,
+  },
   shadowTiers: {
     off: { sun: 0, foliage: 0, bodies: 0, bodyWindow: 48 },
     low: { sun: 1024, foliage: 0, bodies: 512, bodyWindow: 32 },

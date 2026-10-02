@@ -382,6 +382,16 @@ uniform windParams: vec3f;
 // rad/s, flutter rad/s, flutter wavenumber).
 uniform windFrond: vec4f;
 uniform windFrondRate: vec4f;
+// The ash bough's answer (CONFIG.wind.bough), in the same two layouts, and
+// windBoughFade the (start, end) metres from the eye its flutter fades over.
+// The red channel picks which pair a rigged vertex reads: -1 a frond, -2 a
+// bough.
+uniform windBough: vec4f;
+uniform windBoughRate: vec4f;
+uniform windBoughFade: vec2f;
+// The eye, for that fade alone. Declared in the fragment stage too; Babylon
+// puts both stages' uniforms in one buffer, as the grass shader leans on.
+uniform camPos: vec3f;
 
 varying vNormalW: vec3f;
 varying vPosW: vec3f;
@@ -443,6 +453,12 @@ fn main(input: VertexInputs) -> FragmentInputs {
       let bend = vertexInputs.uv.x;
       let edge = floor(vertexInputs.uv.y) / 63.0;
       let tau = fract(vertexInputs.uv.y) * 6.2831853;
+      // Which rigged layer: -1 a palm's frond, -2 an ash's bough. One
+      // motion, two sets of numbers, and coherent per draw like the branch
+      // above, the layer being in the merge key.
+      let bough = vertexInputs.color.r < -1.5;
+      let rig = select(uniforms.windFrond, uniforms.windBough, bough);
+      let rigRate = select(uniforms.windFrondRate, uniforms.windBoughRate, bough);
       // The same gust as the ramp's, read as PRESSURE: 0 in a lull, 1 at the
       // top of a gust, squared so a gust arrives rather than the wind simply
       // breathing. It only ever pushes downwind — nothing leans into a wind.
@@ -451,25 +467,31 @@ fn main(input: VertexInputs) -> FragmentInputs {
       let t = uniforms.windTime;
       // Each frond on its own rate (+-15%) as well as its own phase, so a
       // crown's fronds drift in and out of step instead of nodding together.
-      let rate = uniforms.windFrondRate.y * (0.85 + 0.3 * fract(tau * 1.618));
+      let rate = rigRate.y * (0.85 + 0.3 * fract(tau * 1.618));
       let flap = sin(t * rate + tau) + 0.35 * sin(t * rate * 2.17 + tau * 3.1);
       let swing = sin(t * rate * 0.61 + tau * 5.3);
       let stir = 0.45 + 0.55 * press;
-      let down = uniforms.windFrond.x * mix(uniforms.windFrondRate.x, 1.0, press);
-      let across = uniforms.windFrond.z * swing * stir;
+      let down = rig.x * mix(rigRate.x, 1.0, press);
+      let across = rig.z * swing * stir;
       let crosswind = vec2f(-uniforms.windDir.y, uniforms.windDir.x);
       let sway = (uniforms.windDir * down + crosswind * across) * bend;
       // The pinnae: a ripple running along the frond on a short wave, so the
       // fringe flutters rather than shivers in unison — nothing at the rib,
       // most at a pinna's point, and more out along the frond than near it.
-      let ripple = sin(t * uniforms.windFrondRate.z
-        - dot(worldPos.xyz, vec3f(0.71, 0.45, 0.54)) * uniforms.windFrondRate.w
+      // A bough's leaflets fade out with distance (CONFIG.wind.bough's
+      // header): a pixel-wide leaflet crossing a band is a twinkle.
+      let ripple = sin(t * rigRate.z
+        - dot(worldPos.xyz, vec3f(0.71, 0.45, 0.54)) * rigRate.w
         + tau * 7.0);
-      let flutter = uniforms.windFrond.w * edge * (0.3 + 0.7 * bend)
-        * (0.35 + 0.65 * press) * ripple;
+      let near = select(1.0,
+        1.0 - smoothstep(uniforms.windBoughFade.x, uniforms.windBoughFade.y,
+          distance(worldPos.xyz, uniforms.camPos)),
+        bough);
+      let flutter = rig.w * edge * (0.3 + 0.7 * bend)
+        * (0.35 + 0.65 * press) * ripple * near;
       worldPos.x += sway.x;
       worldPos.z += sway.y;
-      worldPos.y += uniforms.windFrond.y * flap * stir * bend + flutter;
+      worldPos.y += rig.y * flap * stir * bend + flutter;
     }
   }
 
@@ -1839,6 +1861,9 @@ export class CelMaterialFactory {
     "windParams",
     "windFrond",
     "windFrondRate",
+    "windBough",
+    "windBoughRate",
+    "windBoughFade",
     ...GI_UNIFORM_NAMES,
   ];
   /**
@@ -3596,6 +3621,13 @@ export class CelMaterialFactory {
       "windFrondRate",
       new Vector4(f.calm, f.flapRate, f.flutterRate, (Math.PI * 2) / f.flutterWave),
     );
+    const b = w.bough;
+    mat.setVector4("windBough", new Vector4(b.lean, b.flap, b.swing, b.flutter));
+    mat.setVector4(
+      "windBoughRate",
+      new Vector4(b.calm, b.flapRate, b.flutterRate, (Math.PI * 2) / b.flutterWave),
+    );
+    mat.setVector2("windBoughFade", new Vector2(b.flutterFade[0], b.flutterFade[1]));
   }
 
   private applyPointLights(mat: ShaderMaterial): void {

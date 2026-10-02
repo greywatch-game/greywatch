@@ -220,6 +220,7 @@ import {
   type StepState,
 } from "./ScreenStack";
 import {
+  type FoliageQuality,
   type GiQuality,
   readSettings,
   SHADOW_QUALITIES,
@@ -623,6 +624,12 @@ export class Game {
   private sky: Sky;
   private water: WaterSystem;
   private grass: GrassSystem;
+  /**
+   * The crowns' rung the standing map was built with (`Settings.foliage` as
+   * it was at `installMap`), for the profiler — the stored setting may have
+   * moved since, and a capture has to say what the frame was drawn with.
+   */
+  private foliageBuilt: FoliageQuality | null = null;
   private post: PaperGrain;
   /** Moon shafts. Driven from the sky's own moon direction every frame. */
   /**
@@ -2689,6 +2696,7 @@ export class Game {
       shadows: this.shadowQuality,
       gi: this.giForced ?? this.settings.gi,
       grass: this.settings.grass,
+      foliage: this.foliageBuilt ?? undefined,
       volumetrics: this.volumetricsRung ?? "off",
       motionBlur: this.settings.motionBlur,
       paperGrain: this.settings.paperGrain,
@@ -4445,8 +4453,16 @@ export class Game {
     // The old map, gone whole — the other half of this method, and the half
     // the menu owes on its own. See `teardownMap`.
     this.teardownMap();
-    const map = this.mapBuilder.build(layout, environment, heights, opts);
+    // The crowns are the one picture setting decided HERE rather than live: a
+    // cluster of leaf is geometry merged into its block, so the rung is read
+    // as the world is built and a change waits for the next one
+    // (`CONFIG.graphics.foliage`).
+    const foliage = CONFIG.graphics.foliage.tiers[this.settings.foliage].detail;
+    const map = this.mapBuilder.build(layout, environment, heights, { ...opts, foliage });
     this.map = map;
+    // What the profiler reports is the rung this map was built WITH.
+    this.foliageBuilt = this.settings.foliage;
+    this.pushProfileGraphics();
     // The shadow camera follows the environment's key light, and its casters
     // are the fresh map's visuals — last build's meshes are now disposed.
     this.shadows.setLightDirection(environment.lighting.direction);

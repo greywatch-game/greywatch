@@ -1147,6 +1147,7 @@ function renderReport(r) {
     kv("Graphics",
       "scale " + gx.renderScale + " · shadows " + gx.shadows + tag("shadows") +
       " · bounce " + gx.gi + tag("gi") + " · grass " + gx.grass +
+      (gx.foliage ? " · trees " + gx.foliage : "") +
       " · shafts " + gx.volumetrics + tag("volumetrics") +
       " · blur " + (gx.motionBlur ? "on" : "off") + " · grain " + (gx.paperGrain ? "on" : "off"));
     kv("Settings stood", fmt(gx.inForceSeconds, 1) + " s" +

@@ -64,9 +64,11 @@
  * filler and is never read.
  *
  * **The red channel's SIGN is what tells the shader which it has**:
- * `swayWeight` answers a rigged layer with `RIGGED` (-1), which no ramp can
- * produce, so the vertex stage's branch stays coherent per draw (the layer is
- * in the merge key) and the neutral 0 still means planted. Everything a rig
+ * `swayWeight` answers a rigged layer with the NEGATIVE of its `rig` index
+ * (-1 the frond, -2 the ash's bough), which no ramp can produce, so the
+ * vertex stage's branch stays coherent per draw (the layer is in the merge
+ * key), the neutral 0 still means planted, and the magnitude picks which
+ * rigged layer's motion the vertex takes. Everything a rig
  * says is a SCALAR — how far along, which frond, how far out to the edge — and
  * never a position or a direction, because the merge bakes a placement into
  * positions and normals and leaves `uv` exactly as it found it.
@@ -105,7 +107,10 @@ export function swayLayerOf(mesh: Mesh): SwayLayer | null {
 
 /**
  * How much of `CONFIG.wind.foliage.travel` a vertex `height` metres above the
- * ground is entitled to, in the given layer.
+ * ground is entitled to, in the given layer — or, for a RIGGED layer, the
+ * negative of its `rig` index: a sign and a selector, not a weight. A ramp is
+ * never negative, so the shader reads `< 0` as "this vertex carries its own
+ * rig in `uv`" and `> 0` as the ramp it always was.
  *
  * The exponent is the grass shader's, and it is the whole of why a fern reads
  * as a stalk flexing rather than as a mesh sliding: it keeps the lower half of
@@ -115,17 +120,10 @@ export function swayLayerOf(mesh: Mesh): SwayLayer | null {
  */
 export function swayWeight(height: number, layer: SwayLayer): number {
   const l = CONFIG.wind.foliage.layers[layer];
-  if ("rig" in l) return RIGGED;
+  if ("rig" in l) return -l.rig;
   const t = Math.min(1, Math.max(0, height / l.reach));
   return Math.pow(t, 1.6) * l.amount;
 }
-
-/**
- * The red channel's answer for a RIGGED layer: a sign, not a weight. A ramp is
- * never negative, so the shader reads `< 0` as "this vertex carries its own
- * rig in `uv`" and `> 0` as the ramp it always was.
- */
-export const RIGGED = -1;
 
 /**
  * How much of a frond's tip travel a point `f` of the way along it takes: a

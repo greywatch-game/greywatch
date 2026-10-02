@@ -744,8 +744,9 @@ only ever darkens.
 field's clock rather than the shader's eye, because a pause that holds the world
 must hold the canopy. **Anything a collider stands in for may never sway.** **A
 sway layer is RAMPED or RIGGED**: a ramp is the red channel's height weight, and
-a rigged layer (`frond`) writes each vertex's place on its own frond into `uv`
-BEFORE the merge and is told apart by a NEGATIVE red — so every cel material
+a rigged layer (a palm's `frond`, an ash's `bough`) writes each vertex's place
+on its own frond or bough into `uv` BEFORE the merge and is told apart by a
+NEGATIVE red, whose magnitude picks the layer's motion — so every cel material
 binds `uv`, a rig holds only scalars (the merge moves positions and never
 `uv`), and a mesh marked with a rigged layer owes one on every vertex.
 **The ink's line WEIGHT is a function of distance and is not the same reading

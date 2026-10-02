@@ -737,13 +737,16 @@ leaves its box behind, so `PROP_BODIES` is the list to check against first. And
 the mark is part of the merge KEY, so a merged mesh is unanimously foliage or
 unanimously not; a group that disagreed would be handed one layer's ramp for
 both. Today it is a jungle palm's fronds and the liana veil hanging off them
-(the one RIGGED layer, `frond`), a hedgerow ash's crown, a pine's needle tiers
-and a fern's blades — never a trunk, never a LIMB (which is the trunk's argument
-at half the length: a long thin thing lying along the ramp is the one shape a
-vertex ramp cannot bend honestly), and never the collar a veil is hung from.
-**A mesh marked `frond` owes a RIG in its `uv`** (`swayRig`, written before the
-merge) — the shader reads that buffer for that layer and for nothing else, so a
-frond-marked part left on filler moves by whatever its filler happens to say.
+(RIGGED, `frond`), a hedgerow ash's crown — its billows, its leaf and its
+BOUGHS above the fork (RIGGED, `bough`) — a pine's needle tiers and a fern's
+blades — never a trunk, never a RAMPED limb (which is the trunk's argument at
+half the length: a long thin thing lying along the ramp is the one shape a
+vertex ramp cannot bend honestly; the ash's boughs may move only because a rig
+bends them from the fork), and never the collar a veil is hung from.
+**A mesh marked with a rigged layer owes a RIG in its `uv`** (`swayRig`,
+written before the merge) — the shader reads that buffer for those layers and
+for nothing else, so a rigged part left on filler moves by whatever its filler
+happens to say.
 See `docs/rendering.md` for the ramp, the rig, why the trunk is left out and
 what a swaying group gives up.
 

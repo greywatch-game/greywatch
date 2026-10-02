@@ -397,6 +397,14 @@ export interface BuildOptions {
    * ~1740 draws against ~150. Fine for authoring, never for play.
    */
   editor?: boolean;
+  /**
+   * How full a broadleaf crown is, 0..1 — the player's `Settings.foliage`
+   * resolved through `CONFIG.graphics.foliage`, handed to every scatter
+   * builder as its fifth argument. Absent is 1, the full crown. It moves no
+   * prop and no collider: what it thins is drawn from streams the shared
+   * scatter stream never sees (`buildAshTree`).
+   */
+  foliage?: number;
 }
 
 /** The built world: geometry is in the scene, this is the queryable part. */
@@ -606,7 +614,8 @@ export interface GameMap {
  * **Typed rather than inferred, and the fourth argument is why.** Only
  * `buildJungleTree` reads `sub`, and a `Record` of the builders as written
  * would be a UNION of their signatures — which a four-argument call cannot
- * satisfy, because most members declare three. Widening the whole table
+ * satisfy, because most members declare three. The fifth is the same story
+ * for `buildAshTree`, the one reader of `foliage`. Widening the whole table
  * instead is free: a builder that ignores the stream is assignable to a type
  * that offers it, and a builder that wants one now has a place to say so.
  */
@@ -615,6 +624,7 @@ type ScatterBuilder = (
   mats: CelMaterialFactory,
   rng: () => number,
   sub: () => number,
+  foliage: number,
 ) => Mesh;
 
 /** Scatter props, keyed by the name the layout data uses. */
@@ -1010,6 +1020,12 @@ export class MapBuilder {
   private propSeed = 0;
 
   /**
+   * How full a broadleaf crown is in this build — `BuildOptions.foliage`, set
+   * at the top of every `build` and handed to every scatter builder.
+   */
+  private foliage = 1;
+
+  /**
    * This map's albedo palette: the colours the block merge collapsed, in the
    * order the shader indexes them. Reset at the top of every `build` and handed
    * to `CelMaterialFactory.setPalette` at the bottom of it.
@@ -1164,6 +1180,7 @@ export class MapBuilder {
     const seed = layout.seed ?? 0x484c;
     const rng = mulberry32(seed);
     this.propSeed = seed;
+    this.foliage = opts?.foliage ?? 1;
     const forEditor = opts?.editor === true;
     const index: EditorIndex | undefined = forEditor
       ? { placements: [], scatter: [] }
@@ -1899,7 +1916,7 @@ export class MapBuilder {
       // per prop and not per region so that changing a region's `count`
       // leaves the props it still places drawing what they drew.
       const sub = mulberry32(this.propSeed ^ (index * 7919 + i));
-      const prop = build(this.scene, this.mats, rng, sub);
+      const prop = build(this.scene, this.mats, rng, sub, this.foliage);
       prop.scaling.setAll(scale);
       prop.position.x = spot.lx;
       prop.position.z = spot.lz;

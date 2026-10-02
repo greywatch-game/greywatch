@@ -61,6 +61,13 @@ export type ShadowQuality = keyof typeof CONFIG.graphics.shadowTiers;
 export type GrassQuality = keyof typeof CONFIG.grass.tiers;
 
 /**
+ * How full the broadleaf crowns are, as one of `CONFIG.graphics.foliage.tiers`.
+ * Derived from that table for `RenderScale`'s reason. The one picture setting
+ * applied when a map is BUILT rather than live — see the table for why.
+ */
+export type FoliageQuality = keyof typeof CONFIG.graphics.foliage.tiers;
+
+/**
  * A look-sensitivity multiplier, as one of `CONFIG.camera.lookScales`. Derived
  * from that list for the same reason `RenderScale` is derived from its own: the
  * ladder is declared once, and a value that is not on it cannot be stored.
@@ -147,6 +154,12 @@ export type Settings = {
    * Derived per MACHINE on a fresh install: see `defaultGrassQuality`.
    */
   grass: GrassQuality;
+  /**
+   * Trees — how full a broadleaf crown is. Derived per MACHINE on a fresh
+   * install: see `defaultFoliageQuality`. Takes effect from the next map
+   * built, being geometry merged into the world.
+   */
+  foliage: FoliageQuality;
   /**
    * Mouse look speed, as a multiplier on `CONFIG.camera.sensX`/`sensY`.
    *
@@ -332,6 +345,19 @@ export function defaultGrassQuality(): GrassQuality {
  * see `defaultRenderScale`. It is therefore the one default that is not the
  * same on every install, which is the point of it.
  */
+/**
+ * The crowns a fresh install gets, on the grass's test and for its reason: a
+ * full crown is VERTICES, three hundred trees of them on one map, which is
+ * the work a phone pays ~2.4x a desktop's price for.
+ */
+export function defaultFoliageQuality(): FoliageQuality {
+  const coarse =
+    typeof window !== "undefined" &&
+    typeof window.matchMedia === "function" &&
+    window.matchMedia("(pointer: coarse)").matches;
+  return coarse ? "low" : "high";
+}
+
 export const SETTING_DEFAULTS: Settings = {
   fpsCounter: false,
   motionBlur: CONFIG.graphics.motionBlur.strength > 0,
@@ -346,6 +372,7 @@ export const SETTING_DEFAULTS: Settings = {
   gi: defaultGiQuality(),
   shadows: defaultShadowQuality(),
   grass: defaultGrassQuality(),
+  foliage: defaultFoliageQuality(),
   renderScale: defaultRenderScale(),
   // 1 on both, and it is the one default that means "change nothing": the rates
   // in `CONFIG.camera` are what every other number there was tuned against.
@@ -482,6 +509,11 @@ export const SHADOW_QUALITIES = Object.keys(
 /** The grass rungs, in the order the screen draws them. */
 export const GRASS_QUALITIES = Object.keys(CONFIG.grass.tiers) as GrassQuality[];
 
+/** The crown rungs, in the order the screen draws them. */
+export const FOLIAGE_QUALITIES = Object.keys(
+  CONFIG.graphics.foliage.tiers,
+) as FoliageQuality[];
+
 /**
  * One codec per field. The mapped type is the point: a field added to
  * `Settings` without an entry here does not compile, so the store can never
@@ -496,6 +528,7 @@ const CODECS: { [K in keyof Settings]: Codec<Settings[K]> } = {
   gi: oneOfString(GI_QUALITIES),
   shadows: oneOfString(SHADOW_QUALITIES),
   grass: oneOfString(GRASS_QUALITIES),
+  foliage: oneOfString(FOLIAGE_QUALITIES),
   mouseSensitivity: oneOf(CONFIG.camera.lookScales),
   stickSensitivity: oneOf(CONFIG.camera.lookScales),
   touchSensitivity: oneOf(CONFIG.camera.lookScales),

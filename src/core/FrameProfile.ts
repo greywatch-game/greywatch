@@ -642,6 +642,13 @@ export interface ProfileGraphics {
   shadows: string;
   gi: string;
   grass: string;
+  /**
+   * The crowns' rung the standing map was BUILT with — not the stored
+   * setting, which a player may have moved since and which waits for the
+   * next map (`CONFIG.graphics.foliage`). Absent before a map is built, and in
+   * a capture from before the setting existed.
+   */
+  foliage?: string;
   /** The shaft pass's rung, or `off` when it is off the camera. */
   volumetrics: string;
   motionBlur: boolean;
@@ -2674,6 +2681,7 @@ function sameGraphics(a: ProfileGraphics, b: ProfileGraphics): boolean {
     a.shadows === b.shadows &&
     a.gi === b.gi &&
     a.grass === b.grass &&
+    a.foliage === b.foliage &&
     a.volumetrics === b.volumetrics &&
     a.motionBlur === b.motionBlur &&
     a.paperGrain === b.paperGrain &&

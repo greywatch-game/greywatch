@@ -42,7 +42,7 @@
  */
 import "./settings.css";
 import { CONFIG } from "../config";
-import { GRASS_QUALITIES, SHADOW_QUALITIES, type Settings } from "../core/settings";
+import { FOLIAGE_QUALITIES, GRASS_QUALITIES, SHADOW_QUALITIES, type Settings } from "../core/settings";
 import type { GyroStatus } from "../core/GyroInput";
 import { glyph, guessDevice, type InputDevice } from "./prompts";
 
@@ -377,13 +377,13 @@ const PAGES: readonly Page[] = [
   {
     // Split off Display when the shadows row made it nine, which ran under the
     // footer at a phone's 832x384 — this list's own rule for a page that
-    // outgrows its column. The four are the ones a slow device turns down,
+    // outgrows its column. The five are the ones a slow device turns down,
     // which is why grass is here beside the light rather than on a page of its
     // own.
     label: "Detail",
     icon: ICONS.detail,
     blurb:
-      "The four things a slow device turns down first. Each is drawn behind this screen as you change it, so what you are trading is in front of you.",
+      "The five things a slow device turns down first. All but the trees are drawn behind this screen as you change them, so what you are trading is in front of you.",
     rows: [
       {
         key: "volumetrics",
@@ -434,6 +434,18 @@ const PAGES: readonly Page[] = [
         label: "Grass",
         hint: "How thick the grass grows around you and how far it reaches.",
         options: GRASS_QUALITIES.map((k) => ({
+          value: k,
+          label: k.charAt(0).toUpperCase() + k.slice(1),
+        })),
+      },
+      {
+        // The one row on this page that is NOT drawn behind the screen as it
+        // changes: a crown's leaf is merged into the world, so a rung is the
+        // next map built (`CONFIG.graphics.foliage`), and the hint says so.
+        key: "foliage",
+        label: "Trees",
+        hint: "How full the leafy crowns are. Takes effect from the next map loaded.",
+        options: FOLIAGE_QUALITIES.map((k) => ({
           value: k,
           label: k.charAt(0).toUpperCase() + k.slice(1),
         })),

@@ -2,7 +2,8 @@
  * config/wind.ts — the one wind, and what each layer that moves in it does
  * with it.
  * Owns: the air's direction and speed, and the layers keyed off it — the grass
- * field, the world's foliage (ramped, and the one rigged layer's `frond`), the
+ * field, the world's foliage (ramped, and the two rigged layers' `frond` and
+ * `bough`), the
  * flags over the control points, and (bearing only, amplitude its own) a
  * tank's whip antennae. Contract:
  * `docs/rendering.md`.
@@ -105,8 +106,22 @@ const foliageLayers = {
    * travel, so the whole crown slid back and forth over a head that stood
    * still. What moves here is `CONFIG.wind.frond`'s, and it is zero at every
    * frond's root by construction.
+   *
+   * `rig` is the layer's INDEX among the rigged ones, and the bake writes its
+   * negative into the red channel (`swayWeight`): the shader reads -1 as a
+   * frond and -2 as a bough and picks that layer's motion from it.
    */
-  frond: { rig: true },
+  frond: { rig: 1 },
+  /**
+   * The hedgerow ash's crown (`buildAshTree`) — its boughs, the clumps of
+   * leaf they carry and every leaflet on them, RIGGED like the frond and for
+   * the frond's reason: every clump in an ash crown is five to nine metres
+   * up, so a ramp hands them all the same travel and the crown slides as one
+   * piece. Each bough bends from the FORK, which does not move, and the
+   * clumps it carries ride it on its own beat. What moves is
+   * `CONFIG.wind.bough`'s.
+   */
+  bough: { rig: 2 },
 } as const;
 
 export const wind = {
@@ -188,6 +203,41 @@ export const wind = {
     flutter: 0.035,
     flutterRate: 21,
     flutterWave: 1.4,
+  },
+  /**
+   * What a RIGGED ash bough does (`layers.bough`) — the frond's three motions
+   * over the same gust, every distance in metres at the crown's outermost
+   * leaf, and tuned to a different tree. A bough is wood: it leans less than
+   * a frond and bobs slower and shorter (`flap` at `flapRate`), because what
+   * moves an ash crown in a breeze is not the boughs but the LEAF on them.
+   *
+   * **So the flutter is the motion, and it is four times the frond's.** An ash
+   * leaflet hangs on a stalk a few millimetres thick and turns in any air at
+   * all, and that shimmer across a crown is what makes a broadleaf read as
+   * alive. `flutter` is the tip of a leaflet's travel, at `flutterRate` rad/s
+   * on a `flutterWave` metre ripple — short, so the leaflets of one cluster
+   * turn out of step with each other and the shimmer runs through a clump
+   * rather than the clump nodding. The cel shader takes its facets off the
+   * displaced position, so a turning leaflet crosses a band and catches the
+   * light: that is the shimmer, and no normal is moved for it.
+   *
+   * **And it fades out with distance, over `flutterFade` metres from the eye**,
+   * which the frond's does not. A palm's pinnae are four to a metre of rib; an
+   * ash crown is three hundred leaflets in fifteen metres, and past ~60 m each
+   * is a pixel or two, so a band flipping on each is a twinkle with no shape
+   * to it — self-driven sparkle on a still surface, the thing the water had to
+   * lose. The bough's own sway carries on to the horizon.
+   */
+  bough: {
+    lean: 0.24,
+    calm: 0.3,
+    flap: 0.06,
+    flapRate: 2.2,
+    swing: 0.09,
+    flutter: 0.11,
+    flutterRate: 15,
+    flutterWave: 0.8,
+    flutterFade: [30, 70],
   },
   /**
    * The flags over the control points (`systems/FlagCloth.ts`) — the one

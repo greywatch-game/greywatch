@@ -64,7 +64,12 @@ const ASH_BARK = "#6b6553";
 // belt is the darkest, so the pair should not be a hue apart at fifty metres
 // and the same grey at two hundred.
 const ASH_LEAF = "#35602f";
-const ASH_LEAF_LIT = "#57893c";
+const ASH_LEAF_LIT = "#62873a";
+// The HEART of each billow of an ash crown (`buildAshTree`): the darkest green
+// on the tree, seen in the gaps between leaf clusters and as the billow's
+// belly. Plain matte, not translucent — the heart is what the light does NOT
+// get through — so it goes into the block's palette with the crown's wood.
+const ASH_HEART = "#29432a";
 // Ivy on a hedgerow bole: darker and bluer than the ash's own leaf, as ivy is
 // against anything deciduous, so the climber reads as a second plant on the
 // tree rather than as the crown leaking down it.
@@ -809,68 +814,123 @@ export function buildPine(
 const ASH_SHARED_DRAWS = 56;
 
 /**
+ * One billow of an ash crown — see `buildAshTree`. `c` is its centre in the
+ * trunk's frame, `r` its half-width and `h` its half-height (a clump of leaf
+ * is a dome on a flatter belly, never a ball), and `phase` the bough's beat it
+ * moves on (`world/sway.ts`).
+ */
+interface AshClump {
+  c: V3;
+  r: number;
+  h: number;
+  phase: number;
+}
+
+/**
  * Hedgerow ash: a pale, faintly ridged bole on a flare of root knees, forking
- * a little over head height into three or four boughs that reach out and then
- * sweep UP, each ending in a cluster of leaf with pointed sprays breaking its
- * edge — an open, domed crown with sky and boughs showing through it. The
- * temperate BROADLEAF, and the counterpart to the pine in the same way the
- * jungle hardwood is the counterpart to nothing. A third of them carry ivy.
+ * a little over head height into three or four boughs that climb out at a
+ * steep angle, each throwing a side branch, and a crown of BILLOWS — eight to
+ * eleven separate masses of leaf at the ends of the boughs and up the leader,
+ * each a dome of overlapping LEAF CLUSTERS, lit yellow-green on its shoulders
+ * and dark in its belly, with sky between them. The temperate BROADLEAF, and
+ * the counterpart to the pine in the same way the jungle palm is the
+ * counterpart to nothing. A third of them carry ivy.
+ * `reference-media/ash-tree.jpg` is the target.
  *
  * **Why a farming valley needed a second tree at all.** A vale dressed in one
  * conifer is a plantation, not farmland: every stand reads as the same dark
  * cone at every distance, so a shelterbelt, a copse and a field boundary all
  * say the same thing, and the ground between them reads as empty rather than
  * as fields. What breaks that is a tree with a different SILHOUETTE — a bare
- * bole under a round crown against a cone that goes to the ground — because
+ * bole under a broad crown against a cone that goes to the ground — because
  * silhouette is the one thing that survives to the far side of a 400 m map.
  * The bark and leaf tones (`ASH_BARK`, `ASH_LEAF`) are the second and third
  * differences and both were chosen against the pine's, not on their own.
  *
- * **It was four tiers of boxes centred on the axis** and read as a stack of
- * green crates on a hexagonal pole, one black cube from underneath. The crown
- * is CLUSTERS AT THE ENDS OF BOUGHS now, which is what an ash's crown is: the
- * maple's measured lesson (a tier is a rosette at one height, so its
- * silhouette is horizontal edges one over another) drawn in the jungle
- * hardwood's vocabulary — lozenge plates and pointed blades (`prism`), lofted
- * wood (`loft`), all flat-shaded outline the bands and the ink find. NOT smooth
- * puffs: a smooth-shaded crown was tried on this tree and thrown out.
+ * **It was lozenge plates at the bough ends** — three storeys of six-sided
+ * slabs a metre and a half across — and read as green slabs stacked on a pole:
+ * the look this game is drawn in gives a face one value per band and finds an
+ * edge only where depth steps or bends, so a slab is one shape and one tone
+ * however it is tipped. (Before that it was four tiers of boxes, and before
+ * that a smooth-shaded crown of puffs, which was thrown out.) What the
+ * reference draws is the opposite — every mass of leaf broken into CLUSTERS
+ * whose lower edges are each a stroke, the shade deepening into the belly.
+ * So each billow is two things:
+ *
+ * - **A HEART** (`ASH_HEART`): a lumpy, flat-bellied geodesic in the darkest
+ *   green, two thirds of the billow's size — what is seen in the gaps between
+ *   clusters and what the belly is, so a clump is a MASS and never a cloud of
+ *   loose leaves you can see the sky through.
+ * - **A skin of LEAF CLUSTERS over it** (`ashCluster`): each a cupped rosette
+ *   of seven leaf points, laid down the dome's slope like a fish scale with
+ *   its lower rim lifted off it, so every cluster overlaps the one below and
+ *   its lower edge is a step in depth the ink draws — the reference's
+ *   scalloped strokes, made of geometry, which is the only way this look can
+ *   have them. The cup creases each point into a lit half and a shade half,
+ *   and the points are the crown's serrated silhouette. Lit or shade by where
+ *   on the dome a cluster sits and how high its billow is in the crown.
+ *
+ * The leaf clusters were a FAN of five, then seven, narrow leaflets first, and
+ * both read as maple leaves — a star with sky between its points over a heart
+ * that showed as a black ball. A full rosette covers what it is laid on, which
+ * is what turned a cloud of stars into a mass of leaf.
+ *
+ * **The whole crown is RIGGED** (the `bough` layer, `world/sway.ts`), and that
+ * is what lets the leaf FLUTTER rather than slide. Every vertex above the fork
+ * — wood, heart and leaflet alike — is written how far it is from the FORK
+ * (`frondBend` of the distance, so the crown is stiff at the fork and free at
+ * its rim) and the beat of the bough it grows on; every leaflet's point is
+ * written how far out on the leaflet it is, which is what
+ * `CONFIG.wind.bough.flutter` is spent on. Bend is a function of POSITION
+ * alone, so a bough and the billow it buries itself in agree where they meet
+ * and nothing tears; the beats differ only between boughs, and every bough
+ * meets the next at the fork, where the bend is zero. So the boughs are drawn
+ * swaying now too — they bend from the fork, which a vertex ramp could never
+ * do honestly (`world/sway.ts`).
  *
  * Four things about the shape are load-bearing rather than decorative:
  *
- * - **The lowest leaf hangs at ~3.5 m**, twice clear of the 1.7 m hit sphere.
+ * - **The lowest leaf hangs at ~3.6 m**, twice clear of the 1.7 m hit sphere.
  *   The collider is the bole only (see `PROP_BODIES`) — the pine's rule, and
  *   the reason the crown is carried high rather than skirted down toward the
- *   grass where it would be foliage rounds pass straight through. That is the
- *   worst CORNER: a side branch's cluster is never centred under 4.5 m, a
- *   plate sits at most 0.25 m under its cluster, and one tipped to its limits
- *   drops a corner ~0.5 m more. It survives scaling, since the whole tree is
- *   scaled — a region has to be dragged under ~0.5 before leaf reaches the
- *   sphere, and the layout's floor is 0.8. The crown tops out under 9.7 m,
- *   inside `PROP_BODIES.ashTree.visualTop`, which is frozen.
- * - **Every bough ends BURIED in leaf**, and the geometry is what makes it so
- *   rather than luck: each cluster's first plate is centred exactly on the tip
- *   of the bough carrying it and is over a metre across, against the ~0.17 m
- *   the crown drifts at that height. That is what makes it safe for the leaf
- *   to sway while the wood holding it does not — see `world/sway.ts` for why
- *   no bough is marked (a long thin thing lying along the ramp is the one
- *   shape a vertex ramp cannot bend honestly). The sprays start at a cluster's
- *   centre height, most of a metre inside its plate, and sway with it.
+ *   grass where it would be foliage rounds pass straight through. A billow's
+ *   belly is never under `LOWEST`, and that is checked where each is placed,
+ *   not hoped for. It survives scaling, since the whole tree is scaled — down
+ *   to the hedgerow standards a generator sows at half size, where it is
+ *   still at head height. The crown tops out under 9.75 m, inside
+ *   `PROP_BODIES.ashTree.visualTop` (9.9), which is frozen.
  * - **The bole stays inside the collider's 0.34 m half-width** from 0.3 m up,
  *   flutes and bend included, so the column a round stops on is the column
  *   you see. The root knees are what is outside it, and they are under 0.4 m
  *   there and fall to a few centimetres — a thing a boot steps over. The ivy is
  *   pressed to the bark, a few centimetres proud of it.
- * - **Its detail comes from a stream of its OWN.** `rng` is the map's shared
+ * - **Nothing under the fork moves.** The bole carries the collider, so it is
+ *   not marked; the leader and every bough are, and each leaves the bole at
+ *   the fork's height or above it with a bend of nearly zero.
+ * - **Its detail comes from streams of its OWN.** `rng` is the map's shared
  *   scatter stream and every draw from it moves every prop after this one, so
  *   this takes exactly `ASH_SHARED_DRAWS` from it — the first the lean and
- *   the seed of `own`, the rest taken and not spent. Everything else is
- *   `own`'s: distinct per tree, fixed per layout, invisible to the map.
+ *   the seed of `own`, the rest taken and not spent. Everything structural is
+ *   `own`'s; every leaf cluster is a stream seeded per billow, so `detail`
+ *   (below) can lay fewer of them without moving a bough.
+ *
+ * `detail` is the foliage setting (`CONFIG.graphics.foliage`): the share of
+ * the clusters a billow is skinned with, each grown to cover what its missing
+ * neighbours did. 1 is the full skin; a phone's tier lays fewer, bigger
+ * clusters over the same hearts on the same boughs.
  *
  * Budgeted as DRESSING: some three hundred stand on Harrowmead, so a vertex
- * here is three hundred in the scene. Built from parts (`world/parts.ts`), so
- * none of it is uploaded to the device on its way to the merge, and in the
- * three materials the plate crown wore plus the ivy's two matte colours, which
- * go into the block's palette rather than a draw call of their own.
+ * here is three hundred in the scene. Sixteen vertices a cluster, which its
+ * top and underside share but for the stalk, about three hundred and forty
+ * clusters a tree at full detail — ~6.5 k vertices a tree, ~4 k at a phone's
+ * rung. `CONFIG.graphics.foliage` has what each costs, and the cost is mostly
+ * PIXELS rather than vertices (half of it went with half the resolution): a
+ * crown is a few layers of leaf deep wherever it is seen. Built from parts
+ * (`world/parts.ts`), merged to seven at most, so none of it is uploaded on its
+ * way to the merge: the bole, the crown's wood, the hearts, the two leaf
+ * sheets and the ivy's two. The crown's wood and the hearts are matte, so they
+ * go into the block's palette — but being RIGGED they are a merge group of
+ * their own, one draw a block that the plate crown did not cost.
  *
  * Nothing here is scaled non-uniformly, for the reason `buildJungleTree`
  * states: a squashed part's normals are not renormalised by the merge.
@@ -879,8 +939,11 @@ export function buildAshTree(
   scene: Scene,
   mats: CelMaterialFactory,
   rng: () => number = Math.random,
+  _sub: () => number = rng,
+  detail = 1,
 ): Mesh {
   const bark = mats.get(ASH_BARK);
+  const heart = mats.get(ASH_HEART);
   const leaf = mats.getTranslucent(ASH_LEAF, CONFIG.graphics.translucency.canopy);
   const leafLit = mats.getTranslucent(ASH_LEAF_LIT, CONFIG.graphics.translucency.canopy);
   // A standard left in a hedge grows up rather than out — the pine's lean, and
@@ -888,7 +951,8 @@ export function buildAshTree(
   // as a tree coming down rather than as one with character. The first shared
   // draw, and the seed of this tree's own stream (see the header).
   const lean = rng();
-  const own = mulberry32(Math.floor(lean * 4294967296) ^ 0x5a17e3b1);
+  const seed = Math.floor(lean * 4294967296);
+  const own = mulberry32(seed ^ 0x5a17e3b1);
   // The rest of the fifty-six the plate crown took, taken and not spent: the
   // scatter stream draws each tree's yaw and the next tree's spot straight
   // after this returns, so a draw fewer here moves every prop on Harrowmead.
@@ -900,7 +964,7 @@ export function buildAshTree(
   const FOOT = -4.3;
   // The bole's girth, as [height above the foot, radius]: a flare into the
   // roots, the column, and the leader running on up the middle of the crown to
-  // die inside the top cluster. Inside the collider's 0.34 m half-width from
+  // die inside the top billow. Inside the collider's 0.34 m half-width from
   // 0.3 m up, flutes and bend included — 0.30 at chest height.
   const GIRTH: readonly Flat[] = [
     [-0.5, 0.46],
@@ -911,7 +975,7 @@ export function buildAshTree(
     [3.4, 0.25],
     [4.6, 0.2],
     [6.0, 0.14],
-    [7.8, 0.07],
+    [7.9, 0.065],
   ];
   const bendAmp = 0.04 + own() * 0.05;
   const bendRate = 0.4 + own() * 0.3;
@@ -934,11 +998,46 @@ export function buildAshTree(
   // Shallow flutes: an old ash's bark is ridged, and a section a few per cent
   // out of round is what the bands find as ridges running up the column.
   const flute = Array.from({ length: SIDES }, () => (own() - 0.5) * 0.08);
-  const trunk = loft("ash-trunk", GIRTH.map(([h]) => bole(h)), SIDES, scene, flute);
-  trunk.position.y = -FOOT;
-  trunk.material = bark;
-  trunk.rotation.z = (lean - 0.5) * 0.05;
 
+  // The FORK: where the boughs leave the bole, a little over head height —
+  // the bare bole under a broad crown is the silhouette (see the header).
+  // Everything above it sways and is measured from it; nothing below does.
+  const FORK = 3.7 + own() * 0.4;
+  const forkAt = bole(FORK);
+  const fork: V3 = [forkAt.x, forkAt.y, forkAt.z];
+  // How far from the fork the crown's rim is, the distance a vertex's bend
+  // is measured against: 1 there, a cantilever's curve inside it.
+  const SPAN = 4.6;
+  const rigAt = (p: V3, phase: number, edge = 0): [number, number] =>
+    swayRig(frondBend(v3dist(p, fork) / SPAN), phase, edge);
+  // Writes `rigAt` over every vertex of `data`, for a part the bough carries
+  // whole — wood, a heart.
+  const rigged = (data: VertexData, phase: number): VertexData => {
+    const pos = data.positions!;
+    const uvs = new Array<number>((pos.length / 3) * 2);
+    for (let i = 0; i < pos.length / 3; i++) {
+      const [u, v] = rigAt([pos[i * 3], pos[i * 3 + 1], pos[i * 3 + 2]], phase);
+      uvs[i * 2] = u;
+      uvs[i * 2 + 1] = v;
+    }
+    data.uvs = uvs;
+    return data;
+  };
+  // A part's geometry turned and moved, as a mesh's rotation and position
+  // would have — so a knee or an ivy leaf can be merged rather than parented.
+  const placed = (data: VertexData, x: number, y: number, z: number, ry: number, rx = 0, rz = 0): VertexData => {
+    data.transform(Matrix.RotationYawPitchRoll(ry, rx, rz).multiply(Matrix.Translation(x, y, z)));
+    return data;
+  };
+
+  // The bole, to a little over the fork, where the boughs bury their roots.
+  const boleParts: VertexData[] = [
+    loftData(
+      GIRTH.filter(([h]) => h < FORK + 0.3).map(([h]) => bole(h)).concat([bole(FORK + 0.3)]),
+      SIDES,
+      flute,
+    ),
+  ];
   // Root knees: the flare breaking into four or five low spurs where the bole
   // meets the ground — the thing that says a tree GREW here rather than was
   // stood here. Under 0.4 m where they leave the collider and falling to a few
@@ -949,8 +1048,7 @@ export function buildAshTree(
   for (let i = 0; i < knees; i++) {
     const a = (i / knees) * Math.PI * 2 + kneeTurn + (own() - 0.5) * 0.6;
     const end = 0.62 + own() * 0.3;
-    const knee = prism(
-      `ash-knee${i}`,
+    const knee = prismData(
       [
         [0.1, -0.4],
         [0.1, 0.55],
@@ -960,170 +1058,254 @@ export function buildAshTree(
         [end - 0.06, -0.4],
       ],
       [0.2, 0.2, 0.18, 0.13, 0.07, 0.07],
-      scene,
       // Inside the bole, and under the ground.
       { skip: [0, 5] },
     );
-    knee.parent = trunk;
-    knee.position.y = FOOT;
-    knee.rotation.y = a;
-    knee.material = bark;
+    boleParts.push(placed(knee, 0, FOOT, 0, a));
   }
 
-  // A cluster of leaf: overlapping lozenge plates, turned and tipped each its
-  // own way, the first centred exactly where the limb carrying it ends so the
-  // tip is buried in the middle of a plate (see the header). `size` scales the
-  // whole cluster; a limb's own is a metre and a half across, a side branch's
-  // a little smaller.
-  const cluster = (cx: number, cy: number, cz: number, count: number, size: number, out: number): void => {
-    for (let k = 0; k < count; k++) {
-      const off = k === 0 ? 0 : 0.35 + own() * 0.45;
-      const b = out + (own() - 0.5) * 2.4;
-      const up = k === 0 ? 0 : (own() - 0.35) * 0.7;
-      const A = (size * (2.3 + own() * 0.7)) / 2;
-      const B = (size * (1.4 + own() * 0.5)) / 2;
-      const j = () => 1 + (own() - 0.5) * 0.16;
-      const plate = prism(
-        "ash-leaf",
-        [
-          [1.18 * A * j(), (own() - 0.5) * 0.5 * B],
-          [0.58 * A * j(), 1.12 * B * j()],
-          [-0.52 * A * j(), 1.08 * B * j()],
-          [-1.18 * A * j(), (own() - 0.5) * 0.5 * B],
-          [-0.58 * A * j(), -1.12 * B * j()],
-          [0.52 * A * j(), -1.08 * B * j()],
-        ],
-        0.42 + own() * 0.14,
-        scene,
-        { plane: "xz" },
-      );
-      plate.parent = trunk;
-      plate.position.set(cx + Math.sin(b) * off, cy + up, cz + Math.cos(b) * off);
-      plate.rotation.y = own() * Math.PI * 2;
-      plate.rotation.z = (own() - 0.5) * 0.8;
-      plate.rotation.x = (own() - 0.5) * 0.7;
-      // The sun is on the top of the crown and the top of each cluster; the
-      // undersides and the heart are the shade — with a few exceptions,
-      // because a real crown is not banded (the maple's rule).
-      const sunny = cy + up - FOOT > 6.4 || up > 0.12;
-      plate.material = sunny !== own() < 0.15 ? leafLit : leaf;
-      marksSway(plate, "canopy");
-    }
+  // The CROWN's wood, every member of it rigged, and the billows it carries.
+  const wood: VertexData[] = [];
+  const clumps: AshClump[] = [];
+  // No billow's belly under this — what holds the lowest leaf where the
+  // header says it is. A cluster hangs at most ~0.2 m under the belly.
+  const LOWEST = 3.65 + FOOT;
+  // A billow's half-height for its half-width: a dome on a flatter belly.
+  const SQUAT = 0.68;
+  const addClump = (c: V3, r: number, phase: number): void => {
+    const h = r * SQUAT;
+    // Lifted rather than shrunk: a billow keeps its size and stands higher.
+    const y = Math.max(c[1], LOWEST + h * 0.85);
+    clumps.push({ c: [c[0], y, c[2]], r, h, phase });
   };
-
-  // A spray breaking the crown's edge: one pointed blade of leaf leaving a
-  // cluster outward and down, its inner end at the cluster's centre height and
-  // most of a metre inside the plate there. The ash's pinnate leaf read at the
-  // size of a bough, and what makes the silhouette LEAF rather than lozenges.
-  const spray = (cx: number, cy: number, cz: number, b: number): void => {
-    const len = 1.5 + own() * 0.5;
-    const w = 0.34 + own() * 0.1;
-    const l = len / 2;
-    const droop = 0.18 + own() * 0.26;
-    const blade = prism(
-      "ash-spray",
-      [
-        [-0.35 * w, -l],
-        [0.35 * w, -l],
-        [w, 0.05 * len],
-        [0, l],
-        [-w, 0.05 * len],
-      ],
-      0.12,
-      scene,
-      { plane: "xz" },
+  // A round member through `pts`, `r0` at its root and `r1` at its end.
+  const member = (pts: readonly V3[], r0: number, r1: number, sides: number, phase: number): void => {
+    const n = pts.length - 1;
+    wood.push(
+      rigged(
+        loftData(
+          pts.map(([x, y, z], i) => ({ x, y, z, r: r0 + ((r1 - r0) * i) / n })),
+          sides,
+        ),
+        phase,
+      ),
     );
-    blade.parent = trunk;
-    const reach = 0.75 + l * Math.cos(droop);
-    blade.position.set(cx + Math.sin(b) * reach, cy - Math.sin(droop) * l, cz + Math.cos(b) * reach);
-    blade.rotation.y = b;
-    blade.rotation.x = droop;
-    blade.material = own() < 0.5 ? leafLit : leaf;
-    marksSway(blade, "canopy");
+  };
+  // A run from `from` out on bearing `a`, leaving at elevation `e0` and
+  // easing to `e1` by its end, `len` long in `n` steps, each kinked a little —
+  // an ash's branching is in straight-ish runs that turn where a shoot grew,
+  // not in smooth arcs.
+  const run = (from: V3, a: number, e0: number, e1: number, len: number, n: number): V3[] => {
+    const pts: V3[] = [from];
+    for (let i = 0; i < n; i++) {
+      const u = (i + 0.5) / n;
+      const e = e0 + (e1 - e0) * u + (own() - 0.5) * 0.18;
+      const b = a + (own() - 0.5) * 0.22;
+      const d = len / n;
+      const p = pts[pts.length - 1];
+      pts.push([p[0] + Math.sin(b) * Math.cos(e) * d, p[1] + Math.sin(e) * d, p[2] + Math.cos(b) * Math.cos(e) * d]);
+    }
+    return pts;
   };
 
-  // The LIMBS: three or four, leaving the bole at staggered heights through a
-  // metre above head height, reaching out and then sweeping UP at the end —
-  // the ash's habit, and the one thing about its branching anybody knows.
-  //
-  // The crown they carry is a DOME in three storeys, and the storeys are what
-  // stop it reading as a savanna acacia — which is what one storey of
-  // clusters at the bough ends came out as, a flat green shelf on bare sticks.
-  // Each bough ends in a cluster; each throws a side branch off its first bend
-  // to a cluster lower and wider, the skirt that hides most of the bare wood;
-  // and over each bough's end, inward, a cluster of the upper crown that
-  // closes the shoulder of the dome toward the leader's own at the top. The
-  // upper storey carries no wood of its own: it overlaps the storey under it
-  // and the top, sways with both, and a bough into it would be inside leaf the
-  // whole way. The dome is still OPEN — the clusters are separate masses, and
-  // the sky and the boughs seen between them are half of what an ash is.
+  // The LEADER: on up the middle from the fork, carrying the top billow and
+  // the crown's crest. Its beat is the first; each bough below has its own.
+  const leaderPhase = rigPhase(seed * 1e-9, 0.5);
+  const leaderPts: V3[] = [];
+  for (let h = FORK - 0.25; h < 7.9; h += 0.9) {
+    const b = bole(h);
+    leaderPts.push([b.x, b.y, b.z]);
+  }
+  {
+    const b = bole(7.9);
+    leaderPts.push([b.x, b.y, b.z]);
+  }
+  wood.push(
+    rigged(
+      loftData(
+        leaderPts.map(([x, y, z]) => ({ x, y, z, r: bole(y - FOOT).r * 0.97 })),
+        6,
+      ),
+      leaderPhase,
+    ),
+  );
+  // The top billow: the biggest, over the leader's end, its crest the top of
+  // the tree (under 9.75 m with its clusters, inside `visualTop`).
+  const topR = 1.45 + own() * 0.2;
+  const crown = bole(8.6 - topR * SQUAT * 0.5);
+  addClump([crown.x + (own() - 0.5) * 0.4, crown.y, crown.z + (own() - 0.5) * 0.4], topR, leaderPhase);
+
+  // The BOUGHS: three or four, leaving the bole at staggered heights round
+  // the fork and climbing out at forty to fifty-five degrees, each easing
+  // flatter toward its end — the ash's habit. Each ends in a billow; most
+  // throw a side branch off their first third to a billow lower and further
+  // out, the skirt of the crown; and between each pair of boughs the leader
+  // carries a billow of the upper crown on a twig of its own, which closes the
+  // dome's shoulder. The crown is still OPEN — the billows are separate
+  // masses, and the sky and the boughs seen between them are half of what an
+  // ash is.
   const limbs = own() < 0.5 ? 4 : 3;
   const limbTurn = own() * Math.PI * 2;
+  const bearings: number[] = [];
   for (let i = 0; i < limbs; i++) {
-    const a = (i / limbs) * Math.PI * 2 + limbTurn + (own() - 0.5) * 0.5;
-    const fork = 2.9 + (i / limbs) * 0.8 + own() * 0.3;
-    const from = bole(fork);
-    const reach = 2.0 + own() * 0.5;
-    const tip = {
-      x: from.x + Math.sin(a) * reach,
-      y: 5.2 + (fork - 2.9) * 0.5 + own() * 0.6 + FOOT,
-      z: from.z + Math.cos(a) * reach,
-    };
-    const along = (f: number, rise: number, r: number): Ring => ({
-      x: from.x + (tip.x - from.x) * f,
-      y: from.y + (tip.y - from.y) * rise,
-      z: from.z + (tip.z - from.z) * f,
-      r,
-    });
-    // Out first and up last: the horizontal runs ahead of the rise until the
-    // last stretch, where the bough turns up into its leaf.
-    const path = [along(0, 0, 0.15), along(0.45, 0.3, 0.12), along(0.85, 0.66, 0.085), along(1, 1, 0.06)];
-    const limb = loft(`ash-limb${i}`, path, 6, scene);
-    limb.parent = trunk;
-    limb.material = bark;
-    cluster(tip.x, tip.y, tip.z, 3 + (own() < 0.5 ? 1 : 0), 1.1, a);
-    for (let s = own() < 0.5 ? 2 : 1; s > 0; s--) {
-      spray(tip.x, tip.y, tip.z, a + (own() - 0.5) * 1.4);
-    }
-    const ub = a + (own() - 0.5) * 0.7;
-    const ur = reach * (0.5 + own() * 0.15);
-    cluster(from.x + Math.sin(ub) * ur, tip.y + 1.3 + own() * 0.4, from.z + Math.cos(ub) * ur, 2, 1.1, ub);
+    const a = (i / limbs) * Math.PI * 2 + limbTurn + (own() - 0.5) * 0.6;
+    bearings.push(a);
+    const phase = rigPhase(a, i + lean);
+    const rootH = FORK - 0.35 + (i / limbs) * 0.7 + own() * 0.2;
+    const root = bole(rootH);
+    const e = 0.55 + own() * 0.2;
+    const len = 3.3 + own() * 0.8;
+    const pts = run([root.x, root.y, root.z], a, e + 0.2, e - 0.3, len, 4);
+    member(pts, root.r * 0.62, 0.06, 6, phase);
+    const tip = pts[pts.length - 1];
+    addClump([tip[0], tip[1] + 0.3, tip[2]], 1.35 + own() * 0.3, phase);
 
-    if (own() < 0.85) {
-      const base = path[1];
-      const side = a + (own() < 0.5 ? -1 : 1) * (0.7 + own() * 0.3);
-      const sr = reach * (0.95 + own() * 0.2);
-      const end = {
-        x: from.x + Math.sin(side) * sr,
-        // Never under 4.3 m, which is what holds the lowest leaf where the
-        // header says it is.
-        y: Math.max(tip.y - 0.9 - own() * 0.5, 4.3 + FOOT),
-        z: from.z + Math.cos(side) * sr,
-      };
-      // Out of the limb's first bend, where it is still thick enough to bury
-      // a branch half its girth.
-      const twig = loft(
-        `ash-branch${i}`,
-        [
-          { ...base, r: 0.075 },
-          { x: (base.x + end.x) / 2, y: base.y + (end.y - base.y) * 0.45, z: (base.z + end.z) / 2, r: 0.055 },
-          { ...end, r: 0.04 },
-        ],
-        5,
-        scene,
-      );
-      twig.parent = trunk;
-      twig.material = bark;
-      cluster(end.x, end.y, end.z, 2, 0.95, side);
-      if (own() < 0.5) spray(end.x, end.y, end.z, side + (own() - 0.5) * 0.8);
+    if (own() < 0.9) {
+      // Out of the bough's first bend, where it is still thick enough to bury
+      // a branch half its girth, and out flatter than the bough.
+      const base = pts[1];
+      const side = a + (own() < 0.5 ? -1 : 1) * (0.55 + own() * 0.35);
+      const bp = run(base, side, 0.4 + own() * 0.2, 0.0, 1.9 + own() * 0.6, 3);
+      member(bp, 0.08, 0.04, 5, phase);
+      const end = bp[bp.length - 1];
+      addClump([end[0], end[1] + 0.2, end[2]], 1.1 + own() * 0.3, phase);
     }
   }
+  // The shoulder: a billow between each pair of boughs, out from the leader
+  // on a twig, in the upper crown.
+  const sorted = [...bearings].sort((p, q) => p - q);
+  for (let i = 0; i < sorted.length; i++) {
+    if (own() < 0.1) continue;
+    const next = i + 1 < sorted.length ? sorted[i + 1] : sorted[0] + Math.PI * 2;
+    const a = (sorted[i] + next) / 2 + (own() - 0.5) * 0.4;
+    const from = bole(5.3 + own() * 0.8);
+    const tp = run([from.x, from.y, from.z], a, 0.5, 0.25, 1.6 + own() * 0.6, 2);
+    member(tp, 0.07, 0.04, 5, leaderPhase);
+    const end = tp[tp.length - 1];
+    addClump([end[0], end[1] + 0.25, end[2]], 1.2 + own() * 0.3, leaderPhase);
+  }
 
-  // The top: the leader's own cluster, over the middle, and what rounds the
-  // dome off instead of leaving a ring of clusters round a hole. The leader
-  // stops a fifth of a metre under its centre.
-  const top = bole(8.0);
-  cluster(top.x, top.y, top.z, 3, 1.15, own() * Math.PI * 2);
+  // The HEARTS and the LEAF CLUSTERS on them.
+  const hearts: VertexData[] = [];
+  const lit = newSheet();
+  const shade = newSheet();
+  const crestY = Math.max(...clumps.map((k) => k.c[1]));
+  const baseY = Math.min(...clumps.map((k) => k.c[1]));
+  const sphere = geodesic(1);
+  // How far out the heart reaches and the clusters' stalks sit, as shares of
+  // a billow's size, and how many clusters a square metre of it carries at
+  // full detail. The skin is laid OUTSIDE the heart by most of a cluster's
+  // reach, so a leaflet never buries its point in it.
+  const HEART = 0.66;
+  const SKIN = 0.86;
+  const DENSITY = 2.0;
+  // Is `p` under billow `o`'s skin, near enough — where no cluster can be
+  // seen past that billow's own.
+  const inside = (o: AshClump, p: V3): boolean => {
+    const dx = (p[0] - o.c[0]) / (o.r * SKIN);
+    const dy = (p[1] - o.c[1]) / (o.h * SKIN * (p[1] < o.c[1] ? 0.62 : 1));
+    const dz = (p[2] - o.c[2]) / (o.r * SKIN);
+    return dx * dx + dy * dy + dz * dz < 0.85;
+  };
+  clumps.forEach((k, ci) => {
+    const [cx, cy, cz] = k.c;
+    // The billow's own stream: everything below is drawn from it and nothing
+    // else is, so a coarser `detail` re-lays the clusters and moves nothing.
+    const leafRng = mulberry32((seed ^ 0x2d9e61c7) + ci * 7919);
+    // The surface a billow's shape is, at direction `u`: the dome over a belly
+    // half as deep, each billow lumpy in its own way — three slow bumps.
+    const lumps = Array.from({ length: 3 }, () => ({
+      d: v3unit([leafRng() - 0.5, leafRng() * 0.8 - 0.2, leafRng() - 0.5]),
+      k: 0.1 + leafRng() * 0.12,
+    }));
+    const shape = (u: V3, s: number): V3 => {
+      let f = 1;
+      for (const { d, k: amp } of lumps) f += amp * Math.max(0, u[0] * d[0] + u[1] * d[1] + u[2] * d[2]) ** 2;
+      const belly = u[1] < 0 ? 0.62 : 1;
+      return [cx + u[0] * k.r * f * s, cy + u[1] * k.h * f * s * belly, cz + u[2] * k.r * f * s];
+    };
+    // The heart: the geodesic carried out to two thirds of the billow, its
+    // vertices SHARED — the cel shader shades the facet, so a shared vertex
+    // costs nothing in looks and 4/5 of the vertices.
+    const hp: number[] = [];
+    const hn: number[] = [];
+    for (const u of sphere.pts) {
+      const p = shape(u as unknown as V3, HEART);
+      hp.push(p[0], p[1], p[2]);
+      hn.push(u[0], u[1], u[2]);
+    }
+    const hi: number[] = [];
+    for (const [a, b, c] of sphere.faces) tri(hi, hp, a, b, c, hn.slice(a * 3, a * 3 + 3));
+    const hd = new VertexData();
+    hd.positions = hp;
+    hd.normals = hn;
+    hd.indices = hi;
+    hd.uvs = [];
+    hearts.push(rigged(hd, k.phase));
+
+    // The clusters, sown over the billow on a Fibonacci spiral so they cover
+    // it evenly, as many as its area wants at full detail and a share of
+    // that below it, each grown to cover the gaps (`detail` in the header).
+    const area = 4 * Math.PI * ((k.r * k.r + 2 * k.r * k.h) / 3);
+    const full = Math.round(area * DENSITY);
+    const n = Math.max(6, Math.round(full * detail));
+    const grow = Math.min(CONFIG.graphics.foliage.maxGrow, Math.sqrt(full / n));
+    const turn = leafRng() * Math.PI * 2;
+    // How much of the light a billow is in: the crown's top storey most, its
+    // skirt least.
+    const storey = crestY > baseY ? (cy - baseY) / (crestY - baseY) : 1;
+    for (let j = 0; j < n; j++) {
+      const y = 1 - (2 * (j + 0.5)) / n;
+      const ring = Math.sqrt(Math.max(0, 1 - y * y));
+      const th = j * 2.39996 + turn + (leafRng() - 0.5) * 0.5;
+      const u = v3unit([Math.cos(th) * ring, y + (leafRng() - 0.5) * 0.12, Math.sin(th) * ring]);
+      const L = (0.46 + leafRng() * 0.14) * grow;
+      const lift = 0.25 + leafRng() * 0.3;
+      const tone = leafRng() - 0.5;
+      // The belly gets half as many: it is mostly in the heart's shade, but
+      // a crown seen from under it is leaf, not a dark ball.
+      if (u[1] < -0.45 && tone > 0) continue;
+      const p = shape(u, SKIN);
+      // Under another billow's skin, where nothing can see it.
+      if (clumps.some((o, oi) => oi !== ci && inside(o, p))) continue;
+      // Outward off the billow's surface: the ellipsoid's gradient, the belly
+      // being the flatter half.
+      const hb = u[1] < 0 ? k.h * 0.62 : k.h;
+      const out = v3unit([(p[0] - cx) / (k.r * k.r), (p[1] - cy) / (hb * hb), (p[2] - cz) / (k.r * k.r)]);
+      // Laid flatter toward the crest, where a tipped rim stands up against
+      // the sky as a plate rather than lying over the cluster below it.
+      const crest = Math.max(0, out[1]) ** 2;
+      const sunny = out[1] + storey * 0.6 + 0.05 + tone * 0.6 > 0;
+      ashCluster(sunny ? lit : shade, p, out, L, lift * (1 - 0.7 * crest), leafRng, (q, edge) =>
+        rigAt(q, k.phase, edge),
+      );
+    }
+  });
+
+  const part = (name: string, data: VertexData[] | Sheet, material: typeof bark, sways: boolean): void => {
+    const merged = Array.isArray(data)
+      ? data.length
+        ? data[0].merge(data.slice(1))
+        : null
+      : data.indices.length
+        ? sheetData(data)
+        : null;
+    if (!merged) return;
+    const mesh = partSurface(name, merged, scene);
+    mesh.parent = trunk;
+    mesh.material = material;
+    if (sways) marksSway(mesh, "bough");
+  };
+  const trunk = partSurface("ash-trunk", boleParts[0].merge(boleParts.slice(1)), scene);
+  trunk.position.y = -FOOT;
+  trunk.material = bark;
+  trunk.rotation.z = (lean - 0.5) * 0.05;
+  // Emitted leaf first and hearts last: the merge keeps the order, so the
+  // depth test rejects the heart behind the clusters instead of shading it.
+  part("ash-leaf-lit", lit, leafLit, true);
+  part("ash-leaf", shade, leaf, true);
+  part("ash-boughs", wood, bark, true);
+  part("ash-hearts", hearts, heart, true);
 
   // IVY on some of the boles — the hedgerow's own climber, and the one detail
   // on this tree at the height a player actually looks. A dark stem winding up
@@ -1134,7 +1316,7 @@ export function buildAshTree(
   // with the bark and costs nothing but its vertices.
   if (own() < 0.35) {
     const from = 0.1;
-    const to = 2.6 + own() * 1.8;
+    const to = 2.6 + own() * 1.2;
     const turns = (0.8 + own() * 0.7) * (own() < 0.5 ? 1 : -1);
     const phase = own() * Math.PI * 2;
     const wind = (t: number, off: number): Ring & { th: number } => {
@@ -1144,27 +1326,23 @@ export function buildAshTree(
       return { x: b.x + Math.sin(th) * r, y: b.y, z: b.z + Math.cos(th) * r, r: 0, th };
     };
     const steps = 8;
-    const stem = loft(
-      "ash-ivy",
-      Array.from({ length: steps }, (_, i) => ({
-        ...wind(i / (steps - 1), 0.025),
-        r: 0.03 - (0.015 * i) / (steps - 1),
-      })),
-      4,
-      scene,
-    );
-    stem.parent = trunk;
-    stem.material = mats.get(VINE);
-    const dark = mats.get(IVY);
-    const vine = mats.get(VINE);
+    const vineParts: VertexData[] = [
+      loftData(
+        Array.from({ length: steps }, (_, i) => ({
+          ...wind(i / (steps - 1), 0.025),
+          r: 0.03 - (0.015 * i) / (steps - 1),
+        })),
+        4,
+      ),
+    ];
+    const darkParts: VertexData[] = [];
     const count = 12 + Math.floor(own() * 8);
     for (let k = 0; k < count; k++) {
       const at = wind((k + 0.5 + (own() - 0.5) * 0.8) / count, 0.03);
       // Offset round the stem a little either side, so the leaves read as a
       // growth on the bark rather than beads on a string.
       const s = 0.8 + own() * 0.5;
-      const ivy = prism(
-        "ash-ivy-leaf",
+      const ivy = prismData(
         [
           [0, 0.02 * s],
           [0.09 * s, -0.05 * s],
@@ -1174,18 +1352,94 @@ export function buildAshTree(
           [-0.09 * s, -0.05 * s],
         ],
         0.025,
-        scene,
       );
-      ivy.parent = trunk;
-      ivy.position.set(at.x, at.y + (own() - 0.5) * 0.1, at.z);
-      ivy.rotation.y = at.th + (own() - 0.5) * 0.35;
-      ivy.rotation.z = (own() - 0.5) * 1.6;
-      ivy.rotation.x = -(0.15 + own() * 0.25);
-      ivy.material = own() < 0.3 ? vine : dark;
+      const y = at.y + (own() - 0.5) * 0.1;
+      const ry = at.th + (own() - 0.5) * 0.35;
+      const rz = (own() - 0.5) * 1.6;
+      const rx = -(0.15 + own() * 0.25);
+      (own() < 0.3 ? vineParts : darkParts).push(placed(ivy, at.x, y, at.z, ry, rx, rz));
     }
+    part("ash-ivy", vineParts, mats.get(VINE), false);
+    part("ash-ivy-leaf", darkParts, mats.get(IVY), false);
   }
   return trunk;
 }
+
+/**
+ * One LEAF CLUSTER of an ash crown (`buildAshTree`): a ROSETTE of `ASH_TIPS`
+ * leaf points round a stalk at `p`, laid on a billow whose outward normal
+ * there is `out`, `L` its reach from stalk to point.
+ *
+ * Tipped DOWN the billow's slope by `lift` radians, so on a dome every
+ * cluster's lower rim stands off the surface over the cluster below it like a
+ * scale — a step in depth the ink draws as the reference's scalloped strokes
+ * — and CUPPED, its stalk standing proud of its points, so each leaf point is
+ * creased into a lit half and a shade half and the rosette bands as a little
+ * dome of its own. Its rim runs out to a point and back to a notch once per
+ * leaf, so where a cluster meets the sky the crown's edge is serrated rather
+ * than round. A full rosette rather than a fan: a fan leaves the billow
+ * showing through behind its stalk, and a rosette covers what it is laid on.
+ *
+ * Built as `featherBlade` builds a leaflet, and for its reasons: a CLOSED
+ * lens (the world's shadow map records back faces), the top and the underside
+ * SHARING every rim vertex, and each rim vertex given its own direction out
+ * from the stalk as its normal — which lies in both faces it bounds on each
+ * side, so the stalk's vertex alone decides which way a face looks.
+ * `2 + 2 * ASH_TIPS` vertices a cluster. `rig` is each vertex's sway rig,
+ * from where it is and how far out on the cluster (`edge`, 1 at a point).
+ */
+function ashCluster(
+  into: Sheet,
+  p: V3,
+  out: V3,
+  L: number,
+  lift: number,
+  rnd: () => number,
+  rig: (q: V3, edge: number) => [number, number],
+): void {
+  // Down the slope: the downward vertical laid into the surface. Near the
+  // crest there is no slope to follow, and any heading will do.
+  let d = v3add([0, -1, 0], out, out[1]);
+  if (Math.hypot(d[0], d[1], d[2]) < 0.3) d = v3cross(out, v3unit([rnd() - 0.5, 0, rnd() - 0.5]));
+  d = v3unit(d);
+  // The cluster's own face: tipped from the billow's by `lift`, so its lower
+  // rim stands off the surface.
+  const m = v3unit(v3add(v3add([0, 0, 0], out, Math.cos(lift)), d, -Math.sin(lift)));
+  const fwd = v3unit(v3add(d, m, -(d[0] * m[0] + d[1] * m[1] + d[2] * m[2])));
+  const side = v3cross(m, fwd);
+  // The stalk, proud of the rim by the cup, and a little inside the surface,
+  // so the cluster grows out of the billow rather than being stuck on it.
+  const cup = L * (0.2 + rnd() * 0.12);
+  const base = v3add(v3add(p, out, -0.04), m, cup);
+  const top = sheetVert(into, base, m, rig(base, 0));
+  const ub = v3add(base, m, -Math.min(0.06, cup * 0.6));
+  const under = sheetVert(into, ub, v3add([0, 0, 0], m, -1), rig(ub, 0));
+  // The rim, pushed DOWN-slope of the stalk (the downslope points longest),
+  // so the cluster hangs from its stalk as a leaf cluster does.
+  const turn = rnd() * Math.PI * 2;
+  const rim: number[] = [];
+  for (let k = 0; k < ASH_TIPS * 2; k++) {
+    const point = k % 2 === 0;
+    const a = turn + (k / (ASH_TIPS * 2)) * Math.PI * 2 + (rnd() - 0.5) * (point ? 0.35 : 0.15);
+    const ca = Math.cos(a);
+    const sa = Math.sin(a);
+    const hang = 1 + 0.25 * ca;
+    const r = L * hang * (point ? 0.78 + rnd() * 0.36 : 0.62 + rnd() * 0.12);
+    const dir = v3unit(v3add(v3add([0, 0, 0], fwd, ca), side, sa));
+    // A point falls a little further than a notch, so each leaf curls.
+    const q = v3add(v3add(base, dir, r), m, -cup * (point ? 1.15 : 0.85));
+    rim.push(sheetVert(into, q, dir, rig(q, point ? 1 : 0.55)));
+  }
+  for (let k = 0; k < rim.length; k++) {
+    const a = rim[k];
+    const b = rim[(k + 1) % rim.length];
+    sheetFace(into, top, a, b);
+    sheetFace(into, under, b, a);
+  }
+}
+
+/** How many leaf points round each of an ash crown's clusters. */
+const ASH_TIPS = 7;
 
 /**
  * Where one liana strand takes hold, in the trunk's own frame relative to the
