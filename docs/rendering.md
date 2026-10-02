@@ -783,27 +783,15 @@ the bole, and a fern blade leaves its crown at 0.42 m where the ramp has given
 it four centimetres, against a crown 0.3 m across. Marking something whose join
 is neither is what tears.
 
-**What sways is leaf, and what does not is the column holding it up.** A canopy
-tree's plates, fronds and drooping tips lean; its trunk and buttresses do not,
-and the crown does not come off the bole because a plate is centred ON the axis
-and metres across, so a third of a metre of drift is spent inside its own
-overlap. The trunk is left out because a long thing lying ALONG the ramp would
-*bend*, and a bending column is the one shape a vertex ramp cannot draw
-honestly. Fern blades and their tips are the understory layer, at half the
-travel — that is the layer the player walks through, and the one place a sway
-big enough to notice is also big enough to read as the world sliding; its two
-numbers are set against the grass beside it rather than in the abstract, so a
-fern tip moves about 0.09 m where a blade of grass moves 0.16.
-
-**The liana veil is the case that makes the ramp look designed rather than
-lucky**, and it is on the canopy layer despite hanging at eye level. A strand
-does not touch the collar on the trunk — it hangs in the air out under the
-frond whose azimuth `buildJungleTree` measured it against — so the top of a
-strand and the blade above it are at nearly the same height, get nearly the same
-weight, and travel together with no join to shear. Further down the ramp gives
-less, so the hem TRAILS the branch instead of swinging rigidly with it, which is
-the one thing a hand-authored version would have had to fake. The collar itself
-is left out, because it is a thickening on the bole and the bole does not move.
+**What sways is leaf, and what does not is the column holding it up.** A
+tree's leaf leans; its trunk and buttresses do not. The trunk is left out
+because a long thing lying ALONG the ramp would *bend*, and a bending column is
+the one shape a vertex ramp cannot draw honestly. Fern blades and their tips are
+the understory layer, at half the travel — that is the layer the player walks
+through, and the one place a sway big enough to notice is also big enough to
+read as the world sliding; its two numbers are set against the grass beside it
+rather than in the abstract, so a fern tip moves about 0.09 m where a blade of
+grass moves 0.16.
 
 **Cloth is the ramp's inverse case, and the ramp LOSES it.** Everything above is
 planted at the bottom and free at the top, which is the shape the ramp draws:
@@ -878,6 +866,73 @@ Two consequences are worth stating plainly, because both look like bugs:
   the better of the two answers here, and at Greyfen's 28-degree sun a frond
   throws its shadow nineteen metres, where nobody is correlating one leaf with
   one patch of light.
+
+**The ramp cannot draw a PALM CROWN, and it failed in the most visible way it
+could.** Every frond on a jungle palm leaves the crown head between nine and
+eleven metres up, and a ramp in height hands every one of them very nearly the
+same travel — so the whole crown slid back and forth as one piece over a head
+and a bole that stood still. That is the ramp's whole premise (one number per
+vertex, from where it ended up) meeting a shape whose motion is decided by
+where each leaf is ATTACHED, which the merge throws away.
+
+**So a layer may be RIGGED instead (`frond`, `rig: true`), and the anchor the
+merge throws away is written BEFORE it.** The builder still knows each frond's
+root, so `pinnateBlade` writes every vertex's place on its own frond into the
+`uv` buffer (`swayRig`): how much of the tip's travel it takes (`frondBend`, a
+uniformly loaded cantilever's deflection — zero with zero slope at the root),
+the frond's phase, and how far out from the rib to a pinna's point it is. That
+is `writePaletteIndex`'s trick: a merge concatenates vertex data, so a
+per-vertex value survives it where a per-mesh one does not. Three rules hold it
+together:
+
+- **Everything a rig says is a SCALAR.** The merge bakes a placement into
+  positions and normals and leaves `uv` exactly as it found it, so a position
+  or a direction written there would be in the prop's frame on a mesh that is
+  in the world's. A frond's heading is the one thing the motion would like and
+  cannot have; the flap is vertical and the swing crosswind instead.
+- **`uv` is the buffer because it was already there and nobody read it.**
+  Every part in the world carries filler UVs (the merge's all-or-nothing rule),
+  so a rig costs no memory and no new buffer; the cel shader declares `uv` on
+  every material and reads it only behind a NEGATIVE red channel, which only a
+  rigged layer's bake writes (`RIGGED`). A ramp is never negative, so the
+  vertex stage's branch stays coherent per draw and 0 still means planted.
+- **A rigged layer takes no ramp at all.** The head and the bole do not move,
+  so any ramp on a frond is a slide at its root. Every frond's root has a bend
+  of 0, and the crown cannot come off the head whatever the numbers say.
+
+**What it draws is three motions over the one gust** (`CONFIG.wind.frond`).
+The gust is the ramp's own travelling field, so a gust still rolls across a
+stand, but it is spent as a PRESSURE: the crown is pushed downwind and never
+pulled back past rest, where the ramp's symmetric swing leaned every crown
+INTO the wind half the time. Under it each frond flaps and swings on a phase
+AND a rate of its own (±15%), so a crown's fronds drift in and out of step
+rather than nodding together, harder inside a gust than out of one. Over it the
+pinnae flutter on a short wave running along the frond — nothing at the rib,
+most at a point. No normal is moved for any of it: the cel shader's facets come
+off the displaced position, so a turning pinna catches the light by itself.
+The phase is hashed from numbers the builder had already drawn (`rigPhase`), so
+the rig took no draw from any stream and moved no tree, pinna or vine.
+
+**The liana veil rides its frond rather than having a motion of its own.** A
+strand hangs from a blade `buildJungleTree` measured it against, and it carries
+that frond's phase and its bend AT THE HANG on every vertex (`LianaHang.bend`,
+`phase`) — so the top of the strand and the rib above it compute the same
+displacement and there is no join to shear. Left on the canopy ramp it hung
+from nothing: a third of a metre of travel under a blade that moves a few
+centimetres there. The collar and the strand hung on the bole carry a bend of
+0, because the bole does not move.
+
+**What it measured**, Greyfen at 1920x1080 on the Windows box, two runs each
+way round a jungle stand: 460.5/460.8 fps against 464.1/464.8 under the
+canopy, 471.2/468.2 against 458.8/471.4 across the stand — inside the run to
+run spread — and 484.2/486.4 against 434.6/434.8 from a high oblique, faster
+both times for a reason not chased down.
+
+**The other layers stay on the ramp, and a builder that moves one across owes
+the rig on every vertex of every mesh it marks**, the merge key keeping a rigged
+group apart from a ramped one. The pine's whorls, the ash's crown and the date
+palm's fronds are all candidates; the hung cloth is the case `FINDINGS.md` 33
+was waiting for.
 
 The clock is `CelMaterialFactory.updateWind`, advanced from
 `updateCameraAndLighting` beside the grass field's rather than from `Game.tick`

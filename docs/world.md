@@ -736,13 +736,16 @@ owes it. A builder marks foliage with `marksSway` (`src/world/sway.ts`), and
 leaves its box behind, so `PROP_BODIES` is the list to check against first. And
 the mark is part of the merge KEY, so a merged mesh is unanimously foliage or
 unanimously not; a group that disagreed would be handed one layer's ramp for
-both. Today it is a canopy tree's plates, fronds and tips, the liana veil
-hanging off them, a hedgerow ash's crown, a pine's needle tiers and a fern's
-blades — never a trunk, never a LIMB (which is the trunk's argument at half the
-length: a long thin thing lying along the ramp is the one shape a vertex ramp
-cannot bend honestly), and never the collar a veil is hung from. See
-`docs/rendering.md` for the ramp, for why the trunk is left out and for what a
-swaying group gives up.
+both. Today it is a jungle palm's fronds and the liana veil hanging off them
+(the one RIGGED layer, `frond`), a hedgerow ash's crown, a pine's needle tiers
+and a fern's blades — never a trunk, never a LIMB (which is the trunk's argument
+at half the length: a long thin thing lying along the ramp is the one shape a
+vertex ramp cannot bend honestly), and never the collar a veil is hung from.
+**A mesh marked `frond` owes a RIG in its `uv`** (`swayRig`, written before the
+merge) — the shader reads that buffer for that layer and for nothing else, so a
+frond-marked part left on filler moves by whatever its filler happens to say.
+See `docs/rendering.md` for the ramp, the rig, why the trunk is left out and
+what a swaying group gives up.
 
 **The floor is a height field, not a flat plane.** A `Heightfield` feeds a
 `TerrainField` (`src/world/TerrainField.ts`), the one place the ground's

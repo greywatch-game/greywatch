@@ -52,7 +52,9 @@
  * viewmodel, every grenade and every effect mesh stands perfectly still in a
  * gale without carrying a byte, and the shader needs no define and no branch it
  * would not have taken anyway. `world/sway.ts` owns what the number MEANS; this
- * file owns where it lands.
+ * file owns where it lands. **It may be NEGATIVE**: a RIGGED layer's vertex is
+ * written `RIGGED` (-1), which no ramp produces, and that sign is what sends
+ * the shader to the rig the builder wrote into `uv` instead.
  *
  * The BLUE channel is the fourth and the trick's last free slot: how far up
  * from the ground this vertex is, as a straight line through 1 at the footing

@@ -340,6 +340,12 @@ attribute normal: vec3f;
 // mask 0 (not world) and sway 0 (planted). Every rig, the viewmodel and every
 // effect mesh is therefore correct without carrying one.
 attribute color: vec4f;
+// A RIGGED vertex's place on its own frond (world/sway.ts's swayRig): x is how
+// much of a frond's tip travel it takes, y the edge in its whole part and the
+// frond's phase in its fraction. Read ONLY when the red channel is negative,
+// which only a rigged layer's bake writes — every other world part carries
+// filler here, and a mesh with no uv buffer at all reads the empty one.
+attribute uv: vec2f;
 
 #ifdef CEL_PALETTE
 // The albedo's 1-based slot in \`celPalette\`, written per source mesh by
@@ -371,6 +377,11 @@ uniform viewProjection: mat4x4f;
 uniform windTime: f32;
 uniform windDir: vec2f;
 uniform windParams: vec3f;
+// A rigged frond's answer to it (CONFIG.wind.frond): windFrond is the tip's
+// (lean, flap, swing, flutter) in metres, windFrondRate is (calm share, flap
+// rad/s, flutter rad/s, flutter wavenumber).
+uniform windFrond: vec4f;
+uniform windFrondRate: vec4f;
 
 varying vNormalW: vec3f;
 varying vPosW: vec3f;
@@ -408,7 +419,7 @@ fn main(input: VertexInputs) -> FragmentInputs {
   // sines, the second at 2.33x so the field never repeats on a clean beat,
   // phased along the wind's own bearing so a gust TRAVELS rather than every
   // crown leaning at once.
-  if (vertexInputs.color.r > 0.0) {
+  if (vertexInputs.color.r != 0.0) {
     // Subtracted, not added: a gust has to travel WITH the wind, and a wave
     // whose phase runs the other way rolls up the valley against the lean of
     // everything in it. The grass shader adds instead, and gets away with it
@@ -416,13 +427,50 @@ fn main(input: VertexInputs) -> FragmentInputs {
     let phase = dot(worldPos.xz, uniforms.windDir) * uniforms.windParams.z;
     let gust = sin(uniforms.windTime * uniforms.windParams.y - phase)
       + 0.5 * sin(uniforms.windTime * uniforms.windParams.y * 2.33 - phase * 1.71);
-    // Two component writes rather than one swizzle write: WGSL allows an
-    // assignment to a single component and forbids one to a multi-component
-    // swizzle, so the GLSL "worldPos.xz +=" has to be spelled out.
-    let lean =
-      uniforms.windDir * (gust * uniforms.windParams.x * vertexInputs.color.r);
-    worldPos.x += lean.x;
-    worldPos.z += lean.y;
+    if (vertexInputs.color.r > 0.0) {
+      // The RAMP: one lateral swing along the bearing, as much of it as the
+      // height above the ground entitles this vertex to.
+      // Two component writes rather than one swizzle write: WGSL allows an
+      // assignment to a single component and forbids one to a multi-component
+      // swizzle, so the GLSL "worldPos.xz +=" has to be spelled out.
+      let lean =
+        uniforms.windDir * (gust * uniforms.windParams.x * vertexInputs.color.r);
+      worldPos.x += lean.x;
+      worldPos.z += lean.y;
+    } else {
+      // The RIG (world/sway.ts): this vertex knows where it is on its own
+      // frond, so the frond bends from its root and no two move as one.
+      let bend = vertexInputs.uv.x;
+      let edge = floor(vertexInputs.uv.y) / 63.0;
+      let tau = fract(vertexInputs.uv.y) * 6.2831853;
+      // The same gust as the ramp's, read as PRESSURE: 0 in a lull, 1 at the
+      // top of a gust, squared so a gust arrives rather than the wind simply
+      // breathing. It only ever pushes downwind — nothing leans into a wind.
+      let g = clamp(0.5 + gust / 3.0, 0.0, 1.0);
+      let press = g * g;
+      let t = uniforms.windTime;
+      // Each frond on its own rate (+-15%) as well as its own phase, so a
+      // crown's fronds drift in and out of step instead of nodding together.
+      let rate = uniforms.windFrondRate.y * (0.85 + 0.3 * fract(tau * 1.618));
+      let flap = sin(t * rate + tau) + 0.35 * sin(t * rate * 2.17 + tau * 3.1);
+      let swing = sin(t * rate * 0.61 + tau * 5.3);
+      let stir = 0.45 + 0.55 * press;
+      let down = uniforms.windFrond.x * mix(uniforms.windFrondRate.x, 1.0, press);
+      let across = uniforms.windFrond.z * swing * stir;
+      let crosswind = vec2f(-uniforms.windDir.y, uniforms.windDir.x);
+      let sway = (uniforms.windDir * down + crosswind * across) * bend;
+      // The pinnae: a ripple running along the frond on a short wave, so the
+      // fringe flutters rather than shivers in unison — nothing at the rib,
+      // most at a pinna's point, and more out along the frond than near it.
+      let ripple = sin(t * uniforms.windFrondRate.z
+        - dot(worldPos.xyz, vec3f(0.71, 0.45, 0.54)) * uniforms.windFrondRate.w
+        + tau * 7.0);
+      let flutter = uniforms.windFrond.w * edge * (0.3 + 0.7 * bend)
+        * (0.35 + 0.65 * press) * ripple;
+      worldPos.x += sway.x;
+      worldPos.z += sway.y;
+      worldPos.y += uniforms.windFrond.y * flap * stir * bend + flutter;
+    }
   }
 
   // WGSL has no mat4 -> mat3 conversion, so the upper-left block is taken by
@@ -1789,6 +1837,8 @@ export class CelMaterialFactory {
     "windTime",
     "windDir",
     "windParams",
+    "windFrond",
+    "windFrondRate",
     ...GI_UNIFORM_NAMES,
   ];
   /**
@@ -1801,8 +1851,13 @@ export class CelMaterialFactory {
    * varying would read whatever the driver left there. With it declared and no
    * buffer bound the attrib array is simply disabled, which is the defined
    * `(0, 0, 0, 1)` the whole design leans on.
+   *
+   * `uv` is on all of them for the same reason: the vertex stage declares it
+   * unconditionally for the RIGGED sway layer (`world/sway.ts`), and reads it
+   * only behind a negative red channel, which nothing but a rigged layer's
+   * bake writes. It derives no define, so a frozen material is unaffected.
    */
-  private static readonly ATTRIBUTES = ["position", "normal", "color"];
+  private static readonly ATTRIBUTES = ["position", "normal", "color", "uv"];
   /**
    * The same, plus the palette index, for the two materials that read one.
    *
@@ -1817,6 +1872,7 @@ export class CelMaterialFactory {
     "position",
     "normal",
     "color",
+    "uv",
     "uv2",
   ];
   /**
@@ -3533,6 +3589,12 @@ export class CelMaterialFactory {
         w.foliage.speed,
         (Math.PI * 2) / w.foliage.gust,
       ),
+    );
+    const f = w.frond;
+    mat.setVector4("windFrond", new Vector4(f.lean, f.flap, f.swing, f.flutter));
+    mat.setVector4(
+      "windFrondRate",
+      new Vector4(f.calm, f.flapRate, f.flutterRate, (Math.PI * 2) / f.flutterWave),
     );
   }
 

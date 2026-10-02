@@ -16,13 +16,22 @@
  * curtain has to hang from a crown and scatter placement is what pushed it
  * away from every crown on the map. Its own header carries the measurement.
  */
-import { Matrix, Mesh, MeshBuilder, Scene, Vector3, VertexData } from "@babylonjs/core";
+import {
+  CreateBoxVertexData,
+  CreateCylinderVertexData,
+  Matrix,
+  Mesh,
+  MeshBuilder,
+  Scene,
+  Vector3,
+  VertexData,
+} from "@babylonjs/core";
 import { CONFIG } from "../config";
 import type { CelMaterialFactory } from "../shaders/CelShader";
 import { flameData } from "./flame";
 import { partBox, partCylinder, partSurface } from "./parts";
 import { mulberry32 } from "./rng";
-import { marksSway } from "./sway";
+import { frondBend, marksSway, rigPhase, swayRig } from "./sway";
 
 /**
  * Scatter props for Hollowmere — the loose dressing that fills space between
@@ -1180,6 +1189,13 @@ export interface LianaHang {
   a: number;
   r: number;
   y: number;
+  /**
+   * The frond's motion where the strand takes hold — `frondBend` of how far
+   * along it, and its phase — so the strand rides the blade it hangs off
+   * (`world/sway.ts`). 0 for a strand on the bole, which does not move.
+   */
+  bend: number;
+  phase: number;
 }
 
 /** A point in a part's own plane — see `prism`. */
@@ -1251,12 +1267,16 @@ interface Sheet {
   indices: number[];
 }
 const newSheet = (): Sheet => ({ positions: [], normals: [], uvs: [], indices: [] });
-/** A vertex at `p` facing `n` (normalised here); returns its index. */
-function sheetVert(s: Sheet, p: V3, n: V3): number {
+/**
+ * A vertex at `p` facing `n` (normalised here); returns its index. `uv` is a
+ * sway RIG (`swayRig`) for a sheet on a rigged layer, and filler otherwise.
+ */
+function sheetVert(s: Sheet, p: V3, n: V3, uv?: readonly [number, number]): number {
   const l = Math.hypot(n[0], n[1], n[2]) || 1;
   s.positions.push(p[0], p[1], p[2]);
   s.normals.push(n[0] / l, n[1] / l, n[2] / l);
-  s.uvs.push(p[0], p[1] + p[2]);
+  if (uv) s.uvs.push(uv[0], uv[1]);
+  else s.uvs.push(p[0], p[1] + p[2]);
   return s.positions.length / 3 - 1;
 }
 /** A triangle, wound off its first vertex's normal (see `tri`). */
@@ -1269,6 +1289,21 @@ function sheetData(s: Sheet): VertexData {
   data.normals = s.normals;
   data.uvs = s.uvs;
   data.indices = s.indices;
+  return data;
+}
+
+/**
+ * `data` with one sway RIG (`swayRig`) written over its filler `uv` on every
+ * vertex — for a part that rides one point of a rigged frond whole.
+ */
+function withRig(data: VertexData, rig: readonly [number, number]): VertexData {
+  const n = (data.positions?.length ?? 0) / 3;
+  const uvs = new Array<number>(n * 2);
+  for (let i = 0; i < n; i++) {
+    uvs[i * 2] = rig[0];
+    uvs[i * 2 + 1] = rig[1];
+  }
+  data.uvs = uvs;
   return data;
 }
 
@@ -1336,6 +1371,15 @@ interface BladeCut {
    * Absent is pointed, the fern's.
    */
   blunt?: number;
+  /**
+   * The blade's sway RIG, for a frond on the rigged layer (`world/sway.ts`):
+   * the frond's phase, and the half-width a pinna's point is `edge` 1 at.
+   * Every vertex is then written where it is along the rachis and how far out
+   * from it — so the top and the underside, which meet at the notches and the
+   * points, are written the same there and cannot part. Absent is filler, the
+   * fern's, whose layer is a ramp.
+   */
+  rig?: { phase: number; reach: number };
 }
 
 /**
@@ -1358,7 +1402,10 @@ function pinnateBlade(
   under: Sheet,
 ): void {
   const S = pts.length - 1;
-  const { width, fold, droop, notch, sweep, thick, stagger, ragged, blunt } = cut;
+  const { width, fold, droop, notch, sweep, thick, stagger, ragged, blunt, rig } = cut;
+  // `f` along the rachis and `out` metres from it, as the rig the vertex owes.
+  const at = (f: number, out: number): [number, number] | undefined =>
+    rig ? swayRig(frondBend(f), rig.phase, out / rig.reach) : undefined;
   [-1, 1].forEach((s, k) => {
     // The top half and the underside, which meet at the notches and the
     // points; the underside's rib is the blade's thickness under the top's.
@@ -1372,8 +1419,8 @@ function pinnateBlade(
         const { side, up } = frames[i];
         const w = width(i / S) * notch;
         const n = normal(side, up, fold);
-        ribs.push(sheetVert(into, below ? v3add(pts[i], up, -thick * (1 - 0.6 * (i / S))) : pts[i], n));
-        notches.push(sheetVert(into, v3add(v3add(pts[i], side, s * w), up, -fold * w), n));
+        ribs.push(sheetVert(into, below ? v3add(pts[i], up, -thick * (1 - 0.6 * (i / S))) : pts[i], n, at(i / S, 0)));
+        notches.push(sheetVert(into, v3add(v3add(pts[i], side, s * w), up, -fold * w), n, at(i / S, w)));
       }
       for (let i = 0; i < S; i++) {
         const f = (i + 0.5 + s * stagger) / S;
@@ -1383,7 +1430,7 @@ function pinnateBlade(
         const tip = v3add(v3add(v3add(p, side, s * w), up, -fall * w), t, sweep);
         const n = normal(side, up, fall);
         if (!blunt) {
-          const point = sheetVert(into, tip, n);
+          const point = sheetVert(into, tip, n, at(f, w));
           sheetFace(into, ribs[i], notches[i], point);
           sheetFace(into, ribs[i], point, ribs[i + 1]);
           sheetFace(into, ribs[i + 1], point, notches[i + 1]);
@@ -1395,8 +1442,12 @@ function pinnateBlade(
         const half = (blunt * v3dist(pts[i], pts[i + 1])) / 2;
         const foot = v3add(v3add(p, side, s * w * notch), up, -fold * w * notch);
         const end = v3lerp(tip, foot, 0.07);
-        const back = sheetVert(into, v3add(end, t, -half), n);
-        const front = sheetVert(into, v3add(end, t, half), n);
+        // The two corners are a share of an interval either side of `f`, and
+        // written there: the bend is steep out at the tip, and two corners of
+        // one pinna on one number would move as a slab against its neighbours.
+        const df = blunt / (2 * S);
+        const back = sheetVert(into, v3add(end, t, -half), n, at(f - df, w * 0.93));
+        const front = sheetVert(into, v3add(end, t, half), n, at(f + df, w * 0.93));
         sheetFace(into, ribs[i], notches[i], back);
         sheetFace(into, ribs[i], back, front);
         sheetFace(into, ribs[i], front, ribs[i + 1]);
@@ -1904,6 +1955,7 @@ export function buildJungleTree(
     roll: number,
     top: Sheet,
     under: Sheet,
+    phase?: number,
   ): V3[] => {
     const pts: V3[] = [from];
     for (let i = 1; i <= pinnae; i++) {
@@ -1928,7 +1980,21 @@ export function buildJungleTree(
     pinnateBlade(
       pts,
       rachisFrames(pts, a, roll),
-      { width, fold, droop, notch: 0.36, sweep: (len / pinnae) * 0.3, thick: 0.04, stagger: 0.2, ragged, blunt: 0.22 },
+      {
+        width,
+        fold,
+        droop,
+        notch: 0.36,
+        sweep: (len / pinnae) * 0.3,
+        thick: 0.04,
+        stagger: 0.2,
+        ragged,
+        blunt: 0.22,
+        // A live frond is RIGGED (`world/sway.ts`): every vertex is written
+        // where it is along this frond and how far out to a pinna's point,
+        // so it bends from its own root. The dead ones pass no phase.
+        rig: phase === undefined ? undefined : { phase, reach: W },
+      },
       top,
       under,
     );
@@ -1938,7 +2004,7 @@ export function buildJungleTree(
   // Where the older fronds ended up, for the veil's hang points below: a
   // liana hangs from foliage that EXISTS rather than from a radius that hopes
   // to be under some.
-  const boughs: { a: number; pts: V3[] }[] = [];
+  const boughs: { a: number; pts: V3[]; phase: number }[] = [];
   const fronds = 9 + Math.floor(own() * 3);
   for (let k = 0; k < fronds; k++) {
     // 0 the youngest, upright in the middle; 1 the oldest, low and drooping.
@@ -1955,8 +2021,11 @@ export function buildJungleTree(
     const top = own() < 0.95 - age * 0.75 ? lit : shade;
     const W = len * (0.24 + own() * 0.04);
     const roll = (own() - 0.5) * 0.4;
-    const pts = frond(a, from, len, e0, e1, 14, W, 0.3 + age * 0.45, 0.35 + age * 0.2, roll, top, shade);
-    if (age >= 0.5) boughs.push({ a, pts });
+    // The phase this frond moves on, from numbers already drawn — a draw from
+    // `own` here would re-cut every pinna after it.
+    const phase = rigPhase(a, k + lean);
+    const pts = frond(a, from, len, e0, e1, 14, W, 0.3 + age * 0.45, 0.35 + age * 0.2, roll, top, shade, phase);
+    if (age >= 0.5) boughs.push({ a, pts, phase });
   }
 
   // DEAD FRONDS on some, hanging down the bole under the crown in the bark's
@@ -1980,9 +2049,11 @@ export function buildJungleTree(
     const mesh = partSurface(name, sheetData(s), scene);
     mesh.parent = trunk;
     mesh.material = material;
-    // The live crown travels as one piece; see `world/sway.ts`, and the head
-    // above for where the join is buried.
-    if (sways) marksSway(mesh, "canopy");
+    // The live crown is RIGGED rather than ramped: each frond bends from its
+    // own root in the head, which does not move, so nothing slides over it.
+    // It used to be on the canopy ramp and travelled as one piece — every
+    // frond is nine to eleven metres up, so every frond got the same travel.
+    if (sways) marksSway(mesh, "frond");
   };
   crown("jungle-fronds-lit", lit, leafLit, true);
   crown("jungle-fronds", shade, leaf, true);
@@ -2083,7 +2154,7 @@ export function buildJungleTree(
     const hangs: LianaHang[] = [];
     // One on the bole, so the collar is visibly holding something. Everything
     // else is out under a frond.
-    hangs.push({ a: sub() * Math.PI * 2, r: 0.55, y: 0.02 });
+    hangs.push({ a: sub() * Math.PI * 2, r: 0.55, y: 0.02, bend: 0, phase: 0 });
     // The rest, each under one of the older fronds, taken in turn from a
     // random start so no two trees drape the same way. `r` is where along the
     // frond the vine took hold and `y` is the rachis's own height there, which
@@ -2099,8 +2170,14 @@ export function buildJungleTree(
       const p1 = b.pts[at < 0 ? b.pts.length - 1 : at];
       const r0 = Math.hypot(p0[0], p0[2]);
       const r1 = Math.hypot(p1[0], p1[2]);
-      const under = p0[1] + ((p1[1] - p0[1]) * (r - r0)) / (r1 - r0 || 1) - 0.06;
+      const u = Math.min(1, Math.max(0, (r - r0) / (r1 - r0 || 1)));
+      const under = p0[1] + (p1[1] - p0[1]) * u - 0.06;
+      // Where along the frond it took hold, which is how much of the frond's
+      // motion the strand rides: it hangs off the blade, so it moves with it.
+      const along = at < 0 ? 1 : (Math.max(0, at - 1) + u) / (b.pts.length - 1);
       hangs.push({
+        bend: frondBend(along),
+        phase: b.phase,
         a: b.a + (sub() - 0.5) * 0.3,
         r,
         // FLOORED at -0.4 — 9.25 m up a scale-1 tree, the lowest a hang may
@@ -2230,6 +2307,9 @@ export function buildLianaVeil(
     // `top` up or down from the collar — the underside of the blade the caller
     // picked, in the collar's own frame.
     const { a, r: r0, y: top } = hang;
+    // The frond's motion at the hang, on every vertex of the strand: it rides
+    // the blade it hangs off and has no motion of its own to disagree with it.
+    const rig = swayRig(hang.bend, hang.phase, 0);
     // The hem, and the one number in here that is DERIVED rather than picked.
     // The floor is 2.4 m and the collar stands 9.65 m up the trunk, so a hang
     // is at `9.65 + top` — and the lowest a drooping blade offers is 9.25. The
@@ -2259,9 +2339,9 @@ export function buildLianaVeil(
 
     const upperLen = drop * 0.55;
     const upperAt = radial(0.28, 0.22);
-    const upper = MeshBuilder.CreateBox(
+    const upper = partSurface(
       "liana-strand",
-      { width: 0.13, height: upperLen, depth: 0.13 },
+      withRig(CreateBoxVertexData({ width: 0.13, height: upperLen, depth: 0.13 }), rig),
       scene,
     );
     upper.parent = collar;
@@ -2269,21 +2349,18 @@ export function buildLianaVeil(
     upper.rotation.y = a;
     upper.rotation.x = -flare * 0.22;
     upper.material = vineMat;
-    // The whole strand leans, and the CANOPY layer is right for it rather than
-    // an understory one: a veil hangs from a blade nine and a half metres up,
-    // so the ramp gives its top almost exactly what it gives the frond it hangs
-    // from and the two travel together. What the ramp does further down is the
-    // thing a hand-authored version would have had to fake — the hem is
-    // entitled to less than the hang, so the curtain trails the branch instead
-    // of swinging rigidly with it. The COLLAR is deliberately left out: it is a
+    // On the FROND layer, with the frond's own rig at the hang: the crown it
+    // hangs from is rigged, and a strand left on the canopy ramp would travel
+    // a third of a metre under a blade that moves a few centimetres there —
+    // hanging from nothing. The COLLAR is deliberately left out: it is a
     // thickening on the bole, and the bole does not move.
-    marksSway(upper, "canopy");
+    marksSway(upper, "frond");
 
     const lowerLen = drop * 0.45;
     const lowerAt = radial(0.78, 0.78);
-    const lower = MeshBuilder.CreateBox(
+    const lower = partSurface(
       "liana-strand-low",
-      { width: 0.11, height: lowerLen, depth: 0.11 },
+      withRig(CreateBoxVertexData({ width: 0.11, height: lowerLen, depth: 0.11 }), rig),
       scene,
     );
     lower.parent = collar;
@@ -2291,7 +2368,7 @@ export function buildLianaVeil(
     lower.rotation.y = a;
     lower.rotation.x = -flare * 0.1;
     lower.material = vineMat;
-    marksSway(lower, "canopy");
+    marksSway(lower, "frond");
 
     // Leaves down the strand, and they are what the layer is actually SEEN by:
     // a 13 cm vine is under a pixel at the range a belt is read across, so the
@@ -2308,17 +2385,22 @@ export function buildLianaVeil(
       const t = 0.22 + (j / leaves) * 0.62;
       const at = radial(t, t);
       const s = 0.85 + rng() * 0.5;
-      const blade = prism(
+      const blade = partSurface(
         "liana-leaf",
-        [
-          [0, 0],
-          [0.13 * s, -0.16 * s],
-          [0.04 * s, -0.42 * s],
-          [0, -0.56 * s],
-          [-0.04 * s, -0.42 * s],
-          [-0.13 * s, -0.16 * s],
-        ],
-        0.03,
+        withRig(
+          prismData(
+            [
+              [0, 0],
+              [0.13 * s, -0.16 * s],
+              [0.04 * s, -0.42 * s],
+              [0, -0.56 * s],
+              [-0.04 * s, -0.42 * s],
+              [-0.13 * s, -0.16 * s],
+            ],
+            0.03,
+          ),
+          rig,
+        ),
         scene,
       );
       blade.parent = collar;
@@ -2328,23 +2410,26 @@ export function buildLianaVeil(
       // lost in it, and one held level reads as a shelf.
       blade.rotation.x = -(0.25 + rng() * 0.5);
       blade.material = j === 0 ? leafLitMat : leafMat;
-      marksSway(blade, "canopy");
+      marksSway(blade, "frond");
     }
 
     // A tangle at the hem on some strands — the knot of old growth a liana
     // gathers where it has been hanging longest.
     if (rng() < 0.55) {
       const at = radial(1, 1);
-      const knot = MeshBuilder.CreateCylinder(
+      const knot = partSurface(
         "liana-knot",
-        { height: 0.4, diameterTop: 0.3, diameterBottom: 0.22, tessellation: 5 },
+        withRig(
+          CreateCylinderVertexData({ height: 0.4, diameterTop: 0.3, diameterBottom: 0.22, tessellation: 5 }),
+          rig,
+        ),
         scene,
       );
       knot.parent = collar;
       knot.position.set(at.x, hem + 0.2, at.z);
       knot.rotation.y = rng() * Math.PI;
       knot.material = vineMat;
-      marksSway(knot, "canopy");
+      marksSway(knot, "frond");
     }
   }
   return collar;

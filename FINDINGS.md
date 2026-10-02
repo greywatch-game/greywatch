@@ -4700,6 +4700,16 @@ internal join.
 
 ### What would settle it, in rough order of cost
 
+**The first half of this now EXISTS, built for the jungle palm** — see
+`world/sway.ts`'s rig and `docs/rendering.md`'s wind section. A layer may be
+`rig: true`, its builder writes each vertex's place on its own member into the
+`uv` buffer before the merge (`swayRig`), and the shader reads that behind a
+negative red channel. A drape would be the second rigged layer: `bend` running
+from 0 at the head to 1 at the hem, and the shader's frond motion — pressure
+downwind, a slow swing, a flutter at the edge — is close to what a hung sheet
+wants already. Neither the cloth layer nor `kit/desert.ts` has been moved
+across, so the workaround below still stands.
+
 - **An anchor channel.** The BLUE vertex channel is written 0 today
   (`vertexShading.ts` sets `colors[i * 4 + 2] = 0`) and is the only free one.
   A builder that marked a mesh could stash its own top there before the merge —

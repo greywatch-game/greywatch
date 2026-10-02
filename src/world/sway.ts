@@ -8,7 +8,8 @@
  * writes the weight and `CelShader` spends it.
  * Invariants: only VISUAL geometry may be marked (a collider proxy is never
  * drawn, and the box it stands for never moves), the weight is 0 at the ground
- * and rises with height, and a swaying mesh's line work is the FRAME's — the
+ * and rises with height, a mesh on a RIGGED layer carries a `swayRig` on every
+ * vertex of its `uv` (see below), and a swaying mesh's line work is the FRAME's — the
  * ink is one full-screen pass over the depth a swayed vertex has already
  * written (`shaders/CelInk.ts`), so nothing here has to keep a second copy of
  * the geometry in step with the wind.
@@ -41,13 +42,34 @@
  * is neither buried nor near the foot of the ramp is what tears — the liana's
  * collar is left out for exactly that reason.
  *
- * WHAT IT COSTS is that a leaf translates rather than pivoting. At the
- * amplitudes in `CONFIG.wind` that is what a leaf looks like anyway — a third
- * of a metre on a blade three metres long is a two-degree lean, and nobody has
- * ever read that as the wrong kind of motion. What it would get wrong is a
- * long thin thing lying ALONG the ramp, which is why the trunk is not marked:
- * a trunk that swayed from a planted foot would bend, and a bending column is
- * the one shape a vertex ramp cannot draw honestly.
+ * WHAT IT COSTS is that a leaf translates rather than pivoting. On a small
+ * plant, or one whose leaf all hangs at different heights, that is what a leaf
+ * looks like anyway. What it would get wrong is a long thin thing lying ALONG
+ * the ramp, which is why the trunk is not marked: a trunk that swayed from a
+ * planted foot would bend, and a bending column is the one shape a vertex ramp
+ * cannot draw honestly.
+ *
+ * **And it gets a PALM CROWN wrong outright, which is why a layer may be
+ * RIGGED instead.** Every frond on a jungle palm leaves the head between nine
+ * and eleven metres up, so the ramp handed all of them very nearly the same
+ * travel and the whole crown slid back and forth as one piece over a head and
+ * a bole that stood still. A rigged layer (`rig: true` in `CONFIG.wind`) takes
+ * no ramp at all: the BUILDER, which still knows where each frond's root is,
+ * writes each vertex's place on its own frond into the `uv` buffer before the
+ * merge — the per-part anchor this header says is unknowable after it, carried
+ * through the merge the way `writePaletteIndex` carries an albedo, because a
+ * merge concatenates vertex data and a per-vertex value survives it. `uv` is
+ * the buffer because every part in the world already carries one and the cel
+ * shader read none of them; on every mesh that is not rigged it is still
+ * filler and is never read.
+ *
+ * **The red channel's SIGN is what tells the shader which it has**:
+ * `swayWeight` answers a rigged layer with `RIGGED` (-1), which no ramp can
+ * produce, so the vertex stage's branch stays coherent per draw (the layer is
+ * in the merge key) and the neutral 0 still means planted. Everything a rig
+ * says is a SCALAR — how far along, which frond, how far out to the edge — and
+ * never a position or a direction, because the merge bakes a placement into
+ * positions and normals and leaves `uv` exactly as it found it.
  */
 import type { Mesh } from "@babylonjs/core";
 import { CONFIG } from "../config";
@@ -93,6 +115,59 @@ export function swayLayerOf(mesh: Mesh): SwayLayer | null {
  */
 export function swayWeight(height: number, layer: SwayLayer): number {
   const l = CONFIG.wind.foliage.layers[layer];
+  if ("rig" in l) return RIGGED;
   const t = Math.min(1, Math.max(0, height / l.reach));
   return Math.pow(t, 1.6) * l.amount;
+}
+
+/**
+ * The red channel's answer for a RIGGED layer: a sign, not a weight. A ramp is
+ * never negative, so the shader reads `< 0` as "this vertex carries its own
+ * rig in `uv`" and `> 0` as the ramp it always was.
+ */
+export const RIGGED = -1;
+
+/**
+ * How much of a frond's tip travel a point `f` of the way along it takes: a
+ * uniformly loaded cantilever's deflection, normalised to 1 at the tip.
+ *
+ * Rather than `f^2`, which is a guess at the same shape, because the
+ * cantilever is what a frond under its own weight and the wind's actually is
+ * — stiff where it leaves the head, carrying a third of its tip's travel by
+ * halfway, and 0 with a zero slope at the root, so the root does not move and
+ * does not kink where the head buries it.
+ */
+export function frondBend(f: number): number {
+  const t = Math.min(1, Math.max(0, f));
+  return (t * t * (6 - 4 * t + t * t)) / 3;
+}
+
+/**
+ * The phase a frond moves on, 0..1, from two numbers the builder already has
+ * — so a rig takes NO draw from any stream, and adding one moved no tree, no
+ * pinna and no vine anywhere on a map.
+ */
+export function rigPhase(a: number, b: number): number {
+  const h = Math.sin(a * 12.9898 + b * 78.233) * 43758.5453;
+  return h - Math.floor(h);
+}
+
+/** How finely `edge` is stored: 64 steps of a pinna's half-width. */
+const EDGE_STEPS = 63;
+
+/**
+ * One vertex's rig, packed into the two floats of `uv`.
+ *
+ * `bend` is `frondBend` of where it is along its frond (0 at the root, 1 at
+ * the tip), `phase` the frond's own (0..1, see `rigPhase`) and `edge` how far
+ * out from the rib to a pinna's point it is (0..1), which is what the flutter
+ * is spent on. `u` is the bend; `v` is the edge in its WHOLE part and the
+ * phase in its fraction. A vertex attribute is never interpolated in the
+ * vertex stage, so packing two numbers into one float is exact rather than
+ * blended, and float32 keeps the fraction to ~1e-5 under a whole part of 63.
+ */
+export function swayRig(bend: number, phase: number, edge: number): [number, number] {
+  const e = Math.round(Math.min(1, Math.max(0, edge)) * EDGE_STEPS);
+  const p = phase - Math.floor(phase);
+  return [bend, e + Math.min(p, 0.999)];
 }

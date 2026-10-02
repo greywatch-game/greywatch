@@ -2,8 +2,9 @@
  * config/wind.ts — the one wind, and what each layer that moves in it does
  * with it.
  * Owns: the air's direction and speed, and the layers keyed off it — the grass
- * field, the world's foliage, the flags over the control points, and (bearing
- * only, amplitude its own) a tank's whip antennae. Contract:
+ * field, the world's foliage (ramped, and the one rigged layer's `frond`), the
+ * flags over the control points, and (bearing only, amplitude its own) a
+ * tank's whip antennae. Contract:
  * `docs/rendering.md`.
  * Gotcha: `dir` is not normalised here. Every reader normalises on use, so a
  * hand-tuned pair need not be a unit vector.
@@ -92,6 +93,20 @@ const foliageLayers = {
    * translates, which is what it was before and what it looked like.
    */
   cloth: { reach: 5, amount: 0.28 },
+  /**
+   * A jungle palm's fronds and the vines hung off them — the one layer that is
+   * RIGGED rather than ramped (`world/sway.ts`): every vertex carries where it
+   * is along its OWN frond and which frond that is, written before the merge,
+   * so a frond bends from its root and no two fronds move as one.
+   *
+   * **It takes no ramp at all, and that is the fix rather than a setting.** The
+   * crown head and the bole do not move, and a ramp in height hands every frond
+   * in a crown — all of them eight to eleven metres up — very nearly the same
+   * travel, so the whole crown slid back and forth over a head that stood
+   * still. What moves here is `CONFIG.wind.frond`'s, and it is zero at every
+   * frond's root by construction.
+   */
+  frond: { rig: true },
 } as const;
 
 export const wind = {
@@ -135,6 +150,45 @@ export const wind = {
    * shorter than the thing it moves puts opposite leans on one crown.
    */
   foliage: { travel: 0.34, speed: 0.62, gust: 26, layers: foliageLayers },
+  /**
+   * What a RIGGED frond does (`layers.frond`), every distance in metres at the
+   * frond's TIP — a vertex part-way along takes `frondBend` of it, which is a
+   * cantilever's deflection curve, so the stiff stalk barely moves and the
+   * outer blade carries the motion.
+   *
+   * **Three motions over one gust, and the split is what reads as wind.** The
+   * GUST is `foliage`'s own travelling field, so a gust still rolls across a
+   * stand rather than every crown answering at once — but here it is a
+   * PRESSURE rather than a swing: the crown is pushed DOWNWIND by `lean`,
+   * holding `calm` of it between gusts, and never pulled back past rest. A
+   * symmetric swing upwind and down is the other half of why the old crown
+   * read as sliding; nothing in a wind leans INTO it. Under that, each frond
+   * FLAPS — `flap` up and down at `flapRate` rad/s, `swing` across the wind at
+   * a slower beat — on a phase and a rate of its own (±15%), so neighbours
+   * drift in and out of step instead of nodding together, and both are
+   * stronger inside a gust than outside one. Over all of it the pinnae
+   * FLUTTER: `flutter` at a pinna's point and nothing at the rib, at
+   * `flutterRate` rad/s, phased by position along a `flutterWave` metre wave
+   * so the ripple runs down the frond instead of the fringe shivering in
+   * unison. The cel shader's facets are taken off the displaced position, so
+   * a fluttering pinna catches the light as it turns — no normal is moved for
+   * it.
+   *
+   * Set against the palm's own size: a frond is ~5 m, so a 0.3 m push is a
+   * three-degree lean at the root, and the lowest leaf in the crown hangs at
+   * 5.5 m on the smallest tree — `flap` is the only term that takes a tip DOWN
+   * and is two orders under that margin.
+   */
+  frond: {
+    lean: 0.3,
+    calm: 0.25,
+    flap: 0.17,
+    flapRate: 3.9,
+    swing: 0.11,
+    flutter: 0.035,
+    flutterRate: 21,
+    flutterWave: 1.4,
+  },
   /**
    * The flags over the control points (`systems/FlagCloth.ts`) — the one
    * layer here that is SIMULATED rather than posed, and so the one that needs
