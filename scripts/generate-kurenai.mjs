@@ -1273,6 +1273,13 @@ const grass = [
 ];
 {
   let area = 0;
+  // A MEADOW that crosses a body of water stops at its edge rather than
+  // growing on into it as reeds (`GrassRect.dry`): the reeds are the banks'
+  // business below, and a meadow sown over the river or a pond at full
+  // density is a lawn in the water.
+  const wets = (x, z) =>
+    waterBodies.some((b) => Math.abs(x - b.x) < (44 + b.width) / 2 && Math.abs(z - b.z) < (40 + b.depth) / 2);
+  const dry = (x, z) => (wets(x, z) ? ", dry: true" : "");
   for (let gz = -HALF + 20; gz < HALF - 10; gz += 36) {
     for (let gx = -HALF + 20; gx < HALF - 10; gx += 36) {
       const x = gx + rand(-6, 6);
@@ -1284,17 +1291,17 @@ const grass = [
       // rest — are spent on the look instead, in the same order and only where
       // they were drawn before, so every placement after this is unmoved.
       if (chance(0.3)) {
-        grass.push(`  { x: ${n2(Number(x.toFixed(1)))}, z: ${n2(Number(z.toFixed(1)))}, width: 44, depth: 40, density: 0.55, height: 0.8 },`);
+        grass.push(`  { x: ${n2(Number(x.toFixed(1)))}, z: ${n2(Number(z.toFixed(1)))}, width: 44, depth: 40, density: 0.55, height: 0.8${dry(x, z)} },`);
       } else {
         const tall = Number((0.85 + (rand(0.14, 0.22) - 0.14) * 3).toFixed(2));
-        grass.push(`  { x: ${n2(Number(x.toFixed(1)))}, z: ${n2(Number(z.toFixed(1)))}, width: 44, depth: 40, height: ${tall} },`);
+        grass.push(`  { x: ${n2(Number(x.toFixed(1)))}, z: ${n2(Number(z.toFixed(1)))}, width: 44, depth: 40, height: ${tall}${dry(x, z)} },`);
       }
       area += 44 * 40;
     }
   }
-  // The riverbanks, where it is lush: reeds where they stand in the water,
-  // which the mask thins for them, and the tallest grass in the valley where
-  // they do not.
+  // The riverbanks, where it is lush: reeds where they stand in the shallows,
+  // which the mask thins for them and fades out with depth, and the tallest
+  // grass in the valley where they do not.
   for (let x = -104; x <= 104; x += 26) {
     if (Math.abs(x) < 44) continue;
     grass.push(`  { x: ${n2(x)}, z: ${n2(Number(zr(x).toFixed(1)))}, width: 28, depth: 32, height: 1.2 },`);

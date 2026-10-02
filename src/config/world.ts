@@ -833,8 +833,15 @@ export const grass = {
    * What a field becomes where its ground is under a WaterRect's surface: a
    * reed bed — this share of the rect's density, standing at least this
    * multiple of the blade height so it breaks the surface — and no turf.
+   *
+   * **Only in the SHALLOWS**: whole to `fullDepth` metres of water, thinning
+   * to nothing at `maxDepth`. A reed here stands 0.3..1.8 m (`height` times
+   * the blade range times the clump), so past ~0.6 m most of a bed is under
+   * the surface, and what is left of it is tips poking out of open water —
+   * grass in a lake. A rect laid over a pool is then a fringe round its
+   * shore, whatever the rect's own extent.
    */
-  reeds: { density: 0.3, height: 1.5 },
+  reeds: { density: 0.3, height: 1.5, fullDepth: 0.2, maxDepth: 0.6 },
   /**
    * The mask's resolution: metres per texel, and the largest side it may
    * take before the texel grows instead. A texel is also how far a field's

@@ -4,7 +4,8 @@
  * Owns: rasterising a map's GrassRects into a density/height/ground grid, the
  * frayed EDGE of the fields they make together, the refusals a field makes (a
  * carriageway, the inside of a collider, a structure's drawn part standing on
- * the ground) and what water makes of it (reeds),
+ * the ground) and what water makes of it (reeds, in the shallows only, and
+ * only off a rect that is not `dry`),
  * and the per-PATCH summary the GrassSystem culls with.
  * Invariants: pure — no scene, no Babylon, no randomness — so every client
  * bakes the same field off the same layout. The ground height is
@@ -154,6 +155,10 @@ export function bakeGrassMask(
   const ground = new Float32Array(nx * nz);
   const lift = new Float32Array(nx * nz);
   const edgeOf = new Float32Array(nx * nz);
+  // The density of the rects that may grow on into the water as reeds — every
+  // rect but a `dry` one — summed and capped as `density` is, then turned
+  // into that texel's REED SHARE of it before the edge thins either.
+  const reedShare = new Float32Array(nx * nz);
 
   // 1. The rects: density adds where they overlap, capped at 1, and the
   //    tallest and highest-standing rect over a texel is the one it grows as.
@@ -168,6 +173,7 @@ export function bakeGrassMask(
     const hz = r.depth / 2;
     const scale = Math.min(MAX_HEIGHT_SCALE, Math.max(0, r.height ?? 1));
     const edge = Math.max(0, r.edge ?? g.edge);
+    const reedDens = r.dry ? 0 : dens;
     for (let j = j0; j <= j1; j++) {
       const z = z0 + (j + 0.5) * texel;
       if (Math.abs(z - r.z) > hz || Math.abs(z) > extent) continue;
@@ -176,11 +182,16 @@ export function bakeGrassMask(
         if (Math.abs(x - r.x) > hx || Math.abs(x) > extent) continue;
         const k = j * nx + i;
         density[k] = Math.min(1, density[k] + dens);
+        reedShare[k] = Math.min(1, reedShare[k] + reedDens);
         tall[k] = Math.max(tall[k], scale);
         lift[k] = Math.max(lift[k], r.y ?? 0);
         edgeOf[k] = Math.max(edgeOf[k], edge);
       }
     }
+  }
+
+  for (let k = 0; k < density.length; k++) {
+    if (density[k] > 0) reedShare[k] /= density[k];
   }
 
   // 1b. The field's EDGE. A rect is a rectangle and no field is, so the
@@ -267,6 +278,7 @@ export function bakeGrassMask(
   //    the filtered field then feathers into the verge over half a metre. Only
   //    texels something grows in pay for either.
   const q = texel / 4;
+  const reeds = g.reeds;
   // Whether a road comes anywhere near each PATCH, asked once per patch with
   // a pad of half its diagonal: a texel in a patch no road reaches never asks.
   const roadNear = new Uint8Array(px * pz);
@@ -289,18 +301,26 @@ export function bakeGrassMask(
       // surface, and with no turf — a sheet of meadow under a clear channel is
       // a lawn growing underwater. A rect laid over a pool is how every map
       // puts reeds round its shore, so this is the common case, not an edge.
+      //
+      // **And only in the SHALLOWS**, thinning to nothing at `maxDepth`: the
+      // rect says where reeds MAY grow and the water's depth says where they
+      // do, so a pool is a fringe and open water past it — never a bed of tips
+      // standing in the middle of a lake. A `dry` rect grows none at all.
       for (const { r, y } of pools) {
         if (
           ground[k] < y &&
           Math.abs(x - r.x) <= r.width / 2 &&
           Math.abs(z - r.z) <= r.depth / 2
         ) {
+          const t = (y - ground[k] - reeds.fullDepth) / (reeds.maxDepth - reeds.fullDepth);
+          const shallow = t <= 0 ? 1 : t >= 1 ? 0 : 1 - t * t * (3 - 2 * t);
           wet[k] = 1;
-          density[k] *= CONFIG.grass.reeds.density;
-          tall[k] = Math.max(tall[k], CONFIG.grass.reeds.height);
+          density[k] *= reeds.density * reedShare[k] * shallow;
+          tall[k] = Math.max(tall[k], reeds.height);
           break;
         }
       }
+      if (density[k] <= 0) continue;
       // Two cheaper questions first — the patch, then this texel padded by
       // one — because nearly every texel is nowhere near a road, and the four
       // below were most of what this bake cost.

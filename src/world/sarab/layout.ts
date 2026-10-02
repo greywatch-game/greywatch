@@ -1459,9 +1459,9 @@ const grass: GrassRect[] = [
   // not: the wadi's whole run at two densities (see the loop — the middle
   // is where the pools are and the ends are drier), the birkat's margins,
   // and five low patches on the open desert. The rects along the bed run
-  // straight over the three pools, which is deliberate: an opaque body
-  // hides every tuft standing in it, so what is left of a rect crossing a
-  // pool is the ring of it on the shore.
+  // straight over the three pools, which is deliberate: the mask grows a
+  // rect only into the shallows, as reeds, so what is left of a rect
+  // crossing a pool is the ring of it on the shore.
   { x: -358, z: -77.1, width: 58, depth: 46, density: 0.28, height: 0.7 },
   { x: -296, z: -80.8, width: 58, depth: 46, density: 0.28, height: 0.7 },
   { x: -234, z: -82.1, width: 58, depth: 46, density: 0.28, height: 0.7 },
@@ -1481,7 +1481,10 @@ const grass: GrassRect[] = [
   { x: -300, z: 24, width: 70, depth: 60, density: 0.22, height: 0.6 },
   { x: 120, z: 40, width: 80, depth: 70, density: 0.22, height: 0.6 },
   { x: -60, z: 330, width: 110, depth: 60, density: 0.2, height: 0.6 },
-  { x: 300, z: -60, width: 90, depth: 80, density: 0.2, height: 0.6 },
+  // This patch crosses the eastern wadi pool, and is open desert scrub rather
+  // than a margin: it stops at the water (`GrassRect.dry`) instead of growing
+  // on into it as reeds.
+  { x: 300, z: -60, width: 90, depth: 80, density: 0.2, height: 0.6, dry: true },
   { x: 30, z: -350, width: 120, depth: 60, density: 0.2, height: 0.6 },
 ];
 

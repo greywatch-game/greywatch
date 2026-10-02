@@ -85,7 +85,7 @@ const KEY_ORDER: Record<string, string[]> = {
   controlPoints: ["id", "name", "pos", "radius", "poleLift"],
   spawns: ["team", "controlPoint", "pos", "yaw"],
   water: ["x", "z", "width", "depth", "y", "sound"],
-  grass: ["x", "z", "width", "depth", "y", "density", "height", "edge"],
+  grass: ["x", "z", "width", "depth", "y", "density", "height", "edge", "dry"],
 };
 
 export class SerializeError extends Error {}

@@ -2110,6 +2110,14 @@ straddling it), a structure's DRAWN part standing in the grass
 (`GameMap.partBoxes`, the same test with the pad capped at half the part's own
 narrow side), the ground under a water rect's surface (a REED BED: thinner,
 taller, no turf) — and it is pure, so every client bakes the same field.
+**A reed bed grows in the SHALLOWS and nowhere else**: whole to
+`reeds.fullDepth` of water and gone by `reeds.maxDepth`, because a reed stands
+0.3..1.8 m and a bed laid at every depth put a scatter of tips in the middle of
+open water — grass in a lake, on every map with a pool. So a rect says where
+reeds MAY grow and the water's depth where they do. A rect that should stop at
+the bank instead is `GrassRect.dry` (a meadow that happens to cross a pool),
+and under water only the density of the rects that are NOT dry grows, so a
+meadow over a reed fringe neither thickens it nor thins it.
 **The parts are there because most of a building that meets the ground is not
 solid**: a barn's plank floor, a plinth, a doorstep and a manger are visual
 boxes, and asking only the colliders grew a meadow up through the barn's floor.

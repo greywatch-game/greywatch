@@ -249,6 +249,14 @@ export interface GrassRect {
    * so two rects laid side by side meet without a seam whatever this says.
    */
   edge?: number;
+  /**
+   * True for a field that STOPS at the water's edge rather than growing on
+   * into it as reeds (`CONFIG.grass.reeds`): a meadow that happens to cross a
+   * pool, as opposed to a rect laid over one for its reed fringe. Absent is
+   * false, which is every reed bed in the tree. Where a dry rect and a wet
+   * one overlap under water, only the wet one's density grows.
+   */
+  dry?: boolean;
 }
 
 /**

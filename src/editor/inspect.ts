@@ -305,6 +305,9 @@ export function inspect(
           number("density", "density", r.density ?? null, 0, 1, 0.05, 1),
           number("height", "height", r.height ?? null, 0.2, 2, 0.05, 1),
           number("edge", "edge", r.edge ?? null, 0, 10, 0.5, CONFIG.grass.edge),
+          // Off is a field that grows on into the shallows as reeds; on is a
+          // meadow that stops at the water's edge.
+          boolean("dry", "dry (no reeds)", r.dry === true),
         ],
       };
     }

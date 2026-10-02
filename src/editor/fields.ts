@@ -43,6 +43,7 @@ const OPTIONAL_KEYS = new Set([
   "blocking",
   "scale",
   "poleLift",
+  "dry",
 ]);
 
 /**
