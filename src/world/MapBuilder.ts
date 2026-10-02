@@ -694,7 +694,7 @@ const SCATTER_LIGHTS: Partial<
  * a row here decides is only which props are CANDIDATES.
  *
  * `y` is metres above the prop's base, scaled with it: the drum's flame rather
- * than the drum, which is 0.85 m of fire on a 1.2 m barrel.
+ * than the drum, which is a metre of fire rooted in the coals of a 1.2 m barrel.
  */
 const SCATTER_AMBIENCE: Partial<
   Record<ScatterSpec["prop"], { kind: AmbienceId; y: number }>
@@ -852,7 +852,8 @@ const PROP_BODIES: Record<ScatterSpec["prop"], PropBody> = {
   // Heap plus the chunks piled on it. The rebar is a 6 cm rod sticking out to
   // 1.8 m and is not in this — you do not lose a round to a piece of wire.
   rubble: { w: 1.9, d: 1.7, h: 1.05, visualTop: 1.5 },
-  // The drum. NOT the flame above it, which is emissive and 0.85 m tall.
+  // The drum. NOT the flame above it, which is emissive and stands 0.9 m over
+  // the rim, nor the billets, flap and woodpile drawn round it (`buildFireDrum`).
   fireDrum: { w: 0.95, d: 0.95, h: 1.25, visualTop: 2.1 },
   // Oriented, along the stone's own X and Z. The stone is DRAWN to this box
   // rather than the box measured off the stone (see `buildBoulder`): its
