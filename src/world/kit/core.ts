@@ -1395,6 +1395,10 @@ export class Build implements Structure {
    * reason: `buildStairs` is the second caller, and a flight is exactly the
    * shape whose second copy drifts. Everything below the local ground line is
    * skipped, which is what lets a caller overrun its own foot and bury it.
+   *
+   * `drawn: false` declares the collider and draws nothing, for a caller that
+   * draws its own carpentry over the same plane (`buildStairs`' strings and
+   * housed treads). The collider is the same either way.
    */
   flight(opts: {
     x: number;
@@ -1409,8 +1413,10 @@ export class Build implements Structure {
     dir: 1 | -1;
     steps: number;
     color: string;
+    drawn?: boolean;
   }): void {
     const { x, w, topZ, topY, run, rise, dir, steps, color } = opts;
+    const drawn = opts.drawn ?? true;
     const grade = rise / run;
     const pitch = Math.atan(grade);
     const footZ = topZ - dir * run;
@@ -1418,16 +1424,18 @@ export class Build implements Structure {
     const surfaceAt = (z: number): number => topY - dir * (topZ - z) * grade;
 
     const midZ = (topZ + footZ) / 2;
-    this.box(
-      w,
-      thick,
-      Math.hypot(run, rise),
-      x,
-      surfaceAt(midZ) - thick / 2 / Math.cos(pitch),
-      midZ,
-      color,
-      { x: -dir * pitch },
-    );
+    if (drawn) {
+      this.box(
+        w,
+        thick,
+        Math.hypot(run, rise),
+        x,
+        surfaceAt(midZ) - thick / 2 / Math.cos(pitch),
+        midZ,
+        color,
+        { x: -dir * pitch },
+      );
+    }
     this.block({
       w,
       h: thick,
@@ -1437,6 +1445,7 @@ export class Build implements Structure {
       z: midZ,
       rotX: -dir * pitch,
     });
+    if (!drawn) return;
 
     const tread = run / steps;
     const riser = rise / steps;
@@ -2057,5 +2066,30 @@ export function curtain(
       onFace(b, s, plane, lu, y, 0.15 + rnd() * 0.09, 0.09 + rnd() * 0.06, 0.025, out + 0.02 + rnd() * 0.02, rnd() < 0.3 ? FIG_LEAF_LIT : CREEPER, side * (0.35 + rnd() * 0.5));
       side = -side;
     }
+  }
+}
+
+/** One creeper leaf hanging off a stem at bearing `a` and drooping, `s` its size. */
+export function creeperLeaf(b: Build, x: number, y: number, z: number, a: number, s = 1): void {
+  b.box(0.15 * s, 0.02, 0.1 * s, x + Math.sin(a) * 0.07 * s, y, z + Math.cos(a) * 0.07 * s, CREEPER, { y: a + Math.PI / 2, z: 0.55 });
+}
+
+/**
+ * A creeper stem up a post standing at (`x`, `z`), `ox`/`oz` off its axis, from
+ * `y0` to `y1`, with the leaves in twos and threes along it — walked by `seed`
+ * so two vines on one placement do not leaf alike. The stilt hut's vine, and
+ * the boardwalk's and the stair's, which stand beside it.
+ */
+export function creeperClimb(b: Build, seed: number, x: number, z: number, y0: number, y1: number, ox: number, oz: number): void {
+  if (y1 - y0 < 0.3) return;
+  b.box(0.035, y1 - y0, 0.035, x + ox, (y0 + y1) / 2, z + oz, CREEPER, { x: oz * 0.04, z: -ox * 0.04 });
+  const out = Math.atan2(ox, oz);
+  let i = 0;
+  for (let y = y0 + 0.15; y < y1 - 0.05; i++) {
+    const r = (i * 7 + seed) % 5;
+    for (let j = 0; j < 2 + (r % 2); j++) {
+      creeperLeaf(b, x + ox, y - j * 0.05, z + oz, out + (j - 1) * 0.8 + (r - 2) * 0.15, 0.8 + ((i + j) % 3) * 0.15);
+    }
+    y += 0.18 + r * 0.04;
   }
 }

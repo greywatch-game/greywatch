@@ -15,6 +15,8 @@ import {
   streetSeed,
   carve,
   convexSolid,
+  creeperClimb,
+  creeperLeaf,
   onFace,
   outward,
   runsAlongX,
@@ -883,24 +885,9 @@ export function buildStiltHut(
   // ---- the vine: up the back corner's outer pile, then up the house's corner
   // post to the eave, in leaves along a stem.
   {
-    /** One leaf, hanging off the stem at bearing `a` and drooping. */
-    const leaf = (x: number, y: number, z: number, a: number, s = 1): void => {
-      b.box(0.15 * s, 0.02, 0.1 * s, x + Math.sin(a) * 0.07 * s, y, z + Math.cos(a) * 0.07 * s, CREEPER, { y: a + Math.PI / 2, z: 0.55 });
-    };
-    /** A stem up a post, `ox`/`oz` off its axis, with the leaves in twos and threes along it. */
-    const climb = (x: number, z: number, y0: number, y1: number, ox: number, oz: number): void => {
-      if (y1 - y0 < 0.3) return;
-      b.box(0.035, y1 - y0, 0.035, x + ox, (y0 + y1) / 2, z + oz, CREEPER, { x: oz * 0.04, z: -ox * 0.04 });
-      const out = Math.atan2(ox, oz);
-      let i = 0;
-      for (let y = y0 + 0.15; y < y1 - 0.05; i++) {
-        const r = (i * 7 + seed) % 5;
-        for (let j = 0; j < 2 + (r % 2); j++) {
-          leaf(x + ox, y - j * 0.05, z + oz, out + (j - 1) * 0.8 + (r - 2) * 0.15, 0.8 + ((i + j) % 3) * 0.15);
-        }
-        y += 0.18 + r * 0.04;
-      }
-    };
+    const leaf = (x: number, y: number, z: number, a: number, s = 1): void => creeperLeaf(b, x, y, z, a, s);
+    const climb = (x: number, z: number, y0: number, y1: number, ox: number, oz: number): void =>
+      creeperClimb(b, seed, x, z, y0, y1, ox, oz);
     const ci = vineX < 0 ? 0 : cols.length - 1;
     const foot = feet[ci][rows.length - 1];
     const px = cols[ci];

@@ -295,7 +295,11 @@ export type BuilderKind = keyof typeof BUILDERS;
  * of the hours, and carries its platform's face and its steps down to the
  * ground. The arched bridge seeds its planks, its stones and the leaves blown
  * onto it off where it stands, and carries its abutments, its footings
- * and its wing stones down to the ground.
+ * and its wing stones down to the ground. The boardwalk seeds its boards,
+ * its stringers' splices, its piles and its creeper off where it stands, and
+ * cuts each pile, footing and brace to the ground under it. The stair seeds
+ * its treads, its posts and its creeper off where it stands, and carries its
+ * strings' feet, its trestle posts and their footings down to the ground.
  */
 export const CONFORMS_TO_TERRAIN: ReadonlySet<BuilderKind> = new Set([
   "road",
@@ -319,6 +323,8 @@ export const CONFORMS_TO_TERRAIN: ReadonlySet<BuilderKind> = new Set([
   "well",
   "bridge",
   "jetty",
+  "boardwalk",
+  "stairs",
   "kiln",
   "kura",
   "machiya",

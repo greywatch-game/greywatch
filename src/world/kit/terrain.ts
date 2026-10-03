@@ -31,13 +31,14 @@ import {
   type BuildCtx,
   type BuildParams,
   type Structure,
-  CREEPER,
   DARK_STONE,
+  GUARD_HEIGHT,
   DIRT,
   GUARD_THICKNESS,
   IRON,
   KERB,
   KERB_WORN,
+  MOSS_STONE,
   PITCH,
   PLANK,
   ROAD_PAINT,
@@ -45,6 +46,9 @@ import {
   TEAK,
   TIMBER,
   type Point3,
+  convexSolid,
+  creeperClimb,
+  creeperLeaf,
   rope,
   slab,
   streetSeed,
@@ -644,25 +648,120 @@ function flushKerbs(b: Build, site: KerbSite): void {
  */
 const WALK_DECK = 0.5;
 /**
- * The deck slab's thickness, placed by its TOP face so the walked surface is
- * WALK_DECK however this changes.
+ * The deck's collider, placed by its TOP face so the walked surface is
+ * WALK_DECK however this changes. It is no longer DRAWN: what is drawn is
+ * boards across stringers on headstocks on piles, the stilt hut's carpentry,
+ * and this box only says where a body stands and where a round stops.
  *
- * It is deliberately deeper than the height it stands at. `OutlineRenderer`
- * draws the outline shell with a slope-scaled negative depth offset, and at the
- * grazing angle you see a walked surface from, the shell's underside wins the
- * depth test unless there is real depth behind the top face — which paints the
- * deck flat in its own ink. The manor's 0.14 m board deck is the worked failure
- * (see CLAUDE.md); `boardDeck` in kit/buildings/manor.ts is the worked fix. Everything
- * else the boardwalk draws hangs BELOW this box, because a batten laid on top
- * of the walked surface would be a thin slab again with nothing behind it.
+ * It is as deep as that carpentry — boards, a stringer and a headstock come to
+ * 0.665 — so a round arriving at the side of the walk stops on timber, give or
+ * take the band under the stringers between bents. Nothing drawn stands on the
+ * walked surface but a rail outboard of it, and no board is proud of it.
  */
 const WALK_DECK_T = 0.64;
 /** Metres between pile bents. */
 const WALK_BENT = 3.5;
+/**
+ * How far a span's END bents stand in from its ends. A run is authored as a
+ * chain of spans (see `buildBoardwalk`), and a bent at the very end would put
+ * two spans' piles in the same place at every joint — two seeded sets of piles
+ * through each other. Inset, each span carries its own ends on a short
+ * cantilever and a joint reads as two bents side by side, which is what two
+ * spans built one after the other are.
+ */
+const WALK_END_BENT = 0.3;
+/**
+ * `NavGrid`'s HEADROOM. Under a deck with less clearance than this nobody can
+ * walk, so the bents may be braced; over it the ground under the walk is a way
+ * through, and nothing is drawn across it below the headstocks.
+ */
+const WALK_HEADROOM = 1.7;
+/** Where a pile stops when there is no ground to read. */
+const WALK_PILE_FOOT = -2.2;
+/** Board widths, walked by a seed, so no two runs are laid alike. The stilt hut's. */
+const BOARD_WIDTHS = [0.21, 0.24, 0.19, 0.26, 0.22, 0.2, 0.25, 0.23];
+
+/**
+ * The floor under a placement-local point, as a local height, or null with
+ * nothing to read. `MapBuilder`'s rotation: local +X lands on (cos, -sin), +Z
+ * on (sin, cos).
+ */
+function groundUnder(ctx: BuildCtx | undefined, lx: number, lz: number): number | null {
+  if (!ctx) return null;
+  const cos = Math.cos(ctx.rotY);
+  const sin = Math.sin(ctx.rotY);
+  return ctx.terrain.surfaceAt(ctx.x + lx * cos + lz * sin, ctx.z - lx * sin + lz * cos) - ctx.y;
+}
+
+/**
+ * A boarded balustrade over `guard`'s dark core — the stilt hut's, so a walk
+ * and a stair up to one carry the rail the huts beside them do: a handrail, a
+ * top rail and a bottom rail, boards standing between them with the core
+ * showing through the gaps, and posts carried `drop` down over the rim.
+ *
+ * `surf` is the walked height along the run — level on a walk, pitched on a
+ * stair — and `xg` the rail's centreline, half a core outboard of the edge.
+ * `newels` makes the first and last posts newels, standing over the handrail
+ * with a cap, for a run that ends rather than one that carries on into the
+ * next span. All of it is visual: the collider is the guard's.
+ */
+function balustrade(
+  b: Build,
+  xg: number,
+  z0: number,
+  z1: number,
+  surf: (z: number) => number,
+  posts: readonly number[],
+  drop: number,
+  newels: boolean,
+): void {
+  const H = GUARD_HEIGHT;
+  const rail = (dy: number, wide: number, thick: number): void => {
+    slab(b, [xg, surf(z0) + dy, z0], [xg, surf(z1) + dy, z1], wide, thick, TEAK);
+  };
+  rail(H + 0.04, 0.28, 0.08);
+  rail(H - 0.12, 0.2, 0.08);
+  rail(0.12, 0.22, 0.1);
+  for (const [i, z] of posts.entries()) {
+    const end = newels && (i === 0 || i === posts.length - 1);
+    const y0 = surf(z) - drop;
+    const y1 = surf(z) + H + (end ? 0.2 : 0);
+    b.box(end ? 0.24 : 0.22, y1 - y0, end ? 0.2 : 0.16, xg, (y0 + y1) / 2, z, TEAK);
+    if (end) b.box(0.3, 0.06, 0.26, xg, y1 + 0.03, z, TEAK);
+  }
+  for (let z = z0 + 0.19; z < z1 - 0.1; z += 0.17) {
+    if (posts.some((pz) => Math.abs(pz - z) < 0.14)) continue;
+    const b0 = surf(z) + 0.17;
+    const b1 = surf(z) + H - 0.16;
+    b.box(0.2, b1 - b0, 0.1, xg, (b0 + b1) / 2, z, PLANK);
+  }
+}
 
 /**
  * A plank causeway on piles: the connective tissue between stilt huts, and the
  * way across marsh that is too shallow to be worth a bridge.
+ *
+ * ## What it is drawn as
+ *
+ * The stilt hut's platform run out into a causeway, because it stands beside
+ * them: boards laid ACROSS the walk, each a seeded width with its ends left
+ * ragged past the edge, the odd one replaced in a darker wood and the odd one
+ * worn a few millimetres down, over a dark bed so the gaps read as the shadow
+ * under a floor. Under them four stringers along the run — the outer two flush
+ * with the deck's sides, so the side of the walk is board ends over a timber
+ * face — each spliced once over a bent, staggered, with an iron fish plate on
+ * the outer pair, and a header across each end. The stringers bear on a
+ * headstock at every bent, through-bolted, and each headstock on two piles cut
+ * to the GROUND under them on footing stones, each a little different in girth
+ * and a little off plumb. Where the walk is low enough that nobody can pass
+ * under it the bents are cross-braced and each bay carries a sway brace down
+ * the outer piles; where it is lifted past `WALK_HEADROOM` the ground under it
+ * is a way through and nothing crosses it. A creeper climbs an outer pile or
+ * two and runs on along the stringer.
+ *
+ * The boards, the splices, the piles and the vines are seeded, and every pile,
+ * pad and brace is cut to the ground, off where the span stands — which is
+ * what puts it in `CONFORMS_TO_TERRAIN`.
  *
  * ## Why this is not the trestle bridge with a height spinner
  *
@@ -685,7 +784,8 @@ const WALK_BENT = 3.5;
  * available here because a boardwalk is a collider and a road is not. The fix
  * is authoring: lay a run as two or three 9–16 m placements so each samples its
  * own ground. Adjacent decks whose heights differ by less than `HEIGHT_EPS`
- * merge into one nav surface, so the joints cost nothing.
+ * merge into one nav surface, so the joints cost nothing — and each span
+ * carries its own end bents (`WALK_END_BENT`), so a joint draws as two.
  *
  * ## Raising one with a layout `y` is a different building
  *
@@ -702,48 +802,169 @@ export function buildBoardwalk(
   scene: Scene,
   mats: CelMaterialFactory,
   p: BuildParams = {},
+  ctx?: BuildCtx,
 ): Structure {
   const b = new Build(scene, mats, "boardwalk");
   const len = p.length ?? 14;
   const w = p.width ?? 2.4;
   const rails = p.railSide ?? "both";
+  const sides = (["-x", "+x"] as const).filter((s) => rails === "both" || rails === s);
 
-  // The deck: visual and collider in one box, placed by its top face.
-  b.wall(w, WALK_DECK_T, len, 0, WALK_DECK - WALK_DECK_T / 2, 0, PLANK);
+  // ------------------------------------------------------------ the masses
+  //
+  // The deck, placed by its top face, and a rail on each railed side: the
+  // boxes it has always emitted, in the order it has always emitted them. The
+  // rails stand OUTBOARD of the deck edge — a rail sitting on the walked surface
+  // would steal whichever 1.5 m nav cell its sample lands in — and each one's
+  // box is the balustrade's dark core.
+  b.block({ w, h: WALK_DECK_T, d: len, x: 0, y: WALK_DECK - WALK_DECK_T / 2, z: 0 });
+  for (const side of sides) {
+    b.guard(side, ((side === "+x" ? 1 : -1) * w) / 2, 0, len, WALK_DECK, { color: PITCH });
+  }
 
-  const under = WALK_DECK - WALK_DECK_T;
-  const bents = Math.max(1, Math.round(len / WALK_BENT));
-  for (let i = 0; i <= bents; i++) {
-    const z = -len / 2 + (i / bents) * len;
-    // Cross-bearer, tucked directly under the deck so the slab reads as boards
-    // carried on timber rather than as one extruded block.
-    b.box(w + 0.24, 0.18, 0.22, 0, under - 0.09, z, TEAK);
-    for (const sx of [-1, 1]) {
-      // Piles. Visual only, and they must stay that way: a collider here would
-      // sever the links under the walk, spend a nav surface below the deck, and
-      // give bots something to wedge on. buildJetty makes the same call.
-      b.cyl(1.5, 0.2, 0.26, 5, (sx * w) / 2.6, under - 0.18 - 0.75, z, TEAK);
-    }
-    // Creeper down alternate outer piles — the jungle read, and the reason a
-    // boardwalk over a channel does not look like decking.
-    if (i % 2 === 1) {
-      b.box(0.07, 0.9, 0.16, (-w) / 2.6 - 0.13, under - 0.55, z, CREEPER);
+  // ----------------------------------------------------------- the drawing
+  const seed = streetSeed(w, len, WALK_DECK, ctx);
+  const D = WALK_DECK;
+  /** Board thickness, stringer depth, headstock depth. */
+  const DB = 0.045;
+  const SD = 0.42;
+  const HD = 0.2;
+  /** The stringers' top and bottom, and the headstocks' bottom. */
+  const sTop = D - DB;
+  const sBot = sTop - SD;
+  const hBot = sBot - HD;
+  const bents = Math.max(1, Math.round((len - 2 * WALK_END_BENT) / WALK_BENT));
+  const bentZ = (i: number): number => -len / 2 + WALK_END_BENT + (i / bents) * (len - 2 * WALK_END_BENT);
+
+  // ---- the boards, across the walk, on a dark bed sunk between the stringers
+  // so the gaps read as the shadow under a floor rather than as the marsh. The
+  // bed is emitted after everything over it (see the end of the drawing).
+  {
+    let z0 = -len / 2;
+    for (let i = 0; z0 < len / 2 - 0.05; i++) {
+      const bw = Math.min(BOARD_WIDTHS[(i + seed) % BOARD_WIDTHS.length], len / 2 - z0);
+      // The odd board replaced in a different wood, and the odd one worn down.
+      const tone = (i * 7 + seed) % 13 === 4 ? TEAK : PLANK;
+      const worn = (i * 5 + (seed >>> 4)) % 11 === 3 ? 0.006 : 0;
+      // Each end cut where the saw left it, a few centimetres past the stringer.
+      const x0 = -w / 2 - 0.02 - ((i * 3 + seed) % 5) * 0.01;
+      const x1 = w / 2 + 0.02 + ((i * 7 + (seed >>> 2)) % 5) * 0.01;
+      b.box(x1 - x0, DB, bw - 0.018, (x0 + x1) / 2, D - DB / 2 - worn, z0 + bw / 2, tone);
+      z0 += bw;
     }
   }
 
-  // Rails. `guard` stands them OUTBOARD of the deck edge — a rail sitting on the
-  // walked surface would steal whichever 1.5 m nav cell its sample lands in.
-  for (const side of ["-x", "+x"] as const) {
-    if (rails !== "both" && rails !== side) continue;
-    const sx = side === "+x" ? 1 : -1;
-    b.guard(side, (sx * w) / 2, 0, len, WALK_DECK, { color: TEAK });
-    // Posts on the rail's own centreline, which is half a thickness outboard —
-    // drawn at the deck edge they would be inside the guard box and invisible.
-    const postX = (sx * (w + GUARD_THICKNESS)) / 2;
-    for (let i = 0; i <= bents; i++) {
-      const z = -len / 2 + (i / bents) * len;
-      b.box(0.17, 1.1, 0.17, postX, WALK_DECK + 0.55, z, TIMBER);
+  // ---- four stringers along the run, the outer pair flush with the deck's
+  // sides, each spliced once over a bent where the run is long enough to need
+  // it — staggered, so no two joints share a bent — and a header across each end.
+  const xs = [-1, -1 / 3, 1 / 3, 1].map((f) => f * (w / 2 - 0.06));
+  for (const [k, x] of xs.entries()) {
+    const outer = k === 0 || k === xs.length - 1;
+    const cut = bents >= 2 && len > 7 ? bentZ(1 + ((k + seed) % (bents - 1))) : null;
+    const spans = cut === null ? [[-len / 2, len / 2]] : [[-len / 2, cut - 0.006], [cut + 0.006, len / 2]];
+    for (const [a, c] of spans) b.box(outer ? 0.12 : 0.1, SD, c - a, x, (sTop + sBot) / 2, (a + c) / 2, TIMBER);
+    if (outer && cut !== null) {
+      const fx = Math.sign(x) * (w / 2 + 0.006);
+      b.box(0.012, 0.18, 0.7, fx, (sTop + sBot) / 2, cut, IRON);
+      for (const dz of [-0.24, -0.1, 0.1, 0.24]) b.box(0.03, 0.045, 0.045, fx, (sTop + sBot) / 2, cut + dz, IRON);
     }
+  }
+  for (const sz of [-1, 1]) b.box(w, SD, 0.08, 0, (sTop + sBot) / 2, (sz * (len - 0.08)) / 2, TIMBER);
+  // The bed under the boards, AFTER them: what is hidden is emitted after what
+  // hides it, so the depth test rejects it rather than shading it twice.
+  b.box(w - 0.04, 0.02, len - 0.04, 0, sTop - 0.04, 0, PITCH);
+
+  // ---- the bents: a headstock under the stringers, through-bolted, on two
+  // piles cut to the ground under them. Where the ground rises into the
+  // headstock there is no pile, and the headstock bears on the ground.
+  /** Each bent's pile feet, `[bent][side]`, or null where there is no pile. */
+  const feet: (number | null)[][] = [];
+  /** And the ground under each, or null with nothing to read. */
+  const grounds: (number | null)[][] = [];
+  const pileX = w / 2 - 0.12;
+  let n = 0;
+  for (let i = 0; i <= bents; i++) {
+    const z = bentZ(i);
+    b.box(w + 0.24, HD, 0.24, 0, (sBot + hBot) / 2, z, TEAK);
+    feet.push([]);
+    grounds.push([]);
+    for (const sx of [-1, 1]) {
+      const k = ++n;
+      const px = sx * pileX;
+      // A bolt head where the outer stringer bears on the headstock, and the
+      // nuts of the bolt through the headstock into the pile, either face.
+      b.box(0.025, 0.07, 0.07, sx * (w / 2 + 0.012), sBot + 0.09, z, IRON);
+      for (const sz of [-1, 1]) b.box(0.075, 0.075, 0.025, px, (sBot + hBot) / 2, z + sz * 0.13, IRON);
+      const g = groundUnder(ctx, px, z);
+      grounds[i].push(g);
+      if (g !== null && g > hBot - 0.05) {
+        feet[i].push(null);
+        continue;
+      }
+      const foot = g === null ? WALK_PILE_FOOT : g - 0.3;
+      feet[i].push(foot);
+      const top = hBot + 0.06;
+      const dia = 0.26 + (0.07 * ((k * 5 + seed) % 7)) / 6;
+      const lean = (m: number): number => (((k * m + seed) % 5) - 2) * 0.005;
+      b.cyl(top - foot, dia * 0.9, dia, 7, px, (top + foot) / 2, z, TIMBER, { x: lean(3), z: lean(7) });
+      if (g !== null) b.box(dia + 0.3, 0.14, dia + 0.24, px, g + 0.02, z, MOSS_STONE, { y: k * 0.7 });
+    }
+  }
+
+  // ---- bracing, where the walk is too low for anyone to pass under it: a
+  // pair of diagonals across each bent, one on either face, and a sway brace
+  // down the outer piles in every bay, alternating. Over WALK_HEADROOM the
+  // ground under the walk is a way through, and none of this is drawn.
+  {
+    /** The ground a bent's braces come down to, or null where it is not braced. */
+    const low = (i: number): number | null => {
+      const [fa, fb] = feet[i];
+      if (fa === null || fb === null) return null;
+      const g = Math.max(grounds[i][0] ?? fa + 0.3, grounds[i][1] ?? fb + 0.3);
+      const clear = hBot - g;
+      return clear > 0.7 && clear < WALK_HEADROOM ? g : null;
+    };
+    for (let i = 0; i <= bents; i++) {
+      const g = low(i);
+      if (g === null) continue;
+      for (const sz of [-1, 1]) {
+        const zf = bentZ(i) + sz * 0.2;
+        slab(b, [-sz * pileX, hBot - 0.08, zf], [sz * pileX, g + 0.35, zf], 0.14, 0.05, TIMBER);
+      }
+    }
+    for (let i = 0; i < bents; i++) {
+      const [ia, ib] = i % 2 === 0 ? [i, i + 1] : [i + 1, i];
+      const ga = low(ia);
+      const gb = low(ib);
+      if (ga === null || gb === null) continue;
+      for (const sx of [-1, 1]) {
+        const xf = sx * (pileX + 0.2);
+        slab(b, [xf, hBot - 0.06, bentZ(ia)], [xf, gb + 0.35, bentZ(ib)], 0.14, 0.05, TIMBER);
+      }
+    }
+  }
+
+  // ---- a creeper up an outer pile or two, running on along the stringer.
+  for (let v = 0; v < (bents >= 3 ? 2 : 1); v++) {
+    const i = (seed + v * 2 + 1) % (bents + 1);
+    const si = ((seed >>> (5 + v)) & 1) === 0 ? 0 : 1;
+    const foot = feet[i][si];
+    if (foot === null) continue;
+    const sx = si === 0 ? -1 : 1;
+    const z = bentZ(i);
+    creeperClimb(b, seed + v, sx * pileX, z, Math.max(foot + 0.3, grounds[i][si] ?? foot + 0.3), hBot, sx * 0.15, 0.04);
+    const dir = z > 0 ? -1 : 1;
+    for (let j = 0; j < 8; j++) {
+      const a = sx * (Math.PI / 2) + ((j % 3) - 1) * 0.7;
+      creeperLeaf(b, sx * (w / 2 + 0.04), sBot + 0.06 + (j % 3) * 0.07, z + dir * (0.2 + j * 0.15), a, 0.85);
+    }
+  }
+
+  // ---- the balustrades, a post on every bent carried down over the stringer.
+  for (const side of sides) {
+    const sx = side === "+x" ? 1 : -1;
+    const posts = Array.from({ length: bents + 1 }, (_, i) => bentZ(i));
+    balustrade(b, (sx * (w + GUARD_THICKNESS)) / 2, -len / 2, len / 2, () => D, posts, DB + SD, false);
   }
   return b;
 }
@@ -772,12 +993,15 @@ const STAIR_RISER = 0.18;
  * `MapBuilder` samples the terrain once, at the placement's CENTRE, and the
  * foot is half a run away from that — so on anything but level ground the
  * bottom step lands in the air or in the soil. The overrun is the manor's
- * `SERVICE_DROP`: `Build.flight` skips every tread below the local ground line,
- * so what is buried costs nothing and what is exposed is a step more of stair.
+ * `SERVICE_DROP`: no tread is drawn below the ground line, so what is buried
+ * costs nothing and what is exposed is a step more of stair.
  */
 const STAIR_OVERRUN = 0.6;
 /** Metres between the trestles under the flight. */
 const STAIR_BENT = 2.2;
+/** A string's thickness, and its depth measured plumb — to the collider's underside. */
+const STAIR_STRING_T = 0.08;
+const STAIR_STRING_D = 0.5;
 
 /**
  * A free-standing flight of stairs: the way up to anything the kit raises past
@@ -792,6 +1016,26 @@ const STAIR_BENT = 2.2;
  * with `HEADROOM` under it, walkable, reachable from nowhere, and silent about
  * it. This is the piece that reconnects it, and it serves a terrace lip, a
  * jetty over a cut bank or a hut platform on a rise just as well.
+ *
+ * ## What it is drawn as
+ *
+ * A carpenter's stair, in the boardwalk's timber: two closed strings, their
+ * tops riding a hand over the nosings and coming level at the head so they
+ * butt whatever the flight arrives at rather than standing proud of its deck,
+ * and a carriage down the middle. Each tread is two boards housed into the
+ * strings, the front one a nosing over a riser set back under it; the odd
+ * tread is a replacement in a darker wood. A trestle at every bent but the
+ * last carries the span — a headstock under the strings on two posts cut to
+ * the ground on footing stones, cross-braced where nobody could stand under
+ * it anyway — and the HEAD carries no trestle at all: it hangs off whatever it
+ * arrives at, on an iron strap down each string, which is what lets one butt
+ * a boardwalk's end or its side without two sets of piles in one place. The
+ * feet stand on stones. A creeper climbs a trestle post. The balustrades are
+ * the boardwalk's, pitched, with a newel at each end.
+ *
+ * The treads, the posts and the vine are seeded, and the posts, pads and the
+ * strings' feet are cut to the ground off where the flight stands — which is
+ * what puts it in `CONFORMS_TO_TERRAIN`.
  *
  * ## How to place one
  *
@@ -814,6 +1058,7 @@ export function buildStairs(
   scene: Scene,
   mats: CelMaterialFactory,
   p: BuildParams = {},
+  ctx?: BuildCtx,
 ): Structure {
   const b = new Build(scene, mats, "stairs");
   const w = p.width ?? 2.4;
@@ -824,9 +1069,18 @@ export function buildStairs(
   const topZ = run / 2;
   /** The walked surface at any point on the run. Zero at the foot. */
   const surfaceAt = (z: number): number => rise - (topZ - z) * STAIR_GRADE;
+  const steps = Math.max(2, Math.round(rise / STAIR_RISER));
+  const sides = (["-x", "+x"] as const).filter((s) => rails === "both" || rails === s);
 
-  // The flight, overrunning its foot into the ground. One pitched collider
-  // slab: treads are visual, per Build.flight.
+  // ------------------------------------------------------------ the masses
+  //
+  // The flight's one pitched collider slab, overrunning its foot into the
+  // ground, and a rail on each railed side standing OUTBOARD of the treads —
+  // `guard` owns that argument, and a pitched run is why it takes a pitch at
+  // all. The walked height at the run's centre is half the rise, since the
+  // flight passes through the ground line at its foot. The boxes it has always
+  // emitted, in the order it has always emitted them; the flight draws nothing
+  // of its own, and each rail's box is the balustrade's dark core.
   b.flight({
     x: 0,
     w,
@@ -835,44 +1089,140 @@ export function buildStairs(
     run: run + STAIR_OVERRUN,
     rise: rise + STAIR_OVERRUN * STAIR_GRADE,
     dir: 1,
-    steps: Math.max(2, Math.round(rise / STAIR_RISER)),
+    steps,
     color: PLANK,
+    drawn: false,
   });
+  for (const side of sides) {
+    b.guard(side, ((side === "+x" ? 1 : -1) * w) / 2, 0, run, rise / 2, { pitch, color: PITCH });
+  }
 
-  // Trestles carrying the span, and a pair of stringer piles at the head where
-  // it meets the deck. Visual only — the same call `buildBoardwalk` and
-  // `buildJetty` make about their piles, and here it also keeps the space under
-  // a stair open, which is what stops the flight severing the links beside it.
-  const bents = Math.max(1, Math.round(run / STAIR_BENT));
-  for (let i = 1; i <= bents; i++) {
-    const z = -run / 2 + (i / bents) * run;
-    const head = surfaceAt(z) - 0.34;
-    if (head < 0.5) continue;
-    b.box(w + 0.2, 0.16, 0.2, 0, head, z, TEAK);
-    for (const sx of [-1, 1]) {
-      b.cyl(head + 0.5, 0.2, 0.26, 5, (sx * w) / 2.6, (head - 0.5) / 2, z, TEAK);
+  // ----------------------------------------------------------- the drawing
+  //
+  // The treads are stepped exactly as `Build.flight` steps them, so the plane
+  // a body walks never parts company with a tread by more than half a riser.
+  const seed = streetSeed(w, run, rise, ctx);
+  const ground = (lx: number, lz: number): number => groundUnder(ctx, lx, lz) ?? 0;
+  const RUN = run + STAIR_OVERRUN;
+  const tread = RUN / steps;
+  const riser = (rise + STAIR_OVERRUN * STAIR_GRADE) / steps;
+  const footZ = topZ - RUN;
+  const DB = 0.05;
+  const SW = STAIR_STRING_T;
+  /** The strings' top edge: a hand over the line through the nosings. */
+  const lift = 0.02 + (tread / 2 + 0.03) * STAIR_GRADE + 0.06;
+  const stringTop = (z: number): number => surfaceAt(z) + lift;
+  const stringBot = (z: number): number => stringTop(z) - STAIR_STRING_D;
+  const stringX = w / 2 - SW / 2;
+
+  // ---- the treads: two boards housed into the strings, the front one a
+  // nosing standing over a riser set back under it. None below the ground.
+  {
+    const tw = w - 2 * SW + 0.04;
+    let lastTop: number | null = null;
+    for (let i = 0; i < steps; i++) {
+      const zc = footZ + (i + 0.5) * tread;
+      if (surfaceAt(zc) < ground(0, zc) + 0.12) continue;
+      const y = surfaceAt(zc) + 0.02;
+      const tone = (i * 5 + seed) % 9 === 2 ? TEAK : PLANK;
+      const back = i === steps - 1 ? topZ - 0.035 : zc + tread / 2 + 0.035;
+      const front = zc - tread / 2 - 0.03;
+      b.box(tw, DB, zc - 0.006 - front, 0, y - DB / 2, (front + zc - 0.006) / 2, tone);
+      b.box(tw, DB, back - zc - 0.006, 0, y - DB / 2, (back + zc + 0.006) / 2, tone);
+      const r0 = lastTop ?? y - riser - 0.1;
+      b.box(tw - 0.02, y - DB - r0, 0.03, 0, (y - DB + r0) / 2, zc - tread / 2 + 0.015, TEAK);
+      lastTop = y;
     }
-    // Creeper up alternate legs. The jungle read the boardwalk already carries,
-    // so a flight up to one does not arrive as fresh carpentry.
-    if (i % 2 === 0) {
-      b.box(0.07, Math.min(1.1, head), 0.16, -w / 2.6 - 0.13, head / 2, z, CREEPER);
+    // The last riser, up to the deck the flight arrives at.
+    if (lastTop !== null) {
+      b.box(tw - 0.02, rise - 0.01 - lastTop, 0.03, 0, (rise - 0.01 + lastTop) / 2, topZ - 0.015, TEAK);
     }
   }
 
-  // Rails, standing OUTBOARD of the treads: `guard` owns that argument, and a
-  // pitched run is why it takes a pitch at all. The walked height at the run's
-  // centre is half the rise, since the flight passes through the ground line at
-  // its foot.
-  for (const side of ["-x", "+x"] as const) {
-    if (rails !== "both" && rails !== side) continue;
-    const sx = side === "+x" ? 1 : -1;
-    b.guard(side, (sx * w) / 2, 0, run, rise / 2, { pitch, color: TEAK });
-    // Newels at the foot and the head, on the rail's own centreline — drawn at
-    // the tread edge they would be inside the guard box and invisible.
-    const postX = (sx * (w + GUARD_THICKNESS)) / 2;
-    for (const z of [-run / 2, topZ]) {
-      b.box(0.17, 1.3, 0.17, postX, surfaceAt(z) + 0.65, z, TIMBER);
+  // ---- the strings, from where they stand on the ground to the head, level
+  // over the last tread so they butt the deck rather than stand over it; and a
+  // carriage down the middle under the treads.
+  /** Where a string's top edge meets the ground at its foot, cut plumb there. */
+  const feetZ: number[] = [];
+  for (const sx of [-1, 1]) {
+    const x = sx * stringX;
+    const g = ground(x, -run / 2);
+    const zf = Math.max(footZ, topZ - (rise + lift - g - 0.04) / STAIR_GRADE);
+    feetZ.push(zf);
+    const head = rise - 0.01;
+    const zk = topZ - (lift + 0.01) / STAIR_GRADE;
+    const face = (fx: number): Point3[] => {
+      const pts: Point3[] = [[fx, stringTop(zf), zf]];
+      if (zk > zf) pts.push([fx, head, zk]);
+      pts.push([fx, head, topZ - 0.005], [fx, stringBot(topZ - 0.005), topZ - 0.005], [fx, stringBot(zf), zf]);
+      return pts;
+    };
+    convexSolid(b, face(x - SW / 2), face(x + SW / 2), TIMBER);
+    // The foot on a stone, and the head hung off the deck on an iron strap.
+    b.box(0.36, 0.14, 0.6, x, g + 0.03, zf + 0.26, MOSS_STONE, { y: sx * 0.08 });
+    const sx2 = x + sx * (SW / 2 + 0.006);
+    b.box(0.012, 0.42, 0.07, sx2, stringBot(topZ - 0.04) + 0.25, topZ - 0.04, IRON);
+    for (const dy of [0.1, 0.3]) b.box(0.025, 0.045, 0.045, sx2, stringBot(topZ - 0.04) + dy, topZ - 0.04, IRON);
+  }
+  if (w > 1.8) {
+    const z0 = Math.max(...feetZ) + 0.4;
+    const z1 = topZ - 0.05;
+    slab(b, [0, surfaceAt(z0) - 0.2, z0], [0, surfaceAt(z1) - 0.2, z1], 0.1, 0.22, TIMBER);
+  }
+
+  // ---- the trestles, at every bent but the head: a headstock under the
+  // strings on two posts cut to the ground, cross-braced where the flight is
+  // too low to stand under. Where the ground comes up into the headstock there
+  // is no post, and none where the strings are still in the ground.
+  const bents = Math.max(1, Math.round(run / STAIR_BENT));
+  /** A post's place, foot and ground, for the vine. */
+  const posts: [number, number, number, number][] = [];
+  let k = 0;
+  for (let i = 1; i < bents; i++) {
+    const z = -run / 2 + (i / bents) * run;
+    const hTop = stringBot(z);
+    const hb = hTop - 0.18;
+    if (hb < ground(0, z) + 0.15) continue;
+    b.box(w + 0.2, 0.18, 0.2, 0, hTop - 0.09, z, TEAK);
+    const gs: number[] = [];
+    for (const sx of [-1, 1]) {
+      const px = sx * stringX;
+      const g = ground(px, z);
+      gs.push(g);
+      for (const sz of [-1, 1]) b.box(0.07, 0.07, 0.025, px, hTop - 0.09, z + sz * 0.115, IRON);
+      if (g > hb - 0.05) continue;
+      const kk = ++k;
+      const top = hb + 0.05;
+      const dia = 0.22 + (0.06 * ((kk * 5 + seed) % 7)) / 6;
+      const lean = (m: number): number => (((kk * m + seed) % 5) - 2) * 0.004;
+      b.cyl(top - (g - 0.3), dia * 0.9, dia, 7, px, (top + g - 0.3) / 2, z, TIMBER, { x: lean(3), z: lean(7) });
+      b.box(dia + 0.26, 0.12, dia + 0.22, px, g + 0.02, z, MOSS_STONE, { y: kk * 0.7 });
+      posts.push([px, z, g, hb]);
     }
+    const g = Math.max(...gs);
+    const clear = hb - g;
+    if (clear > 0.7 && clear < WALK_HEADROOM && gs.every((gg) => gg <= hb - 0.05)) {
+      for (const sz of [-1, 1]) {
+        const zf = z + sz * 0.17;
+        slab(b, [-sz * stringX, hb - 0.06, zf], [sz * stringX, g + 0.3, zf], 0.13, 0.05, TIMBER);
+      }
+    }
+  }
+  if (posts.length > 0) {
+    const [px, pz, g, hb] = posts[seed % posts.length];
+    creeperClimb(b, seed, px, pz, g + 0.05, hb, Math.sign(px) * 0.13, 0.05);
+  }
+
+  // ---- the balustrades: newels at the foot and the head, posts between
+  // carried down over the string. The head newel stands on the flight's side
+  // of its arrival, so it never stands in the deck it arrives at.
+  for (const side of sides) {
+    const sx = side === "+x" ? 1 : -1;
+    const z0 = -run / 2 + 0.1;
+    const z1 = topZ - 0.11;
+    const between = Math.max(0, Math.round((z1 - z0) / 1.9) - 1);
+    const stops = Array.from({ length: between + 2 }, (_, i) => z0 + (i / (between + 1)) * (z1 - z0));
+    balustrade(b, (sx * (w + GUARD_THICKNESS)) / 2, z0, z1, surfaceAt, stops, lift + 0.12, true);
   }
   return b;
 }
