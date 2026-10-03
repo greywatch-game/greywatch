@@ -1152,7 +1152,7 @@ more than its triangle count says.
 
 **`CEL_GLASS_BACKED` is the same shader over a KNOWN backdrop.** Most glazing on
 a city map is not seen through at all: a tower's curtain wall hangs 0.04 m off a
-solid shaft, a shophouse's sash is drawn on its own wall, a clerestory sits on
+solid shaft, a punched window is drawn on the same shaft, a clerestory sits on
 brick. For those the layer behind the pane is not the framebuffer — it is that
 mass, on a parallel face a hand away, under the light term the pane has already
 computed. `Build.pane({ backed })` names its palette colour, and the composite
@@ -1291,11 +1291,12 @@ one place. The probe stands within ~25 m of every pane it serves rather than
 
 **Per BLOCK, not per merged mesh, and the distinction started mattering when
 `backed` glazing arrived.** A block glazed in more than one material is more
-than one mesh — a shophouse terrace is its shopfronts blended and its sashes
+than one mesh — a brick tower is its lobby front blended and its punched windows
 opaque — and all of them want the same picture of the same street. So
 `ReflectionSystem` keys its slots on `PaneGroup.block`, the merge's own key,
-and the second group on a block reuses the first's probe. Coldharbour is 71
-glazing groups over **40 probes**, which is exactly what it was before the
+and the second group on a block reuses the first's probe. Coldharbour was 71
+glazing groups over **40 probes** (measured before the shophouses' sashes
+stopped being panes), which is exactly what it was before the
 split: the bake stays a function of how many blocks are glazed rather than of
 how many kinds of glazing a builder happened to reach for. The key is asked for
 rather than inferred because "the same building" is a thing `PaneBlocks`

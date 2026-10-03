@@ -1973,7 +1973,7 @@ cost one: glass breaks where there is enterable space behind it.** A sheet hung
 on something solid stops nothing — the round has always ended on the concrete —
 so breaking it changes nothing you can play with, and it costs the building the
 one thing an elevation was saying: a street-level shopfront that shatters into a
-blank grey shaft is a building admitting it is a box. Coldharbour draws **2,550
+blank grey shaft is a building admitting it is a box. Coldharbour draws **2,418
 sheets and twenty-four of them break**, all twenty-four SHOPFRONT bays — twelve
 on the two offices and twelve on the eight shophouses. (It was 6,139 before the
 towers got a podium: a curtain wall that starts at a base's coping rather than
@@ -1982,9 +1982,10 @@ glazing and the lobby front that replaced them are a fraction of that. It was
 4,458 until a tower glazed a sheet per storey per side rather than per bay —
 its drawn mullions and fins are what divide the glass now. The figure is the
 merged glazing's own vertex count over the 24 a sheet carries — nothing keeps
-the raw count after the merge.)
+the raw count after the merge. It was 2,550 until the shophouses' 132 sashes
+were drawn in `CASEMENT` at the back of a reveal instead of as sheets.)
 The curtain walls (4 cm off a solid shaft), the punched windows drawn on the
-same shaft, the shophouses' sash windows drawn on their own shells and the cars'
+same shaft and the cars'
 greenhouses (a cabin nobody gets into) stay whole. The
 offices' upper window bands are the case one step further on: they are left
 OPEN, because glass over a spandrel that already stops a body is worth neither
@@ -2039,7 +2040,7 @@ sheet:
   composite folds to one `mix` of two (exactly — see the rendering contract),
   and the sheet writes depth, so the mass behind it is rejected before it is
   ever shaded. This is most of a city: curtain walls on their shafts, punched
-  windows drawn on the same shaft, a shophouse's sashes, a clerestory on brick.
+  windows drawn on the same shaft, a clerestory on brick.
   On Coldharbour it is 98% of the glazing triangles.
 - **Everything else** is blended, and it is blended because something behind it
   is meant to be legible: the breakable shopfronts, and a car's greenhouse.
