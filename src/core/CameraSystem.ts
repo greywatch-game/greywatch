@@ -330,6 +330,30 @@ export class CameraSystem {
   private cyclePhase = 1;
   private cyclePitch = 0;
   private cycleYaw = 0;
+  /**
+   * The HEAD through a reload: looking down at the work (`reloadPitch`,
+   * radians, negative is down) and leaning with it (`reloadRoll`, the third
+   * contributor to the one roll assignment, beside the landing absorb and the
+   * weapon's twist). `ReloadGesture` decides both (`ReloadPose.headPitch`,
+   * `headRoll`) and `Player` pushes them, so this holds no clock and nothing
+   * that can be stranded: both are zero on every frame no reload is in flight
+   * or easing out.
+   *
+   * **The pitch is the one exception to "nothing may take the rendered aim
+   * down under a held trigger"**, and it is bounded on every side that rule
+   * cares about: it is on the RENDERED view and never on `aimPitch`, so no
+   * round, sightline or aim assist sees it; it happens during a gesture no
+   * round can be fired through; and it is back to level before the round the
+   * reload is loading can be. The rule is about a STRING, and a reload begun
+   * by the last round of one is what ends it. Without the look-down the only
+   * way to see the work was to hoist the weapon up in front of a fixed head,
+   * which is a gesture done for the camera rather than by a person.
+   *
+   * `ViewModel` counter-rotates the weapon by the same look (its BODY node),
+   * so the rifle stays where the hands hold it while the head tips down to it.
+   */
+  private reloadPitch = 0;
+  private reloadRoll = 0;
 
   /**
    * The landing absorb: how far the eye has sunk into a touchdown, in metres
@@ -612,6 +636,8 @@ export class CameraSystem {
     this.cyclePhase = 1;
     this.cyclePitch = 0;
     this.cycleYaw = 0;
+    this.reloadPitch = 0;
+    this.reloadRoll = 0;
     this.bobPhase = 0;
     this.bobAmount = 0;
     this.bobTarget = 0;
@@ -684,6 +710,17 @@ export class CameraSystem {
    */
   setCyclePhase(phase: number): void {
     this.cyclePhase = phase;
+  }
+
+  /**
+   * The head through a reload this frame — `ReloadPose.headPitch` and
+   * `headRoll`, pushed by Player beside the cycle phase and for its reason:
+   * the gesture is decided over there, and this system has no business
+   * re-deriving it.
+   */
+  setReloadHead(pitch: number, roll: number): void {
+    this.reloadPitch = pitch;
+    this.reloadRoll = roll;
   }
 
   /**
@@ -1196,10 +1233,11 @@ export class CameraSystem {
     const rattling = this.shake.active;
 
     this.camera.position.copyFrom(this.eye);
-    if (punch > 0 || nod !== 0 || rattling) {
+    if (punch > 0 || nod !== 0 || rattling || this.reloadPitch !== 0) {
       const shPitch = this.punchPitch * r.shakePitch * punch;
       const shYaw = this.punchYaw * r.shakeYaw * punch;
-      const sp = this.aimPitch + shPitch + nod + this.shake.pitch * rattle;
+      const sp =
+        this.aimPitch + shPitch + nod + this.reloadPitch + this.shake.pitch * rattle;
       const sy = this.aimYaw + shYaw + this.shake.yaw * rattle;
       const cp = Math.cos(sp);
       this.camera.setTarget(
@@ -1234,7 +1272,7 @@ export class CameraSystem {
       this.punchScale *
       this.rollTwist;
     this.camera.rotation.z =
-      swing * l.roll + twist + this.shake.roll * rattle;
+      swing * l.roll + twist + this.reloadRoll + this.shake.roll * rattle;
     this.camera.fov =
       c.fovHip + (this.sight.fovAds - c.fovHip) * t + r.fovPunch * punch;
   }

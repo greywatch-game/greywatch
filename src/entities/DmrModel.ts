@@ -439,6 +439,17 @@ export function buildDmr(
     support: { hand: SUPPORT_HAND, elbow: SUPPORT_ELBOW },
     magazine,
     magDrop: magDropAxis(MAG_RAKE),
+    // An AR-pattern lower: dry, the carrier is held on the catch over the
+    // magazine release (`boltCatch` above), and the heel of the support hand
+    // drops it.
+    reload: {
+      style: "rifle",
+      action: {
+        kind: "catch",
+        hand: new Vector3(-0.091, -0.062, -0.04),
+        strike: new Vector3(0.036, 0.006, 0),
+      },
+    },
     finish,
     sights: { kind: "fitted", assemblies: optics.sights },
     meshes,

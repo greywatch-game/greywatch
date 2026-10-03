@@ -931,7 +931,7 @@ export const recoil = {
   kickSide: 0.035,
   /**
    * The cant. `rot.z` is SUBTRACTED against the drift, because a positive roll
-   * takes the weapon's right flank UP (see `viewmodel.reloadRot`) and a weapon
+   * takes the weapon's right flank UP (see `viewmodel.reload.styles`) and a weapon
    * walking right should lean into the direction it is going, not away from it.
    * Flip this with that convention if it is ever flipped.
    */

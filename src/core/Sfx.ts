@@ -74,6 +74,7 @@ import {
   type MixChannel,
   type MixGroup,
 } from "../config";
+import type { ReloadActionKind } from "../entities/weaponKit";
 import type { ReportVoice } from "../entities/weapons";
 import { SAMPLE_URLS, type SampleId } from "./samples";
 
@@ -261,7 +262,8 @@ const LAUNCH_LEVEL = 0.7;
  * where every other caller schedules one by its start.** A report's transient
  * IS its start; a magazine going home is an ARRIVAL, with the fresh one rising
  * and rocking into the well ahead of it, and `CONFIG.viewmodel.reload` draws
- * exactly that approach between `insertFrom` and `magSeat`. Scheduled by the
+ * exactly that approach: offered to the mouth at `fresh.index` and driven home
+ * by `magSeat`. Scheduled by the
  * start, the slap would land 188 ms after the frame the weapon is drawn taking
  * it. The bolt's four are the same shape and more of it: every one of them is
  * a mass arriving somewhere with the travel that put it there in front, which
@@ -1680,19 +1682,57 @@ export class Sfx {
    * going into — so `actionPitch`, the field whose whole job is telling a belt
    * from a pistol magazine, is what it still has to be told.
    */
-  reload(duration: number, voice: ReportVoice = FLAT_REPORT): void {
+  reload(
+    duration: number,
+    voice: ReportVoice = FLAT_REPORT,
+    cue: { dry: boolean; action: ReloadActionKind } = { dry: true, action: "none" },
+  ): void {
     const bus = this.bus("reload", "mechanism");
+    const r = CONFIG.viewmodel.reload;
     const t = duration;
     const p = voice.actionPitch;
     const g = voice.actionVol;
-    this.clack(bus, 2600 * p, 0.9 * g, 0);
-    if (!this.mechanism(bus, "magOut", MAG_OUT_PEAK, t * 0.18, p, g)) {
-      this.clack(bus, 1500 * p, 0.5 * g, t * 0.18);
+    // A dry BOLT GUN opens its bolt where every other weapon has its catch:
+    // the handle up and the bolt back off the spent case, on the gesture's own
+    // `bolt.open` beats — the recorded cycle's first two cuts, each falling
+    // back to its clack exactly as `boltCycle` does.
+    const boltGun = cue.dry && cue.action === "bolt";
+    if (boltGun) {
+      const open = r.boltWork.open;
+      if (!this.mechanism(bus, "boltLift", BOLT_LIFT_PEAK, t * open.lift[1], p, g)) {
+        this.clack(bus, 3100 * p, 0.55 * g, t * open.lift[1]);
+      }
+      if (!this.mechanism(bus, "boltBack", BOLT_BACK_PEAK, t * open.draw[1], p, g)) {
+        this.clack(bus, 1250 * p, 1 * g, t * open.draw[1]);
+      }
+    } else {
+      this.clack(bus, 2600 * p, 0.9 * g, 0);
     }
-    if (!this.mechanism(bus, "magIn", MAG_IN_PEAK, t * 0.55, p, g)) {
-      this.clack(bus, 760 * p, 1 * g, t * 0.55);
+    if (!this.mechanism(bus, "magOut", MAG_OUT_PEAK, t * r.magOut, p, g)) {
+      this.clack(bus, 1500 * p, 0.5 * g, t * r.magOut);
     }
-    this.clack(bus, 3400 * p, 0.8 * g, t * 0.8);
+    if (!this.mechanism(bus, "magIn", MAG_IN_PEAK, t * r.magSeat, p, g)) {
+      this.clack(bus, 760 * p, 1 * g, t * r.magSeat);
+    }
+    // The last beat is the ACTION closing, and a tactical reload kept its
+    // round and closes nothing: its hand goes straight back to the handguard,
+    // and a bolt slamming over that would be a sound with nothing drawn to be
+    // the sound of. Dry, it is whatever the weapon closes with.
+    if (!cue.dry) return;
+    if (boltGun) {
+      const close = r.boltWork.close;
+      if (!this.mechanism(bus, "boltHome", BOLT_HOME_PEAK, t * close.push[1], p, g)) {
+        this.clack(bus, 620 * p, 1.1 * g, t * close.push[1]);
+      }
+      if (!this.mechanism(bus, "boltLock", BOLT_LOCK_PEAK, t * close.turn[1], p, g)) {
+        this.clack(bus, 2300 * p, 0.8 * g, t * close.turn[1]);
+      }
+      return;
+    }
+    // A charging handle fetches up at the back of its slot before it is let
+    // go, and that stop is a sound of its own a beat ahead of the carrier.
+    if (cue.action === "handle") this.clack(bus, 1900 * p, 0.45 * g, t * r.handle.pull[1]);
+    this.clack(bus, 3400 * p, 0.8 * g, t * r.bolt);
   }
 
   /**

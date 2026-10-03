@@ -2179,7 +2179,7 @@ export class Game {
     // this player hear the magazine change: a reload is the cue to push, and
     // it is the one thing a person does that the server has no way to derive.
     this.player.onReload = () => {
-      this.sfx.reload(this.player.reloadTime, this.player.report);
+      this.sfx.reload(this.player.reloadTime, this.player.report, this.player.reloadCue);
       this.net?.sendReload();
     };
     // The controls talk to `InputManager` rather than to `Game`: they are a

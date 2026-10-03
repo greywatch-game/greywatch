@@ -90,15 +90,6 @@ const GRIP_ELBOW = new Vector3(0.26, -0.518, -0.473);
 const SUPPORT_HAND = new Vector3(-0.02, -0.068, 0.2);
 const SUPPORT_ELBOW = new Vector3(-0.3, -0.49, -0.08);
 
-/**
- * Where the support hand goes for the magazine swap: an OFFSET from its rest
- * (`ViewModel.poseReload` blends it in from zero), and further back than any
- * other weapon's because the well is behind the firing hand. -0.47 off a
- * support hand at z = 0.2 lands on the magazine at -0.268; the two are one
- * number written twice.
- */
-const MAG_HAND = new Vector3(-0.02, -0.075, -0.47);
-
 /** The magazine's centre along the bore, and its well's. */
 const MAG_Z = -0.268;
 
@@ -436,9 +427,21 @@ export function buildCarbine(
     ejectPort: new Vector3(0.042, BORE + 0.023, -0.225),
     grip: { hand: GRIP_HAND, elbow: GRIP_ELBOW },
     support: { hand: SUPPORT_HAND, elbow: SUPPORT_ELBOW },
-    magHand: MAG_HAND,
     magazine,
     magDrop: magDropAxis(MAG_RAKE),
+    // A FAMAS has no hold-open: run dry, its bolt is forward on an empty
+    // chamber and the only way to load one is the charging lever inside the
+    // carry handle (`chLever` above) — hooked from the left, yanked back the
+    // length of its slot and let fly.
+    reload: {
+      style: "bullpup",
+      action: {
+        kind: "handle",
+        arm: "support",
+        hand: new Vector3(-0.062, 0.052, 0.292),
+        pull: new Vector3(0, -0.004, -0.11),
+      },
+    },
     finish,
     sights: { kind: "fitted", assemblies: optics.sights },
     meshes,

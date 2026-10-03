@@ -37,7 +37,7 @@ surface, an ambient bed that alone costs ten times this whole list — not the
 idea of a sound that is not a gunshot. The six are 1.244 mono-seconds cut from
 TWO masters with no round robin behind either, they are the player's own rather
 than every body's, and they pass the admissibility test in full: delete
-`audio/` and `Sfx.reload` is the four clacks it always was and `Sfx.boltCycle`
+`audio/` and `Sfx.reload` is the clacks it always was and `Sfx.boltCycle`
 the five clacks and two sweeps it always was. **A footstep still cannot make
 that second claim** without bringing a surface table and a variant set with it,
 which is the whole argument and is unchanged — and an ambient bed cannot make
@@ -1327,9 +1327,14 @@ which is the same test that placed the eight reports saying the same thing. So
 both are already the direct sound, and what has to be discarded is TIME.
 
 For the reload that is 2.4 seconds of a hand FETCHING a magazine, which is real
-and is not the game's: `Sfx.reload` places four beats as FRACTIONS of a
+and is not the game's: `Sfx.reload` places its beats as FRACTIONS of a
 weapon's `reloadTime`, from a 1.05 s sidearm to a 3.4 s machine gun, and no
-take is the length of all seven.
+take is the length of all seven. It reads those fractions from
+`CONFIG.viewmodel.reload` rather than restating them, and it is told how the
+reload ENDS (`Player.reloadCue`): a tactical one closes no action and plays no
+last beat, and a dry bolt gun opens and shuts its bolt on `bolt-cycle.wav`'s own
+four cuts at the two ends of the reload — still two recorded mechanisms, the
+second heard in two places.
 
 The same argument cuts inside the removal. That gesture is two events 140 ms
 apart with a −65 to −71 dB trough between them — the catch pressed and the
@@ -1344,7 +1349,8 @@ one call's worth of sound`) read one level down.
 **And `magIn` is the row that made PEAK scheduling the rule for a mechanism.**
 A magazine going home is an ARRIVAL, with 188 ms of it rising and rocking into
 the well ahead of the slap, and `CONFIG.viewmodel.reload` draws exactly that
-approach between `insertFrom` and `magSeat`. `Sfx` starts the file
+approach — offered to the mouth at `fresh.index`, driven home by `magSeat`.
+`Sfx` starts the file
 `MAG_IN_PEAK / actionPitch` before the beat so the recorded slap lands on the
 drawn one; scheduled by its start it would arrive 188 ms late. **Those offsets
 are measured off the trims in this table**, which makes a `trim.start` here and

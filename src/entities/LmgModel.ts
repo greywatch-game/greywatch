@@ -89,12 +89,11 @@ const SUPPORT_HAND = new Vector3(-0.02, -0.11 + BORE_Y, 0.32);
 const SUPPORT_ELBOW = new Vector3(-0.3, -0.53 + BORE_Y, 0.04);
 
 /**
- * Where the support hand goes for the box swap: an OFFSET from its rest
- * (`ViewModel.poseReload` blends it in from zero). The shared
- * `CONFIG.viewmodel.magHandOffset` is sized for a rifle magazine and left the
- * fist hanging off the box's lower back corner. This one closes it on the
- * box's left flank, over its middle, and further outboard than a rifle hand,
- * because the box is twice a magazine's width.
+ * Where the support hand holds the box: an OFFSET from its rest on the
+ * handguard. A magazine is held by its floor (the default `ReloadGesture`
+ * measures off it), and a 200-round box is not — it is carried by its FLANK,
+ * so this closes the fist on the box's left side, over its middle, and further
+ * outboard than a rifle hand, because the box is twice a magazine's width.
  */
 const MAG_HAND = new Vector3(-0.052, -0.05, -0.28);
 
@@ -628,6 +627,19 @@ export function buildLmg(
     support: { hand: SUPPORT_HAND, elbow: SUPPORT_ELBOW },
     magHand: MAG_HAND,
     magazine,
+    // A Minimi fires from an OPEN bolt and does not hold it back on the last
+    // link, so a belt run dry leaves the bolt forward and it has to be charged
+    // — by the FIRING hand, because the handle is forward on the right flank
+    // (`chArm` above) and the left is carrying the belt.
+    reload: {
+      style: "belt",
+      action: {
+        kind: "handle",
+        arm: "trigger",
+        hand: new Vector3(0.088, 0.03, 0.108),
+        pull: new Vector3(0, 0, -0.105),
+      },
+    },
     finish,
     sights: { kind: "fitted", assemblies: optics.sights },
     meshes,

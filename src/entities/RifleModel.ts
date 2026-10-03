@@ -631,6 +631,18 @@ export function buildRifle(
     support: { hand: SUPPORT_HAND, elbow: SUPPORT_ELBOW },
     magazine,
     magDrop: magDropAxis(MAG_RAKE),
+    // A dry SCAR locks its carrier back, and the heel of the support hand
+    // drops it off the catch above the magazine release on the left flank —
+    // the `boltCatch` box above. The fist stands off it to the left and is
+    // driven in along x.
+    reload: {
+      style: "rifle",
+      action: {
+        kind: "catch",
+        hand: new Vector3(-0.088, -0.062, -0.03),
+        strike: new Vector3(0.036, 0.006, 0),
+      },
+    },
     finish,
     sights: { kind: "fitted", assemblies: optics.sights },
     meshes,

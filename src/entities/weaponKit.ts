@@ -198,6 +198,56 @@ export interface GripSpec {
   elbow: Vector3;
 }
 
+/**
+ * HOW a weapon is held while its magazine is changed — the pose the reload
+ * works it in, which `CONFIG.viewmodel.reload.styles` states per id.
+ *
+ * It is a property of the weapon's LAYOUT rather than of its calibre, which is
+ * why a model declares it: a bullpup's well is behind the firing hand, so the
+ * weapon has to be turned the other way to bring it into view; a pistol's is
+ * the bottom of its grip; a belt-fed box hangs off the left flank and weighs
+ * what three magazines do.
+ */
+export type ReloadStyleId = "rifle" | "bullpup" | "pistol" | "bolt" | "belt";
+
+/**
+ * What a reload that ran the weapon DRY has to do to its action once the fresh
+ * magazine is home — the last beat of the gesture, and the one a tactical
+ * reload (a round still chambered) skips. Every position is weapon-local and
+ * is the model's, because where a catch or a handle is is geometry.
+ *
+ * - `catch`: the heel of the support hand strikes a bolt catch on the left
+ *   flank and the carrier slams home. `hand` is where the hand's grip point is
+ *   at contact and `strike` the travel that delivers it, so the hand stands off
+ *   at `hand - strike` and is driven in along it.
+ * - `handle`: a charging handle is hooked, yanked back along `pull` and let
+ *   go. `hand` is the hand's grip point on the knob. `arm` says WHICH hand,
+ *   because a handle on the right flank is the firing hand's.
+ * - `bolt`: the firing hand works the weapon's own bolt (`WeaponParts.bolt`),
+ *   open at the start of the reload and shut at the end of it.
+ * - `slide`: the slide (`WeaponParts.slide`) is locked back from the last
+ *   round and goes forward off the slide stop. `travel` is how far back it is
+ *   held, in model units along -z.
+ */
+export type ReloadAction =
+  | { kind: "catch"; hand: Vector3; strike: Vector3 }
+  | { kind: "handle"; arm: "support" | "trigger"; hand: Vector3; pull: Vector3 }
+  | { kind: "bolt" }
+  | { kind: "slide"; travel: number };
+
+/**
+ * Which of those a weapon has, or `none` — what the SOUND of a reload needs to
+ * know about the weapon, without the geometry it has no use for.
+ */
+export type ReloadActionKind = ReloadAction["kind"] | "none";
+
+/** How a weapon is reloaded: the pose it is held in and the action it closes. */
+export interface ReloadSpec {
+  style: ReloadStyleId;
+  /** Absent on a weapon whose dry reload does nothing to the action. */
+  action?: ReloadAction;
+}
+
 /** Handles into a built weapon: the pose root plus alignment landmarks. */
 export interface WeaponParts {
   /** The whole weapon, at identity. Enabled only while this one is carried. */
@@ -210,11 +260,13 @@ export interface WeaponParts {
   grip: GripSpec;
   support: GripSpec;
   /**
-   * Where the support hand travels to for the magazine swap, weapon-local,
-   * when `CONFIG.viewmodel.magHandOffset` is wrong for this weapon. The shared
-   * offset takes the hand back and down to a magwell under the receiver, which
-   * is where every long gun here keeps one; a pistol's magazine is up inside
-   * the grip, so the same move throws the hand out behind the weapon.
+   * Where the support hand holds the magazine, as an offset from its rest on
+   * the handguard, when the default is wrong for this weapon. The default is
+   * MEASURED off the magazine — the heel of the palm under its floorplate,
+   * `CONFIG.viewmodel.reload.basePalm` below it — which is how a box magazine
+   * is driven home and is right wherever the well is: under a receiver,
+   * behind a bullpup's grip or up inside a pistol's. A container that is not
+   * held by its floor — a belt box, carried by its flank — says so here.
    */
   magHand?: Vector3;
   /**
@@ -285,6 +337,23 @@ export interface WeaponParts {
    * and not the part's — it simply has nothing visible sliding in it.
    */
   bolt?: TransformNode;
+  /**
+   * The SLIDE, on a weapon whose top half recoils as one piece — under a node
+   * of its own so a reload that ran it dry can show it locked back and drop
+   * it home. The fourth of these nodes, and the bolt's rule holds for it: it
+   * never leaves the weapon, its rest is the only state anything but
+   * `ViewModel` may see, and it sits at identity so `position.z` is a pure
+   * offset from battery. Whatever is machined INTO the slide — a pistol's
+   * notch and blade — hangs off it and travels with it, which is what a slide
+   * is.
+   */
+  slide?: TransformNode;
+  /**
+   * How this weapon is reloaded. Absent is a rifle's: held in the `rifle`
+   * pose, with nothing done to the action — which is right for nothing in the
+   * kit today and is the safe default for a weapon that has not said.
+   */
+  reload?: ReloadSpec;
   /** A rail's worth of optics, or the one sight this weapon was born with. */
   sights: WeaponSights;
   /**

@@ -109,6 +109,7 @@ import {
   type StageBay,
   type ViewModelParams,
 } from "./ViewModel";
+import type { ReloadActionKind } from "./weaponKit";
 import { narrowedMove, type CollisionField } from "../world/CollisionField";
 import type { ObstacleField } from "../world/ObstacleField";
 import { TerrainField } from "../world/TerrainField";
@@ -434,6 +435,19 @@ export class Player implements Combatant {
    * `startReload`, which is the only thing that begins a gesture.
    */
   private reloadPhase = 1;
+  /**
+   * Whether the reload in hand began with nothing CHAMBERED — a dry reload,
+   * whose last beat closes the action (a catch struck, a bolt run home, a
+   * slide dropped) — rather than a tactical one that kept its round and has
+   * nothing to close. Decided once, in `startReload`, because the ammunition
+   * it is decided from is what the reload is about to change; frozen with the
+   * phase when a reload is abandoned, for the same reason the phase is.
+   *
+   * It decides nothing but the picture and the sound. A reload takes
+   * `reloadTime` either way, which keeps a tactical reload exactly as fast as
+   * it has always been and the authority's rate gate exactly as right.
+   */
+  private reloadDry = false;
   private fireCooldown = 0;
   /**
    * A bolt gun fired through the sight leaves its bolt SHUT until the sight
@@ -623,6 +637,8 @@ export class Player implements Combatant {
     reloadBlend: 0,
     reloadPhase: 0,
     reloading: false,
+    reloadTime: 1,
+    reloadDry: false,
     loadPhase: 1,
     cyclePhase: 1,
     swapBlend: 0,
@@ -2083,6 +2099,8 @@ export class Player implements Combatant {
     v.reloadBlend = this.reloadBlend;
     v.reloadPhase = this.reloadProgress;
     v.reloading = this.reloading;
+    v.reloadTime = this.weapon.reloadTime;
+    v.reloadDry = this.reloadDry;
     v.loadPhase = this.loadProgress;
     v.cyclePhase = this.cycleProgress;
     v.swapBlend = this.swapWeight();
@@ -2097,6 +2115,10 @@ export class Player implements Combatant {
     v.velY = this.velY;
     v.landDip = cam.landDip;
     this.view.update(dt, v);
+    // The head's part of a reload, decided with the hands' — pushed after the
+    // weapon is posed and before the camera runs, the same frame and the same
+    // gesture.
+    cam.setReloadHead(this.view.reloadHeadPitch, this.view.reloadHeadRoll);
   }
 
   /**
@@ -2428,6 +2450,14 @@ export class Player implements Combatant {
     // weapon that has no magazine. `tryShot` does not auto-start one either,
     // for the same reason.
     if (this.carriedEquipment) return false;
+    // Dry is an EMPTY CHAMBER, which is not quite an empty magazine: a bolt
+    // gun with rounds in the magazine still has nothing chambered while its
+    // bolt is owed a cycle — the shot fired aimed and held shut
+    // (`boltHeld`), or one still being worked when the key went down — and
+    // the reload is what chambers it. Everything else is dry only when the
+    // last round has left.
+    this.reloadDry =
+      this.ammo <= 0 || (this.weapon.boltCycle && (this.boltHeld || this.fireCooldown > 0));
     this.reloading = true;
     this.reloadT = this.weapon.reloadTime;
     this.reloadPhase = 0;
@@ -2440,6 +2470,17 @@ export class Player implements Combatant {
   /** Where the gesture is, 0..1 — frozen where a cancelled reload left it. */
   get reloadProgress(): number {
     return this.reloadPhase;
+  }
+
+  /**
+   * How the reload now beginning ENDS, for the sound that has to fit it:
+   * whether it runs the action (`reloadDry`) and what the weapon in the hands
+   * closes it with. `reloadTime`'s twin, read beside it by `onReload`'s
+   * handler, so the beats the gesture draws and the beats `Sfx.reload` plays
+   * are decided by one answer.
+   */
+  get reloadCue(): { dry: boolean; action: ReloadActionKind } {
+    return { dry: this.reloadDry, action: this.view.reloadAction };
   }
 
   /**

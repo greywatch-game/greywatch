@@ -289,8 +289,17 @@ src/
                         #   the kit turntable with the dark card behind it,
                         #   fitted to the BAY the kit screen reports.
                         #   Builds every weapon, enables one
+    ReloadGesture.ts    # The reload decided, not drawn: a pure function of
+                        #   phase, seconds and dry/tactical giving the weapon's
+                        #   curve and its impact rings, both hands, both
+                        #   magazines (the spent one a clone), the bolt or
+                        #   slide, and the head looking down at the work.
+                        #   ViewModel draws it on a BODY node that takes
+                        #   the inverse of that look
     weaponKit.ts        # The build accumulator every weapon model is written
                         #   in + WeaponParts and WeaponSights (rail, or fixed),
+                        #   the ReloadSpec a model declares (its pose, and the
+                        #   catch/handle/bolt/slide a dry reload closes),
                         #   and the five colour groups a weapon merges into —
                         #   which are also what a finish repaints — and the
                         #   primitives: box, slab, upright, picatinny, shell
@@ -327,7 +336,9 @@ src/
     PistolModel.ts      # Sidearm, a Colt M45A1 (the modern 1911) drawn from
                         #   photos in the rifle's design language — the one
                         #   weapon that does not call optics.ts: its notch and
-                        #   blade are its own and are all it ever wears
+                        #   blade are its own and are all it ever wears, on a
+                        #   slide that is a node of its own so a dry reload
+                        #   can hold it back on the stop
     optics.ts           # Every optic assembly, built onto whichever weapon's
                         #   OpticMount asked for them. Past ~4x the cone is
                         #   bounded by the SCREEN rather than by the rail, which

@@ -116,7 +116,7 @@ two meshes an arm, one per colour.
   - **The lateral, roll and yaw take the shot's own `kickDrift`**, so the model
     leans the way the muzzle actually walked rather than picking a direction of
     its own. `kickRoll` is subtracted against it, because a positive `rot.z`
-    takes the right flank UP (see `reloadRot`) and a weapon walking right has to
+    takes the right flank UP (see `reload.styles`) and a weapon walking right has to
     roll negative to lean into where it is going. Flip it with that convention.
   - **A string cannot drive it past the SHOULDER** (`kick.stackCap`, 1.6 of the
     weapon's own single-round travel, applied as `RecoilShape.cap`). The rest
@@ -218,12 +218,14 @@ two meshes an arm, one per colour.
   same reason**: `velY` is a step function at both ends of a jump, so a give read
   straight off it snapped `airDropMax` to neutral on contact.
 
-**Two things write the camera's roll — the landing absorb and the weapon's
-TWIST — and they do it through ONE assignment** at the end of
-`CameraSystem.update`, which is what stops the roll becoming whichever of them
-happened to run last. Verified as a sum rather than a replacement: a twist taken
-with a landing already in flight reads `landDip * adsMult * land.roll + twist`
-to the last digit, and neither term alone.
+**Three things write the camera's roll — the landing absorb, the weapon's
+TWIST and the head's lean through a reload — and they do it through ONE
+assignment** at the end of `CameraSystem.update`, which is what stops the roll
+becoming whichever of them happened to run last. Verified as a sum rather than
+a replacement: a twist taken with a landing already in flight reads
+`landDip * adsMult * land.roll + twist` to the last digit, and neither term
+alone. The reload's term is pushed (`setReloadRoll`) and is zero on every frame
+no reload is drawn.
 
 The twist rises to a peak and falls from it on `rollT`, its own clock —
 `CONFIG.recoil.rollBeat`, a `smoothstep` up to `peakAt` and an `impulse` down
@@ -278,122 +280,273 @@ is the trade it is asking you to make.
 `Player.setBodyHidden` hides the viewmodel, which matters in the editor: it flies
 the same camera the weapon is parented to.
 
-## The reload is a gesture with a magazine in it
+## The reload is two hands changing a magazine on a weapon that has weight
 
-Every fraction below is a share of `CONFIG.weapons[id].reloadTime`, laid out in
-`CONFIG.viewmodel.reload`, so one timeline carries a 1.05 s sidearm and a 3.4 s
-machine gun without a per-weapon number anywhere.
+`entities/ReloadGesture.ts` DECIDES it, `ViewModel.poseReload` draws it,
+`CONFIG.viewmodel.reload` is its numbers and `WeaponParts.reload` is each
+model's say in it — how the weapon is held and what closes its action. Every
+beat is a fraction of `CONFIG.weapons[id].reloadTime`, so one timeline still
+carries a 1.05 s sidearm and a 3.4 s machine gun without a per-weapon number.
 
-- **It is a TIMELINE, not a pose.** `reloadBlend` is only the gate — what eases
-  the weapon back out when a swap or a death cancels one — and `reloadPhase` is
-  the gesture. The weapon tips out of the carry over `tiltIn`, holds while the
-  magazine is changed under it, and is level again by `tiltOut`'s end, which is
-  before the magazine refills: a weapon still coming level on the frame the
-  round is available is a reload that lied about when it ended.
-- **The beats are `Sfx.reload`'s and must move with them.** That sound is four
-  events — catch, magazine out, magazine seated, bolt — and
-  `magOut`/`magSeat`/`bolt` are three of them to the frame. What makes the
-  gesture legible is that what you see lands on what you hear; a magazine that
-  falls half a beat off the clack releasing it is two unrelated things happening
-  at once. **Change a fraction in one file and change it in the other.** The
-  sound is hung off `Player.onReload` rather than fired at a call site, because
-  `startReload` is the one door a gesture begins through and it is reached two
-  ways — the key, and the last round leaving the magazine inside `tryShot`. In a
-  match that callback also announces the reload to the authority, so a second
-  call site would be a reload fifteen other players never hear.
-- **The middle two of those four are RECORDED and the outer two are clacks**,
-  and that split was decided by the master rather than chosen: `magOut` and
-  `magIn` are the two halves of one magazine change cut from
+**What it replaced read as a robot, and the reasons were specific enough to
+be worth keeping.** The weapon took ONE cant, eased in, held it flat for two
+thirds of the gesture and eased out, while the magazine change happened below
+the bottom edge of the frame — the player saw a receiver turn over and turn
+back. The two impacts were all attack: a full displacement on the frame of the
+seat and of the bolt, which is a weapon in two places a frame apart. One node
+stood in for both magazines, so the old one had to be thrown out of the frame
+at three times gravity to be gone before the new one came back. The hand moved
+in straight lines with no wrist, and the forearms were rigid children of the
+weapon, so every radian it turned, they turned with it.
+
+- **It is a pure function of (phase, seconds, dry) and remembers nothing.** A
+  reload is abandoned by a swap, a death or the kit screen at any frame, and a
+  gesture with state is one something can strand; this has none to strand,
+  and is frame-rate independent by construction. `reloadBlend` is still only
+  the gate that eases a cancelled one off, and `Player.reloadPhase` still
+  FREEZES where a cancelled one left it, so the pose eases out of where it was
+  rather than off the end of the gesture.
+- **The CHOREOGRAPHY is in fractions and the PHYSICS is in seconds.** Where a
+  hand is stretches with the gesture; how a weapon rings when a magazine is
+  slapped into it, how fast a dropped magazine falls and how long a spring
+  takes to run a slide home do not — a machine gun that took three times as
+  long to settle from the same slap would read as being under water.
+  `ViewModelParams.reloadTime` is what turns one into the other.
+- **Every channel is continuous.** Measured in the live client at ~125 fps over
+  real reloads of all seven weapons, dry and tactical, by flagging any frame
+  whose speed is over three times both neighbours': nothing, once the one
+  remaining jump (the tactical hand teleporting at the pouch) was designed
+  out. The pistol's seat once tripped it legitimately — a 25 ms impact at 9 ms
+  frames — and was then found to be too VIOLENT rather than too sudden; see
+  `heft` below. The sniper's seat tripped it too, and that one WAS too sudden;
+  see `rise`.
+
+### The beats, and the two endings
+
+`magOut`, `magSeat` and `bolt` (0.18, 0.55, 0.8) are `Sfx.reload`'s beats, and
+**`Sfx` reads them from `CONFIG.viewmodel.reload` rather than restating them**,
+so the gesture and the sound cannot drift. What you see lands on what you
+hear; a magazine that falls half a beat off the clack releasing it is two
+unrelated things happening at once.
+
+- **A reload is DRY or TACTICAL, decided once in `startReload`
+  (`Player.reloadDry`) and frozen with the phase.** Dry is an empty CHAMBER,
+  which is not quite an empty magazine: a bolt gun with rounds in it still has
+  nothing chambered while its bolt is owed a cycle — the aimed shot held shut
+  (`boltHeld`) or a cycle still running when the key went down. It decides the
+  picture and the sound and nothing else: a reload takes `reloadTime` either
+  way, so a tactical reload is exactly as fast as it always was and the
+  authority's rate gate exactly as right.
+- **Dry is a SPEED reload**: the firing finger drops the magazine at `magOut`
+  and it falls free while the support hand is already on its way to the pouch.
+  **Tactical is a RETENTION reload**: a magazine with rounds in it is kept, so
+  the hand goes to it first, strips it out down the well (`strip`) and carries
+  it away below the frame.
+- **The last beat closes the ACTION and only a dry reload has one to close.**
+  `WeaponParts.reload.action` says how, because where a catch or a handle is
+  is geometry: `catch` (SCAR, HK417, MPX — the heel of the support hand
+  struck into the bolt catch on the left flank), `handle` (the FAMAS's lever
+  inside the carry handle, hooked by the support hand; the Minimi's on the
+  right flank, charged by the FIRING hand — `arm` says which), `bolt` (the AI,
+  whose own bolt the firing hand runs open before the magazine is touched and
+  shut after it) and `slide` (the 1911, see below). A tactical reload's hand
+  goes straight home instead and `Sfx.reload` plays no last beat at all — a
+  bolt slamming over a hand returning to a handguard is a sound with nothing
+  drawn to be the sound of. `Player.reloadCue` is the one answer both read.
+- **The middle two of the four sounds are RECORDED and the outer two are
+  clacks**, and that split was decided by the master rather than chosen:
+  `magOut` and `magIn` are the two halves of one magazine change cut from
   `audio/src/reload.wav`, which holds a magazine stripped out of a well and a
   fresh one slapped home 2.4 s apart with the fetch between them, and has no
-  clean catch or bolt release in it. A missing sample falls back to the clack it
-  replaced, so the gesture has the same four beats on a device that never got
-  the file. **It is one of the two mechanisms in the game that are recorded** —
-  the bolt cycle below is the other, and there is no third —
-  and [`docs/audio.md`](audio.md) is where the boundary that keeps it to two is
-  argued.
+  clean catch or bolt release in it. A missing sample falls back to the clack
+  it replaced. **A dry bolt gun is the exception that uses the cycle's tape**:
+  its catch and its last clack are replaced by `boltLift`/`boltBack` on the
+  opening beats and `boltHome`/`boltLock` on the closing ones, the same four
+  cuts `Sfx.boltCycle` plays, each falling back to its own clack. This is
+  still only two recorded MECHANISMS in the game — [`docs/audio.md`](audio.md)
+  is where the boundary that keeps it at two is argued.
 - **`magIn` is scheduled by its PEAK and not by its start, which is the one
-  thing a change here can silently break.** A magazine going home is an ARRIVAL:
-  188 ms of it rising and rocking into the well and then the slap, which is
-  exactly what `insertFrom`→`magSeat` draws. `Sfx` starts the file
+  thing a change here can silently break.** A magazine going home is an
+  ARRIVAL: 188 ms of it rising and rocking into the well and then the slap,
+  which is what the gesture draws as the fresh magazine is offered to the mouth
+  at `fresh.index` and driven home by `magSeat`. `Sfx` starts the file
   `MAG_IN_PEAK / actionPitch` seconds BEFORE `magSeat` so the recorded slap
-  lands on the drawn one — measured across the whole kit at worst 1.5 ms off,
-  against a 16.7 ms frame. Those two offsets are measured off
-  `audio/manifest.json`'s trims, so **a change to a `trim.start` there is a
-  change to a constant in `Sfx.ts`**, exactly as a change to a fraction here is
-  a change to one there.
-- **`actionPitch` and `actionVol` still voice both of them**, and for these two
-  that is the opposite of the rule a report obeys rather than an inconsistency.
-  A report's file is a recording of THAT weapon and has already made the
-  deviation, so `report.pitch` is not spent on it a second time; one magazine
-  recording is shared by every weapon in the kit and has said nothing about
-  which one it is going into, so the field whose whole job is telling a belt
-  from a pistol magazine is what it still has to be told. It stretches the
-  approach as well as the pitch — the LMG's 0.68 makes it half as long again,
-  which is a slower hand.
-- **The magazine is the one part of a weapon that moves on its own**, and it can
-  only move because the model merged it into a node of its own
-  (`WeaponParts.magazine`, a second `merge` call exactly like an optic's).
-  Everything else on a weapon is inside one merged mesh per colour and cannot be
-  animated at all without the same split. It leaves along `magDrop` — the
-  weapon's own rake, from `magDropAxis`, because a magazine sliding straight
-  down out of a raked well shears through the front of it.
-- **The old one FALLS and the new one is DRIVEN**, and the two easings say so:
-  the drop accelerates (nothing has a hand on it) and clears the frame entirely,
-  while the insert's distance-to-go falls as `1 - x²` so the magazine is at its
-  fastest on the frame it arrives. The clear is what lets one node stand in for
-  two magazines — what comes back is read as a fresh one because it was never
-  seen to be the same one.
-- **The hand carries it by construction, not by matching keys.** From
-  `insertFrom` the support hand rides exactly the travel the magazine rides;
-  before that they part company on purpose, because a hand chasing a falling
-  magazine down reads as having dropped it.
-- **The seat and the bolt are IMPULSES, not poses** — instant attack, squared
-  decay, the same shape as the per-shot kick, because they are the same kind of
-  event. In the pose stack as blends they would be two more places the weapon
-  leans and neither would land on its sound.
-- **The magazine keys off `reloading`, never off the eased blend.** It has two
-  places to be and no way to be between them, so a cancelled reload puts it back
-  in the weapon rather than lerping it home through the receiver.
-  `ViewModel.stow()` is the only place that state is cleared and all three ways
-  out of a half-finished reload — a swap, a round starting, the kit screen
-  coming up over one — go through it, or the weapon comes back without a
-  magazine in it.
-- **`Player.reloadPhase` freezes where a cancelled reload left it** rather than
-  resetting to 1. The pose is played off the phase and eased out by the blend,
-  so a phase that snapped to the end underneath a blend still at 1 would take
-  the pose off in a single frame.
-- **The pose is a CANT, not a lift.** A rifle is not hoisted in front of the
-  face to change a magazine, so `reloadPos` barely moves — the weapon stays near
-  carry height, pulled in a little — and the roll is what brings the magwell
-  where the eye can find it. Two passes got this wrong from opposite ends. The
-  original *dipped* the weapon, which played the whole magazine change below the
-  bottom edge of a frame the magwell was already hanging out of. The fix over-
-  corrected and raised it far enough to frame the magazine dead centre, which
-  looked staged at the hip and put a receiver across the middle of the screen on
-  an aimed reload.
-- **`reloadRot.z` must be negative.** A positive roll takes the right flank up
-  and swings the underside out to the right, away from a camera sitting to the
-  LEFT of a weapon carried at `hipPos.x`: the magwell is presented to nobody and
-  the weapon reads as held out at an angle rather than worked on. Negative rolls
-  the underside toward the camera and carries the magwell inboard, which is both
-  where the support hand comes from and the way a right-handed shooter actually
-  cants a rifle to change magazines. `seatKick`/`boltKick` roll *against* that
-  cant — a magazine driven home knocks the cant out — and flip with it.
-- **A reload BREAKS THE AIM (`reload.aimBreak`), and that is geometry as much as
-  realism.** Nobody changes a magazine through their optic, and an aimed weapon
-  is *on the camera axis*, so a reload pose applied there swings the receiver
-  across the middle of the screen whichever way it moves. The gesture's weight
-  scales the hip→ADS blend back down, so the aimed reload is the hip reload, off
-  to the side where it belongs, and the sight is back on the axis by the end of
-  `tiltOut` — before the round it is loading can be fired. It is not a full 1: a
-  little aim is left in so the weapon settles back from near the sight instead of
-  swinging up from the hip on the last beat, which also keeps a scoped weapon
-  from being flung out of a narrow FOV and back into it.
-- Measured at 1280x720 through the hold: the magwell and the top third of a
-  seated rifle magazine sit inside the bottom of the frame (roughly y 600–720),
-  the magazine leaves through that edge, and the aimed reload keeps the whole
-  middle of the screen clear.
+  lands on the drawn one. Those offsets are measured off `audio/manifest.json`'s
+  trims, so **a change to a `trim.start` there is a change to a constant in
+  `Sfx.ts`**, exactly as a change to a beat here is a change to what `Sfx`
+  plays.
+- **`actionPitch` and `actionVol` still voice both recordings**, which is the
+  opposite of the rule a report obeys rather than an inconsistency: one
+  magazine recording is shared by every weapon in the kit and has said nothing
+  about which one it is going into, so the field whose whole job is telling a
+  belt from a pistol magazine is what it still has to be told.
+
+### The weapon: a curve through four poses, turned in the hand
+
+- **Each LAYOUT is held its own way** (`ReloadStyleId`, declared by the model,
+  stated in `reload.styles`) as four deviations from the carry: `work` (off
+  the shoulder, UP, canted so the well faces the support hand), `sag` (what
+  one hand off the front costs while the other is at the pouch), `meet` (the
+  well brought to the incoming magazine — a well comes to a magazine as much
+  as a magazine to a well) and `present` (dry only: turned to give the hand the
+  action). A bullpup is the one that inverts a rifle: its well is BEHIND the
+  firing hand, so it is pushed out and tipped nose-DOWN about the grip to lift
+  its back end into view. A pistol is tipped and rolled so the base of its grip
+  faces the hand coming up from the belt.
+- **The keys are played as a Catmull-Rom curve, not as blends between holds.**
+  The curve flows THROUGH a key rather than stopping at it, the roll
+  overshoots the work by 7% on the way in and settles, and the weapon arrives
+  back a little PAST the carry and settles there — a weapon arriving in a
+  shoulder rather than being parked in one. The rotation is sampled
+  `ROT_LEAD` ahead of the translation: a wrist turns the weapon before the arm
+  carries it.
+- **The weapon is NOT hoisted into view; the HEAD looks down at it.** At the
+  carry height the whole change happens below the bottom edge, and the first
+  pass at this lifted the weapon twelve centimetres toward the middle of the
+  screen to show it — which showed the well and read as a weapon held up for
+  the camera, because the world behind it never moved. A person keeps the
+  weapon where the hands are, tucked in toward the chest a few centimetres
+  higher than the carry (`work`), and looks down at it: `reload.head` tips the
+  rendered camera down 9° through the work, and the weapon hangs off a BODY
+  node (`ViewModel.body`) that takes the inverse of the head's look, so the
+  rifle stays put in the hands while the world climbs the frame. That is how
+  looking down at something you are holding looks, and it is the only reason
+  the work is in shot. The look is the one exception to the held-trigger rule
+  below, and that section says why it is safe.
+- **The cant is still NEGATIVE** — `work.rot.z` below zero rolls the
+  underside toward the camera and carries the well inboard, toward the support
+  hand, the way a right-handed shooter cants a rifle to change magazines. A
+  positive roll presents the well to nobody. The bolt cycle's roll is the one
+  positive one in the file; see the next section.
+- **Every turn is applied about the FIRING HAND** (`turnAboutHand`), not the
+  weapon's origin, which on a rifle is the middle of the receiver. A weapon
+  canted in the hand swings its muzzle and its well round the grip; one canted
+  about its own centre drags the hand holding it sideways across the frame.
+- **And the firing WRIST takes some of it back** (`styles[].wrist`). The arms
+  are children of the weapon, so a forearm turns rigidly with every radian the
+  weapon does: a pistol tipped muzzle-up swung the firing forearm up into the
+  lens until it filled the frame. A share of the turn is undone on that arm,
+  about its own hand, and the hand turning a little inside the grip is the
+  price — a closed fist hides it. Both arms pivot at their hands for this
+  (`setPivotPoint`), so a pivot is load-bearing: a turn written about the
+  arm's origin swings the whole forearm round the receiver.
+- **A reload BREAKS THE AIM (`reload.aimBreak`, 0.8), and that is geometry
+  as much as realism.** Nobody changes a magazine through their optic, and an
+  aimed weapon is on the camera axis, so a reload worked there swings the
+  receiver across the middle of the screen. `ReloadPose.work` is the weight, up
+  over `tiltIn` and down over `tiltOut` (dry) or `tacticalOut`, and the sight is
+  back on the axis by 0.97 — before the round it is loading can be fired. Not
+  1, so the sight comes back from near the axis rather than swinging up from
+  the hip on the last beat.
+
+### Impacts are rings, in seconds
+
+- **Every impact is a damped ring** (`reload.jolts`): the impulse response of a
+  mass on a spring, which is what a weapon in two hands is. An impact hands a
+  weapon a SPEED, never a displacement, so the ring starts at zero and peaks
+  a few tens of milliseconds later — the shape the per-shot kick and the view
+  punch were both moved to for the same reason. The release unloads the
+  weapon upward; the seat drives it up nose-first and knocks the cant out of
+  it; the tug pulls it down; a catch struck from the left pushes it right; a
+  handle yanked back pulls it in and the carrier slamming home throws it
+  forward.
+- **`rise` is how long the FORCE takes to arrive.** A slap is ten to twenty
+  milliseconds of contact and keeps a crisp edge; a strip or a tug is a pull
+  lasting several times that, and taken as instantaneous it put a visible kink
+  in the weapon's path where the pull began. The seat's was 12 ms once, and on
+  the sniper — whose three-second reload makes the push into the well slow —
+  ten of the slap's fourteen millimetres landed in one frame.
+- **`heft` scales an impact by `1/sqrt(heft)`, in size AND in rate.** A heavy
+  weapon answers the same slap less and slower. Not by the full heft: the hand
+  is the spring and a light weapon is held stiffer, and divided by the mass a
+  slapped pistol magazine threw the pistol three centimetres and eight
+  degrees in a hundredth of a second.
+- **A ring is measured from the phase, and the phase stops at 1**, so a ring
+  still swinging when the reload ends is held mid-swing while the blend fades
+  it. Nothing pops, but it is why the shoulder's ring is placed well short of
+  the end rather than on it.
+
+### The two magazines and the hand that moves them
+
+- **The SPENT magazine is a clone** (`WeaponRig.spent`, sharing the
+  magazine's geometry and materials, its colour groups added to the rig's
+  finish list so a repaint reaches it). The weapon's own node is the one in
+  the well and then the FRESH one. They trade on the frame the old magazine
+  first moves, where the two are identical and in the same place.
+- **Dry, the spent one FALLS under the world's gravity**: it leaves the catch
+  already moving (`spent.eject` — the magazine's spring and the flick of the
+  wrist), slides `slide` out of the well at `grip` of g with the well's friction
+  on it, and then drops at 9.81 m/s² along the WORLD's down, converted into the
+  weapon's frame each frame from the matrix the last render left. It falls the
+  way the ground says whatever the cant. Gravity alone, from rest, is slow at
+  the start — 5 cm in the first tenth of a second — and a magazine that hung
+  at the mouth of its well for a beat read as stuck; `eject` is what a real one
+  has that a dropped stone does not.
+- **Tactical, it is stripped to EXACTLY where the fresh one is picked up**
+  (`fresh.fetch`). The dump pouch and the magazine pouch are one reach apart,
+  and ending there is what keeps the hand's path unbroken: the two magazines
+  trade at the pouch, identical and coincident, below the frame. The clone
+  turns about its MIDDLE and the fresh one about its MOUTH (both measured off
+  the magazine's own bounds), so one placement is two different offsets —
+  `strippedAt` carries the formula.
+- **The fresh one comes up on a minimum-jerk ARC** — a quadratic through a
+  point back down the well's own axis, so it finishes travelling up the axis
+  rather than across it — turning upright a little ahead of arriving, stops
+  for an instant at the mouth (`fresh.index`, a magazine is offered to a well
+  before it is driven) and is driven home with its distance to go falling as
+  `1 - x²`, at its fastest on the frame it seats.
+- **Minimum jerk (`10x³ - 15x⁴ + 6x⁵`) is the reach profile throughout**, and
+  not `hermite`: it is what a practised hand's path to a target measures as —
+  zero speed AND zero acceleration at both ends — where `hermite` starts and
+  stops with a finite acceleration, which reads as a motor.
+- **The hand carries the magazine by construction** (`holding`): the arm's
+  offset and turn are the magazine's own transform applied to the hand's grip
+  on it, so the hand is carrying it rather than travelling beside it, and a
+  magazine tilted in the hand tilts the wrist with it.
+- **The hand holds a magazine by its flank or its floor, NEVER round the
+  middle** (`styles[].grip`, measured off the magazine's floorplate, or
+  `WeaponParts.magHand` where neither fits — the M249's box is carried by its
+  flank). The fist is one solid shape, and closed round a magazine's body the
+  body — deeper front-to-back than the fist — pokes out through the knuckles.
+  A long magazine is held from the LEFT, low, which keeps the hand in the frame
+  while it goes in; a pistol's, which is all floorplate below the grip, under
+  the heel of the palm that drives it home.
+- **The push-pull** (`tug`): seated, the magazine is pulled once to prove it
+  latched — the beat every trained shooter does, and the one that says the
+  magazine is now part of the weapon, which is pulled with it.
+- **The magazines key off `reloading`, never off the eased blend.** Each has
+  places to be and no way to be between them, so a cancelled reload puts the
+  fresh one back in the weapon and the spent one away rather than lerping
+  anything home through the receiver. Everything the reload writes is put back
+  once on the frame after the last one it drew (`restReload`), and `stow()`
+  calls the same thing for the three ways a reload is abandoned with nothing
+  left running to do it.
+- **A throw takes the fresh magazine with the hand**, which is the launcher's
+  rule for its rocket: the throwing hand IS the support hand, so the arm is
+  switched off for the throw, and a magazine left drawn would rise into the
+  well on its own.
+
+### The pistol's slide, and the head
+
+- **The 1911's slide is a node of its own** (`WeaponParts.slide`, the fourth
+  of these), and the sights hang off it because they are machined into it. A
+  dry reload holds it back on the stop from the frame the last round left —
+  uncovering the front third of the barrel, which is why the barrel is now
+  built the length of the slide rather than as a stub behind the bushing — and
+  drops it home on the beat in `slide.close` SECONDS, accelerating, under the
+  firing thumb's press. At rest it is at identity, so `sightCenter`'s position
+  is still root-local and the aimed pose derives exactly as it did.
+- **The HEAD looks down at the work and leans with it** (`reload.head`,
+  `ReloadPose.headPitch`/`headRoll`, pushed to `CameraSystem.setReloadHead`).
+  The look comes in with the weapon, dwells a little deeper (`watch`) while
+  the fresh magazine is found and driven home, and leaves AHEAD of the
+  weapon's own return — the eyes go back to the fight while the rifle is still
+  coming up — so the view is level well before the round is live. The lean is
+  a share of the cant, and both take a small share of every impact (`nod`,
+  `jolt`): a slap that moves a rifle moves what it is braced against. The lean
+  is the third contributor to the camera's one roll assignment. Both are
+  rendered only, never on `aimPitch`, and the BODY node turns the weapon back
+  by exactly what the head does, so nothing the hands hold moves with it.
 
 **There is a SECOND gesture built on this one and it is not a reload** (a
 THIRD is the section below): the
@@ -1549,6 +1702,20 @@ cannot move the aim), and read the rendered camera's pitch on every
 `onAfterRenderObservable`. A floor sampled on the frame before each round
 aliases against the fire interval by up to ~0.1° on the steep hip sawtooth, so
 count a round as net-down only past that.
+
+**There is ONE exception, and it is the reload's head** (`reload.head`,
+`CameraSystem.reloadPitch`): a person changing a magazine looks DOWN at the
+well, and the only alternative found was hoisting the weapon up in front of a
+head that never moved, which read as a gesture made for the camera. It is
+bounded on every side this rule exists for. It is on the RENDERED view and
+never on `aimPitch`, so no round, sightline or aim assist sees it. It happens
+during a gesture no round can be fired through — and the rule is about a
+STRING, while a reload begun by the last round of one is what ends it. And it
+is back to level (`head.lookOut`) before the round the reload is loading can be
+fired. So the re-measure above has to read the rendered pitch through the
+STRING, not through the reload that follows it; a held trigger that runs the
+magazine dry will show the head going down after the last round, and that is
+the exception rather than a regression.
 
 **Both string-shaped terms share one exclusion**, `Player.stringed` — whether the
 SELECTED POSITION has a cycle you can be in the middle of (`!semiAuto ||

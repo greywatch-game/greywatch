@@ -87,19 +87,6 @@ const SUPPORT_HAND = new Vector3(-0.05, -0.13, -0.086);
 const SUPPORT_ELBOW = new Vector3(-0.302, -0.478, -0.344);
 
 /**
- * Where the support hand goes for the magazine swap. Straight DOWN off the
- * grip, because that is where this weapon's magazine lives — the shared offset
- * in `CONFIG.viewmodel.magHandOffset` takes the hand back to a magwell under a
- * receiver, and applied here it throws the arm out behind the gun.
- *
- * It puts the fist's fingers at the FLOORPLATE, so the heel of the hand is
- * what drives the magazine home. It is measured against `gripPivot` and has to
- * move whenever that pivot moves. When the grip was raised it stayed put and
- * left the magazine riding in three centimetres above the fist.
- */
-const MAG_HAND = new Vector3(-0.02, -0.11, -0.07);
-
-/**
  * How far the eye is held behind the notch when aimed (m) — this weapon's own,
  * since the table's "iron" figure is a rifle's. The notch, the blade and the
  * fists were all fitted against this distance.
@@ -136,58 +123,16 @@ export function buildPistol(
   const root = new TransformNode(`${prefix}_pistol`, scene);
   const b = new WeaponBuild(scene, mats, prefix, root);
 
-  // --- slide: flat-topped, its nose dropping over the recoil spring ---
-  b.slab("slide", BODY, [
-    [0.143, -0.032],
-    [0.143, SLIDE_TOP - 0.004],
-    [0.139, SLIDE_TOP],
-    [-0.134, SLIDE_TOP],
-    [-0.138, SLIDE_TOP - 0.004],
-    [-0.138, SLIDE_BOTTOM],
-    [0.072, SLIDE_BOTTOM],
-    [0.08, -0.025],
-    [0.09, -0.032],
-  ], 0.032, 0.005);
-  // Cocking serrations at both ends, cut as dark grooves at their real pitch
-  // and raked forward the way M45A1's are.
-  const serrations = (name: string, z0: number, n: number): void => {
-    for (let i = 0; i < n; i++) {
-      const z = z0 + i * 0.0062;
-      b.slab(name, RUBBER, [
-        [z, -0.014],
-        [z + 0.0026, -0.014],
-        [z + 0.0046, SLIDE_TOP - 0.007],
-        [z + 0.002, SLIDE_TOP - 0.007],
-      ], 0.0326, 0);
-    }
-  };
-  serrations("serrRear", -0.131, 8);
-  serrations("serrFront", 0.086, 5);
-  // Ejection port, right side, with the barrel's hood showing in it.
-  b.slab("ejectPort", RUBBER, [
-    [-0.006, 0.0],
-    [0.054, 0.0],
-    [0.054, 0.016],
-    [-0.006, 0.016],
-  ], 0.002, 0, 0.0158);
-  b.slab("barrelHood", METAL, [
-    [-0.002, 0.004],
-    [0.048, 0.004],
-    [0.048, 0.012],
-    [-0.002, 0.012],
-  ], 0.002, 0, 0.0162);
-  // The markings flat on the left, as a few fine dark lines.
-  for (const [y, len] of [[0.01, 0.07], [0.002, 0.05]] as const) {
-    b.box("stamp", RUBBER, 0.002, 0.0026, len, -0.0162, y, 0.0 + len / 2);
-  }
-
-  // --- muzzle end: barrel bushing over the bore, recoil spring plug under it.
-  // The dark core behind the bushing is what the bore reads against; without
-  // something inside it the ring opens onto the skybox and the muzzle looks
-  // like a hole in the model. ---
-  b.tube("bore", RUBBER, 0.018, 0.018, 0.04, 0, 0, 0.126);
-  b.shell("bushing", METAL, 0.019, 0.006, 0.014, 0, 0.146, 12);
-  b.shell("plug", METAL, 0.008, 0.004, 0.01, -0.021, 0.146, 10);
+  // --- the barrel: the one part of the top half that does NOT recoil ---
+  // Built on the frame, under the slide, and long enough to fill it: a slide
+  // locked back off the last round uncovers the front third of the barrel, and
+  // a barrel that was only ever a stub behind the bushing would leave a gap of
+  // open air between the slide's nose and the muzzle. Steel for the length the
+  // slide uncovers, and a dark core proud of its crown — what the bore reads
+  // against inside the bushing. Without something there the ring opens onto
+  // the skybox and the muzzle looks like a hole in the model.
+  b.tube("barrel", METAL, 0.021, 0.021, 0.084, 0, 0, 0.1015);
+  b.tube("bore", RUBBER, 0.016, 0.016, 0.02, 0, 0, 0.1355);
 
   // --- frame: rails under the slide, the railed dust cover, the beavertail ---
   // The frame stands a millimetre inside the slide's flanks, which is the seam
@@ -335,9 +280,67 @@ export function buildPistol(
     }
   }
 
-  // The pistol itself is finished. Merged before the sight is built, so the
-  // sight's parts land in their own colour groups exactly as an optic's do.
+  // The frame is finished. Merged before the slide is built, so nothing on the
+  // slide can land in the frame's colour groups — the slide is the one half of
+  // this weapon that moves.
   const meshes = b.merge("pistol", root);
+
+  // --- slide: flat-topped, its nose dropping over the recoil spring ---
+  // A node of its own (`WeaponParts.slide`), at identity, so a reload that ran
+  // the weapon dry can hold it back on the slide stop and drop it home. The
+  // sights are machined into it and hang off it below; so do the bushing and
+  // the recoil-spring plug, which ride in its nose.
+  const slide = new TransformNode(`${prefix}_slide`, scene);
+  slide.parent = root;
+  b.slab("slide", BODY, [
+    [0.143, -0.032],
+    [0.143, SLIDE_TOP - 0.004],
+    [0.139, SLIDE_TOP],
+    [-0.134, SLIDE_TOP],
+    [-0.138, SLIDE_TOP - 0.004],
+    [-0.138, SLIDE_BOTTOM],
+    [0.072, SLIDE_BOTTOM],
+    [0.08, -0.025],
+    [0.09, -0.032],
+  ], 0.032, 0.005);
+  // Cocking serrations at both ends, cut as dark grooves at their real pitch
+  // and raked forward the way M45A1's are.
+  const serrations = (name: string, z0: number, n: number): void => {
+    for (let i = 0; i < n; i++) {
+      const z = z0 + i * 0.0062;
+      b.slab(name, RUBBER, [
+        [z, -0.014],
+        [z + 0.0026, -0.014],
+        [z + 0.0046, SLIDE_TOP - 0.007],
+        [z + 0.002, SLIDE_TOP - 0.007],
+      ], 0.0326, 0);
+    }
+  };
+  serrations("serrRear", -0.131, 8);
+  serrations("serrFront", 0.086, 5);
+  // Ejection port, right side, with the barrel's hood showing in it. The hood
+  // is drawn as an inlay on the slide rather than on the barrel: it travels
+  // with the port it is seen through.
+  b.slab("ejectPort", RUBBER, [
+    [-0.006, 0.0],
+    [0.054, 0.0],
+    [0.054, 0.016],
+    [-0.006, 0.016],
+  ], 0.002, 0, 0.0158);
+  b.slab("barrelHood", METAL, [
+    [-0.002, 0.004],
+    [0.048, 0.004],
+    [0.048, 0.012],
+    [-0.002, 0.012],
+  ], 0.002, 0, 0.0162);
+  // The markings flat on the left, as a few fine dark lines.
+  for (const [y, len] of [[0.01, 0.07], [0.002, 0.05]] as const) {
+    b.box("stamp", RUBBER, 0.002, 0.0026, len, -0.0162, y, 0.0 + len / 2);
+  }
+  // Muzzle end: the barrel bushing round the crown, the plug under it.
+  b.shell("bushing", METAL, 0.019, 0.006, 0.014, 0, 0.146, 12);
+  b.shell("plug", METAL, 0.008, 0.004, 0.01, -0.021, 0.146, 10);
+  meshes.push(...b.merge("pistolSlide", slide));
 
   // --- the magazine, in a node of its own so the reload can drop it ---
   // The only magazine in the kit that is INSIDE the weapon: all a seated one
@@ -371,7 +374,11 @@ export function buildPistol(
   // `WeaponParts` is one shape for every weapon, not several.
   const finish = b.takeFinish();
 
-  const sight = buildFixedIrons(b, prefix, root);
+  // On the SLIDE, which is where a 1911's sights are. At rest the slide is at
+  // identity, so `sightCenter`'s position is still root-local and the aimed
+  // pose derives from it exactly as it did; the slide only ever moves under a
+  // reload, which has already broken the aim.
+  const sight = buildFixedIrons(b, prefix, slide);
   meshes.push(...sight.meshes);
   b.disposePivots();
 
@@ -382,9 +389,13 @@ export function buildPistol(
     ejectPort: new Vector3(0.024, 0.01, 0.024),
     grip: { hand: GRIP_HAND, elbow: GRIP_ELBOW },
     support: { hand: SUPPORT_HAND, elbow: SUPPORT_ELBOW },
-    magHand: MAG_HAND,
     magazine,
     magDrop: magDropAxis(GRIP_RAKE),
+    slide,
+    // The last round leaves the slide on the stop; the firing thumb takes it
+    // off once the fresh magazine is home. `travel` is the 1911's own stroke
+    // less the little it gives back onto the stop, in model units.
+    reload: { style: "pistol", action: { kind: "slide", travel: 0.058 } },
     finish,
     // Held at arm's length rather than at a cheek weld: the rifle irons' eye
     // relief would put the notch a hand's width from the face.

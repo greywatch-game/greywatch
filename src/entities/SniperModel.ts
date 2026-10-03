@@ -141,7 +141,7 @@ const COMB_TOP = Math.min(RAIL_TOP + 0.004, ironSightFloor(MOUNT, COMB_FRONT_Z) 
  *
  * The lift is `CONFIG.viewmodel.cycle.liftTurn` and is deliberately not here:
  * this file owns where the part is and the viewmodel owns what is done to it,
- * which is the same split `magDrop` and `reload.dropDist` already make. The two
+ * which is the same split `magDrop` and `reload.spent` already make. The two
  * are a PAIR even so — this angle is chosen knowing what that one adds to it.
  */
 const BOLT_Z = -0.075;
@@ -628,6 +628,11 @@ export function buildSniper(
     support: { hand: SUPPORT_HAND, elbow: SUPPORT_ELBOW },
     magazine,
     magDrop: magDropAxis(MAG_RAKE),
+    // A bolt gun is loaded THROUGH its action: the bolt comes back off the
+    // spent case before the magazine is changed and is run home on a fresh
+    // round after it, by the same hand and on the same `bolt` node the cycle
+    // works.
+    reload: { style: "bolt", action: { kind: "bolt" } },
     bolt,
     finish,
     sights: { kind: "fitted", assemblies: optics.sights },

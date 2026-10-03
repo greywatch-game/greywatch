@@ -291,7 +291,7 @@ Five things are load-bearing:
   changed. `alignDist` is sized off it and not off the head: the tail is 0.35
   behind the muzzle when seated, so anything under that is a round that never
   actually came out.
-- **`offerPos` is deep for the reason `reload.insertDist` is.** One node stands
+- **`offerPos` is deep because one node stands
   in for the round that left and the round that comes back, so the frame it
   reappears on is a jump from nothing to there, and it has to happen far enough
   under the bottom edge that neither the bob nor the tube's own tip can bring
@@ -311,8 +311,9 @@ Five things are load-bearing:
   the two depth figures above are tuned against. The round's nose is at
   **(554, 851)** on the last frame it is hidden and **(594, 807)** on the first
   frame it is drawn, so it appears 87 px under the bottom edge rather than the
-  35 px an earlier `offerPos` left — inside the bob, and the same failure
-  `reload.insertDist` records at 40 px. It is fully in frame by `0.48`, on the
+  35 px an earlier `offerPos` left — inside the bob, and the same failure the
+  reload's magazine had at 40 px while it too was one node standing in for two
+  (it has a second node for the spent one now; the rocket does not need one). It is fully in frame by `0.48`, on the
   bore at **(514, 512)** with its tail at the mouth, and seated its nose lands
   on **(585, 502)** against the launcher's own muzzle landmark at (579, 500).
   Nothing crosses the middle of the screen at any point.

@@ -468,7 +468,8 @@ round.
 
 → **[`docs/weapons.md`](docs/weapons.md)** — the report's five layers, the crouch
 latch, the gloss ladder, the viewmodel's rendering group and pose stack, the
-reload's four beats, the kick spring, the recoil pattern's two envelopes, the
+reload (its beats, dry against tactical, the two magazines, the action each
+weapon closes, why impacts ring in seconds and the wrist turns), the kick spring, the recoil pattern's two envelopes, the
 bolt cycle's two expressions in full, the fire selector (the four facts a
 position is, why only the carbine's `semi` states a rate), the two slots, the
 head zone, eye relief, and the procedural-model rules.
@@ -1907,7 +1908,11 @@ lobby and the regions' two headers, and what is not built.
   (`aimSway.holdEase`), a gunshot's punch lifts nothing (`recoil.punchLift`),
   and the haul LEANS IN past `settle.reach*` so a string plateaus instead of
   sinking. **Anything new on `aimPitch` or the rendered pitch owes that test**,
-  through a held trigger in the live client (`docs/weapons.md`).
+  through a held trigger in the live client (`docs/weapons.md`). **The ONE
+  exception is the reload's head looking down at the work** (`reload.head`):
+  rendered only, during a gesture nothing can be fired through, and level
+  again before the round it loads is live — so the test reads the STRING, not
+  the reload the last round of one begins.
 - **The recoil vector is built in `Player.recoilKick`, never at the call site.**
   Every number in it is the weapon's or the body's, and the horizontal is drawn
   ONCE per shot into `Player.kickDrift` so the aim, the viewmodel's lean and the
