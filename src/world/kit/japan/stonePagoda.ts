@@ -14,10 +14,10 @@ import {
   type Structure,
   HIDE_UNDER,
   streetSeed,
+  type V3,
 } from "../core";
 import { Lapidary, TAU, type TubePoint } from "./lapidary";
 import { GRANITE, GRANITE_DARK } from "./palette";
-import type { V3 } from "./roof";
 
 /**
  * A STONE PAGODA (sekitō): a GOJŪ-NO-TŌ in granite, the five-storey tower of

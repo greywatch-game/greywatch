@@ -12,10 +12,10 @@ import {
   type BuildParams,
   type Structure,
   streetSeed,
+  type V3,
 } from "../core";
 import { Lapidary, TAU } from "./lapidary";
 import { GRANITE, GRANITE_DARK, SHOJI_GLOW, SUMI } from "./palette";
-import type { V3 } from "./roof";
 
 /**
  * A STONE LANTERN (tōrō), drawn as the KASUGA lantern that lines every temple

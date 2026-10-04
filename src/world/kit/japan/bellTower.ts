@@ -18,6 +18,7 @@ import {
   hideBack,
   runsAlongX,
   streetSeed,
+  type V3,
 } from "../core";
 import { J_CORNERS, J_SIDES, Joinery } from "./joinery";
 import { Lapidary, TAU, type TubePoint } from "./lapidary";
@@ -32,7 +33,7 @@ import {
   SHIKKUI,
   SUMI,
 } from "./palette";
-import type { RoofSpec, V3 } from "./roof";
+import type { RoofSpec } from "./roof";
 
 /**
  * The BELL TOWER — a SHŌRŌ, the open bell house an Edo temple stands in its

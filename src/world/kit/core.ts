@@ -1899,6 +1899,64 @@ export function carve(a: number, b: number, cuts: [number, number][]): [number, 
 /** A point in a structure's own frame. */
 export type Point3 = readonly [number, number, number];
 
+/** A writable point, which is what `Mesher` takes. */
+export type V3 = [number, number, number];
+
+/**
+ * Finished triangles with their winding decided per triangle.
+ *
+ * `outward` is a HINT, not a normal: the triangle is flipped if Babylon's own
+ * face normal — `(v1 - v2) x (v3 - v2)`, `VertexData.ComputeNormals` in a
+ * left-handed scene — points away from it. So the ring loops below can walk
+ * in whatever order is convenient, and a roof built upside down in the head
+ * of whoever edits this still comes out facing the sky.
+ */
+export class Mesher {
+  private positions: number[] = [];
+  private indices: number[] = [];
+
+  tri(a: V3, b: V3, c: V3, outward: V3): void {
+    const ux = a[0] - b[0];
+    const uy = a[1] - b[1];
+    const uz = a[2] - b[2];
+    const vx = c[0] - b[0];
+    const vy = c[1] - b[1];
+    const vz = c[2] - b[2];
+    const nx = uy * vz - uz * vy;
+    const ny = uz * vx - ux * vz;
+    const nz = ux * vy - uy * vx;
+    // A degenerate triangle has no normal to give the cel shader, and the
+    // rings DO collapse — the ridge ring is a line.
+    if (nx * nx + ny * ny + nz * nz < 1e-10) return;
+    const flip = nx * outward[0] + ny * outward[1] + nz * outward[2] < 0;
+    const order = flip ? [a, c, b] : [a, b, c];
+    for (const v of order) {
+      this.indices.push(this.positions.length / 3);
+      this.positions.push(v[0], v[1], v[2]);
+    }
+  }
+
+  quad(a: V3, b: V3, c: V3, d: V3, outward: V3): void {
+    this.tri(a, b, c, outward);
+    this.tri(a, c, d, outward);
+  }
+
+  data(): VertexData {
+    const data = new VertexData();
+    data.positions = this.positions;
+    data.indices = this.indices;
+    const uvs: number[] = [];
+    for (let i = 0; i < this.positions.length; i += 3) {
+      uvs.push(this.positions[i], this.positions[i + 2]);
+    }
+    data.uvs = uvs;
+    const normals: number[] = [];
+    VertexData.ComputeNormals(this.positions, this.indices, normals);
+    data.normals = normals;
+    return data;
+  }
+}
+
 /**
  * A convex solid between two matching faces — `from[i]` joined to `to[i]` —
  * for the shapes a box cannot be: a coat of thatch cut vertical at the eave

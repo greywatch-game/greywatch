@@ -5,9 +5,8 @@
  * Invariants: draws in the model's own units and scales once by `s` as it
  * emits; emits no colliders.
  */
-import { Build, StoneBatch } from "../core";
+import { Build, Mesher, StoneBatch, type V3 } from "../core";
 import { GRANITE, KAKI, MOMIJI } from "./palette";
-import { Mesher, type V3 } from "./roof";
 
 export const TAU = Math.PI * 2;
 

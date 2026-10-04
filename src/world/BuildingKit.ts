@@ -302,7 +302,9 @@ export type BuilderKind = keyof typeof BUILDERS;
  * strings' feet, its trestle posts and their footings down to the ground.
  * The net loft seeds its paint, which dark windows are shuttered, its slate
  * runs and what lies in its undercroft off where it stands, and carries each
- * pier's footing down to the ground under it.
+ * pier's footing down to the ground under it. The planter seeds its planting,
+ * its ivy and the corner knocked off its coping off where it stands,
+ * and carries its toe down to the lowest ground under its corners.
  */
 export const CONFORMS_TO_TERRAIN: ReadonlySet<BuilderKind> = new Set([
   "road",
@@ -343,4 +345,5 @@ export const CONFORMS_TO_TERRAIN: ReadonlySet<BuilderKind> = new Set([
   "bellTower",
   "archBridge",
   "netLoft",
+  "planter",
 ] as const);

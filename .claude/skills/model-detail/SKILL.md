@@ -211,7 +211,8 @@ down a slope), `carve` (intervals minus cuts), and the forest's words: `orient`,
 `slab` (a flat member from A to C), `limb` (a round one), `rope` (a tapering
 chain — roots, stems, cables), `heading`, `stepAlong`, `fern`, `curtain` (creeper
 hung down a face), plus `FIG_*`;
-`convexSolid` (a solid between two matching faces), and the elevations' words
+`convexSolid` (a solid between two matching faces), `Mesher` (finished
+triangles wound against an outward hint, one surface per colour), and the elevations' words
 `onFace` (a member laid on one of four faces), `Side`, `Hole`, `CASEMENT` and
 `DOOR_PAINTS`. In `buildings/` (set-local, move to core.ts if a second
 set needs one): `offFace`, `casement`, `doorway`, `framing` (`village.ts`),

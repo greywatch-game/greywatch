@@ -15,10 +15,10 @@ import {
   GUARD_THICKNESS,
   guardSpec,
   streetSeed,
+  type V3,
 } from "../core";
 import { Lapidary, TAU } from "./lapidary";
 import { BRONZE, CEDAR, GRANITE, GRANITE_DARK, HINOKI, SHU, SUMI } from "./palette";
-import type { V3 } from "./roof";
 
 /** Walked height of the arch's crown over LOCAL ZERO, which is bank grade. */
 const ARCH_CROWN = 1.7;

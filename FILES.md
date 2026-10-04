@@ -796,7 +796,8 @@ src/
     kit/core.ts         #   Build accumulator (box/wall/guard/flight/...),
                         #   palette, builder contract, and the forest's
                         #   drawing words (limb/rope/slab/fern/curtain) the
-                        #   jungle ruin, the temple and the manor grow from
+                        #   jungle ruin, the temple and the manor grow from;
+                        #   `StoneBatch` and `Mesher`, one surface per colour
     kit/buildings/      #   the big enterable and landmark buildings: one file
                         #   per builder, and one per set of drawing words
       index.ts          #   The set's header and barrel
@@ -869,8 +870,7 @@ src/
                         #   tall climbable
       palette.ts        #   The five materials and the one accent, the paper's
                         #   glows, and the two fallen-leaf colours
-      roof.ts           #   The kit's one CURVED ROOF: `Mesher` (triangles wound
-                        #   per triangle against an outward hint), `curvedRoof`
+      roof.ts           #   The kit's one CURVED ROOF: `curvedRoof`
                         #   (rings from eave to ridge on a power curve, corners
                         #   swept up, a closed solid) and `roofHeight`
       lapidary.ts       #   `Lapidary`, the mason the toro, the stone pagoda,

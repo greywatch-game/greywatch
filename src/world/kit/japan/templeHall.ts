@@ -23,6 +23,8 @@ import {
   rope,
   runsAlongX,
   streetSeed,
+  Mesher,
+  type V3,
 } from "../core";
 import {
   BRONZE,
@@ -41,7 +43,7 @@ import {
   SUMI,
   TRANSLUCENCY,
 } from "./palette";
-import { Mesher, curvedRoof, roofHeight, type RoofSpec, type V3 } from "./roof";
+import { curvedRoof, roofHeight, type RoofSpec } from "./roof";
 
 /**
  * The TEMPLE HALL (hondō): the main hall of an Edo-period temple in the
