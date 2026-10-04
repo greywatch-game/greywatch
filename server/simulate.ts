@@ -93,8 +93,8 @@ function pct(sorted: Float64Array, p: number): number {
  * block that stops a quiet round being read as an answer.
  *
  * A round left to itself on a big map spends most of its ticks with nobody
- * looking at anybody: `FINDINGS.md` 22 had to FORCE a skirmish before the
- * client fired a single ray at 1500 m, and 30 found the same shape again in
+ * looking at anybody: `ENGINE_UPGRADE.md` S2 had to FORCE a skirmish before the
+ * client fired a single ray at 1500 m, and S8 found the same shape again in
  * the frame. The mean tick of such a round is a measurement of walking. So
  * every tick is filed by how many bots held a target during it, and the
  * expensive bucket is quoted beside the cheap one: what settles whether the

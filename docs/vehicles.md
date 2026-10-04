@@ -870,7 +870,7 @@ ray in this tree stopped doing when `RayWorld` replaced the picks
 rather than asking a question about one, so no analytic query stands in for it.
 Measured on the authority, one hull stepped 2,000 times: **0.039 ms a call
 against Coldharbour’s 754 collider meshes and 0.402 against a 1500 m map’s
-5,904** (`FINDINGS.md` 31). On the CLIENT it was worse than either figure
+5,904** (`ENGINE_UPGRADE.md` S9). On the CLIENT it was worse than either figure
 suggests, because a map fields more than one and all of them are driven:
 **Sarab’s fleet cost 2.30 ms a frame and 2.21 ms of it was this one call** —
 96% of everything the vehicles did, against 0.085 ms for the ground probe, the
@@ -885,7 +885,7 @@ collider MESHES, `Vehicle.update` hands the hull's own street to
 is bit-identical, which was proved at 8,000 samples per hull kind on every map
 with armour rather than argued. **11 us a call, the fleet 0.12 ms a frame,
 Sarab's median frame 11.3 ms to 8.7, and the authority's Sarab tick p50 0.691 ms
-to 0.053** (`FINDINGS.md` 35). It still runs only while `|speed| > 1e-3`, so a
+to 0.053**. It still runs only while `|speed| > 1e-3`, so a
 parked fleet still costs nothing.
 
 **Three rules the narrowing rests on, and a change here must not break any of

@@ -8,8 +8,8 @@
  * WHY THIS EXISTS, and it is the same argument `ObstacleField.groundAt` won.
  * `scene.pickWithRay` filters `scene.meshes` by predicate, then bounds-tests,
  * then triangle-tests — so it is `O(colliders in the scene)` and prices every
- * ray on how big the MAP is rather than on how far the ray goes. `FINDINGS.md`
- * 22 measured that at **2,438 us a ray** on a 1500 m proving ground against 222
+ * ray on how big the MAP is rather than on how far the ray goes. `ENGINE_UPGRADE.md`
+ * wall 2 measured that at **2,438 us a ray** on a 1500 m proving ground against 222
  * on Coldharbour: 11x the cost for 7.7x the colliders, and 30.7% of an 8.6 ms
  * frame with sixteen bots in contact. Tripling a ray's LENGTH made it very
  * slightly cheaper, which is the wall's signature — nothing about the cost was

@@ -834,15 +834,16 @@ in the game the moment it started falling.
 is that its occlusion is the FRAME's own depth buffer** rather than a
 whole-scene redraw in opaque black — `src/shaders/GlowPass.ts`, a pass that OWNS
 its mask, its blur and its compose through public API alone. **Do not put the
-whole-scene render list back** (`FINDINGS.md` 3 has the three attempts that
-failed). **The mask is sized from the depth it borrows, in the same function
-that shares and draws it**, which is what keeps a resize from losing a frame;
-its clear is COLOUR ONLY and it writes NO depth. **What may bloom is read per
-mesh every frame** — an emissive colour, no `metadata.noGlow`, and `Game`'s
-`GlowRules` — so nothing excludes a mesh by hand. **Its compose is the post
-process straight after the ink**, so `CelInk` stays first in the chain and the
-bloom lies over the lines. **Its blur kernel is stated against the FRAME** and
-re-derived from the scaling level before every blur.
+whole-scene render list back** (`docs/rendering.md`'s glow section has the
+three attempts that failed). **The mask is sized from the depth it borrows, in
+the same function that shares and draws it**, which is what keeps a resize from
+losing a frame; its clear is COLOUR ONLY and it writes NO depth. **What may
+bloom is read per mesh every frame** — an emissive colour, no
+`metadata.noGlow`, and `Game`'s `GlowRules` — so nothing excludes a mesh by
+hand. **Its compose is the post process straight after the ink**, so `CelInk`
+stays first in the chain and the bloom lies over the lines. **Its blur kernel is
+stated against the FRAME** and re-derived from the scaling level before every
+blur.
 
 → **[`docs/rendering.md`](docs/rendering.md)** — the irradiance volume (why
 not a port of Lumen, the two layers split by rate, why a visibility channel
@@ -1145,7 +1146,7 @@ merely pass a round through it: `CoverMap`, the AO bake, and the collision bake.
 **NO RAY IN THE GAME PICKS A MESH ANY MORE, and that is the load-bearing part
 rather than an optimisation.** `scene.pickWithRay` filters `scene.meshes`, so it
 was priced on how big the MAP is rather than on how far the ray goes
-(`FINDINGS.md` 22). All eight sites are answered analytically now, by
+(`RayWorld.ts`'s header). All eight sites are answered analytically now, by
 [`src/world/RayWorld.ts`](src/world/RayWorld.ts), off `colliderBoxes`, the strut
 groups and `TerrainField` — the same geometry the colliders were built from, and
 exactly the substitution that retired `Player.probeGround`. **`map.rays` is

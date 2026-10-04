@@ -26,7 +26,7 @@
  *    what makes `GlowPass`'s occlusion work, and breaking it breaks all three
  *    readers.
  * 2. **Babylon's WebGPU backend creates depth textures with `TEXTURE_BINDING`**,
- *    and `FINDINGS.md` 4 put the engine at sample count 1 with `depth32float`
+ *    and `main.ts` puts the engine at sample count 1 with `depth32float`
  *    and no stencil, so no MSAA resolve stands in the way.
  * 3. **The buffer belongs to the FIRST pass in the camera's chain and nothing
  *    downstream writes to it.** The scene draws into that pass's texture, every

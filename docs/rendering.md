@@ -294,13 +294,33 @@ paired windows stayed inside the noise (Sarab, re-measured at the real viewport
 with a real roster: −0.8% over five paired reps). **Do not quote a frame-rate
 number for this from `gate.mjs`** — cross-session runs on this box differ by up
 to 45% for no reason, and an earlier version of this paragraph did exactly that
-and was wrong (`FINDINGS.md` 36 carries the warning and `installMs` is the
+and was wrong (`VERIFYING.md` carries the warning and `installMs` is the
 control that catches it). **The picture is byte-identical** — `bank.mjs
 --check` over 21 vantages on all six maps, 0% of pixels differing, against a
 reproducibility floor of 0.000%.
 
-`FINDINGS.md` 36 carries the numbers and 1 carries what the allocation was
-costing in the first place.
+`FINDINGS.md` 1 carries what the allocation was costing in the first place.
+
+A/B'd in ONE session, alternating frozen and unfrozen every six seconds, three
+paired windows a map:
+
+| map | allocation, unfrozen -> FROZEN |
+| --- | --- |
+| cinderhaven | 67.2 -> 50.4 MB/s — **-25.0%** |
+| sarab | 80.1 -> 59.8 MB/s — **-25.3%** |
+| coldharbour | 91.4 -> 72.2 MB/s — **-21.0%** |
+| hollowmere | 79.7 -> 65.2 MB/s — **-18.3%** |
+
+**What this is WORTH is no longer clear, and that is honest rather than
+coy.** It was taken to make collections rarer, on a headless reading of
+1.5-1.8 collections a second — and a capture off the real machine at a real
+frame rate reports **0.06/s**, because the allocation that matters is per
+SECOND and uncapping inflates it (`FINDINGS.md` 1). So this removes a fifth of a
+pressure that may not have been costing anything on the hardware in question.
+It is kept because it is free, provably identical in the picture, and the
+right thing on a device that IS collector-bound — a phone holding 30 fps has
+the frame budget this was measured against, inverted. **Do not cite it as a
+hitch fix.**
 
 ## The irradiance volume: bounce light, sky occlusion, lamps that stop at walls
 
@@ -1182,6 +1202,23 @@ Babylon fills in only on the transparent path. The sort is a visual no-op by
 construction (opaque draws are order-independent through the depth buffer) and
 worth having on its own: a street of towers occludes most of itself.
 
+**Memoising it — one bounding-sphere read per submesh per frame, stamped on the
+frame id and the eye — changes nothing.** A/B'd in one session, three paired
+windows a map:
+
+| map | fps, shipped -> memoised | allocation |
+| --- | --- | --- |
+| cinderhaven | 110.5 -> 108.6 (-1.7%) | 68.9 -> 69.1 MB/s |
+| sarab | 117.1 -> 114.8 (-2.0%) | 71.6 -> 70.1 MB/s |
+| coldharbour | 167.1 -> 164.6 (-1.5%) | 79.8 -> 80.8 MB/s |
+
+Every figure is inside the noise floor and the allocation does not move at all.
+`SubMesh.getBoundingInfo()` is a field read and allocates nothing; the
+attribution was V8 smearing across a function called 22,000 times a frame — see
+`FINDINGS.md` 1's instrument note, which this is the worked example for. **The
+comment in `Game`'s constructor was right**: two bounding-sphere reads per
+comparison is microseconds against the fill it buys back.
+
 **What stays blended is what something is meant to be legible behind**: the
 breakable shopfronts, where `tint: 0.4` exists precisely so a lit interior reads
 from the pavement, and a car's greenhouse, which `buildCar` models a dash and
@@ -1349,6 +1386,15 @@ same number of frames it always did and each of them merely issues far fewer
 draws. That is the conservative direction on the one number standing between
 this bake and a lost device.
 
+The ordering that makes the
+planes the FACE's rather than the main camera's is Babylon's own:
+`ReflectionProbe` writes the face's view and projection through
+`scene.setTransformMatrix` from `onBeforeRenderObservable`, that setter
+refreshes the planes, and `ObjectRenderer.render` fires the observable
+immediately before it calls `_prepareRenderingManager`. A Babylon version that
+moved either line would cull each face against the previous one's planes, and
+the tell is a seam of missing geometry that rotates with the probe.
+
 Three numbers in `CONFIG.graphics.reflection` make the rest smaller, each on a
 different term, and **all three are no-ops on every map that ships**:
 
@@ -1417,7 +1463,7 @@ different term, and **all three are no-ops on every map that ships**:
   case rather than a live lever. **It stops being one somewhere between 900 m
   and 1500 m**: regenerated at 1500/0 the same ground asks for ~500 glazed
   blocks and comes back at `perCell` **2**, 250 probes, which is the first
-  grouping anything has ever measured (`FINDINGS.md` 25). What that costs the
+  grouping anything has ever measured (`ENGINE_UPGRADE.md` S5c). What that costs the
   picture has not been looked at, for the reason the enclosure note below gives. What to know before raising it is the enclosure rule below: a
   probe drops every block it SERVES out of its own bake, so a cell of four
   blocks is a probe with 96 m of city missing from the middle of its cube.
@@ -1442,7 +1488,7 @@ array for the length of the `new ReflectionProbe(...)` call and put back in a
 frame renders inside `installMap`, and probe construction creates no mesh — and
 the second is enforced rather than trusted, because `Scene.addMesh` pushes into
 whatever `scene.meshes` is at the time and a mesh lost there is one nothing
-ever draws. `ENGINE_UPGRADE.md` S5c and `FINDINGS.md` 25 have the measurements.
+ever draws. `ENGINE_UPGRADE.md` S5c has the measurements.
 **Do not move that swap out to wrap the construction LOOP instead**: the water
 pool is minted from a different moment of the same install
 (`WaterSystem.build` → `bakeWater`), and minting through one method is what
@@ -1924,13 +1970,36 @@ on `shadowTiers` in `config/graphics.ts`.
 (`shadowTiers[q].hold`, `ShadowSystem.held`). The texel snap was meant to make
 the world's depth pass a rare event, and in play it never was: the focus stands
 8 m out along the view, so one texel of it is 0.38 degrees of turn and the pass
-re-rendered on 97.5% of frames (`FINDINGS.md` 2). Holding it until the live
+re-rendered on 97.5% of frames. Holding it until the live
 focus has drifted past `hold` takes that to a dozen redraws a second while
 turning, and **costs no shadow**: every window the snap allows is a whole
 number of texels from every other, so a held one is a window the map would have
 drawn for a focus a metre away. What does move is the window's EDGE, by up to
 `hold`. **Only the two static maps are held** — the bodies' map follows the
 live focus and redraws every frame, and must, because what it draws moves.
+
+| desktop, 1080p, high, live round, turning 90 deg/s | redraws/s | tick, Hollowmere | tick, Coldharbour |
+| --- | --- | --- | --- |
+| hold 0 (before) | 232 / 127 (every frame) | 2.52 ms | 4.59 ms |
+| hold 1 m | 12 | 2.18 | 4.17 |
+| hold 2 m | 6 | 2.24 | 4.20 |
+| hold 4 m | 3 | 2.22 | 4.37 |
+
+Three reps per arm interleaved in one process; the GPU frame did not move
+(2.7 / 2.3 ms either way), so on this box the whole saving is CPU. The picture
+was checked as frozen frames (`plans/webgpu-ref/harness.mjs`'s `freeze`) with
+the window lagged 1/2/4 m forward, back and sideways against an exact one, on
+Hollowmere and Greyfen: the differences are single pixels at shadow
+terminators and in the palm crowns' translucency — the depth's rounding, which
+every move of the old window already re-rolled — at 0.04-0.37% of pixels
+against a 0.03-0.18% control.
+
+There is a third path worth knowing about: `cameraSys.forward` is built from
+`aimYaw`/`aimPitch`, which **include the aimed hold sway** (bob and the view
+punch are excluded — they move the rendered camera only). So a player standing
+perfectly still and holding ADS still has a continuously drifting focus, and
+still re-renders every frame. Hip fire while standing still is the one case
+where the optimisation genuinely engages.
 
 ### The lamps' shadows: one atlas, split by refresh rate
 
@@ -2947,8 +3016,8 @@ staged A/B/A with half the roster in frame came back inside its own control
 (27-34/255 worst against a 33/255 control, mean 0.001-0.003).
 
 **Everything else pooled is still loose** — tracers, shards, ragdoll debris,
-grenades, rubble, the viewmodel, the hulls — and finding 21's ~750 idle effect
-meshes are the next thing that could take this same door.
+grenades, rubble, the viewmodel, the hulls — and their idle meshes are kept
+out of the list by `offer` instead (the size gate, below).
 
 **Nothing pooled may ever be block-keyed.** They are loose or pooled because
 they MOVE, and this is precisely why `scene.freezeActiveMeshes()` is a bug in
@@ -2969,7 +3038,7 @@ a pixel — a claim that is true of the fog and of nothing shorter. A body dropp
 inside the fog genuinely disappears, and a map states `bodyDrawDistance` having
 decided that a soldier two pixels tall is worth less than fourteen merged meshes
 of draw. Measured on the proving ground with the roster in view, **65% of the
-frame's active meshes were rigs** (`FINDINGS.md` 30) — so what that field
+frame's active meshes were rigs** (`ENGINE_UPGRADE.md` S8) — so what that field
 removes is large, and it is removed from the same walk this table governs while
 leaving the table alone.
 
@@ -3132,6 +3201,26 @@ lever reads mean **0.066/255** against a control of 0.037. See `VERIFYING.md`
 and `FINDINGS.md` 39, which also carries the two larger levers this deliberately
 does not take, both being look decisions rather than bugs.
 
+### What `offer`'s switched-off rejection is worth
+
+Paired and alternating inside one page, uncapped, at 3432x1432 with a real
+roster — `eligible` handed straight to Babylon against the shipped `offer`:
+
+| map | fps, no offer -> offer | per rep |
+| --- | --- | --- |
+| sarab | 143.2 -> 168.3 — **+17.6%** | +4.3, +6.0, +6.6, +27.9, +18.7, +33.5 |
+| cinderhaven | 111.8 -> 116.9 — **+4.6%** | +3.1, +5.1, +5.2, -4.9, +5.8, +13.8 |
+
+Candidates halve (sarab 1,657 -> 877, cinderhaven 1,744 -> 969) with the active
+count unchanged, which is the proof nothing that draws was dropped. **The gain
+is smallest when the round is busiest** — the reps at ~800 active meshes read
++3 to +6.6% and the thin ones read +18 to +33 — so a crowded fight is where to
+quote it from, not the mean.
+
+`meshWalk` itself moves much less than the list does (sarab 1.82 -> 1.67 ms,
+cinderhaven 2.09 -> 2.07) while the frame rate moves more, so the saving is not
+all in the counter this finding is named after. Not chased.
+
 ## Rendering constraints that look like bugs if you undo them
 
 - `pipeline.imageProcessingEnabled` must stay `false`: the cel shader outputs
@@ -3151,7 +3240,8 @@ does not take, both being look decisions rather than bugs.
   final, into a colour-only target sharing the frame's depth, and its render list
   is the emissive meshes alone. The stock layer redrew every visible mesh in opaque
   black solely so its own buffer would depth-occlude; not doing that is worth ~20%
-  of the frame on the three big maps (`FINDINGS.md` 3), and the occlusion is exact
+  of the frame on the three big maps ("What it measured when it landed", below),
+  and the occlusion is exact
   rather than approximate. **The mask writes NO depth**: every mesh it draws wrote
   its own in the main pass, so an LEQUAL test is the whole of the occlusion, and
   a blended mesh that wrote none there must not start writing one into the buffer
@@ -3162,7 +3252,7 @@ does not take, both being look decisions rather than bugs.
   between two targets), and draws. The layer's texture and that depth resized on
   different schedules, and one frame per `engine.resize()` was encoded with a
   colour attachment at one size and a depth at another and rejected whole — a
-  dragged window lost one frame in two (`FINDINGS.md` 3, last section).
+  dragged window lost one frame in two.
   **Two failures to remember** because both are silent: the target's clear must be
   COLOUR ONLY, or the borrowed depth is wiped and every lamp blooms through its
   wall; and its `renderList` must be `null` rather than the empty array a target is
@@ -3489,6 +3579,215 @@ does not take, both being look decisions rather than bugs.
   dust. It is the same tie the entry above describes, arriving from the other
   direction: there the fix was standing one surface proud at build time, here
   it is offsetting along the pick's own normal at spawn.
+
+## The glow: what the depth share replaced
+
+Before the mask took its occlusion from the frame's own depth, the stock layer's
+whole-scene redraw was narrowed three times and an MRT route was spiked. Each
+failed on the same thing, and each looked right until it was tested, so they
+are kept here rather than re-derived.
+
+### Tried, shipped, and REVERTED — and the predicate was wrong, not the number
+
+`Game.excludeDistantFromGlow` landed this as a per-map range
+(`EnvironmentSpec.glowOccluderRange`, 08d1020) and was reverted the same day
+(beacd3d) on sight: **lights read through terrain and through buildings at
+distance.** Coldharbour and Harrowmead were set to range 0, which excludes every
+non-emissive map visual — and the terrain patches are in `map.visuals`
+(`terrain-<key>`, `MapBuilder`), so the ground stopped occluding along with the
+walls.
+
+**The mistake worth keeping is not the range, it is the PREDICATE.** "Too far
+from any emissive to occlude one" sounds obviously right and is geometrically
+false: occlusion is a property of the LINE OF SIGHT, not of proximity to the
+light. A wall two hundred metres from a lamp occludes it perfectly well when it
+stands between the lamp and the eye, and every mesh on the map is between some
+camera position and some emissive. Distance-from-emissive cannot express the
+question, so no value of the range is the right one — the safe end of it is "the
+whole map", which is what the game already did.
+
+That also disposes of the tuning that was done on the way, and none of it should
+be re-run: centre-to-centre against surface-to-centre (34 of Coldharbour's 559
+visuals excluded at 30 m one way, 140 the other, 508 at zero) was a real
+measurement of the wrong quantity.
+
+### Tried a SECOND time, for BODIES rather than the world, and it fails the same way
+
+**A soldier looked like the exception to "the black is load-bearing" and is
+not.** The rigs are the largest bucket of meshes in a 24-a-side frame (finding
+30), every mesh of one but the visor is a cel `ShaderMaterial` with no
+`emissiveColor`, and a body is nineteen small boxes rather than a wall — so
+excluding rigs alone, and keeping every wall in the layer, looked like the
+version of this that could not repeat the revert above. It repeats it exactly.
+
+**What it was worth, measured on Sarab with the fight held so four arms saw one
+scene** (`glow+cull` / `glow` / `cull` / `none`, round-robin, against an A-vs-A
+control spanning 12.46-13.05 ms), 48 bodies with 19 of them inside
+`bodyDrawDistance`:
+
+| arm | draws | candidates | mesh walk | frame | fps |
+| --- | --- | --- | --- | --- | --- |
+| none | 1,892 | 2,295 | 2.63 ms | 14.22 ms | 70.3 |
+| glow | **1,582** (−16.4%) | 2,295 | 2.61 ms | 13.20 ms (**−7.2%**) | 75.7 |
+| cull | 1,892 | **1,686** (−26.5%) | 2.24 ms | 13.61 ms (−4.3%) | 73.5 |
+| glow+cull | 1,582 | 1,686 | 2.25 ms | 12.72 ms (−10.6%) | 78.7 |
+
+The two levers are orthogonal — each moves its own counter and nothing else —
+and roughly additive. **The glow half is the bigger one and it is the one that
+had to go.**
+
+**The test that killed it is the one the first attempt had prescribed since it
+was written**, and it took ten minutes: stand an emissive directly behind the thing
+being excluded and diff. Staged from the `lanterns` vantage in `deploy` (the
+world is held there, so the camera stays where it is put — in `playing`
+`updateGameplay` puts it back on the player every frame and the first attempt at
+this measured nothing but motion), one bot on the eye-to-lamp line, an A-vs-A
+control that came back **byte-identical**, and the lever confirmed applied by a
+draw count that moved by exactly −19:
+
+| eye to body | body height on screen | mean abs | worst pixel |
+| --- | --- | --- | --- |
+| 1.5 m | 1,260 px | 1.899/255 | **254/255** |
+| 4.5 m | 420 px | 0.406 | 253 |
+| 8.5 m | 222 px | 0.152 | 177 |
+| 13.5 m | 140 px | 0.053 | **104** |
+
+It is the lamp blooming through the soldier's chest, and it is obvious in the
+frame rather than a number — two yellow blobs sitting on a body that is between
+you and the light. It decays with the body's screen AREA and it is still 104/255
+at 13.5 m, so **no distance gate rescues it**: tuning one would be this entry's
+own "the mistake worth keeping is the PREDICATE" a second time, in a night
+village where the failure is exactly the walking-past case a bank of stills
+cannot see.
+
+**Rows past 13.5 m in that sweep read zero and mean nothing** — the camera had
+walked back inside a building and neither the lamp nor the body was in frame.
+Noted because the zeros look like the falloff reaching a floor and are a
+staging failure, which is the same shape of mistake as the revert above.
+
+### Tried a THIRD time, in SCREEN space, and it is defeated by the block merge
+
+The two reverts above both narrowed the occluder set in WORLD space, and the
+lesson drawn from the first is that they could not: "occlusion is a property of
+the LINE OF SIGHT, not of proximity to the light." **A screen-space overlap
+test is that line of sight.** A mesh can occlude a bloomed pixel only if it
+covers pixels within the blur's reach of an emissive pixel — a projection
+rather than a distance — and a wall two hundred metres from a lamp still passes
+it while it stands between the lamp and the eye, which is the exact case that
+killed the range version. So this was not that predicate retuned.
+
+**WHY, and this is the finding.** After finding 18, an emissive "mesh" is not a
+lamp — it is every emissive fitting in a 48 m block, merged per colour.
+Coldharbour's whole visible emissive set in a frozen frame is **five meshes**,
+and Hollowmere's sixteen, each with a bounding sphere tens of metres across;
+two of Hollowmere's had the camera INSIDE them. A block-sized sphere projects
+to most of the screen, so the stamp covers the grid and the test keeps
+everything. **The merge that bought half the main pass's draws also destroyed
+the spatial granularity any screen-space reasoning about emissives needs**, and
+that trade is not recorded anywhere else.
+
+**What this leaves.** An occluder-proxy idea for BODIES is NOT
+affected — a rig is per-body and small, so a body's footprint is a body — but
+the world half now has three failed approaches rather than two,
+and all three failed on the same thing: **there is no cheap way to know which
+geometry matters to a bloom, because the only honest answer is a per-pixel
+depth test.** That is an argument for moving the emissive into the MAIN pass as
+a second attachment and blooming it in post, where occlusion is inherited from
+the depth test the frame already does and merge granularity stops mattering
+entirely. What blocks that is not the shader — every fragment in this game goes
+through hand-written WGSL — but that a scene-wide MRT needs every OTHER
+material in the pass to write the attachment too, Babylon's own
+`StandardMaterial` included. **That sentence has now been tested twice and it
+is exactly right, which was not the expected answer — see the next section.**
+
+### The MRT route, spiked: it WORKS, and the attachment mask is PASS-WIDE
+
+**1. WebGPU allows a pipeline to leave a colour target unwritten, but only if
+that target's `writeMask` is 0.** Raw WebGPU, two `rgba8unorm` targets,
+attachment 1 cleared to blue:
+
+| case | result |
+| --- | --- |
+| shader writes both, two full targets | **OK** — a0 red, a1 green |
+| writes `@location(0)` only, two full targets | **INVALID** |
+| writes `@location(0)` only, `targets[1].writeMask = 0` | **OK**, a1 keeps its clear value |
+| writes `@location(0)` only, `targets[1] = null` | pipeline builds, the render PASS rejects it |
+
+The message is `Color target has no corresponding fragment stage output but
+writeMask (ColorWriteMask::(Red|Green|Blue|Alpha)) is not zero`. An unwritten
+attachment keeps the CLEAR value rather than garbage, which is the half that
+makes the idea viable at all.
+
+**2. Babylon emits exactly that form, and the switch is
+`engine.bindAttachments(engine.buildTextureLayout([...]))`** —
+`webgpuCacheRenderPipeline.js` writes `writeMask: (this._mrtEnabledMask & (1 <<
+i)) !== 0 ? this._writeMask : 0`. Put the game's own active meshes into a
+two-attachment `MultiRenderTarget` with that layout bound and **the scene
+draws**: attachment 0 came back `[20,29,43,255]`, which is Hollowmere.
+
+**3. And the mask is ENGINE state applied per render-target BIND, not per
+material — which is the whole finding.** Setting it pass-wide works. Varying it
+per draw through `mesh.onBeforeDrawObservable` does NOT: the pipeline for that
+draw is already built by the time the hook runs, and the trial fails with the
+same `writeMask` error as doing nothing at all. So within one pass there is one
+attachment mask, and therefore **either every material in the pass writes
+`@location(1)`, or none of them can.**
+
+**And render bundles are keyed on attachment state.** With
+`compatibilityMode = false`, a mesh recorded into a bundle for the one-attachment
+backbuffer pass and then replayed into a two-attachment pass is
+`Attachment state of renderBundles[17] is not compatible with
+[RenderPassEncoder]`. Harmless in a spike that adds a second pass; a real
+implementation has one pass and would not hit it, but it is the thing to watch
+if the main pass ever gains an attachment conditionally.
+
+### The DEPTH-SHARING route, spiked: it WORKS, and it needs no shader changed
+
+The idea sidesteps every wall above. Do not narrow the occluder set and do not
+move the emissive into the main pass — instead draw ONLY the emissive meshes
+into the glow buffer and take the occlusion from the main pass's own depth
+buffer, which already holds exactly the answer at exactly the right
+granularity. `RenderTargetWrapper.shareDepth` is engine-agnostic in 9.19.1 — a
+plain `_depthStencilTexture` reassignment — so WebGPU needs no override.
+
+Hollowmere, the `lanterns` vantage, render scaled to 480x270 because depth
+sharing REQUIRES matching dimensions and a full-resolution readback per trial
+is not worth the wait. An emissive-only buffer holding the frame's 20 emissive
+meshes against the 204 the layer draws today:
+
+| arm | lit pixels |
+| --- | --- |
+| its OWN depth, freshly cleared (nothing can occlude) | 1,672 |
+| the main pass's depth, SHARED | **926** |
+| shared, with the depth test INVERTED (the control) | 748 |
+
+**926 + 748 = 1,674, against the 1,672 the unoccluded arm drew.** The normal
+and inverted tests partition the set exactly, which is what says the depth is
+being read per PIXEL rather than approximately — a control worth copying,
+because "fewer pixels" on its own is also what a broken render looks like.
+
+### What it measured when it landed
+
+**The frame, a live round, uncapped headless, fresh page per arm:**
+
+| map | stock | landed | saving |
+| --- | --- | --- | --- |
+| Coldharbour | 9.45 ms | 7.60 ms | **1.85 ms, 19.6%** (106 -> 132 fps) |
+| Harrowmead | 10.55 ms | 8.25 ms | **2.30 ms, 21.8%** (95 -> 121 fps) |
+| Sarab | 13.40 ms | 10.55 ms | **2.85 ms, 21.3%** (75 -> 95 fps) |
+
+Both arms of every pair agree to within 0.3 ms (9.4/9.5, 7.6/7.6, 13.4/13.4),
+which is far tighter than this box's usual spread and is what makes a ~20%
+reading believable at all.
+
+**The picture: 36 frozen vantages across Hollowmere, Coldharbour and Greyfen —
+three committed diff vantages per map at four yaws each — worst mean
+0.0258/255, worst pixel 90, and zero page or console errors on every map.**
+Two poses came back exactly 0. For scale, finding 18 landed at 0.19 to 3.26.
+The residue is the blur resampling at full resolution rather than half; it is
+not occlusion, which the spike proved separately by showing the normal and
+inverted depth tests PARTITION the emissive pixels exactly (926 + 748 against
+1,672 unoccluded).
 
 ## Impacts: the one pooled effect that reads the world
 

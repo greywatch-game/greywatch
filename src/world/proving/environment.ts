@@ -22,7 +22,7 @@
  * - **`bodyDrawDistance` is deliberately ABSENT**, which is the same decision
  *   one field along. S8 landed it — a map may now pull the three body gates in
  *   ahead of its fog — and stating one here would soften the instrument in
- *   exactly the way a short `fogEnd` would: `FINDINGS.md` 30 prices the lever
+ *   exactly the way a short `fogEnd` would: S8 prices the lever
  *   at **2.6 ms of a 9.2 ms frame** with the roster in view, and it prices it
  *   by toggling the three gates at runtime against this environment, which
  *   only works while this environment is the unlevered arm.

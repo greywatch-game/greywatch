@@ -15,7 +15,8 @@
  * the overrides every frame because the layer kept putting its own back. What
  * that bought is kept here exactly: the render list is the emissive meshes
  * ALONE, and their occlusion is the main pass's depth rather than the whole
- * visible scene redrawn in opaque black (`FINDINGS.md` 3 — ~20% of the frame on
+ * visible scene redrawn in opaque black (docs/rendering.md, "The glow: what
+ * the depth share replaced" — ~20% of the frame on
  * Coldharbour, Harrowmead and Sarab). What it cost is gone by construction:
  *
  * - **No schedule to move.** The mask is a target nothing else renders; it is
@@ -24,7 +25,7 @@
  *   else ever recreates — `resize` swaps its wrapper and keeps the observer.
  * - **No framebuffer to re-bind by internal.** The frame is `frame.inputTexture`,
  *   a public getter on the pass the scene draws into.
- * - **No frame lost on a resize** (`FINDINGS.md` 3, last section). The layer's
+ * - **No frame lost on a resize.** The layer's
  *   texture and the depth it borrowed resized on different schedules, and the
  *   frame between was encoded with a colour attachment at one size and a depth
  *   at another and rejected whole. Here ONE function reads the size of the
@@ -251,8 +252,8 @@ class GlowMaskMaterial extends ShaderMaterial {
     // runs for every submesh of every draw and rebuilds the whole define set
     // before it can answer: two arrays, a `#define` per entry and a join, all
     // of it thrown away against the string already on the wrapper
-    // (`FINDINGS.md` 36, where that walk is a fifth of everything this game
-    // allocates). The define set here is fixed at construction — it IS the
+    // (docs/rendering.md, "Frozen materials", where that walk is a fifth of
+    // everything this game allocates). The define set here is fixed at construction — it IS the
     // cache key, `flags` — so there is nothing for the rebuild to discover.
     //
     // It is safe for the reason `CelMaterialFactory.remember` records: what

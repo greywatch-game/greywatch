@@ -120,8 +120,7 @@ import type { CelMaterialFactory } from "../shaders/CelShader";
  *
  * It is not `isVisible = false`, which would have been the obvious move and is
  * the one thing that cannot work here — a custom render list still drops an
- * invisible mesh, which is `FINDINGS.md`'s note about the untried glow
- * occluder proxy running into the same wall.
+ * invisible mesh.
  */
 const PROXY_LAYER = 0x10000000;
 

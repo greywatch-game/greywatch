@@ -30,7 +30,7 @@
  * skips exactly that while leaving the uniform push alone. It pins ONE
  * SUBMESH's effect in one pass — the effect is stored per submesh — so a mesh
  * must not gain or lose a vertex colour buffer, bones or morph targets after
- * its first draw without `resetDrawCache()` (docs/rendering.md, FINDINGS 36).
+ * its first draw without `resetDrawCache()` (docs/rendering.md).
  * A NEW material is seeded with
  * every piece of shared state on the spot (applyCamera/applyEnvironment/
  * applyPointLights/applyShadow): the per-frame walks are guarded on change and
@@ -2277,7 +2277,8 @@ export class CelMaterialFactory {
    * whole define set from scratch: two arrays, a `#define` string per entry and
    * a `join` over them — all of it thrown away after being compared to the
    * string already on the draw wrapper. Measured on the shipped maps that walk
-   * is **a fifth of everything this game allocates** (`FINDINGS.md` 36), and it
+   * is **a fifth of everything this game allocates** (docs/rendering.md,
+   * "Frozen materials"), and it
    * is pure churn: the answer is the same string every frame for the life of
    * the material.
    *

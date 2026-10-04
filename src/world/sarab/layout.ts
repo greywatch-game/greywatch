@@ -1410,13 +1410,15 @@ const spawns: SpawnPointDef[] = [
  * the back of a machine that is about to leave rather than to get a parked one
  * crewed.
  *
- * **It is also the only thing on this map that costs the AUTHORITY anything
- * that grows with the extent.** A DRIVEN hull is a `moveWithCollisions`
+ * **It was also the only thing on this map that cost the AUTHORITY anything
+ * that grew with the extent.** A DRIVEN hull was a `moveWithCollisions`
  * against every collidable mesh in the map, measured at 0.40 ms a tick at this
- * size against 0.039 on Coldharbour (`FINDINGS.md` 31), and only the ones
+ * size against 0.039 on Coldharbour, and only the ones
  * somebody is actually driving cost anything at all. Measured over a whole
  * headless round with all four crewed for most of it, the tick's median went
  * from 0.27 ms to 0.64 — 3.8% of the 16.67 ms budget, with nothing over it.
+ * The sweep is narrowed to the hull's own street now
+ * (`world/CollisionField.ts`), and the tick's p50 here went 0.691 ms to 0.053.
  */
 const vehicles: VehicleSpawnDef[] = [
   { team: 0, pos: new Vector3(-292, -2.6, -316), yaw: Math.PI / 4 },
@@ -1544,7 +1546,7 @@ export const SarabLayout: MapLayout = {
    * became 653, and 265 glazed blocks became 94. What it costs is cull
    * granularity — a coarser block draws more that is off screen — and on a town
    * whose buildings are eight to twenty metres across, a 96 m block is still
-   * a dozen of them rather than one. See `FINDINGS.md` 29 and S6.
+   * a dozen of them rather than one. See `ENGINE_UPGRADE.md` S6.
    *
    * They are two fields because they answer different questions, and this map
    * happens to want the same answer to both: the merge's is draw calls, and the

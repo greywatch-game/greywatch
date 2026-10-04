@@ -701,8 +701,8 @@ export class ReflectionSystem {
    * engine's CURRENT one before it indexes, so `undefined` is not a slot the
    * map has. What the walk is priced on is the MAP — 265 probes x 6 x 9,002
    * meshes is 14.3 million mesh visits on the 900 m proving ground for
-   * 1,298 ms, and 250 x 6 x 23,014 is 34.5 million at 1500 m for 6,551
-   * (`FINDINGS.md` 25) — and it is paid at the worst moment available,
+   * 1,298 ms, and 250 x 6 x 23,014 is 34.5 million at 1500 m for 6,551 —
+   * and it is paid at the worst moment available,
    * immediately after `MapBuilder.build` has put the whole map in the scene.
    * Handing it an empty list is the whole fix, and takes those to 38 ms and 72;
    * the loop is Babylon's, so the only lever is the multiplier.

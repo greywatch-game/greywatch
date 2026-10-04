@@ -55,7 +55,7 @@
  *    a sub-grain phase is quantisation noise wearing a statistic's clothes.
  *    `clock.grainMs` and `clock.belowGrain` are in every report so a reader can
  *    see which of its rows are real. **This answers "which phase", never "which
- *    function"**; a 3.5 us box query (`FINDINGS.md` §23) is micro-benchmark
+ *    function"**; a 3.5 us box query (`RayWorld`) is micro-benchmark
  *    territory and always will be.
  *  - **The frame is draw-call bound** (`FINDINGS.md` §17), so the JS phases
  *    attribute the third of the frame that was never the problem and `render`

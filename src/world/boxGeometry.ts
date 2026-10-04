@@ -81,7 +81,7 @@ export function topFaceCentreZ(box: WorldBox): number {
  * live with that (a phantom node is a routing nuisance) and a GROUND PROBE
  * could not, because it stands a player on air — which is the whole of why
  * `Player.probeGround` stayed a whole-scene ray pick for as long as it did.
- * FINDINGS 6 carries the measurement.
+ * `docs/world.md` ("The ground probe reads boxes") carries the measurement.
  */
 export function topFaceHalfDepth(box: WorldBox): number {
   return (box.d / 2) * Math.abs(Math.cos(box.rotX));

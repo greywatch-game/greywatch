@@ -103,8 +103,13 @@ brackets and the collector is standing next to it.
 
 **The allocation rate is ~50 MB/s and it is the same 50 on every map**, which
 is the tell that it is not the world: hollowmere 52.5, coldharbour 54.0, sarab
-54.5, cinderhaven 49.2, over frame rates from 222 to 700. Finding 36 is where
-that number is taken apart.
+54.5, cinderhaven 49.2, over frame rates from 222 to 700.
+
+**The other four fifths.** Babylon and the builtins it calls are ~64% of what
+is left and our own code ~36%, and our share is spread over forty sites with
+the largest at 4% — a thousand cuts rather than an actor. Nothing here has
+costed the WebGPU backend's own per-frame objects (`getBindGroups`,
+`_startRenderTargetRenderPass`), which are the next largest block.
 
 ### What the real machine says, and what it eliminates
 
@@ -144,6 +149,31 @@ A/B rather than on a single frame's decomposition:
   same shape reproduced headless reads `frame=9.5, present=0, gc=0`, leaving
   **18.4 ms in the residue**.
 
+### The better hypothesis, which is a first-use PIPELINE stall
+
+**Dawn compiles behind the call and the stall lands on first USE**
+(`VERIFYING.md`), so a pipeline created cheaply is an 80 ms bill payable at an
+arbitrary later frame — inside `drawWorld`, with the draw count flat, with
+`gc` at 0, and clustered, which is every property the real hitches have. The
+uncapped G-Sync session's hitches cluster at frames 2415–2432 and 320; `ProfileReport`'s
+own series header calls a draw count that ramps across a second "a batch of
+pipelines coming into view".
+
+**This is not the thing the bullet above already eliminated.** That measurement counted
+CREATIONS — 29 pipelines and 73 modules in warmup, then 6 pipelines and 2
+modules across 40 s of play — and concluded steady-state compilation was
+negligible. Six pipelines across 40 s of play is six opportunities for a
+first-use stall, and counting creations cannot see one.
+
+**How to settle it:** hook `createRenderPipeline` and `createShaderModule` as
+before, but record the frame INDEX of each against the profiler's ring, and
+look at whether the hitch frames are 1–2 frames downstream of a creation. Fire
+every weapon and set off a blast during the run, which the A/B script did not.
+
+`src/core/FrameCap.ts` is now a frame pacer, and its admitted frame measures
+its delta across the whole gap — the raw, lagging `dt` that `docs/profiling.md`
+(vsync) says a pacer owes something better than. Not measured.
+
 ### The pairing bug, which is where the leftover was coming from
 
 **`Game.tick` reads `getDeltaTime()` on its FIRST line and hands it to
@@ -154,7 +184,8 @@ section was therefore between two different frames, and it fails in one
 direction: a long tick shows up as the NEXT row's wall clock, whose own tick is
 the healthy recovery frame, so the difference reads as time nobody spent.
 
-Proven three ways, over the 9,000 frames of the three captures in finding 40:
+Proven three ways, over the 9,000 frames of three vsync-off captures (Chrome
+152, 3440x1440 G-Sync fullscreen, two Sarab and one Cinderhaven):
 
 | | as filed (v3) | shifted one row |
 | --- | --- | --- |
@@ -204,7 +235,7 @@ and it is the first per-frame reading of this finding that can be trusted:
 | the workload | draws 506/496/514 and meshes 428/423/439 before/during/after — **flat** |
 
 So it is neither the tick nor the submit, and `drawWorld` is clean (max 9.6 ms)
-— which also takes finding 40's pipeline hypothesis off this particular
+— which also takes the first-use pipeline hypothesis above off this particular
 episode.
 
 ### …and the probe has now answered: it is NOT THE MAIN THREAD EITHER
@@ -395,12 +426,12 @@ number.**
 
 **And per-SITE attribution out of it is not to be trusted on our own files
 without an A/B.** Two of its top twenty named a function that allocates nothing
-— `eyeDistanceSq` (see finding 37) and `Sfx.buildBreathBuffer`, which is called
+— `eyeDistanceSq` (see `docs/rendering.md`'s front-to-back sort) and `Sfx.buildBreathBuffer`, which is called
 once at init — because V8 attributes a sampled allocation to the JS frame on
 top at the time, and a function called 22,000 times a frame collects
 attribution that belongs to its callees. The FILE-level split is sound; a
-single line is a hypothesis, and finding 37 is what happens when one is taken
-at face value.
+single line is a hypothesis, and the memoised sort in `docs/rendering.md` is
+what happens when one is taken at face value.
 
 ### Candidates, as they stood before the capture
 
@@ -416,7 +447,7 @@ at face value.
   hitches (a headless 130 fps box is not the 60 Hz battery case above), so what
   is established is the input and not the link. Taking the same capture on the
   machine that actually hitches is now a two-minute job — see below.
-- **The shadow depth pass** (see finding 2) — but that is a *steady* per-frame
+- **The shadow depth pass** (see `docs/rendering.md`, "The shadow rungs") — but that is a *steady* per-frame
   cost, so it fits the mean sitting at 60 rather than the spikes.
 - **HUD `innerHTML` rebuilds.** `magStrip`, `nadePips`, `flagStrip`, the
   damage arcs and the scoreboard are all rebuilt as markup rather than
@@ -456,846 +487,6 @@ even the game's.
 
 ---
 
-## 2. The shadow map's refresh test almost never fails during play — **the HOLD has LANDED; the phone's number is open**
-
-**Status:** acted on (2026-10-04). The two static maps now follow a HELD focus
-that re-centres only once the live one has drifted past the rung's `hold`
-(`CONFIG.graphics.shadowTiers`, 1 m on high and medium, 2 m on low) — option 2
-below, done in METRES of focus rather than texels, and it turned out not to be
-a quality trade at all: the snap makes every held window one the old code drew
-for a nearby focus, so the only thing that moves is the window's edge.
-
-| desktop, 1080p, high, live round, turning 90 deg/s | redraws/s | tick, Hollowmere | tick, Coldharbour |
-| --- | --- | --- | --- |
-| hold 0 (before) | 232 / 127 (every frame) | 2.52 ms | 4.59 ms |
-| hold 1 m | 12 | 2.18 | 4.17 |
-| hold 2 m | 6 | 2.24 | 4.20 |
-| hold 4 m | 3 | 2.22 | 4.37 |
-
-Three reps per arm interleaved in one process; the GPU frame did not move
-(2.7 / 2.3 ms either way), so on this box the whole saving is CPU. The picture
-was checked as frozen frames (`plans/webgpu-ref/harness.mjs`'s `freeze`) with
-the window lagged 1/2/4 m forward, back and sideways against an exact one, on
-Hollowmere and Greyfen: the differences are single pixels at shadow
-terminators and in the palm crowns' translucency — the depth's rounding, which
-every move of the old window already re-rolled — at 0.04-0.37% of pixels
-against a 0.03-0.18% control.
-
-The nearest thing to the phone this box can stand up — Greyfen at `low`,
-832x384, a 4x CPU throttle, the same turn, three reps each — moved the most:
-**redraws 41.6/s -> 5.7, `shadowPass` 2.67 -> 0.73 ms, the tick 17.56 ->
-15.97 ms and 46.6 -> 51.0 fps.** **Open: the phone itself**, where the capture that
-prompted this showed the pass on 80-90% of frames at ~1.8 ms of CPU; a
-`?profile&gpu` capture on Greyfen at `low` is what prices it there.
-
-**What follows is the entry as it stood before the hold**, kept for the
-arithmetic. The frequency below was
-arithmetic when this was written and has since been captured: **97.5% of frames
-re-render** while the view is turning at an ordinary rate, which is what the
-arithmetic predicted.
-
-The *cost* has been measured too, and the first response to it is in: the pass
-was submitting **all 314 casters and 79k triangles** on every re-render,
-because Babylon culls nothing off an explicit `renderList`. It now draws only
-the ~150 that can reach the window (`ShadowSystem.cullToWindow`), which is
-lossless — see CLAUDE.md. Measured over an identical 24-bearing sweep, that
-change and the god-ray detach together took the frame from **846 to 674 draws
-and 253k to 194k triangles**.
-
-**What is left open is the original question**, and the cull does not answer
-it: the pass still runs on essentially every frame, and whether re-rendering a
-2048² depth map at that cadence is worth what it costs is still unmeasured in
-milliseconds. The options below stand, all of them still quality trades, and
-they are now trading against a pass that is roughly half the size.
-
-### The claim in the contract
-
-`ShadowSystem`'s header says the depth map "re-renders only when the snapped
-focus moves", and `update()` implements exactly that: the focus is snapped to
-whole shadow-map texels in the light's basis, and `resetRefreshCounter()` is
-called only when the snapped value changed. The intent is that a stationary
-player pays for one depth pass and then nothing.
-
-### Why it does not hold up
-
-Two numbers from `CONFIG.graphics.shadows`:
-
-```
-texel = frustumSize / mapSize = 110 m / 2048 = 0.0537 m
-```
-
-and the focus is **not** the player — it is (`Game.updateGameplay`):
-
-```ts
-this.shadowFocus
-  .copyFrom(this.player.position)
-  .addInPlace(this.cameraSys.forward.scale(8));
-```
-
-So the focus sits on an **8 m lever arm off the camera's forward**, and moves
-when the player walks *or when the player turns*. The lever is what makes this
-sharp:
-
-- **Walking.** `player.moveSpeed` is 4.6 m/s (6.9 sprinting). At 60 fps that
-  is 0.077 m per frame — **1.4 texels**. Every frame re-renders. At 120 fps it
-  is 0.7 texels walking and 1.07 sprinting.
-- **Turning.** One texel of focus movement is `0.0537 / 8 = 0.0067 rad`, which
-  is **0.38°**. So any turn faster than about **23°/s at 60 fps** moves the
-  focus a full texel between frames. Ordinary aiming is many times that; a
-  flick is two orders of magnitude past it.
-
-The snap is tested on all three axes (`sx`, `sy`, `sz`) and any one changing
-is enough, so real movement — which projects onto more than one — triggers
-more readily than the single-axis figures above suggest.
-
-There is a third path worth knowing about: `cameraSys.forward` is built from
-`aimYaw`/`aimPitch`, which **include the aimed hold sway** (bob and the view
-punch are excluded — they move the rendered camera only). So a player standing
-perfectly still and holding ADS still has a continuously drifting focus, and
-still re-renders every frame. Hip fire while standing still is the one case
-where the optimisation genuinely engages.
-
-**Net: during active play the depth pass runs on essentially every frame.**
-The optimisation buys a saving only when standing still, not aiming, and not
-touching the mouse — which is close to never in a round.
-
-### Why it might matter
-
-A 2048² depth pass over ~150 merged casters is not free. **The cost in
-milliseconds is still not measured** — it could be 0.5 ms or 3 ms, and on the
-120 Hz case the difference decides whether the frame fits an 8.3 ms budget.
-Measure before trading any quality for it.
-
-### Options, in rough order of cost
-
-1. **Measure first.** A GPU timer query around the shadow generator's pass, or
-   simply `shadows.setCasters([])` for a run and compare the readout's frame
-   time. That single comparison says whether any of this is worth doing.
-   Nothing below should be attempted before it, and the caster cull is in
-   precisely because it needed no such licence — it costs nothing visually.
-2. **Widen the deadband.** Re-render when the focus has moved more than *k*
-   texels rather than one. Shadow edges crawl by up to *k* texels when it does
-   fire, which is what the snapping exists to prevent — so this trades a
-   visible artifact for frames and needs to be looked at, not just measured.
-3. **Drop the lever arm, or shorten it.** The 8 m bias exists so the window
-   covers what is ahead rather than centring behind the player. A smaller
-   bias re-renders less on turns; zero makes turning free and wastes half the
-   window behind the player.
-4. **Decouple from turning entirely** — bias along the player's *movement*
-   direction instead of the camera's, so mouse look costs nothing. Changes
-   which ground is covered, so it wants a look at the shadow window's edges
-   during a fast strafe.
-5. **Amortise**: re-render at a fixed cadence (say 30 Hz) rather than on
-   demand. Halves the cost and introduces a one-frame lag between the world
-   and its shadows, which on a 38° moon may well be invisible.
-
-Note that (2)–(5) all trade shadow quality for frame time, and the current
-behaviour is the *correct* one for quality. Nothing here is a bug — it is an
-optimisation whose precondition turns out to be rare, and a cost nobody has
-put a number on.
-
----
-
-## 3. ~~The GlowLayer draws the whole village into a buffer it cannot light~~ — FIXED
-
-**Status: FIXED and LANDED** — first as `src/core/GlowDepth.ts`, and now as
-`src/shaders/GlowPass.ts`, which keeps the same answer without overriding a
-Babylon layer from outside (see the last section); folded into `CLAUDE.md` and
-`docs/rendering.md`. **Worth ~20% of the frame on all three big
-maps**; the last section has the numbers and what landed. The entry is kept
-whole because the three attempts that came first are the argument for the shape
-of the fix, and because each of them looked right when it was written.
-
-The history: measured, ATTEMPTED THREE TIMES and reverted three times — for the
-WORLD in world space, for the BODIES, and for the world again in SCREEN space,
-which was the one that was geometrically right and died on the block merge
-instead. **All three asked WHICH GEOMETRY MATTERS to a bloom. None of them
-could have worked, and the fix is that the frame already answers that question
-per pixel and the layer only had to be handed the answer.** The mechanism is confirmed against Babylon's source. The open
-question below — what excluding the geometry costs visually — is now answered
-for both: enough that neither can be excluded, by distance or otherwise.
-**RE-MEASURED after finding 18 and the share did not move**, which is the last
-section and is the one to read first — it also carries the first breakdown of
-who is actually in the layer's list, and that breakdown is what re-ranks the
-three shapes left.
-
-**The draw counts below were taken on WebGL2 and are now unattributed.** The
-mechanism is source-level and did not move with the backend — the exclusion scan
-still runs before any map exists, and `_shouldRenderMesh` is still `hasMesh` —
-so the entry stands. What is no longer a current measurement is the ~150 draws
-and ~30k triangles.
-
-**The sentence that used to close this paragraph said the count was not worth
-reaching for, and finding 17 has inverted it.** It read: finding 12 measured
-excluding the world from the glow layer at -26.4% of the draw calls and no
-movement in the frame, so only the visual question here mattered. That was true
-on a backend where a draw call was cheap. On WebGPU **disabling the layer
-outright is worth +22.5% on Coldharbour**, the layer is 883 of that map's 2,647
-draws a frame, and this frame is draw-call bound rather than fill bound — see
-finding 17 for the measurement and for why the backend changed the answer.
-**Those two figures are PRE-finding-18 and the draw count is superseded; the
-+22.5% is not.** Both were re-taken on the current tree and the last section has
-them — the layer's list is 585 meshes against the frame's 1,362 draws now, and
-it is still 22.7% of the frame, which is not the coincidence it looks like.
-**So the count is now the reason to reach for this, and the visual question in
-it is the thing standing in the way.** Nothing about that question has moved:
-what has to be established is still whether the village's opaque black is
-load-bearing as a depth occluder for the glow buffer, and "how to settle it"
-below is unchanged.
-
-Note the size of the prize is not the whole 22.5%: that A/B disables the layer
-and the fix here only excludes the WORLD from it, leaving the braziers and lit
-windows the layer exists for. The braziers are a small fraction of the 883.
-
-### What was measured
-
-**~150 draws and ~30k triangles a frame**, spent rendering cel-shaded world
-geometry into the glow layer's texture. Restricting the layer to meshes with a
-non-black emissive `StandardMaterial` removed them; a frozen-scene pixel diff
-at three lamp-facing vantage points came out **below the frame-to-frame noise
-floor**.
-
-### Why it happens
-
-`Game`'s exclusion scan is one loop in the constructor:
-
-```ts
-for (const m of this.scene.meshes) {
-  if (m.metadata && m.metadata.noGlow === true) glow.addExcludedMesh(m as Mesh);
-}
-```
-
-That runs **before any map exists** — the map is built per round, long after —
-so every mesh `MapBuilder` produces is eligible forever. `WaterSystem`,
-`GrassSystem`, `CaptureZoneSystem` and `Sky` each call `addExcludedMesh` by
-hand for exactly this reason; the map does not.
-
-What those meshes contribute is nothing. `ThinGlowLayer._shouldRenderMesh` is
-just `hasMesh`, and `_setEmissiveTextureAndColor` falls back to `neutralColor`
-— `(0, 0, 0, 1)` — for any material without an `emissiveColor`, which is every
-cel `ShaderMaterial`. They are drawn as opaque black.
-
-### The catch, and it is the whole question
-
-Opaque black is not *quite* nothing: it is what makes the glow buffer
-depth-occlude, so a brazier behind a cottage does not bloom through the wall.
-Excluding the world would let it. The blur kernel is 56 px on a half-resolution
-texture, so the bleed would be local rather than map-wide, and it did not show
-at the three vantage points sampled — but those were chosen for lamps in the
-open, which is the case least likely to show it.
-
-### How to settle it
-
-Stand an emissive fixture directly behind a wall — the smithy's forge or a
-lit window with a building between it and the camera — and diff with and
-without the exclusion. If it bleeds, the fallback is to exclude by distance
-from the nearest emissive rather than wholesale, which keeps the occluders
-that matter and drops the 90% of the village that is nowhere near a light.
-
----
-
-### Tried, shipped, and REVERTED — and the predicate was wrong, not the number
-
-`Game.excludeDistantFromGlow` landed this as a per-map range
-(`EnvironmentSpec.glowOccluderRange`, 08d1020) and was reverted the same day
-(beacd3d) on sight: **lights read through terrain and through buildings at
-distance.** Coldharbour and Harrowmead were set to range 0, which excludes every
-non-emissive map visual — and the terrain patches are in `map.visuals`
-(`terrain-<key>`, `MapBuilder`), so the ground stopped occluding along with the
-walls.
-
-**The mistake worth keeping is not the range, it is the PREDICATE.** "Too far
-from any emissive to occlude one" sounds obviously right and is geometrically
-false: occlusion is a property of the LINE OF SIGHT, not of proximity to the
-light. A wall two hundred metres from a lamp occludes it perfectly well when it
-stands between the lamp and the eye, and every mesh on the map is between some
-camera position and some emissive. Distance-from-emissive cannot express the
-question, so no value of the range is the right one — the safe end of it is "the
-whole map", which is what the game already did.
-
-That also disposes of the tuning that was done on the way, and none of it should
-be re-run: centre-to-centre against surface-to-centre (34 of Coldharbour's 559
-visuals excluded at 30 m one way, 140 the other, 508 at zero) was a real
-measurement of the wrong quantity.
-
-**How the verification missed it, which is the more expensive lesson.** It was
-checked by diffing the committed vantages with the pass on and off, and they
-came back 0.04–0.51/255 on Coldharbour against a floor proven byte-identical.
-That number was real and meant nothing: `plans/webgpu-ref/vantages.mjs` is a
-table of poses chosen to catch a SHADER going wrong — glazing at range, a
-lamp-lit street, a gust, water — and a pose with no emissive standing behind
-geometry cannot show an occlusion failure at all. **A diff of ~0 there says the
-vantage does not test the thing, and it was read as "the change is invisible".**
-
-This entry had already said so, in "How to settle it" below, before any of it
-happened: stand an emissive *directly behind a wall* and diff. That is still the
-test, it was not run, and a future attempt owes it plus a sweep over many camera
-positions rather than the committed four or five — the failure is visible while
-WALKING, which is the one thing a bank of still frames cannot do.
-
-**What is still true**: the layer really is drawing the whole village as opaque
-black, it really is 883 of Coldharbour's 2,647 draws a frame, and disabling it
-outright really is worth ~21%. What is now known is that mesh exclusion is not
-how to collect it, because the black is load-bearing everywhere. If this is
-worth another attempt the shape to look at is making the occluders CHEAPER
-rather than fewer — the glow layer redraws geometry it could in principle share
-a depth buffer with — and that is a Babylon question rather than a content one.
-
-### Tried a SECOND time, for BODIES rather than the world, and it fails the same way
-
-**A soldier looked like the exception to "the black is load-bearing" and is
-not.** The rigs are the largest bucket of meshes in a 24-a-side frame (finding
-30), every mesh of one but the visor is a cel `ShaderMaterial` with no
-`emissiveColor`, and a body is nineteen small boxes rather than a wall — so
-excluding rigs alone, and keeping every wall in the layer, looked like the
-version of this that could not repeat the revert above. It repeats it exactly.
-
-**What it was worth, measured on Sarab with the fight held so four arms saw one
-scene** (`glow+cull` / `glow` / `cull` / `none`, round-robin, against an A-vs-A
-control spanning 12.46-13.05 ms), 48 bodies with 19 of them inside
-`bodyDrawDistance`:
-
-| arm | draws | candidates | mesh walk | frame | fps |
-| --- | --- | --- | --- | --- | --- |
-| none | 1,892 | 2,295 | 2.63 ms | 14.22 ms | 70.3 |
-| glow | **1,582** (−16.4%) | 2,295 | 2.61 ms | 13.20 ms (**−7.2%**) | 75.7 |
-| cull | 1,892 | **1,686** (−26.5%) | 2.24 ms | 13.61 ms (−4.3%) | 73.5 |
-| glow+cull | 1,582 | 1,686 | 2.25 ms | 12.72 ms (−10.6%) | 78.7 |
-
-The two levers are orthogonal — each moves its own counter and nothing else —
-and roughly additive. **The glow half is the bigger one and it is the one that
-had to go.**
-
-**The test that killed it is the one this entry has prescribed since it was
-written**, and it took ten minutes: stand an emissive directly behind the thing
-being excluded and diff. Staged from the `lanterns` vantage in `deploy` (the
-world is held there, so the camera stays where it is put — in `playing`
-`updateGameplay` puts it back on the player every frame and the first attempt at
-this measured nothing but motion), one bot on the eye-to-lamp line, an A-vs-A
-control that came back **byte-identical**, and the lever confirmed applied by a
-draw count that moved by exactly −19:
-
-| eye to body | body height on screen | mean abs | worst pixel |
-| --- | --- | --- | --- |
-| 1.5 m | 1,260 px | 1.899/255 | **254/255** |
-| 4.5 m | 420 px | 0.406 | 253 |
-| 8.5 m | 222 px | 0.152 | 177 |
-| 13.5 m | 140 px | 0.053 | **104** |
-
-It is the lamp blooming through the soldier's chest, and it is obvious in the
-frame rather than a number — two yellow blobs sitting on a body that is between
-you and the light. It decays with the body's screen AREA and it is still 104/255
-at 13.5 m, so **no distance gate rescues it**: tuning one would be this entry's
-own "the mistake worth keeping is the PREDICATE" a second time, in a night
-village where the failure is exactly the walking-past case a bank of stills
-cannot see.
-
-**Rows past 13.5 m in that sweep read zero and mean nothing** — the camera had
-walked back inside a building and neither the lamp nor the body was in frame.
-Noted because the zeros look like the falloff reaching a floor and are a
-staging failure, which is the same shape of mistake as the revert above.
-
-**The occluder-proxy idea is what is left, and nobody has costed it.** A rig is
-fourteen meshes because of JOINT merging — it was colour merging when this was
-written, and the kit palette has since taken the colour half away, so the prize
-here is smaller than the entry assumed by a third. The glow pass does not care
-about joints either: it wants one body-shaped depth write. `rig.root` is already an
-invisible capsule of about the right size. Making it draw in the glow pass and
-not in the main one is the "cheaper occluders rather than fewer" shape this
-entry already names, and it is a Babylon question: the layer's render list is
-the scene's ACTIVE meshes, so an occluder has to be `isVisible` to be seen by
-it, and what stops it drawing normally would have to be renderer state the glow
-pass does not inherit. Untried.
-
-**`BodyShadows` has since built the proxy, and half the Babylon question is now
-answered — but it is the half that does NOT transfer.** That system draws every
-body in the game as thin instances of one unit box (`RAGDOLL_BONES` per soldier,
-the collider per hull) and keeps it out of the main pass with a `layerMask` no
-camera includes, which works because `ObjectRenderer` does not check `layerMask`
-against an EXPLICIT render list. The glow layer has no explicit list — it is
-`_activeMeshes`, and `Scene._evaluateActiveMeshes` does check `layerMask` — so
-the same trick hides the proxy from the glow pass as well. What did transfer is
-the SHAPE: a per-bone box set is a better body-shaped depth write than
-`rig.root`'s single capsule and costs one draw for the whole roster, so whoever
-picks this up should reuse that mesh rather than mint a second one. What is
-still missing is a way to put ONE mesh in the glow layer's list and not the main
-one.
-
----
-
-### RE-MEASURED on the current tree: the share is INVARIANT, and who is in the list
-
-**Status:** measured on the Windows box, three instruments agreeing. Nothing
-landed; what this settles is the SIZE of the prize and the RANKING of the three
-shapes above, both of which were being read off pre-finding-18 numbers.
-
-The question was whether finding 18 had quietly eaten this entry. It cut
-Coldharbour from 2,641 draws to 1,431 by taking colour out of the merge key, and
-the glow layer's list is derived from the scene rather than stated, so the
-expectation was that the prize had shrunk with it and this entry could be
-closed. **It has not shrunk, and the reason it has not is the thing worth
-keeping.**
-
-Coldharbour, uncapped headless at 1920x1080, a live round with sixteen bots,
-warm past the compile stall, the shipped profiler armed with `?profile` and its
-capture reaching back over 3,000 frames:
-
-```
-frame        9.905 ms   98.0%      draws 1362 | active 601
-  render     9.398      93.0%      mesh walk 2.06 ms | render targets 2.292 ms
-    drawWorld    4.719  46.7%
-    glow         2.297  22.7%
-    drawOverlay  0.199   2.0%
-  gameplay   0.462       4.6%
-```
-
-and an A/B/A/B on `layer.isEnabled` in the same session, 6 s windows with a
-1.5 s settle, which is the instrument that does not depend on the span being
-bracketed correctly:
-
-| arm | glow | median | fps |
-| --- | --- | --- | --- |
-| 1 | on | 10.10 ms | 99.0 |
-| 2 | **off** | 7.80 ms | 128.2 |
-| 3 | on | 10.60 ms | 94.3 |
-| 4 | **off** | 8.20 ms | 122.0 |
-
-**The layer is 2.35 ms — 22.7% of the frame, and +29.4% fps if it goes.** The
-`glow` span says 2.297, the A/B says 2.35, and `SceneInstrumentation`'s
-render-target counter says 2.292 without being asked, because the glow's main
-texture is the only render target that runs every frame on this map. Three
-instruments inside 2%. The drift between the two ON arms is 4.7%, which is well
-under the effect and is the reason the arms alternate.
-
-Finding 17 measured +22.5% before the palette merge. This is +22.7% after it.
-
-### Why it did not move, which is a rule rather than a coincidence
-
-The layer's render list is not stated anywhere — `effectLayer.js` sets
-`_mainTexture.renderList = null` and `objectRenderer.js` then falls back to
-`scene.getActiveMeshes()`. **So the layer's cost is per ACTIVE MESH, exactly
-like the main pass's, and every fix that removes active meshes removes them from
-both halves at once.** Finding 18 cut the glow's list by the same proportion it
-cut the main pass, in the same frame, and left the ratio exactly where it was.
-
-**The glow layer's share of the frame cannot be reduced by making the scene
-smaller.** That is the general form and it is worth having before anyone spends
-a week on the next mesh-count lever expecting this to fall out of it: mesh-count
-work pays into this entry proportionally and never changes it. Only changing the
-LAYER changes the share. It also disposes of one idea that looks adjacent and is
-not — paletteising `SoldierModel`'s `mergeByColor` the way `BlockMerge` was
-paletteised is worth having for the main and ink passes, and it will not move
-this number.
-
-### Who is in the list, counted for the first time
-
-607 active meshes, 585 of them in the layer, 22 excluded (the sky, the water,
-the grass, the zones, the viewmodel's own exclusions):
-
-| bucket | meshes | share of the layer |
-| --- | --- | --- |
-| bot rigs | 212 | 36% |
-| block-merged world | 220 | 38% |
-| terrain patches (`terrain-#,#`) | 49 | 8% |
-| tank parts | 36 | 6% |
-| ridge scree and rock | 20 | 3% |
-| blob shadows | 15 | 3% |
-
-**That list is 43% of the frame's 1,362 draws and the layer is 23% of its
-time**, and the gap between those two is the same one finding 17 found under
-the outline shells: a glow draw reuses one bound material, so it is a cheap
-draw rather than a free one. (The 43% is the list size against the counter's
-total, not a per-pass draw count — nothing here attributes draws by pass, and
-the 2.35 ms is measured rather than inferred.)
-
-**What the breakdown re-ranks:**
-
-- **The rigs are 36% of the layer, so ~0.85 ms, so ~8% of the frame.** That is
-  the −7.2% the section above measured on Sarab, arrived at from the opposite
-  direction on a different map, which is the best evidence either number is
-  right. It is also the bucket where the occluder proxy is a **92% cut** — 212
-  meshes down to one capsule per body — against the ~37% a colour-merge fix
-  would give, and it is the only one of the three shapes that changes the ratio
-  rather than riding it down. That is the argument for trying it, and the
-  section above is still the caution: the capsule's silhouette is not the
-  body's, so it can fail the emissive-behind test in the OTHER direction —
-  occluding a lamp visible between an arm and the torso — and that test is what
-  it owes before anything else. Untried, and this changes nothing about that.
-- **The world, the terrain and the ridge are 49% between them** and are exactly
-  what the first revert killed. No proxy exists for arbitrary block geometry,
-  and the terrain patches are the specific thing that revert names.
-- **The 15 blob shadows are free and are the only free thing here.** They are
-  flat decals lying on terrain that is already in the list, so they occlude
-  nothing the ground does not already occlude. It is 2.5% of the layer — worth
-  taking only because it is the one exclusion in this entry that carries no
-  visual question at all, and therefore the one that needs no test.
-
-### Tried a THIRD time, in SCREEN space, and it is defeated by the block merge
-
-**Status:** built, verified picture-identical, measured, and REVERTED — this
-time on the numbers rather than on sight. The mechanism was sound and the
-prize is not there, for a reason that is worth more than the attempt.
-
-The two reverts above both narrowed the occluder set in WORLD space, and the
-lesson drawn from the first is that they could not: "occlusion is a property of
-the LINE OF SIGHT, not of proximity to the light." **A screen-space overlap
-test is that line of sight.** A mesh can occlude a bloomed pixel only if it
-covers pixels within the blur's reach of an emissive pixel — a projection
-rather than a distance — and a wall two hundred metres from a lamp still passes
-it while it stands between the lamp and the eye, which is the exact case that
-killed the range version. So this was not that predicate retuned.
-
-`GlowOccluders` put a `getCustomRenderList` hook on the layer's main texture
-(the same public hook `ShadowSystem` uses), stamped each emissive mesh's
-projected bounding sphere — grown by the blur's reach and a margin — into a
-32x18 screen grid, and kept only the meshes whose own projection touched a
-stamped cell. Everything was rounded OUTWARD, and anything that could not be
-bounded at all was kept.
-
-**It works, and the frame is bit-identical.** Twelve poses on Hollowmere — the
-three committed diff vantages at four yaws each, frozen, with an A-vs-A control
-— report **0.0/255 mean and 0 worst pixel** against the un-narrowed frame, on a
-control that is byte-identical. Every pose had the lever confirmed applied by a
-counter that moved, which is the check the first revert did not have.
-
-**And it saves nothing, because the emissive geometry is BLOCK-MERGED.** In a
-live round it kept **584 of 607** meshes on Coldharbour — a 3.8% cut — and
-159/171 then 78/90 on Hollowmere. The measured frame did not improve on either
-map and was worse on the cheap one, where two bounding-sphere projections per
-active mesh per frame in JS cost more than the handful of draws they removed:
-
-| map | narrowed | whole-scene | drift between the two narrowed arms |
-| --- | --- | --- | --- |
-| Coldharbour | 13.20 ms | 12.90 ms | 13.50 / 12.90 |
-| Hollowmere | 2.80 ms | 2.25 ms | 3.30 / 2.30 |
-
-Read the Hollowmere row as noisy and the Coldharbour row as decisive: at a 3.8%
-cut there is nothing to win whatever the drift is.
-
-**WHY, and this is the finding.** After finding 18, an emissive "mesh" is not a
-lamp — it is every emissive fitting in a 48 m block, merged per colour.
-Coldharbour's whole visible emissive set in a frozen frame is **five meshes**,
-and Hollowmere's sixteen, each with a bounding sphere tens of metres across;
-two of Hollowmere's had the camera INSIDE them. A block-sized sphere projects
-to most of the screen, so the stamp covers the grid and the test keeps
-everything. **The merge that bought half the main pass's draws also destroyed
-the spatial granularity any screen-space reasoning about emissives needs**, and
-that trade is not recorded anywhere else.
-
-**One real bug was found on the way and it is in this idea rather than in the
-game.** `Sky`'s four cloud decks (since retired for one faceted ring, which is
-not emissive) carried an emissive AND `infiniteDistance`, so
-their centre sits on the eye with a ~1,000 m radius around it. They are
-correctly excluded from the layer, but the render list a `getCustomRenderList`
-hook is handed is the scene's active meshes BEFORE the layer's own exclusions,
-so consulting one stamped the whole screen on every frame of every map. The
-first version of this cut exactly 0% everywhere and that was why. **Anything
-reading that list owes `layer.hasMesh` before it believes a mesh is in the
-pass.**
-
-**What this leaves.** The occluder-proxy idea in the section above is NOT
-affected — a rig is per-body and small, so a body's footprint is a body — but
-the world half of this entry now has three failed approaches rather than two,
-and all three failed on the same thing: **there is no cheap way to know which
-geometry matters to a bloom, because the only honest answer is a per-pixel
-depth test.** That is an argument for moving the emissive into the MAIN pass as
-a second attachment and blooming it in post, where occlusion is inherited from
-the depth test the frame already does and merge granularity stops mattering
-entirely. What blocks that is not the shader — every fragment in this game goes
-through hand-written WGSL — but that a scene-wide MRT needs every OTHER
-material in the pass to write the attachment too, Babylon's own
-`StandardMaterial` included. **That sentence has now been tested twice and it
-is exactly right, which was not the expected answer — see the next section.**
-
-### The MRT route, spiked: it WORKS, and the attachment mask is PASS-WIDE
-
-**Status:** measured, on the Windows box, in raw WebGPU and then through
-Babylon with this game's real materials. Nothing landed. This is here so the
-next attempt starts from the constraint rather than from the hope.
-
-**1. WebGPU allows a pipeline to leave a colour target unwritten, but only if
-that target's `writeMask` is 0.** Raw WebGPU, two `rgba8unorm` targets,
-attachment 1 cleared to blue:
-
-| case | result |
-| --- | --- |
-| shader writes both, two full targets | **OK** — a0 red, a1 green |
-| writes `@location(0)` only, two full targets | **INVALID** |
-| writes `@location(0)` only, `targets[1].writeMask = 0` | **OK**, a1 keeps its clear value |
-| writes `@location(0)` only, `targets[1] = null` | pipeline builds, the render PASS rejects it |
-
-The message is `Color target has no corresponding fragment stage output but
-writeMask (ColorWriteMask::(Red|Green|Blue|Alpha)) is not zero`. An unwritten
-attachment keeps the CLEAR value rather than garbage, which is the half that
-makes the idea viable at all.
-
-**2. Babylon emits exactly that form, and the switch is
-`engine.bindAttachments(engine.buildTextureLayout([...]))`** —
-`webgpuCacheRenderPipeline.js` writes `writeMask: (this._mrtEnabledMask & (1 <<
-i)) !== 0 ? this._writeMask : 0`. Put the game's own active meshes into a
-two-attachment `MultiRenderTarget` with that layout bound and **the scene
-draws**: attachment 0 came back `[20,29,43,255]`, which is Hollowmere.
-
-**3. And the mask is ENGINE state applied per render-target BIND, not per
-material — which is the whole finding.** Setting it pass-wide works. Varying it
-per draw through `mesh.onBeforeDrawObservable` does NOT: the pipeline for that
-draw is already built by the time the hook runs, and the trial fails with the
-same `writeMask` error as doing nothing at all. So within one pass there is one
-attachment mask, and therefore **either every material in the pass writes
-`@location(1)`, or none of them can.**
-
-**What that costs, enumerated on Hollowmere's 73 active meshes: 51
-`ShaderMaterial` and 22 `StandardMaterial`** — and the `StandardMaterial` half
-is not the awkward remainder, it is the EMISSIVE half, the tracers and embers
-and lamps the layer exists for. So the list is every hand-written shader in
-`src/shaders/` (yours, easy), Babylon's `StandardMaterial`, Babylon's
-`OutlineRenderer` pass and the particle shaders (not yours). The technique for
-the last three is not new here — `OutlineFog.ts` already patches Babylon's WGSL
-shader store by hand and forces the recompile — but it is three more shaders
-under that regime, and `OutlineFog`'s header is a fair estimate of what each
-one costs to get right.
-
-**Two traps, both of which cost time in the spike itself.**
-
-- **A bad pipeline is SILENT.** The baseline trial drew nothing at all —
-  attachment 0 all zeros — with `pageErrors` empty and `consoleErrors` empty.
-  The only trace was a `pushErrorScope("validation")` put there on purpose.
-  This is finding 18's black-frame cascade arriving from a third direction, and
-  it means **any attempt at this owes an explicit WebGPU error scope**, or a
-  wrong answer looks like a working one that renders nothing.
-- **Babylon's pipeline cache POISONS later trials in the same page.** Once one
-  invalid pipeline exists, every later trial reports `[Invalid RenderPipeline
-  ...] is invalid due to a previous error` whatever it actually did — the first
-  run of this spike read that as "the escape hatch does not work" and it was
-  the cache. **One page per trial**, or the result is the previous trial's.
-
-**And render bundles are keyed on attachment state.** With
-`compatibilityMode = false`, a mesh recorded into a bundle for the one-attachment
-backbuffer pass and then replayed into a two-attachment pass is
-`Attachment state of renderBundles[17] is not compatible with
-[RenderPassEncoder]`. Harmless in a spike that adds a second pass; a real
-implementation has one pass and would not hit it, but it is the thing to watch
-if the main pass ever gains an attachment conditionally.
-
-**Where this leaves the route.** It is not blocked and it is not plumbing. It
-is one shader-store patch each for `StandardMaterial`, `OutlineRenderer` and
-the particles, plus an output on every shader in `src/shaders/`, plus the post
-chain re-pointed at attachment 0 — for the 2.60 ms this entry is about. Nobody
-has decided whether that trade is worth taking.
-
-### The DEPTH-SHARING route, spiked: it WORKS, and it needs no shader changed
-
-**Status:** measured on the Windows box, mechanism proven end to end. Nothing
-landed. **This is the cheapest route found so far and the first one that is not
-blocked on something.**
-
-The idea sidesteps every wall above. Do not narrow the occluder set and do not
-move the emissive into the main pass — instead draw ONLY the emissive meshes
-into the glow buffer and take the occlusion from the main pass's own depth
-buffer, which already holds exactly the answer at exactly the right
-granularity. `RenderTargetWrapper.shareDepth` is engine-agnostic in 9.19.1 — a
-plain `_depthStencilTexture` reassignment — so WebGPU needs no override.
-
-Hollowmere, the `lanterns` vantage, render scaled to 480x270 because depth
-sharing REQUIRES matching dimensions and a full-resolution readback per trial
-is not worth the wait. An emissive-only buffer holding the frame's 20 emissive
-meshes against the 204 the layer draws today:
-
-| arm | lit pixels |
-| --- | --- |
-| its OWN depth, freshly cleared (nothing can occlude) | 1,672 |
-| the main pass's depth, SHARED | **926** |
-| shared, with the depth test INVERTED (the control) | 748 |
-
-**926 + 748 = 1,674, against the 1,672 the unoccluded arm drew.** The normal
-and inverted tests partition the set exactly, which is what says the depth is
-being read per PIXEL rather than approximately — a control worth copying,
-because "fewer pixels" on its own is also what a broken render looks like.
-
-**Four things it took to get there, and the second is the one that wasted the
-first run.**
-
-- The main pass IS a render target during the draw phase
-  (`WebGPURenderTargetWrapper`, reachable as `engine._currentRenderTarget` from
-  `scene.onAfterDrawPhaseObservable`) and it DOES carry a depth texture, at the
-  render size. Neither was obvious; the camera has three post-processes and it
-  is the first of those that owns the target.
-- **The glow buffer must clear COLOUR ONLY.** Babylon's default RTT clear wipes
-  depth and stencil too, so the first run cleared the very buffer it had just
-  been handed and occluded nothing — 1,673 against 1,675, which reads exactly
-  like "the mechanism does not work". `rtt.onClearObservable.add((e) =>
-  e.clear(color, true, false, false))` is the whole fix.
-- It has to render from `onAfterDrawPhaseObservable`, so the depth is THIS
-  frame's. An effect layer's own texture renders in the render-target phase,
-  which is BEFORE the main draw — one frame stale, which for a bloom is a halo
-  that lags the camera.
-- No validation errors on any arm, under `compatibilityMode = false`.
-
-**What it would cost to build, and it is all in one place.** `GlowLayer` cannot
-be configured into this — its texture renders in the wrong phase and clears the
-wrong buffers — so this is a custom layer: an RTT holding the emissive meshes,
-a blur, and an additive composite in the post chain, plus a port of
-`Game`'s `customEmissiveColorSelector` (the per-mesh fog fade and the kit-screen
-blanking, both of which are look decisions with arguments written down beside
-them). Two details are not optional. The pass needs its own material so a mesh
-contributes its EMISSIVE term rather than its full shaded colour —
-`RenderTargetTexture.setMaterialForRendering` is the hook, and the spike did
-not use it, so its pixel counts are "what drew" and not "what would bloom".
-And the buffer must be FULL resolution, where the layer's is half
-(`mainTextureRatio` 0.5), because that is what depth sharing demands — four
-times the pixels through the blur, which is free on the box these numbers come
-from and is exactly the trade `FINDINGS.md` 17's third open thread says will
-invert on a phone.
-
-**Against the MRT route it wins on every axis but one.** No shader gains an
-output, no Babylon shader store is patched, no material has to participate, and
-the occlusion is exact rather than conservative. What it does not do is remove
-the second geometry pass — it makes that pass 20 meshes instead of 204, which
-is the same ~90% the whole entry has been chasing, but the pass is still there
-and still costs a bind. **Nobody has measured the frame with it built.**
-
-### WHAT LANDED — `src/core/GlowDepth.ts`
-
-The layer keeps its blur, its compose, its emissive selector and its exclusion
-list. Two things change: **its render list is the emissive meshes alone**, and
-**its occlusion is the main pass's depth buffer**, shared rather than redrawn.
-That is the same answer the opaque black was computing, exact to the pixel, for
-none of the draws.
-
-**The frame, a live round, uncapped headless, fresh page per arm:**
-
-| map | stock | landed | saving |
-| --- | --- | --- | --- |
-| Coldharbour | 9.45 ms | 7.60 ms | **1.85 ms, 19.6%** (106 -> 132 fps) |
-| Harrowmead | 10.55 ms | 8.25 ms | **2.30 ms, 21.8%** (95 -> 121 fps) |
-| Sarab | 13.40 ms | 10.55 ms | **2.85 ms, 21.3%** (75 -> 95 fps) |
-
-Both arms of every pair agree to within 0.3 ms (9.4/9.5, 7.6/7.6, 13.4/13.4),
-which is far tighter than this box's usual spread and is what makes a ~20%
-reading believable at all.
-
-**The picture: 36 frozen vantages across Hollowmere, Coldharbour and Greyfen —
-three committed diff vantages per map at four yaws each — worst mean
-0.0258/255, worst pixel 90, and zero page or console errors on every map.**
-Two poses came back exactly 0. For scale, finding 18 landed at 0.19 to 3.26.
-The residue is the blur resampling at full resolution rather than half; it is
-not occlusion, which the spike proved separately by showing the normal and
-inverted depth tests PARTITION the emissive pixels exactly (926 + 748 against
-1,672 unoccluded).
-
-**Four mechanics, and every one of them failed silently first** — they are on
-the line in `GlowDepth.ts` and repeated here because each cost a measurement
-round:
-
-1. **The main texture must render LATE.** The scene component registers
-   `_renderMainTexture` on `_cameraDrawRenderTargetStage` (before the camera
-   draws) and the compose on `_afterCameraDrawStage` (after). Only the first is
-   in the wrong place. It must be MOVED and never skipped, because it also
-   raises the `_renderEffects` flag the compose reads — skipping it stops the
-   layer compositing at all, which looks like the glow having been deleted.
-2. **The clear must be REPLACED, not added to.** `_createMainTexture` installs
-   its own `onClearObservable` handler that clears colour, depth AND stencil,
-   and an `Observable` runs every observer. Adding a colour-only clear beside it
-   leaves the depth wiped — the arm with sharing and the arm without came back
-   BIT-IDENTICAL, which reads exactly like "the mechanism does not work" and
-   actually meant "it never ran".
-3. **The framebuffer must be re-bound after the render**, because an RTT render
-   restores the DEFAULT framebuffer and the compose would otherwise land on the
-   canvas, under the post chain.
-4. **The texture must be FULL resolution with a doubled kernel.** `shareDepth`
-   demands matching dimensions and the layer's default is half; the kernel is in
-   texels of that texture, so it doubles with it or the bloom halves on screen.
-
-**What this cost that is not milliseconds.** The glow buffer is four times the
-pixels through the blur. That is free on a draw-call-bound desktop frame and is
-precisely the trade finding 17's third open thread says inverts on a phone —
-**nobody has measured this on a phone, and it is the one open thread this
-change leaves.** It also reaches into three Babylon internals (`_getComponent`,
-`_renderMainTexture`, `_currentRenderTarget`), each asserted in a DEV build for
-the reason `OutlineFog.ts` asserts its patch anchors.
-
-**And it retires the entry's whole premise.** The rigs are no longer in the
-layer's render list, so the second attempt's 310 draws on Sarab are gone
-without excluding anything; `CLAUDE.md`'s paragraph saying rig exclusion is
-deliberately not done has been replaced.
-
-### SUPERSEDED — `GlowDepth` is gone, and the depth share lives on in `GlowPass`
-
-`GlowDepth` made a `GlowLayer` do this from the outside, through three Babylon
-internals, re-applying its overrides every frame because the layer kept putting
-its own back — and it kept losing a frame on every `engine.resize()`, because
-the layer's texture and the borrowed depth resized on different schedules (a
-dragged window lost one frame in two). `src/shaders/GlowPass.ts` owns the mask,
-the blur and the compose itself, public API only: the mask is sized from the
-depth it borrows in the same function that shares it and draws, the blur runs at
-half and quarter resolution off a downsample of the full-resolution mask, and
-the compose is a post-process straight after the ink. What this entry bought —
-the emissive meshes alone, occluded by the frame's own depth — is unchanged.
-
-**Measured against the tree it replaced, same session, headless on the Windows
-box:**
-
-| | before (`GlowDepth`) | after (`GlowPass`) |
-| --- | --- | --- |
-| WebGPU validation errors: renderScale 1 -> 0.5 -> 1, viewport 1920x1080 -> 1600x900 -> back, twenty widths one per frame (Hollowmere) | on every step | **0 on every step** |
-| warm fps, `gate.mjs --uncap`, two runs: Coldharbour | 169.1 / 169.5 | **178.6 / 177.8** |
-| Harrowmead | 174.4 / 176.6 | **185.0 / 184.5** |
-| Sarab | 126.5 / 131.5 | **131.9 / 133.1** |
-
-The frame rate is a live round and two runs a side, so read it as "not slower,
-probably ~5% faster" (the blur is a quarter of the pixels it was) rather than
-as a number to quote. **The picture**, 21 banked vantages re-taken before and
-after in the same session: mean 0 to 0.26/255, and every difference that is
-more than blur resampling is on an ink line under a bloom — the compose now
-lands after the ink, so a halo is no longer darkened by the line through it. A
-moon view on Cinderhaven and the kit screen on Hollowmere read 0.013 and ~0.
-**Still unmeasured: a phone**, which is the trade finding 17's third thread is
-about; the blur's move to half resolution should help there, not hurt.
-
-### One thing noticed on the way, and it belongs to finding 32 rather than here
-
-**Coldharbour's frame has roughly halved since finding 32 was written.** That
-entry has it at 52.6 warm fps and a 19.3 ms median; the same map, same
-resolution, same instrument class, profiler armed (which costs ~1.5%), now reads
-94-99 fps and a 10.1-10.6 ms median. 1.9x is well past the ~1/3
-cross-session drift that entry warns about, so most of it is real and is
-presumably `narrowedMove` and the rig culling landing after it. **Finding 32's
-table is stale enough to mislead anyone sizing a lever against it.**
-
-And `shadowPass` fired on **zero of 3,000 frames** on both maps measured. That
-is not a dead hook: `ShadowSystem` sets `REFRESHRATE_RENDER_ONCE` and the
-refresh test genuinely never fails during play, which is finding 2's headline
-confirmed continuously rather than by inference. The 2.18 ms left unattributed
-inside `render` is the mesh walk (2.06 ms by the counter), not the shadows.
-
----
-
-## 4. ~~A 4× MSAA backbuffer is allocated and resolved for nothing~~ — FIXED
-
-**Re-taken on WebGPU, where the reading is a sample count rather than a GL
-parameter, and it still holds.** The engine is
-`new WebGPUEngine(canvas, { antialias: false, stencil: false })`,
-`engine.currentSampleCount` is **1**, and there is not one multisampled texture
-in the engine's cache. The counterfactual was measured rather than assumed: a
-second engine on a throwaway 1920x1080 canvas with `antialias: true` comes back
-at sample count **4**, `bgra8unorm` colour and `depth32float` depth — which is
-33.2 MB of colour and 33.2 MB of depth, so the "66 MB at 1080p" below is exactly
-right for the new formats as well. The original WebGL2 reading follows.
-
-The engine was `new Engine(canvas, false, {})` and
-`gl.getParameter(gl.SAMPLES)` read **0** on the default framebuffer, against
-the 4 it used to. The reasoning was never in doubt — FXAA sends every pass of
-the scene into post-process render targets, so the only thing ever drawn to the
-default framebuffer is one full-screen quad, and multisampling it antialiases
-edges that do not exist while costing a resolve every frame and ~30 MB at 720p.
-`stencil` went with it: nothing in `src/` uses one and there is no
-`HighlightLayer`.
-
-Kept as a heading rather than deleted because the saving is what pays for
-finding 5's render scale, and the two want reading together.
-
----
-
 ## 5. The fill-rate budget: four full-screen passes and 18.6k particles
 
 **Status:** counted, not costed, and now partly *steerable* — the lever this
@@ -1312,7 +503,7 @@ it at ~1% of Coldharbour's frame. `renderScale` is still the unmeasured lever.
 
 - **Four chained passes at the render resolution** — fxaa, the light shafts,
   motionBlur, paper grain — plus the glow layer's blur. The grain is no longer a
-  trivial pass: its world-pinned paper measured ~0.25 ms of GPU at 1920x1080. Finding 2's detach took that
+  trivial pass: its world-pinned paper measured ~0.25 ms of GPU at 1920x1080. The god-ray detach took that
   to three for most of a round while the shafts were `GodRays`; **that saving is
   gone**, because `Volumetrics` replaced it and is attached always. Measured at
   ~0.75 ms of GPU (`docs/rendering.md` has the per-rung table). Both the shafts
@@ -1331,159 +522,6 @@ it at ~1% of Coldharbour's frame. `renderScale` is still the unmeasured lever.
 
 Neither of the last two should be cut by default. If a graphics-quality preset
 is ever wanted, these are what it should move, in that order.
-
----
-
-## 6. Where the per-frame CPU actually goes — its one open thread is CLOSED
-
-**Status:** measured headless, so the absolute milliseconds are inflated and
-only the ranking is trustworthy. **The thread this entry carried — the ground
-probe's analytic replacement — is DONE**; the entry is kept rather than deleted
-because four files cite it by number for the measurements below, and because the
-differential that justified the switch is not worth anybody re-running. Recorded because two of these were surprises.
-**The ranking has since been confirmed on real hardware and the figures are
-about five times too big — see finding 18**, which puts `probeGround` at 0.483
-ms and everything below it under 0.12. Read the order here, never the
-milliseconds.
-
-Per frame, in a live round with 16 bots:
-
-| phase | ms | note |
-| --- | --- | --- |
-| `Player.probeGround` | 2.45 | one whole-scene ray pick |
-| `battle.update` | 0.55 | 16 bots, staggered thinking |
-| `game.updateHud` | 0.49 | |
-| `minimap.update` | 0.28 | canvas redrawn every frame |
-| everything else | < 0.2 each | |
-
-**`minimap.update` roughly DOUBLED when the map was turned player-centred and
-heading-up**, and the figure above is the square-blit version. Re-measured
-against itself in one session on Harrowmead — 300 updates with a 1x1
-`getImageData` after each to force the flush — the old whole-map view costs
-0.134 ms and the turning one 0.274. Timing the calls WITHOUT that readback says
-0.011 and 0.041, which is command submission and not the raster: Canvas2D
-defers, and a micro-benchmark of the blit alone reports two microseconds for
-work that has not happened yet. Both numbers are software raster under
-SwiftShader, so the ratio is the only part to trust; the extra is one rotated
-resample of a 220 px square out of the prerendered backdrop.
-
-**The ground probe dominated the game's own JS**, and it scaled with the map
-rather than with what is on screen: `scene.pickWithRay` with a predicate walked
-all 1,775 meshes and ray-tested all 758 solid colliders. A second identical pick
-had already been removed (see CLAUDE.md on `Player.floorY`). **It is now
-analytic and this row is history** — read the table for the RANKING of what is
-left, and the section below for what closed it.
-
-### The analytic replacement: SWITCHED ON, and what closed it
-
-**Status: done.** `Player.probeGround` no longer casts a ray. It takes the
-highest of three answers in the band the feet reach — `TerrainField.surfaceAt`
-for the floor, `ObstacleField.groundAt` for the static world, and
-`VehicleSystem.deckAt` for the hulls, which are in no baked structure — and the
-whole thing is a bucket lookup, a heightfield sample and a loop over at most two
-tanks. The differential below is kept because it is what the switch rested on
-and nobody should re-run it from scratch.
-
-**Sampling the whole map on a half-metre grid at four standing heights is the
-WRONG test and says so loudly**: 1.2% of 914k samples disagree on Hollowmere,
-2.9% on Greyfen. Nearly all of that is an artefact of asking about positions a
-body cannot occupy. Where the probe's origin lands a few millimetres *inside* a
-ramp, `pickWithRay` starts within the mesh, punches through it, and reports the
-UNDERSIDE — 0.347 for a surface at 0.653. The ray is the one lying there.
-
-**The right domain is the nav graph's walkable surfaces** — every (cell, height)
-pair the game says a body can stand on. Over those the two agreed on 99.8% and
-disagreed on 116 running in opposite directions, and the second class was the
-blocker:
-
-- At the Hollowmere rim the analytic reports 1.2–3.4 m, the nav graph agrees
-  with it, and the RAY finds nothing at all and falls back to the terrain.
-- Along one Greyfen fence line the analytic reports a surface 0.5 m up that the
-  ray passes straight through.
-
-**What closed it was a footprint, and it was in the shared primitive rather than
-in the query.** `topFaceAtLocalZ` extrapolated a box's top-face PLANE across the
-footprint `halfDepth` describes — which is the SOLID's ground projection, and for
-a pitched box is wider than the face sitting on it. The top face's own projection
-is an interval of half-width `(d/2)|cos|` centred on `(h/2) sin`, so the solid
-reaches `h |sin|` further at one end, and across that strip the plane kept
-climbing at `tan(rotX)` over ground it had run out of face for. At the far edge
-it overshoots by exactly one `slabThickness`. `boxGeometry` now gates every
-height query on `topFaceHalfDepth`/`topFaceCentreZ`; `halfDepth` is untouched and
-still owns every question about where a box IS.
-
-**Validated against a brute-force downward ray at the real rotated box**: 640k
-samples over 400 random boxes pitched to ±60°, and the new gate answers on
-exactly the spots where that ray lands on the top face, to 4e-12 m, and declines
-on exactly the spots where it does not. The old gate answered on 1.5% of samples
-with nothing standable under them at all, by as much as 6 m.
-
-**On the shipped maps it is nearly invisible, and that is the honest headline.**
-Every pitched box in all four maps is a stair flight or its parapet at 8.3–19.3°,
-so the widest strip anywhere is 0.343 m against a 1.5 m nav cell. Re-run over
-every walkable surface on all four maps, the old gate and the new one give
-IDENTICAL answers at every one of them, and the nav graph loses four surfaces on
-Coldharbour and none anywhere else. **The fix is what makes the switch safe, not
-what makes it worth doing** — and it would have been a live bug on the first map
-authored with a steeper pitch.
-
-**What is left disagreeing with the ray is the RAY.** Over every walkable
-surface: 0 on Hollowmere, 0 on Greyfen, 431 on Coldharbour and 8 on Harrowmead.
-Every Coldharbour one is a cell centre at x = ±160.25, inside the rim wall
-(`ridge-e-col`, 160→162): the ray starts inside that box, punches through and
-reports its underside at 0, where the analytic reports the terrain at 1.2. Every
-Harrowmead one is a cell centre at x = 120.25, exactly on the outer face plane of
-a 0.5 m wall — the analytic includes the boundary, Babylon's triangle test misses
-it, and the analytic is the one that agrees with the nav graph the bots walk.
-
-**What it costs, measured on the Windows box in a live warm round**, per probe,
-against the ray it replaces at the same 2,000 walkable positions:
-
-| map | ray | analytic | |
-| --- | --- | --- | --- |
-| Hollowmere (240 m) | 0.106 ms | 0.0002 ms | 634x |
-| Greyfen (240 m) | 0.099 ms | 0.0002 ms | 458x |
-| Coldharbour (320 m) | 0.123 ms | 0.0004 ms | 350x |
-| Harrowmead (400 m) | 0.101 ms | 0.0003 ms | 356x |
-
-The ray reads lower here than the 0.483 ms finding 18 measures in the frame —
-this is a tight loop with warm caches and that is a live frame — so the RATIO is
-the trustworthy half, and either way the analytic is a rounding error. **What
-actually matters is the exponent, not the constant**: the ray was O(meshes in the
-scene) and this is O(boxes in one 4 m bucket), which is the difference between a
-probe that grows with the map and one that does not.
-
-**The one thing it cost is a rule.** The boxes are the STATIC world, so anything
-`solid` that MOVES is invisible to the probe — today a tank's hull, and only
-that, which is why `Vehicle.deckAt` exists. Verified against the ray over 1,617
-points on and around a parked hull with no disagreement, and a body dropped over
-the turret settles on the deck. Anything else that ever moves and can be stood
-on owes the same door.
-
-### It IS switched on for a vehicle, and that half is closed
-
-`Vehicle.supportAt` takes it ten times a frame — once per track contact — and the
-hull's `pickWithRay` is gone. **The blocker above does not block a HULL**: a
-phantom surface half a metre up is one of ten contacts under a seven-metre
-plank, and the rise it asks for is rate-limited by `drive.climbSlope` before it
-reaches the drawn tank; the same half metre under a pair of feet stands a player
-in the air. That is the asymmetry that let the vehicle go first.
-
-Measured in one headless session on Coldharbour, so only the ratio is
-trustworthy: **ten contacts cost 0.0009 ms against 0.567 ms for the one
-whole-scene ray they replaced** — about a six-hundredth. It also closes what
-used to be a finding of its own: a DRIVER paid two of the frame's most expensive
-pick (the hull's ground and the chase camera's pull-in) where a body on foot
-paid one. A driver now pays one, the camera's, and it is the only one left in a
-vehicle frame. See `docs/vehicles.md`.
-
-Nothing remains open here: the body's went the same way, above.
-
-Two things checked and found *not* to be problems, recorded so nobody
-re-derives them: the point-light arrays are **not** re-uploaded per draw
-(Babylon rebinds a material's uniforms once per frame — measured 99
-`uniform3fv` calls a frame, not thousands), and the HUD costs **one** style
-recalc and **one** layout per frame.
 
 ---
 
@@ -1512,128 +550,6 @@ Caveat worth keeping: this was sampled headless at ~2 fps, where game time runs
 at ~25% of wall clock, so the *rate* of audio events per second is not the
 rate a real round produces. The ranking is sound; the absolute figure is a
 floor rather than an estimate.
-
----
-
-## 9. ~~A broken pane costs a flow-field rebuild, and the rebuild is not measured on real hardware~~ — FIXED: a break RELAXES the fields and there is no rebuild left
-
-**Status:** measured headless, amortised, re-measured on real hardware, **and
-then closed by deleting the rebuild rather than by placing it.** This entry
-predicted its own failure two milestones early — see "How it scales with the
-MAP" below, which put a 1500 m field at ~32 ms and seven dropped frames in a
-row, and then declined to act because "no map that big exists". Cinderhaven is
-1500 m with four breakable panes, and it arrived at exactly that.
-
-**What it looked like on the shipped map**, from a capture taken on the Windows
-box: `glass` p50 0 and max **44.3 ms** on a map whose median frame is 7, in a
-run of **seven consecutive frames of 33–44 ms** — the queue draining one field
-per frame — for one window. 1,021,019 surfaces, 984,760 walkable, seven fields
-at 25–33 ms each measured in isolation, 208 ms for the set.
-
-**What a break actually owed was a RELAXATION and never a sweep.** The graph's
-one mutation is monotonic, which this entry already said: it only ever gains
-links, so no step count can rise and every field already holds correct upper
-bounds on the new graph. `NavGrid.relaxFields` walks out from the ground the
-break touched until nothing improves, inside `openBox`, in the frame the pane
-broke — so the cost is what the pane OPENED rather than what the map IS, and
-the amortisation it replaces is gone along with `rebuildField`, `fieldGoals`,
-`GlassSystem.update` and the `glass` profiler phase. Measured end to end on
-Cinderhaven, real adapter, warm, all four panes broken on one frame:
-
-| | before | after |
-| --- | --- | --- |
-| worst frame in the 120 after the break | **61.6 ms** | **9.2 ms** |
-| the seven frames after it | 47.8, 47, 51.7, 47.6, 61.6, 48.5, 49.4 | 9.2, 8.3, 7.9, 7.9, 7.6, 8.1, 7.8 |
-| median frame over the window | 8.2 | 7.2 |
-
-**It is exact and not an approximation**, which is the only reason it may
-replace a sweep: against a full re-sweep of all seven fields, **0 of 20.2 M
-step counts differ** — all six shipped maps, 600 randomly opened collider
-boxes, and a synthesised sealed room so the `opened > 0` arm is covered too.
-
-**It also found a correctness bug the sweep was hiding**, which is written up
-in `docs/world.md`: `openBox` re-severs the rectangle it relinks against the
-box list it is handed, and `GlassSystem` was filtering only the box being
-broken out of it — so a second break within a cell rectangle of the first put
-the FIRST window's wall back into the nav graph. Silent, because the fields
-were swept from scratch afterwards and agreed exactly with the corrupted graph.
-On Coldharbour's twenty-four panes, **53,461 step counts across the seven
-fields were describing a wall that was no longer there**, for the rest of the
-round. And the drain was a second call a caller had to remember: `HeadlessGame`
-never made it, so on the AUTHORITY no field was ever updated after a break at
-all.
-
-The historical body follows unchanged.
-
-**A field is half the bytes it was** — `Uint16Array`, one BFS step count per
-surface, see `NavGrid.FLOW_UNREACHED` — which changed what a rebuild ALLOCATED
-and not what it cost.
-
-Breaking a pane relinks the nav graph locally — cheap, bounded by the
-box — and then owes every flow field a rebuild, because a route computed before
-a wall opened still walks round it. `GlassSystem.update` drains **one field per
-frame** and coalesces every break inside that window into the same pass.
-
-Measured on Coldharbour, headless (so inflated; the ranking is the trustworthy
-part):
-
-| | ms |
-| --- | --- |
-| one field (`NavGrid.rebuildField`) | 4.7 |
-| all seven | 15.9 |
-| the local relink + flood (`NavGrid.openBox`) | under the timer's resolution |
-
-34,142 walkable surfaces, seven fields (five control points and both home
-spawns). The walkable count grew by ~5% when the mixed-use blocks went in and
-the timings above were not re-taken; a field is linear in it, so read them as a
-floor rather than as current. (The surface count that used to head this
-paragraph was 183,184, which was `cells * maxSurfaces` rather than surfaces:
-ENGINE_UPGRADE.md S3 compacted the id space and the same graph now reports
-**72,230**. The walkable figure is unaffected — it always counted real ground.)
-
-**One field is 1.9 ms on the Windows box** (Coldharbour, real adapter, warm,
-median of five), against the 4.7 ms headless above — inside the 1–2 ms this
-entry guessed. **Re-measured after `ENGINE_UPGRADE.md` S4 it is 0.90 ms**, same
-box, same map, same median-of-five, and S4 is not the reason: it moved
-`FlowField.dist` from a `Float32Array` to a `Uint16Array` and the BFS queue from
-a `number[]` to an `Int32Array`, and on the proving ground — where a field is
-long enough to measure honestly — the same pair of runs is 11.60 ms before and
-11.80 after. The rebuild is a MEMORY change and not a speed one; read the 1.9
-against the 0.90 as two readings of a sub-millisecond call rather than as a
-2.1x. It is still a SYNCHRONOUS call rather than one taken from the
-page's own frame loop, so what is settled is the machine, not the placement. 15.9 ms in one frame is a dropped frame on a 60 Hz budget that
-FINDINGS #1 already says drops one every 1.7 s; spread over seven it is
-invisible, and the staleness in between costs nothing because breaking is
-monotonic — the graph only ever gains links, so a stale field walks the long way
-and is never wrong.
-
-### What is not known
-
-**The real-hardware figure.** ~~4.7 ms headless is probably 1–2 ms on a real
-machine, but that is a guess~~ — settled above at 1.9 and then 0.90 ms on
-Coldharbour. What is still a synchronous call rather than one taken from the
-page's own frame loop is the PLACEMENT, and that is what the number was wanted
-for.
-
-**How it scales with the MAP, which is the open half now.** The same call on the
-committed 900/300 proving ground is **11.7 ms**, against Coldharbour's 0.90 —
-and a field is linear in walkable surfaces, of which that map has 305,193 to
-Coldharbour's 34,142. Scaled to `ENGINE_UPGRADE.md`'s 1500 m target that is
-**~32 ms a field**, which is a dropped frame on its own and seven of them in a
-row while the queue drains. `ENGINE_UPGRADE.md` S4 measured this, declined to
-re-model the fields for it, and handed it to S5 — the work is unchanged and
-wants to be off the frame rather than smaller. Nothing is chargeable to it yet:
-no map that big exists, and the proving ground has no breakable glass.
-
-**How it scales with the breakable count.** Coldharbour has twenty-four breakable
-panes — the two offices' and the eight shophouses' shopfront bays, the only
-glass on the map with a room
-behind it — and a firefight breaks perhaps two or three of them, so the rebuild
-queue is usually one pass. A map that made every ground floor enterable would
-break several per exchange — and while the coalescing means that is still one
-pass per burst rather than one per pane, nobody has stood in a fight and
-counted. Reach for `PaneSpec.breakable` more often and this entry is the thing
-to re-read.
 
 ---
 
@@ -1796,6 +712,45 @@ frame was not the frame the bake happened on — `installRound` times the frame
 after the state flips, and the bake is not contractually on it — but that has
 not been demonstrated. **Do not quote 138 ms; re-take it.**
 
+### Also open, carried from the bake's closed entries
+
+**A bake draw is 18.6 us and nobody knows why.** 50,000 draws at ~928 ms is
+three times the ~6.3 us `VERIFYING.md` measures for a mesh draw carrying a
+material switch, and eight times the ~2.3 us for an outline shell reusing a
+bound material. A first bake creates a draw wrapper per (mesh, render pass id)
+and six of those per probe, so bind-group creation is the obvious suspect — but
+it is a suspect and not a measurement.
+
+- **The worst frame is still 1,217 ms at 1500 m**, against a 197 ms median. It
+  is the first batch and it is a queue-shaping question rather than a
+  draw-count one: `releaseBatch` lets one probe through however fat it is on an
+  otherwise empty frame, by design, or a queue with a fat head could never
+  drain. A budget that could be spent as "one probe's worth of FACES" rather
+  than one probe would smooth it; nothing has tried.
+- **`perCell` is 2 at 1500 m, which is the first live grouping in the tree** and
+  means a probe there drops 96 m of city out of the middle of its own cube (the
+  enclosure rule — see `docs/rendering.md`). Nobody has looked at what that
+  costs the PICTURE, because the proving ground is not a map anyone plays. A
+  1500 m map that ships glazing owes that reading.
+- **Nothing has looked at the PICTURE on the proving ground**, which is S0b's
+  owed item and survives all of this. The bank can only say the four shipped
+  maps are unmoved.
+- **Nobody has looked at the PICTURE of a wider merge block** (`ENGINE_UPGRADE.md`
+  S6). The whole cost of a wider block is cull granularity — a block is offered
+  while the camera is inside `reach` of its bounds, so a 128 m block draws more
+  that is off screen — and on the proving ground the draw-call saving swamped
+  it. On a map with long sightlines and heavy per-pixel work it might not. Five
+  shipped maps now state a wider block — Sarab 96, Cinderhaven 120, Kurenai 120,
+  Harrowmead 200, and Coldharbour's `terrainBlock` 96 — and a probe drops every
+  block it serves from its own bake (`ReflectionSystem`'s `encloses`), so a
+  wider block is also more of the city missing from its own cube. None of that
+  has been judged on screen.
+- **The proving ground's glazing is a generated worst case.** 1,153 glazing
+  groups over a city-block grid; a real 1500 m map may glaze far less, and S11
+  is deliberately last so that the engine is not tuned against content that does
+  not exist. The SHAPE is not a worst case — the bake is priced on glazing and
+  `docs/rendering.md` says glazing has no natural bound.
+
 ---
 
 ## 11. The editor's tier-3 rebuild is ~2.3 s on Coldharbour, and it is `MapBuilder`
@@ -1907,8 +862,8 @@ shader plus the glass block.
 
 Three changes were A/B'd in the console on a real GPU. **Only hiding the glass
 moved the needle.** Dropping distant outline shells (-35.5% of draw calls) and
-excluding the world from the glow layer (-26.4%, FINDINGS #3) were both
-*negligible* — so this frame is not draw-call bound, and #3's saving is not
+excluding the world from the glow layer (-26.4%, since landed as `GlowPass`) were both
+*negligible* — so this frame is not draw-call bound, and that saving is not
 worth reaching for on that argument alone. Headless had ranked them the other
 way round, which is the sharpest reminder in this file that SwiftShader ranks
 draw calls and a real GPU ranks pixels.
@@ -2051,7 +1006,7 @@ Two of those go the RIGHT way and are the reason the rest is affordable at all:
 `MapBuilder.clusterColliders` merges the scatter's colliders per 12 m square, so
 1,412 blocking props are ~180 meshes and the map has fewer solid meshes than it
 did with a fifth of the trees. `Player.probeGround` — the largest single cost in
-the game's own JS, finding 6 — therefore got *cheaper*.
+the game's own JS, `docs/world.md`'s ground probe — therefore got *cheaper*.
 
 For scale, the same sweep reads 337k active triangles on Hollowmere and 339k on
 Coldharbour. Greyfen was already 2.5x either of them before this (the grass
@@ -2177,9 +1132,9 @@ both.
 ## 17. The frame is DRAW-CALL bound on WebGPU, and that is what the backend changed
 
 **Status:** measured on the Windows box, cause located, three levers costed.
-**One of the three has LANDED** — `compatibilityMode = false`, see below — and
-the other two have not. **This entry corrects findings 3 and 12**, which were
-both written against a backend where a draw call was cheap.
+**Two of the three have LANDED** — `compatibilityMode = false` and the glow, see
+below — and the third has not. **This entry corrects finding 12** and the glow reading
+`GlowPass` replaced, both written against a backend where a draw call was cheap.
 
 It was opened by a symptom rather than by a sweep: the big maps that used to
 run over 100 fps now struggle to hold 60, and the GPU sits at 25-30%
@@ -2219,7 +1174,7 @@ The callback fills the interval, so **the main thread is the wall and the GPU
 is starved rather than busy** — which is what the utilisation reading that
 opened this entry means, and it is worth knowing that it means that, because a
 GPU at 25% looks like headroom and is the exact opposite. Note also that the
-game's own JS is 1.7 ms of a 21.5 ms frame: **finding 6's ranking is still
+game's own JS is 1.7 ms of a 21.5 ms frame: **the per-frame CPU ranking (finding 18) is still
 right about what is expensive inside `updateGameplay`, and that whole budget is
 now under 8% of the frame.** Inside `scene.render`, by Babylon's own phase
 observables:
@@ -2286,7 +1241,7 @@ Single-lever A/Bs in the page on Coldharbour. The baseline itself drifted -4 to
 The last two are the null results and both are useful: the glass is finding
 12's lever and no longer moves anything, and the shadow pass reads *negative*,
 which is drift plus whatever emptying an explicit render list does to Babylon's
-own path — either way finding 2 is not where the frame is. Stacked, which is
+own path — either way the shadow pass is not where the frame is. Stacked, which is
 the number worth having:
 
 | Coldharbour | fps | frame |
@@ -2333,14 +1288,12 @@ not see is a rendering artefact that a person would notice and an assertion
 would not, and the cheapest way to close that is to play a round on Coldharbour
 and look at it.
 
-**2. The GlowLayer is finding 3 and it has inverted.** The layer is 883 of
-Coldharbour's 2,647 draws. The fix that entry names is unchanged and is small —
-the exclusion scan runs in `Game`'s constructor, before any map exists, so
-every `MapBuilder` mesh is eligible forever and is drawn as opaque black into a
-buffer it cannot light. What it is still waiting on is the visual question in
-that entry, which none of this changes: the opaque black is what makes the glow
-buffer depth-occlude. Expect materially less than the 22.5% above, which is the
-whole layer rather than the world in it.
+**2. The GlowLayer had inverted, and the fix has LANDED as `GlowPass`.** The
+layer was 883 of Coldharbour's 2,647 draws, every `MapBuilder` mesh drawn as
+opaque black into a buffer it cannot light so that the glow buffer could
+depth-occlude. `GlowPass` borrows the frame's own depth for that occlusion and
+draws the emissive meshes alone; what it replaced is `docs/rendering.md`, "The
+glow: what the depth share replaced".
 
 **3. `scene.freezeActiveMeshes()` is a diagnostic and must not ship.** It
 freezes the active list, so a bot that walks into view, a pooled effect, a
@@ -2399,16 +1352,17 @@ is the number that closes the "move it to workers" question before it is asked:
 worker RELOCATES 18 ms rather than removing it, and the worker becomes the wall.
 What is genuinely worker-shaped here is burst work and not the frame —
 `MapBuilder`'s geometry, the AO bake, the `NavGrid`/`CoverMap`/`ObstacleField`
-builds, finding 9's flow-field rebuild, finding 11's editor tier-3 — and moving
+builds, finding 11's editor tier-3 — and moving
 any of them buys load time and nothing else. Do not re-derive this.
 
-Inside that tenth, on real hardware rather than finding 6's inflated headless
+Inside that tenth, on real hardware rather than an earlier inflated headless
 run: `player.probeGround` is **0.483 ms** and everything else is under 0.12
 (`updateHud` 0.112, `battle.update` 0.094, `minimap.update` 0.086,
-`lighting.update` 0.063). The ranking finding 6 records is intact and the
+`lighting.update` 0.063). The headless run's ranking is intact and the
 absolute figures were five times too big. **The ground probe was a third of the
 game's own budget and is now gone** — the footprint test it waited on landed, and
-finding 6 carries what closed it and what it measures at now.
+`docs/world.md`'s ground-probe section carries what closed it and what it
+measures at now.
 
 ### What the draws are made of
 
@@ -2515,7 +1469,7 @@ Four things it costs, in the order they will bite:
 
 **An MRT main pass is no longer the first move, and half of it should probably
 never be made.** Writing emissive into a second attachment is the
-architecturally correct answer to finding 3 — a shared depth buffer IS
+architecturally correct answer to the glow's occluders — a shared depth buffer IS
 occlusion, which distance from a lamp can never express — and Babylon's WebGPU
 pipeline cache keeps `_alphaBlendEnabled` as a per-TARGET array, so blended
 glazing writing a second attachment is configurable rather than the blocker it
@@ -2557,7 +1511,7 @@ position: **Coldharbour 7.66 -> 5.80 ms (+32%), Harrowmead 9.22 -> 6.30 ms
 (+51%)**. That beats the runtime A/B that predicted it (+15.4% / +34.7%) because
 the A/B only DISABLED the twins and a disabled mesh is still walked — never
 building them takes them out of `scene.meshes` as well, active meshes 609 -> 555
-and 726 -> 582, which is finding 22's per-mesh walk cost arriving on top of the
+and 726 -> 582, which is the per-mesh walk cost arriving on top of the
 draws.
 
 ### Two null results and one correction, so nobody re-runs them
@@ -2812,7 +1766,7 @@ the placement loop re-timed. If the ms-per-placement column goes flat, this is
 the whole of it. If it does not, the remainder is in `BlockMerge`'s accumulation
 or in `boxIndex`, and neither has been measured apart.
 
-**DISPROVED — see finding 24, and this paragraph is left standing because how
+**DISPROVED — see `src/world/parts.ts`'s header, and this paragraph is left standing because how
 it was wrong is the useful part.** `removeMesh` is 98 ms of a 6,420 ms loop:
 88,131 calls scanning 547 million array elements, which is 0.18 ns an element,
 because V8's `indexOf` over a packed array is not a memory access per element.
@@ -2936,14 +1890,15 @@ vantage, which is what the split was for.
 - **The placement loop's `n^2.9`**, and whether `AssetContainer` flattens it. It
   is worth more than every worker in S5: 159 s of a 183 s build.
 - ~~**Wall 1 at 1.10 µs per scene mesh**, which is what block visibility has to
-  beat.~~ **MOSTLY CLOSED by `ENGINE_UPGRADE.md` S1 — see finding 21.** The walk
+  beat.~~ **MOSTLY CLOSED by `ENGINE_UPGRADE.md` S1 — see `docs/rendering.md`, "Block
+  visibility".** The walk
   is 7.60 ms to 2.50 and the frame 9.80 to 4.30 on the same proving ground, and
   the reason it was that large is not what this entry assumed: **6,349 of the
   9,019 meshes are INVISIBLE collider proxies**. What is left is 0.94 µs over
   2,670 candidates, so the walk is still the largest single line in the frame
   and S8's fog wall is what has the rest of it.
 - ~~**Nothing here was measured with sixteen bots fighting.**~~ **CLOSED by
-  finding 22**, which forces a skirmish and prices one. A fight is an 8.6 ms
+  `ENGINE_UPGRADE.md` S2**, which forces a skirmish and prices one. A fight is an 8.6 ms
   frame against the 4.30 ms quiet one, and 3.75 ms of it is `pickWithRay` —
   wall 2, not this one. Note what had to be worked around to get there: a round
   left to itself fires **no ray at all**, on this map or on Coldharbour.
@@ -3002,397 +1957,20 @@ tile: if the difference is a uniform sub-LSB shift it is the backend, and if it
 is concentrated on the water and the glazing it is a third unpinned clock and
 `freeze` is where it belongs.
 
----
-
-## 21. The frame's mesh walk is two thirds collider boxes, and a candidate list is what takes them out of it
-
-**Status:** measured on the Windows box, landed. **This is `ENGINE_UPGRADE.md`
-S1** and it takes most of wall 1 down. It also corrects that wall's own reading
-of what the meshes ARE: the walk is not mostly buildings, it is mostly
-INVISIBLE COLLIDER PROXIES that Babylon pays full price for and rejects on
-`isVisible` after it has already done everything expensive.
-
-`src/systems/WorldCulling.ts` replaces `Scene.getActiveMeshCandidates` and
-**writes nothing onto any mesh** — no `setEnabled`, no `isVisible`, no
-`isPickable`. `docs/rendering.md` carries the contract; what follows is only
-the measurement.
-
-### The instrument, and the lever
-
-Windows box (RTX 4070 Ti SUPER), headless Chromium via `channel: "chromium"`,
-`--disable-frame-rate-limit --disable-gpu-vsync`, 1920x1080, `spawnPlayer()` so
-the round is LIVE rather than sitting under the deploy lid, warm 10 s past the
-compile stall, medians over 8 s. Findings 17–19's protocol, so the figures are
-comparable to theirs.
-
-**One process, one lever, four arms.** The lever is
-`scene.getActiveMeshCandidates` and nothing else: the OFF arm puts Babylon's own
-`_getDefaultMeshCandidates` back — the whole of `scene.meshes`, which is what
-the tree did before this — and the ON arm hands the pointer back. OFF/ON/OFF/ON
-interleaved in the same boot, so nothing about the map, the camera, the
-pipelines or the thermal state differs between them.
-
-### What the walk is made of
-
-| | scene meshes | hidden | blocked | loose | candidates |
-| --- | --- | --- | --- | --- | --- |
-| hollowmere | 1,935 | 697 | 114 | 1,124 | 1,178 |
-| greyfen | 2,006 | 672 | 213 | 1,121 | 1,230 |
-| coldharbour | 2,230 | 805 | 229 | 1,196 | 1,425 |
-| harrowmead | 2,204 | 647 | 313 | 1,244 | 1,557 |
-| **proving 900/300** | **9,019** | **6,349** | **1,158** | **1,512** | **2,670** |
-
-**On the proving ground 70% of the scene is collider boxes**, and taking them
-out is exact rather than a trade — a collider cannot draw, so no pixel can move.
-The `blocked` column is the distance-culled half and is the smaller one at every
-size.
-
-### What it is worth
-
-| median ms | hollowmere | greyfen | coldharbour | harrowmead | **proving** |
-| --- | --- | --- | --- | --- | --- |
-| `_evaluateActiveMeshes` off | 0.70 | 1.10 | 2.60 | 2.70 | **7.60** |
-| `_evaluateActiveMeshes` on | 0.40 | 0.50 | 2.00 | 2.20 | **2.50** |
-| | **−43%** | **−55%** | **−23%** | **−19%** | **−67%** |
-| frame off | 2.40 | 3.70 | 11.50 | 12.30 | **9.80** |
-| frame on | 1.60 | 2.30 | 11.20 | 12.20 | **4.30** |
-| | **−33%** | **−38%** | −2.6% | −0.8% | **−56%** |
-
-**The proving ground's frame halves.** The two big maps' frame deltas are under
-the 8% floor the measurement protocol says to read as noise and must not be
-quoted as wins; their `_evaluateActiveMeshes` deltas are 3 to 8 times that floor
-and are real. Coldharbour and Harrowmead both state a `fogEnd` past their own
-diagonal, so all 45 and all 44 of their cells stay on and every millisecond
-above is the collider half alone.
-
-The marginal rate on the proving ground is **(7.60 − 2.50) / (9,019 − 2,670) =
-0.80 µs per mesh taken out of the walk**, against finding 19's 1.10 µs per mesh
-in it — the difference being that finding 19's figure came from two map extents
-whose meshes are not the same meshes.
-
-**What is left is still a walk.** 2.50 ms over 2,670 candidates is 0.94 µs each,
-so the same lever has more in it as soon as a map has a fog wall inside its own
-diagonal — which is S8.
-
-### What the block half is worth, which the proving ground cannot show on its own
-
-The proving ground states `fogEnd: 2400` deliberately (see its
-`environment.ts`), so nothing is culled by distance there. Re-filing the same
-built map at the wall S8 will want, in one process:
-
-| reach, m | candidates | cells on | `_evaluateActiveMeshes` | frame |
-| --- | --- | --- | --- | --- |
-| 2400 (as shipped) | 2,670 | 280/280 | 2.80 | 4.80 |
-| 650 | 2,180 | 163/280 | 2.30 | 4.20 |
-| 550 | 2,035 | 127/280 | 2.20 | 4.00 |
-| 450 | 1,908 | 97/280 | 2.00 | 3.70 |
-
-So a 550 m wall is another **0.6 ms of walk and 0.8 ms of frame** on top, on a
-map whose structures are only 1,158 of its meshes. On a denser map — a ruined
-city rather than a generated block grid — that column is the one that grows.
-
-### A ray cannot see any of it, and that was tested adversarially
-
-The whole safety argument is that picking walks `scene.meshes` and has never
-heard of the candidate list. **1,000 seeded rays across the 900 m play square**,
-939 of which hit something, fired twice out of the same process: once with the
-reach at the map's own fog wall and once with it wound down to ZERO, which
-leaves every structure on the map out of the frame (candidates 2,670 → 1,512).
-**The two arms agreed on the mesh and on the distance 1,000 times out of 1,000.**
-
-### The picture, and the one place it moved
-
-`bank.mjs --check` is RED on an unmodified tree (finding 20), so the usable form
+Measured while landing the candidate list (`ENGINE_UPGRADE.md` S1): the usable form
 is the DIFFERENTIAL one: run it either side of the change against the same fixed
 reference and require the same means. Two runs of the unmodified tree reproduce
 Hollowmere's four vantages to four decimal places **and to the fourth decimal of
-the pixel SHARE**, which is what made the reading below possible at all — and is
-a fact finding 20 wanted: cross-process residue on this map is zero, not the
+the pixel SHARE** — the fact this entry wanted: cross-process residue on this map is zero, not the
 0.14 Harrowmead showed.
 
-**Fourteen of the fifteen banked vantages are unmoved to four decimal places.**
-The exception is Hollowmere:
-
-| vantage | before | after |
-| --- | --- | --- |
-| hollowmere/menu | 7.8133% of pixels, mean 0.627/255 | 7.8117%, mean 0.627 |
-| hollowmere/lanterns | 7.3892%, mean 1.5051/255 | 7.3877%, mean **1.5050** |
-
-That is **0.0001 mean/255 over 0.0016% of the frame** — of the order of thirty
-pixels — against a 0.02 tolerance, and against the 0.19 to 3.26 the bank is
-already red by.
-
-**It is the block cull, and it is located.** With the reach widened past the map
-so nothing is culled by distance, all four Hollowmere vantages come back
-byte-for-byte: 7.8133% / 0.627 and 7.3892% / 1.5051. Hollowmere is the map with
-the tightest fog in the tree — `fogEnd: 78` against a 240 m square — and it is
-one of only two of the four where the cull engages at all. Greyfen states the
-same 78 and drops half its cells with **no** movement at any of its four
-vantages, which is what says this is a Hollowmere geometry fact rather than a
-rule being wrong.
-
-### What is open
-
-- **What those thirty pixels ARE.** The hypothesis the design already names is
-  that they are sky: a structure past the wall draws pure `fogColor` and is
-  backed by ground that draws pure `fogColor`, but a roofline poking above the
-  ridge line is backed by the DOME, whose `horizonColor` is only required to sit
-  CLOSE to the fog. Nobody would see thirty pixels; it is recorded because a
-  rule that is exact on three maps and approximate on the fourth should say so.
-- ~~**Nothing here was measured with sixteen bots FIGHTING**~~, **CLOSED by
-  finding 22.** The walk holds up under one — 3.0 ms in a fight against the
-  2.50 ms quiet reading here — and what a fight adds lands on wall 2 instead.
-  That entry also breaks the remaining candidates down: **57% of them are
-  `loose`**, which no fog wall can reach, and ~750 of those are idle pooled
-  effect meshes that the same mechanism could skip.
-- **The cull cell is the 48 m merge block**, because that is the key that
-  already exists. Whether a coarser or a finer cell is better is S6's question
-  and this has not asked it.
-- **The nav arrays are untouched by this**, correctly — they read `WorldBox`es
-  and the terrain field rather than meshes. Wall 3 is entirely open.
-
 ---
 
-## 22. Wall 2, measured at last: one ray is 2.4 ms on a 1500 m map, and a fight spends a third of the frame in `pickWithRay` — **CLOSED by 23**
+## 23. Rays at 1500 m: the terrain march is unpriced and has no hierarchy
 
-**Status:** measured on the Windows box, **and closed by finding 23** — every
-one of the eight sites is a box query now and the per-ray cost is flat in map
-size. What follows is the reading that priced the wall; keep it, because it is
-the before half of 23's pair and because its protocol is the one to reuse. This is
-`ENGINE_UPGRADE.md` wall 2, and it is the first time a ray has been fired down a
-map this size — findings 19 and 21 both name that as the gap and neither closed
-it. It settles the S1/S2/S8 ordering: **wall 2 is now the largest single line in
-the frame**, larger than what S1 left of wall 1, and S1 did nothing for it on
-purpose.
-
-### The instrument
-
-Windows box (RTX 4070 Ti SUPER), headless Chromium via `channel: "chromium"`,
-`--disable-frame-rate-limit --disable-gpu-vsync`, 1920x1080, medians over 8 s —
-findings 17–21's protocol. Two readings, because one of them alone says nothing:
-what a single `scene.pickWithRay` costs, and how many the LIVE game makes, taken
-by wrapping `scene.pickWithRay` for the whole window.
-
-**A round left to itself fires NO ray at all**, which is why this had to be
-forced. `BattleSystem.acquire` gathers candidates by distance and only
-ray-tests inside `bots.perception.engageRange` (55 m), so with nobody in contact
-there is nothing to test: measured at **zero `pickWithRay` calls in eight
-seconds on Coldharbour AND on the proving ground**, sixteen bots alive on both.
-So the bots are stood in a ring 12–24 m around the player and re-stood every
-second, which puts every one of them inside an enemy's engage range with a clear
-look. That is artificial and it is the only way to price this at all; what it
-buys is the two pick sites that carry the load — the bots' LOS
-(`BattleSystem.visible`) and the hitscan's wall cap (`CombatSystem.fire`).
-
-### What a fight costs
-
-| sixteen bots in contact | Coldharbour | Harrowmead | **proving 900/300** |
-| --- | --- | --- | --- |
-| collider boxes | 768 | 748 | **5,929** |
-| frames in 8 s | 1,115 | 890 | 656 |
-| fps | 139.3 | 111.2 | 81.9 |
-| median frame | 5.8 ms | 6.9 ms | **8.6 ms** |
-| — the mesh walk (what S1 left) | 1.5 ms | 1.9 ms | 3.0 ms |
-| — **`pickWithRay`** | **0.41 ms** | **0.35 ms** | **3.75 ms** |
-| picks per frame | 1.86 | 1.77 | 1.54 |
-| **us per pick** | **222** | **199** | **2,438** |
-| **share of the frame** | 5.8% | 3.9% | **30.7%** |
-| bots alive at the end | 7 | 8 | 9 |
-
-**11x the per-pick cost for 7.7x the colliders**, and the two big maps agree
-with each other to 10%. The pick count per frame is essentially the same on all
-three — it is a property of sixteen bots thinking at `thinkRate`, not of the map
-— so **the whole of the difference is what one ray costs**.
-
-### It is the per-mesh walk, and ray LENGTH barely touches it
-
-400 seeded rays per range, warmed, with nothing else running:
-
-| us per pick, isolated | Coldharbour | proving 900/300 |
-| --- | --- | --- |
-| 55 m — `bots.perception.engageRange` | 125.8 | 1,043.8 |
-| 120 m — the rifle's `range` | 121.3 | 1,035.5 |
-| 180 m — the tank gun's | 120.8 | 1,007.3 |
-
-**Tripling the ray changes nothing and is very slightly cheaper**, which is the
-wall's whole signature: `InternalPick` walks `scene.meshes`, runs the predicate,
-then bounds-tests every mesh that survives it, and none of that is bounded by
-how far the ray goes. It is `O(colliders)` and it is the same shape
-`Player.probeGround` was retired for — that pick was 0.483 ms on a 240 m map,
-and this is 1.0 ms on a 900 m one and 2.4 ms in situ.
-
-**The in-situ figure is 2.4x the isolated one on the same map and the gap is
-NOT accounted for** (2,438 against 1,036). Both say the same thing, and S2 must
-re-derive rather than quote either.
-
-**Derived, not measured:** at 1500/0 there are 16,526 boxes against 5,929, so if
-this stays roughly linear in the collider count a ray is ~2.8x again — ~6.8 ms
-in situ, and a fight would be spending more time picking than rendering. That is
-the projection S2 has to settle rather than a number to quote.
-
-### What S1 left in the walk, and why S8 cannot reach most of it
-
-The same session, `WorldCulling.stats` plus a breakdown of the loose bucket:
-
-| | Coldharbour | proving 900/300 |
-| --- | --- | --- |
-| candidates | 1,425 | 2,670 |
-| — blocked (reachable by a fog wall) | 229 | 1,158 |
-| — **loose** | **1,196** | **1,512** |
-| — — pooled effects and the rest | 804 | 753 |
-| — — bot rigs | 320 | 320 |
-| — — map, unblocked (terrain / roads / rim) | 72 | 439 |
-
-**57% of what is left in the walk is loose**, and block visibility can never
-touch it because loose is what MOVES. Of that, ~750 are pooled effect meshes
-sitting idle — tracers, sparks, impact discs, shards, rubble, grenades — and a
-pool member that is not in use is exactly as skippable as a collider is, by the
-same mechanism, for roughly what S8's fog wall is worth (~0.7 ms). **Nothing in
-`ENGINE_UPGRADE.md` names that lever under any step.** The 320 rig meshes are
-S8's own rider (`bots.lodDisableDistance` is `FOG_WALL`, so a map with no fog
-wall draws and poses every rig on it).
-
-### The measurement trap that cost two runs, and will cost the next person too
-
-**The proving ground's reflection bake takes 21 s and 24 frames to drain, and a
-wall-clock warm lands inside it.** S0b spends the bake `drawsPerFrame` at a time
-and its own open list says it lands after the loading card rather than behind
-it; what that means for anyone measuring is sharper than it sounds:
-
-| warmed until | Coldharbour | proving 900/300 |
-| --- | --- | --- |
-| `reflections.queue.length === 0` | 39 ms, 1 frame | **21,039 ms, 24 frames** |
-
-With a ten-second warm the proving ground reports **10 frames in 8 seconds, a
-894 ms median frame, 1.1 fps** and 5,680 us per pick — which reads as a
-catastrophic new wall and is entirely the bake. **Warm on the QUEUE, never on a
-clock.** `VERIFYING.md` already says `queue.length` reaching 0 is what says the
-bake has landed; it now also says what happens if you do not wait for it.
-
-### What is open
-
-- ~~**Wall 2 itself.**~~ **CLOSED by finding 23** — `RayWorld`, the analytic
-  segment query over `colliderBoxes` that `Player.probeGround` set the precedent
-  for.
-- ~~**The 2.4x between the in-situ and the isolated per-pick cost.**~~ **Moot**:
-  both are under 5 us now and the gap is inside the clock's own resolution.
-- ~~**The 1500/0 projection**, which is derived from the collider count alone.~~
-  **Moot**: the cost no longer scales with the collider count at all. Finding 23
-  measures 3.5 us in situ on the 5,929-box proving ground against 4.5 on
-  Coldharbour's 768.
-- **Whether the query count per frame holds up in a real fight** rather than in
-  a forced ring. 0.95–1.6 per frame is what sixteen bots at `thinkRate` produce
-  here; a fight over a control point with everyone shooting will produce more,
-  because every round fired is another wall query. It costs a thousandth of what
-  it did, so this is a curiosity now rather than a budget.
-- **The idle-pool lever**, above. Measured as a count, never as a saving. It is
-  the last unclaimed item in this finding and it is about the mesh WALK rather
-  than about rays.
-
----
-
-## 23. Wall 2 is down: every ray is a box query, and one costs 3.5 us on the map where a pick cost 2,438
-
-**Status:** measured on the Windows box, **fixed and landed** —
-`ENGINE_UPGRADE.md` S2. This is finding 22's after half; read them as a pair,
-and read 22 first, because its protocol is reused here unchanged.
-
-`scene.pickWithRay` is gone from gameplay. All eight sites — the hitscan's wall
-cap, the bots' LOS, the aim assist, the grenade's step ray and its blast probe,
-the rocket, the death cam's pull-in, and the tank's chase camera and dismount
-probe — go through `src/world/RayWorld.ts`: a uniform grid over `colliderBoxes`
-plus the strut groups, plus a march over the heightfield. `world/solid.ts` keeps
-one predicate for the editor's centre-screen pick and nothing else.
-
-### What it costs now
-
-Headless Chromium via `channel: "chromium"`, `--disable-frame-rate-limit
---disable-gpu-vsync`, 1920x1080, warmed on `reflections.queue.length === 0`,
-sixteen bots stood in a 12–24 m ring around the player and re-stood every
-second. Finding 22's forced skirmish, reproduced.
-
-| sixteen bots in contact | Coldharbour | Harrowmead | **proving 900/300** |
-| --- | --- | --- | --- |
-| collider boxes | 768 | 748 | **5,929** |
-| frames in 8 s — **before** | 1,115 | 890 | **656** |
-| frames in 8 s — **after** | **1,234** | **1,151** | **898** |
-| queries per frame | 1.36 | 0.95 | 1.59 |
-| **us per query** | **4.5** | **4.0** | **3.5** |
-| — against, per pick (22) | 222 | 199 | **2,438** |
-| **share of the frame** | 0.07% | 0.05% | **0.07%**, from 30.7% |
-
-**The exponent is what changed and the ratio is only the consequence.** A pick
-was `O(colliders in the scene)`; a query is bounded by what the segment crosses,
-so the 1500-m-class map is now the CHEAPEST of the three per ray rather than 11x
-the dearest. The proving ground's forced fight went from 82 to 112 fps and
-Harrowmead's from 111 to 144.
-
-**Isolated, 400 seeded rays per range — finding 22's second table, rebuilt:**
-
-| us per ray | Coldharbour | proving 900/300 |
-| --- | --- | --- |
-| pick, 55 m | 137.5 | 1,025.2 |
-| pick, 180 m | 122.0 | 983.2 |
-| **`castRound`, 55 m** | **3.25** | **5.0** |
-| **`castRound`, 180 m** | **1.5** | **5.0** |
-| **`blocked`, 55 m** | **2.25** | **3.75** |
-
-The pick column reproduces 22's (125.8 / 1,043.8 at 55 m) to within 2%, which is
-what says the instrument did not move. `blocked` is the any-hit form the three
-line-of-sight callers use and is cheaper than the nearest-hit one, as it should
-be. **`performance.now()` is clamped to 100 us in a page that is not
-cross-origin-isolated**, so these are quantised at 0.25 us/ray over 400 and the
-single-digit figures are 2–4 clock ticks: read them as an order of magnitude,
-and take the in-situ table above — which integrates thousands of calls — as the
-measurement.
-
-### The substitution audit, and the two classes of disagreement it found
-
-Under a NullEngine, off `buildServerWorld` (which still stands the collider
-meshes up), **8,000 seeded rays per map per question** — 4,000 eye-height at
-55/120/180 m, 2,000 short from inside geometry, 2,000 straight down — compared
-`scene.pickWithRay` against `RayWorld` on all four shipped maps. **32,000 rays
-each way. Every disagreement is one of two things and neither is a geometry
-bug.**
-
-**Class 1 — Babylon's picking is FUZZY by `Ray.epsilon` and the analytic is
-not.** `Ray.intersectsTriangle` accepts a barycentric outside the triangle by up
-to `Epsilon` (1e-3) — the guards are literally `bv < -this.epsilon` and
-`bv + bw > 1.0 + this.epsilon`. Thirteen rays out of 32,000 stopped on geometry
-the boxes say they miss, and **every one had a minimum barycentric between
--2.7e-4 and -9.2e-4**: all inside that tolerance, none inside the triangle. On a
-jungle trunk's 13 m face that skin is about a centimetre, and along a grazing
-ray it reads as up to 314 mm of distance (Coldharbour's worst). So the pick was
-reporting hits on a phantom shell around every collider; the analytic does not,
-and **the analytic is the one that agrees with `colliderBoxes` — which is what
-`NavGrid`, `CoverMap`, `ObstacleField`, `server/validate.ts` and the collision
-bake all read.** Greyfen has most of them (a jungle of ~950 tall thin trunks
-maximises the absolute slop); Hollowmere has one.
-
-**How that was established, because three hypotheses were wrong first.** The
-merged clump mesh was suspected — its vertices match the boxes to 5e-7. Then
-`MergeMeshes` — the same boxes as LOOSE meshes miss exactly where the analytic
-does. Then float32 — a centimetre is five orders too big for it at 86 m. What
-settled it was a manual Möller-Trumbore over the picked mesh's own vertex
-buffer, which **found nothing** where `scene.pickWithRay` reported a hit, and
-then `Ray.epsilon` in `node_modules`.
-
-**Class 2 — a coincident surface, which is a tie rather than an error.** A prop
-is planted with its foot on the ground, so the bottom face of its box and the
-terrain under it are the same plane and a ray reaches both at the same distance;
-the measured deltas run from 1e-15 to 3e-7 m. Which one answers decides nothing
-but `RayHit.surface`, i.e. which spark the impact throws. `RayWorld`'s
-`COINCIDENT` (1e-4 m) resolves it the way the pick did — the collider wins,
-because `scene.meshes` is in creation order and every collider is made before
-the floor's clones — and that closed 64 of the 67 on Hollowmere. **About 26 of
-32,000 still tie the other way**, and no rule can satisfy both directions; what
-it costs is a dirt spark where there was a stone one, on a round landing exactly
-where a collider is flush with the ground.
-
-**Agreement after the tie-break: 99.66% to 99.99% per map per question**, with
-100% of the residual accounted for by the two classes above.
-
-### What is open
+**Status:** open. Every ray is a box query now (`RayWorld`, `ENGINE_UPGRADE.md`
+S2, and `docs/world.md` for the audit that proved the substitution); what is
+left is the one term in it that grows with a ray's length.
 
 - **The 1500/0 extent has not been measured**, only 900/300. The cost is no
   longer collider-bound, so the projection is far weaker than it was — but the
@@ -3403,426 +1981,19 @@ where a collider is flush with the ground.
   a long ray passing well over the ground costs four array reads a cell. A ray
   ALONG a valley floor tests two triangles per cell for its whole length. A
   coarse max-height pyramid would fix it and nothing has needed one.
-- **The terrain normal is the FLAT triangle's**, where a pick interpolated the
-  smoothed vertex normals. The two differ by a degree or so on a hillside, which
-  is an impact disc lying a degree flatter. Not measured; nothing looked wrong.
-- **The ~26 residual surface ties**, above.
-- **`npm run simulate` throws before it starts a round** — `CelEmissiveFog`
-  refusing the tracer material's shader language under a NullEngine. Reproduced
-  on an unmodified tree at `f18bdc9`, so it predates this work and is unrelated
-  to it; it is recorded here because S2's own verify list names that command and
-  it could not be run.
-
----
-
-## 24. Wall 4's cause was the wrong one, and the placement loop is not a list scan — it is a MILLION GPU BUFFERS
-
-**S5's first half. The 1500 m build was 186 s and is now 17.4, the placement
-loop 161.5 s and is now 9.4, and the `n^2.9` shape it was carrying is gone.**
-Every figure is a matched pair on the Windows box (RTX 4070 Ti SUPER, headless
-Chromium via `channel: "chromium"`, 1920x1080), taken with
-`src/world/buildProfile.ts` on the generated proving ground at both extents,
-and the "before" column is the same tree with the change stashed rather than
-finding 19's numbers quoted forward.
-
-### The derivation that was wrong, and it was wrong by 65x
-
-Wall 4 and finding 19 both name `Scene.removeMesh` as the cause: it is
-`this.meshes.indexOf(toRemove)` plus a splice, `mergeByMaterial` disposes its
-sources, so a build creating and destroying ~a million part meshes against a
-`scene.meshes` growing to 23,014 is `O(built x live)` — which is exactly the
-shape the ms-per-placement column had. It was recorded as **derived, not
-measured**, and it is worth saying plainly that the derivation was sound and
-the answer was still wrong.
-
-Measured, by wrapping `scene.removeMesh` on the 900/300 ground and summing
-`scene.meshes.length` at every call:
-
-| | |
-| --- | --- |
-| calls | 88,131 |
-| array elements scanned | **547,517,230** |
-| time inside `removeMesh` | **98 ms** |
-| the placement loop it was blamed for | **6,420 ms** |
-
-Half a BILLION element comparisons for 98 ms. V8's `indexOf` over a packed
-array is ~0.18 ns an element, and the derivation was pricing a linear scan as
-if it were a linear number of memory accesses. **A list scan is not a cost at
-this scale, and this document should stop reaching for one.**
-
-### Where it actually goes, from a CPU profile of the build
-
-`Profiler.start` over `installMap`, aggregated by self time inside
-`build@MapBuilder.ts` (8,802 ms of it, on 900/300):
-
-| self, ms | frame |
-| --- | --- |
-| 1,878 | `createBuffer` (native — `device.createBuffer`) |
-| 1,692 | `writeBuffer` (native — `queue.writeBuffer`) |
-| 515 | `createVertexBuffer` |
-| 690 | `CreateBoxVertexData`'s inner loop |
-| 477 | `occlusionAt` (the AO bake) |
-| 367 | `segmentHitsBox` |
-| 81 | `removeMesh` |
-
-**~4.2 s of an 8.8 s build is uploading geometry to the GPU.** Every part a
-builder makes is a real `Mesh`, and `VertexData.applyToMesh` uploads positions,
-normals, UVs and indices the instant it is created. `mergeByMaterial` then
-reads them back out of the CPU copies Babylon kept anyway, uploads the merged
-result, and disposes every source — destroying the buffers it just made. A
-cottage's twenty planks are twenty round trips to the device for geometry that
-never survives to be drawn.
-
-### What the fix is
-
-`src/world/parts.ts`, and the lever is Babylon's own. `Geometry.setVerticesData`
-postpones the device buffer whenever the geometry has no mesh on it yet, and
-`Geometry.applyToMesh` only runs `_applyToMesh` — which creates every postponed
-buffer — `if (this.isReady())`. So a geometry built BEFORE its mesh and applied
-while `delayLoadState` says NOTLOADED gets a mesh that holds its vertices and
-has never spoken to the device. `kit/core.ts`'s seven creation sites go through
-`partBox`/`partCylinder`/`partSurface`, and `uploadPart` puts a part back on the
-normal path on the three ways out of a merge that keep their source.
-
-**The state is put back on the very next line, and the one trap here is that it
-has to be.** Every read on a `Geometry` is gated on the same `isReady()` —
-`getVertexBuffer`, `getVerticesData` and `getTotalVertices` all return null or
-zero while it is false — so a part left NOTLOADED is not an un-uploaded mesh,
-it is an EMPTY one, and `MergeMeshes` fails it as "Positions are required".
-That cost a run.
-
-### What it bought
-
-| build phase, ms | 900/300 before | 900/300 after | 1500/0 before | 1500/0 after |
-| --- | --- | --- | --- | --- |
-| **`build:total`** | **9,284** | **5,010** | **185,899** | **17,422** |
-| — the PLACEMENT loop | 6,420 | **2,607** | 161,491 | **9,443** |
-| — block merge | 495 | 219 | 8,763 | 1,010 |
-| — scatter | 170 | 108 | 4,002 | 443 |
-| — road merge | 135 | 12 | 3,068 | 41 |
-| — ink twins | 86 | 88 | 1,022 | 278 |
-| — pane merge | 74 | 75 | 535 | 236 |
-| — AO bake | 734 | 724 | 2,514 | 2,191 |
-| — `NavGrid` | 696 | 681 | 2,493 | 2,572 |
-| — `CoverMap` | 245 | 246 | 919 | 736 |
-| — seven flow fields | 67 | 67 | 292 | 227 |
-| **install to `deploy`** | **11,993** | **8,807** | **204,800** | **34,923** |
-
-**10.7x on the whole 1500 m build and 17.1x on the loop.** The phases that
-build no geometry — the AO bake, `NavGrid`, `CoverMap`, the flow fields — are
-unmoved, which is what says the attribution is right.
-
-### The superlinearity was the GPU allocator, not a list
-
-This is the part worth keeping. Finding 19 measured 1.1 ms per placement on
-Harrowmead, 6.6 on Coldharbour, 18.4 at 900/300 and **143.7** at 1500/0, and
-called it `n^2.9`. After:
-
-| | placements | ms in the loop | ms per placement |
-| --- | --- | --- | --- |
-| 900 / 300 | 410 | 2,607 | **6.4** |
-| 1500 / 0 | 1,108 | 9,443 | **8.5** |
-
-2.7x the placements now costs **1.33x** each, against 7.8x before. Nothing in
-this change touches a list, a lookup or an index — so what was superlinear was
-the WebGPU buffer allocator degrading as ~3 million create/destroy cycles ran
-through a device already holding tens of thousands of live buffers. The
-downstream phases say the same thing: the road merge and the block merge build
-their geometry the ordinary way and still came down 75x and 8.7x at 1500/0,
-because the device they allocate against is no longer in that state.
-
-### The oracle, because this change must not move a vertex
-
-A nav-graph fingerprint cannot see it — this is VISUAL geometry, and
-`npm run parity` is blind to it by design. What was compared instead, per map,
-is every mesh in `GameMap.visuals` and `GameMap.colliders` in list order: name,
-material name, metadata, position/rotation/scaling, `isVisible`, `isPickable`,
-`checkCollisions`, rendering group, outline flags, vertex and index counts,
-submesh count, `geometry.delayLoadState`, and FNV hashes of the position,
-normal, uv and colour buffers and of the index buffer. **All five maps hash
-identically** — Hollowmere, Greyfen, Coldharbour, Harrowmead and the proving
-ground — along with `scene.meshes`, `scene.geometries`, the active-mesh count,
-and a count of visuals failing `isReady(true)` after the map draws, which is
-zero on both sides.
-
-`npm run parity` passes on all four, `gate.mjs` is clean on all four, and
-`bank.mjs --check` reproduces S4's control run to four decimals (hollowmere/menu
-0.627, coldharbour/avenue 3.2563, harrowmead/millpond 1.3526, and
-harrowmead/borderland at 0%) — which is the same evidence S4 used, and finding
-20 is still the reason the bank reads red at all.
-
-### What is open
-
-- **Colliders are still built the ordinary way, and it is not an oversight.**
-  6,349 of the 900/300 ground's meshes are collider proxies, and their upload is
-  most of the ~430 ms of buffer work left in the build. They cannot become parts
-  as this module stands: `moveWithCollisions` walks `mesh.subMeshes` and a part
-  has none, so a collider built as a part would stop nothing, silently. Giving a
-  part a submesh without a device buffer is possible and nobody has costed
-  whether it is worth it.
-- **`Props.ts`'s seventy creation sites were left alone**, deliberately: the
-  whole scatter phase is 108 ms at 900/300 and 443 at 1500/0, so converting them
-  is churn against a rounding error. If the desert city's dressing is much
-  denser than the proving ground's, re-measure before assuming that holds.
-- **The remaining 656 ms of `CreateBoxVertexData`** at 900/300 is a fresh unit
-  box tessellated per part. Nothing shares geometry between two identical boxes,
-  and a merge has to bake the transform in anyway — but the six faces of a unit
-  cube are the same six faces every time, and the loop is measurable.
-- **Where the 1500 m build now is**: the placement loop is 54% of it and the
-  nav/cover/AO builds S5 would move to a worker are **33%** (5,733 ms of 17,422)
-  against the 3.3% they were before this landed. See `ENGINE_UPGRADE.md` S5 —
-  that inversion is the decision this measurement was owed. **Re-timed after
-  S5b and S5c** (finding 25): `build:total` is 18,853 of a 19,147 ms install,
-  the loop is **10,092 ms and 53.5%**, and the two lanes a worker would have to
-  balance are 3,899 ms of nav against 4,106 of merges. **The loop has not been
-  attributed since this finding changed what it does** — the two threads named
-  above are ~430 ms and 656 ms at 900/300, so nine tenths of ten seconds is
-  unaccounted for, and that profile is what decides whether the worker is the
-  best thing left.
-
----
-
-## 25. Half the install is not the build, and it is two sites: Havok's compound is quadratic and Babylon walks the whole scene once per render pass id — **CLOSED, BOTH HALVES**
-
-**Asked because finding 24 left a 17.5 s hole.** `build:total` is 17,422 ms at
-1500/0 and install-to-`deploy` is 34,923, so more than half the load was
-somewhere nobody had profiled. It is in two calls, both inside `installMap`,
-and **neither is the burst work `ENGINE_UPGRADE.md` S5 is about**.
-
-A CPU profile over `buildRound`, attributed to the direct children of
-`installMap` — so every line is one call in that method, and they sum to it:
-
-| installMap, ms | 900 / 300 | share | 1500 / 0 | share |
-| --- | --- | --- | --- | --- |
-| `MapBuilder.build` | 4,837 | 63.3% | 13,656 | 42.2% |
-| **`PhysicsWorld.setMap`** | **1,716** | **22.4%** | **13,402** | **41.4%** |
-| **`ReflectionSystem.build`** | **1,075** | **14.1%** | **5,272** | **16.3%** |
-| `WorldCulling.setMap` | 5 | 0.1% | 10 | 0.0% |
-| `ShadowSystem.setCasters` | 4 | 0.1% | 7 | 0.0% |
-| `Atmosphere.apply` | 2 | 0.0% | 3 | 0.0% |
-| `GlassSystem.setMap` | 0 | 0.0% | 3 | 0.0% |
-| **total** | **7,643** | | **32,360** | |
-
-(Profiled runs, so the totals sit a little under the unprofiled 8,807 and
-34,923; the split is what matters and it is internally consistent.
-`WaterSystem.build` and `GrassSystem.build` do not appear because the proving
-ground has neither — a map with water owes its own reading.)
-
-**This table is the BEFORE and both bold rows have since been fixed.** S5b
-bucketed the compound and S5c stopped the render-pass walk, so at 1500 m
-`PhysicsWorld.setMap` is **181 ms** and `ReflectionSystem.build` **72**, against
-`MapBuilder.build`'s 18,837 in the same run — 98.7% of a 19,117 ms install.
-Quote the table for the RANKING that produced the two steps, never for what an
-install costs today. And the water reading it says is owed now exists: it is in
-the reflection section below, and it moved with the rest.
-
-**Everything in `installMap` that is not those three is 27 ms at 1500 m.** All
-the wiring — the six `setWorld` calls, the fog pushes, the leash, the ground
-probe, the shadow casters, the culling — is free, and this closes the question
-of whether any of it needed looking at.
-
-### `PhysicsWorld.setMap` is O(boxes²), and it is the largest line at 1500 m — **FIXED, S5b**
-
-| | collider boxes | ms | ms per box |
-| --- | --- | --- | --- |
-| 900 / 300 | 5,929 | 1,716 | 0.29 |
-| 1500 / 0 | 16,526 | **13,402** | **0.81** |
-
-2.79x the boxes costs **7.81x** the time — an exponent of 1.94, which is a
-square with the rounding off. `buildWorld` adds one `PhysicsShapeBox` per box
-into a single `PhysicsShapeContainer`, and the profile puts 13,244 of the
-13,398 ms inside `addChild` rather than in the shape construction. Babylon's
-`HavokPlugin.addChild` is one `HP_Shape_AddChild` per call, so the quadratic is
-Havok rebuilding the compound's acceleration structure on every insert, and
-there is no batch entry point through the plugin.
-
-**`PhysicsWorld`'s own header already measured this and read it as flat.** It
-says "rebuilding a 33-50 ms compound every time a window goes in is a hitch",
-which is Coldharbour's 768 boxes. At 16,526 the same compound is 13.4 seconds
-— 21.5x the boxes for ~300x the cost. The header's ARGUMENT is untouched (a
-rebuild per broken pane is still the wrong trade); its NUMBER does not
-generalise and should not be quoted at a large map.
-
-Two shapes of fix, neither costed:
-
-- **Bucket the compound.** One container per 48 m map block turns `n²` into
-  `k(n/k)²`: 324 blocks at 1500/0 is ~51 boxes each, so 842k insert-units
-  against 273M. It spends the argument at the top of `buildWorld` — one static
-  body rather than 758 — but that argument is about the plugin's per-step sync
-  walking BODIES, and 324 statics that bail out immediately is not 783 dynamic
-  ones. It wants measuring, not assuming.
-- **Move it off the load.** Nothing needs the static world until something
-  falls on it, and the first ragdoll is many seconds after `deploy`. Building
-  it on the far side of the loading card would take 13.4 s off the wait without
-  touching the shape at all — and unlike a worker it needs no async window
-  inside `installMap`, only a place to spend it. The header's "shapes at the
-  moment of a kill is a hitch on the worst frame" still forbids doing it lazily
-  at the first death.
-
-**The first one landed and the second was not needed.** `PhysicsWorld` builds
-one container and one static body per 48 m block, and the two builds above are
-**268 ms and 682** — 6.4x and 19.7x, with the exponent going 1.94 → 0.89. The
-bucket count is 420 and 1,023 rather than the 324 guessed here, because the
-terrain patches carry blocks the boxes do not, and it is ~14 and ~16 boxes a
-bucket rather than 51.
-
-**The per-step body walk was the thing to measure and it costs nothing.** With
-sixty-four bodies resting on the 1500 m ground a substep is 36/36 us with one
-static body and 35/31 with 1,023, which is inside the scatter of the same
-reading taken twice; the falling phase is ~18 us a substep dearer with
-sixty-four bodies in contact at once. `ENGINE_UPGRADE.md` S5b has the whole
-reading, and `plans/physics-ref/drop.mjs` is the oracle that came with it — the
-answer to "a physics change has nothing to check it" this file had no entry
-for.
-
-### `ReflectionSystem.build` is doing nothing at all, 34.5 million times — **FIXED, S5c**
-
-96% of it is probe CONSTRUCTION — `newProbe` → `ReflectionProbe` →
-`RenderTargetTexture` → `ObjectRenderer` — and inside that, 5,058 of 5,272 ms
-is `_releaseRenderPassId`. On a probe that has never had a render pass id.
-
-```js
-// Rendering/objectRenderer.js
-_createRenderPassId() {
-    this._releaseRenderPassId();              // <- _renderPassIds is EMPTY here
-    for (let i = 0; i < this.options.numPasses; ++i) { ... }
-}
-_releaseRenderPassId() {
-    for (let i = 0; i < this.options.numPasses; ++i) {
-        this._engine.releaseRenderPassId(this._renderPassIds[i]);   // undefined
-    }
-}
-// Engines/AbstractEngine/abstractEngine.renderPass.pure.js
-releaseRenderPassId = function (id) {
-    this._renderPassNames[id] = undefined;
-    for (const scene of this.scenes)
-        for (const mesh of scene.meshes) {          // <- EVERY MESH
-            mesh._releaseRenderPassId(id);
-            for (const subMesh of mesh.subMeshes) subMesh._removeDrawWrapper(id);
-        }
-};
-```
-
-A cube probe is six passes, so **every probe constructed walks the entire scene
-six times to release six `undefined` ids**. At 900/300 that is a confirmed 265
-probes x 6 x 9,002 meshes = **14.3 million mesh visits** for 1,075 ms; at
-1500/0, on wall 5's count of 770 probes (carried forward, not re-measured this
-session) x 6 x 23,014 = **106 million** for 5,272 ms. The ratio of the work is
-7.4x and of the time 4.9x, which is as close as a per-submesh inner loop gets.
-**Both of those figures are wrong and S5c re-measured them** — see the fix
-below: the count at 1500/0 is 250 probes and not 770, so the visits are 34.5
-million, and the work grows 2.41x between the extents where the time grows
-5.05x. The direction is the opposite of what this paragraph reads off the
-carried-forward count.
-
-**It is priced on map AREA twice over** — more glazed blocks and more meshes to
-walk per block — which makes it a wall-1-shaped cost hiding in the load rather
-than in the frame, and it is entirely waste: nothing is released because nothing
-was ever allocated.
-
-The lever is the multiplier, since the loop is Babylon's. The probes are POOLED
-and survive a rebuild, so this is a first-install cost, and it is paid when
-`scene.meshes` is at its longest — right after `MapBuilder.build`. Growing the
-pool while the scene is SHORT would remove most of it: `installMap` disposes the
-old map on its first line, and between there and the build the scene is ~1,020
-meshes rather than 23,014, which is a 22x cut. What stands in the way is that
-the probe count is not known until the map is built.
-
-**The other shape landed instead and it takes the walk to nothing rather than
-to a 22nd.** `ReflectionSystem.newProbe` hands `scene.meshes` an empty array
-for the length of the `new ReflectionProbe(...)` call and puts the real one
-back in a `finally`. Both pools mint through that one method, so the water half
-below is covered by construction rather than by remembering to cover it.
-
-| `ReflectionSystem.build` | probes x scene meshes | before | after | |
-| --- | --- | --- | --- | --- |
-| Coldharbour | 40 x 2,213 | 41 ms | **5 ms** | |
-| 900 / 300 | 265 x 9,002 | 1,298 ms | **38 ms** | 34x |
-| 1500 / 0 | 250 x 23,014 | 6,551 ms | **72 ms** | 91x |
-
-`installMap` goes 7,510 ms to **6,099** and 24,876 to **19,117**, matched pairs
-through the instrument at the top of this finding. The water pool moves with it
-— Hollowmere's three probes 6.4 ms to 1.1, Greyfen's one 4.6 to 0.5,
-Harrowmead's one 4.2 to 0.7 — which is the fourth line this finding said the
-proving ground could not show.
-
-**Two numbers above this section were wrong and the pair of extents is what
-found them.** The probe count at 1500/0 is **250**, not the 770 carried forward
-from wall 5: `poolBudgetMiB` caps the pool at 320, so 1,153 glazing groups come
-back at `perCell` 2 — the first map in the tree where the grouping is not 1. And
-2.41x the mesh visits between the two extents cost **5.05x** the time, 91 ns a
-visit against 190, because the inner loop walks submeshes and the outer walks a
-23,014-entry array rather than a 9,002-entry one. **A per-visit rate taken on
-the smaller ground understates the larger by half**, which is finding 18's
-0.67 us against finding 19's 1.10 us in a different file.
-
-**What makes the swap safe is two facts and one of them is enforced.** No frame
-renders inside `installMap`, and probe construction creates no mesh; the
-`finally` moves anything that did arrive back into the real list and logs a DEV
-error naming the site, because `Scene.addMesh` pushes into whatever
-`scene.meshes` is at the time. `ENGINE_UPGRADE.md` S5c has the verification —
-the `[reflection]` line identical in every field on all five maps, `bank.mjs
---check` byte-identical before and after over all fifteen shots, `gate.mjs`
-clean.
-
-### What this says about S5
-
-**The worker is now third, and these two are S5b and S5c.** What S5 would move
-to a worker is 5,733 ms; the physics compound is 13,402 and the reflection
-probes 5,272, and both are single sites with no async window to open inside
-`installMap` and no server path to keep in step. (S5b has since landed, so the
-compound is 682 ms and the worker is second rather than third — the ranking
-below is the one that produced the order, not the one that holds today.)
-
-**The worker is gated on S5b rather than merely ranked behind it**, which is the
-non-obvious part. `installMap` runs build → physics → probes, so today a
-`MapBuilder.build` that returned with the nav work OUTSTANDING would hide the
-whole 3,542 ms nav lane behind the 13,402 ms compound for nothing — no second
-lane, no restructuring. Take S5b first and that hiding place is gone, and the
-worker has to overlap the MERGES instead (3,542 against 3,715 ms), which needs
-`build` split in two. So the worker is cheaper before S5b and dearer after, and
-`ENGINE_UPGRADE.md` S5 holds it unpromoted until S5b says which.
-
-### What is open
-
-- **`MapBuilder.build` is now 98.5% of the install** — 18,853 ms of 19,147 at
-  1500 m, with the other two sites at 185 and 79 between them. Wall 4 is the
-  build and nothing else. **The phase split was re-taken on the same tree** and
-  is under finding 24's last open thread: the placement loop is 10,092 ms and
-  53.5%, and **what it is made of has not been profiled since finding 24
-  changed what it does**. That is the next measurement, and
-  `ENGINE_UPGRADE.md` S5 holds the worker unpromoted until it exists.
-- **The collider thread is BLOCKED, not merely uncosted**, which finding 24's
-  own first bullet says and which is easy to read past when ranking by size:
-  `moveWithCollisions` walks `mesh.subMeshes` and a part has none, so a collider
-  built as a part stops nothing, SILENTLY. No oracle in this tree catches that
-  as a build change — the per-mesh hash would pass and `npm run parity` does not
-  see physics. Anything taking it owes a test that a body still stops.
-- **A probe pool grown while the scene is SHORT was never costed and no longer
-  needs to be.** It was the first shape offered here and the swap took the walk
-  to nothing rather than to a 22nd of it, so the estimate-off-the-layout problem
-  it opened is moot unless something else wants the probe count early.
-- **`perCell` is 2 at 1500 m, which is the first live grouping in the tree** and
-  means a probe there drops 96 m of city out of the middle of its own cube (the
-  enclosure rule — see `docs/rendering.md`). Nobody has looked at what that
-  costs the PICTURE, because the proving ground is not a map anyone plays. A
-  1500 m map that ships glazing owes that reading.
 
 ---
 
 ## 26. The placement loop is one mechanism, not a thousand milliseconds: a part is built as a full `Mesh`, registered, given a uniform buffer and a GUID, tessellated from scratch, merged, and destroyed
 
-**Asked because finding 25 left 53.5% of the build unattributed.** After S5b and
-S5c, `installMap` at 1500/0 is 19,147 ms of which `MapBuilder.build` is 18,853,
-and the placement loop is 10,092 of that. Finding 24 changed what that loop DOES
-— it is no longer allocating three million GPU buffers — and nobody had looked
-at what it is now made of. `ENGINE_UPGRADE.md` S5 was holding the worker
-unpromoted on exactly this measurement.
+**Status:** measured, not acted on. `StoneBatch` and `Mesher` (`kit/core.ts`)
+take the first sub-thread below locally, for the stone and tile runs that opt
+in; the general path in `parts.ts` still builds a `Mesh` per part.
 
 ### The instrument
 
 A CDP `Profiler` capture at a 200 us sampling interval over the whole install,
-attributed by subtree. Same instrument findings 24 and 25 used, and the same
+attributed by subtree. Same instrument as the flatten in `src/world/parts.ts` and S5b/S5c, and the same
 caveat: it is a PROFILED run, so `build:total` reads 15,867 ms against the
 unprofiled 18,853 and the placement phase 8,274 against 10,092. **Read the
 shares, not the absolutes** — the split is internally consistent and that is
@@ -3866,8 +2037,8 @@ out in `partBox`, and aggregated over the whole install that is **3,465 ms,
 **Neither half is doing anything a merged mesh needs.** `CreateBoxVertexData`
 is 94% one anonymous loop in Babylon, and it is the same 24 positions, 24
 normals, 24 UVs and 36 indices every time — a unit cube, rebuilt per part,
-differing only by a scale and an offset. That is finding 24's third open thread,
-which was 656 ms at 900/300 and is **three times that at 1500 m**. And
+differing only by a scale and an offset. That is a thread the flatten left open
+(`ENGINE_UPGRADE.md` S5), which was 656 ms at 900/300 and is **three times that at 1500 m**. And
 `partSurface` is Babylon's `Mesh` constructor: **43% of it is
 `_buildUniformLayout`** — a per-mesh uniform buffer, for a mesh that will never
 be drawn — and **16% is `RandomGUID`**.
@@ -3891,16 +2062,11 @@ out, and then unregistered, its buffer disposed and its rendering group freed.
 Roughly **76% of the placement loop is that round trip**, and the geometry it is
 around is a box.
 
-**This is the same shape finding 24 fixed, one layer down.** The flatten stopped
+**This is the same shape the flatten fixed, one layer down.** It stopped
 the GPU half of the round trip — `device.createBuffer` for geometry no frame
 draws. The CPU half was never touched, and at 1500 m it is bigger than the GPU
 half ever was at 900. `src/world/parts.ts` is already the module that knows a
 part is not a real mesh; what it does not yet do is let one avoid BEING one.
-
-**So the answer to `ENGINE_UPGRADE.md` S5's question is that the loop is a
-single mechanism and not spread cost**, and it is worth more than the worker:
-~6.3 s of the loop against the worker's 3,899 ms ceiling, synchronously, with no
-async window opened inside `installMap` and no `build` split into two lanes.
 
 ### What is open
 
@@ -3915,15 +2081,24 @@ async window opened inside `installMap` and no `build` split into two lanes.
   normal path on the three ways out of a merge that KEEP their source, and an
   editor build keeps every placement unmerged. A merge-only path has to be a
   second path, not a replacement.
-- **The oracle already exists and this change must not move a vertex.** Finding
-  24's per-mesh hash — name, material, metadata, transform, flags, counts and
-  every vertex buffer, over all five maps — is the instrument, and
+- **The oracle already exists and this change must not move a vertex.** A
+  nav-graph fingerprint cannot see it — this is VISUAL geometry, and
+  `npm run parity` is blind to it by design. What was compared instead, per map,
+  is every mesh in `GameMap.visuals` and `GameMap.colliders` in list order: name,
+  material name, metadata, position/rotation/scaling, `isVisible`, `isPickable`,
+  `checkCollisions`, rendering group, outline flags, vertex and index counts,
+  submesh count, `geometry.delayLoadState`, and FNV hashes of the position,
+  normal, uv and colour buffers and of the index buffer. **All five maps hash
+  identically** — Hollowmere, Greyfen, Coldharbour, Harrowmead and the proving
+  ground — along with `scene.meshes`, `scene.geometries`, the active-mesh count,
+  and a count of visuals failing `isReady(true)` after the map draws, which is
+  zero on both sides. No script for it is committed; it has to be rebuilt.
   `plans/physics-ref/drop.mjs` covers anything that changes what a body stands
   on.
 - **The collider half is BLOCKED and this does not unblock it.** `boxMesh`
-  aggregates to 669 ms at 1500/0 (finding 24 measured ~430 at 900/300), but
-  `moveWithCollisions` walks `mesh.subMeshes` and a part has none — see finding
-  24's first open thread. A collider is not a merge candidate, so the mechanism
+  aggregates to 669 ms at 1500/0 (~430 at 900/300 before the flatten), but
+  `moveWithCollisions` walks `mesh.subMeshes` and a part has none — see
+  `parts.ts`'s header. A collider is not a merge candidate, so the mechanism
   above does not reach it.
 - **The AO bake is now the second-largest named cost** — `occlusionAt` is
   1,738 ms subtree and 1,399 self, 9.3% — and it is not in the placement loop at
@@ -3935,576 +2110,22 @@ async window opened inside `installMap` and no `build` split into two lanes.
 
 ---
 
-## 27. The 1500 m FRAME is 9.3 ms and the wall it was supposed to hit is gone — but the bake now drains in the ROUND, and that is 37 seconds at one frame a second — **the drain is CLOSED by 28**
+## 30. A body past `bodyDrawDistance` POPS, and no fade has been built
 
-**Asked because nobody had quoted a 1500 m frame since S0**, which measured
-30.3 ms with `ReflectionSystem.build` stubbed to a no-op and before S1, S2, S3,
-S0b, S5b and S5c had any of them landed. Every ordering decision since has been
-about the LOAD, on the unexamined assumption that the frame was in hand. It is —
-and asking the question turned up something larger than anything left in the
-load.
+**Status:** the gate landed (`ENGINE_UPGRADE.md` S8, `EnvironmentSpec.bodyDrawDistance`,
+stated by Sarab and Cinderhaven). What is open is how it ends.
 
-### The frame, which is fine
-
-Uncapped (`--disable-frame-rate-limit --disable-gpu-vsync`), 1920x1080,
-headless via `channel: "chromium"`, warmed **on the reflection queue draining
-and not on a timer** — see the drain below, and `VERIFYING.md`, which is
-explicit that a wall-clock warm on this map reports the bake as the round:
-
-| proving 1500 / 0 | |
-| --- | --- |
-| scene meshes | 23,031 |
-| active meshes | **146** |
-| cold (5 s) | 102.5 fps, 9.8 ms |
-| warm (8 s) | **107.4 fps, 9.3 ms** |
-
-**S0's 30.3 ms frame is 9.3, and 23.0 ms of it was wall 1.** 146 active meshes
-out of 23,031 is `WorldCulling` doing exactly what S1 built it to do at an
-extent S1 never measured. **Wall 1 is down at 1500 m**, not merely mostly down,
-and this retires the projection that S8 would be needed to finish it — S8 is
-about what a map you cannot fog LOOKS like, which is a different question from
-what it costs.
-
-Read this as a QUIET round: the player is spawned and nothing is in contact.
-Finding 22 measured zero rays fired in eight seconds with sixteen bots alive, so
-a fight has to be forced and this reading does not include one. Wall 2 is down,
-so the expectation is that it changes little, but it has not been measured.
-
-### The drain, which is not fine
-
-`installMap` returns in ~19 s and the state goes to `deploy` with **211 probes
-still queued and 1,782,504 face draws outstanding**. What happens next:
-
-| the bake draining at 1500 / 0 | |
-| --- | --- |
-| frames | **40** |
-| wall clock | **36.9 s** |
-| median frame | **928 ms** |
-| worst frame | 1,505 ms |
-| first ten frames, ms | 931, 975, 932, 871, 909, 931, 822, 809, 1271, 906 |
-
-**So a 1500 m map runs at about one frame a second for its first thirty-seven
-seconds, and it does it in the ROUND rather than behind the loading card.**
-That is six times the mesh round trip (finding 26, ~6.3 s) and nine times the
-worker's whole ceiling (3,899 ms), and unlike either it is not hidden — the
-deploy screen and then the round are what the player is looking at while it
-happens.
-
-**This is not a new mechanism and it is not a regression.** It is the price of
-S0b, which is the step that took wall 5 down: `drawsPerFrame` converts one
-fatal submission into a queue, and the trade is correct — the alternative
-measured is a lost D3D12 device and a replaced renderer process.
-`ENGINE_UPGRADE.md` S0b's own owed list says both halves of this out loud —
-"**1500 / 0 has not been re-tested**" and "**the bake still lands AFTER the
-loading card, not behind it**" — and estimates ~26 s at 900/300.
-`VERIFYING.md` records the 900/300 version (21 s, 24 frames, 894 ms median)
-but only as a trap for measurement scripts. **What nobody had written down is
-that it means the map is unplayable for half a minute.**
-
-**A bake draw is 18.6 us and nobody knows why.** 50,000 draws at ~928 ms is
-three times the ~6.3 us `VERIFYING.md` measures for a mesh draw carrying a
-material switch, and eight times the ~2.3 us for an outline shell reusing a
-bound material. A first bake creates a draw wrapper per (mesh, render pass id)
-and six of those per probe, so bind-group creation is the obvious suspect — but
-it is a suspect and not a measurement.
-
-### The measurement note that cost this finding its profile
-
-**The drain cannot be CPU-profiled with the sampling profiler.** A CDP
-`Profiler` capture at a 500 us interval over the drain ran past **twenty
-minutes** against an unprofiled 37 seconds — a frame issuing 50,000 draws is a
-deep stack sampled two thousand times a second — and was killed rather than
-waited out. The figures above are all from unprofiled runs. Anything that wants
-the 18.6 us broken down needs a different instrument: a GPU capture, or
-`drawsPerFrame` turned down far enough that a frame is samplable and the
-per-draw cost read off the slope.
-
-### What is open
-
-- ~~**Where the 37 s should be spent is a state-machine question and S0b named
-  it.**~~ **CLOSED by 28.** `Game.bakeWait` holds `loading` until the queue and
-  the in-flight re-bakes are both empty, and hands the card a progress figure
-  while it does. Nothing is in the round.
-- ~~**The bake and the FRAME have never been asked the same question, and that
-  is the disproportion.**~~ **CLOSED by 28, and the answer was not the one this
-  entry expected.** The frame's 146 is mostly the FRUSTUM, not the block gate —
-  the proving ground states a `fogEnd` of 2400, past its own diagonal, so
-  `WorldCulling` culls no block on it at all. What a cube probe was missing was
-  the frustum test itself: `ObjectRenderer` dispatches every mesh of a render
-  list on every one of six faces, with no `isInFrustum` anywhere.
-  `ReflectionSystem.faceOf` is that test, and it removed 81% of the draws.
-- **`perCell` is 2 here and grouping harder makes the picture worse, not just
-  the count.** A probe drops every block it SERVES out of its own bake
-  (`encloses`), so a cell of four blocks is a probe with 96 m of city missing
-  from the middle of its cube. The probe count is not a free lever. **Still
-  true and now moot**: after the per-face cull there is nothing left for it to
-  buy.
-- **What a bake draw costs is unexplained**, and it is the term that multiplies
-  everything above.
-- **A fight has not been measured at 1500 m.** The frame reading is a quiet
-  round.
-- **The proving ground's glazing is a generated worst case.** 1,153 glazing
-  groups over a city-block grid; a real 1500 m map may glaze far less, and S11
-  is deliberately last so that the engine is not tuned against content that does
-  not exist. The SHAPE is not a worst case — the bake is priced on glazing and
-  `docs/rendering.md` says glazing has no natural bound.
-
----
-
-## 28. The bake was drawing the whole neighbourhood six times: a cube probe has no frustum culling, and 81% of every bake was clipped geometry
-
-**Asked because finding 27 put 37 seconds of one-frame-a-second in the
-player's hands** and `ENGINE_UPGRADE.md` S0c named three levers for it. Two
-were taken. The first moves the cost; the second turned out to remove most of
-it, and for a reason the step had guessed at from the wrong end.
-
-### The matched pairs
-
-Windows box, RTX 4070 Ti SUPER, headless via `channel: "chromium"`, 1920x1080,
-uncapped, UNPROFILED — finding 27 records that the sampling profiler stretches
-this past twenty minutes. The drain is counted from the first frame that begins
-with a probe outstanding to the first that begins with none, which includes the
-in-flight re-bakes and is therefore a slightly longer window than finding 27's
-40 frames.
-
-| | 900/300 before | 900/300 after | 1500/0 before | 1500/0 after |
-| --- | --- | --- | --- | --- |
-| spent in | `deploy` | **`loading`** | `deploy` | **`loading`** |
-| frames | 31 | 31 | 47 | 47 |
-| wall clock | 24.9 s | **5.7 s** | **44.8 s** | **10.6 s** |
-| median frame | 838 ms | **181 ms** | 931 ms | **197 ms** |
-| worst frame | 1,141 ms | 382 ms | 1,697 ms | 1,217 ms |
-| probes | 265 | 265 | 250 | 250 |
-| warm frame after | 4.54 ms | 4.53 ms | 9.08 ms | 9.50 ms |
-
-**In the round it is 44.8 s to nothing.** The frame COUNT is identical either
-side and that is by design: the queue is still priced at `list.length * 6`, so
-the same number of batches is released and each one merely issues far fewer
-draws. `drawsPerFrame` is what stands between this bake and a lost D3D12 device
-inside one submission, and letting a saving in draws turn into a bigger
-submission would have spent it on exactly the wrong thing.
-
-### The finding under the finding
-
-**A cube render target does not frustum-cull, and nothing in the tree knew
-it.** `ObjectRenderer._prepareRenderingManager` walks the render list and
-dispatches every mesh in it — readiness, LOD, `_activate`, a draw per submesh —
-with no `isInFrustum` anywhere, because a render list is normally something the
-caller has already chosen. `RenderTargetTexture._render` then calls it once per
-face. So a probe drew its whole 1,348-mesh neighbourhood **six times**, once
-for each 90-degree view, where the main pass draws each mesh at most once.
-
-Measured over a whole install, by wrapping the hook:
-
-| meshes dispatched per install | offered | issued | removed |
-| --- | --- | --- | --- |
-| 900/300 | 1,469,484 | **284,097** | 80.7% |
-| 1500/0 | 2,120,976 | **394,604** | 81.4% |
-
-(`offered` exceeds the queue's own figure because a probe that re-bakes offers
-its list again.) The six faces tile the sphere exactly, so the floor is 1/6 —
-17% — and the measured 19% is that plus the conservatism of a bounding-SPHERE
-test at a face boundary. The world being a thin slab is what makes the two poles
-nearly free.
-
-**S0c guessed at this from the wrong end and the guess is worth recording**,
-because the next person will make it too. It read the frame's 146 active meshes
-out of 23,031 as `WorldCulling` filing per 48 m block and gating on `fogEnd`,
-and proposed giving a probe the same treatment. But the proving ground declares
-a `fogEnd` of 2400, past its own 2121 m diagonal, deliberately — so
-`WorldCulling` culls **no block on it at all**, and the frame's 146 is almost
-entirely the FRUSTUM. The disproportion between the bake and the frame was real
-and the mechanism behind it was the opposite of the one named.
-
-### Why this one cannot move a pixel, and the proof
-
-It is `AbstractMesh.isInFrustum` against `scene.frustumPlanes` — the same call
-`_evaluateActiveMeshes` makes for the main pass, at the default
-`CULLINGSTRATEGY_BOUNDINGSPHERE_ONLY`, which is the conservative one. What it
-drops is what the rasteriser was about to clip. The ordering that makes the
-planes the FACE's rather than the main camera's is Babylon's own:
-`ReflectionProbe` writes the face's view and projection through
-`scene.setTransformMatrix` from `onBeforeRenderObservable`, that setter
-refreshes the planes, and `ObjectRenderer.render` fires the observable
-immediately before it calls `_prepareRenderingManager`. A Babylon version that
-moved either line would cull each face against the previous one's planes, and
-the tell is a seam of missing geometry that rotates with the probe.
-
-**Proved rather than argued.** `bank.mjs --check` run either side of the change
-against the same fixed reference reports the SAME mean on all sixteen banked
-vantages of all four shipped maps, to four decimal places — including
-Coldharbour's three curtain-wall vantages and the avenue, which are the frames
-that exist to catch exactly this. The bank itself is still red from the drift
-S0b recorded, so a pass was never available; identical-either-side is the
-stronger statement and it is the one that was taken.
-
-That property is why this is preferable to every other way of shortening a
-probe's list. A smaller `radius` drops geometry the face WOULD have drawn and
-leaves a hole the shader fills with sky (finding 10's objection). A coarser
-`perCell` drops a whole building out of the middle of a cube. This drops
-nothing that would have been seen.
-
-### What the state-machine half cost
-
-Holding `loading` until the bake drains is `Game.bakeWait`, and it needed no
-new machinery — `releaseBatch` already rides a render observable, `loading`
-already renders and already simulates nothing. What it did need was three
-corrections nobody had to make while the state lasted two frames:
-
-- **`loading` stopped being the same question as "the build has not run
-  yet".** Three guards read the state to mean the second. With the card up
-  through a ten-second drain, `NetSession.onSeated` would have deferred a map
-  rotation or a team correction to a `buildRound` that already happened and
-  dropped it on the floor. `Game.buildPending` is now `loading && bakeWait ===
-  null`.
-- **A wait can outlive its own round.** `Game.go` clears it, so stepping away
-  from the card cannot leave a `finishBakeWait` to open a deploy screen over
-  whatever replaced it.
-- **A queue that cannot drain must not hang the card**, and the state machine
-  has no concept of a step that fails. Two caps: a stalled outstanding count
-  (`drainStallFrames`, 120), which is the only thing that can tell a wedged
-  re-bake from a slow machine, and a backstop clock (`drainCapMs`, 90,000) for
-  a bake that inches forward forever, which no stall counter catches. Either
-  gives up and lets the remainder land in the round as before.
-
-Coldharbour is one frame of `loading` and nothing else moved: `installMs` 1,097
-→ 1,865 with `bakeFrameMs` 889 → 5, which is the same frame in a different
-state. `gate.mjs` is clean on all four maps.
-
-### What is open
-
-- **The worst frame is still 1,217 ms at 1500 m**, against a 197 ms median. It
-  is the first batch and it is a queue-shaping question rather than a
-  draw-count one: `releaseBatch` lets one probe through however fat it is on an
-  otherwise empty frame, by design, or a queue with a fat head could never
-  drain. A budget that could be spent as "one probe's worth of FACES" rather
-  than one probe would smooth it; nothing has tried.
-- **What a bake draw costs is still unexplained.** Finding 27 measured 18.6 us
-  and suspected bind-group creation. This finding does not settle it — it
-  removed draws rather than making one cheaper — and the per-draw figure now
-  implied is of the same order.
-- **The 1500 m install is still ~26 s before the drain starts.** That is
-  findings 24, 25 and 26's territory and this step did not touch it; it is now
-  the largest single number in a 1500 m load.
-- **Nothing has looked at the PICTURE on the proving ground**, which is S0b's
-  owed item and survives all of this. The bank can only say the four shipped
-  maps are unmoved.
-
----
-
-## 29. The 48 m merge block is worth a third of the 1500 m frame and two fifths of its install — **the lever is LANDED (S6), the value is nobody's yet**
-
-**Asked because S6 said to make the block size the map's, and a mechanism with
-no number beside it is a lever nobody knows whether to pull.** The step's own
-argument was about mesh COUNTS at 1500 m — 1,024 blocks at 48 m against 256 at
-96 and 144 at 128 — and counts are the thing wall 1 was measured in before S1
-took the walk down. What is left is the DRAW phase, which nothing had priced
-against this axis.
-
-### What was measured
-
-The committed 900/300 proving ground, uncapped
-(`--disable-frame-rate-limit --disable-gpu-vsync`), 1920x1080, headless via
-`channel: "chromium"`, one page per row, 10 s warm and an 8 s window. A quiet
-round: the player is spawned and nothing is in contact. The two fields are set
-on the layout in the page before `startRound`.
-
-| merge / terrain | install | warm | frame | scene meshes | active | drawn map meshes | glazed blocks |
-| --- | --- | --- | --- | --- | --- | --- | --- |
-| **48 / 48** | 10,973 ms | 74.3 fps | **13.5 ms** | 9,002 | 442 | 1,597 | 265 |
-| **96 / 96** | 6,719 ms | 103.0 fps | **9.7 ms** | 7,757 | 222 | 653 | 93 |
-| **128 / 96** | 6,404 ms | 110.9 fps | **9.0 ms** | 7,610 | 184 | 506 | 61 |
-
-**33% of the frame and 42% of the install**, both far past the 8% the
-measurement protocol says to read as real, and both monotonic across three
-points rather than a single pair.
-
-The same three cuts on the two big shipped maps, for the independence check
-rather than for a frame:
-
-| | Coldharbour 48/48 | 96/48 | 48/96 | Harrowmead 48/48 | 96/48 | 48/96 |
-| --- | --- | --- | --- | --- | --- | --- |
-| populated blocks | 45 | **16** | 45 | 44 | **16** | 44 |
-| floor meshes | 49 | 49 | **16** | 97 | 97 | **37** |
-| drawn map meshes | 301 | 201 | 268 | 432 | 306 | 372 |
-| glazing groups orphaned by the merge | 0 | 0 | 0 | — | — | — |
-| collider boxes / nav surfaces | 768 / 72,230 | same | same | 748 / 72,876 | same | same |
-
-### What it means
-
-**The frame is the draw phase and not the walk.** `WorldCulling` offers 442 of
-9,002 meshes at 48 m, so wall 1 is not what moves here; what moves is 1,597
-drawn map meshes becoming 506, each of which is a draw and an outline shell.
-Finding 18's own note applies — an outline shell reusing a bound material is
-~2.3 us and a mesh draw carrying a material switch ~6.3 — so a count is not a
-prediction, which is why this was measured rather than derived.
-
-**The install is a lever on wall 5 that wall 5 did not have.** The reflection
-bake is one cube per GLAZED BLOCK, and a wider block is fewer of them by
-construction: 265 becomes 61. This is the honest form of what `blocksPerCell`
-does under duress — that one groups four blocks onto one probe and the probe
-then has 96 m of city missing from the middle of its own cube, while a wider
-block is a probe whose `encloses` still drops exactly the block it serves and
-nothing else.
-
-**The two axes really are independent**, which is the part the step insisted on
-and the middle table is the proof: `blockSize` alone never moves a floor mesh
-and `terrainBlock` alone never moves a block. Neither moves a collider box or a
-nav surface on any map, at any size.
-
-### What is open
-
-- **Nobody has looked at the PICTURE.** The whole cost of a wider block is cull
-  granularity — a block is offered while the camera is inside `reach` of its
-  bounds, so a 128 m block draws more that is off screen — and on this map the
-  draw-call saving swamped it. On a map with long sightlines and heavy
-  per-pixel work it might not. `bank.mjs` can only say the four shipped maps are
-  unmoved, which they are by construction: none of them states either field.
-- **Nothing here is a fight.** Finding 22 measured a round left to itself firing
-  no ray at all, and this is that kind of round. Wall 2 is down and the merge
-  block is invisible to `RayWorld`, so the expectation is that a fight changes
-  nothing about the SHAPE of this table, but it has not been measured.
-- **The proving ground still builds at 48 / 48** and should probably keep doing
-  so, because it is the load every figure in `ENGINE_UPGRADE.md` was taken
-  against. What wants a value is the desert city (S11), and what should decide
-  it is a real layout rather than a generated grid.
-- **Larger merged buffers were not measured.** 128 m blocks are ~7x the
-  vertices per mesh, which is memory and a coarser bounding box; neither was
-  looked at, and neither showed up as a cost in the frame.
-
----
-
-## 30. The rigs are the largest thing in a 900 m frame, and the frustum hides that until you look down an avenue
-
-**Status:** measured on the Windows box, landed. **This is `ENGINE_UPGRADE.md`
-S8's engine half** — `EnvironmentSpec.bodyDrawDistance`, a body draw distance a
-map may state ahead of its fog — and it prices the lever S8 named and did not
-cost.
-
-S8 claimed that on a map you cannot fog the three body gates
-(`BattleSystem.viewDistance`, `NetRoster`'s, `RagdollSystem`'s) stop gating and
-"the rigs are now the largest bucket in the frame". Both halves are true, and
-the second one is invisible in the reading anyone would take first.
-
-### The instrument, and the lever
-
-Proving ground 900/300 (`fogEnd: 2400`, past its own 2121 m diagonal, so the
-three gates gate nothing), Windows box (RTX 4070 Ti SUPER), headless Chromium
-via `channel: "chromium"`, `--disable-frame-rate-limit --disable-gpu-vsync`,
-1920x1080, `spawnPlayer()`, warm 12 s past the compile stall, medians over 8 s.
-Findings 17-21's protocol, so the numbers sit beside theirs — and the quiet
-round below reproduces finding 21's 4.80 ms frame to the second decimal, which
-is what says it is the same instrument.
-
-**One process, one lever: `battle.setViewDistance` and the ragdoll gate beside
-it, arms interleaved fog/wall/fog/wall.** The field itself is not stated by any
-map in the tree; the arms are the two values it would resolve to.
-
-### A quiet round says almost nothing, and that is the finding under the finding
-
-| 900/300, quiet | frames/8 s | median ms | `_evaluateActiveMeshes` | active meshes | rig meshes active | rigs on |
-| --- | --- | --- | --- | --- | --- | --- |
-| fog 2400 | 1,607 / 1,664 | 4.8 / 4.7 | 2.96 / 2.85 | 121 | **0** | 15 |
-| wall 550 | 1,779 / 1,548 | 4.3 / 4.5 | 2.50 / 2.75 | 121 | **0** | 7 |
-
-**Zero rig meshes reach the active list either way.** The bots are spread across
-the play square and the FRUSTUM is already dropping every one of them, so the
-lever buys only the walk — 160 rig meshes going from enabled (world matrix
-recomputed, frustum tested) to disabled (an early out). The frame delta is
-**−7.4%, under the 8% floor**, and must not be quoted as a win. The walk's is
-−10%.
-
-A first run of the same arms read −16% on the frame; the four-arm interleave
-above is what corrected it. **The quiet-round number is noise and the honest
-reading is "nothing measurable".**
-
-### With the roster in view it is a quarter of the frame
-
-The case S8 is about is a 900 m sight line with bodies down it, which a 240 m
-map does not have. Sixteen rigs stood 120-900 m ahead of the camera, splayed a
-few degrees each side, re-stood every frame on the drawn ground:
-
-| 900/300, roster in view | median ms | `_evaluateActiveMeshes` | active meshes | rig meshes active | rigs on |
-| --- | --- | --- | --- | --- | --- |
-| fog 2400 | **9.2 / 9.1** | 3.89 / 3.90 | 441 | **288** | 15 |
-| wall 550 | **6.6 / 6.6** | 2.95 / 2.98 | 307 | **154** | 8 |
-| | **−28%** | **−24%** | **−30%** | | |
-
-**65% of the frame's active meshes are soldiers** (288 of 441), and the whole of
-the 134-mesh delta is rigs — nothing else moved, because nothing else was
-levered. Both repeats agree to 0.1 ms, so this is 3.5x the 8% floor and not a
-drift.
-
-**The frame delta is 2.55 ms over 134 meshes, or ~19 us each, which is far more
-than a mesh draw.** Finding 18 measures ~6.3 us for a draw carrying a material
-switch and ~2.3 for an outline shell on a bound material; the walk accounts for
-~0.94. So a rig mesh is being paid for more than once a frame — the outline
-shell and the glow accumulation are the obvious suspects and neither has been
-isolated. **That is a suspect, not a measurement.**
-
-### What landed
-
-`EnvironmentSpec.bodyDrawDistance`, resolved once by `bodyDrawDistanceOf` and
-pushed by `installMap` to all three body gates together. Verified end to end on
-Hollowmere by mutating the environment and rebuilding: absent → 78 (both gates),
-40 → 40, 5000 → 78 with the DEV warning, absent again → 78, and
-`WorldCulling`'s reach 105 m throughout all four.
-
-**No map in the tree states one**, so nothing shipped changed — which is also
-why `bank.mjs` has nothing to say about this and was not run.
-
-**`WorldCulling`'s reach deliberately stayed `fogEnd`.** The block cull is exact
-only because a structure past the fog draws `fogColor` in front of ground that
-draws `fogColor`. A body dropped early POPS, and that is a trade a map author
-takes knowingly; a building dropped early pops out of a skyline being looked at.
-
-### The other half: the shadow window's ceiling is now checked
-
-`ShadowSystem.setShadowWindow` DEV-warns when the window is past what
-`depthRange` can carry at the map's own key-light elevation
-(`2 * halfDepth / cos(elevation)`, halfDepth 89 m). Past that the along-sun
-reach does not move and the extra is texel density spent for nothing — and
-there is no feedback at all, because the line the author is trying to push out
-stays exactly where it was on that axis.
-
-**The four shipped maps are the evidence the ceiling is right, and none of them
-trips it**: Harrowmead states 185 against 183.8 at 14.5 degrees and Coldharbour
-200 against 194.9 at 24 — both authored by eye to within a couple of metres of a
-number neither file names. Greyfen (140 of 201.6), Hollowmere (110 of 226.5) and
-the proving ground (200 of 433, near-overhead noon) are well inside. Verified
-silent on all five with a round installed, and verified to FIRE at 400 m.
-
-### What is open
-
-- **What the ~19 us per rig mesh is made of.** The frame saving is three times
-  what a draw costs and twice what a draw plus the walk costs. Until it is
-  broken down, the 2.55 ms is a measurement whose mechanism is a guess.
-- **No map states the field, so it has never run in anger.** What a body popping
-  at 550 m on a clear map LOOKS like is unjudged — there is no map to judge it
-  on until S11, which is exactly why the field defaults to the fog.
 - **A fade was not built.** The gate is a hard on/off, as `lodDisableDistance`
   always was, and it was invisible only because it sat where everything was
   already `fogColor`. If a stated `bodyDrawDistance` reads badly, a short fade
   band is the obvious next thing and nothing here has costed one.
-- ~~**The rigs are still `loose` candidates whether they are drawn or not.**~~
-  **CLOSED for the rigs.** `WorldCulling` has a fourth class — pooled — and
-  `Game.installBodyPools` files both rosters' rigs under the root the LOD
-  already switches, so a body that is not in the round is offered to nothing.
-  On Sarab at 24 a side that is **candidates 2,299 → 1,690 (−26.5%), the walk
-  2.75 → 2.42 ms (−11.9%) and the frame −4.4%**, with draw calls and active
-  meshes identical in every block — it takes the walk and never the draw, which
-  is the half this thread was about. **Finding 21's ~750 idle effect meshes are
-  still open** and can now take the same door.
 
 ---
 
-## 31. The authority's tick is priced on ARMOUR and not on the map — 1500 m is the CHEAPEST tick in the tree, and the instrument that says so had been dead since the WebGPU port — **its two sweep threads are CLOSED by 35**
+## 31. The authority across a rotation: a rebuild in the same process gets slower, and no measured tick has had a person in it
 
-**Status:** measured on the Windows box, landed. **This is `ENGINE_UPGRADE.md`
-S9** — the authority at 1500 m — and it is the first step in that document whose
-budget is a TICK rather than a frame.
-
-Three things came out of it, in the order they had to: the instrument was broken
-and every match server with it, the tick holds at 1500 m by three orders of
-magnitude, and the one term that does grow with map area is the one nobody was
-looking at.
-
-### The instrument was dead, and so was every match server
-
-`npm run simulate` crashed on every map before it printed a line:
-
-```
-The plugin "CelEmissiveFog" can't be added to the material "emissive-#ffe680"
-because the plugin is not compatible with the shader language of the material.
-```
-
-`EmissiveFogPlugin.isCompatible` answers WGSL and only WGSL — deliberately, and
-correctly: there is no GLSL path left in the tree. But
-`Material._createUniformBuffer` picks WGSL for a `StandardMaterial` only when
-`engine.isWebGPU`, and the authority runs under `NullEngine`, which is not. So
-the pair threw inside `CombatSystem`'s constructor — which builds its tracer pool
-out of `getEmissive("#ffe680")` — which is to say inside `new HeadlessGame()`.
-
-**That is not a tooling bug. `Match.game` is `new HeadlessGame()` and a `Match`
-is built when the first person joins**, so a match server booted, printed
-`greywatch server on :8080`, and died on the first join. Every build since the
-WebGPU migration. Nothing noticed, because the process starts perfectly and
-`npm run simulate` was the only thing that would ever have said otherwise.
-
-The fix is one line in `attachEmissiveFog`: skip the plugin when the engine is
-not WebGPU. It is a per-pixel fade over an unlit colour, the authority draws no
-pixels, and it builds these materials only because it runs the same pooled
-systems a client does.
-
-### The tick, on every map in the tree
-
-`npm run simulate` now times every `step` and prints the distribution, the count
-over the `1000 / TICK_HZ` = **16.67 ms** budget, and the ticks filed by how many
-bots held a target during them. One whole round per map, sixteen bots, no humans,
-difficulty 1; the proving ground through `npm run simulate:dev`, the dev-mode
-server build that is the only one which has heard of it.
-
-| map | extent | boxes | build | p50 | p95 | p99 | worst | over budget |
-| --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| Hollowmere | 240 | 824 | 138 ms | 0.016 | 0.034 | 0.070 | 3.04 | **0 / 62,281** |
-| Greyfen | 240 | 1,717 | 210 ms | 0.022 | 0.039 | 0.073 | 3.21 | **0 / 62,821** |
-| Coldharbour | 320 | 768 | 235 ms | **0.062** | **0.192** | **0.275** | 9.80 | **0 / 48,519** |
-| Harrowmead | 400 | 748 | 170 ms | 0.015 | 0.127 | 0.178 | 4.30 | **0 / 64,801** |
-| **proving 900/300** | **1500** | **5,929** | **1.25 s** | **0.012** | **0.029** | **0.055** | 7.45 | **0 / 108,181** |
-
-Milliseconds per tick. **Not one tick of 347,000 crossed the budget on any map,
-and the 1500 m map has the CHEAPEST tick of the five** — its p99 is 0.33% of the
-step. Four proving rounds reproduce it: p50 0.007-0.012, p99 0.030-0.055.
-
-**The worst ticks are not the simulation.** Every spike over 1 ms is reported
-with where it fell and whether a GC pause overlapped it: they cluster in the
-first ~6,000 ticks (the JIT), one or two a round land inside one of that round's
-10-25 GC pauses, and a whole round's collection is 8-16 ms. The largest tick seen
-anywhere here is 10.3 ms — still inside the budget, and a collector pause with a
-tick around it.
-
-### The map is not what prices it — armour is
-
-Read the table by what is ON each map rather than by how big it is: the two
-expensive ticks are **Coldharbour and Harrowmead**, which are the two maps with
-`vehicles`, and the three cheap ones are the three without. Coldharbour's median
-is 4x Hollowmere's on a map with FEWER collider boxes.
-
-A CPU profile of a Coldharbour round says it outright — `_checkCollision` 23.1%,
-`_collideWithWorld` 13.9%, `_testTriangle` 3.3% of all samples, about 2.7 s of a
-round whose ticks total ~3.4 s. That is Babylon's `moveWithCollisions`, and on
-the authority it has exactly one caller: `Vehicle.update`. The legs never touch it —
-a client does its own movement and `validateMove` checks the result analytically
-— and `ENGINE_UPGRADE.md` wall 2 took every ray in the game off the scene. **The
-hull sweep is what was left, and it is the last O(meshes in the map) thing this
-process does per tick.**
-
-It is gated on `Math.abs(this.speed) > 1e-3`, which is why Harrowmead's median is
-cheap and its p95 is eight times that median: its hardstandings are in the home
-yards and its hulls spend the round parked, while Coldharbour's are on the
-avenues and its crews drive.
-
-**Priced directly rather than derived**, with one hull-shaped body carrying the
-tank's own ellipsoid, stepped 2,000 times through a built server world:
-
-| world | collidable meshes | `moveWithCollisions` |
-| --- | --- | --- |
-| Coldharbour | 754 | **0.0394 ms/call** |
-| proving 900/300 | 5,904 | **0.4020 ms/call** |
-
-**10.2x the cost for 7.8x the meshes.** So a 1500 m map with armour pays 0.40 ms
-per DRIVEN hull per tick — 2.4% of the budget for one, 4.8% for the two a map
-states today, against 0.05% for everything else the tick does out there. That is
-not a problem at sixteen slots and two hardstandings. It is the only term in the
-authority that grows with map AREA, and S11 says the desert city probably wants
-armour.
-
-### The install at 1500 m is the COVER bake, not the parse
-
-S9 costed the server's inheritance as a parse — 400 kB of generated
-`collision.ts` against Coldharbour's 53. The bake came out at **5,929 boxes and
-473 kB**, which is that projection to within a rounding, and **it parses and
-evaluates in 7.5 ms**. It is not the cost.
+**Status:** open. The tick itself is answered (`ENGINE_UPGRADE.md` S9, and
+`docs/multiplayer.md`, "What a tick costs").
 
 `buildServerWorld` is **1.25 s** at 1500 m against 235 ms on Coldharbour, and a
 profile of the build alone attributes it to `segmentHitsBox` (19.3%) under
@@ -4514,64 +2135,29 @@ the largest single thing in the authority's install**, which is S3/S4/S5's
 inheritance arriving exactly where they said it would — and a 1.25 s build is a
 rotation cost nobody is watching, not a tick cost.
 
-It is also not stable across a process: rebuilding in the same NullEngine read
-1.25, 1.36, 1.62 and 2.78 s over four consecutive rounds. Heap growth is the
-obvious suspect and nothing has isolated it.
-
-### The world S9 measured is the world the client builds
-
-`npm run parity` now covers the DEV-only maps too, which costs it a second server
-build in dev mode. The proving ground passes on all 17 fingerprint fields:
-**5,929 boxes, 528,287 surfaces, 305,193 walkable.** Without that, every number
-above would rest on the assumption that a 1500 m bake reconstructs correctly —
-which is the one assumption the entire server design is built on.
-
-### The density problem is measurable on the authority, and it is S10's
-
-**Five of eleven proving rounds never ended.** They ran the full 45-minute cap
-with tickets left on both sides (367/239, 183/81); the six that resolved took
-19-30 minutes against 13-18 on every shipped map. Difficulty does not fix it —
-both rounds run at difficulty 3 hit the cap.
-
-The contact block says why: **peak 5-7 of 16 bots ever held a target at once** on
-the proving ground, against 10-14 on the four shipped maps, and 73-95% of its
-ticks have nobody in contact at all. Sixteen bodies over 0.81 km² of play is one
-per 51,000 m²; Harrowmead is one per 10,000.
-
-That is `ENGINE_UPGRADE.md` S10 stated as a measurement rather than as an
-arithmetic worry, and it arrives with a warning for anyone measuring this map
-again: **a quiet round is most of what a 900 m round IS**, so a mean tick taken
-on one is a measurement of walking. Findings 22 and 30 hit the same wall on the
-client and had to force a fight; the contact buckets are this side's answer to
-it.
-
-### What is open
-
-- ~~**`Vehicle.update`'s hull sweep is the last whole-scene walk on the
-  authority.**~~ and ~~**the same sweep is on the CLIENT, per frame**~~ — **BOTH
-  CLOSED by 35.** A big map did state `vehicles` (Sarab, and three kinds of
-  them), the client half turned out to be 96% of everything the fleet cost, and
-  the substitution was not the analytic sweep suggested here: `CollisionField`
-  narrows Babylon's own walk through `surroundingMeshes` instead, which keeps
-  the collision response bit-identical rather than reimplementing it.
-- **Why a rebuild in the same process gets slower**: 1.25 s to 2.78 s over four
-  rounds, with `map.dispose()` between them. A match server rotates maps for
-  hours.
+- **Why a rebuild in the same process gets slower**: rebuilding in the same
+  NullEngine read 1.25, 1.36, 1.62 and 2.78 s over four consecutive rounds, with
+  `map.dispose()` between them. A match server rotates maps for hours. Heap
+  growth is the obvious suspect and nothing has isolated it.
 - **Nothing here had a human in it.** No `LagComp` rewind ran, no snapshot was
   encoded, and `Match`'s own per-tick work — sixteen sockets, `validateMove`, the
   interest sets — is in none of the numbers above. What was measured is the
   SIMULATION's tick, which is what S9 asked for and is not the whole of what a
   server does.
-- **The 45-minute cap is now a thing that fires.** `MAX_SIM_MINUTES` was a
-  backstop against a round that could not end; on a 900 m map it is the normal
-  outcome, and a reader who does not check `winner: NONE` will average a
-  contested round together with one that never started.
 
 ---
 
 ## 32. Sarab: what a 1500 m map actually costs once it is a map — 91 fps, 2.4 s to install, and the two cheapest levers doing most of it
 
 **Status:** measured on the shipped map. ENGINE_UPGRADE.md S11.
+
+**Coldharbour's frame has roughly halved since this entry was written.** This
+entry has it at 52.6 warm fps and a 19.3 ms median; the same map, same
+resolution, same instrument class, profiler armed (which costs ~1.5%), now reads
+94-99 fps and a 10.1-10.6 ms median. 1.9x is well past the ~1/3
+cross-session drift this entry warns about, so most of it is real and is
+presumably `narrowedMove` and the rig culling landing after it. **This entry's
+table is stale enough to mislead anyone sizing a lever against it.**
 
 ### What was measured
 
@@ -4609,10 +2195,10 @@ game time, peak contact 8 to 12 of 16 bots.
 
 **A 900 m map is faster than a 320 m one, and the reason is two numbers in a
 layout file.** Sarab is 5.1 times Harrowmead's playable area and renders in
-three quarters of its frame time. Finding 29 measured `blockSize` and
+three quarters of its frame time. `ENGINE_UPGRADE.md` S6 measured `blockSize` and
 `terrainBlock` at 96 as worth a third of the frame and two fifths of the install
 on the proving ground and said the value was "nobody's yet"; it is Sarab's, and
-this is what it looks like spent on a real layout. The other half is finding 30's
+this is what it looks like spent on a real layout. The other half is `ENGINE_UPGRADE.md` S8's
 `bodyDrawDistance`, stated here at 300 against a 560 m fog, which is the first
 time either field has been in a shipped map.
 
@@ -4633,7 +2219,7 @@ one, plus parapet tops: drawn, solid to a round, and not a floor. The ground
 graph is 353,969 reachable of 361,832 (97.8%), so nothing on the map is
 stranded.
 
-**The density problem finding 31 measured is answered by the LAYOUT and not by
+**The density problem `ENGINE_UPGRADE.md` S9 measured is answered by the LAYOUT and not by
 the engine.** On the proving ground five of eleven rounds ran the 45-minute cap
 with tickets left on both sides and peak contact was 5 to 7 of 16. On Sarab
 every round ended, in about the time a round takes on a shipped map, with peak
@@ -4645,7 +2231,7 @@ lever 1, and it is the whole of what was needed.
 ### What is open
 
 - **Nobody has watched a body POP at 300 m.** `bodyDrawDistance` is stated for
-  the first time here and finding 30's third open thread — what the drop LOOKS
+  the first time here and finding 30's open thread — what the drop LOOKS
   like on a map that states one — is still open, because the measurement above
   is a frame rate and not a pair of eyes. The 300 was chosen so that the pop
   happens in haze rather than in clear air; that is a hypothesis.
@@ -4674,7 +2260,7 @@ lever 1, and it is the whole of what was needed.
   nobody's step yet, and the honest figure to check first is what it costs to
   PARSE rather than what it costs to fetch.
 - **The frame was measured EMPTY.** The gate's round has bots in it but nothing
-  forces contact, which is the wall findings 22, 30 and 31 all hit. What sixteen
+  forces contact, which is the wall `ENGINE_UPGRADE.md` S2 and S9 both hit. What sixteen
   bots fighting across the old town's roofs costs on this map is unmeasured, and
   it is the one place a roofscape could turn out to be expensive: every roof is a
   walked surface and the nav graph has 380,598 of them.
@@ -4796,8 +2382,9 @@ nothing in the two runs separates the two, and the kill count fell as well,
 which a deferral does not explain.
 
 The server cost is not the interesting half. Four driven hulls doubled the
-median tick and it is still 3.8% of the budget with nothing over it; finding 31
-already prices a driven hull and this agrees with it.
+median tick and it is still 3.8% of the budget with nothing over it;
+`docs/multiplayer.md`, "What a tick costs", already prices a driven hull and
+this agrees with it.
 
 ### What would settle it
 
@@ -4816,341 +2403,10 @@ already prices a driven hull and this agrees with it.
 
 ---
 
-## 35. The vehicles were 2.3 ms a frame and 96% of it was ONE call — the last whole-scene walk is down, on both sides
+## 38. `WorldCulling.offer`: who the disabled candidates are, and its own per-frame cost
 
-**Status:** measured on the Windows box, landed. Closes both open threads of
-finding 31.
-
-### What was measured
-
-Sarab, six hulls (a tank, a gun truck and a helicopter a side), four of them
-crewed and driving by the time the sample starts, headless Chromium through
-`plans/webgpu-ref/harness.mjs`, 12 s windows, every phase of the fleet's frame
-wrapped and accumulated:
-
-| phase | before | after |
-| --- | --- | --- |
-| `VehicleSystem.update` | **2.299 ms/frame** | **0.120** |
-| — of which `moveWithCollisions` | **2.214** (553 us x 4 calls) | **0.039** (11 us) |
-| everything else the fleet does | 0.085 | 0.081 |
-| median frame | 11.3 ms | **8.7** |
-| fps | 87.2 | **117.8** |
-
-**The whole of the vehicle subsystem outside that one call is 0.085 ms** — the
-ten-contact ground probe, the plank, the springs, the hull lean, the antennae,
-the turret slew, the cupola gun, the crew AI, `crushSweep` and
-`pushHullEngines` between them. There was never anything else to find here, and
-a reader who goes looking for it will spend a day confirming that.
-
-And the authority, `npm run simulate sarab 1 3`, one round either side of the
-change on the same tree:
-
-| | before | after |
-| --- | --- | --- |
-| tick p50 | 0.691 ms | **0.053** |
-| p95 / p99 | 0.947 / 1.080 | **0.068 / 0.087** |
-| worst | 8.844 | 4.050 |
-| a round of wall clock | 52.9 s | **3.1 s** |
-| real time on one core | 23.6x | **298.5x** |
-
-Finding 31 priced a driven hull at 0.40 ms per tick on a 1500 m map and called
-it "the only term in the authority that grows with map AREA". It does not grow
-with it any more.
-
-### What it is
-
-`scene.meshes`, walked per call, `isEnabled()` up the parent chain and a
-bounding-box test each, up to `collisionRetryCount` times. Babylon's own
-coordinator reads
-`(excludedMesh && excludedMesh.surroundingMeshes) || this._scene.meshes`, so
-handing the body a list is a supported narrowing of that walk and not a patch
-over it — the collision RESPONSE is untouched, which is the whole reason this
-was preferred to the analytic sweep finding 31 proposed. `CollisionField` is
-the bucket grid behind the list; see its header for the rules.
-
-### Three things had to be right, and two of them were found the expensive way
-
-- **The list must be a SUPERSET of what the sweep can reach** — radius plus the
-  whole step plus a margin, centred on the sphere rather than on the mesh.
-- **The ORDER must be the scene's.** `Collider._testTriangle` rejects on
-  `distToCollision >= _nearestDistance`, so a tie goes to whichever mesh was
-  walked FIRST, and a world made of boxes is full of coplanar ties. A grid
-  walks cell order; `scene.meshes` walks creation order. Left alone this put the
-  hull a few centimetres out against a wall — small, real, and exactly the kind
-  of difference that would have been blamed on the suspension a year later.
-  Sorting the hits back into index order fixes it outright.
-- **The centre must be `getAbsolutePosition()` and not `position`**, because
-  that is the expression `moveWithCollisions` opens with. See VERIFYING.md —
-  the two come apart under a render id, and a list built for the wrong point is
-  the one failure mode this whole mechanism has.
-
-### Two traps for whoever measures this next — and a third, which is worse
-
-- **A scripted DRIVE proves nothing and looks like it proves everything.** Every
-  hull on all three maps with armour completed 1,800 steps of full-throttle
-  turning and reversing **without being blocked once** — a hardstanding is in a
-  yard and armour spends its first half-minute crossing open ground. Two arms
-  agreeing over free motion is two arms agreeing about arithmetic. The test that
-  means something samples positions across the whole play square and reports how
-  many of them actually hit something (760 to 2,484 of 8,000, by kind and map).
-- **Always run an A-vs-A control.** The first oracle written for this reported
-  3 m divergences that were entirely its own doing, and the control is what said
-  so in one line.
-- **`surroundingMeshes` is state on the MESH, and an A/B that only nulls the
-  FIELD measures the new path twice.** This nearly buried the player half of
-  this finding: an in-frame comparison that called `setGround(..., null)` for
-  its control left Babylon walking the list the previous frame had written, and
-  reported the whole thing as worth 0.003 ms. `narrowedMove` clears it on the
-  no-field path now — which is a real fix and not only a harness one, because a
-  body that stopped being given a field would otherwise sweep forever against a
-  frozen snapshot of one street.
-- **A sweep timed on open ground is not the sweep the game runs.** The walk is
-  charged per RETRY, so it is dearest against geometry: 106-377 us isolated at a
-  spawn, 388-2,209 us walking a town. Both figures are honest measurements of
-  different things, and only the second is the frame.
-
-### What is open
-
-- ~~**`Player.update` does the same sweep, every frame the player moves.**~~ —
-  **DONE, and it was worth as much again as the fleet.** Measured walking a real
-  round, the player's own sweep is **2.21 ms a frame on Sarab, 0.616 on
-  Coldharbour and 0.521 on Hollowmere**, against 0.036 / 0.015 / 0.026 with the
-  list — Sarab's median frame 14.6 ms to 11.3, Coldharbour's 11.2 to 9.9.
-  Hollowmere's does not move because that map is already at 6.9 ms and something
-  else is its floor; the half-millisecond is real and goes unspent there.
-  **The guess in this bullet was wrong in the direction that matters**: it
-  reasoned that a smaller sphere and one call instead of four would make the
-  player a fraction of the fleet, and the player turned out to cost the same as
-  all four hulls together. The reason is the RETRY loop — `_collideWithWorld`
-  re-walks the entire list on each retry, so the walk is dearest when a body is
-  pressed against geometry, and a body on foot spends a round doing that.
-  `Vehicle.update` and `Player.update` now share `narrowedMove`, which is where
-  the reach, the ordering and the guard live once. Proved identical at 6,000
-  samples on all five maps, 164 to 991 of them blocked.
-- **`CELL` is 24 m and nobody swept it.** It answers with ~10 meshes for a tank
-  and ~12 for the helicopter's 10.4 m disc, which was good enough that the cost
-  stopped being visible; whether 16 or 32 is better has not been asked.
-- **The grid is stamped once and never updated.** That is correct today because
-  the only collidable thing that moves is a hull and hulls are in `movers` — but
-  it is an invariant nothing enforces, and a future collidable that moves and is
-  not registered would be walked through silently.
-
----
-
-## 36. A fifth of everything this game allocates is Babylon asking a question it already knows the answer to — **FIXED**
-
-**Status:** measured, fixed, and proved not to move a pixel.
-
-### What it is
-
-Every shader in this tree is a hand-written `ShaderMaterial`, and
-`ShaderMaterial.isReady` runs for **every submesh of every draw, in the main
-pass and again in the shadow pass**. Before it can answer, it rebuilds the
-material's whole define set from scratch: a `defines` array, an `attribs`
-array, a `#define ...` string per entry — several built with template literals
-— and then a `join` over them. It compares that string to the one already on
-the draw wrapper, finds them equal, and throws all of it away.
-
-The answer is the same string every frame for the life of the material. The
-work is pure churn, and it is the largest single allocator in the game.
-
-### What it costs, and what the fix is worth
-
-The allocation profile (with the two `includeObjectsCollectedBy*GC` flags
-finding 1 explains) puts `join` at **9.0% of all allocation, 19 kB a frame**,
-with `isReady` itself another 7.5% on top. `Material.isFrozen` short-circuits
-exactly this: the top of `isReady` returns the cached verdict when the wrapper
-already holds a ready effect.
-
-A/B'd in ONE session, alternating frozen and unfrozen every six seconds, three
-paired windows a map:
-
-| map | allocation, unfrozen -> FROZEN |
-| --- | --- |
-| cinderhaven | 67.2 -> 50.4 MB/s — **-25.0%** |
-| sarab | 80.1 -> 59.8 MB/s — **-25.3%** |
-| coldharbour | 91.4 -> 72.2 MB/s — **-21.0%** |
-| hollowmere | 79.7 -> 65.2 MB/s — **-18.3%** |
-
-**The frame-rate half of that A/B was inside the noise floor, and no frame-rate
-claim is made for this change at all.** An earlier draft of this finding quoted
-a cross-session `gate.mjs` comparison — "cinderhaven 104.5 -> 125.8 fps" — and
-that number was worthless. See the warning below, which is the more valuable
-half of this entry.
-
-Re-measured properly, paired and alternating inside one page at 3432x1432 on
-Sarab with a real roster, frozen against unfrozen over five reps: **-0.8%**,
-ahead in three reps and behind in two. The freeze buys ALLOCATION and does not
-measurably buy frame rate. It is kept for that, and because the picture is
-byte-identical.
-
-### The measurement warning, which cost this finding its first set of numbers
-
-**Cross-session comparison on this box is worthless and the protocol's +/-8%
-noise floor is far too generous for it.** The same tree, the same script,
-minutes apart: sarab 112.5 then 155.5 fps, cinderhaven 111.3 then 144.0,
-hollowmere 611.6 then 889.8 — a swing of up to 45%. `installMs` moves with it
-(sarab 4824 then 3813) and is untouched by any render change, so it is a free
-control for whether a run is comparable at all: **if the install times differ,
-the frame rates are not comparable.**
-
-Anything claimed about frame rate here must be PAIRED and ALTERNATING inside
-one page. `gate.mjs` is an excellent pass/fail gate and a bad A/B.
-
-### Why it is safe, which is the part to re-check rather than re-derive
-
-**Freezing pins the DEFINES and nothing else.** What gates the uniform push is
-`_mustRebind`, which does not read `isFrozen` — so the light array, the fog,
-the eye, the wind and the palette all keep flowing, and
-`CelMaterialFactory.updateWind`/`updateCamera` still walk the same cache every
-frame. The only other `isFrozen` read on this path guards morph targets and
-baked vertex animation, neither of which exists here.
-
-**The defines vary with the MESH on four counts** — a vertex `color` buffer,
-instancing, bones and morph targets — **and the effect is stored PER
-SUBMESH**, so what freezing pins is one submesh's effect in one pass. This
-entry first argued the opposite: that one wrapper served every mesh wearing a
-material, so a material shared across a disagreement would render the others
-with the first mesh's effect, and it measured **0 of 35 / 113 / 95 / 83** mixed
-materials on the four big maps to show that could not happen. The measurement
-was true and the premise was not — `ShaderMaterial` defaults
-`storeEffectOnSubMeshes` to true (9.19.1 and 9.28.0 both) and nothing here
-passes false — so widening a cache key is safe as far as the freeze goes.
-**What it cannot survive is a mesh changing under its own wrapper**: one that
-gains or loses a colour buffer, bones or morph targets after its first draw
-keeps the effect it compiled first, instancing being the one row re-checked.
-Nothing does that today;
-`docs/rendering.md`'s frozen-materials section says what a mesh that must owes.
-
-Freezing at CREATION rather than at first-ready costs nothing, and is why
-`remember` is the one door into the cache: the fast path also requires the
-wrapper to have been ready once, so a material frozen before its first compile
-falls straight through to the full path until it has an effect.
-
-### The proof it moved no pixel
-
-`bank.mjs` taken on the unmodified tree and `--check`ed with the change in:
-**21 vantages across all six maps, 0% of pixels differing, mean 0/255, worst
-0/255** — byte-identical, against a reproducibility floor the bank measured at
-0.000%. `gate.mjs --uncap` passes all six maps and the typecheck is clean.
-
-### What is open
-
-- **The other four fifths.** Babylon and the builtins it calls are ~64% of what
-  is left and our own code ~36%, and our share is spread over forty sites with
-  the largest at 4% — a thousand cuts rather than an actor. Nothing here has
-  costed the WebGPU backend's own per-frame objects (`getBindGroups`,
-  `_startRenderTargetRenderPass`), which are the next largest block.
-- **What this is WORTH is no longer clear, and that is honest rather than
-  coy.** It was taken to make collections rarer, on a headless reading of
-  1.5-1.8 collections a second — and a capture off the real machine at a real
-  frame rate reports **0.06/s**, because the allocation that matters is per
-  SECOND and uncapping inflates it (finding 1). So this removes a fifth of a
-  pressure that may not have been costing anything on the hardware in question.
-  It is kept because it is free, provably identical in the picture, and the
-  right thing on a device that IS collector-bound — a phone holding 30 fps has
-  the frame budget this was measured against, inverted. **Do not cite it as a
-  hitch fix.**
-- **Grass and water are frozen on the same argument but bought little** — one
-  material each, few submeshes. They are in for consistency, not for a number.
-
----
-
-## 37. The front-to-back sort is not an allocator, and memoising it buys nothing — **DISPROVED, DO NOT RE-RUN**
-
-**Status:** hypothesis measured and dead. Recorded so the next person does not
-spend the afternoon this cost.
-
-The allocation profile named `eyeDistanceSq` (4.19% of all allocation) and the
-comparator beside it (2.05%) as the top two sites in our own code — together
-6.2%, in one mechanism. The reasoning looked sound: `Game`'s opaque comparator
-calls `eyeDistanceSq` twice per COMPARISON, so a sort over ~600 submeshes reads
-~11,000 bounding spheres a frame where 600 reads would do.
-
-**Memoising it — one bounding-sphere read per submesh per frame, stamped on the
-frame id and the eye — changes nothing.** A/B'd in one session, three paired
-windows a map:
-
-| map | fps, shipped -> memoised | allocation |
-| --- | --- | --- |
-| cinderhaven | 110.5 -> 108.6 (-1.7%) | 68.9 -> 69.1 MB/s |
-| sarab | 117.1 -> 114.8 (-2.0%) | 71.6 -> 70.1 MB/s |
-| coldharbour | 167.1 -> 164.6 (-1.5%) | 79.8 -> 80.8 MB/s |
-
-Every figure is inside the noise floor and the allocation does not move at all.
-`SubMesh.getBoundingInfo()` is a field read and allocates nothing; the
-attribution was V8 smearing across a function called 22,000 times a frame — see
-finding 1's instrument note, which this is the worked example for. **The
-comment in `Game`'s constructor was right**: two bounding-sphere reads per
-comparison is microseconds against the fill it buys back.
-
----
-
-## 38. Half the frame's mesh walk is meshes it will reject — **TAKEN**, after the first measurement of it was taken at the wrong viewport and nearly threw it away
-
-**Status:** fixed (`WorldCulling.offer`). The first pass at this measured it as
-worthless; that measurement was wrong in three separate ways and the entry is
-kept whole because each of them is a trap.
-
-### What it is
-
-`meshWalk` (Babylon's `activeMeshesEvaluationTimeCounter`) is **a third to a
-half of the game's own tick** on the big maps — 4.27 ms of a 9.76 ms tick in a
-capture off a real machine. After S1's candidate list the frame was still being
-offered 1,745 candidates on cinderhaven and 1,657 on sarab to produce ~800
-active meshes, and the surplus is the EFFECT POOLS: 96 tracers, 54 embers, 48
-sparks, 48 shards, 40 impacts, 30 blast chunks, 40 grenade parts, 48 mine
-parts, 49 blob shadows, all built once, all idled with `isVisible = false`, and
-all filed `loose` and therefore offered every frame forever.
-
-`_evaluateActiveMeshes` rejects them — but late, after `isBlocked`, the LOD
-map get, `computeWorldMatrix` and `isReady()`. `WorldCulling.offer` makes the
-same two rejections first: `!isEnabled()` is an unconditional `continue` in
-that walk, and `!isVisible` skips activation whatever else is true (
-`alwaysSelectAsActiveMesh` bypasses the FRUSTUM test, not this one), so neither
-can ever be a mesh Babylon would have drawn. It is the claim `hidden` already
-rests on for the collider proxies, made per frame instead of once per map.
-
-### What it is worth
-
-Paired and alternating inside one page, uncapped, at 3432x1432 with a real
-roster — `eligible` handed straight to Babylon against the shipped `offer`:
-
-| map | fps, no offer -> offer | per rep |
-| --- | --- | --- |
-| sarab | 143.2 -> 168.3 — **+17.6%** | +4.3, +6.0, +6.6, +27.9, +18.7, +33.5 |
-| cinderhaven | 111.8 -> 116.9 — **+4.6%** | +3.1, +5.1, +5.2, -4.9, +5.8, +13.8 |
-
-Candidates halve (sarab 1,657 -> 877, cinderhaven 1,744 -> 969) with the active
-count unchanged, which is the proof nothing that draws was dropped. **The gain
-is smallest when the round is busiest** — the reps at ~800 active meshes read
-+3 to +6.6% and the thin ones read +18 to +33 — so a crowded fight is where to
-quote it from, not the mean.
-
-`meshWalk` itself moves much less than the list does (sarab 1.82 -> 1.67 ms,
-cinderhaven 2.09 -> 2.07) while the frame rate moves more, so the saving is not
-all in the counter this finding is named after. Not chased.
-
-### The three ways the first measurement of this was wrong
-
-Kept in full, because each one is cheap to repeat.
-
-1. **The wrong viewport.** It was measured at 1920x1080; the real display is
-   3432x1432, and the workload is not the same scene at two sizes.
-2. **The wrong PLACE.** The scripted walk held `KeyW` and drove the player out
-   of the town into the borderland — it ended at (-324, -301) with **103 active
-   meshes** where a real round has 530-900. A lever priced against an empty
-   desert prices as nothing.
-3. **The frame-rate CAP.** Half the reps of one run sat pinned at 143.9 fps,
-   which is a ceiling and not a cost, so those reps could not show a difference
-   in either direction and dragged the mean to nothing. `--disable-frame-rate-
-   limit` is not cosmetic in an A/B.
-
-On top of all three, the conclusion was cross-checked against `gate.mjs` runs
-taken in different sessions, which finding 36 now shows can differ by 45% on
-this box for no reason at all.
-
-### What is open
+**Status:** the drop landed (`docs/rendering.md`, the size gate). Two things
+about it are open.
 
 - **Who the ~420 disabled candidates ARE has still not been counted.**
   `setPools` already keeps an idle rig out of the list by its root, so a
@@ -5283,147 +2539,6 @@ Both are larger than what landed, and both change what a player sees:
 
 ---
 
-## 40. Uncapping the display makes it WORSE, and it is `drawWorld` that stalls — the flags are measured and dead, VRR is answered
-
-**Status:** measured and closed as a *fix*; the `drawWorld` stall it exposed is
-open and is where finding 1 should go next. Three captures, Chrome 152, the
-Windows box at 3440x1440, **G-Sync on and the window fullscreen**, launched with
-`--disable-gpu-vsync --disable-frame-rate-limit --enable-precise-memory-info`.
-Two sarab, one cinderhaven, 3,000 frames each.
-
-### The flags do exactly what they say, and it buys nothing
-
-| | vsync on (finding 39) | vsync off |
-| --- | --- | --- |
-| residue (rAF wait + compositor) | 1.42 ms | **0.56 / 0.90 / 0.66 ms** |
-| tick share of the wall clock | ~78% | **86.6 / 92.1 / 90.3%** |
-| mean frame | 6.94 ms budget | 6.92 / 7.40 / 6.94 ms |
-| fps | ~144, 1.9% doubled | 144.6 / 135.2 / 144.1 |
-
-The wait is genuinely gone. The frame rate does not move, because the tick is
-5.99–6.81 ms and **the tick was already the binding constraint** — finding 39's
-whole point. Uncapping removed a ceiling nothing was touching.
-
-### What it costs: vsync was quantising the workload's own variance away
-
-| | vsync on | vsync off |
-| --- | --- | --- |
-| frames within 18% of one 6.94 ms interval | **88.5%** | 53.7 / 62.4 / 65.8% |
-| sd of the interval | ~0 by construction | 3.14 / 2.38 / 3.48 ms |
-| frame-to-frame \|Δdt\|, mean | ~0 | 0.88 / 0.67 / 0.98 ms |
-| frame-to-frame \|Δdt\|, p95 | ~0 | **4.30 / 1.90 / 4.80 ms** |
-| frames faster than a 144 Hz interval | 0% | 28.9 / 15.3 / 22.1% |
-
-`drawWorld`'s own sd is 1.29–2.74 ms, so the tick genuinely swings by ±2–3 ms
-with what is on screen. **With vsync on, every tick under 6.94 ms presents at
-6.94** and none of that reaches the eye. Without it, all of it does. The trade
-is 1.9% of frames held an extra interval against **100% of frames arriving
-unevenly** — and it is worse, reported as such from the chair before any of this
-was computed.
-
-There is a second-order version. `dt` is `getDeltaTime()`, the interval BEFORE
-the frame, but the frame is displayed for the interval AFTER it — so each frame
-advances the world by ~0.9 ms (p95: 4.8) more or less than the time it is shown
-for. Vsync was hiding that too. **If a frame pacer is ever built, it owes a dt
-that is smoothed or predicted**, not the raw lagging one.
-
-The tell that VARIANCE is the villain rather than cost: the slowest capture
-(135.2 fps, tick 6.81 ms) has by far the lowest jitter (p95 1.90 ms), because it
-is consistently over budget rather than swinging.
-
-### And it introduces a stall that vsync was preventing
-
-Cinderhaven frames 2415–2432, draw calls and active meshes dead flat at 691/560
-throughout:
-
-```
-tick   4.5  3.5 11.9  4.4 22.3 37.8  4.4 25.8 86.6  4.9  3.7 32.2
-```
-
-86.6 ms of `drawWorld` recording the same number of draws as the 4.4 ms frame
-two rows earlier. **That is a stall, not work**, and the cheap/expensive
-sawtooth is the shape of a producer blocking on a full queue: with the limiter
-off the CPU runs ahead and Dawn applies backpressure. **18 of 21 hitches on
-cinderhaven and 8 of 9 on one sarab are this.** It does not happen with vsync on,
-because the present paces the CPU for free.
-
-### The A/B that was supposed to settle it, and what it settled instead
-
-Four captures on the Windows box, Cinderhaven, one script, 3,000 frames each on
-the FIXED instrument — headless and headed, capped and uncapped, everything but
-the flags held constant. **The paced runs are clean**, and the headed one is at
-a workload that matches the real session closely (537 active meshes and 615
-draws against 549 and 634):
-
-| | wall sd | cv | jitter p95 | `drawWorld` max | frames over the 24 ms bar |
-| --- | --- | --- | --- | --- | --- |
-| headed, capped | 0.76 ms | 0.11 | 1.20 ms | 9.5 ms | **0** |
-| headed, uncapped | 1.11 ms | 0.19 | 1.50 ms | 8.2 ms | **0** |
-| headless, capped | 0.53 ms | 0.07 | 0.80 ms | 8.7 ms | **0** |
-| headless, uncapped | 1.82 ms | 0.44 | 1.00 ms | 8.4 ms | **0** |
-
-Two things come out of it, and the second is the one that matters.
-
-**The variance story reproduces exactly.** A capped run is 92–96% of frames
-within 18% of a 7.00 ms median — a vsync lock at ~143 Hz, arriving at almost
-the same interval as the real panel's 6.94 — and uncapping takes that to 23–67%
-and the coefficient of variation from 0.07–0.11 to 0.19–0.44. That is this
-finding's headline, confirmed on a second display path.
-
-**The `drawWorld` stall does NOT reproduce, in any of the four.** Not capped,
-not uncapped, not headless, not headed, not at a matched mesh count — the worst
-`drawWorld` in 12,000 frames is 9.5 ms against the real session's 86.6, and
-not one frame in any run cleared the hitch bar. So the stall is **not an
-intrinsic consequence of uncapping**, which is what the backpressure reading
-above assumed, and that reading is now a hypothesis with a failed reproduction
-against it.
-
-What the four runs do NOT hold constant against the real session: **3440x1440
-fullscreen on a G-Sync panel**, and **a person actually playing** — firing,
-moving through the map, setting off blasts. The script sweeps the view and does
-neither.
-
-### The better hypothesis, which is a first-use PIPELINE stall
-
-**Dawn compiles behind the call and the stall lands on first USE**
-(`VERIFYING.md`), so a pipeline created cheaply is an 80 ms bill payable at an
-arbitrary later frame — inside `drawWorld`, with the draw count flat, with
-`gc` at 0, and clustered, which is every property the real hitches have. The
-real session's hitches cluster at frames 2415–2432 and 320; `ProfileReport`'s
-own series header calls a draw count that ramps across a second "a batch of
-pipelines coming into view".
-
-**This is not the thing finding 1 already eliminated.** That measurement counted
-CREATIONS — 29 pipelines and 73 modules in warmup, then 6 pipelines and 2
-modules across 40 s of play — and concluded steady-state compilation was
-negligible. Six pipelines across 40 s of play is six opportunities for a
-first-use stall, and counting creations cannot see one.
-
-**How to settle it:** hook `createRenderPipeline` and `createShaderModule` as
-before, but record the frame INDEX of each against the profiler's ring, and
-look at whether the hitch frames are 1–2 frames downstream of a creation. Fire
-every weapon and set off a blast during the run, which the A/B script did not.
-
-**And the capture that is still owed is on the real machine**: vsync ON,
-fullscreen, 3440x1440, a real round with combat in it, on the v4 instrument —
-`?profile`, play, `F3`. That is the reading finding 1 has been missing, and
-until the pairing was fixed it could not have been taken at all.
-
-### VRR is answered, and the answer is no
-
-This is the run that would have shown it: G-Sync on, fullscreen, vsync off, which
-is the configuration native games use to engage VRR. It still stuttered, and the
-reason is in the numbers above — **a 30–90 ms frame is far below any VRR floor**
-(a 144 Hz panel's range bottoms out around 48 Hz, 20.8 ms), so the display falls
-back to frame doubling exactly where it is needed most. VRR handles a frame that
-arrives late by a millisecond, not one that arrives late by 80.
-
-**So do not ship these flags, and do not wrap the game in Electron or NW.js to
-get them.** A wrapper is Chromium either way; what it would buy is the command
-line, and the command line is what was just measured. The fix for judder remains
-finding 39's: make the frame fit the interval.
----
-
 ## 42. The ground's relief DEPTH is unmeasured for aliasing, and unmeasured on a phone
 
 **Status:** open. The depth (parallax and self-shadow over the ground's height
@@ -5531,7 +2646,7 @@ must not be quoted for a round.
 and it was an omission rather than a decision — `FlameMaterial.glowMask`
 already freezes the twin it hands this same pass. `ShaderMaterial.isReady`
 rebuilds the whole define set for every submesh of every draw before it can
-answer (finding 36: a fifth of everything this game allocates), and the define
+answer (`docs/rendering.md`, "Frozen materials": a fifth of everything this game allocates), and the define
 set here is fixed at construction because it IS the cache key.
 
 Paired, 5 reps, frozen against unfrozen: **`glow` 5.26 -> 5.98 ms, -0.72 ms,
@@ -5641,6 +2756,13 @@ on a measurement.
   `?shadows=off` at the same street on Hollowmere and Cinderhaven. If low is
   over ~1 ms there, the levers in order: `every` (hold dynamic tiles longer),
   `taps` (already 1), the sun map's size, then `lights` to 0 on that rung.
+- **The shadow HOLD (`shadowTiers[q].hold`) is priced on the desktop only.**
+  The nearest thing to the phone this box can stand up — Greyfen at `low`,
+  832x384, a 4x CPU throttle, the same turn, three reps each — moved the most:
+  **redraws 41.6/s -> 5.7, `shadowPass` 2.67 -> 0.73 ms, the tick 17.56 ->
+  15.97 ms and 46.6 -> 51.0 fps.** **Open: the phone itself**, where the capture that
+  prompted this showed the pass on 80-90% of frames at ~1.8 ms of CPU; a
+  `?profile&gpu` capture on Greyfen at `low` is what prices it there.
 - **The first-bake frame is unmeasured.** A fixture's static tile is baked from
   the real meshes over `staticFacesPerFrame` faces a frame; walking into a
   street of lamps queues several. It has not been captured as a hitch and has

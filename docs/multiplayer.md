@@ -1404,17 +1404,19 @@ misses once a second has stuttered for everybody on it.
 the half that stops a quiet round being read as an answer. A big map's round is
 mostly walking — 73-95% of the proving ground's ticks have nobody in contact at
 all — so the honest quote is what the CONTESTED ticks cost, not what the round
-averaged. `FINDINGS.md` 22 and 30 are the client's two versions of the same
+averaged. `ENGINE_UPGRADE.md` S2 and S8 are the client's two versions of the same
 lesson, both of which had to force a fight before the measurement meant
 anything.
 
-**What it says today** (`FINDINGS.md` 31, and the numbers to beat): not one tick
+**What it says today** (`ENGINE_UPGRADE.md` S9, and the numbers to beat): not one tick
 of 347,000 crossed the budget on any map in the tree, the 1500 m proving ground
 runs a p99 of 0.055 ms — 0.33% of the step — and the two most expensive ticks
 belong to the two maps with ARMOUR on them rather than to the two biggest. A
-driven hull is `moveWithCollisions` against every collidable mesh in the map,
-which is the last O(map) thing this process does per tick and the only term in
-it that grows with area: 0.039 ms a call on Coldharbour, 0.402 at 1500 m.
+driven hull was `moveWithCollisions` against every collidable mesh in the map,
+which was the last O(map) thing this process did per tick and the only term in
+it that grew with area: 0.039 ms a call on Coldharbour, 0.402 at 1500 m. It is
+narrowed now (`world/CollisionField.ts`, `docs/vehicles.md`): 11 us a call, and
+Sarab's tick p50 went 0.691 ms to 0.053.
 
 **Nothing that instrument reports includes a person.** No rewind runs, no
 snapshot is encoded, and `Match`'s own per-tick work — the sockets,
@@ -1422,6 +1424,13 @@ snapshot is encoded, and `Match`'s own per-tick work — the sockets,
 outside every number it prints. It measures the SIMULATION, which is the half
 that scales with the map; the other half scales with the roster, and the roster
 is fixed at sixteen.
+
+**The worst ticks are not the simulation.** Every spike over 1 ms is reported
+with where it fell and whether a GC pause overlapped it: they cluster in the
+first ~6,000 ticks (the JIT), one or two a round land inside one of that round's
+10-25 GC pauses, and a whole round's collection is 8-16 ms. The largest tick seen
+anywhere here is 10.3 ms — still inside the budget, and a collector pause with a
+tick around it.
 
 **And the DEV-only proving ground can be run here at all**, which took three
 things it is worth knowing about before reaching for them. It has a collision

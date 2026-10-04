@@ -315,7 +315,7 @@ export async function buildServerWorld(scene: Scene, def: MapDef): Promise<GameM
   const rays = new RayWorld(size, boxes, rayGroups, terrain);
   // And the sweep index beside it, off the same finished meshes the client
   // builds one from. The authority's tick has exactly one caller of
-  // `moveWithCollisions` — a driven hull — and `FINDINGS.md` #31 priced that
+  // `moveWithCollisions` — a driven hull — and `ENGINE_UPGRADE.md` S9 priced that
   // walk at 0.40 ms per hull per tick on a 1500 m map, which was the only term
   // in this process that grew with map AREA. It does not grow with it any more.
   const collidables = new CollisionField(colliders);

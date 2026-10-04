@@ -133,8 +133,8 @@ export const CinderhavenEnvironment: EnvironmentSpec = {
    * A little over half the fog, and the second map in the tree to state one.
    *
    * This map has 1,500 m of play and, across the bay or down from the works,
-   * sight lines the length of it — so it is exactly the case `FINDINGS.md` 30
-   * measured, where the roster was 65% of the frame's active meshes and 2.6 ms
+   * sight lines the length of it — so it is exactly the case `ENGINE_UPGRADE.md`
+   * S8 measured, where the roster was 65% of the frame's active meshes and 2.6 ms
    * of a 9.2 ms frame. 420 m is where a body is three pixels of `fogColor`
    * against `fogColor`, and it is inside the haze rather than in clear air,
    * which is the whole of what stops the drop being something a player can see

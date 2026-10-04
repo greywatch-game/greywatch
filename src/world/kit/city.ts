@@ -93,8 +93,8 @@
  * 120 m shot at **93 to 180 µs** over the same 196-ray spray. Call it +95% on
  * every ray, exactly linear in the mesh count.
  *
- * **The ceiling that buys is Hollowmere's 863**, which is what ships and what
- * FINDINGS #6's per-frame budget was measured against. Coldharbour at 783 is
+ * **The ceiling that buys is Hollowmere's 863**, which is what ships.
+ * Coldharbour at 783 is
  * still under it, so this changed how expensive the cheap map is and not how
  * expensive the game's worst map is. Another two of these would not be, and
  * that is the number to check before adding them rather than the building count.

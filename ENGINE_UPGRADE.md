@@ -26,8 +26,8 @@ on screen, and at this multiplier four of them stop working rather than merely
 getting slower. A fifth — the reflection bake — was not in this document at all
 until S0 measured it, and it is the one that fails hardest.
 
-The reference numbers throughout are `FINDINGS.md` **17**, **18**, **19**
-(S0's), **21** (S1's) and **22**/**23** (wall 2's before and after), all
+The reference numbers throughout are `FINDINGS.md` **17**, **18** and **19**
+(S0's), all
 measured on the Windows box (RTX 4070 Ti SUPER, headless
 Chromium via `channel: "chromium"`, 1920x1080, uncapped, warm past the compile
 stall). **Read all three before starting any step**, because they also record
@@ -65,13 +65,13 @@ those are the hypotheses the step that touches them has to settle.
 
 ### Wall 1 — the frame walks the whole scene, and the scene is the map — **DOWN, AND MEASURED DOWN AT 1500 m**
 
-**S1 has landed and finding 21 is what it produced**; the walk is 7.6 ms to 2.5
+**S1 has landed**; the walk is 7.6 ms to 2.5
 at 900/300 and the frame 9.8 to 4.3. **And the extent this wall was really about
-has now been measured too** (`FINDINGS.md` 27): a 1500 / 0 round is
+has now been measured too** (S0c): a 1500 / 0 round is
 **9.3 ms warm, 107 fps, with 146 active meshes out of 23,031** — against the
 30.3 ms below, of which 23.0 was this wall. It is not mostly down at the size
 that mattered, it is down, and the frame is no longer where the 1500 m problem
-is. What is unmeasured is a FIGHT: finding 22 records that a round left to
+is. What is unmeasured is a FIGHT: S2 records that a round left to
 itself fires no ray at all, and that reading was taken on a quiet one. What follows is the wall as S0 measured it,
 kept because the shape of it is why the fix is shaped the way it is — and
 because **one term of it was still wrong after S0 corrected two**: the walk is
@@ -123,7 +123,7 @@ measured at 45 blocks; neither is the lever at 1,000.
 
 ### Wall 2 — every ray in the game walked the same list — **DOWN**
 
-**S2 has landed and finding 23 is the after half of the pair.** No ray in
+**S2 has landed, and S2 below is the after half of the pair.** No ray in
 gameplay picks a mesh any more: all eight sites go through
 `src/world/RayWorld.ts`, a grid over `colliderBoxes` plus the strut groups plus
 a march over the heightfield. **3.75 ms of the frame became 0.006 ms**, the
@@ -135,7 +135,7 @@ than 11x the dearest. The forced fight there went from 82 fps to 112.
 What follows is the reading that priced the wall, kept because it is the before
 half and because the projections in it are what the fix had to beat.
 
-**Finding 22 priced it, and it changed the order of what was left.** With S1
+**Pricing it changed the order of what was left.** With S1
 landed, `pickWithRay` was **3.75 ms of an 8.6 ms frame — 30.7% of it** — on the
 900/300 proving ground with sixteen bots in contact, against 3.0 ms for the mesh
 walk beside it. It was the one wall this document had no measurement for at all.
@@ -254,7 +254,7 @@ working set is 5.4 GB. At 900 / 300 the same figures are 1,696 MiB and 2.6 GB.
 
 ### Wall 4 — load time, and the burst builds behind the card — **MOSTLY DOWN, AND BOTH SITES ARE CLOSED**
 
-**S5's first half has landed and `FINDINGS.md` 24 is what it produced**: the
+**S5's first half has landed**: the
 1500 m build is 186 s to 17.4 and the placement loop 161.5 s to 9.4, and the
 whole install 205 s to 35. What follows is the wall as S0 measured it, kept
 because the shape of it is why the fix is shaped the way it is — and because
@@ -262,16 +262,16 @@ because the shape of it is why the fix is shaped the way it is — and because
 part worth reading twice.**
 
 **What WAS left of the wall was 18.7 s and it was NOT the build.**
-`FINDINGS.md` 25 profiled the gap between `build:total` and
-install-to-`deploy`, which this section had never attributed:
+Profiling the gap between `build:total` and
+install-to-`deploy`, which this section had never attributed, found:
 `PhysicsWorld.setMap` was 13,402 ms and quadratic in collider boxes,
 `ReflectionSystem.build` was 5,272 and walked the whole scene six times per cube
 probe to release ids it never allocated, and everything else in `installMap` is
 27 ms between them. Those were **S5b** and **S5c**, and both have landed: the
 two are **181 ms and 72** at 1500 m now, so 18.7 s of the wall came off for a
 bucketed compound and a three-line swap. **What is left of wall 4 is
-`MapBuilder.build` and nothing else** — 98.7% of a 19.1 s install — and finding
-24's open threads are where it is.
+`MapBuilder.build` and nothing else** — 98.7% of a 19.1 s install — and
+`FINDINGS.md` 26's open threads are where it is.
 
 **This wall is real and this section was wrong about all of it.** Derived:
 30-60 s behind the loading card, dominated by `NavGrid`, `CoverMap`, the flood
@@ -376,13 +376,13 @@ frames is what actually took the wall down; the render list and the probe count
 came down as well and neither had to come down far.
 
 **And "the total is indeed unchanged" is the half of that correction nobody
-followed up, which is what S0c was.** Measured at 1500 / 0 at last
-(`FINDINGS.md` 27): the queue drained over **40 frames and 36.9 seconds**, a
-928 ms median frame, in `deploy` and then in the ROUND rather than behind the
-loading card. **S0c has landed and both halves of that are answered**
-(`FINDINGS.md` 28): the drain is behind the card, and it is 10.6 s rather than
-44.8 because a probe's six faces now cull like the frame does. The total was
-not unchanged after all — it was six times what the picture needed.
+followed up, which is what S0c was.** Measured at 1500 / 0 at last: the queue
+drained over **40 frames and 36.9 seconds**, a 928 ms median frame, in
+`deploy` and then in the ROUND rather than behind the loading card. **S0c has
+landed and both halves of that are answered** (S0c below): the drain is behind
+the card, and it is 10.6 s rather than 44.8 because a probe's six faces now
+cull like the frame does. The total was not unchanged after all — it was six
+times what the picture needed.
 
 ---
 
@@ -503,13 +503,12 @@ in place against it.** What landed:
 
 **What it did NOT measure, and what the next step to touch each owes:**
 
-- ~~**Anything with sixteen bots fighting.**~~ **CLOSED by finding 22.** A
+- ~~**Anything with sixteen bots fighting.**~~ **CLOSED** (wall 2 above). A
   forced skirmish is an 8.6 ms frame against the quiet 4.30, and what a fight
   adds is almost all wall 2. A round left to itself fires no ray at all, which
   is why it had to be forced.
-- ~~**Wall 2.** No ray was fired down a 1500 m scene.~~ **CLOSED by finding
-  22**, after S1 — and it is the biggest thing in the frame now. See wall 2
-  above.
+- ~~**Wall 2.** No ray was fired down a 1500 m scene.~~ **CLOSED**, after
+  S1 — and it is the biggest thing in the frame now. See wall 2 above.
 - **`ObstacleField`'s footprint**, which reported no typed arrays and is absent
   from the memory table.
 - **The reflection bake's cost as a curve.** It is a pass/fail at three points,
@@ -590,8 +589,8 @@ re-baked — which is the point of the budget being where it is.
 
 **What it did NOT do, and what the next step to touch this owes:**
 
-- **1500 / 0 has not been re-tested** — *answered by `FINDINGS.md` 27 and again
-  by 28, at both extents as a matched pair.* The chosen extent is 900 / 300 and that
+- **1500 / 0 has not been re-tested** — *answered by S0c, at both extents as a
+  matched pair.* The chosen extent is 900 / 300 and that
   is what the committed proving ground is; the ceiling case would want the
   probe cap to actually engage, and nothing has watched it do so.
 - **The bake still lands AFTER the loading card, not behind it** — *answered by
@@ -638,7 +637,7 @@ shipped maps are byte-for-byte what they were.
 ### S0c — The bake drains in the ROUND, and at 1500 m that is 37 seconds of one frame a second — **LANDED, LEVERS 1 AND 2**
 
 **It is down, and the two levers are worth more together than either is
-alone.** `FINDINGS.md` 28 is the result. Lever 1 moved the drain off the round
+alone.** Lever 1 moved the drain off the round
 and under the loading card; lever 2 gave a probe's six faces the frustum test
 the frame has always had, which removed four fifths of the draws without moving
 a pixel. Lever 3 — grouping harder — was **not taken**, and should not be: it
@@ -710,7 +709,7 @@ sixteen banked vantages of all four maps, to four decimal places — the bank
 itself is still red from the drift S0b recorded, so this is the same
 stronger-than-a-pass standin S0b used, and it is the check that matters here
 because lever 2 changes what is IN a probe's cube. The 1500 m frame is
-unchanged at 9.5 ms against finding 27's 9.3 and this run's own 9.1 before, so
+unchanged at 9.5 ms against the opened step's 9.3 and this run's own 9.1 before, so
 lever 2 bought nothing out of the round. `loading` is still a STEP with an empty
 arm in `tick`, and an editor build still bakes nothing and never opens a wait.
 
@@ -720,7 +719,7 @@ arm in `tick`, and an editor build still bakes nothing and never opens a wait.
   first batch, and it is a queue-shaping question rather than a draw-count one:
   one probe goes through however fat it is on an empty frame, by design, or a
   queue with a fat head would never drain.
-- **What a bake draw costs is still unexplained** (finding 27), and it is the
+- **What a bake draw costs is still unexplained** (see `FINDINGS.md` 10), and it is the
   term that multiplies everything above.
 - **Nothing has looked at the PICTURE on the proving ground**, which was S0b's
   owed item and still is. The bank proves the four shipped maps are unmoved; it
@@ -738,7 +737,7 @@ anywhere in a 1500 m round.** `installMap` returns in ~19 s, the state goes to
 `deploy` with **211 probes still queued and 1,782,504 face draws outstanding**,
 and the next **40 frames take 36.9 seconds** — a 928 ms median frame, a 1,505 ms
 worst. The player is looking at the deploy screen and then at the round while it
-happens. `FINDINGS.md` 27 is the measurement.
+happens.
 
 **Read this against the two load steps rather than beside them.** The mesh round
 trip (finding 26) is ~6.3 s and the worker's whole ceiling is 3,899 — both
@@ -805,7 +804,7 @@ what S0b bought:**
   waiting on an empty queue.
 
 **Verify:** the drain measurement at both extents as a matched pair, taken
-UNPROFILED — finding 27 records that the sampling profiler stretches a 37 s
+UNPROFILED — `VERIFYING.md` records that the sampling profiler stretches a 37 s
 drain past twenty minutes and cannot be used here; the four shipped maps still
 draining in one frame with `gate.mjs` clean; `bank.mjs --check` byte-identical
 either side, because lever 2 changes what is IN a probe's cube and that is the
@@ -816,7 +815,7 @@ lever 2 must not buy its saving from.
 
 ### S1 — Block visibility: stop walking the whole scene — **LANDED**
 
-Wall 1, and most of it is down. **`FINDINGS.md` 21 is the result.** The walk is
+Wall 1, and most of it is down. The walk is
 **7.60 ms to 2.50** on the 900/300 proving ground and the frame **9.80 to
 4.30**, measured as one lever in one process against the number this step was
 given to beat.
@@ -873,8 +872,8 @@ rim carry no block, and they are what the SKY is behind.
   above it.
 - **The cull cell is the 48 m merge block**, because that key already exists.
   Whether it is the right cell is S6's question.
-- ~~**Nothing was measured with sixteen bots fighting**~~ — **finding 22 does
-  it**, and the walk holds up (3.0 ms in a fight against 2.50 quiet). It also
+- ~~**Nothing was measured with sixteen bots fighting**~~ — **S2's forced fight
+  does it**, and the walk holds up (3.0 ms in a fight against 2.50 quiet). It also
   breaks the remaining candidates down: **57% are `loose`**, which no fog wall
   can reach, and ~750 of those are IDLE POOLED effect meshes. A pool member not
   in use is as skippable as a collider is, by this same mechanism, for roughly
@@ -909,7 +908,7 @@ move at all.
 
 ### S2 — Retire the whole-scene picks — **LANDED**
 
-**Done, and finding 23 is the result.** `src/world/RayWorld.ts` is the segment
+**Done.** `src/world/RayWorld.ts` is the segment
 query; all eight sites go through it; `world/solid.ts` keeps `SOLID_ONLY` for
 the editor's centre-screen pick and `OPAQUE_ONLY` is deleted. Measured against
 the number this step was set: **2,438 us a ray became 3.5, and 30.7% of the
@@ -942,8 +941,8 @@ eight seconds, Harrowmead's 890 → 1,151, Coldharbour's 1,115 → 1,234.
   13 m face. Thirteen rays in 32,000 stopped on it. The analytic agrees with
   `colliderBoxes` instead — the list `NavGrid`, `CoverMap`, `ObstacleField` and
   `server/validate.ts` all read — so the substitution made the ray agree with
-  the rest of the world layer rather than departing from it. Finding 23 has the
-  audit and how the three wrong hypotheses were eliminated.
+  the rest of the world layer rather than departing from it. `docs/world.md`'s
+  Rays section has the audit and how the three wrong hypotheses were eliminated.
 - **A collider flush with the ground is a TIE**, and `RayWorld.COINCIDENT`
   resolves it the way the pick did. It decides only which spark is thrown.
 
@@ -951,8 +950,8 @@ What follows is the step as it was written.
 
 ---
 
-Wall 2, and **since S1 landed it is the biggest thing in the frame.** Finding
-22 measures it: `pickWithRay` is **3.75 ms of an 8.6 ms frame with sixteen bots
+Wall 2, and **since S1 landed it is the biggest thing in the frame.**
+Measured: `pickWithRay` is **3.75 ms of an 8.6 ms frame with sixteen bots
 in contact** on the 900/300 proving ground — 30.7% of it, against 3.0 ms for the
 mesh walk S1 left beside it — at **2,438 us a ray**, 11x Coldharbour's 222 for
 7.7x the colliders. The number to beat is that one.
@@ -1014,9 +1013,9 @@ bug until proven otherwise.
 S0's harness for the per-frame saving. — *All but one done. `npm run simulate`
 throws before it starts a round, and it does so on an unmodified tree at
 `f18bdc9` too: `CelEmissiveFog` refuses the tracer material's shader language
-under a NullEngine. Pre-existing, unrelated, and recorded in finding 23.*
+under a NullEngine. Pre-existing and unrelated, and fixed since by S9.*
 
-**Two things about measuring it, both of which cost a run in finding 22.** A
+**Two things about measuring it, both of which cost a run.** A
 round left to itself fires **no ray at all** — `BattleSystem.acquire` only
 ray-tests a candidate inside `bots.perception.engageRange`, so with nobody in
 contact the count is zero on the proving ground AND on Coldharbour, and a
@@ -1109,7 +1108,8 @@ space has no padding to skip and the test is gone.
 
 ### S4 — Flow fields at 1500 m — **MOVE 1 LANDED, MOVE 2 MEASURED AND NOT TAKEN**
 
-Seven `Float32Array`s over the whole graph, rebuilt on a broken pane (finding 9).
+Seven `Float32Array`s over the whole graph, rebuilt on a broken pane (now relaxed in
+place instead — `docs/world.md`, Panes).
 At this size that is the second-largest line in wall 3's table and the
 longest-running item in wall 4.
 
@@ -1243,8 +1243,8 @@ and so on down the list), with harrowmead/borderland at 0% in both. Identical to
 the digit with and without this change is what says the change moves no pixel;
 re-banking would have destroyed that evidence, so the bank was left alone. It
 predates the last two commits and wants re-taking as its own piece of work.
-`npm run simulate` is still the pre-existing NullEngine failure finding 23
-records.*
+`npm run simulate` is still the pre-existing NullEngine failure S2 records
+(fixed since, by S9).*
 
 ---
 
@@ -1260,7 +1260,7 @@ S5b and S5c below. The original framing is kept under the rule because the ORDER
 it argues for is the order that turned out to be right, three times running.
 
 Wall 4. Finding 18 names the candidates precisely: `MapBuilder`'s geometry, the
-AO bake, the `NavGrid`/`CoverMap`/`ObstacleField` builds, finding 9's flow-field
+AO bake, the `NavGrid`/`CoverMap`/`ObstacleField` builds, the broken pane's flow-field
 rebuild, and finding 11's editor tier-3.
 
 **And it says moving them "buys load time and nothing else" — which is the whole
@@ -1277,7 +1277,7 @@ hides 2 s behind a card that is up for 13 is not the win it looks like.
 
 ---
 
-**The flatten has landed and `FINDINGS.md` 24 is what it produced.** The 1500 m
+**The flatten has landed.** The 1500 m
 build is **185,899 ms to 17,422** and the placement loop **161,491 to 9,443**,
 both matched pairs on the same tree. The cause was neither of the two things
 the paragraph above names:
@@ -1314,8 +1314,8 @@ identically**, with `gate.mjs` clean, `npm run parity` passing and
 
 **And then the gap under the build was profiled, which is what produced S5b and
 S5c.** `build:total` is 17,422 ms and install-to-`deploy` is 34,923, so more
-than half the load was somewhere this document had never looked. `FINDINGS.md`
-25 is the attribution, taken as the direct children of `installMap` so the lines
+than half the load was somewhere this document had never looked. This is
+the attribution, taken as the direct children of `installMap` so the lines
 sum to the method:
 
 | installMap, ms | 900 / 300 | 1500 / 0 | |
@@ -1378,14 +1378,15 @@ GATE and not the step.** The 13.4 s the nav lane could have hidden behind is
 which needs `build` split into two lanes, and the two sides of that
 (3,542 ms of nav against 3,715 of merges) are the figures above rather than
 fresh ones. Nothing here promotes it — what a worker is worth is now a question
-about `MapBuilder.build`, which is 42% of the install and is where finding 24's
-open threads are.
+about `MapBuilder.build`, which is 42% of the install and is where `FINDINGS.md`
+26's open threads are.
 
 ---
 
 **The re-time S5b and S5c both owed has been taken, and the answer is still not
 S5d.** Measured at 1500/0 on the tree with both of them in, through
-`src/world/buildProfile.ts` and the same `installMap` wrapper finding 25 used:
+`src/world/buildProfile.ts` and the same `installMap` wrapper the attribution
+above used:
 
 ```
 installMap 19,147 ms = build 18,853 + physics 185 + reflect 79 + 30 rest
@@ -1417,7 +1418,7 @@ must-not-break list is most emphatic about.
 attributed since the flatten.** The placement loop is **53.5% of the build and
 sits ahead of both lanes** — `NavGrid` is built from the FINISHED collider set,
 so no worker can overlap it — and what it is now MADE OF has not been profiled
-since finding 24 changed what it does. The two threads finding 24 names inside
+since the flatten changed what it does. The two threads the flatten left inside
 it are ~430 ms of collider buffer work and 656 ms of `CreateBoxVertexData`, both
 at 900/300 and neither sized at 1500 m; together they are a tenth of the loop at
 the smaller extent, which means **90% of 10 seconds is unaccounted for**.
@@ -1437,7 +1438,7 @@ install (18.5%) in two near-equal halves — `CreateBoxVertexData` 1,986 and the
 single name in the profile, of which **46% is disposing the sources**. Roughly
 **76% of the placement loop is that round trip**, around geometry that is a box.
 
-**It is the same shape finding 24 fixed, one layer down**: the flatten stopped
+**It is the same shape the flatten fixed, one layer down**: the flatten stopped
 the GPU half of the round trip and the CPU half was never touched. At 1500 m the
 CPU half is bigger than the GPU half ever was at 900. Worth ~6.3 s against the
 worker's 3,899, synchronous, no async window, no lane split — and
@@ -1450,7 +1451,7 @@ cost the next step is about to move. Finding 26's open list has the three
 sub-threads, the constraint `parts.ts` puts on any of them, and the oracle.
 
 **The collider flatten is NOT that step and is not a candidate yet.** It is
-finding 24's first open thread and it is BLOCKED rather than merely uncosted:
+`FINDINGS.md` 26's collider thread and it is BLOCKED rather than merely uncosted:
 `moveWithCollisions` walks `mesh.subMeshes` and a part has none, so a collider
 built as a part would stop nothing, silently — which is a physics failure that
 no oracle in the tree would catch as a build change. Giving a part a submesh
@@ -1466,8 +1467,8 @@ data**: `NavGrid`, `CoverMap` and `ObstacleField` take `WorldBox[]` and a
 boxes and the heightfield in, transfer the arrays back, reconstruct on the main
 thread. `vertexShading` is the same shape over vertex buffers.
 
-There is a **cheaper candidate than any of the three** and it is finding 24's
-first open thread: **colliders are still built the ordinary way** — 16,526 boxes
+There is a **cheaper candidate than any of the three** and it is `FINDINGS.md`
+26's collider thread: **colliders are still built the ordinary way** — 16,526 boxes
 at 1500/0, invisible, never drawn and never picked since wall 2 came down — held
 back only because a part has no submeshes and `moveWithCollisions` walks them.
 It is the same mechanism that just landed, so it is the thing to try first.
@@ -1500,8 +1501,8 @@ done and all clean for the flatten. **The bank is still red on an unmodified
 tree and it is still pre-existing** (finding 20): the sixteen vantages reproduce
 S4's control run to four decimals with this change in the tree, which is what
 says it moves no pixel, and re-banking would destroy that evidence.
-`npm run simulate` is still the pre-existing NullEngine failure finding 23
-records.*
+`npm run simulate` is still the pre-existing NullEngine failure S2 records
+(fixed since, by S9).*
 
 ---
 
@@ -1572,7 +1573,7 @@ reach for the second only if the exponent survives.
   collider exception and has no box to bucket.
 
 **Verify:** the `installMap` attribution again, through the same instrument
-(`FINDINGS.md` 25's profile), at BOTH extents so the exponent is a pair and not
+(S5's profile), at BOTH extents so the exponent is a pair and not
 a point; a step-cost reading with a corpse pile alive, because fix 1 spends the
 per-step body walk; `npm run typecheck`; `npm run build`; `gate.mjs`.
 
@@ -1772,8 +1773,8 @@ constructor builds before any map exists.
 lines sum to it — is 7,510 ms to **6,099** at 900/300 and 24,876 to **19,117**
 at 1500/0, both matched pairs on the same tree in the same session.
 
-**The probe count at 1500/0 is 250 and not 770, which was one of finding 25's
-own open threads.** `poolBudgetMiB` caps the pool at 320, so 1,153 glazing
+**The probe count at 1500/0 is 250 and not 770, which was one of the install
+profile's own open threads.** `poolBudgetMiB` caps the pool at 320, so 1,153 glazing
 groups come back at `perCell` **2** — the first map anywhere in this tree where
 the grouping is not 1, and the bounded worst case `docs/rendering.md` describes
 turning out to be live at this size. So the walk is 250 x 6 x 23,014 =
@@ -1817,7 +1818,7 @@ both extents as matched pairs; `npm run typecheck`; `npm run build`.
 **What this leaves.** `installMap` at 1500 m is `MapBuilder.build` 18,837 ms,
 `PhysicsWorld.setMap` 181 and `ReflectionSystem.build` 72 — **the build is
 98.7% of the install**, everything else in the method is under 300 ms together,
-and finding 24's open threads are the whole of what is left of wall 4.
+and `FINDINGS.md` 26's open threads are the whole of what is left of wall 4.
 
 ---
 
@@ -1864,7 +1865,7 @@ is the world layer's unit of LOCALITY: `PhysicsWorld`'s static buckets and
 `GlassSystem`'s pane index stay on the constant. Neither is an identity —
 nothing reads either key — and what they want from a big map is the opposite of
 what the merge wants, because `addChild` is quadratic in a container's children
-(finding 25). A 128 m bucket is a seventh of the buckets and seven times the
+(S5b). A 128 m bucket is a seventh of the buckets and seven times the
 boxes in each, which is most of what S5b bought handed straight back.
 
 **Measured, and the lever is larger than this step claimed.** Uncapped,
@@ -1898,12 +1899,15 @@ Coldharbour and the proving ground. `colliderBoxes` and
 the nav graph are identical in every row — nothing about the solid world or the
 graph is a function of either field.
 
-**What was not done.** No map states either value, including the proving ground:
+**What was not done.** No map stated either value then, including the proving
+ground — *five do now: Sarab 96/96, Cinderhaven 120/120, Kurenai `blockSize`
+120, Harrowmead `blockSize` 200 and `terrainBlock` 96, Coldharbour
+`terrainBlock` 96*:
 the table above says what the lever is worth on generated geometry, and what it
 costs is cull granularity — a coarser block draws more that is off screen, which
 is a trade only a real layout can settle. That is S8's and S11's to spend. Nor
 was the PICTURE looked at: `bank.mjs` can only say the four shipped maps are
-unmoved, which they are by construction here. See `FINDINGS.md` 29.
+unmoved, which they are by construction here.
 
 **Must not break:**
 
@@ -2035,7 +2039,7 @@ everywhere, and throws nothing. `MapBuilder.build` asserts it in a DEV build.
 
 ### S8 — Sight, shadow and fog for a map you cannot fog — **THE ENGINE HALF IS LANDED; THE MAP HALF IS S11'S**
 
-**`FINDINGS.md` 30 is the result**, and this step split cleanly in two when it
+This step split cleanly in two when it
 was opened. Its FIRST half — pick a `fogEnd` well inside the map, put a high sun
 on it, size the window to that sun — is map authoring with no map to land on,
 and it is restated below unchanged as what S11 owes. Its SECOND half, the two
@@ -2046,7 +2050,8 @@ far a BODY is worth drawing, defaulting to `fogEnd`, clamped to it, resolved in
 exactly one place (`bodyDrawDistanceOf`) and pushed by `installMap` to all three
 gates together — which is what keeps `bots.lodDisableDistance` and
 `bots.death.maxDistance` one distance, the property `config/fogWall.ts` exists
-to hold. **No map in the tree states one**, so nothing shipped moved.
+to hold. **No map in the tree stated one then**, so nothing shipped moved —
+*Sarab (300) and Cinderhaven (420) do now*.
 
 **What it is worth, and the reading that nearly hid it.** On a QUIET round the
 lever is worth −7.4% of the frame, under the measurement protocol's own floor,
@@ -2064,7 +2069,7 @@ past the fog draws `fogColor` in front of ground that draws `fogColor`; a
 building dropped early pops out of a skyline being looked at, and no shorter
 number is exact. **So the answer for the WORLD on a map you cannot fog is still
 to fog it**, and S1's dormant block half is still waiting on S11 to state a real
-`fogEnd` — 0.6 ms of walk and 0.8 ms of frame at 550 m, measured in finding 21
+`fogEnd` — 0.6 ms of walk and 0.8 ms of frame at 550 m, measured in S1
 and unchanged by this step.
 
 **The shadow window's ceiling is now checked rather than only written down.**
@@ -2078,7 +2083,7 @@ right and none of them trips it: Harrowmead states 185 against 183.8, Coldharbou
 **What is still owed:** what the ~19 us per rig mesh is made of (the saving is
 three times a draw and nobody has broken it down), what a body popping at 550 m
 LOOKS like on a map that states one, and the fade band that has not been built.
-Finding 30 carries all three.
+The pop is `FINDINGS.md` 32's open bullet and the fade is `FINDINGS.md` 30.
 
 What follows is the step as it was written, and its first half is still the
 brief for S11.
@@ -2101,7 +2106,7 @@ that for free from rubble and collapsed frontage.
 **S1 has made this step worth more than it was written to be worth.** Block
 visibility landed and its distance half is inert on every map in the tree,
 because all three of the big ones state a `fogEnd` past their own diagonal —
-so the whole of finding 21's saving is the collider half, and the block half is
+so the whole of S1's saving is the collider half, and the block half is
 waiting on this step to have anything to cull. Measured on the proving ground by
 re-filing the built map: a 550 m wall is another 0.6 ms of walk and 0.8 ms of
 frame on a map whose structures are only 1,158 of its 9,019 meshes, and on a
@@ -2138,11 +2143,11 @@ measured true at 65% of the active meshes. See the top of this step.*
 
 ### S9 — The authority at 1500 m — **LANDED**
 
-**`FINDINGS.md` 31 is the result, and the headline is that the tick is not where
-the problem is either.** One process holds a 60 Hz step for sixteen bots across
-900 m with three orders of magnitude to spare: **0 ticks of 108,181 over the
-16.67 ms budget, p50 0.012 ms, p99 0.055** — and the 1500 m map has the CHEAPEST
-tick of the five, because the four levels put bots in contact and it does not.
+**The headline is that the tick is not where the problem is either.** One
+process holds a 60 Hz step for sixteen bots across 900 m with three orders of
+magnitude to spare: **0 ticks of 108,181 over the 16.67 ms budget, p50
+0.012 ms, p99 0.055** — and the 1500 m map has the CHEAPEST tick of the five,
+because the four levels put bots in contact and it does not.
 
 **The instrument had to be fixed before it could measure anything, and what was
 broken was the SERVER.** `npm run simulate` threw on every map:
@@ -2166,7 +2171,7 @@ question at all:
 - **Contact buckets beside it**, because a 900 m round is quiet by default and a
   quiet round measures walking: ticks are filed by how many bots held a target
   during them, so the CONTESTED ticks can be quoted rather than the average.
-  This is findings 22 and 30's lesson applied to this side before it cost a day
+  This is S2 and S8's lesson applied to this side before it cost a day
   rather than after.
 - **The proving ground has a collision bake**, which is what let the authority
   run on it at all: `DEV_MAPS` in `scripts/collision-hash.mjs`,
@@ -2196,6 +2201,7 @@ question at all:
   MOVING — which is why the two maps with armour are the two expensive ticks and
   the three without are the three cheap ones. At 1500 m with two hulls driving
   that is 4.8% of the step. Not a problem; the only term that grows with area.
+  — *Narrowed since: 11 us a call, `docs/vehicles.md`.*
 - **S3, S4 and S5 arrive as a 1.25 s BUILD**, against 235 ms on Coldharbour, and
   the profile puts it in `CoverMap.bake` (`segmentHitsBox` 19.3%) and `NavGrid`
   (`severLinks` 10.2%) rather than anywhere else. That is a rotation cost, not a
@@ -2211,8 +2217,9 @@ question at all:
 10-14 on the levels. **S10 is no longer an arithmetic worry; it is the measured
 outcome of a 900 m play square with sixteen bodies on it.**
 
-**What is still owed** (finding 31 carries all of it): the hull sweep, on this
-side and on the client's own frame while driving; why a rebuild in the same
+**What is still owed** (`FINDINGS.md` 31 carries the rest): ~~the hull sweep, on
+this side and on the client's own frame while driving~~ — *narrowed since,
+`docs/vehicles.md`*; why a rebuild in the same
 process slows from 1.25 s to 2.78 s across four rounds; and the fact that
 nothing measured here had a HUMAN in it — no rewind ran, no snapshot was
 encoded, and `Match`'s own per-tick work is in none of these numbers.
@@ -2229,8 +2236,8 @@ rule that the bake guard hashes the LAYOUT — a flag changed in a builder needs
 before S11 rather than after.** Sixteen combatants over 2.25 km^2 is one body per
 140,000 m^2. Harrowmead is one per 10,000.
 
-**S9 MEASURED this and it is worse than the arithmetic suggests** (`FINDINGS.md`
-31). Even at 900 / 300 — one body per 51,000 m^2 of PLAY, the concentrated
+**S9 MEASURED this and it is worse than the arithmetic suggests** (above).
+Even at 900 / 300 — one body per 51,000 m^2 of PLAY, the concentrated
 variant lever 1 below argues for — five of eleven headless rounds ran the full
 45-minute cap with tickets left on both sides, the rest took 19-30 minutes
 against 13-18 on every shipped map, and the peak contact was 5-7 of 16 bots
@@ -2315,8 +2322,8 @@ time.
 For comparison, the committed 900/300 proving ground at the same extent is
 10,973 ms of install and 13.5 ms of frame at the default 48 m blocks. What Sarab
 is instead of that is a real layout that states the numbers S6 measured: the
-whole table above is `blockSize: 96` and `terrainBlock: 96` doing what finding
-29 said they would.
+whole table above is `blockSize: 96` and `terrainBlock: 96` doing what S6
+said they would.
 
 **What it states, and which step each one is:**
 
@@ -2328,7 +2335,7 @@ whole table above is `blockSize: 96` and `terrainBlock: 96` doing what finding
   time any map in this tree has had a fog wall inside its own square**, which is
   what finally gives `WorldCulling`'s block half something to cull.
 - `bodyDrawDistance: 300` — **S8's landed field**, and still the only map that
-  states one.
+  states one. — *Cinderhaven states 420 now.*
 - `surfaces: 5` — the ground, two floors and a roof inside a shelled block, and
   a parapet or a rubble heap over one of them.
 - `floorSurface: "sand"`, no lamps, no `groundSpec` default, and no breakable
@@ -2340,7 +2347,7 @@ whole table above is `blockSize: 96` and `terrainBlock: 96` doing what finding
 sarab` over three rounds: the world builds in 692 ms, **0 of 64,981 ticks go
 over the 16.67 ms budget**, p50 is 0.021 ms and the worst tick is 6.585. Every
 round ENDED — 18 minutes of game time, a winner and a side out of tickets —
-against finding 31's proving-ground result where five of eleven rounds ran the
+against S9's proving-ground result where five of eleven rounds ran the
 45-minute cap with tickets left on both sides. Peak contact was 8 to 12 of 16
 bots against the proving ground's 5 to 7, which is S10's density lever working:
 900 m of play with the flags 200 to 290 m apart and the ground between them
@@ -2389,14 +2396,16 @@ What this particular map will want, from the contracts rather than from taste:
   also the only thing on this list that costs the AUTHORITY anything**: a
   DRIVEN hull is a `moveWithCollisions` against every collidable mesh in the
   map, measured at 0.40 ms a tick at this extent against 0.039 on Coldharbour
-  (`FINDINGS.md` 31). Two hulls is 4.8% of the server step — affordable, and
-  the one term out there that grows with map area.
+  (S9). Two hulls is 4.8% of the server step — affordable, and
+  the one term out there that grows with map area. — *Narrowed since
+  (`docs/vehicles.md`): 11 us a call, and the authority's Sarab tick p50 0.691
+  ms to 0.053.*
 - **A `fogEnd` well inside the map, and a `bodyDrawDistance` inside THAT if the
   bodies want it.** The first is S8's first half and it is what unlocks the rest
   of S1 — 0.6 ms of walk and 0.8 ms of frame at 550 m, still dormant because no
   map in the tree has a fog wall inside its own diagonal. The second is S8's
   landed field, worth 28% of the frame with the roster down a 900 m sight line
-  (`FINDINGS.md` 30), and the cost of stating it is a body popping in clear air,
+  (S8), and the cost of stating it is a body popping in clear air,
   which nobody has yet had a map to judge.
 - **`groundSpec` left alone.** `config/graphics.ts` warns the wet-cobble sheen is
   tuned to the key light's elevation, and a desert is the wrong weather for it

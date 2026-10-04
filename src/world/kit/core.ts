@@ -20,7 +20,7 @@
  *   no device buffer, no bounding info and no submesh. It may be read,
  *   transformed, merged and disposed, and may never be DRAWN, PICKED or
  *   COLLIDED WITH — uploading parts a merge throws away was half of a 1500 m
- *   build (`FINDINGS.md` 24). Anything new here uses those factories; a raw
+ *   build (see `world/parts.ts`). Anything new here uses those factories; a raw
  *   `MeshBuilder` call puts its geometry on the device on the way to being
  *   thrown away, and buys back its share of that silently.
  * - Builders NEVER set metadata.solid, checkCollisions, or isPickable — the

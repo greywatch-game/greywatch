@@ -498,7 +498,7 @@ export class WorldCulling {
    * step has no business making. In scene order fourteen of the fifteen banked
    * vantages come back to four decimal places, and the fifteenth moves by
    * 0.0001 for an unrelated reason that is the BLOCK cull rather than this —
-   * see finding 21, which locates it.
+   * see `ENGINE_UPGRADE.md` S1, which locates it.
    *
    * The walk is `O(scene)` and the per-mesh work is one or two `Map.get`s —
    * against `_evaluateActiveMeshes`, which is `O(candidates)` and does an order
@@ -568,8 +568,8 @@ export class WorldCulling {
    * Measured on Sarab at a real viewport and a real roster, this halves the
    * list (1,525 → 729) and is worth **+8.9%** of frame rate; the mesh walk is
    * a third of the tick there, so that is most of what the halving predicts.
-   * See `FINDINGS.md` 38, which measured it at the WRONG viewport first and
-   * very nearly threw it away.
+   * It was measured at the WRONG viewport first and very nearly thrown away;
+   * `VERIFYING.md` carries that trap.
    *
    * `isEnabled()` walks ancestors and `isVisible` does not, which is the right
    * way round: a rig part is switched by its ROOT, and `setPools` only files

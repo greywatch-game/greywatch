@@ -1618,7 +1618,8 @@ export class Player implements Combatant {
    * beside itself by up to a slab thickness — a routing nuisance to `NavGrid`
    * and a player standing on air here. `boxGeometry` now gates every height
    * query on the top face's own footprint, which closes it by construction:
-   * see `topFaceHalfDepth`. `FINDINGS.md` 6 carries the measurement.
+   * see `topFaceHalfDepth`. `docs/world.md` ("The ground probe reads boxes")
+   * carries the measurement.
    */
   private probeGround(): number {
     const p = CONFIG.player;

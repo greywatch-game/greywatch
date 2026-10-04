@@ -4219,7 +4219,7 @@ export const CinderhavenLayout: MapLayout = {
    * \`WorldCulling\` to file a cell for. 120 makes it 17 x 17. What it costs is
    * cull granularity, and on a town whose buildings are six to fourteen metres
    * across a 120 m block is still a whole quarter rather than one house. See
-   * \`FINDINGS.md\` 29 and Sarab, which states 96 at 900 m.
+   * \`ENGINE_UPGRADE.md\` S6 and Sarab, which states 96 at 900 m.
    *
    * \`terrainBlock\` matches it because ${120 / CELL} terrain cells is the right patch on a
    * ${CELL} m heightfield — it owes a whole number of cells and nothing checks — but

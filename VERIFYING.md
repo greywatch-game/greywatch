@@ -82,6 +82,34 @@ you are on before you believe anything else in this section.
   residual reads as 1-2% of pixels before the lever has done anything. Compare
   the two MEANS, not the percentages.
 
+- **A diff over the committed vantages can read zero because no vantage tests
+  the change.** A glow change that let lamps bloom through walls was checked by
+  diffing the committed vantages with the pass on and off, and they
+  came back 0.04–0.51/255 on Coldharbour against a floor proven byte-identical.
+  That number was real and meant nothing: `plans/webgpu-ref/vantages.mjs` is a
+  table of poses chosen to catch a SHADER going wrong — glazing at range, a
+  lamp-lit street, a gust, water — and a pose with no emissive standing behind
+  geometry cannot show an occlusion failure at all. **A diff of ~0 there says the
+  vantage does not test the thing, and it was read as "the change is invisible".**
+
+  The entry that proposed it had already said so before any of it
+  happened: stand an emissive *directly behind a wall* and diff. That is still the
+  test, it was not run, and a future attempt owes it plus a sweep over many camera
+  positions rather than the committed four or five — the failure is visible while
+  WALKING, which is the one thing a bank of still frames cannot do.
+
+- **Time a Canvas2D call with a readback after it, or the number is command
+  submission.** `minimap.update` roughly DOUBLED when the map was turned
+  player-centred and heading-up. Re-measured
+  against itself in one session on Harrowmead — 300 updates with a 1x1
+  `getImageData` after each to force the flush — the old whole-map view costs
+  0.134 ms and the turning one 0.274. Timing the calls WITHOUT that readback says
+  0.011 and 0.041, which is command submission and not the raster: Canvas2D
+  defers, and a micro-benchmark of the blit alone reports two microseconds for
+  work that has not happened yet. Both numbers are software raster under
+  SwiftShader, so the ratio is the only part to trust; the extra is one rotated
+  resample of a 220 px square out of the prerendered backdrop.
+
 ### On the Windows box, which is the one with a GPU
 
 - **The BINARY decides whether headless works, and the flag does not.**
@@ -115,6 +143,47 @@ you are on before you believe anything else in this section.
   does not show up in the call it comes from: summed over a whole round,
   `createRenderPipeline` accounts for 0.6 ms, because Dawn compiles behind the
   call and the stall lands on first use.
+
+- **Two traps from a raw-WebGPU pipeline spike, both of which cost time.**
+
+  - **A bad pipeline is SILENT.** The baseline trial drew nothing at all —
+    attachment 0 all zeros — with `pageErrors` empty and `consoleErrors` empty.
+    The only trace was a `pushErrorScope("validation")` put there on purpose.
+    This is finding 18's black-frame cascade arriving from a third direction, and
+    it means **any attempt at this owes an explicit WebGPU error scope**, or a
+    wrong answer looks like a working one that renders nothing.
+  - **Babylon's pipeline cache POISONS later trials in the same page.** Once one
+    invalid pipeline exists, every later trial reports `[Invalid RenderPipeline
+    ...] is invalid due to a previous error` whatever it actually did — the first
+    run of this spike read that as "the escape hatch does not work" and it was
+    the cache. **One page per trial**, or the result is the previous trial's.
+- **Cross-session comparison on this box is worthless and the protocol's +/-8%
+  noise floor is far too generous for it.** The same tree, the same script,
+  minutes apart: sarab 112.5 then 155.5 fps, cinderhaven 111.3 then 144.0,
+  hollowmere 611.6 then 889.8 — a swing of up to 45%. `installMs` moves with it
+  (sarab 4824 then 3813) and is untouched by any render change, so it is a free
+  control for whether a run is comparable at all: **if the install times differ,
+  the frame rates are not comparable.**
+
+  Anything claimed about frame rate here must be PAIRED and ALTERNATING inside
+  one page. `gate.mjs` is an excellent pass/fail gate and a bad A/B.
+- **The three ways a lever measured as worthless was wrong**, each cheap to
+  repeat:
+
+  1. **The wrong viewport.** It was measured at 1920x1080; the real display is
+     3432x1432, and the workload is not the same scene at two sizes.
+  2. **The wrong PLACE.** The scripted walk held `KeyW` and drove the player out
+     of the town into the borderland — it ended at (-324, -301) with **103 active
+     meshes** where a real round has 530-900. A lever priced against an empty
+     desert prices as nothing.
+  3. **The frame-rate CAP.** Half the reps of one run sat pinned at 143.9 fps,
+     which is a ceiling and not a cost, so those reps could not show a difference
+     in either direction and dragged the mean to nothing. `--disable-frame-rate-
+     limit` is not cosmetic in an A/B.
+
+  On top of all three, the conclusion was cross-checked against `gate.mjs` runs
+  taken in different sessions, which the bullet above shows can differ by 45% on
+  this box for no reason at all.
 - **There is a frame profiler in the page and it SHIPS, so a script does not
   have to wrap anything to get a phase breakdown.** Arm it with `?profile` —
   never by writing the setting, which lives in `localStorage` a fresh profile
@@ -256,7 +325,7 @@ you are on before you believe anything else in this section.
 - **The bake no longer drains in the round, and a script written against the
   old rule is now merely SLOW to start rather than wrong.** `Game.bakeWait`
   holds the `loading` state until the reflection queue and its in-flight
-  re-bakes are both empty (`ENGINE_UPGRADE.md` S0c, `FINDINGS.md` 28), so
+  re-bakes are both empty (`ENGINE_UPGRADE.md` S0c), so
   **waiting for `g.state === "deploy"` is already waiting for the whole bake**
   — which is what `harness.mjs`'s `installRound` does, and why its `installMs`
   now includes the drain and its `bakeFrameMs` is an ordinary frame. Budget for
@@ -266,7 +335,7 @@ you are on before you believe anything else in this section.
   is defending against.** Before S0c a wall-clock warm reported the bake AS the
   round on any map taking more than one batch: at 900/300 a ten-second warm
   landed in the middle of a 21 s drain and the next eight seconds were **10
-  frames, a 894 ms median and 1.1 fps**, and finding 22 lost two runs to
+  frames, a 894 ms median and 1.1 fps**, and two runs were lost to
   exactly that. **`g.reflections.bakePending === 0` is still the honest thing
   to warm on** if a script starts a round by any route other than waiting for
   `deploy` — and note it is `bakePending` rather than `queue.length`, because a
@@ -277,18 +346,20 @@ you are on before you believe anything else in this section.
   ran past **twenty minutes** against an unprofiled 37 seconds and had to be
   killed: a frame issuing 50,000 draws is a deep stack being sampled two
   thousand times a second, and the overhead is multiplicative rather than
-  additive. The same profiler over the map INSTALL is fine — findings 24, 25 and
-  26 are all taken that way — so it is the bake specifically. Anything wanting
-  the per-draw cost broken down needs a GPU capture, or
-  `CONFIG.graphics.reflection.drawsPerFrame` turned down until a frame is
+  additive. The same profiler over the map INSTALL is fine — `parts.ts`'s header,
+  `ENGINE_UPGRADE.md` S5b-S5c and `FINDINGS.md` 26 are all taken that way —
+  so it is the bake specifically. Anything wanting the per-draw cost broken
+  down needs a GPU capture, or `CONFIG.graphics.reflection.drawsPerFrame`
+  turned down until a frame is
   samplable and the cost read off the slope.
 - **A round left to itself fires NO ray at all**, so a script measuring rays has
   to force contact. `BattleSystem.acquire` gathers candidates by distance and
   only ray-tests inside `bots.perception.engageRange` (55 m): measured at **zero
   calls in eight seconds** with sixteen bots alive, on Coldharbour and on the
   proving ground both. Standing the bots in a ring around the player
-  (`bot.position.set(...)`) and re-standing them every second is what findings 22
-  and 23 both used; overriding `battle.spawnPointFor` is the other way in.
+  (`bot.position.set(...)`) and re-standing them every second is what
+  `ENGINE_UPGRADE.md` S2's measurements used; overriding
+  `battle.spawnPointFor` is the other way in.
 - **A weapon FINISH is judged on the kit stage, and the stage is two calls
   away.** `g.openLoadout()` puts the real viewmodel on the turntable (it is a
   lid over `deploy`, so `installRound` is the whole of the setup),
@@ -325,7 +396,7 @@ you are on before you believe anything else in this section.
   as well as A-vs-B — so both pairs sit in the same wall clock.
 - **The ray to wrap is no longer `scene.pickWithRay`** — nothing in gameplay
   calls it since `ENGINE_UPGRADE.md` wall 2. Wrap `g.map.rays.castRound`,
-  `castBody` and `blocked` instead (finding 23 did), and note that
+  `castBody` and `blocked` instead (`ENGINE_UPGRADE.md` S2 did), and note that
   `performance.now()` is clamped to 100 us in a page that is not
   cross-origin-isolated: a single 3 us cast reads as 0 or as 100, so only the
   SUM over a few hundred calls means anything. An isolated loop of 400 rays is
@@ -1842,12 +1913,12 @@ is one machine's:
 - **It is also where a server TIMING question is answered, and no browser can
   answer one.** The same run prints the per-tick distribution against the
   16.67 ms step, the ticks filed by how many bots were in contact, and where
-  the spikes fell — see `FINDINGS.md` 31 for the numbers to beat. Two traps
-  come with it. A big map is QUIET: most of its ticks have nobody in contact,
-  so read the contact buckets rather than the mean, exactly as findings 22 and
-  30 had to force a fight on the client side. And a round on a 900 m map often
-  hits the 45-minute cap, so check `winner: NONE` before averaging it with one
-  that finished.
+  the spikes fell — see `docs/multiplayer.md`'s "What a tick costs" for the
+  numbers to beat. Two traps come with it. A big map is QUIET: most of its
+  ticks have nobody in contact, so read the contact buckets rather than the
+  mean, exactly as `ENGINE_UPGRADE.md` S2 and S8 had to force a fight on the
+  client side. And a round on a 900 m map often hits the 45-minute cap, so
+  check `winner: NONE` before averaging it with one that finished.
 - **The DEV-only proving ground needs `npm run simulate:dev`**, which is the
   dev-mode server build; the production one folds that map away and answers
   "no map". Its collision bake is `npm run collision -- proving`, and it takes

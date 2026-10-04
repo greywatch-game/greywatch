@@ -453,7 +453,7 @@ the WEATHER, and on a map with no weather that is not a distance at all:
 Coldharbour and Harrowmead both see past their own diagonals, so both of them
 draw every rig on the map at every moment, and at 1500 m that is measurably the
 largest thing in the frame — **65% of the active meshes with the roster in view,
-and 2.6 ms of a 9.2 ms frame** (`FINDINGS.md` 30). It is `ENGINE_UPGRADE.md` S8.
+and 2.6 ms of a 9.2 ms frame**. It is `ENGINE_UPGRADE.md` S8.
 
 **Two things about it are the whole of its design.** The first is that all three
 gates are handed ONE number, resolved once by `installMap` — which is what keeps
@@ -1905,7 +1905,7 @@ sends a part's positions, normals, UVs and indices to the device the instant it
 exists, `mergeByMaterial` reads them back out of the CPU copies Babylon kept
 anyway, and the merge disposes the source — so a cottage's twenty planks were
 twenty round trips for geometry no frame would ever draw. At 1500 m that was
-161 seconds of a 186-second build; it is 9.4 of 17.4 now (`FINDINGS.md` 24).
+161 seconds of a 186-second build; it is 9.4 of 17.4 now (`ENGINE_UPGRADE.md` S5).
 
 Two consequences a builder has to know. **A part may never be drawn, picked or
 collided with** — it has no submeshes, so it would silently do nothing — which
@@ -1917,7 +1917,8 @@ the scene without it draws nothing and throws nothing.
 
 A **second merge pass** (`BlockMerge`) collapses neighbouring structures and scatter
 fields into one mesh per (map block, material) — the block's side is
-`MapLayout.blockSize`, 48 m on every shipped map but Sarab, which states 96. The village is ~230 structures
+`MapLayout.blockSize`, 48 m by default — Sarab states 96, Cinderhaven and Kurenai
+120, Harrowmead 200. The village is ~230 structures
 and the outline pass draws every mesh twice, so without it the map alone costs ~670
 draws; with it, ~150, and frustum culling still throws away most of the map because
 a block is well inside the 78 m fog wall. Outlines still trace each building,
@@ -2114,7 +2115,7 @@ building is 35–50. Coldharbour's eight shophouses and two depots took it from
 **425 solid meshes to 783**, measured A/B in one session at **+95% on every
 ray** — the ground probe 91 → 180 µs and a 120 m shot 93 → 180 µs over a
 196-ray spray, headless, so read the ratio and not the absolute. The ceiling that buys is Hollowmere's **863**, which is what
-ships and what FINDINGS #6 was measured against — so this made the cheap map
+ships — so this made the cheap map
 dearer without moving the game's worst case. Check that number rather than the
 building count.
 
@@ -2156,6 +2157,15 @@ break lands inside `openBox`, in the frame it happened, and there is nothing
 left for a caller to drain. Proved against a full re-sweep over all six maps and
 600 randomly opened boxes: **0 of 20.2 M step counts differ**, the sealed-room
 case (`opened > 0`) included.
+
+Measured end to end on Cinderhaven, real adapter, warm, all four panes broken
+on one frame:
+
+| | before | after |
+| --- | --- | --- |
+| worst frame in the 120 after the break | **61.6 ms** | **9.2 ms** |
+| the seven frames after it | 47.8, 47, 51.7, 47.6, 61.6, 48.5, 49.4 | 9.2, 8.3, 7.9, 7.9, 7.6, 8.1, 7.8 |
+| median frame over the window | 8.2 | 7.2 |
 
 **Every CLEARED pane comes out of the list `openBox` re-severs against, not
 merely the one being broken** — and that is a correctness rule, not a saving.
@@ -2224,3 +2234,128 @@ Layout gotchas that have already cost time:
   body hides behind. Reach for the dry-stone wall when a run is meant to break
   a sightline, and expect open ground to stay a shooting gallery until
   something opaque stands in it.
+
+## The ground probe reads boxes, and the differential it rested on
+
+`Player.probeGround` reads the `WorldBox` list through `ObstacleField.groundAt`
+rather than casting a ray (`CLAUDE.md`, the collider section). The differential
+below is what the switch rested on, kept so nobody re-runs it from scratch.
+
+**Sampling the whole map on a half-metre grid at four standing heights is the
+WRONG test and says so loudly**: 1.2% of 914k samples disagree on Hollowmere,
+2.9% on Greyfen. Nearly all of that is an artefact of asking about positions a
+body cannot occupy. Where the probe's origin lands a few millimetres *inside* a
+ramp, `pickWithRay` starts within the mesh, punches through it, and reports the
+UNDERSIDE — 0.347 for a surface at 0.653. The ray is the one lying there.
+
+**The right domain is the nav graph's walkable surfaces** — every (cell, height)
+pair the game says a body can stand on. Over those the two agreed on 99.8% and
+disagreed on 116 running in opposite directions, and the second class was the
+blocker:
+
+- At the Hollowmere rim the analytic reports 1.2–3.4 m, the nav graph agrees
+  with it, and the RAY finds nothing at all and falls back to the terrain.
+- Along one Greyfen fence line the analytic reports a surface 0.5 m up that the
+  ray passes straight through.
+
+**What closed it was a footprint, and it was in the shared primitive rather than
+in the query.** `topFaceAtLocalZ` extrapolated a box's top-face PLANE across the
+footprint `halfDepth` describes — which is the SOLID's ground projection, and for
+a pitched box is wider than the face sitting on it. The top face's own projection
+is an interval of half-width `(d/2)|cos|` centred on `(h/2) sin`, so the solid
+reaches `h |sin|` further at one end, and across that strip the plane kept
+climbing at `tan(rotX)` over ground it had run out of face for. At the far edge
+it overshoots by exactly one `slabThickness`. `boxGeometry` now gates every
+height query on `topFaceHalfDepth`/`topFaceCentreZ`; `halfDepth` is untouched and
+still owns every question about where a box IS.
+
+**Validated against a brute-force downward ray at the real rotated box**: 640k
+samples over 400 random boxes pitched to ±60°, and the new gate answers on
+exactly the spots where that ray lands on the top face, to 4e-12 m, and declines
+on exactly the spots where it does not. The old gate answered on 1.5% of samples
+with nothing standable under them at all, by as much as 6 m.
+
+**On the shipped maps it is nearly invisible, and that is the honest headline.**
+Every pitched box in all four maps is a stair flight or its parapet at 8.3–19.3°,
+so the widest strip anywhere is 0.343 m against a 1.5 m nav cell. Re-run over
+every walkable surface on all four maps, the old gate and the new one give
+IDENTICAL answers at every one of them, and the nav graph loses four surfaces on
+Coldharbour and none anywhere else. **The fix is what makes the switch safe, not
+what makes it worth doing** — and it would have been a live bug on the first map
+authored with a steeper pitch.
+
+**What is left disagreeing with the ray is the RAY.** Over every walkable
+surface: 0 on Hollowmere, 0 on Greyfen, 431 on Coldharbour and 8 on Harrowmead.
+Every Coldharbour one is a cell centre at x = ±160.25, inside the rim wall
+(`ridge-e-col`, 160→162): the ray starts inside that box, punches through and
+reports its underside at 0, where the analytic reports the terrain at 1.2. Every
+Harrowmead one is a cell centre at x = 120.25, exactly on the outer face plane of
+a 0.5 m wall — the analytic includes the boundary, Babylon's triangle test misses
+it, and the analytic is the one that agrees with the nav graph the bots walk.
+
+**What it costs, measured on the Windows box in a live warm round**, per probe,
+against the ray it replaces at the same 2,000 walkable positions:
+
+| map | ray | analytic | |
+| --- | --- | --- | --- |
+| Hollowmere (240 m) | 0.106 ms | 0.0002 ms | 634x |
+| Greyfen (240 m) | 0.099 ms | 0.0002 ms | 458x |
+| Coldharbour (320 m) | 0.123 ms | 0.0004 ms | 350x |
+| Harrowmead (400 m) | 0.101 ms | 0.0003 ms | 356x |
+
+The ray reads lower here than the 0.483 ms finding 18 measures in the frame —
+this is a tight loop with warm caches and that is a live frame — so the RATIO is
+the trustworthy half, and either way the analytic is a rounding error. **What
+actually matters is the exponent, not the constant**: the ray was O(meshes in the
+scene) and this is O(boxes in one 4 m bucket), which is the difference between a
+probe that grows with the map and one that does not.
+
+## Rays: the substitution audit that retired the pick
+
+Every ray in the game is answered by `RayWorld` off the colliders' own boxes
+(`CLAUDE.md`, the collider section). This is how the substitution was proved,
+and the two classes of disagreement it found.
+
+Under a NullEngine, off `buildServerWorld` (which still stands the collider
+meshes up), **8,000 seeded rays per map per question** — 4,000 eye-height at
+55/120/180 m, 2,000 short from inside geometry, 2,000 straight down — compared
+`scene.pickWithRay` against `RayWorld` on all four shipped maps. **32,000 rays
+each way. Every disagreement is one of two things and neither is a geometry
+bug.**
+
+**Class 1 — Babylon's picking is FUZZY by `Ray.epsilon` and the analytic is
+not.** `Ray.intersectsTriangle` accepts a barycentric outside the triangle by up
+to `Epsilon` (1e-3) — the guards are literally `bv < -this.epsilon` and
+`bv + bw > 1.0 + this.epsilon`. Thirteen rays out of 32,000 stopped on geometry
+the boxes say they miss, and **every one had a minimum barycentric between
+-2.7e-4 and -9.2e-4**: all inside that tolerance, none inside the triangle. On a
+jungle trunk's 13 m face that skin is about a centimetre, and along a grazing
+ray it reads as up to 314 mm of distance (Coldharbour's worst). So the pick was
+reporting hits on a phantom shell around every collider; the analytic does not,
+and **the analytic is the one that agrees with `colliderBoxes` — which is what
+`NavGrid`, `CoverMap`, `ObstacleField`, `server/validate.ts` and the collision
+bake all read.** Greyfen has most of them (a jungle of ~950 tall thin trunks
+maximises the absolute slop); Hollowmere has one.
+
+**How that was established, because three hypotheses were wrong first.** The
+merged clump mesh was suspected — its vertices match the boxes to 5e-7. Then
+`MergeMeshes` — the same boxes as LOOSE meshes miss exactly where the analytic
+does. Then float32 — a centimetre is five orders too big for it at 86 m. What
+settled it was a manual Möller-Trumbore over the picked mesh's own vertex
+buffer, which **found nothing** where `scene.pickWithRay` reported a hit, and
+then `Ray.epsilon` in `node_modules`.
+
+**Class 2 — a coincident surface, which is a tie rather than an error.** A prop
+is planted with its foot on the ground, so the bottom face of its box and the
+terrain under it are the same plane and a ray reaches both at the same distance;
+the measured deltas run from 1e-15 to 3e-7 m. Which one answers decides nothing
+but `RayHit.surface`, i.e. which spark the impact throws. `RayWorld`'s
+`COINCIDENT` (1e-4 m) resolves it the way the pick did — the collider wins,
+because `scene.meshes` is in creation order and every collider is made before
+the floor's clones — and that closed 64 of the 67 on Hollowmere. **About 26 of
+32,000 still tie the other way**, and no rule can satisfy both directions; what
+it costs is a dirt spark where there was a stone one, on a round landing exactly
+where a collider is flush with the ground.
+
+**Agreement after the tie-break: 99.66% to 99.99% per map per question**, with
+100% of the residual accounted for by the two classes above.

@@ -64,7 +64,7 @@ instrument at 1.5%.
 Neither figure is a constant in a table: both probes run on arming, on the
 device, and `clock.overheadUs` and `clock.grainMs` are in every capture.
 **An instrument that does not state its own cost is one nobody can subtract** —
-see `FINDINGS.md` §31 on the instrument that had been dead since the WebGPU port
+see `ENGINE_UPGRADE.md` S9 on the instrument that had been dead since the WebGPU port
 and nobody noticed.
 
 ---
@@ -611,7 +611,7 @@ panel's cap means something outside this instrument is.
 **`render` is one enormous bar and always will be.** That is §17 — the frame is
 draw-call bound and Babylon's WebGPU backend charges CPU per draw — which is why
 `SceneInstrumentation`'s counters ride alongside: `drawCalls`, `activeMeshes`,
-`meshWalkMs` (the scene walk §21 is about) and `renderTargetsMs` (the shadow map
+`meshWalkMs` (the scene walk `ENGINE_UPGRADE.md` S1 is about) and `renderTargetsMs` (the shadow map
 and the reflection bake). Those four are what the big bar is made of, and a
 change in them is the change worth chasing.
 
@@ -621,7 +621,7 @@ the twenty-two phases here cost less than that. Their MEANS are real — a phase
 boundary falls at a uniformly random offset within the grid, so the difference of
 two quantised stamps is unbiased over a thousand frames — but a `p95` of exactly
 `0.100` is one grain, not a measurement. **This instrument answers "which
-phase", never "which function"**; a 3.5 us box query (§23) is micro-benchmark
+phase", never "which function"**; a 3.5 us box query (`RayWorld`) is micro-benchmark
 territory and always will be.
 
 **The hitch list is where the position pays.** Each kept frame carries its whole
@@ -901,6 +901,68 @@ vsync budget and a tick of 4.5–6.4 — and on the hitch frames themselves it i
 1.6–2.7 ms, including a **160.7 ms frame on which the GPU did 1.7 ms of work**.
 That is what retired the last suspect in `FINDINGS.md` #1.
 
+## Vsync, the uncap flags, and VRR
+
+Measured from three captures launched with `--disable-gpu-vsync
+--disable-frame-rate-limit` (Chrome 152, the Windows box at 3440x1440, G-Sync
+on and the window fullscreen, two on Sarab and one on Cinderhaven, 3,000 frames
+each) against the vsync-on reading `FINDINGS.md` 39 took. **Uncapping the
+display makes it worse, and those flags must not ship.**
+
+### The flags do exactly what they say, and it buys nothing
+
+| | vsync on (finding 39) | vsync off |
+| --- | --- | --- |
+| residue (rAF wait + compositor) | 1.42 ms | **0.56 / 0.90 / 0.66 ms** |
+| tick share of the wall clock | ~78% | **86.6 / 92.1 / 90.3%** |
+| mean frame | 6.94 ms budget | 6.92 / 7.40 / 6.94 ms |
+| fps | ~144, 1.9% doubled | 144.6 / 135.2 / 144.1 |
+
+The wait is genuinely gone. The frame rate does not move, because the tick is
+5.99–6.81 ms and **the tick was already the binding constraint** — finding 39's
+whole point. Uncapping removed a ceiling nothing was touching.
+
+### What it costs: vsync was quantising the workload's own variance away
+
+| | vsync on | vsync off |
+| --- | --- | --- |
+| frames within 18% of one 6.94 ms interval | **88.5%** | 53.7 / 62.4 / 65.8% |
+| sd of the interval | ~0 by construction | 3.14 / 2.38 / 3.48 ms |
+| frame-to-frame \|Δdt\|, mean | ~0 | 0.88 / 0.67 / 0.98 ms |
+| frame-to-frame \|Δdt\|, p95 | ~0 | **4.30 / 1.90 / 4.80 ms** |
+| frames faster than a 144 Hz interval | 0% | 28.9 / 15.3 / 22.1% |
+
+`drawWorld`'s own sd is 1.29–2.74 ms, so the tick genuinely swings by ±2–3 ms
+with what is on screen. **With vsync on, every tick under 6.94 ms presents at
+6.94** and none of that reaches the eye. Without it, all of it does. The trade
+is 1.9% of frames held an extra interval against **100% of frames arriving
+unevenly** — and it is worse, reported as such from the chair before any of this
+was computed.
+
+There is a second-order version. `dt` is `getDeltaTime()`, the interval BEFORE
+the frame, but the frame is displayed for the interval AFTER it — so each frame
+advances the world by ~0.9 ms (p95: 4.8) more or less than the time it is shown
+for. Vsync was hiding that too. **If a frame pacer is ever built, it owes a dt
+that is smoothed or predicted**, not the raw lagging one.
+
+The tell that VARIANCE is the villain rather than cost: the slowest capture
+(135.2 fps, tick 6.81 ms) has by far the lowest jitter (p95 1.90 ms), because it
+is consistently over budget rather than swinging.
+
+### VRR is answered, and the answer is no
+
+This is the run that would have shown it: G-Sync on, fullscreen, vsync off, which
+is the configuration native games use to engage VRR. It still stuttered, and the
+reason is in the numbers above — **a 30–90 ms frame is far below any VRR floor**
+(a 144 Hz panel's range bottoms out around 48 Hz, 20.8 ms), so the display falls
+back to frame doubling exactly where it is needed most. VRR handles a frame that
+arrives late by a millisecond, not one that arrives late by 80.
+
+**So do not ship these flags, and do not wrap the game in Electron or NW.js to
+get them.** A wrapper is Chromium either way; what it would buy is the command
+line, and the command line is what was just measured. The fix for judder remains
+finding 39's: make the frame fit the interval.
+
 ## What is deliberately not in it
 
 Both of these are real levers and both have a blast radius bigger than the
@@ -919,7 +981,7 @@ cross-origin subresource need CORP — including whatever the lobby's match-serv
 fetches touch. That is a deployment change, not a profiler change.
 
 **Per-callsite timing.** Not a lever, a category error: see the grain note
-above. Wrap the call site from a Playwright script, the way §22 and §23 did.
+above. Wrap the call site from a Playwright script, the way `ENGINE_UPGRADE.md` S2 did.
 
 ---
 

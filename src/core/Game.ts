@@ -567,7 +567,7 @@ export class Game {
    * observable and lets a budget's worth go per frame after it. Before this,
    * those frames were the first frames of `deploy` and then of the ROUND — one
    * on every shipped map, and **47 frames over 44.8 seconds on a 1500 m map**
-   * (`FINDINGS.md` 27 and 28), with the player looking at them. `loading` is a STEP
+   * with the player looking at them. `loading` is a STEP
    * where nothing simulates and the scene still renders, which is exactly the
    * shape of frame this needs, so the card stays up until the queue is empty.
    *
@@ -1352,7 +1352,7 @@ export class Game {
     // The ink is also the pass the scene draws into, and so the one whose depth
     // the mask borrows. Worth ~20% of the frame on the three big maps against
     // a mask that redrew the whole visible scene to occlude itself
-    // (`FINDINGS.md` 3).
+    // (docs/rendering.md, "The glow: what the depth share replaced").
     glow.attach(this.celInk.pass);
     const pipeline = new DefaultRenderingPipeline("post", false, this.scene, [
       this.cameraSys.camera,
@@ -5073,9 +5073,9 @@ export class Game {
    * vantage against an A-vs-A control that was byte-identical, a soldier
    * standing in front of a lamp differed by **254/255 at 1.5 m, 253 at 4.5,
    * 177 at 8.5 and 104 at 13.5** — the lamp blooming through his chest, and
-   * still plainly visible at the far end of that. `FINDINGS.md` 3 landed and
-   * reverted the same exclusion for the WORLD, and this is that entry's
-   * argument holding for a body too. The prize is real and mesh exclusion is
+   * still plainly visible at the far end of that. The same exclusion was landed
+   * and reverted for the WORLD (docs/rendering.md, the glow's history), and
+   * this is that argument holding for a body too. The prize is real and mesh exclusion is
    * not how to collect it.
    */
   private installBodyPools(): void {
@@ -5110,7 +5110,7 @@ export class Game {
    * the bake always took, moved from `deploy` to under the card. On the 1500 m
    * proving ground it is 47 frames, and measured either side of this change
    * they went from 44.8 seconds in the ROUND to 10.6 under the card —
-   * `FINDINGS.md` 28, where the second figure is `faceOf`'s doing and the
+   * `ENGINE_UPGRADE.md` S0c, where the second figure is `faceOf`'s doing and the
    * change of state is this method's.
    */
   private openBakeWait(): void {

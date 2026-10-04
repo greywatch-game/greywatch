@@ -306,7 +306,7 @@ export class PhysicsWorld {
    *
    * **`HavokPlugin.addChild` is one `HP_Shape_AddChild`, and Havok rebuilds the
    * container's acceleration structure on every one of them.** Profiled on the
-   * proving ground (`FINDINGS.md` 25): 5,929 boxes into one container is
+   * proving ground: 5,929 boxes into one container is
    * 1,726 ms and 16,526 is 13,433 — 2.79x the boxes for 7.78x the time, an
    * exponent of 1.94, with 13,244 of those milliseconds inside `addChild`
    * rather than in shape construction. There is no batch entry point through

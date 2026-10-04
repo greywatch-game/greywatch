@@ -137,8 +137,8 @@ export const profiling = {
    * How many `begin`/`end` pairs the overhead probe times on arming.
    *
    * Recorded into the capture for the reason the grain is: an instrument that
-   * does not state its own cost is one nobody can subtract. See `FINDINGS.md`
-   * §31 on the instrument that had been dead since the WebGPU port.
+   * does not state its own cost is one nobody can subtract. See `ENGINE_UPGRADE.md`
+   * S9 on the instrument that had been dead since the WebGPU port.
    */
   overheadSamples: 20000,
 

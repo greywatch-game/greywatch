@@ -737,7 +737,7 @@ export const graphics = {
    * **It exists because the texel snap alone almost never holds still.** The
    * focus is 8 m out along the view, so a texel of it is 0.38 deg of TURN: in
    * play the snapped focus moved on 97.5% of frames and the world's depth pass
-   * re-rendered on every one of them (`FINDINGS.md` 2) — on a phone, 80-90% of
+   * re-rendered on every one of them — on a phone, 80-90% of
    * a round's frames and ~1.8 ms of CPU each.
    *
    * **It is not a quality trade, and that is measured rather than argued.**

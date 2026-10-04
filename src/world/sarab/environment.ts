@@ -13,7 +13,7 @@
  * do. At 900 m of play the diagonal is 1,273 m and that trend cannot continue:
  * a `fogEnd` past it would leave all 1,024 merge blocks candidates on every
  * frame, which is `ENGINE_UPGRADE.md` wall 1 with the lever taken off. So this
- * map states **560**, well inside its own square, and finding 21's dormant
+ * map states **560**, well inside its own square, and S1's dormant
  * saving — 0.6 ms of walk and 0.8 ms of frame — is what that buys.
  *
  * **The look and the budget agree here, which is unusual and is why the desert
@@ -36,7 +36,7 @@
  *   texel against Coldharbour's 9.8, and a house's 3 m shadow is 26 texels
  *   across at that density.
  * - **`bodyDrawDistance` is 300**, and this is the first map in the tree to
- *   state one. `FINDINGS.md` 30 measured the lever with the roster stood down a
+ *   state one. `ENGINE_UPGRADE.md` S8 measured the lever with the roster stood down a
  *   900 m sight line: 65% of the frame's active meshes were soldiers and the
  *   frame went 9.2 ms to 6.6. This map HAS 900 m sight lines — down the two
  *   highways, and from the Martyrs' shelf across the whole town — so it is the

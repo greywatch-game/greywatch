@@ -2889,8 +2889,8 @@ function tag(mesh: Mesh, ref: EditorRef): void {
  * meshes to walk and to draw, at coarser cull granularity. What stays here is
  * the size of a locality BUCKET — `PhysicsWorld`'s static containers and
  * `GlassSystem`'s pane index — and those two want the opposite thing from a
- * large map. `HavokPlugin.addChild` is quadratic in a container's children
- * (`FINDINGS.md` 25), so a bucket that grew with a map's merge block would
+ * large map. `HavokPlugin.addChild` is quadratic in a container's children,
+ * so a bucket that grew with a map's merge block would
  * hand back most of what S5b bought; a pane bucket is a slab rejection whose
  * only cost is the panes inside it. Neither is an identity — nothing reads
  * either key — so neither has anything to agree with.

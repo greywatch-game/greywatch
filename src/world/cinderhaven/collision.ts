@@ -42,7 +42,7 @@
 import type { MapCollision } from "../collision";
 
 export const CinderhavenCollision: MapCollision = {
-  sourceHash: "8253a98b41c3f984",
+  sourceHash: "ecbf9a59c0282db8",
   boxes: [
   [2004,20,2,0,10,1001,0,0],
   [2004,20,2,0,10,-1001,0,0],
