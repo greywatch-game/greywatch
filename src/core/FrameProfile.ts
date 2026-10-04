@@ -639,6 +639,13 @@ export interface HitchFrame {
 export interface ProfileGraphics {
   /** `Settings.renderScale` — a share of the panel's native resolution. */
   renderScale: number;
+  /**
+   * `Settings.fpsCap` — the frame-rate ceiling, 0 for none. Read a capture's
+   * frame times against it: under a cap of 30 a 33 ms frame is the cap doing
+   * its job, not a slow device. Absent in a capture from before the setting
+   * existed, which ran uncapped.
+   */
+  fpsCap?: number;
   shadows: string;
   gi: string;
   grass: string;
@@ -2678,6 +2685,7 @@ function round(v: number, places = 3): number {
 function sameGraphics(a: ProfileGraphics, b: ProfileGraphics): boolean {
   return (
     a.renderScale === b.renderScale &&
+    a.fpsCap === b.fpsCap &&
     a.shadows === b.shadows &&
     a.gi === b.gi &&
     a.grass === b.grass &&

@@ -17,6 +17,13 @@ import { CONFIG } from "../config";
 export type RenderScale = (typeof CONFIG.graphics.renderScales)[number];
 
 /**
+ * The most frames a second the game draws, as one of
+ * `CONFIG.graphics.frameCaps` — 0 being no ceiling. Derived from that list for
+ * `RenderScale`'s reason.
+ */
+export type FpsCap = (typeof CONFIG.graphics.frameCaps)[number];
+
+/**
  * How much volumetric moonlight, as `off` plus one of
  * `CONFIG.graphics.volumetrics.rungs`.
  *
@@ -131,6 +138,12 @@ export type Settings = {
    * had ever called `setHardwareScalingLevel`.
    */
   renderScale: RenderScale;
+  /**
+   * The frame-rate ceiling (`core/FrameCap.ts`), or 0 for none. For a device
+   * that cannot hold its display's rate, where an even 30 reads better than a
+   * frame rate stuttering between 60 and 15.
+   */
+  fpsCap: FpsCap;
   /**
    * Light shafts: how many taps the volumetric march spends per ray, or `off`.
    *
@@ -376,6 +389,10 @@ export const SETTING_DEFAULTS: Settings = {
   grass: defaultGrassQuality(),
   foliage: defaultFoliageQuality(),
   renderScale: defaultRenderScale(),
+  // No ceiling, which is the loop as it ran before the setting existed. NOT
+  // derived per machine the way the detail rungs are: a cap trades smoothness
+  // against latency, and that is the player's call rather than the device's.
+  fpsCap: 0,
   // 1 on both, and it is the one default that means "change nothing": the rates
   // in `CONFIG.camera` are what every other number there was tuned against.
   mouseSensitivity: 1,
@@ -526,6 +543,7 @@ const CODECS: { [K in keyof Settings]: Codec<Settings[K]> } = {
   motionBlur: bool,
   paperGrain: bool,
   renderScale: oneOf(CONFIG.graphics.renderScales),
+  fpsCap: oneOf(CONFIG.graphics.frameCaps),
   volumetrics: oneOfString(VOLUMETRIC_QUALITIES),
   gi: oneOfString(GI_QUALITIES),
   shadows: oneOfString(SHADOW_QUALITIES),

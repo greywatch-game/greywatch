@@ -82,6 +82,7 @@ import { Bot } from "../entities/Bot";
 import { difficultyNames, profileFor } from "../entities/BotSkill";
 import { callsign } from "../entities/callsigns";
 import { OTHER_TEAM, type Combatant, type Team } from "../entities/Combatant";
+import { FrameCap } from "./FrameCap";
 import { FrameProfile, P } from "./FrameProfile";
 import { NetSession, type LocalGun, type LocalHull } from "../net/NetSession";
 import { clearRequestTimings, fetchMatches } from "../net/lobby";
@@ -418,6 +419,12 @@ export class Game {
    * line.
    */
   private readonly prof = new FrameProfile();
+  /**
+   * The frame-rate cap (`Settings.fpsCap`). Installed as the engine's frame
+   * requester once, in the constructor, and only ever re-RATED after — at 0 it
+   * admits every refresh, so the loop runs exactly as it did without one.
+   */
+  private readonly frameCap = new FrameCap();
   /** The profiler's corner of the HUD. Up only while the ring is recording. */
   private profChip: ProfileChip;
   private sfx: Sfx;
@@ -1188,6 +1195,7 @@ export class Game {
   ) {
     this.canvas = canvas;
     this.engine = engine;
+    this.engine.customAnimationFrameRequester = this.frameCap.requester;
     this.scene = new Scene(this.engine);
     this.scene.collisionsEnabled = true;
     // The scene has no Babylon lights at all: cel materials carry their own
@@ -2631,6 +2639,7 @@ export class Game {
     this.hud.setFpsVisible(this.settings.fpsCounter);
     this.setProfiling(this.settings.profiler);
     this.applyRenderScale();
+    this.frameCap.setRate(this.settings.fpsCap);
     this.setVolumetrics(this.settings.volumetrics);
     // A no-op unless the tier moved; a change stands up a new texture set and
     // republishes it to every cel material (`GiVolume.setQuality`).
@@ -2693,6 +2702,7 @@ export class Game {
     if (this.volumetricsForced) forced.push("volumetrics");
     this.prof.setGraphics({
       renderScale: this.settings.renderScale,
+      fpsCap: this.settings.fpsCap,
       shadows: this.shadowQuality,
       gi: this.giForced ?? this.settings.gi,
       grass: this.settings.grass,

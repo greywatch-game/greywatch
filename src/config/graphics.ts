@@ -34,6 +34,27 @@ export const graphics = {
    * is the first thing to check if this list ever grows one.
    */
   renderScales: [0.5, 0.75, 1] as const,
+  /**
+   * The frame-rate CEILINGS the settings screen offers, in frames a second and
+   * in the order it draws them, with 0 for none — `core/FrameCap.ts`.
+   *
+   * It exists for a device that cannot hold the display's rate: measured on a
+   * phone (`?profile&gpu`, Greyfen, 832x384 at half scale), a round ran 16,
+   * 16, 16, 70 ms with the main thread idle through the long one — 30 fps on
+   * average and a stall four times a second. An even 30 is what this offers
+   * instead — the same average without the judder, which that capture
+   * predicts and no capture has yet confirmed. **The default is 0**, which is the loop exactly as it
+   * ran before the setting existed.
+   */
+  frameCaps: [30, 60, 0] as const,
+  /**
+   * How early a display refresh may arrive and still be given the frame it was
+   * due, in ms. Over the refresh timestamps' own jitter, and under one refresh
+   * of a 240 Hz panel (4.17 ms) so the refresh BEFORE the due one is still
+   * refused there. It moves which refresh takes a frame and never the average,
+   * which the deadline holds by itself — see `FrameCap`.
+   */
+  frameCapSlackMs: 4,
   /** Emissive glow (neon, reticle, tracers) — `GlowPass`'s bloom strength. */
   glowIntensity: 1.15,
   /**

@@ -331,6 +331,16 @@ const PAGES: readonly Page[] = [
         })),
       },
       {
+        key: "fpsCap",
+        label: "Frame rate cap",
+        hint: "The most frames a second the game draws. A device that cannot hold 60 runs smoother held at an even 30.",
+        // Off the config's list for the render scale's reason; 0 is no cap.
+        options: CONFIG.graphics.frameCaps.map((v) => ({
+          value: v,
+          label: v === 0 ? "Unlimited" : String(v),
+        })),
+      },
+      {
         key: "fpsCounter",
         label: "FPS counter",
         hint: "Frame rate, frame time and the 1% low, in the top corner.",

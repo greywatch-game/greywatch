@@ -1145,7 +1145,9 @@ function renderReport(r) {
   if (gx) {
     const tag = k => (gx.forced || []).indexOf(k) >= 0 ? " (URL)" : "";
     kv("Graphics",
-      "scale " + gx.renderScale + " · shadows " + gx.shadows + tag("shadows") +
+      "scale " + gx.renderScale +
+      // Absent before the setting existed, which ran uncapped.
+      (gx.fpsCap ? " · cap " + gx.fpsCap + " fps" : "") + " · shadows " + gx.shadows + tag("shadows") +
       " · bounce " + gx.gi + tag("gi") + " · grass " + gx.grass +
       (gx.foliage ? " · trees " + gx.foliage : "") +
       " · shafts " + gx.volumetrics + tag("volumetrics") +

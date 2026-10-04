@@ -270,6 +270,12 @@ src/
                         #   recording (GC is what it exists to catch). Game
                         #   brackets the phases it already sequences; no system
                         #   has heard of it. Handle: `window.__profile`
+    FrameCap.ts         # The frame-rate cap (Settings.fpsCap): the engine's
+                        #   frame REQUESTER, refusing a refresh before the
+                        #   next frame is DUE. A deadline, not Babylon's
+                        #   maxFPS accumulator, which turns a 30 cap into 20
+                        #   on a panel a hair over 60 Hz. Rate 0 admits every
+                        #   refresh
     math.ts             # The scalar helpers more than one file needs: clamp,
                         #   clamp01, hermite, smoothstep, angleDelta. Imports
                         #   NOTHING, which is what makes it safe to import from
