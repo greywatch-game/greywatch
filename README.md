@@ -9,6 +9,15 @@ is low-poly and cel-shaded, with ink lines, and the scene is lit by what is
 actually in it: lanterns, fires, muzzle flashes, a moon or a low sun, and the
 light that bounces between them.
 
+![Harrowmead — an English village green under a low evening sun](docs/screenshots/harrowmead.jpg)
+
+<p>
+  <img src="docs/screenshots/kurenai.jpg" width="49%" alt="Kurenai — a temple town in a mountain valley as the maples turn">
+  <img src="docs/screenshots/greyfen.jpg" width="49%" alt="Greyfen — stilt houses in a jungle valley">
+</p>
+
+*Harrowmead (top), Kurenai and Greyfen — in-game, at 1080p.*
+
 ## Setup
 
 ```bash
