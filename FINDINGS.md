@@ -456,9 +456,40 @@ even the game's.
 
 ---
 
-## 2. The shadow map's refresh test almost never fails during play
+## 2. The shadow map's refresh test almost never fails during play — **the HOLD has LANDED; the phone's number is open**
 
-**Status:** measured, and half of it acted on. The frequency below was
+**Status:** acted on (2026-10-04). The two static maps now follow a HELD focus
+that re-centres only once the live one has drifted past the rung's `hold`
+(`CONFIG.graphics.shadowTiers`, 1 m on high and medium, 2 m on low) — option 2
+below, done in METRES of focus rather than texels, and it turned out not to be
+a quality trade at all: the snap makes every held window one the old code drew
+for a nearby focus, so the only thing that moves is the window's edge.
+
+| desktop, 1080p, high, live round, turning 90 deg/s | redraws/s | tick, Hollowmere | tick, Coldharbour |
+| --- | --- | --- | --- |
+| hold 0 (before) | 232 / 127 (every frame) | 2.52 ms | 4.59 ms |
+| hold 1 m | 12 | 2.18 | 4.17 |
+| hold 2 m | 6 | 2.24 | 4.20 |
+| hold 4 m | 3 | 2.22 | 4.37 |
+
+Three reps per arm interleaved in one process; the GPU frame did not move
+(2.7 / 2.3 ms either way), so on this box the whole saving is CPU. The picture
+was checked as frozen frames (`plans/webgpu-ref/harness.mjs`'s `freeze`) with
+the window lagged 1/2/4 m forward, back and sideways against an exact one, on
+Hollowmere and Greyfen: the differences are single pixels at shadow
+terminators and in the palm crowns' translucency — the depth's rounding, which
+every move of the old window already re-rolled — at 0.04-0.37% of pixels
+against a 0.03-0.18% control.
+
+The nearest thing to the phone this box can stand up — Greyfen at `low`,
+832x384, a 4x CPU throttle, the same turn, three reps each — moved the most:
+**redraws 41.6/s -> 5.7, `shadowPass` 2.67 -> 0.73 ms, the tick 17.56 ->
+15.97 ms and 46.6 -> 51.0 fps.** **Open: the phone itself**, where the capture that
+prompted this showed the pass on 80-90% of frames at ~1.8 ms of CPU; a
+`?profile&gpu` capture on Greyfen at `low` is what prices it there.
+
+**What follows is the entry as it stood before the hold**, kept for the
+arithmetic. The frequency below was
 arithmetic when this was written and has since been captured: **97.5% of frames
 re-render** while the view is turning at an ordinary rate, which is what the
 arithmetic predicted.

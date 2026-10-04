@@ -19,7 +19,11 @@
  * Invariants:
  * - The light position is snapped to the shadow map's texel grid as it
  *   tracks the player, so shadow edges stay rock steady instead of crawling.
- * - The depth map re-renders only when the snapped focus moves.
+ * - The depth map re-renders only when the snapped focus moves — and the
+ *   focus the two static maps follow is HELD until the live one has drifted
+ *   past the rung's `hold` (`held`), because an 8 m lever on the view moves
+ *   a texel's worth on nearly every frame of play. Held is never stale: the
+ *   snap makes it a window the map would have drawn anyway.
  * - The depth pass draws only the casters standing in the window (see
  *   getCustomRenderList) — Babylon culls nothing off an explicit renderList.
  * - The depth map records BACK faces (`forceBackFacesOnly`), so every caster
@@ -185,6 +189,15 @@ export class ShadowSystem {
    * open, which is why Sarab needed 240 as well as the ramp.
    */
   private window: number = CONFIG.graphics.shadows.frustumSize;
+  /** The rung's `hold`, in metres — see `held`. */
+  private hold = 0;
+  /**
+   * The focus the two static maps are actually centred on: the live one,
+   * re-taken only once it has drifted more than `hold` from here. Infinite
+   * means "take the next focus whatever it is", which is how a window that
+   * was invalidated re-centres at once rather than up to `hold` late.
+   */
+  private readonly held = new Vector3(Infinity, Infinity, Infinity);
 
   /**
    * The moon's depth map, for a reader that is not a material.
@@ -288,11 +301,13 @@ export class ShadowSystem {
   setQuality(quality: ShadowQuality): void {
     const c = CONFIG.graphics.shadows;
     const tier = CONFIG.graphics.shadowTiers[quality];
+    this.hold = tier.hold;
     if (tier.sun !== this.mapSize) {
       this.generator?.dispose();
       this.generator = tier.sun > 0 ? this.buildWorld(tier.sun) : null;
       this.mapSize = tier.sun;
       this.win.invalidate();
+      this.held.setAll(Infinity);
       this.mats.setShadowMap(this.generator?.getShadowMap() ?? litShadowTexture(this.scene));
       // The map's size goes with them: the consumer's kernel offsets are in UV,
       // and a texel of UV is 1 / mapSize. This is the only place that number is
@@ -480,6 +495,7 @@ export class ShadowSystem {
     this.foliageLight.shadowFrustumSize = metres;
     this.win.invalidate();
     this.foliageWin.invalidate();
+    this.held.setAll(Infinity);
   }
 
   /**
@@ -547,6 +563,7 @@ export class ShadowSystem {
     // Invalidate the snapped focus so the light re-centres on next update.
     this.win.invalidate();
     this.foliageWin.invalidate();
+    this.held.setAll(Infinity);
   }
 
   /** Blob shadows fade with the same fog wall that hides distant geometry. */
@@ -678,8 +695,10 @@ export class ShadowSystem {
     // The snap itself is `core/shadowWindow.ts`, shared with `BodyShadows`
     // rather than written twice — two maps that disagreed about where one
     // focus lands would shade a body against a wall it is not standing by.
+    const held = this.held;
+    if (Vector3.DistanceSquared(focus, held) > this.hold * this.hold) held.copyFrom(focus);
     const gen = this.generator;
-    if (gen && this.win.place(this.light, focus, this.window, this.mapSize, c.distance)) {
+    if (gen && this.win.place(this.light, held, this.window, this.mapSize, c.distance)) {
       gen.getShadowMap()?.resetRefreshCounter();
       // Inside the guard, where it belongs: this is the branch that just
       // decided the shadow camera moved, and the matrix is a function of
@@ -703,7 +722,7 @@ export class ShadowSystem {
     const fgen = this.foliageGen;
     if (
       fgen &&
-      this.foliageWin.place(this.foliageLight, focus, this.window, this.foliageSize, c.distance)
+      this.foliageWin.place(this.foliageLight, held, this.window, this.foliageSize, c.distance)
     ) {
       fgen.getShadowMap()?.resetRefreshCounter();
       mats.setFoliageMatrix(fgen.getTransformMatrix());

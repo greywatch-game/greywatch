@@ -730,11 +730,38 @@ export const graphics = {
     },
     maxGrow: 1.15,
   },
+  /**
+   * `hold` is how far, in metres, the focus may drift before the two STATIC
+   * maps (the world's and the foliage's) follow it — `ShadowSystem.held`.
+   *
+   * **It exists because the texel snap alone almost never holds still.** The
+   * focus is 8 m out along the view, so a texel of it is 0.38 deg of TURN: in
+   * play the snapped focus moved on 97.5% of frames and the world's depth pass
+   * re-rendered on every one of them (`FINDINGS.md` 2) — on a phone, 80-90% of
+   * a round's frames and ~1.8 ms of CPU each.
+   *
+   * **It is not a quality trade, and that is measured rather than argued.**
+   * The snap makes every window a whole number of texels from every other, so
+   * a held window is exactly the window the old code drew for a focus up to
+   * `hold` away — a frame it would have drawn anyway one step later. Frozen
+   * frames with the window lagged 1, 2 and 4 m against an exact one differ
+   * only in single pixels at the shadow terminators (the depth's rounding,
+   * which every move already re-rolled) and in nothing the eye can find; what
+   * a hold genuinely moves is the window's EDGE, by up to `hold`, 55 m out or
+   * more on every shipped map. Desktop, 1080p, high, turning at 90 deg/s:
+   * redraws 232/s -> 12 (1 m) -> 6 (2 m) -> 3 (4 m), and 0.35-0.4 ms of CPU a
+   * frame, nearly all of it at 1 m.
+   *
+   * So the rungs differ only in how far the edge may trail: a metre where a
+   * metre buys everything, and two on the phone's rung where a redraw costs
+   * three times as much. The BODIES' map is not held — it follows the live
+   * focus and redraws every frame, because what it draws moves.
+   */
   shadowTiers: {
-    off: { sun: 0, foliage: 0, bodies: 0, bodyWindow: 48 },
-    low: { sun: 1024, foliage: 0, bodies: 512, bodyWindow: 32 },
-    medium: { sun: 2048, foliage: 1024, bodies: 1024, bodyWindow: 48 },
-    high: { sun: 2048, foliage: 1024, bodies: 1024, bodyWindow: 48 },
+    off: { sun: 0, foliage: 0, bodies: 0, bodyWindow: 48, hold: 0 },
+    low: { sun: 1024, foliage: 0, bodies: 512, bodyWindow: 32, hold: 2 },
+    medium: { sun: 2048, foliage: 1024, bodies: 1024, bodyWindow: 48, hold: 1 },
+    high: { sun: 2048, foliage: 1024, bodies: 1024, bodyWindow: 48, hold: 1 },
   },
   /**
    * Shadows from the POINT and SPOT lights — `systems/LocalShadows.ts`.

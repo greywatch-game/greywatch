@@ -1920,6 +1920,18 @@ every cel material's bind group failed and the round never left `loading`.
 What each rung spends, and why the phone's is shaped the way it is, is argued
 on `shadowTiers` in `config/graphics.ts`.
 
+**The static maps follow a HELD focus, and the rung says how far it may lag**
+(`shadowTiers[q].hold`, `ShadowSystem.held`). The texel snap was meant to make
+the world's depth pass a rare event, and in play it never was: the focus stands
+8 m out along the view, so one texel of it is 0.38 degrees of turn and the pass
+re-rendered on 97.5% of frames (`FINDINGS.md` 2). Holding it until the live
+focus has drifted past `hold` takes that to a dozen redraws a second while
+turning, and **costs no shadow**: every window the snap allows is a whole
+number of texels from every other, so a held one is a window the map would have
+drawn for a focus a metre away. What does move is the window's EDGE, by up to
+`hold`. **Only the two static maps are held** — the bodies' map follows the
+live focus and redraws every frame, and must, because what it draws moves.
+
 ### The lamps' shadows: one atlas, split by refresh rate
 
 `systems/LocalShadows.ts`. Before it the sixteen point lights had no shadow map
