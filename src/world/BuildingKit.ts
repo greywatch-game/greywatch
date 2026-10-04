@@ -300,6 +300,9 @@ export type BuilderKind = keyof typeof BUILDERS;
  * cuts each pile, footing and brace to the ground under it. The stair seeds
  * its treads, its posts and its creeper off where it stands, and carries its
  * strings' feet, its trestle posts and their footings down to the ground.
+ * The net loft seeds its paint, which dark windows are shuttered, its slate
+ * runs and what lies in its undercroft off where it stands, and carries each
+ * pier's footing down to the ground under it.
  */
 export const CONFORMS_TO_TERRAIN: ReadonlySet<BuilderKind> = new Set([
   "road",
@@ -339,4 +342,5 @@ export const CONFORMS_TO_TERRAIN: ReadonlySet<BuilderKind> = new Set([
   "stonePagoda",
   "bellTower",
   "archBridge",
+  "netLoft",
 ] as const);
