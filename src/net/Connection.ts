@@ -124,6 +124,8 @@ export class Connection {
   private retryTimer: ReturnType<typeof setTimeout> | null = null;
   private join: JoinOptions = { name: "player" };
   private closedByUs = false;
+  /** Whoever is waiting on `joinSent`. Settled together, never one at a time. */
+  private joinWaiters: Array<() => void> = [];
 
   /**
    * Recent `serverNow - localNow` samples, in ms. Bounded by `clockWindow`
@@ -253,6 +255,7 @@ export class Connection {
         equipment: this.join.equipment,
         throwable: this.join.throwable,
       });
+      this.settleJoin();
     });
 
     socket.addEventListener("message", (ev) => {
@@ -267,6 +270,10 @@ export class Connection {
 
     socket.addEventListener("close", () => {
       this.socket = null;
+      // An attempt that never opened has nothing to send a join down, and a
+      // build waiting on it would wait out every retry behind a card. One
+      // attempt is the whole of what `joinSent` promises to wait for.
+      this.settleJoin();
       if (this.closedByUs) return this.setState("closed");
       this.retry(url);
     });
@@ -318,6 +325,35 @@ export class Connection {
     this.socket?.close();
     this.socket = null;
     this.setState("closed");
+    this.settleJoin();
+  }
+
+  /**
+   * Resolves once the socket that is opening has had its `join` sent down it —
+   * or has failed to open, or this connection was closed. Immediately when no
+   * socket is opening.
+   *
+   * **The server gives an anonymous socket ten seconds to say `join`, and the
+   * clock starts at the UPGRADE, not when this page gets round to it**
+   * (`HANDSHAKE_MS` in `server/index.ts`). The upgrade happens in the
+   * browser's network stack while the main thread is busy; the `open` handler
+   * that sends the join is a task, and a task cannot run inside another one.
+   * So a map build that holds the thread for ten seconds — Cinderhaven's
+   * install is one task of about that on a desktop GPU, and a phone is slower —
+   * sends its join after the window has shut, and the round it built is torn
+   * down by the refusal. Anything about to hold the thread that long while a
+   * join is outstanding awaits this first; the wait is a connect, which is
+   * milliseconds.
+   */
+  joinSent(): Promise<void> {
+    if (this.socket?.readyState !== WebSocket.CONNECTING) return Promise.resolve();
+    return new Promise((resolve) => this.joinWaiters.push(resolve));
+  }
+
+  private settleJoin(): void {
+    const waiters = this.joinWaiters;
+    this.joinWaiters = [];
+    for (const resolve of waiters) resolve();
   }
 
   private setState(state: ConnectionState): void {

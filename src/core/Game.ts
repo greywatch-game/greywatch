@@ -4834,6 +4834,18 @@ export class Game {
    * why the two are not one method.
    */
   private async buildRound(): Promise<void> {
+    // The join goes out BEFORE the build, never behind it. `joinMatch` starts
+    // the round and then opens the socket, and the server shuts an anonymous
+    // socket after ten seconds — so a build that held the thread that long
+    // (Cinderhaven's does) sent its join late and was refused, the round torn
+    // down under a player who had heard it start. A connect is milliseconds;
+    // see `Connection.joinSent`. Anything that took the session away meanwhile
+    // (a refusal, a quit) took the round with it, and there is nothing to build.
+    const net = this.net;
+    if (net) {
+      await net.joinSent();
+      if (this.net !== net || this.state !== "loading") return;
+    }
     // Which map, and the ground under it — in that order, and until the two
     // agree about which map they are.
     //

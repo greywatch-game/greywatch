@@ -277,6 +277,11 @@ export class NetSession {
     this.conn.connect(opts);
   }
 
+  /** Once the opening socket has sent its join, or failed to — see `Connection.joinSent`. */
+  joinSent(): Promise<void> {
+    return this.conn.joinSent();
+  }
+
   /** Which match we are in, once the server has said. Empty before that. */
   matchId = "";
 
