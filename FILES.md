@@ -275,7 +275,9 @@ src/
                         #   next frame is DUE. A deadline, not Babylon's
                         #   maxFPS accumulator, which turns a 30 cap into 20
                         #   on a panel a hair over 60 Hz. Rate 0 admits every
-                        #   refresh
+                        #   refresh. Also the SIMULATION's clock: `elapsed` is
+                        #   the gap between the refreshes that took two frames,
+                        #   which Game.tick steps the world by
     math.ts             # The scalar helpers more than one file needs: clamp,
                         #   clamp01, hermite, smoothstep, angleDelta. Imports
                         #   NOTHING, which is what makes it safe to import from

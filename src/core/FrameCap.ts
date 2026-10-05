@@ -2,13 +2,15 @@
  * FrameCap.ts — the ceiling on how often a frame is drawn: the player's frame
  * rate cap (`Settings.fpsCap`).
  * Owns: the animation-frame requester Babylon's render loop asks for its next
- * frame (`engine.customAnimationFrameRequester`), and the decision whether a
- * display refresh is given a frame at all.
+ * frame (`engine.customAnimationFrameRequester`), the decision whether a
+ * display refresh is given a frame at all, and the simulation's clock — how
+ * much time a frame steps the world by (`elapsed`).
  * Invariants: a refused refresh runs NOTHING of the engine's frame — not
  * `beginFrame`, not `Game.tick`, not `endFrame` — so the frame that does run
  * measures its delta across the whole gap and every system sees one ordinary
  * long frame. The cap is a DEADLINE, never an accumulator. Rate 0 admits every
  * refresh, which is the loop exactly as it ran before the setting existed.
+ * The world is stepped on the REFRESH clock, never on when the callback ran.
  * Never: allocates per frame (the profiler's rule — `docs/profiling.md`), or
  * relies on `this` in the two functions it hands Babylon, which destructures
  * them and calls them unbound.
@@ -37,6 +39,19 @@
  * backlog of due times in the past, and the frames after it would all be
  * admitted back to back — a burst at the display's own rate, which is the
  * uneven pacing this exists to remove.
+ *
+ * **EVEN PACING IS HALF OF IT; THE OTHER HALF IS AN EVEN STEP.** Babylon's
+ * `getDeltaTime()` is `performance.now()` read in `beginFrame` — whenever the
+ * callback happened to get the main thread — so under a 30 cap every frame is
+ * SHOWN for exactly two refreshes and STEPPED by 31 ms, 36, 33: the camera and
+ * the world advance unevenly across a display that is not, which is judder
+ * under a steady pan however even the cadence is. The timestamp a refresh
+ * hands its callback is the refresh's own (the vsync's, in every engine that
+ * matters), so the gap between two admitted ones is a whole number of
+ * refreshes — the interval the display actually puts between the frames.
+ * `elapsed` is that, and it is what `Game.tick` steps the world by. The raw
+ * delta stays what the profiler and the readout read: an instrument measures
+ * when the work ran, and the world moves by when it is seen.
  */
 import type { ICustomAnimationFrameRequester } from "@babylonjs/core";
 import { CONFIG } from "../config";
@@ -54,6 +69,10 @@ export class FrameCap {
    * be one function for the life of the game rather than a closure a frame.
    */
   private pending: FrameRequestCallback | null = null;
+  /** The refresh timestamp the frame now running was admitted on, 0 before any. */
+  private stamp = 0;
+  /** The one the frame before it was admitted on, 0 before there were two. */
+  private prevStamp = 0;
 
   /** What `Game` installs as `engine.customAnimationFrameRequester`. */
   readonly requester: ICustomAnimationFrameRequester = {
@@ -81,6 +100,16 @@ export class FrameCap {
     this.next = 0;
   }
 
+  /**
+   * Seconds between the refresh that took this frame and the one that took the
+   * last — what the world should be stepped by — or `fallback` until two
+   * frames have run. See the header for why this is not `getDeltaTime()`.
+   */
+  elapsed(fallback: number): number {
+    const gap = this.stamp - this.prevStamp;
+    return this.prevStamp > 0 && gap > 0 ? gap / 1000 : fallback;
+  }
+
   private readonly step = (t: number): void => {
     const render = this.pending;
     if (!render) return;
@@ -92,6 +121,8 @@ export class FrameCap {
     // it, and that request must not be wiped on the way out.
     this.pending = null;
     this.handle = 0;
+    this.prevStamp = this.stamp;
+    this.stamp = t;
     render(t);
   };
 

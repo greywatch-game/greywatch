@@ -205,10 +205,6 @@ capture now carries every creation filed against its frame and named by
 effect and define set, and each hitch says how many landed on it or the two
 frames before. What is left is taking the capture.
 
-`src/core/FrameCap.ts` is now a frame pacer, and its admitted frame measures
-its delta across the whole gap — the raw, lagging `dt` that `docs/profiling.md`
-(vsync) says a pacer owes something better than. Not measured.
-
 ### The pairing bug, which is where the leftover was coming from
 
 **Fixed in report version 4. The mechanism, the worked example (Cinderhaven

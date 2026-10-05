@@ -236,6 +236,8 @@ export class MotionBlur {
    * apply time, when the pass knows the size it is actually running at. */
   private tanY = 1;
   private strength = 0;
+  /** `maxShift` for the frame being drawn — the config's rate times its length. */
+  private maxShift: number = CONFIG.graphics.motionBlur.maxShift;
   /**
    * False for one frame after a teleport (and on the first frame of all), so
    * the stale basis is replaced rather than smeared through.
@@ -288,7 +290,7 @@ export class MotionBlur {
         this.tanY,
       );
       effect.setFloat("strength", this.strength);
-      effect.setFloat("maxShift", c.maxShift);
+      effect.setFloat("maxShift", this.maxShift);
       effect.setFloat2("mask", c.maskInner, c.maskOuter);
       // The clip planes are the camera's own and move with the ADS zoom's
       // fov not at all, but `minZ` is written once by CameraSystem and read
@@ -351,12 +353,17 @@ export class MotionBlur {
    *
    * Called every frame in every game state, so the basis can never go stale
    * just because the player is sitting in a menu.
+   *
+   * `dt` is the frame's length, and it reaches the CAP alone: the smear is
+   * already the frame's own rotation, so it lengthens with the frame by
+   * itself, and only the cap was stated per frame (see `maxShift`).
    */
-  update(yaw: number, pitch: number): void {
+  update(yaw: number, pitch: number, dt: number): void {
     // Detached: no pass to feed, and the basis it would be tracking is
     // discarded by `setEnabled` on the way back on anyway.
     if (!this.enabled) return;
     const c = CONFIG.graphics.motionBlur;
+    this.maxShift = c.maxShift * 60 * Math.min(dt, c.maxShiftSpan);
     const cp = Math.cos(pitch);
     const sp = Math.sin(pitch);
     const cy = Math.cos(yaw);

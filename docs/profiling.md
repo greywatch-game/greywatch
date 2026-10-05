@@ -1050,10 +1050,18 @@ There is a second-order version. `dt` is `getDeltaTime()`, the interval BEFORE
 the frame, but the frame is displayed for the interval AFTER it — so each frame
 advances the world by ~0.9 ms (p95: 4.8) more or less than the time it is shown
 for. Vsync was hiding that too. **A frame pacer owes a dt that is smoothed or
-predicted**, not the raw lagging one — and one is built now
-(`src/core/FrameCap.ts`, the `fpsCap` setting, 96cef43) without it: a frame it
-admits measures its delta across the whole gap, which is exactly the raw dt.
-`FINDINGS.md` 1 holds that as open and unmeasured.
+predicted**, not the raw lagging one, and the pacer (`src/core/FrameCap.ts`,
+the `fpsCap` setting) now hands the world one: `Game.tick` steps by
+`FrameCap.elapsed`, the gap between the REFRESH timestamps that took this frame
+and the last, which is a whole number of refreshes rather than whenever the
+callback got the thread. **The profiler still reads the raw `getDeltaTime()`**
+— it measures when the work ran, and the world moves by when it is seen.
+Measured on the Windows box under a 30 cap, Hollowmere, 180 frames headed: the
+raw delta ran 31.7–35.0 ms (sd 0.70, p95 error against 33.3 of 1.23 ms) and the
+refresh step 32.8–33.8 (sd 0.25, p95 error 0.37); headless, the p95 error went
+1.63 → 0.37. What is left is the browser's own timestamp jitter. A phone,
+whose callback lands later and less evenly, is where the raw figure is worse
+and the change is worth the most — not yet measured there.
 
 The tell that VARIANCE is the villain rather than cost: the slowest capture
 (135.2 fps, tick 6.81 ms) has by far the lowest jitter (p95 1.90 ms), because it

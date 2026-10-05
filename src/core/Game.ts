@@ -3240,8 +3240,13 @@ export class Game {
     // open spans is cleared in the same breath. A span left open by an early
     // return anywhere below is therefore never read as the next frame's.
     this.prof.beginFrame();
+    // Two clocks, on purpose. `real` is when the work RAN, which is what the
+    // readout and the profiler measure; `dt` is the gap between the refreshes
+    // that took this frame and the last, which is how long apart the two are
+    // SEEN — stepping the world by when a callback got the thread is judder
+    // under an evenly paced display (`FrameCap`'s header).
     const real = this.engine.getDeltaTime() / 1000;
-    const dt = Math.min(real, 0.05);
+    const dt = Math.min(this.frameCap.elapsed(real), 0.05);
     this.prof.begin(P.input);
     this.input.update();
     this.prof.end(P.input);
@@ -3404,7 +3409,7 @@ export class Game {
     // drives the Babylon camera directly and never touches these angles, so
     // the pass sees no rotation and stays inert — which is what we want in an
     // authoring tool.
-    this.motionBlur.update(this.cameraSys.aimYaw, this.cameraSys.aimPitch);
+    this.motionBlur.update(this.cameraSys.aimYaw, this.cameraSys.aimPitch, dt);
     this.prof.end(P.post);
     // **Read ONCE, here, and spent twice below.** Two of the pushes at the end
     // of a frame are owed the same fact — did anything actually MOVE the fleet

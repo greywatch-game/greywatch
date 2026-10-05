@@ -287,14 +287,29 @@ export const graphics = {
     /** Taps along the smear, the sharp one included. Must be at least 2. */
     samples: 10,
     /**
-     * Longest smear, as a fraction of the frame. This is a safety cap, not
-     * a look: one dropped frame arrives as a single huge rotation, and
-     * headless captures run slow enough to smear the screen flat without
-     * it. It bites at a pan rate inversely proportional to `strength` —
-     * roughly 550 deg/s at the value above — so ordinary play never
-     * reaches it and a hitch saturates instead of exploding.
+     * Longest smear, as a fraction of the frame, PER 60th OF A SECOND the
+     * frame covers. This is a safety cap, not a look: one dropped frame
+     * arrives as a single huge rotation, and headless captures run slow
+     * enough to smear the screen flat without it. It bites at a pan rate
+     * inversely proportional to `strength` — roughly 550 deg/s at the value
+     * above — so ordinary play never reaches it and a hitch saturates
+     * instead of exploding.
+     *
+     * **It is a RATE, scaled by the frame's own length, because the smear it
+     * caps is one.** A frame's smear is that frame's rotation, so at 30 fps an
+     * ordinary pan smears twice as far as at 60 — which is the shutter doing
+     * its job, and the job matters most there. A cap stated per FRAME bit at
+     * half the pan rate under a 30 cap, and took the blur off exactly the whip
+     * pans where it hides the judder.
      */
     maxShift: 0.04,
+    /**
+     * The longest frame, in seconds, `maxShift` grows with. Past it the cap
+     * holds, so a frame that is a HITCH rather than a frame rate saturates as
+     * the cap above promises. One 30 fps frame: the lowest cap the settings
+     * offer is the slowest cadence the blur is tuned to cover.
+     */
+    maxShiftSpan: 1 / 30,
     /** Rotation in one frame (radians) below which the pass is skipped. */
     minRotation: 0.0015,
     /**
