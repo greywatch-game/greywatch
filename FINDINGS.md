@@ -34,7 +34,10 @@ thread was idle through it and the GPU was idle through it. What is open is:
 - **(d) the capture the pipeline hook was built for** under the first-use
   hypothesis. The hook is in (report version 11: `pipelines`, and
   `createdOn`/`createdNear` on every hitch — `docs/profiling.md`, "Compiles");
-  what is owed is a round with combat in it, on the phone and on this panel.
+  what is owed is a round with combat in it on this panel. **The phone's is
+  taken** (finding 13): one hitch in 151 sat on a creation — the first blast,
+  finding 16 — so on that device the first-use hypothesis is not what drops
+  frames.
 
 **A collector reading taken HEADLESS AND UNCAPPED nearly closed this wrongly.**
 At 220-700 fps the game allocates the same ~200 kB a FRAME and therefore two to
@@ -441,6 +444,11 @@ what happens when one is taken at face value.
   IDLE through the long one — 30 fps on average and a stall four times a
   second. That is this entry's shape on a phone, and what it bought was a
   frame-rate cap (30/60/unlimited on the settings screen) rather than a cause.
+- **A phone on Greyfen again, with `?gpu` (finding 13)** — and this one HAS a
+  cause: the main thread idle through the stall is still true, but the GPU is
+  not. It runs ~13.5 ms of the 16.7 ms interval, and the share of dropped
+  frames climbs with it from 1% to 25%. On that device this entry's "not the
+  GPU either" does not hold.
 
 ### Candidates, as they stood before the capture
 
@@ -497,7 +505,10 @@ Coldharbour's frame (47.3 against 46.4 fps), and detaching the chain later read
 -4.6%, free within drift (`docs/profiling.md`, "Reading a capture") — **stale
 as a share**, since that frame was ~21 ms and Coldharbour now runs at 122 fps
 (~8 ms, 96fcd19). `renderScale` is measured on
-the desktop and still unmeasured on a phone (below).
+the desktop, and on a phone only at its lowest rung (below). **A phone IS
+fill-bound** — finding 13: on Greyfen at render scale 0.5 its GPU frame is
+~13.5 ms, uncorrelated with draw calls, and the dropped frames follow it — so
+this entry's passes are the first thing to price there.
 
 - **Six full-screen passes at the render resolution at defaults**, in the order
   `Game.ts` (~1343-1405) builds them: `CelInk`, the `GlowPass` compose (behind
@@ -522,8 +533,10 @@ the desktop and still unmeasured on a phone (below).
   and 100% are now one keypress away. **On the desktop that cost is measured
   and is nothing**: `docs/rendering.md`, "Why the frame is draw-call bound",
   swept `setHardwareScalingLevel` across 16x the pixels on Coldharbour and the
-  frame was flat. **On a phone it is still
-  unmeasured**, and a phone is the device whose frame might be fill-bound.
+  frame was flat. **On a phone the rungs are still unmeasured against each
+  other**, and the one phone captured (finding 13) was already on the lowest,
+  0.5, and still over budget — so for it the lever is the passes, not the
+  resolution.
 - **The ash field is 18,667 alpha-blended GPU particles** (`getCapacity`, at
   steady state). Simulation is on the GPU and cheap; the overdraw is not.
 - **The glass FRAGMENT's reflection has no distance fade.** The
@@ -842,10 +855,13 @@ way the reflections and the physics world already are, and measure what is left.
 
 ---
 
-## 13. Greyfen's palms on the Trees setting: does a tablet or a phone hold 60 there at `low`?
+## 13. Greyfen at `low` does NOT hold 60 on a phone, and what binds it there is the GPU's FILL — the opposite of the desktop
 
-**Status:** costed on the desktop, open on a touch device — which is the only
-place it was ever a question.
+**Status:** answered for one phone (six captures, below): **no, and not because
+of the CPU, the collector or the compiler** — the frame waits on a GPU running
+at ~13.5 ms of a 16.7 ms interval. Open: WHICH of the GPU's work that is (the
+post chain or the world's fragments — the first step below settles it), and
+the tablet df3c7cc was made for.
 
 **The forest is ~1,400 feather-frond palms** (4ea4c72, 1130c74, 6c7a505;
 `buildJungleTree` in `src/world/Props.ts`) — the most-placed model in the game —
@@ -857,20 +873,103 @@ on a layout seeded by `scripts/generate-greyfen.mjs` (`npm run greyfen`,
 frames than high at all six vantages and built the round ~3.2 s sooner (14.7 ->
 11.5 s). A coarse pointer already defaults to low.
 
-**What df3c7cc was made FOR is not measured.** Its message records a tablet
-that held 60 on Greyfen before the palm and no longer did with it, and nobody
-has taken a capture on that tablet at `low` since. The one touch-device capture
-of Greyfen is the phone in finding 1 (96cef43: 16, 16, 16, 70 ms with the main
-thread idle through the long one), which is a pacing shape rather than a
-geometry cost and does not say which rung it ran.
+**What df3c7cc was made FOR is still not measured.** Its message records a
+tablet that held 60 on Greyfen before the palm and no longer did with it, and
+nobody has taken a capture on that tablet at `low` since.
 
-**How to settle it**: a `?profile` capture on the tablet at Trees `low`, and one
-at `high` beside it — a report carries the rung it was built with
-(`graphics.foliage`) and `device.coarsePointer`. The frame is DRAW-CALL bound on
-the desktop (`docs/rendering.md`, "Why the frame is draw-call bound"), so a
-desktop reading cannot answer a vertex question on a mobile GPU. If `low` does
-not hold 60 there, the levers are the generator's counts and a lower rung; the grass is not one (finding 46 draws it
-around the eye).
+### The phone, at `low` (six captures, 2026-10-05 01:47-01:51 UTC)
+
+`?profile&gpu` SAVE captures, report v11, one session on an Android phone
+(Chrome 154, a 2340x1080 panel at dpr 2.81, 8 cores, 8 GB — the reduced user
+agent does not name the GPU), `gpu.frameMeasurable: true`. All on Greyfen at
+**render scale 0.5 — the lowest rung, a 1170x540 backing store** — shadows,
+grass and Trees `low`, GI and volumetrics off, motion blur and paper grain ON,
+cap 60 on a 60 Hz panel. The table is the last three, which were 100%
+`playing` on settings that had stood for over three minutes:
+
+| capture | fps | tick mean / p95 | tick > 16.7 | `gpu.frame` mean / p95 | GPU > 16.7 | intervals > 22 ms |
+| --- | --- | --- | --- | --- | --- | --- |
+| 01:50:11 | 56.5 | 10.3 / 13.5 ms | 1.0% | 13.4 / 19.6 ms | 19% | 8% |
+| 01:50:41 | 54.9 | 10.6 / 13.6 ms | 1.0% | 13.7 / 19.3 ms | 21% | 10% |
+| 01:51:14 | 51.4 | 10.6 / 15.1 ms | 2.2% | 13.9 / 19.5 ms | 25% | 16% |
+
+- **The slow frames are WAITS.** On the intervals over 22 ms the tick is still
+  ~10-11 ms, the long animation frame over each has zero blocking and script ≈
+  the tick, and every steady-state hitch carries `gc: 0` and `createdNear: 0`
+  (one hitch in 151 across the five gameplay captures sat on a creation —
+  finding 16). The frame was finished and was not presented: finding 1's
+  shape, and here it has a cause.
+- **What the wait follows is GPU time.** One-second windows (60 frames, stride
+  20) over the five gameplay captures, binned by their mean `gpu.frame`:
+
+  | window GPU mean | windows | frames over 22 ms |
+  | --- | --- | --- |
+  | 11-12.5 ms | 154 | 1.0% |
+  | 12.5-14 ms | 176 | 5.9% |
+  | 14-15.5 ms | 182 | 14.0% |
+  | over 15.5 ms | 215 | 25.3% |
+
+  **Drops begin near 13 ms, not 16.7.** The page's GPU frame is not the only
+  work that GPU does — Chrome's compositor puts the canvas and the DOM HUD
+  together on it — and a 14 ms mean has a tail over the interval.
+- **The tick adds to it without ever being the budget.** The same windows split
+  both ways (share of frames over 22 ms):
+
+  | | tick < 10 | tick 10-11.5 | tick > 11.5 |
+  | --- | --- | --- | --- |
+  | GPU < 13 | 0.3% | 0.5% | 4.2% |
+  | GPU 13-15 | 3.7% | 7.8% | 19.2% |
+  | GPU > 15 | 12.2% | 22.5% | 29.7% |
+
+- **Draw calls do not predict the GPU here**: the per-frame correlation of
+  `gpu.frame` with `drawCalls` is -0.11 to 0.06 across the five. The desktop
+  is draw-call bound (`docs/rendering.md`); this phone is FILL bound, so no
+  desktop reading answers it and nothing that cuts draw calls (finding 39) is
+  a lever for it. That also makes Trees `low`/`high` a fragment question here
+  (the canopy's overdraw) more than a vertex one.
+- **About half of the GPU frame may be fixed full-screen work.** The MENU — 12
+  draw calls, a 3.5 ms tick — reads **7.15 ms** of `gpu.frame` over 753
+  samples. That window straddled a settings change (`inForceSeconds` 31.7 of
+  85 s), so its render scale is not certain; if it was 0.5, the post chain
+  (finding 5's passes, less the volumetrics) is ~7 of the ~13.5 ms. The same
+  menu dropped 12% of its frames, but in RUNS of consecutive 33 ms intervals —
+  the shape of a 30 cap passed through on the settings screen, so it is not
+  evidence about the menu's own pacing.
+
+**Three readings this GPU got wrong**, all excluded from the above and none
+explained — the instrument's own open thread on a mobile GPU:
+
+- **~2,300 gameplay readings sit at exactly 7.13-7.20 ms** at 200+ draw calls —
+  the menu's value — and they land on slow frames up to twice as often as
+  other readings (21-29% against 8-15% in the captures where the rate was
+  highest).
+- **`gpu.mainPass` is bimodal** (~0.5 ms or 8-16 ms), and `gpu.frame` reads
+  the same ~13 ms under either mode, so on this GPU (presumably tile-based) it
+  says where a timestamp landed rather than what the final quad cost.
+- **`gpu.frame.maxMs` is 84.95 in five captures**, to the hundredth.
+
+**One-offs in the same session, not the steady problem:** a 26.4 s block in one
+frame callback just before the round (0 bots, at the spawn, 12 draw calls —
+most likely the map build, which on the desktop takes ~11.5 s); the spawn's
+1,268 ms frame with 34 creations near it and the first blast's 403 ms
+(finding 16); and three single-frame CPU spikes, one per capture — 102.8 ms
+(`world` 49.3, `onFoot` 19.2, 50 ms blocking), 68.6 ms (`shadowPass` 15.9, a
+16.7 ms mesh walk, `input` 6.4) and 80.2 ms (`drawWorld` 52.4) — finding 1(a)'s
+second population, on a phone.
+
+**How to settle what is left**, in order:
+
+1. **Which GPU work.** Three captures standing at one spot: as shipped, motion
+   blur off, then motion blur and paper grain both off — each takes one
+   full-screen pass away. If `gpu.frame` falls by a millisecond or more per
+   pass, the post chain is the lever (a touch default, or a phone preset); if
+   it barely moves, the cost is the world's fragments — the canopy, the
+   ground's relief (finding 42) — and Trees `low` against `high` is the next
+   pair. Run them at cap Unlimited, finding 42's protocol, and ignore any
+   window whose `inForceSeconds` straddles a switch.
+2. **The tablet** df3c7cc was made for, at Trees `low` and `high`. A report
+   carries the rung (`graphics.foliage`) and `device.coarsePointer`. The grass
+   is not a lever (finding 46 draws it around the eye).
 
 (History, so nobody re-derives it: the headless before/after table this entry
 carried — 354 trees to ~1,390, 831k to 1,386k active triangles — and the
@@ -993,6 +1092,16 @@ would have to draw. Babylon 9.28 also brings the tool for it:
 `engine.createRenderPipelineAsync` (backed by
 `WebGPUCacheRenderPipeline.preWarmPipeline`) compiles a variant without
 drawing it, and its creations would show up in the same log, before the round.
+
+**On a phone it is bigger, and it reaches past the spawn** (finding 13's
+session, Greyfen, 2026-10-05). The spawn frame ran **1,268 ms with 34
+creations near it**. Then, ~45 s into the round, the FIRST BLAST ran **403 ms**
+on nine creations: `blast` in a plain and a `GLOW_MASK` variant (both
+`INSTANCES`/`THIN_INSTANCES`) and a `default` `StandardMaterial` with a detail
+plugin, all against `rgba8unorm`/`depth32float`. That is measured proof that
+`BlastFx`'s `forceCompilation` warms the effect and NOT the pipeline. The
+blast's pair belongs on any warm-up list, and it is the one stall in this list
+that lands in play rather than under the deploy screen.
 
 ---
 
