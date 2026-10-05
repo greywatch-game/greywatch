@@ -444,11 +444,13 @@ what happens when one is taken at face value.
   IDLE through the long one — 30 fps on average and a stall four times a
   second. That is this entry's shape on a phone, and what it bought was a
   frame-rate cap (30/60/unlimited on the settings screen) rather than a cause.
-- **A phone on Greyfen again, with `?gpu` (finding 13)** — and this one HAS a
-  cause: the main thread idle through the stall is still true, but the GPU is
-  not. It runs ~13.5 ms of the 16.7 ms interval, and the share of dropped
-  frames climbs with it from 1% to 25%. On that device this entry's "not the
-  GPU either" does not hold.
+- **A phone on Greyfen again, twelve captures with and without `?gpu`
+  (finding 13)** — the same shape, 7-24% of frames held with the main thread
+  idle, and it narrows the field: not the collector, the compiler, the frame
+  cap or the GPU timer, and not the display (the menu holds 60 exactly). The
+  GPU ran 11-14 ms and standing still the drops did not follow it; they follow
+  the TICK, which reads as the phone's CPU slowing rather than any one phase
+  growing.
 
 ### Candidates, as they stood before the capture
 
@@ -505,10 +507,10 @@ Coldharbour's frame (47.3 against 46.4 fps), and detaching the chain later read
 -4.6%, free within drift (`docs/profiling.md`, "Reading a capture") — **stale
 as a share**, since that frame was ~21 ms and Coldharbour now runs at 122 fps
 (~8 ms, 96fcd19). `renderScale` is measured on
-the desktop, and on a phone only at its lowest rung (below). **A phone IS
-fill-bound** — finding 13: on Greyfen at render scale 0.5 its GPU frame is
-~13.5 ms, uncorrelated with draw calls, and the dropped frames follow it — so
-this entry's passes are the first thing to price there.
+the desktop, and on a phone only at its lowest rung (below). On a phone
+the passes were priced and are not the lever — finding 13: at render scale
+0.5 on Greyfen, taking motion blur and the grain off moved `gpu.frame` by
+nothing measurable, and the dropped frames there do not follow the GPU.
 
 - **Six full-screen passes at the render resolution at defaults**, in the order
   `Game.ts` (~1343-1405) builds them: `CelInk`, the `GlowPass` compose (behind
@@ -534,9 +536,8 @@ this entry's passes are the first thing to price there.
   and is nothing**: `docs/rendering.md`, "Why the frame is draw-call bound",
   swept `setHardwareScalingLevel` across 16x the pixels on Coldharbour and the
   frame was flat. **On a phone the rungs are still unmeasured against each
-  other**, and the one phone captured (finding 13) was already on the lowest,
-  0.5, and still over budget — so for it the lever is the passes, not the
-  resolution.
+  other**; the one phone captured (finding 13) was on the lowest, 0.5, and
+  0.75 against it is that entry's control for whether fill matters at all.
 - **The ash field is 18,667 alpha-blended GPU particles** (`getCapacity`, at
   steady state). Simulation is on the GPU and cheap; the overdraw is not.
 - **The glass FRAGMENT's reflection has no distance fade.** The
@@ -855,13 +856,18 @@ way the reflections and the physics world already are, and measure what is left.
 
 ---
 
-## 13. Greyfen at `low` does NOT hold 60 on a phone, and what binds it there is the GPU's FILL — the opposite of the desktop
+## 13. Greyfen at `low` does NOT hold 60 on a phone, and neither half the profiler can see is over budget
 
-**Status:** answered for one phone (six captures, below): **no, and not because
-of the CPU, the collector or the compiler** — the frame waits on a GPU running
-at ~13.5 ms of a 16.7 ms interval. Open: WHICH of the GPU's work that is (the
-post chain or the world's fragments — the first step below settles it), and
-the tablet df3c7cc was made for.
+**Status:** answered for one phone (twelve captures, below): **no** — 7-24% of
+frames are held one to three refreshes. **The cause is open, and the field is
+narrowed**: not the collector, not the compiler, not the frame cap, not the GPU
+timer, not the post chain, and not the display (the menu holds 60 exactly).
+Neither measured half is over budget: the tick is ~9-10 ms, the GPU frame
+11-14 ms, and **standing still the drop rate does not follow the GPU at all**.
+What it does follow, most consistently, is the TICK — a CPU reading, at
+roughly half the interval. An earlier reading of this entry called the phone
+GPU-bound; the standing-still captures below disproved it. Also open: the
+tablet df3c7cc was made for.
 
 **The forest is ~1,400 feather-frond palms** (4ea4c72, 1130c74, 6c7a505;
 `buildJungleTree` in `src/world/Props.ts`) — the most-placed model in the game —
@@ -898,9 +904,12 @@ cap 60 on a 60 Hz panel. The table is the last three, which were 100%
   the tick, and every steady-state hitch carries `gc: 0` and `createdNear: 0`
   (one hitch in 151 across the five gameplay captures sat on a creation —
   finding 16). The frame was finished and was not presented: finding 1's
-  shape, and here it has a cause.
-- **What the wait follows is GPU time.** One-second windows (60 frames, stride
-  20) over the five gameplay captures, binned by their mean `gpu.frame`:
+  shape.
+- **WHILE MOVING, the wait appeared to follow GPU time — and standing still it
+  does not**, so this table is a CONFOUND and not a cause: a heavy view raises
+  the GPU and whatever really holds the frame together. One-second windows (60
+  frames, stride 20) over the five gameplay captures, binned by their mean
+  `gpu.frame`:
 
   | window GPU mean | windows | frames over 22 ms |
   | --- | --- | --- |
@@ -909,11 +918,12 @@ cap 60 on a 60 Hz panel. The table is the last three, which were 100%
   | 14-15.5 ms | 182 | 14.0% |
   | over 15.5 ms | 215 | 25.3% |
 
-  **Drops begin near 13 ms, not 16.7.** The page's GPU frame is not the only
-  work that GPU does — Chrome's compositor puts the canvas and the DOM HUD
-  together on it — and a 14 ms mean has a tail over the interval.
-- **The tick adds to it without ever being the budget.** The same windows split
-  both ways (share of frames over 22 ms):
+  Read as it first was ("drops begin near 13 ms because the compositor shares
+  the GPU"), it predicts the standing-still captures below would drop ~6-14%
+  in proportion to their GPU. They dropped 16% at under 12.5 ms.
+- **The tick tracks the drops at every GPU level.** The same windows split both
+  ways (share of frames over 22 ms) — the column effect is the one that
+  survived standing still:
 
   | | tick < 10 | tick 10-11.5 | tick > 11.5 |
   | --- | --- | --- | --- |
@@ -922,19 +932,61 @@ cap 60 on a 60 Hz panel. The table is the last three, which were 100%
   | GPU > 15 | 12.2% | 22.5% | 29.7% |
 
 - **Draw calls do not predict the GPU here**: the per-frame correlation of
-  `gpu.frame` with `drawCalls` is -0.11 to 0.06 across the five. The desktop
-  is draw-call bound (`docs/rendering.md`); this phone is FILL bound, so no
-  desktop reading answers it and nothing that cuts draw calls (finding 39) is
-  a lever for it. That also makes Trees `low`/`high` a fragment question here
-  (the canopy's overdraw) more than a vertex one.
-- **About half of the GPU frame may be fixed full-screen work.** The MENU — 12
-  draw calls, a 3.5 ms tick — reads **7.15 ms** of `gpu.frame` over 753
-  samples. That window straddled a settings change (`inForceSeconds` 31.7 of
-  85 s), so its render scale is not certain; if it was 0.5, the post chain
-  (finding 5's passes, less the volumetrics) is ~7 of the ~13.5 ms. The same
-  menu dropped 12% of its frames, but in RUNS of consecutive 33 ms intervals —
-  the shape of a 30 cap passed through on the settings screen, so it is not
-  evidence about the menu's own pacing.
+  `gpu.frame` with `drawCalls` is -0.11 to 0.06 across the five.
+- **The MENU** — 12 draw calls, a 3.5 ms tick — reads **7.15 ms** of
+  `gpu.frame` over 753 samples, but that window straddled a settings change
+  (`inForceSeconds` 31.7 of 85 s) and dropped frames in RUNS of consecutive
+  33 ms intervals, the shape of a 30 cap passed through on the settings
+  screen. The clean menu reading is the 03:12:55 capture below.
+
+### Standing at the spawn (six captures, 02:14-03:12 UTC)
+
+Same phone, same settings except the column that moves, standing at
+(-102, 98) with the view held; every window on settings that had stood over
+100 s, and none with a creation in it:
+
+| capture | cap | `?gpu` | motion blur / grain | fps | frames > 22 ms | tick mean | `gpu.frame` mean / p95 | GPU > 16.7 |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| 02:14:38 | 60 | yes | on / on | 56.1 | 10.2% | 9.4 ms | 13.5 / 15.8 ms | 0.6% |
+| 02:16:59 | 60 | yes | **off** / on | 51.4 | 23.3% | 10.0 ms | 13.9 / 16.5 ms | 3.5% |
+| 02:19:00 | 60 | yes | **off / off** | 54.3 | 18.8% | 9.6 ms | 13.8 / 16.4 ms | 2.7% |
+| 03:08:14 | **off** | yes | on / on | 56.9 | 6.6% | 8.9 ms | 11.4 / 15.7 ms | 3.1% |
+| 03:11:27 | **off** | **no** | on / on | 50.1 | 24.2% | 9.2 ms | — | — |
+| 03:12:55 | off | no | on / on | **60.1 — MENU** | **0** | 3.0 ms | — | — |
+
+- **The post chain is not the lever.** Two full-screen passes out and
+  `gpu.frame` went UP 0.3 ms; one-second means drift 11-15 ms inside a single
+  capture with nothing moving, which swamps anything those passes cost. Either
+  they are nearly free at 1170x540 or this phone's GPU clock scales to the work
+  (a mobile governor lowers the clock when there is less to do, which would
+  hold the duration flat while the work falls) — so **on a phone `gpu.frame`
+  may read utilisation rather than work**. Unmeasured.
+- **The GPU over the interval is not what drops frames.** It ran over 16.7 ms
+  on 0.6-3.5% of frames while 7-23% dropped, and binned the same way as the
+  moving table, the three capped runs' windows dropped **16% under 12.5 ms GPU, 16% at 12.5-14
+  and 19% at 14-15.5** — flat.
+- **Neither the cap nor the GPU timer is it.** Uncapped dropped 6.6%, inside
+  the 10-23% spread of the capped runs; uncapped without `?gpu` dropped 24.2%,
+  the worst of the six. **The same configuration at the same spot ranges from
+  6.6% to 24%** across an hour, and that spread is itself a finding: device
+  state — temperature, clocks, whatever else the phone was doing — moves the
+  result more than anything toggled here.
+- **The display is not it.** The menu, uncapped, holds 60.1 fps with zero
+  hitches, a p99 of 18.5 ms and not one long animation frame in 50 s. This
+  phone presents a WebGPU canvas under the DOM at 60 without a stumble; the
+  drops arrive with the round's load.
+- **The TICK tracks the drops even where the scene does not move.** Windowed
+  correlation of the drop rate with the tick is 0.34-0.68 at the spawn and
+  0.17-0.90 across all ten gameplay captures, against -0.19 to 0.82 for draw
+  calls. At 02:14:38 the draw count was flat (tick against draws 0.09) and the
+  drops still followed the tick at 0.66 — **the main thread getting slower
+  with the scene held still is the CPU itself slowing**, and frames drop in the
+  same seconds. A 9 ms tick is not over budget by itself, so the reading is
+  that the phone's CPU is the shared resource: the main thread's ~9 ms plus
+  the CPU work neither instrument measures — Chrome's GPU process turning ~195
+  draws into Vulkan commands (the desktop is draw-call bound for the same
+  reason, `docs/rendering.md`) and the compositor. **A hypothesis**, and the
+  first step below is what tests it.
 
 **Three readings this GPU got wrong**, all excluded from the above and none
 explained — the instrument's own open thread on a mobile GPU:
@@ -948,7 +1000,9 @@ explained — the instrument's own open thread on a mobile GPU:
   says where a timestamp landed rather than what the final quad cost.
 - **`gpu.frame.maxMs` is 84.95 in five captures**, to the hundredth.
 
-**One-offs in the same session, not the steady problem:** a 26.4 s block in one
+**One-offs in the same sessions, not the steady problem:** a 291 ms frame at the
+spawn with 284 ms inside `render` and almost none of it in a named span (the
+active-mesh walk, the post chain or a reflection bake's share), a 26.4 s block in one
 frame callback just before the round (0 bots, at the spawn, 12 draw calls —
 most likely the map build, which on the desktop takes ~11.5 s); the spawn's
 1,268 ms frame with 34 creations near it and the first blast's 403 ms
@@ -959,15 +1013,19 @@ second population, on a phone.
 
 **How to settle what is left**, in order:
 
-1. **Which GPU work.** Three captures standing at one spot: as shipped, motion
-   blur off, then motion blur and paper grain both off — each takes one
-   full-screen pass away. If `gpu.frame` falls by a millisecond or more per
-   pass, the post chain is the lever (a touch default, or a phone preset); if
-   it barely moves, the cost is the world's fragments — the canopy, the
-   ground's relief (finding 42) — and Trees `low` against `high` is the next
-   pair. Run them at cap Unlimited, finding 42's protocol, and ignore any
-   window whose `inForceSeconds` straddles a switch.
-2. **The tablet** df3c7cc was made for, at Trees `low` and `high`. A report
+1. **See the threads the profiler cannot.** A DevTools Performance recording
+   of the phone over USB (`chrome://inspect`, a minute at the spawn) shows the
+   GPU process's main thread and the compositor beside the page's, frame by
+   frame — whether a held frame is the GPU process still encoding the last
+   one. A Perfetto system trace over `adb` adds the CPU and GPU clocks, which
+   is what would settle both the CPU-slowing reading and the governor reading
+   of `gpu.frame`. Either is more decisive than another capture.
+2. **If it is the CPU, the lever is draw calls** — shadows to their lowest
+   rung, Trees `low` against `high`, a smaller map (Kurenai) — each A/B'd at
+   the spawn with several runs a side, since one configuration spans 6-24%.
+   Render scale 0.75 against 0.5 is the control: more fill, the same draws, so
+   it should move nothing if the GPU is not the wall.
+3. **The tablet** df3c7cc was made for, at Trees `low` and `high`. A report
    carries the rung (`graphics.foliage`) and `device.coarsePointer`. The grass
    is not a lever (finding 46 draws it around the eye).
 
