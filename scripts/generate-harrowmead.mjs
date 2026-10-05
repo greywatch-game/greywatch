@@ -59,6 +59,33 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { roadNetwork } from "../src/world/roadPaths.ts";
 import { onRoad } from "../src/world/roads.ts";
+import {
+  bell,
+  f1,
+  FACES,
+  leadKind,
+  makeFloorAt,
+  makeFootOnRoad,
+  makeFootWet,
+  makeGrade,
+  makeMust,
+  makeOverlaps,
+  makeRelief,
+  makeWorldFoot,
+  n2,
+  printProbe,
+  printRefusals,
+  printTally,
+  rectDist,
+  section,
+  seeded,
+  smin,
+  smooth,
+  tally,
+  TURN,
+  turnOf,
+  vnoise,
+} from "./lib/mapgen.mjs";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const root = join(here, "..");
@@ -79,52 +106,9 @@ const FLAT = 0.45;
 
 // --- the seeded stream -------------------------------------------------------
 
-function mulberry32(a) {
-  return function () {
-    a |= 0;
-    a = (a + 0x6d2b79f5) | 0;
-    let t = Math.imul(a ^ (a >>> 15), 1 | a);
-    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
-    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
-  };
-}
-const rng = mulberry32(0x48524d44);
-const rand = (lo, hi) => lo + rng() * (hi - lo);
-const chance = (p) => rng() < p;
-const pick = (list) => list[Math.floor(rng() * list.length)];
+const { rng, rand, chance, pick } = seeded(0x48524d44);
 
 // --- the floor ---------------------------------------------------------------
-
-const smooth = (t) => {
-  const x = Math.max(0, Math.min(1, t));
-  return x * x * (3 - 2 * x);
-};
-
-/** Integer lattice hash in [0, 1). */
-function hash2(i, j, seed) {
-  let h = (Math.imul(i, 374761393) + Math.imul(j, 668265263) + Math.imul(seed, 1442695041)) | 0;
-  h = Math.imul(h ^ (h >>> 13), 1274126177);
-  h ^= h >>> 16;
-  return (h >>> 0) / 4294967296;
-}
-
-/** Smooth value noise in [-1, 1] at `scale` metres a lattice cell. */
-function vnoise(x, z, scale, seed) {
-  const fx = x / scale;
-  const fz = z / scale;
-  const i = Math.floor(fx);
-  const j = Math.floor(fz);
-  const u = smooth(fx - i);
-  const v = smooth(fz - j);
-  const a = hash2(i, j, seed);
-  const b = hash2(i + 1, j, seed);
-  const c = hash2(i, j + 1, seed);
-  const d = hash2(i + 1, j + 1, seed);
-  return (a + (b - a) * u + (c - a) * v + (a - b - c + d) * u * v) * 2 - 1;
-}
-
-/** A raised cosine: 1 at the centre, 0 at `radius` and beyond. */
-const bell = (d, radius) => (d >= radius ? 0 : (Math.cos((Math.PI * d) / radius) + 1) / 2);
 
 /**
  * The hills. Peak over radius is the steepest a bell makes (times π/2): the
@@ -302,18 +286,6 @@ for (const d of DISTRICTS) {
   }
 }
 
-function rectDist(x, z, r) {
-  const dx = Math.max(r.x0 - x, 0, x - r.x1);
-  const dz = Math.max(r.z0 - z, 0, z - r.z1);
-  return Math.hypot(dx, dz);
-}
-
-/** A smooth minimum, so the vale's cone meets the hills without a crease. */
-function smin(a, b, k) {
-  const h = Math.max(0, Math.min(1, 0.5 + (0.5 * (b - a)) / k));
-  return b + (a - b) * h - k * h * (1 - h);
-}
-
 /** The ground before any cut: the vale's sides, then every district, averaged. */
 function land(x, z) {
   const cone = BANK + VALE_GRADE * Math.max(0, Math.min(brookDist(x, z), pondDist(x, z) + BED_HW) - CORRIDOR);
@@ -369,69 +341,20 @@ for (let j = 0; j < ROW; j++) {
   }
 }
 
-function floorAt(x, z) {
-  const fx = Math.max(0, Math.min(CELLS - 1e-9, (x + HALF) / CELL));
-  const fz = Math.max(0, Math.min(CELLS - 1e-9, (z + HALF) / CELL));
-  const i = Math.floor(fx);
-  const j = Math.floor(fz);
-  const tx = fx - i;
-  const tz = fz - j;
-  const v = (a, c) => V[c * ROW + a];
-  return (
-    (v(i, j) * (1 - tx) + v(i + 1, j) * tx) * (1 - tz) +
-    (v(i, j + 1) * (1 - tx) + v(i + 1, j + 1) * tx) * tz
-  );
-}
+const floorAt = makeFloorAt((i, j) => V[j * ROW + i], CELLS, CELL, HALF);
 
 /** The steeper of the two axial slopes at a point. */
-function grade(x, z) {
-  const e = 2;
-  return Math.max(
-    Math.abs(floorAt(x + e, z) - floorAt(x - e, z)) / (2 * e),
-    Math.abs(floorAt(x, z + e) - floorAt(x, z - e)) / (2 * e),
-  );
-}
+const grade = makeGrade(floorAt, 2);
 
 /** True where the floor is under the water (plus a margin of bank). */
 const wet = (x, z, margin = 0.3) => floorAt(x, z) < WATER_Y + margin;
 
 if (process.argv.includes("--probe")) {
-  const step = 10;
-  const cols = [];
-  for (let x = -HALF; x <= HALF; x += step) cols.push(String(x).padStart(5));
-  console.log("  z|x " + cols.join(""));
-  for (let z = HALF; z >= -HALF; z -= step) {
-    let line = String(z).padStart(5) + " ";
-    for (let x = -HALF; x <= HALF; x += step) {
-      const g = grade(x, z);
-      line += (floorAt(x, z).toFixed(1) + (wet(x, z, 0) ? "~" : g > 0.3 ? "!" : " ")).padStart(5);
-    }
-    console.log(line);
-  }
+  printProbe({ half: HALF, step: 10, height: floorAt, grade, wet: wet });
   process.exit(0);
 }
 
 // --- the output, and the placement vocabulary --------------------------------
-
-const n2 = (v) => {
-  const r = Number(v.toFixed(2));
-  return Object.is(r, -0) ? "0" : String(r);
-};
-const TURN = ["", ", rotY: Math.PI / 2", ", rotY: Math.PI", ", rotY: -Math.PI / 2"];
-/**
- * Turn 0 faces SOUTH (a builder's front is its local -Z), 1 faces WEST, 2
- * NORTH and 3 EAST — `rotY` of π/2 takes local -Z to world -X.
- */
-const FACES = { south: 0, west: 1, north: 2, east: 3 };
-/** The world offset of a local one under a turn: `MapBuilder`'s `rotateY`. */
-function turnOf(lx, lz, turn) {
-  switch (turn) {
-    case 1: return [lz, -lx];
-    case 2: return [-lx, -lz];
-    case 3: return [-lz, lx];
-    default: return [lx, lz];
-  }
-}
 
 /**
  * The ground each kind takes, in its own frame: `[x0, x1, z0, z1]`, front at
@@ -490,26 +413,12 @@ const PROPS = new Set(["cart", "crates", "woodpile", "trough", "haystack", "stal
 /** Kinds with a front door, whose front the door check holds to a street or a yard. */
 const DOORS = new Set(["cottage", "townhouse", "tavern", "smithy", "chapel", "mill", "barn"]);
 
-function worldFoot(kind, x, z, turn, params) {
-  const [a, b, c, d] = FOOT[kind](params ?? {});
-  const p = [turnOf(a, c, turn), turnOf(b, d, turn)];
-  return {
-    x0: Math.min(p[0][0], p[1][0]) + x,
-    x1: Math.max(p[0][0], p[1][0]) + x,
-    z0: Math.min(p[0][1], p[1][1]) + z,
-    z1: Math.max(p[0][1], p[1][1]) + z,
-  };
-}
+const worldFoot = makeWorldFoot(FOOT);
 
 const placements = [];
 const scatter = [];
 /** The same placements as objects, for the road network and the render. */
 const placed = [];
-
-function section(list, title) {
-  const bar = "=".repeat(Math.max(4, 74 - title.length));
-  list.push(`  // ===== ${title} ${bar}`);
-}
 
 function paramText(params) {
   if (!params) return "";
@@ -641,13 +550,7 @@ const claimed = [];
 const refused = [];
 const open = [];
 
-function overlaps(r, pad, skip) {
-  for (const c of claimed) {
-    if (skip && skip(c)) continue;
-    if (r.x1 + pad > c.x0 && r.x0 - pad < c.x1 && r.z1 + pad > c.z0 && r.z0 - pad < c.z1) return c;
-  }
-  return null;
-}
+const overlaps = makeOverlaps(claimed);
 
 function claim(r, type = "solid", note = "") {
   claimed.push({ ...r, type, note });
@@ -660,36 +563,11 @@ function yard(x0, x1, z0, z1, note) {
 }
 
 /** How far the floor falls across a footprint, from its centre's own height. */
-function relief(r) {
-  const cx = (r.x0 + r.x1) / 2;
-  const cz = (r.z0 + r.z1) / 2;
-  const h0 = floorAt(cx, cz);
-  let worst = 0;
-  for (const fx of [0, 0.5, 1]) {
-    for (const fz of [0, 0.5, 1]) {
-      worst = Math.max(worst, Math.abs(floorAt(r.x0 + fx * (r.x1 - r.x0), r.z0 + fz * (r.z1 - r.z0)) - h0));
-    }
-  }
-  return worst;
-}
+const relief = makeRelief(floorAt);
 
-function footOnRoad(r) {
-  for (let x = r.x0; x <= r.x1 + 1e-9; x += Math.min(1, (r.x1 - r.x0) / 2 || 1)) {
-    for (let z = r.z0; z <= r.z1 + 1e-9; z += Math.min(1, (r.z1 - r.z0) / 2 || 1)) {
-      if (onRoadAt(x, z, 0.2)) return true;
-    }
-  }
-  return false;
-}
+const footOnRoad = makeFootOnRoad(onRoadAt);
 
-function footWet(r, margin = 0.35) {
-  for (const fx of [0, 0.25, 0.5, 0.75, 1]) {
-    for (const fz of [0, 0.25, 0.5, 0.75, 1]) {
-      if (wet(r.x0 + fx * (r.x1 - r.x0), r.z0 + fz * (r.z1 - r.z0), margin)) return true;
-    }
-  }
-  return false;
-}
+const footWet = makeFootWet(wet, 0.35);
 
 const inOpen = (x, z) => open.some((o) => x >= o.x0 && x <= o.x1 && z >= o.z0 && z <= o.z1);
 
@@ -765,10 +643,7 @@ function place(kind, x, z, turn, params, opts = {}) {
 }
 
 /** A named set piece: place it, and refuse to write the map if it did not fit. */
-function must(kind, x, z, turn, params, opts = {}) {
-  if (place(kind, x, z, turn, params, opts)) return;
-  throw new Error(`set piece: ${refused[refused.length - 1]}. Move the piece.`);
-}
+const must = makeMust(place, refused);
 
 // --- the flags, the homes and the yards claim before any building does -------
 
@@ -1290,7 +1165,6 @@ function groveOk(x, z, r, maxGrade = 0.3, skipOpen = false) {
 const ASH = ", scale: [0.8, 1.15], blocking: true, clearance: 2.0";
 const PINE = ", scale: [0.9, 1.4], blocking: true, clearance: 1.2";
 let trees = 0;
-const f1 = (v) => n2(Number(v.toFixed(1)));
 function disc(prop, x, z, r, count, extra = "") {
   scatter.push(`  { prop: "${prop}", x: ${f1(x)}, z: ${f1(z)}, radius: ${n2(r)}, count: ${count}${extra} },`);
 }
@@ -1801,16 +1675,8 @@ writeFileSync(
     .replace("%TUFTS%", String(Math.round(grassArea / 1000) * 1000)),
 );
 
-const byKind = {};
-for (const p of placed) byKind[p.kind] = (byKind[p.kind] ?? 0) + 1;
-const refusedByKind = {};
-for (const r of refused) {
-  const k = r.split(" ")[0];
-  refusedByKind[k] = (refusedByKind[k] ?? 0) + 1;
-}
-console.log("  placed:  " + JSON.stringify(byKind));
-console.log("  refused: " + JSON.stringify(refusedByKind));
-if (process.argv.includes("--refusals")) for (const r of refused) console.log("    " + r);
+printTally(tally(placed, (p) => p.kind), refused, leadKind);
+if (process.argv.includes("--refusals")) printRefusals(refused);
 console.log(
   `harrowmead: ${PLAY} m square\n` +
     `  ${placed.length} placements, ${scatter.filter((l) => l.includes("{ prop:")).length} scatter regions (~${trees} trees in play), ${runs.filter((r) => r.placed).length} field runs\n` +
