@@ -1,6 +1,8 @@
 /**
- * PaperGrain.ts — Full-screen grade: vignette, corner desaturation, radial
- * chromatic aberration, a PAPER grain pinned to the world, red damage flash.
+ * PaperGrain.ts — Full-screen grade: a VIVID chroma push, a
+ * midtone CONTRAST curve,
+ * vignette, corner desaturation, radial chromatic aberration, a PAPER grain
+ * pinned to the world, red damage flash.
  * Why hand-written: Babylon's image-processing pass re-gammas the cel shader's
  * already display-ready colors and washes the palette out — which is also why
  * pipeline.imageProcessingEnabled stays false. Keep the grade in this pass.
@@ -113,6 +115,8 @@ uniform nearFar: vec2f;
 uniform vignette: f32;
 uniform grain: f32;
 uniform aberration: f32;
+uniform vivid: f32;
+uniform contrast: f32;
 uniform damage: f32;
 
 const PERIOD: i32 = ${PERIOD};
@@ -250,6 +254,29 @@ fn main(input: FragmentInputs) -> FragmentOutputs {
   let quantum = select(0.0, d * d / uniforms.nearFar.x * 2.5e-7, world);
   let foot = max(clamp(slope, iso, iso * 6.0), quantum);
 
+  // VIVID: chroma pushed away from grey. A
+  // VIBRANCE rather than a saturation — the push is scaled by how much colour
+  // the pixel does NOT already have, so a grey wall and a dusty field gain it
+  // and a team's armband, already at the gamut's edge, cannot clip into
+  // another hue. Ahead of the vignette, so the corners still drain toward the
+  // grey this lifted them from.
+  let lumC = dot(col, vec3f(0.2126, 0.7152, 0.0722));
+  let hi = max(col.r, max(col.g, col.b));
+  let sat = (hi - min(col.r, min(col.g, col.b))) / max(hi, 1e-4);
+  let push = 1.0 + (uniforms.vivid - 1.0) * (1.0 - sat);
+  col = max(vec3f(lumC) + (col - vec3f(lumC)) * push, vec3f(0.0));
+
+  // CONTRAST: an S-curve on LUMINANCE, applied as one scale on all three
+  // channels so it moves value and never hue. Its weight is faded out under a
+  // quarter of full luminance, so the darkest shadows stay where the lighting
+  // put them — a night map's street must not sink into black for the sake of
+  // drama — and what it spends is the midtones and the lights. Past 1 it
+  // stands aside rather than folding back down the smoothstep.
+  let lumK = dot(col, vec3f(0.2126, 0.7152, 0.0722));
+  let lc = clamp(lumK, 0.0, 1.0);
+  let bend = uniforms.contrast * smoothstep(0.0, 0.25, lumK) * step(lumK, 1.0);
+  col *= mix(lumK, lc * lc * (3.0 - 2.0 * lc), bend) / max(lumK, 1e-4);
+
   // Vignette: the corners fall away into the dark.
   col *= 1.0 - uniforms.vignette * smoothstep(0.05, 0.62, r2);
 
@@ -301,6 +328,8 @@ export class PaperGrain {
   private vignette: number = CONFIG.graphics.vignette;
   private grain: number = CONFIG.graphics.grain;
   private aberration: number = CONFIG.graphics.aberration;
+  private vivid: number = CONFIG.graphics.vivid;
+  private contrast: number = CONFIG.graphics.contrast;
 
   /** Where the eye sits in each level's wrapped lattice, in cells — `vec4`s. */
   private readonly cellOffset = new Float32Array(LEVELS * 4);
@@ -327,6 +356,8 @@ export class PaperGrain {
         "vignette",
         "grain",
         "aberration",
+        "vivid",
+        "contrast",
         "damage",
       ],
       samplers: ["depthTexture"],
@@ -353,6 +384,8 @@ export class PaperGrain {
       effect.setFloat("vignette", this.vignette);
       effect.setFloat("grain", this.grain);
       effect.setFloat("aberration", this.aberration);
+      effect.setFloat("vivid", this.vivid);
+      effect.setFloat("contrast", this.contrast);
       effect.setFloat("damage", this.damage);
       // A DECLARED sampler must be BOUND or the bind group fails to build and
       // the draw is silently lost. It cannot be null by the time this runs —
@@ -402,6 +435,8 @@ export class PaperGrain {
     this.vignette = grade?.vignette ?? g.vignette;
     this.grain = grade?.grain ?? g.grain;
     this.aberration = grade?.aberration ?? g.aberration;
+    this.vivid = grade?.vivid ?? g.vivid;
+    this.contrast = grade?.contrast ?? g.contrast;
   }
 
   /**

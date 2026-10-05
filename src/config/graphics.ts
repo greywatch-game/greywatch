@@ -185,6 +185,27 @@ export const graphics = {
   grain: 0.03,
   aberration: 0.55,
   /**
+   * How much the grade pushes CHROMA — 1 is the colour as lit. It is a
+   * VIBRANCE rather than a saturation: the push is scaled by how unsaturated a
+   * pixel already is, so a grey wall and a dusty field gain colour while a
+   * team's armband and a lamp, which are already at the edge of the gamut, are
+   * barely moved and cannot clip into a different hue. In the grade rather
+   * than the cel shader because it has to reach the grass, the water and the
+   * sky as well, or the ground under the turf would be the only vivid thing
+   * in the frame. The map may restate it (`EnvironmentSpec.grade`).
+   */
+  vivid: 1.4,
+  /**
+   * How far the grade bends LUMINANCE toward an S-curve — 0 is the value as
+   * lit, 1 the whole smoothstep. One scale on all three channels, so it moves
+   * value and never hue; faded out under a quarter of full luminance, so the
+   * shadows a night map is played in are not crushed toward black. It is what
+   * makes `vivid`'s colour read as DRAMATIC rather than merely brighter: the
+   * fog and the haze compress every map's values toward the middle, and this
+   * pulls them apart again. The map may restate it (`EnvironmentSpec.grade`).
+   */
+  contrast: 0.3,
+  /**
    * The paper the world is drawn on — its GRAIN IS PINNED TO THE WORLD and not
    * to the screen, so walking past a wall does not slide the paper across it.
    * `PaperGrain`'s header has how, and why the grain still keeps one size on

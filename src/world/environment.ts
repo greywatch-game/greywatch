@@ -547,6 +547,10 @@ export interface EnvironmentSpec {
     vignette?: number;
     grain?: number;
     aberration?: number;
+    /** The chroma push — see `CONFIG.graphics.vivid`. */
+    vivid?: number;
+    /** The midtone S-curve — see `CONFIG.graphics.contrast`. */
+    contrast?: number;
   };
   /**
    * The wet sheen on cobbled ground, overriding `CONFIG.graphics.spec.cobble`.

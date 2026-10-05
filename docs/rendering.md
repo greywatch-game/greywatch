@@ -3237,6 +3237,16 @@ all in the counter this finding is named after. Not chased.
   display-ready colors and Babylon's image-processing pass re-gammas them and washes
   the palette out. That is also why the vignette/grain/aberration/damage flash grade is
   hand-written (`src/shaders/PaperGrain.ts`).
+- **The grade's colour is a VIBRANCE and a LUMINANCE curve, never a saturation or a
+  per-channel curve** (`CONFIG.graphics.vivid`, `contrast`, each restatable per map
+  through `EnvironmentSpec.grade`). The vibrance scales its push by how much colour a
+  pixel lacks, so a team's armband — already at the gamut's edge, and the thing a
+  body three pixels wide is told apart by — cannot clip into another hue; the curve
+  is one scale on all three channels, so it moves value and never hue, and it fades
+  out under a quarter of full luminance so a night map's shadows are left where the
+  lighting put them. Both ride the grade setting, so a player who turns the grain off
+  turns them off with it, and the menu's photographs are taken through the same pass,
+  so a change here owes `npm run shots`.
 - Glow is an emissive MASK blurred and added to the frame (`src/shaders/GlowPass.ts`),
   keyed off emissive colour and deliberately not threshold bloom —
   bright-but-not-emissive surfaces must stay crisp.
