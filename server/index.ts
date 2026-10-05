@@ -66,7 +66,8 @@ import { readClientMessage } from "./wire";
  * unknown state — and it is the right way round HERE, where the realistic
  * throw is inside one socket's handler or one match's timer and the rest of the
  * process is untouched. A match that has genuinely been corrupted has its own
- * way out: `rotate` abandons it and every client reconnects into a fresh one.
+ * way out: a rotation or a simulation step that throws abandons it
+ * (`Match.abandon`) and every client reconnects into a fresh one.
  *
  * The log line is the point, not the survival. A server that swallows these
  * silently is one where the next `wire.ts`-shaped bug is invisible until

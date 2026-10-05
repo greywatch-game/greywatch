@@ -1212,13 +1212,17 @@ export class HeadlessGame {
    * inside its own splash, and a driver is aiming at a seven-metre hull rather
    * than at a head. What the client's own copy bought was the tracer and the
    * noise, and both of those were free.
+   *
+   * `early` is `Vehicle.fireGun`'s: none for a bot crew, which fires off the
+   * hull's own reload in the same tick it is ready, and `Match`'s tolerance for
+   * a person's claimed round, which arrives on the network's schedule.
    */
-  resolveShell(tank: Vehicle, by: Combatant): boolean {
+  resolveShell(tank: Vehicle, by: Combatant, early = 0): boolean {
     // `fireGun` refuses on a hull that HAS no gun as well as on one still
     // loading — `Vehicle.gunReady` — so this pair is what keeps a claimed
     // shell out of a turretless vehicle on the authority as well as offline.
     const g = tank.spec.gun;
-    if (!g || !tank.fireGun()) return false;
+    if (!g || !tank.fireGun(early)) return false;
     const muzzle = tank.muzzleToRef(this.shellFrom);
     const dir = tank.gunDirToRef(this.shellDir);
     const shot = this.combat.fire(
@@ -1282,9 +1286,11 @@ export class HeadlessGame {
    * kill one anyway (`resist.bullet` is 0.05). That is `paysKiller`'s now,
    * refused inside `creditKill` on both sides rather than restated at each
    * gun — see `resolveShell`, whose guard this one drifted against.
+   *
+   * `early` is `resolveShell`'s.
    */
-  resolveMg(tank: Vehicle, by: Combatant): boolean {
-    if (!tank.fireMg()) return false;
+  resolveMg(tank: Vehicle, by: Combatant, early = 0): boolean {
+    if (!tank.fireMg(early)) return false;
     const m = tank.spec.mg;
     const muzzle = tank.mgMuzzleToRef(this.shellFrom);
     const dir = tank.mgDirToRef(this.shellDir);

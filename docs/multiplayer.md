@@ -442,9 +442,25 @@ the refill being a cheat — a client alternating its claims to farm full bucket
 must go a whole draw without firing to earn each one, which bounds it at one
 round per 0.34 s, slower than any weapon in the kit.
 
-**A reload announcement and the two ordnance clocks are still plain
-timestamps**, and should stay that way: neither is a schedule anybody is trying
-to keep to the millisecond.
+**Every claimed round spends from the same bucket — the rifle, both hull guns
+and the AT slot** (`RateGate` in `server/Match.ts`, one per slot per gun). The
+hull guns and the AT slot were minimum spacings until ISSUES.md #2, and at the
+cupola gun's nine a second that was 11 ms of slack. **Behind them, the hull's
+own clock was a second spacing**: `Vehicle.fireGun`/`fireMg` refuse a round
+until the reload has run out on the simulation's 60 Hz tick grid, with no slack
+at all, so a gunner firing at exactly 9/s was refused whenever a round landed
+six ticks after the last instead of seven. The authority therefore asks that
+clock with `HULL_EARLY` (`SHOT_SLACK`, 150 ms) of tolerance for a person's
+round (`early` through `HeadlessGame.resolveShell`/`resolveMg`), and **the
+bucket is the rate limit for it**. The clock is still asked because it is the
+HULL's and a seat changes hands: a person who turns a bot out of the driver's
+seat the moment it fired cannot fire through its reload. On the cupola gun
+150 ms is longer than the whole interval, so there the clock never refuses what
+the bucket passed. A bot crew fires on the hull's clock with no tolerance,
+since nothing it does crosses a network.
+
+**A reload announcement is still a plain timestamp**, and should stay that way:
+it is not a schedule anybody is trying to keep to the millisecond.
 
 **A reconnect puts the deploy screen back up, over whatever was on it.**
 `Game`'s `onSeated` does that from `playing` and `dying` — the client's old slot

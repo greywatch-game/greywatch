@@ -29,11 +29,11 @@ match smoke test (`npm run build:server && npm run server`, two clients).
 
 | # | Pri | Title |
 | --- | --- | --- |
-| [1](#1-server-tick-loop-has-no-error-boundary) | P0 | Server tick loop has no error boundary |
-| [2](#2-cupola-gun-rate-gate-uses-the-retired-minimum-spacing-rule) | P0 | Cupola-gun rate gate uses the retired minimum-spacing rule |
-| [3](#3-delete-playermods-the-roguelike-leftover) | P0 | Delete `PlayerMods`, the roguelike leftover |
-| [4](#4-add-exhaustiveness-checks-to-the-three-message-switches) | P0 | Add exhaustiveness checks to the three message switches |
-| [5](#5-netdamagefrom-is-used-as-scratch-by-arms-that-must-not-touch-it) | P0 | `netDamageFrom` is used as scratch by arms that must not touch it |
+| ~~[1](#1-server-tick-loop-has-no-error-boundary)~~ | P0 — done | Server tick loop has no error boundary |
+| ~~[2](#2-cupola-gun-rate-gate-uses-the-retired-minimum-spacing-rule)~~ | P0 — done | Cupola-gun rate gate uses the retired minimum-spacing rule |
+| ~~[3](#3-delete-playermods-the-roguelike-leftover)~~ | P0 — done | Delete `PlayerMods`, the roguelike leftover |
+| ~~[4](#4-add-exhaustiveness-checks-to-the-three-message-switches)~~ | P0 — done | Add exhaustiveness checks to the three message switches |
+| ~~[5](#5-netdamagefrom-is-used-as-scratch-by-arms-that-must-not-touch-it)~~ | P0 — done | `netDamageFrom` is used as scratch by arms that must not touch it |
 | [6](#6-share-the-hull-guns-resolveshell--resolvemg-between-client-and-authority) | P1 | Share the hull guns between client and authority |
 | [7](#7-share-resolveordnance-between-client-and-authority) | P1 | Share `resolveOrdnance` between client and authority |
 | [8](#8-share-crushsweep--driverof-between-client-and-authority) | P1 | Share `crushSweep` / `driverOf` between client and authority |
@@ -82,6 +82,8 @@ match smoke test (`npm run build:server && npm run server`, two clients).
 
 ### 1. Server tick loop has no error boundary
 
+**Resolved.** `Match.start`'s interval body is wrapped in a `try`/`catch` that logs once and calls `abandon`; `abandon` also cancels a pending round-over rotation. Verified with an injected throw in `HeadlessGame.step`: one log line per match, the client got `rejected` and a close, and the process served a fresh match on the next join.
+
 **Area:** `server/Match.ts`, `server/index.ts`
 
 **Problem.** `Match.start` drives the simulation from a `setInterval`
@@ -109,6 +111,8 @@ path `rotate` uses, then clears the interval. Do not swallow and continue.
 - No change to the accumulator's behaviour on the happy path.
 
 ### 2. Cupola-gun rate gate uses the retired minimum-spacing rule
+
+**Resolved.** One `RateGate` bucket in `Match.ts` serves the rifle, both hull guns and the AT slot. Fixing the `Match` gate alone was not enough: `Vehicle.fireMg`/`fireGun` were a second spacing with no slack on the 60 Hz tick grid, and on a 144 Hz client they dropped about a third of the cupola gun's rounds with no jitter at all. The authority now asks that clock with 150 ms of tolerance for a person's round (`HULL_EARLY`; longer than the cupola gun's whole interval, short enough that nobody can fire a shell the hull is still reloading), and the bucket is the rate limit. A model of the gates over 60 s: the old gates dropped 87–184 of ~520 rounds, the new gate dropped 0, and a client firing at 2x was held to 9.0/s.
 
 **Area:** `server/Match.ts`
 
@@ -141,6 +145,8 @@ bucket only needs to stop a client exceeding the rate *on average*. If ticket
 
 ### 3. Delete `PlayerMods`, the roguelike leftover
 
+**Resolved.** The type, the field, every read and the reset are gone. Each read now returns the unmodified value, so a round plays exactly as before.
+
 **Area:** `src/entities/Player.ts`, `server/HeadlessGame.ts`
 
 **Problem.** `Player.mods` (`Player.ts:657`) is a `PlayerMods` record from the
@@ -167,6 +173,8 @@ returns nothing related; a weapon's damage, magazine and the player's speed are
 unchanged in a round.
 
 ### 4. Add exhaustiveness checks to the three message switches
+
+**Resolved.** `wire.ts` and `onNetEvent` have `never` defaults. `Match.onMessage` is now an exhaustive switch whose round block dispatches through `onRoundMessage`, itself exhaustive over `RoundMessage`. Checked by adding a dummy member to each union: all three sites failed the typecheck.
 
 **Area:** `server/wire.ts`, `server/Match.ts`, `src/core/Game.ts`
 
@@ -198,6 +206,8 @@ exhaustiveness, so a new member compiles and is silently dropped or misrouted:
 the typecheck.
 
 ### 5. `netDamageFrom` is used as scratch by arms that must not touch it
+
+**Resolved.** The `blaze`, `explode`, `glass` and seat arms use `netScratch`. `netDamageFrom` is now written only by `damage` and read only by `died`.
 
 **Area:** `src/core/Game.ts`
 

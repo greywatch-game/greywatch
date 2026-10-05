@@ -1610,9 +1610,15 @@ export class Vehicle implements Combatant, RayHull {
    * on a ring is a few hundred newtons against sixty tonnes — what it moves is
    * the CAMERA of whoever is holding it, which is the gunner's own business
    * and is spent by `Game` exactly as the shell's camera kick is.
+   *
+   * `early` is `fireGun`'s, for its reason — and it matters more here, at
+   * nine rounds a second on a 60 Hz tick: asked with none, a client firing at
+   * exactly the gun's rate is refused whenever its round lands six ticks after
+   * the last rather than seven.
    */
-  fireMg(): boolean {
-    if (!this.mgReady) return false;
+  fireMg(early = 0): boolean {
+    // `mgReady` with a tolerance; at 0 it is that getter exactly.
+    if (!this.alive || this.mgNextT > early) return false;
     this.mgNextT = 1 / this.spec.mg.fireRate;
     return true;
   }
@@ -1723,12 +1729,22 @@ export class Vehicle implements Combatant, RayHull {
    * about the hull: a stationary tank rocks away from wherever its GUN is laid
    * when it fires, and the shove is spent against the drive over the next
    * second whether anybody is holding the throttle or not.
+   *
+   * **`early` is how far ahead of the reload a caller may fire, in seconds**,
+   * and only the AUTHORITY passes one: a person's round ARRIVES on the
+   * network's schedule rather than the shooter's, and this clock is a minimum
+   * spacing on the simulation's tick grid, so asked with none it refused an
+   * honest round that landed a tick tight, silently. What stops that being a
+   * faster gun is the credit bucket in front of it (`server/Match.ts`,
+   * `RateGate`), which bounds the SUSTAINED rate; what this clock still says is
+   * that the HULL has a reload, whoever pulled the trigger last — a person who
+   * takes the seat from a bot that has just fired cannot fire through it.
    */
-  fireGun(): boolean {
+  fireGun(early = 0): boolean {
     const g = this.spec.gun;
-    // `gunReady` is already false on an unarmed hull; the second test is what
-    // narrows the type, and the two are one statement rather than two.
-    if (!g || !this.gunReady) return false;
+    // `gunReady` with a tolerance; at 0 it is that getter exactly. The `!g`
+    // is what narrows the type — `armed` already says the same thing.
+    if (!g || !this.armed || !this.alive || this.reloadT > early) return false;
     this.reloadT = g.cooldown;
     // What follows is ONE force spent in three places, and the direction of it
     // is the GUN's and never the hull's. The turret traverses and the hull does

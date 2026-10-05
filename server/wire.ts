@@ -215,7 +215,15 @@ export function readClientMessage(raw: string): ClientMessage | null {
         ? msg
         : null;
 
-    default:
+    // Two jobs, one per side of the cast. At RUNTIME this is where an unknown
+    // `t` lands, and it is refused. To the COMPILER every member of the union
+    // has an arm above, so `msg` is `never` here — and a new `ClientMessage`
+    // with no arm fails this line rather than compiling into a type every
+    // client sends and this server silently drops as malformed.
+    default: {
+      const unhandled: never = msg;
+      void unhandled;
       return null;
+    }
   }
 }

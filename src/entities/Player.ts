@@ -186,14 +186,6 @@ function equipHolster(id: EquipmentId): Holster {
   return { setup, ammo: setup.magSize, mode: 0 };
 }
 
-/** Run-scoped stat modifiers granted by loot. */
-export interface PlayerMods {
-  damageMult: number;
-  speedMult: number;
-  maxHpBonus: number;
-  magBonus: number;
-}
-
 /** One live brass case: world-space ballistic, despawned on `t` expiry. */
 interface Casing {
   mesh: Mesh;
@@ -654,8 +646,6 @@ export class Player implements Combatant {
     landDip: 0,
   };
 
-  mods: PlayerMods = { damageMult: 1, speedMult: 1, maxHpBonus: 0, magBonus: 0 };
-
   private readonly groundY = CONFIG.player.height / 2;
   /**
    * The surface height `probeGround` found under the feet this frame — the
@@ -941,7 +931,7 @@ export class Player implements Combatant {
 
   /** The same expression as `magSize`, so both counts are read one way. */
   get slungMagSize(): number {
-    return this.slung.setup.magSize + this.mods.magBonus;
+    return this.slung.setup.magSize;
   }
 
   /**
@@ -963,15 +953,15 @@ export class Player implements Combatant {
   }
 
   get maxHealth(): number {
-    return CONFIG.player.maxHealth + this.mods.maxHpBonus;
+    return CONFIG.player.maxHealth;
   }
 
   get magSize(): number {
-    return this.weapon.magSize + this.mods.magBonus;
+    return this.weapon.magSize;
   }
 
   get damage(): number {
-    return this.weapon.damage * this.mods.damageMult;
+    return this.weapon.damage;
   }
 
   /**
@@ -980,15 +970,12 @@ export class Player implements Combatant {
    * One object, filled in on read rather than rebuilt: a fresh literal per
    * round is exactly the per-shot allocation the effect pools exist to avoid,
    * and a field cached on a carry change is a thing to forget on the next one
-   * — the weapon, the mods and the magazine all change from different places.
-   * Deriving it here cannot go stale and costs three writes.
-   *
-   * `mods.damageMult` scales the far end as well as the near one, or a damage
-   * buff would quietly stop applying at range.
+   * — the weapon and the magazine change from different places. Deriving it
+   * here cannot go stale and costs three writes.
    */
   get shotOptions(): ShotOptions {
     const o = this.shotOpts;
-    o.damageFar = this.weapon.damageFar * this.mods.damageMult;
+    o.damageFar = this.weapon.damageFar;
     o.falloffNear = this.weapon.falloffNear;
     o.falloffFar = this.weapon.falloffFar;
     return o;
@@ -1453,10 +1440,9 @@ export class Player implements Combatant {
     return (base + this.spreadBloom * bloomMult) * crouchMult;
   }
 
-  /** Full reset at the start of a run (permadeath — mods are cleared too). */
+  /** Full reset for a fresh body: a deploy, or the start of a round. */
   fullReset(): void {
     this.regenLockT = 0;
-    this.mods = { damageMult: 1, speedMult: 1, maxHpBonus: 0, magBonus: 0 };
     this.health = this.maxHealth;
     this.alive = true;
     // A fresh body is in nobody's vehicle. Cleared here as well as on the
@@ -1810,7 +1796,6 @@ export class Player implements Combatant {
     // --- horizontal movement (camera-relative), with collision sliding ---
     const speed =
       p.moveSpeed *
-      this.mods.speedMult *
       (cam.adsBlend > 0.4 ? p.adsMoveMult : 1) *
       (this.sprinting ? p.sprintMult : 1) *
       (1 - (1 - p.crouchMoveMult) * this.crouchBlend);

@@ -7458,8 +7458,8 @@ export class Game {
       // ignition, and through `onIgnited` the light, the noise and the mark —
       // and no burn, which is the authority's and arrives as `damage`.
       case "blaze":
-        this.netDamageFrom.set(event.at[0], event.at[1], event.at[2]);
-        this.grenades.drawFire(this.netDamageFrom);
+        this.netScratch.set(event.at[0], event.at[1], event.at[2]);
+        this.grenades.drawFire(this.netScratch);
         break;
 
       // A blast the authority resolved. The light, the noise and the
@@ -7471,14 +7471,14 @@ export class Game {
       // it. Before this the event was a light and a bang with nothing burning
       // in the middle of it — somebody else's grenade had no fireball at all.
       case "explode": {
-        this.netDamageFrom.set(event.at[0], event.at[1], event.at[2]);
+        this.netScratch.set(event.at[0], event.at[1], event.at[2]);
         // How big it LOOKS. A grenade is 1 by definition and says nothing;
         // a tank shell, a rocket and a mine each carry their own, which is
         // the only way this client can tell them apart — no other field on
         // this event says what went off.
         const power = event.power ?? 1;
-        const ground = this.grenades.drawBlast(this.netDamageFrom, power);
-        this.onExplosion(this.netDamageFrom, power, ground);
+        const ground = this.grenades.drawBlast(this.netScratch, power);
+        this.onExplosion(this.netScratch, power, ground);
         break;
       }
 
@@ -7525,16 +7525,27 @@ export class Game {
       // false for a pane already gone, so a predicted break plays its shards
       // once and this call is silent.
       case "glass": {
-        this.netDamageFrom.set(event.at[0], event.at[1], event.at[2]);
+        this.netScratch.set(event.at[0], event.at[1], event.at[2]);
         this.netGlassDir.set(event.dir[0], event.dir[1], event.dir[2]);
         for (const pane of event.panes) {
-          this.glass.applyBreak(pane, this.netDamageFrom, this.netGlassDir, true);
+          this.glass.applyBreak(pane, this.netScratch, this.netGlassDir, true);
         }
         break;
       }
 
+      // Our own is routed before it gets here — `NetSession` hands it to
+      // `onSpawn`, which places the body — and anybody else's is drawn by the
+      // snapshot that carries them. Nothing left to do; the arm is still owed
+      // to the guard below.
       case "spawn":
         break;
+
+      // Every `ServerEvent` has an arm above, so a new kind fails to compile
+      // here rather than arriving and being silently ignored.
+      default: {
+        const unhandled: never = event;
+        void unhandled;
+      }
     }
   }
 
@@ -7898,8 +7909,8 @@ export class Game {
     // `clearVehicle` deliberately does not move anybody, and the camera
     // hand-off below reads the chase yaw that is about to be gone.
     if (event.pos) {
-      this.netDamageFrom.set(event.pos[0], event.pos[1], event.pos[2]);
-      this.player.placeAt(this.netDamageFrom);
+      this.netScratch.set(event.pos[0], event.pos[1], event.pos[2]);
+      this.player.placeAt(this.netScratch);
     }
     const yaw = event.yaw ?? this.vehicleCam.yaw;
     this.clearVehicle();
@@ -8000,8 +8011,20 @@ export class Game {
    */
   private readonly hitCredits = new HitCredits();
 
-  /** Scratch for a networked damage bearing; never allocated per hit. */
+  /**
+   * Where the last networked hit on US came from — NOT scratch. It is written
+   * by `damage` and read by the `died` that follows it, which carries no
+   * bearing of its own, so nothing else may write it in between: the server
+   * queues the two back to back today, and a blast or a pane landing between
+   * them would hand the death cam the wrong killer. Arms that only need a
+   * place to put a point use `netScratch`.
+   */
   private readonly netDamageFrom = new Vector3();
+  /**
+   * Scratch for a point off any other event — a blast, a fire, a pane, a
+   * dismount — used and dropped inside one arm. Never allocated per event.
+   */
+  private readonly netScratch = new Vector3();
   /** The same, for the direction a round crossed a pane it broke. */
   private readonly netGlassDir = new Vector3();
   /**

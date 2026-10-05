@@ -270,6 +270,78 @@ const SIDEARM_SETUP = weaponSetup(SIDEARM);
 const SHOT_SLACK = 150;
 
 /**
+ * The client messages that belong to a round in progress — `onMessage`'s gated
+ * block, as a type, so the arm list there and `onRoundMessage`'s switch are one
+ * list the compiler checks against itself.
+ */
+type RoundMessage = Extract<
+  ClientMessage,
+  {
+    t:
+      | "move"
+      | "shot"
+      | "grenade"
+      | "reload"
+      | "drive"
+      | "gunner"
+      | "mount"
+      | "dismount"
+      | "shell"
+      | "mg"
+      | "ordnance";
+  }
+>;
+
+/**
+ * One rate limit over a peer's claimed rounds — the bucket `SHOT_SLACK`
+ * argues for, and the ONE implementation of it: the rifle, both hull guns and
+ * the AT slot all spend from one of these, because a minimum spacing written
+ * at any of them eats honest rounds for the same reason it did at the rifle.
+ *
+ * Credit accrues in real time and is capped at one interval plus `SHOT_SLACK`,
+ * so the SUSTAINED rate is exactly the weapon's. `ready` and `spend` are two
+ * calls so a caller may refuse a round for some other reason after asking
+ * and keep the credit; `ready` banks the elapsed time either way, or a client
+ * firing into a closed gate would never accumulate anything.
+ */
+class RateGate {
+  /** Credit banked, in ms. Starts full, so nobody's first round is refused. */
+  private credit = Infinity;
+  /** When `credit` was last brought up to date. */
+  private at = 0;
+
+  /** Brings the credit up to `now`; whether it holds one `interval` of it. */
+  ready(now: number, interval: number): boolean {
+    this.credit = Math.min(interval + SHOT_SLACK, this.credit + (now - this.at));
+    this.at = now;
+    return this.credit >= interval;
+  }
+
+  /** Spends one interval. Only after a `ready` that said yes. */
+  spend(interval: number): void {
+    this.credit -= interval;
+  }
+
+  /** Back to full, for a weapon just drawn — see `onShot`. */
+  fill(): void {
+    this.credit = Infinity;
+  }
+}
+
+/**
+ * How far ahead of a HULL's own reload a person's round may arrive, in
+ * seconds — `Vehicle.fireGun`'s `early`.
+ *
+ * The bucket is what bounds a person's rate; the hull's clock is asked as well
+ * because it is the HULL's, and a seat changes hands. It is `SHOT_SLACK`
+ * because that is the jitter the bucket was already sized to forgive, and it
+ * is longer than the cupola gun's whole interval — so on that gun the clock
+ * never refuses a round the bucket passed, and on the main gun it refuses only
+ * a shell fired through somebody else's reload.
+ */
+const HULL_EARLY = SHOT_SLACK / 1000;
+
+/**
  * Inbound messages one peer may send per second, sustained.
  *
  * **`onShot` was the only thing here with a rate limit, and a weapon's rate of
@@ -489,16 +561,13 @@ export class Match {
    * thing being bounded is a rate and what arrives is a schedule the network
    * has already had its way with — see `SHOT_SLACK` and `onShot`.
    *
-   * One record rather than four parallel arrays: every field is spent in the
-   * same eight lines of one method, and a per-slot array that some other gate
-   * forgets to clear is the shape of bug `drop` exists to not have.
+   * One record rather than parallel arrays: every field is spent in the same
+   * few lines of one method, and a per-slot array that some other gate forgets
+   * to clear is the shape of bug `drop` exists to not have.
    */
   private readonly fireGate: (
     | {
-        /** Firing credit banked, in ms. */
-        credit: number;
-        /** When `credit` was last brought up to date — every round, refused or not. */
-        at: number;
+        bucket: RateGate;
         /** When a round was last ACCEPTED, which is what a draw is measured from. */
         fired: number;
         /** Whether the last round claimed the sidearm, so a change of hands shows. */
@@ -511,27 +580,23 @@ export class Match {
   private readonly lastReload: number[] = [];
 
   /**
-   * …and last spent an AT item, and last fired a tank gun.
+   * …and its AT slot's and the tank guns' gates.
    *
-   * Two more clocks of the shot gate's kind, and both are needed for its
-   * reason — plain last-fired timestamps, because neither is a schedule a
-   * client is trying to keep to the millisecond: a
-   * client asking for a rocket or a shell is asking the authority to put an
-   * object in the world, and without a gate the rate at which it may do so
-   * would be a client-side opinion. The gun's own reload already refuses a
-   * shell fired early (`Vehicle.fireGun` returns false) — this is the cheaper
-   * refusal in front of it, so a flood costs a comparison rather than a hull
-   * lookup.
+   * The shot gate's kind exactly — a `RateGate` each — because a client asking
+   * for a rocket or a shell is asking the authority to put an object in the
+   * world, and without a gate the rate at which it may do so would be a
+   * client-side opinion. They were minimum spacings once, the rule the rifle
+   * retired, and at the cupola gun's nine a second that dropped honest rounds
+   * on ordinary jitter. **These ARE the rate limit for a person's hull round**:
+   * the hull's own clock, a spacing too, is asked with `HULL_EARLY` of slack.
+   *
+   * The two guns are two gates rather than one: a hull has two guns with two
+   * triggers and two people, and one gate shared between them would let either
+   * seat's fire rate-limit the other's.
    */
-  private readonly lastOrdnance: number[] = [];
-  private readonly lastShell: number[] = [];
-  /**
-   * The same clock for the CUPOLA gun, and a second array rather than a second
-   * meaning on the one above: a hull has two guns with two triggers and two
-   * people, and one timestamp shared between them would let either seat's fire
-   * rate-limit the other's.
-   */
-  private readonly lastMg: number[] = [];
+  private readonly ordnanceGate: (RateGate | undefined)[] = [];
+  private readonly shellGate: (RateGate | undefined)[] = [];
+  private readonly mgGate: (RateGate | undefined)[] = [];
 
   /**
    * The `AntiTankSystem.version` the clients have been told about, or -1 for
@@ -1071,9 +1136,9 @@ export class Match {
     this.equipment.delete(peer.slot);
     this.throwables.delete(peer.slot);
     delete this.fireGate[peer.slot];
-    delete this.lastOrdnance[peer.slot];
-    delete this.lastShell[peer.slot];
-    delete this.lastMg[peer.slot];
+    delete this.ordnanceGate[peer.slot];
+    delete this.shellGate[peer.slot];
+    delete this.mgGate[peer.slot];
     delete this.lastReload[peer.slot];
     delete this.lastSeen[peer.slot];
     const slot = this.roster.release(peer.id);
@@ -1107,7 +1172,8 @@ export class Match {
 
   /**
    * Ends this match and drops everyone in it, for a failure it cannot carry on
-   * through. The only caller is a rotation that threw.
+   * through. Two callers: a rotation that threw, and a simulation step that
+   * threw (`start`'s loop).
    *
    * Closing the sockets is the honest answer rather than the harsh one: every
    * client reconnects on its own (`net/Connection.retry`) and lands in a fresh
@@ -1122,6 +1188,10 @@ export class Match {
   private abandon(reason: string): void {
     this.rotating = false;
     this.mapVote = null;
+    if (this.rotateTimer !== null) {
+      clearTimeout(this.rotateTimer);
+      this.rotateTimer = null;
+    }
     this.stop();
     if (this.idleTimer !== null) {
       clearTimeout(this.idleTimer);
@@ -1224,24 +1294,38 @@ export class Match {
     let carried = 0;
     let last = Date.now();
     this.timer = setInterval(() => {
-      const now = Date.now();
-      carried += now - last;
-      last = now;
-      // Bounded so a long stall (a GC pause, a suspended container) is dropped
-      // rather than replayed as a burst of catch-up ticks that would teleport
-      // every body on every client at once.
-      //
-      // What is dropped is real time the world will never be stepped through,
-      // and the simulation's own clock is told so — that clock is what every
-      // snapshot is stamped with, and one left quietly behind the wall is one
-      // no client can follow. See `HeadlessGame.drop`.
-      if (carried > 250) {
-        this.game.drop(carried - 250);
-        carried = 250;
-      }
-      while (carried >= STEP_MS) {
-        carried -= STEP_MS;
-        this.step();
+      // **A step that THROWS ends the match**, and it is caught here rather
+      // than left to the process backstop (`server/index.ts`), which only logs.
+      // Left to it, the throw had already taken `carried` down a step, so the
+      // next poll threw again — a log line at up to 250 Hz — and everything in
+      // `step` after the throw (the lag record, the snapshot) never ran: a
+      // world clients stay connected to that no longer advances coherently.
+      // The way out is the one a failed rotation already takes, and the catch
+      // is OUTSIDE the `while` on purpose: `abandon` has cleared this interval
+      // and disposed the world, and the loop must not take another step of it.
+      try {
+        const now = Date.now();
+        carried += now - last;
+        last = now;
+        // Bounded so a long stall (a GC pause, a suspended container) is
+        // dropped rather than replayed as a burst of catch-up ticks that would
+        // teleport every body on every client at once.
+        //
+        // What is dropped is real time the world will never be stepped
+        // through, and the simulation's own clock is told so — that clock is
+        // what every snapshot is stamped with, and one left quietly behind the
+        // wall is one no client can follow. See `HeadlessGame.drop`.
+        if (carried > 250) {
+          this.game.drop(carried - 250);
+          carried = 250;
+        }
+        while (carried >= STEP_MS) {
+          carried -= STEP_MS;
+          this.step();
+        }
+      } catch (err: unknown) {
+        console.error(`[${this.id}] step failed; abandoning match:`, err);
+        this.abandon("the match server hit an error and ended the match");
       }
     }, POLL_MS);
     console.log(`[${this.id}] round started on ${this.mapId}`);
@@ -1305,7 +1389,8 @@ export class Match {
       // a beat later with a vote.
       this.openVote();
       this.broadcastSnapshot();
-      setTimeout(() => {
+      this.rotateTimer = setTimeout(() => {
+        this.rotateTimer = null;
         // A rotation is the one place a failure would now be permanent. It is
         // what clears `rotating`, and `rotating` is what lets the loop step, so
         // a build that threw would leave sixteen people in a match that renders
@@ -1324,6 +1409,13 @@ export class Match {
   }
 
   private rotating = false;
+
+  /**
+   * The round-over pause's timer, held so `abandon` can cancel it: a step that
+   * throws inside that pause would otherwise leave a rotation queued against a
+   * world `abandon` has already disposed.
+   */
+  private rotateTimer: ReturnType<typeof setTimeout> | null = null;
 
   /**
    * Next map, same people.
@@ -1779,7 +1871,7 @@ export class Match {
       case "shell":
       case "mg":
       case "ordnance":
-        // The four that belong to a round in progress, gated on the same fact
+        // The ones that belong to a round in progress, gated on the same fact
         // `step` is: between a round ending and the next one being built there
         // is a window in which `game.map` is the map `startRound` has already
         // disposed, and a message is the one thing that can arrive inside it —
@@ -1792,18 +1884,7 @@ export class Match {
         // `deploy` below is deliberately NOT here. It touches no geometry — it
         // writes an integer a later tick spends — and refusing it would drop a
         // request the client has no reason to send twice.
-        if (this.rotating) break;
-        if (msg.t === "move") this.onMove(peer, msg);
-        else if (msg.t === "shot") this.onShot(peer, msg);
-        else if (msg.t === "grenade") this.onGrenade(peer, msg);
-        else if (msg.t === "drive") this.onDrive(peer, msg);
-        else if (msg.t === "gunner") this.onGunner(peer, msg);
-        else if (msg.t === "mount") this.onMount(peer, msg);
-        else if (msg.t === "dismount") this.onDismount(peer);
-        else if (msg.t === "shell") this.onShell(peer, msg);
-        else if (msg.t === "mg") this.onMg(peer, msg);
-        else if (msg.t === "ordnance") this.onOrdnance(peer, msg);
-        else this.onReload(peer);
+        if (!this.rotating) this.onRoundMessage(peer, msg);
         break;
       case "deploy":
         this.onDeploy(peer, msg);
@@ -1815,6 +1896,62 @@ export class Match {
       case "vote":
         this.onVote(peer, msg);
         break;
+      // Every member of the union has an arm above, so a new one fails to
+      // compile here until somebody has decided which side of the `rotating`
+      // gate it belongs on — the `if`/`else` chain this replaced ran a type it
+      // had not heard of as a RELOAD.
+      default: {
+        const unhandled: never = msg;
+        void unhandled;
+      }
+    }
+  }
+
+  /**
+   * The messages that belong to a round in progress, past `onMessage`'s gate.
+   *
+   * Exhaustive by construction, for `onMessage`'s reason: a type added to that
+   * method's round block and not given an arm here fails the `never` below.
+   */
+  private onRoundMessage(peer: Peer, msg: RoundMessage): void {
+    switch (msg.t) {
+      case "move":
+        this.onMove(peer, msg);
+        break;
+      case "shot":
+        this.onShot(peer, msg);
+        break;
+      case "grenade":
+        this.onGrenade(peer, msg);
+        break;
+      case "reload":
+        this.onReload(peer);
+        break;
+      case "drive":
+        this.onDrive(peer, msg);
+        break;
+      case "gunner":
+        this.onGunner(peer, msg);
+        break;
+      case "mount":
+        this.onMount(peer, msg);
+        break;
+      case "dismount":
+        this.onDismount(peer);
+        break;
+      case "shell":
+        this.onShell(peer, msg);
+        break;
+      case "mg":
+        this.onMg(peer, msg);
+        break;
+      case "ordnance":
+        this.onOrdnance(peer, msg);
+        break;
+      default: {
+        const unhandled: never = msg;
+        void unhandled;
+      }
     }
   }
 
@@ -2093,9 +2230,8 @@ export class Match {
     // it; the cap is what a stall may hand back. See `SHOT_SLACK`.
     const now = Date.now();
     const interval = weapon.shotInterval * 1000;
-    const cap = interval + SHOT_SLACK;
     const sidearm = msg.slot === SIDEARM_SLOT;
-    const gate = this.fireGate[peer.slot];
+    let gate = this.fireGate[peer.slot];
     // **A WEAPON JUST DRAWN HAS NO COOLDOWN**, which is the client's own rule
     // — `Player.completeSwap` drops the fire cooldown with the weapon that
     // earned it, because the swap has already cost more time than either. A
@@ -2115,22 +2251,17 @@ export class Match {
       gate !== undefined &&
       gate.sidearm !== sidearm &&
       now - gate.fired >= weapon.drawTime * 1000 * 0.9;
-    // A slot that has not fired before starts full, so nobody's first round is
-    // refused for arriving too soon after a match they were not in.
-    const credit =
-      gate === undefined || drawn
-        ? cap
-        : Math.min(cap, gate.credit + (now - gate.at));
-    const spent = credit >= interval;
-    // Banked either way: a refused round still leaves what it could not spend,
-    // or a client firing into a closed gate would never accumulate anything.
-    this.fireGate[peer.slot] = {
-      credit: spent ? credit - interval : credit,
-      at: now,
-      fired: spent ? now : (gate?.fired ?? now),
-      sidearm,
-    };
-    if (!spent) return;
+    // A slot that has not fired before starts full (`RateGate`), so nobody's
+    // first round is refused for arriving too soon after a match they were
+    // not in.
+    if (gate === undefined) {
+      gate = this.fireGate[peer.slot] = { bucket: new RateGate(), fired: now, sidearm };
+    }
+    if (drawn) gate.bucket.fill();
+    gate.sidearm = sidearm;
+    if (!gate.bucket.ready(now, interval)) return;
+    gate.bucket.spend(interval);
+    gate.fired = now;
 
     // 2. direction
     const [dx, dy, dz] = msg.dir;
@@ -2529,8 +2660,10 @@ export class Match {
    * A shell a client says it fired. The authority decides what it hit.
    *
    * `onShot`'s three gates, minus the one that does not apply: there is no
-   * weapon slot to look up, because a hull has one gun. The RATE gate is the
-   * cheap refusal in front of `Vehicle.fireGun`, which owns the real reload; the
+   * weapon slot to look up, because a hull has one gun. The RATE gate is
+   * `onShot`'s bucket at the gun's `cooldown`, and it is the rate limit — the
+   * hull's own reload is asked only with `HULL_EARLY` of slack, being a
+   * spacing on the tick grid that would otherwise eat a shell a tick tight; the
    * CONE is measured against the driver's reported look rather than against
    * the gun, because the gun's bearing is the very thing being claimed; and
    * the ORIGIN must be near the hull, not near a head.
@@ -2552,9 +2685,9 @@ export class Match {
     const gun = tank.spec.gun;
     if (!gun) return;
     const now = Date.now();
-    if (now - (this.lastShell[peer.slot] ?? 0) < gun.cooldown * 1000 * 0.9) {
-      return;
-    }
+    const interval = gun.cooldown * 1000;
+    const gate = (this.shellGate[peer.slot] ??= new RateGate());
+    if (!gate.ready(now, interval)) return;
     const [dx, dy, dz] = msg.dir;
     const len = Math.hypot(dx, dy, dz);
     if (len < 1e-3) return;
@@ -2582,17 +2715,18 @@ export class Match {
     // authority's own gun, from the authority's own muzzle, at the authority's
     // own reload — which is the whole security property, and the reason the
     // checks above bound a LIE rather than measure an aim.
-    if (this.game.resolveShell(tank, player)) this.lastShell[peer.slot] = now;
+    if (this.game.resolveShell(tank, player, HULL_EARLY)) gate.spend(interval);
   }
 
   /**
    * A round out of the cupola gun a client says it fired. `onShell`'s twin,
    * with the three gates sized for the other weapon.
    *
-   * The RATE gate is the same cheap refusal in front of `Vehicle.fireMg`, which
-   * owns the real one, and it is per-ROUND rather than per-reload: nine a
-   * second, so the slack is the same tenth. The CONE is measured against the
-   * gunner's reported look, which for this seat is the gun's own order — the
+   * The RATE gate is the same bucket at the gun's `fireRate`, per ROUND rather
+   * than per reload — and at nine a second it is the gate the minimum spacing
+   * hurt most, 11 ms of slack being less than ordinary jitter. The CONE is
+   * measured against the gunner's reported look, which for this seat is the
+   * gun's own order — the
    * ring is light and settles in a fraction of a second, so the two differ by
    * far less than the turret's do and `SHELL_CONE_COS` is generous for both.
    * The ORIGIN is bounded to the hull for `onShell`'s reason.
@@ -2605,8 +2739,9 @@ export class Match {
     if (!tank) return;
 
     const now = Date.now();
-    const gap = (1000 / tank.spec.mg.fireRate) * 0.9;
-    if (now - (this.lastMg[peer.slot] ?? 0) < gap) return;
+    const interval = 1000 / tank.spec.mg.fireRate;
+    const gate = (this.mgGate[peer.slot] ??= new RateGate());
+    if (!gate.ready(now, interval)) return;
     const [dx, dy, dz] = msg.dir;
     const len = Math.hypot(dx, dy, dz);
     if (len < 1e-3) return;
@@ -2625,7 +2760,7 @@ export class Match {
     // …and then nothing of the claim is used, which is `onShell`'s whole
     // security property one calibre down: the round goes down the authority's
     // own gun, from its own muzzle, at its own rate.
-    if (this.game.resolveMg(tank, player)) this.lastMg[peer.slot] = now;
+    if (this.game.resolveMg(tank, player, HULL_EARLY)) gate.spend(interval);
   }
 
   /**
@@ -2654,8 +2789,9 @@ export class Match {
     if (!kind) return;
 
     const now = Date.now();
-    const interval = equipmentSetup(kind).shotInterval * 1000 * 0.9;
-    if (now - (this.lastOrdnance[peer.slot] ?? 0) < interval) return;
+    const interval = equipmentSetup(kind).shotInterval * 1000;
+    const gate = (this.ordnanceGate[peer.slot] ??= new RateGate());
+    if (!gate.ready(now, interval)) return;
 
     const [ox, oy, oz] = msg.origin;
     if (
@@ -2689,7 +2825,7 @@ export class Match {
     }
     if (!placed) return;
     player.ordnance -= 1;
-    this.lastOrdnance[peer.slot] = now;
+    gate.spend(interval);
     // Heard as a shot is, so the fifteen other clients get the report and the
     // minimap reveal a launcher earns. A mine is silent on the wire for the
     // same reason it is nearly silent in the world — there is nothing to hear
