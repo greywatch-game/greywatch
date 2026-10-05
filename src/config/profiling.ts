@@ -118,6 +118,38 @@ export const profiling = {
   loafKept: 12,
 
   /**
+   * How many pipeline and shader-module CREATIONS the profiler keeps whole —
+   * kind, label, shader and define set — newest first.
+   *
+   * They are what a warm-up pass would have to compile in advance, so the log
+   * is sized for a round rather than for a hitch: an install is ~100 creations
+   * and a round in play a handful (`FINDINGS.md` 1 measured 6 in 40 s), so 256
+   * holds the whole of a round with an install's worth to spare. The strings
+   * are references Babylon already holds, so the memory is the arrays — about
+   * 5 KB — sized once on arming. Every creation is still COUNTED per frame
+   * whatever falls off the end of this.
+   */
+  creationsKept: 256,
+
+  /**
+   * How many of those a COMPACT capture carries. The download carries every
+   * one the window holds; this is the clipboard's share.
+   */
+  creationsReported: 48,
+
+  /**
+   * How many frames BEFORE a hitch a creation still counts against it, in
+   * `HitchFrame.createdNear` and `pipelines.hitchesNear`.
+   *
+   * **Two, because Dawn compiles behind the call and the stall lands on first
+   * USE**, which is the frame that created it or one of the next two — the
+   * window `FINDINGS.md` 1 named when it asked for this hook. Wider would start
+   * catching creations that merely happened nearby; a round in play makes so
+   * few that a coincidence at two frames is itself worth a look.
+   */
+  creationLead: 2,
+
+  /**
    * How many `performance.now()` reads the clock-grain probe takes on arming.
    *
    * **The probe is not optional and its answer belongs in every capture.**

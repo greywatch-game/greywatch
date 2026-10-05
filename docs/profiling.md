@@ -753,6 +753,12 @@ What it draws:
   this frame"). The tile prints a REASON where it has no number, because
   `gpuRead`'s five silences are five different facts and one of them —
   `unmeasurable` — looks exactly like an idle GPU.
+- **What was compiled** (report version 11): a `Compiles` tile whose foot is
+  how many slow frames sat on a creation, a `compiled` tag on each such hitch, a
+  rail of creations along the bottom of the frame timeline, and a table of the
+  creations themselves — kind, the frame they landed on (red when it was slow),
+  the shader, the pass Babylon's label names and the define set. Absent on an
+  older capture rather than empty.
 - **The long-frame totals for the window**, as a tile and a row — but **only
   from report version 9**. Before it the ring never cleared a row's LoAF
   numbers when it lapped, so those totals carry every long frame the PROCESS
@@ -932,6 +938,68 @@ mean, 2.4–2.8 p95 and a MAX of 3.7 ms** across four captures, against a 7 ms
 vsync budget and a tick of 4.5–6.4 — and on the hitch frames themselves it is
 1.6–2.7 ms, including a **160.7 ms frame on which the GPU did 1.7 ms of work**.
 That is what retired the last suspect in `FINDINGS.md` #1.
+
+## Compiles: what was created, and on which frame
+
+**WebGPU compiles lazily and Dawn compiles behind the call, so a pipeline is
+an EVENT here and never a span.** Summed over a whole round,
+`createRenderPipeline` costs under a millisecond; the stall lands on the first
+draw that USES what was created — the same frame or one or two after it, and
+often outside the tick altogether, in the GPU process. So the question the
+profiler asks is not how long a creation took but whether a slow frame sat on
+one, which is `FINDINGS.md` 1's first-use hypothesis in a form a capture can
+settle. Report version 11 carries it three ways:
+
+- **`pipelines`** — render pipelines, compute pipelines and shader modules
+  created in the window; `callMs`, the time inside the create calls, which is
+  there to show it is NOT the explanation; `hitchesNear`, how many of the
+  window's slow frames had a creation on them or in the
+  `CONFIG.profiling.creationLead` (2) frames before; and `recent`, the
+  creations themselves, newest first, each with the frame it landed on and its
+  wall clock.
+- **`createdOn` / `createdNear` on every hitch.** `createdNear` is the one to
+  read. Zero means the hitch was not a first-use compile; above zero makes it a
+  candidate, never a verdict, because a compile shows up either as `drawWorld`
+  inside the tick or as a wait outside it, and the viewer appends it to
+  whichever reading the frame already got.
+- **`series.pipelines` and `series.modules`**, per frame, so the whole window
+  can be read at once: a spike zero to two rows after a creation. The viewer
+  draws them as a rail along the bottom of the frame timeline, apart from the
+  collections' rail along the top, and the trace export puts a `compile`
+  instant on each frame that had one.
+
+**What a creation is NAMED by is the part a warm-up needs.** A render pipeline
+built through Babylon's cache carries the effect it is for — the shader's name
+and its define set, which together are the VARIANT — and Babylon's own label,
+which gives the target's colour and depth formats, sample count and texture
+state (as close as the device gets to saying which pass it was for). That list
+is what a warm-up pass would have to compile in advance. Shader modules and
+compute pipelines are counted but not named; the pipeline that uses a module
+carries the name.
+
+**How it hooks in, and the one internal it leans on.** The device's create
+methods are wrapped on `GPUDevice.prototype` — a standard surface no Babylon
+upgrade can move, which the engine's device picks up through its prototype —
+and put back exactly as found on `disarm`, so a disarmed profiler is not on
+the device at all and a script that wrapped them first
+(`plans/webgpu-ref/pipelines.mjs` does) is wrapped in turn and restored. The NAMING wraps
+`WebGPUCacheRenderPipeline._buildRenderPipelineDescriptor`, a Babylon
+internal and the only place that holds the effect: **after a Babylon upgrade,
+check that a capture reads `pipelines.named: true`**, because if that method
+moves the counts stay right and only the names go. Nothing in the recording
+path builds a string — the log holds references Babylon already owns, in
+arrays sized on arming (`CONFIG.profiling.creationsKept`) — so the
+no-allocation rule holds; a compact capture carries
+`creationsReported` of them with long define sets truncated, the download all
+of them whole.
+
+**The first reading** (Coldharbour, headless on the Windows box, 2026-10-04,
+`?profile`, spawn and stand, three runs): the spawn frame ran 240-308 ms with
+24 creations on it and 27 within two frames, while `drawWorld` was ~37 ms of
+it, and nothing more was created in the next eight seconds. Measured against
+an independent counter installed under the hook, the capture's count matched
+exactly (120 of 120 in the window). See `FINDINGS.md` 16 for what was compiled
+and what it means for a warm-up.
 
 ## Vsync, the uncap flags, and VRR
 

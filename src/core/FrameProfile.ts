@@ -105,6 +105,7 @@
  */
 import {
   SceneInstrumentation,
+  WebGPUCacheRenderPipeline,
   type Observable,
   type Scene,
 } from "@babylonjs/core";
@@ -373,6 +374,13 @@ function hasFlag(name: string): boolean {
 const LOAF_NAME_CAP = 120;
 
 /**
+ * How much of a creation's define set a COMPACT report carries, in characters.
+ * A cel variant's set runs to several hundred, and the compact form is sized to
+ * survive a phone's clipboard; the download carries every one whole.
+ */
+const DEFINES_CAP = 160;
+
+/**
  * The duration a frame has to reach before the browser reports it at all.
  *
  * **Fixed by the specification at 50 ms, and it is the one number that decides
@@ -504,6 +512,104 @@ function gpuFrameMeasurable(): boolean {
   return typeof ctor?.prototype?.writeTimestamp === "function";
 }
 
+/**
+ * What a pipeline-or-module creation was, and the byte the ring stores for it.
+ *
+ * **A creation is not a cost, and that is why this is recorded as an EVENT
+ * against the frame rather than timed as a span.** Dawn compiles behind the
+ * call: summed over a whole Coldharbour round `createRenderPipeline` is under a
+ * millisecond (`plans/webgpu-ref/pipelines.mjs`), and the stall lands later, on
+ * the first draw that USES what was created — the same frame or one or two after
+ * it. So the question this answers is never "how long did the call take" but
+ * "was something created on, or just before, the frame that hitched", which
+ * is `FINDINGS.md` 1's first-use hypothesis put in a form a capture can settle.
+ * The call time is kept beside it (`pipelines.callMs`) only to show that it is
+ * not the explanation.
+ */
+const CREATED = ["render", "compute", "module"] as const;
+
+/**
+ * The device's create methods, by the kind each makes. An ASYNC render pipeline
+ * is still a render pipeline — Babylon 9.28's `preWarmPipeline` makes those, and
+ * a warm-up built on it should show up here as creations BEFORE the round.
+ */
+const DEVICE_CREATES: readonly (readonly [string, number])[] = [
+  ["createRenderPipeline", 0],
+  ["createRenderPipelineAsync", 0],
+  ["createComputePipeline", 1],
+  ["createComputePipelineAsync", 1],
+  ["createShaderModule", 2],
+];
+
+/**
+ * The part of a Babylon `Effect` a creation is named by: its shader name and
+ * its define set, which together are the VARIANT — and the variant is what a
+ * warm-up pass would have to draw to have compiled it in advance.
+ */
+interface NamedEffect {
+  readonly name?: unknown;
+  readonly defines?: unknown;
+}
+
+/**
+ * The effect whose render pipeline is about to be created, set by the wrapper on
+ * Babylon's descriptor builder and taken by the wrapper on the device.
+ *
+ * **Module scope and not a field because Babylon's cache calls it, not this
+ * class**, and the two calls are adjacent by construction:
+ * `_createRenderPipeline` and `preWarmPipeline` both pass
+ * `_buildRenderPipelineDescriptor(effect, …)` straight into the device's create
+ * call. The device wrapper clears it, so a pipeline Babylon creates WITHOUT that
+ * builder (the clear quad, the mipmap generator) goes unnamed rather than
+ * inheriting the last effect's name.
+ */
+let namingEffect: NamedEffect | null = null;
+
+/**
+ * The shader an effect was compiled from, as a string the effect already holds.
+ *
+ * `Effect.name` is either the shader's name or an `IShaderPath` object; the
+ * object's keys are read rather than serialised, because nothing in the
+ * recording path may build a string. A `vertexSource`-only path would be the
+ * whole shader text, so it is named "inline" instead of carried.
+ */
+function effectName(e: NamedEffect): string {
+  const n = e.name;
+  if (typeof n === "string") return n;
+  if (n && typeof n === "object") {
+    const p = n as Record<string, unknown>;
+    for (const k of ["vertex", "vertexElement", "fragment", "fragmentElement", "compute"]) {
+      if (typeof p[k] === "string") return p[k] as string;
+    }
+  }
+  return "inline";
+}
+
+/** One creation, as a capture reports it. See `ProfileReport.pipelines`. */
+export interface CreationEvent {
+  /** Seconds before the newest frame in the ring. */
+  ago: number;
+  kind: (typeof CREATED)[number];
+  /**
+   * The wall clock of the frame it landed on — the frame that would pay a
+   * first-use compile if the thing was drawn at once. 0 where that frame's
+   * interval is not known yet (the newest row).
+   */
+  frameMs: number;
+  /**
+   * Babylon's label for a render pipeline: its colour and depth formats, sample
+   * count and texture state, which is as close as the DEVICE gets to saying
+   * which pass it was for. Empty for whatever Babylon creates unlabelled.
+   */
+  label: string;
+  /** The shader name, for a render pipeline built through Babylon's cache. */
+  effect: string;
+  /** That effect's define set — the variant. Truncated in a compact report. */
+  defines: string;
+  /** Time inside the create call itself, which is not the compile. */
+  callMs: number;
+}
+
 /** One phase's line in a report. Milliseconds throughout. */
 export interface PhaseStat {
   name: Phase;
@@ -626,6 +732,18 @@ export interface HitchFrame {
   meshWalkMs: number;
   renderTargetsMs: number;
   particlesMs: number;
+  /**
+   * Pipelines and shader modules created ON this frame, and on it plus the
+   * `CONFIG.profiling.creationLead` frames before it.
+   *
+   * **`createdNear` is the one to read.** A creation costs nothing at the call
+   * and the compile lands on first use, which is this frame or a frame or two
+   * after the creation — so a hitch with `createdNear` above zero is a
+   * candidate first-use stall, and a hitch with zero is not one. Absent before
+   * report version 11.
+   */
+  createdOn: number;
+  createdNear: number;
   /** Only the phases this frame actually entered, in `PHASES` order. */
   phases: Partial<Record<Phase, number>>;
 }
@@ -877,6 +995,33 @@ export interface ProfileReport {
      */
     mainPass: { frames: number; meanMs: number; p95Ms: number; maxMs: number };
   };
+  /**
+   * What was COMPILED during the window, and whether the slow frames sat on it.
+   *
+   * **`observed` first, for the reason every other probe here ships its own
+   * availability**: a window with no creations in it is a finding only where
+   * the hook was installed. `named` says whether Babylon's descriptor builder
+   * was found to name them; after a Babylon upgrade a capture with `observed`
+   * true and `named` false means the internal moved, not that nothing had a
+   * name.
+   */
+  pipelines: {
+    observed: boolean;
+    named: boolean;
+    render: number;
+    compute: number;
+    modules: number;
+    /** Time inside the create calls, summed. Small by nature — see `CREATED`. */
+    callMs: number;
+    /**
+     * Slow frames in the window — every one, not only the kept — with a
+     * creation on them or in the `creationLead` frames before. Read it against
+     * `frame.hitches`.
+     */
+    hitchesNear: number;
+    /** The creations the log still holds inside this window, newest first. */
+    recent: CreationEvent[];
+  };
   phases: PhaseStat[];
   hitches: HitchFrame[];
   /** The whole ring, one array per phase. Present only in a FULL report. */
@@ -922,6 +1067,13 @@ export interface ProfileReport {
      * time. Not a curve; a scatter. See `ProfileReport.gpu`.
      */
     gpuFrameMs: number[];
+    /**
+     * Pipelines (render and compute) and shader modules created per frame.
+     * Laid against `frameMs` this is the first-use question asked of the whole
+     * window: does a spike follow a creation by zero to two rows?
+     */
+    pipelines: number[];
+    modules: number[];
     phases: Partial<Record<Phase, number[]>>;
   };
 }
@@ -1011,6 +1163,43 @@ export class FrameProfile {
   private gpuFiledId = -1;
   /** Set from `?gpu` on arming — see `main.ts`, which is where it has to act. */
   private gpuRequested = false;
+
+  /**
+   * Creations per row, by kind, and the time spent inside the calls.
+   *
+   * Counted against `cursor` at the moment of the call — the frame being
+   * recorded — and cleared when `endFrame` hands the row to the next lap, the
+   * same handover every other per-row reading gets. See `CREATED` on why this
+   * is a count and not a span.
+   */
+  private madeRender: Uint16Array | null = null;
+  private madeCompute: Uint16Array | null = null;
+  private madeModules: Uint16Array | null = null;
+  private madeCallMs: Float32Array | null = null;
+
+  /**
+   * The newest `CONFIG.profiling.creationsKept` creations, whole, as a ring of
+   * parallel arrays sized on arming.
+   *
+   * **Filed by absolute TIME rather than by ring row**, and mapped to a row only
+   * when a capture is built: a creation can land between `endFrame` and the next
+   * `beginFrame`, where the row it belongs to has no stamp yet, and time is the
+   * one coordinate both rings share without an identity pair. The strings are
+   * REFERENCES Babylon already holds (a label, a shader name, a define set) —
+   * storing one allocates nothing, which is what lets this live inside the
+   * recording path.
+   */
+  private logT: Float64Array | null = null;
+  private logKind: Uint8Array | null = null;
+  private logMs: Float32Array | null = null;
+  private logLabel: string[] = [];
+  private logEffect: string[] = [];
+  private logDefines: string[] = [];
+  private logCursor = 0;
+  private logFilled = 0;
+  /** Whether the device's create methods are wrapped, and whether creations can be named. */
+  private createObserved = false;
+  private createNamed = false;
 
   /**
    * Whether this browser reports long animation frames at all.
@@ -1219,6 +1408,19 @@ export class FrameProfile {
     this.gpuMs = new Float32Array(n);
     this.gpuFrameMs = new Float32Array(n);
     this.frameIdAt = new Uint32Array(n);
+    this.madeRender = new Uint16Array(n);
+    this.madeCompute = new Uint16Array(n);
+    this.madeModules = new Uint16Array(n);
+    this.madeCallMs = new Float32Array(n);
+    const logCap = CONFIG.profiling.creationsKept;
+    this.logT = new Float64Array(logCap);
+    this.logKind = new Uint8Array(logCap);
+    this.logMs = new Float32Array(logCap);
+    this.logLabel = new Array<string>(logCap).fill("");
+    this.logEffect = new Array<string>(logCap).fill("");
+    this.logDefines = new Array<string>(logCap).fill("");
+    this.logCursor = 0;
+    this.logFilled = 0;
     this.gpuFiledId = -1;
     this.gpuPendingRow = -1;
     this.gpuLastCount = -1;
@@ -1254,6 +1456,7 @@ export class FrameProfile {
     // rest of this class.
     this.hookRender(scene, glow);
     this.hookEngine(scene);
+    this.hookCreation();
 
     this.on = true;
     this.grainMs = probeGrain();
@@ -1308,6 +1511,22 @@ export class FrameProfile {
     this.gpuMs = null;
     this.gpuFrameMs = null;
     this.frameIdAt = null;
+    this.madeRender = null;
+    this.madeCompute = null;
+    this.madeModules = null;
+    this.madeCallMs = null;
+    this.logT = null;
+    this.logKind = null;
+    this.logMs = null;
+    this.logLabel = [];
+    this.logEffect = [];
+    this.logDefines = [];
+    this.logCursor = 0;
+    this.logFilled = 0;
+    // The wrappers came off with `unhook` above; these only say so.
+    this.createObserved = false;
+    this.createNamed = false;
+    namingEffect = null;
     this.gpuFiledId = -1;
     this.gpuPendingRow = -1;
     this.gpuLastCount = -1;
@@ -1463,6 +1682,101 @@ export class FrameProfile {
     const engine = scene.getEngine();
     const done = engine.onEndFrameObservable.add(() => this.recordPresent());
     this.unhook.push(() => engine.onEndFrameObservable.remove(done));
+  }
+
+  /**
+   * Wraps the device's create methods so every pipeline and shader module lands
+   * on the frame it was made in — the hook `FINDINGS.md` 1 asked for to settle
+   * whether a hitch sits one or two frames after a creation.
+   *
+   * **The PROTOTYPE is wrapped, not Babylon's device field**: `GPUDevice` is the
+   * one surface here that a Babylon upgrade cannot move, and the device the
+   * engine already holds picks the wrapper up through its prototype. The
+   * wrappers are taken off again by `disarm` like every other hook, so a
+   * disarmed profiler is not on the device at all. Anything that wrapped the
+   * same methods first (`plans/webgpu-ref/pipelines.mjs` does, in an init
+   * script) is wrapped in turn and put back exactly as it was found.
+   *
+   * **Naming is the second, optional half and it IS a Babylon internal**:
+   * `WebGPUCacheRenderPipeline._buildRenderPipelineDescriptor` is the one place
+   * that holds the effect a render pipeline is for, so it is wrapped to leave
+   * that effect where the device wrapper can see it. A version that renames it
+   * costs the NAMES and nothing else — `pipelines.named` goes false and every
+   * count stays right — the arrangement `GpuTimestampQuery`'s fields have.
+   *
+   * One argument and no rest parameter on every wrapper: all five create
+   * methods take a single descriptor, and `...args` would be an array per call.
+   */
+  private hookCreation(): void {
+    const proto = (
+      globalThis as unknown as { GPUDevice?: { prototype: Record<string, unknown> } }
+    ).GPUDevice?.prototype;
+    if (!proto) return;
+    for (const [name, kind] of DEVICE_CREATES) {
+      const orig = proto[name];
+      if (typeof orig !== "function") continue;
+      const make = orig as (this: unknown, desc: unknown) => unknown;
+      // A `function`, not an arrow, because `this` must stay the DEVICE.
+      const self = this;
+      proto[name] = function wrapped(this: unknown, desc: unknown): unknown {
+        if (!self.on) return make.call(this, desc);
+        const t0 = performance.now();
+        const out = make.call(this, desc);
+        self.noteCreated(kind, t0, performance.now() - t0, desc);
+        return out;
+      };
+      this.unhook.push(() => {
+        proto[name] = orig;
+      });
+      this.createObserved = true;
+    }
+
+    const cache = WebGPUCacheRenderPipeline.prototype as unknown as Record<string, unknown>;
+    const build = cache._buildRenderPipelineDescriptor;
+    if (typeof build !== "function") return;
+    const describe = build as (this: unknown, e: NamedEffect, t: unknown, s: unknown) => unknown;
+    cache._buildRenderPipelineDescriptor = function named(
+      this: unknown,
+      effect: NamedEffect,
+      topology: unknown,
+      samples: unknown,
+    ): unknown {
+      namingEffect = effect;
+      return describe.call(this, effect, topology, samples);
+    };
+    this.unhook.push(() => {
+      cache._buildRenderPipelineDescriptor = build;
+      namingEffect = null;
+    });
+    this.createNamed = true;
+  }
+
+  /**
+   * Files one creation: a count on the row being recorded, and an entry in the
+   * log. Nothing here builds a string — every one stored is a reference the
+   * descriptor or the effect already held.
+   */
+  private noteCreated(kind: number, t0: number, callMs: number, desc: unknown): void {
+    const i = this.cursor;
+    const counts =
+      kind === 0 ? this.madeRender! : kind === 1 ? this.madeCompute! : this.madeModules!;
+    if (counts[i] < 0xffff) counts[i]++;
+    this.madeCallMs![i] += callMs;
+
+    const at = this.logCursor;
+    this.logT![at] = t0;
+    this.logKind![at] = kind;
+    this.logMs![at] = callMs;
+    const label = (desc as { label?: unknown } | null)?.label;
+    this.logLabel[at] = typeof label === "string" ? label : "";
+    // Only a render pipeline is built through the descriptor builder, and a
+    // module or compute pipeline must not inherit the last render's effect.
+    const effect = kind === 0 ? namingEffect : null;
+    this.logEffect[at] = effect ? effectName(effect) : "";
+    this.logDefines[at] = effect && typeof effect.defines === "string" ? effect.defines : "";
+    if (kind === 0) namingEffect = null;
+    this.logCursor = (at + 1) % this.logT!.length;
+    if (this.logFilled < this.logT!.length) this.logFilled++;
   }
 
   private hookRender(scene: Scene, glow: GlowSpans | null): void {
@@ -1660,6 +1974,14 @@ export class FrameProfile {
     this.loafScriptMs![this.cursor] = 0;
     this.loafRenderMs![this.cursor] = 0;
     this.loafHead![this.cursor] = 0;
+    // The creation counts are incremented, never assigned, so a lap's leftovers
+    // would add to the new frame's — and a creation that lands between this line
+    // and the next `beginFrame` belongs to the frame about to open, which is
+    // the row being cleared here.
+    this.madeRender![this.cursor] = 0;
+    this.madeCompute![this.cursor] = 0;
+    this.madeModules![this.cursor] = 0;
+    this.madeCallMs![this.cursor] = 0;
     // …and the hitch this lap is about to overwrite stops being a hitch. The
     // list is in ring order, so the stale ones are always at the FRONT and this
     // is one comparison on nearly every frame. Without it the chip counts
@@ -1758,6 +2080,8 @@ export class FrameProfile {
       loafMs: [],
       gpuMs: [],
       gpuFrameMs: [],
+      pipelines: [],
+      modules: [],
       phases: {},
     };
     if (full) {
@@ -1771,6 +2095,8 @@ export class FrameProfile {
         series.loafMs.push(round(this.loafMs![i]));
         series.gpuMs.push(round(this.gpuMs![i], 3));
         series.gpuFrameMs.push(round(this.gpuFrameMs![i], 3));
+        series.pipelines.push(this.madeRender![i] + this.madeCompute![i]);
+        series.modules.push(this.madeModules![i]);
       }
     }
 
@@ -1843,7 +2169,12 @@ export class FrameProfile {
       // and `device.coarsePointer`. Before it a capture could only be read
       // against a guess at its settings, the render scale worked back out of
       // the backing store and every rung assumed to be the device's default.
-      version: 10,
+      // 11: `pipelines` — every pipeline and shader module created in the
+      // window, filed against its frame and named by effect where Babylon's
+      // builder could be wrapped — with `createdOn`/`createdNear` on every
+      // hitch and `pipelines`/`modules` in the series. Before it a first-use
+      // compile stall could only be guessed at from a draw count ramping.
+      version: 11,
       takenAt: new Date().toISOString(),
       reason,
       map: this.mapId,
@@ -1878,6 +2209,7 @@ export class FrameProfile {
       memory: this.memoryFacts(first, n, cap, spanMs),
       loaf: this.loafFacts(first, n, cap),
       gpu: this.gpuFacts(first, n, cap),
+      pipelines: this.creationFacts(first, n, cap, full),
       counters: this.counterMeans(first, n, cap),
       phases,
       hitches: this.worstHitches(),
@@ -1926,6 +2258,102 @@ export class FrameProfile {
       gcObserved: this.gcReg !== null,
       gcEvents: gc,
       gcPerSec: seconds > 0 ? round(gc / seconds, 2) : 0,
+    };
+  }
+
+  /** Every creation on ring row `i`, of any kind. */
+  private madeAt(i: number): number {
+    return this.madeRender![i] + this.madeCompute![i] + this.madeModules![i];
+  }
+
+  /**
+   * Creations on row `i` and the `creationLead` rows before it — the frames a
+   * creation could still be compiling into — never reaching back past the
+   * oldest row the ring holds, where the counts belong to a lap long gone.
+   */
+  private madeNear(i: number): number {
+    const cap = this.capacity;
+    const oldest = (this.cursor - this.filled + cap) % cap;
+    let sum = this.madeAt(i);
+    let row = i;
+    for (let k = 0; k < CONFIG.profiling.creationLead && row !== oldest; k++) {
+      row = (row - 1 + cap) % cap;
+      sum += this.madeAt(row);
+    }
+    return sum;
+  }
+
+  /**
+   * What was created over the window, whether the slow frames sat on it, and
+   * the creations the log still holds — see `ProfileReport.pipelines`.
+   *
+   * The log is mapped to rows by TIME here, at capture, rather than at the
+   * call: see `logT`. Rows are in time order, so a binary search over the
+   * window's start stamps finds each one's frame.
+   */
+  private creationFacts(
+    first: number,
+    n: number,
+    cap: number,
+    full: boolean,
+  ): ProfileReport["pipelines"] {
+    let render = 0;
+    let compute = 0;
+    let modules = 0;
+    let callMs = 0;
+    for (let k = 0; k < n; k++) {
+      const i = (first + k) % cap;
+      render += this.madeRender![i];
+      compute += this.madeCompute![i];
+      modules += this.madeModules![i];
+      callMs += this.madeCallMs![i];
+    }
+    let hitchesNear = 0;
+    for (const i of this.hitchAt) if (this.madeNear(i) > 0) hitchesNear++;
+
+    const recent: CreationEvent[] = [];
+    const frameAt = this.frameAt!;
+    const start = frameAt[first];
+    const newest = frameAt[(this.cursor - 1 + cap) % cap];
+    const logCap = this.logT ? this.logT.length : 0;
+    const limit = full ? logCap : CONFIG.profiling.creationsReported;
+    for (let k = 0; k < this.logFilled && recent.length < limit; k++) {
+      const at = (this.logCursor - 1 - k + logCap) % logCap;
+      const t = this.logT![at];
+      // Newest first, so the first one older than the window ends the walk.
+      if (t < start) break;
+      // The last row that started at or before `t`. Row `n` is the newest,
+      // whose interval is not known yet — its creations report frameMs 0.
+      let lo = 0;
+      let hi = n;
+      while (lo < hi) {
+        const mid = (lo + hi + 1) >> 1;
+        if (frameAt[(first + mid) % cap] <= t) lo = mid;
+        else hi = mid - 1;
+      }
+      const defines = this.logDefines[at];
+      recent.push({
+        ago: round(Math.max(0, newest - t) / 1000, 2),
+        kind: CREATED[this.logKind![at]],
+        frameMs: lo < n ? round(this.frameMs![(first + lo) % cap]) : 0,
+        label: this.logLabel[at],
+        effect: this.logEffect[at],
+        defines:
+          full || defines.length <= DEFINES_CAP
+            ? defines
+            : defines.slice(0, DEFINES_CAP - 1) + "…",
+        callMs: round(this.logMs![at], 3),
+      });
+    }
+    return {
+      observed: this.createObserved,
+      named: this.createNamed,
+      render,
+      compute,
+      modules,
+      callMs: round(callMs, 3),
+      hitchesNear,
+      recent,
     };
   }
 
@@ -2119,6 +2547,8 @@ export class FrameProfile {
         meshWalkMs: round(this.meshWalkMs![i]),
         renderTargetsMs: round(this.rttMs![i]),
         particlesMs: round(this.particlesMs![i]),
+        createdOn: this.madeAt(i),
+        createdNear: this.madeNear(i),
         phases,
       });
     }
@@ -2256,6 +2686,22 @@ export class FrameProfile {
             base.toFixed(1) +
             ',"args":{"count":' +
             this.gcAt![i] +
+            "}}",
+        );
+      }
+      // Creations get the same treatment and for the same reason: a first-use
+      // stall is a long frame ZERO TO TWO frames after one of these, and that
+      // is a reading you make by eye down a flame chart.
+      if (this.madeAt(i) > 0) {
+        parts.push(
+          '{"name":"compile","cat":"gpu","ph":"i","s":"g","pid":1,"tid":1,"ts":' +
+            base.toFixed(1) +
+            ',"args":{"render":' +
+            this.madeRender![i] +
+            ',"compute":' +
+            this.madeCompute![i] +
+            ',"modules":' +
+            this.madeModules![i] +
             "}}",
         );
       }

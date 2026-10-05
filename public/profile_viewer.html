@@ -390,6 +390,16 @@ table.lad tr.rest td { color: var(--ink-3); font-style: italic; }
 .tag.gc      { color: var(--collector); border-color: var(--collector); background: var(--collector-soft); }
 .tag.outside { color: var(--signal); border-color: var(--signal); background: var(--signal-soft); }
 .tag.tick    { color: var(--fault); border-color: var(--fault); background: var(--fault-soft); }
+.tag.compile { color: var(--gpu); border-color: var(--gpu); background: var(--gpu-soft); }
+
+/* ── compiles ──────────────────────────────────────────────────────────── */
+table.compiles { width: 100%; border-collapse: collapse; font-size: 12px; }
+table.compiles th { text-align: left; font-weight: 600; color: var(--ink-3); padding: 6px 10px; border-bottom: 1px solid var(--rule); }
+table.compiles td { padding: 5px 10px; border-bottom: 1px solid var(--rule-soft); vertical-align: top; white-space: nowrap; }
+table.compiles td.mono { font-family: ui-monospace, SFMono-Regular, "Cascadia Mono", Menlo, Consolas, monospace; font-size: 11px; color: var(--ink-2); }
+table.compiles td.defs { white-space: normal; min-width: 24ch; max-width: 70ch; overflow-wrap: anywhere; }
+table.compiles td.slow { color: var(--fault); font-weight: 600; }
+table.compiles td.empty { white-space: normal; color: var(--ink-3); padding: 16px; }
 .hitch .detail { padding: 4px 16px 18px; background: var(--surface-2); }
 .hitch .where {
   display: flex; gap: 18px; flex-wrap: wrap; padding: 10px 0 14px;
@@ -568,6 +578,11 @@ table.lad tr.rest td { color: var(--ink-3); font-style: italic; }
     <div class="panel" id="p-hitches">
       <header><h2>Slow frames</h2><div class="note" id="n-hitches"></div></header>
       <div class="body flush" id="r-hitches"></div>
+    </div>
+
+    <div class="panel" id="p-compiles" hidden>
+      <header><h2>Compiled in this window</h2><div class="note" id="n-compiles"></div></header>
+      <div class="body flush overflow"><table class="compiles" id="r-compiles"></table></div>
     </div>
 
     <div class="panel">
@@ -907,7 +922,17 @@ function readHitch(h) {
     why = top ? "the tick spent it, mostly in " + top : "the tick spent it";
     kind = "tick";
   }
-  return { wall, tick, outside, outShare, kind, why, loaf };
+  /* A creation on this frame or the two before it, from report v11. It is a
+     CANDIDATE and never a verdict of its own: Dawn compiles behind the create
+     call, so the stall it causes lands on first use — inside `drawWorld` in the
+     tick, or as a long wait outside it — and either reading above can be one.
+     Appended rather than chosen between, so the main split still stands. */
+  const near = h.createdNear || 0;
+  if (near > 0) {
+    why += "; " + near + (near === 1 ? " pipeline or shader module was" : " pipelines and shader modules were") +
+      " created on this frame or the two before it, so a first-use compile is a candidate";
+  }
+  return { wall, tick, outside, outShare, kind, why, loaf, near };
 }
 
 /* ── report ────────────────────────────────────────────────────────────── */
@@ -1005,6 +1030,8 @@ function renderReport(r) {
     if (nUnseen) tally.push(nUnseen + " under the " + LOAF_FLOOR + " ms floor");
     if (nGc) tally.push(nGc + " with a collection");
     if (nTick) tally.push(nTick + " inside the tick");
+    const nNear = reads.filter((x) => x.near > 0).length;
+    if (nNear) tally.push(nNear + " on or just after a compile");
     let note = ". Time outside the tick is the browser — vsync wait, present, compositing, a " +
       "shader compile — and a collection count is best-effort: the sentinel reports after the " +
       "fact, so it lands on the frame it interrupted or the one after.";
@@ -1073,6 +1100,16 @@ function renderReport(r) {
       fmt(lt.totalMs, 0) + " ms total · " + fmt(lt.blockingMs, 0) + " ms blocking",
       lt.blockingMs > 0 ? "fault" : null));
   }
+  /* Creations, from report v11. The foot is the reading that matters — how many
+     slow frames sat on one — and the count beside it is only context: an
+     install makes a hundred and a round in play a handful. */
+  const pl = r.pipelines;
+  if (pl && pl.observed) {
+    stats.appendChild(tile(
+      "Compiles", String(pl.render + pl.compute), "",
+      pl.modules + " modules · " + pl.hitchesNear + " of " + f.hitches + " slow frames on one",
+      pl.hitchesNear ? "gpu" : null));
+  }
   const c = r.counters || {};
   stats.appendChild(tile("Draw calls", String(c.drawCalls != null ? c.drawCalls : "—"), "", (c.activeMeshes != null ? c.activeMeshes + " meshes" : "")));
   // Particles are only on a capture from a build that measures them, and the
@@ -1123,6 +1160,11 @@ function renderReport(r) {
     r.hitches.forEach((h, i) => box.appendChild(hitchRow(h, reads[i], below)));
   }
 
+  /* compiles — what a warm-up pass would have had to draw in advance. Newest
+     first, as the capture lists them; the slow frame each one sat on is its
+     wall clock, so a creation on a 90 ms frame reads as one. */
+  renderCompiles(r.pipelines, r.frame.hitchThresholdMs);
+
   /* device */
   const dv = $("r-device"); dv.innerHTML = "";
   const kv = (k, v) => { const d = el("div"); d.appendChild(el("div", "k", k)); d.appendChild(el("div", "v", v)); dv.appendChild(d); };
@@ -1166,6 +1208,39 @@ function renderReport(r) {
   kv("Pixel ratio", String(dev.devicePixelRatio != null ? dev.devicePixelRatio : "?"));
   kv("Cores / memory", (dev.hardwareConcurrency || "?") + " ×  " + (dev.deviceMemoryGb != null ? dev.deviceMemoryGb + " GB" : "?"));
   kv("Browser", dev.userAgent || "?");
+}
+
+function renderCompiles(pl, bar) {
+  const panel = $("p-compiles"), table = $("r-compiles");
+  table.innerHTML = "";
+  if (!pl || !pl.observed) { panel.hidden = true; return; }
+  panel.hidden = false;
+  const list = pl.recent || [];
+  $("n-compiles").textContent = pl.render + " render · " + pl.compute + " compute · " +
+    pl.modules + " modules" + (pl.named ? "" : " · unnamed — Babylon's builder was not found") +
+    (list.length < pl.render + pl.compute + pl.modules ? " · newest " + list.length + " listed" : "");
+  if (!list.length) {
+    const tr = el("tr"), td = el("td", "empty", "Nothing was created in this window — so no slow frame in it was a first-use compile.");
+    tr.appendChild(td); table.appendChild(tr);
+    return;
+  }
+  const head = el("tr");
+  for (const k of ["ago", "kind", "frame", "shader", "pass", "defines"]) head.appendChild(el("th", null, k));
+  table.appendChild(head);
+  for (const e of list) {
+    const tr = el("tr");
+    tr.appendChild(el("td", null, fmt(e.ago, 2) + " s"));
+    tr.appendChild(el("td", null, e.kind));
+    const fm = el("td", null, e.frameMs ? fmt(e.frameMs, 1) + " ms" : "—");
+    if (e.frameMs >= bar) fm.className = "slow";
+    tr.appendChild(fm);
+    tr.appendChild(el("td", null, e.effect || "—"));
+    tr.appendChild(el("td", "mono", (e.label || "").replace(/^RenderPipeline_/, "") || "—"));
+    const df = el("td", "mono defs", (e.defines || "").replace(/#define /g, "").replace(/\s*\n\s*/g, " ").trim() || "—");
+    df.title = e.defines || "";
+    tr.appendChild(df);
+    table.appendChild(tr);
+  }
 }
 
 function showFrozenHeap(mem) {
@@ -1332,6 +1407,7 @@ function hitchRow(h, read, below) {
 
   const tags = el("div", "tags");
   if (h.gc > 0) tags.appendChild(el("span", "tag gc", h.gc + (h.gc === 1 ? " collection" : " collections")));
+  if (read.near > 0) tags.appendChild(el("span", "tag compile", read.near + " compiled"));
   tags.appendChild(el("span", "tag " + read.kind,
     read.kind === "tick" ? "in the tick" : read.kind === "gc" ? "collection" : "outside"));
   tags.appendChild(el("span", "tag", h.ago + " s ago"));
@@ -1357,6 +1433,7 @@ function hitchRow(h, read, below) {
   w("rtt", fmt(h.renderTargetsMs, 2) + " ms");
   if (h.particlesMs != null) w("particles", fmt(h.particlesMs, 2) + " ms");
   if (GPU_OK && h.gpuFrameMs > 0) w("gpu", fmt(h.gpuFrameMs, 2) + " ms");
+  if (h.createdNear != null) w("compiled", h.createdOn + " here, " + h.createdNear + " within 2 frames");
   if (h.heapMb) w("heap", fmt(h.heapMb, 1) + " MB");
   det.appendChild(where);
 
@@ -1512,6 +1589,19 @@ function drawFrames(r) {
     }
   }
 
+  /* Creations, on a rail along the BOTTOM (report v11), so the first-use reading
+     is a glance: a spike zero to two rows to the right of one of these. The two
+     rails stay apart because they are two different suspects. */
+  const made = r.series.pipelines || [], mods = r.series.modules || [];
+  ctx.strokeStyle = css("--gpu");
+  ctx.lineWidth = 2;
+  for (let i = 0; i < n; i++) {
+    if ((made[i] || 0) + (mods[i] || 0) > 0) {
+      const x = Math.round(X(i)) + 0.5;
+      ctx.beginPath(); ctx.moveTo(x, h - PAD.b - 10); ctx.lineTo(x, h - PAD.b); ctx.stroke();
+    }
+  }
+
   const over = fr.filter((v) => v > yMax).length;
   $("n-frames").textContent =
     n + " frames · scale " + (fitSpikes ? "fits the worst frame (" + fmt(max, 1) + " ms)"
@@ -1528,11 +1618,13 @@ function drawFrames(r) {
   };
   item(css("--signal"), "frame time");
   item(css("--collector"), "collection", true);
+  if (r.series.pipelines) item(css("--gpu"), "compile", true);
   item(css("--fault"), "over scale", true);
 
   hover(canvas, $("t-frames"), n, X, (i) => {
     const rows = ["<b>" + fmt(fr[i], 2) + " ms</b>  <span class=\"dim\">frame " + (i + 1) + "</span>"];
     if (gc[i] > 0) rows.push("<span class=\"dim\">" + gc[i] + " collection" + (gc[i] === 1 ? "" : "s") + "</span>");
+    if (made[i] > 0 || mods[i] > 0) rows.push("<span class=\"dim\">" + (made[i] || 0) + " pipelines, " + (mods[i] || 0) + " modules created</span>");
     if (r.series.heapMb && r.series.heapMb[i]) rows.push("<span class=\"dim\">heap " + fmt(r.series.heapMb[i], 1) + " MB</span>");
     return rows.join("<br>");
   });

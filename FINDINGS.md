@@ -31,8 +31,10 @@ thread was idle through it and the GPU was idle through it. What is open is:
 - **(c) a laptop capture, on battery at 60 Hz and on AC at 120 Hz** — the case
   this entry was opened for. Every desktop capture so far is the 3432/3440
   panel; the tablet and the phone below are the only other devices.
-- **(d) the pipeline-index hook** under the first-use hypothesis — creations
-  recorded against the ring's frame index.
+- **(d) the capture the pipeline hook was built for** under the first-use
+  hypothesis. The hook is in (report version 11: `pipelines`, and
+  `createdOn`/`createdNear` on every hitch — `docs/profiling.md`, "Compiles");
+  what is owed is a round with combat in it, on the phone and on this panel.
 
 **A collector reading taken HEADLESS AND UNCAPPED nearly closed this wrongly.**
 At 220-700 fps the game allocates the same ~200 kB a FRAME and therefore two to
@@ -195,6 +197,10 @@ first-use stall, and counting creations cannot see one.
 before, but record the frame INDEX of each against the profiler's ring, and
 look at whether the hitch frames are 1–2 frames downstream of a creation. Fire
 every weapon and set off a blast during the run, which the A/B script did not.
+**The hook is BUILT** (report version 11, `docs/profiling.md`, "Compiles"): a
+capture now carries every creation filed against its frame and named by
+effect and define set, and each hitch says how many landed on it or the two
+frames before. What is left is taking the capture.
 
 `src/core/FrameCap.ts` is now a frame pacer, and its admitted frame measures
 its delta across the whole gap — the raw, lagging `dt` that `docs/profiling.md`
@@ -971,6 +977,22 @@ exactly the frame a map first draws. Whether that is a few lines or a fight
 with the variant matrix has not been looked at. Finding 1's first-use pipeline
 hypothesis — pipelines first used in PLAY stalling the frame they are first
 drawn on — is a second reason a warm-up pass would pay.
+
+**The instrument for it now exists, and its first reading says what a warm-up
+owes.** The profiler records every creation against its frame (report v11,
+`docs/profiling.md`, "Compiles"). Coldharbour, headless on the Windows box,
+2026-10-04, `?profile`, spawn and stand: the spawn frame ran **240-308 ms with
+24 creations on it and 27 within two frames, while `drawWorld` was ~37 ms of
+it** — the stall lands mostly OUTSIDE the tick, which is what a compile in the
+GPU process looks like from the page — and nothing further was created over
+the next eight seconds of standing still. What compiled there was the cel
+world (`CEL_PALETTE`), a shadow-map variant (`INSTANCES`/`THIN_INSTANCES`),
+the flame's `GLOW_MASK` twin, and Babylon's own `StandardMaterial` in
+`ALPHABLEND` variants, against an `rgba8unorm` target — the list a warm-up
+would have to draw. Babylon 9.28 also brings the tool for it:
+`engine.createRenderPipelineAsync` (backed by
+`WebGPUCacheRenderPipeline.preWarmPipeline`) compiles a variant without
+drawing it, and its creations would show up in the same log, before the round.
 
 ---
 
