@@ -62,6 +62,7 @@ import {
   lineKind,
   makeFloorAt,
   makeGrade,
+  n2,
   printProbe,
   printRefusals,
   printTally,
@@ -343,8 +344,6 @@ function relief(x, z, w, d) {
 
 const placements = [];
 const scatter = [];
-
-const n2 = (v) => (Number.isInteger(v) ? String(v) : String(Number(v.toFixed(2))));
 
 function paramText(params) {
   if (!params) return "";

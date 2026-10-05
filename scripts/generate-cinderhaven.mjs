@@ -74,6 +74,7 @@ import {
   leadKind,
   lineKind,
   makeGrade,
+  n2,
   printTally,
   section,
   seeded,
@@ -1002,9 +1003,6 @@ function dry(x, z, lift = 0.55) {
 
 const placements = [];
 const scatter = [];
-
-/** Shortest exact decimal for a number a layout states. */
-const n2 = (v) => (Number.isInteger(v) ? String(v) : String(Number(v.toFixed(2))));
 
 /**
  * The `rotY:` clause a placement is written with.
