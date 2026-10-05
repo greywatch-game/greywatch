@@ -110,6 +110,16 @@ export class FrameCap {
     return this.prevStamp > 0 && gap > 0 ? gap / 1000 : fallback;
   }
 
+  /**
+   * The refresh timestamp the frame now running was admitted on, on
+   * `performance.now()`'s clock — the instant this frame is SEEN, which is
+   * what a match's render clock is read at (`Connection.setFrame`). 0 before
+   * the first frame.
+   */
+  get refreshAt(): number {
+    return this.stamp;
+  }
+
   private readonly step = (t: number): void => {
     const render = this.pending;
     if (!render) return;

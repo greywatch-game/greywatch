@@ -42,6 +42,26 @@
  * rate remote motion plays at is not a thing anybody can see, where the jump it
  * replaces plainly is. A disagreement too big to be jitter is not drift and is
  * taken whole: see `SNAP_MS`.
+ *
+ * **The server's timeline is the authority's; WHERE ON IT this client draws a
+ * frame is this client's, and it is read at the instant the frame is SEEN.**
+ * Nothing here decides when anything happened — the stamps do. What the local
+ * clock decides is which instant of that history to pose this frame at, and a
+ * reading taken whenever the code got the thread poses frames that are shown an
+ * even 33.3 ms apart at instants 31, 36, 33 ms apart: every remote body
+ * stutters, and `NetSoldier` reads the same jitter as a change of walking pace.
+ * So `now` and `renderTime` are read at the frame's REFRESH timestamp, handed
+ * in once a frame by `setFrame` — the client's half of the rule `HeadlessGame.now`
+ * is the server's half of, a stamp on the clock the motion is actually on. It
+ * is also what the authority's REWIND is owed: a shot's `time` is the instant
+ * the bodies on screen were posed at, exactly, rather than a few milliseconds
+ * of main thread later.
+ *
+ * **One local clock for everything, and it is `performance.now()`'s.** The
+ * frame timestamp is on it, so the offset has to be sampled on it too or the
+ * two disagree by whatever separates the two clocks; and it is monotonic and
+ * sub-millisecond where `Date.now()` is neither. The offset absorbs the
+ * difference in origin, as it already absorbs two machines' wall clocks.
  */
 import { CONFIG } from "../config";
 import { decode, encode, PROTOCOL_VERSION, type ClientMessage, type ServerMessage } from "./protocol";
@@ -138,10 +158,28 @@ export class Connection {
   private offset = 0;
   /** Local time the slew was last advanced, so it is a rate and not a step. */
   private slewAt = 0;
+  /**
+   * The instant the frame now running is SEEN, on `performance.now()`'s clock
+   * — set by `setFrame`, 0 until the first. See the header.
+   */
+  private frameAt = 0;
 
-  /** Best estimate of the server's clock, in ms. */
+  /**
+   * Hands in the refresh timestamp of the frame about to be drawn
+   * (`FrameCap.refreshAt`). `Game.tick`'s, before anything reads the clock; a
+   * 0 is ignored, so the first frame reads the live clock instead.
+   */
+  setFrame(refreshAt: number): void {
+    if (refreshAt > 0) this.frameAt = refreshAt;
+  }
+
+  /**
+   * Best estimate of the server's clock, in ms, at the instant this frame is
+   * seen — every read inside one frame is the same instant, which is what
+   * lets the bodies, the grenades, the hulls and a shot's stamp agree.
+   */
   now(): number {
-    const local = Date.now();
+    const local = this.frameAt > 0 ? this.frameAt : performance.now();
     this.slew(local);
     return local + this.offset;
   }
@@ -150,13 +188,13 @@ export class Connection {
    * Moves the applied offset toward the estimate, by however much real time has
    * passed since this last ran.
    *
-   * Driven from the READ rather than from the frame or from the socket, because
-   * this is the only place that has to be right: `now` and `renderTime` are
-   * what the world is posed against, they are asked several times a frame
-   * (`NetSession.update`), and the first ask of a frame is what fixes the
-   * instant for all of them. A frame hook would be a second thing to keep in
-   * step with them for no gain, and stepping this on message ARRIVAL would make
-   * the rate a function of the jitter it exists to absorb.
+   * Driven from the READ rather than from the socket, because this is the only
+   * place that has to be right: `now` and `renderTime` are what the world is
+   * posed against, and they are asked several times a frame
+   * (`NetSession.update`) at the one instant `setFrame` fixed — so the first
+   * ask of a frame spends the gap since the last and the rest find none.
+   * Stepping this on message ARRIVAL would make the rate a function of the
+   * jitter it exists to absorb.
    */
   private slew(local: number): void {
     // Clamped, and read BEFORE the early returns so a stretch spent already on
@@ -299,7 +337,10 @@ export class Connection {
   }
 
   private sample(serverNow: number): void {
-    this.offsets.push(serverNow - Date.now());
+    // The LIVE clock, not the frame's: a sample is when the message was
+    // handled, and the frame instant is whenever the last refresh was. Same
+    // clock as `frameAt`, which is the header's second rule.
+    this.offsets.push(serverNow - performance.now());
     const keep = Math.max(2, Math.ceil(CONFIG.net.clockWindow * 20));
     while (this.offsets.length > keep) this.offsets.shift();
     // Maximum, not mean and NOT minimum — see the note at the top of the file.

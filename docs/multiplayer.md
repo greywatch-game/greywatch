@@ -922,6 +922,25 @@ same measurement to **0.98x–1.02x** and costs nothing in buffer depth. A
 disagreement over `SNAP_MS` is not drift and is taken whole: a reconnect, a
 rotation, or the first sample of a session.
 
+**The timeline is the authority's; WHERE ON IT a frame is posed is the
+client's, and it is read at the instant the frame is SEEN.** Nothing about
+this decides when anything happened — the stamps do, on `HeadlessGame.now`.
+What a client's own clock decides is which instant of that history to draw this
+frame at, and `renderTime` used to read `Date.now()` whenever `NetSession.update`
+got the thread: under a 30 cap, frames shown an even 33.3 ms apart were posed at
+instants 31–36 ms apart, every remote body stuttered with it, and `NetSoldier`
+read the same jitter as a change of walking pace. `Game.tick` now hands
+`Connection.setFrame` the frame's REFRESH timestamp (`FrameCap.refreshAt`) before
+anything reads the clock, so every read in a frame is that one instant — the
+client's half of the rule the snapshot stamp is the server's half of. It also
+makes a shot's `time` exactly the instant the bodies on screen were posed at,
+which is what the rewind is owed. **The offset is sampled on `performance.now()`
+and never on `Date.now()`**, because the frame timestamp is on that clock and an
+offset sampled on another is wrong by whatever separates the two; the move
+uploads still stamp `Date.now()`, which is right, because the authority only
+ever subtracts two of them. Measured, local match, Hollowmere, 30 cap, headed:
+the render clock's step went from 31.5–35.3 ms to 32.8–33.9.
+
 ## The stamp on a snapshot is the SIMULATION's clock, never `Date.now()`
 
 `TICK_HZ` must be divisible by `SNAPSHOT_HZ`. A fractional ratio makes the

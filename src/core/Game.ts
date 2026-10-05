@@ -3247,6 +3247,10 @@ export class Game {
     // under an evenly paced display (`FrameCap`'s header).
     const real = this.engine.getDeltaTime() / 1000;
     const dt = Math.min(this.frameCap.elapsed(real), 0.05);
+    // The match's render clock is read at the same instant, and before anything
+    // in this frame asks it: where on the authority's timeline this frame is
+    // posed is a question about when it is SEEN (`Connection`'s header).
+    this.net?.conn.setFrame(this.frameCap.refreshAt);
     this.prof.begin(P.input);
     this.input.update();
     this.prof.end(P.input);

@@ -255,7 +255,7 @@ export class NetSoldier implements Combatant, RagdollSubject {
     // it is the interval of render time these samples span, so the speed it
     // gives is the authority's and not this machine's frame rate.
     //
-    // **In SECONDS, because render time is a `Date.now()` reading and
+    // **In SECONDS, because render time is a millisecond reading and
     // everything it is handed to is written in seconds.** Left in
     // milliseconds it is not a slow body or a fast one — it is a body whose
     // every quantity is out by a thousand at once, and the tell is the GAIT:
