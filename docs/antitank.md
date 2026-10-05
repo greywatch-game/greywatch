@@ -116,13 +116,14 @@ enough to reach a hull's centre from its nose kills infantry at eight metres,
 and a curve tuned for infantry does a third of its damage to the tank it hit
 dead on.
 
-`Game.resolveOrdnance` is the one place both are spent, because the direct hit
-is a `Hittable` and the splash is `GrenadeSystem.blastAt` — the one
-implementation of an explosion in this game, which the tank shell already goes
-through. The two cannot double-count a kill for the reason `fireShell`'s two
-resolutions cannot: `hittablesFor` is fetched INSIDE `blastAt`, after the direct
-hit has been dealt, so a hull finished by the strike is no longer `alive` and no
-longer in the list.
+`resolveOrdnance` (`entities/equipment.ts`, beside `ordnanceEffect`) is the one
+place both are spent — by the client offline and by the authority, through the
+one function — because the direct hit is a `Hittable` and the splash is
+`GrenadeSystem.blastAt`, the one implementation of an explosion in this game,
+which the tank shell already goes through. The two cannot double-count a kill
+for the reason a shell's two resolutions (`fireHullGun`) cannot: `hittablesFor`
+is fetched INSIDE `blastAt`, after the direct hit has been dealt, so a hull
+finished by the strike is no longer `alive` and no longer in the list.
 
 **A hull hit squarely takes the direct number and NOTHING ELSE**, and that is
 the one counter-intuitive figure in the table. `blastAt` needs line of sight
@@ -524,8 +525,9 @@ A kit with no third slot pushes null and the row is not drawn at all.
   is not predicted at all: it is laid at the feet and never moves, so the round
   trip is invisible and a local copy would be a second plate to reconcile
   against the table for the rest of the round. The local rocket decides
-  nothing on either side of that — `Game.resolveOrdnance` returns immediately
-  in a match, so there is no second blast a street from the first.
+  nothing on either side of that — `Game.wireAntiTank` never calls
+  `resolveOrdnance` in a match, so there is no second blast a street from the
+  first.
 - **Resupply.** Two a life and no ammunition crate. It is the grenade pouch's
   economy and it is what makes each shot a decision.
 - **A rocket that can be shot down.** The body is dressing: no `solid`, no

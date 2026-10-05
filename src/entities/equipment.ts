@@ -2,8 +2,9 @@
  * equipment.ts — The anti-tank slot's two items, as a type and as the resolved
  * numbers everything downstream reads.
  * Owns: the derivation from `CONFIG.equipment[id]` to a `WeaponSetup` the
- * carry path can hold, and the ordnance figures `AntiTankSystem` and `Game`
- * resolve a detonation with. Nothing else may re-read that table.
+ * carry path can hold, the ordnance figures a detonation is resolved with,
+ * and `resolveOrdnance`, the one place those figures are SPENT — on the client
+ * offline and on the authority alike. Nothing else may re-read that table.
  * Invariants: `EquipmentId` is derived from the CONFIG table, so the table is
  * the only place an AT item is declared. Holds no state and no geometry: the
  * models are `RpgModel`'s and `MineModel`'s, and which one is carried is
@@ -35,6 +36,8 @@
  * `SELECTOR` below does.
  */
 import { CONFIG } from "../config";
+import type { OrdnanceHit } from "../systems/AntiTankSystem";
+import type { GrenadeSystem } from "../systems/GrenadeSystem";
 import type { FireMode, WeaponSetup } from "./weapons";
 
 /**
@@ -59,8 +62,9 @@ export const DEFAULT_EQUIPMENT: EquipmentId = "rpg";
  *
  * Two numbers rather than one falloff for the reason `CONFIG.equipment`'s
  * header gives — a curve that reaches a hull's centre from its nose kills
- * infantry at eight metres. `Game` is the one place both are spent, because
- * the direct hit is a `Hittable` and the splash is `GrenadeSystem`'s.
+ * infantry at eight metres. `resolveOrdnance` is the one place both are
+ * spent, because the direct hit is a `Hittable` and the splash is
+ * `GrenadeSystem`'s.
  */
 export interface OrdnanceEffect {
   /** What the hull it struck takes, as a `shell`. */
@@ -89,6 +93,42 @@ export function ordnanceEffect(id: EquipmentId): OrdnanceEffect {
       power: e.blast.power,
     },
   };
+}
+
+/**
+ * One rocket or one mine going off: the hull it struck, then the blast.
+ *
+ * **One copy for both simulations**, and it has to be: the authority's used to
+ * be `Game.resolveOrdnance` "to the line", which is what a second copy always
+ * says until the day it stops being true. `blasts` is the simulation's own
+ * `GrenadeSystem`, handed in rather than imported — the one implementation of
+ * an explosion in the game. A client in a MATCH must not call this at all:
+ * its rocket is a prediction and the authority's `explode` event draws the
+ * only fireball (`Game.wireAntiTank`).
+ *
+ * `hit.at` is `AntiTankSystem`'s own live vector, valid for the length of this
+ * call — `blastAt` clones what it keeps, and nothing here holds it.
+ */
+export function resolveOrdnance(
+  hit: OrdnanceHit,
+  blasts: Pick<GrenadeSystem, "blastAt">,
+): void {
+  const e = ordnanceEffect(hit.kind);
+  // The direct hit, which is the thing a falloff cannot express: a rocket that
+  // stopped ON a hull, or a mine a hull drove over. `shell` is what gets
+  // through `CONFIG.vehicles.tank.resist`, and it is the whole reason this kit
+  // exists.
+  if (hit.hull) hit.hull.takeDamage(e.damage, hit.at, "shell");
+  // …and the splash. `by` is whoever fired it, so a kill lands on their row
+  // exactly as a grenade's does — each side's `onBlastHit` is already wired
+  // for it and needed no arm.
+  blasts.blastAt(hit.at, hit.team, hit.by, {
+    radius: e.blast.radius,
+    inner: e.blast.inner,
+    damage: e.blast.damage,
+    kind: "shell",
+    power: e.blast.power,
+  });
 }
 
 /**

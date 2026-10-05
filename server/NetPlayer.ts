@@ -21,6 +21,7 @@
 import { Vector3 } from "@babylonjs/core";
 import { CONFIG } from "../src/config";
 import type { Combatant, Team } from "../src/entities/Combatant";
+import { HealthRegen } from "../src/entities/HealthRegen";
 import { DRIVER, type CrewSeat } from "../src/entities/Vehicle";
 import type { DamageKind } from "../src/systems/CombatSystem";
 import { Leash } from "../src/world/leash";
@@ -171,12 +172,12 @@ export class NetPlayer implements Combatant {
   invulnerable = false;
 
   /**
-   * Counts down from `regenDelay` after each hit; regen resumes at zero. The
-   * server's copy of `Player.regenLockT`, and it has to exist here because the
-   * authority owns the health: regen is a rule about the number, and a rule
-   * about the number belongs wherever the number is decided.
+   * The lock and the curve, as `Player` predicts them — one `HealthRegen` on
+   * each side. It has to be stepped here because the authority owns the
+   * health: regen is a rule about the number, and a rule about the number
+   * belongs wherever the number is decided.
    */
-  private regenLockT = 0;
+  private readonly healing = new HealthRegen();
 
   /**
    * How many AT items a full pouch is for the item this player brought, which
@@ -286,7 +287,7 @@ export class NetPlayer implements Combatant {
     // hitmarker is sent back for a round that hit six inches of plate.
     if (this.invulnerable) return false;
     this.health -= amount;
-    this.regenLockT = CONFIG.player.regenDelay;
+    this.healing.hit();
     const killed = this.health <= 0;
     if (killed) {
       this.health = 0;
@@ -299,8 +300,8 @@ export class NetPlayer implements Combatant {
 
   /**
    * Heals back toward full once the lock a hit armed has run out — the same
-   * Battlefield-style rule `Player.update` runs offline, off the same two
-   * numbers, because a networked round that never refilled a health pool
+   * Battlefield-style rule `Player.updateVitals` runs offline, through the same
+   * `HealthRegen`, because a networked round that never refilled a health pool
    * would be the respawn queue `config/player.ts` calls the rule load-bearing
    * against, with the added twist that only the multiplayer half of the game
    * had it.
@@ -314,17 +315,12 @@ export class NetPlayer implements Combatant {
    */
   regen(dt: number): void {
     if (!this.alive) return;
-    this.regenLockT = Math.max(0, this.regenLockT - dt);
-    if (this.regenLockT > 0 || this.health >= CONFIG.player.maxHealth) return;
-    this.health = Math.min(
-      CONFIG.player.maxHealth,
-      this.health + CONFIG.player.regenRate * dt,
-    );
+    this.health = this.healing.step(this.health, dt);
   }
 
   spawn(at: Vector3, yaw: number): void {
     this.health = CONFIG.player.maxHealth;
-    this.regenLockT = 0;
+    this.healing.clear();
     // Death is the only resupply. See the fields' notes — the AT pouch follows
     // the same rule, and `Match` is what knows how many that is.
     this.grenades = this.grenadesCarried;

@@ -1533,7 +1533,7 @@ export class Vehicle implements Combatant, RayHull {
    * every read afterwards, for the life of the process, returned that same
    * point. Measured on Sarab over a headless round — a hull driven to
    * (115, -26) still fired every shell from the (-192, -217) hardstanding it
-   * spawned on, `resolveShell` casting the round's ray from there and
+   * spawned on, `fireHullGun` casting the round's ray from there and
    * `VehicleCrew.lay` solving the gun's bearing from there. Forcing it walks
    * the chain up to the hull (`computeWorldMatrix(true)` recurses into the
    * parent WITH the force) and costs a client nothing but the compose it was
@@ -1570,7 +1570,7 @@ export class Vehicle implements Combatant, RayHull {
   /**
    * The cupola gun's muzzle in world space: where a round starts and its flash
    * is lit. Forced for `muzzleToRef`'s reason, and it is the same bug — on the
-   * authority `resolveMg` cast every belt round from the hardstanding too.
+   * authority `fireHullMg` cast every belt round from the hardstanding too.
    */
   mgMuzzleToRef(out: Vector3): Vector3 {
     this.rig.mgMuzzle.computeWorldMatrix(true);
@@ -3362,8 +3362,8 @@ export class Vehicle implements Combatant, RayHull {
   /**
    * True when a body standing at `feet` with its hit sphere at `center` is
    * UNDER this hull — which, on a hull that is moving, is a body being run
-   * over. The geometry half of a crush; `Game.crushSweep` and its authority
-   * twin own the rule, exactly as `resolveShell` owns the rule over `fireGun`.
+   * over. The geometry half of a crush; `hullRules.crushSweep` owns the rule
+   * on both sides of the wire, exactly as `fireHullGun` owns it over `fireGun`.
    *
    * **Horizontally it is the sphere and vertically it is the feet**, and the
    * split is what gets the one case that matters right. A footprint padded by

@@ -75,7 +75,7 @@ import { BulletMarks } from "./BulletMarks";
  * this vocabulary anyway for the two readers that already key off it and would
  * otherwise each need a term of their own: `Vehicle.takeDamage`, where it falls
  * to `resist.bullet` and is a dead branch by construction (a tank is never in
- * the list a tank's tracks are swept against — see `Game.crushSweep`), and
+ * the list a tank's tracks are swept against — `hullRules.crushSweep`), and
  * `RagdollSystem.applyImpulse`, whose test is "not a bullet" and which
  * therefore THROWS a crushed body clear of the hull without being taught what
  * one is.

@@ -34,11 +34,11 @@ match smoke test (`npm run build:server && npm run server`, two clients).
 | ~~[3](#3-delete-playermods-the-roguelike-leftover)~~ | P0 — done | Delete `PlayerMods`, the roguelike leftover |
 | ~~[4](#4-add-exhaustiveness-checks-to-the-three-message-switches)~~ | P0 — done | Add exhaustiveness checks to the three message switches |
 | ~~[5](#5-netdamagefrom-is-used-as-scratch-by-arms-that-must-not-touch-it)~~ | P0 — done | `netDamageFrom` is used as scratch by arms that must not touch it |
-| [6](#6-share-the-hull-guns-resolveshell--resolvemg-between-client-and-authority) | P1 | Share the hull guns between client and authority |
-| [7](#7-share-resolveordnance-between-client-and-authority) | P1 | Share `resolveOrdnance` between client and authority |
-| [8](#8-share-crushsweep--driverof-between-client-and-authority) | P1 | Share `crushSweep` / `driverOf` between client and authority |
-| [9](#9-share-the-copied-wiring-lambdas-and-the-spawn-scatter) | P1 | Share the copied wiring lambdas and the spawn scatter |
-| [10](#10-health-regen-is-written-twice-and-caps-at-different-maxima) | P1 | Health regen is written twice and caps at different maxima |
+| ~~[6](#6-share-the-hull-guns-resolveshell--resolvemg-between-client-and-authority)~~ | P1 — done | Share the hull guns between client and authority |
+| ~~[7](#7-share-resolveordnance-between-client-and-authority)~~ | P1 — done | Share `resolveOrdnance` between client and authority |
+| ~~[8](#8-share-crushsweep--driverof-between-client-and-authority)~~ | P1 — done | Share `crushSweep` / `driverOf` between client and authority |
+| ~~[9](#9-share-the-copied-wiring-lambdas-and-the-spawn-scatter)~~ | P1 — done | Share the copied wiring lambdas and the spawn scatter |
+| ~~[10](#10-health-regen-is-written-twice-and-caps-at-different-maxima)~~ | P1 — done | Health regen is written twice and caps at different maxima |
 | [11](#11-client-and-authority-pick-a-hull-seat-by-different-algorithms) | P1 | Client and authority pick a hull seat by different algorithms |
 | [12](#12-stance-heights-are-computed-in-three-places) | P1 | Stance heights are computed in three places |
 | [13](#13-matchts-claim-gates-are-pasted-five-times) | P1 | `Match.ts` claim gates are pasted five times |
@@ -232,6 +232,8 @@ declaration, the `damage` write and the `died` read.
 
 ### 6. Share the hull guns (`resolveShell` / `resolveMg`) between client and authority
 
+**Resolved.** `src/systems/hullRules.ts` holds `fireHullGun` and `fireHullMg`, run by both sides against a `HullRules` context each builds once; `Game.resolveShell`/`resolveMg` are that call plus the light, report, shake and the player's hitmarker, and `HeadlessGame`'s are that call plus `onCannon`/`onMg`. Every kill door on both sides now goes through `settleKill` (`src/systems/killRules.ts`) against a `KillLedger`, and `Game.creditKill` returns `boolean` like the authority's. `DeathCause` moved to `killRules.ts`. Verified: `npm run simulate` on Coldharbour and Sarab (board balances, every hull door fired); an offline Coldharbour round in a headless client (bot crews' shells and cupola fire, the player's own shell and cupola gun, no errors, deaths = paid kills + crew); a local match with two clients (no errors, board 55 kills / 57 deaths).
+
 **Area:** `src/core/Game.ts`, `server/HeadlessGame.ts`, new file in
 `src/systems/`
 
@@ -263,6 +265,8 @@ exclusion); `npm run simulate` still runs a round.
 
 ### 7. Share `resolveOrdnance` between client and authority
 
+**Resolved.** `resolveOrdnance(hit, blasts)` sits beside `ordnanceEffect` in `entities/equipment.ts`; the client's `onDetonated` keeps its `if (!this.net)` at the call site.
+
 **Area:** `src/core/Game.ts:1640`, `server/HeadlessGame.ts:1319`
 
 **Problem.** The server copy's comment says it is "`Game.resolveOrdnance` to the
@@ -278,6 +282,8 @@ lives — `grep -rn ordnanceEffect src`), taking what it needs as parameters.
 before, offline and online.
 
 ### 8. Share `crushSweep` / `driverOf` between client and authority
+
+**Resolved.** `crushSweep` and `driverOf` are in `hullRules.ts`; each side answers only `personIn` (the client's player, or the authority's peers) and the client's hitmarker rides `onCrushed`. Both calls stay right after `VehicleSystem.update`. The crew's death is `crewLost` beside them. 12 tracks kills in the Coldharbour `simulate` round; no crush kill came up in the offline browser round.
 
 **Area:** `src/core/Game.ts:6495/6555`, `server/HeadlessGame.ts:870/899`
 
@@ -295,6 +301,8 @@ sides call it right after `VehicleSystem.update`, preserving the ordering
 identically offline and online.
 
 ### 9. Share the copied wiring lambdas and the spawn scatter
+
+**Resolved.** `ConquestSystem.zoneFor`, `scatterSpawn` (exported from `ConquestSystem.ts`), `AntiTankSystem.launchToward` (the `1e-4` threshold, now one site), `crewLost`, and `settleKill` for `onBotKill`/`onBlastHit`/`onBurnHit` and both rifle paths. `throwGrenadeFor`, `hittablesFor` and `planSquads` were one-line forwards and stay where they are.
 
 **Area:** `src/core/Game.ts`, `server/HeadlessGame.ts`
 
@@ -324,6 +332,8 @@ comment says it is "`Game.spawnPointFor`'s logic, including the scatter").
 threshold finds one site.
 
 ### 10. Health regen is written twice and caps at different maxima
+
+**Resolved.** `entities/HealthRegen.ts` (a lock and `step(health, dt)` capped at `CONFIG.player.maxHealth`) is held by `Player` and `NetPlayer`; neither writes the curve any more. A class rather than the suggested pure function so the lock re-arm is shared too and nothing allocates per step. Offline check: 40 damage, no heal through the lock, then the same values the old code gave. Not observed live in the match (the two players were never hit), so the no-snap claim rests on both sides running one class to one cap.
 
 **Area:** `src/entities/Player.ts:1532`, `server/NetPlayer.ts` (~174 onward)
 

@@ -1385,10 +1385,11 @@ and **nothing reads `Vehicle.hitRadius` any more** — **which is why a hull's o
 ROUNDS leave that collider out too** (`ShotOptions.fromHull`, stated on the GUN
 rather than at the trigger).
 
-**A hull drives over PEOPLE**, which is what `Game.crushSweep` is
-(`HeadlessGame`'s is the authority's twin, and both run right after
-`VehicleSystem.update`): a tank is in no baked structure, so `moveWithCollisions`
-sweeps the HULL out of the world rather than a body out of its way. **What a hit
+**A hull drives over PEOPLE**, which is what `crushSweep` is
+(`systems/hullRules.ts`, beside the two guns — ONE copy that both simulations
+call right after `VehicleSystem.update`): a tank is in no baked structure, so
+`moveWithCollisions` sweeps the HULL out of the world rather than a body out of
+its way. **What a hit
 is worth is a `DamageKind`** — the third parameter on
 `Hittable.takeDamage`, which only a tank reads, against
 `CONFIG.vehicles.tank.resist` — and `"crush"` is one no round carries. **The

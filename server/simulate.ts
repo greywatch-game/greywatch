@@ -36,7 +36,8 @@ import { PerformanceObserver } from "node:perf_hooks";
 import { TICK_HZ } from "../src/net/protocol";
 import { CONFIG } from "../src/config";
 import { MAPS } from "../src/world/maps";
-import { HeadlessGame, type DeathCause } from "./HeadlessGame";
+import type { DeathCause } from "../src/systems/killRules";
+import { HeadlessGame } from "./HeadlessGame";
 
 /** Give up rather than spin forever if a round somehow cannot end. */
 const MAX_SIM_MINUTES = 45;

@@ -1627,8 +1627,9 @@ entirely, and the shape a round is tested against is the shape that is drawn.
 
 ## The TRACKS, and the one thing armour does that is not a weapon
 
-**A hull kills what it drives through.** `Game.crushSweep` runs immediately
-after `VehicleSystem.update`, once per frame per moving hull, and puts down
+**A hull kills what it drives through.** `crushSweep` (`systems/hullRules.ts`,
+one function both simulations call) runs immediately after
+`VehicleSystem.update`, once per frame per moving hull, and puts down
 every enemy body the collider is standing in.
 
 **It exists because of a rule this game states twice and cannot bend.** A tank
@@ -1674,7 +1675,7 @@ moves one.
 | --- | --- |
 | `tank.alive` | a wreck mowing down whatever it was rolling toward when it died. **The one gate here that stops something that would otherwise HAPPEN**: a wreck keeps the momentum it was killed with and `coast` carries it, so a burning hull genuinely does slide through the street it died in — it simply cannot kill anybody doing it |
 | `speed >= crush.minSpeed` (1.5 m/s) | a hardstanding becoming a mincer. Bots walk into parked armour all round, for the reason at the top of this section, and a hull with no speed gate would fill its own side's ticket count while sitting still |
-| a DRIVER | crediting a kill to nobody. It is barely a rule — an empty hull is also one that is not moving — but `by` is what a kill is filed against, and `Game.driverOf` is where the player's seat and the bot crew are asked in `VehicleSystem`'s own order |
+| a DRIVER | crediting a kill to nobody. It is barely a rule — an empty hull is also one that is not moving — but `by` is what a kill is filed against, and `hullRules.driverOf` is where a person's seat and the bot crew are asked in `VehicleSystem`'s own order — each simulation answers the person half (`HullRules.personIn`) |
 
 The gunner is never the killer: the man on the cupola gun moves nothing.
 
@@ -1716,10 +1717,12 @@ them; a bot crew gets none of it.
 
 ### In a match it is the authority's, and a driven hull is swept like any other
 
-`Game.crushSweep` is offline by construction and is never guarded for:
-`updateWorld` returns at its first line in a match. The twin is
-`HeadlessGame.crushSweep`, and the one way it differs is that it sweeps **every**
-hull on the field, the ones a PERSON is driving included. Those are posed on
+On the client `crushSweep` is offline by construction and is never guarded for:
+`updateWorld` returns at its first line in a match. The authority calls the same
+function from `HeadlessGame.step`, and the one way the two calls differ is that
+the authority's sweeps **every** hull on the field, the ones a PERSON is driving
+included — because its `personIn` answers for every peer, where the client's
+answers only for its own player. Those are posed on
 that side from the wire — but `Vehicle.updateRemote` measures `speed` out of the
 ground the hull covered, precisely so everything downstream reads a remote hull
 the way it reads a local one, so a person running a squad over resolves there
@@ -3078,12 +3081,17 @@ fewer bodies.
 
 ### The gun
 
-`Game.resolveShell` is the one implementation of a round out of a tank gun, and
-`fireShell` is now the player's two lines on top of it — the camera kick and the
-rumble. Everything else, damage included, is shared, because the player's tank
-and a bot's are the same vehicle and two copies of a damage figure are two things
-that drift. The target list is `hittablesAgainst(tank.team)`, keyed on the HULL's
-side rather than the player's, and `hearGunshot` says the hull's side too.
+`fireHullGun` (`systems/hullRules.ts`) is the one implementation of a round out
+of a tank gun, on the client and on the authority alike — `fireHullMg` is its
+twin for the cupola gun. `Game.resolveShell` is that call plus the client's
+picture (the light, the report, the shake, the player's hitmarker), and
+`fireShell` is the player's two lines on top of it — the camera kick and the
+rumble. Everything else, damage and credit included, is shared, because the
+player's tank and a bot's are the same vehicle and two copies of a damage figure
+are two things that drift — the client's and the authority's copies had already
+disagreed about what `creditKill` returned. The target list is
+`hittablesAgainst(tank.team)`, keyed on the HULL's side rather than the
+player's, and `hearGunshot` says the hull's side too.
 
 Three rules the crew's gunnery answers to:
 

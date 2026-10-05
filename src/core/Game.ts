@@ -105,10 +105,7 @@ import {
   type GunInput,
   type Vehicle,
 } from "../entities/Vehicle";
-import {
-  ordnanceEffect,
-  type EquipmentId,
-} from "../entities/equipment";
+import { resolveOrdnance, type EquipmentId } from "../entities/equipment";
 import { type SightId } from "../entities/sights";
 import {
   throwableCarried,
@@ -132,7 +129,11 @@ import {
   type DamageKind,
   type Hittable,
 } from "../systems/CombatSystem";
-import { ConquestSystem, type ControlPoint } from "../systems/ConquestSystem";
+import {
+  ConquestSystem,
+  scatterSpawn,
+  type ControlPoint,
+} from "../systems/ConquestSystem";
 import { DeathCam } from "../systems/DeathCam";
 import { VehicleCamera } from "../systems/VehicleCamera";
 import { VehicleCrew } from "../systems/VehicleCrew";
@@ -144,7 +145,16 @@ import { GrassSystem } from "../systems/GrassSystem";
 import { BlastDebrisSystem } from "../systems/BlastDebrisSystem";
 import { DebrisSystem } from "../systems/DebrisSystem";
 import { GlassSystem } from "../systems/GlassSystem";
-import { AntiTankSystem, type OrdnanceHit } from "../systems/AntiTankSystem";
+import { AntiTankSystem } from "../systems/AntiTankSystem";
+import {
+  crewLost,
+  crushSweep,
+  fireHullGun,
+  fireHullMg,
+  type HullRound,
+  type HullRules,
+} from "../systems/hullRules";
+import { settleKill, type KillLedger } from "../systems/killRules";
 import { GrenadeSystem, type BlastGround } from "../systems/GrenadeSystem";
 import { PhysicsWorld, type HavokInstance } from "../systems/PhysicsWorld";
 import { RagdollSystem } from "../systems/RagdollSystem";
@@ -1143,11 +1153,28 @@ export class Game {
   private readonly shellDir = new Vector3();
   /** …and for where a rocket leaves the tube, or a mine goes down. */
   private readonly ordnanceAt = new Vector3();
-  /** …and the line a launcher bot's rocket goes down. */
-  private readonly rocketAim = new Vector3();
   private readonly markerAt = new Vector3();
   private readonly markerOut = new Vector3();
   private readonly markerViewport = new Viewport(0, 0, 1, 1);
+
+  /**
+   * The two doors a kill reaches OFFLINE, as `settleKill` asks for them: the
+   * killer's row, and a bot's death. `HeadlessGame` builds its own pair, and
+   * every door onto a kill on either side goes through `settleKill`.
+   */
+  private readonly ledger: KillLedger = {
+    credit: (by, victim, headshot) => this.creditKill(by, victim, headshot),
+    botDown: (bot, killer, by) =>
+      this.registerBotKill(bot, killer, by === this.player),
+  };
+
+  /**
+   * What `hullRules` asks of this simulation — built once in the constructor,
+   * after the systems it reaches exist. Where a match differs from an offline
+   * round it differs HERE, never in the rule: a hull's round in a match is a
+   * prediction, so it aims at `enemyTargets` and draws no splash.
+   */
+  private readonly hullRules: HullRules;
   /**
    * What this life owes before the next one, latched by `enterDying` and spent
    * by `updateDeathCam` when the shot is over. Offline it is the config
@@ -1509,7 +1536,7 @@ export class Game {
     });
     // The anti-tank kit in the world. It owns the flight and the trigger and
     // nothing else: what a detonation is WORTH is `ordnanceEffect`'s and
-    // spending it is `wireAntiTank`'s, through the same `blastAt` the tank
+    // spending it is `resolveOrdnance`'s, through the same `blastAt` the tank
     // shell already goes through.
     this.antiTank = new AntiTankSystem(this.scene, this.mats);
     this.aimAssist = new AimAssistSystem();
@@ -1527,6 +1554,39 @@ export class Game {
     // material held the factory's own "no cloud" texel.
     this.mats.setCloudShadowMap(this.sky.cloudShadowMap);
     this.applySky();
+
+    this.hullRules = {
+      ledger: this.ledger,
+      combat: this.combat,
+      hulls: () => this.vehicles.hulls,
+      // The tank's own side's enemies. In a match `battle`'s list is empty for
+      // the reason `enemyTargets` gives at length, and the driver's team is
+      // the hull's — a bot crew fires only offline.
+      gunTargets: (team) =>
+        this.net ? this.enemyTargets() : this.battle.hittablesAgainst(team),
+      bodies: (team) => this.battle.hittablesAgainst(team),
+      // **Skipped outright in a match**, which is where a shell differs from a
+      // grenade: a thrown grenade's local copy is the ARC the thrower watched
+      // and its blast goes off a few centimetres from the authority's, while a
+      // shell's local blast would go off at whatever this client's own ray
+      // happened to find — a body the server rewound somewhere else, a pane it
+      // has already broken — which can be a street away. The authority's
+      // `explode` event draws the only fireball.
+      blastAt: (at, team, by, spec) => {
+        if (!this.net) this.grenades.blastAt(at, team, by, spec);
+      },
+      hearGunshot: (at, team, dir) => this.battle.hearGunshot(at, team, dir),
+      personIn: (tank, seat) =>
+        tank === this.driving && this.drivingSeat === seat ? this.player : null,
+      crewOf: (tank, seat) => this.crew.crewOf(tank, seat),
+      // The driver's own screen, on the terms a shell's direct hit gets it: a
+      // kill flash and the note under it. A bot crew's gets none of it.
+      onCrushed: (by) => {
+        if (by !== this.player) return;
+        this.hud.flashHitmarker(true, false);
+        this.sfx.hit();
+      },
+    };
 
     // Everything above is CONSTRUCTION, and stays here because the fields it
     // assigns are what `strictPropertyInitialization` checks. Everything below
@@ -1583,10 +1643,8 @@ export class Game {
     // a bot used to be denied — while the ticket, the killfeed line and the
     // corpse are owed only when a BOT fell. The player's own death goes through
     // `onPlayerDamaged`, which `takeDamage` reached before this callback ran.
-    this.battle.onBotKill = (victim, by) => {
-      this.creditKill(by, victim);
-      if (victim instanceof Bot) this.registerBotKill(victim, by.team, false);
-    };
+    this.battle.onBotKill = (victim, by) =>
+      settleKill(this.ledger, by, victim, by.team, "round");
     // The score feed, OFFLINE: every body on the roster earns, and the one
     // row this screen belongs to is the filter. In a match the same feed is
     // fed by the `score` event instead, because the awards are the
@@ -1628,44 +1686,22 @@ export class Game {
     // lists make everywhere else in this game.
     this.antiTank.hullNear = (at, radius, team) =>
       this.vehicles.hostileNear(at, radius, team);
-    this.antiTank.onDetonated = (hit) => this.resolveOrdnance(hit);
-  }
-
-  /**
-   * One rocket or one mine going off: the hull it struck, then the blast.
-   *
-   * `hit.at` is the system's own live vector and is valid for the length of
-   * this call — `blastAt` clones what it keeps, and nothing here holds it.
-   */
-  private resolveOrdnance(hit: OrdnanceHit): void {
-    // **In a match none of this is ours.** The rocket that reached here is the
+    // One rocket or one mine going off — `resolveOrdnance`, the same function
+    // the authority spends it through.
+    //
+    // **In a match none of it is ours.** The rocket that reached here is the
     // local PREDICTION of one the authority is also flying — see
     // `launchRocket` — and it decides nothing: the hull refuses local damage
-    // (`Vehicle.predicted`), the splash has an empty list to resolve against, and
-    // the fireball arrives on the server's `explode` event with the right
+    // (`Vehicle.predicted`), the splash has an empty list to resolve against,
+    // and the fireball arrives on the server's `explode` event with the right
     // power on it. Drawing one here as well would be two blasts a round trip
     // apart, at two points that agree only to within the flight — which for a
     // rocket that detonated on a hull this client has drawn a tenth of a
-    // second behind is metres, not centimetres. `resolveShell` skips its own
-    // splash for the same reason and in the same words.
-    if (this.net) return;
-    const e = ordnanceEffect(hit.kind);
-    // The direct hit, which is the thing a falloff cannot express: a rocket
-    // that stopped ON a hull, or a mine a hull drove over. `shell` is what
-    // gets through `CONFIG.vehicles.tank.resist`, and it is the whole reason
-    // this kit exists.
-    if (hit.hull) hit.hull.takeDamage(e.damage, hit.at, "shell");
-    // …and the splash, through the one implementation of a blast in the game.
-    // `by` is whoever fired it, so a kill lands on their row exactly as a
-    // grenade's does — `wireGrenades` is already wired for this and needed no
-    // arm.
-    this.grenades.blastAt(hit.at, hit.team, hit.by, {
-      radius: e.blast.radius,
-      inner: e.blast.inner,
-      damage: e.blast.damage,
-      kind: "shell",
-      power: e.blast.power,
-    });
+    // second behind is metres, not centimetres. A hull's shell skips its own
+    // splash for the same reason (`hullRules.blastAt`).
+    this.antiTank.onDetonated = (hit) => {
+      if (!this.net) resolveOrdnance(hit, this.grenades);
+    };
   }
 
   /**
@@ -1733,24 +1769,11 @@ export class Game {
     // `mount`/`clearVehicle` spend on the player, one layer along.
     this.crew.onBoarded = (bot) => this.battle.setCrewed(bot, true);
     this.crew.onLeft = (bot) => this.battle.setCrewed(bot, false);
-    // …and what it costs him when it burns. The body has already been put down
-    // beside the wreck and handed back to the fight by the time this runs, so
-    // there is nothing to do but kill it through the door every other bot
-    // death offline takes — which is what charges the ticket, files the row
-    // and offers the corpse to the ragdoll pool.
-    //
-    // `tank.center` as the bearing the blow came from and `"shell"` as what it
-    // was: a crewman is thrown clear of his own hull, which is the only reading
-    // of a burning tank that is not a man lying down beside one, and it takes
-    // BOTH to get it — the bearing alone would have him fold at the wreck's
-    // edge, because a round drops a body where an explosion throws it. The
+    // …and what it costs him when it burns: `crewLost`, the authority's door
+    // too. `tank.center` as the bearing and `"shell"` as what it was — the
     // player's half of this event is in `onDestroyed` above and passes the same
     // pair; they are one thing happening to whoever was inside.
-    this.crew.onCrewLost = (bot, tank) => {
-      if (bot.takeDamage(bot.hp, tank.center, "shell")) {
-        this.registerBotKill(bot, OTHER_TEAM[bot.team], false);
-      }
-    };
+    this.crew.onCrewLost = (bot, tank) => crewLost(this.ledger, bot, tank);
   }
 
   /**
@@ -1811,16 +1834,15 @@ export class Game {
       // "Was that ours" is a comparison against our own `Player`, which is why
       // the grenade carries the thrower rather than a flag saying so — that
       // system has no way to know what a player is.
-      const byPlayer = by === this.player;
-      // The killer's row, whoever fell, and before the victim filter below:
-      // a blast that finishes the player is still a kill somebody threw.
-      if (killed) this.creditKill(by, victim);
-      // The player's own death is already handled, all the way down to the
-      // deploy screen, by `onPlayerDamaged` — `takeDamage` routed it there
-      // before this callback ran. Only bots are this handler's business.
-      if (!(victim instanceof Bot)) return;
-      if (byPlayer) this.hud.flashHitmarker(killed);
-      if (killed) this.registerBotKill(victim, thrower, byPlayer);
+      // The killer's row whoever fell, and the bot's death if a bot did: a
+      // blast that finishes the player is still a kill somebody threw, and the
+      // player's own death has already been handled, all the way down to the
+      // deploy screen, by `onPlayerDamaged`.
+      if (killed) settleKill(this.ledger, by, victim, thrower, "blast");
+      // The marker is a bot's alone — the player is not a target of their own.
+      if (by === this.player && victim instanceof Bot) {
+        this.hud.flashHitmarker(killed);
+      }
     };
     // A molotov's burn: `onBlastHit`'s shape exactly, minus the hitmarker on
     // every tick — a fire hurts somebody four times a second for as long as
@@ -1829,11 +1851,11 @@ export class Game {
     // is the one thing about a burn the thrower cannot see from where they
     // threw it.
     this.grenades.onBurnHit = (victim, thrower, by, killed) => {
-      const byPlayer = by === this.player;
-      if (killed) this.creditKill(by, victim);
-      if (!(victim instanceof Bot)) return;
-      if (byPlayer && killed) this.hud.flashHitmarker(true);
-      if (killed) this.registerBotKill(victim, thrower, byPlayer);
+      if (!killed) return;
+      settleKill(this.ledger, by, victim, thrower, "fire");
+      if (by === this.player && victim instanceof Bot) {
+        this.hud.flashHitmarker(true);
+      }
     };
     // A fire starting: the bottle's noise, the mark the burn leaves, and a
     // light that stands where it burns until `onBurntOut` takes it away.
@@ -1870,19 +1892,16 @@ export class Game {
     // arc either way.
     this.battle.throwGrenadeFor = (bot, from, at) =>
       this.grenades.throwAt(from, at, bot.team, bot, bot.throwable);
-    // A launcher bot's rocket. Flat: the ask is a POINT and a rocket flies
-    // more or less straight, so unlike the grenade there is no solve to
-    // refuse — the direction is the line to the hull and the pool has the only
-    // word. `considerRocket` has already decided the target is armour.
+    // A launcher bot's rocket, flown toward the POINT it asked for
+    // (`AntiTankSystem.launchToward`). `considerRocket` has already decided
+    // the target is armour.
     this.battle.fireRocketFor = (bot, from, at) => {
-      this.rocketAim.copyFrom(at).subtractInPlace(from);
-      if (this.rocketAim.lengthSquared() < 1e-4) return false;
-      this.rocketAim.normalize();
-      if (!this.antiTank.launch(from, this.rocketAim, bot.team, bot)) return false;
+      const dir = this.antiTank.launchToward(from, at, bot.team, bot);
+      if (!dir) return false;
       // Heard exactly as the player's launcher is, and by the same door: a
       // rocket leaving is the loudest thing on the map after a tank gun, and
       // the side that fired it has just told everybody where it is.
-      this.battle.hearGunshot(from, bot.team, this.rocketAim);
+      this.battle.hearGunshot(from, bot.team, dir);
       this.sfx.launcher(from);
       return true;
     };
@@ -1958,12 +1977,9 @@ export class Game {
     this.battle.planSquads = (team, centroids, previous) =>
       this.conquest.planSquads(team, centroids, previous);
     // A bot is "on" a flag only when it is the one it was sent to. Whether that
-    // means contesting it or holding it is the squad's posture.
-    this.battle.zoneFor = (bot) => {
-      const p = this.conquest.pointAt(bot.position);
-      if (!p || p.def.id !== bot.objective) return "none";
-      return bot.defending && p.owner === bot.team ? "hold" : "contest";
-    };
+    // means contesting it or holding it is the squad's posture — a conquest
+    // rule, and the authority asks the same method.
+    this.battle.zoneFor = (bot) => this.conquest.zoneFor(bot);
   }
 
   /**
@@ -2286,10 +2302,10 @@ export class Game {
         return;
       }
       // Scattered HERE rather than on the way in: this is a spawn POINT, and
-      // turning one into a position is what `scatterFrom` is. The netplay
+      // turning one into a position is what `scatterSpawn` is. The netplay
       // branch above returns before it, because the position that branch is
       // eventually answered with has already been scattered by the authority.
-      this.spawnPlayer(this.scatterFrom(spawn));
+      this.spawnPlayer(scatterSpawn(spawn));
     };
   }
 
@@ -5297,7 +5313,7 @@ export class Game {
    * between the two things this method is reached with. A point is a place —
    * the whole of a team's reinforcement wave is sent to the same one — so the
    * scatter that stops a squad arriving inside itself belongs to resolving it
-   * (`scatterFrom`, which `spawnPointFor` and the deploy screen's offline
+   * (`scatterSpawn`, which `spawnPointFor` and the deploy screen's offline
    * branch both go through), not to arriving. The authority's `spawn` is the
    * case that makes the distinction load-bearing rather than tidy: the server
    * scatters in its own `spawnPointFor` and then TELLS us where the body is,
@@ -5363,25 +5379,7 @@ export class Game {
     if (!this.map) return null;
     const pick = this.conquest.spawnFor(team);
     if (!pick) return null;
-    return this.scatterFrom(pick);
-  }
-
-  /**
-   * A spawn POINT scattered into a POSITION — the one place that conversion
-   * happens on this side, and `HeadlessGame.spawnPointFor`'s counterpart on
-   * the other. See `spawnPlayer` for why it is not simply done on arrival.
-   */
-  private scatterFrom(pick: { pos: Vector3; yaw: number }): {
-    pos: Vector3;
-    yaw: number;
-  } {
-    const s = CONFIG.conquest.spawnScatter;
-    return {
-      pos: pick.pos.add(
-        new Vector3((Math.random() - 0.5) * s, 0, (Math.random() - 0.5) * s),
-      ),
-      yaw: pick.yaw,
-    };
+    return scatterSpawn(pick);
   }
 
   private updateGameplay(dt: number): void {
@@ -5649,7 +5647,7 @@ export class Game {
         // — the two cues that say "stop shooting". Not what the BOARD pays:
         // that is `creditKill`'s to refuse through `paysKiller`, one door for
         // every kill in the game, and the two questions are kept apart here
-        // for the reason `resolveShell` gives at length.
+        // for the reason `hullHitCue` gives.
         const killedBody = shot.killed && shot.target instanceof Bot;
         // Resolved before the marker so a kill gets the red one — the cue to
         // stop putting rounds into a body that is already going down. A
@@ -5672,10 +5670,14 @@ export class Game {
           // Both doors, one line apart: our row, and the body's. Offline only
           // — in a netplay round `shot.killed` is false, because the roster's
           // bodies refuse local damage and the authority scores this round.
-          this.creditKill(this.player, shot.target, shot.headshot);
-          if (shot.target instanceof Bot) {
-            this.registerBotKill(shot.target, this.player.team, true);
-          }
+          settleKill(
+            this.ledger,
+            this.player,
+            shot.target,
+            this.player.team,
+            "round",
+            shot.headshot,
+          );
         }
       }
       // Nothing here for the reload the last round in the magazine just
@@ -6247,109 +6249,27 @@ export class Game {
    * when the gun was not loaded, and a caller that gets a false has fired
    * nothing.
    *
-   * **The one implementation of a shell**, and it is one for the reason the
-   * blast is one: the player's tank and a bot's are the same vehicle, and two
-   * copies of a damage figure, a splash and a noise are two things that drift.
-   * `by` is who the kill belongs to — the player, or the crewman inside the
-   * hull — and it is the ONLY thing that differs between the two callers below
-   * the trigger.
-   *
-   * The direct hit and the splash are two separate resolutions and they cannot
-   * double-count a kill: `hittablesFor` is fetched INSIDE `blastAt`, after the
-   * direct hit has already been dealt, and a body killed by it is no longer
-   * `alive` and no longer in the list.
+   * **The rule is `fireHullGun`'s**, shared with the authority — the hitscan
+   * down the gun's axis, the splash, the kill and the hearing — because the
+   * player's tank and a bot's are the same vehicle on both sides of the wire.
+   * `by` is who the kill belongs to, the player or the crewman inside the
+   * hull, and everything below that call is what this client draws for it.
    */
   private resolveShell(tank: Vehicle, by: Combatant): boolean {
-    // `fireGun` refuses on a hull that HAS no gun as well as on one that is
-    // still loading — see `Vehicle.gunReady` — so this one test is what keeps
-    // every caller of a shell out of a turretless vehicle.
-    const g = tank.spec.gun;
-    if (!g || !tank.fireGun()) return false;
-    const muzzle = tank.muzzleToRef(this.shellFrom);
-    const dir = tank.gunDirToRef(this.shellDir);
-    const byPlayer = by === this.player;
-    // **In a match this is a PREDICTION**, and everything below behaves
-    // accordingly without a second path: the targets refuse damage
-    // (`NetSoldier.takeDamage`, `Vehicle.predicted`), so `shot.killed` is false
-    // and neither the credit nor the killfeed line below can be reached. What
-    // it still buys is what the shooter is owed on their own screen the frame
-    // the trigger goes — the tracer, the impact, the report and the light —
-    // and the report goes up for the authority to re-fire down its own gun.
-    if (byPlayer) this.net?.sendShell(muzzle, dir);
-    // No spread: a tank gun is a rifled barrel with a fire-control system, and
-    // the thing that makes it hard to hit with is the traverse rate, not a
-    // cone. (A bot crew's error is on the AIM POINT instead — see
-    // `CONFIG.vehicles.crew.scatter` — which is a ranging mistake rather than
-    // a loose barrel, and unlike a cone it is something the driver being shot
-    // at can watch the gun make.) No `headMult` either — the head zone is the
-    // player's alone and an upgrade to a body hit, and a shell that landed on
-    // a body has already spent more than a headshot's worth on it.
-    const shot = this.combat.fire(
-      muzzle,
-      dir,
-      0,
-      g.damage,
-      muzzle,
-      // The tank's own side's enemies. In a match `battle`'s list is empty for
-      // the reason `enemyTargets` gives at length, and the driver's team is
-      // the hull's — a bot crew reaches this line only offline.
-      this.net ? this.enemyTargets() : this.battle.hittablesAgainst(tank.team),
-      g.range,
-      tank.shellShot!,
-    );
-    // The splash, through the one implementation of a blast in the game. `by`
-    // is whoever fired, so a kill lands on their row exactly as a grenade's
-    // does — see `wireGrenades`, which is already wired for this and needed no
-    // arm.
-    //
-    // **Skipped outright in a match**, which is where this differs from the
-    // grenade next door: a thrown grenade's local copy is the ARC the thrower
-    // watched and its blast goes off where that copy came to rest, a few
-    // centimetres from the authority's. A shell's local blast would go off at
-    // whatever this client's own ray happened to find — a body the server
-    // rewound somewhere else, a pane it has already broken — which can be a
-    // street away. The authority's `explode` event draws the only fireball,
-    // and the round trip is what it costs.
-    if (!this.net) {
-      this.grenades.blastAt(shot.hitPoint, tank.team, by, {
-        radius: g.blastRadius,
-        inner: g.blastInner,
-        damage: g.blastDamage,
-        kind: "shell",
-        // How big it LOOKS, with the grenade as 1. Deliberately not derived
-        // from `blastRadius`, which is SMALLER than a frag's — see
-        // `blastPower`.
-        power: g.blastPower,
-      });
+    const round = fireHullGun(this.hullRules, tank, by);
+    if (!round) return false;
+    const { muzzle, dir } = round;
+    if (by === this.player) {
+      // **In a match this is a PREDICTION**, and the shared rule behaves
+      // accordingly without a second path: the targets refuse damage
+      // (`NetSoldier.takeDamage`, `Vehicle.predicted`), so nothing was
+      // credited and no splash was drawn. What it still buys is what the
+      // shooter is owed on their own screen the frame the trigger goes — the
+      // tracer, the impact, the report and the light — and the report goes up
+      // for the authority to re-fire down its own gun.
+      this.net?.sendShell(muzzle, dir);
+      this.hullHitCue(round);
     }
-    // A direct hit is the shooter's own to mark. The blast's victims are marked
-    // by `onBlastHit` like any other blast's, so this covers only the body the
-    // ray itself found.
-    if (shot.target) {
-      // What the MARKER says and what the BOARD pays are two questions, and
-      // only the second one is a rule. A hull going up is not a red hitmarker
-      // — that cue means "stop putting rounds into a body that is already
-      // going down", and a burning tank is not a body — while the credit is
-      // `creditKill`'s to refuse, through `paysKiller`, for every door at
-      // once. Conflating them is what put `instanceof Bot` on this line and
-      // quietly took the player off the board as a victim.
-      const killedBody = shot.killed && shot.target instanceof Bot;
-      if (byPlayer) {
-        this.hud.flashHitmarker(killedBody, false);
-        this.sfx.hit();
-      }
-      if (shot.killed) {
-        this.creditKill(by, shot.target, false);
-        if (shot.target instanceof Bot) {
-          this.registerBotKill(shot.target, tank.team, byPlayer);
-        }
-      }
-    }
-    // Bots hear a tank gun the way they hear a rifle — this is the only place
-    // armour enters the world as a noise, so it is the only place that can say
-    // so. The TANK's side, not the player's: a hull the AI is driving is heard
-    // by the other team exactly as one the player is driving is.
-    this.battle.hearGunshot(muzzle, tank.team, dir);
     const lc = CONFIG.lighting;
     this.lighting.pulse(
       muzzle,
@@ -6363,6 +6283,25 @@ export class Game {
     this.sfx.cannon(muzzle, tank === this.driving);
     this.shakeFromCannon(tank, muzzle);
     return true;
+  }
+
+  /**
+   * The marker a hull's round owes the player who fired it — the shell's and
+   * the cupola gun's alike. The blast's victims are marked by `onBlastHit`
+   * like any other blast's, so this covers only the body the ray itself found.
+   *
+   * What the MARKER says and what the BOARD pays are two questions, and only
+   * the second is a rule (`settleKill`, inside `hullRules`). A hull going up is
+   * not a red hitmarker — that cue means "stop putting rounds into a body that
+   * is already going down", and a burning tank is not a body. Conflating the
+   * two is what once put `instanceof Bot` on the credit and quietly took the
+   * player off the board as a victim.
+   */
+  private hullHitCue(round: HullRound): void {
+    const shot = round.shot;
+    if (!shot.target) return;
+    this.hud.flashHitmarker(shot.killed && shot.target instanceof Bot, false);
+    this.sfx.hit();
   }
 
   /**
@@ -6383,59 +6322,19 @@ export class Game {
    * false when the rate limit has not come round, and a caller that gets a
    * false has fired nothing.
    *
-   * **`resolveShell`'s shape with the two halves of a shell taken out**, and
-   * what is left is nearly a rifleman's shot: hitscan through the one
-   * `CombatSystem.fire`, the shooter's own target list so friendly fire is
-   * excluded by construction, a SPREAD (which the main gun deliberately has
-   * none of), fall-off (which it deliberately has none of), and no blast at
-   * all. The one thing it keeps from the gun beside it is the world frame: the
-   * round goes down the GUN's axis and never the camera's, which is why a
-   * second marker is drawn for it.
-   *
-   * In a match it is a PREDICTION exactly as the shell is — the targets refuse
-   * local damage, so nothing below can credit a kill, and what it buys is the
-   * tracer and the report on the shooter's own screen the frame the trigger
-   * goes.
+   * `resolveShell`'s split exactly: the rule is `fireHullMg`'s, shared with
+   * the authority, and what follows it is this client's picture. In a match it
+   * is a PREDICTION as the shell is — nothing below can credit a kill, and
+   * what it buys is the tracer and the report the frame the trigger goes.
    */
   private resolveMg(tank: Vehicle, by: Combatant): boolean {
-    if (!tank.fireMg()) return false;
-    const m = tank.spec.mg;
-    const muzzle = tank.mgMuzzleToRef(this.shellFrom);
-    const dir = tank.mgDirToRef(this.shellDir);
-    const byPlayer = by === this.player;
-    if (byPlayer) this.net?.sendMg(muzzle, dir);
-    const shot = this.combat.fire(
-      muzzle,
-      dir,
-      m.spread,
-      m.damage,
-      muzzle,
-      this.net ? this.enemyTargets() : this.battle.hittablesAgainst(tank.team),
-      m.range,
-      tank.mgShot,
-    );
-    if (shot.target) {
-      // The marker and the board, split for `resolveShell`'s reason — see the
-      // note there. A cupola gun could not kill a hull anyway
-      // (`resist.bullet` is 0.05); the guard is kept in step with the shell's
-      // because the two paths are read as a pair and one of them drifting is
-      // how this started.
-      const killedBody = shot.killed && shot.target instanceof Bot;
-      if (byPlayer) {
-        this.hud.flashHitmarker(killedBody, false);
-        this.sfx.hit();
-      }
-      if (shot.killed) {
-        this.creditKill(by, shot.target, false);
-        if (shot.target instanceof Bot) {
-          this.registerBotKill(shot.target, tank.team, byPlayer);
-        }
-      }
+    const round = fireHullMg(this.hullRules, tank, by);
+    if (!round) return false;
+    const { muzzle, dir } = round;
+    if (by === this.player) {
+      this.net?.sendMg(muzzle, dir);
+      this.hullHitCue(round);
     }
-    // Bots hear it exactly as they hear a rifle, and it is the TANK's side
-    // that fired for `resolveShell`'s reason: a hull the AI is crewing is
-    // heard by the other team exactly as one a person is crewing is.
-    this.battle.hearGunshot(muzzle, tank.team, dir);
     const lc = CONFIG.lighting;
     this.lighting.pulse(
       muzzle,
@@ -6449,113 +6348,12 @@ export class Game {
     // arm's length rather than from the chase camera twelve metres back, which
     // is `Sfx.aboard`. `report` is what makes it a heavy machine gun rather
     // than a rifle — see `CONFIG…mg.report`.
-    this.sfx.botShot(muzzle, 0, m.report, tank === this.driving);
+    this.sfx.botShot(muzzle, 0, tank.spec.mg.report, tank === this.driving);
     return true;
   }
 
-  /**
-   * What the TRACKS killed this frame: every enemy body a moving hull is
-   * standing in, put down and credited to whoever is driving.
-   *
-   * **This is the one thing armour does that is not a weapon**, and it exists
-   * because of a rule this game states twice and cannot bend: a tank is in no
-   * baked structure, so `NavGrid`, `CoverMap` and `ObstacleField` have never
-   * heard of one and bots walk through a hull exactly as they walk through a
-   * corpse. `moveWithCollisions` is no answer either — it sweeps the HULL out
-   * of the world's boxes, and a body is not one of them, so a driver could
-   * put eleven metres a second through a squad and the squad would stand in
-   * the street unmoved. Everything else on this vehicle already treats a body
-   * as something to be shot; this is the one that treats it as something in
-   * the way.
-   *
-   * Offline by construction and never guarded for: `updateWorld` returns at
-   * its first line in a match, so nothing below can run on a client. In a
-   * match this is the authority's, twin for twin, in `HeadlessGame`.
-   *
-   * The three gates are each doing a job. `alive` keeps a WRECK from mowing
-   * down whatever it was rolling toward when it died — nothing moves one, but
-   * `speed` is not zeroed by dying. `minSpeed` is what makes this running
-   * somebody over rather than standing on them, and the reason it is not
-   * optional is in `CONFIG…crush`: bots walk into parked armour all round.
-   * And a hull with nobody driving it crushes nobody, which is not a rule so
-   * much as an arithmetic fact given `by` is what a kill is credited to — an
-   * empty hull is also one that is not moving.
-   *
-   * Friendly fire is excluded by construction rather than by a team check, as
-   * everywhere else in this game: the list is the hull's own side's ENEMIES.
-   * A hull is skipped inside it because armour does not run armour over — two
-   * hulls have colliders and stop each other — and because `takeDamage` on
-   * one would spend `resist.bullet` on a body-shaped blow.
-   *
-   * The list is `BattleSystem`'s per-team scratch and must be read inside the
-   * call. Nothing on the kill path below asks for one, which is what makes
-   * iterating it safe: `takeDamage`, `creditKill` and `registerBotKill` do not
-   * build target lists.
-   */
-  private crushSweep(): void {
-    for (const tank of this.vehicles.hulls) {
-      // The gates are the HULL's own — a truck has to be moving faster than a
-      // tank does before its wheels are a run-over rather than a shove, which
-      // is `VehicleSpec.crush` and is why this is read inside the loop.
-      const c = tank.spec.crush;
-      if (!tank.alive || Math.abs(tank.speed) < c.minSpeed) continue;
-      const by = this.driverOf(tank);
-      if (!by) continue;
-      const byPlayer = by === this.player;
-      for (const target of this.battle.hittablesAgainst(tank.team)) {
-        // A hull is skipped for the reason above, and a body riding in one is
-        // skipped for `GrenadeSystem.blastAt`'s: while a person is inside
-        // armour the ARMOUR is what is being hit, and this is a path that
-        // reaches `takeDamage` directly rather than through the one door
-        // (`CombatSystem.fire`) that already asks. Without it, two hulls
-        // shoving each other — which their colliders permit, the ellipsoid
-        // being narrower than the box — would kill the driver inside the one
-        // that got shoved.
-        if (target.armoured || target.invulnerable) continue;
-        // `position` is the feet and `center` the chest — see `Vehicle.crushes`,
-        // which asks the two heights different questions.
-        if (!tank.crushes(target.center, target.position.y, target.hitRadius)) {
-          continue;
-        }
-        // `tank.center` is the bearing the blow came from, which is what
-        // throws the corpse clear of the hull instead of leaving it folded
-        // under the tracks, and what the killfeed derives an enemy team from
-        // when the victim is the player. `"crush"` is what it was, and all it
-        // decides is that the body LEAVES — see `RagdollSystem.applyImpulse`,
-        // whose test is "not a bullet".
-        if (!target.takeDamage(c.damage, tank.center, "crush")) continue;
-        // The driver's own screen, on the same terms a shell's direct hit gets
-        // it: a kill flash and the note under it. A bot crew's gets none of it.
-        if (byPlayer) {
-          this.hud.flashHitmarker(true, false);
-          this.sfx.hit();
-        }
-        // The driver's row, whoever went under the tracks — the same two
-        // halves `wireSystems` takes a bot's round in, and the authority's
-        // `crushSweep` its twin. It was `instanceof Bot` for both halves,
-        // which is right for the second and was silently wrong for the first:
-        // the player is in this list too, so a bot crew running them down was
-        // the one kill on an offline board nobody was credited with.
-        this.creditKill(by, target);
-        if (target instanceof Bot) {
-          this.registerBotKill(target, tank.team, byPlayer);
-        }
-      }
-    }
-  }
-
-  /**
-   * Whose kill a hull's tracks make, or null for a hull nobody is driving.
-   *
-   * The DRIVER's and never the gunner's: the man on the cupola gun moves
-   * nothing, and a hull's two seats can be held by two different kinds of
-   * thing at once — which is why this is asked the same two ways
-   * `VehicleSystem`'s orders are, the player's seat first and the crew after.
-   */
-  private driverOf(tank: Vehicle): Combatant | null {
-    if (tank === this.driving && this.drivingSeat === DRIVER) return this.player;
-    return this.crew.crewOf(tank, DRIVER);
-  }
+  // What the TRACKS kill is `hullRules.crushSweep`, run from `updateWorld`
+  // right after the hulls move — the authority runs the same function.
 
   /**
    * The camera half of a driver's frame, after the hull has moved.
@@ -8388,7 +8186,7 @@ export class Game {
     // acquisition, exactly as a hull destroyed by a crew's shell is not. It
     // sees where the armour ENDED this frame rather than where it started,
     // which is the whole of what running somebody over is.
-    this.crushSweep();
+    crushSweep(this.hullRules);
     this.prof.end(P.vehicles);
     // The hulls have moved and the crews are aboard, which is everything
     // `pushHullEngines` reads off them at the end of the frame.
@@ -9554,7 +9352,7 @@ export class Game {
     by: Combatant | null,
     victim: Hittable,
     headshot = false,
-  ): void {
+  ): boolean {
     // WHETHER this body pays at all is `paysKiller`'s, and it is here rather
     // than at the five doors below for the reason that function gives at
     // length: guarded by hand at each of them, this side reached for
@@ -9563,7 +9361,7 @@ export class Game {
     // bot crew crushing or shelling the player scored in a match and scored
     // nothing offline. Every caller inherits the rule now instead of restating
     // it, which is what stops the sixth door drifting too.
-    if (!by || !paysKiller(victim)) return;
+    if (!by || !paysKiller(victim)) return false;
     // The flag the VICTIM fell on decides whether this was an attack or a
     // defence, and `awardKill` is where that rule lives — shared with the
     // authority, so the two boards pay a kill the same way. A body that fell
@@ -9580,6 +9378,7 @@ export class Game {
       this.conquest.pointAt(victim.eyePos),
       headshot,
     );
+    return true;
   }
 
   /**

@@ -40,7 +40,7 @@ import { Scene, Vector3 } from "@babylonjs/core";
 import { NullEngine } from "@babylonjs/core/Engines/nullEngine.js";
 import { CONFIG } from "../src/config";
 import { Bot } from "../src/entities/Bot";
-import { OTHER_TEAM, type Combatant, type Team } from "../src/entities/Combatant";
+import type { Combatant, Team } from "../src/entities/Combatant";
 import type { WeaponSetup } from "../src/entities/weapons";
 import { BattleSystem } from "../src/systems/BattleSystem";
 import {
@@ -51,11 +51,24 @@ import {
 } from "../src/systems/CombatSystem";
 import {
   ConquestSystem,
+  scatterSpawn,
   type ControlPoint,
 } from "../src/systems/ConquestSystem";
 import { GlassSystem } from "../src/systems/GlassSystem";
 import { GrenadeSystem } from "../src/systems/GrenadeSystem";
-import { AntiTankSystem, type OrdnanceHit } from "../src/systems/AntiTankSystem";
+import { AntiTankSystem } from "../src/systems/AntiTankSystem";
+import {
+  crewLost,
+  crushSweep,
+  fireHullGun,
+  fireHullMg,
+  type HullRules,
+} from "../src/systems/hullRules";
+import {
+  settleKill,
+  type DeathCause,
+  type KillLedger,
+} from "../src/systems/killRules";
 import {
   ScoreBook,
   awardKill,
@@ -75,7 +88,7 @@ import {
   type CrewSeat,
   type GunAngles,
 } from "../src/entities/Vehicle";
-import { ordnanceEffect } from "../src/entities/equipment";
+import { resolveOrdnance } from "../src/entities/equipment";
 import { CelMaterialFactory } from "../src/shaders/CelShader";
 import type { GameMap } from "../src/world/MapBuilder";
 import type { MapDef } from "../src/world/maps";
@@ -83,35 +96,6 @@ import { perTeamOf } from "../src/world/layout";
 import { LagComp } from "./lagComp";
 import { NetPlayer } from "./NetPlayer";
 import { buildServerWorld } from "./world";
-
-/**
- * What put a body down, named by the DOOR the death came through rather than
- * by what the wound was.
- *
- * It exists for one question, which is why it is a vocabulary of doors: a
- * round of this simulation ends with more deaths on the board than kills, and
- * without this the difference is an unexplained number in a report. Six of the
- * seven doors credit a killer and one — `crew`, a body going down with the
- * hull it was riding — cannot, so telling them apart is what turns "six
- * deaths nobody was paid for" into "six tank crews", which is a round working
- * rather than a rule leaking. See `simulate.ts`, the only reader.
- *
- * `other` is the honest answer at the one door that does not know: a PERSON's
- * death arrives through `NetPlayer.onDamaged`, where whatever killed them was
- * credited at its own door and this side cannot see which. `simulate` never
- * reaches it — there are no people in a headless round — so it is a gap only a
- * tool that grows synthetic players would have to close.
- */
-export type DeathCause =
-  | "round"
-  | "blast"
-  /** A molotov's burn — `GrenadeSystem.onBurnHit`. */
-  | "fire"
-  | "tracks"
-  | "shell"
-  | "mg"
-  | "crew"
-  | "other";
 
 export class HeadlessGame {
   readonly engine = new NullEngine();
@@ -260,6 +244,23 @@ export class HeadlessGame {
       fireShell: (tank, by) => this.resolveShell(tank, by),
       fireMg: (tank, by) => this.resolveMg(tank, by),
     });
+    this.hullRules = {
+      ledger: this.ledger,
+      combat: this.combat,
+      hulls: () => this.vehicles.hulls,
+      gunTargets: (team) => this.battle.hittablesAgainst(team),
+      bodies: (team) => this.battle.hittablesAgainst(team),
+      blastAt: (at, team, by, spec) => this.grenades.blastAt(at, team, by, spec),
+      hearGunshot: (at, team, dir) => this.battle.hearGunshot(at, team, dir),
+      personIn: (tank, seat) => {
+        const index = this.vehicles.hulls.indexOf(tank);
+        for (const player of this.players.values()) {
+          if (player.seat === index && player.crewSeat === seat) return player;
+        }
+        return null;
+      },
+      crewOf: (tank, seat) => this.crew.crewOf(tank, seat),
+    };
     this.wire();
   }
 
@@ -581,7 +582,7 @@ export class HeadlessGame {
     // think, so a body taken by a tank is not a target on the same frame's
     // acquisition. Before the loop below as well, which only rides bodies that
     // are still in a seat.
-    this.crushSweep();
+    crushSweep(this.hullRules);
     // A driver rides their hull, exactly as `Game.updateDriver` slaves the
     // player to it: the conquest count above, the rewind, the snapshot and
     // every bot's idea of where that person is all ask this object where it
@@ -683,10 +684,8 @@ export class HeadlessGame {
     // bookkeeping only when what fell was a bot. A person's death arrives at
     // its own door (`NetPlayer.onDamaged`, wired in `addPlayer`), which is
     // where it is charged and announced.
-    this.battle.onBotKill = (victim, by) => {
-      const credited = this.creditKill(by, victim);
-      if (victim instanceof Bot) this.onKill(victim, by.team, "round", credited);
-    };
+    this.battle.onBotKill = (victim, by) =>
+      settleKill(this.ledger, by, victim, by.team, "round");
     // A round that went past somebody without connecting, which is two
     // different pieces of news and neither of them reaches anyone otherwise.
     //
@@ -741,11 +740,7 @@ export class HeadlessGame {
     this.battle.spawnPointFor = (bot) => this.spawnPointFor(bot.team);
     this.battle.planSquads = (team, centroids, previous) =>
       this.conquest.planSquads(team, centroids, previous);
-    this.battle.zoneFor = (bot) => {
-      const p = this.conquest.pointAt(bot.position);
-      if (!p || p.def.id !== bot.objective) return "none";
-      return bot.defending && p.owner === bot.team ? "hold" : "contest";
-    };
+    this.battle.zoneFor = (bot) => this.conquest.zoneFor(bot);
     // A bot asking for a grenade on a position. The arm has the last word: a
     // solve it cannot make returns false and the bot spends nothing.
     // What leaves the hand is the bot's own pouch, exactly as `Game` wires it.
@@ -760,40 +755,27 @@ export class HeadlessGame {
     // its own, and it is the SIZE of the picture rather than anything a rule
     // reads. See the `explode` event.
     this.grenades.onExploded = (at, power) => this.onExplosion(at, power);
+    // The thrower's row, whoever the blast finished, and a bot's death charged
+    // here — a person's already left through `NetPlayer.onDamaged`, which
+    // `takeDamage` raised before this callback ran. `settleKill`, the door the
+    // client's handler goes through too.
     this.grenades.onBlastHit = (victim, thrower, by, killed) => {
-      if (!killed) return;
-      // The thrower's row, whoever the blast finished — the same rule the
-      // rifle path above follows, and the reason a bot's grenade is worth
-      // something on the board rather than being the one kill in the game
-      // nobody is credited with.
-      const credited = this.creditKill(by, victim);
-      // A person's damage already left through `NetPlayer.onDamaged`, which
-      // `takeDamage` raised before this callback ran — the same split the
-      // client makes, where `onPlayerDamaged` has already handled the player by
-      // the time this fires. Only bots are this handler's business.
-      if (victim instanceof Bot) this.onKill(victim, thrower, "blast", credited);
+      if (killed) settleKill(this.ledger, by, victim, thrower, "blast");
     };
-    // A molotov's burn, on the blast's terms exactly: the thrower's row, and a
-    // bot's death announced here while a person's already left through
-    // `NetPlayer.onDamaged`.
+    // A molotov's burn, on the blast's terms exactly.
     this.grenades.onBurnHit = (victim, thrower, by, killed) => {
-      if (!killed) return;
-      const credited = this.creditKill(by, victim);
-      if (victim instanceof Bot) this.onKill(victim, thrower, "fire", credited);
+      if (killed) settleKill(this.ledger, by, victim, thrower, "fire");
     };
     // A fire starting is news for every client, which draws it; where it burns
     // and whom it hurts stay here.
     this.grenades.onIgnited = (_id, at) => this.onBlaze(at);
-    // A launcher bot's rocket, wired exactly as `Game` wires it: the ask is a
-    // POINT and a rocket flies straight, so there is no solve to refuse and the
-    // pool has the only word. `considerRocket` has already decided the target
-    // is armour.
+    // A launcher bot's rocket, flown toward the POINT it asked for
+    // (`AntiTankSystem.launchToward`) exactly as `Game` wires it.
+    // `considerRocket` has already decided the target is armour.
     this.battle.fireRocketFor = (bot, from, at) => {
-      this.rocketAim.copyFrom(at).subtractInPlace(from);
-      if (this.rocketAim.lengthSquared() < 1e-4) return false;
-      this.rocketAim.normalize();
-      if (!this.antiTank.launch(from, this.rocketAim, bot.team, bot)) return false;
-      this.battle.hearGunshot(from, bot.team, this.rocketAim);
+      const dir = this.antiTank.launchToward(from, at, bot.team, bot);
+      if (!dir) return false;
+      this.battle.hearGunshot(from, bot.team, dir);
       return true;
     };
     // Hostile by construction: the team passed is the ordnance's own and
@@ -807,7 +789,7 @@ export class HeadlessGame {
     // `onExploded` with the same `power` it drew at — the one implementation
     // of a blast in the game reporting itself, exactly as it does for a
     // grenade and for a shell.
-    this.antiTank.onDetonated = (hit) => this.resolveOrdnance(hit);
+    this.antiTank.onDetonated = (hit) => resolveOrdnance(hit, this.grenades);
     // The hull burning, and what it costs whoever was inside it. The two
     // halves are `Game.wireVehicles`'s, with the toast taken out: a bot crew
     // dies through `onCrewLost` below, and a person dies here.
@@ -836,76 +818,35 @@ export class HeadlessGame {
     // nothing to do but kill it through the door every other bot death takes.
     this.crew.onBoarded = (bot) => this.battle.setCrewed(bot, true);
     this.crew.onLeft = (bot) => this.battle.setCrewed(bot, false);
-    this.crew.onCrewLost = (bot, tank) => {
-      if (bot.takeDamage(bot.hp, tank.center, "shell")) {
-        // The ONE door that credits nobody, and the reason `DeathCause`
-        // exists: a hull brewing up is not anybody's kill at this door — the
-        // rocket or the shell that destroyed it was paid at its own, against
-        // the HULL, which `paysKiller` refuses. So the crew go down explained
-        // rather than unaccounted for.
-        this.onKill(bot, OTHER_TEAM[bot.team], "crew", false);
-      }
-    };
+    // `crewLost` is the ONE door that credits nobody, and the reason
+    // `DeathCause` has a `crew`: the crew go down explained rather than
+    // unaccounted for.
+    this.crew.onCrewLost = (bot, tank) => crewLost(this.ledger, bot, tank);
   }
 
   /**
-   * What the TRACKS killed this frame. `Game.crushSweep` with the presentation
-   * taken out, and it is the same one rule for the reason the shell is: a
-   * player's hull and a bot's are the same vehicle, and a second copy of
-   * "how fast is fast enough to kill a man" is a second thing to keep in step.
-   *
-   * **Every hull on the field is swept here, including the ones a PERSON is
-   * driving**, which is the one way this differs from its twin. A driven hull
-   * is posed on this side from the wire through `updateRemote` — but that
-   * method measures `speed` out of the ground it covered, precisely so that
-   * everything downstream reads a remote hull the way it reads a local one, so
-   * a person running a squad over is resolved here exactly as a bot crew's
-   * hull is. Nothing about it is predicted on the client: the driver sees the
-   * kill when the authority's killfeed says so, which is the same round trip
-   * a shell's blast takes.
-   *
-   * The three gates, the enemy-only list, the hull skip and the seat skip are
-   * all `Game.crushSweep`'s and are argued there.
+   * The two doors a kill reaches on the authority, as `settleKill` asks for
+   * them: the killer's row, and a bot's death — which is where a `cause` and a
+   * `credited` are filed for `simulate`. The client builds the same pair out
+   * of its own two.
    */
-  private crushSweep(): void {
-    for (const tank of this.vehicles.hulls) {
-      // The hull's OWN gates — see `Game.crushSweep`, whose twin this is.
-      const c = tank.spec.crush;
-      if (!tank.alive || Math.abs(tank.speed) < c.minSpeed) continue;
-      const by = this.driverOf(tank);
-      if (!by) continue;
-      for (const target of this.battle.hittablesAgainst(tank.team)) {
-        if (target.armoured || target.invulnerable) continue;
-        // `position` is the feet and `center` the chest — see `Vehicle.crushes`,
-        // which asks the two heights different questions.
-        if (!tank.crushes(target.center, target.position.y, target.hitRadius)) {
-          continue;
-        }
-        if (!target.takeDamage(c.damage, tank.center, "crush")) continue;
-        // A HULL is not a row on the scoreboard and cannot be one here — the
-        // list is filtered above — so this is the credit half of
-        // `resolveShell`'s pair with the guard already spent.
-        const credited = this.creditKill(by, target);
-        if (target instanceof Bot) this.onKill(target, tank.team, "tracks", credited);
-      }
-    }
-  }
+  private readonly ledger: KillLedger = {
+    credit: (by, victim, headshot) => this.creditKill(by, victim, headshot),
+    botDown: (bot, killer, _by, cause, credited, headshot) =>
+      this.onKill(bot, killer, cause, credited, headshot),
+  };
 
   /**
-   * Whose kill a hull's tracks make, or null for a hull nobody is driving.
-   * `Game.driverOf`, asked the same two ways this side's `vehicleOrders` are:
-   * a PERSON on the sticks first, and the bot crew after.
+   * What `hullRules` asks of the authority: the guns, the tracks and the crew
+   * run here exactly as they run offline. A person on the sticks is asked for
+   * first, then the bot crew — `driverOf`'s order, and this side's
+   * `vehicleOrders`'.
+   *
+   * **Every hull on the field is swept by `crushSweep`, including the ones a
+   * PERSON is driving** — see that function. Its call stays in `step`, right
+   * after `VehicleSystem.update`.
    */
-  private driverOf(tank: Vehicle): Combatant | null {
-    const index = this.vehicles.hulls.indexOf(tank);
-    for (const player of this.players.values()) {
-      if (player.seat === index && player.crewSeat === DRIVER) return player;
-    }
-    return this.crew.crewOf(tank, DRIVER);
-  }
-
-  /** Scratch for the line a launcher bot's rocket goes down. */
-  private readonly rocketAim = new Vector3();
+  private readonly hullRules: HullRules;
 
   /**
    * A player's round, resolved by the authority.
@@ -976,14 +917,18 @@ export class HeadlessGame {
     //
     // The client's `Game` charges the same kill in the same place for the same
     // reason, one line after its own `combat.fire` — see `registerBotKill`.
-    if (result?.killed) {
+    if (result?.killed && result.target) {
       // The shooter's row first, whoever fell — a person killing a person
       // reaches this line and nothing else on the server would ever credit it,
       // since the victim's own door only knows it was the other side.
-      const credited = this.creditKill(shooter, result.target, result.headshot);
-      if (result.target instanceof Bot) {
-        this.onKill(result.target, shooter.team, "round", credited, result.headshot);
-      }
+      settleKill(
+        this.ledger,
+        shooter,
+        result.target,
+        shooter.team,
+        "round",
+        result.headshot,
+      );
     }
     return result;
   }
@@ -1200,144 +1145,28 @@ export class HeadlessGame {
   }
 
   /**
-   * One round out of a tank gun, whoever pulled the trigger.
-   *
-   * `Game.resolveShell` with the presentation taken out, and it is the same
-   * ONE implementation for the same reason: the player's tank and a bot's are
-   * the same vehicle, so a second copy of the damage, the splash and the
-   * hearing would be a second thing to keep in step. `by` is whose kill it is.
-   *
-   * There is deliberately no rewind here and none is owed. A shell is
-   * `blastRadius` wide and slow to reload; the metre a rewind would recover is
-   * inside its own splash, and a driver is aiming at a seven-metre hull rather
-   * than at a head. What the client's own copy bought was the tracer and the
-   * noise, and both of those were free.
+   * One round out of a tank gun, whoever pulled the trigger — `fireHullGun`,
+   * the rule the client runs too, plus the event `Match` puts on the wire.
+   * `by` is whose kill it is.
    *
    * `early` is `Vehicle.fireGun`'s: none for a bot crew, which fires off the
    * hull's own reload in the same tick it is ready, and `Match`'s tolerance for
    * a person's claimed round, which arrives on the network's schedule.
    */
   resolveShell(tank: Vehicle, by: Combatant, early = 0): boolean {
-    // `fireGun` refuses on a hull that HAS no gun as well as on one still
-    // loading — `Vehicle.gunReady` — so this pair is what keeps a claimed
-    // shell out of a turretless vehicle on the authority as well as offline.
-    const g = tank.spec.gun;
-    if (!g || !tank.fireGun(early)) return false;
-    const muzzle = tank.muzzleToRef(this.shellFrom);
-    const dir = tank.gunDirToRef(this.shellDir);
-    const shot = this.combat.fire(
-      muzzle,
-      dir,
-      // No spread: a tank gun is a rifled barrel with a fire-control system,
-      // and no `headMult` — the head zone is the player's alone and a shell
-      // that landed on a body has already spent more than a headshot's worth.
-      0,
-      g.damage,
-      muzzle,
-      this.battle.hittablesAgainst(tank.team),
-      g.range,
-      tank.shellShot!,
-    );
-    this.grenades.blastAt(shot.hitPoint, tank.team, by, {
-      radius: g.blastRadius,
-      inner: g.blastInner,
-      damage: g.blastDamage,
-      kind: "shell",
-      power: g.blastPower,
-    });
-    // The direct hit's own bookkeeping. The splash's victims come through
-    // `onBlastHit`, which `wire` already handles.
-    //
-    // **A HULL is not a row on the scoreboard** — `shot.target` can be one now
-    // that armour is answered by its collider rather than by a sphere it lost
-    // to (`CombatSystem.fire`), and what a burning tank pays is its CREW,
-    // through `onCrewLost` and the driver's own death. That guard used to be
-    // written out on this line and on the client's, in two different and
-    // disagreeing forms; it is `paysKiller` now, applied inside `creditKill`,
-    // so both sides refuse the same bodies and this site says only WHEN.
-    if (shot.killed) {
-      const credited = this.creditKill(by, shot.target);
-      if (shot.target instanceof Bot) {
-        this.onKill(shot.target, tank.team, "shell", credited);
-      }
-    }
-    // Bots hear a tank gun the way they hear a rifle, and it is the TANK's
-    // side rather than the crewman's — a hull the AI is driving is heard by
-    // the other team exactly as one a person is driving is.
-    this.battle.hearGunshot(muzzle, tank.team, dir);
+    if (!fireHullGun(this.hullRules, tank, by, early)) return false;
     this.onCannon(tank);
     return true;
   }
 
   /**
-   * One round out of a hull's CUPOLA gun, whoever pulled the trigger.
-   *
-   * `Game.resolveMg` with the presentation taken out, and it is the same one
-   * implementation for `resolveShell`'s reason: the person on that seat and a
-   * bot on it fire the same weapon.
-   *
-   * There is no rewind here and none is owed, for a different reason than the
-   * shell's. A machine gun round is small and fast, but it is one of nine a
-   * second down a cone `mg.spread` wide — the metre a rewind would recover is
-   * inside the cone the same burst is already spraying, and the shooter is
-   * holding the trigger down rather than taking one shot at a head.
-   *
-   * **A HULL is not a row on the scoreboard**, and a machine gun could not
-   * kill one anyway (`resist.bullet` is 0.05). That is `paysKiller`'s now,
-   * refused inside `creditKill` on both sides rather than restated at each
-   * gun — see `resolveShell`, whose guard this one drifted against.
-   *
-   * `early` is `resolveShell`'s.
+   * One round out of a hull's CUPOLA gun, whoever pulled the trigger —
+   * `fireHullMg`, shared with the client. `early` is `resolveShell`'s.
    */
   resolveMg(tank: Vehicle, by: Combatant, early = 0): boolean {
-    if (!tank.fireMg(early)) return false;
-    const m = tank.spec.mg;
-    const muzzle = tank.mgMuzzleToRef(this.shellFrom);
-    const dir = tank.mgDirToRef(this.shellDir);
-    const shot = this.combat.fire(
-      muzzle,
-      dir,
-      m.spread,
-      m.damage,
-      muzzle,
-      this.battle.hittablesAgainst(tank.team),
-      m.range,
-      tank.mgShot,
-    );
-    if (shot.killed) {
-      const credited = this.creditKill(by, shot.target);
-      if (shot.target instanceof Bot) {
-        this.onKill(shot.target, tank.team, "mg", credited);
-      }
-    }
-    this.battle.hearGunshot(muzzle, tank.team, dir);
+    if (!fireHullMg(this.hullRules, tank, by, early)) return false;
     this.onMg(tank);
     return true;
-  }
-
-  /**
-   * A rocket or a mine going off: the hull it struck, then the blast.
-   *
-   * `Game.resolveOrdnance` to the line, and it has to be — what an AT item is
-   * worth is `ordnanceEffect`'s, read by both sides off one table, so the day
-   * a number moves it moves for the match as well as for the offline round.
-   */
-  private resolveOrdnance(hit: OrdnanceHit): void {
-    const e = ordnanceEffect(hit.kind);
-    // The direct hit, which is the thing a falloff cannot express. `shell` is
-    // what gets through `CONFIG.vehicles.tank.resist` and is the whole reason
-    // this kit exists.
-    if (hit.hull) hit.hull.takeDamage(e.damage, hit.at, "shell");
-    // …and the splash, through the one implementation of a blast in the game.
-    // `by` is whoever fired it, so a kill lands on their row exactly as a
-    // grenade's does — `wire`'s `onBlastHit` is already wired for it.
-    this.grenades.blastAt(hit.at, hit.team, hit.by, {
-      radius: e.blast.radius,
-      inner: e.blast.inner,
-      damage: e.blast.damage,
-      kind: "shell",
-      power: e.blast.power,
-    });
   }
 
   /**
@@ -1370,10 +1199,6 @@ export class HeadlessGame {
    * because `Match` coalesces it per snapshot exactly as it does a body's.
    */
   onMg: (tank: Vehicle) => void = () => {};
-
-  /** Scratch for the shell's muzzle and the gun's axis. Never per frame. */
-  private readonly shellFrom = new Vector3();
-  private readonly shellDir = new Vector3();
 
   /**
    * Seats a human in a slot, and takes the bot that was there off the field.
@@ -1734,10 +1559,10 @@ export class HeadlessGame {
   /**
    * Where a combatant of `team` deploys.
    *
-   * `Game.spawnPointFor`'s logic, including the scatter — a whole squad landing
-   * on one point is as bad here as it is on the client. `Math.random()` is
-   * correct on this side of the wire: the server decides where people appear
-   * and tells them, so there is nothing for a client to reproduce.
+   * `Game.spawnPointFor`'s logic, including the scatter (`scatterSpawn`) — a
+   * whole squad landing on one point is as bad here as it is on the client.
+   * The server decides where people appear and tells them, so there is
+   * nothing for a client to reproduce.
    *
    * `requested` is a person's pick off their deploy screen, and it is the only
    * thing here a client has any say in. It is not trusted: `deployAt` answers
@@ -1755,14 +1580,7 @@ export class HeadlessGame {
     const pick =
       (requested != null ? this.conquest.deployAt(team, requested) : null) ??
       this.conquest.spawnFor(team);
-    if (!pick) return null;
-    const s = CONFIG.conquest.spawnScatter;
-    return {
-      pos: pick.pos.add(
-        new Vector3((Math.random() - 0.5) * s, 0, (Math.random() - 0.5) * s),
-      ),
-      yaw: pick.yaw,
-    };
+    return pick ? scatterSpawn(pick) : null;
   }
 }
 

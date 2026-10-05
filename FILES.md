@@ -291,6 +291,10 @@ src/
                         #   belongs here
   entities/
     Player.ts           # Movement, sprint, crouch, jump, weapon state
+    HealthRegen.ts      # A person's regen: the lock after a hit and the curve
+                        #   back to full. One held by Player (predicting) and
+                        #   one by server/NetPlayer (authoritative), so the two
+                        #   heal to the same cap at the same rate
     ViewModel.ts        # The first-person weapon: carried gun + gloved arms
                         #   (faceted, in the viewer's own kit) on the camera, hip/ADS/sprint/reload/muzzle-load, sway,
                         #   bob, and
@@ -357,7 +361,9 @@ src/
     equipment.ts        # EquipmentId + the resolution of an AT item into an
                         #   ordinary WeaponSetup (no fall-off, no spread, no
                         #   reload, `magSize` IS a life's ammunition) and into
-                        #   the OrdnanceEffect a detonation is spent through
+                        #   the OrdnanceEffect a detonation is spent through —
+                        #   and `resolveOrdnance`, the one place it is spent,
+                        #   called by both simulations
     throwables.ts       # ThrowableId (frag | molotov), the kit order, and the
                         #   pouch size every side asks — the throwable slot's
                         #   `equipment.ts`, with no WeaponSetup behind it
@@ -482,13 +488,24 @@ src/
                         #   one thing in the kit that is not a weapon at all
   systems/
     BattleSystem.ts     # Bot pool, AI scheduling, LOS, distance LOD
-    ConquestSystem.ts   # Flags, meters, tickets, bleed, spawns, planSquads
+    ConquestSystem.ts   # Flags, meters, tickets, bleed, spawns, planSquads,
+                        #   what a bot's flag means to it (`zoneFor`), and
+                        #   `scatterSpawn` — both simulations ask all three
     ScoreBook.ts        # The round's board: points, kills and deaths, one row
                         #   per roster SLOT. A ledger, not a system — no update,
                         #   reaches nothing. One per simulation (Game offline,
                         #   HeadlessGame on the authority), and `awardKill` and
                         #   `awardZone` are the one place each that a payout's
                         #   shape is decided — both sides call the same two
+    killRules.ts        # `settleKill`: the killer's row, then the victim's door
+                        #   if a bot fell. Every door onto a kill, both sides,
+                        #   goes through it, against each side's `KillLedger`.
+                        #   Also `DeathCause`, the vocabulary simulate files
+    hullRules.ts        # What a hull does, once for both simulations: the main
+                        #   gun, the cupola gun, the tracks (`crushSweep`), the
+                        #   driver a crush is credited to, and a crew's death.
+                        #   No picture — Game draws off what the guns return;
+                        #   each side hands in a `HullRules` context
     CaptureZoneSystem.ts# Flags drawn in the world: ring, skirt, flag on its pole
     FlagCloth.ts        # One flag: the pole and a Verlet cloth flown in the wind
     BulletMarks.ts      # The holes a round leaves behind: a ring of pooled decal
@@ -507,7 +524,8 @@ src/
                         #   thing that isn't hitscan), the mine pool, the arm
                         #   clocks and the hull trigger. Owns no blast and has
                         #   never heard of a tank — it asks `hullNear` and
-                        #   announces `onDetonated`, and Game spends both
+                        #   announces `onDetonated`, and Game spends both.
+                        #   `launchToward` is a bot's rocket at a POINT
     GlassSystem.ts      # Breakable panes: the segment sweep and the break —
                         #   the visual, the collider, and the nav graph with
                         #   the fields over it, all on the frame it happens.

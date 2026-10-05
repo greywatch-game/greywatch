@@ -114,6 +114,7 @@ import { narrowedMove, type CollisionField } from "../world/CollisionField";
 import type { ObstacleField } from "../world/ObstacleField";
 import { TerrainField } from "../world/TerrainField";
 import type { Combatant, Team } from "./Combatant";
+import { HealthRegen } from "./HealthRegen";
 import type { DamageKind, ShotOptions } from "../systems/CombatSystem";
 
 /**
@@ -414,8 +415,11 @@ export class Player implements Combatant {
   get stance(): number {
     return this.crouchBlend;
   }
-  /** Counts down from `regenDelay` after each hit; regen resumes at zero. */
-  private regenLockT = 0;
+  /**
+   * The predicted half of a person's regen — the curve and the lock are
+   * `HealthRegen`'s, shared with the authority's `NetPlayer`.
+   */
+  private readonly regen = new HealthRegen();
   private reloadT = 0;
   /**
    * 0..1 through the reload, and it FREEZES rather than resetting when one
@@ -1442,7 +1446,7 @@ export class Player implements Combatant {
 
   /** Full reset for a fresh body: a deploy, or the start of a round. */
   fullReset(): void {
-    this.regenLockT = 0;
+    this.regen.clear();
     this.health = this.maxHealth;
     this.alive = true;
     // A fresh body is in nobody's vehicle. Cleared here as well as on the
@@ -1516,14 +1520,10 @@ export class Player implements Combatant {
    * thing that leaves.
    */
   updateVitals(dt: number): void {
-    // Stay hurt for a few seconds after the last hit, then heal back to full.
-    // Without this, sixteen hostile bots and no medic turns the round into a
-    // respawn queue for anyone who wins a fight at half health.
-    const p = CONFIG.player;
-    this.regenLockT = Math.max(0, this.regenLockT - dt);
-    if (this.regenLockT <= 0 && this.health < this.maxHealth) {
-      this.health = Math.min(this.maxHealth, this.health + p.regenRate * dt);
-    }
+    // Stay hurt for a few seconds after the last hit, then heal back to full —
+    // the same curve to the same cap the authority runs, which is what keeps a
+    // match's correction from snapping a healed bar back down.
+    this.health = this.regen.step(this.health, dt);
   }
 
   placeAt(spawn: Vector3): void {
@@ -2631,7 +2631,7 @@ export class Player implements Combatant {
   takeDamage(amount: number, from?: Vector3, kind?: DamageKind): boolean {
     if (!this.alive) return false;
     this.health = Math.max(0, this.health - amount);
-    this.regenLockT = CONFIG.player.regenDelay;
+    this.regen.hit();
     const died = this.health <= 0;
     if (died) this.alive = false;
     this.onDamaged(amount, died, from, kind);
@@ -2661,7 +2661,7 @@ export class Player implements Combatant {
    */
   applyServerHealth(health: number): void {
     this.health = health;
-    this.regenLockT = CONFIG.player.regenDelay;
+    this.regen.hit();
   }
 
   /**

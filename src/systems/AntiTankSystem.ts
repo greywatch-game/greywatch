@@ -5,7 +5,8 @@
  * All FIXED SIZE and allocated once, the rule `CombatSystem`'s tracers and
  * `GrenadeSystem`'s pool already follow: a firefight must not allocate.
  * Owns NO blast. What a detonation is worth is `entities/equipment.ts`'s and
- * spending it is `Game`'s, because the direct hit is a `Hittable` and the
+ * spending it is `resolveOrdnance`'s beside it, which both simulations call
+ * from their `onDetonated` — because the direct hit is a `Hittable` and the
  * splash is `GrenadeSystem.blastAt` — the one implementation of an explosion
  * in this game, exactly as the tank shell uses it.
  *
@@ -113,7 +114,10 @@ interface Mine {
   laid: number;
 }
 
-/** What went off, and on what. Handed to `Game`, which is what spends it. */
+/**
+ * What went off, and on what. Handed to `onDetonated`, and spent by
+ * `resolveOrdnance`.
+ */
 export interface OrdnanceHit {
   /**
    * Where the detonation is: the blast's centre and the light's position.
@@ -124,7 +128,7 @@ export interface OrdnanceHit {
    * has to clone it, which is what `onExploded` does downstream.
    */
   at: Vector3;
-  /** Which item it was, so `Game` can resolve `ordnanceEffect` off one id. */
+  /** Which item it was: `resolveOrdnance` reads `ordnanceEffect` off it. */
   kind: EquipmentId;
   team: Team;
   by: Combatant | null;
@@ -143,6 +147,8 @@ const _back = new Vector3();
 /** The flight step, normalised — the segment query wants a unit direction. */
 const _dir = new Vector3();
 const _launch = new Vector3();
+/** The line `launchToward` hands back — see there. */
+const _aim = new Vector3();
 
 export class AntiTankSystem {
   private readonly rockets: Rocket[] = [];
@@ -244,6 +250,30 @@ export class AntiTankSystem {
    */
   setWorld(rays: RayWorld | null): void {
     this.rays = rays;
+  }
+
+  /**
+   * Puts a rocket in the air from `from` toward the POINT `at` — a launcher
+   * bot's ask, which names a hull rather than a bearing. Returns the direction
+   * it flew (module scratch, valid until the next launch) or null when there
+   * was none to fly or the pool refused it, and a caller handed a null has
+   * spent nothing.
+   *
+   * Flat: a rocket flies more or less straight, so unlike a grenade's throw
+   * there is no solve to refuse and the pool has the only word. Both
+   * simulations ask through here, so the degenerate-line threshold is stated
+   * once.
+   */
+  launchToward(
+    from: Vector3,
+    at: Vector3,
+    team: Team,
+    by: Combatant | null,
+  ): Vector3 | null {
+    _aim.copyFrom(at).subtractInPlace(from);
+    if (_aim.lengthSquared() < 1e-4) return null;
+    _aim.normalize();
+    return this.launch(from, _aim, team, by) ? _aim : null;
   }
 
   /**

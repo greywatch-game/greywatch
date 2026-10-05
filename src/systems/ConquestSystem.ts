@@ -14,6 +14,7 @@
 import { Vector3 } from "@babylonjs/core";
 import { CONFIG } from "../config";
 import { clamp } from "../core/math";
+import type { Bot, BotZone } from "../entities/Bot";
 import type { Combatant, Team } from "../entities/Combatant";
 import type { ControlPointDef, GameMap, SpawnPointDef } from "../world/MapBuilder";
 
@@ -144,6 +145,22 @@ export class ConquestSystem {
       if (dx * dx + dz * dz < p.def.radius * p.def.radius) return p;
     }
     return null;
+  }
+
+  /**
+   * What standing where it is means to `bot`: on the flag it was SENT to, and
+   * whether that is holding it or contesting it. Anywhere else — including a
+   * flag it merely walked across — is `none`.
+   *
+   * A conquest rule rather than wiring, which is why it is here and not a
+   * lambda in each simulation: whether a bot is holding or contesting is the
+   * squad's POSTURE (`defending`) read against who owns the ring, and the
+   * client and the authority used to state that test once each.
+   */
+  zoneFor(bot: Bot): BotZone {
+    const p = this.pointAt(bot.position);
+    if (!p || p.def.id !== bot.objective) return "none";
+    return bot.defending && p.owner === bot.team ? "hold" : "contest";
   }
 
   update(dt: number, combatants: Combatant[]): void {
@@ -386,4 +403,29 @@ function near(a: Vector3, b: Vector3, dist: number): boolean {
   const dx = a.x - b.x;
   const dz = a.z - b.z;
   return dx * dx + dz * dz < dist * dist;
+}
+
+/**
+ * A spawn POINT scattered into a POSITION, so a whole reinforcement wave sent
+ * to one point does not arrive inside itself.
+ *
+ * **Both simulations resolve a spawn through this and nothing else** — the
+ * offline round in `Game.spawnPointFor` and the deploy screen, the authority
+ * in `HeadlessGame.spawnPointFor` — and a body is never scattered again on
+ * ARRIVAL, because a client handed the authority's position must put the body
+ * exactly there (see `Game.spawnPlayer`). `Math.random()` is right on both
+ * sides: this is not world-building, and the side that scatters is the side
+ * that says where the body is.
+ */
+export function scatterSpawn(pick: { pos: Vector3; yaw: number }): {
+  pos: Vector3;
+  yaw: number;
+} {
+  const s = CONFIG.conquest.spawnScatter;
+  return {
+    pos: pick.pos.add(
+      new Vector3((Math.random() - 0.5) * s, 0, (Math.random() - 0.5) * s),
+    ),
+    yaw: pick.yaw,
+  };
 }
