@@ -1025,7 +1025,18 @@ second population, on a phone.
    the spawn with several runs a side, since one configuration spans 6-24%.
    Render scale 0.75 against 0.5 is the control: more fill, the same draws, so
    it should move nothing if the GPU is not the wall.
-3. **The tablet** df3c7cc was made for, at Trees `low` and `high`. A report
+3. **The HUD, which is the other page-side work neither instrument times.**
+   Its fills and its low-health glow stopped laying out and repainting in
+   027fe87; what is left is the corner map, redrawn in full every frame
+   (a rotated Canvas2D blit of the backdrop, the marks over it, a
+   `shadowBlur` on the arrow) under a CSS `drop-shadow` the compositor
+   re-applies because the canvas changed. `?nominimap` takes all of it away
+   and the capture records which arm it was (`graphics.minimap`), so the A/B is
+   the same spot with and without it, several runs a side for the reason above.
+   If it moves nothing, the map is not part of this; if it does, the still
+   parts of it (the arrow, the pad, the cone, the rim and the shadow, none of
+   which ever moves) come off the per-frame draw first.
+4. **The tablet** df3c7cc was made for, at Trees `low` and `high`. A report
    carries the rung (`graphics.foliage`) and `device.coarsePointer`. The grass
    is not a lever (finding 46 draws it around the eye).
 

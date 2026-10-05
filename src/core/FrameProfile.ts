@@ -782,6 +782,12 @@ export interface ProfileGraphics {
   volumetrics: string;
   motionBlur: boolean;
   paperGrain: boolean;
+  /**
+   * Whether the corner minimap is drawn — false under `?nominimap`, the
+   * HUD's A/B (FINDINGS.md 13). Absent in a capture from before the flag
+   * existed, every one of which drew it.
+   */
+  minimap?: boolean;
   /** Keys above whose value came from the URL rather than the setting. */
   forced: string[];
 }
@@ -3143,6 +3149,7 @@ function sameGraphics(a: ProfileGraphics, b: ProfileGraphics): boolean {
     a.volumetrics === b.volumetrics &&
     a.motionBlur === b.motionBlur &&
     a.paperGrain === b.paperGrain &&
+    a.minimap === b.minimap &&
     a.forced.join() === b.forced.join()
   );
 }

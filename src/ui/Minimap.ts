@@ -120,6 +120,15 @@ const CARDINALS = ["N", "NE", "E", "SE", "S", "SW", "W", "NW"];
  * it is handed.
  */
 export class Minimap {
+  /**
+   * False under `?nominimap` (`Game.minimapOff`): the map is never put up,
+   * never prerendered and never drawn, so a capture taken with it off has paid
+   * for none of it. It is a MEASUREMENT lever and not a setting — the A/B in
+   * FINDINGS.md 13 — and held here rather than at each caller because
+   * `setVisible(true)` has several, and one that forgot would put a blank frame
+   * up with its drop shadow still being composited.
+   */
+  private readonly enabled: boolean;
   private canvas: HTMLCanvasElement;
   /**
    * The chrome around the canvas — the heading mark, and the box the drop
@@ -186,7 +195,8 @@ export class Minimap {
    */
   private cone: CanvasGradient | null = null;
 
-  constructor() {
+  constructor(enabled = true) {
+    this.enabled = enabled;
     this.canvas = document.createElement("canvas");
     this.canvas.id = "minimap";
     // No inline size: the box is `--hud-map` in `minimap.css` and `resize`
@@ -267,7 +277,7 @@ export class Minimap {
   }
 
   setVisible(visible: boolean): void {
-    this.frame.classList.toggle("hidden", !visible);
+    this.frame.classList.toggle("hidden", !visible || !this.enabled);
   }
 
   /**
@@ -281,6 +291,8 @@ export class Minimap {
    * against, and worth drawing for that alone.
    */
   setMap(map: GameMap, playerTeam: Team, env: EnvironmentSpec): void {
+    // No base, so `update` returns on its first line for the whole round.
+    if (!this.enabled) return;
     this.mapSize = map.size;
     this.revealed.clear();
     this.lastMap = map;

@@ -662,6 +662,18 @@ export class Game {
    * the same reason: a measurement runs in a fresh profile with no
    * `localStorage` to write the setting into.
    */
+  /**
+   * `?nominimap` — the corner map is not drawn at all, for the A/B in
+   * FINDINGS.md 13: it is the one piece of chrome redrawn in full on every
+   * frame (a Canvas2D blit, its marks, and the CSS drop shadow under it
+   * re-applied because the canvas changed), and that is raster and compositor
+   * work no span in the profiler can see. A flag and never a setting, because
+   * the map is not something a player should be offered to lose; recorded in
+   * every capture as `graphics.minimap`.
+   */
+  private readonly minimapOff = new URLSearchParams(location.search).has(
+    "nominimap",
+  );
   private readonly volumetricsForced: VolumetricRung | null = (() => {
     const q = new URLSearchParams(location.search).get("volumetrics");
     return q !== null && isVolumetricRung(q) ? q : null;
@@ -1411,7 +1423,7 @@ export class Game {
     this.loadoutScreen = new LoadoutScreen();
     this.settingsScreen = new SettingsScreen(this.settings);
     this.lobbyScreen = new LobbyScreen();
-    this.minimap = new Minimap();
+    this.minimap = new Minimap(!this.minimapOff);
     this.touch = new TouchControls();
     // After the HUD like every other thing on `#hud`, and before
     // `applySettings` below, which is what may arm it on a reload.
@@ -2700,6 +2712,7 @@ export class Game {
     if (this.giForced) forced.push("gi");
     if (this.shadowsForced) forced.push("shadows");
     if (this.volumetricsForced) forced.push("volumetrics");
+    if (this.minimapOff) forced.push("minimap");
     this.prof.setGraphics({
       renderScale: this.settings.renderScale,
       fpsCap: this.settings.fpsCap,
@@ -2710,6 +2723,7 @@ export class Game {
       volumetrics: this.volumetricsRung ?? "off",
       motionBlur: this.settings.motionBlur,
       paperGrain: this.settings.paperGrain,
+      minimap: !this.minimapOff,
       forced,
     });
   }

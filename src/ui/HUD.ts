@@ -460,6 +460,9 @@ export class HUD {
   private atMarks: HTMLElement[] = [];
   private atBuilt = -1;
   private lastAt = -1;
+  /** Whether the row is up — it is built `hidden` — and the caption on it. */
+  private atShown = false;
+  private atLabel = "";
   private nadeBuilt = -1;
   private hudRight: HTMLElement;
   private weaponLabel: HTMLElement;
@@ -1310,16 +1313,25 @@ export class HUD {
    * a third lifts the first.
    */
   setAntiTank(label: string | null, count: number, carried: number): void {
+    // Guarded like every other setter: `classList.add`/`remove` re-write the
+    // attribute whether or not the class moved, and this is pushed every frame
+    // whether or not the map has armour on it.
+    const show = label !== null;
+    if (show !== this.atShown) {
+      this.atShown = show;
+      this.atRow.classList.toggle("hidden", !show);
+    }
     if (label === null) {
-      this.atRow.classList.add("hidden");
       // Forgotten rather than kept: the next kit with a slot may be a
       // different item with a different pouch size, and a stale build count
       // would leave it drawing the last one's pips.
       this.atBuilt = -1;
       return;
     }
-    this.atRow.classList.remove("hidden");
-    if (this.atCap.textContent !== label) this.atCap.textContent = label;
+    if (label !== this.atLabel) {
+      this.atLabel = label;
+      this.atCap.textContent = label;
+    }
     if (this.atBuilt !== carried) {
       this.atPips.innerHTML = "";
       this.atMarks = [];

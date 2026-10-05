@@ -1193,7 +1193,9 @@ function renderReport(r) {
       " · bounce " + gx.gi + tag("gi") + " · grass " + gx.grass +
       (gx.foliage ? " · trees " + gx.foliage : "") +
       " · shafts " + gx.volumetrics + tag("volumetrics") +
-      " · blur " + (gx.motionBlur ? "on" : "off") + " · grain " + (gx.paperGrain ? "on" : "off"));
+      " · blur " + (gx.motionBlur ? "on" : "off") + " · grain " + (gx.paperGrain ? "on" : "off") +
+      // Absent before the flag existed, and every one of those drew it.
+      (gx.minimap === false ? " · minimap OFF" + tag("minimap") : ""));
     kv("Settings stood", fmt(gx.inForceSeconds, 1) + " s" +
       // 0.1 s of slack: both figures are rounded to it, and settings pushed
       // at boot stand exactly as long as a ring armed with them.

@@ -694,6 +694,13 @@ details:
   blend of two configurations. The clock restarts only when a value moves,
   because `applySettings` runs on every change to every setting, a look speed
   included. The viewer says so in words.
+- **`?nominimap` is the one lever here that is not a setting**: it takes the
+  corner map off for the session (never put up, never prerendered, never
+  drawn) and the capture says so as `graphics.minimap: false`, with `minimap`
+  in `forced`. It exists for FINDINGS.md 13's HUD A/B — the map is the one
+  piece of chrome redrawn in full every frame, and its raster and the drop
+  shadow re-applied under it are work no span here can see. Absent in a capture
+  from before the flag, all of which drew it.
 - **A new graphics setting owes a field here**, in `ProfileGraphics`,
   `sameGraphics` and the viewer's `Graphics` row, or captures go on describing
   a configuration that no longer names everything the frame paid for.
