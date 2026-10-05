@@ -66,6 +66,7 @@ import { mkdirSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import {
+  centredRectDist,
   leadKind,
   lineKind,
   makeGrade,
@@ -399,13 +400,6 @@ const DISTRICTS = [
   { name: "home ne", x: 318, z: 318, hw: 48, hd: 48, level: 0, skirt: 48 },
 ];
 
-/** Distance from a point to a rounded rectangle's core, 0 inside it. */
-function rectDist(x, z, r) {
-  const dx = Math.max(Math.abs(x - r.x) - r.hw, 0);
-  const dz = Math.max(Math.abs(z - r.z) - r.hd, 0);
-  return Math.hypot(dx, dz);
-}
-
 /**
  * The ground, before the wadi is cut through it: dunes, flattened toward each
  * district's level by how strongly that district claims the point.
@@ -424,7 +418,7 @@ function land(x, z) {
   let wsum = 0;
   let hsum = 0;
   for (const d of DISTRICTS) {
-    const w = 1 - smooth(rectDist(x, z, d) / d.skirt);
+    const w = 1 - smooth(centredRectDist(x, z, d) / d.skirt);
     if (w <= 0) continue;
     wsum += w;
     hsum += w * d.level;

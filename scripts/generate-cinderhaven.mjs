@@ -71,6 +71,7 @@ import { fileURLToPath } from "node:url";
 // would let a croft be built on the tarmac.
 import { bendPath } from "../src/world/roadPaths.ts";
 import {
+  centredRectDist,
   leadKind,
   lineKind,
   makeGrade,
@@ -512,14 +513,6 @@ const DISTRICTS = [
   { n: "home1", x: 475, z: -475, hw: 82, hd: 74, skirt: 56 },
 ];
 
-/** Distance from a point to the edge of an axis-aligned district core. */
-function rectDist(x, z, r) {
-  const dx = Math.abs(x - r.x) - r.hw;
-  const dz = Math.abs(z - r.z) - r.hd;
-  if (dx <= 0 && dz <= 0) return 0;
-  return Math.hypot(Math.max(0, dx), Math.max(0, dz));
-}
-
 // --- the floor ---------------------------------------------------------------
 
 /**
@@ -623,7 +616,7 @@ function heightAt(x, z) {
   let h = baseAt(x, z);
   const wet = smooth(bayIn(x, z) / WET_FADE);
   for (const dist of DISTRICTS) {
-    const dd = rectDist(x, z, dist);
+    const dd = centredRectDist(x, z, dist);
     if (dd >= dist.skirt) continue;
     h = mix(h, dist.h, (1 - dd / dist.skirt) * (1 - wet));
   }

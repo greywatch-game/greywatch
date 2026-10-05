@@ -111,6 +111,13 @@ export function rectDist(x, z, r) {
   return Math.hypot(dx, dz);
 }
 
+/** `rectDist` for a centred rectangle `{ x, z, hw, hd }` (half extents); 0 inside. */
+export function centredRectDist(x, z, r) {
+  const dx = Math.max(Math.abs(x - r.x) - r.hw, 0);
+  const dz = Math.max(Math.abs(z - r.z) - r.hd, 0);
+  return Math.hypot(dx, dz);
+}
+
 /**
  * The written floor read back between its vertices: bilinear over the vertex
  * at `vertex(i, j)`, clamped to the play square. `vertex` is a function rather

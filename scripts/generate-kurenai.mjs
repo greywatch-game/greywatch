@@ -57,6 +57,7 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import {
   bell,
+  centredRectDist,
   FACES,
   leadKind,
   lineKind,
@@ -170,19 +171,13 @@ DISTRICTS.push({
   skirt: 18,
 });
 
-function rectDist(x, z, r) {
-  const dx = Math.max(Math.abs(x - r.x) - r.hw, 0);
-  const dz = Math.max(Math.abs(z - r.z) - r.hd, 0);
-  return Math.hypot(dx, dz);
-}
-
 /** The ground before any cut: hills levelled toward every district, averaged. */
 function land(x, z) {
   const base = natural(x, z);
   let wsum = 0;
   let hsum = 0;
   for (const d of DISTRICTS) {
-    const w = 1 - smooth(rectDist(x, z, d) / d.skirt);
+    const w = 1 - smooth(centredRectDist(x, z, d) / d.skirt);
     if (w <= 0) continue;
     wsum += w;
     hsum += w * d.level;
@@ -238,7 +233,7 @@ const BASIN_RIM_EASE = 5;
 function basinRim(h, x, z, b) {
   if (h >= b.level) return h;
   const box = { x: b.x, z: b.z, hw: basinW(b) / 2 + BASIN_RIM, hd: basinD(b) / 2 + BASIN_RIM };
-  const d = rectDist(x, z, box);
+  const d = centredRectDist(x, z, box);
   if (d >= BASIN_RIM_EASE) return h;
   const w = d <= 0 ? 1 : 1 - smooth(d / BASIN_RIM_EASE);
   return h + (b.level - h) * w;
