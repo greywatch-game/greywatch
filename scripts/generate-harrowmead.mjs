@@ -71,6 +71,7 @@ import {
   makeMust,
   makeOverlaps,
   makeRelief,
+  makeScatter,
   makeWorldFoot,
   n2,
   printProbe,
@@ -350,7 +351,7 @@ const grade = makeGrade(floorAt, 2);
 const wet = (x, z, margin = 0.3) => floorAt(x, z) < WATER_Y + margin;
 
 if (process.argv.includes("--probe")) {
-  printProbe({ half: HALF, step: 10, height: floorAt, grade, wet: wet });
+  printProbe({ half: HALF, step: 10, height: floorAt, grade, wet });
   process.exit(0);
 }
 
@@ -1165,12 +1166,7 @@ function groveOk(x, z, r, maxGrade = 0.3, skipOpen = false) {
 const ASH = ", scale: [0.8, 1.15], blocking: true, clearance: 2.0";
 const PINE = ", scale: [0.9, 1.4], blocking: true, clearance: 1.2";
 let trees = 0;
-function disc(prop, x, z, r, count, extra = "") {
-  scatter.push(`  { prop: "${prop}", x: ${f1(x)}, z: ${f1(z)}, radius: ${n2(r)}, count: ${count}${extra} },`);
-}
-function rectRegion(prop, x, z, w, d, count, extra = "") {
-  scatter.push(`  { prop: "${prop}", x: ${f1(x)}, z: ${f1(z)}, width: ${f1(w)}, depth: ${f1(d)}, count: ${count}${extra} },`);
-}
+const { disc, rectRegion } = makeScatter(scatter);
 
 section(scatter, "the hedgerows");
 scatter.push(

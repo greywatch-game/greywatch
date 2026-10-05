@@ -288,17 +288,18 @@ export function section(list, title) {
 
 /**
  * The two scatter-region shapes, each written to the layout's `scatter` lines
- * and recorded as an object in `regions` for the run's own later checks.
+ * and — when the generator keeps `regions` for its own later checks —
+ * recorded there as an object too.
  */
-export function makeScatter(scatter, regions) {
+export function makeScatter(scatter, regions = null) {
   return {
     disc(prop, x, z, r, count, extra = "", obj = {}) {
       scatter.push(`  { prop: "${prop}", x: ${f1(x)}, z: ${f1(z)}, radius: ${n2(r)}, count: ${count}${extra} },`);
-      regions.push({ prop, x, z, radius: r, count, ...obj });
+      regions?.push({ prop, x, z, radius: r, count, ...obj });
     },
     rectRegion(prop, x, z, w, d, count, extra = "", obj = {}) {
       scatter.push(`  { prop: "${prop}", x: ${f1(x)}, z: ${f1(z)}, width: ${f1(w)}, depth: ${f1(d)}, count: ${count}${extra} },`);
-      regions.push({ prop, x, z, width: w, depth: d, count, ...obj });
+      regions?.push({ prop, x, z, width: w, depth: d, count, ...obj });
     },
   };
 }
