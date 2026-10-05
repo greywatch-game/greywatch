@@ -44,7 +44,9 @@ Things it deliberately does not do:
   unmerged meshes, so it is the larger of the two by both terms. That is not a
   new measurement of the editor and is not quoted as one; it is the reason the
   refusal is a rule rather than a tuning knob, restated in a unit a person
-  waiting for a brush stroke can feel.
+  waiting for a brush stroke can feel. (Both probe counts are the Coldharbour of
+  2026-08-26, before the map was re-laid as a bay in 6e848a1; the argument does
+  not depend on them.)
 
 **There are two pointer modes.** `T` toggles terrain mode and the panel turns
 violet, because a mode you forget you are in makes every click feel broken. The
@@ -120,7 +122,9 @@ Coldharbour measures ~2.3 s for the same tier — nearly all of it
 `MapBuilder.build`, and over half of that the 6,139 glazed sheets it draws and
 then merges — off *fewer* placements than Hollowmere has. It is what starting a
 round there costs too; the editor's difficulty is that it pays it per edit. See
-[`FINDINGS.md`](../FINDINGS.md) 11 before reaching for it.
+[`FINDINGS.md`](../FINDINGS.md) 11 before reaching for it. (Both figures date
+from 2026-08-24, before either map was re-laid by its generator — Hollowmere in
+5806a24, Coldharbour in 6e848a1 — and have not been re-taken.)
 
 The third tier is not laziness. Changing a param changes how many colliders an item
 emits, which shifts every later index in `colliderBoxes` and invalidates the

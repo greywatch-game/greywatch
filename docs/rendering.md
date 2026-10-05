@@ -650,8 +650,8 @@ does not protect the wall. The weapon wore a hand-set 0.004 m hull because a
 full-weight line on parts that small swallows it in black; what replaces that is
 `ink.near`, a DEPTH band — the gun is 0.3-0.5 m out and a body cannot get within
 about 0.4 m of world geometry, so distance names the viewmodel with no per-mesh
-data at all. That is the one place `FINDINGS.md` 18 said an ink-id attachment
-would be needed, and it is not.
+data at all. That is the one place the analysis that took colour out of the
+merge key said an ink-id attachment would be needed, and it is not.
 
 **The frame's ALPHA CHANNEL is translucent coverage, and that is a rule the
 whole renderer keeps rather than one this pass owns.** A depth buffer cannot say
@@ -1143,11 +1143,8 @@ reach outside it:
 ## The glazing: the one thing here that is not opaque
 
 `getGlass` is the fourth variant and the odd one out three times over, and each
-difference is forced by what a window is. (`getInk` is a fifth, added for the
-wind — see the outline note above. It is cheap to add to this roster because it
-takes the albedo path away rather than adding one: it writes a flat colour and
-falls straight through to the atmosphere block, so it needs no spec and no
-translucency.)
+difference is forced by what a window is. (A fifth, `getInk`, made the wind's ink
+twins; it went when the ink became a full-screen pass in 36855c2.)
 
 **It is a DEFINE (`CEL_GLASS`) rather than a uniform**, unlike the two above. The
 trick that makes those free is that a black colour multiplies the term out — but
@@ -1192,6 +1189,14 @@ Coldharbour, where glazing covers **16–45% of the screen** depending on where
 you stand: that third of the frame was being shaded twice, once for the shaft
 and once for the pane, with the more expensive of the two shaders on top. 98% of
 the map's glazing triangles are `backed`.
+
+The picture is not identical to the blended one it replaced, and the difference
+is small: against a run-to-run noise floor of 0.02/255, a street view differs by
+a mean of 0.63/255 (4.97% of pixels) and a curtain wall filling the frame at 2 m
+by 1.72/255 (15.87%, worst 72). The residual is believed to be the soft
+shoulder — `col` goes through it and `glassBackdrop * light` does not — plus
+geometry that was faintly visible through the glass and is now occluded.
+Neither has been confirmed.
 
 **It pays only if the pane is drawn FIRST**, and Babylon will not do that on its
 own: its default opaque sort is `PainterSortCompare`, which groups by material
@@ -1359,7 +1364,7 @@ on the frame after the install, and that frame — ~2.3 s — is paid once. At
 draws in one frame**, and the 900 m proving ground for 1,373,340 — and what
 happens then is not a long frame. The D3D12 device is LOST inside it, on
 `ID3D12Device::CreateDescriptorHeap`, and Babylon's attempt to recreate it
-fails too; at the larger of the two extents `FINDINGS.md` §19 measured, the
+fails too; at the larger of the two extents `ENGINE_UPGRADE.md` S0 measured, the
 renderer process is replaced outright. **That is a resource ceiling reached
 inside one command submission and not a timeout**, so a slower bake fails
 identically and only a smaller one does not.
@@ -1440,11 +1445,14 @@ different term, and **all three are no-ops on every map that ships**:
   NEAR SIDE of each mesh's bounding sphere: `distance - radiusWorld`, which is
   what keeps a landform in, because the rim, the ridge rock and the terrain
   patches are single meshes with enormous radii whose centres are nowhere near
-  anything. 800 m is past the diagonal of every map in the tree and past the
-  longest `fogEnd` any of them declares (Harrowmead's 520), so nothing that
-  ships is culled by it, and on a fogged map of any size everything it drops
-  was already drawing as flat fog colour against a sky whose horizon is
-  `fogColor`. It is the smallest of the three levers wherever it has been
+  anything. On a fogged map of any size everything it drops past `fogEnd` was
+  already drawing as flat fog colour against a sky whose horizon is
+  `fogColor`, and 800 m is past the `fogEnd` of every shipped map but one
+  (Sarab's 560 included, whose 1,273 m diagonal is not). **Cinderhaven is the
+  exception**: 1500 m of play, a 2,121 m diagonal and a `fogEnd` of 1,250, with
+  see-through glazing on it (the shophouses' shopfronts), so it is the one
+  shipped map where a probe can drop something the eye would still see — the
+  horizon hole described below, under some fog. It is the smallest of the three levers wherever it has been
   measured: on the 900 m proving ground it takes a probe's list from 928 meshes
   to 864, which is 7%. What it is really for is a map whose PLAY square is
   1500 m, where the probes are spread over the whole of it rather than over the
@@ -2105,7 +2113,8 @@ eight soldiers round the lamp and a moving spot walking beside it:
 
 `LocalShadows.update` is 0.06–0.07 ms of CPU. "off" there has the moon's maps
 off too, so the gap is the whole shadow budget, not only the lamps'. Nothing is
-measured on a phone — `FINDINGS.md` 45.
+measured on a phone — `FINDINGS.md` 45. The Hollowmere rows (2026-09-23) predate
+that map's re-lay on real ground (5806a24) and have not been re-taken.
 
 ### Lightning
 
@@ -2918,7 +2927,7 @@ is the preprocessor eating code, this one is JavaScript eating the shader.
 a Map get, an `isBlocked`, a `getTotalVertices`, an `isReady` and an `isEnabled`
 on each before it has decided anything — so the cost is `O(meshes)` whatever the
 camera can see, and on this game's maps the mesh count is proportional to map
-AREA. Measured (`FINDINGS.md` 19): **1.10 us per mesh per frame**, which is 23.0
+AREA. Measured (`ENGINE_UPGRADE.md` S0, wall 1): **1.10 us per mesh per frame**, which is 23.0
 of a 30.3 ms frame at 1500 m and 7.6 of 10.1 ms at 900/300. Frustum culling does
 not help; it is the decision this walk REACHES.
 
@@ -2944,8 +2953,8 @@ line of code:
 
 Contrast `setEnabled(false)`, which costs all four of those AND buys less: a
 disabled mesh is still in the walk, and merely shortens what the walk does with
-it. That is what made finding 18's 0.67 us and finding 19's 1.10 us disagree
-about the same number.
+it. That is what made the palette measurement's 0.67 us ("The paint palette",
+below) and S0's 1.10 us disagree about the same number.
 
 **Four classes of mesh, and which class a mesh is in is the design.**
 
@@ -3026,9 +3035,10 @@ this game and this is not.
 **The three numbers in `CONFIG.graphics.culling` are all margins and none of
 them is the reach.** The reach is the map's own `fogEnd`; `pad`, `step` and
 `hysteresis` decide how much slack rides around it so the answer is never late
-and never thrashes. A map whose `fogEnd` is past its own diagonal — Coldharbour,
-Harrowmead, and the proving ground on purpose — culls nothing by distance and
-gets the hidden half alone.
+and never thrashes. A map whose `fogEnd` is past its own diagonal — Coldharbour, and
+the proving ground on purpose — culls nothing by distance and gets the hidden
+half alone; Harrowmead's 520 falls just short of its 566 m diagonal, so only
+its far corners are culled.
 
 **And it is `fogEnd` and never `EnvironmentSpec.bodyDrawDistance`, which is the
 one other distance a map may state about drawing.** They are not two spellings
@@ -3580,6 +3590,357 @@ all in the counter this finding is named after. Not chased.
   direction: there the fix was standing one surface proud at build time, here
   it is offsetting along the pick's own normal at spawn.
 
+## Why the frame is draw-call bound
+
+**Where this stands now (current as of 2026-10-04, and not part of the
+measurement below).** Two of the three levers costed here have landed: `main.ts`
+sets `compatibilityMode = false`, and the glow landed as `GlowPass` (see "The
+glow: what the depth share replaced", below). The third's real version — fewer
+active meshes, or a cheaper walk — landed as three things: the paint palette
+(the next section), `WorldCulling`'s candidate list (`ENGINE_UPGRADE.md` S1,
+and "Block visibility" above) and the size gate
+(`CONFIG.graphics.culling.minPixels`). Every table here predates all of that and
+is history; what still stands is the mechanism and the instrument. Lever 3's "the
+walk is the wrong half" held at 320 m and not at 1500 m — "Block visibility" has
+why. On a phone the balance may well differ, and the fill lever for that case is
+`FINDINGS.md` 5's glass fragment.
+
+This was measured on the Windows box, cause located, three levers costed. It
+corrects the WebGL2 reading that called Coldharbour FILL-bound — the reading
+`backed` glazing was built against — and the glow reading `GlowPass` replaced,
+both written against a backend where a draw call was cheap.
+
+It was opened by a symptom rather than by a sweep: the big maps that used to
+run over 100 fps now struggle to hold 60, and the GPU sits at 25-30%
+utilisation while they do it.
+
+### The measurement that settles it
+
+Coldharbour, a live round with sixteen bots, warm, uncapped, headless Chromium
+on the RTX 4070 Ti SUPER. **The same frame at a sixteenth of the pixels costs
+the same milliseconds:**
+
+| render size | fps | frame |
+| --- | --- | --- |
+| 1920x1080 | 45.9 | 21.8 ms |
+| 960x540 | 45.7 | 21.9 ms |
+| 480x270 | 46.0 | 21.7 ms |
+
+`setHardwareScalingLevel` is the right instrument here and hiding geometry is
+not, which is the methodological half of this section: it varies the pixel count
+and **nothing else**, where hiding the glass varies fill, draw calls and active
+meshes together and can never say which of the three it just bought. Hollowmere
+answers the same way — 157, 145, 164 fps down the same three rungs, which is
+noise around a flat line.
+
+### Where the time goes instead
+
+The rAF callback wrapped, `scene.render` wrapped inside it, medians over 246
+frames on Coldharbour:
+
+```
+interval 21.5 ms | in the rAF callback 21.3 ms
+                 |   scene.render()     19.6 ms
+                 |   the game's own JS    1.7 ms
+```
+
+The callback fills the interval, so **the main thread is the wall and the GPU
+is starved rather than busy** — which is what the utilisation reading that
+opened this section means, and it is worth knowing that it means that, because a
+GPU at 25% looks like headroom and is the exact opposite. Note also that the
+game's own JS is 1.7 ms of a 21.5 ms frame: **the per-frame CPU ranking
+(`docs/profiling.md`, beside the `render` bar) is still
+right about what is expensive inside `updateGameplay`, and that whole budget is
+now under 8% of the frame.** Inside `scene.render`, by Babylon's own phase
+observables:
+
+| median ms | Hollowmere | Coldharbour |
+| --- | --- | --- |
+| whole frame | 6.1 | 19.4 |
+| `_evaluateActiveMeshes` | 1.8 | 3.4 |
+| render targets | 0.8 | 4.5 |
+| main draw phase | 3.0 | 11.0 |
+
+All three of those are JS.
+
+### The draw count predicts the frame, and nothing else does
+
+Draws counted by wrapping `drawElementsType` and `drawArraysType`, attributed
+by phase, live round:
+
+| per frame | Hollowmere | Coldharbour | Harrowmead |
+| --- | --- | --- | --- |
+| draw calls | 857 | **2,647** | 2,238 |
+| — render targets | — | 883 | 820 |
+| — main pass | — | 1,760 | 1,414 |
+| active meshes | 240 | 903 | 879 |
+| frame | 6.1 ms | 19.4 ms | 18.7 ms |
+
+Hollowmere to Coldharbour is **3.09x the draws against 3.18x the frame** — a
+fit to within 3%. Triangles are 1.96x and do not fit. Pixels are identical and
+do not fit at all. (The main pass's surplus over its active meshes was the
+inverted-hull outline shells, a second draw per outlined mesh; the ink has been
+one full-screen pass since 36855c2.)
+
+### Why the backend changed the answer
+
+Babylon's WebGPU backend pays substantially more CPU per draw than its WebGL2
+one: a pipeline-state hash and lookup in `WebGPUCacheRenderPipeline`, a
+bind-group cache lookup or rebuild, and dynamic uniform-buffer offset
+management, on every draw. WebGL2 was closer to a `glDrawElements` beside a few
+cached uniform binds. **So the swap raised the SLOPE and not the intercept, and
+the crossover is the draw count.** That is why the two small maps came out of
+the migration faster and the two big ones came out much slower, and why the
+migration's own gates never caught it: they were green, and they were green
+because the game still ran.
+
+**That paragraph is derived and not measured, and it cannot be measured here**
+— there is no WebGL engine left in the tree to A/B against, by design
+(`CLAUDE.md`), and re-introducing one to settle a ranking would cost more than
+the ranking is worth. What backs it is the one lever that isolates the
+submission path and changes nothing else, which is the first below.
+
+### The three levers, costed
+
+Single-lever A/Bs in the page on Coldharbour. The baseline itself drifted -4 to
+-6% across the run, so **read nothing under about 8% as real**:
+
+| lever | Coldharbour |
+| --- | --- |
+| `engine.compatibilityMode = false` | **+25.8%** |
+| the GlowLayer disabled | **+22.5%** |
+| `scene.freezeActiveMeshes()` | **+14.8%** |
+| every `paneGroups` mesh hidden | +1.5% |
+| the shadow generator's `renderList` emptied | -9.7% |
+
+The last two are the null results and both are useful: the glass is the WebGL2
+reading's lever and no longer moves anything, and the shadow pass reads
+*negative*, which is drift plus whatever emptying an explicit render list does
+to Babylon's own path — either way the shadow pass is not where the frame is.
+Stacked, which is the number worth having:
+
+| Coldharbour | fps | frame |
+| --- | --- | --- |
+| baseline | 47.8 | 20.9 ms |
+| bundles | 61.3 | 16.3 ms |
+| + no glow | 75.7 | 13.2 ms |
+| + frozen active meshes | **102.1** | 9.8 ms |
+
+Harrowmead tracks it the whole way: 53.5 -> 66.3 -> 79.3 -> 108.8.
+
+**1. `compatibilityMode = false` is real, and it is the only one verified.** It
+is Babylon's WebGPU render-bundle submission path; it changes how draws are
+submitted and nothing about what is drawn, which is why it doubles as the
+evidence for the section above. Costed end to end through the real boot path
+with `gate.mjs --uncap`, both runs in one session on this machine:
+
+| warm fps | baseline | bundles | p95 |
+| --- | --- | --- | --- |
+| Hollowmere | 165.8 | 192.6 | 7.3 -> 6.6 ms |
+| Greyfen | 183.9 | 211.1 | 6.2 -> 5.6 ms |
+| Coldharbour | 47.2 | 59.4 | 22.7 -> 18.6 ms |
+| Harrowmead | 54.2 | 68.6 | 20.2 -> 17.2 ms |
+
+**The picture does not move.** `bank.mjs --check` comes back 0/255 on all
+sixteen reference frames with the flag on, against a 0/255 control taken in the
+same session with it off; `gate.mjs`, `shaders.mjs` and `npm run build` all pass
+with no page error, no console error and no WebGPU validation complaint.
+
+**What the bank does NOT prove is the case the flag is actually about**, and
+this is the part worth keeping: the bank is a FROZEN frame, and
+non-compatibility mode's documented risk is state CHANGING between draws. So
+the evidence that landed it is a different script — a live round on
+Coldharbour, Harrowmead and Hollowmere with the bots fighting, six bots killed
+into ragdolls, every one of Coldharbour's 24 panes broken in a single frame,
+six overlapping blasts and a turret tracking for 180 frames, run with the flag
+and without it and reporting the same thing both times. **This has LANDED**
+(`main.ts`, with the argument on the line) and it is the reason this section
+calls it no longer a lever but a fact.
+
+**2. The GlowLayer had inverted, and the fix has LANDED as `GlowPass`.** The
+layer was 883 of Coldharbour's 2,647 draws, every `MapBuilder` mesh drawn as
+opaque black into a buffer it cannot light so that the glow buffer could
+depth-occlude. `GlowPass` borrows the frame's own depth for that occlusion and
+draws the emissive meshes alone; what it replaced is "The glow: what the depth
+share replaced", below.
+
+**3. `scene.freezeActiveMeshes()` is a diagnostic and must not ship.** It
+freezes the active list, so a bot that walks into view, a pooled effect, a
+grenade, a shard and a spawned ragdoll all stop appearing — in a game whose
+every mesh is pooled that is not a trade, it is a bug. What the +14.8% measures
+is `_evaluateActiveMeshes` walking **2,488 meshes to find 903**, and the real
+version of that saving is having fewer meshes to walk or a cheaper walk, not a
+frozen list. **"Fewer meshes to WALK" is the wrong half and the palette section
+below measures it**: the ~1,580 the walk rejects are worth 0.8 ms of the 3.3,
+and the ~900 it keeps are the other 2.5. Fewer ACTIVE meshes is the only fix.
+
+## The paint palette: why colour left the merge key
+
+`mergeByMaterial` keys its outer map on the material INSTANCE, so a 48 m block
+used to split once per paint colour, and that was half the frame's draws. This
+answers whether the draw count itself can come down — the open question the
+draw-call section above ended on — and the answer is that it can, by about
+half. Measured on the Windows box, landed 2026-08-26 (6bb50c3); every "before"
+below is the tree of that day.
+
+### What landed
+
+Albedo per vertex, behind `#define CEL_PALETTE`: a 1-based slot in `uv2.x`
+written per source mesh by `MapBuilder` before the merge, indexed into a
+`celPalette` array on the materials that read one — `getWorldCel`, and since
+then the soldier rigs' `getBodyCel` with a kit palette of its own (the world's
+ink twin that was the second reader at the time is gone with the ink hull).
+Slot 0 is "not paletted", which is what an unwritten attrib gives, so a colour
+past `MAX_PALETTE` (128) keeps its own material and merges the way everything
+did before. Only `BlockMerge` paletteises, which exempts the editor for free.
+
+### Before: what the draws were made of (2026-08-26)
+
+Every active mesh attributed to what built it, and counted once for each pass it
+is drawn in. Coldharbour, same session:
+
+| bucket | meshes | materials | outline | glow | shadow | draws |
+| --- | --- | --- | --- | --- | --- | --- |
+| **world (BlockMerge)** | **409** | **55** | 346 | 409 | 401 | **1,565** |
+| soldier rigs | 237 | 11 | 0 | 237 | 0 | 474 |
+| vehicles | 48 | 12 | 48 | 48 | 0 | 144 |
+| glazing | 72 | 72 | 0 | 71 | 0 | 143 |
+| terrain | 49 | 1 | 0 | 49 | 0 | 98 |
+| viewmodel | 28 | 7 | 14 | 28 | 0 | 70 |
+| rim/ridge | 20 | 2 | 20 | 20 | 0 | 60 |
+| everything else | 39 | — | 1 | 19 | 0 | 59 |
+| **total** | **902** | 180 | 429 | 881 | 401 | **2,613** |
+
+**The village is 60% of the frame's draws and it is drawn 3.8 times per mesh** —
+once for itself, once for its outline shell, once as an occluder in the glow
+buffer, once into the shadow map. (Two of those four are gone since for other
+reasons: the outline column is the inverted hull the ink pass replaced, and the
+glow column is the whole-scene occluder pass `GlowPass` replaced.)
+
+Simulated by re-keying the merge on the shader VARIANT
+(`cel`/`gloss`/`trans`/`glass`/`ink`/`emissive`) with the sway layer and the
+exemption set kept, which is what a merge could honestly collapse to:
+
+| map | blocks | world meshes now | colour out of key | per block, now -> then |
+| --- | --- | --- | --- | --- |
+| Coldharbour | 45 | 416 | **90** (4.62x) | median 10 -> 2 |
+| Harrowmead | 44 | 438 | **131** (3.34x) | median 9 -> 3 |
+| Hollowmere | 32 | 332 | **59** (5.63x) | median 11 -> 2 |
+
+Harrowmead collapses least because it carries 104 `trans` and 100 `ink` meshes
+from the swaying groups' twins, which are real shader differences and stay in
+the key. Coldharbour is 349 `cel` against 51 `emissive`, 8 `trans` and 8 `ink`.
+
+### The prototype, and what it bought
+
+Before any of it was built, the outer key was changed to the variant for one
+run — **the picture wrong on purpose, only the cost being read** — and then
+reverted. Same script, same session shape, 3 x 6 s each:
+
+| | Coldharbour | Harrowmead |
+| --- | --- | --- |
+| fps | 48.3 -> **77.2** | 52.6 -> **83.0** |
+| frame | 20.6 -> 12.8 ms | 18.8 -> 11.9 ms |
+| draws | 2,641 -> 1,397 | 2,332 -> 1,361 |
+| main draw phase | 9.1 -> 5.0 ms | 8.3 -> 4.6 ms |
+| render targets | 3.4 -> 2.0 ms | 3.3 -> 1.9 ms |
+| `_evaluateActiveMeshes` | 4.3 -> 3.2 ms | 4.1 -> 3.2 ms |
+| active meshes | 900 -> 577 | 889 -> 574 |
+| world meshes / draws | 409 / 1,565 -> 88 / 305 | — |
+| shadow renderList | 408 -> 86 | — |
+
+**+60% and +58%**, on the two maps that need it. For scale, every other lever
+ever measured on this frame: `compatibilityMode = false` +26% (landed), the
+GlowLayer deleted outright +27%, the glow AND every world outline off together
++19.5%.
+
+**Why it converts better than the shell levers, which is the part worth
+keeping.** Taking the outline shells and the glow occluders away removes draws
+that reuse an already-bound material — measured at about 2.3 us each. This
+removes MESH draws, each carrying a material switch, and those measure about
+6.3 us each: Babylon's WebGPU backend pays a pipeline-state hash, a bind-group
+cache lookup and a dynamic-UBO offset on every draw, and a material change is
+what makes all three miss. That is the draw-call section's mechanism arriving
+from the other side. **So a draw is not a draw** — say which kind before
+predicting a saving from a count.
+
+### After: through the real boot path
+
+**Costed through the real boot path with `gate.mjs --uncap`, both runs in one
+session on this machine**, which is the instrument the draw-call section quotes
+and so the one to compare against:
+
+| warm fps | before | after | p95 |
+| --- | --- | --- | --- |
+| Hollowmere | 148.4 | 185.1 | 9.5 -> 7.3 ms |
+| Greyfen | 167.6 | 203.3 | 8.1 -> 6.4 ms |
+| Coldharbour | 48.9 | **66.9** | 25.5 -> 17.7 ms |
+| Harrowmead | 52.2 | **61.7** | 25.3 -> 20.6 ms |
+
+**The two instruments disagree on the size and the honest range is +18% to
++81%.** An in-page probe over 3 x 6 s of a warm round reads Coldharbour 48.3 ->
+87.5 and Harrowmead 52.6 -> 80.2; `gate.mjs`'s 8 s window right after its
+warm-up reads +37% and +18% for the same change. Both are live rounds, so bots
+dying and ragdolls spawning are in both. **What is not in dispute is the draw
+count**, which is the same number however it is sampled: Coldharbour 2,641 ->
+1,431 and Harrowmead 2,332 -> 1,551. Quote the gate figures and say which.
+
+Against the reference bank of its day, **sixteen of sixteen frames came back
+within 0.19 to 3.26 mean/255** (`borderland` exactly 0), against 43 to 108 when
+the world first drew. The residue was the trade rather than noise, and both
+causes it was put down to — lines between differently-coloured parts of one
+building gone, and an ink twin darkening thin surfaces — belonged to the
+inverted-hull ink, which the full-screen ink pass has since replaced.
+
+### The trap it found, and the heuristic it broke
+
+Two bugs were found on the way and both are fixed; the second (an ink twin in a
+reflection render list) went with the ink twins themselves. The first is
+recorded because it is not obvious and will be met again by anyone adding an
+attribute — `CelShader.ts` states it again where `uv2` is declared:
+
+- **An attribute must be DECLARED in the WGSL source, not merely listed on the
+  material.** `vertexInputs.uv2` without `attribute uv2: vec2f;` is "struct
+  member uv2 not found", the shader module fails, and under
+  `compatibilityMode = false` one bad module invalidates the render bundle and
+  takes **the entire frame black** — sky, glazing and all. Nothing appears in
+  `consoleErrors`; the cascade is a wall of "Invalid RenderPipeline ... is
+  invalid due to a previous error" with the real message above it. This is the
+  first real instance of the moving-state risk `main.ts` warns about, and it
+  arrived from a direction that warning does not describe.
+
+**`ReflectionSystem.encloses` had to be rewritten and that is a consequence
+worth generalising.** It was a bounding-box containment test, and it worked
+only because of a property the palette removes — the merge split per colour, so
+"a colour that appears once appears in a mesh of its own" and the test picked
+out small meshes. With one mesh per block the smallest thing it could remove was
+a 48 m block, and it could not tell a tower's probe standing in its own shaft
+from a water probe floating in open marsh inside the same extent. Greyfen's
+marsh cost one exclusion and that one was the near treeline. It now asks the
+BLOCK KEY, which `PaneBlocks` and `BlockMerge` already file under identically.
+**The general lesson: a heuristic that reads merged GEOMETRY is a heuristic with
+a hidden dependency on how the merge is keyed.** A solid-mass test against the
+collider boxes was tried first and is the wrong answer — 17 of Coldharbour's 40
+glazing probes stand in open air rather than in mass, and `curtain2` regressed
+to 30.5/255 under it against 1.9 with the block key.
+
+### A correction to the draw-call section, so nobody re-runs it
+
+`ENGINE_UPGRADE.md` (wall 1) carries the two null results measured beside this
+— a selection octree and `scene.freezeActiveMeshes()`. The one it does not:
+
+- **The draw-call section's third lever calls the `_evaluateActiveMeshes`
+  saving "fewer meshes to walk", and that half is wrong.** Disabling every mesh
+  the walk REJECTS took it from 2,063 walked to 880 and the cost only moved
+  3.30 -> 2.51 ms: about 2.5 ms of it is the ~900 meshes it KEEPS.
+  `doNotSyncBoundingInfo` on all 1,380 frozen meshes moved nothing, because a
+  frozen matrix already skips it. Fewer ACTIVE meshes is the only fix — which
+  is this section, and it is what took amEval 4.3 -> 3.2 above.
+
+That held at 320 m. At 1500 m the walk itself is the wall, and the 0.67 us per
+rejected mesh this method implies (0.79 ms over 1,183) under-reads it by 1.6x —
+"Block visibility" above has why.
+
 ## The glow: what the depth share replaced
 
 Before the mask took its occlusion from the frame's own depth, the stock layer's
@@ -3676,7 +4037,8 @@ rather than a distance — and a wall two hundred metres from a lamp still passe
 it while it stands between the lamp and the eye, which is the exact case that
 killed the range version. So this was not that predicate retuned.
 
-**WHY, and this is the finding.** After finding 18, an emissive "mesh" is not a
+**WHY, and this is the finding.** After the palette work ("The paint palette",
+above), an emissive "mesh" is not a
 lamp — it is every emissive fitting in a 48 m block, merged per colour.
 Coldharbour's whole visible emissive set in a frozen frame is **five meshes**,
 and Hollowmere's sixteen, each with a bounding sphere tens of metres across;
@@ -3783,7 +4145,8 @@ reading believable at all.
 **The picture: 36 frozen vantages across Hollowmere, Coldharbour and Greyfen —
 three committed diff vantages per map at four yaws each — worst mean
 0.0258/255, worst pixel 90, and zero page or console errors on every map.**
-Two poses came back exactly 0. For scale, finding 18 landed at 0.19 to 3.26.
+Two poses came back exactly 0. For scale, the paint palette landed at 0.19 to 3.26
+("The paint palette", above).
 The residue is the blur resampling at full resolution rather than half; it is
 not occlusion, which the spike proved separately by showing the normal and
 inverted depth tests PARTITION the emissive pixels exactly (926 + 748 against
@@ -4184,6 +4547,10 @@ the way down — see `Settings.volumetrics`.
 
 ### What it costs, and the caveat on that number
 
+**This table predates two taps every march step now pays** — the bodies' shadow
+map (c81fd76) and the clouds' shadow field (2fee69c), both `min`ned into each
+step's light — and has not been re-taken since either.
+
 Measured with `?gpu` at 1920x1080, headless uncapped, three interleaved passes of
 8 s, camera on the moon so both arms are at their most expensive. GPU `frame`,
 against the shafts' own 32 taps:
@@ -4200,7 +4567,7 @@ every input it reads was already computed for something else — the depth image
 `FrameDepth`'s (shared with the ink and the blur), and the shadow map and its
 matrix are `ShadowSystem`'s, published to the cel materials whether this exists or
 not. That matters on a frame that is draw-call bound with the GPU at 25-30%
-(`FINDINGS.md` 17).
+("Why the frame is draw-call bound", above).
 
 **The table is worst-case to worst-case and does NOT say this is free over a
 round.** The old pass cost nothing whenever the moon was off screen; this one is

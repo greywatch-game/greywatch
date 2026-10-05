@@ -14,7 +14,7 @@
  *
  * **What it was written to settle is a number that looked like a bug.**
  * Coldharbour measured 16 fps on a machine where Hollowmere measured 103, and
- * finding 12 says the gap should be about 25%. It is not a gap: 42 shader
+ * an earlier WebGL2 sweep said the gap should be about 25%. It is not a gap: 42 shader
  * modules and 25 render pipelines are created in the FIRST SECOND after the
  * player spawns, that second runs at 9 fps, the second runs at 33, and by the
  * third the round is flat at ~49 and creates nothing further. The map was

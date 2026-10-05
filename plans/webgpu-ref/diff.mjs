@@ -54,7 +54,8 @@ import { chromium } from "playwright";
  * **So this is slack and not a floor**, kept small deliberately. It allows
  * about 2% of pixels to move by one LSB, which is where a driver update or a
  * texture-upload race would land, and it sits a full order below the 0.63/255
- * FINDINGS #12 treats as a real picture change. **If it ever starts crying
+ * the `backed` glazing's residual is measured at (docs/rendering.md, the
+ * glazing section) and treated as a real picture change. **If it ever starts crying
  * wolf, the answer is to find the unpinned thing and not to raise the number**
  * — that has now been the answer twice.
  */

@@ -2108,7 +2108,10 @@ and a ray that crosses one fence tests one fence. The same reasoning is what
 sets the 12 m square for scatter, one section down — small enough that the
 bounds still reject, large enough that the mesh count collapses.
 
-**What the enterable buildings cost is colliders, and that is the budget to
+*(History: this paragraph and the one before it were measured while every ray
+picked meshes, and none does now — `src/world/RayWorld.ts` answers them all off
+the collider boxes — so the per-mesh pick price they argue is no longer what a
+ray costs.)* **What the enterable buildings cost is colliders, and that is the budget to
 check before adding another.** A pick costs per MESH, so the whole solid set is
 on the bill for every ray in the game; a tower is 3 boxes and an enterable
 building is 35–50. Coldharbour's eight shophouses and two depots took it from
@@ -2303,7 +2306,8 @@ against the ray it replaces at the same 2,000 walkable positions:
 | Coldharbour (320 m) | 0.123 ms | 0.0004 ms | 350x |
 | Harrowmead (400 m) | 0.101 ms | 0.0003 ms | 356x |
 
-The ray reads lower here than the 0.483 ms finding 18 measures in the frame —
+The ray reads lower here than the 0.483 ms measured in the frame
+(`docs/profiling.md`, beside the `render` bar) —
 this is a tight loop with warm caches and that is a live frame — so the RATIO is
 the trustworthy half, and either way the analytic is a rounding error. **What
 actually matters is the exponent, not the constant**: the ray was O(meshes in the

@@ -17,12 +17,13 @@ something. This file is about the frame, in flight, on a device you do not own.
 
 ## Why it ships
 
-**Every number in `FINDINGS.md` §17–§32 was taken on one of two dev machines by
+**Every number in `FINDINGS.md` §20–§32, and in `docs/rendering.md`'s "Why the
+frame is draw-call bound", was taken on one of two dev machines by
 hand-wrapping a function from a Playwright script.** That protocol is good and
 should stay — it is how you price a single call site. What it cannot do is
 answer any question about a phone, a tablet, a mid-range laptop or a production
 build, and those are where this game is actually played. The frame is
-**draw-call bound** (§17), which is a property of the machine as much as of the
+**draw-call bound** (that section), which is a property of the machine as much as of the
 scene; a hitch nobody here can reproduce is a hitch nobody here can fix.
 
 So the profiler is armed by a **setting** (`Settings.profiler`, on the Display
@@ -117,15 +118,16 @@ five missed deadlines and a fixed 24 never files it.
 **Nothing allocates per frame while it is recording.** Every array is sized once
 by `arm` and written by index; there is no per-frame object, no label string, no
 closure, and `context()` takes four positional numbers rather than one struct
-for exactly that reason. This is not tidiness. §1's leading suspect for the
-hitch is GC, and a profiler that allocates per frame manufactures the bug it was
-built to find. Captures and reports allocate freely — a capture is a deliberate
+for exactly that reason. This is not tidiness. GC was §1's leading suspect for
+the hitch (§1's own captures have since exonerated the collector — "The heap and
+the collector", below), and a profiler that allocates per frame manufactures the
+bug it was built to find. Captures and reports allocate freely — a capture is a deliberate
 act, not a frame.
 
 **There is exactly one allocation left in the recording path and it is per
 COLLECTION**: the sentinel the GC watch re-registers, below. One empty object
 per GC event, against the alternative of an instrument that cannot see the one
-thing §1 most suspects.
+thing §1 most suspected.
 
 ---
 
@@ -385,7 +387,8 @@ same `share`, and only `frames` tells them apart.
 
 **What they measure is CPU.** Under `compatibilityMode = false` that is the
 recording of a render BUNDLE and not the work the GPU then does — still the
-right thing to watch, since the whole of `FINDINGS.md` §17 is that this frame
+right thing to watch, since the whole of `docs/rendering.md`'s "Why the frame
+is draw-call bound" is that this frame
 is bound by submission, but a group whose bundle Babylon reuses reads cheap
 while the GPU is busy. See **GPU time** below.
 
@@ -465,9 +468,14 @@ still refuses every non-root, and add it to `FALLBACK_ROOTS` in the viewer.
 
 ## The heap and the collector
 
-**§1's leading suspect is GC, and until this the instrument built to chase it
+**§1's leading suspect was GC, and until this the instrument built to chase it
 could not see a collection.** Two readings answer that now, and they are
-deliberately separate because one of them usually does not work.
+deliberately separate because one of them usually does not work. **They have
+since answered it the other way**: read with this instrument, §1's captures
+EXONERATED the collector — a stretch running at 17–20x the collection rate was
+the smoothest in its capture — so GC is no longer the suspect, and the
+no-allocation rule above stands as a rule rather than as a hypothesis being
+chased.
 
 **Collections are watched with a `FinalizationRegistry` sentinel.** An empty
 object is registered and dropped in the same expression; the collection that
@@ -608,12 +616,35 @@ whatever the page is doing outside `runRenderLoop`. A share near 100% means the
 game is the bottleneck; a share near 50% on a machine that is not hitting its
 panel's cap means something outside this instrument is.
 
-**`render` is one enormous bar and always will be.** That is §17 — the frame is
+**`render` is one enormous bar and always will be.** That is `docs/rendering.md`'s
+"Why the frame is draw-call bound" — the frame is
 draw-call bound and Babylon's WebGPU backend charges CPU per draw — which is why
 `SceneInstrumentation`'s counters ride alongside: `drawCalls`, `activeMeshes`,
 `meshWalkMs` (the scene walk `ENGINE_UPGRADE.md` S1 is about) and `renderTargetsMs` (the shadow map
 and the reflection bake). Those four are what the big bar is made of, and a
-change in them is the change worth chasing.
+change in them is the change worth chasing. Two readings taken by hand-wrapping
+belong beside it (Windows box, live round, 2026-08-26, before the paint palette —
+`docs/rendering.md`, "Why the frame is draw-call bound"):
+
+- **The game's own JS is a tenth of the frame and the rest is Babylon's** —
+  2.2 ms of a 20.6 ms frame on Coldharbour, 1.7 of 18.8 on Harrowmead — which
+  is the number that closes the "move it to workers" question before it is
+  asked: `scene.render` is JS on the thread that owns the device, so an
+  `OffscreenCanvas` worker RELOCATES 18 ms rather than removing it, and the
+  worker becomes the wall. What is genuinely worker-shaped here is burst work
+  and not the frame — `MapBuilder`'s geometry, the AO bake, the
+  `NavGrid`/`CoverMap`/`ObstacleField` builds, `FINDINGS.md` 11's editor
+  tier-3 — and moving any of them buys load time and nothing else. Do not
+  re-derive this. Inside that tenth, on real hardware rather than an earlier
+  inflated headless run: `player.probeGround` was **0.483 ms** and everything
+  else under 0.12 (`updateHud` 0.112, `battle.update` 0.094, `minimap.update`
+  0.086, `lighting.update` 0.063). **The ground probe was a third of the game's
+  own budget and is now gone** — `docs/world.md`'s ground-probe section carries
+  what closed it and what it measures at now.
+- **Detaching the whole post chain is -4.6%**, which is free within drift: the
+  four chained passes (`FINDINGS.md` 5) cost nothing on this hardware, and an
+  earlier WebGL2-era reading of ~1% (47.3 against 46.4 fps on Coldharbour)
+  holds.
 
 **`clock.belowGrain` names the rows whose TAILS are fiction.** Chrome quantises
 `performance.now()` to 100 us absent cross-origin isolation, and seventeen of
@@ -857,8 +888,8 @@ all of which the `> 0` filter removes.
 settle `FINDINGS.md` #1 came back empty with every other field looking right.
 So: `frameMeasurable: false` with `samples: 0` means the reading was
 impossible, and only `frameMeasurable: true` with `samples: 0` would mean
-something is wrong with the wiring. `plans/webgpu-ref/harness.mjs` passes the
-flag already (`launchClient`), which is why every headless number below was
+something is wrong with the wiring. `launchClient` (`scripts/browser.mjs`, which
+`plans/webgpu-ref/harness.mjs` re-exports) passes the flag already, which is why every headless number below was
 taken with it — **a reading from the harness does not prove a stock browser can
 take one**.
 
@@ -892,7 +923,8 @@ check tests the flag rather than the internals.
 
 Measured cost: **130.0 fps with the flag against 129.9 without**, and on
 Cinderhaven at 1718x858 the GPU reads 1.372 ms mean and 2.729 p95 against a
-6.746 ms tick — which is finding 17 from the other side, a frame bound by
+6.746 ms tick — which is `docs/rendering.md`'s "Why the frame is draw-call
+bound" from the other side, a frame bound by
 submission and not by the GPU.
 
 **On the real display, at 3440x1440 on Cinderhaven, it reads 1.977–2.325 ms
@@ -942,8 +974,11 @@ was computed.
 There is a second-order version. `dt` is `getDeltaTime()`, the interval BEFORE
 the frame, but the frame is displayed for the interval AFTER it — so each frame
 advances the world by ~0.9 ms (p95: 4.8) more or less than the time it is shown
-for. Vsync was hiding that too. **If a frame pacer is ever built, it owes a dt
-that is smoothed or predicted**, not the raw lagging one.
+for. Vsync was hiding that too. **A frame pacer owes a dt that is smoothed or
+predicted**, not the raw lagging one — and one is built now
+(`src/core/FrameCap.ts`, the `fpsCap` setting, 96cef43) without it: a frame it
+admits measures its delta across the whole gap, which is exactly the raw dt.
+`FINDINGS.md` 1 holds that as open and unmeasured.
 
 The tell that VARIANCE is the villain rather than cost: the slowest capture
 (135.2 fps, tick 6.81 ms) has by far the lowest jitter (p95 1.90 ms), because it

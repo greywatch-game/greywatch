@@ -1422,8 +1422,9 @@ Sarab's tick p50 went 0.691 ms to 0.053.
 snapshot is encoded, and `Match`'s own per-tick work — the sockets,
 `validateMove`, the interest sets — is outside `HeadlessGame.step` and therefore
 outside every number it prints. It measures the SIMULATION, which is the half
-that scales with the map; the other half scales with the roster, and the roster
-is fixed at sixteen.
+that scales with the map; the other half scales with the PEOPLE, and the SEATS
+are fixed at sixteen. The bots are not — the simulation fields 48 on Sarab and
+Cinderhaven — but they are inside the half it measures.
 
 **The worst ticks are not the simulation.** Every spike over 1 ms is reported
 with where it fell and whether a GC pause overlapped it: they cluster in the

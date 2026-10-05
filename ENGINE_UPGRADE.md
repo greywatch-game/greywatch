@@ -26,14 +26,15 @@ on screen, and at this multiplier four of them stop working rather than merely
 getting slower. A fifth — the reflection bake — was not in this document at all
 until S0 measured it, and it is the one that fails hardest.
 
-The reference numbers throughout are `FINDINGS.md` **17**, **18** and **19**
-(S0's), all
+The reference numbers throughout are `docs/rendering.md`'s "Why the frame is
+draw-call bound" and "The paint palette: why colour left the merge key", and
+S0's own (below, folded into the walls), all
 measured on the Windows box (RTX 4070 Ti SUPER, headless
 Chromium via `channel: "chromium"`, 1920x1080, uncapped, warm past the compile
 stall). **Read all three before starting any step**, because they also record
 what has already been tried and did not work.
 
-**S0 HAS LANDED, and finding 19 is what it produced.** Every projection in the
+**S0 HAS LANDED.** Every projection in the
 walls below has been replaced with a measurement taken on a generated 1500 m
 proving ground (`src/world/proving/`, `npm run proving`). Where a derivation
 survived it is marked as CONFIRMED and its measured value is beside it; where it
@@ -54,7 +55,7 @@ ground is that variant.
 | frame | 6.1 ms | 12.8 ms | 11.9 ms |
 
 **Everything below is now MEASURED unless it says otherwise**, on the two
-proving-ground extents finding 19 describes: **1500 / 0** (the whole extent is
+proving-ground extents S0 describes: **1500 / 0** (the whole extent is
 play) and **900 / 300** (a 900 m play square inside a 300 m borderland). Both
 are 1500 m of ground across. Where a figure is still derived it says so, and
 those are the hypotheses the step that touches them has to settle.
@@ -101,8 +102,8 @@ frame**.
 Two corrections to what this section used to say. **The mesh count was 2.4x too
 high**: the derivation read Coldharbour's ~2,500 forward by 22x and predicted
 ~55,000, where a merged block is one mesh whatever is in it and terrain patches
-are cut on a 48 m grid. And **the per-mesh rate was 1.6x too LOW**: finding 18's
-0.67 us came from disabling the rejected meshes, which measures the walk with an
+are cut on a 48 m grid. And **the per-mesh rate was 1.6x too LOW**: the palette
+measurement's 0.67 us (`docs/rendering.md`) came from disabling the rejected meshes, which measures the walk with an
 early-out rather than the walk in full. The two errors point in opposite
 directions and the wall survives both — 23 ms is still most of a frame that
 should be 16.
@@ -115,7 +116,8 @@ it draws a fifth of the calls. That is not comfort: 7.6 of those 10.1 ms are
 still the walk, so the frame is already wall-1-bound at a size everything else
 in the engine holds easily.
 
-**Finding 18 already closed the two obvious escapes.** A selection octree
+**The palette work (`docs/rendering.md`) already closed the two obvious
+escapes.** A selection octree
 measured **-5.4%** *and* dropped meshes that should have stayed active.
 `scene.freezeActiveMeshes()` is +14.8% and must never ship — in a game whose
 every effect is pooled, a frozen active list is a bug, not a trade. Both were
@@ -321,7 +323,8 @@ it moments later, so ~4.2 s of an 8.8 s build was `device.createBuffer` and
 was the allocator degrading under ~3 million create/destroy cycles.
 `src/world/parts.ts` is what stopped it.
 
-**Which means S5's premise has moved.** Finding 18 says the burst work is the
+**Which means S5's premise has moved.** `docs/profiling.md` (beside the
+`render` bar) says the burst work is the
 worker-shaped part of this codebase and that moving it "buys load time and
 nothing else"; at 1500 m load time IS the problem, so that sentence still
 inverts. But the burst work S5 names is 3.3% of the build. **Flattening the
@@ -465,8 +468,9 @@ thing under test is a test of nothing.**
 
 ### S0 — The proving ground, and the numbers to beat — **LANDED**
 
-**Done. `FINDINGS.md` 19 is the result, and every wall above has been corrected
-in place against it.** What landed:
+**Done, and every wall above has been corrected in place against what it
+measured** — each wall carries its own S0 table, and the one table that belongs
+to none of them is "What each extent IS", below. What landed:
 
 - `scripts/generate-proving-ground.mjs` (`npm run proving -- --play P
   --margin M`), writing `src/world/proving/{layout,heights}.ts` — a generated
@@ -488,6 +492,25 @@ in place against it.** What landed:
   handle. This is the instrument every later step should re-use rather than
   re-invent; wall 4's table came out of it.
 
+**What each extent IS.** Two proving-ground extents, both **1500 m of ground
+across**, differing only in how much of that is the PLAY square, beside the two
+shipped maps measured in the same sessions as controls:
+
+| | Coldharbour | Harrowmead | **900 / 300** | **1500 / 0** |
+| --- | --- | --- | --- | --- |
+| play square (m) | 320 | 400 | **900** | **1500** |
+| ground across (m) | 320 | 560 | 1500 | 1500 |
+| placements | 137 | 124 | 410 | 1,108 |
+| collider boxes | 768 | 748 | 5,929 | 16,526 |
+| **scene meshes** | 2,213 | 2,187 | **9,002** | **23,014** |
+| nav cells | 45,796 | 71,289 | 360,000 | 1,000,000 |
+| walkable surfaces | 34,142 | 70,524 | 305,193 | 846,766 |
+| glazing groups | 71 | 0 | 389 | 1,153 |
+| cube probes | 40 | 2 | 265 | 770 |
+
+Coldharbour and Harrowmead are the maps as they stood at S0, before either was
+re-laid by a generator.
+
 **What it changed about the rest of this document**, in the order it matters:
 
 1. **A fifth wall exists and it is first.** The reflection bake loses the GPU
@@ -498,7 +521,8 @@ in place against it.** What landed:
    the biggest thing in this wall.
 3. **The play/margin decision is settled at 900 / 300**, on numbers rather than
    on the derived table.
-4. **Wall 1 is confirmed and larger per mesh than finding 18 said**; wall 3 is
+4. **Wall 1 is confirmed and larger per mesh than the palette measurement said**
+   (`docs/rendering.md`, "The paint palette: why colour left the merge key"); wall 3 is
    confirmed to within 2%.
 
 **What it did NOT measure, and what the next step to touch each owes:**
@@ -835,7 +859,7 @@ makes the two radii unnecessary rather than merely cheaper.**
 `createOrUpdateSelectionOctree` replaces — it is read in exactly one place, and
 a mesh left out of it is skipped ENTIRELY. `setEnabled(false)` leaves the mesh
 in the walk and only shortens what the walk does with it (which is what made
-finding 18's 0.67 µs and finding 19's 1.10 µs disagree about one number), and it
+the palette measurement's 0.67 µs and S0's 1.10 µs disagree about one number), and it
 costs four indifferences that a candidate list gets for nothing: **every ray,
 the shadow map's render list, every cube probe's bake, and
 `moveWithCollisions`**. `WorldCulling` writes no property onto any mesh at all.
@@ -1259,7 +1283,8 @@ candidate inside it rather than its subject, and the two things it turned up are
 S5b and S5c below. The original framing is kept under the rule because the ORDER
 it argues for is the order that turned out to be right, three times running.
 
-Wall 4. Finding 18 names the candidates precisely: `MapBuilder`'s geometry, the
+Wall 4. `docs/profiling.md` (beside the `render` bar) names the candidates
+precisely: `MapBuilder`'s geometry, the
 AO bake, the `NavGrid`/`CoverMap`/`ObstacleField` builds, the broken pane's flow-field
 rebuild, and finding 11's editor tier-3.
 
@@ -1786,8 +1811,8 @@ away.** 2.41x the visits between the two extents cost **5.05x** the time — 91 
 a visit at 900/300 against 190 at 1500/0. The inner loop walks each mesh's
 SUBMESH array too, and the outer one walks a 23,014-entry array where the
 smaller ground walks 9,002; either way a rate taken on the smaller extent
-understates the larger by half. That is finding 18's 0.67 us against finding
-19's 1.10 us, in a different file, and it is why the pair was taken.
+understates the larger by half. That is the palette measurement's 0.67 us
+(`docs/rendering.md`) against S0's 1.10 us, and it is why the pair was taken.
 
 **Why the swap and not the early-grown pool, which this step listed first.**
 Growing the pool while the scene is short needs the probe count before the map
@@ -2420,10 +2445,10 @@ What this particular map will want, from the contracts rather than from taste:
 
 ## What this plan does not fix
 
-- **Fill rate on a phone.** Every number here is one desktop GPU. Finding 17's
-  last open thread says the balance that makes fill irrelevant on the Windows box
-  will not hold on a device this game installs onto, and finding 12's glass
-  fragment is still the right lever there. A 1500 m map on a phone is a separate
+- **Fill rate on a phone.** Every number here is one desktop GPU. The balance
+  that makes fill irrelevant on the Windows box (`docs/rendering.md`, "Why the
+  frame is draw-call bound") will not hold on a device this game installs onto,
+  and the glass fragment (`FINDINGS.md` 5) is still the right lever there. A 1500 m map on a phone is a separate
   question this plan does not open.
 - **The pipeline compile stall.** Finding 16: the first seconds of a round are
   WebGPU compiling pipelines, and on Coldharbour that is 9 fps. More geometry
@@ -2441,13 +2466,14 @@ What this particular map will want, from the contracts rather than from taste:
 
 ## The measurement protocol
 
-One instrument, one lever, one session — the methodological half of finding 17.
+One instrument, one lever, one session — the methodological half of
+`docs/rendering.md`'s "Why the frame is draw-call bound".
 `setHardwareScalingLevel` varies pixels and nothing else; hiding geometry varies
 fill, draw calls and active meshes together and can never say which of the three
-it just bought. **Read nothing under about 8% as real** — finding 17's own
+it just bought. **Read nothing under about 8% as real** — that section's own
 baseline drifted -4 to -6% across a run.
 
-And **a draw is not a draw**: finding 18 measures an outline shell reusing an
+And **a draw is not a draw**: the palette section after it measures an outline shell reusing an
 already-bound material at ~2.3 us and a mesh draw carrying a material switch at
 ~6.3 us. Say which kind before predicting a saving from a count.
 
@@ -2461,5 +2487,5 @@ rebuilt.** `src/world/buildProfile.ts` reports the build split under
 `window.__buildProfile()`, and `npm run proving` regenerates the map every
 figure in this document was taken on. Re-measure through those rather than
 writing a third way of asking the same question — a number taken with a
-different instrument is not comparable to the tables above, and finding 18's
-0.67 us against finding 19's 1.10 us is exactly what that costs.
+different instrument is not comparable to the tables above, and the palette
+measurement's 0.67 us against S0's 1.10 us is exactly what that costs.

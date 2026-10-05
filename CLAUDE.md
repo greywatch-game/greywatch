@@ -85,7 +85,8 @@ Both phones are PWA install targets, so this is a product fact, not a detail.
 **The engine is built with `compatibilityMode = false`, and that is load-bearing
 rather than a tuning flag.** This frame is DRAW-CALL bound and Babylon's WebGPU
 backend charges CPU on every draw, so the render-bundle submission path is worth
-~26% on the two big maps and ~15% on the two small ones (`FINDINGS.md` #17).
+~26% on the two big maps and ~15% on the two small ones (`docs/rendering.md`,
+"Why the frame is draw-call bound").
 **Do not delete it to tidy the boot.** The one thing to know without reading the
 measurement is that its risk is state changing between draws: if a rendering bug
 ever appears that shows only while something is MOVING, flip this first.
@@ -1569,9 +1570,10 @@ run on the DEVICE and land in every capture.
 cannot watch a graph while playing a first-person shooter with two thumbs: the
 ring holds `CONFIG.profiling.frames` and the gesture is pressed AFTER the hitch
 (`F3`, or the chip's buttons on glass). **Nothing allocates PER FRAME while it
-is recording** — no per-frame object, no label string, no closure — because
-`FINDINGS.md` §1's leading suspect for the hitch this exists to find is GC, and
-a profiler that allocates per frame manufactures the bug it was built to catch.
+is recording** — no per-frame object, no label string, no closure — because GC
+was `FINDINGS.md` §1's leading suspect for the hitch this exists to find (its own
+captures have since exonerated the collector), and a profiler that allocates
+per frame manufactures the bug it was built to catch.
 **What a hitch IS is relative**, a fixed bar degenerating on the device this was
 built for; the bar and its floor are in every report, as is the GC count the
 `FinalizationRegistry` sentinel puts on every frame.

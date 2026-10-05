@@ -217,7 +217,8 @@ silently replaces the thing that would have caught the shader change.
   on this machine, but they are not what a reference IMAGE is for. Quote the
   gate's `warmFps`, never a number read off a bank run.
 - **Nothing here proves the shipped bake on a machine that cannot finish it.**
-  Coldharbour's forty probes are one frame here — see `FINDINGS.md` #10 for
+  Coldharbour's forty probes (the pre-re-lay map; it was re-laid as a bay in
+  6e848a1) are one frame here — see `FINDINGS.md` #10 for
   what that frame actually costs, which is not what this plan first recorded.
   On the Chromebook
   that frame takes the device, and no reference set taken there covers it.

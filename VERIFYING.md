@@ -137,7 +137,9 @@ you are on before you believe anything else in this section.
   that second runs at 9 fps, the second at 34, and by the third the round is
   flat at ~48 and creates nothing more. A single figure taken over the first
   five seconds is neither number and is what made a healthy Coldharbour read as
-  16 fps against Hollowmere's 103 — a gap FINDINGS #12 puts at about 25%.
+  16 fps against Hollowmere's 103 — a gap an earlier WebGL2 sweep put at about
+  25% (`docs/rendering.md`, "Why the frame is draw-call bound", has what it
+  became on WebGPU).
   **Warm up for ten seconds before quoting a frame rate**, or use
   `plans/webgpu-ref/gate.mjs`, which reports cold and warm as a pair. The cost
   does not show up in the call it comes from: summed over a whole round,
@@ -149,7 +151,8 @@ you are on before you believe anything else in this section.
   - **A bad pipeline is SILENT.** The baseline trial drew nothing at all —
     attachment 0 all zeros — with `pageErrors` empty and `consoleErrors` empty.
     The only trace was a `pushErrorScope("validation")` put there on purpose.
-    This is finding 18's black-frame cascade arriving from a third direction, and
+    This is the black-frame cascade `docs/rendering.md` records under "The paint
+    palette: why colour left the merge key", arriving from a third direction, and
     it means **any attempt at this owes an explicit WebGPU error scope**, or a
     wrong answer looks like a working one that renders nothing.
   - **Babylon's pipeline cache POISONS later trials in the same page.** Once one
@@ -184,6 +187,20 @@ you are on before you believe anything else in this section.
   On top of all three, the conclusion was cross-checked against `gate.mjs` runs
   taken in different sessions, which the bullet above shows can differ by 45% on
   this box for no reason at all.
+- **For a STRUCTURAL count — draw calls, active meshes, triangles, blended
+  meshes — take a 30-sample sweep**: the five control points at six bearings
+  each, bots frozen. That is how the WebGL2-era cross-map comparison was taken
+  (Coldharbour 635 draws and 169 active meshes, Hollowmere 546 and 134, Greyfen
+  331 and 85), and it is NOT comparable with a reading taken at a spawn with
+  the bots live, where Coldharbour's active set ran ~902 — four times larger.
+  Read the active-mesh row before comparing two tables, and say which protocol
+  a count came from.
+- **A headless run's RANKING of the game's own JS survives and its ABSOLUTES do
+  not.** Re-measured live by hand-wrapping on this box, the per-function ranking
+  inside `updateGameplay` matched an earlier inflated headless run's order with
+  every figure about five times smaller (`docs/profiling.md`, beside the
+  `render` bar). Rank from a headless run; quote milliseconds only from one
+  taken the way the number will be used.
 - **There is a frame profiler in the page and it SHIPS, so a script does not
   have to wrap anything to get a phase breakdown.** Arm it with `?profile` —
   never by writing the setting, which lives in `localStorage` a fresh profile
@@ -321,7 +338,8 @@ you are on before you believe anything else in this section.
   already compiled, it is ~1.4–2.1 s, and it scales almost linearly with the
   render list (486 meshes 2124 ms, 243 meshes 813 ms, 49 meshes 109 ms).
   Hollowmere's four probes cost 76 ms in the same run, which is the same 19 ms a
-  probe. `FINDINGS.md` #10 carries the open thread; do not quote 138 ms.
+  probe. Do not quote 138 ms, and read the mesh counts as Coldharbour before
+  its 2026-10-01 re-lay (6e848a1).
 - **The bake no longer drains in the round, and a script written against the
   old rule is now merely SLOW to start rather than wrong.** `Game.bakeWait`
   holds the `loading` state until the reflection queue and its in-flight

@@ -3064,6 +3064,18 @@ first is deliberate: knowing when a tank is a liability is a judgement no number
 here could make honestly. The second is `enterable`'s team lock, for `enterable`'s
 reason.
 
+**Nothing caps how much of a side may be crewed, and that is NOT BUILT rather
+than decided.** When Sarab was 8 a side with two hulls each, both hulls crewed
+within one sweep put half of each team's AI out of `Bot`'s FSM, and the round
+went quiet (fewer captures, fewer kills); at 24 a side its three hulls' six
+seats are a quarter of each side — Coldharbour's two of eight, the share the AI
+was tuned against — so nothing ships that shows it. Two fixes
+were named and neither is in: a team-wide cap on crewed bodies, one counter in
+`VehicleCrew.board`; and boarding every hull's DRIVER before any hull's gunner
+— `board` loops hulls outside seats, so today it fills both seats of one hull
+before the next. Either would matter on a map that fields more seats against
+fewer bodies.
+
 ### The gun
 
 `Game.resolveShell` is the one implementation of a round out of a tank gun, and
