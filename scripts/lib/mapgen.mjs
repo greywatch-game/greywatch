@@ -196,15 +196,18 @@ export function makeOverlaps(claimed) {
   };
 }
 
-/** How far the floor falls across a footprint, from its centre's own height. */
-export function makeRelief(floorAt) {
+/**
+ * How far the floor falls across a footprint, from its centre's own height,
+ * sampled on a grid at the fractions `at` of each side — 3x3 by default.
+ */
+export function makeRelief(floorAt, at = [0, 0.5, 1]) {
   return (r) => {
     const cx = (r.x0 + r.x1) / 2;
     const cz = (r.z0 + r.z1) / 2;
     const h0 = floorAt(cx, cz);
     let worst = 0;
-    for (const fx of [0, 0.5, 1]) {
-      for (const fz of [0, 0.5, 1]) {
+    for (const fx of at) {
+      for (const fz of at) {
         worst = Math.max(worst, Math.abs(floorAt(r.x0 + fx * (r.x1 - r.x0), r.z0 + fz * (r.z1 - r.z0)) - h0));
       }
     }

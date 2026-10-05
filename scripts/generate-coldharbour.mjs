@@ -70,6 +70,7 @@ import {
   makeGrade,
   makeMust,
   makeOverlaps,
+  makeRelief,
   makeScatter,
   makeWorldFoot,
   n2,
@@ -627,19 +628,11 @@ function yard(x0, x1, z0, z1, why) {
   claim(r, "open", why);
 }
 
-/** How far the floor falls across a footprint, from its centre's own height. */
-function relief(r) {
-  const cx = (r.x0 + r.x1) / 2;
-  const cz = (r.z0 + r.z1) / 2;
-  const h0 = floorAt(cx, cz);
-  let worst = 0;
-  for (const fx of [0, 0.25, 0.5, 0.75, 1]) {
-    for (const fz of [0, 0.25, 0.5, 0.75, 1]) {
-      worst = Math.max(worst, Math.abs(floorAt(r.x0 + fx * (r.x1 - r.x0), r.z0 + fz * (r.z1 - r.z0)) - h0));
-    }
-  }
-  return worst;
-}
+/**
+ * How far the floor falls across a footprint, from its centre's own height —
+ * on a 5x5 sample, where the other maps take 3x3.
+ */
+const relief = makeRelief(floorAt, [0, 0.25, 0.5, 0.75, 1]);
 
 function footOnRoad(r) {
   // Evenly from edge to edge, so the far corners are always sampled.
