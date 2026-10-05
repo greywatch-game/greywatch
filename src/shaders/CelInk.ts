@@ -26,7 +26,7 @@
  * current tree: Coldharbour carried **84 outline shells and 53 ink twins** of
  * 609 active meshes, Harrowmead **77 and 144** of 726. A twin is the expensive
  * kind of draw — a mesh with a material switch, ~6.3 us against a shell's ~2.3
- * (`FINDINGS.md` 18).
+ * (`docs/rendering.md`, "The paint palette: why colour left the merge key").
  *
  * Measured, live round, uncapped headless, arms interleaved A B C A so the
  * run's own drift is on the page rather than assumed away — **Coldharbour
@@ -86,7 +86,8 @@
  * statement about where this frame's bottleneck is, taken on a 4070 Ti SUPER.
  *
  * TWO THINGS STAND IN FOR THE HULL'S PER-MESH CONTROL AND NEITHER IS A FLAG,
- * which is the part `FINDINGS.md` 18 said would need an ink-id attachment.
+ * which is the part the paint-palette measurement (`docs/rendering.md`) said
+ * would need an ink-id attachment.
  * - **Emissives are masked out by the glow's MASK.** Every emissive part was
  *   excluded from the hull through what is now `noInk`, and an inked emissive
  *   is swallowed glow. `GlowPass` draws that mask at FULL RESOLUTION and

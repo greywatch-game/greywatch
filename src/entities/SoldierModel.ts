@@ -172,8 +172,9 @@ export const OWN_KIT: SoldierKit = KITS[0];
  * albedo moved into `uv2.x` and read out of `celPalette` every matte part of a
  * segment wears the one `getBodyCel` material and merges into one mesh. The
  * rig goes from **21 meshes and 11 materials to 14 and 2**, and both halves
- * are worth having — `FINDINGS.md` 18 measured a draw that reuses a bound
- * material at ~2.3 us against ~6.3 for one that switches. It is exactly the
+ * are worth having — the paint-palette measurement (`docs/rendering.md`) put
+ * a draw that reuses a bound material at ~2.3 us against ~6.3 for one that
+ * switches. It is exactly the
  * trick that took the village from 416 meshes to 90, which is where the whole
  * argument is written down.
  *

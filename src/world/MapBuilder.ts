@@ -1111,8 +1111,9 @@ export class MapBuilder {
     // Where the time behind the loading card goes. DEV-only, a no-op in a
     // production build, and an ATTRIBUTION rather than a partition: `build`
     // times itself whole and names the parts worth naming under it, so the
-    // remainder is what is left over. See `buildProfile.ts`, and `FINDINGS.md`
-    // 19 for what it found — 87% of a 1500 m build is the placement loop below.
+    // remainder is what is left over. See `buildProfile.ts`, and
+    // `ENGINE_UPGRADE.md` S0 for what it found — 87% of a 1500 m build was the
+    // placement loop below, before the flatten in `parts.ts`.
     beginProfile();
     const buildStart = performance.now();
     // The map's own extent, not the global — a village and a downtown are not
@@ -2905,15 +2906,15 @@ export const BLOCK_SIZE = 48;
  * mesh per (map block, material).
  *
  * The per-structure merge in `mergeByMaterial` already turns a cottage into
- * four meshes, but a dense village is ~200 structures and the outline pass
- * draws each mesh twice. Grouping neighbours by block takes the map from ~670
- * draws to ~150 without giving up culling: buildings are static, so the extra
- * vertices cost nothing that the draw calls weren't already costing more of.
+ * four meshes, but a dense village is ~200 structures and the outline pass of
+ * the time drew each mesh twice. Grouping neighbours by block took the map from
+ * ~670 draws to ~150 without giving up culling: buildings are static, so the
+ * extra vertices cost nothing that the draw calls weren't already costing more
+ * of.
  *
  * Merging across placements is safe for the same reason it is safe within one:
- * `MergeMeshes` bakes world matrices. Outlines still trace each building,
- * because `renderOutline` expands vertices along their own normals and the
- * buildings in a block are disjoint.
+ * `MergeMeshes` bakes world matrices. The ink still traces each building,
+ * because `CelInk` finds edges in the frame's depth rather than per mesh.
  */
 class BlockMerge {
   private blocks = new Map<string, Mesh[]>();
@@ -3192,10 +3193,10 @@ function exemptionsOf(mesh: Mesh): Exemption[] {
  * Collapses a structure's meshes into one per material.
  *
  * This is the whole draw-call budget for the village: a cottage goes from ~20
- * meshes to 4, and — because `renderOutline` draws a back-face shell per mesh —
- * from ~40 draws to 8. It also means the outline traces each colour group's
- * silhouette rather than every individual plank, which is the look the rifle
- * already uses.
+ * meshes to 4 — and, while the inverted-hull outlines drew a back-face shell
+ * per mesh, from ~40 draws to 8. Those shells are retired: the ink is
+ * `CelInk`'s post pass now, which finds edges in the frame's depth and draws
+ * nothing per mesh.
  *
  * Merging is only safe because builders work at identity: `MergeMeshes` bakes
  * world matrices and hands back an identity-transform mesh, which the caller

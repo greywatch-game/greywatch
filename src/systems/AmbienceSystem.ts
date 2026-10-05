@@ -83,8 +83,10 @@ export class AmbienceSystem {
    * A plain array rewritten in place rather than a `Set`, because this runs in
    * every state — including the ones that draw a menu over a still frame — and
    * the rule about per-frame allocation is the whole frame's rather than the
-   * profiler's: `FINDINGS.md` §1's leading suspect is GC, and a fixed-size
-   * selection over a static list has no reason to produce garbage. At
+   * profiler's: GC was `FINDINGS.md` §1's leading suspect until its captures
+   * exonerated the collector, garbage made per frame still muddies every
+   * capture, and a fixed-size selection over a static list has no reason to
+   * produce any. At
    * `maxVoices` of three the linear scans over it are cheaper than a hash
    * anyway.
    */

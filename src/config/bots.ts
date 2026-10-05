@@ -610,7 +610,8 @@ export const bots = {
      * corpses cost 0.061 ms in a pool of four and 0.062 ms in a pool of eight,
      * so raising this only ever costs when the bodies are actually falling.
      *
-     * Headless absolutes are inflated about five times (`FINDINGS.md` 18), and
+     * Headless absolutes are inflated about five times (`VERIFYING.md`'s
+     * Windows section), and
      * `update(1/60)` is exactly one substep — a 30 fps frame takes two. Treat
      * the RATIO to the roster as the trustworthy part.
      */

@@ -124,10 +124,11 @@ export const profiling = {
    * Chrome coarsens `performance.now()` to 100 us unless the page is
    * cross-origin isolated, and this one is not (`docker/default.conf.template`
    * sets no COOP/COEP) — while most of the phases below `render` cost under
-   * 120 us on real hardware (`FINDINGS.md` §18). So a single frame's reading
-   * of a small phase is one or two grains and nothing in between, and only the
-   * MEAN over many frames converges. A report that did not say which grain it
-   * was taken at would be a table of plausible numbers meaning nothing.
+   * 120 us on real hardware (`docs/profiling.md`, "Reading a capture"). So a
+   * single frame's reading of a small phase is one or two grains and nothing
+   * in between, and only the MEAN over many frames converges. A report that
+   * did not say which grain it was taken at would be a table of plausible
+   * numbers meaning nothing.
    *
    * 20,000 reads is a couple of milliseconds and reliably finds the floor.
    */

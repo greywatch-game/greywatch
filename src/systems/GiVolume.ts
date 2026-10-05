@@ -9,7 +9,7 @@
  * set of seven textures published to `CelMaterialFactory.setGi` for its whole
  * life — whatever the setting, and before any map — because every cel material
  * declares all seven and an unbound one loses the draw. It adds NO draw calls
- * (the frame is draw-call bound, `FINDINGS.md` 17): everything it does is
+ * (the frame is draw-call bound, `docs/rendering.md`): everything it does is
  * compute and three texture fetches in a shader that already runs. It reads
  * the scene's light off `CelMaterialFactory.readLighting`, never off the map,
  * so the editor's work light and a map switch reach the bounce with no second

@@ -125,8 +125,8 @@
  * `Player.probeGround` the most expensive thing the game did per frame, because
  * Babylon walks every mesh in the scene to answer it. Six of those is not a
  * thing that can be afforded; six bucket lookups over the collider boxes are
- * free by comparison, and `FINDINGS.md` had already measured the two against
- * each other and named a VEHICLE as the query's better first customer. The one
+ * free by comparison, and the two had already been measured against each
+ * other, with a VEHICLE named as the query's better first customer. The one
  * failure it was known to have — a thin box pitched a few degrees claiming
  * ground beside itself — stood a BODY on air and merely rocked a seven-metre
  * hull that is riding a rate limit anyway. **That failure is fixed and the body

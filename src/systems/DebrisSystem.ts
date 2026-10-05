@@ -246,9 +246,10 @@ export class DebrisSystem implements PhysicsClient {
    */
   private seed = 0x91a5;
 
-  // Scratch. A burst runs every frame while it is live, and FINDINGS #7 already
-  // measures 13.4 KB/frame of allocation churn without this file in it. The two
-  // vectors are the throw, handed straight to the body and never read back.
+  // Scratch. A burst runs every frame while it is live, and the frame already
+  // carries allocation churn without this file in it (`docs/profiling.md`,
+  // "The heap and the collector"). The two vectors are the throw, handed
+  // straight to the body and never read back.
   private readonly vel = new Vector3();
   private readonly spin = new Vector3();
 

@@ -2342,7 +2342,8 @@ export class CelMaterialFactory {
    * four times over, once for itself, once for its ink, once as a glow occluder
    * and once into the shadow map. Measured on Coldharbour: 416 world meshes and
    * 1,565 draws, against 90 and ~305 with the colour moved per vertex.
-   * `FINDINGS.md` #18 has the whole measurement.
+   * `docs/rendering.md`'s "The paint palette: why colour left the merge key"
+   * has the whole measurement.
    *
    * It is a define and not a branch on the shared material because the palette
    * is a 2 KB uniform array and there are 217 materials in a Coldharbour round,
@@ -2400,9 +2401,9 @@ export class CelMaterialFactory {
    * a segment used to split once per paint colour, so a torso was three
    * meshes and a head four. Measured on Coldharbour, per rig, **22 meshes and
    * 6 materials against 15 and 2** — the second half mattering as much as the
-   * first, since `FINDINGS.md` 18 priced a draw that reuses a bound material
-   * at ~2.3 us against ~6.3 for one that switches. `SoldierModel` has the
-   * arithmetic.
+   * first, since the paint-palette measurement (`docs/rendering.md`) priced a
+   * draw that reuses a bound material at ~2.3 us against ~6.3 for one that
+   * switches. `SoldierModel` has the arithmetic.
    *
    * **The palette is bound at CREATION**, the first call minting it and every
    * later one getting that material back — which is safe because the only

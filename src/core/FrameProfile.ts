@@ -28,17 +28,19 @@
  *  - **Nothing allocates PER FRAME while it is recording.** Every array is
  *    sized once by `arm` and written by index thereafter; there is no
  *    per-frame object, no label string and no closure. That is not tidiness:
- *    `FINDINGS.md` §1's leading suspect for the hitch this exists to find is
- *    GC, and a profiler that allocates per frame manufactures the bug it was
- *    built to catch. Captures and reports allocate freely — a capture is a
- *    deliberate act, not a frame.
+ *    GC was `FINDINGS.md` §1's leading suspect for the hitch this exists to
+ *    find until its captures exonerated the collector, and a profiler that
+ *    allocates per frame still muddies every capture with churn of its own.
+ *    Captures and reports allocate freely — a capture is a deliberate act,
+ *    not a frame.
  *
  *    **There is exactly ONE allocation left in the recording path and it is
  *    per COLLECTION rather than per frame**: the sentinel object the GC watch
  *    re-registers each time one is collected (see `watchGc`). It is one empty
  *    object per GC event — at a scavenge every hundred milliseconds that is
  *    four bytes a second — and the alternative is an instrument that cannot see
- *    the one thing §1 most suspects. Nothing else here may take that licence.
+ *    the collector at all, which is what let §1's captures clear it. Nothing
+ *    else here may take that licence.
  *
  * **WHAT IT CAN AND CANNOT SEE, because a table of plausible numbers is worse
  * than no table.** Three limits, each recorded into every capture rather than
@@ -47,38 +49,40 @@
  *  - **The clock is coarse.** Chrome quantises `performance.now()` to 100 us
  *    unless the page is cross-origin isolated, and this one is not
  *    (`docker/default.conf.template` sets no COOP/COEP). Most phases below
- *    `render` cost under 120 us on real hardware (`FINDINGS.md` §18), so a
- *    SINGLE frame's reading of a small phase is one grain or two and nothing
- *    in between. The mean over a window still converges — a phase boundary
- *    falls at a uniformly random offset within the grid, so the difference of
+ *    `render` cost under 120 us on real hardware (`docs/profiling.md`,
+ *    "Reading a capture"), so a SINGLE frame's reading of a small phase is one
+ *    grain or two and nothing in between. The mean over a window still
+ *    converges — a phase boundary falls at a uniformly random offset within
+ *    the grid, so the difference of
  *    two quantised stamps is unbiased across many frames — but a percentile of
  *    a sub-grain phase is quantisation noise wearing a statistic's clothes.
  *    `clock.grainMs` and `clock.belowGrain` are in every report so a reader can
  *    see which of its rows are real. **This answers "which phase", never "which
  *    function"**; a 3.5 us box query (`RayWorld`) is micro-benchmark
  *    territory and always will be.
- *  - **The frame is draw-call bound** (`FINDINGS.md` §17), so the JS phases
- *    attribute the third of the frame that was never the problem and `render`
- *    is the enormous bar. `SceneInstrumentation`'s counters are carried beside
- *    them for that reason — the mesh walk, the render-target time, the particle
- *    time and the draw count are what the big bar is made of — and **four spans
- *    open INSIDE it now**: `shadowPass`, `glow`, `drawWorld` and
- *    `drawOverlay`. They are the one part of this file `Game` does not
- *    bracket, because the boundaries they want are inside a Babylon call and
- *    there is nowhere in `Game.ts` to put them — `hookRender` hangs them off
- *    the scene's own observables instead, and carries the argument that they
- *    cannot overlap.
+ *  - **The frame is draw-call bound** (`docs/rendering.md`, "Why the frame is
+ *    draw-call bound"), so the JS phases attribute the third of the frame
+ *    that was never the problem and `render` is the enormous bar.
+ *    `SceneInstrumentation`'s counters are carried beside them for that
+ *    reason — the mesh walk, the render-target time, the particle time and
+ *    the draw count are what the big bar is made of — and **four spans open
+ *    INSIDE it now**: `shadowPass`, `glow`, `drawWorld` and `drawOverlay`.
+ *    They are the one part of this file `Game` does not bracket, because the
+ *    boundaries they want are inside a Babylon call and there is nowhere in
+ *    `Game.ts` to put them — `hookRender` hangs them off the scene's own
+ *    observables instead, and carries the argument that they cannot overlap.
  *
  *    **What they measure is CPU, and under `compatibilityMode = false` that is
  *    the recording of a render BUNDLE rather than the work the GPU then does.**
- *    That is still the right thing to be watching — the whole of §17 is that
- *    this frame is bound by the submission and not by the pixels — but a group
- *    whose bundle Babylon reuses reads cheap while the GPU is saturated, and
- *    nothing here would say so. **GPU time is here now, and only when the boot
- *    asked for it** (`?gpu` — see `main.ts`, which is the only place it can
- *    act, because a device's features are fixed when the device is created and
- *    a required feature the adapter lacks makes `requestDevice` REJECT). That
- *    is why it is a boot flag rather than a setting, and why it costs a reload.
+ *    That is still the right thing to be watching — the whole of that
+ *    measurement is that this frame is bound by the submission and not by the
+ *    pixels — but a group whose bundle Babylon reuses reads cheap while the
+ *    GPU is saturated, and nothing here would say so. **GPU time is here
+ *    now, and only when the boot asked for it** (`?gpu` — see `main.ts`,
+ *    which is the only place it can act, because a device's features are
+ *    fixed when the device is created and a required feature the adapter
+ *    lacks makes `requestDevice` REJECT). That is why it is a boot flag
+ *    rather than a setting, and why it costs a reload.
  *    Read `gpu.frame` and not `gpu.mainPass`: this pipeline draws the world
  *    into post-process targets, so the "main pass" is the final full-screen
  *    quad and reads in the tens of microseconds. Measured cost of the flag:
@@ -95,9 +99,9 @@
  *    collection and is best-effort by specification — so `memory.gcEvents` is
  *    "a collection happened near here", never "the pause was this collection".
  *    Read it against the frame it lands on: a hitch whose phases do not add up
- *    to its wall clock, with collections on it, is the GC pause §1 is looking
+ *    to its wall clock, with collections on it, is the GC pause §1 was looking
  *    for; the same hitch with none is not, and eliminating the leading suspect
- *    is worth as much as confirming it.
+ *    is worth as much as confirming it — it is how §1 cleared the collector.
  */
 import {
   SceneInstrumentation,

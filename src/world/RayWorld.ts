@@ -56,8 +56,9 @@
  *   indexed here with the round bit and not the body one.
  * - **The hulls**, which MOVE. A tank is in neither the boxes nor the bake, for
  *   the ragdoll's reason, so `hulls` is a list its owner keeps and every cast
- *   walks. There are at most two, so they are tested before the grid rather
- *   than in it — which also gives the grid walk a `best` to prune against.
+ *   walks. There are at most six (Sarab and Cinderhaven field three a side),
+ *   so they are tested before the grid rather than in it — which also gives
+ *   the grid walk a `best` to prune against.
  *
  * ## What a caster owes
  *

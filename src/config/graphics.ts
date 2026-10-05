@@ -945,9 +945,10 @@ export const graphics = {
      * because the weapon is the only thing that can BE this close.** The gun
      * sits 0.3-0.5 m from the lens and a body cannot get within about 0.4 m of
      * world geometry, so a depth band names it without any per-mesh data — the
-     * one place `FINDINGS.md` 18 said an ink-id attachment would be needed and
-     * it is not. It replaces the hand-set 0.004 m hull the weapon used to wear,
-     * which existed for the same reason: a full-weight line on parts this small
+     * one place the paint-palette measurement (`docs/rendering.md`) said an
+     * ink-id attachment would be needed and it is not. It replaces the
+     * hand-set 0.004 m hull the weapon used to wear, which existed for the
+     * same reason: a full-weight line on parts this small
      * swallows the whole weapon in black. `scale` is what the ink is multiplied
      * by AT the eye, ramping to 1 by `until` metres.
      */
@@ -1178,10 +1179,11 @@ export const graphics = {
      *
      * **What it is for is detail with no LOD of its own.** A helicopter's
      * antenna is 16 cm and its gun ring 14 cm, and both were being drawn at
-     * 880 m on Cinderhaven, where they are half a pixel: vehicles have no
+     * 1,360-1,420 m on Cinderhaven, well under a pixel: vehicles have no
      * distance tier at all, unlike a body, which `bodyDrawDistance` already
-     * takes off whole. Measured at 3440x1440 it is worth **0.49 ms a frame at
-     * 2 px and 0.94 ms at 3** (`FINDINGS.md` 39).
+     * takes off whole. Measured at 3440x1440 on Cinderhaven it is worth
+     * **0.11 ms a frame at 2 px and 0.51 ms at 3** (`FINDINGS.md` 39); Sarab
+     * reads 0.03 ms and the small maps nothing.
      *
      * **A BODY is measured once off its rig ROOT and drops WHOLE**, which is
      * what lets this reach a soldier at all — see `WorldCulling.offer`. A
@@ -1255,13 +1257,15 @@ export const graphics = {
      * block a kilometre away contributes a few pixels of haze at the cost of a
      * draw call in every one of six faces.
      *
-     * **800 m is past the diagonal of every map in the tree**, so nothing that
-     * ships is culled by it and the shipped bakes are unchanged — it is a
-     * ceiling on a map bigger than the game has ever had rather than a tuning
-     * knob on the ones it has. It is also comfortably past the longest sight
-     * line any map declares (Harrowmead's `fogEnd` 520, Coldharbour's 480), so
-     * on a FOGGED map of any size everything this drops was already being
-     * drawn as flat fog colour.
+     * **800 m is past the play square's diagonal on the five smaller maps**
+     * (Harrowmead's 400 m square is 566 m corner to corner), and on Sarab,
+     * whose 900 m square is 1,273 m across, it is past that map's `fogEnd` of
+     * 560 — so on all six, everything this drops was already being drawn as
+     * flat fog colour. **Cinderhaven is the exception**: a 1500 m square,
+     * 2,121 m across, under a `fogEnd` of 1,250, so a mesh between 800 and
+     * 1,250 m from a probe is cut out of the bake while it would still have
+     * drawn partly through the fog. That is the one shipped map where this
+     * radius takes something a player could see out of a reflection.
      *
      * What it costs on a map with no fog is finding 10's objection: a culled
      * mesh does not fade, it vanishes, and the cube's alpha going to 0 is
@@ -1283,11 +1287,11 @@ export const graphics = {
      * **The probe count is the map's GLAZING rather than its size**, so it has
      * no natural ceiling: a generated 1500 m city block grid asks for 770,
      * which is 400 MB of cube texture held for the process on top of a heap
-     * already 84% full (`FINDINGS.md` 19). Past this budget glazed blocks are
-     * grouped in twos, then fours, then sixteens, until the count fits — a
-     * probe then stands in one of the blocks it serves rather than in the only
-     * one, which is the same approximation the feature already makes one size
-     * up.
+     * already 84% full (`ENGINE_UPGRADE.md` S0 and its walls). Past this
+     * budget glazed blocks are grouped in twos, then fours, then sixteens,
+     * until the count fits — a probe then stands in one of the blocks it
+     * serves rather than in the only one, which is the same approximation the
+     * feature already makes one size up.
      *
      * 160 MiB at `size` 128 is 320 probes. Coldharbour asks for 40 and the
      * 900 m proving ground for 265, so **nothing in the tree today groups

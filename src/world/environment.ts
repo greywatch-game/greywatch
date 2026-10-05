@@ -409,7 +409,7 @@ export interface EnvironmentSpec {
    * (`WorldCulling`, whose reach stays `fogEnd` and must — a structure dropped
    * inside the fog does not fade, it vanishes). A body is the other case: it
    * is nineteen merged meshes and it is two pixels tall at four hundred
-   * metres, and a frame that is DRAW-CALL bound (`FINDINGS.md` 17) pays the
+   * metres, and a frame that is DRAW-CALL bound (`docs/rendering.md`) pays the
    * whole nineteen for those two pixels. Coldharbour and Harrowmead already
    * see past their own diagonals, so both of them draw every rig on the map at
    * all times; at 1500 m that is the largest bucket in the frame.

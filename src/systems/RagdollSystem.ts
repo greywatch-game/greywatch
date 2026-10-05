@@ -153,7 +153,8 @@ export class RagdollSystem implements PhysicsClient {
   private slots: Slot[] = [];
 
   // Scratch — this runs every frame with up to `maxConcurrent` corpses live,
-  // and FINDINGS.md #7 already measures 13.4 KB/frame of churn.
+  // and the frame already carries allocation churn (`docs/profiling.md`, "The
+  // heap and the collector").
   private readonly v1 = new Vector3();
   private readonly v2 = new Vector3();
   private readonly scratchScale = new Vector3();

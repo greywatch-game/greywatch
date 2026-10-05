@@ -58,9 +58,11 @@ const MARGIN = 1.5;
  * Incremental because the cost is priced on the SUN rather than on the cloud:
  * a low light stretches a lobe's shadow by 1 / sin(elevation), four times at
  * Harrowmead's 14.5 degrees, so one heap straddling the sun can reach tens of
- * thousands of texels, and doing a whole field in one frame on a phone is the
- * hitch `FINDINGS.md` §1 is hunting. The caller builds the NEXT field while
- * the shader crossfades the two before it, so there is time to spread it.
+ * thousands of texels, and doing a whole field in one frame on a phone is a
+ * stall the TICK makes — the kind `FINDINGS.md` §1's second population is,
+ * rather than the browser-side stalls its captures cleared the page of. The
+ * caller builds the NEXT field while the shader crossfades the two before it,
+ * so there is time to spread it.
  */
 export class CloudShadowRaster {
   /** The field, one byte a texel, row 0 the min-z edge. */

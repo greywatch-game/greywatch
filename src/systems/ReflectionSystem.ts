@@ -909,12 +909,14 @@ function keepAll(): boolean {
  * What this drops does not fade, it vanishes: the cube's alpha goes to 0 and
  * that is where the shader puts sky. It is the objection finding 10 refused a
  * 140 m cull over and it does not go away here — what changes is the radius,
- * which at 800 m is past the diagonal of every map that ships and past the
- * longest `fogEnd` any of them declares. On a fogged map of any size,
- * everything dropped here was already drawing as flat fog colour and the sky
- * replacing it is `fogColor` at the horizon. On an unfogged one it is a hole
- * at the edge of a picture of a street, which is what the map being bigger
- * than the bake can hold costs.
+ * which at 800 m is past the play square's diagonal on the five smaller maps
+ * and past Sarab's `fogEnd` (560). There, everything dropped here was already
+ * drawing as flat fog colour and the sky replacing it is `fogColor` at the
+ * horizon. It is NOT past Cinderhaven's: a 2,121 m diagonal under a `fogEnd`
+ * of 1,250, so there a mesh 800-1,250 m out is cut while it would still have
+ * drawn partly through the fog. On a map like that, or an unfogged one, it is
+ * a hole at the edge of a picture of a street, which is what the map being
+ * bigger than the bake can hold costs.
  */
 function neighbourhood(
   opaque: readonly Mesh[],
@@ -957,7 +959,7 @@ function probeCap(size: number, budgetMiB: number): number {
  * serves out of its own bake, so a cell of four blocks is a probe with 96 m of
  * city missing from the middle of its cube. That is a bad picture, and it is
  * still a better one than a device loss — which is what a map with 770 glazed
- * blocks costs instead (`FINDINGS.md` 19).
+ * blocks costs instead (`ENGINE_UPGRADE.md` S0 and its walls).
  *
  * The doubling is over the block GRID rather than over metres, so the cells
  * nest exactly and a group cannot land in two of them. A block key that does

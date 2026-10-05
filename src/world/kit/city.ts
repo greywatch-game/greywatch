@@ -72,6 +72,10 @@
  *
  * ## What an enterable building COSTS, which is the budget for the next one
  *
+ * **What follows is HISTORY**: no ray picks a mesh any more — `RayWorld`
+ * answers every one analytically off the boxes — so the per-mesh bill it
+ * argues is what rays used to pay, kept for the reasoning behind the budget.
+ *
  * Colliders, and they are paid by every ray in the game. A pick costs per MESH
  * — predicate, matrix inverse, bounding test — so the whole solid set is on the
  * bill for `CombatSystem.fire` on every shot, for sixteen bots' LOS, and for

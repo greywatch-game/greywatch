@@ -66,12 +66,13 @@ type GpuVerdict = "ok" | "insecure" | "unavailable";
  * `powerPreference` is a HINT and not a request — the browser may hand back
  * whatever it likes — but its default on a hybrid machine is the INTEGRATED
  * adapter, and this frame is draw-call bound on hardware nobody here owns
- * (`FINDINGS.md` #17). Babylon forwards the whole engine options object to
- * `requestAdapter`, so the constructor below carries it; the two bare probes
- * carry it too, because **a probe that asks a DIFFERENT adapter is answering
- * about a GPU the game will not run on** — the boot gate would clear a
- * machine whose other adapter fails, and the `?gpu` feature test would read
- * `timestamp-query` off one device and require it of another.
+ * (`docs/rendering.md`, "Why the frame is draw-call bound"). Babylon forwards
+ * the whole engine options object to `requestAdapter`, so the constructor
+ * below carries it; the two bare probes carry it too, because **a probe that
+ * asks a DIFFERENT adapter is answering about a GPU the game will not run
+ * on** — the boot gate would clear a machine whose other adapter fails, and
+ * the `?gpu` feature test would read `timestamp-query` off one device and
+ * require it of another.
  *
  * **It is a `let` because the GATE resolves it, and that is the whole guard
  * against the hint costing somebody the game.** A machine with only
@@ -347,9 +348,10 @@ window.addEventListener("DOMContentLoaded", async () => {
     // is on the device and nothing measures anything.
     if (gpuTimingOk) engine.enableGPUTimingMeasurements = true;
     // **This frame is DRAW-CALL bound, and this line is worth ~26% of it on
-    // the two big maps. Do not delete it as a stray flag.** `FINDINGS.md` #17
-    // has the measurement in full; the short version is that Coldharbour
-    // renders at a sixteenth of the pixels for the same milliseconds, spends
+    // the two big maps. Do not delete it as a stray flag.**
+    // `docs/rendering.md`'s "Why the frame is draw-call bound" has the
+    // measurement in full; the short version is that Coldharbour renders at a
+    // sixteenth of the pixels for the same milliseconds, spends
     // 19.6 ms of a 21.5 ms frame inside `scene.render`, and costs almost
     // exactly what its draw count says it should against Hollowmere's — 3.09x
     // the draws for 3.18x the frame, where triangles are 1.96x and do not fit.

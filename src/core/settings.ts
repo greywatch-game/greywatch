@@ -334,8 +334,10 @@ export function defaultShadowQuality(): ShadowQuality {
 
 /**
  * The grass a fresh install gets, on `defaultGiQuality`'s test: the field is
- * nearly all VERTEX work over a lot of overdraw, which is the GPU work a phone
- * pays ~2.4x a desktop's price for.
+ * nearly all PIXEL work — the cel shader's fragment stage over a lot of
+ * overdraw, a third cut from its vertex work having moved nothing
+ * (`FINDINGS.md` 46) — which is the GPU work a phone pays ~2.4x a desktop's
+ * price for.
  */
 export function defaultGrassQuality(): GrassQuality {
   const coarse =

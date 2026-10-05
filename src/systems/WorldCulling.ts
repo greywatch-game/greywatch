@@ -20,7 +20,7 @@
  * `_evaluateActiveMeshes` iterates every candidate every frame — a Map get for
  * the LOD, `isBlocked`, `getTotalVertices`, `isReady`, `isEnabled` — before it
  * has decided anything, and the walk is `O(candidates)` whatever the camera can
- * see. Measured (`FINDINGS.md` 19): **1.10 us per mesh in the scene per
+ * see. Measured (`ENGINE_UPGRADE.md` S0): **1.10 us per mesh in the scene per
  * frame**, 23.0 ms of a 30.3 ms frame on a 1500 m map and still 7.6 of 10.1 ms
  * on the 900/300 one. Frustum culling does not help — it is the decision this
  * walk REACHES, not the walk. `ENGINE_UPGRADE.md` wall 1 is this, and this file
@@ -28,10 +28,11 @@
  *
  * **Disabling a mesh is the wrong lever and a candidate list is the right one.**
  * `setEnabled(false)` leaves the mesh in the walk and merely shortens what the
- * walk does with it — which is what made finding 18's 0.67 us and finding 19's
- * 1.10 us disagree about the same number — and it costs the four indifferences
- * above: a disabled mesh is out of the shadow map's render list, out of a cube
- * probe's bake, and out of anything picking with Babylon's own default filter.
+ * walk does with it — which is why the 0.67 us and the 1.10 us that
+ * `ENGINE_UPGRADE.md` S0 sets side by side disagree about the same number —
+ * and it costs the four indifferences above: a disabled mesh is out of the
+ * shadow map's render list, out of a cube probe's bake, and out of anything
+ * picking with Babylon's own default filter.
  * `Scene.getActiveMeshCandidates` is the supported extension point (it is what
  * `createOrUpdateSelectionOctree` replaces), it is read in exactly one place,
  * and a mesh left out of it is skipped ENTIRELY rather than skipped cheaply.
@@ -281,7 +282,7 @@ export class WorldCulling {
     scene.getActiveMeshCandidates = () => this.candidates;
     // A flag rather than any real work, because these fire for every part mesh
     // a build creates and destroys — of the order of a million on a 1500 m map
-    // (`FINDINGS.md` 19, wall 4) — and the rebuild they ask for is owed once.
+    // (`ENGINE_UPGRADE.md`, wall 4) — and the rebuild they ask for is owed once.
     scene.onNewMeshAddedObservable.add(() => {
       this.listDirty = true;
     });

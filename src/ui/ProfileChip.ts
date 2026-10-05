@@ -316,9 +316,10 @@ function headline(report: ProfileReport): string {
   const top = worst ? ` · ${worst.name} ${worst.mean.toFixed(1)}ms` : "";
   // The collector's rate rides on the flash line because under a pointer lock
   // this is the ONLY channel back to the player, and "is it GC" is the question
-  // `FINDINGS.md` §1 is actually asking. Omitted rather than shown as zero
-  // where the browser has no `FinalizationRegistry` — a 0 that means "not
-  // watched" is worse than no number.
+  // `FINDINGS.md` §1 asked first — its captures answered no for the stalls,
+  // which is what this line is for on a new device. Omitted rather than shown
+  // as zero where the browser has no `FinalizationRegistry` — a 0 that means
+  // "not watched" is worse than no number.
   const gc = report.memory.gcObserved
     ? ` · ${report.memory.gcPerSec.toFixed(1)} gc/s`
     : "";
