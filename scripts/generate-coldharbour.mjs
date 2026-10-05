@@ -62,6 +62,29 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { roadNetwork } from "../src/world/roadPaths.ts";
 import { onRoad } from "../src/world/roads.ts";
+import {
+  bracketKind,
+  f1,
+  makeFloorAt,
+  makeFootWet,
+  makeGrade,
+  makeMust,
+  makeOverlaps,
+  makeScatter,
+  makeWorldFoot,
+  n2,
+  printProbe,
+  printRefusals,
+  printTally,
+  rectDist,
+  section,
+  seeded,
+  smooth,
+  tally,
+  TURN,
+  turnOf,
+  vnoise,
+} from "./lib/mapgen.mjs";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const root = join(here, "..");
@@ -86,50 +109,11 @@ const FLAT = 0.32;
 
 // --- the seeded stream -------------------------------------------------------
 
-function mulberry32(a) {
-  return function () {
-    a |= 0;
-    a = (a + 0x6d2b79f5) | 0;
-    let t = Math.imul(a ^ (a >>> 15), 1 | a);
-    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
-    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
-  };
-}
-const rng = mulberry32(0x43484152);
-const rand = (lo, hi) => lo + rng() * (hi - lo);
-const chance = (p) => rng() < p;
-const pick = (list) => list[Math.floor(rng() * list.length)];
+const { rng, rand, chance, pick } = seeded(0x43484152);
 
 // --- the floor ---------------------------------------------------------------
 
-const smooth = (t) => {
-  const x = Math.max(0, Math.min(1, t));
-  return x * x * (3 - 2 * x);
-};
 const mix = (a, b, t) => a + (b - a) * t;
-
-/** Integer lattice hash in [0, 1). */
-function hash2(i, j, seed) {
-  let h = (Math.imul(i, 374761393) + Math.imul(j, 668265263) + Math.imul(seed, 1442695041)) | 0;
-  h = Math.imul(h ^ (h >>> 13), 1274126177);
-  h ^= h >>> 16;
-  return (h >>> 0) / 4294967296;
-}
-
-/** Smooth value noise in [-1, 1] at `scale` metres a lattice cell. */
-function vnoise(x, z, scale, seed) {
-  const fx = x / scale;
-  const fz = z / scale;
-  const i = Math.floor(fx);
-  const j = Math.floor(fz);
-  const u = smooth(fx - i);
-  const v = smooth(fz - j);
-  const a = hash2(i, j, seed);
-  const b = hash2(i + 1, j, seed);
-  const c = hash2(i, j + 1, seed);
-  const d = hash2(i + 1, j + 1, seed);
-  return (a + (b - a) * u + (c - a) * v + (a - b - c + d) * u * v) * 2 - 1;
-}
 
 /**
  * The hill the town is built on, before anything is levelled: the waterfront
@@ -184,12 +168,6 @@ const DISTRICTS = [
   { name: "north row east", x0: 50, x1: 160, z0: 105, z1: 160, level: 3.0, skirt: 10 },
   { name: "the heights", x0: -160, x1: -128, z0: 100, z1: 160, level: 4.0, skirt: 10 },
 ];
-
-function rectDist(x, z, r) {
-  const dx = Math.max(r.x0 - x, 0, x - r.x1);
-  const dz = Math.max(r.z0 - z, 0, z - r.z1);
-  return Math.hypot(dx, dz);
-}
 
 /** The ground before the water: the hill, then every district, averaged. */
 function land(x, z) {
@@ -354,65 +332,21 @@ for (let j = 0; j < ROW; j++) {
   }
 }
 
-function floorAt(x, z) {
-  const fx = Math.max(0, Math.min(CELLS - 1e-9, (x + HALF) / CELL));
-  const fz = Math.max(0, Math.min(CELLS - 1e-9, (z + HALF) / CELL));
-  const i = Math.floor(fx);
-  const j = Math.floor(fz);
-  const tx = fx - i;
-  const tz = fz - j;
-  const v = (a, c) => V[c * ROW + a];
-  return (
-    (v(i, j) * (1 - tx) + v(i + 1, j) * tx) * (1 - tz) +
-    (v(i, j + 1) * (1 - tx) + v(i + 1, j + 1) * tx) * tz
-  );
-}
+const floorAt = makeFloorAt((i, j) => V[j * ROW + i], CELLS, CELL, HALF);
 
 /** The steeper of the two axial slopes at a point. */
-function grade(x, z) {
-  const e = 1.5;
-  return Math.max(
-    Math.abs(floorAt(x + e, z) - floorAt(x - e, z)) / (2 * e),
-    Math.abs(floorAt(x, z + e) - floorAt(x, z - e)) / (2 * e),
-  );
-}
+const grade = makeGrade(floorAt, 1.5);
 
 /** True where the floor is under the water (plus a margin of bank). */
 const wet = (x, z, margin = 0.3) => floorAt(x, z) < WATER_Y + margin;
 
 if (process.argv.includes("--probe")) {
-  const step = 8;
-  const cols = [];
-  for (let x = -HALF; x <= HALF; x += step) cols.push(String(x).padStart(5));
-  console.log("  z|x " + cols.join(""));
-  for (let z = HALF; z >= -HALF; z -= step) {
-    let line = String(z).padStart(5) + " ";
-    for (let x = -HALF; x <= HALF; x += step) {
-      const g = grade(x, z);
-      line += (floorAt(x, z).toFixed(1) + (wet(x, z, 0) ? "~" : g > 0.3 ? "!" : " ")).padStart(5);
-    }
-    console.log(line);
-  }
+  printProbe({ half: HALF, step: 8, height: floorAt, grade, wet });
   process.exit(0);
 }
 
 // --- the output, and the placement vocabulary --------------------------------
 
-const n2 = (v) => {
-  const r = Number(v.toFixed(2));
-  return Object.is(r, -0) ? "0" : String(r);
-};
-const f1 = (v) => n2(Number(v.toFixed(1)));
-const TURN = ["", ", rotY: Math.PI / 2", ", rotY: Math.PI", ", rotY: -Math.PI / 2"];
-/** The world offset of a local one under a turn: `MapBuilder`'s `rotateY`. */
-function turnOf(lx, lz, turn) {
-  switch (turn) {
-    case 1: return [lz, -lx];
-    case 2: return [-lx, -lz];
-    case 3: return [-lz, lx];
-    default: return [lx, lz];
-  }
-}
 const DIRS = { north: [0, 1], east: [1, 0], south: [0, -1], west: [-1, 0] };
 /**
  * The turn that points a local face at a world direction. **The two kits face
@@ -482,16 +416,7 @@ const DOOR_FACES = {
 /** Small things a yard or a flag's ring may hold. */
 const PROPS = new Set(["planter", "barrier", "car", "streetLight", "stall", "crates", "fishRack"]);
 
-function worldFoot(kind, x, z, turn, params) {
-  const [a, b, c, d] = FOOT[kind](params ?? {});
-  const p = [turnOf(a, c, turn), turnOf(b, d, turn)];
-  return {
-    x0: Math.min(p[0][0], p[1][0]) + x,
-    x1: Math.max(p[0][0], p[1][0]) + x,
-    z0: Math.min(p[0][1], p[1][1]) + z,
-    z1: Math.max(p[0][1], p[1][1]) + z,
-  };
-}
+const worldFoot = makeWorldFoot(FOOT);
 
 const placements = [];
 const scatter = [];
@@ -499,10 +424,6 @@ const scatter = [];
 const placed = [];
 const regions = [];
 
-function section(list, title) {
-  const bar = "=".repeat(Math.max(4, 74 - title.length));
-  list.push(`  // ===== ${title} ${bar}`);
-}
 const note = (list, ...lines) => list.push(...lines.map((l) => `  // ${l}`.trimEnd()));
 
 function paramText(params) {
@@ -694,13 +615,7 @@ const claimed = [];
 const refused = [];
 const open = [];
 
-function overlaps(r, pad, skip) {
-  for (const c of claimed) {
-    if (skip && skip(c)) continue;
-    if (r.x1 + pad > c.x0 && r.x0 - pad < c.x1 && r.z1 + pad > c.z0 && r.z0 - pad < c.z1) return c;
-  }
-  return null;
-}
+const overlaps = makeOverlaps(claimed);
 
 function claim(r, type = "solid", why = "") {
   claimed.push({ ...r, type, note: why });
@@ -738,14 +653,7 @@ function footOnRoad(r) {
   return false;
 }
 
-function footWet(r, margin = 0.35) {
-  for (const fx of [0, 0.25, 0.5, 0.75, 1]) {
-    for (const fz of [0, 0.25, 0.5, 0.75, 1]) {
-      if (wet(r.x0 + fx * (r.x1 - r.x0), r.z0 + fz * (r.z1 - r.z0), margin)) return true;
-    }
-  }
-  return false;
-}
+const footWet = makeFootWet(wet, 0.35);
 
 const inOpen = (x, z) => open.some((o) => x >= o.x0 && x <= o.x1 && z >= o.z0 && z <= o.z1);
 const solidAt = (x, z, self) =>
@@ -828,10 +736,7 @@ function place(kind, x, z, turn, params, opts = {}) {
 }
 
 /** A named set piece: place it, and refuse to write the map if it did not fit. */
-function must(kind, x, z, turn, params, opts = {}) {
-  if (place(kind, x, z, turn, params, opts)) return;
-  throw new Error(`set piece: ${refused[refused.length - 1]}. Move the piece.`);
-}
+const must = makeMust(place, refused);
 
 /**
  * A street light on the kerb, its arm (the builder's local +X) out over the
@@ -1462,14 +1367,7 @@ function rectOk(x, z, w, d, maxGrade = 0.3, skip = (c) => c.type === "open" || c
   }
   return null;
 }
-function rectRegion(prop, x, z, w, d, count, extra = "", obj = {}) {
-  scatter.push(`  { prop: "${prop}", x: ${f1(x)}, z: ${f1(z)}, width: ${f1(w)}, depth: ${f1(d)}, count: ${count}${extra} },`);
-  regions.push({ prop, x, z, width: w, depth: d, count, ...obj });
-}
-function disc(prop, x, z, r, count, extra = "", obj = {}) {
-  scatter.push(`  { prop: "${prop}", x: ${f1(x)}, z: ${f1(z)}, radius: ${n2(r)}, count: ${count}${extra} },`);
-  regions.push({ prop, x, z, radius: r, count, ...obj });
-}
+const { disc, rectRegion } = makeScatter(scatter, regions);
 /** A region checked first; a refusal is reported, never silently dropped. */
 function sow(prop, x, z, w, d, count, extra, opts = {}) {
   const why = rectOk(x, z, w, d, opts.grade ?? 0.3, opts.skip);
@@ -1810,20 +1708,12 @@ if (!DRY) writeFileSync(
     .replace("%GRASS%", grass.join("\n")),
 );
 
-const byKind = {};
-for (const p of placed) byKind[p.kind] = (byKind[p.kind] ?? 0) + 1;
-const refusedByKind = {};
-for (const r of refused) {
-  const k = r.match(/\((\w+)\) at/)?.[1] ?? "?";
-  refusedByKind[k] = (refusedByKind[k] ?? 0) + 1;
-}
 const lit =
   placed.filter((p) => p.kind === "streetLight" && p.params.lit).length +
   placed.filter((p) => p.kind === "lighthouse" || p.kind === "chapel").length +
   placed.filter((p) => p.params.litWindows).reduce((s, p) => s + ({ shophouse: 3, office: 2, depot: 2 }[p.kind] ?? 0), 0);
-console.log("  placed:  " + JSON.stringify(byKind));
-console.log("  refused: " + JSON.stringify(refusedByKind));
-if (process.argv.includes("--refusals")) for (const r of refused) console.log("    " + r);
+printTally(tally(placed, (p) => p.kind), refused, bracketKind);
+if (process.argv.includes("--refusals")) printRefusals(refused);
 console.log(
   `coldharbour: ${PLAY} m square\n` +
     `  ${placed.length} placements, ${regions.length} scatter regions, ${lit} light slots spent by fixtures\n` +
