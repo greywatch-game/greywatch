@@ -70,6 +70,17 @@ import { fileURLToPath } from "node:url";
 // inside the point it was authored through, and a claim along the polyline
 // would let a croft be built on the tarmac.
 import { bendPath } from "../src/world/roadPaths.ts";
+import {
+  leadKind,
+  lineKind,
+  makeGrade,
+  printTally,
+  section,
+  seeded,
+  segDist,
+  smooth,
+  tally,
+} from "./lib/mapgen.mjs";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const root = join(here, "..");
@@ -124,31 +135,8 @@ const SEA = 0;
  * `MapBuilder` applies to scatter. Deterministic, so the committed file is a
  * function of this script and nothing else.
  */
-function mulberry32(a) {
-  return function () {
-    a |= 0;
-    a = (a + 0x6d2b79f5) | 0;
-    let t = Math.imul(a ^ (a >>> 15), 1 | a);
-    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
-    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
-  };
-}
-const rng = mulberry32(0x43494e44);
-/** A float in [lo, hi). */
-const rand = (lo, hi) => lo + rng() * (hi - lo);
-/** An integer in [lo, hi]. */
-const randInt = (lo, hi) => lo + Math.floor(rng() * (hi - lo + 1));
-/** One of `list`. */
-const pick = (list) => list[Math.floor(rng() * list.length)];
-/** True with probability `p`. */
-const chance = (p) => rng() < p;
-/** A float in [lo, hi), rounded to two places — for a number a layout STATES. */
-const rnd = (lo, hi) => Number(rand(lo, hi).toFixed(2));
+const { rng, rand, randInt, pick, chance, rnd } = seeded(0x43494e44);
 
-const smooth = (t) => {
-  const x = Math.max(0, Math.min(1, t));
-  return x * x * (3 - 2 * x);
-};
 /** Move `a` toward `b` by `k`. */
 const mix = (a, b, k) => a + (b - a) * k;
 /** Signed angular difference, wrapped to (-pi, pi]. */
@@ -312,14 +300,6 @@ function coneAt(r) {
 const BAY = { x: 160, z: 95, r: 300 };
 /** The mouth, as a capsule: its axis, and how far the water reaches off it. */
 const MOUTH = { ax: 160, az: 95, bx: 900, bz: 35, hw: 130 };
-
-/** Distance from a point to a segment — the mouth's own half of `bayIn`. */
-function segDist(x, z, ax, az, bx, bz) {
-  const dx = bx - ax;
-  const dz = bz - az;
-  const t = Math.max(0, Math.min(1, ((x - ax) * dx + (z - az) * dz) / (dx * dx + dz * dz)));
-  return Math.hypot(x - (ax + dx * t), z - (az + dz * t));
-}
 
 /**
  * How far the bay's own shore stands from the middle of it on a bearing.
@@ -652,13 +632,7 @@ function heightAt(x, z) {
 }
 
 /** How steep the ground is at a point, as the larger of the two axial slopes. */
-function grade(x, z) {
-  const e = 3;
-  return Math.max(
-    Math.abs(heightAt(x + e, z) - heightAt(x - e, z)) / (2 * e),
-    Math.abs(heightAt(x, z + e) - heightAt(x, z - e)) / (2 * e),
-  );
-}
+const grade = makeGrade(heightAt, 3);
 
 // --- the shorelines ----------------------------------------------------------
 
@@ -1110,12 +1084,6 @@ function must(kind, x, z, rot, w, d, params, pad, lift) {
       ". Move the piece; the claim list is in authored order and the streets, " +
       "the roads, the flags, the spawns and the hardstandings claim first.",
   );
-}
-
-/** A section heading inside one of the emitted arrays. */
-function section(list, title) {
-  const bar = "=".repeat(Math.max(4, 74 - title.length));
-  list.push(`  // ===== ${title} ${bar}`);
 }
 
 // --- the fabric: streets, blocks, and the houses that front them -------------
@@ -4496,18 +4464,8 @@ const AT_LEAST = {
   saltPan: 5,
 };
 
-const byKind = {};
-for (const l of placements) {
-  const m = /kind: "([a-zA-Z]+)"/.exec(l);
-  if (m) byKind[m[1]] = (byKind[m[1]] ?? 0) + 1;
-}
-const refusedByKind = {};
-for (const r of refused) {
-  const k = r.split(" ")[0];
-  refusedByKind[k] = (refusedByKind[k] ?? 0) + 1;
-}
-console.log("  placed:  " + JSON.stringify(byKind));
-console.log("  refused: " + JSON.stringify(refusedByKind));
+const byKind = tally(placements, lineKind);
+printTally(byKind, refused, leadKind);
 
 for (const [kind, want] of Object.entries(REQUIRED)) {
   const got = byKind[kind] ?? 0;
