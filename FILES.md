@@ -1163,7 +1163,7 @@ src/
                         #   that may be absent and draws what it has, in up to
                         #   three passes as they land
     mapShots.ts         # The PHOTOGRAPH behind the menu: one shot per map
-                        #   (shots/<id>.jpg, imported ?url) and the VANTAGE it
+                        #   (shots/<id>.avif, imported ?url) and the VANTAGE it
                         #   was taken from, which is what lets `npm run shots`
                         #   retake it rather than hunt for the frame again. A
                         #   map with no row here simply has no backdrop. Not a

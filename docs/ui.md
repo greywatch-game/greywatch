@@ -940,7 +940,7 @@ viewport is taller than it is wide — a narrow desktop window is still landscap
 
 **The main menu stands on a photograph of the map that is chosen**, and choosing
 another cross-fades to that one's. The pictures are real screenshots of the
-running game — `shots/<id>.jpg`, taken by `npm run shots` — and there is nothing
+running game — `shots/<id>.avif`, taken by `npm run shots` — and there is nothing
 else in the tree they could be: the game ships no authored art, so the only
 honest picture of Coldharbour at dusk is Coldharbour at dusk.
 
@@ -1133,11 +1133,14 @@ The right-hand side is an INTEL plate on whatever the cursor rests on.
   the browser) and by being re-centred on every step under a pad or a key.
 - **The reel's pictures are THUMBNAILS the client makes** (`shotThumbUrl`):
   each photograph decoded once, drawn down to 480 px, re-encoded as an object
-  URL and cached for the session. Seven cards pointed at the full 1920x1080
-  shots keep seven 8 MB bitmaps alive for a strip whose widest card is a couple
-  of hundred pixels, which on the phone this menu is laid out for is real
-  memory spent on nothing. The backdrop still takes the full shot. A map with
-  no photograph keeps its plate, which is not a broken card.
+  URL and cached for the session. Seven cards pointed at the full 3840x2160
+  shots keep seven 33 MB bitmaps alive for a strip whose widest card is a
+  couple of hundred pixels, which on the phone this menu is laid out for is
+  real memory spent on nothing — and the downscales run ONE AT A TIME, because
+  the reel asks for all seven in one turn and seven full decodes in flight
+  together is the same quarter of a gigabyte for a moment. The backdrop still
+  takes the full shot. A map with no photograph keeps its plate, which is not
+  a broken card.
 - **Every PROMPT is drawn on its control, for the device in hand** — a key cap,
   a pad button in the controller's own colours (A green, Y yellow, the bumpers
   as tabs), or nothing under a finger, where the control is its own prompt.

@@ -9,11 +9,11 @@
  * (`Game.teardownMap`), only the sky of whatever was last installed. Never
  * import this from anything but the menu and the lobby (the two title screens
  * that stand on a map's picture — the lobby's match plates wear the reel's
- * thumbnails): the images are ~250 KB each and nothing else on any screen
- * wants them.
+ * thumbnails): the images are a few hundred KB each and nothing else on any
+ * screen wants them.
  *
  * **The vantage lives here, beside the image, because it is the only thing
- * that can regenerate it.** A screenshot is an opaque 200 KB rectangle: there
+ * that can regenerate it.** A screenshot is an opaque rectangle of pixels: there
  * is nothing in the file that says where the camera stood, so a map whose
  * chapel moves has a backdrop nobody can retake without guessing. Stating the
  * pose next to the picture makes `npm run shots` a re-run rather than a
@@ -23,7 +23,7 @@
  * `blurb` is on the map because a map's own file is the only place that cannot
  * fall out of step with it — but a `MapDef` is imported by the SERVER
  * (`Match.ts`, `simulate.ts`), which has no screen, no menu and no use for a
- * quarter of a megabyte of JPEG per map. The menu's backdrop is the menu's.
+ * few hundred KB of photograph per map. The menu's backdrop is the menu's.
  * What that costs is the one thing this file must therefore say out loud: a
  * fourth map added to `world/maps.ts` gets no backdrop until it is given a row
  * here, and the menu will not complain, it will simply look like it used to.
@@ -34,13 +34,13 @@
  * emitted, and a re-shoot invalidates its own url without anybody editing a
  * cache list.
  */
-import cinderhavenShot from "../../shots/cinderhaven.jpg?url";
-import coldharbourShot from "../../shots/coldharbour.jpg?url";
-import sarabShot from "../../shots/sarab.jpg?url";
-import harrowmeadShot from "../../shots/harrowmead.jpg?url";
-import greyfenShot from "../../shots/greyfen.jpg?url";
-import hollowmereShot from "../../shots/hollowmere.jpg?url";
-import kurenaiShot from "../../shots/kurenai.jpg?url";
+import cinderhavenShot from "../../shots/cinderhaven.avif?url";
+import coldharbourShot from "../../shots/coldharbour.avif?url";
+import sarabShot from "../../shots/sarab.avif?url";
+import harrowmeadShot from "../../shots/harrowmead.avif?url";
+import greyfenShot from "../../shots/greyfen.avif?url";
+import hollowmereShot from "../../shots/hollowmere.avif?url";
+import kurenaiShot from "../../shots/kurenai.avif?url";
 
 /**
  * Where the camera stood for one of these pictures.
@@ -186,18 +186,24 @@ export function mapShotUrl(id: string): string | undefined {
 const THUMB_WIDTH = 480;
 /** One downscale per photograph per session, shared by every reel. */
 const thumbs = new Map<string, Promise<string>>();
+/** The downscale in flight, which the next one waits behind. */
+let thumbQueue: Promise<unknown> = Promise.resolve();
 
 /**
  * A SMALL copy of a map's photograph, for the menu's map reel — as an object
  * URL, or the full shot's own URL when the downscale cannot be made.
  *
- * **The reel shows every map at once and the photographs are 1920x1080**, so
- * pointing seven cards at the full images keeps seven 8 MB decoded bitmaps
+ * **The reel shows every map at once and the photographs are 3840x2160**, so
+ * pointing seven cards at the full images keeps seven 33 MB decoded bitmaps
  * alive for a strip whose widest card is a couple of hundred pixels — on the
  * phone this menu is also laid out for, that is real memory spent on nothing.
  * So each photograph is decoded ONCE, drawn down into a canvas, re-encoded,
  * and the full decode is let go. The backdrop behind the card still takes the
  * full image, which is the one place its pixels are seen.
+ *
+ * **One at a time**, because the reel asks for all seven in the same turn and
+ * seven full decodes in flight together is the quarter of a gigabyte this
+ * function exists not to spend. Queued, the peak is one photograph.
  *
  * Not a committed asset, and deliberately so: a thumbnail on disk is a fifth
  * file per map for `npm run shots` to keep in step with the first, and the
@@ -208,7 +214,7 @@ export function shotThumbUrl(id: string): Promise<string> | undefined {
   if (!url) return undefined;
   let made = thumbs.get(url);
   if (!made) {
-    made = (async () => {
+    const run = async () => {
       try {
         const img = new Image();
         img.src = url;
@@ -218,6 +224,9 @@ export function shotThumbUrl(id: string): Promise<string> | undefined {
         canvas.height = Math.round((THUMB_WIDTH * img.naturalHeight) / img.naturalWidth);
         const ctx = canvas.getContext("2d");
         if (!ctx) return url;
+        // An eighth of the width in one step: the default filter samples
+        // rather than averages at that ratio, and the thumbnail shimmers.
+        ctx.imageSmoothingQuality = "high";
         ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
         const blob = await new Promise<Blob | null>((done) =>
           canvas.toBlob(done, "image/jpeg", 0.84),
@@ -226,7 +235,9 @@ export function shotThumbUrl(id: string): Promise<string> | undefined {
       } catch {
         return url;
       }
-    })();
+    };
+    made = thumbQueue.then(run);
+    thumbQueue = made;
     thumbs.set(url, made);
   }
   return made;

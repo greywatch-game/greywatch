@@ -43,12 +43,24 @@ unless explicitly asked. Five exceptions, each with a generator in
   carrying four separate rules to make it survivable. The FOAM mask stays
   because it is doing what a texture is good at — breaking up a metre-wide band
   through a smoothstep, where a repeat is neither visible nor a problem.
-- `shots/<map>.jpg` (~760 KB, five of them) — what the main menu stands on:
+- `shots/<map>.avif` (~2 MB, seven of them) — what the main menu stands on:
   a photograph of each map, taken by `npm run shots` from the vantage that
   map's row in `src/ui/mapShots.ts` states, and imported the same `?url` way.
   It bends nothing, because a picture of a procedural world is still not
   authored art — the script rebuilds it out of the tree, and the pose that
   produced it is committed beside it rather than lost in the pixels.
+
+  **They are 3840x2160 because the menu never shows one at its own size**: it
+  drifts the picture between 106% and 113%, so a 1080p shot was magnified even
+  on a 1080p screen and by 2.3x on a 4K one, which read as blur. The page is
+  still laid out at 1920x1080 and shot at a device ratio of 2, with the render
+  scale pinned to 1 — the default answers a 2x display with 0.5, a 1080p
+  frame stretched to 4K. **AVIF at 4:4:4, encoded by `sharp`, because the
+  service worker precaches every file the build emits**: four times the pixels
+  as a JPEG would be four times the bytes on every phone that installs the
+  game, and a subsampled encode stores colour at half resolution, a smear along
+  every ink line. Every browser that can boot this game decodes AVIF, so the
+  format costs no reach the WebGPU gate has not already spent.
 
   **This generator alone needs a machine with a GPU and a display**, and that
   requirement arrived with WebGPU. A headless Chromium cannot present a WebGPU
