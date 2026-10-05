@@ -55,6 +55,23 @@
 import { mkdirSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
+import {
+  bell,
+  FACES,
+  leadKind,
+  lineKind,
+  makeFloorAt,
+  makeGrade,
+  printProbe,
+  printRefusals,
+  printTally,
+  section,
+  seeded,
+  smooth,
+  tally,
+  TURN,
+  vnoise,
+} from "./lib/mapgen.mjs";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const root = join(here, "..");
@@ -81,52 +98,9 @@ const FLAT = 0.4;
 
 // --- the seeded stream -------------------------------------------------------
 
-function mulberry32(a) {
-  return function () {
-    a |= 0;
-    a = (a + 0x6d2b79f5) | 0;
-    let t = Math.imul(a ^ (a >>> 15), 1 | a);
-    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
-    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
-  };
-}
-const rng = mulberry32(0x4b555245);
-const rand = (lo, hi) => lo + rng() * (hi - lo);
-const chance = (p) => rng() < p;
-const pick = (list) => list[Math.floor(rng() * list.length)];
+const { rng, rand, chance, pick } = seeded(0x4b555245);
 
 // --- the floor ---------------------------------------------------------------
-
-const smooth = (t) => {
-  const x = Math.max(0, Math.min(1, t));
-  return x * x * (3 - 2 * x);
-};
-
-/** Integer lattice hash in [0, 1). */
-function hash2(i, j, seed) {
-  let h = (Math.imul(i, 374761393) + Math.imul(j, 668265263) + Math.imul(seed, 1442695041)) | 0;
-  h = Math.imul(h ^ (h >>> 13), 1274126177);
-  h ^= h >>> 16;
-  return (h >>> 0) / 4294967296;
-}
-
-/** Smooth value noise in [-1, 1] at `scale` metres a lattice cell. */
-function vnoise(x, z, scale, seed) {
-  const fx = x / scale;
-  const fz = z / scale;
-  const i = Math.floor(fx);
-  const j = Math.floor(fz);
-  const u = smooth(fx - i);
-  const v = smooth(fz - j);
-  const a = hash2(i, j, seed);
-  const b = hash2(i + 1, j, seed);
-  const c = hash2(i, j + 1, seed);
-  const d = hash2(i + 1, j + 1, seed);
-  return (a + (b - a) * u + (c - a) * v + (a - b - c + d) * u * v) * 2 - 1;
-}
-
-/** A raised cosine: 1 at the centre, 0 at `radius` and beyond. */
-const bell = (d, radius) => (d >= radius ? 0 : (Math.cos((Math.PI * d) / radius) + 1) / 2);
 
 /**
  * The hills. The temple's stands in the north-west corner behind the
@@ -286,28 +260,15 @@ function heightAt(x, z) {
  * rounded as the heightfield is written, and blended bilinearly between them.
  * Inside the play square only — the vertex grid does not reach the margin.
  */
-function floorAt(x, z) {
-  const fx = Math.max(0, Math.min(CELLS - 1e-9, (x + HALF) / CELL));
-  const fz = Math.max(0, Math.min(CELLS - 1e-9, (z + HALF) / CELL));
-  const i = Math.floor(fx);
-  const j = Math.floor(fz);
-  const tx = fx - i;
-  const tz = fz - j;
-  const v = (a, c) => Math.round(heightAt(-HALF + a * CELL, -HALF + c * CELL) * 100) / 100;
-  return (
-    (v(i, j) * (1 - tx) + v(i + 1, j) * tx) * (1 - tz) +
-    (v(i, j + 1) * (1 - tx) + v(i + 1, j + 1) * tx) * tz
-  );
-}
+const floorAt = makeFloorAt(
+  (i, j) => Math.round(heightAt(-HALF + i * CELL, -HALF + j * CELL) * 100) / 100,
+  CELLS,
+  CELL,
+  HALF,
+);
 
 /** The steeper of the two axial slopes at a point. */
-function grade(x, z) {
-  const e = 2;
-  return Math.max(
-    Math.abs(heightAt(x + e, z) - heightAt(x - e, z)) / (2 * e),
-    Math.abs(heightAt(x, z + e) - heightAt(x, z - e)) / (2 * e),
-  );
-}
+const grade = makeGrade(heightAt, 2);
 
 /** True where the floor is under any water body's surface (plus a margin). */
 function wet(x, z, margin = 0.25) {
@@ -323,18 +284,7 @@ function wet(x, z, margin = 0.25) {
 // `--probe` prints the floor as a plan, one height every 8 m, and writes
 // nothing: how the terraces meet the town is the thing that needs looking at.
 if (process.argv.includes("--probe")) {
-  const step = 8;
-  const cols = [];
-  for (let x = -HALF; x <= HALF; x += step) cols.push(String(x).padStart(5));
-  console.log("  z|x " + cols.join(""));
-  for (let z = HALF; z >= -HALF; z -= step) {
-    let line = String(z).padStart(5) + " ";
-    for (let x = -HALF; x <= HALF; x += step) {
-      const g = grade(x, z);
-      line += (heightAt(x, z).toFixed(1) + (g > 0.3 ? "!" : " ")).padStart(5);
-    }
-    console.log(line);
-  }
+  printProbe({ half: HALF, step: 8, height: heightAt, grade });
   process.exit(0);
 }
 
@@ -395,13 +345,6 @@ const placements = [];
 const scatter = [];
 
 const n2 = (v) => (Number.isInteger(v) ? String(v) : String(Number(v.toFixed(2))));
-const TURN = ["", ", rotY: Math.PI / 2", ", rotY: Math.PI", ", rotY: -Math.PI / 2"];
-
-/**
- * Turn 0 faces SOUTH (a builder's front is its local -Z), 1 faces WEST, 2
- * NORTH and 3 EAST — `rotY` of π/2 takes local -Z to world -X.
- */
-const FACES = { south: 0, west: 1, north: 2, east: 3 };
 
 function paramText(params) {
   if (!params) return "";
@@ -459,11 +402,6 @@ function must(kind, x, z, turn, w, d, params, opts = {}) {
       ". Move the piece; the claim list is in authored order and the flags, " +
       "spawns and basins claim first.",
   );
-}
-
-function section(list, title) {
-  const bar = "=".repeat(Math.max(4, 74 - title.length));
-  list.push(`  // ===== ${title} ${bar}`);
 }
 
 // --- the flags and the homes -------------------------------------------------
@@ -1622,19 +1560,8 @@ export const KurenaiLayout: MapLayout = {
 `,
 );
 
-const byKind = {};
-for (const l of placements) {
-  const m = /kind: "([a-zA-Z]+)"/.exec(l);
-  if (m) byKind[m[1]] = (byKind[m[1]] ?? 0) + 1;
-}
-const refusedByKind = {};
-for (const r of refused) {
-  const k = r.split(" ")[0];
-  refusedByKind[k] = (refusedByKind[k] ?? 0) + 1;
-}
-console.log("  placed:  " + JSON.stringify(byKind));
-console.log("  refused: " + JSON.stringify(refusedByKind));
-if (process.argv.includes("--refusals")) for (const r of refused) console.log("    " + r);
+printTally(tally(placements, lineKind), refused, leadKind);
+if (process.argv.includes("--refusals")) printRefusals(refused);
 console.log(
   `kurenai: ${PLAY} m play + ${MARGIN} m margin = ${PLAY + 2 * MARGIN} m across\n` +
     `  ${placementCount} placements, ${scatterCount} scatter regions (~${trees} trees, ~${drifts} drifts), ${claimed.length} claims\n` +
