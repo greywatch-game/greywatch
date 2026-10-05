@@ -1113,10 +1113,14 @@ export class HUD {
 
   setHealth(current: number, max: number): void {
     const frac = Math.max(0, current / max);
-    const width = `${frac * 100}%`;
+    // A scale, not a width (`hud.css`, the ticket gauge's fill), clamped at a
+    // full bar because the bar no longer clips its children. Quantised to a
+    // thousandth — a fifth of a pixel at the authored width — so regeneration
+    // is not a fresh transition on every frame it runs.
+    const width = `scaleX(${Math.min(1, frac).toFixed(3)})`;
     if (width !== this.lastHealthWidth) {
       this.lastHealthWidth = width;
-      this.healthFill.style.width = width;
+      this.healthFill.style.transform = width;
     }
     // The low state is carried on the whole block, not just the fill: the bar
     // goes red, the readout goes red, and both breathe, which is the one thing
@@ -1358,10 +1362,10 @@ export class HUD {
         this.lastTicketNum[i] = num;
         part.num.textContent = num;
       }
-      const width = `${Math.max(0, Math.min(1, n / max)) * 100}%`;
+      const width = `scaleX(${Math.max(0, Math.min(1, n / max)).toFixed(4)})`;
       if (width !== this.lastTicketWidth[i]) {
         this.lastTicketWidth[i] = width;
-        part.fill.style.width = width;
+        part.fill.style.transform = width;
       }
       const critical = n / max < 0.15;
       if (critical !== this.lastTicketCritical[i]) {
@@ -1410,11 +1414,14 @@ export class HUD {
         this.lastFlagClass[i] = cls;
         cell.wrap.className = cls;
       }
-      // Meter runs -1..+1; show it as distance from neutral either way.
-      const height = `${Math.abs(p.meter) * 100}%`;
+      // Meter runs -1..+1; show it as distance from neutral either way. In
+      // whole percent, which is under half a pixel of the cell's height: the
+      // meter moves on every frame somebody stands in the zone, and the
+      // transition is what carries the fill between steps.
+      const height = `scaleY(${(Math.round(Math.abs(p.meter) * 100) / 100).toFixed(2)})`;
       if (height !== this.lastFlagHeight[i]) {
         this.lastFlagHeight[i] = height;
-        cell.fill.style.height = height;
+        cell.fill.style.transform = height;
       }
       const fill = `cap-fill ${
         Math.sign(p.meter) === (playerTeam === 0 ? -1 : 1) ? "mine" : "theirs"
@@ -1522,7 +1529,7 @@ export class HUD {
     }`;
     parts.id.textContent = status.id;
     parts.name.textContent = status.name.toUpperCase();
-    parts.fill.style.width = `${pct}%`;
+    parts.fill.style.transform = `scaleX(${(pct / 100).toFixed(2)})`;
     parts.fill.className = `cap-meter-fill ${status.held}`;
     parts.state.textContent = state;
   }
@@ -2181,10 +2188,10 @@ export class HUD {
     // Quantised to whole percent before the guard, so a hull losing a fifth of
     // a point a frame under sustained rifle fire does not repaint the bar
     // sixty times a second for a width nobody can see change.
-    const width = `${Math.round(frac * 100)}%`;
+    const width = `scaleX(${(Math.round(Math.min(1, frac) * 100) / 100).toFixed(2)})`;
     if (width !== this.lastHullWidth) {
       this.lastHullWidth = width;
-      this.vehicleParts.hull.style.width = width;
+      this.vehicleParts.hull.style.transform = width;
       this.vehicle.classList.toggle("hurt", frac <= 0.3);
     }
     // The loader, and the two rows that are it. Absent for a vehicle with no
@@ -2200,10 +2207,10 @@ export class HUD {
     }
     if (status.load !== null) {
       const loaded = status.load >= 1;
-      const loadWidth = `${Math.round(Math.min(1, status.load) * 100)}%`;
+      const loadWidth = `scaleX(${(Math.round(Math.min(1, status.load) * 100) / 100).toFixed(2)})`;
       if (loadWidth !== this.lastLoadWidth) {
         this.lastLoadWidth = loadWidth;
-        this.vehicleParts.load.style.width = loadWidth;
+        this.vehicleParts.load.style.transform = loadWidth;
       }
       if (loaded !== this.lastLoaded) {
         this.lastLoaded = loaded;

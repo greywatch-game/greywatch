@@ -849,7 +849,19 @@ has engaged and still has a 96 px trigger standing on top of its ammunition
 count. What it replaced hid nothing and still does — every gauge is exactly as
 true on a phone, and the band is laid out smaller rather than drawn smaller.
 
-Two rules for anything added to `hud.css`:
+Three rules for anything added to `hud.css`:
+
+- **Anything that MOVES during play moves on `transform` or `opacity`, never on
+  a property that lays out or paints.** Every gauge fill is the whole track
+  scaled down (`scaleX`, the flag cells' `scaleY`) rather than a `width` or a
+  `height`, and the low-health glow is a still shadow whose layer pulses its
+  opacity rather than a pulsing `box-shadow`. The fills were widths and the
+  glow a shadow until 2026-10-04, and none of it showed in the profiler: the
+  `hud` phase was ~0.1 ms either way, because layout and paint are the
+  browser's work after the tick returns. What it did was relayout and repaint
+  the capture meter and its flag cell on every frame the player stood in a
+  zone, the hull's loader through every reload, and the health bar on every
+  frame it was low — the work FINDINGS.md §13 suspects on a phone.
 
 - **State a size as a multiple of the ladder, never in bare pixels** — the one
   exception below, and hairlines, rims and chamfers, which are a pixel because

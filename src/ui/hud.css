@@ -590,17 +590,23 @@
   overflow: hidden;
   transform: skewX(-20deg);
 }
+/* **Every gauge FILL in this file is a SCALE and never a width or a height**,
+   because a fill is the one thing here that animates while a round is being
+   played: a transition on `width` lays out and repaints the bar on every frame
+   it runs, where one on `transform` is the compositor's alone. The fill is
+   always the whole track and `HUD` writes how much of it to show. */
 #ticket-bar .track i {
   position: absolute;
   top: 0;
   bottom: 0;
   width: 100%;
-  transition: width 0.4s linear;
+  transition: transform 0.4s linear;
 }
 /* Both fills are anchored at the centre of the pair, so the two teams
-   meet in the middle at full strength and retreat outward as they bleed. */
-#ticket-bar .track.mine i { right: 0; background: var(--mine); }
-#ticket-bar .track.theirs i { left: 0; background: var(--theirs); }
+   meet in the middle at full strength and retreat outward as they bleed —
+   which is the ORIGIN of each one's scale as well as where it is pinned. */
+#ticket-bar .track.mine i { right: 0; transform-origin: right; background: var(--mine); }
+#ticket-bar .track.theirs i { left: 0; transform-origin: left; background: var(--theirs); }
 
 /* --- conquest: the A..E flag strip ---
    A hexagon per point, filling from the bottom with the capture meter.
@@ -633,12 +639,12 @@
 }
 .flag .cap-fill {
   position: absolute;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  height: 0;
+  inset: 0;
   opacity: 0.55;
-  transition: height 0.15s linear;
+  /* Filled from the bottom, as a scale — see the ticket gauge's fill. */
+  transform: scaleY(0);
+  transform-origin: bottom;
+  transition: transform 0.15s linear;
 }
 .flag .cap-fill.mine { background: var(--mine); }
 .flag .cap-fill.theirs { background: var(--theirs); }
@@ -746,8 +752,11 @@
 }
 #capture-status .cap-meter-fill {
   height: 100%;
-  width: 0;
-  transition: width 0.15s linear;
+  /* A scale over the whole track — see the ticket gauge's fill. This is the
+     one that moves for longest: every frame the player stands in a zone. */
+  transform: scaleX(0);
+  transform-origin: left;
+  transition: transform 0.15s linear;
 }
 #capture-status .cap-meter-fill.mine {
   background: linear-gradient(to bottom, #ffdca7, var(--mine));
@@ -832,7 +841,10 @@
   height: calc(11 * var(--hud-u));
   background: rgba(255, 255, 255, 0.1);
   box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.55);
-  overflow: hidden;
+  /* NOT `overflow: hidden`, which the other tracks carry: the low-health glow
+     below is a child, and a clip here would take it away. Nothing else needs
+     one — the fill is a scale of at most 1 from the left edge and the notches
+     are inset 0, so neither can leave the box. */
   transform: skewX(-20deg);
 }
 #health-fill {
@@ -840,7 +852,8 @@
   height: 100%;
   width: 100%;
   background: linear-gradient(to bottom, #b6ffc4, var(--good));
-  transition: width 0.12s ease-out;
+  transform-origin: left;
+  transition: transform 0.12s ease-out;
 }
 .hp-bar .segs {
   position: absolute;
@@ -852,10 +865,22 @@
   );
 }
 .hp-bar.low #health-fill { background: linear-gradient(to bottom, #ff9a92, var(--theirs)); }
-.hp-bar.low { animation: lowPulse 0.8s ease-in-out infinite alternate; }
+/* The low-health glow is a STILL shadow on its own layer whose OPACITY pulses,
+   never a pulsing `box-shadow`: a shadow is paint, so animating one repaints
+   the bar on every frame for as long as the player is under 30% — which is
+   the middle of the firefight that put them there. An outer shadow is not
+   drawn inside its own box, so the layer can sit over the fill. */
+.hp-bar::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  box-shadow: 0 0 10px rgba(255, 90, 79, 0.65);
+  opacity: 0;
+  pointer-events: none;
+}
+.hp-bar.low::after { animation: lowPulse 0.8s ease-in-out infinite alternate; }
 @keyframes lowPulse {
-  from { box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.55); }
-  to { box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.55), 0 0 10px rgba(255, 90, 79, 0.65); }
+  to { opacity: 1; }
 }
 .hp-num { display: flex; align-items: baseline; gap: calc(6 * var(--hud-u)); }
 #health-text {
@@ -1462,7 +1487,9 @@
   inset: 0 auto 0 0;
   width: 100%;
   background: linear-gradient(to bottom, #b6ffc4, var(--good));
-  transition: width 0.12s linear;
+  /* A scale over the whole track — see the ticket gauge's fill. */
+  transform-origin: left;
+  transition: transform 0.12s linear;
 }
 .veh-bar.load i { background: rgba(255, 255, 255, 0.72); }
 /* Under a third of the hull left, and the bar goes the same hot colour the
