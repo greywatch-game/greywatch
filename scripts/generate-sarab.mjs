@@ -65,6 +65,17 @@
 import { mkdirSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
+import {
+  leadKind,
+  lineKind,
+  makeGrade,
+  printTally,
+  section,
+  seeded,
+  smooth,
+  tally,
+  TURN,
+} from "./lib/mapgen.mjs";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const root = join(here, "..");
@@ -90,33 +101,9 @@ const MAX_GRADE = 0.4;
  * `MapBuilder` applies to scatter. Deterministic, so the committed file is a
  * function of this script and nothing else.
  */
-function mulberry32(a) {
-  return function () {
-    a |= 0;
-    a = (a + 0x6d2b79f5) | 0;
-    let t = Math.imul(a ^ (a >>> 15), 1 | a);
-    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
-    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
-  };
-}
-const rng = mulberry32(0x53415241);
-/** A float in [lo, hi). */
-const rand = (lo, hi) => lo + rng() * (hi - lo);
-/** An integer in [lo, hi]. */
-const randInt = (lo, hi) => lo + Math.floor(rng() * (hi - lo + 1));
-/** One of `list`. */
-const pick = (list) => list[Math.floor(rng() * list.length)];
-/** True with probability `p`. */
-const chance = (p) => rng() < p;
-/** A float in [lo, hi), rounded to two places — for a number a layout STATES. */
-const rnd = (lo, hi) => Number(rand(lo, hi).toFixed(2));
+const { rng, rand, randInt, pick, chance, rnd } = seeded(0x53415241);
 
 // --- the floor ---------------------------------------------------------------
-
-const smooth = (t) => {
-  const x = Math.max(0, Math.min(1, t));
-  return x * x * (3 - 2 * x);
-};
 
 /**
  * Three low knolls of drifted sand, in the only three places on this map with
@@ -536,13 +523,7 @@ function claim(x, z, w, d, pad = 0, low = false) {
 }
 
 /** How steep the ground is at a point, as the larger of the two axial slopes. */
-function grade(x, z) {
-  const e = 2;
-  return Math.max(
-    Math.abs(heightAt(x + e, z) - heightAt(x - e, z)) / (2 * e),
-    Math.abs(heightAt(x, z + e) - heightAt(x, z - e)) / (2 * e),
-  );
-}
+const grade = makeGrade(heightAt, 2);
 
 // --- the placement list ------------------------------------------------------
 
@@ -551,9 +532,6 @@ const scatter = [];
 
 /** Shortest exact decimal for a number a layout states. */
 const n2 = (v) => (Number.isInteger(v) ? String(v) : String(Number(v.toFixed(2))));
-
-/** The four quarter turns, as the source tokens a layout writes them with. */
-const TURN = ["", ", rotY: Math.PI / 2", ", rotY: Math.PI", ", rotY: -Math.PI / 2"];
 
 /**
  * Emit one placement, claiming its footprint first.
@@ -604,12 +582,6 @@ function must(kind, x, z, turn, w, d, params, pad) {
       "something already claimed that ground. Move the piece; the claim list " +
       "is in authored order and the flags, spawns and hardstandings claim first.",
   );
-}
-
-/** A section heading inside one of the emitted arrays. */
-function section(list, title) {
-  const bar = "=".repeat(Math.max(4, 74 - title.length));
-  list.push(`  // ===== ${title} ${bar}`);
 }
 
 // --- the fabric --------------------------------------------------------------
@@ -2835,18 +2807,8 @@ const REQUIRED = {
  */
 const AT_LEAST = { windTower: 6, granary: 6 };
 
-const byKind = {};
-for (const l of placements) {
-  const m = /kind: "([a-zA-Z]+)"/.exec(l);
-  if (m) byKind[m[1]] = (byKind[m[1]] ?? 0) + 1;
-}
-const refusedByKind = {};
-for (const r of refused) {
-  const k = r.split(" ")[0];
-  refusedByKind[k] = (refusedByKind[k] ?? 0) + 1;
-}
-console.log("  placed:  " + JSON.stringify(byKind));
-console.log("  refused: " + JSON.stringify(refusedByKind));
+const byKind = tally(placements, lineKind);
+printTally(byKind, refused, leadKind);
 for (const r of refused) {
   if (!r.startsWith("adobeHouse") && !r.startsWith("compoundWall")) console.log("    x " + r);
 }
