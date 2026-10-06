@@ -45,7 +45,7 @@ match smoke test (`npm run build:server && npm run server`, two clients).
 | ~~[14](#14-matchts-per-slot-state-is-ten-parallel-tables)~~ | P1 — done | `Match.ts` per-slot state is ten parallel tables |
 | ~~[15](#15-map-generators-share-no-code)~~ | P1 — done | Map generators share no code |
 | [16](#16-one-building-footprint-table-for-every-generator) | P1 | One building-footprint table for every generator |
-| [17](#17-cannon-and-muzzle-light-effects-duplicated-in-gamets-with-inline-magic-numbers) | P1 | Cannon/muzzle-light effects duplicated in `Game.ts` with inline magic numbers |
+| ~~[17](#17-cannon-and-muzzle-light-effects-duplicated-in-gamets-with-inline-magic-numbers)~~ | P1 — done | Cannon/muzzle-light effects duplicated in `Game.ts` with inline magic numbers |
 | [18](#18-small-duplicates-inside-gamets) | P2 | Small duplicates inside `Game.ts` |
 | [19](#19-extract-the-gamets-clusters-that-pass-docsgamemds-test) | P2 | Extract the `Game.ts` clusters that pass `docs/game.md`'s test |
 | [20](#20-decompose-the-longest-gamets-methods-in-place) | P2 | Decompose the longest `Game.ts` methods in place |
@@ -491,6 +491,8 @@ explained by the corrected values and the door checks passing. Owes
 moved.
 
 ### 17. Cannon and muzzle-light effects duplicated in `Game.ts` with inline magic numbers
+
+**Resolved.** `Game.drawCannon(tank, muzzle)` is the one cannon presentation: light, report and shake. `resolveShell` and the net `cannon` arm both call it. `Game.flashMuzzle(at, scale?)` is the one muzzle light. It serves the rifle shot, the cupola gun, the bots' budgeted flashes and the two heavier muzzles. Those are now `CONFIG.lighting.launcherFlash` (`{ range: 1.8, life: 2 }`) and `cannonFlash` (`{ range: 2.2, life: 2.5 }`), multiples of the rifle's flash. The blast light's two blend weights are `explosionPowerIntensity` (0.4) and `explosionPowerLife` (0.25). They give the same arithmetic as the old `0.6 + 0.4 * power` and `0.75 + 0.25 * power`. No `lighting.pulse` call in `Game.ts` has a bare multiplier left. Out of scope and still inline: the rumble scales beside them (`shotMs * 2.5`, `* 3`, `0.35, 0.5`).
 
 **Area:** `src/core/Game.ts`
 

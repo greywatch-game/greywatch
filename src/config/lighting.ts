@@ -20,6 +20,16 @@ export const lighting = {
   muzzleBudgetPerFrame: 4,
   muzzleMaxDistance: 30,
   /**
+   * The two heavier muzzles, stated as MULTIPLES of the flash above so a
+   * retune of that one carries them with it: the shoulder launcher's
+   * back-blast and a tank gun's report. Reach and life only — the brightness
+   * is the rifle's, because a flash that is also brighter stops reading as a
+   * flash (the explosion's own argument, below). Neither is budgeted: one is
+   * two rockets a life and the other a shell every few seconds.
+   */
+  launcherFlash: { range: 1.8, life: 2 },
+  cannonFlash: { range: 2.2, life: 2.5 },
+  /**
    * A grenade going off. Unbudgeted, unlike the muzzle flashes above, and it
    * can be: there is one blast every few seconds at the very most, against
    * up to eighty muzzle flashes a second, so a transient slot for each one is
@@ -31,6 +41,17 @@ export const lighting = {
   explosionRange: 28,
   explosionIntensity: 7,
   explosionLife: 0.34,
+  /**
+   * How much of a blast's brightness and life follows its `power` (a grenade
+   * is 1, a tank shell `blastPower`). RANGE follows it whole, because that is
+   * what a bigger fireball actually lights; these two are pulled toward 1
+   * instead — a transient twice as bright and half again as long stops
+   * reading as a flash and starts reading as somebody switching a lamp on.
+   * The light at `power` is `x * (1 - share + share * power)`, so a grenade
+   * is exactly the figures above.
+   */
+  explosionPowerIntensity: 0.4,
+  explosionPowerLife: 0.25,
   /**
    * Shoulder lamp the player carries. Without it these arenas are too dark
    * to fight in between fixtures — and it gives the character a light of

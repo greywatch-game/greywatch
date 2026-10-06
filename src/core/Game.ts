@@ -5621,14 +5621,7 @@ export class Game {
       );
       // Muzzle flash: a hard, very short pulse that lights whatever is in
       // front of the player — the main reason to keep shooting in the dark.
-      const lc = CONFIG.lighting;
-      this.lighting.pulse(
-        muzzle,
-        lc.muzzleColor,
-        lc.muzzleRange,
-        lc.muzzleIntensity,
-        lc.muzzleLife,
-      );
+      this.flashMuzzle(muzzle);
       // Scheduled where the round was DUE rather than on the boundary it
       // could be fired on — see `Player.reportDelay`, which owns the number.
       this.sfx.shoot(this.player.report, this.player.reportDelay);
@@ -6151,14 +6144,7 @@ export class Game {
     // already putting the empty tube away.
     const load = this.player.loadTime;
     if (load > 0) this.sfx.rpgLoad(load);
-    const lc = CONFIG.lighting;
-    this.lighting.pulse(
-      this.ordnanceAt,
-      lc.muzzleColor,
-      lc.muzzleRange * 1.8,
-      lc.muzzleIntensity,
-      lc.muzzleLife * 2,
-    );
+    this.flashMuzzle(this.ordnanceAt, CONFIG.lighting.launcherFlash);
     const haptic = CONFIG.rumble;
     this.input.rumble(1, 1, haptic.shotMs * 2.5);
   }
@@ -6263,19 +6249,45 @@ export class Game {
       this.net?.sendShell(muzzle, dir);
       this.hullHitCue(round);
     }
-    const lc = CONFIG.lighting;
-    this.lighting.pulse(
-      muzzle,
-      lc.muzzleColor,
-      lc.muzzleRange * 2.2,
-      lc.muzzleIntensity,
-      lc.muzzleLife * 2.5,
-    );
-    // Whoever pulled it, a crew hears its own gun beside them rather than from
-    // where the chase camera stands — see `Sfx.aboard`.
+    this.drawCannon(tank, muzzle);
+    return true;
+  }
+
+  /**
+   * What a tank gun going off looks, sounds and feels like, wherever it was
+   * decided: a shell this client resolved (`resolveShell`, the player's or a
+   * bot crew's) and one the authority reports (`cannon`). One door, so the
+   * two cannot drift apart, where they were two copies of the same light.
+   *
+   * Whoever pulled it, a crew hears its own gun beside them rather than from
+   * where the chase camera stands — see `Sfx.aboard` — and is shaken by it as
+   * the hull's own (`shakeFromCannon`).
+   */
+  private drawCannon(tank: Vehicle, muzzle: Vector3): void {
+    this.flashMuzzle(muzzle, CONFIG.lighting.cannonFlash);
     this.sfx.cannon(muzzle, tank === this.driving);
     this.shakeFromCannon(tank, muzzle);
-    return true;
+  }
+
+  /**
+   * A muzzle's light: a hard, very short pulse that lights whatever is in
+   * front of the gun. The rifle's flash unless `scale` names one of the
+   * heavier muzzles (`CONFIG.lighting.launcherFlash`/`cannonFlash`), which are
+   * stated as multiples of it. Unbudgeted — the bots' flashes go through
+   * `spendMuzzleLightBudget`, which calls this for the few it keeps.
+   */
+  private flashMuzzle(
+    at: Vector3,
+    scale?: { readonly range: number; readonly life: number },
+  ): void {
+    const lc = CONFIG.lighting;
+    this.lighting.pulse(
+      at,
+      lc.muzzleColor,
+      scale ? lc.muzzleRange * scale.range : lc.muzzleRange,
+      lc.muzzleIntensity,
+      scale ? lc.muzzleLife * scale.life : lc.muzzleLife,
+    );
   }
 
   /**
@@ -6328,14 +6340,7 @@ export class Game {
       this.net?.sendMg(muzzle, dir);
       this.hullHitCue(round);
     }
-    const lc = CONFIG.lighting;
-    this.lighting.pulse(
-      muzzle,
-      lc.muzzleColor,
-      lc.muzzleRange,
-      lc.muzzleIntensity,
-      lc.muzzleLife,
-    );
+    this.flashMuzzle(muzzle);
     // Placed at the muzzle rather than voiced in the ear, so it is panned like
     // every other gun in the world — but a crew riding THIS hull hears it at
     // arm's length rather than from the chase camera twelve metres back, which
@@ -7284,11 +7289,12 @@ export class Game {
         this.onNetSeat(event);
         break;
 
-      // A tank gun went off somewhere. The report and nothing else: the flash,
-      // the light and the round itself are all the authority's, and the hull
-      // it came out of is already being drawn where the snapshot put it — so
-      // the noise is placed on the MUZZLE of that hull, which is the same rule
-      // `fire` follows one scale down.
+      // A tank gun went off somewhere. The picture of it and nothing else: the
+      // round and what it hit are the authority's, and the hull it came out of
+      // is already being drawn where the snapshot put it — so the report and
+      // the light are placed on the MUZZLE of that hull, which is the same rule
+      // `fire` follows one scale down, and drawn by the door a locally
+      // resolved shell uses (`drawCannon`).
       case "cannon": {
         const tank = this.vehicles.hulls[event.tank];
         // Skipped only when WE pulled that trigger — the driver's seat, which
@@ -7297,16 +7303,7 @@ export class Game {
         if (!tank || (tank === this.driving && this.drivingSeat === DRIVER)) break;
         const g = tank.spec.gun;
         if (g) this.queueNetShot(event.tank, 1, 0, g.range, "cannon");
-        this.sfx.cannon(tank.muzzleToRef(this.shellFrom), tank === this.driving);
-        this.shakeFromCannon(tank, this.shellFrom);
-        const lc = CONFIG.lighting;
-        this.lighting.pulse(
-          this.shellFrom,
-          lc.muzzleColor,
-          lc.muzzleRange * 2.2,
-          lc.muzzleIntensity,
-          lc.muzzleLife * 2.5,
-        );
+        this.drawCannon(tank, tank.muzzleToRef(this.shellFrom));
         break;
       }
 
@@ -9420,17 +9417,17 @@ export class Game {
    */
   private onExplosion(at: Vector3, power: number, ground: BlastGround): void {
     const lc = CONFIG.lighting;
-    // The light, scaled by the same `power` the picture is. RANGE goes with it
-    // linearly because that is what a bigger fireball actually lights; the
-    // INTENSITY and the LIFE are pulled toward 1 instead, because a transient
-    // that is twice as bright and half again as long stops reading as a flash
-    // and starts reading as somebody switching a lamp on.
+    // The light, scaled by the same `power` the picture is: RANGE whole, the
+    // INTENSITY and the LIFE only by their shares — see
+    // `CONFIG.lighting.explosionPowerIntensity` for why.
+    const ki = lc.explosionPowerIntensity;
+    const kl = lc.explosionPowerLife;
     this.lighting.pulse(
       at,
       lc.explosionColor,
       lc.explosionRange * power,
-      lc.explosionIntensity * (0.6 + 0.4 * power),
-      lc.explosionLife * (0.75 + 0.25 * power),
+      lc.explosionIntensity * (1 - ki + ki * power),
+      lc.explosionLife * (1 - kl + kl * power),
       // Shadowed on the rungs that shadow a transient (`localShadows.tiers`):
       // for a third of a second it is the light the valley is lit by.
       "blast",
@@ -9592,13 +9589,7 @@ export class Game {
     const max = Math.min(flashes.length, lc.muzzleBudgetPerFrame);
     for (let i = 0; i < max; i++) {
       if (Vector3.Distance(flashes[i], camera) > lc.muzzleMaxDistance) break;
-      this.lighting.pulse(
-        flashes[i],
-        lc.muzzleColor,
-        lc.muzzleRange,
-        lc.muzzleIntensity,
-        lc.muzzleLife,
-      );
+      this.flashMuzzle(flashes[i]);
     }
   }
 }
