@@ -296,6 +296,38 @@ export const n2 = (v) => {
 /** A number to the decimetre, as a scatter region's centre is written. */
 export const f1 = (v) => n2(Number(v.toFixed(1)));
 
+/**
+ * A placement's `params` as layout source. A string is quoted unless it
+ * starts with `@`, which writes the rest as an expression (a name in the
+ * layout's own scope); an array is a list of points.
+ */
+export function paramText(params) {
+  if (!params) return "";
+  return Object.entries(params)
+    .map(([k, v]) => {
+      if (Array.isArray(v)) return `${k}: [${v.map((q) => `[${q.map(n2).join(", ")}]`).join(", ")}]`;
+      const lit = typeof v === "string" ? (v.startsWith("@") ? v.slice(1) : `"${v}"`) : typeof v === "boolean" ? String(v) : n2(v);
+      return `${k}: ${lit}`;
+    })
+    .join(", ");
+}
+
+/**
+ * Write one placement: its layout line into `placements`, and the same
+ * placement as an object into `placed` for the road network, the checks and
+ * the `--claims` render.
+ */
+export function makeEmit(placements, placed) {
+  return (kind, x, z, turn, params, y) => {
+    const ps = paramText(params);
+    const yy = y !== undefined ? `, y: ${n2(y)}` : "";
+    placements.push(
+      `  { kind: "${kind}", x: ${n2(x)}, z: ${n2(z)}${yy}${TURN[turn]}` + (ps ? `, params: { ${ps} }` : "") + " },",
+    );
+    placed.push({ kind, x, z, y, rotY: [0, Math.PI / 2, Math.PI, -Math.PI / 2][turn], params: params ?? {}, turn });
+  };
+}
+
 /** A banner comment between two runs of a layout's list. */
 export function section(list, title) {
   const bar = "=".repeat(Math.max(4, 74 - title.length));

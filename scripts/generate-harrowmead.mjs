@@ -76,6 +76,7 @@ import {
   makeWorldFoot,
   makeYard,
   n2,
+  paramText,
   printProbe,
   printRefusals,
   printTally,
@@ -423,17 +424,7 @@ const scatter = [];
 /** The same placements as objects, for the road network and the render. */
 const placed = [];
 
-function paramText(params) {
-  if (!params) return "";
-  return Object.entries(params)
-    .map(([k, v]) => {
-      if (Array.isArray(v)) return `${k}: [${v.map((q) => `[${q.map(n2).join(", ")}]`).join(", ")}]`;
-      const lit = typeof v === "string" ? (v.startsWith("@") ? v.slice(1) : `"${v}"`) : typeof v === "boolean" ? String(v) : n2(v);
-      return `${k}: ${lit}`;
-    })
-    .join(", ");
-}
-
+/** Write one placement — the lib's `makeEmit`, but its `placed` object carries no `y`. */
 function emit(kind, x, z, turn, params, y) {
   const ps = paramText(params);
   const yy = y !== undefined ? `, y: ${n2(y)}` : "";

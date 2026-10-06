@@ -66,6 +66,7 @@ import {
   bracketKind,
   f1,
   makeClaim,
+  makeEmit,
   makeFloorAt,
   makeFootWet,
   makeGrade,
@@ -76,6 +77,7 @@ import {
   makeWorldFoot,
   makeYard,
   n2,
+  paramText,
   printProbe,
   printRefusals,
   printTally,
@@ -429,25 +431,7 @@ const regions = [];
 
 const note = (list, ...lines) => list.push(...lines.map((l) => `  // ${l}`.trimEnd()));
 
-function paramText(params) {
-  if (!params) return "";
-  return Object.entries(params)
-    .map(([k, v]) => {
-      if (Array.isArray(v)) return `${k}: [${v.map((q) => `[${q.map(n2).join(", ")}]`).join(", ")}]`;
-      const lit = typeof v === "string" ? `"${v}"` : typeof v === "boolean" ? String(v) : n2(v);
-      return `${k}: ${lit}`;
-    })
-    .join(", ");
-}
-
-function emit(kind, x, z, turn, params, y) {
-  const ps = paramText(params);
-  const yy = y !== undefined ? `, y: ${n2(y)}` : "";
-  placements.push(
-    `  { kind: "${kind}", x: ${n2(x)}, z: ${n2(z)}${yy}${TURN[turn]}` + (ps ? `, params: { ${ps} }` : "") + " },",
-  );
-  placed.push({ kind, x, z, y, rotY: [0, Math.PI / 2, Math.PI, -Math.PI / 2][turn], params: params ?? {}, turn });
-}
+const emit = makeEmit(placements, placed);
 
 // --- the roads, first, because everything else dodges them -------------------
 

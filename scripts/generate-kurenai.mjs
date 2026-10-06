@@ -64,6 +64,7 @@ import {
   makeFloorAt,
   makeGrade,
   n2,
+  paramText,
   printProbe,
   printRefusals,
   printTally,
@@ -339,16 +340,6 @@ function relief(x, z, w, d) {
 
 const placements = [];
 const scatter = [];
-
-function paramText(params) {
-  if (!params) return "";
-  return Object.entries(params)
-    .map(([k, v]) => {
-      const lit = typeof v === "string" ? `"${v}"` : typeof v === "boolean" ? String(v) : n2(v);
-      return `${k}: ${lit}`;
-    })
-    .join(", ");
-}
 
 /**
  * Emit one placement, claiming its footprint first. `w` and `d` are the
