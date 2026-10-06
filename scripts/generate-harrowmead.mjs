@@ -71,6 +71,7 @@ import {
   makeGrade,
   makeMust,
   makeOverlaps,
+  makePathRoad,
   makeRectRoad,
   makeRelief,
   makeScatter,
@@ -454,17 +455,7 @@ const FORDS = [];
 const rectRoad = makeRectRoad(roadDefs, emit);
 
 /** A path road through world points; the network bends and joins it. */
-function pathRoad(points, w, surface, radius = 30) {
-  const xs = points.map((p) => p[0]);
-  const zs = points.map((p) => p[1]);
-  const cx = Number(((Math.min(...xs) + Math.max(...xs)) / 2).toFixed(2));
-  const cz = Number(((Math.min(...zs) + Math.max(...zs)) / 2).toFixed(2));
-  const path = points.map((p) => [Number((p[0] - cx).toFixed(2)), Number((p[1] - cz).toFixed(2))]);
-  const params = { path, width: w, surface };
-  if (radius !== undefined) params.radius = radius;
-  roadDefs.push({ kind: "road", x: cx, z: cz, params });
-  emit("road", cx, cz, 0, params);
-}
+const pathRoad = makePathRoad(roadDefs, emit, 30);
 
 // The green and the streets that frame it. The green is x -22..22, z -15..15.
 const GREEN = { x0: -22, x1: 22, z0: -15, z1: 15 };

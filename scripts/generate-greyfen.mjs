@@ -114,6 +114,7 @@ import {
   makeGrade,
   makeMust,
   makeOverlaps,
+  makePathRoad,
   makeRelief,
   makeScatter,
   makeWorldFoot,
@@ -556,17 +557,10 @@ note(
 );
 
 const roadDefs = [];
+const layPathRoad = makePathRoad(roadDefs, emit);
 function pathRoad(text, points, w, surface, radius) {
   if (text) placements.push(`  // ${text}`);
-  const xs = points.map((p) => p[0]);
-  const zs = points.map((p) => p[1]);
-  const cx = Number(((Math.min(...xs) + Math.max(...xs)) / 2).toFixed(2));
-  const cz = Number(((Math.min(...zs) + Math.max(...zs)) / 2).toFixed(2));
-  const path = points.map((p) => [Number((p[0] - cx).toFixed(2)), Number((p[1] - cz).toFixed(2))]);
-  const params = { path, width: w, surface };
-  if (radius !== undefined) params.radius = radius;
-  roadDefs.push({ kind: "road", x: cx, z: cz, params });
-  emit("road", cx, cz, 0, params);
+  layPathRoad(points, w, surface, radius);
 }
 
 /**

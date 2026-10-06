@@ -78,6 +78,7 @@ import {
   makeGrade,
   makeMust,
   makeOverlaps,
+  makePathRoad,
   makeRectRoad,
   makeRelief,
   makeScatter,
@@ -495,17 +496,10 @@ const roadDefs = [];
 const rectRoad = makeRectRoad(roadDefs, emit);
 
 /** A path road through world points; the network bends and joins it. */
+const layPathRoad = makePathRoad(roadDefs, emit);
 function pathRoad(note, points, w, surface, radius) {
   if (note) placements.push(`  // ${note}`);
-  const xs = points.map((p) => p[0]);
-  const zs = points.map((p) => p[1]);
-  const cx = Number(((Math.min(...xs) + Math.max(...xs)) / 2).toFixed(2));
-  const cz = Number(((Math.min(...zs) + Math.max(...zs)) / 2).toFixed(2));
-  const path = points.map((p) => [Number((p[0] - cx).toFixed(2)), Number((p[1] - cz).toFixed(2))]);
-  const params = { path, width: w, surface };
-  if (radius !== undefined) params.radius = radius;
-  roadDefs.push({ kind: "road", x: cx, z: cz, params });
-  emit("road", cx, cz, 0, params);
+  layPathRoad(points, w, surface, radius);
 }
 
 // The square: x -18..18, z -17..13, and the streets that leave it.

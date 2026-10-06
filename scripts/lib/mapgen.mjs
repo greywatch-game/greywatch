@@ -342,6 +342,25 @@ export function makeRectRoad(roadDefs, emit) {
   };
 }
 
+/**
+ * A path road through world points, centred on its own bounding box and
+ * written relative to that centre; the network bends it and finds its
+ * junctions. `radius` caps the bends, `defaultRadius` when none is given.
+ */
+export function makePathRoad(roadDefs, emit, defaultRadius) {
+  return (points, w, surface, radius = defaultRadius) => {
+    const xs = points.map((p) => p[0]);
+    const zs = points.map((p) => p[1]);
+    const cx = Number(((Math.min(...xs) + Math.max(...xs)) / 2).toFixed(2));
+    const cz = Number(((Math.min(...zs) + Math.max(...zs)) / 2).toFixed(2));
+    const path = points.map((p) => [Number((p[0] - cx).toFixed(2)), Number((p[1] - cz).toFixed(2))]);
+    const params = { path, width: w, surface };
+    if (radius !== undefined) params.radius = radius;
+    roadDefs.push({ kind: "road", x: cx, z: cz, params });
+    emit("road", cx, cz, 0, params);
+  };
+}
+
 /** A banner comment between two runs of a layout's list. */
 export function section(list, title) {
   const bar = "=".repeat(Math.max(4, 74 - title.length));
