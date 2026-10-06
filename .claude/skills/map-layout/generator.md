@@ -55,9 +55,16 @@ CLAUDE.md's commands block.
   (`FOOT`, `DOOR_FACES`/`DOORS`, `FRONTS`), which this skill's
   `footprints.mjs` re-exports. A new kind is a row there, measured off the
   builder — `npm run kit:hash -- --feet --kinds <kind>` prints how far the
-  drawing reaches past it, below head height and in all. A map that wants a
-  kind held to less than the table says (a field ruin with no lane) passes an
-  option to its own `place`, never a second row.
+  drawing reaches past it, below head height and in all. A row is the
+  envelope over seeds, not one build: sample a seeded kind at many positions
+  before trusting a row (the placements in the layouts are only a few seeds).
+  A loose piece lying beside a kind (a ruin's scattered stones) is `LITTER`, an
+  allowance by side, not a bigger row. A map that wants a kind held to less
+  than the table says (a field ruin with no lane) passes an option to its own
+  `place`, never a second row.
+- **Cut a boundary line with `cutRun`** (`mapgen.mjs`), giving it the kind's
+  `reach` past its run's ends off `FOOT` (`-FOOT.stoneWall({ length: 0 })[0]`):
+  a run's nominal length is not where its end piers stand.
 
 ## A forest map
 

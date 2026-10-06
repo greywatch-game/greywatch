@@ -276,6 +276,32 @@ export function makeFrontClear(foot, claimed, wet) {
 }
 
 /**
+ * A free stretch `[start, end]` of a boundary line as the runs that are placed
+ * along it, `[s0, s1]` pairs: none under `minRun`, else equal pieces no longer
+ * than `maxRun`. `reach` is how far the kind's DRAWING stands past the ends of
+ * its own run — a wall's end piers (`FOOT`) — and every run is inset by it, so
+ * the line stops where the stretch does and two pieces stand `2 * JOINT`
+ * apart. That half metre is the gap every generator always meant to leave
+ * between pieces, which a crossing fence passes through; it used to be left
+ * between the runs' nominal ends, so the piers stood in each other and in the
+ * fence.
+ */
+export function cutRun(start, end, { minRun, maxRun, reach }) {
+  const JOINT = 0.25;
+  const len = end - start;
+  if (len < minRun) return [];
+  const pieces = Math.ceil(len / maxRun);
+  const each = len / pieces;
+  const runs = [];
+  for (let k = 0; k < pieces; k++) {
+    const s0 = start + k * each + reach + (k > 0 ? JOINT : 0);
+    const s1 = start + (k + 1) * each - reach - (k < pieces - 1 ? JOINT : 0);
+    runs.push([s0, s1]);
+  }
+  return runs;
+}
+
+/**
  * A named set piece: `place` it, and refuse to write the map if it did not
  * fit, naming the refusal `place` filed last.
  */

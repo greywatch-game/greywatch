@@ -280,15 +280,17 @@ export function rubbleTeeth(
 /**
  * Where a wall has gone altogether its footing is still there: a course or two
  * of stones along its line, low enough to step over, so the house keeps its
- * outline. Carried down to the ground under each stone.
+ * outline. Carried down to the ground under each stone. `c` is the wall's
+ * line and `width` its thickness, in `rubbleTeeth`'s order, then the stretch
+ * `u0`..`u1` along it where the wall has gone.
  */
 export function rubbleFooting(
   sb: StoneBatch,
   alongX: boolean,
   c: number,
+  width: number,
   u0: number,
   u1: number,
-  width: number,
   ground: (u: number) => number,
   rnd: () => number,
 ): void {

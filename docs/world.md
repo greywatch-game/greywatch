@@ -1196,12 +1196,24 @@ that is not across it.
   and they had drifted — Coldharbour's townhouse claimed 0.4 m less frontage
   than the same house on Harrowmead. **A footprint is MEASURED off the builder
   and may not understate it**: what stands below head height, plus a
-  building's eaves, and not a canopy a body stands under. That is the rule;
-  most rows typed before the kit's reworks do not meet it yet (`ISSUES.md`
-  #47). `npm run kit:hash -- --feet` builds every placement of every kind and
-  prints where the drawing reaches past its row, so a builder rework owes that
-  run, an edit to the table, and a re-seed of every map that places the kind —
-  a footprint is half of every claim, so moving one moves layouts. **Which kinds a map
+  building's eaves, and not a canopy a body stands under. **A row is the
+  ENVELOPE of a seeded drawing** — rubble, billets, a ruined cart's wheel and
+  the steps down to a falling floor are drawn off where the placement stands,
+  so a row is measured over many seeds and grounds, not only the placements
+  the layouts hold — and **LITTER is the one departure the other way**
+  (`LITTER`): a loose piece of the thing lying beside it, a ruin's scattered
+  stones or a cask's lost hoop, which may lie past the row by a stated
+  allowance rather than push every neighbour off for a stone. `npm run
+  kit:hash -- --feet` builds every placement of every kind and prints where the
+  drawing reaches past its row, flagging past the row plus its allowance, so a
+  builder rework owes that run, an edit to the table, and a re-seed of every
+  map that places the kind — a footprint is half of every claim, so moving one
+  moves layouts. **A boundary line is cut into runs by one helper**
+  (`mapgen.mjs`'s `cutRun`), which insets each run by how far its kind's
+  drawing stands past its ends — a wall's end piers — so a line stops where its
+  free stretch does and two pieces stand half a metre apart: the gap the
+  generators always meant, and once left between nominal ends with the piers
+  standing in each other. **Which kinds a map
   door-checks is still the map's**: Harrowmead's field ruins pass `noDoor`
   where Hollowmere's burnt houses are held to their streets.
 

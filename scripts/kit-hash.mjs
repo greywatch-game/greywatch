@@ -41,9 +41,11 @@
  * (and the bare build) on each side of the builder's own frame — once for
  * what stands below head height, once for everything. A positive figure is a
  * footprint that understates its builder, and a kind with one in the ground
- * columns is flagged; the table's header says which kinds take more ground
- * than they draw, or less, on purpose. It is the check a builder rework owes
- * before the table is trusted again, and it writes nothing.
+ * columns is flagged — past its row plus its `LITTER` allowance, a kind with
+ * one being marked `(litter)` instead; the table's header says which kinds
+ * take more ground than they draw, or less, on purpose. It is the check a
+ * builder rework owes before the table is trusted again, and it writes
+ * nothing.
  *
  * Two stand-ins decide what a hash can see. A PATH road is built without its
  * share of the network (`BuildCtx.road`, which only `MapBuilder` can hand
@@ -157,7 +159,7 @@ function planOf(B, meshes) {
  * what stands on the ground, then everything, eaves and canopies included.
  */
 async function reportFeet(result, notBuilt) {
-  const { FOOT } = await import("./lib/footprints.mjs");
+  const { FOOT, LITTER } = await import("./lib/footprints.mjs");
   const worst = new Map();
   const reach = (box, [x0, x1, z0, z1]) => [x0 - box[0], box[1] - x1, z0 - box[2], box[3] - z1];
   const max = (a, b) => a.map((q, i) => Math.max(q, b[i]));
@@ -184,7 +186,9 @@ async function reportFeet(result, notBuilt) {
   console.log(`  ${"".padEnd(21)}  ground, under ${HEADROOM} m          everything`);
   console.log(`  ${"kind".padEnd(14)} ${"builds".padStart(6)}     -x     +x     -z     +z      -x     +x     -z     +z`);
   for (const [kind, w] of [...worst].sort((p, q) => (p[0] < q[0] ? -1 : 1))) {
-    const flag = w.ground.some((q) => q > 0.05) ? "  <" : "";
+    const litter = LITTER[kind] ?? {};
+    const allowed = ["-x", "+x", "-z", "+z"].map((side) => litter[side] ?? 0);
+    const flag = w.ground.some((q, i) => q > allowed[i] + 0.05) ? "  <" : Object.keys(litter).length ? "  (litter)" : "";
     console.log(`  ${kind.padEnd(14)} ${String(w.n).padStart(6)} ${w.ground.map(f).join(" ")}  ${w.plan.map(f).join(" ")}${flag}`);
   }
   if (notBuilt.length) console.log(`  in FOOT but not a builder: ${notBuilt.join(", ")}`);

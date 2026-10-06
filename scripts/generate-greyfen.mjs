@@ -105,6 +105,7 @@ import { DOORS, FOOT, FRONTS, stairRun } from "./lib/footprints.mjs";
 import {
   bell,
   bracketKind,
+  cutRun,
   f1,
   FACES,
   makeClaim,
@@ -314,11 +315,11 @@ function poolDist(p, x, z) {
  */
 const DISTRICTS = [
   // C — the manor's terrace and the walled garden below its front.
-  { name: "manor terrace", x0: -22, x1: 20, z0: -26, z1: 5, level: 0.8, skirt: 12, weight: 2, hard: 7 },
+  { name: "manor terrace", x0: -22, x1: 20, z0: -26, z1: 8, level: 0.8, skirt: 12, weight: 2, hard: 7 },
   { name: "garden", x0: -26, x1: 26, z0: -50, z1: -26, level: 0.7, skirt: 10 },
   { name: "kitchen yard", x0: -46, x1: -22, z0: -24, z1: 2, level: 0.6, skirt: 8 },
   // The overseer's terrace, cut into the spine's north flank over the ferry track.
-  { name: "overseer", x0: -54, x1: -38, z0: -54, z1: -42, level: 1.2, skirt: 8 },
+  { name: "overseer", x0: -54, x1: -38, z0: -56, z1: -42, level: 1.2, skirt: 8 },
   // A — the stilt village, on the lagoon's south shore.
   { name: "stilt village", x0: -92, x1: -30, z0: 58, z1: 95, level: 0.55, skirt: 10, weight: 1.5 },
   // B — the ferry's bank, and the mission above it.
@@ -561,7 +562,7 @@ pathRoad(
 );
 pathRoad(
   "The processional way — the one paved road in the valley — from the trestle's east foot up to the temple's causeway.",
-  [[TRESTLE_X + TRESTLE_REACH + 0.5, TRESTLE_Z], [64, 13], [TEMPLE.x, 14]],
+  [[TRESTLE_X + TRESTLE_REACH + 0.5, TRESTLE_Z], [64, 13], [TEMPLE.x, 13.5]],
   5,
   "cobble",
   10,
@@ -585,7 +586,7 @@ pathRoad(
 pathRoad(null, [[EBRIDGE_X, EBRIDGE_Z + FOOT_LEN / 2 + 1], [96, -14], [90, 2], [72, 13.4]], 3.5, "dirt", 12);
 pathRoad(
   "The manor's service track, from the kitchen yard round to the north lawn and the trestle.",
-  [[-30, -12], [-26, 6], [-12, 8], [TRESTLE_X - TRESTLE_REACH - 0.5, TRESTLE_Z]],
+  [[-30, -12], [-26, 6], [-18, 10.8], [4, 10.8], [TRESTLE_X - TRESTLE_REACH - 0.5, TRESTLE_Z]],
   3.5,
   "dirt",
   8,
@@ -755,7 +756,7 @@ yard(-44, -24, -22, 0, "the kitchen yard", true);
 yard(-14, 10, 58, 72, "the Landing");
 yard(-116, -86, -44, -12, "the ferry yard", true);
 yard(-64, -52, -30, -18, "the east landing");
-yard(-108, -96, 30, 54, "the sawmill yard");
+yard(-107.5, -96, 30, 54, "the sawmill yard");
 yard(-53, -35, -90, -71, "the old city's court", true);
 yard(22, 58, -98, -70, "the camp", true);
 yard(64, 96, 50, 60, "the temple's north court");
@@ -790,7 +791,7 @@ place("shed", -20, -36, 3, { width: 4.4, depth: 3 }, { note: "the gardener's she
 place("shed", 21, -45, 1, { width: 4.4, depth: 3 }, { note: "the potting shed" });
 place("cart", 4.5, -44, 1, null, { note: "a cart on the drive" });
 // The kitchen yard and the overseer's house on the manor's west flank.
-place("jungleRuin", -46, -48, 2, { width: 11, depth: 8 }, { note: "the overseer's house", flat: 0.6 });
+place("jungleRuin", -46, -49.5, 2, { width: 11, depth: 8 }, { note: "the overseer's house", flat: 0.6 });
 place("shed", -40, -4, 3, { width: 5, depth: 3.2 }, { note: "the kitchen store" });
 place("woodpile", -26, -20, 1, { length: 4 });
 place("crates", -40, -24, 0, null);
@@ -977,7 +978,7 @@ place("crates", -88, -16, 0, null);
 place("shed", -114, -30, 3, { width: 4.4, depth: 3 }, { note: "the ferry store" });
 place("stall", -104, -40, 2, null, { note: "a stall" });
 // The mission, on the rise south of the flag, its door to the ferry yard.
-place("jungleRuin", -110, -55, 2, { width: 12, depth: 9 }, { note: "the mission" });
+place("jungleRuin", -110, -54, 2, { width: 12, depth: 9 }, { note: "the mission" });
 place("well", -94, -50, 0, null, { note: "the mission well" });
 
 // --- the sawmill ---------------------------------------------------------------
@@ -997,7 +998,7 @@ place("woodpile", -113, 30, 1, { length: 6 });
 place("woodpile", -92, 56, 1, { length: 5 });
 place("shed", -92, 30, 1, { width: 5, depth: 3.2 }, { note: "the saw shed" });
 place("cart", -98, 28, 1, null, { note: "a timber cart" });
-place("crates", -92, 43, 0, null);
+place("crates", -91.5, 43.5, 0, null);
 
 // --- D — the temple ------------------------------------------------------------
 
@@ -1116,6 +1117,8 @@ const WALLS = [
 ];
 const MIN_RUN = 3;
 const MAX_RUN = 10;
+/** How far a wall's end piers stand past its run's ends. */
+const WALL_REACH = -FOOT.stoneWall({ length: 0 })[0];
 
 function runnable(x, z) {
   if (Math.abs(x) > HALF - 3 || Math.abs(z) > HALF - 3) return false;
@@ -1149,15 +1152,8 @@ for (const [x0, z0, x1, z1, height, gone = 0] of WALLS) {
   let start = null;
   const flush = (end) => {
     if (start === null) return;
-    const len = end - start;
-    if (len >= MIN_RUN) {
-      const pieces = Math.ceil(len / MAX_RUN);
-      const each = len / pieces;
-      for (let k = 0; k < pieces; k++) {
-        const s0 = start + k * each + (k > 0 ? 0.25 : 0);
-        const s1 = start + (k + 1) * each - (k < pieces - 1 ? 0.25 : 0);
-        here.push({ alongX, at, s0, s1, height });
-      }
+    for (const [s0, s1] of cutRun(start, end, { minRun: MIN_RUN, maxRun: MAX_RUN, reach: WALL_REACH })) {
+      here.push({ alongX, at, s0, s1, height });
     }
     start = null;
   };
@@ -1251,14 +1247,14 @@ note(
   "was checked clear of the carriageways by the generator.",
 );
 // The processional way's stele avenue, both sides of the paving.
-for (const [x, z, w, d, n] of [[52, 17.6, 10, 1.6, 3], [63.3, 8.2, 4.4, 2, 2], [63.3, 17.6, 4.4, 1.6, 2]]) {
+for (const [x, z, w, d, n] of [[52, 17.6, 10, 1.6, 3], [62.9, 8.2, 3.8, 2, 2], [62.9, 17.6, 3.8, 1.6, 2]]) {
   if (rectOk(x, z, w, d) && offRoad(x, z, w, d, 0.6)) rectRegion("carvedStele", x, z, w, d, n, STELE);
   else console.log(`  WARNING: steles at (${x}, ${z}) refused: ${rectWhy}`);
 }
 // Boulders and steles on the temple's hill.
 for (const [prop, x, z, r, n, extra] of [
-  ["boulder", 107, 40, 5, 3, BOULDER], ["boulder", 63, 44, 2, 1, BOULDER], ["carvedStele", 97, 18, 2, 1, STELE],
-  ["carvedStele", 96, 44, 1.5, 1, STELE], ["boulder", 109, 24, 5, 3, BOULDER],
+  ["boulder", 107, 40, 5, 3, BOULDER], ["boulder", 62.9, 44, 1.9, 1, BOULDER], ["carvedStele", 97, 18, 2, 1, STELE],
+  ["carvedStele", 96.6, 44, 1.5, 1, STELE], ["boulder", 109, 24, 5, 3, BOULDER],
 ]) {
   if (groveOk(x, z, r, 0.42) && offRoad(x, z, 2 * r, 2 * r)) disc(prop, x, z, r, n, extra);
   else console.log(`  WARNING: ${prop} at (${x}, ${z}) refused: ${rectOk(x, z, 2 * r, 2 * r, 0.42) ? "a road" : rectWhy}`);
