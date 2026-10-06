@@ -73,11 +73,7 @@ import { CelInk } from "../shaders/CelInk";
 import { FrameDepth } from "../shaders/FrameDepth";
 import { GlowPass } from "../shaders/GlowPass";
 import { MotionBlur } from "../shaders/MotionBlur";
-import {
-  isVolumetricRung,
-  Volumetrics,
-  type VolumetricRung,
-} from "../shaders/Volumetrics";
+import { Volumetrics, type VolumetricRung } from "../shaders/Volumetrics";
 import { Bot } from "../entities/Bot";
 import { difficultyNames, profileFor } from "../entities/BotSkill";
 import { callsign } from "../entities/callsigns";
@@ -233,15 +229,14 @@ import {
 } from "./ScreenStack";
 import {
   type FoliageQuality,
-  type GiQuality,
   readSettings,
-  SHADOW_QUALITIES,
   type ShadowQuality,
   writeSettings,
   type Settings,
   type VolumetricQuality,
 } from "./settings";
 import { Sfx } from "./Sfx";
+import { UrlOverrides, urlFlag } from "./urlOverrides";
 import { setViewerTeam, teamLook } from "./teamView";
 import { forgetBindGroups } from "./webgpuLeaks";
 
@@ -572,25 +567,11 @@ export class Game {
    */
   private localShadows: LocalShadows;
   /**
-   * `?gi=off|low|high`, which overrides the setting for the whole session —
-   * `volumetricsForced`'s relationship to its own setting, for its reason: a
-   * measurement runs in a fresh profile with nothing stored.
+   * The URL's session overrides of the display settings — `?gi=`,
+   * `?shadows=`, `?volumetrics=` and `?nominimap`. Read once; every value in
+   * force below is resolved through it (`core/urlOverrides.ts`).
    */
-  private readonly giForced: GiQuality | null = (() => {
-    const q = new URLSearchParams(location.search).get("gi");
-    return q === "off" || q === "low" || q === "high" ? q : null;
-  })();
-  /**
-   * `?shadows=off|low|medium|high`, overriding the setting for the session on
-   * `giForced`'s terms — a capture that compares rungs is taken in a fresh
-   * profile with nothing stored.
-   */
-  private readonly shadowsForced: ShadowQuality | null = (() => {
-    const q = new URLSearchParams(location.search).get("shadows");
-    return (SHADOW_QUALITIES as readonly string[]).includes(q ?? "")
-      ? (q as ShadowQuality)
-      : null;
-  })();
+  private readonly overrides = new UrlOverrides();
   /**
    * The world as the glazing reflects it — one cube, baked per map install.
    * The only render target here besides the shadow map.
@@ -695,28 +676,6 @@ export class Game {
    */
   private volumetricsSlot = 0;
   private volumetricsAttached = false;
-  /**
-   * `?volumetrics=<rung>`, which overrides the setting for the whole session
-   * — the same relationship `?profile` has with `Settings.profiler`, and for
-   * the same reason: a measurement runs in a fresh profile with no
-   * `localStorage` to write the setting into.
-   */
-  /**
-   * `?nominimap` — the corner map is not drawn at all, for the A/B in
-   * FINDINGS.md 13: it is the one piece of chrome redrawn in full on every
-   * frame (a Canvas2D blit, its marks, and the CSS drop shadow under it
-   * re-applied because the canvas changed), and that is raster and compositor
-   * work no span in the profiler can see. A flag and never a setting, because
-   * the map is not something a player should be offered to lose; recorded in
-   * every capture as `graphics.minimap`.
-   */
-  private readonly minimapOff = new URLSearchParams(location.search).has(
-    "nominimap",
-  );
-  private readonly volumetricsForced: VolumetricRung | null = (() => {
-    const q = new URLSearchParams(location.search).get("volumetrics");
-    return q !== null && isVolumetricRung(q) ? q : null;
-  })();
   private motionBlur: MotionBlur;
   /**
    * The ink. One full-screen edge over the depth the frame already wrote —
@@ -945,7 +904,7 @@ export class Game {
   private settings: Settings = readSettings();
   /** The shadow rung in force: the URL's for a session, else the setting. */
   private get shadowQuality(): ShadowQuality {
-    return this.shadowsForced ?? this.settings.shadows;
+    return this.overrides.shadows(this.settings.shadows);
   }
   /** Reused each frame: the player plus every bot, for objective occupancy. */
   /**
@@ -1290,7 +1249,7 @@ export class Game {
       this.engine,
       this.scene,
       this.mats,
-      this.giForced ?? this.settings.gi,
+      this.overrides.gi(this.settings.gi),
     );
     this.input = new InputManager(canvas);
     this.cameraSys = new CameraSystem(this.scene);
@@ -1441,7 +1400,7 @@ export class Game {
     // the first frame the depth image exists and on every later frame the
     // player turns them back on. The blur and the grade append after the hole
     // and the order is exact whatever the setting does.
-    const bootRung = this.volumetricsWanted(this.settings.volumetrics);
+    const bootRung = this.overrides.volumetrics(this.settings.volumetrics);
     const first = new Volumetrics(
       this.scene,
       this.cameraSys.camera,
@@ -1479,7 +1438,7 @@ export class Game {
     this.loadoutScreen = new LoadoutScreen();
     this.settingsScreen = new SettingsScreen(this.settings);
     this.lobbyScreen = new LobbyScreen();
-    this.minimap = new Minimap(!this.minimapOff);
+    this.minimap = new Minimap(this.overrides.minimap);
     this.touch = new TouchControls();
     // After the HUD like every other thing on `#hud`, and before
     // `applySettings` below, which is what may arm it on a reload.
@@ -1644,7 +1603,7 @@ export class Game {
     // `localStorage`, which a fresh browser profile and every smoke script
     // start without — so this is the only way in that does not require a visit
     // to the settings screen first.
-    if (new URLSearchParams(location.search).has("profile")) this.setProfiling(true);
+    if (urlFlag("profile")) this.setProfiling(true);
     this.joinFromUrl();
     this.engine.runRenderLoop(() => this.tick());
   }
@@ -2699,7 +2658,7 @@ export class Game {
     this.setVolumetrics(this.settings.volumetrics);
     // A no-op unless the tier moved; a change stands up a new texture set and
     // republishes it to every cel material (`GiVolume.setQuality`).
-    this.gi.setQuality(this.giForced ?? this.settings.gi);
+    this.gi.setQuality(this.overrides.gi(this.settings.gi));
     // Each a no-op unless its own map's rung moved; a change rebuilds that
     // generator at the new size and re-binds it to every consumer.
     this.shadows.setQuality(this.shadowQuality);
@@ -2752,23 +2711,18 @@ export class Game {
    * where one overrides the setting — because that is what the frame cost.
    */
   private pushProfileGraphics(): void {
-    const forced: string[] = [];
-    if (this.giForced) forced.push("gi");
-    if (this.shadowsForced) forced.push("shadows");
-    if (this.volumetricsForced) forced.push("volumetrics");
-    if (this.minimapOff) forced.push("minimap");
     this.prof.setGraphics({
       renderScale: this.settings.renderScale,
       fpsCap: this.settings.fpsCap,
       shadows: this.shadowQuality,
-      gi: this.giForced ?? this.settings.gi,
+      gi: this.overrides.gi(this.settings.gi),
       grass: this.settings.grass,
       foliage: this.foliageBuilt ?? undefined,
       volumetrics: this.volumetricsRung ?? "off",
       motionBlur: this.settings.motionBlur,
       paperGrain: this.settings.paperGrain,
-      minimap: !this.minimapOff,
-      forced,
+      minimap: this.overrides.minimap,
+      forced: this.overrides.forced,
     });
   }
 
@@ -2823,28 +2777,6 @@ export class Game {
   }
 
   /**
-   * Adds or removes the motion blur pass, keeping the chain's order.
-   *
-   * The order is load-bearing and documented on both passes: the shafts, then
-   * the blur, then the grade — the shafts belong to the frame they smear with, and
-   * grain over a smear reads as a dirty lens. Babylon's `attachPostProcess`
-   * APPENDS, so simply re-attaching the blur would put it behind the grade.
-   * Taking the grade off and putting it back after is what restores the order
-   * without computing an index into a chain that also holds the pipeline's own
-   * FXAA — and it is Game's job because Game is what assembled the chain.
-   *
-   * Nothing throws if this is wrong. The symptom is smeared grain.
-   */
-  /**
-   * Which rung should be BUILT for a given setting — `?volumetrics=` first, the
-   * player's choice otherwise, and null for off.
-   */
-  private volumetricsWanted(q: VolumetricQuality): VolumetricRung | null {
-    if (this.volumetricsForced) return this.volumetricsForced;
-    return q === "off" ? null : q;
-  }
-
-  /**
    * Builds, rebuilds or removes the shaft pass for a quality setting.
    *
    * **A rung change is a REBUILD and not a uniform**: the tap count is a WGSL
@@ -2862,7 +2794,7 @@ export class Game {
    * depth image exists, which is also the frame after this on a live rebuild.
    */
   private setVolumetrics(q: VolumetricQuality): void {
-    const want = this.volumetricsWanted(q);
+    const want = this.overrides.volumetrics(q);
     if (want === this.volumetricsRung) return;
     const camera = this.cameraSys.camera;
     if (this.volumetrics) {
@@ -2919,6 +2851,19 @@ export class Game {
     this.volumetricsAttached = on;
   }
 
+  /**
+   * Adds or removes the motion blur pass, keeping the chain's order.
+   *
+   * The order is load-bearing and documented on both passes: the shafts, then
+   * the blur, then the grade — the shafts belong to the frame they smear with, and
+   * grain over a smear reads as a dirty lens. Babylon's `attachPostProcess`
+   * APPENDS, so simply re-attaching the blur would put it behind the grade.
+   * Taking the grade off and putting it back after is what restores the order
+   * without computing an index into a chain that also holds the pipeline's own
+   * FXAA — and it is Game's job because Game is what assembled the chain.
+   *
+   * Nothing throws if this is wrong. The symptom is smeared grain.
+   */
   private setMotionBlurEnabled(on: boolean): void {
     if (on === this.motionBlur.isEnabled) return;
     const camera = this.cameraSys.camera;

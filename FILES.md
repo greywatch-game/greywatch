@@ -240,6 +240,11 @@ src/
     settings.ts         # Settings shape, defaults, localStorage. Applies
                         #   nothing — that is Game.applySettings, the ONLY
                         #   place a setting reaches whatever owns it
+    urlOverrides.ts     # The URL's session overrides of a display setting
+                        #   (?gi= ?shadows= ?volumetrics= ?nominimap), read
+                        #   ONCE and resolved against the setting Game hands
+                        #   in; the `forced` list a capture files. Also the
+                        #   URL-flag reader (?profile, ?gpu). Applies nothing
     shadowWindow.ts     # Where a directional shadow camera STANDS, and the
                         #   texel snap that stops its edges crawling. Both maps
                         #   place themselves with it — ShadowSystem's and

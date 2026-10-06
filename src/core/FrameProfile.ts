@@ -110,6 +110,7 @@ import {
   type Scene,
 } from "@babylonjs/core";
 import { CONFIG } from "../config";
+import { urlFlag } from "./urlOverrides";
 
 /**
  * What the profiler needs of the glow: a pair of notifications around each
@@ -353,21 +354,6 @@ interface LoafEntry {
    */
   readonly renderStart?: number;
   readonly scripts?: readonly LoafScript[];
-}
-
-/**
- * Whether a boot flag is on the URL.
- *
- * The profiler already arms itself from `?profile` for the reason this exists:
- * a fresh browser profile and every smoke script start without the setting, and
- * some of what this instrument does cannot be turned on after boot at all.
- */
-function hasFlag(name: string): boolean {
-  try {
-    return new URLSearchParams(location.search).has(name);
-  } catch {
-    return false;
-  }
 }
 
 /** How long a name from a long animation frame may be, in characters. */
@@ -789,7 +775,7 @@ export interface ProfileGraphics {
    */
   minimap?: boolean;
   /** Keys above whose value came from the URL rather than the setting. */
-  forced: string[];
+  forced: readonly string[];
 }
 
 /** What a capture hands back. JSON by construction — this is the artefact. */
@@ -1433,7 +1419,7 @@ export class FrameProfile {
     // Read here rather than passed in: `main.ts` acts on this flag at device
     // creation and cannot reach an instrument that is armed later, and a
     // capture has to be able to tell "nobody asked" from "the adapter said no".
-    this.gpuRequested = hasFlag("gpu");
+    this.gpuRequested = urlFlag("gpu");
     this.loafWorst = [];
     this.cursor = 0;
     this.filled = 0;

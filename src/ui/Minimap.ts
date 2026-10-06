@@ -121,7 +121,7 @@ const CARDINALS = ["N", "NE", "E", "SE", "S", "SW", "W", "NW"];
  */
 export class Minimap {
   /**
-   * False under `?nominimap` (`Game.minimapOff`): the map is never put up,
+   * False under `?nominimap` (`UrlOverrides.minimap`): the map is never put up,
    * never prerendered and never drawn, so a capture taken with it off has paid
    * for none of it. It is a MEASUREMENT lever and not a setting — the A/B in
    * FINDINGS.md 13 — and held here rather than at each caller because

@@ -1004,8 +1004,11 @@ still justify a rule into `docs/profiling.md` (verbatim), delete the rest
 **Area:** `src/core/Game.ts`, `docs/game.md`
 
 - ~641: orphaned "Moon shafts" doc comment stacked on another one.
-- ~659–664: the `?volumetrics` doc is stranded above `minimapOff`'s, so
-  `volumetricsForced` (~677) has none.
+- ~~~659–664: the `?volumetrics` doc is stranded above `minimapOff`'s, so
+  `volumetricsForced` (~677) has none.~~ Gone with ticket 19: the four
+  overrides moved into `core/urlOverrides.ts`, each with its own doc. The
+  motion blur's doc, stranded above `volumetricsWanted`, is back on
+  `setMotionBlurEnabled`.
 - ~911: "Reused each frame: the player plus every bot…" describes
   `combatants` (~963) but sits above `net`.
 - ~1468–1473: says "three clients", then "into both… both clients".
