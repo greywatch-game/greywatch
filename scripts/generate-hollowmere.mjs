@@ -68,6 +68,7 @@ import { DOORS, FOOT, FRONTS } from "./lib/footprints.mjs";
 import {
   bell,
   bracketKind,
+  cutRun,
   f1,
   FACES,
   makeClaim,
@@ -754,7 +755,7 @@ must("well", NORTH_X - 1, 7, 0, null, { force: true, note: "the well" });
 for (const [x, z, t] of [[-10, 4, 0], [10, 4, 0], [-11, -10, 2], [11, -10, 2]]) {
   must("stall", x, z, t, null, { force: true, note: "a stall" });
 }
-must("cart", -14.5, -14, 0, { ruined: true }, { force: true, note: "a cart" });
+must("cart", -12.5, -14, 0, { ruined: true }, { force: true, note: "a cart" });
 must("crates", 14.5, 8.5, 0, null, { force: true, note: "crates" });
 must("trough", -14.5, 9, 1, null, { force: true, note: "a trough" });
 // The inn, on the north side of the square: its porch to the square, its yard
@@ -962,7 +963,8 @@ placements.push(
   "  // it, the fishermen's cottages round the yard. A brawl in the thickest",
   "  // mist on the map.",
 );
-must("boathouse", BOAT.x, BOAT.z, 2, null, { note: "the boathouse", dry: [-6, 7.2, -7, -2.5], flat: 1.8 });
+// The shore puts the open side's corner posts 0.65 m off the dock yard it opens onto.
+must("boathouse", BOAT.x, BOAT.z, 2, null, { note: "the boathouse", dry: [-6, 7.2, -7, -2.5], flat: 1.8, pad: 0.6 });
 // The jetties, rooted on the shore and run out over the pool.
 for (const jx of [22, 58]) {
   let root = -66;
@@ -975,10 +977,10 @@ for (const jx of [22, 58]) {
   claim(worldFoot("jetty", jx, cz, 0, { length: len }), "solid", "a jetty");
 }
 place("cottage", 14, -60, 3, { width: 7, depth: 6, ruined: true }, { note: "a fisherman's cottage" });
-place("ruin", 8, -69.5, 3, { width: 8, depth: 6.5 }, { note: "the net loft" });
+place("ruin", 8, -70, 3, { width: 8, depth: 6.5 }, { note: "the net loft" });
 place("shed", 52, -60, 2, { width: 5, depth: 3 }, { note: "a net shed" });
 place("shed", 44, -57, 2, { width: 4.4, depth: 3 }, { note: "a net shed" });
-place("kiln", 8, -52, 3, null, { note: "the smokehouse" });
+place("kiln", 7.5, -51.5, 3, null, { note: "the smokehouse" });
 place("crates", 28, -73, 0, null);
 place("crates", 51, -73, 1, null);
 lamp(29.5, -72, "east", "a lamp in the dock yard");
@@ -1242,6 +1244,8 @@ const BOUNDARIES = [
 ];
 const MIN_RUN = 5;
 const MAX_RUN = 22;
+/** How far a boundary kind's drawing stands past its run's ends: a wall's end piers, a fence's end posts. */
+const reachOf = (kind) => -FOOT[kind === "wall" ? "stoneWall" : "fence"]({ length: 0 })[0];
 
 /** Whether a point on a boundary line may carry a run. */
 function runnable(x, z) {
@@ -1274,15 +1278,8 @@ for (const [x0, z0, x1, z1, kind] of BOUNDARIES) {
   let start = null;
   const flush = (end) => {
     if (start === null) return;
-    const len = end - start;
-    if (len >= MIN_RUN) {
-      const pieces = Math.ceil(len / MAX_RUN);
-      const each = len / pieces;
-      for (let k = 0; k < pieces; k++) {
-        const s0 = start + k * each + (k > 0 ? 0.25 : 0);
-        const s1 = start + (k + 1) * each - (k < pieces - 1 ? 0.25 : 0);
-        here.push({ alongX, at, s0, s1, kind });
-      }
+    for (const [s0, s1] of cutRun(start, end, { minRun: MIN_RUN, maxRun: MAX_RUN, reach: reachOf(kind) })) {
+      here.push({ alongX, at, s0, s1, kind });
     }
     start = null;
   };
