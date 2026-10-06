@@ -328,6 +328,20 @@ export function makeEmit(placements, placed) {
   };
 }
 
+/**
+ * An axis-aligned rectangle road: filed in `roadDefs` for the network (so the
+ * generator's road footprint is the game's own) and written through `emit`.
+ * `turn` 0 runs along Z, 1 along X; no `surface` leaves the builder's default.
+ */
+export function makeRectRoad(roadDefs, emit) {
+  return (x, z, turn, len, w, surface) => {
+    const params = { length: len, width: w };
+    if (surface) params.surface = surface;
+    roadDefs.push({ kind: "road", x, z, rotY: turn ? Math.PI / 2 : 0, params });
+    emit("road", x, z, turn, params);
+  };
+}
+
 /** A banner comment between two runs of a layout's list. */
 export function section(list, title) {
   const bar = "=".repeat(Math.max(4, 74 - title.length));

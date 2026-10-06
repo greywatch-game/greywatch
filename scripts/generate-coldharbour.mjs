@@ -72,6 +72,7 @@ import {
   makeGrade,
   makeMust,
   makeOverlaps,
+  makeRectRoad,
   makeRelief,
   makeScatter,
   makeWorldFoot,
@@ -497,13 +498,7 @@ note(
 
 const roadDefs = [];
 
-/** An axis-aligned rectangle road. `turn` 0 runs along Z, 1 along X. */
-function rectRoad(x, z, turn, len, w, surface) {
-  const params = { length: len, width: w };
-  if (surface) params.surface = surface;
-  roadDefs.push({ kind: "road", x, z, rotY: turn ? Math.PI / 2 : 0, params });
-  emit("road", x, z, turn, params);
-}
+const rectRoad = makeRectRoad(roadDefs, emit);
 
 /** A path road through world points; the network bends and joins it. */
 function pathRoad(comment, points, w, surface, radius) {
