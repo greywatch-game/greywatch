@@ -12,6 +12,12 @@
  *
  * Never reach for Math.random() in world-building code. A map must build the
  * same way every time or none of its nav gotchas are reproducible.
+ *
+ * **A Node script loads this file by type stripping**: the map generators
+ * (through `scripts/lib/mapgen.mjs`) and the foam mask's generator draw from
+ * this generator rather than a copy of it. So nothing here may be syntax that
+ * has to be compiled rather than erased, and a value import would have to name
+ * its `.ts` — the rule `roadPaths.ts` and `roads.ts` carry for the same reason.
  */
 
 /**
