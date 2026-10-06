@@ -46,7 +46,7 @@ match smoke test (`npm run build:server && npm run server`, two clients).
 | ~~[15](#15-map-generators-share-no-code)~~ | P1 — done | Map generators share no code |
 | ~~[16](#16-one-building-footprint-table-for-every-generator)~~ | P1 — done | One building-footprint table for every generator |
 | ~~[17](#17-cannon-and-muzzle-light-effects-duplicated-in-gamets-with-inline-magic-numbers)~~ | P1 — done | Cannon/muzzle-light effects duplicated in `Game.ts` with inline magic numbers |
-| [18](#18-small-duplicates-inside-gamets) | P2 | Small duplicates inside `Game.ts` |
+| ~~[18](#18-small-duplicates-inside-gamets)~~ | P2 — done | Small duplicates inside `Game.ts` |
 | [19](#19-extract-the-gamets-clusters-that-pass-docsgamemds-test) | P2 | Extract the `Game.ts` clusters that pass `docs/game.md`'s test |
 | [20](#20-decompose-the-longest-gamets-methods-in-place) | P2 | Decompose the longest `Game.ts` methods in place |
 | [21](#21-extend-kithash-to-cover-scatter-builders) | P2 | Extend `kit:hash` to cover scatter builders |
@@ -529,6 +529,8 @@ weapon/vehicle spec it belongs to) with a name saying what it is.
 ## P2 — structure
 
 ### 18. Small duplicates inside `Game.ts`
+
+**Resolved.** `Game.hitCue(killed, head)` is the marker and its sound. It serves the rifle's own resolve, the authority's `hit`, `hullHitCue` and the crush. The blast and the burn mark without a sound, so they still call `flashHitmarker` alone. The module-level `netWeapon(w)` resolves a wire event's weapon name, `undefined` meaning a bot. `onNetFire` reads its voice and reach from it and the `reload` arm its voice and time; `netVoice` is gone. `netBurst(n)` and `burstSpacing(rounds)` are the burst clamp and spacing for `onNetFire` and `onNetMg`.
 
 **Area:** `src/core/Game.ts`
 

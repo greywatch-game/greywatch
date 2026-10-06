@@ -120,7 +120,6 @@ import {
   isWeaponId,
   PRIMARY_WEAPON_IDS,
   type PrimaryWeaponId,
-  type ReportVoice,
 } from "../entities/weapons";
 import { AimAssistSystem } from "../systems/AimAssistSystem";
 import { Atmosphere } from "../systems/Atmosphere";
@@ -357,6 +356,34 @@ function eyeDistanceSq(sub: SubMesh, eye: Vector3): number {
  * a carried light nobody removes never gives its shader slot back.
  */
 const kitLampId = (n: number) => `kit-lamp-${n}`;
+
+/**
+ * The weapon a wire event names, or `undefined` for a slot that named none —
+ * which is a BOT, so every reader falls through to what a bot carries: the
+ * flat round's voice, its reach and a default-skill reload. One resolve so the
+ * report, the tracer's reach and the reload's time cannot be read off two
+ * different guns. The name came off a socket, so it is checked, not cast.
+ */
+function netWeapon(w: string | undefined) {
+  return w !== undefined && isWeaponId(w) ? CONFIG.weapons[w] : undefined;
+}
+
+/**
+ * How many rounds one `fire` or `mg` event stands for, bounded by the ticks in
+ * a snapshot interval — the most a rate-gated slot can physically have spent,
+ * because the count came off a socket.
+ */
+function netBurst(n: number | undefined): number {
+  return Math.min(Math.max(n ?? 1, 1), TICK_HZ / SNAPSHOT_HZ);
+}
+
+/**
+ * …and the gap between those rounds, laid back out across the interval they
+ * were fired in rather than stacked on one instant.
+ */
+function burstSpacing(rounds: number): number {
+  return 1 / SNAPSHOT_HZ / rounds;
+}
 
 /**
  * Top-level orchestrator: owns the scene, all systems, the game state machine,
@@ -1585,8 +1612,7 @@ export class Game {
       // kill flash and the note under it. A bot crew's gets none of it.
       onCrushed: (by) => {
         if (by !== this.player) return;
-        this.hud.flashHitmarker(true, false);
-        this.sfx.hit();
+        this.hitCue(true, false);
       },
     };
 
@@ -5649,9 +5675,7 @@ export class Game {
         // headshot is the second axis and loses to a kill on the marker,
         // because "stop shooting" is the more urgent thing to say; it keeps
         // its own sound either way, which is where the read actually lands.
-        this.hud.flashHitmarker(killedBody, shot.headshot);
-        if (shot.headshot) this.sfx.headshot();
-        else this.sfx.hit();
+        this.hitCue(killedBody, shot.headshot);
         // Netplay: this marker is a guess, and remembering that it was made is
         // what keeps the authority's answer from repeating it a round trip
         // later. See `HitCredits`.
@@ -6305,8 +6329,20 @@ export class Game {
   private hullHitCue(round: HullRound): void {
     const shot = round.shot;
     if (!shot.target) return;
-    this.hud.flashHitmarker(shot.killed && shot.target instanceof Bot, false);
-    this.sfx.hit();
+    this.hitCue(shot.killed && shot.target instanceof Bot, false);
+  }
+
+  /**
+   * A round of this player's landed: the marker and the note under it, the
+   * pair every door that says so spends together — the rifle's own resolve,
+   * the authority's answer to it, a hull's guns and a crush. A kill gets the
+   * red marker and a headshot its own sound; the blast and the burn mark
+   * without a note, so they reach `flashHitmarker` alone.
+   */
+  private hitCue(killed: boolean, head: boolean): void {
+    this.hud.flashHitmarker(killed, head);
+    if (head) this.sfx.headshot();
+    else this.sfx.hit();
   }
 
   /**
@@ -7197,9 +7233,7 @@ export class Game {
           event.shooter === this.net?.slot &&
           !this.hitCredits.claim(event.killed, event.headshot)
         ) {
-          this.hud.flashHitmarker(event.killed, event.headshot);
-          if (event.headshot) this.sfx.headshot();
-          else this.sfx.hit();
+          this.hitCue(event.killed, event.headshot);
         }
         break;
 
@@ -7226,15 +7260,15 @@ export class Game {
         if (event.slot === this.net?.slot) break;
         const who = this.net?.roster.at(event.slot);
         if (!who) break;
-        this.sfx.botReload(who.position, this.netVoice(event.w));
+        const weapon = netWeapon(event.w);
+        this.sfx.botReload(who.position, weapon?.report);
         // …and SEEN: the body's left hand goes to the magazine. A weapon named
         // is a person's and takes that weapon's own time; none named is a bot,
         // whose skill-drawn time this client cannot know, so it takes the one a
         // bot of default skill would.
         who.startReload(
-          event.w !== undefined && isWeaponId(event.w)
-            ? CONFIG.weapons[event.w].reloadTime
-            : profileFor(CONFIG.bots.skill.defaultSkill).reloadTime,
+          weapon?.reloadTime ??
+            profileFor(CONFIG.bots.skill.defaultSkill).reloadTime,
         );
         break;
       }
@@ -7481,30 +7515,25 @@ export class Game {
     // One event carries every round that slot fired inside a snapshot interval,
     // so they are laid back out across it rather than stacked on one instant —
     // a burst played as a single louder shot reads as one shot, and the rate is
-    // most of what says which weapon is being fired at you. Bounded by the
-    // ticks in an interval, which is the most a rate-gated slot can physically
-    // have spent, because the count came off a socket.
-    const rounds = Math.min(Math.max(event.n ?? 1, 1), TICK_HZ / SNAPSHOT_HZ);
-    const spacing = 1 / SNAPSHOT_HZ / rounds;
+    // most of what says which weapon is being fired at you.
+    const rounds = netBurst(event.n);
+    const spacing = burstSpacing(rounds);
     // Voiced by the weapon the authority says is in that slot's hands, so a
     // match can be read by ear the way an offline round can be read by eye: a
     // DMR two streets away is not the SMG beside you. A slot with no weapon
     // named is a bot, and a bot fires the flat round.
-    const voice = this.netVoice(event.w);
+    const weapon = netWeapon(event.w);
+    const voice = weapon?.report;
     // The eye rather than the feet: a rifle goes off at a shoulder, and this is
     // the only height on a net body that is near one. Offline the same sound is
     // placed at the bot's own muzzle.
     for (let i = 0; i < rounds; i++) {
       this.sfx.botShot(shooter.eyePos, i * spacing, voice);
     }
-    // The weapon the authority named, resolved exactly as the report's voice
-    // is. A slot with none is a bot, and a bot fires the flat round with the
-    // flat reach — the same fall-through `netVoice` makes, and the same number
-    // `BattleSystem.botFire` gives it.
-    const range =
-      event.w !== undefined && isWeaponId(event.w)
-        ? CONFIG.weapons[event.w].range
-        : CONFIG.bots.range;
+    // The same weapon's reach. A slot with none is a bot, and a bot fires the
+    // flat round with the flat reach — the number `BattleSystem.botFire` gives
+    // it.
+    const range = weapon?.range ?? CONFIG.bots.range;
     this.queueNetShot(event.slot, rounds, spacing, range, "body");
     if (shooter.team !== this.player.team) this.minimap.reveal(shooter);
   }
@@ -7574,9 +7603,9 @@ export class Game {
     if (!tank || !tank.alive) return;
     if (tank === this.driving && this.drivingSeat === GUNNER) return;
     const m = tank.spec.mg;
-    // Bounded like `fire`'s count, because it came off a socket.
-    const rounds = Math.min(Math.max(event.n ?? 1, 1), TICK_HZ / SNAPSHOT_HZ);
-    const spacing = 1 / SNAPSHOT_HZ / rounds;
+    // Bounded and spaced like `fire`'s count, because it came off a socket.
+    const rounds = netBurst(event.n);
+    const spacing = burstSpacing(rounds);
     tank.mgMuzzleToRef(this.netMuzzle);
     const onBoard = tank === this.driving;
     for (let i = 0; i < rounds; i++) {
@@ -7714,10 +7743,6 @@ export class Game {
     this.cameraSys.reset(yaw);
     this.motionBlur.reset();
     this.input.consumeFire();
-  }
-
-  private netVoice(w: string | undefined): ReportVoice | undefined {
-    return w !== undefined && isWeaponId(w) ? CONFIG.weapons[w].report : undefined;
   }
 
   /**
