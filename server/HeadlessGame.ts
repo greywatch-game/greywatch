@@ -946,8 +946,10 @@ export class HeadlessGame {
    * entry without a seat is a hull nobody can steer and nothing can free, and
    * a seat without one is a driver whose reports go nowhere.
    *
-   * Returns the hull that was taken, or null for a refusal or a dismount. A
-   * refusal is SILENT beyond the answer: `Match` tells the asker where they
+   * Returns the hull the player is in afterwards: the one taken, or null for a
+   * refused mount or a dismount — and for a refused CROSSING the hull they are
+   * still sitting in, since refusing a swap moves nobody. A refusal is SILENT
+   * beyond the answer: `Match` tells the asker where they
    * are either way, and a player who pressed the key a metre too far from
    * their own tank has lost nothing but the press.
    */
@@ -966,11 +968,17 @@ export class HeadlessGame {
     // taken is answered with the OTHER one, and this player is what is making
     // it taken.
     if (held === tank && !crossing) return tank;
-    // **A crossing that will be refused is refused BEFORE the release**, or
-    // the refusal would have spent the chair the player is sitting in. The
-    // chair being asked for is held by whoever holds it whether or not this
-    // player's own is given up, so the answer below cannot differ from this one.
-    if (crossing && !this.mayCross(held, want)) return held;
+    // **A CROSSING is decided BEFORE the release**, or a refusal would have
+    // spent the chair the player is sitting in. It is `chooseSeat` with `only`
+    // set — the chair named or nothing — because the fall-back would be the
+    // chair just left, and a swap against a bot gunner silently put the player
+    // back where they started. Who holds the chair being asked for does not
+    // change when this player's own is given up, so the answer stands.
+    let crossTo: CrewSeat | -1 = -1;
+    if (crossing && held) {
+      crossTo = this.pickSeat(held, want, true);
+      if (crossTo === -1) return held;
+    }
     if (held && (held !== tank || crossing)) {
       this.release(player, held);
       if (held !== tank) {
@@ -992,21 +1000,13 @@ export class HeadlessGame {
     // is turned out of the one asked for and then out of the other — the whole
     // of "a bot crew never denies the player their own armour" — and a PERSON
     // never is.
-    //
-    // **A CROSSING is `only`: the chair named or nothing.** The fall-back is
-    // the chair the player just left, so without it a swap against a bot
-    // gunner silently put them back where they started.
-    const use = chooseSeat(
-      this.seatHolder(tank, DRIVER),
-      this.seatHolder(tank, GUNNER),
-      want,
-      crossing,
-    );
+    const use = crossing ? crossTo : this.pickSeat(tank, want, false);
     if (use === -1) return null;
     // The eviction lands on the same frame as the mount for `Game`'s reason:
     // a hull given up and not taken is one the boarding sweep can re-crew
-    // before anybody else gets a word in.
-    if (tank.seats[use] && !this.crew.evict(tank, use)) return null;
+    // before anybody else gets a word in. `chooseSeat` only names a held chair
+    // when a bot holds it, so the second line is a guard rather than a branch.
+    if (tank.seats[use]) this.crew.evict(tank, use);
     if (tank.seats[use]) return null;
 
     player.seat = index;
@@ -1055,19 +1055,18 @@ export class HeadlessGame {
   }
 
   /**
-   * Who is in one chair, as `chooseSeat` asks it: nobody, a bot of
-   * `VehicleCrew`'s, or a person. The authority's half of the client's
-   * `Game.seatHeldBy`, and it reads the crew table the client cannot.
+   * `chooseSeat` asked against this hull's crew as the authority holds it —
+   * the half of the client's `Game.seatHeldBy` that reads the crew table a
+   * client cannot.
    */
-  seatHolder(tank: Vehicle, seat: CrewSeat): SeatHolder {
-    if (!tank.seats[seat]) return "open";
-    return this.crew.crewOf(tank, seat) ? "bot" : "player";
+  private pickSeat(tank: Vehicle, want: CrewSeat, only: boolean): CrewSeat | -1 {
+    return chooseSeat(this.seatHolder(tank, DRIVER), this.seatHolder(tank, GUNNER), want, only);
   }
 
-  /** May a person aboard `tank` cross into `want`? `Game.canSwapSeat`'s twin. */
-  private mayCross(tank: Vehicle, want: CrewSeat): boolean {
-    const driver = this.seatHolder(tank, DRIVER);
-    return chooseSeat(driver, this.seatHolder(tank, GUNNER), want, true) !== -1;
+  /** Who is in one chair: nobody, a bot of `VehicleCrew`'s, or a person. */
+  private seatHolder(tank: Vehicle, seat: CrewSeat): SeatHolder {
+    if (!tank.seats[seat]) return "open";
+    return this.crew.crewOf(tank, seat) ? "bot" : "player";
   }
 
   /**

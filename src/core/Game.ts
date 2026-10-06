@@ -5714,23 +5714,6 @@ export class Game {
   }
 
   /**
-   * The hull this player could get into right now, WHICH seat of it, and what
-   * the prompt should call the offer: a hull with a chair free, or — failing
-   * that — their own side's hull with a bot crew in it, which they may turn
-   * out of it.
-   *
-   * **A seat free first**, and with two seats that is no longer a
-   * hypothetical: the ordinary case on a map with one hardstanding a side is a
-   * hull a bot is already driving, and the right answer is for the player to
-   * climb onto the gun rather than to throw the driver out of it. Eviction is
-   * the last resort — a full hull — rather than the greeting.
-   *
-   * The whole of "a bot crew never denies the player their own armour" is
-   * these six lines and `VehicleCrew.evict`. Without them a single hull a side
-   * makes whether the player ever drives a race to the yard, which is a worse
-   * feature than bots not driving at all.
-   */
-  /**
    * The hull this client is driving, as the upload needs it, or null on foot.
    *
    * Rebuilt in place rather than allocated, because it is read at `INPUT_HZ`
@@ -5826,6 +5809,25 @@ export class Game {
    */
   private useOffer: string | null = null;
 
+  /**
+   * The hull this player could get into right now, WHICH seat of it, and what
+   * the prompt should call the offer: a hull with a chair free, or — failing
+   * that — their own side's hull with a bot crew in it, which they may turn
+   * out of it.
+   *
+   * **A seat free first**, and with two seats that is no longer a
+   * hypothetical: the ordinary case on a map with one hardstanding a side is a
+   * hull a bot is already driving, and the right answer is for the player to
+   * climb onto the gun rather than to throw the driver out of it. Eviction is
+   * the last resort — a full hull — rather than the greeting.
+   *
+   * The whole of "a bot crew never denies the player their own armour" is
+   * `chooseSeat` and `VehicleCrew.evict`. Without them a single hull a side
+   * makes whether the player ever drives a race to the yard, which is a worse
+   * feature than bots not driving at all.
+   *
+   * Asked every frame of `playing`, so nothing under it allocates.
+   */
   private offeredSeat(): Seat | null {
     const at = this.player.position;
     const team = this.player.team;
@@ -5873,8 +5875,13 @@ export class Game {
    * ordering nothing states is one that breaks silently.
    */
   private botSlotIn(slot: number): boolean {
-    if (slot < 0) return false;
-    return this.net?.slots.find((s) => s.index === slot)?.occupant.kind === "bot";
+    if (slot < 0 || !this.net) return false;
+    // A loop rather than `find`: `offeredSeat` reaches this every frame a
+    // hull is in reach, and a closure per call is garbage per frame.
+    for (const s of this.net.slots) {
+      if (s.index === slot) return s.occupant.kind === "bot";
+    }
+    return false;
   }
 
   /**

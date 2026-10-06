@@ -217,6 +217,13 @@ export class NetPlayer implements Combatant {
    * the quarter-second the blend takes at either end, and the rewind would
    * happily resolve shots against that phantom — the history `LagComp` records
    * is only ever as honest as the pose it samples.
+   *
+   * **A `dt` of 0 is a PLACEMENT, and it WRITES the blend instead.** `spawn`,
+   * a dismount and a wreck's eject put a body down rather than move one, and a
+   * body put down standing must stand on the same tick — eased by nothing, a
+   * player who crouched before boarding got out with a crouched sphere for a
+   * quarter of a second. `onMove` can never pass 0: it clamps a sample's gap to
+   * at least one tick.
    */
   apply(
     dt: number,
@@ -234,7 +241,8 @@ export class NetPlayer implements Combatant {
     this.pitch = pitch;
     this.crouching = crouching;
     this.sprinting = sprinting;
-    this.crouchBlend = easeStance(this.crouchBlend, crouching, dt);
+    this.crouchBlend =
+      dt > 0 ? easeStance(this.crouchBlend, crouching, dt) : crouching ? 1 : 0;
 
     // `height / 2` standing, exactly as `Player.syncCombatant` resolves it —
     // and NOT `eyeHeight - 0.05`, which is the trap this line was in. The 0.05

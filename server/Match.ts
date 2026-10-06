@@ -148,8 +148,8 @@ interface SlotRecord {
   shellGate: RateGate;
   mgGate: RateGate;
   /**
-   * Where this slot's body was on the last snapshot, for deriving its walk
-   * cycle — a bot's as well as a person's, since every body is drawn walking.
+   * Where this slot's PERSON was on the last snapshot, for deriving their walk
+   * cycle (`movingFor`). A bot's is the simulation's own and never lands here.
    */
   lastSeen: { x: number; z: number } | null;
 }
@@ -970,10 +970,10 @@ export class Match {
     // it is called from the deploy door too, where there is no fresh one to
     // hold.
     this.game.addPlayer(slot.index, slot.team);
-    // A slot changing hands inherits nothing — the bot's travel least of all:
-    // the walk cycle is derived from how far a body moved between snapshots,
-    // so a stale entry makes the new arrival's first frame a sprint from
-    // wherever the previous occupant was standing.
+    // A slot changing hands inherits nothing from whoever last sat in it — the
+    // travel least of all: the walk cycle is derived from how far a body moved
+    // between snapshots, so a stale entry makes the new arrival's first frame
+    // a sprint from wherever the previous person was standing.
     this.slots[slot.index] = freshSlot();
     // The kit this person named at the handshake, resolved out of this side's
     // own tables. It is the FIRST of two doors: a player picks a kit more than
