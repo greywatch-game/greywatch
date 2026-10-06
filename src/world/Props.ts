@@ -4770,7 +4770,7 @@ export function buildRubble(
 
 // --- the city's own dressing ------------------------------------------------
 // Everything below is Coldharbour's, and the palette is deliberately restated
-// here rather than imported from `kit/city.ts` — Props.ts owns its own colours
+// here rather than imported from `kit/city/` — Props.ts owns its own colours
 // and takes nothing from the structure kit, which is what keeps a prop
 // placeable without a builder (see this file's header).
 const SKIP_PAINT = "#7a5230";

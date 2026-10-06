@@ -21,7 +21,7 @@
  *
  * Nominal collider count at these arguments: **~6,239 boxes**, struck
  * against Coldharbour's density of 768 over 320 m. It is a nominal drawn from
- * `kit/city.ts`'s per-builder figures; what the map actually bakes is
+ * `kit/city/index.ts`'s per-builder figures; what the map actually bakes is
  * `GameMap.colliderBoxes.length`, and that is the number to quote.
  */
 import { Vector3 } from "@babylonjs/core";

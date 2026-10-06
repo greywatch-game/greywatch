@@ -356,7 +356,7 @@ standing there and the next quarter second is it coming apart. Where a pane is
 bigger than a burst the pattern is centred on the hole and clipped to the face
 rather than spread thin across it — twelve pieces over ninety square metres is
 confetti — and **the right fix for a pane that big is a smaller pane**: see
-`kit/city.ts`, whose shopfront breaks a bay at a time, the unit its own piers
+`kit/city/`, whose shopfronts break a bay at a time, the unit its own piers
 divide the elevation into.
 
 **The pieces are CUT, and a cut is not a grid.** They were rectangles first: the

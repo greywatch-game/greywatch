@@ -2,7 +2,7 @@
  * BuildingKit.ts — Facade for the parametric structure builders. Re-exports
  * the shared types and the BUILDERS registry; the implementation lives in
  * kit/ (core.ts = Build accumulator + palette + contract, buildings/,
- * city.ts, desert.ts, harbour.ts, japan/, structures/,
+ * city/, desert.ts, harbour.ts, japan/, structures/,
  * terrain.ts).
  * Invariants: builders assemble AT THE ORIGIN, UNROTATED and NEVER set
  * metadata.solid, checkCollisions, or isPickable — MapBuilder owns the
@@ -158,8 +158,8 @@ export const BUILDERS = {
   trough: buildTrough,
   shrine: buildShrine,
   kiln: buildKiln,
-  // The downtown set — see kit/city.ts, whose header owns the four rules a
-  // building that stacks walked floors has to obey.
+  // The downtown set — see kit/city/index.ts, whose header owns the four
+  // rules a building that stacks walked floors has to obey.
   tower: buildTower,
   office: buildOffice,
   shophouse: buildShophouse,

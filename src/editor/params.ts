@@ -175,7 +175,7 @@ export const PARAMS: Record<BuilderKind, ParamSpec[]> = {
     },
   ],
 
-  // --- the downtown set (world/kit/city.ts) --------------------------------
+  // --- the downtown set (world/kit/city/) ----------------------------------
   // `floors` is a COUNT of walked levels rather than a height, for the reason
   // BuildParams gives: a storey's height is fixed by what a flight at
   // MAX_WALKABLE_GRADE can climb inside the footprint. The ceiling of 4 is not

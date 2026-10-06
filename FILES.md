@@ -943,15 +943,30 @@ src/
       bellTower.ts      #   buildBellTower — the shōrō
       gardenWall.ts     #   buildGardenWall — the tsuijibei
       archBridge.ts     #   buildArchBridge — the vermilion taikobashi
-    kit/city.ts         #   tower, office, shophouse, depot, parkade, planter,
-                        #   barrier, car, streetLight, monument — the downtown
-                        #   set, and the first builders that stack WALKED floors.
-                        #   Its header owns the four rules that makes necessary,
-                        #   what each of the five buildings is FOR, and the
-                        #   collider budget an enterable one is spending.
-                        #   buildTower's own header owns the opposite budget:
-                        #   what a building nobody may enter can be given
-                        #   without a fourth collider
+    kit/city/           #   the downtown set, built for Coldharbour, and the
+                        #   first builders that stack WALKED floors: one file
+                        #   per building, the street furniture together
+      index.ts          #   The set's header and barrel: the four rules
+                        #   stacking floors makes necessary, what each of the
+                        #   five buildings is FOR, the collider budget an
+                        #   enterable one is spending, the glass, and the
+                        #   light budget
+      shared.ts         #   What a stacked building is measured by: STOREY,
+                        #   SLAB, GRADE, LANDING, DOORWAY, `levelY`, and
+                        #   `laneFlight`, the stair lane the office and the
+                        #   shophouse climb on
+      tower.ts          #   buildTower — the solid stock of the skyline, its
+                        #   curtain-wall and brick skins, and `towerRoll`. Its
+                        #   header owns the opposite budget: what a building
+                        #   nobody may enter can be given without a fourth
+                        #   collider
+      office.ts         #   buildOffice — the plate you fight across
+      shophouse.ts      #   buildShophouse — a shop with flats over it
+      parkade.ts        #   buildParkade — three open decks
+      depot.ts          #   buildDepot — the goods shed and its gallery
+      planter.ts        #   buildPlanter — the precast council trough
+      street.ts         #   buildBarrier, buildQuay, buildCar, buildStreetLight
+      monument.ts       #   buildMonument — the war memorial
     kit/desert.ts       #   adobeHouse, compoundWall, shellBlock, mosque,
                         #   minaret, souk, windTower, caravanserai, hammam,
                         #   granary, blastWall, sandbags, pylon — the desert-town

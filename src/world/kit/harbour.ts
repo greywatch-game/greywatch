@@ -6,7 +6,7 @@
  *
  * ## What this set is, and why it is a set rather than seven more props
  *
- * Coldharbour got `kit/city.ts` and Sarab got `kit/desert.ts`; the island got
+ * Coldharbour got `kit/city/` and Sarab got `kit/desert.ts`; the island got
  * hand-me-downs. Cinderhaven was built out of the village kit — cottage,
  * townhouse, barn, mill, boathouse — which is most of why a volcanic harbour
  * town read as Hollowmere with more water in it. **A map does not feel like a

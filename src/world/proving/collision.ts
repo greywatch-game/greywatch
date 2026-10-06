@@ -42,7 +42,7 @@
 import type { MapCollision } from "../collision";
 
 export const ProvingCollision: MapCollision = {
-  sourceHash: "2d014d66823714db",
+  sourceHash: "f118ba734a35a248",
   boxes: [
   [1504,20,2,0,10,751,0,0],
   [1504,20,2,0,10,-751,0,0],

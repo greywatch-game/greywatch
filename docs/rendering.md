@@ -1239,15 +1239,15 @@ merge being told glazing now comes in two. The one thing that had to learn is
 the probe count — see below.
 
 **Both kinds carry a depth BIAS, and it is the only one in the renderer.** A
-pane hangs a few centimetres off the wall behind it — `kit/city.ts`'s `glaze`
-stands 0.04 m of glass over the shaft, with the collars proud of that again —
-and the depth buffer loses that gap with distance. The near plane is 5 cm
-because the viewmodel's optics sit inside 5 cm of the eye, and against a buffer
-resolving 2^-24 of the range that leaves a step of 1 cm at 90 m, 3 cm at 160 m
-and 27 cm at Coldharbour's fog wall. Measured square-on with the pane held at a
-constant size on screen, with no bias at all: full contribution at 40 and 90 m,
-**nothing at all from 180 m out** — every distant tower back to blank concrete,
-with a correct shader and correct geometry.
+pane hangs a few centimetres off the wall behind it — a tower's curtain wall
+(`kit/city/tower.ts`) stands 0.04 m of glass over the shaft, with the collars
+proud of that again — and the depth buffer loses that gap with distance. The
+near plane is 5 cm because the viewmodel's optics sit inside 5 cm of the eye,
+and against a buffer resolving 2^-24 of the range that leaves a step of 1 cm at
+90 m, 3 cm at 160 m and 27 cm at Coldharbour's fog wall. Measured square-on with
+the pane held at a constant size on screen, with no bias at all: full
+contribution at 40 and 90 m, **nothing at all from 180 m out** — every distant
+tower back to blank concrete, with a correct shader and correct geometry.
 `CelMaterialFactory.GLASS_DEPTH_UNITS` (-16) is a polygon offset in the buffer's
 own units, so the correction is millimetres up close and metres at the far end,
 exactly where the error is; the near plane is spoken for and `maxZ` is worth

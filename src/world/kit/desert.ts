@@ -7,7 +7,8 @@
  * emplacement.
  * All follow the contract in kit/core.ts (origin-local geometry, no
  * solid/pickable/collisions metadata, colliders declared not created) and the
- * four rules in kit/city.ts's header about buildings that stack walked floors.
+ * four rules in kit/city/index.ts's header about buildings that stack walked
+ * floors.
  *
  * ## Why a file rather than parameters on the village kit
  *
@@ -47,7 +48,7 @@
  *
  * ## THE STAIR LANE, which is the one thing to understand before editing
  *
- * `kit/city.ts` derives it and this file uses it unchanged: a flight is
+ * `kit/city/` derives it and this file uses it unchanged: a flight is
  * `rise / MAX_WALKABLE_GRADE` long, the slab it climbs to may not cover it, and
  * cutting a void around each flight is worse than leaving a LANE out of the
  * slab. So every building here that is climbed has a lane down its +X edge, the
@@ -176,9 +177,9 @@ const T = 0.45;
 /** The plinth every building stands on. Under `stepHeight`, so it merges. */
 const PLINTH = 0.25;
 /**
- * A walked slab's thickness, and `kit/city.ts`'s third rule: below about this,
- * the outline shell wins the depth test at the grazing angle a floor is seen
- * from and paints the whole storey in its own ink.
+ * A walked slab's thickness, and `kit/city/index.ts`'s third rule: below
+ * about this, the outline shell wins the depth test at the grazing angle a
+ * floor is seen from and paints the whole storey in its own ink.
  */
 const SLAB = 0.5;
 /** Storey height for mud brick — low, which is what a hot climate builds. */

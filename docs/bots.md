@@ -27,7 +27,7 @@ surfaces a crowded cell keeps is decided by the order the BUILDER pushed its
 colliders — which makes emission order part of a builder's design rather than an
 implementation detail. The rule is: **walked surfaces first, cover and parapets
 next, roofs last.** `kit/buildings/manor.ts` states it for one building ("Roofs are emitted
-LAST"); `kit/city.ts` generalises it, because a three-storey office stacks a
+LAST"); `kit/city/` generalises it, because a three-storey office stacks a
 ground floor, two slabs, two window spandrels, three wall heads and a roof into
 one perimeter column — nine candidates for four slots. Measured on Coldharbour
 with a route probe from both home spawns: with that order, even the default 3

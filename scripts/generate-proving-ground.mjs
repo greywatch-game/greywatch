@@ -149,11 +149,11 @@ const empty = new Set([
  * centres are at (+/-16, +/-16) from the block centre, which is what keeps
  * every footprint clear of the avenue and of its neighbours.
  *
- * The figure beside each is the DECLARED collider count from `kit/city.ts`'s
- * header — tower 3, office ~50, shophouse ~42, depot ~35, parkade ~35 — and is
- * what the density target above was struck against. It is a nominal: what the
- * map actually bakes is `GameMap.colliderBoxes.length`, and that is the number
- * to quote.
+ * The figure beside each is the DECLARED collider count from
+ * `kit/city/index.ts`'s header — tower 3, office ~50, shophouse ~42, depot ~35,
+ * parkade ~35 — and is what the density target above was struck against. It is
+ * a nominal: what the map actually bakes is `GameMap.colliderBoxes.length`, and
+ * that is the number to quote.
  */
 const Q = [
   [-16, -16],
@@ -224,7 +224,7 @@ const FOOTPRINT = {
   parkade: { width: 30, depth: 22, floors: 3 },
 };
 
-/** Nominal declared boxes per kind, from `kit/city.ts`'s header. */
+/** Nominal declared boxes per kind, from `kit/city/index.ts`'s header. */
 const NOMINAL = { tower: 3, office: 50, shophouse: 42, depot: 35, parkade: 35 };
 
 /** Scatter props, cycled per block. Three of the five carry a collider. */
@@ -445,7 +445,7 @@ writeFileSync(
  *
  * Nominal collider count at these arguments: **~${nominalBoxes.toLocaleString("en-US")} boxes**, struck
  * against Coldharbour's density of 768 over 320 m. It is a nominal drawn from
- * \`kit/city.ts\`'s per-builder figures; what the map actually bakes is
+ * \`kit/city/index.ts\`'s per-builder figures; what the map actually bakes is
  * \`GameMap.colliderBoxes.length\`, and that is the number to quote.
  */
 import { Vector3 } from "@babylonjs/core";

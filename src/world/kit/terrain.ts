@@ -317,8 +317,9 @@ export function buildRoad(
       // shell `addOutline` wraps it in is 5 cm of expansion along its own
       // normals — bigger than the thing it is outlining — so every marking came
       // out as a dark scratch rather than a pale one, which is the same
-      // thin-slab failure the SLAB note in kit/city.ts describes from the other
-      // end. Paint has no silhouette to ink; it is a colour on a surface.
+      // thin-slab failure the SLAB note in kit/city/shared.ts describes from
+      // the other end. Paint has no silhouette to ink; it is a colour on a
+      // surface.
       b.box(0.26, 0.04, dash, 0, paintY, z, ROAD_PAINT).metadata = {
         noInk: true,
       };

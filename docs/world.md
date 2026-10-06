@@ -224,7 +224,7 @@ new here rather than borrowed, and each is written up where it belongs:
   `cinderhaven/environment.ts`, which owns that argument and the measurement
   behind its `fogEnd`.
 - **It has a KIT of its own** (`kit/harbour.ts`), and it is the first map in
-  the tree to get one AFTER shipping. Coldharbour got `kit/city.ts` and Sarab
+  the tree to get one AFTER shipping. Coldharbour got `kit/city/` and Sarab
   got `kit/desert.ts`; the island was built out of the village set — cottage,
   townhouse, barn, mill, boathouse — which is most of why a volcanic harbour
   town read as Hollowmere with more water in it. **A map does not feel like a
@@ -1962,12 +1962,12 @@ because `renderOutline` expands vertices along their own normals.
 
 **There are FOUR vernaculars in the kit and each is a shape before it is a
 palette**: `kit/buildings/` and `kit/structures/` are the wet northern
-village, `kit/buildings/manor.ts` and the jungle props are Greyfen's, `kit/city.ts` is the
+village, `kit/buildings/manor.ts` and the jungle props are Greyfen's, `kit/city/` is the
 downtown, and `kit/desert.ts` is Sarab's. The last one exists for one geometric
 reason and its header owns the argument: its ROOF is flat and WALKED, which
 nothing else in the kit has, so a terrace of its houses is a second storey of
-ground with a parapet for cover and a stair to reach it. It re-uses `city.ts`'s
-STAIR LANE unchanged for every building in it that is climbed.
+ground with a parapet for cover and a stair to reach it. It re-uses
+`kit/city/`'s STAIR LANE unchanged for every building in it that is climbed.
 
 **Four of that file's builders exist to ARGUE with the sentence above**, and
 that is the pattern to copy when a vernacular's workhorse starts making a
@@ -1980,22 +1980,22 @@ and `granary` is not a building at all but five metres of solid mud that fits in
 an alley. Each is one disagreement, and none is a re-skin.
 
 **A building that stacks WALKED FLOORS is a different kind of thing from
-everything else in the kit, and `kit/city.ts`'s header is its contract.** Every
-other builder is one walked surface with a roof over it; an office with three
-storeys and a stair between each pair runs into four limits at once, and the
-file states all four. In summary, because a new multi-storey builder anywhere
-will meet them: emit walked surfaces FIRST (see `docs/bots.md` on arrival
-order); a flight is `rise / 0.35` long and the slab it climbs to may not cover
-it, so put flights in a LANE at one edge and leave that lane out of the slab
-above — alternating edges storey by storey so two voids never stack, and keeping
-the head of the lane out of the void as a LANDING that runs from the top tread
-to the elevation ahead of it, or the top tread is merely flush with the slab
-beside it and walking off the stair the way you climbed it drops you a storey (a
-landing of a fixed depth only moves that drop back by its own depth: measured on
-Coldharbour, 4.5 m of open lane still stood in front of an office landing over a
-3.4 m fall); a walked
-slab needs real depth behind its top face or its own outline shell paints it;
-and a mullion or a fin is a `strut`, never a wall.
+everything else in the kit, and `kit/city/index.ts`'s header is its contract.**
+Every other builder is one walked surface with a roof over it; an office with
+three storeys and a stair between each pair runs into four limits at once, and
+that header states all four. In summary, because a new multi-storey builder
+anywhere will meet them: emit walked surfaces FIRST (see `docs/bots.md` on
+arrival order); a flight is `rise / 0.35` long and the slab it climbs to may not
+cover it, so put flights in a LANE at one edge and leave that lane out of the
+slab above — alternating edges storey by storey so two voids never stack, and
+keeping the head of the lane out of the void as a LANDING that runs from the top
+tread to the elevation ahead of it, or the top tread is merely flush with the
+slab beside it and walking off the stair the way you climbed it drops you a
+storey (a landing of a fixed depth only moves that drop back by its own depth:
+measured on Coldharbour, 4.5 m of open lane still stood in front of an office
+landing over a 3.4 m fall); a walked slab needs real depth behind its top face
+or its own outline shell paints it; and a mullion or a fin is a `strut`, never a
+wall.
 
 ## Panes: the one thing in the world that is not static
 
@@ -2159,7 +2159,7 @@ dearer without moving the game's worst case. Check that number rather than the
 building count.
 
 **A pane that DOES break is sized like the thing that breaks, and the
-elevation's own framing is what says how big that is.** `kit/city.ts` cuts the
+elevation's own framing is what says how big that is.** `kit/city/` cuts the
 shopfront into the bays its piers already divide it into: a break then reads as
 one panel out of its frame with the piers either side still standing, where a
 single sheet would take the whole frontage on one round. The second reason is

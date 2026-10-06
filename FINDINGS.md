@@ -696,7 +696,7 @@ ships.** Sarab is 900 m (a 1,273 m diagonal), but its `fogEnd` is 560, so
 everything the cull drops there was already flat fog colour. **Cinderhaven is
 not covered**: 1500 m, a 2,121 m diagonal under a `fogEnd` of 1,250, and it
 ships see-through glazing (the shophouses' breakable, unbacked panes,
-`kit/city.ts` ~3191) — so a mesh 800-1,250 m from one of its probes is cut
+`kit/city/shophouse.ts`) — so a mesh 800-1,250 m from one of its probes is cut
 while it would still draw partly through the fog, and **the hole this entry
 refused a 140 m cull over is now on a shipped map**. Nobody has looked at it
 (`ReflectionSystem.ts`'s `neighbourhood` header says the same).
@@ -808,7 +808,7 @@ Rolled up by function inside the build (total, so these nest):
 
 | ms | what |
 | --- | --- |
-| 525 | `kit/city.ts` `buildTower` — 44 of them |
+| 525 | `kit/city/tower.ts` `buildTower` — 44 of them |
 | 450 / 401 / 362 | `glaze` / `pane` / `cut` — the 6,139 sheets |
 | 389 | `mergeByMaterial` |
 | 383 | `MapBuilder.paneGroup` |

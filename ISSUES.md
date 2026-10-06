@@ -50,7 +50,7 @@ match smoke test (`npm run build:server && npm run server`, two clients).
 | ~~[19](#19-extract-the-gamets-clusters-that-pass-docsgamemds-test)~~ | P2 — done | Extract the `Game.ts` clusters that pass `docs/game.md`'s test |
 | ~~[20](#20-decompose-the-longest-gamets-methods-in-place)~~ | P2 — done | Decompose the longest `Game.ts` methods in place |
 | ~~[21](#21-extend-kithash-to-cover-scatter-builders)~~ | P2 — done | Extend `kit:hash` to cover scatter builders |
-| [22](#22-split-worldkitcityts-per-builder) | P2 | Split `world/kit/city.ts` per builder |
+| ~~[22](#22-split-worldkitcityts-per-builder)~~ | P2 — done | Split `world/kit/city.ts` per builder |
 | [23](#23-split-worldpropsts) | P2 | Split `world/Props.ts` |
 | [24](#24-split-worldkitharbourts-and-worldkitdesertts) | P2 | Split `world/kit/harbour.ts` and `world/kit/desert.ts` |
 | [25](#25-mapbuilderts-move-types-and-merge-code-out) | P2 | `MapBuilder.ts`: move types and merge code out |
@@ -649,6 +649,21 @@ Proposed layout under `src/world/kit/city/`:
 
 **Acceptance.** Pure move: `kit:hash --against` identical for every city kind;
 `FILES.md` updated.
+
+**Done.** `kit/city.ts` is `kit/city/`, laid out as proposed. `index.ts`
+carries the set's header, moved as it was, and re-exports the eleven builders,
+so `BuildingKit.ts` imports exactly what it did. Two departures from the
+table, both by the `japan/` rule that what more than one builder uses is
+`shared.ts` and nothing else is: `towerRoll` and `OVER_GLASS` went to
+`tower.ts` (the office only names `towerRoll` in a comment), and `SPANDREL`,
+`HEAD` and `MULLION_PITCH` to `office.ts`. No builder imports another. It is a
+pure move — every body line of the old file lands exactly once, the only code
+change being `export` on what `shared.ts` hands out, and the comments that
+said "this file" or "the file header" now say the set's. Checked: `kit:hash
+--against` a whole-kit fingerprint taken before the move is identical over all
+3,722 builds; `npm run build` and `npm run parity` pass. The proving ground's
+layout comment named the old path, so its bake was re-stamped (`npm run
+collision -- proving`: 5,938 boxes, only the hash line moved).
 
 ### 23. Split `world/Props.ts`
 

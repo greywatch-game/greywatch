@@ -29,7 +29,7 @@
  * failure and it is deliberate: twelve pieces sprinkled over ninety square
  * metres is confetti, while twelve over the two metres around the round is a
  * hole with glass falling out of it. **The right fix for a pane that big is a
- * smaller pane** — see `kit/city.ts`, where the shopfront breaks a bay at a
+ * smaller pane** — see `kit/city/`, where the shopfront breaks a bay at a
  * time, the unit its own piers divide the elevation into.
  *
  * ## The pieces are CUT, and a cut is not a grid

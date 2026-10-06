@@ -1947,19 +1947,19 @@ export class CelMaterialFactory {
    * all**, which is the bug this exists for and it is a depth-precision one
    * rather than anything about the shading.
    *
-   * A pane stands a few centimetres off the wall behind it (`kit/city.ts`'s
-   * `glaze`: 0.04 m of glass over the shaft, the collars proud of that again),
-   * and the depth buffer stops being able to tell the two apart with distance.
-   * The camera's near plane is 5 cm — it has to be, the viewmodel's optics sit
-   * inside 5 cm of the eye — and against a buffer resolving 2^-24 of the range
-   * that leaves a step of 1 cm at 90 m, 3 cm at 160 m and 27 cm at the fog
-   * wall, while the standoff stays what the builder gave it. Measured on
-   * Coldharbour's curtain wall, square on, with the pane held at a constant
-   * size on screen: full at 40 and 90 m, **gone entirely from 130 m out** — the
-   * tower goes back to being blank concrete, with nothing wrong in the shader
-   * and nothing wrong in the geometry. (That reading was taken on WebGL2's
-   * 24-bit buffer; the cliff is at ~180 m on `depth32float` and the table
-   * below is the current one.)
+   * A pane stands a few centimetres off the wall behind it (a tower's curtain
+   * wall in `kit/city/tower.ts`: 0.04 m of glass over the shaft, the collars
+   * proud of that again), and the depth buffer stops being able to tell the two
+   * apart with distance. The camera's near plane is 5 cm — it has to be, the
+   * viewmodel's optics sit inside 5 cm of the eye — and against a buffer
+   * resolving 2^-24 of the range that leaves a step of 1 cm at 90 m, 3 cm at
+   * 160 m and 27 cm at the fog wall, while the standoff stays what the builder
+   * gave it. Measured on Coldharbour's curtain wall, square on, with the pane
+   * held at a constant size on screen: full at 40 and 90 m, **gone entirely
+   * from 130 m out** — the tower goes back to being blank concrete, with
+   * nothing wrong in the shader and nothing wrong in the geometry. (That
+   * reading was taken on WebGL2's 24-bit buffer; the cliff is at ~180 m on
+   * `depth32float` and the table below is the current one.)
    *
    * A polygon offset is the fix rather than a workaround because it is stated
    * in exactly the units the problem is: it scales with the buffer's step at

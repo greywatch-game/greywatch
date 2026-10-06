@@ -8,16 +8,17 @@ server's bake — follows from what the builder declares.
 
 - **File by set, not by map.** `kit/buildings/` (the big enterable and
   landmark buildings), `kit/structures/` (small structures and cover),
-  `kit/city.ts`, `kit/desert.ts`, `kit/harbour.ts`, `kit/japan/`,
+  `kit/city/`, `kit/desert.ts`, `kit/harbour.ts`, `kit/japan/`,
   `kit/terrain.ts` (walked ground: roads, ramps, decks). A set that has
-  outgrown one file is a DIRECTORY, as `kit/japan/`, `kit/buildings/` and
-  `kit/structures/` are: one file per builder, what two builders share in a file
-  of its own (its palette, its roof, its mason), and an `index.ts` that is
-  the set's header and the barrel `BuildingKit.ts` imports — so a new
-  builder in it is a new file plus a line there. The kit is map-agnostic — **nothing in a builder may
-  special-case a map**, and anything built here is available to every map.
-  Read the chosen file's header: several own rules every builder in them obeys
-  (city's walked-storey rules, desert's stair lane).
+  outgrown one file is a DIRECTORY, as `kit/japan/`, `kit/city/`,
+  `kit/buildings/` and `kit/structures/` are: one file per builder, what two
+  builders share in a file of its own (its palette, its roof, its mason), and an
+  `index.ts` that is the set's header and the barrel `BuildingKit.ts` imports —
+  so a new builder in it is a new file plus a line there. The kit is
+  map-agnostic — **nothing in a builder may special-case a map**, and anything
+  built here is available to every map. Read the chosen file's header: several
+  own rules every builder in them obeys (city's walked-storey rules, desert's
+  stair lane).
 - **Signature**:
   ```ts
   export function buildThing(scene: Scene, mats: CelMaterialFactory, p: BuildParams = {}, ctx?: BuildCtx): Structure {
