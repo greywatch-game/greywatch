@@ -47,7 +47,7 @@ match smoke test (`npm run build:server && npm run server`, two clients).
 | ~~[16](#16-one-building-footprint-table-for-every-generator)~~ | P1 — done | One building-footprint table for every generator |
 | ~~[17](#17-cannon-and-muzzle-light-effects-duplicated-in-gamets-with-inline-magic-numbers)~~ | P1 — done | Cannon/muzzle-light effects duplicated in `Game.ts` with inline magic numbers |
 | ~~[18](#18-small-duplicates-inside-gamets)~~ | P2 — done | Small duplicates inside `Game.ts` |
-| [19](#19-extract-the-gamets-clusters-that-pass-docsgamemds-test) | P2 | Extract the `Game.ts` clusters that pass `docs/game.md`'s test |
+| ~~[19](#19-extract-the-gamets-clusters-that-pass-docsgamemds-test)~~ | P2 — done | Extract the `Game.ts` clusters that pass `docs/game.md`'s test |
 | [20](#20-decompose-the-longest-gamets-methods-in-place) | P2 | Decompose the longest `Game.ts` methods in place |
 | [21](#21-extend-kithash-to-cover-scatter-builders) | P2 | Extend `kit:hash` to cover scatter builders |
 | [22](#22-split-worldkitcityts-per-builder) | P2 | Split `world/kit/city.ts` per builder |
@@ -544,6 +544,14 @@ weapon/vehicle spec it belongs to) with a name saying what it is.
 **Acceptance.** Each exists once.
 
 ### 19. Extract the `Game.ts` clusters that pass `docs/game.md`'s test
+
+**Resolved**, one commit per cluster.
+1. `core/urlOverrides.ts`: `UrlOverrides` reads `?gi=`, `?shadows=`, `?volumetrics=` and `?nominimap` once. It resolves each against the setting `Game` hands in (`gi`, `shadows`, `volumetrics`, the last being `Game.volumetricsWanted`) and builds the `forced` list once. `urlFlag`/`urlParam` replace `FrameProfile`'s private `hasFlag` and serve `?gpu` and `?profile`.
+2. `core/PointerLockChase.ts`: the five lock fields. `changed(locked, now)` answers "is this the player leaving?" and `step(...)` answers "ask now?". `Game` keeps `requestLock`, `pause` and which states a departure pauses.
+3. `net/NetShotQueue.ts`: `PendingShot`, the pool, its cap and `queueNetShot`'s argument. `Game` queues from the three events and draws in `drawNetShots`.
+4. `LightningStrikes` owns its offline clock (`step(dt, held, authorityNow)`, holding with the world as before) and the map's flash `color`, parsed in `setSpec`. `update` is private now.
+
+`bakeWait` stays, as the ticket says.
 
 **Area:** `src/core/Game.ts`; read `docs/game.md` first. `src/net/RegionBook.ts`
 is the worked example.

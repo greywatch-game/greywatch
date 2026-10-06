@@ -517,10 +517,6 @@ export class Game {
    * (`systems/LightningStrikes.ts`) and spent in `pushLightning`.
    */
   private readonly lightning = new LightningStrikes();
-  /** The offline strike clock; a match reads the authority's instead. */
-  private lightningClock = 0;
-  /** The map's flash colour, parsed once per install. */
-  private readonly flashColor = new Color3(1, 1, 1);
   private shadows: ShadowSystem;
   /**
    * The bodies' own shadow map — soldiers and hulls, and nothing static.
@@ -4421,10 +4417,6 @@ export class Game {
     // The storm, seeded off the map's id so its schedule is the map's own and
     // the same on every client in a match (see `LightningStrikes`).
     this.lightning.setSpec(environment.lightning ?? null, hashId(this.mapDef.id));
-    if (environment.lightning) {
-      this.flashColor.copyFrom(Color3.FromHexString(environment.lightning.color));
-    }
-    this.lightningClock = 0;
     // The bodies' map is lit from the same place, pushed on the line after so
     // the two windows cannot be pointed in different directions — which would
     // be two shadows off one soldier, and would read as the bodies' map being
@@ -6357,21 +6349,16 @@ export class Game {
    */
   private pushLightning(dt: number): void {
     const strikes = this.lightning;
-    // The offline clock HOLDS with the world. The pause that holds it also
-    // suspends the audio context, so a strike raised under it queued thunder
-    // against a frozen `currentTime` — a long pause's worth of `keep` layers
-    // all falling due on the resume, over the voice cap, refusing gunfire for
-    // seconds. A match reads the authority's clock and holds nothing.
-    if (!this.worldHeld) this.lightningClock += dt;
     const was = strikes.active;
-    strikes.update(this.net ? this.net.conn.now() / 1000 : this.lightningClock);
+    // The offline clock holds with the world — see `LightningStrikes.step`.
+    strikes.step(dt, this.worldHeld, this.net ? this.net.conn.now() / 1000 : null);
     // The strike's own map, drawn once on the frame it starts. The moon's
     // maps are never touched — see `CelMaterialFactory.setFlash`.
     if (strikes.active && !was) this.shadows.flash(strikes.direction, this.shadowFocus);
     const f = strikes.active ? strikes.flash : 0;
-    this.mats.setFlash(strikes.direction, this.flashColor, f);
+    this.mats.setFlash(strikes.direction, strikes.color, f);
     this.gi.setFlash(f > 0 ? CONFIG.lighting.lightningFill : 0);
-    this.sky.setFlash(this.flashColor, f);
+    this.sky.setFlash(strikes.color, f);
     // The thunder owed by strikes already seen, started as each layer falls
     // due — queued in `Sfx` rather than scheduled, so silence holds no voice.
     this.sfx.thunderStep();

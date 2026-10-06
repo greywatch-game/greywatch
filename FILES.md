@@ -677,7 +677,9 @@ src/
                         #   tile, so one pass fills many
     LightningStrikes.ts # When lightning strikes, from where, how bright: a
                         #   seeded SCHEDULE read off a clock (the authority's
-                        #   in a match), never a timer. Game spends the flash
+                        #   in a match; offline its own, which holds with the
+                        #   world), never a timer. Owns the map's flash colour.
+                        #   Game spends the flash
                         #   on its own key term and shadow map (drawn once per
                         #   strike), the sky and the volume's sky fill; onStrike
                         #   is the thunder

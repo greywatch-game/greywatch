@@ -1,8 +1,9 @@
 /**
  * LightningStrikes.ts — when lightning strikes, from where, and how bright the
  * sky is at any instant: a SCHEDULE, read off a clock.
- * Owns the seeded strike sequence and the flash envelope; owns no light, no
- * shadow, no sound and no mesh — `Game` reads `flash`/`direction` and spends
+ * Owns the seeded strike sequence, the flash envelope, the map's flash COLOUR
+ * and the offline clock the schedule runs on; owns no light, no shadow, no
+ * sound and no mesh — `Game` reads `flash`/`direction`/`color` and spends
  * them on the flash's own key and map, the sky and the volume, and hears
  * `onStrike` for the thunder.
  * Invariants:
@@ -20,7 +21,7 @@
  *   every state, the ambience's rule: weather does not stop for a menu.
  * Contract: `docs/rendering.md` (lightning).
  */
-import { Vector3 } from "@babylonjs/core";
+import { Color3, Vector3 } from "@babylonjs/core";
 import { mulberry32 } from "../world/rng";
 import type { LightningSpec } from "../world/environment";
 
@@ -69,6 +70,14 @@ export class LightningStrikes {
   /** Whether a strike is in progress; its map is drawn the frame this turns true. */
   active = false;
   /**
+   * The map's flash colour, parsed once per `setSpec`. Held by reference by
+   * whatever it is spent on, so it is written in place and never replaced.
+   * A map with no storm keeps the last one's, which nothing reads.
+   */
+  readonly color = new Color3(1, 1, 1);
+  /** The offline strike clock, in seconds; a match reads the authority's. */
+  private ownClock = 0;
+  /**
    * Raised once per strike, the frame it starts: its distance in metres, for
    * the thunder's delay. Wired by `Game`.
    */
@@ -84,6 +93,24 @@ export class LightningStrikes {
     this.raisedAt = NaN;
     this.flash = 0;
     this.active = false;
+    this.ownClock = 0;
+    if (spec) this.color.copyFrom(Color3.FromHexString(spec.color));
+  }
+
+  /**
+   * One frame of the storm, on the clock it runs on: the AUTHORITY's in a
+   * match (`authorityNow`, seconds), so every client flashes together, and
+   * this session's own offline.
+   *
+   * The offline clock HOLDS with the world (`held`). The pause that holds it
+   * also suspends the audio context, so a strike raised under it queued
+   * thunder against a frozen `currentTime` — a long pause's worth of `keep`
+   * layers all falling due on the resume, over the voice cap, refusing gunfire
+   * for seconds. A match reads the authority's clock and holds nothing.
+   */
+  step(dt: number, held: boolean, authorityNow: number | null): void {
+    if (!held) this.ownClock += dt;
+    this.update(authorityNow ?? this.ownClock);
   }
 
   /** Seeds epoch `e` and returns its first strike. */
@@ -143,7 +170,7 @@ export class LightningStrikes {
   }
 
   /** The flash at clock `now`, in seconds. */
-  update(now: number): void {
+  private update(now: number): void {
     if (!this.spec) {
       this.flash = 0;
       this.active = false;
