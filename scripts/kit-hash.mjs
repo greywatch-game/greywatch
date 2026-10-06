@@ -86,6 +86,7 @@ import { cpus } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { createServer } from "vite";
+import { mulberry32 } from "../src/world/rng.ts";
 
 const ROOT = fileURLToPath(new URL("..", import.meta.url));
 const SELF = fileURLToPath(import.meta.url);
@@ -117,7 +118,7 @@ function vite() {
  */
 const SCATTER_SEEDS = [1, 2, 3, 4, 5, 6, 7, 8];
 
-/** A seeded stream that counts how many numbers were drawn from it. */
+/** A seeded stream that counts how many numbers were drawn from it — the region's. */
 function counted(next) {
   const f = () => {
     f.draws++;
@@ -125,6 +126,32 @@ function counted(next) {
   };
   f.draws = 0;
   return f;
+}
+
+/** A vertex buffer's bytes, empty for a buffer the mesh does not carry. */
+const f32 = (a) => (a ? Buffer.from(new Float32Array(a).buffer) : Buffer.alloc(0));
+
+/**
+ * One mesh's transform and geometry into `draw`. Each caller writes its own
+ * header line first — the name and material, and whatever else its kind of
+ * build can see — so a structure's hash is what it was before scatter shared
+ * this.
+ */
+function hashMesh(draw, m) {
+  draw.update(
+    JSON.stringify([
+      m.position.asArray(),
+      m.rotation.asArray(),
+      m.scaling.asArray(),
+      m.rotationQuaternion?.asArray() ?? null,
+      m.parent?.name ?? null,
+    ]),
+  );
+  for (const kind of ["position", "normal", "uv", "uv2", "color", "matricesIndices"]) {
+    draw.update(kind);
+    draw.update(f32(m.getVerticesData(kind)));
+  }
+  draw.update(Buffer.from(new Uint32Array(m.getIndices() ?? []).buffer));
 }
 
 /** The ground every placement stands on: a swell, not any map's floor. */
@@ -202,8 +229,6 @@ async function reportFeet(result, notBuilt) {
   for (const [key, r] of Object.entries(result)) {
     if (!r.plan) continue;
     const parsed = JSON.parse(key);
-    // A scatter kind has no footprint: it is sown by clearance, not placed.
-    if (parsed[1] === "scatter") continue;
     const kind = parsed[0];
     // `--kinds` may name a builder the table has no row for (a road).
     if (!(kind in FOOT)) {
@@ -242,7 +267,6 @@ async function hashJobs(jobs) {
     B.Logger.LogLevels = B.Logger.NoneLogLevel;
     const { BUILDERS } = await server.ssrLoadModule("/src/world/BuildingKit.ts");
     const { SCATTER_BUILDERS, PROP_BODIES } = await server.ssrLoadModule("/src/world/MapBuilder.ts");
-    const { mulberry32 } = await server.ssrLoadModule("/src/world/rng.ts");
     const engine = new B.NullEngine();
     let scene = new B.Scene(engine);
     // A material is named for the factory call that asked for it, so a
@@ -263,14 +287,13 @@ async function hashJobs(jobs) {
       },
     );
     const terrain = { flat: false, surfaceAt: swell, heightAt: swell };
-    const f32 = (a) => (a ? Buffer.from(new Float32Array(a).buffer) : Buffer.alloc(0));
     for (const [key, p] of jobs) {
       scene.dispose();
       scene = new B.Scene(engine);
       cache.clear();
       try {
         if (p.scatter) {
-          out[key] = hashScatter(SCATTER_BUILDERS[p.kind], PROP_BODIES[p.kind], scene, mats, mulberry32, p, f32);
+          out[key] = hashScatter(SCATTER_BUILDERS[p.kind], PROP_BODIES[p.kind], scene, mats, p);
           continue;
         }
         const floor = p.bare ? 0 : swell(p.x, p.z);
@@ -281,20 +304,7 @@ async function hashJobs(jobs) {
         const draw = createHash("sha256");
         for (const m of [...s.meshes, ...s.paneMeshes]) {
           draw.update(`|${m.name}|${m.material?.name}|${s.freeform.has(m)}|`);
-          draw.update(
-            JSON.stringify([
-              m.position.asArray(),
-              m.rotation.asArray(),
-              m.scaling.asArray(),
-              m.rotationQuaternion?.asArray() ?? null,
-              m.parent?.name ?? null,
-            ]),
-          );
-          for (const kind of ["position", "normal", "uv", "uv2", "color", "matricesIndices"]) {
-            draw.update(kind);
-            draw.update(f32(m.getVerticesData(kind)));
-          }
-          draw.update(Buffer.from(new Uint32Array(m.getIndices() ?? []).buffer));
+          hashMesh(draw, m);
         }
         draw.update(JSON.stringify([s.lights, s.sounds, s.panes]));
         const colliders = createHash("sha256").update(JSON.stringify(s.colliders));
@@ -314,28 +324,14 @@ async function hashJobs(jobs) {
  * One scatter prop, built off `p.seed` at foliage `p.foliage` and hashed in
  * two halves — see the header for what each one is.
  */
-function hashScatter(build, body, scene, mats, mulberry32, p, f32) {
+function hashScatter(build, body, scene, mats, p) {
   const rng = counted(mulberry32(p.seed));
-  const sub = counted(mulberry32(p.seed ^ 0x2545f491));
-  const root = build(scene, mats, rng, sub, p.foliage);
+  const root = build(scene, mats, rng, mulberry32(p.seed ^ 0x2545f491), p.foliage);
   const draw = createHash("sha256");
   // `MapBuilder.flatten`'s order: the root, then its child meshes.
   for (const m of [root, ...root.getChildMeshes()]) {
     draw.update(`|${m.name}|${m.material?.name}|${JSON.stringify(m.metadata ?? null)}|`);
-    draw.update(
-      JSON.stringify([
-        m.position.asArray(),
-        m.rotation.asArray(),
-        m.scaling.asArray(),
-        m.rotationQuaternion?.asArray() ?? null,
-        m.parent?.name ?? null,
-      ]),
-    );
-    for (const kind of ["position", "normal", "uv", "uv2", "color", "matricesIndices"]) {
-      draw.update(kind);
-      draw.update(f32(m.getVerticesData(kind)));
-    }
-    draw.update(Buffer.from(new Uint32Array(m.getIndices() ?? []).buffer));
+    hashMesh(draw, m);
   }
   const colliders = createHash("sha256").update(JSON.stringify([body, rng.draws]));
   return { draw: draw.digest("hex").slice(0, 16), colliders: colliders.digest("hex").slice(0, 16) };
@@ -371,7 +367,7 @@ async function listJobs(only) {
     for (const k of Object.keys(BUILDERS)) {
       if (!only || only.has(k)) jobs.set(JSON.stringify([k, "bare"]), { kind: k, bare: true });
     }
-    const rungs = [...new Set(Object.values(CONFIG.graphics.foliage.tiers).map((t) => t.detail))].sort();
+    const rungs = new Set(Object.values(CONFIG.graphics.foliage.tiers).map((t) => t.detail));
     for (const k of Object.keys(SCATTER_BUILDERS)) {
       if (only && !only.has(k)) continue;
       for (const seed of SCATTER_SEEDS) {
