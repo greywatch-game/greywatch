@@ -1355,6 +1355,10 @@ src/
                       #   FIFO queue of predicted hits the authority's verdict
                       #   claims. Expiring, so a round the server scored as a
                       #   miss leaves nothing standing. Cues nothing itself
+    NetShotQueue.ts   #   Other people's rounds off the wire, waiting for the
+                      #   netplay frame that draws them: an event is not a
+                      #   frame, and a tracer spawned outside one HAUNTS. A
+                      #   pooled, capped queue of SLOTS; draws nothing
     RegionBook.ts     #   WHICH region this client browses and joins: the list
                       #   once read, the player's pick, the fastest-answering
                       #   pick for one who has none, and ?server=. resolve() is
