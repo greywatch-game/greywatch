@@ -766,10 +766,10 @@ for (const [id, dx, dz, yaw] of FLAG_SPAWNS) {
 // The open ground every door may open onto: the square, the quaysides, the
 // set pieces' yards and the two home yards.
 yard(SQ.x0, SQ.x1, SQ.z0, SQ.z1, "the square");
-yard(-118, -63, 44.5, 53, "Exchange Square");
+yard(-118, -63, 44.5, 52.8, "Exchange Square");
 yard(-104, -64, 79, 95, "the Exchange garden");
-yard(52, 100, 44.5, 72, "the station forecourt");
-yard(52, 94, -31.5, -12.5, "the Harbour Board plaza");
+yard(52, 99.6, 44.5, 72, "the station forecourt");
+yard(52, 93.6, -31.5, -12.5, "the Harbour Board plaza");
 yard(52, 114, -75.5, -59, "the Harbour Board's yard");
 yard(-160, -60, -152, -136, "the pier");
 yard(-132, -96, -136, -111, "the fish quay");

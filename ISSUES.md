@@ -75,7 +75,7 @@ match smoke test (`npm run build:server && npm run server`, two clients).
 | [44](#44-stale-comments-in-gamets-and-docsgamemd) | P3 | Stale comments in `Game.ts` and `docs/game.md` |
 | [45](#45-the-recoil-argument-is-written-in-five-places) | P3 | The recoil argument is written in five places |
 | [46](#46-physics-reference-baselines-missing-for-three-maps) | P3 | Physics reference baselines missing for three maps |
-| [47](#47-most-of-the-footprint-table-understates-its-builders) | P1 | Most of the footprint table understates its builders |
+| ~~[47](#47-most-of-the-footprint-table-understates-its-builders)~~ | P1 — done | Most of the footprint table understates its builders |
 
 ---
 
@@ -1041,6 +1041,29 @@ Kurenai have none. The parallel `webgpu-ref` bank is already admitted stale
 README which maps are covered and that the bank is not a full gate.
 
 ### 47. Most of the footprint table understates its builders
+
+**Resolved.** `npm run kit:hash -- --feet` flags no kind. Every flagged row was re-measured as the ENVELOPE of its drawing: each kind was built at 30 to 40 seeded positions and turns per params set the layouts use, because rubble, billets, a ruined cart's wheel and the steps down to a falling floor are drawn off where a placement stands, and the layouts hold only a few seeds. Rows that read a param now read it: `ruined` for the cottage (a fallen gable timber, +X) and the cart (its lost hind wheel and what it spilled). What each overreach was is named beside its row where the builder says what it is.
+- manor: the row was an older building's — the service stair once ran south. It is now `[-15.9, 17.75, -12.9, 12.65]`, the portico to the creeper on the north veranda's plinth.
+- `LITTER` is new: how far a loose piece may lie past a row, by side, which `--feet` reads. It covers the crates' lost hoop, the planter's knocked-off coping corner and the ruin's scattered stones.
+- The ruin's 2.2 m west reach was a BUILDER bug. `rubbleFooting` took `(c, u0, u1, width)` and all four calls passed `(c, width, u0, u1)`, so three footings drew nothing and the fourth was a 3.75 m slab across the west stub. The signature now matches the calls: drawing only, colliders unchanged per `kit:hash`. With it the ruin's row is its solid drawing (`0.7`–`0.8` past the walls) and its scatter is litter.
+- Wall and fence rows now claim their end piers and posts. That exposed that every generator's run cutting (three copies) left its 0.5 m joint gap between NOMINAL ends, so the piers stood in each other and in any fence through the joint. It is one `cutRun` in `mapgen.mjs` now, insetting each run by its kind's reach off `FOOT`.
+
+All four maps were re-seeded, with door checks passing, every set piece placed and every map byte-reproducible. Moves forced by real clashes the corrected rows exposed:
+- Greyfen: 147 → 147 placements, 43 wall runs. The manor's service track ran across its north veranda's ferns; it now runs at z 10.8, where the causeway stair's landing meets it. The manor terrace's edge went 5 → 8, which the veranda stands past. The processional way ends 0.5 m shorter. The mission and the overseer's house moved 1–1.5 m off the river's bank and the ferry track; the overseer's terrace is 2 m deeper. The sawmill yard's west edge moved 0.5 m, and the crates and two temple-side dressing regions moved off the woodpile and the temple.
+- Harrowmead: 249 → 248, 99 field runs. The two field ruins and four props each moved 1–10 m to flatter ground. The cowman's cottage's door, which opened onto a woodpile at HEAD, is clear. The one placement short is a seeded back-plot woodpile.
+- Hollowmere: 245 → 243, 54 houses, 23 burnt (55 and 25 at HEAD). The burnt quarter keeps its shape; the difference is seeded row picks. The ruined cart on the square moved 2 m off the south-west lamp. The smokehouse and the net loft moved half a metre to a metre to clear the ruined fisherman's cottage. The boathouse is held 0.6 m off the dock yard it opens onto.
+- Coldharbour: 269 → 270, with every tower and shophouse kept. Exchange Square, the station forecourt and the Harbour Board plaza each gave up 0.2–0.4 m to the buildings backing onto them.
+
+Each map was rebaked. `npm run parity` passes on every map, and `buried.mjs` reads 0 on all four. The physics references were re-banked for Greyfen, Hollowmere and Coldharbour, and `physdiff` puts every moved body on a changed collider; Harrowmead's reference still passes. The menu photographs were retaken. Greyfen's framing changed: the re-rolled forest put a trunk near the vantage.
+
+Bot rounds, Valeguard–Redline, now against HEAD (`npm run simulate -- <map> 1 12`):
+- Greyfen 5–7 against 3–9, Harrowmead 9–3 and 8–4 against 9–3, Coldharbour 7–5 against 8–4.
+- Hollowmere 2–10 and 1–11 against HEAD's 3–9 and 4–8. That is Redline 21–3 against 17–7: the same lean, perhaps stronger, inside the batch noise but owed a per-flag hold count before it is believed either way.
+
+Left alone:
+- `mapgen.mjs`'s `makeFootOnRoad` walks from `x0` in metre steps and never samples the far edge of a footprint whose side is not a whole metre. The audit caught two corners it missed (both moved here).
+- Two audit errors are at a generator's own limit: Coldharbour's FLAT is 0.32 against the audit's 0.3, and the mission ruin's 0.34 is only under its scattered rubble.
+- Hollowmere's pre-existing ruin facing a ruin's back, now at (22.4, -22.1).
 
 **Area:** `scripts/lib/footprints.mjs`; the four generators that read it
 (Harrowmead, Hollowmere, Coldharbour, Greyfen)
