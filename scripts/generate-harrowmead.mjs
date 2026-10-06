@@ -59,6 +59,7 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { roadNetwork } from "../src/world/roadPaths.ts";
 import { onRoad } from "../src/world/roads.ts";
+import { DOORS, FOOT } from "./lib/footprints.mjs";
 import {
   bell,
   f1,
@@ -362,62 +363,9 @@ if (process.argv.includes("--probe")) {
 
 // --- the output, and the placement vocabulary --------------------------------
 
-/**
- * The ground each kind takes, in its own frame: `[x0, x1, z0, z1]`, front at
- * -Z. Measured off the builders — the eaves, a porch, a ramp and a wheel are
- * all ground nothing else may stand on, whether or not a collider covers it.
- */
-const FOOT = {
-  cottage: (p) => {
-    const w = p.width ?? 7;
-    const d = p.depth ?? 6;
-    return [-w / 2 - 0.8, w / 2 + 0.8, -d / 2 - 1.0, d / 2 + 0.8];
-  },
-  townhouse: (p) => {
-    const w = p.width ?? 6.5;
-    const d = p.depth ?? 6.5;
-    return [-w / 2 - 0.5, w / 2 + 0.5, -d / 2 - 1.1, d / 2 + 0.6];
-  },
-  tavern: () => [-7.1, 7.1, -9.2, 5.6],
-  smithy: () => [-5.2, 5.2, -6.6, 4.8],
-  chapel: () => [-7.4, 7.4, -11.6, 16.6],
-  barn: () => [-8.9, 11.9, -11.8, 11.8],
-  mill: () => [-7.2, 5.4, -5.8, 5.0],
-  silo: () => [-3.2, 3.2, -3.2, 3.2],
-  watchtower: () => [-2.8, 2.8, -18.2, 2.8],
-  gatehouse: () => [-11.3, 11.3, -8.2, 2.6],
-  shed: (p) => {
-    const w = p.width ?? 3.4;
-    const d = p.depth ?? 2.8;
-    return [-w / 2 - 0.3, w / 2 + 0.3, -d / 2 - 0.3, d / 2 + 0.3];
-  },
-  haystack: () => [-1.6, 1.6, -1.6, 1.6],
-  cart: () => [-1.8, 3.8, -1.1, 1.1],
-  crates: () => [-1.6, 1.7, -1.3, 1.3],
-  woodpile: (p) => {
-    const len = p.length ?? 5;
-    return [-len / 2 - 0.2, len / 2 + 0.2, -0.7, 0.7];
-  },
-  trough: () => [-1.6, 1.6, -0.6, 0.6],
-  well: () => [-1.7, 1.7, -1.7, 1.7],
-  stall: () => [-2, 2, -1.1, 1.1],
-  kiln: () => [-2, 2, -2.2, 2],
-  shrine: () => [-0.8, 0.8, -0.8, 0.8],
-  ruin: (p) => {
-    const w = p.width ?? 10;
-    const d = p.depth ?? 8;
-    return [-w / 2 - 0.3, w / 2 + 0.3, -d / 2 - 0.3, d / 2 + 0.3];
-  },
-  stoneWall: (p) => [-(p.length ?? 12) / 2, (p.length ?? 12) / 2, -0.4, 0.4],
-  fence: (p) => [-(p.length ?? 10) / 2, (p.length ?? 10) / 2, -0.25, 0.25],
-  bridge: (p) => [-(p.width ?? 3.2) / 2 - 0.3, (p.width ?? 3.2) / 2 + 0.3, -(p.length ?? 12) / 2, (p.length ?? 12) / 2],
-};
-
 /** Small things a yard or a flag's ring may hold. */
 const PROPS = new Set(["cart", "crates", "woodpile", "trough", "haystack", "stall", "well", "shrine"]);
 
-/** Kinds with a front door, whose front the door check holds to a street or a yard. */
-const DOORS = new Set(["cottage", "townhouse", "tavern", "smithy", "chapel", "mill", "barn"]);
 
 const worldFoot = makeWorldFoot(FOOT);
 
@@ -918,7 +866,8 @@ placements.push(
   place("crates", 104, -52, 0, null);
   place("cart", 84, -64, 1, null);
   place("cart", 112, -80, 0, { ruined: true });
-  place("ruin", 122, -86, 0, { width: 9, depth: 7 }, { note: "the old kiln house" });
+  // Abandoned, so its door is held to nothing — see the field ruins below.
+  place("ruin", 122, -86, 0, { width: 9, depth: 7 }, { note: "the old kiln house", noDoor: true });
 }
 
 // --- the farms ---------------------------------------------------------------
@@ -1102,7 +1051,11 @@ for (const r of runs) {
   }
 }
 
-// Field furniture: haystacks and troughs out in the fields, a ruin or two.
+// Field furniture: haystacks and troughs out in the fields, a ruin or two. A
+// ruin out here is a steading nobody has lived in for a generation, so its
+// door is held to nothing: the lane that served it went back to field with it.
+// (Hollowmere's ruins are a burnt village's houses, and are held to their
+// streets like any other.)
 for (const [kind, x, z, t, p] of [
   ["haystack", -52, -80, 0], ["haystack", -48, -84, 0], ["haystack", 34, -132, 0], ["haystack", 140, -98, 0],
   ["haystack", -150, -60, 0], ["haystack", -52, 112, 0], ["haystack", 36, 150, 0], ["haystack", 170, 100, 0],
@@ -1111,7 +1064,7 @@ for (const [kind, x, z, t, p] of [
   ["ruin", 172, 60, 0, { width: 8, depth: 7 }], ["ruin", -40, -140, 0, { width: 10, depth: 8 }],
   ["cart", -150, -96, 0, { ruined: true }], ["cart", 60, 70, 1], ["cart", -20, 120, 0],
 ]) {
-  place(kind, x, z, t, p ?? null, { note: `a field ${kind}` });
+  place(kind, x, z, t, p ?? null, { note: `a field ${kind}`, noDoor: kind === "ruin" });
 }
 
 // --- the dressing -------------------------------------------------------------

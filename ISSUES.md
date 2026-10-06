@@ -44,7 +44,7 @@ match smoke test (`npm run build:server && npm run server`, two clients).
 | ~~[13](#13-matchts-claim-gates-are-pasted-five-times)~~ | P1 — done | `Match.ts` claim gates are pasted five times |
 | ~~[14](#14-matchts-per-slot-state-is-ten-parallel-tables)~~ | P1 — done | `Match.ts` per-slot state is ten parallel tables |
 | ~~[15](#15-map-generators-share-no-code)~~ | P1 — done | Map generators share no code |
-| [16](#16-one-building-footprint-table-for-every-generator) | P1 | One building-footprint table for every generator |
+| ~~[16](#16-one-building-footprint-table-for-every-generator)~~ | P1 — done | One building-footprint table for every generator |
 | ~~[17](#17-cannon-and-muzzle-light-effects-duplicated-in-gamets-with-inline-magic-numbers)~~ | P1 — done | Cannon/muzzle-light effects duplicated in `Game.ts` with inline magic numbers |
 | [18](#18-small-duplicates-inside-gamets) | P2 | Small duplicates inside `Game.ts` |
 | [19](#19-extract-the-gamets-clusters-that-pass-docsgamemds-test) | P2 | Extract the `Game.ts` clusters that pass `docs/game.md`'s test |
@@ -75,6 +75,7 @@ match smoke test (`npm run build:server && npm run server`, two clients).
 | [44](#44-stale-comments-in-gamets-and-docsgamemd) | P3 | Stale comments in `Game.ts` and `docs/game.md` |
 | [45](#45-the-recoil-argument-is-written-in-five-places) | P3 | The recoil argument is written in five places |
 | [46](#46-physics-reference-baselines-missing-for-three-maps) | P3 | Physics reference baselines missing for three maps |
+| [47](#47-most-of-the-footprint-table-understates-its-builders) | P1 | Most of the footprint table understates its builders |
 
 ---
 
@@ -468,6 +469,19 @@ About 2,500 more lines are same-named helpers that have **drifted**: `claim`,
 exists only in `src/world/rng.ts`.
 
 ### 16. One building-footprint table for every generator
+
+**Resolved.** `scripts/lib/footprints.mjs` holds `FOOT`, `DOOR_FACES` (with `DOORS` and `FRONT_PLUS_Z` derived from it), `FRONTS` and `stairRun`. The four generators import it, and the map-layout skill's `footprints.mjs` re-exports it, so there were five copies, not four. There is also a check now: `npm run kit:hash -- --feet` builds every placement of every kind in the table and prints how far the drawing reaches past its row on each side, once for parts below 2 m and once for everything. Drifted values were settled by that measurement. Rule: what stands below head height, plus a building's eaves, but not a canopy a body stands under.
+- cottage front `-1.0` (Harrowmead) over `-0.9`: the enterable cottage's eave reaches `-d/2 - 0.92`.
+- townhouse front `-1.1` over `-0.7`: the shop variant's let-down board and the eave reach `-d/2 - 1.05`. Coldharbour's `-0.7` was the wall line.
+- crates: Harrowmead's. The cask is inside it. The extra Coldharbour gave covered nothing but an open cask's lost hoop, which is litter.
+- fishRack: Greyfen's. Coldharbour's understated the ends by 0.08.
+- stall: neither. The back is now `+1.45`, for the sacks on the ground behind the counter.
+- jetty: neither. `±1.9` for the pile heads, ends `±(L/2 + 0.5)` for the step and the laid ladder.
+- careenedHull: neither. `±2.95` for the shores' feet. The ends are Greyfen's `+0.3`, because the stem and stern rise clear of the ground.
+
+Before the corrections were applied, the switch alone regenerated Hollowmere, Greyfen and Harrowmead byte-identical. Harrowmead's field ruins now pass `noDoor`: the shared `DOORS` includes `ruin`, as Hollowmere's always did, but an abandoned steading has no lane. After the corrections, Greyfen's slip boat now samples its shores' feet and was refused at a 0.56 slope. It keeps its place with `flat: 0.6`: this is the ground it has always stood on. Hollowmere, Greyfen and Harrowmead are still byte-identical. Coldharbour moved: its old town's townhouses and cottages stand 0.4 m back from the lane, some seeded widths reshuffled, the counts are unchanged, and one more stack of crates fits (247 → 248 placements). Every door check still passes, and the skill audit reads the same as before on all four maps. Coldharbour was rebaked and `npm run parity` passes on every map. Its menu photograph was not retaken (`npm run shots` needs a GPU); the change is 0.4 m in one quarter.
+
+The same report shows that most of the table understates the builders it describes. That is #47.
 
 **Area:** generators (harrowmead:441, hollowmere:485, coldharbour:438,
 greyfen:526)
@@ -1026,12 +1040,50 @@ Kurenai have none. The parallel `webgpu-ref` bank is already admitted stale
 (`FINDINGS.md` §20). Either capture the missing three, or note in `plans/`'s
 README which maps are covered and that the bank is not a full gate.
 
+### 47. Most of the footprint table understates its builders
+
+**Area:** `scripts/lib/footprints.mjs`; the four generators that read it
+(Harrowmead, Hollowmere, Coldharbour, Greyfen)
+
+**Problem.** The table was typed "measured off the builders" when each
+generator was written, and most of the kit has been reworked since. Taken
+after #16, `npm run kit:hash -- --feet` shows 32 of 52 kinds with parts below
+2 m reaching more than 5 cm past their row. The figures are worst-case metres
+past the row, `-x +x -z +z`, ground only:
+
+- buildings: ruin `+1.80 +1.34 +1.59 +0.36`, jungleRuin `+1.38 +1.72` on z,
+  cottage `+0.75` on +x, mill `+0.42` on +x, kiln `+0.97` on -z, depot
+  `+1.25` on -x, tower `+0.35` on -z, templeRuin `+0.87 +0.86 -0.13 +0.83`
+- props: cart `+1.01 +0.49 +1.32 +0.29` (the shafts), woodpile `+0.92 +0.89`
+  on z, trough `+1.08` on +z (the hitching rail), planter `~+0.5` all round,
+  stoneWall `+0.35` on both ends, bridge `+0.31` on both sides
+- **manor `+1.37 -0.27 -5.53 +5.20`**: the row claims 5.5 m in front that the
+  drawing does not reach, and the drawing reaches 5.2 m past its back. That
+  looks like the row's front and back are swapped against the builder. Check
+  this one first.
+
+What it costs is what #16 was about. A claim smaller than what is drawn lets
+a neighbour stand in a cart's shafts or a ruin's rubble, and a front set at
+the wall line puts the door check's ray inside the doorstep.
+
+**Fix.** Re-measure each flagged kind, decide what is deliberate (a
+forecourt, a canopy) and say so beside the row, as #16 did for its seven.
+Then re-seed every map that places the kind. Correcting the rows moves all
+four maps, and the bigger corrections (ruin, cart, manor) will probably
+refuse set pieces that fit today. So this is a re-lay done with the
+map-layout skill, not a table edit: one map per commit, each with its
+collision rebake, `npm run parity`, and `npm run shots`.
+
+**Acceptance.** `npm run kit:hash -- --feet` flags no kind in the ground
+columns, or each flagged one has a comment on its row saying why. Every map
+regenerates with door checks passing and its set pieces placed.
+
 ---
 
 ## Suggested order
 
 1. Tickets 1–5 (small, independent, P0).
 2. Tickets 6–14 (client/authority sharing), with 3 before 10 and 13 alongside 2.
-3. Tickets 15–16 (generators), one map per commit.
+3. Tickets 15–16 (generators), one map per commit; 47 after them, with the map-layout skill.
 4. Ticket 21, then 22–25 (world splits) behind `kit:hash`.
 5. Everything else as convenient; 40–45 can go to anyone at any time.

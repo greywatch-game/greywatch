@@ -391,8 +391,9 @@ general rather than details of that map:
   station.
 - **The city kit's street front is +Z** (the shophouse's shopfront, the
   tower's lobby, the depot's bays) where every other kit's is -Z, and the
-  OFFICE's main door is -Z. The generator and this skill's `footprints.mjs`
-  both carry that per kind (`FRONT_PLUS_Z`), and a terrace is laid by turning
+  OFFICE's main door is -Z. `scripts/lib/footprints.mjs` carries that per
+  kind (`DOOR_FACES`, whose first face is the front, and `FRONT_PLUS_Z` off
+  it), and a terrace is laid by turning
   the front at the street rather than by a rotation. **A shophouse's plate
   must be 15.6 m deep at three storeys** (`laneFlight` throws in a dev build
   below it: a 10.3 m flight and its 2.4 m landing in half the depth less a
@@ -1189,6 +1190,19 @@ that is not across it.
   call site reads as it always did. What stays in a generator is its design
   and every helper whose difference is deliberate; a change to the lib owes a
   regeneration of every map that imports it, with no diff.
+- **There is ONE footprint table** (`scripts/lib/footprints.mjs`): the ground
+  each kit kind takes and which of its faces are ways in, read by every
+  generator and by the map-layout skill's audit and plan. It was four copies
+  and they had drifted — Coldharbour's townhouse claimed 0.4 m less frontage
+  than the same house on Harrowmead. **A footprint is MEASURED off the builder
+  and may not understate it**: what stands below head height, plus a
+  building's eaves, and not a canopy a body stands under. `npm run kit:hash --
+  --feet` builds every placement of every kind and prints where the drawing
+  reaches past its row, so a builder rework owes that run, an edit to the
+  table, and a re-seed of every map that places the kind — a footprint is
+  half of every claim, so moving one moves layouts. **Which kinds a map
+  door-checks is still the map's**: Harrowmead's field ruins pass `noDoor`
+  where Hollowmere's burnt houses are held to their streets.
 
 **A COBBLED STREET ENDS IN A KERB COURSE** (`layKerb` in `kit/terrain.ts`), and
 it exists because the ground was given a depth. The setts are carved down into

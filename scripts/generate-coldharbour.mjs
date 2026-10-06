@@ -62,6 +62,7 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { roadNetwork } from "../src/world/roadPaths.ts";
 import { onRoad } from "../src/world/roads.ts";
+import { DOOR_FACES, FOOT } from "./lib/footprints.mjs";
 import {
   bracketKind,
   f1,
@@ -370,56 +371,6 @@ function turnFacing(dir, localFace = "+z") {
   throw new Error(`turnFacing: ${dir} ${localFace}`);
 }
 
-/**
- * The ground each kind takes, in its own frame: `[x0, x1, z0, z1]`. Measured
- * off the builders — a plinth, a dock bumper, a doorstep and a hull's shores
- * are all ground nothing else may stand on. Overhead canopies, blinds and jibs
- * are not, so a neighbour may stand under them.
- */
-const FOOT = {
-  tower: (p) => [-(p.width ?? 18) / 2 - 0.4, (p.width ?? 18) / 2 + 0.4, -(p.depth ?? 16) / 2 - 0.4, (p.depth ?? 16) / 2 + 0.4],
-  office: (p) => [-(p.width ?? 22) / 2 - 0.3, (p.width ?? 22) / 2 + 0.3, -(p.depth ?? 18) / 2 - 0.3, (p.depth ?? 18) / 2 + 0.3],
-  shophouse: (p) => [-(p.width ?? 13) / 2 - 0.2, (p.width ?? 13) / 2 + 0.2, -(p.depth ?? 16) / 2 - 0.2, (p.depth ?? 16) / 2 + 0.4],
-  depot: (p) => [-(p.width ?? 28) / 2 - 0.45, (p.width ?? 28) / 2 + 0.45, -(p.depth ?? 16) / 2 - 0.35, (p.depth ?? 16) / 2 + 0.4],
-  parkade: (p) => [-(p.width ?? 32) / 2 - 0.3, (p.width ?? 32) / 2 + 0.3, -(p.depth ?? 24) / 2 - 0.3, (p.depth ?? 24) / 2 + 0.3],
-  monument: (p) => [-(p.width ?? 11) / 2, (p.width ?? 11) / 2, -(p.width ?? 11) / 2, (p.width ?? 11) / 2],
-  planter: (p) => [-(p.width ?? 2.6) / 2, (p.width ?? 2.6) / 2, -(p.depth ?? 1.4) / 2, (p.depth ?? 1.4) / 2],
-  barrier: (p) => [-0.31, 0.31, -(p.length ?? 6) / 2, (p.length ?? 6) / 2],
-  car: () => [-2.25, 2.25, -1.0, 1.0],
-  streetLight: () => [-0.3, 0.3, -0.3, 0.3],
-  quay: (p) => [-(p.length ?? 40) / 2, (p.length ?? 40) / 2, -4.44, 0],
-  lighthouse: () => [-5.7, 5.7, -11.2, 5.7],
-  crane: () => [-4.2, 4.2, -4.0, 5.6],
-  fishRack: (p) => [-(p.length ?? 9) / 2, (p.length ?? 9) / 2, -1.0, 1.0],
-  careenedHull: (p) => [-2.9, 2.9, -(p.length ?? 11) / 2 - 0.75, (p.length ?? 11) / 2 + 0.75],
-  netLoft: (p) => [-(p.width ?? 9) / 2 - 0.45, (p.width ?? 9) / 2 + 0.45, -(p.depth ?? 7) / 2 - 0.45, (p.depth ?? 7) / 2 + 0.45],
-  chapel: () => [-7.4, 7.4, -11.6, 16.6],
-  tavern: () => [-7.1, 7.1, -9.2, 5.6],
-  townhouse: (p) => [-(p.width ?? 6.5) / 2 - 0.5, (p.width ?? 6.5) / 2 + 0.5, -(p.depth ?? 6.5) / 2 - 0.7, (p.depth ?? 6.5) / 2 + 0.6],
-  cottage: (p) => [-(p.width ?? 7) / 2 - 0.8, (p.width ?? 7) / 2 + 0.8, -(p.depth ?? 6) / 2 - 0.9, (p.depth ?? 6) / 2 + 0.8],
-  stall: () => [-2.0, 2.0, -1.15, 1.15],
-  crates: () => [-1.6, 1.8, -1.45, 1.3],
-  jetty: (p) => [-1.9, 1.9, -(p.length ?? 18) / 2 - 0.4, (p.length ?? 18) / 2 + 0.4],
-};
-
-/**
- * The faces a body walks in through, by kind; the FIRST is the one that has
- * to reach a street, a square or a yard (`doorway`), and every other is only
- * held clear for a couple of metres. A tower has no way in, but its lobby is
- * still a FRONT and still owes the street.
- */
-const DOOR_FACES = {
-  tower: ["+z"],
-  office: ["-z", "+x"],
-  shophouse: ["+z", "-z"],
-  depot: ["+z", "-x"],
-  netLoft: ["-z"],
-  lighthouse: ["-z"],
-  chapel: ["-z"],
-  tavern: ["-z"],
-  townhouse: ["-z"],
-  cottage: ["-z"],
-};
 /** Small things a yard or a flag's ring may hold. */
 const PROPS = new Set(["planter", "barrier", "car", "streetLight", "stall", "crates", "fishRack"]);
 

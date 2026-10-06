@@ -51,9 +51,13 @@ CLAUDE.md's commands block.
 - **A piece that reaches over water on purpose states what must be dry**
   (`opts.dry`, in its own frame: the mill's body, the boathouse's landward
   half).
-- **The footprint table is copied per generator** (and mirrored in this
-  skill's `footprints.mjs`). A builder whose footprint changes owes all of
-  them — this is the argument for a shared module, not yet written.
+- **The footprint table is ONE module**, `scripts/lib/footprints.mjs`
+  (`FOOT`, `DOOR_FACES`/`DOORS`, `FRONTS`), which this skill's
+  `footprints.mjs` re-exports. A new kind is a row there, measured off the
+  builder — `npm run kit:hash -- --feet --kinds <kind>` prints how far the
+  drawing reaches past it, below head height and in all. A map that wants a
+  kind held to less than the table says (a field ruin with no lane) passes an
+  option to its own `place`, never a second row.
 
 ## A forest map
 

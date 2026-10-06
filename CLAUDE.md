@@ -251,7 +251,9 @@ npm run loc        # how big the project is: hand-written code split into
 npm run kit:hash   # fingerprint every kit builder over every placement, the
                    #   DRAWING and the COLLIDERS hashed apart — proves a
                    #   refactor moved nothing, or a rework kept its colliders.
-                   #   `-- --kinds a,b`, `--out f.json`, `--against f.json`
+                   #   `-- --kinds a,b`, `--out f.json`, `--against f.json`.
+                   #   `-- --feet` measures every kind against the generators'
+                   #   footprint table (`scripts/lib/footprints.mjs`)
 npm run shots      # re-photograph the maps for the menu backdrop (committed).
                    #   The ONE script here that needs a real GPU — docs/build.md
 npm run proving    # regenerate the DEV-ONLY proving ground (committed source).

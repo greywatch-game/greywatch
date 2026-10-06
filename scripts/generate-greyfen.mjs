@@ -101,6 +101,7 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { roadNetwork } from "../src/world/roadPaths.ts";
 import { onRoad } from "../src/world/roads.ts";
+import { DOORS, FOOT, FRONTS, stairRun } from "./lib/footprints.mjs";
 import {
   bell,
   bracketKind,
@@ -442,60 +443,8 @@ const n3 = (v) => {
   return Object.is(r, -0) ? "0" : String(r);
 };
 
-/** Metres of run per metre of rise on every stair (`STAIR_GRADE` in kit/terrain.ts). */
-const STAIR_GRADE = 0.35;
-const stairRun = (h) => h / STAIR_GRADE;
-
-/**
- * The ground each kind takes, in its own frame: `[x0, x1, z0, z1]`, front at
- * -Z. Measured off the builders — a veranda, a ramp, an oversailing platform
- * are all ground nothing else may stand on. Mirrored in the map-layout skill's
- * `footprints.mjs`.
- */
-const FOOT = {
-  manor: () => [-14.5, 18, -18.4, 7.4],
-  stiltHut: () => [-5, 5, -4.4, 4.4],
-  jungleRuin: (p) => {
-    const w = p.width ?? 12;
-    const d = p.depth ?? 9;
-    return [-w / 2 - 1.8, w / 2 + 1.8, -d / 2 - 3.0, d / 2 + 0.6];
-  },
-  templeRuin: (p) => [-(p.width ?? 26) / 2 - 0.5, (p.width ?? 26) / 2 + 0.5, -(p.depth ?? 22) / 2 - 6, (p.depth ?? 22) / 2 + 0.5],
-  trestleBridge: (p) => [-(p.width ?? 3.2) / 2 - 0.4, (p.width ?? 3.2) / 2 + 0.4, -(p.length ?? 26) / 2 - 7, (p.length ?? 26) / 2 + 7],
-  boardwalk: (p) => [-(p.width ?? 2.4) / 2 - 0.2, (p.width ?? 2.4) / 2 + 0.2, -(p.length ?? 14) / 2, (p.length ?? 14) / 2],
-  stairs: (p) => [-1.4, 1.4, -stairRun(p.height ?? 2.5) / 2 - 0.6, stairRun(p.height ?? 2.5) / 2],
-  boathouse: () => [-6.0, 7.2, -7.0, 7.0],
-  watchtower: () => [-2.8, 2.8, -18.2, 2.8],
-  shed: (p) => {
-    const w = p.width ?? 3.4;
-    const d = p.depth ?? 2.8;
-    return [-w / 2 - 0.3, w / 2 + 0.3, -d / 2 - 0.3, d / 2 + 0.3];
-  },
-  cart: () => [-1.8, 3.8, -1.1, 1.1],
-  crates: () => [-1.6, 1.7, -1.3, 1.3],
-  woodpile: (p) => {
-    const len = p.length ?? 5;
-    return [-len / 2 - 0.2, len / 2 + 0.2, -0.7, 0.7];
-  },
-  well: () => [-1.7, 1.7, -1.7, 1.7],
-  stall: () => [-2, 2, -1.1, 1.1],
-  kiln: () => [-2, 2, -2.2, 2],
-  shrine: () => [-0.8, 0.8, -0.8, 0.8],
-  lamp: () => [-0.4, 1.1, -0.4, 0.4],
-  stoneWall: (p) => [-(p.length ?? 12) / 2, (p.length ?? 12) / 2, -0.4, 0.4],
-  bridge: (p) => [-(p.width ?? 3.2) / 2 - 0.3, (p.width ?? 3.2) / 2 + 0.3, -(p.length ?? 12) / 2, (p.length ?? 12) / 2],
-  jetty: (p) => [-1.7, 1.7, -(p.length ?? 18) / 2, (p.length ?? 18) / 2],
-  fishRack: (p) => [-(p.length ?? 9) / 2 - 0.2, (p.length ?? 9) / 2 + 0.2, -1.1, 1.1],
-  careenedHull: (p) => [-1.9, 1.9, -(p.length ?? 11) / 2 - 0.3, (p.length ?? 11) / 2 + 0.3],
-  sandbags: (p) => [-(p.length ?? 6) / 2 - 0.1, (p.length ?? 6) / 2 + 0.1, -0.5, 0.5],
-};
-
 /** Small things a yard or a flag's clearing may hold. */
 const PROPS = new Set(["cart", "crates", "woodpile", "stall", "well", "shrine", "lamp", "fishRack", "sandbags", "careenedHull"]);
-/** Kinds with a front door, held to opening onto a track, a yard or a clearing. */
-const DOORS = new Set(["stiltHut", "jungleRuin", "boathouse"]);
-/** Kinds whose front only has to be CLEAR: a shed's door, a kiln's wicket. */
-const FRONTS = new Set(["shed", "kiln"]);
 
 const worldFoot = makeWorldFoot(FOOT);
 
@@ -912,7 +861,11 @@ note(
   while (floorAt(bx, bz) > -0.2 && bx < 40) bx += 0.25;
   must("boathouse", Number(bx.toFixed(1)), bz, 1, null, { note: "the boathouse", dry: [-6, 7.2, -7, -3.5], flat: 1.8, skip: (c) => c.type === "open" });
 }
-place("careenedHull", -12, 86, 1, { length: 10 }, { note: "a river boat on the slip" });
+// A slip slopes, which is what it is for. The footprint reaches the shores'
+// feet, 2.95 m either side of the keel, and across that the slip falls 0.56 —
+// past a prop's 0.5, and what this boat has always stood on: the table it was
+// placed by stopped at 1.9 m and never sampled the feet.
+place("careenedHull", -12, 86, 1, { length: 10 }, { note: "a river boat on the slip", flat: 0.6 });
 place("stall", -4, 60, 1, null, { note: "a stall" });
 place("crates", 3, 64, 0, null);
 place("fishRack", 4, 70, 1, { length: 7 }, { note: "a fish rack" });

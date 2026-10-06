@@ -35,6 +35,16 @@
  * A build that throws is recorded as its error message, so a builder broken
  * by the change is a difference too.
  *
+ * `--feet` asks a different question of the same builds: for every kind in
+ * `scripts/lib/footprints.mjs`'s `FOOT`, how far the DRAWING reaches past
+ * the footprint the generators claim for it, worst case over every placement
+ * (and the bare build) on each side of the builder's own frame — once for
+ * what stands below head height, once for everything. A positive figure is a
+ * footprint that understates its builder, and a kind with one in the ground
+ * columns is flagged; the table's header says which kinds take more ground
+ * than they draw, or less, on purpose. It is the check a builder rework owes
+ * before the table is trusted again, and it writes nothing.
+ *
  * Two stand-ins decide what a hash can see. A PATH road is built without its
  * share of the network (`BuildCtx.road`, which only `MapBuilder` can hand
  * out), so it builds empty and only a rectangle road is really covered; and
@@ -47,6 +57,8 @@
  * carefully it disposes, and a worker that exits hands all of it back at once.
  *
  * Never: writes anything but `--out`, or fails a build — it is not a gate.
+ * A `--feet` run's measurements stay out of `--out`'s fingerprint, which
+ * hashes and nothing else.
  */
 import { fork } from "node:child_process";
 import { createHash } from "node:crypto";
@@ -102,6 +114,74 @@ function stubCanvas() {
       return sink;
     }
   };
+}
+
+/**
+ * What a body cannot walk under: anything below this, in metres over the
+ * placement's origin. A wall's foot is under it and its eaves are not.
+ */
+const HEADROOM = 2;
+
+/**
+ * The plan of what a builder drew, `[x0, x1, z0, z1]` in its own frame — a
+ * structure is origin-local until `MapBuilder` turns and places it — twice:
+ * everything (`plan`), and only what stands below `HEADROOM` (`ground`).
+ */
+function planOf(B, meshes) {
+  const all = [Infinity, -Infinity, Infinity, -Infinity];
+  const low = [Infinity, -Infinity, Infinity, -Infinity];
+  const grow = (b, x, z) => {
+    if (x < b[0]) b[0] = x;
+    if (x > b[1]) b[1] = x;
+    if (z < b[2]) b[2] = z;
+    if (z > b[3]) b[3] = z;
+  };
+  const v = new B.Vector3();
+  for (const m of meshes) {
+    const pos = m.getVerticesData("position");
+    if (!pos) continue;
+    const wm = m.computeWorldMatrix(true);
+    for (let i = 0; i < pos.length; i += 3) {
+      B.Vector3.TransformCoordinatesFromFloatsToRef(pos[i], pos[i + 1], pos[i + 2], wm, v);
+      grow(all, v.x, v.z);
+      if (v.y < HEADROOM) grow(low, v.x, v.z);
+    }
+  }
+  const mm = (b) => b.map((n) => Math.round(n * 1000) / 1000);
+  return { plan: mm(all), ground: mm(low) };
+}
+
+/**
+ * `--feet`'s report: per kind, the furthest the drawing reaches past its
+ * `FOOT` entry on each side (`-x +x -z +z`), over every build of it — first
+ * what stands on the ground, then everything, eaves and canopies included.
+ */
+async function reportFeet(result, notBuilt) {
+  const { FOOT } = await import("./lib/footprints.mjs");
+  const worst = new Map();
+  const reach = (box, [x0, x1, z0, z1]) => [x0 - box[0], box[1] - x1, z0 - box[2], box[3] - z1];
+  const max = (a, b) => a.map((q, i) => Math.max(q, b[i]));
+  for (const [key, r] of Object.entries(result)) {
+    if (!r.plan) continue;
+    const parsed = JSON.parse(key);
+    const kind = parsed[0];
+    const foot = FOOT[kind](parsed[1] === "bare" ? {} : parsed[1]);
+    const none = [-Infinity, -Infinity, -Infinity, -Infinity];
+    const w = worst.get(kind) ?? { n: 0, ground: none, plan: none };
+    w.n++;
+    w.ground = max(w.ground, reach(r.ground, foot));
+    w.plan = max(w.plan, reach(r.plan, foot));
+    worst.set(kind, w);
+  }
+  const f = (n) => (Number.isFinite(n) ? (n > 0 ? "+" : "") + n.toFixed(2) : "-").padStart(6);
+  console.log(`feet: how far each kind reaches past its FOOT entry, worst build (+ = the table understates it)`);
+  console.log(`  ${"".padEnd(21)}  ground, under ${HEADROOM} m          everything`);
+  console.log(`  ${"kind".padEnd(14)} ${"builds".padStart(6)}     -x     +x     -z     +z      -x     +x     -z     +z`);
+  for (const [kind, w] of [...worst].sort((p, q) => (p[0] < q[0] ? -1 : 1))) {
+    const flag = w.ground.some((q) => q > 0.05) ? "  <" : "";
+    console.log(`  ${kind.padEnd(14)} ${String(w.n).padStart(6)} ${w.ground.map(f).join(" ")}  ${w.plan.map(f).join(" ")}${flag}`);
+  }
+  if (notBuilt.length) console.log(`  in FOOT but not a builder: ${notBuilt.join(", ")}`);
 }
 
 /** Builds `[key, job]` pairs and returns `{ key: { draw, colliders } | { error } }`. */
@@ -165,6 +245,7 @@ async function hashJobs(jobs) {
         draw.update(JSON.stringify([s.lights, s.sounds, s.panes]));
         const colliders = createHash("sha256").update(JSON.stringify(s.colliders));
         out[key] = { draw: draw.digest("hex").slice(0, 16), colliders: colliders.digest("hex").slice(0, 16) };
+        if (process.env.KIT_HASH_FEET) Object.assign(out[key], planOf(B, [...s.meshes, ...s.paneMeshes]));
       } catch (e) {
         out[key] = { error: String(e?.message ?? e) };
       }
@@ -212,9 +293,24 @@ if (process.env.KIT_HASH_WORKER) {
     process.send(out, () => process.exit(0));
   });
 } else {
-  const only = opt("kinds") ? new Set(opt("kinds").split(",")) : null;
+  const feet = args.includes("--feet");
+  if (feet) process.env.KIT_HASH_FEET = "1";
   const outFile = opt("out");
   const againstFile = opt("against");
+  // `--feet` measures the kinds the footprint table names, unless told which.
+  let only = opt("kinds") ? new Set(opt("kinds").split(",")) : null;
+  let notBuilt = [];
+  if (feet && !only) {
+    const { FOOT } = await import("./lib/footprints.mjs");
+    const server = await vite();
+    try {
+      const { BUILDERS } = await server.ssrLoadModule("/src/world/BuildingKit.ts");
+      only = new Set(Object.keys(FOOT).filter((k) => k in BUILDERS));
+      notBuilt = Object.keys(FOOT).filter((k) => !(k in BUILDERS));
+    } finally {
+      await server.close();
+    }
+  }
 
   const list = await listJobs(only);
   const chunks = [];
@@ -240,8 +336,10 @@ if (process.env.KIT_HASH_WORKER) {
   const errors = keys.filter((k) => result[k].error);
   console.log(`${keys.length} builds of ${new Set(keys.map(kindOf)).size} kinds, ${errors.length} threw`);
   for (const k of errors.slice(0, 10)) console.log(`  threw  ${k}: ${result[k].error}`);
+  if (feet) await reportFeet(result, notBuilt);
   if (outFile) {
-    writeFileSync(outFile, JSON.stringify(Object.fromEntries(keys.map((k) => [k, result[k]])), null, 1));
+    const hashOnly = ({ plan: _p, ground: _g, ...r }) => r;
+    writeFileSync(outFile, JSON.stringify(Object.fromEntries(keys.map((k) => [k, hashOnly(result[k])])), null, 1));
     console.log(`wrote ${outFile}`);
   }
   if (againstFile) {
