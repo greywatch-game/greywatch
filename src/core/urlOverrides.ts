@@ -19,8 +19,7 @@
  * be offered — `?nominimap` is a flag precisely because losing the map is not
  * a setting.
  */
-import type { VolumetricRung } from "../shaders/Volumetrics";
-import { isVolumetricRung } from "../shaders/Volumetrics";
+import { isVolumetricRung, type VolumetricRung } from "../shaders/Volumetrics";
 import {
   type GiQuality,
   SHADOW_QUALITIES,

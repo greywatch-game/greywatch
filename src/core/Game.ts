@@ -117,6 +117,7 @@ import {
   isWeaponId,
   PRIMARY_WEAPON_IDS,
   type PrimaryWeaponId,
+  type WeaponId,
 } from "../entities/weapons";
 import { AimAssistSystem } from "../systems/AimAssistSystem";
 import { Atmosphere } from "../systems/Atmosphere";
@@ -337,7 +338,9 @@ const kitLampId = (n: number) => `kit-lamp-${n}`;
  * report, the tracer's reach and the reload's time cannot be read off two
  * different guns. The name came off a socket, so it is checked, not cast.
  */
-function netWeapon(w: string | undefined) {
+function netWeapon(
+  w: string | undefined,
+): (typeof CONFIG.weapons)[WeaponId] | undefined {
   return w !== undefined && isWeaponId(w) ? CONFIG.weapons[w] : undefined;
 }
 
@@ -6906,10 +6909,10 @@ export class Game {
     };
 
     // The side the authority put us on, arriving after the round was booked.
-    // The build below is optimistic about everything, and about this it was
-    // wrong for the second person into a match: `Roster.claim` fills the
-    // thinner team, so they are on team 1 while every screen here is painted
-    // for team 0.
+    // The build `joinMatch` books is optimistic about everything, and about
+    // this it was wrong for the second person into a match: `Roster.claim`
+    // fills the thinner team, so they are on team 1 while every screen here is
+    // painted for team 0.
     //
     // Two cases and one of them is not this callback's: a welcome that beats
     // the build has nothing on screen to correct and is read straight off the

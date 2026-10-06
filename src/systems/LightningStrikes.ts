@@ -17,7 +17,7 @@
  *   epoch time in seconds (~1.8e9), and a replay from zero was fifty million
  *   strikes on the first frame of a match. A clock that jumps either way
  *   costs at most one epoch's strikes.
- * - Nothing here is scheduled on a timer. `update` is pushed from `tick` in
+ * - Nothing here is scheduled on a timer. `step` is pushed from `tick` in
  *   every state, the ambience's rule: weather does not stop for a menu.
  * Contract: `docs/rendering.md` (lightning).
  */
