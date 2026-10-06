@@ -62,6 +62,7 @@ import { onRoad } from "../src/world/roads.ts";
 import { DOORS, FOOT } from "./lib/footprints.mjs";
 import {
   bell,
+  cutRun,
   f1,
   FACES,
   leadKind,
@@ -656,7 +657,7 @@ must("chapel", CHURCH.x, CHURCH.z, 0, null, { note: "the church" });
 must("tavern", 14.5, 31, 0, null, { note: "the inn" });
 place("shed", 22, 43, 2, { width: 6, depth: 3.4 }, { note: "the inn's stable" });
 place("cart", 10, 42, 1, null);
-place("woodpile", 4.6, 40, 1, { length: 4 });
+place("woodpile", 5.6, 40, 1, { length: 4 });
 place("crates", 18, 38.5, 0, null);
 
 /**
@@ -824,7 +825,7 @@ placements.push(
   place("cart", -100, -86, 1, null);
   place("cart", -88, -104, 0, { ruined: true });
   place("trough", -86, -86, 1, null);
-  place("woodpile", -104, -80, 0, null);
+  place("woodpile", -96, -80, 0, null);
   place("crates", -90, -83, 0, null);
 }
 
@@ -839,7 +840,7 @@ placements.push(
   must("cottage", 106, 119, 0, { width: 10, depth: 7, enterable: true, litWindows: true }, { note: "the orchard farmhouse" });
   must("watchtower", 128, 96, 2, null, { note: "the look-out", anySlope: true });
   place("shed", 94, 118, 0, { width: 5, depth: 3.4 }, { note: "the apple store" });
-  place("cart", 116, 92, 1, null);
+  place("cart", 117, 95, 1, null);
   place("haystack", 96, 90, 0, null);
   place("trough", 104, 110, 0, null);
   place("crates", 110, 90, 0, null);
@@ -867,7 +868,7 @@ placements.push(
   place("cart", 84, -64, 1, null);
   place("cart", 112, -80, 0, { ruined: true });
   // Abandoned, so its door is held to nothing — see the field ruins below.
-  place("ruin", 122, -86, 0, { width: 9, depth: 7 }, { note: "the old kiln house", noDoor: true });
+  place("ruin", 121, -84, 0, { width: 9, depth: 7 }, { note: "the old kiln house", noDoor: true });
 }
 
 // --- the farms ---------------------------------------------------------------
@@ -907,7 +908,7 @@ farm("North Farm", 30, 114, 0, [
   ["shed", 40, 123, 0, { width: 6, depth: 3.4 }],
   ["haystack", 18, 122, 0],
   ["haystack", 22, 126, 0],
-  ["cart", 41, 113, 1],
+  ["cart", 41, 114, 1],
   ["woodpile", 18, 114, 1],
 ]);
 // Wayside cottages along the lanes out of the village.
@@ -980,6 +981,9 @@ const BOUNDARIES = [
 ];
 const MIN_RUN = 6;
 const MAX_RUN = 26;
+/** How far a boundary kind's drawing stands past its run's ends — a wall's end
+ * piers, a fence's end posts; a hedge is claimed, not drawn. */
+const reachOf = (kind) => (kind === "wall" ? -FOOT.stoneWall({ length: 0 })[0] : kind === "fence" ? -FOOT.fence({ length: 0 })[0] : 0);
 
 /** Whether a point on a boundary line may carry a run. */
 function runnable(x, z) {
@@ -1003,15 +1007,8 @@ for (const [x0, z0, x1, z1, kind] of BOUNDARIES) {
   let start = null;
   const flush = (end) => {
     if (start === null) return;
-    const len = end - start;
-    if (len >= MIN_RUN) {
-      const pieces = Math.ceil(len / MAX_RUN);
-      const each = len / pieces;
-      for (let k = 0; k < pieces; k++) {
-        const s0 = start + k * each + (k > 0 ? 0.25 : 0);
-        const s1 = start + (k + 1) * each - (k < pieces - 1 ? 0.25 : 0);
-        runs.push({ alongX, at, s0, s1, kind });
-      }
+    for (const [s0, s1] of cutRun(start, end, { minRun: MIN_RUN, maxRun: MAX_RUN, reach: reachOf(kind) })) {
+      runs.push({ alongX, at, s0, s1, kind });
     }
     start = null;
   };
@@ -1059,8 +1056,8 @@ for (const r of runs) {
 for (const [kind, x, z, t, p] of [
   ["haystack", -52, -80, 0], ["haystack", -48, -84, 0], ["haystack", 34, -132, 0], ["haystack", 140, -98, 0],
   ["haystack", -150, -60, 0], ["haystack", -52, 112, 0], ["haystack", 36, 150, 0], ["haystack", 170, 100, 0],
-  ["trough", 30, -80, 0], ["trough", -130, -40, 1], ["trough", 170, -30, 0], ["trough", -90, 112, 0],
-  ["ruin", 36, -38, 0, { width: 9, depth: 7 }], ["ruin", -150, 44, 0, { width: 8, depth: 7 }],
+  ["trough", 30, -80, 0], ["trough", -130, -40, 1], ["trough", 170, -33, 0], ["trough", -90, 112, 0],
+  ["ruin", 36, -38, 0, { width: 9, depth: 7 }], ["ruin", -150, 54, 0, { width: 8, depth: 7 }],
   ["ruin", 172, 60, 0, { width: 8, depth: 7 }], ["ruin", -40, -140, 0, { width: 10, depth: 8 }],
   ["cart", -150, -96, 0, { ruined: true }], ["cart", 60, 70, 1], ["cart", -20, 120, 0],
 ]) {
