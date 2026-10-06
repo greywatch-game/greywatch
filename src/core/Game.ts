@@ -235,6 +235,7 @@ import {
   type Settings,
   type VolumetricQuality,
 } from "./settings";
+import { PointerLockChase } from "./PointerLockChase";
 import { Sfx } from "./Sfx";
 import { UrlOverrides, urlFlag } from "./urlOverrides";
 import { setViewerTeam, teamLook } from "./teamView";
@@ -801,24 +802,12 @@ export class Game {
     return this.screens.current;
   }
   /**
-   * Whether the pointer was locked as of the last `pointerlockchange`. Losing
-   * the lock is what pauses the game, and only a *transition* out of it counts
-   * — a pad player who never took the lock has none to lose.
+   * The pointer lock's timing: whether a loss is the player leaving — which
+   * is what pauses the game — and when a resume that still owes the lock asks
+   * for it again (`core/PointerLockChase.ts`). It answers; `requestLock` and
+   * `pause` act.
    */
-  private hadPointerLock = false;
-  /**
-   * `performance.now()` of the last time the lock was TAKEN. A loss inside
-   * `CONFIG.input.lockGrace` of it is the browser finishing an Escape it had
-   * already started rather than the player leaving, and does not pause.
-   */
-  private lockTakenAt = 0;
-  /**
-   * A resume that still owes the pointer lock: how long it has been owed, and
-   * how long until the next attempt. See `updatePendingLock`.
-   */
-  private lockPending = false;
-  private lockPendingT = 0;
-  private lockRetryT = 0;
+  private readonly lockChase = new PointerLockChase();
   private map: GameMap | null = null;
   /**
    * The hulls' decks, as the ground `Player` probes beside the terrain — see
@@ -2066,15 +2055,9 @@ export class Game {
     // (Start) and for the keyboard player who was not locked to begin with.
     document.addEventListener("pointerlockchange", () => {
       const locked = document.pointerLockElement === canvas;
-      if (locked) this.lockTakenAt = performance.now();
-      // A lock granted and revoked in the same beat is the browser refusing,
-      // not the player leaving: the request a resume makes lands while the UA
-      // still owes an Escape-exit, and it takes back what it just gave. Pausing
-      // on that is how a dismissed pause menu reappeared a split second later,
-      // with nothing but the browser between the two. The retry in
-      // `updatePendingLock` is what carries the resume from here.
-      const refused =
-        performance.now() - this.lockTakenAt < CONFIG.input.lockGrace * 1000;
+      // Only a transition OUT of a held lock, and never the browser taking
+      // back a lock it granted a beat ago — see `PointerLockChase.changed`.
+      const lost = this.lockChase.changed(locked, performance.now());
       // `dying` counts too. The death cam deliberately KEEPS the lock — there
       // is nothing to click, and dropping it on the way in would pause the
       // very shot it is about to show — so it has a lock to lose like any
@@ -2083,15 +2066,12 @@ export class Game {
       // the mouse down and reached for the screen (`pushTouchControls`). That
       // is the one hand-over that looks exactly like an alt-tab from here.
       if (
-        !locked &&
-        this.hadPointerLock &&
-        !refused &&
+        lost &&
         !this.input.touchActive &&
         (this.state === "playing" || this.state === "dying")
       ) {
         this.pause();
       }
-      this.hadPointerLock = locked;
     });
     window.addEventListener("keydown", () => this.sfx.unlock(), { once: true });
     // Through `applyRenderScale` rather than straight to `engine.resize`,
@@ -3959,10 +3939,8 @@ export class Game {
    */
   private pause(): void {
     if (!this.raiseLid("paused")) return;
-    // A pause outranks a resume that never got its lock: a second pause taken
-    // while one was still being chased must not have the round grab the mouse
-    // out from under the menu it just raised.
-    this.lockPending = false;
+    // A pause outranks a resume that never got its lock — see `cancel`.
+    this.lockChase.cancel();
     this.hud.setPaused(true);
     this.overlayScreen.showPause(this.pauseState());
     this.pauseRoundT = CONFIG.pauseCard.refresh;
@@ -4004,52 +3982,27 @@ export class Game {
       this.input.consumeFire();
       // NOT a bare `requestLock()`: a resume driven by Escape is asking for the
       // lock with the browser's own release-the-lock key still down. See
-      // `updatePendingLock`.
-      this.lockPending = true;
-      this.lockPendingT = 0;
-      this.lockRetryT = 0;
+      // `PointerLockChase.step`.
+      this.lockChase.owe();
     }
   }
 
   /**
-   * Carries a resume's pointer lock until the browser agrees to it.
-   *
-   * A pause taken with Escape ends with Escape, and that one key is both the
-   * resume and the UA's gesture for dropping a lock — so the request a resume
-   * makes is the one request the browser is least willing to grant. Chrome
-   * refuses outright for about a second after an Escape-exit, and a lock taken
-   * while the key is still down is dropped again by its auto-repeat, which
-   * `pointerlockchange` would read as a player leaving and pause on. Both look
-   * to the player like the same thing: a menu that flickers off and back on,
-   * and a round that eventually resumes with the mouse still loose.
-   *
-   * So the request waits for the key to come UP and is then retried on an
-   * interval until the lock lands, or until the window runs out — at which
-   * point the round is still running, the lock hint is on screen, and the next
-   * click takes it through the `pointerdown` handler. Nothing here can pause:
-   * a refusal is not a state change.
+   * Carries a resume's pointer lock until the browser agrees to it: asks
+   * whenever `PointerLockChase.step` says this frame should, which is after
+   * the Escape that ended the pause has come up and then on an interval until
+   * the lock lands or the window runs out. Nothing here can pause: a refusal
+   * is not a state change. There is nothing to chase on a phone — see the note
+   * in `spawnPlayer`.
    */
   private updatePendingLock(dt: number): void {
-    if (!this.lockPending) return;
-    if (this.input.pointerLocked) {
-      this.lockPending = false;
-      return;
-    }
-    this.lockPendingT += dt;
-    if (this.lockPendingT > CONFIG.input.lockRetryWindow) {
-      this.lockPending = false;
-      return;
-    }
-    if (this.input.pauseKeyHeld) return;
-    // Nothing to chase on a phone: see the note in `spawnPlayer`.
-    if (this.input.touchActive) {
-      this.lockPending = false;
-      return;
-    }
-    this.lockRetryT -= dt;
-    if (this.lockRetryT > 0) return;
-    this.lockRetryT = CONFIG.input.lockRetryInterval;
-    this.requestLock();
+    const ask = this.lockChase.step(
+      dt,
+      this.input.pointerLocked,
+      this.input.pauseKeyHeld,
+      this.input.touchActive,
+    );
+    if (ask) this.requestLock();
   }
 
   /**

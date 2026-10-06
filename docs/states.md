@@ -280,7 +280,10 @@ dismissed. So `resume` only *marks* the lock as owed, `updatePendingLock` waits
 for the key to come up and then asks on an interval until the lock lands or the
 window runs out, and a loss inside `CONFIG.input.lockGrace` of taking it is read
 as a refusal rather than a departure. If the browser holds out, the round is
-still running with the CLICK hint up and the next click gets it.
+still running with the CLICK hint up and the next click gets it. The timing is
+`core/PointerLockChase.ts`, which answers "is this the player leaving?" and "ask
+now?" and does neither: `Game` keeps `requestLock`, `pause` and which states a
+departure pauses.
 
 ## What the pause card is on screen
 

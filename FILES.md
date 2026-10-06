@@ -240,6 +240,10 @@ src/
     settings.ts         # Settings shape, defaults, localStorage. Applies
                         #   nothing — that is Game.applySettings, the ONLY
                         #   place a setting reaches whatever owns it
+    PointerLockChase.ts # The pointer lock's TIMING: whether a lost lock is
+                        #   the player leaving (a transition out, past
+                        #   lockGrace) and when a resume's owed lock asks again.
+                        #   Answers only — Game keeps requestLock and pause
     urlOverrides.ts     # The URL's session overrides of a display setting
                         #   (?gi= ?shadows= ?volumetrics= ?nominimap), read
                         #   ONCE and resolved against the setting Game hands
