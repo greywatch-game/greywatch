@@ -48,7 +48,7 @@ match smoke test (`npm run build:server && npm run server`, two clients).
 | ~~[17](#17-cannon-and-muzzle-light-effects-duplicated-in-gamets-with-inline-magic-numbers)~~ | P1 — done | Cannon/muzzle-light effects duplicated in `Game.ts` with inline magic numbers |
 | ~~[18](#18-small-duplicates-inside-gamets)~~ | P2 — done | Small duplicates inside `Game.ts` |
 | ~~[19](#19-extract-the-gamets-clusters-that-pass-docsgamemds-test)~~ | P2 — done | Extract the `Game.ts` clusters that pass `docs/game.md`'s test |
-| [20](#20-decompose-the-longest-gamets-methods-in-place) | P2 | Decompose the longest `Game.ts` methods in place |
+| ~~[20](#20-decompose-the-longest-gamets-methods-in-place)~~ | P2 — done | Decompose the longest `Game.ts` methods in place |
 | [21](#21-extend-kithash-to-cover-scatter-builders) | P2 | Extend `kit:hash` to cover scatter builders |
 | [22](#22-split-worldkitcityts-per-builder) | P2 | Split `world/kit/city.ts` per builder |
 | [23](#23-split-worldpropsts) | P2 | Split `world/Props.ts` |
@@ -582,6 +582,8 @@ methods touch no system, no mesh and no frame. These qualify:
 unchanged; `FILES.md` gets a line per new file.
 
 ### 20. Decompose the longest `Game.ts` methods in place
+
+**Resolved.** `joinMatch`'s session callbacks are `wireNet(net)`, beside `wireBattle` and `wireVehicles`, and are assigned at the same point in the join. `updateOnFoot`'s gun branch is `firePrimary()`, the twin of `fireOrdnance`, and its tail is `updateBoarding()`. In `tick`, the shafts' three shadow pushes moved into `syncVolumetrics`, their only caller. The eye-follow block inside the `culling` span is `followEye(fleetStepped)`. Every `begin`/`end` bracket and every call in `tick` is where it was, in the same order. Checked live: a capture on Hollowmere and Cinderhaven still records every phase an offline round on foot runs (all but `driver` and `net`). A two-client match on a local server seated both clients, and bravo queued and drew alpha's rounds and the bots'.
 
 **Area:** `src/core/Game.ts` — wiring stays in `Game`, these are private-method
 extractions only.

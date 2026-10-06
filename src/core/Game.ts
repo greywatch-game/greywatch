@@ -2790,9 +2790,111 @@ export class Game {
     vol.setLightDir(-lx, -ly, -lz);
   }
 
+  /**
+   * Everything stood around the EYE rather than over the map, pushed in EVERY
+   * state because every state renders and only some of them simulate: the
+   * shader's eye, the water's grid, the grass patches, the cull's
+   * neighbourhood and the mote field — and the rotor wash, on the fleet's
+   * terms rather than the eye's. Once a frame, from `tick`, inside the cull
+   * span; the order below is load-bearing and each line says why.
+   */
+  private followEye(fleetStepped: boolean): void {
+    // The eye the cel shader fogs and rims against, last of all and in EVERY
+    // state, because every state renders and only some of them simulate. It
+    // used to be pushed from `updateSceneForCamera` and by hand from the kit
+    // screen, which covered the four states that run a camera and left the
+    // scene behind the menu, the building card and the deploy screen fogged
+    // against wherever the last live frame stood — the origin, before there
+    // has been one. That was 8.5 m of error on a fresh boot's first deploy
+    // screen and exactly none anywhere else, and the reason it was only ever
+    // 8.5 m is that nothing currently MOVES the camera in a state that does
+    // not simulate. A deploy screen that flew to an overlook, or a menu that
+    // panned, would have broken it silently and looked like a shader bug. Here
+    // it cannot: `updateCamera` guards on the position, so a still camera in
+    // any state costs one comparison and no walk.
+    this.mats.updateCamera(this.cameraSys.camera.position);
+    // And the water: its wave grid stands under the eye and its Fresnel is
+    // asked of it, and a deploy screen over the bay is a live view of both.
+    // Nothing here advances its clock — see `WaterSystem.follow`.
+    this.water.follow(this.cameraSys.camera.position);
+    // And the grass, whose patches are chosen around the eye and inside the
+    // frustum: a deploy screen over a meadow is a live view of it too. Nothing
+    // here advances its clock — see `GrassSystem.follow`.
+    //
+    // **Both of these come BEFORE the cull, because both decide `isVisible`
+    // on their own meshes and the cull's `offer` reads it.** The grass hides a
+    // patch mesh with no patches this frame and the water swaps a body's grid
+    // for its quad by distance; with the cull first, a mesh switched ON here
+    // was not offered and dropped out for exactly one frame. Running down a
+    // meadow that was an 8 m patch blinking out 13–26 m ahead about three
+    // times a second — the middle LOD rings are narrower than a patch, so one
+    // empties and refills every few strides. The water's live frames were
+    // safe only because the camera tail's `water.update` follows first; in a
+    // state with no tail it lost its near surface on the frame the eye came
+    // within the grid's reach.
+    this.grass.follow(this.cameraSys.camera);
+    // And on the same terms and for the same reason: the map around the eye,
+    // rather than the map. Every state renders and only some of them simulate,
+    // so a menu, a building card or a deploy screen with a live view behind it
+    // would otherwise be offered whatever neighbourhood the last live frame
+    // stood in — which on a map big enough for this to matter is a hole where
+    // the city is. It guards on the position exactly as the line above does.
+    this.culling.update(this.cameraSys.camera.position);
+    // And on exactly those terms again, for a map whose dust is emitted around
+    // the eye rather than over the whole square (`ParticleSpec.volume`). A
+    // no-op for every map that states none, which is all of them but one.
+    this.atmosphere.update(this.cameraSys.camera.position);
+    // The dust under the rotors, on the fleet's terms rather than the eye's: a
+    // held world is a machine frozen over a street, and one still boiling that
+    // street is the droning-engine lie with a picture instead of a sound. In
+    // the cull span rather than a span of its own because that is what it is —
+    // a per-frame push at a standing GPU emitter, the mote field's own shape,
+    // and at most one question per machine on the field.
+    this.rotorWash.update(fleetStepped);
+    // …and the WATER's half of the same wash, straight off the sites that call
+    // just worked out. It is here rather than beside `water.update` in the
+    // camera tail for two reasons that both come out of WHERE each one runs.
+    // The tail is only reached by the states that simulate, so a hole in the
+    // bay pushed from there would be one frame stale — the wash is worked out
+    // after the world step and the water is drawn before it. And it is gated
+    // on the same flag as the dust, which is what FREEZES the hole rather than
+    // closing it: a held world is a machine hanging motionless over the water,
+    // `RotorWash` answers 0 for it, and healing the surface under a deploy
+    // card while the swell around it stands stopped mid-crest is the droning
+    // engine again with the picture the wrong way round.
+    if (fleetStepped) {
+      this.water.setWash(this.rotorWash.sites, this.rotorWash.siteCount);
+    }
+  }
+
+  /**
+   * The shafts' frame: the three shadow maps they march through, pushed, and
+   * the pass attached on the first frame its depth image exists (or taken off
+   * if it stops existing). Once a frame, from `tick`, after every state has
+   * had its go at the camera and before the render the shafts are drawn into.
+   */
   private syncVolumetrics(): void {
     const vol = this.volumetrics;
     if (!vol) return;
+    vol.update();
+    // The shadow map is re-read rather than held, which
+    // `ShadowSystem.lightMatrix` explains — the generator mutates that matrix
+    // in place, and leaning on it is leaning on an implementation detail of
+    // Babylon's.
+    const map = this.shadows.depthMap;
+    if (map) vol.setShadow(map, this.shadows.lightMatrix);
+    // And the bodies', which is what lets a soldier standing in a beam cut it.
+    // Re-read for the same reason the line above is: both generators mutate
+    // their matrix in place.
+    const bodyMap = this.bodyShadows.depthMap;
+    if (bodyMap) vol.setBodyShadow(bodyMap, this.bodyShadows.lightMatrix);
+    // And the clouds', so a beam stops where the ground under it goes into a
+    // cloud's shadow.
+    vol.setCloudShadow(
+      this.sky.cloudShadowMap,
+      this.sky.cloudShadowArea,
+      this.sky.cloudShadowRay,
+    );
     const on = vol.ready;
     if (on === this.volumetricsAttached) return;
     const camera = this.cameraSys.camera;
@@ -3326,29 +3428,7 @@ export class Game {
     // stop for a menu — and after the sky has placed its clouds.
     this.pushLightning(dt);
     // After every state has had its go at the camera, and before the render
-    // the shafts are drawn into. The shadow map is re-read rather than held,
-    // which `ShadowSystem.lightMatrix` explains — the generator mutates that
-    // matrix in place, and leaning on it is leaning on an implementation
-    // detail of Babylon's.
-    if (this.volumetrics) {
-      this.volumetrics.update();
-      const map = this.shadows.depthMap;
-      if (map) this.volumetrics.setShadow(map, this.shadows.lightMatrix);
-      // And the bodies', which is what lets a soldier standing in a beam cut
-      // it. Re-read for the same reason the line above is: both generators
-      // mutate their matrix in place.
-      const bodyMap = this.bodyShadows.depthMap;
-      if (bodyMap) {
-        this.volumetrics.setBodyShadow(bodyMap, this.bodyShadows.lightMatrix);
-      }
-      // And the clouds', so a beam stops where the ground under it goes into
-      // a cloud's shadow.
-      this.volumetrics.setCloudShadow(
-        this.sky.cloudShadowMap,
-        this.sky.cloudShadowArea,
-        this.sky.cloudShadowRay,
-      );
-    }
+    // the shafts are drawn into.
     this.syncVolumetrics();
     // Every frame in every state, so the basis it reprojects against can never
     // go stale while the player sits in a menu. In the editor the free-fly cam
@@ -3366,72 +3446,7 @@ export class Game {
     const fleetStepped = this.fleetStepped;
     this.fleetStepped = false;
     this.prof.begin(P.culling);
-    // The eye the cel shader fogs and rims against, last of all and in EVERY
-    // state, because every state renders and only some of them simulate. It
-    // used to be pushed from `updateSceneForCamera` and by hand from the kit
-    // screen, which covered the four states that run a camera and left the
-    // scene behind the menu, the building card and the deploy screen fogged
-    // against wherever the last live frame stood — the origin, before there
-    // has been one. That was 8.5 m of error on a fresh boot's first deploy
-    // screen and exactly none anywhere else, and the reason it was only ever
-    // 8.5 m is that nothing currently MOVES the camera in a state that does
-    // not simulate. A deploy screen that flew to an overlook, or a menu that
-    // panned, would have broken it silently and looked like a shader bug. Here
-    // it cannot: `updateCamera` guards on the position, so a still camera in
-    // any state costs one comparison and no walk.
-    this.mats.updateCamera(this.cameraSys.camera.position);
-    // And the water: its wave grid stands under the eye and its Fresnel is
-    // asked of it, and a deploy screen over the bay is a live view of both.
-    // Nothing here advances its clock — see `WaterSystem.follow`.
-    this.water.follow(this.cameraSys.camera.position);
-    // And the grass, whose patches are chosen around the eye and inside the
-    // frustum: a deploy screen over a meadow is a live view of it too. Nothing
-    // here advances its clock — see `GrassSystem.follow`.
-    //
-    // **Both of these come BEFORE the cull, because both decide `isVisible`
-    // on their own meshes and the cull's `offer` reads it.** The grass hides a
-    // patch mesh with no patches this frame and the water swaps a body's grid
-    // for its quad by distance; with the cull first, a mesh switched ON here
-    // was not offered and dropped out for exactly one frame. Running down a
-    // meadow that was an 8 m patch blinking out 13–26 m ahead about three
-    // times a second — the middle LOD rings are narrower than a patch, so one
-    // empties and refills every few strides. The water's live frames were
-    // safe only because the camera tail's `water.update` follows first; in a
-    // state with no tail it lost its near surface on the frame the eye came
-    // within the grid's reach.
-    this.grass.follow(this.cameraSys.camera);
-    // And on the same terms and for the same reason: the map around the eye,
-    // rather than the map. Every state renders and only some of them simulate,
-    // so a menu, a building card or a deploy screen with a live view behind it
-    // would otherwise be offered whatever neighbourhood the last live frame
-    // stood in — which on a map big enough for this to matter is a hole where
-    // the city is. It guards on the position exactly as the line above does.
-    this.culling.update(this.cameraSys.camera.position);
-    // And on exactly those terms again, for a map whose dust is emitted around
-    // the eye rather than over the whole square (`ParticleSpec.volume`). A
-    // no-op for every map that states none, which is all of them but one.
-    this.atmosphere.update(this.cameraSys.camera.position);
-    // The dust under the rotors, on the fleet's terms rather than the eye's: a
-    // held world is a machine frozen over a street, and one still boiling that
-    // street is the droning-engine lie with a picture instead of a sound. In
-    // the cull span rather than a span of its own because that is what it is —
-    // a per-frame push at a standing GPU emitter, the mote field's own shape,
-    // and at most one question per machine on the field.
-    this.rotorWash.update(fleetStepped);
-    // …and the WATER's half of the same wash, straight off the sites that call
-    // just worked out. It is here rather than beside `water.update` in the
-    // camera tail for two reasons that both come out of WHERE each one runs.
-    // The tail is only reached by the states that simulate, so a hole in the
-    // bay pushed from there would be one frame stale — the wash is worked out
-    // after the world step and the water is drawn before it. And it is gated
-    // on the same flag as the dust, which is what FREEZES the hole rather than
-    // closing it: a held world is a machine hanging motionless over the water,
-    // `RotorWash` answers 0 for it, and healing the surface under a deploy
-    // card while the swell around it stands stopped mid-crest is the droning
-    // engine again with the picture the wrong way round.
-    if (fleetStepped) {
-      this.water.setWash(this.rotorWash.sites, this.rotorWash.siteCount);
-    }
+    this.followEye(fleetStepped);
     this.prof.end(P.culling);
     // The irradiance volume, around the eye, in EVERY state and on the cull
     // span's terms: every state renders, so a building card, a deploy screen
@@ -5445,156 +5460,14 @@ export class Game {
         this.fireOrdnance(carriedAt);
       }
     } else if (this.player.tryShot(this.input.fire && canFire)) {
-      const blend = this.cameraSys.adsBlend;
-      const spread = this.player.spread(blend);
-      // Tracers, the flash light and the noise all start at the viewmodel's
-      // muzzle — about half a metre in front of the eye. That is the rifle
-      // on screen, so it is the one the shot has to appear to come from.
-      const muzzle = this.player.muzzleWorld();
-      const shot = this.combat.fire(
-        this.cameraSys.camera.position,
-        this.cameraSys.forward,
-        spread,
-        this.player.damage,
-        muzzle,
-        this.enemyTargets(),
-        this.player.range,
-        this.player.shotOptions,
-      );
-      // Networked: report the round. Everything above stays exactly as it is —
-      // the local resolve is what draws the tracer, flashes the hitmarker and
-      // kicks the weapon, and none of that may wait on a round trip. What it
-      // no longer does is decide anything: in a netplay round `enemyTargets`
-      // answers with the `NetSoldier`s the roster is drawing, whose
-      // `takeDamage` returns false and changes nothing, so the hitmarker below
-      // is a PREDICTION and the server's `hit` event is the truth.
-      //
-      // `shot.dir` and not `cameraSys.forward`: the spread was rolled inside
-      // `fire`, and the server has to re-resolve this bullet rather than a
-      // differently-jittered one.
-      // The SLOT and not a constant: the authority reads this round's damage
-      // off it, and the sidearm is not the primary — see `ShotMessage.slot`.
-      this.net?.sendShot(
-        this.cameraSys.camera.position,
-        shot.dir,
-        this.player.carriedSlot,
-      );
-
-      // Bots hear the player's rifle the same way they hear each other's. This
-      // is the only place the player's own gunfire enters the world, so it is
-      // the only place that can say so.
-      this.battle.hearGunshot(muzzle, this.player.team, shot.dir);
-      // Recoil: kick the aim up and off toward the weapon's own bias, softened
-      // braced and stiffened on the move. It decays on its own, so the burst
-      // climbs and settles.
-      //
-      // The vector is built by `Player.recoilKick` and not here: every number
-      // in it is the weapon's, and `docs/weapons.md` has always said the recoil
-      // multipliers reach nothing but `Player`. Wiring it to the camera is this
-      // call site's whole job, which is what a call site in `Game` is for.
-      // Exactly once per shot — it reads the string counter and the drift
-      // `tryShot` just advanced.
-      const kick = this.player.recoilKick(blend);
-      this.cameraSys.addRecoil(kick.pitch, kick.yaw, kick.opensString);
-      // Cosmetic view punch: FOV spike + shove + a nudge thrown the way this
-      // round went, on the rendered camera only — the bullets above already
-      // left with the clean aim. The SHOCK is the weapon's, built in `Player`
-      // like the kick above it; a blast raises a punch too and passes none, so
-      // the number arrives per event rather than being read off the hands.
-      // `punchLift` and `punchSwing` are the two terms a gunshot cuts: the aim's
-      // kick above is already the whole measured lift, and with no lift the
-      // yaw would be the punch's ONLY angle — a purely sideways jolt on a
-      // round that went up.
-      this.cameraSys.addPunch(
-        this.player.kickDrift,
-        this.player.punchShock,
-        1,
-        CONFIG.recoil.punchLift,
-        CONFIG.recoil.punchSwing,
-      );
-      // Muzzle flash: a hard, very short pulse that lights whatever is in
-      // front of the player — the main reason to keep shooting in the dark.
-      this.flashMuzzle(muzzle);
-      // Scheduled where the round was DUE rather than on the boundary it
-      // could be fired on — see `Player.reportDelay`, which owns the number.
-      this.sfx.shoot(this.player.report, this.player.reportDelay);
-      // …and, on a bolt gun, the action being worked, laid out across the fire
-      // cooldown this shot has just set — which on that weapon IS the cycle,
-      // and which `ViewModel` is playing the gesture off at the same moment.
-      // Zero on everything else, and zero on the round that empties the
-      // magazine: `tryShot` has already started the reload and `Sfx.reload` is
-      // the sound of that. Zero too on a round fired through the sight, whose
-      // bolt stays shut until the sight comes down — `ev.cycleBegun` raises it
-      // then. Exactly the shape `rpgLoad` is raised in, one weapon table over.
-      const cycle = this.player.cycleTime;
-      if (cycle > 0) this.sfx.boltCycle(cycle, this.player.report);
-      const haptic = CONFIG.rumble;
-      this.input.rumble(haptic.shotStrong, haptic.shotWeak, haptic.shotMs);
-      if (shot.target) {
-        // A BODY went down, which is what the marker and the rumble are about
-        // — the two cues that say "stop shooting". Not what the BOARD pays:
-        // that is `creditKill`'s to refuse through `paysKiller`, one door for
-        // every kill in the game, and the two questions are kept apart here
-        // for the reason `hullHitCue` gives.
-        const killedBody = shot.killed && shot.target instanceof Bot;
-        // Resolved before the marker so a kill gets the red one — the cue to
-        // stop putting rounds into a body that is already going down. A
-        // headshot is the second axis and loses to a kill on the marker,
-        // because "stop shooting" is the more urgent thing to say; it keeps
-        // its own sound either way, which is where the read actually lands.
-        this.hitCue(killedBody, shot.headshot);
-        // Netplay: this marker is a guess, and remembering that it was made is
-        // what keeps the authority's answer from repeating it a round trip
-        // later. See `HitCredits`.
-        if (this.net) this.hitCredits.note(shot.headshot);
-        this.input.rumble(
-          killedBody ? haptic.killStrong : haptic.hitStrong,
-          killedBody ? haptic.killWeak : haptic.hitWeak,
-          killedBody ? haptic.killMs : haptic.hitMs,
-        );
-        if (shot.killed) {
-          // Both doors, one line apart: our row, and the body's. Offline only
-          // — in a netplay round `shot.killed` is false, because the roster's
-          // bodies refuse local damage and the authority scores this round.
-          settleKill(
-            this.ledger,
-            this.player,
-            shot.target,
-            this.player.team,
-            "round",
-            shot.headshot,
-          );
-        }
-      }
-      // Nothing here for the reload the last round in the magazine just
-      // started: `tryShot` began it, and `player.onReload` is what hears about
-      // it — sound and announcement together, from the one door.
+      this.firePrimary();
     }
 
     // The one verb that is not on the mouse or a stance key. Last in this
     // method on purpose: it is tested against where `player.update` has just
     // put the body, so walking up to a hull offers it on the frame you arrive
     // rather than the frame after.
-    const seat = this.vehicles.empty ? null : this.offeredSeat();
-    this.offerUse(seat ? seat.label : null);
-    if (!seat || !this.input.usePressed) return;
-    // **In a match, getting in is an ASK.** Nothing local changes here: the
-    // authority re-derives the whole offer against its own copy of the hull,
-    // the team, the distance and the crew, and answers with a `seat` event —
-    // which is where `mount` is finally called. Mounting locally and letting
-    // the server catch up would be a client deciding it is inside a tank
-    // somebody else may already be sitting in.
-    if (this.net) {
-      this.net.sendMount(this.vehicles.hulls.indexOf(seat.tank), seat.seat);
-      return;
-    }
-    // The eviction and the mount are one gesture and must land on the same
-    // frame: `mount` writes `Vehicle.seats` through `setOccupied`, and a crew
-    // taken out without somebody taking its place would leave the hull open
-    // for the boarding sweep to re-crew before the player's key is even read
-    // again.
-    if (seat.crewed) this.crew.evict(seat.tank, seat.seat);
-    this.mount(seat.tank, seat.seat);
+    this.updateBoarding();
   }
 
   /**
@@ -5919,6 +5792,170 @@ export class Game {
     } else {
       this.leash.clear();
     }
+  }
+
+  /**
+   * The primary trigger: a round down the aim axis, and everything it owes the
+   * screen, the ear, the hands and — in a match — the authority.
+   *
+   * `fireOrdnance`'s twin, and the second half of `updateOnFoot`'s shooting
+   * block for every weapon that is a gun. `Player.tryShot` has already
+   * agreed the round may leave and advanced the string and the drift by the
+   * time this runs, which is what the recoil below reads.
+   */
+  private firePrimary(): void {
+    const blend = this.cameraSys.adsBlend;
+    const spread = this.player.spread(blend);
+    // Tracers, the flash light and the noise all start at the viewmodel's
+    // muzzle — about half a metre in front of the eye. That is the rifle
+    // on screen, so it is the one the shot has to appear to come from.
+    const muzzle = this.player.muzzleWorld();
+    const shot = this.combat.fire(
+      this.cameraSys.camera.position,
+      this.cameraSys.forward,
+      spread,
+      this.player.damage,
+      muzzle,
+      this.enemyTargets(),
+      this.player.range,
+      this.player.shotOptions,
+    );
+    // Networked: report the round. Everything above stays exactly as it is —
+    // the local resolve is what draws the tracer, flashes the hitmarker and
+    // kicks the weapon, and none of that may wait on a round trip. What it
+    // no longer does is decide anything: in a netplay round `enemyTargets`
+    // answers with the `NetSoldier`s the roster is drawing, whose
+    // `takeDamage` returns false and changes nothing, so the hitmarker below
+    // is a PREDICTION and the server's `hit` event is the truth.
+    //
+    // `shot.dir` and not `cameraSys.forward`: the spread was rolled inside
+    // `fire`, and the server has to re-resolve this bullet rather than a
+    // differently-jittered one.
+    // The SLOT and not a constant: the authority reads this round's damage
+    // off it, and the sidearm is not the primary — see `ShotMessage.slot`.
+    this.net?.sendShot(
+      this.cameraSys.camera.position,
+      shot.dir,
+      this.player.carriedSlot,
+    );
+
+    // Bots hear the player's rifle the same way they hear each other's. This
+    // is the only place the player's own gunfire enters the world, so it is
+    // the only place that can say so.
+    this.battle.hearGunshot(muzzle, this.player.team, shot.dir);
+    // Recoil: kick the aim up and off toward the weapon's own bias, softened
+    // braced and stiffened on the move. It decays on its own, so the burst
+    // climbs and settles.
+    //
+    // The vector is built by `Player.recoilKick` and not here: every number
+    // in it is the weapon's, and `docs/weapons.md` has always said the recoil
+    // multipliers reach nothing but `Player`. Wiring it to the camera is this
+    // call site's whole job, which is what a call site in `Game` is for.
+    // Exactly once per shot — it reads the string counter and the drift
+    // `tryShot` just advanced.
+    const kick = this.player.recoilKick(blend);
+    this.cameraSys.addRecoil(kick.pitch, kick.yaw, kick.opensString);
+    // Cosmetic view punch: FOV spike + shove + a nudge thrown the way this
+    // round went, on the rendered camera only — the bullets above already
+    // left with the clean aim. The SHOCK is the weapon's, built in `Player`
+    // like the kick above it; a blast raises a punch too and passes none, so
+    // the number arrives per event rather than being read off the hands.
+    // `punchLift` and `punchSwing` are the two terms a gunshot cuts: the aim's
+    // kick above is already the whole measured lift, and with no lift the
+    // yaw would be the punch's ONLY angle — a purely sideways jolt on a
+    // round that went up.
+    this.cameraSys.addPunch(
+      this.player.kickDrift,
+      this.player.punchShock,
+      1,
+      CONFIG.recoil.punchLift,
+      CONFIG.recoil.punchSwing,
+    );
+    // Muzzle flash: a hard, very short pulse that lights whatever is in
+    // front of the player — the main reason to keep shooting in the dark.
+    this.flashMuzzle(muzzle);
+    // Scheduled where the round was DUE rather than on the boundary it
+    // could be fired on — see `Player.reportDelay`, which owns the number.
+    this.sfx.shoot(this.player.report, this.player.reportDelay);
+    // …and, on a bolt gun, the action being worked, laid out across the fire
+    // cooldown this shot has just set — which on that weapon IS the cycle,
+    // and which `ViewModel` is playing the gesture off at the same moment.
+    // Zero on everything else, and zero on the round that empties the
+    // magazine: `tryShot` has already started the reload and `Sfx.reload` is
+    // the sound of that. Zero too on a round fired through the sight, whose
+    // bolt stays shut until the sight comes down — `updateOnFoot`'s
+    // `ev.cycleBegun` raises it then. Exactly the shape `rpgLoad` is raised
+    // in, one weapon table over.
+    const cycle = this.player.cycleTime;
+    if (cycle > 0) this.sfx.boltCycle(cycle, this.player.report);
+    const haptic = CONFIG.rumble;
+    this.input.rumble(haptic.shotStrong, haptic.shotWeak, haptic.shotMs);
+    if (shot.target) {
+      // A BODY went down, which is what the marker and the rumble are about
+      // — the two cues that say "stop shooting". Not what the BOARD pays:
+      // that is `creditKill`'s to refuse through `paysKiller`, one door for
+      // every kill in the game, and the two questions are kept apart here
+      // for the reason `hullHitCue` gives.
+      const killedBody = shot.killed && shot.target instanceof Bot;
+      // Resolved before the marker so a kill gets the red one — the cue to
+      // stop putting rounds into a body that is already going down. A
+      // headshot is the second axis and loses to a kill on the marker,
+      // because "stop shooting" is the more urgent thing to say; it keeps
+      // its own sound either way, which is where the read actually lands.
+      this.hitCue(killedBody, shot.headshot);
+      // Netplay: this marker is a guess, and remembering that it was made is
+      // what keeps the authority's answer from repeating it a round trip
+      // later. See `HitCredits`.
+      if (this.net) this.hitCredits.note(shot.headshot);
+      this.input.rumble(
+        killedBody ? haptic.killStrong : haptic.hitStrong,
+        killedBody ? haptic.killWeak : haptic.hitWeak,
+        killedBody ? haptic.killMs : haptic.hitMs,
+      );
+      if (shot.killed) {
+        // Both doors, one line apart: our row, and the body's. Offline only
+        // — in a netplay round `shot.killed` is false, because the roster's
+        // bodies refuse local damage and the authority scores this round.
+        settleKill(
+          this.ledger,
+          this.player,
+          shot.target,
+          this.player.team,
+          "round",
+          shot.headshot,
+        );
+      }
+    }
+    // Nothing here for the reload the last round in the magazine just
+    // started: `tryShot` began it, and `player.onReload` is what hears about
+    // it — sound and announcement together, from the one door.
+  }
+
+  /**
+   * The vehicle verb on foot: offered when a hull is in reach, taken when the
+   * key is pressed — an ASK in a match, a mount offline.
+   */
+  private updateBoarding(): void {
+    const seat = this.vehicles.empty ? null : this.offeredSeat();
+    this.offerUse(seat ? seat.label : null);
+    if (!seat || !this.input.usePressed) return;
+    // **In a match, getting in is an ASK.** Nothing local changes here: the
+    // authority re-derives the whole offer against its own copy of the hull,
+    // the team, the distance and the crew, and answers with a `seat` event —
+    // which is where `mount` is finally called. Mounting locally and letting
+    // the server catch up would be a client deciding it is inside a tank
+    // somebody else may already be sitting in.
+    if (this.net) {
+      this.net.sendMount(this.vehicles.hulls.indexOf(seat.tank), seat.seat);
+      return;
+    }
+    // The eviction and the mount are one gesture and must land on the same
+    // frame: `mount` writes `Vehicle.seats` through `setOccupied`, and a crew
+    // taken out without somebody taking its place would leave the hull open
+    // for the boarding sweep to re-crew before the player's key is even read
+    // again.
+    if (seat.crewed) this.crew.evict(seat.tank, seat.seat);
+    this.mount(seat.tank, seat.seat);
   }
 
   /**
@@ -6770,6 +6807,50 @@ export class Game {
     const net = new NetSession(this.scene, this.mats);
     this.net = net;
 
+    this.wireNet(net);
+
+    // The screen stays up under the build, showing which row is being joined,
+    // and `startRound` takes it down on the way into `loading`. Qualified by
+    // region for the reason the row itself is: the same match id is being shown
+    // by every server on the screen.
+    if (opts.matchId && region) this.lobbyScreen.setJoining(region.id, opts.matchId);
+
+    this.startRound();
+    net.connect({
+      name: this.playerName,
+      url: region?.socketUrl,
+      weapon: this.weapon,
+      // The third slot, sent on every join for `map`'s reason: the map a join
+      // lands on decides whether there is a third slot at all, and the client
+      // does not know which map that will be. The server resolves it once and
+      // spends it whenever a round with armour in it comes round.
+      equipment: this.equipment,
+      // The pouch, on the same terms: resolved by the server against its own
+      // table and spent on every throw — see `Join.throwable`.
+      throwable: this.throwable,
+      matchId: opts.matchId,
+      create: opts.create,
+      // Sent on every join rather than only on a create, because "there is room
+      // somewhere" can end in a fresh match too — the server spends this only
+      // when it actually builds one, and ignores it otherwise.
+      map: this.mapDef.id,
+      // The other parameter of a new match, on every join for the same reason
+      // and spent in the same one place. `undefined` where it is the default,
+      // so an ordinary join carries no field at all rather than a `true` that
+      // says nothing.
+      bots: this.lobbyBots ? undefined : false,
+    });
+  }
+
+  /**
+   * What a networked session needs from the rest of the game: where the
+   * authority puts this player and their hull, which side and which map the
+   * match is on, what its events and bodies do to this screen, and what a
+   * refusal or a lost socket leaves behind. `wireBattle`'s counterpart for a
+   * round whose fight is somebody else's to simulate — every line here is the
+   * screen hearing the AUTHORITY, never deciding for it.
+   */
+  private wireNet(net: NetSession): void {
     // The server placed us. This is the only thing that spawns the local body
     // in a networked round — there is no local respawn timer, because a
     // reinforcement is the authority's to spend.
@@ -6992,38 +7073,6 @@ export class Game {
       this.hud.toast(reason);
       this.openLobby();
     };
-
-    // The screen stays up under the build, showing which row is being joined,
-    // and `startRound` takes it down on the way into `loading`. Qualified by
-    // region for the reason the row itself is: the same match id is being shown
-    // by every server on the screen.
-    if (opts.matchId && region) this.lobbyScreen.setJoining(region.id, opts.matchId);
-
-    this.startRound();
-    net.connect({
-      name: this.playerName,
-      url: region?.socketUrl,
-      weapon: this.weapon,
-      // The third slot, sent on every join for `map`'s reason: the map a join
-      // lands on decides whether there is a third slot at all, and the client
-      // does not know which map that will be. The server resolves it once and
-      // spends it whenever a round with armour in it comes round.
-      equipment: this.equipment,
-      // The pouch, on the same terms: resolved by the server against its own
-      // table and spent on every throw — see `Join.throwable`.
-      throwable: this.throwable,
-      matchId: opts.matchId,
-      create: opts.create,
-      // Sent on every join rather than only on a create, because "there is room
-      // somewhere" can end in a fresh match too — the server spends this only
-      // when it actually builds one, and ignores it otherwise.
-      map: this.mapDef.id,
-      // The other parameter of a new match, on every join for the same reason
-      // and spent in the same one place. `undefined` where it is the default,
-      // so an ordinary join carries no field at all rather than a `true` that
-      // says nothing.
-      bots: this.lobbyBots ? undefined : false,
-    });
   }
 
   /**
