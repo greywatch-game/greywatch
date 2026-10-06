@@ -65,6 +65,7 @@ import { onRoad } from "../src/world/roads.ts";
 import {
   bracketKind,
   f1,
+  makeClaim,
   makeFloorAt,
   makeFootWet,
   makeGrade,
@@ -73,6 +74,7 @@ import {
   makeRelief,
   makeScatter,
   makeWorldFoot,
+  makeYard,
   n2,
   printProbe,
   printRefusals,
@@ -618,15 +620,9 @@ const open = [];
 
 const overlaps = makeOverlaps(claimed);
 
-function claim(r, type = "solid", why = "") {
-  claimed.push({ ...r, type, note: why });
-}
+const claim = makeClaim(claimed);
 
-function yard(x0, x1, z0, z1, why) {
-  const r = { x0, x1, z0, z1 };
-  open.push(r);
-  claim(r, "open", why);
-}
+const yard = makeYard(open, claim);
 
 /**
  * How far the floor falls across a footprint, from its centre's own height —

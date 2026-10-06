@@ -69,6 +69,7 @@ import {
   bracketKind,
   f1,
   FACES,
+  makeClaim,
   makeFloorAt,
   makeFootOnRoad,
   makeFootWet,
@@ -79,6 +80,7 @@ import {
   makeRelief,
   makeScatter,
   makeWorldFoot,
+  makeYard,
   n2,
   printProbe,
   printRefusals,
@@ -396,7 +398,7 @@ const grade = makeGrade(floorAt, 1.5);
 const wet = (x, z, margin = 0.3) => floorAt(x, z) < WATER_Y + margin;
 
 if (process.argv.includes("--probe")) {
-  printProbe({ half: HALF, step: 6, height: floorAt, grade, wet: wet });
+  printProbe({ half: HALF, step: 6, height: floorAt, grade, wet });
   process.exit(0);
 }
 
@@ -601,15 +603,9 @@ const open = [];
 
 const overlaps = makeOverlaps(claimed);
 
-function claim(r, type = "solid", note = "") {
-  claimed.push({ ...r, type, note });
-}
+const claim = makeClaim(claimed);
 
-function yard(x0, x1, z0, z1, note) {
-  const r = { x0, x1, z0, z1 };
-  open.push(r);
-  claim(r, "open", note);
-}
+const yard = makeYard(open, claim);
 
 /** How far the floor falls across a footprint, from its centre's own height. */
 const relief = makeRelief(floorAt);

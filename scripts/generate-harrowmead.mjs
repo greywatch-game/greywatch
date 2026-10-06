@@ -64,6 +64,7 @@ import {
   f1,
   FACES,
   leadKind,
+  makeClaim,
   makeFloorAt,
   makeFootOnRoad,
   makeFootWet,
@@ -73,6 +74,7 @@ import {
   makeRelief,
   makeScatter,
   makeWorldFoot,
+  makeYard,
   n2,
   printProbe,
   printRefusals,
@@ -553,15 +555,9 @@ const open = [];
 
 const overlaps = makeOverlaps(claimed);
 
-function claim(r, type = "solid", note = "") {
-  claimed.push({ ...r, type, note });
-}
+const claim = makeClaim(claimed);
 
-function yard(x0, x1, z0, z1, note) {
-  const r = { x0, x1, z0, z1 };
-  open.push(r);
-  claim(r, "open", note);
-}
+const yard = makeYard(open, claim);
 
 /** How far the floor falls across a footprint, from its centre's own height. */
 const relief = makeRelief(floorAt);

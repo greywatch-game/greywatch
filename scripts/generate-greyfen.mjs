@@ -106,6 +106,7 @@ import {
   bracketKind,
   f1,
   FACES,
+  makeClaim,
   makeFloorAt,
   makeFootOnRoad,
   makeFootWet,
@@ -669,9 +670,7 @@ const refused = [];
 const open = [];
 
 const overlaps = makeOverlaps(claimed);
-function claim(r, type = "solid", text = "") {
-  claimed.push({ ...r, type, note: text });
-}
+const claim = makeClaim(claimed);
 /** A yard. A WOODED one (the camp, the old city's court) is a yard the forest still stands in. */
 function yard(x0, x1, z0, z1, text, wooded = false) {
   const r = { x0, x1, z0, z1 };

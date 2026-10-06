@@ -196,6 +196,22 @@ export function makeOverlaps(claimed) {
   };
 }
 
+/** File an edge rectangle on the claim list as `type`, with a `note` a refusal can name. */
+export function makeClaim(claimed) {
+  return (r, type = "solid", note = "") => {
+    claimed.push({ ...r, type, note });
+  };
+}
+
+/** Claim an OPEN rectangle — a yard, a green — which is also somewhere a door may open onto. */
+export function makeYard(open, claim) {
+  return (x0, x1, z0, z1, note) => {
+    const r = { x0, x1, z0, z1 };
+    open.push(r);
+    claim(r, "open", note);
+  };
+}
+
 /**
  * How far the floor falls across a footprint, from its centre's own height,
  * sampled on a grid at the fractions `at` of each side — 3x3 by default.
