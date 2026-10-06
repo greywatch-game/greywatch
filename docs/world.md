@@ -1192,15 +1192,16 @@ that is not across it.
   regeneration of every map that imports it, with no diff.
 - **There is ONE footprint table** (`scripts/lib/footprints.mjs`): the ground
   each kit kind takes and which of its faces are ways in, read by every
-  generator and by the map-layout skill's audit and plan. It was four copies
+  generator and by the map-layout skill's audit and plan. It was five copies
   and they had drifted — Coldharbour's townhouse claimed 0.4 m less frontage
   than the same house on Harrowmead. **A footprint is MEASURED off the builder
   and may not understate it**: what stands below head height, plus a
-  building's eaves, and not a canopy a body stands under. `npm run kit:hash --
-  --feet` builds every placement of every kind and prints where the drawing
-  reaches past its row, so a builder rework owes that run, an edit to the
-  table, and a re-seed of every map that places the kind — a footprint is
-  half of every claim, so moving one moves layouts. **Which kinds a map
+  building's eaves, and not a canopy a body stands under. That is the rule;
+  most rows typed before the kit's reworks do not meet it yet (`ISSUES.md`
+  #47). `npm run kit:hash -- --feet` builds every placement of every kind and
+  prints where the drawing reaches past its row, so a builder rework owes that
+  run, an edit to the table, and a re-seed of every map that places the kind —
+  a footprint is half of every claim, so moving one moves layouts. **Which kinds a map
   door-checks is still the map's**: Harrowmead's field ruins pass `noDoor`
   where Hollowmere's burnt houses are held to their streets.
 

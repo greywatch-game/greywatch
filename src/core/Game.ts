@@ -6256,8 +6256,8 @@ export class Game {
   /**
    * What a tank gun going off looks, sounds and feels like, wherever it was
    * decided: a shell this client resolved (`resolveShell`, the player's or a
-   * bot crew's) and one the authority reports (`cannon`). One door, so the
-   * two cannot drift apart, where they were two copies of the same light.
+   * bot crew's) and one the authority reports (`cannon`). It is one door so
+   * the two paths cannot drift apart; each used to write all three out.
    *
    * Whoever pulled it, a crew hears its own gun beside them rather than from
    * where the chase camera stands — see `Sfx.aboard` — and is shaken by it as

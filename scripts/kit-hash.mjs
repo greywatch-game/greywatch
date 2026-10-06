@@ -161,10 +161,16 @@ async function reportFeet(result, notBuilt) {
   const worst = new Map();
   const reach = (box, [x0, x1, z0, z1]) => [x0 - box[0], box[1] - x1, z0 - box[2], box[3] - z1];
   const max = (a, b) => a.map((q, i) => Math.max(q, b[i]));
+  const unlisted = new Set();
   for (const [key, r] of Object.entries(result)) {
     if (!r.plan) continue;
     const parsed = JSON.parse(key);
     const kind = parsed[0];
+    // `--kinds` may name a builder the table has no row for (a road).
+    if (!(kind in FOOT)) {
+      unlisted.add(kind);
+      continue;
+    }
     const foot = FOOT[kind](parsed[1] === "bare" ? {} : parsed[1]);
     const none = [-Infinity, -Infinity, -Infinity, -Infinity];
     const w = worst.get(kind) ?? { n: 0, ground: none, plan: none };
@@ -182,6 +188,7 @@ async function reportFeet(result, notBuilt) {
     console.log(`  ${kind.padEnd(14)} ${String(w.n).padStart(6)} ${w.ground.map(f).join(" ")}  ${w.plan.map(f).join(" ")}${flag}`);
   }
   if (notBuilt.length) console.log(`  in FOOT but not a builder: ${notBuilt.join(", ")}`);
+  if (unlisted.size) console.log(`  a builder with no FOOT row: ${[...unlisted].sort().join(", ")}`);
 }
 
 /** Builds `[key, job]` pairs and returns `{ key: { draw, colliders } | { error } }`. */

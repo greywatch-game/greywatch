@@ -3,18 +3,23 @@
  * ways in: ONE table for every map generator (`scripts/generate-<map>.mjs`)
  * and the map-layout skill's audit and plan scripts, which re-export it.
  *
- * Owns: `FOOT`, `DOOR_FACES` and `FRONTS`, and the two sets derived from the
- * door table. Nothing here decides where anything goes — which kinds a map
+ * Owns: `FOOT`, `DOOR_FACES` and `FRONTS`, the two sets derived from the door
+ * table, and `stairRun`, the one piece of a builder's arithmetic a generator
+ * also lays by. Nothing here decides where anything goes — which kinds a map
  * door-checks, and how hard, is still that map's generator.
  *
  * **A footprint is MEASURED off the builder and may not understate it.** It is
- * the plan of what the builder draws, in its own frame — walls, plinth,
- * doorstep, porch, ramp, a wheel, and the EAVES, because an eave over a
- * neighbour's wall is two roofs in one place — with two kinds of exception,
- * each stated beside the kind it applies to: ground a footprint takes BEYOND
- * the drawing on purpose (a stair's landing, a ruin's forecourt, a bridge's
- * approaches), and a street-level canopy, blind or jib a body walks under,
- * which a neighbour may stand under too.
+ * the plan of what the builder draws below head height, in its own frame —
+ * walls, plinth, doorstep, porch, ramp, a wheel — plus a building's EAVES,
+ * because an eave over a neighbour's wall is two roofs in one place. Two
+ * things depart from the drawing on purpose: ground a footprint takes BEYOND
+ * it (a stair's landing, a bridge's approaches), and a canopy, blind or jib a
+ * body walks under, which a neighbour may stand under too. A row that departs
+ * says so in a comment beside it.
+ *
+ * **That is the rule and not yet the table**: most rows were typed before the
+ * kit was reworked, and 32 of them still understate their builders.
+ * `ISSUES.md` #47 is the re-measure, and it re-lays every map that reads this.
  *
  * **`npm run kit:hash -- --feet` is the check.** It builds every placement of
  * every kind in this table across every layout and prints where the drawing
@@ -28,12 +33,12 @@
  *   every kind but those whose first door face says otherwise (`FRONT_PLUS_Z`).
  * - Defaults inside an entry are the BUILDER's defaults; an entry whose
  *   builder reads a param must read the same one with the same default.
- * - Node loads this as plain JS and the generators load `src/world/*.ts` by
- *   type stripping beside it, so nothing here may import the game.
+ * - Plain JS that imports nothing: the generators, `kit-hash` and the skill's
+ *   scripts all load it straight off disk under Node, with no bundler.
  *
  * Never: name a map, or hold a value one map needs and another does not — a
  * per-map difference is an option on that generator's `place`, not a second
- * row here (four copies of this table drifted apart before it existed).
+ * row here (five copies of this table drifted apart before it existed).
  */
 
 /** Metres of run per metre of rise on every stair (`STAIR_GRADE` in kit/terrain.ts). */
