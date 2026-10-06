@@ -415,7 +415,8 @@ folds rather than a property of whoever asked. Off the blend come the eye, the h
 sphere, the pose, the speed (`cover.crouchMoveMult`) and the spread
 (`cover.crouchSpreadMult`), so a stance caught halfway is as correct as one at
 rest. **The eye and the hit sphere must come down together** — `syncTransform`
-runs the same arithmetic `NetSoldier` runs for a remote body — or crouching makes
+asks `entities/stance.ts`, the one copy every crouching body asks, a remote one
+included — or crouching makes
 a bot easier to kill rather than harder, every incoming round aimed at the middle
 of an unmoved sphere instead of grazing its top.
 

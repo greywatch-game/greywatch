@@ -39,11 +39,11 @@ match smoke test (`npm run build:server && npm run server`, two clients).
 | ~~[8](#8-share-crushsweep--driverof-between-client-and-authority)~~ | P1 — done | Share `crushSweep` / `driverOf` between client and authority |
 | ~~[9](#9-share-the-copied-wiring-lambdas-and-the-spawn-scatter)~~ | P1 — done | Share the copied wiring lambdas and the spawn scatter |
 | ~~[10](#10-health-regen-is-written-twice-and-caps-at-different-maxima)~~ | P1 — done | Health regen is written twice and caps at different maxima |
-| [11](#11-client-and-authority-pick-a-hull-seat-by-different-algorithms) | P1 | Client and authority pick a hull seat by different algorithms |
-| [12](#12-stance-heights-are-computed-in-three-places) | P1 | Stance heights are computed in three places |
-| [13](#13-matchts-claim-gates-are-pasted-five-times) | P1 | `Match.ts` claim gates are pasted five times |
-| [14](#14-matchts-per-slot-state-is-ten-parallel-tables) | P1 | `Match.ts` per-slot state is ten parallel tables |
-| [15](#15-map-generators-share-no-code) | P1 | Map generators share no code |
+| ~~[11](#11-client-and-authority-pick-a-hull-seat-by-different-algorithms)~~ | P1 — done | Client and authority pick a hull seat by different algorithms |
+| ~~[12](#12-stance-heights-are-computed-in-three-places)~~ | P1 — done | Stance heights are computed in three places |
+| ~~[13](#13-matchts-claim-gates-are-pasted-five-times)~~ | P1 — done | `Match.ts` claim gates are pasted five times |
+| ~~[14](#14-matchts-per-slot-state-is-ten-parallel-tables)~~ | P1 — done | `Match.ts` per-slot state is ten parallel tables |
+| ~~[15](#15-map-generators-share-no-code)~~ | P1 — done | Map generators share no code |
 | [16](#16-one-building-footprint-table-for-every-generator) | P1 | One building-footprint table for every generator |
 | [17](#17-cannon-and-muzzle-light-effects-duplicated-in-gamets-with-inline-magic-numbers) | P1 | Cannon/muzzle-light effects duplicated in `Game.ts` with inline magic numbers |
 | [18](#18-small-duplicates-inside-gamets) | P2 | Small duplicates inside `Game.ts` |
@@ -351,6 +351,8 @@ server's correction arrives after a regen in a match.
 
 ### 11. Client and authority pick a hull seat by different algorithms
 
+**Resolved.** `chooseSeat(driver, gunner, want, only)` in `entities/Vehicle.ts` replaces `VehicleSystem.seatOn` and the server's fall-back chain: the chair asked for if free, the other if free, then the chair asked for if a bot holds it, then the other if a bot holds that. `Game.offeredSeat` asks it for the driver's seat to word the prompt, and `HeadlessGame.seat` asks it with the claimed seat to grant one (`seatHolder` is the authority's view of who sits where). Offline, the two old algorithms already agreed in all nine occupant combinations; the live drift was in a match, where the client read bot crews from its own `VehicleCrew`, which is always empty there, so a full hull with a bot driver was offered as TAKE OVER GUN. It now reads `seatHeldBy`. A crossing is `only`, and `HeadlessGame.seat` checks it *before* releasing the old chair, so a refused swap leaves the player where they were; `Match`'s crossing gate and `Game.canSwapSeat` go through it too. Checked against a real `HeadlessGame` on Coldharbour with bot crews and three `NetPlayer`s: for every combination of empty, bot and person in each chair, the seat offered is the seat granted, and all six crossings land correctly. Not driven by hand in a browser.
+
 **Area:** `src/core/Game.ts:5825` (`offeredSeat`), `server/HeadlessGame.ts:1007`
 (`seat`)
 
@@ -372,6 +374,8 @@ grants.
 
 ### 12. Stance heights are computed in three places
 
+**Resolved.** `entities/stance.ts` — `stanceCentre(standCentre, blend)`, `stanceEye(blend)`, `easeStance(blend, crouching, dt)`. There were five sites, not three: Player, Bot, NetSoldier, server/NetPlayer and the death cam's corpse. Three functions rather than one returning `{ eye, centre }`, so nothing allocates per body per frame. Player, NetPlayer and DeathCam heights are bit-identical. Bot and NetSoldier differ by at most one ulp (6e-14 m over 400k random samples), because `y + c + d` became `y + (c + d)`.
+
 **Area:** `src/entities/Player.ts:2627–2631`, `src/entities/Bot.ts:1955–1970`,
 `src/net/NetSoldier.ts:305–311`; easing at `Player.ts:1806–1808`,
 `Bot.ts:1010–1012`
@@ -390,6 +394,8 @@ unchanged eye and hit-sphere heights (log them before and after).
 
 ### 13. `Match.ts` claim gates are pasted five times
 
+**Resolved.** `server/claimGates.ts` holds `RateGate` and `SHOT_SLACK` (moved from `Match`), `claimedDir`, `lookDir`, `withinCone`, `withinSlip`, and one `DEGENERATE_DIR` (1e-3). It is not a tunable, so it is not in `src/config/`. The sizes of the cones and slips stay in `Match` with their arguments. Over 300k random claims, the gates agree with the old shell/mg/ordnance inline checks every time. The shot and grenade arms now refuse directions shorter than 1e-3 rather than 1e-6, which nothing honest sends. All the gates now refuse NaN, which the old `<`/`>` comparisons let through.
+
 **Area:** `server/Match.ts` ~2137, ~2216, ~2559, ~2611, ~2674
 
 **Problem.** Each inbound claim (shot, throw, shell, mg, ordnance) recomputes
@@ -404,6 +410,8 @@ tunable.
 **Acceptance.** Each handler calls the shared gates; one threshold.
 
 ### 14. `Match.ts` per-slot state is ten parallel tables
+
+**Resolved.** `SlotRecord` and `freshSlot()` in `Match.ts`. It is named that because `SlotState` is already the wire's roster row. `Match.slots` is built at `SLOT_COUNT` and holds each slot's loadout, equipment, pouch, the four rate gates, the reload clock and `lastSeen`. `drop` and `admit` are each one assignment. The gates are built eagerly, which is equivalent because a `RateGate` starts full. `firedRounds`/`firedMg` stay as they were: they are per-snapshot accumulators, not occupant state. Tested in a local match on Coldharbour with two clients: shots went through the new gates, the second client left and a third joined the same slot and fired normally, and neither client logged an error.
 
 **Area:** `server/Match.ts:453–534`, `drop` at ~1069–1078
 
@@ -421,6 +429,8 @@ as the key (`CLAUDE.md`: "a slot index IS a bot index").
 slot carries nothing over.
 
 ### 15. Map generators share no code
+
+**Resolved.** `scripts/lib/mapgen.mjs` (436 lines). Each generator was switched in its own commit (210e0db…55d77fc). The drifted helpers that were merged afterwards each got their own commit too (633535e…f893e2b): `n2`, `centredRectDist`, `makeRelief`, `makeScatter`, `makeClaim`/`makeYard`, `paramText`, `makeEmit`, `makeRectRoad`, `makePathRoad`. Each one was regenerated on every map that uses it. Helpers that differ on purpose stay local: Harrowmead's `emit`, Greyfen's millimetre `emit`/`paramText` and its wooded `yard`, Coldharbour's `footOnRoad`, every `doorway`, and the map design code. The seven generators went from 17,833 to 17,002 lines. All seven regenerate byte-identical `layout.ts` and `heights.ts`, and print the same output under every flag. Sarab already failed to reproduce at 1c3151d: someone hand-added a 3-line comment over the wadi grass rect in its `layout.ts`, and a regeneration drops it. It was compared against its pre-change output instead. `mulberry32` is now defined only in `src/world/rng.ts` and `src/world/textures.ts` (#38). `generate-water-textures.mjs` had a copy too and now imports it, and the foam mask comes out byte-identical.
 
 **Area:** `scripts/generate-{sarab,cinderhaven,kurenai,harrowmead,greyfen,coldharbour,hollowmere}.mjs`
 (17,840 lines together)

@@ -37,6 +37,7 @@ import {
   type SoldierRig,
 } from "./SoldierModel";
 import { SoldierMotion } from "./SoldierMotion";
+import { stanceCentre, stanceEye } from "./stance";
 
 /** One received sample, with the server time it describes. */
 interface Sample {
@@ -298,18 +299,11 @@ export class NetSoldier implements Combatant, RagdollSubject {
     // The ROOT does not move. The crouch lives inside the rig — `animateSoldier`
     // drops the body node and folds the legs under it — so the rig still hangs
     // from the standing body centre and the boots stay on the ground.
-    const p = CONFIG.player;
     const c = this.rig.centerHeight;
     this.rig.root.position.set(x, y + c, z);
     this.rig.root.rotation.y = bodyYaw;
-    this.center.set(x, y + c + (p.crouchCenterHeight - c) * crouch, z);
-    this.eyePos.set(
-      x,
-      y +
-        CONFIG.camera.eyeHeight +
-        (p.crouchEyeHeight - CONFIG.camera.eyeHeight) * crouch,
-      z,
-    );
+    this.center.set(x, y + stanceCentre(c, crouch), z);
+    this.eyePos.set(x, y + stanceEye(crouch), z);
 
     if (!this.alive && dead >= 1 && this.enabled) {
       // Fully collapsed and still. Nothing more to draw until it respawns.

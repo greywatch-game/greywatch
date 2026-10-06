@@ -262,8 +262,8 @@ boolean, and not nothing.
 Not nothing, because a drawn body that does not crouch is an invisible
 advantage. The authority drops a crouching body's eye to `crouchEyeHeight` and
 its hit sphere to `crouchCenterHeight`, half a metre each — a player's in
-`NetPlayer`, a bot's in `Bot.syncTransform`, and the two run the same
-arithmetic; an observer drawing
+`NetPlayer`, a bot's in `Bot.syncTransform`, and both ask `entities/stance.ts`
+for it; an observer drawing
 them upright aims at a helmet the sphere no longer reaches, and the round the
 shooter watched land is a miss the server never saw a reason for. The same body
 is also drawn head-up over a wall it is genuinely hidden behind. Both are the
@@ -271,7 +271,7 @@ is also drawn head-up over a wall it is genuinely hidden behind. Both are the
 over a wire instead of out of a config.
 
 Not the boolean, because a client cannot ease it. `NetPlayer` runs the same
-`crouchBlendSpeed` ease `Player.syncCombatant` runs, so the eye and the sphere
+`crouchBlendSpeed` ease `Player` runs (`easeStance`), so the eye and the sphere
 take a quarter of a second to travel — and a client running its own ease against
 that one would disagree with it for that whole window, by up to the same half
 metre it was sent to fix. Sending the number the authority actually used makes
@@ -344,7 +344,7 @@ and the join only ever says it once.** The kit screen is reachable from the
 deploy screen — that is the one moment inside a round when the weapon is
 already put away — so a person who switches to the sniper on their third death
 has been carrying it locally ever since. `Match.admit` resolved
-`Join.weapon` into `loadouts` at the handshake and nothing ever wrote that map
+`Join.weapon` into the slot's loadout at the handshake and nothing ever wrote it
 again, and since the authority is what pays a round out
 (`HeadlessGame.resolveShot` reads `weapon.damage` and the fall-off off that
 entry), every round the player fired for the rest of the match was worth
@@ -394,7 +394,7 @@ rather than in `Player`: `server/` names them too and cannot import that file.
 
 Everybody carries the sidearm whatever else is in the kit, and its numbers are
 not the primary's. The field was on the wire and read by nothing: the client
-sent a literal `0` and `onShot` resolved every round out of `loadouts`, so a
+sent a literal `0` and `onShot` resolved every round out of the primary, so a
 pistol round was paid at the primary's damage and fall-off and gated at the
 primary's rate — a sniper's hundred out of a sidearm at one end, and a nerfed
 pistol at the other. It is a CLAIM like every other field on that message and is
@@ -443,7 +443,12 @@ must go a whole draw without firing to earn each one, which bounds it at one
 round per 0.34 s, slower than any weapon in the kit.
 
 **Every claimed round spends from the same bucket — the rifle, both hull guns
-and the AT slot** (`RateGate` in `server/Match.ts`, one per slot per gun). The
+and the AT slot** (`RateGate` in `server/claimGates.ts`, one per slot per gun).
+**The direction and the origin are measured ONCE too**: all five claim arms
+(shot, grenade, shell, cupola round, ordnance) call `claimGates`' `claimedDir`,
+`lookDir`, `withinCone` and `withinSlip`, with one zero-length threshold —
+two of the five inline copies refused a direction under 1e-6 and three under
+1e-3. Each gate's SIZE stays in `Match`, beside its argument. The
 hull guns and the AT slot were minimum spacings until ISSUES.md #2, and at the
 cupola gun's nine a second that was 11 ms of slack. **Behind them, the hull's
 own clock was a second spacing**: `Vehicle.fireGun`/`fireMg` refuse a round
@@ -758,8 +763,8 @@ same read the report was rebuilt to give offline (see `docs/weapons.md`). The
 listener DOES with a magazine change is decide whether to push, and the answer
 differs by three seconds between a pistol and an LMG.
 
-Three details make it free. It is read at snapshot time from `Match.loadouts`
-rather than remembered at the trigger, because the authority owns the loadout and
+Three details make it free. It is read at snapshot time from the slot's
+`SlotRecord.loadout` in `Match` rather than remembered at the trigger, because the authority owns the loadout and
 it cannot change under a seated player mid-interval. It is a STRING resolved
 against the client's own weapon table exactly as `Join.weapon` is resolved
 against the server's, so an id one side has never heard of degrades rather than
@@ -2225,6 +2230,15 @@ and put the bot back — and seating it anyway puts a `NetPlayer` nobody owns in
 life of the match. Nothing can ever remove either, because the removal has been
 and gone. The peer map is the test, because that map is what `drop` empties and
 what everything else in the file reads to mean "still connected".
+
+**What `Match` holds about a slot's occupant is ONE record, and a slot changing
+hands replaces it** (`SlotRecord`, `freshSlot`): the kit (weapon, third slot,
+pouch), every claim gate (the rifle's bucket, the shell, cupola and ordnance
+buckets, the reload announcement's clock) and the last snapshot position the
+walk cycle is derived from. It was ten tables keyed by slot, cleared by hand in
+`drop` — so a new one `drop` forgot would have carried one person's half-spent
+bucket or kit into the next person seated there. Both `admit` and `drop` are now
+one assignment, and a new per-slot field is a field on the record.
 
 **`rotating` is what says the world is not the match's to touch**, and it gates
 `step` as well as the three client messages that reach into it — `move`, `shot`

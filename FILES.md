@@ -16,6 +16,10 @@ server/               # The authoritative match server. Node, NullEngine, no
                       #   game rules
   Match.ts            #   One match: fixed-step loop, snapshots, the gates on
                       #   what a client may claim, round rotation
+  claimGates.ts       #   HOW a claimed round is gated — the RateGate bucket,
+                      #   the look vector, the cone, the origin slip and the
+                      #   one zero-length threshold. Match's five claim arms
+                      #   all call it; the SIZE of each gate stays in Match
   Roster.ts           #   The 48 slots, 16 seats, team balance, human<->bot handover
   MapVote.ts          #   The ballot for the next map: the candidates, the
                       #   per-slot tally, the tie-break. Its first candidate is
@@ -295,6 +299,12 @@ src/
                         #   back to full. One held by Player (predicting) and
                         #   one by server/NetPlayer (authoritative), so the two
                         #   heal to the same cap at the same rate
+    stance.ts           # The crouch's geometry: the eye and the hit sphere's
+                        #   centre above the feet for a blend, and the blend's
+                        #   easing. One copy for all five bodies that crouch
+                        #   (Player, Bot, NetSoldier, server/NetPlayer, the
+                        #   death cam's corpse), so the eye and the sphere
+                        #   cannot come down apart
     ViewModel.ts        # The first-person weapon: carried gun + gloved arms
                         #   (faceted, in the viewer's own kit) on the camera, hip/ADS/sprint/reload/muzzle-load, sway,
                         #   bob, and
@@ -381,7 +391,9 @@ src/
                         #   BOTH guns' clocks and angles (the second seat's gun
                         #   holds a WORLD bearing exactly as the turret does,
                         #   which is what lets the two seats aim
-                        #   independently), which of its two SEATS are filled,
+                        #   independently), which of its two SEATS are filled
+                        #   and `chooseSeat` (which one a person gets — the
+                        #   driver's first, one rule for both processes),
                         #   the springs behind its lean, its SPRUNG body and
                         #   its whips, `rideableAt` (the climb band spent on
                         #   where the hull is ABOUT to be, which is the whole
@@ -585,9 +597,8 @@ src/
                         #   outside combat
     VehicleSystem.ts    # The armour on the field: one hull per hardstanding, the
                         #   wreck clock and the respawn clock (two, so a side can
-                        #   never field both), which SEAT a boarder gets
-                        #   (`seatOn` — the driver's first, stated once for both
-                        #   processes), and where a dismount lands. Owns
+                        #   never field both), which hull a boarder may get
+                        #   into, and where a dismount lands. Owns
                         #   no player and no AI — `update` asks a `VehicleOrders`
                         #   four questions per hull: who is at the sticks, who
                         #   is on the cupola gun, and which of the two somebody
@@ -781,7 +792,10 @@ src/
                         #   ground, water makes reeds) and the
                         #   field's frayed EDGE, and the per-patch summary the
                         #   GrassSystem culls with. Pure — no scene
-    rng.ts              # mulberry32 — the seeded PRNG world-building uses
+    rng.ts              # mulberry32 — the seeded PRNG world-building uses,
+                        #   and the map generators' too: Node loads it by type
+                        #   stripping through scripts/lib/mapgen.mjs, the
+                        #   helpers the seven generate-<map>.mjs share
     MapBuilder.ts       # Builds the map; merges visuals, emits colliders
     solid.ts            # SOLID_ONLY — the one mesh pick predicate left, and the
                         #   editor's alone. The three-way table of what a

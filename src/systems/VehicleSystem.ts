@@ -363,18 +363,6 @@ export class VehicleSystem {
   }
 
   /**
-   * The nearest hull of `team` a body standing at `at` could get into: live,
-   * with a SEAT still free, and inside `enterRadius` of its centre.
-   *
-   * "Free" is either seat — `seatOn` is what decides which one a boarder
-   * takes, and the driver's is taken first.
-   *
-   * Team-locked on purpose. Stealing the other side's armour is a real design
-   * choice and a good one in some shooters, but it is a choice — and made by
-   * accident here it would mean a hardstanding's respawn timer feeding the
-   * wrong team for the rest of the round.
-   */
-  /**
    * Takes or gives up a seat. The ONE writer of `Vehicle.occupied`, and it is here
    * rather than derived inside `update` for a reason that has already been a
    * bug: derived, the flag is only true from the next frame's world step, so
@@ -387,25 +375,17 @@ export class VehicleSystem {
   }
 
   /**
-   * The nearest hull of `team` this body could get INTO, and which seat it
-   * would take — the driver's if it is free, the gunner's otherwise.
+   * The nearest hull of `team` a body standing at `at` could get into: live,
+   * with a SEAT still free, and inside `enterRadius` of its centre.
    *
-   * **The seat is decided here rather than by the caller**, which is what makes
-   * "first in drives" a fact about the fleet rather than a convention two
-   * callers have to agree on: `Game` asks this offline and `HeadlessGame` asks
-   * it on the authority, and a rule stated in both is a rule that can drift.
-   * Returns -1 for a hull that is full or out of reach, so a caller reads one
-   * number and needs no second question.
+   * "Free" is either seat — `chooseSeat` (`entities/Vehicle.ts`) is what
+   * decides which one a boarder takes, and the driver's is taken first.
+   *
+   * Team-locked on purpose. Stealing the other side's armour is a real design
+   * choice and a good one in some shooters, but it is a choice — and made by
+   * accident here it would mean a hardstanding's respawn timer feeding the
+   * wrong team for the rest of the round.
    */
-  seatOn(tank: Vehicle, at: Vector3, team: Team): CrewSeat | -1 {
-    const r = CONFIG.vehicles.enterRadius;
-    if (!tank.alive || tank.team !== team) return -1;
-    if (Vector3.DistanceSquared(at, tank.center) > r * r) return -1;
-    if (!tank.seats[DRIVER]) return DRIVER;
-    if (!tank.seats[GUNNER]) return GUNNER;
-    return -1;
-  }
-
   enterable(at: Vector3, team: Team): Vehicle | null {
     return this.nearestOwn(at, team, false);
   }

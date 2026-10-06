@@ -1741,8 +1741,15 @@ pair of booleans indexed by `DRIVER` (0) and `GUNNER` (1), and the split is:
 | `GUNNER` | **no** | the CUPOLA machine gun, laid by walking its ring to the same camera's order | the same chase camera |
 
 **The first person aboard drives**, and that rule is stated in exactly one
-place — `VehicleSystem.seatOn`, which both `Game.offeredSeat` and
-`HeadlessGame.seat` ask. A tank with a man on the cupola gun and nobody at the
+place — `chooseSeat` in `entities/Vehicle.ts`, which `Game.offeredSeat` asks to
+word the prompt and `HeadlessGame.seat` asks to grant it, so the chair a prompt
+names is the chair the server seats you in. It takes who holds each chair
+(`SeatHolder`: open, a bot, a person — each process answering from its own
+tables) and the chair asked for, and answers in one order: that chair if free,
+the other if free, that chair if a bot holds it, the other if a bot holds that.
+Until they shared it the two sides ran two algorithms, and the client read the
+crew off its own `VehicleCrew`, which in a match is empty — so a full hull with
+a bot driving was offered as TAKE OVER GUN. A tank with a man on the cupola gun and nobody at the
 sticks is a pillbox; a tank with a driver and an empty cupola is a tank, so the
 driver's chair is always filled first, by a player boarding and by the bot
 crews' own sweep alike.
@@ -1778,7 +1785,7 @@ beside a spawn, and the crew is whoever walks past — so a player who took an
 empty hull was a driver with a bot gunner before he left the yard, `F` did
 nothing from then on, and there was no way round it. **Getting out and back in
 does not work either**, which is the part that makes it a hole rather than a
-preference: `VehicleSystem.seatOn` hands a boarder the FIRST free chair, and
+preference: `chooseSeat` hands a boarder the FIRST free chair, and
 the first free chair is the one just vacated.
 
 So the crossing takes the boarding rule rather than an exception to it — **a
@@ -1788,16 +1795,20 @@ the words the ground offer already uses (`TAKE OVER TANK`, `TAKE OVER GUN`
 against a bot; `SWAP SEAT` into an empty chair). A PERSON is never moved, on
 either side: `Game.seatHeldBy` is what tells the three kinds apart — offline
 through `VehicleCrew.crewOf`, in a match through `VehicleState.by`/`by2` against
-the roster, which is `crewedByBot`'s exception to "a client never learns which
-slots are bots", made for the same reason (this draws a PROMPT).
+the roster, which is the one exception to "a client never learns which slots
+are bots", made because this draws a PROMPT. The authority's twin is
+`HeadlessGame.seatHolder`, reading the crew table the client cannot.
 
 **The authority makes the same move and needed a line of its own for it.**
 `HeadlessGame.seat` is one method for mounting and crossing, and its fall-back
 when the chair asked for is taken is *the other chair* — which on a crossing is
 the chair the player just left, so a swap against a bot gunner silently put
 them back where they started. The eviction below it was unreachable from that
-path, because after the release a crossing never sees both chairs taken. One
-`if (crossing && tank.seats[want])` is the whole of the fix.
+path, because after the release a crossing never sees both chairs taken. **A
+crossing is `chooseSeat` with `only` set** — the chair named or nothing — on
+both sides: `Game.canSwapSeat` offers the key with it, and `HeadlessGame.seat`
+asks it BEFORE releasing the chair the player is in, so a refused crossing
+leaves them sitting where they were rather than in no chair at all.
 
 **The HUD draws the CREW, not only your own chair.** The two seats have
 different controls and a different weapon under the trigger, so a player who

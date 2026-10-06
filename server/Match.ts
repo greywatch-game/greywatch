@@ -58,9 +58,116 @@ import { DRIVER, GUNNER, type CrewSeat } from "../src/entities/Vehicle";
 import { MAPS } from "../src/world/maps";
 import { HeadlessGame } from "./HeadlessGame";
 import { MapVote } from "./MapVote";
-import { HUMANS_PER_TEAM, Roster } from "./Roster";
+import { HUMANS_PER_TEAM, Roster, SLOT_COUNT } from "./Roster";
 import { validateDrive, validateMove } from "./validate";
 import { readClientMessage } from "./wire";
+import {
+  claimedDir,
+  lookDir,
+  RateGate,
+  SHOT_SLACK,
+  withinCone,
+  withinSlip,
+} from "./claimGates";
+
+/**
+ * Everything this match holds about whoever is in ONE roster slot — the kit a
+ * person named and every gate their claims are spent against — as one record.
+ *
+ * **One record rather than a table per field, so a slot changing hands is one
+ * assignment** (`freshSlot`, in `drop` and `admit`). These were ten parallel
+ * tables keyed by slot and `drop` cleared each by hand, so a new one it forgot
+ * would have leaked one player's state — a half-spent rate bucket, a kit, a
+ * walk cycle — into the next person seated in that slot. Keyed by the slot
+ * INDEX, because a slot index is a bot index (`CLAUDE.md`).
+ *
+ * Named `SlotRecord` because `SlotState` is the wire's roster row.
+ */
+interface SlotRecord {
+  /**
+   * What this slot's person is carrying, resolved from the weapon TABLE —
+   * null for a bot, which fires the flat round the field's absence means.
+   *
+   * The server owns this. A client names a weapon id and the id is validated;
+   * the damage, range and fall-off are looked up here and never cross the
+   * wire, because a client that could state its own damage would state
+   * whatever it liked.
+   */
+  loadout: WeaponSetup | null;
+  /**
+   * What they have in the THIRD slot, resolved from the equipment table here
+   * for `loadout`'s reason exactly.
+   *
+   * A separate field rather than part of the `WeaponSetup` beside it, because
+   * they are answers to different questions: one is the weapon this person is
+   * shooting people with and the other is the thing they carry for armour, and
+   * `equipmentSetup` deliberately resolves to a `WeaponSetup` whose every
+   * combat field says it is not a gun.
+   */
+  equipment: EquipmentId | null;
+  /**
+   * What their POUCH holds — a frag or a molotov — resolved here for
+   * `equipment`'s reason: what leaves the hand on a `grenade` message is this
+   * side's to say, and a client naming it per throw would name whatever it
+   * liked. `onGrenade` reads it; `setKit` writes it.
+   */
+  throwable: ThrowableId | null;
+  /**
+   * The rifle's rate limit, built on this person's first round.
+   *
+   * A BUCKET rather than the timestamp of the last accepted round, because the
+   * thing being bounded is a rate and what arrives is a schedule the network
+   * has already had its way with — see `SHOT_SLACK` and `onShot`.
+   */
+  fire: {
+    bucket: RateGate;
+    /** When a round was last ACCEPTED, which is what a draw is measured from. */
+    fired: number;
+    /** Whether the last round claimed the sidearm, so a change of hands shows. */
+    sidearm: boolean;
+  } | null;
+  /** When they last announced a reload, for that message's own gate. */
+  lastReload: number;
+  /**
+   * …and the AT slot's and the tank guns' gates.
+   *
+   * The shot gate's kind exactly — a `RateGate` each — because a client asking
+   * for a rocket or a shell is asking the authority to put an object in the
+   * world, and without a gate the rate at which it may do so would be a
+   * client-side opinion. They were minimum spacings once, the rule the rifle
+   * retired, and at the cupola gun's nine a second that dropped honest rounds
+   * on ordinary jitter. **These ARE the rate limit for a person's hull round**:
+   * the hull's own clock, a spacing too, is asked with `HULL_EARLY` of slack.
+   *
+   * The two guns are two gates rather than one: a hull has two guns with two
+   * triggers and two people, and one gate shared between them would let either
+   * seat's fire rate-limit the other's. A `RateGate` starts full, so built
+   * eagerly here it is the same gate it was when built on the first claim.
+   */
+  ordnanceGate: RateGate;
+  shellGate: RateGate;
+  mgGate: RateGate;
+  /**
+   * Where this slot's body was on the last snapshot, for deriving its walk
+   * cycle — a bot's as well as a person's, since every body is drawn walking.
+   */
+  lastSeen: { x: number; z: number } | null;
+}
+
+/** A slot nobody has been in: no kit, every gate full, no travel. */
+function freshSlot(): SlotRecord {
+  return {
+    loadout: null,
+    equipment: null,
+    throwable: null,
+    fire: null,
+    lastReload: 0,
+    ordnanceGate: new RateGate(),
+    shellGate: new RateGate(),
+    mgGate: new RateGate(),
+    lastSeen: null,
+  };
+}
 
 /** One connected human. */
 interface Peer {
@@ -237,37 +344,9 @@ const SIDEARM_RELOAD = CONFIG.weapons[SIDEARM].reloadTime;
  * The second half of what a person is carrying. The kit chooses the primary
  * and everybody has this one whatever else is in the kit, so there is nothing
  * per-peer about it and nothing to store per slot: `onShot` picks between this
- * and the peer's own `loadouts` entry on the slot the round says it left.
+ * and the peer's own `loadout` on the slot the round says it left.
  */
 const SIDEARM_SETUP = weaponSetup(SIDEARM);
-
-/**
- * How far ahead of its own rate a client's fire may bank, in ms.
- *
- * **The rate gate measures ARRIVALS, and a client does not control when its
- * rounds arrive.** It was a minimum SPACING — no accepted round within 90% of
- * the weapon's `shotInterval` of the last one — and 10% of an interval is
- * five milliseconds on the carbine, eight on the SMG and ten on the LMG, which
- * is less than the jitter of an ordinary wireless connection. A burst fired at
- * exactly the right cadence and delivered a few milliseconds tight lost rounds
- * SILENTLY: no correction, no event, nothing on either screen except a body
- * that did not fall. Three carbine rounds are a kill and two are 68, so the
- * symptom is the weapon quietly not doing what the table says it does.
- *
- * A bucket bounds the same thing without reading the network's timing as the
- * player's: credit accrues in real time, a round spends one interval of it,
- * and the cap is one interval plus this — so the SUSTAINED rate is exactly the
- * weapon's, and what a stall may hand back is 150 ms of rounds and no more.
- * On the carbine that is a burst arriving in one packet, which is the case it
- * is for; on the sniper it is one round 150 ms early after a pause, on an
- * interval of 1250.
- *
- * It leans toward letting a laggy honest player through, exactly as the
- * movement tolerance does and for the same reason — see
- * `docs/multiplayer.md`. A cheat worth 150 ms of banked fire, once per pause,
- * is worth less than the honest rounds the tight rule was eating.
- */
-const SHOT_SLACK = 150;
 
 /**
  * The client messages that belong to a round in progress — `onMessage`'s gated
@@ -291,42 +370,6 @@ type RoundMessage = Extract<
       | "ordnance";
   }
 >;
-
-/**
- * One rate limit over a peer's claimed rounds — the bucket `SHOT_SLACK`
- * argues for, and the ONE implementation of it: the rifle, both hull guns and
- * the AT slot all spend from one of these, because a minimum spacing written
- * at any of them eats honest rounds for the same reason it did at the rifle.
- *
- * Credit accrues in real time and is capped at one interval plus `SHOT_SLACK`,
- * so the SUSTAINED rate is exactly the weapon's. `ready` and `spend` are two
- * calls so a caller may refuse a round for some other reason after asking
- * and keep the credit; `ready` banks the elapsed time either way, or a client
- * firing into a closed gate would never accumulate anything.
- */
-class RateGate {
-  /** Credit banked, in ms. Starts full, so nobody's first round is refused. */
-  private credit = Infinity;
-  /** When `credit` was last brought up to date. */
-  private at = 0;
-
-  /** Brings the credit up to `now`; whether it holds one `interval` of it. */
-  ready(now: number, interval: number): boolean {
-    this.credit = Math.min(interval + SHOT_SLACK, this.credit + (now - this.at));
-    this.at = now;
-    return this.credit >= interval;
-  }
-
-  /** Spends one interval. Only after a `ready` that said yes. */
-  spend(interval: number): void {
-    this.credit -= interval;
-  }
-
-  /** Back to full, for a weapon just drawn — see `onShot`. */
-  fill(): void {
-    this.credit = Infinity;
-  }
-}
 
 /**
  * How far ahead of a HULL's own reload a person's round may arrive, in
@@ -392,6 +435,8 @@ const ROUND_OVER_MS = 8_000;
 /** Scratch for shot resolution; reused so a firefight allocates nothing. */
 const SHOT_ORIGIN = new Vector3();
 const SHOT_DIR = new Vector3();
+/** The claimant's reported look, which every cone in `claimGates` is measured about. */
+const CLAIM_LOOK = new Vector3();
 
 /**
  * Ticks between snapshots. `SNAPSHOT_HZ` divides `TICK_HZ`, so this is exact —
@@ -521,82 +566,12 @@ export class Match {
   private readonly vehicleScratch: VehicleState[] = [];
   private readonly rocketScratch: RocketState[] = [];
 
-  /** Last broadcast position per slot, for deriving a player's walk cycle. */
-  private readonly lastSeen: ({ x: number; z: number } | undefined)[] = [];
-
   /**
-   * What each seated player is carrying, resolved from the weapon TABLE.
-   *
-   * The server owns this. A client names a weapon id at join and the id is
-   * validated; the damage, range and fall-off are looked up here and never
-   * cross the wire, because a client that could state its own damage would
-   * state whatever it liked.
+   * One `SlotRecord` per roster slot, for the life of the match — see that
+   * type. Replaced whole when a slot changes hands, never cleared field by
+   * field.
    */
-  private readonly loadouts = new Map<number, WeaponSetup>();
-
-  /**
-   * What each seated player has in the THIRD slot, resolved from the equipment
-   * table here for `loadouts`' reason exactly.
-   *
-   * A separate map rather than a field on the `WeaponSetup` beside it, because
-   * they are answers to different questions: one is the weapon this person is
-   * shooting people with and the other is the thing they carry for armour, and
-   * `equipmentSetup` deliberately resolves to a `WeaponSetup` whose every
-   * combat field says it is not a gun.
-   */
-  private readonly equipment = new Map<number, EquipmentId>();
-
-  /**
-   * What each seated player's POUCH holds — a frag or a molotov — resolved
-   * here for `equipment`'s reason: what leaves the hand on a `grenade` message
-   * is this side's to say, and a client naming it per throw would name
-   * whatever it liked. `onGrenade` reads it; `setKit` writes it.
-   */
-  private readonly throwables = new Map<number, ThrowableId>();
-
-  /**
-   * The rate limit's state per roster slot, built on that peer's first round.
-   *
-   * A BUCKET rather than the timestamp of the last accepted round, because the
-   * thing being bounded is a rate and what arrives is a schedule the network
-   * has already had its way with — see `SHOT_SLACK` and `onShot`.
-   *
-   * One record rather than parallel arrays: every field is spent in the same
-   * few lines of one method, and a per-slot array that some other gate forgets
-   * to clear is the shape of bug `drop` exists to not have.
-   */
-  private readonly fireGate: (
-    | {
-        bucket: RateGate;
-        /** When a round was last ACCEPTED, which is what a draw is measured from. */
-        fired: number;
-        /** Whether the last round claimed the sidearm, so a change of hands shows. */
-        sidearm: boolean;
-      }
-    | undefined
-  )[] = [];
-
-  /** …and last announced a reload, for that message's own gate. */
-  private readonly lastReload: number[] = [];
-
-  /**
-   * …and its AT slot's and the tank guns' gates.
-   *
-   * The shot gate's kind exactly — a `RateGate` each — because a client asking
-   * for a rocket or a shell is asking the authority to put an object in the
-   * world, and without a gate the rate at which it may do so would be a
-   * client-side opinion. They were minimum spacings once, the rule the rifle
-   * retired, and at the cupola gun's nine a second that dropped honest rounds
-   * on ordinary jitter. **These ARE the rate limit for a person's hull round**:
-   * the hull's own clock, a spacing too, is asked with `HULL_EARLY` of slack.
-   *
-   * The two guns are two gates rather than one: a hull has two guns with two
-   * triggers and two people, and one gate shared between them would let either
-   * seat's fire rate-limit the other's.
-   */
-  private readonly ordnanceGate: (RateGate | undefined)[] = [];
-  private readonly shellGate: (RateGate | undefined)[] = [];
-  private readonly mgGate: (RateGate | undefined)[] = [];
+  private readonly slots: SlotRecord[] = Array.from({ length: SLOT_COUNT }, freshSlot);
 
   /**
    * The `AntiTankSystem.version` the clients have been told about, or -1 for
@@ -995,11 +970,11 @@ export class Match {
     // it is called from the deploy door too, where there is no fresh one to
     // hold.
     this.game.addPlayer(slot.index, slot.team);
-    // A slot changing hands must not inherit the last occupant's travel. The
-    // walk cycle is derived from how far a body moved between snapshots, so a
-    // stale entry here makes the new arrival's first frame a sprint from
-    // wherever the previous player was standing.
-    delete this.lastSeen[slot.index];
+    // A slot changing hands inherits nothing — the bot's travel least of all:
+    // the walk cycle is derived from how far a body moved between snapshots,
+    // so a stale entry makes the new arrival's first frame a sprint from
+    // wherever the previous occupant was standing.
+    this.slots[slot.index] = freshSlot();
     // The kit this person named at the handshake, resolved out of this side's
     // own tables. It is the FIRST of two doors: a player picks a kit more than
     // once in a match, and the second is `onDeploy`.
@@ -1098,14 +1073,14 @@ export class Match {
     equipment?: string,
     throwable?: string,
   ): void {
-    this.loadouts.set(
-      slot,
-      weaponSetup(weapon && isPrimaryWeaponId(weapon) ? weapon : DEFAULT_WEAPON),
+    const held = this.slots[slot];
+    held.loadout = weaponSetup(
+      weapon && isPrimaryWeaponId(weapon) ? weapon : DEFAULT_WEAPON,
     );
     const kit = equipment && isEquipmentId(equipment) ? equipment : DEFAULT_EQUIPMENT;
-    this.equipment.set(slot, kit);
+    held.equipment = kit;
     const pouch = isThrowableId(throwable) ? throwable : DEFAULT_THROWABLE;
-    this.throwables.set(slot, pouch);
+    held.throwable = pouch;
     const player = this.game.players.get(slot);
     if (player) {
       player.ordnanceCarried = equipmentSetup(kit).magSize;
@@ -1132,15 +1107,9 @@ export class Match {
     // next cadence instead of one per departure.
     if (this.mapVote?.clear(peer.slot)) this.voteDirty = true;
     this.game.removePlayer(peer.slot);
-    this.loadouts.delete(peer.slot);
-    this.equipment.delete(peer.slot);
-    this.throwables.delete(peer.slot);
-    delete this.fireGate[peer.slot];
-    delete this.ordnanceGate[peer.slot];
-    delete this.shellGate[peer.slot];
-    delete this.mgGate[peer.slot];
-    delete this.lastReload[peer.slot];
-    delete this.lastSeen[peer.slot];
+    // Everything this match held about the person, in one assignment — the
+    // slot goes back to a bot carrying nothing of theirs.
+    this.slots[peer.slot] = freshSlot();
     const slot = this.roster.release(peer.id);
     if (slot) {
       console.log(`[${this.id}] ${peer.name} left; slot ${slot.index} back to a bot`);
@@ -1726,11 +1695,11 @@ export class Match {
     //
     // `w` is read HERE rather than remembered at the trigger, because the
     // loadout is the authority's own and cannot change under a seated player
-    // mid-interval. A slot with no entry is a bot, and a bot is the flat round
+    // mid-interval. A slot with no loadout is a bot, and a bot is the flat round
     // the field's absence already means — so there is nothing to say and the
     // event stays the shape it has always been.
     for (const [slot, n] of this.firedRounds) {
-      const w = this.loadouts.get(slot)?.id;
+      const w = this.slots[slot]?.loadout?.id;
       this.queue(n > 1 ? { e: "fire", slot, n, w } : { e: "fire", slot, w });
     }
     this.firedRounds.clear();
@@ -1772,7 +1741,7 @@ export class Match {
     // cue is sharper for it, because what a listener does with a reload is
     // decide whether to push, and the answer is a different one for a pistol
     // and an LMG.
-    this.queue({ e: "reload", slot, w: this.loadouts.get(slot)?.id });
+    this.queue({ e: "reload", slot, w: this.slots[slot]?.loadout?.id });
   }
 
   /** Queues an event for every client. */
@@ -2067,11 +2036,12 @@ export class Match {
     // the tables. It is spent here, on a player who is by definition dead
     // (checked above), rather than at the spawn: `setKit` writes the pouch and
     // `NetPlayer.spawn` is what fills it.
+    const held = this.slots[peer.slot];
     this.setKit(
       peer.slot,
-      msg.weapon ?? this.loadouts.get(peer.slot)?.id,
-      msg.equipment ?? this.equipment.get(peer.slot),
-      msg.throwable ?? this.throwables.get(peer.slot),
+      msg.weapon ?? held.loadout?.id,
+      msg.equipment ?? held.equipment ?? undefined,
+      msg.throwable ?? held.throwable ?? undefined,
     );
     player.deployRequest = msg.spawn;
   }
@@ -2166,14 +2136,18 @@ export class Match {
    * full stride and a crouch-shuffle as a partial one.
    */
   private movingFor(slot: number, x: number, z: number): number {
-    const prev = this.lastSeen[slot];
+    const held = this.slots[slot];
+    const prev = held.lastSeen;
     const interval = TICKS_PER_SNAPSHOT / TICK_HZ;
     let moving = 0;
     if (prev) {
       const speed = Math.hypot(x - prev.x, z - prev.z) / interval;
       moving = Math.min(1, speed / CONFIG.player.moveSpeed);
+      prev.x = x;
+      prev.z = z;
+    } else {
+      held.lastSeen = { x, z };
     }
-    this.lastSeen[slot] = { x, z };
     return moving;
   }
 
@@ -2215,7 +2189,8 @@ export class Match {
     // that nothing can shoot back at.
     if (player.seat >= 0) return;
 
-    const primary = this.loadouts.get(peer.slot);
+    const held = this.slots[peer.slot];
+    const primary = held.loadout;
     if (!primary) return;
     // WHICH of the two, because they are not worth the same. A pistol round
     // paid out of the primary's table is a sniper's hundred from a sidearm at
@@ -2231,7 +2206,7 @@ export class Match {
     const now = Date.now();
     const interval = weapon.shotInterval * 1000;
     const sidearm = msg.slot === SIDEARM_SLOT;
-    let gate = this.fireGate[peer.slot];
+    let gate = held.fire;
     // **A WEAPON JUST DRAWN HAS NO COOLDOWN**, which is the client's own rule
     // — `Player.completeSwap` drops the fire cooldown with the weapon that
     // earned it, because the swap has already cost more time than either. A
@@ -2248,14 +2223,14 @@ export class Match {
     // which bounds it at one round per 0.34 s, slower than any weapon in the
     // kit.
     const drawn =
-      gate !== undefined &&
+      gate !== null &&
       gate.sidearm !== sidearm &&
       now - gate.fired >= weapon.drawTime * 1000 * 0.9;
     // A slot that has not fired before starts full (`RateGate`), so nobody's
     // first round is refused for arriving too soon after a match they were
     // not in.
-    if (gate === undefined) {
-      gate = this.fireGate[peer.slot] = { bucket: new RateGate(), fired: now, sidearm };
+    if (gate === null) {
+      gate = held.fire = { bucket: new RateGate(), fired: now, sidearm };
     }
     if (drawn) gate.bucket.fill();
     gate.sidearm = sidearm;
@@ -2263,29 +2238,13 @@ export class Match {
     gate.bucket.spend(interval);
     gate.fired = now;
 
-    // 2. direction
-    const [dx, dy, dz] = msg.dir;
-    const len = Math.hypot(dx, dy, dz);
-    if (len < 1e-6) return;
-    const nx = dx / len;
-    const ny = dy / len;
-    const nz = dz / len;
-    // The shooter's own reported look vector. Yaw is atan2(x, z) and pitch is
-    // negative-for-down, the same convention `CameraSystem` uses.
-    const cp = Math.cos(player.pitch);
-    const lx = Math.sin(player.yaw) * cp;
-    const ly = Math.sin(player.pitch);
-    const lz = Math.cos(player.yaw) * cp;
-    if (nx * lx + ny * ly + nz * lz < SHOT_CONE_COS) return;
+    // 2. direction, about the shooter's own reported look
+    if (!claimedDir(msg.dir, SHOT_DIR)) return;
+    lookDir(player.yaw, player.pitch, CLAIM_LOOK);
+    if (!withinCone(CLAIM_LOOK, SHOT_DIR, SHOT_CONE_COS)) return;
 
     // 3. origin
-    const [ox, oy, oz] = msg.origin;
-    if (
-      Math.hypot(ox - player.eyePos.x, oy - player.eyePos.y, oz - player.eyePos.z) >
-      MAX_ORIGIN_SLIP
-    ) {
-      return;
-    }
+    if (!withinSlip(msg.origin, player.eyePos, MAX_ORIGIN_SLIP)) return;
 
     // Past all three gates, so this is a round the authority accepts was fired
     // — which is what gives the shooter away, whatever it goes on to hit. Noted
@@ -2293,8 +2252,7 @@ export class Match {
     // loud as a hit, and a shot at nobody must still light the map up.
     this.noteFire(peer.slot);
 
-    SHOT_ORIGIN.set(ox, oy, oz);
-    SHOT_DIR.set(nx, ny, nz);
+    SHOT_ORIGIN.fromArray(msg.origin);
     const result = this.game.resolveShot(
       player,
       SHOT_ORIGIN,
@@ -2343,28 +2301,14 @@ export class Match {
     if (!player || !player.alive) return;
     if (player.grenades <= 0) return;
 
-    const [dx, dy, dz] = msg.dir;
-    const len = Math.hypot(dx, dy, dz);
-    if (len < 1e-6) return;
-    const nx = dx / len, ny = dy / len, nz = dz / len;
-    const cp = Math.cos(player.pitch);
-    const lx = Math.sin(player.yaw) * cp;
-    const ly = Math.sin(player.pitch);
-    const lz = Math.cos(player.yaw) * cp;
+    if (!claimedDir(msg.dir, SHOT_DIR)) return;
+    lookDir(player.yaw, player.pitch, CLAIM_LOOK);
     // A grenade leaves along a lifted version of the aim, so the cone has to be
     // wider than a bullet's — `throwLift` tilts it up before it is thrown.
-    if (nx * lx + ny * ly + nz * lz < GRENADE_CONE_COS) return;
+    if (!withinCone(CLAIM_LOOK, SHOT_DIR, GRENADE_CONE_COS)) return;
+    if (!withinSlip(msg.origin, player.eyePos, MAX_ORIGIN_SLIP)) return;
 
-    const [ox, oy, oz] = msg.origin;
-    if (
-      Math.hypot(ox - player.eyePos.x, oy - player.eyePos.y, oz - player.eyePos.z) >
-      MAX_ORIGIN_SLIP
-    ) {
-      return;
-    }
-
-    SHOT_ORIGIN.set(ox, oy, oz);
-    SHOT_DIR.set(nx, ny, nz);
+    SHOT_ORIGIN.fromArray(msg.origin);
     // Spent only if the arm accepts it — the pool refuses rather than stealing
     // a live slot, and a refused throw must cost nothing. WHAT is thrown is
     // this side's record of the kit, never anything on the message.
@@ -2374,7 +2318,7 @@ export class Match {
         SHOT_DIR,
         player.team,
         player,
-        this.throwables.get(peer.slot) ?? DEFAULT_THROWABLE,
+        this.slots[peer.slot].throwable ?? DEFAULT_THROWABLE,
       )
     ) {
       player.grenades--;
@@ -2569,16 +2513,13 @@ export class Match {
     // BODY standing, because none of that was ever about which seat.
     //
     // **The gate is a PERSON in the other chair, never the chair being
-    // taken** — `Game.canSwapSeat`'s rule, which is what the client's key and
-    // prompt already offered. Gated on `seats[want]` it refused every crossing
-    // against a bot, so TAKE OVER GUN / TAKE OVER TANK did nothing in a match.
+    // taken** — `chooseSeat` with `only` set, inside `seat`, which is the call
+    // `Game.canSwapSeat` offers the key with. Gated on `seats[want]` it
+    // refused every crossing against a bot, so TAKE OVER GUN / TAKE OVER TANK
+    // did nothing in a match.
     if (player.seat === msg.tank && player.seat >= 0) {
       const hull = this.game.hullOf(player);
-      const held = hull !== null && hull.seats[want];
-      const byBot = hull !== null && this.game.crew.crewOf(hull, want) !== null;
-      if (hull && want !== player.crewSeat && (!held || byBot)) {
-        this.game.seat(player, hull, want);
-      }
+      if (hull && want !== player.crewSeat) this.game.seat(player, hull, want);
       this.game.onSeatChanged(player, player.seat, player.position, player.yaw);
       return;
     }
@@ -2686,30 +2627,19 @@ export class Match {
     if (!gun) return;
     const now = Date.now();
     const interval = gun.cooldown * 1000;
-    const gate = (this.shellGate[peer.slot] ??= new RateGate());
+    const gate = this.slots[peer.slot].shellGate;
     if (!gate.ready(now, interval)) return;
-    const [dx, dy, dz] = msg.dir;
-    const len = Math.hypot(dx, dy, dz);
-    if (len < 1e-3) return;
     // The cone, against where this driver last said they were LOOKING. It is
     // generous for `SHOT_CONE_COS`'s reason and then some: the gun is walking
     // toward the look at the turret's own rate, so the two legitimately differ
     // by a whole traverse — which is exactly why the shell is fired down the
     // gun's own axis below and not down this vector.
-    const cp = Math.cos(player.pitch);
-    const aimX = cp * Math.sin(player.yaw);
-    const aimY = Math.sin(player.pitch);
-    const aimZ = cp * Math.cos(player.yaw);
-    if ((dx * aimX + dy * aimY + dz * aimZ) / len < SHELL_CONE_COS) return;
+    if (!claimedDir(msg.dir, SHOT_DIR)) return;
+    lookDir(player.yaw, player.pitch, CLAIM_LOOK);
+    if (!withinCone(CLAIM_LOOK, SHOT_DIR, SHELL_CONE_COS)) return;
     // The origin, against the hull rather than the head. A client that could
     // name any origin could fire from inside somebody else's tank.
-    const [ox, oy, oz] = msg.origin;
-    if (
-      Math.hypot(ox - tank.center.x, oy - tank.center.y, oz - tank.center.z) >
-      SHELL_ORIGIN_SLACK
-    ) {
-      return;
-    }
+    if (!withinSlip(msg.origin, tank.center, SHELL_ORIGIN_SLACK)) return;
 
     // …and then nothing of the claim is used. The round goes down the
     // authority's own gun, from the authority's own muzzle, at the authority's
@@ -2740,23 +2670,12 @@ export class Match {
 
     const now = Date.now();
     const interval = 1000 / tank.spec.mg.fireRate;
-    const gate = (this.mgGate[peer.slot] ??= new RateGate());
+    const gate = this.slots[peer.slot].mgGate;
     if (!gate.ready(now, interval)) return;
-    const [dx, dy, dz] = msg.dir;
-    const len = Math.hypot(dx, dy, dz);
-    if (len < 1e-3) return;
-    const cp = Math.cos(player.pitch);
-    const aimX = cp * Math.sin(player.yaw);
-    const aimY = Math.sin(player.pitch);
-    const aimZ = cp * Math.cos(player.yaw);
-    if ((dx * aimX + dy * aimY + dz * aimZ) / len < SHELL_CONE_COS) return;
-    const [ox, oy, oz] = msg.origin;
-    if (
-      Math.hypot(ox - tank.center.x, oy - tank.center.y, oz - tank.center.z) >
-      SHELL_ORIGIN_SLACK
-    ) {
-      return;
-    }
+    if (!claimedDir(msg.dir, SHOT_DIR)) return;
+    lookDir(player.yaw, player.pitch, CLAIM_LOOK);
+    if (!withinCone(CLAIM_LOOK, SHOT_DIR, SHELL_CONE_COS)) return;
+    if (!withinSlip(msg.origin, tank.center, SHELL_ORIGIN_SLACK)) return;
     // …and then nothing of the claim is used, which is `onShell`'s whole
     // security property one calibre down: the round goes down the authority's
     // own gun, from its own muzzle, at its own rate.
@@ -2785,42 +2704,28 @@ export class Match {
     // `Player.tryShot` cannot even reach the trigger while driving — this is
     // the authority saying the same thing rather than trusting it.
     if (player.seat >= 0) return;
-    const kind = this.equipment.get(peer.slot);
+    const held = this.slots[peer.slot];
+    const kind = held.equipment;
     if (!kind) return;
 
     const now = Date.now();
     const interval = equipmentSetup(kind).shotInterval * 1000;
-    const gate = (this.ordnanceGate[peer.slot] ??= new RateGate());
+    const gate = held.ordnanceGate;
     if (!gate.ready(now, interval)) return;
 
-    const [ox, oy, oz] = msg.origin;
-    if (
-      Math.hypot(ox - player.eyePos.x, oy - player.eyePos.y, oz - player.eyePos.z) >
-      ORDNANCE_ORIGIN_SLACK
-    ) {
-      return;
-    }
+    if (!withinSlip(msg.origin, player.eyePos, ORDNANCE_ORIGIN_SLACK)) return;
 
     let placed = false;
+    ORDNANCE_AT.fromArray(msg.origin);
     if (kind === "mine") {
-      ORDNANCE_AT.set(ox, oy, oz);
       placed = this.game.layMine(ORDNANCE_AT, player);
     } else {
-      const [dx, dy, dz] = msg.dir;
-      const len = Math.hypot(dx, dy, dz);
-      if (len < 1e-3) return;
       // The same cone a rifle round is bounded by, and for the same reason —
       // it stops a claimed rocket leaving backwards or through the shooter's
       // own feet, and it stops nothing else.
-      const cp = Math.cos(player.pitch);
-      const dot =
-        (dx * (cp * Math.sin(player.yaw)) +
-          dy * Math.sin(player.pitch) +
-          dz * (cp * Math.cos(player.yaw))) /
-        len;
-      if (dot < SHOT_CONE_COS) return;
-      ORDNANCE_AT.set(ox, oy, oz);
-      ORDNANCE_DIR.set(dx / len, dy / len, dz / len);
+      if (!claimedDir(msg.dir, ORDNANCE_DIR)) return;
+      lookDir(player.yaw, player.pitch, CLAIM_LOOK);
+      if (!withinCone(CLAIM_LOOK, ORDNANCE_DIR, SHOT_CONE_COS)) return;
       placed = this.game.launchRocket(ORDNANCE_AT, ORDNANCE_DIR, player);
     }
     if (!placed) return;
@@ -2836,13 +2741,14 @@ export class Match {
   private onReload(peer: Peer): void {
     const player = this.game.players.get(peer.slot);
     if (!player || !player.alive) return;
-    const weapon = this.loadouts.get(peer.slot);
+    const held = this.slots[peer.slot];
+    const weapon = held.loadout;
     if (!weapon) return;
 
     const now = Date.now();
     const soonest = Math.min(weapon.reloadTime, SIDEARM_RELOAD) * 1000 * 0.9;
-    if (now - (this.lastReload[peer.slot] ?? 0) < soonest) return;
-    this.lastReload[peer.slot] = now;
+    if (now - held.lastReload < soonest) return;
+    held.lastReload = now;
     this.noteReload(peer.slot);
   }
 

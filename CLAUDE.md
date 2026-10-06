@@ -1296,7 +1296,8 @@ scalar drawn **per squad** from a seeded generator.
 height being a hit SPHERE's top and never an eye height. **A bot's crouch is one
 decision re-made every frame and one eased blend read by everything else**, and
 the eye and the hit sphere come down together or the stance makes a body easier
-to kill. **A team's bots tell each other two things, and both are CUES that may
+to kill — `entities/stance.ts` is the one copy of both heights and the ease,
+for all five bodies that crouch. **A team's bots tell each other two things, and both are CUES that may
 never enter `BotMemory`** (`entities/SquadRadio.ts`, one board per team): a
 squad-only contact CALL, deliberately not a destination, and a HAZARD mark where
 the team's own bodies fall — everything in `BotMemory` feeds `hasCue`, so a cue

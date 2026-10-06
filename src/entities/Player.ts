@@ -115,6 +115,7 @@ import type { ObstacleField } from "../world/ObstacleField";
 import { TerrainField } from "../world/TerrainField";
 import type { Combatant, Team } from "./Combatant";
 import { HealthRegen } from "./HealthRegen";
+import { easeStance, stanceCentre, stanceEye } from "./stance";
 import type { DamageKind, ShotOptions } from "../systems/CombatSystem";
 
 /**
@@ -1789,9 +1790,7 @@ export class Player implements Combatant {
     if (this.sprinting && !wasSprinting) input.clearCrouchToggle();
     if (wasSprinting && !this.sprinting) input.clearSprintToggle();
     this.crouching = input.crouch && !this.sprinting;
-    this.crouchBlend +=
-      ((this.crouching ? 1 : 0) - this.crouchBlend) *
-      Math.min(1, dt * p.crouchBlendSpeed);
+    this.crouchBlend = easeStance(this.crouchBlend, this.crouching, dt);
 
     // --- horizontal movement (camera-relative), with collision sliding ---
     const speed =
@@ -2606,17 +2605,11 @@ export class Player implements Combatant {
    * would buy nothing and would need a stand-up clearance test to be safe.
    */
   private syncCombatant(): void {
-    const c = CONFIG.player;
     const p = this.root.position;
     const feet = p.y - this.groundY;
-    const centerH =
-      this.groundY + (c.crouchCenterHeight - this.groundY) * this.crouchBlend;
-    const eyeH =
-      CONFIG.camera.eyeHeight +
-      (c.crouchEyeHeight - CONFIG.camera.eyeHeight) * this.crouchBlend;
     this.position.set(p.x, feet, p.z);
-    this.center.set(p.x, feet + centerH, p.z);
-    this.eyePos.set(p.x, feet + eyeH, p.z);
+    this.center.set(p.x, feet + stanceCentre(this.groundY, this.crouchBlend), p.z);
+    this.eyePos.set(p.x, feet + stanceEye(this.crouchBlend), p.z);
   }
 
   /**

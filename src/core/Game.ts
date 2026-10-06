@@ -100,6 +100,8 @@ import {
   DRIVER,
   GUNNER,
   SEATS,
+  chooseSeat,
+  type SeatHolder,
   type CrewSeat,
   type DriveInput,
   type GunInput,
@@ -272,9 +274,9 @@ type NetEvent<E extends ServerEvent["e"]> = Extract<ServerEvent, { e: E }>;
 interface Seat {
   tank: Vehicle;
   /**
-   * Which of the hull's two jobs this offer is for. `VehicleSystem.seatOn`
-   * decides it — the driver's if it is free, the gunner's otherwise — so the
-   * "first man drives" rule is stated in one place for both processes.
+   * Which of the hull's two jobs this offer is for. `chooseSeat` decides it,
+   * the same call `HeadlessGame.seat` grants with, so the "first man drives"
+   * rule and the eviction order are stated in one place for both processes.
    */
   seat: CrewSeat;
   /** True when taking it evicts somebody. The prompt says so. */
@@ -5827,58 +5829,42 @@ export class Game {
   private offeredSeat(): Seat | null {
     const at = this.player.position;
     const team = this.player.team;
-    const seat = this.seat;
     // A hull with a SEAT LEFT is the first offer, which is what makes two
     // seats worth having: with one bot already driving, the player gets in
     // beside him rather than turning him out, and the tank leaves the yard
-    // with both jobs done. Only a FULL hull reaches the eviction below.
-    const free = this.vehicles.enterable(at, team);
-    if (free) {
-      const which = this.vehicles.seatOn(free, at, team);
-      if (which !== -1) {
-        seat.tank = free;
-        seat.seat = which;
-        seat.crewed = false;
-        // The vehicle's own word — see `VehicleType.name`. `ENTER TANK`
-        // offered over a truck is a prompt naming the wrong machine, which
-        // on Sarab is a thing that happens twenty metres apart.
-        seat.label = which === DRIVER ? `ENTER ${free.name}` : "MAN THE GUN";
-        return seat;
-      }
-    }
-    const held = this.vehicles.occupiedNear(at, team);
-    if (held && this.crewedByBot(held)) {
-      seat.tank = held;
-      // Both seats are taken and at least one of them by a bot: the DRIVER's
-      // is the one worth having and the one the prompt promises, so a crew is
-      // turned out of that chair by preference and out of the gun only when a
-      // person already has the sticks.
-      seat.seat = this.crew.crewOf(held, DRIVER) ? DRIVER : GUNNER;
-      seat.crewed = true;
-      seat.label =
-        seat.seat === DRIVER ? `TAKE OVER ${held.name}` : "TAKE OVER GUN";
-      return seat;
-    }
-    return null;
+    // with both jobs done. Only a FULL hull reaches an eviction.
+    const tank =
+      this.vehicles.enterable(at, team) ??
+      this.vehicles.occupiedNear(at, team);
+    if (!tank) return null;
+    // **Which chair is `chooseSeat`'s, the same call the authority grants
+    // with**, asked for the driver's as every boarder from the ground does —
+    // so the prompt names the chair the server seats you in. On a full hull
+    // that is the driver's if a bot has it and the gun's otherwise, and
+    // nothing at all when both are people.
+    const driver = this.seatHeldBy(tank, DRIVER);
+    const gunner = this.seatHeldBy(tank, GUNNER);
+    const which = chooseSeat(driver, gunner, DRIVER);
+    if (which === -1) return null;
+    const seat = this.seat;
+    seat.tank = tank;
+    seat.seat = which;
+    seat.crewed = (which === DRIVER ? driver : gunner) === "bot";
+    // The vehicle's own word — see `VehicleType.name`. `ENTER TANK` offered
+    // over a truck is a prompt naming the wrong machine, which on Sarab is a
+    // thing that happens twenty metres apart.
+    seat.label = seat.crewed
+      ? which === DRIVER
+        ? `TAKE OVER ${tank.name}`
+        : "TAKE OVER GUN"
+      : which === DRIVER
+        ? `ENTER ${tank.name}`
+        : "MAN THE GUN";
+    return seat;
   }
 
   /**
-   * Is anybody in this hull a BOT — somebody who may be turned out of it?
-   *
-   * The whole-vehicle form of `seatHeldBy`, which is where the offline/netplay
-   * split is written down and which carries the argument for why a client is
-   * allowed to know: **what this decides is a PROMPT**, and a prompt offering
-   * to evict a person would be a key that does nothing.
-   */
-  private crewedByBot(tank: Vehicle): boolean {
-    // EITHER chair holding a bot makes this hull one the player may take over,
-    // and `seatHeldBy` is where the offline/netplay split lives — this is the
-    // same question asked of the whole vehicle rather than of one chair.
-    return SEATS.some((seat) => this.seatHeldBy(tank, seat) === "bot");
-  }
-
-  /**
-   * Is this roster slot a BOT? The half of `crewedByBot` that is about the
+   * Is this roster slot a BOT? The half of `seatHeldBy` that is about the
    * roster rather than about the hull.
    *
    * Found by `index` rather than subscripted. The roster is laid out in slot
@@ -6610,19 +6596,22 @@ export class Game {
    * file cares about: nobody, a bot who may be turned out of it, or a person
    * who may not.
    *
-   * **The one question `crewedByBot` asks about a HULL, asked about a SEAT** —
-   * and it is a seat's question because everything reading it names a chair:
-   * whether this player may cross into that one, and what the crew line on the
-   * HUD says about it. Offline it is `VehicleCrew`'s own pairing; in a match it
-   * is `VehicleState.by`/`by2` against the roster, which is the same exception
-   * `crewedByBot` documents at length — the client is allowed to care which,
-   * because what it is drawing is a PROMPT.
+   * It is a seat's question because everything reading it names a chair:
+   * which one a boarder is offered (`offeredSeat`, through `chooseSeat`),
+   * whether this player may cross into one, and what the crew line on the HUD
+   * says about it. Offline it is `VehicleCrew`'s own pairing; in a match it is
+   * `VehicleState.by`/`by2` against the roster — **the one exception to "a
+   * client never learns which slots are bots"**, and it is allowed because
+   * what this decides is a PROMPT: a prompt offering to evict a person would
+   * be a key that does nothing. **Never `VehicleCrew.crewOf` in a match**: a
+   * client's crew table is empty there, so a full hull with a bot driving read
+   * as a person's and was offered as TAKE OVER GUN.
    *
    * Note that the player's OWN chair comes back `"player"`, which is correct
    * for both readers: it is the one chair `canSwapSeat` is never asked about,
    * and the crew line marks it from `drivingSeat` rather than from here.
    */
-  private seatHeldBy(tank: Vehicle, seat: CrewSeat): "open" | "bot" | "player" {
+  private seatHeldBy(tank: Vehicle, seat: CrewSeat): SeatHolder {
     if (this.net) {
       const i = this.vehicles.hulls.indexOf(tank);
       const by =
@@ -6650,7 +6639,7 @@ export class Game {
    * player drove past his own infantry is exactly that denial — the sweep
    * fills the free chair within seconds of a mount, and the chair it fills is
    * then unreachable by every route the game has, including getting out and
-   * back in (`VehicleSystem.seatOn` hands a boarder the FIRST free chair,
+   * back in (`chooseSeat` hands a boarder the FIRST free chair,
    * which is the one just vacated). The earlier rule here was that a swap is
    * never an eviction, and what it bought was a second seat the player could
    * not sit in.
@@ -6663,7 +6652,11 @@ export class Game {
    */
   private canSwapSeat(tank: Vehicle): boolean {
     const other: CrewSeat = this.drivingSeat === DRIVER ? GUNNER : DRIVER;
-    return this.seatHeldBy(tank, other) !== "player";
+    // A crossing is `chooseSeat` with `only` set — the chair named or nothing —
+    // which is the call `Match` gates the same request with.
+    const driver = this.seatHeldBy(tank, DRIVER);
+    const gunner = this.seatHeldBy(tank, GUNNER);
+    return chooseSeat(driver, gunner, other, true) !== -1;
   }
 
   /**

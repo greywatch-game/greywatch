@@ -85,8 +85,10 @@ import {
   DRIVER,
   GUNNER,
   Vehicle,
+  chooseSeat,
   type CrewSeat,
   type GunAngles,
+  type SeatHolder,
 } from "../src/entities/Vehicle";
 import { resolveOrdnance } from "../src/entities/equipment";
 import { CelMaterialFactory } from "../src/shaders/CelShader";
@@ -958,12 +960,17 @@ export class HeadlessGame {
     // everything a body owes while it is aboard — the invulnerability, the
     // absence from every bot's target list — is left standing, because none of
     // it was ever about which chair.
-    const crossing = held === tank && player.crewSeat !== want;
+    const crossing = held !== null && held === tank && player.crewSeat !== want;
     // Asked for the chair they are already in: nothing to do, and saying so
     // here rather than letting it fall through matters — below, a seat that is
     // taken is answered with the OTHER one, and this player is what is making
     // it taken.
     if (held === tank && !crossing) return tank;
+    // **A crossing that will be refused is refused BEFORE the release**, or
+    // the refusal would have spent the chair the player is sitting in. The
+    // chair being asked for is held by whoever holds it whether or not this
+    // player's own is given up, so the answer below cannot differ from this one.
+    if (crossing && !this.mayCross(held, want)) return held;
     if (held && (held !== tank || crossing)) {
       this.release(player, held);
       if (held !== tank) {
@@ -978,37 +985,29 @@ export class HeadlessGame {
 
     const index = this.vehicles.hulls.indexOf(tank);
     if (index < 0 || !tank.alive || tank.team !== player.team) return null;
-    // **A CROSSING names one chair and the fall-back below is the chair it
-    // just left**, so a bot in the one being asked for has to be turned out
-    // here or the swap silently puts this player back where they started.
-    // That is not a new eviction rule: it is the one three lines down —
-    // a bot crew never denies a player their own armour — reaching the one
-    // path that could not use it, because after the release above there is
-    // never a moment when BOTH chairs read as taken. A person in it is still
-    // never moved: `evict` only knows bots, and the fall-back is what a
-    // refusal comes out as.
-    if (crossing && tank.seats[want]) this.crew.evict(tank, want);
-    // Which chair, decided against the authority's own copy of the fleet — the
+    // **Which chair is `chooseSeat`'s, the call the client words its prompt
+    // with**, decided against the authority's own copy of the fleet — the
     // client's `seat` field is a preference and never a claim. Asked for one
-    // that is taken, the other is granted if it is free; asked for nothing,
-    // the driver's comes first, which is `VehicleSystem.seatOn`'s rule stated
-    // once for both processes.
-    let use: CrewSeat = want;
-    if (tank.seats[use]) use = use === DRIVER ? GUNNER : DRIVER;
-    if (tank.seats[use]) {
-      // Both taken. A BOT is turned out rather than keeping the seat — the
-      // whole of "a bot crew never denies the player their own armour" — and
-      // it lands on the same frame as the mount for `Game`'s reason: a hull
-      // given up and not taken is one the boarding sweep can re-crew before
-      // anybody else gets a word in. A PERSON is never evicted, which is why
-      // the chair asked for is tried first and then the other one.
-      use = want;
-      if (!this.crew.evict(tank, use)) {
-        use = use === DRIVER ? GUNNER : DRIVER;
-        if (!this.crew.evict(tank, use)) return null;
-      }
-      if (tank.seats[use]) return null;
-    }
+    // that is taken, the other is granted if it is free; failing both, a BOT
+    // is turned out of the one asked for and then out of the other — the whole
+    // of "a bot crew never denies the player their own armour" — and a PERSON
+    // never is.
+    //
+    // **A CROSSING is `only`: the chair named or nothing.** The fall-back is
+    // the chair the player just left, so without it a swap against a bot
+    // gunner silently put them back where they started.
+    const use = chooseSeat(
+      this.seatHolder(tank, DRIVER),
+      this.seatHolder(tank, GUNNER),
+      want,
+      crossing,
+    );
+    if (use === -1) return null;
+    // The eviction lands on the same frame as the mount for `Game`'s reason:
+    // a hull given up and not taken is one the boarding sweep can re-crew
+    // before anybody else gets a word in.
+    if (tank.seats[use] && !this.crew.evict(tank, use)) return null;
+    if (tank.seats[use]) return null;
 
     player.seat = index;
     player.crewSeat = use;
@@ -1053,6 +1052,22 @@ export class HeadlessGame {
     this.vehicles.setOccupied(held, player.crewSeat, false);
     player.seat = -1;
     player.crewSeat = DRIVER;
+  }
+
+  /**
+   * Who is in one chair, as `chooseSeat` asks it: nobody, a bot of
+   * `VehicleCrew`'s, or a person. The authority's half of the client's
+   * `Game.seatHeldBy`, and it reads the crew table the client cannot.
+   */
+  seatHolder(tank: Vehicle, seat: CrewSeat): SeatHolder {
+    if (!tank.seats[seat]) return "open";
+    return this.crew.crewOf(tank, seat) ? "bot" : "player";
+  }
+
+  /** May a person aboard `tank` cross into `want`? `Game.canSwapSeat`'s twin. */
+  private mayCross(tank: Vehicle, want: CrewSeat): boolean {
+    const driver = this.seatHolder(tank, DRIVER);
+    return chooseSeat(driver, this.seatHolder(tank, GUNNER), want, true) !== -1;
   }
 
   /**

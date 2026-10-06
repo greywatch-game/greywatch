@@ -60,6 +60,7 @@ import { SoldierMotion } from "./SoldierMotion";
 import { profileFor, type BotProfile } from "./BotSkill";
 import { mulberry32 } from "../world/rng";
 import { BotMemory } from "./BotMemory";
+import { easeStance, stanceCentre, stanceEye } from "./stance";
 import type { Combatant, Team } from "./Combatant";
 // Type-only, and erased — this file still knows nothing about a system.
 import type { DamageKind } from "../systems/CombatSystem";
@@ -1007,9 +1008,7 @@ export class Bot implements Combatant {
     // authority's blend with the same constant (`NetSoldier`). Everything
     // downstream reads the blend: the speed here, the spread in `shoot`, the
     // eye and the hit sphere in `syncTransform`, the pose in `animateSoldier`.
-    this.crouchBlend +=
-      ((this.wantCrouch ? 1 : 0) - this.crouchBlend) *
-      Math.min(1, dt * CONFIG.player.crouchBlendSpeed);
+    this.crouchBlend = easeStance(this.crouchBlend, this.wantCrouch, dt);
     speed *= 1 - (1 - b.cover.crouchMoveMult) * this.crouchBlend;
 
     // A bot that has just been hit stumbles rather than jogging on serenely.
@@ -1936,7 +1935,6 @@ export class Bot implements Combatant {
 
   private syncTransform(): void {
     const c = this.rig.centerHeight;
-    const p = CONFIG.player;
     // The ROOT does not move with the crouch. The stance lives inside the rig —
     // `animateSoldier` drops the body node and folds the legs with the boots
     // planted — so a root pulled down with it would put the feet through the
@@ -1949,11 +1947,11 @@ export class Bot implements Combatant {
     // of sight is tested to; `center` is the sphere their rounds are tested
     // against. Drop the eye alone and crouching makes this bot easier to kill,
     // not harder — every incoming round aimed at the middle of an unmoved
-    // sphere instead of grazing its top. The arithmetic is `NetSoldier`'s,
+    // sphere instead of grazing its top. The arithmetic is `stance.ts`'s,
     // because a remote copy of this body has to land in the same place.
     this.center.set(
       this.position.x,
-      this.position.y + c + (p.crouchCenterHeight - c) * this.crouchBlend,
+      this.position.y + stanceCentre(c, this.crouchBlend),
       this.position.z,
     );
     // `camera.eyeHeight`, not a literal repeat of it. This is the point the
@@ -1964,9 +1962,7 @@ export class Bot implements Combatant {
     // any of the three comments reasoning about its value.
     this.eyePos.set(
       this.position.x,
-      this.position.y +
-        CONFIG.camera.eyeHeight +
-        (p.crouchEyeHeight - CONFIG.camera.eyeHeight) * this.crouchBlend,
+      this.position.y + stanceEye(this.crouchBlend),
       this.position.z,
     );
   }

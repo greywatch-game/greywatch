@@ -1180,6 +1180,15 @@ that is not across it.
   module by type stripping, which puts two rules on `roadPaths.ts` and `roads.ts`
   (their headers): a value import names its `.ts`, and no syntax that must be
   compiled rather than erased. A new map's generator imports it the same way.
+- **The generators SHARE what they used to copy**, through
+  `scripts/lib/mapgen.mjs`: the seeded stream (over `src/world/rng.ts`'s
+  `mulberry32`, which is loaded by type stripping too and carries the same two
+  rules), the floor's noise and sampler, the claim and footprint checks, the
+  layout's number and placement text, and the `--probe` and `--refusals`
+  printers. A helper that reads a generator's state is a FACTORY over it, so a
+  call site reads as it always did. What stays in a generator is its design
+  and every helper whose difference is deliberate; a change to the lib owes a
+  regeneration of every map that imports it, with no diff.
 
 **A COBBLED STREET ENDS IN A KERB COURSE** (`layKerb` in `kit/terrain.ts`), and
 it exists because the ground was given a depth. The setts are carved down into

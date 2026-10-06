@@ -54,6 +54,7 @@ import {
 } from "../entities/SoldierModel";
 import type { CelMaterialFactory } from "../shaders/CelShader";
 import { newRayHit, type RayWorld } from "../world/RayWorld";
+import { stanceCentre } from "../entities/stance";
 
 /**
  * The player's stand-in, as the ragdoll pool wants it.
@@ -263,9 +264,7 @@ export class DeathCam {
     // to the same place `Player.center` was on the frame of death.
     corpse.center.set(
       feet.x,
-      feet.y +
-        rig.centerHeight +
-        (CONFIG.player.crouchCenterHeight - rig.centerHeight) * crouch,
+      feet.y + stanceCentre(rig.centerHeight, crouch),
       feet.z,
     );
     corpse.deathDamage = damage;

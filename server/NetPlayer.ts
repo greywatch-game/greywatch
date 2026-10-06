@@ -22,6 +22,7 @@ import { Vector3 } from "@babylonjs/core";
 import { CONFIG } from "../src/config";
 import type { Combatant, Team } from "../src/entities/Combatant";
 import { HealthRegen } from "../src/entities/HealthRegen";
+import { easeStance, stanceCentre, stanceEye } from "../src/entities/stance";
 import { DRIVER, type CrewSeat } from "../src/entities/Vehicle";
 import type { DamageKind } from "../src/systems/CombatSystem";
 import { Leash } from "../src/world/leash";
@@ -233,13 +234,8 @@ export class NetPlayer implements Combatant {
     this.pitch = pitch;
     this.crouching = crouching;
     this.sprinting = sprinting;
-    this.crouchBlend +=
-      ((crouching ? 1 : 0) - this.crouchBlend) *
-      Math.min(1, dt * p.crouchBlendSpeed);
+    this.crouchBlend = easeStance(this.crouchBlend, crouching, dt);
 
-    const eyeY =
-      CONFIG.camera.eyeHeight +
-      (p.crouchEyeHeight - CONFIG.camera.eyeHeight) * this.crouchBlend;
     // `height / 2` standing, exactly as `Player.syncCombatant` resolves it —
     // and NOT `eyeHeight - 0.05`, which is the trap this line was in. The 0.05
     // in `config/player.ts` is where the sphere's TOP sits relative to the eye
@@ -247,10 +243,8 @@ export class NetPlayer implements Combatant {
     // read as a centre it puts a standing player's body sphere 0.6 m up their
     // own chest, so the authority disagrees with both the client that drew the
     // body and the shooter that aimed at it.
-    const centerY =
-      p.height / 2 + (p.crouchCenterHeight - p.height / 2) * this.crouchBlend;
-    this.eyePos.set(x, y + eyeY, z);
-    this.center.set(x, y + centerY, z);
+    this.eyePos.set(x, y + stanceEye(this.crouchBlend), z);
+    this.center.set(x, y + stanceCentre(p.height / 2, this.crouchBlend), z);
   }
 
   /**
