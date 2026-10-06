@@ -251,6 +251,9 @@ npm run loc        # how big the project is: hand-written code split into
 npm run kit:hash   # fingerprint every kit builder over every placement, the
                    #   DRAWING and the COLLIDERS hashed apart — proves a
                    #   refactor moved nothing, or a rework kept its colliders.
+                   #   The SCATTER props too, over fixed seeds and every
+                   #   foliage rung, their collider half being the
+                   #   `PROP_BODIES` row and the region-stream draw count.
                    #   `-- --kinds a,b`, `--out f.json`, `--against f.json`.
                    #   `-- --feet` measures every kind against the generators'
                    #   footprint table (`scripts/lib/footprints.mjs`)

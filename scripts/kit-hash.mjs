@@ -35,6 +35,23 @@
  * A build that throws is recorded as its error message, so a builder broken
  * by the change is a difference too.
  *
+ * **The SCATTER props are fingerprinted too** (`MapBuilder`'s
+ * `SCATTER_BUILDERS` — the trees, rocks, barrels and junk in `Props.ts`),
+ * and since a layout places a REGION rather than a prop, each kind is built
+ * over `SCATTER_SEEDS` fixed seeds at every rung of `CONFIG.graphics.foliage`
+ * instead of over its placements. Its two halves are the scatter's own: the
+ * DRAWING is the prop as `MapBuilder.flatten` would hand it to the merge —
+ * the root and every child mesh, in that order, metadata included, because
+ * `noInk`/`noGlow`/`noShadowCaster` are part of the merge key — and the
+ * COLLIDERS are what decides where a blocking field's boxes go: the kind's
+ * `PROP_BODIES` row, and how many numbers the builder drew from the REGION's
+ * stream. That count is the one a rework must not move ("keep 48 rng draws"):
+ * every prop after it in the region, and every yaw, comes off the same
+ * stream, so a builder that draws one more rerolls the whole field — and its
+ * colliders — without a vertex of its own changing. The prop's own `sub`
+ * stream reaches only its own drawing, which is already hashed. A scatter
+ * kind is named in `--kinds` like any other.
+ *
  * `--feet` asks a different question of the same builds: for every kind in
  * `scripts/lib/footprints.mjs`'s `FOOT`, how far the DRAWING reaches past
  * the footprint the generators claim for it, worst case over every placement
@@ -90,6 +107,24 @@ function vite() {
     optimizeDeps: { noDiscovery: true, include: [] },
     appType: "custom",
   });
+}
+
+/**
+ * The seeds every scatter kind is built over. The region's stream and the
+ * prop's own are both minted from one, the second XORed apart, so a builder
+ * reading either is exercised; eight is enough that a draw-dependent branch
+ * (a bamboo clump's culm count, a cask's decay) takes more than one arm.
+ */
+const SCATTER_SEEDS = [1, 2, 3, 4, 5, 6, 7, 8];
+
+/** A seeded stream that counts how many numbers were drawn from it. */
+function counted(next) {
+  const f = () => {
+    f.draws++;
+    return next();
+  };
+  f.draws = 0;
+  return f;
 }
 
 /** The ground every placement stands on: a swell, not any map's floor. */
@@ -167,6 +202,8 @@ async function reportFeet(result, notBuilt) {
   for (const [key, r] of Object.entries(result)) {
     if (!r.plan) continue;
     const parsed = JSON.parse(key);
+    // A scatter kind has no footprint: it is sown by clearance, not placed.
+    if (parsed[1] === "scatter") continue;
     const kind = parsed[0];
     // `--kinds` may name a builder the table has no row for (a road).
     if (!(kind in FOOT)) {
@@ -204,6 +241,8 @@ async function hashJobs(jobs) {
     const B = await server.ssrLoadModule("@babylonjs/core");
     B.Logger.LogLevels = B.Logger.NoneLogLevel;
     const { BUILDERS } = await server.ssrLoadModule("/src/world/BuildingKit.ts");
+    const { SCATTER_BUILDERS, PROP_BODIES } = await server.ssrLoadModule("/src/world/MapBuilder.ts");
+    const { mulberry32 } = await server.ssrLoadModule("/src/world/rng.ts");
     const engine = new B.NullEngine();
     let scene = new B.Scene(engine);
     // A material is named for the factory call that asked for it, so a
@@ -230,6 +269,10 @@ async function hashJobs(jobs) {
       scene = new B.Scene(engine);
       cache.clear();
       try {
+        if (p.scatter) {
+          out[key] = hashScatter(SCATTER_BUILDERS[p.kind], PROP_BODIES[p.kind], scene, mats, mulberry32, p, f32);
+          continue;
+        }
         const floor = p.bare ? 0 : swell(p.x, p.z);
         const ctx = p.bare
           ? undefined
@@ -267,13 +310,49 @@ async function hashJobs(jobs) {
   return out;
 }
 
-/** Every placement of the asked-for kinds in every layout, plus one bare build of each. */
+/**
+ * One scatter prop, built off `p.seed` at foliage `p.foliage` and hashed in
+ * two halves — see the header for what each one is.
+ */
+function hashScatter(build, body, scene, mats, mulberry32, p, f32) {
+  const rng = counted(mulberry32(p.seed));
+  const sub = counted(mulberry32(p.seed ^ 0x2545f491));
+  const root = build(scene, mats, rng, sub, p.foliage);
+  const draw = createHash("sha256");
+  // `MapBuilder.flatten`'s order: the root, then its child meshes.
+  for (const m of [root, ...root.getChildMeshes()]) {
+    draw.update(`|${m.name}|${m.material?.name}|${JSON.stringify(m.metadata ?? null)}|`);
+    draw.update(
+      JSON.stringify([
+        m.position.asArray(),
+        m.rotation.asArray(),
+        m.scaling.asArray(),
+        m.rotationQuaternion?.asArray() ?? null,
+        m.parent?.name ?? null,
+      ]),
+    );
+    for (const kind of ["position", "normal", "uv", "uv2", "color", "matricesIndices"]) {
+      draw.update(kind);
+      draw.update(f32(m.getVerticesData(kind)));
+    }
+    draw.update(Buffer.from(new Uint32Array(m.getIndices() ?? []).buffer));
+  }
+  const colliders = createHash("sha256").update(JSON.stringify([body, rng.draws]));
+  return { draw: draw.digest("hex").slice(0, 16), colliders: colliders.digest("hex").slice(0, 16) };
+}
+
+/**
+ * Every placement of the asked-for kinds in every layout, plus one bare build
+ * of each — and every asked-for scatter kind over every seed and foliage rung.
+ */
 async function listJobs(only) {
   const jobs = new Map();
   const server = await vite();
   try {
     const { BUILDERS } = await server.ssrLoadModule("/src/world/BuildingKit.ts");
-    if (only) for (const k of only) if (!(k in BUILDERS)) throw new Error(`no builder "${k}"`);
+    const { SCATTER_BUILDERS } = await server.ssrLoadModule("/src/world/MapBuilder.ts");
+    const { CONFIG } = await server.ssrLoadModule("/src/config/index.ts");
+    if (only) for (const k of only) if (!(k in BUILDERS) && !(k in SCATTER_BUILDERS)) throw new Error(`no builder "${k}"`);
     const worlds = readdirSync(join(ROOT, "src/world"), { withFileTypes: true })
       .filter((d) => d.isDirectory() && existsSync(join(ROOT, "src/world", d.name, "layout.ts")))
       .map((d) => d.name)
@@ -291,6 +370,15 @@ async function listJobs(only) {
     }
     for (const k of Object.keys(BUILDERS)) {
       if (!only || only.has(k)) jobs.set(JSON.stringify([k, "bare"]), { kind: k, bare: true });
+    }
+    const rungs = [...new Set(Object.values(CONFIG.graphics.foliage.tiers).map((t) => t.detail))].sort();
+    for (const k of Object.keys(SCATTER_BUILDERS)) {
+      if (only && !only.has(k)) continue;
+      for (const seed of SCATTER_SEEDS) {
+        for (const foliage of rungs) {
+          jobs.set(JSON.stringify([k, "scatter", seed, foliage]), { kind: k, scatter: true, seed, foliage });
+        }
+      }
     }
   } finally {
     await server.close();

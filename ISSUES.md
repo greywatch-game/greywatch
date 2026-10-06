@@ -49,7 +49,7 @@ match smoke test (`npm run build:server && npm run server`, two clients).
 | ~~[18](#18-small-duplicates-inside-gamets)~~ | P2 — done | Small duplicates inside `Game.ts` |
 | ~~[19](#19-extract-the-gamets-clusters-that-pass-docsgamemds-test)~~ | P2 — done | Extract the `Game.ts` clusters that pass `docs/game.md`'s test |
 | ~~[20](#20-decompose-the-longest-gamets-methods-in-place)~~ | P2 — done | Decompose the longest `Game.ts` methods in place |
-| [21](#21-extend-kithash-to-cover-scatter-builders) | P2 | Extend `kit:hash` to cover scatter builders |
+| ~~[21](#21-extend-kithash-to-cover-scatter-builders)~~ | P2 — done | Extend `kit:hash` to cover scatter builders |
 | [22](#22-split-worldkitcityts-per-builder) | P2 | Split `world/kit/city.ts` per builder |
 | [23](#23-split-worldpropsts) | P2 | Split `world/Props.ts` |
 | [24](#24-split-worldkitharbourts-and-worldkitdesertts) | P2 | Split `world/kit/harbour.ts` and `world/kit/desert.ts` |
@@ -614,6 +614,17 @@ rebake plus `npm run parity`, which doesn't see visual-only geometry.
 
 **Acceptance.** `npm run kit:hash -- --kinds <scatter kind>` works; a one-vertex
 change to a tree changes its hash.
+
+**Done.** Every `SCATTER_BUILDERS` kind is built over eight fixed seeds at each
+`CONFIG.graphics.foliage` rung (24 builds a kind, 576 in all). The drawing is
+the prop in `MapBuilder.flatten`'s order with metadata included (it is part of
+the merge key); the collider half is the kind's `PROP_BODIES` row plus how many
+numbers the builder drew from the region's stream, which is what moves a
+blocking field's boxes. Checked: a 1 mm nudge to one pine vertex changed all 24
+pine drawing hashes and nothing else; one extra `rng()` in `buildPine` changed
+all 24 pine collider hashes and no drawing; the whole kit against a HEAD
+fingerprint changed no structure build. A whole-kit fingerprint taken before
+this change now reports the 576 as `builds added` — take a fresh one.
 
 ### 22. Split `world/kit/city.ts` per builder
 

@@ -637,8 +637,12 @@ type ScatterBuilder = (
   foliage: number,
 ) => Mesh;
 
-/** Scatter props, keyed by the name the layout data uses. */
-const SCATTER_BUILDERS: Record<ScatterSpec["prop"], ScatterBuilder> = {
+/**
+ * Scatter props, keyed by the name the layout data uses. Exported for
+ * `npm run kit:hash`, which fingerprints every one of them; nothing in the
+ * game reaches for it outside this file.
+ */
+export const SCATTER_BUILDERS: Record<ScatterSpec["prop"], ScatterBuilder> = {
   deadTree: buildDeadTree,
   pine: buildPine,
   ashTree: buildAshTree,
@@ -773,8 +777,11 @@ interface PropBody {
  *
  * Keep these honest against `Props.ts`. Too small only costs a round clipping
  * through a silhouette; too large costs shots that visibly should have landed.
+ *
+ * Exported for `npm run kit:hash`, whose COLLIDER half of a scatter kind's
+ * fingerprint is this row — the box is the table's, not the builder's.
  */
-const PROP_BODIES: Record<ScatterSpec["prop"], PropBody> = {
+export const PROP_BODIES: Record<ScatterSpec["prop"], PropBody> = {
   // Trunk only, at roughly its width around chest height (a 0.26 m radius,
   // furrows and lean inside the box to head height — see `buildDeadTree`).
   // The limbs leave it overhead and the twigs are a centimetre or two thick —
