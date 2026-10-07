@@ -2039,7 +2039,7 @@ Numbers that did not match the value under them, now fixed:
 - **The doc's pattern paragraph** still opened "the kick's DIRECTION rotates as
   a string runs", which is the behaviour the one-envelope change removed. It
   now opens on how HARD.
-- **The viewmodel kick is still called a SPRING** in three places: the doc
+- **The viewmodel kick was still called a SPRING** in three places: the doc
   (which cites a `recoil.kick.speed` that no longer exists), `recoil.ts`'s
   `kick` block and `ViewModel.ts`. They also said `p.kick` overshoots
   negative, which it cannot: `RecoilAxis`'s haul stops at zero. All three now
@@ -2052,7 +2052,11 @@ the argument or a number. Neither copy the ticket names (~1861, ~1925)
 survived ticket 40.
 
 Checked: `npm run typecheck`; `npm run build`, with every gate passing; and
-`CONFIG.recoil` compared field by field before and after.
+`CONFIG.recoil` compared field by field before and after. The isolated-round
+timings were re-computed by stepping `RecoilAxis` with the shipped constants.
+The peaks land at 65 and 90 ms as quoted. The return to a tenth of peak comes
+at 269 and 439 ms, against the 266 and 434 that were quoted, so both copies
+now say "about 270 and 440".
 
 ### 46. Physics reference baselines missing for three maps
 
@@ -2080,7 +2084,10 @@ read `identical`, and so does Greyfen at `--steps 2400`. Harrowmead reads
 `within tol`, worst 1.1 mm, 0.4 mm of it vertical, under its 8.9 mm floor.
 
 `drop.mjs`'s header now says every shipped map is banked and a new map owes a
-bank. `plans/README.md`'s row says the same, plus Greyfen's step count.
+bank. `plans/README.md`'s row says the same. Both also say that a bare
+`--check` runs at 480 steps and so covers six maps. Greyfen does not settle at
+480 and needs its own `--check --steps 2400 greyfen`. (This commit's message
+calls a bare `--check` a full gate. That is wrong for that reason.)
 
 ### 47. Most of the footprint table understates its builders
 

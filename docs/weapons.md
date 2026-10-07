@@ -102,10 +102,10 @@ two meshes an arm, one per colour.
   the way out), which has an instant attack, a monotone return and nothing on
   the far side of neutral: a fade rather than a mechanism cycling, and two
   rounds 77 ms apart simply re-set it to 1, so an automatic looked like one long
-  shot. The second was a damped spring given a
-  velocity, the same idiom as `camera.land`, which put a rise and an overshoot
-  in it and made it accumulate — and was symmetric about its peak, which is
-  the reason neither recoil is a spring now (see "Recoil has a shape" below).
+  shot. The second was a damped spring given a velocity, the same idiom as
+  `camera.land`, which put a rise and an overshoot in it and made it
+  accumulate — and was symmetric about its peak, which is the reason neither
+  recoil is a spring now (see "Recoil has a shape" below).
   - **It is stepped EXACTLY at any `dt`, and the landing absorb's semi-implicit
     Euler must not be copied onto it.** The spring it replaced was 6 Hz, where
     `omega * dt` reaches 1.26 at 30 fps, far outside where that integrator
@@ -1209,8 +1209,8 @@ amplitude worth feeling it reads as rubber.
 [`src/core/recoilCurve.ts`](../src/core/recoilCurve.ts) is the model that
 replaced it, and this section is its argument — the source comments state the
 rule and point here. **Nothing about a gun wants to be where it started**, so a
-restoring force is the wrong idea at the root. What actually happens is three things with three
-different causes:
+restoring force is the wrong idea at the root. What actually happens is three
+things with three different causes:
 
 1. **The impulse.** The charge delivers its momentum while the bullet is in the
    barrel and for a few milliseconds of gas jet after it — 2-5 ms, which at any
@@ -1296,10 +1296,11 @@ back to the resting line:
 **That table predates the reference fit and its timings are the tuning of the
 day.** At the shipped `settle` the reaction is 59 ms aimed and 79 at the hip,
 and an isolated rifle round (a first shot, so `firstShotMult` included) peaks at
-65 and 90 ms and is back to a tenth of its peak 266 and 434 ms after that.
+65 and 90 ms and is back to a tenth of its peak about 270 and 440 ms after
+that.
 
-So an aimed weapon is a snap that is home in a twentieth of a second and a
-hip-fired one is a lift you watch come down — the same weapon, two mechanical
+In either tuning an aimed weapon is a snap and a hip-fired one is a lift you
+watch come down — the same weapon, two mechanical
 systems. `massExp` is what spreads the four rows: more mass takes longer to
 arrest and longer to drive back, and **neither of those is an angle.**
 
@@ -1308,11 +1309,11 @@ had to become the moment the kick got a rise. `1 - recoverFraction` of every
 kick goes into the player's own aim and never comes back; applied whole on the
 frame the trigger broke that is the permanent share (30% of the kick when this
 was written, 4.2% of the vertical and 9.5% of the lateral now) arriving as a
-step underneath a rise taking 20-85 ms — the exact artefact the rise exists to remove.
-`CameraSystem.owedPitch`/`owedYaw` are a bookkeeping bucket drained at the
-haul's own rate, so all of it lands by the time the sight is home and none of it
-before the sight has moved. **The total is unchanged**, which is why every walk
-figure in this file still holds.
+step underneath a rise taking 20-85 ms — the exact artefact the rise exists to
+remove. `CameraSystem.owedPitch`/`owedYaw` are a bookkeeping bucket drained at
+the haul's own rate, so all of it lands by the time the sight is home and none
+of it before the sight has moved. **The total is unchanged**, which is why every
+walk figure in this file still holds.
 
 **`CameraSystem.addFlinch` is the one aim kick that is 100% springy and must
 stay that way**: a hit *taken* is not a choice the player made, so a permanent
@@ -1438,9 +1439,8 @@ sweep wide enough to read as a shape is a sweep wide enough to rotate the
 kick. **It is not a difficulty change and that was
 checked rather than assumed**: `yawBias` scales and offsets the sweep exactly as
 it did the noise, so every round's mean lateral is unmoved and the rifle's
-permanent drift over 22 rounds was 0.176° under both models at the `yawPerShot`
-of the day. What moves is the
-SPREAD across magazines — 0.11..0.24° where the independent draw ran
+permanent drift over 22 rounds was 0.176° under both models at the
+`yawPerShot` of the day. What moves is the SPREAD across magazines — 0.11..0.24° where the independent draw ran
 −0.01..0.37° — and the springy mid-string peak, up about 8% (0.65 → 0.72° aimed)
 because five rounds pulling the same way go further than five rounds arguing.
 Re-run that pair rather than scaling if `yawPerShot` or `recoverFraction` moves.
@@ -1595,15 +1595,15 @@ reference match cut.** For the rifle's 24 rounds from the hip the per-shot
 multipliers sum to 15.25 on BOTH axes — one envelope — so the permanent share is
 **0.70° of climb and 0.15° of drift** (the drift off `yawPerShot`,
 `yawRecoverFraction` and the rifle's `yawBias` of 0.35, which is the lateral's
-mean), against the 10.6° and 2.4° they were before. The drift was 0.21° while
-the lateral ramped against the vertical and its multipliers summed to 21.27. Most of that is `recoverFraction` going 0.7 → 0.958 rather than
-anything in `pattern` — and its last step, 0.93 → 0.958, is what held the climb
+mean), against the 10.6° and 2.4° they were before. Most of that is
+`recoverFraction` going 0.7 → 0.958 rather than anything in `pattern` — and its last step, 0.93 → 0.958, is what held the climb
 at 0.70° when `pitchSettled` went 0.25 → 0.55. **`recoverFraction` is the first
 number to move back if the rifle proves too easy to hold**, 0.7 having been an
 explicit product decision that a fully-recovering recoil is decoration.
 `maxYaw` and `maxPitch` are untouched and neither binds on any weapon now; they
-are kept for what `addFlinch` queues onto the same axes. **All these figures are
-derived. Re-derive them rather than assuming they followed** whenever anything
+are kept for what `addFlinch` queues onto the same axes. (The drift read 0.21° while the lateral
+ramped against the vertical and its multipliers summed to 21.27.) **All these
+figures are derived. Re-derive them rather than assuming they followed** whenever anything
 in `pattern`, `pitchPerShot`, `yawPerShot` or `firstShotMult` moves.
 
 ### What the reference footage was, and what was taken from it
@@ -1704,8 +1704,9 @@ second: the hip is still the softer system, peaking later and climbing higher
 through a string, but it is not charged for the size of its kick twice.
 
 **The lean (`reachAds`/`reachHip`) is gated to strings because applied to
-everything it would have halved both the single-round shape and a grenade's
-flinch**, which is a balance change nobody asked it for. At the hip, before the
+everything it would have halved both the measured single-round figures and a
+grenade's two-second flinch**, which is a balance change nobody asked it
+for. At the hip, before the
 lean, the rifle's string climbed past 9° with no end in sight.
 
 **`maxPitch`/`maxYaw` were sized as a number of ROUNDS** — `maxYaw` at 0.09
@@ -1832,37 +1833,38 @@ DMR's 0.286 s against 0.35). Only a player firing them as fast as the weapon
 allows would collect it — a discount for spamming a precision weapon, which is
 the opposite of what a rate ceiling is for. Excluded, the DMR and the pistol fire
 shot one every time: full climb, minimum drift, nothing to learn and nothing to
-game. Their envelope is 1.0 on every round of a magazine while the rifle's and
-the carbine's run 1.25, 0.94, 0.87, 0.81, 0.74, 0.68, 0.61, 0.55, 0.55…
+game. Their envelope is 1.0 on every round of a magazine, while the rifle's
+runs 1.25, 0.94, 0.87, 0.81, 0.74, 0.68, 0.61, 0.55, 0.55… and the carbine's
+opens every burst again at 1.25, 0.94, 0.87.
 
 **`recoil.firstShotMult` (1.25) is what makes a burst have a punch and a settle
 rather than a flat ramp.** It was 1.6, and is 1.25 because the reference's
 opening round is 1.3x the ones behind it — measured as the first step of a
-28-round string against the mean of rounds 2-4. A weapon that has been sitting still and one that is
-mid-string are not the same weapon; without this they were, because shot 1 and
-shot 20 kicked identically. It is also what makes a tap distinct from a held
-trigger, which is the entire reason to tap. `Player` owns the string counter,
-beside `spreadBloom` and with exactly its lifecycle — raised by a shot, bled off
-by `stringResetTime` (0.35 s), and dropped by anything that takes the weapon
-away. **The string belongs to the WEAPON, not to the finger**, the same split
-`burstLeft` and `triggerHeld` already draw, so `completeSwap` clears it
-explicitly: the sidearm's `drawTime` of 0.34 s is a hundredth of a second inside
-the window, and without that line the pistol's first round would inherit the
-rifle's settled kick.
+28-round string against the mean of rounds 2-4. A weapon that has been sitting
+still and one that is mid-string are not the same weapon; without this they
+were, because shot 1 and shot 20 kicked identically. It is also what makes a tap
+distinct from a held trigger, which is the entire reason to tap. `Player` owns
+the string counter, beside `spreadBloom` and with exactly its lifecycle — raised
+by a shot, bled off by `stringResetTime` (0.35 s), and dropped by anything that
+takes the weapon away. **The string belongs to the WEAPON, not to the finger**,
+the same split `burstLeft` and `triggerHeld` already draw, so `completeSwap`
+clears it explicitly: the sidearm's `drawTime` of 0.34 s is a hundredth of a
+second inside the window, and without that line the pistol's first round would
+inherit the rifle's settled kick.
 
 **It does not apply to a weapon that is a string of one**, and the exclusion is
 the feature rather than an exception to it. `firstShotRamp` returns 1 when
 `Player.stringed` is false, which is the DMR and the pistol: every shot there is
 a first shot, so the multiplier would not be texture at all — just a flat 25%
 recoil increase wearing feel's clothing, and on the DMR's 1.35 that is 1.86°
-instead of 1.49° on every deliberate scoped round. Their `recoilMult` already carries the punch a
-single shot is supposed to have. The carbine's `burst` position is semi-automatic
-too and is deliberately **included**, because `burst > 1` means one pull is three
-rounds climbing as one motion, which is exactly the thing that has a first round
-in it; `burstCycle` 0.4 s exceeds the reset window, so every burst gets the
-punch. Switch either weapon to `semi` and it joins the DMR and the pistol on the
-excluded side, which is most of what that position is for — see the fire
-selector's own section.
+instead of 1.49° on every deliberate scoped round. Their `recoilMult` already
+carries the punch a single shot is supposed to have. The carbine's `burst`
+position is semi-automatic too and is deliberately **included**, because `burst
+> 1` means one pull is three rounds climbing as one motion, which is exactly the
+thing that has a first round in it; `burstCycle` 0.4 s exceeds the reset window,
+so every burst gets the punch. Switch either weapon to `semi` and it joins the
+DMR and the pistol on the excluded side, which is most of what that position is
+for — see the fire selector's own section.
 
 **The stance is the fourth term, and it is the one a player can answer
 immediately.** `adsMult` (0.55) was on its own for a long time; `crouchMult`

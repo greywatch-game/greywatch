@@ -87,9 +87,11 @@
  * frame from the shader under test: it is a test of nothing. Say so in the
  * commit, as `bank.mjs` asks.
  *
- * **Every shipped map is banked, so a check with no map named grades all of
- * them.** Sarab, Cinderhaven and Kurenai were first banked after S5b, at 480
- * steps (ISSUES.md 46). A NEW map owes a bank in the commit that ships it.
+ * **Every shipped map is banked, and a check with no map named grades all of
+ * them but Greyfen**, whose bank is at 2400 steps and which does not settle at
+ * the default 480 — check it on its own with `--steps 2400 greyfen`. Sarab,
+ * Cinderhaven and Kurenai were first banked after S5b, at 480 (ISSUES.md 46).
+ * A NEW map owes a bank in the commit that ships it.
  *
  * **The proving ground is not banked and `ref/.gitignore` says so.** Its extent
  * is an argument to `npm run proving`, so a ref taken at one regeneration is

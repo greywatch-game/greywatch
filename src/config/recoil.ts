@@ -46,9 +46,10 @@ export const recoil = {
    * which is the one place in this file the footage lost: the fit was 0.0109,
    * which reproduced the reference's 0.40 deg of lateral pull and read in play
    * as the reticle being thrown sideways and hauled back. **It moves as a PAIR
-   * with `yawRecoverFraction`**: their product is the walk, and 0.005 at 0.905
-   * cuts the swing that comes back to a fifth while leaving the walk within 4%
-   * of the fit's.
+   * with `yawRecoverFraction`**: their product is what a round permanently
+   * costs, and 0.005 at 0.905 holds that within 4% of the fit's while the
+   * swing that comes back fell from 0.67 to 0.20 deg aimed and from 1.71 to
+   * 1.00 at the hip, measured.
    */
   pitchPerShot: 0.0192,
   yawPerShot: 0.005,
@@ -188,7 +189,7 @@ export const recoil = {
      * shooter's REACTION before the haul begins: **59 ms aimed and 79 ms at the
      * hip** on the reference weapon. An isolated rifle round (a first shot, so
      * `firstShotMult` included) peaks at 65 and 90 ms and is back to a tenth
-     * of its peak 266 and 434 ms after that.
+     * of its peak about 270 and 440 ms after that.
      *
      * The aimed pair is MEASURED: the reference's muzzle tops out 58 ms after
      * the shot and is half home 160 ms after that. The footage is all ADS, so
@@ -546,9 +547,10 @@ export const recoil = {
    * It RISES and FALLS on `punchRise`/`punchFall`, a two-pole impulse
    * `CameraSystem` normalises so one round peaks at exactly these amplitudes,
    * 46 ms after the shot — within a dozen milliseconds of the roll beat and of
-   * each round's own peak through a string. **One event should arrive once.** It ACCUMULATES rather
-   * than restarting, and its angles are ONE direction drawn per shot and held
-   * (`CameraSystem.addPunch`), never noise re-rolled per frame.
+   * each round's own peak through a string. **One event should arrive
+   * once.** It ACCUMULATES rather than restarting, and its angles are ONE
+   * direction drawn per shot and held (`CameraSystem.addPunch`), never noise
+   * re-rolled per frame.
    * `docs/weapons.md` has the measurement each of those answers.
    *
    * The ROLL is `rollBeat` and opposes the weapon's `kickRoll` on purpose:
