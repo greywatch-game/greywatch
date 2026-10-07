@@ -1176,7 +1176,11 @@ shove is the CARTRIDGE. They are uncorrelated and in this kit they are
 frequently inverted: the pistol flips at 1.15 on a shove of 0.55 (the worst
 bore-axis offset in the game and the least mass to resist it), the LMG shoves
 0.9 and flips 0.7 (a full-power belt round soaked by the weight of the gun), and
-only the bolt gun tops both columns.
+only the bolt gun tops both columns. `recoilMult` is the MOMENT — how far the
+muzzle tips, and the only thing that reaches `pitchPerShot`. `recoilImpulse` is
+the SHOVE, and it reaches no angle at all: the settle spring's constants, the
+post-shot unsteadiness, the view punch's amplitude and the viewmodel's own
+travel.
 
 Conflating them is why the two heaviest weapons said "I am a big cartridge" the
 only way one number can — by ANGLE. The DMR threw the reticle **3.78° on every
@@ -1297,6 +1301,11 @@ haul's own rate, so all of it lands by the time the sight is home and none of it
 before the sight has moved. **The total is unchanged**, which is why every walk
 figure in this file still holds.
 
+**`CameraSystem.addFlinch` is the one aim kick that is 100% springy and must
+stay that way**: a hit *taken* is not a choice the player made, so a permanent
+share would ratchet the view skyward over one exchange — it queues nothing, the
+owed buckets being the only route into `pitch`/`yaw`.
+
 **The fourth term is the ACTION, and it is what makes a self-loader read as a
 MACHINE.** A rifle's recoil is not one impulse and a shooter does not feel it as
 one: there is the shot, then the carrier reaching the back of its travel and
@@ -1373,7 +1382,9 @@ slower `haul` chosen for smoothness took it past 5×. `kick.stackCap` (1.6) is a
 wall instead of a report, so the string cannot pass it however fast the weapon
 cycles and this bound is exact. It is a multiple of the WEAPON's own travel and
 not an absolute, or it would clip the bolt gun's single shot (2.10 kick units),
-which is not a string and has nothing to stack against.
+which is not a string and has nothing to stack against. **The aim has no
+shoulder and must not be given one**; what bounds that is `maxPitch`/`maxYaw`,
+which are about a crossfire.
 
 
 **The view punch knows what is in your hands now**, which it did not: every
@@ -1442,7 +1453,9 @@ braces against a climb they knew about before the trigger broke*, which is most
 of what a grip is and why nearly all of the vertical returns on its own; a
 lateral cannot be pre-loaded against, is not known until it has happened, and
 what a shooter does about it is re-aim. More of it is therefore aim and less of
-it is spring.
+it is spring. That split is the lever between the two things a lateral does —
+the SWING that is hauled back and reads as the reticle being thrown sideways,
+and the WALK that turns your aim and stays turned.
 
 Measured after, same probe, same strings:
 
@@ -1568,11 +1581,13 @@ share is **0.70° of climb and 0.21° of drift** (the drift off `yawPerShot` and
 `yawRecoverFraction`, which are not the vertical's pair), against the 10.6° and 2.4° they
 were before. Most of that is `recoverFraction` going 0.7 → 0.958 rather than
 anything in `pattern` — and its last step, 0.93 → 0.958, is what held the climb
-at 0.70° when `pitchSettled` went 0.25 → 0.55. `maxYaw` and `maxPitch` are untouched and
-neither binds on any weapon now; they are kept for what `addFlinch` queues onto
-the same axes. **All these figures are derived. Re-derive them rather than
-assuming they followed** whenever anything in `pattern`, `pitchPerShot`,
-`yawPerShot` or `firstShotMult` moves.
+at 0.70° when `pitchSettled` went 0.25 → 0.55. **`recoverFraction` is the first
+number to move back if the rifle proves too easy to hold**, 0.7 having been an
+explicit product decision that a fully-recovering recoil is decoration.
+`maxYaw` and `maxPitch` are untouched and neither binds on any weapon now; they
+are kept for what `addFlinch` queues onto the same axes. **All these figures are
+derived. Re-derive them rather than assuming they followed** whenever anything
+in `pattern`, `pitchPerShot`, `yawPerShot` or `firstShotMult` moves.
 
 ### What the reference footage was, and what was taken from it
 

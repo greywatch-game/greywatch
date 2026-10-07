@@ -68,8 +68,8 @@ match smoke test (`npm run build:server && npm run server`, two clients).
 | ~~[37](#37-propsts-drop-the-mathrandom-defaults)~~ | P2 — done | `Props.ts`: drop the `Math.random` defaults |
 | ~~[38](#38-texturests-has-its-own-prng)~~ | P3 — done | `textures.ts` has its own PRNG |
 | ~~[39](#39-frameprofile-depends-on-a-private-babylon-internal)~~ | P3 — done | `FrameProfile` depends on a private Babylon internal |
-| [40](#40-claudemd-is-over-its-own-cap) | P3 | `CLAUDE.md` is over its own cap |
-| [41](#41-filesmd-has-no-scripts-section) | P3 | `FILES.md` has no `scripts/` section |
+| ~~[40](#40-claudemd-is-over-its-own-cap)~~ | P3 — done | `CLAUDE.md` is over its own cap |
+| ~~[41](#41-filesmd-has-no-scripts-section)~~ | P3 — done | `FILES.md` has no `scripts/` section |
 | [42](#42-findingsmd-1-carries-closed-history) | P3 | `FINDINGS.md` §1 carries closed history |
 | [43](#43-dead-and-over-exported-symbols) | P3 | Dead and over-exported symbols |
 | [44](#44-stale-comments-in-gamets-and-docsgamemd) | P3 | Stale comments in `Game.ts` and `docs/game.md` |
@@ -1699,6 +1699,87 @@ Also:
 **Acceptance.** Under ~1,500 lines; no rule lost (diff each companion to
 confirm the argument arrived verbatim).
 
+**Done.** `CLAUDE.md` is 1,505 lines, down from 2,013. Each over-cap section
+was cut by the spine's own rule: argument first, then rules only that
+subsystem's author can break. Every cut passage was checked against its
+companion. Where the companion already carried it (most of them), the
+`CLAUDE.md` copy went. Where it did not, the passage was MOVED verbatim.
+
+| section | before | after |
+| --- | --- | --- |
+| Project overview | 158 | 65 |
+| First person / loadout | 91 | 80 |
+| The interface | 120 | 80 |
+| The scene has (almost) no Babylon lights | 224 | 125 |
+| The map is data, not code | 187 | 107 |
+| Visual meshes and collider proxies | 130 | 104 |
+| Vehicles | 92 | 80 |
+| Measuring a frame | 95 | 65 |
+| Multiplayer | 148 | 99 |
+| Conventions | 172 | 105 |
+
+The four long sections (wiring, colliders, metadata, conventions) total 346
+lines against ~340.
+
+What arrived in the companions verbatim:
+- `docs/audio.md`: the VOICE/MOMENT/BEAT/BLAST argument with the
+  `report.pitch` inversion, and "nothing in it is scheduled".
+- `docs/build.md`: the WebGPU gate's cost in reach (a section of its own),
+  the deleted GLB modules, and the seventeen recordings. That last item
+  replaces a stale "TEN audio files" paragraph.
+- `docs/rendering.md`: the map's grime paragraph whole, `shadowWindow.ts`,
+  and the water's "sampled from nothing" lead.
+- `docs/world.md`: the shipped maps one line each, Sarab spending the levers,
+  the proving ground paragraph, the road depth step, the road-ink rule, and the
+  body-at-rest-in-a-collider measurement.
+- `docs/weapons.md`: what the SHOVE reaches, the `addFlinch` argument, the
+  aim having no shoulder, the SWING/WALK sentence, and `recoverFraction` as
+  the first lever back.
+- `docs/ui.md`: the row-of-picks argument. The doc cited that rule twice but
+  never stated it.
+- `docs/vehicles.md`: the unforced-world-matrix sentence.
+- `docs/profiling.md`: the phase-list sentence.
+- `docs/multiplayer.md` needed nothing. Every cut there was already in it, or
+  in `docs/states.md` or `docs/ui.md`.
+
+Each section's pointer paragraph now names what moved.
+
+Fixed along the way:
+- The stale `undefined/` line is deleted.
+- `docs/vehicles.md`'s capability table said `flies` had nine readers where
+  its flight section lists ten. It was missing `gearLoad`.
+- Two recoil figures in `CLAUDE.md` disagreed with `docs/weapons.md`:
+  - "two rounds in three" against "roughly a third", the latter matching
+    `recoil.ts`.
+  - 2.9x against a measured 3.03x.
+
+  Neither was carried across. The companion's figures stand.
+
+Left for later:
+- `docs/build.md`'s `audio/` bullet still quotes the ten-file kit ("Eight
+  reports and one magazine change", "2.45 of 44").
+- `docs/world.md`'s road-ink paragraph still argues from the retired
+  `addOutline` hull.
+
+Two rules came out in the first pass and were put back on review, because an
+author outside the subsystem can break each: the `report.pitch` inversion with
+"the ROOM is the game's" (the old overview had said both reach outside
+`audio/`), and "each sound cue comes from whichever side actually knows"
+(the addressed crack).
+
+Checked: section line counts, and a read-through of every spliced section.
+Every bolded claim in the old file was then matched against the new
+`CLAUDE.md`, the companions and the source headers, and each one that left
+`CLAUDE.md` was found in a companion.
+
+`scripts/check-audio.mjs` pins countable sentences to the file they live in.
+Its row for "which is what keeps N files serving" now points at `docs/audio.md`,
+where that sentence moved. It also gained two rows for `docs/build.md`'s new
+"SEVENTEEN audio files … but for those seventeen", since the unguarded copy
+that sentence replaced had drifted to TEN.
+
+Checked: `npm run build`, every gate included.
+
 ### 41. `FILES.md` has no `scripts/` section
 
 **Area:** `FILES.md`
@@ -1714,6 +1795,34 @@ unmapped:
 
 Add a `scripts/` section, one line per file, in the same style. Add new files
 from tickets 15, 16, 19, 22–34 as they land.
+
+**Done.** `FILES.md` has a `scripts/` section after `server/`, one entry per
+file for all 27 (the 25 at the top and `lib/mapgen.mjs`, `lib/footprints.mjs`
+from tickets 15 and 16). Each entry says what the script does, read off its
+header, and which npm script runs it: the four build gates in the order
+`npm run build` runs them, the bake and its parity check, the two browser
+helpers, `kit:hash`, `loc`, the audio pair and `ffmpeg.mjs`, the icon, foam
+and proving-ground generators, the seven map generators with their flags,
+and the two `lib/` modules. `src/vite-env.d.ts` is mapped under `src/`. The
+two Vite configs are mapped beside `main.ts`, since each carries real code
+under a contract header. `recoilCurve.ts` and every file split out by tickets
+15, 16, 19 and 22–34 had already been added as those tickets landed. The
+passing `check-proving.mjs` mentions under `proving/` stay, because they say
+which string each file carries. The file's opening code fence was missing,
+so the `server/` block rendered as prose and the fence after it opened the
+rest. It now opens before `server/` and closes once at the end.
+
+No stale entries: every listed path exists. 431 tracked files are mapped,
+up from 401. The tracked files still unmapped are outside the module map by
+its own convention. `public/manifest.webmanifest`, `public/icons/` and
+`server/README.md` are named in their directory's line. The rest are config
+(`tsconfig.json`s, `package.json`), docs, `audio/`, `shots/`, `textures/`,
+and the scripts under `plans/` and `.claude/skills/`, which their own
+README and SKILL files map.
+
+Checked: a script that walks `FILES.md`'s tree into full paths and compares
+them with `git ls-files`, before and after. Zero unmapped files remain under
+`src/`, `server/` (code) and `scripts/`, and zero listed paths are missing.
 
 ### 42. `FINDINGS.md` §1 carries closed history
 

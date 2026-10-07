@@ -136,7 +136,7 @@ const shippedKb = +(
 const CLAIMS = [
   ["CLAUDE.md", /and (\w+) audio files/, [rows]],
   ["CLAUDE.md", /but for those (\w+)\./, [rows]],
-  ["CLAUDE.md", /which is what keeps (\w+) files serving/, [rows]],
+  ["docs/audio.md", /which is what keeps (\w+) files serving/, [rows]],
   ["docs/audio.md", /\*\*(\w+) files sit on top of it/, [rows]],
   ["docs/audio.md", /([\d.]+) KB downloaded once, ([\d.]+) of the (\d+) mono-seconds/,
     [shippedKb, +spent.toFixed(2), manifest.budget.decodedSeconds]],
@@ -146,6 +146,8 @@ const CLAIMS = [
   ["docs/audio.md", /(\w+) masters carry (\w+) rows/, [masters, rows]],
   ["docs/audio.md", /(\w+) masters and (\w+) cuts\./, [masters, rows]],
   ["docs/audio.md", /they carry six of the (\w+) rows/, [rows]],
+  ["docs/build.md", /and (\w+) audio files/, [rows]],
+  ["docs/build.md", /but for those (\w+)\./, [rows]],
   ["docs/build.md", /\(([\d.]+) KB shipped, (\w+) sounds off (\w+) masters\)/,
     [shippedKb, rows, masters]],
 ];

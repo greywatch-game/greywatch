@@ -5,6 +5,7 @@ The module map, one line per file, stating what it owns. Split out of
 subsystem contracts under [`docs/`](docs/) that it points to carry the rules
 these modules obey; this file is for finding your way to the right one.
 
+```
 server/               # The authoritative match server. Node, NullEngine, no
   index.ts            #   rendering and no canvas — see server/README.md.
                       #   Process entry: /health, /matches, the ws listener and
@@ -48,7 +49,141 @@ server/               # The authoritative match server. Node, NullEngine, no
                       #   budget this process has. Times every step, files them
                       #   by bots in contact, and names the spikes
   parity.ts           #   Fingerprint dump for `npm run parity`
-```
+scripts/                      # Node tooling, run by hand or by `npm run build`,
+                              #   never shipped. Plain .mjs outside both
+                              #   tsconfigs. The game's own code is reached
+                              #   through Vite (a dev server, a browser, or
+                              #   ssrLoadModule), except the few .ts files
+                              #   imported by name under Node's type stripping
+                              #   (roadPaths.ts, roads.ts, rng.ts), which
+                              #   therefore hold only erasable syntax. Each
+                              #   header carries its argument, and package.json
+                              #   says which npm script runs which file
+  check-collision.mjs         # BUILD GATE, first: refuses a map whose
+                              #   collision bake is older than its layout and
+                              #   heights (collision-hash.mjs's hash), the
+                              #   DEV-only maps included
+  check-deep-imports.mjs      # BUILD GATE: refuses a deep static import into
+                              #   @babylonjs/core under src/ and main.ts — the
+                              #   one absolute rule tsc cannot see. server/ is
+                              #   outside it on purpose
+  check-audio.mjs             # BUILD GATE: audio/ stale against its masters,
+                              #   over its mono-seconds budget, an encoded file
+                              #   samples.ts does not load (or a url it loads
+                              #   with no row), a missing output, or a doc's
+                              #   count of the sounds disagreeing with the
+                              #   manifest. Needs no ffmpeg
+  check-proving.mjs           # BUILD GATE, last: greps dist/ and dist-server/
+                              #   for the four proving-ground sentinels, so the
+                              #   DEV-only map provably did not ship. Never
+                              #   scans dist-server-dev/, where it belongs
+  collision-hash.mjs          # The map table (MAPS, and DEV_MAPS kept apart)
+                              #   and the source hash, shared by the bake and
+                              #   its check so the two cannot hash different
+                              #   files. A new map adds its row here
+  bake-collision.mjs          # `npm run collision [-- <map>]`: builds each map
+                              #   in a real Chromium against the dev server and
+                              #   writes src/world/<map>/collision.ts — the
+                              #   boxes the authority rebuilds its world from,
+                              #   stamped with the hash the gate checks
+  check-world-parity.mjs      # `npm run parity`: the world the server rebuilds
+                              #   from the bake against the one a browser
+                              #   builds, compared by NAV GRAPH
+                              #   (world/fingerprint.ts) rather than by box. The
+                              #   DEV-only maps cost a second, dev-mode server
+                              #   build
+  capture-map-shots.mjs       # `npm run shots`: photographs each map from its
+                              #   ui/mapShots.ts vantage into shots/<id>.avif,
+                              #   the menu's backdrop — no HUD, no bodies, the
+                              #   lamps lit, the scene READY. HEADED, and needs
+                              #   a real GPU
+  dev-server.mjs              # Starts a Vite dev server for the browser-driven
+                              #   scripts (and plans/webgpu-ref/) and reliably
+                              #   stops it: node on vite.js, never npx or the
+                              #   .bin shim, which orphan the server
+  browser.mjs                 # launchClient — the Chromium those scripts
+                              #   drive, and the two WebGPU facts a bare launch
+                              #   gets wrong (the flag, and the full binary
+                              #   rather than the headless shell). A script
+                              #   timing out on window.__celshock is read here
+                              #   first
+  kit-hash.mjs                # `npm run kit:hash`: fingerprints every kit
+                              #   builder over every placement, and every
+                              #   scatter prop over fixed seeds and foliage
+                              #   rungs, under a NullEngine — the DRAWING and
+                              #   the COLLIDERS hashed apart, so a refactor
+                              #   proves it moved nothing. `--feet` measures the
+                              #   kinds against lib/footprints.mjs. Not a gate
+  loc.mjs                     # `npm run loc`: how big the project is, off `git
+                              #   ls-files` — hand-written code split into
+                              #   code, comment and blank, apart from the map
+                              #   data, the generated bakes and the docs. Not a
+                              #   gate
+  encode-audio.mjs            # `npm run audio`: cuts and encodes every master
+                              #   in audio/manifest.json, writing back the two
+                              #   fields check-audio.mjs reads (sourceHash,
+                              #   decoded). The cut is the manifest's, never
+                              #   the master's. Needs ffmpeg
+  measure-audio.mjs           # `npm run audio:measure`: where the numbers in a
+                              #   trim come from — envelope, bands, width, sum,
+                              #   onset, room, over the CUT — and `--decode`,
+                              #   which boots the game and asks whether every
+                              #   row decoded. Decides nothing
+  ffmpeg.mjs                  # The one place ffmpeg is found and run, and
+                              #   MASTER, the rate and depth audio/src/ claims —
+                              #   shared by the two audio scripts
+  generate-icons.mjs          # `npm run icons`: the PWA icons in public/icons/,
+                              #   the HUD's flag hexagon in amber, PNGs encoded
+                              #   by hand with zlib. Deterministic
+  generate-water-textures.mjs # `npm run textures`: the water's foam mask,
+                              #   textures/water-foam.png, seeded through
+                              #   world/rng.ts. The normal map is not coming
+                              #   back
+  generate-proving-ground.mjs # `npm run proving`: the DEV-only proving ground
+                              #   (src/world/proving/), ENGINE_UPGRADE.md S0's
+                              #   load. `--play`/`--margin` pick the variant.
+                              #   Not a level
+  generate-hollowmere.mjs     # `npm run hollowmere`: SEEDS the night village's
+                              #   layout.ts and heights.ts — the design
+                              #   authored, the transcription CHECKED (nothing
+                              #   in the water, on a road or on a slope, every
+                              #   door onto somewhere). Re-running discards
+                              #   editor edits, and owes the collision rebake
+                              #   of that map and `npm run parity`. `--probe`,
+                              #   `--refusals`, `--claims`, `--dry`
+  generate-greyfen.mjs        # `npm run greyfen`: the same for the jungle
+                              #   valley, plus `--at`/`--point` (the floor over
+                              #   a box or at one spot) and `--stands` (how the
+                              #   forest fitted)
+  generate-coldharbour.mjs    # `npm run coldharbour`: the same for the town on
+                              #   the bay. `--probe`, `--refusals`, `--claims`,
+                              #   `--dry`
+  generate-harrowmead.mjs     # `npm run harrowmead`: the same for the farming
+                              #   vale, a road crossing the brook only where it
+                              #   fords. `--probe`, `--refusals`, `--claims`
+  generate-sarab.mjs          # `npm run sarab`: SEEDS the desert town — dunes,
+                              #   the districts flattened, the wadi cut. Its
+                              #   header argues why a map is seeded at all
+  generate-cinderhaven.mjs    # `npm run cinderhaven`: SEEDS the volcanic
+                              #   island, where the FLOOR is the level — five
+                              #   passes in order, the waterfront derived from
+                              #   where the ground meets the sea. `--probe`,
+                              #   `--roads`
+  generate-kurenai.mjs        # `npm run kurenai`: SEEDS the temple valley,
+                              #   240 m. `--probe`, `--plan`, `--refusals`
+  lib/mapgen.mjs              # What the seven generators share: the seeded
+                              #   stream (world/rng.ts's mulberry32), the
+                              #   floor's noise, the placement arithmetic, the
+                              #   text a layout is written in, and the two
+                              #   printers. A helper needing a generator's state
+                              #   is a FACTORY; a change owes every map
+                              #   regenerated byte-identical
+  lib/footprints.mjs          # FOOT, LITTER, DOOR_FACES/FRONTS and stairRun:
+                              #   the ground each kit kind takes and its ways
+                              #   in, for every generator and the map-layout
+                              #   skill. MEASURED off the builder by
+                              #   `npm run kit:hash -- --feet`, and an edit
+                              #   re-seeds every map it moves
 index.html          # The head, and NO interface CSS beyond the two things shown
                     #   while there IS no interface: a black background (so a
                     #   dev reload does not flash white) and the boot screen —
@@ -63,6 +198,19 @@ main.ts             # Bootstrap. Imports src/ui/base.css FIRST. Awaits the two
                     #   await on its load plate, paints before the constructor,
                     #   fades it on the first drawn frame, or fills plate and
                     #   note with one of the four failures.
+vite.config.ts      # The client build, and the two plugins only it can hold:
+                    #   the DEV-only layout writer the editor saves through
+                    #   (WRITABLE, the literal table of files it may write —
+                    #   three per map) and the build-only service worker
+                    #   substitution (src/pwa/sw.js's PRECACHE, split
+                    #   immutable/mutable, into dist/sw.js). Also: never
+                    #   inline a sound, and optimizeDeps.exclude for Havok.
+                    #   Outside tsconfig's include, so it stays thin
+vite.server.config.ts # Builds server/ into dist-server/, for
+                    #   `npm run build:server` and `simulate` — and with
+                    #   `--mode development` into dist-server-dev/ with
+                    #   import.meta.env.DEV forced true, the only way the
+                    #   authority runs the proving ground (`simulate:dev`)
 public/             # Copied to dist/ VERBATIM — unhashed URLs named by hand
                     #   (manifest.webmanifest, icons/ from `npm run icons`).
   profile_viewer.html # Where a frame-profiler capture is READ: paste or drop a
@@ -81,6 +229,8 @@ public/             # Copied to dist/ VERBATIM — unhashed URLs named by hand
                     #   docker-compose.prod.yml bind-mounts the box's own copy
                     #   over this one, which is what makes "on the box" true
 src/
+  vite-env.d.ts     # `/// <reference types="vite/client" />` and nothing else:
+                    #   what types import.meta.env and Vite's asset imports
   config/           # ALL tunable constants (no magic numbers in code).
                     #   One module per subsystem; import `CONFIG` from "…/config"
     index.ts            # Composes CONFIG from the sections. The ONLY importer of

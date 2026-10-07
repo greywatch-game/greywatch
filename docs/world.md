@@ -399,6 +399,40 @@ general rather than details of that map:
   below it: a 10.3 m flight and its 2.4 m landing in half the depth less a
   wall), so a plot too shallow for one is given the low brick tower instead.
 
+**The shipped maps, one line each**:
+**Hollowmere** (a night village; no wall and no rim, and its whole horizon
+costs 180 m of margin because `fogEnd` is 78 — that number is the FOG's, not
+the map's), **Greyfen** (a jungle valley; no wall and no rim either, on the
+same 180 m for the same `fogEnd`, and the map where a river runs out through
+the margin), **Coldharbour** (a harbour town on a BAY — `size: 320` inside
+180 m of ground, hills on three sides and the open sea across the fourth, a
+wadeable low-water harbour cut into the middle of it, and what the first three
+overrides exist for), **Harrowmead** (`size: 400` inside 1600 m of ground, no
+wall and no rim — the country runs out into the fog), **Sarab** (`size: 900`
+inside 1500 m of ground — a desert town, and the map `ENGINE_UPGRADE.md` exists
+for), **Cinderhaven** (`size: 1500` inside 2000 m of ground and 4,600 m of sea
+— a harbour town on a volcanic island, at night, the biggest map in the tree)
+**and Kurenai** (`size: 240` inside 440 m of ground — a temple town in a
+mountain valley as the maples turn, built against a reference frame,
+`reference-media/new-map.jpg`; infantry only, and cut down from 750 m because
+the same kit over three times the side read as sparse and cost 88 fps where it
+now runs 154). **Sarab is the map that SPENDS the levers**, stating six of the
+eight rows below, and the first to state a `ParticleSpec.volume` — the mote
+field emitted around the EYE, without which `count` is a density that scales
+with a map's AREA.
+
+**There is an eighth entry in `MAPS` and it is DEV-ONLY and not a level.**
+`src/world/proving/` is the generated load `ENGINE_UPGRADE.md` S0 measures
+against, written by `npm run proving`. **`MAPS` is an `import.meta.env.DEV`
+ternary and must stay one**: that fold is the only thing keeping 900 kB of it
+out of both bundles, and a `push`, a `filter` or a `const dev =
+import.meta.env.DEV` one line up would silently stop working.
+`scripts/check-proving.mjs` enforces that on the end of `npm run build`, over
+`dist/` and `dist-server/` both. **It has a collision bake, so the AUTHORITY
+runs on it too** — `DEV_MAPS` in `scripts/collision-hash.mjs`, kept out of the
+`MAPS` beside it because `npm run parity`'s server half is a production build,
+and reached through `npm run simulate:dev`.
+
 No two maps share a module in any direction.
 
 ## Eight things that look global and are the map's
@@ -1014,7 +1048,8 @@ between two sheets at the same range, so a millimetre of separation is a
 millimetre however far away the junction is. The FLOOR is not: `ROAD_TOP` is
 10 mm of real geometry, and what the depth buffer can tell apart at 500 m is
 tens of centimetres, so the lift that keeps a road off the ground under your
-feet is spent long before the far end of a big map. Past that the slab and the
+feet is spent long before the far end of a big map — by ~100 m against the
+depth buffer's own step. Past that the slab and the
 floor are the SAME depth, the tie is broken per pixel, and it is broken
 differently on the next frame. **Measured on Sarab from 40 m up — a
 helicopter's height, which is the vantage that made this a bug report, because
@@ -1066,6 +1101,10 @@ the carriageway meets the verge: a road's outline never thinned (`updateOutlineS
 measures to a bounding sphere the camera stands inside, so a map-spanning merge is
 always at full width), and on Hollowmere's square the line is the difference between
 two frames you have to flick between to tell apart.
+
+**That hull is retired now, and with it the rule: a road is not inked and needs
+no rule to stop it** — `CelInk` finds an edge where depth STEPS or BENDS, and
+two coplanar sheets do neither.
 
 **A prop sown on a road stands on the ROAD.** Everything the scatter pass places is
 put down against the floor, and a carriageway is a sheet lying on top of that floor,
@@ -2279,6 +2318,18 @@ Layout gotchas that have already cost time:
 `Player.probeGround` reads the `WorldBox` list through `ObstacleField.groundAt`
 rather than casting a ray (`CLAUDE.md`, the collider section). The differential
 below is what the switch rested on, kept so nobody re-runs it from scratch.
+
+**That probe is a POINT and a body is not, so a body can come to REST inside a
+collider — and no sweep gets it out again.** Gravity is added to `y` and never
+swept, so a body coming down beside a 0.16 m guard rail arrives in the timber,
+and `moveWithCollisions` from an embedded start is an EJECTION rather than a
+sweep: measured in a round, a body standing in a rail left it at a seventh of
+walking pace and pressing AWAY from the rail moved it the other way. That is why
+every body owes a push-out through `ObstacleField.resolve` (`CLAUDE.md`, the
+collider section). The authority agrees by construction: `server/validate.ts`
+runs the same query and calls a position deeper than `nav.bodyRadius` a noclip,
+so a body welded in a prop is one being corrected back into it every input
+tick.
 
 **Sampling the whole map on a half-metre grid at four standing heights is the
 WRONG test and says so loudly**: 1.2% of 914k samples disagree on Hollowmere,

@@ -214,7 +214,9 @@ which is what keeps the recording loop free of strings. The brackets are in
 after it**: `tick`,
 `updateGameplay`, `updateNetWorld` and `updateWorld` are where the frame's
 order is already declared with the argument for it written down, so **the phase
-list IS that order** and no system had to be taught the profiler exists.
+list IS that order** and no system had to be taught the profiler exists. A
+phase is a name in `PHASES`, a parent in `PARENT_OF` and a `begin`/`end` pair;
+the ring, the report and the trace are all sized and labelled off that list.
 
 ```
 frame                       the whole tick, wall to wall

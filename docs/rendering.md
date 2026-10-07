@@ -201,6 +201,28 @@ Six rules about it, and the first is the one everything else rests on:
   glow builds its halo from `material.emissiveColor` and never saw the
   vertex buffer. `walk` skips anything whose material is not a `ShaderMaterial`.
 
+**A map's GRIME is the MAP's and its ramp is not** (`EnvironmentSpec.wear`
+against `CONFIG.wear`), and the split is the one every override in this file
+makes: how splash-back and rising damp climb a wall is physics and is the same
+in every village, while what colour a place's dirt is and how much of it there
+is are claims about that place. Absent is CLEAN, so a map that says nothing is
+unaffected. **What the BAKE stores is a straight LINE and never the curve** —
+1 at the footing, 0 at `wear.height`, SIGNED above it and clamped by nobody —
+because a box part has two vertical samples and the rasteriser joins them with
+a straight line whatever is written there, so a baked curve arrives as a wash
+up the whole wall and a clamp at the eaves drags the stain's edge up with it.
+The falloff, the strength and the GRAIN that breaks the tide line into runs are
+all uniforms, which is what lets a map be dirtied without a rebuild and why the
+editor's work light re-derives it with every other palette field. **It is also
+only on the OUTSIDE, and the BAKE decides that rather than anything a builder
+declares** — a vertex steps `wear.shelterProbe` along its own NORMAL and is
+clean if a collider stands over that spot, so a wall is dirty on the street and
+dry in the parlour. **That step has to clear the deepest EAVES in the kit and
+stay inside its shallowest ROOM**, so a structure that overhangs further than a
+jettied townhouse owes it a look. **Sarab is the one that INVERTS** — blown
+dust is LIGHTER than the wall it settles on, where every other map's dirt is wet
+and darker — so nothing may assume the term only ever darkens.
+
 The same buffer's green channel gates the cel shader's **albedo weathering**, a
 slow value-noise drift over world position that stops a 48 m merged block
 arriving as one flat tone. It is keyed on position rather than on anything
@@ -1750,6 +1772,10 @@ focus moves), casters are the map's merged static meshes re-registered every
 round via `shadows.setCasters(map.visuals)` (skipping anything flat with
 `metadata.noShadowCaster`).
 
+**Where a window STANDS is `core/shadowWindow.ts`** — one texel snap every map
+places itself with, because two copies of it is two maps looking at two places
+off one focus.
+
 ### The world's map records BACK faces, and the foliage has a map of its own
 
 **The world's depth map stores the FAR side of every caster**
@@ -2471,6 +2497,10 @@ same geometry. Three things follow and all three are load-bearing:
   of a grid that would otherwise stand wherever the player last did.
 
 ### The wave field is analytic, and that is a rule
+
+**Water is a MIRROR with a dark body under it, and it is SAMPLED FROM NOTHING** —
+directional wave trains and no normal map, re-adding which brings back four
+rules that existed only to hide its lattice.
 
 **There is no normal map and there must not be one again.** The surface was
 three scrolled, rotated, mutually-warped layers of a tiling fBm normal map, and

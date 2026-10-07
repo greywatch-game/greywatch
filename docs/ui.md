@@ -76,6 +76,12 @@ scaled screen is a scaled 44 px target — and the pause was the last one on it,
 so the ladder went with it. A new screen fits a phone by its floors, never by a
 transform.
 
+**A ROW OF PICKS IS A GRID OF EQUAL SHARES, NEVER A WRAPPING FLEX ROW** — a flex
+row cannot be squeezed below its own longest word, so where it breaks is a
+`flex-basis` tuned per viewport and a stranded button nothing but a screenshot
+can catch; N items in `grid-auto-flow: column` are N equal shares at every
+width, and a narrow viewport changes the COUNT rather than the break.
+
 **The boot screen is the one piece of interface that is not in this directory**,
 and the exception is what defines it: it covers the stretch before any module
 has evaluated, so `src/ui/` could not draw it — the bundle it would be drawn by

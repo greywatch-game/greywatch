@@ -125,6 +125,21 @@ which it got. That is the whole of what makes an authored asset admissible
 here: **the game is still whole with every file in `audio/` deleted.** A new
 sound that cannot make that claim does not belong in this pipeline.
 
+**A sample belongs to a VOICE, never to a weapon**, which is what keeps
+seventeen files serving everything that makes a noise: to a `ReportVoice` (one
+file is the tank's cupola, the truck's remote station and the gunship's chin
+turret — one gun on three mounts), to a MOMENT (every weapon in the kit plays
+the same magazine change, told apart by `actionPitch`/`actionVol`), to a BEAT
+(a gesture placed as fractions of a `shotInterval` cannot be one file), or to a
+BLAST, of which this game has exactly ONE — `blastAt` takes a `power`, so one
+recording is every explosion in the game: a grenade, a tank shell, a rocket and
+a mine. **A weapon's `report.pitch` is NOT spent on its own sample**, the eight
+scalars being deviations from the reference report that a recording of that
+weapon has already made — **and a SHARED recording inverts that**, which is the
+rule rather than an exception to it: the magazine change, the bolt's four and
+the grenade's one have said nothing about what they are going into, so the
+scalars ARE spent on them.
+
 ## The budget is SECONDS, not bytes, and the measurement is why
 
 A decoded `AudioBuffer` costs
@@ -338,7 +353,8 @@ next, so in play the ranking has only ever been handed a list of one.
 caller uses to tell one emitter from another, **called every frame rather than
 when something starts**, with the range gate and its hysteresis inside the voice
 class rather than at the call site. What is being tracked is not
-somebody lighting a fire; it is a fire being within earshot.
+somebody lighting a fire; it is a fire being within earshot. **Nothing in it is
+scheduled**, `Sfx`'s own invariant.
 
 **Where the two part company is what a held world is owed, and the difference
 is the whole argument for where the push lives.** `enginesOff` exists because a

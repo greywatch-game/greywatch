@@ -69,7 +69,7 @@ it is the same fact asked the other way round, and still never a kind:
 | the block | the question | what it gates |
 | --- | --- | --- |
 | `VehicleSpec.gun` | `Vehicle.armed`, or the block where its numbers are wanted | the trigger, the HUD's loader row, the gun marker, an AI driver's lay-and-fire, the authority's rate gate on a claimed shell — listed below |
-| `VehicleSpec.flight` | `Vehicle.flies` | the drive block, the attitude, the wire's altitude, whether a bot may take the chair, the leash, the shadow focus, the collective's buttons and the authority's two bounds — nine readers, listed in the flight section |
+| `VehicleSpec.flight` | `Vehicle.flies` | the drive block, the attitude, the wire's altitude, whether a bot may take the chair, the leash, the shadow focus, the collective's buttons, the authority's two bounds and the running gear's load — ten readers, listed in the flight section |
 
 The first, in full:
 
@@ -3416,10 +3416,12 @@ The second is that **`moveWithCollisions` opens with `getAbsolutePosition()`,
 and on the AUTHORITY nothing had ever computed one.** That value is whatever
 `computeWorldMatrix` last wrote; on a client the render walk writes it once a
 frame, so nothing in this tree ever had to say so. The server does not render.
-Every hull on it swept from the origin its collider box was built at — so a
-tank asking for 11 m/s made 1, every hull was ejected sideways at a constant
-3.1 m/s out of the pile of colliders standing at 0,0 whatever its route said,
-and a bot crew took two minutes to cross ground it covers in twenty seconds.
+A node that is merely MOVED does not report itself out of sync, so its FIRST
+read is what it returns for the life of the process. Every hull on it swept
+from the origin its collider box was built at — so a tank asking for 11 m/s
+made 1, every hull was ejected sideways at a constant 3.1 m/s out of the pile
+of colliders standing at 0,0 whatever its route said, and a bot crew took two
+minutes to cross ground it covers in twenty seconds.
 It was there for as long as bots have crewed anything and nothing could see it,
 because the only tool that watches a headless round prints tickets and kills
 rather than positions. `narrowedMove` forces the matrix now, which is one 4x4
