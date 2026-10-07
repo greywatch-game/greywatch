@@ -56,7 +56,7 @@ const DATE_FRUIT = "#8a5a2a";
 export function buildPalm(
   scene: Scene,
   mats: CelMaterialFactory,
-  rng: () => number = Math.random,
+  rng: () => number,
 ): Mesh {
   const height = 7.6 + rng() * 1.6;
   const trunk = MeshBuilder.CreateCylinder(

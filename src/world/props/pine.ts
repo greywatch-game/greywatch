@@ -70,7 +70,7 @@ const PINE_SHARED_DRAWS = 17;
 export function buildPine(
   scene: Scene,
   mats: CelMaterialFactory,
-  rng: () => number = Math.random,
+  rng: () => number,
 ): Mesh {
   const bark = mats.get(BARK);
   // Translucent for the reason the cones were: a pine with the light behind it

@@ -278,8 +278,8 @@ function wornShape(
 export function buildBoulder(
   scene: Scene,
   mats: CelMaterialFactory,
-  rng: () => number = Math.random,
-  sub: () => number = Math.random,
+  rng: () => number,
+  sub: () => number,
 ): Mesh {
   // The octahedron's draws, taken and not spent (see the header).
   for (let i = 0; i < BOULDER_SHARED_DRAWS; i++) rng();

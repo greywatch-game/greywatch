@@ -195,8 +195,8 @@ function pinnateBlade(
 export function buildFernClump(
   scene: Scene,
   mats: CelMaterialFactory,
-  rng: () => number = Math.random,
-  sub: () => number = Math.random,
+  rng: () => number,
+  sub: () => number,
 ): Mesh {
   // The plank fern's draws, taken and not spent (see the header).
   const planks = 7 + Math.floor(rng() * 4);

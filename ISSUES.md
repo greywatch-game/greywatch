@@ -65,7 +65,7 @@ match smoke test (`npm run build:server && npm run server`, two clients).
 | ~~[34](#34-vehicle-models-shared-resetrigpose-and-whip)~~ | P2 — done | Vehicle models: shared `resetRigPose` and `whip` |
 | ~~[35](#35-decompose-botupdate-viewmodelupdate-and-players-recoil-vector)~~ | P2 — done | Decompose `Bot.update`, `ViewModel.update`, Player's recoil vector |
 | ~~[36](#36-vehicle-capability-idioms-three-soft-spots)~~ | P2 — done | Vehicle capability idioms: three soft spots |
-| [37](#37-propsts-drop-the-mathrandom-defaults) | P2 | `Props.ts`: drop the `Math.random` defaults |
+| ~~[37](#37-propsts-drop-the-mathrandom-defaults)~~ | P2 — done | `Props.ts`: drop the `Math.random` defaults |
 | [38](#38-texturests-has-its-own-prng) | P3 | `textures.ts` has its own PRNG |
 | [39](#39-frameprofile-depends-on-a-private-babylon-internal) | P3 | `FrameProfile` depends on a private Babylon internal |
 | [40](#40-claudemd-is-over-its-own-cap) | P3 | `CLAUDE.md` is over its own cap |
@@ -1614,6 +1614,20 @@ code, or the nav graph differs between page loads". Only `MapBuilder` imports
 compile error. Can be folded into ticket 23.
 
 **Acceptance.** No `Math.random` reference in `src/world/` outside comments.
+
+**Done.** Ticket 23 had already split `Props.ts` into `world/props/`, so the
+defaults were spread over twelve files there: 28 `rng`/`sub` parameters
+defaulting to `Math.random`. All 28 are now required. The three `sub = rng`
+defaults (ash, maple, jungle tree) stay, because they fall back to a seeded
+stream. Nothing had to change at a call site: `SCATTER_BUILDERS` and
+`kit:hash` already pass both streams. The `props/index.ts` header that
+explained the default now says why there is none, and the jungle tree's
+`sub` note stops promising a two-argument call. `grep Math.random src/world`
+finds only comments.
+
+Checked: `npm run typecheck`, `npm run build`, and `npm run kit:hash --
+--against` a baseline taken before the change: 3,722 builds of 105 kinds,
+**identical** (drawing and colliders).
 
 ---
 

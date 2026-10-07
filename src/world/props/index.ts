@@ -36,8 +36,11 @@
  * Placement (position, rotation, scale) is the caller's business — unlike the
  * old `PropSpec`, these carry no counts and no transform of their own.
  *
- * `rng` defaults to `Math.random` so a one-off caller (a model viewer, a test)
- * stays a two-argument call; MapBuilder always passes the map's seeded stream.
+ * **`rng` and `sub` have no default, and must not get one back.** They used
+ * to default to `Math.random`, so a caller that forgot a seed built a nav
+ * graph that differed between page loads; now it fails to compile. MapBuilder
+ * passes the map's seeded streams and `kit:hash` passes fixed ones. A `sub`
+ * that defaults to `rng` is still seeded, and is fine.
  */
 export { RIM_WOOD } from "./palette";
 export { buildDeadTree } from "./deadTree";

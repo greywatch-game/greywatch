@@ -175,7 +175,7 @@ const ASH_SHARED_DRAWS = 56;
 export function buildAshTree(
   scene: Scene,
   mats: CelMaterialFactory,
-  rng: () => number = Math.random,
+  rng: () => number,
   _sub: () => number = rng,
   detail = 1,
 ): Mesh {

@@ -30,7 +30,7 @@ const CONCRETE = "#4a4d54";
 export function buildButtressLog(
   scene: Scene,
   mats: CelMaterialFactory,
-  rng: () => number = Math.random,
+  rng: () => number,
 ): Mesh {
   const bark = mats.get(JUNGLE_BARK);
   const trunk = MeshBuilder.CreateCylinder(
@@ -102,7 +102,7 @@ export function buildButtressLog(
 export function buildCarvedStele(
   scene: Scene,
   mats: CelMaterialFactory,
-  rng: () => number = Math.random,
+  rng: () => number,
 ): Mesh {
   const stone = mats.get(STONE);
   const slab = MeshBuilder.CreateBox(
@@ -165,7 +165,7 @@ export function buildCarvedStele(
 export function buildGravestone(
   scene: Scene,
   mats: CelMaterialFactory,
-  rng: () => number = Math.random,
+  rng: () => number,
 ): Mesh {
   const stone = mats.get(STONE);
   const slab = MeshBuilder.CreateBox(
@@ -252,7 +252,7 @@ export function buildLantern(scene: Scene, mats: CelMaterialFactory): Mesh {
 export function buildFungus(
   scene: Scene,
   mats: CelMaterialFactory,
-  rng: () => number = Math.random,
+  rng: () => number,
 ): Mesh {
   const stem = mats.get("#6a6f63");
   const glow = mats.getEmissive("#6effc0");
@@ -295,7 +295,7 @@ export function buildFungus(
 export function buildLog(
   scene: Scene,
   mats: CelMaterialFactory,
-  rng: () => number = Math.random,
+  rng: () => number,
 ): Mesh {
   const log = MeshBuilder.CreateCylinder(
     "log",
@@ -326,7 +326,7 @@ export function buildLog(
 export function buildBramble(
   scene: Scene,
   mats: CelMaterialFactory,
-  rng: () => number = Math.random,
+  rng: () => number,
 ): Mesh {
   const wood = mats.get(DEAD_BARK);
   const base = MeshBuilder.CreateCylinder(
@@ -359,7 +359,7 @@ export function buildBramble(
 export function buildRubble(
   scene: Scene,
   mats: CelMaterialFactory,
-  rng: () => number = Math.random,
+  rng: () => number,
 ): Mesh {
   const heap = MeshBuilder.CreateBox(
     "rubble",

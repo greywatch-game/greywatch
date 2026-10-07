@@ -260,7 +260,7 @@ const MAPLE_SKIN: BillowSkin = {
 export function buildMaple(
   scene: Scene,
   mats: CelMaterialFactory,
-  rng: () => number = Math.random,
+  rng: () => number,
   _sub: () => number = rng,
   detail = 1,
 ): Mesh {
@@ -492,7 +492,7 @@ export function buildMaple(
 export function buildLeafLitter(
   scene: Scene,
   mats: CelMaterialFactory,
-  rng: () => number = Math.random,
+  rng: () => number,
 ): Mesh {
   const chip = (i: number): Mesh => {
     const m = partBox(
@@ -533,7 +533,7 @@ export function buildLeafLitter(
 export function buildBamboo(
   scene: Scene,
   mats: CelMaterialFactory,
-  rng: () => number = Math.random,
+  rng: () => number,
 ): Mesh {
   let root: Mesh | null = null;
   const culms = 8 + Math.floor(rng() * 4);

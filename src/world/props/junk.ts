@@ -40,7 +40,7 @@ const SCRAP_CARD = "#8a7355";
 export function buildSkip(
   scene: Scene,
   mats: CelMaterialFactory,
-  rng: () => number = Math.random,
+  rng: () => number,
 ): Mesh {
   const body = MeshBuilder.CreateBox(
     "skip",
@@ -81,7 +81,7 @@ export function buildSkip(
 export function buildBinPair(
   scene: Scene,
   mats: CelMaterialFactory,
-  rng: () => number = Math.random,
+  rng: () => number,
 ): Mesh {
   const root = MeshBuilder.CreateBox(
     "bin",
@@ -127,7 +127,7 @@ export function buildBinPair(
 export function buildPalletStack(
   scene: Scene,
   mats: CelMaterialFactory,
-  rng: () => number = Math.random,
+  rng: () => number,
 ): Mesh {
   const root = MeshBuilder.CreateBox(
     "pallet",
@@ -171,7 +171,7 @@ export function buildPalletStack(
 export function buildTrafficCone(
   scene: Scene,
   mats: CelMaterialFactory,
-  rng: () => number = Math.random,
+  rng: () => number,
 ): Mesh {
   const base = MeshBuilder.CreateBox(
     "cone-base",
@@ -224,7 +224,7 @@ export function buildTrafficCone(
 export function buildLitter(
   scene: Scene,
   mats: CelMaterialFactory,
-  rng: () => number = Math.random,
+  rng: () => number,
 ): Mesh {
   const root = MeshBuilder.CreateBox(
     "litter",

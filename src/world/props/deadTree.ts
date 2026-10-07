@@ -65,7 +65,7 @@ import { BARK, DEAD_BARK } from "./palette";
 export function buildDeadTree(
   scene: Scene,
   mats: CelMaterialFactory,
-  rng: () => number = Math.random,
+  rng: () => number,
 ): Mesh {
   const bark = mats.get(BARK);
   const dead = mats.get(DEAD_BARK);

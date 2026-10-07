@@ -100,8 +100,8 @@ function drumPatch(a0: number, a1: number, y0: number, y1: number, n: number) {
 export function buildFireDrum(
   scene: Scene,
   mats: CelMaterialFactory,
-  _rng: () => number = Math.random,
-  sub: () => number = Math.random,
+  _rng: () => number,
+  sub: () => number,
 ): Mesh {
   const rust: VertexData[] = [];
   const dark: VertexData[] = [];

@@ -85,8 +85,8 @@ function caskR(y: number): number {
 export function buildBarrel(
   scene: Scene,
   mats: CelMaterialFactory,
-  _rng: () => number = Math.random,
-  sub: () => number = Math.random,
+  _rng: () => number,
+  sub: () => number,
 ): Mesh {
   const parts = caskData(sub);
   const cask = partSurface("barrel", parts.wood, scene);

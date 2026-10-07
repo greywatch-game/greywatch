@@ -273,7 +273,7 @@ function featherBlade(pts: readonly V3[], frames: readonly RachisFrame[], cut: F
  * which is what leaves all 354 trees, all 149 fern clumps and all five flag
  * walks on Greyfen where they already were. Drawing the veil from `rng` would
  * reroll the entire dressing field of any map with a jungle belt on it. It
- * defaults to `rng` so a one-off caller stays a two- or three-argument call;
+ * defaults to `rng` so a caller with one stream stays a three-argument call;
  * `MapBuilder.scatterRegion` is what mints the real one.
  *
  * **It is the most-placed model on its map by a wide margin** — some fourteen
@@ -295,7 +295,7 @@ function featherBlade(pts: readonly V3[], frames: readonly RachisFrame[], cut: F
 export function buildJungleTree(
   scene: Scene,
   mats: CelMaterialFactory,
-  rng: () => number = Math.random,
+  rng: () => number,
   sub: () => number = rng,
   detail = 1,
 ): Mesh {
