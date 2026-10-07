@@ -9,7 +9,7 @@ the **reference harnesses** built to grade them.
 | --- | --- |
 | `done/` | Shipped plans, kept for their ARGUMENTS. A record, not a to-do. Each one opens with a status block saying when it landed and what in it is still true. |
 | `webgpu-ref/` | **LIVE.** The reference-image bank and harness the WGSL milestones diffed against, and still how a rendering change is graded — `gate.mjs`, `bank.mjs --check`, `depth.mjs`. Cited from `docs/build.md`, `docs/rendering.md`, `docs/world.md`, `VERIFYING.md` and `FINDINGS.md`. |
-| `physics-ref/` | **LIVE.** The same for Havok: `drop.mjs` is the oracle for anything that changes what a body stands on. |
+| `physics-ref/` | **LIVE.** The same for Havok: `drop.mjs` is the oracle for anything that changes what a body stands on. Every shipped map has a bank in `ref/` (Greyfen's at `--steps 2400`), so a bare `--check` is a full gate; a new map owes one. |
 
 **A plan being finished is not a reason to delete it.** These documents argue
 rather than describe, and the argument outlives the work — why the uniform

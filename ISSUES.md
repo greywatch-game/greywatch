@@ -74,7 +74,7 @@ match smoke test (`npm run build:server && npm run server`, two clients).
 | ~~[43](#43-dead-and-over-exported-symbols)~~ | P3 — done | Dead and over-exported symbols |
 | ~~[44](#44-stale-comments-in-gamets-and-docsgamemd)~~ | P3 — done | Stale comments in `Game.ts` and `docs/game.md` |
 | [45](#45-the-recoil-argument-is-written-in-five-places) | P3 | The recoil argument is written in five places |
-| [46](#46-physics-reference-baselines-missing-for-three-maps) | P3 | Physics reference baselines missing for three maps |
+| ~~[46](#46-physics-reference-baselines-missing-for-three-maps)~~ | P3 — done | Physics reference baselines missing for three maps |
 | ~~[47](#47-most-of-the-footprint-table-understates-its-builders)~~ | P1 — done | Most of the footprint table understates its builders |
 
 ---
@@ -1993,6 +1993,25 @@ Baselines exist for only 4 of the 7 shipped maps; Sarab, Cinderhaven and
 Kurenai have none. The parallel `webgpu-ref` bank is already admitted stale
 (`FINDINGS.md` §20). Either capture the missing three, or note in `plans/`'s
 README which maps are covered and that the bank is not a full gate.
+
+**Done.** The missing three are captured. (The banks are tracked JSON resting
+sets, not git-ignored images. Only `proving.json` is ignored.) This machine
+runs the oracle, so `node plans/physics-ref/drop.mjs sarab cinderhaven kurenai`
+banked all three at the default 480 steps:
+
+| map | hash | floor | colliders |
+| --- | --- | --- | --- |
+| sarab | `a599c829da989591` | 3.0 mm | 3,545 boxes + 116 terrain |
+| cinderhaven | `0bc739877ded19b3` | 3.0 mm | 3,857 boxes + 189 terrain |
+| kurenai | `9527748c34314092` | 3.0 mm | 764 boxes + 37 terrain |
+
+A `--check` from a fresh process reads `identical` on all three. The four older
+banks were re-checked at the same time against HEAD. Coldharbour and Hollowmere
+read `identical`, and so does Greyfen at `--steps 2400`. Harrowmead reads
+`within tol`, worst 1.1 mm, 0.4 mm of it vertical, under its 8.9 mm floor.
+
+`drop.mjs`'s header now says every shipped map is banked and a new map owes a
+bank. `plans/README.md`'s row says the same, plus Greyfen's step count.
 
 ### 47. Most of the footprint table understates its builders
 
