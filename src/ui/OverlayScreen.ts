@@ -49,18 +49,12 @@ import { difficultyTiers } from "../entities/BotSkill";
 import type { SightId } from "../entities/sights";
 import type { PrimaryWeaponId } from "../entities/weapons";
 import { perTeamOf } from "../world/layout";
-import {
-  collisionOf,
-  heightsOf,
-  loadCollision,
-  loadHeights,
-  type MapDef,
-} from "../world/maps";
+import type { MapDef } from "../world/maps";
 import { pickFieldNote } from "./fieldNotes";
 import { WEAPON_BLURBS } from "./LoadoutScreen";
 import { mapShotUrl, shotThumbUrl } from "./mapShots";
-import { drawMapThumb } from "./MapThumb";
-import { glyph, guessDevice, type InputDevice } from "./prompts";
+import { paintMapThumb } from "./MapThumb";
+import { glyph, guessDevice, markDevice, type InputDevice } from "./prompts";
 
 /**
  * What the pause menu can do, and the label for each. In screen order.
@@ -1065,34 +1059,19 @@ export class OverlayScreen {
    * panel the viewport has dropped has no box, which `drawMapThumb` answers
    * by drawing nothing. The resize handler paints it again if it comes back.
    *
-   * **The paint is synchronous and NEITHER of the map's two bulk halves may be
-   * here yet, which is why this can run three times for one row.** The
-   * heightfield and the collider bake are chunks of their own
-   * (`MapDef.heights`, `MapDef.collision`), so the first paint draws whatever
-   * has already landed, which on a cold boot is neither, and each arrival
-   * books another. What the player sees is a bare square, then the ground it
-   * is cut in, then the town on it; see `MapThumb.ts` for why that order is
-   * the honest one.
-   *
-   * The map is re-tested inside every callback because the cursor moves
-   * faster than a fetch: a floor arriving for the map the player has already
-   * stepped off must not repaint the one they are looking at now.
+   * The map's two bulk halves may not be here yet, so this can run three
+   * times for one row: `paintMapThumb` draws what has landed and calls back as
+   * each half arrives. The map is re-tested inside that callback because the
+   * cursor moves faster than a fetch: a floor arriving for the map the player
+   * has already stepped off must not repaint the one they are looking at now.
    */
   private paintThumb(): void {
     const canvas = this.detailEl?.querySelector("canvas");
     const map = this.maps[this.mapIndex];
     if (!canvas || !map) return;
-    const floor = heightsOf(map);
-    const bake = collisionOf(map);
-    drawMapThumb(canvas, map, floor ?? null, bake ?? null);
-    // A schematic is not worth a broken menu, so both rejections are
-    // swallowed: the round start asks for the same two chunks and reports the
-    // failure where it can be acted on.
-    const again = () => {
+    paintMapThumb(canvas, map, () => {
       if (this.maps[this.mapIndex] === map) this.paintThumb();
-    };
-    if (floor === undefined) void loadHeights(map).then(again).catch(() => {});
-    if (bake === undefined) void loadCollision(map).then(again).catch(() => {});
+    });
   }
 
   /** One picture layer of the backdrop. Empty until a map is chosen. */
@@ -1188,9 +1167,7 @@ export class OverlayScreen {
     if (device === this.device) return;
     this.device = device;
     if (this.card !== "menu" && this.card !== "roundover" && this.card !== "pause") return;
-    for (const d of ["kbm", "pad", "touch"] as const) {
-      this.root.classList.toggle(`dev-${d}`, d === device);
-    }
+    markDevice(this.root, device);
   }
 
   /** Steps the menu cursor around its ring. No-op off the menu card. */

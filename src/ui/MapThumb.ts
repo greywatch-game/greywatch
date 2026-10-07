@@ -7,11 +7,13 @@
  * `MapDef` into the one and hands it to the other.
  * Invariants: it touches no scene, no `MapBuilder` and no `GameMap`. What it
  * reads is the layout (a module constant, in the bundle before the player
- * pressed anything) and the two BULK halves behind `MapDef`'s lazy imports,
- * both of which it takes as ARGUMENTS rather than going and getting: the
- * schematic draws whatever it is handed, and `OverlayScreen.paintThumb` — which
- * is what knows a row is under the cursor and is allowed to wait — asks again
- * when each half lands.
+ * pressed anything) and the two BULK halves behind `MapDef`'s lazy imports.
+ * `drawMapThumb` takes both as ARGUMENTS rather than going and getting: the
+ * schematic draws whatever it is handed. `paintMapThumb` is the one place that
+ * goes and gets them, and it never decides on its own to paint again — the
+ * screen calling it (`OverlayScreen.paintThumb`, `LobbyScreen.paintThumb`) is
+ * what knows a row is under the cursor and is allowed to wait, so it is the
+ * screen's callback that asks again when each half lands.
  *
  * That restriction is the whole reason this file can exist. The deploy screen
  * and the minimap draw out of the finished collider set, which is the honest
@@ -46,7 +48,45 @@ import {
 import { planFromLayout } from "./mapPlan";
 import type { MapCollision } from "../world/collision";
 import type { Heightfield } from "../world/layout";
-import type { MapDef } from "../world/maps";
+import {
+  collisionOf,
+  heightsOf,
+  loadCollision,
+  loadHeights,
+  type MapDef,
+} from "../world/maps";
+
+/**
+ * Paints a map's schematic with whatever of its two bulk halves has landed,
+ * and books `again` for each half still on its way.
+ *
+ * **The paint is synchronous and NEITHER half may be here yet, which is why
+ * one row can be painted three times.** The heightfield and the collider bake
+ * are chunks of their own (`MapDef.heights`, `MapDef.collision`), so the first
+ * paint draws whatever has already landed, which on a cold boot is neither,
+ * and each arrival books another. What the player sees is a bare square, then
+ * the ground it is cut in, then the town on it — see the header for why that
+ * order is the honest one.
+ *
+ * `again` is the caller's, and it must re-test that the map is still the one
+ * under the cursor and look the canvas up afresh: the cursor moves faster than
+ * a fetch, so a floor arriving for a map the player has already stepped off
+ * must not repaint the one they are looking at now, and the panel may have
+ * been rebuilt in between. A schematic is not worth a broken menu, so both
+ * rejections are swallowed: the round start asks for the same two chunks and
+ * reports the failure where it can be acted on.
+ */
+export function paintMapThumb(
+  canvas: HTMLCanvasElement,
+  def: MapDef,
+  again: () => void,
+): void {
+  const floor = heightsOf(def);
+  const bake = collisionOf(def);
+  drawMapThumb(canvas, def, floor ?? null, bake ?? null);
+  if (floor === undefined) void loadHeights(def).then(again).catch(() => {});
+  if (bake === undefined) void loadCollision(def).then(again).catch(() => {});
+}
 
 /**
  * Paints one map into a canvas, filling it edge to edge.

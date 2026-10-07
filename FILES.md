@@ -1323,7 +1323,8 @@ src/
                         #   menu is the one screen where there is none — so it
                         #   takes the FLOOR and the COLLIDER BAKE as arguments
                         #   that may be absent and draws what it has, in up to
-                        #   three passes as they land
+                        #   three passes as they land. `paintMapThumb` is that
+                        #   fetch-and-repaint, shared by the menu and the lobby
     mapShots.ts         # The PHOTOGRAPH behind the menu: one shot per map
                         #   (shots/<id>.avif, imported ?url) and the VANTAGE it
                         #   was taken from, which is what lets `npm run shots`
@@ -1360,9 +1361,10 @@ src/
                         #   (stageBay), so nothing sharing its column may
                         #   change height. Four templates; phones are LANDSCAPE
     prompts.ts          # The prompt drawn ON a control for the device in hand
-                        #   (`glyph`, `InputDevice`, `guessDevice`) — shared by
-                        #   the menu, the kit and the settings; the kbd.gl rules and
-                        #   the shared `--u` unit are base.css's
+                        #   (`glyph`, `InputDevice`, `guessDevice`, and
+                        #   `markDevice`, the `dev-*` class write) — shared by
+                        #   the five title screens; the kbd.gl rules and the
+                        #   shared `--u` unit are base.css's
     SettingsScreen.ts   # A title screen for the PAGE of settings, laid out as
       settings.css      #   the menu and the kit are: the page's name is the
                         #   title, the pages a tab strip the bumpers turn, the

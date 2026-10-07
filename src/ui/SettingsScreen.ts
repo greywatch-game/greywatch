@@ -44,7 +44,7 @@ import "./settings.css";
 import { CONFIG } from "../config";
 import { FOLIAGE_QUALITIES, GRASS_QUALITIES, SHADOW_QUALITIES, type Settings } from "../core/settings";
 import type { GyroStatus } from "../core/GyroInput";
-import { glyph, guessDevice, type InputDevice } from "./prompts";
+import { glyph, guessDevice, markDevice, type InputDevice } from "./prompts";
 
 /**
  * The gyro row's sentence, per sensor state, and the word its plate has room
@@ -636,9 +636,7 @@ export class SettingsScreen {
   setInputDevice(device: InputDevice): void {
     if (device === this.device) return;
     this.device = device;
-    for (const d of ["kbm", "pad", "touch"] as const) {
-      this.root.classList.toggle(`dev-${d}`, d === device);
-    }
+    markDevice(this.root, device);
   }
 
   show(): void {

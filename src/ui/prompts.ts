@@ -1,10 +1,12 @@
 /**
  * prompts.ts — The key or pad button drawn ON a control, for the device in hand.
- * Owns: `InputDevice`, `glyph` (the markup of one prompt) and `guessDevice`
- * (what a screen assumes before any device has spoken).
+ * Owns: `InputDevice`, `glyph` (the markup of one prompt), `guessDevice`
+ * (what a screen assumes before any device has spoken) and `markDevice` (the
+ * `dev-*` class write every screen's `setInputDevice` makes).
  * Invariants: holds no state and reads no input — `Game` pushes the device to
  * each screen that draws prompts, and the screen writes it as a `dev-*` class on
- * its own root. The stylesheet does the rest (`kbd.gl` in `base.css`).
+ * its own root through `markDevice`. The stylesheet does the rest (`kbd.gl` in
+ * `base.css`).
  *
  * Shared by every screen laid out like a console front end: the main menu,
  * the round-over card and the pause (`OverlayScreen`), the kit screen
@@ -45,4 +47,20 @@ export function guessDevice(): InputDevice {
     matchMedia("(hover: none) and (pointer: coarse)").matches
     ? "touch"
     : "kbm";
+}
+
+/** Every device, for the class write below. */
+const DEVICES: readonly InputDevice[] = ["kbm", "pad", "touch"];
+
+/**
+ * Puts `device` on a screen's root as its `dev-*` class and takes the other
+ * two off, which turns every prompt on that screen over in one write.
+ *
+ * The write itself and nothing else. Each screen's `setInputDevice` keeps the
+ * device it last wrote and compares before calling this, so `Game` can push
+ * the device every frame and the DOM hears only a change. The overlay also
+ * skips the write on a card that draws no prompts.
+ */
+export function markDevice(root: HTMLElement, device: InputDevice): void {
+  for (const d of DEVICES) root.classList.toggle(`dev-${d}`, d === device);
 }

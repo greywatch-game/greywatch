@@ -427,8 +427,8 @@ export function heightsOf(def: MapDef): Heightfield | null | undefined {
  * import for exactly the reason it always was — hundreds of kilobytes per map,
  * and a chunk nobody who never opens the map row ever asks for — and the
  * client still builds the real colliders when it builds the world. See
- * `src/ui/MapThumb.ts`, which is the caller and takes the answer as an
- * argument rather than reaching for it.
+ * `src/ui/MapThumb.ts`: `paintMapThumb` is the caller, and `drawMapThumb`
+ * takes the answer as an argument rather than reaching for it.
  *
  * A FAILED fetch is left to throw, as the floor's is, and the caller turns it
  * into a schematic without masses rather than a broken menu: a picture of the

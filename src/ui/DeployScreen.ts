@@ -43,7 +43,7 @@ import {
   type PlanView,
 } from "./mapPaint";
 import { planFromWorld } from "./mapPlan";
-import { glyph, guessDevice, type InputDevice } from "./prompts";
+import { glyph, guessDevice, markDevice, type InputDevice } from "./prompts";
 import type { ControlPoint, ConquestSystem } from "../systems/ConquestSystem";
 import type { EnvironmentSpec } from "../world/environment";
 import type { GameMap, SpawnPointDef } from "../world/MapBuilder";
@@ -303,9 +303,7 @@ export class DeployScreen {
   setInputDevice(device: InputDevice): void {
     if (device === this.device) return;
     this.device = device;
-    for (const d of ["kbm", "pad", "touch"] as const) {
-      this.root.classList.toggle(`dev-${d}`, d === device);
-    }
+    markDevice(this.root, device);
   }
 
   show(

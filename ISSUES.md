@@ -60,7 +60,7 @@ match smoke test (`npm run build:server && npm run server`, two clients).
 | ~~[29](#29-vehiclecrewts-extract-the-pilot)~~ | P2 — done | `VehicleCrew.ts`: extract the pilot |
 | ~~[30](#30-celshaderts-move-shadow-bindings-out-of-the-material-factory)~~ | P2 — done | `CelShader.ts`: move shadow bindings out of the factory |
 | ~~[31](#31-hudts-scoreboard-to-its-own-class-one-1-low)~~ | P2 — done | `HUD.ts`: scoreboard to its own class, one 1% low |
-| [32](#32-ui-screens-shared-setinputdevice-and-paintthumb) | P2 | UI screens: shared `setInputDevice` and `paintThumb` |
+| ~~[32](#32-ui-screens-shared-setinputdevice-and-paintthumb)~~ | P2 — done | UI screens: shared `setInputDevice` and `paintThumb` |
 | [33](#33-overlayscreents-extract-menubackdrop) | P2 | `OverlayScreen.ts`: extract `MenuBackdrop` |
 | [34](#34-vehicle-models-shared-resetrigpose-and-whip) | P2 | Vehicle models: shared `resetRigPose` and `whip` |
 | [35](#35-decompose-botupdate-viewmodelupdate-and-players-recoil-vector) | P2 | Decompose `Bot.update`, `ViewModel.update`, Player's recoil vector |
@@ -1286,6 +1286,51 @@ recompute over its whole series (838.1 ms, with the install frames in it).
   `OverlayScreen.ts:~1081`. → one function, parameterised on the difference.
 
 **Acceptance.** Switching mouse → pad → touch flips prompts on every screen.
+
+**Done.** Two functions, each in the module that already owned the thing they
+do.
+
+- **`markDevice(root, device)`** in `ui/prompts.ts` writes the `dev-*` class:
+  it puts the one for `device` on and takes the other two off. All five
+  `setInputDevice`s call it in place of their own loop. Each screen still keeps
+  its `device` field and compares against it before calling, because that field
+  is the screen's own state: its constructor writes it into the root's first
+  class list, and the overlay writes it again whenever it builds a card. So
+  `setInputDevice` stays a public method on each screen, and `Game`'s six calls
+  to it are unchanged. The overlay still skips the write on a card that draws
+  no prompts (the building card, or no card at all).
+- **`paintMapThumb(canvas, def, again)`** in `ui/MapThumb.ts`. That file's
+  header already said it owned "the fetch-and-upgrade order", but the order was
+  written out in the two screens. It reads what has landed of the floor and the
+  bake, draws, and books `again` for each half that has not. The difference the
+  ticket asked to parameterise is the callback. Each screen's `paintThumb`
+  keeps the two things only it knows: where its canvas is, and whether the map
+  is still the one under the cursor. The lobby's callback also checks that the
+  lobby is still up. The callback re-enters `paintThumb`, so the canvas is
+  looked up again after a fetch, as before. The swallowed-rejection reasoning
+  and the three-pass argument moved with the code. `OverlayScreen` and
+  `LobbyScreen` no longer import `heightsOf`/`collisionOf`/`loadHeights`/
+  `loadCollision`.
+
+References updated: `MapThumb.ts`'s header (`drawMapThumb` still takes both
+halves as arguments; `paintMapThumb` is now the one place that fetches them),
+`prompts.ts`'s header, `docs/ui.md` (the schematic's three passes), `FILES.md`
+(both rows; the prompts row had said the menu, the kit and the settings, and
+now says the five title screens), a comment in `world/maps.ts` that called
+`MapThumb` the bake's caller, and the `ui-screen` skill's primitives table,
+which gains a `markDevice` row.
+
+Checked: `npm run typecheck` passes. **In the browser, HEAD against this
+change.** The device was driven through `InputManager`'s own last-used stamps,
+so the push under test is `Game`'s real per-frame one. The run went kbm → pad →
+touch → kbm on the menu, settings, the lobby, the deploy screen, the kit screen
+and the pause card. On all six, the root's class followed every step, the
+first prompt's label went from key to pad button (`Q`→`LB`, `Esc`→`B`,
+`Esc`→`Start`, `R`→`X`), and the prompt was gone under touch. The results were
+identical to HEAD's. **The schematics:** the menu's (378×378) and the lobby's
+new-match map row (388×310) were each waited until stable with both halves
+landed. Their `toDataURL` output is byte-identical between HEAD and this
+change. No page errors.
 
 ### 33. `OverlayScreen.ts`: extract `MenuBackdrop`
 

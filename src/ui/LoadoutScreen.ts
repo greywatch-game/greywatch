@@ -97,7 +97,7 @@ import {
   type PrimaryWeaponId,
   type WeaponId,
 } from "../entities/weapons";
-import { glyph, guessDevice, type InputDevice } from "./prompts";
+import { glyph, guessDevice, markDevice, type InputDevice } from "./prompts";
 
 /**
  * Which slot the keyboard/pad cursor is on, and therefore which options the
@@ -734,9 +734,7 @@ export class LoadoutScreen {
   setInputDevice(device: InputDevice): void {
     if (device === this.device) return;
     this.device = device;
-    for (const d of ["kbm", "pad", "touch"] as const) {
-      this.root.classList.toggle(`dev-${d}`, d === device);
-    }
+    markDevice(this.root, device);
   }
 
   /** Steps the slot cursor — the screen's up/down. Wraps at both ends. */

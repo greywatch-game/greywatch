@@ -1234,12 +1234,13 @@ The right-hand side is an INTEL plate on whatever the cursor rests on.
 - **So this panel can paint THREE times for one row, and that order is the
   feature.** Both bulk halves are lazy (`MapDef.heights`, `MapDef.collision`),
   `drawMapThumb` takes both as ARGUMENTS and goes and gets nothing, and
-  `paintThumb` hands it whatever has already landed — on a cold boot, neither —
-  and books a repaint per arrival. What a player sees is a bare square, then
-  the ground it is cut in, then the town on it. The row is re-tested inside
-  every callback, because the cursor moves faster than a fetch and a chunk
-  arriving for a map the player has scrolled off must not repaint the one they
-  are looking at. A coarse map for a moment and then the real one is the honest
+  `paintMapThumb` hands it whatever has already landed — on a cold boot,
+  neither — and books a repaint per arrival through a callback the calling
+  screen supplies (the menu's `paintThumb`, and the lobby's, which is the same
+  drawing). What a player sees is a bare square, then the ground it is cut in,
+  then the town on it. The row is re-tested inside every callback, because the
+  cursor moves faster than a fetch and a chunk arriving for a map the player
+  has scrolled off must not repaint the one they are looking at. A coarse map for a moment and then the real one is the honest
   order; a hole in the menu until two fetches return is not.
 - **A `WaterRect` is an EXTENT and the waterline is DERIVED**, which is the one
   thing on these maps that cannot be read straight off the layout. The real

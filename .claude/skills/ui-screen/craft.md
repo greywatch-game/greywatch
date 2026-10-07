@@ -88,6 +88,7 @@ Think like a game UI designer, not a web one:
 | `--gx`, `--gy` | `base.css` | gutters; `--gx` caps the frame at 2.4:1 and centres it |
 | `--plate-mm`, `--plate-edge`, `--cut` | `base.css` | a control's plate, its hairline, its chamfer |
 | `glyph(key, pad)` | `prompts.ts` | a prompt; the root's `dev-kbm/-pad/-touch` class picks the label |
+| `markDevice(root, device)` | `prompts.ts` | writes that class; a screen's `setInputDevice` compares, then calls it |
 | the title | per screen | white, 900, tight, hard black drop; a hollow numeral behind it |
 | the eyebrow | per screen | hot, `--t-cap`, tracked 0.3em, over the title |
 | a row with a cursor | per screen | a `position: relative` wrapper carrying `::before/::after` brackets around a clipped plate |

@@ -64,18 +64,11 @@ import type { MatchSummary } from "../net/protocol";
 import type { LobbyResult } from "../net/lobby";
 import type { Region } from "../net/regions";
 import { perTeamOf } from "../world/layout";
-import {
-  collisionOf,
-  heightsOf,
-  loadCollision,
-  loadHeights,
-  MAPS,
-  type MapDef,
-} from "../world/maps";
+import { MAPS, type MapDef } from "../world/maps";
 import { shotThumbUrl } from "./mapShots";
-import { drawMapThumb } from "./MapThumb";
+import { paintMapThumb } from "./MapThumb";
 import { pingQuality, pingText } from "./ping";
-import { glyph, guessDevice, type InputDevice } from "./prompts";
+import { glyph, guessDevice, markDevice, type InputDevice } from "./prompts";
 
 /**
  * One line on the JOIN page, in screen order. There is deliberately no `back`
@@ -511,9 +504,7 @@ export class LobbyScreen {
   setInputDevice(device: InputDevice): void {
     if (device === this.device) return;
     this.device = device;
-    for (const d of ["kbm", "pad", "touch"] as const) {
-      this.root.classList.toggle(`dev-${d}`, d === device);
-    }
+    markDevice(this.root, device);
   }
 
   /**
@@ -1419,23 +1410,17 @@ export class LobbyScreen {
 
   /**
    * Paints the plan in the intel, if the plate that is up has one — the menu's
-   * `paintThumb`, for the menu's reasons: the floor and the bake are chunks of
-   * their own, so the first paint draws what has landed and each arrival books
-   * another, and the map is re-tested inside every callback because the
-   * cursor moves faster than a fetch.
+   * `paintThumb`, through the same `paintMapThumb`. The map is re-tested inside
+   * the callback because the cursor moves faster than a fetch, and so is the
+   * screen: a half landing after the lobby has closed paints nothing.
    */
   private paintThumb(): void {
     const canvas = this.intelEl.querySelector("canvas");
     const map = this.thumbMap;
     if (!canvas || !map) return;
-    const floor = heightsOf(map);
-    const bake = collisionOf(map);
-    drawMapThumb(canvas, map, floor ?? null, bake ?? null);
-    const again = () => {
+    paintMapThumb(canvas, map, () => {
       if (this.thumbMap === map && this.visible) this.paintThumb();
-    };
-    if (floor === undefined) void loadHeights(map).then(again).catch(() => {});
-    if (bake === undefined) void loadCollision(map).then(again).catch(() => {});
+    });
   }
 
   /** Which map the photograph behind the screen should be. */
