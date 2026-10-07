@@ -640,12 +640,12 @@ table.compiles td.empty { white-space: normal; color: var(--ink-3); padding: 16p
 "use strict";
 
 /* ── the phase tree ────────────────────────────────────────────────────────
-   PHASES in FrameProfile.ts is a flat list and the nesting lives in Game.ts's
+   PHASES in profilePhases.ts is a flat list and the nesting lives in Game.ts's
    bracket placement, which the contract writes down. It is restated here
    because the containment is what makes an attribution readable: a child's
    time is INSIDE its parent's, so the two must never be added together. */
 /* A capture from this build onward CARRIES its tree (`report.tree`, straight
-   from `PARENT_OF` in FrameProfile.ts), and that is what gets used. This copy
+   from `PARENT_OF` in profilePhases.ts), and that is what gets used. This copy
    is the fallback for captures taken before that field existed — and it is the
    only thing here that can go stale, so it is the only thing here that should
    ever need editing. */

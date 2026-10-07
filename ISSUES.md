@@ -56,7 +56,7 @@ match smoke test (`npm run build:server && npm run server`, two clients).
 | ~~[25](#25-mapbuilderts-move-types-and-merge-code-out)~~ | P2 — done | `MapBuilder.ts`: move types and merge code out |
 | ~~[26](#26-split-sfxts-engine-voices-and-ambience-into-their-own-classes)~~ | P2 — done | Split `Sfx.ts`: engine voices and ambience |
 | ~~[27](#27-vehiclets-extract-hullflex-and-the-flight-model)~~ | P2 — done | `Vehicle.ts`: extract `HullFlex` and the flight model |
-| [28](#28-frameprofilets-split-the-recorder-from-the-reporter) | P2 | `FrameProfile.ts`: split recorder from reporter |
+| ~~[28](#28-frameprofilets-split-the-recorder-from-the-reporter)~~ | P2 — done | `FrameProfile.ts`: split recorder from reporter |
 | [29](#29-vehiclecrewts-extract-the-pilot) | P2 | `VehicleCrew.ts`: extract the pilot |
 | [30](#30-celshaderts-move-shadow-bindings-out-of-the-material-factory) | P2 | `CelShader.ts`: move shadow bindings out of the factory |
 | [31](#31-hudts-scoreboard-to-its-own-class-one-1-low) | P2 | `HUD.ts`: scoreboard to its own class, one 1% low |
@@ -1006,6 +1006,64 @@ disarmed profiler never loads it.
 
 **Acceptance.** A capture is byte-compatible (same report version); viewer at
 `/profile_viewer.html` reads it.
+
+**Done.** `FrameProfile.ts` is 1,743 lines, down from 3,141. It became three
+files, not two.
+
+- **`core/profileReport.ts`** holds the report's shape (`ProfileReport`,
+  `PhaseStat`, `HitchFrame`, `LoafFrame`, `CreationEvent`,
+  `ProfileGraphics`), the constants only a report reads (`CREATED`,
+  `DEFINES_CAP`, `LOAF_FLOOR_MS`, `gpuFrameMeasurable`), `buildReport` and
+  its `*Facts` helpers, `worstHitches`, `worstLoaf`, `madeAt`/`madeNear`,
+  `deviceFacts`, the trace as `buildTrace`, and `stats`/`pick`/
+  `onePercentLow`/`round`. They are plain functions over a `ProfileRing`.
+- **`ProfileRing`** is what the recorder lends at a capture: its own fields
+  under their own names, the typed arrays by reference (no copy), built by a
+  new private `FrameProfile.ring()`. Three entries are not fields:
+  `gcObserved` (the registry exists), `gpuAvailable` (the engine has a
+  main-pass counter, asked by the recorder, which keeps every Babylon internal)
+  and `engine`, for the backing store. The header says the reporter never
+  writes the ring.
+- **`core/profilePhases.ts`** holds `PHASES`, `P`, `SLOTS`, `PARENT_OF`
+  and `ROOTS`. The report labels slots and ships the tree, and the recorder
+  calls the report, so with the phases in either file the two would import
+  each other. `Game` imports `P` from there now.
+- **`FrameProfile.ts`** keeps the ring, the brackets, the hooks, the probes,
+  `capture` and `last`, and a two-line `trace` that guards and delegates.
+  Its public surface is unchanged, so `window.__profile` and the chip work as
+  before. `ProfileChip` takes `ProfileReport` from `profileReport.ts`.
+
+**Not lazy-loaded.** `capture` stays synchronous. The chip's VIEW opens the
+reader's window inside the tap's user activation, and a smoke script reads
+`window.__profile.capture(...)` on one line. Both would break if a dynamic
+import came first. The reporter is 8.5 kB minified, 3.5 kB gzipped, against a
+9.3 MB main chunk. This is written
+in `docs/profiling.md`.
+
+Apart from that it is a move: `this.X` became `r.X`, `worstLoaf`'s loop
+variable became `rec`, and three guards that the ring's types make dead were
+dropped (`if (this.loafMs)` and `!this.frameAt` in `worstLoaf`, the
+`logT` null check). Comments in the moved code that said "the header" or "this
+file" now name `FrameProfile`. Three stranded docs are back on their
+methods: `hookRender`'s had been sitting on `hookEngine`, and `probeOverhead`'s
+and `watchGc`'s had been sitting on `watchLoaf`. References to the old home
+are updated in `docs/profiling.md`, `public/profile_viewer.html`'s comments,
+`FINDINGS.md` and `FILES.md`.
+Two comments that were already wrong are fixed: `markLoaf` said `loafFacts`
+sums per row (it has summed once per window since v7), and
+`docs/profiling.md` gave `PARENT_OF`'s key type without `"present"`.
+
+Checked: `npm run typecheck` (client and server) and `npm run build` pass.
+For equivalence, a Node harness bundled with esbuild drove HEAD's
+`FrameProfile` and this one through the same 3,600-frame session with a
+seeded clock, a NullEngine scene and fakes for the GPU device, the GPU
+counters, the heap and long animation frames. The session laps the ring,
+changes graphics settings, creates named and unnamed pipelines, and hits
+hitches inside and outside the tick. It recorded every capture (compact and
+full, early, mid and end, plus a one-frame and a disarmed capture), five
+traces and the getters. The 14.4 MB of output is byte-identical, so the
+report version is unchanged and the viewer reads what it read before. Nobody
+has taken a capture on a real device.
 
 ### 29. `VehicleCrew.ts`: extract the pilot
 

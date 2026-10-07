@@ -621,7 +621,7 @@ SwiftShader.
 ### How to settle it
 
 **It is cheap now**: `FrameProfile` has a `physics` phase under `world`
-bracketing Havok's step and its three clients (`FrameProfile.ts` ~153, ~266),
+bracketing Havok's step and its three clients (`profilePhases.ts` ~56, ~170),
 so one `?profile` capture on real hardware with several corpses falling reads
 it in the page's own frame loop. If the original stands, the lever is fewer
 substeps while several corpses are live — `hasSettled`'s velocity poll is known

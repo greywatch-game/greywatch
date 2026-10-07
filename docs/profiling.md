@@ -1,7 +1,10 @@
 # Measuring a frame
 
-The contract for [`src/core/FrameProfile.ts`](../src/core/FrameProfile.ts),
-[`src/ui/ProfileChip.ts`](../src/ui/ProfileChip.ts) and
+The contract for [`src/core/FrameProfile.ts`](../src/core/FrameProfile.ts)
+(the recorder),
+[`src/core/profileReport.ts`](../src/core/profileReport.ts) (what a capture
+says), [`src/core/profilePhases.ts`](../src/core/profilePhases.ts) (the phase
+list both read), [`src/ui/ProfileChip.ts`](../src/ui/ProfileChip.ts) and
 [`src/config/profiling.ts`](../src/config/profiling.ts), and for the ~22 pairs
 of brackets in `Game.ts` that feed them, plus the four inside `render` that
 `FrameProfile` hangs off the scene itself. [`CLAUDE.md`](../CLAUDE.md) carries the
@@ -122,7 +125,15 @@ for exactly that reason. This is not tidiness. GC was §1's leading suspect for
 the hitch (§1's own captures have since exonerated the collector — "The heap and
 the collector", below), and a profiler that allocates per frame manufactures the
 bug it was built to find. Captures and reports allocate freely — a capture is a deliberate
-act, not a frame.
+act, not a frame — **and the two halves are two FILES**: `FrameProfile.ts`
+records and `profileReport.ts` builds the report and the trace from a
+`ProfileRing` the recorder lends it at the capture, reading it and never
+writing it. A new figure in a capture is a field in the ring and a line in the
+reporter, and the reporter is the only side that may build an object to say it.
+The reporter is NOT lazy-loaded: `capture` is synchronous because the chip's
+VIEW opens the reader's window and writes the hand-over inside the tap's own
+user activation, and `window.__profile.capture` returns the report to a smoke
+script on the same line.
 
 **There is exactly one allocation left in the recording path and it is per
 COLLECTION**: the sentinel the GC watch re-registers, below. One empty object
@@ -196,7 +207,7 @@ this and not `__celshock`, because none of it is anything to do with the game.
 
 ## The phases
 
-`PHASES` in `FrameProfile.ts` is the list, and **an index into it is a slot id**,
+`PHASES` in `profilePhases.ts` is the list, and **an index into it is a slot id**,
 which is what keeps the recording loop free of strings. The brackets are in
 `Game.ts` and nowhere else **except the four inside `render` and `present`
 after it**: `tick`,
@@ -789,10 +800,10 @@ What it draws:
   below still points at it; this is the look you take without leaving the phone.
 
 **The capture states its own tree.** `ProfileReport.tree` is `PARENT_OF` from
-`FrameProfile.ts` — child phase to the span containing it — so the viewer draws
+`profilePhases.ts` — child phase to the span containing it — so the viewer draws
 the containment of the build that produced the capture rather than of the build
-it was written against. `PARENT_OF` is typed `Record<Exclude<Phase, "frame">,
-Phase>`, so **a phase added to `PHASES` does not compile until it says where it
+it was written against. `PARENT_OF` is typed `Record<Exclude<Phase, "frame" |
+"present">, Phase>`, so **a phase added to `PHASES` does not compile until it says where it
 sits**, and adding one is still a name, a `begin`/`end` pair, and now its parent.
 The viewer keeps a `FALLBACK_TREE` — and, since the frame grew a second root, a
 `FALLBACK_ROOTS` beside it — for captures older than those fields; those two

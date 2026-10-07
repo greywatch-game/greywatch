@@ -293,7 +293,17 @@ src/
                         #   at all while it is off. Allocates nothing while
                         #   recording (GC is what it exists to catch). Game
                         #   brackets the phases it already sequences; no system
-                        #   has heard of it. Handle: `window.__profile`
+                        #   has heard of it. Handle: `window.__profile`.
+                        #   The RECORDER only: lends the ring to profileReport
+                        #   at a capture
+    profilePhases.ts    # The profiler's phase list (PHASES, the slot ids P
+                        #   and SLOTS) and the tree it nests in (PARENT_OF,
+                        #   ROOTS). Both halves read it, which is why it is
+                        #   neither's — kept in either, they would be a cycle
+    profileReport.ts    # What a capture SAYS: the ProfileReport shape (the
+                        #   JSON the viewer reads), buildReport, buildTrace and
+                        #   the stats. Allocates freely and never writes the
+                        #   ProfileRing it is lent
     FrameCap.ts         # The frame-rate cap (Settings.fpsCap): the engine's
                         #   frame REQUESTER, refusing a refresh before the
                         #   next frame is DUE. A deadline, not Babylon's

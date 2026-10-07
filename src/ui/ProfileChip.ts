@@ -50,7 +50,7 @@
  * download; the last rung always works and is what a desktop wants anyway.
  */
 import "./profile.css";
-import type { ProfileReport } from "../core/FrameProfile";
+import type { ProfileReport } from "../core/profileReport";
 
 /** How long a flash line stays up, in milliseconds. A fact about reading. */
 const FLASH_MS = 4000;
