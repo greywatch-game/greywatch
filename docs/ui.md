@@ -11,9 +11,9 @@ contract for everything under `src/ui/`.
 goes: `OverlayScreen` owns the four full-screen cards, `DeployScreen` the deploy
 map, `LoadoutScreen` the kit, `SettingsScreen` the settings list, `LobbyScreen`
 the match browser, `Minimap` the corner map, `Scoreboard` the Tab board, and
-`HUD` **only** the gameplay chrome. `TouchControls` is in the directory and is deliberately not in that
-count — it draws like a screen and answers like a gamepad; see the last section
-here.
+`HUD` **only** the gameplay chrome. `TouchControls` is in the directory and is
+deliberately not in that count — it draws like a screen and answers like a
+gamepad; see the last section here.
 
 ## The front end, and the shell it replaced
 
@@ -387,23 +387,24 @@ pause are still true.
 
 **The Tab board is a title screen for the STANDING, held over the round**, and
 it is `Scoreboard` (`ui/Scoreboard.ts`, `scoreboard.css`) rather than a part of
-`HUD`, because its lifetime is the ROUND's rather than the armed player's: it
-is owed to the deploy screen, which takes the HUD's gameplay chrome off. It is
-built straight after `HUD` and before every other screen. It read as a web
-table in a dialog — CONQUEST the largest word on it, a spreadsheet of team
-totals, two small grids of rows — and it is laid out as the front end is now. **The title is the two reinforcement counts facing each
-other**, each in its own side's colour, across the margin between them drawn
-as the round-over card draws it (the two counts against each other, not
-against the pool: the HUD's own gauge over the top of the screen already says
-how far each side has fallen, and what the board adds is who is AHEAD). Each
-side's flags, points and kills sit under its numeral, and an eyebrow says what
-is being played. **Each side's list is the round-over card's board line for
-line** — a place, the side's mark down the leading edge, the name, kills,
-deaths and the points it is ranked by, last and brightest, the player's own
-line hot — because the card that ends a round shows the top of this board, and
-two drawings of one board is a board a player learns twice. The round goes
-DOWN behind it under a scrim rather than away, and the entrance (a fade and a
-short rise, the margin bar growing in) is keyed to the RAISE, never to a patch.
+`HUD`, because its lifetime is the ROUND's rather than the armed player's: it is
+owed to the deploy screen, which takes the HUD's gameplay chrome off. It is
+built straight after `HUD` and before every other screen. It read as a web table
+in a dialog — CONQUEST the largest word on it, a spreadsheet of team totals, two
+small grids of rows — and it is laid out as the front end is now. **The title is
+the two reinforcement counts facing each other**, each in its own side's colour,
+across the margin between them drawn as the round-over card draws it (the two
+counts against each other, not against the pool: the HUD's own gauge over the
+top of the screen already says how far each side has fallen, and what the board
+adds is who is AHEAD). Each side's flags, points and kills sit under its
+numeral, and an eyebrow says what is being played. **Each side's list is the
+round-over card's board line for line** — a place, the side's mark down the
+leading edge, the name, kills, deaths and the points it is ranked by, last and
+brightest, the player's own line hot — because the card that ends a round shows
+the top of this board, and two drawings of one board is a board a player learns
+twice. The round goes DOWN behind it under a scrim rather than away, and the
+entrance (a fade and a short rise, the margin bar growing in) is keyed to the
+RAISE, never to a patch.
 
 **It is sized on the FRONT END's unit rather than on the HUD's ladder** —
 `#scoreboard` is on `base.css`'s `:is(...)` token list, so `--u`, the `--t-*`
@@ -426,17 +427,18 @@ first, the PLACE next in a match (the ping column taking a track), and on a
 phone the place always and, in a match, the kills. What is left on the
 smallest phone in a 48-body match is who, their points and their connection.
 
-**The board's frame is built once and patched by text; its LISTS are rebuilt
-as markup, and their rows are BUILT rather than interpolated.** Tab is a held
-key, so `Game.pushScoreboard` pushes the panel on every frame it is up; a key over everything the lists say is what keeps that
-to a rebuild per change, and the per-body rows are in that key because a kill
-anywhere reorders the column it lands in. The standing has a key of its own
-and is written into the frame by `textContent`, while every row goes through
-`document.createElement` and `textContent`, because one of its fields is **a
-name another player typed**. The server bounds that string's
-length; nothing bounds what is in it, and this file is where it is finally
-drawn. A bot's name is not on the wire at all: `entities/callsigns.ts` derives
-one from the roster index, which is the same number on every screen.
+**The board's frame is built once and patched by text; its LISTS are rebuilt as
+markup, and their rows are BUILT rather than interpolated.** Tab is a held key,
+so `Game.pushScoreboard` pushes the panel on every frame it is up; a key over
+everything the lists say is what keeps that to a rebuild per change, and the
+per-body rows are in that key because a kill anywhere reorders the column it
+lands in. The standing has a key of its own and is written into the frame by
+`textContent`, while every row goes through `document.createElement` and
+`textContent`, because one of its fields is **a name another player typed**. The
+server bounds that string's length; nothing bounds what is in it, and
+`Scoreboard` is where it is finally drawn. A bot's name is not on the wire at
+all: `entities/callsigns.ts` derives one from the roster index, which is the
+same number on every screen.
 
 **The ping column exists only in a match, and whether it does is TOLD rather
 than derived.** Offline there is no server to be any distance from, so the
@@ -1244,8 +1246,9 @@ The right-hand side is an INTEL plate on whatever the cursor rests on.
   drawing). What a player sees is a bare square, then the ground it is cut in,
   then the town on it. The row is re-tested inside every callback, because the
   cursor moves faster than a fetch and a chunk arriving for a map the player
-  has scrolled off must not repaint the one they are looking at. A coarse map for a moment and then the real one is the honest
-  order; a hole in the menu until two fetches return is not.
+  has scrolled off must not repaint the one they are looking at. A coarse map
+  for a moment and then the real one is the honest order; a hole in the menu
+  until two fetches return is not.
 - **A `WaterRect` is an EXTENT and the waterline is DERIVED**, which is the one
   thing on these maps that cannot be read straight off the layout. The real
   surface is a flat plane and the world is opaque, so a body is only the part of

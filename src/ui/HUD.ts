@@ -536,10 +536,9 @@ export class HUD {
    * their own guards on the spot, in the same branch that rebuilt them: the
    * magazine strip on a change of magazine size, the grenade pips and the
    * anti-tank pips on a change of pouch, and the flag cells on a change of
-   * flag count. Anything added
-   * here that replaces a cached element owes the same line next to the
-   * rebuild, or the new node inherits a previous one's "already correct" and
-   * the first write it needs is the write it skips.
+   * flag count. Anything added here that replaces a cached element owes the
+   * same line next to the rebuild, or the new node inherits a previous one's
+   * "already correct" and the first write it needs is the write it skips.
    */
   private lastUsePrompt = false;
   private lastUseText = "";
@@ -917,9 +916,9 @@ export class HUD {
    * anything, which the caller shows as `--`.
    *
    * The statistic is `core/frameStats.ts`'s, which a profiler capture reports
-   * too — in milliseconds where this is a rate, but one definition, so the two
-   * instruments cannot disagree about what a 1% low is. Why it is the mean of
-   * the tail and not the 99th percentile is argued there.
+   * too — in milliseconds where this is a rate, but one definition, so the
+   * two instruments cannot disagree about what a 1% low is. Why it is the mean
+   * of the tail and not the 99th percentile is argued there.
    *
    * A full sort at four times a second over a few hundred floats is far below
    * anything that would matter, and it is done into a preallocated scratch so

@@ -185,10 +185,10 @@ export interface VoteView {
 /**
  * One line of the round's board, as the round-over card ranks it.
  *
- * A view rather than `Scoreboard`'s `ScoreRow`, for `VoteView`'s reason: the card
- * draws SIDES as the viewer sees them (`mine`), never a team index, and has no
- * business with a ping. `name` may be a string a PERSON chose on the far end
- * of a socket, so it only ever reaches the page through `textContent`.
+ * A view rather than `Scoreboard`'s `ScoreRow`, for `VoteView`'s reason: the
+ * card draws SIDES as the viewer sees them (`mine`), never a team index, and
+ * has no business with a ping. `name` may be a string a PERSON chose on the
+ * far end of a socket, so it only ever reaches the page through `textContent`.
  */
 export interface BoardRow {
   name: string;

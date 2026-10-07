@@ -22,8 +22,8 @@
  * small caps floating in the middle of a black page, and three rows of chips
  * under them — eight map names in a strip that ran off its own edge. Now the
  * MATCH is the title: the map it is running is set large over that map's own
- * photograph (the menu's `MenuBackdrop`, `#menu-shot`), with the
- * seats, the ping and the state under it. The matches are a column of plates,
+ * photograph (the menu's `MenuBackdrop`, `#menu-shot`), with the seats, the
+ * ping and the state under it. The matches are a column of plates,
  * each carrying a slice of its map's picture; an INTEL plate on the right says
  * what joining that one means and draws its plan; Refresh and Back are the
  * system corner; the prompts are drawn on their controls for the device in hand
@@ -826,14 +826,14 @@ export class LobbyScreen {
 
     // An id, because a listed match names its map by id — and one this build
     // has never heard of has no picture, so the backdrop fades out. Pushed only
-    // while the screen is up, which is only ever over the menu: the picture is
-    // the menu's, and nothing else may raise it.
-    const backdrop = this.backdropOf(focus);
-    if (this.visible && (!was || was.backdrop !== backdrop)) {
-      this.backdrop.show(MAPS.find((m) => m.id === backdrop));
+    // while this screen is up, which is only ever over the menu: the picture
+    // is the menu's, and the lobby has no business raising it anywhere else.
+    const shotId = this.backdropOf(focus);
+    if (this.visible && (!was || was.backdrop !== shotId)) {
+      this.backdrop.show(MAPS.find((m) => m.id === shotId));
     }
 
-    this.shown = { page: this.page, keys, heroKey, intelKey, backdrop };
+    this.shown = { page: this.page, keys, heroKey, intelKey, backdrop: shotId };
   }
 
   /** The row the cursor was on at the last draw, for the identity rule. */

@@ -12,8 +12,8 @@
  * writes `#hud.innerHTML`, and before every other screen.
  *
  * Invariants:
- *  - **Pushed, never asked.** `set` is called on every frame of a round; while
- *    the board is down it returns after one comparison, and while it is up the
+ *  - **Pushed, never asked.** `set` is called on every frame; while the board
+ *    is down it returns after a comparison or two, and while it is up the
  *    standing and the lists each have a key, so the DOM hears a CHANGE and not
  *    a frame. The keys are values LAST WRITTEN, never a second copy of game
  *    state, and the raise clears both so the first frame up always writes.
@@ -147,7 +147,8 @@ export class Scoreboard {
   /**
    * LAST-WRITTEN VALUES, as `HUD`'s gauges keep them: whether the board is up,
    * the standing's key and the lists' key. The two keys are cleared on the
-   * raise, in the same branch that replays the entrance.
+   * raise, in the same branch that replays the entrance — so the first frame
+   * the board is up writes everything, whatever it said when it went down.
    */
   private lastVisible = false;
   private lastHead = "";
@@ -203,8 +204,8 @@ export class Scoreboard {
     }
     // THE ONE MARKUP REBUILD, AND IT IS KEYED.
     //
-    // Tab is a HELD key, so `Game.updateHud` calls this on every frame the
-    // board is up — and this method used to answer by tearing down and
+    // Tab is a HELD key, so `Game.pushScoreboard` calls this on every frame
+    // the board is up — and this method used to answer by tearing down and
     // reparsing the whole panel sixty times a second for as long as a player
     // looked at it. The key is what makes it a rebuild per CHANGE.
     //

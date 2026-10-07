@@ -1271,8 +1271,8 @@ src/
       backdrop.css      #   on: a root of its own so it survives a card being
                         #   rewritten and stays UNDER the scrim, drifting, two
                         #   layers cross-fading on a decode. Built by Game just
-                        #   before the overlay and handed to it and to the lobby,
-                        #   so there is one picture
+                        #   before the overlay and handed to it and to the
+                        #   lobby, so there is one picture
     OverlayScreen.ts    # The four cards — menu, round-over, pause, building —
       overlay.css       #   the .overlaid class they raise, and which map the
                         #   MenuBackdrop it is handed shows. The menu is a

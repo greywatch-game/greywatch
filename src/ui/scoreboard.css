@@ -160,9 +160,9 @@
 }
 
 /* --- the two sides' lists ---
-   One line per combatant, bots included: the round is 8v8 whoever is
-   driving, so a board that listed only the people in it would be reporting a
-   fraction of the fight. Your side is always the left column — see
+   One line per combatant, bots included: the round fields its whole roster
+   whoever is driving, so a board that listed only the people in it would be
+   reporting a fraction of the fight. Your side is always the left column — see
    `Scoreboard.set`. A DEEP roster puts two lists in each column, split in rank
    order, each with its own heading. */
 #scoreboard .sb-teams {
