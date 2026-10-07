@@ -461,9 +461,9 @@ what happens when one is taken at face value.
 - ~~**HUD `innerHTML` rebuilds.**~~ **False of today's tree**: `HUD.ts`'s header
   says per-frame writes never touch `innerHTML`, the magazine strip, the
   grenade pips and the flag strip are rebuilt only when their SIZE changes, the
-  damage arcs are a fixed pool, and the scoreboard's frame is built once with
-  its lists rebuilt only while Tab is held. A killfeed line is still built as
-  markup, once per kill.
+  damage arcs are a fixed pool, and the scoreboard (`Scoreboard.ts` now) builds
+  its frame once and rebuilds its lists only while Tab is held. A killfeed line
+  is still built as markup, once per kill.
 - **`ConquestSystem.planSquads`**, called by `BattleSystem.updateSquads` on its
   timer (`CONFIG.bots.squad.updateRate`, 2 Hz).
 - **WebAudio node churn** in `Sfx` — nodes are created per voice.

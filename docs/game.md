@@ -234,7 +234,7 @@ state's own arm**, and for the mirror reason: the Tab board is owed to `playing`
 `dying` and `deploy` alike, so it belongs to the ROUND rather than to the states
 that simulate one. It runs after the switch and before the render, so the state
 a frame ends in decides — which is what makes "the board goes when the round
-does" one line instead of a `setScoreboard(false)` owed by every one of the six
+does" one line instead of a `scoreboard.set(false)` owed by every one of the six
 ways out of a round. A lid takes it away, because a lid is a screen the player
 asked for.
 

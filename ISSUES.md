@@ -59,7 +59,7 @@ match smoke test (`npm run build:server && npm run server`, two clients).
 | ~~[28](#28-frameprofilets-split-the-recorder-from-the-reporter)~~ | P2 — done | `FrameProfile.ts`: split recorder from reporter |
 | ~~[29](#29-vehiclecrewts-extract-the-pilot)~~ | P2 — done | `VehicleCrew.ts`: extract the pilot |
 | ~~[30](#30-celshaderts-move-shadow-bindings-out-of-the-material-factory)~~ | P2 — done | `CelShader.ts`: move shadow bindings out of the factory |
-| [31](#31-hudts-scoreboard-to-its-own-class-one-1-low) | P2 | `HUD.ts`: scoreboard to its own class, one 1% low |
+| ~~[31](#31-hudts-scoreboard-to-its-own-class-one-1-low)~~ | P2 — done | `HUD.ts`: scoreboard to its own class, one 1% low |
 | [32](#32-ui-screens-shared-setinputdevice-and-paintthumb) | P2 | UI screens: shared `setInputDevice` and `paintThumb` |
 | [33](#33-overlayscreents-extract-menubackdrop) | P2 | `OverlayScreen.ts`: extract `MenuBackdrop` |
 | [34](#34-vehicle-models-shared-resetrigpose-and-whip) | P2 | Vehicle models: shared `resetRigPose` and `whip` |
@@ -1218,6 +1218,61 @@ or unshadowed surface at whole-percent means, not hundredths of a level.
 
 **Acceptance.** Tab board looks and behaves the same in every state; FPS
 readout's 1% low matches a capture's.
+
+**Done.** `HUD.ts` is 2,007 lines, down from 2,412, and `hud.css` 1,407, down
+from 1,766. The board is `ui/Scoreboard.ts` (444 lines) with
+`ui/scoreboard.css` (365), and the 1% low is `core/frameStats.ts`.
+
+- **`Scoreboard`** owns `#scoreboard`: `DEEP_ROSTER`, `ScoreboardParts`,
+  `ScoreRow` (now exported from here), the frame, the keyed lists and the three
+  last-written guards. `setScoreboard` is `Scoreboard.set`, and its inline
+  payload type is the exported `ScoreboardView`. Otherwise the methods moved
+  as they were: `buildScoreboard` is `build`, `this.scoreboard` is `this.root`,
+  and the guards lost their `Scoreboard` prefix. It builds its own root and
+  appends it to `#hud`. `Game` constructs it straight after `HUD`, before every
+  other screen, so it sits in `#hud` where it used to: after the HUD's own
+  markup and before every other root. Stacking is its `z-index: 9`, which did
+  not change.
+- **`scoreboard.css`** is the old `hud.css` scoreboard section, moved verbatim
+  under a header of its own. Two comments in it named `setScoreboard` and now
+  name `Scoreboard.set`. Nothing outside the section targeted `#scoreboard`
+  except `base.css`'s token list, which only sets custom properties, so moving
+  the rules later in the bundle changes no cascade.
+- **The 1% low** is `onePercentLow(sorted)` in `core/frameStats.ts`. It is the
+  mean of the slowest 1% of an ascending sample in the sample's own units, and
+  it allocates nothing. The HUD hands it its ring in seconds and turns the
+  answer into a rate (its method is now `lowRate`, so it does not shadow the
+  import). `profileReport.ts` hands it the capture's frames in ms, and its
+  private copy is gone. The argument for the tail mean over p99 moved from the
+  HUD into the new module. An empty sample now reads 0 where the profiler's copy
+  would have returned NaN; nothing calls it empty.
+- **`HUD`'s header and its guard notes** stop listing the scoreboard. The
+  guard note had said four rebuilds clear their own guards, and one of the four
+  was the scoreboard. It now names the four that are left: the magazine strip,
+  the grenade pips, the anti-tank pips (which were missing from the list) and
+  the flag cells. `hud.css`'s header stops claiming the menu, round-over and
+  pause cards, which live in `overlay.css`.
+- **`Game`**: `pushScoreboard` calls `scoreboard.set`. Its doc comment had come
+  loose above `pushTouchControls`'s, and it is back on `pushScoreboard`.
+
+References updated: `docs/ui.md` (the screen list, the board's section, and
+"the one markup rebuild left in `HUD`", which also named `Game.updateHud` as
+the pusher), `docs/game.md`, `docs/world.md`, `docs/profiling.md`,
+`FILES.md` (a `Scoreboard.ts` row and a `frameStats.ts` row), `FINDINGS.md`,
+`VERIFYING.md` (whose tip named `updateGameplay` and `hud.setScoreboard`),
+`ENGINE_UPGRADE.md`, and a comment in `OverlayScreen.ts`.
+
+Checked: `npm run typecheck` passes. **In the browser, HEAD against this
+change**, with Tab held on Hollowmere (16 bodies) and Sarab (48, the deep
+board), in `deploy` and in `playing`, at 1920×1080, 844×390 and 390×844. Every
+element under `#scoreboard` (162 on Hollowmere, 402 on Sarab) has the same
+computed style and the same box. The board's text, its class list and its
+parent are the same too, and it goes back to `hidden` on release. No page
+errors. **The 1% low:** with `?profile` armed and the readout up for twelve
+seconds on Hollowmere, the HUD's ring held 299 frames and read 25.15 ms
+(39.76 fps). The capture's `series.frameMs` over the same last 299 frames
+gives 25.15 ms too. The capture's own `onePercentLow` matched an independent
+recompute over its whole series (838.1 ms, with the install frames in it).
 
 ### 32. UI screens: shared `setInputDevice` and `paintThumb`
 

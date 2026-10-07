@@ -2277,7 +2277,7 @@ Three levers, and only the first is cheap:
    between them that is transit rather than fighting.
 2. **More flags.** `ConquestSystem` counts occupancy off the combatant list
    `Game` assembles each frame and nothing hardcodes five — but the UI is TOLD
-   the count rather than assuming it (`MenuState.flagCount`, `setScoreboard`,
+   the count rather than assuming it (`MenuState.flagCount`, `Scoreboard.set`,
    `showRoundOver`), and the deploy map, the minimap's edge markers and the
    ticket bleed all read it. Check each rather than assuming.
 3. **More bodies, which is the expensive one — LANDED OFFLINE.**

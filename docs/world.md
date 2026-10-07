@@ -635,7 +635,7 @@ Three rules:
   minimap — a write at any other time leaves all four pointing into a `GameMap` that
   `installMap` has already disposed.
 - A map's display name and its **flag count** are **passed to the UI, never written
-  there** — through `setScoreboard`'s `map` field, `showRoundOver`, and
+  there** — through `Scoreboard.set`'s `map` field, `showRoundOver`, and
   `MenuState.flagCount`. The `<h1>GREYWATCH</h1>` on the title screen is the
   deliberate exception: that one is the game's name and no map's — it was the
   first map's too until the game was renamed, and the markup carrying it as a

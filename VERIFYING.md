@@ -1116,8 +1116,9 @@ is one machine's:
   spring is steppable the same way, and being closed-form it gives the same
   answer at any `dt`, which is the one recoil number a headless run may be
   trusted on.
-- `Game.updateGameplay` pushes HUD state every frame, so `hud.setScoreboard(...)`
-  by hand is overwritten next tick. Drive the input (`page.keyboard.down("Tab")`).
+- `Game.tick` pushes the Tab board every frame (`pushScoreboard`), so
+  `scoreboard.set(...)` by hand is overwritten next tick. Drive the input
+  (`page.keyboard.down("Tab")`).
 - **`moveWithCollisions` is inert headless, so a "does this stop a body" test
   cannot be written that way.** Set `scene.collisionsEnabled`, give the mover an
   `ellipsoid` and push it 10 m into a `checkCollisions` box and it travels the

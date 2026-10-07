@@ -12,7 +12,8 @@ summary; this is the argument.
 
 It is not the only instrument in the tree and is deliberately not the biggest.
 [`world/buildProfile.ts`](../src/world/buildProfile.ts) times the map BUILD and
-is DEV-only; `HUD.setFps` puts a rate and a 1% low on screen;
+is DEV-only; `HUD.setFps` puts a rate and a 1% low on screen, the 1% low
+being the same function a capture reports (`core/frameStats.ts`);
 [`FINDINGS.md`](../FINDINGS.md) is where a measurement goes once it means
 something. This file is about the frame, in flight, on a device you do not own.
 

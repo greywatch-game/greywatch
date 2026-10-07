@@ -2,7 +2,8 @@
  * HUD.ts — The gameplay chrome, and only that: vitals/ammo/grenades, the stowed
  * slot, reinforcement gauge, flag strip, capture-zone panel, hitmarker,
  * damage vignette, directional damage arcs, toasts, killfeed,
- * score feed, scoreboard.
+ * score feed. The Tab board is NOT here — it is `Scoreboard`, a screen whose
+ * lifetime is the round's rather than the living player's.
  * Invariants: Game pushes state every frame (setHealth/setAmmo/setFlags/
  * setCapture/setViewYaw/...) — setting HUD state from anywhere else is
  * overwritten next tick. Pure DOM manipulation; reads ControlPoint data, never
@@ -27,24 +28,23 @@
  *
  * Per-frame writes touch text nodes, class flags and CSS custom properties
  * only — never innerHTML. Every element written 60 times a second (the ticket
- * gauge, the flag cells, the magazine strip) is built once and cached, and
- * `setScoreboard` is the one markup-rebuilding call left.
+ * gauge, the flag cells, the magazine strip) is built once and cached.
  *
  * **EVERY SETTER GUARDS ITS OWN WRITE.** `Game.updateHud` pushes the whole
  * gauge set on every frame — that is the right shape, and it says nothing
  * about how often the DOM should hear it. Health moves on a hit, tickets a few
- * times a second, the flag strip on a capture, and the scoreboard's markup only
- * while Tab is held. So each setter keeps the value it last handed over and
- * writes only on a difference; `setFps` is the pattern, and the `last*` block
- * of fields below is the bookkeeping. Adding a setter here without a guard is
- * adding a style recalculation to every frame of the game.
+ * times a second, the flag strip on a capture. So each setter keeps the value
+ * it last handed over and writes only on a difference; `setFps` is the
+ * pattern, and the `last*` block of fields below is the bookkeeping. Adding a
+ * setter here without a guard is adding a style recalculation to every frame
+ * of the game.
  */
 import "./hud.css";
 import { CONFIG } from "../config";
+import { onePercentLow } from "../core/frameStats";
 import { angleDelta } from "../core/math";
 import type { ControlPoint } from "../systems/ConquestSystem";
 import type { ScoreKind } from "../systems/ScoreBook";
-import { pingQuality, pingText } from "./ping";
 
 /**
  * Geometry of one damage arc, in the pixels of its own SVG box. Art constants,
@@ -242,76 +242,6 @@ const HIT_POP_GAIN = 0.55;
 const HIT_FADE = 0.45;
 
 /**
- * Bodies in the round above which the scoreboard lays each side's list out
- * two-up instead of as one column.
- *
- * 24 is chosen against the rosters that exist rather than against a pixel
- * count: five maps field sixteen, and Sarab's and Cinderhaven's forty-eight are
- * the only rosters on the far side of it. They field forty-eight in a MATCH
- * too (`setFielded`), so a deep board can carry the ping column, and
- * `hud.css` takes the deaths and then the place off a deep line to keep a
- * name readable beside it.
- */
-const DEEP_ROSTER = 24;
-
-/** The Tab board's frame, looked up once when it is built. */
-interface ScoreboardParts {
-  eyebrow: HTMLElement;
-  /** Left (the player's own side) and right, never team 0 and team 1. */
-  sides: {
-    team: HTMLElement;
-    tickets: HTMLElement;
-    flags: HTMLElement;
-    score: HTMLElement;
-    kills: HTMLElement;
-  }[];
-  margin: HTMLElement;
-  split: [HTMLElement, HTMLElement];
-  /** The box each side's lists are rebuilt into. */
-  lists: [HTMLElement, HTMLElement];
-}
-
-/**
- * One combatant's line on the scoreboard.
- *
- * A body, not a person: a bot and a human are the same row with the same three
- * numbers, because they are the same thing to the round they are fighting in.
- * `Game.scoreRows` builds these — offline from its own counters, in a match
- * from the authority's table — and this file only sorts and prints them.
- *
- * `name` is the one field here that can be a STRANGER'S STRING, so it is
- * written with `textContent` and never interpolated into markup. The server
- * bounds its length on arrival; nothing bounds what is in it.
- */
-export interface ScoreRow {
-  name: string;
-  team: number;
-  kills: number;
-  deaths: number;
-  /**
-   * Points: kills, the bonuses on them, and what this body has been paid for
-   * the flags — see `config/score.ts`.
-   *
-   * The column the board is SORTED by, and the reason it exists: a round is
-   * won on flags and lost on tickets, so the player who took three of them is
-   * doing more for the win than the one with four more kills, and a board
-   * ordered by kills says the opposite in the one place everybody looks.
-   */
-  score: number;
-  /** The local player's own row, which the board picks out. */
-  you: boolean;
-  /**
-   * Round trip to the server in ms, or -1 where there is no connection to
-   * measure — every bot on the board, and every row of an offline round.
-   *
-   * The authority's own measurement, mirrored: see `PingsMessage` for why a
-   * client cannot produce this column for anybody but itself. Rendered by
-   * `ui/ping.ts`, which is also what the lobby's reading goes through.
-   */
-  ping: number;
-}
-
-/**
  * The vehicle the player is driving, as the bottom-right band draws it.
  *
  * Derived by `Game` from the live `Vehicle` each frame, exactly as `CaptureStatus`
@@ -427,7 +357,7 @@ export interface CaptureStatus {
 
 /**
  * DOM-based HUD: vitals/ammo, the Conquest reinforcement gauge and flag strip,
- * hitmarker, damage vignette, toasts, killfeed and scoreboard.
+ * hitmarker, damage vignette, toasts and killfeed.
  * Styling is `hud.css`, imported above.
  */
 export class HUD {
@@ -541,9 +471,6 @@ export class HUD {
   private usePromptParts: { key: HTMLElement; text: HTMLElement };
   private killfeed: HTMLElement;
   private scorefeed: HTMLElement;
-  private scoreboard: HTMLElement;
-  /** The board's standing parts, built once — see `buildScoreboard`. */
-  private sb: ScoreboardParts;
   private capture: HTMLElement;
   /** The capture panel's parts, looked up once — it is written every frame. */
   private captureParts: {
@@ -605,13 +532,14 @@ export class HUD {
    * it remembers a write to was replaced under it. The HUD's own markup is
    * written once in the constructor and never torn down as a whole, so there is
    * no moment when all of these are stale together for something to clear —
-   * which means the four calls that DO replace their elements each clear their
-   * own guards on the spot, in the same branch that rebuilt them: the magazine
-   * strip on a change of magazine size, the grenade pips on a change of pouch,
-   * the flag cells on a change of flag count, and the scoreboard's key when the
-   * board comes back up. Anything added here that replaces a cached element
-   * owes the same line next to the rebuild, or the new node inherits a previous
-   * one's "already correct" and the first write it needs is the write it skips.
+   * which means the four calls that DO replace their elements each clear
+   * their own guards on the spot, in the same branch that rebuilt them: the
+   * magazine strip on a change of magazine size, the grenade pips and the
+   * anti-tank pips on a change of pouch, and the flag cells on a change of
+   * flag count. Anything added
+   * here that replaces a cached element owes the same line next to the
+   * rebuild, or the new node inherits a previous one's "already correct" and
+   * the first write it needs is the write it skips.
    */
   private lastUsePrompt = false;
   private lastUseText = "";
@@ -672,9 +600,6 @@ export class HUD {
   private lastFlagHeight: string[] = [];
   private lastFlagFill: string[] = [];
   private lastCaptureKey = "";
-  private lastScoreboardVisible = false;
-  private lastScoreboardHead = "";
-  private lastScoreboardKey = "";
   private lastLockHint = false;
   private lastTouching = false;
   private lastStowedDry = false;
@@ -719,7 +644,6 @@ export class HUD {
       <div id="toasts"></div>
       <div id="killfeed"></div>
       <div id="scorefeed"></div>
-      <div id="scoreboard" class="hidden"></div>
       <div id="lock-hint" class="hidden"><b>CLICK</b> TO CAPTURE THE MOUSE</div>
       <div id="gun-marker" class="hidden">
         <i class="t"></i><i class="r"></i><i class="b"></i><i class="l"></i>
@@ -837,8 +761,6 @@ export class HUD {
     };
     this.killfeed = document.getElementById("killfeed")!;
     this.scorefeed = document.getElementById("scorefeed")!;
-    this.scoreboard = document.getElementById("scoreboard")!;
-    this.sb = this.buildScoreboard();
     this.capture = document.getElementById("capture-status")!;
     this.captureParts = {
       id: this.capture.querySelector(".cap-id") as HTMLElement,
@@ -955,7 +877,7 @@ export class HUD {
       this.fpsMsText = ms;
       this.fpsMs.textContent = ms;
     }
-    const low = this.onePercentLow();
+    const low = this.lowRate();
     const lowText = low > 0 ? String(Math.round(low)) : "--";
     if (lowText !== this.fpsLowText) {
       this.fpsLowText = lowText;
@@ -994,23 +916,16 @@ export class HUD {
    * the window. Zero until the ring holds enough frames for that to mean
    * anything, which the caller shows as `--`.
    *
-   * The mean of the worst 1%, deliberately, and not the 99th percentile —
-   * they sound interchangeable and are not. A percentile is a single sample
-   * from the tail, so it cannot move until a full 1% of frames are bad: over
-   * a 5 s window at 120 Hz that is six frames, and a lone 100 ms stall sits at
-   * index 599 of 600 where p99 reads index 594 and never sees it. Measured,
-   * that stall left a p99 reading a clean 120 — a hitch you would certainly
-   * feel, reported as perfect. Averaging the tail lets one bad frame pull the
-   * figure down in proportion to how bad it was, which is the behaviour this
-   * number exists to have.
+   * The statistic is `core/frameStats.ts`'s, which a profiler capture reports
+   * too — in milliseconds where this is a rate, but one definition, so the two
+   * instruments cannot disagree about what a 1% low is. Why it is the mean of
+   * the tail and not the 99th percentile is argued there.
    *
    * A full sort at four times a second over a few hundred floats is far below
    * anything that would matter, and it is done into a preallocated scratch so
-   * the readout allocates nothing per update. `Float64Array.sort` is numeric
-   * by default — the ascending-string default that catches `Array.sort` out
-   * does not apply here.
+   * the readout allocates nothing per update.
    */
-  private onePercentLow(): number {
+  private lowRate(): number {
     if (this.frameCount < FPS_MIN_SAMPLES) return 0;
     for (let i = 0; i < this.frameCount; i++) {
       this.frameScratch[i] =
@@ -1018,14 +933,7 @@ export class HUD {
     }
     const window = this.frameScratch.subarray(0, this.frameCount);
     window.sort();
-    // At least one frame, so a short window still reports its worst rather
-    // than dividing by zero.
-    const tail = Math.max(1, Math.floor(this.frameCount * 0.01));
-    let sum = 0;
-    for (let i = this.frameCount - tail; i < this.frameCount; i++) {
-      sum += window[i];
-    }
-    const mean = sum / tail;
+    const mean = onePercentLow(window);
     return mean > 0 ? 1 / mean : 0;
   }
 
@@ -1717,319 +1625,6 @@ export class HUD {
     }
     setTimeout(() => el.classList.add("fade"), 1500);
     setTimeout(() => el.remove(), 2100);
-  }
-
-  /**
-   * The Tab board: a title screen for the STANDING, held over the round.
-   *
-   * **The title is the two reinforcement counts facing each other**, in the
-   * colours of the sides that own them, across the margin between them drawn
-   * as the round-over card draws it — because that is the question a player
-   * holding Tab is asking, and it is the one thing on the board that says
-   * whether the round is being won. Under it each side's list is the
-   * round-over card's board, line for line: a place, the side's mark down the
-   * leading edge, the name, kills, deaths and the points it is ranked by, the
-   * player's own line picked out hot. The card that ends the round shows the
-   * top of this board, and the two are one drawing so a player learns it once.
-   *
-   * The FRAME is built once (`buildScoreboard`) and patched by text; the
-   * lists are the one markup rebuild left in the file, and they are KEYED —
-   * see below.
-   */
-  setScoreboard(
-    visible: boolean,
-    rows?: {
-      /** What is being played on — passed in, never named here. */
-      map: string;
-      teams: readonly string[];
-      tickets: readonly number[];
-      flags: readonly number[];
-      /** How many flags the map has, which the held counts are read against. */
-      flagCount: number;
-      kills: readonly number[];
-      /** Team totals, summed from the rows by the caller like the one above. */
-      score: readonly number[];
-      playerTeam: number;
-      /**
-       * Whether the board has a ping column at all — true in a match, false
-       * offline, where there is no server to be any distance from.
-       *
-       * Stated by the caller rather than derived from the rows, and that is the
-       * difference between a column and a flicker: the authority's first table
-       * arrives a second into the round, so a board that grew its column when
-       * the first number turned up would reflow every name on it under a player
-       * already reading them. Told outright, the column is there from the first
-       * frame with an em dash in it, and the dashes fill in.
-       */
-      pings: boolean;
-      /**
-       * One line per body in the round, in roster order. Summed for the team
-       * totals above by the caller, and split into two columns here.
-       */
-      rows: readonly ScoreRow[];
-    },
-  ): void {
-    if (visible !== this.lastScoreboardVisible) {
-      this.lastScoreboardVisible = visible;
-      this.scoreboard.classList.toggle("hidden", !visible);
-      // Force both writes below on the frame it comes up, whatever the numbers
-      // were when it was last down — and replay the entrance, which is keyed
-      // to the RAISE and never to a patch.
-      this.lastScoreboardHead = "";
-      this.lastScoreboardKey = "";
-      if (visible) {
-        this.scoreboard.classList.remove("enter");
-        void this.scoreboard.offsetWidth;
-        this.scoreboard.classList.add("enter");
-      }
-    }
-    if (!visible || !rows) return;
-    const sides = [rows.playerTeam, 1 - rows.playerTeam];
-    const head =
-      `${rows.map}|${rows.playerTeam}|${rows.teams}|${rows.tickets}|` +
-      `${rows.flags}|${rows.flagCount}|${rows.kills}|${rows.score}|${rows.rows.length}`;
-    if (head !== this.lastScoreboardHead) {
-      this.lastScoreboardHead = head;
-      this.patchScoreHead(rows, sides);
-    }
-    // THE ONE MARKUP REBUILD LEFT IN THE FILE, AND IT IS KEYED.
-    //
-    // Tab is a HELD key, so `Game.updateHud` calls this on every frame the
-    // board is up — and this method used to answer by tearing down and
-    // reparsing the whole panel sixty times a second for as long as a player
-    // looked at it. The key is what makes it a rebuild per CHANGE.
-    //
-    // The rows are in it whole: a kill anywhere on the roster moves one of
-    // their numbers and reorders the column it is in, and a board that redraws
-    // only when the TOTALS move would sit there showing the wrong order for the
-    // rest of the round every time two people traded.
-    //
-    // The pings are in it too, which is a rebuild about once a second for as
-    // long as Tab is held — the cadence the authority measures them on, and the
-    // same cost as a kill landing. A column left out of the key would be a
-    // column frozen at whatever it read when somebody last died.
-    const key =
-      `${rows.playerTeam}|${rows.teams}|${rows.pings}|` +
-      rows.rows
-        .map(
-          (r) =>
-            `${r.name}:${r.team}:${r.score}:${r.kills}:${r.deaths}:${r.ping}`,
-        )
-        .join(",");
-    if (key === this.lastScoreboardKey) return;
-    this.lastScoreboardKey = key;
-    // The column's width lives in CSS, so whether there IS one is a class on
-    // the panel rather than a template branch per row.
-    this.scoreboard.classList.toggle("pinged", rows.pings);
-    // A DEEP roster is laid out two-up inside each side's column rather than as
-    // one list twice as long.
-    //
-    // The board draws every body in the round and not only the people in it, so
-    // its height is the ROSTER's — eight a side is a panel a player reads at a
-    // glance and twenty-four a side is off the bottom of every short viewport
-    // the game runs on. `MapLayout.perTeam` is what made that reachable.
-    //
-    // Two LISTS rather than one list flowed into CSS columns: the side is
-    // SORTED, so it is split in rank order — the top half down the left, the
-    // rest down the right, each read downward — and each list carries its own
-    // heading, so the right-hand one is never a column of unlabelled figures.
-    const deep = rows.rows.length > DEEP_ROSTER;
-    this.scoreboard.classList.toggle("deep", deep);
-    // Your side on the left, always — the board is read from where you are
-    // standing, and a column that swaps ends with the team you were seated
-    // onto is one a player has to find before they can read it.
-    for (let i = 0; i < sides.length; i++) {
-      const team = sides[i];
-      const lists = this.sb.lists[i];
-      // Sorted by SCORE, then by kills, then by the fewer deaths. Score first
-      // because it is what the board is for: the player who has been taking
-      // flags outranks the one who has been shooting people away from them,
-      // which is the whole reason there is a column beside the kills. `sort`
-      // is stable, so bodies level on all three keep roster order and a row
-      // does not jitter between two places while a player is looking at it.
-      const side = rows.rows
-        .filter((r) => r.team === team)
-        .sort(
-          (a, b) => b.score - a.score || b.kills - a.kills || a.deaths - b.deaths,
-        );
-      const per = deep ? Math.ceil(side.length / 2) : side.length;
-      const parts = deep ? [side.slice(0, per), side.slice(per)] : [side];
-      const built: HTMLElement[] = [];
-      for (let p = 0; p < parts.length; p++) {
-        const list = document.createElement("ol");
-        list.className = "sb-list";
-        list.appendChild(
-          this.scoreHeading(p === 0 ? rows.teams[team] : "", rows.pings),
-        );
-        for (let j = 0; j < parts[p].length; j++) {
-          list.appendChild(
-            this.scoreRow(parts[p][j], p * per + j + 1, rows.pings),
-          );
-        }
-        built.push(list);
-      }
-      lists.replaceChildren(...built);
-    }
-  }
-
-  /**
-   * The board's frame, built once and never rewritten: the eyebrow, the two
-   * sides facing each other across the margin, and a box per side that the
-   * lists are rebuilt into. Everything in it is a number or a name out of
-   * `CONFIG`, and it is still written by `textContent` below, so nothing a
-   * player typed is ever parsed as markup here.
-   */
-  private buildScoreboard(): ScoreboardParts {
-    const side = (which: "mine" | "theirs") => `
-      <div class="sb-side ${which}">
-        <span class="sb-team"></span>
-        <b class="sb-n"></b>
-        <span class="sb-facts"><span><b></b> flags</span><span><b></b> pts</span><span><b></b> kills</span></span>
-      </div>`;
-    this.scoreboard.innerHTML = `
-      <div class="sb-in">
-        <header class="sb-hero">
-          <span class="sb-eyebrow"></span>
-          <div class="sb-face">
-            ${side("mine")}
-            <div class="sb-mid">
-              <b class="sb-margin"></b>
-              <div class="sb-split"><i class="mine"></i><i class="theirs"></i></div>
-              <span class="sb-mcap">Reinforcements</span>
-            </div>
-            ${side("theirs")}
-          </div>
-        </header>
-        <div class="sb-teams">
-          <section class="sb-col mine"></section>
-          <section class="sb-col theirs"></section>
-        </div>
-      </div>
-    `;
-    const q = (sel: string) => this.scoreboard.querySelector(sel) as HTMLElement;
-    const sideParts = (which: string) => {
-      const el = q(`.sb-side.${which}`);
-      const facts = el.querySelectorAll<HTMLElement>(".sb-facts b");
-      return {
-        team: el.querySelector(".sb-team") as HTMLElement,
-        tickets: el.querySelector(".sb-n") as HTMLElement,
-        flags: facts[0],
-        score: facts[1],
-        kills: facts[2],
-      };
-    };
-    return {
-      eyebrow: q(".sb-eyebrow"),
-      sides: [sideParts("mine"), sideParts("theirs")],
-      margin: q(".sb-margin"),
-      split: [q(".sb-split .mine"), q(".sb-split .theirs")],
-      lists: [q(".sb-col.mine"), q(".sb-col.theirs")],
-    };
-  }
-
-  /** Writes the standing into the frame: the eyebrow, both sides, the margin. */
-  private patchScoreHead(
-    rows: NonNullable<Parameters<HUD["setScoreboard"]>[1]>,
-    sides: readonly number[],
-  ): void {
-    let per = 0;
-    for (const team of sides) {
-      let n = 0;
-      for (const r of rows.rows) if (r.team === team) n++;
-      per = Math.max(per, n);
-    }
-    this.sb.eyebrow.textContent = `Conquest · ${rows.map} · ${per} v ${per}`;
-    for (let i = 0; i < sides.length; i++) {
-      const t = sides[i];
-      const parts = this.sb.sides[i];
-      parts.team.textContent = rows.teams[t];
-      parts.tickets.textContent = String(rows.tickets[t]);
-      parts.flags.textContent = `${rows.flags[t]}/${rows.flagCount}`;
-      parts.score.textContent = String(rows.score[t]);
-      parts.kills.textContent = String(rows.kills[t]);
-    }
-    // The bar is the two counts against each other rather than against the
-    // pool, as the round-over card draws it: the HUD's own gauge over the top
-    // of the screen already says how far each side has fallen, and what the
-    // board adds is who is AHEAD, which is the margin.
-    const mine = Math.max(0, rows.tickets[sides[0]]);
-    const theirs = Math.max(0, rows.tickets[sides[1]]);
-    const total = Math.max(1, mine + theirs);
-    this.sb.split[0].style.flexGrow = (mine / total).toFixed(4);
-    this.sb.split[1].style.flexGrow = (theirs / total).toFixed(4);
-    const margin = mine - theirs;
-    this.sb.margin.textContent =
-      margin === 0 ? "Even" : `${margin > 0 ? "+" : "−"}${Math.abs(margin)}`;
-    this.sb.margin.className = `sb-margin ${margin > 0 ? "up" : margin < 0 ? "down" : ""}`;
-  }
-
-  /** The heading over one list — the side's name over the first, blank over a second. */
-  private scoreHeading(team: string, pings: boolean): HTMLElement {
-    const el = document.createElement("li");
-    el.className = "head";
-    const rk = document.createElement("span");
-    rk.className = "rk";
-    rk.textContent = "#";
-    const name = document.createElement("b");
-    name.className = "nm";
-    name.textContent = team;
-    const k = document.createElement("span");
-    k.className = "k";
-    k.textContent = "K";
-    const d = document.createElement("span");
-    d.className = "d";
-    d.textContent = "D";
-    const s = document.createElement("span");
-    s.className = "pts";
-    s.textContent = "Pts";
-    el.append(rk, document.createElement("i"), name, k, d, s);
-    if (pings) {
-      const ms = document.createElement("span");
-      ms.textContent = "Ms";
-      el.append(ms);
-    }
-    return el;
-  }
-
-  /**
-   * One body's line, laid out as the round-over card lays its board.
-   *
-   * Built rather than interpolated, and that is a rule and not a preference:
-   * `name` is a string another player typed on a machine this one has never
-   * met, so it reaches the document through `textContent` — the same way every
-   * other screen in the game writes one. The server bounds its length; nothing
-   * bounds its contents.
-   */
-  private scoreRow(r: ScoreRow, place: number, pings: boolean): HTMLElement {
-    const el = document.createElement("li");
-    if (r.you) el.className = "you";
-    const rk = document.createElement("span");
-    rk.className = "rk";
-    rk.textContent = String(place);
-    const name = document.createElement("b");
-    name.className = "nm";
-    name.textContent = r.name;
-    const kills = document.createElement("span");
-    kills.className = "k";
-    kills.textContent = String(r.kills);
-    const deaths = document.createElement("span");
-    deaths.className = "d";
-    deaths.textContent = String(r.deaths);
-    const score = document.createElement("span");
-    score.className = "pts";
-    score.textContent = String(r.score);
-    el.append(rk, document.createElement("i"), name, kills, deaths, score);
-    // The connection behind the row, in the band that says how bad it is. A
-    // bot's is an em dash rather than a zero — it has no connection at all, and
-    // a zero would read as the best one on the board. Both the number and the
-    // band come from `ui/ping.ts`, which the lobby's reading also goes through.
-    if (pings) {
-      const ping = document.createElement("span");
-      ping.className = `ms ${pingQuality(r.ping)}`;
-      ping.textContent = pingText(r.ping);
-      el.append(ping);
-    }
-    return el;
   }
 
   /**

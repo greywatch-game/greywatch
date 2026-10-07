@@ -24,6 +24,7 @@
  *    graphics and the context rows were pushed by `Game` into the ring.
  */
 import { CONFIG } from "../config";
+import { onePercentLow } from "./frameStats";
 import { PARENT_OF, PHASES, ROOTS, SLOTS, type Phase } from "./profilePhases";
 
 /**
@@ -869,7 +870,14 @@ export function buildReport(
       p95: round(frameStats.p95),
       p99: round(frameStats.p99),
       max: round(frameStats.max),
-      onePercentLow: round(onePercentLow(frames, n), 1),
+      // The statistic `HUD.setFps` puts on screen, from the one definition
+      // both import (`core/frameStats.ts`): a mean is close to the worst
+      // measure of smoothness, because it is dominated by the frames that
+      // arrived quickly and what a player feels is the ones that did not.
+      onePercentLow: round(
+        onePercentLow(Float64Array.from(frames.subarray(0, n)).sort()),
+        1,
+      ),
       hitches: r.hitchAt.length,
       hitchThresholdMs: round(r.hitchBarMs, 1),
       baselineMs: round(r.baselineMs),
@@ -1424,22 +1432,6 @@ function stats(values: Float64Array, n: number): Stats {
 function pick(sorted: Float64Array, q: number): number {
   const i = Math.min(sorted.length - 1, Math.max(0, Math.round(q * (sorted.length - 1))));
   return sorted[i];
-}
-
-/**
- * The mean of the slowest 1% of frames, in milliseconds.
- *
- * The statistic `HUD.setFps` already puts on screen, and for the same reason: a
- * mean is close to the worst measure of smoothness, because it is dominated by
- * the frames that arrived quickly and what a player feels is the ones that did
- * not.
- */
-function onePercentLow(values: Float64Array, n: number): number {
-  const sorted = Float64Array.from(values.subarray(0, n)).sort();
-  const take = Math.max(1, Math.floor(n * 0.01));
-  let sum = 0;
-  for (let i = 0; i < take; i++) sum += sorted[n - 1 - i];
-  return sum / take;
 }
 
 function round(v: number, places = 3): number {

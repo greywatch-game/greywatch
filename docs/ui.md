@@ -10,8 +10,8 @@ contract for everything under `src/ui/`.
 `src/ui/` holds one class per thing on screen, and `HUD` is not where a new one
 goes: `OverlayScreen` owns the four full-screen cards, `DeployScreen` the deploy
 map, `LoadoutScreen` the kit, `SettingsScreen` the settings list, `LobbyScreen`
-the match browser, `Minimap` the corner map, and `HUD` **only** the gameplay
-chrome. `TouchControls` is in the directory and is deliberately not in that
+the match browser, `Minimap` the corner map, `Scoreboard` the Tab board, and
+`HUD` **only** the gameplay chrome. `TouchControls` is in the directory and is deliberately not in that
 count — it draws like a screen and answers like a gamepad; see the last section
 here.
 
@@ -385,10 +385,13 @@ goes up and the HUD's own aiming chrome comes down, and they are not the same
 decision — `.overlaid` would take the tickets and vitals with it, which under a
 pause are still true.
 
-**The Tab board is a title screen for the STANDING, held over the round.** It
-read as a web table in a dialog — CONQUEST the largest word on it, a
-spreadsheet of team totals, two small grids of rows — and it is laid out as the
-front end is now. **The title is the two reinforcement counts facing each
+**The Tab board is a title screen for the STANDING, held over the round**, and
+it is `Scoreboard` (`ui/Scoreboard.ts`, `scoreboard.css`) rather than a part of
+`HUD`, because its lifetime is the ROUND's rather than the armed player's: it
+is owed to the deploy screen, which takes the HUD's gameplay chrome off. It is
+built straight after `HUD` and before every other screen. It read as a web
+table in a dialog — CONQUEST the largest word on it, a spreadsheet of team
+totals, two small grids of rows — and it is laid out as the front end is now. **The title is the two reinforcement counts facing each
 other**, each in its own side's colour, across the margin between them drawn
 as the round-over card draws it (the two counts against each other, not
 against the pool: the HUD's own gauge over the top of the screen already says
@@ -423,10 +426,9 @@ first, the PLACE next in a match (the ping column taking a track), and on a
 phone the place always and, in a match, the kills. What is left on the
 smallest phone in a 48-body match is who, their points and their connection.
 
-**The board's frame is built once and patched by text; its LISTS are the one
-markup rebuild left in `HUD`, and their rows are BUILT rather than
-interpolated.** Tab is a held key, so `Game.updateHud` pushes the panel on
-every frame it is up; a key over everything the lists say is what keeps that
+**The board's frame is built once and patched by text; its LISTS are rebuilt
+as markup, and their rows are BUILT rather than interpolated.** Tab is a held
+key, so `Game.pushScoreboard` pushes the panel on every frame it is up; a key over everything the lists say is what keeps that
 to a rebuild per change, and the per-body rows are in that key because a kill
 anywhere reorders the column it lands in. The standing has a key of its own
 and is written into the frame by `textContent`, while every row goes through
@@ -454,7 +456,7 @@ the death cam, and the DEPLOY SCREEN, which is where a player most wants it: in
 a match that screen is where you sit out every reinforcement clock while the
 round carries on without you. The push is one line after the state switch and
 before the render, so the state a frame ENDS in decides, and the six ways out of
-a round no longer each owe a `setScoreboard(false)` — the one that forgot would
+a round no longer each owe a `scoreboard.set(false)` — the one that forgot would
 leave the numbers hanging over the next screen. It goes away under a lid
 (`paused`, `loadout`, `settings`) because a lid is a screen the player asked
 for. `#scoreboard` carries a `z-index` for exactly one reason: every screen

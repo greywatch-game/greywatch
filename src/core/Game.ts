@@ -184,12 +184,8 @@ import { MAPS, loadHeights, type MapDef } from "../world/maps";
 import { MapBuilder, type BuildOptions, type GameMap } from "../world/MapBuilder";
 import { TerrainField } from "../world/TerrainField";
 import { DeployScreen } from "../ui/DeployScreen";
-import {
-  HUD,
-  type CaptureStatus,
-  type ScoreRow,
-  type VehicleChair,
-} from "../ui/HUD";
+import { HUD, type CaptureStatus, type VehicleChair } from "../ui/HUD";
+import { Scoreboard, type ScoreRow } from "../ui/Scoreboard";
 import {
   OverlayScreen,
   type BuildingState,
@@ -397,6 +393,8 @@ export class Game {
   private input: InputManager;
   private cameraSys: CameraSystem;
   private hud: HUD;
+  /** The Tab board, pushed from `tick` — see `pushScoreboard`. */
+  private scoreboard: Scoreboard;
   /** The menu, the round-over card and the pause list. */
   private overlayScreen: OverlayScreen;
   private deployScreen: DeployScreen;
@@ -1399,6 +1397,7 @@ export class Game {
     this.sfx = new Sfx();
     this.hud = new HUD();
     // After the HUD: its root is the element every screen appends to.
+    this.scoreboard = new Scoreboard();
     this.overlayScreen = new OverlayScreen();
     this.deployScreen = new DeployScreen();
     this.loadoutScreen = new LoadoutScreen();
@@ -8992,32 +8991,6 @@ export class Game {
   }
 
   /**
-   * The scoreboard, pushed once per frame from `tick` in EVERY state that has a
-   * round behind it — playing, the death cam, and the deploy screen.
-   *
-   * It is here rather than in `updateHud` for the reason `mats.updateCamera` is
-   * in `tick`: `updateHud` runs while you are alive and holding a weapon, and
-   * this panel is owed to two states that are neither. **The deploy screen is
-   * where a player most wants it** — it is the one screen in the game you sit
-   * on while the round carries on without you, for a reinforcement clock's
-   * worth of every death in a match, and it is where you decide where to come
-   * back in. A board that goes dark exactly then is dark for a good share of
-   * the round.
-   *
-   * `ScreenSpec.inRound` is answered by the state the frame is IN and
-   * deliberately not by what is under the lids: a lid is a screen the player
-   * ASKED for and put in front of the round, so every lid answers `false` and
-   * the board goes away under one without anything having to remember to hide
-   * it. That is the whole reason this is a per-frame push rather than a call at
-   * each boundary: the six ways out of a round (deploying, dying, the round
-   * ending, a pause, the kit screen, the menu) each used to owe a
-   * `setScoreboard(false)`, and the one that forgot would leave last round's
-   * numbers hanging over the next screen.
-   *
-   * Assembled only while the board is actually up: the payload is an object
-   * and four arrays, and `flagsHeld` counts the control points twice.
-   */
-  /**
    * The on-screen controls: whether they are up, and the two things drawn on
    * them that they cannot know.
    *
@@ -9106,9 +9079,35 @@ export class Game {
     );
   }
 
+  /**
+   * The scoreboard, pushed once per frame from `tick` in EVERY state that has a
+   * round behind it — playing, the death cam, and the deploy screen.
+   *
+   * It is here rather than in `updateHud` for the reason `mats.updateCamera` is
+   * in `tick`: `updateHud` runs while you are alive and holding a weapon, and
+   * this panel is owed to two states that are neither. **The deploy screen is
+   * where a player most wants it** — it is the one screen in the game you sit
+   * on while the round carries on without you, for a reinforcement clock's
+   * worth of every death in a match, and it is where you decide where to come
+   * back in. A board that goes dark exactly then is dark for a good share of
+   * the round.
+   *
+   * `ScreenSpec.inRound` is answered by the state the frame is IN and
+   * deliberately not by what is under the lids: a lid is a screen the player
+   * ASKED for and put in front of the round, so every lid answers `false` and
+   * the board goes away under one without anything having to remember to hide
+   * it. That is the whole reason this is a per-frame push rather than a call at
+   * each boundary: the six ways out of a round (deploying, dying, the round
+   * ending, a pause, the kit screen, the menu) each used to owe a
+   * `scoreboard.set(false)`, and the one that forgot would leave last round's
+   * numbers hanging over the next screen.
+   *
+   * Assembled only while the board is actually up: the payload is an object
+   * and four arrays, and `flagsHeld` counts the control points twice.
+   */
   private pushScoreboard(): void {
     if (!this.screens.inRound || !this.input.scoreboard) {
-      this.hud.setScoreboard(false);
+      this.scoreboard.set(false);
       return;
     }
     const rows = this.scoreRows();
@@ -9122,7 +9121,7 @@ export class Game {
       kills[r.team] += r.kills;
       score[r.team] += r.score;
     }
-    this.hud.setScoreboard(true, {
+    this.scoreboard.set(true, {
       map: this.mapDef.name,
       teams: [teamLook(0).name, teamLook(1).name],
       tickets: this.conquest.tickets,

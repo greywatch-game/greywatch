@@ -312,6 +312,10 @@ src/
                         #   refresh. Also the SIMULATION's clock: `elapsed` is
                         #   the gap between the refreshes that took two frames,
                         #   which Game.tick steps the world by
+    frameStats.ts       # The 1% low — the mean of the slowest 1% of a sorted
+                        #   sample, unit-blind and allocation-free — so the
+                        #   HUD's fps readout and a profiler capture state one
+                        #   statistic. Imports nothing
     math.ts             # The scalar helpers more than one file needs: clamp,
                         #   clamp01, hermite, smoothstep, angleDelta. Imports
                         #   NOTHING, which is what makes it safe to import from
@@ -1255,11 +1259,14 @@ src/
                         #   vitals, ammo, the stowed slot, hitmarker, killfeed,
                         #   score feed, damage arcs, +
                         #   .paused/.editing/.dying. NO crosshair: the fitted
-                        #   sight is the only aim mark in the game. And the
-                        #   Tab board, the one piece set on the FRONT END's
-                        #   unit: the two reinforcement counts facing each
-                        #   other as its title, each side's list the
-                        #   round-over card's board line for line
+                        #   sight is the only aim mark in the game
+    Scoreboard.ts       # The Tab board, a screen whose lifetime is the ROUND's
+      scoreboard.css    #   (pushed from tick on playing, dying and deploy), set
+                        #   on the FRONT END's unit: the two reinforcement
+                        #   counts facing each other as its title, each side's
+                        #   list the round-over card's board line for line.
+                        #   Built straight after HUD; z-index 9 puts it over
+                        #   the deploy screen
     OverlayScreen.ts    # The four cards — menu, round-over, pause, building —
       overlay.css       #   the .overlaid class they raise, and #menu-shot, the
                         #   map photograph the menu stands on: a second root of
