@@ -359,6 +359,12 @@ const PAGES: readonly Page[] = [
         options: OFF_ON,
       },
       {
+        key: "fxaa",
+        label: "Antialiasing",
+        hint: "Smooths stair-stepped edges. Off is cheaper on a phone, whose dense screen hides the steps.",
+        options: OFF_ON,
+      },
+      {
         key: "profiler",
         label: "Profiler",
         // What it actually does, in the width a hint has: it records

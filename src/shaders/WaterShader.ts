@@ -692,8 +692,13 @@ fn main(input: FragmentInputs) -> FragmentOutputs {
   // --- point lights: a little diffuse lift, and the same two cuts ---
   // A lamp on the far bank lays a broken column of light across the water
   // toward the eye, for the reason the sun does.
+  // A break on the uniform count, as the cel shader and the grass do: a frame
+  // with three lights in its slots walks three iterations, not sixteen.
   for (var i = 0; i < MAX_POINT_LIGHTS; i++) {
-    if (f32(i) < uniforms.pointCount) {
+    if (f32(i) >= uniforms.pointCount) {
+      break;
+    }
+    {
       let toLight = uniforms.pointPos[i] - posW;
       let dist = length(toLight);
       var atten = clamp(1.0 - dist / max(uniforms.pointRange[i], 0.001), 0.0, 1.0);

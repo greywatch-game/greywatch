@@ -835,9 +835,8 @@ export class FrameProfile {
    *
    * **Every one of `hookRender`'s spans needs this and none of `Game`'s does**,
    * which is the whole reason it is a second method rather than `end` growing a
-   * flag: a rendering group is entered once per group per camera, the glow is
-   * entered twice — its mask and blur, then its compose in the post chain — and a
-   * plain `end` would report the LAST of those as the phase's whole cost.
+   * flag: a rendering group is entered once per group per camera, and a plain
+   * `end` would report the LAST of those as the phase's whole cost.
    *
    * **`entered` is what says "first this frame", and it is sound because
    * `endFrame` clears the slots of the frame it is about to overwrite** — the
@@ -1014,10 +1013,10 @@ export class FrameProfile {
    *  2. `onBeforeDrawPhaseObservable`, the rendering manager, and
    *     `onAfterDrawPhaseObservable`, which is the camera's own pass and where
    *     the glow draws its mask and blurs it, after every group has drawn;
-   *  3. the post chain, where the glow COMPOSES.
+   *  3. the post chain, where the ink runs the glow's compose as its last line.
    *
    * So the shadow map is in (1), the two group spans and then the glow's mask
-   * are in (2), and the glow's compose is in (3). What is left inside
+   * are in (2), and the glow's compose is in (3), unnamed. What is left inside
    * `render` and named by nothing is the active-mesh evaluation, the post
    * chain, a frame's share of a reflection bake, and the present.
    *
@@ -1039,8 +1038,7 @@ export class FrameProfile {
    * added to the game should join the overlay rather than go unrecorded.
    *
    * **A render target is bracketed BIND to UNBIND.** The glow is not bracketed
-   * as a target at all: it notifies around its mask AND its blur together, and
-   * again around its compose, and `endAdd` sums the two.
+   * as a target at all: it notifies around its mask AND its blur together.
    */
   private hookRender(scene: Scene, glow: GlowSpans | null): void {
     const off = this.unhook;
@@ -1081,8 +1079,8 @@ export class FrameProfile {
       off.push(() => map.onAfterUnbindObservable.remove(unbind));
     }
 
-    // The glow: its mask and blur at the end of the draw phase, and its
-    // compose in the post chain. See the header on `inDraw`.
+    // The glow: its mask and blur at the end of the draw phase. See the header
+    // on `inDraw`.
     if (!glow) return;
     const before = glow.onBeforeWorkObservable.add(() => {
       this.inDraw = false;
@@ -1760,6 +1758,7 @@ function sameGraphics(a: ProfileGraphics, b: ProfileGraphics): boolean {
     a.volumetrics === b.volumetrics &&
     a.motionBlur === b.motionBlur &&
     a.paperGrain === b.paperGrain &&
+    a.fxaa === b.fxaa &&
     a.minimap === b.minimap &&
     a.forced.join() === b.forced.join()
   );

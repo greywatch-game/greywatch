@@ -10,11 +10,14 @@
  * alpha 1.
  * It only ever DARKENS (`mix(scene, scene * tint, edge)` with tint < 1), which
  * is what makes it safe to lay over a lit frame and is worth keeping true. The
- * bloom is composited AFTER it (`GlowPass`, the next pass in the chain), so a
- * halo lies over the lines round its lamp rather than under them. Its shader is hand-written WGSL and `shaderLanguage` on the
- * PostProcess is load-bearing rather than declarative: the constructor
- * defaults to GLSL and would look this pass up in a store nothing writes any
- * more.
+ * bloom is composited AFTER it, in this pass's own last line — `GlowPass` owns
+ * the arithmetic and hands it over as `GLOW_COMPOSE_WGSL`, and the header there
+ * says why it is not a pass of its own — so a halo lies over the lines round
+ * its lamp rather than under them. "Only darker" is therefore a promise about
+ * the ink's own `mix`, not about the pixel this pass writes. Its shader is
+ * hand-written WGSL and `shaderLanguage` on the PostProcess is load-bearing
+ * rather than declarative: the constructor defaults to GLSL and would look this
+ * pass up in a store nothing writes any more.
  *
  * WHAT IT REPLACED, AND WHY THE OLD ANSWER WAS TWO ANSWERS. The ink used to be
  * geometry, twice over. Babylon's `renderOutline` drew a back-face shell for
@@ -116,8 +119,8 @@
  * read** — it is the fourth channel of the sample this shader already took —
  * and this pass writes 1 back out, so nothing downstream ever sees it. THREE
  * things share it and each is checked in the tree rather than assumed: the glow
- * composes AFTER this pass and passes the alpha it is handed straight through,
- * so a bloom cannot claim coverage it does not have; an ADDITIVE effect leaves the
+ * composes after the ink, inside this pass, and writes no alpha of its own, so
+ * a bloom cannot claim coverage it does not have; an ADDITIVE effect leaves the
  * channel alone and should, since a flare adds light rather than hiding what is
  * behind it; and a REFLECTION PROBE wants the opposite value out of the same
  * line, which is why `opaqueAlpha` is a uniform and `ReflectionSystem` flips it
@@ -135,11 +138,16 @@ import {
   Scene,
   ShaderLanguage,
   ShaderStore,
-  type BaseTexture,
 } from "@babylonjs/core";
 import { CONFIG } from "../config";
 import { fogBand } from "./CelShader";
 import { FrameDepth } from "./FrameDepth";
+import {
+  GLOW_COMPOSE_SAMPLERS,
+  GLOW_COMPOSE_UNIFORMS,
+  GLOW_COMPOSE_WGSL,
+  type GlowPass,
+} from "./GlowPass";
 
 ShaderStore.ShadersStoreWGSL["celInkFragmentShader"] = `
 varying vUV: vec2f;
@@ -170,6 +178,9 @@ uniform widthBand: vec4f;    // the NIB, in texels: x at the eye, y bold, z fine
 uniform widthRange: vec2f;   // x = where the bold nib is, y = where the fine one is, in metres
 uniform creaseStroke: vec2f; // what a CREASE is worth against a contour: x = darkness, y = width
 uniform grain: vec3f;        // x = pressure of the faintest line, y = wobble in texels, z = wobble frequency
+
+// The bloom's compose, owned by GlowPass and added in this pass's last line.
+${GLOW_COMPOSE_WGSL}
 
 // Buffer depth -> metres. Babylon is left-handed and WebGPU's NDC z is [0, 1]
 // (engine.isNDCHalfZRange), and nothing in the tree turns on a reverse depth
@@ -381,10 +392,12 @@ fn main(input: FragmentInputs) -> FragmentOutputs {
   // nothing — a tracer's flare adds light rather than hiding what is behind it.
   edge *= 1.0 - saturate(frame.a);
 
-  // ONLY EVER DARKER. tint < 1, so no pixel can leave this pass brighter than
-  // it arrived — which is what lets the ink sit over a lit frame, with the
-  // bloom composited over it afterwards, without either disturbing the other.
-  fragmentOutputs.color = vec4f(mix(scene, scene * uniforms.tint, edge), 1.0);
+  // ONLY EVER DARKER. tint < 1, so the ink cannot leave a pixel brighter than
+  // it arrived — which is what lets it sit over a lit frame, with the bloom
+  // composited over it afterwards, without either disturbing the other. The
+  // bloom is that afterwards: added to the inked pixel rather than inked over.
+  let inked = mix(scene, scene * uniforms.tint, edge);
+  fragmentOutputs.color = vec4f(inked + glowAt(input.vUV), 1.0);
   return fragmentOutputs;
 }
 `;
@@ -399,8 +412,11 @@ export class CelInk {
   constructor(
     scene: Scene,
     private readonly camera: Camera,
-    /** The glow's emissive mask (`GlowPass.mask`). Read, never written. */
-    private readonly emissiveMask: BaseTexture,
+    /**
+     * The bloom: its emissive mask (`GlowPass.mask`), read as the ink's mask,
+     * and the blurred halves the compose adds. Read, never written.
+     */
+    private readonly glow: GlowPass,
     /** The frame's own depth image. Shared — see `FrameDepth`. */
     private readonly depth: FrameDepth,
   ) {
@@ -418,8 +434,9 @@ export class CelInk {
         "widthRange",
         "creaseStroke",
         "grain",
+        ...GLOW_COMPOSE_UNIFORMS,
       ],
-      samplers: ["depthTexture", "emissiveSampler"],
+      samplers: ["depthTexture", "emissiveSampler", ...GLOW_COMPOSE_SAMPLERS],
       size: 1.0,
       camera,
       engine: scene.getEngine(),
@@ -458,9 +475,11 @@ export class CelInk {
       // until the first frame has handed one over, rather than resting on it.
       const depth = this.depth.texture;
       if (depth) effect.setTexture("depthTexture", depth);
-      // Same rule, and this one cannot be null: the glow owns its mask from
-      // construction and `Game` builds the glow before this pass.
-      effect.setTexture("emissiveSampler", this.emissiveMask);
+      // Same rule, and these cannot be null: the glow owns its mask and its
+      // blur targets from construction and `Game` builds the glow before this
+      // pass.
+      effect.setTexture("emissiveSampler", this.glow.mask);
+      this.glow.bindCompose(effect);
     };
 
     this.applyEnvironment();

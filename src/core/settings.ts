@@ -128,6 +128,15 @@ export type Settings = {
    */
   paperGrain: boolean;
   /**
+   * FXAA, the antialiasing pass over the inked frame. Off detaches the pass.
+   *
+   * On by default everywhere, which is the chain as it was before the setting
+   * existed. It is here for a PHONE: on a high-density panel a stair is a
+   * fraction of a CSS pixel, and the pass is a whole-frame read and write on a
+   * GPU whose frame is fill rather than draw calls (`FINDINGS.md` 5).
+   */
+  fxaa: boolean;
+  /**
    * How much of the panel's native resolution the scene is drawn at.
    *
    * This is the one setting that was silently pinned before it existed. The
@@ -379,6 +388,7 @@ const SETTING_DEFAULTS: Settings = {
   fpsCounter: false,
   motionBlur: CONFIG.graphics.motionBlur.strength > 0,
   paperGrain: true,
+  fxaa: true,
   // **Medium, and it is the rung that costs what the pass it replaced cost.**
   // Measured against `GodRays`' own 32 taps at 1920x1080, 16 came back at
   // -0.010 ms of GPU on Hollowmere and -0.019 on Cinderhaven — inside the
@@ -544,6 +554,7 @@ const CODECS: { [K in keyof Settings]: Codec<Settings[K]> } = {
   fpsCounter: bool,
   motionBlur: bool,
   paperGrain: bool,
+  fxaa: bool,
   renderScale: oneOf(CONFIG.graphics.renderScales),
   fpsCap: oneOf(CONFIG.graphics.frameCaps),
   volumetrics: oneOfString(VOLUMETRIC_QUALITIES),

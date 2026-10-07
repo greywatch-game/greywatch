@@ -662,6 +662,10 @@ const MAX_POINT_LIGHTS: i32 = ${MAX_POINT_LIGHTS};
 // the narrow settings of both photographed as.
 const MIRROR_GLOSS: f32 = 8.0;
 const MIRROR_HORIZON: f32 = 0.10;
+// How upright a face must be before its wear can show in the 8-bit frame;
+// under this its noise is not computed at all. The WEAR block has the
+// arithmetic.
+const WEAR_UNSEEN: f32 = 1.0 / 1024.0;
 
 #include<celShadow>
 #include<celGi>
@@ -1093,8 +1097,16 @@ fn main(input: FragmentInputs) -> FragmentOutputs {
   }
 
   // --- point lights (3 bands, smooth inverse-square-ish falloff) ---
+  //
+  // A BREAK on the count rather than a test inside every iteration, as the
+  // grass does: the bound is a uniform, so the whole wave leaves together and a
+  // frame with three lights in its slots walks three iterations, not sixteen.
+  // The light is the same; a frame with every slot filled saves nothing.
   for (var i = 0; i < MAX_POINT_LIGHTS; i++) {
-    if (f32(i) < uniforms.pointCount) {
+    if (f32(i) >= uniforms.pointCount) {
+      break;
+    }
+    {
       let toLight = uniforms.pointPos[i] - fragmentInputs.vPosW;
       let dist = length(toLight);
       let range = max(uniforms.pointRange[i], 0.001);
@@ -1259,43 +1271,58 @@ fn main(input: FragmentInputs) -> FragmentOutputs {
   // vertical runs and a wall, a fence post and a barrel all streak the same way
   // up with nothing needed to tell them apart. No uv, no sample, no second
   // material — the same test \`albedoVariation\` passes.
+  //
+  // AND THE NOISE IS ONLY PAID WHERE IT CAN SHOW. Two kinds of face get no
+  // grime whatever the grain says, and between them they are much of the
+  // screen: a face high up a wall, where the line is so far below zero that
+  // even the grain's whole reach (\`edgeBreak / 2\`) cannot lift the ramp off
+  // it, and a LEVEL face — the terrain, a road, a floor — where \`upright\` has
+  // gone to zero. The first test is exact. The second skips under 1/1024 of upright, where the most
+  // the mix could move a channel at full light is a quarter of one step of the
+  // 8-bit target the scene draws into. Both are per pixel and neither guards a
+  // texture read, so the branch is free to diverge.
   if (uniforms.wearParams.x > 0.0 && fragmentInputs.vBaked.y > 0.5) {
     // Full at vertical, none at level, smooth between. \`abs\` because an
     // UNDERSIDE is as level as a floor and collects no splash either — a
     // soffit, a deck's belly, the underside of an arch.
     let upright = 1.0 - smoothstep(uniforms.wearParams.y, 1.0, abs(n.y));
-    // The squashed sampling point, and the fine octave at 3.4x the coarse one
-    // with its cells stretched twice as far again — a ratio rather than a
-    // second pair of uniforms, because what these two are FOR is one blotch
-    // field with runs in it and the interesting knob is the pair's scale.
-    let gp = vec3f(
-      fragmentInputs.vPosW.x,
-      fragmentInputs.vPosW.y * uniforms.wearGrain.y,
-      fragmentInputs.vPosW.z) * uniforms.wearGrain.x;
-    let octaves = mix(
-      valueNoise(gp),
-      valueNoise(vec3f(gp.x, gp.y * 0.5, gp.z) * 3.4 + vec3f(19.3, 7.1, 41.7)),
-      0.35);
-    // STRETCHED ABOUT ITS MIDDLE, and without this the grain is not visible at
-    // all. Trilinear value noise is eight hashes averaged, so it is centrally
-    // peaked rather than uniform — a cell CENTRE has a standard deviation of
-    // about 0.10 where a corner has 0.29 — and summing two octaves narrows it
-    // again, to something like 0.15 overall. A displacement of \`edgeBreak\`
-    // times that is a tide line that wanders a few centimetres, which is a
-    // straight line with extra arithmetic. The stretch turns the field bimodal,
-    // which is what dirt is: a wall is either stained here or it is not, and
-    // the interesting part is the boundary between those.
-    let grain = clamp((octaves - 0.5) * uniforms.wearGrain.z + 0.5, 0.0, 1.0);
-    // Clamped AFTER the displacement and after the interpolation, which is the
-    // one place it is free and the one place it is correct.
-    let ramp = clamp(
-      fragmentInputs.vBaked.z + (grain - 0.5) * uniforms.wearParams.w,
-      0.0, 1.0);
-    base = mix(
-      base,
-      uniforms.wearColor,
-      pow(ramp, uniforms.wearParams.z) * upright * uniforms.wearParams.x,
-    );
+    let reach = fragmentInputs.vBaked.z + 0.5 * abs(uniforms.wearParams.w);
+    if (upright > WEAR_UNSEEN && reach > 0.0) {
+      // The squashed sampling point, and the fine octave at 3.4x the coarse
+      // one with its cells stretched twice as far again — a ratio rather than
+      // a second pair of uniforms, because what these two are FOR is one
+      // blotch field with runs in it and the interesting knob is the pair's
+      // scale.
+      let gp = vec3f(
+        fragmentInputs.vPosW.x,
+        fragmentInputs.vPosW.y * uniforms.wearGrain.y,
+        fragmentInputs.vPosW.z) * uniforms.wearGrain.x;
+      let octaves = mix(
+        valueNoise(gp),
+        valueNoise(vec3f(gp.x, gp.y * 0.5, gp.z) * 3.4 + vec3f(19.3, 7.1, 41.7)),
+        0.35);
+      // STRETCHED ABOUT ITS MIDDLE, and without this the grain is not visible
+      // at all. Trilinear value noise is eight hashes averaged, so it is
+      // centrally peaked rather than uniform — a cell CENTRE has a standard
+      // deviation of about 0.10 where a corner has 0.29 — and summing two
+      // octaves narrows it again, to something like 0.15 overall. A
+      // displacement of \`edgeBreak\` times that is a tide line that wanders a
+      // few centimetres, which is a straight line with extra arithmetic. The
+      // stretch turns the field bimodal, which is what dirt is: a wall is
+      // either stained here or it is not, and the interesting part is the
+      // boundary between those.
+      let grain = clamp((octaves - 0.5) * uniforms.wearGrain.z + 0.5, 0.0, 1.0);
+      // Clamped AFTER the displacement and after the interpolation, which is
+      // the one place it is free and the one place it is correct.
+      let ramp = clamp(
+        fragmentInputs.vBaked.z + (grain - 0.5) * uniforms.wearParams.w,
+        0.0, 1.0);
+      base = mix(
+        base,
+        uniforms.wearColor,
+        pow(ramp, uniforms.wearParams.z) * upright * uniforms.wearParams.x,
+      );
+    }
   }
 
   var col = base * light;
@@ -1448,8 +1475,12 @@ fn main(input: FragmentInputs) -> FragmentOutputs {
     env += uniforms.lightColor * band(
       pow(max(dot(mirrorDir, -uniforms.lightDir), 0.0), MIRROR_GLOSS), 2.0)
       * shadow;
+    // The same break on the uniform count as the diffuse loop above.
     for (var i = 0; i < MAX_POINT_LIGHTS; i++) {
-      if (f32(i) < uniforms.pointCount) {
+      if (f32(i) >= uniforms.pointCount) {
+        break;
+      }
+      {
         let toLight = uniforms.pointPos[i] - fragmentInputs.vPosW;
         let dist = length(toLight);
         var atten = clamp(

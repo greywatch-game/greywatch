@@ -1677,7 +1677,8 @@ src/
                         #   drawn against the FRAME's depth (shared, sized in
                         #   the same function that draws it), Babylon's kernel
                         #   blur at half and quarter resolution, and an additive
-                        #   compose straight after the ink. Public API only;
+                        #   compose the ink runs as its last line (a WGSL
+                        #   snippet, not a pass). Public API only;
                         #   `Game` supplies the rules (what blooms, how bright)
     FrameDepth.ts       # The frame's own depth attachment, captured once and
                         #   wrapped for the two passes that sample it (the ink's

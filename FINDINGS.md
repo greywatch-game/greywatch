@@ -174,7 +174,10 @@ even the game's.
 ## 5. The fill-rate budget: six full-screen passes and 18.7k particles
 
 **Status:** counted, not costed, and now partly *steerable* — the lever this
-entry asked for exists.
+entry asked for exists. **On a phone, fill now has a measurement: at render
+scale 0.75 the GPU frame is ~28 ms, and draw calls don't predict it** (finding
+13, "The same phone at render scale 0.75"). So on that device, this entry is the
+frame budget rather than a footnote to it.
 
 **Re-counted on WebGPU and the shape is unchanged**: the post chain is all still
 there, and the ash field is a `ComputeShaderParticleSystem` (WebGPU
@@ -190,16 +193,19 @@ Coldharbour's frame (47.3 against 46.4 fps), and detaching the chain later read
 -4.6%, free within drift (`docs/profiling.md`, "Reading a capture") — **stale
 as a share**, since that frame was ~21 ms and Coldharbour now runs at 122 fps
 (~8 ms, 96fcd19). `renderScale` is measured on
-the desktop, and on a phone only at its lowest rung (below). On a phone
-the passes were priced and are not the lever — finding 13: at render scale
-0.5 on Greyfen, taking motion blur and the grain off moved `gpu.frame` by
-nothing measurable, and the dropped frames there do not follow the GPU.
+the desktop, and on a phone at 0.5 and 0.75 (below). **At 0.5** the passes
+were priced on a phone and are not the lever — finding 13: on Greyfen, taking
+motion blur and the grain off moved `gpu.frame` by nothing measurable, and the
+dropped frames there do not follow the GPU. **At 0.75 they have not been
+priced**, and there the GPU is the wall (below).
 
-- **Six full-screen passes at the render resolution at defaults**, in the order
-  `Game.ts` (~1343-1405) builds them: `CelInk`, the `GlowPass` compose (behind
-  its own mask and separable blur passes), FXAA, `Volumetrics`, `MotionBlur` and
-  `PaperGrain`. Three of them are detachable by a setting (`core/settings.ts`,
-  `motionBlur`, `paperGrain`, `volumetrics`). The grain is no longer a
+- **Five full-screen passes at the render resolution at defaults**, in the order
+  `Game.ts` builds them: `CelInk` (which runs the `GlowPass` compose as its last
+  line, behind the glow's own mask and separable blur passes), FXAA,
+  `Volumetrics`, `MotionBlur` and `PaperGrain`. The compose was a sixth pass of
+  its own until it was folded into the ink for a phone's sake, with no change
+  to the picture. Four of them are detachable by a setting (`core/settings.ts`,
+  `fxaa`, `motionBlur`, `paperGrain`, `volumetrics`). The grain is no longer a
   trivial pass: its world-pinned paper measured ~0.25 ms of GPU at 1920x1080. The god-ray detach took the chain
   down by one for most of a round while the shafts were `GodRays`; **that saving is
   gone**, because `Volumetrics` replaced it and is ON by default — only `off`
@@ -218,9 +224,14 @@ nothing measurable, and the dropped frames there do not follow the GPU.
   and 100% are now one keypress away. **On the desktop that cost is measured
   and is nothing**: `docs/rendering.md`, "Why the frame is draw-call bound",
   swept `setHardwareScalingLevel` across 16x the pixels on Coldharbour and the
-  frame was flat. **On a phone the rungs are still unmeasured against each
-  other**; the one phone captured (finding 13) was on the lowest, 0.5, and
-  0.75 against it is that entry's control for whether fill matters at all.
+  frame was flat. **On a phone, fill matters, and at 0.75 it is the whole
+  wall.** Finding 13's phone at 0.75 on Harrowmead reads `gpu.frame`
+  27.8 / 35.1 ms (mean / p95), with every sample over 16.7 ms and a floor of
+  20.1 ms. That's against 11.4-13.9 ms at 0.5 on Greyfen: 2.25x the pixels for
+  about 2x the GPU time. The map differs, so this is not a clean A/B, but at
+  92 draw calls and at 449 the GPU reads the same, so geometry cannot be what
+  doubled it. **Not yet taken: the same map at both rungs**, which would turn
+  the 2x into a measured slope.
 - **The ash field is 18,667 alpha-blended GPU particles** (`getCapacity`, at
   steady state). Simulation is on the GPU and cheap; the overdraw is not.
 - **The glass FRAGMENT's reflection has no distance fade.** The
@@ -233,7 +244,12 @@ nothing measurable, and the dropped frames there do not follow the GPU.
   is a PHONE lever only** — the desktop frame is not fill-bound.
 
 Neither the resolution nor the ash field should be cut by default. If a graphics-quality preset
-is ever wanted, these are what it should move, in that order.
+is ever wanted, these are what it should move, in that order. **The 0.5 phone
+reading says the post passes are nearly free, and that does not carry over to
+0.75.** At 0.5, motion blur and grain moved `gpu.frame` by nothing measurable,
+but that frame was under budget and may have read the governor rather than the
+work (finding 13). At 0.75 the GPU is saturated, so a toggle there would show
+what the pass costs. It has not been taken.
 
 ---
 
@@ -550,7 +566,11 @@ Neither measured half is over budget: the tick is ~9-10 ms, the GPU frame
 What it does follow, most consistently, is the TICK — a CPU reading, at
 roughly half the interval. An earlier reading of this entry called the phone
 GPU-bound; the standing-still captures below disproved it. Also open: the
-tablet df3c7cc was made for.
+tablet df3c7cc was made for. **All of that is at render scale 0.5.** At 0.75
+the same phone IS GPU-bound, and is fill-bound: 27.8 ms of `gpu.frame`, every
+sample over 16.7 ms, and flat against draw calls. So 60 fps at 0.75 is out of
+reach on this phone for any lever but cheaper per-pixel work ("The same phone at
+render scale 0.75", below).
 
 **The forest is ~1,400 feather-frond palms** (4ea4c72, 1130c74, 6c7a505;
 `buildJungleTree` in `src/world/props/jungleTree.ts`) — the most-placed model
@@ -671,6 +691,51 @@ Same phone, same settings except the column that moves, standing at
   reason, `docs/rendering.md`) and the compositor. **A hypothesis**, and the
   first step below is what tests it.
 
+### The same phone at render scale 0.75 (one capture, 2026-10-07 03:36 UTC)
+
+A `?profile&gpu` SAVE capture, report v11. The device block is identical to the
+captures above (Chrome 154, dpr 2.8125, 8 cores, 8 GB). It was taken on
+**Harrowmead**, at **render scale 0.75 — a 1755x810 backing store, 2.25x the
+pixels of 0.5**. Everything else is as above: shadows, grass and Trees `low`, GI
+off, volumetrics `low`, motion blur and grain on, and a cap of 60. The settings
+had been in force for 154 s, and the window covered 2,999 frames over 100.5 s.
+
+| | fps | tick mean / p95 | tick > 16.7 | `gpu.frame` mean / p95 / min | GPU > 16.7 | GPU > 33.3 | intervals > 33.4 ms |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| Harrowmead, 0.75 | 29.8 | 13.1 / 18.7 ms | 13% | 27.8 / 35.1 / 20.1 ms | **100%** | 10.6% | 36.7% |
+
+- **This is the control step 2 below asked for, and fill moved the GPU.** Going
+  from 0.5 to 0.75 took `gpu.frame` from 11.4-13.9 ms to 27.8 ms. That is about
+  2x, against 2.25x the pixels. The map is not the same one, so the slope is
+  inferred rather than measured, and a same-map pair is still owed. Draw calls
+  rule the map difference out as the cause, though.
+- **Draw calls do not predict the GPU here either.** Sorted into quarters by
+  draw count (92-176, 176-211, 211-296, 297-449), the frames read 28.5, 28.8,
+  25.7 and 28.4 ms of `gpu.frame`, and no frame took under 20 ms. Whatever
+  costs that is paid per pixel, not per draw.
+- **No governor caveat applies at this level.** The reading above, that
+  `gpu.frame` might be a clock scaling to the work, needs a GPU with slack. One
+  that takes 20-35 ms on every frame has none.
+- **The slow intervals are the CPU waiting on the GPU.** The tick averages
+  13.1 ms and the interval 33.5 ms. In ten-second windows, the interval runs
+  3.8-6.2 ms above `gpu.frame` throughout, and the GPU drifts 23.5 → 33.0 →
+  25.5 ms through the capture (a view change, or heat — one capture cannot
+  tell).
+- **Under a 60 cap the pacing is ragged.** Intervals spread from 8 ms to over
+  100, with p50 22.4 ms and 22% over 50 ms, for the same mean a 30 cap would
+  hold far steadier. GPU p95 is 35.1 ms, so even capped at 30, about one frame in
+  ten would miss.
+- **The tick is higher than Greyfen's** (13.1 against ~10 ms) and over 16.7 ms
+  on 13% of frames. At 0.5 on Harrowmead, the CPU would be the next wall after
+  the GPU. That is unmeasured.
+
+**What this settles:** at 0.75 on this phone, 60 is unreachable through draw
+calls, shadows, Trees or anything else on the CPU side. The lever is the cost
+per pixel: what the cel fragment and the full-screen passes spend on each pixel.
+None of that is priced on a phone yet. The cheap first step is the same spot at
+0.75 with motion blur and grain toggled, since a saturated GPU will show what
+they cost.
+
 **Three readings this GPU got wrong**, all excluded from the above and none
 explained — the instrument's own open thread on a mobile GPU:
 
@@ -706,8 +771,12 @@ second population, on a phone.
 2. **If it is the CPU, the lever is draw calls** — shadows to their lowest
    rung, Trees `low` against `high`, a smaller map (Kurenai) — each A/B'd at
    the spawn with several runs a side, since one configuration spans 6-24%.
-   Render scale 0.75 against 0.5 is the control: more fill, the same draws, so
-   it should move nothing if the GPU is not the wall.
+   The control, render scale 0.75 against 0.5, is taken (above). At 0.75 the
+   GPU is the wall, so the CPU question belongs to 0.5 alone. A same-map pair
+   is still owed to measure the slope.
+3. **At 0.75, price the per-pixel work.** First the post passes, toggled one
+   at a time at a fixed spot. Then the cel fragment's own terms: shadow taps,
+   the light loop, fog, and the GI volume's samples when GI is `off`.
 3. **The HUD, which is the other page-side work neither instrument times.**
    Its fills and its low-health glow stopped laying out and repainting in
    027fe87; what is left is the corner map, redrawn in full every frame

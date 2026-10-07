@@ -1,7 +1,7 @@
 /**
  * GlowPass.ts — The game's bloom, as a pass it OWNS end to end: the emissive
- * mask, the blur, and the additive compose. Owns its targets, its override
- * materials and the depth it borrows; reads no game state (what may glow and
+ * mask, the blur, and the additive compose's arithmetic. Owns its targets, its
+ * override materials and the depth it borrows; reads no game state (what may glow and
  * how brightly are `GlowRules`, handed in by `Game`) and writes to no mesh.
  * Invariants: the mask is drawn against the frame's OWN depth, borrowed at the
  * size that depth is at on the frame it is borrowed — so a bloom that reaches
@@ -51,9 +51,19 @@
  * THE LOOK is Babylon's glow layer as it was tuned: a Gaussian `kernelBlur`
  * at half resolution and again at quarter, the two summed, scaled by
  * `glowIntensity`, clamped to 1, added to the frame. The one deliberate change
- * is WHERE: the compose is a post-process right after `CelInk` rather than a
- * blend onto the frame before it, so a bloom lies over the ink lines around its
- * lamp rather than under them.
+ * is WHERE: the bloom is added AFTER the ink rather than blended onto the frame
+ * before it, so a bloom lies over the ink lines around its lamp rather than
+ * under them.
+ *
+ * THE COMPOSE IS NOT A PASS OF ITS OWN, and that is a phone's fill rate rather
+ * than tidiness. It reads one pixel of the frame and adds two bilinear taps,
+ * so as a post-process it was a whole-frame write and read for three fetches —
+ * on a tile-based GPU, a round trip of the full backing store through memory.
+ * So the arithmetic stays HERE, as `GLOW_COMPOSE_WGSL` and `bindCompose`, and
+ * `CelInk` splices it into its own last line: the ink already holds the pixel,
+ * and adding the bloom after its own `mix` is exactly the order the separate
+ * pass kept. The one difference is that the inked frame is no longer rounded
+ * to 8 bits before the bloom lands on it, which is under half a step.
  *
  * A MATERIAL WHOSE VERTICES MOVE BRINGS ITS OWN MASK (`SelfMasking`). The
  * stock variants transform by `world` and `viewProjection` alone, so a surface
@@ -71,7 +81,6 @@ import {
   Constants,
   EffectRenderer,
   Observable,
-  PostProcess,
   RenderTargetTexture,
   ShaderLanguage,
   ShaderMaterial,
@@ -81,10 +90,12 @@ import {
   type AbstractMesh,
   type BaseTexture,
   type Camera,
+  type Effect,
   type Material,
   type Matrix,
   type Mesh,
   type Nullable,
+  type PostProcess,
   type Scene,
   type StandardMaterial,
   type SubMesh,
@@ -145,30 +156,36 @@ fn main(input: FragmentInputs) -> FragmentOutputs {
 }
 `;
 
-ShaderStore.ShadersStoreWGSL["glowComposeFragmentShader"] = `
-varying vUV: vec2f;
-var textureSamplerSampler: sampler;
-var textureSampler: texture_2d<f32>;
+/**
+ * The bloom's compose, as WGSL for the pass that runs it (`CelInk`, the header
+ * says why it is not a pass of its own). Splice it in at the top level of a
+ * fragment shader, declare `GLOW_COMPOSE_UNIFORMS` and `GLOW_COMPOSE_SAMPLERS`
+ * on that pass, call `bindCompose` from its `onApply`, and add `glowAt(uv)` to
+ * the finished pixel.
+ */
+export const GLOW_COMPOSE_WGSL = `
 var glowNearSampler: sampler;
 var glowNear: texture_2d<f32>;
 var glowWideSampler: sampler;
 var glowWide: texture_2d<f32>;
 
-uniform intensity: f32;
+uniform glowIntensity: f32;
 
-@fragment
-fn main(input: FragmentInputs) -> FragmentOutputs {
-  let scene = textureSample(textureSampler, textureSamplerSampler, input.vUV);
-  let near = textureSample(glowNear, glowNearSampler, input.vUV).rgb;
-  let wide = textureSample(glowWide, glowWideSampler, input.vUV).rgb;
-  // Clamped BEFORE the add, as the layer's merge was: it wrote into an 8-bit
-  // target and was blended on from there. The layer's blend also scaled by
-  // the merge's alpha, which was always 1 — the mask clears to alpha 1 and
-  // nothing drawn into it lowers that — so there is no alpha term here.
-  let bloom = min((near + wide) * uniforms.intensity, vec3f(1.0));
-  fragmentOutputs.color = vec4f(scene.rgb + bloom, scene.a);
+// Clamped BEFORE the add, as the layer's merge was: it wrote into an 8-bit
+// target and was blended on from there. The layer's blend also scaled by the
+// merge's alpha, which was always 1 — the mask clears to alpha 1 and nothing
+// drawn into it lowers that — so there is no alpha term here, and the caller
+// keeps whatever alpha it was going to write.
+fn glowAt(uv: vec2f) -> vec3f {
+  let near = textureSampleLevel(glowNear, glowNearSampler, uv, 0.0).rgb;
+  let wide = textureSampleLevel(glowWide, glowWideSampler, uv, 0.0).rgb;
+  return min((near + wide) * uniforms.glowIntensity, vec3f(1.0));
 }
 `;
+
+/** What a pass splicing in `GLOW_COMPOSE_WGSL` declares beside its own. */
+export const GLOW_COMPOSE_UNIFORMS = ["glowIntensity"] as const;
+export const GLOW_COMPOSE_SAMPLERS = ["glowNear", "glowWide"] as const;
 
 /** What `Game` decides about the bloom, and the only game knowledge this pass sees. */
 export interface GlowRules {
@@ -293,9 +310,10 @@ export class GlowPass {
   readonly mask: RenderTargetTexture;
 
   /**
-   * Fired around each of the pass's two pieces of work — the mask and its blur
-   * at the end of the draw phase, and the compose in the post chain — so the
-   * frame profiler can bracket them without this file knowing it exists.
+   * Fired around the pass's own work — the mask and its blur, at the end of
+   * the draw phase — so the frame profiler can bracket it without this file
+   * knowing it exists. The compose is three fetches inside `CelInk` and is
+   * that pass's cost now.
    */
   readonly onBeforeWorkObservable = new Observable<void>();
   readonly onAfterWorkObservable = new Observable<void>();
@@ -310,9 +328,8 @@ export class GlowPass {
   private readonly blurs: ThinBlurPostProcess[];
   private readonly renderer: EffectRenderer;
 
-  /** The pass the scene draws into, and the compose appended after it. */
+  /** The pass the scene draws into, whose depth the mask borrows. */
   private frame: PostProcess | null = null;
-  private compose: PostProcess | null = null;
 
   /** Both ends of the last depth share. A share is a relation between two targets. */
   private sharedFrom: object | null = null;
@@ -376,36 +393,24 @@ export class GlowPass {
   }
 
   /**
-   * Appends the compose to the camera's chain and names the pass the scene
-   * draws into, whose depth the mask borrows.
+   * Names the pass the scene draws into, whose depth the mask borrows.
    *
-   * **Call it immediately after that pass is built.** `attachPostProcess`
-   * APPENDS, so this is what puts the compose right behind the ink and in
-   * front of everything `Game` builds after it — FXAA antialiases the bloom's
-   * edge with the rest of the picture, and the shafts and the grade land on
-   * top of it. And `frame` must be the FIRST pass in the chain, because it is
-   * the only one Babylon gives a depth buffer to.
+   * **`frame` must be the FIRST pass in the chain**, because it is the only one
+   * Babylon gives a depth buffer to — `render` asserts it in a DEV build.
    */
-  attach(frame: PostProcess): void {
+  drawsInto(frame: PostProcess): void {
     this.frame = frame;
-    const compose = new PostProcess("glowCompose", "glowCompose", {
-      uniforms: ["intensity"],
-      samplers: ["glowNear", "glowWide"],
-      size: 1.0,
-      camera: this.camera,
-      engine: this.scene.getEngine(),
-      shaderLanguage: ShaderLanguage.WGSL,
-    });
-    compose.onApplyObservable.add((effect) => {
-      this.onBeforeWorkObservable.notifyObservers();
-      effect.setFloat("intensity", CONFIG.graphics.glowIntensity);
-      // Declared samplers must be BOUND or the draw is silently lost; both
-      // targets exist from construction, so neither can be missing here.
-      effect.setTexture("glowNear", this.near);
-      effect.setTexture("glowWide", this.wide);
-    });
-    compose.onAfterRenderObservable.add(() => this.onAfterWorkObservable.notifyObservers());
-    this.compose = compose;
+  }
+
+  /**
+   * Binds what `GLOW_COMPOSE_WGSL` reads, from the `onApply` of the pass that
+   * spliced it in. Declared samplers must be BOUND or the draw is silently
+   * lost; both targets exist from construction, so neither can be missing.
+   */
+  bindCompose(effect: Effect): void {
+    effect.setFloat("glowIntensity", CONFIG.graphics.glowIntensity);
+    effect.setTexture("glowNear", this.near);
+    effect.setTexture("glowWide", this.wide);
   }
 
   /** The emissive meshes of this frame, dressed for the mask. */
@@ -604,7 +609,6 @@ export class GlowPass {
   }
 
   dispose(): void {
-    this.compose?.dispose();
     for (const blur of this.blurs) blur.dispose();
     this.renderer.dispose();
     for (const mat of this.materials.values()) mat.dispose();

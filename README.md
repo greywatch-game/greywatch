@@ -380,7 +380,8 @@ in and out are asks the server answers.
 
 Settings has four pages, turned by Q/E or the bumpers: **Input** (mouse and stick look speed, and the
 bindings), **Touch** (see above), **Display** (render scale at 50, 75 or 100%,
-an FPS counter, motion blur, paper grain, and the frame profiler), and
+an FPS counter, motion blur, paper grain, antialiasing, and the frame
+profiler), and
 **Detail** (light shafts, bounce light, shadows and grass, each with rungs
 down to off). A phone starts on low shadows.
 

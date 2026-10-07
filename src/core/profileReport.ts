@@ -306,6 +306,11 @@ export interface ProfileGraphics {
   motionBlur: boolean;
   paperGrain: boolean;
   /**
+   * `Settings.fxaa`. Absent in a capture from before the setting existed,
+   * every one of which ran it.
+   */
+  fxaa?: boolean;
+  /**
    * Whether the corner minimap is drawn — false under `?nominimap`, the
    * HUD's A/B (FINDINGS.md 13). Absent in a capture from before the flag
    * existed, every one of which drew it.

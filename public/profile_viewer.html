@@ -1194,6 +1194,8 @@ function renderReport(r) {
       (gx.foliage ? " · trees " + gx.foliage : "") +
       " · shafts " + gx.volumetrics + tag("volumetrics") +
       " · blur " + (gx.motionBlur ? "on" : "off") + " · grain " + (gx.paperGrain ? "on" : "off") +
+      // Absent before the setting existed, and every one of those ran it.
+      (gx.fxaa === false ? " · fxaa off" : "") +
       // Absent before the flag existed, and every one of those drew it.
       (gx.minimap === false ? " · minimap OFF" + tag("minimap") : ""));
     kv("Settings stood", fmt(gx.inForceSeconds, 1) + " s" +

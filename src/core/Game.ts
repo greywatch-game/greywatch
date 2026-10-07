@@ -57,6 +57,7 @@ import {
   Color3,
   DefaultRenderingPipeline,
   Matrix,
+  type PostProcess,
   Scene,
   type SubMesh,
   Vector3,
@@ -652,6 +653,14 @@ export class Game {
    */
   private volumetricsSlot = 0;
   private volumetricsAttached = false;
+  /**
+   * The pipeline's FXAA pass and where it sits in the camera's chain, claimed
+   * once in the constructor so the setting can take it off and put it back
+   * without moving anything behind it. See `setFxaaEnabled`.
+   */
+  private fxaa: PostProcess;
+  private fxaaSlot = 0;
+  private fxaaAttached = true;
   private motionBlur: MotionBlur;
   /**
    * The ink. One full-screen edge over the depth the frame already wrote —
@@ -1259,9 +1268,9 @@ export class Game {
     // emissive color, so neon/reticle/tracer meshes bloom while bright
     // non-emissive surfaces stay crisp.
     // The bloom's mask, blur and compose — `shaders/GlowPass.ts`. Built before
-    // the ink because the ink reads the MASK as its emissive mask; the compose
-    // is not on the camera until `attach` below, so building it here puts
-    // nothing in the chain ahead of the ink.
+    // the ink because the ink reads the MASK as its emissive mask and runs the
+    // compose in its own last line; the glow puts no pass on the camera at
+    // all, so building it here puts nothing in the chain ahead of the ink.
     //
     // The RULES are this file's, because both are questions about the game.
     //
@@ -1335,27 +1344,38 @@ export class Game {
     // them, since a declared sampler that is still null at apply time loses the
     // draw silently; `FrameDepth` argues the rest.
     this.frameDepth = new FrameDepth(this.scene, this.cameraSys.camera);
+    // The bloom's compose is the ink's last line rather than a pass of its own
+    // (`GlowPass`'s header): after the ink, so a bloom lies over the lines
+    // round its lamp rather than under them, and before FXAA and everything
+    // else, which treat it as part of the picture.
     this.celInk = new CelInk(
       this.scene,
       this.cameraSys.camera,
-      glow.mask,
+      glow,
       this.frameDepth,
     );
-    // The bloom's compose goes on SECOND, straight behind the ink: after it, so
-    // a bloom lies over the lines round its lamp rather than under them, and
-    // before FXAA and everything else, which treat it as part of the picture.
     // The ink is also the pass the scene draws into, and so the one whose depth
     // the mask borrows. Worth ~20% of the frame on the three big maps against
     // a mask that redrew the whole visible scene to occlude itself
     // (docs/rendering.md, "The glow: what the depth share replaced").
-    glow.attach(this.celInk.pass);
+    glow.drawsInto(this.celInk.pass);
     const pipeline = new DefaultRenderingPipeline("post", false, this.scene, [
       this.cameraSys.camera,
     ]);
     // The cel shader outputs display-ready colors; the default image
     // processing pass would re-apply gamma and wash them out.
     pipeline.imageProcessingEnabled = false;
+    // FXAA is BUILT always and taken off the camera by the setting
+    // (`setFxaaEnabled`), never by `fxaaEnabled`: that setter rebuilds the
+    // pipeline, which re-attaches its passes by APPENDING — behind the shafts,
+    // the blur and the grade. So its slot is claimed here, while it is the last
+    // pass in the chain: detaching nulls its entry, and re-attaching appends it
+    // again and hands back the index, which is the one public way to learn it.
+    // The null left behind is skipped by the chain, as the shafts' hole is.
     pipeline.fxaaEnabled = true;
+    this.fxaa = pipeline.fxaa;
+    this.cameraSys.camera.detachPostProcess(this.fxaa);
+    this.fxaaSlot = this.cameraSys.camera.attachPostProcess(this.fxaa);
     // The light shafts: volumetric moonlight marched through the shadow
     // volume, after FXAA and before the blur — they belong to the same instant
     // as the geometry, so they have to smear and be graded with it.
@@ -2627,6 +2647,7 @@ export class Game {
     // A no-op unless the rung moved; a change rebuilds the patch meshes and
     // keeps the map's mask.
     this.grass.setQuality(this.settings.grass);
+    this.setFxaaEnabled(this.settings.fxaa);
     this.setMotionBlurEnabled(this.settings.motionBlur);
     // After the blur, and that is the order rather than a preference: the
     // blur's own toggle takes the grade off and puts it back to keep the
@@ -2681,6 +2702,7 @@ export class Game {
       volumetrics: this.volumetricsRung ?? "off",
       motionBlur: this.settings.motionBlur,
       paperGrain: this.settings.paperGrain,
+      fxaa: this.settings.fxaa,
       minimap: this.overrides.minimap,
       forced: this.overrides.forced,
     });
@@ -2911,6 +2933,30 @@ export class Game {
       camera.detachPostProcess(vol.pass);
     }
     this.volumetricsAttached = on;
+  }
+
+  /**
+   * Takes FXAA off the camera or puts it back, into the slot it was built in.
+   *
+   * A setting rather than a fixed part of the chain because what it costs is
+   * a phone's: on a high-density panel the backing store already holds two or
+   * more device pixels per CSS pixel, so a stair is far less visible, and it is
+   * a whole-frame read and write on a GPU whose frame is fill rather than draw
+   * calls (`FINDINGS.md` 5). Babylon's own shader also moves its early exit to
+   * the end on a Mali driver, so there every pixel pays the full edge search.
+   *
+   * Detached and re-attached at `fxaaSlot`, the shafts' trick
+   * (`syncVolumetrics`): `detachPostProcess` NULLS the entry rather than
+   * removing it, and `attachPostProcess` with an index refills a null, so the
+   * order behind it is untouched either way. Nothing throws if this is wrong;
+   * the symptom is FXAA softening the grain.
+   */
+  private setFxaaEnabled(on: boolean): void {
+    if (on === this.fxaaAttached) return;
+    const camera = this.cameraSys.camera;
+    if (on) camera.attachPostProcess(this.fxaa, this.fxaaSlot);
+    else camera.detachPostProcess(this.fxaa);
+    this.fxaaAttached = on;
   }
 
   /**

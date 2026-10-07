@@ -694,8 +694,8 @@ even a texture read**: it is the fourth channel of the sample the shader already
 took, and nothing downstream ever sees it.
 
 Four things share that channel and each was checked in the tree rather than
-assumed. The glow composes AFTER the ink and passes the alpha it is handed
-straight through, so a bloom cannot claim coverage it does not have. An ADDITIVE
+assumed. The glow composes AFTER the ink, inside the ink's own pass, and
+writes no alpha of its own, so a bloom cannot claim coverage it does not have. An ADDITIVE
 effect leaves the channel alone and should — a flare adds light rather than
 hiding what is behind it. The GLAZING writes its Fresnel alpha, so ink behind a
 window is attenuated by how opaque the window is, which is what you want and is
@@ -3338,12 +3338,21 @@ all in the counter this finding is named after. Not chased.
   returns on an unchanged value), so the render-scale setting cannot change the
   bloom's size on screen: `devicePixelRatio` is already inside the level, and the
   level is 1 at every default install.
-- **The compose is a post-process straight behind the ink**, and that is a LOOK
+- **The compose comes straight after the ink**, and that is a LOOK
   decision: a bloom lies over the ink lines round its lamp rather than under them,
   and FXAA, the shafts and the grade treat it as part of the picture. Against the
   old order the banked frames move only on edges under a bloom (a halo is no
   longer darkened by the line through it) — up to 0.26 mean/255 on the vantages
   with the sun or lamps in frame, and ~0.01 on the moon and the kit screen.
+- **…and it is the ink's LAST LINE rather than a pass of its own.** It reads
+  one pixel of the frame and two bilinear taps, so as a post-process it was a
+  whole-frame write and read for three fetches — on a phone's tile-based GPU, the
+  full backing store through memory and back (`FINDINGS.md` 5 and 13). `GlowPass`
+  still owns the arithmetic, as `GLOW_COMPOSE_WGSL` and `bindCompose`, and
+  `CelInk` splices it in after its own `mix`, which is the order the pass kept.
+  The inked pixel is no longer rounded to 8 bits before the bloom is added, which
+  is under half a step: the committed vantages of Harrowmead, Coldharbour and
+  Hollowmere diffed against the two-pass build inside the A-vs-A floor.
 - Flat shading is recovered in the fragment shader from screen-space derivatives of
   the world position. Do not call `convertToFlatShadedMesh()`; it would unweld vertices
   on every prop and clone for no visual gain.
@@ -3471,7 +3480,11 @@ all in the counter this finding is named after. Not chased.
 - **The post-process chain has an order, and a display setting that switches an
   effect off REMOVES its pass** rather than zeroing its uniforms — an attached but idle
   pass still reads and writes the whole frame. The order is FXAA, shafts (`Volumetrics`),
-  motion blur, paper grain, enforced by where each one re-attaches: `attachPostProcess` appends, so
+  motion blur, paper grain, enforced by where each one re-attaches. FXAA and the shafts
+  each hold a SLOT claimed while the chain is being built, which `detachPostProcess`
+  nulls and an indexed `attachPostProcess` refills (`Game.setFxaaEnabled`,
+  `Game.syncVolumetrics`) — never `pipeline.fxaaEnabled`, which rebuilds the pipeline
+  and re-appends FXAA behind the grain. For the other two, `attachPostProcess` appends, so
   the blur's toggle takes the grade off and puts it back behind it
   (`Game.setMotionBlurEnabled`), and the grade's own toggle always appends because the
   tail is where it belongs. `PaperGrain` owns whether it is attached, so the blur's

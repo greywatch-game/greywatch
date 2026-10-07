@@ -24,9 +24,9 @@
  * - `PaperGrain` is **detachable by a player setting**, and the contract for the
  *   post chain is that a setting which turns an effect off REMOVES its pass. A
  *   dither living there would be a correctness fix that disappears.
- * - A new always-attached full-screen pass — a seventh behind the default
- *   chain's six (the ink, the glow's compose, FXAA, the shafts, the blur and
- *   the grain) — costs a full read and write of the frame, exactly what
+ * - A new always-attached full-screen pass — a sixth behind the default
+ *   chain's five (the ink with the glow's compose in it, FXAA, the shafts, the
+ *   blur and the grain) — costs a full read and write of the frame, exactly what
  *   `FINDINGS.md` §5's fill-rate budget counts, to run three instructions.
  * - **The banding is a grade-off artefact, and the grade-off frame is the one
  *   configuration a pass inside the grade cannot reach.** The old screen grain

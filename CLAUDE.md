@@ -614,8 +614,9 @@ is that its occlusion is the FRAME's own depth buffer**
 (`src/shaders/GlowPass.ts`). **Do not put the whole-scene render list back.**
 **What may bloom is read per mesh every frame** — an emissive colour, no
 `metadata.noGlow`, and `Game`'s `GlowRules` — so nothing excludes a mesh by
-hand. **Its compose is the post process straight after the ink**, so `CelInk`
-stays first in the chain and the bloom lies over the lines.
+hand. **Its compose is the ink pass's own last line** (`GLOW_COMPOSE_WGSL`,
+not a pass of its own), so `CelInk` stays first in the chain and the bloom lies
+over the lines.
 
 → **[`docs/rendering.md`](docs/rendering.md)** — the frozen define set, the
 irradiance volume (why not Lumen, why the blend is 1), the four light terms and
