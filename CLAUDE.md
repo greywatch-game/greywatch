@@ -278,16 +278,16 @@ nothing, because the authority never heard the key.
 `Game.updateGameplay` has a load-bearing order at the end of the frame: camera
 update → carried-light updates → `lighting.update(dt, camera.position, mats)`.
 Light slot selection keys off the camera position, so nothing may move the
-camera after it. **Four things are pushed from `tick` instead, because they are
-owed by the states that simulate nothing**: `mats.updateCamera()` (the shader's
-EYE, or every screen with a live view behind it is fogged against wherever the
-last live frame stood), `sfx.setListener()` (the EAR, the same bug with a
-different symptom — a listener placed only by the frames that simulate sits at
-the origin, so a fire in the village pans from the map's corner while the menu
-is up), `Game.pushAmbience` and `Game.pushScoreboard` (the Tab board belongs to
-the ROUND, not to the states that simulate one). `ConquestSystem.update` runs
-*before* `BattleSystem.update`, so a bot's think tick sees this frame's flag
-ownership rather than last frame's.
+camera after it. **What the states that simulate nothing still owe is pushed
+from `tick`** (`docs/game.md` lists it); four of those are what a change
+elsewhere breaks: `mats.updateCamera()` (the shader's EYE, or every screen with
+a live view behind it is fogged against wherever the last live frame stood),
+`sfx.setListener()` (the EAR, the same bug with a different symptom — a listener
+placed only by the frames that simulate sits at the origin, so a fire in the
+village pans from the map's corner while the menu is up), `Game.pushAmbience`
+and `Game.pushScoreboard` (the Tab board belongs to the ROUND, not to the states
+that simulate one). `ConquestSystem.update` runs *before* `BattleSystem.update`,
+so a bot's think tick sees this frame's flag ownership rather than last frame's.
 
 → **[`docs/game.md`](docs/game.md)** — the mechanical test for what may leave
 `Game.ts`, what `installMap` hands to which system, and the pushes from `tick`.

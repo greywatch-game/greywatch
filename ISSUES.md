@@ -72,7 +72,7 @@ match smoke test (`npm run build:server && npm run server`, two clients).
 | ~~[41](#41-filesmd-has-no-scripts-section)~~ | P3 — done | `FILES.md` has no `scripts/` section |
 | ~~[42](#42-findingsmd-1-carries-closed-history)~~ | P3 — done | `FINDINGS.md` §1 carries closed history |
 | ~~[43](#43-dead-and-over-exported-symbols)~~ | P3 — done | Dead and over-exported symbols |
-| [44](#44-stale-comments-in-gamets-and-docsgamemd) | P3 | Stale comments in `Game.ts` and `docs/game.md` |
+| ~~[44](#44-stale-comments-in-gamets-and-docsgamemd)~~ | P3 — done | Stale comments in `Game.ts` and `docs/game.md` |
 | [45](#45-the-recoil-argument-is-written-in-five-places) | P3 | The recoil argument is written in five places |
 | [46](#46-physics-reference-baselines-missing-for-three-maps) | P3 | Physics reference baselines missing for three maps |
 | ~~[47](#47-most-of-the-footprint-table-understates-its-builders)~~ | P1 — done | Most of the footprint table understates its builders |
@@ -1943,6 +1943,27 @@ stripping, which still exports what the generators import (`bendPath`,
 - `docs/game.md`'s header "Two things are pushed from `tick`" — `CLAUDE.md`
   says four, and `tick` actually pushes about a dozen. Make the doc list what
   `tick` pushes and why.
+
+**Done.**
+- The orphaned "Moon shafts" line is deleted. The shafts' own doc under it was
+  already right.
+- "Reused each frame…" now sits on `combatants`. It also names the list's two
+  other readers, `awardZone` and the grass, and says why no hull is in it.
+- The physics comment says three clients throughout.
+- `pushHullEngines` had no doc of its own, so `pushAmbience`'s "its neighbour"
+  pointed at nothing. It has one now.
+- `docs/game.md`'s section is now "What `tick` pushes, not a state's own arm".
+  It has a table, in frame order, of every push `tick` makes, what states each
+  is owed to and why. The eye and scoreboard arguments stay under it verbatim,
+  except the claim that the eye is pushed "last thing before `scene.render()`".
+  That stopped being true when it moved into `followEye`, ahead of the GI,
+  the audio and the scoreboard. `pushTouchControls` gets a sentence beside
+  the scoreboard, since it is the same case.
+- `CLAUDE.md`'s "Four things are pushed from `tick`" now says everything owed
+  by the states that simulate nothing is pushed from there, that the doc lists
+  it, and that these four are the ones a change elsewhere breaks.
+
+Checked: `npm run typecheck`. `CLAUDE.md` stays at 1,505 lines.
 
 ### 45. The recoil argument is written in five places
 

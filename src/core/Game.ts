@@ -635,7 +635,6 @@ export class Game {
    */
   private foliageBuilt: FoliageQuality | null = null;
   private post: PaperGrain;
-  /** Moon shafts. Driven from the sky's own moon direction every frame. */
   /**
    * The light shafts, or null when the player has them off — which is a
    * DETACHED pass and not a zeroed one, the post chain's own rule.
@@ -871,7 +870,6 @@ export class Game {
   private get shadowQuality(): ShadowQuality {
     return this.overrides.shadows(this.settings.shadows);
   }
-  /** Reused each frame: the player plus every bot, for objective occupancy. */
   /**
    * The networked round, or null offline.
    *
@@ -923,6 +921,11 @@ export class Game {
    */
   private playerName = "player";
 
+  /**
+   * Reused each frame: the player plus every bot — what `ConquestSystem`
+   * counts occupancy from, what `awardZone` pays and what the grass bends
+   * around. No hull: armour captures nothing (see `buildRound`).
+   */
   private readonly combatants: Combatant[] = [];
   /** Scratch for the shadow focus point — no per-frame allocation. */
   private readonly shadowFocus = new Vector3();
@@ -1452,11 +1455,11 @@ export class Game {
     this.combat = new CombatSystem(this.scene, this.mats);
     this.grenades = new GrenadeSystem(this.scene, this.mats);
     // The one physics engine, and its three clients. `PhysicsWorld` is INJECTED
-    // into both rather than imported by either — see its header, and the
+    // into each rather than imported by any — see its header, and the
     // `BattleSystem`←`CombatSystem` precedent in CLAUDE.md. It is stood up
-    // synchronously on the module `main.ts` already awaited, so both clients
-    // build their pools in their own constructors and nothing below ever has
-    // to ask whether physics has arrived yet.
+    // synchronously on the module `main.ts` already awaited, so all three
+    // clients build their pools in their own constructors and nothing below
+    // ever has to ask whether physics has arrived yet.
     this.physics = new PhysicsWorld(this.scene, havok);
     this.ragdolls = new RagdollSystem(this.scene, this.physics);
     this.debris = new DebrisSystem(this.scene, this.mats, this.physics);
@@ -6430,6 +6433,13 @@ export class Game {
     this.ambience.update(this.cameraSys.camera.position, this.sfx);
   }
 
+  /**
+   * The engines of the hulls the player is NOT sitting in, from `tick` in
+   * every state — and silenced (`Sfx.enginesOff`) on a frame that did not
+   * step the fleet, because a held world is a hull whose load is frozen and a
+   * voice left running under the deploy card is a tank droning in a street
+   * where nothing moves. `stepped` is `fleetStepped`, read once in `tick`.
+   */
   private pushHullEngines(stepped: boolean): void {
     if (!stepped) {
       this.sfx.enginesOff();

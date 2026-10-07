@@ -2,7 +2,7 @@
 
 Why the one place systems meet is a long file on purpose, the mechanical test
 for what may be extracted from it, the single funnel every map is built through,
-and the two things pushed from `tick` rather than from a state's own arm. Split
+and what is pushed from `tick` rather than from a state's own arm. Split
 out of [`CLAUDE.md`](../CLAUDE.md), which keeps the wiring rule itself and the
 end-of-frame order; this file is the contract for `src/core/Game.ts` and for
 anything proposing to make it smaller.
@@ -202,16 +202,38 @@ is stepped anywhere in the client**, which was two places and a sentence in each
 saying so; `scene.physicsEnabled` stays false precisely so that a pause, the
 deploy map and the menu, all of which render, cannot advance it.
 
-## Two things are pushed from `tick`, not from a state's own arm
+## What `tick` pushes, not a state's own arm
 
 The end-of-frame order inside `updateGameplay` is in
-[`CLAUDE.md`](../CLAUDE.md), because three subsystems depend on it. These two are
-the opposite case: they are owed by the states that simulate **nothing**, so
-they cannot live in a chain that only a simulating state runs.
+[`CLAUDE.md`](../CLAUDE.md), because three subsystems depend on it. Everything
+below is the opposite case: it is owed by the states that simulate **nothing**
+as well as by the ones that do, so it cannot live in a chain that only a
+simulating state runs.
 
-**The shader's eye is the one camera-derived thing that is NOT in that chain**,
-because it is owed by the states that simulate nothing: `Game.tick` pushes
-`mats.updateCamera()` once per frame in every state, last thing before
+`Game.tick` runs it in this order, and each row's reason is written at its call
+site:
+
+| push | owed to | why from `tick` |
+| --- | --- | --- |
+| `net.conn.setFrame` | every state, in a match | first in the frame: where on the authority's timeline a frame is posed is a question about when it is SEEN, and anything later may ask it (`Connection`'s header) |
+| `input.update` | every state | every arm reads it |
+| `hud.setFps`, `profChip.update` | every state | they are instruments, and a frame rate that stops being reported when a menu opens cannot be investigated |
+| `updateRoundBehind` | the states whose `ScreenSpec.roundBehind` says so | the authority's round carries on behind the screen; BEFORE the switch, because `dt` has already passed under the screen that was up (`docs/states.md`) |
+| *the state's own arm* | | |
+| `netShots.clear` | every state | the wire's shots a state did not draw are DROPPED, or the menu's worth leave the barrel on the next round's first frame |
+| `hud.update` | every state, at `dt` 0 under a held world | a pause freezes the killfeed with the world; a netplay pause holds nothing, so neither does the feed |
+| `post.update`, `sky.update`, `setCloudShadow`, `pushLightning` | every state | the sky and the weather do not stop for a menu, and in a match they run on the authority's clock so every client agrees |
+| `syncVolumetrics`, `motionBlur.update` | every state | after every arm has placed the camera, before the render they are drawn into |
+| `followEye` — `mats.updateCamera`, `water.follow`, `grass.follow`, `culling.update`, `atmosphere.update` | every state | the EYE; see below |
+| `followEye` — `rotorWash.update`, `water.setWash`; and `pushHullEngines` | every state, gated on `fleetStepped` (read ONCE) | a held world is a fleet frozen in place, so these owe it stillness and SILENCE rather than nothing |
+| `gi.update` | every state with a map | the bounce is owed to every picture with a map in it, and converges behind the loading card |
+| `sfx.setListener`, `pushAmbience` | every state | the EAR, for the eye's reason; a fire is a property of the map and the ear, both true behind a deploy card |
+| `pushTouchControls`, `pushScoreboard` | the state the frame ENDS in | see below |
+| `updateBakeWait` | while a reflection bake drains | after the render, which released the bake's share; not an arm, because `loading` simulates nothing |
+
+**The shader's eye is not in that chain either**, because it is owed by the
+states that simulate nothing: `Game.followEye` pushes `mats.updateCamera()`
+once per frame in every state, after every arm has placed the camera and before
 `scene.render()`. The scene renders behind the menu, the building card, the
 deploy screen and the kit turntable, and all four would otherwise be fogged
 against wherever the last *live* frame stood — the origin, before there has been
@@ -229,16 +251,21 @@ camera tail a deploy screen over a meadow shows bare ground — the field is onl
 ever drawn where it was last chosen. Its clock stays in the tail with the
 foliage's, so a paused field holds still.
 
-**`Game.pushScoreboard` is the other thing pushed from `tick` rather than from a
-state's own arm**, and for the mirror reason: the Tab board is owed to `playing`,
-`dying` and `deploy` alike, so it belongs to the ROUND rather than to the states
-that simulate one. It runs after the switch and before the render, so the state
+**`Game.pushScoreboard` is pushed from `tick` for the mirror reason**: the Tab
+board is owed to `playing`, `dying` and `deploy` alike, so it belongs to the
+ROUND rather than to the states that simulate one. It runs after the switch and before the render, so the state
 a frame ends in decides — which is what makes "the board goes when the round
 does" one line instead of a `scoreboard.set(false)` owed by every one of the six
 ways out of a round. A lid takes it away, because a lid is a screen the player
 asked for.
 
-Both share a shape worth recognising before adding a third: the thing being
-pushed is owed by a **span** of states rather than by one, and the span does not
-match "is the world moving". Anything with that shape belongs in `tick` after
-the switch, and anything without it belongs in the state's own arm.
+**`pushTouchControls` sits beside it on the same terms**: the on-screen
+controls are owed to `playing` alone, which is narrower than `inRound`, and a
+frame that paused, died or deployed has already taken them away by the time it
+reads the state.
+
+Every row above shares a shape worth recognising before adding another: the
+thing being pushed is owed by a **span** of states rather than by one, and the
+span does not match "is the world moving". Anything with that shape belongs in
+`tick` and gets a row in the table, and anything without it belongs in the
+state's own arm.
