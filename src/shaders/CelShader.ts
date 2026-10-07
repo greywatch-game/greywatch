@@ -588,6 +588,9 @@ uniform reliefFade: vec4f;
 // x: how dark the relief's own shadow is (1 = the key gone), y: how much of the
 // ambient a groove at height 0 loses.
 uniform reliefShade: vec2f;
+// The Ground relief setting: 1 marches the depth and the self-shadow, 0 skips
+// both and leaves the slope and the cavity — see setGroundRelief.
+uniform reliefMarch: f32;
 #endif
 #else
 uniform baseColor: vec3f;
@@ -861,7 +864,8 @@ fn reliefHeight(uv: vec2f, gx: vec2f, gy: vec2f) -> f32 {
 // The rise is clamped for the same reason, so a pixel on the horizon line
 // cannot ask for a shift of a whole tile.
 fn reliefParallax(uv0: vec2f, gx: vec2f, gy: vec2f, dist: f32) -> vec3f {
-  let amount = 1.0 - smoothstep(uniforms.reliefFade.x, uniforms.reliefFade.y, dist);
+  let amount = (1.0 - smoothstep(uniforms.reliefFade.x, uniforms.reliefFade.y, dist))
+    * uniforms.reliefMarch;
   let top = reliefHeight(uv0, gx, gy);
   if (amount <= 0.0 || top >= 1.0) {
     return vec3f(uv0, top);
@@ -922,7 +926,7 @@ fn reliefParallax(uv0: vec2f, gx: vec2f, gy: vec2f, dist: f32) -> vec3f {
 // shadow four times the relief's own depth, which is the look this is for.
 fn reliefLit(uv: vec2f, h: f32, gx: vec2f, gy: vec2f, dist: f32) -> f32 {
   let amount = (1.0 - smoothstep(uniforms.reliefFade.z, uniforms.reliefFade.w, dist))
-    * uniforms.reliefShade.x;
+    * uniforms.reliefShade.x * uniforms.reliefMarch;
   let l = -uniforms.lightDir;
   if (amount <= 0.0 || l.y <= 0.0 || h >= 1.0) {
     return 1.0;
@@ -2769,7 +2773,7 @@ export class CelMaterialFactory {
             "texScale",
             "groundVariationScale",
             "groundVariationAmount",
-            ...(bump ? ["bumpScale", "reliefFade", "reliefShade"] : []),
+            ...(bump ? ["bumpScale", "reliefFade", "reliefShade", "reliefMarch"] : []),
           ],
           samplers: [
             "baseColorTex",
@@ -2812,6 +2816,8 @@ export class CelMaterialFactory {
           "reliefShade",
           new Vector2(relief.shadowStrength, relief.cavity),
         );
+        mat.setFloat("reliefMarch", this.reliefMarch);
+        this.relieved.add(mat);
       }
       this.applyCamera(mat);
       this.applyWind(mat);
@@ -3443,6 +3449,25 @@ export class CelMaterialFactory {
     this.specs.forEach((_, mat) => {
       if (mat.name.startsWith("cel-ground-")) this.applySpec(mat, next);
     });
+  }
+
+  /** 1 with the Ground relief setting on, 0 off — what a bumped ground is built with. */
+  private reliefMarch = 1;
+  /** Every bumped ground material, which is every reader of `reliefMarch`. */
+  private readonly relieved = new Set<ShaderMaterial>();
+
+  /**
+   * The Ground relief setting. Off zeroes both marches' fade amounts, so
+   * `reliefParallax` and `reliefLit` take their early return on every pixel —
+   * a uniform branch, no variant compiled — and the ground keeps its bumped
+   * slope and its cavity: flatter up close, the same from the far side of the
+   * fade, where the marches had already gone to nothing.
+   */
+  setGroundRelief(on: boolean): void {
+    const march = on ? 1 : 0;
+    if (march === this.reliefMarch) return;
+    this.reliefMarch = march;
+    for (const mat of this.relieved) mat.setFloat("reliefMarch", march);
   }
 
   /**

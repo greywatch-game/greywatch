@@ -2638,6 +2638,8 @@ export class Game {
     this.setVolumetrics(this.settings.volumetrics);
     // A no-op unless the rung moved; a move re-sizes the bloom's blur targets.
     this.glow.setQuality(this.settings.glow);
+    // A no-op unless it moved; a move is one uniform on every bumped ground.
+    this.mats.setGroundRelief(this.settings.groundRelief);
     // A no-op unless the tier moved; a change stands up a new texture set and
     // republishes it to every cel material (`GiVolume.setQuality`).
     this.gi.setQuality(this.overrides.gi(this.settings.gi));
@@ -2703,6 +2705,7 @@ export class Game {
       foliage: this.foliageBuilt ?? undefined,
       volumetrics: this.volumetricsRung ?? "off",
       glow: this.settings.glow,
+      groundRelief: this.settings.groundRelief,
       motionBlur: this.settings.motionBlur,
       paperGrain: this.settings.paperGrain,
       fxaa: this.settings.fxaa,

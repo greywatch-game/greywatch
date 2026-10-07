@@ -199,6 +199,13 @@ export type Settings = {
    */
   glow: GlowQuality;
   /**
+   * Ground relief — the depth and self-shadow the textured ground is marched
+   * for near the eye (`CONFIG.graphics.relief`). Off keeps the bumped slope
+   * and the cavity and drops the two marches, so nearby stones look flatter.
+   * Derived per MACHINE on a fresh install: see `defaultGroundRelief`.
+   */
+  groundRelief: boolean;
+  /**
    * Mouse look speed, as a multiplier on `CONFIG.camera.sensX`/`sensY`.
    *
    * The first setting that is not about the picture, and the reason the screen
@@ -414,6 +421,21 @@ function defaultGlowQuality(): GlowQuality {
   return coarse ? "low" : "high";
 }
 
+/**
+ * The ground relief a fresh install gets, on `defaultGiQuality`'s test: the
+ * two marches are up to a few dozen height-map fetches on every ground pixel
+ * near the eye — which on foot is most of the bottom of the screen — and that
+ * is the fill a phone pays ~2.4x a desktop's price for (`FINDINGS.md` 5). A
+ * device that stored its settings before this row existed gets it too.
+ */
+function defaultGroundRelief(): boolean {
+  const coarse =
+    typeof window !== "undefined" &&
+    typeof window.matchMedia === "function" &&
+    window.matchMedia("(pointer: coarse)").matches;
+  return !coarse;
+}
+
 const SETTING_DEFAULTS: Settings = {
   fpsCounter: false,
   motionBlur: CONFIG.graphics.motionBlur.strength > 0,
@@ -431,6 +453,7 @@ const SETTING_DEFAULTS: Settings = {
   grass: defaultGrassQuality(),
   foliage: defaultFoliageQuality(),
   glow: defaultGlowQuality(),
+  groundRelief: defaultGroundRelief(),
   renderScale: defaultRenderScale(),
   // No ceiling, which is the loop as it ran before the setting existed. NOT
   // derived per machine the way the detail rungs are: a cap trades smoothness
@@ -597,6 +620,7 @@ const CODECS: { [K in keyof Settings]: Codec<Settings[K]> } = {
   grass: oneOfString(GRASS_QUALITIES),
   foliage: oneOfString(FOLIAGE_QUALITIES),
   glow: oneOfString(GLOW_QUALITIES),
+  groundRelief: bool,
   mouseSensitivity: oneOf(CONFIG.camera.lookScales),
   stickSensitivity: oneOf(CONFIG.camera.lookScales),
   touchSensitivity: oneOf(CONFIG.camera.lookScales),

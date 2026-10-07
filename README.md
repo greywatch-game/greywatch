@@ -378,13 +378,13 @@ in and out are asks the server answers.
 
 ## Settings and performance
 
-Settings has four pages, turned by Q/E or the bumpers: **Input** (mouse and stick look speed, and the
+Settings has five pages, turned by Q/E or the bumpers: **Input** (mouse and stick look speed, and the
 bindings), **Touch** (see above), **Display** (render scale at 50, 75 or 100%,
 an FPS counter, motion blur, paper grain, antialiasing, and the frame
-profiler), and
-**Detail** (light shafts, bounce light, shadows and grass, each with rungs
-down to off, and glow and trees at low or high). A phone starts on low for
-everything here but the light shafts.
+profiler), **Light** (light shafts, bounce light and shadows, each with rungs
+down to off, and glow at low or high) and **Detail** (ground relief on or off,
+grass, and trees). A phone starts on low, or off, for everything on the last
+two pages but the light shafts.
 
 **The frame profiler ships in the production build**, because the devices
 worth measuring are the ones that will never run a dev server. Turn it on under

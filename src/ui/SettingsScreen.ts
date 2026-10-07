@@ -230,6 +230,9 @@ const ICONS = {
   ),
   touch: svg(`<path d="M7 2.8h10v18.4H7z"/><path d="M10.5 18h3"/>`),
   display: svg(`<path d="M3 4.5h18v12H3z"/><path d="M8.5 20.5h7M12 16.5v4"/>`),
+  light: svg(
+    `<circle cx="12" cy="12" r="4"/><path d="M12 2.5v2.5M12 19v2.5M2.5 12H5M19 12h2.5M5.3 5.3l1.8 1.8M16.9 16.9l1.8 1.8M5.3 18.7l1.8-1.8M16.9 7.1l1.8-1.8"/>`,
+  ),
   detail: svg(`<circle cx="16" cy="7.5" r="3"/><path d="M2.5 20.5l6.5-9 5 6.2 2.8-3.2 4.7 6z"/>`),
   back: svg(`<path d="M15 5l-7 7 7 7"/>`),
 };
@@ -399,13 +402,14 @@ const PAGES: readonly Page[] = [
   {
     // Split off Display when the shadows row made it nine, which ran under the
     // footer at a phone's 832x384 — this list's own rule for a page that
-    // outgrows its column. The six are the ones a slow device turns down,
-    // which is why grass is here beside the light rather than on a page of its
-    // own.
-    label: "Detail",
-    icon: ICONS.detail,
+    // outgrows its column — and split again when glow and ground relief made
+    // it seven against the five that fit there. The two pages are the things a
+    // slow device turns down: what LIGHTS the world here, what it is MADE of on
+    // the next page.
+    label: "Light",
+    icon: ICONS.light,
     blurb:
-      "The six things a slow device turns down first. All but the trees are drawn behind this screen as you change them, so what you are trading is in front of you.",
+      "The light a slow device turns down first. Every row is drawn behind this screen as you change it, so what you are trading is in front of you.",
     rows: [
       {
         key: "volumetrics",
@@ -459,6 +463,20 @@ const PAGES: readonly Page[] = [
           value: k,
           label: k.charAt(0).toUpperCase() + k.slice(1),
         })),
+      },
+    ],
+  },
+  {
+    label: "Detail",
+    icon: ICONS.detail,
+    blurb:
+      "The ground and the growth on it, the rest of what a slow device turns down. All but the trees are drawn behind this screen as you change them.",
+    rows: [
+      {
+        key: "groundRelief",
+        label: "Ground relief",
+        hint: "The depth and shadows of the stones underfoot. Off is flatter up close, and cheaper on a phone.",
+        options: OFF_ON,
       },
       {
         key: "grass",

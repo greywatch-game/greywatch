@@ -308,6 +308,11 @@ export interface ProfileGraphics {
    * every one of which ran `high`.
    */
   glow?: string;
+  /**
+   * `Settings.groundRelief`. Absent in a capture from before the setting
+   * existed, every one of which marched it.
+   */
+  groundRelief?: boolean;
   motionBlur: boolean;
   paperGrain: boolean;
   /**

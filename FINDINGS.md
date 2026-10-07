@@ -1602,9 +1602,10 @@ switch. Vantages: Cinderhaven's harbour street (42, 44, 45); a lamp-lit
 Hollowmere street (44, 45); Harrowmead's pasture (46); Coldharbour's square
 and a sprint down its lit streets (45's first bake, 46, and 43's re-count);
 Greyfen at `low` (45's hold); Kurenai's loam (42). **The tooling gap comes
-first**: grass and relief have no URL override, so nothing in a capture says
-the field was hidden or the relief pulled — `?grass=` and `?relief=`,
-recorded in `graphics.forced`, are what make those captures self-describing.
+first** for the grass: it has no URL override, so nothing in a capture says
+the field was hidden — `?grass=`, recorded in `graphics.forced`, is what makes
+those captures self-describing. The relief needs none: it is a setting, and
+every capture records it (`graphics.groundRelief`).
 
 ### What was measured
 
@@ -1631,8 +1632,9 @@ recorded in `graphics.forced`, are what make those captures self-describing.
   finds would be a camera-locked shape of exactly the kind the rim light was
   gated off level ground for.
 - **A phone.** Up to 12 layers, 3 refines and 8 shadow taps per ground pixel
-  inside the fades, on a device whose GPU was never the budget here. Nothing
-  gates it but the fades.
+  inside the fades, on a device whose GPU was never the budget here. The
+  Ground relief setting gates it now, off by default on a phone, and that
+  default is a guess until the capture below prices it.
 
 ### How to settle it
 
@@ -1643,12 +1645,12 @@ parallax fade pulled to 0, standing still and after a slow strafe. On a phone, a
 with both fades pulled to zero. If either is bad, the lever is the fade
 distances and the step counts in `CONFIG.graphics.relief`, not the height maps.
 
-**"Pulled to zero" has no switch today.** The relief is read off `CONFIG` into
-each cel material's `reliefFade`/`reliefShade` uniforms at construction, so on
-a phone it means a console write of those two on every bumped material, or a
-CONFIG edit and a rebuild. A `?relief=` override recorded in the capture's
-`graphics.forced` — beside `gi`, `shadows` and `volumetrics`, the three it
-holds now — would make a phone capture say which it was.
+**"Pulled to zero" is a setting now** (`Settings.groundRelief`, the Detail
+page's Ground relief row, off by default on a coarse pointer), and a capture
+records it as `graphics.groundRelief`, so a phone capture says which it was
+without a URL override. It zeroes both marches together, so the shadow alone
+at 0 is still a console write of `reliefShade` or a CONFIG edit. Not yet
+priced on the phone: the A/B above, Off against On.
 
 ---
 

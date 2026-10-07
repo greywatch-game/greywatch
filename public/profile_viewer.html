@@ -1195,6 +1195,8 @@ function renderReport(r) {
       " · shafts " + gx.volumetrics + tag("volumetrics") +
       // Absent before the setting existed, and every one of those ran high.
       " · glow " + (gx.glow || "high") +
+      // Absent before the setting existed, and every one of those marched it.
+      (gx.groundRelief === false ? " · relief off" : "") +
       " · blur " + (gx.motionBlur ? "on" : "off") + " · grain " + (gx.paperGrain ? "on" : "off") +
       // Absent before the setting existed, and every one of those ran it.
       (gx.fxaa === false ? " · fxaa off" : "") +

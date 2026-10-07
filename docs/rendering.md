@@ -3630,7 +3630,15 @@ all in the counter this finding is named after. Not chased.
     8–22 m and the rise is floored at 0.2. The shadow is not keyed on the view
     and carries to 30–60 m. The layer count is adaptive (40% of the cap looking
     straight down) and a crossing is refined with three secant steps, without
-    which the side of a sett reads as a stack of plates.
+    which the side of a sett reads as a stack of plates;
+  - **both are ONE SETTING, and Off is a uniform rather than a variant**
+    (`Settings.groundRelief`, `CelMaterialFactory.setGroundRelief`, off by
+    default on a coarse pointer). `reliefMarch` multiplies both fade amounts, so
+    at 0 every pixel takes the early return each march already had for "past
+    the fade" — a uniform branch, nothing recompiled — and the ground keeps its
+    bumped slope and its cavity, read at the undisplaced height. Up close that
+    is a visibly flat street (stones painted on one sheet again); past the fades
+    it is the picture it always was.
 
   **What the height maps had to become for it**, because a field tuned as a
   slope is wrong as a depth: a sett was a flat crown reached a quarter of the way

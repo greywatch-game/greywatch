@@ -1490,6 +1490,8 @@ export const graphics = {
    * and nothing casts a shadow. These two marches (`CelShader`'s
    * `reliefParallax` and `reliefLit`) put that back off the same height map at
    * the same `bumpScale`, so the depth, the slope and the shadow are one fact.
+   * The Ground relief setting (`Settings.groundRelief`) turns both marches off
+   * together and leaves the slope.
    */
   relief: {
     /**
