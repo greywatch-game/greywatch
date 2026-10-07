@@ -1815,13 +1815,18 @@ export const HarrowmeadLayout: MapLayout = {
   // \`surfaces\` stays at the default 3: a farm stacks like a village (brook
   // bed, bank, hayloft), not like an office block.
   /**
-   * Twice the default, and it is the borderland below that asks for it: the
-   * floor is cut into patches of this, and with 600 m of pasture on every side
-   * the default 48 would cut the ground into 193 meshes, two thirds of them
-   * country nobody fights over, every one of them walked by the frame. At 96
-   * it is 57, and the play floor's own share falls from 81 draws to 25.
+   * Half the play square, so the floor is the square in 2 x 2 — the cut
+   * \`blockSize\` makes of the structures — and the borderland, cut at four times
+   * this, is the eight bands round it: 12 meshes, where 96 made 57 and the
+   * default 48 would make 193. It is DRAW CALLS and the triangles are its
+   * price: measured live at the phone's shape over twenty views (the five
+   * flags at four bearings), 96 drew 25 floor patches a frame and 35 at worst,
+   * 200 draws 7 and 9, for 33k more floor triangles (146k to 179k of a 3.6M
+   * frame) because a bigger patch is culled less tightly. 400 saved under two
+   * draws more for another 6k, so it stops here. 50 cells, the whole number
+   * \`terrainPatches\` needs; the picture does not move.
    */
-  terrainBlock: 96,
+  terrainBlock: 200,
   /**
    * Four times the default, which is DRAW CALLS and nothing else: under a
    * 520 m fog the whole square is in view from anywhere in it, so a merge
