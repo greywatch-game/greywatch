@@ -31,7 +31,7 @@ import {
  * One parameter off the page's URL, or null. Never throws: a page with no
  * `location` to read (a worker, a test harness) has no flags on it.
  */
-export function urlParam(name: string): string | null {
+function urlParam(name: string): string | null {
   try {
     return new URLSearchParams(location.search).get(name);
   } catch {

@@ -179,7 +179,7 @@ export function equal(a: unknown, b: unknown): boolean {
 }
 
 /** A deep copy, so the original values survive being edited in place. */
-export function snapshot<T>(value: T): T {
+function snapshot<T>(value: T): T {
   if (value instanceof Vector3) return value.clone() as unknown as T;
   if (Array.isArray(value)) return value.map(snapshot) as unknown as T;
   if (value && typeof value === "object") {

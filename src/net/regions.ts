@@ -93,7 +93,7 @@ function schemes(): { http: string; ws: string } {
  * lobby — a client with no regions file browses and joins exactly as it did
  * before this module existed, through one code path rather than beside it.
  */
-export function originRegion(id = "local", name = "This server"): Region {
+function originRegion(id = "local", name = "This server"): Region {
   return {
     id,
     name,

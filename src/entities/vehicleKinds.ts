@@ -85,7 +85,7 @@ export interface VehicleType {
  * Every kind, keyed by name. A `Record` rather than an array so that a new
  * member of `VehicleKind` fails to compile until it has a row.
  */
-export const VEHICLE_KINDS: Record<VehicleKind, VehicleType> = {
+const VEHICLE_KINDS: Record<VehicleKind, VehicleType> = {
   tank: { name: "TANK", spec: CONFIG.vehicles.tank, build: buildTank },
   truck: { name: "TRUCK", spec: CONFIG.vehicles.truck, build: buildTruck },
   heli: { name: "HELI", spec: CONFIG.vehicles.heli, build: buildHeli },

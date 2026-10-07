@@ -1803,7 +1803,7 @@ export class MapBuilder {
     // inverted, which mirrored the whole test across every yaw-rotated box
     // while carrying a comment describing the convention it was not using.
     // The extents test stays local because it pads by the placement
-    // clearance, which `toLocalXZ` knows nothing about.
+    // clearance.
     const { lx, lz } = rotateToLocalXZ(b, x, z, this.localScratch);
     return Math.abs(lx) <= b.w / 2 + pad && Math.abs(lz) <= b.d / 2 + pad;
   }

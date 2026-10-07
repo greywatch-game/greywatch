@@ -1177,7 +1177,7 @@ mirrors them exactly where it mirrors `owner`, `meter` and `contested`.
 
 **The authority counts them, for the same reason it holds the stopwatch.** A
 client could run the same `pointAt` over the bodies it is drawing, and it would
-be counting a picture `INTERP_DELAY_MS` behind the tick that decided
+be counting a picture `CONFIG.net.interpDelay` behind the tick that decided
 `contested` — so its tally and that flag would disagree in exactly the frames
 the panel exists to explain. Nor is it a new leak: `contested` already says both
 sides are standing on that flag, and a snapshot puts every body's position on

@@ -408,9 +408,9 @@ export class ObstacleField {
     // Into the box's frame through the shared transform rather than a private
     // copy of the yaw convention — that convention has already been got wrong
     // once, and a push resolved in a mirrored frame would shove a bot the wrong
-    // way out of every rotated wall. Through `rotateToLocalXZ` rather than
-    // `toLocalXZ` because this needs `lx`/`lz` even for a point outside the
-    // footprint, which is exactly the case that helper answers with a bare null.
+    // way out of every rotated wall. Through `rotateToLocalXZ`, which tests no
+    // extents, because this needs `lx`/`lz` even for a point outside the
+    // footprint.
     const { lx, lz } = rotateToLocalXZ(box, out.x, out.z, this.localScratch);
     const hw = box.w / 2;
     const hd = halfDepth(box);

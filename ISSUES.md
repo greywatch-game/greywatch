@@ -71,7 +71,7 @@ match smoke test (`npm run build:server && npm run server`, two clients).
 | ~~[40](#40-claudemd-is-over-its-own-cap)~~ | P3 — done | `CLAUDE.md` is over its own cap |
 | ~~[41](#41-filesmd-has-no-scripts-section)~~ | P3 — done | `FILES.md` has no `scripts/` section |
 | ~~[42](#42-findingsmd-1-carries-closed-history)~~ | P3 — done | `FINDINGS.md` §1 carries closed history |
-| [43](#43-dead-and-over-exported-symbols) | P3 | Dead and over-exported symbols |
+| ~~[43](#43-dead-and-over-exported-symbols)~~ | P3 — done | Dead and over-exported symbols |
 | [44](#44-stale-comments-in-gamets-and-docsgamemd) | P3 | Stale comments in `Game.ts` and `docs/game.md` |
 | [45](#45-the-recoil-argument-is-written-in-five-places) | P3 | The recoil argument is written in five places |
 | [46](#46-physics-reference-baselines-missing-for-three-maps) | P3 | Physics reference baselines missing for three maps |
@@ -1884,6 +1884,48 @@ exists.
   `src/`, grep `src/ server/ scripts/` excluding its own file; zero hits = over-
   exported. (Careful with `roadPaths.ts`: Node generators import it by type
   stripping — grep `scripts/` too.)
+
+**Done.** The three dead symbols are deleted. `buildLantern` was in no
+scatter table and nothing called it, so no seeded draw could move; `IRON`, the
+colour only it wore, went with it. Deleting `isStructural` also removed the
+step in `.claude/skills/model-detail/new-model.md` that told a new builder to
+register there, since nothing reads it.
+
+51 symbols lost their `export`. The scan was the one proposed, run over
+`const`/`function`/`class`/`let`/`enum` in `src/` and `server/`, against
+`src/`, `server/`, `scripts/`, the root `.ts` files, `index.html` and
+`public/`. Two changes to it:
+- It also counted a hit that was only a COMMENT naming the symbol as no hit.
+  That found 24 more, among them six of the seven `MapDef` constants in
+  `maps.ts` (`CINDERHAVEN` had no hit at all), `WORLD_CEL_NAME`,
+  `GI_UNIFORM_NAMES`, `ROAD_BEND_CUT` and `ROAD_RANK_STEP`.
+- `server/` was scanned as well, which found `BALLOT_SIZE`.
+
+`MUDBRICK` and `WHITEWASH` are no longer on the list: the desert kit split into
+`kit/desert/`, and `adobe.ts` and `caravanserai.ts` import them.
+
+Un-exporting showed three more that nothing read at all, in their own file or
+anywhere else:
+- `INTERP_DELAY_MS` in `net/protocol.ts`. It has been unread since the initial
+  migration, and the client draws at `CONFIG.net.interpDelay`. The five
+  comments that named it (`protocol.ts`, `server/lagComp.ts`, `server/Match.ts`,
+  `config/net.ts` and `docs/multiplayer.md`) now name `CONFIG.net.interpDelay`.
+  The deleted doc claimed the delay and the rewind window were one constant;
+  they are not, so `config/net.ts` now says the delay shares
+  `REWIND_WINDOW_MS` with the shot's trip to the authority.
+- `toLocalXZ` in `boxGeometry.ts`, and with it `intoFootprint`, which only
+  `toLocalXZ` called. `intoFootprint`'s doc line moved onto `intoTopFace`. The comments in
+  `boxGeometry.ts`, `MapBuilder.ts` and `ObstacleField.ts` that pointed at
+  `toLocalXZ` say the same thing without it.
+
+Type and interface exports were left alone: the ticket's scan names
+`const|function|class`, and many of those types sit in the signature of an
+exported function.
+
+Checked: `npm run typecheck`; `npm run build`, with every gate passing; the scan
+re-run, with zero symbols left; and `roadPaths.ts` loaded under Node's type
+stripping, which still exports what the generators import (`bendPath`,
+`roadNetwork`, `stripSections`).
 
 ### 44. Stale comments in `Game.ts` and `docs/game.md`
 

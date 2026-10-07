@@ -221,7 +221,7 @@ export function fireHullMg(
  * at once — which is why this is asked the two ways `VehicleSystem`'s orders
  * are, a person on the sticks first and the bot crew after.
  */
-export function driverOf(ctx: HullRules, tank: Vehicle): Combatant | null {
+function driverOf(ctx: HullRules, tank: Vehicle): Combatant | null {
   return ctx.personIn(tank, DRIVER) ?? ctx.crewOf(tank, DRIVER);
 }
 

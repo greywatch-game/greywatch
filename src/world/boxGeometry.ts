@@ -63,7 +63,7 @@ export function halfDepth(box: WorldBox): number {
  * it and no top face over it, and where every query here used to answer with an
  * extrapolation of a plane that had run out of face.
  */
-export function topFaceCentreZ(box: WorldBox): number {
+function topFaceCentreZ(box: WorldBox): number {
   return (box.h / 2) * Math.sin(box.rotX);
 }
 
@@ -83,7 +83,7 @@ export function topFaceCentreZ(box: WorldBox): number {
  * `Player.probeGround` stayed a whole-scene ray pick for as long as it did.
  * `docs/world.md` ("The ground probe reads boxes") carries the measurement.
  */
-export function topFaceHalfDepth(box: WorldBox): number {
+function topFaceHalfDepth(box: WorldBox): number {
   return (box.d / 2) * Math.abs(Math.cos(box.rotX));
 }
 
@@ -136,8 +136,9 @@ export interface LocalXZ {
 
 /**
  * Rotates a world XZ point into the box's own frame, into `out`. No extents
- * test — that is `toLocalXZ`'s job, and the callers that pad the footprint or
- * ask about it in more than two dimensions do it themselves.
+ * test — this module's own queries gate on `intoTopFace`, and the callers that
+ * pad the footprint or ask about it in more than two dimensions do it
+ * themselves.
  *
  * THE ONE PLACE THE YAW CONVENTION LIVES, and it is here because it had already
  * been got wrong. The transform is world→local, so it rotates by *minus* rotY;
@@ -178,26 +179,21 @@ export function rotateToLocalXZ(
  * caller's result would put an allocation on the REJECTING path — which is the
  * overwhelming majority, because every caller sweeps a rectangle sized to the
  * box's reach and asks about a footprint several times smaller inside it.
- * Nothing may hold this across a call: `toLocalXZ` copies out of it and
- * `topFaceHeight` reads one field and drops it.
+ * Nothing may hold this across a call: `topFaceHeight` reads one field and
+ * drops it.
  */
 const LOCAL: LocalXZ = { lx: 0, lz: 0 };
 
-/** Rotates into `LOCAL` and answers whether the point is inside the footprint. */
-function intoFootprint(box: WorldBox, x: number, z: number): boolean {
-  rotateToLocalXZ(box, x, z, LOCAL);
-  return Math.abs(LOCAL.lx) <= box.w / 2 && Math.abs(LOCAL.lz) <= halfDepth(box);
-}
-
 /**
- * The same, against the TOP FACE's own footprint rather than the solid's — the
- * gate on every height query here. See the header: outside it the box still has
- * ground under it, but what stands over that ground is an END face, and the
- * top-face plane asked about it answers with an extrapolation that runs up to a
- * whole `slabThickness` above anything really there. Refusing is right and is
- * also the safe direction: a height query that declines falls through to
- * whatever the caller has underneath — the terrain, for the ground probe — and
- * one that invents a surface stands a body on air.
+ * Rotates into `LOCAL` and answers whether the point is inside the TOP FACE's
+ * own footprint rather than the solid's — the gate on every height query here.
+ * See the header: outside it the box still has ground under it, but what stands
+ * over that ground is an END face, and the top-face plane asked about it
+ * answers with an extrapolation that runs up to a whole `slabThickness` above
+ * anything really there. Refusing is right and is also the safe direction: a
+ * height query that declines falls through to whatever the caller has
+ * underneath — the terrain, for the ground probe — and one that invents a
+ * surface stands a body on air.
  */
 function intoTopFace(box: WorldBox, x: number, z: number): boolean {
   rotateToLocalXZ(box, x, z, LOCAL);
@@ -208,30 +204,19 @@ function intoTopFace(box: WorldBox, x: number, z: number): boolean {
 }
 
 /**
- * Transforms a world XZ point into the box's local frame, returning null when
- * it falls outside the footprint. Allocates its result only once that has
- * passed.
- */
-export function toLocalXZ(box: WorldBox, x: number, z: number): LocalXZ | null {
-  if (!intoFootprint(box, x, z)) return null;
-  return { lx: LOCAL.lx, lz: LOCAL.lz };
-}
-
-/**
  * Height of the box's top face above `(x, z)` in world space, or null when the
  * box has no top face over that spot. Allocates on neither path — it wants one
- * number out of the local point, so it reads the scratch rather than going
- * through `toLocalXZ` for a result it would drop. This is the query the nav
- * bake runs per cell per box.
+ * number out of the local point, so it reads the scratch. This is the query
+ * the nav bake runs per cell per box.
  *
- * **The gate is `intoTopFace`, not `intoFootprint`**, and the difference is the
- * whole of what made this query untrustworthy for a ground probe. Validated
- * against a brute-force downward ray at the real rotated box over 640k samples
- * on 400 random boxes pitched to +-60 deg: it now answers on exactly the spots
- * where that ray lands on the top face, with the same height to 4e-12 m, and
- * declines on exactly the spots where it does not. The footprint gate answered
- * on 1.5% of samples with no standable surface under them at all, by as much as
- * 6 m.
+ * **The gate is `intoTopFace`, not the solid's footprint**, and the
+ * difference is the whole of what made this query untrustworthy for a ground
+ * probe. Validated against a brute-force downward ray at the real rotated box
+ * over 640k samples on 400 random boxes pitched to +-60 deg: it now answers on
+ * exactly the spots where that ray lands on the top face, with the same height
+ * to 4e-12 m, and declines on exactly the spots where it does not. The
+ * footprint gate answered on 1.5% of samples with no standable surface under
+ * them at all, by as much as 6 m.
  */
 export function topFaceHeight(box: WorldBox, x: number, z: number): number | null {
   if (!intoTopFace(box, x, z)) return null;

@@ -64,7 +64,7 @@ export const RUBBER = "#15181d"; // the contact surfaces: butt pad, grip cap, fo
  * steel-glossy along with the rails.
  */
 export const BRASS = "#a8823a";
-export const RETICLE = "#ff3b30";
+const RETICLE = "#ff3b30";
 
 /**
  * A colour group, by name — one merged mesh per weapon, and the unit a

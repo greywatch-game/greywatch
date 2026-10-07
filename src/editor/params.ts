@@ -536,18 +536,6 @@ export const PARAMS: Record<BuilderKind, ParamSpec[]> = {
   kiln: [],
 };
 
-/** Kinds whose rotation should snap to the axis-aligned layout rule. */
-export function isStructural(kind: BuilderKind): boolean {
-  return (
-    kind !== "cart" &&
-    kind !== "crates" &&
-    kind !== "woodpile" &&
-    // A parked car is dressing, not architecture: it sits at whatever angle it
-    // was left at, the same licence the cart has.
-    kind !== "car"
-  );
-}
-
 /**
  * Every builder kind, alphabetically — the add menu and the kind picker.
  *

@@ -90,7 +90,7 @@ export type LookScale = (typeof CONFIG.camera.lookScales)[number];
  * first because it is what shipped. See `TouchControls`' header for what each
  * one trades.
  */
-export const TOUCH_STICKS = ["floating", "fixed"] as const;
+const TOUCH_STICKS = ["floating", "fixed"] as const;
 export type TouchStick = (typeof TOUCH_STICKS)[number];
 
 /**
@@ -99,7 +99,7 @@ export type TouchStick = (typeof TOUCH_STICKS)[number];
  * gentle way in: the drag still does the big turns and the wrist only does
  * the fine work an aimed shot is made of.
  */
-export const GYRO_MODES = ["off", "aiming", "always"] as const;
+const GYRO_MODES = ["off", "aiming", "always"] as const;
 export type GyroMode = (typeof GYRO_MODES)[number];
 
 /**
@@ -291,7 +291,7 @@ export type Settings = {
  * coming out sharper than before. That is the right way for the clamp to fail
  * and it only reaches phones — unchanged by this.
  */
-export function defaultRenderScale(): RenderScale {
+function defaultRenderScale(): RenderScale {
   const dpr = typeof window === "undefined" ? 1 : window.devicePixelRatio || 1;
   const want = 1 / dpr;
   const rungs = CONFIG.graphics.renderScales;
@@ -310,7 +310,7 @@ export function defaultRenderScale(): RenderScale {
  * to be the thing that makes the frame late — and a player who wants more is
  * one row away.
  */
-export function defaultGiQuality(): GiQuality {
+function defaultGiQuality(): GiQuality {
   const coarse =
     typeof window !== "undefined" &&
     typeof window.matchMedia === "function" &&
@@ -324,7 +324,7 @@ export function defaultGiQuality(): GiQuality {
  * frame at ~2.4x a desktop's cost, and the lamps' shadows are a depth pass per
  * face on top of the moon's.
  */
-export function defaultShadowQuality(): ShadowQuality {
+function defaultShadowQuality(): ShadowQuality {
   const coarse =
     typeof window !== "undefined" &&
     typeof window.matchMedia === "function" &&
@@ -339,7 +339,7 @@ export function defaultShadowQuality(): ShadowQuality {
  * (`FINDINGS.md` 46) — which is the GPU work a phone pays ~2.4x a desktop's
  * price for.
  */
-export function defaultGrassQuality(): GrassQuality {
+function defaultGrassQuality(): GrassQuality {
   const coarse =
     typeof window !== "undefined" &&
     typeof window.matchMedia === "function" &&
@@ -367,7 +367,7 @@ export function defaultGrassQuality(): GrassQuality {
  * hundred palms on Greyfen — which is the work a phone pays ~2.4x a
  * desktop's price for.
  */
-export function defaultFoliageQuality(): FoliageQuality {
+function defaultFoliageQuality(): FoliageQuality {
   const coarse =
     typeof window !== "undefined" &&
     typeof window.matchMedia === "function" &&
@@ -375,7 +375,7 @@ export function defaultFoliageQuality(): FoliageQuality {
   return coarse ? "low" : "high";
 }
 
-export const SETTING_DEFAULTS: Settings = {
+const SETTING_DEFAULTS: Settings = {
   fpsCounter: false,
   motionBlur: CONFIG.graphics.motionBlur.strength > 0,
   paperGrain: true,

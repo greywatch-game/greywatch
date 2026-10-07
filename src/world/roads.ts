@@ -218,7 +218,7 @@ export const ROAD_DEPTH_UNITS = -8;
  * do not interact: both surfaces at a junction carry the same bias, so what
  * decides between them is still the two millimetres here.
  */
-export const ROAD_RANK_STEP = 0.002;
+const ROAD_RANK_STEP = 0.002;
 
 /** The surface a road placement asks for, defaulting as `buildRoad` does. */
 export function roadSurface(surface?: string): RoadSurface {

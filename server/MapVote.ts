@@ -33,7 +33,7 @@
  */
 
 /** How many maps a ballot offers, when there are that many to offer. */
-export const BALLOT_SIZE = 3;
+const BALLOT_SIZE = 3;
 
 export class MapVote {
   /** The candidates, in ballot order — an index into this is a vote. */

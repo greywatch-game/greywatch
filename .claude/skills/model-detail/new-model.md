@@ -42,9 +42,7 @@ server's bake — follows from what the builder declares.
    `BUILDERS` (grouped with its set). `BuilderKind` derives from this.
 2. `src/editor/params.ts`: a `PARAMS` row listing exactly the `BuildParams` it
    reads, with the builder's own defaults (`[]` if none). It is a `Record` over
-   `BuilderKind`, so this is a compile error until done. If it is dressing
-   that may sit at any angle (cart, crates, car), exclude it in
-   `isStructural`.
+   `BuilderKind`, so this is a compile error until done.
 3. A NEW param: add the field to `BuildParams` in `kit/core.ts` with a doc
    comment saying which builder reads it and what it means. The bag is shared
    and flat on purpose; reuse `width`/`depth`/`height`/`length`/`ruined`/`lit`

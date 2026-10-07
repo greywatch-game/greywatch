@@ -63,18 +63,6 @@ export interface SlabSpec {
   thickness: number;
 }
 
-/**
- * An empty, level heightfield at the given resolution, over a map `extent`
- * metres on a side (`CONFIG.map.size` unless the layout states its own).
- */
-export function emptyHeightfield(
-  cell: number,
-  extent = CONFIG.map.size,
-): Heightfield {
-  const size = Math.round(extent / cell);
-  return { size, cell, heights: new Array((size + 1) * (size + 1)).fill(0) };
-}
-
 export class TerrainField {
   /**
    * Half the map, cached — every sample needs it.

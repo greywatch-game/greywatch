@@ -114,7 +114,7 @@ export type RegionName = (typeof EDITABLE)[number];
  * object literal, and a parser would drag a dependency and a build step into
  * a dev tool for no gain.
  */
-export function splitFields(inner: string): ParsedField[] | null {
+function splitFields(inner: string): ParsedField[] | null {
   const parts: string[] = [];
   let depth = 0;
   let quote: string | null = null;
@@ -177,7 +177,7 @@ function topLevelColon(part: string): number {
  * leading whitespace attached, which is what lets a rewritten line come back
  * spaced exactly as it was authored.
  */
-export function splitComment(line: string): [string, string] {
+function splitComment(line: string): [string, string] {
   let quote: string | null = null;
   for (let i = 0; i < line.length - 1; i++) {
     const ch = line[i];

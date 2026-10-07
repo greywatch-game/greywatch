@@ -112,17 +112,6 @@ export const SNAPSHOT_HZ = 20;
 /** How often a client uploads its own movement. */
 export const INPUT_HZ = 20;
 
-/**
- * How far behind the newest snapshot a client renders other entities.
- *
- * Two snapshots' worth plus a margin: interpolation needs a sample on each side
- * of the render time, so anything less than one interval guarantees
- * extrapolation on a perfect connection, and the margin absorbs jitter. This is
- * also the window the server rewinds through for hit validation, which is why
- * the two live in one constant rather than being tuned apart and drifting.
- */
-export const INTERP_DELAY_MS = 100;
-
 /** How much position history the server keeps per combatant, for rewind. */
 export const REWIND_WINDOW_MS = 400;
 
@@ -1319,9 +1308,9 @@ export interface MoveMessage {
  * A round the client believes it fired.
  *
  * `time` is the client's RENDER time — what it was actually looking at, which
- * is `INTERP_DELAY_MS` behind the newest snapshot it holds. The server rewinds
- * every target to that instant before re-running the ray, so a shot at a
- * moving enemy lands where the shooter saw them and not where they now are.
+ * is `CONFIG.net.interpDelay` behind the newest snapshot it holds. The server
+ * rewinds every target to that instant before re-running the ray, so a shot at
+ * a moving enemy lands where the shooter saw them and not where they now are.
  *
  * There is deliberately no victim field. An earlier draft had one and the
  * server checked it for plausibility; naming the victim at all invites

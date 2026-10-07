@@ -198,7 +198,7 @@ const ROAD_R = 0.34;
  * the body may tilt without knowing where the outermost wheel is, and where it
  * is is a drawing decision made here.
  */
-export const WHEEL_REACH = 2.11;
+const WHEEL_REACH = 2.11;
 /**
  * How far the tub's floor stands above the face the tracks stand on — this
  * vehicle's ground clearance, and therefore the ceiling on how far its body
@@ -252,7 +252,7 @@ const END_Z = CONFIG.vehicles.tank.hull.length / 2 - 0.6;
  * the belt at each end, which is a hull rearing up on a kerb its tracks have
  * not reached yet.
  */
-export const TRACK_REACH = END_Z;
+const TRACK_REACH = END_Z;
 
 /**
  * The distance between the two tracks' centrelines.

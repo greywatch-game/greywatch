@@ -31,7 +31,7 @@ import { REST_POSE, type SoldierPose } from "./SoldierModel";
  * Sideways steps are shorter (a sidestep cannot reach as far as a stride) and
  * so are backward ones.
  */
-export function stepLength(speed: number, heading: number): number {
+function stepLength(speed: number, heading: number): number {
   const base = Math.min(2, Math.max(0.5, 0.55 + 0.2 * speed));
   const side = Math.abs(Math.sin(heading));
   const back = Math.max(0, -Math.cos(heading));

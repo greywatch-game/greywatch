@@ -89,7 +89,7 @@ export interface SaveResult {
  * @param eol the terminator to write, the layout file's own, so the two files
  *   written by one save agree with each other and with the checkout.
  */
-export function serializeHeights(
+function serializeHeights(
   field: Heightfield,
   mapId: string,
   current: string,

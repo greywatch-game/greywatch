@@ -81,7 +81,7 @@ export interface OrdnanceEffect {
 }
 
 /** What one AT item does when it goes off. Called at a detonation, not per frame. */
-export function ordnanceEffect(id: EquipmentId): OrdnanceEffect {
+function ordnanceEffect(id: EquipmentId): OrdnanceEffect {
   const e = CONFIG.equipment[id];
   return {
     damage: e.damage,

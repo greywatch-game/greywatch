@@ -62,7 +62,7 @@ type Ctx = ReturnType<DynamicTexture["getContext"]>;
  * cells below land 5 setts across it, so one cobble is ~0.30 m — right for a
  * village street read at eye height.
  */
-export const COBBLE_METERS_PER_TILE = 1.5;
+const COBBLE_METERS_PER_TILE = 1.5;
 /** Value for the cel shader's `texScale` uniform (repeats per metre). */
 export const COBBLE_TEX_SCALE = 1 / COBBLE_METERS_PER_TILE;
 

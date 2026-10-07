@@ -340,7 +340,7 @@ export const FINISH_IDS = Object.keys(FINISHES) as FinishId[];
 /** The scheme every weapon ships in, and the fallback for anything unknown. */
 export const DEFAULT_FINISH: FinishId = "standard";
 
-export function isFinishId(value: string): value is FinishId {
+function isFinishId(value: string): value is FinishId {
   return Object.prototype.hasOwnProperty.call(FINISHES, value);
 }
 

@@ -1,7 +1,7 @@
 /**
  * props/small.ts — The scatter props that are a few dozen lines of
  * primitives apiece: buildButtressLog, buildCarvedStele, buildGravestone,
- * buildLantern, buildFungus, buildLog, buildBramble and buildRubble.
+ * buildFungus, buildLog, buildBramble and buildRubble.
  * Part of the scatter set: follows the contract in `./index.ts`.
  */
 import { Mesh, MeshBuilder, Scene } from "@babylonjs/core";
@@ -10,7 +10,6 @@ import { BARK, DEAD_BARK, JUNGLE_BARK, VINE } from "./palette";
 
 const STONE = "#7a7f7c";
 const DARK_STONE = "#5f6461";
-const IRON = "#2f3338";
 const CONCRETE = "#4a4d54";
 
 /**
@@ -197,55 +196,6 @@ export function buildGravestone(
   plinth.position.y = -0.72;
   plinth.material = mats.get("#5f6461");
   return slab;
-}
-
-/** Iron lamp post — the warm anchor in an otherwise blue-black village. */
-export function buildLantern(scene: Scene, mats: CelMaterialFactory): Mesh {
-  const iron = mats.get(IRON);
-  const post = MeshBuilder.CreateCylinder(
-    "lantern-post",
-    { height: 3.6, diameterTop: 0.14, diameterBottom: 0.24, tessellation: 6 },
-    scene,
-  );
-  post.position.y = 1.8;
-  post.material = iron;
-
-  const arm = MeshBuilder.CreateBox(
-    "lantern-arm",
-    { width: 0.9, height: 0.1, depth: 0.1 },
-    scene,
-  );
-  arm.parent = post;
-  arm.position.set(0.35, 1.75, 0);
-  arm.material = iron;
-
-  const cage = MeshBuilder.CreateCylinder(
-    "lantern-cage",
-    { height: 0.62, diameterTop: 0.42, diameterBottom: 0.3, tessellation: 6 },
-    scene,
-  );
-  cage.parent = post;
-  cage.position.set(0.75, 1.42, 0);
-  cage.material = iron;
-
-  const flame = MeshBuilder.CreateSphere(
-    "lantern-flame",
-    { diameter: 0.3, segments: 6 },
-    scene,
-  );
-  flame.parent = cage;
-  flame.material = mats.getEmissive("#ffbe63");
-  flame.metadata = { noInk: true };
-
-  const cap = MeshBuilder.CreateCylinder(
-    "lantern-cap",
-    { height: 0.18, diameterTop: 0.1, diameterBottom: 0.5, tessellation: 6 },
-    scene,
-  );
-  cap.parent = cage;
-  cap.position.y = 0.38;
-  cap.material = iron;
-  return post;
 }
 
 /** Cluster of luminous corpse-fungus — small, cold, and everywhere. */

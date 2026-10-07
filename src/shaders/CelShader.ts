@@ -218,7 +218,7 @@ export function writePaletteIndex(mesh: Mesh, slot: number): void {
  * source is only half the contract: a `ShaderMaterial` builds its bind group
  * from the lists it is CONSTRUCTED with.
  */
-export const PROBE_BOX_UNIFORM_NAMES = ["reflectBoxMin", "reflectBoxMax"];
+const PROBE_BOX_UNIFORM_NAMES = ["reflectBoxMin", "reflectBoxMax"];
 /**
  * The probe uniform a sampling material owes, beside `PROBE_SAMPLER_NAMES`.
  *
@@ -292,7 +292,7 @@ export const SHADOW_SAMPLER_NAMES = [
  * cel materials alone. See `systems/GiVolume.ts` for what each carries and
  * `wgsl/includes.ts` for how the fragment reads them.
  */
-export const GI_UNIFORM_NAMES = [
+const GI_UNIFORM_NAMES = [
   "giGrid",
   "giWindow",
   "giShade",
@@ -3517,7 +3517,7 @@ const fogState = { color: new Color3(0.05, 0.06, 0.08), start: 24, end: 78 };
  * shell for a mesh holding ten colours. A full-screen ink asks the name
  * nothing.
  */
-export const WORLD_CEL_NAME = "cel-world";
+const WORLD_CEL_NAME = "cel-world";
 
 /**
  * The same, for the one material every soldier rig wears (`getBodyCel`).
@@ -3527,7 +3527,7 @@ export const WORLD_CEL_NAME = "cel-world";
  * `MapBuilder`'s merge, because the rule that keeps a paletteised mesh from
  * being paletteised twice should hold for both palettes or for neither.
  */
-export const BODY_CEL_NAME = "cel-body";
+const BODY_CEL_NAME = "cel-body";
 
 const windBearing = new Vector2(
   CONFIG.wind.dir[0],

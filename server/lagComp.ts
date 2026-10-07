@@ -11,9 +11,9 @@
  * nothing would report it — every subsequent shot, every LOS test and every
  * capture-zone check would silently use ghost positions.
  *
- * **Why this exists.** A client draws other bodies `INTERP_DELAY_MS` behind the
- * server, and its own packets took time to arrive on top of that. So when a
- * player puts their sight on someone and fires, that someone has already
+ * **Why this exists.** A client draws other bodies `CONFIG.net.interpDelay`
+ * behind the server, and its own packets took time to arrive on top of that. So
+ * when a player puts their sight on someone and fires, that someone has already
  * moved on the server. Resolving the ray against the present would mean a
  * player has to lead every target by their own ping, which is the single most
  * complained-about thing in a networked shooter. Rewinding costs the opposite

@@ -494,7 +494,7 @@ function terrainGrade(f: Heightfield | undefined): Finding[] {
 }
 
 /** Fixture-cluster check, split out so it can take the lighting system. */
-export function validateLights(
+function validateLights(
   fixtures: readonly { position: Vector3 }[],
 ): Finding[] {
   const out: Finding[] = [];
@@ -524,7 +524,7 @@ export function validateLights(
 }
 
 /** Body-clearance probe: spots where a bot would be pushed somewhere illegal. */
-export function validateClearance(map: GameMap): Finding[] {
+function validateClearance(map: GameMap): Finding[] {
   const nav = map.nav;
   const snap = nav.debugSnapshot();
   const { dim, cellSize, origin, cellBase, counts, walkable, heights } = snap;

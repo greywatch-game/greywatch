@@ -1209,7 +1209,7 @@ const FACE = '"Bahnschrift", "DIN Alternate", "Roboto Condensed", sans-serif';
 const TAU = Math.PI * 2;
 
 /** A `#rrggbb` or `rgb()` colour with an alpha channel put on it. */
-export function withAlpha(color: string, alpha: number): string {
+function withAlpha(color: string, alpha: number): string {
   if (color.startsWith("#")) {
     const n = parseInt(color.slice(1), 16);
     return `rgba(${(n >> 16) & 255}, ${(n >> 8) & 255}, ${n & 255}, ${alpha})`;

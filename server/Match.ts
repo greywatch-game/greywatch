@@ -236,10 +236,10 @@ const STEP_MS = 1000 / TICK_HZ;
  * rides on runs anywhere in a 16 ms window and the twenty sends a second land
  * 31 to 80 ms apart. That spread is not rendered as speed any more (the stamps
  * are the simulation's own clock — `HeadlessGame.now`), but it is still spent:
- * a client draws bodies `INTERP_DELAY_MS` behind the newest sample it holds,
- * and a send that is early shortens that buffer by exactly its earliness. Half
- * the spread came off the budget meant for the NETWORK's jitter, on a link with
- * none.
+ * a client draws bodies `CONFIG.net.interpDelay` behind the newest sample it
+ * holds, and a send that is early shortens that buffer by exactly its
+ * earliness. Half the spread came off the budget meant for the NETWORK's
+ * jitter, on a link with none.
  *
  * At 4 ms the same measurement is 47 to 66 — the early cluster is gone
  * entirely, which is the half that costs. 2 ms and 1 ms measured no better

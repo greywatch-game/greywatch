@@ -859,7 +859,7 @@ export function buildJungleTree(
  * rail; the whole silhouette is in the raggedness, which is the same lesson
  * `buildJungleTree` states about its fronds needing two segments.
  */
-export function buildLianaVeil(
+function buildLianaVeil(
   scene: Scene,
   mats: CelMaterialFactory,
   rng: () => number,

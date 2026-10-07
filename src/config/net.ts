@@ -18,8 +18,9 @@ export const net = {
    *
    * Interpolation needs a sample either side of the render time, so this must
    * exceed one snapshot interval or a perfect connection still extrapolates.
-   * `PROTOCOL.INTERP_DELAY_MS` is the shared default; this is the client's own
-   * knob for spending more latency to ride out worse jitter.
+   * Raising it spends more latency to ride out worse jitter. It shares the
+   * authority's `REWIND_WINDOW_MS` with the shot's own trip there: a render
+   * time older than that window is clamped rather than rewound to.
    */
   interpDelay: 0.1,
 

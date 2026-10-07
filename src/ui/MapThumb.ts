@@ -96,7 +96,7 @@ export function paintMapThumb(
  * canvas left at its attribute size and stretched by CSS is the one thing on
  * these screens that would come out visibly soft.
  */
-export function drawMapThumb(
+function drawMapThumb(
   canvas: HTMLCanvasElement,
   def: MapDef,
   floor: Heightfield | null,

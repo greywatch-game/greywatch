@@ -80,7 +80,7 @@ import {
  * three centimetres off its circle is invisible from anywhere a player stands,
  * and it is what bounds the vertex count on a bend a kilometre round.
  */
-export const ROAD_BEND_SAG = 0.03;
+const ROAD_BEND_SAG = 0.03;
 
 /** The largest angle one chord of any arc may turn through: 5 degrees. */
 const ROAD_BEND_STEP = (5 * Math.PI) / 180;
@@ -90,7 +90,7 @@ const ROAD_BEND_STEP = (5 * Math.PI) / 180;
  * Under half a width the inner kerb's offset folds back over itself; 0.6 keeps
  * a margin, and a layout asking for less gets this.
  */
-export const ROAD_BEND_MIN = 0.6;
+const ROAD_BEND_MIN = 0.6;
 
 /**
  * How far inside the point it rounds a bend may pass, in metres.
@@ -104,14 +104,14 @@ export const ROAD_BEND_MIN = 0.6;
  * was put: the same corner is rounded over seventy metres rather than a
  * hundred and ninety. Never tighter than `ROAD_BEND_MIN` for it.
  */
-export const ROAD_BEND_CUT = 2;
+const ROAD_BEND_CUT = 2;
 
 /**
  * The kerb radius at a junction, as a fraction of the NARROWER of the two
  * carriageways it turns between. Half a width is the bellmouth a lane leaving a
  * road actually has; much more and a town's corner plots are paved over.
  */
-export const ROAD_KERB = 0.5;
+const ROAD_KERB = 0.5;
 
 /**
  * How far along either carriageway a junction's kerb may run before it meets
@@ -120,7 +120,7 @@ export const ROAD_KERB = 0.5;
  * and past what a sharp corner can reach the two roads are simply left
  * overlapping — which at that angle is what they already do.
  */
-export const ROAD_KERB_REACH = 1.5;
+const ROAD_KERB_REACH = 1.5;
 
 /**
  * How far a join rides above a carriageway of its own surface: one millimetre,
@@ -130,7 +130,7 @@ export const ROAD_KERB_REACH = 1.5;
  * normals either side of it; half a rung settles it without reaching the next
  * surface's rank.
  */
-export const ROAD_JOIN_LIFT = 0.001;
+const ROAD_JOIN_LIFT = 0.001;
 
 /** Within this of a half turn, a gap between two arms is a straight. */
 const STRAIGHT = 0.05;
@@ -237,7 +237,7 @@ interface Frame {
  * A centreline in world space, measured by ARC LENGTH — the one parameter a
  * cut, a crossing and a junction can all be stated in.
  */
-export class RoadLine {
+class RoadLine {
   readonly x: number[] = [];
   readonly z: number[] = [];
   /** Arc length at each point; `s[0]` is 0 and the last is `len`. */

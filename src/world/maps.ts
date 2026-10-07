@@ -115,7 +115,7 @@ export interface MapDef {
   collision: () => Promise<{ default: MapCollision }>;
 }
 
-export const HOLLOWMERE: MapDef = {
+const HOLLOWMERE: MapDef = {
   id: "hollowmere",
   name: "Hollowmere",
   blurb:
@@ -132,7 +132,7 @@ export const HOLLOWMERE: MapDef = {
  * the sun coming down through the canopy in shafts. Its layout was forked from
  * Hollowmere's and is diverging; the two share no module and must not.
  */
-export const GREYFEN: MapDef = {
+const GREYFEN: MapDef = {
   id: "greyfen",
   name: "Greyfen",
   blurb:
@@ -151,7 +151,7 @@ export const GREYFEN: MapDef = {
  * what `Game.installMap` pushes into the three systems that used to read
  * `FOG_WALL`. It shares no module with either valley and must not.
  */
-export const COLDHARBOUR: MapDef = {
+const COLDHARBOUR: MapDef = {
   id: "coldharbour",
   name: "Coldharbour",
   blurb:
@@ -172,7 +172,7 @@ export const COLDHARBOUR: MapDef = {
  * hills, a wadeable mill stream, and hedged fields between five farmyard
  * flags. It shares no module with the other three and must not.
  */
-export const HARROWMEAD: MapDef = {
+const HARROWMEAD: MapDef = {
   id: "harrowmead",
   name: "Harrowmead",
   blurb:
@@ -202,7 +202,7 @@ export const HARROWMEAD: MapDef = {
  * exactly as it does Harrowmead's. It shares no module with the other four and
  * must not.
  */
-export const SARAB: MapDef = {
+const SARAB: MapDef = {
   id: "sarab",
   name: "Sarab",
   blurb:
@@ -249,7 +249,7 @@ export const SARAB: MapDef = {
  * precedent, and it is an ordinary layout file in every other way. It shares
  * no module with the other five and must not.
  */
-export const CINDERHAVEN: MapDef = {
+const CINDERHAVEN: MapDef = {
   id: "cinderhaven",
   name: "Cinderhaven",
   blurb:
@@ -278,7 +278,7 @@ export const CINDERHAVEN: MapDef = {
  * precedent, and it is an ordinary layout file in every other way. It shares
  * no module with the other six and must not.
  */
-export const KURENAI: MapDef = {
+const KURENAI: MapDef = {
   id: "kurenai",
   name: "Kurenai",
   blurb:

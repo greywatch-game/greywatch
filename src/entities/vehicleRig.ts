@@ -122,7 +122,7 @@ export type Shape = readonly [Mesh, string];
  * Shared by both models rather than stated twice, because a burnt-out truck and
  * a burnt-out tank are the same object to everybody who walks past one.
  */
-export const CHARRED = "#221f1c";
+const CHARRED = "#221f1c";
 
 /**
  * One whip antenna, drawn as two links because a rigid rod cannot bow.
