@@ -7,8 +7,9 @@
  * it is up. Owns no networking — it never fetches and never connects. `Game`
  * hands it a region list and each region's answer as it lands, and takes
  * `onJoin`/`onCreate`/`onPickRegion`/`onPickMap`/`onPickBots`/`onRefresh`/
- * `onBackdrop`/`onClose` back, the same render-what-you-are-given shape
- * `SettingsScreen` follows.
+ * `onClose` back, the same render-what-you-are-given shape `SettingsScreen`
+ * follows. It is also handed the menu's `MenuBackdrop` and puts its own map
+ * up on it.
  * Invariants: the rows are DERIVED from the results (`joinRows`), never
  * authored as markup, because the match rows are as many as the servers say and
  * the keyboard navigation has to know about every one of them. Every string that
@@ -21,7 +22,7 @@
  * small caps floating in the middle of a black page, and three rows of chips
  * under them — eight map names in a strip that ran off its own edge. Now the
  * MATCH is the title: the map it is running is set large over that map's own
- * photograph (the menu's `#menu-shot`, pushed through `onBackdrop`), with the
+ * photograph (the menu's `MenuBackdrop`, `#menu-shot`), with the
  * seats, the ping and the state under it. The matches are a column of plates,
  * each carrying a slice of its map's picture; an INTEL plate on the right says
  * what joining that one means and draws its plan; Refresh and Back are the
@@ -66,6 +67,7 @@ import type { Region } from "../net/regions";
 import { perTeamOf } from "../world/layout";
 import { MAPS, type MapDef } from "../world/maps";
 import { shotThumbUrl } from "./mapShots";
+import type { MenuBackdrop } from "./MenuBackdrop";
 import { paintMapThumb } from "./MapThumb";
 import { pingQuality, pingText } from "./ping";
 import { glyph, guessDevice, markDevice, type InputDevice } from "./prompts";
@@ -370,21 +372,20 @@ export class LobbyScreen {
   onPickBots: (bots: boolean) => void = () => {};
   /** Wired by Game: fetch every region's list again. */
   onRefresh: () => void = () => {};
-  /**
-   * Wired by Game: the map the screen is ABOUT changed, so the photograph behind
-   * it should be that map's. An id, because a listed match names its map by id
-   * and one this build has never heard of has no picture to show.
-   *
-   * The photograph is the MENU's (`#menu-shot`) rather than a second copy here:
-   * this screen is only ever raised from the menu, the picture is already up
-   * behind it, and one backdrop with one cross-fade cannot show two maps at
-   * once. The menu puts its own map back when it is redrawn on the way out.
-   */
-  onBackdrop: (mapId: string) => void = () => {};
   /** Wired by Game: leave the screen. */
   onClose: () => void = () => {};
 
-  constructor() {
+  /**
+   * The photograph behind the screen: the map it is ABOUT, put up on the
+   * MENU's backdrop (`#menu-shot`) rather than a second copy here. This screen
+   * is only ever raised from the menu, the picture is already up behind it, and
+   * one backdrop with one cross-fade cannot show two maps at once. The menu
+   * puts its own map back when it is redrawn on the way out.
+   */
+  private readonly backdrop: MenuBackdrop;
+
+  constructor(backdrop: MenuBackdrop) {
+    this.backdrop = backdrop;
     this.root = document.createElement("div");
     this.root.id = "lobby";
     this.root.className = `hidden dev-${this.device}`;
@@ -823,8 +824,14 @@ export class LobbyScreen {
       this.sayEl.textContent = intel.say;
     }
 
+    // An id, because a listed match names its map by id — and one this build
+    // has never heard of has no picture, so the backdrop fades out. Pushed only
+    // while the screen is up, which is only ever over the menu: the picture is
+    // the menu's, and nothing else may raise it.
     const backdrop = this.backdropOf(focus);
-    if (!was || was.backdrop !== backdrop) this.onBackdrop(backdrop);
+    if (this.visible && (!was || was.backdrop !== backdrop)) {
+      this.backdrop.show(MAPS.find((m) => m.id === backdrop));
+    }
 
     this.shown = { page: this.page, keys, heroKey, intelKey, backdrop };
   }

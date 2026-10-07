@@ -61,7 +61,7 @@ match smoke test (`npm run build:server && npm run server`, two clients).
 | ~~[30](#30-celshaderts-move-shadow-bindings-out-of-the-material-factory)~~ | P2 — done | `CelShader.ts`: move shadow bindings out of the factory |
 | ~~[31](#31-hudts-scoreboard-to-its-own-class-one-1-low)~~ | P2 — done | `HUD.ts`: scoreboard to its own class, one 1% low |
 | ~~[32](#32-ui-screens-shared-setinputdevice-and-paintthumb)~~ | P2 — done | UI screens: shared `setInputDevice` and `paintThumb` |
-| [33](#33-overlayscreents-extract-menubackdrop) | P2 | `OverlayScreen.ts`: extract `MenuBackdrop` |
+| ~~[33](#33-overlayscreents-extract-menubackdrop)~~ | P2 — done | `OverlayScreen.ts`: extract `MenuBackdrop` |
 | [34](#34-vehicle-models-shared-resetrigpose-and-whip) | P2 | Vehicle models: shared `resetRigPose` and `whip` |
 | [35](#35-decompose-botupdate-viewmodelupdate-and-players-recoil-vector) | P2 | Decompose `Bot.update`, `ViewModel.update`, Player's recoil vector |
 | [36](#36-vehicle-capability-idioms-three-soft-spots) | P2 | Vehicle capability idioms: three soft spots |
@@ -1345,6 +1345,67 @@ the scrim).
 
 **Acceptance.** Menu reel and lobby both change the photograph; closing the
 lobby restores the menu's map.
+
+**Done.** `OverlayScreen.ts` is 1,972 lines, down from 2,088, and `overlay.css`
+is 2,306, down from 2,371. The photograph is `ui/MenuBackdrop.ts` (152 lines)
+with `ui/backdrop.css` (73).
+
+- **`MenuBackdrop`** owns `#menu-shot`, its two layers, which layer is in front
+  and the URL last asked for. It has three verbs:
+  - `show(map)` was `setShot`: the cross-fade on a decode, and the URL guard
+    that lets the latest pick win.
+  - `showNamed(map)` is the prelude the building card and the round-over card
+    each had pasted. A picture the layers do not already hold takes the front
+    layer down first, so the last map's photograph never stands behind this
+    map's name.
+  - `hide()` was `clearShot`, and it takes the container down, not the layers.
+
+  The field docs and the two load-bearing reasons it is a root of its own
+  moved into its header. `backdrop.css` is the old `overlay.css` backdrop
+  block plus its reduced-motion rule, moved verbatim apart from one comment
+  that named `OverlayScreen.shotRoot`. The layer class stays `.ov-shot`, so
+  the DOM is unchanged.
+- **`Game` builds it** just before `OverlayScreen`, so `#menu-shot` sits in
+  the same place as before: after the scoreboard and right before `#overlay`.
+  `Game` hands it to `OverlayScreen` and `LobbyScreen` as a constructor
+  argument and keeps no reference itself.
+- **`OverlayScreen`** calls `backdrop.show` from `showMenu`, `showNamed` from
+  `showRoundOver` and `showBuilding`, and `hide` from `showPause` and `hide`.
+  `showBackdrop`, `setShot`, `clearShot`, `buildShotLayer` and the four shot
+  fields are gone, and so is its `mapShotUrl` import.
+- **`LobbyScreen`** puts its own map up. `onBackdrop` and its `Game` wiring
+  are gone. The lookup from id to `MapDef` moved into the lobby, which already
+  imports `MAPS`. The guard moved with it. `showBackdrop` had refused unless the
+  menu card was up; the lobby now pushes only while it is itself visible.
+  That is the same condition, because `ScreenSpec` lets the lobby cover the
+  menu and nothing else.
+
+References updated: `CLAUDE.md`'s UI section (the lobby drives the photograph
+through `MenuBackdrop`, not `OverlayScreen.showBackdrop`), `docs/ui.md` (the
+backdrop section names the class, and the lobby's photograph paragraph had
+described the old callback hop), `FILES.md` (a `MenuBackdrop.ts` row; the
+overlay row stops claiming `#menu-shot`; the lobby row stops naming
+`onBackdrop`), `lobby.css`'s header, both file headers, and the `ui-screen`
+skill's craft notes.
+
+Checked: `npm run typecheck` and `npm run build` pass. **In the browser, HEAD
+against this change**, over one scripted sequence logged at every step: which shot is in
+front, both layers' classes and images, `#menu-shot`'s `on`, opacity,
+z-index, animation, and its index in `#hud` beside `#overlay`'s. The sequence:
+- the menu on Hollowmere, and the reel stepped with the bumper key (to
+  Greyfen);
+- the lobby opened over it, with a live Sarab match injected;
+- the cursor on that match (Sarab), the NEW MATCH page (Greyfen), and back on
+  the match (Sarab);
+- the lobby closed, which put the menu's map back (Greyfen);
+- `startRound`, with the building card up; the deploy screen (photograph
+  down); a pause (down); and quit to menu (back up).
+
+All 15 steps are identical between the two runs, with no page errors. The
+sequence never put a card up for a map the backdrop was not already showing.
+So `showNamed` was checked on its own as well: a different map takes the front
+layer down in the same tick and fades in on decode; the same map is a no-op;
+and a plain `show` keeps the old picture until the new one decodes.
 
 ### 34. Vehicle models: shared `resetRigPose` and `whip`
 

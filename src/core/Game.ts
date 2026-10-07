@@ -186,6 +186,7 @@ import { TerrainField } from "../world/TerrainField";
 import { DeployScreen } from "../ui/DeployScreen";
 import { HUD, type CaptureStatus, type VehicleChair } from "../ui/HUD";
 import { Scoreboard, type ScoreRow } from "../ui/Scoreboard";
+import { MenuBackdrop } from "../ui/MenuBackdrop";
 import {
   OverlayScreen,
   type BuildingState,
@@ -1398,11 +1399,16 @@ export class Game {
     this.hud = new HUD();
     // After the HUD: its root is the element every screen appends to.
     this.scoreboard = new Scoreboard();
-    this.overlayScreen = new OverlayScreen();
+    // The photograph the front end stands on, before the overlay so it sits
+    // under `#overlay` in DOM order as well as by z-index. Handed to the two
+    // screens that stand on it — the menu's cards and the lobby — so there is
+    // one picture and one cross-fade.
+    const backdrop = new MenuBackdrop();
+    this.overlayScreen = new OverlayScreen(backdrop);
     this.deployScreen = new DeployScreen();
     this.loadoutScreen = new LoadoutScreen();
     this.settingsScreen = new SettingsScreen(this.settings);
-    this.lobbyScreen = new LobbyScreen();
+    this.lobbyScreen = new LobbyScreen(backdrop);
     this.minimap = new Minimap(this.overrides.minimap);
     this.touch = new TouchControls();
     // After the HUD like every other thing on `#hud`, and before
@@ -2193,11 +2199,6 @@ export class Game {
     this.lobbyScreen.onPickMap = (index) => this.setMap(index);
     this.lobbyScreen.onPickBots = (bots) => this.setLobbyBots(bots);
     this.lobbyScreen.onRefresh = () => void this.refreshLobby();
-    // The photograph behind the lobby is the map its cursor is on — the menu's
-    // backdrop, since the lobby is only ever raised over the menu. An id this
-    // build has never heard of has no picture, and the backdrop fades out.
-    this.lobbyScreen.onBackdrop = (mapId) =>
-      this.overlayScreen.showBackdrop(MAPS.find((m) => m.id === mapId));
     this.lobbyScreen.onClose = () => this.closeLobby();
     this.overlayScreen.onPauseAction = (action) => {
       // Restart needs nothing put back by hand: `startRound` lifts the lid,

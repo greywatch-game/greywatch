@@ -580,10 +580,10 @@ one column anchored left over the round it holds rather than a photograph. **A f
 (`#hud.kitting`, `#hud.setting`, `#hud.lobbying` — `visibility`, so they
 return unredrawn) and is laid over the SCENE, so a new child of `#hud` that
 must survive one is carved out of every such rule by name, as `#hud-fps` is.
-**The lobby DRIVES the menu's photograph** (`OverlayScreen.showBackdrop`)
-rather than keeping a copy, and the menu puts its own map back on the redraw
-the lobby's close already does — so `#menu-shot` must stay a root of its own
-that a card rewrite leaves standing.
+**The lobby DRIVES the menu's photograph** (`MenuBackdrop`, which `Game`
+hands to both) rather than keeping a copy, and the menu puts its own map back
+on the redraw the lobby's close already does — so `#menu-shot` must stay a root
+of its own that a card rewrite leaves standing.
 
 **The MENU is the first title screen, and the one the others copy**: the
 chosen map's PHOTOGRAPH is the screen (`#menu-shot`, a root of its OWN at z-index

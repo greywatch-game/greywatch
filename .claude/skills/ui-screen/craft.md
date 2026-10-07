@@ -75,8 +75,9 @@ Think like a game UI designer, not a web one:
   `#hud.setting`, `#hud.lobbying`: `visibility`, so they come back unredrawn)
   and lays a scrim shaped like its own layout over the scene, instead of an
   opaque veil. One raised over the MENU may drive the menu's photograph
-  (`OverlayScreen.showBackdrop`) rather than keep a second copy of it; the
-  menu puts its own map back when it is redrawn on the way out.
+  (take the `MenuBackdrop` `Game` builds, as the lobby does) rather than keep
+  a second copy of it; the menu puts its own map back when it is redrawn on the
+  way out.
 
 ## The shared vocabulary (front end)
 

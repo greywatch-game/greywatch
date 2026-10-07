@@ -3,8 +3,10 @@
  * menu, the round-over result, the pause list, and the one that stands over a
  * map being built.
  * Owns: `#overlay` and everything written into it, the menu's and the pause
- * list's selection, `#menu-shot` (the photograph the menu stands on), and the
- * `.overlaid` class on `#hud` that hides the gameplay chrome behind a card. A
+ * list's selection, and the `.overlaid` class on `#hud` that hides the
+ * gameplay chrome behind a card. NOT the photograph the menu stands on: that
+ * is `MenuBackdrop` (`#menu-shot`), handed in by `Game` and shared with the
+ * lobby, and this file only says which map it shows and when it goes. A
  * peer of DeployScreen and LoadoutScreen — Game wires its callbacks
  * (`onStart`, `onDifficulty`, `onMap`, `onOpenLoadout`, `onPauseAction`,
  * `onVote`, `onLeave`) and drives its selection, and it knows nothing about game state
@@ -52,7 +54,8 @@ import { perTeamOf } from "../world/layout";
 import type { MapDef } from "../world/maps";
 import { pickFieldNote } from "./fieldNotes";
 import { WEAPON_BLURBS } from "./LoadoutScreen";
-import { mapShotUrl, shotThumbUrl } from "./mapShots";
+import { shotThumbUrl } from "./mapShots";
+import type { MenuBackdrop } from "./MenuBackdrop";
 import { paintMapThumb } from "./MapThumb";
 import { glyph, guessDevice, markDevice, type InputDevice } from "./prompts";
 
@@ -453,33 +456,11 @@ export class OverlayScreen {
   private lastNote: string | null = null;
   /**
    * The menu's BACKDROP: a photograph of the map that is chosen, under the
-   * card, cross-faded when the choice changes.
-   *
-   * It is a root of its OWN (`#menu-shot`, appended to `#hud` beside
-   * `#overlay`) rather than markup inside the card, and both halves of that
-   * are load-bearing. It has to survive the card being rewritten — the round
-   * -over card and a fresh raise both rewrite it, and a layer removed and
-   * re-inserted has no style to interpolate FROM, so the cross-fade would
-   * jump-cut. And it has to sit UNDER the scrim, which is the card's own
-   * background: a child of `#overlay` paints over its parent's background
-   * whatever its z-index, so a photograph inside the card would put the
-   * picture on top of the gradients that make the type over it legible.
+   * card, cross-faded when the choice changes. `Game`'s, built just before
+   * this screen so it sits under `#overlay` in DOM order as well as by
+   * z-index, and shared with the lobby — see `MenuBackdrop`.
    */
-  private shotRoot: HTMLElement;
-  /**
-   * The two picture layers. One is showing and the other is where the next
-   * one is prepared; a cross-fade swaps which is which. Two rather than one
-   * because `background-image` cannot be transitioned.
-   */
-  private shotLayers: [HTMLElement, HTMLElement];
-  private shotFront = 0;
-  /**
-   * What the front layer was last asked to show. `undefined` covers both "no
-   * card has raised the backdrop yet" and "this map has no shot", which is why
-   * a map without one fades the picture OUT rather than leaving the last map's
-   * behind it.
-   */
-  private shotUrl: string | undefined;
+  private readonly backdrop: MenuBackdrop;
   /**
    * Which card is up. The menu is BUILT when it is raised and PATCHED while it
    * is up: `showMenu` is called again on every map step, every difficulty
@@ -550,18 +531,11 @@ export class OverlayScreen {
    */
   private voteIndex = 0;
 
-  constructor() {
+  constructor(backdrop: MenuBackdrop) {
+    this.backdrop = backdrop;
     this.root = document.createElement("div");
     this.root.id = "overlay";
     this.root.className = "hidden";
-    this.shotRoot = document.createElement("div");
-    this.shotRoot.id = "menu-shot";
-    this.shotLayers = [this.buildShotLayer(), this.buildShotLayer()];
-    for (const layer of this.shotLayers) this.shotRoot.appendChild(layer);
-    // The backdrop goes in first, so that DOM order agrees with the z-indices
-    // that actually decide it (`#menu-shot` 9, `#overlay` 10) — nothing rests
-    // on that, but a reader looking at the elements should not have to check.
-    document.getElementById("hud")!.appendChild(this.shotRoot);
     // Appended like every other screen, and before the deploy map and the
     // minimap because Game builds this first. DOM order does not decide the
     // stacking here — `#overlay` carries a z-index of its own, since a pause
@@ -644,7 +618,7 @@ export class OverlayScreen {
     this.tier = selected;
     this.mapCount = maps.length;
     this.mapIndex = selectedMap;
-    this.setShot(maps[selectedMap]);
+    this.backdrop.show(maps[selectedMap]);
     // A patch for a card that is already up with the same shape of rows; a
     // build for anything else. The row COUNTS are the shape — the maps can
     // differ between a dev build and a release, never inside one session.
@@ -1074,90 +1048,6 @@ export class OverlayScreen {
     });
   }
 
-  /** One picture layer of the backdrop. Empty until a map is chosen. */
-  private buildShotLayer(): HTMLElement {
-    const el = document.createElement("div");
-    el.className = "ov-shot";
-    return el;
-  }
-
-  /**
-   * Puts the chosen map's photograph up, cross-fading from whatever was there.
-   *
-   * Called from `showMenu` rather than from the cursor, because the backdrop
-   * follows the map that has been CHOSEN and not the row the cursor happens to
-   * be resting on — so this is called exactly when the answer changes.
-   *
-   * It waits for the image to DECODE before swapping. A fade into a layer the
-   * browser has not finished decoding is a fade into a blank rectangle and
-   * then a pop, which on a cold boot is every first visit to this screen; the
-   * cost of waiting is that the very first backdrop arrives a frame or two
-   * after the card it is behind, which is the harmless half of the trade.
-   *
-   * The `shotUrl` guard is what makes stepping quickly along the reel safe:
-   * whichever pick is the latest owns the swap, and a decode that comes back
-   * after a later one has already been asked for is dropped rather than
-   * fighting it for the front layer.
-   */
-  private setShot(map: MapDef | undefined): void {
-    // Raised by the fact of being called: the menu, the building card and the
-    // round-over card are the only three that call this (the lobby reaches it
-    // through `showBackdrop`, over the menu), and the pause calls `clearShot`.
-    this.shotRoot.classList.add("on");
-    const url = map ? mapShotUrl(map.id) : undefined;
-    if (url === this.shotUrl) return;
-    this.shotUrl = url;
-    // A map with no shot of its own takes the picture away rather than
-    // leaving the last one up, which would be a caption's worth of lie.
-    if (!url) {
-      this.shotLayers[this.shotFront].classList.remove("on");
-      return;
-    }
-    const img = new Image();
-    img.src = url;
-    const raise = () => {
-      if (this.shotUrl !== url) return;
-      const back = this.shotLayers[1 - this.shotFront];
-      back.style.backgroundImage = `url("${url}")`;
-      back.classList.add("on");
-      this.shotLayers[this.shotFront].classList.remove("on");
-      this.shotFront = 1 - this.shotFront;
-    };
-    // A rejection is a build missing its own asset, and there is nothing to
-    // fall back TO but the scrim the picture is already under — so the last
-    // backdrop stays and the screen is the one it was before shots existed.
-    img.decode().then(raise, () => {});
-  }
-
-  /**
-   * The backdrop, asked for by the LOBBY: the photograph of the map the lobby's
-   * cursor is on, cross-faded exactly as a map step on the menu is.
-   *
-   * Public because the lobby is the one other screen that stands on the
-   * picture — it is only ever raised over the menu, whose backdrop is already
-   * up behind it — and one backdrop with one cross-fade is the whole reason
-   * this is a call rather than a second copy of the layers. It raises nothing
-   * the menu had not raised, and it is undone for free: the menu is redrawn on
-   * the lobby's way out, and `showMenu` puts its own map back.
-   */
-  showBackdrop(map: MapDef | undefined): void {
-    if (this.card !== "menu") return;
-    this.setShot(map);
-  }
-
-  /**
-   * Takes the backdrop down — the container, not the layers, so coming back to
-   * the menu on the same map brings the same picture back without re-decoding
-   * or re-fading it.
-   *
-   * The pause calls this, and `hide`: what a pause stands over is a live
-   * round, and a photograph of a map behind the round
-   * you are playing on it is two of the same place at once.
-   */
-  private clearShot(): void {
-    this.shotRoot.classList.remove("on");
-  }
-
   /**
    * Which device's prompts to draw. A class on the card, compared before it
    * is written, so `Game` can push it every frame; every prompt on the card
@@ -1324,10 +1214,7 @@ export class OverlayScreen {
     // the building card for another round on it stands on — so pressing the
     // button leaves the picture where it is. Until a different map's picture
     // has decoded, the last one must not stand behind this one's result.
-    if (mapShotUrl(map.id) !== this.shotUrl) {
-      this.shotLayers[this.shotFront].classList.remove("on");
-    }
-    this.setShot(map);
+    this.backdrop.showNamed(map);
     const mine = CONFIG.teams[0];
     const theirs = CONFIG.teams[1];
     const per = perTeamOf(map.layout);
@@ -1736,14 +1623,9 @@ export class OverlayScreen {
     this.menuEls.clear();
     this.detailEl = null;
     this.clearVote();
-    // The backdrop. A picture the layers are already holding (the menu's, on
-    // the same map) goes straight back up; any other has to decode first, and
-    // until it has, the LAST map's photograph must not stand behind this one's
-    // name — so the front layer comes down and the scrim stands over the scene.
-    if (mapShotUrl(map.id) !== this.shotUrl) {
-      this.shotLayers[this.shotFront].classList.remove("on");
-    }
-    this.setShot(map);
+    // The backdrop: the menu's picture goes straight back up on the same map,
+    // and no other map's may stand behind this one's name (`showNamed`).
+    this.backdrop.showNamed(map);
     const weapon = CONFIG.weapons[state.weapon];
     const sight = CONFIG.sights[state.sight];
     const rules = CONFIG.conquest;
@@ -1881,7 +1763,7 @@ export class OverlayScreen {
   showPause(state: PauseState): void {
     this.setCardClass("pause", true);
     this.card = "pause";
-    this.clearShot();
+    this.backdrop.hide();
     this.menuEls.clear();
     this.detailEl = null;
     this.build = null;
@@ -2052,7 +1934,7 @@ export class OverlayScreen {
   hide(): void {
     this.root.className = "hidden";
     this.setOverlaid(false);
-    this.clearShot();
+    this.backdrop.hide();
     this.detailEl = null;
     this.build = null;
     this.clearVote();

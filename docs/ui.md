@@ -966,7 +966,11 @@ not a broken screen**: `mapShotUrl` returns nothing, the picture fades out, and
 the menu is the one it was before shots existed.
 
 **It is a root of its own — `#menu-shot`, a child of `#hud` at z-index 9 — and
-both halves of that are load-bearing.**
+both halves of that are load-bearing.** It is a class of its own as well,
+`MenuBackdrop` (`backdrop.css`), which `Game` builds just before the overlay and
+hands to the two screens that stand on it — the overlay's cards and the lobby —
+so there is one picture with one cross-fade and neither screen reaches it
+through the other.
 
 - It must survive the card. `showMenu` rewrites `#overlay`'s markup on every map
   step, and a layer that is removed and re-inserted has no before-change style to
@@ -1702,11 +1706,13 @@ is the list's own state in one word (*Searching*, *No matches*, *Offline*,
 *Full*); on the other page it is the map a new match would be built on.
 
 **The photograph behind it is that map's, and it is the MENU's photograph.**
-`LobbyScreen.onBackdrop` names a map id and `Game` hands it to
-`OverlayScreen.showBackdrop`, which cross-fades `#menu-shot` exactly as a map
-step on the menu does. One backdrop rather than a copy here, because the lobby
-is only ever raised over the menu and the picture is already up behind it; the
-menu puts its own map back when `closeLobby` redraws it. `#hud.lobbying` takes
+The lobby is handed the same `MenuBackdrop` the overlay is, and puts the map its
+cursor is about on it, which cross-fades `#menu-shot` exactly as a map step on
+the menu does. It only does so while it is up, which is only ever over the menu
+(the overlay's `showBackdrop` used to check the card for it). One backdrop
+rather than a copy here, because the lobby is only ever raised over the menu and
+the picture is already up behind it; the menu puts its own map back when
+`closeLobby` redraws it. `#hud.lobbying` takes
 the menu card off the glass (visibility, so it returns unredrawn) and carves out
 `#menu-shot` and `#hud-fps`, the settings screen's `.setting` rule. A map id
 this build has never heard of has no picture, and the backdrop fades out rather

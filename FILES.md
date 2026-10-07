@@ -1267,11 +1267,15 @@ src/
                         #   list the round-over card's board line for line.
                         #   Built straight after HUD; z-index 9 puts it over
                         #   the deploy screen
+    MenuBackdrop.ts     # #menu-shot, the map photograph the front end stands
+      backdrop.css      #   on: a root of its own so it survives a card being
+                        #   rewritten and stays UNDER the scrim, drifting, two
+                        #   layers cross-fading on a decode. Built by Game just
+                        #   before the overlay and handed to it and to the lobby,
+                        #   so there is one picture
     OverlayScreen.ts    # The four cards — menu, round-over, pause, building —
-      overlay.css       #   the .overlaid class they raise, and #menu-shot, the
-                        #   map photograph the menu stands on: a second root of
-                        #   its own so it survives the card being rewritten and
-                        #   stays UNDER the scrim, drifting. The menu is a
+      overlay.css       #   the .overlaid class they raise, and which map the
+                        #   MenuBackdrop it is handed shows. The menu is a
                         #   title screen on its own grid of named areas (four templates, one unit,
                         #   `--u`), the map's name as the hero, a column of the
                         #   round's decisions — a REEL of map photographs, the
@@ -1380,7 +1384,7 @@ src/
                         #   return as setValues
     LobbyScreen.ts      # The match browser, a TITLE SCREEN for the match the
       lobby.css         #   cursor is on: its map's name over its photograph
-                        #   (the menu's #menu-shot, via onBackdrop), two pages
+                        #   (the menu's MenuBackdrop, handed in), two pages
                         #   on a tab strip the bumpers turn — JOIN (a plate per
                         #   match, with a slice of its map's picture) and NEW
                         #   MATCH (region/map/bots steppers and Start match) —

@@ -1,0 +1,73 @@
+/**
+ * backdrop.css — the front end's photograph, and only that.
+ * Owns: #menu-shot and its two picture layers. Imported by MenuBackdrop.ts,
+ * which is the one module that writes this markup. It was a section of
+ * overlay.css while OverlayScreen owned the picture. The scrim over it is the
+ * menu's, in overlay.css; the carve-outs that keep it on the glass under the
+ * lobby and the settings screen are in lobby.css and settings.css.
+ */
+
+/* =====================================================================
+   THE MENU'S BACKDROP — the photograph of the chosen map.
+   ---------------------------------------------------------------------
+   A root of its own rather than markup inside `#overlay`, and
+   `MenuBackdrop`'s header says why at length: a child paints over its
+   parent's BACKGROUND whatever its z-index, and the menu's scrim is that
+   background — so a picture inside the card would sit on top of the
+   gradients that make the type over it readable. The scrim itself is the
+   menu's, and is with the rest of the menu below. */
+#menu-shot {
+  position: absolute;
+  inset: 0;
+  /* Under `#overlay` (10) and over the canvas. No background of its own: while
+     a shot is still decoding, what shows is the live scene the menu has always
+     stood over, not a black hole where a picture is about to be. */
+  z-index: 9;
+  opacity: 0;
+  transition: opacity 0.4s ease;
+  pointer-events: none;
+}
+/* **The picture DRIFTS, and that is the cheapest life this screen can be
+   given.** A title screen standing on a still photograph reads as a
+   paused game; the same photograph moving a few percent over three
+   quarters of a minute reads as a place. It is on the CONTAINER rather
+   than on either picture layer, because the layers own their own
+   transform — the cross-fade's settle — and two animations on one
+   property is one of them not happening.
+
+   Scale is 1.06 at its smallest so that no amount of the translation can
+   pull an edge into frame, and it is a `transform`, so the whole thing is
+   a compositor layer and costs the main thread nothing at all. */
+#menu-shot.on {
+  opacity: 1;
+  animation: shot-drift 46s ease-in-out infinite alternate;
+}
+@keyframes shot-drift {
+  from { transform: scale(1.06) translate3d(-0.9%, 0.7%, 0); }
+  to { transform: scale(1.13) translate3d(1%, -0.8%, 0); }
+}
+/* The two picture layers. `cover` because the frame is a viewport and the shot
+   is 16:9 — a phone in portrait crops it rather than letterboxing the menu.
+   The scale is the cross-fade's other half: the incoming picture settles the
+   last few percent of a push-in as it arrives, which reads as a photograph
+   being put down rather than as two images dissolving through each other. */
+#menu-shot .ov-shot {
+  position: absolute;
+  inset: 0;
+  background-position: center;
+  background-size: cover;
+  opacity: 0;
+  transform: scale(1.035);
+  transition: opacity 0.65s ease, transform 1.3s cubic-bezier(0.16, 0.84, 0.36, 1);
+}
+#menu-shot .ov-shot.on {
+  opacity: 1;
+  transform: scale(1);
+}
+
+/* The backdrop's drift is decoration over a screen that works without it.
+   Its cross-fade is left alone: that is a TRANSITION, and what stops a map
+   change being a jump cut. */
+@media (prefers-reduced-motion: reduce) {
+  #menu-shot.on { animation: none; }
+}
