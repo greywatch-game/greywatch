@@ -64,7 +64,7 @@ match smoke test (`npm run build:server && npm run server`, two clients).
 | ~~[33](#33-overlayscreents-extract-menubackdrop)~~ | P2 — done | `OverlayScreen.ts`: extract `MenuBackdrop` |
 | ~~[34](#34-vehicle-models-shared-resetrigpose-and-whip)~~ | P2 — done | Vehicle models: shared `resetRigPose` and `whip` |
 | ~~[35](#35-decompose-botupdate-viewmodelupdate-and-players-recoil-vector)~~ | P2 — done | Decompose `Bot.update`, `ViewModel.update`, Player's recoil vector |
-| [36](#36-vehicle-capability-idioms-three-soft-spots) | P2 | Vehicle capability idioms: three soft spots |
+| ~~[36](#36-vehicle-capability-idioms-three-soft-spots)~~ | P2 — done | Vehicle capability idioms: three soft spots |
 | [37](#37-propsts-drop-the-mathrandom-defaults) | P2 | `Props.ts`: drop the `Math.random` defaults |
 | [38](#38-texturests-has-its-own-prng) | P3 | `textures.ts` has its own PRNG |
 | [39](#39-frameprofile-depends-on-a-private-babylon-internal) | P3 | `FrameProfile` depends on a private Babylon internal |
@@ -1571,6 +1571,35 @@ three harnesses reseed after loading, before they fire or step.
   (`Vehicle.gun(): GunSpec | null`) and use that everywhere.
 
 **Acceptance.** No kind-specific defaults; doc matches code.
+
+**Done.**
+
+- **`Vehicle.ts:~2757` was already fixed.** Ticket 27 moved the attitude
+  into `FlightModel`, and `settle` now asks `this.flight` (the nullable
+  block resolved once). The one `this.spec.flight` read left in `Vehicle.ts`
+  is `aloftAt`, which needs the ceiling's numbers. That falls under the third
+  bullet's rule, so it stays.
+- **`VehicleCamera` no longer starts out as a tank.** `view` and `mount` are
+  null until the first `take`, `pitch` starts at 0, and `aim` returns early
+  if nothing has been mounted. Nothing could see the old defaults: `aim` is
+  only reached from `Game.updateDriver`, `take` always comes first, and every
+  read of `yaw`/`pitch` is behind `this.driving`. `take` now reads
+  `restPitch` off the hull rather than off the field it just wrote.
+- **The doc was amended, not the code.** A `Vehicle.gun()` accessor would
+  only rename `spec.gun`. The rule is now written as it is practised: a
+  reader that wants a yes or no asks `armed`/`flies`, and a reader that needs
+  the numbers (a range, a reload, a ceiling) narrows on the block. That is the
+  same fact, and still never a kind. The real `armed` readers are the trigger
+  (`gunReady`, `fireGun`, the touch layer's fire button for a driver) and the
+  crew's lay-and-fire. The block readers are `loadProgress`, the gun marker,
+  `resolveShell` (now in `systems/hullRules.ts`, which is where the
+  `HeadlessGame.ts:~1220` site went in ticket 6), a client drawing somebody
+  else's `cannon`, and `Match.onShell`. Amended: `CLAUDE.md`'s vehicles
+  section, `docs/vehicles.md`'s capability table and its two bullets, the
+  `Vehicle.armed` doc comment (which also said `Vehicle` used it in two
+  places; it is three) and the `vehicleKinds.ts` header.
+
+Checked: `npm run typecheck` and `npm run build`.
 
 ### 37. `Props.ts`: drop the `Math.random` defaults
 

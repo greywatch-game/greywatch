@@ -131,24 +131,26 @@ const SIGHT_REACH = 100;
 export class VehicleCamera {
   /** Where the driver is asking the gun to point. `Vehicle` walks to these. */
   yaw = 0;
-  pitch: number = CONFIG.vehicles.tank.camera.restPitch;
+  pitch = 0;
   /**
    * The hull's own camera block, taken on `take` and held.
    *
    * **Held rather than asked per call, because `aim` is not handed a
    * hull** — it runs before the world step and knows only the input, so
    * the pitch limits and the look multiplier it applies have to come from
-   * whatever was last mounted. The tank's is the value at rest, which is
-   * what a session that has never been in a vehicle uses and never reads.
+   * whatever was last mounted. **Null until the first `take`, rather than
+   * some kind's numbers standing in** — this file has never been told kinds
+   * exist, and nothing reads these before a hull is mounted: `aim` is reached
+   * only from `Game.updateDriver`, and `take` always comes first.
    */
-  private view: VehicleSpec["camera"] = CONFIG.vehicles.tank.camera;
+  private view: VehicleSpec["camera"] | null = null;
   /**
    * …and the second seat's gun, held for the same reason and taken at the same
    * moment. Only its two STOPS are read: `aim` clamps the order to the weapon's
    * own elevation band while the sight is up, so the picture stops where the
    * gun stops and there is no band of order the view will not follow.
    */
-  private mount: AxisSpec = CONFIG.vehicles.tank.mg;
+  private mount: AxisSpec | null = null;
 
   /** This frame's camera pose. `Game` hands all three to `CameraSystem.place`. */
   readonly eye = new Vector3();
@@ -235,7 +237,7 @@ export class VehicleCamera {
     this.view = tank.spec.camera;
     this.mount = tank.spec.mg;
     this.yaw = tank.yaw;
-    this.pitch = this.view.restPitch;
+    this.pitch = tank.spec.camera.restPitch;
     this.kick = 0;
     this.kickVel = 0;
     this.shake.reset();
@@ -263,6 +265,9 @@ export class VehicleCamera {
   aim(dt: number, input: InputManager, optic: boolean): void {
     const c = CONFIG.camera;
     const v = this.view;
+    const m = this.mount;
+    // Never mounted: there is no hull whose numbers this could aim with.
+    if (v === null || m === null) return;
 
     // The same three look sources `CameraSystem` folds, times this view's own
     // multiplier: the eye is twelve metres back, so the same wrist sweeps far
@@ -293,8 +298,8 @@ export class VehicleCamera {
     // raising the sight can pull the order up to meet a gun already sitting at
     // full depression — which is the right snap and the only one there is: the
     // view arrives where the weapon actually is.
-    const lo = optic ? this.mount.pitchMin : v.pitchMin;
-    const hi = optic ? this.mount.pitchMax : v.pitchMax;
+    const lo = optic ? m.pitchMin : v.pitchMin;
+    const hi = optic ? m.pitchMax : v.pitchMax;
     this.pitch = Math.max(lo, Math.min(hi, this.pitch));
 
     // The report settles on a damped spring, semi-implicit Euler — the same

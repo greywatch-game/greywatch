@@ -25,12 +25,14 @@
  * is zero on everything that cannot fly.
  *
  * TWO things a kind genuinely differs by in code, and neither is asked here.
- * Each is one nullable block in the spec resolved once into one boolean that
- * every reader puts instead: `spec.gun` is null on a gunless kind and
- * `Vehicle.armed` is the question, and `spec.flight` is null on one that cannot
- * leave the ground and `Vehicle.flies` is the question. Both are CAPABILITIES
- * rather than identities, which is what keeps them inside the bargain above — a
- * reader asks what a hull can DO, and never what it is.
+ * Each is one nullable block in the spec resolved once into one boolean:
+ * `spec.gun` is null on a gunless kind and `Vehicle.armed` is the question, and
+ * `spec.flight` is null on one that cannot leave the ground and `Vehicle.flies`
+ * is the question. A reader that wants only the yes or no asks the boolean; one
+ * that needs the block's NUMBERS (a gun's range, a rotor's ceiling) narrows on
+ * the block, the same fact in the form TypeScript can carry. Both are
+ * CAPABILITIES rather than identities, which is what keeps them inside the
+ * bargain above — a reader asks what a hull can DO, and never what it is.
  *
  * ## A map names a kind and nothing else
  *

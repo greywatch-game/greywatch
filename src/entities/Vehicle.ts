@@ -641,13 +641,21 @@ export class Vehicle implements Combatant, RayHull {
   /**
    * Does this vehicle have a main gun at all?
    *
-   * **The one question anything asks about a KIND, and the only one.** It is
+   * **The one yes-or-no anything asks about a KIND, and the only one.** It is
    * `spec.gun !== null` resolved once, and everything that would otherwise
-   * have to branch on what it is holding asks this instead: the trigger, the
-   * HUD's loader row, the gun marker, an AI driver's lay-and-fire, and the
-   * authority's own rate gate on a claimed shell. `Vehicle` itself uses it in
-   * exactly two places — `update` leaves `turretYaw` on the hull's own heading
-   * so an inert ring draws at a local zero, and `fireGun` refuses.
+   * have to branch on what it is holding asks this instead: the trigger
+   * (`gunReady`, and whether the touch layer gives a driver a fire button),
+   * an AI driver's lay-and-fire, and `Vehicle` itself — `update` leaves
+   * `turretYaw` on the hull's own heading so an inert ring draws at a local
+   * zero, and `fireGun` refuses.
+   *
+   * **A reader that needs the gun's NUMBERS narrows on `spec.gun` instead**,
+   * because that is the only form TypeScript can carry to a range or a
+   * reload: the HUD's loader row (`loadProgress`), the gun marker, the shell
+   * itself (`resolveShell`), a client drawing somebody else's shell, and the
+   * authority's rate gate on a claimed one. It is the same fact asked the
+   * other way round, and it is still a CAPABILITY — what nothing may ask is
+   * which kind this is.
    */
   readonly armed: boolean;
 

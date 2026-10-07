@@ -61,11 +61,14 @@ broken.**
 
 **Two things a kind genuinely differs by in code, and neither is asked as a
 kind.** Both are one nullable block in the spec resolved once into one boolean,
-and the boolean is what every reader puts instead:
+and the boolean is what a reader that wants only a yes or no puts instead. **A
+reader that needs the block's NUMBERS narrows on the block itself** — a range, a
+reload, a ceiling — because that is the only form TypeScript carries to them;
+it is the same fact asked the other way round, and still never a kind:
 
 | the block | the question | what it gates |
 | --- | --- | --- |
-| `VehicleSpec.gun` | `Vehicle.armed` | the trigger, the HUD's loader row, the gun marker, an AI driver's lay-and-fire, the authority's rate gate on a claimed shell — six readers, listed below |
+| `VehicleSpec.gun` | `Vehicle.armed`, or the block where its numbers are wanted | the trigger, the HUD's loader row, the gun marker, an AI driver's lay-and-fire, the authority's rate gate on a claimed shell — listed below |
 | `VehicleSpec.flight` | `Vehicle.flies` | the drive block, the attitude, the wire's altitude, whether a bot may take the chair, the leash, the shadow focus, the collective's buttons and the authority's two bounds — nine readers, listed in the flight section |
 
 The first, in full:
@@ -73,13 +76,17 @@ The first, in full:
 - `VehicleSpec.gun` is `null` on an unarmed kind, and it is ONE nullable field
   because the mount and the round are one weapon — `turret` nests inside it, so
   a hull with nothing to traverse cannot be handed a traverse rate by accident.
-- `Vehicle.armed` is that resolved once, and **it is the only question anything
+- `Vehicle.armed` is that resolved once, and **it is the only yes-or-no anything
   else asks.** The trigger (`gunReady`, so `fireGun` and the AI crew's shoot
-  both refuse), the HUD's loader row (`loadProgress` is null, so the row is
-  ABSENT rather than dimmed), the gun marker (a driver with no gun gets none),
-  the crew (`lay` and `shoot` are skipped and the driver acquires as a spotter),
-  and the authority's `onShell` rate gate, which refuses a claimed shell from a
-  turretless hull outright.
+  both refuse, and the touch layer shows a driver no fire button) and the crew
+  (`lay` and `shoot` are skipped and the driver acquires as a spotter) ask it.
+- **What needs the gun's numbers narrows on `spec.gun` instead**: the HUD's
+  loader row (`loadProgress` is null, so the row is ABSENT rather than dimmed),
+  the gun marker (a driver with no gun gets none; a range for one who has),
+  `resolveShell` in `systems/hullRules.ts`, a client drawing somebody else's
+  `cannon`, and the authority's `onShell` rate gate, which refuses a claimed
+  shell from a turretless hull outright and measures the rest against
+  `cooldown`.
 - **An unarmed hull keeps `turretYaw` equal to its own yaw**, which is not a
   special case dressed up. The drawn angle is `turretYaw - yaw`, so a turret
   that tracks the hull draws at a permanent local zero — exactly what a ring

@@ -1364,10 +1364,12 @@ turns on. **There are THREE KINDS and no code that knows it**: a fourth is a row
 in `VEHICLE_KINDS`, a block of numbers and a model file, and **no `if`
 anywhere** — the moment a system asks which kind it is holding, that is broken.
 **TWO capabilities stand in for that branch**, each one nullable block in the
-spec resolved once into one boolean, and the boolean is what every reader puts
-instead: **`Vehicle.armed`** (the trigger, the HUD's loader row — ABSENT, not
-dimmed — the gun marker, the authority's rate gate) and **`Vehicle.flies`**,
-which ten readers ask, from the wire's altitude to the shadow focus.
+spec resolved once into one boolean, and the boolean is what a yes-or-no reader
+puts instead: **`Vehicle.armed`** (the trigger and the crew's lay-and-fire) and
+**`Vehicle.flies`**, which ten readers ask, from the wire's altitude to the
+shadow focus. **A reader that needs the NUMBERS narrows on the block itself**
+(`spec.gun` for the loader row, the gun marker and the authority's rate gate;
+`spec.flight` for a ceiling) — the same fact, and still never a kind.
 
 **There is no player model in this game, so nothing on a vehicle may promise a
 body standing at it**, and nothing may stand on a roof inside a gun's sweep.
