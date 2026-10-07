@@ -47,15 +47,10 @@ export interface AimKick {
  * minimum drift rather than into a pattern. That is a tighter group per
  * round and a worse one per second, which is the trade the selector is for.
  *
- * **Both string-shaped terms share this test**, and they have to. Applied to
- * a string of one, `firstShotMult` is a flat 60% increase and `pattern`'s
- * taper is a flat 20% DECREASE — and the decrease is the worse of the two,
- * because both weapons' fire rates sit just inside `stringResetTime` (the
- * DMR's 0.333 s against 0.35) and so only a player firing them as fast as the
- * weapon allows would collect it. That is a discount for spamming a precision
- * weapon, which is the opposite of what the rate limit is for. Excluded, they
- * fire shot one every time: full climb, minimum drift, nothing to learn and
- * nothing to game.
+ * **Both string-shaped terms share this test**, and they have to: applied to
+ * a string of one, `pattern`'s taper is a discount only a player firing a
+ * precision weapon at its rate limit would collect (`docs/weapons.md`).
+ * Excluded, those weapons fire shot one every time.
  */
 export function hasString(mode: {
   readonly semiAuto: boolean;
@@ -69,13 +64,9 @@ export function hasString(mode: {
  * multiplies its kick by, given whether its position has a string and how
  * far into one it is (`stringShots`, already raised by this round).
  *
- * **It is 1 on a weapon that is a string of one**, and that exclusion is the
- * feature rather than an exception to it. The multiplier is about the
- * difference between a settled weapon and one mid-burst; on the DMR and the
- * pistol every shot is a first shot, so it would not be texture at all —
- * just a flat 60% recoil increase wearing feel's clothing, and on the DMR's
- * 2.2 multiplier that is 6.0 deg on every deliberate scoped round. Their
- * `recoilMult` already carries the punch a single shot is supposed to have.
+ * **It is 1 on a weapon that is a string of one**: there every shot is a
+ * first shot, so the multiplier would be a flat recoil increase rather than
+ * texture, and their `recoilMult` already carries the punch.
  *
  * The carbine's `burst` position is semi-automatic too and is deliberately
  * included: one pull is three rounds that climb as one motion, which is
@@ -161,16 +152,12 @@ export function aimKick(
  * span used to be `1 - |bias|`, which made a weapon's spread a consequence of
  * its pull and put the rifle's worst round at three times its own mean.
  *
- * **It is a SWEEP over the string and not an independent draw per round**,
- * which is `pattern.sweepShots`'s argument: eight to thirteen independent
- * draws a second on one axis is a muzzle that changes its mind, and what a
- * player reads is an aim jumping in random directions rather than one
- * walking somewhere they can learn. The direction of the sweep is the only
- * thing drawn per STRING, and the sine starts at zero so a string opens on
- * the weapon's own bias with nothing added to it. It is a NARROW band about
- * that bias (`sweepSpan`): wide enough to keep a long string off a ruler
- * line, and deliberately not wide enough to rotate the kick, which is
- * `pattern`'s rule and the thing this used to break.
+ * **It is a SWEEP over the string and never an independent draw per round**
+ * (`pattern.sweepShots`; `docs/weapons.md` has the argument). The direction
+ * of the sweep is the only thing drawn per STRING, and the sine starts at
+ * zero so a string opens on the weapon's own bias with nothing added to it.
+ * The band about that bias (`sweepSpan`) is narrow enough never to rotate
+ * the kick, which is `pattern`'s rule.
  */
 export function sweepDrift(
   stringShots: number,
@@ -187,10 +174,9 @@ export function sweepDrift(
 
 /**
  * How much of a weapon's kick reaches the MODEL, as opposed to the aim. A
- * compression, and the compression is the point: 2.4 is a defensible thing to
- * do to an aim measured in fractions of a degree and an indefensible thing to
- * do to a pose measured in centimetres, which is why the model used to ignore
- * the weapon entirely rather than read this.
+ * compression, and the compression is the point: the DMR's 2.4 is a
+ * defensible statement about a settle time and an indefensible thing to do to
+ * a pose measured in centimetres.
  *
  * **It reads `recoilImpulse` and not `recoilMult`, and that is the honest one
  * of the two.** The kick's largest term by a distance is `kickBack`, travel

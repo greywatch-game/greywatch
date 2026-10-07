@@ -73,7 +73,7 @@ match smoke test (`npm run build:server && npm run server`, two clients).
 | ~~[42](#42-findingsmd-1-carries-closed-history)~~ | P3 — done | `FINDINGS.md` §1 carries closed history |
 | ~~[43](#43-dead-and-over-exported-symbols)~~ | P3 — done | Dead and over-exported symbols |
 | ~~[44](#44-stale-comments-in-gamets-and-docsgamemd)~~ | P3 — done | Stale comments in `Game.ts` and `docs/game.md` |
-| [45](#45-the-recoil-argument-is-written-in-five-places) | P3 | The recoil argument is written in five places |
+| ~~[45](#45-the-recoil-argument-is-written-in-five-places)~~ | P3 — done | The recoil argument is written in five places |
 | ~~[46](#46-physics-reference-baselines-missing-for-three-maps)~~ | P3 — done | Physics reference baselines missing for three maps |
 | ~~[47](#47-most-of-the-footprint-table-understates-its-builders)~~ | P1 — done | Most of the footprint table understates its builders |
 
@@ -1984,6 +1984,75 @@ in a sentence and point there; `recoil.ts` field comments say what the field
 does and what it was measured against, not the history of how it got there.
 Check while doing it that every number quoted in a comment matches the value
 under it.
+
+**Done.** `docs/weapons.md` now holds the argument. Each source copy states the
+rule in a sentence or two and points to it.
+
+- **`config/recoil.ts`: 1,103 → 638 lines.** Every field comment now says what
+  the field does and what it was measured against. The header also names the
+  two derived walk figures and gives the formula behind each. The history went
+  to the doc. What the doc lacked was moved there in the source's words, as a
+  new subsection, "How the fitted numbers got where they are". It covers the
+  Monte-Carlo yaw fit, `recoverFraction`'s 0.7 → 0.93 → 0.958, the scaled hip
+  pair's 112 ms reaction, why the lean is string-only, how `maxYaw` was first
+  sized, `kick.haul`'s 5.15×, `sweepShots` at eleven, the per-frame punch
+  noise and `punchLift`'s step. The isolated-round timings went beside the
+  doc's single-shot table, which they supersede. Every value is unchanged:
+  `CONFIG.recoil` serialises byte-identical before and after.
+- **`core/recoilCurve.ts`**: the 84 lines of argument in its header are now an
+  18-line account of what the model computes, plus the pointer. All of it was
+  already in the doc, including why the shoulder is a wall, which is in the
+  viewmodel section.
+- **`CameraSystem.ts`, `Player.ts`**: the spring argument, the punch-step
+  measurement, the per-frame-noise history and the Euler measurement are
+  each down to a sentence and a pointer.
+- **A sixth copy: `core/recoilVector.ts`**, split out of `Player` by ticket 35.
+  `hasString`, `firstShotRamp` and `sweepDrift` each carried a copy, so they
+  are trimmed the same way.
+
+Numbers that did not match the value under them, now fixed:
+- **The rifle's permanent drift.** It was quoted as 0.21° in `recoil.ts`'s
+  header, in `recoverFraction` and in the doc, and as 0.15° in `pattern`.
+  Re-derived, it is **0.15°**: 0.005 × (1 − 0.905) × 0.35 × 15.25. 0.21° and
+  "yaw multipliers sum to 21.27" were from before the lateral shared the
+  vertical's envelope.
+- **`firstShotMult`.** The doc said 1.6, and the doc and `recoilVector.ts` said
+  "a flat 60% increase". It is 1.25, so 25%. The DMR example, "2.2 → 6.0°",
+  is now 1.35 → 1.86° instead of 1.49°. The doc's per-round envelope is
+  re-derived: 1.25, 0.94 … 0.55.
+- **The DMR's cycle** was "0.333 s" in two places. It is 0.286 s (3.5/s).
+- **The LMG's reaction at the hip** was "76 ms". That was at a shove of 0.9;
+  at 0.95 it is 78. The doc's "shoves 0.9 and flips 0.7" is now 0.95 and 0.85.
+- **The bolt gun's single shot** was "2.10 kick units" in two places. At
+  `compress` 0.6 it is 2.16.
+- **Bloom bleed-off**: "0.048/s" is 0.057/s at the rifle's 9.43/s.
+- **"30% of every kick"** was the permanent share at `recoverFraction` 0.7. It
+  is 4.2% vertical and 9.5% lateral now (`CameraSystem` ×2, the doc).
+- **The doc's `sweepNoise`** was 0.3. It is 0.5.
+- **The doc's `shakeYaw`** "went 0.006 → 0.0035". Commit 218da22 put it back
+  to 0.006 when `punchSwing` took a gunshot's share to zero, and the doc now
+  says so.
+- **The doc's `kick.adsMult`** was "(0.3)" and the aimed flip "0.036 rad
+  (2.1°)". They are 0.16 and 0.035 rad (2.0°).
+- **The doc's `yawBias` formula** was still `rand * (1 − |bias|) + bias`. It
+  now gives `sweepDrift`'s `bias + wander * sweepSpan`.
+- **The doc's pattern paragraph** still opened "the kick's DIRECTION rotates as
+  a string runs", which is the behaviour the one-envelope change removed. It
+  now opens on how HARD.
+- **The viewmodel kick is still called a SPRING** in three places: the doc
+  (which cites a `recoil.kick.speed` that no longer exists), `recoil.ts`'s
+  `kick` block and `ViewModel.ts`. They also said `p.kick` overshoots
+  negative, which it cannot: `RecoilAxis`'s haul stops at zero. All three now
+  describe the arrest and haul. The doc keeps the spring as history, along
+  with its Euler measurement. `ViewModel.ts`'s doc says the action's beats
+  arrive separately.
+
+Left alone: `CLAUDE.md`'s recoil bullets. They already state rules without
+the argument or a number. Neither copy the ticket names (~1861, ~1925)
+survived ticket 40.
+
+Checked: `npm run typecheck`; `npm run build`, with every gate passing; and
+`CONFIG.recoil` compared field by field before and after.
 
 ### 46. Physics reference baselines missing for three maps
 

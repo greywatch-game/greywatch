@@ -252,7 +252,7 @@ src/
                         #   the fire selector and `modes[0]` is what every
                         #   figure in the table is quoted in
     recoil.ts           # What a shot does to the aim: the per-shot kick, the
-                        #   string's two envelopes, recovery, stance
+                        #   string's envelope and sweep, recovery, stance
     sights.ts           # The optic table — its ORDER is the loadout row, and
                         #   `eyeRelief` has to RISE with magnification or the
                         #   camera's near plane clips the eyepiece open

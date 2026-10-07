@@ -24,13 +24,12 @@
  * the player's aim permanently — a deliberate product decision, not a bug.
  * `addFlinch` is the ONE aim kick that is 100% springy, and must stay that
  * way: a hit is not a choice the player made, so a permanent share would
- * ratchet the view up over one exchange. It shares the spring rather than
- * owning one, so it cannot drift against the recoil sitting on top of it.
+ * ratchet the view up over one exchange. It shares the recoil axes rather
+ * than owning its own, so it cannot drift against the recoil on top of it.
  * The view punch (FOV spike / camera shove / directed nudge), the head bob and
  * the landing absorb are pure cosmetics: they are applied only to the rendered
  * camera, never to aimPitch/aimYaw, so bullets and bots never see them. The
- * punch's angles are drawn ONCE per shot and held, not re-rolled per frame —
- * white noise at 8-13 rounds a second is a buzz, not an impact.
+ * punch's angles are drawn ONCE per shot and held, not re-rolled per frame.
  * TWO offsets are deliberately the exception and both are part of
  * aimPitch/aimYaw, because the weapon hangs off this camera and a sight
  * picture that drifts while the rounds fly down an undrifted axis is a reticle
@@ -132,10 +131,8 @@ export class CameraSystem {
   /**
    * The recoil offset on the aim, stacked on top of the player's own angle:
    * the gun's own rotation, arrested by the grip and then hauled back by the
-   * shooter. `core/recoilCurve.ts` is the model and carries the argument for
-   * why it is not a spring — the short version is that nothing about a gun
-   * wants to be where it started, so a restoring force is the wrong shape and
-   * reads as rubber at any amplitude worth feeling.
+   * shooter — never a spring (`core/recoilCurve.ts` is the model,
+   * `docs/weapons.md` the argument).
    *
    * Two axes, one per angle, stepped on the SAME shape — the pitch and the
    * yaw of one event, so a weapon whose kick is mostly sideways at the end of
@@ -151,12 +148,9 @@ export class CameraSystem {
    * own rate, and cannot therefore drift against it the way two integrators on
    * one impact would.
    *
-   * It exists because the permanent share used to be applied whole on the
-   * frame the trigger broke. Under a first-order decay that was invisible —
-   * the whole kick was a step function too — but against a model with a rise
-   * it is 30% of every kick landing in one frame underneath an attack that
-   * takes 30-60 ms, which is exactly the artefact the rise was brought in to
-   * remove.
+   * Drained rather than applied at the shot, because the permanent share
+   * landing whole on the frame the trigger broke is a step underneath a rise,
+   * the artefact the rise exists to remove (`docs/weapons.md`).
    */
   private owedPitch = 0;
   private owedYaw = 0;
@@ -215,11 +209,9 @@ export class CameraSystem {
    * shots have delivered and decays over `recoil.punchFall`, and `punchT` is
    * the value everything reads, chasing it over `recoil.punchRise`.
    *
-   * **It was a countdown — 1 on the frame of the shot, falling from there —
-   * and that made every term it scales a STEP.** Measured in the client, the
-   * field of view opened 1.2 degrees between two frames on every round while
-   * the 95th percentile of every other frame in the same string was 0.19. A
-   * cut eight to thirteen times a second is most of what reads as jumpy.
+   * **A rise and a fall, never a STEP**: a countdown from 1 on the shot frame
+   * cut the field of view open on every round (`docs/weapons.md` has the
+   * measurement).
    *
    * Two poles rather than a shaped decay for one reason a shaped decay cannot
    * cover: a round landing on a punch still in flight has to ADD to it. Any
@@ -253,11 +245,8 @@ export class CameraSystem {
    * a fixed torque on `rollT` rather than a drawn direction, for the reason
    * `CONFIG.recoil.rollBeat` gives.
    *
-   * It used to be `Math.random()` re-rolled every frame, and that is why the
-   * amplitudes in `CONFIG.recoil` had to be almost invisible: white noise at
-   * 8-13 rounds a second overlaps into a buzz that reads as a dirty lens
-   * rather than as a weapon going off. One coherent nudge per shot reads as an
-   * impact at roughly twice the amplitude and costs nothing.
+   * Drawn once and held, never re-rolled per frame: per-frame noise at an
+   * automatic's rate is a buzz, not an impact (`docs/weapons.md`).
    */
   private punchPitch = 0;
   private punchYaw = 0;
@@ -985,20 +974,16 @@ export class CameraSystem {
     this.pitch = Math.max(c.pitchMin, Math.min(c.pitchMax, this.pitch));
 
     // --- recoil comes back toward the player's own aim ---
-    // An ARREST and a HAUL, not a spring. `core/recoilCurve.ts` carries the
-    // argument; what it buys here is a shape with a CORNER in it — a fast
-    // flattening rise while the grip stops the gun, then a straight descent
-    // while the shooter drags it back — where a spring's peak is smooth and
-    // symmetric and reads as animation. The stance picks the constants rather
-    // than an amplitude, because a weapon in a three-point lock and a weapon
-    // on two arms are two mechanical systems and not one at two volumes.
+    // An ARREST and a HAUL, never a spring (`core/recoilCurve.ts`). The
+    // stance picks the constants rather than an amplitude, because a weapon
+    // in a three-point lock and a weapon on two arms are two mechanical
+    // systems and not one at two volumes.
     const rec = CONFIG.recoil;
     const shape = this.shapeAt(this.adsBlend);
     // The permanent share is handed over at the haul's own rate, so all of it
     // has arrived by the time the muzzle is home and none of it before the
-    // muzzle has moved. It is drained rather than applied at the shot because
-    // 30% of a kick landing on one frame is the step function this model
-    // exists to remove. Before the clamp below, which is `pitch`'s.
+    // muzzle has moved (see `owedPitch`). Before the clamp below, which is
+    // `pitch`'s.
     if (this.owedPitch !== 0 || this.owedYaw !== 0) {
       const give = 1 - Math.exp(-this.drainRate(this.adsBlend) * dt);
       const dp = this.owedPitch * give;

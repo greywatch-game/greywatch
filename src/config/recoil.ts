@@ -2,37 +2,32 @@
  * config/recoil.ts — What a shot does to the aim, and the shape a string of
  * them walks in.
  *
- * Split out of `config/weapons.ts` under the spine's own rule: at 334 lines it
- * was larger than fifteen of the nineteen config modules and was the section
- * CLAUDE.md spends the most rules on, which is the definition of having
- * outgrown the file it was lodged in. Nothing here changed in the move.
- *
- * It is its own subsystem rather than a corner of the weapon table: the weapon
+ * Its own subsystem rather than a corner of the weapon table: a weapon
  * contributes two multipliers (`recoilMult`, the muzzle rise, and
- * `recoilImpulse`, the shove) and one bias (`yawBias`), and everything else —
- * the per-shot kick, the first-shot multiplier, the two pattern envelopes, the
- * recovery fraction, the stance multipliers and both springs' own constants —
- * is about the ACT of firing rather than about any particular gun.
+ * `recoilImpulse`, the shove) and one bias (`yawBias`), and everything here —
+ * the per-shot kick, the first-shot multiplier, the pattern envelope, the two
+ * recovery fractions, the stance multipliers, and the constants of the settle
+ * and the kick — is about the ACT of firing rather than about any one gun.
  *
  * **The two weapon multipliers are the thing to understand before changing
- * anything here.** They were one field for most of this system's life, and
- * conflating them is why the two heaviest weapons in the kit stated their
- * weight by throwing the reticle four and five and a half degrees skyward on a
- * single frame. Muzzle rise is a MOMENT — the recoil force runs along the bore
- * and the shoulder holds the weapon below it, so what tips the muzzle is that
- * offset and a properly mounted heavy rifle tips remarkably little. The shove
- * is the CARTRIDGE, and what it buys is not angle: `settle` spends it on how
- * long the sight takes to come back, `shake` on how long the shooter takes to
- * re-settle afterwards, `punchCompress` on how hard the frame is hit, and
- * `kick.compress` on how far the weapon travels on screen. **Nothing driven by
- * the impulse may ever reach `pitchPerShot`.**
+ * anything here.** Muzzle rise is a MOMENT, and the shove is the CARTRIDGE. The
+ * shove buys no angle: `settle` spends it on how long the sight takes to come
+ * back, `shake` on how long the shooter takes to re-settle, `punchCompress` on
+ * how hard the frame is hit and `kick.compress` on how far the weapon travels
+ * on screen. **Nothing driven by the impulse may ever reach `pitchPerShot`.**
  *
- * Read `docs/weapons.md` before changing any of it. Two figures in the pattern
- * comment below are DERIVED (0.70 deg of climb and 0.21 deg of drift over the
- * rifle's magazine) and have to be re-derived rather than assumed whenever
- * `pattern`, `pitchPerShot`, `yawPerShot`, `firstShotMult` or either recovery
- * fraction moves — the climb off `recoverFraction` and the drift off
- * `yawRecoverFraction`, which are two numbers now and not one.
+ * `docs/weapons.md` ("Recoil has a shape, and the shape is learnable") holds
+ * the argument for every block below, the reference footage each fitted number
+ * was taken from, and what was tried first. The comments here say what a field
+ * does and what it was measured against.
+ *
+ * **Two figures are DERIVED**: the rifle's permanent walk over its 24-round
+ * magazine from the hip, **0.70 deg of climb** (`pitchPerShot * (1 -
+ * recoverFraction) * 15.25`) and **0.15 deg of drift** (`yawPerShot * (1 -
+ * yawRecoverFraction) * yawBias * 15.25`), 15.25 being the envelope summed over
+ * the magazine (see `pattern`). Re-derive both rather than assuming they
+ * followed whenever `pattern`, `pitchPerShot`, `yawPerShot`, `firstShotMult` or
+ * either recovery fraction moves.
  */
 /**
  * Recoil. Every shot kicks the aim up and slightly sideways and blooms the
@@ -41,247 +36,98 @@
  */
 export const recoil = {
   /**
-   * Aim kick per shot (radians): upward, and left/right about the weapon's
-   * bias. Both are the value at the TOP of a string — `pattern` below tapers
-   * the first and ramps the second across the rounds that follow, so neither
-   * of these numbers is what any particular shot actually kicks.
+   * Aim kick per shot (radians): upward, and sideways about the weapon's
+   * `yawBias`. Both are the value on the round that OPENS a string, before
+   * `firstShotMult`; `pattern` tapers both across the rounds that follow, so
+   * neither is what any particular shot actually kicks.
    *
-   * **Both were set against reference footage** (`docs/weapons.md`): 0.03 to
-   * 0.0192 on the vertical, 0.018 to 0.0103 on the horizontal.
-   *
-   * **The horizontal was briefly taken to 0.002 and that was a measurement
-   * error, not a decision.** The first clip's dark range gave 0.6 px of net
-   * lateral across 28 rounds and read as a weapon with no sideways component
-   * at all. A later clip aimed at a distant vertical edge — which is what
-   * makes a horizontal drift legible — shows the pull plainly: **0.40 deg to
-   * the RIGHT by round 22, building through the string and springing back
-   * almost entirely when it ends.** The lesson is about the FOOTAGE and not
-   * the gun: a lateral drift measured against a wall of horizontal panelling
-   * is a drift measured against nothing.
-   *
-   * 0.0103 is higher than the 0.018 it replaced would suggest because
-   * `recoverFraction` moved with it: the haul is a RATE, so a smaller
-   * per-shot yaw is annihilated between rounds rather than accumulating, and
-   * the axis is sharply nonlinear about that threshold. It was fitted by
-   * Monte-Carlo over the real `kickDrift` draw rather than by algebra —
-   * mean 0.41 deg at round 22, and a single magazine lands anywhere from
-   * 0.12 to 0.83. The reference's own drift is comparably noisy.
-   *
-   * **0.0109 is that fit carried across `recoverFraction` 0.93 -> 0.958**, not
-   * a new one: a smaller permanent share takes lateral out of every round, and
-   * the same Monte-Carlo puts the round-22 mean back where 0.0103 had it at the
-   * old fraction. Re-run it rather than scaling if either moves again.
-   *
-   * **0.005 is a PRODUCT decision taken against that fit, and it is the one
-   * place in this file where the footage lost an argument.** What the
-   * reference measures is a lateral that is mostly SPRING: 0.40 deg of pull
-   * built through 22 rounds and given back almost entirely when the string
-   * ends. Played rather than measured, that reads as the reticle being thrown
-   * sideways and hauled back — and it got worse, not better, when
-   * `pattern.sweepShots` made the direction coherent, because five rounds
-   * pulling the same way go somewhere five rounds arguing never did. Measured
-   * in the client at the old figure, the rifle's springy lateral swung **0.67
-   * deg aimed and 1.71 at the hip** and then came home.
-   *
-   * **What was cut is the SPRING and not the lateral**, which is what
-   * `yawRecoverFraction` is for: this drops to 46% and the share of it that
-   * never comes back rises to 9.5%, so the WALK — the part that turns your
-   * aim and has to be put back by hand — is within 4% of what it was, while
-   * the swing that bounces back is about a fifth of it. The horizontal is now
-   * mostly something you correct and a little something you ride, where it
-   * used to be the other way round.
+   * `pitchPerShot` is fitted to the reference's isolated peak (0.735 deg at
+   * 58 ms). `yawPerShot` is a PRODUCT decision taken against the footage,
+   * which is the one place in this file the footage lost: the fit was 0.0109,
+   * which reproduced the reference's 0.40 deg of lateral pull and read in play
+   * as the reticle being thrown sideways and hauled back. **It moves as a PAIR
+   * with `yawRecoverFraction`**: their product is the walk, and 0.005 at 0.905
+   * cuts the swing that comes back to a fifth while leaving the walk within 4%
+   * of the fit's.
    */
   pitchPerShot: 0.0192,
   yawPerShot: 0.005,
   /**
-   * What the FIRST round of a string kicks, as a multiple of the rest.
+   * What the FIRST round of a string kicks, as a multiple of the rest — the
+   * punch that makes a tap distinct from a held trigger, which is the entire
+   * reason to tap. Set against the reference's opening round, 1.3x the mean of
+   * rounds 2-4 of a 28-round string.
    *
-   * A weapon that has been sitting still and one that is mid-burst are not the
-   * same weapon, and without this they were: shot 1 and shot 20 kicked
-   * identically, so a burst had a flat ramp instead of a punch that settles.
-   * The punch is also what makes the first round of a tap distinct from a held
-   * trigger, which is the entire reason to tap.
-   *
-   * It applies only where a string means something — `!semiAuto || burst > 1`
-   * of the SELECTED FIRE MODE, resolved in `Player.recoilRamp`. The DMR, the
-   * bolt gun and the pistol are strings of one and every shot would be a first
-   * shot; their `recoilMult` (1.35, 1.7 and 1.15) already carries the punch,
-   * and stacking this on top of the DMR's would put the multiplier on every
-   * deliberate scoped round. A rifle switched to `semi` leaves this the same
-   * way and for the same reason, which is most of what that position buys.
-   *
-   * 1.25 rather than the 1.6 it was, because the reference's opening round is
-   * 1.3x the ones behind it — measured as the first step of a 28-round string
-   * against the mean of rounds 2-4.
+   * It applies only where the SELECTED FIRE MODE has a string
+   * (`recoilVector.hasString`, `!semiAuto || burst > 1`). The DMR, the bolt
+   * gun, the pistol and a rifle switched to `semi` are strings of one, where
+   * every shot would be a first shot and their `recoilMult` already carries
+   * the punch.
    */
   firstShotMult: 1.25,
   /**
    * Seconds without firing before the string resets and the next round is a
-   * first one again. Comfortably longer than any automatic's gap (the LMG's
-   * is 0.1 s) and shorter than the carbine's `burstCycle` of 0.4, so a burst
-   * weapon gets the punch on the first round of EVERY burst — which is right
-   * for three rounds that climb as one motion. The DMR's 0.333 s at full rate
-   * sits just inside it, but the DMR is excluded anyway.
+   * first one again. Longer than any automatic's gap (the LMG's is 0.1 s) and
+   * shorter than the carbine's `burstCycle` of 0.4, so every burst opens with
+   * the punch. The DMR's 0.286 s at full rate sits inside it, which is why a
+   * string of one is excluded rather than left to collect the taper.
    */
   stringResetTime: 0.35,
   /**
-   * The SHAPE of a string: ONE envelope over the shot counter `firstShotMult`
-   * reads (`Player.stringShots`), spent on BOTH axes. A muzzle climbs hardest
-   * at the start and then binds — the shooter is already leaning into it and
-   * the weapon has nowhere further to rotate — so a string's rounds kick less
-   * as it runs.
+   * The SHAPE of a string: ONE envelope over the shot counter
+   * (`Player.stringShots`), spent on BOTH axes, so **a string changes how HARD
+   * a weapon kicks and never which WAY** — the direction is the weapon's
+   * `yawBias`. A muzzle climbs hardest at the start and then binds, so the
+   * envelope runs from 1 on the opening round down to `pitchSettled` at
+   * `patternShots` and holds there.
    *
-   * **It was TWO envelopes, and the second one was a mistake you could see.**
-   * The lateral had a ramp of its own running the other way (`yawStart` 0.3
-   * climbing to 1 while the vertical tapered 1 to 0.55), on the theory that a
-   * muzzle which can no longer rise goes sideways instead, and that a kick
-   * whose DIRECTION rotates is a hook you can learn where a kick that only
-   * changes size can merely be pulled against. What it actually produces is a
-   * kick vector that ROTATES THROUGH THE OPENING OF EVERY STRING — measured
-   * per round in the client, the aimed rifle went 2, 2, 4, 7, 9, 9, 12, 11,
-   * 10 degrees off vertical and then back to 2 as the sweep came round, and
-   * the report was exactly that: "it starts recoiling vertically, then tilts
-   * until it is kicking at 45 degrees, then tilts back."
-   *
-   * **A string changes how HARD a weapon kicks and never which WAY.** The
-   * direction is the weapon's — `yawBias`, which is a torque and does not
-   * oscillate — and with one envelope over both axes the vector keeps it for
-   * every round of the magazine. The hook argument survives where it was
-   * actually true: it was made when the lateral was symmetric NOISE and the
-   * only alternative to a rotation was a straight line with jitter on it.
-   * `yawBias` is what answers that now, and a straight diagonal whose
-   * direction belongs to the weapon is as learnable as a hook and far easier
-   * to read.
-   *
-   * **The walk follows this rather than leading it.** For the rifle at the hip
-   * (24 rounds, `recoilMult` 1) the multipliers now sum to 15.25 on BOTH axes,
-   * so the permanent share is **0.70 deg** of climb and **0.15 deg** of drift.
-   * The drift is worked against `yawRecoverFraction` and NOT `recoverFraction`
-   * — the two axes keep different shares, and using the vertical's would
-   * under-report it by a factor of two and a quarter — and it is down from
-   * 0.21 because the lateral now tapers with the vertical instead of ramping
-   * against it. Re-derive both figures if any of these numbers moves; the walk
-   * is quoted in `recoverFraction` and in `docs/weapons.md`, and it does not
-   * follow on its own.
+   * Summed for the rifle's 24 rounds from the hip (`recoilMult` 1): 1.25 on
+   * round one, 5.2 over rounds 2-8 and 0.55 a round after that, **15.25** on
+   * both axes. That is the factor in the header's walk figures. Measured per
+   * round in the client, the aimed rifle's kick holds 3-6 deg off vertical
+   * across a magazine with no trend and no cycle.
    */
   pattern: {
     /**
-     * Rounds over which the envelope travels from its first-shot value to its
-     * settled one. Eight is a third of the rifle's magazine, so the
-     * shape is legible inside one burst rather than being a property of a
-     * whole magazine — and it is eight rather than seven because that is
-     * where the reference's own climb stops: its per-round step is gone by
-     * round 8-10 and flat for the eighteen after it.
+     * Rounds over which the envelope travels from its opening value to its
+     * settled one — a third of the rifle's magazine, so the shape is legible
+     * inside one burst. Set where the reference's own climb stops: its
+     * per-round step is gone by round 8-10 and flat for the eighteen after.
      */
     patternShots: 8,
     /**
-     * What the vertical falls to once the muzzle has bound.
-     *
-     * **It is NOT what makes a string plateau any more, and for one revision it
-     * was.** At 0.25 the taper was standing in for an equilibrium the haul did
-     * not have: a pure-rate haul nets the same amount off every cycle wherever
-     * the muzzle is, so a string plateaus only where the tapered kick happens
-     * to equal it. It did for the aimed rifle, by fitting; for the aimed SMG it
-     * came in under, and a held SMG's aim SANK for the rest of the magazine —
-     * 0.8 deg down with the trigger still held, which reads as downward recoil.
-     * `settle.reachAds` is the plateau now, and it holds for every weapon.
-     *
-     * **0.55 is what the reference's per-round kick is through a held string.**
-     * Tracked frame by frame, every round of its plateau still lifts the aim
-     * ~0.31 deg and the shooter takes ~0.25 back before the next one — a
-     * sawtooth riding a flat floor. At 0.25 the rounds past the eighth made
-     * 0.15 deg of it and the string read as a smear; at 0.55 it is 0.32. It was
-     * grid-fitted with `patternShots` and `reachAds` against the reference's
-     * floor through all 28 rounds, and lands 6x closer than 0.25 did.
+     * What the kick falls to once the muzzle has bound: the reference's
+     * per-round kick through a held string, where every round of its plateau
+     * lifts the aim ~0.31 deg and gives ~0.25 back before the next. Grid-fitted
+     * with `patternShots` and `settle.reachAds` against its floor through all
+     * 28 rounds. **It is not what makes a string plateau** — `settle.reachAds`
+     * is.
      */
     pitchSettled: 0.55,
     /**
-     * Rounds in one full lateral SWEEP, and how much of each round's lateral is
-     * fresh noise rather than the sweep — the shape of `Player.kickDrift`,
-     * which is the signed lateral the aim kick, the model's lean and the view
-     * punch are all built from.
-     *
-     * **A string used to draw it independently per round, and that is why the
-     * aim read as jumping in random directions rather than walking.** An
-     * automatic puts eight to thirteen of those draws a second on the same
-     * axis, so the horizontal changed sign on roughly a third of the rounds and
-     * nothing about it could be anticipated — which is the definition of
-     * recoil you can only pull against. A muzzle does not do that: it walks,
-     * and it walks somewhere, and the reference footage shows exactly that —
-     * 0.40 deg of RIGHTWARD pull building through 22 rounds and springing back
-     * when the string ends.
-     *
-     * So the lateral is a SINE over the string counter with its direction
-     * drawn once per string — but it is a FAINT one now, because a sweep wide
-     * enough to be read as a shape is a sweep wide enough to be read as the
-     * kick changing direction, which is the one thing a string may not do
-     * (see `pattern` above). At `sweepSpan` 0.15 what it does is keep a long
-     * string off being a ruler-straight line; what it may not do is rotate
-     * the vector, and the measurement that proves it is the per-round angle
-     * holding flat across a magazine.
-     *
-     * **It is not a difficulty change, and that was checked rather than
-     * assumed.** The weapon's `yawBias` scales the sweep and offsets it exactly
-     * as it did the noise, so the MEAN lateral of every round is what it was;
-     * over the rifle's 22 rounds the permanent drift is 0.176 deg under both
-     * models. What moves is the spread across magazines — 0.11..0.24 deg where
-     * the independent draw ran -0.01..0.37 — and the springy mid-string peak,
-     * up about 8% (0.65 -> 0.72 deg aimed) because five rounds pulling the same
-     * way go further than five rounds arguing. Re-run that pair rather than
-     * scaling if `yawPerShot` or `recoverFraction` moves.
-     *
-     * **Seventeen rather than the eleven it opened at, and the reason is the
-     * difference between a WALK and a JUMP.** At eleven a half cycle is five
-     * and a half rounds — 0.58 s on the rifle — so the muzzle went out and came
-     * back inside a single burst, which is a swing rather than a walk however
-     * coherent it is. At seventeen a burst of six to ten rounds is most of one
-     * way, and it is a whole magazine that sees the lateral come back: what a
-     * player has to do about it is re-aim rather than wait. The noise share
-     * keeps it off being a machine tracing the same figure, which is the same
-     * job the hold sway's second sine does.
+     * Rounds in one full lateral SWEEP. `Player.kickDrift`, the signed lateral
+     * the aim kick, the model's lean and the view punch are all built from, is
+     * a sine over the string counter with its direction drawn once per string
+     * — not an independent draw per round, which on an automatic's eight to
+     * thirteen rounds a second reads as an aim jumping rather than walking.
+     * At seventeen a burst of six to ten rounds is most of one way, so the
+     * lateral is something to re-aim against rather than wait out.
      */
     sweepShots: 17,
     /**
-     * How much of the span is fresh per-round noise rather than the sweep.
-     * Raised with the span's cut: what is left of the slow term is small
-     * enough to be texture, and a half-and-half mix keeps even that from
-     * reading as a cycle.
+     * How much of each round's lateral is fresh noise rather than the sweep.
+     * Half and half keeps what is left of a narrow sweep from reading as a
+     * cycle.
      */
     sweepNoise: 0.5,
     /**
-     * How far the sweep and its noise may carry a round off the weapon's own
+     * How far the sweep and its noise may carry a round off the weapon's
      * `yawBias` — the SPREAD of the lateral, where the bias is its centre.
-     *
-     * **It used to be `1 - |bias|`, which is not a decision about anything.**
-     * That form kept the total inside -1..+1 by spending whatever the bias had
-     * not, so a weapon's lateral SPREAD was decided entirely by its pull: the
-     * rifle at a bias of 0.35 wandered +-0.65, which put its worst round at
-     * 1.0 — three times its own mean, and a round that throws the sight
-     * sideways three times harder than the weapon's character says it should.
-     * Those are the rounds seen to jump. Nothing physical couples the two:
-     * torque is what the weapon does every round, and the spread is the
-     * shooter.
-     *
-     * At 0.35 the rifle's lateral is 0..0.70 about a mean of 0.35, so **every
-     * round pulls the same way** and what varies is how hard — which is what a
-     * torque IS, and what "it should pull to the right, but a round would not
-     * kick the dot at that much of an angle" is asking for. The MEAN is
-     * untouched on every weapon, so the permanent walk is exactly what it was;
-     * what goes is the tail. A zero-bias weapon (the DMR, the bolt gun) is
-     * left with +-0.35 of pure wander, which is right for a rifle fired one
-     * round at a time: there is no string for a direction to belong to.
-     *
-     * The total is still clamped to -1..+1, so every ceiling documented for
-     * `maxYaw` survives whatever a future weapon states for a bias.
-     *
-     * **0.15 rather than the 0.35 it opened at, because a span is also an
-     * ANGLE.** The lateral is the short side of the kick vector, so a spread
-     * of plus or minus a span is a spread of plus or minus that many degrees
-     * off vertical — at 0.35 the rifle's rounds ran 0..0.70 about a mean of
-     * 0.35, which is every round between straight up and twice the weapon's
-     * own pull, and it read as the kick tilting. At 0.15 it is 0.20..0.50:
-     * the pull is what the weapon says it is, every round, and the spread is
-     * texture on the magnitude rather than a claim about direction.
+     * A span is also an ANGLE, the lateral being the short side of the kick
+     * vector, so at 0.15 the rifle's rounds run 0.20..0.50 about its 0.35:
+     * every round pulls the weapon's way, and the spread is texture on how
+     * hard. The total is clamped to -1..+1, so every ceiling documented for
+     * `maxYaw` survives whatever a weapon states for a bias.
      */
     sweepSpan: 0.15,
   },
@@ -289,156 +135,77 @@ export const recoil = {
   adsMult: 0.55,
   /**
    * The rest of the stance, on the same footing as `adsMult` and blended the
-   * same way. Crouching already bought a tighter group (`player.crouchSpreadMult`)
-   * and a steadier hold (`camera.aimSway.crouchMult`) and did nothing at all
-   * about the kick, which made kneeling behind a wall a decision about the
-   * first round and not about the eighth.
-   *
-   * The two penalties are the same fact from the other side: recoil is absorbed
-   * by a body braced against it, and a body that is walking or in the air is
-   * not braced. `airMult` is the harshest number here because a jump is the one
-   * stance a player chooses freely and there is nothing under it at all.
+   * same way: recoil is absorbed by a body braced against it, and a body that
+   * is walking or in the air is not braced. Crouching also buys a tighter
+   * group (`player.crouchSpreadMult`) and a steadier hold
+   * (`camera.aimSway.crouchMult`). `airMult` is the harshest because a jump is
+   * the one stance a player chooses freely and there is nothing under it.
    */
   crouchMult: 0.8,
   moveMult: 1.25,
   airMult: 1.5,
   /**
-   * Fraction of each kick that springs back on its own. The remainder is
-   * pushed into the player's own aim and stays there, so a magazine held
-   * down walks the muzzle off target and has to be pulled back by hand. At
-   * 1.0 recoil is pure decoration.
+   * Fraction of each VERTICAL kick that comes back on its own. The remainder
+   * goes into the player's own aim and stays, so a held magazine walks the
+   * muzzle off target and has to be pulled back by hand. At 1.0 recoil is
+   * decoration.
    *
-   * **0.93 was measured, not chosen, and it reverses a product decision that
-   * was once made the other way.** This was 0.7 — 30% of every kick kept, an
-   * explicit call that a fully-recovering recoil was decoration and that a
-   * held magazine ought to genuinely walk off target. The reference footage
-   * does not do that: an isolated round is ~90% recovered 300 ms later, and a
-   * 28-round string leaves 0.37 deg behind against the 2.6 deg it was holding
-   * mid-string. Matching it means most of the walk goes. **If the rifle turns
-   * out to be too easy to hold, this is the first number to move back**, and
-   * it is worth about eight times as much of the walk as anything in
-   * `pattern`.
+   * Measured against the reference, where an isolated round is ~90% recovered
+   * 300 ms later; 0.958 holds the rifle's climb at the header's 0.70 deg under
+   * the plateau `pattern.pitchSettled` gives. **If the rifle proves too easy
+   * to hold, this is the first number to move back** — it is worth about
+   * eight times as much of the walk as anything in `pattern`.
    *
-   * **0.958 rather than 0.93 holds the walk where it was when
-   * `pattern.pitchSettled` went 0.25 -> 0.55.** Every round past the eighth
-   * now kicks twice as hard, so at the old fraction the same magazine would
-   * have kept half as much again — 1.10 deg of climb instead of 0.71, and
-   * further from the reference's 0.15, not nearer. The walk is a claim this
-   * file makes on purpose and a kick change should not move it by accident.
-   *
-   * **The walk is now ~0.70 deg of climb and ~0.21 deg of drift for the
-   * rifle's 24 rounds from the hip**, and it is derived rather than set: the
-   * vertical is `pitchPerShot * (1 - recoverFraction) * sum(firstShotMult-and-
-   * taper over the magazine)`, which `pattern` works through, and the lateral
-   * is the same product over `yawPerShot` and `yawRecoverFraction`. Re-derive both
-   * when anything in `pattern`, `pitchPerShot`, `yawPerShot` or
-   * `firstShotMult` moves; neither figure follows on its own.
-   *
-   * **The permanent share is HANDED OVER rather than applied at the shot**,
-   * and it has to be now that `settle` gives the kick a rise: applied whole on
-   * the frame the trigger broke, 30% of every kick would still be a step
-   * function sitting underneath the spring, which is the exact thing the
-   * spring exists to remove. `CameraSystem` owes it into `pitch`/`yaw` at the
-   * spring's own envelope rate, so all of it is delivered by the time the
-   * sight has settled and none of it before the sight has moved. **The
-   * handover does not change the total** — the walk figures above are what
-   * they are because of the fraction, not because of when it is collected.
+   * The permanent share is HANDED OVER at the haul's rate
+   * (`CameraSystem.owedPitch`) rather than applied at the shot, which changes
+   * when it arrives and never how much.
    */
   recoverFraction: 0.958,
   /**
-   * The same fraction for the HORIZONTAL, which is a different question about
-   * a shooter and used to be answered with the vertical's number.
-   *
-   * **A shooter hauls DOWN against a direction they knew before the trigger
-   * broke.** Muzzle rise is what a gun does, every round, and bracing against
-   * it is most of what a grip IS — so nearly all of it comes back on its own,
-   * which is `recoverFraction` at 0.958. A lateral cannot be pre-loaded
-   * against: it is not known until it has happened, so what a shooter does
-   * about it is re-aim. More of it is therefore AIM rather than spring, and
-   * at 0.905 nine and a half percent of every round's horizontal stays.
-   *
-   * **It is the lever that separates the two things a lateral does**, which
-   * were one thing while the two axes shared a number: the SWING that goes out
-   * and is hauled back — read in play as the reticle being thrown sideways —
-   * and the WALK that turns your aim and stays turned. Raising this and
-   * cutting `yawPerShot` together takes the first down by four fifths and
-   * leaves the second where it was. **They move as a PAIR and their product is
-   * the walk**: `yawPerShot * (1 - this)` is what a round permanently costs,
-   * and moving either alone moves it.
+   * The same fraction for the HORIZONTAL. A shooter braces against a climb
+   * they knew about before the trigger broke, but a lateral is not known until
+   * it has happened, and what a shooter does about it is re-aim — so more of
+   * it is AIM and less is spring, and at 0.905 nine and a half percent of every
+   * round's horizontal stays. **It moves as a PAIR with `yawPerShot`**:
+   * `yawPerShot * (1 - this)` is what a round permanently costs.
    */
   yawRecoverFraction: 0.905,
   /**
    * The SETTLE: how the aim comes back, and the one place a weapon's IMPULSE
    * (as against its muzzle rise) buys anything.
    *
-   * **It is not a spring, and it was one twice before it was right.** The
-   * first version was a first-order decay, which has no rise at all — the
-   * whole kick landed on one frame and fell away from there, so every weapon
-   * in the kit moved the sight as a step function. The second was a damped
-   * spring given a velocity, which fixed the attack and introduced a worse
-   * problem: a damped spring is symmetric about its peak and smooth in the
-   * first derivative through it, so the sight eased out of the top of its
-   * travel on the same curve it eased in, and the whole excursion read as
-   * something ANIMATED rather than something hit. At the amplitudes a heavy
-   * weapon needs, that reads as rubber.
-   *
-   * `core/recoilCurve.ts` carries the argument in full; the short version is
-   * that **nothing about a gun wants to be where it started.** The charge
-   * hands it an angular velocity, the shooter's grip ARRESTS that over tens of
-   * milliseconds (and left alone it would stop wherever it got to), and then
-   * the shooter HAULS it back — muscularly, at a rate, after a reaction. What
-   * that produces is a fast flattening rise, a genuine CORNER at the top where
-   * the arrest hands over to the haul, and a straight descent. **The corner is
-   * the feature**: it is the point where the motion changes cause, and a curve
-   * that is smooth through it is claiming the rise and the fall are one
-   * motion.
-   *
-   * **The stance changes the TIMING and not merely the amplitude, and that is
-   * the half of this the old model could not say at all.** Aimed, the weapon
-   * is in a three-point lock — shoulder pocket, cheek weld, support hand — and
-   * that is a stiff system a braced shooter drives back immediately. At the
-   * hip it is held on two arms, which is a long, soft, slow lever with nothing
-   * constraining it. They are not one system at a different volume, and
-   * `adsMult` scaling one number could only ever say they were.
+   * **It is not a spring.** The charge throws the gun, the grip ARRESTS it,
+   * and the shooter HAULS it back at a rate: a flattening rise, a CORNER where
+   * the motion changes cause, and a straight descent. `core/recoilCurve.ts`
+   * is the model. Aimed and hip are two sets of constants rather than one at
+   * two amplitudes, because a three-point lock and a weapon on two arms are
+   * different mechanical systems, and **the stance changes the TIMING**.
    */
   settle: {
     /**
      * How fast the grip arrests the rotation (1/s), braced and unbraced. The
      * rise's time constant is its reciprocal, and `riseTurns` of it is the
-     * shooter's REACTION — how long before the haul begins: **59 ms aimed and
-     * 79 ms at the hip** on the reference weapon. An isolated rifle round (a
-     * first shot, so `firstShotMult` included) peaks at 65 and 90 ms and is
-     * back to a tenth of its peak 266 and 434 ms after that.
+     * shooter's REACTION before the haul begins: **59 ms aimed and 79 ms at the
+     * hip** on the reference weapon. An isolated rifle round (a first shot, so
+     * `firstShotMult` included) peaks at 65 and 90 ms and is back to a tenth
+     * of its peak 266 and 434 ms after that.
      *
-     * **The aimed pair is MEASURED and the hip pair is not.** The footage
-     * `docs/weapons.md` records is all ADS, and it puts the muzzle at the top
-     * of its travel 58 ms after the shot and half the way home 160 ms after
-     * that. There is no usable hip reference, so the hip pair is set against
-     * two constraints instead, and **both were violated by the scaled pair it
-     * replaced** (24.1 and 1.48), which made a hip string take 3.7 s to settle
-     * against 0.8 aimed:
+     * The aimed pair is MEASURED: the reference's muzzle tops out 58 ms after
+     * the shot and is half home 160 ms after that. The footage is all ADS, so
+     * the hip pair is SET, against two constraints:
      *
-     * - **The reaction must fit inside an automatic's cycle.** `age` restarts
-     *   on every round, so a reaction longer than the gap between rounds means
-     *   the haul never engages through a held trigger and the string piles up
-     *   unopposed. At 24.1 it was 112 ms against the rifle's 106 and the LMG's
-     *   100; at 34 it is 79 and 76, and the SMG's is 60 against its 77. **Check
-     *   it against the fastest automatic whenever `gripHip`, `riseTurns` or
-     *   `massExp` moves** — the carbine's burst is exempt, three rounds in
-     *   0.1 s being meant to climb as one motion.
-     * - **The haul has to pay for `adsMult`.** It is a RATE, so a hip kick
-     *   already 1/`adsMult` the size of an aimed one takes that much longer to
-     *   come home at the same haul — and a slower haul on top of it compounds.
-     *   That is why `haulHip` is ABOVE `haulAds` in kicks per second: the hip
-     *   is still the softer system, peaking later and climbing higher through
-     *   a string, but it is not charged for the size of its kick twice.
+     * - **The reaction must fit inside an automatic's cycle**, or the haul
+     *   never engages through a held trigger and the string piles up
+     *   unopposed. At 34 it is 79 ms against the rifle's 106, 78 against the
+     *   LMG's 100 and 60 against the SMG's 77. **Check it against the fastest
+     *   automatic whenever `gripHip`, `riseTurns` or `massExp` moves**; the
+     *   carbine's burst is exempt, three rounds in 0.1 s being meant to climb
+     *   as one motion.
+     * - **The haul has to pay for `adsMult`** — see `haulAds`.
      *
-     * **They are set against the FRAME as much as against the gun.** An
-     * earlier tuning was 21 ms up and 20 down aimed, and at 60 Hz that is an
-     * entire excursion inside two and a half samples, which cannot read as
-     * motion however right its curve is. It read as a dropped frame. The floor
-     * is roughly five samples for the whole travel; under it, making recoil
-     * faster makes it JERKIER. These are nowhere near it.
+     * Both are set against the FRAME as well as the gun: an excursion that
+     * completes in under ~5 samples at 60 Hz reads as a dropped frame rather
+     * than as motion, and these are well clear of it.
      */
     gripAds: 45.5,
     gripHip: 34,
@@ -446,8 +213,10 @@ export const recoil = {
      * How fast the shooter hauls it back, in REFERENCE KICKS (`pitchPerShot`)
      * per second. A rate rather than a proportion, so a bigger excursion takes
      * proportionally longer to come home — which is why the bolt gun's return
-     * is slower than the SMG's without either of them saying so — and why
-     * `haulHip` sits above `haulAds` rather than below it (see `gripAds`).
+     * is slower than the SMG's without either of them saying so. `haulHip` is
+     * ABOVE `haulAds` because a hip kick is already 1/`adsMult` the size of an
+     * aimed one and takes that much longer at the same rate; a slower hip haul
+     * would charge it for the size of its kick twice.
      */
     haulAds: 2.46,
     haulHip: 2.7,
@@ -476,32 +245,19 @@ export const recoil = {
     easeBand: 0.1,
     /**
      * Above this many reference kicks of displacement the haul LEANS IN — its
-     * rate multiplied by how many of these the muzzle is off — braced and
-     * unbraced, **and only in a string**: the rounds behind a string's first
-     * ask for it, and it lets go when the muzzle is back inside this.
-     * `RecoilShape.reach` has the argument; the short version is that a pure
-     * rate gives a held trigger no level to settle at, so a string either
-     * climbs forever or, where the kick is small against the haul, SINKS with
-     * the trigger still held. The aimed SMG did the second: 0.8 deg down
-     * through a magazine. With this every string finds a plateau.
+     * rate multiplied by how many of these the muzzle is off — **only in a
+     * string**, letting go once the muzzle is back inside this. A pure rate
+     * gives a held trigger no level to settle at (`RecoilShape.reach`), so this
+     * is what makes every string plateau. **A lone round, a tap and a flinch
+     * never lean**, so each keeps the measured single-round shape and a
+     * grenade's flinch is still two seconds.
      *
-     * **A lone round, a tap and a flinch never lean**, so each is the measured
-     * shape to the number — the straight descent, the corner and every figure
-     * `docs/weapons.md` measures off one — and a grenade's flinch is still the
-     * two seconds it was. Applied to everything it would have halved both,
-     * which is a balance change nobody asked this for.
-     *
-     * **The aimed number is FITTED and the hip one is set, as with the pairs
-     * above.** 0.8 (0.88 deg) was grid-fitted with `pattern` against the
-     * reference's floor through a 28-round string.
-     *
-     * The hip one is lower because the hip REACTION eats most of an
-     * automatic's cycle (79 ms of the rifle's 106), so it has far less haul
-     * per round to lean with. At 0.6 a hip string plateaus about twice as high
-     * as an aimed one — the rifle at ~4.5 deg, where it used to climb past 9
-     * with no end in sight — which keeps the hip the softer system and bounds
-     * it. **Re-fit `reachAds` against the footage, not by feel**, if
-     * `pattern`, `haulAds` or `gripAds` moves.
+     * The aimed 0.8 (0.88 deg) is grid-fitted with `pattern` against the
+     * reference's floor through a 28-round string; **re-fit it against the
+     * footage, not by feel**, if `pattern`, `haulAds` or `gripAds` moves. The
+     * hip's 0.6 is set: the hip reaction eats 79 ms of the rifle's 106, leaving
+     * far less haul per round to lean with, and at 0.6 a hip string levels at
+     * about twice the aimed one (~4.9 deg on the rifle, measured).
      */
     reachAds: 0.8,
     reachHip: 0.6,
@@ -515,39 +271,23 @@ export const recoil = {
     massExp: 0.4,
   },
   /**
-   * The post-shot UNSTEADINESS — what a heavy round actually costs, and the
-   * half of it the muzzle rise had been standing in for.
+   * The post-shot UNSTEADINESS. A shot moves the sight (`settle`, over a few
+   * hundred milliseconds), and it also disturbs the POSITION the shooter was
+   * holding it in, which takes far longer to come back — the cost of a heavy
+   * round, for which muzzle rise must not stand in.
    *
-   * A shot does two things to a shooter: it moves the sight (`settle` above,
-   * over a few hundred milliseconds) and it disturbs the POSITION they were
-   * holding it in, which takes far longer to come back and is what a trained
-   * shooter means by needing to re-settle. Nothing here modelled the second,
-   * so the only language a big cartridge had was ANGLE — a bolt gun said "I am
-   * a .338" by throwing the reticle five and a half degrees skyward, which is
-   * neither what a mounted rifle does nor what it costs.
+   * **Spent on the hold sway rather than as an offset of its own**, so it
+   * cannot make the reticle lie: a shot WIDENS the wander (`swayGain`) and
+   * QUICKENS it (`rateGain`), and both fade back into the figure-eight the sway
+   * already draws. It rides `swayW`, so aiming and crouching steady the
+   * disturbance exactly as they steady the hold, and hip fire pays none of it
+   * (hip fire is charged in bloom instead).
    *
-   * **It is spent on the hold sway rather than as an offset of its own**, for
-   * the reason the bolt cycle's wobble is: the sway is already an honest
-   * disturbance of where the rifle POINTS, so widening it cannot make the
-   * reticle lie. A shot both WIDENS the wander (`swayGain`) and QUICKENS it
-   * (`rateGain`) — a disturbed position is restless as well as loose — and
-   * both fade back into the breathing figure-eight the sway already draws. It
-   * rides `swayW`, so aiming and crouching steady the disturbance exactly as
-   * they steady the hold, and hip fire pays none of it (hip fire is charged in
-   * bloom instead).
-   *
-   * **A STRING disturbs the hold ONCE, on its opening round, and the rounds
-   * behind it are the recoil's to charge.** It used to be raised by every
-   * round, and on a held automatic trigger that piled up to ~1.5 — a sway
-   * 2.6x as wide and 3.5x as fast, swinging the aim through a degree and a
-   * half in the middle of a string. Half of every swing is DOWN, and a player
-   * holding the trigger reads a muzzle going down under fire as recoil going
-   * the wrong way — which is exactly what one did. The reference shows nothing
-   * of it: tracked through 28 rounds, its floor holds flat to a tenth of a
-   * degree. `Player.recoilKick` says which rounds disturb (`opensString`), off the
-   * same `stringed`/`stringShots` pair `firstShotMult` reads, so a DMR, a
-   * pistol and a bolt gun — strings of one — pay on every round exactly as
-   * before, and every burst of the carbine's pays once.
+   * **A STRING disturbs the hold ONCE, on its opening round**
+   * (`AimKick.opensString`), and the rounds behind it are the recoil's to
+   * charge. A string of one — the DMR, the pistol, the bolt gun — pays on every
+   * round. Raised by every round, a held automatic piled it up into a sway that
+   * swung the aim downward mid-string, which is recoil going the wrong way.
    */
   shake: {
     /**
@@ -569,15 +309,13 @@ export const recoil = {
     /**
      * Time constant of the fade, in seconds, at `recoilImpulse` 1 — and the
      * exponent by which the weapon's own impulse lengthens it
-     * (`settle * impulse^settleExp`). A true exponential, for the reason the
-     * spring's own step is exact: it is on the hold sway, which is on the aim.
+     * (`settle * impulse^settleExp`). A true exponential, because it is on the
+     * hold sway and the hold sway is on the aim.
      *
-     * **A heavy round does not merely disturb more, it disturbs for LONGER**,
-     * At 0.5 s and 0.6 the SMG's disturbance is gone in a third of a second
-     * and the bolt gun's takes 1.08 — so the bolt gun's single round opens the
-     * hold to 2.1x for **literally about a second**, which is the thing a
-     * shooter means by needing to re-settle and the whole reason this block
-     * exists.
+     * **A heavy round disturbs for LONGER, not merely more.** The SMG's is gone
+     * in a third of a second and the bolt gun's takes 1.08, so the bolt gun's
+     * single round opens the hold to 2.1x for about a second, which is what a
+     * shooter means by needing to re-settle.
      */
     settle: 0.5,
     settleExp: 0.6,
@@ -586,95 +324,56 @@ export const recoil = {
     rateGain: 1.6,
   },
   /**
-   * Ceilings on the SPRINGY part, so sustained fire can't walk the aim off the
-   * screen and a crossfire's flinches can't stack off it either.
+   * Ceilings on the springy part of the two recoil AXES, so neither sustained
+   * fire nor a crossfire's flinches can walk the aim off the screen.
    *
-   * **Neither of these binds on any weapon in the kit any more, and both are
-   * kept for what else they catch.** They were sized as a number of ROUNDS —
-   * `maxYaw` at 0.09 bound after about seven of hard drift — and measured
-   * through held triggers in the client the worst springy lateral in the kit
-   * is now **1.0 deg at the hip and 0.20 aimed** against a ceiling of 5.16,
-   * with the haul's own lean doing the bounding long before this could. The
-   * vertical is the same story: a sustained string holds at 2.4 deg aimed and
-   * 5.0 at the hip where `maxPitch` sits at 9.7.
+   * **Neither binds on any weapon in the kit**: measured through held triggers
+   * in the client, the worst springy lateral is 1.0 deg at the hip and 0.20
+   * aimed against `maxYaw`'s 5.16, and a sustained string holds at 2.4 deg
+   * aimed and 5.0 at the hip against `maxPitch`'s 9.7, the haul's lean doing
+   * the bounding first.
    *
-   * They stay because **the ceilings are on the shared recoil AXES, not on
-   * the weapon**: `addFlinch` queues onto the same two, so what these actually
-   * defend now is a crossfire — a grenade asks for 0.099 rad on its own
+   * They stay for `addFlinch`, which queues onto the same two axes: a grenade
+   * survived at 90 damage asks for 0.099 rad on its own
    * (`player.flinchPitchPerDamage`) and several hits close together must not
-   * stack off the screen. **That is the reason `maxPitch` was NOT dropped to
-   * suit the new climb**: sized to the rifle it would silently clamp flinch to
-   * a fifth of what a blast is supposed to be worth, and the failure would
-   * show up in grenades rather than anywhere near this file.
+   * stack off the screen. **Do not size `maxPitch` to the rifle's climb**: it
+   * would silently clamp a blast's flinch to a fifth of what it is worth, and
+   * the failure would show up in grenades rather than anywhere near this file.
    */
   maxPitch: 0.17,
   maxYaw: 0.09,
   /**
    * Spread bloom: added per shot, its ceiling, and its bleed-off per second.
-   * The bleed-off has to be well under `bloomPerShot * fireRate` (0.048/s
-   * here) or holding the trigger never actually blooms.
+   * The bleed-off has to be well under `bloomPerShot * fireRate` (0.057/s on
+   * the rifle) or holding the trigger never actually blooms.
    */
   bloomPerShot: 0.006,
   maxBloom: 0.03,
   bloomRecovery: 0.02,
   /**
-   * The weapon punch on the viewmodel: a DAMPED SPRING the shot gives a
-   * velocity to, not a level the shot sets and then fades.
+   * The weapon on screen: the same ARREST-AND-HAUL model as `settle`
+   * (`core/recoilCurve.ts`) at its own constants, because the gun in your
+   * hands and the sight on your target are one object and cannot move on two
+   * different laws. A shot gives it VELOCITY, so a round arriving on a weapon
+   * still coming home ADDS to what is there — which is why a held trigger
+   * reads as a weapon that never quite settles. Stepped exactly at any frame
+   * rate: the arrest in closed form, the haul as a rate.
    *
-   * It used to be the second thing: `weaponKickT` snapped to 1 and fell
-   * linearly, squared on the way out. That has an instant attack and a monotone
-   * return with nothing on the other side of neutral — a fade rather than a
-   * recoil, and two rounds 77 ms apart simply re-set it to 1, so an automatic
-   * looked like one long shot instead of a mechanism cycling. The spring is the
-   * same idiom and the same argument as `camera.land` — an impact hands it a
-   * VELOCITY and it finds its own way back, which is what puts a rise, an
-   * overshoot past neutral and a settle in it. It also accumulates for free: a
-   * second round arriving on a weapon that has not come home adds to what is
-   * already there, exactly as a second landing does, which is why a held
-   * trigger now reads as a weapon that never quite settles, and why the
-   * carbine's three rounds in 0.1 s stack to 1.35 where one makes 1.00.
-   *
-   * **It is NOT the same integrator, and that is the one thing here that must
-   * not be copied back from `land`.** That spring is 2 Hz and semi-implicit
-   * Euler is fine for it; this one is 6 Hz, where `omega * dt` reaches 1.26 at
-   * 30 fps and Euler falls apart. Measured on the Euler version, a single
-   * round peaked at 0.08 of its travel at 30 fps, 0.54 at 60 and 0.78 at 120 —
-   * recoil growing with the frame rate, which is the failure `settle`'s own
-   * closed-form step exists to prevent one field up. `Player` steps it in closed
-   * form instead and every figure below holds at any frame rate.
-   *
-   * `Player` owns the spring and `ViewModel` reads it, the same split as the
+   * `Player` owns the motion and `ViewModel` reads it, the same split as the
    * bob phase and the landing dip, and for the same reason: two integrators on
    * one impact drift apart.
    */
   kick: {
     /**
-     * How fast the shooter's grip arrests the WEAPON on screen (1/s), braced
-     * and unbraced — the same model as `settle` above and deliberately the
-     * same argument, because the gun in your hands and the sight on your
-     * target are one object and cannot move on two different laws.
+     * How fast the grip arrests the WEAPON (1/s), braced and unbraced. Stiffer
+     * than `settle`'s, because it is a shorter lever: a receiver in two hands
+     * rather than an upper body rotating.
      *
-     * It is stiffer than the aim's because it is a shorter lever: what
-     * `settle` describes is the shooter's whole upper body rotating, and this
-     * is the receiver moving in two hands. As with `settle`, the floor under
-     * all four numbers is the FRAME rather than the mechanism — and this pair
-     * was the one still under it.
-     *
-     * **95/65 put the rifle's whole ATTACK at 27 ms braced and 40 at the hip,
-     * which at 60 Hz is 1.6 frames and 2.4.** Measured in the client it was
-     * worse than the arithmetic — **18 ms to the top aimed and 36 at the hip,
-     * whole excursions of 66 and 96 ms**. `settle` states the rule this
-     * breaks: nothing that completes in two samples can read as MOTION however
-     * right its curve is, it reads as a strobe — and the weapon on screen is
-     * the biggest moving thing in the frame, so it is where the rule matters
-     * most. The report was that recoil felt jumpy and jerky rather than heavy;
-     * this pair is most of it.
-     *
-     * At 56/40, measured the same way: **39 ms to the top aimed and 56 at the
-     * hip, whole excursions of 101 and 145 ms** — two and a half to three and a
-     * half frames of attack at 60 Hz, six to nine of travel. **Do not take
-     * them back up to buy a snappier weapon**: what a snappier weapon buys at
-     * this rate is a frame the eye reads as dropped.
+     * **Set against the FRAME.** Measured in the client: **39 ms to the top
+     * aimed and 56 at the hip, whole excursions of 101 and 145 ms** — two and
+     * a half to three and a half frames of attack at 60 Hz, six to nine of
+     * travel. **Do not take them back up to buy a snappier weapon**: what a
+     * snappier weapon buys at this rate is a frame the eye reads as dropped.
      */
     gripAds: 56,
     grip: 40,
@@ -682,16 +381,8 @@ export const recoil = {
      * How fast it is driven home, in KICK UNITS per second (1 being one
      * round's peak). Nothing scales these by the weapon: `compress` below
      * already makes a heavy gun travel further, and a rate against a longer
-     * travel is a longer return for free — which is the right answer and one
-     * fewer exponent to keep honest.
-     *
-     * Slowed with the arrest above and for the same reason: a descent that
-     * outpaces the display is not a descent. **What normally makes that
-     * expensive is stacking** — a slower return means the next round lands on a
-     * weapon that has not come home — and here it costs nothing, because
-     * `stackCap` is a wall rather than a tuning coincidence. Before it, this
-     * pair could not be moved at all: at `haul` 12 a submachine gun's held
-     * trigger measured 5.15x one round's travel.
+     * travel is a longer return for free. Slow for the frame's sake as the
+     * arrest is, which costs nothing in stacking because `stackCap` is a wall.
      */
     haulAds: 17,
     haul: 12,
@@ -701,66 +392,34 @@ export const recoil = {
     haulRamp: 0.35,
     easeBand: 0.1,
     /**
-     * The ACTION, which is the thing that makes a self-loader read as a
-     * MACHINE rather than as a catapult.
+     * The ACTION: the carrier stopping at the back of its travel and then
+     * slamming into battery, two beats per round after the shot. It is what
+     * makes a self-loader read as a MACHINE; one smooth excursion per round,
+     * however sharp its attack, is a catapult.
      *
-     * A rifle's recoil is not one impulse and a shooter does not feel it as
-     * one. There is the shot; then, some milliseconds later, the carrier
-     * reaching the back of its travel and stopping against the buffer; then
-     * the carrier returning and slamming into battery. Three distinct events,
-     * and the second and third are what a shooter means when they describe a
-     * gas gun as feeling "busy" against a bolt gun's single clean shove.
-     * Without them the weapon on screen makes one smooth excursion per round
-     * however sharp its attack, and one smooth excursion is a catapult.
-     *
-     * **They are on the WEAPON and the frame, never on the aim.** The carrier
-     * is a fraction of the charge's momentum and the mount absorbs most of
-     * what it does; what it costs is visible and not aimable, so putting it on
-     * `aimPitch` would be jitter on where the bullets go in exchange for
-     * nothing. `impulse` in `core/math.ts` is the shape — all attack and no
-     * ease-in, which is what an arrival is.
-     *
-     * **A bolt gun states `boltCycle` and is exempt**, because its action is
-     * worked by a hand rather than by the gas, and `CONFIG.viewmodel.cycle`
-     * already plays that as a gesture over a second and a quarter. Two
-     * accounts of one mechanism would be one too many.
+     * **On the WEAPON and the frame, never on the aim**: what the carrier costs
+     * is visible and not aimable, so on `aimPitch` it would be jitter on where
+     * the bullets go. `impulse` in `core/math.ts` is the shape. **A bolt gun
+     * states `boltCycle` and is exempt** — its action is worked by a hand, and
+     * `CONFIG.viewmodel.cycle` already plays it as a gesture.
      */
     action: {
       /**
        * Seconds after the shot the carrier stops at the back of its travel,
-       * and seconds after it that it slams back into battery.
-       *
-       * **These are LEGIBLE rather than literal, and the difference is the
-       * display.** A real carrier is at the back of its travel around 10 ms
-       * and in battery around 35 ms, and those were the first numbers here.
-       * At 60 Hz that put two OPPOSITE-SIGNED peaks 1.7 samples apart, which
-       * does not resolve as two events — it aliases, and what aliasing looks
-       * like is the jitter this whole block was added to avoid. Stretched to
-       * 30 and 82 ms the pair is three samples apart inside a seven-sample
-       * window, which reads as what it is: a mass going back, stopping, and
-       * coming home. **A mechanism the frame cannot resolve is noise, and
-       * noise is not more faithful for having the right timing.**
+       * and seconds after it that it slams back into battery. **LEGIBLE rather
+       * than literal**: a real carrier's ~10 and ~35 ms put two
+       * opposite-signed peaks 1.7 samples apart at 60 Hz, which aliases into
+       * jitter. **A mechanism the frame cannot resolve is noise.**
        */
       back: 0.034,
       home: 0.088,
       /** Seconds each of those impacts dies away over. */
       fall: 0.058,
       /**
-       * …and seconds each takes to ARRIVE. `impulse` is all attack and no
-       * ease-in, which is the right shape for something hitting and the wrong
-       * one at this rate: an instantaneous jump to full is a step in the pose,
-       * and two of them per round at 8 rounds a second is a buzz rather than a
-       * mechanism. Twenty milliseconds is a little over one frame — enough to
-       * be a move rather than a jump, and far short of anything that would
-       * read as a swell.
-       *
-       * **32 ms rather than 20, which is the same correction `grip` above
-       * took.** Two beats per round arriving in a little over one frame each
-       * is a rattle laid over the kick rather than a mechanism inside it, and
-       * at 8-13 rounds a second a rattle is what "too jerky" is made of.
-       * Their amplitudes came down with it (`backKick`/`homeKick`): the
-       * carrier is a fraction of the charge and was reading as a second
-       * recoil.
+       * …and seconds each takes to ARRIVE. `impulse` is all attack, and two
+       * instantaneous jumps a round at eight to thirteen rounds a second is a
+       * rattle laid over the kick rather than a mechanism inside it. 32 ms is
+       * about two frames: a move rather than a jump, and short of a swell.
        */
       rise: 0.032,
       /**
@@ -773,14 +432,10 @@ export const recoil = {
       backKick: 0.13,
       homeKick: -0.08,
       /**
-       * What is left of it while fully aimed. **Not zero, and that is the
-       * point**: a rifle in a three-point lock still buzzes, and the buzz is
-       * most of what tells you the thing in your hands is a gas gun rather
-       * than a catapult. But it is a fraction, because the action's impulse
-       * is small against the charge's and a braced mount absorbs most of what
-       * it does — and because the weapon carries the sight, so the whole of
-       * it arriving on an aimed picture would be the model's reticle wandering
-       * off the axis the rounds fly down.
+       * What is left of it while fully aimed. **Not zero**: a rifle in a
+       * three-point lock still buzzes, and the buzz is most of what tells you
+       * the thing in your hands is a gas gun. A fraction, because a braced
+       * mount absorbs most of it and the weapon carries the sight.
        */
       adsMult: 0.45,
     },
@@ -794,23 +449,16 @@ export const recoil = {
      */
     compress: 0.6,
     /**
-     * What is left of the OFF-AXIS terms while fully aimed. The z travel is
-     * exempt and stays at full.
+     * What is left of the OFF-AXIS terms while fully aimed; the z travel is
+     * exempt and stays at full. **It moves as a PAIR with `kickPitch`**: their
+     * product (0.035 rad) is what an aimed weapon takes, and the bare
+     * `kickPitch` is what hip fire takes.
      *
-     * **It went 0.3 -> 0.16 when `kickPitch` went 0.12 -> 0.22, and the two
-     * moves are one change**: their product is what an aimed weapon takes and
-     * it is unmoved, while the bare `kickPitch` is what hip fire takes and it
-     * nearly doubled. Move either one alone and the aimed sight picture moves
-     * with it.
-     *
-     * That split is geometry, not taste. The weapon carries the sight, so
-     * anything that rotates or laterally shifts the model while aimed takes
-     * the RETICLE off the axis the rounds fly down — which is the reticle
-     * lying, the same failure the aimed hold sway is arranged to avoid from
-     * the other side. Travel along z moves the sight closer to the eye and
-     * leaves the picture centred, so it costs nothing. It is also what a
-     * braced shoulder actually does with a rifle: absorbs it straight back and
-     * lets it rotate very little.
+     * Geometry, not taste. The weapon carries the sight, so anything that
+     * rotates or laterally shifts the model while aimed takes the RETICLE off
+     * the axis the rounds fly down. Travel along z moves the sight toward the
+     * eye and leaves the picture centred, which is also what a braced shoulder
+     * does with a rifle.
      */
     adsMult: 0.16,
     /**
@@ -818,12 +466,9 @@ export const recoil = {
      * travelling, in metres. **A floor under the near plane, not a look.**
      *
      * The kick's travel is toward the eye and an aimed sight is already only
-     * centimetres from it, so on a magnified optic the two collide: the DMR
-     * with the scope drove 4.8 cm of travel into a 7.8 cm stand-off and put
-     * the eyepiece 2 cm BEHIND `camera.minZ`, which reads exactly as the scope
-     * going inside your head. `ViewModel` scales the aimed travel down to fit
-     * `sightDist - this` rather than clamping at it, so the kick keeps its
-     * shape and only loses amplitude.
+     * centimetres from it, so on a magnified optic the two collide. `ViewModel`
+     * scales the aimed travel down to fit `sightDist - this` rather than
+     * clamping at it, so the kick keeps its shape and only loses amplitude.
      *
      * **It has to sit well above `CameraSystem`'s `minZ` of 0.05, and the gap
      * is not slack**: the bound is computed on the WEAPON NODE's travel while
@@ -836,70 +481,36 @@ export const recoil = {
     /**
      * The SHOULDER: the furthest back a string may drive the weapon, as a
      * multiple of what one of ITS OWN rounds travels (`RecoilShape.cap`, times
-     * `kickWeight`). It is also what `adsClearance` is derived against, since
-     * the travel to leave room for at the near plane is the biggest a string
-     * makes and never one round's.
+     * `kickWeight`). A wall rather than a measured peak, so the travel
+     * `adsClearance` is derived against is the biggest a string makes and is
+     * exact. Without it a held SMG at the hip reached 3.03x one round's travel,
+     * 13.3 cm of receiver toward the eye.
      *
-     * **It replaced a MEASURED `stackPeak`, and that is the point rather than
-     * a tidy-up.** That number described what a held trigger happened to reach
-     * under the tuning of the day, so it carried a standing debt — re-measure
-     * it whenever `grip`, `haul` or `riseTurns` moves — and it was never a
-     * bound: it was a report. What it reported at the hip is why this exists.
-     * On the shipped constants a held submachine gun reached **3.03x** one
-     * round's travel measured in the client — 13.3 cm of receiver toward the
-     * eye, the muzzle flip that rides the same number through 23 degrees, and
-     * a residual at each shot frame that climbed monotonically from round 3 to
-     * round 20 without ever coming home; an earlier, smoother `haul` was
-     * measured past 5x. The stated figure was 2, and it was honest about the
-     * ADS case it had been measured in: the rifle reads 0.000 at all twenty
-     * shot frames in both stances, and it was the hip that was never taken.
-     *
-     * A wall makes it a bound instead: the string cannot pass it however fast
-     * the weapon cycles, the near-plane fit is derived rather than measured,
-     * and `haul` and `grip` can be set for how the motion READS without a
-     * stacking budget to keep in step. 1.6 leaves a round and a half of travel
-     * — the rifle's held plateau sawtooths between 3.7 and 5.8 cm, so what a
-     * string looks like is still a weapon working and not a pose.
-     *
-     * **It is a multiple of the WEAPON's own travel and not an absolute**, or
-     * it clips the two heaviest weapons on a single round: the bolt gun's one
-     * shot is 2.10 kick units and nothing about it is a string.
+     * 1.6 leaves a round and a half of travel: the rifle's held plateau
+     * sawtooths between 3.7 and 5.8 cm, still a weapon working and not a pose.
+     * **A multiple of the WEAPON's own travel and not an absolute**, or it
+     * clips the bolt gun's single shot (2.16 kick units), which is no string.
      */
     stackCap: 1.6,
   },
   /**
-   * The kick's reach on each axis, at a displacement of 1 (one round's peak).
-   * Metres and radians in the CAMERA's frame, like every other viewmodel
-   * offset, so they take the zoom compensation with the rest of the pose.
+   * How far the weapon travels back along the bore, in metres at a
+   * displacement of 1 (one round's peak) — in the CAMERA's frame, like every
+   * other viewmodel offset, so it takes the zoom compensation with the rest of
+   * the pose. Small on purpose: **a mounted rifle barely translates**, because
+   * the shoulder stops it, and it ROTATES about that mount instead, which is
+   * `kickPitch` and `kickLift`.
    *
-   * `kickBack` carries the longitudinal travel and `kickLift` the rise that
-   * goes with it. The lateral three all take the shot's own `kickDrift` — the
-   * same signed number `yawBias` shapes and the aim kick is built from — so
-   * what the model does and what the muzzle does are one motion rather than
-   * two.
-   *
-   * **`kickBack` was 0.072 and that was half again too much of the wrong
-   * axis.** The argument for making it the largest term was that in first
-   * person the camera cannot move backwards to any visible degree, so the
-   * weapon coming toward the eye IS what recoil travel looks like from inside
-   * the head. True, and it still bought the wrong picture: 7.2 cm of receiver
-   * per round on the rifle and 15 on the bolt gun, before any stacking, into
-   * a weapon whose butt is against a shoulder. **A mounted rifle barely
-   * translates** — the shoulder is what stops it — and what it does instead is
-   * ROTATE about that mount, which is `kickPitch` and is already where this
-   * file says to spend the budget. So the travel is 3.6 cm and the difference
-   * went to `kickLift`, which is the same rotation seen as the receiver coming
-   * UP rather than as the muzzle tipping.
+   * The lateral three all take the shot's own `kickDrift` — the same signed
+   * number `yawBias` shapes and the aim kick is built from — so what the model
+   * does and what the muzzle does are one motion rather than two.
    */
   kickBack: 0.036,
   /**
    * How far the weapon RISES on the same travel, in metres at a displacement
    * of 1 — the receiver climbing as the muzzle tips about a mount behind it.
-   *
-   * It was `kickBack * 0.25` written into `ViewModel`, which made it a quarter
-   * of a term it has nothing to do with: one is a shoulder compressing and the
-   * other is a weapon pivoting in it. Stated on its own it survived `kickBack`
-   * halving, which is exactly why it is stated on its own.
+   * Stated on its own rather than as a share of `kickBack`, which is a shoulder
+   * compressing and nothing to do with it.
    *
    * It rides the off-axis damping like the rotations rather than the z travel,
    * because lifting the model while aimed lifts the SIGHT off the axis the
@@ -909,23 +520,11 @@ export const recoil = {
   kickLift: 0.018,
   /**
    * The muzzle FLIP on the model, and the biggest single lever there is on
-   * whether a gun reads as being fired.
-   *
-   * **It went 0.12 -> 0.22 and `kick.adsMult` went 0.3 -> 0.16 in the same
-   * change, which is deliberate and is why this is not a nerf or a buff.**
-   * The product of the two is what an AIMED weapon takes (0.035 rad, against
-   * 0.036 before — the same picture to two decimal places), and the bare
-   * number is what hip fire takes: 12.6 deg of model rotation against 6.9. So
-   * the weapon now genuinely throws its muzzle skyward in the hands and
-   * nothing about the aimed sight picture moved.
-   *
-   * That asymmetry is the whole trade this axis is for. A rotation of the
-   * model while aimed takes the fitted sight's reticle off the axis the rounds
-   * fly down, so it is the one term that has to stay small; at the hip there
-   * is no sight on the eye and no mark on the screen either — nothing is
-   * drawn that the muzzle could be seen to disagree with — so the flip costs
-   * nothing and is most of what you see. **Spend recoil's visual budget here,
-   * not on the aim.**
+   * whether a gun reads as being fired. **Spend recoil's visual budget here,
+   * not on the aim**: at the hip there is no sight on the eye and nothing drawn
+   * that the muzzle could be seen to disagree with, so 0.22 rad (12.6 deg) is
+   * free and most of what you see, while `kick.adsMult` takes the aimed
+   * picture down to 0.035 rad. Move the two as a pair.
    */
   kickPitch: 0.22,
   kickSide: 0.035,
@@ -939,46 +538,22 @@ export const recoil = {
   kickYaw: 0.018,
   /**
    * The cosmetic view punch per shot: an FOV spike, a backward camera shove,
-   * and a directed nudge on pitch, yaw and roll. Deliberately NOT part of
-   * aimPitch/aimYaw: bullets, bots, the aim assist and the motion blur never
-   * see it, and it only sells the impact to the eye. Because it comes and goes
-   * inside the time the aim kick is still rising, it is also what lets the
-   * VIEW snap harder than the AIM does.
+   * and a directed nudge on pitch and yaw. NOT part of aimPitch/aimYaw:
+   * bullets, bots, the aim assist and the motion blur never see it. Because it
+   * comes and goes inside the time the aim kick is still rising, it is also
+   * what lets the VIEW snap harder than the AIM does.
    *
-   * **It is a RISE and a FALL now, and it was a STEP — which is the single
-   * jumpiest thing measurement found in this whole system.** `punchT` was set
-   * to 1 on the frame the trigger broke and fell from there, so every term it
-   * scales arrived WHOLE in one frame: measured in the client, the field of
-   * view opened 1.2 degrees between two frames on every round, against a 95th
-   * percentile of 0.19 for every other frame in the string. That is not a
-   * snap, it is a cut, and at 8-13 rounds a second it is a cut repeated eight
-   * to thirteen times a second. `punchRise`/`punchFall` are a two-pole impulse
-   * response instead — `CameraSystem` normalises it so one round still peaks
-   * at exactly the same amplitude — which puts the peak 46 ms after the shot,
-   * the same moment the aim's own kick and the roll beat below reach theirs.
-   * **One event should arrive once**: three terms peaking at three different
-   * times were three events as far as the eye is concerned.
+   * It RISES and FALLS on `punchRise`/`punchFall`, a two-pole impulse
+   * `CameraSystem` normalises so one round peaks at exactly these amplitudes,
+   * 46 ms after the shot — within a dozen milliseconds of the roll beat and of
+   * each round's own peak through a string. **One event should arrive once.** It ACCUMULATES rather
+   * than restarting, and its angles are ONE direction drawn per shot and held
+   * (`CameraSystem.addPunch`), never noise re-rolled per frame.
+   * `docs/weapons.md` has the measurement each of those answers.
    *
-   * It also ACCUMULATES rather than restarting, which a decaying timer cannot:
-   * a round landing on a punch that has not faded adds to it, where `punchT =
-   * 1` threw the remainder away. Restarting is invisible from a step and
-   * glaring from a shape — the envelope would drop to zero on the frame of
-   * every round, which is the same cut inverted.
-   *
-   * **The three angles are one direction drawn per shot and held, not fresh
-   * noise per frame.** They used to be re-rolled every frame, and that is why
-   * they had to be tiny: white noise at 8-13 rounds a second overlaps into a
-   * buzz that reads as a dirty lens rather than as a weapon going off, and the
-   * only defence against it was turning it down until it could not be seen. A
-   * single coherent nudge per shot reads as an impact at roughly twice the
-   * amplitude, which is where these now sit. `CameraSystem.addPunch` draws the
-   * direction — biased upward and toward the shot's own drift, with noise on
-   * top, so the punch is visibly the same event as the kick and not a second
-   * one happening at the same time.
-   *
-   * The roll opposes the weapon's `kickRoll` on purpose. Rolling the camera the
-   * same way the model rolls cancels the two against each other and tips the
-   * whole picture instead; opposed, the weapon reads as twisting in the hands.
+   * The ROLL is `rollBeat` and opposes the weapon's `kickRoll` on purpose:
+   * opposed, the weapon reads as twisting in the hands; matched, the two
+   * cancel and the whole picture tips instead.
    */
   // The two must not be EQUAL: both the normaliser and the step divide by
   // their difference, and a pair set the same would take the field of view to
@@ -988,18 +563,13 @@ export const recoil = {
   punchFall: 0.085,
   /**
    * How much of the weapon's `recoilImpulse` reaches the punch, as an
-   * exponent. **The punch is where the SHOCK is drawn**, and until this field
-   * existed every weapon in the game shook the view by exactly the same
-   * amount: a bolt gun and a submachine gun made the identical picture, which
-   * is the clearest possible statement that the frame does not know what is in
-   * the player's hands.
+   * exponent. **The punch is where the SHOCK is drawn**, so a bolt gun and a
+   * submachine gun must not shake the frame alike.
    *
-   * It is compressed for the reason `kick.compress` is — 3.6 is a defensible
-   * thing to do to a settle time and an indefensible thing to do to the FOV —
-   * and at 0.5 the five terms below span 0.71x on the SMG to 1.90x on the bolt
-   * gun. It scales the punch's AMPLITUDE only; how long it lasts is
-   * `punchRise`/`punchFall` for everything, because a shock is a SNAP and what takes a
-   * second to fade is `shake`.
+   * Compressed for the reason `kick.compress` is: at 0.5 the five terms below
+   * span 0.71x on the SMG to 1.90x on the bolt gun. AMPLITUDE only — how long
+   * it lasts is `punchRise`/`punchFall` for everything, because a shock is a
+   * SNAP and what takes a second to fade is `shake`.
    */
   punchCompress: 0.5,
   fovPunch: 0.025,
@@ -1007,84 +577,49 @@ export const recoil = {
   shakePitch: 0.007,
   shakeYaw: 0.006,
   /**
-   * How much of `shakePitch` a GUNSHOT's punch lifts the view by — the blast
-   * that shares `addPunch` lifts by all of it.
+   * How much of `shakePitch` a GUNSHOT's punch lifts the view by — a blast,
+   * which shares `addPunch`, lifts by all of it.
    *
-   * **Zero, because the aim's own kick already IS the whole lift, measured.**
-   * `settle` and `pattern` are fitted against what the reference's picture
-   * does per round — a rise to the top at ~60 ms, and ~0.3 deg of it through a
-   * held string — and that footage is the rendered view, so it has no second
-   * term to add. The punch's nudge landed on top as a STEP: the full 0.24-0.40
-   * deg on the frame the trigger broke, then 90 ms of fall. Through a held
-   * string that put every round's peak on its first frame instead of at 60
-   * ms, doubled the per-round travel, and made the dominant motion of each
-   * cycle the view SINKING while the aim was still rising — the other half of
-   * what a player described as downward recoil. The FOV spike, the shove and
-   * the roll are untouched, and a grenade still snaps the head.
+   * **Zero, because the aim's own kick already IS the whole lift.** `settle`
+   * and `pattern` are fitted to the reference's RENDERED view, so a nudge on
+   * top was a second copy of it, and it landed as a step: every round of a
+   * string peaked on its first frame and then sank while the aim under it was
+   * still rising.
    */
   punchLift: 0,
   /**
-   * How much of `shakeYaw` a GUNSHOT's punch swings the view by — `punchLift`'s
-   * twin, and it exists because that field being ZERO turned this one into
-   * something it was never meant to be.
+   * `punchLift`'s twin for `shakeYaw`. **Zero, and read the two together:
+   * a GUNSHOT'S PUNCH HAS NO DIRECTION.** Every angle in a round is already
+   * stated where the bullets can see it — the climb in `pitchPerShot`, the
+   * pull in `yawPerShot` and `yawBias`, the twist in `rollBeat`'s fixed torque
+   * — so a cosmetic angle on top can only disagree with one of them. With a
+   * share here the punch's yaw peaked at 0.201 deg against the aim's own 0.035
+   * of lateral, and the 45-degree diagonal players saw was that. What still
+   * sells a shot is the FOV, the shove and the roll.
    *
-   * **With no lift, the punch's only angular term is sideways, so every round
-   * got a purely HORIZONTAL jolt that rose and fell in a tenth of a second.**
-   * The report was that some rounds threw the sight up and out at about
-   * 45 degrees and came back, and the arithmetic is exactly that: measured
-   * per round through a held trigger, the aimed rifle's own aim rises
-   * **0.256 deg vertically and 0.035 sideways** — a 9 degree median, which is
-   * the "mostly up with a slight pull" this kit is meant to have — while the
-   * punch's yaw alone peaked at **0.201 deg**, five and a half times the aim's
-   * own lateral and four fifths of its vertical. The diagonal was the
-   * COSMETIC, and no round ever went where it pointed.
-   *
-   * **Zero, and read it beside `punchLift` rather than on its own: together
-   * they say a GUNSHOT'S PUNCH HAS NO DIRECTION.** Every angle in a rifle
-   * round is already stated honestly somewhere the bullets can see it — the
-   * climb in `pitchPerShot`, the pull in `yawPerShot` and `yawBias`, the twist
-   * in `rollBeat`'s fixed torque — so a cosmetic angle on top can only ever
-   * disagree with one of them, and this one disagreed with all three at once.
-   * What still sells a shot to the eye is the three terms that make no claim
-   * about direction at all: the field of view, the shove along the view axis,
-   * and the roll. Measured with it gone, the aimed rifle's per-round vector is
-   * 0.256 deg up against 0.053 across — twelve degrees off vertical, which is
-   * the slight pull this kit is meant to have.
-   *
-   * **A BLAST keeps all of it**, which is why this is per-event like `lift`
-   * rather than a smaller `shakeYaw`: a grenade HAS a bearing, throwing the
-   * view off it is the whole point, and nothing about a blast is already
-   * stated in a weapon's table.
+   * **A BLAST keeps all of it**, which is why this is per-event like
+   * `punchLift` rather than a smaller `shakeYaw`: a grenade HAS a bearing, and
+   * throwing the view off it is the whole point.
    */
   punchSwing: 0,
   /**
    * The camera's ROLL after a shot: the weapon twisting in the hands, as two
-   * opposite-signed beats on one clock — `core/math.ts`'s `impulse`, the same
-   * idiom and the same argument as `kick.action`'s carrier beats one layer
-   * down.
+   * opposite-signed beats on one clock — `core/math.ts`'s `impulse`, the idiom
+   * `kick.action` uses one layer down.
    *
-   * **It replaced a roll drawn against the shot's own lateral drift, and the
-   * reason is that the drift is RANDOM per round and a weapon's torque is
-   * not.** A rifle's bore sits above and off the axis of the shoulder pocket,
-   * so every round twists it the same way; tying the roll to `kickDrift` made
-   * the sign flip shot to shot, which reads as camera shake rather than as a
-   * gun, and made the roll vanish altogether on the rounds whose drift came
-   * out near zero, which the drift no longer does at all: `yawBias` is its
-   * centre and `sweepSpan` a narrow band about it, so a rifle's rounds all
-   * pull the same way. The argument stands whatever the drift does — a bore
-   * over a shoulder twists one way, and a roll drawn against a random number
-   * is camera shake wearing a gun's clothes.
+   * **A fixed torque, not a roll drawn against the round's drift.** A rifle's
+   * bore sits above and off the axis of the shoulder pocket, so every round
+   * twists it the same way, and a roll drawn against a random number is camera
+   * shake wearing a gun's clothes.
    *
    * Measured off 240 fps reference footage (`docs/weapons.md`), by tracking
-   * the left and right thirds of the frame separately: what roll IS, to a
+   * the left and right thirds of the frame separately — what roll IS, to a
    * camera, is the two sides moving vertically against each other. Nine shots
-   * across two clips, all nine the same sign, against a noise floor of 0.001
-   * deg — 0.86 deg at the shot, back through zero at ~33 ms, a counter-swing
-   * to +0.52 deg at ~50 ms, and home by ~85 ms.
+   * across two clips, all the same sign, against a noise floor of 0.001 deg.
    *
-   * **`amp` carries the SIGN, and flipping the twist is negating it and
-   * nothing else.** It is scaled by the punch's `shock` like every other
-   * term, so what a weapon rolls follows its `recoilImpulse`.
+   * **`amp` carries the SIGN**, and flipping the twist is negating it and
+   * nothing else. It is scaled by the punch's `shock` like every other term,
+   * so what a weapon rolls follows its `recoilImpulse`.
    */
   rollBeat: {
     /** Radians at the top of the travel. 0.015 is the 0.86 deg measured. */

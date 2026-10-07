@@ -66,12 +66,10 @@
  *   hand did not throw, which is the whole reason the arm exists.
  * - Everything else here is cosmetic. It reads the camera; it never writes it,
  *   and it never touches aim, spread or damage.
- * - The per-shot KICK is a spring displacement Player owns and this only reads
- *   (`PoseInput.kick`), the same split as `landDip` and `bobPhase`. It goes
- *   genuinely NEGATIVE as the spring overshoots the carry on the way home, so
- *   every term reading it must invert with it — gating on `> 0` rather than
- *   `!== 0` puts a visible corner in the return. Its lateral, roll and yaw take
- *   `kickDrift` so the model leans the way the muzzle walked, and those three
+ * - The per-shot KICK is the displacement of an arrest-and-haul axis Player
+ *   owns and this only reads (`PoseInput.kick`), the same split as `landDip`
+ *   and `bobPhase`. Its lateral, roll and yaw take `kickDrift` so the model
+ *   leans the way the muzzle walked, and those three
  *   plus the pitch are damped by `recoil.kick.adsMult` while the z travel is
  *   not: the weapon carries the sight, so anything that rotates or laterally
  *   shifts it while aimed takes the reticle off the axis the rounds fly down.
@@ -1665,12 +1663,10 @@ export class ViewModel {
   /**
    * The per-shot kick: back, up, nose-high, and over toward the drift.
    *
-   * `p.kick` is a spring displacement, not a fading level, so it goes briefly
-   * negative on the way home and every term below inverts with it — the
-   * weapon comes back THROUGH the carry and settles from the front, which is
-   * the half of the cycle the old fade could not show. Hence `!== 0` and not
-   * `> 0.001`: the overshoot is real motion and clipping it at zero would put
-   * a visible corner in the return.
+   * `p.kick` is the displacement of `Player`'s arrest-and-haul axis
+   * (`core/recoilCurve.ts`), 1 being one round's peak: a rise, a corner and a
+   * straight descent to rest, never past it. The action's two beats arrive
+   * separately, as `p.actionJolt`.
    *
    * The lateral three take the shot's own drift, so the model leans the way
    * the muzzle walked. They are damped hard while aimed and the longitudinal
@@ -1711,7 +1707,7 @@ export class ViewModel {
     // the right answer with nothing per-combination written down. What the
     // travel spends is SCALED to fit the room rather than clamped to it: a
     // clamp stops the weapon dead partway through the kick and reads as a
-    // clunk, where a scale keeps the spring's shape and only takes amplitude
+    // clunk, where a scale keeps the kick's shape and only takes amplitude
     // off it. It blends in with `t`, so hip fire is untouched.
     //
     // The room is derived against `stackCap`, not against one round: a burst

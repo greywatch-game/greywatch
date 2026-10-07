@@ -40,11 +40,11 @@
  * would have the weapon leaning one way while the muzzle walked the other.
  * `stringed` is the single test both string-shaped terms share
  * (`firstShotMult` and `recoil.pattern`); splitting them hands the DMR and the
- * pistol a 20% climb discount for firing at their own rate limit.
- * The viewmodel's kick spring is stepped in CLOSED FORM, not integrated: at
- * 6 Hz semi-implicit Euler makes the peak a function of the frame rate (0.08 at
- * 30 fps against 0.78 at 120). CameraSystem.land's 2 Hz is inside where Euler
- * holds and is deliberately not the same code.
+ * pistol a climb discount for firing at their own rate limit.
+ * The viewmodel's kick is stepped EXACTLY (`core/recoilCurve.ts`), never with
+ * the landing absorb's semi-implicit Euler, which at the kick's speed makes the
+ * peak a function of the frame rate. CameraSystem.land's 2 Hz is inside where
+ * Euler holds and is deliberately not the same code.
  * Footfalls are read off the CAMERA's bob phase, never a step timer of their
  * own — the sound has to land on the dip you can see — and leave here as
  * PlayerEvents rather than as a sound: this file owns no audio.
@@ -545,13 +545,8 @@ export class Player implements Combatant {
    * displacement, so a second round arriving on a weapon that has not come
    * home adds to what is already there instead of restarting it.
    *
-   * **It was a damped spring and the model is deliberately not that any more.**
-   * A spring is symmetric about its peak and smooth in the first derivative
-   * through it, so the weapon eased out of the top of its travel on the curve
-   * it eased in — an animation rather than an impact, and at the amplitude a
-   * heavy weapon wants it read as rubber. `core/recoilCurve.ts` carries the
-   * argument in full; the short version is that no part of a gun wants to be
-   * where it started, and what brings it back is a person.
+   * Never a spring (`core/recoilCurve.ts` is the model, `docs/weapons.md`
+   * the argument): what brings the weapon back is a person.
    *
    * `kickDrift` is the SIGNED lateral of the round that last fired, -1..+1: the
    * same number the aim kick's horizontal is built from, kept so the model can
@@ -1068,7 +1063,7 @@ export class Player implements Combatant {
    * caller that is not a weapon at all: a blast raises one too, and a grenade
    * going off has no business being scaled by whatever happens to be in the
    * player's hands. So the SHOCK is per-EVENT and passed, while the settle
-   * spring and the post-shot unsteadiness are per-WEAPON and held by the
+   * and the post-shot unsteadiness are per-WEAPON and held by the
    * camera across the shots that stack on them.
    */
   get punchShock(): number {
@@ -1367,7 +1362,7 @@ export class Player implements Combatant {
     this.sinceShot = CONFIG.recoil.stringResetTime;
     // A fresh body is not under fire, whatever the last one died in.
     this.suppression = 0;
-    // The spring's velocity as well as its displacement: a body that died with
+    // The kick's velocity as well as its displacement: a body that died with
     // the weapon still travelling would otherwise come back carrying the last
     // life's kick and finish it in the new one's first frames.
     this.kick.reset();
@@ -1880,18 +1875,10 @@ export class Player implements Combatant {
     this.pitchRate = ease(this.pitchRate, dt > 0 ? dPitch / dt : 0, 8);
 
     // --- weapon punch: an arrest and a haul, not a spring ---
-    // The same model the aim runs on (`core/recoilCurve.ts`) at this system's
-    // own, stiffer constants, and for the same reason: the charge throws the
-    // gun, the grip stops it, and the shooter drives it back. What that gives
-    // that a spring cannot is a CORNER at the top of the travel — the point
-    // where the motion changes cause — and a descent that is a straight line
-    // rather than the back half of a cosine.
-    //
-    // **Stepped exactly at any `dt`**, which the spring it replaced also had
-    // to be: measured on a semi-implicit Euler version, one round peaked at
-    // 0.08 of its intended travel at 30 fps, 0.54 at 60 and 0.78 at 120 — the
-    // recoil visibly growing with the frame rate. The arrest integrates in
-    // closed form and the haul is a rate, so neither can do that.
+    // The aim's model (`core/recoilCurve.ts`) at this system's own, stiffer
+    // constants. **Stepped exactly at any `dt`** — the arrest in closed form,
+    // the haul as a rate — so the kick cannot grow with the frame rate, which
+    // an Euler step measurably did (`docs/weapons.md`).
     //
     // Parking it exactly is not tidiness either. The kick is an additive
     // offset on the viewmodel's pose, so a residue left running puts all
@@ -2102,7 +2089,7 @@ export class Player implements Combatant {
       r.maxBloom * this.weapon.bloomMult,
       this.spreadBloom + r.bloomPerShot * this.weapon.bloomMult,
     );
-    // A weapon quiet long enough for the spring to settle is firing a first
+    // A weapon quiet long enough for the string to reset is firing a first
     // round again. No reload or ADS reset is needed on top: the shortest
     // reload here is 1.05 s, so the clock has already done it.
     if (this.sinceShot >= r.stringResetTime) this.stringShots = 0;

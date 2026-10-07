@@ -8,90 +8,24 @@
  * from both `core/` and `entities/` survives — an edge to it is an edge to a
  * leaf and never a path back to a system.
  *
- * ## Why a gun is not a spring
+ * **It is not a spring, and must never become one again.** A damped spring is
+ * symmetric about its peak and reads as rubber; nothing about a gun wants to
+ * be where it started. What this computes is three causes in order: the
+ * charge leaves the gun with an angular VELOCITY, the grip ARRESTS it over
+ * `riseTurns` time constants of `grip` (a fast, flattening rise), and the
+ * shooter HAULS it back at a RATE (a straight descent). The CORNER where the
+ * arrest hands over to the haul is the feature; `haulRamp` keeps it a corner
+ * in the position without making it a step in the velocity.
  *
- * Both recoils in this game used to be DAMPED SPRINGS given a velocity, and
- * that model is wrong in a way you can see. A damped spring is symmetric about
- * its peak, smooth in the first derivative everywhere, and returns because a
- * restoring force pulls it back — so the sight eases out of the top of its
- * travel on the same curve it eased into it, which reads as something being
- * ANIMATED rather than something being hit, and at any amplitude large enough
- * to feel it reads as rubber.
+ * The peak is linear in the impulse — `(v / grip) * (1 - exp(-riseTurns))`,
+ * which `recoilGain` inverts so a caller states a kick in units of PEAK —
+ * until rounds stack faster than the haul can answer. On the aim that is how a
+ * held trigger walks and `reach` gives it a level; on the weapon it is a bug,
+ * and `cap` is the shoulder that stops it.
  *
- * **There is no restoring force on a rifle.** Nothing about a gun wants to be
- * where it started. What actually happens is three things, in order, and none
- * of them is a spring:
- *
- * 1. **The impulse.** The charge delivers essentially all of its momentum
- *    while the bullet is in the barrel and for a few milliseconds of gas jet
- *    after it — call it 2-5 ms, which at any frame rate is instant. The gun
- *    leaves that with an angular VELOCITY, not a displacement.
- * 2. **The grip arrests it.** The shooter's shoulder, cheek and support hand
- *    are what stop the rotation, and they do it over tens of milliseconds. The
- *    muzzle climbs fast and then FLATTENS OUT — and, left alone, stops there.
- *    A gun that is fired and then dropped does not come back down.
- * 3. **The shooter hauls it back.** The return is muscular and deliberate:
- *    the support hand pulls, the shoulder drives forward, and the shooter is
- *    re-acquiring. Muscle applies roughly constant force, so the return is a
- *    RATE — closer to a straight line in time than to an exponential — and it
- *    does not begin until the shooter has reacted to the gun having moved.
- *
- * The shape those three produce is the whole point: **a fast flattening rise,
- * a genuine CORNER where the arrest hands over to the haul, and a straight
- * descent.** The corner is the feature. It is where the motion changes CAUSE —
- * the gun stops going up because the grip stopped it, and starts coming down
- * because a person is pulling it — and a curve that is smooth through that
- * point is claiming the two are one motion, which is exactly the claim that
- * reads as fake.
- *
- * ## …but a corner in the POSITION is not a step in the VELOCITY
- *
- * The first cut of this switched the haul on at the handover, which put the
- * whole haul rate into the velocity in a single frame — an unbounded
- * acceleration, and one the eye reads as a dropped frame rather than as a
- * corner. `haulRamp` eases the haul in over a window CENTRED on the handover,
- * so the rate is at half strength exactly where the switch used to be: the
- * corner stays where it was and stays legible, and the acceleration through it
- * is finite. It is a smoothing of the CAUSE, not of the shape.
- *
- * **The other half of reading smooth is having enough frames to be resolved,
- * and that is a constraint the physics does not care about.** A 60 Hz display
- * samples every 16.7 ms; the first tuning of this put an aimed rifle's whole
- * excursion — up, corner, and back — inside 41 ms, which is two and a half
- * samples. Nothing that completes in two samples can read as motion, however
- * correct its curve: it reads as a strobe. The constants a caller passes are
- * therefore chosen against the FRAME as well as against the gun, and a change
- * here that shortens an excursion below ~5 frames has made it jerkier no
- * matter what it did to the arithmetic.
- *
- * ## The peak is linear in the impulse, and that is arranged rather than lucky
- *
- * `riseTurns` gives the rise a fixed number of grip time constants before the
- * haul begins. Set at 2.5-3 the rise is ~93% complete when the haul starts, so
- * the peak lands ON that handover for every impulse a weapon can produce, at
- * exactly `(v / grip) * (1 - exp(-riseTurns))`. That is what lets a caller go
- * on stating a kick in RADIANS OF PEAK (`recoilGain` inverts it) even though
- * the haul is a rate limit and the system is therefore not linear in general.
- *
- * **Where it stops being linear is a burst, and there the nonlinearity is the
- * behaviour you want.** Stack enough impulse and the residual velocity at the
- * handover still exceeds the haul rate, so the muzzle keeps climbing past it
- * and the peak arrives late and high: a string outruns the shooter's
- * correction. That is not a defect to be normalised away — it is why a held
- * trigger walks and a tap does not.
- *
- * **…and on the WEAPON the same nonlinearity is a bug, which is what `cap`
- * is for.** A string outrunning the shooter's correction is the right account
- * of an AIM, which is a rotation with nowhere it has to stop. The thing in the
- * hands is travelling straight back into a shoulder that is already against
- * it, and under the same rule it walks into the eye: measured on the shipped
- * constants a submachine gun's held trigger reached 3.0x one round's travel
- * — 13.3 cm of receiver toward the eye, with the muzzle flip riding the same
- * number through 23 degrees — and the residual it started each round from
- * climbed monotonically for the whole magazine. The shoulder is a WALL rather
- * than a stronger haul, and it has to be, because the haul is gated on a
- * reaction that every round restarts: at an automatic's rate it is barely
- * running at the moment it is most needed.
+ * `docs/weapons.md` ("Recoil has a shape, and the shape is learnable") holds
+ * the argument and the measurements, including why an excursion must span
+ * ~5 frames or more.
  */
 import { smoothstep } from "./math";
 
