@@ -788,6 +788,143 @@ export class Bot implements Combatant {
       this.strafe = this.pickStrafe(ctx);
     }
 
+    let speed = this.steer(dt, ctx);
+
+    // On fire: out, whatever the state wanted, at a run and standing up — the
+    // corner check, the cover spot and the peek cycle all come after not
+    // burning. Straight away from the middle, which is the shortest way out of
+    // a disc from anywhere inside it. HERE, before the stance is eased and the
+    // modifiers below are applied, so the stand-up lands this frame and the
+    // per-bot pace still applies; the corner stop is cancelled outright, since
+    // a bot pausing to look round a corner inside a fire is a bot that dies
+    // there.
+    if (this.burnT > 0) {
+      this.burnT -= dt;
+      _to.set(this.position.x - this.burnFrom.x, 0, this.position.z - this.burnFrom.z);
+      const away = _to.length();
+      if (away > 1e-3) _dir.copyFrom(_to).scaleInPlace(1 / away);
+      else _dir.set(this.strafe, 0, 0);
+      speed = b.moveSpeed * b.advanceSprintMult;
+      this.wantCrouch = false;
+      this.cornerT = 0;
+    }
+
+    // The stance itself, eased on `player.crouchBlendSpeed` — the player's
+    // number because it is how fast a BODY folds rather than a property of
+    // whoever asked for it, and because a remote copy of this bot eases the
+    // authority's blend with the same constant (`NetSoldier`). Everything
+    // downstream reads the blend: the speed here, the spread in `shoot`, the
+    // eye and the hit sphere in `syncTransform`, the pose in `animateSoldier`.
+    this.crouchBlend = easeStance(this.crouchBlend, this.wantCrouch, dt);
+    speed *= 1 - (1 - b.cover.crouchMoveMult) * this.crouchBlend;
+
+    // A bot that has just been hit stumbles rather than jogging on serenely.
+    if (this.flinchT > 0) speed *= 0.6;
+    // Per-bot pace, so a squad on one flow field doesn't move as one body.
+    speed *= this.paceMult;
+    // Stopped at a corner to look before committing to what is round it.
+    if (this.cornerT > 0) {
+      this.cornerT -= dt;
+      speed = 0;
+      _dir.setAll(0);
+    }
+
+    ctx.separation(this, _sep);
+    _dir.addInPlace(_sep);
+
+    if (this.detourT > 0) {
+      // Watchdog sidestep: swing the intent round to the detour side so the bot
+      // walks *along* whatever it is grinding on. Keeping a third of the
+      // original heading means it still drifts the right way while it does.
+      this.detourT -= dt;
+      const tx = -_dir.z * this.detourSide;
+      const tz = _dir.x * this.detourSide;
+      _dir.set(_dir.x * 0.3 + tx, 0, _dir.z * 0.3 + tz);
+    }
+
+    // Where this frame's travel is measured from, for the gait: taken before
+    // the push-out below so a de-penetration is ground covered too — the body
+    // on screen moved, and a leg that did not step with it would slide.
+    const startX = this.position.x;
+    const startZ = this.position.z;
+
+    // De-penetrate before anything else: a bot that ended up inside a collider
+    // — spawned on a prop, shoved there by separation — has to get out even
+    // when it is standing still, or it is left unshootable.
+    this.stepTo(ctx, 0, 0);
+
+    const len = Math.hypot(_dir.x, _dir.z);
+    if (len > 1e-4) {
+      const step = (speed * dt) / len;
+      const fromX = this.position.x;
+      const fromZ = this.position.z;
+      this.tryMove(ctx, _dir.x * step, _dir.z * step);
+
+      // A bot that asked to move and barely did is grinding on something.
+      const covered = Math.hypot(this.position.x - fromX, this.position.z - fromZ);
+      if (covered < speed * dt * b.stuckFraction) {
+        this.stuckT += dt;
+        if (this.stuckT > b.stuckTime && this.detourT <= 0) {
+          this.stuckT = 0;
+          this.detourT = b.detourTime;
+          this.detourSide = this.pickDetourSide(ctx, _dir.x / len, _dir.z / len);
+          // Sidestepping twice with nothing to show for it means the bot is
+          // wedged somewhere narrower than its own body — a gate post, a gap
+          // between two props — where the push-out cancels every step it
+          // takes. Let it clip through: overlapping geometry for a second is
+          // the lesser evil against standing there for the rest of the round.
+          if (++this.stuckStreak >= 2) this.squeezeT = b.detourTime;
+        }
+      } else {
+        this.stuckT = 0;
+        this.stuckStreak = 0;
+      }
+
+      this.driftPhase += (speed * dt) / 0.9;
+      this.moveBlend = Math.min(1, this.moveBlend + dt * 6);
+    } else {
+      this.stuckT = 0;
+      this.stuckStreak = 0;
+      this.moveBlend = Math.max(0, this.moveBlend - dt * 6);
+    }
+
+    this.faceLook(dt);
+    this.turnFeet(dt);
+
+    // The gait, off the ground this frame actually covered — so a bot grinding
+    // on a wall stops stepping — and a boot going down is a footstep.
+    if (this.motion.step(dt, this.position.x - startX, this.position.z - startZ, this.bodyYaw)) {
+      this.onStep();
+    }
+
+    this.trackAim(dt);
+    this.shoot(dt, ctx);
+    this.syncTransform();
+    if (animate) {
+      animateSoldier(
+        this.rig,
+        this.motion.fill(
+          dt,
+          this.moveBlend,
+          this.aimPitch(),
+          this.torsoTwist,
+          this.crouchBlend,
+          // Rifle up for the whole of a fight, a search included — not only
+          // while there is somebody in the sights.
+          this.target !== null || this.alerted,
+        ),
+      );
+    }
+  }
+
+  /**
+   * Where this bot's STATE wants it to go this frame: the heading into `_dir`,
+   * the stance it wants into `wantCrouch`, and the speed it goes at as the
+   * answer — the per-state half of `update`, before the reflexes and the
+   * modifiers every state shares are laid over it.
+   */
+  private steer(dt: number, ctx: BattleCtx): number {
+    const b = CONFIG.bots;
     let speed: number = b.moveSpeed;
     _dir.setAll(0);
     // The stance is re-decided from scratch every frame, by whichever state the
@@ -982,105 +1119,11 @@ export class Bot implements Combatant {
         break;
       }
     }
+    return speed;
+  }
 
-    // On fire: out, whatever the state wanted, at a run and standing up — the
-    // corner check, the cover spot and the peek cycle all come after not
-    // burning. Straight away from the middle, which is the shortest way out of
-    // a disc from anywhere inside it. HERE, before the stance is eased and the
-    // modifiers below are applied, so the stand-up lands this frame and the
-    // per-bot pace still applies; the corner stop is cancelled outright, since
-    // a bot pausing to look round a corner inside a fire is a bot that dies
-    // there.
-    if (this.burnT > 0) {
-      this.burnT -= dt;
-      _to.set(this.position.x - this.burnFrom.x, 0, this.position.z - this.burnFrom.z);
-      const away = _to.length();
-      if (away > 1e-3) _dir.copyFrom(_to).scaleInPlace(1 / away);
-      else _dir.set(this.strafe, 0, 0);
-      speed = b.moveSpeed * b.advanceSprintMult;
-      this.wantCrouch = false;
-      this.cornerT = 0;
-    }
-
-    // The stance itself, eased on `player.crouchBlendSpeed` — the player's
-    // number because it is how fast a BODY folds rather than a property of
-    // whoever asked for it, and because a remote copy of this bot eases the
-    // authority's blend with the same constant (`NetSoldier`). Everything
-    // downstream reads the blend: the speed here, the spread in `shoot`, the
-    // eye and the hit sphere in `syncTransform`, the pose in `animateSoldier`.
-    this.crouchBlend = easeStance(this.crouchBlend, this.wantCrouch, dt);
-    speed *= 1 - (1 - b.cover.crouchMoveMult) * this.crouchBlend;
-
-    // A bot that has just been hit stumbles rather than jogging on serenely.
-    if (this.flinchT > 0) speed *= 0.6;
-    // Per-bot pace, so a squad on one flow field doesn't move as one body.
-    speed *= this.paceMult;
-    // Stopped at a corner to look before committing to what is round it.
-    if (this.cornerT > 0) {
-      this.cornerT -= dt;
-      speed = 0;
-      _dir.setAll(0);
-    }
-
-    ctx.separation(this, _sep);
-    _dir.addInPlace(_sep);
-
-    if (this.detourT > 0) {
-      // Watchdog sidestep: swing the intent round to the detour side so the bot
-      // walks *along* whatever it is grinding on. Keeping a third of the
-      // original heading means it still drifts the right way while it does.
-      this.detourT -= dt;
-      const tx = -_dir.z * this.detourSide;
-      const tz = _dir.x * this.detourSide;
-      _dir.set(_dir.x * 0.3 + tx, 0, _dir.z * 0.3 + tz);
-    }
-
-    // Where this frame's travel is measured from, for the gait: taken before
-    // the push-out below so a de-penetration is ground covered too — the body
-    // on screen moved, and a leg that did not step with it would slide.
-    const startX = this.position.x;
-    const startZ = this.position.z;
-
-    // De-penetrate before anything else: a bot that ended up inside a collider
-    // — spawned on a prop, shoved there by separation — has to get out even
-    // when it is standing still, or it is left unshootable.
-    this.stepTo(ctx, 0, 0);
-
-    const len = Math.hypot(_dir.x, _dir.z);
-    if (len > 1e-4) {
-      const step = (speed * dt) / len;
-      const fromX = this.position.x;
-      const fromZ = this.position.z;
-      this.tryMove(ctx, _dir.x * step, _dir.z * step);
-
-      // A bot that asked to move and barely did is grinding on something.
-      const covered = Math.hypot(this.position.x - fromX, this.position.z - fromZ);
-      if (covered < speed * dt * b.stuckFraction) {
-        this.stuckT += dt;
-        if (this.stuckT > b.stuckTime && this.detourT <= 0) {
-          this.stuckT = 0;
-          this.detourT = b.detourTime;
-          this.detourSide = this.pickDetourSide(ctx, _dir.x / len, _dir.z / len);
-          // Sidestepping twice with nothing to show for it means the bot is
-          // wedged somewhere narrower than its own body — a gate post, a gap
-          // between two props — where the push-out cancels every step it
-          // takes. Let it clip through: overlapping geometry for a second is
-          // the lesser evil against standing there for the rest of the round.
-          if (++this.stuckStreak >= 2) this.squeezeT = b.detourTime;
-        }
-      } else {
-        this.stuckT = 0;
-        this.stuckStreak = 0;
-      }
-
-      this.driftPhase += (speed * dt) / 0.9;
-      this.moveBlend = Math.min(1, this.moveBlend + dt * 6);
-    } else {
-      this.stuckT = 0;
-      this.stuckStreak = 0;
-      this.moveBlend = Math.max(0, this.moveBlend - dt * 6);
-    }
-
+  /** Turns the LOOK toward whatever this bot should be watching. */
+  private faceLook(dt: number): void {
     // What to look at, in priority order: the enemy being fought, then the
     // bearing danger last came from, then wherever the feet are going. The
     // middle one is the whole "shot in the back" reaction — without it a bot
@@ -1129,7 +1172,11 @@ export class Bot implements Combatant {
         (this.flinchT > 0 ? CONFIG.bots.combat.flinchTurnMult : 1);
       this.yaw += delta * Math.min(1, dt * rate);
     }
+  }
 
+  /** Turns the FEET, and leaves the torso twisted the rest of the way to the look. */
+  private turnFeet(dt: number): void {
+    const b = CONFIG.bots;
     // Where the feet point, and the torso twists the rest of the way to the
     // look direction.
     //
@@ -1174,31 +1221,6 @@ export class Bot implements Combatant {
     }
     this.bodyYaw = wrapAngle(this.bodyYaw);
     this.torsoTwist = twist;
-
-    // The gait, off the ground this frame actually covered — so a bot grinding
-    // on a wall stops stepping — and a boot going down is a footstep.
-    if (this.motion.step(dt, this.position.x - startX, this.position.z - startZ, this.bodyYaw)) {
-      this.onStep();
-    }
-
-    this.trackAim(dt);
-    this.shoot(dt, ctx);
-    this.syncTransform();
-    if (animate) {
-      animateSoldier(
-        this.rig,
-        this.motion.fill(
-          dt,
-          this.moveBlend,
-          this.aimPitch(),
-          this.torsoTwist,
-          this.crouchBlend,
-          // Rifle up for the whole of a fight, a search included — not only
-          // while there is somebody in the sights.
-          this.target !== null || this.alerted,
-        ),
-      );
-    }
   }
 
   /**

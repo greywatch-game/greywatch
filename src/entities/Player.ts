@@ -34,7 +34,8 @@
  * hangs off. Damage flows out via the onDamaged callback wired in Game.
  * The RECOIL VECTOR is built here (`recoilKick`) and nowhere else: every number
  * in it is the weapon's or the body's, and Game only wires the result to the
- * camera. The horizontal is drawn ONCE per shot into `kickDrift`, read by the
+ * camera. Its arithmetic is `core/recoilVector.ts`'s and its STATE is this
+ * file's. The horizontal is drawn ONCE per shot into `kickDrift`, read by the
  * aim, by the viewmodel's lean and by the view punch — a second draw anywhere
  * would have the weapon leaning one way while the muzzle walked the other.
  * `stringed` is the single test both string-shaped terms share
@@ -69,12 +70,23 @@ import {
   Vector3,
 } from "@babylonjs/core";
 import { CONFIG } from "../config";
-import { impulse, smoothstep } from "../core/math";
 import {
   RecoilAxis,
   recoilGain,
   type RecoilShape,
 } from "../core/recoilCurve";
+import {
+  actionJolt,
+  aimKick,
+  blendKickShape,
+  firstShotRamp,
+  hasString,
+  kickWeightOf,
+  punchShockOf,
+  stanceScale,
+  sweepDrift,
+  type AimKick,
+} from "../core/recoilVector";
 import { CelMaterialFactory } from "../shaders/CelShader";
 import type { CameraSystem } from "../core/CameraSystem";
 import type { InputManager } from "../core/InputManager";
@@ -1005,130 +1017,37 @@ export class Player implements Combatant {
   }
 
   /**
-   * The whole of `recoil.firstShotMult`, resolved here so the call site reads
-   * one number: what the round about to leave multiplies its kick by.
-   *
-   * **It is 1 on a weapon that is a string of one**, and that exclusion is the
-   * feature rather than an exception to it. The multiplier is about the
-   * difference between a settled weapon and one mid-burst; on the DMR and the
-   * pistol every shot is a first shot, so it would not be texture at all —
-   * just a flat 60% recoil increase wearing feel's clothing, and on the DMR's
-   * 2.2 multiplier that is 6.0 deg on every deliberate scoped round. Their
-   * `recoilMult` already carries the punch a single shot is supposed to have.
-   *
-   * The carbine's `burst` position is semi-automatic too and is deliberately
-   * included: one pull is three rounds that climb as one motion, which is
-   * exactly the thing that has a first round in it.
-   */
-  private get recoilRamp(): number {
-    if (!this.stringed) return 1;
-    return this.stringShots === 1 ? CONFIG.recoil.firstShotMult : 1;
-  }
-
-  /**
-   * Whether the SELECTED POSITION has a string — whether there is such a thing
-   * as being in the middle of a cycle on it. `!semiAuto` is a held trigger and
-   * `burst > 1` is one pull that climbs as a single motion; a position that is
-   * neither is the DMR, the pistol, or the rifle switched to `semi`, where the
-   * trigger comes up between every round and every round is a first round.
-   *
-   * **It is the position's question and not the weapon's**, which is most of
-   * what a rifle switched to `semi` actually buys: the string terms below stop
-   * applying, so every round is fired at full `firstShotMult` climb and
-   * minimum drift rather than into a pattern. That is a tighter group per
-   * round and a worse one per second, which is the trade the selector is for.
-   *
-   * **Both string-shaped terms share this test**, and they have to. Applied to
-   * a string of one, `firstShotMult` is a flat 60% increase and `pattern`'s
-   * taper is a flat 20% DECREASE — and the decrease is the worse of the two,
-   * because both weapons' fire rates sit just inside `stringResetTime` (the
-   * DMR's 0.333 s against 0.35) and so only a player firing them as fast as the
-   * weapon allows would collect it. That is a discount for spamming a precision
-   * weapon, which is the opposite of what the rate limit is for. Excluded, they
-   * fire shot one every time: full climb, minimum drift, nothing to learn and
-   * nothing to game.
+   * Whether the SELECTED POSITION has a string — `hasString`'s answer for the
+   * position the selector is on, and the single test both string-shaped terms
+   * share (`firstShotMult` and `recoil.pattern`). It is the position's
+   * question and not the weapon's: a rifle switched to `semi` stops having one.
    */
   private get stringed(): boolean {
-    const m = this.fireMode;
-    return !m.semiAuto || m.burst > 1;
+    return hasString(this.fireMode);
   }
 
   /**
-   * The aim kick owed by the round `tryShot` has just fired, for `Game` to hand
-   * the camera. Call it exactly once per successful shot and no other time: it
-   * reads `stringShots` and `kickDrift`, both of which belong to that round.
-   *
-   * **It lives here because every number in it is the WEAPON's**, and
-   * `docs/weapons.md` has always said the recoil multipliers reach nothing but
-   * `Player`. They used to reach `Game`, which assembled the vector out of
-   * three getters and a random draw — so the weapon's kick was described in one
-   * file and built in another, and the horizontal was drawn a second time from
-   * the one the viewmodel needed. One draw, in `tryShot`, read by both.
-   *
-   * Five things scale it and they are deliberately separate questions: how hard
-   * the weapon kicks (`recoilMult`), whether this is a first round
-   * (`recoilRamp`), how far into a string it is (`pattern`), whether the weapon
-   * is braced against a shoulder (`adsMult`), and what the body under it is
-   * doing (`crouchMult`/`moveMult`/`airMult`).
-   */
-  /**
-   * How much of the carried weapon's kick reaches the MODEL, as opposed to the
-   * aim. A compression, and the compression is the point: 2.4 is a defensible
-   * thing to do to an aim measured in fractions of a degree and an
-   * indefensible thing to do to a pose measured in centimetres, which is why
-   * the model used to ignore the weapon entirely rather than read this.
-   *
-   * **It reads `recoilImpulse` and not `recoilMult`, and that is the honest
-   * one of the two.** The kick's largest term by a distance is `kickBack`,
-   * travel straight along the bore toward the eye — which is the LINEAR
-   * impulse and nothing to do with how far the muzzle tips. At `kick.compress`
-   * 0.6 the rifle is 1.00, the DMR 1.69, the bolt gun 2.16 and the SMG 0.66.
+   * How much of the carried weapon's kick reaches the MODEL — see
+   * `kickWeightOf`, which says why it reads `recoilImpulse`.
    */
   private get kickWeight(): number {
-    return Math.pow(this.weapon.recoilImpulse, CONFIG.recoil.kick.compress);
+    return kickWeightOf(this.weapon.recoilImpulse);
   }
 
-  /**
-   * The weapon's recoil constants for the stance it is actually held in, into
-   * the scratch shape. `riseTurns` and `easeBand` do not blend — they are the
-   * SHAPE of the response rather than its speed, and the same at both ends.
-   *
-   * The SHOULDER does not blend either, and it is the one field here that is
-   * not a constant: it is `kick.stackCap` of THIS weapon's own travel, so the
-   * stop a string runs into is proportional to what one of its rounds does
-   * rather than an absolute that would clip the bolt gun's single shot. Stance
-   * has nothing to say about it — the butt is in the same shoulder either way.
-   */
+  /** The weapon's own kick shape for a stance, into the scratch — `blendKickShape`. */
   private kickShapeAt(blend: number): RecoilShape {
-    const a = this.kickHip;
-    const b = this.kickAds;
-    this.kickShape.grip = a.grip + (b.grip - a.grip) * blend;
-    this.kickShape.haul = a.haul + (b.haul - a.haul) * blend;
-    this.kickShape.riseTurns = a.riseTurns;
-    this.kickShape.haulRamp = a.haulRamp;
-    this.kickShape.easeBand = a.easeBand;
-    this.kickShape.cap = this.kickWeight * CONFIG.recoil.kick.stackCap;
-    return this.kickShape;
+    return blendKickShape(
+      this.kickShape,
+      this.kickHip,
+      this.kickAds,
+      blend,
+      this.kickWeight,
+    );
   }
 
   /**
-   * The ACTION, as one signed number on the shot clock: the carrier reaching
-   * the back of its travel and then slamming into battery.
-   *
-   * **This is what makes a self-loader read as a machine.** The charge is not
-   * the only impulse a shooter feels and a rifle does not make one smooth
-   * excursion per round — there is the shot, then a mass stopping hard against
-   * the buffer some milliseconds later, then the same mass arriving in
-   * battery. The two beats are OPPOSITE in sign, which is the whole of why the
-   * pair reads as a mechanism cycling rather than as a second recoil: mass
-   * travelling rearward drives the weapon back into the shoulder, and the same
-   * mass arriving forward pulls it out and dips the muzzle.
-   *
-   * It costs no state at all. `sinceShot` is already here — the string
-   * counter's clock, raised by a shot and dropped by anything that takes the
-   * weapon away — and `impulse` is already the shape of an arrival, all attack
-   * and no ease-in. Past the last beat both terms are zero and this is 0
-   * without a test.
+   * The ACTION's two beats on the shot clock (`actionJolt`), for the weapons
+   * that have one.
    *
    * **A bolt gun is exempt and so is anything that is not a gun.** `boltCycle`
    * says the action is worked by a hand rather than by the gas, and
@@ -1137,25 +1056,13 @@ export class Player implements Combatant {
    * mine have no action to cycle.
    */
   private get viewActionJolt(): number {
-    const w = this.weapon;
-    if (w.boltCycle || this.carriedEquipment) return 0;
-    const a = CONFIG.recoil.kick.action;
-    const t = this.sinceShot;
-    if (t > a.home + a.fall) return 0;
-    // Each beat ARRIVES over `rise` and dies away over `fall`. `impulse` is
-    // the decay — all attack and no ease-in, which is what an arrival is —
-    // and the leading smoothstep is what stops that attack being a STEP in
-    // the pose. The two meet at 1 on the beat, so the pair is continuous.
-    const beat = (at: number): number =>
-      t < at ? smoothstep(at - a.rise, at, t) : impulse(t, at, a.fall);
-    return (
-      (a.backKick * beat(a.back) + a.homeKick * beat(a.home)) * this.kickWeight
-    );
+    if (this.weapon.boltCycle || this.carriedEquipment) return 0;
+    return actionJolt(this.sinceShot, this.kickWeight);
   }
 
   /**
-   * How hard this weapon SHOCKS the frame — `CameraSystem.addPunch`'s scale,
-   * compressed out of the same impulse for the reason `kickWeight` is.
+   * How hard this weapon SHOCKS the frame — `CameraSystem.addPunch`'s scale
+   * (`punchShockOf`).
    *
    * Public and read by `Game` at the two shot sites, because the punch has a
    * caller that is not a weapon at all: a blast raises one too, and a grenade
@@ -1165,50 +1072,30 @@ export class Player implements Combatant {
    * camera across the shots that stack on them.
    */
   get punchShock(): number {
-    return Math.pow(this.weapon.recoilImpulse, CONFIG.recoil.punchCompress);
+    return punchShockOf(this.weapon.recoilImpulse);
   }
 
-  recoilKick(
-    adsBlend: number,
-  ): { pitch: number; yaw: number; opensString: boolean } {
-    const r = CONFIG.recoil;
-    const pat = r.pattern;
-    // How far into the string this round is, 0 on the first and 1 once the
-    // pattern has settled. `stringShots` was raised by the shot this is for, so
-    // round one reads exactly 0 and both envelopes are at their opening value.
-    // A weapon with no string is pinned there — see `stringed`, which is also
-    // what excludes those weapons from `firstShotMult`.
-    const into =
-      !this.stringed || pat.patternShots <= 1
-        ? 0
-        : Math.min(1, (this.stringShots - 1) / (pat.patternShots - 1));
-    // The stance. ADS is a blend because the sight comes up over time; crouch
-    // and movement are blends for the same reason and are already eased by
-    // `update`. Airborne is the one step function here — feet are on the ground
-    // or they are not — but it rides `airBlend` so a hop does not switch the
-    // weapon's character on and off between two frames.
-    const stance =
-      (1 - (1 - r.adsMult) * adsBlend) *
-      (1 - (1 - r.crouchMult) * this.crouchBlend) *
-      (1 + (r.moveMult - 1) * this.moveBlend) *
-      (1 + (r.airMult - 1) * this.airBlend);
-    const kickMult = stance * this.weapon.recoilMult * this.recoilRamp;
-    // ONE envelope over both axes, so a string changes how HARD the weapon
-    // kicks and never which WAY. The lateral used to ramp up on an envelope of
-    // its own while this one tapered down, which rotated the kick vector
-    // through the opening of every string — see `pattern`.
-    const env = 1 + (pat.pitchSettled - 1) * into;
-    return {
-      pitch: r.pitchPerShot * env * kickMult,
-      yaw: this.kickDrift * r.yawPerShot * env * kickMult,
-      // Whether this round OPENS a string, which the camera spends twice: an
-      // opening round disturbs the shooter's hold (`CONFIG.recoil.shake`) and
-      // every round behind it has the haul lean in (`settle.reachAds`). A
-      // weapon with no string opens one on every round, so the DMR, the
-      // pistol and the bolt gun disturb on each and never lean — exactly as
-      // they always did.
-      opensString: !this.stringed || this.stringShots === 1,
-    };
+  /**
+   * The aim kick owed by the round `tryShot` has just fired, for `Game` to hand
+   * the camera. Call it exactly once per successful shot and no other time: it
+   * reads `stringShots` and `kickDrift`, both of which belong to that round.
+   *
+   * **It lives here because every number in it is the WEAPON's or the
+   * BODY's**, and `docs/weapons.md` has always said the recoil multipliers
+   * reach nothing but `Player`. They used to reach `Game`, which assembled the
+   * vector out of three getters and a random draw — so the weapon's kick was
+   * described in one file and built in another, and the horizontal was drawn a
+   * second time from the one the viewmodel needed. One draw, in `tryShot`, read
+   * by both. The arithmetic is `core/recoilVector.ts`'s; what this adds is
+   * the state it is applied to.
+   */
+  recoilKick(adsBlend: number): AimKick {
+    const stringed = this.stringed;
+    const kickMult =
+      stanceScale(adsBlend, this.crouchBlend, this.moveBlend, this.airBlend) *
+      this.weapon.recoilMult *
+      firstShotRamp(stringed, this.stringShots);
+    return aimKick(stringed, this.stringShots, kickMult, this.kickDrift);
   }
 
   /**
@@ -2222,34 +2109,16 @@ export class Player implements Combatant {
     this.stringShots += 1;
     this.sinceShot = 0;
     // Which way this round goes, drawn ONCE and read by both the aim
-    // (`recoilKick`) and the model (`ViewModel`'s kick). The bias is the
-    // CENTRE of the draw and `sweepSpan` is how far off it a round may land,
-    // clamped so the total stays inside -1..+1 whatever the bias is — which is
-    // what keeps every ceiling documented for `maxYaw` true. The span used to
-    // be `1 - |bias|`, which made a weapon's spread a consequence of its pull
-    // and put the rifle's worst round at three times its own mean.
-    //
-    // **It is a SWEEP over the string and not an independent draw per round**,
-    // which is `pattern.sweepShots`'s argument: eight to thirteen independent
-    // draws a second on one axis is a muzzle that changes its mind, and what
-    // a player reads is an aim jumping in random directions rather than one
-    // walking somewhere they can learn. The direction of the sweep is the only
-    // thing drawn per STRING, and the sine starts at zero so a string opens on
-    // the weapon's own bias with nothing added to it. It is a NARROW band
-    // about that bias (`sweepSpan`): wide enough to keep a long string off a
-    // ruler line, and deliberately not wide enough to rotate the kick, which
-    // is `pattern`'s rule and the thing this used to break.
-    const pat = CONFIG.recoil.pattern;
+    // (`recoilKick`) and the model (`ViewModel`'s kick): a SWEEP over the
+    // string rather than an independent draw per round (`sweepDrift` says
+    // why). The sweep's direction is the only thing drawn per STRING, and it
+    // is drawn here, before the round's own noise, so a seeded string replays.
     if (this.stringShots === 1) this.driftSweep = Math.random() < 0.5 ? 1 : -1;
-    const walk =
-      Math.sin(((this.stringShots - 1) * Math.PI * 2) / pat.sweepShots) *
-      this.driftSweep;
-    const wander =
-      walk * (1 - pat.sweepNoise) + (Math.random() * 2 - 1) * pat.sweepNoise;
-    const bias = this.weapon.yawBias;
-    this.kickDrift = Math.max(
-      -1,
-      Math.min(1, bias + wander * pat.sweepSpan),
+    this.kickDrift = sweepDrift(
+      this.stringShots,
+      this.driftSweep,
+      this.weapon.yawBias,
+      Math.random() * 2 - 1,
     );
     // The weapon takes a velocity, not a displacement: see `kick`. It
     // ACCUMULATES on a weapon still coming home, which is the whole reason a

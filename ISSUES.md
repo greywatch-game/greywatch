@@ -63,7 +63,7 @@ match smoke test (`npm run build:server && npm run server`, two clients).
 | ~~[32](#32-ui-screens-shared-setinputdevice-and-paintthumb)~~ | P2 — done | UI screens: shared `setInputDevice` and `paintThumb` |
 | ~~[33](#33-overlayscreents-extract-menubackdrop)~~ | P2 — done | `OverlayScreen.ts`: extract `MenuBackdrop` |
 | ~~[34](#34-vehicle-models-shared-resetrigpose-and-whip)~~ | P2 — done | Vehicle models: shared `resetRigPose` and `whip` |
-| [35](#35-decompose-botupdate-viewmodelupdate-and-players-recoil-vector) | P2 | Decompose `Bot.update`, `ViewModel.update`, Player's recoil vector |
+| ~~[35](#35-decompose-botupdate-viewmodelupdate-and-players-recoil-vector)~~ | P2 — done | Decompose `Bot.update`, `ViewModel.update`, Player's recoil vector |
 | [36](#36-vehicle-capability-idioms-three-soft-spots) | P2 | Vehicle capability idioms: three soft spots |
 | [37](#37-propsts-drop-the-mathrandom-defaults) | P2 | `Props.ts`: drop the `Math.random` defaults |
 | [38](#38-texturests-has-its-own-prng) | P3 | `textures.ts` has its own PRNG |
@@ -1473,6 +1473,83 @@ only; no file splits.
 
 **Acceptance.** Bots behave as before (watch a round); recoil traces identical
 (log `kickDrift` and the aim offsets over a held string before and after).
+
+**Done.** All three are extract-method only. Every operation is the same
+and runs in the same order, so all three traces below are byte-identical to
+HEAD.
+
+- **`Bot.update`** goes from 451 lines to 167. Three methods come out of it:
+  - `steer(dt, ctx)` is the per-state switch. It writes the heading into
+    `_dir` and the crouch wish into `wantCrouch`, and returns the speed. The
+    burn reflex and the modifiers that apply to every state stay in `update`,
+    after the switch.
+  - `faceLook(dt)` picks what to look at and slews the yaw toward it.
+  - `turnFeet(dt)` turns the feet and the torso twist.
+
+  The comments moved with their code. The movement integration and the stuck
+  watchdog are still inline, because the ticket did not name them.
+- **`ViewModel.update`** goes from 327 lines to 61. It works out the gesture
+  weights (the reload, the load, the bolt cycle, the aim blend `t`), then
+  calls the pose layers in their old order:
+  - `poseCarry`, `layerLoad`, `layerCycle`, `layerSwap` and `layerThrowGive`
+    (which returns whether a throw is in flight);
+  - `layerSway`, `layerBob` and `layerAirborne` (the jump give and the landing
+    absorb);
+  - `layerKick` and `layerAction`;
+  - `applyPose` (the zoom compensation, then the write to the weapon node);
+  - `poseHands` (the bolt, the reload or the load, the support arm, and the
+    throwing hand).
+
+  The order matters, because the layers add into the same vectors and
+  floating-point sums depend on order. The new doc on `update` says so.
+- **Player's recoil arithmetic** moves to `core/recoilVector.ts`, next to
+  `recoilCurve.ts` (274 lines with the arguments that came with it).
+  `Player.ts` goes from 2,730 lines to 2,599. The module has `hasString`,
+  `firstShotRamp`, `stanceScale`, `aimKick` (the pattern envelope, plus the
+  `AimKick` type it returns), `sweepDrift`, `kickWeightOf`, `punchShockOf`,
+  `blendKickShape` and `actionJolt`. It holds no state and draws no random
+  numbers.
+  - `Player` keeps the string state and both draws. `tryShot` still draws the
+    sweep direction and then the round's noise, in that order, and hands both
+    in.
+  - `recoilKick` is still the entry point, and is now three lines over the
+    module.
+  - `stringed`, `kickWeight`, `kickShapeAt`, `viewActionJolt` and
+    `punchShock` stay as one-line delegates, so nothing that reads them
+    changed. The bolt-gun and equipment exemption stays in `viewActionJolt`.
+    `recoilRamp` is gone, because `firstShotRamp` replaces it.
+  - The doc block for `recoilKick` had been sitting above `kickWeight`. It is
+    back on `recoilKick`.
+
+References updated: the `Player.ts` header (the arithmetic is the module's
+and the state is Player's), `docs/weapons.md`'s `Player.recoilRamp`, and
+`FILES.md`. `FILES.md` gets a `recoilVector.ts` row, plus a `recoilCurve.ts`
+row it never had.
+
+Checked: `npm run typecheck` and `npm run build`. Three seeded traces, each
+run on HEAD (the change stashed) and on this change:
+- **Recoil.** A NullEngine `Player` fires every primary and the pistol in
+  every selector position, at three stances (hip, aimed and crouched, and
+  half-aimed while moving and airborne), with a held trigger and a tapped one.
+  For each fired round it logs `kickDrift`, `recoilKick`'s pitch, yaw and
+  `opensString`, `punchShock` and `kickWeight`. Every frame it also logs the
+  model's kick value and the action jolt. **8,155 rows, identical.**
+- **ViewModel.** A NullEngine `ViewModel` runs every carried item with every
+  sight, in tactical and dry runs, over a scripted 520-frame timeline. The
+  timeline covers ADS in and out, a sprint, a kick and action string, the bolt
+  cycle aimed and at the hip, a swap, a reload, the launcher's load, a jump, a
+  landing and a throw. Every frame it hashes every node's transform and
+  enabled flag. **126 runs (113 distinct), identical.**
+- **Bots.** A headless authority round (`HeadlessGame`) with `Math.random`
+  reseeded after the round is built. Every tick it hashes every bot's state,
+  position, eye, look and feet yaw, move amount, aim angle, stance, health
+  and target. Every tenth tick it also hashes every rig joint. **20,000 ticks
+  on Hollowmere (123 kills) and 12,000 on Coldharbour (66), identical.**
+
+One thing the traces turned up: the Vite dev loader draws from `Math.random`,
+and how many draws it makes depends on the module graph. So a trace seeded
+once, at process start, moves whenever an import is added. All three
+harnesses reseed after loading, before they fire or step.
 
 ### 36. Vehicle capability idioms: three soft spots
 

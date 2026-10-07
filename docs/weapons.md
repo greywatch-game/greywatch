@@ -1745,7 +1745,7 @@ the window, and without that line the pistol's first round would inherit the
 rifle's settled kick.
 
 **It does not apply to a weapon that is a string of one**, and the exclusion is
-the feature rather than an exception to it. `Player.recoilRamp` returns 1 when
+the feature rather than an exception to it. `firstShotRamp` returns 1 when
 `Player.stringed` is false, which is the DMR and the pistol: every shot there is
 a first shot, so the multiplier would not be texture at all — just a flat 60%
 recoil increase wearing feel's clothing, and on the DMR's 2.2 that is 6.0° on

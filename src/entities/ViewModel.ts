@@ -1384,6 +1384,13 @@ export class ViewModel {
     this.backdrop.scaling.set(cardH * p.aspect, cardH, 1);
   }
 
+  /**
+   * One frame of the carried weapon: the gesture weights resolved here, then
+   * every LAYER of the pose added on top of the last in a fixed order, then
+   * the hands. The layers are additive into `pos`/`off`/`rot` — which is what
+   * lets one gesture bend out of another with no pop — so their ORDER is part
+   * of the pose and is the order below.
+   */
   update(dt: number, p: ViewModelParams): void {
     const v = CONFIG.viewmodel;
     const rig = this.rigs[this.weaponFit.id];
@@ -1432,7 +1439,32 @@ export class ViewModel {
       (1 - reloadW * v.reload.aimBreak) *
       (1 - loadW * l.aimBreak);
 
-    // --- base pose: hip -> aimed, with sprint and reload layered on top ---
+    this.poseCarry(p, rig, rp, t);
+    this.layerLoad(p, loading, loadW);
+    this.layerCycle(p, t, cycling, cycleW);
+    this.layerSwap(p);
+    const throwing = this.layerThrowGive(p);
+    this.layerSway(dt, p, t);
+    this.layerBob(p, t);
+    this.layerAirborne(dt, p);
+    this.layerKick(p, t);
+    this.layerAction(p, t);
+    this.applyPose(t);
+    this.poseHands(p, rig, throwing);
+  }
+
+  /**
+   * The base pose: hip -> aimed, with the sprint and the reload layered on
+   * top. It is the one layer that WRITES rather than adds — `pos` and `rot`
+   * start here and `off` is cleared — so it goes first.
+   */
+  private poseCarry(
+    p: ViewModelParams,
+    rig: WeaponRig,
+    rp: ReloadPose | null,
+    t: number,
+  ): void {
+    const v = CONFIG.viewmodel;
     // The state offsets are additive rather than exclusive, so a reload that
     // starts mid-sprint bends out of one and into the other with no pop.
     Vector3.LerpToRef(this.hipPos, this.adsPos, t, this.pos);
@@ -1452,16 +1484,24 @@ export class ViewModel {
     if (rp && rig.reload) {
       this.turnAboutHand(rp, v.reload.styles[rig.reload.style].wrist);
     }
-    // The launcher coming down off the shoulder to be loaded and going back up
-    // onto it, and the two impacts in the middle of that — the rocket driven
-    // home and the hammer thumbed back. Same construction as the reload above
-    // it, because it is the same kind of thing: a pose over a timeline, with
-    // the events laid on as impulses so each one lands on the sound it is.
+  }
+
+  /**
+   * The launcher coming down off the shoulder to be loaded and going back up
+   * onto it, and the two impacts in the middle of that — the rocket driven
+   * home and the hammer thumbed back. Same construction as the reload before
+   * it, because it is the same kind of thing: a pose over a timeline, with the
+   * events laid on as impulses so each one lands on the sound it is.
+   */
+  private layerLoad(p: ViewModelParams, loading: boolean, loadW: number): void {
+    const v = CONFIG.viewmodel;
+    const l = v.load;
     if (loadW > 0.001) {
       addScaled(this.off, v.loadPos, loadW);
       addScaled(this.rot, v.loadRot, loadW);
     }
     if (loading) {
+      const lp = p.loadPhase;
       const seat = impulse(lp, l.seat, l.kickFall);
       if (seat > 0.001) {
         addScaled(this.off, l.seatKick.pos, seat);
@@ -1473,33 +1513,46 @@ export class ViewModel {
         addScaled(this.rot, l.cockKick.rot, cock);
       }
     }
-    // The rifle rolling its right flank up to be worked and coming back down,
-    // and the two ends of the bolt's travel laid on as impulses. Same
-    // construction as the reload and the load above it, for the third time and
-    // the same reason: a pose over a timeline, with the events laid on top so
-    // each one lands on the sound it is.
-    //
-    // …and the one difference, which is the whole of how a bolt gun is carried:
-    // ALL THREE ARE THE HIP'S, taken to nothing by the aim. This is the one
-    // gesture that keeps the sight picture, and a weapon that keeps a sight
-    // picture is a weapon that may not move: the sight is ON it, so a roll, a
-    // cant, a sideways snatch — and, uniquely here, travel along the bore,
-    // because that is EYE RELIEF and 3 cm of it is most of the 6x scope's —
-    // each either take the reticle off the axis the rounds fly down or pull
-    // the eyepiece through the near plane. The per-shot kick can spend its z
-    // travel aimed because it is a transient measured in tens of
-    // milliseconds; this is nearly a second of sustained hold.
-    //
-    // So what is left of an aimed cycle in the FRAME is the bolt and the hand
-    // on it, neither of which carries the sight, and what is left of it on the
-    // AIM is `cycle.wobble` — which is where the whole weight of the gesture
-    // goes as this comes off.
+  }
+
+  /**
+   * The rifle rolling its right flank up to be worked and coming back down,
+   * and the two ends of the bolt's travel laid on as impulses. Same
+   * construction as the reload and the load before it, for the third time and
+   * the same reason: a pose over a timeline, with the events laid on top so
+   * each one lands on the sound it is.
+   *
+   * …and the one difference, which is the whole of how a bolt gun is carried:
+   * ALL THREE ARE THE HIP'S, taken to nothing by the aim. This is the one
+   * gesture that keeps the sight picture, and a weapon that keeps a sight
+   * picture is a weapon that may not move: the sight is ON it, so a roll, a
+   * cant, a sideways snatch — and, uniquely here, travel along the bore,
+   * because that is EYE RELIEF and 3 cm of it is most of the 6x scope's —
+   * each either take the reticle off the axis the rounds fly down or pull
+   * the eyepiece through the near plane. The per-shot kick can spend its z
+   * travel aimed because it is a transient measured in tens of
+   * milliseconds; this is nearly a second of sustained hold.
+   *
+   * So what is left of an aimed cycle in the FRAME is the bolt and the hand
+   * on it, neither of which carries the sight, and what is left of it on the
+   * AIM is `cycle.wobble` — which is where the whole weight of the gesture
+   * goes as this comes off.
+   */
+  private layerCycle(
+    p: ViewModelParams,
+    t: number,
+    cycling: boolean,
+    cycleW: number,
+  ): void {
+    const v = CONFIG.viewmodel;
+    const c = v.cycle;
     const cycleHip = cycleW * (1 - t);
     if (cycleHip > 0.001) {
       addScaled(this.off, v.cyclePos, cycleHip);
       addScaled(this.rot, v.cycleRot, cycleHip);
     }
     if (cycling && t < 0.999) {
+      const cp = p.cyclePhase;
       const hip = 1 - t;
       const stop = impulse(cp, c.back, c.kickFall) * hip;
       if (stop > 0.001) {
@@ -1512,23 +1565,37 @@ export class ViewModel {
         addScaled(this.rot, c.homeKick.rot, home);
       }
     }
-    // The swap, on the same additive footing as the two above — which is what
-    // lets a swap taken out of a sprint bend out of the carry rather than
-    // snapping to the drop. Eased here rather than in Player: the clock is a
-    // straight triangle, and the ease is how the weapon moves, which is this
-    // file's business.
+  }
+
+  /**
+   * The swap, on the same additive footing as the layers before it — which is
+   * what lets a swap taken out of a sprint bend out of the carry rather than
+   * snapping to the drop. Eased here rather than in Player: the clock is a
+   * straight triangle, and the ease is how the weapon moves, which is this
+   * file's business.
+   */
+  private layerSwap(p: ViewModelParams): void {
+    const v = CONFIG.viewmodel;
     const swapW = hermite(clamp(p.swapBlend, 0, 1));
     if (swapW > 0.001) {
       addScaled(this.off, v.swap.pos, swapW);
       addScaled(this.rot, v.swap.rot, swapW);
     }
-    // The throw's give is NOT a symmetric arc like the blends above: it is the
-    // support hand being somewhere else, so it comes on as fast as the hand
-    // leaves the handguard, holds for as long as the hand is away, and eases
-    // back as the arm returns. A weapon that dipped and recovered on a bell
-    // curve is the shape of a recoil impulse, which is exactly what the old
-    // throw was mistaken for.
-    const th = v.throw;
+  }
+
+  /**
+   * The throw's give, and whether a throw is in flight at all — which the
+   * hands read at the end of the frame.
+   *
+   * It is NOT a symmetric arc like the blends before it: it is the support
+   * hand being somewhere else, so it comes on as fast as the hand leaves the
+   * handguard, holds for as long as the hand is away, and eases back as the
+   * arm returns. A weapon that dipped and recovered on a bell curve is the
+   * shape of a recoil impulse, which is exactly what the old throw was
+   * mistaken for.
+   */
+  private layerThrowGive(p: ViewModelParams): boolean {
+    const th = CONFIG.viewmodel.throw;
     const total = th.windup + th.recover;
     const cockT = th.windup * th.cockFrac;
     const throwing = p.throwTime >= 0 && p.throwTime <= total;
@@ -1539,8 +1606,12 @@ export class ViewModel {
       addScaled(this.off, th.weaponPos, w);
       addScaled(this.rot, th.weaponRot, w);
     }
+    return throwing;
+  }
 
-    // --- sway: the weapon trails the look, damped hard while braced ---
+  /** Sway: the weapon trails the look, damped hard while braced. */
+  private layerSway(dt: number, p: ViewModelParams, t: number): void {
+    const v = CONFIG.viewmodel;
     const swayMult = 1 - (1 - v.adsSwayMult) * t;
     const s = Math.min(1, dt * v.swaySmooth);
     this.swayX += (clamp(-p.turnRate * v.swayPos, -v.swayMax, v.swayMax) - this.swayX) * s;
@@ -1554,15 +1625,22 @@ export class ViewModel {
     this.off.y += this.swayY * swayMult;
     this.rot.y += this.swayYaw * swayMult;
     this.rot.x += this.swayPitch * swayMult;
+  }
 
-    // --- bob: the camera's phase, so the weapon strides with the view ---
+  /** Bob: the camera's phase, so the weapon strides with the view. */
+  private layerBob(p: ViewModelParams, t: number): void {
+    const v = CONFIG.viewmodel;
     const bobW = p.moveBlend * (1 - (1 - v.adsBobMult) * t);
     if (bobW > 0.001) {
       this.off.x += Math.sin(p.bobPhase) * v.bobLateral * bobW;
       this.off.y += Math.sin(p.bobPhase * 2) * v.bobVertical * bobW;
       this.rot.z += Math.sin(p.bobPhase) * v.bobRoll * bobW;
     }
+  }
 
+  /** The airborne give and the landing absorb: the weapon riding the body's vertical. */
+  private layerAirborne(dt: number, p: ViewModelParams): void {
+    const v = CONFIG.viewmodel;
     // --- airborne give: the weapon lags the body through a jump ---
     // Sprung, not read straight off velY. Vertical speed is a STEP function at
     // both ends of a jump — 0 to jumpVelocity at the push, impact speed to 0
@@ -1582,134 +1660,162 @@ export class ViewModel {
     // arms give and come back.
     this.off.y += p.landDip * v.landFollow;
     this.rot.x -= p.landDip * v.landPitch;
+  }
 
-    // --- per-shot kick: back, up, nose-high, and over toward the drift ---
-    // `p.kick` is a spring displacement, not a fading level, so it goes briefly
-    // negative on the way home and every term below inverts with it — the
-    // weapon comes back THROUGH the carry and settles from the front, which is
-    // the half of the cycle the old fade could not show. Hence `!== 0` and not
-    // `> 0.001`: the overshoot is real motion and clipping it at zero would put
-    // a visible corner in the return.
+  /**
+   * The per-shot kick: back, up, nose-high, and over toward the drift.
+   *
+   * `p.kick` is a spring displacement, not a fading level, so it goes briefly
+   * negative on the way home and every term below inverts with it — the
+   * weapon comes back THROUGH the carry and settles from the front, which is
+   * the half of the cycle the old fade could not show. Hence `!== 0` and not
+   * `> 0.001`: the overshoot is real motion and clipping it at zero would put
+   * a visible corner in the return.
+   *
+   * The lateral three take the shot's own drift, so the model leans the way
+   * the muzzle walked. They are damped hard while aimed and the longitudinal
+   * travel is not, and that split is geometry rather than taste: the weapon
+   * carries the sight, so anything that rotates or laterally shifts it while
+   * aimed takes the RETICLE off the axis the rounds fly down and the sight
+   * picture lies. Travel along z leaves the picture centred and costs
+   * nothing, which is also what a braced shoulder actually does with a rifle.
+   */
+  private layerKick(p: ViewModelParams, t: number): void {
+    if (p.kick === 0) return;
+    const r = CONFIG.recoil;
+    // **`p.kick` already carries the weapon's weight** — `Player` strikes the
+    // axis with `kickWeight` — and multiplying by it again here SQUARED it,
+    // which is what this line did for as long as there was a spring behind
+    // it. Two consequences, and the second is why it was invisible: the
+    // heavy weapons travelled far further than the table said (the bolt gun
+    // at 4.7x the rifle rather than 2.2x), and the aimed near-plane bound
+    // below applies the weight ONCE, so it was under-predicting the travel
+    // it was supposed to be bounding by exactly that factor. Measured after
+    // the fix, the worst aimed stand-off in the kit went from 26 cm BEHIND
+    // the eye to 6.6 cm in front of it.
+    const k = p.kick;
+    // Everything that moves the SIGHT off the camera axis rides this; only
+    // the z travel below is exempt. Named for what it does rather than for an
+    // axis, because it covers both a translation and two rotations.
+    const offAxis = k * (1 - (1 - r.kick.adsMult) * t);
+    const side = offAxis * p.kickDrift;
+    // The travel is toward the EYE, and an aimed weapon is already only a few
+    // centimetres from it — so on a magnified optic the kick can drive the
+    // sight through the near plane, which reads as the scope going inside
+    // your head. Worst case is the DMR with the scope: 0.065 x 1.605 x 0.457
+    // is 4.8 cm of travel into a 7.8 cm stand-off, putting the eyepiece at
+    // 3.0 cm against a 5 cm `minZ`. The rifle grazes it at 4.8 cm.
     //
-    // The lateral three take the shot's own drift, so the model leans the way
-    // the muzzle walked. They are damped hard while aimed and the longitudinal
-    // travel is not, and that split is geometry rather than taste: the weapon
-    // carries the sight, so anything that rotates or laterally shifts it while
-    // aimed takes the RETICLE off the axis the rounds fly down and the sight
-    // picture lies. Travel along z leaves the picture centred and costs
-    // nothing, which is also what a braced shoulder actually does with a rifle.
-    if (p.kick !== 0) {
-      const r = CONFIG.recoil;
-      // **`p.kick` already carries the weapon's weight** — `Player` strikes the
-      // axis with `kickWeight` — and multiplying by it again here SQUARED it,
-      // which is what this line did for as long as there was a spring behind
-      // it. Two consequences, and the second is why it was invisible: the
-      // heavy weapons travelled far further than the table said (the bolt gun
-      // at 4.7x the rifle rather than 2.2x), and the aimed near-plane bound
-      // below applies the weight ONCE, so it was under-predicting the travel
-      // it was supposed to be bounding by exactly that factor. Measured after
-      // the fix, the worst aimed stand-off in the kit went from 26 cm BEHIND
-      // the eye to 6.6 cm in front of it.
-      const k = p.kick;
-      // Everything that moves the SIGHT off the camera axis rides this; only
-      // the z travel below is exempt. Named for what it does rather than for an
-      // axis, because it covers both a translation and two rotations.
-      const offAxis = k * (1 - (1 - r.kick.adsMult) * t);
-      const side = offAxis * p.kickDrift;
-      // The travel is toward the EYE, and an aimed weapon is already only a few
-      // centimetres from it — so on a magnified optic the kick can drive the
-      // sight through the near plane, which reads as the scope going inside
-      // your head. Worst case is the DMR with the scope: 0.065 x 1.605 x 0.457
-      // is 4.8 cm of travel into a 7.8 cm stand-off, putting the eyepiece at
-      // 3.0 cm against a 5 cm `minZ`. The rifle grazes it at 4.8 cm.
-      //
-      // The bound is DERIVED from the fitted sight rather than authored, the
-      // same rule `adsPos` itself follows, so every optic on every weapon gets
-      // the right answer with nothing per-combination written down. What the
-      // travel spends is SCALED to fit the room rather than clamped to it: a
-      // clamp stops the weapon dead partway through the kick and reads as a
-      // clunk, where a scale keeps the spring's shape and only takes amplitude
-      // off it. It blends in with `t`, so hip fire is untouched.
-      //
-      // The room is derived against `stackCap`, not against one round: a burst
-      // arrives faster than the weapon comes home, so what has to fit is the
-      // furthest a string can be driven. That figure used to be a MEASURED
-      // `stackPeak` carrying a re-measure whenever the kick's constants moved;
-      // it is now the shoulder the axis is actually capped at, so this bound
-      // is exact rather than a report with margin on it.
-      const sightDist = this.sight.eyeRelief * this.sight.zoomComp;
-      const room = Math.max(0, sightDist - r.kick.adsClearance);
-      const authored =
-        r.kickBack * p.kickWeight * this.sight.zoomComp * r.kick.stackCap;
-      const fit = authored > 1e-6 ? Math.min(1, room / authored) : 1;
-      this.off.z -= r.kickBack * k * (1 + (fit - 1) * t);
-      // The rise that goes with the tip. It is off-axis rather than exempt
-      // like the travel: lifting the model while aimed lifts the SIGHT off the
-      // axis the rounds fly down, so this is hip fire's.
-      this.off.y += r.kickLift * offAxis;
-      this.off.x += r.kickSide * side;
-      this.rot.x -= r.kickPitch * offAxis;
-      // Negative against the drift: a positive roll takes the weapon's right
-      // flank UP (see `viewmodel.reload.styles`), so a weapon walking right has to
-      // roll negative to lean into where it is going rather than away from it.
-      this.rot.z -= r.kickRoll * side;
-      this.rot.y += r.kickYaw * side;
-    }
-
-    // The ACTION, on two axes and no more. A carrier running back and slamming
-    // into battery is felt fore-and-aft and as a nod; it does not throw the
-    // weapon sideways or roll it, and giving it those would make it a second
-    // recoil instead of a mechanism working inside one. It is damped while
-    // aimed but deliberately NOT to nothing (`action.adsMult`): a rifle in a
-    // three-point lock still buzzes, and that buzz is most of what tells you
-    // the thing in your hands is a gas gun rather than a catapult.
+    // The bound is DERIVED from the fitted sight rather than authored, the
+    // same rule `adsPos` itself follows, so every optic on every weapon gets
+    // the right answer with nothing per-combination written down. What the
+    // travel spends is SCALED to fit the room rather than clamped to it: a
+    // clamp stops the weapon dead partway through the kick and reads as a
+    // clunk, where a scale keeps the spring's shape and only takes amplitude
+    // off it. It blends in with `t`, so hip fire is untouched.
     //
-    // Its reach is a FRACTION of the kick's own, so a heavy weapon's action
-    // hits harder for free and nothing has to be stated per weapon.
-    if (p.actionJolt !== 0) {
-      const r = CONFIG.recoil;
-      const jolt = p.actionJolt * (1 - (1 - r.kick.action.adsMult) * t);
-      this.off.z -= r.kickBack * jolt;
-      this.rot.x -= r.kickPitch * jolt;
-    }
+    // The room is derived against `stackCap`, not against one round: a burst
+    // arrives faster than the weapon comes home, so what has to fit is the
+    // furthest a string can be driven. That figure used to be a MEASURED
+    // `stackPeak` carrying a re-measure whenever the kick's constants moved;
+    // it is now the shoulder the axis is actually capped at, so this bound
+    // is exact rather than a report with margin on it.
+    const sightDist = this.sight.eyeRelief * this.sight.zoomComp;
+    const room = Math.max(0, sightDist - r.kick.adsClearance);
+    const authored =
+      r.kickBack * p.kickWeight * this.sight.zoomComp * r.kick.stackCap;
+    const fit = authored > 1e-6 ? Math.min(1, room / authored) : 1;
+    this.off.z -= r.kickBack * k * (1 + (fit - 1) * t);
+    // The rise that goes with the tip. It is off-axis rather than exempt
+    // like the travel: lifting the model while aimed lifts the SIGHT off the
+    // axis the rounds fly down, so this is hip fire's.
+    this.off.y += r.kickLift * offAxis;
+    this.off.x += r.kickSide * side;
+    this.rot.x -= r.kickPitch * offAxis;
+    // Negative against the drift: a positive roll takes the weapon's right
+    // flank UP (see `viewmodel.reload.styles`), so a weapon walking right has to
+    // roll negative to lean into where it is going rather than away from it.
+    this.rot.z -= r.kickRoll * side;
+    this.rot.y += r.kickYaw * side;
+  }
 
-    // The zoom compensation rides the same blend as the pose, so the weapon
-    // shrinks into the aim exactly as the FOV closes around it and its
-    // apparent size never jumps. At t = 0 this is 1 and the hip pose is
-    // untouched; with a sight at or under the reference magnification it is 1
-    // throughout and both lines below are a multiply by one.
+  /**
+   * The ACTION, on two axes and no more. A carrier running back and slamming
+   * into battery is felt fore-and-aft and as a nod; it does not throw the
+   * weapon sideways or roll it, and giving it those would make it a second
+   * recoil instead of a mechanism working inside one. It is damped while
+   * aimed but deliberately NOT to nothing (`action.adsMult`): a rifle in a
+   * three-point lock still buzzes, and that buzz is most of what tells you
+   * the thing in your hands is a gas gun rather than a catapult.
+   *
+   * Its reach is a FRACTION of the kick's own, so a heavy weapon's action
+   * hits harder for free and nothing has to be stated per weapon.
+   */
+  private layerAction(p: ViewModelParams, t: number): void {
+    if (p.actionJolt === 0) return;
+    const r = CONFIG.recoil;
+    const jolt = p.actionJolt * (1 - (1 - r.kick.action.adsMult) * t);
+    this.off.z -= r.kickBack * jolt;
+    this.rot.x -= r.kickPitch * jolt;
+  }
+
+  /**
+   * Writes the summed pose onto the weapon, with the zoom compensation.
+   *
+   * The compensation rides the same blend as the pose, so the weapon shrinks
+   * into the aim exactly as the FOV closes around it and its apparent size
+   * never jumps. At t = 0 this is 1 and the hip pose is untouched; with a
+   * sight at or under the reference magnification it is 1 throughout and both
+   * lines below are a multiply by one.
+   */
+  private applyPose(t: number): void {
     const k = 1 + (this.sight.zoomComp - 1) * t;
     this.pos.addInPlace(this.off.scaleInPlace(k));
     this.weapon.position.copyFrom(this.pos);
     this.weapon.rotation.copyFrom(this.rot);
-    this.weapon.scaling.setAll(v.scale * k);
+    this.weapon.scaling.setAll(CONFIG.viewmodel.scale * k);
+  }
 
-    // --- the round change: the magazine's trip, or the launcher's ---
-    // One or the other and never both. They are exclusive because a rig holds
-    // at most one of the two nodes (see `WeaponParts.warhead`) and because
-    // both write the support arm — run together, whichever went second would
-    // simply be the answer.
-    //
-    // The bolt cycle goes FIRST and the reload over it. The cycle writes the
-    // TRIGGER arm and the bolt node, puts both home whenever it is not running
-    // — which includes every frame of a reload, because `cycleProgress` reads 1
-    // under one — and a dry reload on a bolt gun works that same bolt with that
-    // same hand. The two cannot both be live (see `cycleProgress`), so the
-    // reload writing second is not arbitration; it is the one that has
-    // something to say.
+  /**
+   * The hands, once the weapon is placed: the round change (the magazine's
+   * trip, or the launcher's), the bolt, and the throwing arm.
+   *
+   * The round change is one or the other and never both. They are exclusive
+   * because a rig holds at most one of the two nodes (see
+   * `WeaponParts.warhead`) and because both write the support arm — run
+   * together, whichever went second would simply be the answer.
+   *
+   * The bolt cycle goes FIRST and the reload over it. The cycle writes the
+   * TRIGGER arm and the bolt node, puts both home whenever it is not running
+   * — which includes every frame of a reload, because `cycleProgress` reads 1
+   * under one — and a dry reload on a bolt gun works that same bolt with that
+   * same hand. The two cannot both be live (see `cycleProgress`), so the
+   * reload writing second is not arbitration; it is the one that has
+   * something to say.
+   */
+  private poseHands(p: ViewModelParams, rig: WeaponRig, throwing: boolean): void {
     this.poseBolt(p, rig);
     if (rig.warhead) this.poseLoad(p, rig, throwing);
     else this.poseReload(p, rig, throwing);
     const supportArm = rig.supportArm;
     // ...and off the weapon entirely for a throw. The hand that throws IS the
     // support hand, so leaving it welded to the handguard would put two left
-    // arms on screen at once — and hiding it is what motivates the give above:
-    // the weapon tips because only the firing hand is still on it.
+    // arms on screen at once — and hiding it is what motivates the give in
+    // `layerThrowGive`: the weapon tips because only the firing hand is still
+    // on it.
     supportArm.setEnabled(!throwing);
 
     // --- the throwing arm: the gesture the grenade actually leaves from ---
     this.throwHand.setEnabled(throwing);
-    if (throwing) this.poseThrowHand(p.throwTime, cockT, th.windup, total);
+    if (throwing) {
+      const th = CONFIG.viewmodel.throw;
+      this.poseThrowHand(
+        p.throwTime,
+        th.windup * th.cockFrac,
+        th.windup,
+        th.windup + th.recover,
+      );
+    }
   }
 
   /**

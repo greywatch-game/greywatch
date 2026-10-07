@@ -327,6 +327,17 @@ src/
                         #   mean an output range, an input clamp and a
                         #   precondition at once. Nothing with a single caller
                         #   belongs here
+    recoilCurve.ts      # How a shot moves a thing: RecoilShape, RecoilAxis and
+                        #   recoilGain — the arrest, the haul and the shoulder
+                        #   the aim and the weapon on screen both run on.
+                        #   Imports nothing but math.ts
+    recoilVector.ts     # What ONE ROUND does, as arithmetic: hasString, the
+                        #   first-shot ramp, the stance scale, the pattern
+                        #   envelope (aimKick), the lateral sweep (sweepDrift),
+                        #   the kick weight, the punch shock, the kick shape
+                        #   for a stance and the action's two beats. No state
+                        #   and no random draws — Player holds the string and
+                        #   draws, and Player.recoilKick is still the one door
   entities/
     Player.ts           # Movement, sprint, crouch, jump, weapon state
     HealthRegen.ts      # A person's regen: the lock after a hit and the curve
