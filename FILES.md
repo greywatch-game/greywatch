@@ -209,22 +209,33 @@ src/
                         #   their own hands, and two for a blast, all a
                         #   preference and never a requirement. Two kinds of
                         #   SUSTAINED voice hang off the same rules and neither
-                        #   is ever recorded: an engine (buildEngine, two
-                        #   powerplants) and a place that makes a noise on its
-                        #   own (buildAmbience: a roar, a LIST of humps, a
-                        #   breath and one impulse-excited resonator per event
-                        #   row — nothing scheduled, THREE kinds and no branch,
-                        #   and each FITTED to a recording rather than tuned.
-                        #   A fire is one hump with the events carrying the
-                        #   top; water is two humps in the octaves the fire
-                        #   leaves empty, with the events a garnish.
-                        #   docs/audio.md has both tables).
+                        #   is ever recorded; each is a class of its own below,
+                        #   built here and reached only through Sfx's delegates
+                        #   (engineOn…enginesOff, ambience…ambienceAllOff).
                         #   Owns the mixer's buses too: a dry tap into the
                         #   master and a wet tap into the convolver, per family
                         #   and again per (channel, family) PAIR, handed to
                         #   every layer helper as its FIRST argument — so a
                         #   fader reaches a sound's tail as well as its direct
                         #   sound, and moves a voice already sounding
+    sfxCore.ts          # AudioCore: the whole of what Sfx lends its two voice
+                        #   classes (context, noise buffer, buses, listener
+                        #   distance, burst/tone, the pause flag), read live.
+                        #   Plus MixBus, BurstSpec and Point. Types only
+    EngineVoices.ts     # The hulls' engines: the driven hull's unpanned voice
+                        #   and everybody else's in earshot, one graph
+                        #   (buildEngine) for two powerplants, forked in
+                        #   driveEngine because a rotor's note is GOVERNED
+    AmbienceVoices.ts   # A place that makes a noise on its own (buildAmbience:
+                        #   a roar, a LIST of humps, a breath and one
+                        #   impulse-excited resonator per event row — nothing
+                        #   scheduled, THREE kinds and no branch, and each
+                        #   FITTED to a recording rather than tuned. A fire is
+                        #   one hump with the events carrying the top; water is
+                        #   two humps in the octaves the fire leaves empty,
+                        #   with the events a garnish. docs/audio.md has both
+                        #   tables). Owns the breath buffer and the spark
+                        #   curves, which Sfx.playerHurt borrows
     samples.ts          # The recorded sounds: an id union and a url table,
                         #   nothing else. A weapon names a report row through
                         #   ReportVoice.sample, and so do all three hulls'

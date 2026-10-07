@@ -17,7 +17,10 @@ test every asset in the tree has to pass.
 ## Everything is synthesized, and a recording is laid over the top
 
 `src/core/Sfx.ts` generates every sound in the game from a shared noise buffer,
-a handful of filters and one shared convolution reverb. That is not a
+a handful of filters and one shared convolution reverb — the two SUSTAINED
+kinds in classes of their own behind it (`EngineVoices.ts`, `AmbienceVoices.ts`),
+lent only what `sfxCore.ts`'s `AudioCore` names and reached only through
+`Sfx`'s delegates. That is not a
 constraint anybody is working around — it is why a firefight of eighty rounds a
 second costs no memory, why every weapon is a row of eight scalars, and why the
 game shipped for its whole life with no audio assets at all.
@@ -330,10 +333,11 @@ next, so in play the ranking has only ever been handed a list of one.
 
 ### It is the engine's graph, with the opposite conclusion about a held world
 
-`Sfx.ambience` is `hullEngine` line for line — a graph behind a panner, keyed by
-whatever the caller uses to tell one emitter from another, **called every frame
-rather than when something starts**, with the range gate and its hysteresis
-inside `Sfx` rather than at the call site. What is being tracked is not
+`Sfx.ambience` is `hullEngine` line for line (`AmbienceVoices` and
+`EngineVoices`, behind it) — a graph behind a panner, keyed by whatever the
+caller uses to tell one emitter from another, **called every frame rather than
+when something starts**, with the range gate and its hysteresis inside the voice
+class rather than at the call site. What is being tracked is not
 somebody lighting a fire; it is a fire being within earshot.
 
 **Where the two part company is what a held world is owed, and the difference
@@ -604,7 +608,7 @@ a waterline emitter on a marsh map never loses its slot. Measured on Greyfen,
 plateau**, against 15–30% and 1–2% on every other map with water.
 
 So the wander is built ONCE, in doubles, and read as a BUFFER
-(`Sfx.buildBreathBuffer`): two one-pole passes, which is exactly what the
+(`AmbienceVoices.buildBreathBuffer`): two one-pole passes, which is exactly what the
 biquad was (a lowpass at Q 0.5 is two coincident real poles), run cyclically
 so the loop has no seam. `breathHz` is the source's playback rate now — the
 same trick the bed plays on the shared noise buffer — and a rate is nothing a

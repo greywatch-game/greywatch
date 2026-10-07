@@ -1389,9 +1389,9 @@ export class Vehicle implements Combatant, RayHull {
   }
 
   /**
-   * What the powerplant is doing, as the two numbers `Sfx.driveEngine` is
-   * written around: how hard it is being WORKED and how fast it is TURNING,
-   * each 0..1.
+   * What the powerplant is doing, as the two numbers
+   * `EngineVoices.driveEngine` is written around: how hard it is being WORKED
+   * and how fast it is TURNING, each 0..1.
    *
    * **It is asked OF THE HULL rather than worked out by the caller, and that
    * is the whole of why it exists.** What a machine geared to its road wheels

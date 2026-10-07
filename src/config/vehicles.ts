@@ -282,9 +282,9 @@ export interface VehicleSpec {
   /**
    * What this kind SOUNDS like, against the tank's own voice.
    *
-   * `Sfx.buildEngine` is one graph, and these are the ways a KIND differs
-   * inside it. Stated the way a weapon's `report` is: a field per way this
-   * differs, with the reference at 1.
+   * `EngineVoices.buildEngine` is one graph, and these are the ways a KIND
+   * differs inside it. Stated the way a weapon's `report` is: a field per way
+   * this differs, with the reference at 1.
    *
    * **`rotor` is the same bargain `flight` makes one level up**, and it is
    * made here a second time for the same reason: a nullable BLOCK rather than
@@ -318,7 +318,7 @@ export interface VehicleSpec {
      * what the machine is doing; a rotor is held at one governed speed by a
      * governor and changes only how hard it is WORKING, which is why the two
      * cannot be one set of numbers with different values. See
-     * `Sfx.buildEngine`, which spends every figure here, and
+     * `EngineVoices.buildEngine`, which spends every figure here, and
      * `Vehicle.powerplant`, which is where the two numbers driving it stop
      * being road speed and a stick.
      */

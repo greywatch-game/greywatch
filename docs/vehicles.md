@@ -2453,9 +2453,9 @@ full.
 ## The engine, and the two voices it is
 
 A hull makes a noise whoever is in it. There are **two kinds of voice and one
-graph**, and the graph is `Sfx.buildEngine` — six sources held open, five layers
-hanging off one gain swinging at the firing rate, and the whole of the argument
-for what a powerplant sounds like is on that method.
+graph**, and the graph is `EngineVoices.buildEngine` — six sources held open,
+five layers hanging off one gain swinging at the firing rate, and the whole of
+the argument for what a powerplant sounds like is on that method.
 
 | voice | who | how it is heard |
 | --- | --- | --- |
@@ -2485,7 +2485,7 @@ asked of the HULL**, through `Vehicle.powerplant`, which is the next section.
 
 ## The second powerplant: a turbine hung off a disc
 
-**`Sfx.buildEngine` was one description of a DIESEL, and the helicopter was that
+**`EngineVoices.buildEngine` was one description of a DIESEL, and the helicopter was that
 diesel revved high.** `engine: { revMult: 2.1, clatter: 0 }` was the only lever
 a voice with no rotor in it had for saying "not a piston engine", and what it
 bought was a machine that revved as it accelerated, fell away as it slowed, and
@@ -2505,7 +2505,7 @@ collective:
 **The fix is in two halves and neither is a branch on a kind.**
 
 **What DRIVES the voice is asked of the hull.** `Vehicle.powerplant(stick)`
-returns the two numbers `Sfx.driveEngine` is written around — how hard the
+returns the two numbers `EngineVoices.driveEngine` is written around — how hard the
 machine is being WORKED and how fast it is TURNING — and a machine geared to its
 road wheels answers with exactly what `Game` used to compute at the call site, so
 the two ground kinds do not move. A rotor answers with the SPOOL (`this.rotor`,

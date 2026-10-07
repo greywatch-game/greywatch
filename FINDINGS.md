@@ -417,7 +417,7 @@ number.**
 
 **And per-SITE attribution out of it is not to be trusted on our own files
 without an A/B.** Two of its top twenty named a function that allocates nothing
-— `eyeDistanceSq` (see `docs/rendering.md`'s front-to-back sort) and `Sfx.buildBreathBuffer`, which is called
+— `eyeDistanceSq` (see `docs/rendering.md`'s front-to-back sort) and `buildBreathBuffer` (then on `Sfx`, now `AmbienceVoices`), which is called
 once at init — because V8 attributes a sampled allocation to the JS frame on
 top at the time, and a function called 22,000 times a frame collects
 attribution that belongs to its callees. The FILE-level split is sound; a

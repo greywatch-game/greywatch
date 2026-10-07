@@ -54,7 +54,7 @@ match smoke test (`npm run build:server && npm run server`, two clients).
 | ~~[23](#23-split-worldpropsts)~~ | P2 — done | Split `world/Props.ts` |
 | ~~[24](#24-split-worldkitharbourts-and-worldkitdesertts)~~ | P2 — done | Split `world/kit/harbour.ts` and `world/kit/desert.ts` |
 | ~~[25](#25-mapbuilderts-move-types-and-merge-code-out)~~ | P2 — done | `MapBuilder.ts`: move types and merge code out |
-| [26](#26-split-sfxts-engine-voices-and-ambience-into-their-own-classes) | P2 | Split `Sfx.ts`: engine voices and ambience |
+| ~~[26](#26-split-sfxts-engine-voices-and-ambience-into-their-own-classes)~~ | P2 — done | Split `Sfx.ts`: engine voices and ambience |
 | [27](#27-vehiclets-extract-hullflex-and-the-flight-model) | P2 | `Vehicle.ts`: extract `HullFlex` and the flight model |
 | [28](#28-frameprofilets-split-the-recorder-from-the-reporter) | P2 | `FrameProfile.ts`: split recorder from reporter |
 | [29](#29-vehiclecrewts-extract-the-pilot) | P2 | `VehicleCrew.ts`: extract the pilot |
@@ -867,6 +867,58 @@ making the sound and **never held in a field** (`CLAUDE.md`, two faders).
 
 **Acceptance.** Engines and fires sound identical in a round; `F4` mixer still
 moves both families.
+
+**Done.** `Sfx.ts` is 2,787 lines, down from 4,436.
+
+- **`core/EngineVoices.ts`** holds `EngineKind`, `EngineVoice`,
+  `HULL_ENGINE_LEVEL` and the class: the driven hull's voice, the hull map,
+  `growlCurve`, and every engine method from `engineOn` to `stopEngine`, plus
+  `growlShape`.
+- **`core/AmbienceVoices.ts`** holds the `AmbienceId`/`AmbienceKind`/`BandSpec`/
+  `SparkSpec` types, the `BREATH_*` and spark constants, `sparkThreshold`,
+  `AmbienceVoice` and the class: the emitter map, the spark curves, the breath
+  buffer, every ambience method, `sparkShape` and `buildBreathBuffer`. `unlock`
+  still builds the breath, in the same place in the order.
+- **`core/sfxCore.ts`** holds `AudioCore`, the handle both classes get, plus
+  `MixBus`, `BurstSpec` (`burst`'s argument, which was an inline type) and
+  `Point`. `AudioCore` has the six things the ticket named: `ctx`,
+  `noiseBuffer`, `paused`, `bus`, `distanceToListener` and `burst`/`tone`.
+  `Sfx` builds it in its new constructor, using getters so it reads the
+  context and the buffer as they are after `unlock`.
+- `Sfx` keeps all nine public methods as delegates and re-exports every type
+  that used to come from it, so no caller changed. Both new headers state
+  the "nothing is scheduled" invariant and the bus-in-a-local rule. Neither
+  class holds a bus in a field.
+
+There was one extra thing to handle: `playerHurt` uses the ambience's spark
+gate for its grit. It now gets the curve from `AmbienceVoices.sparkShape`,
+which is public for that one caller, so there is still one cache.
+
+Apart from that, the move only changed the `this.X` → `this.core.X`
+references, some comments, and one name: inside `AmbienceVoices` the emitter
+map is `voices`, because `ambienceVoices` is now `Sfx`'s name for the class
+itself. Comments that said "this file" now name `Sfx`
+where they meant it. References that named the old home are updated in
+`docs/audio.md`, `docs/vehicles.md`, `FINDINGS.md`, `FILES.md`,
+`config/audio.ts`, `config/vehicles.ts` and `Vehicle.ts`. Two comments in the
+moved code were already out of date and are fixed: `MixBus`'s doc named a
+`Sfx.setMix` that no longer exists, and the `sparkThreshold` doc was stranded
+above `HURT_SWEEP`. Two stranded docs in `Sfx` are back on what they describe:
+`LoadedSample`'s had been sitting on `ThunderLayer`, and the class's own had
+been sitting on `MixBus`.
+
+Checked: `npm run typecheck` and `npm run build` pass. Equivalence was checked
+with an offline render. Both versions of `Sfx` (HEAD's and this one) were
+loaded in Chromium through Vite with a seeded `Math.random` and rendered 3 s
+into an `OfflineAudioContext`. The cases were: the driven tank, every kind as
+a hull engine, the driven rotor, wind-down through `engineOff`/`enginesOff`,
+all three ambience kinds, `ambienceOff`/`ambienceAllOff`, `playerHurt`, and
+the tank plus a fire with the `tankEngine` and `ambience` faders moved. The
+largest sample difference between old and new is 1.5e-5. Rendering the old
+`Sfx` against itself differs by up to 2.3e-5, so the remaining difference is
+the renderer's own noise. The faders still move both families: the faded
+render's energy is 178 against 1,106 unfaded. Nobody has listened in a live
+round.
 
 ### 27. `Vehicle.ts`: extract `HullFlex` and the flight model
 

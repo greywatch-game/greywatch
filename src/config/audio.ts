@@ -403,10 +403,10 @@ export const audio = {
        * renders 2.22.
        *
        * It is a source of its own — and a BUFFER of its own, built once by
-       * `Sfx.buildBreathBuffer` — rather than a tap off the bed's noise,
-       * because the bed is read at 0.33 against a one-second buffer and a
-       * modulator taken from it would repeat every three seconds, which is
-       * the same trap `SparkSpec.loop` exists for. This one is 24 seconds of
+       * `AmbienceVoices.buildBreathBuffer` — rather than a tap off the bed's
+       * noise, because the bed is read at 0.33 against a one-second buffer
+       * and a modulator taken from it would repeat every three seconds, which
+       * is the same trap `SparkSpec.loop` exists for. This one is 24 seconds of
        * pre-smoothed wander read at `breathHz`, so the fire's 1.2 loops every
        * twenty seconds and a slower breath loops proportionally later.
        *
@@ -702,8 +702,8 @@ export const audio = {
        * It is also the number that broke the graph: a live lowpass at 0.28 Hz
        * is a recursion with both poles 3.7e-5 from z = 1, and three of six
        * 300-second renders of it ran away into a climbing DC offset. Nothing
-       * about the swell was wrong — see `Sfx.buildBreathBuffer`, which is why
-       * this row can go on asking for a wander this slow.
+       * about the swell was wrong — see `AmbienceVoices.buildBreathBuffer`,
+       * which is why this row can go on asking for a wander this slow.
        */
       breathHz: 0.28,
       breathRoarDepth: 0.57,
