@@ -66,7 +66,7 @@ match smoke test (`npm run build:server && npm run server`, two clients).
 | ~~[35](#35-decompose-botupdate-viewmodelupdate-and-players-recoil-vector)~~ | P2 — done | Decompose `Bot.update`, `ViewModel.update`, Player's recoil vector |
 | ~~[36](#36-vehicle-capability-idioms-three-soft-spots)~~ | P2 — done | Vehicle capability idioms: three soft spots |
 | ~~[37](#37-propsts-drop-the-mathrandom-defaults)~~ | P2 — done | `Props.ts`: drop the `Math.random` defaults |
-| [38](#38-texturests-has-its-own-prng) | P3 | `textures.ts` has its own PRNG |
+| ~~[38](#38-texturests-has-its-own-prng)~~ | P3 — done | `textures.ts` has its own PRNG |
 | [39](#39-frameprofile-depends-on-a-private-babylon-internal) | P3 | `FrameProfile` depends on a private Babylon internal |
 | [40](#40-claudemd-is-over-its-own-cap) | P3 | `CLAUDE.md` is over its own cap |
 | [41](#41-filesmd-has-no-scripts-section) | P3 | `FILES.md` has no `scripts/` section |
@@ -1641,6 +1641,13 @@ It defines its own `mulberry32` instead of importing `src/world/rng.ts`, whose
 header says it is "the one seeded PRNG". Deterministic, so not a rule
 violation — just a copy. Import from `rng.ts`; textures must be byte-identical
 (check a texture hash or screenshot).
+
+**Done.** The local copy is deleted and `textures.ts` imports `mulberry32`
+from `./rng`. The two function bodies were diffed before the copy went and are
+character-for-character the same, so every seed draws the same sequence and
+every texture is byte-identical by construction rather than by a screenshot.
+
+Checked: `npm run typecheck` and `npm run build`.
 
 ### 39. `FrameProfile` depends on a private Babylon internal
 
