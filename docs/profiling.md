@@ -1005,9 +1005,10 @@ the device at all and a script that wrapped them first
 `WebGPUCacheRenderPipeline._buildRenderPipelineDescriptor`, a Babylon
 internal and the only place that holds the effect: **after a Babylon upgrade,
 check that a capture reads `pipelines.named: true`**, because if that method
-moves the counts stay right and only the names go — and the profiler says so
-once on the console when it arms, so the bump is noticed without a capture. Nothing in the recording
-path builds a string — the log holds references Babylon already owns, in
+moves the counts stay right and only the names go. The profiler also warns
+once on the console when it arms without it, so the loss does not wait on
+somebody reading that flag. Nothing in the recording path builds a string —
+the log holds references Babylon already owns, in
 arrays sized on arming (`CONFIG.profiling.creationsKept`) — so the
 no-allocation rule holds; a compact capture carries
 `creationsReported` of them with long define sets truncated, the download all

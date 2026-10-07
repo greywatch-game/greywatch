@@ -906,8 +906,8 @@ export class FrameProfile {
    * that effect where the device wrapper can see it. A version that renames it
    * costs the NAMES and nothing else — `pipelines.named` goes false and every
    * count stays right — the arrangement `GpuTimestampQuery`'s fields have. It
-   * says so ONCE on the console when it happens, because a capture nobody
-   * reads the flag of is how a Babylon bump would otherwise go unnoticed.
+   * also warns ONCE on the console, because a flag in a capture is only seen
+   * by somebody who already knows to look for it.
    *
    * One argument and no rest parameter on every wrapper: all five create
    * methods take a single descriptor, and `...args` would be an array per call.
