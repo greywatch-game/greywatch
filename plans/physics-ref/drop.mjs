@@ -90,7 +90,7 @@
  * **Every shipped map is banked, and a check with no map named grades all of
  * them but Greyfen**, whose bank is at 2400 steps and which does not settle at
  * the default 480 — check it on its own with `--steps 2400 greyfen`. Sarab,
- * Cinderhaven and Kurenai were first banked after S5b, at 480 (04ac71c).
+ * Cinderhaven and Kurenai were first banked after S5b, at 480 (c43b542).
  * A NEW map owes a bank in the commit that ships it.
  *
  * **The proving ground is not banked and `ref/.gitignore` says so.** Its extent

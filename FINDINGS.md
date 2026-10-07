@@ -48,7 +48,7 @@ fill and not the GPU ("GPU time"), and not steady-state compilation by count
 ("Compiles"). **The frame was simply not scheduled.** The rules those captures
 justify are in `docs/profiling.md` with their measurements; the captures'
 narrative, the candidate list as it stood and the instrument bugs they found are
-in this file's git history (before e9d33c4). **Do not measure
+in this file's git history (before 77aa155). **Do not measure
 allocation pressure uncapped** — that section of `docs/profiling.md` says why.
 
 ### What was measured
