@@ -55,7 +55,7 @@ match smoke test (`npm run build:server && npm run server`, two clients).
 | ~~[24](#24-split-worldkitharbourts-and-worldkitdesertts)~~ | P2 — done | Split `world/kit/harbour.ts` and `world/kit/desert.ts` |
 | ~~[25](#25-mapbuilderts-move-types-and-merge-code-out)~~ | P2 — done | `MapBuilder.ts`: move types and merge code out |
 | ~~[26](#26-split-sfxts-engine-voices-and-ambience-into-their-own-classes)~~ | P2 — done | Split `Sfx.ts`: engine voices and ambience |
-| [27](#27-vehiclets-extract-hullflex-and-the-flight-model) | P2 | `Vehicle.ts`: extract `HullFlex` and the flight model |
+| ~~[27](#27-vehiclets-extract-hullflex-and-the-flight-model)~~ | P2 — done | `Vehicle.ts`: extract `HullFlex` and the flight model |
 | [28](#28-frameprofilets-split-the-recorder-from-the-reporter) | P2 | `FrameProfile.ts`: split recorder from reporter |
 | [29](#29-vehiclecrewts-extract-the-pilot) | P2 | `VehicleCrew.ts`: extract the pilot |
 | [30](#30-celshaderts-move-shadow-bindings-out-of-the-material-factory) | P2 | `CelShader.ts`: move shadow bindings out of the factory |
@@ -938,6 +938,55 @@ driven by the nullable spec blocks / `flies`, never a kind name.
 
 **Acceptance.** A hull drives, flexes and flies identically; `npm run
 simulate` runs (the authority steps hulls too).
+
+**Done.** `Vehicle.ts` is 3,432 lines, down from 4,253. Both steps were done.
+
+- **`entities/HullFlex.ts`** holds the wind bearing, the suspension's pitch
+  and roll springs, the heave, the mast-foot rate, both whips, the wind clock,
+  `stationTravel`, `springRate`, `flexSuspension`, `flexHeave` and
+  `flexAntennae`. Three methods are new. `reset` is `placeAt`'s share.
+  `kick` is the gun's rock and mast crack, taken out of `fireGun` with their
+  comments. `lean` is the half of `leanHull` that writes `rig.sprung` and
+  works out the mast-foot rate. `Vehicle` keeps the ground half of the
+  attitude, because `standOnGround` and the flying branch both write its
+  targets. `gearLoad` also stays, because it reads the rotor, and is handed
+  in as `load`. `jolt` stays too (`standOnGround` writes it, the crash check
+  reads it) and is handed to `flexHeave`.
+- **`entities/FlightModel.ts`** holds `REMOTE_ACCEL_RATE`, `tiltFor`, the
+  spool and the disc's run, the four attitude angles, the lagged velocity,
+  `rotorPower`, `tiltFromMotion`, and `flyStep`'s cyclic, thrust and
+  collective as three methods. `spool` is also new: it replaces the two
+  copies of the spool-up arithmetic in `flyStep` and `updateRemote`.
+  `Vehicle.flyStep` keeps everything that touches the hull itself: the
+  pedals (`steerTo` and `steerAuthority`, which the ground path also uses),
+  `yaw`, the measured `speed`, the height over the floor, and `lift`.
+  `FlightModel` owns no position or velocity. It writes the `vel` it is
+  handed (`thrust`) or returns a number (`collective`), so no field of
+  `Vehicle` had to be exposed. `Vehicle.flight` is `spec.flight` resolved
+  once and is null on the two ground kinds, so nothing branches on a kind.
+  `Vehicle` reads four of its fields: `rotor`, `rotorRun`, `tiltPitch` and
+  `tiltRoll`.
+
+Apart from that it is a move. The only other changes are `this.X` becoming
+a parameter or `fl.spec.X`, the lagged velocity becoming a plain `{x, z}`
+(the class has no runtime Babylon import), and comments that named a method
+by position ("two hundred lines below") now naming it. One stranded doc was
+also fixed: `updateRemote`'s had been sitting on `correctTo`. References to
+the old home are updated in `docs/vehicles.md`, `docs/multiplayer.md`,
+`config/vehicles.ts`, `vehicleRig.ts` and FILES.md.
+
+Checked: `npm run typecheck` and `npm run build` pass. `npm run simulate
+sarab` ran a full round with crewed hulls (192 machine-gun kills, 8 track
+kills, a shell). For equivalence, a NullEngine harness drove every kind
+through a scripted run with mixed frame times: a tank and a truck over a kerb,
+a car, a wall and a tilted slab and on open relief, firing both guns,
+corrected, wrecked and coasting, each with a copy posed off its track through
+`updateRemote`; and a helicopter taking off, cruising, strafing, turning,
+landing, spooling down, corrected and wrecked, with a remote copy, plus a
+second one shot down at altitude. It recorded every rig node's transform, the
+collider, the exported points, `powerplant`, `washTo` and the gun state on
+every frame. HEAD and this version match byte for byte over all 14,100
+frames. Nobody has driven a hull in a live client.
 
 ### 28. `FrameProfile.ts`: split the recorder from the reporter
 

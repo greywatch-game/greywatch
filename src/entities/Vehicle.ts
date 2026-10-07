@@ -8,6 +8,13 @@
  * when it lands — those are `VehicleSystem`'s and `Game`'s respectively, the
  * same split `Bot` has against `BattleSystem`.
  *
+ * Two parts of it live in files of their own, and both are HANDED what they
+ * read of the hull rather than reaching for it. `HullFlex` is the sprung
+ * body's three springs and the whips — a picture, and nothing else. A
+ * `FlightModel` is the rotor and the disc's attitude, built only for a kind
+ * whose spec states `flight`; the hull's position, velocity and `lift` stay
+ * here, because the ground path writes them too.
+ *
  * ## TWO guns, two owners, and one world frame between them
  *
  * A hull holds two crewmen (`Vehicle.seats`, `DRIVER` and `GUNNER`) and each lays
@@ -159,10 +166,11 @@
  * metres are where the ten contacts find the pad, and it is stood on the plank
  * exactly as a tank is. `jolt` is the arrival — it was always "what the ground
  * did to the hull's vertical motion this frame", which on a machine that flies
- * is the whole of a touchdown, so the skids compress through `flexHeave` with
- * no new code and the crash check is a reading of a number that was already
- * there. And a hull nobody is in winds its rotor down, `lift` returns to 0, and
- * the parked-hull skip stops the probe exactly as it does for armour.
+ * is the whole of a touchdown, so the skids compress through
+ * `HullFlex.flexHeave` with no new code and the crash check is a reading of a
+ * number that was already there. And a hull nobody is in winds its rotor down,
+ * `lift` returns to 0, and the parked-hull skip stops the probe exactly as it
+ * does for armour.
  *
  * `flyStep` is what writes `lift`, and what it commands is a RATE rather than
  * an acceleration — see its own note, which carries the two measurements that
@@ -195,14 +203,14 @@
  * had just been stood on.
  *
  * **There is a THIRD, it is a distance rather than an angle, and it shares the
- * other two's budget.** `flexHeave` moves `rig.sprung` in Y, so a landing
- * compresses onto the bump stop and a hull going light over a crest lifts off
- * its own tracks. It answers to what the GROUND did to the hull's vertical
- * motion and to nothing the driver asked for, which is why the other two had
- * nothing to say about driving over a car. And because all three move the same
- * body against the same running gear, **how far it may travel is stated ONCE**
- * — `heaveBump`/`heaveDroop`, at the road wheel — and the tilt spends what the
- * heave has left. There is no authored limit on either angle.
+ * other two's budget.** `HullFlex.flexHeave` moves `rig.sprung` in Y, so a
+ * landing compresses onto the bump stop and a hull going light over a crest
+ * lifts off its own tracks. It answers to what the GROUND did to the hull's
+ * vertical motion and to nothing the driver asked for, which is why the other
+ * two had nothing to say about driving over a car. And because all three move
+ * the same body against the same running gear, **how far it may travel is
+ * stated ONCE** — `heaveBump`/`heaveDroop`, at the road wheel — and the tilt
+ * spends what the heave has left. There is no authored limit on either angle.
  *
  * Both are free to be pictures for the same reason: the gun is aimed in world
  * angles off `turretYaw`/`gunPitch` and the shell is fired down that, so a
@@ -220,13 +228,13 @@
  * The two whips are the third picture and the furthest out: they answer to the
  * acceleration the drive achieved (the suspension's own input), to how fast the
  * hull node they hang off is TURNING, and to the wind. That is two damped
- * springs a mast — `flexAntennae` — and it is deliberately not Havok. The
- * engine in this tree is stepped by hand for corpses and glass shards, things
- * nothing reads back and nothing steers; a hull is moved by
- * `moveWithCollisions` and ridden up over a kerb by `standOnGround`,
- * which is a teleport to a solver, and a jointed chain hung off it would crack
- * every time a tank climbed a kerb. What is bought instead is a whip that is
- * clamped, tunable and free. See `docs/vehicles.md`.
+ * springs a mast — `HullFlex.flexAntennae` — and it is deliberately not Havok.
+ * The engine in this tree is stepped by hand for corpses and glass shards,
+ * things nothing reads back and nothing steers; a hull is moved by
+ * `moveWithCollisions` and ridden up over a kerb by `standOnGround`, which is a
+ * teleport to a solver, and a jointed chain hung off it would crack every time
+ * a tank climbed a kerb. What is bought instead is a whip that is clamped,
+ * tunable and free. See `docs/vehicles.md`.
  */
 import {
   AbstractEngine,
@@ -247,7 +255,9 @@ import type { ObstacleField } from "../world/ObstacleField";
 import type { RayHull } from "../world/RayWorld";
 import { TerrainField } from "../world/TerrainField";
 import type { Combatant, Team } from "./Combatant";
-import { setAntennaBend, type VehicleRig } from "./vehicleRig";
+import { FlightModel } from "./FlightModel";
+import { HullFlex } from "./HullFlex";
+import type { VehicleRig } from "./vehicleRig";
 import type { VehicleSpec } from "../config/vehicles";
 
 /** What the driver is asking for this frame. */
@@ -485,40 +495,6 @@ const IDLE: DriveInput = {
 const REMOTE_RESYNC_Y = 1;
 
 /**
- * How fast a remote hull's own velocity is chased to get an ACCELERATION out
- * of it, 1/s. `tiltFromMotion` is the only reader.
- *
- * **A lag rather than a difference, and that is the whole of why it works.**
- * `NetVehicles` lerps LINEARLY between samples, so the velocity measured on
- * this side is piecewise constant: differencing it frame to frame gives a
- * spike at every bracket boundary and a zero on every frame between them,
- * which is not an acceleration but a picture of when the snapshots landed.
- * Chasing a lagged copy instead makes the estimate an exponentially weighted
- * MEAN of that train, which is the acceleration — the spikes are what carry
- * it, and averaging them is exactly what recovers the figure they are a
- * sampling of.
- *
- * At 6 it averages over about a sixth of a second, which is two or three
- * snapshot intervals: enough for the mean to be the mean, and short against
- * the `drive.airTiltRate` filter the answer is drawn through anyway.
- */
-const REMOTE_ACCEL_RATE = 6;
-
-/**
- * The one wind's bearing, normalised once — `CONFIG.wind.dir` is documented as
- * un-normalised and every reader owes this.
- *
- * The masts are the third layer to lean on it, after the grass field and the
- * world's foliage, and they take the BEARING alone: what a gust does to a blade
- * of grass, to ten metres of canopy and to a steel whip are three different
- * answers to the same question, which is exactly the split `config/wind.ts`
- * makes. See `CONFIG.vehicles.tank.antenna.wind`.
- */
-const WIND_HYP = Math.hypot(CONFIG.wind.dir[0], CONFIG.wind.dir[1]);
-const WIND_X = CONFIG.wind.dir[0] / WIND_HYP;
-const WIND_Z = CONFIG.wind.dir[1] / WIND_HYP;
-
-/**
  * How many places along each belt the hull asks what it is standing on.
  *
  * **This is a BELT and not a set of feet, and the number is what decides which
@@ -557,24 +533,6 @@ function contactLong(i: number, reach: number): number {
 /** Where track contact `i` sits across the hull: positive is the RIGHT belt. */
 function contactLat(i: number, wide: number): number {
   return (i & 1) === 0 ? wide : -wide;
-}
-
-/**
- * The disc tilt that would be making `thrust` m/s^2 of horizontal push, given
- * `scale` m/s^2 per radian of tilt, bounded by what the cyclic can ask for.
- *
- * `flyStep`'s own line read backwards, and both of its bounds are load-bearing
- * rather than defensive tidiness. The ratio is clamped because it is built out
- * of a velocity `updateRemote` MEASURED off the wire, and a hull the
- * interpolator is shoving can report a push no disc could produce — `asin` of
- * which is `NaN`, which would go straight onto a drawn node and take the hull
- * off the map. The ANGLE is clamped again because the stick has a limit: what
- * comes back must be an attitude a pilot could be holding, and a machine being
- * dragged sideways past a wall is evidence of a wall and not of a stick.
- */
-function tiltFor(thrust: number, scale: number, limit: number): number {
-  const ratio = Math.max(-1, Math.min(1, thrust / scale));
-  return Math.max(-limit, Math.min(limit, Math.asin(ratio)));
 }
 
 /**
@@ -655,6 +613,17 @@ export class Vehicle implements Combatant, RayHull {
   /** The collider box, and the thing that MOVES. See the header. */
   readonly body: Mesh;
   readonly rig: VehicleRig;
+  /**
+   * What the hull's own mass does to the drawing — the sprung body's three
+   * springs and the whips. A picture and nothing else; see `HullFlex`.
+   */
+  private readonly flex: HullFlex;
+  /**
+   * The rotor and the disc — null on a hull that cannot fly, which is
+   * `spec.flight` resolved once, the same bargain `flies` makes. See
+   * `FlightModel`.
+   */
+  private readonly flight: FlightModel | null;
 
   alive = true;
   health: number;
@@ -844,26 +813,9 @@ export class Vehicle implements Combatant, RayHull {
    */
   private groundPitchTarget = 0;
   private groundRollTarget = 0;
-  private suspPitch = 0;
-  private suspPitchVel = 0;
-  private suspRoll = 0;
-  private suspRollVel = 0;
-  /**
-   * The heave axis: how far the BODY has travelled against the running gear it
-   * stands on, in metres, and how fast. Negative is compressed. The pitch and
-   * roll above are the other two axes of the same travel and share its stops.
-   *
-   * The other two are angles because a hull rocking fore and aft turns about
-   * its own middle; this one is a distance because a hull landing on its
-   * tracks does not turn at all. It is drawn on `rig.sprung`, which is
-   * everything the springs carry — see `flexHeave` for what drives it, and
-   * `VehicleRig.sprung` for why the tracks are not on it.
-   */
-  private heave = 0;
-  private heaveVel = 0;
   /**
    * What the ground did to the hull's own vertical velocity this frame, in
-   * m/s, written by `standOnGround` and spent by `flexHeave`.
+   * m/s, written by `standOnGround` and spent by `HullFlex.flexHeave`.
    *
    * Held as a field rather than passed because a WRECK spends it too: a hull
    * killed off a kerb still falls, still lands and still settles on its
@@ -901,78 +853,8 @@ export class Vehicle implements Combatant, RayHull {
    * then puts back, once a frame, for ever.
    */
   private readonly vel = new Vector3();
-  /**
-   * `vel` chased at `REMOTE_ACCEL_RATE`, horizontal, and the difference
-   * between the two IS the acceleration `tiltFromMotion` needs.
-   *
-   * Written on a hull posed from the wire and on no other, which is why it is
-   * not next to the drive: a machine simulating itself knows what its own disc
-   * is doing and never has to ask what the motion implies.
-   */
-  private readonly velLag = new Vector3();
-  /** How far spooled, 0..1. A rotor nobody is turning is a rotor at rest. */
-  private rotor = 0;
-  /** Radians of disc, accumulated mod 2pi. `trackRun`'s metres, for a rotor. */
-  private rotorRun = 0;
   /** What was last drawn, so a turning disc opens the `stirred` gate. */
   private rotorShown = 0;
-  /**
-   * The attitude the CYCLIC is commanding, radians, in the DRAWN sense — so
-   * positive `tiltPitch` is nose-DOWN and positive `cyclicRoll` raises the
-   * hull's own RIGHT side. Both are held that way so that the picture and the
-   * thrust taken off them cannot come apart; `flyStep` has the measurements.
-   *
-   * Written by `flyStep` on the machine somebody is flying and by
-   * `tiltFromMotion` on the ones they are not — the same two angles either
-   * way, the second worked out of the motion that arrived instead of out of a
-   * stick, so a hull is drawn at one attitude on every screen in the match.
-   *
-   * (This said "nose-up positive" for as long as it existed and was wrong the
-   * whole time — `standOnGround` writes `groundPitchTarget = -rise` from a
-   * nose-up `rise`, and the flying branch assigns `tiltPitch` to that same
-   * field with no negation.)
-   */
-  private tiltPitch = 0;
-  private cyclicRoll = 0;
-  /**
-   * The coordinated-turn bank, which is a PICTURE and has no thrust behind it
-   * — see `flyStep`, where the reason is that this half is made of the pilot's
-   * look rather than of anything they asked the machine to do.
-   */
-  private bankRoll = 0;
-  /**
-   * What is actually DRAWN: `cyclicRoll + bankRoll`, clamped. Held as a field
-   * rather than recomputed because the airborne branch of `update` hands it
-   * straight to `groundRollTarget`, and `updateRemote`'s hands it the copy
-   * `tiltFromMotion` worked out.
-   */
-  private tiltRoll = 0;
-  /**
-   * The hull node's attitude as it was LAST frame, and how fast it is turning.
-   *
-   * Kept because the whips answer to it: a mast bolted to a rocking hull bends
-   * because its foot is ROTATING, which is a rate and not an angle, and the
-   * rate has to be read off the two halves SUMMED — a tank climbing a kerb
-   * cracks its antennae exactly as one firing its gun does, and only one of
-   * those is the suspension's.
-   */
-  private leanX = 0;
-  private leanZ = 0;
-  private leanRateX = 0;
-  private leanRateZ = 0;
-  /**
-   * The two whips: the bow each spring is holding, its velocity, and the LAGGED
-   * angle the tip has actually got to. Long mast first, `ANTENNA_LENGTHS`' own
-   * order. Pictures, every one of them — see `flexAntennae`.
-   */
-  private readonly whipX: [number, number] = [0, 0];
-  private readonly whipZ: [number, number] = [0, 0];
-  private readonly whipVelX: [number, number] = [0, 0];
-  private readonly whipVelZ: [number, number] = [0, 0];
-  private readonly tipX: [number, number] = [0, 0];
-  private readonly tipZ: [number, number] = [0, 0];
-  /** The idle stir's own clock. Held by whatever holds the world, as the wind is. */
-  private windT = 0;
   private velY = 0;
   /**
    * How fast the ground under the tracks actually moved the hull this frame,
@@ -1217,6 +1099,8 @@ export class Vehicle implements Combatant, RayHull {
     // collider box is centred on the hull, so the model hangs half a hull
     // below the box's own origin.
     this.rig.root.position.y = -t.hull.height / 2;
+    this.flex = new HullFlex(this.rig, t);
+    this.flight = t.flight !== null ? new FlightModel(t.flight, t.drive) : null;
   }
 
   /**
@@ -1275,37 +1159,14 @@ export class Vehicle implements Combatant, RayHull {
     this.steerHeld = 0;
     this.groundPitch = 0;
     this.groundRoll = 0;
-    this.suspPitch = 0;
-    this.suspPitchVel = 0;
-    this.suspRoll = 0;
-    this.suspRollVel = 0;
-    this.heave = 0;
-    this.heaveVel = 0;
+    this.flex.reset();
     this.jolt = 0;
-    this.leanX = 0;
-    this.leanZ = 0;
-    this.leanRateX = 0;
-    this.leanRateZ = 0;
-    for (let i = 0; i < 2; i++) {
-      this.whipX[i] = 0;
-      this.whipZ[i] = 0;
-      this.whipVelX[i] = 0;
-      this.whipVelZ[i] = 0;
-      this.tipX[i] = 0;
-      this.tipZ[i] = 0;
-    }
     this.velY = 0;
     this.riseRate = 0;
     this.vel.setAll(0);
-    this.velLag.setAll(0);
     this.lift = 0;
-    this.rotor = 0;
-    this.rotorRun = 0;
+    this.flight?.reset();
     this.rotorShown = 0;
-    this.tiltPitch = 0;
-    this.cyclicRoll = 0;
-    this.bankRoll = 0;
-    this.tiltRoll = 0;
     this.lastTarget = pos.y + t.hull.height / 2;
     this.grounded = true;
     this.climbOwed = 0;
@@ -1417,11 +1278,11 @@ export class Vehicle implements Combatant, RayHull {
    *
    * ## What a rotor answers instead
    *
-   * **`rev` is the SPOOL** — `this.rotor`, the same 0..1 the disc is drawn
-   * turning at, so the turbine winds up in step with the picture and with the
-   * moment the machine gets light on its skids. Not `rotorPower`: that is what
-   * the disc LIFTS, and a rotor below `liftFloor` is turning and audible and
-   * lifting nothing, which is the whole sound of a spool.
+   * **`rev` is the SPOOL** — `FlightModel.rotor`, the same 0..1 the disc is
+   * drawn turning at, so the turbine winds up in step with the picture and with
+   * the moment the machine gets light on its skids. Not `rotorPower`: that is
+   * what the disc LIFTS, and a rotor below `liftFloor` is turning and audible
+   * and lifting nothing, which is the whole sound of a spool.
    *
    * **`load` is DISC LOADING**, and it is built out of three terms because a
    * rotor is worked by three things:
@@ -1464,15 +1325,16 @@ export class Vehicle implements Combatant, RayHull {
    * shot left it and would answer true here for the rest of the round.
    */
   get running(): boolean {
-    return this.occupied || (this.flies && this.rotor > 0);
+    return this.occupied || (this.flight !== null && this.flight.rotor > 0);
   }
 
   powerplant(stick: number): [load: number, rev: number] {
-    const f = this.spec.flight;
-    if (!f) {
+    const fl = this.flight;
+    if (!fl) {
       return [stick, Math.min(1, this.travel / this.spec.drive.maxSpeed)];
     }
-    const power = this.rotorPower(f);
+    const f = fl.spec;
+    const power = fl.rotorPower();
     const climb = Math.min(1, Math.abs(this.velY) / f.climbRate);
     const fast = Math.min(
       1,
@@ -1480,7 +1342,7 @@ export class Vehicle implements Combatant, RayHull {
     );
     return [
       Math.min(1, power * (0.5 + 0.3 * climb + 0.3 * fast)),
-      this.rotor,
+      fl.rotor,
     ];
   }
 
@@ -1535,9 +1397,10 @@ export class Vehicle implements Combatant, RayHull {
    * this game has but one.
    */
   washTo(out: Vector3, floor = -Infinity): number {
-    const f = this.spec.flight;
-    if (!f || !this.alive) return 0;
-    const power = this.rotorPower(f);
+    const fl = this.flight;
+    if (!fl || !this.alive) return 0;
+    const f = fl.spec;
+    const power = fl.rotorPower();
     if (power <= 0) return 0;
     const p = this.body.position;
     const ground = Math.max(this.skylineAt(p.x, p.z), floor);
@@ -1816,36 +1679,9 @@ export class Vehicle implements Combatant, RayHull {
     // is the honest answer rather than a dropped term: a stationary tank is
     // not driven sideways by its own gun either.
     this.speed -= g.recoilSpeed * along;
-    // ...and the hull ROCKS, which is a second fact and not the same one. The
-    // shove above is spent against the drive over the next second; this is a
-    // velocity straight into the suspension's springs, NOSE UP, because a gun's
-    // recoil is a rearward force well above the tracks and what that does to a
-    // body standing on them is lift the front. Left to the acceleration term
-    // the shove would read as a brake and dive the nose — the opposite of every
-    // tank that has ever fired. See `CONFIG.vehicles.tank.suspension.gunKick`.
-    //
-    // The same couple over a TRAVERSED turret is a roll and not a pitch, and
-    // the two are the one impulse split by the bearing, so the hull is rocked
-    // exactly as hard whichever way the gun is laid. A positive Z stands the
-    // hull's RIGHT side up (`flexSuspension` says so), and a shot to the right
-    // shoves the hull left — which lifts the right side, hence the sign.
-    const s = this.spec.suspension;
-    this.suspPitchVel -= s.gunKick * along;
-    this.suspRollVel += s.gunKick * across;
-    // ...and the MASTS crack, which is a third fact and belongs here for the
-    // same reason the second one does. The hull is shoved back along the GUN's
-    // axis, so both whips are thrown out along it; the only thing the drive
-    // terms would ever see of a shot is the quarter second afterwards where the
-    // tracks brake that shove out, which lays them BACK — so said here, the
-    // pair come out as one crack and a lay-back after it. See `antenna.gunKick`.
-    //
-    // No bearing on this one, and that is the whole point rather than an
-    // omission: a whip's axes are the TURRET's and so is the gun's, so the
-    // direction a shot throws a mast is the one thing on this vehicle that
-    // traversing cannot change. A positive X bend tips a tip toward the
-    // turret's +Z, which is where the gun points.
-    const kick = this.spec.antenna.gunKick;
-    for (let i = 0; i < this.rig.antennae.length; i++) this.whipVelX[i] += kick;
+    // ...and the hull ROCKS and the MASTS crack, which are a second and a third
+    // fact off the same bearing. Both are pictures, so both are `HullFlex`'s.
+    this.flex.kick(along, across);
     return true;
   }
 
@@ -1925,7 +1761,7 @@ export class Vehicle implements Combatant, RayHull {
     // settles like anything else" was true of a machine that had landed and
     // false of one that was flying, which had no weight on its gear at the
     // moment it most obviously does.
-    this.rotor = 0;
+    this.flight?.stop();
     this.lift = 0;
     this.wreckT = CONFIG.vehicles.wreckTime;
     this.rig.paint(true);
@@ -2011,141 +1847,13 @@ export class Vehicle implements Combatant, RayHull {
   }
 
   /**
-   * How much of the rotor's song is worth anything, 0..1.
-   *
-   * Below `liftFloor` the disc turns and lifts nothing, which is what a
-   * spool-up IS — and it takes the tail rotor's authority with it, so a
-   * machine coming up to speed cannot pedal either.
-   *
-   * A method rather than a line inside `flyStep` because the hull on the WIRE
-   * asks it too: `tiltFromMotion` divides the push a machine is making by this
-   * to get the angle its disc must be at, and a second copy of the fade would
-   * be a way for the two screens to draw different attitudes for one spool.
-   */
-  private rotorPower(f: NonNullable<VehicleSpec["flight"]>): number {
-    return this.rotor <= f.liftFloor
-      ? 0
-      : (this.rotor - f.liftFloor) / (1 - f.liftFloor);
-  }
-
-  /**
-   * The attitude a hull on the WIRE must be at, worked out from the motion it
-   * has just made, written onto the same four fields `flyStep` writes.
-   *
-   * **This is the one part of the picture a flying hull could not derive, and
-   * on the two ground kinds it never had to.** `updateRemote`'s bargain is
-   * that the wire carries where a hull ended up and every client works the
-   * rest out for itself — the belts, the steer they are drawn at, the lean,
-   * the heave and the whips are all local. A tank's drawn pitch and roll come
-   * out of that bargain for free, because they are `standOnGround`'s: measured
-   * off the ground it is standing on, which every client holds identically. A
-   * helicopter in the air is standing on nothing, `groundPitchTarget` had
-   * nothing to say about it, and so every hull anybody ELSE was flying was
-   * drawn dead level — cruising flat and sliding through its turns without
-   * banking, while the machine under its own pilot was doing neither.
-   *
-   * ## The disc's own equation, run backwards
-   *
-   * `flyStep` spends `thrustPerTilt * sin(tilt) * power` along the hull's
-   * forward, the same off `cyclicRoll` along its right, and both against a
-   * drag of `drag * v`. So the push a disc is making is `a + drag * v` — what
-   * the machine's velocity actually did, plus what the air was taking off it
-   * meanwhile — and an `asin` hands back the angle the disc must be at to be
-   * making it. That is the move `updateRemote` already makes one axis along
-   * for the steer the tracks are drawn at: a yaw rate over the turn the drive
-   * could have asked for IS the stick that produced it.
-   *
-   * **Both terms are needed and the ACCELERATION is the one that is not
-   * obvious.** The drag term alone is the steady-state balance and is exact
-   * whenever the machine is holding a speed, which is most of a cruise — but
-   * this model has no aerodynamic side force at all, so a machine in a hard
-   * turn is one whose velocity has not caught up with its heading, and the
-   * drag term reads that lag as a pilot commanding a strafe. Measured on
-   * Sarab: a hull at full cyclic through a sustained turn came out at 1.8
-   * degrees nose-down against the 17.2 it was flying at, and banked half as
-   * far as the machine under its own pilot. With the acceleration in, both
-   * are within a degree.
-   *
-   * The estimate is `(vel - velLag) * REMOTE_ACCEL_RATE` rather than a
-   * difference between frames, and the reason is the interpolator rather than
-   * the physics — see that constant.
-   *
-   * The BANK is not derived at all: it is `flyStep`'s line with the MEASURED
-   * yaw rate in place of the commanded one, eased at the same `cyclicRate` so
-   * that both screens draw the same roll through the same turn. The two angles
-   * either side of it are deliberately NOT eased again — what a velocity
-   * carries is the attitude as it was after the pilot's own `cyclicRate`
-   * filter, and a second pass would charge that lag twice.
-   */
-  private tiltFromMotion(
-    dt: number,
-    f: NonNullable<VehicleSpec["flight"]>,
-    yawRate: number,
-  ): void {
-    // The acceleration, as a lagged copy of the velocity chasing it. Stepped
-    // whatever the rotor is doing, so that a machine coming back up to power
-    // is not read against a lag left over from before it wound down.
-    const ax = (this.vel.x - this.velLag.x) * REMOTE_ACCEL_RATE;
-    const az = (this.vel.z - this.velLag.z) * REMOTE_ACCEL_RATE;
-    const chase = Math.min(1, dt * REMOTE_ACCEL_RATE);
-    this.velLag.x += (this.vel.x - this.velLag.x) * chase;
-    this.velLag.z += (this.vel.z - this.velLag.z) * chase;
-    const power = this.rotorPower(f);
-    // A disc that is lifting nothing is tilting nothing either. This is the
-    // hull whose pilot has just stepped out, drawn level as it winds down —
-    // and it is also the guard that keeps the divide below off zero.
-    if (power <= 0) {
-      this.tiltPitch = 0;
-      this.cyclicRoll = 0;
-      this.bankRoll = 0;
-      this.tiltRoll = 0;
-      return;
-    }
-    // Forward is `(sin yaw, cos yaw)` and right is therefore
-    // `(cos yaw, -sin yaw)` — the pair `flyStep` spends its thrust on and
-    // `standOnGround` lays its contacts out on. Both the velocity and the
-    // acceleration are resolved onto the CURRENT heading, which is what keeps
-    // a turning hull's own rotation out of the answer: what is wanted is the
-    // world acceleration seen along the hull's axes, not the rate of change of
-    // a quantity measured in a frame that is itself turning.
-    const sn = Math.sin(this.yaw);
-    const cs = Math.cos(this.yaw);
-    const scale = f.thrustPerTilt * power;
-    const pushX = ax + f.drag * this.vel.x;
-    const pushZ = az + f.drag * this.vel.z;
-    this.tiltPitch = tiltFor(pushX * sn + pushZ * cs, scale, f.cyclicPitch);
-    // Negated exactly where `flyStep` negates the thrust it takes OFF this
-    // angle, and for that reason: `cyclicRoll` is held in the drawn sense and
-    // a positive one raises the hull's own right side, so a machine being
-    // pushed to its right is a machine rolled right-side-DOWN.
-    this.cyclicRoll = -tiltFor(pushX * cs - pushZ * sn, scale, f.cyclicRoll);
-    // …and the coordinated half, which is `flyStep`'s to the letter: the
-    // airspeed rather than `speed`, because the two come apart in exactly the
-    // turn this is drawing, and negated because a positive yaw rate sweeps the
-    // nose right and a machine leans INTO its turn.
-    const lateral = Math.hypot(this.vel.x, this.vel.z) * yawRate;
-    const wantBank = Math.max(
-      -f.bankLimit,
-      Math.min(f.bankLimit, -lateral * f.bankPerLateral),
-    );
-    this.bankRoll +=
-      (wantBank - this.bankRoll) * Math.min(1, dt * f.cyclicRate);
-    // The sum, clamped where `flyStep` clamps it and to the same field: what
-    // is drawn is one attitude and `drive.tiltLimit` is what a hull may hold.
-    const limit = this.spec.drive.tiltLimit;
-    this.tiltRoll = Math.max(
-      -limit,
-      Math.min(limit, this.cyclicRoll + this.bankRoll),
-    );
-  }
-
-  /**
    * One frame of a hull that hangs on a rotor, in place of the throttle walk.
    *
    * Hands back the two figures the rest of `update` reads off the drive — the
    * stick the running gear is drawn at, and the yaw rate the lean and the whips
-   * answer to — having written `yaw`, `vel`, `speed`, `lift` and the commanded
-   * attitude. **It moves the hull no further than the ground path does**:
+   * answer to — having written `yaw`, `vel`, `speed` and `lift`, and had the
+   * `FlightModel` write the commanded attitude. **It moves the hull no further
+   * than the ground path does**:
    * horizontally through the same `moveWithCollisions`, vertically through the
    * same `standOnGround`, which is what keeps one set of answers about where a
    * vehicle is.
@@ -2164,32 +1872,24 @@ export class Vehicle implements Combatant, RayHull {
    * `steerAtRest: 1` and `turnAtSpeed: 1`, which collapses the authority to a
    * flat `turnRate` at every speed, and a flat yaw authority at every speed is
    * what a tail rotor IS. The bank is drawn by `leanToGround` at
-   * `drive.airTiltRate`, the skids flex on `flexHeave`, and the arrival is
-   * `jolt`. What is genuinely here is a thrust vector and a collective.
+   * `drive.airTiltRate`, the skids flex on `HullFlex.flexHeave`, and the
+   * arrival is `jolt`. What is genuinely new is a thrust vector and a
+   * collective, and both are `FlightModel`'s.
    */
   private flyStep(
     dt: number,
     d: DriveInput,
-    f: NonNullable<VehicleSpec["flight"]>,
+    fl: FlightModel,
   ): [number, number] {
-    const c = this.spec.drive;
+    const f = fl.spec;
     const p = this.body.position;
 
     // --- the rotor, which turns whether the machine is going anywhere or not ---
-    // Rate-limited exactly rather than lerped, for `steerTo`'s reason: a spool
-    // is a mechanism and not a smoothing, so it must take the same time on
-    // every machine. A hull nobody is in winds down, which is what makes a
-    // parked helicopter cost the frame what a parked tank costs — with `lift`
-    // back at 0 the ground probe's own skip re-arms and stops asking.
-    const want = this.seats[DRIVER] ? 1 : 0;
-    this.rotor +=
-      Math.sign(want - this.rotor) *
-      Math.min(Math.abs(want - this.rotor), dt / f.spoolTime);
-    this.rotorRun =
-      (this.rotorRun + this.rotor * f.rotorRate * dt) % (Math.PI * 2);
+    // See `FlightModel.spool`.
+    fl.spool(dt, this.seats[DRIVER]);
     // How much of the song is worth anything — see `rotorPower`, which
     // `updateRemote` asks the same question of for the same reason.
-    const power = this.rotorPower(f);
+    const power = fl.rotorPower();
 
     // --- the pedals, and on this kind they are the LOOK ---
     // **The nose follows the eye.** A tracked hull is steered by a stick and a
@@ -2222,128 +1922,12 @@ export class Vehicle implements Combatant, RayHull {
     this.yaw += yawRate * dt;
     this.body.rotation.y = this.yaw;
 
-    // --- the cyclic, and the auto-level is this line with the stick centred ---
-    // What the fore/aft stick commands is an ATTITUDE and not a speed, which is
-    // the whole difference between this and the throttle next door: let go and
-    // the nose comes back level because level is what a centred stick asks for,
-    // and the machine then coasts to a stop on drag alone.
-    //
-    // **`tiltPitch` is the angle as the DRAWN node takes it**, which on this
-    // rig means positive is nose-DOWN — `standOnGround` writes
-    // `groundPitchTarget = -rise` for exactly that reason two hundred lines
-    // below. Holding it in the drawn sense is what keeps the sign honest: the
-    // first version negated here and negated again at the thrust, which
-    // cancelled and flew forwards correctly while drawing the machine 17
-    // degrees nose-UP as it accelerated. The thrust below reads the same field
-    // without a sign of its own, so the picture and the direction of travel
-    // cannot come apart again.
-    const wantTilt = d.throttle * f.cyclicPitch;
-    this.tiltPitch +=
-      (wantTilt - this.tiltPitch) * Math.min(1, dt * f.cyclicRate);
-    // The BANK is drawn rather than flown: a helicopter in a coordinated turn
-    // rolls into it, and how far is the lateral the turn is actually making. So
-    // a pedal turn at a hover banks nothing, which is correct, and is why this
-    // is not simply the stick.
-    //
-    // **It is the AIRSPEED and not `speed`**, which is the one place on this
-    // vehicle the two genuinely come apart. `speed` is the along-heading
-    // component every ground reader wants, and in a hard turn it collapses —
-    // the heading sweeps round faster than the velocity follows it — so a
-    // machine doing 6 m/s through a 77 deg/s turn reported 2 and banked three
-    // degrees, which reads as a vehicle sliding flat round a corner. What a
-    // turn actually pulls is `|v| * omega`, and that is what a wing is holding
-    // up against.
-    //
-    // **It is NEGATED, and that is the DRAWN sense rather than a correction on
-    // top of one** — the same statement `tiltPitch` makes twenty lines above,
-    // got wrong here in the mirror image. `DriveInput.steer` is positive to the
-    // RIGHT and forward is `(sin yaw, cos yaw)`, so a positive `yawRate` sweeps
-    // the nose toward the hull's own right and `lateral` comes out positive in
-    // a right turn — but a positive Z rotation raises local +X, which IS that
-    // right side, measured at +29.6 cm of right-side rise per 0.3 rad. So the
-    // unnegated form rolled AWAY from the turn: 0.42 rad of left bank through a
-    // hard right, which reads as a machine being thrown out of its own turn
-    // rather than leaning into it. `standOnGround` gets the same convention
-    // right two hundred lines below by measuring `right - left` off the ground
-    // itself, which is why a helicopter standing on a slope has always looked
-    // correct and only a FLYING one did not. `bankPerLateral` stays a positive
-    // magnitude in the spec exactly as `cyclicPitch` does; which way it is
-    // spent is this file's to know.
-    const airspeed = Math.hypot(this.vel.x, this.vel.z);
-    const lateral = airspeed * yawRate;
-    const wantBank = Math.max(
-      -f.bankLimit,
-      Math.min(f.bankLimit, -lateral * f.bankPerLateral),
-    );
-    this.bankRoll +=
-      (wantBank - this.bankRoll) * Math.min(1, dt * f.cyclicRate);
-
-    // --- the LATERAL cyclic, which is the other half of the same stick ---
-    // With the nose bolted to the look there is no yaw left for `d.steer` to
-    // mean, so it means what the other axis of a cyclic means: the disc tilts
-    // sideways and the machine goes that way. This is `tiltPitch` again with
-    // the axis changed — an ATTITUDE and not a speed, so letting go rolls back
-    // to level and the machine coasts out of the strafe on drag alone — and it
-    // is held in the DRAWN sense for the same reason and with the same sign
-    // measured the same way: a positive Z rotation raises the hull's own right
-    // side, so strafing RIGHT is a NEGATIVE roll.
-    const wantRoll = -d.steer * f.cyclicRoll;
-    this.cyclicRoll +=
-      (wantRoll - this.cyclicRoll) * Math.min(1, dt * f.cyclicRate);
-
-    // **The drawn roll is the sum and only the COMMANDED half has thrust
-    // behind it**, which is a decision rather than an oversight and the one
-    // place this model deliberately lets the picture carry more than the
-    // physics. A disc tilted by theta really does push `T sin(theta)` that
-    // way, so taking the thrust off the whole angle is the more physical
-    // reading — and it is the wrong one HERE, because the coordinated half is
-    // now made of the pilot's LOOK: `lateral` is `airspeed * yawRate` and
-    // `yawRate` is how fast the view is sweeping, so a bank with thrust behind
-    // it would mean turning your head translates the aircraft. A player
-    // glancing at a flag would slide toward it. The commanded half is the
-    // half somebody asked for, and it is the half that moves the machine.
-    //
-    // Clamped to `drive.tiltLimit`, which is what that field has always meant
-    // on this kind and until now bounded nothing: the flying branch writes
-    // `groundRollTarget` directly and skips `standOnGround`'s own clamp, so a
-    // full strafe inside a hard turn was 0.71 rad — 41 degrees — of roll on a
-    // machine whose stated bank limit is 34.
-    this.tiltRoll = Math.max(
-      -c.tiltLimit,
-      Math.min(c.tiltLimit, this.cyclicRoll + this.bankRoll),
-    );
-
-    // --- thrust ---
-    // The disc's thrust is along the hull's own UP, so tilting it by theta puts
-    // `T sin(theta)` along the tilt. The vertical share is the collective's and
-    // is spent below; what is taken here is the horizontal alone, on BOTH axes
-    // of the stick and off the same constant, because a disc has no opinion
-    // about which way it has been tipped.
-    //
-    // Forward is `(sin yaw, cos yaw)` and right is therefore
-    // `(cos yaw, -sin yaw)` — the same pair `standOnGround` lays its contacts
-    // out on. The lateral term is negated because `cyclicRoll` is the DRAWN
-    // angle and a positive one raises the right side, so a right-side-down
-    // roll has to come out as thrust to the right.
-    const thrust = f.thrustPerTilt * Math.sin(this.tiltPitch) * power;
-    const side = f.thrustPerTilt * Math.sin(-this.cyclicRoll) * power;
-    this.vel.x += (Math.sin(this.yaw) * thrust + Math.cos(this.yaw) * side) * dt;
-    this.vel.z += (Math.cos(this.yaw) * thrust - Math.sin(this.yaw) * side) * dt;
-
-    // Drag, stepped EXACTLY and not with the frame-lerp idiom: this velocity
-    // moves the hull a gunner is laying a gun from, so it is somewhere bullets
-    // go, and the convention is explicit about which of the two those need.
-    const keep = Math.exp(-f.drag * dt);
-    this.vel.x *= keep;
-    this.vel.z *= keep;
-    // The terminal is separate from the drag so that top speed stays a FACT
-    // rather than a consequence — the same statement `maxSpeed` makes next door.
-    const air = Math.hypot(this.vel.x, this.vel.z);
-    if (air > f.maxAirspeed) {
-      const k = f.maxAirspeed / air;
-      this.vel.x *= k;
-      this.vel.z *= k;
-    }
+    // --- the cyclic and the thrust, which are the disc's ---
+    // The attitude the stick commands and the bank the turn draws, then the
+    // push off that attitude, spent on `vel`. The bank reads the airspeed from
+    // BEFORE this frame's thrust, so `cyclic` runs first.
+    fl.cyclic(dt, d, yawRate, this.vel);
+    fl.thrust(dt, this.yaw, this.vel);
 
     // `speed` is still the ALONG-HEADING scalar every downstream reader wants —
     // the engine note, the crush gate, `steerAuthority`, the collision sphere's
@@ -2356,37 +1940,10 @@ export class Vehicle implements Combatant, RayHull {
     // --- the collective ---
     // The ceiling is measured over the FLOOR and not over sea level: this map
     // runs from -6 to +7 and a ceiling above the origin would be a different
-    // height above every part of it. It fades rather than clamps, so the
-    // machine runs out of air instead of hitting a lid.
+    // height above every part of it. What the disc does with it is
+    // `FlightModel.collective`'s.
     const above = p.y - this.spec.hull.height / 2 - this.terrain.surfaceAt(p.x, p.z);
-    const fade = Math.max(
-      0,
-      Math.min(1, (f.ceiling - above) / f.ceilingBand),
-    );
-    // **The collective asks for a RATE, and `lift` is whatever acceleration
-    // chases it.** That is the one thing here that is not simply "a force on a
-    // mass", and it is deliberate twice over.
-    //
-    // It is what a HOVER is. An acceleration-commanding collective holds
-    // VELOCITY when it is centred rather than height — Newton's first law — so
-    // a machine that had been climbing went on climbing with the stick let go,
-    // measured at 237 m over a 40 m ceiling with nothing in the model asking it
-    // to stop. What a pilot means by letting go is "stay where you are", and a
-    // target rate of zero says exactly that with no altitude-holder anywhere.
-    //
-    // And it is what makes the CEILING work. The fade is on the asked rate and
-    // only when it asks to go UP, so at the ceiling full stick asks for zero
-    // and the correction actively arrests a climb already in hand — where
-    // fading `lift` itself would put the machine under gravity and drop it out
-    // of the sky, which was the first version and cost a 35 m fall from a
-    // centred stick. Coming DOWN is never something the air refuses.
-    const wantY =
-      d.lift >= 0 ? d.lift * f.climbRate * fade : d.lift * f.descentRate;
-    const need = (wantY - this.velY) * f.liftResponse;
-    this.lift =
-      (c.gravity +
-        Math.max(-f.climbAccel, Math.min(f.climbAccel, need))) *
-      power;
+    this.lift = fl.collective(d.lift, above, this.velY);
     return [steer, yawRate];
   }
 
@@ -2414,7 +1971,7 @@ export class Vehicle implements Combatant, RayHull {
     const c = this.spec.drive;
     // Null on a hull that cannot leave the ground, which is the only question
     // this method puts about a kind. See `Vehicle.flies`.
-    const fl = this.spec.flight;
+    const fl = this.flight;
     // What the drive ACHIEVES this frame, for the suspension to answer to. Read
     // as a difference rather than taken from the throttle because the three
     // things that decelerate a hull are not all the throttle's: letting go of
@@ -2479,6 +2036,7 @@ export class Vehicle implements Combatant, RayHull {
     // and `freeFromWalls`, and a hovering hull that had drifted into a wall
     // would otherwise never be pushed back out of it.
     const stirred = this.vel.lengthSquared() > 0 || yawRate !== 0;
+    const rotorRun = fl ? fl.rotorRun : 0;
     // **The steering is drawn on a hull that is not moving at all**, which is
     // the one thing the skip above cannot cover on a vehicle that has to be
     // rolling to turn: a parked truck under full lock yaws by nothing, and if
@@ -2491,14 +2049,14 @@ export class Vehicle implements Combatant, RayHull {
     if (
       stirred ||
       steer !== this.steerShown ||
-      this.rotorRun !== this.rotorShown
+      rotorRun !== this.rotorShown
     ) {
       const differential = (yawRate * this.rig.gauge) / 2;
       this.trackRun[0] += (this.speed + differential) * dt;
       this.trackRun[1] += (this.speed - differential) * dt;
-      this.rig.setRun(this.trackRun[0], this.trackRun[1], steer, this.rotorRun);
+      this.rig.setRun(this.trackRun[0], this.trackRun[1], steer, rotorRun);
       this.steerShown = steer;
-      this.rotorShown = this.rotorRun;
+      this.rotorShown = rotorRun;
     }
 
     // **Aimed on a TURN as well as on a move, and that is a fix rather than a
@@ -2575,7 +2133,7 @@ export class Vehicle implements Combatant, RayHull {
 
     if (stirred || this.clearing) this.freeFromWalls(dt);
     this.standOnGround(dt);
-    this.flexHeave(dt);
+    this.flex.flexHeave(dt, this.jolt);
     if (fl) {
       // **The commanded attitude wins in the AIR and the ground's wins on the
       // skids, and it is `grounded` that decides — a state, and never a kind.**
@@ -2583,8 +2141,8 @@ export class Vehicle implements Combatant, RayHull {
       // a level pad takes `standOnGround`'s own targets, so `rig.hull.rotation`
       // reads 0.0 there exactly as a tank's does.
       if (!this.grounded) {
-        this.groundPitchTarget = this.tiltPitch;
-        this.groundRollTarget = this.tiltRoll;
+        this.groundPitchTarget = fl.tiltPitch;
+        this.groundRollTarget = fl.tiltRoll;
       }
       // The one thing the ground can do to this kind that it cannot do to the
       // other two. `jolt` is already "what the ground did to the hull's own
@@ -2592,8 +2150,10 @@ export class Vehicle implements Combatant, RayHull {
       // of an arrival — so this reads a number that was already there rather
       // than detecting a landing. Spent as `shell` so `resist` cannot shrug it
       // off, and through the one door damage takes.
-      const over = this.jolt - fl.crashJolt;
-      if (over > 0) this.takeDamage(over * fl.crashDamage, undefined, "shell");
+      const over = this.jolt - fl.spec.crashJolt;
+      if (over > 0) {
+        this.takeDamage(over * fl.spec.crashDamage, undefined, "shell");
+      }
     }
     // ...and climbing costs speed, for the same reason walking into a wall
     // does. Spent here rather than inside the ground so it lands BEFORE the
@@ -2668,7 +2228,7 @@ export class Vehicle implements Combatant, RayHull {
     // After the hull, never before it: the whips answer to how fast the node
     // they hang off is turning, and that rate is a difference `leanHull` has
     // only just finished computing.
-    this.flexAntennae(dt, accel, lateral);
+    this.flex.flexAntennae(dt, accel, lateral);
     this.sync();
   }
 
@@ -2810,14 +2370,15 @@ export class Vehicle implements Combatant, RayHull {
       this.standOnGround(dt);
       // A wreck settles on its springs after it falls, for the reason its
       // masts keep stirring: it is still a mass standing on the ground.
-      this.flexHeave(dt);
+      this.flex.flexHeave(dt, this.jolt);
       // `update`'s rule, and it is `grounded` that decides rather than a kind:
       // the commanded attitude wins in the air and the ground's wins on the
       // skids. `tiltPitch`/`tiltRoll` are frozen wherever the shot left them,
       // which is exactly what a falling wreck should be drawn at.
-      if (this.spec.flight && !this.grounded) {
-        this.groundPitchTarget = this.tiltPitch;
-        this.groundRollTarget = this.tiltRoll;
+      const fl = this.flight;
+      if (fl && !this.grounded) {
+        this.groundPitchTarget = fl.tiltPitch;
+        this.groundRollTarget = fl.tiltRoll;
       }
       const c = this.spec.drive;
       this.leanHull(dt, Math.max(-c.brake, Math.min(c.accel, accel)), 0);
@@ -2827,40 +2388,11 @@ export class Vehicle implements Combatant, RayHull {
       // wind is the only thing on it still saying the world is running. After
       // the hull, never before it, for `update`'s reason: the rate they bend
       // against is a difference `leanHull` has only just finished computing.
-      this.flexAntennae(dt, 0, 0);
+      this.flex.flexAntennae(dt, 0, 0);
     }
     this.sync();
   }
 
-  /**
-   * One frame of a hull SOMEBODY ELSE is driving — the authority's copy of a
-   * player's tank, or a client's copy of anybody's.
-   *
-   * `update`'s twin, and the split between them is exactly the split
-   * `docs/multiplayer.md` makes for a body: what a driver DECIDES arrives from
-   * outside, and everything that is a fact about the world the hull is
-   * standing in is re-derived here rather than sent. So the drive, the
-   * throttle curve and the turret's slew are gone — those produced the numbers
-   * that just arrived — and the ground, the lean, the suspension, the tracks
-   * and the masts all run exactly as they do for a driven hull.
-   *
-   * **The height is the LOCAL probe's and not the wire's**, which is the one
-   * decision in here worth arguing. Every client and the server hold the
-   * identical collider world and heightfield, so ten track contacts answer the
-   * same question the same way on all of them — and answering it locally costs
-   * one probe fan that a parked hull skips anyway, while sending it would put
-   * an interpolated `y` in a fight with the plank the springs are measured
-   * against. What the wire's `y` is kept for is the RESYNC: a difference of
-   * more than a metre is not float noise, it is a hull that has driven off
-   * something or been put back on its hardstanding, and the local guess has to
-   * be abandoned rather than climbed out of at the kerb rate.
-   *
-   * `speed` is MEASURED from the ground covered, for `Match.movingFor`'s
-   * reason one scale up: it is what the tracks, the engine note and the climb
-   * limiter all read, and a driver reporting it could report anything. A hull
-   * that is being shoved sideways by the interpolator still runs its belts,
-   * which is right — that is what a track slipping looks like.
-   */
   /**
    * The authority did not take this hull where its own driver put it. Move it.
    *
@@ -2911,6 +2443,35 @@ export class Vehicle implements Combatant, RayHull {
     this.sync();
   }
 
+  /**
+   * One frame of a hull SOMEBODY ELSE is driving — the authority's copy of a
+   * player's tank, or a client's copy of anybody's.
+   *
+   * `update`'s twin, and the split between them is exactly the split
+   * `docs/multiplayer.md` makes for a body: what a driver DECIDES arrives from
+   * outside, and everything that is a fact about the world the hull is
+   * standing in is re-derived here rather than sent. So the drive, the
+   * throttle curve and the turret's slew are gone — those produced the numbers
+   * that just arrived — and the ground, the lean, the suspension, the tracks
+   * and the masts all run exactly as they do for a driven hull.
+   *
+   * **The height is the LOCAL probe's and not the wire's**, which is the one
+   * decision in here worth arguing. Every client and the server hold the
+   * identical collider world and heightfield, so ten track contacts answer the
+   * same question the same way on all of them — and answering it locally costs
+   * one probe fan that a parked hull skips anyway, while sending it would put
+   * an interpolated `y` in a fight with the plank the springs are measured
+   * against. What the wire's `y` is kept for is the RESYNC: a difference of
+   * more than a metre is not float noise, it is a hull that has driven off
+   * something or been put back on its hardstanding, and the local guess has to
+   * be abandoned rather than climbed out of at the kerb rate.
+   *
+   * `speed` is MEASURED from the ground covered, for `Match.movingFor`'s
+   * reason one scale up: it is what the tracks, the engine note and the climb
+   * limiter all read, and a driver reporting it could report anything. A hull
+   * that is being shoved sideways by the interpolator still runs its belts,
+   * which is right — that is what a track slipping looks like.
+   */
   updateRemote(
     dt: number,
     x: number,
@@ -2977,7 +2538,7 @@ export class Vehicle implements Combatant, RayHull {
     // local probe would sink every remote helicopter at gravity until the one
     // metre yanked it back, once a frame, for the whole round.
     const wantY = y + half;
-    const fl = t.flight;
+    const fl = this.flight;
     if (fl) {
       // Measured, not sent, for the reason `speed` is measured next door — the
       // springs answer to it and a driver reporting it could report anything —
@@ -2986,8 +2547,8 @@ export class Vehicle implements Combatant, RayHull {
       this.velY =
         dt > 0
           ? Math.max(
-              -fl.descentRate,
-              Math.min(fl.climbRate, (wantY - p.y) / dt),
+              -fl.spec.descentRate,
+              Math.min(fl.spec.climbRate, (wantY - p.y) / dt),
             )
           : 0;
       p.y = wantY;
@@ -3004,19 +2565,14 @@ export class Vehicle implements Combatant, RayHull {
       // rotor is the one part of a helicopter that is turning even when the
       // machine on the wire has not moved at all. Held up by whether anybody
       // is ABOARD, which the snapshot does carry.
-      const want = this.seats[DRIVER] ? 1 : 0;
-      this.rotor +=
-        Math.sign(want - this.rotor) *
-        Math.min(Math.abs(want - this.rotor), dt / fl.spoolTime);
-      this.rotorRun =
-        (this.rotorRun + this.rotor * fl.rotorRate * dt) % (Math.PI * 2);
+      fl.spool(dt, this.seats[DRIVER]);
       // The ATTITUDE, worked out from the motion that has just arrived rather
-      // than sent — see `tiltFromMotion`, which is the reason this is the only
-      // part of a helicopter's picture that needed a line of its own. Asked
-      // here because it reads the velocity and the yaw rate measured above,
-      // and SPENT below the ground, where the airborne branch of `update`
-      // spends it.
-      this.tiltFromMotion(dt, fl, yawRate);
+      // than sent — see `FlightModel.tiltFromMotion`, which is the reason this
+      // is the only part of a helicopter's picture that needed a line of its
+      // own. Asked here because it reads the velocity and the yaw rate measured
+      // above, and SPENT below the ground, where the airborne branch of
+      // `update` spends it.
+      fl.tiltFromMotion(dt, this.vel, this.yaw, yawRate);
     } else if (Math.abs(p.y - wantY) > REMOTE_RESYNC_Y) {
       p.y = wantY;
       this.velY = 0;
@@ -3049,10 +2605,11 @@ export class Vehicle implements Combatant, RayHull {
     // widening: a disc that has turned is a picture that has changed, and a
     // helicopter hovering perfectly still is exactly the hull the old gate
     // would have frozen the rotor on.
+    const rotorRun = fl ? fl.rotorRun : 0;
     if (
       this.speed !== 0 ||
       yawRate !== 0 ||
-      this.rotorRun !== this.rotorShown
+      rotorRun !== this.rotorShown
     ) {
       const differential = (yawRate * this.rig.gauge) / 2;
       this.trackRun[0] += (this.speed + differential) * dt;
@@ -3067,14 +2624,14 @@ export class Vehicle implements Combatant, RayHull {
         this.trackRun[0],
         this.trackRun[1],
         Math.abs(turn) > 1e-4 ? Math.max(-1, Math.min(1, yawRate / turn)) : 0,
-        this.rotorRun,
+        rotorRun,
       );
-      this.rotorShown = this.rotorRun;
+      this.rotorShown = rotorRun;
     }
     if (Math.abs(this.speed) > 1e-3) this.aimCollider();
 
     this.standOnGround(dt);
-    this.flexHeave(dt);
+    this.flex.flexHeave(dt, this.jolt);
     // **The commanded attitude wins in the AIR and the ground's wins on the
     // skids**, which is `update`'s line and `update`'s reason: it is
     // `grounded` that decides, a state and never a kind, so a remote hull
@@ -3083,8 +2640,8 @@ export class Vehicle implements Combatant, RayHull {
     // two angles came from — `tiltFromMotion` above, off the wire's own
     // motion, rather than off a stick nobody here is holding.
     if (fl && !this.grounded) {
-      this.groundPitchTarget = this.tiltPitch;
-      this.groundRollTarget = this.tiltRoll;
+      this.groundPitchTarget = fl.tiltPitch;
+      this.groundRollTarget = fl.tiltRoll;
     }
 
     // Held in the world and drawn against the hull, exactly as `update` does
@@ -3102,7 +2659,7 @@ export class Vehicle implements Combatant, RayHull {
     const accel = dt > 0 ? (this.speed - speedWas) / dt : 0;
     const lateral = this.speed * yawRate;
     this.leanHull(dt, accel, lateral);
-    this.flexAntennae(dt, accel, lateral);
+    this.flex.flexAntennae(dt, accel, lateral);
     this.sync();
   }
 
@@ -3734,7 +3291,6 @@ export class Vehicle implements Combatant, RayHull {
    */
   private leanHull(dt: number, accel: number, lateral: number): void {
     this.leanToGround(dt);
-    this.flexSuspension(dt, accel, lateral);
     // **The two halves are written to two DIFFERENT NODES, and that is the
     // whole of the difference between a tank on a suspension and a tank being
     // tilted.** The ground half is the whole vehicle standing on a slope, so
@@ -3751,27 +3307,16 @@ export class Vehicle implements Combatant, RayHull {
       g.x = this.groundPitch;
       g.z = this.groundRoll;
     }
-    const b = this.rig.sprung.rotation;
-    if (
-      Math.abs(this.suspPitch - b.x) > 1e-5 ||
-      Math.abs(this.suspRoll - b.z) > 1e-5
-    ) {
-      b.x = this.suspPitch;
-      b.z = this.suspRoll;
-    }
-    // How fast the MAST FEET are turning, which is what the antennae bend
-    // against, and it is still the SUM: a whip hangs off the turret, which
-    // rides on the sprung body, which hangs off the hull, so its foot carries
-    // both halves. A hull tipping onto a kerb rotates it exactly as one
-    // rocking on its own springs does, and a whip cannot tell the two apart.
-    const pitch = this.groundPitch + this.suspPitch;
-    const roll = this.groundRoll + this.suspRoll;
-    if (dt > 0) {
-      this.leanRateX = (pitch - this.leanX) / dt;
-      this.leanRateZ = (roll - this.leanZ) / dt;
-    }
-    this.leanX = pitch;
-    this.leanZ = roll;
+    // The suspension half, and the rate the mast feet turn at off the two
+    // summed. See `HullFlex.lean`.
+    this.flex.lean(
+      dt,
+      accel,
+      lateral,
+      this.gearLoad(),
+      this.groundPitch,
+      this.groundRoll,
+    );
   }
 
   /**
@@ -3800,57 +3345,6 @@ export class Vehicle implements Combatant, RayHull {
     const k = Math.min(1, dt * (this.grounded ? c.tiltRate : c.airTiltRate));
     this.groundPitch += (this.groundPitchTarget - this.groundPitch) * k;
     this.groundRoll += (this.groundRollTarget - this.groundRoll) * k;
-  }
-
-  /**
-   * How much travel a tilt is asking of its outermost station, in metres.
-   *
-   * `WHEEL_REACH` and not `TRACK_REACH`: a bump stop is something a road-wheel
-   * ARM reaches, and the sprocket and the idler hang off the hull with no arms
-   * at all. The two axes SUM because one station is the corner both of them
-   * reach — a hull diving and leaning at once puts the same wheel nearest its
-   * stop twice over.
-   */
-  private stationTravel(pitch: number, roll: number): number {
-    return (
-      this.rig.wheelReach * Math.abs(Math.sin(pitch)) +
-      (this.rig.gauge / 2) * Math.abs(Math.sin(roll))
-    );
-  }
-
-  /**
-   * What a spring's rate is multiplied by once `f` of its travel is spent.
-   *
-   * **A PROGRESSIVE spring is the difference between a suspension that runs
-   * out and a suspension that resists**, and it is one number:
-   * `1 + progression * f^2`. Squared, so the first part of the travel is
-   * within a few per cent of the plain rate and the last part is where the
-   * pack goes solid — a spring that hardened linearly from rest would be a
-   * stiffer spring rather than a progressive one, and would take the small
-   * movements away along with the flop.
-   *
-   * **It changes where a spring SETTLES and not just how fast it gets there**,
-   * which is the whole of what it is for: the drive term is untouched, so a
-   * steady acceleration now solves `x * rate(x) = want` instead of `x = want`
-   * and the answer is inside the travel where the old one was on the stop.
-   *
-   * **The stops are not what this replaces.** They are still there and still
-   * spend one budget — this is the ramp up to a wall that used to be a wall on
-   * its own, and a hull that has spent its travel on one axis still has none
-   * left for the other. What it does change is who arrives at them: on a
-   * progressive hull the tilt reaches a stop on turn-in and comes off it,
-   * where it used to lie against one, and the heave stops arriving at all —
-   * see `truck.suspension.heaveBump` for why that is a reserve and not dead
-   * space.
-   *
-   * At `progression: 0` it returns 1 and every spring in the file is the exact
-   * arithmetic it was, which is what a tank gets.
-   */
-  private springRate(f: number): number {
-    const p = this.spec.suspension.progression;
-    if (p <= 0) return 1;
-    const spent = Math.min(1, Math.max(0, f));
-    return 1 + p * spent * spent;
   }
 
   /**
@@ -3914,323 +3408,8 @@ export class Vehicle implements Combatant, RayHull {
    * what is holding the aircraft up.
    */
   private gearLoad(): number {
-    const fl = this.spec.flight;
-    return fl ? 1 - this.rotorPower(fl) : 1;
-  }
-
-  /**
-   * What the hull's own mass does to it: the nose dives under the brake, squats
-   * under power, and the body leans out of a turn.
-   *
-   * **A hull that stayed perfectly level was the tell that a tank was a box
-   * being slid rather than a mass being driven**, and the fix is not more
-   * animation but the arithmetic that was already there: the drive knows the
-   * acceleration it achieved and the yaw rate it turned at, and weight transfer
-   * is those two numbers and a spring.
-   *
-   * Two springs, one per axis, driven toward an angle proportional to the
-   * acceleration along that axis:
-   *
-   * - **Pitch** answers to `accel` along the hull's own forward, which is a
-   *   DIFFERENCE and not the throttle — coasting, braking and driving into a
-   *   building all decelerate, and only the last of them is unasked for. The
-   *   input is clamped (`accelLimit`) because a collision spends most of road
-   *   speed in a single frame, and the output is bounded by the STOPS below.
-   * - **Roll** answers to `speed * yawRate`, the lateral acceleration of the
-   *   turn. That is zero for a neutral-steer pivot on the spot, which is
-   *   correct: the hull is rotating, not cornering, and there is nothing for it
-   *   to lean against.
-   *
-   * **Both are scaled by `gearLoad`, which is the same argument one step
-   * further back**: a hull whose ROTOR is carrying it is not cornering against
-   * its skids either, and there is nothing for that to lean against either. It
-   * is 1 on anything that cannot fly, so neither line moved on the ground
-   * kinds.
-   *
-   * **What bounds the answer is a TRAVEL and not an angle, and that is the
-   * second half of the fix the node split is the first half of.** A real
-   * tracked suspension runs out where a road-wheel arm meets its bump stop, so
-   * how far the body may tilt is how much travel is left at the outermost
-   * station divided by how far out that station is — and the heave draws on
-   * the same stops, so the two are spent from ONE budget rather than clamped
-   * separately at limits that could each be legal and jointly put the belly
-   * through the road. It falls out at ~3.3 deg of pitch and ~5.2 deg of roll
-   * on the tank, and nothing in `CONFIG` states either number.
-   *
-   * **The springs get STIFFER the more of that budget they have spent
-   * (`suspension.progression`), and that is what keeps a stop an event rather
-   * than a driving position.** A linear spring pointed at a target angle
-   * outside its travel has nowhere to go but the stop, and it sits there for
-   * as long as the input holds with its velocity killed — measured on the
-   * truck, where full lock at road speed asks for 19.4 deg against a budget
-   * worth 8.2, the body lay on its side through every corner, and **half the
-   * steering range produced the same lean as the other half**. What hardens is
-   * the RESTORE and never the drive, so the angle a steady acceleration
-   * settles at solves `x * rate(x) = want` and lands inside the travel with
-   * the curve monotone the whole way out. The tank states 0 and its arithmetic
-   * is untouched, exactly and not approximately.
-   *
-   * Stepped semi-implicit Euler rather than in closed form. `CLAUDE.md`'s rule
-   * is that anything that moves where bullets go or reads as recoil is stepped
-   * exactly; this moves neither — the gun sits on the turret, which hangs off
-   * this node and is aimed in WORLD angles, so a leaning hull does not carry
-   * the gun off the aim — and at ~1 Hz Euler holds it comfortably. Same
-   * treatment as the camera's landing absorb, and for the same reason.
-   */
-  private flexSuspension(dt: number, accel: number, lateral: number): void {
-    const s = this.spec.suspension;
-    const bound = (v: number, lim: number) => Math.max(-lim, Math.min(lim, v));
-    const felt = bound(accel, s.accelLimit);
-    // **Weight transfer needs WEIGHT**, and `gearLoad` is how much of it this
-    // hull's running gear is holding. It is exactly 1 on anything without a
-    // rotor, so the two lines below are the lines they always were on both
-    // ground kinds — see that method.
-    const load = this.gearLoad();
-    // Accelerating lifts the nose and a positive X rotation puts it down, so
-    // the pitch target is the negative of the acceleration. Turning right is a
-    // positive yaw rate, and a body thrown left by it stands its RIGHT side up,
-    // which is a positive Z.
-    const wantPitch = -s.pitchPerAccel * felt * load;
-    const wantRoll = s.rollPerAccel * bound(lateral, s.accelLimit) * load;
-    // How much travel a corner station has left, in metres, AFTER `flexHeave`
-    // has spent what it spent. A tilt spends both stops at once — one end down
-    // is the other end up — so what is left is the smaller of the two
-    // remainders, which is why the tilt is bounded by `heaveDroop` rather than
-    // by the larger `heaveBump`.
-    const room = Math.min(s.heaveDroop - this.heave, s.heaveBump + this.heave);
-    // The RATE the two springs are standing at, off the travel they have
-    // already spent — ONE number for both axes, because they spend one budget,
-    // which is the same argument the stop below makes one step later. Read off
-    // where the tilt IS rather than off where this frame is taking it, which
-    // is the semi-implicit step the rest of this method takes.
-    const rate = this.springRate(
-      room > 1e-6 ? this.stationTravel(this.suspPitch, this.suspRoll) / room : 1,
-    );
-    // **The drive term is the acceleration's and the rate never touches it; it
-    // is the RESTORE that hardens.** `stiffness * (want - rate * x)` is the
-    // plain `stiffness * (want - x)` at rate 1, which is what a hull with no
-    // `progression` gets, exactly and not approximately.
-    //
-    // The DAMPER hardens with it, as the square root of the rate, so that the
-    // damping ratio the two figures were tuned to is the ratio at every point
-    // of the travel: a suspension that rang at full lean and not at rest would
-    // be two different vehicles. What is left over — the spring's TANGENT rate
-    // climbs faster than the secant one the restore is written in — leaves a
-    // hull a little livelier the harder it is leaning, which is the direction
-    // a truck should err in.
-    const damp = s.damping * Math.sqrt(rate);
-    this.suspPitchVel +=
-      (s.stiffness * (wantPitch - rate * this.suspPitch) - damp * this.suspPitchVel) * dt;
-    this.suspRollVel +=
-      (s.stiffness * (wantRoll - rate * this.suspRoll) - damp * this.suspRollVel) * dt;
-    let pitch = this.suspPitch + this.suspPitchVel * dt;
-    let roll = this.suspRoll + this.suspRollVel * dt;
-    // --- the stops, which are at the WHEEL STATIONS and not on the angles ---
-    //
-    // What the springs are asking for now, at the outermost road wheel and the
-    // outer edge of a track.
-    const asked = this.stationTravel(pitch, roll);
-    if (asked > room) {
-      // Scaled rather than clamped per axis, because the two are drawing on
-      // ONE budget: a hull already leaning hard has less dive left in it, and
-      // a hull that has just landed on its bump stops has none at all and goes
-      // flat, which is what bottoming out does to a body.
-      const scale = room / asked;
-      pitch *= scale;
-      roll *= scale;
-      // A stop absorbs rather than bounces, exactly as `flexHeave`'s does.
-      this.suspPitchVel = 0;
-      this.suspRollVel = 0;
-    }
-    this.suspPitch = pitch;
-    this.suspRoll = roll;
-  }
-
-  /**
-   * Settles the hull's BODY onto its running gear, which is the third axis of
-   * the suspension and the only one measured in metres.
-   *
-   * **A hull that stayed exactly as far off its tracks as it was parked at was
-   * the last thing making a tank look weightless.** The other two springs
-   * answer to the drive, so a tank that was neither accelerating nor cornering
-   * had nothing to say — and driving over a car is exactly that: the hull went
-   * up, came back down and never once looked like it weighed sixty tonnes,
-   * because the only thing that had moved was the whole vehicle, rigidly,
-   * exactly as far as the ground told it to.
-   *
-   * What it answers to is one number and it is not a new measurement:
-   * `standOnGround` already knows what the ground did to the hull's own
-   * vertical velocity, and **when the ground under a vehicle changes speed the
-   * body does not** — the difference IS the deflection. So a landing spends
-   * the closing speed into the spring, mounting a kerb spends the rise, the
-   * top of a car spends that same rise back the other way, and a hull in the
-   * air spends gravity itself and droops onto its stops. One term, four
-   * events, and nothing anywhere that knows which of them is happening.
-   *
-   * **The jolt is spent on the spring's VELOCITY and never on its position**,
-   * for the reason `fireGun` kicks the pitch spring's: it is an impulse, so it
-   * is frame-rate free — the sum of what a fall hands over does not depend on
-   * how many frames the fall took — where an acceleration read off it and
-   * clamped would hand a 30 Hz frame twice the landing of a 60 Hz one.
-   *
-   * **The spring is the progressive one `flexSuspension` describes**, on this
-   * axis' own two stops: one suspension has one rate, and a body that has
-   * crushed most of its bump rubber is not on the rate it was parked at. What
-   * it does NOT do is take the stop away — the most the ground can hand these
-   * springs still carries more energy than the hardened spring absorbs inside
-   * `heaveBump`, so a real landing still arrives on the stop and rings off it.
-   *
-   * **The two stops are not the same number, they are not this axis' alone,
-   * and `heaveBump` is not a taste**: it is two thirds of `TankModel.BELLY`,
-   * so a body compressing much further would put the hull through the road it
-   * is driving on — and the third that is left over is what `flexSuspension`
-   * is allowed to tilt into. Reaching a stop kills the travel dead and the
-   * spring pushes back out, which is what bottoming out is, and a hull that
-   * has reached one has no dive left in it either.
-   *
-   * Cosmetic in `flexSuspension`'s strict sense — this reaches one
-   * `TransformNode`'s Y and nothing else. The collider does not move, the gun
-   * is aimed in world angles off a turret that rides on this node, and the
-   * reticle still cannot lie.
-   */
-  private flexHeave(dt: number): void {
-    const s = this.spec.suspension;
-    this.heaveVel -= this.jolt * s.heaveResponse;
-    // The hardening the tilt takes, on this axis' own pair of stops — one
-    // suspension, one rate, and a body two thirds of the way onto its bump
-    // rubber is not standing on the rate it left the ride height at. The two
-    // directions normalise against DIFFERENT stops because they ARE different
-    // stops: `heaveBump` is a rubber being crushed and `heaveDroop` is a body
-    // lifting off its own running gear.
-    const rate = this.springRate(
-      this.heave < 0 ? -this.heave / s.heaveBump : this.heave / s.heaveDroop,
-    );
-    this.heaveVel +=
-      (-s.heaveStiffness * rate * this.heave -
-        s.heaveDamping * Math.sqrt(rate) * this.heaveVel) *
-      dt;
-    const want = this.heave + this.heaveVel * dt;
-    this.heave = Math.max(-s.heaveBump, Math.min(s.heaveDroop, want));
-    // A stop absorbs rather than bounces: what is left of the travel is spent
-    // in the rubber, and what comes back out is the spring's own doing.
-    if (this.heave !== want) this.heaveVel = 0;
-    // Guarded for `leanHull`'s reason: two of these are parked doing nothing
-    // for most of a round, and a write is a world matrix whether the number
-    // moved or not.
-    if (Math.abs(this.heave - this.rig.sprung.position.y) > 1e-5) {
-      this.rig.sprung.position.y = this.heave;
-    }
-  }
-
-  /**
-   * Bends the two whip antennae.
-   *
-   * **This is the suspension's own argument one derivative further out, and it
-   * is why there is no physics engine anywhere near it.** A mast is a thin
-   * cantilever bolted to the turret: it bends because of the acceleration the
-   * drive achieved, because of how fast the thing it is bolted to is rotating,
-   * and because there is a wind. All three of those numbers are already in this
-   * class, and what a whip does with them is one damped spring per axis. A
-   * Havok chain would need a kinematic body per link, a constraint per joint
-   * and a transform read back per frame — for a picture, on a hull that is
-   * moved by `moveWithCollisions` and SNAPPED up to `stepHeight` by the ground
-   * probe, which is a teleport as far as a solver is concerned and cracks a
-   * jointed chain every time a tank climbs a kerb. See `docs/vehicles.md`.
-   *
-   * Four terms, and every one of them is in the TURRET's frame rather than the
-   * hull's, because that is what the masts hang off: a hull diving under a
-   * turret traversed ninety degrees bends its whips SIDEWAYS, and terms written
-   * in the hull's axes would lay them back along a tank that was stopping
-   * beside them.
-   *
-   * - **The drive's acceleration**, clamped by `suspension.accelLimit` — the
-   *   same clamp for the same one-frame reason, deliberately not restated in
-   *   the antenna block. A whip trails what is thrown at it, so the tip goes
-   *   the OPPOSITE way to the acceleration: a hull pulling away lays its masts
-   *   back, and one that has just hit a building throws them forward.
-   * - **Sideways is `speed * yawRate`**, as the hull's roll is, so a
-   *   neutral-steer pivot whips nothing sideways. There is no lateral
-   *   acceleration in one to whip against.
-   * - **The base's own rotation RATE**, which is the term that makes the gun
-   *   visible from outside the tank: `fireGun` rocks the hull nose-up in a
-   *   fifth of a second, the mast feet go with it and the tips do not, so both
-   *   whips bend back and ring. It costs nothing extra and it arrives through
-   *   the ground lean too, so kerbs and shell craters crack them for free.
-   * - **The wind**, so a parked hull is not two steel rods. Bearing from
-   *   `CONFIG.wind.dir` because there is one wind; amplitude and speed its own,
-   *   because a mast is not a blade of grass.
-   *
-   * Then the bow is handed on in two pieces. The spring's angle is the whip's,
-   * and the TIP's angle is a lagged copy of it — so during a fast event the
-   * upper link is bent back against the lower one and the mast is an S, and
-   * once it settles the two agree and it is a smooth bow. See
-   * `setAntennaBend`.
-   *
-   * Stepped semi-implicit Euler like the suspension, and it holds for the same
-   * reason: the frame's `dt` is clamped at 0.05 and the faster of the two masts
-   * runs at 3.8 Hz, which is `w * dt` of 1.2 against Euler's ceiling of 2. What
-   * would break it is a stiffer spring, not a slower frame.
-   */
-  private flexAntennae(dt: number, accel: number, lateral: number): void {
-    const a = this.spec.antenna;
-    const lim = this.spec.suspension.accelLimit;
-    const bound = (v: number, l: number) => Math.max(-l, Math.min(l, v));
-    // Into the turret's own frame: its world yaw is `turretYaw`, so the local
-    // one is what the drawn node already carries.
-    const phi = this.rig.turret.rotation.y;
-    const cs = Math.cos(phi);
-    const sn = Math.sin(phi);
-    const ax = bound(lateral, lim);
-    const az = bound(accel, lim);
-    const localAX = ax * cs - az * sn;
-    const localAZ = ax * sn + az * cs;
-    const rateX = this.leanRateX * cs - this.leanRateZ * sn;
-    const rateZ = this.leanRateX * sn + this.leanRateZ * cs;
-    const windX = WIND_X * cs - WIND_Z * sn;
-    const windZ = WIND_X * sn + WIND_Z * cs;
-    // Wrapped at the two sines' COMMON period rather than at either one's, so
-    // the gust is continuous across the wrap and the clock does not grow for
-    // the length of a round. Same rule as `setTrackRun`'s modulo.
-    this.windT = (this.windT + dt) % (200 * Math.PI / a.wind.speed);
-    for (let i = 0; i < this.rig.antennae.length; i++) {
-      const whip = this.rig.antennae[i];
-      // Two sines well off a whole ratio, so the gust does not come round on a
-      // metronome — the same trick the grass shader plays, at a mast's rate.
-      const t = this.windT * a.wind.speed + whip.phase;
-      // The flutter rides on top of the drift: a quicker beat, about a second
-      // at the speed every kind states, swelling and fading on a slower
-      // envelope so it comes in gusts rather than on a metronome. Mostly along
-      // the wind and partly across it — a whip in a steady wind is shaken
-      // sideways by its own wake — and both ride the same whip's phase, so a
-      // pair are shaken out of step. 0 on a kind that states none, where this
-      // is the drift exactly as it always was.
-      const beat = a.wind.flutter * (0.6 + 0.4 * Math.sin(t * 0.73));
-      const along = a.wind.sway * (Math.sin(t) * 0.7 + Math.sin(t * 0.41) * 0.3)
-        + beat * Math.sin(t * 5.3 + whip.phase);
-      const across = beat * 0.5 * Math.sin(t * 4.1 + whip.phase * 1.7);
-      // A positive X rotation tips the mast's top toward +Z and a positive Z
-      // rotation tips it toward -X, which is where both signs below come from.
-      // `across` is the wind's bearing turned a quarter, (-windZ, windX).
-      const wantX = -localAZ * a.swayPerAccel - rateX * a.lagPerRate + windZ * along + windX * across;
-      const wantZ = localAX * a.swayPerAccel - rateZ * a.lagPerRate - windX * along + windZ * across;
-      // One spring per mast, scaled off the long one by its length — see
-      // `Whip.rate`. Stiffness goes as the square of the rate and damping as
-      // the rate itself, which is what keeps both at the same damping RATIO:
-      // scaling only the stiffness would leave the short mast ringing.
-      const rate = whip.rate;
-      const k = a.stiffness * rate * rate;
-      const c = a.damping * rate;
-      this.whipVelX[i] += (k * (wantX - this.whipX[i]) - c * this.whipVelX[i]) * dt;
-      this.whipX[i] = bound(this.whipX[i] + this.whipVelX[i] * dt, a.bendLimit);
-      this.whipVelZ[i] += (k * (wantZ - this.whipZ[i]) - c * this.whipVelZ[i]) * dt;
-      this.whipZ[i] = bound(this.whipZ[i] + this.whipVelZ[i] * dt, a.bendLimit);
-      // The tip chases the bow and never leads it. This is the only reason the
-      // mast is drawn as two links rather than one.
-      const follow = Math.min(1, dt * a.lagRate);
-      this.tipX[i] += (this.whipX[i] - this.tipX[i]) * follow;
-      this.tipZ[i] += (this.whipZ[i] - this.tipZ[i]) * follow;
-      setAntennaBend(whip, a.baseShare, this.whipX[i], this.whipZ[i], this.tipX[i], this.tipZ[i]);
-    }
+    const fl = this.flight;
+    return fl ? 1 - fl.rotorPower() : 1;
   }
 
   /**

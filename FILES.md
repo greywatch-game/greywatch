@@ -414,8 +414,8 @@ src/
                         #   independently), which of its two SEATS are filled
                         #   and `chooseSeat` (which one a person gets — the
                         #   driver's first, one rule for both processes),
-                        #   the springs behind its lean, its SPRUNG body and
-                        #   its whips, `rideableAt` (the climb band spent on
+                        #   the ground half of its lean, `rideableAt` (the
+                        #   climb band spent on
                         #   where the hull is ABOUT to be, which is the whole
                         #   of an AI driver's road graph), and what a hull
                         #   feels of each DamageKind. Takes a `VehicleSpec` and
@@ -427,6 +427,18 @@ src/
                         #   `lift`, an addend that is 0 on anything else, so a
                         #   hover is an equality and the plank is a landing
                         #   floor. Knows nothing about a player
+    HullFlex.ts         # What a hull's own mass does to its DRAWING: the
+                        #   sprung body's pitch, roll and heave springs on one
+                        #   travel budget, the rate the mast feet turn at, and
+                        #   the two whips in the wind. Writes `rig.sprung` and
+                        #   the antennae and nothing else; handed the drive's
+                        #   acceleration, the ground's jolt and the gear's load
+    FlightModel.ts      # The rotor, for a hull whose spec states `flight`:
+                        #   the spool, the disc's commanded attitude, the
+                        #   cyclic, thrust and collective, and the attitude a
+                        #   hull on the wire is drawn at, worked back out of
+                        #   its motion. Owns no position or velocity — those
+                        #   stay `Vehicle`'s and are handed in
     vehicleKinds.ts     # The list of kinds that exist, and the ONE place a
                         #   kind becomes a name, a spec and a model. A map's
                         #   `VehicleSpawnDef.kind` is resolved here, and the

@@ -1708,17 +1708,17 @@ carries the split, and `Match` is where the policy lives, because
 `server/validate.ts` returns a verdict and decides nothing.
 
 **THE CEILING IS A RATE AND NOT A HEIGHT**, which is the specific thing the
-first version got wrong. `flyStep` fades the commanded climb to nothing as a
-machine approaches `flight.ceiling`; it never pulls the machine down. So a
-helicopter cruising at the top of its envelope and crossing ground that falls
-away — a ridge, a caldera wall, a coastline — is legitimately far higher over
-the floor than its ceiling and has done nothing whatever to get there. The rule
-that IS true of the model is that a machine over its ceiling cannot GAIN height,
-which is terrain-independent: over flat ground it pins the machine at its
-ceiling and over falling ground it lets the gap open as fast as the ground
-drops. It is asked at the last ACCEPTED position, it freezes the height rather
-than pulling it toward the lid, and it carries a three-metre allowance for the
-overshoot the arrest itself produces.
+first version got wrong. `FlightModel.collective` fades the commanded climb to
+nothing as a machine approaches `flight.ceiling`; it never pulls the machine
+down. So a helicopter cruising at the top of its envelope and crossing ground
+that falls away — a ridge, a caldera wall, a coastline — is legitimately far
+higher over the floor than its ceiling and has done nothing whatever to get
+there. The rule that IS true of the model is that a machine over its ceiling
+cannot GAIN height, which is terrain-independent: over flat ground it pins the
+machine at its ceiling and over falling ground it lets the gap open as fast as
+the ground drops. It is asked at the last ACCEPTED position, it freezes the
+height rather than pulling it toward the lid, and it carries a three-metre
+allowance for the overshoot the arrest itself produces.
 
 **And every outcome that is not "applied exactly as sent" is ANSWERED, with
 `hullcorrect`.** This is `correct`'s twin and deliberately not the same message:

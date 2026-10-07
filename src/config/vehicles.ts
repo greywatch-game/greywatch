@@ -1420,9 +1420,9 @@ export const vehicles = {
        * author: it is `heaveBump`/`heaveDroop` over the distance to the
        * outermost road wheel, because a tilt is one end of the suspension
        * compressing and the other end extending, and both ends run out of
-       * travel at the stops the heave uses. `Vehicle.flexSuspension` spends what
-       * `flexHeave` has left of ONE budget, so a hull already sitting on its
-       * bump stops cannot also dive — which is what bottoming out is.
+       * travel at the stops the heave uses. `HullFlex.flexSuspension` spends
+       * what `flexHeave` has left of ONE budget, so a hull already sitting on
+       * its bump stops cannot also dive — which is what bottoming out is.
        *
        * What that works out to on the drawn tank is ~3.3 deg of pitch over
        * `TankModel.WHEEL_REACH` (2.11 m) and ~5.2 deg of roll over the narrower
@@ -1570,9 +1570,9 @@ export const vehicles = {
      * bends because of that same acceleration AND because of how fast the thing
      * it is bolted to is turning — the mast trails a rotating base exactly as a
      * body thrown back in a seat trails an accelerating one. So there is no new
-     * measurement here: `Vehicle.flexAntennae` reads the numbers `flexSuspension`
-     * already has, plus the rate the hull node is leaning at, and everything
-     * below is a gain on one of them.
+     * measurement here: `HullFlex.flexAntennae` reads the numbers
+     * `flexSuspension` already has, plus the rate the hull node is leaning at,
+     * and everything below is a gain on one of them.
      *
      * **Cosmetic in the same strict sense `suspension` is**: this block reaches
      * two `TransformNode`s per whip and nothing else. Nothing aims, walks,
@@ -2676,9 +2676,9 @@ export const vehicles = {
      * **What holds it up.** The one block in the fleet that is new machinery
      * rather than different numbers.
      *
-     * Read with `Vehicle.flyStep`, which spends every figure here, and with
-     * `Vehicle.lift`, which is the single value this block reaches the ground
-     * model through.
+     * Read with `Vehicle.flyStep` and the `FlightModel` it drives, which
+     * between them spend every figure here, and with `Vehicle.lift`, which is
+     * the single value this block reaches the ground model through.
      */
     flight: {
       /** Long enough to be a moment rather than a switch. */

@@ -35,7 +35,9 @@ that reads those two:
 | `entities/vehicleKinds.ts` | the ONE place a kind becomes a name, a spec and a model, and the one place the default (a tank) is written down |
 | `entities/vehicleRig.ts` | what every vehicle's mesh IS: the joints `Vehicle` writes, the three extents the physics needs off the drawing, and the three closures a model hands back |
 | `entities/TankModel.ts`, `entities/TruckModel.ts`, `entities/HeliModel.ts` | the ART, one file per kind — the boxes, the running gear, the whips and the guns as JOINTS over them, and the charred repaint a wreck takes |
-| `entities/Vehicle.ts` | one hull of any kind: its collider, its drive, its turret, its two guns' clocks and angles, which of its two seats are filled, its health, and the springs behind its lean and its antennae |
+| `entities/Vehicle.ts` | one hull of any kind: its collider, its drive, its turret, its two guns' clocks and angles, which of its two seats are filled, its health, and the ground half of its lean |
+| `entities/HullFlex.ts` | what the hull's own mass does to the drawing: the sprung body's three springs and the antennae |
+| `entities/FlightModel.ts` | the rotor, on a kind that states `flight`: the spool, the disc's attitude, the cyclic, thrust and collective, and the attitude a hull on the wire is drawn at |
 | `systems/VehicleSystem.ts` | the fleet: build, the respawn clock, the wreck clock, which seat a boarder gets, and where a dismount lands |
 | `systems/VehicleCamera.ts` | the view from behind a hull, and its pull-in |
 | `systems/VehicleCrew.ts` | the bots that crew: which body is in which SEAT of which hull, where it is taking it, and what each of its guns is laid on |
@@ -657,7 +659,7 @@ one that carries the weight. `VehicleRig.sprung` is everything the springs carry
 the tub, the sponson, the stowage, the marking and the whole turret with the
 gun and the masts on it — and it hangs off `VehicleRig.hull` with the RUNNING GEAR
 left behind on the hull node: the belts, the road wheels, the idlers, the
-sprockets and the link strips. `Vehicle.flexHeave` moves it in Y and never rotates
+sprockets and the link strips. `HullFlex.flexHeave` moves it in Y and never rotates
 it, so a compressing hull compresses along its own up axis rather than the
 world's.
 
@@ -743,9 +745,9 @@ turret that rides on it, and the reticle still cannot lie.
 
 The two whips are the third picture on this vehicle and the furthest out from
 the drive. A mast is a thin cantilever bolted to the turret roof, and the three
-things that bend one are all numbers this class already has: the acceleration
+things that bend one are all numbers the hull already has: the acceleration
 the drive achieved, how fast the hull node the foot is bolted to is ROTATING,
-and the wind. So it is two damped springs a mast (`Vehicle.flexAntennae`), and it
+and the wind. So it is two damped springs a mast (`HullFlex.flexAntennae`), and it
 was asked whether it should be a physics chain instead. It should not, and the
 reasons are worth writing down because the question will come back:
 
@@ -3471,8 +3473,8 @@ attitude is not a fact about any ground: the machine is hanging on a disc, so
 `standOnGround` had nothing to say about it and every hull anybody else was
 flying was drawn dead level — cruising flat and sliding through its turns
 without banking, while the same machine under its own pilot did neither. What
-answers it is `Vehicle.tiltFromMotion`, which runs the disc's own equation
-backwards: `flyStep` spends `thrustPerTilt * sin(tilt) * power` along the
+answers it is `FlightModel.tiltFromMotion`, which runs the disc's own equation
+backwards: `thrust` spends `thrustPerTilt * sin(tilt) * power` along the
 hull's forward and the same off `cyclicRoll` along its right, both against a
 drag of `drag * v`, so the motion a machine has just made is enough to say what
 angle its disc must be at — and an `asin` hands that angle back. It is the move

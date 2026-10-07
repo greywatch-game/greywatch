@@ -177,8 +177,8 @@ export interface VehicleRig {
   hull: TransformNode;
   /**
    * The sprung mass — everything the springs carry, and therefore everything
-   * the springs may move: `Vehicle.flexHeave` writes its Y and
-   * `Vehicle.flexSuspension` writes its pitch and roll, all three in the frame
+   * the springs may move: `HullFlex.flexHeave` writes its Y and
+   * `HullFlex.flexSuspension` writes its pitch and roll, all three in the frame
    * of the `hull` node it hangs off, so a compressing body compresses along its
    * OWN up axis rather than the world's.
    *
