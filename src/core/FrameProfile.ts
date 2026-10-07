@@ -312,6 +312,13 @@ interface NamedEffect {
 let namingEffect: NamedEffect | null = null;
 
 /**
+ * Whether a missing descriptor builder has been reported. Once per PAGE and
+ * not once per arm, because the method is gone for the life of the bundle and
+ * re-arming would only repeat the same sentence.
+ */
+let warnedUnnamed = false;
+
+/**
  * The shader an effect was compiled from, as a string the effect already holds.
  *
  * `Effect.name` is either the shader's name or an `IShaderPath` object; the
@@ -898,7 +905,9 @@ export class FrameProfile {
    * that holds the effect a render pipeline is for, so it is wrapped to leave
    * that effect where the device wrapper can see it. A version that renames it
    * costs the NAMES and nothing else — `pipelines.named` goes false and every
-   * count stays right — the arrangement `GpuTimestampQuery`'s fields have.
+   * count stays right — the arrangement `GpuTimestampQuery`'s fields have. It
+   * says so ONCE on the console when it happens, because a capture nobody
+   * reads the flag of is how a Babylon bump would otherwise go unnoticed.
    *
    * One argument and no rest parameter on every wrapper: all five create
    * methods take a single descriptor, and `...args` would be an array per call.
@@ -929,7 +938,17 @@ export class FrameProfile {
 
     const cache = WebGPUCacheRenderPipeline.prototype as unknown as Record<string, unknown>;
     const build = cache._buildRenderPipelineDescriptor;
-    if (typeof build !== "function") return;
+    if (typeof build !== "function") {
+      if (!warnedUnnamed) {
+        warnedUnnamed = true;
+        console.warn(
+          "FrameProfile: WebGPUCacheRenderPipeline._buildRenderPipelineDescriptor " +
+            "is gone (a Babylon upgrade?) — pipeline creations are still counted " +
+            "but will not be named. See docs/profiling.md.",
+        );
+      }
+      return;
+    }
     const describe = build as (this: unknown, e: NamedEffect, t: unknown, s: unknown) => unknown;
     cache._buildRenderPipelineDescriptor = function named(
       this: unknown,

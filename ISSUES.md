@@ -67,7 +67,7 @@ match smoke test (`npm run build:server && npm run server`, two clients).
 | ~~[36](#36-vehicle-capability-idioms-three-soft-spots)~~ | P2 — done | Vehicle capability idioms: three soft spots |
 | ~~[37](#37-propsts-drop-the-mathrandom-defaults)~~ | P2 — done | `Props.ts`: drop the `Math.random` defaults |
 | ~~[38](#38-texturests-has-its-own-prng)~~ | P3 — done | `textures.ts` has its own PRNG |
-| [39](#39-frameprofile-depends-on-a-private-babylon-internal) | P3 | `FrameProfile` depends on a private Babylon internal |
+| ~~[39](#39-frameprofile-depends-on-a-private-babylon-internal)~~ | P3 — done | `FrameProfile` depends on a private Babylon internal |
 | [40](#40-claudemd-is-over-its-own-cap) | P3 | `CLAUDE.md` is over its own cap |
 | [41](#41-filesmd-has-no-scripts-section) | P3 | `FILES.md` has no `scripts/` section |
 | [42](#42-findingsmd-1-carries-closed-history) | P3 | `FINDINGS.md` §1 carries closed history |
@@ -1659,6 +1659,17 @@ pipeline names, which is acceptable — but it should **fail loudly once** (a
 `console.warn` on arm when the method is missing) rather than silently, so a
 Babylon bump is noticed. Add a line to `docs/build.md`'s upgrade notes if one
 exists.
+
+**Done.** `hookCreation` now `console.warn`s when
+`_buildRenderPipelineDescriptor` is missing, once per page through a
+module-level flag rather than on every arm, since the method stays gone for the
+life of the bundle. The warning says the counts still hold and only the names
+are lost, and it points at `docs/profiling.md`. The method's comment says so
+too. `docs/build.md` has no upgrade notes section. The upgrade note already
+lived in `docs/profiling.md` ("check that a capture reads `pipelines.named:
+true`"), so that paragraph gained the line about the warning instead.
+
+Checked: `npm run typecheck` and `npm run build`.
 
 ### 40. `CLAUDE.md` is over its own cap
 
