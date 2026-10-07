@@ -449,7 +449,7 @@ and the AT slot** (`RateGate` in `server/claimGates.ts`, one per slot per gun).
 `lookDir`, `withinCone` and `withinSlip`, with one zero-length threshold —
 two of the five inline copies refused a direction under 1e-6 and three under
 1e-3. Each gate's SIZE stays in `Match`, beside its argument. The
-hull guns and the AT slot were minimum spacings until ISSUES.md #2, and at the
+hull guns and the AT slot were minimum spacings until 6c4183e, and at the
 cupola gun's nine a second that was 11 ms of slack. **Behind them, the hull's
 own clock was a second spacing**: `Vehicle.fireGun`/`fireMg` refuse a round
 until the reload has run out on the simulation's 60 Hz tick grid, with no slack

@@ -48,7 +48,7 @@ fill and not the GPU ("GPU time"), and not steady-state compilation by count
 ("Compiles"). **The frame was simply not scheduled.** The rules those captures
 justify are in `docs/profiling.md` with their measurements; the captures'
 narrative, the candidate list as it stood and the instrument bugs they found are
-in this file's git history (before ISSUES.md ticket 42). **Do not measure
+in this file's git history (before e9d33c4). **Do not measure
 allocation pressure uncapped** — that section of `docs/profiling.md` says why.
 
 ### What was measured
@@ -1850,3 +1850,64 @@ padded query per 8 m patch and then per texel took it down.
   is not covered by `npm run parity` or the reference bank. **That re-run is
   OWED now**: its own condition was met by 3ff0456, which stitched the turf's
   patches edge to edge instead of skirting them, and the test was not repeated.
+
+---
+
+## 47. Hollowmere may lean further to Redline since its re-lay, and only a per-flag hold count can say
+
+**Status:** open. Carried from the footprint re-measure (134f507 and the three
+commits before it), which re-seeded four maps and compared bot rounds against
+the commit before.
+
+- **Measured:** `npm run simulate -- hollowmere 1 12`, Valeguard–Redline, read
+  2–10 and 1–11 after the re-lay against 3–9 and 4–8 before it — Redline 21–3
+  against 17–7. The lean was already there; the re-lay may have widened it.
+  The other three maps moved within a round of their old scores (Greyfen 5–7
+  against 3–9, Harrowmead 9–3 and 8–4 against 9–3, Coldharbour 7–5 against
+  8–4).
+- **Not known:** whether 21–3 is the map or the batch. It is inside the noise
+  of two 12-round batches.
+
+**How to settle it:** a per-flag hold count over a longer batch — which flags
+each side holds and for how long — on Hollowmere before and after bcd77bc.
+If one flag accounts for the gap, that is a layout question for the
+map-layout skill; if none does, delete this entry.
+
+---
+
+## 48. `makeFootOnRoad` never samples the far edge of a footprint that is not a whole number of metres
+
+**Status:** open, derived from the code and seen twice. `scripts/lib/mapgen.mjs`'s
+`makeFootOnRoad` walks a footprint from `x0`/`z0` in steps of at most 1 m and
+stops at the last step inside `x1`/`z1`, so on a side of 4.6 m the last 0.6 m
+is never asked whether it is on a road. Greyfen, Harrowmead and Hollowmere all
+use it. During the footprint re-measure the skill's audit caught two corners it
+missed; both placements were moved, but the gap in the check is still there.
+
+Two smaller misses from the same re-measure, both at a generator's own limit
+rather than in a shared helper: Coldharbour's FLAT is 0.32 against the audit's
+0.3, and Greyfen's mission ruin reads 0.34 only under its scattered rubble.
+Hollowmere also still has a ruin facing a ruin's back, now at (22.4, −22.1),
+which was there before the re-lay.
+
+**How to settle it:** sample the far edge as well (step to `x1`/`z1` exactly
+on the last iteration). Any change re-rolls the seeded field, so it is a
+re-seed of all three maps with their door checks, `npm run collision`,
+`npm run parity`, the physics references and `npm run shots`. Do it alongside
+the next re-lay of any of them rather than on its own.
+
+---
+
+## 49. Three rumble pulses in `Game.ts` are still bare numbers
+
+**Status:** open, small. 742fca3 took every bare multiplier off the muzzle
+lights and left the haptic pulses beside them, which were out of its scope:
+
+- the launcher: `rumble(1, 1, haptic.shotMs * 2.5)`
+- the tank gun: `rumble(1, 1, haptic.shotMs * 3)`
+- the cupola gun: `rumble(0.35, 0.5, haptic.shotMs)`
+
+Every other pulse in `Game.ts` reads named fields off `CONFIG.rumble`
+(`src/config/input.ts`), so these three break the rule that tunables live in
+`src/config/`. **How to settle it:** give each a strength/weak/ms triple in
+`CONFIG.rumble` beside `shot*`, valued so the arithmetic is unchanged.
