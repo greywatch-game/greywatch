@@ -979,7 +979,7 @@ export const vehicles = {
      * seventy-seven.
      *
      * **It is a filter and a manner at the same time, and it is a rate limit
-     * rather than a smoothing because of the first.** `VehicleCrew.holdYaw`
+     * rather than a smoothing because of the first.** `crewPilot.holdYaw`
      * carries the measurement; the short of it is that a flow field is sampled
      * per frame, a helicopter crosses a nav cell every fifth frame, and the
      * bearing that comes back reverses its direction of change about twelve

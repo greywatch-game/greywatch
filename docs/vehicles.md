@@ -7,9 +7,9 @@ the summary; this file is the contract for `src/entities/Vehicle.ts`,
 `src/entities/vehicleRig.ts`, `src/entities/vehicleKinds.ts`,
 `src/entities/TankModel.ts`, `src/entities/TruckModel.ts`,
 `src/entities/HeliModel.ts`, `src/systems/VehicleSystem.ts`, `src/systems/VehicleCamera.ts`,
-`src/systems/VehicleCrew.ts` and for `Game`'s `updateDriver` /
-`frameVehicleCamera` / `mount` / `dismount` / `clearVehicle` / `resolveShell` /
-`offeredSeat`.
+`src/systems/VehicleCrew.ts`, `src/systems/crewPilot.ts` and for `Game`'s
+`updateDriver` / `frameVehicleCamera` / `mount` / `dismount` /
+`clearVehicle` / `resolveShell` / `offeredSeat`.
 
 **Most of what follows is written about a TANK**, because the tank is what
 every rule in it was found on, and because the second kind changed none of
@@ -41,6 +41,7 @@ that reads those two:
 | `systems/VehicleSystem.ts` | the fleet: build, the respawn clock, the wreck clock, which seat a boarder gets, and where a dismount lands |
 | `systems/VehicleCamera.ts` | the view from behind a hull, and its pull-in |
 | `systems/VehicleCrew.ts` | the bots that crew: which body is in which SEAT of which hull, where it is taking it, and what each of its guns is laid on |
+| `systems/crewPilot.ts` | the bot at the sticks of a hull that flies: the held heading, the air fan, the collective and the cyclic, and the flow-field `route` both seats ask |
 
 `Game` is the only place they meet, exactly as with every other system: it holds
 the two facts the feature turns on (`Game.driving` and `Game.drivingSeat`),
@@ -2982,7 +2983,8 @@ they are a road graph evaluated locally and never baked — which is the only ki
 a moving thing could have been in anyway, for the same reason a hull is in no
 other baked structure.
 
-`systems/VehicleCrew.ts` is the whole of it and its header carries the argument.
+`systems/VehicleCrew.ts` is the whole of it, with its pilot in
+`systems/crewPilot.ts`, and their headers carry the argument.
 What belongs here is what a crew is to the rest of the vehicle.
 
 ### A crewed bot is out of the fight, exactly as a mounted player is
@@ -3179,11 +3181,11 @@ answered off the same two halves of the world — `ObstacleField` for what is
 built there and `TerrainField` for the floor under it — and against the
 machine's own ceiling and climb rate rather than against a tank's climb band.
 
-So `VehicleCrew.fly` is `steer` with those two substitutions and nothing else.
-The bearing comes from the same three places in the same order (a commitment, a
-target, the crewman's squad objective), the fan is searched in the same
-ascending deviation with the same bias toward the side the nose is already on,
-the same detour holds it, and the same stuck watchdog backs it out. What is
+So `crewPilot.fly` is `VehicleCrew.steer` with those two substitutions and
+nothing else. The bearing comes from the same three places in the same order (a
+commitment, a target, the crewman's squad objective), the fan is searched in the
+same ascending deviation with the same bias toward the side the nose is already
+on, the same detour holds it, and the same stuck watchdog backs it out. What is
 genuinely new is one control and one ordering.
 
 ### The fan hands back a height, and that is what makes it one walk
@@ -3278,7 +3280,7 @@ half times a second, and BANKING with every wag — the bank is
 `airspeed * yawRate`, so the noise reached the picture twice.
 
 **So the bearing a pilot flies is HELD, and the route only ever nudges it.**
-`VehicleCrew.holdYaw` eases `crew.flyYaw` onto the wanted bearing at
+`crewPilot.holdYaw` eases `crew.flyYaw` onto the wanted bearing at
 `crew.airTurn` of the hull's own `turnRate`, and everything downstream reads the
 held one. Three things make that the right shape rather than a filter bolted on:
 
@@ -3332,7 +3334,7 @@ with the ration and 0.57/s without. The weave was in the yaw.
 
 ### A pilot reads the route off the STREET
 
-`VehicleCrew.column` is one line and it is a correctness fix rather than part of
+`crewPilot.column` is one line and it is a correctness fix rather than part of
 the above: **a helicopter navigates by the town's plan, not by the parapet it
 happens to be over.** `NavGrid` stacks several walkable surfaces in one cell and
 `surfaceAt` picks whichever is nearest in HEIGHT to the point it is handed —

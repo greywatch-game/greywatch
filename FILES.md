@@ -662,11 +662,14 @@ src/
                         #   keeps its life, its position and its squad's order.
                         #   Steers on the body flow field for a BEARING and on
                         #   `Vehicle.rideableAt` for what is a wall; a PILOT is
-                        #   that sentence one axis up, on `Vehicle.aloftAt` for
-                        #   how high the air has to be flown, and answers an
-                        #   obstacle by climbing before it answers by turning.
-                        #   `evict` is what stops the AI holding a side's only
-                        #   armour
+                        #   that sentence one axis up (crewPilot.ts). `evict`
+                        #   is what stops the AI holding a side's only armour
+    crewPilot.ts        # The bot at the sticks of a hull that flies: a bearing
+                        #   off the same flow field (`route`, both seats ask
+                        #   it) and a HEIGHT off `Vehicle.aloftAt`, out of one
+                        #   fan walk. Answers an obstacle by climbing before it
+                        #   answers by turning; holds its heading at a rate.
+                        #   No state of its own — it lives on the `Crew`
     AimAssistSystem.ts  # Gamepad-only: outer bubble slows the stick, inner one
                         #   rotates. Bounded by the player's own turn rate
     LightingSystem.ts   # Dynamic point lights: fixtures, flashes, lamps. A

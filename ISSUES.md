@@ -57,7 +57,7 @@ match smoke test (`npm run build:server && npm run server`, two clients).
 | ~~[26](#26-split-sfxts-engine-voices-and-ambience-into-their-own-classes)~~ | P2 — done | Split `Sfx.ts`: engine voices and ambience |
 | ~~[27](#27-vehiclets-extract-hullflex-and-the-flight-model)~~ | P2 — done | `Vehicle.ts`: extract `HullFlex` and the flight model |
 | ~~[28](#28-frameprofilets-split-the-recorder-from-the-reporter)~~ | P2 — done | `FrameProfile.ts`: split recorder from reporter |
-| [29](#29-vehiclecrewts-extract-the-pilot) | P2 | `VehicleCrew.ts`: extract the pilot |
+| ~~[29](#29-vehiclecrewts-extract-the-pilot)~~ | P2 — done | `VehicleCrew.ts`: extract the pilot |
 | [30](#30-celshaderts-move-shadow-bindings-out-of-the-material-factory) | P2 | `CelShader.ts`: move shadow bindings out of the factory |
 | [31](#31-hudts-scoreboard-to-its-own-class-one-1-low) | P2 | `HUD.ts`: scoreboard to its own class, one 1% low |
 | [32](#32-ui-screens-shared-setinputdevice-and-paintthumb) | P2 | UI screens: shared `setInputDevice` and `paintThumb` |
@@ -1075,6 +1075,46 @@ itself → `crewPilot.ts`. Ground driving (~970–1199) stays.
 
 **Acceptance.** Bot-flown helicopters on Sarab/Cinderhaven behave as before
 over a few minutes of a round.
+
+**Done.** `VehicleCrew.ts` is 1,096 lines, down from 1,609. The pilot is in
+`systems/crewPilot.ts` (567 lines).
+
+- **`crewPilot.ts`** holds `fly`, `offGraph`, `column`, `holdYaw`,
+  `collective`, `flyOn`, `pickAloft` and `aloftAlong` as module functions,
+  plus the constants only they read (`AIR_DEPTHS`, `AIR_LATERAL`,
+  `GROUND_COLUMN`) and their scratch (`_aloft`, `_at`, its own `_dir`).
+  It owns no state. A pilot's `flyYaw` and `lostT` stay on `Crew`, because
+  `take` starts them beside the rest, and the detour, reverse and stuck clocks
+  are shared with the ground driver. `fly` takes the crew and the nav graph,
+  and `VehicleCrew.stepCrew` calls it on `Vehicle.flies` as before.
+- **`route` moved too**, and is exported. Both seats ask it, but its
+  `onGround` argument is the pilot's question and `column` is what it turns
+  into. Keeping it in `VehicleCrew` would have made the two files import each
+  other at runtime. Now `VehicleCrew` imports `fly` and `route`, and
+  `crewPilot` imports only the `Crew` type back, which is now exported. `route`
+  writes into a vector it is handed instead of `VehicleCrew`'s `_dir`.
+- **The header's air section moved verbatim** to `crewPilot.ts`, except
+  that "this file" and "the paragraph above" now name `VehicleCrew.ts` and its
+  road-graph argument. `VehicleCrew` keeps a summary and a pointer.
+
+Apart from that it is a move. `this.X` became a parameter or a plain call,
+and comments that named a ground-driver method now say `VehicleCrew.` in
+front of it. One stranded doc was fixed: `_aloft`'s doc had been sitting on
+top of `GROUND_COLUMN`'s, with the `let` two declarations below. References
+to the old home are updated in `docs/vehicles.md` (the file table, the
+contract scope, the crew section's pointer and three method names),
+`config/vehicles.ts` and FILES.md.
+
+Checked: `npm run typecheck` (client and server) and `npm run build` pass.
+`npm run simulate sarab` ran a full round (9.7 min, 149 machine-gun kills, 6
+shells, board balances). For equivalence, a harness built off
+`vite.server.config.ts` ran `HeadlessGame` with `Math.random` seeded for
+60,000 ticks (16.7 min) on Sarab and on Cinderhaven. It hashed every hull's
+position, yaw, drive input and crew flag and every bot's position on every
+tick. Both gunships on each map were bot-flown for the whole run. HEAD ran twice
+to the same hash, and this version matches it on both maps. Sarab has all three
+kinds, so the ground driver's `route` was covered too. Nobody has watched a
+bot fly in a live client.
 
 ### 30. `CelShader.ts`: move shadow bindings out of the material factory
 
