@@ -1460,10 +1460,11 @@ export class VehicleCrew {
    * never a height over the ground.
    *
    * One proportional term and no clamp on what it may ask for, and the second
-   * half of that is `flyStep`'s to make rather than this file's: the collective
-   * commands a RATE and the ceiling fades the rate, so a pilot ordering a climb
-   * into air the machine cannot hold is answered with zero and stops there. A
-   * limit here would be that limit stated twice, and two of them drift.
+   * half of that is `FlightModel.collective`'s to make rather than this file's:
+   * the collective commands a RATE and the ceiling fades the rate, so a pilot
+   * ordering a climb into air the machine cannot hold is answered with zero and
+   * stops there. A limit here would be that limit stated twice, and two of them
+   * drift.
    *
    * **The height is deliberately NOT held the way the heading is**, which is
    * worth knowing before it is added. The demand is a step function — `wantY`

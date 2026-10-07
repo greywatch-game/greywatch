@@ -3276,8 +3276,9 @@ export class Vehicle implements Combatant, RayHull {
   }
 
   /**
-   * The whole of the drawn hull's attitude: the ground it is standing on, plus
-   * what its own mass is doing to it, written to the rig in one place.
+   * The whole of the drawn hull's attitude: the ground it is standing on,
+   * written here, plus what its own mass is doing to it, which `HullFlex.lean`
+   * writes. Both halves are written from this one call.
    *
    * Cosmetic in the strict sense — the collider box never tilts, so nothing
    * here can move where a round goes, where a body may stand or what a
@@ -3351,15 +3352,16 @@ export class Vehicle implements Combatant, RayHull {
    * How much of its own weight this hull's running gear is carrying, 0..1.
    *
    * **A suspension is a spring between a mass and the ground, and it deflects
-   * in proportion to the load ACROSS it.** Every input `flexSuspension` reads
-   * is an acceleration, and an acceleration only becomes a lean because the
-   * gear has to push the hull sideways to produce it. A machine hanging from a
-   * rotor is not being pushed sideways by anything it is standing on — the
-   * disc is doing all of it, at the top — so its skids have nothing to lean
-   * against and the drive term is not merely small, it is ZERO.
+   * in proportion to the load ACROSS it.** Every input
+   * `HullFlex.flexSuspension` reads is an acceleration, and an acceleration
+   * only becomes a lean because the gear has to push the hull sideways to
+   * produce it. A machine hanging from a rotor is not being pushed sideways by
+   * anything it is standing on — the disc is doing all of it, at the top — so
+   * its skids have nothing to lean against and the drive term is not merely
+   * small, it is ZERO.
    *
    * **This is the same bargain `lift` made with `standOnGround` and it is made
-   * the same way: by DATA rather than by a branch on a kind.** `spec.flight` is
+   * the same way: by DATA rather than by a branch on a kind.** `flight` is
    * null on anything that cannot fly, so this returns exactly 1 there and the
    * two multiplications downstream are multiplications by one — the tank's and
    * the truck's arithmetic is untouched to the bit, not approximately. Nothing

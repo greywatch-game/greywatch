@@ -928,9 +928,10 @@ export const vehicles = {
     /**
      * The collective, as stick per metre of altitude error. Proportional
      * inside about three metres and hard over outside it, which is what a
-     * pilot flying to a height rather than holding one wants: `flyStep`'s
-     * collective commands a RATE, so full stick is `climbRate` and this is
-     * simply how near the wanted height the machine starts easing off.
+     * pilot flying to a height rather than holding one wants:
+     * `FlightModel.collective` commands a RATE, so full stick is `climbRate`
+     * and this is simply how near the wanted height the machine starts easing
+     * off.
      *
      * Nothing clamps what it may ask for, and nothing needs to: the fade at
      * the ceiling is on the ASKED rate, so a pilot ordering a climb into air

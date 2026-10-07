@@ -1490,7 +1490,7 @@ its turn: 0.42 rad of left bank through a hard right, which reads as being
 thrown out of a corner rather than leaning into one. It is held in the DRAWN
 sense for `tiltPitch`'s reason and stated the same way — `bankPerLateral` is a
 positive magnitude in the spec, exactly as `cyclicPitch` is, and which way it is
-spent belongs to `flyStep`.
+spent belongs to `FlightModel.bankInto`.
 
 **A hull on the ground never had this**, which is why only a flying one looked
 wrong: `standOnGround` measures `right - left` off the ground itself, so its
@@ -3507,10 +3507,11 @@ the figure they are a sampling of.
 interpolator is shoving can report a push no disc could make and `asin` of that
 is `NaN` on a drawn node; and the ANGLE, because what comes back must be an
 attitude a pilot could be holding. The BANK is not derived at all: it is
-`flyStep`'s line with the measured yaw rate in place of the commanded one,
-eased at the same `cyclicRate` so both screens draw the same roll through the
-same turn — while the two angles either side of it are NOT eased again, a
-velocity already carrying the attitude as it was after the pilot's own filter.
+`FlightModel.bankInto`, the line `cyclic` uses, with the measured yaw rate in
+place of the commanded one, eased at the same `cyclicRate` so both screens draw
+the same roll through the same turn — while the two angles either side of it are
+NOT eased again, a velocity already carrying the attitude as it was after the
+pilot's own filter.
 
 **`grounded` still decides, exactly as it does under a pilot**: a remote hull
 on its skids takes `standOnGround`'s own targets, so one sitting on a level pad

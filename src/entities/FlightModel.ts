@@ -72,9 +72,9 @@ export class FlightModel {
    * `vel` chased at `REMOTE_ACCEL_RATE`, horizontal, and the difference
    * between the two IS the acceleration `tiltFromMotion` needs.
    *
-   * Written on a hull posed from the wire and on no other, which is why it is
-   * not next to the drive: a machine simulating itself knows what its own disc
-   * is doing and never has to ask what the motion implies.
+   * Written on a hull posed from the wire and on no other: a machine
+   * simulating itself knows what its own disc is doing and never has to ask
+   * what the motion implies.
    */
   private readonly velLag = { x: 0, z: 0 };
   /**
@@ -180,10 +180,12 @@ export class FlightModel {
    * spool-up IS — and it takes the tail rotor's authority with it, so a
    * machine coming up to speed cannot pedal either.
    *
-   * A method rather than a line inside `thrust` because the hull on the WIRE
-   * asks it too: `tiltFromMotion` divides the push a machine is making by this
-   * to get the angle its disc must be at, and a second copy of the fade would
-   * be a way for the two screens to draw different attitudes for one spool.
+   * A method rather than a line inside the flown path because the hull on the
+   * WIRE asks it too: `tiltFromMotion` divides the push a machine is making by
+   * this to get the angle its disc must be at, and a second copy of the fade
+   * would be a way for the two screens to draw different attitudes for one
+   * spool. `Vehicle` asks it as well, for the voice, the wash and the gear's
+   * load.
    */
   rotorPower(): number {
     const f = this.spec;
@@ -234,12 +236,12 @@ export class FlightModel {
    * difference between frames, and the reason is the interpolator rather than
    * the physics — see that constant.
    *
-   * The BANK is not derived at all: it is `cyclic`'s line with the MEASURED
-   * yaw rate in place of the commanded one, eased at the same `cyclicRate` so
-   * that both screens draw the same roll through the same turn. The two angles
-   * either side of it are deliberately NOT eased again — what a velocity
-   * carries is the attitude as it was after the pilot's own `cyclicRate`
-   * filter, and a second pass would charge that lag twice.
+   * The BANK is not derived at all: it is `bankInto`, the line `cyclic` uses,
+   * with the MEASURED yaw rate in place of the commanded one, eased at the same
+   * `cyclicRate` so that both screens draw the same roll through the same turn.
+   * The two angles either side of it are deliberately NOT eased again — what a
+   * velocity carries is the attitude as it was after the pilot's own
+   * `cyclicRate` filter, and a second pass would charge that lag twice.
    */
   tiltFromMotion(
     dt: number,
@@ -269,7 +271,7 @@ export class FlightModel {
     }
     // Forward is `(sin yaw, cos yaw)` and right is therefore
     // `(cos yaw, -sin yaw)` — the pair `thrust` spends its push on and
-    // `standOnGround` lays its contacts out on. Both the velocity and the
+    // `Vehicle.standOnGround` lays its contacts out on. Both the velocity and the
     // acceleration are resolved onto the CURRENT heading, which is what keeps
     // a turning hull's own rotation out of the answer: what is wanted is the
     // world acceleration seen along the hull's axes, not the rate of change of
@@ -285,24 +287,11 @@ export class FlightModel {
     // a positive one raises the hull's own right side, so a machine being
     // pushed to its right is a machine rolled right-side-DOWN.
     this.cyclicRoll = -tiltFor(pushX * cs - pushZ * sn, scale, f.cyclicRoll);
-    // …and the coordinated half, which is `cyclic`'s to the letter: the
-    // airspeed rather than `speed`, because the two come apart in exactly the
-    // turn this is drawing, and negated because a positive yaw rate sweeps the
-    // nose right and a machine leans INTO its turn.
-    const lateral = Math.hypot(vel.x, vel.z) * yawRate;
-    const wantBank = Math.max(
-      -f.bankLimit,
-      Math.min(f.bankLimit, -lateral * f.bankPerLateral),
-    );
-    this.bankRoll +=
-      (wantBank - this.bankRoll) * Math.min(1, dt * f.cyclicRate);
-    // The sum, clamped where `cyclic` clamps it and to the same field: what
-    // is drawn is one attitude and `drive.tiltLimit` is what a hull may hold.
-    const limit = this.drive.tiltLimit;
-    this.tiltRoll = Math.max(
-      -limit,
-      Math.min(limit, this.cyclicRoll + this.bankRoll),
-    );
+    // …and the coordinated half, through the same `bankInto` `cyclic` uses:
+    // the airspeed rather than `speed`, because the two come apart in exactly
+    // the turn this is drawing.
+    this.bankInto(dt, Math.hypot(vel.x, vel.z) * yawRate);
+    this.drawRoll();
   }
 
   /**
@@ -317,7 +306,6 @@ export class FlightModel {
    */
   cyclic(dt: number, d: DriveInput, yawRate: number, vel: Vector3): void {
     const f = this.spec;
-    const c = this.drive;
     // --- the cyclic, and the auto-level is this line with the stick centred ---
     // What the fore/aft stick commands is an ATTITUDE and not a speed, which is
     // the whole difference between this and the throttle walk in
@@ -363,16 +351,10 @@ export class FlightModel {
     // convention right by measuring `right - left` off the ground itself, which
     // is why a helicopter standing on a slope has always looked correct and
     // only a FLYING one did not. `bankPerLateral` stays a positive magnitude in
-    // the spec exactly as `cyclicPitch` does; which way it is spent is this
-    // file's to know.
+    // the spec exactly as `cyclicPitch` does; which way it is spent is
+    // `bankInto`'s to know.
     const airspeed = Math.hypot(vel.x, vel.z);
-    const lateral = airspeed * yawRate;
-    const wantBank = Math.max(
-      -f.bankLimit,
-      Math.min(f.bankLimit, -lateral * f.bankPerLateral),
-    );
-    this.bankRoll +=
-      (wantBank - this.bankRoll) * Math.min(1, dt * f.cyclicRate);
+    this.bankInto(dt, airspeed * yawRate);
 
     // --- the LATERAL cyclic, which is the other half of the same stick ---
     // With the nose bolted to the look there is no yaw left for `d.steer` to
@@ -404,9 +386,37 @@ export class FlightModel {
     // `groundRollTarget` directly and skips `standOnGround`'s own clamp, so a
     // full strafe inside a hard turn was 0.71 rad — 41 degrees — of roll on a
     // machine whose stated bank limit is 34.
+    this.drawRoll();
+  }
+
+  /**
+   * Eases the coordinated bank toward what a turn pulling `lateral` m/s^2
+   * asks for. NEGATED, because a positive yaw rate sweeps the nose right and
+   * a machine leans INTO its turn — `cyclic` has the measurement.
+   *
+   * One copy for both writers, so the hull under its own pilot and the same
+   * hull on everybody else's screen draw the same roll through the same turn.
+   */
+  private bankInto(dt: number, lateral: number): void {
+    const f = this.spec;
+    const wantBank = Math.max(
+      -f.bankLimit,
+      Math.min(f.bankLimit, -lateral * f.bankPerLateral),
+    );
+    this.bankRoll +=
+      (wantBank - this.bankRoll) * Math.min(1, dt * f.cyclicRate);
+  }
+
+  /**
+   * The roll that is DRAWN: the commanded half plus the bank, clamped to
+   * `drive.tiltLimit`, because what is drawn is one attitude and that is what
+   * a hull may hold. See `cyclic` for why only the first half has thrust.
+   */
+  private drawRoll(): void {
+    const limit = this.drive.tiltLimit;
     this.tiltRoll = Math.max(
-      -c.tiltLimit,
-      Math.min(c.tiltLimit, this.cyclicRoll + this.bankRoll),
+      -limit,
+      Math.min(limit, this.cyclicRoll + this.bankRoll),
     );
   }
 

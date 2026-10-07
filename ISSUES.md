@@ -967,13 +967,16 @@ simulate` runs (the authority steps hulls too).
   `Vehicle` reads four of its fields: `rotor`, `rotorRun`, `tiltPitch` and
   `tiltRoll`.
 
-Apart from that it is a move. The only other changes are `this.X` becoming
-a parameter or `fl.spec.X`, the lagged velocity becoming a plain `{x, z}`
-(the class has no runtime Babylon import), and comments that named a method
-by position ("two hundred lines below") now naming it. One stranded doc was
-also fixed: `updateRemote`'s had been sitting on `correctTo`. References to
-the old home are updated in `docs/vehicles.md`, `docs/multiplayer.md`,
-`config/vehicles.ts`, `vehicleRig.ts` and FILES.md.
+Apart from that it is a move. The only other changes are `this.X` becoming a
+parameter or `fl.spec.X`, the lagged velocity becoming a plain `{x, z}` (the
+class has no runtime Babylon import), and comments that named a method by
+position ("two hundred lines below") now naming it. One stranded doc was also
+fixed: `updateRemote`'s had been sitting on `correctTo`. On review, the
+coordinated bank and the roll clamp, which `cyclic` and `tiltFromMotion` each
+wrote out in full, became one private `bankInto` and one `drawRoll`, now that
+both writers are in one class. References to the old home are updated in
+`docs/vehicles.md`, `docs/multiplayer.md`, `config/vehicles.ts`,
+`vehicleRig.ts` and FILES.md.
 
 Checked: `npm run typecheck` and `npm run build` pass. `npm run simulate
 sarab` ran a full round with crewed hulls (192 machine-gun kills, 8 track
