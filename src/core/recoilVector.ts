@@ -13,8 +13,8 @@
  * `kickDrift`, the sweep's direction) and the stance blends and hands them
  * in, and `Player.recoilKick` is still the one place the aim kick is built:
  * this is the arithmetic under it, not a second door to it.
- * Never: draws a random number. The draws are `Player.tryShot`'s, made in a
- * fixed order and passed in, so a string replays from its seed.
+ * Never: draws a random number. The draws are `Player.tryShot`'s and are
+ * passed in, so every function here is a pure function of its arguments.
  */
 import { CONFIG } from "../config";
 import { impulse, smoothstep } from "./math";

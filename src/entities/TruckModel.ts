@@ -1074,7 +1074,7 @@ export function buildTruck(
       phase: i * 2.1,
       color: kit.frame,
       taper: [0.045, 0.036, 0.022],
-      cap: 0.05,
+      cap: [0.05, 0.05],
     });
   };
   const antennae: readonly [Whip, Whip] = [mast(0), mast(1)];

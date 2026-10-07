@@ -2111,8 +2111,8 @@ export class Player implements Combatant {
     // Which way this round goes, drawn ONCE and read by both the aim
     // (`recoilKick`) and the model (`ViewModel`'s kick): a SWEEP over the
     // string rather than an independent draw per round (`sweepDrift` says
-    // why). The sweep's direction is the only thing drawn per STRING, and it
-    // is drawn here, before the round's own noise, so a seeded string replays.
+    // why). The sweep's direction is the only thing drawn per STRING; the
+    // round's own noise is drawn with it, and both are handed in.
     if (this.stringShots === 1) this.driftSweep = Math.random() < 0.5 ? 1 : -1;
     this.kickDrift = sweepDrift(
       this.stringShots,

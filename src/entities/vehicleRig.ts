@@ -371,8 +371,8 @@ export interface WhipDrawing {
   color: string;
   /** Diameters at the foot, at the joint between the two links, and at the top. */
   taper: readonly [number, number, number];
-  /** The ball the mast ends in, as a diameter. Absent for a bare tip. */
-  cap?: number;
+  /** The ball the mast ends in, `[diameter, height]`. Absent for a bare tip. */
+  cap?: readonly [number, number];
 }
 
 /**
@@ -380,8 +380,8 @@ export interface WhipDrawing {
  *
  * Each link is drawn from its own node's origin UP, and each tapers into the
  * next: a whip is thinner at the top, and the taper is what stops two straight
- * rods reading as one straight rod with a joint in it. The cap on the tip is
- * the ball a real whip ends in, so it is not an eye-poker.
+ * rods reading as one straight rod with a joint in it. A `cap` is the ball a
+ * real whip ends in, so it is not an eye-poker.
  *
  * A cantilever's natural frequency goes as 1/L^2, so a short mast is stiffer
  * than the long one by the square of the length ratio and nothing about it is
@@ -404,7 +404,7 @@ export function whip(
     [foot, half, 0, half / 2, 0, d.color, "y", joint],
   ]);
   const upper: Cyl[] = [[joint, half, 0, half / 2, 0, d.color, "y", top]];
-  if (d.cap !== undefined) upper.push([d.cap, 0.05, 0, half, 0, d.color, "y"]);
+  if (d.cap) upper.push([d.cap[0], d.cap[1], 0, half, 0, d.color, "y"]);
   segment(`${d.name}-hi`, tip, [], upper);
   return { base, tip, rate: (d.longest / d.length) ** 2, phase: d.phase };
 }

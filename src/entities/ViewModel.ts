@@ -1807,15 +1807,7 @@ export class ViewModel {
 
     // --- the throwing arm: the gesture the grenade actually leaves from ---
     this.throwHand.setEnabled(throwing);
-    if (throwing) {
-      const th = CONFIG.viewmodel.throw;
-      this.poseThrowHand(
-        p.throwTime,
-        th.windup * th.cockFrac,
-        th.windup,
-        th.windup + th.recover,
-      );
-    }
+    if (throwing) this.poseThrowHand(p.throwTime);
   }
 
   /**
@@ -1829,12 +1821,11 @@ export class ViewModel {
    * - the follow-through eases OUT, the arm running down against itself;
    * - the return is a smoothstep, out of frame and forgotten.
    */
-  private poseThrowHand(
-    t: number,
-    cockT: number,
-    windup: number,
-    total: number,
-  ): void {
+  private poseThrowHand(t: number): void {
+    const th = CONFIG.viewmodel.throw;
+    const windup = th.windup;
+    const total = th.windup + th.recover;
+    const cockT = th.windup * th.cockFrac;
     const holdT = windup + (total - windup) * THROW_FOLLOW_FRAC;
     let a = 0;
     let b = 1;

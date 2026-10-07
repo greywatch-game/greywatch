@@ -921,7 +921,9 @@ export class Bot implements Combatant {
    * Where this bot's STATE wants it to go this frame: the heading into `_dir`,
    * the stance it wants into `wantCrouch`, and the speed it goes at as the
    * answer — the per-state half of `update`, before the reflexes and the
-   * modifiers every state shares are laid over it.
+   * modifiers every state shares are laid over it. It also runs the clocks
+   * and latches a state owns: the hunt's sweep, the peek cycle and the
+   * sentry's cover search.
    */
   private steer(dt: number, ctx: BattleCtx): number {
     const b = CONFIG.bots;
@@ -1122,12 +1124,17 @@ export class Bot implements Combatant {
     return speed;
   }
 
-  /** Turns the LOOK toward whatever this bot should be watching. */
+  /**
+   * Turns the LOOK toward whatever this bot should be watching, in priority
+   * order: the enemy being fought, then the bearing danger last came from,
+   * then wherever the feet are going. The middle one is the whole "shot in
+   * the back" reaction — without it a bot took a round from behind and kept
+   * walking.
+   *
+   * "Where the feet are going" is `_dir` as `update` has just MOVED along it,
+   * separation and detour included, so this runs after the move.
+   */
   private faceLook(dt: number): void {
-    // What to look at, in priority order: the enemy being fought, then the
-    // bearing danger last came from, then wherever the feet are going. The
-    // middle one is the whole "shot in the back" reaction — without it a bot
-    // took a round from behind and kept walking.
     let faceX: number;
     let faceZ: number;
     if (this.target) {
@@ -1174,12 +1181,12 @@ export class Bot implements Combatant {
     }
   }
 
-  /** Turns the FEET, and leaves the torso twisted the rest of the way to the look. */
+  /**
+   * Turns the FEET, and leaves the torso twisted the rest of the way to the
+   * look. The travel it reads is `_dir` as `update` has just moved along it,
+   * and the look is `faceLook`'s, so it runs after both.
+   */
   private turnFeet(dt: number): void {
-    const b = CONFIG.bots;
-    // Where the feet point, and the torso twists the rest of the way to the
-    // look direction.
-    //
     // Near the look, the feet follow travel — a bot walking where it is looking
     // walks forward, and one drifting off it a little turns its hips into the
     // turn. Past `faceTravelArc` they stop following and come back toward the
@@ -1191,7 +1198,7 @@ export class Bot implements Combatant {
     // then had its hips dragged round, walking forward at an angle to the thing
     // it was shooting. Continuous across all three bands, so a bot whose travel
     // swings round does not snap its hips.
-    const mv = b.movement;
+    const mv = CONFIG.bots.movement;
     const travel = Math.hypot(_dir.x, _dir.z);
     // Standing still, the feet come round to meet the eyes — nobody stands
     // indefinitely with their body square and their head over one shoulder.

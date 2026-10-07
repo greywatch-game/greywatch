@@ -1433,7 +1433,9 @@ look unchanged.
 - **`whip(scene, segment, drawing)`** builds one mast: the two nodes, the two
   links and the `Whip` it returns. A `WhipDrawing` carries every number a
   model states: name, parent, foot, length, the longest mast (for `rate`),
-  phase, colour, the three diameters of the taper, and an optional `cap`. The
+  phase, colour, the three diameters of the taper, and an optional `cap`
+  (diameter and height, so `vehicleRig.ts` still states no geometry of its
+  own). The
   shared comments (the taper, the cap, `1/L^2`) moved onto it. What is about
   one model stayed in that model: the tank's 2.4/3.8 Hz, why the masts are
   where they are, and the clearance under the heli's disc.
@@ -1443,9 +1445,9 @@ look unchanged.
   `heli-whip0-tip`, and `heli-whip-lo0` is `heli-whip0-lo`. Nothing reads
   those names.
 
-References updated: `FILES.md`'s `vehicleRig.ts` row, the respawn paragraph
-in `docs/vehicles.md`, and the `buildTank` doc comment. All three named
-`resetTankPose`.
+References updated: the respawn paragraph in `docs/vehicles.md` and the
+`buildTank` doc comment, which both named `resetTankPose`, and `FILES.md`'s
+`vehicleRig.ts` row, which now lists the two helpers.
 
 Checked: `npm run typecheck`. A scratch script builds every kind for both
 teams under a NullEngine and hashes it in three ways: geometry (vertices and
@@ -1498,7 +1500,8 @@ HEAD.
   - `layerKick` and `layerAction`;
   - `applyPose` (the zoom compensation, then the write to the weapon node);
   - `poseHands` (the bolt, the reload or the load, the support arm, and the
-    throwing hand).
+    throwing hand). `poseThrowHand` now reads the throw's timings itself, so
+    they are derived in one place.
 
   The order matters, because the layers add into the same vectors and
   floating-point sums depend on order. The new doc on `update` says so.
@@ -1512,7 +1515,7 @@ HEAD.
   - `Player` keeps the string state and both draws. `tryShot` still draws the
     sweep direction and then the round's noise, in that order, and hands both
     in.
-  - `recoilKick` is still the entry point, and is now three lines over the
+  - `recoilKick` is still the entry point, and is now a few lines over the
     module.
   - `stringed`, `kickWeight`, `kickShapeAt`, `viewActionJolt` and
     `punchShock` stay as one-line delegates, so nothing that reads them
@@ -1546,10 +1549,10 @@ run on HEAD (the change stashed) and on this change:
   and target. Every tenth tick it also hashes every rig joint. **20,000 ticks
   on Hollowmere (123 kills) and 12,000 on Coldharbour (66), identical.**
 
-One thing the traces turned up: the Vite dev loader draws from `Math.random`,
-and how many draws it makes depends on the module graph. So a trace seeded
-once, at process start, moves whenever an import is added. All three
-harnesses reseed after loading, before they fire or step.
+One thing the traces turned up: something on the module-loading path draws
+from `Math.random`, and adding an import changed how many draws it made. So a
+trace seeded once, at process start, moved when nothing it measured had. All
+three harnesses reseed after loading, before they fire or step.
 
 ### 36. Vehicle capability idioms: three soft spots
 

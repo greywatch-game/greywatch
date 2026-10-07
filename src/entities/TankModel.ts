@@ -1023,7 +1023,7 @@ export function buildTank(
       phase: i * 2.1,
       color: kit.stow,
       taper: [0.05, 0.042, 0.028],
-      cap: 0.055,
+      cap: [0.055, 0.05],
     });
   };
   // At the two back corners of the roof, and staggered in Z as well as X: two
