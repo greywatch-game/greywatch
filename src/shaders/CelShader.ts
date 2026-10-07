@@ -3340,9 +3340,9 @@ export class CelMaterialFactory {
 
   /**
    * Seeds a new cel material with every shadow it samples, then the
-   * irradiance volume. The irradiance volume rides the same door for the same
-   * reason: every one of the six creation paths comes through here, so no cel
-   * material can be born without the seven textures its sampler list declares.
+   * irradiance volume. Both ride this one door because every one of the six
+   * creation paths comes through it, so no cel material can be born without
+   * a texture its sampler list declares.
    */
   private applyShadow(mat: ShaderMaterial): void {
     this.shadows.applyShadow(mat);

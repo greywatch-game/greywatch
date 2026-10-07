@@ -1144,8 +1144,9 @@ coupling gain — optional.
   registry, every setter over them, `localSlots`, and `applyShadow`. The
   factory lends it its cache as a `ReadonlyMap` at construction, so a
   material minted later is walked by the next push without being told. The
-  "no cloud anywhere" texel moved with the clouds and is still created in the
-  factory's constructor, before any material is.
+  "no cloud anywhere" texel moved with the clouds. It is created in
+  `ShadowBindings`' constructor, which the factory's constructor calls, so it
+  still exists before any material does.
 - **The irradiance volume stayed in the factory.** It is bound only on cel
   materials and it was never a shadow. The factory keeps a three-line
   `applyShadow` that every creation path still calls: it calls
@@ -1168,14 +1169,18 @@ coupling gain — optional.
   `keyLight` stay on the factory: one is the material registry and the
   other is the environment.
 
-Apart from that it is a move. The `CelShader` side of the diff is deletions
-only, plus the import, the field, the constructor and the small door. In the
-moved text, "the factory's own" now reads "this object's own", and
+Apart from that it is a move. Besides deletions, the `CelShader` side of the
+diff adds only the import, the `shadows` field, the one-line constructor, the
+small door, the three `readLighting` getters and `readonly` on the cache. In
+the moved text, "the factory's own" now reads "this object's own", and
 `this.cache` is now `this.cels`. One stale reference (`setLocalShadows`,
 which never existed) now names `setLocalShadowMap`. References updated:
 `docs/rendering.md` (the contract scope and four method names), `FILES.md`,
-`wgsl/includes.ts`, and comments in `Game.ts`, `ReflectionSystem.ts` and
-`CelShader.ts`.
+`wgsl/includes.ts`, and comments in `Game.ts`, `ReflectionSystem.ts`,
+`CelShader.ts`, `LocalShadows.ts`, `BodyShadows.ts` and `GiVolume.ts` that
+still said the factory did what `ShadowBindings` now does. "The three shadow
+uploads" in the moved registry docs (and in `docs/rendering.md`) was already
+stale before this ticket and now says "the shadow uploads".
 
 Checked: `npm run typecheck` and `npm run build` pass. **Screenshots: all
 22 bank vantages on all seven maps, before and after, on the Windows box.**

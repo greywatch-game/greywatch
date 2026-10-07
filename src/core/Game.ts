@@ -1505,7 +1505,7 @@ export class Game {
     this.sky = new Sky(this.scene);
     // The clouds' shadow field, bound once: `Sky` keeps one texture for the
     // life of the process and rewrites it as the ring drifts. Until now every
-    // material held the factory's own "no cloud" texel.
+    // material held `ShadowBindings`' own "no cloud" texel.
     this.mats.shadows.setCloudShadowMap(this.sky.cloudShadowMap);
     this.applySky();
 

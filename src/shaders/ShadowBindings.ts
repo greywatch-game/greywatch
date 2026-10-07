@@ -3,19 +3,21 @@
  * world's map, the bodies', the lamps' atlas, the lightning's key and its map,
  * the clouds' field and the foliage's front-face map, plus the registry of the
  * non-cel materials (grass, water) that read the same `celShadow` include.
- * `CelMaterialFactory` owns one (`mats.shadows`) and hands it its cache; the
- * systems that render a map (`ShadowSystem`, `BodyShadows`, `LocalShadows`,
- * `Sky` through `Game`) publish into it, and nothing else does.
+ * `CelMaterialFactory` owns one (`mats.shadows`) and lends it its cache. The
+ * maps are published by the systems that render them (`ShadowSystem`,
+ * `BodyShadows`, `LocalShadows`, and `Sky`'s field through `Game`); `Game`
+ * also pushes the clouds and the lightning each frame, `ReflectionSystem`
+ * holds the clouds off for a bake, and grass and water register here.
  * Invariants: **every sampler `SHADOW_SAMPLER_NAMES` names, and `foliageMap`
  * on a cel material, is BOUND on every material that declares it, always** — a
  * declared sampler with nothing behind it is a bind group that fails to build
  * and the draw silently lost. So a new material is seeded on the spot
- * (`applyShadow`, which the factory's every creation path calls and
- * `registerShadowConsumer` calls for a consumer), each map is published
- * before the first material is asked for, and the clouds start on a texel of
- * their own. Vectors and arrays are handed over BY REFERENCE and rewritten in
- * place, so a per-frame push walks nothing; a walk happens when a TEXTURE or a
- * matrix object changes.
+ * (`applyShadow`, called by every creation path in the factory and by
+ * `registerShadowConsumer`), each map is published before the first material
+ * is asked for, and the clouds start on a texel of their own. The per-frame
+ * pushes (the clouds, the lightning, the lamp slots) write into objects every
+ * material already holds BY REFERENCE and walk nothing; the other setters
+ * walk every reader.
  * Never: adds, removes or reorders a binding — the bumped ground variant is at
  * 15 of WebGPU's 16 sampled textures per stage (CLAUDE.md); creates or caches
  * a material; holds a consumer past its owner's `dispose`. The irradiance
@@ -121,7 +123,7 @@ export class ShadowBindings {
    * They cannot live in the factory's cache: that map is keyed by colour and
    * its entries are shared, permanent and created on demand, while these are
    * one per map build and disposed with the map. So they are a second list
-   * that only the three shadow setters walk — the same shape as the factory's
+   * that only the shadow setters walk — the same shape as the factory's
    * `specs`, which holds foreign material references for the same reason.
    *
    * **Registering is the consumer's half of the contract and unregistering is
@@ -131,7 +133,7 @@ export class ShadowBindings {
    */
   private readonly shadowConsumers = new Set<ShaderMaterial>();
 
-  /** Adds a non-cel material to the three shadow uploads, and seeds it now. */
+  /** Adds a non-cel material to the shadow uploads, and seeds it now. */
   registerShadowConsumer(mat: ShaderMaterial): void {
     this.shadowConsumers.add(mat);
     this.applyShadow(mat);
@@ -429,5 +431,4 @@ export class ShadowBindings {
       mat.setVector4("foliageParams", this.foliageParams);
     }
   }
-
 }

@@ -1048,8 +1048,8 @@ export class GiVolume {
     put4(p, s + 44, this.cursor, 0, 0, 0);
     // The clouds' shadow, read off the factory like the key itself, so a wall
     // under a cloud bounces the key it is lit by (`cloudLitAt`). The texture
-    // is bound here rather than in `bindShaders` because the factory swaps its
-    // own "no cloud" texel for `Sky`'s field after the volume exists — and
+    // is bound here rather than in `bindShaders` because `ShadowBindings` swaps
+    // its own "no cloud" texel for `Sky`'s field after the volume exists — and
     // only when it or the shader CHANGED, because binding the same texture
     // again is not free: `ComputeShader.setTexture` mints a binding record on
     // every call, which was an allocation a frame for nothing.

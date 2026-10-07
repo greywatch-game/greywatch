@@ -159,7 +159,7 @@ export class BodyShadows {
   private readonly picked: (ShadowBody | null)[] = [];
   private readonly pickedDist: number[] = [];
 
-  /** The bodies' depth map, for `CelMaterialFactory` and `Volumetrics`. */
+  /** The bodies' depth map, for `ShadowBindings` and `Volumetrics`. */
   get depthMap(): BaseTexture | null {
     return this.generator?.getShadowMap() ?? litShadowTexture(this.scene);
   }

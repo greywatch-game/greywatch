@@ -3,7 +3,7 @@
  * which lights get tiles in it, and the passes that fill them.
  * Owns the atlas render target, its tile allocation, the static cache per
  * fixture, the proxy mesh every moving shadow is drawn as, and the per-slot
- * cone/tile arrays the shaders read (written into `CelMaterialFactory`'s own
+ * cone/tile arrays the shaders read (written into `ShadowBindings`' own
  * arrays, which every `celShadow` consumer holds by reference). Owns no light
  * — `LightingSystem` decides which lights exist and which won a slot, and this
  * decides only which of THOSE cast.
@@ -1184,7 +1184,7 @@ export class LocalShadows {
   }
 
   /**
-   * Writes every slot's cone and tiles into the factory's arrays — every
+   * Writes every slot's cone and tiles into `ShadowBindings`' arrays — every
    * slot, shadowed or not, because a spot's CONE is owed whatever the rung.
    */
   private publish(active: readonly PointLightData[]): void {

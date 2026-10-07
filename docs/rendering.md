@@ -1713,7 +1713,7 @@ edge of a grass rect and at the waterline. The lookup and the band function are
 shared so all three sample one depth map with one kernel — the WGSL includes
 `celShadow` and `celBand`, taken by all three.
 `ShadowBindings.registerShadowConsumer` /
-`unregisterShadowConsumer` is how a non-cel material joins the three per-frame
+`unregisterShadowConsumer` is how a non-cel material joins the per-frame shadow
 uploads. **Registering is half the contract and unregistering is the other
 half**: grass and water are rebuilt every round, and a material left registered
 after its `dispose` takes uniform writes for the rest of the session. Water
@@ -2097,8 +2097,8 @@ cannot fit is not shadowed that frame — never a partial one.
 
 **Cones.** `PointLightData.spot` makes a light a spot, and the cone is owed
 WHATEVER the rung — `publish` writes every slot's cone before it asks whether
-the slot casts. Grass and water read the same per-slot arrays, which the
-factory hands out by reference and `LocalShadows` rewrites in place.
+the slot casts. Grass and water read the same per-slot arrays, which
+`ShadowBindings` hands out by reference and `LocalShadows` rewrites in place.
 
 **What it costs.** Measured on the RTX box, uncapped, a lamp-lit street with
 eight soldiers round the lamp and a moving spot walking beside it:
