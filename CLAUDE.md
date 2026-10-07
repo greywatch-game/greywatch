@@ -982,7 +982,7 @@ swimming in this game**, so water anybody must cross is walkable and everything
 else is made steep enough to sever. **A FORESHORE has to be as long as the
 ground behind it is high**, or the same beach that links on a 10 m shelf is a
 severed shoreline against a 26 m apron. **A MAP FEELS LIKE A PLACE BECAUSE OF
-WHICH BUILDINGS ARE ON IT, NOT HOW MANY** (`src/world/kit/harbour.ts`), and **a
+WHICH BUILDINGS ARE ON IT, NOT HOW MANY** (`src/world/kit/harbour/`), and **a
 landmark needs an INSIDE** — what lets the Cinderworks be both is that its
 height is a CHIMNEY rather than a room. **AND A ROAD NETWORK IS MEASURED, NEVER
 REVIEWED** (`npm run cinderhaven -- --roads`): a quarter laid off the network

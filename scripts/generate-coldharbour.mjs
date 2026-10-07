@@ -810,7 +810,7 @@ for (const q of QUAYS) {
 note(
   placements,
   "THE HARBOUR LIGHT, on the pier head with its keeper's cottage turned back",
-  "along the pier toward the town. Not climbable (see `kit/harbour.ts`): a",
+  "along the pier toward the town. Not climbable (see `kit/harbour/`): a",
   "gallery over a harbour every flag can see is a perch with no counter. It is",
   "one of the sixteen light slots, always, and the one every bearing in the",
   "town has a line to.",

@@ -53,10 +53,10 @@ const OVER_GLASS = { overGlass: true } as const;
  * differ between page loads (`CLAUDE.md`) — and a structure builder is the one
  * place in the world layer with no seed to hand: a scatter prop is given one by
  * `MapBuilder`, and a `BuilderKind` is handed only its params. So the variation
- * comes out of the params themselves. `kit/desert.ts`'s `clothHash` got there
- * first and its header owns the argument, which is that two buildings with the
- * same footprint and the same height ARE the same building, and what separates
- * them on the ground is `rotY` and what is standing next to them.
+ * comes out of the params themselves. `kit/desert/shared.ts`'s `clothHash` got
+ * there first and its header owns the argument, which is that two buildings
+ * with the same footprint and the same height ARE the same building, and what
+ * separates them on the ground is `rotY` and what is standing next to them.
  *
  * It lands better here than anywhere else in the kit, because HEIGHT is already
  * the one thing a layout varies about a tower: Coldharbour's thirty-seven are

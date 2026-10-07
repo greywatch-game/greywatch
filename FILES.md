@@ -902,16 +902,26 @@ src/
       kiln.ts           #   buildKiln — the brick bottle kiln
     kit/terrain.ts      #   terrace, ramp, road (and a cobbled street's kerb
                         #   course), jetty, boardwalk, stairs
-    kit/harbour.ts      #   smelter, lighthouse, crane, fishRack, careenedHull,
-                        #   netLoft, saltPan — the volcanic-coast set, and the
-                        #   only one in the kit built for a map that already
-                        #   shipped. `smelter` is the tree's one LANDMARK: a
-                        #   hollow ore hall with an arch armour drives through,
-                        #   a furnace block carrying the light, a 40 m stack and
-                        #   a walked charging deck one flight up. Its header
-                        #   owns why a landmark has to be worth walking INTO,
-                        #   the three materials the whole set is made of, and
-                        #   why nothing else in it is climbable
+    kit/harbour/        #   the volcanic-coast set, and the only one in the kit
+                        #   built for a map that already shipped: one file per
+                        #   building, the three small waterfront pieces together
+      index.ts          #   The set's header and barrel: why a place is the
+                        #   buildings that place would have built, the three
+                        #   materials the whole set is made of, and why nothing
+                        #   tall in it is climbable but the smelter's deck
+      shared.ts         #   What more than one building is drawn with: `bar`,
+                        #   `splitRun`, the tarred lapped boarding and the
+                        #   window cut into it, `NET_PAINTS`, `TRANSLUCENCY`
+      smelter.ts        #   buildSmelter — the tree's one LANDMARK: a hollow
+                        #   ore hall with an arch armour drives through, a
+                        #   furnace block carrying the light, a 40 m stack and a
+                        #   walked charging deck one flight up. Its header owns
+                        #   why a landmark has to be worth walking INTO
+      lighthouse.ts     #   buildLighthouse — the rock tower, its lantern and
+                        #   the keeper's cottage
+      crane.ts          #   buildHarbourCrane — the quay crane and its winch house
+      netLoft.ts        #   buildNetLoft — the tarred loft on basalt piers
+      small.ts          #   buildFishRack, buildCareenedHull, buildSaltPan
     kit/japan/          #   the temple-town set, built for Kurenai: one file
                         #   per builder, and one per word two builders share
       index.ts          #   The set's header and barrel: why it is a set, the
@@ -967,20 +977,36 @@ src/
       planter.ts        #   buildPlanter — the precast council trough
       street.ts         #   buildBarrier, buildQuay, buildCar, buildStreetLight
       monument.ts       #   buildMonument — the war memorial
-    kit/desert.ts       #   adobeHouse, compoundWall, shellBlock, mosque,
-                        #   minaret, souk, windTower, caravanserai, hammam,
-                        #   granary, blastWall, sandbags, pylon — the desert-town
-                        #   set. `pylon` is the odd one: a power pole that
-                        #   carries the SPAN of wire ahead of it (`length`), so a
-                        #   chain of them draws one line across ground a
-                        #   placement cannot otherwise reach off the end of, and
-                        #   it samples `BuildCtx.terrain` for the far end's
-                        #   height. The first vernacular here whose ROOF is walked,
-                        #   which is what it exists for: a flat roof is a second
-                        #   storey of ground and a parapet is the cover on it.
-                        #   Its header owns the STAIR LANE every climbed building
-                        #   in it is built around, and the collider ORDER the
-                        #   nav grid's silent overflow makes load-bearing
+    kit/desert/         #   the desert-town set, and the first vernacular here
+                        #   whose ROOF is walked, which is what it exists for: a
+                        #   flat roof is a second storey of ground and a parapet
+                        #   is the cover on it. One file per building, the runs
+                        #   and the furniture together
+      index.ts          #   The set's header and barrel: the STAIR LANE every
+                        #   climbed building in it is built around, the
+                        #   collider ORDER the nav grid's silent overflow makes
+                        #   load-bearing, and the ten-colour palette's argument
+      shared.ts         #   What a building is measured and dressed by: the
+                        #   palette, T, PLINTH, SLAB, STOREY, the lane, PARAPET,
+                        #   GRADE, `laneFlight` and `assertClimbable`,
+                        #   `clothHash` and `drape`, the parapets, `windowRow`
+      adobe.ts          #   buildAdobeHouse — the courtyard house, nine in ten
+      shellBlock.ts     #   buildShellBlock — the shelled concrete slab
+      mosque.ts         #   buildMosque, buildMinaret — the dome and the shaft
+                        #   nobody climbs
+      souk.ts           #   buildSouk — the colonnade with a walked roof
+      windTower.ts      #   buildWindTower — the house with a barjeel on its deck
+      caravanserai.ts   #   buildCaravanserai — the inn built as a fort, and
+                        #   `arcade`, its punched inner walls
+      hammam.ts         #   buildHammam — the bathhouse and its domed deck
+      granary.ts        #   buildGranary — the mud silos in the alley
+      walls.ts          #   buildCompoundWall, buildBlastWall, buildSandbags,
+                        #   buildPylon. `pylon` is the odd one: a power pole
+                        #   that carries the SPAN of wire ahead of it
+                        #   (`length`), so a chain of them draws one line across
+                        #   ground a placement cannot otherwise reach off the
+                        #   end of, and it samples `BuildCtx.terrain` for the
+                        #   far end's height
     NavGrid.ts          # Walkable-surface graph + precomputed flow fields
     CoverMap.ts         # Baked per-surface directional cover masks
     boxGeometry.ts      # Analytic WorldBox primitives, shared by NavGrid /

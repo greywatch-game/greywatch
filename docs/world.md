@@ -142,7 +142,7 @@ them, each quarter flattened dead level, the whole SOUTHERN group of quarters
 flattened to a terrace 2.6 m below the rest, a flood bench levelled either side
 of the watercourse, and the wadi cut through all of it; its boundary is
 Harrowmead's open one at nearly four times the margin, for a different reason
-(see that section). It also needed a fourth VERNACULAR — `kit/desert.ts`, whose
+(see that section). It also needed a fourth VERNACULAR — `kit/desert/`, whose
 flat WALKED roof is the first in this kit and is what makes a town of them a
 second surface over the whole map — and one scatter prop, the date palm.
 
@@ -223,9 +223,9 @@ new here rather than borrowed, and each is written up where it belongs:
   bright disc and every shaft the air scatters over the crater — see
   `cinderhaven/environment.ts`, which owns that argument and the measurement
   behind its `fogEnd`.
-- **It has a KIT of its own** (`kit/harbour.ts`), and it is the first map in
+- **It has a KIT of its own** (`kit/harbour/`), and it is the first map in
   the tree to get one AFTER shipping. Coldharbour got `kit/city/` and Sarab
-  got `kit/desert.ts`; the island was built out of the village set — cottage,
+  got `kit/desert/`; the island was built out of the village set — cottage,
   townhouse, barn, mill, boathouse — which is most of why a volcanic harbour
   town read as Hollowmere with more water in it. **A map does not feel like a
   place because of how MANY buildings are on it; it feels like a place because
@@ -1963,7 +1963,7 @@ because `renderOutline` expands vertices along their own normals.
 **There are FOUR vernaculars in the kit and each is a shape before it is a
 palette**: `kit/buildings/` and `kit/structures/` are the wet northern
 village, `kit/buildings/manor.ts` and the jungle props are Greyfen's, `kit/city/` is the
-downtown, and `kit/desert.ts` is Sarab's. The last one exists for one geometric
+downtown, and `kit/desert/` is Sarab's. The last one exists for one geometric
 reason and its header owns the argument: its ROOF is flat and WALKED, which
 nothing else in the kit has, so a terrace of its houses is a second storey of
 ground with a parapet for cover and a stair to reach it. It re-uses

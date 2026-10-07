@@ -2380,7 +2380,7 @@ transit rather than fighting. `npm run parity` passes — 3,231 boxes, 380,598 n
 surfaces, server matching the client on all seventeen fields.
 
 **What it needed that was not on this list.** A vernacular: `src/world/kit/
-desert.ts`, eight builders and the first in the kit whose ROOF is walked, which
+desert/`, eight builders and the first in the kit whose ROOF is walked, which
 is what makes a town of flat roofs a second surface over the whole map rather
 than a set of boxes. And one scatter prop, the date palm — the only tree that
 grows on a map with no water on it.

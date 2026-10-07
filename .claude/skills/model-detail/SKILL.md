@@ -16,8 +16,8 @@ Read before touching anything:
 - the builder's own header comment (it owns its argument — nav budget, cover
   heights, what was tried first);
 - `src/world/kit/core.ts`'s header (the builder contract) and the kit file's
-  own header (`structures/index.ts`, `city/index.ts`, `desert.ts`, `harbour.ts`,
-  `japan/index.ts` each carry rules for their set);
+  own header (`structures/index.ts`, `city/index.ts`, `desert/index.ts`,
+  `harbour/index.ts`, `japan/index.ts` each carry rules for their set);
 - CLAUDE.md's "Visual meshes and collider proxies" and "Mesh metadata"
   sections, and `docs/world.md` / `docs/rendering.md` where the task touches
   them.

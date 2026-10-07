@@ -1615,9 +1615,9 @@ happen to be right.
 rather than corrected: `reach` 5 spans the heights cloth is hung at so a drape
 shears down its own length, and `amount` 0.28 caps the largest travel in the
 layer at 0.095 m against the 0.08 m every drape's coping oversails its wall by.
-The look is carried by `kit/desert.ts`'s `drape` — a rolled head and three
-strips differing in width, drop, proudness and hang, all marked so there is no
-internal join.
+The look is carried by `kit/desert/shared.ts`'s `drape` — a rolled head and
+three strips differing in width, drop, proudness and hang, all marked so there
+is no internal join.
 
 ### What would settle it, in rough order of cost
 
@@ -1625,7 +1625,7 @@ internal join.
 `world/sway.ts`'s rig and `docs/rendering.md`'s wind section. A layer may name
 a `rig`, its builder writes each vertex's place on its own member into the
 `uv` buffer before the merge (`swayRig`), and the shader reads that behind a
-negative red channel. Neither the cloth layer nor `kit/desert.ts` has been
+negative red channel. Neither the cloth layer nor `kit/desert/` has been
 moved across, so the workaround above still stands.
 
 - **A rigged `hang` layer — the route, and now the only per-vertex one.** A

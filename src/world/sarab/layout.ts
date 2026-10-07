@@ -146,7 +146,7 @@ import type {
  *   belongs to scatter props, not buildings.
  * - A house with `rampSide` has a stair and a WALKED roof; one without has a
  *   roof that stops rounds and nothing can stand on. The builder throws in a
- *   DEV build below 13 m of depth — see kit/desert.ts, whose header owns the
+ *   DEV build below 13 m of depth — see kit/desert/, whose header owns the
  *   stair lane every climbed building here is built around.
  * - Compound walls are authored in runs with GAPS. A sealed compound is a wall
  *   the nav grid routes bots the whole way around.
@@ -193,7 +193,7 @@ const placements: Placement[] = [
   // which is the only large flat ground in the quarter and is overlooked from
   // every roof around it — a flag you can hold and cannot hide on. The
   // minaret is the map's landmark and is deliberately not climbable; see
-  // kit/desert.ts.
+  // kit/desert/mosque.ts.
   { kind: "mosque", x: -232, z: 150, rotY: Math.PI / 2, params: { width: 26, depth: 20, height: 7.4 } },
   { kind: "minaret", x: -232, z: 104, params: { height: 27 } },
   { kind: "compoundWall", x: -155.63, z: 100, params: { length: 55.25, height: 3, tint: "#b6a68f" } },
@@ -1509,7 +1509,7 @@ export const SarabLayout: MapLayout = {
    * Five, because this town genuinely stacks: the ground, two floors and a roof
    * inside a shelled block, and a parapet or a rubble heap over one of them.
    * Overflow is a SILENT drop in arrival order, which is why every builder in
-   * kit/desert.ts emits plinth, flights, slabs, walls, roof, parapet — in that
+   * kit/desert/ emits plinth, flights, slabs, walls, roof, parapet — in that
    * order — and why the fifth slot here is margin rather than need.
    */
   surfaces: 5,

@@ -2,7 +2,7 @@
  * BuildingKit.ts — Facade for the parametric structure builders. Re-exports
  * the shared types and the BUILDERS registry; the implementation lives in
  * kit/ (core.ts = Build accumulator + palette + contract, buildings/,
- * city/, desert.ts, harbour.ts, japan/, structures/,
+ * city/, desert/, harbour/, japan/, structures/,
  * terrain.ts).
  * Invariants: builders assemble AT THE ORIGIN, UNROTATED and NEVER set
  * metadata.solid, checkCollisions, or isPickable — MapBuilder owns the
@@ -171,7 +171,7 @@ export const BUILDERS = {
   car: buildCar,
   streetLight: buildStreetLight,
   monument: buildMonument,
-  // The desert-town set — see kit/desert.ts, whose header owns the stair lane
+  // The desert-town set — see kit/desert/, whose header owns the stair lane
   // every building in it that is climbed is built around.
   adobeHouse: buildAdobeHouse,
   compoundWall: buildCompoundWall,
@@ -186,7 +186,7 @@ export const BUILDERS = {
   blastWall: buildBlastWall,
   sandbags: buildSandbags,
   pylon: buildPylon,
-  // The volcanic-coast set — see kit/harbour.ts, whose header owns the rule
+  // The volcanic-coast set — see kit/harbour/, whose header owns the rule
   // that everything walked in it (the smelter's deck and its flight) obeys
   // kit/terrain.ts, and the argument for why nothing else in it is climbed.
   smelter: buildSmelter,

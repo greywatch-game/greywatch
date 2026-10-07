@@ -2893,7 +2893,7 @@ placements.push(
   "  // with a cart arch wide enough to drive a tank through, a solid furnace",
   "  // block carrying the one light on this hillside, a forty-metre stack, and",
   "  // a charging deck six metres over the yard reached by one stone flight.",
-  "  // `kit/harbour.ts` owns the argument for all four.",
+  "  // `kit/harbour/smelter.ts` owns the argument for all four.",
 );
 
 /**

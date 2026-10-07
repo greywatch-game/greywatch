@@ -67,8 +67,8 @@
  * **The palette is a VALUE ladder rather than a hue one**, which is what a
  * bleached place is: floor, wall, roof and rim are within a few percent of one
  * another in hue and separated by lightness, and the only chroma anywhere is
- * the mosque's dome (`TILE_BLUE` in kit/desert.ts) and the two teams' liveries.
- * That is deliberate and it is a gameplay decision as much as a look — on a map
+ * the mosque's dome (`TILE_BLUE` in kit/desert/shared.ts) and the two teams'
+ * liveries. That is deliberate and it is a gameplay decision as much as a look — on a map
  * this size the thing you navigate by has to be the one saturated object in the
  * town, and a body's team colour has to be the one saturated thing on a body.
  */

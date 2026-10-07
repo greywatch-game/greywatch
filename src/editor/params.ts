@@ -263,7 +263,7 @@ export const PARAMS: Record<BuilderKind, ParamSpec[]> = {
     },
   ],
 
-  // --- the desert-town set (world/kit/desert.ts) ---------------------------
+  // --- the desert-town set (world/kit/desert/) -----------------------------
   // The depth floors here are `assertClimbable`, which throws in a DEV build
   // rather than letting a layout ask for a stair the nav graph will decline to
   // link: a mud-brick storey is 10.0 m of run plus a 1.8 m landing inside the
@@ -418,7 +418,7 @@ export const PARAMS: Record<BuilderKind, ParamSpec[]> = {
     num("height", "height", 8.4, 5, 13, 0.2),
   ],
 
-  // The volcanic coast — kit/harbour.ts.
+  // The volcanic coast — kit/harbour/.
   lighthouse: [num("height", "height", 26, 16, 40, 0.5)],
   fishRack: [num("length", "length", 9, 3, 30, 0.5)],
   careenedHull: [num("length", "length", 11, 6, 20, 0.5)],

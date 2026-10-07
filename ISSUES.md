@@ -52,7 +52,7 @@ match smoke test (`npm run build:server && npm run server`, two clients).
 | ~~[21](#21-extend-kithash-to-cover-scatter-builders)~~ | P2 — done | Extend `kit:hash` to cover scatter builders |
 | ~~[22](#22-split-worldkitcityts-per-builder)~~ | P2 — done | Split `world/kit/city.ts` per builder |
 | ~~[23](#23-split-worldpropsts)~~ | P2 — done | Split `world/Props.ts` |
-| [24](#24-split-worldkitharbourts-and-worldkitdesertts) | P2 | Split `world/kit/harbour.ts` and `world/kit/desert.ts` |
+| ~~[24](#24-split-worldkitharbourts-and-worldkitdesertts)~~ | P2 — done | Split `world/kit/harbour.ts` and `world/kit/desert.ts` |
 | [25](#25-mapbuilderts-move-types-and-merge-code-out) | P2 | `MapBuilder.ts`: move types and merge code out |
 | [26](#26-split-sfxts-engine-voices-and-ambience-into-their-own-classes) | P2 | Split `Sfx.ts`: engine voices and ambience |
 | [27](#27-vehiclets-extract-hullflex-and-the-flight-model) | P2 | `Vehicle.ts`: extract `HullFlex` and the flight model |
@@ -740,6 +740,47 @@ them separate, but consider writing each as `MAX_WALKABLE_GRADE - margin` so
 the shared bound is visible.
 
 **Acceptance.** `kit:hash --against` identical.
+
+**Done.** `kit/harbour.ts` is `kit/harbour/` and `kit/desert.ts` is
+`kit/desert/`. Each `index.ts` carries its set's header, moved as it was, and
+re-exports the set's builders, so `BuildingKit.ts` imports exactly what it
+did. The split departs from the proposal where ticket 22's rule decides it:
+what more than one building uses is shared, and nothing else is.
+
+- **harbour/**: `smelter`, `lighthouse`, `crane`, `netLoft`, and `small.ts`
+  for the rack, the hull and the pan. The proposed `boarding.ts` is
+  `shared.ts`, because it also holds `bar`, `splitRun`, `TRANSLUCENCY` and
+  `NET_PAINTS`, and none of those is boarding. `dressed`, `TO_CORE` and
+  `sashWindow` went to the lighthouse, their only user. `GRADE` went to the
+  smelter, which has the set's only flight.
+- **desert/**: `shared.ts`, then `adobe`, `windTower`, `caravanserai`,
+  `hammam`, `walls` and `mosque`. The proposal left out the shelled block and
+  the granary, so each got a file of its own. `arcade` went to
+  `caravanserai.ts`, its only caller; the souk never used it, so the souk has
+  its own file and `mosque.ts` holds just the mosque and the minaret.
+  `STOREY_RC` went to `shellBlock.ts`. `parapet`'s doc comment had drifted
+  two functions above it, and is back over it.
+
+No builder imports another. It is a pure move: every body line of the old
+files lands exactly once. The only code changes are `export` on what crosses
+a file and the paths in two DEV-only error strings. Comments that said "this
+file" now say "the set". Every outside reference names the file it means,
+across the source, the generators, the docs, FILES.md, FINDINGS.md, CLAUDE.md
+and the model-detail skill.
+
+The comments in the Coldharbour, Sarab and Cinderhaven layouts named the old
+paths, so their bakes were re-stamped; only the hash line moved. Coldharbour
+and Cinderhaven regenerate with no other diff. Sarab's generator is missing
+the three-line comment over the dry grass patch at (300, −60) that
+`layout.ts` carries. That drift was already there before this ticket and was
+left alone.
+
+The `MAX_WALKABLE_GRADE - margin` rewrite was not done. `0.4 - 0.05` is
+`0.35000000000000003`, so the city's flights would move.
+
+Checked: `kit:hash --against` a whole-kit fingerprint taken before the move
+is identical over all 3,722 builds. `npm run parity` and `npm run build`
+pass.
 
 ### 25. `MapBuilder.ts`: move types and merge code out
 

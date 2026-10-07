@@ -80,7 +80,7 @@ const foliageLayers = {
    * one-storey parapet's head travels 1.5x its hem, which reads as the sheet
    * shearing rather than sliding — and `amount` at 0.28 puts the largest
    * travel anywhere in the layer at 0.095 m. That number is not taste: every
-   * drape in `kit/desert.ts` hangs under a coping that oversails its wall by
+   * drape in `kit/desert/` hangs under a coping that oversails its wall by
    * 0.08, so a head that never travels further than the oversail can never
    * emerge from under it, whatever the wind's bearing does relative to the
    * wall. Cloth that BREATHES rather than swinging, in other words, which is

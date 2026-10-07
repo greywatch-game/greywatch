@@ -837,8 +837,8 @@ function oldTownBlock(cx, cz, core) {
     // of the blocks, the block recipes above take most of the rest, and a
     // fourteen-metre building in a twenty-six-metre core is refused often
     // enough to matter. A dozen is what the skyline needed: every one is 2.8 m
-    // of solid brick standing in the middle of a roof deck (see kit/desert.ts),
-    // so at this rate no quarter is without one and no two quarters have them
+    // of solid brick standing in the middle of a roof deck (see
+    // kit/desert/windTower.ts), so at this rate no quarter is without one and no two quarters have them
     // in the same places. At one in ten nobody would learn to expect one; at
     // three in four they would be a texture rather than a landmark.
     const turn = randInt(0, 3);
@@ -1089,7 +1089,7 @@ placements.push(
   "  // which is the only large flat ground in the quarter and is overlooked from",
   "  // every roof around it — a flag you can hold and cannot hide on. The",
   "  // minaret is the map's landmark and is deliberately not climbable; see",
-  "  // kit/desert.ts.",
+  "  // kit/desert/mosque.ts.",
 );
 place("mosque", A.x - 40, A.z, 1, 26, 26, { width: 26, depth: 20, height: 7.4 }, 2.5);
 place("minaret", A.x - 40, A.z - 46, 0, 7, 7, { height: 27 }, 2);
@@ -2502,7 +2502,7 @@ import type {
  *   belongs to scatter props, not buildings.
  * - A house with \`rampSide\` has a stair and a WALKED roof; one without has a
  *   roof that stops rounds and nothing can stand on. The builder throws in a
- *   DEV build below 13 m of depth — see kit/desert.ts, whose header owns the
+ *   DEV build below 13 m of depth — see kit/desert/, whose header owns the
  *   stair lane every climbed building here is built around.
  * - Compound walls are authored in runs with GAPS. A sealed compound is a wall
  *   the nav grid routes bots the whole way around.
@@ -2659,7 +2659,7 @@ export const SarabLayout: MapLayout = {
    * Five, because this town genuinely stacks: the ground, two floors and a roof
    * inside a shelled block, and a parapet or a rubble heap over one of them.
    * Overflow is a SILENT drop in arrival order, which is why every builder in
-   * kit/desert.ts emits plinth, flights, slabs, walls, roof, parapet — in that
+   * kit/desert/ emits plinth, flights, slabs, walls, roof, parapet — in that
    * order — and why the fifth slot here is margin rather than need.
    */
   surfaces: 5,

@@ -496,7 +496,7 @@ const placements: Placement[] = [
   // with a cart arch wide enough to drive a tank through, a solid furnace
   // block carrying the one light on this hillside, a forty-metre stack, and
   // a charging deck six metres over the yard reached by one stone flight.
-  // `kit/harbour.ts` owns the argument for all four.
+  // `kit/harbour/smelter.ts` owns the argument for all four.
   { kind: "smelter", x: -330, z: -200, rotY: Math.PI },
   { kind: "road", x: -330, z: -171.5, params: { path: [[0, 10.5], [0, -10.5]], width: 7, surface: "dirt" } },
   { kind: "kiln", x: -348, z: -126 },

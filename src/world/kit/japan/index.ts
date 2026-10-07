@@ -17,7 +17,7 @@
  * ## What this set is, and why it is a set
  *
  * Kurenai is a temple town in a mountain valley in the last week of the
- * maples, and the rule `kit/harbour.ts` wrote down holds here unchanged: **a
+ * maples, and the rule `kit/harbour/` wrote down holds here unchanged: **a
  * map feels like a place because the buildings are the ones that place would
  * have built**, not because there are many of them. A valley like this one
  * built a temple with a pagoda for its landmark, a gate and a bell to go with

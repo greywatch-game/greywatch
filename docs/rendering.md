@@ -840,11 +840,11 @@ brick already makes.** These surfaces carry no texture, so silhouette is the
 whole of what a material is — and a sheet drawn as a single box is a slab with a
 level hem, one flat face and a constant thickness, which on this layer also
 translates rigidly because every vertex on one box gets very nearly one weight.
-`kit/desert.ts`'s `drape` is a rolled head and three strips under it differing
-in width, drop, proudness and hang, so the hem is ragged, the folds band the
-light differently and the assembly has depth. All four are marked, which is what
-leaves it no internal join to shear: the only step anywhere is where the roll
-meets the wall, and that is what the coping is hiding.
+`kit/desert/shared.ts`'s `drape` is a rolled head and three strips under it
+differing in width, drop, proudness and hang, so the hem is ragged, the folds
+band the light differently and the assembly has depth. All four are marked,
+which is what leaves it no internal join to shear: the only step anywhere is
+where the roll meets the wall, and that is what the coping is hiding.
 
 The other half of the rule is unchanged and load-bearing: a drape emits no
 collider and nothing was ever measured against it, so `sway.ts`'s prohibition on
