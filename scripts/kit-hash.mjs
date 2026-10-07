@@ -40,8 +40,8 @@
  * and since a layout places a REGION rather than a prop, each kind is built
  * over `SCATTER_SEEDS` fixed seeds at every rung of `CONFIG.graphics.foliage`
  * instead of over its placements. Its two halves are the scatter's own: the
- * DRAWING is the prop as `MapBuilder.flatten` would hand it to the merge —
- * the root and every child mesh, in that order, metadata included, because
+ * DRAWING is the prop as `flatten` (`world/merge.ts`) would hand it to the
+ * merge — the root and every child mesh, in that order, metadata included, because
  * `noInk`/`noGlow`/`noShadowCaster` are part of the merge key — and the
  * COLLIDERS are what decides where a blocking field's boxes go: the kind's
  * `PROP_BODIES` row, and how many numbers the builder drew from the REGION's
@@ -328,7 +328,7 @@ function hashScatter(build, body, scene, mats, p) {
   const rng = counted(mulberry32(p.seed));
   const root = build(scene, mats, rng, mulberry32(p.seed ^ 0x2545f491), p.foliage);
   const draw = createHash("sha256");
-  // `MapBuilder.flatten`'s order: the root, then its child meshes.
+  // `flatten`'s order (`world/merge.ts`): the root, then its child meshes.
   for (const m of [root, ...root.getChildMeshes()]) {
     draw.update(`|${m.name}|${m.material?.name}|${JSON.stringify(m.metadata ?? null)}|`);
     hashMesh(draw, m);

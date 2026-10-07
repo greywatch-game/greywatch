@@ -412,7 +412,7 @@ export class GlassSystem {
  * a merged mesh's and never on the wire — so it has nothing to agree with, and
  * what it wants from a big map is the opposite of what the merge wants: a
  * bucket is a slab rejection whose only cost is the panes left inside it. See
- * `BLOCK_SIZE` in `MapBuilder`, where the split is argued.
+ * `BLOCK_SIZE` in `world/merge.ts`, where the split is argued.
  */
 function bucketPanes(panes: readonly WorldPane[]): PaneBucket[] {
   const byBlock = new Map<string, PaneBucket>();

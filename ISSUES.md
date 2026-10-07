@@ -53,7 +53,7 @@ match smoke test (`npm run build:server && npm run server`, two clients).
 | ~~[22](#22-split-worldkitcityts-per-builder)~~ | P2 — done | Split `world/kit/city.ts` per builder |
 | ~~[23](#23-split-worldpropsts)~~ | P2 — done | Split `world/Props.ts` |
 | ~~[24](#24-split-worldkitharbourts-and-worldkitdesertts)~~ | P2 — done | Split `world/kit/harbour.ts` and `world/kit/desert.ts` |
-| [25](#25-mapbuilderts-move-types-and-merge-code-out) | P2 | `MapBuilder.ts`: move types and merge code out |
+| ~~[25](#25-mapbuilderts-move-types-and-merge-code-out)~~ | P2 — done | `MapBuilder.ts`: move types and merge code out |
 | [26](#26-split-sfxts-engine-voices-and-ambience-into-their-own-classes) | P2 | Split `Sfx.ts`: engine voices and ambience |
 | [27](#27-vehiclets-extract-hullflex-and-the-flight-model) | P2 | `Vehicle.ts`: extract `HullFlex` and the flight model |
 | [28](#28-frameprofilets-split-the-recorder-from-the-reporter) | P2 | `FrameProfile.ts`: split recorder from reporter |
@@ -807,6 +807,45 @@ invariant.
 
 **Acceptance.** `npm run collision` no diff; `npm run parity` passes;
 `kit:hash` identical.
+
+**Done**, steps 1, 2 and 4. `MapBuilder.ts` is 2,506 lines, down from 3,361.
+
+- **`world/mapTypes.ts`** holds every type from `ControlPointDef` to
+  `GameMap`, with type-only imports. `MapBuilder` re-exports each one, so none
+  of the importers changed.
+- **`world/merge.ts`** holds `mergeByMaterial` and its key (`EXEMPTIONS`,
+  `exemptionsOf`, `plainCelHex`, `markSwayMerged`, `Palette`), `BlockMerge`,
+  `PaneBlocks`, `flatten` and `BLOCK_SIZE`. `MapBuilder` re-exports
+  `BLOCK_SIZE` for `GlassSystem`, `PhysicsWorld` and the server. `tag` went
+  with them because `PaneBlocks` tags the merged glazing for the editor, and
+  `merge.ts` could not take it from `MapBuilder` without a cycle. `CORNERS`
+  and `rotateY` stayed, since only `MapBuilder` uses them. Both
+  `metadata.block` writes moved unchanged.
+- **`build()` is now a list of phases**, one method each: `reset`, `floorFor`,
+  `buildValley` (as before), `placeStructures` (with the road merge),
+  `placeScatter` (with the collider clustering), `waterAmbience`,
+  `mergeBlocks`, `bake` and `derive`. A `BuildRun` carries the lists they
+  fill. `reset` calls `release()` and then sets the fields the layout decides.
+  Before, a build reset and a teardown cleared the same fourteen fields from
+  two lists that had to agree; now there is one list.
+
+**Step 3 was not done.** The scatter code reads `collider()`, `recordBox`,
+the box index, `keepClear`, the roads, the prop seed, the foliage, the pending
+cluster and the editor item, so its context object would be most of the
+builder. The tables could move without one, but a dozen comments across
+`props/`, `kit/` and the layouts name `PROP_BODIES` in `MapBuilder.ts`.
+
+It is a pure move apart from four kinds of change: `export` on what crosses a
+file, `build`'s body becoming calls, comments that said "below" or "`build`"
+now naming the method they mean, and the outside references that named the
+old home (`weaponKit.ts`, `CelShader.ts`, `ReflectionSystem.ts`,
+`GlassSystem.ts`, `layout.ts`, `kit-hash.mjs`, `docs/world.md`,
+`ENGINE_UPGRADE.md`, `FILES.md`). The empty `else {}` in the editor's road
+branch was left for ticket 43.
+
+Checked: `kit:hash --against` a whole-kit fingerprint taken before the move
+is identical over all 3,722 builds. `npm run collision` rebaked all eight maps
+with no diff. `npm run parity` and `npm run build` pass.
 
 ### 26. Split `Sfx.ts`: engine voices and ambience into their own classes
 

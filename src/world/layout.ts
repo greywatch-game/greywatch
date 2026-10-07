@@ -10,7 +10,7 @@
  * a named map.
  *
  * The remaining pieces of the vocabulary (ControlPointDef, SpawnPointDef,
- * WaterRect, GrassRect) are declared in MapBuilder.ts next to the GameMap they
+ * WaterRect, GrassRect) are declared in mapTypes.ts next to the GameMap they
  * end up inside, and re-exported here so a layout file has one import.
  */
 import { CONFIG } from "../config";

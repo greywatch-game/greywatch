@@ -12,7 +12,7 @@
  * - A builder assembles at the ORIGIN with its root at identity and merges
  *   before anything is moved. `MergeMeshes` bakes world matrices, so a merge
  *   under a transformed root bakes that transform in twice. Same rule, same
- *   reason, as `BuildingKit` and `MapBuilder.mergeByMaterial`.
+ *   reason, as `BuildingKit` and `mergeByMaterial` (`world/merge.ts`).
  * - Nothing may be scaled non-uniformly. `VertexData.transform` carries
  *   normals across without re-normalising them and `renderOutline` extrudes
  *   each vertex along its own normal, so a squashed part grows an ink shell
@@ -687,7 +687,7 @@ export class WeaponBuild {
       // it hands the mesh straight back with its transform intact, which the
       // new parent would then apply a second time. Bake it by hand instead,
       // detached first because the bake resets the local matrix. Same rule,
-      // and same reason, as ViewModel's arms and MapBuilder's mergeByMaterial.
+      // and same reason, as ViewModel's arms and mergeByMaterial (world/merge.ts).
       const merged =
         parts.length === 1
           ? (parts[0].setParent(null), parts[0].bakeCurrentTransformIntoVertices())

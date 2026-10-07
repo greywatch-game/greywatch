@@ -2515,8 +2515,8 @@ export class CelMaterialFactory {
    * whichever level asked first would silently answer for both, which is a
    * weapon finish coming out matte because some other finish had already
    * minted its colour. The NAME still carries the palette colour and nothing
-   * else, because a name is what `MapBuilder.plainCelHex` reads to decide
-   * whether a mesh can join the palette merge — the one reader left now that
+   * else, because a name is what `world/merge.ts`'s `plainCelHex` reads to
+   * decide whether a mesh can join the palette merge — the one reader left now that
    * the hull ink's own `inkColorFor` has gone with it.
    */
   getGlossy(hex: string, spec: SpecSpec): ShaderMaterial {

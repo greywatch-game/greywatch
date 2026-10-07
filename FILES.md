@@ -807,7 +807,14 @@ src/
                         #   and the map generators' too: Node loads it by type
                         #   stripping through scripts/lib/mapgen.mjs, the
                         #   helpers the seven generate-<map>.mjs share
-    MapBuilder.ts       # Builds the map; merges visuals, emits colliders
+    MapBuilder.ts       # Builds the map; merges visuals, emits colliders.
+                        #   build() is a list of phases, one method each
+    mapTypes.ts         # GameMap, WorldBox, WorldPane, PaneGroup, the layout's
+                        #   flag/spawn/water/grass shapes and the editor index.
+                        #   Types only; MapBuilder re-exports every one
+    merge.ts            # The visual merges: mergeByMaterial, then BlockMerge
+                        #   and PaneBlocks per map block (one key, one
+                        #   metadata.block), flatten, tag, BLOCK_SIZE
     solid.ts            # SOLID_ONLY — the one mesh pick predicate left, and the
                         #   editor's alone. The three-way table of what a
                         #   collider answers a body and a round is still here

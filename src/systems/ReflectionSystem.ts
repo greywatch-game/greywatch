@@ -1021,7 +1021,7 @@ function centreOf(mesh: Mesh, out: Vector3): Vector3 {
  * merged per block per COLOUR: a colour that appeared once appeared in a mesh
  * of its own, so "inside its box" picked out one to five small meshes of the
  * probe's own building. The albedo palette took the colour out of that merge
- * key (`MapBuilder.mergeByMaterial`), which left the smallest thing a box test
+ * key (`mergeByMaterial`), which left the smallest thing a box test
  * could remove at one whole merge block — 48 m on every shipped map, and wider
  * on a map that states its own `blockSize` — and a box test cannot tell a tower's
  * probe standing in its own shaft from a water probe floating in open marsh

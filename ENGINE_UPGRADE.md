@@ -1616,7 +1616,7 @@ not in it.
 
 **Fix 1 landed, the exponent went with it, and the fallback was not needed.**
 `PhysicsWorld.buildWorld` builds one `PhysicsShapeContainer` and one static
-`PhysicsBody` per 48 m map block — `MapBuilder`'s `BLOCK_SIZE`, keyed exactly as
+`PhysicsBody` per 48 m map block — `world/merge.ts`'s `BLOCK_SIZE`, keyed exactly as
 `BlockMerge` keys a merged visual — with each block's collider boxes and its own
 terrain patch in it. Every bucket's node stands at the ORIGIN and every child
 carries the world-space transform it always carried, so nothing in the world

@@ -36,6 +36,8 @@
  * `build(..., { editor: true })` keeps geometry per layout item, tags it with
  * metadata.editorRef and indexes it — at the cost of the BlockMerge pass and
  * roughly 10x the draw calls. Authoring only; never measure frame cost there.
+ * The shapes it builds are `mapTypes.ts` and the merge passes it runs are
+ * `merge.ts`; both are re-exported from here, so a reader may name either.
  */
 import {
   Color3,
@@ -47,18 +49,13 @@ import {
   VertexBuffer,
 } from "@babylonjs/core";
 import { CONFIG } from "../config";
-import { kindOf, type VehicleKind } from "../entities/vehicleKinds";
-import {
-  MAX_PALETTE,
-  writePaletteIndex,
-  type CelMaterialFactory,
-} from "../shaders/CelShader";
-import { marksSway, type SwayLayer, swayLayerOf } from "./sway";
+import { kindOf } from "../entities/vehicleKinds";
+import { MAX_PALETTE, type CelMaterialFactory } from "../shaders/CelShader";
 import { bakeVertexShading } from "./vertexShading";
 import { begin as beginProfile, record, since } from "./buildProfile";
 import type { LightingSystem } from "../systems/LightingSystem";
 import type { AmbienceSystem } from "../systems/AmbienceSystem";
-import type { AmbienceId, AmbienceKind, WaterAmbienceId } from "../core/Sfx";
+import type { AmbienceId, AmbienceKind } from "../core/Sfx";
 import { BUILDERS, type BoxSpec, type Structure } from "./BuildingKit";
 import type { EnvironmentSpec } from "./environment";
 import { floorMaterial } from "./floorSurfaces";
@@ -87,6 +84,24 @@ import { CollisionField } from "./CollisionField";
 import { CoverMap } from "./CoverMap";
 import { ObstacleField } from "./ObstacleField";
 import { uploadPart } from "./parts";
+import {
+  BLOCK_SIZE,
+  BlockMerge,
+  flatten,
+  mergeByMaterial,
+  PaneBlocks,
+  tag,
+} from "./merge";
+import type {
+  BuildOptions,
+  EditorIndex,
+  EditorItem,
+  GameMap,
+  PaneGroup,
+  WaterRect,
+  WorldBox,
+  WorldPane,
+} from "./mapTypes";
 import { mulberry32 } from "./rng";
 import {
   buildAshTree,
@@ -116,506 +131,22 @@ import {
   RIM_WOOD,
 } from "./props";
 
-/** A capturable flag. */
-export interface ControlPointDef {
-  /** Single letter shown on the HUD strip: A..E. */
-  id: string;
-  name: string;
-  pos: Vector3;
-  radius: number;
-  /**
-   * Metres the flag's pole is moved up (or, negative, down) from where
-   * `CaptureZoneSystem` stands it — on the floor, or on the roof its one
-   * downward cast found. A correction for when that cast finds a collider a
-   * little off the drawn roof, and nothing else: the ring, the capture test
-   * and the flow field all ignore it. Absent is 0.
-   */
-  poleLift?: number;
-}
-
-/** A place a combatant can deploy to. */
-export interface SpawnPointDef {
-  /** Owning team, or null for a spawn tied to a control point. */
-  team: 0 | 1 | null;
-  /** Set when this spawn belongs to a control point. */
-  controlPoint?: string;
-  pos: Vector3;
-  yaw: number;
-}
-
-/**
- * Where one team's vehicle stands at the start of a round, and where a fresh
- * one is put after the last was destroyed.
- *
- * **A hardstanding, not a spawn point.** It is deliberately not a
- * `SpawnPointDef` with a flag on it: a soldier's spawn is one of a set the
- * deploy screen offers and the conquest rules hand out, and this is a single
- * fixed place that belongs to a team for the whole round whatever they hold.
- * Sharing the type would have put a `vehicle?: true` on every infantry spawn on
- * every map and given `ConquestSystem.spawnFor` something to skip.
- *
- * The MapBuilder does one thing with these and it is not building anything:
- * they join `keepClear`, so blocking scatter cannot be sown on top of a
- * hardstanding. What stands here is `VehicleSystem`'s, from `GameMap`.
- */
-export interface VehicleSpawnDef {
-  team: 0 | 1;
-  /** Absolute, like a control point's — the ground here is where the hull rests. */
-  pos: Vector3;
-  /** Which way the hull faces when it arrives. */
-  yaw: number;
-  /**
-   * WHAT stands here, or nothing for a tank.
-   *
-   * Optional so that the maps written before there was a second kind say
-   * nothing at all and are unaffected — the default is stated once, in
-   * `entities/vehicleKinds.ts`, and the two readers here (`keepClear` below and
-   * `VehicleSystem.build`) both go through it rather than repeating it.
-   *
-   * **A team may have as many hardstandings as the layout states, of any mix
-   * of kinds**: the respawn clock is per hardstanding, so what this list is is
-   * exactly the vehicles that side can ever have on the field at once.
-   */
-  kind?: VehicleKind;
-}
-
-/**
- * A rectangular body of shallow surface water. Purely visual: no collider,
- * no nav cost — combatants wade across the ground beneath. Consumed by the
- * WaterSystem, not by the MapBuilder (water is never merged or frozen).
- */
-export interface WaterRect {
-  x: number;
-  z: number;
-  /** Extents along X and Z. */
-  width: number;
-  depth: number;
-  /** Surface height; defaults to CONFIG.water.surfaceY. */
-  y?: number;
-  /**
-   * What it SOUNDS like, and the third thing in the game to carry a sound by
-   * ID beside `Build.sound` and `SCATTER_AMBIENCE`.
-   *
-   * **Defaults to `"shore"`, which is the one place in this interface a
-   * default is not "unaffected".** Every other optional field on a layout
-   * means a map that says nothing gets what it always had; here that would
-   * mean silence, and silent water is a bug rather than a neutral choice. A
-   * map states `"stream"` for water that RUNS — Hollowmere's creek, a mill
-   * race — because that is the half of the distinction geometry cannot make:
-   * the creek is 6.6 m wide and Sarab's birkat is 54, but the wadi's pools are
-   * 75 m of standing water and a mountain beck would be narrower than either.
-   * Flow is not a shape.
-   *
-   * Where it is HEARD is not stated here at all and could not usefully be:
-   * see `MapBuilder.waterEmitters`, which marches the finished floor to find
-   * where this rect actually meets the land.
-   */
-  sound?: WaterAmbienceId;
-}
-
-/**
- * A rectangular grass field. Purely visual: no collider, no nav cost —
- * combatants walk straight through (the shader bends the blades around
- * them). Consumed by the GrassSystem, not by the MapBuilder: the rects are
- * baked into one mask (`world/grassMask.ts`), which refuses a collider's
- * footprint, a structure's drawn parts standing in it (`GameMap.partBoxes`)
- * and a carriageway and frays the fields' joint edge, and the
- * blades are placed around the eye. A rect states how LUSH, never how many.
- */
-export interface GrassRect {
-  x: number;
-  z: number;
-  /** Extents along X and Z. */
-  width: number;
-  depth: number;
-  /** Base height — set for fields on a terrace or embankment. */
-  y?: number;
-  /**
-   * How thick it grows, 0..1: a share of the quality rung's full density
-   * (`CONFIG.grass.tiers`). Absent is 1 — a field says how lush it is, never
-   * how many blades that costs, because the field is drawn around the eye and
-   * its AREA is not a price. Overlapping rects add, capped at 1.
-   */
-  density?: number;
-  /**
-   * How tall, as a multiplier on `CONFIG.grass.heightMin..heightMax`. Absent
-   * is 1; a mown green is ~0.45, reeds and a neglected paddock ~1.3.
-   */
-  height?: number;
-  /**
-   * How many metres of ragged edge the field thins out over where nothing
-   * carries it on (`CONFIG.grass.edge` when absent). 0 is a clean cut: a
-   * tended lawn against its path. It is the edge of all the fields together,
-   * so two rects laid side by side meet without a seam whatever this says.
-   */
-  edge?: number;
-  /**
-   * True for a field that STOPS at the water's edge rather than growing on
-   * into it as reeds (`CONFIG.grass.reeds`): a meadow that happens to cross a
-   * pool, as opposed to a rect laid over one for its reed fringe. Absent is
-   * false, which is every reed bed in the tree. Where a dry rect and a wet
-   * one overlap under water, only the wet one's density grows.
-   */
-  dry?: boolean;
-}
-
-/**
- * A collider's world-space geometry, kept alongside the mesh so the nav grid
- * can compute surface heights analytically instead of firing 25,600 rays.
- */
-export interface WorldBox {
-  w: number;
-  h: number;
-  d: number;
-  cx: number;
-  cy: number;
-  cz: number;
-  rotX: number;
-  rotY: number;
-  /**
-   * Stops a body, not a round — see `BoxSpec.porous`, which is where a builder
-   * declares it. Carried here because the box outlives the spec: `CoverMap`
-   * bakes off these, and the server rebuilds its whole world from them.
-   */
-  porous?: true;
-  /**
-   * A breakable pane's collider — `porous` until `GlassSystem` breaks it, and
-   * nothing at all afterwards. See `BoxSpec.glass`.
-   *
-   * Carried here for the readers that must skip a pane rather than merely
-   * treat it as porous: `CoverMap` and the AO bake. The bake carries it to the
-   * server, which needs to break the same box this one names.
-   */
-  glass?: true;
-}
-
-/**
- * A pane of glass in world space: the rect a round has to cross to break it,
- * and the two places breaking it has to reach.
- *
- * **Only a `breakable` pane is one of these.** Most of a city's glazing is
- * hung on something solid and never goes, and none of it is here — a sheet
- * that cannot be taken away has nothing to say to the sweep, the wire or the
- * authority, and is a mesh and nothing else (see `PaneSpec.breakable`).
- *
- * **The index into `GameMap.panes` IS the pane's identity**, on the client and
- * on the authority alike, exactly as an index into `colliderBoxes` is. Both
- * sides build the list in the same order — placements in layout order, and each
- * placement's breakable panes in the order its builder declared them — which is
- * what lets one number on the wire name one sheet of glass.
- */
-export interface WorldPane {
-  /** Centre, extents and turn: the sheet as an oriented box. */
-  w: number;
-  h: number;
-  d: number;
-  cx: number;
-  cy: number;
-  cz: number;
-  rotY: number;
-  /**
-   * Where this pane's 24 positions live in `PaneGroup.mesh`'s vertex buffer.
-   * Collapsing them to the pane's own centre is what takes it off the screen.
-   */
-  vertexStart: number;
-  vertexCount: number;
-  /** Which `paneGroups` entry holds those vertices. */
-  group: number;
-  /**
-   * Position in `colliderBoxes` of the box that stops a body until this pane
-   * goes. Every pane in the list has one — that is what `PaneSpec.breakable`
-   * means — and it is a number rather than a mesh because it has to survive
-   * the collision bake and name the same box on the authority.
-   */
-  box: number;
-}
-
-/**
- * One placement's glazing: the merged mesh, and the breakable panes with
- * vertices in it — usually none, because most glass never goes anywhere.
- *
- * Merged per placement and kept out of `BlockMerge`, so a building's glass is
- * one draw call and the panes in it that CAN break are still individually
- * reachable. That is the trade the whole feature rests on — see
- * `MapBuilder.paneGroup`.
- */
-export interface PaneGroup {
-  mesh: Mesh;
-  /** Indices into `GameMap.panes`. */
-  panes: number[];
-  /**
-   * Which map block this glazing was merged under — the key `PaneBlocks` filed
-   * it against, opaque to everyone but useful for one thing: telling two groups
-   * that are the SAME BUILDING apart from two that merely stand near each
-   * other.
-   *
-   * There is more than one group per block whenever a building glazes in more
-   * than one material, which `backed` glazing made ordinary rather than
-   * hypothetical (see `Build.pane`). `ReflectionSystem` bakes one cube per
-   * block and not per group, because a cube is a picture of the street rather
-   * than of the sheet — this is what lets it do that without measuring
-   * distances and guessing.
-   *
-   * **Written by `PaneBlocks.finish` and empty before it**, exactly as
-   * `WorldPane.group` is -1 until the same pass fills it: the per-placement
-   * groups `paneGroup` returns have no block yet and never reach `GameMap`.
-   */
-  block: string;
-}
-
-/**
- * Which layout item a mesh came from. Present in `metadata.editorRef` only on
- * editor builds — the shipped path merges across placements, so a mesh there
- * belongs to a whole map block rather than to any one item.
- */
-export interface EditorRef {
-  list: "placements" | "scatter";
-  index: number;
-}
-
-/** One layout item's geometry, so the editor can move or rebuild it alone. */
-export interface EditorItem {
-  visuals: Mesh[];
-  colliders: Mesh[];
-  /** Positions in `GameMap.colliderBoxes` of this item's boxes. */
-  boxes: number[];
-  /**
-   * The builder's own collider specs, in the structure's local space, in the
-   * same order as `colliders`/`boxes`. Kept so a move or rotate can be
-   * recomputed exactly — `repositionItem` needs the pre-transform boxes, and
-   * the world-space ones have already had the placement baked into them.
-   */
-  localBoxes: BoxSpec[];
-}
-
-/**
- * Per-item geometry index. Built only when `build()` is given `editor: true`;
- * that mode also skips the BlockMerge pass, because merging across placements
- * is exactly what makes a single placement unrecoverable afterwards.
- */
-export interface EditorIndex {
-  placements: EditorItem[];
-  scatter: EditorItem[];
-}
-
-/** Opt-in build behaviour. Absent in the shipped path. */
-export interface BuildOptions {
-  /**
-   * Keep geometry per layout item and tag it, at the cost of the block merge:
-   * ~1740 draws against ~150. Fine for authoring, never for play.
-   */
-  editor?: boolean;
-  /**
-   * How full a tree's crown is, 0..1 — the player's `Settings.foliage`
-   * resolved through `CONFIG.graphics.foliage`, handed to every scatter
-   * builder as its fifth argument. Absent is 1, the full crown. It moves no
-   * prop and no collider: what it thins is drawn from streams the shared
-   * scatter stream never sees (`buildAshTree`, `buildMaple`,
-   * `buildJungleTree`).
-   */
-  foliage?: number;
-}
-
-/** The built world: geometry is in the scene, this is the queryable part. */
-export interface GameMap {
-  /**
-   * The PLAY square's side, centred on the origin. Everything authored, every
-   * flag, every spawn, the nav grid and the obstacle field are inside it, and
-   * it is what a body leaving is measured against.
-   */
-  size: number;
-  /**
-   * How far the floor carries on past that square, in metres — the map's
-   * `Borderland.margin`, or 0 on a map closed by the rim.
-   *
-   * Two readers and they want it for opposite reasons. `Game` asks whether
-   * there is a borderland at all, because that is what decides whether the
-   * leash runs. `server/validate.ts` asks how wide it is, because `size / 2`
-   * used to be the edge of everywhere a player could legitimately be and on
-   * this kind of map it is the edge of where they may legitimately STAY.
-   */
-  margin: number;
-  /**
-   * The side of the square the structures were merged over — the map's
-   * `MapLayout.blockSize`, or `BLOCK_SIZE`.
-   *
-   * Carried for the reason `size` is: it is the map's, and the readers that
-   * meet a built map rather than a layout would otherwise take the default and
-   * cut a different lattice from the one the merge actually used. Nothing that
-   * reads `metadata.block` needs it — a block key is a name, and both readers
-   * take it as one — so this is for whoever has to ask the question the merge
-   * asked, in the units it asked it in.
-   */
-  blockSize: number;
-  /**
-   * The side of the square the FLOOR was tessellated over — the map's
-   * `MapLayout.terrainBlock`, or `BLOCK_SIZE`, and independent of `blockSize`.
-   *
-   * The editor's terrain brush is the reader: a stroke names the patches it
-   * moved by the same arithmetic `terrainPatches` cut them with, and a brush
-   * that assumed 48 on a map that states otherwise re-tessellates the wrong
-   * meshes and silently leaves the ones under the cursor stale.
-   */
-  terrainBlock: number;
-  controlPoints: ControlPointDef[];
-  spawns: SpawnPointDef[];
-  /**
-   * The vehicle hardstandings, one per team on a map that has them and empty on
-   * every map that does not — which is two of the four shipped.
-   *
-   * Carried on the built map rather than read off the layout by whoever wants
-   * it, for the reason everything else here is: `VehicleSystem` is handed a
-   * `GameMap` by `installMap` and must never reach for a named map's own
-   * modules. See `VehicleSpawnDef`.
-   */
-  vehicleSpawns: VehicleSpawnDef[];
-  /** Invisible collider proxies — the only pickable, collidable geometry. */
-  colliders: Mesh[];
-  /** The same colliders as plain boxes, for the nav grid. */
-  colliderBoxes: WorldBox[];
-  /**
-   * An ALBEDO per `colliderBoxes` entry, as `r, g, b` triples in the same
-   * order: the average colour of whatever the box stands in for, which is what
-   * the irradiance volume's trace bounces light off (`systems/GiVolume.ts`).
-   *
-   * **Client-only and absent on the authority**, which builds its world from
-   * the collision bake and has no materials to average — so this is kept off
-   * `WorldBox` and out of the bake, and neither `npm run collision` nor
-   * `npm run parity` has heard of it. It must stay PARALLEL to
-   * `colliderBoxes`: `MapBuilder.recordBox` is the one place either grows.
-   */
-  colliderAlbedo?: Float32Array;
-  /**
-   * Every placed structure's VISUAL parts that stand where grass grows, as
-   * boxes in world space — the plank floor of a barn, a plinth, a doorstep, a
-   * manger. What stands on them is refused by the grass mask exactly as the
-   * inside of a collider is, because most of a building that meets the ground
-   * is drawn and not solid: the barn's floor never had a collider, and every
-   * blade under it grew straight up through the boards.
-   *
-   * **Client-only, like `colliderAlbedo`, and it decides nothing.** It is not
-   * a collider, not in the nav grid, not on the wire and not in the bake; the
-   * one thing that reads it is `GrassSystem`. Roads are not in it — their
-   * footprint is `roads`, which feathers where a box would cut.
-   */
-  partBoxes?: WorldBox[];
-  /**
-   * The `strut` boxes — ray geometry with no body behind it — grouped by the
-   * collider mesh each group was merged into.
-   *
-   * Not in `colliderBoxes` on purpose: everything derived from geometry reads
-   * that list, and none of it can represent a 0.1 m rail (see
-   * `BoxSpec.rayOnly`). The grouping is carried rather than flattened because
-   * the server has to rebuild and merge the same meshes from the bake, and it
-   * cannot recover from a flat list which boxes were one fence.
-   */
-  rayGroups: WorldBox[][];
-  /**
-   * The `colliderBoxes` indices that were merged into one collider mesh each,
-   * one entry per merged mesh — a scatter region's props, grouped by locality.
-   *
-   * Unlike `rayGroups` these boxes ARE in `colliderBoxes` and everything
-   * derived from geometry still sees them one at a time; the grouping is about
-   * nothing but what a ray meets. Boxes named by no group are their own mesh,
-   * which is every collider a structure builder makes.
-   *
-   * Carried rather than recomputed for the same reason `rayGroups` is: the
-   * server rebuilds these meshes from the bake, and the grouping is a decision
-   * the client made rather than a property of the boxes.
-   * See `MapBuilder.clusterColliders`.
-   */
-  boxGroups: number[][];
-  /**
-   * Every pane of glass on the map that can BREAK, in build order — and the
-   * index into this list is the pane's identity everywhere, including on the
-   * wire.
-   *
-   * Not every sheet of glass: a building's glazing is in `paneGroups` whether
-   * or not anything can take it away, and only the panes with somewhere to get
-   * into behind them are here. Coldharbour draws ~6,100 and lists twenty-four.
-   *
-   * Empty on a map whose builders declare none, which is every map but
-   * Coldharbour today. See `WorldPane`, and `systems/GlassSystem.ts` for the
-   * one thing that writes through it.
-   */
-  panes: WorldPane[];
-  /**
-   * The merged glazing meshes — all of the map's glass, not only the panes
-   * above, which hold their vertices in these.
-   */
-  paneGroups: PaneGroup[];
-  /**
-   * The floor's collider blocks, a SUBSET of `colliders`.
-   *
-   * They are called out because they are the one collider with no `WorldBox`
-   * behind it (a heightfield is not a box — see the terrain section of
-   * `build`), so anything that wants the whole solid world as geometry has to
-   * take `colliderBoxes` for the boxes and these for the floor.
-   * `RagdollSystem` is the caller: it needs the real mesh to rest a body on.
-   * Picking them out of `colliders` by name would work and is exactly the sort
-   * of string-sniffing that breaks silently when a name changes.
-   */
-  terrainColliders: Mesh[];
-  /** Drawn geometry, merged per colour. */
-  visuals: Mesh[];
-  /** Walkable-surface graph with one precomputed flow field per objective. */
-  nav: NavGrid;
-  /** Sub-cell collision the nav grid is too coarse to express. */
-  obstacles: ObstacleField;
-  /**
-   * The segment query every ray in the game asks — the same collider set as
-   * `colliderBoxes` and `rayGroups`, plus the floor, indexed for a LINE rather
-   * than for a point.
-   *
-   * Here beside `nav`, `cover` and `obstacles` rather than built by whoever
-   * wants one, for the reason all three are: it is derived from the finished
-   * collider set, it is built once per map, and the authority gets the same
-   * object off `buildServerWorld` without a server-only variant. See
-   * `world/RayWorld.ts`, and `ENGINE_UPGRADE.md` wall 2 for what it replaced.
-   */
-  rays: RayWorld;
-  /**
-   * The same collider set indexed for a SWEEP — which meshes a moving body's
-   * collision sphere could touch — so `moveWithCollisions` walks a street
-   * rather than the map.
-   *
-   * `rays`' counterpart and here for the identical reason, one question later:
-   * that one answers a LINE analytically and took every pick off the scene,
-   * and this one narrows the last whole-scene walk left behind, which no
-   * analytic query can replace because it MOVES a body rather than asking
-   * about one. See `world/CollisionField.ts` for what it measured and for the
-   * superset rule a caller owes it.
-   */
-  collidables: CollisionField;
-  /** Baked directional cover over the nav graph, for the AI. */
-  cover: CoverMap;
-  /** Shallow-water bodies from the layout; empty when the map is dry. */
-  water: WaterRect[];
-  /** Grass fields from the layout; empty when the map is bald. */
-  grass: GrassRect[];
-  /**
-   * The carriageways, derived from the layout's `road` placements.
-   *
-   * A road is still visual-only — no collider, no `WorldBox`, invisible to
-   * navigation, to cover and to every ray — and this list is not a step back
-   * from that. It answers one question, "is this ground paved", for the two
-   * things that GROW: `MapBuilder.findSpot` holds rooted props off it and
-   * `GrassSystem` holds every tuft off it. Carried on the map rather than
-   * re-derived by each because the authority builds one too, off the same
-   * layout, so a rule that reads it cannot mean different ground on the two
-   * sides. See `world/roads.ts`, and `world/roadPaths.ts` for a road that
-   * bends.
-   */
-  roads: RoadFootprint;
-  /**
-   * The floor's height, for everything that used to assume zero. Flat when the
-   * layout declares no terrain, which is the whole of the old behaviour.
-   */
-  terrain: TerrainField;
-  /** Per-item geometry. Editor builds only — undefined in play. */
-  editor?: EditorIndex;
-  dispose(): void;
-}
+export type {
+  BuildOptions,
+  ControlPointDef,
+  EditorIndex,
+  EditorItem,
+  EditorRef,
+  GameMap,
+  GrassRect,
+  PaneGroup,
+  SpawnPointDef,
+  VehicleSpawnDef,
+  WaterRect,
+  WorldBox,
+  WorldPane,
+} from "./mapTypes";
+export { BLOCK_SIZE } from "./merge";
 
 /**
  * One scatter prop's factory.
@@ -902,6 +433,26 @@ export const PROP_BODIES: Record<ScatterSpec["prop"], PropBody> = {
 const NEUTRAL_ALBEDO: readonly [number, number, number] = [0.5, 0.5, 0.5];
 
 /**
+ * What one `build` hands its phases: what they read, and the lists they fill.
+ * Lives for one call and is never kept — every field that outlasts a build is
+ * on the `GameMap` it returns.
+ */
+interface BuildRun {
+  layout: MapLayout;
+  terrain: TerrainField;
+  /** Becomes `GameMap.visuals`. */
+  visuals: Mesh[];
+  /** Becomes `GameMap.colliders`. */
+  colliders: Mesh[];
+  /** The opaque block merge, fed by the placements and the scatter. */
+  blocks: BlockMerge;
+  /** The glazing's own, fed by the placements. See `PaneBlocks`. */
+  paneBlocks: PaneBlocks;
+  /** Per-item geometry, on editor builds only — `GameMap.editor`. */
+  index: EditorIndex | undefined;
+}
+
+/**
  * Builds a map from the `MapLayout` and `EnvironmentSpec` it is handed — the
  * pair `world/maps.ts` keeps together. No map is named here.
  *
@@ -961,7 +512,7 @@ export class MapBuilder {
    */
   private rayGroups: WorldBox[][] = [];
   private boxGroups: number[][] = [];
-  /** Scatter boxes recorded but not yet given geometry — see `build`. */
+  /** Scatter boxes recorded, not yet given geometry — see `placeScatter`. */
   private pendingCluster: number[] = [];
   /**
    * Ground a ROOTED scatter prop may not grow out of: every road on the
@@ -1082,7 +633,8 @@ export class MapBuilder {
    * Drops everything the last build left in this builder's own fields — the
    * boxes, the panes, the groups, the roads, the box index — which `build`
    * hands to the `GameMap` and would otherwise keep until the next one resets
-   * them. `Game.teardownMap`, for the menu.
+   * them, which it does by calling this (`reset`). `Game.teardownMap`, for
+   * the menu.
    */
   release(): void {
     this.boxes = [];
@@ -1109,6 +661,10 @@ export class MapBuilder {
    * it is fetched rather than bundled (`MapDef.heights`), so the caller is the
    * one holding it by the time there is anything to build. `undefined` is a
    * level floor, exactly as an absent field always was.
+   *
+   * The phases run in a load-bearing order, one method each: the floor, the
+   * placements, the scatter, the merges, the bake, then everything derived from
+   * the finished collider set. Each method says why it stands where it does.
    */
   build(
     layout: MapLayout,
@@ -1121,7 +677,7 @@ export class MapBuilder {
     // times itself whole and names the parts worth naming under it, so the
     // remainder is what is left over. See `buildProfile.ts`, and
     // `ENGINE_UPGRADE.md` S0 for what it found — 87% of a 1500 m build was the
-    // placement loop below, before the flatten in `parts.ts`.
+    // placement loop in `placeStructures`, before the flatten in `parts.ts`.
     beginProfile();
     const buildStart = performance.now();
     // The map's own extent, not the global — a village and a downtown are not
@@ -1138,21 +694,128 @@ export class MapBuilder {
     // neither builds exactly what it always did. See `MapLayout.blockSize`.
     const blockSize = layout.blockSize ?? BLOCK_SIZE;
     const terrainBlock = layout.terrainBlock ?? BLOCK_SIZE;
-    const visuals: Mesh[] = [];
-    const colliders: Mesh[] = [];
     // A view onto the floor's own blocks within `colliders` — see GameMap.
     const terrainColliders: Mesh[] = [];
-    this.boxes = [];
-    this.boxAlbedo = [];
-    this.partBoxes = [];
+    // The carriageways, derived before anything is built because `findSpot`
+    // asks about them and the scatter pass runs after the placement loop that
+    // draws them. Nothing else about a road changes: it is still visual-only,
+    // still emits no collider, and is still invisible to every ray, to the nav
+    // grid and to cover. See `world/roads.ts`.
+    //
+    // A road with a `path` is resolved as a NETWORK first, because where it
+    // stops depends on what it meets: the strip each such placement draws and
+    // the junctions it owns are handed to its builder in `placeStructures`,
+    // and the footprint of all of it is what `findSpot` and the grass ask. See
+    // `world/roadPaths.ts`.
+    const network: RoadNetwork = roadNetwork(layout.placements);
+    this.reset(layout, env, size, network, opts);
+    // One stream for the whole build, so scatter regions stay reproducible in
+    // authored order. Seeding per region would be stabler under editing but
+    // would let two regions with the same seed sample identically.
+    const rng = mulberry32(this.propSeed);
+
+    // How far the ground carries on past the play square, and therefore where
+    // the boundary actually is. Zero on a map closed by the rim, which no
+    // shipped map is any more — see `MapLayout.borderland`.
+    const margin = layout.borderland?.margin ?? 0;
+    const terrain = this.floorFor(layout, heights, size, margin);
+    // One size, handed to both, because `ReflectionSystem.encloses` asks a
+    // glazing group and the wall behind it whether they are the same building
+    // by comparing the two keys. See `PaneBlocks`.
+    const run: BuildRun = {
+      layout,
+      terrain,
+      visuals: [],
+      colliders: [],
+      blocks: new BlockMerge(blockSize),
+      paneBlocks: new PaneBlocks(blockSize),
+      index:
+        opts?.editor === true ? { placements: [], scatter: [] } : undefined,
+    };
+    const { visuals, colliders, index } = run;
+    record("valley", () =>
+      this.buildValley(
+        size,
+        margin,
+        terrainBlock,
+        env,
+        terrain,
+        visuals,
+        colliders,
+        terrainColliders,
+        layout.ridge,
+      ),
+    );
+
+    this.placeStructures(run, network);
+    this.placeScatter(run, rng);
+
+    // What the water sounds like, and where from. Off the FLOOR rather than
+    // off the rect, and after everything else because it consumes no RNG and
+    // touches nothing — see `waterAmbience`. The reach handed to it is all the
+    // ground there is: the play square plus whatever borderland continues it.
+    record("waterAmbience", () =>
+      this.waterAmbience(layout.water ?? [], terrain, size / 2 + terrain.margin),
+    );
+
+    this.mergeBlocks(run);
+    this.bake(run, size);
+    const { nav, cover, obstacles, rays, collidables } = this.derive(run, size);
+    since("build:total", buildStart);
+
+    return {
+      size,
+      margin,
+      blockSize,
+      terrainBlock,
+      nav,
+      cover,
+      obstacles,
+      rays,
+      collidables,
+      controlPoints: layout.controlPoints,
+      spawns: layout.spawns,
+      vehicleSpawns: layout.vehicles ?? [],
+      colliders,
+      colliderBoxes: this.boxes,
+      colliderAlbedo: Float32Array.from(this.boxAlbedo),
+      partBoxes: this.partBoxes,
+      rayGroups: this.rayGroups,
+      boxGroups: this.boxGroups,
+      panes: this.panes,
+      paneGroups: this.paneGroups,
+      terrainColliders,
+      visuals,
+      water: layout.water ?? [],
+      grass: layout.grass ?? [],
+      roads: this.roads,
+      terrain,
+      editor: index,
+      dispose: () => {
+        for (const m of visuals) m.dispose();
+        for (const m of colliders) m.dispose();
+        this.lighting.clear();
+        this.ambience.clear();
+      },
+    };
+  }
+
+  /**
+   * Puts every per-build field back to a fresh map's, and seeds the ones this
+   * layout decides. `release` is the empty half, so the list of what a build
+   * resets is the list of what a teardown drops and cannot drift from it.
+   */
+  private reset(
+    layout: MapLayout,
+    env: EnvironmentSpec,
+    size: number,
+    network: RoadNetwork,
+    opts: BuildOptions | undefined,
+  ): void {
+    this.release();
     // The rim and the ground plane's stand-ins are the floor as far as a
     // bounce is concerned, so the valley pass records its boxes in its colour.
     this.setAlbedoHint(Color3.FromHexString(env.floorColor));
-    this.rayGroups = [];
-    this.boxGroups = [];
-    this.pendingCluster = [];
-    this.paletteColors = [];
-    this.paletteSlots.clear();
     // A body's standing room plus a trunk's own half-width, which is all this
     // has to guarantee: the SHAPE of a flag's surroundings is the layout's to
     // decide (Bravo is a bare bank and Echo is a thicket), and what cannot be
@@ -1178,43 +841,23 @@ export class MapBuilder {
         r: kindOf(v.kind).spec.hull.length / 2 + 1.5,
       })),
     ];
-    this.panes = [];
-    this.paneGroups = [];
-    // The carriageways, derived before anything is built because `findSpot`
-    // asks about them and the scatter pass runs after the placement loop that
-    // draws them. Nothing else about a road changes: it is still visual-only,
-    // still emits no collider, and is still invisible to every ray, to the nav
-    // grid and to cover. See `world/roads.ts`.
-    //
-    // A road with a `path` is resolved as a NETWORK first, because where it
-    // stops depends on what it meets: the strip each such placement draws and
-    // the junctions it owns are handed to its builder below, and the footprint
-    // of all of it is what `findSpot` and the grass ask. See
-    // `world/roadPaths.ts`.
-    const network: RoadNetwork = roadNetwork(layout.placements);
     this.roads = network.footprint;
     // Sized to the widest burial test this layout will run. `findSpot` asks
     // about `(spec.clearance ?? 0.8) * scale`, and `scale` tops out at the
     // upper end of the spec's own range — so the layout knows the answer before
     // a single box exists, which is the only moment the index can be told.
     this.boxIndex = emptyBoxIndex(size, maxScatterClearance(layout));
-    // One stream for the whole build, so scatter regions stay reproducible in
-    // authored order. Seeding per region would be stabler under editing but
-    // would let two regions with the same seed sample identically.
-    const seed = layout.seed ?? 0x484c;
-    const rng = mulberry32(seed);
-    this.propSeed = seed;
+    this.propSeed = layout.seed ?? 0x484c;
     this.foliage = opts?.foliage ?? 1;
-    const forEditor = opts?.editor === true;
-    const index: EditorIndex | undefined = forEditor
-      ? { placements: [], scatter: [] }
-      : undefined;
-    this.item = null;
+  }
 
-    // How far the ground carries on past the play square, and therefore where
-    // the boundary actually is. Zero on a map closed by the rim, which no
-    // shipped map is any more — see `MapLayout.borderland`.
-    const margin = layout.borderland?.margin ?? 0;
+  /** The floor this build stands everything on — see `TerrainField`. */
+  private floorFor(
+    layout: MapLayout,
+    heights: Heightfield | undefined,
+    size: number,
+    margin: number,
+  ): TerrainField {
     // The one thing the two halves of a map owe each other that the compiler
     // can no longer see. `Heightfield.cell`'s contract is that `size * cell`
     // IS the map's extent, and `TerrainField` takes its own half-extent from
@@ -1232,35 +875,25 @@ export class MapBuilder {
         );
       }
     }
-    const terrain = new TerrainField(
+    return new TerrainField(
       heights,
       margin,
       layout.borderland?.roll,
       layout.borderland?.ease,
     );
-    record("valley", () =>
-      this.buildValley(
-        size,
-        margin,
-        terrainBlock,
-        env,
-        terrain,
-        visuals,
-        colliders,
-        terrainColliders,
-        layout.ridge,
-      ),
-    );
+  }
 
-    // --- authored structures ---
+  /**
+   * The authored structures: every placement built, merged per material and
+   * filed under its map block, with its colliders, struts, glazing, lights and
+   * sounds — then the roads, merged on their own.
+   */
+  private placeStructures(run: BuildRun, network: RoadNetwork): void {
+    const { layout, terrain, visuals, colliders, blocks, paneBlocks, index } =
+      run;
     // Roads are merged into one draw call per material so overlapping junctions
     // (the central cross, etc.) don't z-fight between separate meshes.
     const roadParts: Mesh[] = [];
-    // One size, handed to both, because `ReflectionSystem.encloses` asks a
-    // glazing group and the wall behind it whether they are the same building
-    // by comparing the two keys. See `PaneBlocks`.
-    const blocks = new BlockMerge(blockSize);
-    const paneBlocks = new PaneBlocks(blockSize);
     const placementsStart = performance.now();
     for (const [i, p] of layout.placements.entries()) {
       const item = index ? newItem(index.placements) : null;
@@ -1401,8 +1034,14 @@ export class MapBuilder {
       // fixed it because the shell rode with the slab.
       visuals.push(merged);
     }
+  }
 
-    // --- scattered dressing ---
+  /**
+   * The scattered dressing, region by region off the one shared stream — then
+   * every region's blocking props clustered into collider meshes at once.
+   */
+  private placeScatter(run: BuildRun, rng: () => number): void {
+    const { layout, terrain, visuals, colliders, blocks, index } = run;
     const scatterStart = performance.now();
     for (const [i, spec] of layout.scatter.entries()) {
       const item = index ? newItem(index.scatter) : null;
@@ -1423,19 +1062,18 @@ export class MapBuilder {
       ),
     );
     this.pendingCluster = [];
+  }
 
-    // What the water sounds like, and where from. Off the FLOOR rather than
-    // off the rect, and after everything else because it consumes no RNG and
-    // touches nothing — see `waterAmbience`. The reach handed to it is all the
-    // ground there is: the play square plus whatever borderland continues it.
-    record("waterAmbience", () =>
-      this.waterAmbience(layout.water ?? [], terrain, size / 2 + terrain.margin),
-    );
-
+  /**
+   * The second merge pass, over the opaque world and then over the glazing,
+   * and the palette the first of them discovers.
+   */
+  private mergeBlocks(run: BuildRun): void {
+    const { visuals, blocks, paneBlocks } = run;
     // One more merge across neighbouring structures — see BlockMerge. This is
     // the ONE merge that paletteises, which is also what exempts the editor for
     // free: an editor build files its meshes on the item instead and never
-    // reaches this pass at all (see the `item` branch in the placement loop).
+    // reaches this pass at all (see the `item` branch in `placeStructures`).
     for (const merged of record("blockMerge", () =>
       blocks.finish({
         slot: (hex) => this.paletteIndex(hex),
@@ -1479,9 +1117,15 @@ export class MapBuilder {
       };
       visuals.push(merged);
     }
+  }
 
+  /**
+   * The vertex-colour bake and the freeze, over every visual the merges left.
+   */
+  private bake(run: BuildRun, size: number): void {
+    const { terrain, visuals } = run;
     // The vertex-colour bake — occlusion, the world mark and the wind's sway
-    // weight — and the position in this method is the whole of it.
+    // weight — and its position in `build` is the whole of it.
     //
     // AFTER every merge, because `VertexData.merge` throws on a group where
     // some meshes carry `colors` and some do not, and `mergeByMaterial`
@@ -1517,7 +1161,17 @@ export class MapBuilder {
     record("markVisual", () => {
       for (const m of visuals) this.markVisual(m);
     });
+  }
 
+  /**
+   * Everything derived from the finished collider set: the nav graph and its
+   * flow fields, cover, the obstacle field, and the two query indexes.
+   */
+  private derive(
+    run: BuildRun,
+    size: number,
+  ): Pick<GameMap, "nav" | "cover" | "obstacles" | "rays" | "collidables"> {
+    const { layout, terrain, colliders } = run;
     // Navigation is derived from the finished collider set, then a flow field
     // is precomputed per objective: five flags plus both home spawns. The map
     // is static, so this is the only time any of it is computed.
@@ -1565,43 +1219,7 @@ export class MapBuilder {
       "collisionField",
       () => new CollisionField(colliders),
     );
-    since("build:total", buildStart);
-
-    return {
-      size,
-      margin,
-      blockSize,
-      terrainBlock,
-      nav,
-      cover,
-      obstacles,
-      rays,
-      collidables,
-      controlPoints: layout.controlPoints,
-      spawns: layout.spawns,
-      vehicleSpawns: layout.vehicles ?? [],
-      colliders,
-      colliderBoxes: this.boxes,
-      colliderAlbedo: Float32Array.from(this.boxAlbedo),
-      partBoxes: this.partBoxes,
-      rayGroups: this.rayGroups,
-      boxGroups: this.boxGroups,
-      panes: this.panes,
-      paneGroups: this.paneGroups,
-      terrainColliders,
-      visuals,
-      water: layout.water ?? [],
-      grass: layout.grass ?? [],
-      roads: this.roads,
-      terrain,
-      editor: index,
-      dispose: () => {
-        for (const m of visuals) m.dispose();
-        for (const m of colliders) m.dispose();
-        this.lighting.clear();
-        this.ambience.clear();
-      },
-    };
+    return { nav, cover, obstacles, rays, collidables };
   }
 
   /** The valley floor plus the rim that bounds play. */
@@ -2581,9 +2199,9 @@ export class MapBuilder {
    *
    * What makes that collapse the whole of a break rather than the first half of
    * one is that a pane owns nothing else to take down with it. It casts no
-   * shadow and carries no outline (see the `paneBlocks.finish` loop in `build`
-   * for why glass has neither), so there is no second registration anywhere to
-   * revoke — and `bakeVertexShading` writes the COLOUR buffer, so the bake is
+   * shadow and carries no outline (see the `paneBlocks.finish` loop in
+   * `mergeBlocks` for why glass has neither), so there is no second
+   * registration anywhere to revoke — and `bakeVertexShading` writes the COLOUR buffer, so the bake is
    * untouched by a later position rewrite and may still run last.
    *
    * A breakable pane's collider is an ordinary `collider()` box, one mesh each,
@@ -2871,279 +2489,6 @@ export function repositionItem(
   }
 }
 
-/**
- * Records which layout item a mesh belongs to. The editor picks with a
- * predicate on this, which is why visuals can stay `isPickable = false`:
- * Babylon skips the isPickable test entirely when a pick supplies a predicate,
- * so the visual/collider split survives the editor untouched.
- */
-function tag(mesh: Mesh, ref: EditorRef): void {
-  mesh.metadata = { ...(mesh.metadata ?? {}), editorRef: ref };
-}
-
-/**
- * Side of a merge block, in metres, **for a map that states none** — and the
- * world layer's fixed unit of LOCALITY, which is a second job and the reason
- * this is still a constant at all.
- *
- * 48 m over a 240 m map gives a 5x5 grid of blocks — coarse enough that the
- * whole village collapses into a few dozen draws, fine enough that frustum
- * culling still throws away most of the map. Well under the 78 m fog wall, so
- * a block is never half-visible for long. **Every clause of that is about a
- * 240 m map with a 78 m fog wall**, which is why `MapLayout.blockSize` exists
- * and why this is the default rather than the answer.
- *
- * **The two jobs came apart the moment a map could state its own, and they
- * must stay apart.** What a map states is how the MERGE groups: fewer, larger
- * meshes to walk and to draw, at coarser cull granularity. What stays here is
- * the size of a locality BUCKET — `PhysicsWorld`'s static containers and
- * `GlassSystem`'s pane index — and those two want the opposite thing from a
- * large map. `HavokPlugin.addChild` is quadratic in a container's children,
- * so a bucket that grew with a map's merge block would
- * hand back most of what S5b bought; a pane bucket is a slab rejection whose
- * only cost is the panes inside it. Neither is an identity — nothing reads
- * either key — so neither has anything to agree with.
- *
- * `terrainPatches` is called with `MapLayout.terrainBlock`, which defaults to
- * this too and moves independently of the merge's.
- */
-export const BLOCK_SIZE = 48;
-
-/**
- * The second merge pass: collapses every structure and scatter field into one
- * mesh per (map block, material).
- *
- * The per-structure merge in `mergeByMaterial` already turns a cottage into
- * four meshes, but a dense village is ~200 structures and the outline pass of
- * the time drew each mesh twice. Grouping neighbours by block took the map from
- * ~670 draws to ~150 without giving up culling: buildings are static, so the
- * extra vertices cost nothing that the draw calls weren't already costing more
- * of.
- *
- * Merging across placements is safe for the same reason it is safe within one:
- * `MergeMeshes` bakes world matrices. The ink still traces each building,
- * because `CelInk` finds edges in the frame's depth rather than per mesh.
- */
-class BlockMerge {
-  private blocks = new Map<string, Mesh[]>();
-
-  /**
-   * The block's side, in metres — the MAP's (`MapLayout.blockSize`), taken in
-   * rather than read off the constant so that this pass and the glazing's know
-   * they are cutting on the same lattice by construction. Both are given the
-   * one value `build` resolved.
-   */
-  constructor(private readonly blockSize: number) {}
-
-  /** Files a positioned, per-material merged mesh under its map block. */
-  add(x: number, z: number, mesh: Mesh): void {
-    const key = `${Math.floor(x / this.blockSize)},${Math.floor(z / this.blockSize)}`;
-    const group = this.blocks.get(key);
-    if (group) group.push(mesh);
-    else this.blocks.set(key, [mesh]);
-  }
-
-  /**
-   * Merges each block and returns the meshes the caller should draw.
-   *
-   * `palette` is what turns this from a merge per COLOUR into a merge per
-   * block: hand it a hex and it hands back the slot to write into `uv2`, or 0
-   * for a colour it has no room for. It is a callback rather than a map because
-   * the slots are allocated in the order the merge meets them, and the merge is
-   * the only thing that knows that order.
-   */
-  finish(palette: Palette): Mesh[] {
-    const out: Mesh[] = [];
-    for (const [key, group] of this.blocks) {
-      for (const merged of mergeByMaterial(group, `block${key}`, palette)) {
-        // The key travels ON the mesh, because `ReflectionSystem` has to ask
-        // which building a merged mesh IS and the palette took the answer out
-        // of the geometry — see `encloses` there. `PaneBlocks` files glazing
-        // under this same key, which is what lets the two agree on "the same
-        // building" without measuring a distance between two centres.
-        merged.metadata = { ...(merged.metadata ?? {}), block: key };
-        out.push(merged);
-      }
-    }
-    return out;
-  }
-}
-
-/**
- * The same second pass for glazing, and it is a class of its own rather than a
- * caller of `BlockMerge` because the two want opposite things from a merge.
- *
- * `BlockMerge` exists to make a placement unrecoverable — that is the saving.
- * A breakable pane must survive it, so this one carries every such pane's
- * vertex range across by the running offset of the meshes ahead of it. Same
- * key, same reason (glass is unbatched alpha, so a mesh is a sorted draw of its
- * own), and measured on Coldharbour: 6,139 sheets across 82 glazed placements
- * (44 towers, 26 cars, 8 shophouses, 2 offices, 2 depots) come out as 40
- * meshes, eight of which hold a range anything will ever write.
- *
- * **The editor keys per placement instead**, so nothing merges across
- * placements there — the same exemption `BlockMerge` gets, for the same reason.
- * Running the pass either way keeps one code path, and the pass is where the
- * position buffer is made updatable.
- */
-class PaneBlocks {
-  private blocks = new Map<string, PaneGroup[]>();
-  /** The layout item a block belongs to, on editor builds. See `add`. */
-  private owners = new Map<string, { item: EditorItem; placement: number }>();
-
-  /**
-   * The block's side, in metres. **It must be `BlockMerge`'s**, and it is the
-   * same value from `build` rather than a second reading of the layout: the
-   * whole of `ReflectionSystem.encloses` rests on a glazing group and the wall
-   * it is glazed onto landing under the same key, and two sizes would break
-   * that silently — a probe reflecting its own building, with nothing in the
-   * numbers to point at.
-   */
-  constructor(private readonly blockSize: number) {}
-
-  /**
-   * Files one placement's merged glazing under its map block.
-   *
-   * **On an editor build the key is the PLACEMENT**, so nothing merges across
-   * placements and every block has exactly one owner — which is what lets the
-   * merged mesh be handed back to that item's `visuals`. Without it a dragged
-   * building leaves its own windows behind in the street, and nothing says so:
-   * the glass is still drawn, still in `visuals`, and still disposed with the
-   * map.
-   */
-  add(
-    x: number,
-    z: number,
-    group: PaneGroup,
-    item: EditorItem | null,
-    placement: number,
-  ): void {
-    const key = item
-      ? `item${placement}`
-      : `${Math.floor(x / this.blockSize)},${Math.floor(z / this.blockSize)}`;
-    if (item) this.owners.set(key, { item, placement });
-    const existing = this.blocks.get(key);
-    if (existing) existing.push(group);
-    else this.blocks.set(key, [group]);
-  }
-
-  /**
-   * Merges each block and rewrites the ranges it moved.
-   *
-   * `panes` is the map's list, written through: a pane's `vertexStart` shifts
-   * by the vertices of every mesh merged ahead of its own, and its `group`
-   * becomes the index of the mesh it ended up in. Nothing else may write either
-   * field.
-   */
-  finish(panes: WorldPane[], out: PaneGroup[]): Mesh[] {
-    const meshes: Mesh[] = [];
-    for (const [key, group] of this.blocks) {
-      // Split by material for the reason `mergeByMaterial` does: two materials
-      // in one mesh would draw one of them wrong. Glass is one colour today, so
-      // this is almost always a single group.
-      const byMaterial = new Map<Material, PaneGroup[]>();
-      for (const g of group) {
-        const mat = g.mesh.material;
-        if (!mat) continue;
-        const list = byMaterial.get(mat);
-        if (list) list.push(g);
-        else byMaterial.set(mat, [g]);
-      }
-
-      for (const [mat, list] of byMaterial) {
-        // Offsets are accumulated BEFORE the merge, because `MergeMeshes`
-        // disposes its sources and `getTotalVertices()` afterwards is a read
-        // off a dead mesh. It concatenates in array order, which is what makes
-        // a running sum the right answer at all.
-        let offset = 0;
-        const indices: number[] = [];
-        for (const g of list) {
-          for (const p of g.panes) {
-            panes[p].vertexStart += offset;
-            indices.push(p);
-          }
-          offset += g.mesh.getTotalVertices();
-        }
-        const parts = list.map((g) => g.mesh);
-        // **A group of one is taken AS IT STANDS, and must not be baked.** This
-        // is where this pass differs from `mergeByMaterial`, which bakes a lone
-        // mesh because its caller then composes a placement's transform onto
-        // what it gets back. Nothing composes anything onto these: `paneGroup`
-        // has already put each mesh where it belongs. Baking anyway flattens
-        // that transform into the vertices and leaves the mesh at identity,
-        // which the editor's `repositionItem` then reads as "no transform yet"
-        // and applies the placement a second time — a dragged building whose
-        // glass is at twice its own offset, drawn perfectly, with nothing in
-        // the numbers to point at.
-        const merged =
-          parts.length === 1
-            ? parts[0]
-            : Mesh.MergeMeshes(parts, true, true, undefined, false, false);
-        if (!merged) continue;
-        merged.name = `paneblock${key}-${mat.name}`;
-        merged.material = mat;
-        // Updatable, which no merge can ask for: `MergeMeshes` writes a static
-        // buffer and `bakeCurrentTransformIntoVertices` leaves whatever was
-        // there. Without this the first break is a silent no-op — the array is
-        // rewritten and never re-uploaded.
-        //
-        // Only where there is something to break. A block of pure glazing is
-        // immutable for the life of the map — nothing holds a range into it and
-        // nothing may write one — so it keeps the static buffer the merge gave
-        // it, which is what almost every block on Coldharbour is.
-        if (indices.length > 0) {
-          const positions = merged.getVerticesData(VertexBuffer.PositionKind);
-          if (positions) {
-            merged.setVerticesData(VertexBuffer.PositionKind, positions, true);
-          }
-        }
-        const groupIndex = out.length;
-        for (const p of indices) panes[p].group = groupIndex;
-        // The same key `BlockMerge.finish` writes onto a merged block, and it
-        // travels for a second reader: `WorldCulling` groups by it, and a
-        // tower's glazing has to leave the frame on the same block as the
-        // shaft it is hung on or the city keeps its windows and loses its
-        // walls. **Only on a play build** — an editor key is a PLACEMENT
-        // (`item12`), which is not a map block and must not be filed as one.
-        if (!this.owners.has(key)) {
-          merged.metadata = { ...(merged.metadata ?? {}), block: key };
-        }
-        out.push({ mesh: merged as Mesh, panes: indices, block: key });
-        meshes.push(merged as Mesh);
-        // Editor builds only, and AFTER the merge rather than before it: a
-        // merge of two or more disposes its sources, and `Node.dispose` nulls
-        // their metadata — so a tag written on the way in survives only for a
-        // group of one. That is every group here in editor mode, which is
-        // exactly the kind of accident that holds until somebody gives a
-        // building two colours of glass. Hand the mesh to the item that owns it
-        // so a dragged building takes its glazing with it.
-        const owner = this.owners.get(key);
-        if (owner) {
-          tag(merged as Mesh, { list: "placements", index: owner.placement });
-          owner.item.visuals.push(merged as Mesh);
-        }
-      }
-    }
-    return meshes;
-  }
-}
-
-/**
- * Flattens a prop hierarchy into a plain mesh list, unparenting each child so
- * its world transform survives the merge. `MergeMeshes` reads world matrices,
- * so the children have to be detached but left where they are.
- */
-function flatten(root: Mesh): Mesh[] {
-  const out: Mesh[] = [root];
-  for (const child of root.getChildMeshes()) {
-    const m = child as Mesh;
-    m.computeWorldMatrix(true);
-    m.setParent(null);
-    out.push(m);
-  }
-  return out;
-}
-
 /** A box's four corners, as signs on its two horizontal half-extents. */
 const CORNERS = [
   [-1, -1],
@@ -3159,203 +2504,3 @@ function rotateY(x: number, y: number, z: number, angle: number): Vector3 {
   const s = Math.sin(angle);
   return new Vector3(x * c + z * s, y, -x * s + z * c);
 }
-
-/**
- * The render exemptions a merged mesh may carry, and the reason they are part
- * of the merge KEY rather than something read off a member.
- *
- * `noInk` could have been propagated from any one mesh safely, because it
- * tracks the MATERIAL: the kit's `glow()` reaches for `getEmissive`, so an
- * emissive group is unanimous by construction and the group key already
- * implies the flag. `noGlow` and `noShadowCaster` track a mesh's ROLE, which
- * is orthogonal to its colour — a flat sheet that must not cast stands in the
- * same paint as the wall behind it. Reading either off one member would hand
- * the whole colour group an exemption one mesh asked for, and through
- * `BlockMerge` that group is every structure within 48 m; requiring unanimity
- * instead would drop the exemption the one mesh genuinely needed. Both fail
- * silently. Keying splits a disagreeing group into one merged mesh per
- * exemption set, which costs a draw call exactly when there is a real
- * disagreement to represent and nothing at all otherwise.
- *
- * `solid` is deliberately NOT in the set — a merged VISUAL is never a
- * collider, and carrying it up would break the one rule the world layer cannot
- * bend.
- *
- * The sway mark is keyed beside these and is not one of them, because it is a
- * VALUE rather than a flag — a canopy leaf and a fern blade are both foliage
- * and lean by different amounts. It is in the key for the `noGlow` reason and
- * one further one: `vertexShading` reads the mark once per MESH and writes the
- * weight per vertex from it, so a group that disagreed would write one layer's
- * answer over both.
- */
-const EXEMPTIONS = ["noInk", "noGlow", "noShadowCaster"] as const;
-
-type Exemption = (typeof EXEMPTIONS)[number];
-
-/** A mesh's exemptions, in a fixed order so the key is stable. */
-function exemptionsOf(mesh: Mesh): Exemption[] {
-  return EXEMPTIONS.filter((flag) => mesh.metadata?.[flag] === true);
-}
-
-/**
- * Collapses a structure's meshes into one per material.
- *
- * This is the whole draw-call budget for the village: a cottage goes from ~20
- * meshes to 4 — and, while the inverted-hull outlines drew a back-face shell
- * per mesh, from ~40 draws to 8. Those shells are retired: the ink is
- * `CelInk`'s post pass now, which finds edges in the frame's depth and draws
- * nothing per mesh.
- *
- * Merging is only safe because builders work at identity: `MergeMeshes` bakes
- * world matrices and hands back an identity-transform mesh, which the caller
- * then positions.
- */
-function mergeByMaterial(
-  meshes: Mesh[],
-  tag: string,
-  palette?: Palette,
-): Mesh[] {
-  // Material first, then sway layer and exemption set — see `EXEMPTIONS`.
-  // Nested rather than keyed on a composed string, because two distinct
-  // materials are free to share a name and a merge across them would draw one
-  // of them wrong.
-  const groups = new Map<Material, Map<string, Group>>();
-  for (const m of meshes) {
-    const mat0 = m.material;
-    // A part with no material is not merged and is not disposed, so it is the
-    // one mesh that leaves this function alive without going through a group.
-    // It has to be uploaded or it is a part in the scene — see `parts.ts`.
-    if (!mat0) {
-      uploadPart(m);
-      continue;
-    }
-    // **The palette is what takes the COLOUR out of this key.** A matte cel
-    // material differs from another only in a uniform, so every one of them can
-    // be answered by one material reading the albedo per vertex instead — which
-    // is what collapses a block of a city from ten meshes to two. Only the
-    // plain matte variant qualifies: gloss, translucency, glazing and emissive
-    // are shader BEHAVIOUR and merging across them would draw one of them
-    // wrong, which is the rule this function already states about two materials
-    // sharing a name.
-    const hex = palette ? plainCelHex(mat0.name) : null;
-    const slot = hex ? palette!.slot(hex) : 0;
-    if (slot > 0) writePaletteIndex(m, slot);
-    const mat = slot > 0 ? palette!.material : mat0;
-    let byExemption = groups.get(mat);
-    if (!byExemption) groups.set(mat, (byExemption = new Map()));
-    const flags = exemptionsOf(m);
-    // The sway mark is in the key for the EXEMPTIONS' reason and one of its
-    // own. It tracks a mesh's ROLE — a canopy tree's fronds sway and its
-    // trunk does not, in the same palette green a fern's crown is — so reading
-    // it off one member would hand a whole colour group a lean one mesh asked
-    // for. The extra reason is that the BAKE reads it per mesh rather than per
-    // vertex, so a group that disagreed would write one answer over both.
-    const sway = swayLayerOf(m);
-    const key = `${sway ?? ""}|${flags.join("-")}`;
-    const group = byExemption.get(key);
-    if (group) group.meshes.push(m);
-    else byExemption.set(key, { flags, sway, meshes: [m] });
-  }
-
-  const out: Mesh[] = [];
-  for (const [mat, byExemption] of groups) {
-    for (const { flags, sway, meshes: group } of byExemption.values()) {
-      const merged =
-        group.length === 1
-          ? // A merge of two or more bakes their world matrices; a group of one
-            // has to be baked by hand or the promise above is a lie for exactly
-            // the colours only one mesh uses — and the caller, which positions
-            // and rotates what it gets back, would clobber that mesh's own
-            // transform instead of composing with it.
-            uploadPart(group[0]).bakeCurrentTransformIntoVertices()
-          : Mesh.MergeMeshes(group, true, true, undefined, false, false);
-      if (!merged) continue;
-      // Suffixed only where a group actually splits, so the common name is the
-      // one the rest of the tree already reads in a profile.
-      const suffix = flags.map((f) => `-${f}`).join("");
-      merged.name = `${tag}-${mat.name}${sway ? `-${sway}` : ""}${suffix}`;
-      merged.material = mat;
-      // From the KEY, not from a member — and this half of it was not a
-      // precaution, it was a live bug. The exemption used to be read back off
-      // the group AFTER the merge, and `MergeMeshes` is called with
-      // `disposeSource = true`, so by then Babylon's `Node.dispose` has set
-      // every source's `metadata` to null and the read came back false for any
-      // group of two or more. Only a group of ONE survived it, because that
-      // path bakes in place and disposes nothing. Measured on Hollowmere: 19
-      // of the map's 42 merged emissive meshes lost the ink exemption here and
-      // were handed an outline shell by the caller — a black ring drawn around
-      // every lantern, flame and sign dense enough to have a neighbour its own
-      // colour. That particular consequence is gone with the outline pass, and
-      // the same read still has to be right for `noGlow` and `noShadowCaster`,
-      // which are live. Grouping first means the flags are read while the meshes are
-      // still alive, and the group is unanimous, so the key is what they said.
-      for (const flag of flags) {
-        merged.metadata = { ...(merged.metadata ?? {}), [flag]: true };
-      }
-      // A swaying group carries the mark forward, and that is now all it does.
-      // It used to leave Babylon's outline pass here as well, because that
-      // hull could see neither the wind nor the per-vertex weight and the leaf
-      // leaned out from under a shell left standing at the rest pose. The ink
-      // reads the depth buffer now and the leaf is already in it.
-      if (sway) {
-        markSwayMerged(merged as Mesh, sway);
-      }
-      out.push(merged as Mesh);
-    }
-  }
-  return out;
-}
-
-/** One merge group: the meshes, and the exemptions and sway they all agree on. */
-type Group = { flags: Exemption[]; sway: SwayLayer | null; meshes: Mesh[] };
-
-/**
- * What a merge needs in order to take the colour out of its key: somewhere to
- * put a hex, and the one material that answers for all of them.
- *
- * Passed in rather than reached for, because the SLOTS are allocated in the
- * order the merge meets a colour and only the merge knows that order, while the
- * material belongs to a factory this file's free functions cannot see.
- */
-type Palette = {
-  /** The 1-based slot for a hex, or 0 for "keep your own material". */
-  slot(hex: string): number;
-  /** The material every slotted mesh ends up wearing. */
-  material: Material;
-};
-
-/**
- * The hex of a PLAIN matte cel material, or null for anything else.
- *
- * **It matches the matte name ALONE and must stay that strict**, which is the
- * whole of what it is for: gloss and translucent differ from matte in shader
- * BEHAVIOUR rather than merely in a uniform, so they cannot join the palette
- * merge however alike their colours are, and a regex loosened to
- * `cel-(gloss-|trans-)?#rrggbb` would quietly enrol them. `cel-world` is
- * refused by the same line, having no hex at all — see `WORLD_CEL_NAME`.
- *
- * It had a looser twin once, `inkColorFor`, which DID accept all three because
- * it was asking a different question of the same name: what colour to tint a
- * mesh's ink shell. That went with the hull ink, so this is the only reader of
- * a material name left and there is no longer a second regex to keep it
- * distinct from.
- */
-function plainCelHex(materialName: string): string | null {
-  const m = /^cel-(#[0-9a-fA-F]{6})$/.exec(materialName);
-  return m ? m[1] : null;
-}
-
-/**
- * Carries a merged group's sway mark onto the mesh.
- *
- * It used to do a second thing — take Babylon's ink off the group, because that
- * hull could see neither the wind nor the per-vertex weight and an outlined leaf
- * leaned out from under a shell left standing at the rest pose. The ink is a
- * screen-space pass over the depth buffer now, and the depth buffer already has
- * the leaf where the wind put it, so there is nothing to take off.
- */
-function markSwayMerged(mesh: Mesh, layer: SwayLayer): void {
-  marksSway(mesh, layer);
-}
-
-

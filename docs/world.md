@@ -2093,7 +2093,7 @@ claiming (`skin`, `CITY_BRICK`, `ENAMEL`) rather than naming a colour of its own
 Three consequences belong here rather than in the rendering contract:
 
 - **The merged pane meshes are marked `noInk` and `noShadowCaster`**, in the
-  `paneBlocks.finish` loop in `MapBuilder.build`. Ink on a transparent mesh
+  `paneBlocks.finish` loop in `MapBuilder.mergeBlocks`. Ink on a transparent mesh
   needs a stencil buffer this engine does not have and lands as a dark plate
   behind the pane; a clear sheet laying a hard shadow on the pavement is simply
   wrong. A window's frame is drawn by the mullion, the collar and the reveal.
@@ -2218,7 +2218,7 @@ the player had shot out. Measured on Coldharbour's twenty-four: **53,461 step
 counts across the seven fields were describing a wall that was no longer there.**
 
 Two contracts say the map never changes and both now say it changes in exactly
-this one way: `ObstacleField`'s header, and `MapBuilder.build`'s note beside the
+this one way: `ObstacleField`'s header, and `MapBuilder.derive`'s note beside the
 nav bake. Neither may grow at runtime and nothing may be added back.
 
 Layout gotchas that have already cost time:
