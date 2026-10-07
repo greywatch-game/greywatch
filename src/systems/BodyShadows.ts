@@ -249,14 +249,14 @@ export class BodyShadows {
       gen.addShadowCaster(this.proxy, false);
       this.generator = gen;
     }
-    this.mats.setBodyShadowMap(
+    this.mats.shadows.setBodyShadowMap(
       this.generator?.getShadowMap() ?? litShadowTexture(this.scene),
     );
-    this.mats.setBodyShadowParams(
+    this.mats.shadows.setBodyShadowParams(
       depthBias(c.bias, c.depthRange),
       c.pcfRadiusTexels / Math.max(1, this.mapSize),
     );
-    this.mats.setBodyShadowMatrix(this.lightMatrix);
+    this.mats.shadows.setBodyShadowMatrix(this.lightMatrix);
   }
 
   /**
@@ -304,7 +304,7 @@ export class BodyShadows {
       return;
     }
     if (this.win.place(this.light, focus, this.window, this.mapSize, c.distance)) {
-      mats.setBodyShadowMatrix(gen.getTransformMatrix());
+      mats.shadows.setBodyShadowMatrix(gen.getTransformMatrix());
     }
 
     this.count = 0;

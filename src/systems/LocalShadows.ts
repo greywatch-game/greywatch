@@ -446,7 +446,7 @@ export class LocalShadows {
     this.warm = false;
     const side = 1 / Math.max(1, this.tilesPerRow);
     this.atlasShape.set(Math.max(1, this.tilesPerRow), side, 0, 0);
-    const slots = this.mats.localSlots;
+    const slots = this.mats.shadows.localSlots;
     slots.atlas.set(
       Math.max(1, this.tilesPerRow),
       side,
@@ -455,7 +455,7 @@ export class LocalShadows {
     );
     const c = CONFIG.graphics.localShadows;
     slots.params.set(c.bias, c.normalBias, 0, 0);
-    this.mats.setLocalShadowMap(this.atlas ?? litShadowTexture(this.scene));
+    this.mats.shadows.setLocalShadowMap(this.atlas ?? litShadowTexture(this.scene));
     this.publish([]);
   }
 
@@ -1188,7 +1188,7 @@ export class LocalShadows {
    * slot, shadowed or not, because a spot's CONE is owed whatever the rung.
    */
   private publish(active: readonly PointLightData[]): void {
-    const { spot, shade } = this.mats.localSlots;
+    const { spot, shade } = this.mats.shadows.localSlots;
     const n = Math.min(active.length, MAX_POINT_LIGHTS);
     for (let i = 0; i < MAX_POINT_LIGHTS; i++) {
       const o = i * 4;

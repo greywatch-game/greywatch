@@ -1489,6 +1489,10 @@ src/
   shaders/
     CelShader.ts        # Custom cel ShaderMaterial. Both stages WGSL; six
                         #   defines, six UBO layouts
+    ShadowBindings.ts   # Every shadow a lit material samples (world, bodies,
+                        #   lamps' atlas, lightning, clouds, foliage) bound
+                        #   onto the factory's cache and the grass/water
+                        #   consumers. `mats.shadows`; GI stays in the factory
     CelInk.ts           # THE INK: one full-screen edge over the depth the
                         #   frame already wrote. Replaced Babylon's outline
                         #   hull AND MapBuilder's ink twins — Coldharbour

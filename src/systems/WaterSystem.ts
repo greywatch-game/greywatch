@@ -374,7 +374,7 @@ export class WaterSystem {
       // The depth map, its matrix and its params come from the factory, which
       // is the one publisher of all three. Unregistered, the shader would
       // sample an unbound sampler and the body would sit in permanent shadow.
-      this.mats.registerShadowConsumer(mat);
+      this.mats.shadows.registerShadowConsumer(mat);
 
       this.bodies.push({
         grid,
@@ -575,7 +575,7 @@ export class WaterSystem {
     for (const { grid, quad, mat, depth } of this.bodies) {
       // Before the dispose, not after: the factory would otherwise keep writing
       // three uniforms a frame into a dead material for the rest of the session.
-      this.mats.unregisterShadowConsumer(mat);
+      this.mats.shadows.unregisterShadowConsumer(mat);
       // The shared grid and quad go with the last body wearing them.
       grid.dispose();
       quad.dispose();

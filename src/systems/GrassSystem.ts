@@ -392,7 +392,7 @@ export class GrassSystem {
       // The depth map, its matrix and its params come from the factory, which
       // is the one publisher of all three. Unregistered, the shader would
       // sample an unbound sampler and the field would stand in permanent shadow.
-      this.mats.registerShadowConsumer(m);
+      this.mats.shadows.registerShadowConsumer(m);
     }
     mat.setColor3("rimColor", Color3.FromHexString(lit.rimColor).scale(lit.rimIntensity));
     this.mat = mat;
@@ -838,8 +838,8 @@ export class GrassSystem {
   dispose(): void {
     // Before the dispose, not after: the factory would otherwise keep writing
     // three uniforms a frame into a dead material for the rest of the session.
-    if (this.mat) this.mats.unregisterShadowConsumer(this.mat);
-    if (this.turfMat) this.mats.unregisterShadowConsumer(this.turfMat);
+    if (this.mat) this.mats.shadows.unregisterShadowConsumer(this.mat);
+    if (this.turfMat) this.mats.shadows.unregisterShadowConsumer(this.turfMat);
     for (const l of this.lods) l.mesh.dispose();
     for (const l of this.turfLods) l.mesh.dispose();
     this.lods = [];

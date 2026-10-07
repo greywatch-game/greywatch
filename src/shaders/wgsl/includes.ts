@@ -239,8 +239,8 @@ fn cloudLitAir(p: vec3f) -> f32 {
  *
  * A consumer owes four uniforms (`SHADOW_UNIFORM_NAMES`) and two samplers
  * (`SHADOW_SAMPLER_NAMES`) in its own lists, and owes REGISTERING with
- * `CelMaterialFactory.registerShadowConsumer` — the factory pushes all of them,
- * and a material that is never registered samples an unbound texture.
+ * `ShadowBindings.registerShadowConsumer` (`mats.shadows`) — that pushes all
+ * of them, and a material that is never registered samples an unbound texture.
  */
 register(
   "celShadow",

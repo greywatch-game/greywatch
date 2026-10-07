@@ -308,17 +308,17 @@ export class ShadowSystem {
       this.mapSize = tier.sun;
       this.win.invalidate();
       this.held.setAll(Infinity);
-      this.mats.setShadowMap(this.generator?.getShadowMap() ?? litShadowTexture(this.scene));
+      this.mats.shadows.setShadowMap(this.generator?.getShadowMap() ?? litShadowTexture(this.scene));
       // The map's size goes with them: the consumer's kernel offsets are in UV,
       // and a texel of UV is 1 / mapSize. This is the only place that number is
       // known, so it is handed over rather than restated in the shader.
-      this.mats.setShadowParams(
+      this.mats.shadows.setShadowParams(
         depthBias(c.bias, c.depthRange),
         c.darkness,
         c.normalBias,
         Math.max(1, this.mapSize),
       );
-      this.mats.setShadowMatrix(this.lightMatrix);
+      this.mats.shadows.setShadowMatrix(this.lightMatrix);
     }
     const flashSize = Math.min(tier.sun, FLASH_MAP_MAX);
     if (flashSize !== this.flashSize) {
@@ -326,8 +326,8 @@ export class ShadowSystem {
       this.flashGen = flashSize > 0 ? this.buildFlash(flashSize) : null;
       this.flashSize = flashSize;
       this.flashWin.invalidate();
-      this.mats.setFlashMap(this.flashGen?.getShadowMap() ?? litShadowTexture(this.scene));
-      this.mats.setFlashParams(
+      this.mats.shadows.setFlashMap(this.flashGen?.getShadowMap() ?? litShadowTexture(this.scene));
+      this.mats.shadows.setFlashParams(
         depthBias(c.bias, c.depthRange),
         c.pcfRadiusTexels / Math.max(1, flashSize),
       );
@@ -337,10 +337,10 @@ export class ShadowSystem {
       this.foliageGen = tier.foliage > 0 ? this.buildFoliage(tier.foliage) : null;
       this.foliageSize = tier.foliage;
       this.foliageWin.invalidate();
-      this.mats.setFoliageMap(
+      this.mats.shadows.setFoliageMap(
         this.foliageGen?.getShadowMap() ?? litShadowTexture(this.scene),
       );
-      this.mats.setFoliageParams(
+      this.mats.shadows.setFoliageParams(
         c.pcfRadiusTexels / Math.max(1, this.foliageSize),
         depthBias(1, c.depthRange),
       );
@@ -430,7 +430,7 @@ export class ShadowSystem {
       CONFIG.graphics.shadows.distance,
     );
     gen.getShadowMap()?.resetRefreshCounter();
-    this.mats.setFlashMatrix(gen.getTransformMatrix());
+    this.mats.shadows.setFlashMatrix(gen.getTransformMatrix());
   }
 
   /** The foliage's front-face generator at `size`, with its solids. */
@@ -714,7 +714,7 @@ export class ShadowSystem {
       // an implementation detail of Babylon's rather than a promise, which is
       // why this stays a real re-upload on the frames the window moves instead
       // of being deleted outright.
-      mats.setShadowMatrix(gen.getTransformMatrix());
+      mats.shadows.setShadowMatrix(gen.getTransformMatrix());
     }
     // The foliage's window, off the same focus on its own texel grid. A
     // separate test because the two grids are different sizes: one moving
@@ -725,7 +725,7 @@ export class ShadowSystem {
       this.foliageWin.place(this.foliageLight, held, this.window, this.foliageSize, c.distance)
     ) {
       fgen.getShadowMap()?.resetRefreshCounter();
-      mats.setFoliageMatrix(fgen.getTransformMatrix());
+      mats.shadows.setFoliageMatrix(fgen.getTransformMatrix());
     }
   }
 

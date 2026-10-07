@@ -4,8 +4,8 @@ The four light terms and the sixteen slots, the three passes that owe their own
 fog, the constraints that look like bugs if you undo them, how much of the map the
 frame is allowed to walk, and the painted sky. Split out of
 [`CLAUDE.md`](../CLAUDE.md), which keeps the summary; this file is the contract
-for `LightingSystem`, `ShadowSystem`, `CelMaterialFactory`, `WorldCulling`, the
-shaders and `Sky`.
+for `LightingSystem`, `ShadowSystem`, `CelMaterialFactory` and its
+`ShadowBindings`, `WorldCulling`, the shaders and `Sky`.
 
 ## The scene has (almost) no Babylon lights
 
@@ -513,7 +513,7 @@ phone**, which is why a coarse pointer defaults to `low` — `FINDINGS.md` 44.
 ### Contracts that reach outside it
 
 - **Seven textures and six uniforms on every cel material, bound always**
-  (`GI_SAMPLER_NAMES`, `GI_UNIFORM_NAMES`), through `applyShadow`'s cel branch,
+  (`GI_SAMPLER_NAMES`, `GI_UNIFORM_NAMES`), through the factory's `applyShadow`,
   the one door all six creation paths share. `GiVolume` publishes a real set in
   its constructor and keeps one published whatever the setting. Grass and water
   do not declare them and keep the flat path.
@@ -1712,7 +1712,7 @@ shadow term entirely, which showed as a cottage's shadow stopping dead at the
 edge of a grass rect and at the waterline. The lookup and the band function are
 shared so all three sample one depth map with one kernel — the WGSL includes
 `celShadow` and `celBand`, taken by all three.
-`CelMaterialFactory.registerShadowConsumer` /
+`ShadowBindings.registerShadowConsumer` /
 `unregisterShadowConsumer` is how a non-cel material joins the three per-frame
 uploads. **Registering is half the contract and unregistering is the other
 half**: grass and water are rebuilt every round, and a material left registered
@@ -2130,7 +2130,7 @@ audio context, and strikes raised under it queued thunder against a frozen
 `currentTime` that all fell due on the resume, over the voice cap.
 
 **A flash is a SECOND KEY with a depth map of its own, and the moon never
-moves for it** (`CelMaterialFactory.setFlash`, `ShadowSystem.flash`,
+moves for it** (`ShadowBindings.setFlash`, `ShadowSystem.flash`,
 `celShadow`'s `flashLight`). The map is the world's casters drawn ONCE along
 the strike on the frame it starts — render-once, back faces, its own window
 round the moon's focus, at most 1024 texels — and the term is banded like the
@@ -4483,7 +4483,7 @@ whose shadow they are standing in, because it is the same ray.
   **The shafts take it per march step** (`cloudLitAir`, derivative-free for
   the loop), so a beam stops where the ground under it goes into shade and
   the gaps between two clouds' shadows are where the shafts are.
-- **A reflection bake HOLDS it off** (`CelMaterialFactory.holdCloudShadow`, on
+- **A reflection bake HOLDS it off** (`ShadowBindings.holdCloudShadow`, on
   the hooks that move the eye into a probe and back): a cube is baked once and
   the shadow moves, so one caught in a bake would stay painted into every pane
   and pond for the round.

@@ -58,7 +58,7 @@ match smoke test (`npm run build:server && npm run server`, two clients).
 | ~~[27](#27-vehiclets-extract-hullflex-and-the-flight-model)~~ | P2 — done | `Vehicle.ts`: extract `HullFlex` and the flight model |
 | ~~[28](#28-frameprofilets-split-the-recorder-from-the-reporter)~~ | P2 — done | `FrameProfile.ts`: split recorder from reporter |
 | ~~[29](#29-vehiclecrewts-extract-the-pilot)~~ | P2 — done | `VehicleCrew.ts`: extract the pilot |
-| [30](#30-celshaderts-move-shadow-bindings-out-of-the-material-factory) | P2 | `CelShader.ts`: move shadow bindings out of the factory |
+| ~~[30](#30-celshaderts-move-shadow-bindings-out-of-the-material-factory)~~ | P2 — done | `CelShader.ts`: move shadow bindings out of the factory |
 | [31](#31-hudts-scoreboard-to-its-own-class-one-1-low) | P2 | `HUD.ts`: scoreboard to its own class, one 1% low |
 | [32](#32-ui-screens-shared-setinputdevice-and-paintthumb) | P2 | UI screens: shared `setInputDevice` and `paintThumb` |
 | [33](#33-overlayscreents-extract-menubackdrop) | P2 | `OverlayScreen.ts`: extract `MenuBackdrop` |
@@ -1134,6 +1134,70 @@ coupling gain — optional.
 
 **Acceptance.** Screenshots of each map identical before/after (needs a GPU box
 — see `VERIFYING.md`).
+
+**Done.** `CelShader.ts` is 3,572 lines, down from 3,917. The shadows are in
+`shaders/ShadowBindings.ts` (433 lines), reached as `mats.shadows`.
+
+- **`ShadowBindings`** holds every shadow-map field (the world's, the
+  bodies', the lamps' atlas with its per-slot arrays, the lightning's key and
+  map, the clouds' field and its hold, and the foliage map), the consumer
+  registry, every setter over them, `localSlots`, and `applyShadow`. The
+  factory lends it its cache as a `ReadonlyMap` at construction, so a
+  material minted later is walked by the next push without being told. The
+  "no cloud anywhere" texel moved with the clouds and is still created in the
+  factory's constructor, before any material is.
+- **The irradiance volume stayed in the factory.** It is bound only on cel
+  materials and it was never a shadow. The factory keeps a three-line
+  `applyShadow` that every creation path still calls: it calls
+  `shadows.applyShadow` and then `applyGi`. That is the same calls in the
+  same order as before, so binding order and count are unchanged. The GI
+  comment moved onto that door.
+- **No runtime import cycle.** `ShadowBindings` sizes the lamp arrays off
+  `MAX_LOCAL_SLOTS` from `wgsl/includes` instead of importing
+  `MAX_POINT_LIGHTS` back from `CelShader`. The arrays are `celShadow`'s
+  and are sized off that include's constant anyway, and `CelShader` already
+  asserts the two are equal. The name lists (`SHADOW_*_NAMES`,
+  `GI_*_NAMES`) stay in `CelShader`, because they describe what the shader
+  declares.
+- **`readLighting`'s three cloud getters** now read
+  `shadows.cloudMap/cloudArea/cloudRay`, which are live references, as
+  before.
+- **Callers** (`Game`, `ShadowSystem`, `BodyShadows`, `LocalShadows`,
+  `ReflectionSystem`, `GrassSystem`, `WaterSystem`) say `mats.shadows.X`
+  where they said `mats.X`. No method was renamed. `isSolid` and
+  `keyLight` stay on the factory: one is the material registry and the
+  other is the environment.
+
+Apart from that it is a move. The `CelShader` side of the diff is deletions
+only, plus the import, the field, the constructor and the small door. In the
+moved text, "the factory's own" now reads "this object's own", and
+`this.cache` is now `this.cels`. One stale reference (`setLocalShadows`,
+which never existed) now names `setLocalShadowMap`. References updated:
+`docs/rendering.md` (the contract scope and four method names), `FILES.md`,
+`wgsl/includes.ts`, and comments in `Game.ts`, `ReflectionSystem.ts` and
+`CelShader.ts`.
+
+Checked: `npm run typecheck` and `npm run build` pass. **Screenshots: all
+22 bank vantages on all seven maps, before and after, on the Windows box.**
+`plans/webgpu-ref/bank.mjs` could not take the reference. At HEAD every
+vantage came back "NOT REPRODUCIBLE": two consecutive grabs of the frozen
+frame differ, so the freeze set has fallen behind something that moves in a
+held frame. That gap is open and not this ticket's. A scratch script on the
+same harness (`bootMap`/`placeVantage`/`freeze`) stopped the engine's
+render loop for the grab, which made every frame byte-stable. It shot HEAD
+twice and this change once:
+
+- HEAD vs HEAD, the control: mean 0 to 0.135/255 per vantage. The worst was
+  Coldharbour's `curtain2`.
+- HEAD vs this change: mean 0 to 0.137/255, the same vantages at the same
+  sizes, and the worst was again `curtain2`.
+- The only reading above its own control was Hollowmere `ashwood` (0.007
+  against 0): a faint wash on a cart's shaded side. Two more runs of this
+  change on Hollowmere differ from EACH OTHER by that same 0.007, and one of
+  them matches HEAD to 0.0006. So it is per-process noise, not the move.
+
+No page or console errors on any map. A lost binding would read as a black
+or unshadowed surface at whole-percent means, not hundredths of a level.
 
 ### 31. `HUD.ts`: scoreboard to its own class, one 1% low
 

@@ -1506,7 +1506,7 @@ export class Game {
     // The clouds' shadow field, bound once: `Sky` keeps one texture for the
     // life of the process and rewrites it as the ring drifts. Until now every
     // material held the factory's own "no cloud" texel.
-    this.mats.setCloudShadowMap(this.sky.cloudShadowMap);
+    this.mats.shadows.setCloudShadowMap(this.sky.cloudShadowMap);
     this.applySky();
 
     this.hullRules = {
@@ -3427,7 +3427,7 @@ export class Game {
     // Where the clouds' shadow lies and how far the crossfade has run, pushed
     // in every state for the drift's reason: the sky moves behind a menu too,
     // and a shadow held still under a moving cloud is the tell.
-    this.mats.setCloudShadow(this.sky.cloudShadowArea, this.sky.cloudShadowRay);
+    this.mats.shadows.setCloudShadow(this.sky.cloudShadowArea, this.sky.cloudShadowRay);
     // The storm, in every state for the ambience's reason — weather does not
     // stop for a menu — and after the sky has placed its clouds.
     this.pushLightning(dt);
@@ -6394,10 +6394,10 @@ export class Game {
     // The offline clock holds with the world — see `LightningStrikes.step`.
     strikes.step(dt, this.worldHeld, this.net ? this.net.conn.now() / 1000 : null);
     // The strike's own map, drawn once on the frame it starts. The moon's
-    // maps are never touched — see `CelMaterialFactory.setFlash`.
+    // maps are never touched — see `ShadowBindings.setFlash`.
     if (strikes.active && !was) this.shadows.flash(strikes.direction, this.shadowFocus);
     const f = strikes.active ? strikes.flash : 0;
-    this.mats.setFlash(strikes.direction, strikes.color, f);
+    this.mats.shadows.setFlash(strikes.direction, strikes.color, f);
     this.gi.setFlash(f > 0 ? CONFIG.lighting.lightningFill : 0);
     this.sky.setFlash(strikes.color, f);
     // The thunder owed by strikes already seen, started as each layer falls

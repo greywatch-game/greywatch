@@ -210,8 +210,8 @@ export class ReflectionSystem {
       // of frames that bake nothing this is a comparison.
       this.mats.setOpaqueAlpha(0);
       // And the clouds' shadow, which a bake holds off: a cube is baked once
-      // and the shadow moves. See `CelMaterialFactory.holdCloudShadow`.
-      this.mats.holdCloudShadow(false);
+      // and the shadow moves. See `ShadowBindings.holdCloudShadow`.
+      this.mats.shadows.holdCloudShadow(false);
     });
     // Probe 0 exists before any map does, because `MapBuilder` asks for a
     // glazing material during the build and that material has to be born with
@@ -782,7 +782,7 @@ export class ReflectionSystem {
       // the same way, so the six faces of one probe cost one walk between them
       // and the restore above costs one more.
       this.mats.setOpaqueAlpha(1);
-      this.mats.holdCloudShadow(true);
+      this.mats.shadows.holdCloudShadow(true);
     });
     // **And the face is asked what it can SEE, which is the one question the
     // bake had never been asked.** See `faceOf`. It is registered here rather
