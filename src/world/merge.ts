@@ -226,12 +226,11 @@ export class PaneBlocks {
         // mesh because its caller then composes a placement's transform onto
         // what it gets back. Nothing composes anything onto these:
         // `MapBuilder.paneGroup` has already put each mesh where it belongs.
-        // Baking anyway flattens
-        // that transform into the vertices and leaves the mesh at identity,
-        // which the editor's `repositionItem` then reads as "no transform yet"
-        // and applies the placement a second time — a dragged building whose
-        // glass is at twice its own offset, drawn perfectly, with nothing in
-        // the numbers to point at.
+        // Baking anyway flattens that transform into the vertices and leaves
+        // the mesh at identity, which the editor's `repositionItem` then reads
+        // as "no transform yet" and applies the placement a second time — a
+        // dragged building whose glass is at twice its own offset, drawn
+        // perfectly, with nothing in the numbers to point at.
         const merged =
           parts.length === 1
             ? parts[0]

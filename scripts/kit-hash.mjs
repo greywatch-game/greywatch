@@ -41,8 +41,8 @@
  * over `SCATTER_SEEDS` fixed seeds at every rung of `CONFIG.graphics.foliage`
  * instead of over its placements. Its two halves are the scatter's own: the
  * DRAWING is the prop as `flatten` (`world/merge.ts`) would hand it to the
- * merge — the root and every child mesh, in that order, metadata included, because
- * `noInk`/`noGlow`/`noShadowCaster` are part of the merge key — and the
+ * merge — the root and every child mesh, in that order, metadata included,
+ * because `noInk`/`noGlow`/`noShadowCaster` are part of the merge key — and the
  * COLLIDERS are what decides where a blocking field's boxes go: the kind's
  * `PROP_BODIES` row, and how many numbers the builder drew from the REGION's
  * stream. That count is the one a rework must not move ("keep 48 rng draws"):

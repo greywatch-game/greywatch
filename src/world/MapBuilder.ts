@@ -63,7 +63,6 @@ import {
   isScatterRect,
   type Heightfield,
   type MapLayout,
-  type RidgeSpec,
   type ScatterSpec,
 } from "./layout";
 import { type LocalXZ, rotateToLocalXZ } from "./boxGeometry";
@@ -664,7 +663,7 @@ export class MapBuilder {
    *
    * The phases run in a load-bearing order, one method each: the floor, the
    * placements, the scatter, the merges, the bake, then everything derived from
-   * the finished collider set. Each method says why it stands where it does.
+   * the finished collider set.
    */
   build(
     layout: MapLayout,
@@ -719,14 +718,14 @@ export class MapBuilder {
     // shipped map is any more — see `MapLayout.borderland`.
     const margin = layout.borderland?.margin ?? 0;
     const terrain = this.floorFor(layout, heights, size, margin);
-    // One size, handed to both, because `ReflectionSystem.encloses` asks a
-    // glazing group and the wall behind it whether they are the same building
-    // by comparing the two keys. See `PaneBlocks`.
     const run: BuildRun = {
       layout,
       terrain,
       visuals: [],
       colliders: [],
+      // One size, handed to both, because `ReflectionSystem.encloses` asks a
+      // glazing group and the wall behind it whether they are the same
+      // building by comparing the two keys. See `PaneBlocks`.
       blocks: new BlockMerge(blockSize),
       paneBlocks: new PaneBlocks(blockSize),
       index:
@@ -734,17 +733,7 @@ export class MapBuilder {
     };
     const { visuals, colliders, index } = run;
     record("valley", () =>
-      this.buildValley(
-        size,
-        margin,
-        terrainBlock,
-        env,
-        terrain,
-        visuals,
-        colliders,
-        terrainColliders,
-        layout.ridge,
-      ),
+      this.buildValley(run, size, margin, terrainBlock, env, terrainColliders),
     );
 
     this.placeStructures(run, network);
@@ -947,7 +936,6 @@ export class MapBuilder {
             // narrower reason (unmerged, each road's shell is drawn over
             // whatever it overlaps, which is a black patch at every junction);
             // the selection highlight shows a road's extent instead.
-          } else {
           }
           visuals.push(merged);
         } else if (isRoad) {
@@ -1224,19 +1212,18 @@ export class MapBuilder {
 
   /** The valley floor plus the rim that bounds play. */
   private buildValley(
+    run: BuildRun,
     size: number,
     /** `Borderland.margin`, or 0 on a map closed by the rim. */
     margin: number,
     /** `MapLayout.terrainBlock`, or `BLOCK_SIZE` — the floor's own cut. */
     terrainBlock: number,
     env: EnvironmentSpec,
-    terrain: TerrainField,
-    visuals: Mesh[],
-    colliders: Mesh[],
     /** The floor's blocks alone — see `GameMap.terrainColliders`. */
     terrainColliders: Mesh[],
-    ridge: RidgeSpec | undefined,
   ): void {
+    const { terrain, visuals, colliders } = run;
+    const ridge = run.layout.ridge;
     const floorMat = floorMaterial(
       this.mats,
       this.scene,

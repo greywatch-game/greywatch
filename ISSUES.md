@@ -824,8 +824,8 @@ invariant.
 - **`build()` is now a list of phases**, one method each: `reset`, `floorFor`,
   `buildValley` (as before), `placeStructures` (with the road merge),
   `placeScatter` (with the collider clustering), `waterAmbience`,
-  `mergeBlocks`, `bake` and `derive`. A `BuildRun` carries the lists they
-  fill. `reset` calls `release()` and then sets the fields the layout decides.
+  `mergeBlocks`, `bake` and `derive`. A `BuildRun` carries what they read
+  and the lists they fill, `buildValley` included. `reset` calls `release()` and then sets the fields the layout decides.
   Before, a build reset and a teardown cleared the same fourteen fields from
   two lists that had to agree; now there is one list.
 
@@ -840,8 +840,8 @@ file, `build`'s body becoming calls, comments that said "below" or "`build`"
 now naming the method they mean, and the outside references that named the
 old home (`weaponKit.ts`, `CelShader.ts`, `ReflectionSystem.ts`,
 `GlassSystem.ts`, `layout.ts`, `kit-hash.mjs`, `docs/world.md`,
-`ENGINE_UPGRADE.md`, `FILES.md`). The empty `else {}` in the editor's road
-branch was left for ticket 43.
+`ENGINE_UPGRADE.md`, `FILES.md`). An empty `else {}` the move carried
+across, in the editor's road branch, is gone.
 
 Checked: `kit:hash --against` a whole-kit fingerprint taken before the move
 is identical over all 3,722 builds. `npm run collision` rebaked all eight maps
