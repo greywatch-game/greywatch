@@ -466,7 +466,9 @@ src/
                         #   tracked hull's powerplant is already in the first
                         #   two figures and a rotor is not. Plus `Box`/`Cyl`,
                         #   the per-colour merge and the outline pass every
-                        #   model draws with. No geometry and no numbers
+                        #   model draws with, the one whip builder (`whip`)
+                        #   and the one `reset` (`resetRigPose`) all three
+                        #   kinds share. No geometry and no numbers
     TankModel.ts        # ~180 boxes and cylinders merged to twenty-five, with
                         #   a SPRUNG body over running gear that is not, a
                         #   turret and a gun that turn, a CUPOLA gun on a ring

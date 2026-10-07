@@ -143,10 +143,11 @@ import {
   type Box,
   type Cyl,
   paintRig,
+  resetRigPose,
   segmentOf,
-  setAntennaBend,
   type Shape,
   type VehicleRig,
+  whip,
   type Whip,
 } from "./vehicleRig";
 
@@ -1060,41 +1061,23 @@ export function buildTruck(
   // on the DRIVE the way the tank's tracks do — the wheels say it is moving
   // and the masts say how hard — and, parked, the one thing on it that is
   // never quite still: `antenna.wind` stirs them with a slow sway and a
-  // quicker flutter, so a truck at its hardstanding is not a photograph.
-  const whip = (i: number): Whip => {
-    const len = ANTENNA_LENGTHS[i];
+  // quicker flutter, so a truck at its hardstanding is not a photograph. The
+  // phases are arbitrary and exist so the one gust does not stir both in step.
+  const mast = (i: number): Whip => {
     const [x, z] = ANTENNA_FEET[i];
-    const base = new TransformNode(`truck-whip${i}`, scene);
-    base.parent = sprung;
-    // Inside the spring foot, so the pivot is inside the foot at every bend
-    // the springs can reach.
-    base.position.set(x, ANTENNA_FOOT_Y + 0.1, z);
-    const tip = new TransformNode(`truck-whip${i}-tip`, scene);
-    tip.parent = base;
-    tip.position.set(0, len / 2, 0);
-    // Each link is drawn from its own node's origin UP, and each tapers into
-    // the next: a whip is thinner at the top, and the taper is what stops two
-    // straight rods reading as one straight rod with a joint in it. The cap on
-    // the tip is the ball a real whip ends in.
-    segment(`truck-whip${i}-lo`, base, [], [
-      [0.045, len / 2, 0, len / 4, 0, kit.frame, "y", 0.036],
-    ]);
-    segment(`truck-whip${i}-hi`, tip, [], [
-      [0.036, len / 2, 0, len / 4, 0, kit.frame, "y", 0.022],
-      [0.05, 0.05, 0, len / 2, 0, kit.frame, "y"],
-    ]);
-    // A cantilever's natural frequency goes as 1/L^2, so the short mast is
-    // stiffer than the long one by the square of the length ratio and nothing
-    // about it is tuned separately — see `Whip.rate`. The phases are arbitrary
-    // and exist so the one gust does not stir both in step.
-    return {
-      base,
-      tip,
-      rate: (ANTENNA_LENGTHS[0] / len) ** 2,
+    return whip(scene, segment, {
+      name: `truck-whip${i}`,
+      parent: sprung,
+      foot: [x, ANTENNA_FOOT_Y + 0.1, z],
+      length: ANTENNA_LENGTHS[i],
+      longest: ANTENNA_LENGTHS[0],
       phase: i * 2.1,
-    };
+      color: kit.frame,
+      taper: [0.045, 0.036, 0.022],
+      cap: 0.05,
+    });
   };
-  const antennae: readonly [Whip, Whip] = [whip(0), whip(1)];
+  const antennae: readonly [Whip, Whip] = [mast(0), mast(1)];
 
   const rig: VehicleRig = {
     root,
@@ -1121,7 +1104,7 @@ export function buildTruck(
     // tank the two differ, which is the whole reason `VehicleRig` states both.
     wheelReach: AXLE_Z,
     setRun: (left, right, steer, _rotor) => setWheelRun(wheels, left, right, steer),
-    reset: () => resetTruckPose(rig, mats),
+    reset: () => resetRigPose(rig, mats, CONFIG.vehicles.truck),
     paint: (wrecked) => paintRig(meshes, livery, mats, wrecked),
   };
   return rig;
@@ -1159,23 +1142,4 @@ function setWheelRun(
     w.spin.rotation.x = ((turns % (Math.PI * 2)) + Math.PI * 2) % (Math.PI * 2);
     if (w.steer) w.steer.rotation.y = lock;
   }
-}
-
-/**
- * Puts a rig back to how it was built — every joint at rest, the wheels back
- * at the start of their turn and the paint back on. What a hull goes through
- * on the respawn timer, and the whole reason a destroyed truck is repainted
- * rather than replaced.
- */
-function resetTruckPose(rig: VehicleRig, mats: CelMaterialFactory): void {
-  rig.hull.rotation.set(0, 0, 0);
-  rig.sprung.position.y = 0;
-  rig.sprung.rotation.set(0, 0, 0);
-  rig.turret.rotation.set(0, 0, 0);
-  rig.mgMount.rotation.set(0, 0, 0);
-  rig.mgGun.rotation.set(0, 0, 0);
-  rig.setRun(0, 0, 0, 0);
-  const share = CONFIG.vehicles.truck.antenna.baseShare;
-  for (const w of rig.antennae) setAntennaBend(w, share, 0, 0, 0, 0);
-  paintRig(rig.meshes, rig.livery, mats, false);
 }

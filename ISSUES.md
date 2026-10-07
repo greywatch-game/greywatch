@@ -62,7 +62,7 @@ match smoke test (`npm run build:server && npm run server`, two clients).
 | ~~[31](#31-hudts-scoreboard-to-its-own-class-one-1-low)~~ | P2 — done | `HUD.ts`: scoreboard to its own class, one 1% low |
 | ~~[32](#32-ui-screens-shared-setinputdevice-and-paintthumb)~~ | P2 — done | UI screens: shared `setInputDevice` and `paintThumb` |
 | ~~[33](#33-overlayscreents-extract-menubackdrop)~~ | P2 — done | `OverlayScreen.ts`: extract `MenuBackdrop` |
-| [34](#34-vehicle-models-shared-resetrigpose-and-whip) | P2 | Vehicle models: shared `resetRigPose` and `whip` |
+| ~~[34](#34-vehicle-models-shared-resetrigpose-and-whip)~~ | P2 — done | Vehicle models: shared `resetRigPose` and `whip` |
 | [35](#35-decompose-botupdate-viewmodelupdate-and-players-recoil-vector) | P2 | Decompose `Bot.update`, `ViewModel.update`, Player's recoil vector |
 | [36](#36-vehicle-capability-idioms-three-soft-spots) | P2 | Vehicle capability idioms: three soft spots |
 | [37](#37-propsts-drop-the-mathrandom-defaults) | P2 | `Props.ts`: drop the `Math.random` defaults |
@@ -1420,6 +1420,42 @@ and a plain `show` keeps the old picture until the new one decodes.
 
 **Acceptance.** A respawned hull of each kind is posed correctly; antennae
 look unchanged.
+
+**Done.** The three models lose 26 to 37 lines each (`TankModel.ts` 1,163 →
+1,126, `TruckModel.ts` 1,181 → 1,145, `HeliModel.ts` 1,340 → 1,314), and
+`vehicleRig.ts` gains the two helpers (479 → 569).
+
+- **`resetRigPose(rig, mats, spec)`** replaces `resetTankPose`,
+  `resetTruckPose` and `resetHeliPose`. It reads `spec.antenna.baseShare`,
+  the one number that differed. The tank's copy reset `rig.gun` through `?.`
+  and the other two did not touch it, because their `gun` is null. The shared
+  copy keeps the `?.`, so it does the same thing on all three.
+- **`whip(scene, segment, drawing)`** builds one mast: the two nodes, the two
+  links and the `Whip` it returns. A `WhipDrawing` carries every number a
+  model states: name, parent, foot, length, the longest mast (for `rate`),
+  phase, colour, the three diameters of the taper, and an optional `cap`. The
+  shared comments (the taper, the cap, `1/L^2`) moved onto it. What is about
+  one model stayed in that model: the tank's 2.4/3.8 Hz, why the masts are
+  where they are, and the clearance under the heli's disc.
+- **The heli's loop was a third copy** with different names and no cap, so it
+  goes through `whip` too. Its nodes and meshes are renamed to the other two
+  kinds' pattern: `heli-whip-base0` is now `heli-whip0`, `heli-whip-tip0` is
+  `heli-whip0-tip`, and `heli-whip-lo0` is `heli-whip0-lo`. Nothing reads
+  those names.
+
+References updated: `FILES.md`'s `vehicleRig.ts` row, the respawn paragraph
+in `docs/vehicles.md`, and the `buildTank` doc comment. All three named
+`resetTankPose`.
+
+Checked: `npm run typecheck`. A scratch script builds every kind for both
+teams under a NullEngine and hashes it in three ways: geometry (vertices and
+indices), node and mesh names with their parents, and pose (every node's and
+mesh's transform and material). It hashes the pose four times: as built,
+after one `reset`, after every joint is disturbed (and the running gear run,
+the masts bent and the hull charred), and after a second `reset`. **HEAD and
+this change give the same geometry and the same four pose hashes on all six
+builds**, and the second `reset` matches the first on both. The one
+difference is the heli's names hash, from the rename above.
 
 ### 35. Decompose `Bot.update`, `ViewModel.update`, and Player's recoil vector
 

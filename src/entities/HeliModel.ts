@@ -254,10 +254,11 @@ import {
   type Box,
   type Cyl,
   paintRig,
+  resetRigPose,
   segmentOf,
-  setAntennaBend,
   type Shape,
   type VehicleRig,
+  whip,
   type Whip,
 } from "./vehicleRig";
 
@@ -1237,31 +1238,22 @@ export function buildHeli(
   // both, because the main disc is overhead — the version before the gunship
   // stood 1.15 m of mast here and put its tip six centimetres through the blade
   // path. See the first clearance.
-  const whips: Whip[] = [];
-  for (const [i, [foot, length, phase]] of (
-    [
-      [whip1, ANTENNA_LENGTH, 0],
-      [whip2, SHORT_ANTENNA, 2.1],
-    ] as const
-  ).entries()) {
-    const base = new TransformNode(`heli-whip-base${i}`, scene);
-    base.parent = sprung;
-    base.position.set(foot[0], foot[1], foot[2]);
-    const tip = new TransformNode(`heli-whip-tip${i}`, scene);
-    tip.parent = base;
-    tip.position.y = length / 2;
-    const half = length / 2;
-    segment(`heli-whip-lo${i}`, base, [], [
-      [0.045, half, 0, half / 2, 0, kit.frame, "y", 0.036],
-    ]);
-    segment(`heli-whip-hi${i}`, tip, [], [
-      [0.036, half, 0, half / 2, 0, kit.frame, "y", 0.024],
-    ]);
-    // A cantilever's natural frequency goes as 1/L^2 — see `Whip.rate`.
-    whips.push({ base, tip, rate: (ANTENNA_LENGTH / length) ** 2, phase });
-  }
+  const mast = (i: number, foot: Point3, length: number, phase: number): Whip =>
+    whip(scene, segment, {
+      name: `heli-whip${i}`,
+      parent: sprung,
+      foot,
+      length,
+      longest: ANTENNA_LENGTH,
+      phase,
+      color: kit.frame,
+      taper: [0.045, 0.036, 0.024],
+    });
   // Longest first, which is the order `rate` is measured against.
-  const antennae: readonly Whip[] = whips;
+  const antennae: readonly Whip[] = [
+    mast(0, whip1, ANTENNA_LENGTH, 0),
+    mast(1, whip2, SHORT_ANTENNA, 2.1),
+  ];
 
   const rig: VehicleRig = {
     root,
@@ -1290,7 +1282,7 @@ export function buildHeli(
     wheelReach: SKID_REACH,
     setRun: (_left, _right, _steer, rotor) =>
       setRotorRun(mainRotor, tailRotor, rotor),
-    reset: () => resetHeliPose(rig, mats),
+    reset: () => resetRigPose(rig, mats, CONFIG.vehicles.heli),
     paint: (wrecked) => paintRig(meshes, livery, mats, wrecked),
   };
   return rig;
@@ -1320,21 +1312,3 @@ function setRotorRun(
   tail.rotation.x = (((rotor * TAIL_GEAR) % two) + two) % two;
 }
 
-/**
- * Puts a rig back to how it was built — every joint at rest, both discs back at
- * the start of their turn and the paint back on. What a hull goes through on
- * the respawn timer, and the whole reason a destroyed helicopter is repainted
- * rather than replaced.
- */
-function resetHeliPose(rig: VehicleRig, mats: CelMaterialFactory): void {
-  rig.hull.rotation.set(0, 0, 0);
-  rig.sprung.position.y = 0;
-  rig.sprung.rotation.set(0, 0, 0);
-  rig.turret.rotation.set(0, 0, 0);
-  rig.mgMount.rotation.set(0, 0, 0);
-  rig.mgGun.rotation.set(0, 0, 0);
-  rig.setRun(0, 0, 0, 0);
-  const share = CONFIG.vehicles.heli.antenna.baseShare;
-  for (const w of rig.antennae) setAntennaBend(w, share, 0, 0, 0, 0);
-  paintRig(rig.meshes, rig.livery, mats, false);
-}

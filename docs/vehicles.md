@@ -2292,7 +2292,7 @@ their next frame. Refusing would mean a side losing its armour for the rest of
 the round because a bot was loitering, which is far worse than a shove.
 
 The hull is POOLED: `Vehicle.placeAt` puts a destroyed one back rather than building
-a new one, and `resetTankPose` is what guarantees nothing survives the round it
+a new one, and `resetRigPose` is what guarantees nothing survives the round it
 died in. Nothing is disposed inside a round.
 
 ### A wreck is not stepped and it is not static either, and `settle` is that

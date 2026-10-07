@@ -1,12 +1,13 @@
 /**
  * vehicleRig.ts — What every vehicle's MESH is, whatever kind it is, and the
- * two helpers both models are drawn with.
+ * helpers every model is drawn with.
  * Owns: the `VehicleRig` contract — the joints `Vehicle` writes and the three
  * closures it calls — plus `Box`/`Cyl`/`Shape`, the per-colour merge and the outline
- * pass every model owes.
- * Owns NO geometry and no numbers. `TankModel.ts` and `TruckModel.ts` are the
- * ART, one file per kind; this is the shape they both come out in, and the one
- * thing `entities/Vehicle.ts` has ever heard of.
+ * pass every model owes, the one way a whip antenna is built (`whip`) and the
+ * one pose a rig is reset to (`resetRigPose`).
+ * Owns NO geometry and no numbers. `TankModel.ts`, `TruckModel.ts` and
+ * `HeliModel.ts` are the ART, one file per kind; this is the shape they all
+ * come out in, and the one thing `entities/Vehicle.ts` has ever heard of.
  *
  * ## The rig is CLOSED over its own model, which is what buys the second kind
  *
@@ -55,6 +56,7 @@ import {
   Scene,
   TransformNode,
 } from "@babylonjs/core";
+import type { VehicleSpec } from "../config/vehicles";
 import { type CelMaterialFactory } from "../shaders/CelShader";
 
 /**
@@ -344,6 +346,94 @@ export function setAntennaBend(
   w.base.rotation.z = baseZ;
   w.tip.rotation.x = tipX - baseX;
   w.tip.rotation.z = tipZ - baseZ;
+}
+
+/**
+ * Every number a model states about one of its masts. Where it stands, how
+ * long it is and how thick are drawing decisions, so they are the model's; how
+ * a whip is BUILT out of them is the same on every hull and lives in `whip`.
+ */
+export interface WhipDrawing {
+  /** The nodes are `name` and `name-tip`, the meshes `name-lo` and `name-hi`. */
+  name: string;
+  /** What the foot is bolted to — a turret, or the sprung body. */
+  parent: TransformNode;
+  /**
+   * The pivot, in `parent`'s frame. Put it INSIDE the spring foot the model
+   * draws, so the pivot is inside the foot at every bend the springs can reach.
+   */
+  foot: readonly [number, number, number];
+  length: number;
+  /** The model's LONGEST mast, which `Whip.rate` is measured against. */
+  longest: number;
+  /** See `Whip.phase`. */
+  phase: number;
+  color: string;
+  /** Diameters at the foot, at the joint between the two links, and at the top. */
+  taper: readonly [number, number, number];
+  /** The ball the mast ends in, as a diameter. Absent for a bare tip. */
+  cap?: number;
+}
+
+/**
+ * Builds one whip: two nodes, one link drawn on each.
+ *
+ * Each link is drawn from its own node's origin UP, and each tapers into the
+ * next: a whip is thinner at the top, and the taper is what stops two straight
+ * rods reading as one straight rod with a joint in it. The cap on the tip is
+ * the ball a real whip ends in, so it is not an eye-poker.
+ *
+ * A cantilever's natural frequency goes as 1/L^2, so a short mast is stiffer
+ * than the long one by the square of the length ratio and nothing about it is
+ * tuned separately — see `Whip.rate`.
+ */
+export function whip(
+  scene: Scene,
+  segment: Segments["segment"],
+  d: WhipDrawing,
+): Whip {
+  const half = d.length / 2;
+  const [foot, joint, top] = d.taper;
+  const base = new TransformNode(d.name, scene);
+  base.parent = d.parent;
+  base.position.set(d.foot[0], d.foot[1], d.foot[2]);
+  const tip = new TransformNode(`${d.name}-tip`, scene);
+  tip.parent = base;
+  tip.position.set(0, half, 0);
+  segment(`${d.name}-lo`, base, [], [
+    [foot, half, 0, half / 2, 0, d.color, "y", joint],
+  ]);
+  const upper: Cyl[] = [[joint, half, 0, half / 2, 0, d.color, "y", top]];
+  if (d.cap !== undefined) upper.push([d.cap, 0.05, 0, half, 0, d.color, "y"]);
+  segment(`${d.name}-hi`, tip, [], upper);
+  return { base, tip, rate: (d.longest / d.length) ** 2, phase: d.phase };
+}
+
+/**
+ * Puts a rig back to how it was built — every joint at rest, the running gear
+ * back at the start of its run, the masts straight and the paint back on. What
+ * `VehicleRig.reset` is on every kind, given the kind's own spec for the one
+ * number it needs (how the masts share a bend).
+ *
+ * `gun` is the only joint a kind may lack, which is why it is the only one
+ * written through `?.`.
+ */
+export function resetRigPose(
+  rig: VehicleRig,
+  mats: CelMaterialFactory,
+  spec: VehicleSpec,
+): void {
+  rig.hull.rotation.set(0, 0, 0);
+  rig.sprung.position.y = 0;
+  rig.sprung.rotation.set(0, 0, 0);
+  rig.turret.rotation.set(0, 0, 0);
+  rig.gun?.rotation.set(0, 0, 0);
+  rig.mgMount.rotation.set(0, 0, 0);
+  rig.mgGun.rotation.set(0, 0, 0);
+  rig.setRun(0, 0, 0, 0);
+  const share = spec.antenna.baseShare;
+  for (const w of rig.antennae) setAntennaBend(w, share, 0, 0, 0, 0);
+  paintRig(rig.meshes, rig.livery, mats, false);
 }
 
 /**

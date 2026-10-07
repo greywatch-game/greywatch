@@ -81,8 +81,9 @@ import { viewTeam } from "../core/teamView";
 import { extrude, rodBetween, solidBetween, type Point3, type ProfilePoint } from "./facet";
 import {
   paintRig,
+  resetRigPose,
   segmentOf,
-  setAntennaBend,
+  whip,
   type Box,
   type Cyl,
   type Shape,
@@ -293,7 +294,7 @@ interface TrackSide {
  * Built once per hardstanding and never disposed inside a round — the same rule
  * the bot rig pool follows, and for the same reason: this is ~600 parts and
  * their merges, which is not a cost to pay on the frame a hull respawns.
- * `resetTankPose` is what a fresh one goes through instead.
+ * `resetRigPose` is what a fresh one goes through instead.
  *
  * **What it is drawn AS is a Leopard 2A6**, and everything below follows from
  * how that vehicle is built: a long low hull with a shallow upper glacis, seven
@@ -1005,47 +1006,29 @@ export function buildTank(
   // is a lever and what a mast does is bow. What it buys is the only moving
   // part on the vehicle that reports on the DRIVE: the tracks say it is moving
   // and the masts say how hard.
-  const whip = (i: number, x: number, z: number): Whip => {
-    const len = ANTENNA_LENGTHS[i];
-    const base = new TransformNode(`tank-whip${i}`, scene);
-    base.parent = turret;
-    // The spring foot on the roof is 16 cm tall and this is inside it, so the
-    // pivot is inside the foot at every bend the springs can reach.
-    base.position.set(x, ROOF + 0.13, z);
-    const tip = new TransformNode(`tank-whip${i}-tip`, scene);
-    tip.parent = base;
-    tip.position.set(0, len / 2, 0);
-    // Each link is drawn from its own node's origin UP, and each tapers into
-    // the next: a whip is thinner at the top, and the taper is what stops two
-    // straight rods reading as one straight rod with a joint in it. The cap on
-    // the tip is the ball a real whip ends in, so it is not an eye-poker.
-    segment(`tank-whip${i}-lo`, base, [], [
-      [0.05, len / 2, 0, len / 4, 0, kit.stow, "y", 0.042],
-    ]);
-    segment(`tank-whip${i}-hi`, tip, [], [
-      [0.042, len / 2, 0, len / 4, 0, kit.stow, "y", 0.028],
-      [0.055, 0.05, 0, len / 2, 0, kit.stow, "y"],
-    ]);
-    // A cantilever's natural frequency goes as 1/L^2, so the short mast is
-    // stiffer than the long one by the square of the length ratio and nothing
-    // about it is tuned separately: one config spring is scaled by this. The
-    // pair come out 2.4 Hz and 3.8 Hz, which is why two masts on one turret
-    // never swing in step — and a pair that DID would read as one animation
-    // playing twice. The phases are arbitrary and exist for the same reason,
-    // one layer down: the gust is one gust.
-    return {
-      base,
-      tip,
-      rate: (ANTENNA_LENGTHS[0] / len) ** 2,
+  //
+  // The pair come out 2.4 Hz and 3.8 Hz off one config spring (`Whip.rate`),
+  // which is why two masts on one turret never swing in step — and a pair that
+  // DID would read as one animation playing twice. The phases are arbitrary
+  // and exist for the same reason, one layer down: the gust is one gust.
+  const mast = (i: number): Whip => {
+    const [x, z] = ANTENNA_FEET[i];
+    return whip(scene, segment, {
+      name: `tank-whip${i}`,
+      parent: turret,
+      // The spring foot on the roof is 16 cm tall and this is inside it.
+      foot: [x, ROOF + 0.13, z],
+      length: ANTENNA_LENGTHS[i],
+      longest: ANTENNA_LENGTHS[0],
       phase: i * 2.1,
-    };
+      color: kit.stow,
+      taper: [0.05, 0.042, 0.028],
+      cap: 0.055,
+    });
   };
   // At the two back corners of the roof, and staggered in Z as well as X: two
   // masts at the same station are a pair of goalposts.
-  const antennae: readonly [Whip, Whip] = [
-    whip(0, ANTENNA_FEET[0][0], ANTENNA_FEET[0][1]),
-    whip(1, ANTENNA_FEET[1][0], ANTENNA_FEET[1][1]),
-  ];
+  const antennae: readonly [Whip, Whip] = [mast(0), mast(1)];
 
   // --- the gun: elevates in the mantlet, in the slot between the wedges -----
   const gun = new TransformNode("tank-gun", scene);
@@ -1103,7 +1086,7 @@ export function buildTank(
     contactReach: TRACK_REACH,
     wheelReach: WHEEL_REACH,
     setRun: (left, right, _steer, _rotor) => setTrackRun(tracks, left, right),
-    reset: () => resetTankPose(rig, mats),
+    reset: () => resetRigPose(rig, mats, CONFIG.vehicles.tank),
     paint: (wrecked) => paintRig(meshes, livery, mats, wrecked),
   };
   return rig;
@@ -1140,24 +1123,4 @@ function setTrackRun(
     side.upper.position.z = phase;
     side.sprocket.rotation.x = (run / END_R) % (Math.PI * 2);
   }
-}
-
-/**
- * Puts a rig back to how it was built — every joint at rest, the tracks back at
- * the start of their loop and the paint back on. What a hull goes through on
- * the respawn timer, and the whole reason a destroyed tank is repainted rather
- * than replaced.
- */
-function resetTankPose(rig: VehicleRig, mats: CelMaterialFactory): void {
-  rig.hull.rotation.set(0, 0, 0);
-  rig.sprung.position.y = 0;
-  rig.sprung.rotation.set(0, 0, 0);
-  rig.turret.rotation.set(0, 0, 0);
-  rig.gun?.rotation.set(0, 0, 0);
-  rig.mgMount.rotation.set(0, 0, 0);
-  rig.mgGun.rotation.set(0, 0, 0);
-  rig.setRun(0, 0, 0, 0);
-  const share = CONFIG.vehicles.tank.antenna.baseShare;
-  for (const w of rig.antennae) setAntennaBend(w, share, 0, 0, 0, 0);
-  paintRig(rig.meshes, rig.livery, mats, false);
 }
