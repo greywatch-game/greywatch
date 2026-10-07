@@ -91,8 +91,9 @@ import { mulberry32 } from "./rng";
 
 /**
  * The rim's tones. The last four are the WOODS, and they are the near trees'
- * own paint (`Props.RIM_WOOD`) rather than colours of the rim's, so a stand on
- * the hill and a stand on the plain in front of it cannot disagree.
+ * own paint (`RIM_WOOD`, `props/palette.ts`) rather than colours of the
+ * rim's, so a stand on the hill and a stand on the plain in front of it
+ * cannot disagree.
  */
 export type RidgeTone =
   | "rock"

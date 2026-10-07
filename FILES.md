@@ -994,16 +994,42 @@ src/
     boxIndex.ts         # The build-time uniform grid over collider boxes, so
                         #   scatter placement and the occlusion bake stop
                         #   walking all of them
-    Props.ts            # Scatter props: trees, graves, rubble, braziers,
+    props/              # Scatter props: trees, graves, rubble, braziers,
                         #   boulders, brambles, barrels, and the understory —
                         #   ferns, fallen buttress logs, carved stelae — plus
                         #   the mid-story, the liana veil, which is NOT a
                         #   scatter prop: the jungle tree hangs it off its own
                         #   fronds, because scatter placement is what pushed it
-                        #   away from every crown on the map. The temple
-                        #   valley's three (maple, leafLitter, bamboo) are the
-                        #   only props built from upload-free PARTS, because a
-                        #   map sows thousands of them
+                        #   away from every crown on the map. One file per
+                        #   prop; a prop never imports another
+      index.ts          #   The set's header and barrel: the contract every
+                        #   builder obeys, and what `MapBuilder` imports
+      palette.ts        #   The colours more than one prop wears, and
+                        #   `RIM_WOOD`, the paint a rolling rim's woods wear
+      geometry.ts       #   The shapes more than one prop is built from: `tri`,
+                        #   the `V3` arithmetic, the `Sheet` a fine leaf is laid
+                        #   on, a rachis's frames, `prism`, `loft`, `geodesic`
+      crown.ts          #   The broadleaf crown of billows the ash and the
+                        #   maple share: `skinBillows`, a leaf's stalk and
+                        #   faces, `crownPart`, `rigVerts`
+      deadTree.ts       #   buildDeadTree — the stag-headed snag
+      pine.ts           #   buildPine — the spruce-habit conifer
+      ash.ts            #   buildAshTree — the hedgerow ash and its leaf cluster
+      jungleTree.ts     #   buildJungleTree and buildLianaVeil — the feather-
+                        #   frond palm and the curtain it hangs from its crown
+      fern.ts           #   buildFernClump — the shuttlecock fern
+      palm.ts           #   buildPalm — the date palm
+      maple.ts          #   buildMaple, buildLeafLitter, buildBamboo — the
+                        #   temple valley's three, the only props built from
+                        #   upload-free PARTS, because a map sows thousands
+      fireDrum.ts       #   buildFireDrum — the open burn barrel
+      boulder.ts        #   buildBoulder — the glacial erratic and `rockData`
+      cask.ts           #   buildBarrel and `caskData`, the coopered cask the
+                        #   structure kit's crate stack borrows
+      small.ts          #   The few-dozen-line props: buttress log, stele,
+                        #   gravestone, lantern, fungus, log, bramble, rubble
+      junk.ts           #   The city's own dressing: skip, bins, pallets, cone,
+                        #   litter
     textures.ts         # Generated canvas textures: the cobbles, and the floor
                         #   surfaces — noise fields posterized onto a ramp of
                         #   the map's floorColor, albedo and height in one pass

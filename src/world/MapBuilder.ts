@@ -114,7 +114,7 @@ import {
   buildSkip,
   buildTrafficCone,
   RIM_WOOD,
-} from "./Props";
+} from "./props";
 
 /** A capturable flag. */
 export interface ControlPointDef {
@@ -762,7 +762,7 @@ interface PropBody {
 
 /**
  * Every scatter prop's body at scale 1, measured off the builders in
- * `Props.ts`. The collider box is `w`/`d`/`h`, oriented with the prop.
+ * `world/props/`. The collider box is `w`/`d`/`h`, oriented with the prop.
  *
  * **This is deliberately not `ScatterSpec.clearance`, which is what it used to
  * be.** Clearance is a *placement* rule — how much room a prop wants around it
@@ -775,8 +775,9 @@ interface PropBody {
  * tests line of sight against and what `CameraSystem` pulls in on, one wrong
  * number was showing up as three unrelated-looking complaints.
  *
- * Keep these honest against `Props.ts`. Too small only costs a round clipping
- * through a silhouette; too large costs shots that visibly should have landed.
+ * Keep these honest against `world/props/`. Too small only costs a round
+ * clipping through a silhouette; too large costs shots that visibly should have
+ * landed.
  *
  * Exported for `npm run kit:hash`, whose COLLIDER half of a scatter kind's
  * fingerprint is this row — the box is the table's, not the builder's.

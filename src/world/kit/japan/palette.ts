@@ -49,16 +49,17 @@ export const GILT_GLOW = "#e0a24a";
 export const NOREN = "#2d3d58";
 /**
  * Persimmons drying under a farm's eave — the maples' own fallen flame
- * (`Props.ts`'s `FALLEN`), so the fruit shares the leaf litter's material
- * rather than adding a draw to every block a farm stands in.
+ * (`props/maple.ts`'s `FALLEN`), so the fruit shares the leaf litter's
+ * material rather than adding a draw to every block a farm stands in.
  */
 export const KAKI = "#c9602a";
 
 export const TRANSLUCENCY = CONFIG.graphics.translucency;
 
 /**
- * The maples' own red on the ground (`Props.ts`'s `FALLEN`), for the leaves
- * lying on a stone pagoda — the litter's material, so a leaf on a ledge adds
- * no draw to a garden block the litter already carpets. `KAKI` is the other.
+ * The maples' own red on the ground (`props/maple.ts`'s `FALLEN`), for the
+ * leaves lying on a stone pagoda — the litter's material, so a leaf on a ledge
+ * adds no draw to a garden block the litter already carpets. `KAKI` is the
+ * other.
  */
 export const MOMIJI = "#b33c20";

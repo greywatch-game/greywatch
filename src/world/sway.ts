@@ -3,7 +3,7 @@
  * given height.
  * Owns: the `SwayLayer` ids (derived from `CONFIG.wind`, so each is declared
  * once), the mesh mark a builder puts on foliage, and the per-vertex weight the
- * bake writes. Owns no geometry, no materials and no uniforms — `Props` marks,
+ * bake writes. Owns no geometry, no materials and no uniforms — the props mark,
  * `MapBuilder` keeps the mark unanimous through both merges, `vertexShading`
  * writes the weight and `CelShader` spends it.
  * Invariants: only VISUAL geometry may be marked (a collider proxy is never

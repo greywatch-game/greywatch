@@ -51,7 +51,7 @@ match smoke test (`npm run build:server && npm run server`, two clients).
 | ~~[20](#20-decompose-the-longest-gamets-methods-in-place)~~ | P2 — done | Decompose the longest `Game.ts` methods in place |
 | ~~[21](#21-extend-kithash-to-cover-scatter-builders)~~ | P2 — done | Extend `kit:hash` to cover scatter builders |
 | ~~[22](#22-split-worldkitcityts-per-builder)~~ | P2 — done | Split `world/kit/city.ts` per builder |
-| [23](#23-split-worldpropsts) | P2 | Split `world/Props.ts` |
+| ~~[23](#23-split-worldpropsts)~~ | P2 — done | Split `world/Props.ts` |
 | [24](#24-split-worldkitharbourts-and-worldkitdesertts) | P2 | Split `world/kit/harbour.ts` and `world/kit/desert.ts` |
 | [25](#25-mapbuilderts-move-types-and-merge-code-out) | P2 | `MapBuilder.ts`: move types and merge code out |
 | [26](#26-split-sfxts-engine-voices-and-ambience-into-their-own-classes) | P2 | Split `Sfx.ts`: engine voices and ambience |
@@ -697,6 +697,27 @@ scatter and moves colliders.
 
 **Acceptance.** `kit:hash --against` identical for every scatter and structure
 kind; `npm run collision` produces no diff; `npm run parity` passes.
+
+**Done.** `Props.ts` is `world/props/`, one file per prop as proposed, with
+`index.ts` carrying the set's header, moved as it was, and re-exporting what
+`MapBuilder` imports; `kit/structures/small.ts` takes `caskData` from
+`props/cask.ts`. Departures, all by the rule ticket 22 followed — what more
+than one prop uses is shared and nothing else is: a `palette.ts` holds the
+colours two or more props wear plus `RIM_WOOD` (a colour one prop wears went
+with it); `rigVerts` went to `crown.ts` beside the rest of the broadleaf crown;
+`withRig` and `featherBlade` to `jungleTree.ts` and `pinnateBlade` to `fern.ts`,
+their only users; `reach` stayed with the boulder and `geodesic` went to
+`geometry.ts`, the crown being its other user. `jungleSmall.ts` is `small.ts`,
+since a gravestone, a log and the corpse-fungus are Hollowmere's, and it also
+takes the four props the proposal left out — the buttress log, the bramble,
+the rubble and the dead `buildLantern`, kept for ticket 43 to delete. No prop
+imports another. It is a pure move — every body line of the old file lands
+exactly once, the only code change being `export` on what crosses a file, and
+comments that said "this file" now say the set's. The optional `Sheet`/`tri`
+unification with `Mesher.tri` was not attempted. Checked: `kit:hash --against`
+a whole-kit fingerprint taken before the move is identical over all 3,722
+builds; `npm run collision` rebaked all eight maps with no diff; `npm run
+parity` and `npm run build` pass.
 
 ### 24. Split `world/kit/harbour.ts` and `world/kit/desert.ts`
 

@@ -164,7 +164,7 @@ npm run kit:hash -- --kinds <kind> --against <scratch>/before.json
 
 A rework that keeps its colliders must report `colliders changed 0` — that is
 the "byte for byte" claim a header makes, checked rather than asserted. A pure
-refactor must report nothing changed at all. A SCATTER prop (`Props.ts`) is
+refactor must report nothing changed at all. A SCATTER prop (`world/props/`) is
 named the same way and built over fixed seeds instead of placements; its
 `colliders` half is its `PROP_BODIES` row plus how many numbers it drew from
 the region's stream, so `colliders changed` on a tree means the rework moved

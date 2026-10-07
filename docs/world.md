@@ -334,8 +334,8 @@ engine. Seven things came out of building it and all of them outlive it:
 - **A prop a map sows by the thousand is built from PARTS**
   (`world/parts.ts`), which the older props are not. The maple, the leaf drift
   and the bamboo clump were first built with `MeshBuilder` like everything else
-  in `Props.ts`, and some 130,000 small meshes, each uploaded to the device on the
-  way to being merged away took this map's build from 15 s to 86 s; as parts it
+  in `world/props/`, and some 130,000 small meshes, each uploaded to the device
+  on the way to being merged away took this map's build from 15 s to 86 s; as parts it
   is 11-13 s. The maple is BLOCKING and built this way, and the collision bake,
   `npm run parity` and a live round all pass with it, so a blocking prop may be.
 - **A floor surface is judged under the map's own sun.** At 14.5 degrees
@@ -1598,8 +1598,8 @@ after.
   go bald, the foot thins into the plain, broadleaf holds the lower slope and
   conifer the upper. `shore` is the lowest height a tree may stand at, for a
   range running down into the sea.
-- **They wear the near trees' paint** (`Props.RIM_WOOD`): the pine's needles
-  and bark, and the dark broadleaf — the ash's spring green came out as a
+- **They wear the near trees' paint** (`RIM_WOOD`, `props/palette.ts`): the
+  pine's needles and bark, and the dark broadleaf — the ash's spring green came out as a
   field of bright diamonds under a low sun. They go into `visuals`, so the
   vertex bake gives them the colour buffer the merged pines carry, which is
   what makes sharing the pines' cached materials safe. **Every tree has a
@@ -2229,8 +2229,8 @@ Layout gotchas that have already cost time:
   0.24 m headstone stopped rounds through 1.2 m of air and a dead tree ate a 1.74 m
   corridor around a 0.7 m trunk. The box is oriented with the prop, which is the only
   thing that makes a fallen log or a headstone meaningful. Keep the numbers measured
-  against `Props.ts`: too small costs a round clipping a silhouette, too large costs
-  shots that visibly should have landed. Note `CreatePolyhedron`'s `size` is not a
+  against `world/props/`: too small costs a round clipping a silhouette, too large
+  costs shots that visibly should have landed. Note `CreatePolyhedron`'s `size` is not a
   radius — `size: 0.8` is a 2.26 m boulder, the only prop sized *up*.
 - A collider's top face must stay within `CONFIG.nav.stepHeight` (0.6) of the ground
   beside it, or the nav flood fill never reaches it and bots treat it as a wall. The

@@ -36,7 +36,7 @@
  * by the change is a difference too.
  *
  * **The SCATTER props are fingerprinted too** (`MapBuilder`'s
- * `SCATTER_BUILDERS` — the trees, rocks, barrels and junk in `Props.ts`),
+ * `SCATTER_BUILDERS` — the trees, rocks, barrels and junk in `world/props/`),
  * and since a layout places a REGION rather than a prop, each kind is built
  * over `SCATTER_SEEDS` fixed seeds at every rung of `CONFIG.graphics.foliage`
  * instead of over its placements. Its two halves are the scatter's own: the

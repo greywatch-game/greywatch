@@ -660,10 +660,11 @@ export const VERDIGRIS = "#3f6055";
 /** Creeper, vine and moss: what the forest has already taken back. */
 export const CREEPER = "#41552f";
 /**
- * The strangler fig: `Props.ts`'s jungle hardwood, restated rather than
- * imported for the reason that file restates `CREEPER` — the kit and the
- * scatter each own their palette — and restated EXACTLY, so the tree that took
- * a building is the same tree as the forest standing round it. The jungle ruin
+ * The strangler fig: the scatter's jungle hardwood (`props/palette.ts`'s
+ * `JUNGLE_BARK`), restated rather than imported for the reason that file
+ * restates `CREEPER` — the kit and the scatter each own their palette — and
+ * restated EXACTLY, so the tree that took a building is the same tree as the
+ * forest standing round it. The jungle ruin
  * and the temple both grow one.
  */
 export const FIG_BARK = "#5b5443";

@@ -866,8 +866,8 @@ GPU-bound; the standing-still captures below disproved it. Also open: the
 tablet df3c7cc was made for.
 
 **The forest is ~1,400 feather-frond palms** (4ea4c72, 1130c74, 6c7a505;
-`buildJungleTree` in `src/world/Props.ts`) — the most-placed model in the game —
-on a layout seeded by `scripts/generate-greyfen.mjs` (`npm run greyfen`,
+`buildJungleTree` in `src/world/props/jungleTree.ts`) — the most-placed model
+in the game — on a layout seeded by `scripts/generate-greyfen.mjs` (`npm run greyfen`,
 94c97db), so density is dialled in the generator rather than in `layout.ts`.
 **Since df3c7cc the palm follows the Trees setting** (`CONFIG.graphics.foliage`):
 ~4.3k / ~3.5k / ~2.7k vertices a tree on high / medium / low, 6.21 / 5.39 /
@@ -1549,7 +1549,7 @@ lever 1, and it is the whole of what was needed.
   side of the change against the same fixed reference. All fifteen banked
   vantages report the SAME mean to four decimal places with these changes
   applied and with them stashed, which is what says the shared edits (the palm
-  in `Props.ts`, the two table rows in `MapBuilder.ts`, the eight in
+  in `props/palm.ts`, the two table rows in `MapBuilder.ts`, the eight in
   `BuildingKit.ts`) moved no pixel on any existing map. Sarab now has a bank of
   its own — menu, `alley`, `shelf` and `wadi` — and the `shelf` row is the first
   banked frame anywhere with a fog wall INSIDE the play square in it.

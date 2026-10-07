@@ -7,7 +7,7 @@
  */
 import { Matrix, Scene } from "@babylonjs/core";
 import type { CelMaterialFactory } from "../../../shaders/CelShader";
-import { caskData } from "../../Props";
+import { caskData } from "../../props/cask";
 import { mulberry32 } from "../../rng";
 import {
   Build,
@@ -196,8 +196,8 @@ export function buildLampPost(
  * Stack of crates and a barrel — waist-to-chest cover for yards and docks.
  *
  * The barrel stood against the stack is the scatter's cask (`caskData` in
- * `Props.ts`), so it is the same barrel as the ones lying loose in the yard
- * round it — staves, hoops, a board head and whatever has happened to it —
+ * `props/cask.ts`), so it is the same barrel as the ones lying loose in the
+ * yard round it — staves, hoops, a board head and whatever has happened to it —
  * painted from this kit's palette: the plank it always was, the crates'
  * timber for its head and the iron its hoops always were. Seeded off where
  * the stack stands (`streetSeed`) and stood on the ground under it, which is
