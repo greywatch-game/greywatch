@@ -226,10 +226,11 @@ site:
 | `syncVolumetrics`, `motionBlur.update` | every state | after every arm has placed the camera, before the render they are drawn into |
 | `followEye` — `mats.updateCamera`, `water.follow`, `grass.follow`, `culling.update`, `atmosphere.update` | every state | the EYE; see below |
 | `followEye` — `rotorWash.update`, `water.setWash`; and `pushHullEngines` | every state, gated on `fleetStepped` (read ONCE) | a held world is a fleet frozen in place, so these owe it stillness and SILENCE rather than nothing |
-| `gi.update` | every state with a map | the bounce is owed to every picture with a map in it, and converges behind the loading card |
-| `sfx.setListener`, `pushAmbience` | every state | the EAR, for the eye's reason; a fire is a property of the map and the ear, both true behind a deploy card |
+| `stageWarmFrame` | while the building card's pipeline warm-up stands | BEFORE `followEye`, which is what carries its vantage into the cull, the water and the grass; `unstageWarmFrame` after the render undoes all of it, so a wait `go` abandons leaves nothing behind (`docs/states.md`) |
+| `gi.update` | every state with a map, but never a warm-up frame | the bounce is owed to every picture with a map in it, and converges behind the loading card — around the CAMERA, so not around each vantage the warm-up stands at |
+| `sfx.setListener`, `pushAmbience` | every state; the listener never from a warm-up frame | the EAR, for the eye's reason; a fire is a property of the map and the ear, both true behind a deploy card |
 | `pushTouchControls`, `pushScoreboard` | the state the frame ENDS in | see below |
-| `updateBakeWait` | while a reflection bake drains | after the render, which released the bake's share; not an arm, because `loading` simulates nothing |
+| `updateBakeWait` | while a reflection bake drains, and then while the pipeline warm-up runs | after the render, which released the bake's share or compiled the warm frame's pipelines; not an arm, because `loading` simulates nothing |
 
 **The shader's eye is not in that chain either**, because it is owed by the
 states that simulate nothing: `Game.followEye` pushes `mats.updateCamera()`

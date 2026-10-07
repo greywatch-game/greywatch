@@ -889,6 +889,23 @@ export class GrenadeSystem {
   }
 
   /**
+   * The blast's billows and one molotov flame shown, or taken back off, for
+   * the frames of the building card's pipeline warm-up — see `BlastFx.warm`. A
+   * map with no fire of its own standing has never drawn the flame's material,
+   * so a round's first molotov compiled it. The flame is the first of the LAST
+   * fire slot, used only while that slot is free, at a fire's own stretch.
+   * Nothing on the authority, which draws neither.
+   */
+  warm(on: boolean): void {
+    this.fx?.warm(on);
+    const fire = this.fires[this.fires.length - 1];
+    const flame = fire?.flames[0];
+    if (!flame || fire.t >= 0) return;
+    if (on) flame.mesh.scaling.set(1, 1.5, 1);
+    flame.mesh.isVisible = on;
+  }
+
+  /**
    * Draws a fire the authority lit: the flames, the ignition and everything
    * `onIgnited` hangs off it, and no burn. `drawBlast`'s twin — in a match the
    * burn arrives as a `blaze` event with nothing but a position on it.

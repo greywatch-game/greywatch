@@ -1421,6 +1421,35 @@ export const graphics = {
     drainCapMs: 90_000,
   },
   /**
+   * The pipeline warm-up: the last thing the building card covers, after the
+   * reflection bake has drained (`Game.bakeWait`, `core/PipelineWarmup.ts`).
+   *
+   * WebGPU compiles a render pipeline the first time a draw needs one, and the
+   * frame that draw lands on pays for it — 139 ms on the spawn frame on
+   * Coldharbour on the Windows box, 1,268 ms on a phone (`FINDINGS.md` 16). So
+   * the card stands the camera at every place a life can start and draws the
+   * WHOLE map from there, frustum and cull cells off, until a frame compiles
+   * nothing; the pipelines that frame would have built are then cached before
+   * the round can see them.
+   */
+  warmup: {
+    /**
+     * Frames at one vantage that must compile nothing before the next one is
+     * stood at. Two, because a material whose effect was not ready on the
+     * first frame is skipped by that frame's draw rather than compiled, and
+     * shows up on the second.
+     */
+    quietFrames: 2,
+    /** The most frames spent at one vantage, quiet or not. */
+    maxFramesPerVantage: 8,
+    /**
+     * The backstop on the whole warm-up, in milliseconds. A warm-up that runs
+     * out simply stops: whatever it did not reach compiles in the round, as
+     * all of it did before this existed.
+     */
+    capMs: 8_000,
+  },
+  /**
    * Albedo weathering on flat cel colours — a slow value drift over world space
    * so a merged block stops arriving as one tone. Costs three ALU and no data.
    */

@@ -857,28 +857,63 @@ the next one by the economy — two grenades a life, a 3.6 s tank reload.
 
 ---
 
-## 16. The first seconds of a round are WebGPU compiling pipelines, and on Coldharbour that is 9 fps
+## 16. The round's pipelines are compiled under the building card now — what the warm-up does not reach, and the phone
 
-**Status:** open — measured on real hardware and cause located, but **every
-number below needs re-taking on today's tree**, and not acted on.
+**Status:** the warm-up LANDED (`core/PipelineWarmup.ts`, `docs/states.md`,
+"a SECOND phase"); what is open is the phone, and four things it does not
+reach.
 
-WebGPU compiles pipelines lazily, and **nothing warms the MAIN-PASS
-pipelines**. What does exist is narrow: `BlastFx` calls `forceCompilation` on
-its one material (`src/systems/BlastFx.ts` ~426), which builds the EFFECT — on
-WebGPU the pipeline itself is still created at the first real draw, since it
-depends on render state, vertex layout and target format; `LocalShadows.ready()`
-compiles the lamp atlas's own pass before it draws; and `GiVolume` and
-`GlowPass` skip their work until their compute and blur are ready, which warms
-nothing. The reflection bake drains under the building card, but what it
-compiles is reflection-pass pipelines, not the main pass's.
+WebGPU builds a render pipeline on the first draw that needs one, and that
+draw's frame pays — Dawn compiles behind the create call, so the stall lands on
+first USE and never in the call (`docs/profiling.md`, "Compiles"). The loading
+card now draws the whole map from each home spawn and flag until a frame
+compiles nothing, and every idle pool a round draws from shows one member, posed
+as in flight, for those frames. Measured on the Windows box headless, a scripted
+opening — deploy, spawn, a turn, a burst, the sight up, a blast, a molotov's
+fire — counting creations per phase (2026-10-07):
 
-On Coldharbour, measured second by second from the frame the player spawns
-(2026-08-26 — **before** `compatibilityMode = false`, the ink pass, the palette
-merge, `GlowPass`, the irradiance volume, the clouds, the water, the grass
-field, `BlastShader` and the flame, every one of which adds variants):
+| | before: in play | after: in play | warm-up |
+| --- | --- | --- | --- |
+| Coldharbour | 19 (spawn 9, worst frame 139 ms; first blast 185 ms) | 0 (spawn worst 50; blast 12) | 17 in 805 ms |
+| Hollowmere | 15 (spawn 7; first blast 189 ms) | 0 (blast 6.5) | 16 in 220-824 ms |
+| Greyfen | 16 (spawn 7; first blast 147 ms) | 0 (blast 9.4) | 18 in 1,432 ms |
+| Harrowmead | — | 0 | 17 in 1,328 ms |
+| Sarab | — | 1 (the rotor wash, below) | 21 in 990 ms |
+| Cinderhaven | — | 1 (the rotor wash, below) | 19 in 916 ms |
+| Kurenai | — | 1 (a lamp's proxy, below) | 18 in 701 ms |
 
-| second | 1 | 2 | 3 | 4 | 5 |
-| --- | --- | --- | --- | --- | --- |
+Render pipelines only; the "before" column is the same script on the tree
+before this landed. A second round on the same page warms in ~360 ms, the pipelines being cached.
+**The idle pose was the trap**: the first attempt showed each pool idle and
+the first shot still compiled its tracer, disc and spark, because a tracer is
+STRETCHED (`NONUNIFORMSCALING` is a different effect) and a fading spark or disc
+is drawn at `visibility` under 1, which is a BLENDED pipeline. A pipeline is
+keyed on the pose, not on the mesh.
+
+**What is open:**
+
+- **The phone.** Every number above is a desktop GPU. The phone's spawn frame
+  was 1,268 ms with 34 creations near it and its first blast 403 ms (finding
+  13's session, Greyfen, 2026-10-05); a capture there owes `createdNear` on the
+  spawn and first-blast frames, and the card's extra time on that device.
+- **The lamps' atlas PROXY variant** still compiles in play on Kurenai: a body
+  is only drawn into a lamp's tile when a SHADOW-CASTING lamp stands near it,
+  and no vantage there has one. Standing the stand-in body under a casting lamp
+  would reach it.
+- **The rotor wash** on Sarab and Cinderhaven is a GPU particle system, not a
+  mesh, and compiles on the first frame a helicopter raises dust.
+- **Only the weapon and optic WORN are warmed.** Changing kit on the deploy
+  screen and spawning with a weapon the card never drew compiles its glass and
+  any material only it wears — the kit screen's turntable draws it first, so
+  the cost lands there rather than in the round, but it is not measured.
+
+**And a separate stall the counting found, which is NOT a compile**: the deploy
+screen's first second runs 974 and 613 ms frames on Hollowmere and 480 on
+Greyfen, with nothing created on them — present before the warm-up and after
+it. Unattributed; a `?profile` capture over the first second of `deploy` names
+the phase.
+
+--- | --- | --- | --- | --- | --- |
 | fps | 9 | 34 | 48 | 47 | 48 |
 | shader modules created | 42 | 2 | 0 | 0 | 0 |
 | render pipelines created | 25 | 3 | 0 | 0 | 0 |

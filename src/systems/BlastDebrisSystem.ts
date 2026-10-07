@@ -254,6 +254,15 @@ export class BlastDebrisSystem implements PhysicsClient {
     this.scorch.mark(at, power, ground);
   }
 
+  /**
+   * One scorch mark shown, or taken back off, for the frames of the building
+   * card's pipeline warm-up (`core/PipelineWarmup.ts`) — see
+   * `ScorchMarks.warm`.
+   */
+  warm(on: boolean): void {
+    this.scorch.warm(on);
+  }
+
   burst(at: Vector3, power: number, ground: BlastGround, camPos: Vector3): boolean {
     const d = CONFIG.grenade.debris;
     this.scorch.mark(at, power, ground);
@@ -630,6 +639,19 @@ class ScorchMarks {
       mesh.isVisible = false;
       this.marks.push({ mesh, t: -1 });
     }
+  }
+
+  /**
+   * The last mark shown at its standing opacity while it is free, or hidden
+   * again — so the first blast of a round draws its scorch through a pipeline
+   * the building card already compiled. The opacity is part of it: a mark
+   * fades by `visibility`, which is what puts it on the blended pipeline.
+   */
+  warm(on: boolean): void {
+    const slot = this.marks[this.marks.length - 1];
+    if (slot.t >= 0) return;
+    if (on) slot.mesh.visibility = CONFIG.grenade.scorch.opacity;
+    slot.mesh.isVisible = on;
   }
 
   /**

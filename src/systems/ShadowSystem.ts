@@ -769,6 +769,30 @@ export class ShadowSystem {
     for (const blob of this.blobs.values()) blob.setEnabled(false);
   }
 
+  /**
+   * `cbt`'s blob switched on at its standing opacity, or back off, for the
+   * frames of the building card's pipeline warm-up (`core/PipelineWarmup.ts`)
+   * — so the frame a body first stands on the floor does not also compile the
+   * blob's blended pipeline. It is the player's blob that `Game` asks for,
+   * which the first `updateBlobs` of the round would build anyway. A blob some
+   * frame has already switched on is left alone, and only the one this switched
+   * on is switched off.
+   */
+  warmBlob(on: boolean, cbt: Combatant): void {
+    if (!on) {
+      if (this.warmedBlob) this.warmedBlob.setEnabled(false);
+      this.warmedBlob = null;
+      return;
+    }
+    const fresh = !this.blobs.has(cbt);
+    const blob = this.blobFor(cbt);
+    if (!fresh && blob.isEnabled(false)) return;
+    blob.visibility = CONFIG.graphics.shadows.blobOpacity;
+    blob.setEnabled(true);
+    this.warmedBlob = blob;
+  }
+  private warmedBlob: Mesh | null = null;
+
   private updateBlob(cbt: Combatant, camPos: Vector3, groundY: number): void {
     const blob = this.blobFor(cbt);
     // A dead combatant normally has no shadow, and for the 0.9 s the collapse

@@ -1140,8 +1140,9 @@ of them whole.
 24 creations on it and 27 within two frames, while `drawWorld` was ~37 ms of
 it, and nothing more was created in the next eight seconds. Measured against
 an independent counter installed under the hook, the capture's count matched
-exactly (120 of 120 in the window). See `FINDINGS.md` 16 for what was compiled
-and what it means for a warm-up.
+exactly (120 of 120 in the window). That list is what the building card's
+pipeline warm-up now compiles before the round (`core/PipelineWarmup.ts`);
+`FINDINGS.md` 16 has what it reaches and what it does not.
 
 **Steady state, creations are few, and counting them is not the same as
 eliminating them.** Hooking `createRenderPipeline` and `createShaderModule`

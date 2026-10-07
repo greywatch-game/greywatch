@@ -245,6 +245,13 @@ export class WorldCulling {
   /** Set when the candidate list no longer matches the state above. */
   private listDirty = true;
 
+  /**
+   * Whether this frame offers EVERYTHING — every cell, every pool and no size
+   * gate — for the building card's pipeline warm-up (`core/PipelineWarmup.ts`).
+   * See `setWarm`.
+   */
+  private warm = false;
+
   /** Squared distances a cell switches at. Infinite reach culls nothing. */
   private onSq = Number.POSITIVE_INFINITY;
   private offSq = Number.POSITIVE_INFINITY;
@@ -464,6 +471,26 @@ export class WorldCulling {
   }
 
   /**
+   * Offers every mesh this file would otherwise hold back, for as long as it is
+   * on: every cell whatever its distance, every pool whether or not its root
+   * is in the round, and no size gate. What is switched OFF is still dropped by
+   * `offer`, because Babylon would drop it too.
+   *
+   * It exists for one caller — the warm-up under the building card, which
+   * draws the whole map once from each vantage so that every pipeline the
+   * round will need is compiled before the round can see the cost — and that
+   * caller turns it on and back off around a single render, so a wait that is
+   * abandoned between frames cannot leave the map unculled. It is still a
+   * claim about the LIST and nothing else: no mesh is written, which is this
+   * file's first invariant.
+   */
+  setWarm(on: boolean): void {
+    if (on === this.warm) return;
+    this.warm = on;
+    this.listDirty = true;
+  }
+
+  /**
    * Which cells are within reach, with a band of hysteresis so a camera
    * standing on a boundary does not rebuild the list every step it takes.
    *
@@ -514,13 +541,13 @@ export class WorldCulling {
     for (const mesh of this.scene.meshes) {
       const cell = this.cellOf.get(mesh);
       if (cell) {
-        if (cell.on) data.push(mesh);
+        if (cell.on || this.warm) data.push(mesh);
         continue;
       }
       if (this.hidden.has(mesh)) continue;
       const pool = this.poolOf.get(mesh);
       if (pool) {
-        if (pool.on) data.push(mesh);
+        if (pool.on || this.warm) data.push(mesh);
         continue;
       }
       loose++;
@@ -602,7 +629,7 @@ export class WorldCulling {
     // density, and only moves once the player has moved the slider.
     const cam = this.scene.activeCamera;
     const minPx = CONFIG.graphics.culling.minPixels;
-    const gate = minPx > 0 && cam !== null;
+    const gate = !this.warm && minPx > 0 && cam !== null;
     const engine = this.scene.getEngine();
     const perRad = gate
       ? (engine.getRenderHeight() * engine.getHardwareScalingLevel()) /

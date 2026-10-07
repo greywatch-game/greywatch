@@ -754,6 +754,76 @@ export class CombatSystem {
     }
   }
 
+  /**
+   * Shows idle members of the effect pools for the frames of the building
+   * card's pipeline warm-up (`core/PipelineWarmup.ts`), or takes them back
+   * off — so the first shot of a round draws through pipelines already
+   * compiled rather than paying for four of them on the frame the trigger is
+   * pulled.
+   *
+   * **Each is posed as it is IN FLIGHT, because that is what decides the
+   * pipeline, and an idle pose compiles the wrong one.** A tracer is stretched
+   * along its length, and a non-uniform scale is a different effect
+   * (`NONUNIFORMSCALING`); a spark and a disc fade by `visibility`, and under 1
+   * that is a BLENDED pipeline beside the opaque one their first frame uses —
+   * so the two of those are shown twice, once at each. Only idle slots are
+   * used, from the end of each pool, and every property touched is put back
+   * exactly as it was.
+   */
+  warm(on: boolean): void {
+    const look = IMPACTS.hard;
+    if (!on) {
+      for (let i = 0; i < this.warmedCount; i++) {
+        const w = this.warmed[i];
+        w.mesh!.isVisible = false;
+        w.mesh!.visibility = w.visibility;
+        w.mesh!.scaling.copyFrom(w.scaling);
+        w.mesh = null;
+      }
+      this.warmedCount = 0;
+      this.marks.warm(false, look.mark!.hex);
+      return;
+    }
+    const tracer = this.tracers[this.tracers.length - 1];
+    if (!tracer.alive) this.warmOne(tracer.mesh, 1, 3);
+    for (let i = 0; i < 2; i++) {
+      const spark = this.sparks[this.sparks.length - 1 - i];
+      if (spark.t > 0) continue;
+      spark.mesh.material = this.mats.getEmissive(look.spark!);
+      this.warmOne(spark.mesh, i === 0 ? 1 : 0.5, 1);
+    }
+    for (let i = 0; i < 2; i++) {
+      const disc = this.discs[this.discs.length - 1 - i];
+      if (disc.t > 0) continue;
+      disc.mesh.material = this.mats.getEmissive(look.disc!);
+      this.warmOne(disc.mesh, i === 0 ? 1 : 0.5, 1);
+    }
+    this.marks.warm(true, look.mark!.hex);
+  }
+
+  /** One pooled mesh shown for `warm`, its old visibility and scale kept. */
+  private warmOne(mesh: Mesh, visibility: number, stretch: number): void {
+    if (mesh.isVisible) return;
+    const w = this.warmed[this.warmedCount++];
+    w.mesh = mesh;
+    w.visibility = mesh.visibility;
+    w.scaling.copyFrom(mesh.scaling);
+    mesh.visibility = visibility;
+    mesh.scaling.set(1, stretch, 1);
+    mesh.isVisible = true;
+  }
+  /**
+   * What `warm` switched on, and what to put back when it switches off: one
+   * record per mesh it can show (a tracer, two sparks, two discs), held so a
+   * warm frame allocates nothing.
+   */
+  private readonly warmed = Array.from({ length: 5 }, () => ({
+    mesh: null as Mesh | null,
+    visibility: 1,
+    scaling: new Vector3(),
+  }));
+  private warmedCount = 0;
+
   /** Clears transient effects between rounds. */
   clearTransient(): void {
     for (const tr of this.tracers) {

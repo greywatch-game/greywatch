@@ -187,6 +187,33 @@ export class DeathCam {
   }
 
   /**
+   * The stand-in body switched on at `at`, or back off for null, for the
+   * frames of the building card's pipeline warm-up (`core/PipelineWarmup.ts`). No body is switched
+   * on while `loading` draws — the bots are not deployed until the round is —
+   * and this one is built from the same kit and painted from the same caches
+   * as every bot's, so the pipelines it compiles are the ones the first
+   * soldier on screen needs. Not while the cam is up, which is the body's own
+   * life.
+   *
+   * It is stood at the warm-up's eye, because two of the passes it has to
+   * reach — the bodies' shadow map and the lamps' atlas — only draw a body
+   * near the eye they are placed around, and they read its JOINTS, whose
+   * matrices are therefore composed here rather than left to the render.
+   */
+  warm(at: Vector3 | null): void {
+    if (!this.corpse || this.running) return;
+    const rig = this.corpse.rig;
+    if (at) {
+      rig.root.position.copyFrom(at);
+      rig.root.computeWorldMatrix(true);
+      for (const node of rig.root.getChildTransformNodes(false)) {
+        node.computeWorldMatrix(true);
+      }
+    }
+    this.corpse.setEnabled(at !== null);
+  }
+
+  /**
    * Builds the rig, once, before it is needed. Called from `startRound` rather
    * than lazily at the moment of death for the reason `BattleSystem`'s pool is
    * built up front: `buildSoldier` allocates nine merged meshes and their GL

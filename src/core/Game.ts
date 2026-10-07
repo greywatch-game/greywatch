@@ -62,6 +62,7 @@ import {
   type SubMesh,
   Vector3,
   Viewport,
+  WebGPUCacheRenderPipeline,
   type WebGPUEngine,
 } from "@babylonjs/core";
 import { CONFIG } from "../config";
@@ -81,6 +82,7 @@ import { callsign } from "../entities/callsigns";
 import { OTHER_TEAM, type Combatant, type Team } from "../entities/Combatant";
 import { FrameCap } from "./FrameCap";
 import { FrameProfile } from "./FrameProfile";
+import { PipelineWarmup } from "./PipelineWarmup";
 import { P } from "./profilePhases";
 import { NetSession, type LocalGun, type LocalHull } from "../net/NetSession";
 import { clearRequestTimings, fetchMatches } from "../net/lobby";
@@ -164,7 +166,7 @@ import { RotorWash } from "../systems/RotorWash";
 import { ScoreBook, awardKill, awardZone, paysKiller } from "../systems/ScoreBook";
 import { LightingSystem, type RoomLight } from "../systems/LightingSystem";
 import { AmbienceSystem } from "../systems/AmbienceSystem";
-import { BodyShadows } from "../systems/BodyShadows";
+import { BodyShadows, type ShadowBody } from "../systems/BodyShadows";
 import { GiVolume } from "../systems/GiVolume";
 import { LocalShadows } from "../systems/LocalShadows";
 import { ShadowSystem } from "../systems/ShadowSystem";
@@ -582,7 +584,28 @@ export class Game {
     stalled: number;
     /** When the wait opened, for the backstop cap. */
     since: number;
+    /**
+     * The wait's SECOND phase, once the bake has drained or been given up on:
+     * the pipeline warm-up, which draws the whole map from every place a life
+     * can start so that WebGPU compiles the round's pipelines under the card
+     * rather than on the spawn frame (`FINDINGS.md` 16). Null while the bake
+     * is still draining. It is part of THIS wait rather than one of its own so
+     * that everything which already ends the wait — `go`, and `buildPending`'s
+     * reading of it — ends the warm-up too without being told it exists.
+     */
+    warm: PipelineWarmup | null;
   } | null = null;
+  /**
+   * The camera's pose while a warm-up frame stands it at a vantage, put back
+   * straight after that frame's render — see `stageWarmFrame`. Scratch rather
+   * than a copy per frame.
+   */
+  private readonly warmPose = { pos: new Vector3(), rot: new Vector3() };
+  /**
+   * The bodies a warm-up frame's shadow passes draw: the death cam's stand-in,
+   * filled once when the warm-up opens (`beginWarmup`).
+   */
+  private readonly warmBodies: ShadowBody[] = [];
   /**
    * The authority put us in the world while there was no world to put us in.
    *
@@ -3504,6 +3527,12 @@ export class Game {
     // frame already has and not a new one.
     const fleetStepped = this.fleetStepped;
     this.fleetStepped = false;
+    // The building card's pipeline warm-up, if one is standing: the camera at
+    // a vantage for THIS frame only, and the whole map offered to the render.
+    // Before the eye is followed, which is what carries the vantage into the
+    // cull, the water and the grass; put back straight after the render, so
+    // nothing of it reaches the next frame. See `stageWarmFrame`.
+    const warming = this.stageWarmFrame();
     this.prof.begin(P.culling);
     this.followEye(fleetStepped);
     this.prof.end(P.culling);
@@ -3517,8 +3546,11 @@ export class Game {
     // frame's; on the frames that do not, they are simply the last ones
     // chosen. All compute — no draw call — so what this span measures is the
     // CPU side of recording it, and the GPU's share is in `gpu.frame`.
+    // Never from a warm-up's vantage: the volume converges around the camera
+    // behind the card, and one dragged to every flag in turn would have to
+    // converge again around the deploy screen.
     this.prof.begin(P.gi);
-    if (this.map) {
+    if (this.map && !warming) {
       this.gi.update(this.cameraSys.camera.position, this.lighting, this.map.rays.hulls);
     }
     this.prof.end(P.gi);
@@ -3542,10 +3574,15 @@ export class Game {
     // order it was ever owed, and it is now last in the frame rather than last
     // in the world step — so the rule that nothing may move the camera after
     // it is if anything harder to break.
-    this.sfx.setListener(
-      this.cameraSys.camera.position,
-      this.cameraSys.forwardToRef(this.listenerForward),
-    );
+    //
+    // Never from a warm-up's vantage either, or the map's fires pan to each
+    // flag the building card stands at in turn.
+    if (!warming) {
+      this.sfx.setListener(
+        this.cameraSys.camera.position,
+        this.cameraSys.forwardToRef(this.listenerForward),
+      );
+    }
     this.pushHullEngines(fleetStepped);
     this.pushAmbience();
     this.prof.end(P.audio);
@@ -3560,6 +3597,7 @@ export class Game {
     this.prof.begin(P.render);
     this.scene.render();
     this.prof.end(P.render);
+    if (warming) this.unstageWarmFrame();
     // AFTER the render, because the render is the thing being waited for: a
     // frame's share of the reflection bake is released from inside
     // `scene.render` and has already been issued by the time this line runs,
@@ -5125,23 +5163,106 @@ export class Game {
     const total = this.reflections.bakePending;
     // A map with no glazing and no water bakes nothing at all, and a card that
     // sat for a frame waiting on an empty queue would be a delay this step has
-    // no business adding. It is also the editor's answer, though the editor
-    // does not come through here.
-    if (total === 0) {
-      this.finishBakeWait();
-      return;
-    }
+    // no business adding — so such a wait opens straight into its SECOND
+    // phase, the pipeline warm-up, which every map owes whatever it bakes.
+    //
     // The bar is left SWEEPING here and is only given a figure once a frame
     // has gone by with the bake still outstanding — see
     // `OverlayScreen.setBuildProgress`. Every shipped map drains on the first
     // frame and never reaches that call, so none of them flashes an empty
     // track on the way past.
-    this.bakeWait = {
+    const wait: NonNullable<Game["bakeWait"]> = {
       total,
       best: total,
       stalled: 0,
       since: performance.now(),
+      warm: null,
     };
+    this.bakeWait = wait;
+    if (total === 0) this.beginWarmup(wait);
+  }
+
+  /**
+   * The bake is done with (drained, or given up on), and the card stays up for
+   * the warm-up instead of coming down.
+   *
+   * **The vantages are every place a life can start or be fought over** — the
+   * two home spawns and the flags — because the shadow window, the bodies' map
+   * and which lamps win a shadow tile are all chosen around the EYE, so a
+   * pipeline those passes need is only compiled by a frame whose eye is near
+   * the thing that needs it. The main pass is not: a warm frame offers it the
+   * whole map (`stageWarmFrame`). Without a map there is nothing to warm and
+   * the wait simply ends.
+   */
+  private beginWarmup(wait: NonNullable<Game["bakeWait"]>): void {
+    const map = this.map;
+    if (!map) {
+      this.finishBakeWait();
+      return;
+    }
+    const points: Vector3[] = [];
+    for (const sp of map.spawns) if (sp.team !== null) points.push(sp.pos);
+    for (const cp of map.controlPoints) points.push(cp.pos);
+    this.warmBodies.length = 0;
+    const body = this.deathCam.body;
+    if (body) this.warmBodies.push({ rig: body });
+    wait.warm = new PipelineWarmup(points, WebGPUCacheRenderPipeline.NumCacheMiss);
+  }
+
+  /**
+   * Stands the camera at the warm-up's vantage for this frame and draws the
+   * whole map from there: every cell and pool offered (`WorldCulling.setWarm`)
+   * and the frustum test off, so everything in the scene that is switched on
+   * reaches a draw — and through it a pipeline — whichever way the eye faces.
+   * The camera-dependent passes (the two shadow maps, the lamps' atlas, the
+   * water, the grass) are placed by the same tail the editor's free camera
+   * uses, at `dt` 0, so nothing is stepped: `loading` still simulates nothing.
+   *
+   * Returns whether it staged anything, and `unstageWarmFrame` undoes ALL of it
+   * straight after this frame's render. That is the reason nothing here may
+   * outlive its frame: a wait that `go` abandons between two frames then leaves
+   * nothing behind it — no map drawn unculled, no camera parked at a flag.
+   */
+  private stageWarmFrame(): boolean {
+    const vantage = this.bakeWait?.warm?.vantage;
+    if (!vantage) return false;
+    const camera = this.cameraSys.camera;
+    this.warmPose.pos.copyFrom(camera.position);
+    this.warmPose.rot.copyFrom(camera.rotation);
+    this.shadowFocus.copyFrom(vantage);
+    camera.position.copyFrom(vantage);
+    // …and what the map does not have standing: the pools a round draws from
+    // the moment it starts — a soldier, a shot and a blast — each of which is
+    // idle and switched off until then, and each of which used to compile on
+    // the frame it was first needed. An idle member of each, posed as it is in
+    // flight, for this frame.
+    this.deathCam.warm(vantage);
+    this.combat.warm(true);
+    this.grenades.warm(true);
+    this.blastDebris.warm(true);
+    this.shadows.warmBlob(true, this.player);
+    this.player.warmView(true);
+    this.updateSceneForCamera(0, this.shadowFocus, null, EMPTY_PUSHERS, this.warmBodies);
+    this.culling.setWarm(true);
+    this.scene.skipFrustumClipping = true;
+    return true;
+  }
+
+  /** Puts back everything `stageWarmFrame` changed, after the render. */
+  private unstageWarmFrame(): void {
+    this.scene.skipFrustumClipping = false;
+    this.culling.setWarm(false);
+    this.deathCam.warm(null);
+    this.combat.warm(false);
+    this.grenades.warm(false);
+    this.blastDebris.warm(false);
+    this.shadows.warmBlob(false, this.player);
+    this.player.warmView(false);
+    // Position and rotation outright rather than through `place`, whose
+    // `setTarget` would re-derive the rotation from a target the camera may
+    // never have been pointed at.
+    this.cameraSys.camera.position.copyFrom(this.warmPose.pos);
+    this.cameraSys.camera.rotation.copyFrom(this.warmPose.rot);
   }
 
   /**
@@ -5161,10 +5282,16 @@ export class Game {
   private updateBakeWait(): void {
     const wait = this.bakeWait;
     if (!wait) return;
+    if (wait.warm) {
+      if (wait.warm.afterFrame(WebGPUCacheRenderPipeline.NumCacheMiss)) {
+        this.finishBakeWait();
+      }
+      return;
+    }
     const cfg = CONFIG.graphics.reflection;
     const pending = this.reflections.bakePending;
     if (pending <= 0) {
-      this.finishBakeWait();
+      this.beginWarmup(wait);
       return;
     }
     if (pending < wait.best) {
@@ -5184,7 +5311,7 @@ export class Game {
             `the rest lands in the round`,
         );
       }
-      this.finishBakeWait();
+      this.beginWarmup(wait);
       return;
     }
     // The one progress figure this card has ever had. It is monotonic by
@@ -5216,7 +5343,16 @@ export class Game {
    * the glass.
    */
   private finishBakeWait(): void {
+    const warmed = this.bakeWait?.warm != null;
     this.bakeWait = null;
+    // The warm-up placed the shadow window, the bodies' map and the lamps'
+    // slots around its LAST vantage, and nothing in `deploy` places them again
+    // offline — so they are placed once more around the camera the deploy
+    // screen is actually drawn from, at `dt` 0 as the warm frames were.
+    if (warmed) {
+      this.shadowFocus.copyFrom(this.cameraSys.camera.position);
+      this.updateSceneForCamera(0, this.shadowFocus, null, EMPTY_PUSHERS);
+    }
     // Read and cleared BEFORE the two calls below, neither of which may find
     // it still standing: `spawnPlayer` is the answer to it, and `enterDeploy`
     // is a state this client can be knocked back out of.
@@ -8422,6 +8558,10 @@ export class Game {
     shadowFocus: Vector3,
     player: Player | null,
     pushers: readonly Combatant[],
+    // The bodies the two shadow passes draw. The roster's, but for the
+    // building card's warm-up, which has no roster in the field and hands in
+    // the death cam's stand-in instead — see `stageWarmFrame`.
+    bodies: readonly ShadowBody[] = this.battle.bots,
   ): void {
     this.shadows.update(shadowFocus, this.mats);
     // The bodies' map follows the same focus and is rebuilt from whatever is
@@ -8433,7 +8573,7 @@ export class Game {
     this.bodyShadows.update(
       shadowFocus,
       this.mats,
-      this.battle.bots,
+      bodies,
       this.vehicles.hulls,
     );
     if (player) {
@@ -8478,7 +8618,7 @@ export class Game {
     this.localShadows.update(
       this.lighting.activeLights,
       this.cameraSys.camera.position,
-      this.battle.bots,
+      bodies,
       this.vehicles.hulls,
     );
     this.prof.end(P.localShadows);

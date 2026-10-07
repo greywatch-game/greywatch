@@ -95,6 +95,35 @@ consequences:
   a measured fill once a frame goes by with some of the bake done. Most maps
   drain on the first frame and never reach that call.
 
+**And the wait has a SECOND phase now: the pipeline warm-up.** WebGPU builds a
+render pipeline on the first draw that needs one, and that draw's frame pays
+for it — on Coldharbour the spawn frame ran 139 ms and the first blast 185 ms
+on the Windows box, and a phone paid 1,268 and 403 (`FINDINGS.md` 16). So when
+the bake has drained, or been given up on, `bakeWait.warm` holds the card for
+a few more frames that draw the WHOLE map from each home spawn and each flag in
+turn (`core/PipelineWarmup.ts`), until a frame compiles nothing. It is a phase
+of the same wait rather than a wait of its own, on purpose: `go` and
+`buildPending` already answer for that one, so nothing had to be taught it
+exists. Three rules hold it to `loading`'s contract:
+
+- **Nothing a warm frame changes outlives that frame.** `Game.stageWarmFrame`
+  stands the camera at the vantage, offers every mesh (`WorldCulling.setWarm`),
+  turns the frustum test off and shows an idle member of each pool, posed as
+  it is in flight;
+  `unstageWarmFrame` puts every one of those back straight after the render. A
+  wait abandoned between two frames therefore leaves no map drawn unculled and
+  no camera parked at a flag.
+- **It simulates nothing.** The camera-dependent passes are placed by
+  `updateSceneForCamera` at `dt` 0 — the editor's tail — and the bounce volume
+  and the ear are not moved at all, because both are owed to the camera the
+  deploy screen will be drawn from. That tail runs once more at the end, around
+  that camera, because offline nothing in `deploy` would place the shadow
+  window again.
+- **It ends.** A vantage is left after `CONFIG.graphics.warmup.quietFrames`
+  frames that compiled nothing or `maxFramesPerVantage` frames whatever, and
+  the whole of it is capped by `capMs`; what it does not reach compiles in the
+  round, as all of it used to.
+
 **News from the authority that needs a world is HELD across `buildPending`, not
 applied and not dropped**, and there are two of them for the same reason.
 `NetSession.onSeated` defers a welcome to `buildRound`, which re-reads it on the

@@ -145,6 +145,17 @@ you are on before you believe anything else in this section.
   does not show up in the call it comes from: summed over a whole round,
   `createRenderPipeline` accounts for 0.6 ms, because Dawn compiles behind the
   call and the stall lands on first use.
+  **Since the building card's pipeline warm-up (`FINDINGS.md` 16) that cost is
+  under the card, so a script that waits for `deploy` has waited for it**: a
+  scripted opening creates nothing in play on four of the seven maps and one
+  pipeline each on the other three. The rule
+  still stands for a frame rate, because the first seconds also hold the GI
+  converging and the deploy screen's own first-second stall, and for anything
+  the warm-up does not reach — the entry lists them. To find what compiles and
+  WHO, wrap `GPUDevice.prototype.createRenderPipeline` in an init script and
+  `_processRendering` on a mesh's prototype in the page; the mesh being drawn
+  when the pipeline is created is the answer, and the profiler names the
+  effect and defines.
 
 - **Two traps from a raw-WebGPU pipeline spike, both of which cost time.**
 

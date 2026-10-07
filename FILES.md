@@ -454,6 +454,12 @@ src/
                         #   JSON the viewer reads), buildReport, buildTrace and
                         #   the stats. Allocates freely and never writes the
                         #   ProfileRing it is lent
+    PipelineWarmup.ts   # Where the building card stands the camera while the
+                        #   round's render pipelines are compiled, and when it
+                        #   may stop: the vantages (home spawns and flags), the
+                        #   quiet-frame count off Babylon's pipeline-cache miss
+                        #   counter, and the cap. Decides WHEN; Game stages
+                        #   each frame (WorldCulling.setWarm, the pools' warm)
     FrameCap.ts         # The frame-rate cap (Settings.fpsCap): the engine's
                         #   frame REQUESTER, refusing a refresh before the
                         #   next frame is DUE. A deadline, not Babylon's

@@ -249,6 +249,28 @@ export class BulletMarks {
     mesh.freezeWorldMatrix();
   }
 
+  /**
+   * Shows one idle mark, in `hex`, for the frames of the building card's
+   * pipeline warm-up (`core/PipelineWarmup.ts`), or takes it back off. A mark
+   * is drawn at `MARK_DEPTH_UNITS` and the depth bias is part of the pipeline,
+   * which is why this cannot be left to any other cel surface to compile.
+   * Only a slot that is not already standing is used, and only that one is
+   * hidden again, so a mark in the world is never touched.
+   */
+  warm(on: boolean, hex: string): void {
+    const mesh = this.pool[this.pool.length - 1];
+    if (on) {
+      if (mesh.isVisible) return;
+      mesh.material = this.mats.get(hex, MARK_DEPTH_UNITS);
+      mesh.isVisible = true;
+      this.warmed = true;
+    } else if (this.warmed) {
+      mesh.isVisible = false;
+      this.warmed = false;
+    }
+  }
+  private warmed = false;
+
   /** Takes every mark off the world. Called when a map is torn down. */
   clear(): void {
     for (const mesh of this.pool) mesh.isVisible = false;

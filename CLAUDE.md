@@ -257,6 +257,15 @@ through `Game.teardownMap` — `installMap`'s other half, and the one place a ma
 is torn down — and anything new that `installMap` hands a map to owes a line
 there that takes it back.
 
+**`loading` ends in a PIPELINE WARM-UP** (`core/PipelineWarmup.ts`): after the
+reflection bake, the card draws the whole map from each home spawn and flag
+until a frame compiles nothing, because WebGPU compiles a pipeline on the frame
+that first draws it. What it cannot see it is SHOWN, one frame at a time, by a
+`warm(on)` on whatever owns an idle pool (a shot's effects, a blast, a scorch,
+a body, a blob, the weapon) — **posed as IN FLIGHT**, since a stretched mesh or
+a `visibility` under 1 is a different pipeline from the idle pose. **A new pool
+that idles switched off owes one**, or its first use compiles in the round.
+
 **A LID is a screen laid over a state, which taking it off puts back rather than
 moving the game on — and which state is which, and what each one owes, is
 DECLARED rather than described.** `SCREENS` in
