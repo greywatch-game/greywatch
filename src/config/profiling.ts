@@ -123,10 +123,10 @@ export const profiling = {
    *
    * They are what a warm-up pass would have to compile in advance, so the log
    * is sized for a round rather than for a hitch: an install is ~100 creations
-   * and a round in play a handful (`FINDINGS.md` 1 measured 6 in 40 s), so 256
-   * holds the whole of a round with an install's worth to spare. The strings
-   * are references Babylon already holds, so the memory is the arrays — about
-   * 5 KB — sized once on arming. Every creation is still COUNTED per frame
+   * and a round in play a handful (6 in 40 s, `docs/profiling.md`,
+   * "Compiles"), so 256 holds the whole of a round with an install's worth to
+   * spare. The strings are references Babylon already holds, so the memory is
+   * the arrays — about 5 KB — sized once on arming. Every creation is still COUNTED per frame
    * whatever falls off the end of this.
    */
   creationsKept: 256,

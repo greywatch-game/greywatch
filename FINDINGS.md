@@ -17,11 +17,11 @@ spends an afternoon re-deriving it.
 
 **Status:** still open, but its central conclusion now stands on the FIXED
 instrument. **The instrument was pairing each frame's wall clock with the NEXT
-frame's spans** — see "The pairing bug" below — and every per-frame reading
+frame's spans** (`docs/profiling.md`, "The phases") and every per-frame reading
 taken before report version 4 was argued from that. It was re-taken the same
-week on v4-v9 (the sections from "What is left" down), and **"the stalls are
-not the page" survived it**: the browser did not schedule the frame, the main
-thread was idle through it and the GPU was idle through it. What is open is:
+week on v4-v9, and **"the stalls are not the page" survived it**: the browser
+did not schedule the frame, the main thread was idle through it and the GPU was
+idle through it. What is open is:
 
 - **(a) the SECOND population of stalls**, which IS the tick and lands in a
   different phase each time — one stall absorbed wherever the frame stands, or
@@ -39,17 +39,17 @@ thread was idle through it and the GPU was idle through it. What is open is:
   finding 16 — so on that device the first-use hypothesis is not what drops
   frames.
 
-**A collector reading taken HEADLESS AND UNCAPPED nearly closed this wrongly.**
-At 220-700 fps the game allocates the same ~200 kB a FRAME and therefore two to
-seven times as much per SECOND as a real session does, which wakes the
-collector at 1.5-1.8/s and makes GC frames 1.7x-4.5x the cost of a clean one —
-a tidy, wrong answer. On the real machine the rate VARIES — **2 collections in
-31.4 seconds (0.06/s)** on one Sarab capture at 95 fps with `gc: 0` on every
-hitch, and `gcPerSec` 2.77, 1.49 and 1.62 on the Cinderhaven captures below —
-and it does not matter which, because **the collector is exonerated** by the
-table in "…and the collector is EXONERATED" below. **Do not measure allocation
-pressure uncapped**; the rate per second is what the collector responds to, and
-uncapping fabricates it.
+**What is closed, and where its evidence lives.** Eliminated, each on a capture
+or an A/B rather than an argument: not the tick, not the submit
+(`docs/profiling.md`, "`present`, and the two roots"), not the collector
+("Uncapped, the collector reading lies"), not `drawWorld`, not the main thread
+and not the browser's own rendering work ("The residue splits in two"), not
+fill and not the GPU ("GPU time"), and not steady-state compilation by count
+("Compiles"). **The frame was simply not scheduled.** The rules those captures
+justify are in `docs/profiling.md` with their measurements; the captures'
+narrative, the candidate list as it stood and the instrument bugs they found are
+in this file's git history (before ISSUES.md ticket 42). **Do not measure
+allocation pressure uncapped** — that section of `docs/profiling.md` says why.
 
 ### What was measured
 
@@ -62,15 +62,6 @@ WebGL engine**, before the WebGPU boot (the table is already in 3ed9fec, before
 | --- | --- | --- | --- |
 | AC (120 Hz) | >60 | — | — |
 | battery (60 Hz) | 60 | 17 ms | **28** |
-
-The counter itself is sound: `Engine.getFps()` is `1000 / mean(frame
-interval)` over a 30-frame rolling window, sampled once per `beginFrame()`,
-and it agreed with an independent `requestAnimationFrame` count over a
-four-second window to **0.9%**. There is at most one `beginFrame()` per rAF
-callback in Babylon's `_processFrame` — at most, since `src/core/FrameCap.ts`
-refuses a refresh before the next frame is due and a refused one runs nothing
-of the engine's frame — and the game has a single
-`runRenderLoop` and a single `scene.render()`, so nothing double-counts.
 
 ### What it means
 
@@ -93,246 +84,7 @@ it is running at half the panel's cap with alternating pacing. Not yet
 confirmed: the AC reading above is from memory rather than from a capture,
 and the frame time beside it was not recorded.
 
-### The headless, uncapped GC reading — OVERTURNED
-
-**Kept as the wrong answer this entry nearly closed on; the paragraph under
-the status and the exoneration table below are what overturned it.** It ran
-uncapped at 222-700 fps, which fabricates the per-second allocation the
-collector responds to.
-
-**Taken on the Windows box, on the then-current tree, with a REAL round
-under it** — walking, sweeping the view, firing in bursts — through the shipped
-profiler (`?profile`, `window.__profile.capture("x", true)`), 3,000 frames a
-map. The full series carries `gc[]` and `frameMs[]` per frame, so the question
-this section could not answer for two milestones is one filter over a capture:
-**split the frames by whether a collection landed on them.**
-
-| map | no-GC mean | GC-frame mean | GC-frame max | frames with a GC |
-| --- | --- | --- | --- | --- |
-| hollowmere | 1.42 ms | **6.33** | **27.6** | 7 of 3000 |
-| coldharbour | 2.13 ms | **5.11** | 8.3 | 11 of 3000 |
-| sarab | 3.81 ms | **6.97** | 11.9 | 20 of 3000 |
-| cinderhaven | 4.48 ms | **7.85** | 17.6 | 21 of 3000 |
-
-**A frame with a collection on it costs 1.7x to 4.5x a frame without one, on
-every map in the tree**, and the frame AFTER one is still elevated (cinderhaven
-6.44 against 4.48, sarab 6.29 against 3.81) — a collection spills past its own
-frame. The rate is **1.44–1.83 collections a second on every map**, which is
-this section's own "a visible hitch roughly every 1.7 seconds" arriving from
-the other end — headless and uncapped, which is what made it look like one.
-
-Hollowmere's worst frame was read as the shape this section had predicted:
-**27.6 ms of wall clock whose phases add up to 2.4, with `gc` on it.** That is
-a v3 per-frame decomposition, taken before the pairing fix — **do not argue
-from it**; under that pairing the 2.4 may well be the next frame's spans.
-
-**The allocation rate is ~50 MB/s and it is the same 50 on every map**, which
-is the tell that it is not the world: hollowmere 52.5, coldharbour 54.0, sarab
-54.5, cinderhaven 49.2, over frame rates from 222 to 700.
-
-**The other four fifths.** The fifth that went was `ShaderMaterial.isReady`
-rebuilding every material's define set per submesh per draw, removed by
-freezing every cel material (`docs/rendering.md`, "Frozen materials"). Of what
-is left, Babylon and the builtins it calls are ~64% and our own code ~36%, and
-our share is spread over forty sites with the largest at 4% — a thousand cuts
-rather than an actor. Nothing here has costed the WebGPU backend's own
-per-frame objects (`getBindGroups`, `_startRenderTargetRenderPass`), which are
-the next largest block. **That split predates Babylon 9.28 (96fcd19) and the
-allocation fixes a804a66, 0bbc3c6, 211fdb2 and 7085da7** — re-take it before
-arguing from it.
-
-### What the real machine says, and what it eliminates
-
-A capture off the actual display (3432x1432, sarab, 31.4 s, 602 draw calls and
-532 active meshes — a busier frame than any headless run had been reproducing):
-
-| | wall clock | `frame` span | unaccounted | gc |
-| --- | --- | --- | --- | --- |
-| hitch 1 | 42.2 ms | 15.1 | **27.1** | 0 |
-| hitch 2 | 30.8 ms | 13.4 | **17.4** | 0 |
-| hitch 3 | 24.9 ms | 10.5 | **14.4** | 0 |
-
-**DO NOT ARGUE FROM THAT TABLE.** Its three "unaccounted" figures are the
-pairing bug below, at least in part: the `frame` span in each row is the
-RECOVERY frame's, not the span that filled the interval beside it. The capture
-it came from is a v3 and cannot be re-read — only re-taken.
-
-What it seemed to say was this section's own third bullet — "the same shortfall
-with `gc` at 0 puts the time outside the game altogether" — and three further
-suspects were measured and dropped on the strength of it. **Those three
-eliminations survive**, because each rests on an aggregate or on a controlled
-A/B rather than on a single frame's decomposition:
-
-- **Not the GPU, and not fill.** `setHardwareScalingLevel` across an **8x**
-  reduction in pixels (4,915 -> 613 kpixels) moved the frame rate not at all:
-  97.0 / 96.0 / 95.0 / 97.2 fps, with the wall-to-tick gap ~0 at every step.
-  The frame is CPU-bound even at that resolution. That sweep also reproduces
-  the real session closely (97 fps against 95.5, 10.29 ms against 10.48), so it
-  is the workload to measure on.
-- **Not pipeline compilation.** Hooking `createRenderPipeline` and
-  `createShaderModule`: 29 pipelines and 73 modules during warmup, then **6
-  pipelines and 2 modules across 40 s of play**. Finding 16 is a first-seconds
-  cost and not a steady-state one.
-- **Not the submit.** The `present` phase added for this reads **0.027 ms mean**
-  and 0.3% of the wall clock. The decomposition now closes exactly — `frame`
-  77.9% + `present` 0.3% + residue 21.8% = 100.0% — and a 27.9 ms hitch of the
-  same shape reproduced headless reads `frame=9.5, present=0, gc=0`, leaving
-  **18.4 ms in the residue** (a v3 per-frame decomposition, before the pairing
-  fix — not to be argued from; the aggregate split beside it stands).
-
-### The better hypothesis, which is a first-use PIPELINE stall
-
-**Dawn compiles behind the call and the stall lands on first USE**
-(`VERIFYING.md`), so a pipeline created cheaply is an 80 ms bill payable at an
-arbitrary later frame — inside `drawWorld`, with the draw count flat, with
-`gc` at 0, and clustered, which is every property the real hitches have. The
-uncapped G-Sync session's hitches cluster at frames 2415–2432 and 320; `ProfileReport`'s
-own series header calls a draw count that ramps across a second "a batch of
-pipelines coming into view".
-
-**This is not the thing the bullet above already eliminated.** That measurement counted
-CREATIONS — 29 pipelines and 73 modules in warmup, then 6 pipelines and 2
-modules across 40 s of play — and concluded steady-state compilation was
-negligible. Six pipelines across 40 s of play is six opportunities for a
-first-use stall, and counting creations cannot see one.
-
-**How to settle it:** hook `createRenderPipeline` and `createShaderModule` as
-before, but record the frame INDEX of each against the profiler's ring, and
-look at whether the hitch frames are 1–2 frames downstream of a creation. Fire
-every weapon and set off a blast during the run, which the A/B script did not.
-**The hook is BUILT** (report version 11, `docs/profiling.md`, "Compiles"): a
-capture now carries every creation filed against its frame and named by
-effect and define set, and each hitch says how many landed on it or the two
-frames before. What is left is taking the capture.
-
-### The pairing bug, which is where the leftover was coming from
-
-**Fixed in report version 4. The mechanism, the worked example (Cinderhaven
-frame 2424, a 90.6 ms tick filed as "82 ms outside the game, gc 0") and the
-contract are in `docs/profiling.md`, "The phases".** What only this entry
-carries: over the three vsync-off captures that found it (Chrome 152, 3440x1440
-G-Sync fullscreen, two Sarab and one Cinderhaven), the minimum residue as filed
-was **-60.5 / -35.2 / -20.2 ms** with 133 / 133 / 87 negative residues, and
-+0.1 with none on all three shifted one row; under the correct pairing **18 of
-21 hitches on the Cinderhaven capture and 8 of 9 on one of the Sarabs are the
-previous frame's tick**. Verified after the fix in a real round under an 8x CPU
-throttle: minimum residue +0.30 ms over 884 frames, and 7 of the top 8 hitches
-attributed to their own tick, which is what a CPU throttle should produce.
-
-### What is left, and the instrument that now splits it
-
-**The residue is real and it is no longer un-nameable**: the
-`long-animation-frame` probe (report version 5) tells a busy main thread from
-an idle one, and how to read it is `docs/profiling.md`, "The residue splits in
-two". Verified two-sided before it was believed — a planted 120 ms `setTimeout`
-outside the tick comes back as `tick 2.2 | loaf 124 | block 74` naming
-`TimerHandler:setTimeout`, and a clean round reports nothing but the map
-install.
-
-**The vsync-ON capture that this section was waiting for has now been taken**,
-and it is the first per-frame reading of this finding that can be trusted:
-
-| | |
-| --- | --- |
-| the lock | 96.0% of frames within 18% of a 7.00 ms median — vsync on at ~143 Hz |
-| the tick | 4.61 ms mean, 19.5 ms max, sd 1.07 — **healthy throughout** |
-| `present` | **0.0 on every hitch frame** (0.017 mean, 0.2 max over 2,999) |
-| the hitches | 18 intervals over the 24 ms bar, **0 explained by their own tick** |
-| the worst | 120.6 ms wall, 7.4 ms tick, 113.2 ms of WAIT, `gc: 0` |
-| the workload | draws 506/496/514 and meshes 428/423/439 before/during/after — **flat** |
-
-So it is neither the tick nor the submit, and `drawWorld` is clean (max 9.6 ms)
-— which also takes the first-use pipeline hypothesis above off this particular
-episode.
-
-### …and the probe has now answered: it is NOT THE MAIN THREAD EITHER
-
-Cinderhaven at 3440x1440, 43 bots alive, the player standing still at
-(34, -0.2, 204.4), 2,999 frames on the v5 instrument. Eight hitches, and the
-browser's own account of every one of them:
-
-| wall | tick | `present` | long frame | of which script | blocking |
-| --- | --- | --- | --- | --- | --- |
-| **262.1 ms** | 7.2 | 0.1 | 263.5 | **8.7** | **0** |
-| 163.0 | 6.9 | 0 | 165.1 | ~9 | **0** |
-| 120.7 | 7.6 | 0 | 121.5 | 8.4 | **0** |
-| 84.4 | 9.0 | 0 | 84.2 | — | **0** |
-
-**A 263.5 ms animation frame carrying 8.7 ms of script and no blocking task at
-all.** The browser watched the frame, agrees it took a quarter of a second, and
-reports that essentially none of it was JavaScript. Draw calls are flat at
-497–509 and meshes at 427–429 across the whole episode; `allocMbPerSec` is
-50.28 and `gcPerSec` 2.77, both ordinary. The shape is a stall and then a
-catch-up — 262.1 then 13.5, 163 then 40.9, 84.4 then 20.4.
-
-So the elimination list was: not the tick, not the submit, not the collector,
-not `drawWorld`, and not the main thread — and not the GPU either, two sections
-below.
-
-### ANSWERED: the browser is not giving the page a frame
-
-Two v6 captures, Cinderhaven at 3440x1440, 32-36 bots alive, 2,999 frames each.
-Every hitch in both, split by `renderStart`:
-
-| wall | tick | `present` | long frame | script | render | **before the render began** |
-| --- | --- | --- | --- | --- | --- | --- |
-| **243.4** | 6.2 | 0 | 244.0 | 7.0 | 7.3 | **236.7** |
-| 124.7 | 4.7 | 0 | 125.9 | 6.1 | 6.3 | **119.6** |
-| 96.8 | 5.4 | 0.1 | 97.6 | 6.6 | 6.9 | **90.7** |
-| 107.6 | 7.1 | 0 | 108.0 | 8.1 | 8.3 | **99.7** |
-| 77.1 | 5.7 | 0 | 77.5 | 6.4 | 6.4 | **71.1** |
-| 68.1 | 7.1 | 0 | 68.4 | 7.8 | 7.9 | **60.5** |
-
-**`renderMs` is `scriptMs` plus about 0.3 ms on every row in both captures.**
-The rendering steps ARE the rAF callback — `Game.tick` — plus a third of a
-millisecond of style, layout and paint, which is what a page that is one canvas
-should cost. So the whole of every hitch sits BEFORE the rendering steps began,
-with **no script in it at all**.
-
-The browser opened the frame, ran nothing for up to 236.7 ms, then ran our 7 ms
-tick and painted. `gc` is 0 on every one, `allocMbPerSec` is 38.0 and 41.5 and
-`gcPerSec` 1.49 and 1.62 — ordinary on both. Draw calls are flat within each
-episode. The shape is a stall and then a catch-up.
-
-**So the time is not the page's in any sense the page can reach.** Not the tick,
-not the submit, not the collector, not the main thread, and not the browser's
-rendering work either — **the frame was simply not scheduled**. Six of this
-section's seven suspects are dead and the seventh was never on the list. **The
-seventh — the GPU — is dead too as of the next section**, measured rather
-than argued, which leaves this finding with no suspect inside the process at
-all.
-
-### ANSWERED: IT IS NOT THE GPU EITHER, and the instrument that says so nearly lied
-
-**A rendering opportunity that does not arrive for 237 ms on a 144 Hz panel is
-the compositor declining to issue one**, and the leading reason for that was the
-GPU being behind: `present` returns instantly because `queue.submit` queues
-rather than blocks, so a saturated GPU is invisible to every CPU span in this
-file. `?gpu` was built for exactly this question and the answer is **no**.
-
-Four v8/v9 captures of Cinderhaven at 3440x1440 on the real display, with the
-whole-frame counter armed:
-
-| capture | GPU mean | GPU p95 | **GPU max** | tick mean | wall budget |
-| --- | --- | --- | --- | --- | --- |
-| 21-35-38 | 1.977 | 2.449 | **3.672** | 4.48 | ~7.0 |
-| 21-36-13 | 2.065 | 2.548 | **3.677** | 6.41 | ~7.0 |
-| headless 3440x1440 | 2.325 | 2.821 | 15.079 | 6.05 | ~7.0 |
-
-**The GPU never comes near the budget, and on the hitch frames themselves it is
-1.6–2.7 ms** — including a **160.7 ms frame on which the GPU did 1.703 ms of
-work**, and a 150.7 ms one on which it did 1.779. Whatever is holding the frame
-open, the GPU is idle through it. That was the seventh suspect and the last one
-this instrument could reach.
-
-**The reading was nearly zero for the wrong reason**: without
-`--enable-unsafe-webgpu` the whole-frame counter records real zeros and the
-capture looks healthy. Fixed as `gpu.frameMeasurable` (report **version 9**);
-the mechanism is `docs/profiling.md`, "GPU time". Every headless GPU number in
-`VERIFYING.md` had the flag because `launchClient` in `scripts/browser.mjs`
-(re-exported by `plans/webgpu-ref/harness.mjs`) passes it.
-
-### …and a SECOND population appeared, which IS the tick and DOES name a phase
+### (a) The SECOND population, which IS the tick and DOES name a phase
 
 Every hitch in this finding's history until now was "not the page". Five
 captures from one session contain four that are, each one the game's own tick,
@@ -369,60 +121,16 @@ every third frame at 27.7 → 37.8 → 59.1 → 114.3 → 115.4 → 254.6 ms, fo
 448 clean frames at 6.9. Draw calls and active meshes FALL through each burst
 rather than rising.
 
-### The instrument bugs this capture found, all fixed
+### (b) The event at frame 2291
 
-A long frame read as a busy main thread, an absence under 50 ms read as an
-idle one, and a starving `loaf.worst` — all three, and the fixes, are in
-`docs/profiling.md`, "The residue splits in two".
-
-### …and the collector is EXONERATED by the same capture
-
-The collection rate steps **20x at the hitch and stays there**, which looks
-exactly like a cause until the tail is read:
-
-| frames | gc/frame | mean wall |
-| --- | --- | --- |
-| 0–2100 | 0.010 | 6.95 ms |
-| 2100–2400 | 0.087 | **10.79 ms** |
-| 2400–2700 | **0.207** | **6.95 ms** |
-| last 300 | 0.173 | 6.97 ms |
-
-Six hundred frames run at 17–20x the collection rate at a flawless 144 Hz lock.
-Per second it is 1–2 collections for sixteen seconds, 12–14 through the hitch,
-then 29/31/29/22 — and those four seconds are the smoothest in the capture. **If
-0.2 collections a frame cost 14 ms, the tail would be the worst part of the
-capture instead of the best.**
-
-So one event at frame 2291 had two consequences and the GC is the harmless one:
-a permanent step in allocation, and ~2 s of stalls outside the tick. The stalls
-stopped; the allocation did not. **What the event WAS is not in the capture** —
-the player barely moves through it, from (-88.6, 7.9, 316.2) to (-86.6, 7.9,
-316.3), with 32 bots alive. `heapLive` was false on that run, so there is no
-MB/s to size the step; the next capture wants
-`--enable-precise-memory-info`.
-
-### The instrument trap, because it cost a run and will cost the next one
-
-**Chrome's sampling heap profiler answers a DIFFERENT question by default and
-its answer looks like good news.** `HeapProfiler.startSampling` at a 2 kB
-interval over the same round reported **0.2 MB/s** — 260x under what the frame
-profiler was reporting, and low enough to close this finding by mistake. V8
-drops a sample when the object it sampled has been collected, so what comes
-back is what SURVIVED: it measures retention, not churn, and churn is the whole
-of this finding. `includeObjectsCollectedByMajorGC` and
-`includeObjectsCollectedByMinorGC` are the two experimental flags that fix it,
-and with both on the same run reports **51.6 MB/s**, agreeing with
-`memory.allocMbPerSec` to 5%. **Ask for those flags or do not believe the
-number.**
-
-**And per-SITE attribution out of it is not to be trusted on our own files
-without an A/B.** Two of its top twenty named a function that allocates nothing
-— `eyeDistanceSq` (see `docs/rendering.md`'s front-to-back sort) and `buildBreathBuffer` (then on `Sfx`, now `AmbienceVoices`), which is called
-once at init — because V8 attributes a sampled allocation to the JS frame on
-top at the time, and a function called 22,000 times a frame collects
-attribution that belongs to its callees. The FILE-level split is sound; a
-single line is a hypothesis, and the memoised sort in `docs/rendering.md` is
-what happens when one is taken at face value.
+The capture whose table exonerated the collector (`docs/profiling.md`,
+"Uncapped, the collector reading lies") also carries this. One event at frame
+2291 had two consequences and the GC is the harmless one: a permanent step in
+allocation, and ~2 s of stalls outside the tick. The stalls stopped; the
+allocation did not. **What the event WAS is not in the capture** — the player
+barely moves through it, from (-88.6, 7.9, 316.2) to (-86.6, 7.9, 316.3), with
+32 bots alive. `heapLive` was false on that run, so there is no MB/s to size
+the step; the next capture wants `--enable-precise-memory-info`.
 
 ### Two captures off other devices, recorded only in commit messages
 
@@ -447,27 +155,6 @@ what happens when one is taken at face value.
   GPU ran 11-14 ms and standing still the drops did not follow it; they follow
   the TICK, which reads as the phone's CPU slowing rather than any one phase
   growing.
-
-### Candidates, as they stood before the capture
-
-- ~~**GC.**~~ **Superseded by the exoneration table above.** The headless
-  Hollowmere reading this bullet quoted (2.2 collections a second, 27.4 MB/s)
-  is in `docs/profiling.md`, "The heap and the collector".
-- **The shadow depth pass** (see `docs/rendering.md`, "The shadow rungs") — but that is a *steady* per-frame
-  cost, so it fits the mean sitting at 60 rather than the spikes. **And 52579ed
-  took it off most frames**: turning at 90 deg/s the two static maps now redraw
-  ~12 times a second rather than 127-232 (the bodies' map still redraws every
-  frame).
-- ~~**HUD `innerHTML` rebuilds.**~~ **False of today's tree**: `HUD.ts`'s header
-  says per-frame writes never touch `innerHTML`, the magazine strip, the
-  grenade pips and the flag strip are rebuilt only when their SIZE changes, the
-  damage arcs are a fixed pool, and the scoreboard (`Scoreboard.ts` now) builds
-  its frame once and rebuilds its lists only while Tab is held. A killfeed line
-  is still built as markup, once per kill.
-- **`ConquestSystem.planSquads`**, called by `BattleSystem.updateSquads` on its
-  timer (`CONFIG.bots.squad.updateRate`, 2 Hz).
-- **WebAudio node churn** in `Sfx` — nodes are created per voice.
-- The browser compositor, or anything else on the machine.
 
 ### How to settle it
 

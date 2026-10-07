@@ -70,7 +70,7 @@ match smoke test (`npm run build:server && npm run server`, two clients).
 | ~~[39](#39-frameprofile-depends-on-a-private-babylon-internal)~~ | P3 — done | `FrameProfile` depends on a private Babylon internal |
 | ~~[40](#40-claudemd-is-over-its-own-cap)~~ | P3 — done | `CLAUDE.md` is over its own cap |
 | ~~[41](#41-filesmd-has-no-scripts-section)~~ | P3 — done | `FILES.md` has no `scripts/` section |
-| [42](#42-findingsmd-1-carries-closed-history) | P3 | `FINDINGS.md` §1 carries closed history |
+| ~~[42](#42-findingsmd-1-carries-closed-history)~~ | P3 — done | `FINDINGS.md` §1 carries closed history |
 | [43](#43-dead-and-over-exported-symbols) | P3 | Dead and over-exported symbols |
 | [44](#44-stale-comments-in-gamets-and-docsgamemd) | P3 | Stale comments in `Game.ts` and `docs/game.md` |
 | [45](#45-the-recoil-argument-is-written-in-five-places) | P3 | The recoil argument is written in five places |
@@ -1835,6 +1835,37 @@ OVERTURNED", three "ANSWERED" subsections, "Candidates, as they stood before
 the capture", "The instrument bugs… all fixed". Move the measurements that
 still justify a rule into `docs/profiling.md` (verbatim), delete the rest
 (git keeps it), and leave §1 as its open bullets plus pointers.
+
+**Done.** §1 is 157 lines, down from 469, and `FINDINGS.md` 1,852 from 2,165.
+What stayed is what is still open: the status and bullets (a)–(d), the laptop
+table and its reading (ask (c)), the second population with its heap correlate
+and burst shape (ask (a)), the frame-2291 paragraph (ask (b)), the other
+devices' captures, and "How to settle it". A new paragraph lists each
+eliminated suspect beside the `docs/profiling.md` section holding its evidence.
+
+What moved to `docs/profiling.md` verbatim, each beside the rule it justifies:
+- "Uncapped, the collector reading lies" (new, under "The heap and the
+  collector"): the uncapped-allocation warning, the headless GC-frame table,
+  the ~50 MB/s on every map, "the other four fifths", and the exoneration
+  table.
+- "Finding WHO allocates": the sampler's 0.2 against 51.6 MB/s, and per-site
+  attribution needing an A/B.
+- "The residue splits in two": the `renderStart` table showing a hitch is a
+  wait before the rendering steps.
+- "The phases": the 18-of-21 / 8-of-9 re-attribution and the 8x-throttle
+  check of the pairing fix.
+- "GPU time": the 8x `setHardwareScalingLevel` sweep (not fill).
+- "Compiles": 29/73 creations in warm-up and 6/2 in play.
+
+Deleted (git keeps it): the vsync-on table, the long-frame table, the v3
+real-machine table, "the better hypothesis" (now bullet (d) plus "Compiles"),
+the instrument-bug pointer, and the candidate list. Repointed at `docs/profiling.md`: `docs/rendering.md` (three
+references), `docs/audio.md` and `audio/manifest.json` (the 157 MB heap), and
+`config/profiling.ts` (`creationsKept`'s 6 in 40 s).
+
+Checked: `npm run typecheck`, `node scripts/check-audio.mjs`, and a grep for
+every reference to §1 in the tree, each confirmed to land on text that still
+exists.
 
 ### 43. Dead and over-exported symbols
 

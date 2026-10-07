@@ -19,7 +19,7 @@
       "container, the bitrate and the file's own sample rate are invisible to",
       "it (measured: a 22 kHz file decodes back up to 48 kHz for identical",
       "RAM). So the budget is seconds of mono, not bytes on disk.",
-      "44 s = 8 MB at 48 kHz, ~5% of the 157 MB heap FINDINGS.md #1 measures.",
+      "44 s = 8 MB at 48 kHz, ~5% of the 157 MB heap docs/profiling.md measures.",
       "A stereo row spends two seconds of it per second of audio."
     ]
   },

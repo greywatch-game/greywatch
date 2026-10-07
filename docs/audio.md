@@ -166,7 +166,7 @@ channels halved the memory exactly.
 So at 48 kHz, **one second of mono is 187.5 KB and one second of stereo is
 375 KB**, whatever you encode it as. `audio/manifest.json` states the ceiling in
 that unit: **44 mono-seconds ≈ 8 MB**, about 5% of the 157 MB heap
-[`FINDINGS.md`](../FINDINGS.md) §1 measures on Hollowmere. A stereo row spends
+[`docs/profiling.md`](profiling.md) measures on Hollowmere. A stereo row spends
 two of those seconds per second of audio.
 
 ### Three budgets, and a file can pass one while failing another

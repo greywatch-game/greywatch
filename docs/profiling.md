@@ -270,6 +270,13 @@ outside the game with no collection on it**, which is exactly the shape
 into `lastSlot` now, as `recordPresent` already did, and files a hitch against
 the frame that FILLED the interval rather than the one recovering from it.
 
+Over the three vsync-off captures that found it (Chrome 152, 3440x1440 G-Sync
+fullscreen, two Sarab and one Cinderhaven), under the correct pairing **18 of
+21 hitches on the Cinderhaven capture and 8 of 9 on one of the Sarabs are the
+previous frame's tick**. Verified after the fix in a real round under an 8x CPU
+throttle: minimum residue +0.30 ms over 884 frames, and 7 of the top 8 hitches
+attributed to their own tick, which is what a CPU throttle should produce.
+
 Two consequences worth knowing when reading a capture:
 
 - **A residue can no longer be negative**, and one that is says the pairing has
@@ -312,6 +319,25 @@ the trap.** The first capture that mattered carried a **263.5 ms window over
 8.7 ms of script with zero blocking** — which the viewer confidently called "the
 main thread was busy through it" and which was nothing of the kind. The three
 shares are three different verdicts and the duration alone is none of them.
+
+**What a WAIT looks like, measured** — two v6 captures, Cinderhaven at
+3440x1440, 32-36 bots alive, 2,999 frames each. Every hitch in both, split by
+`renderStart`:
+
+| wall | tick | `present` | long frame | script | render | **before the render began** |
+| --- | --- | --- | --- | --- | --- | --- |
+| **243.4** | 6.2 | 0 | 244.0 | 7.0 | 7.3 | **236.7** |
+| 124.7 | 4.7 | 0 | 125.9 | 6.1 | 6.3 | **119.6** |
+| 96.8 | 5.4 | 0.1 | 97.6 | 6.6 | 6.9 | **90.7** |
+| 107.6 | 7.1 | 0 | 108.0 | 8.1 | 8.3 | **99.7** |
+| 77.1 | 5.7 | 0 | 77.5 | 6.4 | 6.4 | **71.1** |
+| 68.1 | 7.1 | 0 | 68.4 | 7.8 | 7.9 | **60.5** |
+
+**`renderMs` is `scriptMs` plus about 0.3 ms on every row in both captures.**
+The rendering steps ARE the rAF callback — `Game.tick` — plus a third of a
+millisecond of style, layout and paint, which is what a page that is one canvas
+should cost. So the whole of every hitch sits BEFORE the rendering steps began,
+with **no script in it at all**.
 
 **And an absence only means something above the floor.** The specification
 reports at 50 ms, so a 44.9 ms hitch is invisible to this probe by design — six
@@ -546,6 +572,72 @@ session before this was fixed should be re-taken.
 `memory.gcPerSec` also rides on the **flash line**, because under a pointer lock
 that is the only channel back to the player and "is it GC" is the whole question.
 
+### Uncapped, the collector reading lies — and the capture that cleared it
+
+**A collector reading taken HEADLESS AND UNCAPPED nearly closed `FINDINGS.md`
+§1 wrongly.** At 220-700 fps the game allocates the same ~200 kB a FRAME and
+therefore two to seven times as much per SECOND as a real session does, which
+wakes the collector at 1.5-1.8/s and makes GC frames 1.7x-4.5x the cost of a
+clean one — a tidy, wrong answer. On the real machine the rate VARIES — **2
+collections in 31.4 seconds (0.06/s)** on one Sarab capture at 95 fps with
+`gc: 0` on every hitch, and `gcPerSec` 2.77, 1.49 and 1.62 on three Cinderhaven
+captures — and it does not matter which, because **the collector is
+exonerated** by the table at the end of this section. **Do not measure
+allocation pressure uncapped**; the rate per second is what the collector
+responds to, and uncapping fabricates it.
+
+The wrong answer, kept because it is what an uncapped run will hand the next
+person. **Taken on the Windows box, with a REAL round under it** — walking,
+sweeping the view, firing in bursts — through the shipped profiler (`?profile`,
+`window.__profile.capture("x", true)`), 3,000 frames a map, split by whether a
+collection landed on the frame:
+
+| map | no-GC mean | GC-frame mean | GC-frame max | frames with a GC |
+| --- | --- | --- | --- | --- |
+| hollowmere | 1.42 ms | **6.33** | **27.6** | 7 of 3000 |
+| coldharbour | 2.13 ms | **5.11** | 8.3 | 11 of 3000 |
+| sarab | 3.81 ms | **6.97** | 11.9 | 20 of 3000 |
+| cinderhaven | 4.48 ms | **7.85** | 17.6 | 21 of 3000 |
+
+**A frame with a collection on it costs 1.7x to 4.5x a frame without one, on
+every map in the tree**, and the frame AFTER one is still elevated (cinderhaven
+6.44 against 4.48, sarab 6.29 against 3.81) — a collection spills past its own
+frame. The rate is **1.44–1.83 collections a second on every map**, which is
+§1's own "a visible hitch roughly every 1.7 seconds" arriving from the other
+end — headless and uncapped, which is what made it look like one.
+
+**The allocation rate is ~50 MB/s and it is the same 50 on every map**, which
+is the tell that it is not the world: hollowmere 52.5, coldharbour 54.0, sarab
+54.5, cinderhaven 49.2, over frame rates from 222 to 700.
+
+**The other four fifths.** The fifth that went was `ShaderMaterial.isReady`
+rebuilding every material's define set per submesh per draw, removed by
+freezing every cel material (`docs/rendering.md`, "Frozen materials"). Of what
+is left, Babylon and the builtins it calls are ~64% and our own code ~36%, and
+our share is spread over forty sites with the largest at 4% — a thousand cuts
+rather than an actor. Nothing here has costed the WebGPU backend's own
+per-frame objects (`getBindGroups`, `_startRenderTargetRenderPass`), which are
+the next largest block. **That split predates Babylon 9.28 (96fcd19) and the
+allocation fixes a804a66, 0bbc3c6, 211fdb2 and 7085da7** — re-take it before
+arguing from it.
+
+**What cleared the collector**, off the real display (Cinderhaven, 3440x1440,
+vsync on at ~143 Hz). The collection rate steps **20x at the hitch and stays
+there**, which looks exactly like a cause until the tail is read:
+
+| frames | gc/frame | mean wall |
+| --- | --- | --- |
+| 0–2100 | 0.010 | 6.95 ms |
+| 2100–2400 | 0.087 | **10.79 ms** |
+| 2400–2700 | **0.207** | **6.95 ms** |
+| last 300 | 0.173 | 6.97 ms |
+
+Six hundred frames run at 17–20x the collection rate at a flawless 144 Hz lock.
+Per second it is 1–2 collections for sixteen seconds, 12–14 through the hitch,
+then 29/31/29/22 — and those four seconds are the smoothest in the capture. **If
+0.2 collections a frame cost 14 ms, the tail would be the worst part of the
+capture instead of the best.**
+
 ### Finding WHO allocates, which the capture cannot say
 
 **`allocMbPerSec` says how much and never where**, and it is too coarse to see a
@@ -566,6 +658,24 @@ from a Playwright script over a CDP session:
   `samplingInterval` of 16 bytes over ten seconds of a round resolves tens of
   bytes a frame. Always run the parent commit the same way — a row present in
   both builds is not the change's.
+
+**Without those two flags its answer looks like good news.** At a 2 kB interval
+over the same round as a frame-profiler capture it reported **0.2 MB/s** — 260x
+under what the frame profiler was reporting, and low enough to close
+`FINDINGS.md` §1 by mistake. V8 drops a sample when the object it sampled has
+been collected, so what comes back is what SURVIVED: it measures retention, not
+churn, and churn is the whole of that finding. With both flags on, the same run
+reports **51.6 MB/s**, agreeing with `memory.allocMbPerSec` to 5%. **Ask for
+those flags or do not believe the number.**
+
+**And per-SITE attribution out of it is not to be trusted on our own files
+without an A/B.** Two of its top twenty named a function that allocates nothing
+— `eyeDistanceSq` (see `docs/rendering.md`'s front-to-back sort) and `buildBreathBuffer` (then on `Sfx`, now `AmbienceVoices`), which is called
+once at init — because V8 attributes a sampled allocation to the JS frame on
+top at the time, and a function called 22,000 times a frame collects
+attribution that belongs to its callees. The FILE-level split is sound; a
+single line is a hypothesis, and the memoised sort in `docs/rendering.md` is
+what happens when one is taken at face value.
 
 **A function that runs ONCE A FRAME never reaches V8's top tier, and that
 changes what allocates in it.** Measured in a live round with
@@ -960,6 +1070,14 @@ vsync budget and a tick of 4.5–6.4 — and on the hitch frames themselves it i
 1.6–2.7 ms, including a **160.7 ms frame on which the GPU did 1.7 ms of work**.
 That is what retired the last suspect in `FINDINGS.md` #1.
 
+**Nor is it fill, and that was settled before the counter existed**:
+`setHardwareScalingLevel` across an **8x** reduction in pixels (4,915 -> 613
+kpixels, Sarab at 3432x1432) moved the frame rate not at all: 97.0 / 96.0 /
+95.0 / 97.2 fps, with the wall-to-tick gap ~0 at every step. The frame is
+CPU-bound even at that resolution. That sweep also reproduces the real session
+closely (97 fps against 95.5, 10.29 ms against 10.48), so it is the workload to
+measure on.
+
 ## Compiles: what was created, and on which frame
 
 **WebGPU compiles lazily and Dawn compiles behind the call, so a pipeline is
@@ -1023,6 +1141,14 @@ it, and nothing more was created in the next eight seconds. Measured against
 an independent counter installed under the hook, the capture's count matched
 exactly (120 of 120 in the window). See `FINDINGS.md` 16 for what was compiled
 and what it means for a warm-up.
+
+**Steady state, creations are few, and counting them is not the same as
+eliminating them.** Hooking `createRenderPipeline` and `createShaderModule`
+before this was built: 29 pipelines and 73 modules during warmup, then **6
+pipelines and 2 modules across 40 s of play** — which is what sizes
+`CONFIG.profiling.creationsKept`. Six pipelines across 40 s of play is still six
+opportunities for a first-use stall, and counting creations cannot see one;
+`createdNear` can.
 
 ## Vsync, the uncap flags, and VRR
 

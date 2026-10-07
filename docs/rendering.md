@@ -321,7 +321,8 @@ control that catches it). **The picture is byte-identical** — `bank.mjs
 --check` over 21 vantages on all six maps, 0% of pixels differing, against a
 reproducibility floor of 0.000%.
 
-`FINDINGS.md` 1 carries what the allocation was costing in the first place.
+`docs/profiling.md`, "Uncapped, the collector reading lies", carries what the
+allocation was costing in the first place.
 
 A/B'd in ONE session, alternating frozen and unfrozen every six seconds, three
 paired windows a map:
@@ -337,8 +338,9 @@ paired windows a map:
 coy.** It was taken to make collections rarer, on a headless reading of
 1.5-1.8 collections a second — and a capture off the real machine at a real
 frame rate reports **0.06/s**, because the allocation that matters is per
-SECOND and uncapping inflates it (`FINDINGS.md` 1). So this removes a fifth of a
-pressure that may not have been costing anything on the hardware in question.
+SECOND and uncapping inflates it (`docs/profiling.md`). So this removes a fifth
+of a pressure that may not have been costing anything on the hardware in
+question.
 It is kept because it is free, provably identical in the picture, and the
 right thing on a device that IS collector-bound — a phone holding 30 fps has
 the frame budget this was measured against, inverted. **Do not cite it as a
@@ -1242,9 +1244,10 @@ windows a map:
 Every figure is inside the noise floor and the allocation does not move at all.
 `SubMesh.getBoundingInfo()` is a field read and allocates nothing; the
 attribution was V8 smearing across a function called 22,000 times a frame — see
-`FINDINGS.md` 1's instrument note, which this is the worked example for. **The
-comment in `Game`'s constructor was right**: two bounding-sphere reads per
-comparison is microseconds against the fill it buys back.
+`docs/profiling.md`'s sampler note under "Finding WHO allocates", which this is
+the worked example for. **The comment in `Game`'s constructor was right**: two
+bounding-sphere reads per comparison is microseconds against the fill it buys
+back.
 
 **What stays blended is what something is meant to be legible behind**: the
 breakable shopfronts, where `tint: 0.4` exists precisely so a lit interior reads
