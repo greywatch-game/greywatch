@@ -383,7 +383,8 @@ bindings), **Touch** (see above), **Display** (render scale at 50, 75 or 100%,
 an FPS counter, motion blur, paper grain, antialiasing, and the frame
 profiler), and
 **Detail** (light shafts, bounce light, shadows and grass, each with rungs
-down to off). A phone starts on low shadows.
+down to off, and glow and trees at low or high). A phone starts on low for
+everything here but the light shafts.
 
 **The frame profiler ships in the production build**, because the devices
 worth measuring are the ones that will never run a dev server. Turn it on under

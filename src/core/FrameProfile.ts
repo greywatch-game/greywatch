@@ -1756,6 +1756,7 @@ function sameGraphics(a: ProfileGraphics, b: ProfileGraphics): boolean {
     a.grass === b.grass &&
     a.foliage === b.foliage &&
     a.volumetrics === b.volumetrics &&
+    a.glow === b.glow &&
     a.motionBlur === b.motionBlur &&
     a.paperGrain === b.paperGrain &&
     a.fxaa === b.fxaa &&

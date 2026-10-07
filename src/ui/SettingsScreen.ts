@@ -42,7 +42,13 @@
  */
 import "./settings.css";
 import { CONFIG } from "../config";
-import { FOLIAGE_QUALITIES, GRASS_QUALITIES, SHADOW_QUALITIES, type Settings } from "../core/settings";
+import {
+  FOLIAGE_QUALITIES,
+  GLOW_QUALITIES,
+  GRASS_QUALITIES,
+  SHADOW_QUALITIES,
+  type Settings,
+} from "../core/settings";
 import type { GyroStatus } from "../core/GyroInput";
 import { glyph, guessDevice, markDevice, type InputDevice } from "./prompts";
 
@@ -393,13 +399,13 @@ const PAGES: readonly Page[] = [
   {
     // Split off Display when the shadows row made it nine, which ran under the
     // footer at a phone's 832x384 — this list's own rule for a page that
-    // outgrows its column. The five are the ones a slow device turns down,
+    // outgrows its column. The six are the ones a slow device turns down,
     // which is why grass is here beside the light rather than on a page of its
     // own.
     label: "Detail",
     icon: ICONS.detail,
     blurb:
-      "The five things a slow device turns down first. All but the trees are drawn behind this screen as you change them, so what you are trading is in front of you.",
+      "The six things a slow device turns down first. All but the trees are drawn behind this screen as you change them, so what you are trading is in front of you.",
     rows: [
       {
         key: "volumetrics",
@@ -417,6 +423,15 @@ const PAGES: readonly Page[] = [
             label: k.charAt(0).toUpperCase() + k.slice(1),
           })),
         ],
+      },
+      {
+        key: "glow",
+        label: "Glow",
+        hint: "The bloom round lamps, fires and tracers. Low blurs it at lower resolution: softer, and cheaper on a phone.",
+        options: GLOW_QUALITIES.map((k) => ({
+          value: k,
+          label: k.charAt(0).toUpperCase() + k.slice(1),
+        })),
       },
       {
         key: "gi",

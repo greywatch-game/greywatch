@@ -75,6 +75,14 @@ export type GrassQuality = keyof typeof CONFIG.grass.tiers;
 export type FoliageQuality = keyof typeof CONFIG.graphics.foliage.tiers;
 
 /**
+ * How the bloom is blurred, as one of `CONFIG.graphics.glowTiers`. Derived
+ * from that table for `RenderScale`'s reason. There is no `off`: the mask the
+ * blur starts from is also what the ink reads to keep its lines off a lamp,
+ * so the pass runs whatever this says.
+ */
+export type GlowQuality = keyof typeof CONFIG.graphics.glowTiers;
+
+/**
  * A look-sensitivity multiplier, as one of `CONFIG.camera.lookScales`. Derived
  * from that list for the same reason `RenderScale` is derived from its own: the
  * ladder is declared once, and a value that is not on it cannot be stored.
@@ -183,6 +191,13 @@ export type Settings = {
    * built, being geometry merged into the world.
    */
   foliage: FoliageQuality;
+  /**
+   * Glow — the resolution the bloom is blurred at. `low` blurs at half the
+   * resolution `high` does: the same width on screen, and softer
+   * (`GlowPass`). `high` is the bloom as it was before the setting existed.
+   * Derived per MACHINE on a fresh install: see `defaultGlowQuality`.
+   */
+  glow: GlowQuality;
   /**
    * Mouse look speed, as a multiplier on `CONFIG.camera.sensX`/`sensY`.
    *
@@ -384,6 +399,21 @@ function defaultFoliageQuality(): FoliageQuality {
   return coarse ? "low" : "high";
 }
 
+/**
+ * The bloom a fresh install gets, on `defaultGiQuality`'s test. The blur's
+ * kernel is stated in CSS pixels, so its taps grow with pixel density, and a
+ * finger for a pointer is the densest panel and the GPU that pays ~2.4x a
+ * desktop's price for fill (`FINDINGS.md` 5). A device that already stored its
+ * settings before this row existed gets it too, the key being new.
+ */
+function defaultGlowQuality(): GlowQuality {
+  const coarse =
+    typeof window !== "undefined" &&
+    typeof window.matchMedia === "function" &&
+    window.matchMedia("(pointer: coarse)").matches;
+  return coarse ? "low" : "high";
+}
+
 const SETTING_DEFAULTS: Settings = {
   fpsCounter: false,
   motionBlur: CONFIG.graphics.motionBlur.strength > 0,
@@ -400,6 +430,7 @@ const SETTING_DEFAULTS: Settings = {
   shadows: defaultShadowQuality(),
   grass: defaultGrassQuality(),
   foliage: defaultFoliageQuality(),
+  glow: defaultGlowQuality(),
   renderScale: defaultRenderScale(),
   // No ceiling, which is the loop as it ran before the setting existed. NOT
   // derived per machine the way the detail rungs are: a cap trades smoothness
@@ -545,6 +576,9 @@ export const FOLIAGE_QUALITIES = Object.keys(
   CONFIG.graphics.foliage.tiers,
 ) as FoliageQuality[];
 
+/** The glow rungs, in the order the screen draws them. */
+export const GLOW_QUALITIES = Object.keys(CONFIG.graphics.glowTiers) as GlowQuality[];
+
 /**
  * One codec per field. The mapped type is the point: a field added to
  * `Settings` without an entry here does not compile, so the store can never
@@ -562,6 +596,7 @@ const CODECS: { [K in keyof Settings]: Codec<Settings[K]> } = {
   shadows: oneOfString(SHADOW_QUALITIES),
   grass: oneOfString(GRASS_QUALITIES),
   foliage: oneOfString(FOLIAGE_QUALITIES),
+  glow: oneOfString(GLOW_QUALITIES),
   mouseSensitivity: oneOf(CONFIG.camera.lookScales),
   stickSensitivity: oneOf(CONFIG.camera.lookScales),
   touchSensitivity: oneOf(CONFIG.camera.lookScales),

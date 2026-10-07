@@ -3338,6 +3338,22 @@ all in the counter this finding is named after. Not chased.
   returns on an unchanged value), so the render-scale setting cannot change the
   bloom's size on screen: `devicePixelRatio` is already inside the level, and the
   level is 1 at every default install.
+- **The Glow setting moves where the blur STARTS, never how far it reaches**
+  (`Settings.glow`, `CONFIG.graphics.glowTiers`). Because the kernel is stated
+  in CSS pixels, a dense panel pays for it in texels: a phone at dpr 2.8 and
+  render scale 0.75 runs a 57-wide kernel, 29 taps a pass. `high` is the
+  paragraph above, unchanged, and a coarse pointer starts on `low`
+  (`defaultGlowQuality`). `low` blurs at a quarter and an eighth, and the
+  kernel is `glowKernel / (4 * level)`, so it is half the taps on a quarter of
+  the pixels, with the same reach and a softer bloom. **It owes a box downsample
+  first, and that pass is not optional**: the first blur reads the
+  full-resolution mask with taps spaced in texels of its OWN target. At half
+  resolution that already touches about half the mask's pixels, and at quarter
+  it would touch an eighth, so a one-pixel tracer or reticle line would flicker
+  as it crossed between taps. `glowDown` reads every mask pixel once (four
+  bilinear taps on 2x2 corners) into a quarter-resolution target, and the
+  first blur reads that instead. There is no `off` rung: the MASK is also the
+  ink's emissive mask, so it is drawn whatever the setting says.
 - **The compose comes straight after the ink**, and that is a LOOK
   decision: a bloom lies over the ink lines round its lamp rather than under them,
   and FXAA, the shafts and the grade treat it as part of the picture. Against the

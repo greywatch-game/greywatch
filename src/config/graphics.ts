@@ -67,6 +67,24 @@ export const graphics = {
    */
   glowKernel: 56,
   /**
+   * The Glow setting's rungs (`Settings.glow`), in the order the screen draws
+   * them. `downsample` is how far below the backing store the bloom's NEAR
+   * target sits — the wide one is always half of that again. The blur's WIDTH
+   * on screen is `glowKernel` on every rung: `GlowPass.kernelTexels` divides
+   * by this figure, so a coarser target spends proportionally fewer taps on
+   * the same reach, and the bloom only gets softer rather than smaller.
+   *
+   * `high` is the bloom exactly as it was before the setting existed. `low`
+   * blurs from a QUARTER-resolution box downsample of the mask instead of
+   * reading the mask at half — a quarter of the pixels through every blur pass
+   * and half the taps in each, which on a dense phone panel at render scale
+   * 0.75 is 29 taps a pass coming down to 15 (`FINDINGS.md` 5).
+   */
+  glowTiers: {
+    low: { downsample: 4 },
+    high: { downsample: 2 },
+  },
+  /**
    * An open fire (`shaders/FlameShader.ts`, geometry in `world/flame.ts`).
    * Every distance is a SHARE OF THE FIRE'S HEIGHT, measured at the tip of a
    * tongue where the motion is whole — so a candle and a burning drum move

@@ -1193,6 +1193,8 @@ function renderReport(r) {
       " · bounce " + gx.gi + tag("gi") + " · grass " + gx.grass +
       (gx.foliage ? " · trees " + gx.foliage : "") +
       " · shafts " + gx.volumetrics + tag("volumetrics") +
+      // Absent before the setting existed, and every one of those ran high.
+      " · glow " + (gx.glow || "high") +
       " · blur " + (gx.motionBlur ? "on" : "off") + " · grain " + (gx.paperGrain ? "on" : "off") +
       // Absent before the setting existed, and every one of those ran it.
       (gx.fxaa === false ? " · fxaa off" : "") +

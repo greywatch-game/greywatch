@@ -232,6 +232,19 @@ priced**, and there the GPU is the wall (below).
   92 draw calls and at 449 the GPU reads the same, so geometry cannot be what
   doubled it. **Not yet taken: the same map at both rungs**, which would turn
   the 2x into a measured slope.
+- **The glow's blur is a setting** (`Settings.glow`: `low` on a coarse
+  pointer, `high` — the bloom as it was — everywhere else). Its kernel is
+  stated in CSS pixels, so it widens in texels with pixel density: on the 0.75
+  phone above (dpr 2.8125, level 0.474) `high` asks for 59 texels, which
+  Babylon rounds to a 57-wide kernel of 29 taps a pass over a half- and a
+  quarter-resolution pair — ~18 fetches per backing-store pixel. `low` blurs
+  from a quarter-resolution box downsample at half the kernel (29 wide, 15
+  taps), ~2.6 fetches per pixel counting the downsample and a quarter of the
+  blur's writes, with the same reach on screen. Measured on the Windows box at that shape
+  (832x384, dpr 2.8125, 0.75, Hollowmere's `lanterns`): `low` against `high`
+  reads 0.079 mean/255 against a 0.068 control and 0.152 for the bloom off.
+  **Not yet priced on the phone**: the same spot, `?profile&gpu`, `low`
+  against `high`, several runs a side.
 - **The ash field is 18,667 alpha-blended GPU particles** (`getCapacity`, at
   steady state). Simulation is on the GPU and cheap; the overdraw is not.
 - **The glass FRAGMENT's reflection has no distance fade.** The
@@ -1740,10 +1753,12 @@ vertex colours multiply DIFFUSE. Converting it touches `getEmissive`,
 "what colour do you emit" and would have to ask a vertex instead. Cost it
 before starting it.
 
-The two cheaper alternatives are both LOOK decisions and neither is costed: a
-bloom quality rung (the shape `volumetrics` already has, and there is no glow
-setting today), and a distance cap on the mask, which the measurement above
-says would have to be well inside the fog to remove anything.
+The two cheaper alternatives are both LOOK decisions: a bloom quality rung,
+and a distance cap on the mask, which the measurement above says would have
+to be well inside the fog to remove anything. **The rung now exists**
+(`Settings.glow`, `CONFIG.graphics.glowTiers`), but it moves the BLUR and not
+the mask, so it does nothing about the 123 draws this entry is about. It is
+finding 5's lever, and it has not been priced on a phone (see there).
 
 ---
 

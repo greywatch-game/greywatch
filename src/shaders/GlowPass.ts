@@ -37,6 +37,18 @@
  *   reads it as its emissive mask — and the blur starts from a half-resolution
  *   downsample, which is the size the kernel was tuned at in the first place.
  *
+ * THE GLOW SETTING MOVES WHERE THE BLUR STARTS AND NOTHING ELSE
+ * (`CONFIG.graphics.glowTiers`). `high` is the paragraph above. `low` blurs at
+ * a quarter and an eighth instead, with the kernel halved in texels so the
+ * bloom reaches exactly as far on screen and is only softer. It owes one more
+ * pass to do that honestly: the first blur reads the full-resolution mask
+ * with taps spaced in texels of its OWN target, which at half resolution
+ * already touches about half the mask's pixels and at quarter would touch an
+ * eighth — a one-pixel tracer or reticle line falling between taps and
+ * flickering as it moved. So `low` first box-filters the mask to quarter
+ * resolution (`glowDown`, four bilinear taps reading every pixel once) and
+ * blurs from that.
+ *
  * THE MASK IS DRAWN WITH AN OVERRIDE MATERIAL, NOT WITH THE MESH'S OWN. Every
  * glowing mesh wears an unlit `StandardMaterial` already faded by `EmissiveFog`,
  * and drawing that would be simpler — but `EmissiveFog` fades a colour TOWARD
@@ -80,6 +92,7 @@ import {
   Color4,
   Constants,
   EffectRenderer,
+  EffectWrapper,
   Observable,
   RenderTargetTexture,
   ShaderLanguage,
@@ -155,6 +168,39 @@ fn main(input: FragmentInputs) -> FragmentOutputs {
   fragmentOutputs.color = colour;
 }
 `;
+
+// The `low` rung's downsample: the full-resolution mask to a quarter, as a 4x4
+// box. Each tap sits one source texel off the output texel's centre, which is
+// the corner a 2x2 quad of source pixels shares, so bilinear filtering
+// averages that quad and the four taps read all sixteen pixels once. Exactly
+// so where the frame divides by four. Elsewhere the quarter target is floored,
+// a texel spans a little over four pixels (1755 / 438 is 4.007) and the taps
+// slide off the corners: the weights go uneven and about one column in 150 is
+// read faintly, against seven pixels in eight the first blur would miss
+// without this pass.
+ShaderStore.ShadersStoreWGSL["glowDownFragmentShader"] = `
+varying vUV: vec2f;
+var textureSamplerSampler: sampler;
+var textureSampler: texture_2d<f32>;
+
+// One texel of the SOURCE, the mask.
+uniform texel: vec2f;
+
+@fragment
+fn main(input: FragmentInputs) -> FragmentOutputs {
+  let uv = fragmentInputs.vUV;
+  let d = uniforms.texel;
+  let sum =
+    textureSampleLevel(textureSampler, textureSamplerSampler, uv + vec2f(-d.x, -d.y), 0.0) +
+    textureSampleLevel(textureSampler, textureSamplerSampler, uv + vec2f(d.x, -d.y), 0.0) +
+    textureSampleLevel(textureSampler, textureSamplerSampler, uv + vec2f(-d.x, d.y), 0.0) +
+    textureSampleLevel(textureSampler, textureSamplerSampler, uv + vec2f(d.x, d.y), 0.0);
+  fragmentOutputs.color = sum * 0.25;
+}
+`;
+
+/** A rung of the Glow setting — derived from the config for `VolumetricRung`'s reason. */
+export type GlowRung = keyof typeof CONFIG.graphics.glowTiers;
 
 /**
  * The bloom's compose, as WGSL for the pass that runs it (`CelInk`, the header
@@ -318,14 +364,25 @@ export class GlowPass {
   readonly onBeforeWorkObservable = new Observable<void>();
   readonly onAfterWorkObservable = new Observable<void>();
 
-  /** Half resolution: the horizontal pass's output, then the finished blur. */
+  /**
+   * The mask box-filtered to quarter resolution, which the `low` rung blurs
+   * from (see the header). 1x1 on `high`, which never reads it.
+   */
+  private readonly down: RenderTargetTexture;
+  /** `downsample` below the frame: the horizontal pass's output, then the finished blur. */
   private readonly nearH: RenderTargetTexture;
   private readonly near: RenderTargetTexture;
-  /** Quarter resolution, blurred from `near`. */
+  /** Half of `near` again, blurred from it. */
   private readonly wideH: RenderTargetTexture;
   private readonly wide: RenderTargetTexture;
 
   private readonly blurs: ThinBlurPostProcess[];
+  private readonly downsample: EffectWrapper;
+  /** What the first blur reads this frame: `down` on `low` once it is drawn, else the mask. */
+  private firstSource: RenderTargetTexture;
+  private rung: GlowRung = "high";
+  /** Set when the rung moves, so the next frame re-sizes the targets whatever the frame did. */
+  private stale = false;
   private readonly renderer: EffectRenderer;
 
   /** The pass the scene draws into, whose depth the mask borrows. */
@@ -371,6 +428,8 @@ export class GlowPass {
       this.buildList(list, length);
 
     const half = Constants.TEXTURETYPE_HALF_FLOAT;
+    this.down = this.target("glowDown", half);
+    this.firstSource = this.mask;
     this.nearH = this.target("glowNearH", half);
     this.near = this.target("glowNear", half);
     this.wideH = this.target("glowWideH", half);
@@ -380,13 +439,32 @@ export class GlowPass {
     const kernel = this.kernelTexels();
     const across = new Vector2(1, 0);
     const down = new Vector2(0, 1);
-    const sources = [this.mask, this.nearH, this.near, this.wideH];
+    // The first pass's source is read at bind time: it is the mask or `down`.
+    const sources = [null, this.nearH, this.near, this.wideH];
     this.blurs = sources.map((source, i) => {
       const blur = new ThinBlurPostProcess(`glowBlur${i}`, engine, i % 2 === 0 ? across : down, kernel);
       blur.onApplyObservable.add(() => {
-        blur.effect.setTexture("textureSampler", source);
+        blur.effect.setTexture("textureSampler", source ?? this.firstSource);
       });
       return blur;
+    });
+
+    this.downsample = new EffectWrapper({
+      engine,
+      name: "glowDown",
+      fragmentShader: "glowDown",
+      useShaderStore: true,
+      // Babylon's own post-process binding — no blending, and the `scale` its
+      // stock vertex stage reads — which is the shape `ThinBlurPostProcess`
+      // takes.
+      useAsPostProcess: true,
+      uniforms: ["texel"],
+      shaderLanguage: ShaderLanguage.WGSL,
+    });
+    this.downsample.onApplyObservable.add(() => {
+      const size = this.mask.getSize();
+      this.downsample.effect.setTexture("textureSampler", this.mask);
+      this.downsample.effect.setFloat2("texel", 1 / size.width, 1 / size.height);
     });
 
     scene.onAfterDrawPhaseObservable.add(() => this.render());
@@ -400,6 +478,17 @@ export class GlowPass {
    */
   drawsInto(frame: PostProcess): void {
     this.frame = frame;
+  }
+
+  /**
+   * The Glow setting. A no-op unless the rung moved; a move re-sizes the blur's
+   * targets on the next frame, and the kernel follows by itself because it is
+   * read before every blur.
+   */
+  setQuality(rung: GlowRung): void {
+    if (rung === this.rung) return;
+    this.rung = rung;
+    this.stale = true;
   }
 
   /**
@@ -522,7 +611,7 @@ export class GlowPass {
     const w = frame.width;
     const h = frame.height;
     const size = this.mask.getSize();
-    if (size.width !== w || size.height !== h) this.resize(w, h);
+    if (this.stale || size.width !== w || size.height !== h) this.resize(w, h);
 
     const dest = this.mask.renderTarget;
     if (dest && (frame !== this.sharedFrom || dest !== this.sharedTo)) {
@@ -542,7 +631,11 @@ export class GlowPass {
     this.onAfterWorkObservable.notifyObservers();
   }
 
-  /** Four separable passes: mask -> half (across, down) -> quarter (across, down). */
+  /**
+   * Four separable passes: mask -> near (across, down) -> wide (across, down),
+   * near being half resolution on `high` and quarter on `low` — where the mask
+   * is box-filtered into `down` first and the first pass reads that instead.
+   */
   private blur(): void {
     const engine = this.scene.getEngine();
     // Read every frame: the render-scale setting moves the backing store, and
@@ -550,6 +643,18 @@ export class GlowPass {
     const kernel = this.kernelTexels();
     const outputs = [this.nearH, this.near, this.wideH, this.wide];
     this.renderer.saveStates();
+    // Until the box filter's shader has compiled, the first pass reads the
+    // mask direct — undersampled for a frame or two rather than blurring
+    // nothing.
+    this.firstSource = this.mask;
+    const down = this.down.renderTarget;
+    if (this.downsampleBy() > 2 && down && this.downsample.isReady()) {
+      engine.bindFramebuffer(down, undefined, undefined, undefined, true);
+      this.renderer.applyEffectWrapper(this.downsample);
+      this.renderer.draw();
+      engine.unBindFramebuffer(down);
+      this.firstSource = this.down;
+    }
     for (let i = 0; i < 4; i++) {
       const blur = this.blurs[i];
       blur.kernel = kernel;
@@ -568,31 +673,41 @@ export class GlowPass {
   }
 
   private resize(w: number, h: number): void {
+    this.stale = false;
     this.mask.resize({ width: w, height: h });
-    const hw = Math.max(1, Math.floor(w / 2));
-    const hh = Math.max(1, Math.floor(h / 2));
-    const qw = Math.max(1, Math.floor(hw / 2));
-    const qh = Math.max(1, Math.floor(hh / 2));
-    this.nearH.resize({ width: hw, height: hh });
-    this.near.resize({ width: hw, height: hh });
-    this.wideH.resize({ width: qw, height: qh });
-    this.wide.resize({ width: qw, height: qh });
+    const by = this.downsampleBy();
+    const nw = Math.max(1, Math.floor(w / by));
+    const nh = Math.max(1, Math.floor(h / by));
+    const ww = Math.max(1, Math.floor(nw / 2));
+    const wh = Math.max(1, Math.floor(nh / 2));
+    // The box filter's output IS the near size, four mask pixels to a texel.
+    this.down.resize(by > 2 ? { width: nw, height: nh } : { width: 1, height: 1 });
+    this.nearH.resize({ width: nw, height: nh });
+    this.near.resize({ width: nw, height: nh });
+    this.wideH.resize({ width: ww, height: wh });
+    this.wide.resize({ width: ww, height: wh });
+  }
+
+  /** How far below the frame the near target sits, off the rung. */
+  private downsampleBy(): number {
+    return CONFIG.graphics.glowTiers[this.rung].downsample;
   }
 
   /**
-   * The kernel in TEXELS of the half-resolution target, from
+   * The kernel in TEXELS of the near target, from
    * `CONFIG.graphics.glowKernel`, which is stated against the FRAME.
    *
-   * A half-resolution texel is two backing-store pixels, and a backing-store
-   * pixel is `level` CSS pixels (`Game.applyRenderScale`), so `glowKernel` CSS
-   * pixels is `glowKernel / (2 * level)` texels. The quarter target uses the
-   * same count and so blurs twice as wide on screen, which is the pair the
-   * layer composed. At a scaling level of 1 this is exactly the kernel the
-   * layer ran with.
+   * A near texel is `downsample` backing-store pixels (2 on `high`, 4 on
+   * `low`), and a backing-store pixel is `level` CSS pixels
+   * (`Game.applyRenderScale`), so `glowKernel` CSS pixels is
+   * `glowKernel / (downsample * level)` texels — the same reach on screen on
+   * either rung. The wide target uses the same count and so blurs twice as
+   * wide on screen, which is the pair the layer composed. At a scaling level
+   * of 1 on `high` this is exactly the kernel the layer ran with.
    */
   private kernelTexels(): number {
     const level = this.scene.getEngine().getHardwareScalingLevel();
-    return Math.max(1, CONFIG.graphics.glowKernel / (2 * level));
+    return Math.max(1, CONFIG.graphics.glowKernel / (this.downsampleBy() * level));
   }
 
   private target(name: string, type: number): RenderTargetTexture {
@@ -610,9 +725,11 @@ export class GlowPass {
 
   dispose(): void {
     for (const blur of this.blurs) blur.dispose();
+    this.downsample.dispose();
     this.renderer.dispose();
     for (const mat of this.materials.values()) mat.dispose();
     this.mask.dispose();
+    this.down.dispose();
     this.nearH.dispose();
     this.near.dispose();
     this.wideH.dispose();

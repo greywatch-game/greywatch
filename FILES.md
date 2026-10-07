@@ -1676,7 +1676,9 @@ src/
     GlowPass.ts         # THE BLOOM, owned end to end: an emissive-only mask
                         #   drawn against the FRAME's depth (shared, sized in
                         #   the same function that draws it), Babylon's kernel
-                        #   blur at half and quarter resolution, and an additive
+                        #   blur at half and quarter resolution (quarter and
+                        #   eighth off a box downsample on the Glow setting's
+                        #   `low`), and an additive
                         #   compose the ink runs as its last line (a WGSL
                         #   snippet, not a pass). Public API only;
                         #   `Game` supplies the rules (what blooms, how bright)

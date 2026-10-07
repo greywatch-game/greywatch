@@ -303,6 +303,11 @@ export interface ProfileGraphics {
   foliage?: string;
   /** The shaft pass's rung, or `off` when it is off the camera. */
   volumetrics: string;
+  /**
+   * `Settings.glow`. Absent in a capture from before the setting existed,
+   * every one of which ran `high`.
+   */
+  glow?: string;
   motionBlur: boolean;
   paperGrain: boolean;
   /**
