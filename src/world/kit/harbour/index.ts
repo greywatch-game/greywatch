@@ -6,8 +6,8 @@
  *
  * This file is the set's contract and its barrel: `BuildingKit.ts` imports
  * the seven builders from here, and each building is a file of its own beside
- * it (`smelter.ts`, `lighthouse.ts`, `crane.ts`, `netLoft.ts`), with the
- * three small waterfront pieces together in `small.ts`. What more than one of
+ * it (`smelter.ts`, `lighthouse.ts`, `crane.ts`, `netLoft.ts`, `hull.ts`),
+ * with the two small waterfront pieces together in `small.ts`. What more than one of
  * them is drawn with — the straight member, the broken-jointed run, the
  * tarred boarding and the window cut into it, the net loft's paints — is
  * `shared.ts`. A builder never imports another builder.
@@ -56,4 +56,5 @@ export { buildSmelter } from "./smelter";
 export { buildLighthouse } from "./lighthouse";
 export { buildHarbourCrane } from "./crane";
 export { buildNetLoft } from "./netLoft";
-export { buildFishRack, buildCareenedHull, buildSaltPan } from "./small";
+export { buildCareenedHull } from "./hull";
+export { buildFishRack, buildSaltPan } from "./small";

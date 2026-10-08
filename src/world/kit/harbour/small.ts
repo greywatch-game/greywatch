@@ -1,7 +1,7 @@
 /**
- * kit/harbour/small.ts — The three small pieces of the working waterfront:
- * buildFishRack (the catch hung to dry), buildCareenedHull (an open boat up
- * on the hard) and buildSaltPan (a walled evaporation pan and its heap). Part
+ * kit/harbour/small.ts — The two small pieces of the working waterfront:
+ * buildFishRack (the catch hung to dry) and buildSaltPan (a walled
+ * evaporation pan and its heap); the boat up on the hard is `hull.ts`. Part
  * of the volcanic-coast set: follows the contract in kit/core.ts and the
  * set's rules in `./index.ts`. Invariants: fixed geometry, so nothing is
  * seeded. Never imports another builder.
@@ -12,13 +12,11 @@ import {
   Build,
   type BuildParams,
   type Structure,
-  BASALT,
   BASALT_PALE,
   PITCH,
   PLANK,
   SAILCLOTH,
   SLAG,
-  TEAK,
   TIMBER,
 } from "../core";
 import { TRANSLUCENCY } from "./shared";
@@ -91,63 +89,6 @@ export function buildFishRack(
 
   // The coarse box: the whole run, at the height a body walks into it.
   b.block({ w: len, h: 1.95, d: half * 2 + 0.3, x: 0, y: 0.975, z: 0, porous: true });
-  return b;
-}
-
-/**
- * A CAREENED HULL: an open boat up on the hard, chocked on keel blocks with
- * four shores holding her upright and a tarpaulin over the after half.
- *
- * **There is no boat in this game and this is not waiting to be one.** It
- * answers a question every waterfront on this map raised and none of them
- * answered: eleven boat sheds, eight jetties, three slipways, and nothing
- * anywhere that had ever been in the water. A hull on the hard is what a
- * fishing town looks like between tides, and it is the piece that makes the
- * jetties read as jetties rather than as decking.
- *
- * It is also the only real hard cover on an open strand — 2.9 m, over
- * `CONFIG.bots.cover.hardHeight`, so it stops a round at a body standing up —
- * which is why the collider is one honest box from the ground to the sheer
- * rather than a shell you could shoot underneath. The shores are `strut`s, so
- * a round that hits one stops on it.
- */
-export function buildCareenedHull(
-  scene: Scene,
-  mats: CelMaterialFactory,
-  p: BuildParams = {},
-): Structure {
-  const b = new Build(scene, mats, "hull");
-  const len = p.length ?? 11;
-
-  // The cradle: two keel blocks and four raking shores.
-  for (const sz of [-1, 1] as const) {
-    b.wall(1.3, 0.7, 1.1, 0, 0.35, sz * len * 0.25, BASALT);
-    for (const sx of [-1, 1] as const) {
-      b.strut(0.26, 2.2, 0.26, sx * 2.15, 0.85, sz * len * 0.28, TIMBER, {
-        z: sx * 0.688,
-      });
-    }
-  }
-
-  // The hull, four strakes deepening to the sheer. Boxes cannot taper, so what
-  // makes this a boat rather than a crate is the raked stem and stern posts
-  // and one pale boot-topping line across a tarred body.
-  b.box(0.42, 0.5, len, 0, 0.95, 0, PITCH);
-  b.box(1.9, 0.75, len * 0.93, 0, 1.4, 0, PITCH);
-  b.box(2.7, 0.7, len * 0.97, 0, 2.0, 0, PITCH);
-  b.box(3.16, 0.11, len * 0.995, 0, 2.29, 0, SAILCLOTH);
-  b.box(3.1, 0.52, len, 0, 2.6, 0, PLANK);
-  b.box(3.26, 0.16, len + 0.2, 0, 2.9, 0, TEAK);
-  for (const sz of [-1, 1] as const) {
-    b.box(0.38, 2.7, 0.38, 0, 1.95, sz * (len / 2 + 0.34), PITCH, { x: sz * 0.28 });
-  }
-  for (const dz of [-0.22, 0, 0.22]) {
-    b.box(2.7, 0.1, 0.36, 0, 2.55, dz * len, PLANK);
-  }
-  b.box(0.27, 3.6, 0.27, 0, 4.3, -len * 0.12, TIMBER, { x: -0.05 });
-  b.box(3.0, 0.13, len * 0.42, 0, 3.0, len * 0.2, SAILCLOTH, { x: 0.03 });
-
-  b.block({ w: 3.3, h: 2.9, d: len, x: 0, y: 1.45, z: 0 });
   return b;
 }
 

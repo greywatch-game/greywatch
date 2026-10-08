@@ -307,7 +307,11 @@ export type BuilderKind = keyof typeof BUILDERS;
  * and carries its toe down to the lowest ground under its corners. The quay
  * crane seeds its door's paint, its shutters, its slate runs, its stones and
  * what lies on its quay off where it stands, and carries its quay block's
- * footing down to the lowest ground round it.
+ * footing down to the lowest ground round it. The careened hull seeds whether
+ * her topsides are tarred or oiled, where her tarpaulin begins, her oars, her
+ * port letters and what lies on the hard beside her off where she stands, and
+ * carries her cribbing's footings, her shores' soles and that clutter down to
+ * the ground under each.
  */
 export const CONFORMS_TO_TERRAIN: ReadonlySet<BuilderKind> = new Set([
   "road",
@@ -350,4 +354,5 @@ export const CONFORMS_TO_TERRAIN: ReadonlySet<BuilderKind> = new Set([
   "netLoft",
   "planter",
   "crane",
+  "careenedHull",
 ] as const);

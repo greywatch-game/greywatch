@@ -1704,6 +1704,42 @@ export const CASEMENT = "#272c2d";
  */
 export const DOOR_PAINTS = [PLANK, TEAK, VERDIGRIS, AWNING] as const;
 
+/**
+ * Block letters and figures as strokes on a 3 x 5 grid, x to the right and y
+ * up: `[x0, y0, x1, y1]` per stroke. Painted words and cast dates — what a
+ * depot's fascia, its bay numbers and its datestone say, and the port letters
+ * and number on a fishing boat's bow. Only the characters something spells; a
+ * new word adds its letters, and a character with no entry is a space.
+ *
+ * Every stroke is an axis-aligned bar, so a diagonal is drawn as steps: the
+ * `R`'s leg is two.
+ */
+export const STENCIL: Record<string, readonly (readonly [number, number, number, number])[]> = {
+  G: [[0, 4, 3, 5], [0, 0, 1, 5], [0, 0, 3, 1], [2, 0, 3, 2.6], [1.6, 2, 3, 2.8]],
+  O: [[0, 4, 3, 5], [0, 0, 3, 1], [0, 0, 1, 5], [2, 0, 3, 5]],
+  D: [[0, 0, 1, 5], [0, 4, 2.1, 5], [0, 0, 2.1, 1], [2, 0.6, 3, 4.4]],
+  S: [[0, 4, 3, 5], [0, 2, 1, 5], [0, 2, 3, 3], [2, 0, 3, 3], [0, 0, 3, 1]],
+  E: [[0, 0, 1, 5], [0, 4, 3, 5], [0, 2, 2.3, 3], [0, 0, 3, 1]],
+  P: [[0, 0, 1, 5], [0, 4, 3, 5], [0, 2, 3, 3], [2, 2, 3, 5]],
+  T: [[0, 4, 3, 5], [1, 0, 2, 5]],
+  F: [[0, 0, 1, 5], [0, 4, 3, 5], [0, 2, 2.3, 3]],
+  I: [[1, 0, 2, 5], [0.3, 4, 2.7, 5], [0.3, 0, 2.7, 1]],
+  C: [[0, 4, 3, 5], [0, 0, 1, 5], [0, 0, 3, 1]],
+  H: [[0, 0, 1, 5], [2, 0, 3, 5], [0, 2, 3, 3]],
+  L: [[0, 0, 1, 5], [0, 0, 3, 1]],
+  R: [[0, 0, 1, 5], [0, 4, 2.4, 5], [2, 2.6, 3, 4.6], [0, 2, 2.4, 3], [1.6, 1, 2.6, 2.2], [2, 0, 3, 1.4]],
+  "0": [[0, 4, 3, 5], [0, 0, 3, 1], [0, 0, 1, 5], [2, 0, 3, 5]],
+  "1": [[1, 0, 2, 5], [0.2, 3.7, 1, 4.6], [0.3, 0, 2.7, 1]],
+  "2": [[0, 4, 3, 5], [2, 2, 3, 5], [0, 2, 3, 3], [0, 0, 1, 3], [0, 0, 3, 1]],
+  "3": [[0, 4, 3, 5], [0.7, 2, 3, 3], [0, 0, 3, 1], [2, 0, 3, 5]],
+  "4": [[0, 2, 1, 5], [0, 2, 3, 3], [2, 0, 3, 5]],
+  "5": [[0, 4, 3, 5], [0, 2, 1, 5], [0, 2, 3, 3], [2, 0, 3, 3], [0, 0, 3, 1]],
+  "6": [[0, 4, 3, 5], [0, 0, 1, 5], [0, 2, 3, 3], [2, 0, 3, 3], [0, 0, 3, 1]],
+  "7": [[0, 4, 3, 5], [2, 0, 3, 5]],
+  "8": [[0, 4, 3, 5], [0, 2, 3, 3], [0, 0, 3, 1], [0, 0, 1, 5], [2, 0, 3, 5]],
+  "9": [[0, 4, 3, 5], [0, 2, 3, 3], [0, 0, 3, 1], [0, 2, 1, 5], [2, 0, 3, 5]],
+};
+
 export const outward = (s: Side): number => (s === "+z" || s === "+x" ? 1 : -1);
 export const runsAlongX = (s: Side): boolean => s === "-z" || s === "+z";
 

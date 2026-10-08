@@ -97,6 +97,13 @@ most one saturated accent, spent where it means something.
   merge is per colour, so a shared top face is a per-pixel tie that strobes as
   the camera moves. Stand one proud (≥ 1 cm near, 2–3 cm for broad surfaces
   seen far). Coplanar faces of ONE colour are fine.
+- **The cel shader lights each TRIANGLE by its own facet** (`facetNormal` in
+  `CelShader.ts`); the vertex normal only says which way it faces. So a
+  curved surface built from twisted quads draws each quad as two triangles of
+  different value, and no normal smoothing removes it — only flatter quads do.
+  The careened hull's strakes were up to 30° twisted at the ends; ruling each
+  one developably (`Lines.rule` in `harbour/hull.ts`) made them flat. Measure
+  the angle between a quad's two triangles before photographing a curved shell.
 - **Emit what is hidden AFTER what hides it** (cores after facing, the bed
   after the tiles). The part merge keeps emission order, so the depth test
   rejects the hidden layer instead of shading it twice — the wrong order was
