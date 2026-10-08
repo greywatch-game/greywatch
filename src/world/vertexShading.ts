@@ -139,19 +139,11 @@
 import { Mesh, ShaderMaterial, VertexBuffer } from "@babylonjs/core";
 import { CONFIG } from "../config";
 import { isFlame } from "../shaders/FlameShader";
-import {
-  halfDepth,
-  type LocalXZ,
-  rotateToLocalXZ,
-  slabThickness,
-} from "./boxGeometry";
+import { halfDepth, slabThickness } from "./boxGeometry";
 import { type BoxIndex, boxesNear, buildBoxIndex } from "./boxIndex";
 import type { WorldBox } from "./MapBuilder";
 import { swayLayerOf, swayWeight } from "./sway";
 import type { TerrainField } from "./TerrainField";
-
-/** Scratch for the box-frame transform; the bake runs it per vertex per box. */
-const localScratch: LocalXZ = { lx: 0, lz: 0 };
 
 /**
  * The grid is `boxIndex.ts`'s, whose header carries the reasoning: the pad is
@@ -185,25 +177,61 @@ const SELF = 0.08;
  */
 interface Bucketed {
   index: BoxIndex;
-  /** Local half-extents, precomputed: the pitch makes these non-obvious. */
-  half: { x: number; y: number; z: number }[];
+  /**
+   * Everything the per-vertex loops read off a box, flat, `GEO` numbers a box:
+   * the centre, the local half-extents (the pitch makes these non-obvious), and
+   * the yaw's cosine and sine both ways — world to local, which
+   * `rotateToLocalXZ` computes, and back, which the facing test does.
+   *
+   * **Precomputed and not recomputed, and that is the whole saving, not an
+   * approximation**: the same `Math.cos`/`Math.sin` of the same angle, taken
+   * once per box instead of once per vertex per box. The bake was a quarter of
+   * a map build (`FINDINGS.md` 26) and most of it was trigonometry repeated
+   * thousands of times on each box's one angle.
+   */
+  geo: Float64Array;
 }
+
+/** Numbers a box takes in `Bucketed.geo`; the offsets are the `G_*` below. */
+const GEO = 11;
+const G_CX = 0;
+const G_CY = 1;
+const G_CZ = 2;
+const G_HX = 3;
+const G_HY = 4;
+const G_HZ = 5;
+/** 1 if the box is yawed at all — `rotateToLocalXZ`'s own `rotY === 0` test. */
+const G_YAWED = 6;
+const G_COS = 7;
+const G_SIN = 8;
+const G_COS_BACK = 9;
+const G_SIN_BACK = 10;
 
 /** Indexes the collider boxes for the radius query below. */
 function bucket(boxes: readonly WorldBox[], size: number, radius: number): Bucketed {
   const index = buildBoxIndex(boxes, size, radius);
-  const half = index.boxes.map((box) => {
+  const geo = new Float64Array(index.boxes.length * GEO);
+  index.boxes.forEach((box, i) => {
+    const o = i * GEO;
+    geo[o + G_CX] = box.cx;
+    geo[o + G_CY] = box.cy;
+    geo[o + G_CZ] = box.cz;
     // Local half-extents. Depth and height both grow with the pitch: a tilted
     // slab covers more ground than its depth and stands taller than its height,
     // and `boxGeometry` already owns both of those conversions.
     const sin = Math.abs(Math.sin(box.rotX));
-    return {
-      x: box.w / 2,
-      y: slabThickness(box) / 2 + (box.d / 2) * sin,
-      z: halfDepth(box),
-    };
+    geo[o + G_HX] = box.w / 2;
+    geo[o + G_HY] = slabThickness(box) / 2 + (box.d / 2) * sin;
+    geo[o + G_HZ] = halfDepth(box);
+    // `rotateToLocalXZ`'s convention, read once: world to local by `rotY`,
+    // and the facing test's way back by `-rotY`.
+    geo[o + G_YAWED] = box.rotY !== 0 ? 1 : 0;
+    geo[o + G_COS] = Math.cos(box.rotY);
+    geo[o + G_SIN] = Math.sin(box.rotY);
+    geo[o + G_COS_BACK] = Math.cos(-box.rotY);
+    geo[o + G_SIN_BACK] = Math.sin(-box.rotY);
   });
-  return { index, half };
+  return { index, geo };
 }
 
 /**
@@ -226,21 +254,43 @@ function occlusionAt(
   radius: number,
 ): number {
   let occ = 0;
+  const geo = index.geo;
+  // The squared range a box must be inside to be worth `Math.hypot`, with a
+  // margin either way so the cheap test can only refuse what the exact one
+  // would refuse too — the borderline still goes to `hypot`, so not a bit of
+  // the result moves.
+  const far2 = radius * radius * (1 + 1e-9);
+  const near2 = SELF * SELF * (1 - 1e-9);
 
   const list = boxesNear(index.index, px, pz);
   if (list) {
     for (const i of list) {
-      const box = index.index.boxes[i];
-      const half = index.half[i];
-      // Into the box's yaw frame; the pitch is folded into the half-extents
-      // above rather than rotated for, because an occlusion estimate does not
-      // need a ramp's exact face — only roughly where its bulk is.
-      const { lx, lz } = rotateToLocalXZ(box, px, pz, localScratch);
-      const ly = py - box.cy;
+      const o = i * GEO;
+      // Into the box's yaw frame (`rotateToLocalXZ`, inlined over the
+      // precomputed angle); the pitch is folded into the half-extents above
+      // rather than rotated for, because an occlusion estimate does not need
+      // a ramp's exact face — only roughly where its bulk is.
+      const dx = px - geo[o + G_CX];
+      const dz = pz - geo[o + G_CZ];
+      let lx = dx;
+      let lz = dz;
+      const yawed = geo[o + G_YAWED] !== 0;
+      if (yawed) {
+        const c = geo[o + G_COS];
+        const s = geo[o + G_SIN];
+        lx = dx * c - dz * s;
+        lz = dx * s + dz * c;
+      }
+      const ly = py - geo[o + G_CY];
+      const hx = geo[o + G_HX];
+      const hy = geo[o + G_HY];
+      const hz = geo[o + G_HZ];
 
-      const qx = lx - Math.max(-half.x, Math.min(half.x, lx));
-      const qy = ly - Math.max(-half.y, Math.min(half.y, ly));
-      const qz = lz - Math.max(-half.z, Math.min(half.z, lz));
+      const qx = lx - Math.max(-hx, Math.min(hx, lx));
+      const qy = ly - Math.max(-hy, Math.min(hy, ly));
+      const qz = lz - Math.max(-hz, Math.min(hz, lz));
+      const d2 = qx * qx + qy * qy + qz * qz;
+      if (d2 > far2 || d2 < near2) continue;
       const r = Math.hypot(qx, qy, qz);
       if (r < SELF || r > radius) continue;
 
@@ -253,9 +303,9 @@ function occlusionAt(
       // hands this loop every box whose reach the point falls in.
       let wx = qx;
       let wz = qz;
-      if (box.rotY !== 0) {
-        const c = Math.cos(-box.rotY);
-        const s = Math.sin(-box.rotY);
+      if (yawed) {
+        const c = geo[o + G_COS_BACK];
+        const s = geo[o + G_SIN_BACK];
         wx = qx * c - qz * s;
         wz = qx * s + qz * c;
       }
@@ -340,15 +390,27 @@ function shelteredAt(
   // the floor of the place it stands over, and a wall on a slope is exactly the
   // case where those two differ.
   const floor = terrain.heightAt(sx, sz) + cover;
+  const geo = index.geo;
   for (const i of list) {
-    const box = index.index.boxes[i];
-    const half = index.half[i];
-    // `half.y` folds the pitch in, so a tilted slab's underside comes out at
-    // its lowest corner — which under-reports cover rather than inventing it.
-    const under = box.cy - half.y;
+    const o = i * GEO;
+    // The half-height folds the pitch in, so a tilted slab's underside comes
+    // out at its lowest corner — which under-reports cover rather than
+    // inventing it.
+    const under = geo[o + G_CY] - geo[o + G_HY];
     if (under < floor || under < py) continue;
-    const { lx, lz } = rotateToLocalXZ(box, sx, sz, localScratch);
-    if (Math.abs(lx) > half.x || Math.abs(lz) > half.z) continue;
+    // `rotateToLocalXZ`, inlined over the precomputed angle as in
+    // `occlusionAt`.
+    const dx = sx - geo[o + G_CX];
+    const dz = sz - geo[o + G_CZ];
+    let lx = dx;
+    let lz = dz;
+    if (geo[o + G_YAWED] !== 0) {
+      const c = geo[o + G_COS];
+      const s = geo[o + G_SIN];
+      lx = dx * c - dz * s;
+      lz = dx * s + dz * c;
+    }
+    if (Math.abs(lx) > geo[o + G_HX] || Math.abs(lz) > geo[o + G_HZ]) continue;
     return true;
   }
   return false;

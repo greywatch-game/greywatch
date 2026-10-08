@@ -61,6 +61,7 @@ import {
   Mesh,
   VertexBuffer,
   type Scene,
+  Vector3,
   VertexData,
 } from "@babylonjs/core";
 
@@ -191,4 +192,75 @@ export function uploadPart(mesh: Mesh): Mesh {
   geometry.releaseForMesh(mesh, false);
   geometry.applyToMesh(mesh);
   return mesh;
+}
+
+/**
+ * `uploadPart(mesh).bakeCurrentTransformIntoVertices()` with ONE upload, or
+ * none at all when `upload` is false — the merge's group-of-one path, which a
+ * lone colour in a building or a block takes.
+ *
+ * **That chain uploaded twice**: `uploadPart` creates every device buffer, and
+ * the bake then writes new positions and normals through `setVerticesData`,
+ * which creates their buffers AGAIN and drops the first pair. And where the
+ * result is going to be merged again (`mergeByMaterial`'s `again`), neither
+ * upload was ever drawn.
+ *
+ * **It is Babylon's bake on the part's own arrays**: the world matrix computed
+ * the same way, the same arrays read through the same `getVerticesData`, each
+ * vertex through the same `TransformCoordinatesFromFloatsToRef` and each
+ * normal through `TransformNormalFromFloatsToRef` and `normalize` — then the
+ * arrays put on a fresh part geometry rather than uploaded one kind at a
+ * time, and the local matrix reset exactly as `bakeCurrentTransformIntoVertices`
+ * resets it. The mesh keeps its identity, name and metadata.
+ *
+ * **A mirrored transform and a mesh with tangents go the old way**: Babylon
+ * flips the winding through a re-application this does not reproduce, and no
+ * part in the kit has either — the fallback is exactness, not speed.
+ */
+export function bakePart(mesh: Mesh, upload: boolean): Mesh {
+  const geometry = mesh.geometry;
+  const world = mesh.computeWorldMatrix(true);
+  const positionBuffer = geometry?.getVertexBuffer(VertexBuffer.PositionKind);
+  if (
+    !geometry ||
+    !positionBuffer ||
+    positionBuffer.getBuffer() ||
+    world.determinant() < 0 ||
+    mesh.isVerticesDataPresent(VertexBuffer.TangentKind)
+  ) {
+    return uploadPart(mesh).bakeCurrentTransformIntoVertices();
+  }
+  const data = new VertexData();
+  for (const kind of geometry.getVerticesDataKinds()) {
+    const stored = geometry.getVertexBuffer(kind)?.getData();
+    if (stored) data.set(stored as number[], kind);
+  }
+  const temp = Vector3.Zero();
+  const positions = mesh.getVerticesData(VertexBuffer.PositionKind)!;
+  for (let i = 0; i < positions.length; i += 3) {
+    Vector3.TransformCoordinatesFromFloatsToRef(
+      positions[i], positions[i + 1], positions[i + 2], world, temp,
+    ).toArray(positions, i);
+  }
+  data.positions = positions;
+  const normals = mesh.getVerticesData(VertexBuffer.NormalKind);
+  if (normals) {
+    for (let i = 0; i < normals.length; i += 3) {
+      Vector3.TransformNormalFromFloatsToRef(
+        normals[i], normals[i + 1], normals[i + 2], world, temp,
+      )
+        .normalize()
+        .toArray(normals, i);
+    }
+    data.normals = normals;
+  }
+  data.indices = geometry.getIndices(false, false);
+  geometry.releaseForMesh(mesh, true);
+  const fresh = new Geometry(Geometry.RandomId(), mesh.getScene());
+  fresh.setAllVerticesData(data, false);
+  fresh.delayLoadState = Constants.DELAYLOADSTATE_NOTLOADED;
+  fresh.applyToMesh(mesh);
+  fresh.delayLoadState = Constants.DELAYLOADSTATE_NONE;
+  mesh.resetLocalMatrix(true);
+  return upload ? uploadPart(mesh) : mesh;
 }

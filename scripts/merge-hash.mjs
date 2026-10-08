@@ -136,6 +136,10 @@ function fingerprintMap() {
       indices: m.getTotalIndices(),
       subMeshes: m.subMeshes ? m.subMeshes.length : 0,
       delayLoadState: geo ? geo.delayLoadState : null,
+      // Whether the mesh is on the DEVICE. A part that reaches the world draws
+      // nothing and throws nothing (`world/parts.ts`), so this is checked on
+      // its own below, against no baseline at all.
+      onDevice: Boolean(geo?.getVertexBuffer("position")?.getBuffer()),
       buffers,
       index: hashArray(m.getIndices(false, true)),
     };
@@ -209,6 +213,8 @@ async function buildOne(browser, url, id) {
 function fieldsThatMoved(a, b) {
   const moved = [];
   for (const k of new Set([...Object.keys(a), ...Object.keys(b)])) {
+    // A field an older fingerprint did not record is not a difference.
+    if (!(k in a)) continue;
     if (k === "buffers") {
       for (const kind of new Set([...Object.keys(a.buffers), ...Object.keys(b.buffers)])) {
         if (a.buffers[kind] !== b.buffers[kind]) moved.push(`buffer:${kind}`);
@@ -280,6 +286,21 @@ try {
   await browser?.close();
   await vite.stop();
 }
+
+// Every mesh handed to the world must be on the device, whatever any baseline
+// says — the one failure the hashes above cannot see.
+let stranded = 0;
+for (const [id, r] of Object.entries(result)) {
+  if (r.error) continue;
+  for (const list of ["visuals", "colliders", "terrainColliders"]) {
+    const parts = r[list].filter((m) => m.vertices > 0 && !m.onDevice);
+    stranded += parts.length;
+    for (const m of parts.slice(0, 5)) {
+      console.log(`${id}.${list}: ${m.name} is a PART — it will draw nothing`);
+    }
+  }
+}
+if (stranded > 0) process.exitCode = 1;
 
 if (outFile) {
   writeFileSync(outFile, JSON.stringify(result));

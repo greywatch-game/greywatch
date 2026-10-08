@@ -26,7 +26,7 @@
 import { Material, Mesh, VertexBuffer, VertexData } from "@babylonjs/core";
 import { writePaletteIndex } from "../shaders/CelShader";
 import type { EditorItem, EditorRef, PaneGroup, WorldPane } from "./mapTypes";
-import { partSurface, uploadPart } from "./parts";
+import { bakePart, partSurface, uploadPart } from "./parts";
 import { marksSway, type SwayLayer, swayLayerOf } from "./sway";
 
 /**
@@ -417,7 +417,7 @@ export function mergeByMaterial(
             // the colours only one mesh uses — and the caller, which positions
             // and rotates what it gets back, would clobber that mesh's own
             // transform instead of composing with it.
-            uploadPart(group[0]).bakeCurrentTransformIntoVertices()
+            bakePart(group[0], !again)
           : again
             ? mergeToPart(group)
             : Mesh.MergeMeshes(group, true, true, undefined, false, false);
