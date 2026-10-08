@@ -114,6 +114,13 @@ scripts/                      # Node tooling, run by hand or by `npm run build`,
                               #   the COLLIDERS hashed apart, so a refactor
                               #   proves it moved nothing. `--feet` measures the
                               #   kinds against lib/footprints.mjs. Not a gate
+  merge-hash.mjs              # `npm run merge:hash`: kit:hash's other half —
+                              #   builds every map in a real browser and hashes
+                              #   every merged visual, collider and terrain
+                              #   collider plus the box lists, so a change to
+                              #   how parts are built or merged proves it moved
+                              #   nothing. Same machine and Babylon only. Not a
+                              #   gate
   loc.mjs                     # `npm run loc`: how big the project is, off `git
                               #   ls-files` — hand-written code split into
                               #   code, comment and blank, apart from the map

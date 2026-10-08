@@ -14,17 +14,19 @@
  * contract in `CLAUDE.md`). A merged mesh carries the exemptions and the sway
  * mark its group was KEYED on, never ones read back off a member — `MergeMeshes`
  * disposes its sources, and disposal nulls their metadata. Every path out of a
- * merge that keeps its source owes `uploadPart()` or it draws nothing.
+ * merge that keeps its source owes `uploadPart()` or it draws nothing — and a
+ * merge asked for with `again` hands back PARTS, so its caller must merge them
+ * again through a final pass (which uploads) before the world sees them.
  * Merging is only safe at identity transform: `MergeMeshes` bakes world
  * matrices, so a lone mesh is baked by hand — except by `PaneBlocks`, whose
  * meshes are already where they belong.
  * Must NOT merge across two materials, carry `solid` onto a merged visual, or
  * paletteise anything but a plain matte cel material (`plainCelHex`).
  */
-import { Material, Mesh, VertexBuffer } from "@babylonjs/core";
+import { Material, Mesh, VertexBuffer, VertexData } from "@babylonjs/core";
 import { writePaletteIndex } from "../shaders/CelShader";
 import type { EditorItem, EditorRef, PaneGroup, WorldPane } from "./mapTypes";
-import { uploadPart } from "./parts";
+import { partSurface, uploadPart } from "./parts";
 import { marksSway, type SwayLayer, swayLayerOf } from "./sway";
 
 /**
@@ -354,6 +356,14 @@ export function mergeByMaterial(
   meshes: Mesh[],
   tag: string,
   palette?: Palette,
+  /**
+   * The caller is going to merge what this returns AGAIN (a placement or a
+   * scatter field on its way into `BlockMerge`, a road on its way into the
+   * road merge), so a merged group may stay a PART — see `mergeToPart`. Never
+   * for a mesh that is handed to the world as it is: the editor's per-item
+   * meshes and the final passes leave this off.
+   */
+  again = false,
 ): Mesh[] {
   // Material first, then sway layer and exemption set — see `EXEMPTIONS`.
   // Nested rather than keyed on a composed string, because two distinct
@@ -408,7 +418,9 @@ export function mergeByMaterial(
             // and rotates what it gets back, would clobber that mesh's own
             // transform instead of composing with it.
             uploadPart(group[0]).bakeCurrentTransformIntoVertices()
-          : Mesh.MergeMeshes(group, true, true, undefined, false, false);
+          : again
+            ? mergeToPart(group)
+            : Mesh.MergeMeshes(group, true, true, undefined, false, false);
       if (!merged) continue;
       // Suffixed only where a group actually splits, so the common name is the
       // one the rest of the tree already reads in a profile.
@@ -444,6 +456,50 @@ export function mergeByMaterial(
     }
   }
   return out;
+}
+
+/**
+ * `Mesh.MergeMeshes(group, true, true, undefined, false, false)` whose result
+ * is a PART (`world/parts.ts`) rather than a mesh on the device.
+ *
+ * **A merge that is going to be merged again was uploading for nothing.** A
+ * placement's per-material merge is filed into `BlockMerge`, which merges it
+ * a second time and disposes it — so the device buffers `MergeMeshes` gave it
+ * were created, written and destroyed without a frame ever drawing them: the
+ * same round trip `parts.ts` took off the parts themselves, one merge later.
+ *
+ * **It is Babylon's own merge, step for step**, so the vertices cannot move
+ * (`npm run merge:hash` is the proof): each member's world matrix computed
+ * first and its data extracted uncopied, the members folded into the first by
+ * the same `_mergeCoroutine` with 32-bit indices and no index clone, then the
+ * same three properties carried over from the first member and every member
+ * disposed. The only step that differs is the last: the result is put on a
+ * part instead of uploaded. **`_mergeCoroutine` is Babylon-internal**, so a
+ * Babylon upgrade owes `npm run merge:hash` against the version before it.
+ *
+ * Only the path `mergeByMaterial` takes — no submeshes, no multi-material,
+ * no instances. A side-orientation disagreement returns null, as Babylon
+ * does (and as Babylon, it would have warned).
+ */
+function mergeToPart(meshes: Mesh[]): Mesh | null {
+  const source = meshes[0];
+  const side = source.sideOrientation;
+  for (const m of meshes) if (m.sideOrientation !== side) return null;
+  const extract = (m: Mesh) => {
+    const transform = m.computeWorldMatrix(true);
+    return { vertexData: VertexData.ExtractFromMesh(m, false, false), transform };
+  };
+  const first = extract(source);
+  const rest = meshes.slice(1).map(extract);
+  const run = first.vertexData._mergeCoroutine(first.transform, rest, true, false, false);
+  let step = run.next();
+  while (!step.done) step = run.next();
+  const merged = partSurface(`${source.name}_merged`, step.value, source.getScene());
+  merged.checkCollisions = source.checkCollisions;
+  merged.sideOrientation = side;
+  for (const m of meshes) m.dispose();
+  merged.material = source.material;
+  return merged;
 }
 
 /** One merge group: the meshes, and the exemptions and sway they all agree on. */

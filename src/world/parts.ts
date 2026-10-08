@@ -61,7 +61,7 @@ import {
   Mesh,
   VertexBuffer,
   type Scene,
-  type VertexData,
+  VertexData,
 } from "@babylonjs/core";
 
 /** The options `MeshBuilder.CreateBox` takes, minus the ones a part cannot use. */
@@ -102,8 +102,57 @@ export function partSurface(
  * divergence here would be loud rather than subtle.
  */
 export function partBox(name: string, options: BoxOptions, scene: Scene): Mesh {
-  return partSurface(name, CreateBoxVertexData(options), scene);
+  return partSurface(name, boxVertexData(options), scene);
 }
+
+/**
+ * `CreateBoxVertexData`, bit for bit, without its tessellation loop.
+ *
+ * **Every box in the kit is the same 24 vertices** — one unit cube, scaled —
+ * and Babylon rebuilds it from scratch per call, its positions by a `reduce`
+ * that `concat`s a fresh array for each of 72 numbers. That loop was 10.6% of
+ * a whole map install (`FINDINGS.md` 26). So the cube is taken from Babylon
+ * ONCE, at a half-extent of exactly 1, and every box after it is that cube's
+ * positions times its own half-extents: the same `base * (size / 2)` product
+ * Babylon computes, so not a bit moves (`npm run merge:hash` is the proof).
+ *
+ * **Only for the options the kit actually passes** — `width`, `height` and
+ * `depth`. Anything else (a `size`, `faceUV`, `wrap`, a side orientation)
+ * goes to Babylon unchanged rather than being reimplemented here.
+ *
+ * **Every array is the part's OWN copy**, never the cached one: a merge
+ * transforms its sources' vertex data in place and a group of one is baked
+ * in place (`mergeByMaterial`), so a shared normal or index array would be
+ * rewritten under every other box holding it.
+ */
+function boxVertexData(options: BoxOptions): VertexData {
+  for (const key in options) {
+    if (key !== "width" && key !== "height" && key !== "depth") {
+      return CreateBoxVertexData(options);
+    }
+  }
+  const unit = (UNIT_BOX ??= CreateBoxVertexData({ width: 2, height: 2, depth: 2 }));
+  // Babylon's own defaulting, `||` and all: a zero or absent extent is 1.
+  const hx = (options.width || 1) / 2;
+  const hy = (options.height || 1) / 2;
+  const hz = (options.depth || 1) / 2;
+  const base = unit.positions!;
+  const positions = new Array<number>(base.length);
+  for (let i = 0; i < base.length; i += 3) {
+    positions[i] = base[i] * hx;
+    positions[i + 1] = base[i + 1] * hy;
+    positions[i + 2] = base[i + 2] * hz;
+  }
+  const data = new VertexData();
+  data.indices = Array.from(unit.indices!);
+  data.positions = positions;
+  data.normals = Array.from(unit.normals!);
+  data.uvs = Array.from(unit.uvs!);
+  return data;
+}
+
+/** The cube `boxVertexData` scales, built by Babylon on first use. */
+let UNIT_BOX: VertexData | undefined;
 
 /** `MeshBuilder.CreateCylinder` without the upload. See `partBox`. */
 export function partCylinder(

@@ -921,7 +921,7 @@ export class MapBuilder {
       // into the verge where a box would cut it off square.
       if (!isRoad) this.recordParts(s, origin, rotY, terrain);
 
-      for (const merged of mergeByMaterial(s.meshes, p.kind)) {
+      for (const merged of mergeByMaterial(s.meshes, p.kind, undefined, !item)) {
         merged.rotation.y = rotY;
         merged.position.addInPlace(origin);
         if (item) {
@@ -1615,7 +1615,7 @@ export class MapBuilder {
       }
     }
 
-    for (const merged of mergeByMaterial(parts, `${spec.prop}-field`)) {
+    for (const merged of mergeByMaterial(parts, `${spec.prop}-field`, undefined, !item)) {
       merged.rotation.y = rot;
       merged.position.addInPlace(origin);
       if (item) {

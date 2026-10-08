@@ -1044,9 +1044,28 @@ left is the one term in it that grows with a ray's length.
 
 ## 26. The placement loop is one mechanism, not a thousand milliseconds: a part is built as a full `Mesh`, registered, given a uniform buffer and a GUID, tessellated from scratch, merged, and destroyed
 
-**Status:** measured, not acted on. `StoneBatch` and `Mesher` (`kit/core.ts`)
-take the first sub-thread below locally, for the stone and tile runs that opt
-in; the general path in `parts.ts` still builds a `Mesh` per part.
+**Status:** PARTLY ACTED ON (2026-10-08, `PERF_PLAN.md` A1). **The oracle is
+committed**: `npm run merge:hash` (`scripts/merge-hash.mjs`) is the
+merged-visuals comparison below, rebuilt for the seven shipped maps and the
+proving ground, A-vs-A identical, and shown to catch a 2^-20 change in one box
+width. Against it, two changes landed with every map hashing identically:
+`partBox` scales one cached unit cube instead of tessellating per call (the
+second sub-thread), and a placement's or scatter field's per-material merge —
+which `BlockMerge` merges AGAIN — now ends as a part rather than uploading
+(`mergeToPart` in `merge.ts`; the device round trip one merge further down).
+Three runs a side, build:total: **Coldharbour 4,592 → 4,277 ms (-6.9%),
+Sarab 4,381 → 3,866 (-11.8%), the proving ground 10,075 → 9,292 (-7.8%)**; the
+placements phase -20 to -25% on all three. `blockMerge` ROSE on Coldharbour
+(635 → 757 ms), unexplained. A CPU profile of today's Coldharbour build puts
+`partSurface` (the `Mesh` per part) at only ~300 ms of 4.4 s now that most
+builders batch through `StoneBatch` — so the first sub-thread below is worth
+far less than when this was written; `MergeMeshes` (~1.4 s) and the AO bake
+(`bakeVertexShading` ~1.1 s, `occlusionAt` 0.8) are the large names left.
+The text below is the entry as written, before either change.
+
+`StoneBatch` and `Mesher` (`kit/core.ts`) take the first sub-thread below
+locally, for the stone and tile runs that opt in; the general path in
+`parts.ts` still builds a `Mesh` per part.
 
 ### The instrument
 
@@ -2032,3 +2051,77 @@ Every other pulse in `Game.ts` reads named fields off `CONFIG.rumble`
 (`src/config/input.ts`), so these three break the rule that tunables live in
 `src/config/`. **How to settle it:** give each a strength/weak/ms triple in
 `CONFIG.rumble` beside `shot*`, valued so the arithmetic is unchanged.
+
+---
+
+## 50. On the phone the simulation is 5-8% of the tick, and the GPU has become the wall at render scale 0.5
+
+**Status:** P0 of `PERF_PLAN.md`, Greyfen only. **The sim half is ANSWERED**
+(small); **the GPU half is OPEN**, with two named suspects and a ten-minute A/B
+that splits them. The trace P0 also asked for was not taken — USB debugging
+would not hold on the Windows box (the S24 Ultra's ADB interface re-binds to a
+generic `winusb.inf` "WinUsb Device" when the phone leaves its first USB mode,
+and the VMware USB arbitration service logs an event on the port every ~30 s),
+and wireless debugging would not pair.
+
+### What was measured
+
+Four `?profile&gpu` SAVE captures, report v11, 2026-10-08 22:34-22:38 UTC, the
+`FINDINGS.md` 13 phone (dpr 2.8125, 832x384, 8 cores, 8 GB), Greyfen at the
+spawn (~(-99, 93), within metres of 13's), render scale 0.5, shadows / grass /
+Trees `low`, GI off, **volumetrics `low`**, glow `low`, ground relief off,
+FXAA off, motion blur and grain on, cap 60. Settings had stood 136-358 s.
+Three standing with the view held, then one playing:
+
+| capture | fps | > 22 ms | tick mean / p95 | `world` + `onFoot` | `render` | `drawWorld` | `gpu.frame` mean / p95 | GPU > 16.7 |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| 22:34:15 standing | **33.1** | 42% | 12.5 / 16.6 | 0.73 | 9.5 | 5.4 | 15.8 / 27.5 | 40% |
+| 22:35:25 standing | 51.6 | 17% | 9.5 / 14.1 | 0.67 | 7.3 | 4.0 | 16.1 / 27.0 | 38% |
+| 22:36:25 standing | 48.7 | 26% | 9.6 / 14.7 | 0.52 | 7.4 | 4.1 | 16.4 / 26.5 | 44% |
+| 22:37:57 playing | 42.3 | 32% | 11.7 / 17.4 | 1.00 | 8.6 | 4.7 | 17.3 / 26.1 | 59% |
+
+Draws 189-243 a frame, active meshes 162-205. Inside `render` beside
+`drawWorld`: `glow` 0.8-1.0 ms, `drawOverlay` 0.4-0.55, `shadowPass`
+0.25-0.37, and the active-mesh walk (`meshWalkMs`) ~1.1. Outside it: `culling`
+0.6-0.75 and `hud` 0.43-0.75 — the HUD costs as much as the whole simulation.
+`bots` is 0.28-0.46 ms for sixteen of them.
+
+### What it means
+
+- **The simulation is 5-8% of the tick.** Tripled for Cinderhaven's 48 bodies
+  it is still about a millisecond. Moving it off the main thread cannot buy
+  the phone a frame; `PERF_PLAN.md` Part C is demoted on this evidence.
+- **Rendering is ~76% of the tick** (`render` plus `culling`), and that is the
+  draw-count side `PERF_PLAN.md` Parts A and B attack.
+- **The GPU is ~3 ms heavier than finding 13 measured at the same spot and
+  scale**, while the tick is unchanged: 13's standing captures read
+  13.5 / 15.8 ms (mean / p95) and 0.6-3.5% of frames over 16.7; these read
+  ~16.3 / ~27 and 38-59%. Inside the second capture the frame rate falls with
+  the window's GPU mean (59.8 fps at 14.7 ms, 46.6 at 17.3) while the tick
+  stays flat at 9.1-9.9. **At 0.5 on this phone the GPU is now the limit**,
+  which 13 found it was not.
+- **Per FRAME, neither the tick nor `gpu.frame` predicts which interval runs
+  long** (binned either way the slow share is flat), as in 13; the windowed
+  relation above is the one that holds.
+- **The first capture is device state, not scene**: the same draw counts at a
+  tick ~30% slower, 30-37 fps for its whole 90 s, recovered by the next one —
+  13's "the CPU itself slowing", again. Only a trace can say more.
+
+### The two suspects for the GPU
+
+1. **Volumetrics was `low` here and `off` in 13.** And a fresh install gets
+   `medium` on EVERY device (`Settings.ts`, `SETTING_DEFAULTS.volumetrics`),
+   phones included — priced only on a desktop GPU, where shadows, grass, Trees
+   and ground relief all drop to low on a coarse pointer and it does not.
+2. **The shadow lookup changed in 684a88c** (the cubic filter over four
+   `textureGather`s and the cut to a line) after 13 was taken; its commit says
+   GPU time was not measured and it was not looked at on a phone.
+
+### How to settle it
+
+Same spot, same settings, one change at a time, two standing captures each:
+volumetrics `off`; then, if `gpu.frame` has not come back to ~13 ms, shadows
+`off`. A desktop `?gpu` A/B of both is a cheaper proxy to take first, and says
+only whether either is large anywhere. Whichever it is, a phone default
+(volumetrics on a coarse pointer) or a cheaper path is the fix, and the
+result decides where `PERF_PLAN.md` Part B stands.
