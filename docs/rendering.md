@@ -3509,6 +3509,21 @@ all in the counter this finding is named after. Not chased.
   smear, which reads as a dirty lens. The red damage flash is painted by the grade's
   shader and goes off with it, leaving the HUD's damage arcs to tell the player where a
   hit came from.
+- **FXAA's PASS is Babylon's and its SHADER is ours** (`shaders/Fxaa.ts`), because the
+  one number that decides how soft the frame is — FXAA's sub-pixel blend — is a `const`
+  in Babylon's text, at 1.0, FXAA's own "softer" limit. In this game nearly every pixel
+  is past the edge test (one-pixel ink, a relief grain per pixel), so at 1.0 the pass
+  blurred the frame more than it antialiased it, and a player preferred it off on a
+  desktop. The text is Babylon's token for token but for `CONFIG.graphics.fxaa`'s three
+  constants, and it gets in by being registered first under `fxaaPixelShader`: Babylon's
+  lazy shader module only registers itself `if` the name is empty. **Nothing throws if
+  that race is ever lost** — the frame is just soft again — so `Game` checks
+  `fxaaShaderIsOurs` on the pass's first apply in a DEV build. The varyings and
+  `texelSize` are the contract with Babylon's vertex shader and must not be renamed.
+  Measured against FXAA off (mean |Laplacian| of luma, frozen frame, 1920x1080),
+  Greyfen's `treeline` keeps 54% of its fine detail at 1.0 and 78% at the shipped 0.25,
+  with the trunks' stairs smoothed alike; the edge threshold is not a lever here (0.166
+  to 0.333 moved that 78.3% to 78.6%).
 - **The grain is PAPER PINNED TO THE WORLD, and a grain keyed on the pixel is the thing
   it replaced — which is why the setting no longer says "film".** Walking past a wall
   under a screen grain slides the wall under a

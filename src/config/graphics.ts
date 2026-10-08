@@ -284,6 +284,38 @@ export const graphics = {
   damageFlash: 1.0,
   damageFlashDecay: 2.6,
   /**
+   * FXAA's three knobs (`shaders/Fxaa.ts`), baked into the shader text at
+   * import — a change here is a reload, not a uniform.
+   */
+  fxaa: {
+    /**
+     * How far a pixel past the edge test is blended toward the 3x3 low-pass
+     * of its neighbourhood: FXAA's own scale runs 0 (off, sharper) to 1
+     * (softer), with 0.75 its default. **This is the one that decides how
+     * soft the frame is**, and Babylon ships 1.0.
+     *
+     * Measured as high-frequency energy (mean |Laplacian| of luma) against
+     * the same frozen frame with FXAA off, at 1920x1080 on the Windows box:
+     * Greyfen's `treeline` keeps 54% at 1.0, 78% at 0.25 and 85% at 0;
+     * Coldharbour's `curtain40` 73%, 88%, 92%; Hollowmere's `lanterns` 86%,
+     * 92%, 93%. At 0.25 the stairs on a trunk's edge are smoothed as at 1.0
+     * while the bark, the dapple and a railing's one-pixel rails survive,
+     * which 1.0 smeared to a wash. What is left between 0 and off is the
+     * edge search itself, which is the antialiasing.
+     */
+    subpix: 0.25,
+    /**
+     * Local contrast, as a share of the brightest neighbour, below which a
+     * pixel is left alone. FXAA's default 0.166; higher touches fewer.
+     * **Not a sharpness lever here**: 0.166 to 0.333 moved Greyfen's kept
+     * detail from 78.3% to 78.6%, because what this game draws past the test
+     * is ink and cel bands, which are far over either.
+     */
+    edgeThreshold: 0.166,
+    /** The floor under `edgeThreshold` in dark areas. FXAA's default. */
+    edgeThresholdMin: 0.0833,
+  },
+  /**
    * Motion blur on the look. A rotation reprojects identically at every
    * distance, so this needs no depth buffer and no second pass over the
    * scene — and equally, translation (strafing past a wall) does not blur.

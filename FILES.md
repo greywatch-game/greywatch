@@ -1688,6 +1688,11 @@ src/
                         #   compose the ink runs as its last line (a WGSL
                         #   snippet, not a pass). Public API only;
                         #   `Game` supplies the rules (what blooms, how bright)
+    Fxaa.ts             # FXAA's fragment shader, registered under the name
+                        #   Babylon's pass looks up so it runs this text: the
+                        #   same shader with CONFIG.graphics.fxaa's three
+                        #   constants (sub-pixel blend 0.25 where Babylon's 1.0
+                        #   blurred the frame). Owns no pass
     FrameDepth.ts       # The frame's own depth attachment, captured once and
                         #   wrapped for the two passes that sample it (the ink's
                         #   edges, the blur's weapon mask). Renders and copies

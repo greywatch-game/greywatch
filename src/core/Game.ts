@@ -72,6 +72,7 @@ import {
 } from "../shaders/CelShader";
 import { PaperGrain } from "../shaders/PaperGrain";
 import { CelInk } from "../shaders/CelInk";
+import { fxaaShaderIsOurs } from "../shaders/Fxaa";
 import { FrameDepth } from "../shaders/FrameDepth";
 import { GlowPass } from "../shaders/GlowPass";
 import { MotionBlur } from "../shaders/MotionBlur";
@@ -1399,6 +1400,16 @@ export class Game {
     this.fxaa = pipeline.fxaa;
     this.cameraSys.camera.detachPostProcess(this.fxaa);
     this.fxaaSlot = this.cameraSys.camera.attachPostProcess(this.fxaa);
+    // The pass is Babylon's and the SHADER is ours (`shaders/Fxaa.ts`),
+    // registered under the name the pass looks up. If Babylon's own text ever
+    // wins that race the frame is simply soft again, so a DEV build says so.
+    if (import.meta.env.DEV) {
+      this.fxaa.onApplyObservable.addOnce(() => {
+        if (!fxaaShaderIsOurs()) {
+          console.warn("FXAA is running Babylon's shader, not shaders/Fxaa.ts");
+        }
+      });
+    }
     // The light shafts: volumetric moonlight marched through the shadow
     // volume, after FXAA and before the blur — they belong to the same instant
     // as the geometry, so they have to smear and be graded with it.
@@ -2971,8 +2982,8 @@ export class Game {
    * a phone's: on a high-density panel the backing store already holds two or
    * more device pixels per CSS pixel, so a stair is far less visible, and it is
    * a whole-frame read and write on a GPU whose frame is fill rather than draw
-   * calls (`FINDINGS.md` 5). Babylon's own shader also moves its early exit to
-   * the end on a Mali driver, so there every pixel pays the full edge search.
+   * calls (`FINDINGS.md` 5). The shader (Babylon's text, `shaders/Fxaa.ts`) also
+   * moves its early exit to the end on a Mali driver, so there every pixel pays the full edge search.
    *
    * Detached and re-attached at `fxaaSlot`, the shafts' trick
    * (`syncVolumetrics`): `detachPostProcess` NULLS the entry rather than
