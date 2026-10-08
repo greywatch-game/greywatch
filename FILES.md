@@ -864,9 +864,9 @@ src/
                         #   and a shore is a line — and its INDEX is the key
                         #   Sfx holds a graph on, so add()/addRun() only append
                         #   and clear() is the only thing that renumbers
-    ShadowSystem.ts     # Moon shadow map (stepped) + blob shadows. The STATIC
-                        #   world's casters, re-rendered only when the
-                        #   texel-snapped focus moves
+    ShadowSystem.ts     # Moon shadow maps (stepped) + blob shadows. The STATIC
+                        #   world's casters in two cascades (near + far),
+                        #   re-rendered only when the snapped focus moves
     BodyShadows.ts      # The BODIES' shadow map: soldiers and hulls and nothing
                         #   static, re-rendered every frame, its own tighter
                         #   window (4.7 cm texels against the world's 5.4).

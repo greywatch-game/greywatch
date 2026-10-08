@@ -505,6 +505,29 @@ export const graphics = {
     mapSize: 2048,
     /** Width/height of the light's fixed ortho window, in metres. */
     frustumSize: 110,
+    /**
+     * Side of the NEAR window, in metres — the second, finer map the world's
+     * casters are drawn into around the player (`ShadowSystem`'s near
+     * cascade; its resolution is the rung's `near`).
+     *
+     * **It exists because the far window grew and its texel grew with it.**
+     * Every map that lowered its sun widened `shadowWindow` to keep the long
+     * shadows on screen — 185 to 240 m over 2048 texels, 9-12 cm a texel — and
+     * on a wall the low sun RAKES one texel is stretched across a dozen
+     * pixels, so the filtered edge still wanders a texel either side of the
+     * true line (`reference-media/shadows2.png`: Coldharbour's chapel, every
+     * buttress and jamb drawn as a squiggle). No filter can put back an edge
+     * the map never recorded; density is the only fix.
+     *
+     * 48 m over 2048 is **2.3 cm**, four to five times finer than any shipped
+     * far window, and it is the bodies' window (`bodyShadows.window`): the
+     * same reasoning about where a shadow is worth resolving. The focus sits
+     * 8 m out along the view, so this covers ~30 m ahead of the eye and ~16 m
+     * behind it, and the last `edgeFade` of it blends into the far map rather
+     * than ramping to lit — what the eye crosses there is detail changing, not
+     * a shadow ending.
+     */
+    nearWindow: 48,
     /** Light camera distance behind the focus, along the light direction. */
     distance: 90,
     /** Depth range of the ortho volume — must span valley floor to roofs. */
@@ -577,32 +600,39 @@ export const graphics = {
      */
     normalBias: 0.06,
     /**
-     * Half-width of the shadow lookup's four-tap kernel, in shadow-map texels.
-     *
-     * **0.5 is one texel of support, and one texel is the artefact.** A single
-     * tap put the depth map's own grid on screen — at 110 m over 2048 texels an
-     * edge climbs in 5.4 cm steps — and a staircase with a one-texel period is
-     * cancelled by a kernel that spans exactly one texel. Going wider does not
-     * clean it up further; it starts producing a genuine penumbra, which is the
-     * one thing `CelShader`'s flat bands cannot have. Treat this as a constant
-     * with an argument attached rather than as a dial.
-     *
-     * **Measured as a containment check rather than as a win**, which is the
-     * honest way round for this one. Setting the map size to 1e9 collapses the
-     * radius to zero and makes all four taps the same fetch — exactly the old
-     * single-tap lookup — so differencing the two frames isolates every pixel
-     * the kernel touches. Over the village from above: **0.33% of the frame
-     * differs, with a peak of 55/255 on the pixels that do.** A large local
-     * change on a third of one percent of the frame is the shape a kernel
-     * confined to shadow BOUNDARIES has; a penumbra would have shown up as a
-     * small change over a large area, and did not.
-     *
-     * `bias` above went 0.0025 -> 0.0035 with it, when it was still normalised
-     * depth over a front-face map: a half-texel wider footprint was a
-     * half-texel more depth error on a sloped receiver compared against its
-     * own depth. Back faces took that comparison away (see `bias`).
+     * The same offset for the NEAR cascade, in TEXELS of that map rather than
+     * metres, because the offset is a function of the texel and not of the
+     * surface: it exists to step a sample off its own facet's depth, and what
+     * it has to clear is the rounding of one texel of a sloped receiver. Past
+     * that it is a LEAK, carrying the sample out past any caster thinner than
+     * it is. At 6 cm on a 2.3 cm texel every jamb stone, string course and
+     * corbel lost its shadow outright; at 1.5 cm a buttress's lit side came
+     * out saw-toothed at its edge. 1.3 is 3 cm at `high`'s 2048 and 6 cm at
+     * `medium`'s 1024 — about what 6 cm is of the far map's 5.4.
      */
-    pcfRadiusTexels: 0.5,
+    nearNormalBiasTexels: 1.3,
+    /**
+     * How many pixels the shadow edge is cut across — see `shadowTap` in
+     * `shaders/wgsl/includes.ts`. Every map's lookup is the depth compare
+     * over the 4x4 texels round the receiver, weighted by a cubic B-spline
+     * (four `textureGather`s), and the edge is that smooth field's 0.5
+     * contour rather than a step on the map's grid. It is thresholded by a
+     * smoothstep `fwidth(field) * edgePixels` either side of 0.5, so the
+     * edge is antialiased over about this many pixels at EVERY distance — one
+     * texel filling a tenth of the screen still draws a line this wide rather
+     * than a ten-pixel ramp, which is what keeps it the flat bands' hard
+     * two-level edge.
+     *
+     * **It replaced four POINT taps rotated per pixel by a hash**, which
+     * turned the one-texel staircase into salt-and-pepper noise rather than
+     * removing it (`reference-media/shadows.png`), and the footprint is not a
+     * dial: widening a filter that is cut back to a line does not soften it,
+     * it rounds corners and erases small shadows. The first replacement was
+     * four bilinear taps, and the residue it left on a diagonal (a scallop a
+     * fraction of a texel deep, which a raking sun stretches into a sawtooth)
+     * is what the cubic took out.
+     */
+    edgePixels: 0.75,
     /**
      * Soft contact disc under each combatant — and with `bodyShadows` below it
      * is the CONTACT term rather than the whole shadow.
@@ -697,16 +727,6 @@ export const graphics = {
      * normalised depth, which is the same 13 cm over this 90 m volume.
      */
     bias: 0.13,
-    /**
-     * Half-width of the four-tap kernel, in texels of THIS map.
-     *
-     * The same 0.5 the world map uses and for the same reason — one texel of
-     * support cancels a one-texel staircase — but it cannot be the same
-     * NUMBER once it reaches the shader: the radius is in UV and a UV texel is
-     * `1 / mapSize`, so the two maps have different radii and
-     * `bodyShadowParams` carries its own.
-     */
-    pcfRadiusTexels: 0.5,
     /**
      * How many bodies may hold proxies in one frame.
      *
@@ -842,12 +862,16 @@ export const graphics = {
    * metre buys everything, and two on the phone's rung where a redraw costs
    * three times as much. The BODIES' map is not held — it follows the live
    * focus and redraws every frame, because what it draws moves.
+   *
+   * `near` is the world map's NEAR cascade (`shadows.nearWindow`): held and
+   * redrawn with the far one, and absent on the phone's rung, where a second
+   * world depth pass per move is the cost the `hold` above exists to cut.
    */
   shadowTiers: {
-    off: { sun: 0, foliage: 0, bodies: 0, bodyWindow: 48, hold: 0 },
-    low: { sun: 1024, foliage: 0, bodies: 512, bodyWindow: 32, hold: 2 },
-    medium: { sun: 2048, foliage: 1024, bodies: 1024, bodyWindow: 48, hold: 1 },
-    high: { sun: 2048, foliage: 1024, bodies: 1024, bodyWindow: 48, hold: 1 },
+    off: { sun: 0, near: 0, foliage: 0, bodies: 0, bodyWindow: 48, hold: 0 },
+    low: { sun: 1024, near: 0, foliage: 0, bodies: 512, bodyWindow: 32, hold: 2 },
+    medium: { sun: 2048, near: 1024, foliage: 1024, bodies: 1024, bodyWindow: 48, hold: 1 },
+    high: { sun: 2048, near: 2048, foliage: 1024, bodies: 1024, bodyWindow: 48, hold: 1 },
   },
   /**
    * Shadows from the POINT and SPOT lights — `systems/LocalShadows.ts`.

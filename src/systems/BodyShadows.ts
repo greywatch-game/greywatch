@@ -252,10 +252,7 @@ export class BodyShadows {
     this.mats.shadows.setBodyShadowMap(
       this.generator?.getShadowMap() ?? litShadowTexture(this.scene),
     );
-    this.mats.shadows.setBodyShadowParams(
-      depthBias(c.bias, c.depthRange),
-      c.pcfRadiusTexels / Math.max(1, this.mapSize),
-    );
+    this.mats.shadows.setBodyShadowParams(depthBias(c.bias, c.depthRange));
     this.mats.shadows.setBodyShadowMatrix(this.lightMatrix);
   }
 

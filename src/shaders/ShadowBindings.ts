@@ -19,7 +19,8 @@
  * material already holds BY REFERENCE and walk nothing; the other setters
  * walk every reader.
  * Never: adds, removes or reorders a binding — the bumped ground variant is at
- * 15 of WebGPU's 16 sampled textures per stage (CLAUDE.md); creates or caches
+ * 16 of WebGPU's 16 sampled textures per stage since the near cascade
+ * (CLAUDE.md), so a seventeenth is a packing first; creates or caches
  * a material; holds a consumer past its owner's `dispose`. The irradiance
  * volume is NOT here: it is bound only on cel materials and stays with the
  * factory (`setGi`), which binds it straight after this on creation.
@@ -35,7 +36,6 @@ import {
   Vector3,
   Vector4,
 } from "@babylonjs/core";
-import { CONFIG } from "../config";
 import { MAX_LOCAL_SLOTS } from "./wgsl/includes";
 
 export class ShadowBindings {
@@ -43,6 +43,12 @@ export class ShadowBindings {
   private shadowMap: BaseTexture | null = null;
   private shadowMatrix = Matrix.Identity();
   private shadowParams = new Vector4(0.0025, 0.15, 0.06, 0);
+  // The world's NEAR cascade: the same casters over a small window around
+  // the player at a fine texel — see `ShadowSystem`'s near map. x = depth
+  // bias, y = its own facet offset in metres.
+  private nearShadowMap: BaseTexture | null = null;
+  private nearShadowMatrix = Matrix.Identity();
+  private readonly nearShadowParams = new Vector4(0, 0, 0, 0);
   // The bodies' map, the same three things over again — see
   // `SHADOW_UNIFORM_NAMES` for why none of it is shared with the pair above.
   private bodyShadowMap: BaseTexture | null = null;
@@ -224,6 +230,31 @@ export class ShadowBindings {
   }
 
   /**
+   * The world's NEAR cascade, bound once per rung like the far map — the lit
+   * 1x1 on a rung without one, read through a matrix that puts every receiver
+   * OUTSIDE its window so the far map answers alone.
+   */
+  setNearShadowMap(map: BaseTexture): void {
+    this.nearShadowMap = map;
+    this.eachShadowReader((mat) => mat.setTexture("nearShadowMap", map));
+  }
+
+  /** The near light's view*projection; re-uploaded when its window moves. */
+  setNearShadowMatrix(matrix: Matrix): void {
+    this.nearShadowMatrix = matrix;
+    this.eachShadowReader((mat) => mat.setMatrix("nearLightMatrix", matrix));
+  }
+
+  /**
+   * Its depth bias (normalised) and its OWN facet offset in metres — the
+   * offset is sized to a texel, and this one is finer.
+   */
+  setNearShadowParams(bias: number, normalBias: number): void {
+    this.nearShadowParams.set(bias, normalBias, 0, 0);
+    this.eachShadowReader((mat) => mat.setVector4("nearShadowParams", this.nearShadowParams));
+  }
+
+  /**
    * The BODIES' map, bound once at startup for the same reason the world's is:
    * the texture object is stable while its contents re-render.
    *
@@ -244,17 +275,12 @@ export class ShadowBindings {
   }
 
   /**
-   * The bodies' depth bias and tap radius. Two values rather than four: the
-   * darkness and the facet offset are the RECEIVER's and are already in
-   * `shadowParams`, so restating them here would be two places to set one look.
-   *
-   * The radius arrives already divided by that map's size — the caller is the
-   * only thing that knows which size it was — which is the opposite of
-   * `setShadowParams` below, and deliberately: that one is handed a `mapSize`
-   * because it is also the place the world map's number is known at all.
+   * The bodies' depth bias. One value rather than four: the darkness and the
+   * facet offset are the RECEIVER's and are already in `shadowParams`, so
+   * restating them here would be two places to set one look.
    */
-  setBodyShadowParams(bias: number, radiusUV: number): void {
-    this.bodyShadowParams.set(bias, radiusUV, 0, 0);
+  setBodyShadowParams(bias: number): void {
+    this.bodyShadowParams.set(bias, 0, 0, 0);
     this.eachShadowReader((mat) =>
       mat.setVector4("bodyShadowParams", this.bodyShadowParams),
     );
@@ -290,9 +316,9 @@ export class ShadowBindings {
     this.eachShadowReader((mat) => mat.setMatrix("flashLightMatrix", matrix));
   }
 
-  /** Its depth bias (normalised) and tap radius in UV. */
-  setFlashParams(bias: number, radiusUV: number): void {
-    this.flashParams.set(bias, radiusUV, 0, 0);
+  /** Its depth bias (normalised). */
+  setFlashParams(bias: number): void {
+    this.flashParams.set(bias, 0, 0, 0);
   }
 
   /**
@@ -353,29 +379,22 @@ export class ShadowBindings {
   }
 
   /**
-   * The foliage map's tap radius (already in UV) and the reciprocal of its
-   * depth span in metres, which is what turns a material's `depth` into that
-   * map's normalised depth in the shader.
+   * The reciprocal of the foliage map's depth span in metres, which is what
+   * turns a material's `depth` into that map's normalised depth in the
+   * shader. In `y`, where it has always been read.
    */
-  setFoliageParams(radiusUV: number, perMetre: number): void {
-    this.foliageParams.set(radiusUV, perMetre, 0, 0);
+  setFoliageParams(perMetre: number): void {
+    this.foliageParams.set(0, perMetre, 0, 0);
     this.cels.forEach((mat) => mat.setVector4("foliageParams", this.foliageParams));
   }
 
   /**
-   * Depth bias, in-shadow darkness, facet-normal offset, and the depth map's
-   * size — which is here because the kernel's tap offsets are in UV, and one
-   * texel of UV is `1 / mapSize`. Passing the size rather than the offset keeps
-   * the radius a graphics tunable instead of a number two files agree on.
+   * Depth bias, in-shadow darkness and facet-normal offset. The lookup's
+   * footprint is in TEXELS of whatever map it reads (`shadowCubic` asks the
+   * texture its own size), so no map size is handed over any more.
    */
-  setShadowParams(
-    bias: number,
-    darkness: number,
-    normalBias: number,
-    mapSize: number,
-  ): void {
-    const radius = CONFIG.graphics.shadows.pcfRadiusTexels / Math.max(1, mapSize);
-    this.shadowParams.set(bias, darkness, normalBias, radius);
+  setShadowParams(bias: number, darkness: number, normalBias: number): void {
+    this.shadowParams.set(bias, darkness, normalBias, 0);
     this.eachShadowReader((mat) =>
       mat.setVector4("shadowParams", this.shadowParams),
     );
@@ -408,6 +427,9 @@ export class ShadowBindings {
     mat.setVector4("cloudShadowRay", this.cloudShadowRay);
     mat.setMatrix("lightMatrix", this.shadowMatrix);
     mat.setVector4("shadowParams", this.shadowParams);
+    if (this.nearShadowMap) mat.setTexture("nearShadowMap", this.nearShadowMap);
+    mat.setMatrix("nearLightMatrix", this.nearShadowMatrix);
+    mat.setVector4("nearShadowParams", this.nearShadowParams);
     if (this.bodyShadowMap) {
       mat.setTexture("bodyShadowMap", this.bodyShadowMap);
     }

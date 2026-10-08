@@ -1692,34 +1692,77 @@ shadowed and everything lit, because the function returns 1.0 outside it. It
 read as an art direction on the night maps and was unmissable on Sarab, where
 the ground is bright sand and the window is 150 m of it.
 
-**The third row of the table below was measured under that bug**, so it says how
-much of each frame was inside the window rather than how much of it was in
-shadow; the first two rows are a kernel-vs-no-kernel difference and are
-unaffected. Re-take the row before quoting it.
+**The shadow lookup is a FILTERED compare cut back to a hard line, and the
+edge is a contour of a smooth field rather than a step on the map's grid.**
+One plain compare puts the depth map's own texels on screen, and on a wall the
+low sun RAKES one texel is stretched over many pixels, so the staircase becomes
+the shadow's outline. `shadowTap` compares the 4x4 texels round the receiver
+and weights them by a CUBIC B-spline (`shadowCubic`: four `textureGather`s,
+each taken at the corner its 2x2 shares so the hardware's sub-texel rounding
+cannot pick the next footprint over). That field is smooth, its 0.5 contour
+runs through the staircase, and a smoothstep `fwidth(field) * edgePixels`
+either side of 0.5 cuts it back to a line about a pixel wide at every
+distance. So the flat bands still meet a two-level edge — the penumbra is a
+pixel, never a texel — and what goes is the grid.
 
-**The shadow lookup is FOUR taps, and four is a ceiling rather than a budget.**
-One tap put the depth map's own grid on screen — at 110 m over 2048 texels an
-edge climbs in 5.4 cm steps — so the kernel spans exactly one texel, which is
-the period of that staircase. Anything wider starts producing a real penumbra,
-and a penumbra is the one thing the flat bands cannot have. The 2x2 is rotated
-per pixel: four taps averaged give five values, five values along an edge are
-five contours, and the rotation turns that residue into noise instead. Measured
-as a containment check by collapsing the radius to zero (which makes all four
-taps the same fetch, i.e. the old lookup), at each map's committed vantage with
-the whole post chain off:
+**It replaced four POINT taps rotated per pixel by a hash, and the rotation was
+the artefact** (`reference-media/shadows.png`). Four taps give a five-rung
+ladder and a random rotation picks a different rung on each neighbouring pixel,
+which turns the staircase into noise rather than removing it: harmless while a
+texel was a pixel or two, and a dotted band ten pixels deep down every buttress
+and under every sill where one texel covers ten. A filter that is a function of
+POSITION alone is the same on neighbouring pixels and has no noise to dissolve.
+The fetch count did not move — four gathers where there were four samples.
 
-| | Hollowmere | Greyfen | Coldharbour | Harrowmead |
-| --- | --- | --- | --- | --- |
-| the kernel moves | 0.12% | 0.60% | 0.39% | 0.42% |
-| peaking at | 31/255 | 105/255 | 119/255 | 69/255 |
-| of a frame in shadow at all | 32.7% | 40.0% | 7.2% | 26.8% |
-| so, of the shadowed area | 0.4% | 1.5% | 5.4% | 1.6% |
+**Cubic, because bilinear was tried and left a sawtooth.** Four bilinear taps a
+quarter texel apart (half a texel was tried before that, and two tents half a
+texel either side sum to exactly the 0.5 cut across a one-texel feature, so
+every corbel's shadow became a coin toss) took the noise out and left the
+contour scalloped a fraction of a texel deep along every diagonal, which a
+raking sun draws out into regular teeth. The cubic is smooth to its second
+derivative and the scallops go with it. What it costs is the smallest shadow —
+a lone texel peaks at 0.44 and is cut — while a line one texel wide survives at
+0.67. **Widening the footprint does not soften anything**: the cut takes the
+softness back, and what is left is rounder corners and fewer small shadows.
 
-A large change on very few pixels, which is the shape of something confined to
-boundaries rather than spread over a penumbra — the third row is what makes that
-readable, because Coldharbour's frame is a tenth in shadow and the other three
-are a third. (The earlier single figure was 0.33% peaking at 55/255, taken on
-WebGL2 at one unrecorded vantage.)
+**And no filter fixes a texel that is too big, which is why the world's map
+is TWO CASCADES.** Every map that lowered its sun widened `shadowWindow` to
+keep the long shadows on screen — 185 to 240 m over 2048 texels, 9-12 cm a
+texel — and on Coldharbour's chapel (`reference-media/shadows2.png`) the best
+contour through a 10 cm texel stretched over a dozen pixels still wandered a
+fraction of it either side of the true line: every buttress and jamb a
+squiggle. `ShadowSystem` therefore draws the same casters a second time into a
+NEAR map, `CONFIG.graphics.shadows.nearWindow` (48 m) at the rung's `near`
+(2048 on `high`, 1024 on `medium`, none on `low`) — **2.3 cm**, the same
+texel snap, back faces, bias and `hold`. `shadowVisibility` lays it over the
+far map by its own edge weight (`shadowTapW`), so the far map ramps to lit at
+ITS edge as every map does and crossing the near window's boundary is a coarser
+texel taking over, never a shadow ending. Off is the lit 1x1 seen through
+`nearOffMatrix`, which maps every receiver OUTSIDE the window — the far map's
+off matrix maps to the middle, and here that would read as a near map saying
+lit over everything the far one shades. Checked as a containment test first:
+at a 200 m near window the frame matches the far-only one to the dust motes.
+
+**What the near map showed is that the far map had been INFLATING small
+shadows.** A 6 mm reference (24 m at 4096, a millimetre-scale offset) drew the
+chapel's jamb stones, string course and eave corbels as the thin slivers a
+raking sun actually makes; the far map's 10 cm texels had smeared each into a
+chunky band, and that band is what wobbled. So the near map dropping them is
+the correct answer, not a regression. **The facet offset is sized to a TEXEL
+and the near map has its own** (`nearNormalBiasTexels`, 1.3 texels — 3 cm on
+`high` — against the far map's 6 cm): 6 cm on a 2.3 cm texel carried the
+sample past every thin caster, and 1.5 cm saw-toothed a buttress's own lit edge. Cost on the Windows box: a forced
+near redraw every frame put ~0.1-0.2 ms on the CPU side of `scene.render`
+(Coldharbour, 16 casters, 263k triangles), and in play it redraws only when the
+held focus moves.
+
+**The cut needs a derivative, so `shadowTapW` has no early return before it**:
+the volume's edge ramp already answers lit outside the window, and every
+consumer carries `DISABLE_UNIFORMITY_ANALYSIS` for `band`. The lamps' atlas
+(`localLayer`) takes the same cubic (one bilinear gather on the one-tap rung)
+but a FIXED cut, because it runs inside the light loop behind per-pixel early
+returns where a derivative is not defined, and it clamps two texels inside its
+tile so the 4x4 never weighs a neighbour's face.
 
 **A frozen vantage holds NO shadowed pixel until the window is pushed to it, and
 the reading that comes back is 0.000% on every map.** The shadow window follows
@@ -1728,8 +1771,8 @@ are taken from, and outside the window `shadowVisibility` returns FULLY LIT — 
 a camera teleported to a vantage is looking at a lit world and every shadow
 measurement reads as a kernel that does nothing. `g.shadows.invalidate()` then
 `g.shadows.update(cam.position, g.mats)` before the grab is the fix, and the
-control that proves it landed is setting the darkness term to zero: that is the
-third row above, and if it comes back 0% too then nothing is being measured.
+control that proves it landed is setting the darkness term to zero: if THAT
+comes back 0% too, then nothing is being measured.
 
 **Grass and water sample that same depth map, and they are not cel materials.**
 They reproduce the cel lighting model in their own shaders and went without a
@@ -1978,11 +2021,12 @@ analytic now and the field survives it: two callers re-deriving the floor are tw
 opinions about where it is, however cheap each one is. Anything wanting the floor
 under the player reads that field rather than probing again.
 
-### The shadow rungs: one setting, four maps
+### The shadow rungs: one setting, five maps
 
-**`Shadows` is one setting over all four shadow maps** — the moon's world,
-foliage and bodies maps and the lamps' atlas below — and `?shadows=` overrides
-it for a session on `?gi=`'s terms. The rungs are two tables,
+**`Shadows` is one setting over all five shadow maps** — the moon's world map
+in two cascades (`near` is the rung's size for the finer one, absent on
+`low`), its foliage and bodies maps and the lamps' atlas below — and
+`?shadows=` overrides it for a session on `?gi=`'s terms. The rungs are two tables,
 `CONFIG.graphics.shadowTiers` (the moon's three) and
 `CONFIG.graphics.localShadows.tiers` (the lamps'), and they must name the same
 rungs because `ShadowQuality` is derived from the first and indexes the second.
@@ -4573,11 +4617,12 @@ whose shadow they are standing in, because it is the same ray.
   the shadow moves, so one caught in a bake would stay painted into every pane
   and pond for the round.
 - **The texture is one more sampler on every cel material, and the bumped
-  ground variant is now at 15 of WebGPU's 16 sampled textures per stage** — two
-  ground textures, five shadow samplers, the foliage map and seven irradiance
-  textures. A sixteenth fits; a seventeenth is a bind group that fails to build
-  and a draw silently lost, so the next texture any cel variant gains owes a
-  look at that count (or a packing) first.
+  ground variant is now at 16 of WebGPU's 16 sampled textures per stage** — two
+  ground textures, six shadow samplers (the near cascade took the sixteenth),
+  the foliage map and seven irradiance textures. A seventeenth is a bind group
+  that fails to build and a draw silently lost, so the next texture any cel
+  variant gains owes a PACKING first — the irradiance volume's seven are the
+  obvious candidate.
 - **The BOUNCE takes it too, at the hit and not at the probe.** A traced ray
   lights what it hits with the sun (`giTrace.ts`'s `radiance`), and that sun
   is scaled by `cloudLitAt` — `cloudLitAir` to the letter, read off params rows

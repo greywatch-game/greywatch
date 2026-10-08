@@ -62,6 +62,8 @@ import { DITHER_WGSL } from "../Dither";
  * field for why the floor reads as no ramp.
  */
 const EDGE_FADE = Math.max(CONFIG.graphics.shadows.edgeFade, 1e-4);
+/** How many PIXELS the shadow edge is cut across — see `shadowTap`. */
+const SHADOW_EDGE_PX = CONFIG.graphics.shadows.edgePixels;
 
 /**
  * The length of `celShadow`'s per-slot lamp arrays, which index the same
@@ -231,14 +233,20 @@ fn cloudLitAir(p: vec3f) -> f32 {
  * over its own `edgeFade`, so neither boundary can darken past the other and
  * nothing has to know which map is the bigger one.
  *
+ * **The world's map is itself two CASCADES, and they combine differently.**
+ * A near map of the same casters at a fine texel is laid OVER the far one by
+ * its own edge weight (`shadowTapW`) rather than `min`'d with it — both
+ * answer for the same occluders, and a `min` would let the far map's coarse,
+ * inflated texels darken what the near one resolves as lit.
+ *
  * **The darkness mix moved OUT of the tap for that**, and it is exactly
  * equivalent rather than nearly: `mix(dark, 1, x)` is affine in `x` and fixes
  * `x = 1`, so `mix(1, mix(dark, 1, S), E)` — the form this shipped with — is
  * `mix(dark, 1, mix(1, S, E))` for the single-map case. The picture is
  * unchanged on a frame with nobody in it.
  *
- * A consumer owes four uniforms (`SHADOW_UNIFORM_NAMES`) and two samplers
- * (`SHADOW_SAMPLER_NAMES`) in its own lists, and owes REGISTERING with
+ * A consumer owes every name in `SHADOW_UNIFORM_NAMES` and
+ * `SHADOW_SAMPLER_NAMES` in its own lists, and owes REGISTERING with
  * `ShadowBindings.registerShadowConsumer` (`mats.shadows`) — that pushes all
  * of them, and a material that is never registered samples an unbound texture.
  */
@@ -274,23 +282,31 @@ register(
 uniform lightMatrix: mat4x4f;
 var shadowMapSampler: sampler;
 var shadowMap: texture_2d<f32>;
-// x = depth bias, y = darkness, z = normal offset, w = tap radius in UV
+// x = depth bias, y = darkness, z = normal offset
 uniform shadowParams: vec4f;
+
+// The world's NEAR cascade — ShadowSystem's second map of the same casters,
+// over a small window around the player at a fine texel. Same conventions as
+// the pair above. Off is the lit 1x1 seen through a matrix that puts every
+// receiver outside the window, so the far map answers alone.
+uniform nearLightMatrix: mat4x4f;
+var nearShadowMapSampler: sampler;
+var nearShadowMap: texture_2d<f32>;
+// x = depth bias, y = its own facet offset (metres)
+uniform nearShadowParams: vec4f;
 
 // The BODIES' map and its own view*projection — systems/BodyShadows.ts. Same
 // conventions as the pair above, because it is the same kind of object built by
 // the same Babylon generator: raw clip z, no [0,1] remap, XY to UV.
 //
-// **It is a different WINDOW, so it needs its own bias and its own tap radius
-// and cannot borrow either.** The radius is in UV and a UV texel is
-// 1 / mapSize, which is 1/1024 here against the world's 1/2048; the bias is
-// 13 cm against the world's 5 cm, over a 90 m volume against 180. Copying
-// shadowParams over would have been a 2x-wide kernel at a 2x-loose bias,
-// which is a soft shadow floating off its own body.
+// **It is a different VOLUME, so it needs its own bias and cannot borrow the
+// world's**: 13 cm against the world's 5 cm, over a 90 m volume against 180.
+// The lookup's footprint needs nothing handed over — it is in texels of
+// whichever map it reads, and the texture says its own size.
 uniform bodyLightMatrix: mat4x4f;
 var bodyShadowMapSampler: sampler;
 var bodyShadowMap: texture_2d<f32>;
-// x = depth bias, y = tap radius in UV. Darkness and the normal offset are
+// x = depth bias. Darkness and the normal offset are
 // NOT restated: a shadow is a shadow whichever map resolved it, and the offset
 // is a property of the RECEIVER's facet rather than of either caster set.
 uniform bodyShadowParams: vec4f;
@@ -317,35 +333,99 @@ uniform bodyShadowParams: vec4f;
 // rather than the wave normal, for the same reason in both cases — the relief
 // is a fiction, and offsetting along a fiction moves the shadow with it.
 //
-// **FOUR taps, and the count is the whole design.** One tap put the shadow map's
-// own texel grid on screen: at 110 m over 2048 texels an edge climbs in 5.4 cm
-// steps, and up close that reads as a staircase rather than as a line. The
-// staircase has a spatial period of exactly one texel, so a kernel whose support
-// covers one period cancels it — and anything WIDER starts producing a real
-// penumbra, which is the thing this shader's flat bands cannot have. The
-// softening is confined to the width of the artefact: a 5.4 cm edge is
-// sub-pixel past about 2 m, so what is left still reads as the hard line the
-// look wants. The cel terminator is band(dot(n, -lightDir), 4.0) and is not
-// touched by any of this.
+// **The edge is a CONTOUR of a smooth field, and that is the whole design.**
+// A plain depth compare is a step function over the map's texel grid, so a
+// single tap draws that grid on screen — at 110 m over 2048 texels an edge
+// climbs in 5.4 cm steps, and on a wall the low sun rakes across, one texel
+// is stretched over many pixels and the staircase is the shadow's outline.
+// What this takes instead is the compare FILTERED: the 4x4 texels round the
+// receiver, each compared, weighted by a cubic B-spline (shadowCubic — four
+// textureGathers, so sixteen texels for four fetches). That field is smooth,
+// its 0.5 contour runs through the staircase rather than around it, and the
+// contour is then CUT back to a hard line by a smoothstep about one pixel
+// wide (fwidth of the field, times edgePixels). So the shadow keeps the flat
+// bands' hard two-level edge — the penumbra is a pixel at every distance,
+// never a texel — and what it loses is the grid.
 //
-// The 2x2 is ROTATED per pixel, which matters as much as the count. Four taps
-// averaged give five possible values, and five values along an edge are five
-// visible contours — a staircase with more steps. Rotating by a hash of the
-// pixel turns that residue into noise, which composes with dither() rather
-// than fighting it.
+// **It used to be four point taps ROTATED by a hash of the pixel**, which
+// turned the staircase into noise rather than removing it: four taps give a
+// five-step ladder, and a per-pixel random rotation picks a different rung on
+// each neighbouring pixel, so where one texel covered ten pixels its edge was
+// a ten-pixel band of salt and pepper — the dotted outline under every sill
+// and down every buttress. A filter that is a function of POSITION alone is
+// the same on neighbouring pixels, so this has no noise to dissolve.
 //
-// Hardware PCF is not available: this samples a plain depth texture and
-// compares by hand rather than through a comparison sampler, so every tap is a
-// full fetch. That is the other half of why the count stops at four.
+// **Cubic, because bilinear was tried and left a sawtooth.** Four bilinear taps
+// a quarter texel apart took the noise out and left the contour scalloped a
+// fraction of a texel deep along every diagonal — invisible face-on, and drawn
+// out into regular teeth on a wall the low sun rakes. The cubic weights the
+// same sixteen texels so that the field is smooth to its second derivative,
+// and the scallops go with it. What it costs is the smallest shadow: a lone
+// texel peaks at 0.44 and is cut away. A line one texel wide survives (0.67),
+// which is every rail and leaflet, and at the near cascade's 2.3 cm a lone
+// texel is nothing the kit builds. Widening the footprint further would not
+// soften the edge — the cut takes softness back — it would round corners.
 //
-// **textureSampleLevel and never textureSample**, and this function is what
-// settled the rule: the fetches sit behind an early-out, so an implicit LOD
-// is a sample reached through control flow WGSL cannot prove uniform, and the
-// error names a function that has been correct for the life of the project.
-// The map carries no mip chain, so an explicit level 0 is what was meant.
-// One map's answer: how LIT this receiver is by it, 0..1, with the volume's own
-// edge ramp already applied and the darkness mix deliberately NOT — see the
-// header for why that has to come after the two maps are combined.
+// **No filter fixes a texel that is too big**, which is why the world has a
+// NEAR cascade (shadowVisibility): a raked wall stretches a 10 cm texel over a
+// dozen pixels, and the best contour through it still wanders a fraction of
+// that texel either side of the true line. Only density takes that out.
+//
+// The gather is taken at the CORNER shared by its four texels, and the weights
+// are worked out from the same floor: a gather taken at the tap itself lets the
+// hardware's own sub-texel rounding pick the next footprint over on the last
+// few hundredths of a texel, which is a one-texel seam along every texel row.
+//
+// **No early return before the fwidth**: the derivative must be taken by every
+// pixel of the quad, and the volume's edge ramp already answers lit outside it
+// (smoothstep of a negative edge is 0), so a receiver out there just samples a
+// clamped texel nobody reads.
+//
+// The texture and the sampler are textureGather'd and never textureSample'd:
+// the map carries no mip chain, and an implicit LOD reached through control
+// flow WGSL cannot prove uniform is the error that settled that rule.
+
+// One bilinear-filtered compare: the 2x2 round uv. The lamps' cheapest rung.
+fn shadowCmp(tex: texture_2d<f32>, smp: sampler, uv: vec2f, size: vec2f, depth: f32) -> f32 {
+  let t = uv * size - 0.5;
+  let i = floor(t);
+  let f = t - i;
+  // Order is (u0,v1) (u1,v1) (u1,v0) (u0,v0).
+  let lit = step(vec4f(depth), textureGather(0, tex, smp, (i + 1.0) / size));
+  return mix(mix(lit.w, lit.z, f.x), mix(lit.x, lit.y, f.x), f.y);
+}
+
+// The compare over the 4x4 texels round uv, weighted by a CUBIC B-spline —
+// four gathers, each at the corner its own 2x2 shares, with i the texel the
+// second of four sits in along each axis.
+fn shadowCubic(tex: texture_2d<f32>, smp: sampler, uv: vec2f, size: vec2f, depth: f32) -> f32 {
+  let t = uv * size - 0.5;
+  let i = floor(t);
+  let f = t - i;
+  let f2 = f * f;
+  let f3 = f2 * f;
+  let w0 = (1.0 - 3.0 * f + 3.0 * f2 - f3) / 6.0;
+  let w1 = (4.0 - 6.0 * f2 + 3.0 * f3) / 6.0;
+  let w2 = (1.0 + 3.0 * f + 3.0 * f2 - 3.0 * f3) / 6.0;
+  let w3 = f3 / 6.0;
+  let wx = vec4f(w0.x, w1.x, w2.x, w3.x);
+  let d = vec4f(depth);
+  // Gather order is (u0,v1) (u1,v1) (u1,v0) (u0,v0).
+  let a = step(d, textureGather(0, tex, smp, (i + vec2f(0.0, 0.0)) / size));
+  let b = step(d, textureGather(0, tex, smp, (i + vec2f(2.0, 0.0)) / size));
+  let c = step(d, textureGather(0, tex, smp, (i + vec2f(0.0, 2.0)) / size));
+  let e = step(d, textureGather(0, tex, smp, (i + vec2f(2.0, 2.0)) / size));
+  return w0.y * dot(vec4f(a.w, a.z, b.w, b.z), wx)
+    + w1.y * dot(vec4f(a.x, a.y, b.x, b.y), wx)
+    + w2.y * dot(vec4f(c.w, c.z, e.w, e.z), wx)
+    + w3.y * dot(vec4f(c.x, c.y, e.x, e.y), wx);
+}
+
+// One map's answer, as a pair: x is how LIT this receiver is by it, 0..1, and
+// y how far INSIDE its volume, as the 0..1 weight of the edge ramp — kept
+// apart so the cascades can blend by it (shadowTap below applies it for every
+// other map). The darkness mix is deliberately NOT applied — see the header
+// for why that has to come after the maps are combined.
 //
 // **The texture and the sampler are function PARAMETERS**, which is legal WGSL
 // for a handle passed straight from a module-scope declaration and is the only
@@ -359,19 +439,13 @@ uniform bodyShadowParams: vec4f;
 // processor's rewrite is a regex over the whole shader source, comments
 // included, so a sentence that quoted one would mint a binding with nothing
 // behind it — and a bind group that fails to build loses every draw silently.
-//
-// dir is the per-pixel rotation, unit, computed once by the caller and shared:
-// the two maps have different texel grids but the same need, which is for four
-// taps to stop being five contours along an edge.
-fn shadowTap(
+fn shadowTapW(
   m: mat4x4f,
   tex: texture_2d<f32>,
   smp: sampler,
   p: vec3f,
-  dir: vec2f,
-  bias: f32,
-  radius: f32
-) -> f32 {
+  bias: f32
+) -> vec2f {
   let sc4 = m * vec4f(p, 1.0);
   let sc = sc4.xyz / sc4.w;
   let uv = sc.xy * 0.5 + 0.5;
@@ -384,25 +458,33 @@ fn shadowTap(
     min(min(uv.x, 1.0 - uv.x), min(uv.y, 1.0 - uv.y)),
     min(sc.z, 1.0 - sc.z)
   );
-  if (edge <= 0.0) { return 1.0; }
   let depth = sc.z - bias;
+  let size = vec2f(textureDimensions(tex, 0));
+  let field = shadowCubic(tex, smp, uv, size, depth);
+  // Cut at 0.5, one pixel wide. Where a texel is smaller than a pixel the
+  // field moves faster than the clamp and this is the field itself, which is
+  // sub-pixel there anyway; the floor keeps a texel that fills the screen from
+  // drawing an edge sharper than the raster can.
+  let w = clamp(fwidth(field) * ${SHADOW_EDGE_PX.toFixed(3)}, 0.02, 0.5);
+  let shade = smoothstep(0.5 - w, 0.5 + w, field);
+  // The outermost band of the volume as a weight. Cubic and not linear: a
+  // linear ramp is flat-shaded ground with a crease in it at each end, and a
+  // crease across open sand is the artefact this exists to remove rather
+  // than a milder version of it.
+  return vec2f(shade, smoothstep(0.0, ${EDGE_FADE.toFixed(4)}, edge));
+}
 
-  let rot = dir * radius;
-  let perp = vec2f(-rot.y, rot.x);
-
-  let hits = step(depth, textureSampleLevel(tex, smp, uv + rot, 0.0).x)
-    + step(depth, textureSampleLevel(tex, smp, uv - rot, 0.0).x)
-    + step(depth, textureSampleLevel(tex, smp, uv + perp, 0.0).x)
-    + step(depth, textureSampleLevel(tex, smp, uv - perp, 0.0).x);
-  // Narrow smoothstep rather than a plain average: the four taps give a 0,
-  // 0.25, 0.5, 0.75, 1 ladder, and this pulls the middle of it back toward a
-  // decision so the edge stays an edge and only its jaggies are dissolved.
-  let shade = smoothstep(0.25, 0.75, hits * 0.25);
-  // Back to fully lit over the outermost band of the volume. Cubic and not
-  // linear: a linear ramp is flat-shaded ground with a crease in it at each
-  // end, and a crease across open sand is the artefact this exists to remove
-  // rather than a milder version of it.
-  return mix(1.0, shade, smoothstep(0.0, ${EDGE_FADE.toFixed(4)}, edge));
+// One map's answer with its edge ramped back to fully LIT — what every map
+// but a cascade's near half wants.
+fn shadowTap(
+  m: mat4x4f,
+  tex: texture_2d<f32>,
+  smp: sampler,
+  p: vec3f,
+  bias: f32
+) -> f32 {
+  let t = shadowTapW(m, tex, smp, p, bias);
+  return mix(1.0, t.x, t.y);
 }
 
 fn shadowVisibility(n: vec3f, posW: vec3f) -> f32 {
@@ -422,13 +504,20 @@ fn shadowVisibility(n: vec3f, posW: vec3f) -> f32 {
     uniforms.lightMatrix[0][2], uniforms.lightMatrix[1][2], uniforms.lightMatrix[2][2]);
   let toward = select(1.0, -1.0, dot(n, lightTravel) > 0.0);
   let p = posW + n * (toward * uniforms.shadowParams.z);
-  let a = fract(sin(dot(fragmentInputs.position.xy, vec2f(12.9898, 78.233))) * 43758.5453)
-    * 6.2831853;
-  let dir = vec2f(cos(a), sin(a));
-  let world = shadowTap(uniforms.lightMatrix, shadowMap, shadowMapSampler, p, dir,
-    uniforms.shadowParams.x, uniforms.shadowParams.w);
+  // The world is TWO cascades of one caster set: the far map ramps to lit at
+  // its own edge as every map does, and the near one is laid over it by ITS
+  // edge weight — so crossing the near window's boundary is the far map's
+  // coarser texel taking over, never a shadow ending.
+  let far = shadowTap(uniforms.lightMatrix, shadowMap, shadowMapSampler, p,
+    uniforms.shadowParams.x);
+  // Offset by its OWN amount: the offset is sized to a texel, and the far
+  // map's would carry the sample past every thin caster this one resolves.
+  let pNear = posW + n * (toward * uniforms.nearShadowParams.y);
+  let near = shadowTapW(uniforms.nearLightMatrix, nearShadowMap, nearShadowMapSampler, pNear,
+    uniforms.nearShadowParams.x);
+  let world = mix(far, near.x, near.y);
   let bodies = shadowTap(uniforms.bodyLightMatrix, bodyShadowMap, bodyShadowMapSampler,
-    p, dir, uniforms.bodyShadowParams.x, uniforms.bodyShadowParams.y);
+    p, uniforms.bodyShadowParams.x);
   // Either occluder is enough, and min is the only combination that does not
   // invent a darkness neither map claimed: multiplying two 0.15 terms is 0.0225,
   // which is a black hole where a soldier stands in a doorway's shadow.
@@ -510,19 +599,24 @@ fn localLayer(base: f32, d: vec3f, rel: f32, spot: vec4f) -> f32 {
   let side = uniforms.localAtlas.y;
   let texel = uniforms.localAtlas.z;
   let origin = vec2f(col, row) * side;
-  // Clamped a texel inside the tile, so no tap reads its neighbour's face.
+  // Clamped inside the tile by the filter's whole reach — the cubic's 4x4
+  // runs two texels either side of the receiver — so no texel of a
+  // neighbour's face is ever weighed.
   let uv = clamp(origin + (st * 0.5 + 0.5) * side,
-    origin + vec2f(texel), origin + vec2f(side - texel));
-  if (uniforms.localAtlas.w < 2.0) {
-    return step(rel, textureSampleLevel(localAtlasMap, localAtlasMapSampler, uv, 0.0).x);
+    origin + vec2f(texel * 2.0), origin + vec2f(side - texel * 2.0));
+  // The moon's filtered compare, for its reason: a field that is a function
+  // of position, whose contour runs through the texel staircase. One rung is
+  // one bilinear gather; four is the moon's cubic over four.
+  let size = vec2f(1.0 / texel);
+  var field: f32;
+  if (uniforms.localAtlas.w >= 2.0) {
+    field = shadowCubic(localAtlasMap, localAtlasMapSampler, uv, size, rel);
+  } else {
+    field = shadowCmp(localAtlasMap, localAtlasMapSampler, uv, size, rel);
   }
-  let h = texel * 0.5;
-  let hits = step(rel, textureSampleLevel(localAtlasMap, localAtlasMapSampler, uv + vec2f(h, h), 0.0).x)
-    + step(rel, textureSampleLevel(localAtlasMap, localAtlasMapSampler, uv + vec2f(-h, h), 0.0).x)
-    + step(rel, textureSampleLevel(localAtlasMap, localAtlasMapSampler, uv + vec2f(h, -h), 0.0).x)
-    + step(rel, textureSampleLevel(localAtlasMap, localAtlasMapSampler, uv + vec2f(-h, -h), 0.0).x);
-  // The moon's ladder-to-decision curve, for its reason.
-  return smoothstep(0.25, 0.75, hits * 0.25);
+  // A FIXED cut and not the moon's fwidth one: this runs inside the light loop
+  // behind per-pixel early returns, where a derivative is not defined.
+  return smoothstep(0.3, 0.7, field);
 }
 
 // ---- THE LIGHTNING'S KEY (ShadowSystem.flash, LightningStrikes) ----
@@ -536,7 +630,7 @@ fn localLayer(base: f32, d: vec3f, rel: f32, spot: vec4f) -> f32 {
 uniform flashDir: vec3f;
 uniform flashColor: vec3f;
 uniform flashLightMatrix: mat4x4f;
-// x = depth bias, y = tap radius in UV
+// x = depth bias
 uniform flashParams: vec4f;
 var flashMapSampler: sampler;
 var flashMap: texture_2d<f32>;
@@ -546,10 +640,8 @@ var flashMap: texture_2d<f32>;
 fn flashVisibility(n: vec3f, posW: vec3f) -> f32 {
   let toward = select(1.0, -1.0, dot(n, uniforms.flashDir) > 0.0);
   let p = posW + n * (toward * uniforms.shadowParams.z);
-  let a = fract(sin(dot(fragmentInputs.position.xy, vec2f(12.9898, 78.233))) * 43758.5453)
-    * 6.2831853;
   return shadowTap(uniforms.flashLightMatrix, flashMap, flashMapSampler, p,
-    vec2f(cos(a), sin(a)), uniforms.flashParams.x, uniforms.flashParams.y);
+    uniforms.flashParams.x);
 }
 
 // The flash's whole contribution: banded like the key, cut by its own map.

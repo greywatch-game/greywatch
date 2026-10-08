@@ -36,8 +36,16 @@
  * - Meshes with metadata.noShadowCaster (flat ground sheets, roads) must
  *   never be registered — they are receivers, and casting from them is acne.
  * - Blob discs are isPickable=false, metadata.noInk, and never casters.
+ * - The world's casters are drawn TWICE, as two cascades off the one focus: the
+ *   far map over the map's own `shadowWindow`, and the NEAR map over
+ *   `CONFIG.graphics.shadows.nearWindow` at the rung's `near` resolution,
+ *   which is what resolves an edge on a wall the low sun rakes. Same casters,
+ *   same back faces, same bias in metres, same hold; the shader blends the
+ *   near one into the far one over its last `edgeFade` (`shadowVisibility`).
+ *   A rung without it binds the lit 1x1 through `nearOffMatrix`, which puts
+ *   every receiver OUTSIDE its window so the far map answers alone.
  * - A THIRD directional map is the LIGHTNING's (`flash`): the world's casters
- *   drawn once along a strike, on the frame it starts, so the moon's two maps
+ *   drawn once along a strike, on the frame it starts, so the moon's maps
  *   never move for a flash. Render-once, back faces, its own window.
  * - Either map may be OFF (`CONFIG.graphics.shadowTiers`), and off is a bound
  *   1x1 lit texture (`litShadowTexture`) rather than an absent one: every
@@ -82,6 +90,9 @@ const FOLIAGE_LAYER = 0x20000000;
 /** The lightning light's layer, for the same reason: it lights nothing. */
 const FLASH_LAYER = 0x40000000;
 
+/** The near cascade's light's layer, for the same reason again. */
+const NEAR_LAYER = 0x80000000;
+
 /**
  * The lightning map's largest side. A strike lasts half a second and is
  * judged by the SHAPE of what it throws, so it never needs the moon's full
@@ -115,6 +126,29 @@ export class ShadowSystem {
     0, 0, 0, 0,
     0, 0, 0, 0,
     0, 0, 0.5, 1,
+  );
+  /**
+   * The NEAR cascade: the world's casters again, over a small window at a
+   * fine texel — see `CONFIG.graphics.shadows.nearWindow` for why. A light
+   * of its own because a generator is one per light; a window of its own
+   * because the snap is in texels of ITS size.
+   */
+  private readonly nearLight: DirectionalLight;
+  private nearGen: ShadowGenerator | null = null;
+  private nearSize = -1;
+  private readonly nearWin = new ShadowWindow();
+  private readonly nearCasters: AbstractMesh[] = [];
+  /**
+   * What the near matrix answers while that map is OFF: every receiver at
+   * uv (-1, -1), outside the window, so the cascade blend gives the far map
+   * all of it. Not `offMatrix`'s middle of the volume, which would read as a
+   * near map saying "lit" over everything the far map shades.
+   */
+  private readonly nearOffMatrix = Matrix.FromValues(
+    0, 0, 0, 0,
+    0, 0, 0, 0,
+    0, 0, 0, 0,
+    -3, -3, 0.5, 1,
   );
   private readonly blobMaterial: StandardMaterial;
   private readonly blobs = new Map<Combatant, Mesh>();
@@ -259,7 +293,16 @@ export class ShadowSystem {
     this.flashLight.shadowMaxZ = c.depthRange;
     this.flashLight.autoUpdateExtends = false;
 
-    // The generators are built here, once all three lights exist.
+    // The near cascade's light: the moon's volume over the near window,
+    // pinned to a layer nothing carries like the two above.
+    this.nearLight = new DirectionalLight("nearShadow", this.light.direction.clone(), scene);
+    this.nearLight.includeOnlyWithLayerMask = NEAR_LAYER;
+    this.nearLight.shadowFrustumSize = c.nearWindow;
+    this.nearLight.shadowMinZ = SHADOW_NEAR;
+    this.nearLight.shadowMaxZ = c.depthRange;
+    this.nearLight.autoUpdateExtends = false;
+
+    // The generators are built here, once all four lights exist.
     this.setQuality(quality);
 
     // Blob shadow: a radial-gradient disc, unlit black, depth-write off so it
@@ -309,16 +352,28 @@ export class ShadowSystem {
       this.win.invalidate();
       this.held.setAll(Infinity);
       this.mats.shadows.setShadowMap(this.generator?.getShadowMap() ?? litShadowTexture(this.scene));
-      // The map's size goes with them: the consumer's kernel offsets are in UV,
-      // and a texel of UV is 1 / mapSize. This is the only place that number is
-      // known, so it is handed over rather than restated in the shader.
-      this.mats.shadows.setShadowParams(
-        depthBias(c.bias, c.depthRange),
-        c.darkness,
-        c.normalBias,
-        Math.max(1, this.mapSize),
-      );
+      this.mats.shadows.setShadowParams(depthBias(c.bias, c.depthRange), c.darkness, c.normalBias);
       this.mats.shadows.setShadowMatrix(this.lightMatrix);
+    }
+    // The near cascade only ever sits INSIDE a far map, so a rung with the
+    // sun off has none whatever its row says.
+    const nearSize = tier.sun > 0 ? tier.near : 0;
+    if (nearSize !== this.nearSize) {
+      this.nearGen?.dispose();
+      this.nearGen = nearSize > 0 ? this.buildNear(nearSize) : null;
+      this.nearSize = nearSize;
+      this.nearWin.invalidate();
+      this.held.setAll(Infinity);
+      this.mats.shadows.setNearShadowMap(
+        this.nearGen?.getShadowMap() ?? litShadowTexture(this.scene),
+      );
+      this.mats.shadows.setNearShadowParams(
+        depthBias(c.bias, c.depthRange),
+        (c.nearNormalBiasTexels * c.nearWindow) / Math.max(1, nearSize),
+      );
+      this.mats.shadows.setNearShadowMatrix(
+        this.nearGen?.getTransformMatrix() ?? this.nearOffMatrix,
+      );
     }
     const flashSize = Math.min(tier.sun, FLASH_MAP_MAX);
     if (flashSize !== this.flashSize) {
@@ -327,10 +382,7 @@ export class ShadowSystem {
       this.flashSize = flashSize;
       this.flashWin.invalidate();
       this.mats.shadows.setFlashMap(this.flashGen?.getShadowMap() ?? litShadowTexture(this.scene));
-      this.mats.shadows.setFlashParams(
-        depthBias(c.bias, c.depthRange),
-        c.pcfRadiusTexels / Math.max(1, flashSize),
-      );
+      this.mats.shadows.setFlashParams(depthBias(c.bias, c.depthRange));
     }
     if (tier.foliage !== this.foliageSize) {
       this.foliageGen?.dispose();
@@ -340,10 +392,7 @@ export class ShadowSystem {
       this.mats.shadows.setFoliageMap(
         this.foliageGen?.getShadowMap() ?? litShadowTexture(this.scene),
       );
-      this.mats.shadows.setFoliageParams(
-        c.pcfRadiusTexels / Math.max(1, this.foliageSize),
-        depthBias(1, c.depthRange),
-      );
+      this.mats.shadows.setFoliageParams(depthBias(1, c.depthRange));
     }
   }
 
@@ -378,7 +427,35 @@ export class ShadowSystem {
       // which is why the cull is computed here rather than kept up to date in
       // `update`.
       map.getCustomRenderList = () =>
-        this.cullToWindow(map.renderList ?? [], this.win, this.light, this.windowCasters);
+        this.cullToWindow(map.renderList ?? [], this.win, this.light, this.window, this.windowCasters);
+    }
+    for (const m of this.casters) {
+      if (!m.metadata?.noShadowCaster) gen.addShadowCaster(m, false);
+    }
+    return gen;
+  }
+
+  /**
+   * The near cascade's generator at `size`: `buildWorld` exactly, over the
+   * near light and window — the same casters and back faces, render-once and
+   * culled to what stands in its own small window.
+   */
+  private buildNear(size: number): ShadowGenerator {
+    const gen = new ShadowGenerator(size, this.nearLight);
+    gen.bias = 0;
+    gen.forceBackFacesOnly = true;
+    const map = gen.getShadowMap();
+    if (map) {
+      map.refreshRate = RenderTargetTexture.REFRESHRATE_RENDER_ONCE;
+      map.resetRefreshCounter();
+      map.getCustomRenderList = () =>
+        this.cullToWindow(
+          map.renderList ?? [],
+          this.nearWin,
+          this.nearLight,
+          CONFIG.graphics.shadows.nearWindow,
+          this.nearCasters,
+        );
     }
     for (const m of this.casters) {
       if (!m.metadata?.noShadowCaster) gen.addShadowCaster(m, false);
@@ -399,7 +476,7 @@ export class ShadowSystem {
     if (map) {
       map.refreshRate = RenderTargetTexture.REFRESHRATE_RENDER_ONCE;
       map.getCustomRenderList = () =>
-        this.cullToWindow(map.renderList ?? [], this.flashWin, this.flashLight, this.flashCasters);
+        this.cullToWindow(map.renderList ?? [], this.flashWin, this.flashLight, this.window, this.flashCasters);
     }
     for (const m of this.casters) {
       if (!m.metadata?.noShadowCaster) gen.addShadowCaster(m, false);
@@ -446,6 +523,7 @@ export class ShadowSystem {
           fmap.renderList ?? [],
           this.foliageWin,
           this.foliageLight,
+          this.window,
           this.foliageCasters,
         );
     }
@@ -560,9 +638,11 @@ export class ShadowSystem {
       direction[2],
     ).normalize();
     this.foliageLight.direction = this.light.direction.clone();
+    this.nearLight.direction = this.light.direction.clone();
     // Invalidate the snapped focus so the light re-centres on next update.
     this.win.invalidate();
     this.foliageWin.invalidate();
+    this.nearWin.invalidate();
     this.held.setAll(Infinity);
   }
 
@@ -594,15 +674,22 @@ export class ShadowSystem {
     if (lgen && lmap?.renderList) {
       for (const m of lmap.renderList.slice()) lgen.removeShadowCaster(m, false);
     }
+    const ngen = this.nearGen;
+    const nmap = ngen?.getShadowMap();
+    if (ngen && nmap?.renderList) {
+      for (const m of nmap.renderList.slice()) ngen.removeShadowCaster(m, false);
+    }
     for (const m of meshes) {
       if (m.metadata?.noShadowCaster) continue;
       gen?.addShadowCaster(m, false);
+      ngen?.addShadowCaster(m, false);
       lgen?.addShadowCaster(m, false);
       // A translucent SOLID goes in both: the world's map for what it hides,
       // and the foliage's for how thick it is.
       if (this.mats.isSolid(m.material)) fgen?.addShadowCaster(m, false);
     }
     map?.resetRefreshCounter();
+    nmap?.resetRefreshCounter();
     fmap?.resetRefreshCounter();
   }
 
@@ -638,10 +725,11 @@ export class ShadowSystem {
     all: readonly AbstractMesh[],
     win: ShadowWindow,
     light: DirectionalLight,
+    side: number,
     list: AbstractMesh[],
   ): AbstractMesh[] {
     const c = CONFIG.graphics.shadows;
-    const half = this.window / 2;
+    const half = side / 2;
     const dir = light.direction;
     const ax = win.axisX;
     const ay = win.axisY;
@@ -678,6 +766,7 @@ export class ShadowSystem {
    */
   invalidate(): void {
     this.generator?.getShadowMap()?.resetRefreshCounter();
+    this.nearGen?.getShadowMap()?.resetRefreshCounter();
     this.foliageGen?.getShadowMap()?.resetRefreshCounter();
   }
 
@@ -715,6 +804,15 @@ export class ShadowSystem {
       // why this stays a real re-upload on the frames the window moves instead
       // of being deleted outright.
       mats.shadows.setShadowMatrix(gen.getTransformMatrix());
+    }
+    // The near cascade, off the same held focus on its own (finer) grid.
+    const ngen = this.nearGen;
+    if (
+      ngen &&
+      this.nearWin.place(this.nearLight, held, c.nearWindow, this.nearSize, c.distance)
+    ) {
+      ngen.getShadowMap()?.resetRefreshCounter();
+      mats.shadows.setNearShadowMatrix(ngen.getTransformMatrix());
     }
     // The foliage's window, off the same focus on its own texel grid. A
     // separate test because the two grids are different sizes: one moving

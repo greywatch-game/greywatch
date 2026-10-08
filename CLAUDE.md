@@ -543,15 +543,16 @@ texel-snapped focus MOVES, so **nothing that ANIMATES may be registered with
 rig's shape is `RAGDOLL_BONES` and a hull's is its collider box**, so moving
 either moves a shadow, and **the local player casts nothing**, having no rig in
 first person. **Where a window STANDS is `core/shadowWindow.ts`** — one texel
-snap every map places itself with. **The world's map records BACK faces**, so
-**every caster must be a CLOSED shape**.
+snap every map places itself with. **The world's map is two CASCADES of one
+caster set** (a near window at the player over the map's far one) and **records
+BACK faces**, so **every caster must be a CLOSED shape**.
 
 **THE LAMPS CAST INTO ONE ATLAS through ONE binding** (`systems/LocalShadows.ts`)
-and **a light casts by what it SAYS** (`PointLightData.shadow`). **All four
-maps are one `Shadows` setting.** **The CLOUDS cast a fifth, which is a field
-in key space and not a map** (`celCloud`) — and it put the bumped ground variant
-at **15 of WebGPU's 16 sampled textures per stage**, so a texture added to any
-cel variant owes that count first.
+and **a light casts by what it SAYS** (`PointLightData.shadow`). **All five
+maps are one `Shadows` setting.** **The CLOUDS cast a sixth, which is a field
+in key space and not a map** (`celCloud`) — and with the near cascade the bumped
+ground variant is at **16 of WebGPU's 16 sampled textures per stage**, so a
+texture added to any cel variant owes a PACKING first.
 
 **Nothing drawn outside the cel shader gets fog for free, and everything that
 draws outside it owes the same fade** `CelMaterialFactory.setEnvironment`

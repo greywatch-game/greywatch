@@ -246,6 +246,10 @@ export const PROBE_SAMPLER_NAMES = ["reflectionCube"];
 export const SHADOW_UNIFORM_NAMES = [
   "lightMatrix",
   "shadowParams",
+  // The world's NEAR cascade (`ShadowSystem`): the same casters over a
+  // small window at a fine texel — its matrix, and its bias and facet offset.
+  "nearLightMatrix",
+  "nearShadowParams",
   "bodyLightMatrix",
   "bodyShadowParams",
   // The lamps' atlas (`systems/LocalShadows.ts`): per-slot cone and tiles,
@@ -281,6 +285,7 @@ export const SHADOW_UNIFORM_NAMES = [
  */
 export const SHADOW_SAMPLER_NAMES = [
   "shadowMap",
+  "nearShadowMap",
   "bodyShadowMap",
   "localAtlasMap",
   "flashMap",
@@ -1545,15 +1550,10 @@ fn main(input: FragmentInputs) -> FragmentOutputs {
   // does not.
   var transLit = shadow;
   if (uniforms.transDepth > 0.0) {
-    let ta = fract(sin(dot(fragmentInputs.position.xy, vec2f(12.9898, 78.233))) * 43758.5453)
-      * 6.2831853;
-    let tdir = vec2f(cos(ta), sin(ta));
     let thin = shadowTap(uniforms.foliageLightMatrix, foliageMap, foliageMapSampler,
-      fragmentInputs.vPosW, tdir,
-      uniforms.transDepth * uniforms.foliageParams.y, uniforms.foliageParams.x);
+      fragmentInputs.vPosW, uniforms.transDepth * uniforms.foliageParams.y);
     let clear = shadowTap(uniforms.lightMatrix, shadowMap, shadowMapSampler,
-      fragmentInputs.vPosW, tdir,
-      uniforms.transDepth * uniforms.foliageParams.y, uniforms.shadowParams.w);
+      fragmentInputs.vPosW, uniforms.transDepth * uniforms.foliageParams.y);
     transLit = mix(uniforms.shadowParams.y, 1.0, thin * clear);
   }
   // Leaves are lit THROUGH by the light a cloud has already taken.
