@@ -432,6 +432,45 @@ export const PROP_BODIES: Record<ScatterSpec["prop"], PropBody> = {
 const NEUTRAL_ALBEDO: readonly [number, number, number] = [0.5, 0.5, 0.5];
 
 /**
+ * A mesh's local half-extents — its bounding box's `extendSize` — including
+ * for a PART, which has no bounding info at all.
+ *
+ * **A part answers `getBoundingInfo()` with a box of size ZERO**
+ * (`world/parts.ts`: no device buffer, no bounding info), so every caller that
+ * weighed a part by its bounds was weighing every part the same. That was
+ * `albedoFromMeshes` for every kit structure since parts landed: a beam and a
+ * whole wall counted alike in the colour the irradiance volume bounces off
+ * the structure's boxes, which is not what its own comment says it does. So a
+ * part is measured from its vertices, by the same arithmetic Babylon's
+ * `BoundingBox` uses — `(max - min) * 0.5` over the positions — and a mesh on
+ * the device keeps the bounds it has.
+ */
+function halfExtentsOf(mesh: Mesh): { x: number; y: number; z: number } {
+  const buffer = mesh.geometry?.getVertexBuffer(VertexBuffer.PositionKind);
+  if (buffer && !buffer.getBuffer()) {
+    const p = mesh.getVerticesData(VertexBuffer.PositionKind);
+    if (p && p.length >= 3) {
+      let x0 = p[0];
+      let y0 = p[1];
+      let z0 = p[2];
+      let x1 = x0;
+      let y1 = y0;
+      let z1 = z0;
+      for (let i = 3; i < p.length; i += 3) {
+        x0 = Math.min(x0, p[i]);
+        x1 = Math.max(x1, p[i]);
+        y0 = Math.min(y0, p[i + 1]);
+        y1 = Math.max(y1, p[i + 1]);
+        z0 = Math.min(z0, p[i + 2]);
+        z1 = Math.max(z1, p[i + 2]);
+      }
+      return { x: (x1 - x0) * 0.5, y: (y1 - y0) * 0.5, z: (z1 - z0) * 0.5 };
+    }
+  }
+  return mesh.getBoundingInfo().boundingBox.extendSize;
+}
+
+/**
  * What one `build` hands its phases: what they read, and the lists they fill.
  * Lives for one call and is never kept — every field that outlasts a build is
  * on the `GameMap` it returns.
@@ -2067,7 +2106,7 @@ export class MapBuilder {
     for (const m of meshes) {
       const c = this.mats.albedoOf(m.material);
       if (!c) continue;
-      const e = m.getBoundingInfo().boundingBox.extendSize;
+      const e = halfExtentsOf(m);
       const sx = Math.abs(m.scaling.x) * e.x;
       const sy = Math.abs(m.scaling.y) * e.y;
       const sz = Math.abs(m.scaling.z) * e.z;
