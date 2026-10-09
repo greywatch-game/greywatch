@@ -121,7 +121,9 @@ One step per session, in order, with this prompt:
 > Do not touch `develop`.
 
 A step marked **(decision)** has a question for you in "Decisions that are
-yours" at the end of this file. Answer it before handing the step over.
+yours" at the end of this file. Answer it before handing the step over. A step
+marked **(decision at the end)** is handed over as it is: the agent stops
+before its last part and brings you what you need to answer it.
 
 ---
 
@@ -160,15 +162,27 @@ records nothing but the mode. It is the look oracle for all of Phases 3–5.
 - **Rewrites:** `FINDINGS.md` 20 (closed or narrowed),
   `plans/webgpu-ref/README.md`.
 
-### X0.2 — Seeded randomness in the simulation (PERF_PLAN C1) — **S** (decision)
+### X0.2 — Seeded randomness in the simulation (PERF_PLAN C1) — **S**
 
 As `PERF_PLAN.md` C1 states it — `CombatSystem`'s spread cone,
 `ConquestSystem`'s spawn choice and scatter, `VehicleCrew`'s aim onto seeded
-`mulberry32` streams; visual-only draws may stay. **This plan adds one
-requirement: the seed is per ROUND.** Normal play draws a fresh seed for each
-round; the benchmark and any replay pass a fixed one. The bots' own streams
-(`BattleSystem.ts`, `CONFIG.bots.skill.seed + team * 131 + i * 17`) are
-constant today; whether they take the round's seed is the decision.
+`mulberry32` streams; visual-only draws may stay. **This plan adds two
+requirements:**
+
+- **The seed is per ROUND.** Normal play draws a fresh seed for each round; the
+  benchmark and any replay pass a fixed one.
+- **The round's seed is readable.** Once outcomes vary by seed, reproducing a
+  bug needs that round's seed. Write it into the profiler capture and into a
+  DEV-visible line, and let a URL override set it.
+
+**Leave the bots' own streams as they are.** Each bot's movement stream
+(`BattleSystem.ts`, `CONFIG.bots.skill.seed + team * 131 + i * 17`) and the
+per-squad skill draw stay on their constant seeds. That is deliberate, the
+code says so, and it does not affect the exit: the benchmark passes a fixed
+seed either way. Whether bots' movement should vary between rounds is a
+game-feel question for later (see "Decisions that are yours"). The skill draw
+should stay constant regardless, because seeding it per round would make squad
+strength, and so balance, a matter of chance.
 
 - **Verify:** `npm run parity`; `npm run simulate`; a bot-only round run twice
   from one seed at a fixed `dt` reaches the same score and the same kill
@@ -196,15 +210,35 @@ ends in a profiler capture.**
   protocol's ~8% on every segment. A phone run completes with nothing but the
   URL.
 
-### X0.4 — The targets, and the "before" — **S** (decision)
+### X0.4 — The "before", then the targets — **S** (decision at the end)
 
-- **Do:** Write the frame targets per device into this file (the decision).
-  Then take the "before" with X0.3 on Sarab, Cinderhaven, Coldharbour and
-  Greyfen, on the desktop, the phone and the tablet, several runs each. Do
-  `PERF_PLAN.md` G1 here too: the phone's GPU cost moves with the shaders, not
-  the engine, and the shaders port.
-- **Output:** a `FINDINGS.md` entry with the tables. Every later step quotes
-  its numbers against it.
+The targets are set from measurements, not guessed ahead of them. A target set
+blind can be out of the exit's reach whatever the exit does. At render scale
+0.5 the phone is limited by its GPU (`FINDINGS.md` 50), and at 0.75 by
+per-pixel shader cost (`FINDINGS.md` 13). The shaders port unchanged, so no
+renderer rewrite moves either.
+
+- **Do, first:** take the "before" with X0.3 on Sarab, Cinderhaven,
+  Coldharbour and Greyfen, on the desktop, the phone and the tablet, several
+  runs each. Do `PERF_PLAN.md` G1 here too, since the phone's GPU cost moves
+  with the shaders, not the engine.
+- **Output:** a `FINDINGS.md` entry with the tables. For each device, split
+  the time into what the exit can move (draw calls, CPU time in the render)
+  and what it cannot (GPU fill, the browser's floor), as far as the captures
+  allow. Every later step quotes its numbers against this entry.
+- **Then stop, and bring the user the tables.** The user writes the targets
+  into this file. Each target names:
+  - a device
+  - a map
+  - a render scale
+  - a statistic: a p95 or the 1% low, never a mean (`FINDINGS.md` 1 found
+    the mean at 60 while the slowest frames were at 28)
+
+  For example: "p95 at or under 16.7 ms on the Sarab benchmark, Android
+  phone, render scale 0.5".
+- **Nothing needs the targets until X6.2's sign-off.** The X3.3 gate only asks
+  whether any device's frame improved. So if the user is not ready to set them,
+  the step still lands, and Phase 1 can start.
 
 **Gate after Phase 0:** the bank and the benchmark both reproduce. If either
 does not, no later step can claim it moved nothing or saved anything. Fix them
@@ -791,8 +825,8 @@ Phase 1 actually took.
 
 | before | question | recommendation |
 | --- | --- | --- |
-| X0.2 | Do the bots' own streams take the round's seed, so their personalities vary between rounds? | Yes. A constant seed was right when nothing else was seeded, and it makes every round start alike. |
-| X0.4 | The frame target per device: phone, tablet, desktop. | Write numbers, for example 60 at the phone's default render scale and your monitor's refresh on desktop. Every later step needs them. |
+| any time | Should the bots' movement streams take the round's seed, so they move less alike from round to round? Not part of the exit. | Optional, and a one-line change. Leave the per-squad skill draw constant either way, or balance becomes chance. |
+| end of X0.4 | The frame targets: device, map, render scale and statistic for each. | Set them from X0.4's tables, against what the exit can move. Needed by X6.2, not before. |
 | X0.4 | Bring Sarab to final detail first, as a heavier "before"? | Optional. If yes, do it after X0.3 and take the "before" twice, once on each side of the rework. |
 | X2.5 | One simulation core, offline and online? | Yes, here, while it is cheapest. |
 | X3.4 | Scatter AO: baked per kind (cheaper, changes the look) or per instance? | Per kind, judged in the bank. |
