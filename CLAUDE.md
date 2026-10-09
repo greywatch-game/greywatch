@@ -599,7 +599,10 @@ tree owes it.** Everything opaque writes **0** into that channel (`CelShader`'s
 (`ALPHA_COMBINE`), and `CelInk` scales its edge by `1 - a`. **A REFLECTION
 PROBE inverts it** — `ReflectionSystem` flips `opaqueAlpha` to 1 for the length
 of a bake — and **a shader that hardcodes either value breaks one of the two
-passes silently**.
+passes silently**. **The EMISSIVES are the one deliberate exception**: the
+emissive palette (`EmissiveWorld.ts`) hardcodes **1** in both passes, because
+`getEmissive`'s `StandardMaterial` always wrote 1 — a lamp takes no ink and is
+city in a probe's cube. Do not "fix" it onto `opaqueAlpha`.
 **The sky's CLOUDS stand in the world but write the depth of a point 7 km out
 along each pixel's ray**, so every surface a map draws must be nearer than that
 or a cloud draws over it. **They draw on group 0's ALPHA-TEST list** — after
