@@ -256,7 +256,8 @@ apart once and the failure is silent rather than loud. **Anything new that
 consumes a `GameMap` or an `EnvironmentSpec` goes in `installMap`.**
 
 `Game`'s state machine is `menu -> loading -> deploy -> playing -> dying ->
-deploy`, with `roundover` when a side runs out of tickets. **The 3D scene renders
+deploy`, with `roundover` when a side runs out of tickets, and `bench` — the
+benchmark `?bench=<map>` plays — off to one side of it like `editor`. **The 3D scene renders
 in every state**, which is what lets the deploy screen sit over a live view,
 and `loading` and `dying` are **STEPS, not lids**: `updateWorld` runs in full
 under the death cam, and nothing may simulate under the building card. **The
@@ -1266,6 +1267,15 @@ it cannot drift, and shipped in every capture as `ProfileReport.roots`). **What
 is left over is the answer, not a gap**: `frame` + `present` short of the wall
 clock is the rAF wait, the compositor, the panel — and naming it would be
 claiming to know which.
+
+**THE BENCHMARK IS A URL** (`?bench=<map>`, `bench/BenchScript.ts`): the bank's
+vantages at eight headings, a path through the densest quarter and a bot-only
+round from a fixed seed, ending in a labelled capture on a HALTED ring — so a
+phone runs it with nothing but the link. **Every bench frame is the FIXED step
+`tick` hands down**, which is why the world must step by `tick`'s `dt` and by
+no clock of its own: anything that reads the refresh clock, the wall clock or
+`Math.random` for an OUTCOME makes two runs fight two fights, and the capture's
+`bench.fight.hash` is what says so.
 
 **What all of them measure is CPU**, and under `compatibilityMode = false` that
 is the recording of a render BUNDLE rather than the work the GPU then does.

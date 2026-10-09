@@ -7,7 +7,10 @@ says), [`src/core/profilePhases.ts`](../src/core/profilePhases.ts) (the phase
 list both read), [`src/ui/ProfileChip.ts`](../src/ui/ProfileChip.ts) and
 [`src/config/profiling.ts`](../src/config/profiling.ts), and for the ~22 pairs
 of brackets in `Game.ts` that feed them, plus the four inside `render` that
-`FrameProfile` hangs off the scene itself. [`CLAUDE.md`](../CLAUDE.md) carries the
+`FrameProfile` hangs off the scene itself — and for the BENCHMARK that rides
+on all of it, [`src/bench/BenchScript.ts`](../src/bench/BenchScript.ts),
+`Game.updateBench` and the desktop wrapper
+[`plans/webgpu-ref/bench.mjs`](../plans/webgpu-ref/bench.mjs). [`CLAUDE.md`](../CLAUDE.md) carries the
 summary; this is the argument.
 
 It is not the only instrument in the tree and is deliberately not the biggest.
@@ -151,6 +154,13 @@ reload. `?profile` arms it before the first frame and is how a smoke script gets
 it on, since the setting lives in `localStorage` and a fresh browser profile has
 none.
 
+**An arm from inside a frame drops that frame**, and it used to file it. The
+settings toggle and a benchmark's first frame both arm part-way through a tick
+whose `beginFrame` ran before there was a ring, so the first `endFrame` closed
+a row with a `frameAt` of 0 — and `window.seconds`, which is the newest row's
+stamp minus the oldest's, read as the page's whole lifetime until the ring
+lapped. `FrameProfile.frameOpen` is what refuses that row now.
+
 **The chip** (`#prof`, top-left) is up whenever the ring is recording, in every
 state, and is the only sign that it is. It shows how much the ring is holding
 and how many hitches it has seen, and carries three buttons:
@@ -203,6 +213,130 @@ merely going to reject — it is `undefined`. So: the modern API, then an
 **`window.__profile`** is the instrument itself — `capture(reason, full)`,
 `trace(maxFrames)`, `last()`, `armed`, `seconds`. It ships. A smoke script wants
 this and not `__celshock`, because none of it is anything to do with the game.
+
+---
+
+## The benchmark: `?bench=<map>`
+
+**A URL starts it, the game plays it, and it ends in a capture** — because the
+devices it is for will not run a script (`PERF_PLAN.md` P0: USB and wireless
+debugging both failed on the phone), and `BABYLON_EXIT.md` grades every step
+from X0.4 on against it. Open `/?bench=sarab` (or `?bench` bare, for the map the
+menu would offer) and the page builds that map, plays the run, and comes back
+to its menu with the chip up and the run handed over: `VIEW` reads it. Nothing
+else is needed, and nothing the player chose is changed — the map and the enemy
+tier are the run's for its length and the stored picks come back after it.
+
+**What it plays, in order** (`BenchScript`, every length in
+`CONFIG.profiling.bench`):
+
+1. **The bank's vantages, eight headings each.** The poses are
+   `plans/webgpu-ref/`'s reference bank's — the menu's from `ui/mapShots.ts`,
+   the rest from `src/bench/vantages.ts`, which the bank now re-exports
+   rather than keeping a copy — one stop per POSITION, turned through a circle
+   at the row's own pitch, with the world held as `deploy` holds it. Every
+   stop and heading is first REHEARSED, unmeasured; then each stop is
+   arrived at again, settled, and each heading MEASURED for `holdFrames`.
+2. **One camera path through the densest quarter**: a loop around the
+   quarter of the play square with the most BUILT ground — collider boxes
+   weighed by footprint, because the boxes are the one description of a place
+   this exit cannot move and a count of them is a census of tree trunks — at
+   eye height over the street, lifted over a roof and walked past a trunk.
+3. **A bot-only round from the fixed seed** (`bench.seed`, X0.2's 777;
+   `?seed=` overrides): nobody is seated, so every slot fights, and the player's
+   body is DEAD, which takes it out of every count. The first `leadSeconds` are
+   stepped `leadSteps` fixed steps a frame and not measured — they are bots
+   running to flags on every map, the empty frame `FINDINGS.md` 32 warned
+   about — and then `fightSeconds` are measured one step a frame, the camera
+   over the shoulder of the lowest-numbered bot still standing.
+
+**A SETTLE ends when the device has caught up, and the first look at a place
+is REHEARSED — both because of one measurement.** The first version settled
+for a fixed 60 frames and measured each vantage straight away, and on the
+Windows box, headless and uncapped, three runs of one map disagreed on a
+vantage by up to 71% while the path and the fight agreed within 6%. Every
+outlier was one frame that WAITED — 110 to 570 ms with no script and almost
+no render in it, `loaf`'s "neither" verdict — 60 to 92 frames after the camera
+arrived somewhere: the GPU's bill for arriving (the irradiance volume back on
+its warm budget after a jump of more than half its window, pipelines first
+used, a lamp's first shadow tiles) presented by a CPU that had run dozens of
+frames ahead of it, so it landed in a hold on one run and a settle on the
+next. The same run played three times in one page had five of them the first
+time and none in a hold after. So a settle now runs until its last `frames`
+frames were all QUIET (`BenchScript.settles`: none over `quietFactor` times
+the fastest it has seen and `quietSlackMs` over it), capped at `settleCap`
+times its length, and a `rehearsal` visits every stop and heading once before
+the measured pass. **What a hold measures is what a view costs once it has
+been seen** — the steady state a renderer change moves — and the first-look
+bill stays on the path and in the fight, where every run pays it the same
+way. A settle's length is the one thing the DEVICE decides, and it may be only
+because a settle is never measured and steps nothing.
+
+**A GPU-bound frame, uncapped, arrives in BURSTS, so no measured stretch may
+be short.** With the settles and the rehearsal in, Kurenai's one stop still
+moved 41% between three runs while its path agreed to 0.4%: at 3440x1440 the
+map is GPU-bound (a 3.0 ms tick in a 4.1 ms frame), and the browser delivers
+that as a CPU that runs ahead and then waits 180-320 ms for the GPU, about
+every 1.3 s, at the same frames on every run. The mean over a long stretch is
+right; a stretch of 288 frames catches none of those waits or one. So the
+vantages between them are measured for at least `vantageFrames` (1,152, what
+Greyfen's four stops already came to), each heading held longer on a map with
+fewer stops.
+
+**Everything is counted in FRAMES and fixed steps, never in wall clock, and
+that is what makes two runs comparable.** Every bench frame advances the world
+and every clock by `bench.dt` (1/60 s) whatever the device did, so a phone and
+a desktop are shown the same frames in the same order and differ only in what
+each one cost — which is also why the same fight happens on every run, on every
+device: `FightHash` folds every award and every death, with the step it landed
+on, into a hash the capture carries, and **two runs whose hashes differ did not
+fight the same fight** and their `fight` segments are not comparable. The
+frame TIME is still the real one, read off the same clock every capture reads.
+
+**The capture says what each frame was showing.** The ring is armed at the
+run's first frame, SIZED to the script (`BenchScript.frames`, every settle
+counted at its cap, so nothing is ever lapped out), and every row carries a SEGMENT label: each vantage's hold,
+the path, the fight, and three labels that are recorded but are not
+measurements — `rehearsal`, `settle` and `lead`. Report version 13 rolls them up two ways,
+`segments.list` (each label) and `segments.groups` (`vantages`, `path`,
+`fight`), each with the wall clock's mean, p50, p95, p99 and 1% low, the tick,
+`render`, the draw and mesh counts and `gpu.frame` over the rows that got a
+reading; `bench` carries the run's own facts (completed or not, the plan, the
+path's loop, the fight's hash and steps); `series.segment` labels every row of
+a SAVE. **A capture with `bench.completed` false was stopped** — Escape, or a
+round that ran out of tickets inside it — and its fight is short.
+
+**It ends by HALTING the ring, not disarming it** (`FrameProfile.halt`):
+nothing after the run's last frame is recorded and the buffers are kept, so
+`VIEW`, `KEEP`, `SAVE` and `TRACE` all hand over the run and only the run, for
+as long as the page is open. The report is written to the hand-off key at once
+(`ProfileChip.benchDone`) — no tab is opened, because the run ends on a frame
+nobody touched and a popup without a gesture is refused — and the chip says so
+until something else is said. A halted profiler costs what a disarmed one does;
+arming it again from the settings starts a fresh ring.
+
+**Read it as a benchmark and not as a session.** The graphics are whatever is
+in force — a fresh profile gets the device's defaults, and the capture says
+which (`graphics`) — and the frame cap is the setting's. The HUD is drawn as the
+death cam draws it, because the minimap is a real per-frame cost
+(`FINDINGS.md` 13) and a run without it would flatter every device that pays
+for it. Sound plays where the page may play it; on a phone with no gesture it
+is silent.
+
+**On a desktop, `node plans/webgpu-ref/bench.mjs [map...] --runs 3`** plays the
+URL N times per map in one browser (a fresh context each time), checks every
+run completed and fought the one fight, and prints each group's medians and the
+SPREAD of its mean across the runs — flagged over the protocol's 8% — plus the
+worst single segment per map. `--out f.json` keeps the result and `--against
+f.json` prints each group's median as a ratio, new over old. It runs UNCAPPED
+unless told `--capped`, the opposite of `gate.mjs`, because a run held at the
+display's ceiling reports the ceiling; uncapping fabricates the collector's
+rate, so no GC figure is read out of it. `--gpu` adds `?gpu`, and `--size WxH`
+is the viewport, which is part of the workload rather than a detail of it:
+3440x1440 unless told, the Windows box's own display — and the size at which
+three runs agreed within 4% on every segment, where at the bank's 1920x1080 a
+frame is ~2.5 ms, the browser's pacing jitter is a tenth of it, and a single
+vantage's hold moved 23% between runs.
 
 ---
 
@@ -829,6 +963,10 @@ details:
 - **A new graphics setting owes a field here**, in `ProfileGraphics`,
   `sameGraphics` and the viewer's `Graphics` row, or captures go on describing
   a configuration that no longer names everything the frame paid for.
+
+**From report version 13 a capture can be a BENCHMARK's** — `bench`,
+`segments` and `series.segment`, null and absent on every other ring — and
+"The benchmark" above is how to read one. Nothing older changed meaning.
 
 **From report version 12 a capture states the round's SEED** (`seed`, pushed
 by `Game.buildRound` through `FrameProfile.setSeed`), which is every outcome in

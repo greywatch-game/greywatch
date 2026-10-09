@@ -146,6 +146,31 @@ both come out) drops the held spawn: both hand out a fresh body regardless, a
 rotation by retiring every player on the authority and a reconnect by seating
 this client into a new slot that is dead until it asks.
 
+**`bench` is the benchmark (`?bench=<map>`) and is the other STEP outside the
+cycle**, beside `editor`. It is entered from `deploy` on the frame the deploy
+screen opens — `finishBakeWait` hands the round to `Game.enterBench` instead of
+waiting for the player — and it leaves for `menu` and for nothing else: its
+script running out, Escape, or a round that ends inside it all go through
+`Game.endBench`. Three things make it unlike every other step, and each is a
+rule a change near it could break:
+
+- **Every frame in it is the FIXED step** (`CONFIG.profiling.bench.dt`), the
+  one place `tick`'s `dt` is not the refresh clock — the run compares the cost
+  of the same frames, so the frames may not depend on the device.
+- **The player is in no slot and is DEAD.** `buildRound` seats nobody when a
+  benchmark is booked, so every slot is a fielded bot, and `enterBench` sets
+  the body dead, which is the state the death cam already runs the world in:
+  skipped by conquest's count, by acquisition and by every damage path.
+- **Nothing covers it.** `SCREENS.bench.covers` is null and so is every lid's
+  claim on it, so no pause card can stand in a run's capture; Escape ENDS it.
+
+Its frames are `updateWorld` and the camera tail when its script says FIGHT,
+and the camera tail alone, the world held as `deploy` holds it, when the script
+says LOOK — so it simulates exactly when a played frame would. A benchmark
+booked and never reached (a build that failed under it) is dropped by
+`enterMenu`, or the next round the player started would be taken over by it.
+`docs/profiling.md`, "The benchmark", has the run itself.
+
 **`dying` is the death cam and is a STEP, not a lid** — `updateWorld` runs in full
 underneath it. **`loadout`, `settings`, `lobby` and `paused` are lids**: a screen
 laid over a state, which taking it off puts back rather than moving the game on.

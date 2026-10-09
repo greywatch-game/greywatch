@@ -185,6 +185,33 @@ export class ProfileChip {
     this.act("keep");
   }
 
+  /**
+   * A benchmark has ended and its ring is held (`FrameProfile.halt`): the
+   * report is HANDED OFF the way `VIEW` hands one off, without opening a tab,
+   * and a line stays up saying so until something else is said.
+   *
+   * No tab, because there is no gesture to open one with — the run ends on a
+   * frame nobody touched, and `window.open` outside a user activation is a
+   * popup the browser refuses. So the hand-off key is written now, which is
+   * what lets `/profile_viewer.html` opened by hand find the run, and `VIEW`
+   * stays the one-tap way there: the ring is halted, so what it captures is
+   * the same run.
+   */
+  benchDone(report: ProfileReport): void {
+    let stored = true;
+    try {
+      localStorage.setItem(HANDOFF_KEY, JSON.stringify(report));
+    } catch {
+      stored = false;
+    }
+    const verdict = report.bench?.completed ? "benchmark done" : "benchmark stopped";
+    this.flash(
+      `${verdict} · ${headline(report)} · ` +
+        (stored ? "VIEW reads it" : "SAVE keeps it — storage refused the hand-off"),
+      0,
+    );
+  }
+
   private act(what: string): void {
     if (what === "view") {
       this.view();
@@ -293,13 +320,15 @@ export class ProfileChip {
     window.setTimeout(() => URL.revokeObjectURL(url), 10_000);
   }
 
-  private flash(text: string): void {
+  /** `holdMs` 0 keeps the line up until the next one replaces it. */
+  private flash(text: string, holdMs: number = FLASH_MS): void {
     this.flashEl.textContent = text;
     this.flashEl.classList.remove("hidden");
     window.clearTimeout(this.flashTimer);
+    if (holdMs <= 0) return;
     this.flashTimer = window.setTimeout(() => {
       this.flashEl.classList.add("hidden");
-    }, FLASH_MS);
+    }, holdMs);
   }
 }
 

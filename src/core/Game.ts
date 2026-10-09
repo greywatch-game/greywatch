@@ -186,9 +186,11 @@ import { Leash, LEASH_KILLER } from "../world/leash";
 import { perTeamOf, type Heightfield } from "../world/layout";
 import type { EditorSession } from "../editor";
 import type { MixerSession } from "../dev/mixer";
+import type { BenchScript, FightHash } from "../bench/BenchScript";
 import { MAPS, loadHeights, type MapDef } from "../world/maps";
 import { MapBuilder, type BuildOptions, type GameMap } from "../world/MapBuilder";
 import { TerrainField } from "../world/TerrainField";
+import { newRayHit } from "../world/RayWorld";
 import { DeployScreen } from "../ui/DeployScreen";
 import { HUD, type CaptureStatus, type VehicleChair } from "../ui/HUD";
 import { Scoreboard, type ScoreRow } from "../ui/Scoreboard";
@@ -249,6 +251,24 @@ import { forgetBindGroups } from "./webgpuLeaks";
 
 /** Grass bends around combatants; in the editor there are none. */
 const EMPTY_PUSHERS: readonly Combatant[] = [];
+
+/**
+ * A benchmark, from the moment `?bench=` books one to the frame it ends — see
+ * `Game.bootBench`. `kit` is the lazily loaded module itself: nothing about a
+ * benchmark is on the boot path, so its classes arrive with it rather than
+ * being imported.
+ */
+interface BenchRun {
+  kit: typeof import("../bench/BenchScript");
+  /** Laid at the bake's end, when there is a built map to lay it over. */
+  script: BenchScript | null;
+  fight: FightHash;
+  /** The player's own tier, put back when the run ends. */
+  difficulty: number;
+  /** The bot the spectator follows, by roster index; -1 for none yet. */
+  focus: number;
+  roundEnded: boolean;
+}
 
 /**
  * The camera's own local forward, for `getDirection`. A module constant because
@@ -994,6 +1014,16 @@ export class Game {
   private readonly kitLampPos = new Vector3();
   /** …and for where a thrown grenade leaves the player's hand. */
   private readonly grenadeHand = new Vector3();
+  /**
+   * The benchmark, booked or running — null in every session that did not
+   * ask for one with `?bench=`. See `bootBench`.
+   */
+  private bench: BenchRun | null = null;
+  /** …and the benchmark camera's eye, aim point and pull-in, no per-frame allocation. */
+  private readonly benchEye = new Vector3();
+  private readonly benchLook = new Vector3();
+  private readonly benchDir = new Vector3();
+  private readonly benchHit = newRayHit();
   /** Counts down while the player is waiting to redeploy. */
   private respawnT = 0;
   /**
@@ -1647,7 +1677,10 @@ export class Game {
     // start without — so this is the only way in that does not require a visit
     // to the settings screen first.
     if (urlFlag("profile")) this.setProfiling(true);
-    this.joinFromUrl();
+    // A benchmark is the whole session, so it is never also a match: a URL
+    // carrying both plays the benchmark.
+    if (this.overrides.bench !== null) void this.bootBench(this.overrides.bench);
+    else this.joinFromUrl();
     this.engine.runRenderLoop(() => this.tick());
   }
 
@@ -1681,6 +1714,7 @@ export class Game {
     // authority's — see `onNetEvent`.
     this.scores.onAward = (slot, kind, points) => {
       if (slot === this.battle.playerSlot) this.hud.addScore(kind, points);
+      this.bench?.fight.award(slot, kind, points);
     };
     this.wireDeaths();
     this.wireGrenades();
@@ -3398,7 +3432,13 @@ export class Game {
     // SEEN — stepping the world by when a callback got the thread is judder
     // under an evenly paced display (`FrameCap`'s header).
     const real = this.engine.getDeltaTime() / 1000;
-    const dt = Math.min(this.frameCap.elapsed(real), 0.05);
+    // …except under a benchmark, where every frame is the FIXED step whatever
+    // either clock says (`CONFIG.profiling.bench`): what a run compares is the
+    // cost of the same frames, so the frames may not depend on the device.
+    const dt =
+      this.state === "bench"
+        ? CONFIG.profiling.bench.dt
+        : Math.min(this.frameCap.elapsed(real), 0.05);
     // The match's render clock is read at the same instant, and before anything
     // in this frame asks it: where on the authority's timeline this frame is
     // posed is a question about when it is SEEN (`Connection`'s header).
@@ -3490,6 +3530,14 @@ export class Game {
         break;
       case "editor":
         this.updateEditor(dt);
+        break;
+      // Bracketed as `gameplay`, because that is what it is — a played frame
+      // whose body is a script — and a capture of one reads against a capture
+      // of the other under the same phase tree.
+      case "bench":
+        this.prof.begin(P.gameplay);
+        this.updateBench(dt, real * 1000);
+        this.prof.end(P.gameplay);
         break;
     }
 
@@ -4129,6 +4177,14 @@ export class Game {
    * on the HUD and the camera handed to a body that no longer exists.
    */
   private enterMenu(): void {
+    // A benchmark that is still booked here never reached its first frame — a
+    // build that failed under it — and goes with the round it was booked on,
+    // or the next round the PLAYER starts would be taken over by it.
+    // `endBench` clears its own before it comes this way.
+    if (this.bench) {
+      this.difficulty = this.bench.difficulty;
+      this.bench = null;
+    }
     // Takes down the pause card, the kit screen and the settings with it —
     // whichever of them the player was looking at when they quit. All three used
     // to be listed here by hand; see `go`.
@@ -4288,6 +4344,9 @@ export class Game {
     // the failure `installMap` exists to prevent, arriving by the one door it
     // does not cover. One frame, and F2 works on the next.
     if (this.buildPending()) return;
+    // A benchmark, booked or running, is the whole session: the editor would
+    // tear its map down under it. Escape stops one first.
+    if (this.bench) return;
     // A previous F2 is still waiting on the import. Its `createEditor` has not
     // run yet, so `this.editor` is still null and would wave this one through.
     if (this.editorLoading) return;
@@ -5053,7 +5112,8 @@ export class Game {
     // since a round's seed is the only handle on a bug in it. In a match the
     // fight is the authority's and so is its seed (the server logs it): this
     // one draws nothing but this client's own cone, and the capture says null.
-    const seed = this.overrides.seed ?? freshSeed();
+    const seed =
+      this.overrides.seed ?? (this.bench ? CONFIG.profiling.bench.seed : freshSeed());
     this.random.seedRound(seed);
     this.prof.setSeed(this.net ? null : seed);
     if (import.meta.env.DEV && !this.net) {
@@ -5118,7 +5178,10 @@ export class Game {
     // maps and twenty-four on Sarab. In a match the authority does this on its
     // own roster and the local pool is not the fight — see
     // `BattleSystem.seatPlayer`.
-    if (!this.net) this.battle.seatPlayer(this.player.team);
+    //
+    // A BENCHMARK seats nobody: its round is bot-only, every slot fielded, and
+    // the player's body stays out of it (`enterBench`).
+    if (!this.net && !this.bench) this.battle.seatPlayer(this.player.team);
     // A new round is a new board. Sized from the pool here rather than at
     // construction, so it is the roster that says how many rows there are —
     // and after `seatPlayer` above, so the slot the player's own line is kept
@@ -5400,6 +5463,8 @@ export class Game {
     this.pendingSpawn = null;
     this.enterDeploy(0);
     if (spawn) this.spawnPlayer(spawn);
+    // A benchmark takes the deploy screen's place on the frame it opens.
+    else if (this.bench) this.enterBench();
   }
 
   /**
@@ -8463,6 +8528,250 @@ export class Game {
   }
 
   /**
+   * Books the benchmark `?bench=<map>` asked for: that map, the default enemy
+   * tier and the bench's fixed seed, then a round started exactly as the
+   * menu's Deploy starts one. `BABYLON_EXIT.md` X0.3, `docs/profiling.md`'s
+   * "The benchmark".
+   *
+   * **Nothing it sets is the PLAYER's choice, so none of it is remembered**:
+   * the map and the tier are written to the fields and not to `prefs`, and
+   * `endBench` hands both back — the map through `enterMenu`, which re-reads
+   * the stored pick, the tier from the run. A phone that was handed a bench
+   * URL keeps the map its owner chose.
+   *
+   * The script itself is a dynamic import, so the bench's code and the
+   * vantage table's prose are a chunk only this path downloads.
+   */
+  private async bootBench(id: string): Promise<void> {
+    const def = id === "" ? this.mapDef : MAPS.find((m) => m.id === id);
+    if (!def) {
+      console.warn(
+        `[bench] no map "${id}" — one of ${MAPS.map((m) => m.id).join(", ")}`,
+      );
+      return;
+    }
+    const kit = await import("../bench/BenchScript");
+    // Anything the player did while the chunk arrived wins: a round started
+    // from the menu is theirs and not a benchmark's.
+    if (this.state !== "menu" || this.buildPending()) return;
+    this.mapDef = def;
+    this.bench = {
+      kit,
+      script: null,
+      fight: new kit.FightHash(),
+      difficulty: this.difficulty,
+      focus: -1,
+      roundEnded: false,
+    };
+    this.difficulty = CONFIG.bots.skill.defaultDifficulty;
+    this.startRound();
+  }
+
+  /**
+   * The bake has drained and the deploy screen has just opened: the script is
+   * laid over the built map, the profiler is armed with a ring that holds all
+   * of it, and the deploy screen is taken down for the `bench` step.
+   *
+   * **The ring is re-armed whatever state it was in**, sized to the script
+   * (`BenchScript.frames`), so the capture holds the whole run and nothing
+   * before it — not the menu, not the build. The chip goes up because it is
+   * the only sign the ring is recording and the only way off the device.
+   *
+   * **The player is taken out of the fight by being DEAD, and that is the
+   * whole of it.** `buildRound` already seated nobody, so every slot on both
+   * sides is a fielded bot; a dead combatant is skipped by conquest's count,
+   * by acquisition and by every damage path, which is the state the death cam
+   * already runs the world in.
+   */
+  private enterBench(): void {
+    const run = this.bench;
+    const map = this.map;
+    if (!run || !map) return;
+    const script = new run.kit.BenchScript(this.mapDef.id, {
+      size: map.size,
+      boxes: map.colliderBoxes,
+      surfaceAt: (x, z) => map.terrain.surfaceAt(x, z, true),
+    });
+    run.script = script;
+    this.prof.disarm();
+    // Two spare rows: the frame that ends the run is recorded half-way, and
+    // a ring that laps by one would drop the run's first frame.
+    this.prof.arm(this.scene, this.glow, script.frames + 2);
+    this.prof.setMap(this.mapDef.id);
+    this.prof.setSegments(script.segments);
+    this.profChip.setArmed(true);
+    this.deployScreen.hide();
+    this.minimap.setVisible(true);
+    this.player.alive = false;
+    this.cameraSys.reset(0);
+    this.go("bench");
+  }
+
+  /**
+   * One frame of the benchmark: whatever the script says this frame is.
+   *
+   * A LOOK stands the camera where the script puts it with the world held, as
+   * `deploy` holds it; a FIGHT frame steps the world `steps` fixed steps — one
+   * a frame for the measured fight, several for the lead-in — and puts the
+   * camera over the bot it follows. Either way the frame then runs what a
+   * played frame runs after its world step, in the same spans: the camera
+   * tail, the capture rings and the HUD, drawn as the death cam draws it.
+   *
+   * Escape stops it, and the capture says it was stopped.
+   */
+  private updateBench(dt: number, realMs: number): void {
+    const run = this.bench;
+    const script = run?.script;
+    if (!run || !script) return;
+    if (this.input.pausePressed) {
+      this.endBench(false);
+      return;
+    }
+    const cue = script.next(realMs);
+    if (cue.kind === "done") {
+      this.endBench(true);
+      return;
+    }
+    this.prof.setSegment(cue.segment);
+    if (cue.kind === "fight") {
+      this.prof.begin(P.world);
+      for (let i = 0; i < cue.steps; i++) {
+        run.fight.step++;
+        if (!this.updateWorld(dt)) {
+          run.roundEnded = true;
+          break;
+        }
+      }
+      this.prof.end(P.world);
+      // A round that ENDED inside the run has put its card up already; the
+      // run ends with it, short, and its capture says so.
+      if (run.roundEnded) {
+        this.endBench(false);
+        return;
+      }
+      this.prof.begin(P.camera);
+      this.chaseBench(run, script, dt);
+    } else {
+      this.prof.begin(P.camera);
+      this.benchEye.set(cue.x, cue.y, cue.z);
+      this.aimBench(cue.yaw, cue.pitch);
+      this.shadowFocus.copyFrom(this.benchLook);
+    }
+    // The tail a played frame runs, with no body of the player's in it: the
+    // blobs are placed here because `updateSceneForCamera` places them only
+    // for a player it is handed, and handing it this one would hang the
+    // carried lamp over a body nobody is standing in.
+    this.shadows.updateBlobs(
+      this.player,
+      this.battle.bots,
+      this.cameraSys.camera.position,
+      this.player.floorY,
+    );
+    this.updateSceneForCamera(dt, this.shadowFocus, null, this.combatants);
+    this.prof.end(P.camera);
+    this.prof.begin(P.zones);
+    this.zones.update(dt, this.conquest.points, this.cameraSys.camera.position);
+    this.prof.end(P.zones);
+    this.prof.begin(P.hud);
+    this.updateHud(dt, true);
+    this.prof.end(P.hud);
+  }
+
+  /**
+   * Points the camera from `benchEye` along a bearing and a pitch (the
+   * camera's convention — see `CameraSystem.forwardToRef`), leaving the aim
+   * point in `benchLook` for the shadow focus. The two angles go onto
+   * `cameraSys` as well, which is what the blur reprojects against, what the
+   * listener faces and what the minimap turns by.
+   */
+  private aimBench(yaw: number, pitch: number): void {
+    const cp = Math.cos(pitch);
+    this.benchLook.set(
+      this.benchEye.x + cp * Math.sin(yaw) * 8,
+      this.benchEye.y + Math.sin(pitch) * 8,
+      this.benchEye.z + cp * Math.cos(yaw) * 8,
+    );
+    this.cameraSys.place(this.benchEye, this.benchLook);
+    this.cameraSys.yaw = yaw;
+    this.cameraSys.pitch = pitch;
+  }
+
+  /**
+   * The spectator: behind and over the lowest-numbered bot still in the
+   * fight, looking where it looks, pulled in off whatever solid is behind it
+   * the way the death cam's is. Which bot that is follows from the fight, and
+   * the fight follows from the seed, so the camera is the same on every run.
+   */
+  private chaseBench(run: BenchRun, script: BenchScript, dt: number): void {
+    const bots = this.battle.bots;
+    const held = run.focus >= 0 ? bots[run.focus] : null;
+    if (!held || !held.alive || this.battle.aside(held)) {
+      run.focus = -1;
+      for (let i = 0; i < bots.length; i++) {
+        if (bots[i].alive && !this.battle.aside(bots[i])) {
+          run.focus = i;
+          break;
+        }
+      }
+    }
+    // Nobody standing — every body between lives at once. The camera holds
+    // where it was, which is a frame like any other.
+    if (run.focus < 0) return;
+    const bot = bots[run.focus];
+    const c = CONFIG.profiling.bench;
+    const yaw = script.bearing(run.focus, bot.lookYaw, dt);
+    const anchor = bot.eyePos;
+    this.benchDir.set(-Math.sin(yaw) * c.chaseBack, c.chaseUp, -Math.cos(yaw) * c.chaseBack);
+    const len = this.benchDir.length();
+    this.benchDir.scaleInPlace(1 / len);
+    let reach = len;
+    if (this.map?.rays.castBody(anchor, this.benchDir, len, this.benchHit)) {
+      reach = Math.max(0.4, this.benchHit.distance - 0.3);
+    }
+    this.benchEye.copyFrom(anchor).addInPlace(this.benchDir.scaleInPlace(reach));
+    // Down onto the body from over its shoulder, at a point eight metres on.
+    const pitch = Math.atan2(anchor.y - 0.5 - this.benchEye.y, 8);
+    this.aimBench(yaw, pitch);
+    this.shadowFocus.copyFrom(anchor);
+  }
+
+  /**
+   * The end of a benchmark — its script run out, or Escape, or a round that
+   * ended inside it. The ring is HALTED rather than disarmed, so the chip's
+   * `VIEW`, `SAVE` and `TRACE` all hand over the run and nothing after it; the
+   * run's facts are pushed and its capture taken and handed off; and the page
+   * goes back to its menu with the player's own map and tier.
+   *
+   * `window.__profile.last()` is the run's capture from here, with `reason`
+   * `bench` (or `bench stopped`), which is what a script waits on.
+   */
+  private endBench(completed: boolean): void {
+    const run = this.bench;
+    if (!run) return;
+    this.bench = null;
+    this.prof.setSegment(-1);
+    this.prof.halt();
+    const script = run.script;
+    this.prof.setBench({
+      completed,
+      plannedFrames: script?.frames ?? 0,
+      dt: CONFIG.profiling.bench.dt,
+      vantages: script ? [...script.vantages] : [],
+      path: script ? { ...script.path } : { x: 0, z: 0, radius: 0 },
+      fight: {
+        hash: run.fight.hex,
+        events: run.fight.events,
+        steps: run.fight.step,
+        roundEnded: run.roundEnded,
+      },
+    });
+    const report = this.prof.capture(completed ? "bench" : "bench stopped", true);
+    if (report) this.profChip.benchDone(report);
+    this.difficulty = run.difficulty;
+    this.enterMenu();
+  }
+
+  /**
    * The player's throw, at the moment the hand reaches full extension. It
    * leaves from the VIEWMODEL's throwing hand rather than from a point
    * measured off the eye, which is the difference between a grenade that was
@@ -8712,7 +9021,9 @@ export class Game {
    * order, which is why the netplay upload reports that same field.
    */
   private viewYaw(dying: boolean): number {
-    if (dying) return this.deathCam.yaw;
+    // A benchmark's HUD is drawn as a death cam's is (`updateBench`), but its
+    // camera is its own and `cameraSys` carries the bearing.
+    if (dying) return this.state === "bench" ? this.cameraSys.yaw : this.deathCam.yaw;
     return this.driving ? this.vehicleCam.yaw : this.cameraSys.yaw;
   }
 
@@ -9226,7 +9537,9 @@ export class Game {
     this.ragdolls.spawn(bot, this.cameraSys.camera.position);
     this.sfx.enemyDie();
     this.conquest.registerDeath(bot.team);
-    this.scores.registerDeath(this.battle.bots.indexOf(bot));
+    const slot = this.battle.bots.indexOf(bot);
+    this.scores.registerDeath(slot);
+    this.bench?.fight.death(slot);
     this.hud.addKill(
       byPlayer ? "YOU" : teamLook(killer).name,
       teamLook(bot.team).name,

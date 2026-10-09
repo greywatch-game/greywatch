@@ -47,6 +47,16 @@
  *    the collector at all, which is what let §1's captures clear it. Nothing
  *    else here may take that licence.
  *
+ * **A BENCHMARK borrows the same ring, and asks three things of it nothing else
+ * does** (`?bench=<map>`, `bench/BenchScript.ts`): a ring SIZED to its script
+ * rather than to `CONFIG.profiling.frames` (`arm`'s third argument), so
+ * nothing the run drew is ever lapped out of its capture; a SEGMENT label on
+ * every row (`setSegments`, `setSegment`), so a capture can say what each
+ * frame was showing; and `halt`, which stops the recording at the run's last
+ * frame and leaves the ring to be read — so `VIEW`, `SAVE` and `TRACE` all
+ * hand over the run and nothing after it. A halted profiler is not armed and
+ * costs what a disarmed one does; only its buffers are kept.
+ *
  * **WHAT IT CAN AND CANNOT SEE, because a table of plausible numbers is worse
  * than no table.** Three limits, each recorded into every capture rather than
  * left to prose:
@@ -119,10 +129,12 @@ import { P, SLOTS } from "./profilePhases";
 import {
   buildReport,
   buildTrace,
+  type BenchFacts,
   type LoafRecord,
   type ProfileGraphics,
   type ProfileReport,
   type ProfileRing,
+  type ProfileSegment,
 } from "./profileReport";
 import { urlFlag } from "./urlOverrides";
 
@@ -365,6 +377,12 @@ export class FrameProfile {
   private meshWalkMs: Float32Array | null = null;
   private rttMs: Float32Array | null = null;
   private particlesMs: Float32Array | null = null;
+  /**
+   * Which segment of a benchmark each row was, as an index into `segments`
+   * plus one — 0 is a row nobody labelled, which is every row outside a
+   * benchmark. Written by `endFrame` from `segmentNow`, like the context.
+   */
+  private segmentAt: Uint8Array | null = null;
 
   /**
    * The used heap at the end of each frame in MB, and the collections the
@@ -539,6 +557,16 @@ export class FrameProfile {
   private cursor = 0;
   private filled = 0;
   private frameT0 = 0;
+  /**
+   * Whether the frame being closed was OPENED on this ring. `arm` is reached
+   * from inside a frame — the settings screen's toggle, and a benchmark's
+   * first frame off the bake — so the first `endFrame` after it closes a frame
+   * whose `beginFrame` ran before there was a ring (or on the last one), and
+   * `frameT0` is whatever that left: 0 on a first arm. Filed, that row put a
+   * `frameAt` of 0 at the head of the ring and `window.seconds` read as the
+   * page's lifetime until the ring lapped. Such a frame is dropped instead.
+   */
+  private frameOpen = false;
 
   /**
    * When `endFrame` finished, and the ring row it had just written — the two
@@ -578,6 +606,20 @@ export class FrameProfile {
   private mapId = "?";
   /** The round's seed, pushed by `Game` like the map. See `ProfileReport.seed`. */
   private seed: number | null = null;
+  /**
+   * The labels a benchmark's rows may carry, and the one the frame being
+   * recorded carries (an index into the list plus one, 0 for none). Pushed by
+   * `Game`, which has them from `BenchScript`; nothing here knows a script.
+   */
+  private segments: readonly ProfileSegment[] = [];
+  private segmentNow = 0;
+  /** What a benchmark says about its own run, pushed by `Game` before its capture. */
+  private bench: BenchFacts | null = null;
+  /**
+   * How many rows the ring holds — `CONFIG.profiling.frames`, or what `arm`
+   * was asked for. Fixed between an `arm` and the next.
+   */
+  private cap: number = CONFIG.profiling.frames;
   /** The graphics in force, and since when. Pushed by `Game` like the map. */
   private graphics: ProfileGraphics | null = null;
   private graphicsAt = 0;
@@ -603,7 +645,7 @@ export class FrameProfile {
   }
 
   private get capacity(): number {
-    return CONFIG.profiling.frames;
+    return this.cap;
   }
 
   /** Which map the ring is recording. Set by `Game.installMap`. */
@@ -617,6 +659,28 @@ export class FrameProfile {
    */
   setSeed(seed: number | null): void {
     this.seed = seed;
+  }
+
+  /**
+   * The labels a benchmark's rows will carry, in its own order. An empty list
+   * is a ring nobody is labelling, which is the state `arm` leaves.
+   */
+  setSegments(list: readonly ProfileSegment[]): void {
+    this.segments = list;
+    this.segmentNow = 0;
+  }
+
+  /**
+   * Which of `setSegments`' labels the frame being recorded is, or -1 for
+   * none. Read by `endFrame`, so a frame may set it anywhere inside itself.
+   */
+  setSegment(index: number): void {
+    this.segmentNow = index >= 0 && index < this.segments.length ? index + 1 : 0;
+  }
+
+  /** What a benchmark says about its run — see `ProfileReport.bench`. */
+  setBench(facts: BenchFacts | null): void {
+    this.bench = facts;
   }
 
   /**
@@ -643,8 +707,15 @@ export class FrameProfile {
    * They cost a few milliseconds once, during a settings toggle — never in a
    * frame.
    */
-  arm(scene: Scene, glow: GlowSpans | null = null): void {
+  arm(
+    scene: Scene,
+    glow: GlowSpans | null = null,
+    frames: number = CONFIG.profiling.frames,
+  ): void {
     if (this.on) return;
+    // A HALTED ring is still held, and arming again replaces it.
+    if (this.frameAt) this.disarm();
+    this.cap = Math.max(2, Math.floor(frames));
     const n = this.capacity;
     this.startMs = new Float32Array(n * SLOTS);
     this.durMs = new Float32Array(n * SLOTS);
@@ -660,6 +731,10 @@ export class FrameProfile {
     this.meshWalkMs = new Float32Array(n);
     this.rttMs = new Float32Array(n);
     this.particlesMs = new Float32Array(n);
+    this.segmentAt = new Uint8Array(n);
+    this.segments = [];
+    this.segmentNow = 0;
+    this.bench = null;
     this.gcAt = new Uint8Array(n);
     this.loafMs = new Float32Array(n);
     this.loafBlockMs = new Float32Array(n);
@@ -695,6 +770,7 @@ export class FrameProfile {
     this.hitchAt = [];
     this.hitchWhen = [];
     this.openAt.fill(0);
+    this.frameOpen = false;
     this.baselineMs = 0;
     this.hitchBarMs = CONFIG.profiling.hitchMs;
     this.gcPending = 0;
@@ -736,9 +812,35 @@ export class FrameProfile {
     this.entered.fill(0);
   }
 
+  /**
+   * Stops recording and KEEPS the ring, to be read — the end of a benchmark.
+   *
+   * Everything that hangs off the scene, the engine and the device comes off,
+   * exactly as `disarm` takes it off, so a halted profiler costs what a
+   * disarmed one does. What stays is the ring and the facts pushed into it,
+   * which is what lets `capture` and `trace` keep answering about the run —
+   * and only the run, since nothing after this line is recorded. `armed` is
+   * false from here; `arm` replaces the ring and `disarm` releases it.
+   *
+   * The row in flight when this is called is never closed, and that is
+   * correct rather than lost: a row's wall clock is written by the frame
+   * after it, so a halt mid-frame leaves the last COMPLETED row as the one
+   * `buildReport` already drops for want of an interval.
+   */
+  halt(): void {
+    if (!this.on) return;
+    this.on = false;
+    for (const off of this.unhook) off();
+    this.unhook = [];
+    this.inDraw = false;
+    this.tickEndAt = 0;
+    this.instr?.dispose();
+    this.instr = null;
+  }
+
   /** Stops recording and gives the memory back. The last report survives. */
   disarm(): void {
-    if (!this.on) return;
+    if (!this.on && !this.frameAt) return;
     this.on = false;
     for (const off of this.unhook) off();
     this.unhook = [];
@@ -762,6 +864,10 @@ export class FrameProfile {
     this.meshWalkMs = null;
     this.rttMs = null;
     this.particlesMs = null;
+    this.segmentAt = null;
+    this.segments = [];
+    this.segmentNow = 0;
+    this.bench = null;
     this.heapMb = null;
     this.gcAt = null;
     this.loafMs = null;
@@ -805,6 +911,7 @@ export class FrameProfile {
   /** Opens the frame. Called first thing in `Game.tick`. */
   beginFrame(): void {
     if (!this.on) return;
+    this.frameOpen = true;
     this.frameT0 = performance.now();
     this.openAt.fill(0);
     this.openAt[0] = this.frameT0;
@@ -1129,9 +1236,19 @@ export class FrameProfile {
    */
   endFrame(realDeltaMs: number): void {
     if (!this.on) return;
+    // A frame armed part-way through — see `frameOpen`. Whatever its spans
+    // wrote into the row is cleared, because the next frame reuses it and
+    // only `endFrame` ever clears a row's flags.
+    if (!this.frameOpen) {
+      const at = this.cursor * SLOTS;
+      this.entered!.fill(0, at, at + SLOTS);
+      return;
+    }
+    this.frameOpen = false;
     this.end(0);
     const i = this.cursor;
     this.frameAt![i] = this.frameT0;
+    this.segmentAt![i] = this.segmentNow;
     // **The interval that has just elapsed belongs to the row BEFORE this
     // one.** `Game.tick` reads `getDeltaTime()` on its FIRST line, so
     // `realDeltaMs` is `start(i) - start(i-1)` — the gap the PREVIOUS frame
@@ -1310,7 +1427,8 @@ export class FrameProfile {
   capture(reason: string, full = false): ProfileReport | null {
     // TWO frames, not one: a row's wall clock is written by the frame AFTER
     // it, so a ring holding one frame holds no COMPLETED frame at all.
-    if (!this.on || this.filled < 2) return null;
+    // The BUFFERS rather than `on`: a halted ring is still a ring to read.
+    if (!this.frameAt || this.filled < 2) return null;
     const report = buildReport(this.ring(), reason, full);
     this.lastReport = report;
     return report;
@@ -1328,14 +1446,14 @@ export class FrameProfile {
    */
   trace(maxFrames = 600): string {
     // `< 2` for `capture`'s reason: the newest row has no wall clock yet.
-    if (!this.on || this.filled < 2) return "{}";
+    if (!this.frameAt || this.filled < 2) return "{}";
     return buildTrace(this.ring(), maxFrames);
   }
 
   /**
    * Lends the reporter everything it reads — see `ProfileRing`. Called only by
-   * `capture` and `trace`, both of which return first unless the profiler is
-   * armed and holds two frames. That is what entitles every `!` below: in that
+   * `capture` and `trace`, both of which return first unless the profiler
+   * holds a ring (armed, or halted) with two frames in it. That is what entitles every `!` below: in that
    * state nothing here is null but the heap series.
    */
   private ring(): ProfileRing {
@@ -1359,6 +1477,9 @@ export class FrameProfile {
       meshWalkMs: this.meshWalkMs!,
       rttMs: this.rttMs!,
       particlesMs: this.particlesMs!,
+      segmentAt: this.segmentAt!,
+      segments: this.segments,
+      bench: this.bench,
       heapMb: this.heapMb,
       gcAt: this.gcAt!,
       loafMs: this.loafMs!,

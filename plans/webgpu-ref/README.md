@@ -36,6 +36,7 @@ node plans/webgpu-ref/shaders.mjs [map...] [--headed] [--list]
 node plans/webgpu-ref/depth.mjs glass|zoffset [--headed]
 node plans/webgpu-ref/diff.mjs a.png b.png [--tiles]
 node plans/webgpu-ref/pipelines.mjs [map] [--seconds N]
+node plans/webgpu-ref/bench.mjs [map...] [--runs 3] [--capped] [--gpu] [--size WxH] [--out f.json] [--against f.json]
 ```
 
 - **`gate.mjs`** boots every shipped map, plays a real round on each and fails
@@ -57,6 +58,19 @@ node plans/webgpu-ref/pipelines.mjs [map] [--seconds N]
   because it forces the CACHED materials to compile rather than the drawn ones.
 - **`vantages.mjs`** is the table of poses `bank.mjs` shoots, one row per frame
   with what that frame is FOR written beside it. It is data and has no CLI.
+  **The table itself is `src/bench/vantages.ts` now** and this file re-exports
+  it through Node's type stripping, because the benchmark (`?bench=<map>`)
+  stands at the same poses and two copies would drift the first time a row
+  was re-posed. Edit a row there.
+- **`bench.mjs`** is the benchmark's desktop wrapper (`BABYLON_EXIT.md` X0.3).
+  The benchmark itself is the PAGE's — `?bench=<map>` plays the bank's
+  vantages at eight headings, a path through the densest quarter and a seeded
+  bot-only round at a fixed step, and ends in a labelled capture — and this
+  only opens the URL N times per map and reads the captures: medians per
+  group, the spread of each group and each segment against the protocol's 8%,
+  the fight's hash (every run must print one), and `--against` ratios.
+  Uncapped unless `--capped`. `docs/profiling.md`, "The benchmark", is the
+  contract.
 - **`diff.mjs`** says how much and where two PNGs differ. `bank.mjs --check`
   grades itself with the same function; the CLI is for looking at a specific
   pair by hand, and `--tiles` names the region rather than the number.
@@ -233,7 +247,7 @@ being replaced piece by piece**, and a table of map views holds none of the
 pieces after the static world. So a row may ask for a SUBJECT — soldiers, a
 blast in the air, the viewmodel, the capture rings and flags, a setting
 changed, the motion blur in flight — each posed by the game's own code from a
-fixed state through fixed steps (`vantages.mjs`'s header lists them, and
+fixed state through fixed steps (`src/bench/vantages.ts`'s header lists them, and
 `placeVantage` puts every one away before the next row). What the table holds
 for each step of the exit:
 

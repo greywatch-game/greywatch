@@ -238,8 +238,9 @@ export function waitUntilDrawn(page, timeoutMs = 120_000) {
  *
  * The menu vantage is `src/ui/mapShots.ts`'s, which is the table the MENU
  * reads, so a reference frame and a menu backdrop cannot come to hold two
- * ideas of where the camera stands; the rest are `vantages.mjs`'s, whose
- * header lists the subjects a row can ask for. `pos.y` is height above the
+ * ideas of where the camera stands; the rest are `vantages.mjs`'s (the table
+ * is `src/bench/vantages.ts`, whose header lists the subjects a row can ask
+ * for). `pos.y` is height above the
  * SURFACE — upper envelope, because that is the floor as drawn.
  */
 export function placeVantage(page, vantage) {
