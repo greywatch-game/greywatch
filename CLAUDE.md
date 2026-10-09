@@ -634,7 +634,12 @@ is that its occlusion is the FRAME's own depth buffer**
 `metadata.noGlow`, and `Game`'s `GlowRules` — so nothing excludes a mesh by
 hand. **Its compose is the ink pass's own last line** (`GLOW_COMPOSE_WGSL`,
 not a pass of its own), so `CelInk` stays first in the chain and the bloom lies
-over the lines.
+over the lines. **A map's merged emissives are a PALETTE like its albedo**
+(`shaders/EmissiveWorld.ts`): `BlockMerge` moves every `getEmissive` colour
+onto `getEmissiveWorld`, whose `emissiveColor` is WHITE and whose colour is a
+slot in `uv2.x` — so **a new reader asking a material what it emits must ask
+the vertex for that one**, and its bloom fades per PIXEL, not per mesh
+(`fadesOwnBloom`), because one of its meshes is a whole block.
 
 → **[`docs/rendering.md`](docs/rendering.md)** — the frozen define set, the
 irradiance volume (why not Lumen, why the blend is 1), the four light terms and

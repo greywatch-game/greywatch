@@ -138,6 +138,7 @@
  */
 import { Mesh, ShaderMaterial, VertexBuffer } from "@babylonjs/core";
 import { CONFIG } from "../config";
+import { isEmissiveWorld } from "../shaders/EmissiveWorld";
 import { isFlame } from "../shaders/FlameShader";
 import { halfDepth, slabThickness, turnX, turnZ } from "./boxGeometry";
 import { type BoxIndex, boxesNear, buildBoxIndex } from "./boxIndex";
@@ -476,6 +477,10 @@ export function bakeVertexShading(
     // term, and a colour buffer it does not declare is an attribute Babylon
     // would bind to it anyway.
     if (isFlame(mesh.material)) return;
+    // Nor is the emissive palette (`EmissiveWorld.ts`): it is the same unlit
+    // colour the `StandardMaterial` above was, read per vertex, and the first
+    // reason in this walk is still the reason.
+    if (isEmissiveWorld(mesh.material)) return;
 
     const positions = mesh.getVerticesData(VertexBuffer.PositionKind);
     const normals = mesh.getVerticesData(VertexBuffer.NormalKind);

@@ -1708,6 +1708,12 @@ src/
     EmissiveFog.ts      # The same fog as a material plugin on every unlit
                         #   emissive material — windows, flames, tracers. WGSL
                         #   only, which is what isCompatible states
+    EmissiveWorld.ts    # THE EMISSIVE PALETTE: the one material a map's merged
+                        #   windows, lenses and embers wear, the colour a slot
+                        #   in uv2.x (getEmissive + EmissiveFog to the same
+                        #   pixel), and a glow-mask twin that fades the bloom
+                        #   per PIXEL. Two per factory, by over-glass offset.
+                        #   WGSL
     Dither.ts           # One LSB of triangular noise, in the three surface
                         #   shaders. Fixes 8-bit banding in the fog. Owns the
                         #   ARGUMENT and the WGSL; wgsl/includes.ts registers

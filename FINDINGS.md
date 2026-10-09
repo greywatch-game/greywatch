@@ -1710,12 +1710,14 @@ priced on the phone: the A/B above, Off against On.
 
 ---
 
-## 43. The bloom is a SECOND GEOMETRY PASS over every lit window in view — 123 draws on Coldharbour, and the only lossless lever left is an EMISSIVE palette
+## 43. The bloom is a SECOND GEOMETRY PASS over every lit window in view — **the EMISSIVE palette is LANDED (Coldharbour's worst view 114 -> 48 mask draws); its frame cost on a phone is not measured**
 
 **Status:** decomposed and measured on the Windows box under a CPU throttle at
-the phone's viewport. One free lever found and **LANDED** (the mask materials
-were the only unfrozen `ShaderMaterial` in the tree). Everything else is a look
-decision or the palette below, and none of it is taken.
+the phone's viewport. Two levers **LANDED**: the frozen mask material, and the
+emissive palette (`PERF_PLAN.md` A2, 2026-10-08 — "The palette, landed"
+below). **What is still open is the phone**: neither has been read in `glow`
+and `drawWorld` on the device this entry started from. Everything else is a
+look decision and is not taken.
 
 Opened by a phone capture (832x384, Android, Chrome 153) where `glow` read
 **1.44 ms mean and 3.1 p95 of a 20.1 ms frame** — 7% — against **0.21-0.30 ms**
@@ -1793,27 +1795,32 @@ mask reads **0.0000% of pixels and max 0** on both the control and the lever,
 which is the `glowColor` push still flowing through `_mustRebind` as
 `CelMaterialFactory.remember` says it does.
 
-### The lever that is NOT taken, and it is the big one
+### The palette, landed
 
-**An EMISSIVE palette, the albedo palette's twin.** It would collapse a block's
-three or four emissive meshes into one and take Coldharbour's 123 to roughly
-40, and it pays **twice** — those meshes are drawn once into the world and
-again into the mask, so ~1 ms of `glow` and ~1.6 ms of `drawWorld` on the
-phone, ~2.6 ms of a 20.1 ms frame. It is lossless, exactly as the albedo
-palette was.
+**An EMISSIVE palette, the albedo palette's twin** — `shaders/EmissiveWorld.ts`,
+argued in `docs/rendering.md` ("The emissive palette"). Re-counted first, as
+this entry said to, because the 123 was history: the reworked Coldharbour put
+**31 mesh draws in the mask on average and 114 at worst** (a spawn looking down
+the street) over its flags and spawns at eight headings, and a palette was
+predicted to leave 15 and 48. Measured after: **15.0 and 48**; Cinderhaven 30.0
+/ 92 -> 17.9 / 52; the five smaller maps were already under 12 on average and
+save one to four. Each of those is a main-pass mesh with a material switch as
+well as a mask draw. It is lossless in the FRAME (`merge:hash` by name: only
+the emissive meshes moved, their vertex totals equal) and changes one thing on
+purpose, the bloom's fog fade going from per-mesh to per-pixel — the merged
+meshes are whole blocks, and a centre would fade the near window as the far
+one.
 
-**What makes it a project rather than a change** is that an emissive is an
-unlit `StandardMaterial` and not a cel `ShaderMaterial`, so there is no vertex
-path to put a colour on: `StandardMaterial.emissiveColor` is a uniform and
-vertex colours multiply DIFFUSE. Converting it touches `getEmissive`,
-`EmissiveFog`, `GlowPass.buildList` and its mask shader, `GlowRules.colour`,
-`WorldCulling.glows` and the merge key — six readers that all ask a material
-"what colour do you emit" and would have to ask a vertex instead. Cost it
-before starting it.
+**What it is worth on the phone is the open half.** Scaling this entry's
+throttled per-draw figures says roughly 0.4 ms at Coldharbour's mean view and
+1.5-2 ms at its worst, and next to nothing on Greyfen, where the phone captures
+were taken (three draws). That is arithmetic, not a measurement: read `glow` and
+`drawWorld` on the phone at a Coldharbour street view before quoting it.
 
-The two cheaper alternatives are both LOOK decisions: a bloom quality rung,
-and a distance cap on the mask, which the measurement above says would have
-to be well inside the fog to remove anything. **The rung now exists**
+The two cheaper levers this entry named beside the palette are both LOOK
+decisions: a bloom quality rung, and a distance cap on the mask, which the
+measurement above says would have to be well inside the fog to remove
+anything. **The rung now exists**
 (`Settings.glow`, `CONFIG.graphics.glowTiers`), but it moves the BLUR and not
 the mask, so it does nothing about the 123 draws this entry is about. It is
 finding 5's lever, and it has not been priced on a phone (see there).

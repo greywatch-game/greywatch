@@ -53,6 +53,7 @@ import {
 import { CONFIG } from "../config";
 import { kindOf } from "../entities/vehicleKinds";
 import { MAX_PALETTE, type CelMaterialFactory } from "../shaders/CelShader";
+import { MAX_EMISSIVE_PALETTE } from "../shaders/EmissiveWorld";
 import { bakeVertexShading } from "./vertexShading";
 import { begin as beginProfile, record, since } from "./buildProfile";
 import type { LightingSystem } from "../systems/LightingSystem";
@@ -670,6 +671,24 @@ export class MapBuilder {
   }
 
   /**
+   * The map's EMISSIVE palette — the colours the block merge moved onto
+   * `getEmissiveWorld`, in the order the shader indexes them — and its lookup.
+   * The albedo table's twin with its own cap and its own overflow, which is as
+   * graceful: 0 keeps the mesh on `getEmissive` and merges it as before.
+   */
+  private glowColors: Color3[] = [];
+  private glowSlots = new Map<string, number>();
+
+  private glowIndex(hex: string): number {
+    const known = this.glowSlots.get(hex);
+    if (known !== undefined) return known;
+    if (this.glowSlots.size >= MAX_EMISSIVE_PALETTE) return 0;
+    const slot = this.glowColors.push(Color3.FromHexString(hex));
+    this.glowSlots.set(hex, slot);
+    return slot;
+  }
+
+  /**
    * Drops everything the last build left in this builder's own fields — the
    * boxes, the panes, the groups, the roads, the box index — which `build`
    * hands to the `GameMap` and would otherwise keep until the next one resets
@@ -685,6 +704,8 @@ export class MapBuilder {
     this.pendingCluster = [];
     this.paletteColors = [];
     this.paletteSlots.clear();
+    this.glowColors = [];
+    this.glowSlots.clear();
     this.keepClear = [];
     this.panes = [];
     this.paneGroups = [];
@@ -1110,6 +1131,10 @@ export class MapBuilder {
       blocks.finish({
         slot: (hex) => this.paletteIndex(hex),
         material: this.mats.getWorldCel(),
+        glow: {
+          slot: (hex) => this.glowIndex(hex),
+          material: (overGlass) => this.mats.getEmissiveWorld(overGlass),
+        },
       }),
     )) {
       visuals.push(merged);
@@ -1118,6 +1143,7 @@ export class MapBuilder {
     // see `CelMaterialFactory.setPalette`. Unconditional, so a rebuild that
     // paletteises nothing still clears the last map's colours out.
     this.mats.setPalette(this.paletteColors);
+    this.mats.setEmissivePalette(this.glowColors);
     // And the same pass over the glazing, which keeps its ranges — see
     // `PaneBlocks`. Its meshes join `visuals` for the AO bake and to be
     // disposed with the map, and they are the one entry in that list that is

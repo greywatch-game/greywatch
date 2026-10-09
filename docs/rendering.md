@@ -15,7 +15,10 @@ uniforms; `LightingSystem` is the sole owner of dynamic light and uploads the
 winning slots via `CelMaterialFactory.setPointLights()` once per frame. Adding a
 `PointLight`/`HemisphericLight` to the scene will not affect any cel-shaded mesh.
 Effect meshes (tracers, sparks, neon, reticles) use unlit emissive
-`StandardMaterial`s from `mats.getEmissive()` and are unaffected by lighting.
+`StandardMaterial`s from `mats.getEmissive()` and are unaffected by lighting;
+the map's block-merged windows and lamps are moved off them onto the emissive
+palette (`mats.getEmissiveWorld()`), which draws the same unlit colour per
+vertex.
 
 **A fixture's flicker PHASE is SEEDED, and the reason is a picture rather than
 a simulation.** `LightingSystem` draws each phase from `FLICKER_SEED`'s stream
@@ -65,12 +68,22 @@ granularities, and the difference is forced**:
   emissive colour with no per-pixel hook at all, and it is affordable here where
   it was not for the ink: a bloom is a soft blob with no edge to misplace, and
   only 4 of 290 emissive meshes span more than half the fog band.
+  **The emissive palette is the exception, and fades its bloom per PIXEL**
+  (`shaders/EmissiveWorld.ts`, its mask twin): one of its meshes is every lamp
+  in a 48 m block whatever its colour, so a centre would fade the near window
+  as if it stood at the far one. `GlowRules.colour` leaves that material's
+  colour unfaded (`fadesOwnBloom`) and the twin evaluates `fogAmountAt`'s curve
+  at each pixel instead — see "The emissive palette" below.
 - **The emissive material fades per PIXEL**, through a `MaterialPluginBase` in
   `src/shaders/EmissiveFog.ts` that injects the same curve at
   `CUSTOM_FRAGMENT_MAIN_END`. A plugin *can* declare real uniforms, so
   `setEmissiveFog` is a buffer write and needs no cache invalidation.
   Distance is `vPositionW` against `vEyePosition`, both unconditional in
   `default.fragment`.
+  A map's MERGED emissives no longer wear it: they draw through the emissive
+  palette, whose own WGSL carries this plugin's arithmetic term for term (the
+  same `(d - start) * (1 / span)` pair, the same `mix`), so the frame is the
+  same pixel either way.
 
 That this was invisible for a whole map is the point: on Hollowmere unfogged ink
 is near-black against near-black fog and an unfogged glow reads as a lamp doing
@@ -199,7 +212,10 @@ Six rules about it, and the first is the one everything else rests on:
   those multiplied each one by pure green, so the village's lanterns and fires
   rendered as green blobs *inside their own correctly-coloured bloom*, since the
   glow builds its halo from `material.emissiveColor` and never saw the
-  vertex buffer. `walk` skips anything whose material is not a `ShaderMaterial`.
+  vertex buffer. `walk` skips anything whose material is not a `ShaderMaterial`
+  — and, by name, the two `ShaderMaterial`s that are not cel either: the fire
+  and the emissive palette, onto which those windows and lamps have since
+  moved (`isFlame`, `isEmissiveWorld`).
 
 **A map's GRIME is the MAP's and its ramp is not** (`EnvironmentSpec.wear`
 against `CONFIG.wear`), and the split is the one every override in this file
@@ -3932,6 +3948,67 @@ ink twin that was the second reader at the time is gone with the ink hull).
 Slot 0 is "not paletted", which is what an unwritten attrib gives, so a colour
 past `MAX_PALETTE` (128) keeps its own material and merges the way everything
 did before. Only `BlockMerge` paletteises, which exempts the editor for free.
+
+### The emissive palette (2026-10-08, `PERF_PLAN.md` A2)
+
+**The light sources are paletted too, into a table of their own.** The albedo
+palette refused an emissive because it was a different SHADER rather than a
+different colour — `getEmissive`'s unlit `StandardMaterial`, its colour a
+uniform with no vertex path — so a 48 m block still held one mesh per lamp
+colour, and every one of them is drawn twice: into the frame and into the
+glow's mask (`FINDINGS.md` 43). `shaders/EmissiveWorld.ts` is that shader as a
+`ShaderMaterial`: the colour a slot in `uv2.x` written by the same
+`writePaletteIndex`, `MAX_EMISSIVE_PALETTE` (32) entries, slot 0 graceful
+overflow exactly as above. **Two materials, not one**, because `overGlass` is a
+polygon offset and an offset belongs to the material: `MapBuilder`'s block merge
+picks by the source's name (`emissive-#rrggbb[-over-glass]`, `plainEmissive` in
+`merge.ts` — as strict as `plainCelHex` and for its reason).
+
+**The frame is the same pixel.** With lighting off, the stock material's output
+reduces to `clamp(emissive)` at alpha 1, then `EmissiveFog`'s `mix`; the WGSL
+does that term for term, the fog pair computed on the CPU as the plugin's is.
+So it writes coverage 1 in the frame and in a probe alike, as that material did
+— a literal, and the one shader where a literal is right, because it is what
+was there. It declares a WHITE `emissiveColor`, as the fire declares one, so
+`GlowPass` and `WorldCulling`'s gate still find it by the one property they ask,
+and it brings its own mask twin (`SelfMasking`). `vertexShading` skips it
+(`isEmissiveWorld`).
+
+**The bloom is the one thing that changed, and it changed toward the wall.**
+`GlowRules.colour` fades a bloom by the fog at a mesh's bounding-sphere centre,
+and a palette mesh is every lamp in a block — a centre that is usually BEHIND
+the frontage you are looking at, which would fade the near window as if it
+stood at the far one. So the twin fades each pixel by its own distance on
+`fogAmountAt`'s curve, and `Game` leaves that material's colour unfaded
+(`fadesOwnBloom`). Measured on Hollowmere at night (the one map where the
+harness's run-to-run floor is near zero): three of twelve poses moved, all of
+them distant windows' halos and none of them a window — the chapel's windows
+at ~60 m from the spawn, 1.3% of pixels, 0.019 mean/255, max 50, the halo
+slightly STRONGER, which is the old centre having over-faded them. On
+Coldharbour, Cinderhaven and Greyfen the change is inside the harness's own
+cross-run noise.
+
+**What it bought, counted** (`merge:hash` by name: every non-emissive visual,
+collider and list byte-identical on all eight maps, emissive vertex and index
+totals equal):
+
+| map | emissive meshes | glow mask draws, mean / max over 7 spots x 8 headings |
+| --- | --- | --- |
+| Coldharbour | 114 -> 46 | 31.4 / 114 -> 15.0 / 48 |
+| Cinderhaven | 102 -> 53 | 30.0 / 92 -> 17.9 / 52 |
+| Hollowmere | 52 -> 29 | 11.2 / 29 -> 6.9 / 17 |
+| Greyfen | 25 -> 10 | 6.2 / 17 -> 2.8 / 7 |
+| Harrowmead | 17 -> 4 | 6.9 / 18 -> 3.1 / 7 |
+| Kurenai | 6 -> 4 | 3.0 / 6 -> 2.4 / 5 |
+| Sarab | 7 -> 7 | 2.1 / 8, unchanged — one lamp colour a block |
+
+The mask column counts the FIRES too (`FlameMaterial`, its own material and
+never paletted), which is why it does not fall in proportion to the first.
+Spots are each flag and both home spawns at eye height, bots off.
+
+Each of those is a mesh in the main pass as well as a draw in the mask, and
+every one carried a material switch of its own. Its frame cost on the phone is
+not measured.
 
 ### Before: what the draws were made of (2026-08-26)
 

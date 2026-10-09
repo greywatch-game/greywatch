@@ -78,6 +78,7 @@ import {
 import { CONFIG } from "../config";
 import { setPartVerticesData } from "../world/parts";
 import { attachEmissiveFog, setEmissiveFog } from "./EmissiveFog";
+import { EmissiveWorldMaterial, MAX_EMISSIVE_PALETTE } from "./EmissiveWorld";
 import { FlameMaterial } from "./FlameShader";
 import { BlastMaterial } from "./BlastShader";
 import { ShadowBindings } from "./ShadowBindings";
@@ -2870,6 +2871,53 @@ export class CelMaterialFactory {
   }
 
   /**
+   * The ONE emissive material a map's merged world wears, whatever colour it
+   * emits — `getEmissive`'s twin as `getWorldCel` is `get`'s, the colour read
+   * per vertex out of `setEmissivePalette`'s table (`EmissiveWorld.ts` has the
+   * argument). Two of them, because `overGlass` is a polygon offset and an
+   * offset is a property of the MATERIAL: the block merge picks by the source's
+   * key, so a lit room behind a `backed` pane keeps its bias.
+   *
+   * Held outside `cache` for the flame's reason: not a cel material, and none
+   * of the uniforms that cache's walks write.
+   */
+  getEmissiveWorld(overGlass: boolean): EmissiveWorldMaterial {
+    const i = overGlass ? 1 : 0;
+    let mat = this.emissiveWorld[i];
+    if (!mat) {
+      mat = new EmissiveWorldMaterial(
+        this.scene,
+        overGlass ? "emissive-world-over-glass" : "emissive-world",
+        overGlass ? CelMaterialFactory.OVER_GLASS_DEPTH_UNITS : 0,
+      );
+      mat.setFog(fogState.color, fogState.start, fogState.end);
+      mat.setPalette(this.emissivePalette);
+      this.emissiveWorld[i] = mat;
+    }
+    return mat;
+  }
+
+  private readonly emissiveWorld: (EmissiveWorldMaterial | null)[] = [null, null];
+
+  /** The map's emissive palette, flattened — `palette`'s twin. */
+  private readonly emissivePalette = new Float32Array(MAX_EMISSIVE_PALETTE * 3);
+
+  /**
+   * Publishes the emissive palette `MapBuilder` assembled while it merged —
+   * `setPalette`'s twin, on the same deadline and for the same reason.
+   */
+  setEmissivePalette(colors: readonly Color3[]): void {
+    this.emissivePalette.fill(0);
+    const n = Math.min(colors.length, MAX_EMISSIVE_PALETTE);
+    for (let i = 0; i < n; i++) {
+      this.emissivePalette[i * 3] = colors[i].r;
+      this.emissivePalette[i * 3 + 1] = colors[i].g;
+      this.emissivePalette[i * 3 + 2] = colors[i].b;
+    }
+    for (const mat of this.emissiveWorld) mat?.setPalette(this.emissivePalette);
+  }
+
+  /**
    * The one material every open fire wears (`FlameShader`), created on first
    * ask. Held OUTSIDE `cache` because it is not a cel material and declares
    * none of the uniforms that cache's walks write; what it does share with it
@@ -2955,6 +3003,7 @@ export class CelMaterialFactory {
     // And the third pass that never runs the cel shader: the unlit emissive
     // materials behind every window, flame and tracer.
     setEmissiveFog(fogState.color, fogState.start, fogState.end);
+    for (const mat of this.emissiveWorld) mat?.setFog(fogState.color, fogState.start, fogState.end);
     this.flame?.setFog(fogState.color, fogState.start, fogState.end);
     this.blast?.setFog(fogState.color, fogState.start, fogState.end);
     this.mistColor = env.mistColor;

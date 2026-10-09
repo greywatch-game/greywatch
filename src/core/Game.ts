@@ -74,6 +74,7 @@ import { PaperGrain } from "../shaders/PaperGrain";
 import { CelInk } from "../shaders/CelInk";
 import { fxaaShaderIsOurs } from "../shaders/Fxaa";
 import { FrameDepth } from "../shaders/FrameDepth";
+import { fadesOwnBloom } from "../shaders/EmissiveWorld";
 import { GlowPass } from "../shaders/GlowPass";
 import { MotionBlur } from "../shaders/MotionBlur";
 import { Volumetrics, type VolumetricRung } from "../shaders/Volumetrics";
@@ -1334,7 +1335,11 @@ export class Game {
         // Read off the base Material: only PBR declares it.
         let k =
           (material as { emissiveIntensity?: number }).emissiveIntensity ?? 1;
-        if (!mesh.infiniteDistance) {
+        // …and the emissive palette fades its own, PER PIXEL, because one of
+        // its meshes is a whole block's lamps and a centre would be a whole
+        // block wrong (`EmissiveWorld.ts`). Its colour is white, so what goes
+        // over is this rule's scale alone.
+        if (!mesh.infiniteDistance && !fadesOwnBloom(material)) {
           // The sphere's CENTRE, deliberately — not the NEAR point, which is
           // what a per-mesh ink width used to be measured to. A bloom is a soft
           // blob with no edge to speak of, so its middle is where it reads

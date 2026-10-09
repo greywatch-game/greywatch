@@ -158,8 +158,8 @@ unknown until G1 is done**. Part A does not wait for it.
 
 ## Part A — The cheap levers, inside Babylon as it stands
 
-Each is independent; the order is by certainty of payoff. **A1 has
-LANDED**; A2 is next.
+Each is independent; the order is by certainty of payoff. **A1 and A2
+have LANDED**; A3 is next.
 
 ### A1 — Parts stop being meshes (`FINDINGS.md` 26) — **LANDED, -16 TO -28% ON EVERY MAP**
 
@@ -227,7 +227,39 @@ landed it does not**: the merged world still arrives as Babylon meshes over
 plain arrays, so getting it into B1's buffers is B1's own first job (see
 there).
 
-### A2 — The emissive palette (`FINDINGS.md` 43) — **M**
+### A2 — The emissive palette (`FINDINGS.md` 43) — **LANDED, COLDHARBOUR'S WORST VIEW 114 -> 48 MASK DRAWS**
+
+**Done (2026-10-08).** `shaders/EmissiveWorld.ts`: the map's merged emissives
+on one WGSL material per polygon offset (plain and over-glass), the colour a
+slot in `uv2.x` exactly as the albedo's, and a glow-mask twin. Costed first, as
+the step said: the finding's 123 was stale, and a census over every flag and
+both spawns at eight headings put Coldharbour at 31 mask draws on average and
+114 at worst, predicted 15 and 48 with a palette — measured after, 15.0 and 48.
+`docs/rendering.md` ("The emissive palette") has every map's row; Coldharbour
+and Cinderhaven are the two it is for, and the five smaller maps save one to
+four draws.
+
+- **The six readers, as resolved**: `getEmissive` is untouched (effects keep
+  it) and `getEmissiveWorld` sits beside it; `EmissiveFog`'s arithmetic is
+  carried term for term in the new WGSL; `GlowPass` needed no change (the
+  material is `SelfMasking`, as the fire is); `WorldCulling.glows` reads the
+  material's white `emissiveColor`; the merge key takes the colour out through
+  `Palette.glow`. `GlowRules.colour` is the one that CHANGED: a palette mesh is
+  a whole block, so its bloom is faded per pixel in the twin and `Game` leaves
+  it unfaded (`fadesOwnBloom`).
+- **Verified**: `merge:hash` compared BY NAME — every non-emissive visual,
+  collider, terrain collider and list byte-identical on all eight maps, the
+  emissive vertex and index totals equal. Frozen frames, twelve poses a map on
+  Coldharbour, Hollowmere (night), Cinderhaven and Greyfen, against a second
+  after-run as the cross-run control: inside the harness's floor everywhere but
+  three Hollowmere poses, whose difference is distant windows' halos (the
+  per-pixel fade; slightly stronger, never the window itself).
+- **Not measured: the phone.** The step's own verify asks for `glow` and
+  `drawWorld` there, and it is owed — at a Coldharbour street view, since
+  Greyfen, where the phone has been read, saves three draws.
+
+The step as it was planned, kept for the argument:
+
 
 The glow mask draws every lit window a second time: 123 mask draws on
 Coldharbour's street view, ~1.44 ms of `glow` on the phone. An emissive

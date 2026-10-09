@@ -82,7 +82,9 @@
  * displaced in its vertex stage — the fire (`FlameShader`) — would draw its
  * rest pose into the mask and fail the LEQUAL tie everywhere it had moved. Such
  * a material hands back a twin that runs its own vertex stage, and is painted
- * through the same `GlowRules.colour` as everything else.
+ * through the same `GlowRules.colour` as everything else. So does a material
+ * whose COLOUR is per vertex — the map's emissive palette (`EmissiveWorld.ts`),
+ * whose `emissiveColor` is a white this pass would otherwise bloom as it is.
  *
  * MESH INSTANCES ARE NOT SUPPORTED, and nothing glowing uses them: the mask
  * shader has no instance attributes, so an instanced emissive would draw one

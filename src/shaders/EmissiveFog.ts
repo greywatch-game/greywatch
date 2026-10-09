@@ -33,6 +33,9 @@
  *   blooms by `material.emissiveColor`; a material without one is not in the
  *   mask, and every lantern, tracer, visor and reticle in the game stops
  *   glowing. Keeping the `StandardMaterial` is what keeps that rule working.
+ *   (The map's MERGED emissives did later move to one — `EmissiveWorld.ts`,
+ *   which declares an `emissiveColor` for that rule as the fire does, and
+ *   carries this file's curve in its own WGSL rather than this plugin.)
  *   The BLOOM is not drawn from this fogged colour, though: it fades toward the
  *   fog, and the glow wants its halo to fade toward black.
  * - **Not baked literals + a cache drop, the way the retired `OutlineFog`

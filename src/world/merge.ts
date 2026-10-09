@@ -21,7 +21,8 @@
  * matrices, so a lone mesh is baked by hand — except by `PaneBlocks`, whose
  * meshes are already where they belong.
  * Must NOT merge across two materials, carry `solid` onto a merged visual, or
- * paletteise anything but a plain matte cel material (`plainCelHex`).
+ * paletteise anything but a plain matte cel material (`plainCelHex`) or one
+ * of `getEmissive`'s unlit colours (`plainEmissive`), each into its own table.
  */
 import { Material, Mesh, VertexBuffer, VertexData } from "@babylonjs/core";
 import { writePaletteIndex } from "../shaders/CelShader";
@@ -375,14 +376,20 @@ export function mergeByMaterial(
     // material differs from another only in a uniform, so every one of them can
     // be answered by one material reading the albedo per vertex instead — which
     // is what collapses a block of a city from ten meshes to two. Only the
-    // plain matte variant qualifies: gloss, translucency, glazing and emissive
-    // are shader BEHAVIOUR and merging across them would draw one of them
-    // wrong, which is the rule this function already states about two materials
-    // sharing a name.
-    const hex = palette ? plainCelHex(mat0.name) : null;
-    const slot = hex ? palette!.slot(hex) : 0;
-    if (slot > 0) writePaletteIndex(m, slot);
-    const mat = slot > 0 ? palette!.material : mat0;
+    // plain matte variant qualifies: gloss, translucency and glazing are shader
+    // BEHAVIOUR and merging across them would draw one of them wrong, which is
+    // the rule this function already states about two materials sharing a
+    // name.
+    //
+    // An EMISSIVE was refused the same way once, for being a different shader
+    // rather than a different colour. It is now the same move into a table of
+    // its own (`Palette.glow`): `getEmissive`'s unlit colour differs from
+    // another only in a uniform too, and `EmissiveWorld.ts` draws it per vertex
+    // to the same pixel. Never into the ALBEDO table — the two never share a
+    // material, so they never share a merge group either.
+    const picked = palette ? paletteFor(mat0.name, palette) : null;
+    if (picked) writePaletteIndex(m, picked.slot);
+    const mat = picked ? picked.material : mat0;
     let byExemption = groups.get(mat);
     if (!byExemption) groups.set(mat, (byExemption = new Map()));
     const flags = exemptionsOf(m);
@@ -524,7 +531,50 @@ export type Palette = {
   slot(hex: string): number;
   /** The material every slotted mesh ends up wearing. */
   material: Material;
+  /**
+   * The same pair for the map's EMISSIVES, in a table of their own —
+   * `CelMaterialFactory.getEmissiveWorld`. The material is asked per mesh
+   * because the source's polygon offset (`overGlass`) has to survive the move.
+   */
+  glow: {
+    slot(hex: string): number;
+    material(overGlass: boolean): Material;
+  };
 };
+
+/**
+ * Which palette a source material joins, and the slot — or null for "keep
+ * your own material", which is every material neither name test accepts and
+ * every colour a table had no room for.
+ */
+function paletteFor(name: string, palette: Palette): { slot: number; material: Material } | null {
+  const hex = plainCelHex(name);
+  if (hex) {
+    const slot = palette.slot(hex);
+    return slot > 0 ? { slot, material: palette.material } : null;
+  }
+  const glow = plainEmissive(name);
+  if (glow) {
+    const slot = palette.glow.slot(glow.hex);
+    return slot > 0 ? { slot, material: palette.glow.material(glow.overGlass) } : null;
+  }
+  return null;
+}
+
+/**
+ * The hex of one of `CelMaterialFactory.getEmissive`'s materials, and whether
+ * it is the over-glass variant — or null for anything else.
+ *
+ * **As strict as `plainCelHex` and for its reason.** That factory names its
+ * unlit `StandardMaterial`s `emissive-#rrggbb` and `emissive-#rrggbb-over-glass`
+ * and nothing else in the tree is named so; a material with a texture, an
+ * alpha or any behaviour the palette material does not reproduce must never
+ * match, and none can, because `getEmissive` makes none.
+ */
+function plainEmissive(materialName: string): { hex: string; overGlass: boolean } | null {
+  const m = /^emissive-(#[0-9a-fA-F]{6})(-over-glass)?$/.exec(materialName);
+  return m ? { hex: m[1], overGlass: m[2] !== undefined } : null;
+}
 
 /**
  * The hex of a PLAIN matte cel material, or null for anything else.
