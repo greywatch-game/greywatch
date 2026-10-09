@@ -974,49 +974,6 @@ that lands in play rather than under the deploy screen.
 
 ---
 
-## 20. The reference bank cannot reproduce a frame, and is stale against the clouds and Babylon 9.28
-
-**Status:** open. This is the merge gate `ENGINE_UPGRADE.md` names for every
-step in it, so it matters more than its size suggests. The mystery this number
-used to hold is explained; what has replaced it is not.
-
-**The bank that was red "on an unmodified tree" was red over the paint
-palette.** It was taken at 61c6ace (2026-08-26, 18:16) and the palette landed
-two hours later at 6bb50c3 (20:10), whose own message reports sixteen of
-sixteen reference frames **within 0.19 to 3.26 mean/255** — the same residue,
-smallest and largest, this entry tabulated as unexplained. It was the
-palette's trade (the ink tracing a block rather than each colour group), not
-anything under the bank. It went green afterwards: f7f515e (2026-09-07) checks
-21 vantages on six maps at 0% of pixels, and 860fad6 (2026-09-14) re-took all
-21 — the PNGs on disk are that day's.
-
-**What is open now:**
-
-- **It cannot reproduce a frame.** a59abd2 (2026-09-26) records that "the WebGPU
-  reference bank cannot reproduce a frame on any map at the moment", and so did
-  not re-take Harrowmead over its re-lay. `bank.mjs` refuses to write a frame
-  whose two consecutive grabs differ, so that is an UNPINNED CLOCK somewhere —
-  the shape both earlier false alarms took (a lantern's flicker phase and an
-  unfrozen cube probe, `diff.mjs`'s header). Derived and not checked: the
-  water's swell (363eb8b, 2026-09-25) and the grass field (c0f17b1,
-  2026-09-26) both landed the days before, and both move with time.
-- **It is stale against the picture twice over.** 864d5f8 and 7f98ec1 changed
-  the clouds and both say the bank was not re-taken. 96fcd19 moved Babylon to
-  9.28 and compared every banked vantage under both engines, but
-  `plans/webgpu-ref/README.md`'s own rule is to RE-TAKE when the engine moves,
-  and the bank on disk is still 2026-09-14's.
-- **`ref/mode.json` still records only `{"mode":"headless"}`** — `bank.mjs`
-  writes the mode and nothing else (~line 214), so the Chromium build and the
-  driver version this entry asked to be recorded beside a bank still are not.
-
-**What would settle it:** find what makes two consecutive grabs differ, and pin
-it as the lantern and the probe were pinned; re-take on the current engine and
-the current vantages, saying so in the commit as the README asks; and write the
-browser and driver version into `mode.json` beside the mode, so the next red
-bank can be told apart from a Chromium update in one read.
-
----
-
 ## 23. Rays at 1500 m: the terrain march is unpriced and has no hierarchy
 
 **Status:** open. Every ray is a box query now (`RayWorld`, `ENGINE_UPGRADE.md`

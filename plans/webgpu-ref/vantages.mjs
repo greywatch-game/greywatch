@@ -35,6 +35,34 @@
  * frame at all: at t = 0 every blade and every branch stands exactly where it
  * was authored, so a set taken only at zero diffs clean against a sway that
  * has been deleted outright.
+ *
+ * **The rest of the optional fields stand something in front of the camera
+ * that the map alone does not have**, because the bank is the look oracle for
+ * a renderer being replaced piece by piece (`BABYLON_EXIT.md` X0.1) and a
+ * table of map views holds none of the pieces after the static world. Each is
+ * posed by the game's own code from a fixed starting state through fixed
+ * steps, so it is the same picture every run; `placeVantage` in `harness.mjs`
+ * puts every one of them away again before the next row.
+ *
+ * - `rigs: [{ at: [x, z], yaw, pose }]` — soldiers from the front of the
+ *   roster, stood on the floor and posed by `animateSoldier` (`pose` is a
+ *   partial `SoldierPose` over `REST_POSE`). `yaw` π faces a camera to the
+ *   rig's south.
+ * - `blast: { at: [x, z], age, power }` — the real `BlastFx`, raised on the
+ *   floor at `at` and aged `age` seconds in 1/60 s steps, its layout drawn
+ *   under a seeded `Math.random`.
+ * - `view: { weapon, sight, aimed }` — the player's viewmodel, fitted and
+ *   posed by `ViewModel.update` until it settles; aimed takes the optic's own
+ *   field too.
+ * - `zones: true` — the capture rings and their flags, which every other row
+ *   hides. Built at the start of a round, so the flag is at the foot of its
+ *   pole and the cloth at rest.
+ * - `settings: { key: value }` — `Game.setSetting` for this row only, which is
+ *   how a post setting is photographed OFF beside the row that has it on.
+ * - `turn` — radians: the motion blur held mid-turn rather than at rest (see
+ *   `freeze`), since a still camera leaves the pass inert.
+ *
+ * Positions read like `pos`: `[x, z]` on the floor as drawn.
  */
 
 /**
@@ -64,11 +92,76 @@ export const DIFF_VANTAGES = {
     },
     {
       id: "wall40",
-      of: "the farmstead barn's west gable, square on down the east road, at 40 m",
+      of: "a cottage's moonlit east face, square on down the lane from 40 m (re-posed for the re-laid village: the old pose stood in a street a metre off a dark wall)",
       proves:
         "the dither, which is the one thing in the shader whose failure is a BAND rather than a colour — a flat lit surface far enough away for the ramp to quantise",
-      pos: [28, 1.7, 30],
-      target: [68, 5, 30],
+      pos: [62.6, 1.7, 6.6],
+      target: [22.6, 3, 6.6],
+    },
+    {
+      id: "ring",
+      of: "the square from above its north side, the capture ring's paint across the cobbles and the flag's pole by the well",
+      proves:
+        "the capture ring and the flag (X4.6), which every other row hides — the paint on made ground and the cloth at rest at the foot of its pole",
+      pos: [4, 9, 32],
+      target: [0, 0.6, -3],
+      zones: true,
+    },
+    // The post chain, one setting at a time. `lanterns` above is every one of
+    // them ON at this machine's defaults; each row below is the same frame with
+    // ONE taken off, so a pass that stops attaching — or attaches and changes
+    // what the others draw — moves exactly one pair. The night street is the
+    // frame for it because it has lit windows for the bloom, the moon's shafts
+    // and enough contrast for the grain and the AA to read.
+    {
+      id: "post-blur",
+      of: "`lanterns`, the motion blur held mid-turn",
+      proves:
+        "the motion blur pass IN FLIGHT — at rest it is inert, so every other row would diff clean against a blur that had been deleted",
+      pos: [2, 1.7, 18],
+      target: [0, 2.2, -14],
+      turn: 0.03,
+    },
+    {
+      id: "post-noblur",
+      of: "`post-blur` with the motion blur setting off",
+      proves: "the chain with the blur pass detached, and that taking it off leaves the grade at the tail",
+      pos: [2, 1.7, 18],
+      target: [0, 2.2, -14],
+      turn: 0.03,
+      settings: { motionBlur: false },
+    },
+    {
+      id: "post-nograin",
+      of: "`lanterns` with the paper grain off",
+      proves: "the chain without the grade pass",
+      pos: [2, 1.7, 18],
+      target: [0, 2.2, -14],
+      settings: { paperGrain: false },
+    },
+    {
+      id: "post-nofxaa",
+      of: "`lanterns` with FXAA off",
+      proves: "the chain without the anti-aliasing pass",
+      pos: [2, 1.7, 18],
+      target: [0, 2.2, -14],
+      settings: { fxaa: false },
+    },
+    {
+      id: "post-novol",
+      of: "`lanterns` with the light shafts off",
+      proves: "the chain without the volumetric shafts, which move ~90% of this frame's pixels when on",
+      pos: [2, 1.7, 18],
+      target: [0, 2.2, -14],
+      settings: { volumetrics: "off" },
+    },
+    {
+      id: "post-glowlow",
+      of: "`lanterns` with the bloom at its low rung",
+      proves: "the bloom's other downsample — the glow has no off, so its two rungs are the pair",
+      pos: [2, 1.7, 18],
+      target: [0, 2.2, -14],
+      settings: { glow: "low" },
     },
   ],
   greyfen: [
@@ -99,37 +192,57 @@ export const DIFF_VANTAGES = {
     },
   ],
   coldharbour: [
+    // Re-posed for the bay (6e848a1): the curtain walls now front the street
+    // north of the square, at z ~43, and the old poses filmed a podium, a
+    // corner and the side of a building. The distances are the old ones.
     {
       id: "curtain2",
-      of: "the north tower's curtain wall at 2 m, square on and level with the glazing",
+      of: "a curtain-walled tower north of the square, 3 m off its glazing a storey above its stone podium, square on",
       proves:
         "CEL_GLASS_BACKED at the range where the composite IS the picture — the arithmetic standing in for the mass behind the sheet, and the depth write that pays for it",
-      pos: [0, 5, 50],
-      target: [0, 13, 62],
+      pos: [-16, 12, 41],
+      target: [-16, 14, 44],
     },
     {
       id: "curtain40",
-      of: "the same curtain wall from the middle of the civic square, 40 m out",
+      of: "the same curtain wall from over the civic square's trees, 40 m out",
       proves:
         "the same pane with fog and the front-to-back opaque sort in front of it — the near half of the `GLASS_DEPTH_UNITS` question, which is a NUMBER taken by M7's own rig and a picture here",
-      pos: [0, 8, 12],
-      target: [0, 8, 65],
+      pos: [-16, 8, 3],
+      target: [-16, 10, 43],
     },
     {
       id: "curtain90",
-      of: "the same curtain wall from the south avenue kerb, 90 m out",
+      of: "the same curtain wall from south of the square, 90 m out",
       proves:
         "that distant glazing is DRAWN AT ALL — the failure `GLASS_DEPTH_UNITS` exists for is a pane losing the depth test past ~100 m, which is a sheet that silently is not there rather than one that looks wrong",
-      pos: [0, 8, -38],
-      target: [0, 8, 65],
+      pos: [-16, 8, -47],
+      target: [-16, 12, 43],
     },
     {
       id: "avenue",
-      of: "the south avenue end to end, 320 m of street with the towers stepping away down both sides",
+      of: "the town end to end from twelve metres over its west edge, roofs and towers stepping away to the harbour cranes 300 m off",
       proves:
-        "the front-to-back opaque sort over the deepest sightline in the game, the fog on a map with no wall, and the shadow window at the far end of it",
-      pos: [-150, 2, -40],
-      target: [150, 10, -40],
+        "the front-to-back opaque sort over the deepest sightline on the map, the fog on a map with no wall, and the shadow window — placed at this eye by `placeVantage` — against what lies past it",
+      pos: [-150, 12, -26],
+      target: [150, 6, -26],
+    },
+    {
+      id: "shopfront",
+      of: "a shop window from the pavement, 5 m off, the shop's lamps behind the glass",
+      proves:
+        "SEE-THROUGH glazing (`getGlass` over its block's cube) — a breakable pane with a room behind it, the kind the curtain walls are not — and the probe it samples",
+      pos: [61.3, 1.7, 38.7],
+      target: [61.3, 2.3, 33.7],
+    },
+    {
+      id: "blast",
+      of: "a grenade's blast on the square's lawn half a second after it went off, the war memorial behind",
+      proves:
+        "`BlastFx` and `BlastShader` (X4.4) — the lit billows hot and cooling, the streamers and the surge — which no map view holds, since the pool idles switched off",
+      pos: [-16, 1.7, -12],
+      target: [-4, 3, -3],
+      blast: { at: [-4, -3], age: 0.5 },
     },
   ],
   harrowmead: [
@@ -149,6 +262,7 @@ export const DIFF_VANTAGES = {
       pos: [24, 6, -178],
       target: [10, 12, -260],
     },
+    ...viewRows(),
   ],
   sarab: [
     {
@@ -163,7 +277,7 @@ export const DIFF_VANTAGES = {
       id: "shelf",
       of: "the whole town from the Martyrs' shelf, seven metres up and four hundred metres of it in frame",
       proves:
-        "the fog wall INSIDE the play square — the one thing no other banked frame has, since this is the only map whose `fogEnd` is short of its own diagonal — plus `WorldCulling`'s block half, which is inert everywhere else. **It does NOT photograph the shadow window, whatever this note claimed for a while**: a bank is frozen in `deploy`, `shadows.update` is only reached from `updateGameplay`, and the depth map is therefore still centred wherever the install left it — 260 m from this vantage. `docs/rendering.md` has the fix (invalidate, then `shadows.update(cam.position, mats)` before the grab) and a shadow-window change has to be measured with it rather than against this bank",
+        "the fog wall INSIDE the play square — the one thing no other banked frame has, since this is the only map whose `fogEnd` is short of its own diagonal — plus `WorldCulling`'s block half, which is inert everywhere else, and the shadow window over a whole town. **The window is in it now**: for a while this note had to say it was not, because a bank is frozen in `deploy`, where nothing places the shadow maps, and they stayed wherever the install left them — 260 m from here. `placeVantage` places them at each row's eye since X0.1",
       pos: [228, 20, 132],
       target: [-120, 2, 96],
       fov: 58,
@@ -177,8 +291,91 @@ export const DIFF_VANTAGES = {
       target: [-66, -4, -96],
       wind: 2.6,
     },
+    // One hull of each kind, on the west base's three hardstandings, parked as
+    // a round builds them. Three-quarter views, so a hull is its silhouette
+    // and two of its faces.
+    {
+      id: "tank",
+      of: "the west base's tank broadside on, 10 m off",
+      proves: "a TANK's hull model and its cel paths (X4.2) — the one kind every armoured map has",
+      pos: [-284, 2.5, -324],
+      target: [-292, -1.4, -316],
+    },
+    {
+      id: "truck",
+      of: "the west base's truck from its front quarter, 11 m off",
+      proves: "a TRUCK's hull model (X4.2)",
+      pos: [-314, 2.5, -314],
+      target: [-322, -1.4, -306],
+    },
+    {
+      id: "heli",
+      of: "the west base's helicopter broadside on, on its pad",
+      proves: "a HELICOPTER's hull model, rotor at rest (X4.2) — the kind with the most thin parts for the ink",
+      pos: [-302, 3, -341],
+      target: [-312, -0.6, -332],
+    },
+    // Bodies. Sarab because its `bodyDrawDistance` (300) is the one a body at
+    // 250 m is inside on a straight road, and that gate is what X4.1 moves.
+    {
+      id: "rig-near",
+      of: "a soldier mid-stride on the west highway, 6 m off, facing the camera",
+      proves:
+        "a RIG (X4.1): fourteen merged meshes, the kit palette in `uv2.x`, the team colour worn, and its shadow in the bodies' map — the half of the cel shader no map view reaches",
+      pos: [-66, 1.7, 0],
+      target: [-66, 1.1, 6],
+      rigs: [{ at: [-66, 6], yaw: Math.PI - 0.6, pose: { moving: 1, phase: 1, run: 0.3, stride: 0.35 } }],
+    },
+    {
+      id: "rig-far",
+      of: "a soldier standing on the same highway 250 m off, through a 10° field",
+      proves:
+        "that a body inside `bodyDrawDistance` is DRAWN at range — the culling, the LOD and the fog on a rig — which is the regression that is a body silently not there",
+      pos: [-66, 1.7, 0],
+      target: [-66, 1, 250],
+      fov: 10,
+      rigs: [{ at: [-66, 250], yaw: Math.PI }],
+    },
+  ],
+  cinderhaven: [
+    {
+      id: "town",
+      of: "the harbour town's cobbled square at night, the memorial, lit windows, street lamps and the lighthouse",
+      proves:
+        "the night map at street level — a moonless violet key, the lamps and the emissive palette carrying the frame — where its menu row is a far shot of the island",
+      pos: [-90, 1.7, 300],
+      target: [-60, 8.4, 340],
+    },
   ],
 };
+
+/**
+ * The viewmodel, hip and aimed, one weapon per optic: each optic on the
+ * weapon it reads best on, so five weapon models are in the set as well as
+ * five sights. Harrowmead's millpond is behind them because it is daylight
+ * with water, foliage and a lit building in one direction.
+ */
+function viewRows() {
+  const fits = [
+    ["reflex", "smg"],
+    ["iron", "rifle"],
+    ["holo", "carbine"],
+    ["prism", "lmg"],
+    ["scope", "sniper"],
+  ];
+  return fits.flatMap(([sight, weapon]) =>
+    [false, true].map((aimed) => ({
+      id: `view-${sight}-${aimed ? "aim" : "hip"}`,
+      of: `the ${weapon} with the ${sight} sight, ${aimed ? "aimed" : "at the hip"}, over the millpond`,
+      proves: aimed
+        ? "the aimed pose `applyFit` derives (the sight centred on the axis) and the optic's own field — the picture the reticle cannot lie in (X4.3)"
+        : "the viewmodel's rendering group, its depth clear and its ink band, the weapon model and the sight (X4.3)",
+      pos: [-160, 1.6, 102],
+      target: [-108, 3, 70],
+      view: { weapon, sight, aimed },
+    })),
+  );
+}
 
 /**
  * The full ordered shot list for a map: its menu vantage first, then its diff

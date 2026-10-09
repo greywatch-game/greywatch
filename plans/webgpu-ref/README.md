@@ -143,6 +143,23 @@ lamp or a reflection. See the floor, below.
   than a measured floor. **Re-derive the floor in any run that is going to
   produce a number** — a method that cannot reach its own floor is not
   measuring what you think, and this one could not twice.
+- **The floor was lost once more, and it took the bank's whole job with it.**
+  From 2026-09-26 `bank.mjs` refused every frame on every map (the finding
+  `BABYLON_EXIT.md` X0.1 closed), and the cause was the IRRADIANCE VOLUME: it
+  re-traces a rolling slice of itself every frame, its multi-bounce term
+  converges by a factor of the albedo per SWEEP (~72 frames), and a frame shot
+  36 frames after a teleport was half way through one — 7% of Greyfen's pixels, up to 78/255, between two
+  consecutive grabs. `freeze` now re-sweeps it at its warm budget from a
+  cursor of zero, `GI_SWEEPS` (8) times, after everything it traces is
+  pinned, and holds it; one sweep instead of eight still leaves 6% of
+  Greyfen's pixels up to 74/255 off across processes. Beside it two more
+  things that move by themselves were found unpinned: the cloud ring's TURN,
+  which replaced the two scrolling textures the freeze was still zeroing
+  (`sky.turn` is pinned to 0 and the clouds' shadow re-primed at it), and
+  Cinderhaven's storm, whose clock runs in `deploy` (held with no strike in
+  the air). **When the bank goes red on an unchanged tree again, look for the
+  newest thing that changes by itself in a held world** — that has now been
+  the answer four times.
 - **The post chain is left ON, with only its clock pinned.** The plan called
   for `g.post.setEnabled(false)`, and that would reach the same floor — the
   grade's grain is re-hashed every frame at ~14 LSB and is the largest term in
@@ -185,14 +202,19 @@ Headed and headless frames are **not** byte-identical, on three of the four
 maps. Both are correct; what may not happen is banking in one mode and checking
 in the other, which reports four regressions that are a browser mode. The mode
 is recorded in `ref/mode.json` and `bank.mjs --check` refuses a mismatch rather
-than reporting nonsense. The same caution applies across machines: this bank was
+than reporting nonsense. **Beside the mode it records what the bank was taken
+ON** — the Chromium build, the Playwright that drove it, the WebGPU adapter,
+the GPU driver (`nvidia-smi`, null where there is none) and the settings every
+row was shot at, which are device-derived — and a check prints any of those
+that has moved since, so a red bank after an update says which update in one
+read. A full take writes it; a take over named maps leaves it alone. The same caution applies across machines: this bank was
 taken headless on the Windows box (`nvidia/lovelace`), and a diff taken against
 it on different silicon is measuring the silicon.
 
 **Which is why `ref/` is NOT committed** — it is in `.gitignore` beside
-`gate.json`. It is ~45 MB of PNG that is only meaningful on one machine in one
-browser mode, and it has a generator: `node plans/webgpu-ref/bank.mjs` rebuilds
-the whole set in about four minutes. That is the same bar the four generated
+`gate.json`. It is ~130 MB of PNG (47 frames since X0.1) that is only
+meaningful on one machine in one browser mode, and it has a generator: `node
+plans/webgpu-ref/bank.mjs` rebuilds the whole set in about five minutes. That is the same bar the four generated
 assets in `docs/build.md` are held to, and a bank fails the other half of it —
 those are the SAME on every machine and this is not. What is committed is the
 harness and `vantages.mjs`, which is the part that would be expensive to lose:
@@ -204,15 +226,42 @@ the commit.** A frame taken here has the engine difference already absorbed
 into it, which is the entire technique; re-taking after a shader change
 silently replaces the thing that would have caught the shader change.
 
+## What a row can stand in front of the camera
+
+**Since `BABYLON_EXIT.md` X0.1 the bank is the look oracle for a renderer
+being replaced piece by piece**, and a table of map views holds none of the
+pieces after the static world. So a row may ask for a SUBJECT — soldiers, a
+blast in the air, the viewmodel, the capture rings and flags, a setting
+changed, the motion blur in flight — each posed by the game's own code from a
+fixed state through fixed steps (`vantages.mjs`'s header lists them, and
+`placeVantage` puts every one away before the next row). What the table holds
+for each step of the exit:
+
+| exit step | rows |
+| --- | --- |
+| X3 the static world | every map's menu and map views |
+| X4.1 bodies | `sarab-rig-near`, `sarab-rig-far` (250 m, inside `bodyDrawDistance`) |
+| X4.2 vehicles | `sarab-tank`, `sarab-truck`, `sarab-heli` |
+| X4.3 the viewmodel | `harrowmead-view-<optic>-hip` / `-aim`, one weapon per optic |
+| X4.4 effect pools | `coldharbour-blast` |
+| X4.5 sky and clouds | every row; `hollowmere-lanterns` and `cinderhaven-town` at night |
+| X4.6 water, glazing, rings | `greyfen-marsh`, `harrowmead-millpond`, `coldharbour-shopfront` (see-through), `coldharbour-curtain2/40/90` (backed), `hollowmere-ring` |
+| X5.2 the post chain | `hollowmere-post-*`, each one setting off against `lanterns` |
+
+**`placeVantage` also places the camera-dependent passes at each row's eye**
+— the two cascades, the bodies' map, the lamps' atlas, the water and the grass
+— by `Game.updateSceneForCamera` at dt 0, the path the editor and the warm-up
+use. Before X0.1 they stayed wherever the install left them, so a frame far
+from the spawn photographed no shadow window at all.
+
 ## What is NOT in it
 
-- **Nothing here holds a mesh with NO vertex colour buffer.** `bank.mjs`
-  disables every bot rig and disposes the zones before it places a camera, and
-  it never spawns the player — so the rigs, the viewmodel, the grenades and
-  every effect mesh are outside the whole set, and with them the `vBaked.y >
-  0.5` branch not taken. That half of the cel shader is covered by the
-  whole-scene twin swap over a PAUSED live round instead; `VERIFYING.md` has the
-  recipe and the one trap in it.
+- **Nothing here is a body in MOTION or a world being culled as it is
+  walked.** A posed rig and a held camera cover what is drawn, not what a
+  candidate-list change does while bodies move — `VERIFYING.md` has the live
+  round's screenshot pair with a control for that.
+- **Nothing here holds a GPU particle.** The freeze turns particles off,
+  because they run on their own clock; X4.7 has to bring its own check.
 - **Nothing here is a frame TIME.** `gate.mjs` reports those and they are real
   on this machine, but they are not what a reference IMAGE is for. Quote the
   gate's `warmFps`, never a number read off a bank run.
