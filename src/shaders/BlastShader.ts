@@ -198,7 +198,8 @@ varying vLocal: vec3f;
 varying vBillow: vec4f;
 varying vWarmth: f32;
 
-uniform cameraPosition: vec3f;
+// The cel materials' eye, not Babylon's \`cameraPosition\` — see \`BlastMaterial.setEye\`.
+uniform camPos: vec3f;
 uniform time: f32;
 uniform shape: vec4f;
 uniform field: vec4f;      // x = grain cells, y = climb, z = ragged, w = erode cells
@@ -233,7 +234,7 @@ fn main(input: FragmentInputs) -> FragmentOutputs {
   let seed = b.z;
   let p = fragmentInputs.vPosW;
   let n = normalize(fragmentInputs.vNormalW);
-  let v = normalize(uniforms.cameraPosition - p);
+  let v = normalize(uniforms.camPos - p);
   let facing = clamp(dot(n, v), 0.0, 1.0);
   let clock = drawnClock();
 
@@ -315,7 +316,7 @@ fn main(input: FragmentInputs) -> FragmentOutputs {
   fragmentOutputs.color = vec4f(uniforms.glowColor.rgb * glow, uniforms.glowColor.a);
 #else
   // The cel shader's fog: same curve, same radial distance.
-  let dist = distance(p, uniforms.cameraPosition);
+  let dist = distance(p, uniforms.camPos);
   let f = clamp((dist - uniforms.fogParams.x) / max(0.001, uniforms.fogParams.y - uniforms.fogParams.x), 0.0, 1.0);
   col = mix(col, uniforms.fogColor, f * f);
   fragmentOutputs.color = vec4f(col, uniforms.opaqueAlpha);
@@ -326,7 +327,7 @@ fn main(input: FragmentInputs) -> FragmentOutputs {
 const COMMON_UNIFORMS = [
   "world",
   "viewProjection",
-  "cameraPosition",
+  "camPos",
   "time",
   "shape",
   "field",
@@ -404,6 +405,7 @@ export class BlastMaterial extends ShaderMaterial implements SelfMasking {
   private clock = 0;
   private light: BlastLight | null = null;
   private dust = Color3.FromHexString("#8a7d68");
+  private readonly eye = Vector3.Zero();
 
   constructor(scene: Scene) {
     super(
@@ -438,6 +440,18 @@ export class BlastMaterial extends ShaderMaterial implements SelfMasking {
     this.clock = seconds;
     this.setFloat("time", seconds);
     for (const mask of this.masks) mask.setFloat("time", seconds);
+  }
+
+  /**
+   * The eye, onto this and every twin — the cel materials' own, for the
+   * fire's reason (`FlameMaterial.setEye`). No probe draws a blast today, its
+   * meshes being a pool rather than the map's visuals; reading the active
+   * camera would make that a rule nothing states, where this makes it moot.
+   */
+  setEye(pos: Vector3): void {
+    this.eye.copyFrom(pos);
+    this.setVector3("camPos", this.eye);
+    for (const mask of this.masks) mask.setVector3("camPos", this.eye);
   }
 
   setFog(color: Color3, start: number, end: number): void {
@@ -494,6 +508,7 @@ export class BlastMaterial extends ShaderMaterial implements SelfMasking {
     mat.setColor3("coreColor", Color3.FromHexString(FIRE_INKS.core));
     mat.setColor3("sootColor", Color3.FromHexString(SOOT));
     mat.setColor3("dustColor", this.dust);
+    mat.setVector3("camPos", this.eye);
     mat.setVector3("lightDir", new Vector3(-0.5, -0.9, 0.4).normalize());
     mat.setColor3("lightColor", new Color3(0.8, 0.8, 0.8));
     mat.setColor3("ambientColor", new Color3(0.16, 0.18, 0.24));

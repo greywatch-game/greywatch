@@ -144,7 +144,7 @@ attribute uv: vec2f;
 
 uniform world: mat4x4f;
 uniform viewProjection: mat4x4f;
-uniform cameraPosition: vec3f;
+uniform camPos: vec3f;
 uniform time: f32;
 uniform windDir: vec2f;
 uniform motion: vec4f;   // x = boil fps; y = writhe, z = lean, w = lick (shares of the fire's height)
@@ -232,7 +232,8 @@ varying vT: f32;
 varying vLayer: f32;
 varying vField: vec3f;
 
-uniform cameraPosition: vec3f;
+// The cel materials' eye, not Babylon's \`cameraPosition\` — see \`FlameMaterial.setEye\`.
+uniform camPos: vec3f;
 uniform time: f32;
 uniform motion: vec4f;
 uniform boil: vec3f;      // x = how ragged, y = how fast the field climbs (per s), z = bite
@@ -267,7 +268,7 @@ fn main(input: FragmentInputs) -> FragmentOutputs {
   let q = vec3f(f0.x * 4.2, f0.y * 1.9 - clock * uniforms.boil.y, f0.z * 4.2);
   let noise = vnoise(q) * 0.62 + vnoise(q * vec3f(2.3, 2.0, 2.3) + vec3f(17.0)) * 0.38;
   // Where the surface turns away from the eye.
-  let v = normalize(uniforms.cameraPosition - p);
+  let v = normalize(uniforms.camPos - p);
   let edge = 1.0 - abs(dot(v, normalize(fragmentInputs.vNormalW)));
   // A tongue's heat: hottest at the root, eaten by the field, and bitten at
   // the silhouette harder toward the tip, so it narrows to a brush point.
@@ -325,7 +326,7 @@ fn main(input: FragmentInputs) -> FragmentOutputs {
   fragmentOutputs.color = vec4f(uniforms.glowColor.rgb * glow, uniforms.glowColor.a);
 #else
   // The same fog, curve and radial distance as the cel shader and EmissiveFog.
-  let dist = distance(fragmentInputs.vPosW, uniforms.cameraPosition);
+  let dist = distance(fragmentInputs.vPosW, uniforms.camPos);
   let f = clamp((dist - uniforms.fogParams.x) / max(0.001, uniforms.fogParams.y - uniforms.fogParams.x), 0.0, 1.0);
   col = mix(col, uniforms.fogColor, f * f);
   // Opaque, so it writes what every opaque surface writes into the frame's
@@ -338,7 +339,7 @@ fn main(input: FragmentInputs) -> FragmentOutputs {
 const COMMON_UNIFORMS = [
   "world",
   "viewProjection",
-  "cameraPosition",
+  "camPos",
   "time",
   "windDir",
   "motion",
@@ -400,6 +401,7 @@ export class FlameMaterial extends ShaderMaterial implements SelfMasking {
   readonly emissiveColor = Color3.FromHexString(GLOW);
 
   private readonly masks: FlameMaskMaterial[] = [];
+  private readonly eye = Vector3.Zero();
 
   constructor(scene: Scene) {
     super(
@@ -442,6 +444,20 @@ export class FlameMaterial extends ShaderMaterial implements SelfMasking {
     for (const mask of this.masks) mask.setFloat("time", seconds);
   }
 
+  /**
+   * The eye the fire fogs against and turns its silhouette from — the cel
+   * materials' own (`CelMaterialFactory.updateCamera`), onto this and every
+   * mask twin. Never `ShaderMaterial`'s `cameraPosition`: Babylon writes that
+   * from `scene.activeCamera`, which a reflection probe never changes, so a
+   * bake drew every fire it captured as seen from wherever the player stood.
+   * `EmissiveWorld.ts`, "WHY ITS OWN EYE", has the argument and the measure.
+   */
+  setEye(pos: Vector3): void {
+    this.eye.copyFrom(pos);
+    this.setVector3("camPos", this.eye);
+    for (const mask of this.masks) mask.setVector3("camPos", this.eye);
+  }
+
   setFog(color: Color3, start: number, end: number): void {
     this.setColor3("fogColor", color);
     this.setVector2("fogParams", new Vector2(start, end));
@@ -469,9 +485,7 @@ export class FlameMaterial extends ShaderMaterial implements SelfMasking {
     mat.setColor3("midColor", Color3.FromHexString(MID));
     mat.setColor3("hotColor", Color3.FromHexString(HOT));
     mat.setColor3("coreColor", Color3.FromHexString(CORE));
-    // `cameraPosition` is not set here: `ShaderMaterial.bind` writes it from
-    // the ACTIVE camera on every bind, which is also what makes a reflection
-    // probe's bake fog the fire against the probe rather than the player.
+    mat.setVector3("camPos", this.eye);
   }
 }
 

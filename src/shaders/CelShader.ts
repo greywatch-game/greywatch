@@ -2934,6 +2934,7 @@ export class CelMaterialFactory {
       this.flame.setClock(this.windTime);
       this.flame.setFog(fogState.color, fogState.start, fogState.end);
       this.flame.setOpaqueAlpha(this.opaqueAlpha);
+      this.flame.setEye(this.camPos);
     }
     return this.flame;
   }
@@ -2953,6 +2954,7 @@ export class CelMaterialFactory {
       this.blast.setClock(this.windTime);
       this.blast.setFog(fogState.color, fogState.start, fogState.end);
       this.blast.setOpaqueAlpha(this.opaqueAlpha);
+      this.blast.setEye(this.camPos);
       this.pushBlastLight();
     }
     return this.blast;
@@ -3130,9 +3132,11 @@ export class CelMaterialFactory {
     if (!camPos.equals(this.camPos)) {
       this.camPos.copyFrom(camPos);
       this.cache.forEach((mat) => this.applyCamera(mat));
-      // The emissive palette fogs against this same eye, a probe's included
-      // (`EmissiveWorld.ts`, "WHY ITS OWN EYE").
+      // The three materials outside the cache fog against this same eye, a
+      // probe's included (`EmissiveWorld.ts`, "WHY ITS OWN EYE").
       for (const mat of this.emissiveWorld) mat?.setEye(this.camPos);
+      this.flame?.setEye(this.camPos);
+      this.blast?.setEye(this.camPos);
     }
   }
 

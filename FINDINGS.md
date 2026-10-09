@@ -2134,3 +2134,31 @@ volumetrics `off`; then, if `gpu.frame` has not come back to ~13 ms, shadows
 only whether either is large anywhere. Whichever it is, a phone default
 (volumetrics on a coarse pointer) or a cheaper path is the fix, and the
 result decides where `PERF_PLAN.md` Part B stands.
+
+---
+
+## 51. A reflection probe never draws a FIRE, and nothing says it should not
+
+**Status:** open, cause not found. Seen while checking that the fire fogs a
+bake against the probe's eye rather than the player's (`FlameMaterial.setEye`).
+A probe's list is `map.visuals`, which holds every block's merged
+`block<x>,<y>-flame-…` mesh, and the fire's fragment writes `opaqueAlpha` for
+exactly this pass — so it is meant to be in the glass. It is not.
+
+Measured on Coldharbour by cutting one probe's list to a single fire mesh,
+standing it 6 m off the probe at three times its size (bounding radius 15 m,
+so the probe is inside it) and reading the six 128² faces back: a bake with
+the fire and a bake with an EMPTY list differ by 0.024/255 mean over 0.10% of
+texels, which is the bake's own run-to-run noise (0.02-0.05, 0.06-0.26%). The
+same harness puts the emissive palette's lamps and a blast's billows in the
+cube without trouble (1.3-1.4% of texels lit, every one moving when their eye
+does). Ruled out: the clock (held and running alike), back-face culling (off on
+the fire, no change), `ReflectionSystem.faceOf`'s cull (`alwaysSelectAsActiveMesh`
+set), readiness (`isReady(true)` true), rendering group and layer mask.
+
+**Why it is worth an answer:** a brazier beside a glazed frontage is the one
+light source the glass should show most, and today it shows the lamps beside
+the fire and not the fire. Start where the fire differs from the two that
+draw: its `normal` and `uv` attributes, the vertex stage's displacement, and
+how a frozen `FlameMaterial` builds its effect for a render pass it has not
+drawn in before.

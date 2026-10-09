@@ -3985,7 +3985,15 @@ one 600 m off it: with `cameraPosition`, 1.44% of texels moved — every lit
 one, 1.36% of the cube — at 1.74/255 mean, against a same-place control of
 0.16% and 0.03-0.05; with `camPos`, 0.08% and 0.024, inside its controls'
 0.06-0.08% and 0.015-0.030. That control is not zero on either build, and it
-does not depend on the eye. It declares a WHITE `emissiveColor`, as the fire declares one, so
+does not depend on the eye. **The fire and the blast read the same eye for the
+same reason** (`FlameMaterial.setEye`, `BlastMaterial.setEye`), and so do
+their mask twins: both had declared `cameraPosition` and the fire's comment
+claimed the active camera was the probe. A blast stood 12 m off a probe and
+added to its list: 1.50% of texels moved at 1.88/255 before, inside the control
+(0.12% and 0.037 against 0.09-0.13% and 0.024-0.038) after. No probe draws a
+blast in play (a pool, not `map.visuals`), and none draws a fire at all, which
+is a bug of its own (`FINDINGS.md` 51) — so the fire's half is a correctness
+fix that no picture can show until that one is found. It declares a WHITE `emissiveColor`, as the fire declares one, so
 `GlowPass` and `WorldCulling`'s gate still find it by the one property they ask,
 and it brings its own mask twin (`SelfMasking`). `vertexShading` skips it
 (`isEmissiveWorld`).
