@@ -5,7 +5,8 @@ The plan for removing `@babylonjs/core` from the tree, written like
 step at a time.** Each step lands on the **`babylon-exit` branch**, leaves the
 game on that branch shippable, and is proven by an oracle run against the
 commit before it. `develop` does not see any of it until the whole exit merges
-at X6.2.
+at X6.2 — with one exception, by the user's call: X0.1 to X0.3 were merged
+into `develop` early (see "The branch").
 
 `CLAUDE.md` and the companions under `docs/` remain the contract for every
 subsystem a step touches. This file argues about ORDER and about what proves
@@ -50,6 +51,14 @@ has nothing to revert.
 - **Nothing is cherry-picked to `develop` along the way** unless the user asks.
   Phase 0's instruments and Phase 1's typed arrays change no behaviour, so the
   phase-0 and phase-1 tags are the clean points if that is ever wanted.
+- **X0.1 to X0.3 are already on `develop`**, merged `--no-ff` from this
+  branch at 2026-10-09 by the user's call, before the phase-0 tag. The game
+  deploys from `develop`, and X0.4's phone run needs `?bench=` on a deployed
+  URL, because the phone takes no tooling (`PERF_PLAN.md` P0). Nothing in
+  those three steps changes a pixel or touches Babylon. Their one change to
+  play is that each bot's movement stream restarts every round (X0.2). So
+  X6.2's merge carries Phase 1 onwards, and its `revert -m 1` leaves the
+  instruments on `develop`, which is what is wanted.
 - **If the exit is abandoned,** `develop` is untouched and the branch is kept
   for its findings, not deleted.
 
@@ -317,7 +326,8 @@ renderer rewrite moves either.
 - **Do, first:** take the "before" with X0.3 on Sarab, Cinderhaven,
   Coldharbour and Greyfen, on the desktop, the phone and the tablet, several
   runs each. Do `PERF_PLAN.md` G1 here too, since the phone's GPU cost moves
-  with the shaders, not the engine.
+  with the shaders, not the engine. The phone and the tablet run it from the
+  deployed build (`develop` carries X0.1 to X0.3; see "The branch").
 - **Output:** a `FINDINGS.md` entry with the tables. For each device, split
   the time into what the exit can move (draw calls, CPU time in the render)
   and what it cannot (GPU fill, the browser's floor), as far as the captures
@@ -820,7 +830,8 @@ It stays behind its one dynamic `import()` in a DEV branch.
 
 ### X6.2 — Merge to `develop` — **S** (decision)
 
-The one step that touches `develop`. It is the user's to start.
+The one step that touches `develop`, apart from Phase 0's early merge of X0.1
+to X0.3 (see "The branch"). It is the user's to start.
 
 - **Before:** merge `develop` into `babylon-exit` one last time and run every
   oracle on the result. X0.3 against X0.4's "before" must pass on every device,
@@ -828,7 +839,8 @@ The one step that touches `develop`. It is the user's to start.
   every map, offline and in a match, for long enough that you would ship it.
 - **Do:** merge with `git merge --no-ff babylon-exit`, so the whole exit is
   ONE merge commit on `develop`. If it has to come out after landing,
-  `git revert -m 1 <merge>` takes all of it out in one commit. That is the
+  `git revert -m 1 <merge>` takes all of it out in one commit, except X0.1 to
+  X0.3, which were already on `develop` before it. That is the
   "no mess to revert" the branch exists for.
 - **After:** move this file to `plans/done/` with a status block, as
   `plans/README.md` says, and keep the branch and its tags.
