@@ -2889,9 +2889,12 @@ export class CelMaterialFactory {
         this.scene,
         overGlass ? "emissive-world-over-glass" : "emissive-world",
         overGlass ? CelMaterialFactory.OVER_GLASS_DEPTH_UNITS : 0,
+        this.emissivePalette,
       );
       mat.setFog(fogState.color, fogState.start, fogState.end);
-      mat.setPalette(this.emissivePalette);
+      // The cel cache's eye, seeded here for `applyCamera`'s reason: the walk
+      // in `updateCamera` is guarded, and skips a material it has never seen.
+      mat.setEye(this.camPos);
       this.emissiveWorld[i] = mat;
     }
     return mat;
@@ -3127,6 +3130,9 @@ export class CelMaterialFactory {
     if (!camPos.equals(this.camPos)) {
       this.camPos.copyFrom(camPos);
       this.cache.forEach((mat) => this.applyCamera(mat));
+      // The emissive palette fogs against this same eye, a probe's included
+      // (`EmissiveWorld.ts`, "WHY ITS OWN EYE").
+      for (const mat of this.emissiveWorld) mat?.setEye(this.camPos);
     }
   }
 

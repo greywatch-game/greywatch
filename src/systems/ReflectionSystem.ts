@@ -57,7 +57,8 @@
  *   list.
  * - The bake renders the world from the probe, so the cel materials' eye is
  *   moved for it and put back around the whole render-target block — never
- *   per probe, or 37 bakes are 37 chances to put it back wrong.
+ *   per probe, or 37 bakes are 37 chances to put it back wrong. The emissive
+ *   palette takes the same eye (`EmissiveWorld.ts`, "WHY ITS OWN EYE").
  * - Probes are pooled and never disposed, like the bot rigs: a `ReflectionProbe`
  *   is six scene uniform buffers and a cube, and a round is not the place to
  *   build one.

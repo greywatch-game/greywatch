@@ -260,7 +260,6 @@ four draws.
 
 The step as it was planned, kept for the argument:
 
-
 The glow mask draws every lit window a second time: 123 mask draws on
 Coldharbour's street view, ~1.44 ms of `glow` on the phone. An emissive
 palette — emissive colour into the vertex data as the albedo palette did for

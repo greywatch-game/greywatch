@@ -10,7 +10,9 @@
  * Invariants: the main pass draws EXACTLY what `getEmissive`'s unlit
  * `StandardMaterial` plus `EmissiveFog` drew for the same colour — the colour,
  * faded toward the fog by the same curve over the same radial distance, alpha
- * 1 — so a block moving onto this material changes no pixel of the frame. The
+ * 1 — so a block moving onto this material changes no pixel of the frame or
+ * of a reflection bake. Its EYE is the cel materials' `camPos`, never
+ * `ShaderMaterial`'s `cameraPosition` (see WHY ITS OWN EYE). The
  * mask twin runs the SAME vertex function, which is what lets its LEQUAL test
  * tie against the depth the main pass wrote, and carries the same polygon
  * offset. Never given a vertex colour buffer (`vertexShading` skips it). Never
@@ -36,6 +38,16 @@
  * colour unfaded (`fadesOwnBloom`). It is the one LOOK change the palette
  * makes, and it moves the bloom toward what the wall around it already does.
  *
+ * WHY ITS OWN EYE. `ShaderMaterial.bind` writes a declared `cameraPosition`
+ * from `scene.activeCamera`, and a reflection probe never changes that: its
+ * renderer draws with the PLAYER's camera and moves only the scene's forced
+ * view position. The stock material read the scene's eye, which honours that,
+ * so a probe fogged its lamps against the probe; reading `cameraPosition`
+ * fogged every lamp a bake captured from wherever the player happened to
+ * stand. So this takes `camPos` from `CelMaterialFactory.updateCamera`, the
+ * one eye `ReflectionSystem` already moves per face and puts back — the wall
+ * and the window in front of it fog against the same point by construction.
+ *
  * WHY IT DECLARES `emissiveColor`. `GlowPass` and `WorldCulling` decide what is
  * a light source by that property and nothing else, exactly as for the fire
  * (`FlameMaterial`). It is WHITE, so `GlowRules.colour` hands the twin the
@@ -54,6 +66,7 @@ import {
   type Mesh,
   type Scene,
   type SubMesh,
+  Vector3,
 } from "@babylonjs/core";
 import type { SelfMasking } from "./GlowPass";
 
@@ -94,7 +107,8 @@ ShaderStore.ShadersStoreWGSL["emissiveWorldFragmentShader"] = `
 varying vPosW: vec3f;
 varying vSlot: f32;
 
-uniform cameraPosition: vec3f;
+// The cel materials' eye, not Babylon's \`cameraPosition\` — see the header.
+uniform camPos: vec3f;
 uniform emissivePalette: array<vec3f, ${MAX_EMISSIVE_PALETTE}>;
 uniform fogColor: vec3f;
 // x = fogStart, y = 1 / (fogEnd - fogStart): \`EmissiveFog\`'s pair, computed
@@ -108,7 +122,7 @@ uniform glowColor: vec4f;
 @fragment
 fn main(input: FragmentInputs) -> FragmentOutputs {
   let col = uniforms.emissivePalette[u32(fragmentInputs.vSlot + 0.5) - 1u];
-  let t = clamp((distance(fragmentInputs.vPosW, uniforms.cameraPosition) - uniforms.fogRange.x) * uniforms.fogRange.y, 0.0, 1.0);
+  let t = clamp((distance(fragmentInputs.vPosW, uniforms.camPos) - uniforms.fogRange.x) * uniforms.fogRange.y, 0.0, 1.0);
 #ifdef GLOW_MASK
   // Toward BLACK, where the frame below fades toward the fog — a bloom of the
   // fog colour is a white haze round every far lamp (GlowPass's header).
@@ -128,7 +142,7 @@ fn main(input: FragmentInputs) -> FragmentOutputs {
 const COMMON_UNIFORMS = [
   "world",
   "viewProjection",
-  "cameraPosition",
+  "camPos",
   "emissivePalette",
   "fogColor",
   "fogRange",
@@ -170,11 +184,19 @@ export class EmissiveWorldMaterial extends ShaderMaterial implements SelfMasking
   readonly emissiveColor = Color3.White();
 
   private readonly masks: EmissiveWorldMask[] = [];
-  private palette: Float32Array = new Float32Array(MAX_EMISSIVE_PALETTE * 3);
-  private readonly fogRange = new Vector2(24, 1 / 54);
+  // Unfogged and at the origin until told: the factory pushes the fog and the
+  // eye before it hands the material out, so neither default is ever drawn.
+  private readonly fogRange = new Vector2(0, 0);
   private readonly fogColor = new Color3(0, 0, 0);
+  private readonly eye = Vector3.Zero();
 
-  constructor(scene: Scene, name: string, depthUnits: number) {
+  /** `palette` is the factory's table, held by reference — see `setPalette`. */
+  constructor(
+    scene: Scene,
+    name: string,
+    depthUnits: number,
+    private palette: Float32Array,
+  ) {
     super(
       name,
       scene,
@@ -211,6 +233,12 @@ export class EmissiveWorldMaterial extends ShaderMaterial implements SelfMasking
     }
   }
 
+  /** The cel materials' eye, onto this and every mask twin — see the header. */
+  setEye(pos: Vector3): void {
+    this.eye.copyFrom(pos);
+    for (const mat of [this, ...this.masks]) mat.setVector3("camPos", this.eye);
+  }
+
   /**
    * `EmissiveFog`'s band, onto this and every mask twin — which reads only
    * its range, fading toward black on it rather than toward the colour.
@@ -228,8 +256,7 @@ export class EmissiveWorldMaterial extends ShaderMaterial implements SelfMasking
     mat.setArray3("emissivePalette", this.palette as unknown as number[]);
     mat.setColor3("fogColor", this.fogColor);
     mat.setVector2("fogRange", this.fogRange);
-    // `cameraPosition` is written by `ShaderMaterial.bind` off the ACTIVE
-    // camera, which is also what fogs a reflection bake against its probe.
+    mat.setVector3("camPos", this.eye);
   }
 }
 
@@ -243,5 +270,5 @@ export function isEmissiveWorld(material: Material | null): material is Emissive
  * not fade it again per mesh — see the header.
  */
 export function fadesOwnBloom(material: Material): boolean {
-  return material instanceof EmissiveWorldMaterial;
+  return isEmissiveWorld(material);
 }

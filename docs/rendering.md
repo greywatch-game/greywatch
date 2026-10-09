@@ -3969,7 +3969,23 @@ reduces to `clamp(emissive)` at alpha 1, then `EmissiveFog`'s `mix`; the WGSL
 does that term for term, the fog pair computed on the CPU as the plugin's is.
 So it writes coverage 1 in the frame and in a probe alike, as that material did
 — a literal, and the one shader where a literal is right, because it is what
-was there. It declares a WHITE `emissiveColor`, as the fire declares one, so
+was there. **Its EYE is the cel materials' `camPos`**, pushed by
+`CelMaterialFactory.updateCamera`, and never `ShaderMaterial`'s
+`cameraPosition`: Babylon writes that from `scene.activeCamera`, which a
+`ReflectionProbe` does not change — its renderer draws with the player's
+camera and moves only the scene's forced view position, which is what the
+stock material's `scene.vEyePosition` read. The first cut declared
+`cameraPosition` and so fogged every lamp a bake captured from wherever the
+player stood; a probe more than `fogEnd` from the camera baked its
+neighbours' windows as flat fog. The frozen-frame comparison could not see it,
+because it compares the frame and not what a probe holds. Measured by cutting
+one Coldharbour probe's list to the palette's lamps (13 meshes; fog 130-480 m)
+and reading its six faces back after a bake with the camera AT the probe and
+one 600 m off it: with `cameraPosition`, 1.44% of texels moved — every lit
+one, 1.36% of the cube — at 1.74/255 mean, against a same-place control of
+0.16% and 0.03-0.05; with `camPos`, 0.08% and 0.024, inside its controls'
+0.06-0.08% and 0.015-0.030. That control is not zero on either build, and it
+does not depend on the eye. It declares a WHITE `emissiveColor`, as the fire declares one, so
 `GlowPass` and `WorldCulling`'s gate still find it by the one property they ask,
 and it brings its own mask twin (`SelfMasking`). `vertexShading` skips it
 (`isEmissiveWorld`).
