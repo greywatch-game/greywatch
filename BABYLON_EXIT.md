@@ -182,7 +182,29 @@ records nothing but the mode. It is the look oracle for all of Phases 3–5.
 - **Rewrites:** `FINDINGS.md` 20 (closed or narrowed),
   `plans/webgpu-ref/README.md`.
 
-### X0.2 — Seeded randomness in the simulation (PERF_PLAN C1) — **S**
+### X0.2 — Seeded randomness in the simulation (PERF_PLAN C1) — **S** — **LANDED** (08a52fd)
+
+**Landed.** Every outcome `Math.random` decided now draws from a stream out of
+`src/systems/RoundRandom.ts`: the spread cone, spawn choice and scatter, a
+crew's lay, and also the player's recoil drift and flinch, since those move
+where the player's rounds go. There is one stream per shooter, keyed by the
+authority's slot for a bot and by hardstanding for a hull's cupola gun, so one
+shooter's draws never move another's. Each side calls one `seedRound` per round
+(`Game.buildRound`, `HeadlessGame.startRound`). Normal play draws a fresh seed;
+`?seed=` and `npm run simulate`'s fourth argument fix one. The seed is in the
+profiler capture (report version 12, shown in the viewer), on a DEV console
+line, and in the match server's round log. In a match the client's capture
+says null, because the seed is the authority's. The bots' movement streams
+still use their constant seeds, but `BattleSystem.reset` now restarts them every
+round. Without that, a seed reproduced only the first round of a session. The
+skill draw is untouched. Pictures and sounds stay on `Math.random`. `simulate`
+now prints `fight`, a hash over the whole kill list in order. **Measured:** from
+seed 777, all seven maps (the four vehicle maps among them) printed one hash
+for two rounds in each of two processes, and every board balanced. Seed 778 and
+two fresh seeds printed different hashes. `npm run parity` passed on all eight
+maps, `npm run build` passed, and `bank.mjs --check` passed with no pixel
+moved. In a browser, `?seed=4242` reached two rounds in a row, the DEV line, and
+the capture, with the player firing and bots fighting and no page errors.
 
 As `PERF_PLAN.md` C1 states it — `CombatSystem`'s spread cone,
 `ConquestSystem`'s spawn choice and scatter, `VehicleCrew`'s aim onto seeded
