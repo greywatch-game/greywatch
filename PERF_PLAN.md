@@ -11,6 +11,14 @@ disagrees with a contract, the contract wins until the step that changes it
 also rewrites it — and several steps below must (see "Contracts this plan
 rewrites").
 
+> **Status, 2026-10-09: Parts B and C are now steps in `BABYLON_EXIT.md`, and
+> B4 is decided — the game takes the frame.** Do not start a Part B or Part C
+> step from this file; start it from there, where each one is mapped ("PERF_PLAN,
+> step by step"). Part A's remaining steps are resolved there too: A3 and A4
+> are built in the new renderer, A5 is optional after its X3.3, and A6 is
+> dropped. This file's measurements, its arguments and its measurement protocol
+> are still the reference that plan cites.
+
 **Babylon stays.** Nothing here removes it for its own sake. Part B replaces the
 pieces of it that stand between the game and fewer active meshes, and Part C
 the pieces that tie the simulation to scene nodes. There is ONE decision point
