@@ -2,7 +2,8 @@
  * props/palm.ts — buildPalm: the date palm and its colours. Part of the scatter
  * set: follows the contract in `./index.ts`.
  */
-import { Mesh, MeshBuilder, Scene } from "@babylonjs/core";
+import { Mesh, Scene } from "@babylonjs/core";
+import { partBox, partCylinder } from "../parts";
 import { CONFIG } from "../../config";
 import type { CelMaterialFactory } from "../../shaders/CelShader";
 import { marksSway } from "../sway";
@@ -59,7 +60,7 @@ export function buildPalm(
   rng: () => number,
 ): Mesh {
   const height = 7.6 + rng() * 1.6;
-  const trunk = MeshBuilder.CreateCylinder(
+  const trunk = partCylinder(
     "palm-trunk",
     { height, diameterTop: 0.44, diameterBottom: 0.68, tessellation: 7 },
     scene,
@@ -77,7 +78,7 @@ export function buildPalm(
   const rings = 6;
   for (let i = 0; i < rings; i++) {
     const t = (i + 0.5) / rings;
-    const ring = MeshBuilder.CreateCylinder(
+    const ring = partCylinder(
       `palm-ring${i}`,
       {
         height: 0.24,
@@ -94,7 +95,7 @@ export function buildPalm(
 
   // The boss at the head of the bole: unmarked, and what buries every frond's
   // root. See the header.
-  const boss = MeshBuilder.CreateCylinder(
+  const boss = partCylinder(
     "palm-boss",
     { height: 0.7, diameterTop: 0.9, diameterBottom: 1.1, tessellation: 7 },
     scene,
@@ -110,7 +111,7 @@ export function buildPalm(
     // Two thirds of them arch up and out; the rest are older and hang. Both
     // start at the axis, so the root is inside the boss whatever the droop.
     const droop = i % 3 === 0 ? -0.62 - rng() * 0.3 : 0.16 + rng() * 0.24;
-    const frond = MeshBuilder.CreateBox(
+    const frond = partBox(
       `palm-frond${i}`,
       { width: len, height: 0.06, depth: 0.52 },
       scene,
@@ -137,7 +138,7 @@ export function buildPalm(
   // Two bunches of dates under the crown, on the fruiting side.
   for (let i = 0; i < 2; i++) {
     const a = rng() * Math.PI * 2;
-    const bunch = MeshBuilder.CreateCylinder(
+    const bunch = partCylinder(
       `palm-dates${i}`,
       { height: 0.8, diameterTop: 0.16, diameterBottom: 0.5, tessellation: 6 },
       scene,

@@ -7,13 +7,12 @@ import {
   CreateBoxVertexData,
   CreateCylinderVertexData,
   Mesh,
-  MeshBuilder,
   Scene,
   VertexData,
 } from "@babylonjs/core";
 import { CONFIG } from "../../config";
 import type { CelMaterialFactory } from "../../shaders/CelShader";
-import { partSurface } from "../parts";
+import { partCylinder, partSurface } from "../parts";
 import { mulberry32 } from "../rng";
 import { frondBend, marksSway, rigPhase, swayRig } from "../sway";
 import {
@@ -887,7 +886,7 @@ function buildLianaVeil(
   // 0.52 there), which is what makes it a thickening on the trunk rather than
   // a band painted round it. Half of it is inside the crown and half below,
   // so it emerges from the foliage instead of sitting under it.
-  const collar = MeshBuilder.CreateCylinder(
+  const collar = partCylinder(
     "liana-collar",
     { height: 0.55, diameterTop: 0.58, diameterBottom: 0.7, tessellation: 6 },
     scene,

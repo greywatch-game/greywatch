@@ -3,7 +3,8 @@
  * buildPalletStack, buildTrafficCone and buildLitter. Part of the scatter set:
  * follows the contract in `./index.ts`.
  */
-import { Mesh, MeshBuilder, Scene } from "@babylonjs/core";
+import { Mesh, Scene } from "@babylonjs/core";
+import { partBox, partCylinder } from "../parts";
 import type { CelMaterialFactory } from "../../shaders/CelShader";
 import { DARK_METAL } from "./palette";
 
@@ -42,7 +43,7 @@ export function buildSkip(
   mats: CelMaterialFactory,
   rng: () => number,
 ): Mesh {
-  const body = MeshBuilder.CreateBox(
+  const body = partBox(
     "skip",
     { width: 1.9, height: 1.1, depth: 1.2 },
     scene,
@@ -52,7 +53,7 @@ export function buildSkip(
   body.rotation.y = (rng() - 0.5) * 0.24;
   body.material = mats.get(SKIP_PAINT);
 
-  const rim = MeshBuilder.CreateBox(
+  const rim = partBox(
     "skip-rim",
     { width: 2.04, height: 0.12, depth: 1.34 },
     scene,
@@ -62,7 +63,7 @@ export function buildSkip(
   rim.material = mats.get(DARK_METAL);
 
   for (const sx of [-1, 1]) {
-    const lug = MeshBuilder.CreateBox(
+    const lug = partBox(
       `skip-lug${sx}`,
       { width: 0.12, height: 0.34, depth: 0.5 },
       scene,
@@ -83,7 +84,7 @@ export function buildBinPair(
   mats: CelMaterialFactory,
   rng: () => number,
 ): Mesh {
-  const root = MeshBuilder.CreateBox(
+  const root = partBox(
     "bin",
     { width: 0.5, height: 1.0, depth: 0.56 },
     scene,
@@ -92,7 +93,7 @@ export function buildBinPair(
   root.rotation.y = (rng() - 0.5) * 0.5;
   root.material = mats.get(BIN_BODY);
 
-  const lid = MeshBuilder.CreateBox(
+  const lid = partBox(
     "bin-lid",
     { width: 0.54, height: 0.08, depth: 0.6 },
     scene,
@@ -102,7 +103,7 @@ export function buildBinPair(
   lid.material = mats.get(BIN_LID);
 
   // The second bin, leaning in slightly — a pair nobody lined up.
-  const mate = MeshBuilder.CreateBox(
+  const mate = partBox(
     "bin-mate",
     { width: 0.48, height: 0.92, depth: 0.54 },
     scene,
@@ -112,7 +113,7 @@ export function buildBinPair(
   mate.rotation.y = (rng() - 0.5) * 0.4;
   mate.material = mats.get(BIN_BODY);
 
-  const mateLid = MeshBuilder.CreateBox(
+  const mateLid = partBox(
     "bin-mate-lid",
     { width: 0.52, height: 0.08, depth: 0.58 },
     scene,
@@ -129,7 +130,7 @@ export function buildPalletStack(
   mats: CelMaterialFactory,
   rng: () => number,
 ): Mesh {
-  const root = MeshBuilder.CreateBox(
+  const root = partBox(
     "pallet",
     { width: 1.2, height: 0.14, depth: 1.0 },
     scene,
@@ -141,7 +142,7 @@ export function buildPalletStack(
   // Four or five more on top, each skewed a little — a stack nobody squared.
   const count = 4 + Math.floor(rng() * 2);
   for (let i = 0; i < count; i++) {
-    const slat = MeshBuilder.CreateBox(
+    const slat = partBox(
       `pallet${i}`,
       { width: 1.2, height: 0.14, depth: 1.0 },
       scene,
@@ -173,7 +174,7 @@ export function buildTrafficCone(
   mats: CelMaterialFactory,
   rng: () => number,
 ): Mesh {
-  const base = MeshBuilder.CreateBox(
+  const base = partBox(
     "cone-base",
     { width: 0.42, height: 0.05, depth: 0.42 },
     scene,
@@ -182,7 +183,7 @@ export function buildTrafficCone(
   base.rotation.y = rng() * Math.PI;
   base.material = mats.get(CONE_ORANGE);
 
-  const body = MeshBuilder.CreateCylinder(
+  const body = partCylinder(
     "cone",
     { height: 0.62, diameterTop: 0.06, diameterBottom: 0.3, tessellation: 8 },
     scene,
@@ -192,7 +193,7 @@ export function buildTrafficCone(
   body.material = mats.get(CONE_ORANGE);
 
   // The reflective band. A cone without one reads as a lump.
-  const band = MeshBuilder.CreateCylinder(
+  const band = partCylinder(
     "cone-band",
     { height: 0.1, diameterTop: 0.17, diameterBottom: 0.21, tessellation: 8 },
     scene,
@@ -226,7 +227,7 @@ export function buildLitter(
   mats: CelMaterialFactory,
   rng: () => number,
 ): Mesh {
-  const root = MeshBuilder.CreateBox(
+  const root = partBox(
     "litter",
     { width: 0.24, height: 0.012, depth: 0.19 },
     scene,
@@ -237,7 +238,7 @@ export function buildLitter(
 
   const scraps = 2 + Math.floor(rng() * 3);
   for (let i = 0; i < scraps; i++) {
-    const scrap = MeshBuilder.CreateBox(
+    const scrap = partBox(
       `scrap${i}`,
       { width: 0.1 + rng() * 0.2, height: 0.01, depth: 0.08 + rng() * 0.16 },
       scene,
@@ -252,7 +253,7 @@ export function buildLitter(
     scrap.material = mats.get(rng() < 0.5 ? SCRAP_PAPER : SCRAP_CARD);
   }
 
-  const can = MeshBuilder.CreateCylinder(
+  const can = partCylinder(
     "can",
     { height: 0.11, diameter: 0.06, tessellation: 6 },
     scene,

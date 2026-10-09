@@ -5,6 +5,7 @@
  * Part of the scatter set: follows the contract in `./index.ts`.
  */
 import { Mesh, MeshBuilder, Scene } from "@babylonjs/core";
+import { partBox, partCylinder } from "../parts";
 import type { CelMaterialFactory } from "../../shaders/CelShader";
 import { BARK, DEAD_BARK, JUNGLE_BARK, VINE } from "./palette";
 
@@ -32,7 +33,7 @@ export function buildButtressLog(
   rng: () => number,
 ): Mesh {
   const bark = mats.get(JUNGLE_BARK);
-  const trunk = MeshBuilder.CreateCylinder(
+  const trunk = partCylinder(
     "buttresslog-trunk",
     { height: 5.2, diameterTop: 0.72, diameterBottom: 0.95, tessellation: 7 },
     scene,
@@ -46,7 +47,7 @@ export function buildButtressLog(
   // Buttress fins, still standing off the butt end. Parented to the trunk, so
   // they ride its roll — a fin that ignored it would float.
   for (let i = 0; i < 2; i++) {
-    const fin = MeshBuilder.CreateBox(
+    const fin = partBox(
       `buttresslog-fin${i}`,
       { width: 0.16, height: 1.5, depth: 1.1 },
       scene,
@@ -58,7 +59,7 @@ export function buildButtressLog(
   }
 
   // The torn root plate: a disc on edge, closing the butt.
-  const plate = MeshBuilder.CreateCylinder(
+  const plate = partCylinder(
     "buttresslog-plate",
     { height: 0.28, diameterTop: 1.7, diameterBottom: 1.9, tessellation: 7 },
     scene,
@@ -70,7 +71,7 @@ export function buildButtressLog(
   // Moss along the upper flank — a log on a wet floor is the first thing the
   // forest takes.
   for (let i = 0; i < 3; i++) {
-    const moss = MeshBuilder.CreateBox(
+    const moss = partBox(
       `buttresslog-moss${i}`,
       { width: 0.5, height: 0.1, depth: 0.62 },
       scene,
@@ -104,7 +105,7 @@ export function buildCarvedStele(
   rng: () => number,
 ): Mesh {
   const stone = mats.get(STONE);
-  const slab = MeshBuilder.CreateBox(
+  const slab = partBox(
     "stele-slab",
     { width: 0.95, height: 2.3, depth: 0.42 },
     scene,
@@ -116,7 +117,7 @@ export function buildCarvedStele(
   slab.rotation.z = (rng() - 0.5) * 0.24;
   slab.material = stone;
 
-  const cap = MeshBuilder.CreateCylinder(
+  const cap = partCylinder(
     "stele-cap",
     { height: 0.2, diameter: 0.98, tessellation: 6 },
     scene,
@@ -129,7 +130,7 @@ export function buildCarvedStele(
   // Relief bands across the face — the carving, at the only fidelity a cel
   // shader's flat bands can carry at this distance.
   for (let i = 0; i < 3; i++) {
-    const band = MeshBuilder.CreateBox(
+    const band = partBox(
       `stele-band${i}`,
       { width: 0.78, height: 0.14, depth: 0.06 },
       scene,
@@ -139,7 +140,7 @@ export function buildCarvedStele(
     band.material = mats.get(DARK_STONE);
   }
 
-  const plinth = MeshBuilder.CreateBox(
+  const plinth = partBox(
     "stele-plinth",
     { width: 1.3, height: 0.3, depth: 0.7 },
     scene,
@@ -149,7 +150,7 @@ export function buildCarvedStele(
   plinth.material = mats.get(DARK_STONE);
 
   // Creeper up one face.
-  const vine = MeshBuilder.CreateBox(
+  const vine = partBox(
     "stele-vine",
     { width: 0.16, height: 1.6, depth: 0.08 },
     scene,
@@ -167,7 +168,7 @@ export function buildGravestone(
   rng: () => number,
 ): Mesh {
   const stone = mats.get(STONE);
-  const slab = MeshBuilder.CreateBox(
+  const slab = partBox(
     "grave-slab",
     { width: 1.0, height: 1.5, depth: 0.24 },
     scene,
@@ -177,7 +178,7 @@ export function buildGravestone(
   slab.rotation.z = (rng() - 0.5) * 0.3;
   slab.material = stone;
 
-  const cap = MeshBuilder.CreateCylinder(
+  const cap = partCylinder(
     "grave-cap",
     { height: 0.22, diameter: 1.0, tessellation: 7 },
     scene,
@@ -187,7 +188,7 @@ export function buildGravestone(
   cap.position.y = 0.72;
   cap.material = stone;
 
-  const plinth = MeshBuilder.CreateBox(
+  const plinth = partBox(
     "grave-plinth",
     { width: 1.3, height: 0.28, depth: 0.5 },
     scene,
@@ -206,7 +207,7 @@ export function buildFungus(
 ): Mesh {
   const stem = mats.get("#6a6f63");
   const glow = mats.getEmissive("#6effc0");
-  const base = MeshBuilder.CreateCylinder(
+  const base = partCylinder(
     "fungus-base",
     { height: 0.5, diameterTop: 0.12, diameterBottom: 0.2, tessellation: 5 },
     scene,
@@ -218,7 +219,7 @@ export function buildFungus(
     const a = (i / 4) * Math.PI * 2 + rng();
     const r = 0.25 + rng() * 0.35;
     const h = 0.3 + rng() * 0.4;
-    const stalk = MeshBuilder.CreateCylinder(
+    const stalk = partCylinder(
       `fungus-stalk${i}`,
       { height: h, diameterTop: 0.07, diameterBottom: 0.1, tessellation: 5 },
       scene,
@@ -247,7 +248,7 @@ export function buildLog(
   mats: CelMaterialFactory,
   rng: () => number,
 ): Mesh {
-  const log = MeshBuilder.CreateCylinder(
+  const log = partCylinder(
     "log",
     { height: 3.0, diameterTop: 0.55, diameterBottom: 0.7, tessellation: 6 },
     scene,
@@ -257,7 +258,7 @@ export function buildLog(
   log.position.y = 0.36;
   log.material = mats.get(DEAD_BARK);
 
-  const stub = MeshBuilder.CreateCylinder(
+  const stub = partCylinder(
     "log-stub",
     { height: 0.9, diameterTop: 0.12, diameterBottom: 0.22, tessellation: 5 },
     scene,
@@ -279,7 +280,7 @@ export function buildBramble(
   rng: () => number,
 ): Mesh {
   const wood = mats.get(DEAD_BARK);
-  const base = MeshBuilder.CreateCylinder(
+  const base = partCylinder(
     "bramble",
     { height: 0.4, diameterTop: 0.5, diameterBottom: 0.7, tessellation: 5 },
     scene,
@@ -291,7 +292,7 @@ export function buildBramble(
   for (let i = 0; i < canes; i++) {
     const a = (i / canes) * Math.PI * 2 + rng() * 0.5;
     const h = 0.8 + rng() * 0.9;
-    const cane = MeshBuilder.CreateCylinder(
+    const cane = partCylinder(
       `cane${i}`,
       { height: h, diameterTop: 0.03, diameterBottom: 0.09, tessellation: 4 },
       scene,
@@ -311,7 +312,7 @@ export function buildRubble(
   mats: CelMaterialFactory,
   rng: () => number,
 ): Mesh {
-  const heap = MeshBuilder.CreateBox(
+  const heap = partBox(
     "rubble",
     { width: 1.9, height: 0.6, depth: 1.6 },
     scene,
@@ -321,7 +322,7 @@ export function buildRubble(
   heap.material = mats.get(CONCRETE);
 
   for (let i = 0; i < 3; i++) {
-    const chunk = MeshBuilder.CreateBox(
+    const chunk = partBox(
       `chunk${i}`,
       { width: 0.7, height: 0.5, depth: 0.6 },
       scene,
@@ -336,7 +337,7 @@ export function buildRubble(
     chunk.material = mats.get("#565a62");
   }
 
-  const rebar = MeshBuilder.CreateCylinder(
+  const rebar = partCylinder(
     "rebar",
     { height: 1.7, diameterTop: 0.05, diameterBottom: 0.07, tessellation: 4 },
     scene,
