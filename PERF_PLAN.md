@@ -161,18 +161,42 @@ unknown until G1 is done**. Part A does not wait for it.
 Each is independent; the order is by certainty of payoff. **A1 is IN
 PROGRESS.**
 
-### A1 — Parts stop being meshes (`FINDINGS.md` 26) — **M; THE ORACLE AND TWO CUTS LANDED**
+### A1 — Parts stop being meshes (`FINDINGS.md` 26) — **LANDED, -16 TO -28% ON EVERY MAP**
 
-**Progress (2026-10-08):** `npm run merge:hash` is committed (the oracle
-below). Against it, the cached unit box and `mergeToPart` (a merge that
-`BlockMerge` merges again no longer uploads) landed byte-identical on every
-map: build time -7 to -12%, the placement loop -20 to -25%. **The profile
-changed the step's premise**: with most builders on `StoneBatch`, the `Mesh`
-per part is now ~300 ms of Coldharbour's 4.4 s build, so the merge-only
-accumulator below is no longer the big lever it was. What is left that is
-large: `MergeMeshes` (~1.4 s) and the AO bake (~1.1 s). Next: profile again
-and take whichever of those is cheaper to cut; the accumulator only if it
-still shows.
+**Done (2026-10-08, 8fbf663..f4b8fe9).** `npm run merge:hash` is the oracle;
+against it every cut below hashed identically on all eight maps, and the one
+change that did not is its own commit and says so:
+
+- the cached unit box; `mergeToPart` (a merge `BlockMerge` merges again
+  stays a part); `bakePart` (a lone colour uploads once, or not at all);
+- the shading bake's per-box trig and `hypot` taken out of the vertex loop;
+- the scatter props built as parts instead of through `MeshBuilder`;
+- **one look change, 907c0f0**: a kit structure's bounce colour weighted by
+  part size again — parts report zero-size bounds, so every part had weighed
+  the same since the flatten. Bounce light only; nothing with GI off.
+
+`build:total`, pre-A1 (684a88c, measured in a worktree) against f4b8fe9, two
+or three runs a side on the Windows box:
+
+| map | before | after | |
+| --- | --- | --- | --- |
+| Greyfen | 13.27 s | 9.93 s | -25% |
+| Cinderhaven | 9.28 | 6.72 | -28% |
+| Harrowmead | 9.10 | 7.61 | -16% |
+| Kurenai | 7.27 | 5.67 | -22% |
+| Coldharbour | 4.59 | 3.54 | -23% |
+| Sarab | 4.38 | 3.38 | -23% |
+| Hollowmere | 3.35 | 2.56 | -24% |
+| proving ground | 10.08 | 7.67 | -24% |
+
+**What is left, and why it stops here.** On Greyfen, the biggest: the FINAL
+upload of the merged world (~1.2 s, unavoidable — it is what gets drawn; the
+arrays arrive as plain JS arrays and a typed-array merge would save some of it
+but rounds vertices in a different order, which no oracle can call harmless),
+`buildJungleTree`'s own geometry (~2 s, art code), and the bake (~1.5 s over
+~6 M vertices). The merge-only accumulator this step was written around is no
+longer worth building: with most builders on `StoneBatch`, a `Mesh` per part
+is ~300 ms of Coldharbour's build.
 
 A kit part is built as a full `Mesh` (uniform layout, GUID, registration),
 tessellated from scratch, merged and destroyed; ~76% of the placement loop is

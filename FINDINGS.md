@@ -1044,7 +1044,17 @@ left is the one term in it that grows with a ray's length.
 
 ## 26. The placement loop is one mechanism, not a thousand milliseconds: a part is built as a full `Mesh`, registered, given a uniform buffer and a GUID, tessellated from scratch, merged, and destroyed
 
-**Status:** PARTLY ACTED ON (2026-10-08, `PERF_PLAN.md` A1). **The oracle is
+**Status:** ACTED ON — and what follows the next paragraph is history.
+After 8fbf663, three more cuts and one fix landed (236eace, 907c0f0,
+f4b8fe9): `bakePart`, the shading bake's per-box trig, the scatter props as
+parts, and a kit structure's albedo weighted by part size again. Every map now
+builds 16-28% faster than at 684a88c; the table, and what is left and why it
+stops there, is `PERF_PLAN.md` A1. **What remains open from this entry**: the
+collider half (unchanged), the GC share (not re-measured), and the final
+upload's plain-array conversion, which only a change that rounds vertices
+differently would remove. If nothing here is taken up, delete the entry.
+
+**Earlier status:** PARTLY ACTED ON (2026-10-08, `PERF_PLAN.md` A1). **The oracle is
 committed**: `npm run merge:hash` (`scripts/merge-hash.mjs`) is the
 merged-visuals comparison below, rebuilt for the seven shipped maps and the
 proving ground, A-vs-A identical, and shown to catch a 2^-20 change in one box
