@@ -132,7 +132,27 @@ before its last part and brings you what you need to answer it.
 Nothing in the game moves in this phase. Every later step is graded with what
 it builds, so a gap here is a gap in every step after it.
 
-### X0.1 — A reference bank that reproduces, and covers what will move — **M**
+### X0.1 — A reference bank that reproduces, and covers what will move — **M** — **LANDED** (9246a72)
+
+**Landed.** The unpinned clock was the IRRADIANCE VOLUME's rolling sweep: it
+converges per sweep (~72 frames), not per frame, and moved 7.4% of Greyfen's
+pixels, up to 78/255, between two consecutive grabs. `freeze` now re-sweeps it
+8 times at its warm budget after everything else is pinned, then holds it (1
+sweep still leaves 6.4% off across processes). The cloud ring's turn and
+Cinderhaven's storm were unpinned too and are now. The water, the grass and the
+wind were already pinned, the flags' cloth is not stepped in `deploy`, and the
+particles are off in the freeze. The bank went from 22 frames on six maps to 47
+on seven. The new rows hold rigs at 6 m and 250 m, all three hull kinds, the
+viewmodel hip and aimed for one weapon per optic, a blast in the air, a
+see-through shopfront, a capture ring, Cinderhaven at night, and the blur in
+flight beside each post setting off. Four rows had gone stale with the re-lays
+and were re-posed. Every row now places the shadow maps, the lamps' atlas, the
+water and the grass at its own eye. It was re-taken on 9.28 with the current
+clouds, and `mode.json` now records the Chromium build, Playwright, the adapter,
+the driver and the settings. **Measured:** two `--check` runs in a row, from two
+separate shells, came back 47 of 47 at 0% of pixels and 0/255. `FINDINGS.md` 20
+was fixed and deleted. The bank's README has a table of which rows serve which
+exit step.
 
 `FINDINGS.md` 20: the bank in `plans/webgpu-ref/` cannot reproduce a frame on
 any map, is stale against the clouds and Babylon 9.28, and `ref/mode.json`
