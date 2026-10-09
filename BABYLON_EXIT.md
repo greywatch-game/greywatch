@@ -230,7 +230,61 @@ strength, and so balance, a matter of chance.
   from one seed at a fixed `dt` reaches the same score and the same kill
   list.
 
-### X0.3 — A benchmark that runs itself on any device — **M**
+### X0.3 — A benchmark that runs itself on any device — **M** — **LANDED** (6e2e7a9)
+
+**Landed.** `?bench=<map>` (or `?bench` for the menu's map) builds the map and
+plays three parts. First, the bank's vantages: one stop per position, eight
+headings each. Second, a loop through the quarter with the most built ground,
+which means collider boxes weighed by footprint, because a plain count picked
+Hollowmere's dead-tree wood. Third, a bot-only round from seed 777: nobody is
+seated, the player's body is dead, and a 45 s lead-in at nine steps a frame
+gets the bots into contact before 45 s of fight is measured. Every bench frame
+is the fixed 1/60 s step, so every device draws the same measured frames and
+fights the same fight. The run ends in a capture on a HALTED ring, so `VIEW`,
+`SAVE` and `TRACE` hand over the run and nothing after it. Every row of that
+capture is labelled by segment (report version 13: `bench`, `segments`,
+`series.segment`, and a table in the viewer), and it carries `FightHash`. The
+page then goes back to its menu with the player's own map and tier. `bench` is
+a new step state. The script and the bank's vantage table are a lazy chunk;
+the table moved to `src/bench/vantages.ts`, which `vantages.mjs` re-exports.
+`plans/webgpu-ref/bench.mjs` is the desktop wrapper. It also fixed a recorder
+bug: arming mid-frame, which the settings toggle does, filed a row stamped 0,
+so `window.seconds` read as the page's lifetime.
+
+Three things the first version got wrong were found by the verify, and each
+is now in `docs/profiling.md`'s "The benchmark":
+- **A first look's GPU bill.** It surfaced, uncapped, as one 110-570 ms wait
+  at a frame nobody can predict, which moved a vantage up to 71% between runs.
+  Settles now end on quiet frames, and every stop is rehearsed before it is
+  measured.
+- **A GPU-bound frame arrives in bursts.** So the vantages are measured for at
+  least 1,152 frames between them.
+- **1920x1080 was too small to measure at.** A frame there is ~2.5 ms, which
+  is pacing jitter. The wrapper defaults to the box's own 3440x1440.
+
+**Measured:** the Windows box, headless and uncapped at 3440x1440, three runs
+per map in one session. Every group on all seven maps agreed:
+
+| map | vantages | path | fight | fight ms (median) |
+| --- | --- | --- | --- | --- |
+| hollowmere | 2.5% | 2.2% | 3.1% | 5.85 |
+| greyfen | 0.7% | 0.4% | 1.3% | 7.12 |
+| coldharbour | 2.1% | 0.5% | 0.2% | 7.33 |
+| harrowmead | 0.6% | 0.3% | 2.3% | 5.98 |
+| sarab | 0.7% | 1.4% | 0.5% | 11.14 |
+| cinderhaven | 0.1% | 0.4% | 1.4% | 10.07 |
+| kurenai | 0.4% | 0.7% | 5.4% | 5.98 |
+
+Each figure is the spread of the mean across the three runs. Each map fought
+one fight on every run. Of the individual vantage holds, only Coldharbour's
+`avenue` was over 8%, at 8.8%. The last three rows were re-run after the
+1,152-frame floor, which changes only maps with fewer than four stops.
+
+**Not run: a real phone.** Nothing here can reach one, and X0.4 owes that run.
+A phone-SHAPED run did complete with nothing but the URL: touch, a coarse
+pointer, a 915x412 viewport at DPR 2.625 and the CPU throttled 4x. It came
+back to the menu with the hand-off written, and its fight hash on Greyfen
+matched the desktop's. `bank.mjs --check` passed and `npm run build` passed.
 
 USB and wireless debugging both failed on the phone (`PERF_PLAN.md` P0), so
 the benchmark must need no tooling: **a URL starts it, it plays itself, and it
