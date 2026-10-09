@@ -47,7 +47,9 @@ server/               # The authoritative match server. Node, NullEngine, no
   simulate.ts         #   `npm run simulate`: a whole round, headless, no clients
                       #   — and the instrument for the TICK, which is the only
                       #   budget this process has. Times every step, files them
-                      #   by bots in contact, and names the spikes
+                      #   by bots in contact, and names the spikes. Takes a
+                      #   round SEED (4th argument) and prints `fight`, a hash
+                      #   of the kill list the same seed must reproduce
   parity.ts           #   Fingerprint dump for `npm run parity`
 scripts/                      # Node tooling, run by hand or by `npm run build`,
                               #   never shipped. Plain .mjs outside both
@@ -305,8 +307,9 @@ src/
                         #   backoff, the hit-credit window, the ping bands the
                         #   lobby colours by, and the correction snap
     profiling.ts        # The frame profiler's ring size, hitch threshold and
-                        #   probe depths. Nothing here decides anything about
-                        #   the game — FrameProfile is the only reader
+                        #   probe depths, and the benchmark's lengths and fixed
+                        #   step (bench). Nothing here decides anything about
+                        #   the game — FrameProfile and BenchScript read it
     lighting.ts         # The dynamic light budget (uniforms, not Babylon lights)
     gi.ts               # The irradiance volume's tiers (grid, rays, budget),
                         #   the fast layer's caps and how the traced light is
@@ -345,7 +348,8 @@ src/
                         #   SCREENS table (what a lid covers, what holds the
                         #   world offline, what owes the netplay frame, what is
                         #   owed the scoreboard), and the raised-lid stack. A
-                        #   new state does not compile without a row
+                        #   new state does not compile without a row. `bench`
+                        #   is the benchmark's step, outside the cycle
     InputManager.ts     # Keyboard/mouse + gamepad + TOUCH state, and rumble.
                         #   Three sources, one composition, one set of fields —
                         #   and the clock that says which device is in hand.
@@ -417,7 +421,9 @@ src/
                         #   (?gi= ?shadows= ?volumetrics= ?nominimap), read
                         #   ONCE and resolved against the setting Game hands
                         #   in; the `forced` list a capture files. Also the
-                        #   URL-flag reader (?profile, ?gpu). Applies nothing
+                        #   URL-flag reader (?profile, ?gpu), and ?seed= — the
+                        #   round seed every round of the session plays from —
+                        #   and ?bench=, the benchmark's map. Applies nothing
     shadowWindow.ts     # Where a directional shadow camera STANDS, and the
                         #   texel snap that stops its edges crawling. Both maps
                         #   place themselves with it — ShadowSystem's and
@@ -453,7 +459,9 @@ src/
                         #   brackets the phases it already sequences; no system
                         #   has heard of it. Handle: `window.__profile`.
                         #   The RECORDER only: lends the ring to profileReport
-                        #   at a capture
+                        #   at a capture. A benchmark's ring is sized to its
+                        #   script, labelled by segment, and HALTED at its end
+                        #   rather than disarmed, so it can still be read
     profilePhases.ts    # The profiler's phase list (PHASES, the slot ids P
                         #   and SLOTS) and the tree it nests in (PARENT_OF,
                         #   ROOTS). Both halves read it, which is why it is
@@ -732,6 +740,11 @@ src/
                         #   HeadlessGame on the authority), and `awardKill` and
                         #   `awardZone` are the one place each that a payout's
                         #   shape is decided — both sides call the same two
+    RoundRandom.ts      # The ROUND's seed and every outcome stream drawn from
+                        #   it (the cones, the spawns, a crew's lay), one per
+                        #   shooter, reseeded in place once a round by each
+                        #   simulation. Not a system — reaches nothing. Also
+                        #   `freshSeed`, `parseSeed` and `UNDRAWN`
     killRules.ts        # `settleKill`: the killer's row, then the victim's door
                         #   if a bot fell. Every door onto a kill, both sides,
                         #   goes through it, against each side's `KillLedger`.
@@ -1596,7 +1609,9 @@ src/
                         #   OWN ORIGIN; VIEWER_PATH here is one of the three
                         #   places that path is spelled. Delivery (clipboard,
                         #   then execCommand, then download) is this file's;
-                        #   the ring is never reached for
+                        #   the ring is never reached for. benchDone writes a
+                        #   finished benchmark to the hand-off key with no tab
+                        #   (no gesture to open one) and keeps a line up
     TouchControls.ts    # The on-screen controls a phone plays with: a FLOATING
       touch.css         #   (or, by setting, FIXED) movement stick in the left
                         #   zone, a look DRAG in the right one, and the button
@@ -1667,6 +1682,21 @@ src/
                       #   the funnel every socket and every list goes through.
                       #   Draws nothing and stores nothing — choose()/note()
                       #   hand back the row for Game to light up
+  bench/              # The benchmark (?bench=<map>), a dynamic import behind
+                        #   that flag — nothing here is on the boot path.
+                        #   docs/profiling.md, "The benchmark", is the contract
+    BenchScript.ts      # What the run shows, frame by frame: the vantages at
+                        #   eight headings, the loop through the quarter with
+                        #   the most built ground, the seeded bot-only round at
+                        #   a fixed step. Counted in FRAMES, never wall clock,
+                        #   and allocation-free per frame. Also the spectator's
+                        #   bearing and FightHash, one hash over every award and
+                        #   death. Answers in numbers; Game.updateBench spends
+    vantages.ts         # The reference bank's pose table (DIFF_VANTAGES),
+                        #   moved here so the bank and the benchmark stand at
+                        #   one set of poses; plans/webgpu-ref/vantages.mjs
+                        #   re-exports it by Node's type stripping, so it is
+                        #   ERASABLE syntax with no runtime import
   pwa/
     register.ts         # SW registration, the update check that is the only
                         #   thing that ever looks for a new build, and the

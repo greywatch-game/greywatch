@@ -55,6 +55,7 @@ import {
   type ControlPoint,
 } from "../src/systems/ConquestSystem";
 import { GlassSystem } from "../src/systems/GlassSystem";
+import { RoundRandom, UNDRAWN, freshSeed } from "../src/systems/RoundRandom";
 import { GrenadeSystem } from "../src/systems/GrenadeSystem";
 import { AntiTankSystem } from "../src/systems/AntiTankSystem";
 import {
@@ -104,7 +105,14 @@ export class HeadlessGame {
   readonly scene: Scene;
   readonly combat: CombatSystem;
   readonly battle: BattleSystem;
-  readonly conquest = new ConquestSystem();
+  /**
+   * The round's seed and every outcome stream drawn from it
+   * (`src/systems/RoundRandom.ts`) — the authority's, as `Game` holds the
+   * offline round's. Declared before `conquest`, whose initialiser takes it.
+   * Reseeded once per round by `startRound`; `seed` is what `Match` logs.
+   */
+  readonly random = new RoundRandom();
+  readonly conquest = new ConquestSystem(this.random);
   readonly grenades: GrenadeSystem;
   /**
    * Breakable glazing. The same system the client runs, on the same panes —
@@ -204,7 +212,7 @@ export class HeadlessGame {
     // construction; here it does not, but the pair is kept in the same order so
     // the two files read the same way.
     this.combat = new CombatSystem(this.scene, this.mats);
-    this.battle = new BattleSystem(this.scene, this.mats, this.combat);
+    this.battle = new BattleSystem(this.scene, this.mats, this.combat, this.random);
     // **The authority's pool is the ceiling, once, for the life of the
     // process.** A slot index is a bot index and a match rotates maps under one
     // slot table, so team 1's block has to begin at the same number on every
@@ -218,7 +226,7 @@ export class HeadlessGame {
     // is a rule and belongs here; the dust needs a canvas and a GPU device and
     // does not exist on this side — see `GrenadeOptions`.
     this.grenades = new GrenadeSystem(this.scene, this.mats, { dust: false });
-    this.vehicles = new VehicleSystem(this.scene, this.mats);
+    this.vehicles = new VehicleSystem(this.scene, this.mats, this.random);
     this.antiTank = new AntiTankSystem(this.scene, this.mats);
     // The crew's context, and it is `Game`'s to the line — a crew asks the same
     // eight questions wherever it is running, because there is nothing about
@@ -245,7 +253,7 @@ export class HeadlessGame {
       },
       fireShell: (tank, by) => this.resolveShell(tank, by),
       fireMg: (tank, by) => this.resolveMg(tank, by),
-    });
+    }, this.random);
     this.hullRules = {
       ledger: this.ledger,
       combat: this.combat,
@@ -322,8 +330,17 @@ export class HeadlessGame {
    * skills are re-drawn for the tier, the world is rebuilt, the roster is reset
    * and conquest starts. The rig pool is never disposed, so this is the only
    * place the roster's difficulty can change — exactly as on the client.
+   *
+   * `seed` fixes the round's seed (`RoundRandom`) — `npm run simulate` passes
+   * one to play a round again — and a match leaves it out and gets a fresh
+   * one per round, which `Match` logs.
    */
-  async startRound(def: MapDef, difficulty: number, bots = true): Promise<void> {
+  async startRound(
+    def: MapDef,
+    difficulty: number,
+    bots = true,
+    seed: number = freshSeed(),
+  ): Promise<void> {
     this.battle.setDifficulty(difficulty);
     this.map?.dispose();
     this.map = await buildServerWorld(this.scene, def);
@@ -437,6 +454,10 @@ export class HeadlessGame {
     // clients have just put back up.
     this.glass.setMap(this.map);
     for (const bot of this.battle.bots) this.lag.track(bot);
+    // **The round's seed**, with every outcome stream rewound to it — `Game`'s
+    // line in `buildRound`, after everything that draws is built (the pool at
+    // construction, the fleet above) and before anything has spawned or fired.
+    this.random.seedRound(seed);
     this.tick = 0;
     // A new round is a new board. Sized here rather than at construction
     // because the pool is what says how many slots there are, and `reset`
@@ -886,8 +907,10 @@ export class HeadlessGame {
       this.combat.fire(
         origin,
         dir,
-        // Zero: the client's direction already carries its own spread.
+        // Zero: the client's direction already carries its own spread, drawn
+        // from the client's own stream — so there is nothing here to draw.
         0,
+        UNDRAWN,
         weapon.damage,
         origin,
         targets,
@@ -1594,7 +1617,7 @@ export class HeadlessGame {
     const pick =
       (requested != null ? this.conquest.deployAt(team, requested) : null) ??
       this.conquest.spawnFor(team);
-    return pick ? scatterSpawn(pick) : null;
+    return pick ? scatterSpawn(pick, this.conquest.spawnRand) : null;
   }
 }
 

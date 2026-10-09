@@ -58,6 +58,7 @@ import type { CelMaterialFactory } from "../shaders/CelShader";
 import type { GameMap, VehicleSpawnDef } from "../world/MapBuilder";
 import type { CollisionField } from "../world/CollisionField";
 import { newRayHit, type RayWorld } from "../world/RayWorld";
+import { STREAM, type RoundRandom } from "./RoundRandom";
 
 /**
  * Who is telling which hull what to do, asked once per hull per frame.
@@ -181,6 +182,8 @@ export class VehicleSystem {
   constructor(
     private scene: Scene,
     private mats: CelMaterialFactory,
+    // The simulation's round seed, for each hull's cupola-gun cone — see `build`.
+    private readonly random: RoundRandom,
   ) {}
 
   /** Every hull on the field, live or wrecked. Empty on a map with no armour. */
@@ -257,6 +260,9 @@ export class VehicleSystem {
       // is all one thing: a mixture would be a round in which some armour was
       // authoritative and some was not.
       tank.predicted = predicted;
+      // Keyed by HARDSTANDING, the index this hull is on the wire by, so a
+      // rebuilt fleet's guns draw where the last one's did for the same seed.
+      tank.mgRand = this.random.stream(STREAM.hullShot, this.stands.length);
       this.stands.push({ def, tank, respawnIn: 0 });
       this.fleet.push(tank);
       map.rays.hulls.push(tank);

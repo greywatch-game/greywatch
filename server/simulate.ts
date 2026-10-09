@@ -1,6 +1,16 @@
 /**
  * server/simulate.ts — Runs a whole Conquest round headlessly and prints what
- * happened. `npm run simulate [map] [difficulty] [rounds]`.
+ * happened. `npm run simulate [map] [difficulty] [rounds] [seed]`.
+ *
+ * **A round is a function of its map, its difficulty and its SEED**
+ * (`src/systems/RoundRandom.ts`), and every round printed says which seed it
+ * was. Pass one and every round of the run plays from it — the same fight,
+ * the same kills, the same score, in this process or any other — which is how
+ * a round is played again and how a change is shown to have moved nothing
+ * about the fight. Leave it out and each round draws a fresh one, as a match
+ * does. **`fight` is what to compare**: a hash over every death and every
+ * award in the order they happened, each with its tick, its slot and its
+ * kind — the whole kill list, where the board beside it is only its totals.
  *
  * This is the server's equivalent of playing a round, and it is the only way to
  * see the simulation on its own — no clients, no rendering, no wall clock. A
@@ -32,10 +42,12 @@
  * how long the SIMULATION took to compute and never how long it would take to
  * play. The realtime multiple is the honest way to read it.
  */
+import { createHash } from "node:crypto";
 import { PerformanceObserver } from "node:perf_hooks";
 import { TICK_HZ } from "../src/net/protocol";
 import { CONFIG } from "../src/config";
 import { MAPS } from "../src/world/maps";
+import { freshSeed, parseSeed } from "../src/systems/RoundRandom";
 import type { DeathCause } from "../src/systems/killRules";
 import { HeadlessGame } from "./HeadlessGame";
 
@@ -106,7 +118,7 @@ function pct(sorted: Float64Array, p: number): number {
  */
 const CONTACT_BUCKETS = [0, 1, 4, 8] as const;
 
-async function runRound(mapId: string, difficulty: number) {
+async function runRound(mapId: string, difficulty: number, seed: number) {
   const def = MAPS.find((m) => m.id === mapId);
   if (!def) throw new Error(`no map "${mapId}" (have ${MAPS.map((m) => m.id).join(", ")})`);
 
@@ -126,8 +138,14 @@ async function runRound(mapId: string, difficulty: number) {
   // paid nobody, and no `defend` line means the attack/defend split is not
   // being reached at all.
   const awards: Record<string, number> = {};
-  game.scores.onAward = (_slot, kind) => {
+  // The fight as a list, hashed as it happens — see the header. Fed from the
+  // two hooks below, which between them see every death and every payout.
+  const fight = createHash("sha256");
+  let events = 0;
+  game.scores.onAward = (slot, kind, points) => {
     awards[kind] = (awards[kind] ?? 0) + 1;
+    fight.update(`${game.tick} a ${slot} ${kind} ${points}\n`);
+    events++;
   };
   // Every death, filed by the door it came through and by whether anybody was
   // paid for it. The two checks under `reconcile` are what this is for; the
@@ -137,7 +155,9 @@ async function runRound(mapId: string, difficulty: number) {
   const uncredited: Partial<Record<DeathCause, number>> = {};
   let bodies = 0;
   let creditedBodies = 0;
-  game.onDeath = (_slot, cause, credited) => {
+  game.onDeath = (slot, cause, credited) => {
+    fight.update(`${game.tick} d ${slot} ${cause} ${credited ? 1 : 0}\n`);
+    events++;
     bodies++;
     deaths[cause] = (deaths[cause] ?? 0) + 1;
     if (credited) creditedBodies++;
@@ -154,7 +174,7 @@ async function runRound(mapId: string, difficulty: number) {
   // `server/Roster.ts`.
 
   const built = Date.now();
-  await game.startRound(def, difficulty);
+  await game.startRound(def, difficulty, true, seed);
   const buildMs = Date.now() - built;
 
   const dt = 1 / TICK_HZ;
@@ -251,6 +271,7 @@ async function runRound(mapId: string, difficulty: number) {
   const result = {
     map: def.name,
     difficulty,
+    seed,
     buildMs,
     wallMs,
     ticks,
@@ -338,6 +359,8 @@ async function runRound(mapId: string, difficulty: number) {
     blasts,
     blazes,
     flagsHeld: [game.conquest.flagsHeld(0), game.conquest.flagsHeld(1)] as [number, number],
+    /** The kill list's fingerprint — see the header — and how long the list was. */
+    fight: { hash: fight.digest("hex").slice(0, 16), events },
   };
   game.dispose();
   return result;
@@ -382,10 +405,16 @@ function reconcileProblems(r: Awaited<ReturnType<typeof runRound>>): string[] {
   return out;
 }
 
-const [mapId = "hollowmere", difficulty = "1", rounds = "1"] = process.argv.slice(2);
+const [mapId = "hollowmere", difficulty = "1", rounds = "1", seedArg] = process.argv.slice(2);
+// Refused rather than ignored: a typo that quietly drew a fresh seed would
+// print a different fight and call it the one that was asked for.
+const fixedSeed = seedArg === undefined ? null : parseSeed(seedArg);
+if (seedArg !== undefined && fixedSeed === null) {
+  throw new Error(`"${seedArg}" is not a seed (a whole number below 2^32)`);
+}
 
 for (let i = 0; i < Number(rounds); i++) {
-  const r = await runRound(mapId, Number(difficulty));
+  const r = await runRound(mapId, Number(difficulty), fixedSeed ?? freshSeed());
   const mins = (r.simSeconds / 60).toFixed(1);
   const problems = reconcileProblems(r);
   // Sorted heaviest first: on a vehicle map the crews are most of it, and a
@@ -393,7 +422,7 @@ for (let i = 0; i < Number(rounds); i++) {
   const unpaid = Object.entries(r.reconcile.uncredited).sort((a, b) => b[1] - a[1]);
   console.log(
     [
-      `${r.map} (difficulty ${r.difficulty})`,
+      `${r.map} (difficulty ${r.difficulty}, seed ${r.seed})`,
       `  world built in ${r.buildMs} ms`,
       `  round ran ${r.ticks} ticks = ${mins} min of game time in ${r.wallMs} ms of wall clock`,
       `           = ${(r.simSeconds / (r.wallMs / 1000)).toFixed(1)}x real time on one core`,
@@ -436,6 +465,8 @@ for (let i = 0; i < Number(rounds); i++) {
       `  flag captures during the round: ${r.captures}`,
       `  grenades detonated: ${r.blasts}`,
       `  molotovs lit: ${r.blazes}`,
+      `  fight:   ${r.fight.hash} over ${r.fight.events} deaths and awards ` +
+        `(the same seed must print the same hash)`,
     ].join("\n"),
   );
   // **A failed reconciliation is an EXIT CODE and not just a line**, so this

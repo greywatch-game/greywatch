@@ -28,7 +28,8 @@ export const profiling = {
    * The cost is `frames * PHASES * 8 bytes` for the two span arrays plus the
    * per-frame context, which at 3,000 x 26 is about 1.3 MB. Allocated once on
    * arming and never resized — see `FrameProfile` on why nothing here may
-   * allocate while it is recording.
+   * allocate while it is recording. The one ring that is not this size is a
+   * benchmark's, which is sized to its script (`bench` below).
    */
   frames: 3000,
 
@@ -194,4 +195,103 @@ export const profiling = {
    * few milliseconds during a settings toggle rather than anything in a frame.
    */
   heapProbeMb: 16,
+
+  /**
+   * The benchmark `?bench=<map>` plays (`bench/BenchScript.ts`): how long it
+   * holds each thing it looks at, and the fixed step it plays the round at.
+   *
+   * **Everything here is counted in FRAMES or in fixed steps, never in wall
+   * clock, and that is the whole of what makes two runs comparable.** The
+   * same frames are drawn in the same order on every device; only what each
+   * one COSTS differs. A script paced by seconds would show a phone fewer
+   * frames of the same path than a desktop and call the two the same run.
+   *
+   * The ring is sized to the script on arming (`BenchScript.frames`), so
+   * lengthening any of these lengthens the run and the memory together, and
+   * nothing is ever lapped out of a capture.
+   */
+  bench: {
+    /**
+     * The round's seed — `BABYLON_EXIT.md` X0.2's fixed seed, so the fight is
+     * the one that step proved reproduces. `?seed=` overrides it.
+     */
+    seed: 777,
+    /**
+     * The step every bench frame advances the world and every clock by,
+     * whatever the wall clock did. 1/60 s, the authority's tick, so a fight
+     * here and one under `npm run simulate` are the same arithmetic.
+     */
+    dt: 1 / 60,
+    /** Headings per vantage: the bank's pose turned through a full circle. */
+    headings: 8,
+    /**
+     * The settle on arriving somewhere — a vantage, or the path's start —
+     * before anything there is measured: the QUIET frames in a row that end
+     * it (`BenchScript.settles`). The shadow window re-renders, the irradiance
+     * volume re-traces its new window on its warm budget, and the first look
+     * at anything the warm-up did not reach compiles. Long, because the GPU's
+     * share of that surfaced 60-92 frames after the jump on the Windows box,
+     * as one frame that waited; the settle has to outlast it to see it.
+     */
+    arriveFrames: 120,
+    /** The settle after each turn of the camera, in quiet frames in a row. */
+    turnFrames: 12,
+    /**
+     * What a settle calls QUIET: a frame no more than this many times the
+     * fastest it has seen, nor this many milliseconds over it — whichever is
+     * looser, so a device whose frame swings by a few milliseconds is quiet.
+     */
+    quietFactor: 2.5,
+    quietSlackMs: 8,
+    /**
+     * The most frames a settle takes, quiet or not, as a multiple of its own
+     * length — 600 on arriving, 60 after a turn. The ring is sized as if every
+     * settle ran to it, so this is also the run's memory.
+     */
+    settleCap: 5,
+    /** Frames measured per heading, at the least — see `vantageFrames`. */
+    holdFrames: 36,
+    /**
+     * The fewest frames the VANTAGES are measured for between them, spread
+     * over however many a map has: a map with one stop holds each heading
+     * longer rather than measuring less. A GPU-bound frame, uncapped, arrives
+     * in BURSTS — the CPU runs ahead and then waits a few hundred milliseconds
+     * for the GPU, about every 1.3 s on Kurenai at 3440x1440 — and a window
+     * shorter than a few bursts catches none or one: Kurenai's single stop,
+     * 288 frames, moved 41% between three runs while its 1,440-frame path
+     * agreed to 0.4%. 1,152 is what Greyfen's four stops already came to.
+     */
+    vantageFrames: 1152,
+    /** Fixed steps of the camera path through the densest quarter. */
+    pathSeconds: 24,
+    /**
+     * The path's loop radius is the spread of the quarter's collider boxes,
+     * held between these two, in metres — so a village is circled at street
+     * scale and a 900 m town is not flown at airliner speed.
+     */
+    pathRadius: [25, 110],
+    /** Metres the path rides over whatever is under it — street or roof. */
+    pathClearance: 2.5,
+    /**
+     * The round before the measured fight, stepped `leadSteps` fixed steps a
+     * frame and NOT measured: on every map the first tens of seconds are bots
+     * running to flags, which is a frame with nobody fighting in it
+     * (`FINDINGS.md` 32's "the CLIENT frame was measured EMPTY"). It is the
+     * same steps as playing them one a frame, so the fight that follows is the
+     * fight the seed decides.
+     */
+    leadSeconds: 45,
+    leadSteps: 9,
+    /** Fixed steps of the measured fight, one a frame. */
+    fightSeconds: 45,
+    /**
+     * The spectator's chase camera over the bot it follows: metres back and
+     * up from the eye, pulled in off whatever solid is behind, and how fast its
+     * bearing follows the bot's look (per second, the frame-lerp idiom at the
+     * fixed step).
+     */
+    chaseBack: 3.5,
+    chaseUp: 1.1,
+    chaseTurn: 4,
+  },
 } as const;

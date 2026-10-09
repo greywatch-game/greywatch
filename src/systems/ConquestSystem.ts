@@ -17,6 +17,7 @@ import { clamp } from "../core/math";
 import type { Bot, BotZone } from "../entities/Bot";
 import type { Combatant, Team } from "../entities/Combatant";
 import type { ControlPointDef, GameMap, SpawnPointDef } from "../world/MapBuilder";
+import { STREAM, type Rand, type RoundRandom } from "./RoundRandom";
 
 /**
  * What one squad has been told to do. `defend` is a posture rather than a
@@ -82,6 +83,15 @@ export class ConquestSystem {
    */
   onNeutralised: (point: ControlPoint, by: Team) => void = () => {};
 
+  /**
+   * Which spawn a body takes and where inside it — the ROUND's stream
+   * (`RoundRandom`, `STREAM.spawn`), one for every body on both sides, since a
+   * spawn is the round's decision rather than a shooter's. Public for the
+   * other half of the same decision, `scatterSpawn`, which both simulations
+   * call with it.
+   */
+  readonly spawnRand: Rand;
+
   private spawns: SpawnPointDef[] = [];
   /**
    * The play square's diagonal, which is what the squad planner's distance
@@ -101,6 +111,10 @@ export class ConquestSystem {
    */
   private span = CONFIG.map.size * Math.SQRT2;
   private bleedT = 0;
+
+  constructor(random: RoundRandom) {
+    this.spawnRand = random.stream(STREAM.spawn);
+  }
 
   start(map: GameMap): void {
     this.points.length = 0;
@@ -246,12 +260,12 @@ export class ConquestSystem {
         );
       });
       const pool = frontline.length > 0 ? frontline : owned;
-      return pool[Math.floor(Math.random() * pool.length)];
+      return pool[Math.floor(this.spawnRand() * pool.length)];
     }
 
     const home = this.homeSpawnsFor(team);
     if (home.length === 0) return null;
-    return home[Math.floor(Math.random() * home.length)];
+    return home[Math.floor(this.spawnRand() * home.length)];
   }
 
   /**
@@ -413,19 +427,21 @@ function near(a: Vector3, b: Vector3, dist: number): boolean {
  * offline round in `Game.spawnPointFor` and the deploy screen, the authority
  * in `HeadlessGame.spawnPointFor` — and a body is never scattered again on
  * ARRIVAL, because a client handed the authority's position must put the body
- * exactly there (see `Game.spawnPlayer`). `Math.random()` is right on both
- * sides: this is not world-building, and the side that scatters is the side
- * that says where the body is.
+ * exactly there (see `Game.spawnPlayer`). The side that scatters is the side
+ * that says where the body is, and it draws from that side's round stream —
+ * `ConquestSystem.spawnRand`, which every caller passes — because where a body
+ * stands decides the fight it walks into.
  */
-export function scatterSpawn(pick: { pos: Vector3; yaw: number }): {
+export function scatterSpawn(
+  pick: { pos: Vector3; yaw: number },
+  rand: Rand,
+): {
   pos: Vector3;
   yaw: number;
 } {
   const s = CONFIG.conquest.spawnScatter;
   return {
-    pos: pick.pos.add(
-      new Vector3((Math.random() - 0.5) * s, 0, (Math.random() - 0.5) * s),
-    ),
+    pos: pick.pos.add(new Vector3((rand() - 0.5) * s, 0, (rand() - 0.5) * s)),
     yaw: pick.yaw,
   };
 }

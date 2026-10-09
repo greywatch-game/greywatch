@@ -73,6 +73,7 @@ import { CHECK_TOLERANCE, comparePngs } from "./diff.mjs";
 import {
   MAP_IDS,
   bootMap,
+  describeStack,
   freeze,
   installRound,
   launchClient,
@@ -102,20 +103,33 @@ const modePath = join(refDir, "mode.json");
 mkdirSync(refDir, { recursive: true });
 
 const mode = HEADED ? "headed" : "headless";
-if (CHECK && existsSync(modePath)) {
-  const banked = JSON.parse(readFileSync(modePath, "utf8")).mode;
-  if (banked !== mode) {
-    console.error(
-      `bank was taken ${banked}; re-run with ${banked === "headed" ? "--headed" : "no --headed"}.\n` +
-        "Headed and headless frames are not byte-identical — see the header.",
-    );
-    process.exit(2);
-  }
+const banked = CHECK && existsSync(modePath) ? JSON.parse(readFileSync(modePath, "utf8")) : null;
+if (banked && banked.mode !== mode) {
+  console.error(
+    `bank was taken ${banked.mode}; re-run with ${banked.mode === "headed" ? "--headed" : "no --headed"}.\n` +
+      "Headed and headless frames are not byte-identical — see the header.",
+  );
+  process.exit(2);
 }
 
 const sha = (b) => createHash("sha256").update(b).digest("hex");
 const vite = await startDevServer(root);
 const browser = await launchClient({ headed: HEADED });
+const stack = await describeStack(browser, vite.url);
+// **What the bank was taken ON, so the next red one can be told apart from a
+// browser or driver update in one read** — what `FINDINGS.md` 20 asked for
+// until X0.1 closed it. A check does not refuse a mismatch, as it does the
+// mode: a new Chromium may draw the same bytes, and only the grade can say. It
+// says which one moved instead. The settings are compared at the end, once the
+// first boot has said what they are.
+const STACK_KEYS = ["chromium", "playwright", "adapter", "gpuDriver", "settings"];
+const stackNotes = (keys = STACK_KEYS) =>
+  banked
+    ? keys.filter((k) => JSON.stringify(banked[k] ?? null) !== JSON.stringify(stack[k] ?? null)).map(
+        (k) => `note: ${k} was ${JSON.stringify(banked[k] ?? null)} when banked and is ${JSON.stringify(stack[k] ?? null)} now`,
+      )
+    : [];
+for (const n of stackNotes(STACK_KEYS.filter((k) => k !== "settings"))) console.log(n);
 // The differ decodes PNGs on a 2D canvas and wants no GPU, so it is a plain
 // headless shell rather than a second copy of the game's browser — and it is
 // opened once for the whole run rather than once per map.
@@ -138,6 +152,10 @@ for (const id of targets) {
   // holding the lid up and placing the camera by hand moves nothing at all.
   const { page, pageErrors } = await bootMap(browser, vite.url, id);
   await installRound(page);
+  // The settings every row is shot at unless it states its own: this
+  // machine's defaults, which are DEVICE-derived (`settings.ts`), and which
+  // the `post-*` rows are each one step away from.
+  stack.settings ??= await page.evaluate(() => ({ ...window.__celshock.settings }));
   console.log(`${id}`);
   for (const v of shots) {
     const label = `  ${v.id}`.padEnd(14);
@@ -156,7 +174,7 @@ for (const id of targets) {
     // the freeze pins are unaffected by how long this takes, which is the
     // point of pinning them. See `freeze`.
     await settle(page, CONVERGE_FRAMES);
-    await freeze(page, undefined, { windTime: v.wind ?? 0 });
+    await freeze(page, undefined, { windTime: v.wind ?? 0, turn: v.turn ?? 0 });
     await settle(page, SETTLE_FRAMES);
 
     const a = await page.screenshot({ type: "png", timeout: 120_000 });
@@ -211,11 +229,21 @@ for (const id of targets) {
   await page.close();
 }
 
-if (!CHECK) writeFileSync(modePath, JSON.stringify({ mode }, null, 2));
+// Only a FULL re-take may say what the bank was taken on: a run over some
+// maps leaves the rest of the frames as they were, taken on whatever was
+// recorded before it.
+if (!CHECK && !maps.length) writeFileSync(modePath, JSON.stringify({ mode, ...stack }, null, 2));
+else if (!CHECK && !existsSync(modePath)) {
+  writeFileSync(modePath, JSON.stringify({ mode, ...stack, partial: targets }, null, 2));
+}
 await browser.close();
 await decoder?.close();
 vite.stop();
 
+// Again at the end, where a red run's reader is looking, and now with the
+// settings the first boot reported.
+const notes = stackNotes();
+if (notes.length) console.log(["", ...notes].join("\n"));
 if (problems.length) {
   console.log("");
   for (const p of problems) console.log(`  ${p}`);

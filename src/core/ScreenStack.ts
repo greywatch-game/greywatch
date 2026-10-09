@@ -71,6 +71,14 @@
  * with F2, and leaving it always restarts the round rather than resuming,
  * because the systems that cache the `GameMap` cannot be handed a map that was
  * rebuilt underneath them.
+ *
+ * `bench` is the benchmark (`?bench=<map>`, `bench/BenchScript.ts`), and it is
+ * the other state outside the cycle: entered from `deploy` in place of the
+ * player, left for `menu` and never for anything in the round. The GAME plays
+ * it — the camera stands where the script says, and for the round at the end
+ * the world is stepped at a FIXED step with nobody in the player's slot — so
+ * nothing the player does reaches it but Escape, which stops it. It ships, and
+ * it is offline only.
  */
 export type StepState =
   | "menu"
@@ -79,7 +87,8 @@ export type StepState =
   | "playing"
   | "dying"
   | "roundover"
-  | "editor";
+  | "editor"
+  | "bench";
 
 /**
  * The states that are a SCREEN over another one. A lid is not a step in the
@@ -205,6 +214,10 @@ const SCREENS: Record<GameState, ScreenSpec> = {
   dying: { covers: null, holdsWorld: false, roundBehind: false, inRound: true },
   roundover: { covers: null, holdsWorld: false, roundBehind: false, inRound: false },
   editor: { covers: null, holdsWorld: false, roundBehind: false, inRound: false },
+  // A round is standing and the script is in it, so the board is owed; there
+  // is never a match behind it (offline only) and nothing may cover it — a
+  // pause over a benchmark would be frames of a pause card in its capture.
+  bench: { covers: null, holdsWorld: false, roundBehind: false, inRound: true },
 
   // The three states a round is in are exactly the three a pause may cover, so
   // a pause taken while waiting out a respawn returns to the deploy map rather

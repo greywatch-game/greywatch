@@ -64,6 +64,7 @@ import { easeStance, stanceCentre, stanceEye } from "./stance";
 import type { Combatant, Team } from "./Combatant";
 // Type-only, and erased — this file still knows nothing about a system.
 import type { DamageKind } from "../systems/CombatSystem";
+import { UNDRAWN, type Rand } from "../systems/RoundRandom";
 import { throwableCarried, type ThrowableId } from "./throwables";
 
 /**
@@ -449,13 +450,25 @@ export class Bot implements Combatant {
   private rand: () => number = mulberry32(1);
 
   /**
-   * Gives this bot its own deterministic stream. Called once by BattleSystem
-   * with the pool index, so every bot weaves and paces differently but the same
-   * way on every run.
+   * Gives this bot its own deterministic stream. Called by BattleSystem with
+   * a constant off the pool slot — when the pool is built and again at every
+   * `reset`, so every bot weaves and paces differently but the same way in
+   * every round, and a round does not inherit where the last one left it.
    */
   seedRandom(seed: number): void {
     this.rand = mulberry32(seed);
   }
+  /**
+   * The cone of every round this bot fires — the ROUND's stream for its slot
+   * (`RoundRandom`, `STREAM.botShot`), handed in by `BattleSystem.buildPool`
+   * and read by its `botFire`.
+   *
+   * Not `rand`, and the two must not merge: that one is the bot's movement
+   * personality on a constant seed, and a cone drawn from it would make where
+   * the bot walks next depend on how many rounds it has fired. `UNDRAWN`
+   * until the pool hands it one, which it does before the bot can shoot.
+   */
+  shotRand: Rand = UNDRAWN;
   /** Phase of this bot's lateral weave, so squadmates don't share a line. */
   private lanePhase = 0;
   /** Per-bot speed multiplier: nobody marches in lockstep. */

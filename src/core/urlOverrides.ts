@@ -1,7 +1,10 @@
 /**
  * urlOverrides.ts — The boot flags on the page's URL that override a display
  * setting for the whole session: `?gi=`, `?shadows=`, `?volumetrics=` and
- * `?nominimap`.
+ * `?nominimap` — and `?seed=`, which overrides no setting but the ROUND's
+ * seed (`systems/RoundRandom.ts`), for every round of the session — and
+ * `?bench=<map>`, which overrides the session itself: the page plays the
+ * benchmark on that map instead of offering a menu (`bench/BenchScript.ts`).
  * Owns: reading them once, validating each against its own table, the rule
  * that an override BEATS the setting it shadows, and the list of which ones a
  * capture must say were forced. Owns the URL-flag reader `FrameProfile` uses
@@ -20,6 +23,7 @@
  * a setting.
  */
 import { isVolumetricRung, type VolumetricRung } from "../shaders/Volumetrics";
+import { parseSeed } from "../systems/RoundRandom";
 import {
   type GiQuality,
   SHADOW_QUALITIES,
@@ -76,6 +80,23 @@ export class UrlOverrides {
    */
   readonly minimap: boolean;
   /**
+   * `?seed=<n>` — every round this session plays starts from this seed rather
+   * than a fresh one, which is how a round is played again: the seed is in
+   * the profiler capture and on a DEV build's console (`Game.buildRound`).
+   * Null when absent or not a seed. Not in `forced`, which is the GRAPHICS a
+   * capture was drawn with; a capture states its seed on its own.
+   */
+  readonly seed: number | null;
+  /**
+   * `?bench=<map>` — the page plays the benchmark on that map
+   * (`Game.bootBench`), and `?bench` bare plays it on the map the menu would
+   * have offered. Null when absent. The id is NOT validated here, because the
+   * map table is `Game`'s to read; an id that names no map is refused there,
+   * on the console, and the page boots to its menu. Not in `forced`: a
+   * benchmark's capture says it was one in `bench`, on its own.
+   */
+  readonly bench: string | null;
+  /**
    * Which of the above the URL set, by the name a capture files it under —
    * `graphics.forced`, so a report off a device nobody here owns says which of
    * its numbers were somebody's experiment rather than the player's choice.
@@ -95,6 +116,8 @@ export class UrlOverrides {
     this.volumetricsForced =
       volumetrics !== null && isVolumetricRung(volumetrics) ? volumetrics : null;
     this.minimap = !urlFlag("nominimap");
+    this.seed = parseSeed(urlParam("seed"));
+    this.bench = urlParam("bench");
     const forced: string[] = [];
     if (this.giForced) forced.push("gi");
     if (this.shadowsForced) forced.push("shadows");

@@ -25,7 +25,7 @@
  */
 import { CONFIG } from "../config";
 import { onePercentLow } from "./frameStats";
-import { PARENT_OF, PHASES, ROOTS, SLOTS, type Phase } from "./profilePhases";
+import { P, PARENT_OF, PHASES, ROOTS, SLOTS, type Phase } from "./profilePhases";
 
 /**
  * How much of a creation's define set a COMPACT report carries, in characters.
@@ -281,6 +281,72 @@ export interface HitchFrame {
  * one that reported the stored rung would be a confident wrong answer about the
  * very thing it was taken to compare. `forced` names the keys the URL decided.
  */
+/**
+ * A label a benchmark's rows may carry — pushed by `Game` from
+ * `BenchScript.segments`. `group` is what segments roll up into (every
+ * vantage's hold is `vantages`); null is a stretch that was recorded but is
+ * not a measurement, the settles and the round's lead-in.
+ */
+export interface ProfileSegment {
+  name: string;
+  group: string | null;
+}
+
+/**
+ * One labelled stretch of a benchmark, or one group of them — the figures a
+ * run is compared on. Milliseconds throughout.
+ *
+ * **Every figure is over the rows that carried the label, and the GPU's over
+ * the rows of those that got a reading** (`gpuSamples`), for `gpu.frame`'s
+ * reason. `tick` is the `frame` span — the game's own share — and `mean` is
+ * the WALL CLOCK, so the two read against each other exactly as they do in the
+ * phase table.
+ */
+export interface SegmentStat {
+  name: string;
+  group: string | null;
+  frames: number;
+  seconds: number;
+  fps: number;
+  mean: number;
+  p50: number;
+  p95: number;
+  p99: number;
+  max: number;
+  onePercentLow: number;
+  tick: number;
+  tickP95: number;
+  render: number;
+  drawCalls: number;
+  activeMeshes: number;
+  gpuFrame: number;
+  gpuSamples: number;
+}
+
+/**
+ * What a benchmark says about its own run (`?bench=<map>`), pushed by `Game`
+ * before the capture that ends it. See `docs/profiling.md`, "The benchmark".
+ */
+export interface BenchFacts {
+  /** Whether the script ran to its end: false is an Escape, or a round that ended early. */
+  completed: boolean;
+  /** Frames the script plans, which is what the ring was sized to. */
+  plannedFrames: number;
+  /** The fixed step every bench frame advanced the world by, in seconds. */
+  dt: number;
+  /** The vantages stood at, in order, deduplicated by position. */
+  vantages: string[];
+  /** The camera path's loop through the densest quarter. */
+  path: { x: number; z: number; radius: number };
+  /**
+   * The fight, as `FightHash` saw it: one hash over every award and death in
+   * order with the fixed step it landed on. **Two runs of one build, map and
+   * seed that print different hashes did not fight the same fight**, and
+   * their `fight` segments are not comparable.
+   */
+  fight: { hash: string; events: number; steps: number; roundEnded: boolean };
+}
+
 export interface ProfileGraphics {
   /** `Settings.renderScale` — a share of the panel's native resolution. */
   renderScale: number;
@@ -337,6 +403,14 @@ export interface ProfileReport {
   reason: string;
   /** The map the ring was recorded on, pushed by `Game`. */
   map: string;
+  /**
+   * The seed the round in the ring was started from (`RoundRandom`), pushed
+   * by `Game` — what `?seed=` takes to play that round again. Null where this
+   * client did not decide it: before a first round, and in a match, whose
+   * seed is the AUTHORITY's and is in the server's log. Absent before report
+   * version 12.
+   */
+  seed: number | null;
   device: {
     userAgent: string;
     devicePixelRatio: number;
@@ -360,6 +434,17 @@ export interface ProfileReport {
    * aggregates are a blend of two configurations.
    */
   graphics: (ProfileGraphics & { inForceSeconds: number }) | null;
+  /**
+   * The benchmark that recorded this ring, or null for a ring nobody scripted.
+   * Absent before report version 13.
+   */
+  bench: BenchFacts | null;
+  /**
+   * The ring's labelled stretches, in the order they were reached, and the
+   * same rows rolled up by group — null where no row carried a label. Absent
+   * before report version 13.
+   */
+  segments: { list: SegmentStat[]; groups: SegmentStat[] } | null;
   /**
    * Child phase → the span that contains it, straight from `PARENT_OF`.
    *
@@ -619,6 +704,11 @@ export interface ProfileReport {
      */
     pipelines: number[];
     modules: number[];
+    /**
+     * Which of `segments.list` each row was, as an index, or -1 for a row
+     * nobody labelled. Absent before report version 13.
+     */
+    segment: number[];
     phases: Partial<Record<Phase, number[]>>;
   };
 }
@@ -654,7 +744,7 @@ export interface LoafRecord {
  * reading is frozen.
  */
 export interface ProfileRing {
-  /** `CONFIG.profiling.frames` — how many rows the ring holds. */
+  /** How many rows the ring holds: `CONFIG.profiling.frames`, or a benchmark's own. */
   readonly capacity: number;
   readonly cursor: number;
   readonly filled: number;
@@ -672,6 +762,10 @@ export interface ProfileRing {
   readonly meshWalkMs: Float32Array;
   readonly rttMs: Float32Array;
   readonly particlesMs: Float32Array;
+  /** Per row: an index into `segments` plus one, 0 for none. */
+  readonly segmentAt: Uint8Array;
+  readonly segments: readonly ProfileSegment[];
+  readonly bench: BenchFacts | null;
   readonly heapMb: Float32Array | null;
   readonly gcAt: Uint8Array;
   readonly loafMs: Float32Array;
@@ -706,6 +800,7 @@ export interface ProfileRing {
   readonly grainMs: number;
   readonly overheadUs: number;
   readonly mapId: string;
+  readonly seed: number | null;
   readonly graphics: ProfileGraphics | null;
   readonly graphicsAt: number;
   readonly gpuRequested: boolean;
@@ -766,6 +861,7 @@ export function buildReport(
     gpuFrameMs: [],
     pipelines: [],
     modules: [],
+    segment: [],
     phases: {},
   };
   if (full) {
@@ -781,6 +877,7 @@ export function buildReport(
       series.gpuFrameMs.push(round(r.gpuFrameMs[i], 3));
       series.pipelines.push(r.madeRender[i] + r.madeCompute[i]);
       series.modules.push(r.madeModules[i]);
+      series.segment.push(r.segmentAt[i] - 1);
     }
   }
 
@@ -858,10 +955,18 @@ export function buildReport(
     // builder could be wrapped — with `createdOn`/`createdNear` on every
     // hitch and `pipelines`/`modules` in the series. Before it a first-use
     // compile stall could only be guessed at from a draw count ramping.
-    version: 11,
+    // 12: `seed` — the round's seed, so the round a capture was taken in can
+    // be played again (`?seed=`). Before it a round's outcomes were drawn
+    // from `Math.random` and no seed existed to record.
+    // 13: `bench`, `segments` and `series.segment` — a benchmark's own facts
+    // and every row labelled with what it was showing (`?bench=<map>`). Not a
+    // change to any existing field: a v12 capture reads the same, and simply
+    // has no labels.
+    version: 13,
     takenAt: new Date().toISOString(),
     reason,
     map: r.mapId,
+    seed: r.seed,
     tree: PARENT_OF,
     roots: [...ROOTS],
     device: deviceFacts(r),
@@ -872,6 +977,10 @@ export function buildReport(
           inForceSeconds: round((performance.now() - r.graphicsAt) / 1000, 1),
         }
       : null,
+    bench: r.bench
+      ? { ...r.bench, vantages: [...r.bench.vantages], path: { ...r.bench.path }, fight: { ...r.bench.fight } }
+      : null,
+    segments: segmentFacts(r, first, n, cap),
     clock: {
       grainMs: round(r.grainMs, 4),
       overheadUs: round(r.overheadUs, 3),
@@ -1047,6 +1156,104 @@ function creationFacts(
     callMs: round(callMs, 3),
     hitchesNear,
     recent,
+  };
+}
+
+/**
+ * The labelled stretches of the window, each and rolled up by group — see
+ * `ProfileReport.segments`. Null where no row in the window carried a label,
+ * which is every ring but a benchmark's.
+ */
+function segmentFacts(
+  r: ProfileRing,
+  first: number,
+  n: number,
+  cap: number,
+): ProfileReport["segments"] {
+  const labels = r.segments.length;
+  if (labels === 0) return null;
+  // Row lists per label, in ring order, then per group from the same rows.
+  const rows: number[][] = [];
+  for (let s = 0; s < labels; s++) rows.push([]);
+  for (let k = 0; k < n; k++) {
+    const i = (first + k) % cap;
+    const s = r.segmentAt[i];
+    if (s > 0 && s <= labels) rows[s - 1].push(i);
+  }
+  const list: SegmentStat[] = [];
+  const grouped = new Map<string, number[]>();
+  for (let s = 0; s < labels; s++) {
+    if (rows[s].length === 0) continue;
+    const seg = r.segments[s];
+    list.push(segmentStat(r, seg.name, seg.group, rows[s]));
+    if (seg.group === null) continue;
+    let into = grouped.get(seg.group);
+    if (!into) grouped.set(seg.group, (into = []));
+    for (const i of rows[s]) into.push(i);
+  }
+  if (list.length === 0) return null;
+  const groups: SegmentStat[] = [];
+  for (const [name, at] of grouped) groups.push(segmentStat(r, name, name, at));
+  return { list, groups };
+}
+
+/** One `SegmentStat` over the given ring rows. Capture-time only. */
+function segmentStat(
+  r: ProfileRing,
+  name: string,
+  group: string | null,
+  at: readonly number[],
+): SegmentStat {
+  const m = at.length;
+  const wall = new Float64Array(m);
+  const tick = new Float64Array(m);
+  let ticks = 0;
+  let render = 0;
+  let renders = 0;
+  let draws = 0;
+  let meshes = 0;
+  let gpu = 0;
+  let gpuN = 0;
+  for (let k = 0; k < m; k++) {
+    const i = at[k];
+    wall[k] = r.frameMs[i];
+    const f = i * SLOTS + P.frame;
+    if (r.entered[f] === 1) tick[ticks++] = r.durMs[f];
+    const g = i * SLOTS + P.render;
+    if (r.entered[g] === 1) {
+      render += r.durMs[g];
+      renders++;
+    }
+    draws += r.drawCalls[i];
+    meshes += r.activeMeshes[i];
+    if (r.gpuFrameMs[i] > 0) {
+      gpu += r.gpuFrameMs[i];
+      gpuN++;
+    }
+  }
+  const w = stats(wall, m);
+  let seconds = 0;
+  for (let k = 0; k < m; k++) seconds += wall[k];
+  const t = ticks > 0 ? stats(tick, ticks) : null;
+  return {
+    name,
+    group,
+    frames: m,
+    seconds: round(seconds / 1000, 2),
+    fps: w.mean > 0 ? round(1000 / w.mean, 1) : 0,
+    mean: round(w.mean),
+    p50: round(w.p50),
+    p95: round(w.p95),
+    p99: round(w.p99),
+    max: round(w.max),
+    onePercentLow: round(onePercentLow(Float64Array.from(wall).sort()), 1),
+    tick: t ? round(t.mean) : 0,
+    tickP95: t ? round(t.p95) : 0,
+    render: renders > 0 ? round(render / renders) : 0,
+    drawCalls: Math.round(draws / m),
+    activeMeshes: Math.round(meshes / m),
+    gpuFrame: gpuN > 0 ? round(gpu / gpuN, 3) : 0,
+    gpuSamples: gpuN,
   };
 }
 

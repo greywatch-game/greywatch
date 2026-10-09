@@ -72,11 +72,13 @@ you are on before you believe anything else in this section.
 
 - **The reference bank is NECESSARY AND NOT SUFFICIENT for a change to the
   candidate list, and it fails silently in the direction that matters.**
-  `placeVantage` disables every bot and disposes the capture zones before it
-  shoots, so a vantage holds no body, no blob shadow and often no hull —
-  exactly the things a culling change touches. A gate that deleted the player's
-  own VIEWMODEL passed `bank.mjs --check` byte-identical on all 21 vantages
-  (`FINDINGS.md` 39). What catches it is a screenshot pair taken in a LIVE
+  `placeVantage` hides every bot and the capture zones before it shoots, so a
+  vantage holds no body, no blob shadow and often no hull unless its row
+  POSES one — exactly the things a culling change touches. A gate that deleted
+  the player's own VIEWMODEL passed `bank.mjs --check` byte-identical on all
+  21 vantages (`FINDINGS.md` 39); since X0.1 the bank has rows that pose a
+  rig, each hull kind and the viewmodel and would catch THAT, but still none
+  where bodies move or a world is culled while it is walked. What catches it is a screenshot pair taken in a LIVE
   round at one frozen camera, and **the pair needs a CONTROL** — two shots under
   the SAME condition — because `freeze` does not quite still everything and the
   residual reads as 1-2% of pixels before the lever has done anything. Compare
@@ -1164,9 +1166,11 @@ is one machine's:
   `CONFIG` is `as const` to the typechecker and a plain object at runtime, so a
   probe can override any tunable from an env var and ablate one change at a
   time; and `git worktree add <tmp> HEAD` with `node_modules` symlinked in gives
-  a BEFORE build to run against the same probe. **Rounds are not deterministic**
-  — `ConquestSystem.spawnFor` picks with `Math.random()` — so take three rounds
-  a side and compare means; single rounds move by half the effect size.
+  a BEFORE build to run against the same probe. **A round is deterministic
+  from its seed** (`systems/RoundRandom.ts`) — pass one to
+  `game.startRound(def, difficulty, true, seed)` — but one seed is one round,
+  so to measure an EFFECT rather than a fight, take three seeds a side and
+  compare means; single rounds move by half the effect size.
 - Free a stuck vite port by PID from `ss -tlnp`. Never `pkill -f vite` — it
   matches the calling shell.
 - **Do not edit anything under `src/` while a script is driving the page.** Vite
@@ -1940,6 +1944,12 @@ is one machine's:
 - **`npm run simulate` is the fastest way to see the rules work at all** — a
   whole round with no clients and no rendering, in seconds of wall clock. It is
   not a balance oracle: sixteen bots is not eight bots and eight people.
+- **…and, given a seed, it is the oracle for "this change moved nothing in the
+  fight"**: `npm run simulate -- <map> 1 2 <seed>` plays two rounds from one
+  seed and prints a `fight` hash over the whole kill list; both rounds, and the
+  same command run before the change, must print the same one. A change that
+  moves a draw (a new outcome stream, a different order of draws) is expected
+  to change it, and says so.
 - **It is also where a server TIMING question is answered, and no browser can
   answer one.** The same run prints the per-tick distribution against the
   16.67 ms step, the ticks filed by how many bots were in contact, and where

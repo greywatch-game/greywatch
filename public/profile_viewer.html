@@ -400,6 +400,9 @@ table.compiles td.mono { font-family: ui-monospace, SFMono-Regular, "Cascadia Mo
 table.compiles td.defs { white-space: normal; min-width: 24ch; max-width: 70ch; overflow-wrap: anywhere; }
 table.compiles td.slow { color: var(--fault); font-weight: 600; }
 table.compiles td.empty { white-space: normal; color: var(--ink-3); padding: 16px; }
+table.compiles tr.group td { font-weight: 600; }
+table.compiles tr.dim td { color: var(--ink-3); }
+table.compiles td.num { text-align: right; font-variant-numeric: tabular-nums; }
 .hitch .detail { padding: 4px 16px 18px; background: var(--surface-2); }
 .hitch .where {
   display: flex; gap: 18px; flex-wrap: wrap; padding: 10px 0 14px;
@@ -512,6 +515,11 @@ table.compiles td.empty { white-space: normal; color: var(--ink-3); padding: 16p
     </div>
 
     <div class="stats" id="r-stats"></div>
+
+    <div class="panel" id="p-bench" hidden>
+      <header><h2>Benchmark</h2><div class="note" id="n-bench"></div></header>
+      <div class="body flush overflow"><table class="compiles" id="r-bench"></table></div>
+    </div>
 
     <div class="panel" id="p-frames">
       <header>
@@ -958,6 +966,9 @@ function renderReport(r) {
     ["window", fmt(r.window.seconds, 2) + " s"],
     ["taken", (r.takenAt || "").replace("T", " ").replace(/\..*$/, "")],
   ];
+  /* The round's seed (report version 12), which `?seed=` takes to play the
+     round again. Null in a match and before a first round — nothing to say. */
+  if (r.seed != null) bits.push(["seed", String(r.seed)]);
   for (const [k, v] of bits) {
     const d = el("div");
     if (k) d.appendChild(el("b", null, k + " "));
@@ -1164,6 +1175,7 @@ function renderReport(r) {
      first, as the capture lists them; the slow frame each one sat on is its
      wall clock, so a creation on a 90 ms frame reads as one. */
   renderCompiles(r.pipelines, r.frame.hitchThresholdMs);
+  renderBench(r);
 
   /* device */
   const dv = $("r-device"); dv.innerHTML = "";
@@ -1249,6 +1261,48 @@ function renderCompiles(pl, bar) {
     tr.appendChild(df);
     table.appendChild(tr);
   }
+}
+
+/* A benchmark's run (report version 13, `?bench=<map>`): the three groups a
+   run is compared on, then every labelled stretch in the order it was played.
+   The settles and the lead-in are recorded and are not measurements, so they
+   are listed dimmed. Absent on every other capture. */
+function renderBench(r) {
+  const panel = $("p-bench"), table = $("r-bench");
+  table.innerHTML = "";
+  const seg = r.segments || null, b = r.bench || null;
+  if (!seg && !b) { panel.hidden = true; return; }
+  panel.hidden = false;
+  const notes = [];
+  if (b) {
+    notes.push(b.completed ? "ran to its end" : "STOPPED — the fight is short");
+    notes.push("fight " + b.fight.hash + " · " + b.fight.events + " events over " +
+      b.fight.steps + " steps" + (b.fight.roundEnded ? " · the round ended" : ""));
+    notes.push("step " + fmt(b.dt * 1000, 2) + " ms");
+  }
+  $("n-bench").textContent = notes.join(" · ");
+  if (!seg) return;
+  const head = el("tr");
+  for (const k of ["", "frames", "fps", "mean", "p95", "1% low", "tick", "render", "draws", "gpu"]) {
+    head.appendChild(el("th", null, k));
+  }
+  table.appendChild(head);
+  const row = (s, cls) => {
+    const tr = el("tr", cls);
+    tr.appendChild(el("td", null, s.name));
+    tr.appendChild(el("td", "num", String(s.frames)));
+    tr.appendChild(el("td", "num", fmt(s.fps, 1)));
+    tr.appendChild(el("td", "num", fmt(s.mean, 2) + " ms"));
+    tr.appendChild(el("td", "num", fmt(s.p95, 2) + " ms"));
+    tr.appendChild(el("td", "num", fmt(s.onePercentLow, 1) + " ms"));
+    tr.appendChild(el("td", "num", fmt(s.tick, 2) + " ms"));
+    tr.appendChild(el("td", "num", fmt(s.render, 2) + " ms"));
+    tr.appendChild(el("td", "num", String(s.drawCalls)));
+    tr.appendChild(el("td", "num", s.gpuSamples ? fmt(s.gpuFrame, 2) + " ms" : "—"));
+    table.appendChild(tr);
+  };
+  for (const g of seg.groups || []) row(g, "group");
+  for (const s of seg.list || []) row(s, s.group === null ? "dim" : null);
 }
 
 function showFrozenHeap(mem) {

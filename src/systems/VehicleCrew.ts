@@ -132,6 +132,7 @@ import {
 import type { GameMap } from "../world/MapBuilder";
 import type { NavGrid } from "../world/NavGrid";
 import { fly, route } from "./crewPilot";
+import { STREAM, type Rand, type RoundRandom } from "./RoundRandom";
 
 /** What a crew is allowed to know about the rest of the game. */
 export interface CrewCtx {
@@ -339,7 +340,20 @@ export class VehicleCrew {
    */
   onCrewLost: (bot: Bot, tank: Vehicle) => void = () => {};
 
-  constructor(private ctx: CrewCtx) {}
+  /**
+   * Every crew's ranging error, drawn in `drawLay` — the ROUND's stream
+   * (`RoundRandom`, `STREAM.crewLay`), one for the system: a lay is drawn at an
+   * acquisition and after a round, both on the simulation's own clock, so the
+   * order crews draw in is the order the simulation steps them.
+   */
+  private readonly layRand: Rand;
+
+  constructor(
+    private ctx: CrewCtx,
+    random: RoundRandom,
+  ) {
+    this.layRand = random.stream(STREAM.crewLay);
+  }
 
   /**
    * The map's nav graph, for the bearing half of the drive. Null on a map with
@@ -764,9 +778,9 @@ export class VehicleCrew {
     const d = Vector3.Distance(crew.tank.center, target.position);
     const spread = c.scatter * Math.min(1, d / c.engageRange);
     crew.aimAt.set(
-      (Math.random() * 2 - 1) * spread,
-      (Math.random() * 2 - 1) * spread * 0.4,
-      (Math.random() * 2 - 1) * spread,
+      (this.layRand() * 2 - 1) * spread,
+      (this.layRand() * 2 - 1) * spread * 0.4,
+      (this.layRand() * 2 - 1) * spread,
     );
   }
 

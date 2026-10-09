@@ -32,6 +32,14 @@
  * of its pixels between consecutive grabs, and with everything but the wind it
  * moves 99.8% of them across a second, because a gust crossed the canopy.
  *
+ * **Then two more clocks arrived and the bank stopped reproducing ANY frame**
+ * until `BABYLON_EXIT.md` X0.1: the irradiance volume re-traces a rolling
+ * slice of itself every frame and converges over sweeps, not frames, and the
+ * cloud ring's turn replaced the two scrolling textures the sky used to have.
+ * With those and a storm's clock it is TEN — see `FREEZE_SET` and `freeze` —
+ * and all of them are re-asked each time something new starts moving by
+ * itself.
+ *
  * **Six reach zero inside ONE process and not across two**, which is the floor
  * that actually matters — a bank is compared against by a later run. The two
  * in the way were a lantern's flicker PHASE, drawn from `Math.random()` per
@@ -83,6 +91,8 @@ export const HEIGHT = 1080;
 /**
  * Everything that moves in a state that simulates nothing. See the header —
  * this list is the freeze, and shortening it does not reach a zero floor.
+ * **`gi` must stay after everything it traces and before `reflections`**,
+ * which is the order `freeze` applies them in whatever order this lists them.
  */
 export const FREEZE_SET = [
   "post",
@@ -92,8 +102,19 @@ export const FREEZE_SET = [
   "wind",
   "particles",
   "lights",
+  "lightning",
+  "gi",
   "reflections",
 ];
+
+/**
+ * Full sweeps of the irradiance volume traced, at the warm budget, before it is
+ * held. See `freeze`: the volume's only motion in a still world is the
+ * multi-bounce iteration, which shrinks by the albedo every sweep, so this is
+ * how far below a half-float's step the history is taken before it is
+ * photographed. Measured: 8 reaches the cross-process floor on every map.
+ */
+export const GI_SWEEPS = 8;
 
 /** Map ids in the order the shipped registry states them. */
 export const MAP_IDS = MAPS.map((m) => m.id);
@@ -212,35 +233,130 @@ export function waitUntilDrawn(page, timeoutMs = 120_000) {
 }
 
 /**
- * Stands the camera at a map's committed vantage and pushes what `deploy` does
- * not push for itself.
+ * Stands the camera at a vantage, poses whatever the row asks to have in front
+ * of it, and pushes what `deploy` does not push for itself.
  *
- * The vantage is `src/ui/mapShots.ts`'s, which is the table the MENU reads, so
- * a reference frame and a menu backdrop cannot come to hold two ideas of where
- * the camera stands. `pos.y` is height above the SURFACE — upper envelope,
- * because that is the floor as drawn.
+ * The menu vantage is `src/ui/mapShots.ts`'s, which is the table the MENU
+ * reads, so a reference frame and a menu backdrop cannot come to hold two
+ * ideas of where the camera stands; the rest are `vantages.mjs`'s (the table
+ * is `src/bench/vantages.ts`, whose header lists the subjects a row can ask
+ * for). `pos.y` is height above the
+ * SURFACE — upper envelope, because that is the floor as drawn.
  */
 export function placeVantage(page, vantage) {
   return page.evaluate(async (v) => {
     const g = window.__celshock;
+    // **Every subject a row can ask for is put away first, every time**, so a
+    // vantage's frame is a function of its own row and never of the one shot
+    // before it in the same boot.
     // The place, not the fight: no bodies, no rings, no beacons.
     for (const bot of g.battle.bots) bot.rig.root.setEnabled(false);
-    g.zones.dispose();
+    // HIDDEN rather than disposed, which is what a row asking for them needs:
+    // a boot shoots the whole table in order and a disposed ring is gone for
+    // every row after the one that took it.
+    for (const zone of g.zones.zones) {
+      for (const m of zone.meshes) m.setEnabled(Boolean(v.zones));
+      zone.flag.setVisible(Boolean(v.zones));
+    }
+    g.grenades.fx?.reset();
+    g.player.view.setVisible(false);
+    // The settings a row overrode go back to what the boot chose — this
+    // machine's defaults, recorded in `mode.json` beside the browser — before
+    // this row states its own. Recorded ONCE, on the first row that touches
+    // one, for `freeze`'s stash's reason.
+    window.__refSettings ??= { ...g.settings };
+    for (const [k, val] of Object.entries(window.__refSettings)) {
+      if (g.settings[k] !== val) g.setSetting(k, val);
+    }
+    for (const [k, val] of Object.entries(v.settings ?? {})) g.setSetting(k, val);
+
     const cam = g.cameraSys.camera;
     const Vec3 = cam.position.constructor;
     const [x, above, z] = v.pos;
     cam.position.set(x, g.map.terrain.surfaceAt(x, z, true) + above, z);
-    cam.setTarget(new Vec3(...v.target));
-    if (v.fov) cam.fov = (v.fov * Math.PI) / 180;
+    const target = new Vec3(...v.target);
+    cam.setTarget(target);
+    // The game's own hip field unless the row states one, every row: a row's
+    // `fov` used to stay on the camera for every row shot after it.
+    window.__refFov ??= cam.fov;
+    cam.fov = v.fov ? (v.fov * Math.PI) / 180 : window.__refFov;
     // The motion blur pass reprojects against these two, and a camera that
     // teleported without them smears the first frames it stands still for.
     g.cameraSys.yaw = cam.rotation.y;
     g.cameraSys.pitch = cam.rotation.x;
-    // The eye the cel shader fogs against and the light slots — neither of
-    // which `deploy` pushes for itself, so a village that has never been
-    // played in has its windows dark.
+    // The eye the cel shader fogs against — which `deploy` does not push for
+    // itself, so a village that has never been played in has its windows dark.
     g.mats.updateCamera(cam.position);
-    g.lighting.update(0.05, cam.position, g.mats);
+
+    // A soldier, stood on the floor and posed by the function `Bot` poses it
+    // with, so the frame is the rig's own geometry rather than wherever the
+    // install's FSM happened to leave its joints. One bot per entry, from the
+    // front of the roster — they are hidden again by the next row.
+    if (v.rigs) {
+      const soldier = await import("/src/entities/SoldierModel.ts");
+      v.rigs.forEach((r, i) => {
+        const rig = g.battle.bots[i].rig;
+        soldier.resetSoldierPose(rig);
+        soldier.animateSoldier(rig, { ...soldier.REST_POSE, ...(r.pose ?? {}) });
+        const [rx, rz] = r.at;
+        rig.root.position.set(rx, g.map.terrain.surfaceAt(rx, rz, true) + rig.centerHeight, rz);
+        rig.root.rotation.y = r.yaw ?? 0;
+        rig.root.setEnabled(true);
+      });
+    }
+
+    // **The camera-dependent passes are placed at the vantage**, by the same
+    // tail the editor's free camera and the building card's warm-up use, at
+    // dt 0 so nothing is stepped: the world's two cascades, the bodies' map,
+    // the lamps' atlas and their slots, the water and the grass. Without it
+    // they stay wherever the install left them, which on a big map is
+    // hundreds of metres from the frame — and a bank that cannot see the
+    // shadow window cannot check it. Focus as `updateCameraAndLighting` puts
+    // it: ahead of the eye along the view.
+    const focus = target.subtract(cam.position).normalize().scaleInPlace(8).addInPlace(cam.position);
+    g.updateSceneForCamera(0, focus, null, [], g.battle.bots);
+
+    // A blast in the air: the real `BlastFx` raised at a point and aged by
+    // a fixed number of fixed steps, so it is posed in flight the same way
+    // every run. Its layout is drawn from `Math.random`, which is seeded for
+    // the length of the pose and put back — the GAME's draw is not touched.
+    if (v.blast && g.grenades.fx) {
+      const fx = g.grenades.fx;
+      const [bx, bz] = v.blast.at;
+      const at = new Vec3(bx, g.map.terrain.surfaceAt(bx, bz, true), bz);
+      const keep = Math.random;
+      let s = 0x5eed1 >>> 0;
+      Math.random = () => {
+        s = (s + 0x6d2b79f5) >>> 0;
+        let t = s;
+        t = Math.imul(t ^ (t >>> 15), t | 1);
+        t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+        return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+      };
+      try {
+        fx.blast(at, v.blast.power ?? 1, g.grenades.probeGround(at));
+        const steps = Math.round((v.blast.age ?? 0.5) * 60);
+        for (let i = 0; i < steps; i++) fx.update(1 / 60);
+      } finally {
+        Math.random = keep;
+      }
+    }
+
+    // The player's own weapon, on the camera as it is in a round: fitted,
+    // shown, and posed by `ViewModel.update` from rest through enough fixed
+    // steps for every spring in it to settle, hip or aimed. An aimed frame
+    // takes the optic's own field as well, which is the picture the sight is
+    // FOR.
+    if (v.view) {
+      const view = g.player.view;
+      view.setWeapon(v.view.weapon);
+      view.setSight(v.view.sight);
+      view.reset();
+      view.setVisible(true);
+      const p = { ...g.player.viewParams, adsBlend: v.view.aimed ? 1 : 0 };
+      for (let i = 0; i < 240; i++) view.update(1 / 60, p);
+      if (v.view.aimed) cam.fov = view.sight.fovAds;
+    }
   }, vantage);
 }
 
@@ -285,13 +401,15 @@ export function placeVantage(page, vantage) {
  * safe and re-stashes nothing: the first stash is the one kept, so a second
  * freeze cannot record its own no-ops as the real methods.
  */
-export function freeze(page, set = FREEZE_SET, { windTime = 0 } = {}) {
-  return page.evaluate(([f, wind]) => {
+export function freeze(page, set = FREEZE_SET, { windTime = 0, turn = 0 } = {}) {
+  return page.evaluate(async ([f, wind, blurTurn, sweeps]) => {
     const g = window.__celshock;
     // The real updaters, recorded ONCE. See `thaw`.
     window.__refThaw ??= {
       post: g.post.update,
       sky: g.sky.update,
+      lightning: g.lightning.step,
+      gi: g.gi.update,
       // The shafts are `Volumetrics` now and the field is NULL when the player
       // has them off, so this records the instance beside the method: the pass
       // is REBUILT on a rung change, and a thaw that assigned a stashed method
@@ -307,9 +425,19 @@ export function freeze(page, set = FREEZE_SET, { windTime = 0 } = {}) {
       g.post.update = () => {};
     }
     if (f.includes("sky")) {
-      // The decks scroll azimuthally off their own speeds; the offset is the
-      // phase, and it is the only state `Sky.update` carries.
-      for (const tex of g.sky.cloudTextures ?? []) tex.uOffset = 0;
+      // **The cloud ring's TURN is the sky's clock** — `Sky.update`
+      // accumulates it from boot offline, and the clouds' shadow on the ground
+      // is stepped off it — so it is a constant like the others, pushed once
+      // through the real updater before it is halted. The shadow's fields are
+      // re-primed at that turn rather than left mid-crossfade, and the lumps
+      // re-sorted for it. (This line used to zero two cloud textures' scroll
+      // offsets, which no longer exist: the clouds became a ring of masses
+      // standing in the world, the bank was not re-taken, and the turn went
+      // unpinned.)
+      g.sky.turn = 0;
+      g.sky.shadowPrimed = false;
+      g.sky.sortedTurn = Infinity;
+      window.__refThaw.sky.call(g.sky, 0, g.cameraSys.camera.position, null);
       g.sky.update = () => {};
     }
     // Belt and braces rather than a clock: `Volumetrics.update` is a pure read
@@ -318,7 +446,20 @@ export function freeze(page, set = FREEZE_SET, { windTime = 0 } = {}) {
     // `tick` runs", and a pass that is exempt today is one somebody gives a
     // clock to tomorrow.
     if (f.includes("shafts") && g.volumetrics) g.volumetrics.update = () => {};
-    if (f.includes("blur")) g.motionBlur.update = () => {};
+    if (f.includes("blur")) {
+      // A row may ask for the blur IN FLIGHT: the real updater shown the aim
+      // `turn` radians to the left and then where it is, which is one frame of
+      // a head turning at that rate, and then held — so the pass's matrix is
+      // a function of the row and not of a camera nobody can make move
+      // between two grabs. At 0 it is held at rest, which is inert.
+      if (blurTurn) {
+        const yaw = g.cameraSys.aimYaw;
+        const pitch = g.cameraSys.aimPitch;
+        window.__refThaw.blur.call(g.motionBlur, yaw - blurTurn, pitch, 1 / 60);
+        window.__refThaw.blur.call(g.motionBlur, yaw, pitch, 1 / 60);
+      }
+      g.motionBlur.update = () => {};
+    }
     if (f.includes("wind")) {
       // Assigned and then pushed through the real updater, because the clock
       // lives on the factory and the value lives on every material in its
@@ -370,6 +511,47 @@ export function freeze(page, set = FREEZE_SET, { windTime = 0 } = {}) {
       // Pushed at dt = 0 so the clock stays where it was just put.
       g.lighting.update(0, g.cameraSys.camera.position, g.mats);
     }
+    if (f.includes("lightning")) {
+      // A storm's clock runs in `deploy` — `worldHeld` is false there offline,
+      // since nothing is behind the card to hold — so a strike could land
+      // between two grabs. Held with NO strike in the air rather than at a
+      // constant time, because a frame lit by a flash is a frame of one
+      // sixtieth of a second nobody else can reproduce at a different phase.
+      g.lightning.active = false;
+      g.lightning.flash = 0;
+      g.lightning.step = () => {};
+    }
+    if (f.includes("gi") && g.gi.tier) {
+      // **The irradiance volume re-traces a rolling slice of itself every
+      // frame, and that was the clock nobody had pinned** — what stopped the
+      // bank reproducing any frame at all until `BABYLON_EXIT.md` X0.1. Its
+      // ray set is fixed, so a still world converges to a fixed point; but the
+      // multi-bounce term gets there a factor of the albedo per SWEEP, a sweep
+      // is ~72 frames at the steady budget, and a frame shot thirty-six frames
+      // after a teleport was photographed half way through one: 7% of
+      // Greyfen's pixels, up to 78/255, between two consecutive grabs.
+      // So the volume is re-swept at its WARM budget from a cursor of zero,
+      // `GI_SWEEPS` times — after everything it traces has been pinned, so it
+      // converges onto the frame being photographed — and then held. A
+      // converged history is a function of the world and not of how it got
+      // there, which is what makes it the same across processes.
+      const gi = g.gi;
+      const total = gi.tier.columns * gi.tier.columns * gi.tier.layers;
+      gi.cursor = 0;
+      gi.warmFrames = gi.sweepFrames(gi.tier, total) * sweeps;
+      const cap = gi.warmFrames * 4 + 120;
+      let frames = 0;
+      while (gi.warmFrames > 0) {
+        if (++frames > cap) throw new Error("the irradiance volume never finished its sweeps");
+        await new Promise((res) => {
+          const o = g.scene.onAfterRenderObservable.add(() => {
+            g.scene.onAfterRenderObservable.remove(o);
+            res();
+          });
+        });
+      }
+      gi.update = () => {};
+    }
     if (f.includes("reflections")) {
       // **A cube probe is refresh-ONCE, and it was baked before any of this
       // was pinned** — in the frame after `installMap`, with the grass and the
@@ -387,7 +569,7 @@ export function freeze(page, set = FREEZE_SET, { windTime = 0 } = {}) {
       for (const p of g.reflections.probes ?? []) p.cubeTexture.resetRefreshCounter();
       for (const p of g.reflections.waterProbes ?? []) p.cubeTexture.resetRefreshCounter();
     }
-  }, [set, windTime]);
+  }, [set, windTime, turn, GI_SWEEPS]);
 }
 
 /**
@@ -405,6 +587,8 @@ export function thaw(page) {
     const g = window.__celshock;
     g.post.update = s.post;
     g.sky.update = s.sky;
+    g.lightning.step = s.lightning;
+    g.gi.update = s.gi;
     // Only onto the instance it was taken from — see the stash.
     if (s.shafts && g.volumetrics === s.shafts.on) {
       g.volumetrics.update = s.shafts.fn;
@@ -447,6 +631,53 @@ export async function vantages(browser, url) {
   });
   await page.close();
   return Object.fromEntries(rows);
+}
+
+/**
+ * What a picture taken here was taken ON: the Chromium build, the Playwright
+ * that drove it, the adapter WebGPU handed out, and the GPU driver where the
+ * machine will say. `bank.mjs` writes it into `ref/mode.json` beside the mode,
+ * so a bank that goes red after an update says which update.
+ *
+ * The adapter is asked on the dev server's origin, because `navigator.gpu` is
+ * a secure-context property and `about:blank` has none (`VERIFYING.md`). The
+ * driver is asked of `nvidia-smi`, the only vendor tool any machine here has
+ * had, and is null where it is absent — a Chromebook's SwiftShader has no
+ * driver to name, and the adapter row already says so.
+ */
+export async function describeStack(browser, url) {
+  const { createRequire } = await import("node:module");
+  const { execFileSync } = await import("node:child_process");
+  const require = createRequire(import.meta.url);
+  const page = await browser.newPage();
+  await page.goto(url, { waitUntil: "domcontentloaded" });
+  const adapter = await page.evaluate(async () => {
+    const a = await navigator.gpu?.requestAdapter();
+    if (!a) return null;
+    const i = a.info ?? {};
+    return {
+      vendor: i.vendor ?? "",
+      architecture: i.architecture ?? "",
+      device: i.device ?? "",
+      description: i.description ?? "",
+    };
+  });
+  await page.close();
+  let gpuDriver = null;
+  try {
+    gpuDriver = execFileSync("nvidia-smi", ["--query-gpu=name,driver_version", "--format=csv,noheader"], {
+      encoding: "utf8",
+      stdio: ["ignore", "pipe", "ignore"],
+    }).trim();
+  } catch {
+    // No such tool on this machine: see the doc comment.
+  }
+  return {
+    chromium: browser.version(),
+    playwright: require("playwright/package.json").version,
+    adapter,
+    gpuDriver,
+  };
 }
 
 /** Frames per second over a wall-clock window, measured off the scene's own counter. */

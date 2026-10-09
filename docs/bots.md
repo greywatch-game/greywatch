@@ -665,3 +665,15 @@ generator, because an elite squad and a green squad is something a player can re
 where salt-and-pepper skill inside a squad is noise. Difficulty tiers slide the
 distribution's centre and hold its width, so every tier still contains aces and
 rookies.
+
+**A bot holds TWO random streams, and only one of them is the round's.** Its
+movement personality — the weave, the pace, the grenade timing, everything
+`Bot.rand` decides — is on a CONSTANT seed off its pool slot, deliberately, and
+`BattleSystem.reset` restarts it on that same constant every round, so a round
+never walks on from where the last one stopped drawing. Where its ROUNDS go is
+`Bot.shotRand`, the round's stream for its slot (`systems/RoundRandom.ts`,
+`STREAM.botShot`), handed in by `buildPool`. **The two must not merge**: a cone
+drawn from the movement stream would make where a bot walks next depend on how
+many rounds it has fired. Whether the movement stream should take the round's
+seed too is an open game-feel question (`BABYLON_EXIT.md`, "Decisions that are
+yours"); the skill draw stays constant regardless, or balance is chance.
