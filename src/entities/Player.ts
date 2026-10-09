@@ -129,6 +129,7 @@ import type { Combatant, Team } from "./Combatant";
 import { HealthRegen } from "./HealthRegen";
 import { easeStance, stanceCentre, stanceEye } from "./stance";
 import type { DamageKind, ShotOptions } from "../systems/CombatSystem";
+import { UNDRAWN, type Rand } from "../systems/RoundRandom";
 
 /**
  * The height of the highest MOVING solid surface a body standing at `(x, z)`
@@ -609,6 +610,16 @@ export class Player implements Combatant {
    * thing that can be forgotten.
    */
   private driftSweep = 1;
+  /**
+   * Everything random about where this player's rounds go — the recoil's
+   * sweep and drift here, and the spread cone and the flinch `Game` draws with
+   * it. The ROUND's stream (`RoundRandom`, `STREAM.player`), handed in by
+   * `Game` at construction; `UNDRAWN` until then.
+   *
+   * The casings, the flash and every other picture of a shot stay on
+   * `Math.random`: nothing about them reaches where a round goes.
+   */
+  shotRand: Rand = UNDRAWN;
   /**
    * How far into the last frame the round `tryShot` just fired was actually
    * DUE, 0..dt — the debt `tryShot` carries, kept a second time because the
@@ -2100,12 +2111,12 @@ export class Player implements Combatant {
     // string rather than an independent draw per round (`sweepDrift` says
     // why). The sweep's direction is the only thing drawn per STRING; the
     // round's own noise is drawn with it, and both are handed in.
-    if (this.stringShots === 1) this.driftSweep = Math.random() < 0.5 ? 1 : -1;
+    if (this.stringShots === 1) this.driftSweep = this.shotRand() < 0.5 ? 1 : -1;
     this.kickDrift = sweepDrift(
       this.stringShots,
       this.driftSweep,
       this.weapon.yawBias,
-      Math.random() * 2 - 1,
+      this.shotRand() * 2 - 1,
     );
     // The weapon takes a velocity, not a displacement: see `kick`. It
     // ACCUMULATES on a weapon still coming home, which is the whole reason a

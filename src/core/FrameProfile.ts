@@ -576,6 +576,8 @@ export class FrameProfile {
 
   /** Which map the ring holds. Pushed by `Game`, since nothing here may ask. */
   private mapId = "?";
+  /** The round's seed, pushed by `Game` like the map. See `ProfileReport.seed`. */
+  private seed: number | null = null;
   /** The graphics in force, and since when. Pushed by `Game` like the map. */
   private graphics: ProfileGraphics | null = null;
   private graphicsAt = 0;
@@ -607,6 +609,14 @@ export class FrameProfile {
   /** Which map the ring is recording. Set by `Game.installMap`. */
   setMap(id: string): void {
     this.mapId = id;
+  }
+
+  /**
+   * Which round seed the ring is recording, or null where this client did not
+   * decide one. Set by `Game.buildRound`.
+   */
+  setSeed(seed: number | null): void {
+    this.seed = seed;
   }
 
   /**
@@ -1382,6 +1392,7 @@ export class FrameProfile {
       grainMs: this.grainMs,
       overheadUs: this.overheadUs,
       mapId: this.mapId,
+      seed: this.seed,
       graphics: this.graphics,
       graphicsAt: this.graphicsAt,
       gpuRequested: this.gpuRequested,

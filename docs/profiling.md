@@ -830,6 +830,14 @@ details:
   `sameGraphics` and the viewer's `Graphics` row, or captures go on describing
   a configuration that no longer names everything the frame paid for.
 
+**From report version 12 a capture states the round's SEED** (`seed`, pushed
+by `Game.buildRound` through `FrameProfile.setSeed`), which is every outcome in
+an offline round (`systems/RoundRandom.ts`): reopen the game with `?seed=<n>`
+and the same map, and the round in the capture is fought again. It is null
+before a first round and in a match, whose seed is the AUTHORITY's and is in
+the server's log (`round started on <map>, seed <n>`). The viewer prints it
+beside `taken`.
+
 ---
 
 ## Reading one: `/profile_viewer.html`

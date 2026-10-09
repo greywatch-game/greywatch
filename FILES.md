@@ -47,7 +47,9 @@ server/               # The authoritative match server. Node, NullEngine, no
   simulate.ts         #   `npm run simulate`: a whole round, headless, no clients
                       #   — and the instrument for the TICK, which is the only
                       #   budget this process has. Times every step, files them
-                      #   by bots in contact, and names the spikes
+                      #   by bots in contact, and names the spikes. Takes a
+                      #   round SEED (4th argument) and prints `fight`, a hash
+                      #   of the kill list the same seed must reproduce
   parity.ts           #   Fingerprint dump for `npm run parity`
 scripts/                      # Node tooling, run by hand or by `npm run build`,
                               #   never shipped. Plain .mjs outside both
@@ -417,7 +419,9 @@ src/
                         #   (?gi= ?shadows= ?volumetrics= ?nominimap), read
                         #   ONCE and resolved against the setting Game hands
                         #   in; the `forced` list a capture files. Also the
-                        #   URL-flag reader (?profile, ?gpu). Applies nothing
+                        #   URL-flag reader (?profile, ?gpu), and ?seed= — the
+                        #   round seed every round of the session plays from.
+                        #   Applies nothing
     shadowWindow.ts     # Where a directional shadow camera STANDS, and the
                         #   texel snap that stops its edges crawling. Both maps
                         #   place themselves with it — ShadowSystem's and
@@ -732,6 +736,11 @@ src/
                         #   HeadlessGame on the authority), and `awardKill` and
                         #   `awardZone` are the one place each that a payout's
                         #   shape is decided — both sides call the same two
+    RoundRandom.ts      # The ROUND's seed and every outcome stream drawn from
+                        #   it (the cones, the spawns, a crew's lay), one per
+                        #   shooter, reseeded in place once a round by each
+                        #   simulation. Not a system — reaches nothing. Also
+                        #   `freshSeed`, `parseSeed` and `UNDRAWN`
     killRules.ts        # `settleKill`: the killer's row, then the victim's door
                         #   if a bot fell. Every door onto a kill, both sides,
                         #   goes through it, against each side's `KillLedger`.

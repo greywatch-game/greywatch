@@ -337,6 +337,14 @@ export interface ProfileReport {
   reason: string;
   /** The map the ring was recorded on, pushed by `Game`. */
   map: string;
+  /**
+   * The seed the round in the ring was started from (`RoundRandom`), pushed
+   * by `Game` — what `?seed=` takes to play that round again. Null where this
+   * client did not decide it: before a first round, and in a match, whose
+   * seed is the AUTHORITY's and is in the server's log. Absent before report
+   * version 12.
+   */
+  seed: number | null;
   device: {
     userAgent: string;
     devicePixelRatio: number;
@@ -706,6 +714,7 @@ export interface ProfileRing {
   readonly grainMs: number;
   readonly overheadUs: number;
   readonly mapId: string;
+  readonly seed: number | null;
   readonly graphics: ProfileGraphics | null;
   readonly graphicsAt: number;
   readonly gpuRequested: boolean;
@@ -858,10 +867,14 @@ export function buildReport(
     // builder could be wrapped — with `createdOn`/`createdNear` on every
     // hitch and `pipelines`/`modules` in the series. Before it a first-use
     // compile stall could only be guessed at from a draw count ramping.
-    version: 11,
+    // 12: `seed` — the round's seed, so the round a capture was taken in can
+    // be played again (`?seed=`). Before it a round's outcomes were drawn
+    // from `Math.random` and no seed existed to record.
+    version: 12,
     takenAt: new Date().toISOString(),
     reason,
     map: r.mapId,
+    seed: r.seed,
     tree: PARENT_OF,
     roots: [...ROOTS],
     device: deviceFacts(r),

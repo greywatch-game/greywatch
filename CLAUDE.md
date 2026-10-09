@@ -1519,6 +1519,17 @@ regions' two headers, and what is not built.
   so a head sphere their rounds could find would make every accurate bot shot a
   headshot. It is an *upgrade* to a body hit that already landed, never a
   candidate of its own, and fall-off applies first.
+- **An OUTCOME is drawn from the ROUND's seed, never from `Math.random`**
+  ([`src/systems/RoundRandom.ts`](src/systems/RoundRandom.ts)): a round's
+  cone, which spawn a body takes and where in it, a crew's lay, and anything
+  new that decides who lives. A system asks its simulation's `RoundRandom` for
+  a stream when it builds what draws — **one per SHOOTER**, keyed by the
+  authority's slot or the hardstanding — and both simulations reseed it once a
+  round (`Game.buildRound`, `HeadlessGame.startRound`) from `?seed=`,
+  `simulate`'s fourth argument, or a fresh draw. **A picture or a sound stays
+  on `Math.random` and never draws from an outcome stream**, or the fight
+  depends on the camera. `npm run simulate -- <map> 1 2 <seed>` prints a
+  `fight` hash the same seed must reproduce.
 - TypeScript is strict with `noUnusedLocals`/`noUnusedParameters` — the typecheck
   fails on dead variables.
 - `Bot` holds a small FSM and drives a joint rig built by `SoldierModel` (invisible

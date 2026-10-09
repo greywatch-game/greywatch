@@ -958,6 +958,9 @@ function renderReport(r) {
     ["window", fmt(r.window.seconds, 2) + " s"],
     ["taken", (r.takenAt || "").replace("T", " ").replace(/\..*$/, "")],
   ];
+  /* The round's seed (report version 12), which `?seed=` takes to play the
+     round again. Null in a match and before a first round — nothing to say. */
+  if (r.seed != null) bits.push(["seed", String(r.seed)]);
   for (const [k, v] of bits) {
     const d = el("div");
     if (k) d.appendChild(el("b", null, k + " "));

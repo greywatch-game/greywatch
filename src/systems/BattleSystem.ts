@@ -66,6 +66,7 @@ import type { ObstacleField } from "../world/ObstacleField";
 import type { TerrainField } from "../world/TerrainField";
 import type { RayWorld } from "../world/RayWorld";
 import type { CombatSystem, Hittable, ShotOptions } from "./CombatSystem";
+import { STREAM, type RoundRandom } from "./RoundRandom";
 import { SquadRadio } from "../entities/SquadRadio";
 import type { SquadOrder } from "./ConquestSystem";
 
@@ -80,6 +81,16 @@ const BOT_SHOT: ShotOptions = {
   falloffNear: CONFIG.bots.falloffNear,
   falloffFar: CONFIG.bots.falloffFar,
 };
+
+/**
+ * The CONSTANT a bot's movement stream starts from, by its per-team index —
+ * one copy for the two lines that seed it (`buildPool`, `reset`), which have
+ * to agree or a round's first think draws from a different personality than
+ * the pool was built with.
+ */
+function moveSeed(team: number, i: number): number {
+  return CONFIG.bots.skill.seed + team * 131 + i * 17;
+}
 
 /**
  * Owns both teams: a fixed pool of bot rigs, the AI schedule, and the render
@@ -392,6 +403,9 @@ export class BattleSystem {
     private readonly scene: Scene,
     private readonly mats: CelMaterialFactory,
     private combat: CombatSystem,
+    // The simulation's round seed, which the pool takes each bot's SHOT stream
+    // from — see `buildPool`.
+    private readonly random: RoundRandom,
   ) {
     this.buildPool(this.perTeam);
 
@@ -532,8 +546,17 @@ export class BattleSystem {
             ? "molotov"
             : "frag";
         // A stream per bot, seeded off the pool slot: movement personality
-        // differs between bots but is identical between runs.
-        bot.seedRandom(CONFIG.bots.skill.seed + team * 131 + i * 17);
+        // differs between bots but is identical between runs — and between
+        // ROUNDS, since `reset` restarts it on the same constant.
+        bot.seedRandom(moveSeed(team, i));
+        // …and where its rounds go, which is the ROUND's (`RoundRandom`):
+        // keyed by the AUTHORITY's slot, which is this per-team index in a
+        // block `maxPerTeam` wide whatever this pool's size, so a body draws
+        // the same cone on both sides of the wire and on every map.
+        bot.shotRand = this.random.stream(
+          STREAM.botShot,
+          team * CONFIG.bots.maxPerTeam + i,
+        );
         bot.onReload = () => this.onBotReloaded(bot);
         bot.onStep = () => this.onBotStepped(bot);
         // Where this team's bodies fall, on this team's own board. Taken here
@@ -891,6 +914,15 @@ export class BattleSystem {
     // says nothing about this one, and a map change would leave the marks
     // floating over geometry that no longer exists.
     for (const radio of this.radios) radio.clear();
+    // Each bot's movement stream back to its start — the same CONSTANT
+    // `buildPool` seeded it with, not the round's seed. Without it a round
+    // walked on from wherever the last one stopped drawing, and the round
+    // seed reproduced only the first round of a session. `perTeam` is the
+    // pool's own, so the index is the one the stream was built with.
+    for (let k = 0; k < this.bots.length; k++) {
+      const team = k < this.perTeam ? 0 : 1;
+      this.bots[k].seedRandom(moveSeed(team, k - team * this.perTeam));
+    }
     for (const bot of this.bots) {
       bot.alive = false;
       bot.state = "dead";
@@ -1174,6 +1206,7 @@ export class BattleSystem {
       from,
       dir,
       spread,
+      bot.shotRand,
       CONFIG.bots.damage,
       muzzle,
       this.hittablesAgainst(bot.team),

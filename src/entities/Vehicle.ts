@@ -248,6 +248,7 @@ import { CONFIG } from "../config";
 import { angleDelta } from "../core/math";
 import type { CelMaterialFactory } from "../shaders/CelShader";
 import type { DamageKind, ShotOptions } from "../systems/CombatSystem";
+import { UNDRAWN, type Rand } from "../systems/RoundRandom";
 import { rotateToLocalXZ, topFaceHeight, type LocalXZ } from "../world/boxGeometry";
 import type { WorldBox } from "../world/MapBuilder";
 import { narrowedMove, type CollisionField } from "../world/CollisionField";
@@ -694,6 +695,14 @@ export class Vehicle implements Combatant, RayHull {
    */
   readonly shellShot: ShotOptions | null;
   readonly mgShot: ShotOptions;
+  /**
+   * The cupola gun's cone — the ROUND's stream for this hardstanding
+   * (`RoundRandom`, `STREAM.hullShot`), handed in by `VehicleSystem.build`.
+   * The HULL's rather than the gunner's, because whoever is on the gun — a
+   * person, a crewman, nobody for a while — it is the same gun firing into
+   * the same round. The main gun has no cone and draws nothing.
+   */
+  mgRand: Rand = UNDRAWN;
 
   /** Feet — the point the tracks rest on, as `Combatant` requires. */
   readonly position = new Vector3();

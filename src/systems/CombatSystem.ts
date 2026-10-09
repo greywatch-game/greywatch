@@ -52,6 +52,7 @@ import {
 import { CONFIG } from "../config";
 import type { CelMaterialFactory } from "../shaders/CelShader";
 import { newRayHit, type RayHull, type RayWorld } from "../world/RayWorld";
+import type { Rand } from "./RoundRandom";
 import { BulletMarks } from "./BulletMarks";
 
 /**
@@ -489,18 +490,25 @@ export class CombatSystem {
    * it is resolved against the distance this method already had to compute to
    * place the impact — so range costs the shot nothing extra to know about.
    * `range` is still the hard reach; the ramp lives inside it.
+   *
+   * `rand` is the SHOOTER's stream (`RoundRandom`), and the cone is the one
+   * thing here that draws from it — two draws a round, none at a spread of
+   * zero. Never `Math.random`: where a round goes is an outcome, and an
+   * outcome drawn from a shared unseeded source is a round nobody can play
+   * twice. A caller with no spread passes `UNDRAWN`.
    */
   fire(
     origin: Vector3,
     aimDir: Vector3,
     spread: number,
+    rand: Rand,
     damage: number,
     muzzle: Vector3,
     targets: Hittable[],
     range: number,
     opts: ShotOptions,
   ): ShotResult {
-    const dir = jitterDirection(aimDir, spread);
+    const dir = jitterDirection(aimDir, spread, rand);
 
     // Wall/prop/floor hit distance caps the shot. `range` is the whole reach of
     // the round, so it bounds this as well as the near-miss sweep below.
@@ -992,15 +1000,19 @@ function raySphere(
   return t - Math.sqrt(Math.max(radius * radius - d2, 0));
 }
 
-/** Perturbs an aim direction inside a cone (uniform over the disc). */
-function jitterDirection(dir: Vector3, halfAngle: number): Vector3 {
+/**
+ * Perturbs an aim direction inside a cone (uniform over the disc), drawing
+ * from the shooter's own stream — and drawing NOTHING at a zero half-angle,
+ * which is what `UNDRAWN` relies on.
+ */
+function jitterDirection(dir: Vector3, halfAngle: number, rand: Rand): Vector3 {
   if (halfAngle <= 0) return dir.normalizeToNew();
   let u = Vector3.Cross(dir, Vector3.Up());
   if (u.lengthSquared() < 0.001) u = Vector3.Cross(dir, Vector3.Right());
   u.normalize();
   const v = Vector3.Cross(dir, u).normalize();
-  const angle = Math.random() * Math.PI * 2;
-  const r = Math.tan(halfAngle) * Math.sqrt(Math.random());
+  const angle = rand() * Math.PI * 2;
+  const r = Math.tan(halfAngle) * Math.sqrt(rand());
   return dir
     .add(u.scale(Math.cos(angle) * r))
     .add(v.scale(Math.sin(angle) * r))

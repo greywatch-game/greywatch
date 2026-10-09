@@ -1297,7 +1297,7 @@ export class Match {
         this.abandon("the match server hit an error and ended the match");
       }
     }, POLL_MS);
-    console.log(`[${this.id}] round started on ${this.mapId}`);
+    console.log(`[${this.id}] round started on ${this.mapId}, seed ${this.game.random.seed}`);
   }
 
   private stop(): void {
@@ -1450,7 +1450,7 @@ export class Match {
     // different clock poisons the offset window every body is drawn against.
     this.broadcast({ t: "roundstart", mapId: this.mapId, now: this.game.now });
     this.broadcastRoster();
-    console.log(`[${this.id}] rotated to ${this.mapId}`);
+    console.log(`[${this.id}] rotated to ${this.mapId}, seed ${this.game.random.seed}`);
   }
 
   /**

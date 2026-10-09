@@ -165,6 +165,7 @@ import { PhysicsWorld, type HavokInstance } from "../systems/PhysicsWorld";
 import { RagdollSystem } from "../systems/RagdollSystem";
 import { ReflectionSystem } from "../systems/ReflectionSystem";
 import { RotorWash } from "../systems/RotorWash";
+import { RoundRandom, STREAM, freshSeed } from "../systems/RoundRandom";
 import { ScoreBook, awardKill, awardZone, paysKiller } from "../systems/ScoreBook";
 import { LightingSystem, type RoomLight } from "../systems/LightingSystem";
 import { AmbienceSystem } from "../systems/AmbienceSystem";
@@ -550,10 +551,18 @@ export class Game {
   private localShadows: LocalShadows;
   /**
    * The URL's session overrides of the display settings — `?gi=`,
-   * `?shadows=`, `?volumetrics=` and `?nominimap`. Read once; every value in
-   * force below is resolved through it (`core/urlOverrides.ts`).
+   * `?shadows=`, `?volumetrics=` and `?nominimap` — and of the round's seed,
+   * `?seed=`. Read once; every value in force below is resolved through it
+   * (`core/urlOverrides.ts`).
    */
   private readonly overrides = new UrlOverrides();
+  /**
+   * The round's seed and every outcome stream drawn from it
+   * (`systems/RoundRandom.ts`) — this simulation's, as `HeadlessGame` holds
+   * the authority's. Handed to every system that decides an outcome when it
+   * is built, and reseeded once per round in `buildRound`.
+   */
+  private readonly random = new RoundRandom();
   /**
    * The world as the glazing reflects it — one cube, baked per map install.
    * The only render target here besides the shadow map.
@@ -1525,7 +1534,7 @@ export class Game {
     this.blastDebris = new BlastDebrisSystem(this.scene, this.mats, this.physics);
     this.glass = new GlassSystem();
     this.deathCam = new DeathCam(this.scene, this.mats);
-    this.vehicles = new VehicleSystem(this.scene, this.mats);
+    this.vehicles = new VehicleSystem(this.scene, this.mats, this.random);
     this.vehicleCam = new VehicleCamera();
     // The crew's context, built once exactly as `BattleSystem`'s `BattleCtx`
     // is: everything a driver may ask about the rest of the game, and nothing
@@ -1554,18 +1563,19 @@ export class Game {
       },
       fireShell: (tank, by) => this.resolveShell(tank, by),
       fireMg: (tank, by) => this.resolveMg(tank, by),
-    });
+    }, this.random);
     // The anti-tank kit in the world. It owns the flight and the trigger and
     // nothing else: what a detonation is WORTH is `ordnanceEffect`'s and
     // spending it is `resolveOrdnance`'s, through the same `blastAt` the tank
     // shell already goes through.
     this.antiTank = new AntiTankSystem(this.scene, this.mats);
     this.aimAssist = new AimAssistSystem();
-    this.battle = new BattleSystem(this.scene, this.mats, this.combat);
-    this.conquest = new ConquestSystem();
+    this.battle = new BattleSystem(this.scene, this.mats, this.combat, this.random);
+    this.conquest = new ConquestSystem(this.random);
     this.zones = new CaptureZoneSystem(this.scene, this.mats);
     // The weapon is parented to the camera, so the camera has to exist first.
     this.player = new Player(this.scene, this.mats, this.cameraSys.camera);
+    this.player.shotRand = this.random.stream(STREAM.player);
     this.player.setBodyHidden(true); // hidden until a round starts
     // The sky hangs behind every state (menu included), so it is dressed
     // once here and re-applied per round alongside the environment.
@@ -2311,7 +2321,7 @@ export class Game {
       // turning one into a position is what `scatterSpawn` is. The netplay
       // branch above returns before it, because the position that branch is
       // eventually answered with has already been scattered by the authority.
-      this.spawnPlayer(scatterSpawn(spawn));
+      this.spawnPlayer(scatterSpawn(spawn, this.conquest.spawnRand));
     };
   }
 
@@ -5035,6 +5045,20 @@ export class Game {
 
     this.battle.setMap(map);
     this.battle.reset();
+    // **The round's seed**, and every outcome stream in the round rewound to
+    // it (`RoundRandom`) — here because everything that draws has now been
+    // built (the pool above, the fleet inside `installMap`) and nothing has
+    // spawned or fired yet. Fresh each round unless the URL fixed it, which is
+    // how a round is played again; written where a person can read it back,
+    // since a round's seed is the only handle on a bug in it. In a match the
+    // fight is the authority's and so is its seed (the server logs it): this
+    // one draws nothing but this client's own cone, and the capture says null.
+    const seed = this.overrides.seed ?? freshSeed();
+    this.random.seedRound(seed);
+    this.prof.setSeed(this.net ? null : seed);
+    if (import.meta.env.DEV && !this.net) {
+      console.info(`[round] ${this.mapDef.id} seed ${seed} (replay: ?seed=${seed})`);
+    }
     // Who is in the fight but is not a bot: the player, and every hull on the
     // field. `setPlayer` resets that list to the player alone, which is exactly
     // what makes this safe to run every round — last round's tanks were
@@ -5500,7 +5524,7 @@ export class Game {
     if (!this.map) return null;
     const pick = this.conquest.spawnFor(team);
     if (!pick) return null;
-    return scatterSpawn(pick);
+    return scatterSpawn(pick, this.conquest.spawnRand);
   }
 
   private updateGameplay(dt: number): void {
@@ -6025,6 +6049,7 @@ export class Game {
       this.cameraSys.camera.position,
       this.cameraSys.forward,
       spread,
+      this.player.shotRand,
       this.player.damage,
       muzzle,
       this.enemyTargets(),
@@ -9071,7 +9096,7 @@ export class Game {
       const pc = CONFIG.player;
       this.cameraSys.addFlinch(
         amount * pc.flinchPitchPerDamage,
-        (Math.random() * 2 - 1) * amount * pc.flinchYawPerDamage,
+        (this.player.shotRand() * 2 - 1) * amount * pc.flinchYawPerDamage,
       );
     }
     this.post.flashDamage();

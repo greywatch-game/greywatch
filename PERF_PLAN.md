@@ -508,7 +508,7 @@ simulation becomes deterministic (shots replayable, parity provable by
 construction); and the same code runs in the client's Worker and on the server.
 Say which of these a step is for.
 
-### C1 — Seeded randomness in the simulation — **S**
+### C1 — Seeded randomness in the simulation — **S** — **LANDED** as `BABYLON_EXIT.md` X0.2
 
 `Math.random` decides outcomes in `CombatSystem` (the spread cone, every shot),
 `ConquestSystem` (spawn choice, `scatterSpawn`) and `VehicleCrew` (crew aim).

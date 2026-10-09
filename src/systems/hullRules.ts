@@ -41,6 +41,7 @@ import { DRIVER, type CrewSeat, type Vehicle } from "../entities/Vehicle";
 import type { CombatSystem, Hittable, ShotResult } from "./CombatSystem";
 import type { GrenadeSystem } from "./GrenadeSystem";
 import { settleKill, type KillLedger } from "./killRules";
+import { UNDRAWN } from "./RoundRandom";
 
 /**
  * Everything a hull's rules ask of the rest of the game, built once per
@@ -132,6 +133,7 @@ export function fireHullGun(
     muzzle,
     dir,
     0,
+    UNDRAWN,
     g.damage,
     muzzle,
     ctx.gunTargets(tank.team),
@@ -199,6 +201,7 @@ export function fireHullMg(
     muzzle,
     dir,
     m.spread,
+    tank.mgRand,
     m.damage,
     muzzle,
     ctx.gunTargets(tank.team),
