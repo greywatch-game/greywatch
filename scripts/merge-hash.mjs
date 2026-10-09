@@ -31,7 +31,12 @@
  * version's bake reaches the same bits.
  *
  * Flags: `--maps a,b` limits it to those map ids (with `--against`, only those
- * maps of the file are compared); `--out file` writes the fingerprint;
+ * maps of the file are compared); `--editor` fingerprints the EDITOR's build
+ * instead (`Game.buildEditorMap`, run over the round's: nothing block-merged,
+ * every mesh one layout item's) — the other path out of `mergeByMaterial`,
+ * which a shipped build never takes, so it owes a baseline of its own and is
+ * never compared with one taken without the flag; `--out file` writes the
+ * fingerprint;
  * `--against file` compares and exits 1 on any difference, naming the list,
  * the index, the mesh and the fields that moved. A map that fails to build is
  * recorded as its error, so a build broken by the change is a difference too.
@@ -56,6 +61,7 @@ function arg(name) {
 }
 
 const only = arg("--maps")?.split(",");
+const editor = process.argv.includes("--editor");
 const outFile = arg("--out");
 const againstFile = arg("--against");
 
@@ -176,7 +182,7 @@ function fingerprintMap() {
   };
 }
 
-async function buildOne(browser, url, id) {
+async function buildOne(browser, url, id, editor) {
   const page = await browser.newPage();
   try {
     page.on("pageerror", (e) => console.error(`  [page] ${e.message}`));
@@ -201,9 +207,21 @@ async function buildOne(browser, url, id) {
         poll();
       });
     }, DEPLOY_TIMEOUT_MS);
-    return await page.evaluate(fingerprintMap);
+    if (editor) {
+      // The editor's own rebuild, over the floor the round just fetched — the
+      // same synchronous `installMap({ editor: true })` F2 ends in, without
+      // the editor's UI. Private, and reached anyway: this is a DEV page.
+      // Braced so it returns nothing: the `GameMap` it hands back is a scene
+      // graph, and Playwright would try to serialise it.
+      await page.evaluate(() => {
+        window.__celshock.buildEditorMap();
+      });
+    }
+    const print = await page.evaluate(fingerprintMap);
+    print.editor = editor;
+    return print;
   } catch (e) {
-    return { error: String(e.message ?? e).split("\n")[0] };
+    return { error: String(e.message ?? e).split("\n")[0], editor };
   } finally {
     await page.close();
   }
@@ -233,6 +251,10 @@ function compare(before, after) {
     const b = after[id];
     if (!a) {
       lines.push(`${id}: not in the "before" file`);
+      continue;
+    }
+    if (Boolean(a.editor) !== Boolean(b.editor)) {
+      lines.push(`${id}: an ${a.editor ? "editor" : "shipped"} build against an ${b.editor ? "editor" : "shipped"} one`);
       continue;
     }
     if (a.error || b.error) {
@@ -273,7 +295,7 @@ try {
   browser = await launchClient();
   for (const id of ids) {
     const t0 = Date.now();
-    result[id] = await buildOne(browser, vite.url, id);
+    result[id] = await buildOne(browser, vite.url, id, editor);
     const r = result[id];
     console.log(
       r.error

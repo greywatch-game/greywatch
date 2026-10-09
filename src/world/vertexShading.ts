@@ -139,7 +139,7 @@
 import { Mesh, ShaderMaterial, VertexBuffer } from "@babylonjs/core";
 import { CONFIG } from "../config";
 import { isFlame } from "../shaders/FlameShader";
-import { halfDepth, slabThickness } from "./boxGeometry";
+import { halfDepth, slabThickness, turnX, turnZ } from "./boxGeometry";
 import { type BoxIndex, boxesNear, buildBoxIndex } from "./boxIndex";
 import type { WorldBox } from "./MapBuilder";
 import { swayLayerOf, swayWeight } from "./sway";
@@ -180,8 +180,8 @@ interface Bucketed {
   /**
    * Everything the per-vertex loops read off a box, flat, `GEO` numbers a box:
    * the centre, the local half-extents (the pitch makes these non-obvious), and
-   * the yaw's cosine and sine both ways — world to local, which
-   * `rotateToLocalXZ` computes, and back, which the facing test does.
+   * the yaw's cosine and sine both ways for `turnX`/`turnZ` — world to local, as
+   * `rotateToLocalXZ` turns, and back, which the facing test does.
    *
    * **Precomputed and not recomputed, and that is the whole saving, not an
    * approximation**: the same `Math.cos`/`Math.sin` of the same angle, taken
@@ -223,8 +223,8 @@ function bucket(boxes: readonly WorldBox[], size: number, radius: number): Bucke
     geo[o + G_HX] = box.w / 2;
     geo[o + G_HY] = slabThickness(box) / 2 + (box.d / 2) * sin;
     geo[o + G_HZ] = halfDepth(box);
-    // `rotateToLocalXZ`'s convention, read once: world to local by `rotY`,
-    // and the facing test's way back by `-rotY`.
+    // `turnX`/`turnZ`'s two angles, read once: world to local by `rotY`, and the
+    // facing test's way back by `-rotY`.
     geo[o + G_YAWED] = box.rotY !== 0 ? 1 : 0;
     geo[o + G_COS] = Math.cos(box.rotY);
     geo[o + G_SIN] = Math.sin(box.rotY);
@@ -266,10 +266,10 @@ function occlusionAt(
   if (list) {
     for (const i of list) {
       const o = i * GEO;
-      // Into the box's yaw frame (`rotateToLocalXZ`, inlined over the
-      // precomputed angle); the pitch is folded into the half-extents above
-      // rather than rotated for, because an occlusion estimate does not need
-      // a ramp's exact face — only roughly where its bulk is.
+      // Into the box's yaw frame (`rotateToLocalXZ` over the precomputed
+      // angle); the pitch is folded into the half-extents above rather than
+      // rotated for, because an occlusion estimate does not need a ramp's
+      // exact face — only roughly where its bulk is.
       const dx = px - geo[o + G_CX];
       const dz = pz - geo[o + G_CZ];
       let lx = dx;
@@ -278,8 +278,8 @@ function occlusionAt(
       if (yawed) {
         const c = geo[o + G_COS];
         const s = geo[o + G_SIN];
-        lx = dx * c - dz * s;
-        lz = dx * s + dz * c;
+        lx = turnX(c, s, dx, dz);
+        lz = turnZ(c, s, dx, dz);
       }
       const ly = py - geo[o + G_CY];
       const hx = geo[o + G_HX];
@@ -306,8 +306,8 @@ function occlusionAt(
       if (yawed) {
         const c = geo[o + G_COS_BACK];
         const s = geo[o + G_SIN_BACK];
-        wx = qx * c - qz * s;
-        wz = qx * s + qz * c;
+        wx = turnX(c, s, qx, qz);
+        wz = turnZ(c, s, qx, qz);
       }
       // `q` points from the box's surface OUT to the vertex, so the occluder
       // lies along -q.
@@ -398,8 +398,7 @@ function shelteredAt(
     // inventing it.
     const under = geo[o + G_CY] - geo[o + G_HY];
     if (under < floor || under < py) continue;
-    // `rotateToLocalXZ`, inlined over the precomputed angle as in
-    // `occlusionAt`.
+    // `rotateToLocalXZ` over the precomputed angle, as in `occlusionAt`.
     const dx = sx - geo[o + G_CX];
     const dz = sz - geo[o + G_CZ];
     let lx = dx;
@@ -407,8 +406,8 @@ function shelteredAt(
     if (geo[o + G_YAWED] !== 0) {
       const c = geo[o + G_COS];
       const s = geo[o + G_SIN];
-      lx = dx * c - dz * s;
-      lz = dx * s + dz * c;
+      lx = turnX(c, s, dx, dz);
+      lz = turnZ(c, s, dx, dz);
     }
     if (Math.abs(lx) > geo[o + G_HX] || Math.abs(lz) > geo[o + G_HZ]) continue;
     return true;

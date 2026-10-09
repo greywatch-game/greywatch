@@ -158,8 +158,8 @@ unknown until G1 is done**. Part A does not wait for it.
 
 ## Part A — The cheap levers, inside Babylon as it stands
 
-Each is independent; the order is by certainty of payoff. **A1 is IN
-PROGRESS.**
+Each is independent; the order is by certainty of payoff. **A1 has
+LANDED**; A2 is next.
 
 ### A1 — Parts stop being meshes (`FINDINGS.md` 26) — **LANDED, -16 TO -28% ON EVERY MAP**
 
@@ -198,6 +198,10 @@ but rounds vertices in a different order, which no oracle can call harmless),
 longer worth building: with most builders on `StoneBatch`, a `Mesh` per part
 is ~300 ms of Coldharbour's build.
 
+**The step as it was planned, kept for the argument and SUPERSEDED where it
+differs from the list above** — the accumulator was not built, and the oracle
+it asked for first is `merge:hash`:
+
 A kit part is built as a full `Mesh` (uniform layout, GUID, registration),
 tessellated from scratch, merged and destroyed; ~76% of the placement loop is
 that round trip, and it is the install's biggest single cost. `StoneBatch` and
@@ -218,7 +222,10 @@ that round trip, and it is the install's biggest single cost. `StoneBatch` and
 **Verify:** the merged hash identical on every map, `npm run kit:hash
 --against` identical, `npm run parity`, `buildProfile` before/after on
 Coldharbour and Sarab. **Buys:** load time, not frame time. It is first because
-it is certain, and because B1 starts from geometry as typed arrays.
+it is certain. **It was also to hand B1 its geometry as typed arrays, and as
+landed it does not**: the merged world still arrives as Babylon meshes over
+plain arrays, so getting it into B1's buffers is B1's own first job (see
+there).
 
 ### A2 — The emissive palette (`FINDINGS.md` 43) — **M**
 
@@ -359,9 +366,13 @@ move: frozen-frame diffs at the banked vantages, every map.
   **engine-agnostic by construction**: it owns its buffers and pipelines and
   takes a `GPUDevice` and a pass encoder. It never imports a Babylon type. This
   is what lets B4 move the frame's ownership later without a rewrite.
-- Built from A1's typed arrays in `installMap`, and taken back in
+- Built in `installMap` from the merged world's vertex data, and taken back in
   `Game.teardownMap` (CLAUDE.md: anything `installMap` hands a map to owes a line
-  there).
+  there). **A1 was to hand that data over as typed arrays and, as landed, does
+  not** — the merged world is Babylon meshes over plain arrays — so getting it
+  out (read off the merged meshes on the `installMap` side, so this module
+  still never sees a Babylon type, or the final merge emitting arrays) is this
+  step's first piece of work, and `merge:hash` is what proves it moved nothing.
 - Only the MAIN pass at first. Blocks drawn by the new path are taken out of
   `WorldCulling`'s candidate list for the main pass; the Babylon meshes stay
   alive for every other pass until B3 moves it.

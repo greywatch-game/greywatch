@@ -168,9 +168,33 @@ export function rotateToLocalXZ(
   }
   const c = Math.cos(box.rotY);
   const s = Math.sin(box.rotY);
-  out.lx = dx * c - dz * s;
-  out.lz = dx * s + dz * c;
+  out.lx = turnX(c, s, dx, dz);
+  out.lz = turnZ(c, s, dx, dz);
   return out;
+}
+
+/**
+ * The two rows of the matrix `rotateToLocalXZ` applies, over an angle whose
+ * cosine and sine the caller has already taken — so the convention above is
+ * written once however a caller gets its trigonometry. World to a box's frame
+ * is `(Math.cos(box.rotY), Math.sin(box.rotY))`; back to the world is the
+ * same matrix over `-box.rotY`.
+ *
+ * For a caller that holds one box against many points: the vertex bake
+ * (`vertexShading.ts`) takes each box's four trig values ONCE rather than per
+ * vertex per box, which was most of what that bake cost. Two scalar functions
+ * rather than one writing an `out`, because that bake's inner loop is where
+ * they run: the `out` form read ~5% slower over Greyfen's bake (three builds a
+ * side), and these are within noise of the arithmetic written inline (four
+ * builds a side, twice, interleaved).
+ */
+export function turnX(c: number, s: number, x: number, z: number): number {
+  return x * c - z * s;
+}
+
+/** The other row: see `turnX`. */
+export function turnZ(c: number, s: number, x: number, z: number): number {
+  return x * s + z * c;
 }
 
 /**

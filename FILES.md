@@ -119,7 +119,8 @@ scripts/                      # Node tooling, run by hand or by `npm run build`,
                               #   every merged visual, collider and terrain
                               #   collider plus the box lists, so a change to
                               #   how parts are built or merged proves it moved
-                              #   nothing. Same machine and Babylon only. Not a
+                              #   nothing; `--editor` does the editor's unmerged
+                              #   build. Same machine and Babylon only. Not a
                               #   gate
   loc.mjs                     # `npm run loc`: how big the project is, off `git
                               #   ls-files` — hand-written code split into

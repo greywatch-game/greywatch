@@ -164,6 +164,14 @@ npm run kit:hash   # fingerprint every kit builder over every placement, the
                    #   `-- --kinds a,b`, `--out f.json`, `--against f.json`.
                    #   `-- --feet` measures every kind against the generators'
                    #   footprint table (`scripts/lib/footprints.mjs`)
+npm run merge:hash # kit:hash's other half: builds every map in a real browser
+                   #   and hashes what the MERGE hands the world — every
+                   #   visual, collider and terrain collider, and the box
+                   #   lists — and fails on any mesh left a PART. Proves a
+                   #   change to how parts are built or merged moved nothing,
+                   #   and is owed by every Babylon upgrade (docs/build.md).
+                   #   `-- --out f.json`, `--against f.json`, `--maps a,b`,
+                   #   `--editor` for the editor's unmerged build
 npm run shots      # re-photograph the maps for the menu backdrop (committed).
                    #   The ONE script here that needs a real GPU — docs/build.md
 npm run proving    # regenerate the DEV-ONLY proving ground (committed source).

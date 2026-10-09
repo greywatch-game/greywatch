@@ -113,7 +113,7 @@ export class BlockMerge {
   finish(palette: Palette): Mesh[] {
     const out: Mesh[] = [];
     for (const [key, group] of this.blocks) {
-      for (const merged of mergeByMaterial(group, `block${key}`, palette)) {
+      for (const merged of mergeByMaterial(group, `block${key}`, { palette })) {
         // The key travels ON the mesh, because `ReflectionSystem` has to ask
         // which building a merged mesh IS and the palette took the answer out
         // of the geometry — see `encloses` there. `PaneBlocks` files glazing
@@ -355,15 +355,7 @@ function exemptionsOf(mesh: Mesh): Exemption[] {
 export function mergeByMaterial(
   meshes: Mesh[],
   tag: string,
-  palette?: Palette,
-  /**
-   * The caller is going to merge what this returns AGAIN (a placement or a
-   * scatter field on its way into `BlockMerge`, a road on its way into the
-   * road merge), so a merged group may stay a PART — see `mergeToPart`. Never
-   * for a mesh that is handed to the world as it is: the editor's per-item
-   * meshes and the final passes leave this off.
-   */
-  again = false,
+  { palette, again = false }: MergeOptions = {},
 ): Mesh[] {
   // Material first, then sway layer and exemption set — see `EXEMPTIONS`.
   // Nested rather than keyed on a composed string, because two distinct
@@ -500,6 +492,20 @@ function mergeToPart(meshes: Mesh[]): Mesh | null {
   for (const m of meshes) m.dispose();
   merged.material = source.material;
   return merged;
+}
+
+/** What a `mergeByMaterial` caller may ask for beyond a merge per material. */
+export interface MergeOptions {
+  /** Merge per BLOCK rather than per colour — see `BlockMerge.finish`. */
+  palette?: Palette;
+  /**
+   * The caller is going to merge what this returns AGAIN (a placement or a
+   * scatter field on its way into `BlockMerge`, a road on its way into the
+   * road merge), so a merged group may stay a PART — see `mergeToPart`. Never
+   * for a mesh that is handed to the world as it is: the editor's per-item
+   * meshes and the final passes leave this off.
+   */
+  again?: boolean;
 }
 
 /** One merge group: the meshes, and the exemptions and sway they all agree on. */

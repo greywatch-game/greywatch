@@ -29,8 +29,10 @@
  * device buffer under them, because uploading geometry a merge throws away was
  * half of a 1500 m build. So every path out of a merge that KEEPS its source
  * owes uploadPart() — the group-of-one hand-bake in mergeByMaterial and in
- * paneGroup, and the material-less mesh both of them skip. A part that reaches
- * the scene without it draws nothing and throws nothing. collider() is
+ * paneGroup, and the material-less mesh both of them skip — unless it is
+ * merged AGAIN: a placement's or scatter field's merge on its way into
+ * BlockMerge (or the road merge) stays a part, and the final pass uploads. A
+ * part that reaches the scene draws nothing and throws nothing. collider() is
  * deliberately NOT on that path: a part has no submeshes and moveWithCollisions
  * walks them.
  * `build(..., { editor: true })` keeps geometry per layout item, tags it with
@@ -960,7 +962,10 @@ export class MapBuilder {
       // into the verge where a box would cut it off square.
       if (!isRoad) this.recordParts(s, origin, rotY, terrain);
 
-      for (const merged of mergeByMaterial(s.meshes, p.kind, undefined, !item)) {
+      // Off the editor, everything below is merged again (`BlockMerge`, the
+      // road merge), so it may stay a part until then.
+      const again = !item;
+      for (const merged of mergeByMaterial(s.meshes, p.kind, { again })) {
         merged.rotation.y = rotY;
         merged.position.addInPlace(origin);
         if (item) {
@@ -1654,7 +1659,9 @@ export class MapBuilder {
       }
     }
 
-    for (const merged of mergeByMaterial(parts, `${spec.prop}-field`, undefined, !item)) {
+    // As in `placeStructures`: off the editor, `BlockMerge` merges it again.
+    const again = !item;
+    for (const merged of mergeByMaterial(parts, `${spec.prop}-field`, { again })) {
       merged.rotation.y = rot;
       merged.position.addInPlace(origin);
       if (item) {

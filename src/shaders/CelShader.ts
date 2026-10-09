@@ -76,6 +76,7 @@ import {
   VertexBuffer,
 } from "@babylonjs/core";
 import { CONFIG } from "../config";
+import { setPartVerticesData } from "../world/parts";
 import { attachEmissiveFog, setEmissiveFog } from "./EmissiveFog";
 import { FlameMaterial } from "./FlameShader";
 import { BlastMaterial } from "./BlastShader";
@@ -206,7 +207,10 @@ export function writePaletteIndex(mesh: Mesh, slot: number): void {
   // Only x is read. y is left at 0 rather than given a second meaning: the
   // slot's whole value is that it is the ONE thing this attribute says.
   for (let i = 0; i < count; i++) uv2[i * 2] = slot;
-  mesh.setVerticesData(VertexBuffer.UV2Kind, uv2, false);
+  // Through `parts.ts` because the map's merge hands this PARTS on their way
+  // into `BlockMerge`: Babylon's own call would put this one buffer on the
+  // device a moment before the merge disposes it.
+  setPartVerticesData(mesh, VertexBuffer.UV2Kind, uv2);
 }
 
 /**

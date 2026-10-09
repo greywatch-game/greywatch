@@ -1,16 +1,22 @@
 /**
  * parts.ts — A structure's PART meshes, built without ever reaching the GPU.
- * Owns: the three factories `kit/core.ts` builds visual geometry with, and the
- * one call that puts a part back on the normal path when it turns out to be
- * the thing that survives.
+ * Owns: the three factories the kit (`kit/core.ts`) and the scatter props
+ * (`props/`) build visual geometry with, the cached unit box behind `partBox`,
+ * the two ways a part is changed and STAYS one (`bakePart` without an upload,
+ * `setPartVerticesData`), and the one call that puts a part back on the normal
+ * path when it turns out to be the thing that survives (`uploadPart`).
  * Invariants: a part carries its vertex data in CPU memory and NOTHING on the
  * device — no vertex buffer, no index buffer, no bounding info, no submesh. So
  * a part may be read, transformed, merged and disposed, and may never be
- * DRAWN, PICKED or COLLIDED WITH. Anything that survives a merge owes
- * `uploadPart` before it is handed to the rest of the world; a mesh that
- * reaches the scene without it is silently invisible, which is the one failure
- * this module can cause and the reason `mergeByMaterial` calls `uploadPart` on
- * every path out of it rather than only the ones it believes can survive.
+ * DRAWN, PICKED or COLLIDED WITH. Anything handed to the rest of the world
+ * owes `uploadPart` first; a mesh that reaches the scene without it is
+ * silently invisible, which is the one failure this module can cause. That is
+ * why `mergeByMaterial` uploads on every path out of it rather than only the
+ * ones it believes can survive — EXCEPT when its caller says it will merge
+ * the result `again` (a placement or scatter field into `BlockMerge`, a road
+ * into the road merge), where every path out stays a part on purpose and the
+ * final pass is what uploads. `npm run merge:hash` fails on any mesh the world
+ * is handed that is still a part.
  *
  * **It exists because 87% of a 1500 m build was the placement loop, and the
  * placement loop is not what anybody thought it was.** `ENGINE_UPGRADE.md`
@@ -192,6 +198,39 @@ export function uploadPart(mesh: Mesh): Mesh {
   geometry.releaseForMesh(mesh, false);
   geometry.applyToMesh(mesh);
   return mesh;
+}
+
+/**
+ * `mesh.setVerticesData(kind, data, false)`, except that a part stays a part.
+ *
+ * Babylon creates a buffer's device copy at once whenever its geometry
+ * already has a mesh on it, which a part's always does — so a buffer ADDED to
+ * a part (the palette's `uv2`, written as a group goes into `BlockMerge`)
+ * landed on the device a moment before the merge threw it away, and left the
+ * part half uploaded. This postpones that buffer as `partSurface` postpones
+ * the rest, and `uploadPart` creates it with them. A mesh already on the
+ * device takes Babylon's own call.
+ */
+export function setPartVerticesData(
+  mesh: Mesh,
+  kind: string,
+  data: Float32Array | number[],
+): void {
+  const geometry = mesh.geometry;
+  const positions = geometry?.getVertexBuffer(VertexBuffer.PositionKind);
+  if (!geometry || !positions || positions.getBuffer()) {
+    mesh.setVerticesData(kind, data, false);
+    return;
+  }
+  // `Geometry.setVerticesData`'s own buffer, with the postponement it gives
+  // a geometry that has no mesh yet.
+  geometry.setVerticesBuffer(
+    new VertexBuffer(mesh.getEngine(), data, kind, {
+      updatable: false,
+      postponeInternalCreation: true,
+      label: `Geometry_${geometry.id}_${kind}`,
+    }),
+  );
 }
 
 /**

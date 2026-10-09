@@ -256,3 +256,31 @@ symptom appears in a subsystem that has nothing to do with the import, on a
 machine that is not the one where the import was written, and it goes away on
 its own the moment anyone looks hard enough to restart the server. There is no
 version of "be careful with deep imports" that survives that.
+
+## A Babylon upgrade owes `npm run merge:hash` against the version before it
+
+**The map build leans on Babylon's internals in four places, and none of them
+fails loudly when an upgrade moves what it copied.** All four are in
+`src/world/parts.ts` and `src/world/merge.ts`, and each is a claim that it does
+exactly what a Babylon routine does, minus a GPU upload:
+
+- `partSurface` holds `Geometry.delayLoadState` at NOTLOADED for one
+  `applyToMesh`, relying on `setVerticesData` postponing a buffer for a
+  geometry with no mesh yet and on `applyToMesh` skipping `_applyToMesh` while
+  the geometry is not ready.
+- `boxVertexData` scales one cached `CreateBoxVertexData` cube, claiming the
+  same `base * (size / 2)` product Babylon computes per call.
+- `bakePart` is `bakeTransformIntoVertices` on a part's own arrays.
+- `mergeToPart` is `Mesh.MergeMeshes` step for step, and calls
+  `VertexData._mergeCoroutine` — an underscore member, so nothing in Babylon's
+  semver covers it.
+
+If an upgrade changes any of those routines, the copy silently stops matching:
+vertices move, or a mesh reaches the scene with nothing on the device and draws
+nothing. So take `npm run merge:hash -- --out before.json` (and the same with
+`--editor`) on the OLD version, upgrade, and run `--against` on the new one,
+on the same machine. A difference is either the upgrade changing Babylon's own
+output or one of these copies having drifted; to tell which, hash the new
+version once more with the copies swapped back for the calls they stand in for
+(`CreateBoxVertexData`, `uploadPart(m).bakeCurrentTransformIntoVertices()`,
+`Mesh.MergeMeshes`) and see which side the difference follows.

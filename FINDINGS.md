@@ -1044,34 +1044,26 @@ left is the one term in it that grows with a ray's length.
 
 ## 26. The placement loop is one mechanism, not a thousand milliseconds: a part is built as a full `Mesh`, registered, given a uniform buffer and a GUID, tessellated from scratch, merged, and destroyed
 
-**Status:** ACTED ON — and what follows the next paragraph is history.
-After 8fbf663, three more cuts and one fix landed (236eace, 907c0f0,
-f4b8fe9): `bakePart`, the shading bake's per-box trig, the scatter props as
-parts, and a kit structure's albedo weighted by part size again. Every map now
-builds 16-28% faster than at 684a88c; the table, and what is left and why it
-stops there, is `PERF_PLAN.md` A1. **What remains open from this entry**: the
-collider half (unchanged), the GC share (not re-measured), and the final
-upload's plain-array conversion, which only a change that rounds vertices
-differently would remove. If nothing here is taken up, delete the entry.
-
-**Earlier status:** PARTLY ACTED ON (2026-10-08, `PERF_PLAN.md` A1). **The oracle is
-committed**: `npm run merge:hash` (`scripts/merge-hash.mjs`) is the
-merged-visuals comparison below, rebuilt for the seven shipped maps and the
-proving ground, A-vs-A identical, and shown to catch a 2^-20 change in one box
-width. Against it, two changes landed with every map hashing identically:
-`partBox` scales one cached unit cube instead of tessellating per call (the
-second sub-thread), and a placement's or scatter field's per-material merge —
-which `BlockMerge` merges AGAIN — now ends as a part rather than uploading
-(`mergeToPart` in `merge.ts`; the device round trip one merge further down).
-Three runs a side, build:total: **Coldharbour 4,592 → 4,277 ms (-6.9%),
-Sarab 4,381 → 3,866 (-11.8%), the proving ground 10,075 → 9,292 (-7.8%)**; the
-placements phase -20 to -25% on all three. `blockMerge` ROSE on Coldharbour
-(635 → 757 ms), unexplained. A CPU profile of today's Coldharbour build puts
-`partSurface` (the `Mesh` per part) at only ~300 ms of 4.4 s now that most
-builders batch through `StoneBatch` — so the first sub-thread below is worth
-far less than when this was written; `MergeMeshes` (~1.4 s) and the AO bake
-(`bakeVertexShading` ~1.1 s, `occlusionAt` 0.8) are the large names left.
-The text below is the entry as written, before either change.
+**Status:** ACTED ON (2026-10-08, `PERF_PLAN.md` A1, 8fbf663..f4b8fe9), and
+everything from "The instrument" down is the entry as first written, before
+any of it. **The oracle this asked for is committed**: `npm run merge:hash`
+(`scripts/merge-hash.mjs`) hashes the merged visuals and colliders of the
+seven shipped maps and the proving ground, A-vs-A identical, and catches a
+2^-20 change in one box width. Against it, every map hashing identically: the
+cached unit box (the second sub-thread); `mergeToPart`, so a per-material merge
+that `BlockMerge` merges again stays a part; `bakePart`, so a lone colour
+uploads once or not at all (the double upload was also the Coldharbour
+`blockMerge` rise 8fbf663 could not explain); the shading bake's per-box trig
+and `hypot` out of the vertex loop; and the scatter props as parts. One change
+moved something and is its own commit (907c0f0): a kit structure's bounce
+colour weighted by part size again. Every map builds 16-28% faster than at
+684a88c; the table is `PERF_PLAN.md` A1. **The first sub-thread is worth far
+less than when this was written**: with most builders on `StoneBatch`, a
+`Mesh` per part is ~300 ms of Coldharbour's 4.4 s, so the merge-only
+accumulator was not built. **What remains open from this entry**: the collider
+half (unchanged), the GC share (not re-measured), and the final upload's
+plain-array conversion, which only a change that rounds vertices differently
+would remove. If nothing here is taken up, delete the entry.
 
 `StoneBatch` and `Mesher` (`kit/core.ts`) take the first sub-thread below
 locally, for the stone and tile runs that opt in; the general path in
