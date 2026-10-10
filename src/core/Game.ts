@@ -1266,7 +1266,6 @@ export class Game {
     this.engine = engine;
     this.engine.customAnimationFrameRequester = this.frameCap.requester;
     this.scene = new Scene(this.engine);
-    this.scene.collisionsEnabled = true;
     // The scene has no Babylon lights at all: cel materials carry their own
     // key/ambient/point-light uniforms (fed by the LightingSystem) and every
     // effect material is unlit emissive.
@@ -4731,10 +4730,9 @@ export class Game {
       map.terrain,
       map.obstacles,
       this.deckAt,
-      // …and the same colliders as MESHES, which is the OTHER question a body
-      // asks of them: not what it stands on but what it walks into.
-      // `moveWithCollisions` was the last thing in the frame still asking that
-      // of the whole scene — see `world/CollisionField.ts`.
+      // …and the sweep, which is the OTHER question a body asks of the same
+      // colliders: not what it stands on but what it walks into — see
+      // `world/CollisionField.ts`.
       map.collidables,
     );
     // **The solid world as a SEGMENT QUERY, to the six systems that used to ask

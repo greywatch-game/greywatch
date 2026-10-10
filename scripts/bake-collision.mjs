@@ -136,8 +136,9 @@ async function bakeMap(browser, url, id) {
       // `boxGroups` is INDICES rather than boxes, because unlike `rayGroups`
       // these boxes are already in `boxes` — they are the solid world and the
       // nav grid reads every one of them. What is baked is only which of them
-      // the client merged into one mesh, so the server can meet the same
-      // geometry with the same number of bounding tests.
+      // the client merged into one mesh, and in what order: a body's sweep
+      // breaks ties in the order the client made its collider meshes
+      // (`RayWorld`'s rank), so the server needs the grouping to agree.
       boxGroups: g.map.boxGroups,
       panes: g.map.panes.map(pane),
     };
@@ -179,7 +180,8 @@ function emit(id, constant, baked, hash, mark) {
  *
  * \`boxGroups\` is a third view of the SAME boxes: ${grouped} of them, in
  * ${boxGroups.length} groups, that the client merged into one collider mesh
- * each because they are a scatter region's props and a pick costs per mesh.
+ * each because they are a scatter region's props. What reads it now is a
+ * body's sweep, whose ties go in the order the client made those meshes.
  * Indices into \`boxes\`, not boxes — everything derived from geometry still
  * reads them one at a time. Anything named here is not also given a mesh of
  * its own.

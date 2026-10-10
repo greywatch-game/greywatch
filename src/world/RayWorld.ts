@@ -218,8 +218,14 @@ export class RayWorld {
   private readonly mark: Int32Array;
   private stamp = 0;
 
-  /** `bodyNear`'s hits as indices, so they can be put back in collider order. */
+  /** `bodyNear`'s hits as indices, so they can be put back in `rank` order. */
   private readonly picked: number[] = [];
+  /**
+   * Where each static box stands in the order a SWEEP tests them — `bodyNear`'s
+   * sort key, and a tie-break that decides where a body slides. See the
+   * constructor.
+   */
+  private readonly rank: Int32Array;
 
   /** The heightfield's own numbers, hoisted: every terrain step reads them. */
   private readonly half: number;
@@ -234,6 +240,12 @@ export class RayWorld {
     boxes: readonly WorldBox[],
     rayGroups: readonly (readonly WorldBox[])[],
     private readonly terrain: TerrainField,
+    /**
+     * `GameMap.boxGroups`: which boxes the client merged into one scatter
+     * cluster, in the order it made them. Read for the sweep's tie order and
+     * nothing else; absent is no clusters, which is the editor's build.
+     */
+    boxGroups: readonly (readonly number[])[] = [],
   ) {
     const f = terrain.field;
     this.grid = f ? f.size : 0;
@@ -275,6 +287,30 @@ export class RayWorld {
 
     this.flags = Uint8Array.from(flags);
     this.mark = new Int32Array(this.boxes.length).fill(-1);
+    // **The sweep's tie order is the order the client's collider MESHES were
+    // made, because that is the order Babylon's walk met them in and the feel
+    // of a body leaning on two boxes at once was tuned against it.** A sweep
+    // keeps the FIRST of two contacts at one distance, and an ellipsoid that
+    // has ended up touching two boxes — a hull wedged on a quay's corner, a
+    // body against a tree beside a wall — slides along whichever plane won. On
+    // the client every box but the scattered props got its mesh as it was
+    // recorded, and the props were merged into clusters afterwards, all
+    // together and in `boxGroups` order — nothing made a collider after them.
+    // So: every box no cluster holds, in collider order, then each cluster's
+    // boxes, cluster by cluster. Measured against the shipped scene, collider
+    // order alone slid hulls metres apart from embedded starts. The authority
+    // made its clusters FIRST, so under Babylon the two sides broke these ties
+    // differently; both rank from the same `boxGroups` now and agree.
+    const rank = new Int32Array(this.boxes.length);
+    const grouped = new Uint8Array(this.boxes.length);
+    for (const group of boxGroups) for (const b of group) grouped[b] = 1;
+    let next = 0;
+    for (let i = 0; i < boxes.length; i++) if (!grouped[i]) rank[i] = next++;
+    for (const group of boxGroups) for (const b of group) rank[b] = next++;
+    // The struts stop no body and are never a sweep's candidate; ranked last
+    // only so every slot holds a number.
+    for (let i = boxes.length; i < this.boxes.length; i++) rank[i] = next++;
+    this.rank = rank;
     for (let c = 0; c < cells; c++) counts[c + 1] += counts[c];
     this.cellStart = counts;
     this.cellBox = new Int32Array(counts[cells]);
@@ -382,11 +418,12 @@ export class RayWorld {
    *
    * **The order is part of the answer.** A sweep keeps the FIRST of two
    * contacts at the same distance (`ellipsoidSweep.ts`), so the static boxes
-   * come back in collider order — sorted, because a grid walk is in cell order
-   * — and the hulls last, which is where `scene.meshes` had a hull built after
-   * the map it stands on. A hull is its `rayBox()`, so one `hide` or a wreck
-   * carried away takes it out of every sweep as it takes it out of every ray,
-   * and `skip` is the hull doing the sweeping.
+   * come back sorted by `rank` — the order the client's collider meshes were
+   * made in (see the constructor) — and the hulls last, which is where
+   * `scene.meshes` had a hull built after the map it stands on. A hull is its
+   * `rayBox()`, so one `hide` or a wreck carried away takes it out of every
+   * sweep as it takes it out of every ray, and `skip` is the hull doing the
+   * sweeping.
    *
    * `reach` of `Infinity` is every body box on the map.
    */
@@ -423,7 +460,20 @@ export class RayWorld {
         }
       }
       for (const b of this.big) if (this.flags[b] & BLOCKS_BODY) picked.push(b);
-      picked.sort((a, b) => a - b);
+    }
+    // An insertion sort by rank rather than `Array.sort`: a list is a dozen
+    // boxes, and this runs once per body per frame, where a comparator closure
+    // over `rank` and the sort's own work array would be garbage every call.
+    const rank = this.rank;
+    for (let i = 1; i < picked.length; i++) {
+      const b = picked[i];
+      const r = rank[b];
+      let j = i - 1;
+      while (j >= 0 && rank[picked[j]] > r) {
+        picked[j + 1] = picked[j];
+        j--;
+      }
+      picked[j + 1] = b;
     }
     for (const b of picked) out.push(this.boxes[b]);
     for (const h of this.hulls) {

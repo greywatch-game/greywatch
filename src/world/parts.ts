@@ -66,10 +66,12 @@
  * world keeps, once, through public API. The part mesh, and every helper that
  * kept it honest, is deleted.
  *
- * **Colliders are deliberately NOT parts.** `moveWithCollisions` walks
- * `mesh.subMeshes`, and a collider built without them would stop nothing,
- * silently. `MapBuilder.collider` stays on `MeshBuilder` (BABYLON_EXIT.md
- * X2.1's), and that is a rule rather than an omission.
+ * **Colliders are deliberately NOT parts.** The editor's centre-screen pick
+ * walks `mesh.subMeshes`, and a collider built without them would be one it
+ * could never select. Nothing that moves or shoots reads the meshes any more
+ * — the rays and the sweeps both answer off the `WorldBox`es (`RayWorld`,
+ * `CollisionField`) — so `MapBuilder.collider` staying on `MeshBuilder` is the
+ * editor's, and goes when the editor stops picking meshes.
  */
 import {
   Mesh,

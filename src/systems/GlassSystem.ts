@@ -50,11 +50,13 @@
  *
  * The COLLIDER is every pane's, because a pane with a room behind it is the
  * only thing in the way while it stands. `RayWorld.remove` takes it out of both
- * questions every ray asks in one write; clearing `checkCollisions` takes it
- * out of `moveWithCollisions`; `ObstacleField.remove` takes it out of the
- * sub-cell push-out the bots and the server's move validator both read. The
- * `solid` flag on the MESH is written with them and is the editor's alone now
- * — `world/solid.ts` is all that still reads it.
+ * questions every ray asks AND out of every body's sweep in one write (a sweep
+ * gathers through `RayWorld.bodyNear`, off the same body bit);
+ * `ObstacleField.remove` takes it out of the sub-cell push-out the bots and the
+ * server's move validator both read. The MESH's `solid` flag is written with
+ * them and is the editor's alone now — `world/solid.ts` is all that still reads
+ * it — and its `checkCollisions` and enabled flag describe a mesh nothing walks
+ * any more.
  *
  * The NAV GRAPH is `NavGrid.openBox`, which relinks the ground the pane was
  * severing AND relaxes the flow fields over what that opened. Both are local
@@ -354,12 +356,12 @@ export class GlassSystem {
 
     const mesh = this.colliders.get(pane);
     if (mesh) {
-      // The MESH's own three writes, and what each is still for. `solid` is
-      // read by `world/solid.ts` and so by the editor's centre-screen pick;
-      // `checkCollisions` is the movement half, which is a separate list; and
-      // disabling is neither — it is what takes the mesh out of the scene
-      // entirely. The rays stopped reading any of them at
-      // `ENGINE_UPGRADE.md` wall 2 and read the BOX instead, below.
+      // The MESH's own three writes. `solid` is read by `world/solid.ts` and so
+      // by the editor's centre-screen pick; `checkCollisions` and disabling
+      // keep the mesh describing itself as what it now is. Nothing that moves
+      // or shoots reads any of them: the rays stopped at `ENGINE_UPGRADE.md`
+      // wall 2 and the sweeps at `BABYLON_EXIT.md` X2.1, and both read the BOX
+      // instead, below.
       mesh.metadata.solid = false;
       mesh.checkCollisions = false;
       mesh.setEnabled(false);

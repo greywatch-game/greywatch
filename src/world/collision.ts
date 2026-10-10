@@ -105,9 +105,11 @@ export interface MapCollision {
    * The mirror of `rayGroups` and not its twin: these boxes ARE the solid
    * world and ARE in `boxes`, so the nav grid, the cover bake and the obstacle
    * field see every one of them separately. The grouping says nothing about
-   * the world and everything about what a RAY meets — a pick costs per mesh
-   * before it costs per triangle, and a jungle belt is hundreds of one-metre
-   * trunks that no structure builder would ever have made separately.
+   * the world's shape: it is which meshes the client made, and in what order,
+   * and what still reads it is a body's SWEEP, whose ties go by that order
+   * (`RayWorld`'s rank) — so the authority's hulls break them as the client's
+   * do. It began as a pick budget, when a pick cost per mesh and a jungle belt
+   * was hundreds of one-metre trunks.
    *
    * Every index that appears here is left out of the one-mesh-per-box pass, so
    * a box belongs to exactly one mesh either way. Boxes named by no group are

@@ -1,18 +1,18 @@
 /**
  * server/world.ts — Rebuilds a map's SOLID world under a NullEngine, from the
  * baked collider set plus the layout.
- * Owns: the collider meshes `moveWithCollisions` walks, the terrain floor's
- * collider clones, and the nav/cover/obstacle/ray structures built from them.
+ * Owns: the collider meshes, the terrain floor's collider clones, and the
+ * nav/cover/obstacle/ray/sweep structures built from the same boxes.
  *
- * **THE MESHES ARE NO LONGER WHAT A SHOT IS RESOLVED AGAINST, and they are
- * still required.** They existed so this process's `scene.pickWithRay` had
- * something to pick; every ray on both sides is a box query now (`RayWorld`,
- * `ENGINE_UPGRADE.md` wall 2), so nothing here is picked at all. What still
- * needs them is `Vehicle.update`, which drives a hull with
- * `body.moveWithCollisions` — and the authority simulates its own hulls. So a
- * pass that deleted this geometry as dead weight would leave armour driving
- * through walls on the server and stopping at them on every client, which is
- * the worst-shaped disagreement this file exists to prevent.
+ * **NOTHING ON THIS SIDE READS THE MESHES ANY MORE.** They existed first so
+ * this process's `scene.pickWithRay` had something to pick, and then so a
+ * driven hull's `moveWithCollisions` had something to walk. Every ray is a box
+ * query now (`RayWorld`, `ENGINE_UPGRADE.md` wall 2) and so is every sweep
+ * (`CollisionField`, `BABYLON_EXIT.md` X2.1), both off `colliderBoxes` — so
+ * the hulls the authority drives meet exactly the walls its clients' meet,
+ * without a mesh in between. The meshes still mirror the client's so the two
+ * worlds stay one shape for whoever reads them next, and they go with the
+ * scene (`BABYLON_EXIT.md` X2.3).
  * Invariants: this is the collider half of `MapBuilder.build` and nothing else
  * — no visuals, no materials, no textures, no AO bake, and the two merges here
  * (`strutMesh`, `clusterMesh`) merge COLLIDERS and draw nothing. It must produce
@@ -86,11 +86,10 @@ function colliderBox(scene: Scene, box: WorldBox, i: number): Mesh {
   mesh.rotation.set(box.rotX, box.rotY, 0);
   mesh.isVisible = false;
   mesh.isPickable = true;
-  // `checkCollisions` is what `moveWithCollisions` walks, and it is the ONE
-  // thing on this side that still needs these meshes at all: a bot or a human
-  // driving a hull is simulated here, and `Vehicle.update` moves it that way. The
-  // legs never touched this list — a client does its own movement and
-  // `validateMove` checks the result analytically — and neither did the bots.
+  // Copied from `MapBuilder.collider()` like the flags below, so the mesh
+  // describes itself as its twin does. Nothing walks it: a driven hull sweeps
+  // off the boxes (`CollisionField`), a client does its own movement, and
+  // `validateMove` checks the result analytically.
   mesh.checkCollisions = true;
   // `porous` copied through so the mesh describes itself the way the client's
   // twin does. The flag that DECIDES a shot rides on the `WorldBox` and is read
@@ -130,8 +129,10 @@ function colliderBox(scene: Scene, box: WorldBox, i: number): Mesh {
  * went with the picks. Group by group exactly as baked, never all in one.
  *
  * Unlike a strut, every box in here IS in `colliderBoxes`, so the nav grid, the
- * cover bake and the obstacle field still see individual trunks. The merge is
- * about nothing but what a ray meets. `MapBuilder.clusterColliders` is the
+ * cover bake and the obstacle field still see individual trunks. The merge
+ * meets nothing any more — rays and sweeps both answer off the boxes — but the
+ * GROUPING still decides the sweep's tie order (`RayWorld`'s rank), which is
+ * why it is baked and read. `MapBuilder.clusterColliders` is the
  * client's half, and both refuse to group anything but plain `solid` boxes —
  * one mesh cannot carry two answers about porosity, and glass has to stay
  * addressable a sheet at a time.
@@ -207,7 +208,7 @@ function terrainColliders(
     col.isVisible = false;
     col.isPickable = true;
     // Vertical placement is the ground probe's job — the same reason the client
-    // keeps the floor out of `moveWithCollisions`.
+    // keeps the floor out of every sweep (it emits no `WorldBox`).
     col.checkCollisions = false;
     col.metadata = { solid: true, surface: "ground" };
     col.freezeWorldMatrix();
@@ -313,13 +314,11 @@ export async function buildServerWorld(scene: Scene, def: MapDef): Promise<GameM
   // than the reason this file exists: every ray the shared systems fire — the
   // rewound hitscan, sixteen bots' line of sight, the grenade, the rocket —
   // goes through this and never through the scene.
-  const rays = new RayWorld(size, boxes, rayGroups, terrain);
-  // And the sweep index beside it, off the same finished meshes the client
-  // builds one from. The authority's tick has exactly one caller of
-  // `moveWithCollisions` — a driven hull — and `ENGINE_UPGRADE.md` S9 priced that
-  // walk at 0.40 ms per hull per tick on a 1500 m map, which was the only term
-  // in this process that grew with map AREA. It does not grow with it any more.
-  const collidables = new CollisionField(colliders);
+  const rays = new RayWorld(size, boxes, rayGroups, terrain, collision.boxGroups ?? []);
+  // And the sweep a driven hull moves by, over the same boxes: the authority's
+  // one sweep is a hull's, and it is answered off `rays` exactly as the
+  // client's is — no mesh, no scene.
+  const collidables = new CollisionField(rays);
 
   // One flow field per objective, plus a route home per team — the set
   // `BattleSystem.fieldFor`/`homeFieldFor` ask for by name.

@@ -84,7 +84,7 @@ import type { AbstractMesh } from "@babylonjs/core";
  * box, and the two must not drift. Porous boxes are included, and that is the
  * point — a fence is still something you stand on when you jump onto it, and a
  * ground answer that could not see one would drop the player inside a box
- * `moveWithCollisions` is still holding them out of. `rayOnly` geometry is
+ * the sweep is still holding them out of. `rayOnly` geometry is
  * excluded for the mirror reason: a fence's posts and rails stop rounds, but
  * standing on a 0.1 m rail is not a thing a body does, and the coarse box
  * beside them is what the probe is meant to find. `MapBuilder` keeps that

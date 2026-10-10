@@ -34,8 +34,10 @@
  * (`worldMeshes`), in birth order, which is the scene order the meshes had
  * when the merge still ran on them — and only the freeze runs on the meshes.
  * What the map keeps of the record is `GameMap.world`: everything but the
- * arrays. collider() is deliberately NOT on that path: a collider has to be a
- * real mesh with submeshes, because moveWithCollisions walks them.
+ * arrays. collider() is deliberately NOT on that path: a collider is still a
+ * real mesh with submeshes, because the editor's centre-screen pick walks
+ * them — nothing that moves or shoots does any more (`RayWorld`,
+ * `CollisionField`).
  * `build(..., { editor: true })` keeps geometry per layout item, tags it with
  * metadata.editorRef and indexes it — at the cost of the BlockMerge pass and
  * roughly 10x the draw calls. Authoring only; never measure frame cost there.
@@ -536,12 +538,12 @@ interface BuildRun {
  *
  * ## The visual / collider split
  *
- * Every ray test in the game runs against `metadata.solid === true` meshes:
- * `CameraSystem`'s occlusion pull-in (every frame), `CombatSystem`'s hitscan
- * (every shot), and the bots' line-of-sight checks. `Player.moveWithCollisions`
- * separately walks every mesh with `checkCollisions`. At village scale, letting
- * visual geometry carry those jobs means thousands of triangle-picked meshes in
- * the hot path.
+ * Every ray test in the game — the death cam's and the chase camera's pull-in,
+ * `CombatSystem`'s hitscan, the bots' line of sight — and every body's sweep
+ * is answered off the COLLIDERS: their `WorldBox`es, through `RayWorld` and
+ * `CollisionField`, and on the editor's pick their `solid` meshes. At village
+ * scale, letting visual geometry carry those jobs would put thousands of
+ * triangle meshes in the hot path.
  *
  * So the two roles are split, and nothing does both:
  *
@@ -590,6 +592,8 @@ export class MapBuilder {
    */
   private rayGroups: WorldBox[][] = [];
   private boxGroups: number[][] = [];
+  /** The meshes `clusterColliders` made, for `derive`'s DEV check on their order. */
+  private clusterMeshes = new Set<Mesh>();
   /** Scatter boxes recorded, not yet given geometry — see `placeScatter`. */
   private pendingCluster: number[] = [];
   /**
@@ -738,6 +742,7 @@ export class MapBuilder {
     this.partBoxes = [];
     this.rayGroups = [];
     this.boxGroups = [];
+    this.clusterMeshes = new Set();
     this.pendingCluster = [];
     this.paletteColors = [];
     this.paletteSlots.clear();
@@ -1310,6 +1315,7 @@ export class MapBuilder {
     size: number,
   ): Pick<GameMap, "nav" | "cover" | "obstacles" | "rays" | "collidables"> {
     const { layout, terrain, colliders } = run;
+    if (import.meta.env.DEV) this.assertSweepOrder(colliders);
     // Navigation is derived from the finished collider set, then a flow field
     // is precomputed per objective: five flags plus both home spawns. The map
     // is static, so this is the only time any of it is computed.
@@ -1345,19 +1351,46 @@ export class MapBuilder {
     // them — a strut group added later would be geometry no round could find.
     const rays = record(
       "rayWorld",
-      () => new RayWorld(size, this.boxes, this.rayGroups, terrain),
+      () => new RayWorld(size, this.boxes, this.rayGroups, terrain, this.boxGroups),
     );
-    // …and the same set indexed for a SWEEP. Off the finished MESHES rather
-    // than off `boxes`, which is the one thing here that cannot be derived from
-    // geometry: what `moveWithCollisions` walks is the merged collider meshes,
-    // and a cluster of a scatter region's props is one of those and twelve of
-    // the other. The floor and the struts are in `colliders` and carry no
-    // `checkCollisions`, so the constructor drops them for free.
-    const collidables = record(
-      "collisionField",
-      () => new CollisionField(colliders),
-    );
+    // …and the sweep a body MOVES by, over the same index: its candidates are
+    // `rays.bodyNear`'s, so it holds nothing to build and nothing to go stale
+    // apart from `rays`. No collider mesh is walked by anything any more.
+    const collidables = new CollisionField(rays);
     return { nav, cover, obstacles, rays, collidables };
+  }
+
+  /**
+   * DEV: the premise `RayWorld`'s sweep RANK rests on, checked against the
+   * meshes this build really made — every collider mesh no cluster is came
+   * before every cluster mesh, there is one per box no group names, and the
+   * clusters were made in `boxGroups` order. A body's sweep breaks ties in that
+   * order (`RayWorld`'s constructor), and the rank re-derives it from
+   * `boxGroups` alone so the authority can too; a builder that made a collider
+   * after the scatter clusters would leave the two silently disagreeing about
+   * which way a wedged hull slides.
+   */
+  private assertSweepOrder(colliders: readonly Mesh[]): void {
+    let grouped = 0;
+    for (const g of this.boxGroups) grouped += g.length;
+    const singles = this.boxes.length - grouped;
+    let seen = 0;
+    let clusters = 0;
+    for (const mesh of colliders) {
+      if (!mesh.checkCollisions) continue;
+      if (this.clusterMeshes.has(mesh)) {
+        clusters++;
+      } else if (clusters > 0) {
+        throw new Error(`MapBuilder: collider ${mesh.name} was made after the scatter clusters`);
+      }
+      seen++;
+    }
+    if (clusters !== this.boxGroups.length || seen !== singles + clusters) {
+      throw new Error(
+        `MapBuilder: ${seen} collider meshes (${clusters} clusters) for ${singles} ` +
+          `single boxes and ${this.boxGroups.length} groups`,
+      );
+    }
   }
 
   /** The valley floor plus the rim that bounds play. */
@@ -1403,8 +1436,9 @@ export class MapBuilder {
       vertexDataOf(patch.data, plain).applyToMesh(col);
       col.isVisible = false;
       col.isPickable = true;
-      // Vertical placement is the ground probe's job and bots never touch the
-      // collidable list, so the floor stays out of moveWithCollisions.
+      // Vertical placement is the ground probe's job, so the floor is in no
+      // sweep — it emits no `WorldBox`, which is what a sweep reads — and the
+      // flag says the same of the mesh.
       col.checkCollisions = false;
       // `surface` is the impact channel, and this is the only place in the
       // world that sets it to anything: the clone IS the heightfield, so it
@@ -2318,6 +2352,7 @@ export class MapBuilder {
       mesh.metadata = { solid: true };
       mesh.freezeWorldMatrix();
       this.boxGroups.push(group);
+      this.clusterMeshes.add(mesh);
       out.push(mesh);
     }
     return out;

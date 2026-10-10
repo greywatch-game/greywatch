@@ -1296,9 +1296,9 @@ export class Bot implements Combatant {
   /**
    * Moves by `(dx, dz)` if the destination is somewhere a body can stand.
    *
-   * Bots move on the nav graph rather than through Babylon's collider: 16
-   * agents calling `moveWithCollisions` would walk the whole collidable mesh
-   * list 16 times a frame. But the grid only samples cell centres, so the
+   * Bots move on the nav graph rather than through the body sweep: sixteen
+   * (or forty-eight) agents sweeping every frame would be that many collider
+   * runs for bodies whose routes the flow field already chose. But the grid only samples cell centres, so the
    * destination is also pushed clear of any collider it overlaps — most of the
    * map's props are narrower than a cell and are otherwise invisible to
    * navigation entirely.

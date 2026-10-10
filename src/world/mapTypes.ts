@@ -429,9 +429,12 @@ export interface GameMap {
    * one entry per merged mesh — a scatter region's props, grouped by locality.
    *
    * Unlike `rayGroups` these boxes ARE in `colliderBoxes` and everything
-   * derived from geometry still sees them one at a time; the grouping is about
-   * nothing but what a ray meets. Boxes named by no group are their own mesh,
-   * which is every collider a structure builder makes.
+   * derived from geometry still sees them one at a time. The grouping says
+   * which meshes the client made, and in what order — every box named here got
+   * its mesh after every box named nowhere, cluster by cluster — which is the
+   * order a SWEEP breaks a tie in (`RayWorld`'s rank) and the only thing that
+   * still reads it. Boxes named by no group are their own mesh, which is every
+   * collider a structure builder makes.
    *
    * Carried rather than recomputed for the same reason `rayGroups` is: the
    * server rebuilds these meshes from the bake, and the grouping is a decision
@@ -498,16 +501,14 @@ export interface GameMap {
    */
   rays: RayWorld;
   /**
-   * The same collider set indexed for a SWEEP — which meshes a moving body's
-   * collision sphere could touch — so `moveWithCollisions` walks a street
-   * rather than the map.
+   * The sweep every moving body goes through — the player on foot, a hull
+   * driving, a wreck coasting (`world/CollisionField.ts`).
    *
-   * `rays`' counterpart and here for the identical reason, one question later:
-   * that one answers a LINE analytically and took every pick off the scene,
-   * and this one narrows the last whole-scene walk left behind, which no
-   * analytic query can replace because it MOVES a body rather than asking
-   * about one. See `world/CollisionField.ts` for what it measured and for the
-   * superset rule a caller owes it.
+   * Built over `rays` and holding nothing of its own: a sweep's candidates are
+   * `RayWorld.bodyNear`'s, so a sweep sees exactly the boxes and hulls every
+   * ray sees, and a pane a round has broken is out of both at once. It is the
+   * one thing here that MOVES a body rather than answering a question about
+   * one, which is why it is a field of its own rather than a method on `rays`.
    */
   collidables: CollisionField;
   /** Baked directional cover over the nav graph, for the AI. */

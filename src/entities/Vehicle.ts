@@ -44,8 +44,9 @@
  *   sightline breaks on it, the ground probe finds it, and a player can climb
  *   onto the deck. That is the whole of what a tank is to anything holding a
  *   rifle.
- * - It has `checkCollisions`, so `moveWithCollisions` — the player's, and the
- *   other tank's — is held out of it.
+ * - It is in every SWEEP — the player's and the other hulls' — because
+ *   `rayBox` is what `RayWorld.bodyNear` hands a sweep as well as what a ray
+ *   meets, behind the same gate (`hide` ends both).
  * - It emits NO `WorldBox`, so the nav graph, the cover bake, the obstacle
  *   field, the AO bake and the collision bake have never heard of it. Bots walk
  *   through a parked tank exactly as they walk through a corpse, and for the
@@ -54,7 +55,7 @@
  *
  * ## The collision sphere is on an ARM, so the hull is pushed out of walls
  *
- * `moveWithCollisions` sweeps a TRANSLATION and nothing else, and this vehicle
+ * The sweep moves a TRANSLATION and nothing else, and this vehicle
  * moves its own collider two other ways. The sphere rides `hull.length / 2 -
  * collideRadius` — 1.4 m — off the hull's centre (`aimCollider`), so the YAW
  * carries it round on that arm at up to `turnRate * 1.4`, through whatever the
@@ -72,27 +73,20 @@
  * ejects the hull at `drive.freeRate` off `ObstacleField.resolve`. See that
  * method, and `docs/vehicles.md`.
  *
- * ## ...and the sweep is handed a STREET rather than the map
+ * ## ...and the sweep is the game's own
  *
- * `moveWithCollisions` walks `scene.meshes` — every collidable mesh on the map,
- * up to `collisionRetryCount` times a call — which was the last whole-scene
- * walk in the game and, measured on Sarab's six hulls, **96% of everything the
- * vehicles cost**: 2.21 ms of the fleet's 2.30 a frame. `update` narrows it
- * through `body.surroundingMeshes`, which is Babylon's own field for exactly
- * this, off `map.collidables` — see `world/CollisionField.ts` for the grid and
- * `setGround` for how a hull gets one.
+ * `moveBody` over `map.collidables` (`world/CollisionField.ts`) — Babylon's
+ * `moveWithCollisions` ported, bit for bit, and fed the boxes near the hull
+ * rather than walking the scene's meshes. Walking the whole scene was once 96%
+ * of everything Sarab's fleet cost (2.21 ms of 2.30 a frame); a narrowed walk
+ * took it to 0.12 ms, and the port is cheaper per move than that narrowed
+ * walk was (`scripts/sweep-check.mjs` times the two side by side).
+ * `setGround` is how a hull gets one.
  *
- * **It is lossless only while the list is a SUPERSET of what the sweep can
- * reach, and `update` CHECKS that rather than trusting it** — a sphere that
- * began inside a box is EJECTED rather than swept, and an ejection is not
- * bounded by the step. A sweep that outran its list is thrown away and re-run
- * against the whole scene, which is the old code path, so the answer is the old
- * answer.
+ * ## ...and it may not ask the sweep for less than a millimetre
  *
- * ## ...and it may not ask the engine for less than a millimetre
- *
- * `moveWithCollisions` writes the position back only when the move exceeds
- * `CollisionsEpsilon`, and returns the mesh where it was otherwise. From rest
+ * The sweep writes the position back only when the move exceeds
+ * `COLLISIONS_EPSILON`, and leaves the hull where it was otherwise. From rest
  * the first frame asks for `accel * dt^2` — a third of a millimetre at 120 fps
  * — so the hull did not move, the blocked check called that walked-into-
  * something, and `s = 0.35 * (s + accel * dt)` pinned the drive at 0.021 m/s
@@ -230,15 +224,13 @@
  * hull node they hang off is TURNING, and to the wind. That is two damped
  * springs a mast — `HullFlex.flexAntennae` — and it is deliberately not Havok.
  * The engine in this tree is stepped by hand for corpses and glass shards,
- * things nothing reads back and nothing steers; a hull is moved by
- * `moveWithCollisions` and ridden up over a kerb by `standOnGround`, which is a
+ * things nothing reads back and nothing steers; a hull is moved by the sweep
+ * and ridden up over a kerb by `standOnGround`, which is a
  * teleport to a solver, and a jointed chain hung off it would crack every time
  * a tank climbed a kerb. What is bought instead is a whip that is clamped,
  * tunable and free. See `docs/vehicles.md`.
  */
 import {
-  AbstractEngine,
-  type AbstractMesh,
   Mesh,
   MeshBuilder,
   Scene,
@@ -251,7 +243,11 @@ import type { DamageKind, ShotOptions } from "../systems/CombatSystem";
 import { UNDRAWN, type Rand } from "../systems/RoundRandom";
 import { rotateToLocalXZ, topFaceHeight, type LocalXZ } from "../world/boxGeometry";
 import type { WorldBox } from "../world/MapBuilder";
-import { narrowedMove, type CollisionField } from "../world/CollisionField";
+import {
+  COLLISIONS_EPSILON,
+  moveBody,
+  type CollisionField,
+} from "../world/CollisionField";
 import type { ObstacleField } from "../world/ObstacleField";
 import type { RayHull } from "../world/RayWorld";
 import { TerrainField } from "../world/TerrainField";
@@ -989,21 +985,11 @@ export class Vehicle implements Combatant, RayHull {
    */
   private obstacles: ObstacleField | null = null;
   /**
-   * The collidable MESHES, bucketed — what `moveWithCollisions` is narrowed to.
-   *
-   * Null until a map hands one over, and a hull with none sweeps the whole
-   * scene exactly as it always did. That fallback is a correctness floor and
-   * not a mode: it is slow rather than wrong, which is the right way round for
-   * a field nothing but `installMap` is supposed to leave unset.
+   * The sweep the hull moves by (`world/CollisionField.ts`). Null only before
+   * `setGround`, which `VehicleSystem.build` calls the moment the hull is
+   * made; a hull with none would step unobstructed.
    */
   private collidables: CollisionField | null = null;
-  /**
-   * The list handed to `body.surroundingMeshes` each sweep — this hull's own,
-   * not shared, because Babylon holds the array on the mesh across the call and
-   * two hulls sweeping off one scratch would be the second one's street under
-   * the first one's tracks.
-   */
-  private readonly nearby: AbstractMesh[] = [];
   // Scratch. This runs every frame a tank exists; nothing below allocates.
   private readonly step = new Vector3();
   /** Where the push-out would put the hull. See `freeFromWalls`. */
@@ -1122,7 +1108,7 @@ export class Vehicle implements Combatant, RayHull {
 
   /**
    * Hands the hull the world it stands on: the collider boxes it rides over,
-   * the heightfield under them, and the same colliders as MESHES for the sweep.
+   * the heightfield under them, and the sweep it drives by.
    *
    * The first two in one call because a contact takes the higher of the two and
    * a hull holding one without the other answers half a question — the boxes
@@ -1131,9 +1117,9 @@ export class Vehicle implements Combatant, RayHull {
    * The third is the same collider set a third way round and is here rather
    * than in a setter of its own for the same reason: it is a fact about the
    * world this hull is standing in, it arrives from `installMap` with the other
-   * two, and a hull that had the boxes but not the meshes would be one whose
-   * ground probe knew about a wall its own drive was pricing against the whole
-   * map. See `world/CollisionField.ts`.
+   * two, and a hull that had the boxes but not the sweep would be one whose
+   * ground probe knew about a wall its drive could not meet. See
+   * `world/CollisionField.ts`.
    */
   setGround(
     terrain: TerrainField,
@@ -1447,8 +1433,8 @@ export class Vehicle implements Combatant, RayHull {
    * unreachable, and a `Vector3` nobody reads is a cheaper way to say that than
    * a nullable every call site has to unwrap.
    *
-   * **The matrix is FORCED, and that is `narrowedMove`'s trap one level down
-   * the rig rather than a tidy-up.** `getAbsolutePosition` computes the world
+   * **The matrix is FORCED, and that is a correctness line rather than a
+   * tidy-up.** `getAbsolutePosition` computes the world
    * matrix itself, but only if the node reports itself out of sync — and a
    * TransformNode's own test never fails on a moved position (Babylon's
    * `Vector3` carries no dirty flag), so what actually invalidates a rig joint
@@ -2088,12 +2074,13 @@ export class Vehicle implements Combatant, RayHull {
     if (stirred) this.aimCollider();
 
     // **The gate is the DISTANCE this frame asks for and not the speed, because
-    // the engine's own gate is a distance — and a speed here was a hull that
+    // the sweep's own gate is a distance — and a speed here was a hull that
     // could not pull away from a standstill.**
     //
-    // `moveWithCollisions` writes the position back only when the move it
-    // worked out exceeds `CollisionsEpsilon`, one millimetre, and silently
-    // returns the mesh where it was otherwise. From rest the first frame asks
+    // The sweep writes the position back only when the move it worked out
+    // exceeds `COLLISIONS_EPSILON`, one millimetre — Babylon's
+    // `CollisionsEpsilon`, kept — and silently leaves the hull where it was
+    // otherwise. From rest the first frame asks
     // for `accel * dt^2` — a third of a millimetre at 120 fps — so the hull did
     // not move, the check below read that as walked-into-something and docked
     // the speed to a third, and the two settled into a fixed point:
@@ -2104,19 +2091,18 @@ export class Vehicle implements Combatant, RayHull {
     // machine — seconds of a tank refusing to pull away at 120 fps and nothing
     // at all under about 40.
     //
-    // Asking below the engine's threshold is asking for nothing, so the frames
+    // Asking below the sweep's threshold is asking for nothing, so the frames
     // that would ask are skipped outright: `speed` goes on building at the
     // throttle's rate and the hull is moving inside three frames. Nothing is
     // lost by not asking — those frames never moved the hull anyway.
     this.step.copyFrom(this.vel).scaleInPlace(dt);
     const asked = this.step.length();
-    if (asked > AbstractEngine.CollisionsEpsilon) {
-      // **The street, not the map** — see `world/CollisionField.ts` for the
-      // three rules this one call is standing on, and the header above for
-      // what it was worth on this hull.
+    if (asked > COLLISIONS_EPSILON) {
+      // The sweep — see `world/CollisionField.ts`. `this` is the hull doing
+      // it, which is what takes the hull's own box out of its own list.
       const before = this.body.position.x;
       const beforeZ = this.body.position.z;
-      narrowedMove(this.body, this.step, this.collidables, this.nearby);
+      moveBody(this.collidables, this.body, this.step, this);
       // Walked into something: drop the speed rather than grinding along it at
       // full throttle. `moveWithCollisions` already slid the hull, so this is
       // about the ENGINE noise and the driver's read, not about the position —
@@ -2269,10 +2255,9 @@ export class Vehicle implements Combatant, RayHull {
    * from one to the other on the frame the plank catches it, with no landing to
    * detect.
    *
-   * **The move is `narrowedMove` because there is no other kind of move in this
-   * game** — it is the third of the three sweeps `CLAUDE.md` allows, and a
-   * sweep that walked `scene.meshes` would price a burning hull on the size of
-   * the map. A wreck that hits a building has ARRIVED: the velocity is re-read
+   * **The move is the sweep (`moveBody`) because there is no other kind of move
+   * in this game** — it is the third of the three sweeps, and the same one a
+   * live hull drives by. A wreck that hits a building has ARRIVED: the velocity is re-read
    * off the ground actually covered rather than docked by a fraction, so a slide
    * along a wall keeps the along-wall share and a head-on stop keeps nothing.
    * Bounded by what was ASKED, because a sphere being ejected out of a box
@@ -2307,11 +2292,11 @@ export class Vehicle implements Combatant, RayHull {
 
     this.step.copyFrom(this.vel).scaleInPlace(dt);
     const asked = this.step.length();
-    if (asked > AbstractEngine.CollisionsEpsilon) {
+    if (asked > COLLISIONS_EPSILON) {
       const p = this.body.position;
       const beforeX = p.x;
       const beforeZ = p.z;
-      narrowedMove(this.body, this.step, this.collidables, this.nearby);
+      moveBody(this.collidables, this.body, this.step, this);
       const dx = p.x - beforeX;
       const dz = p.z - beforeZ;
       const covered = Math.hypot(dx, dz);
