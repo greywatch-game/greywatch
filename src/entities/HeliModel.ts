@@ -240,6 +240,7 @@ import { CONFIG } from "../config";
 import type { CelMaterialFactory } from "../shaders/CelShader";
 import type { Team } from "./Combatant";
 import { viewTeam } from "../core/teamView";
+import type { HullFrame } from "./hullFrame";
 import {
   extrude,
   loftAlongZ,
@@ -398,6 +399,28 @@ const PYLON_X = 1.0;
 const MG_Y = 0.6;
 const MG_Z = 4.75;
 const MG_REACH = 0.7;
+
+/**
+ * This kind's joints as numbers (`entities/hullFrame.ts`), which `buildHeli`
+ * places its nodes FROM, so the simulation's replay and the drawn chin gun
+ * cannot drift. The ring is INERT and at the sprung body's origin, the gun
+ * hangs at its mount's own origin, and there is no main gun. The skids ARE
+ * the suspension and the contact patch at once, exactly as a truck's axles
+ * are, so the two reaches are the same number here — stated twice rather than
+ * aliased, because the day one of them moves is the day that matters.
+ */
+export const HELI_FRAME: HullFrame = {
+  gauge: SKID_TRACK,
+  contactReach: SKID_REACH,
+  wheelReach: SKID_REACH,
+  turretAt: [0, 0, 0],
+  gun: null,
+  mgMountAt: [0, MG_Y, MG_Z],
+  mgGunAt: [0, 0, 0],
+  mgMuzzleAt: [0, 0, MG_REACH],
+  // The gunner's eye — see `mgSight` for the three clearances that bound it.
+  mgSightAt: [-0.32, 0.13, 0.3],
+};
 
 /** The two aerials' lengths, both off the boom top and both bounded by the DISC. */
 const ANTENNA_LENGTH = 0.66;
@@ -1138,12 +1161,14 @@ export function buildHeli(
   // welded to the airframe and is drawn in the body segment, where it is free.
   // The node exists so that `mgMount` has the same parent it has on a tank and
   // `aimMg` needs no branch of its own.
+  const f = HELI_FRAME;
   const turret = new TransformNode("heli-ring", scene);
   turret.parent = sprung;
+  turret.position.set(f.turretAt[0], f.turretAt[1], f.turretAt[2]);
 
   const mgMount = new TransformNode("heli-mg-mount", scene);
   mgMount.parent = turret;
-  mgMount.position.set(0, MG_Y, MG_Z);
+  mgMount.position.set(f.mgMountAt[0], f.mgMountAt[1], f.mgMountAt[2]);
   segment(
     "heli-mg-ring",
     mgMount,
@@ -1169,6 +1194,7 @@ export function buildHeli(
 
   const mgGun = new TransformNode("heli-mg-gun", scene);
   mgGun.parent = mgMount;
+  mgGun.position.set(f.mgGunAt[0], f.mgGunAt[1], f.mgGunAt[2]);
   segment(
     "heli-mg",
     mgGun,
@@ -1203,7 +1229,7 @@ export function buildHeli(
   // own bodywork — see the third clearance in the header. It is the same figure
   // the belly's keep-out circle is drawn with, and deliberately so: what the
   // muzzle reaches IS what the barrel sweeps.
-  mgMuzzle.position.set(0, 0, MG_REACH);
+  mgMuzzle.position.set(f.mgMuzzleAt[0], f.mgMuzzleAt[1], f.mgMuzzleAt[2]);
 
   // **The gunner's eye, at the outer face of the optic head drawn on the port
   // cheek above** — the pale metal box two segments up, which exists to tell a
@@ -1229,7 +1255,7 @@ export function buildHeli(
   //   moves.
   const mgSight = new TransformNode("heli-mg-sight", scene);
   mgSight.parent = mgGun;
-  mgSight.position.set(-0.32, 0.13, 0.3);
+  mgSight.position.set(f.mgSightAt[0], f.mgSightAt[1], f.mgSightAt[2]);
 
   // --- the aerials ------------------------------------------------------------
   //
@@ -1273,13 +1299,6 @@ export function buildHeli(
     antennae,
     meshes,
     livery,
-    gauge: SKID_TRACK,
-    contactReach: SKID_REACH,
-    // The skids ARE the suspension and the contact patch at once, exactly as a
-    // truck's axles are, so the two figures `VehicleRig` insists on stating
-    // separately are the same number here — and it is stated twice rather than
-    // aliased, because the day one of them moves is the day that matters.
-    wheelReach: SKID_REACH,
     setRun: (_left, _right, _steer, rotor) =>
       setRotorRun(mainRotor, tailRotor, rotor),
     reset: () => resetRigPose(rig, mats, CONFIG.vehicles.heli),

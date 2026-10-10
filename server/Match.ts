@@ -1593,7 +1593,7 @@ export class Match {
     // by the second of them and by nothing else.
     this.vehicleScratch.length = 0;
     for (const [i, tank] of this.game.vehicles.hulls.entries()) {
-      if (!tank.body.isEnabled()) continue;
+      if (!tank.present) continue;
       this.vehicleScratch.push({
         i,
         p: [tank.position.x, tank.position.y, tank.position.z],

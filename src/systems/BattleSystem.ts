@@ -68,7 +68,7 @@ import type { FlowField, NavGrid } from "../world/NavGrid";
 import type { GameMap } from "../world/MapBuilder";
 import type { ObstacleField } from "../world/ObstacleField";
 import type { TerrainField } from "../world/TerrainField";
-import type { RayWorld } from "../world/RayWorld";
+import type { RayHull, RayWorld } from "../world/RayWorld";
 import type { CombatSystem, Hittable, ShotOptions } from "./CombatSystem";
 import { STREAM, type RoundRandom } from "./RoundRandom";
 import { SquadRadio } from "../entities/SquadRadio";
@@ -847,9 +847,14 @@ export class BattleSystem {
    * bot needs and must get the identical answer — a tank that could see
    * through a wall a rifleman cannot would be a different game running in the
    * same window. Budgeted by the caller, as every LOS ray in this file is.
+   *
+   * `skip` is the crew's OWN hull, out of the answer for the length of the
+   * ray (`RayWorld.blocked`): a cupola eye stands five centimetres over its
+   * own collider, so every sightline to anything shorter dives straight back
+   * into it. An argument, never a write to the hull.
    */
-  losBetween(from: Vector3Like, to: Vector3Like): boolean {
-    return this.visible(from, to);
+  losBetween(from: Vector3Like, to: Vector3Like, skip: RayHull | null = null): boolean {
+    return !this.rays?.blocked(from, to, skip);
   }
 
   /**

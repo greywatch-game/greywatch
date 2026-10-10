@@ -5,14 +5,18 @@
  * Owns: the suspension's pitch and roll springs, the heave spring, the rate
  * the mast feet are turning at, both whips, and the wind's clock for them.
  * Writes `rig.sprung` (its rotation and its Y) and the antennae's bend, and
- * nothing else.
+ * nothing else — and every write to `sprung` into the hull's `HullPose` beside
+ * it, in the same guarded branch.
  * Owns NO rule. Nothing here moves the collider, the gun's aim or a body's
- * footing, so nothing that shoots, aims or walks can tell this class exists —
- * see `Vehicle`'s header, "What is a rule and what is a picture". It reads the
- * rig and the spec it was built with and the numbers `Vehicle` hands it each
- * frame, and it never asks what KIND of hull it is drawing: a hull with no
- * masts has an empty `rig.antennae`, and a hull whose rotor is carrying it is
- * handed a `load` of 0.
+ * footing — but it is on a MUZZLE's path: the turret and both guns hang off
+ * `sprung`, so where a round leaves is read off the springs AS DRAWN, guard
+ * and all (`entities/hullFrame.ts`). So the springs are simulated on the
+ * authority too, the pose record is written exactly where and when the node
+ * is, and a change to either guard moves the fight hash. It reads the rig, the
+ * spec and the frame it was built with and the numbers `Vehicle` hands it each
+ * frame, never a node, and it never asks what KIND of hull it is drawing: a
+ * hull with no masts has an empty `rig.antennae`, and a hull whose rotor is
+ * carrying it is handed a `load` of 0.
  *
  * ## The ground half of the attitude is not here
  *
@@ -24,6 +28,7 @@
  */
 import { CONFIG } from "../config";
 import type { VehicleSpec } from "../config/vehicles";
+import type { HullFrame, HullPose } from "./hullFrame";
 import { setAntennaBend, type VehicleRig } from "./vehicleRig";
 
 /**
@@ -93,6 +98,14 @@ export class HullFlex {
   constructor(
     private readonly rig: VehicleRig,
     private readonly spec: VehicleSpec,
+    /** The kind's extents — `wheelReach` and `gauge` bound the travel. */
+    private readonly frame: HullFrame,
+    /**
+     * The hull's drawn pose, `Vehicle`'s record: this class writes the three
+     * `sprung` channels wherever it writes the node, and reads `turretY` for
+     * the masts' frame. See `HullPose`.
+     */
+    private readonly pose: HullPose,
   ) {}
 
   /**
@@ -100,7 +113,9 @@ export class HullFlex {
    * `Vehicle.placeAt`, and for its reason — the rig is pooled, so the only
    * guarantee worth having is that what comes back is clean.
    *
-   * The wind's clock is left running, because the wind did not stop.
+   * The wind's clock is left running, because the wind did not stop. The
+   * pose's `sprung` channels are not zeroed here: `Vehicle.placeAt` zeroes the
+   * whole record beside `rig.reset`, which is what zeroes the nodes.
    */
   reset(): void {
     this.suspPitch = 0;
@@ -183,13 +198,18 @@ export class HullFlex {
     groundRoll: number,
   ): void {
     this.flexSuspension(dt, accel, lateral, load);
-    const b = this.rig.sprung.rotation;
+    // Compared against what is DRAWN, which the pose record holds — the node
+    // and the record are written together and nowhere else.
+    const shown = this.pose;
     if (
-      Math.abs(this.suspPitch - b.x) > 1e-5 ||
-      Math.abs(this.suspRoll - b.z) > 1e-5
+      Math.abs(this.suspPitch - shown.sprungX) > 1e-5 ||
+      Math.abs(this.suspRoll - shown.sprungZ) > 1e-5
     ) {
-      b.x = this.suspPitch;
-      b.z = this.suspRoll;
+      shown.sprungX = this.suspPitch;
+      shown.sprungZ = this.suspRoll;
+      const b = this.rig.sprung.rotation;
+      b.x = shown.sprungX;
+      b.z = shown.sprungZ;
     }
     // How fast the MAST FEET are turning, which is what the antennae bend
     // against, and it is still the SUM: a whip hangs off the turret, which
@@ -217,8 +237,8 @@ export class HullFlex {
    */
   private stationTravel(pitch: number, roll: number): number {
     return (
-      this.rig.wheelReach * Math.abs(Math.sin(pitch)) +
-      (this.rig.gauge / 2) * Math.abs(Math.sin(roll))
+      this.frame.wheelReach * Math.abs(Math.sin(pitch)) +
+      (this.frame.gauge / 2) * Math.abs(Math.sin(roll))
     );
   }
 
@@ -461,8 +481,9 @@ export class HullFlex {
     // Guarded for `lean`'s reason: two of these are parked doing nothing
     // for most of a round, and a write is a world matrix whether the number
     // moved or not.
-    if (Math.abs(this.heave - this.rig.sprung.position.y) > 1e-5) {
-      this.rig.sprung.position.y = this.heave;
+    if (Math.abs(this.heave - this.pose.sprungY) > 1e-5) {
+      this.pose.sprungY = this.heave;
+      this.rig.sprung.position.y = this.pose.sprungY;
     }
   }
 
@@ -520,8 +541,8 @@ export class HullFlex {
     const lim = this.spec.suspension.accelLimit;
     const bound = (v: number, l: number) => Math.max(-l, Math.min(l, v));
     // Into the turret's own frame: its world yaw is `turretYaw`, so the local
-    // one is what the drawn node already carries.
-    const phi = this.rig.turret.rotation.y;
+    // one is what the drawn node already carries — the pose's `turretY`.
+    const phi = this.pose.turretY;
     const cs = Math.cos(phi);
     const sn = Math.sin(phi);
     const ax = bound(lateral, lim);

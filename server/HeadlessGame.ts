@@ -248,16 +248,10 @@ export class HeadlessGame {
       setOccupied: (tank, seat, on) => this.vehicles.setOccupied(tank, seat, on),
       exitSpot: (tank) => this.vehicles.exitSpot(tank),
       targetsFor: (team) => this.battle.hittablesAgainst(team),
-      // The hull is taken out of its own pick for the length of the ray, the
-      // two property writes `Game` spends here and for the same reason: a
+      // The hull is taken out of its own answer for the length of the ray —
+      // the query's `skip`, as `Game` passes it and for the same reason: a
       // crew's eye is five centimetres above the top of its own collider box.
-      visibleFrom: (tank, to) => {
-        const was = tank.body.isPickable;
-        tank.body.isPickable = false;
-        const seen = this.battle.losBetween(tank.eyePos, to);
-        tank.body.isPickable = was;
-        return seen;
-      },
+      visibleFrom: (tank, to) => this.battle.losBetween(tank.eyePos, to, tank),
       fireShell: (tank, by) => this.resolveShell(tank, by),
       fireMg: (tank, by) => this.resolveMg(tank, by),
     }, this.random);

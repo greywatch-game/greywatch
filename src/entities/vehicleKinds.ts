@@ -2,7 +2,7 @@
  * vehicleKinds.ts — The list of vehicles that exist, and the ONE place a kind
  * is turned into the two things a hull is made of.
  * Owns: the `VehicleKind` union and the table pairing each kind's
- * `VehicleSpec` with the function that builds its mesh.
+ * `VehicleSpec` and `HullFrame` with the function that builds its mesh.
  * Owns NO behaviour. `entities/Vehicle.ts` is one hull of any kind and has
  * never heard of this file; `systems/VehicleSystem.ts` is the only reader, and
  * it reads it once per hardstanding at map load.
@@ -10,8 +10,10 @@
  * ## Why a table and not a branch
  *
  * A vehicle in this game is exactly two things — a block of numbers
- * (`CONFIG.vehicles.<kind>`, shaped by `VehicleSpec`) and a `VehicleRig` that
- * draws them — and everything else about it, the collider and the drive and
+ * (`CONFIG.vehicles.<kind>`, shaped by `VehicleSpec`) and a model that draws
+ * them, which hands over a `VehicleRig` and states a `HullFrame` (where its
+ * joints are, which the simulation reads instead of the rig) — and
+ * everything else about it, the collider and the drive and
  * the ten ground contacts and the two seats and the chase camera and the
  * crush, is machinery that reads those two and nothing else. So a fourth kind
  * is a row here, a block in `config/vehicles.ts` and a model file, and NO
@@ -46,9 +48,10 @@
 import { CONFIG } from "../config";
 import type { VehicleSpec } from "../config/vehicles";
 import type { Team } from "./Combatant";
-import { buildHeli } from "./HeliModel";
-import { buildTank } from "./TankModel";
-import { buildTruck } from "./TruckModel";
+import { buildHeli, HELI_FRAME } from "./HeliModel";
+import type { HullFrame } from "./hullFrame";
+import { buildTank, TANK_FRAME } from "./TankModel";
+import { buildTruck, TRUCK_FRAME } from "./TruckModel";
 import type { VehicleRig } from "./vehicleRig";
 import type { CelMaterialFactory } from "../shaders/CelShader";
 import type { Scene } from "@babylonjs/core";
@@ -74,6 +77,13 @@ export interface VehicleType {
    */
   readonly name: string;
   readonly spec: VehicleSpec;
+  /**
+   * Where the joints on the way to each muzzle are, and the three extents the
+   * drive reads off the drawing — the model's own numbers, which it builds its
+   * nodes from (`entities/hullFrame.ts`). The simulation reads THESE and never
+   * the rig.
+   */
+  readonly frame: HullFrame;
   readonly build: (
     scene: Scene,
     mats: CelMaterialFactory,
@@ -86,9 +96,9 @@ export interface VehicleType {
  * member of `VehicleKind` fails to compile until it has a row.
  */
 const VEHICLE_KINDS: Record<VehicleKind, VehicleType> = {
-  tank: { name: "TANK", spec: CONFIG.vehicles.tank, build: buildTank },
-  truck: { name: "TRUCK", spec: CONFIG.vehicles.truck, build: buildTruck },
-  heli: { name: "HELI", spec: CONFIG.vehicles.heli, build: buildHeli },
+  tank: { name: "TANK", spec: CONFIG.vehicles.tank, frame: TANK_FRAME, build: buildTank },
+  truck: { name: "TRUCK", spec: CONFIG.vehicles.truck, frame: TRUCK_FRAME, build: buildTruck },
+  heli: { name: "HELI", spec: CONFIG.vehicles.heli, frame: HELI_FRAME, build: buildHeli },
 };
 
 /**

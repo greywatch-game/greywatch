@@ -53,7 +53,6 @@ import {
 import { DRIVER, GUNNER, type CrewSeat } from "../entities/hullSeats";
 import { kindOf } from "../entities/vehicleKinds";
 import type { Vector3Like } from "../math";
-import { toBabylon } from "../math/babylon";
 import type { CelMaterialFactory } from "../shaders/CelShader";
 import type { GameMap, VehicleSpawnDef } from "../world/MapBuilder";
 import { newRayHit, type RayWorld } from "../world/RayWorld";
@@ -246,7 +245,7 @@ export class VehicleSystem {
       const tank = new Vehicle(this.scene, this.mats, def.team, kindOf(def.kind));
       tank.setGround(map.terrain, map.obstacles, map.collidables);
       tank.onDestroyed = () => this.onDestroyed(tank);
-      tank.placeAt(toBabylon(def.pos), def.yaw);
+      tank.placeAt(def.pos, def.yaw);
       // A hull in a match refuses local damage and answers to the wire for
       // when it burns and when a fresh one arrives — see `Vehicle.predicted` and
       // the clocks in `update`. Set here rather than by the caller so a fleet
@@ -323,7 +322,7 @@ export class VehicleSystem {
       if (this.predicted) continue;
       // The wreck's own clock has run out: take the hull away. Its collider
       // goes with it, which is the moment the street opens up again.
-      if (tank.wreckT <= 0 && tank.body.isEnabled()) tank.hide();
+      if (tank.wreckT <= 0 && tank.present) tank.hide();
       // The hardstanding's clock is separate and starts on the same frame the
       // hull died. Armed here rather than in `Vehicle.destroy` so that the tank
       // never has to know what a hardstanding is.
@@ -334,7 +333,7 @@ export class VehicleSystem {
       stand.respawnIn -= dt;
       if (stand.respawnIn > 0) continue;
       stand.respawnIn = 0;
-      tank.placeAt(toBabylon(stand.def.pos), stand.def.yaw);
+      tank.placeAt(stand.def.pos, stand.def.yaw);
       this.onRespawned(tank);
     }
   }

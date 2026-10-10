@@ -129,6 +129,7 @@ import { CONFIG } from "../config";
 import type { CelMaterialFactory } from "../shaders/CelShader";
 import type { Team } from "./Combatant";
 import { viewTeam } from "../core/teamView";
+import type { HullFrame } from "./hullFrame";
 import {
   extrude,
   loftAlongZ,
@@ -346,6 +347,29 @@ const RING_Y = ROOF_Y + 0.04;
  * its barrel down over the cargo bed.
  */
 const RING_Z = -0.85;
+
+/**
+ * This kind's joints as numbers (`entities/hullFrame.ts`), which `buildTruck`
+ * places its nodes FROM, so the simulation's replay and the drawn station
+ * cannot drift. The ring is INERT and at the sprung body's origin, and there
+ * is no main gun. The suspension's travel is bounded at the wheel STATIONS,
+ * which on this vehicle are the axles — the same place the ground contacts
+ * are, because a truck's wheels are its suspension and its contact patch at
+ * once. On a tank the two differ, which is the whole reason the frame states
+ * both.
+ */
+export const TRUCK_FRAME: HullFrame = {
+  gauge: TRACK_GAUGE,
+  contactReach: CONTACT_REACH,
+  wheelReach: AXLE_Z,
+  turretAt: [0, 0, 0],
+  gun: null,
+  mgMountAt: [0, RING_Y + 0.06, RING_Z],
+  mgGunAt: [0, 0.18, 0.06],
+  // **This 1.46 is the tightest number in the file** — see `mgMuzzle`.
+  mgMuzzleAt: [0, 0.02, 1.46],
+  mgSightAt: [-0.36, 0.12, 0.4],
+};
 
 /**
  * The two whips' lengths in metres, the long one first — the order
@@ -940,8 +964,10 @@ export function buildTruck(
   // angle written on this node is always zero — which is exactly what a ring
   // BOLTED to a roof should do. It exists so that the mount below has the same
   // parent it has on a tank and `aimMg` needs no branch.
+  const f = TRUCK_FRAME;
   const turret = new TransformNode("truck-ring", scene);
   turret.parent = sprung;
+  turret.position.set(f.turretAt[0], f.turretAt[1], f.turretAt[2]);
   segment("truck-ring-m", turret, [], [
     // The ring itself, and the armoured collar it is let into — which is what
     // stops a station standing on a roof reading as a thing dropped onto one.
@@ -961,7 +987,7 @@ export function buildTruck(
   // which between them say that the thing aiming this gun is downstairs.
   const mgMount = new TransformNode("truck-mg", scene);
   mgMount.parent = turret;
-  mgMount.position.set(0, RING_Y + 0.06, RING_Z);
+  mgMount.position.set(f.mgMountAt[0], f.mgMountAt[1], f.mgMountAt[2]);
   segment("truck-mg-ring", mgMount, [
     // The yoke arm on the right, the drive housing outboard of it, and the
     // smaller cheek on the left between the gun and the sensor head. Nothing
@@ -978,7 +1004,7 @@ export function buildTruck(
   ]);
   const mgGun = new TransformNode("truck-mg-gun", scene);
   mgGun.parent = mgMount;
-  mgGun.position.set(0, 0.18, 0.06);
+  mgGun.position.set(f.mgGunAt[0], f.mgGunAt[1], f.mgGunAt[2]);
   segment("truck-mg-m", mgGun, [
     // The receiver, the buffer behind it, the charging handle and the feed
     // cover — the shapes that make a heavy machine gun read as one at ten
@@ -1034,7 +1060,7 @@ export function buildTruck(
   // place. **The sensor head and the chute are inside that envelope at every
   // lay**: the head's lowest corner is 9 cm over the turntable at `pitchMax`
   // and 10 cm over it at `pitchMin`.
-  mgMuzzle.position.set(0, 0.02, 1.46);
+  mgMuzzle.position.set(f.mgMuzzleAt[0], f.mgMuzzleAt[1], f.mgMuzzleAt[2]);
 
   // **The gunner's eye, in front of the sensor head's upper lens** — the head
   // that is the only big pale thing above this roof line, and now where the
@@ -1047,7 +1073,7 @@ export function buildTruck(
   // the near plane at every lay.
   const mgSight = new TransformNode("truck-mg-sight", scene);
   mgSight.parent = mgGun;
-  mgSight.position.set(-0.36, 0.12, 0.4);
+  mgSight.position.set(f.mgSightAt[0], f.mgSightAt[1], f.mgSightAt[2]);
 
   // ==========================================================================
   // THE WHIPS: two, on the bed's back corners
@@ -1096,13 +1122,6 @@ export function buildTruck(
     antennae,
     meshes,
     livery,
-    gauge: TRACK_GAUGE,
-    contactReach: CONTACT_REACH,
-    // The suspension's travel is bounded at the wheel STATIONS, which on this
-    // vehicle are the axles — the same place the ground contacts are, because
-    // a truck's wheels are its suspension and its contact patch at once. On a
-    // tank the two differ, which is the whole reason `VehicleRig` states both.
-    wheelReach: AXLE_Z,
     setRun: (left, right, steer, _rotor) => setWheelRun(wheels, left, right, steer),
     reset: () => resetRigPose(rig, mats, CONFIG.vehicles.truck),
     paint: (wrecked) => paintRig(meshes, livery, mats, wrecked),

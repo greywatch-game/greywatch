@@ -78,6 +78,7 @@ import { CONFIG } from "../config";
 import type { CelMaterialFactory } from "../shaders/CelShader";
 import type { Team } from "./Combatant";
 import { viewTeam } from "../core/teamView";
+import type { HullFrame } from "./hullFrame";
 import { extrude, rodBetween, solidBetween, type Point3, type ProfilePoint } from "./facet";
 import {
   paintRig,
@@ -277,6 +278,44 @@ export const TRACK_GAUGE = TRACK_X * 2;
  * own. See `CONFIG.vehicles.tank.antenna`.
  */
 export const ANTENNA_LENGTHS = [1.5, 1.2] as const;
+
+/**
+ * The hull's top, and therefore where the turret ring sits. Derived from the
+ * collider's own height rather than authored, so that raising the box raises
+ * the vehicle drawn inside it: what is left above this is the 0.95 m the ring
+ * and the turret need to reach the top of the box exactly.
+ */
+const DECK_Y = CONFIG.vehicles.tank.hull.height - 0.95;
+/** The turret ring, 6 cm proud of the deck. */
+const TURRET_Y = DECK_Y + 0.06;
+/** Where the commander stands, in the turret's own frame. */
+const CUPOLA_Y = CONFIG.vehicles.tank.cupolaHeight - TURRET_Y;
+/** Where the barrel ends, along the gun's own axis. */
+const BARREL_END = 0.45 + BARREL_LENGTH;
+
+/** The main gun's trunnion on the turret, and its muzzle just past the barrel. */
+const TANK_GUN = {
+  at: [0, 0.45, 1.25],
+  muzzleAt: [0, 0, BARREL_END + 0.2],
+} as const;
+
+/**
+ * This kind's joints as numbers (`entities/hullFrame.ts`), which `buildTank`
+ * places its nodes FROM — so the muzzle the simulation replays off these and
+ * the one drawn on the rig cannot drift apart. The three extents are the
+ * drawing decisions `Vehicle` cannot get anywhere else: see `HullFrame`.
+ */
+export const TANK_FRAME: HullFrame = {
+  gauge: TRACK_GAUGE,
+  contactReach: TRACK_REACH,
+  wheelReach: WHEEL_REACH,
+  turretAt: [0, TURRET_Y, -0.3],
+  gun: TANK_GUN,
+  mgMountAt: [-0.62, CUPOLA_Y + 0.3, 0.15],
+  mgGunAt: [0, 0.12, 0.16],
+  mgMuzzleAt: [0, 0.02, 1.1],
+  mgSightAt: [0, 0.22, 0.3],
+};
 
 /** One side's moving parts: the two link strips and the toothed sprocket. */
 interface TrackSide {
@@ -485,11 +524,8 @@ export function buildTank(
   // THE HULL — on `sprung`, one segment: every colour on it is one mesh.
   // ==========================================================================
   //
-  // The hull's top, and therefore where the turret ring sits. Derived from the
-  // collider's own height rather than authored, so that raising the box raises
-  // the vehicle drawn inside it: what is left above this is the 0.95 m the
-  // ring and the turret need to reach the top of the box exactly.
-  const deckY = H - 0.95;
+  // The hull's top, and therefore where the turret ring sits — `DECK_Y`.
+  const deckY = DECK_Y;
   /** The nose and the tail plate stand at the collider's own ends. */
   const NOSE = L / 2;
   const TAIL = -NOSE + 0.04;
@@ -732,11 +768,12 @@ export function buildTank(
   // ==========================================================================
   const turret = new TransformNode("tank-turret", scene);
   turret.parent = sprung;
-  turret.position.set(0, deckY + 0.06, -0.3);
+  const f = TANK_FRAME;
+  turret.position.set(f.turretAt[0], f.turretAt[1], f.turretAt[2]);
   /** Where the commander stands, in the turret's own frame. */
-  const cupolaY = t.cupolaHeight - (deckY + 0.06);
+  const cupolaY = CUPOLA_Y;
   /** The roof, in the turret's frame: the top of the collider box exactly. */
-  const ROOF = H - (deckY + 0.06);
+  const ROOF = H - TURRET_Y;
 
   const tur: Box[] = [];
   const turCyls: Cyl[] = [];
@@ -946,7 +983,7 @@ export function buildTank(
   // front of his hatch where the real one does.
   const mgMount = new TransformNode("tank-mg", scene);
   mgMount.parent = turret;
-  mgMount.position.set(-0.62, cupolaY + 0.3, 0.15);
+  mgMount.position.set(f.mgMountAt[0], f.mgMountAt[1], f.mgMountAt[2]);
   segment("tank-mg-ring", mgMount, [
     // The ring itself and the pintle standing out of its front. Both turn with
     // the mount, which is what makes the traverse legible from outside: the
@@ -957,7 +994,7 @@ export function buildTank(
   ]);
   const mgGun = new TransformNode("tank-mg-gun", scene);
   mgGun.parent = mgMount;
-  mgGun.position.set(0, 0.12, 0.16);
+  mgGun.position.set(f.mgGunAt[0], f.mgGunAt[1], f.mgGunAt[2]);
   segment("tank-mg-m", mgGun, [
     // The receiver, its box magazine and the spade grips behind it — the three
     // shapes that make a machine gun read as one at ten metres.
@@ -975,7 +1012,7 @@ export function buildTank(
   mgMuzzle.parent = mgGun;
   // Just past the barrel, so a flash lit here is outside it and a round fired
   // from here starts outside the turret's own geometry.
-  mgMuzzle.position.set(0, 0.02, 1.1);
+  mgMuzzle.position.set(f.mgMuzzleAt[0], f.mgMuzzleAt[1], f.mgMuzzleAt[2]);
 
   // **The commander's eye over the receiver, and this is the one of the three
   // that the drawing does NOT already answer.** The truck's station and the
@@ -993,7 +1030,7 @@ export function buildTank(
   // picture, so the weapon frames the shot without standing in it.
   const mgSight = new TransformNode("tank-mg-sight", scene);
   mgSight.parent = mgGun;
-  mgSight.position.set(0, 0.22, 0.3);
+  mgSight.position.set(f.mgSightAt[0], f.mgSightAt[1], f.mgSightAt[2]);
 
   // --- the antennae: the only parts of this vehicle that BEND ---------------
   //
@@ -1033,10 +1070,9 @@ export function buildTank(
   // --- the gun: elevates in the mantlet, in the slot between the wedges -----
   const gun = new TransformNode("tank-gun", scene);
   gun.parent = turret;
-  gun.position.set(0, 0.45, 1.25);
+  const g = TANK_GUN;
+  gun.position.set(g.at[0], g.at[1], g.at[2]);
 
-  /** Where the barrel ends, along the gun's own axis. */
-  const BARREL_END = 0.45 + BARREL_LENGTH;
   segment("tank-gun-m", gun, [
     // The muzzle reference sensor, a small box on its stalk over the muzzle.
     [0.05, 0.04, 0.05, 0, 0.14, BARREL_END - 0.12, kit.track],
@@ -1072,19 +1108,12 @@ export function buildTank(
   muzzle.parent = gun;
   // Just past the barrel, so a flash lit here is outside it and a shell fired
   // from here starts outside the hull's own collider box.
-  muzzle.position.set(0, 0, BARREL_END + 0.2);
+  muzzle.position.set(g.muzzleAt[0], g.muzzleAt[1], g.muzzleAt[2]);
 
   const rig: VehicleRig = {
     root, hull, sprung, turret, gun, muzzle,
     mgMount, mgGun, mgMuzzle, mgSight,
     antennae, meshes, livery,
-    // The three extents `Vehicle` cannot get anywhere else — see
-    // `VehicleRig.gauge`. All three are drawing decisions made in this file,
-    // which is why they are stated here rather than exported as constants a
-    // physics file would have to import from a model.
-    gauge: TRACK_GAUGE,
-    contactReach: TRACK_REACH,
-    wheelReach: WHEEL_REACH,
     setRun: (left, right, _steer, _rotor) => setTrackRun(tracks, left, right),
     reset: () => resetRigPose(rig, mats, CONFIG.vehicles.tank),
     paint: (wrecked) => paintRig(meshes, livery, mats, wrecked),

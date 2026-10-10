@@ -347,9 +347,11 @@ export class RayWorld {
    * tank's chase camera, the dismount's floor test.
    *
    * `skip` is how a caster takes its OWN hull out of the answer — two property
-   * writes around a `scene.pickWithRay` before this, an argument now.
-   * `world/solid.ts` forbade minting a predicate at a call site and that rule
-   * is kept: nothing here allocates per cast.
+   * writes around a `scene.pickWithRay` before this, an argument now, and the
+   * only way there is: `world/solid.ts` forbade minting a predicate at a call
+   * site and that rule is kept (nothing here allocates per cast), and a hull
+   * has no flag left to clear (`Vehicle.present` is whether it is on the
+   * field at all).
    */
   castBody(
     origin: Vector3Like,
@@ -394,15 +396,19 @@ export class RayWorld {
    * box that blocks instead of walking the rest of the segment to find out
    * which blocked first. At sixteen bots and `thinkRate` that is the difference
    * between a whole segment and a few metres of one.
+   *
+   * `skip` is `castRound`'s, and its one caller is a CREW's sightline: the
+   * cupola eye is five centimetres over the top of its own hull's collider,
+   * so the hull it is looking out of has to be out of the answer.
    */
-  blocked(from: Vector3Like, to: Vector3Like): boolean {
+  blocked(from: Vector3Like, to: Vector3Like, skip: RayHull | null = null): boolean {
     const dx = to.x - from.x;
     const dy = to.y - from.y;
     const dz = to.z - from.z;
     const len = Math.hypot(dx, dy, dz);
     if (len < 0.01) return false;
     ANY_DIR.set(dx / len, dy / len, dz / len);
-    return this.cast(from, ANY_DIR, len, BLOCKS_ROUND, null, null);
+    return this.cast(from, ANY_DIR, len, BLOCKS_ROUND, null, skip);
   }
 
   /**

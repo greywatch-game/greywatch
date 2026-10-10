@@ -167,8 +167,10 @@ export interface CrewCtx {
    * tank could see nothing at all in front of it. Measured on Coldharbour: no
    * line of sight to a body standing in the open at 20, 25, 30, 40 or 50 m
    * dead ahead. The fix is `docs/vehicles.md`'s own — take the hull out of the
-   * pick for the length of the call — and it is the caller's to make, because
-   * `world/solid.ts` forbids minting a predicate that closes over one.
+   * answer for the length of the call, as the query's `skip`
+   * (`BattleSystem.losBetween` → `RayWorld.blocked`) — and it is the caller's
+   * to make, because the caller holds the hull and `world/solid.ts` forbids
+   * minting a predicate that closes over one.
    */
   visibleFrom: (tank: Vehicle, to: Vector3Like) => boolean;
   /**

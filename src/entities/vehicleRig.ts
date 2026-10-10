@@ -34,17 +34,16 @@
  * vehicle IS lives in `config/vehicles.ts` as a `VehicleSpec` and in a model
  * file as this, and the pair are married once in `entities/vehicleKinds.ts`.
  *
- * ## What a rig must state, because `Vehicle` cannot see the geometry
+ * ## What a model must state, because `Vehicle` cannot see the geometry
  *
- * Three numbers, and all three are DRAWING decisions the physics cannot do
- * without: `gauge` (a hull turning at `w` runs its outer side `w * gauge / 2`
- * faster than its inner one, which is what makes a track run backwards in a
- * pivot), `contactReach` (how far fore and aft the ground contacts are laid,
- * which is where the belt or the wheelbase actually touches) and `wheelReach`
- * (where the outermost SUSPENSION station is, which is not the same place and
- * is what bounds the body's travel). Stating them here rather than exporting
- * three constants per model is what stopped `Vehicle` importing from a model
- * file at all.
+ * A `HullFrame` (`entities/hullFrame.ts`): the three extents the drive cannot
+ * do without — `gauge`, `contactReach`, `wheelReach`, all DRAWING decisions —
+ * and the offsets of every joint between the collider box and a muzzle, which
+ * the simulation replays as numbers rather than reading off these nodes. Each
+ * model exports its own and places its nodes FROM it, and
+ * `entities/vehicleKinds.ts` hands it to the hull beside the spec, so
+ * `Vehicle` still imports from no model file. They rode on this rig until
+ * `BABYLON_EXIT.md` X2.2 C8 took the simulation off it.
  *
  * ## Two rules every model owes, both inherited and both already broken once
  *
@@ -261,32 +260,6 @@ export interface VehicleRig {
   meshes: Mesh[];
   /** What each of `meshes` was painted with when it was built. */
   livery: Material[];
-  /**
-   * The distance between the two sides' ground contacts.
-   *
-   * `Vehicle` splits one hull speed into two side speeds and cannot do it
-   * without this — a hull turning at `w` rad/s runs its outer side
-   * `w * gauge / 2` faster than its inner one.
-   */
-  gauge: number;
-  /**
-   * How far fore and aft of the hull's centre the ground contacts reach —
-   * where the belt or the wheelbase stops touching anything.
-   *
-   * Not the collider's own half-length: on a tank the sprocket and the idler
-   * stand 0.6 m inside the box, and sampling past them is a hull rearing up on
-   * a kerb its tracks have not reached yet.
-   */
-  contactReach: number;
-  /**
-   * …and how far out the outermost SUSPENSION station is, which is a different
-   * place and bounds a different thing.
-   *
-   * The body's travel is stopped at the wheel STATIONS rather than at the ends
-   * of the running gear, because a bump stop is something a wheel arm reaches
-   * and an idler has no arm at all.
-   */
-  wheelReach: number;
   /**
    * The running gear, given how far each side has covered in metres, how hard
    * the stick is over (-1..1), and how far the ROTOR has turned in radians.

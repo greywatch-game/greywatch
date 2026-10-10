@@ -1637,20 +1637,14 @@ export class Game {
       setOccupied: (tank, seat, on) => this.vehicles.setOccupied(tank, seat, on),
       exitSpot: (tank) => this.vehicles.exitSpot(tank),
       targetsFor: (team) => this.battle.hittablesAgainst(team),
-      // The hull is taken out of its own pick for the length of the ray, which
-      // is `VehicleCamera`'s trick and `VehicleSystem.groundAt`'s: a crew's
-      // eye sits five centimetres above the top of its own collider, so every
-      // sightline to anything shorter than the cupola dives straight back into
-      // it. Two property writes and no allocation — `world/solid.ts` forbids
-      // minting a predicate that closes over the hull, and this is a per-think
-      // call.
-      visibleFrom: (tank, to) => {
-        const was = tank.body.isPickable;
-        tank.body.isPickable = false;
-        const seen = this.battle.losBetween(tank.eyePos, to);
-        tank.body.isPickable = was;
-        return seen;
-      },
+      // The hull is taken out of its own answer for the length of the ray,
+      // which is `VehicleCamera`'s trick and `VehicleSystem.groundAt`'s: a
+      // crew's eye sits five centimetres above the top of its own collider, so
+      // every sightline to anything shorter than the cupola dives straight
+      // back into it. It is the query's `skip` — no write to the hull and no
+      // allocation; `world/solid.ts` forbids minting a predicate that closes
+      // over the hull, and this is a per-think call.
+      visibleFrom: (tank, to) => this.battle.losBetween(tank.eyePos, to, tank),
       fireShell: (tank, by) => this.resolveShell(tank, by),
       fireMg: (tank, by) => this.resolveMg(tank, by),
     }, this.random);
@@ -7946,7 +7940,7 @@ export class Game {
    */
   private drawNetHullShot(shot: PendingShot): void {
     const tank = this.vehicles.hulls[shot.slot];
-    if (!tank || !tank.alive || !tank.body.isEnabled()) return;
+    if (!tank || !tank.alive || !tank.present) return;
     const muzzle = this.netMuzzle;
     if (shot.gun === "cannon") {
       tank.muzzleToRef(muzzle);
@@ -8302,11 +8296,11 @@ export class Game {
     for (const [i, tank] of this.vehicles.hulls.entries()) {
       const present = net.vehicles.present(i);
       if (!present) {
-        if (tank.body.isEnabled()) tank.hide();
+        if (tank.present) tank.hide();
         continue;
       }
       const state = net.vehicles.stateFor(i);
-      if (!tank.body.isEnabled()) {
+      if (!tank.present) {
         // A fresh hull, and it is placed at the position that arrived rather
         // than at the hardstanding: the two are the same on a respawn, and
         // they are NOT the same for a hull this client has only just been told

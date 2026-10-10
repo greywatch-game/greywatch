@@ -58,11 +58,12 @@
  * than tidy.** `scene.pick(x, y, predicate)` runs the predicate INSTEAD of
  * Babylon's own `isEnabled && isVisible && isPickable` filter, not as well as
  * it. So a predicate that does not ask leaves every collider in the game
- * permanently pickable whatever the flag says. Three places used to take a mesh
+ * permanently pickable whatever the flag says. Four places used to take a mesh
  * out of a ray by clearing it — the tank's ground probe, the chase camera's
- * pull-in, the dismount's floor test; all three pass their hull to `RayWorld`'s
- * `skip` now, and `Vehicle.rayBox` reads the same two terms so a WRECK that has
- * been carried away stops stopping rounds in the street. It is LAST so the
+ * pull-in, the dismount's floor test and a crew's sightline; all pass their
+ * hull to `RayWorld`'s `skip` now. `Vehicle.rayBox` used to read these same two
+ * terms off the hull's body mesh and reads `Vehicle.present` instead (C8); the
+ * mesh's `isPickable` follows that field, for this predicate. It is LAST so the
  * metadata rejection still short-circuits ahead of it for the ~1,800 visuals
  * that are not solid, and it must stay a flag rather than an `isEnabled()`
  * call, which walks the parent chain.

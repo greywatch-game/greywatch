@@ -38,7 +38,7 @@
  *   world matrix: on a client a frame old for one already moved this frame,
  *   and on the AUTHORITY, which never renders, whatever a muzzle read or the
  *   hull's own last sweep had left there — the origin it was built at, for a
- *   hull nobody had driven. `rayBox()` reads the body's position, on both.
+ *   hull nobody had driven. `rayBox()` reads the hull's own `pos`, on both.
  *
  * Each of the first two only ever moves an answer by a rounding, which
  * matters only on a knife edge — an ellipsoid already touching two boxes,
@@ -86,8 +86,9 @@ export { COLLISIONS_EPSILON };
 /**
  * A body that sweeps: where it is, and the ellipsoid it sweeps as. A Babylon
  * mesh satisfies it as it stands — `position`, `ellipsoid`, `ellipsoidOffset`
- * — and so will whatever holds a body's state once the nodes are views
- * (X2.2), because nothing here reads anything else.
+ * — and so does a plain record of a body's own fields, which is what a hull
+ * hands over (`Vehicle.sweeper`, over `Vehicle.pos`): nothing here reads
+ * anything else.
  */
 export interface SweepBody {
   /** Written through `set` when the move is kept, and never otherwise. */

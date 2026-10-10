@@ -722,7 +722,7 @@ is one machine's:
   something computes its world matrix, so the FIRST script run after a build
   reported a rocket flying straight through a tank and every run after it
   reported a hit. The step ray is `RayWorld.castRound` now and the hull reaches
-  it through `Vehicle.rayBox`, which reads `body.position` — always current, no
+  it through `Vehicle.rayBox`, which reads `tank.pos` — always current, no
   matrix involved. Anything still asking `getAbsolutePosition()` needs a frame
   driven first. Measured on Coldharbour: 1200 → 580 on a clean strike, which is `damage` exactly and
   no splash — `blastAt` needs line of sight to the hull's centre and the hull is
@@ -744,11 +744,15 @@ is one machine's:
   still the right instrument for a per-call figure (the clock is clamped, so
   only a sum over hundreds of calls means anything); it just has to be run
   somewhere a body is actually colliding.
-- **Teleporting a hull between calls moves the sweep now, and a world-matrix
-  read still does not.** Since X2.1 the sweep starts from `body.position` and
-  meets every other hull at its `rayBox()`, which reads the position too, so
-  no matrix is involved. Anything that still asks `getAbsolutePosition()` (a
-  muzzle, a node's world position) reads the world matrix, and
+- **Teleport a hull through `tank.pos`, never `tank.body.position`, and a
+  world-matrix read still does not follow it.** Since X2.2 C8 the hull's
+  position IS `pos` (`placeAt`/`correctTo` write it too): the sweep starts
+  from it, every other hull meets it at its `rayBox()`, and the three muzzles
+  are replayed off it, so none of those involve a matrix. The body mesh is a
+  FOLLOWER that `sync` overwrites from `pos` at the end of every hull step — a
+  write to it moves nothing and is undone. Anything that still asks
+  `getAbsolutePosition()` (a rig joint's world position) reads the world
+  matrix, and
   `computeWorldMatrix()` early-outs while `_currentRenderId` equals
   `scene.getRenderId()` — which never advances inside one synchronous
   `page.evaluate`. **Call `body.computeWorldMatrix(true)` after a position
@@ -897,10 +901,11 @@ is one machine's:
   with `position` only when something computes the world matrix, so a fleet
   stepped inside one synchronous `evaluate` collided from where each hull stood
   at the last drawn frame and a script "proved" a tank drives out of the map.
-  Since X2.1 the sweep reads `body.position` and the other hulls' `rayBox()`,
-  so `vehicles.update` in a tight loop is honest. Anything ELSE in the same
-  loop that reads a node's world position still owes
-  `tank.body.computeWorldMatrix(true)` first (the item above).
+  Since X2.1 the sweep reads the hull's position and the other hulls'
+  `rayBox()`, so `vehicles.update` in a tight loop is honest — and since X2.2
+  C8 so are the three muzzles, which are arithmetic off `tank.pos`. Anything
+  ELSE in the same loop that reads a node's world position (a rig joint you
+  are measuring) still owes `computeWorldMatrix(true)` first (the item above).
 - **`startRound()` does not build the map — it books it.** The state goes to
   `loading` and `buildRound()` runs two animation frames later, so a script that
   calls it and reads the world on the next line gets last round's (or nothing at

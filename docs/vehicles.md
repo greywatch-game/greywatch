@@ -105,7 +105,12 @@ carries `setRun(left, right, steer)`, a closure the builder made, and `Vehicle`
 hands it the two distances and the stick it already has. `reset` and `paint` are
 the same bargain for the respawn and the wreck. The three numbers the physics
 cannot get anywhere else — `gauge`, `contactReach`, `wheelReach` — are stated on
-the rig, which is what stopped `Vehicle` importing from a model file at all.
+the model's `HullFrame` (`entities/hullFrame.ts`), beside the offset of every
+joint between the collider box and a muzzle, and `vehicleKinds.ts` hands it to
+the hull with the spec: that is what stopped `Vehicle` importing from a model
+file at all, and since `BABYLON_EXIT.md` X2.2 C8 it is what keeps the
+simulation off the rig. Each model places its nodes FROM its frame, so the two
+cannot drift.
 
 ### What the TRUCK is, and the trade it is
 
@@ -847,8 +852,9 @@ established: things that MOVE cannot be in structures that are BAKED.
 
 What the hull's collider box is:
 
-- `metadata.solid`, and neither `porous` nor `rayOnly`. Those two describe a
-  fence — a thing that is a wall to a body and mostly air to a bullet, or the
+- A box to both questions, and neither `porous` nor `rayOnly` (the body MESH
+  carries `metadata.solid` for the editor's centre-screen pick and nothing
+  else reads it). Those two describe a fence — a thing that is a wall to a body and mostly air to a bullet, or the
   reverse. A tank is both to both, which is the plain case. So it answers both
   of `RayWorld`'s questions: a round stops on it and a sightline breaks on it.
   It reaches those queries as `RayWorld.hulls` — a list `VehicleSystem` keeps
@@ -864,8 +870,8 @@ What the hull's collider box is:
 - **In every SWEEP**, so the player's and the other hulls' are held out of it.
   It reaches them the way it reaches the rays: `RayWorld.bodyNear`, the list
   every sweep is gathered from, appends each hull's `rayBox()` after the static
-  boxes, behind the same gate — so `hide` takes it out of every sweep and every
-  ray in one write, and `VehicleSystem.build` registers a hull once, in
+  boxes, behind the same gate (`Vehicle.present`) — so `hide` takes it out of
+  every sweep and every ray in one write, and `VehicleSystem.build` registers a hull once, in
   `map.rays.hulls`. A hull's own sweep passes itself as `self`, which is the
   whole of how a mover is kept out of its own test (Babylon's coordinator
   skipped the mover; `bodyNear` skips `self`).
@@ -952,8 +958,10 @@ queries stopped picking meshes, and it is an argument now — the rule is kept
 either way: nothing is allocated per call, and **the other tank stays in the
 answer throughout**, which is what makes one hull block another's camera. The
 dismount's floor test does the same thing for the same reason. The crew's
-sightline is the second and is `Game`'s `CrewCtx.visibleFrom` — see the two
-bugs the AI crew found, below.
+sightline is the second and is `Game`'s `CrewCtx.visibleFrom`, which passes
+the hull as `RayWorld.blocked`'s `skip` (through `BattleSystem.losBetween`) —
+it was two writes to `body.isPickable` around the query until `BABYLON_EXIT.md`
+X2.2 C8, the same answer, and see the two bugs the AI crew found, below.
 
 **The third is the hitscan's own wall cap, and it is the same mistake seen from
 the other end: a hull's guns are DRAWN on the hull, so a muzzle is regularly
@@ -990,16 +998,51 @@ one of the eight, and **a round fired at the enemy tank parked 20 m ahead still
 stops on it** for 2.75 of 55 — `resist.bullet` at 0.05, which is the trade that
 keeps this gun useless against armour.
 
-**`isPickable` is still read, and it is still load-bearing.** `Vehicle.rayBox`
-gates on `isEnabled() && isPickable` exactly as `SOLID_ONLY` does, so `hide`
-takes a wreck that has been carried away out of every ray in one write.
-**The bug that found that term was the ground probe's**, back
+**The gate is `Vehicle.present`, and it is load-bearing.** `Vehicle.rayBox`
+returns null unless the hull is on the field, so `hide` takes a wreck that has
+been carried away out of every ray, every sweep, the deck and the crush in one
+write. It used to be `body.isEnabled() && body.isPickable`, the terms
+`SOLID_ONLY` reads; since `BABYLON_EXIT.md` X2.2 C8 it is a field and the body
+mesh merely follows it (enabled, and pickable for the editor, exactly while
+present). **The bug that found the pickable term was the ground probe's**, back
 when the ground was a ray: it started INSIDE the box it was meant to ignore,
 found the hull's own underside, pinned `floorY` to whatever height the tracks
 already had, and a hull lifted by anything — Babylon's own collision response
 climbing a barrier — stayed there for the rest of the round and could not fall.
-That probe is gone (see below) and the term it argued for is still load-bearing.
-Do not take it back out of `world/solid.ts`.
+That probe is gone (see below), and the rule it argued for is that a caster
+takes its OWN hull out by `skip`, never by a write to the hull. The editor's
+predicate in `world/solid.ts` still ends on `isPickable`, for the mesh.
+
+### Where a round leaves is read off the hull AS DRAWN, and it is arithmetic
+
+`Vehicle.muzzleToRef`, `mgMuzzleToRef` and `mgSightToRef` were node reads —
+`computeWorldMatrix(true)` and `getAbsolutePosition()` on `rig.muzzle` (the
+turret on a gunless kind), `rig.mgMuzzle` and `rig.mgSight`. A forced read
+walks every ancestor, so on both sides each was the FRESH float32 chain off
+the nodes' current values: body `T(pos) R(yaw)` → root `T(0, -h/2, 0)` → hull
+`R(lean)` → sprung `T(0, heave) R(tilt)` → turret `T(turretAt) R(local yaw)` →
+gun `T(at) R(-gunPitch)` → muzzle `T(muzzleAt)`, or turret → mgMount
+`T(mgMountAt) R(local yaw)` → mgGun `T(mgGunAt) R(-mgPitch)` → mgMuzzle or
+mgSight. **Since `BABYLON_EXIT.md` X2.2 C8 they are that chain replayed**
+(`entities/hullFrame.ts`, `hullPointToRef`) with `src/math`'s float32
+`Matrix` and yaw-pitch-roll quaternions, off `Vehicle.pos`, `yaw`, the kind's
+`HullFrame` and the hull's `HullPose` — and bit for bit: an assertion against
+the node read at every call, removed before the commit, saw 0 mismatches over
+whole seed-777 rounds on the four armour maps and over a live client driving,
+firing and sighting all three kinds.
+
+**The pose is what the joints hold AS DRAWN, and that is not what the springs
+want.** The ground lean (`leanHull`) and the suspension's tilt and heave
+(`HullFlex.lean`, `flexHeave`) are written to their nodes only when they have
+moved by more than 1e-5, so a drawn joint trails its spring by up to that —
+and the muzzle was always read off the drawn joint. So `HullPose` is written
+exactly where, and exactly when, its node is (and zeroed beside `rig.reset`),
+and the guards are on the muzzle's path: changing one moves the fight hash.
+Measured: on a seed-777 Sarab round 15,090 of 27,707 reads were taken while
+the drawn lean was behind the ground's. **The lean and the springs are
+therefore SIMULATED on the authority** — a picture to everything that aims,
+never to where a round starts. `fireGun`'s recoil bearing reads the pose's
+`turretY` too, which is the value the turret node carried.
 
 ## Driving OVER things: the ten contacts and the climb
 
@@ -1595,7 +1638,7 @@ which was never the thing that was wrong.
 ### Three gaps, all accepted on purpose
 
 - **`vel` stays horizontal and `standOnGround` remains the sole owner of
-  `body.position.y`.** Putting a Y component through the sweep was
+  `pos.y`.** Putting a Y component through the sweep was
   the obvious move and is wrong: the collision ellipsoid's floor sits
   `climbHeight/2` above the hull's bottom, so a descending machine would be
   stopped by the collider and put back by the plank, once a frame, for ever. The
@@ -3164,9 +3207,10 @@ because each will be re-introduced by anything that adds a second vehicle.
   shorter than 2.95 m dives straight back into the box within the hull's own
   length. Measured: no line of sight to a body standing in the open at 20, 25,
   30, 40 or 50 m dead ahead. The fix is the chase camera's — take the hull out of
-  the pick for the length of the ray, two property writes and no allocation, made
-  by the CALLER because `world/solid.ts` forbids minting a predicate that closes
-  over a mesh. `Game`'s `CrewCtx.visibleFrom` is where it lives.
+  the answer for the length of the ray, made by the CALLER as the query's `skip`
+  (`RayWorld.blocked`, through `BattleSystem.losBetween`), no allocation and no
+  write to the hull; `world/solid.ts` forbids minting a predicate that closes
+  over one. `Game`'s `CrewCtx.visibleFrom` is where it lives.
 - **A whisker fan must reach the nose, and must be denser than the narrowest
   thing it may not hit.** With the probes spread evenly from a third of the reach,
   anything closer than four metres was invisible — which never showed on a
@@ -3453,11 +3497,14 @@ sweep, one 4x4 compose per sweep per frame; the Sarab authority tick was
 unmoved by it (p50 0.101 ms before, 0.086 after, p95 0.201 both). **Since
 `BABYLON_EXIT.md` X2.1 there is no matrix to force**: the sweep starts from
 the body's own position and meets every other hull at its `rayBox()`, which
-reads the body's position too, so a sweep on the authority reads no world
-matrix at all. Every OTHER read of a hull's world matrix the authority can
-reach still forces its own (the rule `CLAUDE.md` states). A bot's muzzle, the
-one forced read on the authority that was not a hull's, needs none since
-`BABYLON_EXIT.md` X2.2 C5: it is replayed off numbers (`soldierPose.ts`).
+reads the hull's position too, so a sweep on the authority reads no world
+matrix at all. **Nor does anything else on a hull since `BABYLON_EXIT.md` X2.2
+C8**: the three muzzles, the last node reads the authority made on one, were
+FORCED (a forced read walks every ancestor, so they were never stale), and are
+now the same float32 chain replayed off the hull's fields (`hullFrame.ts`; see
+"Where a round leaves", above). A bot's muzzle, the other forced read, needs
+none since C5 (`soldierPose.ts`). So the rule `CLAUDE.md` states — a node read
+on the authority owes a forced matrix — has no hull or bot reader left.
 
 ### What it does, measured
 
@@ -3801,7 +3848,7 @@ ray happened to find, which can be a street away.
   differently from the rest of it, which is the part of a landing a player is
   actually watching.
 - **A flying hull is not collided UPWARD.** `vel` is horizontal and
-  `standOnGround` owns `body.position.y` alone, so nothing stops a helicopter
+  `standOnGround` owns `pos.y` alone, so nothing stops a helicopter
   climbing through the underside of an arch. Putting a Y component through
   the sweep is the obvious fix and is worse: the collision ellipsoid's
   floor sits `climbHeight/2` above the hull's bottom, so a descending machine

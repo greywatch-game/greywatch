@@ -679,9 +679,10 @@ src/
                         #   its colour groups. The one kit table that decides
                         #   nothing
     Combatant.ts        # Team + the shared shootable/shooter interface
-    Vehicle.ts          # ONE hull of any KIND: the collider (the only MOVING
-                        #   `solid` mesh in the game, and invisible to the nav
-                        #   graph for the reason a corpse is), the drive, the
+    Vehicle.ts          # ONE hull of any KIND: the collider box as fields —
+                        #   `pos`, `yaw`, `present` (the only MOVING solid
+                        #   thing in the game, and invisible to the nav graph
+                        #   for the reason a corpse is) — the drive, the
                         #   ten GROUND CONTACTS it stands on and the
                         #   rate-limited climb that rides it over a car, the
                         #   leading-end collision sphere, the turret's slew,
@@ -701,7 +702,17 @@ src/
                         #   of that: what a rotor does to the ground model is
                         #   `lift`, an addend that is 0 on anything else, so a
                         #   hover is an equality and the plank is a landing
-                        #   floor. Knows nothing about a player
+                        #   floor. Its three muzzles are ARITHMETIC off those
+                        #   fields and the drawn pose (`hullFrame.ts`); the
+                        #   body mesh and the rig only FOLLOW. Knows nothing
+                        #   about a player
+    hullFrame.ts        # Where a hull's guns and sight ARE, no Babylon:
+                        #   `HullFrame` (a kind's joint offsets and the three
+                        #   extents the drive reads off the drawing, stated by
+                        #   each model, which places its nodes from it),
+                        #   `HullPose` (what those joints hold AS DRAWN) and
+                        #   `hullPointToRef`, the float32 node chain replayed
+                        #   bit for bit
     hullSeats.ts        # The two chairs in a hull (`CrewSeat`: `DRIVER`,
                         #   `GUNNER`), the order they fill in (`SEATS`), and
                         #   `chooseSeat` (which one a person gets — the
@@ -711,7 +722,8 @@ src/
     HullFlex.ts         # What a hull's own mass does to its DRAWING: the
                         #   sprung body's pitch, roll and heave springs on one
                         #   travel budget, the rate the mast feet turn at, and
-                        #   the two whips in the wind. Writes `rig.sprung` and
+                        #   the two whips in the wind. Writes `rig.sprung` (and
+                        #   the pose record beside it — a muzzle rides it) and
                         #   the antennae and nothing else; handed the drive's
                         #   acceleration, the ground's jolt and the gear's load
     FlightModel.ts      # The rotor, for a hull whose spec states `flight`:
@@ -721,13 +733,11 @@ src/
                         #   its motion. Owns no position or velocity — those
                         #   stay `Vehicle`'s and are handed in
     vehicleKinds.ts     # The list of kinds that exist, and the ONE place a
-                        #   kind becomes a name, a spec and a model. A map's
+                        #   kind becomes a name, a spec, a frame and a model. A map's
                         #   `VehicleSpawnDef.kind` is resolved here, and the
                         #   default (a tank) is written down once
     vehicleRig.ts       # What every vehicle's MESH is: the joints `Vehicle`
-                        #   writes, the three extents the physics needs off the
-                        #   drawing (gauge, contact reach, wheel reach), and
-                        #   the three CLOSURES a model hands back — `setRun`,
+                        #   writes and the three CLOSURES a model hands back — `setRun`,
                         #   `reset`, `paint`. `setRun`'s FOURTH argument is the
                         #   rotor, for the reason its third is the steer: a
                         #   tracked hull's powerplant is already in the first

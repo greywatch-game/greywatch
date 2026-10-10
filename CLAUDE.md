@@ -1080,12 +1080,14 @@ body's**: `Player.update` is not called, so the hull's ground REPLACES the
 probe.
 
 **A hull is the one MOVING solid thing in the game**: every ray and every
-SWEEP meets it through `rays.hulls` and `rayBox()`, behind one gate (`hide`
-ends both), but it emits **no `WorldBox`** — so the nav
+SWEEP meets it through `rays.hulls` and `rayBox()`, behind one gate
+(`Vehicle.present`, which `hide` ends), off its own fields and never its mesh,
+but it emits **no `WorldBox`** — so the nav
 graph, the cover bake, the obstacle field and the collision bake have never
 heard of it, and **bots walk through a parked tank as they walk through a
-corpse**. **Anything picking a hull out of its own way owes two property writes
-rather than a predicate** (`world/solid.ts` forbids minting one). **It is also
+corpse**. **Anything taking a hull out of its own way passes it as the query's
+`skip`** (`castBody`, `castRound`, `blocked`) — never a predicate
+(`world/solid.ts` forbids minting one) and never a write to the hull. **It is also
 the one TARGET answered by its collider rather than by a hit sphere** —
 `RayHit.hull` says which hull a cast stopped on, and **nothing reads
 `Vehicle.hitRadius` any more** — **which is why a hull's own ROUNDS leave that
@@ -1114,7 +1116,11 @@ keeping its LIFE, its POSITION slaved to the hull and its SQUAD'S ORDER.
 
 **ANY world position read off a node on the AUTHORITY owes a forced world
 matrix, and the failure is invisible on a client**, whose render walk writes one
-every frame.
+every frame — **which is why no simulation reads a node at all any more**: a
+hull's three muzzles (`entities/hullFrame.ts`) and a bot's
+(`soldierPose.ts`) are the node chains replayed off fields, bit for bit. A
+hull's are read off its joints AS DRAWN, so the 1e-5 guards on the lean and the
+springs are on a muzzle's path, and both are simulated on the authority too.
 
 **A hull is HEARD whoever is in it**, pushed per FRAME by `Game.pushHullEngines`
 rather than opened on a mount, and **what drives the voice is asked of the HULL**
