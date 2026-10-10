@@ -6,6 +6,12 @@
  * levels of detail), the particle state under them, and the height the flag
  * is flown at.
  *
+ * The POLE is static geometry and is built as `Part`s through `src/geometry/`,
+ * merged by `mergeParts` and made a mesh by `drawnMesh` (BABYLON_EXIT.md
+ * X1.3). The CLOTH is not: its meshes are the simulation's output, written
+ * every frame into updatable Babylon buffers, and stay Babylon's until the
+ * renderer that draws them is ours.
+ *
  * Invariants: annotation exactly as the ring is — never `solid`, never
  * `checkCollisions`, never pickable, never a WorldBox, so no ray, no nav
  * consumer and no sweep has heard of it. Every mesh is `noShadowCaster`: the
@@ -42,14 +48,15 @@
 import {
   BoundingInfo,
   Mesh,
-  MeshBuilder,
   Scene,
   Vector3,
   VertexBuffer,
   VertexData,
 } from "@babylonjs/core";
 import { CONFIG } from "../config";
+import { createCylinder, createSphere } from "../geometry/primitives";
 import type { CelMaterialFactory } from "../shaders/CelShader";
+import { drawnMesh, mergeParts, Part } from "../world/parts";
 
 /*
  * Art constants — what the flag and its pole ARE, not how they behave.
@@ -294,35 +301,38 @@ export class FlagCloth {
     baseY: number,
     topY: number,
   ): Mesh {
-    const shaft = MeshBuilder.CreateCylinder(
+    const shaft = new Part(
       `${name}-pole-shaft`,
-      {
+      createCylinder({
         height: topY - baseY,
         diameterBottom: POLE_RADIUS_BASE * 2,
         diameterTop: POLE_RADIUS_TOP * 2,
         tessellation: 8,
-      },
-      this.scene,
+      }),
     );
     shaft.position.set(x, (baseY + topY) / 2, z);
-    const plinth = MeshBuilder.CreateCylinder(
+    const plinth = new Part(
       `${name}-pole-plinth`,
-      {
+      createCylinder({
         height: PLINTH_HEIGHT,
         diameterBottom: PLINTH_RADIUS * 2.3,
         diameterTop: PLINTH_RADIUS * 2,
         tessellation: 8,
-      },
-      this.scene,
+      }),
     );
     plinth.position.set(x, baseY, z);
-    const finial = MeshBuilder.CreateSphere(
+    const finial = new Part(
       `${name}-pole-finial`,
-      { diameter: FINIAL_RADIUS * 2, segments: 6 },
-      this.scene,
+      createSphere({ diameter: FINIAL_RADIUS * 2, segments: 6 }),
     );
     finial.position.set(x, topY, z);
-    const pole = Mesh.MergeMeshes([shaft, plinth, finial], true)!;
+    // `Mesh.MergeMeshes([shaft, plinth, finial], true)`, which is what this
+    // was: the three merged in world space and the mesh named as it named it.
+    const pole = drawnMesh(
+      `${shaft.name}_merged`,
+      mergeParts([shaft, plinth, finial]),
+      this.scene,
+    );
     pole.name = `${name}-pole`;
     pole.material = this.mats.get(POLE_HEX);
     annotate(pole);

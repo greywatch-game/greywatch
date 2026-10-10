@@ -37,20 +37,19 @@
  * (`ZoneState`), which `ControlPoint` satisfies, so Game can pass its points
  * straight through without this becoming a system-to-system import.
  *
+ * The ring's geometry is ours (BABYLON_EXIT.md X1.3): each stone is a
+ * `createPolyhedron` shape put through its own scale, turn and seat into a
+ * batch, and a batch becomes a mesh only at `finish`, through `drawnMesh`.
+ *
  * build() once per round; update() every frame — the flag's visibility and
  * its cloth step are functions of the viewpoint.
  */
-import {
-  Color3,
-  CreatePolyhedronVertexData,
-  Matrix,
-  Mesh,
-  Scene,
-  Vector3,
-  VertexData,
-} from "@babylonjs/core";
+import { Color3, type Mesh, Scene, Vector3 } from "@babylonjs/core";
 import { teamLook } from "../core/teamView";
 import type { Team } from "../entities/Combatant";
+import { GeometryBuffer } from "../geometry/buffer";
+import { createPolyhedron } from "../geometry/primitives";
+import { Matrix } from "../math";
 import type { CelMaterialFactory } from "../shaders/CelShader";
 import type { EnvironmentSpec } from "../world/environment";
 import type { ControlPointDef } from "../world/MapBuilder";
@@ -63,6 +62,7 @@ import {
   roadTopAt,
 } from "../world/roads";
 import type { TerrainField } from "../world/TerrainField";
+import { drawnMesh } from "../world/parts";
 import {
   FlagCloth,
   MIN_POLE_HEIGHT,
@@ -192,8 +192,8 @@ export class CaptureZoneSystem {
   private fogEnd = 1;
   /** A side's flag colours, derived once from its worn colour. */
   private flagColours = new Map<string, FlagColours>();
-  /** Unit-radius stone shapes, made once — `CreatePolyhedronVertexData` types. */
-  private protos = new Map<number, VertexData>();
+  /** Unit-radius stone shapes, made once — `createPolyhedron` types. */
+  private protos = new Map<number, GeometryBuffer>();
 
   constructor(
     private scene: Scene,
@@ -449,16 +449,16 @@ export class CaptureZoneSystem {
   }
 
   /** A polyhedron scaled to unit radius, so a stone's size is its size. */
-  private proto(type: number): VertexData {
+  private proto(type: number): GeometryBuffer {
     let data = this.protos.get(type);
     if (!data) {
-      data = CreatePolyhedronVertexData({ type, size: 1 });
-      const pos = data.positions!;
+      data = createPolyhedron({ type, size: 1 });
+      const pos = data.positions;
       let max = 0;
       for (let i = 0; i < pos.length; i += 3) {
         max = Math.max(max, Math.hypot(pos[i], pos[i + 1], pos[i + 2]));
       }
-      data.positions = Array.from(pos, (v) => v / max);
+      data.positions = pos.map((v) => v / max);
       this.protos.set(type, data);
     }
     return data;
@@ -471,7 +471,7 @@ export class CaptureZoneSystem {
    */
   private addStone(
     b: Batch,
-    proto: VertexData,
+    proto: GeometryBuffer,
     rot: Matrix,
     sx: number,
     sy: number,
@@ -480,7 +480,7 @@ export class CaptureZoneSystem {
     y: number,
     z: number,
   ): void {
-    const pos = proto.positions!;
+    const pos = proto.positions;
     const nrm = proto.normals!;
     const base = b.positions.length / 3;
     const m = rot.m;
@@ -502,13 +502,14 @@ export class CaptureZoneSystem {
       const len = Math.hypot(wx, wy, wz) || 1;
       b.normals.push(wx / len, wy / len, wz / len);
     }
-    for (const index of proto.indices!) b.indices.push(base + index);
+    for (const index of proto.indices) b.indices.push(base + index);
   }
 
   /**
    * A batch as a world-space mesh in the cel material, or nothing at all for
    * an empty one (a ring entirely indoors has no stones; one in a field has
-   * no paint).
+   * no paint). The batch is a `GeometryBuffer` and `drawnMesh` is where it
+   * becomes a mesh — the one a fresh `Mesh` and `applyToMesh` made of it.
    */
   private finish(
     name: string,
@@ -517,12 +518,15 @@ export class CaptureZoneSystem {
     depthUnits = 0,
   ): Mesh[] {
     if (b.indices.length === 0) return [];
-    const mesh = new Mesh(name, this.scene);
-    const data = new VertexData();
-    data.positions = b.positions;
-    data.normals = b.normals;
-    data.indices = b.indices;
-    data.applyToMesh(mesh);
+    const mesh = drawnMesh(
+      name,
+      new GeometryBuffer({
+        positions: b.positions,
+        normals: b.normals,
+        indices: b.indices,
+      }),
+      this.scene,
+    );
     mesh.material = this.mats.get(hex, depthUnits);
     // Dressing, not world: out of every ray test and off the collidable list.
     // The paint is `noInk` by intent only — a sheet on a floor has no depth

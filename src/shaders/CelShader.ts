@@ -76,6 +76,7 @@ import {
   VertexBuffer,
 } from "@babylonjs/core";
 import { CONFIG } from "../config";
+import type { GeometryBuffer } from "../geometry/buffer";
 import { setPartVerticesData } from "../world/parts";
 import { attachEmissiveFog, setEmissiveFog } from "./EmissiveFog";
 import { EmissiveWorldMaterial, MAX_EMISSIVE_PALETTE } from "./EmissiveWorld";
@@ -203,15 +204,33 @@ export const MAX_PALETTE = 128;
  * them may state twice is where the index goes.
  */
 export function writePaletteIndex(mesh: Mesh, slot: number): void {
-  const count = mesh.getTotalVertices();
+  // Through `parts.ts` because the map's merge hands this PARTS on their way
+  // into `BlockMerge`: Babylon's own call would put this one buffer on the
+  // device a moment before the merge disposes it.
+  setPartVerticesData(
+    mesh,
+    VertexBuffer.UV2Kind,
+    paletteIndexArray(mesh.getTotalVertices(), slot),
+  );
+}
+
+/**
+ * `writePaletteIndex` for a part that is still a BUFFER — a soldier's, which
+ * is merged as `GeometryBuffer`s (`SoldierModel`'s `mergeByColor`) and is
+ * never a mesh to write onto. The same attribute and the same array, so a
+ * merge of parts carries it exactly as `MergeMeshes` carried the mesh's.
+ */
+export function writeBufferPaletteIndex(buffer: GeometryBuffer, slot: number): void {
+  buffer.uvs2 = paletteIndexArray(buffer.vertexCount, slot);
+}
+
+/** `slot` in `uv2.x` of every one of `count` vertices, as a `Float32Array`. */
+function paletteIndexArray(count: number, slot: number): Float32Array {
   const uv2 = new Float32Array(count * 2);
   // Only x is read. y is left at 0 rather than given a second meaning: the
   // slot's whole value is that it is the ONE thing this attribute says.
   for (let i = 0; i < count; i++) uv2[i * 2] = slot;
-  // Through `parts.ts` because the map's merge hands this PARTS on their way
-  // into `BlockMerge`: Babylon's own call would put this one buffer on the
-  // device a moment before the merge disposes it.
-  setPartVerticesData(mesh, VertexBuffer.UV2Kind, uv2);
+  return uv2;
 }
 
 /**

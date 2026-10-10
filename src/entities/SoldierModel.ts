@@ -7,6 +7,14 @@
  * arms solved onto it — posed TransformNode joints, never clips), plus the
  * bone table `RagdollSystem` builds a corpse's rigid bodies from. What DRIVES
  * a pose is `SoldierMotion`'s.
+ * The geometry is built as `Part`s on `GeometryBuffer`s (`src/geometry/`,
+ * `facet.ts`) and is NOT Babylon's until `mergeByColor` makes a segment's
+ * mesh through `drawnMesh` (BABYLON_EXIT.md X1.3) and it is hung off its live
+ * joint; the visor is the one part drawn on its own, through the same door.
+ * What stays Babylon's is the rig (X4.1): the joints, the poser, and the
+ * invisible root — still `MeshBuilder`'s capsule, because it is never drawn
+ * but is the body's one MEASURE (`WorldCulling` sizes a whole rig off its
+ * bounds) and the live node every roster switches.
  * Invariants: merging is what keeps 16 bots affordable, and since `KIT_PALETTE`
  * it is per SEGMENT rather than per colour — a segment is one mesh whatever it
  * is painted, so the cost of this rig is JOINTS and no longer colours or boxes.
@@ -33,13 +41,15 @@ import {
 import { CONFIG } from "../config";
 import { clamp } from "../core/math";
 import {
-  writePaletteIndex,
+  writeBufferPaletteIndex,
   type CelMaterialFactory,
 } from "../shaders/CelShader";
 import type { Team } from "./Combatant";
 import { viewTeam } from "../core/teamView";
 import { loft, type Ring } from "./facet";
-import { drawnMesh } from "../world/parts";
+import { createBox } from "../geometry/primitives";
+import { Matrix as PartMatrix, Vector3 as PartVector3 } from "../math";
+import { drawnMesh, mergeParts, Part } from "../world/parts";
 // Type-only, so no runtime edge is created — the same import `Vehicle` takes
 // for the same reason. `DamageKind` lives with the shot that carries it.
 import type { DamageKind } from "../systems/CombatSystem";
@@ -806,7 +816,8 @@ export interface RagdollSubject {
  *
  * `rotZ` is `weaponKit.box`'s parameter under its own name and exists for one
  * part — the bandolier, which has to cross the chest rather than hang down it.
- * A rotation is safe where a scale is not: `MergeMeshes` bakes world matrices,
+ * A rotation is safe where a scale is not: the merge (`mergeParts`, which is
+ * `MergeMeshes`' arithmetic) bakes world matrices,
  * and a rotation carries normals across unit-length while a non-uniform scale
  * hands `renderOutline` a shell that is fat on the squashed axis.
  */
@@ -843,11 +854,11 @@ type SegmentPart = SegmentBox | SegmentLoft;
  * handedness, the same way `solveArm` signs the elbow.
  */
 const ALONG_Z = (() => {
-  const p = Vector3.TransformCoordinates(new Vector3(0, 1, 0), Matrix.RotationX(Math.PI / 2));
+  const p = PartVector3.TransformCoordinates(new PartVector3(0, 1, 0), PartMatrix.RotationX(Math.PI / 2));
   return p.z > 0 ? Math.PI / 2 : -Math.PI / 2;
 })();
 const Z_TO_Y = Math.sign(
-  Vector3.TransformCoordinates(new Vector3(0, 0, 1), Matrix.RotationX(ALONG_Z)).y,
+  PartVector3.TransformCoordinates(new PartVector3(0, 0, 1), PartMatrix.RotationX(ALONG_Z)).y,
 );
 
 /**
@@ -918,6 +929,10 @@ export function buildSoldier(
   // match seated them in. See `core/teamView.ts`.
   const kit = KITS[viewTeam(team)];
   const centerHeight = 0.9;
+  // The root is the RIG's, not the model's, and stays on `MeshBuilder` until
+  // the rig leaves Babylon (X4.1): never drawn, but its capsule's bounds are
+  // what `WorldCulling` measures a whole body by, and `src/geometry/` has no
+  // capsule to build it from.
   const root = MeshBuilder.CreateCapsule(
     "bot",
     { height: 1.8, radius: 0.4 },
@@ -951,7 +966,7 @@ export function buildSoldier(
    * roster, on the walk `WorldCulling` exists for. Once per hex: this runs for
    * every part of every rig in the pool.
    */
-  const paint = (m: Mesh, color: string): void => {
+  const paint = (p: Part, color: string): void => {
     const slot = KIT_SLOT.get(color.toLowerCase());
     if (slot === undefined) {
       if (import.meta.env.DEV && !warnedOffPalette.has(color.toLowerCase())) {
@@ -963,46 +978,47 @@ export function buildSoldier(
             " emissive, which cannot join one.",
         );
       }
-      m.material = mats.get(color);
+      p.material = mats.get(color);
       return;
     }
-    writePaletteIndex(m, slot);
-    m.material = kitCel;
+    writeBufferPaletteIndex(p.geometry, slot);
+    p.material = kitCel;
   };
 
   /**
    * Builds one limb from a list of boxes, merges it per colour, and parents the
    * results to a joint. Offsets are relative to the joint, so the merge can
    * happen at identity and the joint carries the animation.
+   *
+   * The pieces are `Part`s — geometry, a transform in the joint's frame and a
+   * paint — and only what the merge makes of them is a mesh (`mergeByColor`),
+   * which is the one moment a limb reaches Babylon before it is hung off its
+   * live joint.
    */
   const segment = (
     name: string,
     parent: TransformNode,
     boxes: SegmentPart[],
   ): void => {
-    const parts: Mesh[] = [];
+    const parts: Part[] = [];
     for (let i = 0; i < boxes.length; i++) {
       const part = boxes[i];
       if (!Array.isArray(part)) {
-        const m = drawnMesh(loft(`${name}${i}`, part.rings), scene);
-        if (part.at) m.position.set(...part.at);
-        if (part.rot) m.rotation.set(...part.rot);
-        paint(m, part.color);
-        parts.push(m);
+        const p = loft(`${name}${i}`, part.rings);
+        if (part.at) p.position.set(...part.at);
+        if (part.rot) p.rotation.set(...part.rot);
+        paint(p, part.color);
+        parts.push(p);
         continue;
       }
       const [w, h, d, x, y, z, color, rotZ = 0] = part;
-      const m = MeshBuilder.CreateBox(
-        `${name}${i}`,
-        { width: w, height: h, depth: d },
-        scene,
-      );
-      m.position.set(x, y, z);
-      m.rotation.z = rotZ;
-      paint(m, color);
-      parts.push(m);
+      const p = new Part(`${name}${i}`, createBox({ width: w, height: h, depth: d }));
+      p.position.set(x, y, z);
+      p.rotation.z = rotZ;
+      paint(p, color);
+      parts.push(p);
     }
-    for (const merged of mergeByColor(parts, name)) {
+    for (const merged of mergeByColor(parts, name, scene)) {
       merged.parent = parent;
       merged.isPickable = false;
       meshes.push(merged);
@@ -1158,9 +1174,8 @@ export function buildSoldier(
     },
   ]);
   // The visor protrudes past the face so the ink cannot swallow it.
-  const visor = MeshBuilder.CreateBox(
-    "bot-visor",
-    { width: 0.15, height: 0.04, depth: 0.05 },
+  const visor = drawnMesh(
+    new Part("bot-visor", createBox({ width: 0.15, height: 0.04, depth: 0.05 })),
     scene,
   );
   visor.parent = head;
@@ -1859,7 +1874,7 @@ function stepLeg(
 }
 
 /**
- * Merges a limb's boxes into one mesh per MATERIAL, at identity.
+ * Merges a limb's parts into one mesh per MATERIAL, at identity.
  *
  * It keys on the material instance and always did; what changed under it is
  * how many a limb has. `paint` puts every matte part on the one `getBodyCel`
@@ -1867,26 +1882,32 @@ function stepLeg(
  * one per colour — which is why the palette needed no change here at all. The
  * name is kept because the split it makes is still the one a caller reasons
  * about: two parts merge unless something about their PAINT stops them.
+ *
+ * **This is where a limb becomes a mesh** (`drawnMesh`), and it makes exactly
+ * the mesh `Mesh.MergeMeshes(group, true, true, undefined, false, false)`
+ * made: the group's geometry merged under each part's own transform
+ * (`mergeParts`), standing at identity, named as the merge named it until the
+ * caller's name goes on. A group of ONE was never merged — it kept its own
+ * transform, which is what `drawnMesh` of the part carries.
  */
-function mergeByColor(parts: Mesh[], name: string): Mesh[] {
-  const groups = new Map<unknown, Mesh[]>();
-  for (const m of parts) {
-    const key = m.material;
+function mergeByColor(parts: Part[], name: string, scene: Scene): Mesh[] {
+  const groups = new Map<unknown, Part[]>();
+  for (const p of parts) {
+    const key = p.material;
     const g = groups.get(key);
-    if (g) g.push(m);
-    else groups.set(key, [m]);
+    if (g) g.push(p);
+    else groups.set(key, [p]);
   }
   const out: Mesh[] = [];
   for (const group of groups.values()) {
     const mat = group[0].material;
     const merged =
       group.length === 1
-        ? group[0]
-        : Mesh.MergeMeshes(group, true, true, undefined, false, false);
-    if (!merged) continue;
+        ? drawnMesh(group[0], scene)
+        : drawnMesh(`${group[0].name}_merged`, mergeParts(group), scene);
     merged.name = name;
     merged.material = mat;
-    out.push(merged as Mesh);
+    out.push(merged);
   }
   return out;
 }
