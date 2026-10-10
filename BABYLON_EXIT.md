@@ -74,7 +74,7 @@ then the frame loop itself, at which point taking the frame is mostly deletion.
 | --- | --- | --- |
 | **0. Instruments** | nothing — the oracles this plan needs and the "before" | the bank and the benchmark both reproduce |
 | **1. Data off Babylon types** | math, geometry and the merge become plain arrays | `kit:hash` and `merge:hash` identical, no pixel moved |
-| **2. The simulation off the scene** | sweeps, state, the server, Havok | `server/` and the simulation import nothing from Babylon (a build gate says so) |
+| **2. The simulation off the scene** | sweeps, state, the server, Havok, one core in a Worker | `server/` and the simulation import nothing from Babylon (a build gate says so) |
 | **3. The static world** | our renderer draws blocks, scatter and terrain, in every pass | Babylon builds no world mesh for a round |
 | **4. Everything else that draws** | bodies, hulls, the viewmodel, effects, sky, water, glass, grass, particles | Babylon's scene draws nothing but the post chain |
 | **5. The frame** | GI compute, the post chain, the editor, the loop | Babylon's engine is not constructed |
@@ -818,43 +818,112 @@ wrapper over it.
 - **Rewrites:** `docs/deaths.md`. The `scene.physicsEnabled` rule stays until
   the scene is gone.
 
-### X2.5 — One simulation core — **L** (decided 2026-10-10: yes)
+### X2.5 — One simulation core, in a Worker — **L**, as two sub-steps (decided 2026-10-10)
 
 Not needed to leave Babylon, and cheapest right here, with both simulations
 Babylon-free. `Game` offline and `HeadlessGame` on the authority become one
-core. This ends the class of bug where the two drift apart (`paysKiller`, the
-capture awards).
+core, and offline play runs it in a Worker (`PERF_PLAN.md` C4). One core ends
+the class of bug where the two drift apart (`paysKiller`, the capture awards).
 
-**Where it runs, decided 2026-10-10: in the page, behind an interface built
-for a Worker.**
-- **Offline, the core runs on the main thread.** P0 measured the simulation at
-  0.5-1.0 ms of a 9.5-12 ms phone tick (5-8%, `PERF_PLAN.md`). The phone's
-  frame is bound by the GPU and by draw-call CPU, so a Worker would buy about a
-  millisecond. It would also cost what `PERF_PLAN.md` C4 lists:
-  - cross-origin isolation on every server of the page, including the
-    navigations the service worker answers offline;
-  - the local player split from the world it reads;
-  - a frame of bot latency;
-  - one more place for two seeded runs to diverge.
-- **The interface is the Worker's anyway**, so moving later is plumbing rather
-  than a redesign. Inputs (the local player's commands, net events) go in.
-  `step(dt)` runs. State as plain data and an event queue (shots, hits, kills,
-  captures, blasts, sound cues) come out. The core has no DOM, no Babylon and
-  no reference to anything the view owns. `Game` reads the queue and does its
-  wiring there, which keeps "systems never import each other" true. Nothing in
-  the core may assume it shares a heap with its caller.
-- **The gate that moves it.** Re-measure the simulation's share of the phone's
-  main-thread tick (`?bench=` on Sarab and Greyfen, P0's split) at the end of
-  Phase 3, at the end of Phase 5, and whenever a map larger than any shipped
-  one, or one with more bodies, lands. When the share passes ~15%, moving it
-  into a Worker as `PERF_PLAN.md` C4 describes becomes a step of its own.
-- **The authority runs the same core**, in-process as `HeadlessGame` does
-  today.
+**Why a Worker now, although P0 measured the simulation at only 5-8% of a
+GPU-bound phone tick (0.5-1.0 ms of 9.5-12).** The user decided it on
+2026-10-10, and the case is about where the game is going rather than what it
+measures today:
+- Phases 3-5 cut the draw-call CPU the frame is bound by, so the simulation
+  becomes a larger share of what is left.
+- The game is going to large battlefield maps with more bodies, more vehicles
+  and destructible buildings.
+- Moving the core while it is being made one is cheaper than moving it after
+  Phases 3-5 have built on it.
 
-**Verify:** `parity`; `simulate`; the scoring rules exercised offline and
-online; the benchmark's fights (X0.4's hashes, or new ones with the reason
-named); and the interface checked by a test that drives the core with no
-`Game` at all.
+**What the Worker costs**, which this step owes in full rather than discovers:
+- cross-origin isolation, which the shared state needs;
+- the local player split from the world it reads;
+- a frame of bot latency;
+- one more place for two seeded runs to diverge.
+
+The two sub-steps land separately, each with its own oracle, because a
+divergence after both at once could not be placed in either.
+
+#### X2.5a — One core, in the page — **M**
+
+- **Do:** extract the core behind the interface the Worker will use.
+  - Inputs go in: the local player's commands and the net events.
+  - `step(dt)` runs.
+  - Out come state as plain data (typed arrays where it is per-body) and an
+    event queue: shots, hits, kills, captures, blasts and sound cues.
+  - The core has no DOM, no Babylon, and no reference to anything a view owns.
+  - Nothing in it may assume it shares a heap with its caller: everything
+    crossing the boundary is data that could be posted or shared.
+  - `Game` reads the queue and does its wiring there (`onBotKill`,
+    `onCaptured` and the rest become events), which keeps "systems never
+    import each other" true on the main thread.
+  - The authority runs the same core in-process as `HeadlessGame`'s
+    replacement.
+- **Verify:**
+  - `parity` and `simulate`;
+  - the scoring rules, exercised offline and online;
+  - the benchmark's fights: X0.4's hashes, or new ones with the reason named;
+  - a test that drives the core with no `Game` at all;
+  - a netplay round.
+- **Rewrites:** `CLAUDE.md`, "Ownership and wiring" (the core's events are
+  where systems meet) and "Conquest rules" (one ledger, one core); `docs/game.md`;
+  `docs/multiplayer.md`.
+
+#### X2.5b — The core in a Worker — **M**
+
+As `PERF_PLAN.md` C4 states it:
+- **The shared state.** Per-body state and the event queue are double-buffered
+  in a `SharedArrayBuffer`.
+- **The local player stays on the main thread** with the camera, so the time
+  from input to photon is unchanged. It reads the world from the last
+  published state and runs its own sweep there (X2.1's primitive, now plain
+  code).
+- **Bots and everything else run a frame ahead** in the Worker.
+- **The authority** runs the core in-process or in `worker_threads`, whichever
+  measures better.
+
+**Cross-origin isolation** (COOP `same-origin`, COEP `require-corp`) is owed on
+EVERY document response:
+- the Vite dev server;
+- `docker/default.conf.template`;
+- anything in `server/` that serves the client;
+- the navigations the service worker answers from its cache. Missing this one
+  makes the installed app silently lose isolation offline, which is the same
+  failure shape as `sw.js`'s `DOCS` list (`docs/pwa.md`).
+
+Check every cross-origin load the page makes (fonts, anything from a CDN)
+against `require-corp` before turning it on.
+
+**Do:**
+- **The fixed step survives the hop.** The benchmark and `simulate` still
+  fight the same fight from the same seed. Nothing in the core may read a clock
+  the Worker owns.
+- **The profiler sees the Worker.** The core's `step` reports its own timing
+  back through the published state. `FrameProfile` shows it as a phase that is
+  not inside `frame`, in the way `present` is not (`docs/profiling.md`). Its
+  allocation-free rule holds on both threads.
+- **Fallback:** a browser without cross-origin isolation (or without
+  `SharedArrayBuffer`) runs the core in the page, exactly as X2.5a left it. It
+  stays one code path behind one interface, and the boot says which one is
+  running.
+
+**Verify:**
+- `crossOriginIsolated` is true in dev, in the docker image, and in the
+  installed app OFFLINE.
+- The benchmark's fights are unchanged from X2.5a.
+- `parity` and `simulate`.
+- A netplay round, and an offline round on the phone.
+- The phone's main-thread tick, before and after, against P0's split. **If the
+  main thread does not get faster by roughly the simulation's share, stop and
+  find out why before going on**, as C4's own verify says.
+
+**Rewrites:**
+- `CLAUDE.md`: "Ownership and wiring" (the simulation runs off the main
+  thread), "Measuring a frame" (the Worker's phase, a third root), and "The
+  installable app" (the isolation headers, beside `DOCS`);
+- `docs/pwa.md`, `docs/profiling.md`, `docs/game.md`;
+- `VERIFYING.md`, which has to say how a headless run gets isolation.
 
 ---
 
@@ -1192,7 +1261,7 @@ to X0.3 (see "The branch"). It is the user's to start.
 | B4 who owns the frame | decided: X5.4 |
 | C1 | X0.2 |
 | C2, C3 | X2.1, X2.2 |
-| C4 Worker | optional, with X2.5 |
+| C4 Worker | X2.5b (decided 2026-10-10) |
 | C5 Rust core | not in this plan |
 | C6 dynamic draws | X4.1 |
 
@@ -1270,7 +1339,7 @@ Phase 1 actually took.
 | X2.1 | Who judges the feel? | **Decided** 2026-10-10: the user play-tests a round on foot and in each vehicle kind before the step lands (X2.1). |
 | X2.4 | Fix `FINDINGS.md` 53 (world friction 0.5, not 0.8) while porting Havok? | **Decided** 2026-10-10: no. The port keeps 0.5, so `drop.mjs` stays an oracle. A fix is a separate commit afterwards, on the user's word (X2.4). |
 | X2.5 | One simulation core, offline and online? | **Decided** 2026-10-10: yes. |
-| X2.5 | In the page or in a Worker? | **Decided** 2026-10-10: in the page, behind a Worker-ready interface. It moves to a Worker when the simulation passes ~15% of the phone's main-thread tick, re-measured at the end of Phases 3 and 5 and with any larger map (X2.5). |
+| X2.5 | In the page or in a Worker? | **Decided** 2026-10-10: in a Worker. X2.5a makes the one core in the page behind a Worker-shaped interface, and X2.5b moves it into a Worker with cross-origin isolation, keeping the in-page core as the fallback for a browser without isolation (X2.5). |
 | X3.4 | Scatter AO: baked per kind (cheaper, changes the look) or per instance? | Per kind, judged in the bank. |
 | X4.2 | Which hull parts drop at range (the tank's links and wheels, the MG rings)? | An art call; PERF_PLAN A3 measured +6.5% at 300 m on Cinderhaven. |
 | X6.2 | Is it ready to merge to `develop`? | Only when X6.2's "Before" list passes in full. |
