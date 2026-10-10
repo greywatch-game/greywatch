@@ -8,9 +8,21 @@
  * — name, material name, metadata, transform, the flags the world layer reads
  * (`isVisible`, `isPickable`, `checkCollisions`, rendering group), vertex,
  * index and submesh counts, `geometry.delayLoadState`, and a hash of every
- * vertex buffer and of the index buffer. Beside them, the three plain lists a
- * build derives from its parts: `colliderBoxes`, `colliderAlbedo` and
- * `partBoxes`.
+ * vertex buffer and of the index buffer. Beside them, the plain lists a build
+ * derives from its parts: `colliderBoxes`, `colliderAlbedo` and `partBoxes`
+ * (hashed), and three that say how the merged meshes are WIRED to the rest of
+ * the map (kept as data): `panes` (every `WorldPane` field), `paneGroups` (each
+ * as `[index in visuals, panes, block]`) and `editorItems` (each layout item's
+ * `visuals` as indices into `GameMap.visuals`, `null` on a shipped build).
+ *
+ * **Four per-mesh fields describe the UPLOAD rather than the geometry**, because
+ * a merge that moves onto arrays and uploads at the end can get each wrong
+ * without moving a vertex: `sceneRank` (the mesh's rank within its list by its
+ * index in `scene.meshes` — creation order, which is the order `WorldCulling`
+ * offers candidates in and so reaches the glow mask and the transparent
+ * tie-breaks), `positionUpdatable` (whether the position buffer is writable,
+ * which `GlassSystem` needs on a pane block holding a breakable pane),
+ * `hasVertexAlpha` and `frozen` (`isWorldMatrixFrozen`).
  *
  * **It is the other half of `npm run kit:hash`, and the half `FINDINGS.md` 26
  * said did not exist.** `kit:hash` proves a builder emits the same PARTS and
@@ -40,6 +52,13 @@
  * `--against file` compares and exits 1 on any difference, naming the list,
  * the index, the mesh and the fields that moved. A map that fails to build is
  * recorded as its error, so a build broken by the change is a difference too.
+ * A field or a list the "before" file did not record is not a difference, so an
+ * older baseline still compares everything it has. `info` (the scene's mesh and
+ * geometry counts) is reported when it moves but never fails the run: it counts
+ * what the scene holds besides the map. `--profile` prints the build's phases
+ * (`window.__buildProfile()`, `world/buildProfile.ts`) per map — the editor's
+ * rebuild under `--editor` — and they are never written or compared: a duration
+ * is not a fingerprint.
  *
  * Boots the dev server and the GPU-capable Chromium the other browser scripts
  * use (`dev-server.mjs`, `browser.mjs`) — read `VERIFYING.md` first if it
@@ -64,6 +83,7 @@ const only = arg("--maps")?.split(",");
 const editor = process.argv.includes("--editor");
 const outFile = arg("--out");
 const againstFile = arg("--against");
+const profile = process.argv.includes("--profile");
 
 /**
  * Runs IN THE PAGE. Kept free of closures over this module, because
@@ -117,7 +137,26 @@ function fingerprintMap() {
     return out;
   };
 
-  const meshRecord = (m) => {
+  // Where each mesh stands in the scene's list — its creation order, since
+  // `removeMesh` splices and so keeps the survivors' order. A Map, because an
+  // `indexOf` per mesh is quadratic over an editor build's thousands.
+  const sceneIndex = new Map();
+  g.scene.meshes.forEach((m, i) => sceneIndex.set(m, i));
+  // A mesh's rank within its own LIST by that index: which of the list's
+  // meshes was made before which, without the absolute index that every pool
+  // or sky mesh made earlier would shift. -1 for a mesh not in the scene.
+  const sceneRanks = (list) => {
+    const at = list.map((m) => sceneIndex.get(m) ?? -1);
+    const order = at
+      .map((v, i) => [v, i])
+      .filter(([v]) => v >= 0)
+      .sort((x, y) => x[0] - y[0]);
+    const rank = at.map(() => -1);
+    order.forEach(([, i], r) => (rank[i] = r));
+    return rank;
+  };
+
+  const meshRecord = (m, sceneRank) => {
     const geo = m.geometry;
     const kinds = m.getVerticesDataKinds ? [...m.getVerticesDataKinds()].sort() : [];
     const buffers = {};
@@ -146,6 +185,10 @@ function fingerprintMap() {
       // nothing and throws nothing (`world/parts.ts`), so this is checked on
       // its own below, against no baseline at all.
       onDevice: Boolean(geo?.getVertexBuffer("position")?.getBuffer()),
+      sceneRank,
+      positionUpdatable: geo?.getVertexBuffer("position")?.isUpdatable() ?? null,
+      hasVertexAlpha: m.hasVertexAlpha,
+      frozen: m.isWorldMatrixFrozen,
       buffers,
       index: hashArray(m.getIndices(false, true)),
     };
@@ -163,14 +206,39 @@ function fingerprintMap() {
         )
       : null;
 
+  const records = (list) => {
+    const rank = sceneRanks(list);
+    return list.map((m, i) => meshRecord(m, rank[i]));
+  };
+  // Indices into `visuals`, by identity: -1 is a mesh the list does not hold.
+  const visualIndex = new Map();
+  map.visuals.forEach((m, i) => visualIndex.set(m, i));
+  const indexOfVisual = (m) => visualIndex.get(m) ?? -1;
+  const itemVisuals = (items) => items.map((item) => item.visuals.map(indexOfVisual));
+
   return {
-    visuals: map.visuals.map(meshRecord),
-    colliders: map.colliders.map(meshRecord),
-    terrainColliders: map.terrainColliders.map(meshRecord),
+    visuals: records(map.visuals),
+    colliders: records(map.colliders),
+    terrainColliders: records(map.terrainColliders),
     lists: {
       colliderBoxes: boxes(map.colliderBoxes),
       colliderAlbedo: hashArray(map.colliderAlbedo ?? null),
       partBoxes: boxes(map.partBoxes ?? null),
+      // Kept as DATA rather than hashed: short, and a difference is worth
+      // reading. Every field of a pane, in its own order.
+      panes: (map.panes ?? []).map((p) => [
+        p.w, p.h, p.d, p.cx, p.cy, p.cz, p.rotY,
+        p.vertexStart, p.vertexCount, p.group, p.box,
+      ]),
+      paneGroups: (map.paneGroups ?? []).map((pg) => [
+        indexOfVisual(pg.mesh), [...pg.panes], pg.block,
+      ]),
+      editorItems: map.editor
+        ? {
+            placements: itemVisuals(map.editor.placements),
+            scatter: itemVisuals(map.editor.scatter),
+          }
+        : null,
     },
     // Not compared: what the scene holds besides the map (pools, the sky,
     // the viewmodel) is not this script's business, but a change that leaks
@@ -219,6 +287,13 @@ async function buildOne(browser, url, id, editor) {
     }
     const print = await page.evaluate(fingerprintMap);
     print.editor = editor;
+    if (profile) {
+      // Printed now and never stored: see the header.
+      const phases = await page.evaluate(() => window.__buildProfile?.() ?? []);
+      for (const p of phases) {
+        console.log(`  ${id} ${p.label.padEnd(24)} ${p.ms.toFixed(1).padStart(9)} ms`);
+      }
+    }
     return print;
   } catch (e) {
     return { error: String(e.message ?? e).split("\n")[0], editor };
@@ -272,14 +347,33 @@ function compare(before, after) {
         const moved = fieldsThatMoved(a[list][i], b[list][i]);
         if (moved.length === 0) continue;
         differing++;
-        if (shown++ < 8) {
+        if (shown < 8) {
+          shown++;
           lines.push(`${id}.${list}[${i}] ${b[list][i].name}: ${moved.join(", ")}`);
         }
       }
       if (differing > shown) lines.push(`${id}.${list}: ...and ${differing - shown} more`);
     }
     for (const k of Object.keys(b.lists)) {
-      if (a.lists[k] !== b.lists[k]) lines.push(`${id}.${k}: changed`);
+      // A list an older fingerprint did not record is not a difference.
+      if (!(k in a.lists)) continue;
+      if (JSON.stringify(a.lists[k]) !== JSON.stringify(b.lists[k])) {
+        lines.push(`${id}.${k}: changed`);
+      }
+    }
+  }
+  return lines;
+}
+
+/** `info` lines that moved: reported, never a failure (see the header). */
+function infoThatMoved(before, after) {
+  const lines = [];
+  for (const id of Object.keys(after)) {
+    const a = before[id]?.info;
+    const b = after[id]?.info;
+    if (!a || !b) continue;
+    for (const k of Object.keys(b)) {
+      if (k in a && a[k] !== b[k]) lines.push(`${id}.info.${k}: ${a[k]} -> ${b[k]} (not a failure)`);
     }
   }
   return lines;
@@ -331,6 +425,7 @@ if (outFile) {
 if (againstFile) {
   const before = JSON.parse(readFileSync(againstFile, "utf8"));
   const lines = compare(before, result);
+  for (const l of infoThatMoved(before, result)) console.log(l);
   if (lines.length === 0) {
     console.log(`identical to ${againstFile} on ${ids.join(", ")}`);
   } else {

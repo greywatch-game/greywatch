@@ -130,8 +130,12 @@ scripts/                      # Node tooling, run by hand or by `npm run build`,
                               #   collider plus the box lists, so a change to
                               #   how parts are built or merged proves it moved
                               #   nothing; `--editor` does the editor's unmerged
-                              #   build. Same machine and Babylon only. Not a
-                              #   gate
+                              #   build. Per mesh also its creation rank in the
+                              #   scene, updatable positions, vertex alpha and
+                              #   frozen matrix; the panes, pane groups and
+                              #   editor items as indices into visuals.
+                              #   `--profile` prints the build's phases. Same
+                              #   machine and Babylon only. Not a gate
   geometry-check.mjs          # `node scripts/geometry-check.mjs`: builds every
                               #   generator in src/geometry/ and Babylon's of
                               #   the same name over seeded options, and runs
