@@ -659,7 +659,43 @@ X1.2, because the kit and the props are built from them.)
 - **Verify:** that new mode identical; `kit:hash` and `merge:hash` identical;
   the bank's viewmodel and hull vantages pixel-identical.
 
-### X1.4 — The merge and the vertex bake on arrays — **M**
+### X1.4 — The merge and the vertex bake on arrays — **M** — **LANDED** (3b35779)
+
+**Landed**, in seven commits graded one at a time:
+- **C0** (0879ffe): `merge:hash` sees what an upload at the end could get wrong. Each mesh's `sceneRank` (its creation order), `positionUpdatable`, `hasVertexAlpha` and `frozen` are recorded. So are the `panes`, the `paneGroups` and each editor item's visuals.
+- **C1** (68e7a8e): `kit:hash` hashes Parts directly.
+- **C2** (4992dbe): the bake's core runs on arrays (`shadingContext`, `takesShading`, `shadeVertices`). The dead child walk left over from the ink twins was deleted.
+- **C3** (ddad7e5): the merges run on `WorldSurface`s (`worldGeometry.ts`). `mergeByMaterial`, `BlockMerge`, `PaneBlocks` and `paneGroup` all use `mergeParts` and `bakePartTransform`. The palette is written into the buffer. A merged mesh is made in ONE place: `worldMeshes`, the adapter, which uses `drawnMesh`.
+- **C4** (080cff0): the floor and the rim become surfaces (`Ridge.ts` returns a `GeometryBuffer`). The bake runs on the surfaces before the upload. `GameMap.world` is the record: one `SurfaceRecord` per visual with its name, material, metadata, block, pieces and counts. Its arrays are released as each mesh is made, so the CPU holds the world's geometry once.
+- **C5** (f4d9b4b): the part mesh is deleted (`partMesh`, `partSurface`, `uploadPart`, `bakePart`, `setPartVerticesData`, `structureMeshes`, `propMeshes`), and so is the mesh form of `writePaletteIndex`. `shaders/` no longer imports `world/`.
+- **C6** (3b35779): each surface carries its PIECE ranges (a piece is a layout item, from the `GameMap.world.pieces` table) through every merge, and a DEV assertion checks that they tile each surface exactly.
+
+The design came from a survey first, and two of its rules were what the bits turned on:
+- **A survivor's creation order is part of the picture.** `WorldCulling` hands candidates in scene order, and that order reaches the glow mask and the transparent tie-breaks. So every surface is minted a `born` number where Babylon used to make its mesh (a part on admission, a merge of two or more when it runs, a merge of one inheriting its member's), and the adapter makes the meshes in that order. List order is not creation order: Hollowmere differs on 91 of 135 visuals.
+- **The floor's collider clone still shares its arrays with its ground** through a per-build memo (`PlainArrays`).
+
+**What is left between the world and Babylon is public API in two places:**
+- the adapter, through `VertexData.applyToMesh` and `Mesh.setVerticesData`;
+- the colliders, through `MeshBuilder.CreateBox` and `Mesh.MergeMeshes`, which are X2.1's.
+
+All three internals `docs/build.md` listed are gone. `geometry-check` is now the only caller of `_mergeCoroutine`, as the reference our copy is checked against. A Babylon upgrade now owes geometry-check, math-check, then `merge:hash` (`docs/build.md`).
+
+**Measured:**
+- **merge:hash:** identical on all eight maps, shipped and `--editor`, after every commit from C2 on, against C0's baselines: every field, including `sceneRank`, the pane ranges and their updatability, and the editor items. No `info` line moved.
+- **The piece assertion:** holds on all eight maps in both modes, and a planted bad offset was caught. Pieces per map, table entries / shipped ranges / editor ranges: Greyfen 809 / 2,202 / 3,586, Coldharbour 313 / 690 / 2,098. Every editor surface is one piece, and the widest shipped surface (Harrowmead) spans 170.
+- **kit:hash:** identical on all 3,722 builds. **kit:hash --models:** identical on all 244.
+- **geometry-check and math-check:** clean.
+- **`build:total`, median of 5, parent / this step / parent again, one session:**
+  - Greyfen: 13,652 / **8,875** / 13,559 ms, **-35%**.
+  - Coldharbour: 4,433 / **2,996** / 4,368 ms, **-32%**.
+  - Where it went, on Greyfen: placements 1,311 to 564 ms, scatter 5,935 to 3,117, the block merge 2,990 to 703, and the bake 2,881 to 1,893.
+  - What it now costs: the new `upload` phase, 2,137 ms. That is the adapter's `number[]` copies and the device upload, and it is the next thing to take (`FINDINGS.md` 26).
+  - The same session also cleared X1.3: X1.2's commit measured 13,598 and 4,446 ms against X1.3's 13,652 and 4,433.
+- **The bank, `--check`:** all 47 rows on all seven maps at 0% of pixels.
+- **parity:** passes.
+- **simulate, seed 777:** fought X1.1's fights (Greyfen `6ef4707c3c7a8414`, Sarab `c109c06104830c4a`).
+- **gate.mjs:** a real round is clean on all seven maps.
+- **`npm run build`:** passes.
 
 `PERF_PLAN.md` B1's "first job". `mergeByMaterial`, `BlockMerge`,
 `PaneBlocks`, `writePaletteIndex`, the emissive palette and `vertexShading`
@@ -681,6 +717,17 @@ already merge with it (`mergeParts`).
   Greyfen's placement phase in copies this removes). X1.2 took the fourth
   internal `docs/build.md` listed; of the three left, the merge's two should
   be gone. Name what is left.
+
+**Gate after Phase 1:** `kit:hash` and `merge:hash` identical, and no pixel
+moved.
+
+**Met 2026-10-10:** `kit:hash` (3,722 builds), `kit:hash --models` (244, no
+content change), `merge:hash` on all eight maps shipped and `--editor`, and
+the bank 47 of 47 at 0% of pixels at 3b35779. **Owed before the tag**, both
+the user's to run:
+- the merge of `develop` this file's "The branch" asks for at every gate. It
+  carries one commit, a7b58ea, whose content is already here;
+- tagging `exit-phase-1`.
 
 ---
 
