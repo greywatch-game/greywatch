@@ -1,9 +1,11 @@
 /**
  * RayWorld.ts — The segment query that retired `scene.pickWithRay`.
  * Owns: a uniform grid over the collider boxes, the oriented-box and
- * heightfield intersections behind it, and the two questions every ray in the
- * game asks. Owns no meshes, no materials, and nothing a frame can move except
- * the hulls, which are handed in rather than held.
+ * heightfield intersections behind it, the two questions every ray in the
+ * game asks — and the candidate list every SWEEP asks for (`bodyNear`), which
+ * is `castBody`'s question put to a region instead of a line. Owns no meshes,
+ * no materials, and nothing a frame can move except the hulls, which are
+ * handed in rather than held.
  *
  * WHY THIS EXISTS, and it is the same argument `ObstacleField.groundAt` won.
  * `scene.pickWithRay` filters `scene.meshes` by predicate, then bounds-tests,
@@ -216,6 +218,9 @@ export class RayWorld {
   private readonly mark: Int32Array;
   private stamp = 0;
 
+  /** `bodyNear`'s hits as indices, so they can be put back in collider order. */
+  private readonly picked: number[] = [];
+
   /** The heightfield's own numbers, hoisted: every terrain step reads them. */
   private readonly half: number;
   private readonly cell: number;
@@ -365,6 +370,85 @@ export class RayWorld {
   }
 
   /**
+   * Every box that stops a BODY and could be within `reach` of `(x, z)` in the
+   * ground plane — the candidate list for one body sweep
+   * (`ellipsoidSweep.ts`), written into `out` and handed back.
+   *
+   * **A SUPERSET, never an exact answer**: a box is in when the grid cells its
+   * footprint was stamped into meet the query square, which is all a sweep may
+   * rely on. Struts and broken panes are out by the same body bit `castBody`
+   * reads, so a sweep and the death cam's pull-in cannot disagree about what a
+   * body may walk through.
+   *
+   * **The order is part of the answer.** A sweep keeps the FIRST of two
+   * contacts at the same distance (`ellipsoidSweep.ts`), so the static boxes
+   * come back in collider order — sorted, because a grid walk is in cell order
+   * — and the hulls last, which is where `scene.meshes` had a hull built after
+   * the map it stands on. A hull is its `rayBox()`, so one `hide` or a wreck
+   * carried away takes it out of every sweep as it takes it out of every ray,
+   * and `skip` is the hull doing the sweeping.
+   *
+   * `reach` of `Infinity` is every body box on the map.
+   */
+  bodyNear(
+    x: number,
+    z: number,
+    reach: number,
+    skip: RayHull | null,
+    out: WorldBox[],
+  ): WorldBox[] {
+    out.length = 0;
+    const picked = this.picked;
+    picked.length = 0;
+    if (reach === Infinity) {
+      for (let i = 0; i < this.boxes.length; i++) {
+        if (this.flags[i] & BLOCKS_BODY) picked.push(i);
+      }
+    } else {
+      const stamp = this.nextStamp();
+      const i0 = this.cellOf(x - reach);
+      const i1 = this.cellOf(x + reach);
+      const j0 = this.cellOf(z - reach);
+      const j1 = this.cellOf(z + reach);
+      for (let j = j0; j <= j1; j++) {
+        for (let i = i0; i <= i1; i++) {
+          const c = j * this.dim + i;
+          const end = this.cellStart[c + 1];
+          for (let k = this.cellStart[c]; k < end; k++) {
+            const b = this.cellBox[k];
+            if (this.mark[b] === stamp) continue;
+            this.mark[b] = stamp;
+            if (this.flags[b] & BLOCKS_BODY) picked.push(b);
+          }
+        }
+      }
+      for (const b of this.big) if (this.flags[b] & BLOCKS_BODY) picked.push(b);
+      picked.sort((a, b) => a - b);
+    }
+    for (const b of picked) out.push(this.boxes[b]);
+    for (const h of this.hulls) {
+      if (h === skip) continue;
+      const box = h.rayBox();
+      if (box) out.push(box);
+    }
+    return out;
+  }
+
+  /**
+   * A fresh query stamp. **Wrapped by hand before the `Int32Array` would**: an
+   * authority that runs for days asks billions of these, and a stamp that had
+   * wrapped inside `mark` would never match again — de-duplication silently
+   * off, every straddling box tested once per cell it is in.
+   */
+  private nextStamp(): number {
+    if (this.stamp === 0x7fffffff) {
+      this.mark.fill(-1);
+      this.stamp = 0;
+    }
+    return ++this.stamp;
+  }
+
+  /**
    * The cells a box's XZ footprint touches.
    *
    * The footprint is the box's own frame grown by the pitch — `halfDepth`'s
@@ -376,10 +460,14 @@ export class RayWorld {
   private eachCell(box: WorldBox, fn: (cell: number) => void): void {
     const c = Math.abs(Math.cos(box.rotY));
     const s = Math.abs(Math.sin(box.rotY));
-    const hw = box.w / 2;
+    // `createBox`'s defaulting, `||` and all — a zero extent is a metre — so
+    // the footprint stamped here is the one a SWEEP tests (`ellipsoidSweep`
+    // builds its triangles the way the collider mesh was built). No bake holds
+    // such a box; this keeps `bodyNear` a superset if one ever does.
+    const hw = (box.w || 1) / 2;
     const hd =
-      (box.d / 2) * Math.abs(Math.cos(box.rotX)) +
-      (box.h / 2) * Math.abs(Math.sin(box.rotX));
+      ((box.d || 1) / 2) * Math.abs(Math.cos(box.rotX)) +
+      ((box.h || 1) / 2) * Math.abs(Math.sin(box.rotX));
     const x0 = this.cellOf(box.cx - (hw * c + hd * s));
     const x1 = this.cellOf(box.cx + (hw * c + hd * s));
     const z0 = this.cellOf(box.cz - (hw * s + hd * c));
@@ -461,7 +549,7 @@ export class RayWorld {
     }
 
     const xz = Math.hypot(dx, dz);
-    const stamp = ++this.stamp;
+    const stamp = this.nextStamp();
     if (xz < EPS) {
       // Straight up or straight down: one cell, and every downward probe in
       // the game takes this path.

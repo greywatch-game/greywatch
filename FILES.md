@@ -153,6 +153,14 @@ scripts/                      # Node tooling, run by hand or by `npm run build`,
                               #   case covers. Owed by every method added
                               #   there. Deleted with Babylon (X6.1). Not a
                               #   gate
+  sweep-check.mjs             # `node scripts/sweep-check.mjs [map...]`: moves
+                              #   the player and every hull kind's ellipsoid by
+                              #   Babylon's moveWithCollisions and by the port
+                              #   (src/world/ellipsoidSweep.ts) from the same
+                              #   seeded starts on every map, and fails on any
+                              #   answer that is not BIT-identical. `--mode`
+                              #   picks the reference. Deleted with Babylon
+                              #   (X6.1). Not a gate
   loc.mjs                     # `npm run loc`: how big the project is, off `git
                               #   ls-files` — hand-written code split into
                               #   code, comment and blank, apart from the map
@@ -1139,9 +1147,16 @@ src/
     RayWorld.ts         # The segment query every ray in the game asks, off the
                         #   collider boxes, the strut groups and the terrain
                         #   rather than off scene.meshes. castBody / castRound /
-                        #   blocked, the grid behind them, and the hulls, which
+                        #   blocked, bodyNear (a body sweep's candidates, in
+                        #   collider order), the grid behind them, and the hulls, which
                         #   are the one solid thing that moves. It is what
                         #   retired scene.pickWithRay at all eight sites
+    ellipsoidSweep.ts   # The swept ellipsoid every body moves by: Babylon's
+                        #   moveWithCollisions (collider + retry loop) ported
+                        #   operation for operation, against each WorldBox's
+                        #   twelve triangles instead of a mesh's. Back faces
+                        #   tested, ties to the first found. Bit-identical to
+                        #   Babylon (scripts/sweep-check.mjs). Apache-2.0 notice
     CollisionField.ts   # RayWorld's counterpart for the one whole-scene walk a
                         #   ray query could not replace: the collider MESHES
                         #   bucketed, so moveWithCollisions is handed a street
