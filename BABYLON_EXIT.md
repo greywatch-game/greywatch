@@ -407,7 +407,72 @@ fight per map on both devices (X0.3, X0.4).
 The cheapest phase and the one that pays most: the maps, the kit and the merge
 stop depending on Babylon, and every oracle stays byte-identical.
 
-### X1.1 — `src/math/`, and the world's data layer on it — **M**
+### X1.1 — `src/math/`, and the world's data layer on it — **M** — **LANDED** (ad863e7)
+
+**Landed.** `src/math/` holds `Vector3`, `Quaternion`, `Matrix`, `Color3` and
+`Color4`: the members of Babylon's classes that the tree calls (a TypeScript
+compiler survey listed them), under the same names and signatures. Every body
+is copied from Babylon 9.28 in the same order of operations, with Babylon's
+Apache-2.0 notice in each header. The matrix stores float32 and keeps the
+identity flag its shortcuts read, so the answers are the same bits.
+`scripts/math-check.mjs` checks that. It runs every method in both libraries
+on seeded inputs (zeros, negative zeros, right angles, identity-flagged
+matrices), compares the results with `Object.is`, and fails when a member has
+no test case. Each map's `layout.ts`, the eight generators that write those
+files, `mapTypes`, `NavGrid`, `CoverMap`, `ObstacleField` and `RayWorld` now
+use it. The rest of the list had nothing to move: `TerrainField`'s queries
+take numbers, and its `VertexData` waits for X1.3. `layout`, `boxGeometry`,
+`boxIndex`, `roads`, `roadPaths`, `leash` and `collision` imported no Babylon
+math.
+
+**What the types found, and what it costs later steps.** Babylon's vector
+methods read `_x`, not `x`. Passing one of ours to a Babylon method therefore
+produces NaN, with no error. The reverse fails too: a Babylon vector cannot
+stand in for ours, because its `add` would be handed one of ours and read `_x`
+from it. So every function that both sides call takes `Vector3Like` (it only
+reads `x`, `y`, `z`) or `Vector3Ref` (it only writes, through `set`). A Babylon
+vector satisfies both as it is. `RayHit` is generic over which library's
+vectors it holds. Every copy from our math to Babylon's goes through
+`src/math/babylon.ts`, the one file under `src/math/` that imports Babylon (Rule 6
+names it). For now that is `toBabylon` at thirteen call sites and
+`babylonRayHit` in the three systems that read a hit with Babylon's methods.
+The file is deleted at X6.1, and each step that moves a caller off Babylon
+removes that caller's use of it. Two crossings get past the types. The
+editor's serializer recognises a position with `instanceof`, so `serialize.ts`
+and the editor's new layout entries now use our `Vector3` (`CLAUDE.md`,
+Conventions). A compiler scan for any of our values passed to a Babylon
+declaration finds none; a planted one is caught. `npm run collision`
+changed only the eight hash stamps, because the layouts' text changed and no
+box did.
+
+**Measured:**
+- **math-check:** 1,440,000 comparisons, all identical. A sum with its terms
+  reordered was planted, and it was caught.
+- **kit:hash:** identical on every kind, for both the drawing and the
+  colliders.
+- **merge:hash:** identical on all eight maps, shipped and `--editor`.
+- **parity:** passes on all eight maps.
+- **drop.mjs --check:** identical on five maps, and on Greyfen at its banked
+  2,400 steps. Harrowmead is "within tol" with the same hash on the parent, so
+  that state predates this step. At the default 480 steps Greyfen does not
+  settle, as its header says it won't, even though a run with no map named
+  still includes it.
+- **simulate, seed 777:** two processes of three rounds on each side (before
+  and after). Both sides fought the same fight (Greyfen `6ef4707c3c7a8414`,
+  Sarab `c109c06104830c4a`), and tick times differ by at most 2%, which is
+  within noise. The plain fields are neither faster nor slower here, because
+  no vector on a hot path left Babylon's math in this step. Bots, bodies and
+  hulls still hold Babylon's; X2.2 is where that question gets a real answer.
+- **The benchmark at `--max`:** fought X0.4's fights (Greyfen
+  `7ee089c174427e3d`, Sarab `1cab861b4ea23f7f`). Sarab's fight measured a 1%
+  low of 16.8 ms against 17.2.
+- **Generators and serializer:** every generator rewrites its layout byte for
+  byte apart from the import line. (Sarab's file has one comment added by hand
+  after generation, which the generator would drop.) The editor's serializer
+  rewrites every untouched layout byte for byte.
+- **A live round:** plays offline on Sarab and in a match on Greyfen, with no
+  page errors.
+- **`npm run build`:** passes.
 
 - **Do:** A small vector, quaternion, matrix and colour module covering the
   methods the tree actually calls — a subset, with the same names, so the swap
