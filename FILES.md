@@ -117,7 +117,13 @@ scripts/                      # Node tooling, run by hand or by `npm run build`,
                               #   the merge is handed it: a prop flattened)
                               #   and the COLLIDERS hashed apart, so a refactor
                               #   proves it moved nothing. `--feet` measures the
-                              #   kinds against lib/footprints.mjs. Not a gate
+                              #   kinds against lib/footprints.mjs. `--models`
+                              #   does the rest: weapons in every finish, the
+                              #   viewmodel in every sight, the player, the
+                              #   projectiles, the hulls, the soldiers and the
+                              #   capture rings, every node and every vertex
+                              #   as exact doubles, with order-only changes
+                              #   reported apart. Not a gate
   merge-hash.mjs              # `npm run merge:hash`: kit:hash's other half —
                               #   builds every map in a real browser and hashes
                               #   every merged visual, collider and terrain

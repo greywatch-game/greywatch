@@ -1,5 +1,6 @@
 /**
- * Fingerprints what the kit's builders BUILD — `npm run kit:hash`.
+ * Fingerprints what the kit's builders BUILD — `npm run kit:hash` — and, with
+ * `--models`, every other model in the game.
  *
  * Owns: nothing but a report and, when asked, one JSON file. Every placement
  * of every builder in every map's layout is built, made into part meshes
@@ -28,8 +29,9 @@
  * so a hash means something only against another hash taken the same way.
  * For what a change LOOKS like, `.claude/skills/model-detail/scripts/shots.mjs`.
  *
- * Flags: `--kinds a,b` limits it to those builder keys (every key in
- * `BUILDERS` otherwise); `--out file` writes the fingerprint; `--against
+ * Flags: `--models` fingerprints the models instead of the kit (below);
+ * `--kinds a,b` limits it to those builder keys (every key in `BUILDERS`
+ * otherwise); `--out file` writes the fingerprint; `--against
  * file` compares with one and exits 1 on any difference, listing the drawing
  * and the collider changes apart (with `--kinds`, only those kinds of the
  * file are compared, so one whole-kit fingerprint serves every later check).
@@ -53,6 +55,59 @@
  * colliders — without a vertex of its own changing. The prop's own `sub`
  * stream reaches only its own drawing, which is already hashed. A scatter
  * kind is named in `--kinds` like any other.
+ *
+ * **`--models` fingerprints everything drawn that is NOT the kit**, which is
+ * what `BABYLON_EXIT.md` X1.3 moves onto `src/geometry/` and has to prove it
+ * moved nothing:
+ *
+ * - each carried weapon's model (`weapon:<id>`, the builders `ViewModel`'s
+ *   `WEAPON_BUILDERS` names: the seven guns, the launcher and the mine). A
+ *   builder builds every optic its rail can take into the weapon, so one
+ *   build covers them all. Each is built bare and in each finish
+ *   (`applyFinish`, a material write the hash sees as material names);
+ * - the `ViewModel` itself (`viewmodel`): the arms (`buildArm`), the throwing
+ *   hand, its grenade and bottle, the spent magazines and the kit card. It is
+ *   hashed as built, and with every carried weapon in every sight. Its data is
+ *   what the fit derives from the geometry: the aimed pose off the worn
+ *   sight's centre, the hip pose, the turntable pivot, and each rig's magazine
+ *   pivots, which are MEASURED off the magazine's bounds;
+ * - the `Player` (`player`): its capsule, flash petals and casing pool, over
+ *   a `ViewModel` of its own;
+ * - the four pooled bodies that fly or lie (`grenade`, `molotov`, `rocket`
+ *   with its flame, `mine`, the laid one);
+ * - every vehicle kind (`vehicle:<kind>`: the `CONFIG.vehicles` blocks
+ *   `kindOf` pairs with a builder), for both sides, in its livery and wrecked;
+ * - a soldier of each side (`soldier`), as `Bot` and `NetSoldier` build one;
+ * - `CaptureZoneSystem`'s rings, poles and flags (`zone`), over every map's
+ *   control points at their own positions and radii. They stand on
+ *   `zoneWorld`, a striped stand-in that gives every ring open ground, made
+ *   ground, a wall and a road to cross, and puts some poles under a roof. It
+ *   is not the map.
+ *
+ * Each build gets a fresh Scene under the NullEngine and the stub factory
+ * above. The viewer is on side 0, so side 1 is the other kit, and
+ * `Math.random` is seeded (none of these builders calls it today).
+ *
+ * **It is stricter than the kit half, on purpose.** Every mesh AND every
+ * transform node left in the scene is hashed. A part disposed after its merge
+ * is gone from the scene and is not counted. Each node's record is its class,
+ * name, parent, enabled state, transform and pivot. A mesh adds its material
+ * name, visibility, picking and collision flags, rendering group, culling
+ * flag, side orientation, metadata, sub-meshes and bounding box, then every
+ * vertex attribute it carries and its indices. Each array goes in with its
+ * TYPE (a `number[]` holds doubles and a `Float32Array` does not) and its
+ * numbers as exact doubles, not through float32. The builder's plain data is
+ * hashed with it (landmarks, the finish list, a rig's reaches), with each
+ * Babylon object named by class and name.
+ *
+ * Each build gives two hashes. `draw` takes the records in SCENE ORDER;
+ * `set` sorts them first. `--against` puts every build in one of three
+ * buckets: "identical", "scene order differs" (the same nodes, created in
+ * another order, as when a merge mints its mesh at a different moment) and
+ * "content changed". It fails on content, and on order only under
+ * `--strict-order`: whether creation order reaches a pixel is the reference
+ * bank's question, not this one's. `--kinds` takes model kinds (`weapon:rifle`,
+ * `viewmodel`, `vehicle:tank`, `zone`). `--feet` does not apply.
  *
  * `--feet` asks a different question of the same builds: for every kind in
  * `scripts/lib/footprints.mjs`'s `FOOT`, how far the DRAWING reaches past
@@ -100,6 +155,8 @@ const opt = (k) => {
 
 /** Builds per worker. See the header for why there are workers at all. */
 const CHUNK = 250;
+/** The same for `--models`, whose viewmodel builds are each nine weapons. */
+const MODEL_CHUNK = 24;
 
 function vite() {
   return createServer({
@@ -259,6 +316,29 @@ async function reportFeet(result, notBuilt) {
   if (unlisted.size) console.log(`  a builder with no FOOT row: ${[...unlisted].sort().join(", ")}`);
 }
 
+/**
+ * The material factory every build is handed: a material is named for the
+ * factory call that asked for it, so a builder that paints a part another
+ * colour changes the drawing's hash. A Babylon object among the arguments (the
+ * road's ground texture) is named by its class and name, being a graph that
+ * points back at the engine. `scene` is read per call, so one stub serves a
+ * worker that makes a fresh Scene per build.
+ */
+function stubMats(B, cache, scene) {
+  const plain = (_k, v) =>
+    v && typeof v === "object" && typeof v.getClassName === "function" ? `${v.getClassName()}:${v.name}` : v;
+  return new Proxy(
+    {},
+    {
+      get: (_t, prop) => (...a) => {
+        const key = `${String(prop)}(${JSON.stringify(a, plain)})`;
+        if (!cache.has(key)) cache.set(key, new B.StandardMaterial(key, scene()));
+        return cache.get(key);
+      },
+    },
+  );
+}
+
 /** Builds `[key, job]` pairs and returns `{ key: { draw, colliders } | { error } }`. */
 async function hashJobs(jobs) {
   stubCanvas();
@@ -273,23 +353,8 @@ async function hashJobs(jobs) {
     );
     const engine = new B.NullEngine();
     let scene = new B.Scene(engine);
-    // A material is named for the factory call that asked for it, so a
-    // builder that paints a part another colour changes the drawing's hash. A
-    // Babylon object among the arguments (the road's ground texture) is named
-    // by its class and name, being a graph that points back at the engine.
     const cache = new Map();
-    const plain = (_k, v) =>
-      v && typeof v === "object" && typeof v.getClassName === "function" ? `${v.getClassName()}:${v.name}` : v;
-    const mats = new Proxy(
-      {},
-      {
-        get: (_t, prop) => (...a) => {
-          const key = `${String(prop)}(${JSON.stringify(a, plain)})`;
-          if (!cache.has(key)) cache.set(key, new B.StandardMaterial(key, scene));
-          return cache.get(key);
-        },
-      },
-    );
+    const mats = stubMats(B, cache, () => scene);
     const terrain = { flat: false, surfaceAt: swell, heightAt: swell };
     for (const [key, p] of jobs) {
       scene.dispose();
@@ -349,6 +414,400 @@ function hashScatter(build, body, propMeshes, scene, mats, p) {
   return { draw: draw.digest("hex").slice(0, 16), colliders: colliders.digest("hex").slice(0, 16) };
 }
 
+/*
+ * ---------------------------------------------------------------------------
+ * `--models`: everything drawn that is not the world kit. See the header.
+ * ---------------------------------------------------------------------------
+ */
+
+/** A number array's exact doubles, whatever array it arrived in. */
+const f64 = (a) => Buffer.from(Float64Array.from(a).buffer);
+
+/**
+ * A plain-data replacer for what a builder hands back: a node, a material, a
+ * texture or the scene is named by class and name (each is a graph pointing
+ * back at the engine), a Babylon maths value is spelled out by class and its
+ * numbers, the stub factory is `mats`, a typed array is its type and its
+ * numbers, and a number JSON cannot spell (`Infinity`, `NaN`, `-0`) is spelled
+ * as a string so it is not silently `null` or `0`.
+ */
+function plainOf(mats) {
+  return function (_k, v) {
+    if (v === mats) return "mats";
+    if (typeof v === "number") return Number.isFinite(v) && !Object.is(v, -0) ? v : String(Object.is(v, -0) ? "-0" : v);
+    if (!v || typeof v !== "object") return v;
+    if (isGraph(v)) return `${v.getClassName()}:${v.name}`;
+    if (ArrayBuffer.isView(v)) return [v.constructor.name, ...Array.from(v)];
+    if (typeof v.getClassName === "function" && typeof v.asArray === "function") {
+      return [v.getClassName(), ...Array.from(v.asArray())];
+    }
+    if (v instanceof Map) return ["Map", ...v];
+    if (v instanceof Set) return ["Set", ...v];
+    return v;
+  };
+}
+
+/**
+ * Whether a value is part of Babylon's object GRAPH — a node, a material, a
+ * texture, the scene — rather than a value. Asked by shape, never by
+ * `instanceof`: the `@babylonjs/core` this script loads through Vite is not
+ * the instance the game's modules were linked against, so a mesh they build is
+ * no instance of this script's `Mesh`, and a test by class would silently skip
+ * every one of them.
+ */
+const isGraph = (v) =>
+  typeof v.getClassName === "function" && (typeof v.uniqueId === "number" || v.getClassName() === "Scene");
+
+/**
+ * One node's whole record — everything the hash can see of it, in one buffer.
+ * Its NAME and its PARENT'S are in it, so a part hung off a different joint is
+ * a different record and not merely a reordering.
+ */
+function nodeRecord(n, plain) {
+  const head = [
+    n.getClassName(),
+    n.name,
+    n.parent ? `${n.parent.getClassName()}:${n.parent.name}` : null,
+    n.isEnabled(false),
+    n.position.asArray(),
+    n.rotation.asArray(),
+    n.scaling.asArray(),
+    n.rotationQuaternion?.asArray() ?? null,
+    Array.from(n.getPivotMatrix().m),
+    n.infiniteDistance,
+    n.billboardMode,
+  ];
+  const parts = [];
+  if (typeof n.getBoundingInfo === "function") {
+    head.push(
+      n.material ? `${n.material.getClassName()}:${n.material.name}` : null,
+      n.isVisible,
+      n.isPickable,
+      n.checkCollisions,
+      n.renderingGroupId,
+      n.alwaysSelectAsActiveMesh,
+      n.sideOrientation ?? null,
+      n.visibility,
+      n.alphaIndex,
+      n.layerMask,
+      n.metadata ?? null,
+      n.getTotalVertices(),
+      (n.subMeshes ?? []).map((s) => [s.materialIndex, s.verticesStart, s.verticesCount, s.indexStart, s.indexCount]),
+    );
+    const box = n.getBoundingInfo().boundingBox;
+    head.push(box.minimum.asArray(), box.maximum.asArray());
+    if (typeof n.getVerticesDataKinds === "function") {
+      for (const kind of [...n.getVerticesDataKinds()].sort()) {
+        const vb = n.getVertexBuffer(kind);
+        const data = vb.getData();
+        // The array's TYPE is its precision — a `number[]` keeps doubles and a
+        // `Float32Array` rounds — so it is part of the record, and the numbers
+        // are hashed as exact doubles rather than through float32.
+        parts.push(
+          Buffer.from(
+            JSON.stringify([kind, data?.constructor?.name ?? null, vb.getSize(), vb.byteStride, vb.byteOffset, vb.type, vb.normalized]),
+          ),
+        );
+        if (data) parts.push(data instanceof ArrayBuffer ? Buffer.from(data) : f64(data));
+      }
+      const idx = n.getIndices(false, false);
+      parts.push(Buffer.from(JSON.stringify(["indices", idx?.constructor?.name ?? null])));
+      if (idx) parts.push(f64(idx));
+    }
+  }
+  return Buffer.concat([Buffer.from(JSON.stringify(head, plain)), ...parts]);
+}
+
+/**
+ * The two hashes of one model build: `draw`, every mesh and then every
+ * transform node in SCENE ORDER followed by the builder's plain data, and
+ * `set`, the same records hashed one by one and sorted first — so a build
+ * whose nodes are all the same but were created in another order matches on
+ * `set` and differs on `draw`. That is the difference `--against` reports as
+ * "scene order differs", apart from "content changed".
+ */
+function hashScene(scene, data, plain) {
+  const draw = createHash("sha256");
+  const each = [];
+  for (const list of [scene.meshes, scene.transformNodes]) {
+    draw.update(`|${list === scene.meshes ? "meshes" : "nodes"}|${list.length}|`);
+    for (const n of list) {
+      const rec = nodeRecord(n, plain);
+      draw.update(createHash("sha256").update(rec).digest());
+      each.push((list === scene.meshes ? "m" : "n") + createHash("sha256").update(rec).digest("hex"));
+    }
+  }
+  const tail = JSON.stringify(data ?? null, plain);
+  draw.update(tail);
+  each.sort();
+  const set = createHash("sha256").update(each.join(",")).update(tail);
+  return { draw: draw.digest("hex").slice(0, 16), set: set.digest("hex").slice(0, 16) };
+}
+
+/** What the capture-zone build stands on — see `zoneWorld`. */
+const ZONE_DECK = 40;
+const ZONE_WALL = 30;
+const ZONE_ROOF = 60;
+
+/**
+ * A stand-in world for `CaptureZoneSystem.build`, which asks a map four
+ * questions: the floor (the swell), the obstacle boxes' floors and walls, the
+ * roads, and a body cast for the flag's pole. Each is answered by a pattern
+ * striped across the plane, so every map's points — at their own positions
+ * and radii — find open ground (stones), made ground (paint), a wall the ring
+ * breaks at, and somewhere a roof the pole goes up through. A comparison and
+ * not a map, like everything else here.
+ */
+function zoneWorld(points) {
+  const mod = (a, n) => ((a % n) + n) % n;
+  // A deck's top is flat over a 4 m cell, so `floorAt`'s probes agree on it.
+  const deckTop = (x, z) => swell(Math.floor(x / 4) * 4 + 2, Math.floor(z / 4) * 4 + 2) + 0.2;
+  const terrain = { flat: false, surfaceAt: swell, heightAt: swell };
+  const obstacles = {
+    groundAt: (x, z, ceiling, floor) => {
+      if (mod(x, ZONE_DECK) >= 12) return null;
+      const top = deckTop(x, z);
+      return top <= ceiling && top >= floor ? top : null;
+    },
+    wallAt: (x, z) => mod(z, ZONE_WALL) < 2 && mod(x, ZONE_DECK) >= 12,
+  };
+  const roads = {
+    rects: points.map((cp) => ({
+      x: cp.pos.x + cp.radius * 0.7,
+      z: cp.pos.z,
+      rotY: 0.4,
+      width: 3,
+      length: cp.radius * 2,
+      top: 0.06,
+    })),
+    pieces: [],
+    cell: 16,
+    ox: 0,
+    oz: 0,
+    nx: 0,
+    nz: 0,
+    cells: [],
+  };
+  const rays = {
+    castBody: (from, dir, max, hit) => {
+      if (mod(from.x, ZONE_ROOF) >= 15) return false;
+      const roof = swell(from.x, from.z) + 4;
+      const d = dir.y > 0 ? roof - from.y : from.y - (roof + 0.3);
+      if (d < 0 || d > max) return false;
+      hit.distance = d;
+      hit.point.set(from.x, from.y + dir.y * d, from.z);
+      hit.normal.set(0, -Math.sign(dir.y), 0);
+      return true;
+    },
+  };
+  return { terrain, obstacles, roads, rays, env: { fogEnd: 400 } };
+}
+
+/**
+ * Builds model jobs and returns `{ key: { draw, set } | { error } }`. Each build
+ * is in a fresh Scene with the viewer on side 0 and `Math.random` seeded, so a
+ * builder that reached for it would still hash the same twice running (none
+ * does today).
+ */
+async function hashModelJobs(jobs) {
+  stubCanvas();
+  const server = await vite();
+  const out = {};
+  const random = Math.random;
+  try {
+    const B = await server.ssrLoadModule("@babylonjs/core");
+    B.Logger.LogLevels = B.Logger.NoneLogLevel;
+    const load = (p) => server.ssrLoadModule(p);
+    const [W, VM, PL, GR, MO, RPG, MINE, VK, SM, CZ, FIN, TV] = await Promise.all(
+      [
+        "/src/entities/weapons.ts",
+        "/src/entities/ViewModel.ts",
+        "/src/entities/Player.ts",
+        "/src/entities/GrenadeModel.ts",
+        "/src/entities/MolotovModel.ts",
+        "/src/entities/RpgModel.ts",
+        "/src/entities/MineModel.ts",
+        "/src/entities/vehicleKinds.ts",
+        "/src/entities/SoldierModel.ts",
+        "/src/systems/CaptureZoneSystem.ts",
+        "/src/entities/finishes.ts",
+        "/src/core/teamView.ts",
+      ].map(load),
+    );
+    const weaponBuilders = await modelWeaponBuilders(load);
+    const engine = new B.NullEngine();
+    let scene = new B.Scene(engine);
+    const cache = new Map();
+    const mats = stubMats(B, cache, () => scene);
+    const plain = plainOf(mats);
+    for (const [key, p] of jobs) {
+      scene.dispose();
+      scene = new B.Scene(engine);
+      cache.clear();
+      TV.setViewerTeam(0);
+      Math.random = mulberry32(0x6d0de15);
+      try {
+        let data = null;
+        if (p.kind.startsWith("weapon:")) {
+          const id = p.kind.slice("weapon:".length);
+          const parts = weaponBuilders[id](scene, mats, `view_${id}`);
+          if (p.finish) FIN.applyFinish(mats, parts.finish, p.finish);
+          data = parts;
+        } else if (p.kind === "viewmodel") {
+          const camera = new B.TransformNode("camera", scene);
+          const vm = new VM.ViewModel(scene, mats, camera);
+          if (p.weapon) vm.setWeapon(p.weapon);
+          if (p.sight) vm.setSight(p.sight);
+          // What the fit derived from the geometry — the aimed pose off the
+          // worn sight's centre, the hip pose, the turntable pivot — and each
+          // rig's magazine pivots, MEASURED off the magazine's bounds.
+          data = {
+            carriedSight: vm.carriedSight,
+            reloadAction: vm.reloadAction,
+            sight: vm.sight,
+            adsPos: vm.adsPos,
+            hipPos: vm.hipPos,
+            hipRot: vm.hipRot,
+            pivot: vm.pivot,
+            rigs: Object.fromEntries(
+              Object.entries(vm.rigs).map(([id, r]) => [id, { parts: r.parts, magDrop: r.magDrop, reload: r.reload }]),
+            ),
+          };
+        } else if (p.kind === "player") {
+          const camera = new B.TransformNode("camera", scene);
+          new PL.Player(scene, mats, camera);
+        } else if (p.kind === "grenade") {
+          data = GR.buildGrenade(scene, mats, "grenade0");
+        } else if (p.kind === "molotov") {
+          data = MO.buildMolotov(scene, mats, "molotov0");
+        } else if (p.kind === "rocket") {
+          data = RPG.buildRocket(scene, mats, "rocket0");
+        } else if (p.kind === "mine") {
+          data = MINE.buildMineBody(scene, mats, "mine0");
+        } else if (p.kind.startsWith("vehicle:")) {
+          const type = VK.kindOf(p.kind.slice("vehicle:".length));
+          const rig = type.build(scene, mats, p.team);
+          if (p.wrecked) rig.paint(true);
+          data = rig;
+        } else if (p.kind === "soldier") {
+          data = SM.buildSoldier(scene, mats, p.team);
+        } else if (p.kind === "zone") {
+          const w = zoneWorld(p.points);
+          const zones = new CZ.CaptureZoneSystem(scene, mats);
+          zones.build(p.points, w.terrain, w.obstacles, w.roads, w.rays, w.env);
+          data = zones.zones.map((z) => ({ x: z.x, z: z.z, meshes: z.meshes }));
+        } else throw new Error(`no model "${p.kind}"`);
+        out[key] = hashScene(scene, data, plain);
+      } catch (e) {
+        out[key] = { error: String(e?.message ?? e) };
+      }
+    }
+  } finally {
+    Math.random = random;
+    await server.close();
+  }
+  return out;
+}
+
+/**
+ * Every carried id's model builder — `ViewModel`'s `WEAPON_BUILDERS`, which is
+ * not exported, rebuilt here from the same modules under the same ids; a
+ * carried id with no builder here throws rather than going unhashed.
+ */
+async function modelWeaponBuilders(load) {
+  const named = {
+    rifle: ["RifleModel", "buildRifle"],
+    carbine: ["CarbineModel", "buildCarbine"],
+    smg: ["SmgModel", "buildSmg"],
+    dmr: ["DmrModel", "buildDmr"],
+    sniper: ["SniperModel", "buildSniper"],
+    lmg: ["LmgModel", "buildLmg"],
+    pistol: ["PistolModel", "buildPistol"],
+    rpg: ["RpgModel", "buildRpg"],
+    mine: ["MineModel", "buildMine"],
+  };
+  const { CARRIED_IDS } = await load("/src/entities/weapons.ts");
+  const out = {};
+  for (const id of CARRIED_IDS) {
+    if (!named[id]) throw new Error(`no weapon builder for carried id "${id}" in kit-hash.mjs`);
+    const [file, fn] = named[id];
+    out[id] = (await load(`/src/entities/${file}.ts`))[fn];
+  }
+  return out;
+}
+
+/**
+ * Every model build, keyed `[kind, ...variant]`: each carried weapon bare and
+ * in every finish, the viewmodel as built and with every carried weapon in
+ * every sight, the player, the four projectiles, every vehicle kind for both
+ * sides in its livery and wrecked, a soldier of each side, and the capture
+ * zones of every map's control points.
+ */
+async function listModelJobs(only) {
+  const jobs = new Map();
+  const server = await vite();
+  try {
+    const { CARRIED_IDS } = await server.ssrLoadModule("/src/entities/weapons.ts");
+    const { SIGHT_IDS } = await server.ssrLoadModule("/src/entities/sights.ts");
+    const { FINISH_IDS } = await server.ssrLoadModule("/src/entities/finishes.ts");
+    const { kindOf } = await server.ssrLoadModule("/src/entities/vehicleKinds.ts");
+    const { CONFIG } = await server.ssrLoadModule("/src/config/index.ts");
+    const add = (key, job) => jobs.set(JSON.stringify(key), job);
+    for (const id of CARRIED_IDS) {
+      const kind = `weapon:${id}`;
+      add([kind, "built"], { kind });
+      for (const finish of FINISH_IDS) add([kind, "finish", finish], { kind, finish });
+    }
+    add(["viewmodel", "built"], { kind: "viewmodel" });
+    for (const weapon of CARRIED_IDS) {
+      for (const sight of SIGHT_IDS) add(["viewmodel", weapon, sight], { kind: "viewmodel", weapon, sight });
+    }
+    add(["player", "built"], { kind: "player" });
+    for (const kind of ["grenade", "molotov", "rocket", "mine"]) add([kind, "built"], { kind });
+    // `VEHICLE_KINDS` is not exported; its keys are `CONFIG.vehicles`' blocks
+    // that `kindOf` pairs with that same block.
+    const vehicleKinds = Object.keys(CONFIG.vehicles).filter((k) => kindOf(k)?.spec === CONFIG.vehicles[k]);
+    for (const v of vehicleKinds) {
+      for (const team of [0, 1]) {
+        for (const wrecked of [false, true]) {
+          add([`vehicle:${v}`, team, wrecked ? "wrecked" : "livery"], { kind: `vehicle:${v}`, team, wrecked });
+        }
+      }
+    }
+    for (const team of [0, 1]) add(["soldier", team], { kind: "soldier", team });
+    for (const m of mapDirs()) {
+      const mod = await server.ssrLoadModule(`/src/world/${m}/layout.ts`);
+      for (const layout of Object.values(mod)) {
+        if (!layout || !Array.isArray(layout.controlPoints) || !Array.isArray(layout.placements)) continue;
+        const points = layout.controlPoints.map((cp) => ({
+          id: cp.id,
+          name: cp.name,
+          pos: { x: cp.pos.x, y: cp.pos.y, z: cp.pos.z },
+          radius: cp.radius,
+          poleLift: cp.poleLift,
+        }));
+        add(["zone", m], { kind: "zone", points });
+      }
+    }
+  } finally {
+    await server.close();
+  }
+  const all = [...jobs];
+  if (only) {
+    const kinds = new Set(all.map(([k]) => JSON.parse(k)[0]));
+    for (const k of only) if (!kinds.has(k)) throw new Error(`no model "${k}" (models: ${[...kinds].join(", ")})`);
+  }
+  return all.filter(([k]) => !only || only.has(JSON.parse(k)[0])).sort((a, b) => (a[0] < b[0] ? -1 : 1));
+}
+
+/** The map directories under `src/world` that hold a layout, sorted. */
+function mapDirs() {
+  return readdirSync(join(ROOT, "src/world"), { withFileTypes: true })
+    .filter((d) => d.isDirectory() && existsSync(join(ROOT, "src/world", d.name, "layout.ts")))
+    .map((d) => d.name)
+    .sort();
+}
+
 /**
  * Every placement of the asked-for kinds in every layout, plus one bare build
  * of each — and every asked-for scatter kind over every seed and foliage rung.
@@ -361,11 +820,7 @@ async function listJobs(only) {
     const { SCATTER_BUILDERS } = await server.ssrLoadModule("/src/world/MapBuilder.ts");
     const { CONFIG } = await server.ssrLoadModule("/src/config/index.ts");
     if (only) for (const k of only) if (!(k in BUILDERS) && !(k in SCATTER_BUILDERS)) throw new Error(`no builder "${k}"`);
-    const worlds = readdirSync(join(ROOT, "src/world"), { withFileTypes: true })
-      .filter((d) => d.isDirectory() && existsSync(join(ROOT, "src/world", d.name, "layout.ts")))
-      .map((d) => d.name)
-      .sort();
-    for (const m of worlds) {
+    for (const m of mapDirs()) {
       const mod = await server.ssrLoadModule(`/src/world/${m}/layout.ts`);
       for (const layout of Object.values(mod)) {
         if (!layout || !Array.isArray(layout.placements)) continue;
@@ -396,12 +851,15 @@ async function listJobs(only) {
 
 if (process.env.KIT_HASH_WORKER) {
   process.once("message", async (jobs) => {
-    const out = await hashJobs(jobs);
+    const out = process.env.KIT_HASH_MODELS ? await hashModelJobs(jobs) : await hashJobs(jobs);
     process.send(out, () => process.exit(0));
   });
 } else {
   const feet = args.includes("--feet");
   if (feet) process.env.KIT_HASH_FEET = "1";
+  const models = args.includes("--models");
+  if (models) process.env.KIT_HASH_MODELS = "1";
+  if (models && feet) throw new Error("--feet measures the kit, and --models is not the kit");
   const outFile = opt("out");
   const againstFile = opt("against");
   // `--feet` measures the kinds the footprint table names, unless told which.
@@ -419,9 +877,10 @@ if (process.env.KIT_HASH_WORKER) {
     }
   }
 
-  const list = await listJobs(only);
+  const list = models ? await listModelJobs(only) : await listJobs(only);
   const chunks = [];
-  for (let i = 0; i < list.length; i += CHUNK) chunks.push(list.slice(i, i + CHUNK));
+  const chunk = models ? MODEL_CHUNK : CHUNK;
+  for (let i = 0; i < list.length; i += chunk) chunks.push(list.slice(i, i + chunk));
   const result = {};
   const run = (chunk) =>
     new Promise((resolve, reject) => {
@@ -459,8 +918,6 @@ if (process.env.KIT_HASH_WORKER) {
     const added = keys.filter((k) => !(k in before));
     const both = keys.filter((k) => k in before);
     const differs = (k, f) => JSON.stringify(before[k][f]) !== JSON.stringify(result[k][f]);
-    const drawn = both.filter((k) => differs(k, "draw") || differs(k, "error"));
-    const boxed = both.filter((k) => differs(k, "colliders") || differs(k, "error"));
     const report = (label, ks) => {
       const per = {};
       for (const k of ks) per[kindOf(k)] = (per[kindOf(k)] ?? 0) + 1;
@@ -470,6 +927,26 @@ if (process.env.KIT_HASH_WORKER) {
       console.log(`  ${label.padEnd(18)} ${ks.length}${ks.length ? `  (${kinds})` : ""}`);
     };
     console.log(`against ${againstFile}:`);
+    if (models) {
+      // A build whose set of node records matches but whose scene order does
+      // not is reported apart: the same meshes, created in another order.
+      const changed = both.filter((k) => differs(k, "set") || differs(k, "error"));
+      const reordered = both.filter((k) => !changed.includes(k) && differs(k, "draw"));
+      const same = both.filter((k) => !changed.includes(k) && !reordered.includes(k));
+      report("identical", same);
+      report("scene order differs", reordered);
+      report("content changed", changed);
+      report("builds added", added);
+      report("builds gone", gone);
+      for (const k of reordered.slice(0, 10)) console.log(`    order  ${k}`);
+      for (const k of changed.slice(0, 20)) console.log(`    change ${k}`);
+      const strictOrder = args.includes("--strict-order");
+      if (changed.length + added.length + gone.length || (strictOrder && reordered.length)) process.exit(1);
+      console.log(reordered.length ? "  same content (scene order differs)" : "  identical");
+      process.exit(0);
+    }
+    const drawn = both.filter((k) => differs(k, "draw") || differs(k, "error"));
+    const boxed = both.filter((k) => differs(k, "colliders") || differs(k, "error"));
     report("drawing changed", drawn);
     report("colliders changed", boxed);
     report("builds added", added);
