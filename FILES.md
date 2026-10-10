@@ -766,7 +766,8 @@ src/
                         #   bevelled SLAB (a side profile extruded, concave
                         #   allowed), the convex SOLID between two faces and a
                         #   ROD laid at any angle, all shaded flat and merged
-                        #   beside boxes. The soldier and its rifle are cut
+                        #   beside boxes; each a Part on a GeometryBuffer, no
+                        #   scene and no Babylon import. The soldier and its rifle are cut
                         #   from the loft, the first-person rifle from both;
                         #   the slung launcher is still boxes
     NetSoldier.ts       # Somebody else, drawn from the wire: one rig, the

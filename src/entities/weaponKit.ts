@@ -46,6 +46,7 @@ import {
 import { CONFIG } from "../config";
 import type { CelMaterialFactory } from "../shaders/CelShader";
 import { extrude, loft, type ProfilePoint, type Ring } from "./facet";
+import { drawnMesh } from "../world/parts";
 import type { SightId } from "./sights";
 
 export const BODY = "#2b2b33"; // aluminium upper receiver, barrel, hinge block
@@ -515,7 +516,7 @@ export class WeaponBuild {
     x = 0,
     parent: TransformNode = this.root,
   ): Mesh {
-    const m = extrude(`${this.prefix}_${name}`, this.scene, profile, width, bevel, x);
+    const m = drawnMesh(extrude(`${this.prefix}_${name}`, profile, width, bevel, x), this.scene);
     m.parent = parent;
     return this.collect(color, m);
   }
@@ -532,7 +533,7 @@ export class WeaponBuild {
     rings: readonly Ring[],
     parent: TransformNode = this.root,
   ): Mesh {
-    const m = loft(`${this.prefix}_${name}`, this.scene, rings);
+    const m = drawnMesh(loft(`${this.prefix}_${name}`, rings), this.scene);
     m.parent = parent;
     return this.collect(color, m);
   }
@@ -636,12 +637,15 @@ export class WeaponBuild {
     // The spine: continuous under the whole run, as deep as the slots are cut.
     this.box(`${name}Spine`, BODY, width * 0.62, neck, len + tooth, 0, neck / 2, len / 2, n);
     for (let i = 0; i < count; i++) {
-      const m = loft(`${this.prefix}_${name}Tooth`, this.scene, [
-        { y: neck * 0.8, w: width * 0.66, d: tooth, z: i * pitch },
-        { y: height * 0.55, w: width, d: tooth, z: i * pitch },
-        { y: height * 0.8, w: width, d: tooth, z: i * pitch },
-        { y: height, w: width * 0.86, d: tooth, z: i * pitch },
-      ]);
+      const m = drawnMesh(
+        loft(`${this.prefix}_${name}Tooth`, [
+          { y: neck * 0.8, w: width * 0.66, d: tooth, z: i * pitch },
+          { y: height * 0.55, w: width, d: tooth, z: i * pitch },
+          { y: height * 0.8, w: width, d: tooth, z: i * pitch },
+          { y: height, w: width * 0.86, d: tooth, z: i * pitch },
+        ]),
+        this.scene,
+      );
       m.parent = n;
       this.collect(METAL, m);
     }

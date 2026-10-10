@@ -127,6 +127,7 @@ import {
 import { buildMine } from "./MineModel";
 import { buildRpg } from "./RpgModel";
 import { loft, type Ring } from "./facet";
+import { drawnMesh } from "../world/parts";
 import { ReloadGesture, type ReloadInput, type ReloadPose, type ReloadRig } from "./ReloadGesture";
 import { OWN_KIT } from "./SoldierModel";
 import {
@@ -2272,7 +2273,7 @@ function buildArm(
   const parts = new Map<string, Mesh[]>();
   const frame = new TransformNode(`view_${name}Frame`, scene);
   const collect = (color: string, part: string, rings: Ring[]) => {
-    const m = loft(`view_${name}${part}`, scene, rings);
+    const m = drawnMesh(loft(`view_${name}${part}`, rings), scene);
     m.parent = frame;
     const g = parts.get(color);
     if (g) g.push(m);

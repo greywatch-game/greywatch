@@ -5,13 +5,21 @@
  * convex SOLID between two end faces (`solidBetween`, a wedge of armour) and a
  * ROD laid at any angle (`rodBetween`), all shaded flat but the rod, for the
  * parts of a model that a box makes read as a toy.
+ * Owns: no mesh and no scene. Each builder returns a `Part` (`world/parts.ts`)
+ * on a `GeometryBuffer` (`src/geometry/`) — the model that asked for it decides
+ * when it becomes a mesh, and `drawnMesh` is where it does — and this file
+ * imports nothing from `@babylonjs/core`: its vectors are `src/math/`'s, which
+ * are Babylon's bit for bit (BABYLON_EXIT.md X1.3).
  * Invariants: every face carries its own normal and its own vertices, so the
- * part shades in flat planes exactly as a `CreateBox` does and a `mergeByColor`
+ * part shades in flat planes exactly as a `createBox` does and a `mergeByColor`
  * beside boxes cannot tell the two apart; positions, normals AND uvs are
- * emitted because `Mesh.MergeMeshes` refuses to merge vertex data whose
- * attribute sets differ, and every box carries uvs. Triangles are wound by the
- * face's OWN outward normal rather than by an assumed convention, so a ring
- * list authored in either order comes out right side out.
+ * emitted because a merge refuses vertex data whose attribute sets differ, and
+ * every box carries uvs. The arrays are built as doubles and kept as
+ * `Float64Array`s — the `number[]` Babylon held when this applied them to a
+ * mesh itself — so nothing is rounded before a merge transforms it. Triangles
+ * are wound by the face's OWN outward normal rather than by an assumed
+ * convention, so a ring list authored in either order comes out right side
+ * out.
  * Never: smooth a normal across a facet (that is a continuous-tone surface in a
  * banded frame), or emit a zero-area face — a ring that collapses to a point is
  * handled, a ring that repeats its predecessor is the caller's mistake.
@@ -26,7 +34,10 @@
  * purpose: `CelInk` draws an edge wherever the normal bends, so every facet is
  * a potential pen line, and a round section at range is a scribble.
  */
-import { Mesh, MeshBuilder, Scene, Vector3, VertexData } from "@babylonjs/core";
+import { GeometryBuffer } from "../geometry/buffer";
+import { createCylinder } from "../geometry/primitives";
+import { Vector3 } from "../math";
+import { bakePartTransform, Part } from "../world/parts";
 
 /**
  * One cross-section of a loft, in the part's own frame: a rectangle `w` by `d`
@@ -97,10 +108,9 @@ function outline(r: Ring): Vector3[] {
  */
 export function loft(
   name: string,
-  scene: Scene,
   rings: readonly Ring[],
   { capBottom = true, capTop = true } = {},
-): Mesh {
+): Part {
   const loops = rings.map(outline);
   const sides = loops[0].length;
   if (loops.some((l) => l.length !== sides)) {
@@ -168,14 +178,7 @@ export function loft(
   const top = loops[loops.length - 1];
   if (capTop && !isPoint(top)) face(top, allInside);
 
-  const mesh = new Mesh(name, scene);
-  const data = new VertexData();
-  data.positions = positions;
-  data.normals = normals;
-  data.uvs = uvs;
-  data.indices = indices;
-  data.applyToMesh(mesh);
-  return mesh;
+  return new Part(name, new GeometryBuffer({ positions, normals, uvs, indices }));
 }
 
 /**
@@ -207,13 +210,11 @@ export interface Station {
  */
 export function loftAlongZ(
   name: string,
-  scene: Scene,
   stations: readonly Station[],
   caps: { capBottom?: boolean; capTop?: boolean } = {},
-): Mesh {
-  const mesh = loft(
+): Part {
+  const part = loft(
     name,
-    scene,
     stations.map((s) => ({
       y: s.z,
       w: s.w,
@@ -226,20 +227,18 @@ export function loftAlongZ(
     })),
     caps,
   );
-  const turn = (data: Float32Array | number[]) => {
+  // In place, on the doubles the loft built — the turn only moves and negates
+  // values, so no precision is spent on it.
+  const turn = (data: Float64Array | Float32Array) => {
     for (let i = 0; i < data.length; i += 3) {
       const y = data[i + 1];
       data[i + 1] = -data[i + 2];
       data[i + 2] = y;
     }
-    return data;
   };
-  const pos = mesh.getVerticesData("position")!;
-  const nrm = mesh.getVerticesData("normal")!;
-  mesh.setVerticesData("position", turn(pos));
-  mesh.setVerticesData("normal", turn(nrm));
-  mesh.refreshBoundingInfo();
-  return mesh;
+  turn(part.geometry.positions);
+  turn(part.geometry.normals!);
+  return part;
 }
 
 /**
@@ -275,28 +274,27 @@ export function stationAt(stations: readonly Station[], z: number): Station {
  * angle. Built along +Z and turned onto its bearing the way `world/kit/core.ts`'s
  * `orient` turns a member, because neither a box's two rotations nor a
  * cylinder's three axes can lay a tube at an angle. `d` is the diameter at `a`
- * and `dTop` at `b`.
+ * and `dTop` at `b`. The quarter turn onto Z is baked into the cylinder
+ * (`bakePartTransform`); the bearing is left on the part's own transform.
  */
 export function rodBetween(
   name: string,
-  scene: Scene,
   a: Point3,
   b: Point3,
   d: number,
   tess = 8,
   dTop = d,
-): Mesh {
+): Part {
   const dx = b[0] - a[0];
   const dy = b[1] - a[1];
   const dz = b[2] - a[2];
   const len = Math.max(1e-4, Math.hypot(dx, dy, dz));
-  const m = MeshBuilder.CreateCylinder(
+  const m = new Part(
     name,
-    { height: len, diameterBottom: d, diameterTop: dTop, tessellation: tess },
-    scene,
+    createCylinder({ height: len, diameterBottom: d, diameterTop: dTop, tessellation: tess }),
   );
   m.rotation.x = Math.PI / 2;
-  m.bakeCurrentTransformIntoVertices();
+  bakePartTransform(m);
   m.position.set((a[0] + b[0]) / 2, (a[1] + b[1]) / 2, (a[2] + b[2]) / 2);
   m.rotation.x = -Math.asin(Math.max(-1, Math.min(1, dy / len)));
   m.rotation.y = Math.atan2(dx, dz);
@@ -335,12 +333,11 @@ export type ProfilePoint = readonly [z: number, y: number];
  */
 export function extrude(
   name: string,
-  scene: Scene,
   profile: readonly ProfilePoint[],
   width: number,
   bevel = 0,
   x = 0,
-): Mesh {
+): Part {
   // Anticlockwise in (z, y), so each edge's inward normal is its left one.
   let pts = profile.map(([z, y]) => ({ z, y }));
   let area = 0;
@@ -431,14 +428,7 @@ export function extrude(
     );
   }
 
-  const mesh = new Mesh(name, scene);
-  const data = new VertexData();
-  data.positions = positions;
-  data.normals = normals;
-  data.uvs = uvs;
-  data.indices = indices;
-  data.applyToMesh(mesh);
-  return mesh;
+  return new Part(name, new GeometryBuffer({ positions, normals, uvs, indices }));
 }
 
 /** A point in a part's own frame, `[x, y, z]`. */
@@ -462,10 +452,9 @@ export type Point3 = readonly [number, number, number];
  */
 export function solidBetween(
   name: string,
-  scene: Scene,
   from: readonly Point3[],
   to: readonly Point3[],
-): Mesh {
+): Part {
   if (from.length !== to.length || from.length < 3) {
     throw new Error(`solidBetween ${name}: the two faces need the same corner count`);
   }
@@ -525,14 +514,7 @@ export function solidBetween(
     } else if (poly.length === 3) face(poly);
   }
 
-  const mesh = new Mesh(name, scene);
-  const data = new VertexData();
-  data.positions = positions;
-  data.normals = normals;
-  data.uvs = uvs;
-  data.indices = indices;
-  data.applyToMesh(mesh);
-  return mesh;
+  return new Part(name, new GeometryBuffer({ positions, normals, uvs, indices }));
 }
 
 /**

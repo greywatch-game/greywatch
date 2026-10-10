@@ -79,6 +79,7 @@ import type { CelMaterialFactory } from "../shaders/CelShader";
 import type { Team } from "./Combatant";
 import { viewTeam } from "../core/teamView";
 import { extrude, rodBetween, solidBetween, type Point3, type ProfilePoint } from "./facet";
+import { drawnMesh } from "../world/parts";
 import {
   paintRig,
   resetRigPose,
@@ -339,7 +340,7 @@ export function buildTank(
    * box's two rotations nor a cylinder's three axes can lay a tube at an angle.
    */
   const rod = (a: Point3, b: Point3, d: number, color: string, tess = 8, dTop = d): Shape => [
-    rodBetween("tank-rod", scene, a, b, d, tess, dTop),
+    drawnMesh(rodBetween("tank-rod", a, b, d, tess, dTop), scene),
     color,
   ];
   /** A side profile extruded across X — a hull, a skirt plate, a sight head. */
@@ -349,10 +350,10 @@ export function buildTank(
     bevel: number,
     x: number,
     color: string,
-  ): Shape => [extrude("tank-slab", scene, profile, width, bevel, x), color];
+  ): Shape => [drawnMesh(extrude("tank-slab", profile, width, bevel, x), scene), color];
   /** A convex solid between two end faces — the turret's wedge. */
   const solid = (from: readonly Point3[], to: readonly Point3[], color: string): Shape =>
-    [solidBetween("tank-solid", scene, from, to), color];
+    [drawnMesh(solidBetween("tank-solid", from, to), scene), color];
 
   // ==========================================================================
   // THE RUNNING GEAR — on `hull`, because a track lies on the ground its

@@ -39,6 +39,7 @@ import {
 import type { Team } from "./Combatant";
 import { viewTeam } from "../core/teamView";
 import { loft, type Ring } from "./facet";
+import { drawnMesh } from "../world/parts";
 // Type-only, so no runtime edge is created — the same import `Vehicle` takes
 // for the same reason. `DamageKind` lives with the shot that carries it.
 import type { DamageKind } from "../systems/CombatSystem";
@@ -983,7 +984,7 @@ export function buildSoldier(
     for (let i = 0; i < boxes.length; i++) {
       const part = boxes[i];
       if (!Array.isArray(part)) {
-        const m = loft(`${name}${i}`, scene, part.rings);
+        const m = drawnMesh(loft(`${name}${i}`, part.rings), scene);
         if (part.at) m.position.set(...part.at);
         if (part.rot) m.rotation.set(...part.rot);
         paint(m, part.color);
