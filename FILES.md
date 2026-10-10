@@ -1106,15 +1106,25 @@ src/
                         #   stripping through scripts/lib/mapgen.mjs, the
                         #   helpers the seven generate-<map>.mjs share
     MapBuilder.ts       # Builds the map; merges visuals, emits colliders.
-                        #   build() is a list of phases, one method each.
-                        #   structureMeshes / propMeshes: where a builder's
-                        #   parts become part meshes for the merge
+                        #   build() is a list of phases, one method each. Its
+                        #   parts enter the merge as WorldSurfaces and become
+                        #   meshes once, at the end of mergeBlocks
+                        #   (worldMeshes). structureMeshes / propMeshes are
+                        #   the part-mesh adapters nothing calls any more
     mapTypes.ts         # GameMap, WorldBox, WorldPane, PaneGroup, the layout's
                         #   flag/spawn/water/grass shapes and the editor index.
                         #   Types only; MapBuilder re-exports every one
-    merge.ts            # The visual merges: mergeByMaterial, then BlockMerge
-                        #   and PaneBlocks per map block (one key, one
-                        #   metadata.block), tag, BLOCK_SIZE
+    merge.ts            # The visual merges, on WorldSurfaces: mergeByMaterial,
+                        #   then BlockMerge and PaneBlocks per map block (one
+                        #   key, one metadata.block), tag, BLOCK_SIZE. Nothing
+                        #   in it touches the device
+    worldGeometry.ts    # The world's merged geometry as a record: WorldSurface
+                        #   (a Part, its block, its piece ranges, whether its
+                        #   positions stay writable, its BIRTH — the scene
+                        #   order its mesh is made in — and its editor item),
+                        #   PaneSurfaceGroup, WorldGeometry, and admission
+                        #   (admitStructure / admitProp), the one door a part
+                        #   enters the merge by, refusing a shared array in DEV
     solid.ts            # SOLID_ONLY — the one mesh pick predicate left, and the
                         #   editor's alone. The three-way table of what a
                         #   collider answers a body and a round is still here
@@ -1153,16 +1163,14 @@ src/
                         #   step for step: detachPart), mergeParts and
                         #   bakePartTransform (MergeMeshes and
                         #   bakeCurrentTransformIntoVertices, for the models),
-                        #   and the adapters into Babylon: partMesh for the
-                        #   world's merge, drawnMesh for a model (uploaded,
-                        #   ready to draw), vertexDataOf. Plus the part MESHES
-                        #   the world's merge runs on,
-                        #   built without ever reaching the GPU: uploading
-                        #   geometry that a merge throws away was half of a
-                        #   1500 m build. partSurface, and uploadPart, which
-                        #   every path out of a merge owes. Colliders are NOT
-                        #   parts — a part mesh has no submeshes and would stop
-                        #   nothing
+                        #   and the adapters into Babylon: drawnMesh for a
+                        #   model (uploaded, ready to draw), worldMeshes for
+                        #   the world's merged surfaces (made in BIRTH order),
+                        #   vertexDataOf. Plus the part MESHES the world's
+                        #   merge ran on until X1.4 (partMesh, partSurface,
+                        #   uploadPart, bakePart), which nothing calls now.
+                        #   Colliders are NOT parts — a part mesh has no
+                        #   submeshes and would stop nothing
     BuildingKit.ts      # Facade: shared types + BUILDERS registry
     kit/core.ts         #   Build accumulator (box/wall/guard/flight/...),
                         #   palette, builder contract, and the forest's

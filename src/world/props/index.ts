@@ -5,7 +5,7 @@
  * the origin and returns the root of a parented hierarchy; placement, the
  * flatten, merging and colliders are the caller's job. Nothing here touches a
  * scene or a Babylon mesh — every surface is a `GeometryBuffer` built through
- * `src/geometry/`, and `MapBuilder.propMeshes` is where one becomes a mesh.
+ * `src/geometry/`, merged as parts, and made a mesh by `worldMeshes`.
  * Invariants: emissive parts (lantern glow, fire, fungus) MUST set
  * metadata.noInk (and noGlow where they shouldn't feed the bloom).
  * Foliage the wind moves calls `marksSway`, and NOTHING a collider stands in

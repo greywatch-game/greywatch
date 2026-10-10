@@ -1963,14 +1963,14 @@ them unmerged, for the reason it also skips `BlockMerge` and the strut merge:
 
 Builders assemble geometry **at the origin, unrotated**, and return three parallel
 lists (`meshes`, `colliders`, `lights`) in local space; `MapBuilder` merges the
-meshes per colour and then transforms all three into place. Building at identity is
-what makes the merge safe — `MergeMeshes` bakes world matrices and returns an
-identity-transform mesh. **A scatter region obeys the same rule**, which is what
-lets the editor move and turn one by writing a transform. A merge of *one* mesh is
-the exception `MergeMeshes` will not handle — `mergeByMaterial` bakes those by hand,
-and before it did, every colour used by a single part of a rotated building (the
-tavern's sign, the smithy's forge glow, the boathouse lamp) was translated into
-place without being rotated.
+parts per colour and then transforms all three into place. Building at identity is
+what makes the merge safe — the merge bakes each member's world matrix and returns
+an identity-transform surface. **A scatter region obeys the same rule**, which is what
+lets the editor move and turn one by writing a transform. A merge of *one* part is
+the exception a merge cannot express — `mergeByMaterial` bakes those by hand
+(`bakePartTransform`), and before it did, every colour used by a single part of a
+rotated building (the tavern's sign, the smithy's forge glow, the boathouse lamp)
+was translated into place without being rotated.
 
 **A builder's geometry is not Babylon's, and its parts never reach the GPU.**
 Everything `Build` makes — every box, cylinder and surface — and everything a
@@ -1986,32 +1986,38 @@ object under it (BABYLON_EXIT.md X1.2). A builder that reaches for
 `MapBuilder` has placed the root — exactly as Babylon's `setParent(null)`
 did, in its child order.
 
-`MapBuilder` turns parts into part MESHES in one place (`partMesh`, through
-`structureMeshes` and `propMeshes`) on the way into the merge, and a part mesh
-holds real vertices with no device buffer, no bounding info and no submesh
-under it. Uploading them was HALF the build. `VertexData.applyToMesh` sends a
-mesh's positions, normals, UVs and indices to the device the instant it
-exists, `mergeByMaterial` reads them back out of the CPU copies Babylon kept
-anyway, and the merge disposes the source — so a cottage's twenty planks were
-twenty round trips for geometry no frame would ever draw. At 1500 m that was
-161 seconds of a 186-second build; it is 9.4 of 17.4 now (`ENGINE_UPGRADE.md` S5).
+**And the merge is not Babylon's either** (BABYLON_EXIT.md X1.4). A placement's
+or a prop's parts are ADMITTED in one place (`admitStructure`, `admitProp` in
+`world/worldGeometry.ts`) as `WorldSurface`s, and both merge passes and the
+glazing's run on those: `mergeParts` for two or more (`Mesh.MergeMeshes`'
+arithmetic, `mergeTransformed`), `bakePartTransform` for one, the palette slot
+written into the buffer's `uv2`, the metadata written on the part. Nothing
+touches the device until the end of `MapBuilder.mergeBlocks`, where
+`worldMeshes` (`parts.ts`) makes every merged surface a mesh at once. It used to
+be the other way round: every plank was a Babylon mesh, uploaded the instant it
+existed, read back out of the CPU copies by the merge and disposed — HALF the
+build at 1500 m (161 seconds of a 186-second one), until `parts.ts` stopped
+the upload and then stopped the mesh.
 
-Two consequences a builder has to know. **A part mesh may never be drawn,
-picked or collided with** — it has no submeshes, so it would silently do
-nothing — which is why `MapBuilder.collider()` stays on `MeshBuilder` and
-colliders are not parts. And **every path out of a merge that KEEPS its source
-owes `uploadPart`**: the group-of-one hand-bake in both `mergeByMaterial` and
-`paneGroup`, and the material-less mesh both of them skip. A part mesh that
-reaches the scene without it draws nothing and throws nothing.
+Three consequences a builder has to know. **A part's arrays are its own**: the
+merge bakes a lone part's transform into its arrays IN PLACE, so two parts
+sharing one array would both be moved by it, silently — DEV refuses a shared
+buffer or array at admission. **A part with no material is dropped**: nothing
+would draw it. And **the adapter makes the meshes in BIRTH order**
+(`WorldSurface.born`, minted at admission and at every merge of two or more,
+inherited by a merge of one) — the order Babylon made them in while the merge
+ran on meshes, and the order `scene.meshes` holds them in, which `WorldCulling`
+offers candidates in. `npm run merge:hash` records that order per mesh
+(`sceneRank`) and fails on it.
 
 A **second merge pass** (`BlockMerge`) collapses neighbouring structures and scatter
-fields into one mesh per (map block, material) — the block's side is
+fields into one surface per (map block, material) — the block's side is
 `MapLayout.blockSize`, 48 m by default — Sarab states 96, Cinderhaven and Kurenai
-120, Harrowmead 200. The village is ~230 structures
-and the outline pass draws every mesh twice, so without it the map alone costs ~670
-draws; with it, ~150, and frustum culling still throws away most of the map because
-a block is well inside the 78 m fog wall. Outlines still trace each building,
-because `renderOutline` expands vertices along their own normals.
+120, Harrowmead 200. The village is ~230 structures, and without it the map alone
+cost ~670 draws while the outline pass drew every mesh twice; with it, ~150, and
+frustum culling still throws away most of the map because a block is well inside
+the 78 m fog wall. The ink still traces each building, because `CelInk` finds
+edges in the frame's depth rather than per mesh.
 
 **There are FOUR vernaculars in the kit and each is a shape before it is a
 palette**: `kit/buildings/` and `kit/structures/` are the wet northern

@@ -12,7 +12,7 @@
  * invisible to rays AND bots. Colliders must line up with the visuals they
  * stand in for (sparks land on colliders). Visuals must never be pickable or
  * solid. Builders arrive at identity transform; merging then transforming is
- * what makes MergeMeshes safe. Must NOT special-case Hollowmere — a second map
+ * what makes the merge safe. Must NOT special-case Hollowmere — a second map
  * is one new layout file, and build() takes the layout, the environment and the
  * heightfield as arguments precisely so nothing here can reach for a named one.
  * Scatter runs off the layout's seeded RNG, never Math.random: blocking props
@@ -26,16 +26,14 @@
  * box to stand in for it, and splitting it per block is what keeps ray picks
  * rejecting it as cheaply as the old flat box did.
  * Builders arrive with PARTS (world/parts.ts) — plain geometry, a transform
- * and a material, which `structureMeshes` and `propMeshes` turn into part
- * MESHES in one place (`partMesh`) on the way into the merge — and a part mesh
- * has no device buffer under it, because uploading geometry a merge throws
- * away was half of a 1500 m build. So every path out of a merge that KEEPS its source
- * owes uploadPart() — the group-of-one hand-bake in mergeByMaterial and in
- * paneGroup, and the material-less mesh both of them skip — unless it is
- * merged AGAIN: a placement's or scatter field's merge on its way into
- * BlockMerge (or the road merge) stays a part, and the final pass uploads. A
- * part that reaches the scene draws nothing and throws nothing. collider() is
- * deliberately NOT on that path: a part has no submeshes and moveWithCollisions
+ * and a material — which enter the merge in one place (`admitStructure`,
+ * `admitProp` in world/worldGeometry.ts) as `WorldSurface`s, each minted the
+ * BIRTH its mesh will be made in. Every merge runs on those and touches no
+ * device; the world becomes meshes once, at the end of `mergeBlocks`
+ * (`worldMeshes`), in birth order, which is the scene order the meshes had
+ * when the merge still ran on them — and the vertex bake and the freeze then
+ * run on those meshes. collider() is deliberately NOT on that path: a
+ * collider has to be a real mesh with submeshes, because moveWithCollisions
  * walks them.
  * `build(..., { editor: true })` keeps geometry per layout item, tags it with
  * metadata.editorRef and indexes it — at the cost of the BlockMerge pass and
@@ -50,7 +48,6 @@ import {
   MeshBuilder,
   Scene,
   Vector3,
-  VertexBuffer,
 } from "@babylonjs/core";
 import { CONFIG } from "../config";
 import { kindOf } from "../entities/vehicleKinds";
@@ -87,7 +84,26 @@ import { RayWorld } from "./RayWorld";
 import { CollisionField } from "./CollisionField";
 import { CoverMap } from "./CoverMap";
 import { ObstacleField } from "./ObstacleField";
-import { flattenParts, type Part, partMesh, uploadPart, vertexDataOf } from "./parts";
+import {
+  bakePartTransform,
+  flattenParts,
+  mergeParts,
+  Part,
+  partMesh,
+  vertexDataOf,
+  worldMatrixOf,
+  worldMeshes,
+} from "./parts";
+import { Matrix } from "../math";
+import {
+  admitProp,
+  admitStructure,
+  type Mint,
+  mintFrom,
+  type PaneSurfaceGroup,
+  surfaceOf,
+  type WorldSurface,
+} from "./worldGeometry";
 import {
   BLOCK_SIZE,
   BlockMerge,
@@ -174,9 +190,9 @@ type ScatterBuilder = (
 
 /**
  * A built structure with its parts made into part MESHES (`partMesh`), which
- * is what the merges and the bookkeeping beside them still run on until X1.4
- * of BABYLON_EXIT.md moves them onto buffers. The one place `MapBuilder`
- * crosses from a builder's parts to Babylon's meshes.
+ * is what the merges and the bookkeeping beside them ran on until X1.4 of
+ * BABYLON_EXIT.md moved them onto parts. Nothing calls it or `propMeshes`
+ * now; X1.4's last commit deletes both.
  */
 type MeshStructure = Omit<Structure, "meshes" | "paneMeshes" | "freeform"> & {
   meshes: Mesh[];
@@ -467,42 +483,37 @@ export const PROP_BODIES: Record<ScatterSpec["prop"], PropBody> = {
 const NEUTRAL_ALBEDO: readonly [number, number, number] = [0.5, 0.5, 0.5];
 
 /**
- * A mesh's local half-extents — its bounding box's `extendSize` — including
- * for a PART, which has no bounding info at all.
+ * A part's local half-extents, from its vertices, by the arithmetic Babylon's
+ * `BoundingBox` uses — `(max - min) * 0.5` over the positions — and zero for
+ * a part with no vertex, which is what a part MESH's empty bounding info
+ * answered when the merge still ran on those.
  *
- * **A part answers `getBoundingInfo()` with a box of size ZERO**
- * (`world/parts.ts`: no device buffer, no bounding info), so every caller that
- * weighed a part by its bounds was weighing every part the same. That was
- * `albedoFromMeshes` for every kit structure since parts landed: a beam and a
- * whole wall counted alike in the colour the irradiance volume bounces off
- * the structure's boxes, which is not what its own comment says it does. So a
- * part is measured from its vertices, by the same arithmetic Babylon's
- * `BoundingBox` uses — `(max - min) * 0.5` over the positions — and a mesh on
- * the device keeps the bounds it has.
+ * **Measured, never read off a bounding box**: a part mesh had none, so while
+ * this asked one every caller that weighed a part by its bounds weighed every
+ * part the same. That was `albedoFromParts` for every kit structure: a beam
+ * and a whole wall counted alike in the colour the irradiance volume bounces
+ * off the structure's boxes, which is not what its own comment says it does.
  */
-function halfExtentsOf(mesh: Mesh): { x: number; y: number; z: number } {
-  const buffer = mesh.geometry?.getVertexBuffer(VertexBuffer.PositionKind);
-  if (buffer && !buffer.getBuffer()) {
-    const p = mesh.getVerticesData(VertexBuffer.PositionKind);
-    if (p && p.length >= 3) {
-      let x0 = p[0];
-      let y0 = p[1];
-      let z0 = p[2];
-      let x1 = x0;
-      let y1 = y0;
-      let z1 = z0;
-      for (let i = 3; i < p.length; i += 3) {
-        x0 = Math.min(x0, p[i]);
-        x1 = Math.max(x1, p[i]);
-        y0 = Math.min(y0, p[i + 1]);
-        y1 = Math.max(y1, p[i + 1]);
-        z0 = Math.min(z0, p[i + 2]);
-        z1 = Math.max(z1, p[i + 2]);
-      }
-      return { x: (x1 - x0) * 0.5, y: (y1 - y0) * 0.5, z: (z1 - z0) * 0.5 };
+function halfExtentsOf(part: Part): { x: number; y: number; z: number } {
+  const p = part.geometry.positions;
+  if (p.length >= 3) {
+    let x0 = p[0];
+    let y0 = p[1];
+    let z0 = p[2];
+    let x1 = x0;
+    let y1 = y0;
+    let z1 = z0;
+    for (let i = 3; i < p.length; i += 3) {
+      x0 = Math.min(x0, p[i]);
+      x1 = Math.max(x1, p[i]);
+      y0 = Math.min(y0, p[i + 1]);
+      y1 = Math.max(y1, p[i + 1]);
+      z0 = Math.min(z0, p[i + 2]);
+      z1 = Math.max(z1, p[i + 2]);
     }
+    return { x: (x1 - x0) * 0.5, y: (y1 - y0) * 0.5, z: (z1 - z0) * 0.5 };
   }
-  return mesh.getBoundingInfo().boundingBox.extendSize;
+  return { x: 0, y: 0, z: 0 };
 }
 
 /**
@@ -513,8 +524,18 @@ function halfExtentsOf(mesh: Mesh): { x: number; y: number; z: number } {
 interface BuildRun {
   layout: MapLayout;
   terrain: TerrainField;
-  /** Becomes `GameMap.visuals`. */
+  /**
+   * Becomes `GameMap.visuals`: the floor and the rim, made as meshes first,
+   * then `surfaces` once the adapter has made them meshes too.
+   */
   visuals: Mesh[];
+  /**
+   * Every merged surface after the floor and the rim, in `visuals` order —
+   * what `worldMeshes` turns into meshes at the end of `mergeBlocks`.
+   */
+  surfaces: WorldSurface[];
+  /** The build's birth counter — see `WorldSurface.born`. */
+  mint: Mint;
   /** Becomes `GameMap.colliders`. */
   colliders: Mesh[];
   /** The opaque block merge, fed by the placements and the scatter. */
@@ -813,16 +834,19 @@ export class MapBuilder {
     // shipped map is any more — see `MapLayout.borderland`.
     const margin = layout.borderland?.margin ?? 0;
     const terrain = this.floorFor(layout, heights, size, margin);
+    const mint = mintFrom();
     const run: BuildRun = {
       layout,
       terrain,
       visuals: [],
+      surfaces: [],
+      mint,
       colliders: [],
       // One size, handed to both, because `ReflectionSystem.encloses` asks a
       // glazing group and the wall behind it whether they are the same
       // building by comparing the two keys. See `PaneBlocks`.
-      blocks: new BlockMerge(blockSize),
-      paneBlocks: new PaneBlocks(blockSize),
+      blocks: new BlockMerge(blockSize, mint),
+      paneBlocks: new PaneBlocks(blockSize, mint),
       index:
         opts?.editor === true ? { placements: [], scatter: [] } : undefined,
     };
@@ -973,11 +997,11 @@ export class MapBuilder {
    * sounds — then the roads, merged on their own.
    */
   private placeStructures(run: BuildRun, network: RoadNetwork): void {
-    const { layout, terrain, visuals, colliders, blocks, paneBlocks, index } =
+    const { layout, terrain, surfaces, mint, colliders, blocks, paneBlocks, index } =
       run;
     // Roads are merged into one draw call per material so overlapping junctions
     // (the central cross, etc.) don't z-fight between separate meshes.
-    const roadParts: Mesh[] = [];
+    const roadParts: WorldSurface[] = [];
     const placementsStart = performance.now();
     for (const [i, p] of layout.placements.entries()) {
       const item = index ? newItem(index.placements) : null;
@@ -1005,38 +1029,37 @@ export class MapBuilder {
             : undefined,
         roads: isRoad ? network.footprint : undefined,
       });
-      const s = structureMeshes(built, this.scene);
+      const s = built;
+      // Its parts enter the merge here and nowhere else, each minted the birth
+      // its mesh will be made in (`worldGeometry.ts`).
+      const admitted = admitStructure(built, mint);
       // What light bounces off this structure's boxes: the average of what it
       // is painted, weighted by how much of each there is. Taken HERE, before
-      // the merge below disposes these meshes — what it hands back wears the
+      // the merge below bakes these parts — what it hands back wears the
       // palette material, which has no single colour to read.
-      this.albedoFromMeshes(s.meshes);
+      this.albedoFromParts(s.meshes);
       // …and where its parts stand, for the same reason and against the same
       // deadline: after the merge there is no part left to ask. A road is not
       // asked at all — its footprint is `this.roads`, which feathers the grass
       // into the verge where a box would cut it off square.
       if (!isRoad) this.recordParts(s, origin, rotY, terrain);
 
-      // Off the editor, everything below is merged again (`BlockMerge`, the
-      // road merge), so it may stay a part until then.
-      const again = !item;
-      for (const merged of mergeByMaterial(s.meshes, p.kind, { again })) {
-        merged.rotation.y = rotY;
-        merged.position.addInPlace(origin);
+      for (const merged of mergeByMaterial(admitted.meshes, p.kind, { mint })) {
+        place(merged.part, origin, rotY);
         if (item) {
           // The block merge is what makes a placement unrecoverable, so the
           // editor takes the draw-call hit and keeps its meshes separate.
-          tag(merged, { list: "placements", index: i });
-          item.visuals.push(merged);
+          tag(merged.part, { list: "placements", index: i });
+          merged.owner = item;
           if (isRoad) {
-            merged.metadata.noShadowCaster = true;
+            merged.part.metadata!.noShadowCaster = true;
             // Roads are NOT outlined, here or in play — see the road merge
             // below for the whole of why. The editor found it first and for a
             // narrower reason (unmerged, each road's shell is drawn over
             // whatever it overlaps, which is a black patch at every junction);
             // the selection highlight shows a road's extent instead.
           }
-          visuals.push(merged);
+          surfaces.push(merged);
         } else if (isRoad) {
           roadParts.push(merged);
         } else {
@@ -1077,7 +1100,15 @@ export class MapBuilder {
       // sides, so a breakable pane's collider lands at a known place in them
       // whichever kinds a structure declares.
       if (s.panes.length > 0) {
-        const glazing = this.paneGroup(`${p.kind}-glass`, s, origin, rotY, i);
+        const glazing = this.paneGroup(
+          `${p.kind}-glass`,
+          s,
+          admitted.panes,
+          origin,
+          rotY,
+          i,
+          mint,
+        );
         for (const group of glazing.visuals) {
           paneBlocks.add(p.x, p.z, group, item, i);
         }
@@ -1100,10 +1131,10 @@ export class MapBuilder {
     since("placements", placementsStart);
 
     for (const merged of record("roadMerge", () =>
-      mergeByMaterial(roadParts, "roads"),
+      mergeByMaterial(roadParts, "roads", { mint }),
     )) {
       // Flat ground sheets receive shadows, never cast them.
-      merged.metadata = { ...(merged.metadata ?? {}), noShadowCaster: true };
+      merged.part.metadata = { ...(merged.part.metadata ?? {}), noShadowCaster: true };
       // **AND NO ROAD IS INKED**, which is the same sentence one line up rather
       // than a second exemption: a sheet lying on the ground has no silhouette
       // to cast a shadow from and none to draw a line round either. Nothing has
@@ -1119,7 +1150,7 @@ export class MapBuilder {
       // measured on Sarab, where the ink of whichever mesh the front-to-back
       // sort drew second covered the whole intersection, and no amount of lift
       // fixed it because the shell rode with the slab.
-      visuals.push(merged);
+      surfaces.push(merged);
     }
   }
 
@@ -1128,13 +1159,14 @@ export class MapBuilder {
    * every region's blocking props clustered into collider meshes at once.
    */
   private placeScatter(run: BuildRun, rng: () => number): void {
-    const { layout, terrain, visuals, colliders, blocks, index } = run;
+    const { layout, terrain, surfaces, mint, colliders, blocks, index } = run;
     const scatterStart = performance.now();
     for (const [i, spec] of layout.scatter.entries()) {
       const item = index ? newItem(index.scatter) : null;
       this.item = item;
-      this.scatterRegion(spec, terrain, rng, blocks, colliders, item, i);
-      if (item) for (const m of item.visuals) visuals.push(m);
+      for (const merged of this.scatterRegion(spec, terrain, rng, blocks, mint, colliders, item, i)) {
+        surfaces.push(merged);
+      }
     }
     this.item = null;
     since("scatter", scatterStart);
@@ -1156,7 +1188,7 @@ export class MapBuilder {
    * and the palette the first of them discovers.
    */
   private mergeBlocks(run: BuildRun): void {
-    const { visuals, blocks, paneBlocks } = run;
+    const { visuals, surfaces, blocks, paneBlocks } = run;
     // One more merge across neighbouring structures — see BlockMerge. This is
     // the ONE merge that paletteises, which is also what exempts the editor for
     // free: an editor build files its meshes on the item instead and never
@@ -1171,7 +1203,7 @@ export class MapBuilder {
         },
       }),
     )) {
-      visuals.push(merged);
+      surfaces.push(merged);
     }
     // Published before anything draws and after the merge that discovers it —
     // see `CelMaterialFactory.setPalette`. Unconditional, so a rebuild that
@@ -1199,16 +1231,30 @@ export class MapBuilder {
     // therefore the one visual in the world with no ink, and it loses nothing:
     // what draws a window's frame is the mullion, the collar and the reveal,
     // all of which are geometry with outlines of their own.
-    for (const merged of record("paneMerge", () =>
-      paneBlocks.finish(this.panes, this.paneGroups),
-    )) {
-      merged.metadata = {
-        ...(merged.metadata ?? {}),
+    const glazing = record("paneMerge", () => paneBlocks.finish(this.panes));
+    for (const { surface } of glazing) {
+      surface.part.metadata = {
+        ...(surface.part.metadata ?? {}),
         noInk: true,
         noShadowCaster: true,
       };
-      visuals.push(merged);
+      surfaces.push(surface);
     }
+
+    // **The one place the merged world becomes meshes** (`worldMeshes`): every
+    // surface above, made in the order Babylon made them when the merge still
+    // ran on meshes and listed after the floor and the rim, which were made
+    // first. The glazing groups are handed their meshes on the way past, which
+    // is the shape `GameMap.paneGroups` and `GlassSystem` read.
+    const meshes = record("upload", () => worldMeshes(surfaces, this.scene));
+    const meshOf = new Map<WorldSurface, Mesh>();
+    surfaces.forEach((surface, i) => meshOf.set(surface, meshes[i]));
+    for (const mesh of meshes) visuals.push(mesh);
+    this.paneGroups = glazing.map((g) => ({
+      mesh: meshOf.get(g.surface)!,
+      panes: g.panes,
+      block: g.block,
+    }));
   }
 
   /**
@@ -1219,10 +1265,11 @@ export class MapBuilder {
     // The vertex-colour bake — occlusion, the world mark and the wind's sway
     // weight — and its position in `build` is the whole of it.
     //
-    // AFTER every merge, because `VertexData.merge` throws on a group where
-    // some meshes carry `colors` and some do not, and `mergeByMaterial`
-    // disposes its sources — which is what turns Babylon's attribute-aligning
-    // path off. Baking last cannot hit that.
+    // AFTER every merge, because the merge (`mergeTransformed`) refuses a
+    // group where some members carry `colors` and some do not, and has no
+    // attribute-aligning path to fall back on. Baking last cannot hit that.
+    // It still runs on the MESHES `worldMeshes` made at the end of
+    // `mergeBlocks`, reading their arrays as stored.
     //
     // BEFORE `markVisual`, which freezes the world matrices the bake needs to
     // recompute, and before the nav graph, which wants `this.boxes` for its own
@@ -1593,16 +1640,17 @@ export class MapBuilder {
     terrain: TerrainField,
     rng: () => number,
     blocks: BlockMerge,
+    mint: Mint,
     colliders: Mesh[],
     item: EditorItem | null,
     index: number,
-  ): void {
+  ): WorldSurface[] {
     const build = SCATTER_BUILDERS[spec.prop];
     const light = SCATTER_LIGHTS[spec.prop];
     const sound = SCATTER_AMBIENCE[spec.prop];
     const [minS, maxS] = scatterScale(spec);
     const placed: { x: number; z: number; r: number }[] = [];
-    const parts: Mesh[] = [];
+    const parts: WorldSurface[] = [];
     // A disc has no orientation, so this is zero for every circular region —
     // which is every region on the shipped map.
     const rot = isScatterRect(spec) ? (spec.rotY ?? 0) : 0;
@@ -1654,13 +1702,13 @@ export class MapBuilder {
       const yaw = rng() * Math.PI * 2;
       prop.rotation.y = yaw;
       // Compose the placement into every part and cut the links
-      // (`flattenParts`), then hand the parts to the merge as meshes — the
-      // merge bakes each one's transform into its vertices, the same
-      // identity-transform trick the structures use, applied one level up.
-      const flat = propMeshes(prop, this.scene);
+      // (`flattenParts`), then admit the parts to the merge — which bakes each
+      // one's transform into its vertices, the same identity-transform trick
+      // the structures use, applied one level up.
+      const flat = flattenParts(prop);
       // Its box, if it gets one, bounces light in its own colours.
-      if (spec.blocking) this.albedoFromMeshes(flat);
-      parts.push(...flat);
+      if (spec.blocking) this.albedoFromParts(flat);
+      parts.push(...admitProp(flat, mint));
 
       if (light) {
         this.lighting.add(
@@ -1672,7 +1720,7 @@ export class MapBuilder {
         );
       }
       // Beside the light and on the same terms: the prop's own position, taken
-      // here because nothing downstream still has one. `propMeshes` above composes
+      // here because nothing downstream still has one. `flattenParts` above composes
       // this placement into every part, the merge bakes it into the vertices
       // and then takes the mesh away entirely, so an emitter that is not recorded on this line has no
       // second chance to be — see `AmbienceSystem`.
@@ -1713,18 +1761,20 @@ export class MapBuilder {
       }
     }
 
-    // As in `placeStructures`: off the editor, `BlockMerge` merges it again.
-    const again = !item;
-    for (const merged of mergeByMaterial(parts, `${spec.prop}-field`, { again })) {
-      merged.rotation.y = rot;
-      merged.position.addInPlace(origin);
+    // As in `placeStructures`: off the editor, `BlockMerge` merges it again,
+    // and on it the item keeps its surfaces — handed back for `visuals`.
+    const kept: WorldSurface[] = [];
+    for (const merged of mergeByMaterial(parts, `${spec.prop}-field`, { mint })) {
+      place(merged.part, origin, rot);
       if (item) {
-        tag(merged, { list: "scatter", index });
-        item.visuals.push(merged);
+        tag(merged.part, { list: "scatter", index });
+        merged.owner = item;
+        kept.push(merged);
       } else {
         blocks.add(spec.x, spec.z, merged);
       }
     }
+    return kept;
   }
 
   /**
@@ -2052,16 +2102,17 @@ export class MapBuilder {
    * 900 m town's roofs and upper floors out of the list.
    */
   private recordParts(
-    s: MeshStructure,
+    s: Structure,
     origin: Vector3,
     rotY: number,
     terrain: TerrainField,
   ): void {
     const reach = CONFIG.grass.heightMax * MAX_HEIGHT_SCALE;
+    const world = new Matrix();
     for (const m of s.meshes) {
       if (s.freeform.has(m)) continue;
-      const pos = m.getVerticesData(VertexBuffer.PositionKind);
-      if (!pos || pos.length < 3) continue;
+      const pos = m.geometry.positions;
+      if (pos.length < 3) continue;
       let x0 = Infinity;
       let y0 = Infinity;
       let z0 = Infinity;
@@ -2081,7 +2132,7 @@ export class MapBuilder {
       }
       // Row-vector convention: a point is `v * M`, so rows 0-2 are the part's
       // own axes (scaled) in the structure's frame and row 3 its position.
-      const M = m.computeWorldMatrix(true).m;
+      const M = worldMatrixOf(m, world).m;
       const lx = (x0 + x1) / 2;
       const ly = (y0 + y1) / 2;
       const lz = (z0 + z1) / 2;
@@ -2149,19 +2200,19 @@ export class MapBuilder {
 
   /**
    * Sets the albedo the next boxes are recorded in to the average paint of
-   * `meshes`, each weighted by its bounding box's surface — a stand-in for
+   * `parts`, each weighted by its bounding box's surface — a stand-in for
    * how much of the structure it is, and plenty for light that is about to be
    * averaged over a whole hemisphere. A mesh with no single colour (a ground
    * texture, glazing) says nothing; a structure where nothing says anything
    * is `NEUTRAL_ALBEDO`. It must never KEEP the hint, which is whatever the
    * last structure or prop was painted — or the floor, for the first one.
    */
-  private albedoFromMeshes(meshes: readonly Mesh[]): void {
+  private albedoFromParts(parts: readonly Part[]): void {
     let r = 0;
     let g = 0;
     let b = 0;
     let total = 0;
-    for (const m of meshes) {
+    for (const m of parts) {
       const c = this.mats.albedoOf(m.material);
       if (!c) continue;
       const e = halfExtentsOf(m);
@@ -2295,12 +2346,15 @@ export class MapBuilder {
    */
   private paneGroup(
     name: string,
-    s: MeshStructure,
+    s: Structure,
+    /** `s.paneMeshes`, admitted (`admitStructure`) — index for index. */
+    paneSurfaces: readonly WorldSurface[],
     origin: Vector3,
     parentRotY: number,
     placement: number,
-  ): { visuals: PaneGroup[]; colliders: Mesh[] } {
-    const visuals: PaneGroup[] = [];
+    mint: Mint,
+  ): { visuals: PaneSurfaceGroup[]; colliders: Mesh[] } {
+    const visuals: PaneSurfaceGroup[] = [];
     const colliders: Mesh[] = [];
 
     // Grouped by material and kept in declaration order within a group, because
@@ -2308,47 +2362,44 @@ export class MapBuilder {
     // it. Panes carry no exemptions, so unlike `mergeByMaterial` there is no
     // second key — a pane that ever needs one owes this method the same nesting.
     const groups = new Map<Material, number[]>();
-    for (const [j, mesh] of s.paneMeshes.entries()) {
-      const mat = mesh.material;
-      // As in `mergeByMaterial`: skipped means kept, and a kept part owes the
-      // upload the merge would have done for it.
-      if (!mat) {
-        uploadPart(mesh);
-        continue;
-      }
+    for (const [j, surface] of paneSurfaces.entries()) {
+      const mat = surface.part.material;
+      // As in `mergeByMaterial`: a part with no material draws nothing, and
+      // is dropped.
+      if (!mat) continue;
       const group = groups.get(mat);
       if (group) group.push(j);
       else groups.set(mat, [j]);
     }
 
     for (const [mat, members] of groups) {
-      // Vertex counts are read BEFORE the merge and never assumed. A box is 24
-      // positions today and the arithmetic would be right, but `MergeMeshes`
-      // disposes its sources — so a wrong guess here is unrecoverable and
-      // silent, and it would break the wrong pane rather than throwing.
-      const parts: Mesh[] = [];
+      // Vertex counts are read off each member and never assumed. A box is 24
+      // positions today and the arithmetic would be right, but a wrong guess
+      // here is silent: it would break the wrong pane rather than throwing.
+      const parts: Part[] = [];
       const ranges: { start: number; count: number }[] = [];
       let cursor = 0;
       for (const j of members) {
-        const mesh = s.paneMeshes[j];
-        const count = mesh.getTotalVertices();
+        const part = paneSurfaces[j].part;
+        const count = part.geometry.vertexCount;
         ranges.push({ start: cursor, count });
         cursor += count;
-        parts.push(mesh);
+        parts.push(part);
       }
-      const merged =
-        parts.length === 1
-          ? // The group-of-one exception `MergeMeshes` will not handle, and the
-            // same hand-bake `mergeByMaterial` does: the caller composes a
-            // transform onto what it gets back, so an unbaked mesh would have
-            // its own position clobbered rather than added to.
-            uploadPart(parts[0]).bakeCurrentTransformIntoVertices()
-          : Mesh.MergeMeshes(parts, true, true, undefined, false, false);
-      if (!merged) continue;
-      merged.name = `${name}-${mat.name}`;
-      merged.material = mat;
-      merged.rotation.y = parentRotY;
-      merged.position.addInPlace(origin);
+      // The group-of-one exception, and the same hand-bake `mergeByMaterial`
+      // does: the caller composes a transform onto what it gets back, so an
+      // unbaked part would have its own position clobbered rather than added
+      // to. A lone surface keeps its birth; a merge is born now.
+      let merged: WorldSurface;
+      if (parts.length === 1) {
+        merged = paneSurfaces[members[0]];
+        bakePartTransform(merged.part);
+      } else {
+        merged = surfaceOf(new Part("", mergeParts(parts)), mint());
+      }
+      merged.part.name = `${name}-${mat.name}`;
+      merged.part.material = mat;
+      place(merged.part, origin, parentRotY);
 
       const paneIndices: number[] = [];
       for (const [k, j] of members.entries()) {
@@ -2412,7 +2463,7 @@ export class MapBuilder {
       // this method leaves `WorldPane.group` at -1 for it: a placement does not
       // know which block it will be merged under, and these per-placement
       // groups never reach `GameMap` — only `finish`'s output does.
-      visuals.push({ mesh: merged as Mesh, panes: paneIndices, block: "" });
+      visuals.push({ surface: merged, panes: paneIndices, block: "" });
     }
     return { visuals, colliders };
   }
@@ -2580,6 +2631,18 @@ const CORNERS = [
   [1, 1],
   [-1, 1],
 ] as const;
+
+/**
+ * Puts a merged surface's part where its placement stands: turned by `rotY`
+ * and moved by `origin` — what the merge, which works at identity, leaves to
+ * its caller.
+ */
+function place(part: Part, origin: Vector3, rotY: number): void {
+  part.rotation.y = rotY;
+  part.position.x += origin.x;
+  part.position.y += origin.y;
+  part.position.z += origin.z;
+}
 
 /** Rotates a local offset about the Y axis. */
 function rotateY(x: number, y: number, z: number, angle: number): Vector3 {

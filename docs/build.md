@@ -260,38 +260,40 @@ version of "be careful with deep imports" that survives that.
 
 ## A Babylon upgrade owes `npm run merge:hash` against the version before it
 
-**The map build leans on Babylon's internals in three places, and none of them
-fails loudly when an upgrade moves what it copied.** All three are in
-`src/world/parts.ts` and `src/world/merge.ts`, and each is a claim that it does
+**The map build leaned on Babylon's internals in three places, none of which
+failed loudly when an upgrade moved what it copied, and since BABYLON_EXIT.md
+X1.4 the world's merges call none of them.** Each was a claim that it did
 exactly what a Babylon routine does, minus a GPU upload:
 
-- `partSurface` holds `Geometry.delayLoadState` at NOTLOADED for one
+- `partSurface` held `Geometry.delayLoadState` at NOTLOADED for one
   `applyToMesh`, relying on `setVerticesData` postponing a buffer for a
   geometry with no mesh yet and on `applyToMesh` skipping `_applyToMesh` while
   the geometry is not ready.
-- `bakePart` is `bakeTransformIntoVertices` on a part's own arrays.
-- `mergeToPart` is `Mesh.MergeMeshes` step for step, and calls
+- `bakePart` was `bakeTransformIntoVertices` on a part's own arrays.
+- `mergeToPart` was `Mesh.MergeMeshes` step for step, and called
   `VertexData._mergeCoroutine` — an underscore member, so nothing in Babylon's
-  semver covers it.
+  semver covers it. It is gone.
 
-There were four until BABYLON_EXIT.md X1.2. The fourth was `boxVertexData`,
-which scaled one cached `CreateBoxVertexData` cube; the kit's and the props'
-geometry is now OURS (`src/geometry/`: the primitive generators, the merge,
-the transform and the normals, copied operation for operation), so an upgrade
-cannot move a vertex the kit builds — what it can still move is the merge
-above. Since X1.3 the models (weapons, optics, hulls, soldiers, thrown things)
-build on the same layer and merge on it too (`mergeTransformed`, `bake`), so
-an upgrade cannot move a vertex of theirs either. `scripts/geometry-check.mjs` compares ours with the INSTALLED Babylon,
-so after an upgrade a difference there means Babylon's generators changed, not
-ours: worth knowing, and worth nothing to the map, which no longer calls
-them. X1.4 takes the merge onto buffers too, and with it the three above.
+The first two are still in `src/world/parts.ts` and called by nothing, until
+X1.4's last commit deletes them. There were four until BABYLON_EXIT.md X1.2.
+The fourth was `boxVertexData`, which scaled one cached `CreateBoxVertexData`
+cube; the kit's and the props' geometry is now OURS (`src/geometry/`: the
+primitive generators, the merge, the transform and the normals, copied
+operation for operation), so an upgrade cannot move a vertex the kit builds.
+Since X1.3 the models (weapons, optics, hulls, soldiers, thrown things) build
+on the same layer and merge on it too (`mergeTransformed`, `bake`), and since
+X1.4 so does the world's merge (`mergeParts`, `bakePartTransform`), so an
+upgrade cannot move a vertex of either. `scripts/geometry-check.mjs` compares
+ours with the INSTALLED Babylon, so after an upgrade a difference there means
+Babylon's generators changed, not ours: worth knowing, and worth nothing to
+the map, which no longer calls them.
 
-If an upgrade changes any of those routines, the copy silently stops matching:
-vertices move, or a mesh reaches the scene with nothing on the device and draws
-nothing. So take `npm run merge:hash -- --out before.json` (and the same with
+What an upgrade can still move is the ONE adapter (`drawnMesh`, and
+`worldMeshes` through it: `VertexData.applyToMesh`, a public API, and
+`Mesh.setVerticesData` for a writable pane block) and the colliders, which
+are still `MeshBuilder` boxes and `Mesh.MergeMeshes` (BABYLON_EXIT.md X2.1's).
+So take `npm run merge:hash -- --out before.json` (and the same with
 `--editor`) on the OLD version, upgrade, and run `--against` on the new one,
-on the same machine. A difference is either the upgrade changing Babylon's own
-output or one of these copies having drifted; to tell which, hash the new
-version once more with the copies swapped back for the calls they stand in for
-(`uploadPart(m).bakeCurrentTransformIntoVertices()`, `Mesh.MergeMeshes`) and
-see which side the difference follows.
+on the same machine. A difference is Babylon's own output changing under the
+adapter or a collider; `node scripts/geometry-check.mjs` says whether our
+copies still agree with the installed generators.

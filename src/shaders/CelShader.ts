@@ -196,12 +196,16 @@ export const MAX_PALETTE = 128;
  * a mesh gets a slot exactly when it is going into the paletteised group, and
  * every mesh in that group got one.
  *
- * **It lives here rather than with either caller because there are now TWO**,
- * and the two index different tables: `MapBuilder`'s merge writes slots in the
- * map palette `setPalette` publishes, and `SoldierModel` writes slots in the
- * kit palette `getBodyCel` holds. What they share is this attribute and the
- * varying that reads it, which is the shader's, so the one thing neither of
- * them may state twice is where the index goes.
+ * **It lives here rather than with either caller because there are TWO**, and
+ * the two index different tables: the map's merge (`world/merge.ts`) writes
+ * slots in the map palette `setPalette` publishes, and `SoldierModel` writes
+ * slots in the kit palette `getBodyCel` holds. What they share is this
+ * attribute and the varying that reads it, which is the shader's, so the one
+ * thing neither of them may state twice is where the index goes. **Both now
+ * write a BUFFER (`writeBufferPaletteIndex`, below)**: since BABYLON_EXIT.md
+ * X1.4 the map merges parts rather than meshes, and this mesh form is called
+ * by nothing until that step's last commit deletes it and gives the buffer
+ * form its name.
  */
 export function writePaletteIndex(mesh: Mesh, slot: number): void {
   // Through `parts.ts` because the map's merge hands this PARTS on their way

@@ -149,10 +149,11 @@ Six rules about it, and the first is the one everything else rests on:
   not neutral for a multiplier, which is why the green channel is used as a
   *mask* (1 on baked world geometry) rather than as a second multiplier.
 - **The bake runs AFTER every merge, and cannot be moved earlier.**
-  `VertexData.merge` throws `"Cannot merge vertex data that do not have the same
-  set of attributes"` the moment one mesh in a group carries `colors` and another
-  does not, and `mergeByMaterial`'s `disposeSource = true` is what turns
-  Babylon's attribute-aligning path off. Baking last also makes a positional
+  The merge (`mergeTransformed`, `src/geometry/buffer.ts`, as Babylon's
+  `VertexData.merge` before it) throws `"Cannot merge vertex data that do not
+  have the same set of attributes"` the moment one member of a group carries
+  `colors` and another does not, and it has no attribute-aligning path to turn
+  on. Baking last also makes a positional
   estimate legitimate: two meshes meeting at a corner are in different merge
   groups (the merge is per colour), and shading a vertex from where it *is*
   rather than from what it belongs to is what makes the two sides agree.

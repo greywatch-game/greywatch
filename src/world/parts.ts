@@ -1,88 +1,75 @@
 /**
  * parts.ts — PARTS: the `Part` every kit builder, scatter prop and model
- * (weapon, optic, hull, soldier, thrown thing) builds, what a model does to
- * its parts before they are meshes, the two places a part becomes a Babylon
- * mesh, and the Babylon-side part meshes the world's merge still runs on.
+ * (weapon, optic, hull, soldier, thrown thing) builds, what a model and the
+ * world's merge do to parts before they are meshes, and the places a part
+ * becomes a Babylon mesh.
  * Owns: `PartNode` (a local transform and a parent — the frame a group of
  * parts is built in) and `Part` (a node with a `GeometryBuffer`, a material
  * and its metadata); `worldMatrixOf`, `detachPart` (`setParent(null)`),
  * `flattenParts` (a prop's parent links resolved into each part's own
  * transform at EMIT time), `mergeParts` (`MergeMeshes`' geometry) and
  * `bakePartTransform` (`bakeCurrentTransformIntoVertices`); the adapters —
- * `partMesh` for the world's merge, `drawnMesh` for a model, `vertexDataOf`
- * for a bare buffer — and the Babylon-side helpers the world's merge runs on:
- * `partSurface`, `uploadPart`, `bakePart`, `setPartVerticesData`.
+ * `drawnMesh` for a model, `worldMeshes` for the world's merged surfaces,
+ * `vertexDataOf` for a bare buffer. Still here and called by nothing since
+ * BABYLON_EXIT.md X1.4 moved the world's merge onto parts (deleted by its C5):
+ * `partMesh`, `partSurface`, `uploadPart`, `bakePart`, and
+ * `setPartVerticesData`, whose only caller is `CelShader`'s equally unused
+ * `writePaletteIndex`.
  * Invariants: a `Part` is plain data — nothing in it has heard of Babylon but
- * the material it carries — and `partMesh` and `drawnMesh` are the ONLY
- * places one becomes a mesh (BABYLON_EXIT.md X1.2, X1.3), handing Babylon
- * exactly the arrays and the transform it held when the builders made meshes
- * themselves, so `kit:hash` (and its `--models` half) and `merge:hash` cannot
- * tell the difference. Every routine that moves a vertex or a transform here
- * is Babylon's, step for step, because those oracles compare bits. A part has
- * no parent by the time it is adapted: `flattenParts` or `detachPart` cuts
- * every link first, and both adapters refuse one that is left. A part MESH carries
- * its vertex data in CPU memory and NOTHING on the device — no vertex buffer,
- * no index buffer, no bounding info, no submesh. So a part mesh may be read,
- * transformed, merged and disposed, and may never be DRAWN, PICKED or
- * COLLIDED WITH. Anything handed to the rest of the world owes `uploadPart`
- * first; a mesh that reaches the scene without it is silently invisible,
- * which is the one failure this module can cause. That is why
- * `mergeByMaterial` uploads on every path out of it rather than only the ones
- * it believes can survive — EXCEPT when its caller says it will merge the
- * result `again` (a placement or scatter field into `BlockMerge`, a road into
- * the road merge), where every path out stays a part on purpose and the final
- * pass is what uploads. `npm run merge:hash` fails on any mesh the world is
- * handed that is still a part.
+ * the material it carries — and `drawnMesh` is the ONE place one becomes a
+ * mesh (`worldMeshes` makes every world mesh through it), handing Babylon
+ * exactly the arrays and the transform it held when the builders and the
+ * merges made meshes themselves, so `kit:hash` (and its `--models` half) and
+ * `merge:hash` cannot tell the difference. Every routine that moves a vertex
+ * or a transform here is Babylon's, step for step, because those oracles
+ * compare bits. A part has no parent by the time it is adapted:
+ * `flattenParts` or `detachPart` cuts every link first, and every adapter
+ * refuses one that is left. `worldMeshes` makes the world's meshes in BIRTH
+ * order (`WorldSurface.born`, `worldGeometry.ts`), which is the scene order
+ * they had when the merge ran on meshes, and hands them back in list order.
  *
  * **Why the geometry is ours and the meshes are still Babylon's.** The kit
  * builds `GeometryBuffer`s through `src/geometry/` (Babylon's generators,
  * copied operation for operation and checked by `scripts/geometry-check.mjs`),
- * and the merge still runs on Babylon meshes until X1.4 moves it onto buffers.
- * The adapter is the seam between the two, and it is deliberately dumb: a
- * `Float64Array` goes back as the `number[]` Babylon held, a `Float32Array` as
- * itself, the indices as a plain array — never a `Float64Array` handed to a
- * Babylon buffer, which would upload eight-byte doubles as if they were four.
+ * every merge runs on those buffers, and Babylon draws the result until the
+ * renderer is ours. The adapter is the seam between the two, and it is
+ * deliberately dumb: a `Float64Array` goes back as the `number[]` Babylon
+ * held, a `Float32Array` as itself, the indices as a plain array — never a
+ * `Float64Array` handed to a Babylon buffer, which would upload eight-byte
+ * doubles as if they were four.
  *
- * **Part MESHES exist because 87% of a 1500 m build was the placement loop,
- * and the placement loop is not what anybody thought it was.** `ENGINE_UPGRADE.md`
- * wall 4 derived the cost as `Scene.removeMesh`'s `indexOf` over a
- * `scene.meshes` growing to 23,014 — `O(built x live)`, which is the shape the
- * table had. Measured on the 900/300 proving ground it is not: `removeMesh` is
- * called 88,131 times, scans 547 MILLION array elements doing it, and costs
- * **98 ms** of a 6,420 ms loop. V8's `indexOf` over a packed array is 0.18 ns
- * an element, and the derivation was pricing it as a memory access.
+ * **Why nothing is a mesh until the end: 87% of a 1500 m build was the
+ * placement loop, and the placement loop is not what anybody thought it was.**
+ * `ENGINE_UPGRADE.md` wall 4 derived the cost as `Scene.removeMesh`'s
+ * `indexOf` over a `scene.meshes` growing to 23,014 — `O(built x live)`, which
+ * is the shape the table had. Measured on the 900/300 proving ground it is
+ * not: `removeMesh` is called 88,131 times, scans 547 MILLION array elements
+ * doing it, and costs **98 ms** of a 6,420 ms loop. V8's `indexOf` over a
+ * packed array is 0.18 ns an element, and the derivation was pricing it as a
+ * memory access.
  *
- * **Where the time actually goes is `device.createBuffer` and
+ * **Where the time actually went was `device.createBuffer` and
  * `queue.writeBuffer`.** Every part a builder made — a plank, a mullion, a
- * pane — was a real `Mesh`, and `VertexData.applyToMesh` uploads its positions,
- * normals, UVs and indices to the GPU the instant it is created.
- * `MergeMeshes` then reads them back out of the CPU copies Babylon kept
- * anyway, uploads the merged result, and DISPOSES every source — destroying
- * the buffers it just made. Profiled inside `MapBuilder.build` on the same
+ * pane — was a real `Mesh`, and `VertexData.applyToMesh` uploads its
+ * positions, normals, UVs and indices to the GPU the instant it is created.
+ * `MergeMeshes` then read them back out of the CPU copies Babylon kept
+ * anyway, uploaded the merged result, and DISPOSED every source — destroying
+ * the buffers it had just made. Profiled inside `MapBuilder.build` on the same
  * ground: 1,878 ms in `createBuffer`, 1,692 in `writeBuffer` and 515 in
  * `createVertexBuffer` around them, against an 8,802 ms build. Half the build
- * is uploading geometry that is thrown away before a frame is drawn.
+ * was uploading geometry that was thrown away before a frame was drawn.
  *
- * **The lever is Babylon's own and it is `Geometry.delayLoadState`, held for
- * exactly one call.** `Geometry.setVerticesData` postpones the device buffer
- * whenever the geometry has no mesh on it yet (`postponeInternalCreation:
- * this._meshes.length === 0`), and `Geometry.applyToMesh` only runs
- * `_applyToMesh` — which is what creates every postponed buffer —
- * `if (this.isReady())`. So building the geometry BEFORE the mesh and applying
- * it while it reads as not-ready gets a mesh holding vertices that has never
- * spoken to the device.
+ * The first answer was the part MESH (`partSurface`): a mesh holding vertices
+ * with nothing on the device, by holding `Geometry.delayLoadState` at
+ * NOTLOADED for the one call that would have created its buffers, and an
+ * `uploadPart` every path out of a merge owed. The second, X1.4's, is that
+ * there is no mesh at all until the merges are done: they run on parts, and
+ * `worldMeshes` uploads each surface the world keeps, once.
  *
- * **The state is put back IMMEDIATELY, and that is not tidiness.** Every read
- * on a `Geometry` is gated on the same `isReady()` — `getVertexBuffer`,
- * `getVerticesData` and `getTotalVertices` all return null or zero while it is
- * false — so a part left in that state is not an un-uploaded mesh, it is an
- * EMPTY one, and `MergeMeshes` fails it as "Positions are required". The
- * not-ready window is one call wide by construction.
- *
- * **Colliders are deliberately NOT built this way and must not be.**
- * `moveWithCollisions` walks `mesh.subMeshes`, and a part has none — a
- * collider built as a part would stop nothing, silently. `MapBuilder.collider`
- * stays on `MeshBuilder`, and that is a rule rather than an omission.
+ * **Colliders are deliberately NOT parts.** `moveWithCollisions` walks
+ * `mesh.subMeshes`, and a collider built without them would stop nothing,
+ * silently. `MapBuilder.collider` stays on `MeshBuilder` (BABYLON_EXIT.md
+ * X2.1's), and that is a rule rather than an omission.
  */
 import {
   Constants,
@@ -97,6 +84,7 @@ import {
 } from "@babylonjs/core";
 import { mergeTransformed, type FloatArray, type GeometryBuffer } from "../geometry/buffer";
 import { Matrix, Quaternion, Vector3 } from "../math";
+import type { WorldSurface } from "./worldGeometry";
 
 /** A mesh's metadata bag, which is what the merge and the bake read flags off. */
 export type PartMetadata = { [flag: string]: unknown };
@@ -360,6 +348,51 @@ export function drawnMesh(a: Part | string, b: Scene | GeometryBuffer, c?: Scene
   const mesh = new Mesh(a, c!);
   vertexDataOf(b as GeometryBuffer).applyToMesh(mesh);
   return mesh;
+}
+
+/**
+ * The one place the WORLD's merged surfaces become Babylon meshes — every
+ * structure, scatter field, road and glazing block a map build merged
+ * (`merge.ts`), each through `drawnMesh`, carrying its part's transform,
+ * material and metadata object unchanged.
+ *
+ * **The meshes are CREATED in birth order (`WorldSurface.born`) and RETURNED
+ * in list order**, and the two are not the same: a surface's birth is when
+ * Babylon made its mesh while the merge still ran on meshes, and that is the
+ * order `scene.meshes` holds them in — the order `WorldCulling` offers
+ * candidates in, which reaches the glow mask and the transparent tie-breaks.
+ * The list order is `GameMap.visuals`'.
+ *
+ * A surface whose positions must stay writable (`updatable`, a pane block
+ * holding a breakable pane) gets them through `Mesh.setVerticesData(…, true)`,
+ * the call that made them writable before. Each editor surface's mesh joins
+ * its item's `visuals`, in list order: a placement's merged surfaces, then its
+ * glazing.
+ */
+export function worldMeshes(surfaces: readonly WorldSurface[], scene: Scene): Mesh[] {
+  const order = surfaces.map((_, i) => i).sort((a, b) => surfaces[a].born - surfaces[b].born);
+  if (import.meta.env.DEV) {
+    for (let k = 1; k < order.length; k++) {
+      if (surfaces[order[k]].born === surfaces[order[k - 1]].born) {
+        throw new Error(
+          `worldMeshes: "${surfaces[order[k]].part.name}" and "${surfaces[order[k - 1]].part.name}" ` +
+            `share birth ${surfaces[order[k]].born} — one surface reached the world twice`,
+        );
+      }
+    }
+  }
+  const meshes = new Array<Mesh>(surfaces.length);
+  for (const i of order) {
+    const surface = surfaces[i];
+    const mesh = drawnMesh(surface.part, scene);
+    if (surface.updatable) {
+      const positions = mesh.getVerticesData(VertexBuffer.PositionKind);
+      if (positions) mesh.setVerticesData(VertexBuffer.PositionKind, positions, true);
+    }
+    meshes[i] = mesh;
+  }
+  surfaces.forEach((surface, i) => surface.owner?.visuals.push(meshes[i]));
+  return meshes;
 }
 
 /** A part's transform, material and metadata onto the mesh made of it. */

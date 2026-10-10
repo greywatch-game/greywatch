@@ -287,9 +287,10 @@ export class WorldCulling {
     // target with an explicit `renderList` walks that list, and the collision
     // coordinator walks the collidable meshes. All three are why this is safe.
     scene.getActiveMeshCandidates = () => this.candidates;
-    // A flag rather than any real work, because these fire for every part mesh
-    // a build creates and destroys — of the order of a million on a 1500 m map
-    // (`ENGINE_UPGRADE.md`, wall 4) — and the rebuild they ask for is owed once.
+    // A flag rather than any real work, because these fire for every mesh a
+    // build creates and destroys — of the order of a million on a 1500 m map
+    // while every part was a mesh (`ENGINE_UPGRADE.md`, wall 4), thousands of
+    // colliders still — and the rebuild they ask for is owed once.
     scene.onNewMeshAddedObservable.add(() => {
       this.listDirty = true;
     });

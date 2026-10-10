@@ -4,6 +4,10 @@
  * map block across neighbours (`BlockMerge` for everything opaque,
  * `PaneBlocks` for the glazing, which has to keep its breakable panes'
  * vertex ranges). Plus `tag`, the editor's per-item mark, and `BLOCK_SIZE`.
+ * Everything here runs on `WorldSurface`s (`worldGeometry.ts`) — `Part`s and
+ * their bookkeeping, typed arrays and nothing on the device — and what it
+ * hands back is still surfaces: `worldMeshes` (`parts.ts`) is where the world
+ * becomes meshes, once, at the end of the build (BABYLON_EXIT.md X1.4).
  * A prop's hierarchy arrives already flattened (`flattenParts` in `parts.ts`).
  * Owns: no state outlasting a call but the two passes' own block lists, and no
  * collider — `MapBuilder` drives every function here and is still the only
@@ -11,33 +15,36 @@
  * Invariants: `BlockMerge.finish` and `PaneBlocks.finish` write the SAME
  * `metadata.block` key off the same block size, which is what
  * `ReflectionSystem.encloses` and `WorldCulling` both rest on (the metadata
- * contract in `CLAUDE.md`). A merged mesh carries the exemptions and the sway
- * mark its group was KEYED on, never ones read back off a member — `MergeMeshes`
- * disposes its sources, and disposal nulls their metadata. Every path out of a
- * merge that keeps its source owes `uploadPart()` or it draws nothing — and a
- * merge asked for with `again` hands back PARTS, so its caller must merge them
- * again through a final pass (which uploads) before the world sees them.
- * Merging is only safe at identity transform: `MergeMeshes` bakes world
- * matrices, so a lone mesh is baked by hand — except by `PaneBlocks`, whose
- * meshes are already where they belong.
+ * contract in `CLAUDE.md`). A merged surface carries the exemptions and the
+ * sway mark its group was KEYED on, never ones read back off a member. A
+ * merge of two or more is `mergeParts` (`Mesh.MergeMeshes`' arithmetic, each
+ * member under its own world matrix, NOT renormalised) into a new part at
+ * identity, minted a new birth; a merge of ONE is that member, its transform
+ * baked into its own arrays (`bakePartTransform`, which DOES renormalise —
+ * so a colour lone in both passes is baked twice, as it always was) and its
+ * birth and metadata object kept. Merging is only safe at identity transform:
+ * the merge bakes world matrices, so a lone surface is baked by hand — except
+ * by `PaneBlocks`, whose surfaces are already where they belong.
  * Must NOT merge across two materials, carry `solid` onto a merged visual, or
  * paletteise anything but a plain matte cel material (`plainCelHex`) or one
  * of `getEmissive`'s unlit colours (`plainEmissive`), each into its own table.
  */
-import { Material, Mesh, VertexBuffer, VertexData } from "@babylonjs/core";
-import { writePaletteIndex } from "../shaders/CelShader";
-import type { EditorItem, EditorRef, PaneGroup, WorldPane } from "./mapTypes";
-import { bakePart, partSurface, uploadPart } from "./parts";
+import type { Material } from "@babylonjs/core";
+import { writeBufferPaletteIndex } from "../shaders/CelShader";
+import type { EditorItem, EditorRef, WorldPane } from "./mapTypes";
+import { bakePartTransform, mergeParts, Part, type PartMetadata } from "./parts";
 import { marksSway, type SwayLayer, swayLayerOf } from "./sway";
+import { type Mint, type PaneSurfaceGroup, surfaceOf, type WorldSurface } from "./worldGeometry";
 
 /**
- * Records which layout item a mesh belongs to. The editor picks with a
+ * Records which layout item a mesh — or a surface's part, which hands the mesh
+ * made of it the same metadata object — belongs to. The editor picks with a
  * predicate on this, which is why visuals can stay `isPickable = false`:
  * Babylon skips the isPickable test entirely when a pick supplies a predicate,
  * so the visual/collider split survives the editor untouched.
  */
-export function tag(mesh: Mesh, ref: EditorRef): void {
-  mesh.metadata = { ...(mesh.metadata ?? {}), editorRef: ref };
+export function tag(target: { metadata: PartMetadata | null }, ref: EditorRef): void {
+  target.metadata = { ...(target.metadata ?? {}), editorRef: ref };
 }
 
 /**
@@ -70,40 +77,44 @@ export const BLOCK_SIZE = 48;
 
 /**
  * The second merge pass: collapses every structure and scatter field into one
- * mesh per (map block, material).
+ * surface per (map block, material).
  *
  * The per-structure merge in `mergeByMaterial` already turns a cottage into
- * four meshes, but a dense village is ~200 structures and the outline pass of
+ * four surfaces, but a dense village is ~200 structures and the outline pass of
  * the time drew each mesh twice. Grouping neighbours by block took the map from
  * ~670 draws to ~150 without giving up culling: buildings are static, so the
  * extra vertices cost nothing that the draw calls weren't already costing more
  * of.
  *
  * Merging across placements is safe for the same reason it is safe within one:
- * `MergeMeshes` bakes world matrices. The ink still traces each building,
- * because `CelInk` finds edges in the frame's depth rather than per mesh.
+ * the merge bakes world matrices. The ink still traces each building, because
+ * `CelInk` finds edges in the frame's depth rather than per mesh.
  */
 export class BlockMerge {
-  private blocks = new Map<string, Mesh[]>();
+  private blocks = new Map<string, WorldSurface[]>();
 
   /**
    * The block's side, in metres — the MAP's (`MapLayout.blockSize`), taken in
    * rather than read off the constant so that this pass and the glazing's know
    * they are cutting on the same lattice by construction. Both are given the
-   * one value `MapBuilder.build` resolved.
+   * one value `MapBuilder.build` resolved. `mint` is the build's birth counter
+   * (`worldGeometry.ts`), which a merge of two or more draws from.
    */
-  constructor(private readonly blockSize: number) {}
+  constructor(
+    private readonly blockSize: number,
+    private readonly mint: Mint,
+  ) {}
 
-  /** Files a positioned, per-material merged mesh under its map block. */
-  add(x: number, z: number, mesh: Mesh): void {
+  /** Files a positioned, per-material merged surface under its map block. */
+  add(x: number, z: number, surface: WorldSurface): void {
     const key = `${Math.floor(x / this.blockSize)},${Math.floor(z / this.blockSize)}`;
     const group = this.blocks.get(key);
-    if (group) group.push(mesh);
-    else this.blocks.set(key, [mesh]);
+    if (group) group.push(surface);
+    else this.blocks.set(key, [surface]);
   }
 
   /**
-   * Merges each block and returns the meshes the caller should draw.
+   * Merges each block and returns the surfaces the caller should draw.
    *
    * `palette` is what turns this from a merge per COLOUR into a merge per
    * block: hand it a hex and it hands back the slot to write into `uv2`, or 0
@@ -111,16 +122,17 @@ export class BlockMerge {
    * the slots are allocated in the order the merge meets them, and the merge is
    * the only thing that knows that order.
    */
-  finish(palette: Palette): Mesh[] {
-    const out: Mesh[] = [];
+  finish(palette: Palette): WorldSurface[] {
+    const out: WorldSurface[] = [];
     for (const [key, group] of this.blocks) {
-      for (const merged of mergeByMaterial(group, `block${key}`, { palette })) {
-        // The key travels ON the mesh, because `ReflectionSystem` has to ask
+      for (const merged of mergeByMaterial(group, `block${key}`, { palette, mint: this.mint })) {
+        // The key travels ON the surface, because `ReflectionSystem` has to ask
         // which building a merged mesh IS and the palette took the answer out
         // of the geometry — see `encloses` there. `PaneBlocks` files glazing
         // under this same key, which is what lets the two agree on "the same
         // building" without measuring a distance between two centres.
-        merged.metadata = { ...(merged.metadata ?? {}), block: key };
+        merged.part.metadata = { ...(merged.part.metadata ?? {}), block: key };
+        merged.block = key;
         out.push(merged);
       }
     }
@@ -134,7 +146,7 @@ export class BlockMerge {
  *
  * `BlockMerge` exists to make a placement unrecoverable — that is the saving.
  * A breakable pane must survive it, so this one carries every such pane's
- * vertex range across by the running offset of the meshes ahead of it. Same
+ * vertex range across by the running offset of the surfaces ahead of it. Same
  * key, same reason (glass is unbatched alpha, so a mesh is a sorted draw of its
  * own), and measured on Coldharbour: 6,139 sheets across 82 glazed placements
  * (44 towers, 26 cars, 8 shophouses, 2 offices, 2 depots) come out as 40
@@ -143,10 +155,10 @@ export class BlockMerge {
  * **The editor keys per placement instead**, so nothing merges across
  * placements there — the same exemption `BlockMerge` gets, for the same reason.
  * Running the pass either way keeps one code path, and the pass is where the
- * position buffer is made updatable.
+ * position buffer is marked updatable.
  */
 export class PaneBlocks {
-  private blocks = new Map<string, PaneGroup[]>();
+  private blocks = new Map<string, PaneSurfaceGroup[]>();
   /** The layout item a block belongs to, on editor builds. See `add`. */
   private owners = new Map<string, { item: EditorItem; placement: number }>();
 
@@ -156,24 +168,27 @@ export class PaneBlocks {
    * layout: the whole of `ReflectionSystem.encloses` rests on a glazing group
    * and the wall it is glazed onto landing under the same key, and two sizes
    * would break that silently — a probe reflecting its own building, with
-   * nothing in the numbers to point at.
+   * nothing in the numbers to point at. `mint` as `BlockMerge`'s.
    */
-  constructor(private readonly blockSize: number) {}
+  constructor(
+    private readonly blockSize: number,
+    private readonly mint: Mint,
+  ) {}
 
   /**
    * Files one placement's merged glazing under its map block.
    *
    * **On an editor build the key is the PLACEMENT**, so nothing merges across
    * placements and every block has exactly one owner — which is what lets the
-   * merged mesh be handed back to that item's `visuals`. Without it a dragged
-   * building leaves its own windows behind in the street, and nothing says so:
-   * the glass is still drawn, still in `visuals`, and still disposed with the
-   * map.
+   * merged surface be handed back to that item's `visuals`. Without it a
+   * dragged building leaves its own windows behind in the street, and nothing
+   * says so: the glass is still drawn, still in `visuals`, and still disposed
+   * with the map.
    */
   add(
     x: number,
     z: number,
-    group: PaneGroup,
+    group: PaneSurfaceGroup,
     item: EditorItem | null,
     placement: number,
   ): void {
@@ -190,19 +205,19 @@ export class PaneBlocks {
    * Merges each block and rewrites the ranges it moved.
    *
    * `panes` is the map's list, written through: a pane's `vertexStart` shifts
-   * by the vertices of every mesh merged ahead of its own, and its `group`
-   * becomes the index of the mesh it ended up in. Nothing else may write either
-   * field.
+   * by the vertices of every surface merged ahead of its own, and its `group`
+   * becomes the index of the group it ended up in, in what this returns.
+   * Nothing else may write either field.
    */
-  finish(panes: WorldPane[], out: PaneGroup[]): Mesh[] {
-    const meshes: Mesh[] = [];
+  finish(panes: WorldPane[]): PaneSurfaceGroup[] {
+    const out: PaneSurfaceGroup[] = [];
     for (const [key, group] of this.blocks) {
       // Split by material for the reason `mergeByMaterial` does: two materials
       // in one mesh would draw one of them wrong. Glass is one colour today, so
       // this is almost always a single group.
-      const byMaterial = new Map<Material, PaneGroup[]>();
+      const byMaterial = new Map<Material, PaneSurfaceGroup[]>();
       for (const g of group) {
-        const mat = g.mesh.material;
+        const mat = g.surface.part.material;
         if (!mat) continue;
         const list = byMaterial.get(mat);
         if (list) list.push(g);
@@ -210,10 +225,9 @@ export class PaneBlocks {
       }
 
       for (const [mat, list] of byMaterial) {
-        // Offsets are accumulated BEFORE the merge, because `MergeMeshes`
-        // disposes its sources and `getTotalVertices()` afterwards is a read
-        // off a dead mesh. It concatenates in array order, which is what makes
-        // a running sum the right answer at all.
+        // Offsets are accumulated over the members in the order the merge
+        // concatenates them, which is what makes a running sum the right
+        // answer at all.
         let offset = 0;
         const indices: number[] = [];
         for (const g of list) {
@@ -221,40 +235,41 @@ export class PaneBlocks {
             panes[p].vertexStart += offset;
             indices.push(p);
           }
-          offset += g.mesh.getTotalVertices();
+          offset += g.surface.part.geometry.vertexCount;
         }
-        const parts = list.map((g) => g.mesh);
         // **A group of one is taken AS IT STANDS, and must not be baked.** This
         // is where this pass differs from `mergeByMaterial`, which bakes a lone
-        // mesh because its caller then composes a placement's transform onto
+        // surface because its caller then composes a placement's transform onto
         // what it gets back. Nothing composes anything onto these:
-        // `MapBuilder.paneGroup` has already put each mesh where it belongs.
+        // `MapBuilder.paneGroup` has already put each surface where it belongs.
         // Baking anyway flattens that transform into the vertices and leaves
         // the mesh at identity, which the editor's `repositionItem` then reads
         // as "no transform yet" and applies the placement a second time — a
         // dragged building whose glass is at twice its own offset, drawn
         // perfectly, with nothing in the numbers to point at.
         const merged =
-          parts.length === 1
-            ? parts[0]
-            : Mesh.MergeMeshes(parts, true, true, undefined, false, false);
-        if (!merged) continue;
-        merged.name = `paneblock${key}-${mat.name}`;
-        merged.material = mat;
-        // Updatable, which no merge can ask for: `MergeMeshes` writes a static
-        // buffer and `bakeCurrentTransformIntoVertices` leaves whatever was
-        // there. Without this the first break is a silent no-op — the array is
-        // rewritten and never re-uploaded.
+          list.length === 1
+            ? list[0].surface
+            : surfaceOf(new Part("", mergeParts(list.map((g) => g.surface.part))), this.mint());
+        merged.part.name = `paneblock${key}-${mat.name}`;
+        merged.part.material = mat;
+        // Updatable, which no merge can ask for: the adapter uploads a static
+        // buffer unless told otherwise, and then the first break is a silent
+        // no-op — the array is rewritten and never re-uploaded. The positions
+        // become float32 HERE, which is what `Geometry.setVerticesData` makes
+        // of a plain array it is asked to keep writable, so the record already
+        // holds the numbers the device will.
         //
         // Only where there is something to break. A block of pure glazing is
         // immutable for the life of the map — nothing holds a range into it and
-        // nothing may write one — so it keeps the static buffer the merge gave
-        // it, which is what almost every block on Coldharbour is.
+        // nothing may write one — so it keeps the static buffer, which is what
+        // almost every block on Coldharbour is.
         if (indices.length > 0) {
-          const positions = merged.getVerticesData(VertexBuffer.PositionKind);
-          if (positions) {
-            merged.setVerticesData(VertexBuffer.PositionKind, positions, true);
+          const geometry = merged.part.geometry;
+          if (!(geometry.positions instanceof Float32Array)) {
+            geometry.positions = new Float32Array(geometry.positions);
           }
+          merged.updatable = true;
         }
         const groupIndex = out.length;
         for (const p of indices) panes[p].group = groupIndex;
@@ -265,31 +280,27 @@ export class PaneBlocks {
         // walls. **Only on a play build** — an editor key is a PLACEMENT
         // (`item12`), which is not a map block and must not be filed as one.
         if (!this.owners.has(key)) {
-          merged.metadata = { ...(merged.metadata ?? {}), block: key };
+          merged.part.metadata = { ...(merged.part.metadata ?? {}), block: key };
+          merged.block = key;
         }
-        out.push({ mesh: merged as Mesh, panes: indices, block: key });
-        meshes.push(merged as Mesh);
-        // Editor builds only, and AFTER the merge rather than before it: a
-        // merge of two or more disposes its sources, and `Node.dispose` nulls
-        // their metadata — so a tag written on the way in survives only for a
-        // group of one. That is every group here in editor mode, which is
-        // exactly the kind of accident that holds until somebody gives a
-        // building two colours of glass. Hand the mesh to the item that owns it
-        // so a dragged building takes its glazing with it.
+        out.push({ surface: merged, panes: indices, block: key });
+        // Editor builds only: tag the surface for its item and hand it over,
+        // so a dragged building takes its glazing with it. Its mesh joins the
+        // item's `visuals` when the adapter makes it (`worldMeshes`).
         const owner = this.owners.get(key);
         if (owner) {
-          tag(merged as Mesh, { list: "placements", index: owner.placement });
-          owner.item.visuals.push(merged as Mesh);
+          tag(merged.part, { list: "placements", index: owner.placement });
+          merged.owner = owner.item;
         }
       }
     }
-    return meshes;
+    return out;
   }
 }
 
 /**
- * The render exemptions a merged mesh may carry, and the reason they are part
- * of the merge KEY rather than something read off a member.
+ * The render exemptions a merged surface may carry, and the reason they are
+ * part of the merge KEY rather than something read off a member.
  *
  * `noInk` could have been propagated from any one mesh safely, because it
  * tracks the MATERIAL: the kit's `glow()` reaches for `getEmissive`, so an
@@ -300,7 +311,7 @@ export class PaneBlocks {
  * the whole colour group an exemption one mesh asked for, and through
  * `BlockMerge` that group is every structure within 48 m; requiring unanimity
  * instead would drop the exemption the one mesh genuinely needed. Both fail
- * silently. Keying splits a disagreeing group into one merged mesh per
+ * silently. Keying splits a disagreeing group into one merged surface per
  * exemption set, which costs a draw call exactly when there is a real
  * disagreement to represent and nothing at all otherwise.
  *
@@ -319,43 +330,41 @@ const EXEMPTIONS = ["noInk", "noGlow", "noShadowCaster"] as const;
 
 type Exemption = (typeof EXEMPTIONS)[number];
 
-/** A mesh's exemptions, in a fixed order so the key is stable. */
-function exemptionsOf(mesh: Mesh): Exemption[] {
-  return EXEMPTIONS.filter((flag) => mesh.metadata?.[flag] === true);
+/** A part's exemptions, in a fixed order so the key is stable. */
+function exemptionsOf(part: Part): Exemption[] {
+  return EXEMPTIONS.filter((flag) => part.metadata?.[flag] === true);
 }
 
 /**
- * Collapses a structure's meshes into one per material.
+ * Collapses a structure's surfaces into one per material.
  *
  * This is the whole draw-call budget for the village: a cottage goes from ~20
- * meshes to 4 — and, while the inverted-hull outlines drew a back-face shell
- * per mesh, from ~40 draws to 8. Those shells are retired: the ink is
+ * parts to 4 surfaces — and, while the inverted-hull outlines drew a back-face
+ * shell per mesh, from ~40 draws to 8. Those shells are retired: the ink is
  * `CelInk`'s post pass now, which finds edges in the frame's depth and draws
  * nothing per mesh.
  *
- * Merging is only safe because builders work at identity: `MergeMeshes` bakes
- * world matrices and hands back an identity-transform mesh, which the caller
- * then positions.
+ * Merging is only safe because builders work at identity: the merge bakes
+ * world matrices and hands back an identity-transform surface, which the
+ * caller then positions.
  */
 export function mergeByMaterial(
-  meshes: Mesh[],
+  surfaces: readonly WorldSurface[],
   tag: string,
-  { palette, again = false }: MergeOptions = {},
-): Mesh[] {
+  { palette, mint }: MergeOptions,
+): WorldSurface[] {
   // Material first, then sway layer and exemption set — see `EXEMPTIONS`.
   // Nested rather than keyed on a composed string, because two distinct
   // materials are free to share a name and a merge across them would draw one
   // of them wrong.
   const groups = new Map<Material, Map<string, Group>>();
-  for (const m of meshes) {
+  for (const s of surfaces) {
+    const m = s.part;
     const mat0 = m.material;
-    // A part with no material is not merged and is not disposed, so it is the
-    // one mesh that leaves this function alive without going through a group.
-    // It has to be uploaded or it is a part in the scene — see `parts.ts`.
-    if (!mat0) {
-      uploadPart(m);
-      continue;
-    }
+    // A part with no material is not merged, and is dropped: nothing would
+    // draw it. (The part mesh it used to become was uploaded and left in the
+    // scene, outside `visuals`, for no reader at all.)
+    if (!mat0) continue;
     // **The palette is what takes the COLOUR out of this key.** A matte cel
     // material differs from another only in a uniform, so every one of them can
     // be answered by one material reading the albedo per vertex instead — which
@@ -372,7 +381,7 @@ export function mergeByMaterial(
     // to the same pixel. Never into the ALBEDO table — the two never share a
     // material, so they never share a merge group either.
     const picked = palette ? paletteFor(mat0.name, palette) : null;
-    if (picked) writePaletteIndex(m, picked.slot);
+    if (picked) writeBufferPaletteIndex(m.geometry, picked.slot);
     const mat = picked ? picked.material : mat0;
     let byExemption = groups.get(mat);
     if (!byExemption) groups.set(mat, (byExemption = new Map()));
@@ -386,46 +395,47 @@ export function mergeByMaterial(
     const sway = swayLayerOf(m);
     const key = `${sway ?? ""}|${flags.join("-")}`;
     const group = byExemption.get(key);
-    if (group) group.meshes.push(m);
-    else byExemption.set(key, { flags, sway, meshes: [m] });
+    if (group) group.surfaces.push(s);
+    else byExemption.set(key, { flags, sway, surfaces: [s] });
   }
 
-  const out: Mesh[] = [];
+  const out: WorldSurface[] = [];
   for (const [mat, byExemption] of groups) {
-    for (const { flags, sway, meshes: group } of byExemption.values()) {
-      const merged =
-        group.length === 1
-          ? // A merge of two or more bakes their world matrices; a group of one
-            // has to be baked by hand or the promise above is a lie for exactly
-            // the colours only one mesh uses — and the caller, which positions
-            // and rotates what it gets back, would clobber that mesh's own
-            // transform instead of composing with it.
-            bakePart(group[0], !again)
-          : again
-            ? mergeToPart(group)
-            : Mesh.MergeMeshes(group, true, true, undefined, false, false);
-      if (!merged) continue;
+    for (const { flags, sway, surfaces: group } of byExemption.values()) {
+      // A merge of two or more bakes their world matrices; a group of one has
+      // to be baked by hand or the promise above is a lie for exactly the
+      // colours only one part uses — and the caller, which positions and
+      // rotates what it gets back, would clobber that part's own transform
+      // instead of composing with it. The lone surface keeps its birth and its
+      // metadata OBJECT (the editor writes a road's flag into it in place); a
+      // merge starts from none, as `MergeMeshes`' new mesh did.
+      let merged: WorldSurface;
+      if (group.length === 1) {
+        merged = group[0];
+        bakePartTransform(merged.part);
+      } else {
+        merged = surfaceOf(new Part("", mergeParts(group.map((g) => g.part))), mint());
+      }
       // Suffixed only where a group actually splits, so the common name is the
       // one the rest of the tree already reads in a profile.
       const suffix = flags.map((f) => `-${f}`).join("");
-      merged.name = `${tag}-${mat.name}${sway ? `-${sway}` : ""}${suffix}`;
-      merged.material = mat;
+      merged.part.name = `${tag}-${mat.name}${sway ? `-${sway}` : ""}${suffix}`;
+      merged.part.material = mat;
       // From the KEY, not from a member — and this half of it was not a
       // precaution, it was a live bug. The exemption used to be read back off
-      // the group AFTER the merge, and `MergeMeshes` is called with
-      // `disposeSource = true`, so by then Babylon's `Node.dispose` has set
+      // the group AFTER the merge, and `MergeMeshes` was called with
+      // `disposeSource = true`, so by then Babylon's `Node.dispose` had set
       // every source's `metadata` to null and the read came back false for any
-      // group of two or more. Only a group of ONE survived it, because that
-      // path bakes in place and disposes nothing. Measured on Hollowmere: 19
-      // of the map's 42 merged emissive meshes lost the ink exemption here and
-      // were handed an outline shell by the caller — a black ring drawn around
-      // every lantern, flame and sign dense enough to have a neighbour its own
-      // colour. That particular consequence is gone with the outline pass, and
-      // the same read still has to be right for `noGlow` and `noShadowCaster`,
-      // which are live. Grouping first means the flags are read while the meshes are
-      // still alive, and the group is unanimous, so the key is what they said.
+      // group of two or more. Measured on Hollowmere: 19 of the map's 42 merged
+      // emissive meshes lost the ink exemption here and were handed an outline
+      // shell by the caller — a black ring drawn around every lantern, flame
+      // and sign dense enough to have a neighbour its own colour. That
+      // particular consequence is gone with the outline pass, and the same
+      // read still has to be right for `noGlow` and `noShadowCaster`, which are
+      // live. Grouping first means the flags are read off the members, and the
+      // group is unanimous, so the key is what they said.
       for (const flag of flags) {
-        merged.metadata = { ...(merged.metadata ?? {}), [flag]: true };
+        merged.part.metadata = { ...(merged.part.metadata ?? {}), [flag]: true };
       }
       // A swaying group carries the mark forward, and that is now all it does.
       // It used to leave Babylon's outline pass here as well, because that
@@ -433,74 +443,24 @@ export function mergeByMaterial(
       // leaned out from under a shell left standing at the rest pose. The ink
       // reads the depth buffer now and the leaf is already in it.
       if (sway) {
-        markSwayMerged(merged as Mesh, sway);
+        markSwayMerged(merged.part, sway);
       }
-      out.push(merged as Mesh);
+      out.push(merged);
     }
   }
   return out;
 }
 
-/**
- * `Mesh.MergeMeshes(group, true, true, undefined, false, false)` whose result
- * is a PART (`world/parts.ts`) rather than a mesh on the device.
- *
- * **A merge that is going to be merged again was uploading for nothing.** A
- * placement's per-material merge is filed into `BlockMerge`, which merges it
- * a second time and disposes it — so the device buffers `MergeMeshes` gave it
- * were created, written and destroyed without a frame ever drawing them: the
- * same round trip `parts.ts` took off the parts themselves, one merge later.
- *
- * **It is Babylon's own merge, step for step**, so the vertices cannot move
- * (`npm run merge:hash` is the proof): each member's world matrix computed
- * first and its data extracted uncopied, the members folded into the first by
- * the same `_mergeCoroutine` with 32-bit indices and no index clone, then the
- * same three properties carried over from the first member and every member
- * disposed. The only step that differs is the last: the result is put on a
- * part instead of uploaded. **`_mergeCoroutine` is Babylon-internal**, so a
- * Babylon upgrade owes `npm run merge:hash` against the version before it.
- *
- * Only the path `mergeByMaterial` takes — no submeshes, no multi-material,
- * no instances. A side-orientation disagreement returns null, as Babylon
- * does (and as Babylon, it would have warned).
- */
-function mergeToPart(meshes: Mesh[]): Mesh | null {
-  const source = meshes[0];
-  const side = source.sideOrientation;
-  for (const m of meshes) if (m.sideOrientation !== side) return null;
-  const extract = (m: Mesh) => {
-    const transform = m.computeWorldMatrix(true);
-    return { vertexData: VertexData.ExtractFromMesh(m, false, false), transform };
-  };
-  const first = extract(source);
-  const rest = meshes.slice(1).map(extract);
-  const run = first.vertexData._mergeCoroutine(first.transform, rest, true, false, false);
-  let step = run.next();
-  while (!step.done) step = run.next();
-  const merged = partSurface(`${source.name}_merged`, step.value, source.getScene());
-  merged.checkCollisions = source.checkCollisions;
-  merged.sideOrientation = side;
-  for (const m of meshes) m.dispose();
-  merged.material = source.material;
-  return merged;
-}
-
-/** What a `mergeByMaterial` caller may ask for beyond a merge per material. */
+/** What a `mergeByMaterial` caller hands it beyond the surfaces. */
 export interface MergeOptions {
   /** Merge per BLOCK rather than per colour — see `BlockMerge.finish`. */
   palette?: Palette;
-  /**
-   * The caller is going to merge what this returns AGAIN (a placement or a
-   * scatter field on its way into `BlockMerge`, a road on its way into the
-   * road merge), so a merged group may stay a PART — see `mergeToPart`. Never
-   * for a mesh that is handed to the world as it is: the editor's per-item
-   * meshes and the final passes leave this off.
-   */
-  again?: boolean;
+  /** The build's birth counter, drawn from by every merge of two or more. */
+  mint: Mint;
 }
 
-/** One merge group: the meshes, and the exemptions and sway they all agree on. */
-type Group = { flags: Exemption[]; sway: SwayLayer | null; meshes: Mesh[] };
+/** One merge group: the surfaces, and the exemptions and sway they all agree on. */
+type Group = { flags: Exemption[]; sway: SwayLayer | null; surfaces: WorldSurface[] };
 
 /**
  * What a merge needs in order to take the colour out of its key: somewhere to
@@ -582,7 +542,7 @@ function plainCelHex(materialName: string): string | null {
 }
 
 /**
- * Carries a merged group's sway mark onto the mesh.
+ * Carries a merged group's sway mark onto the surface's part.
  *
  * It used to do a second thing — take Babylon's ink off the group, because that
  * hull could see neither the wind nor the per-vertex weight and an outlined leaf
@@ -590,6 +550,6 @@ function plainCelHex(materialName: string): string | null {
  * screen-space pass over the depth buffer now, and the depth buffer already has
  * the leaf where the wind put it, so there is nothing to take off.
  */
-function markSwayMerged(mesh: Mesh, layer: SwayLayer): void {
-  marksSway(mesh, layer);
+function markSwayMerged(part: Part, layer: SwayLayer): void {
+  marksSway(part, layer);
 }

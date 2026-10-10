@@ -575,8 +575,8 @@ defaults, not ours** — baked occlusion in the **alpha**, a world marker in the
 `(0, 0, 0, 1)`: unoccluded, not world, planted, clean. **All four channels are
 now spoken for**, so a fifth per-vertex quantity owes a second buffer and the
 argument for it. The bake (`world/vertexShading.ts`) runs **after every merge**:
-`VertexData.merge` throws when one mesh in a group has `colors` and another
-does not.
+the merge (`mergeTransformed`, as `VertexData.merge` before it) refuses a
+group where one member has `colors` and another does not.
 
 **A map's GRIME is the MAP's and its ramp is not** (`EnvironmentSpec.wear`
 against `CONFIG.wear`); absent is CLEAN. **It is only on the OUTSIDE, and the

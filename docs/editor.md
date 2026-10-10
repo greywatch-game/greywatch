@@ -425,13 +425,13 @@ resulting mesh is handed back to that item's `visuals` and tagged like any other
 — a dragged building takes its windows with it. Two things there are easy to get
 wrong and neither says so:
 
-- **A group of one is not baked.** `mergeByMaterial` bakes a lone mesh because
+- **A group of one is not baked.** `mergeByMaterial` bakes a lone surface because
   its caller composes the placement's transform onto what it gets back;
   `PaneBlocks` has no such caller, so baking would flatten the transform into
   the vertices and `repositionItem` would then apply the placement a second
   time. The glass ends up at twice its own offset, drawn perfectly.
-- **The tag is written after the merge, not before.** `MergeMeshes` disposes its
-  sources and `Node.dispose` nulls their metadata, so a tag written on the way
+- **The tag is written after the merge, not before.** A merge of two or more
+  is a NEW surface whose metadata starts from none, so a tag written on the way
   in survives only for a group of one — which is every group in editor mode
   today, and stops being so the first time a building is given two colours of
   glass.
