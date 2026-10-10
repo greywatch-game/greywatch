@@ -113,8 +113,9 @@ scripts/                      # Node tooling, run by hand or by `npm run build`,
   kit-hash.mjs                # `npm run kit:hash`: fingerprints every kit
                               #   builder over every placement, and every
                               #   scatter prop over fixed seeds and foliage
-                              #   rungs, under a NullEngine — the DRAWING (as
-                              #   the merge is handed it: a prop flattened)
+                              #   rungs, under a NullEngine — the DRAWING (the
+                              #   PARTS the merge is handed, a prop flattened,
+                              #   hashed as the part meshes they once became)
                               #   and the COLLIDERS hashed apart, so a refactor
                               #   proves it moved nothing. `--feet` measures the
                               #   kinds against lib/footprints.mjs. `--models`

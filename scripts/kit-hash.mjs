@@ -3,12 +3,20 @@
  * `--models`, every other model in the game.
  *
  * Owns: nothing but a report and, when asked, one JSON file. Every placement
- * of every builder in every map's layout is built, made into part meshes
- * through the door `MapBuilder` uses (`structureMeshes`) under a NullEngine,
- * and hashed twice: the DRAWING (every mesh's vertices, indices, material, name
- * and transform, the panes, the lights and the sounds) and the COLLIDERS (the
- * `BoxSpec` list, in the order it was emitted). Each kind is also built once
- * bare — default params, no `BuildCtx` — as a preview would build it.
+ * of every builder in every map's layout is built under a NullEngine, and its
+ * PARTS (`world/parts.ts`) hashed twice: the DRAWING (every part's vertices,
+ * indices, material, name and transform, the panes, the lights and the
+ * sounds) and the COLLIDERS (the `BoxSpec` list, in the order it was emitted).
+ * Each kind is also built once bare — default params, no `BuildCtx` — as a
+ * preview would build it.
+ *
+ * **A part is hashed as the Babylon mesh it used to be made into**
+ * (`hashPart`), so the fingerprint is the one `MapBuilder.structureMeshes` and
+ * `propMeshes` gave before `BABYLON_EXIT.md` X1.4 took the merge off meshes:
+ * the transform as a mesh holds it (a quaternion zeroes the Euler angles, as
+ * Babylon's setter does), each attribute cut to the vertex count and hashed as
+ * float32 bytes, the indices as Uint32. A baseline taken through the meshes
+ * therefore still compares.
  *
  * **What it is for is proving a change did or did not move something.** Take
  * a fingerprint, make the change, take another against it:
@@ -43,7 +51,7 @@
  * and since a layout places a REGION rather than a prop, each kind is built
  * over `SCATTER_SEEDS` fixed seeds at every rung of `CONFIG.graphics.foliage`
  * instead of over its placements. Its two halves are the scatter's own: the
- * DRAWING is the prop as `propMeshes` (`MapBuilder`) hands it to the merge
+ * DRAWING is the prop as `MapBuilder` hands it to the merge (`flattenParts`)
  * — the root and every child, in that order, each child's parent composed
  * into its own transform and the link cut (`flattenParts`), metadata included,
  * because `noInk`/`noGlow`/`noShadowCaster` are part of the merge key — and the
@@ -190,27 +198,50 @@ function counted(next) {
 /** A vertex buffer's bytes, empty for a buffer the mesh does not carry. */
 const f32 = (a) => (a ? Buffer.from(new Float32Array(a).buffer) : Buffer.alloc(0));
 
+/** Each hashed attribute: its Babylon kind, its field on a buffer, its size. */
+const ATTRIBUTES = [
+  ["position", "positions", 3],
+  ["normal", "normals", 3],
+  ["uv", "uvs", 2],
+  ["uv2", "uvs2", 2],
+  ["color", "colors", 4],
+  ["matricesIndices", null, 4],
+];
+
 /**
- * One mesh's transform and geometry into `draw`. Each caller writes its own
- * header line first — the name and material, and whatever else its kind of
- * build can see — so a structure's hash is what it was before scatter shared
- * this.
+ * One part's transform and geometry into `draw`, as the part MESH it was made
+ * into until X1.4 (`partMesh`) hashed — byte for byte, so a baseline taken
+ * through meshes still compares. Each caller writes its own header line first
+ * — the name and material, and whatever else its kind of build can see — so a
+ * structure's hash is what it was before scatter shared this.
+ *
+ * What the mesh did on the way, written out: a quaternion ZEROED the Euler
+ * angles (Babylon's `rotationQuaternion` setter, run after `rotation` was
+ * set); `getVerticesData` cut every attribute to the vertex count (positions
+ * over three) times its size (`GetFloatData`); and a part never had a parent
+ * by then, because `partMesh` refused one — as this does.
  */
-function hashMesh(draw, m) {
+function hashPart(draw, p) {
+  if (p.parent) throw new Error(`partMesh: "${p.name}" still has a parent — flattenParts first`);
+  const q = p.rotationQuaternion;
+  const v = (a) => [a.x, a.y, a.z];
   draw.update(
     JSON.stringify([
-      m.position.asArray(),
-      m.rotation.asArray(),
-      m.scaling.asArray(),
-      m.rotationQuaternion?.asArray() ?? null,
-      m.parent?.name ?? null,
+      v(p.position),
+      q ? [0, 0, 0] : v(p.rotation),
+      v(p.scaling),
+      q ? [q.x, q.y, q.z, q.w] : null,
+      null,
     ]),
   );
-  for (const kind of ["position", "normal", "uv", "uv2", "color", "matricesIndices"]) {
+  const g = p.geometry;
+  const vertices = g.positions.length / 3;
+  for (const [kind, field, size] of ATTRIBUTES) {
     draw.update(kind);
-    draw.update(f32(m.getVerticesData(kind)));
+    const a = field ? g[field] : null;
+    draw.update(f32(a ? a.subarray(0, vertices * size) : null));
   }
-  draw.update(Buffer.from(new Uint32Array(m.getIndices() ?? []).buffer));
+  draw.update(Buffer.from(new Uint32Array(g.indices).buffer));
 }
 
 /** The ground every placement stands on: a swell, not any map's floor. */
@@ -250,7 +281,7 @@ const HEADROOM = 2;
  * structure is origin-local until `MapBuilder` turns and places it — twice:
  * everything (`plan`), and only what stands below `HEADROOM` (`ground`).
  */
-function planOf(B, meshes) {
+function planOf(B, worldMatrixOf, Matrix, parts) {
   const all = [Infinity, -Infinity, Infinity, -Infinity];
   const low = [Infinity, -Infinity, Infinity, -Infinity];
   const grow = (b, x, z) => {
@@ -260,10 +291,11 @@ function planOf(B, meshes) {
     if (z > b[3]) b[3] = z;
   };
   const v = new B.Vector3();
-  for (const m of meshes) {
-    const pos = m.getVerticesData("position");
-    if (!pos) continue;
-    const wm = m.computeWorldMatrix(true);
+  for (const p of parts) {
+    const pos = p.geometry.positions;
+    // The part's float32 world matrix — `computeWorldMatrix(true)`'s numbers,
+    // by `worldMatrixOf`. Babylon's transform below reads only its `.m`.
+    const wm = worldMatrixOf(p, new Matrix());
     for (let i = 0; i < pos.length; i += 3) {
       B.Vector3.TransformCoordinatesFromFloatsToRef(pos[i], pos[i + 1], pos[i + 2], wm, v);
       grow(all, v.x, v.z);
@@ -348,9 +380,9 @@ async function hashJobs(jobs) {
     const B = await server.ssrLoadModule("@babylonjs/core");
     B.Logger.LogLevels = B.Logger.NoneLogLevel;
     const { BUILDERS } = await server.ssrLoadModule("/src/world/BuildingKit.ts");
-    const { SCATTER_BUILDERS, PROP_BODIES, propMeshes, structureMeshes } = await server.ssrLoadModule(
-      "/src/world/MapBuilder.ts",
-    );
+    const { SCATTER_BUILDERS, PROP_BODIES } = await server.ssrLoadModule("/src/world/MapBuilder.ts");
+    const { flattenParts, worldMatrixOf } = await server.ssrLoadModule("/src/world/parts.ts");
+    const { Matrix } = await server.ssrLoadModule("/src/math/index.ts");
     const engine = new B.NullEngine();
     let scene = new B.Scene(engine);
     const cache = new Map();
@@ -362,26 +394,26 @@ async function hashJobs(jobs) {
       cache.clear();
       try {
         if (p.scatter) {
-          out[key] = hashScatter(SCATTER_BUILDERS[p.kind], PROP_BODIES[p.kind], propMeshes, scene, mats, p);
+          out[key] = hashScatter(SCATTER_BUILDERS[p.kind], PROP_BODIES[p.kind], flattenParts, mats, p);
           continue;
         }
         const floor = p.bare ? 0 : swell(p.x, p.z);
         const ctx = p.bare
           ? undefined
           : { terrain, x: p.x, z: p.z, y: floor + (p.y ?? 0), floor, rotY: p.rotY ?? 0 };
-        // Through the same door `MapBuilder` takes, so what is hashed is what
-        // the merge is handed: every part a part mesh (`structureMeshes`).
-        const built = p.bare ? BUILDERS[p.kind](scene, mats) : BUILDERS[p.kind](scene, mats, p.params ?? {}, ctx);
-        const s = structureMeshes(built, scene);
+        // What the merge is handed: the structure's parts, then its panes'.
+        const s = p.bare ? BUILDERS[p.kind](scene, mats) : BUILDERS[p.kind](scene, mats, p.params ?? {}, ctx);
         const draw = createHash("sha256");
-        for (const m of [...s.meshes, ...s.paneMeshes]) {
-          draw.update(`|${m.name}|${m.material?.name}|${s.freeform.has(m)}|`);
-          hashMesh(draw, m);
+        for (const part of [...s.meshes, ...s.paneMeshes]) {
+          draw.update(`|${part.name}|${part.material?.name}|${s.freeform.has(part)}|`);
+          hashPart(draw, part);
         }
         draw.update(JSON.stringify([s.lights, s.sounds, s.panes]));
         const colliders = createHash("sha256").update(JSON.stringify(s.colliders));
         out[key] = { draw: draw.digest("hex").slice(0, 16), colliders: colliders.digest("hex").slice(0, 16) };
-        if (process.env.KIT_HASH_FEET) Object.assign(out[key], planOf(B, [...s.meshes, ...s.paneMeshes]));
+        if (process.env.KIT_HASH_FEET) {
+          Object.assign(out[key], planOf(B, worldMatrixOf, Matrix, [...s.meshes, ...s.paneMeshes]));
+        }
       } catch (e) {
         out[key] = { error: String(e?.message ?? e) };
       }
@@ -396,19 +428,19 @@ async function hashJobs(jobs) {
  * One scatter prop, built off `p.seed` at foliage `p.foliage` and hashed in
  * two halves — see the header for what each one is.
  */
-function hashScatter(build, body, propMeshes, scene, mats, p) {
+function hashScatter(build, body, flattenParts, mats, p) {
   const rng = counted(mulberry32(p.seed));
   const root = build(mats, rng, mulberry32(p.seed ^ 0x2545f491), p.foliage);
   const draw = createHash("sha256");
-  // What `propMeshes` (`MapBuilder`) hands the merge: the root, then every
-  // child with its parent's transform composed into its own and the link cut
-  // (`flattenParts`), each made a part mesh. Hashed AFTER that rather than
-  // before, so the fingerprint is of what the merge reads and not of how a
-  // builder chose to say it — a child parented to a trunk and one placed
-  // where the trunk would have put it are the same drawing.
-  for (const m of propMeshes(root, scene)) {
-    draw.update(`|${m.name}|${m.material?.name}|${JSON.stringify(m.metadata ?? null)}|`);
-    hashMesh(draw, m);
+  // What `MapBuilder` hands the merge: the root, then every child with its
+  // parent's transform composed into its own and the link cut
+  // (`flattenParts`). Hashed AFTER that rather than before, so the
+  // fingerprint is of what the merge reads and not of how a builder chose to
+  // say it — a child parented to a trunk and one placed where the trunk would
+  // have put it are the same drawing.
+  for (const part of flattenParts(root)) {
+    draw.update(`|${part.name}|${part.material?.name}|${JSON.stringify(part.metadata ?? null)}|`);
+    hashPart(draw, part);
   }
   const colliders = createHash("sha256").update(JSON.stringify([body, rng.draws]));
   return { draw: draw.digest("hex").slice(0, 16), colliders: colliders.digest("hex").slice(0, 16) };
