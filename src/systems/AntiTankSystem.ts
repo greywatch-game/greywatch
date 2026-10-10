@@ -1,9 +1,16 @@
 /**
  * AntiTankSystem.ts — The anti-tank kit in the world: rockets in flight and
- * mines on the ground.
+ * mines on the ground, as a SIMULATION.
  * Owns: the rocket pool, the mine pool, the arm clocks and the trigger test.
- * All FIXED SIZE and allocated once, the rule `CombatSystem`'s tracers and
+ * All FIXED SIZE and allocated once, the rule `CombatSystem`'s shot and
  * `GrenadeSystem`'s pool already follow: a firefight must not allocate.
+ * Invariants: it imports nothing from `@babylonjs/core` and nothing from
+ * `math/babylon.ts`. A rocket's position is its own `pos` field and a mine's
+ * likewise, both `src/math`; nothing here builds a mesh. What the two LOOK
+ * like — the warhead pointed down its flight, the motor guttering, the fuze
+ * lamp — is `AntiTankFx`'s, which only a client builds and which reads
+ * `rocketSlots`/`mineSlots` every frame and never writes a slot.
+ * Contract: `docs/antitank.md`.
  * Owns NO blast. What a detonation is worth is `entities/equipment.ts`'s and
  * spending it is `resolveOrdnance`'s beside it, which both simulations call
  * from their `onDetonated` — because the direct hit is a `Hittable` and the
@@ -29,15 +36,11 @@
  * `VehicleSystem`, a `Vehicle` or a `Player`. It asks "is there a hostile hull
  * within this many metres of this point" and is answered by whoever knows.
  */
-import { Mesh, Scene, Vector3 } from "@babylonjs/core";
 import { CONFIG } from "../config";
 import type { Combatant, Team } from "../entities/Combatant";
 import type { EquipmentId } from "../entities/equipment";
-import { buildMineBody } from "../entities/MineModel";
-import { buildRocket } from "../entities/RpgModel";
-import { babylonRayHit } from "../math/babylon";
-import type { CelMaterialFactory } from "../shaders/CelShader";
-import type { RayWorld } from "../world/RayWorld";
+import { Vector3, type Vector3Like } from "../math";
+import { newRayHit, type RayWorld } from "../world/RayWorld";
 import { TerrainField } from "../world/TerrainField";
 import type { Hittable } from "./CombatSystem";
 
@@ -51,9 +54,9 @@ import type { Hittable } from "./CombatSystem";
  * live slot — so the one thing this number can cost is a rocket that was never
  * spent, never a rocket that vanished out of the sky.
  *
- * Exported so `net/NetOrdnance` can size its own pool to exactly this: a
- * client can never be told about a flight it has no mesh for, because the
- * authority cannot have more in the air than this holds. Two constants would
+ * Exported so `AntiTankFx` and `net/NetOrdnance` can size their own pools to
+ * exactly this: a client can never be told about a flight it has no mesh for,
+ * because the authority cannot have more in the air than this holds. Two constants would
  * be two that could drift, and the failure would be a rocket that is simply
  * not drawn.
  */
@@ -77,7 +80,8 @@ export const MINE_POOL = 16;
 
 /** One rocket in flight. */
 interface Rocket {
-  mesh: Mesh;
+  /** Where it is — the slot's own vector, and the only place a flight's position lives. */
+  pos: Vector3;
   /**
    * Names the FLIGHT and not the pool slot: monotonic, never reused, and -1
    * while the slot is free. It is what a netplay client keys its interpolation
@@ -85,8 +89,6 @@ interface Rocket {
    * rockets' samples into one buffer and draw a warhead crossing the map.
    */
   id: number;
-  /** The motor, parented to the body — the tell a driver actually reads. */
-  flame: Mesh;
   vel: Vector3;
   live: boolean;
   /** Seconds before it goes off on its own, having hit nothing. */
@@ -99,11 +101,10 @@ interface Rocket {
 
 /** One mine on the ground. */
 interface Mine {
-  mesh: Mesh;
-  /** The fuze lamp: dark while arming, lit once live. */
-  lamp: Mesh;
+  /** Where it lies. The slot's own vector. */
+  pos: Vector3;
   live: boolean;
-  /** Seconds until it arms; <= 0 means it is live. */
+  /** Seconds until it arms; <= 0 means it is live — and its fuze lamp lit. */
   armT: number;
   team: Team;
   by: Combatant | null;
@@ -116,6 +117,25 @@ interface Mine {
 }
 
 /**
+ * One rocket as the PICTURE reads it — `rocketSlots`. Read-only by type, and
+ * the vectors are `Vector3Like` so a reader cannot write through them.
+ */
+export interface RocketFlight {
+  readonly pos: Vector3Like;
+  readonly vel: Vector3Like;
+  readonly live: boolean;
+  /** Metres flown — what the motor's gutter is keyed on. */
+  readonly flown: number;
+}
+
+/** One mine as the picture reads it — `mineSlots`, `RocketFlight`'s terms. */
+export interface MineSlot {
+  readonly pos: Vector3Like;
+  readonly live: boolean;
+  readonly armT: number;
+}
+
+/**
  * What went off, and on what. Handed to `onDetonated`, and spent by
  * `resolveOrdnance`.
  */
@@ -123,8 +143,8 @@ export interface OrdnanceHit {
   /**
    * Where the detonation is: the blast's centre and the light's position.
    *
-   * It is the SYSTEM's own live vector — the slot's mesh position, freed on
-   * the same frame — exactly as `GrenadeSystem.forEachLive`'s is. Valid for
+   * It is the SYSTEM's own live vector — the slot's `pos`, freed on the same
+   * frame — exactly as `GrenadeSystem.forEachLive`'s is. Valid for
    * the length of the handler and not one line longer; anything that keeps it
    * has to clone it, which is what `onExploded` does downstream.
    */
@@ -160,7 +180,7 @@ export class AntiTankSystem {
    * own terrain backstop catches it.
    */
   private rays: RayWorld | null = null;
-  private readonly hit = babylonRayHit();
+  private readonly hit = newRayHit();
   private terrain = new TerrainField();
   private nextLaid = 0;
   /** The next flight id. Monotonic for the life of the system — see `Rocket.id`. */
@@ -189,7 +209,7 @@ export class AntiTankSystem {
    * default answers "no armour anywhere", which is the right answer on the
    * three maps with none and on the server, where nothing wires this at all.
    */
-  hullNear: (at: Vector3, radius: number, team: Team) => Hittable | null = () =>
+  hullNear: (at: Vector3Like, radius: number, team: Team) => Hittable | null = () =>
     null;
 
   /**
@@ -199,17 +219,10 @@ export class AntiTankSystem {
    */
   onDetonated: (hit: OrdnanceHit) => void = () => {};
 
-  constructor(
-    // Not a field: the two pools are built here and the last thing that wanted
-    // the scene afterwards was the rocket's step ray.
-    scene: Scene,
-    mats: CelMaterialFactory,
-  ) {
+  constructor() {
     for (let i = 0; i < ROCKET_POOL; i++) {
-      const { mesh, flame } = buildRocket(scene, mats, `rocket${i}`);
       this.rockets.push({
-        mesh,
-        flame,
+        pos: new Vector3(),
         id: -1,
         vel: new Vector3(),
         live: false,
@@ -220,10 +233,8 @@ export class AntiTankSystem {
       });
     }
     for (let i = 0; i < MINE_POOL; i++) {
-      const { mesh, lamp } = buildMineBody(scene, mats, `mine${i}`);
       this.mines.push({
-        mesh,
-        lamp,
+        pos: new Vector3(),
         live: false,
         armT: 0,
         team: 0,
@@ -254,6 +265,20 @@ export class AntiTankSystem {
   }
 
   /**
+   * The rocket pool, slot by slot, for the PICTURE (`AntiTankFx`) — the free
+   * slots included, so a reader indexes its own bodies by the same slot.
+   * Read-only by type; read it, never keep a slot past the frame.
+   */
+  get rocketSlots(): readonly RocketFlight[] {
+    return this.rockets;
+  }
+
+  /** The mine pool, slot by slot, for the picture — `rocketSlots`' terms. */
+  get mineSlots(): readonly MineSlot[] {
+    return this.mines;
+  }
+
+  /**
    * Puts a rocket in the air from `from` toward the POINT `at` — a launcher
    * bot's ask, which names a hull rather than a bearing. Returns the direction
    * it flew (module scratch, valid until the next launch) or null when there
@@ -266,8 +291,8 @@ export class AntiTankSystem {
    * once.
    */
   launchToward(
-    from: Vector3,
-    at: Vector3,
+    from: Vector3Like,
+    at: Vector3Like,
     team: Team,
     by: Combatant | null,
   ): Vector3 | null {
@@ -285,12 +310,12 @@ export class AntiTankSystem {
    * `GrenadeSystem.throwAlong`: a count debited for something that never
    * arrived is the most confusing thing this could hand a player.
    */
-  launch(from: Vector3, dir: Vector3, team: Team, by: Combatant | null): boolean {
+  launch(from: Vector3Like, dir: Vector3Like, team: Team, by: Combatant | null): boolean {
     const slot = this.rockets.find((r) => !r.live);
     if (!slot) return false;
     const cfg = CONFIG.equipment.rpg.rocket;
     _launch.copyFrom(dir).normalize().scaleInPlace(cfg.speed);
-    slot.mesh.position.copyFrom(from);
+    slot.pos.copyFrom(from);
     slot.vel.copyFrom(_launch);
     slot.id = this.nextFlight++;
     slot.live = true;
@@ -298,10 +323,6 @@ export class AntiTankSystem {
     slot.flown = 0;
     slot.team = team;
     slot.by = by;
-    // The whole body, motor and fins included — see `buildRocket` on why this
-    // is `setEnabled` and not `isVisible`.
-    slot.mesh.setEnabled(true);
-    this.faceFlight(slot);
     return true;
   }
 
@@ -313,7 +334,7 @@ export class AntiTankSystem {
    * has made a decision about which two are on the field, and refusing them
    * would be the game telling them to go and find their own mine first.
    */
-  place(at: Vector3, team: Team, by: Combatant | null): boolean {
+  place(at: Vector3Like, team: Team, by: Combatant | null): boolean {
     const cfg = CONFIG.equipment.mine;
     if (by) {
       let live = 0;
@@ -327,17 +348,16 @@ export class AntiTankSystem {
     }
     const slot = this.mines.find((m) => !m.live);
     if (!slot) return false;
-    slot.mesh.position.copyFrom(at);
+    slot.pos.copyFrom(at);
     slot.live = true;
+    // Dark until it arms (`AntiTankFx` lights the lamp off this clock). That
+    // is the whole tell, and it is the right way round: what a driver can see
+    // is a mine that would go off.
     slot.armT = cfg.mine.armTime;
     slot.team = team;
     slot.by = by;
     slot.laid = ++this.nextLaid;
-    slot.mesh.setEnabled(true);
     this.version += 1;
-    // Dark until it arms. That is the whole tell, and it is the right way
-    // round: what a driver can see is a mine that would go off.
-    slot.lamp.isVisible = false;
     return true;
   }
 
@@ -355,13 +375,13 @@ export class AntiTankSystem {
       // a twelfth of the grenade's fall and reads as a rocket rather than as a
       // thrown thing — see `CONFIG.equipment`.
       r.vel.y -= cfg.rocket.gravity * dt;
-      r.vel.scaleToRef(dt, _step);
+      _step.copyFrom(r.vel).scaleInPlace(dt);
       const travel = _step.length();
       if (travel > 1e-5) {
         _dir.copyFrom(_step).scaleInPlace(1 / travel);
         if (
           this.rays?.castRound(
-            r.mesh.position,
+            r.pos,
             _dir,
             travel + cfg.rocket.radius,
             this.hit,
@@ -371,34 +391,26 @@ export class AntiTankSystem {
           // the face rather than a hair inside it — a blast centre inside a
           // wall has the wall between it and everything it should have hurt,
           // and `blastAt`'s line-of-sight ray would answer for all of them.
-          r.mesh.position
+          r.pos
             .copyFrom(this.hit.point)
             .subtractInPlace(_back.copyFrom(_dir).scaleInPlace(cfg.rocket.radius));
           r.flown += travel;
           this.detonateRocket(r);
           continue;
         }
-        r.mesh.position.addInPlace(_step);
+        r.pos.addInPlace(_step);
         r.flown += travel;
       }
 
       // The floor as a backstop under the collider proxies, exactly as the
       // grenade has one: a rocket that slipped past a seam has to go off on
       // the ground rather than fly on under the map.
-      const floor = this.terrain.heightAt(r.mesh.position.x, r.mesh.position.z);
-      if (r.mesh.position.y < floor + cfg.rocket.radius) {
-        r.mesh.position.y = floor + cfg.rocket.radius;
+      const floor = this.terrain.heightAt(r.pos.x, r.pos.z);
+      if (r.pos.y < floor + cfg.rocket.radius) {
+        r.pos.y = floor + cfg.rocket.radius;
         this.detonateRocket(r);
         continue;
       }
-
-      this.faceFlight(r);
-      // The motor, guttering. Driven by the distance FLOWN rather than by a
-      // clock or a random: it costs one sine, it is the same flicker for the
-      // same rocket however the frame rate wanders, and it is what stops a
-      // solid cone of light reading as a painted-on tail.
-      const flick = 0.78 + 0.22 * Math.sin(r.flown * 37);
-      r.flame.scaling.set(flick, flick, 0.75 + 0.5 * flick);
     }
 
     const mine = CONFIG.equipment.mine;
@@ -406,46 +418,31 @@ export class AntiTankSystem {
       if (!m.live) continue;
       if (m.armT > 0) {
         m.armT -= dt;
-        if (m.armT <= 0) m.lamp.isVisible = true;
         continue;
       }
       // The trigger, and the whole of it: a hostile hull whose centre has come
       // within `contactRadius` of the plate. A body walking over it is not
       // enough pressure and is not asked about — see `CONFIG.equipment`.
-      const hull = this.hullNear(m.mesh.position, mine.contactRadius, m.team);
+      const hull = this.hullNear(m.pos, mine.contactRadius, m.team);
       if (hull) this.detonateMine(m, hull);
     }
-  }
-
-  /**
-   * Points a rocket along its own velocity.
-   *
-   * `lookAt` rather than an angle pair because the body has a roll nobody
-   * cares about and two angles that would have to be kept in step: what a
-   * rocket owes the picture is that the warhead is at the front, and the up
-   * vector it picks for the rest is free.
-   */
-  private faceFlight(r: Rocket): void {
-    _launch.copyFrom(r.mesh.position).addInPlace(r.vel);
-    r.mesh.lookAt(_launch);
   }
 
   private detonateRocket(r: Rocket): void {
     r.live = false;
     r.id = -1;
-    r.mesh.setEnabled(false);
     // A rocket that has not flown far enough to arm is a dud: it stops, and
     // nothing happens. The warhead is live at three metres, which is past the
     // doorframe the shooter is standing in and well inside anything they were
     // aiming at.
     if (r.flown < CONFIG.equipment.rpg.rocket.armDistance) return;
     this.onDetonated({
-      at: r.mesh.position,
+      at: r.pos,
       kind: "rpg",
       team: r.team,
       by: r.by,
       hull: this.hullNear(
-        r.mesh.position,
+        r.pos,
         CONFIG.equipment.rpg.contactRadius,
         r.team,
       ),
@@ -453,12 +450,12 @@ export class AntiTankSystem {
   }
 
   private detonateMine(m: Mine, hull: Hittable): void {
-    const at = m.mesh.position;
+    const at = m.pos;
     this.park(m);
     this.onDetonated({ at, kind: "mine", team: m.team, by: m.by, hull });
   }
 
-  /** Frees a slot and takes its meshes off the screen. */
+  /** Frees a slot — `AntiTankFx` takes its meshes off the screen on its next pass. */
   private park(m: Mine): void {
     // Only a slot that was actually live is a change worth telling anybody
     // about: `reset` walks the whole pool, and bumping sixteen times for the
@@ -467,8 +464,6 @@ export class AntiTankSystem {
     if (m.live) this.version += 1;
     m.live = false;
     m.by = null;
-    m.mesh.setEnabled(false);
-    m.lamp.isVisible = false;
   }
 
   /**
@@ -484,7 +479,6 @@ export class AntiTankSystem {
       r.live = false;
       r.id = -1;
       r.by = null;
-      r.mesh.setEnabled(false);
     }
     for (const m of this.mines) this.park(m);
   }
@@ -500,7 +494,7 @@ export class AntiTankSystem {
     fn: (id: number, at: Vector3, vel: Vector3, by: Combatant | null) => void,
   ): void {
     for (const r of this.rockets) {
-      if (r.live) fn(r.id, r.mesh.position, r.vel, r.by);
+      if (r.live) fn(r.id, r.pos, r.vel, r.by);
     }
   }
 
@@ -520,7 +514,7 @@ export class AntiTankSystem {
     ) => void,
   ): void {
     for (const [i, m] of this.mines.entries()) {
-      if (m.live) fn(i, m.mesh.position, m.team, m.armT <= 0, m.by);
+      if (m.live) fn(i, m.pos, m.team, m.armT <= 0, m.by);
     }
   }
 

@@ -15,8 +15,8 @@
  * loads would only make a screenshot diff lie.
  *
  * It needs a canvas, which is what makes it a CLIENT-only file: the multiplayer
- * server runs the same `GrenadeSystem` under a `NullEngine` and passes
- * `{ dust: false }` precisely so nothing reaches this.
+ * server runs the grenade SIMULATION alone and never builds a picture
+ * (`GrenadeFx`, `RotorWash`), so nothing on that side reaches this.
  */
 import { DynamicTexture, type Scene } from "@babylonjs/core";
 

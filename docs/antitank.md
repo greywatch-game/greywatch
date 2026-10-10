@@ -6,12 +6,12 @@ projectile at all, and what is deliberately not built. Split out of
 [`CLAUDE.md`](../CLAUDE.md), which keeps the summary; this file is the contract
 for `src/config/equipment.ts`, `src/entities/equipment.ts`,
 `src/entities/RpgModel.ts`, `src/entities/MineModel.ts`,
-`src/systems/AntiTankSystem.ts`, and for `Game`'s `fireOrdnance` /
+`src/systems/AntiTankSystem.ts`, `src/systems/AntiTankFx.ts`, and for `Game`'s `fireOrdnance` /
 `launchRocket` / `layMine` / `resolveOrdnance` / `armourOffered`.
 
 ## The shape of it
 
-The kit is five things and one line of map data:
+The kit is six things and one line of map data:
 
 | the thing | what it owns |
 | --- | --- |
@@ -19,7 +19,8 @@ The kit is five things and one line of map data:
 | `config/equipment.ts` | the two items: what one is worth, how a rocket flies, how a mine arms, and how each is carried |
 | `entities/equipment.ts` | the derivation from that table to a `WeaponSetup` the carry path can hold, and to the `OrdnanceEffect` a detonation is spent through |
 | `entities/RpgModel.ts` / `MineModel.ts` | what each looks like at both ends: the thing in the hands and the thing in the world |
-| `systems/AntiTankSystem.ts` | the rocket pool, the mine pool, the arm clocks and the trigger test |
+| `systems/AntiTankSystem.ts` | the rocket pool, the mine pool, the arm clocks and the trigger test — a SIMULATION: a rocket's and a mine's position is its own `src/math` `pos` field, nothing here is a mesh, and the authority runs it whole |
+| `systems/AntiTankFx.ts` | the PICTURE of both pools: a `RocketBody` per rocket slot (faced down its velocity, the motor guttering off metres flown) and a `MineBody` per mine (the lamp off the arm clock), posed off `rocketSlots`/`mineSlots` after every `update` and never writing them. Client only; `net/NetOrdnance` draws the wire's copies through the same two bodies |
 
 `Game` is the only place they meet, exactly as with every other system. It holds
 the pick (`Game.equipment`), decides whether there is a slot for it
@@ -484,7 +485,8 @@ Four things are load-bearing:
 - **A parked rocket or mine is DISABLED, not invisible.** Babylon's `isVisible`
   hides the mesh it is set on and nothing under it, so a pool of eight hidden
   rockets leaves eight sets of fins and eight motors standing at the world
-  origin. `setEnabled` takes the subtree. (`GrenadeModel` gets away with
+  origin. `setEnabled` takes the subtree — `RocketBody.show` and
+  `MineBody.hide`, the one door each for both pools that draw one. (`GrenadeModel` gets away with
   `isVisible` only because it toggles its pip by hand.)
 
 The launcher takes `prism`'s entry in `CONFIG.sights` rather than declaring one

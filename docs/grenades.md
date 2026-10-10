@@ -5,7 +5,21 @@ the other — see [`antitank.md`](antitank.md)), and everything that follows fro
 that: the pool, the bounce, the blast, the dust, the throw gesture, the bots'
 range band, and the molotov that shares all of it but the ending. Split out of
 [`CLAUDE.md`](../CLAUDE.md), which keeps the summary; this file is the contract
-for `GrenadeSystem` and both throwers.
+for `GrenadeSystem`, its picture `GrenadeFx`, and both throwers.
+
+**The pool is a SIMULATION and its picture is another module** (`BABYLON_EXIT.md`
+X2.2 C3, the `CombatSystem`/`CombatFx` split one system over).
+`GrenadeSystem` imports nothing from Babylon: a flight's position is its own
+`pos` field and a fire's floor its `at`, both `src/math`, and every rule below
+lives there — the authority runs it whole and builds nothing else.
+`GrenadeFx` is everything a GPU is needed for — a `GrenadeBody` per slot, a
+fire's flames, the `BlastFx` — and it READS the simulation and never writes
+it: the pools through `flights` and `fireSlots` (read-only by type) after each
+`update`, and the rest as calls `Game` makes from the events — `onBlast` (the
+billows), `onIgnited` (the flames and the ignition, ahead of the light and the
+noise, where they always were) and `onBurntOut`. A new flight in a slot is
+told by its `id` changing, and gets its own random tumble start there — a
+picture, so the simulation draws no random at all.
 
 Everyone carries two and there is no resupply, so the pouch is refilled by death
 and nothing else (`Player.fullReset`, `Bot.spawn`). Two a life makes each throw a
@@ -72,7 +86,7 @@ second thing says only how it differs. A tank shell is
 declares nothing else about its own explosion — no second fireball, no second
 dust cloud, no second set of numbers to keep in step. `CONFIG.grenade`'s "The
 blast, as a picture" is the table; six of the layers are drawn by `BlastFx`
-(owned by `GrenadeSystem`) and two by `BlastDebrisSystem`.
+(owned by `GrenadeFx`) and two by `BlastDebrisSystem`.
 
 **The SOUND makes the same bargain, and one recording is every explosion in the
 game.** `Sfx.explosion` plays `audio/grenade.webm` — a grenade going off, so
@@ -121,8 +135,9 @@ wrong first:
   and is told it is over level earth, which is the right answer for every
   consumer.
 - **`drawBlast` is public, because there are two ways a blast can happen and
-  only one of them is a rule.** Offline `blastAt` resolves the damage and then
-  draws. In a netplay round the damage is the authority's and arrives as an
+  only one of them is a rule.** It probes the ground and raises `onBlast`, the
+  one event the billows start on, so it stays the one place a blast is drawn.
+  Offline `blastAt` resolves the damage and then draws. In a netplay round the damage is the authority's and arrives as an
   `explode` event with nothing but a position on it, so `Game` calls `drawBlast`
   directly — which is also what put a fireball on somebody ELSE's grenade, an
   event that used to arrive as a light and a bang with nothing burning in the
@@ -136,8 +151,9 @@ hot and smoke once it is not. It replaced five flat emissive spheres stepping a
 four-rung colour ladder, a glowing torus, and two pools of soft gradient
 sprites: a photograph's smoke in a frame of flat fills and ink, the mismatch
 the water was once reworked for. `systems/BlastFx.ts` owns the six layers and
-their motion; `GrenadeSystem` owns the rules and calls it, and **the authority
-never builds one** (`GrenadeOptions.dust`), because nothing in it is a rule.
+their motion; `GrenadeFx` owns it and calls it off `onBlast` and `onIgnited`,
+and **the authority never builds one**, because nothing in it is a rule. Its
+points and normals are `Vector3Like` and read through their fields.
 
 - **A billow is four numbers the shader reads** — heat, dissolve, a seed, and
   how much of it is dust rather than soot — plus the WARMTH of the fire under
@@ -269,9 +285,11 @@ the scoreboard, tickets and killfeed from all three causes (the hitmarker and ru
 stay with the weapon, being about the shot that landed rather than the body).
 
 **What a grenade LOOKS like is `entities/GrenadeModel.ts` and not this system**,
-for the reason the bot rig is `SoldierModel`: two things build one now. This
-system builds the pool it simulates, and `net/NetGrenades` builds the ones a
-client only draws, from positions the multiplayer authority sent. Both the
+for the reason the bot rig is `SoldierModel`: two things build one now, both
+through `GrenadeFx`'s `GrenadeBody` (the moves — show, place, tumble, the pip —
+as well as the meshes). `GrenadeFx` builds the pool the local simulation is
+drawn in, and `net/NetGrenades` builds the ones a client only draws, from
+positions the multiplayer authority sent. Both the
 meshes and the pip's blink live there — the blink because it is the only warning
 a grenade gives and it must read the same whoever threw it, so both sides run
 `pipLit` over the same remaining fraction rather than each describing the
@@ -390,15 +408,19 @@ burn-out take the new fire's light away.
 
 - **The flames are the world's one fire material** (`FlameMaterial` over
   `world/flame.ts`), `CONFIG.molotov.flames` of them per fire, cloned off one
-  geometry and spread over the disc on the golden angle at construction — no
-  random in a constructor the server also runs. They grow out of the ground
+  geometry and spread over the disc on the golden angle at construction, keyed
+  on the fire SLOT, so a slot's fire is the same shape every time. They grow
+  out of the ground
   wider-first and sink back into it (`fireStrength`, one curve that the flames,
   the light and the sound all ride), because the material is hard-banded and
   has no alpha to fade. **Ten, not seven**: photographed from twenty metres,
   seven drew a cluster in the middle and not the rim — and the rim is what
-  tells a player where they may walk. **They are built only where something
-  draws** (`dust !== false`): the authority has no device to compile the WGSL
-  on, and the fire's SLOTS, which are rules, exist on both sides.
+  tells a player where they may walk. **They are `GrenadeFx`'s**, so they exist
+  only where something draws: the authority has no device to compile the WGSL
+  on, and the fire's SLOTS, which are rules, are the simulation's on both
+  sides. **Each flame is stood on its floor by its OWN probe** — `floorUnder`,
+  a pure function the simulation's broken bottle uses too, run with the
+  view's own ray buffer and scratch, at `onIgnited` and never again.
 - **The ignition is the one blast's own flash and fireball** at
   `molotov.ignition` of a frag, with its sparks and a column at
   `molotov.smoke` — and no surge and no burning fragments, because petrol going
@@ -465,7 +487,7 @@ figure to re-measure if the burn numbers move.
 
 A bottle in the air is a `GrenadeState` with `k: "molotov"` (absent is a frag,
 which is what every grenade on the wire was before), drawn by the same
-`NetGrenades` ghost with a bottle in place of the frag. **The fire is the
+`NetGrenades` ghost (a `GrenadeBody`) with a bottle in place of the frag. **The fire is the
 AUTHORITY's**: `HeadlessGame` raises `onBlaze` from `onIgnited`, `Match` queues
 a `blaze` event with a position and nothing else, and every client — the
 thrower included — draws it through `drawFire`, a fire with no rules. The

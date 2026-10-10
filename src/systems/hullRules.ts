@@ -40,7 +40,6 @@ import { OTHER_TEAM, type Combatant, type Team } from "../entities/Combatant";
 import type { Vehicle } from "../entities/Vehicle";
 import { DRIVER, type CrewSeat } from "../entities/hullSeats";
 import type { Vector3Like } from "../math";
-import { toBabylon } from "../math/babylon";
 import type { CombatSystem, Hittable, ShotResult } from "./CombatSystem";
 import type { GrenadeSystem } from "./GrenadeSystem";
 import { settleKill, type KillLedger } from "./killRules";
@@ -151,9 +150,7 @@ export function fireHullGun(
   // The splash, through the one implementation of a blast in the game. `by` is
   // whoever fired, so a kill lands on their row exactly as a grenade's does —
   // the simulation's `onBlastHit` is already wired for it and needed no arm.
-  // A COPY into Babylon's vector: the hit point is `src/math`'s and the blast
-  // is not yet (`BABYLON_EXIT.md` X2.2 C3 takes the crossing away).
-  ctx.blastAt(toBabylon(shot.hitPoint), tank.team, by, {
+  ctx.blastAt(shot.hitPoint, tank.team, by, {
     radius: g.blastRadius,
     inner: g.blastInner,
     damage: g.blastDamage,

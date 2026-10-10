@@ -1542,10 +1542,13 @@ panes.
 
 ## Grenades
 
-Ballistics and damage are the server's; the picture is not. `GrenadeSystem`
-takes `{ dust: false }` there, which leaves out `BlastFx` (the blast's billows)
-and the molotov's flames — both WGSL, and a NullEngine has no device to compile
-them on. The flag is named for the sprite dust it first guarded.
+Ballistics and damage are the server's; the picture is not. `GrenadeSystem` and
+`AntiTankSystem` are SIMULATIONS with no picture in them (`BABYLON_EXIT.md` X2.2
+C3), and the server builds nothing else: their pictures, `GrenadeFx` (the
+bodies, the molotov's flames and `BlastFx`, the blast's billows) and
+`AntiTankFx`, are WGSL and meshes, and only a client constructs them. There is
+no flag for it any more — the `{ dust: false }` option that once left the
+picture out is gone with the picture.
 
 The pouch is the server's count. There is no resupply in this game — death is
 the only refill — so the ammunition IS the limit, and a client tracking its own

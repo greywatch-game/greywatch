@@ -82,7 +82,7 @@
  *
  * **It never runs on the authority.** Nothing here is simulation — no ray, no
  * damage, no bearing — and it needs both a canvas and a GPU device, which is
- * `BlastDust`'s split (`{ dust: false }`) drawn one system further out: the
+ * the split every picture in the game takes (`GrenadeFx`, `CombatFx`): the
  * server does not construct this class at all.
  */
 import {

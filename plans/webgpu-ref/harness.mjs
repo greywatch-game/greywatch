@@ -258,7 +258,7 @@ export function placeVantage(page, vantage) {
       for (const m of zone.meshes) m.setEnabled(Boolean(v.zones));
       zone.flag.setVisible(Boolean(v.zones));
     }
-    g.grenades.fx?.reset();
+    g.grenadeFx?.fx?.reset();
     g.player.view.setVisible(false);
     // The settings a row overrode go back to what the boot chose — this
     // machine's defaults, recorded in `mode.json` beside the browser — before
@@ -320,8 +320,8 @@ export function placeVantage(page, vantage) {
     // a fixed number of fixed steps, so it is posed in flight the same way
     // every run. Its layout is drawn from `Math.random`, which is seeded for
     // the length of the pose and put back — the GAME's draw is not touched.
-    if (v.blast && g.grenades.fx) {
-      const fx = g.grenades.fx;
+    if (v.blast && g.grenadeFx?.fx) {
+      const fx = g.grenadeFx.fx;
       const [bx, bz] = v.blast.at;
       const at = new Vec3(bx, g.map.terrain.surfaceAt(bx, bz, true), bz);
       const keep = Math.random;

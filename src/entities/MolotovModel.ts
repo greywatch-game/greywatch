@@ -2,8 +2,8 @@
  * MolotovModel.ts — What a molotov looks like: a bottle, its neck, and the
  * lit rag stuffed in it.
  * Owns: the three meshes. Owns NO behaviour — nothing here flies, breaks or
- * burns; the fire it leaves is `GrenadeSystem`'s and is drawn in the world's
- * one fire material.
+ * burns; the fire it leaves is `GrenadeSystem`'s, drawn by `GrenadeFx` in the
+ * world's one fire material.
  * Invariants: DRESSING, never a collider — no `solid`, no `WorldBox`, not
  * pickable — on every side of the wire, for `GrenadeModel`'s reason. Built at
  * the origin with the bottle's middle there, so a tumble about the mesh's own
@@ -12,7 +12,7 @@
  * `drawnMesh` (BABYLON_EXIT.md X1.3).
  *
  * A file of its own for `GrenadeModel`'s reason, and there are THREE builders
- * of it rather than two: `GrenadeSystem`'s pool, `net/NetGrenades`' drawn
+ * of it rather than two: `GrenadeFx`'s pool, `net/NetGrenades`' drawn
  * copies, and the viewmodel's fist. The first two have to be the same object on
  * screen, and the third has to read as that object before it is thrown — which
  * is what the RAG is for: a lit wick is the one detail that says "this will be

@@ -3,7 +3,7 @@
  * ground.
  * Returns `WeaponParts` exactly as the six guns do, so `ViewModel` carries it
  * with nothing re-tuned, plus `buildMineBody` for the one `AntiTankSystem`
- * lays.
+ * lays and `AntiTankFx` draws.
  * Invariants: the carried mine is assembled at the origin with the root at
  * identity and merged before it is moved — `weaponKit.ts` owns that contract
  * and the primitives. The laid mine is DRESSING: no `solid` flag, no

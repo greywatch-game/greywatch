@@ -408,8 +408,8 @@ a kit row on every map, riding the join and the deploy like the weapon). **A
 molotov is the same pool, the same arc and the same ray** — thrown on the frag's
 `throwSpeed`/`throwLift`/`gravity`, which the bots' measured band depends on —
 and it BREAKS on first contact into a FIRE: a second pool in `GrenadeSystem`
-that burns the thrower's target list on a tick, skips hulls, and is drawn in
-the world's one `FlameMaterial`. Three rules reach outside it. **A burn is
+that burns the thrower's target list on a tick, skips hulls, and is drawn (by
+`GrenadeFx`) in the world's one `FlameMaterial`. Three rules reach outside it. **A burn is
 `DamageKind` `"fire"`, which DROPS a body** — `RagdollSystem`'s test is "not a
 bullet or a burn". **A fire's held-open sound is keyed NEGATIVE**
 (`Game.fireSoundKey`), because `AmbienceSystem` spends 0 and up and an
@@ -427,11 +427,15 @@ scales SIZE and COUNT, never TIME**, because the order the layers arrive in is
 what the effect is. **What a blast throws is
 keyed on what it went off ON** — one downward ray reading the same
 `metadata.surface` a bullet's impact reads — and `drawBlast` is the one place a
-blast is DRAWN, public because the authority raises one with nothing but a
-position on it. **Six of the layers are DRAWN** (`systems/BlastFx.ts`,
-`BlastShader`): every shape in the air is an opaque, lit, thin-instanced billow
-that is fire while hot and smoke once not, so the ink draws between billows —
-one draw call per blast, never built on the authority.
+blast is DRAWN (it raises `onBlast`, the only event the picture starts on),
+public because the authority raises one with nothing but a position on it.
+**Six of the layers are DRAWN** (`systems/BlastFx.ts`, `BlastShader`): every
+shape in the air is an opaque, lit, thin-instanced billow that is fire while
+hot and smoke once not, so the ink draws between billows — one draw call per
+blast, never built on the authority. **Both flying things are a SIMULATION and
+a PICTURE**: `GrenadeSystem` and `AntiTankSystem` hold their positions as
+plain `src/math` fields and import no Babylon, and `GrenadeFx`/`AntiTankFx`
+read their pools after each `update` and never write them (`docs/grenades.md`).
 
 → **[`docs/grenades.md`](docs/grenades.md)** — the bounce, resting and terrain
 backstop rules, the eight layers and the four rules holding them together, the

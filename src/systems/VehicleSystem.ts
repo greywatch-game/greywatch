@@ -52,6 +52,7 @@ import {
 } from "../entities/Vehicle";
 import { DRIVER, GUNNER, type CrewSeat } from "../entities/hullSeats";
 import { kindOf } from "../entities/vehicleKinds";
+import type { Vector3Like } from "../math";
 import { toBabylon } from "../math/babylon";
 import type { CelMaterialFactory } from "../shaders/CelShader";
 import type { GameMap, VehicleSpawnDef } from "../world/MapBuilder";
@@ -451,13 +452,19 @@ export class VehicleSystem {
    * kept going off under a burnt-out chassis would spend a player's whole
    * pouch on a thing that is already dead.
    */
-  hostileNear(at: Vector3, radius: number, team: Team): Vehicle | null {
+  hostileNear(at: Vector3Like, radius: number, team: Team): Vehicle | null {
     let best: Vehicle | null = null;
     let bestDist = radius * radius;
     for (const stand of this.stands) {
       const tank = stand.tank;
       if (!tank.alive || tank.team === team) continue;
-      const d = Vector3.DistanceSquared(at, tank.center);
+      // On the FIELDS, in Babylon's `DistanceSquared` order: the ordnance's
+      // point is `src/math`'s, and Babylon's static reads `_x` off it.
+      const c = tank.center;
+      const dx = at.x - c.x;
+      const dy = at.y - c.y;
+      const dz = at.z - c.z;
+      const d = dx * dx + dy * dy + dz * dz;
       if (d < bestDist) {
         bestDist = d;
         best = tank;

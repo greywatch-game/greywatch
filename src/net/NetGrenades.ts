@@ -31,19 +31,19 @@
  *
  * A MOLOTOV is drawn by the same ghost with a bottle in place of the frag
  * (`GrenadeState.k`), and it ends the same way: it stops appearing on the
- * snapshot that carries the `blaze` event, and the fire is `GrenadeSystem`'s
- * to draw from there.
+ * snapshot that carries the `blaze` event, and the fire is
+ * `GrenadeSystem.drawFire`'s from there, drawn by `GrenadeFx`.
+ *
+ * **Every ghost is a `GrenadeFx.GrenadeBody`** — the meshes and the moves
+ * (show, place, tumble, the pip) the local simulation's flights are drawn by,
+ * so the two pools are one object on screen and only the SOURCE differs: a
+ * slot read after a step there, an interpolated sample here.
  */
-import { Mesh, Scene, Vector3 } from "@babylonjs/core";
+import type { Scene } from "@babylonjs/core";
 import { CONFIG } from "../config";
-import { buildGrenade, pipLit } from "../entities/GrenadeModel";
-import {
-  buildMolotov,
-  showMolotov,
-  type MolotovMeshes,
-} from "../entities/MolotovModel";
 import type { ThrowableId } from "../entities/throwables";
 import type { CelMaterialFactory } from "../shaders/CelShader";
+import { GrenadeBody } from "../systems/GrenadeFx";
 import type { Snapshot } from "./protocol";
 
 /** One received sample, with the server time it describes. */
@@ -60,10 +60,15 @@ const BUFFER = 8;
 
 /** One pool entry: the meshes, and the flight it is drawing. */
 interface Ghost {
-  readonly mesh: Mesh;
-  readonly pip: Mesh;
-  /** The bottle, for a flight the wire says is a molotov. */
-  readonly bottle: MolotovMeshes;
+  /**
+   * The frag and the bottle — `GrenadeFx`'s own `GrenadeBody`, so a ghost and
+   * a simulated grenade are one object on screen tumbling at one set of rates.
+   */
+  readonly body: GrenadeBody;
+  /** Where it was last posed, for the tumble's distance. */
+  x: number;
+  y: number;
+  z: number;
   /** Which of the two this flight is — decided when it is claimed. */
   kind: ThrowableId;
   /** The wire's flight id, or -1 while the slot is free. */
@@ -92,11 +97,11 @@ export class NetGrenades {
 
   constructor(scene: Scene, mats: CelMaterialFactory) {
     for (let i = 0; i < CONFIG.grenade.poolSize; i++) {
-      const { mesh, pip } = buildGrenade(scene, mats, `netGrenade${i}`);
       this.pool.push({
-        mesh,
-        pip,
-        bottle: buildMolotov(scene, mats, `netMolotov${i}`),
+        body: new GrenadeBody(scene, mats, `netGrenade${i}`, `netMolotov${i}`),
+        x: 0,
+        y: 0,
+        z: 0,
         kind: "frag",
         id: -1,
         samples: [],
@@ -161,25 +166,24 @@ export class NetGrenades {
       const z = a.z + (b.z - a.z) * blend;
       const fuse = a.fuse + (b.fuse - a.fuse) * blend;
 
-      const bottle = ghost.kind === "molotov";
-      const body = bottle ? ghost.bottle.mesh : ghost.mesh;
       const stepped = ghost.hasPosition
-        ? Vector3.Distance(body.position, TMP.set(x, y, z))
+        ? Math.hypot(x - ghost.x, y - ghost.y, z - ghost.z)
         : 0;
-      body.position.set(x, y, z);
+      ghost.x = x;
+      ghost.y = y;
+      ghost.z = z;
+      ghost.body.place(ghost.kind, x, y, z);
       // Shown on the frame it is first POSED and never on the one it was
       // claimed — see `Ghost.hasPosition`.
       if (!ghost.hasPosition) {
         ghost.hasPosition = true;
-        if (bottle) showMolotov(ghost.bottle, true);
-        else ghost.mesh.isVisible = true;
+        ghost.body.show(ghost.kind);
       }
       // The same rates the simulated flight tumbles at, read off distance
       // instead of speed — one is the other times the frame.
-      body.rotation.x += stepped * (bottle ? 0.9 : 2.4);
-      body.rotation.z += stepped * (bottle ? 0.25 : 1.7);
+      ghost.body.tumble(ghost.kind, stepped);
       // A bottle's rag is its tell and is always lit; only a frag has a fuse.
-      if (!bottle) ghost.pip.isVisible = pipLit(fuse / g.fuse);
+      ghost.body.fuse(ghost.kind, fuse / g.fuse);
     }
   }
 
@@ -193,12 +197,7 @@ export class NetGrenades {
   }
 
   dispose(): void {
-    for (const ghost of this.pool) {
-      ghost.pip.dispose();
-      ghost.mesh.dispose();
-      // The neck, the cloth and the wick are its children and go with it.
-      ghost.bottle.mesh.dispose();
-    }
+    for (const ghost of this.pool) ghost.body.dispose();
     this.pool.length = 0;
     this.live.clear();
   }
@@ -213,15 +212,8 @@ export class NetGrenades {
     free.samples.length = 0;
     free.hasPosition = false;
     // Some attitude to start from, so twenty grenades are not all facing the
-    // same way. `Math.random` is fine here for the reason `GrenadeSystem` uses
-    // it in the same place: this is an effect, not world building — nothing
-    // navigates by it and no other client has to reproduce it.
-    free.mesh.rotation.set(
-      Math.random() * 3,
-      Math.random() * 3,
-      Math.random() * 3,
-    );
-    free.bottle.mesh.rotation.copyFrom(free.mesh.rotation);
+    // same way — `GrenadeBody.begin`, the door a simulated flight takes too.
+    free.body.begin();
     this.live.set(id, free);
     return free;
   }
@@ -231,14 +223,9 @@ export class NetGrenades {
     ghost.id = -1;
     ghost.samples.length = 0;
     ghost.hasPosition = false;
-    ghost.mesh.isVisible = false;
-    ghost.pip.isVisible = false;
-    showMolotov(ghost.bottle, false);
+    ghost.body.hide();
   }
 }
-
-/** Scratch for the distance the tumble reads. Never allocated per frame. */
-const TMP = new Vector3();
 
 /**
  * Appends a sample, dropping anything that is not newer than what is already

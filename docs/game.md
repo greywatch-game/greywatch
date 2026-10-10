@@ -152,11 +152,12 @@ on the far side; the loop settles in two passes. A fetch that FAILS is
 `leaveUnknownMap`'s move — there is no honest half-build of a map with no
 ground under it, and leaving the card up would wedge `buildPending` forever.
 
-**Seven of those hand-offs are one line each and one object**, and they are worth
+**Eight of those hand-offs are one line each and one object**, and they are worth
 naming because they are new and because they look skippable. `map.rays` is the
 segment query every ray in the game asks (`world/RayWorld.ts`), and `installMap`
 pushes it to `CombatSystem`, `CombatFx` (whose `drawRounds` casts for itself),
-`GrenadeSystem`, `AntiTankSystem`,
+`GrenadeSystem`, `GrenadeFx` (which stands a fire's flames on their floors
+with its own probe), `AntiTankSystem`,
 `AimAssistSystem`, `DeathCam` and `VehicleCamera`. `BattleSystem` and
 `VehicleSystem` are absent from that list and are not exceptions: both are
 handed the whole `GameMap`, and both take it off `map.rays` where they take
@@ -177,7 +178,7 @@ day to attribute.
 `updateWorld` is the offline round and `updateNetWorld` is the client's half of
 a networked one, and the second is not a subset of the first — it runs `net`
 where the other runs `conquest` and the bots, and it poses the fleet off the
-wire rather than stepping a crew. What they DO share is eight system updates
+wire rather than stepping a crew. What they DO share is ten system updates
 that are identical on both sides, in the same relative order, and those were
 written out twice.
 

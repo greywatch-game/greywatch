@@ -3,7 +3,7 @@
  * the mark it leaves where it happened: two of `CONFIG.grenade`'s eight blast
  * layers, and the two that outlive the fire.
  * Owns: the chunk pool and its bodies, the per-surface rubble colours, and
- * `ScorchMarks`. The other six layers are `GrenadeSystem`'s.
+ * `ScorchMarks`. The other six layers are `GrenadeFx`'s (`BlastFx`).
  * Invariants: it is the THIRD `PhysicsClient` and owns no engine — see
  * `PhysicsWorld`. Nothing here feeds navigation, cover or hit detection: a
  * chunk is dressing exactly as a corpse and a glass shard are, and rounds and
@@ -79,6 +79,19 @@ import {
   type PhysicsClient,
   type PhysicsWorld,
 } from "./PhysicsWorld";
+
+/**
+ * What a blast went off on, as THIS system reads it: `GrenadeSystem`'s
+ * `BlastGround` with its normal in Babylon's vector. The rubble's spread and
+ * the scorch's turn go through Babylon's statics, which read `_x` off a
+ * vector, and the simulation's normal is `src/math`'s — so `Game` hands this
+ * a COPY (`Game.debrisGroundOf`), never the simulation's own. It goes when
+ * this system leaves Babylon's math with Havok (`BABYLON_EXIT.md` X2.4).
+ */
+export interface DebrisGround {
+  surface: BlastGround["surface"];
+  normal: Vector3;
+}
 
 /**
  * What each surface throws, and the two rules the table is written under.
@@ -250,7 +263,7 @@ export class BlastDebrisSystem implements PhysicsClient {
    * burns on and throws no rubble out of it — petrol does not dig. `power` is
    * the mark's size against a frag's, exactly as `burst`'s is.
    */
-  scorchAt(at: Vector3, power: number, ground: BlastGround): void {
+  scorchAt(at: Vector3, power: number, ground: DebrisGround): void {
     this.scorch.mark(at, power, ground);
   }
 
@@ -263,7 +276,7 @@ export class BlastDebrisSystem implements PhysicsClient {
     this.scorch.warm(on);
   }
 
-  burst(at: Vector3, power: number, ground: BlastGround, camPos: Vector3): boolean {
+  burst(at: Vector3, power: number, ground: DebrisGround, camPos: Vector3): boolean {
     const d = CONFIG.grenade.debris;
     this.scorch.mark(at, power, ground);
 
@@ -660,7 +673,7 @@ class ScorchMarks {
    * nothing is spent on a mark, so a blast with no scorch is a worse lie than
    * an old one cut short.
    */
-  mark(at: Vector3, power: number, ground: BlastGround): void {
+  mark(at: Vector3, power: number, ground: DebrisGround): void {
     const s = CONFIG.grenade.scorch;
     let slot = this.marks[0];
     for (const m of this.marks) {

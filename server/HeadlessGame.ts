@@ -7,10 +7,10 @@
  * here, and `ConquestSystem.update` runs BEFORE `BattleSystem.update` so a
  * bot's think tick sees this frame's flag ownership.
  * Invariants: NOTHING here may render, and nothing may reach a canvas — see
- * `server/README.md`. `GrenadeSystem` is here under `{ dust: false }`, which is
- * that rule applied rather than bent: where a grenade goes and who it hurts is
- * a rule and belongs to the authority, while `BlastDust` builds a
- * `DynamicTexture` and a `GPUParticleSystem` and neither exists without GL.
+ * `server/README.md`. `GrenadeSystem` and `AntiTankSystem` are here as the
+ * SIMULATIONS they are — where a grenade or a rocket goes and whom it hurts
+ * is a rule and belongs to the authority — and their pictures, `GrenadeFx`
+ * and `AntiTankFx`, are never built on this side (`BABYLON_EXIT.md` X2.2).
  *
  * A slot index IS a bot index, by construction: `Roster` lays its slots out
  * team 0 then team 1, `BattleSystem` builds its pool the same way, and both are
@@ -147,10 +147,8 @@ export class HeadlessGame {
    * grenades are: where a rocket goes and what it kills is a rule.
    *
    * The FLIGHT is on this side and the picture is not — a rocket's motor
-   * flame, its smoke and its light are the client's, off the position this
-   * broadcasts. That is `GrenadeSystem`'s `{ dust: false }` split applied to
-   * the other thing in this game that flies, except that a rocket needs no
-   * flag for it: nothing in `AntiTankSystem` reaches for a canvas.
+   * flame, its smoke and its light are the client's (`AntiTankFx`), off the
+   * position this broadcasts, exactly as a grenade's are `GrenadeFx`'s.
    */
   readonly antiTank: AntiTankSystem;
 
@@ -226,11 +224,12 @@ export class HeadlessGame {
     // no loading card to do that behind.
     this.battle.setRoster(CONFIG.bots.maxPerTeam);
     // Ballistics without the picture. Where a grenade lands and who it hurts
-    // is a rule and belongs here; the dust needs a canvas and a GPU device and
-    // does not exist on this side — see `GrenadeOptions`.
-    this.grenades = new GrenadeSystem(this.scene, this.mats, { dust: false });
+    // is a rule and belongs here; what it looks like is `GrenadeFx`'s, which
+    // needs a GPU device and is never built on this side, so `onBlast` is
+    // left unwired and every blast's picture is a no-op here.
+    this.grenades = new GrenadeSystem();
     this.vehicles = new VehicleSystem(this.scene, this.mats, this.random);
-    this.antiTank = new AntiTankSystem(this.scene, this.mats);
+    this.antiTank = new AntiTankSystem();
     // The crew's context, and it is `Game`'s to the line — a crew asks the same
     // eight questions wherever it is running, because there is nothing about
     // driving a tank that is presentation. The one that reads differently here
@@ -1523,14 +1522,14 @@ export class HeadlessGame {
    * that just went off was a frag, a shell or a rocket, and the difference is
    * the whole size of the fireball.
    */
-  onExplosion: (at: Vector3, power: number) => void = () => {};
+  onExplosion: (at: Vector3Like, power: number) => void = () => {};
 
   /**
    * Wired by `Match`: a molotov caught here. A position and nothing else — see
    * the `blaze` event. `at` is `GrenadeSystem`'s own vector, read inside the
    * call.
    */
-  onBlaze: (at: Vector3) => void = () => {};
+  onBlaze: (at: Vector3Like) => void = () => {};
 
   /**
    * Wired by `Match`: this person got into a hull or was put out of one, and

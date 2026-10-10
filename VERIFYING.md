@@ -1352,15 +1352,20 @@ is one machine's:
   `tryShot(true)` returning **false** on a trigger that was never released.
 - **Grenades are testable without waiting for a round**: `g.grenades` takes
   `throwAlong`/`throwAt` and `g.grenades.update(1/60)` steps the flight, so a whole
-  detonation is a synchronous loop in one `page.evaluate`. A bot moved by hand must
+  detonation is a synchronous loop in one `page.evaluate`. The flight lives in
+  `g.grenades.flights[i].pos`; the MESH only follows it on
+  `g.grenadeFx.update(dt)` (and a rocket's on `g.antiTankFx.update()`), which a
+  frame runs straight after — a loop that steps the simulation alone moves no
+  mesh. A bot moved by hand must
   be put back to `alive = true` between blasts — `takeDamage` kills it and
   `hittablesAgainst` then leaves it out, which reads exactly like broken falloff.
   "0 damage" at a plausible range is usually the LOS ray finding a wall: sample the
   same distance in all four compass directions before believing it.
 - **A whole BLAST is one synchronous evaluate, and `blastAt` is the door.**
   `g.grenades.blastAt(at, team, by, {radius, inner, damage, kind, power})` runs
-  the damage and the six drawn layers; `g.grenades.drawBlast(at, power)` runs the
-  picture alone and hands back the `BlastGround` the ground probe found. Neither
+  the damage and the six drawn layers (through `onBlast` to `g.grenadeFx`);
+  `g.grenades.drawBlast(at, power)` runs the picture alone and hands back the
+  `BlastGround` the ground probe found — its normal is `src/math`'s. Neither
   fires the light, the sound, the shake or the two Havok layers — those are
   `Game`'s, so a script that wants the whole thing calls
   `g.onExplosion(at, power, g.grenades.probeGround(at))` after it. Step it with

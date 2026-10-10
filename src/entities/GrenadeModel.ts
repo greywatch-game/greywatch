@@ -10,9 +10,10 @@
  * `drawnMesh` (BABYLON_EXIT.md X1.3).
  *
  * It is a file of its own for the reason `SoldierModel` is one: two things
- * build a grenade now. `GrenadeSystem` builds the pool it SIMULATES, and
- * `net/NetGrenades` builds the ones a client is only DRAWING, from positions
- * the authority sent. A grenade somebody else threw has to be the same object
+ * build a grenade now, both through `GrenadeFx`'s `GrenadeBody`: `GrenadeFx`
+ * builds the pool the local SIMULATION is drawn in, and `net/NetGrenades`
+ * builds the ones a client is only DRAWING, from positions the authority
+ * sent. A grenade somebody else threw has to be the same object
  * on screen as the one you threw yourself — same size, same ink, same pip
  * blinking at the same rate — and the way that stays true is one description
  * of it rather than two that agree on the day they were written.

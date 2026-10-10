@@ -3,7 +3,7 @@
  * the tube on the player's shoulder and the rocket that leaves it.
  * Returns `WeaponParts` exactly as the six guns do, so `ViewModel` carries it
  * with nothing re-tuned, plus `buildRocket` for the body `AntiTankSystem`
- * flies.
+ * flies and `AntiTankFx` draws.
  * Invariants: the launcher is assembled at the origin with the root at
  * identity and merged before it is moved — `weaponKit.ts` owns that contract
  * and the primitives. The rocket is DRESSING: no `solid` flag, no `WorldBox`,

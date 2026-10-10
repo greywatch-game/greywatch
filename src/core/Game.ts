@@ -148,9 +148,10 @@ import {
   type VehicleOrders,
 } from "../systems/VehicleSystem";
 import { GrassSystem } from "../systems/GrassSystem";
-import { BlastDebrisSystem } from "../systems/BlastDebrisSystem";
+import { BlastDebrisSystem, type DebrisGround } from "../systems/BlastDebrisSystem";
 import { DebrisSystem } from "../systems/DebrisSystem";
 import { GlassSystem } from "../systems/GlassSystem";
+import { AntiTankFx } from "../systems/AntiTankFx";
 import { AntiTankSystem } from "../systems/AntiTankSystem";
 import {
   crewLost,
@@ -161,6 +162,7 @@ import {
   type HullRules,
 } from "../systems/hullRules";
 import { settleKill, type KillLedger } from "../systems/killRules";
+import { GrenadeFx } from "../systems/GrenadeFx";
 import { GrenadeSystem, type BlastGround } from "../systems/GrenadeSystem";
 import { PhysicsWorld, type HavokInstance } from "../systems/PhysicsWorld";
 import { RagdollSystem } from "../systems/RagdollSystem";
@@ -481,6 +483,13 @@ export class Game {
   /** Thrown grenades — the one thing on the map that is not hitscan. */
   private grenades: GrenadeSystem;
   /**
+   * The grenades' PICTURE: every flight's body, a fire's flames and a blast's
+   * billows. Reads `grenades`' pools after each `update` and is handed the
+   * rest by its events (`onBlast`, `onIgnited`, `onBurntOut`), and never
+   * writes the simulation — the `CombatFx` split one system over.
+   */
+  private grenadeFx: GrenadeFx;
+  /**
    * The anti-tank kit in the world: rockets in the air, mines on the ground.
    *
    * Offline only, and on a map with armour only — the same gate the hulls
@@ -490,6 +499,8 @@ export class Game {
    * frame over two empty loops.
    */
   private antiTank: AntiTankSystem;
+  /** The AT kit's PICTURE — the rockets and the plates, posed off `antiTank`'s pools. */
+  private antiTankFx: AntiTankFx;
   /** The only physics engine in the game, and the two things that use it. */
   private physics: PhysicsWorld;
   /** Corpses under physics. */
@@ -912,6 +923,16 @@ export class Game {
   private readonly fireLights = new Map<number, RoomLight>();
   /** Scratch for a fire light's position, lifted off the floor it burns on. */
   private readonly fireLightAt = new Vector3();
+  /**
+   * A fire's floor, copied into Babylon's vector for the readers still on its
+   * math — the noise, the scorch, the light and the held-open sound. Scratch,
+   * read inside the call.
+   */
+  private readonly fireAt = new Vector3();
+  /** A blast's point, copied for `onExplosion`'s readers on the same terms. */
+  private readonly blastPoint = new Vector3();
+  /** What a blast went off on, copied for `BlastDebrisSystem` — see `debrisGroundOf`. */
+  private readonly debrisGround: DebrisGround = { surface: "hard", normal: new Vector3(0, 1, 0) };
   /**
    * What a burning molotov SOUNDS like: the burning drum's graph with the
    * three terms `CONFIG.molotov.sound` restates. Built once — `Sfx.ambience`
@@ -1565,7 +1586,13 @@ export class Game {
     // each other; this line is where the two meet.
     this.combat.onRound = (muzzle, to, kind, normal, mark) =>
       this.combatFx.drawRound(muzzle, to, kind, normal, mark);
-    this.grenades = new GrenadeSystem(this.scene, this.mats);
+    this.grenades = new GrenadeSystem();
+    this.grenadeFx = new GrenadeFx(this.scene, this.mats, this.grenades);
+    // The one event a blast's picture needs, wired here beside `onRound` for
+    // that line's reason: the simulation probes the ground and draws nothing,
+    // the view puts the six billowed layers up. Raised by every resolved
+    // blast and by the netplay `explode` event's `drawBlast` alike.
+    this.grenades.onBlast = (at, power, ground) => this.grenadeFx.blast(at, power, ground);
     // The one physics engine, and its three clients. `PhysicsWorld` is INJECTED
     // into each rather than imported by any — see its header, and the
     // `BattleSystem`←`CombatSystem` precedent in CLAUDE.md. It is stood up
@@ -1612,7 +1639,8 @@ export class Game {
     // nothing else: what a detonation is WORTH is `ordnanceEffect`'s and
     // spending it is `resolveOrdnance`'s, through the same `blastAt` the tank
     // shell already goes through.
-    this.antiTank = new AntiTankSystem(this.scene, this.mats);
+    this.antiTank = new AntiTankSystem();
+    this.antiTankFx = new AntiTankFx(this.scene, this.mats, this.antiTank);
     this.aimAssist = new AimAssistSystem();
     this.battle = new BattleSystem(this.scene, this.mats, this.combat, this.random);
     this.conquest = new ConquestSystem(this.random);
@@ -1940,11 +1968,18 @@ export class Game {
     // Raised on both sides of the wire — offline by the bottle breaking, in a
     // match by the authority's `blaze` event through `drawFire` — so none of
     // this is gated on `net` the way a blast's `onExploded` is.
+    //
+    // The flames and the ignition's billows first, because that is where they
+    // always were: inside the ignition, ahead of the event. `at` is
+    // `src/math`'s and every reader after the view is still Babylon's, so one
+    // COPY serves them all.
     this.grenades.onIgnited = (id, at, ground) => {
       const lc = CONFIG.molotov.light;
-      this.sfx.molotov(at);
-      this.blastDebris.scorchAt(at, CONFIG.molotov.scorch, ground);
-      this.fireLightAt.copyFrom(at);
+      this.grenadeFx.ignite(id, at);
+      const fire = toBabylon(at, this.fireAt);
+      this.sfx.molotov(fire);
+      this.blastDebris.scorchAt(fire, CONFIG.molotov.scorch, this.debrisGroundOf(ground));
+      this.fireLightAt.copyFrom(fire);
       this.fireLightAt.y += lc.y;
       // A FIXTURE, in `LightingSystem`'s own words for this case: it stands
       // still for the whole of its life, so its shadows are baked once like a
@@ -1957,6 +1992,7 @@ export class Game {
       );
     };
     this.grenades.onBurntOut = (id) => {
+      this.grenadeFx.burntOut(id);
       const light = this.fireLights.get(id);
       if (light) {
         this.lighting.remove(light);
@@ -4500,10 +4536,12 @@ export class Game {
     // over terrain that no longer exists — and, in the editor, in the middle
     // of a rebuild.
     this.grenades.reset();
+    this.grenadeFx.reset();
     // …and everything the AT kit has left lying about. A mine that outlived
     // its map would be waiting under a street that no longer exists, which is
     // the same failure a live fuse would be.
     this.antiTank.reset();
+    this.antiTankFx.reset();
     // The flag markers are geometry hung off the old map's terrain. The editor
     // draws proxies of its own and would double every ring; a round rebuilds
     // them. Either way they cannot survive the map they were placed on.
@@ -4555,6 +4593,8 @@ export class Game {
     this.combatFx.setWorld(null);
     this.grenades.setWorld(null);
     this.grenades.setTerrain(new TerrainField());
+    this.grenadeFx.setWorld(null);
+    this.grenadeFx.setTerrain(new TerrainField());
     this.antiTank.setWorld(null);
     this.antiTank.setTerrain(new TerrainField());
     this.aimAssist.setWorld(null);
@@ -4769,6 +4809,7 @@ export class Game {
     this.combat.setWorld(map.rays);
     this.combatFx.setWorld(map.rays);
     this.grenades.setWorld(map.rays);
+    this.grenadeFx.setWorld(map.rays);
     // Whether a molotov that breaks on THIS screen lights anything: in a match
     // the fire is the authority's and arrives as a `blaze` event, so the
     // thrower's own local bottle flies and breaks and lights nothing — the
@@ -4782,7 +4823,8 @@ export class Game {
     // proxies — the same terrain the player's ground probe falls back to, and
     // the map's own mist and moon, which are what colour the blast dust.
     this.grenades.setTerrain(map.terrain);
-    this.grenades.setEnvironment(environment);
+    this.grenadeFx.setTerrain(map.terrain);
+    this.grenadeFx.setEnvironment(environment);
     // The same backstop under a rocket's flight, and for the same reason. The
     // AT kit has no environment of its own to be given: everything it draws
     // that is weather-dependent is drawn by the blast, which is the grenades'.
@@ -5359,7 +5401,7 @@ export class Game {
     // flight, for this frame.
     this.deathCam.warm(vantage);
     this.combatFx.warm(true);
-    this.grenades.warm(true);
+    this.grenadeFx.warm(true);
     this.blastDebris.warm(true);
     this.shadows.warmBlob(true, this.player);
     this.player.warmView(true);
@@ -5375,7 +5417,7 @@ export class Game {
     this.culling.setWarm(false);
     this.deathCam.warm(null);
     this.combatFx.warm(false);
-    this.grenades.warm(false);
+    this.grenadeFx.warm(false);
     this.blastDebris.warm(false);
     this.shadows.warmBlob(false, this.player);
     this.player.warmView(false);
@@ -8441,6 +8483,7 @@ export class Game {
     this.prof.end(P.combat);
     this.prof.begin(P.grenades);
     this.grenades.update(dt);
+    this.grenadeFx.update(dt);
     this.pushFires();
     this.prof.end(P.grenades);
   }
@@ -8460,11 +8503,15 @@ export class Game {
   }
 
   /** `pushFires`' visitor, bound once so a frame with a fire in it mints no closure. */
-  private readonly pushFire = (id: number, at: Vector3, strength: number): void => {
+  private readonly pushFire = (id: number, at: Vector3Like, strength: number): void => {
     const light = this.fireLights.get(id);
     if (light) light.baseIntensity = CONFIG.molotov.light.intensity * strength;
-    if (strength > 0.05) this.sfx.ambience(fireSoundKey(id), at, this.fireSound);
-    else this.sfx.ambienceOff(fireSoundKey(id));
+    // A COPY into Babylon's vector: the fire's floor is `src/math`'s.
+    if (strength > 0.05) {
+      this.sfx.ambience(fireSoundKey(id), toBabylon(at, this.fireAt), this.fireSound);
+    } else {
+      this.sfx.ambienceOff(fireSoundKey(id));
+    }
   };
 
   /**
@@ -8494,6 +8541,7 @@ export class Game {
   private stepAftermath(dt: number): void {
     this.prof.begin(P.antiTank);
     this.antiTank.update(dt);
+    this.antiTankFx.update();
     this.prof.end(P.antiTank);
     this.prof.begin(P.physics);
     this.physics.update(dt);
@@ -9854,6 +9902,18 @@ export class Game {
   }
 
   /**
+   * What a blast went off on, COPIED for `BlastDebrisSystem`, which is still
+   * on Babylon's math (`DebrisGround`) — the simulation's normal is
+   * `src/math`'s and a Babylon static would read `_x` off it. One scratch,
+   * read inside the call that asked for it.
+   */
+  private debrisGroundOf(ground: BlastGround): DebrisGround {
+    this.debrisGround.surface = ground.surface;
+    toBabylon(ground.normal, this.debrisGround.normal);
+    return this.debrisGround;
+  }
+
+  /**
    * A grenade went off. The light, the noise and the concussion — none of
    * which the grenade system may reach on its own, which is why they arrive
    * here as one event with a position on it.
@@ -9878,7 +9938,12 @@ export class Game {
    * a seat in a hull gets, because the other two are `CameraSystem`'s and that
    * camera is not running while the hull's is.
    */
-  private onExplosion(at: Vector3, power: number, ground: BlastGround): void {
+  private onExplosion(point: Vector3Like, power: number, sim: BlastGround): void {
+    // The two COPIES this handler's readers need: they are all still on
+    // Babylon's math, and the blast's point and ground normal are `src/math`'s
+    // (`GrenadeSystem`). The light clones what it keeps.
+    const at = toBabylon(point, this.blastPoint);
+    const ground = this.debrisGroundOf(sim);
     const lc = CONFIG.lighting;
     // The light, scaled by the same `power` the picture is: RANGE whole, the
     // INTENSITY and the LIFE only by their shares — see

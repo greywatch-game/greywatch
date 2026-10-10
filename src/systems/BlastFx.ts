@@ -3,10 +3,11 @@
  * billows in one material.
  * Owns: the blast slots (one thin-instanced mesh each), the shared mesh the
  * sparks and the burning fragments' trails are drawn in, every billow's
- * motion, and the dust's colour. `GrenadeSystem` owns it and calls it; the
- * server never builds one (`GrenadeOptions.dust`), because nothing here is a
- * rule — where a blast is and whom it hurts are decided before this is asked
- * to draw it.
+ * motion, and the dust's colour. `GrenadeFx` owns it and calls it, on the
+ * simulation's `onBlast` and `onIgnited`; the server never builds one,
+ * because nothing here is a rule — where a blast is and whom it hurts are
+ * decided before this is asked to draw it. Its points and normals are
+ * `Vector3Like`, read through their FIELDS: the simulation's are `src/math`'s.
  * Invariants: nothing allocates after construction — a billow is a record in
  * a fixed pool and a frame is property writes into three typed arrays per
  * mesh. `power` scales sizes, reaches, speeds and COUNTS and never a time
@@ -41,13 +42,14 @@ import {
   type Scene,
 } from "@babylonjs/core";
 import { CONFIG } from "../config";
+import type { Vector3Like } from "../math";
 import type { BlastMaterial } from "../shaders/BlastShader";
 import type { CelMaterialFactory } from "../shaders/CelShader";
 import type { EnvironmentSpec } from "../world/environment";
 
 /** What the blast went off on, as `GrenadeSystem.probeGround` answers it. */
 export interface BlastSurface {
-  normal: Vector3;
+  normal: Vector3Like;
 }
 
 /**
@@ -391,6 +393,8 @@ const _q = new Quaternion();
 const _t1 = new Vector3();
 const _t2 = new Vector3();
 const _up = new Vector3(0, 1, 0);
+/** The surge's ground normal, copied off whichever library handed it in. */
+const _normal = new Vector3();
 
 export class BlastFx {
   private readonly slots: Slot[] = [];
@@ -449,7 +453,7 @@ export class BlastFx {
   }
 
   /** A frag's blast, or a shell's, at `power` of a frag. */
-  blast(at: Vector3, power: number, ground: BlastSurface): void {
+  blast(at: Vector3Like, power: number, ground: BlastSurface): void {
     const slot = this.claim();
     this.flash(slot, at, power);
     this.fireball(slot, at, power);
@@ -465,7 +469,7 @@ export class BlastFx {
    * column at `smoke`, and the sparks — no surge (petrol going up is a whoosh,
    * not a pressure wave) and no burning fragments (there is no metal).
    */
-  ignite(at: Vector3, fire: number, smoke: number): void {
+  ignite(at: Vector3Like, fire: number, smoke: number): void {
     const slot = this.claim();
     this.flash(slot, at, fire);
     this.fireball(slot, at, fire);
@@ -643,7 +647,7 @@ export class BlastFx {
    * The core: one billow, already large, white to its rim and torn apart
    * inside `flash.life`.
    */
-  private flash(slot: Slot, at: Vector3, power: number): void {
+  private flash(slot: Slot, at: Vector3Like, power: number): void {
     const fl = CONFIG.grenade.flash;
     const b = this.take(slot);
     if (!b) return;
@@ -664,7 +668,7 @@ export class BlastFx {
   }
 
   /** The cluster: out along the golden angle, fire, then its own smoke. */
-  private fireball(slot: Slot, at: Vector3, power: number): void {
+  private fireball(slot: Slot, at: Vector3Like, power: number): void {
     const fb = CONFIG.grenade.fireball;
     const n = fb.billows;
     const spin = Math.random() * Math.PI * 2;
@@ -705,7 +709,7 @@ export class BlastFx {
   }
 
   /** The column: thrown straight up, stacking as the drag catches each one. */
-  private column(slot: Slot, at: Vector3, power: number): void {
+  private column(slot: Slot, at: Vector3Like, power: number): void {
     const c = CONFIG.grenade.column;
     const n = Math.max(1, Math.round(c.billows * power));
     for (let j = 0; j < n; j++) {
@@ -741,8 +745,11 @@ export class BlastFx {
   }
 
   /** The surge: a ring of low dust rolled out flat to the ground. */
-  private surge(slot: Slot, at: Vector3, power: number, normal: Vector3): void {
+  private surge(slot: Slot, at: Vector3Like, power: number, ground: Vector3Like): void {
     const s = CONFIG.grenade.surge;
+    // Babylon's statics below read `_x` off a vector, and the simulation's
+    // ground normal is `src/math`'s: a copy, never a cast.
+    const normal = _normal.copyFromFloats(ground.x, ground.y, ground.z);
     const n = Math.max(3, Math.round(s.billows * power));
     // Two tangents of the ground, so the ring lies on a slope or a wall as
     // well as on the level.
@@ -791,7 +798,7 @@ export class BlastFx {
   }
 
   /** Hot metal, as strokes on an even-ish spread. */
-  private sparks(at: Vector3, power: number): void {
+  private sparks(at: Vector3Like, power: number): void {
     const sp = CONFIG.grenade.sparks;
     const n = Math.round(sp.count * power);
     for (let j = 0; j < n; j++) {
@@ -820,7 +827,7 @@ export class BlastFx {
   }
 
   /** The burning fragments: thrown out and up, laying their trails in `update`. */
-  private trails(at: Vector3, power: number): void {
+  private trails(at: Vector3Like, power: number): void {
     const tr = CONFIG.grenade.trails;
     const n = Math.round(tr.streamers * power);
     const spin = Math.random() * Math.PI * 2;

@@ -859,6 +859,12 @@ src/
                         #   fuse, the molotov's fire, and the ground probe
                         #   under a blast. `blastAt` is the one blast in the
                         #   game and `drawBlast` the one place one is drawn
+                        #   (it raises `onBlast`). Babylon-free; positions are
+                        #   plain `pos`/`at` fields
+    GrenadeFx.ts        # The grenades' PICTURE: a `GrenadeBody` per slot
+                        #   (tumble, pip), a fire's flames on their own floor
+                        #   probe, and the BlastFx. Reads `flights`/`fireSlots`,
+                        #   fed `onBlast`/`onIgnited`/`onBurntOut`. Client only
     BlastFx.ts          # Six of a blast's eight layers, DRAWN: flash,
                         #   fireball, surge, sparks, burning trails and column,
                         #   every one a billow in BlastShader. One thin-instanced
@@ -868,7 +874,13 @@ src/
                         #   clocks and the hull trigger. Owns no blast and has
                         #   never heard of a tank — it asks `hullNear` and
                         #   announces `onDetonated`, and Game spends both.
-                        #   `launchToward` is a bot's rocket at a POINT
+                        #   `launchToward` is a bot's rocket at a POINT.
+                        #   Babylon-free; positions are plain `pos` fields
+    AntiTankFx.ts       # The AT kit's PICTURE: a `RocketBody` per rocket slot
+                        #   (faced down its flight, motor guttering off metres
+                        #   flown) and a `MineBody` per mine (lamp off the arm
+                        #   clock), posed off `rocketSlots`/`mineSlots`. Client
+                        #   only
     GlassSystem.ts      # Breakable panes: the segment sweep and the break —
                         #   the visual, the collider, and the nav graph with
                         #   the fields over it, all on the frame it happens.
@@ -1781,8 +1793,9 @@ src/
                       #   The client's stand-in for BattleSystem: same job on
                       #   screen, none of the job underneath
     NetGrenades.ts    #   Everybody else's grenades in the air, interpolated on
-                      #   the same clock as the bodies. The thrower's own is
-                      #   skipped — they are watching their local copy
+                      #   the same clock as the bodies, drawn by GrenadeFx's
+                      #   own `GrenadeBody`. The thrower's own is skipped —
+                      #   they are watching their local copy
     NetVehicles.ts    #   Somebody else's armour: one interpolation buffer per
                       #   HARDSTANDING, feeding Vehicle.updateRemote. Owns no hull
                       #   — the fleet is VehicleSystem's on both sides — and the
@@ -1790,7 +1803,8 @@ src/
                       #   they are simulating it
     NetOrdnance.ts    #   The AT kit off the wire: rockets interpolated like
                       #   grenades, mines applied whole from the versioned
-                      #   `mines` table. The shooter's own rocket is skipped;
+                      #   `mines` table, drawn by AntiTankFx's `RocketBody` and
+                      #   `MineBody`. The shooter's own rocket is skipped;
                       #   their own mine is NOT, because it is never predicted
     lobby.ts          #   GET /matches for ONE region. The only part of
                       #   multiplayer that is not the WebSocket. Times its own
