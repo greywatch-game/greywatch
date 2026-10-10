@@ -1315,7 +1315,9 @@ export class MapBuilder {
     size: number,
   ): Pick<GameMap, "nav" | "cover" | "obstacles" | "rays" | "collidables"> {
     const { layout, terrain, colliders } = run;
-    if (import.meta.env.DEV) this.assertSweepOrder(colliders);
+    if (import.meta.env.DEV) {
+      assertSweepOrder(colliders, this.boxes.length, this.boxGroups, this.clusterMeshes);
+    }
     // Navigation is derived from the finished collider set, then a flow field
     // is precomputed per objective: five flags plus both home spawns. The map
     // is static, so this is the only time any of it is computed.
@@ -1358,39 +1360,6 @@ export class MapBuilder {
     // apart from `rays`. No collider mesh is walked by anything any more.
     const collidables = new CollisionField(rays);
     return { nav, cover, obstacles, rays, collidables };
-  }
-
-  /**
-   * DEV: the premise `RayWorld`'s sweep RANK rests on, checked against the
-   * meshes this build really made — every collider mesh no cluster is came
-   * before every cluster mesh, there is one per box no group names, and the
-   * clusters were made in `boxGroups` order. A body's sweep breaks ties in that
-   * order (`RayWorld`'s constructor), and the rank re-derives it from
-   * `boxGroups` alone so the authority can too; a builder that made a collider
-   * after the scatter clusters would leave the two silently disagreeing about
-   * which way a wedged hull slides.
-   */
-  private assertSweepOrder(colliders: readonly Mesh[]): void {
-    let grouped = 0;
-    for (const g of this.boxGroups) grouped += g.length;
-    const singles = this.boxes.length - grouped;
-    let seen = 0;
-    let clusters = 0;
-    for (const mesh of colliders) {
-      if (!mesh.checkCollisions) continue;
-      if (this.clusterMeshes.has(mesh)) {
-        clusters++;
-      } else if (clusters > 0) {
-        throw new Error(`MapBuilder: collider ${mesh.name} was made after the scatter clusters`);
-      }
-      seen++;
-    }
-    if (clusters !== this.boxGroups.length || seen !== singles + clusters) {
-      throw new Error(
-        `MapBuilder: ${seen} collider meshes (${clusters} clusters) for ${singles} ` +
-          `single boxes and ${this.boxGroups.length} groups`,
-      );
-    }
   }
 
   /** The valley floor plus the rim that bounds play. */
@@ -2702,4 +2671,43 @@ function rotateY(x: number, y: number, z: number, angle: number): Vector3 {
   const c = Math.cos(angle);
   const s = Math.sin(angle);
   return new Vector3(x * c + z * s, y, -x * s + z * c);
+}
+
+/**
+ * DEV: the premise `RayWorld`'s sweep RANK rests on, checked against the
+ * meshes a build really made — every collider mesh no cluster is came before
+ * every cluster mesh, there is one per box no group names, and there is one
+ * cluster mesh per group. A body's sweep breaks ties in that order
+ * (`RayWorld`'s constructor), and the rank re-derives it from `boxGroups` alone
+ * so the authority can too; a builder that made a collider after the scatter
+ * clusters would leave the two silently disagreeing about which way a wedged
+ * hull slides. A module function rather than a method so a production bundle
+ * drops it whole.
+ */
+function assertSweepOrder(
+  colliders: readonly Mesh[],
+  boxes: number,
+  boxGroups: readonly (readonly number[])[],
+  clusterMeshes: ReadonlySet<Mesh>,
+): void {
+  let grouped = 0;
+  for (const g of boxGroups) grouped += g.length;
+  const singles = boxes - grouped;
+  let seen = 0;
+  let clusters = 0;
+  for (const mesh of colliders) {
+    if (!mesh.checkCollisions) continue;
+    if (clusterMeshes.has(mesh)) {
+      clusters++;
+    } else if (clusters > 0) {
+      throw new Error(`MapBuilder: collider ${mesh.name} was made after the scatter clusters`);
+    }
+    seen++;
+  }
+  if (clusters !== boxGroups.length || seen !== singles + clusters) {
+    throw new Error(
+      `MapBuilder: ${seen} collider meshes (${clusters} clusters) for ${singles} ` +
+        `single boxes and ${boxGroups.length} groups`,
+    );
+  }
 }
