@@ -84,6 +84,7 @@ import {
   type MolotovMeshes,
 } from "../entities/MolotovModel";
 import type { ThrowableId } from "../entities/throwables";
+import { Vector3 as MathVector3, type Vector3Like } from "../math";
 import { babylonRayHit } from "../math/babylon";
 import type { CelMaterialFactory } from "../shaders/CelShader";
 import type { EnvironmentSpec } from "../world/environment";
@@ -1048,7 +1049,7 @@ export class GrenadeSystem {
   ): void {
     for (const target of this.hittablesFor(team)) {
       if (target.invulnerable) continue;
-      const dist = Vector3.Distance(at, target.center);
+      const dist = MathVector3.Distance(at, target.center);
       if (dist > spec.radius) continue;
       if (!this.visible(at, target.center)) continue;
       const falloff =
@@ -1128,12 +1129,15 @@ export class GrenadeSystem {
    * which is backwards from how it reads and is the whole of why this is not
    * one line — see `LOS_SKIP`.
    */
-  private visible(from: Vector3, to: Vector3): boolean {
+  private visible(from: Vector3Like, to: Vector3Like): boolean {
     if (!this.rays) return true;
-    from.subtractToRef(to, _los);
+    // On the FIELDS of both ends, in Babylon's `subtractToRef`/`addInPlace`
+    // order: the victim's centre may be either library's vector, and a
+    // Babylon method handed one of ours reads `_x` off it.
+    _los.copyFromFloats(from.x - to.x, from.y - to.y, from.z - to.z);
     const len = _los.length();
     if (len <= LOS_SKIP) return true;
-    _los.scaleInPlace((len - LOS_SKIP) / len).addInPlace(to);
+    _los.scaleInPlace((len - LOS_SKIP) / len).addInPlaceFromFloats(to.x, to.y, to.z);
     return !this.rays.blocked(to, _los);
   }
 

@@ -35,6 +35,7 @@ that reads those two:
 | `entities/vehicleKinds.ts` | the ONE place a kind becomes a name, a spec and a model, and the one place the default (a tank) is written down |
 | `entities/vehicleRig.ts` | what every vehicle's mesh IS: the joints `Vehicle` writes, the three extents the physics needs off the drawing, and the three closures a model hands back |
 | `entities/TankModel.ts`, `entities/TruckModel.ts`, `entities/HeliModel.ts` | the ART, one file per kind — the boxes, the running gear, the whips and the guns as JOINTS over them, and the charred repaint a wreck takes |
+| `entities/hullSeats.ts` | the two chairs (`CrewSeat`: `DRIVER`, `GUNNER`), the order they fill in (`SEATS`), and `chooseSeat`, the one boarding rule — no vehicle, no import, so the authority's roster can name a seat without pulling in a hull |
 | `entities/Vehicle.ts` | one hull of any kind: its collider, its drive, its turret, its two guns' clocks and angles, which of its two seats are filled, its health, and the ground half of its lean |
 | `entities/HullFlex.ts` | what the hull's own mass does to the drawing: the sprung body's three springs and the antennae |
 | `entities/FlightModel.ts` | the rotor, on a kind that states `flight`: the spool, the disc's attitude, the cyclic, thrust and collective, and the attitude a hull on the wire is drawn at |
@@ -1774,7 +1775,7 @@ pair of booleans indexed by `DRIVER` (0) and `GUNNER` (1), and the split is:
 | `GUNNER` | **no** | the CUPOLA machine gun, laid by walking its ring to the same camera's order | the same chase camera |
 
 **The first person aboard drives**, and that rule is stated in exactly one
-place — `chooseSeat` in `entities/Vehicle.ts`, which `Game.offeredSeat` asks to
+place — `chooseSeat` in `entities/hullSeats.ts`, which `Game.offeredSeat` asks to
 word the prompt and `HeadlessGame.seat` asks to grant it, so the chair a prompt
 names is the chair the server seats you in. It takes who holds each chair
 (`SeatHolder`: open, a bot, a person — each process answering from its own

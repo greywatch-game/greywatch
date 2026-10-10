@@ -66,6 +66,7 @@ import {
   type WebGPUEngine,
 } from "@babylonjs/core";
 import { CONFIG } from "../config";
+import type { Vector3Like } from "../math";
 import { toBabylon } from "../math/babylon";
 import {
   CelMaterialFactory,
@@ -100,6 +101,7 @@ import {
 } from "../net/protocol";
 import { type FinishId } from "../entities/finishes";
 import { Player } from "../entities/Player";
+import type { DriveInput, GunInput, Vehicle } from "../entities/Vehicle";
 import {
   DRIVER,
   GUNNER,
@@ -107,10 +109,7 @@ import {
   chooseSeat,
   type SeatHolder,
   type CrewSeat,
-  type DriveInput,
-  type GunInput,
-  type Vehicle,
-} from "../entities/Vehicle";
+} from "../entities/hullSeats";
 import { resolveOrdnance, type EquipmentId } from "../entities/equipment";
 import { type SightId } from "../entities/sights";
 import {
@@ -9383,7 +9382,7 @@ export class Game {
   private onPlayerDamaged(
     amount: number,
     died: boolean,
-    from?: Vector3,
+    from?: Vector3Like,
     kind: DamageKind = "bullet",
   ): void {
     if (this.state !== "playing") return;
@@ -9471,7 +9470,7 @@ export class Game {
    * nothing breaks quietly on the day one of them stops.
    */
   private enterDying(
-    from: Vector3 | undefined,
+    from: Vector3Like | undefined,
     amount: number,
     kind: DamageKind,
     // Annotated, because `CONFIG` is `as const` and the bare default would give

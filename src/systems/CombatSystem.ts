@@ -50,6 +50,7 @@ import {
   Vector3,
 } from "@babylonjs/core";
 import { CONFIG } from "../config";
+import type { Vector3Like, Vector3Ref } from "../math";
 import { babylonRayHit } from "../math/babylon";
 import type { CelMaterialFactory } from "../shaders/CelShader";
 import type { RayHull, RayWorld } from "../world/RayWorld";
@@ -90,9 +91,18 @@ import { BulletMarks } from "./BulletMarks";
  */
 export type DamageKind = "bullet" | "blast" | "shell" | "crush" | "fire";
 
-/** Anything a hitscan shot can damage. */
+/**
+ * Anything a hitscan shot can damage.
+ *
+ * **Its vectors are either library's** (`BABYLON_EXIT.md` X2.2): `center` and
+ * `eyePos` are `Vector3Ref` — read through their fields, and written through
+ * `set`/`copyFromFloats` by the one thing that moves them from outside,
+ * `server/lagComp.ts`'s rewind — so nothing that reaches a target through
+ * this interface may hand either to a Babylon method, which would read `_x`
+ * off one of ours and write NaN. The types refuse it.
+ */
 export interface Hittable {
-  center: Vector3;
+  center: Vector3Ref;
   hitRadius: number;
   /**
    * This target is a HULL, and so is answered by its collider box rather than
@@ -105,21 +115,39 @@ export interface Hittable {
    */
   readonly armoured?: boolean;
   /**
+   * This target is a `Bot`, and nothing else may declare it — `isBotVictim`
+   * in `killRules.ts` narrows on it to the class.
+   *
+   * A flag rather than an `instanceof` for `armoured`'s reason one level
+   * down: the one reader is `settleKill`, which both simulations reach, and
+   * an `instanceof` is a VALUE import of `Bot` — which pulled the whole
+   * soldier rig and the scene behind it into a module that only books a kill
+   * (`BABYLON_EXIT.md` X2.2). Absent on everything that is not one.
+   */
+  readonly isBot?: true;
+  /**
    * The eye, which is also the head — `CONFIG.combat.headRadius` about this
    * point is the head zone. It lives here rather than only on `Combatant`
    * because the head test is part of resolving a shot, and everything that
    * reaches this interface already had one: `Player` and `Bot` both declare
    * it, and every list `fire` is given is built out of `Combatant`s.
    */
-  eyePos: Vector3;
+  eyePos: Vector3Ref;
   invulnerable?: boolean;
   /**
    * `from` is where the shot started, for whoever wants to face the shooter;
    * `kind` is what delivered it, for whoever answers differently to each. A
    * target that ignores either may simply not declare it — a method with fewer
    * parameters satisfies this one.
+   *
+   * **A PROPERTY, not a method signature, and that is the point**: a method's
+   * parameters are checked bivariantly, so an implementer declaring `from` as
+   * Babylon's `Vector3` — and calling `copyFrom(from)` on it — would compile
+   * against `Vector3Like` and write NaN the day a caller hands it one of ours.
+   * As a property `strictFunctionTypes` refuses that implementer; take the
+   * coordinates with `copyFromFloats(from.x, from.y, from.z)`.
    */
-  takeDamage(amount: number, from?: Vector3, kind?: DamageKind): boolean;
+  takeDamage: (amount: number, from?: Vector3Like, kind?: DamageKind) => boolean;
 }
 
 /** Outcome of one shot: who it hit, whether that killed them, and if it stopped on geometry. */
@@ -565,7 +593,13 @@ export class CombatSystem {
           // nothing on the common path pays for it. `NEAR_POINT` is module
           // scratch and is handed out rather than copied, so the handler must
           // read it now — which the one handler does.
-          target.center.subtractToRef(origin, SCRATCH);
+          // On the centre's FIELDS, because a target's centre may be either
+          // library's vector — Babylon's `subtractToRef` reads `_x` off it.
+          SCRATCH.copyFromFloats(
+            target.center.x - origin.x,
+            target.center.y - origin.y,
+            target.center.z - origin.z,
+          );
           dir.scaleToRef(Vector3.Dot(SCRATCH, dir), NEAR_POINT);
           NEAR_POINT.addInPlace(origin);
           this.onNearMiss(target, origin, NEAR_POINT);
@@ -988,15 +1022,20 @@ function falloffDamage(damage: number, dist: number, o: ShotOptions): number {
 
 /** Ray vs sphere: returns entry distance along the ray, or null on miss. */
 function raySphere(
-  origin: Vector3,
-  dir: Vector3,
-  center: Vector3,
+  origin: Vector3Like,
+  dir: Vector3Like,
+  center: Vector3Like,
   radius: number,
 ): number | null {
-  const oc = center.subtract(origin);
-  const t = Vector3.Dot(oc, dir);
+  // Babylon's `center.subtract(origin)`, `Dot` and `lengthSquared`, written
+  // out on the fields in their own order — a target's centre may be either
+  // library's vector, and this way neither is handed to the other's methods.
+  const ocx = center.x - origin.x;
+  const ocy = center.y - origin.y;
+  const ocz = center.z - origin.z;
+  const t = ocx * dir.x + ocy * dir.y + ocz * dir.z;
   if (t < 0) return null;
-  const d2 = oc.lengthSquared() - t * t;
+  const d2 = ocx * ocx + ocy * ocy + ocz * ocz - t * t;
   if (d2 > radius * radius) return null;
   return t - Math.sqrt(Math.max(radius * radius - d2, 0));
 }

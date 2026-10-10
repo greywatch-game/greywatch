@@ -39,6 +39,7 @@ import { Scene, Vector3 } from "@babylonjs/core";
 // map, and the null engine is not in the package barrel.
 import { NullEngine } from "@babylonjs/core/Engines/nullEngine.js";
 import { CONFIG } from "../src/config";
+import type { Vector3Like } from "../src/math";
 import { Bot } from "../src/entities/Bot";
 import type { Combatant, Team } from "../src/entities/Combatant";
 import type { WeaponSetup } from "../src/entities/weapons";
@@ -82,15 +83,14 @@ import {
   type RemoteHull,
   type VehicleOrders,
 } from "../src/systems/VehicleSystem";
+import { Vehicle, type GunAngles } from "../src/entities/Vehicle";
 import {
   DRIVER,
   GUNNER,
-  Vehicle,
   chooseSeat,
   type CrewSeat,
-  type GunAngles,
   type SeatHolder,
-} from "../src/entities/Vehicle";
+} from "../src/entities/hullSeats";
 import { resolveOrdnance } from "../src/entities/equipment";
 import { CelMaterialFactory } from "../src/shaders/CelShader";
 import type { GameMap } from "../src/world/MapBuilder";
@@ -1567,7 +1567,7 @@ export class HeadlessGame {
   onPlayerDamaged: (
     player: NetPlayer,
     amount: number,
-    from: Vector3 | undefined,
+    from: Vector3Like | undefined,
     killed: boolean,
     kind: DamageKind,
   ) => void = () => {};

@@ -54,7 +54,7 @@ import {
   throwableCarried,
   type ThrowableId,
 } from "../src/entities/throwables";
-import { DRIVER, GUNNER, type CrewSeat } from "../src/entities/Vehicle";
+import { DRIVER, GUNNER, type CrewSeat } from "../src/entities/hullSeats";
 import { MAPS } from "../src/world/maps";
 import { HeadlessGame } from "./HeadlessGame";
 import { MapVote } from "./MapVote";

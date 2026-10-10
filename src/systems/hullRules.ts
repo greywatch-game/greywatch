@@ -37,7 +37,9 @@
 import { Vector3 } from "@babylonjs/core";
 import type { Bot } from "../entities/Bot";
 import { OTHER_TEAM, type Combatant, type Team } from "../entities/Combatant";
-import { DRIVER, type CrewSeat, type Vehicle } from "../entities/Vehicle";
+import type { Vehicle } from "../entities/Vehicle";
+import { DRIVER, type CrewSeat } from "../entities/hullSeats";
+import type { Vector3Like } from "../math";
 import type { CombatSystem, Hittable, ShotResult } from "./CombatSystem";
 import type { GrenadeSystem } from "./GrenadeSystem";
 import { settleKill, type KillLedger } from "./killRules";
@@ -63,8 +65,13 @@ export interface HullRules {
   bodies(team: Team): readonly Combatant[];
   /** The one implementation of a blast — `GrenadeSystem.blastAt`. */
   blastAt(...args: Parameters<GrenadeSystem["blastAt"]>): void;
-  /** Bots hear it — `BattleSystem.hearGunshot`. */
-  hearGunshot(at: Vector3, team: Team, dir: Vector3): void;
+  /**
+   * Bots hear it — `BattleSystem.hearGunshot`. A PROPERTY rather than a
+   * method signature for `Hittable.takeDamage`'s reason: its vectors are
+   * `Vector3Like`, and only a property makes `strictFunctionTypes` refuse an
+   * implementer that would hand one to a Babylon method.
+   */
+  hearGunshot: (at: Vector3Like, team: Team, dir: Vector3Like) => void;
   /** The PERSON in `seat` of `tank`, or null. Asked before the bot crew. */
   personIn(tank: Vehicle, seat: CrewSeat): Combatant | null;
   /** The bot in `seat` of `tank`, or null — `VehicleCrew.crewOf`. */

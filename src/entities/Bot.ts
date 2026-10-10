@@ -62,6 +62,7 @@ import { mulberry32 } from "../world/rng";
 import { BotMemory } from "./BotMemory";
 import { easeStance, stanceCentre, stanceEye } from "./stance";
 import type { Combatant, Team } from "./Combatant";
+import { Vector3 as MathVector3, type Vector3Like } from "../math";
 // Type-only, and erased — this file still knows nothing about a system.
 import type { DamageKind } from "../systems/CombatSystem";
 import { UNDRAWN, type Rand } from "../systems/RoundRandom";
@@ -182,7 +183,7 @@ export interface BattleCtx {
    * sixteen bots converging on one grid reference, which is the herd rather
    * than the fix for it.
    */
-  callContact(bot: Bot, at: Vector3): void;
+  callContact: (bot: Bot, at: Vector3Like) => void;
   /**
    * The squad's freshest contact call, written into `into`. False when there is
    * none, or when it has gone stale.
@@ -240,6 +241,8 @@ const _rocket = new Vector3();
 export class Bot implements Combatant {
   readonly team: Team;
   readonly rig: SoldierRig;
+  /** `Hittable.isBot` — this class is the one thing that declares it. */
+  readonly isBot = true;
 
   /** Which squad this bot belongs to; squads share an objective. */
   squad = 0;
@@ -687,7 +690,7 @@ export class Bot implements Combatant {
    */
   takeDamage(
     amount: number,
-    from?: Vector3,
+    from?: Vector3Like,
     // Annotated with the default the interface already implies, so a caller
     // that has no opinion — the leash, a crew burning with its hull — is a
     // round rather than an explosion.
@@ -703,7 +706,7 @@ export class Bot implements Combatant {
     // flinch either: the flinch is a stumble at 60% speed, and a bot stumbling
     // through the one thing it most needs to run out of is the wrong reflex.
     if (from && kind === "fire") {
-      this.burnFrom.copyFrom(from);
+      this.burnFrom.copyFromFloats(from.x, from.y, from.z);
       this.burnT = CONFIG.molotov.bot.escape;
     } else if (from) {
       this.memory.tookHit(from);
@@ -719,7 +722,7 @@ export class Bot implements Combatant {
       this.target = null;
       // Captured here rather than passed along the kill path: this is the one
       // place that sees both the blow and where it came from.
-      if (from) this.deathFrom.copyFrom(from);
+      if (from) this.deathFrom.copyFromFloats(from.x, from.y, from.z);
       else this.deathFrom.copyFrom(this.center);
       this.deathDamage = amount;
       this.deathKind = kind;
@@ -1371,7 +1374,7 @@ export class Bot implements Combatant {
     if (!this.aimLocked) {
       // First sight of this enemy: start on them rather than swinging in from
       // wherever the last one died, which would read as a scripted sweep.
-      this.aimPoint.copyFrom(t.eyePos);
+      this.aimPoint.copyFromFloats(t.eyePos.x, t.eyePos.y, t.eyePos.z);
       this.aimLocked = true;
       return;
     }
@@ -1415,7 +1418,7 @@ export class Bot implements Combatant {
     if (this.aimT < this.profile.reactionTime) return;
     if (this.fireCooldown > 0) return;
 
-    const dist = Vector3.Distance(this.eyePos, t.eyePos);
+    const dist = MathVector3.Distance(this.eyePos, t.eyePos);
     if (dist > b.engageRange) return;
 
     // Accuracy falls off linearly with range, so a bot across the square is a

@@ -8,7 +8,9 @@
  * at the victim's, once each (`ScoreBook`'s rule). The credit is asked FIRST,
  * whoever fell, and the death door is reached only for a `Bot` — a person's
  * death has already left through its own `onDamaged` by the time anything
- * here runs, on both sides of the wire.
+ * here runs, on both sides of the wire. A bot is told by `Hittable.isBot`,
+ * never by `instanceof`: this module imports `Bot` as a TYPE only, so the
+ * kill path pulls no rig and no scene into either simulation.
  * Never: decide WHETHER a body pays (`paysKiller`, inside each `creditKill`)
  * or what it pays (`awardKill`), and never hold state — the ledger is the
  * simulation's, handed in.
@@ -20,7 +22,7 @@
  * authority, and the two had already disagreed about what `creditKill`
  * returned. A door that goes through `settleKill` cannot forget either half.
  */
-import { Bot } from "../entities/Bot";
+import type { Bot } from "../entities/Bot";
 import type { Combatant, Team } from "../entities/Combatant";
 import type { Hittable } from "./CombatSystem";
 
@@ -99,7 +101,16 @@ export function settleKill(
   headshot = false,
 ): void {
   const credited = ledger.credit(by, victim, headshot);
-  if (victim instanceof Bot) {
+  if (isBotVictim(victim)) {
     ledger.botDown(victim, killer, by, cause, credited, headshot);
   }
+}
+
+/**
+ * `victim` is a `Bot`: `Hittable.isBot`, which only that class declares. A
+ * flag and not an `instanceof`, so this module imports `Bot` as a TYPE and
+ * the server's kill path does not pull in the rig behind it.
+ */
+function isBotVictim(victim: Hittable): victim is Bot {
+  return victim.isBot === true;
 }

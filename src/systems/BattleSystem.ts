@@ -58,6 +58,7 @@ import { Bot, type BattleCtx, type BotZone } from "../entities/Bot";
 import { assignSkills } from "../entities/BotSkill";
 import { OTHER_TEAM, type Combatant, type Team } from "../entities/Combatant";
 import { viewerTeam } from "../core/teamView";
+import { Vector3 as MathVector3, type Vector3Like } from "../math";
 import type { CelMaterialFactory } from "../shaders/CelShader";
 import type { CoverMap } from "../world/CoverMap";
 import type { FlowField, NavGrid } from "../world/NavGrid";
@@ -842,7 +843,7 @@ export class BattleSystem {
    * Called internally for bot fire and by `Game`/`HeadlessGame` for a person's,
    * a launcher's and a hull's two guns.
    */
-  hearGunshot(at: Vector3, shooter: Team, dir: Vector3): void {
+  hearGunshot(at: Vector3Like, shooter: Team, dir: Vector3Like): void {
     const p = CONFIG.bots.perception;
     const range2 = p.hearRange * p.hearRange;
     const near2 = p.friendlyHearMin * p.friendlyHearMin;
@@ -895,7 +896,7 @@ export class BattleSystem {
    * through a wall a rifleman cannot would be a different game running in the
    * same window. Budgeted by the caller, as every LOS ray in this file is.
    */
-  losBetween(from: Vector3, to: Vector3): boolean {
+  losBetween(from: Vector3Like, to: Vector3Like): boolean {
     return this.visible(from, to);
   }
 
@@ -1115,7 +1116,7 @@ export class BattleSystem {
       held &&
       held.alive &&
       held.team === enemy &&
-      Vector3.Distance(bot.position, held.position) < range &&
+      MathVector3.Distance(bot.position, held.position) < range &&
       this.visible(bot.eyePos, held.eyePos)
     ) {
       return held;
@@ -1123,7 +1124,7 @@ export class BattleSystem {
 
     const consider = (c: Combatant) => {
       if (!c.alive || c.team !== enemy) return;
-      const d = Vector3.Distance(bot.position, c.position);
+      const d = MathVector3.Distance(bot.position, c.position);
       if (d < range && this.inView(bot, c)) candidates.push({ c, d });
     };
     for (const other of this.bots) {
@@ -1182,7 +1183,7 @@ export class BattleSystem {
    * retired enemies never did — they fired straight at the player through
    * walls, which is invisible in an empty arena and absurd in a village.
    */
-  private visible(from: Vector3, to: Vector3): boolean {
+  private visible(from: Vector3Like, to: Vector3Like): boolean {
     return !this.rays?.blocked(from, to);
   }
 

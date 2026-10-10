@@ -45,14 +45,12 @@ import { type Scene, Vector3 } from "@babylonjs/core";
 import { CONFIG } from "../config";
 import type { Team } from "../entities/Combatant";
 import {
-  DRIVER,
-  GUNNER,
   Vehicle,
-  type CrewSeat,
   type DriveInput,
   type GunAngles,
   type GunInput,
 } from "../entities/Vehicle";
+import { DRIVER, GUNNER, type CrewSeat } from "../entities/hullSeats";
 import { kindOf } from "../entities/vehicleKinds";
 import { toBabylon } from "../math/babylon";
 import type { CelMaterialFactory } from "../shaders/CelShader";

@@ -10,6 +10,11 @@
  * throw between the two would leave sixteen bodies permanently displaced, and
  * nothing would report it — every subsequent shot, every LOS test and every
  * capture-zone check would silently use ghost positions.
+ * A body's `center` and `eyePos` are `Vector3Ref` — either library's vector —
+ * so they are read through their fields and written through `set` and
+ * `copyFromFloats` only, never `copyFrom`: Babylon's reads `_x` off its
+ * argument, and one of ours handed to it writes NaN. The saved present is
+ * `src/math`'s.
  *
  * **Why this exists.** A client draws other bodies `CONFIG.net.interpDelay`
  * behind the server, and its own packets took time to arrive on top of that. So
@@ -24,7 +29,7 @@
  * older than that is clamped rather than honoured: unbounded rewind lets
  * someone shoot at where you stood a second ago.
  */
-import { Vector3 } from "@babylonjs/core";
+import { Vector3 } from "../src/math";
 import type { Hittable } from "../src/systems/CombatSystem";
 import { REWIND_WINDOW_MS, TICK_HZ } from "../src/net/protocol";
 
@@ -119,8 +124,9 @@ export class LagComp {
     const moved: Tracked[] = [];
     for (const track of this.tracked) {
       if (track.body === except || track.count === 0) continue;
-      track.savedCenter.copyFrom(track.body.center);
-      track.savedEye.copyFrom(track.body.eyePos);
+      const { center, eyePos } = track.body;
+      track.savedCenter.copyFromFloats(center.x, center.y, center.z);
+      track.savedEye.copyFromFloats(eyePos.x, eyePos.y, eyePos.z);
       this.apply(track, at);
       moved.push(track);
     }
@@ -129,8 +135,9 @@ export class LagComp {
       return fn();
     } finally {
       for (const track of moved) {
-        track.body.center.copyFrom(track.savedCenter);
-        track.body.eyePos.copyFrom(track.savedEye);
+        const { savedCenter: c, savedEye: e } = track;
+        track.body.center.copyFromFloats(c.x, c.y, c.z);
+        track.body.eyePos.copyFromFloats(e.x, e.y, e.z);
       }
     }
   }

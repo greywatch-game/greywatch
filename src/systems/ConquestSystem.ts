@@ -154,7 +154,7 @@ export class ConquestSystem {
   }
 
   /** The point a combatant is standing in, if any. */
-  pointAt(pos: Vector3): ControlPoint | null {
+  pointAt(pos: Vector3Like): ControlPoint | null {
     for (const p of this.points) {
       const dx = p.def.pos.x - pos.x;
       const dz = p.def.pos.z - pos.z;

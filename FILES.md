@@ -688,9 +688,7 @@ src/
                         #   BOTH guns' clocks and angles (the second seat's gun
                         #   holds a WORLD bearing exactly as the turret does,
                         #   which is what lets the two seats aim
-                        #   independently), which of its two SEATS are filled
-                        #   and `chooseSeat` (which one a person gets — the
-                        #   driver's first, one rule for both processes),
+                        #   independently), which of its two SEATS are filled,
                         #   the ground half of its lean, `rideableAt` (the
                         #   climb band spent on
                         #   where the hull is ABOUT to be, which is the whole
@@ -704,6 +702,12 @@ src/
                         #   `lift`, an addend that is 0 on anything else, so a
                         #   hover is an equality and the plank is a landing
                         #   floor. Knows nothing about a player
+    hullSeats.ts        # The two chairs in a hull (`CrewSeat`: `DRIVER`,
+                        #   `GUNNER`), the order they fill in (`SEATS`), and
+                        #   `chooseSeat` (which one a person gets — the
+                        #   driver's first, one rule for both processes).
+                        #   Imports nothing, so the authority's roster names a
+                        #   seat without pulling in a hull
     HullFlex.ts         # What a hull's own mass does to its DRAWING: the
                         #   sprung body's pitch, roll and heave springs on one
                         #   travel budget, the rate the mast feet turn at, and
@@ -1134,10 +1138,14 @@ src/
                         #   Types only; MapBuilder re-exports every one
     merge.ts            # The visual merges, on WorldSurfaces: mergeByMaterial,
                         #   then BlockMerge and PaneBlocks per map block (one
-                        #   key, one metadata.block), tag, BLOCK_SIZE; the
+                        #   key, one metadata.block), tag; the
                         #   palette slot through CelShader's writePaletteIndex;
                         #   mergeSurfaces, the one 2+ merge, carrying the piece
                         #   ranges. Nothing in it touches the device
+    blocks.ts           # BLOCK_SIZE, and nothing else: the merge block of a map
+                        #   that states none, and the fixed LOCALITY unit of the
+                        #   physics buckets and the pane index. Imports
+                        #   nothing, so the server reads it without MapBuilder
     worldGeometry.ts    # The world's geometry as a record: WorldSurface (a
                         #   Part, its block, its piece ranges, whether its
                         #   positions stay writable, its BIRTH — the scene

@@ -3,8 +3,11 @@
  * the Team type (0/1 index into CONFIG.teams). Pure types, no runtime logic.
  * CombatSystem.fire() takes a shooter's target list built from Combatants, so
  * friendly fire is excluded by construction, never by a team check inside.
+ * `position` is a `Vector3Like` — either library's vector, READ through its
+ * fields — so nothing reaching a body through this interface may hand it to
+ * a Babylon method (`Hittable`'s note, `BABYLON_EXIT.md` X2.2).
  */
-import type { Vector3 } from "@babylonjs/core";
+import type { Vector3Like } from "../math";
 import type { Hittable } from "../systems/CombatSystem";
 
 /** 0 = Valeguard, 1 = Redline. Indexes into `CONFIG.teams`. */
@@ -31,7 +34,7 @@ export interface Combatant extends Hittable {
   team: Team;
   alive: boolean;
   /** Feet. */
-  position: Vector3;
+  position: Vector3Like;
   /**
    * This combatant is a VEHICLE. Absent on everything that is not one.
    *

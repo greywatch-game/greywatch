@@ -79,7 +79,8 @@ import {
   Vector3,
 } from "@babylonjs/core";
 import { CONFIG } from "../config";
-import { BLOCK_SIZE, type GameMap } from "../world/MapBuilder";
+import { BLOCK_SIZE } from "../world/blocks";
+import type { GameMap } from "../world/MapBuilder";
 
 /**
  * The instantiated WASM module, as `HavokPlugin` wants it.

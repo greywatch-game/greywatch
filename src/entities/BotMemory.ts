@@ -11,6 +11,7 @@
 import { Vector3 } from "@babylonjs/core";
 import { CONFIG } from "../config";
 import type { Combatant } from "./Combatant";
+import type { Vector3Like } from "../math";
 
 /**
  * What a bot remembers.
@@ -76,10 +77,10 @@ export class BotMemory {
   }
 
   /** Currently looking at an enemy: the strongest cue there is. */
-  sawEnemy(at: Vector3): void {
-    this.lastKnown.copyFrom(at);
+  sawEnemy(at: Vector3Like): void {
+    this.lastKnown.copyFromFloats(at.x, at.y, at.z);
     this.lastKnownT = CONFIG.bots.combat.threatMemory;
-    this.threat.copyFrom(at);
+    this.threat.copyFromFloats(at.x, at.y, at.z);
     this.threatT = CONFIG.bots.combat.threatMemory;
     this.alert = 1;
   }
@@ -88,15 +89,15 @@ export class BotMemory {
    * Took a round. `from` is the shooter's origin, which the combat system has
    * always passed and `Bot` used to discard.
    */
-  tookHit(from: Vector3): void {
-    this.threat.copyFrom(from);
+  tookHit(from: Vector3Like): void {
+    this.threat.copyFromFloats(from.x, from.y, from.z);
     this.threatT = CONFIG.bots.combat.threatMemory;
     this.alert = 1;
     // A hit is not a sighting — the bot knows a direction, not a position it
     // could walk to and expect to find someone. But it is worth investigating,
     // so seed the search with it at full staleness rather than not at all.
     if (this.lastKnownT <= 0) {
-      this.lastKnown.copyFrom(from);
+      this.lastKnown.copyFromFloats(from.x, from.y, from.z);
       this.lastKnownT = CONFIG.bots.combat.threatMemory * 0.5;
     }
   }
@@ -121,7 +122,7 @@ export class BotMemory {
    * `BattleSystem.hearGunshot` before it gets here. What is weakened here is
    * the WEIGHT of the cue; where it points was settled by the time of arrival.
    */
-  heardShot(at: Vector3, hostile: boolean, jitterX: number, jitterZ: number): void {
+  heardShot(at: Vector3Like, hostile: boolean, jitterX: number, jitterZ: number): void {
     const p = CONFIG.bots.perception;
     const weight = hostile ? 1 : p.friendlyHearMult;
     // Never overwrite something the bot actually saw with something it heard.

@@ -43,6 +43,7 @@
 import { Scene, Vector3 } from "@babylonjs/core";
 import { CONFIG } from "../config";
 import type { Team } from "../entities/Combatant";
+import type { Vector3Like } from "../math";
 import type { DamageKind } from "./CombatSystem";
 import {
   animateSoldier,
@@ -273,7 +274,7 @@ export class DeathCam {
     yaw: number,
     eye: Vector3,
     forward: Vector3,
-    from: Vector3 | undefined,
+    from: Vector3Like | undefined,
     damage: number,
     kind: DamageKind,
     crouch: number,
@@ -296,7 +297,7 @@ export class DeathCam {
     );
     corpse.deathDamage = damage;
     corpse.deathKind = kind;
-    if (from) corpse.deathFrom.copyFrom(from);
+    if (from) corpse.deathFrom.copyFromFloats(from.x, from.y, from.z);
     else corpse.deathFrom.copyFrom(corpse.center);
 
     // A clean pose facing the way the player was, in the stance they were in,

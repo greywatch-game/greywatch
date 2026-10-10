@@ -130,6 +130,7 @@ import { moveBody, type CollisionField } from "../world/CollisionField";
 import type { ObstacleField } from "../world/ObstacleField";
 import { TerrainField } from "../world/TerrainField";
 import type { Combatant, Team } from "./Combatant";
+import type { Vector3Like } from "../math";
 import { HealthRegen } from "./HealthRegen";
 import { easeStance, stanceCentre, stanceEye } from "./stance";
 import type { DamageKind, ShotOptions } from "../systems/CombatSystem";
@@ -300,7 +301,7 @@ export class Player implements Combatant {
   onDamaged: (
     amount: number,
     died: boolean,
-    from?: Vector3,
+    from?: Vector3Like,
     kind?: DamageKind,
   ) => void = () => {};
   /** The rifle and hands on screen; the only visible thing the player owns. */
@@ -2472,7 +2473,7 @@ export class Player implements Combatant {
    * no rig, and the stand-in body that does is stood up by `Game` from what
    * arrives here.
    */
-  takeDamage(amount: number, from?: Vector3, kind?: DamageKind): boolean {
+  takeDamage(amount: number, from?: Vector3Like, kind?: DamageKind): boolean {
     if (!this.alive) return false;
     this.health = Math.max(0, this.health - amount);
     this.regen.hit();

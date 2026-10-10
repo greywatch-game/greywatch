@@ -21,9 +21,10 @@
 import { Vector3 } from "@babylonjs/core";
 import { CONFIG } from "../src/config";
 import type { Combatant, Team } from "../src/entities/Combatant";
+import type { Vector3Like } from "../src/math";
 import { HealthRegen } from "../src/entities/HealthRegen";
 import { easeStance, stanceCentre, stanceEye } from "../src/entities/stance";
-import { DRIVER, type CrewSeat } from "../src/entities/Vehicle";
+import { DRIVER, type CrewSeat } from "../src/entities/hullSeats";
 import type { DamageKind } from "../src/systems/CombatSystem";
 import { Leash } from "../src/world/leash";
 
@@ -264,7 +265,7 @@ export class NetPlayer implements Combatant {
    */
   onDamaged: (
     amount: number,
-    from: Vector3 | undefined,
+    from: Vector3Like | undefined,
     killed: boolean,
     kind: DamageKind,
   ) => void = () => {};
@@ -280,7 +281,7 @@ export class NetPlayer implements Combatant {
    */
   takeDamage(
     amount: number,
-    from?: Vector3,
+    from?: Vector3Like,
     kind: DamageKind = "bullet",
   ): boolean {
     if (!this.alive) return false;

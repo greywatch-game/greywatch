@@ -120,15 +120,9 @@ import { CONFIG } from "../config";
 import type { Bot } from "../entities/Bot";
 import type { Combatant, Team } from "../entities/Combatant";
 import { angleDelta } from "../core/math";
-import {
-  DRIVER,
-  GUNNER,
-  SEATS,
-  type CrewSeat,
-  type DriveInput,
-  type GunInput,
-  type Vehicle,
-} from "../entities/Vehicle";
+import type { DriveInput, GunInput, Vehicle } from "../entities/Vehicle";
+import { DRIVER, GUNNER, SEATS, type CrewSeat } from "../entities/hullSeats";
+import { Vector3 as MathVector3, type Vector3Like } from "../math";
 import type { GameMap } from "../world/MapBuilder";
 import type { NavGrid } from "../world/NavGrid";
 import { fly, route } from "./crewPilot";
@@ -176,7 +170,7 @@ export interface CrewCtx {
    * pick for the length of the call — and it is the caller's to make, because
    * `world/solid.ts` forbids minting a predicate that closes over one.
    */
-  visibleFrom(tank: Vehicle, to: Vector3): boolean;
+  visibleFrom: (tank: Vehicle, to: Vector3Like) => boolean;
   /**
    * Fires this hull's gun, resolved by `Game` exactly as the player's shell
    * is — same damage, same blast, same one implementation. `by` is who the
@@ -707,7 +701,7 @@ export class VehicleCrew {
       held &&
       held.alive &&
       !(soft && held.armoured) &&
-      Vector3.Distance(tank.center, held.position) < range &&
+      MathVector3.Distance(tank.center, held.position) < range &&
       this.ctx.visibleFrom(tank, held.eyePos)
     ) {
       return;
@@ -727,7 +721,7 @@ export class VehicleCrew {
     for (const t of this.ctx.targetsFor(tank.team)) {
       if (!t.alive) continue;
       if (soft && t.armoured) continue;
-      const d = Vector3.Distance(tank.center, t.position);
+      const d = MathVector3.Distance(tank.center, t.position);
       if (d >= range) continue;
       if (t.armoured) {
         if (d < hullDist) {
@@ -775,7 +769,7 @@ export class VehicleCrew {
       crew.aimAt.setAll(0);
       return;
     }
-    const d = Vector3.Distance(crew.tank.center, target.position);
+    const d = MathVector3.Distance(crew.tank.center, target.position);
     const spread = c.scatter * Math.min(1, d / c.engageRange);
     crew.aimAt.set(
       (this.layRand() * 2 - 1) * spread,
@@ -809,7 +803,9 @@ export class VehicleCrew {
       crew.layT = 0;
       return;
     }
-    _aim.copyFrom(target.eyePos).addInPlace(crew.aimAt);
+    _aim
+      .copyFromFloats(target.eyePos.x, target.eyePos.y, target.eyePos.z)
+      .addInPlace(crew.aimAt);
     const from = tank.muzzleToRef(_dir);
     const dx = _aim.x - from.x;
     const dy = _aim.y - from.y;
@@ -849,7 +845,7 @@ export class VehicleCrew {
       crew.layT = 0;
       return;
     }
-    _aim.copyFrom(target.eyePos);
+    _aim.copyFromFloats(target.eyePos.x, target.eyePos.y, target.eyePos.z);
     const from = tank.mgMuzzleToRef(_dir);
     const dx = _aim.x - from.x;
     const dy = _aim.y - from.y;

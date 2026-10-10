@@ -108,8 +108,8 @@ import {
   type WorldGeometry,
   type WorldSurface,
 } from "./worldGeometry";
+import { BLOCK_SIZE } from "./blocks";
 import {
-  BLOCK_SIZE,
   BlockMerge,
   mergeByMaterial,
   mergeSurfaces,
@@ -171,7 +171,7 @@ export type {
   WorldBox,
   WorldPane,
 } from "./mapTypes";
-export { BLOCK_SIZE } from "./merge";
+export { BLOCK_SIZE } from "./blocks";
 
 /**
  * One scatter prop's factory: the prop's ROOT part, with the rest of it

@@ -3,7 +3,8 @@
  * material within a structure or a scatter field (`mergeByMaterial`), then per
  * map block across neighbours (`BlockMerge` for everything opaque,
  * `PaneBlocks` for the glazing, which has to keep its breakable panes'
- * vertex ranges). Plus `tag`, the editor's per-item mark, and `BLOCK_SIZE`.
+ * vertex ranges). Plus `tag`, the editor's per-item mark. `BLOCK_SIZE`, the
+ * block side a map that states none is merged at, is `blocks.ts`'s.
  * Everything here runs on `WorldSurface`s (`worldGeometry.ts`) — `Part`s and
  * their bookkeeping, typed arrays and nothing on the device — and what it
  * hands back is still surfaces: `worldMeshes` (`parts.ts`) is where the world
@@ -56,34 +57,6 @@ import {
 export function tag(target: { metadata: PartMetadata | null }, ref: EditorRef): void {
   target.metadata = { ...(target.metadata ?? {}), editorRef: ref };
 }
-
-/**
- * Side of a merge block, in metres, **for a map that states none** — and the
- * world layer's fixed unit of LOCALITY, which is a second job and the reason
- * this is still a constant at all.
- *
- * 48 m over a 240 m map gives a 5x5 grid of blocks — coarse enough that the
- * whole village collapses into a few dozen draws, fine enough that frustum
- * culling still throws away most of the map. Well under the 78 m fog wall, so
- * a block is never half-visible for long. **Every clause of that is about a
- * 240 m map with a 78 m fog wall**, which is why `MapLayout.blockSize` exists
- * and why this is the default rather than the answer.
- *
- * **The two jobs came apart the moment a map could state its own, and they
- * must stay apart.** What a map states is how the MERGE groups: fewer, larger
- * meshes to walk and to draw, at coarser cull granularity. What stays here is
- * the size of a locality BUCKET — `PhysicsWorld`'s static containers and
- * `GlassSystem`'s pane index — and those two want the opposite thing from a
- * large map. `HavokPlugin.addChild` is quadratic in a container's children,
- * so a bucket that grew with a map's merge block would
- * hand back most of what S5b bought; a pane bucket is a slab rejection whose
- * only cost is the panes inside it. Neither is an identity — nothing reads
- * either key — so neither has anything to agree with.
- *
- * `terrainPatches` is called with `MapLayout.terrainBlock`, which defaults to
- * this too and moves independently of the merge's.
- */
-export const BLOCK_SIZE = 48;
 
 /**
  * The second merge pass: collapses every structure and scatter field into one

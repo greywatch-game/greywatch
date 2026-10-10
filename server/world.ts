@@ -52,7 +52,7 @@ import {
 } from "../src/world/collision";
 import { CoverMap } from "../src/world/CoverMap";
 import type { GameMap, WorldBox } from "../src/world/MapBuilder";
-import { BLOCK_SIZE } from "../src/world/MapBuilder";
+import { BLOCK_SIZE } from "../src/world/blocks";
 import type { MapDef } from "../src/world/maps";
 import { NavGrid } from "../src/world/NavGrid";
 import { ObstacleField } from "../src/world/ObstacleField";

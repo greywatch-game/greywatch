@@ -92,7 +92,7 @@ import type { Mesh, Vector3 } from "@babylonjs/core";
 import { VertexBuffer } from "@babylonjs/core";
 import { CONFIG } from "../config";
 import type { GameMap, WorldBox, WorldPane } from "../world/MapBuilder";
-import { BLOCK_SIZE } from "../world/MapBuilder";
+import { BLOCK_SIZE } from "../world/blocks";
 
 /** One pane a segment crossed, and how far along it the crossing was. */
 export interface GlassHit {
