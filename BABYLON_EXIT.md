@@ -723,11 +723,9 @@ moved.
 
 **Met 2026-10-10:** `kit:hash` (3,722 builds), `kit:hash --models` (244, no
 content change), `merge:hash` on all eight maps shipped and `--editor`, and
-the bank 47 of 47 at 0% of pixels at 3b35779. **Owed before the tag**, both
-the user's to run:
-- the merge of `develop` this file's "The branch" asks for at every gate. It
-  carries one commit, a7b58ea, whose content is already here;
-- tagging `exit-phase-1`.
+the bank 47 of 47 at 0% of pixels at 3b35779. **Tagged** by the user on
+2026-10-10: `develop` merged in at 09e35f8 (it carried one commit, a7b58ea,
+whose content was already here), and `exit-phase-1` is that merge.
 
 ---
 
