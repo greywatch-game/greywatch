@@ -582,7 +582,67 @@ directly, and there are 52 `.parent =` assignments.
 - **Rewrites:** `docs/build.md` (the four copied internals start going away),
   `parts.ts`'s header.
 
-### X1.3 — The rest of the geometry — **M**
+### X1.3 — The rest of the geometry — **M** — **LANDED** (3bcaca7)
+
+**Landed.** The oracle came before any model moved: `kit:hash --models`
+(9b76260) builds every model that is not the kit under a NullEngine, 244
+builds of 20 kinds, and
+hashes every mesh AND transform node left in the scene, each vertex array with
+its TYPE and as exact doubles. It keeps two hashes a build, one in scene order
+and one over the sorted records, so `--against` can tell "content changed"
+from "scene order differs". The foundation (31c672a) added
+`mergeTransformed` to `src/geometry/buffer.ts`, which is
+`VertexData._mergeCoroutine`, the merge `Mesh.MergeMeshes` runs. Each member is
+transformed INSIDE the merge, after it has been copied into the first member's
+array type, so "transform, then merge" rounds at the other end and is not the
+same bits. It also added `GeometryBuffer.bake` (`bakeTransformIntoVertices`,
+which renormalises where a merge does not), and `createPlane` and `createDisc`
+for the optics' glass. `world/parts.ts` gained `PartNode` (a build frame that
+draws nothing, standing where a model hung a `TransformNode`), `detachPart`
+(`setParent(null)`, now the step `flattenParts` runs), `mergeParts`,
+`bakePartTransform`, and `drawnMesh`, the one adapter a model's surface
+becomes an uploaded Babylon mesh through. Then `facet.ts` (754ef99) was
+converted, with a temporary `drawnMesh` bridge at each caller, and the three
+families in parallel: the hulls (01b0fad), the soldier, the capture ring and
+the flag's pole (1c2b6ab), and the weapons, optics, the viewmodel's arms and
+card, the player's petals and casings and the four thrown or laid things
+(b992968). Every family removed facet's bridges in its own files. Every model's
+geometry is now ours. Its merges run on buffers, and its live joints are still
+Babylon `TransformNode`s (the rig is X4's). What is left on `MeshBuilder` is
+there on purpose. The player's capsule and a hull's box are colliders, and the
+sweeps are X2.1's. The rig's root capsule is what `WorldCulling` measures a body
+by and goes with the rig at X4.1. The flag's cloth is a live simulation with
+updatable buffers.
+
+**Scene order moved and no pixel did.** The weapons family came back with 201
+builds (every gun, the launcher, the viewmodel, the player) "scene order
+differs" and no content change, for two reasons. First, a lone colour group's
+mesh is now minted at merge time and not when its one part was made: the
+magazine's rubber on five guns and the sleeve on all 19 arms. Second, Babylon's
+`removeTransformNode` is a swap-remove, so disposing the old pivots used to
+shuffle the last live nodes into their slots. The hulls keep the old order on
+purpose (`vehicleRig.mergeByColor` mints lone colours first). A transform
+node's order draws nothing. A mesh's order is the opaque draw order, which the
+bank judged.
+
+**Measured:**
+- **kit:hash --models:** no content change on any of the 244 builds. 43 are
+  identical, and 201 differ in scene order only, for the two causes above.
+- **The bank, `--check` on Harrowmead, Sarab and Hollowmere:** every row is at
+  0% of pixels and 0/255. That covers the ten viewmodel rows (each optic, hip
+  and aimed), the three hulls, both rigs and the ring. The same check passed
+  before the conversion.
+- **geometry-check:** 55,548 comparisons over 14 cases at 3,000 trials, all
+  identical. Three plants were caught: no first-member flip, no renormalise in
+  `bake`, and no transform on a float32 first member.
+- **kit:hash:** identical on all 3,722 builds, drawing and colliders.
+- **merge:hash:** identical on all eight maps, shipped and `--editor`, against
+  2fc1286.
+- **parity:** passes.
+- **simulate, seed 777:** fought X1.1's fights (Greyfen `6ef4707c3c7a8414`,
+  Sarab `c109c06104830c4a`). The server builds the rigs and the hulls too.
+- **gate.mjs:** a real round on Harrowmead and Sarab is clean.
+- **`npm run build`:** passes.
 
 The same for what is not in the kit:
 - `weaponKit` and the seven weapon models, `optics.ts`
@@ -608,6 +668,9 @@ X1.2, because the kit and the props are built from them.)
 metadata `CLAUDE.md` makes a contract (`block`, `surface`, `noShadowCaster`,
 `noGlow`, `noInk`). The adapter uploads Babylon meshes carrying identical
 metadata, so `WorldCulling` and every reader of `metadata.*` are untouched.
+X1.3 left the merge it needs in place: `mergeTransformed` is
+`VertexData._mergeCoroutine`, checked by `geometry-check`, and the models
+already merge with it (`mergeParts`).
 
 - **Do also:** carry a **piece id** per vertex range through the merge, the
   `paneGroup` precedent. It costs nothing now, and destructible buildings need

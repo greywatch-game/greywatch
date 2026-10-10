@@ -86,9 +86,9 @@ state changing between draws: if a rendering bug ever appears that shows only
 while something is MOVING, flip this first (`docs/rendering.md`).
 
 **Zero model files, and SEVENTEEN audio files** — every mesh is built from
-primitives at runtime (Babylon's, or for the world kit and the scatter props
-the copies of them in `src/geometry/`), and every sound is synthesized WebAudio
-(`src/core/Sfx.ts`) but for those seventeen. Do not add asset files unless
+primitives at runtime (for the world kit, the scatter props and every model
+the copies of Babylon's in `src/geometry/`, for the rest Babylon's own), and
+every sound is synthesized WebAudio (`src/core/Sfx.ts`) but for those seventeen. Do not add asset files unless
 explicitly asked. There are four generated exceptions, each with a generator in
 `package.json`: the icons, Havok's `.wasm`, the water's foam mask, and each
 map's menu photograph. **The recordings in `audio/` are the fifth**, and **the

@@ -2647,8 +2647,9 @@ because brass is the one thing on a weapon that is not part of the weapon and
 merged into the fittings it would come out steel-coloured and steel-glossy along
 with the rails.
 
-**Nothing in the rifle may be scaled non-uniformly.** `VertexData.transform`
-transforms normals *without* re-normalising them, and `renderOutline` extrudes each
+**Nothing in the rifle may be scaled non-uniformly.** A merge (`mergeParts`, which
+is `Mesh.MergeMeshes`' arithmetic) transforms normals *without* re-normalising them,
+and `renderOutline` extrudes each
 vertex along its own normal — so a squashed part grows an ink shell that is fat on
 the squashed axis. This is why the round shells (the optic housing, the muzzle cage)
 are built by `shell()`, a ring of slabs each turned to its own facet, rather than by
@@ -2656,7 +2657,10 @@ stretching a torus. The primitives offer nothing else that would do: a capped
 cylinder has no bore, and an uncapped one is a single-sided shell whose far wall
 disappears exactly when you look through it. Facets cost nothing visually — the cel
 shader flat-shades from screen-space derivatives. `ViewModel`'s arms follow the same
-rule, with the wrinkle `mergeByMaterial` documents: a colour group of **one** mesh
-has to be baked by hand (`bakeCurrentTransformIntoVertices`), and because that call
-resets the local matrix, the part must be detached with `setParent(null)` first or
-the aim node's transform is applied twice.
+rule, with the wrinkle `mergeByMaterial` documents: a colour group of **one** part
+has to be baked by hand (`bakePartTransform`, Babylon's
+`bakeCurrentTransformIntoVertices`), and because that resets the local matrix, the
+part must be detached (`detachPart`, Babylon's `setParent(null)`) first or its
+frame's transform is applied twice. Both are copied step for step
+(`world/parts.ts`), because a bake renormalises where a merge does not and the
+two are not the same bits.
