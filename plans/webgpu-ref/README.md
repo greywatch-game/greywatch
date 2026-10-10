@@ -36,7 +36,7 @@ node plans/webgpu-ref/shaders.mjs [map...] [--headed] [--list]
 node plans/webgpu-ref/depth.mjs glass|zoffset [--headed]
 node plans/webgpu-ref/diff.mjs a.png b.png [--tiles]
 node plans/webgpu-ref/pipelines.mjs [map] [--seconds N]
-node plans/webgpu-ref/bench.mjs [map...] [--runs 3] [--capped] [--gpu] [--size WxH] [--out f.json] [--against f.json]
+node plans/webgpu-ref/bench.mjs [map...] [--runs 3] [--capped] [--gpu] [--max] [--size WxH] [--out f.json] [--against f.json]
 ```
 
 - **`gate.mjs`** boots every shipped map, plays a real round on each and fails
@@ -69,8 +69,10 @@ node plans/webgpu-ref/bench.mjs [map...] [--runs 3] [--capped] [--gpu] [--size W
   only opens the URL N times per map and reads the captures: medians per
   group, the spread of each group and each segment against the protocol's 8%,
   the fight's hash (every run must print one), and `--against` ratios.
-  Uncapped unless `--capped`. `docs/profiling.md`, "The benchmark", is the
-  contract.
+  Uncapped unless `--capped`. `--max` puts every graphics setting at its top
+  rung first and fails a run whose capture says otherwise; without it a run
+  gets a fresh context's per-device defaults. `docs/profiling.md`, "The
+  benchmark", is the contract.
 - **`diff.mjs`** says how much and where two PNGs differ. `bank.mjs --check`
   grades itself with the same function; the CLI is for looking at a specific
   pair by hand, and `--tiles` names the region rather than the number.

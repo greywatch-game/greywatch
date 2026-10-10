@@ -331,7 +331,11 @@ worst single segment per map. `--out f.json` keeps the result and `--against
 f.json` prints each group's median as a ratio, new over old. It runs UNCAPPED
 unless told `--capped`, the opposite of `gate.mjs`, because a run held at the
 display's ceiling reports the ceiling; uncapping fabricates the collector's
-rate, so no GC figure is read out of it. `--gpu` adds `?gpu`, and `--size WxH`
+rate, so no GC figure is read out of it. `--max` writes every graphics
+setting at its top rung into the page's store before it boots, and fails a
+run whose capture's `graphics` is not at max; without it a run gets a fresh
+context's DEFAULTS, which are chosen per device and are the top of no ladder.
+`--gpu` adds `?gpu`, and `--size WxH`
 is the viewport, which is part of the workload rather than a detail of it:
 3440x1440 unless told, the Windows box's own display — and the size at which
 three runs agreed within 4% on every segment, where at the bank's 1920x1080 a

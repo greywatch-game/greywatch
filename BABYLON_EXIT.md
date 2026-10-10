@@ -323,11 +323,31 @@ blind can be out of the exit's reach whatever the exit does. At render scale
 per-pixel shader cost (`FINDINGS.md` 13). The shaders port unchanged, so no
 renderer rewrite moves either.
 
-- **Do, first:** take the "before" with X0.3 on Sarab, Cinderhaven,
-  Coldharbour and Greyfen, on the desktop, the phone and the tablet, several
-  runs each. Do `PERF_PLAN.md` G1 here too, since the phone's GPU cost moves
-  with the shaders, not the engine. The phone and the tablet run it from the
-  deployed build (`develop` carries X0.1 to X0.3; see "The branch").
+- **Do, first:** take the "before" with X0.3 on **Greyfen and Sarab**, on
+  **the desktop and the phone**, several runs each. The two maps are the two
+  ends of the game: Greyfen is small, 8 a side and has no vehicles; Sarab is
+  large, 24 a side and has all three kinds. The two devices are the two ends
+  of its settings:
+  - **the desktop at MAX settings**: `bench.mjs --max`, which fails a run
+    whose capture is not at the top of every ladder, uncapped at 3440x1440.
+  - **the phone at minimal settings**: render scale 0.5, the 60 fps cap, every
+    quality setting at its lowest, GI off. It runs from the deployed build
+    (`develop` carries X0.1 to X0.3; see "The branch").
+
+  Cinderhaven and Coldharbour were dropped (the user's call, 2026-10-09):
+  Sarab covers Cinderhaven's size, roster and armour, and the steps that need
+  either map (X1.x's build times, X4.2) take their own before and after. The
+  tablet was dropped too: it is faster than the phone, so a target the phone
+  meets says nothing more on the tablet.
+
+  **Measure the phone WARM.** A player plays for more than a minute, and the
+  phone slows as it heats: on Greyfen the runs after a cold first run took
+  33-49% longer a frame, and the cold run slowed through its own 164 s
+  (`FINDINGS.md` 52). So: one warm-up run
+  that is thrown away, then the runs back to back, in the same screen state
+  (installed app or fullscreen) and the same settings. Do `PERF_PLAN.md` G1
+  where the device allows it; the phone's GPU cost moves with the shaders, not
+  the engine.
 - **Output:** a `FINDINGS.md` entry with the tables. For each device, split
   the time into what the exit can move (draw calls, CPU time in the render)
   and what it cannot (GPU fill, the browser's floor), as far as the captures

@@ -3,8 +3,15 @@
  * browser and reports what the runs agree on (`BABYLON_EXIT.md` X0.3).
  *
  *   node plans/webgpu-ref/bench.mjs [map...] [--runs 3] [--capped] [--headed]
- *        [--gpu] [--size 3440x1440] [--url http://host:port] [--out f.json]
- *        [--against f.json]
+ *        [--gpu] [--max] [--size 3440x1440] [--url http://host:port]
+ *        [--out f.json] [--against f.json]
+ *
+ * **`--max` is every graphics setting at its top rung** (`MAX_SETTINGS`),
+ * written into the page's settings store before it boots, which is the
+ * desktop's half of `BABYLON_EXIT.md` X0.4's "before". Without it a run gets
+ * a fresh context's DEFAULTS, which are chosen per device and are not the
+ * top of any ladder. Either way the capture states what was in force
+ * (`graphics`), and that is what to quote.
  *
  * **The benchmark is the PAGE's, and this file only drives it from outside.**
  * Everything a run is — the vantages, the path, the seeded fight at a fixed
@@ -56,6 +63,30 @@ const value = (name, fallback) => {
 const HEADED = flag("--headed");
 const CAPPED = flag("--capped");
 const GPU = flag("--gpu");
+const MAX = flag("--max");
+/**
+ * `--max`: the top rung of every ladder in `src/core/settings.ts`, keyed as
+ * that file stores them (`greywatch.setting.` plus the field, or its
+ * `STORED_AS` alias — `paperGrain` is `filmGrain`) and written as its codecs
+ * write them. A key or a value the build does not know is silently the
+ * default there, which is why every run checks `graphics` against this.
+ * `fpsCap` 0 is uncapped, which `--capped` still limits at the browser.
+ */
+const MAX_SETTINGS = {
+  renderScale: 1,
+  fpsCap: 0,
+  volumetrics: "high",
+  gi: "high",
+  shadows: "high",
+  grass: "high",
+  foliage: "high",
+  glow: "high",
+  groundRelief: true,
+  motionBlur: true,
+  paperGrain: true,
+  fxaa: true,
+};
+const STORED_AS = { paperGrain: "filmGrain" };
 const RUNS = Math.max(1, Number(value("--runs", "3")));
 const URL_ARG = value("--url", null);
 const OUT = value("--out", null);
@@ -84,7 +115,7 @@ const browser = CAPPED
     });
 console.log(
   `bench: ${HEADED ? "headed" : "headless"}, ${CAPPED ? "capped" : "uncapped"}` +
-    `${GPU ? ", ?gpu" : ""}, ${VW}x${VH} @ ${url} — ${RUNS} run${RUNS > 1 ? "s" : ""} a map\n`,
+    `${GPU ? ", ?gpu" : ""}${MAX ? ", max settings" : ", default settings"}, ${VW}x${VH} @ ${url} — ${RUNS} run${RUNS > 1 ? "s" : ""} a map\n`,
 );
 
 const results = {};
@@ -183,6 +214,15 @@ async function benchOnce(id) {
   page.on("console", (m) => {
     if (m.type() === "error") errors.push(m.text());
   });
+  if (MAX) {
+    const stored = Object.entries(MAX_SETTINGS).map(([k, v]) => [
+      `greywatch.setting.${STORED_AS[k] ?? k}`,
+      typeof v === "boolean" ? (v ? "1" : "0") : String(v),
+    ]);
+    await page.addInitScript((rows) => {
+      for (const [k, v] of rows) window.localStorage.setItem(k, v);
+    }, stored);
+  }
   const t0 = Date.now();
   await page.goto(`${url}/?bench=${id}${GPU ? "&gpu" : ""}`);
   await page.waitForFunction(() => window.__celshock?.state === "bench", null, {
@@ -227,6 +267,12 @@ function summarise(id, runs) {
       failures.push(`${id} run ${i + 1}: ended as "${r.reason}"`);
     }
     if (r.errors.length) failures.push(`${id} run ${i + 1}: ${r.errors.length} page/console errors`);
+    if (MAX) {
+      const off = Object.entries(MAX_SETTINGS)
+        .filter(([k, v]) => r.graphics?.[k] !== v)
+        .map(([k, v]) => `${k} ${r.graphics?.[k]} (asked ${v})`);
+      if (off.length) failures.push(`${id} run ${i + 1}: not at max — ${off.join(", ")}`);
+    }
   });
   const groups = {};
   for (const k of GROUPS) {

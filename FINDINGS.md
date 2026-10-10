@@ -2119,3 +2119,86 @@ the fire and not the fire. Start where the fire differs from the two that
 draw: its `normal` and `uv` attributes, the vertex stage's displacement, and
 how a frozen `FlameMaterial` builds its effect for a render pass it has not
 drawn in before.
+
+## 52. The exit's "before": Greyfen and Sarab, the desktop at max and the phone at minimum — **the phone's fight on Sarab is CPU in the render, and its look frames on Greyfen are not**
+
+**Status:** `BABYLON_EXIT.md` X0.4's measurements, taken 2026-10-09. Every
+later step of the exit quotes its numbers against this entry. **Open:** the
+phone's GPU share is INFERRED (frame minus tick), because none of its
+captures carried `?gpu`; `?bench=<map>&gpu` on the same phone would measure it
+(the phone reports `gpu.frame`; see 50).
+
+### What was measured
+
+Both devices fought the one fight per map from seed 777: Greyfen
+`7ee089c174427e3d`, Sarab `1cab861b4ea23f7f`, on every run on both. Times in
+ms. "Tick" is the CPU's frame (`frame` span) and "render" the CPU recording
+the draw inside it, both means.
+
+**Desktop, MAX settings** (`bench.mjs --max --runs 3`): the Windows box,
+headless, uncapped, 3440x1440, render scale 1, every ladder at `high`, ground
+relief, FXAA, blur and grain on. Medians of three runs in one session; spread
+is the spread of the mean across them.
+
+| map | part | mean | p95 | 1% low | tick | render | draws | spread |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| greyfen | vantages | 5.72 | 11.7 | 14.7 | 5.09 | 4.65 | 131 | 2.3% |
+| greyfen | path | 5.49 | 11.1 | 16.3 | 4.96 | 4.34 | 184 | 0.5% |
+| greyfen | fight | 7.47 | 15.4 | 23.6 | 7.05 | 5.83 | 350 | 1.1% |
+| sarab | vantages | 3.56 | 7.4 | 11.8 | 3.33 | 2.84 | 181 | 2.1% |
+| sarab | path | 4.16 | 8.2 | 12.5 | 3.82 | 3.16 | 175 | 0.2% |
+| sarab | fight | 11.09 | 13.5 | 17.2 | 10.73 | 8.94 | 614 | 2.0% |
+
+Only one segment was over 8%: Sarab's `heli` vantage, at 9.1%.
+
+**Phone, MINIMAL settings**: the 50 / 13 phone (Android 10 UA, dpr 2.8125,
+832x384, 8 cores, 8 GB), `?bench=<map>` on the deployed build, SAVE captures
+(report v13), render scale 0.5 (backing store 1170x540), cap 60, shadows /
+grass / Trees / volumetrics / glow `low`, GI off, ground relief and FXAA off,
+blur and grain on. **Warm**: the runs back to back, 23:42-00:06 UTC, in the
+order Greyfen, Sarab, Sarab, Greyfen. Each pair of figures is the two runs.
+
+| map | part | mean | p95 | 1% low | tick | render | draws |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| greyfen | vantages | 24.6 / 25.6 | 68 / 73 | 96 / 98 | 8.8 / 9.2 | 6.5 / 6.9 | 125 |
+| greyfen | path | 26.9 / 28.4 | 76 / 85 | 98 / 110 | 8.7 / 9.1 | 6.4 / 6.7 | 133 |
+| greyfen | fight | 28.3 / 31.6 | 69 / 69 | 97 / 94 | 16.2 / 19.4 | 12.2 / 14.9 | 300 |
+| sarab | vantages | 19.2 / 19.3 | 36 / 39 | 64 / 64 | 10.7 / 10.7 | 8.3 / 8.2 | 158 |
+| sarab | path | 20.4 / 20.1 | 46 / 45 | 79 / 77 | 10.8 / 10.8 | 8.1 / 8.1 | 144 |
+| sarab | fight | 31.9 / 30.5 | 37 / 36 | 93 / 57 | 29.2 / 27.8 | 24.1 / 22.8 | 530 |
+
+Sarab's two runs agree within 1.3% on the vantages and the path and 4.5% on
+the fight. Greyfen's agree within 4% and 5%, and 11.6% on the fight's mean
+(the later run followed both Sarab runs), while its fight p95 agrees exactly.
+
+**A COLD run is not the before.** The first Greyfen run, 23:36 UTC from a
+phone that had been idle, measured 16.8 / 19.4 / 22.6 ms (vantages / path /
+fight), and the warm runs took 33-49% longer a frame. It also slowed through its own
+164 s, from 17 ms a frame in its first 30 s to 24 ms in its last, and the
+warm runs began at ~22 ms and never came back. Its capture also states a
+different backing store (1170x618), so its screen state differed too. A
+player plays for longer than a cold run lasts, so the warm figures are the
+before, and every later phone run takes one warm-up run first and throws it
+away.
+
+### What it means
+
+- **The desktop is CPU-bound everywhere, and the render's recording is most
+  of it.** Tick is 89-97% of the frame on every part of both maps, and
+  `render` is 83-91% of the tick. That is the cost the exit exists to move.
+  Its p95 runs at about twice its mean, the bursts X0.3 found in an uncapped
+  GPU-bound stream; read the desktop on its mean and 1% low.
+- **The phone's SARAB FIGHT is the same shape**: tick 28-29 ms of a 30-32 ms
+  frame, render 23-24 ms of it, 530 draws. The exit can move it.
+- **The phone's GREYFEN look frames are not.** Tick is ~9 ms of a ~25 ms
+  frame; most frames land on the 16.7 ms vsync and the rest wait 70-85 ms,
+  four or five refreshes. That is the GPU wall 50 describes, and on this
+  phone it gets worse as it warms. A CPU saving moves the mean little until
+  the GPU half moves, and the shaders port unchanged.
+- **Sarab's look frames sit between the two**: tick ~11 ms of ~19 ms.
+
+### What would settle the open half
+
+Two warm `?bench=greyfen&gpu` and `?bench=sarab&gpu` runs on the phone, after
+one warm-up run: `gpu.frame` splits the wait above into GPU work and
+everything else, and with it the "what the exit cannot move" column.
