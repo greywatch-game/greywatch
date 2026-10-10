@@ -315,7 +315,31 @@ ends in a profiler capture.**
   protocol's ~8% on every segment. A phone run completes with nothing but the
   URL.
 
-### X0.4 — The "before", then the targets — **S** (decision at the end)
+### X0.4 — The "before", then the targets — **S** (decision at the end) — **LANDED** (2048484)
+
+**Landed.** The "before" is `FINDINGS.md` 52: Greyfen and Sarab, the desktop
+at max settings (`bench.mjs --max`, three runs a map, every group within
+2.3%) and the phone at minimal ones (two warm runs a map, after a warm-up run
+that was thrown away). Both devices fought one fight per map. On the desktop,
+and in the phone's Sarab fight, the CPU's work is nearly the whole frame and
+recording the draw calls is most of that, which is what the exit moves. The
+phone's Greyfen frames wait on the GPU. The phone's GPU share is inferred, not
+measured; `?bench=<map>&gpu` would measure it and is not needed before X6.2.
+
+**The targets** (the user's, 2026-10-09). X6.2 checks each against a run of
+X0.3 taken as `FINDINGS.md` 52 took it:
+
+| device | map | render scale | statistic | target | before |
+| --- | --- | --- | --- | --- | --- |
+| the phone, minimal settings, warm | Sarab, the fight | 0.5 | p95 | **at or under 25 ms** | 36-37 ms |
+| the phone, minimal settings, warm | Greyfen, the fight | 0.5 | p95 | **at or under 69 ms** (no regression) | 69 ms |
+| the desktop, `--max`, uncapped 3440x1440 | Sarab, the fight | 1 | 1% low | **at or under 12 ms** | 17.2 ms |
+
+The first is the exit's own: the fight's frame is CPU in the render on that
+phone. The second is a floor, because Greyfen's frame on the phone is the GPU,
+which the exit does not port away. The desktop's is a 1% low, not a p95,
+because an uncapped frame arrives in bursts and its p95 sits at about twice
+its mean.
 
 The targets are set from measurements, not guessed ahead of them. A target set
 blind can be out of the exit's reach whatever the exit does. At render scale
@@ -369,6 +393,10 @@ renderer rewrite moves either.
 **Gate after Phase 0:** the bank and the benchmark both reproduce. If either
 does not, no later step can claim it moved nothing or saved anything. Fix them
 before going on.
+
+**Met 2026-10-09, tagged `exit-phase-0`:** the bank 47 of 47 (X0.1), the
+benchmark within 2.3% on the desktop and 4.5% on the phone's Sarab, and one
+fight per map on both devices (X0.3, X0.4).
 
 ---
 
@@ -954,7 +982,7 @@ Phase 1 actually took.
 | before | question | recommendation |
 | --- | --- | --- |
 | any time | Should the bots' movement streams take the round's seed, so they move less alike from round to round? Not part of the exit. | Optional, and a one-line change. Leave the per-squad skill draw constant either way, or balance becomes chance. |
-| end of X0.4 | The frame targets: device, map, render scale and statistic for each. | Set them from X0.4's tables, against what the exit can move. Needed by X6.2, not before. |
+| end of X0.4 | The frame targets: device, map, render scale and statistic for each. | **Decided** 2026-10-09: X0.4's table. |
 | X0.4 | Bring Sarab to final detail first, as a heavier "before"? | Optional. If yes, do it after X0.3 and take the "before" twice, once on each side of the rework. |
 | X2.5 | One simulation core, offline and online? | Yes, here, while it is cheapest. |
 | X3.4 | Scatter AO: baked per kind (cheaper, changes the look) or per instance? | Per kind, judged in the bank. |
