@@ -6,9 +6,20 @@
  * Run with `node plans/physics-ref/drop.mjs [map...]`, `--check` to grade
  * against what is banked rather than replacing it, `--steps N` to lengthen the
  * settle. Resting sets land in `plans/physics-ref/ref/<map>.json`, which
- * records the `steps` it was banked at — and a check owes the same number:
- * Greyfen's is 2400, because since the valley was re-laid one body lands on
- * the east arm's bank under water and is still sliding at 480 and 960.
+ * records the `steps` it was banked at — and **a map is run at its bank's
+ * number unless `--steps` names another**, because a check owes the same
+ * number and a re-take keeps it. A check run at a DIFFERENT number is refused
+ * rather than graded: a set settled for longer is a different drop.
+ *
+ * **Greyfen's is 2400, and that is the physics, not the test.** Body 23 lands
+ * on the open bank above the east arm's water, an 11-degree grade with no
+ * collider near it, and ROCKS: every substep it alternates between lifting off
+ * (falling at ~0.25 m/s, tipped one way) and landing (pushed out along the
+ * slope's normal, tipped back), and the push has a downhill component, so it
+ * walks down the bank ~2 mm a substep until the rocking decays and Havok
+ * sleeps it at ~1540 — still moving at 480 and 960. Measured 2026-10-09.
+ * Moving the lattice off that bank would hide a real behaviour to turn a
+ * check green; the bank's own step count is the answer.
  *
  * **It exists because a physics change is the one class of change this tree had
  * no way to check.** `npm run parity` fingerprints the NAV GRAPH, and physics
@@ -88,8 +99,8 @@
  * commit, as `bank.mjs` asks.
  *
  * **Every shipped map is banked, and a check with no map named grades all of
- * them but Greyfen**, whose bank is at 2400 steps and which does not settle at
- * the default 480 — check it on its own with `--steps 2400 greyfen`. Sarab,
+ * them**, each at the step count its bank records (Greyfen's 2400; see the top
+ * of this header). Sarab,
  * Cinderhaven and Kurenai were first banked after S5b, at 480 (c43b542).
  * A NEW map owes a bank in the commit that ships it.
  *
@@ -113,7 +124,10 @@ import {
 const args = process.argv.slice(2);
 const CHECK = args.includes("--check");
 const stepArg = args.indexOf("--steps");
-const STEPS = stepArg >= 0 ? Number(args[stepArg + 1]) : 480;
+/** `--steps`, or null: each map then runs at its bank's number, or this. */
+const STEPS_ARG = stepArg >= 0 ? Number(args[stepArg + 1]) : null;
+/** What a map with no bank is settled for — and what every bank but Greyfen's says. */
+const DEFAULT_STEPS = 480;
 const maps = args.filter(
   (a, i) => !a.startsWith("--") && !(stepArg >= 0 && i === stepArg + 1),
 );
@@ -452,10 +466,18 @@ const vite = await startDevServer(root);
 const browser = await launchClient();
 
 console.log(
-  `drop: ${STEPS} substeps @ ${vite.url}${CHECK ? "  (check only)" : ""}\n`,
+  `drop: ${STEPS_ARG ?? "each bank's"} substeps @ ${vite.url}${CHECK ? "  (check only)" : ""}\n`,
 );
 const problems = [];
 for (const id of targets) {
+  const out = join(refDir, `${id}.json`);
+  const banked = existsSync(out) ? JSON.parse(readFileSync(out, "utf8")) : null;
+  const STEPS = STEPS_ARG ?? banked?.steps ?? DEFAULT_STEPS;
+  if (CHECK && banked && banked.steps !== STEPS) {
+    problems.push(`${id}: banked at ${banked.steps} substeps, asked to check at ${STEPS}`);
+    console.log(`${id.padEnd(12)} NOT GRADED — banked at ${banked.steps} substeps, not ${STEPS}`);
+    continue;
+  }
   const { page, pageErrors } = await bootMap(browser, vite.url, id);
   await installRound(page);
   const r = await drop(page, {
@@ -510,13 +532,11 @@ for (const id of targets) {
     problems.push(`${id}: ${first.fell} bodies came to rest under the floor`);
   }
 
-  const out = join(refDir, `${id}.json`);
   if (CHECK) {
-    if (!existsSync(out)) {
+    if (!banked) {
       problems.push(`${id}: nothing banked to compare against`);
       console.log(`${label} no reference on disk. ${shape}`);
     } else {
-      const banked = JSON.parse(readFileSync(out, "utf8"));
       if (banked.rows.length !== first.rows.length) {
         problems.push(
           `${id}: banked ${banked.rows.length} bodies, ran ${first.rows.length}`,

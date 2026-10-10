@@ -456,7 +456,8 @@ box did.
   2,400 steps. Harrowmead is "within tol" with the same hash on the parent, so
   that state predates this step. At the default 480 steps Greyfen does not
   settle, as its header says it won't, even though a run with no map named
-  still includes it.
+  still includes it. (Fixed after this step landed: a bare `--check` now runs
+  each map at its bank's count, and passes on all seven.)
 - **simulate, seed 777:** two processes of three rounds on each side (before
   and after). Both sides fought the same fight (Greyfen `6ef4707c3c7a8414`,
   Sarab `c109c06104830c4a`), and tick times differ by at most 2%, which is

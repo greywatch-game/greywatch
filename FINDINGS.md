@@ -2202,3 +2202,32 @@ away.
 Two warm `?bench=greyfen&gpu` and `?bench=sarab&gpu` runs on the phone, after
 one warm-up run: `gpu.frame` splits the wait above into GPU work and
 everything else, and with it the "what the exit cannot move" column.
+
+## 53. A body's friction is configured at 0.8 and is 0.5 against the whole world
+
+**Status:** open, and a gameplay call rather than a bug fix. Found while
+explaining why Greyfen's physics bank needs 2400 steps (`drop.mjs`'s header).
+
+**Derived from the code:** `PhysicsWorld.buildWorld` gives the static world's
+shapes (every collider box and terrain patch) no material, so they carry the
+default friction of 0.5. Babylon's Havok plugin combines friction by MINIMUM
+unless a material says otherwise (`havokPlugin.js`, `setMaterial`). So
+`CONFIG.bots.death.friction` (0.8), which `RagdollSystem`, `DebrisSystem`
+(glass shards) and `BlastDebrisSystem` (rubble) all set, never applies against
+anything static: every body slides on 0.5, which holds on a grade up to about
+27 degrees rather than about 39. Restitution is not affected, because it combines
+by MAXIMUM and the world's is 0.
+
+**Measured** on Greyfen's drop (64 boxes, `CONFIG.bots.death`'s step, damping
+and gravity): with the world at its default, the one body that rocks down the
+east bank sleeps at step ~1536 and ends 1.4 m from where it landed; with every
+world shape given friction 0.8, it sleeps at ~864, about 40 cm higher up the
+bank. Neither run settled by 480. So friction does not cause the rocking, but
+it does decide how far a body slides.
+
+**What would settle it:** decide whether 0.8 is what a body should feel. If
+so, give the world's shapes a material in `PhysicsWorld.buildWorld` (or set
+the bodies' `frictionCombine`), then watch a few deaths and some rubble on a
+slope, and re-take every `plans/physics-ref/` bank in the same commit, saying
+why. If 0.5 is the feel that shipped, the fix is to set the config to 0.5 and
+say so, so the number stops being wrong.
