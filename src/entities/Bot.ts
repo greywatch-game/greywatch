@@ -1,7 +1,9 @@
 /**
  * Bot.ts — AI combatant: FSM (advance/hunt/engage/takeCover/suppressed/retreat/
  * capture/dead), movement, perception, aiming, firing. Rig visuals come from
- * SoldierModel.
+ * SoldierModel; the pose is SOLVED by `soldierPose.ts`, and the rifle's
+ * muzzle — an outcome, being where a shot is heard from and a rocket leaves —
+ * is replayed off that solved pose and never read off the rig.
  * Invariants: NEVER uses moveWithCollisions and never runs its own pathfinding —
  * movement steers on NavGrid flow fields + ObstacleField push-out. The graph
  * picks the SURFACE and the geometry places the FEET (`settle`): a surface is
@@ -51,11 +53,18 @@ import type { CelMaterialFactory } from "../shaders/CelShader";
 import type { CoverKind } from "../world/CoverMap";
 import type { FlowField, NavGrid } from "../world/NavGrid";
 import {
-  animateSoldier,
   buildSoldier,
+  poseSoldier,
   resetSoldierPose,
   type SoldierRig,
 } from "./SoldierModel";
+import {
+  newSoldierJoints,
+  REST_POSE,
+  solveSoldier,
+  soldierMuzzleToRef,
+  type SoldierJoints,
+} from "./soldierPose";
 import { SoldierMotion } from "./SoldierMotion";
 import { profileFor, type BotProfile } from "./BotSkill";
 import { mulberry32 } from "../world/rng";
@@ -284,6 +293,25 @@ export class Bot implements Combatant {
   readonly eyePos = new Vector3();
   readonly center = new Vector3();
   hitRadius = CONFIG.bots.hitRadius;
+
+  /**
+   * The pose last SOLVED onto this bot's rig — what its joints hold, as
+   * numbers. Written wherever the rig is posed (`update` inside the LOD, and
+   * `REST_POSE` at a respawn), and read by `muzzleWorld`, which replays the
+   * node chain off it rather than asking the rig.
+   */
+  readonly joints: SoldierJoints = newSoldierJoints();
+  /**
+   * Where `syncTransform` last stood the rig's ROOT: the body centre and the
+   * feet's yaw. The root of `muzzleWorld`'s chain — the LAST written one,
+   * which is what the node held when a shot or a rocket read it.
+   */
+  private rootX = 0;
+  private rootY = 0;
+  private rootZ = 0;
+  private rootYaw = 0;
+  /** `muzzleWorld`'s answer, reused. */
+  private readonly muzzleAt = new Vector3();
 
   target: Combatant | null = null;
 
@@ -657,6 +685,7 @@ export class Bot implements Combatant {
     // own note — a quaternion left behind freezes this bot for the round.
     this.motion.reset();
     resetSoldierPose(this.rig);
+    solveSoldier(REST_POSE, this.joints);
     this.setEnabled(true);
   }
 
@@ -919,9 +948,9 @@ export class Bot implements Combatant {
     this.shoot(dt, ctx);
     this.syncTransform();
     if (animate) {
-      animateSoldier(
+      poseSoldier(
         this.rig,
-        this.motion.fill(
+        solveSoldier(this.motion.fill(
           dt,
           this.moveBlend,
           this.aimPitch(),
@@ -930,7 +959,7 @@ export class Bot implements Combatant {
           // Rifle up for the whole of a fight, a search included — not only
           // while there is somebody in the sights.
           this.target !== null || this.alerted,
-        ),
+        ), this.joints),
       );
     }
   }
@@ -1987,8 +2016,12 @@ export class Bot implements Combatant {
     // planted — so a root pulled down with it would put the feet through the
     // floor. The same split `NetSoldier` and `DeathCam` draw for a body they do
     // not own.
-    this.rig.root.position.set(this.position.x, this.position.y + c, this.position.z);
-    this.rig.root.rotation.y = this.bodyYaw;
+    this.rootX = this.position.x;
+    this.rootY = this.position.y + c;
+    this.rootZ = this.position.z;
+    this.rootYaw = this.bodyYaw;
+    this.rig.root.position.set(this.rootX, this.rootY, this.rootZ);
+    this.rig.root.rotation.y = this.rootYaw;
     // What DOES come down is the pair the fight is fought with, and they must
     // come down TOGETHER. `eyePos` is what every shooter aims at and what line
     // of sight is tested to; `center` is the sphere their rounds are tested
@@ -2018,18 +2051,24 @@ export class Bot implements Combatant {
    * The rifle's muzzle in world space: where the tracer is flown from, where
    * the flash is lit, and where the shot is HEARD from.
    *
-   * **Forced, for `Vehicle.muzzleToRef`'s reason** — a rig joint is only
-   * invalidated by its parent being recomputed, the render walk is what does
-   * that, and the authority does not render. Unforced, this answered with the
-   * rig's pose at the first read for the life of the server process; measured
-   * on Sarab, that was (0.2, 0.8) — the ORIGIN, since a pooled rig is built
-   * there — which put every bot's `hearGunshot` cue at the middle of the map
-   * whatever end of it the bot was fighting on. The round's own ray is
-   * `eyePos` and was never affected (`BattleSystem.botFire`).
+   * **Replayed off numbers, never read off the rig** (`soldierMuzzleToRef`):
+   * the root `syncTransform` last wrote and the pose last solved onto the
+   * joints (`joints`), through the same float32 chain Babylon composes, so it
+   * is the value `rig.muzzle.computeWorldMatrix(true)` returned bit for bit —
+   * proved against it over whole rounds on all seven maps (BABYLON_EXIT.md
+   * X2.2 C5). That forced call recomputed every ancestor; UNFORCED it had
+   * answered with the rig's pose at the first read for the life of the server
+   * process, since a joint is only invalidated by its parent being recomputed
+   * and the authority does not render — measured on Sarab, (0.2, 0.8), the
+   * ORIGIN a pooled rig is built at, which put every bot's `hearGunshot` cue at
+   * the middle of the map. Nothing here can go stale that way: there is no
+   * cache. The round's own ray is `eyePos` (`BattleSystem.botFire`).
+   *
+   * The shared vector comes back; a caller that keeps it copies it.
    */
   muzzleWorld(): Vector3 {
-    this.rig.muzzle.computeWorldMatrix(true);
-    return this.rig.muzzle.getAbsolutePosition();
+    soldierMuzzleToRef(this.rootX, this.rootY, this.rootZ, this.rootYaw, this.joints, this.muzzleAt);
+    return this.muzzleAt;
   }
 
   /**

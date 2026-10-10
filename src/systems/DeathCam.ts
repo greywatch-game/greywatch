@@ -49,10 +49,10 @@ import {
   animateSoldier,
   buildSoldier,
   resetSoldierPose,
-  REST_POSE,
   type RagdollSubject,
   type SoldierRig,
 } from "../entities/SoldierModel";
+import { REST_POSE } from "../entities/soldierPose";
 import type { CelMaterialFactory } from "../shaders/CelShader";
 import { newRayHit, type RayWorld } from "../world/RayWorld";
 import { stanceCentre } from "../entities/stance";

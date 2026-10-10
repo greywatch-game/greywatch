@@ -312,6 +312,14 @@ budget is the one thing here that does not scale.
 - **Hearing** is a squared-distance sweep inside `BattleSystem.botFire`, with a
   jittered position so bots converge on the *sound*, not the shooter. `Game` calls
   `hearGunshot` for the player's own fire.
+- **A bot's MUZZLE is an outcome, so it is ARITHMETIC and never a rig read.**
+  It is where a bot's shot is heard from and where its rocket leaves, and
+  `Bot.muzzleWorld` replays it (`soldierPose.ts`'s `soldierMuzzleToRef`) off
+  the root `syncTransform` last wrote and the pose last solved onto the joints
+  — the same float32 node chain Babylon's forced `computeWorldMatrix(true)`
+  walked, bit for bit (BABYLON_EXIT.md X2.2 C5 proved it against the rig at
+  every read over whole rounds on all seven maps). The round's own ray is
+  `eyePos` and does not move with it.
 - **A shot is heard differently by the two sides, and the difference is WHERE
   the cue lands.** To the side being shot at, the noise IS the shooter: the cue
   is the muzzle, which is the thing worth looking at. To the shooter's own side

@@ -786,10 +786,15 @@ src/
                         #   marks its own deaths leave. Cues, never targets
     BotSkill.ts         # skill scalar -> BotProfile; difficulty tiers
     SoldierModel.ts     # Merged bot rig + the per-team kit it is painted and
-                        #   shaped in + the procedural poser (a SoldierPose:
-                        #   gait any way, aim, twist, crouch, the rifle's kick,
-                        #   carry and reload, arms IK'd onto it), and the
+                        #   shaped in + the poser that writes a solved pose
+                        #   onto the joints (arms IK'd onto the rifle), and the
                         #   RagdollSubject interface
+    soldierPose.ts      # What a pose IS, as numbers, no Babylon: SoldierPose
+                        #   and REST_POSE (gait any way, aim, twist, crouch,
+                        #   the rifle's kick, carry and reload), solveSoldier
+                        #   to the joint channels, the skeleton's measures the
+                        #   rig is built from, and the bot's MUZZLE replayed
+                        #   off them in src/math, bit for bit the node chain
     SoldierMotion.ts    # One body's motion turned into a SoldierPose: gait
                         #   phase and stepLength, velocity in the feet's frame,
                         #   kick, reload, ready. Bot and NetSoldier drive the

@@ -377,11 +377,12 @@ export class NetSoldier implements Combatant, RagdollSubject {
   /**
    * The rifle's muzzle in world space: where a drawn round's streak starts.
    *
-   * `Bot.muzzleWorld` to the letter, forcing included. A rig joint is only
-   * invalidated by its parent being recomputed and the render walk is what
-   * does that — so an unforced read here is LAST frame's pose, which on a body
+   * Read off the RIG, forced, because this body is a drawing and its streak
+   * leaves the barrel on screen: `computeWorldMatrix(true)` recomputes every
+   * ancestor, while an unforced read is LAST frame's pose — which on a body
    * that has not been drawn yet this round is the pool's build position at the
-   * origin.
+   * origin. `Bot.muzzleWorld` is the same point replayed off numbers
+   * (`soldierMuzzleToRef`), because there it is an outcome.
    */
   muzzleWorld(): Vector3 {
     this.rig.muzzle.computeWorldMatrix(true);

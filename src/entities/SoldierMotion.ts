@@ -13,7 +13,7 @@
  * the same at 30 fps and 144.
  * Never: allocates per frame, or reads anything but what it is handed.
  */
-import { REST_POSE, type SoldierPose } from "./SoldierModel";
+import { REST_POSE, type SoldierPose } from "./soldierPose";
 
 /**
  * How long one STEP is, in metres, at a given speed — the replacement for the
