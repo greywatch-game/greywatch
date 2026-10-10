@@ -13,7 +13,15 @@
  * (hashed), and three that say how the merged meshes are WIRED to the rest of
  * the map (kept as data): `panes` (every `WorldPane` field), `paneGroups` (each
  * as `[index in visuals, panes, block]`) and `editorItems` (each layout item's
- * `visuals` as indices into `GameMap.visuals`, `null` on a shipped build).
+ * `visuals` as indices into `GameMap.visuals`, `null` on a shipped build) — and
+ * a fourth, `pieces`: `GameMap.world.pieces`, the PIECE table (each layout
+ * item a piece id names, as `[list, index]`).
+ *
+ * **Each VISUAL also records its piece ranges** (`pieces`, from the record
+ * `GameMap.world` keeps beside it: `[piece, vertexStart, vertexCount,
+ * indexStart, indexCount]` per range), which say which layout item each span
+ * of a merged mesh came from — what a destructible building will need, and
+ * what nothing else in this file can see moving (`world/worldGeometry.ts`).
  *
  * **Four per-mesh fields describe the UPLOAD rather than the geometry**, because
  * a merge that moves onto arrays and uploads at the end can get each wrong
@@ -211,6 +219,19 @@ function fingerprintMap() {
     const rank = sceneRanks(list);
     return list.map((m, i) => meshRecord(m, rank[i]));
   };
+  // The visuals' piece ranges, off the record `GameMap.world` keeps aligned
+  // with them. Absent on a build older than the piece id.
+  const surfaces = map.world?.surfaces;
+  const visuals = records(map.visuals).map((r, i) =>
+    surfaces
+      ? {
+          ...r,
+          pieces: surfaces[i].pieces.map((p) => [
+            p.piece, p.vertexStart, p.vertexCount, p.indexStart, p.indexCount,
+          ]),
+        }
+      : r,
+  );
   // Indices into `visuals`, by identity: -1 is a mesh the list does not hold.
   const visualIndex = new Map();
   map.visuals.forEach((m, i) => visualIndex.set(m, i));
@@ -218,7 +239,7 @@ function fingerprintMap() {
   const itemVisuals = (items) => items.map((item) => item.visuals.map(indexOfVisual));
 
   return {
-    visuals: records(map.visuals),
+    visuals,
     colliders: records(map.colliders),
     terrainColliders: records(map.terrainColliders),
     lists: {
@@ -240,6 +261,7 @@ function fingerprintMap() {
             scatter: itemVisuals(map.editor.scatter),
           }
         : null,
+      pieces: map.world ? map.world.pieces.map((p) => [p.list, p.index]) : null,
     },
     // Not compared: what the scene holds besides the map (pools, the sky,
     // the viewmodel) is not this script's business, but a change that leaks

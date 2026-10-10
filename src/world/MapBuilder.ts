@@ -88,7 +88,6 @@ import { ObstacleField } from "./ObstacleField";
 import {
   bakePartTransform,
   flattenParts,
-  mergeParts,
   Part,
   type PlainArrays,
   vertexDataOf,
@@ -99,6 +98,7 @@ import { Matrix } from "../math";
 import {
   admitProp,
   admitStructure,
+  assertPieces,
   type Mint,
   mintFrom,
   type PaneSurfaceGroup,
@@ -110,6 +110,7 @@ import {
   BLOCK_SIZE,
   BlockMerge,
   mergeByMaterial,
+  mergeSurfaces,
   PaneBlocks,
   tag,
 } from "./merge";
@@ -117,6 +118,7 @@ import type {
   BuildOptions,
   EditorIndex,
   EditorItem,
+  EditorRef,
   GameMap,
   PaneGroup,
   WaterRect,
@@ -507,6 +509,12 @@ interface BuildRun {
   /** The build's birth counter — see `WorldSurface.born`. */
   mint: Mint;
   /**
+   * Becomes `GameMap.world.pieces`: one entry per layout item, placements
+   * first and then scatter regions, each a PIECE id by its index — see
+   * `worldGeometry.ts`.
+   */
+  pieces: EditorRef[];
+  /**
    * The build's plain-array memo (`PlainArrays`), so the floor's collider
    * clones, made in `buildValley`, and the floor's meshes, made by the adapter
    * at the end, hold one copy of each array between them.
@@ -818,6 +826,7 @@ export class MapBuilder {
       surfaces: [],
       mint,
       plain: new WeakMap(),
+      pieces: [],
       colliders: [],
       // One size, handed to both, because `ReflectionSystem.encloses` asks a
       // glazing group and the wall behind it whether they are the same
@@ -831,6 +840,9 @@ export class MapBuilder {
     record("valley", () =>
       this.buildValley(run, size, margin, terrainBlock, env, terrainColliders),
     );
+    // The floor's patches and the rim's runs, which are no layout item and
+    // carry no piece — see `assertPieces` below.
+    const unpieced = run.surfaces.length;
 
     this.placeStructures(run, network);
     this.placeScatter(run, rng);
@@ -845,6 +857,7 @@ export class MapBuilder {
 
     const glazing = this.mergeBlocks(run);
     const world = this.bake(run, size, glazing);
+    if (import.meta.env.DEV) assertPieces(world, unpieced, index !== undefined);
     const { nav, cover, obstacles, rays, collidables } = this.derive(run, size);
     since("build:total", buildStart);
 
@@ -975,7 +988,7 @@ export class MapBuilder {
    * sounds — then the roads, merged on their own.
    */
   private placeStructures(run: BuildRun, network: RoadNetwork): void {
-    const { layout, terrain, surfaces, mint, colliders, blocks, paneBlocks, index } =
+    const { layout, terrain, surfaces, mint, pieces, colliders, blocks, paneBlocks, index } =
       run;
     // Roads are merged into one draw call per material so overlapping junctions
     // (the central cross, etc.) don't z-fight between separate meshes.
@@ -1008,8 +1021,10 @@ export class MapBuilder {
         roads: isRoad ? network.footprint : undefined,
       });
       // Its parts enter the merge here and nowhere else, each minted the birth
-      // its mesh will be made in (`worldGeometry.ts`).
-      const admitted = admitStructure(built, mint);
+      // its mesh will be made in and filed under this placement's PIECE — a
+      // road's included (`worldGeometry.ts`).
+      const piece = pieces.push({ list: "placements", index: i }) - 1;
+      const admitted = admitStructure(built, piece, mint);
       // What light bounces off this structure's boxes: the average of what it
       // is painted, weighted by how much of each there is. Taken HERE, before
       // the merge below bakes these parts — what it hands back wears the
@@ -1136,12 +1151,14 @@ export class MapBuilder {
    * every region's blocking props clustered into collider meshes at once.
    */
   private placeScatter(run: BuildRun, rng: () => number): void {
-    const { layout, terrain, surfaces, mint, colliders, blocks, index } = run;
+    const { layout, terrain, surfaces, mint, pieces, colliders, blocks, index } = run;
     const scatterStart = performance.now();
     for (const [i, spec] of layout.scatter.entries()) {
       const item = index ? newItem(index.scatter) : null;
       this.item = item;
-      for (const merged of this.scatterRegion(spec, terrain, rng, blocks, mint, colliders, item, i)) {
+      // One PIECE per region, every prop in it filed under it.
+      const piece = pieces.push({ list: "scatter", index: i }) - 1;
+      for (const merged of this.scatterRegion(spec, terrain, rng, blocks, mint, colliders, item, i, piece)) {
         surfaces.push(merged);
       }
     }
@@ -1281,7 +1298,7 @@ export class MapBuilder {
     record("markVisual", () => {
       for (const m of visuals) this.markVisual(m);
     });
-    return { surfaces: records, pieces: [] };
+    return { surfaces: records, pieces: run.pieces };
   }
 
   /**
@@ -1638,6 +1655,8 @@ export class MapBuilder {
     colliders: Mesh[],
     item: EditorItem | null,
     index: number,
+    /** The region's PIECE id — see `worldGeometry.ts`. */
+    piece: number,
   ): WorldSurface[] {
     const build = SCATTER_BUILDERS[spec.prop];
     const light = SCATTER_LIGHTS[spec.prop];
@@ -1702,7 +1721,7 @@ export class MapBuilder {
       const flat = flattenParts(prop);
       // Its box, if it gets one, bounces light in its own colours.
       if (spec.blocking) this.albedoFromParts(flat);
-      parts.push(...admitProp(flat, mint));
+      parts.push(...admitProp(flat, piece, mint));
 
       if (light) {
         this.lighting.add(
@@ -2383,13 +2402,17 @@ export class MapBuilder {
       // The group-of-one exception, and the same hand-bake `mergeByMaterial`
       // does: the caller composes a transform onto what it gets back, so an
       // unbaked part would have its own position clobbered rather than added
-      // to. A lone surface keeps its birth; a merge is born now.
+      // to. A lone surface keeps its birth and its piece; a merge is born now
+      // and carries its members' pieces (`mergeSurfaces`).
       let merged: WorldSurface;
       if (parts.length === 1) {
         merged = paneSurfaces[members[0]];
         bakePartTransform(merged.part);
       } else {
-        merged = surfaceOf(new Part("", mergeParts(parts)), mint());
+        merged = mergeSurfaces(
+          members.map((j) => paneSurfaces[j]),
+          mint,
+        );
       }
       merged.part.name = `${name}-${mat.name}`;
       merged.part.material = mat;

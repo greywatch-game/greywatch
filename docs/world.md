@@ -2020,6 +2020,30 @@ clone in `buildValley`, the patch by the adapter, both through the build's
 `PlainArrays` memo, which hands the second the very `number[]` the first was
 given.
 
+**A merged surface still knows which LAYOUT ITEM each span of it came from —
+its PIECE ranges** (`WorldSurface.pieces`, kept on `GameMap.world`). A piece
+is a layout item: one per placement, roads included, and one per scatter
+region, numbered in that order, its id an index into `GameMap.world.pieces`
+(an `EditorRef`, the editor's own shape for "which item"). Admission files
+every part as one range of its item's piece; `mergeSurfaces` (`merge.ts`)
+carries the members' ranges into a merge by running vertex and index
+offsets in member order — the order `mergeTransformed` concatenates in — and
+folds a range into the one before it when both are one piece; a merge of one
+keeps its member's. It is a wrapper around the merge, never inside it, so the
+merge stays a verbatim copy of Babylon's. So after `BlockMerge` has made a
+dozen buildings one mesh, which vertices and which triangles are each
+building's is still written down. **Nothing reads it yet: it is what
+DESTRUCTIBLE BUILDINGS need** — collapsing, hiding or re-uploading one
+placement's span of a block, the way `GlassSystem` already collapses a pane's
+— and it costs a few numbers a surface. The floor and the rim carry none.
+**Its extension point is a builder-declared SUB-piece** (a
+`Part.metadata.piece`: this wall is its own piece of the cottage), which
+admission would file under an id of its own with nothing downstream changing.
+DEV checks every build (`assertPieces`): each surface's ranges are contiguous
+and cover its vertices and indices exactly, and on an editor build each
+surface is one range whose piece is its own `editorRef`. `npm run merge:hash`
+records the ranges per visual and the table under `lists`.
+
 A **second merge pass** (`BlockMerge`) collapses neighbouring structures and scatter
 fields into one surface per (map block, material) — the block's side is
 `MapLayout.blockSize`, 48 m by default — Sarab states 96, Cinderhaven and Kurenai

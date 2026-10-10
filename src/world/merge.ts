@@ -9,6 +9,9 @@
  * hands back is still surfaces: `worldMeshes` (`parts.ts`) is where the world
  * becomes meshes, once, at the end of the build (BABYLON_EXIT.md X1.4).
  * A prop's hierarchy arrives already flattened (`flattenParts` in `parts.ts`).
+ * Plus `mergeSurfaces`, the one way two or more surfaces become one: the
+ * geometry by `mergeParts`, the PIECE ranges carried across beside it
+ * (`concatPieces`, `worldGeometry.ts`).
  * Owns: no state outlasting a call but the two passes' own block lists, and no
  * collider — `MapBuilder` drives every function here and is still the only
  * place a collider is made.
@@ -17,9 +20,10 @@
  * `ReflectionSystem.encloses` and `WorldCulling` both rest on (the metadata
  * contract in `CLAUDE.md`). A merged surface carries the exemptions and the
  * sway mark its group was KEYED on, never ones read back off a member. A
- * merge of two or more is `mergeParts` (`Mesh.MergeMeshes`' arithmetic, each
- * member under its own world matrix, NOT renormalised) into a new part at
- * identity, minted a new birth; a merge of ONE is that member, its transform
+ * merge of two or more is `mergeSurfaces` — `mergeParts` (`Mesh.MergeMeshes`'
+ * arithmetic, each member under its own world matrix, NOT renormalised) into a
+ * new part at identity, minted a new birth, its piece ranges the members' in
+ * member order; a merge of ONE is that member, its pieces untouched, its transform
  * baked into its own arrays (`bakePartTransform`, which DOES renormalise —
  * so a colour lone in both passes is baked twice, as it always was) and its
  * birth and metadata object kept. Merging is only safe at identity transform:
@@ -34,7 +38,13 @@ import { writePaletteIndex } from "../shaders/CelShader";
 import type { EditorItem, EditorRef, WorldPane } from "./mapTypes";
 import { bakePartTransform, mergeParts, Part, type PartMetadata } from "./parts";
 import { marksSway, type SwayLayer, swayLayerOf } from "./sway";
-import { type Mint, type PaneSurfaceGroup, surfaceOf, type WorldSurface } from "./worldGeometry";
+import {
+  concatPieces,
+  type Mint,
+  type PaneSurfaceGroup,
+  surfaceOf,
+  type WorldSurface,
+} from "./worldGeometry";
 
 /**
  * Records which layout item a mesh — or a surface's part, which hands the mesh
@@ -250,7 +260,10 @@ export class PaneBlocks {
         const merged =
           list.length === 1
             ? list[0].surface
-            : surfaceOf(new Part("", mergeParts(list.map((g) => g.surface.part))), this.mint());
+            : mergeSurfaces(
+                list.map((g) => g.surface),
+                this.mint,
+              );
         merged.part.name = `paneblock${key}-${mat.name}`;
         merged.part.material = mat;
         // Updatable, which no merge can ask for: the adapter uploads a static
@@ -414,7 +427,7 @@ export function mergeByMaterial(
         merged = group[0];
         bakePartTransform(merged.part);
       } else {
-        merged = surfaceOf(new Part("", mergeParts(group.map((g) => g.part))), mint());
+        merged = mergeSurfaces(group, mint);
       }
       // Suffixed only where a group actually splits, so the common name is the
       // one the rest of the tree already reads in a profile.
@@ -449,6 +462,21 @@ export function mergeByMaterial(
     }
   }
   return out;
+}
+
+/**
+ * Two or more surfaces as ONE, in the order given: their parts merged
+ * (`mergeParts`, which leaves every member's arrays as they were) into a new
+ * part at identity with no name, material or metadata yet — the caller's, as
+ * `MergeMeshes`' new mesh was — minted a new birth, and carrying the members'
+ * piece ranges shifted by the running offsets of that same order
+ * (`concatPieces`). It is beside the merge rather than inside it so that
+ * `mergeTransformed` stays a verbatim copy of Babylon's.
+ */
+export function mergeSurfaces(members: readonly WorldSurface[], mint: Mint): WorldSurface {
+  const merged = surfaceOf(new Part("", mergeParts(members.map((m) => m.part))), mint());
+  merged.pieces = concatPieces(members);
+  return merged;
 }
 
 /** What a `mergeByMaterial` caller hands it beyond the surfaces. */

@@ -133,8 +133,9 @@ scripts/                      # Node tooling, run by hand or by `npm run build`,
                               #   nothing; `--editor` does the editor's unmerged
                               #   build. Per mesh also its creation rank in the
                               #   scene, updatable positions, vertex alpha and
-                              #   frozen matrix; the panes, pane groups and
-                              #   editor items as indices into visuals.
+                              #   frozen matrix, and each visual's PIECE ranges;
+                              #   the panes, pane groups, editor items (indices
+                              #   into visuals) and the piece table.
                               #   `--profile` prints the build's phases. Same
                               #   machine and Babylon only. Not a gate
   geometry-check.mjs          # `node scripts/geometry-check.mjs`: builds every
@@ -1118,8 +1119,9 @@ src/
     merge.ts            # The visual merges, on WorldSurfaces: mergeByMaterial,
                         #   then BlockMerge and PaneBlocks per map block (one
                         #   key, one metadata.block), tag, BLOCK_SIZE; the
-                        #   palette slot through CelShader's writePaletteIndex.
-                        #   Nothing in it touches the device
+                        #   palette slot through CelShader's writePaletteIndex;
+                        #   mergeSurfaces, the one 2+ merge, carrying the piece
+                        #   ranges. Nothing in it touches the device
     worldGeometry.ts    # The world's geometry as a record: WorldSurface (a
                         #   Part, its block, its piece ranges, whether its
                         #   positions stay writable, its BIRTH — the scene
@@ -1128,7 +1130,9 @@ src/
                         #   (GameMap.world: everything kept but the arrays,
                         #   which releaseArrays drops at upload), and admission
                         #   (admitStructure / admitProp), the one door a part
-                        #   enters the merge by, refusing a shared array in DEV
+                        #   enters the merge by, refusing a shared array in DEV.
+                        #   The PIECE id (a layout item) and its ranges'
+                        #   arithmetic: concatPieces, assertPieces (DEV)
     solid.ts            # SOLID_ONLY — the one mesh pick predicate left, and the
                         #   editor's alone. The three-way table of what a
                         #   collider answers a body and a round is still here
