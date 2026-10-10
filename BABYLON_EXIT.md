@@ -736,11 +736,10 @@ the user's to run:
 The server is the proof. When this phase ends, the authority runs without
 Babylon, and a build gate keeps it that way.
 
-### X2.1 — The three sweeps are ours (PERF_PLAN C2) — **L** — **BUILT, awaiting the user's play-test** (d11ba15, 869bddc)
+### X2.1 — The three sweeps are ours (PERF_PLAN C2) — **L** — **LANDED** (b7607c3)
 
-**Built and verified, awaiting the user's play-test.** Not landed: the step
-lands only on the user's word after a round on foot and in all three vehicle
-kinds (below). Two commits:
+**Landed** 2026-10-10, on the user's play-test: a round on foot and in all
+three vehicle kinds, and "everything feels good". Four commits:
 - **C1** (d11ba15): `src/world/ellipsoidSweep.ts`, Babylon 9.28's
   `moveWithCollisions` ported against each `WorldBox`'s twelve triangles,
   `RayWorld.bodyNear` as its candidate list, and the oracle
@@ -750,6 +749,10 @@ kinds (below). Two commits:
   its forced world matrix, `CollisionField.movers` and
   `scene.collisionsEnabled` are gone. Static boxes are ranked in the client's
   collider-mesh order, derived from `boxGroups` on both sides.
+- **C3** (0372808): the contracts and docs below, and the collision bakes
+  regenerated for `boxGroups`' new header text.
+- b7607c3: the DEV sweep-order assertion made a module function, so a
+  production bundle drops it whole.
 
 **Why a port and not a new analytic sweep.** The feel is the acceptance test,
 and every push-out, the hull's offset sphere and its climb band were tuned
@@ -819,7 +822,8 @@ sweep is a copied Babylon internal; `sweep-check` is owed by an upgrade),
 `FILES.md` and `VERIFYING.md`. The collision bakes were regenerated for the
 new `boxGroups` header text.
 
-**Owed:** the user's play-test.
+**The play-test** (the user's, 2026-10-10): on foot and in the tank, the truck
+and the helicopter — everything feels good.
 
 As `PERF_PLAN.md` C2 states it: an analytic swept capsule (or ellipsoid)
 against `WorldBox`es, hull boxes and the terrain, over the buckets
@@ -1419,7 +1423,7 @@ Phase 1 actually took.
 | any time | Should the bots' movement streams take the round's seed, so they move less alike from round to round? Not part of the exit. | Optional, and a one-line change. Leave the per-squad skill draw constant either way, or balance becomes chance. |
 | end of X0.4 | The frame targets: device, map, render scale and statistic for each. | **Decided** 2026-10-09: X0.4's table. |
 | X0.4 | Bring Sarab to final detail first, as a heavier "before"? | Optional. If yes, do it after X0.3 and take the "before" twice, once on each side of the rework. |
-| X2.1 | Who judges the feel? | **Decided** 2026-10-10: the user play-tests a round on foot and in each vehicle kind before the step lands (X2.1). |
+| X2.1 | Who judges the feel? | **Decided** 2026-10-10: the user play-tests a round on foot and in each vehicle kind before the step lands (X2.1). **Done** 2026-10-10: it felt good, and X2.1 landed. |
 | X2.4 | Fix `FINDINGS.md` 53 (world friction 0.5, not 0.8) while porting Havok? | **Decided** 2026-10-10: no. The port keeps 0.5, so `drop.mjs` stays an oracle. A fix is a separate commit afterwards, on the user's word (X2.4). |
 | X2.5 | One simulation core, offline and online? | **Decided** 2026-10-10: yes. |
 | X2.5 | In the page or in a Worker? | **Decided** 2026-10-10: in a Worker. X2.5a makes the one core in the page behind a Worker-shaped interface, and X2.5b moves it into a Worker with cross-origin isolation, keeping the in-page core as the fallback for a browser without isolation (X2.5). |
