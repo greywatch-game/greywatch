@@ -676,7 +676,7 @@ The design came from a survey first, and two of its rules were what the bits tur
 
 **What is left between the world and Babylon is public API in two places:**
 - the adapter, through `VertexData.applyToMesh` and `Mesh.setVerticesData`;
-- the colliders, through `MeshBuilder.CreateBox` and `Mesh.MergeMeshes`, which are X2.1's.
+- the colliders, through `MeshBuilder.CreateBox` and `Mesh.MergeMeshes`. Since X2.1 nothing that moves or shoots reads them: they remain only for the editor's centre-screen pick on the client, and as an inert mirror on the server, which X2.3 deletes.
 
 All three internals `docs/build.md` listed are gone. `geometry-check` is now the only caller of `_mergeCoroutine`, as the reference our copy is checked against. A Babylon upgrade now owes geometry-check, math-check, then `merge:hash` (`docs/build.md`).
 
@@ -736,7 +736,90 @@ the user's to run:
 The server is the proof. When this phase ends, the authority runs without
 Babylon, and a build gate keeps it that way.
 
-### X2.1 — The three sweeps are ours (PERF_PLAN C2) — **L**
+### X2.1 — The three sweeps are ours (PERF_PLAN C2) — **L** — **BUILT, awaiting the user's play-test** (d11ba15, 869bddc)
+
+**Built and verified, awaiting the user's play-test.** Not landed: the step
+lands only on the user's word after a round on foot and in all three vehicle
+kinds (below). Two commits:
+- **C1** (d11ba15): `src/world/ellipsoidSweep.ts`, Babylon 9.28's
+  `moveWithCollisions` ported against each `WorldBox`'s twelve triangles,
+  `RayWorld.bodyNear` as its candidate list, and the oracle
+  `scripts/sweep-check.mjs`. Nothing wired.
+- **C2** (869bddc): `CollisionField` rewritten over `RayWorld`. The player,
+  a driven hull and a coasting wreck move by it on both sides. `narrowedMove`,
+  its forced world matrix, `CollisionField.movers` and
+  `scene.collisionsEnabled` are gone. Static boxes are ranked in the client's
+  collider-mesh order, derived from `boxGroups` on both sides.
+
+**Why a port and not a new analytic sweep.** The feel is the acceptance test,
+and every push-out, the hull's offset sphere and its climb band were tuned
+against Babylon's response loop. A difference that starts at the last bit can
+pick the other triangle of a tie and slide somewhere else, so the port keeps
+Babylon's arithmetic, quirks included: back faces are tested (the default
+material meant Babylon's cull never ran in this game), and the 1 mm
+write-back is kept.
+
+**Where it differs from the text above:**
+- **The candidates come from `RayWorld`'s grid** (`bodyNear`), not from a grid
+  `CollisionField` keeps. One index, so a hull (`rays.hulls`) and a broken pane
+  (`RayWorld.remove`) leave every ray and every sweep in one write.
+  `CollisionField` holds no geometry of its own.
+- **The terrain is not swept**, as it never was. Vertical placement is the
+  ground probe's.
+- **The candidate list is checked against the path the centre took.** A sweep
+  that outran it is re-gathered at the reach it needed (three times, then the
+  whole map).
+
+**Three deliberate differences from what shipped**, named in
+`CollisionField.ts`'s header. All three matter only on knife edges at embedded
+starts:
+- the start is the body's own float64 position, where Babylon read the float32
+  world matrix;
+- a merged scatter cluster's triangles round as a mesh of their own did;
+- a hull is swept where it IS. Babylon read a stale world matrix on a client,
+  and on the authority possibly the origin.
+
+**Measured:**
+- **sweep-check, exact** (one mesh per box in the client's order, Babylon's
+  float32 start, the production gather): 56,000 of 56,000 bit-identical over
+  the seven maps; 44-73% of samples blocked. Ours takes 10-33 us a move, against
+  Babylon narrowed to the same boxes at 13-80 us and its whole walk at 52-524.
+- **sweep-check, `--tight`:** the same 56,000, with 104,118 re-gathers and
+  52,069 whole-map fallbacks. In C1 a reviewer forced the redo on 93% of
+  samples and it stayed 8,000/8,000.
+- **sweep-check, shipped** (the client's real merged scene, float64 starts
+  both sides): 40,345 of 56,000 within 1e-9, 90 over 1 mm. Every one of the 90
+  is an embedded start on a knife edge or merged-cluster rounding; 0
+  unexplained.
+- **sweep-check, walk** (700 chained fixed-step trajectories): the player never
+  drifts past 7 mm. Hulls pinned on box edges at those same knife edges drive
+  apart open-loop. Of the six worst, traced: three were merge rounding, three
+  were the start, none were ties.
+- **simulate, seed 777:** Greyfen fought X1.1's fight (`6ef4707c3c7a8414`). The
+  armour maps' fights changed: Sarab `dd2ee4abacfda2fe`, Coldharbour
+  `81e262436c7af253`, Harrowmead `6c61e93be2cffcbc`, Cinderhaven
+  `0e09b2c0616d9fa7`. Every change is attributed: with a float32 start, ours
+  fights the parent's own Babylon fight exactly once the parent is given
+  unmerged clusters and fresh hull matrices.
+- **parity:** passes on all eight maps.
+- **drop.mjs --check:** identical on six maps. Harrowmead is "within tol", as
+  it has been since X1.1.
+- **gate.mjs:** a real round on all seven maps is clean.
+- **A netplay round on Coldharbour**, on foot and driving into a building:
+  client and authority agree to 0.000 m. No body correction in ~640 uploads,
+  and no hull correction in 391 drive samples without bots. A drive refused
+  for speed after a long frame was found on the way and is pre-existing
+  (`FINDINGS.md` 54).
+- **`npm run build`:** passes.
+
+**Rewritten:** `CLAUDE.md` ("Visual meshes and collider proxies", and the
+hull's line in "Vehicles"), `CollisionField.ts`'s header, `docs/vehicles.md`,
+`docs/multiplayer.md`, `docs/editor.md`, `docs/world.md`, `docs/build.md` (the
+sweep is a copied Babylon internal; `sweep-check` is owed by an upgrade),
+`FILES.md` and `VERIFYING.md`. The collision bakes were regenerated for the
+new `boxGroups` header text.
+
+**Owed:** the user's play-test.
 
 As `PERF_PLAN.md` C2 states it: an analytic swept capsule (or ellipsoid)
 against `WorldBox`es, hull boxes and the terrain, over the buckets
@@ -1286,7 +1369,7 @@ Each is rewritten by the step that breaks it, in the same commit.
 | `CLAUDE.md`: the pipeline warm-up | X4.4, X5.4 |
 | `CLAUDE.md`: a colour gradient changes a particle system's vertex layout | X4.7 (deleted) |
 | `CLAUDE.md`: measuring a frame, the two roots | X5.4 |
-| `docs/build.md`: the four copied Babylon internals, `merge:hash` owed per upgrade | X1.2, X1.4, X6.1 |
+| `docs/build.md`: the four copied Babylon internals, `merge:hash` owed per upgrade | X1.2, X1.4, X2.1 (adds the sweep and `sweep-check`), X6.1 |
 | `docs/rendering.md` | X3.1 onward, swept at X6.1 |
 | `PERF_PLAN.md` Parts B and C | this file (see the note at its top) |
 

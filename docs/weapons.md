@@ -23,7 +23,7 @@ unmoved sphere puts every round through the middle of the target instead of graz
 its top, and crouching makes you *easier* to kill. The two numbers keep the
 sphere's top the same 0.05 m above the eye it is when standing — the
 visible-but-unhittable trap `CoverMap`'s `hardHeight` documents from the other
-side. The collider capsule is deliberately *not* resized: `moveWithCollisions` is
+side. The collider capsule is deliberately *not* resized: the sweep is
 horizontal-only and the ground probe places the feet, so a shorter body buys
 nothing and would owe a stand-up clearance test. Sprint outranks crouch and is
 resolved first. Bots have no equivalent: the rig they share with remote humans can

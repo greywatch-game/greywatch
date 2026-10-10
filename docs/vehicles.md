@@ -764,8 +764,8 @@ reasons are worth writing down because the question will come back:
   antenna is on a live vehicle, and `CLAUDE.md`'s standing rule is that Havok
   never touches a rig node.
 - **A hull TELEPORTS as far as a solver is concerned.** It is moved by
-  `moveWithCollisions` and ridden up over a kerb by `standOnGround`, neither of
-  which is a velocity. A jointed chain hung off an anchor that jumps
+  the sweep (`CollisionField`) and ridden up over a kerb by `standOnGround`,
+  neither of which is a velocity. A jointed chain hung off an anchor that jumps
   0.9 m in a frame cracks every time a tank climbs a kerb, and the fix for that
   is to feed the solver a velocity the hull does not have.
 - **It would cost per link what the spring costs per mast.** Four bodies and
@@ -860,22 +860,23 @@ What the hull's collider box is:
   `Game`). Verified against the ray it replaced over 1,617 points on and around
   a parked hull: no disagreement anywhere, and a body dropped over the turret
   settles on the deck.
-- `checkCollisions`, so `moveWithCollisions` — the player's, and the other
-  tank's — is held out of it. It is also the mesh that *moves*, which is what
-  makes that safe: Babylon excludes the mover from its own collision test. And
-  because it moves, it is the one collidable mesh that cannot live in
-  `CollisionField`'s grid — `VehicleSystem.build` registers every hull body in
-  `map.collidables.movers` instead, which is appended to every answer, exactly
-  as it pushes the hull into `map.rays.hulls` a line earlier and for the same
-  reason.
+- **In every SWEEP**, so the player's and the other hulls' are held out of it.
+  It reaches them the way it reaches the rays: `RayWorld.bodyNear`, the list
+  every sweep is gathered from, appends each hull's `rayBox()` after the static
+  boxes, behind the same gate — so `hide` takes it out of every sweep and every
+  ray in one write, and `VehicleSystem.build` registers a hull once, in
+  `map.rays.hulls`. A hull's own sweep passes itself as `self`, which is the
+  whole of how a mover is kept out of its own test (Babylon's coordinator
+  skipped the mover; `bodyNear` skips `self`).
 - **No `WorldBox`.** `NavGrid`, `CoverMap`, `ObstacleField`, the AO bake and the
   collision bake are all built once from the finished collider set at map load,
   and a thing that moves cannot be in any of them.
 
 **The drive USED to be the last thing in the game that walks the whole scene,
-and that is the single most expensive thing a vehicle has ever done.**
-`moveWithCollisions` costs per collidable MESH in the map, which is what every
-ray in this tree stopped doing when `RayWorld` replaced the picks
+and that is the single most expensive thing a vehicle has ever done.** This is
+history now, kept because the numbers are what argued for the two fixes after
+it. Babylon's `moveWithCollisions` cost per collidable MESH in the map, which
+is what every ray in this tree stopped doing when `RayWorld` replaced the picks
 (`ENGINE_UPGRADE.md` wall 2) — a hull was left behind because it MOVES a body
 rather than asking a question about one, so no analytic query stands in for it.
 Measured on the authority, one hull stepped 2,000 times: **0.039 ms a call
@@ -887,25 +888,46 @@ suggests, because a map fields more than one and all of them are driven:
 plank, the springs, the lean, the whips, the turret, the cupola gun, the crew
 AI, the crush sweep and the engine audio combined.
 
-**It is narrowed now, and the narrowing is Babylon's own rather than a
-replacement.** `map.collidables` (`world/CollisionField.ts`) buckets the
-collider MESHES, `Vehicle.update` hands the hull's own street to
-`body.surroundingMeshes`, and Babylon's coordinator walks that instead of
-`scene.meshes` — so the collision RESPONSE is untouched and the landing position
-is bit-identical, which was proved at 8,000 samples per hull kind on every map
-with armour rather than argued. **11 us a call, the fleet 0.12 ms a frame,
-Sarab's median frame 11.3 ms to 8.7, and the authority's Sarab tick p50 0.691 ms
-to 0.053**. It still runs only while `|speed| > 1e-3`, so a
-parked fleet still costs nothing.
+**It was narrowed first, and the narrowing was Babylon's own.** A bucketed
+mesh grid handed the hull's own street to `body.surroundingMeshes`, and
+Babylon's coordinator walked that instead of `scene.meshes` — the landing
+position bit-identical at 8,000 samples per hull kind on every map with armour.
+**11 us a call, the fleet 0.12 ms a frame, Sarab's median frame 11.3 ms to 8.7,
+and the authority's Sarab tick p50 0.691 ms to 0.053.**
 
-**Three rules the narrowing rests on, and a change here must not break any of
-them.** The list must be a SUPERSET of what the sweep can reach — radius plus
-the whole step plus a margin — so `Vehicle.update` CHECKS that the hull did not
-outrun it and re-runs the whole walk when it did, which is what makes an
-ejection out of a wall safe. The list must be in the SCENE's order, because
-Babylon breaks a distance tie in favour of whichever mesh it walked first and a
-box world is full of coplanar ties. And it must be centred on
-`getAbsolutePosition()`, which is what `moveWithCollisions` itself opens with.
+**And now the sweep is the game's own** (`BABYLON_EXIT.md` X2.1).
+`world/ellipsoidSweep.ts` is Babylon 9.28's collider ported operation for
+operation — a port rather than a new sweep because every push-out, the offset
+sphere and the climb band in this file were tuned against its response — and
+`CollisionField.move` feeds it the BOXES near the hull out of `RayWorld`
+rather than meshes, so no collider mesh is walked by anything and the
+authority's hulls drive with no scene at all. `scripts/sweep-check.mjs` holds
+it to the bit against Babylon (56,000 of 56,000 over the seven maps) at 10-33
+us a move. It still runs only while `|speed| > 1e-3`, so a parked fleet still
+costs nothing.
+
+**Three rules the sweep rests on, and a change here must not break any of
+them** (`CollisionField.ts`'s header). The list must be a SUPERSET of what the
+sweep can reach — radius plus the whole step plus a margin — and that is
+CHECKED: a sweep whose centre travelled farther than the list was gathered for
+is re-gathered at the reach it needed and run again, three times, then against
+every body box on the map, which is what makes an ejection out of a wall safe.
+The list must be in the CLIENT's collider-mesh ORDER (`RayWorld`'s rank,
+derived from `boxGroups` on both sides), because the sweep breaks a distance
+tie in favour of whichever box it met first and a box world is full of
+coplanar ties — measured, a different order slid hulls metres apart from an
+embedded start. And a move of a millimetre or less is not written back
+(`COLLISIONS_EPSILON`), which is Babylon's callback and what lets a hull pull
+away from rest (below).
+
+**It differs from what shipped under Babylon in three places, all on
+purpose**: the start is the body's own float64 position (Babylon read it out
+of the float32 world matrix), a merged scatter cluster's triangles round as a
+mesh of its own did, and **a hull is swept where it IS** — Babylon swept
+against a hull's last computed world matrix, a frame old on a client and, on
+the authority, wherever the last read had left it, the origin for a hull
+nobody had driven. Each of the first two moves an answer only by a rounding,
+which matters only on a knife edge.
 
 The consequence is stated rather than hidden: **bots walk through a parked
 tank.** They walk through corpses too, for the identical reason, and both are in
@@ -1093,7 +1115,7 @@ halves must not drift apart:
 
 - Horizontally it is **where the collision ellipsoid's floor sits**
   (`ellipsoidOffset.y`), so anything shorter is simply not in the hull's way.
-  `moveWithCollisions` has no notion of climbing and slides along a vertical
+  The sweep has no notion of climbing and slides along a vertical
   face whatever its height, so without the lift the ground query never gets a
   chance and a tank is stopped dead by a 0.3 m kerb.
 - Vertically it is **the ceiling of the band a contact will accept a surface
@@ -1145,8 +1167,8 @@ Three things about that offset, all of them load-bearing:
 
 ### And the arm that offset hangs on is what got the hull stuck
 
-The 1.4 m offset is the fix above and it is also a lever. `moveWithCollisions`
-sweeps a TRANSLATION and nothing else, so a hull's YAW carries the sphere round
+The 1.4 m offset is the fix above and it is also a lever. The sweep moves a
+TRANSLATION and nothing else, so a hull's YAW carries the sphere round
 on that arm — at `turnRate * 1.4`, 1.26 m/s at full stick — through anything the
 tank is parked beside, with no test of any kind. Two things followed, and the
 second is the one players reported.
@@ -1218,9 +1240,10 @@ The push-out above is about walls. This one has no wall in it at all, and it is
 the one that reads as *"I come to a stop, press W, and it chugs for four or five
 seconds before it starts moving."*
 
-`moveWithCollisions` writes the position back **only when the move it worked out
-exceeds `CollisionsEpsilon`** — one millimetre — and otherwise returns the mesh
-exactly where it was, quietly. From a standstill the first frame asks for
+The sweep writes the position back **only when the move it worked out
+exceeds `COLLISIONS_EPSILON`** — one millimetre, Babylon's `CollisionsEpsilon`,
+which the port keeps on purpose — and otherwise leaves the body exactly where
+it was, quietly. From a standstill the first frame asks for
 `accel * dt^2`, which is a third of a millimetre at 120 fps. So the hull did not
 move; the blocked check read that as walked-into-something and docked the speed
 to a third; and the two found a fixed point:
@@ -1571,7 +1594,7 @@ which was never the thing that was wrong.
 ### Three gaps, all accepted on purpose
 
 - **`vel` stays horizontal and `standOnGround` remains the sole owner of
-  `body.position.y`.** Putting a Y component through `moveWithCollisions` was
+  `body.position.y`.** Putting a Y component through the sweep was
   the obvious move and is wrong: the collision ellipsoid's floor sits
   `climbHeight/2` above the hull's bottom, so a descending machine would be
   stopped by the collider and put back by the plank, once a frame, for ever. The
@@ -1648,7 +1671,7 @@ and the collision bake are all built once from the finished collider set, and a
 thing that MOVES cannot be in any of them. That is the ragdoll's rule and the
 hull is an instance of it rather than an exception to it, and the consequence
 is stated everywhere it lands: **bots walk through a parked tank exactly as
-they walk through a corpse.** `moveWithCollisions` is no answer either — it
+they walk through a corpse.** The sweep is no answer either — it
 sweeps the HULL out of the world's boxes, and a body is not one of them. So
 before this, a driver could put eleven metres a second through a squad standing
 in the road and the squad stood there unmoved. Everything else on this vehicle
@@ -2294,7 +2317,7 @@ A hardstanding's hull is LIVE, a WRECK, or GONE:
 
 **A respawn is never refused.** A hardstanding is in `MapBuilder.keepClear`, so
 nothing is ever built on one, and the only thing that could be standing there is
-a body — which resolves itself, because `moveWithCollisions` pushes them out on
+a body — which resolves itself, because the sweep pushes them out on
 their next frame. Refusing would mean a side losing its armour for the rest of
 the round because a bot was loitering, which is far worse than a shove.
 
@@ -2382,9 +2405,9 @@ is the whole point. At 0.9 the fall ate nearly all of the speed, the wreck lande
 at 2.9 m/s and scrubbed 20 cm, and what a player saw was a lurch and then a
 vertical drop.
 
-The move is `narrowedMove`, the third of the three sweeps `CLAUDE.md` allows — a
-sweep that walked `scene.meshes` would price a burning hull on the size of the
-map. **A wreck that hits a building has ARRIVED**: the velocity is re-read off the
+The move is `moveBody` (`CollisionField`), the third of the three sweeps
+`CLAUDE.md` allows — a sweep that walked `scene.meshes`, as Babylon's once did,
+would price a burning hull on the size of the map. **A wreck that hits a building has ARRIVED**: the velocity is re-read off the
 ground actually COVERED rather than docked by a fraction, so a slide along a wall
 keeps the along-wall share and a head-on stop keeps nothing, and it is bounded by
 what was ASKED, because a sphere being ejected out of a box covers a great deal of
@@ -3394,7 +3417,7 @@ argument that a machine which answers an obstacle by climbing needs the run-up
 rather than the near field. That opened a nine-metre hole directly in front of
 a hull whose rotor disc is ten metres across, and `WHISKER_DEPTHS`' own hour
 was paid a second time one axis up: measured on Sarab, a pilot flew into the
-side of a building at fifteen metres, `moveWithCollisions` refused every metre
+side of a building at fifteen metres, the sweep refused every metre
 of the drive, and `freeFromWalls` walked the machine sideways out of the wall
 for the rest of the round while the fan reported clear air and the engine note
 said fifteen knots. **The near field is what a TURN swings a bearing onto, and
@@ -3412,8 +3435,8 @@ stand high enough to reach a machine twelve metres over the roofs.
 
 The first is the near-field hole above.
 
-The second is that **`moveWithCollisions` opens with `getAbsolutePosition()`,
-and on the AUTHORITY nothing had ever computed one.** That value is whatever
+The second is that **Babylon's `moveWithCollisions` opened with
+`getAbsolutePosition()`, and on the AUTHORITY nothing had ever computed one.** That value is whatever
 `computeWorldMatrix` last wrote; on a client the render walk writes it once a
 frame, so nothing in this tree ever had to say so. The server does not render.
 A node that is merely MOVED does not report itself out of sync, so its FIRST
@@ -3424,10 +3447,14 @@ of colliders standing at 0,0 whatever its route said, and a bot crew took two
 minutes to cross ground it covers in twenty seconds.
 It was there for as long as bots have crewed anything and nothing could see it,
 because the only tool that watches a headless round prints tickets and kills
-rather than positions. `narrowedMove` forces the matrix now, which is one 4x4
-compose per sweep per frame against the two sweeps this game has; the Sarab
-authority tick is unmoved by it (p50 0.101 ms before, 0.086 after, p95 0.201
-both).
+rather than positions. The fix then was to force the matrix before every
+sweep, one 4x4 compose per sweep per frame; the Sarab authority tick was
+unmoved by it (p50 0.101 ms before, 0.086 after, p95 0.201 both). **Since
+`BABYLON_EXIT.md` X2.1 there is no matrix to force**: the sweep starts from
+the body's own position and meets every other hull at its `rayBox()`, which
+reads the body's position too, so a sweep on the authority reads no world
+matrix at all. Every OTHER read of a hull's world matrix the authority can
+reach still forces its own (the rule `CLAUDE.md` states).
 
 ### What it does, measured
 
@@ -3773,7 +3800,7 @@ ray happened to find, which can be a street away.
 - **A flying hull is not collided UPWARD.** `vel` is horizontal and
   `standOnGround` owns `body.position.y` alone, so nothing stops a helicopter
   climbing through the underside of an arch. Putting a Y component through
-  `moveWithCollisions` is the obvious fix and is worse: the collision ellipsoid's
+  the sweep is the obvious fix and is worse: the collision ellipsoid's
   floor sits `climbHeight/2` above the hull's bottom, so a descending machine
   would be stopped by the collider and put back by the plank once a frame for
   ever. Same class as "a hull pivots through whatever it is beside".

@@ -155,12 +155,20 @@ scripts/                      # Node tooling, run by hand or by `npm run build`,
                               #   gate
   sweep-check.mjs             # `node scripts/sweep-check.mjs [map...]`: moves
                               #   the player and every hull kind's ellipsoid by
-                              #   Babylon's moveWithCollisions and by the port
-                              #   (src/world/ellipsoidSweep.ts) from the same
-                              #   seeded starts on every map, and fails on any
-                              #   answer that is not BIT-identical. `--mode`
-                              #   picks the reference. Deleted with Babylon
-                              #   (X6.1). Not a gate
+                              #   Babylon's moveWithCollisions and by the
+                              #   production sweep (CollisionField over
+                              #   src/world/ellipsoidSweep.ts) from seeded
+                              #   starts on every map. Three modes: `exact`
+                              #   (default) fails on any answer not
+                              #   BIT-identical to one mesh per box from
+                              #   Babylon's float32 start; `shipped` measures
+                              #   against the client's real merged scene and
+                              #   diagnoses every miss over 1 mm; `walk` chains
+                              #   fixed-step trajectories and reports drift.
+                              #   `--tight` forces the re-gathers, `--reference
+                              #   server` the authority's scene. Owed by a
+                              #   Babylon upgrade (docs/build.md). Deleted with
+                              #   Babylon (X6.1). Not a gate
   loc.mjs                     # `npm run loc`: how big the project is, off `git
                               #   ls-files` — hand-written code split into
                               #   code, comment and blank, apart from the map
@@ -1018,7 +1026,7 @@ src/
                         #   offered. Replaces scene.getActiveMeshCandidates and
                         #   writes NOTHING onto a mesh, which is what leaves
                         #   every ray, the shadow map, every cube probe and
-                        #   moveWithCollisions unable to tell it ran. A collider
+                        #   every sweep unable to tell it ran. A collider
                         #   is never a candidate, a mesh carrying metadata.block
                         #   is one inside the map's fogEnd, everything else
                         #   always is
@@ -1148,7 +1156,8 @@ src/
                         #   collider boxes, the strut groups and the terrain
                         #   rather than off scene.meshes. castBody / castRound /
                         #   blocked, bodyNear (a body sweep's candidates, in
-                        #   collider order), the grid behind them, and the hulls, which
+                        #   the client's collider-mesh order, ranked from
+                        #   boxGroups, hulls last), the grid behind them, and the hulls, which
                         #   are the one solid thing that moves. It is what
                         #   retired scene.pickWithRay at all eight sites
     ellipsoidSweep.ts   # The swept ellipsoid every body moves by: Babylon's
@@ -1157,15 +1166,14 @@ src/
                         #   twelve triangles instead of a mesh's. Back faces
                         #   tested, ties to the first found. Bit-identical to
                         #   Babylon (scripts/sweep-check.mjs). Apache-2.0 notice
-    CollisionField.ts   # RayWorld's counterpart for the one whole-scene walk a
-                        #   ray query could not replace: the collider MESHES
-                        #   bucketed, so moveWithCollisions is handed a street
-                        #   through Babylon's own surroundingMeshes instead of
-                        #   walking the map. `narrowedMove` is the whole of how
-                        #   a body sweeps — a hull's and the player's, the only
-                        #   two in the game, and it forces the mover's world
-                        #   matrix because the AUTHORITY never renders one.
-                        #   Superset or nothing — read it
+    CollisionField.ts   # How a body MOVES: the one sweep the player, a driven
+                        #   hull and a coasting wreck go through, on both sides.
+                        #   move / moveBody (null-safe) / sweepFrom (oracle)
+                        #   gather RayWorld.bodyNear, run ellipsoidSweep, CHECK
+                        #   the list against the path the centre took
+                        #   (re-gather, then the whole map), and keep Babylon's
+                        #   1 mm write-back. No geometry, no index, no mesh;
+                        #   hulls and broken glass arrive through RayWorld
     vertexShading.ts    # The world's baked vertex-colour buffer, written after
                         #   every merge and before the upload: AO in the ALPHA,
                         #   the world mark in the GREEN, the wind's sway weight

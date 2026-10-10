@@ -727,34 +727,34 @@ is one machine's:
   driven first. Measured on Coldharbour: 1200 → 580 on a clean strike, which is `damage` exactly and
   no splash — `blastAt` needs line of sight to the hull's centre and the hull is
   in the way.
-- **To A/B the narrowed sweep against the old one you must CLEAR
-  `surroundingMeshes`, not just null the field.** It is state on the MESH:
-  `narrowedMove` now clears it on the no-field path, but a harness that sets
-  `player.setGround(..., null)` and nothing else is handing Babylon whatever
-  list was last written, so BOTH arms walk the narrow list and the change
-  reports as worth nothing. Measured wrongly this way it read 0.022 ms a frame
-  either side; measured properly it is **2.21 ms against 0.036**.
+- **To A/B the sweep against Babylon's, run `scripts/sweep-check.mjs`; do not
+  build a harness in the page.** Since `BABYLON_EXIT.md` X2.1 the sweep is
+  ours (`CollisionField` over `ellipsoidSweep.ts`) and there is no
+  `surroundingMeshes`, no `narrowedMove` and no collidable mesh to walk, so
+  Babylon's `moveWithCollisions` survives only as the oracle's reference.
+  (Under Babylon, an A/B that nulled the field without clearing the mesh's
+  `surroundingMeshes` walked the narrow list in BOTH arms and read 0.022 ms a
+  frame either side, against a true **2.21 ms against 0.036**.)
 - **Time a sweep in a ROUND, not in an isolated loop at the spawn.**
-  `_collideWithWorld` re-walks the whole list on every retry, so the cost peaks
+  The retry loop (Babylon's `_collideWithWorld`, ported) re-walks the whole
+  list on every retry, so the cost peaks
   when a body is pressed against geometry — which is most of a real round and
-  none of a loop run on open ground. The player's walk reads 106-377 us
-  isolated at a spawn and 388-2,209 us walking a town. The isolated form is
+  none of a loop run on open ground. Under Babylon, the player's walk read
+  106-377 us isolated at a spawn and 388-2,209 us walking a town. The isolated form is
   still the right instrument for a per-call figure (the clock is clamped, so
   only a sum over hundreds of calls means anything); it just has to be run
   somewhere a body is actually colliding.
-- **Teleporting a hull between calls does NOT move the sweep, and the failure
-  looks exactly like a broken collider index.** `moveWithCollisions` opens with
-  `getAbsolutePosition()`, and `computeWorldMatrix()` early-outs when
-  `_currentRenderId` already equals `scene.getRenderId()` — which never advances
-  inside one synchronous `page.evaluate`. So the first `body.position.set()` in
-  such a loop takes and **every one after it is ignored**, and the hull sweeps
-  from wherever it stood at the last render. Chasing this cost an afternoon:
-  a differential harness reported the whole-scene walk colliding with a
-  `compoundWall-col` **600 m away** from where the test had put the body, which
-  reads as an index missing a mesh and is nothing of the kind. **Call
-  `body.computeWorldMatrix(true)` after every position write**, and if something
-  still disagrees, print `collider._basePointWorld` — it says where Babylon
-  thinks the sphere is, and one line of it ends the argument.
+- **Teleporting a hull between calls moves the sweep now, and a world-matrix
+  read still does not.** Since X2.1 the sweep starts from `body.position` and
+  meets every other hull at its `rayBox()`, which reads the position too, so
+  no matrix is involved. Anything that still asks `getAbsolutePosition()` (a
+  muzzle, a node's world position) reads the world matrix, and
+  `computeWorldMatrix()` early-outs while `_currentRenderId` equals
+  `scene.getRenderId()` — which never advances inside one synchronous
+  `page.evaluate`. **Call `body.computeWorldMatrix(true)` after a position
+  write before any such read.** (Under Babylon this was the SWEEP's start too,
+  and it cost an afternoon: a harness reported the walk colliding with a
+  `compoundWall-col` 600 m from where the test had put the body.)
 - **A scripted DRIVE is not a test of anything a hull hits.** Measured over
   1,800 steps of full-throttle turning and reversing, on Sarab, Coldharbour and
   Harrowmead: **every hull finished without being blocked once.** Hardstandings
@@ -791,22 +791,29 @@ is one machine's:
   - `g.crew.clearAlong(tank, yaw)` and `g.crew.pickBearing(tank, wantYaw)` are
     the whiskers, and sweeping 24 bearings through the first is the fastest way
     to see what a stuck driver thinks the world looks like. A hull with the
-    throttle at 1.0 and `travel` near zero is `moveWithCollisions` refusing —
+    throttle at 1.0 and `travel` near zero is the sweep refusing —
     which means the whiskers said clear and were wrong, and the sweep is where
     that shows.
 - **A NETPLAY tank is driven the same way, and three things about the harness
   bite before the feature does.** Point the page at `?mp=ws://host:port/ws`, set
   `localStorage["greywatch.map"]` in an `addInitScript` (the map a match is
   created on is the one the JOINING client asks for, and there is no URL
-  parameter for it), and deploy with `g.net.sendDeploy(i)` where `i` indexes
+  parameter for it), and deploy with
+  `g.net.sendDeploy(i, g.weapon, g.equipment, g.throwable)` where `i` indexes
   `g.map.spawns` — the deploy screen's own list is derived and is not that
-  index. Then:
+  index (the kit rides the deploy, so the other three are owed). **A BOTLESS
+  match keeps a bot crew from taking the hull first**: wrap `WebSocket` in an
+  `addInitScript` and rewrite the outgoing `join` frame to `bots: false`
+  (`Join.bots`; there is no URL parameter for it either). Then:
   - **`g.mount()` is not the way in.** In a match the seat is an ask:
     `g.net.sendMount(hullIndex)` and then `waitForFunction(() => !!g.driving)`.
     The authority refuses it unless the body IT holds is inside `enterRadius`,
     so the player has to genuinely walk there.
   - **Walking there fights the movement validator, and the frame rate is what
-    makes it fight.** `placeAt` in a loop is fine at ~3 m a step, but at 2 fps a
+    makes it fight.** At 60 fps on the GPU box, real keyboard input through the
+    frame loop (`page.keyboard.down("w")`) walks there and drives the hull
+    with no help, and is the better test. `placeAt` in a loop is fine at ~3 m a
+    step, but at 2 fps a
     loop with a 100 ms wait runs several steps between frames — the uploads
     then carry the whole jump, get refused, and the player is snapped back with
     nothing on screen to say why. Wait ~500 ms per step, or accept that the
@@ -814,8 +821,9 @@ is one machine's:
   - **Sixty synchronous `vehicles.update` calls will be REFUSED.** The
     offline recipe above drives three seconds inside one `evaluate`; a netplay
     driver reporting that jump has covered 19 m since its last accepted sample
-    and `validateDrive` allows about 7. Drive in bursts of ~4 steps with a frame
-    in between, which is what a real driver's reports look like.
+    and `validateDrive` allows about 7. At a low frame rate, drive in bursts of
+    ~4 steps with a frame in between, which is what a real driver's reports
+    look like; at 60 fps, drive with the keyboard instead.
   - **After a dismount, `g.net.vehicles.stateFor(i)` is the authority's own copy
     of the hull** — the client's samples for a hull it was driving are skipped
     while it drives it, so this is the only way to see whether the drive was
@@ -884,17 +892,15 @@ is one machine's:
   wall parks with `position.z + 3.6` a couple of centimetres off the face. A
   script that checks `position` against the wall and expects `collideRadius`
   will report a bug that is the fix.
-- **A stepped fleet COLLIDES WITH NOTHING unless you compute the world matrix
-  yourself**, and it fails silently in the direction that looks like a finding.
-  `moveWithCollisions` starts from `getAbsolutePosition()`, which only catches up
-  with `position` when something computes the world matrix — a render, and there
-  is not one inside a synchronous `evaluate`. So every step after the first
-  collides from where the hull stood at the last drawn frame: the hull advances,
-  nothing is ever in the way, and a script "proves" a tank drives through the
-  rim, through a barrier and out of the map. Put
-  `tank.body.computeWorldMatrix(true)` immediately before each
-  `vehicles.update`, which is what the render loop was doing for you. Anything
-  driving another `moveWithCollisions` body in a tight loop owes the same call.
+- **A stepped fleet collides without help now; it did not under Babylon.**
+  `moveWithCollisions` started from `getAbsolutePosition()`, which catches up
+  with `position` only when something computes the world matrix, so a fleet
+  stepped inside one synchronous `evaluate` collided from where each hull stood
+  at the last drawn frame and a script "proved" a tank drives out of the map.
+  Since X2.1 the sweep reads `body.position` and the other hulls' `rayBox()`,
+  so `vehicles.update` in a tight loop is honest. Anything ELSE in the same
+  loop that reads a node's world position still owes
+  `tank.body.computeWorldMatrix(true)` first (the item above).
 - **`startRound()` does not build the map — it books it.** The state goes to
   `loading` and `buildRound()` runs two animation frames later, so a script that
   calls it and reads the world on the next line gets last round's (or nothing at
@@ -1132,18 +1138,14 @@ is one machine's:
 - `Game.tick` pushes the Tab board every frame (`pushScoreboard`), so
   `scoreboard.set(...)` by hand is overwritten next tick. Drive the input
   (`page.keyboard.down("Tab")`).
-- **`moveWithCollisions` is inert headless, so a "does this stop a body" test
-  cannot be written that way.** Set `scene.collisionsEnabled`, give the mover an
-  `ellipsoid` and push it 10 m into a `checkCollisions` box and it travels the
-  full 10 — and it does so for a plain `MeshBuilder.CreateBox` as readily as for
-  anything the map built, which is the tell that the harness is what is missing
-  rather than the geometry. What that costs is real: the merged scatter
-  colliders (`MapBuilder.clusterColliders`) were verified for RAYS directly (200
-  shots fired at trunks from 6 m, 200 stopped) and for BODIES only by
-  equivalence — a merged mesh and a loose one behave identically in the same
-  harness, and so do the same map before and after the merge. Prefer a
-  `pickWithRay` assertion, which works, and say plainly when the body half rests
-  on equivalence.
+- **A "does this stop a body" test is a direct call now.** The sweep is plain
+  numbers since X2.1, so `g.map.collidables.move(body, step)` (any object with
+  `position`, `ellipsoid` and `ellipsoidOffset`) works headless and in the
+  page alike, and `scripts/sweep-check.mjs` is the oracle against Babylon.
+  Babylon's own `moveWithCollisions` was inert in a headless page — a body
+  pushed 10 m into a `checkCollisions` box travelled the full 10 — which is why
+  the merged scatter colliders were once verified for BODIES only by
+  equivalence; the merged mesh is read by nothing now.
 - **A canopy is checked by firing rays at the sky, not by looking at a
   screenshot.** Make the visual meshes pickable (they are `isPickable = false`
   by default), sample a grid of ground points inside the stand, cast straight up

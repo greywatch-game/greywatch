@@ -1944,7 +1944,9 @@ are box queries through `RayWorld`, exactly as `Player.probeGround` became one
 first — so what the merge buys the FRAME is gone with them. It stays for three
 reasons that are not performance: the editor still picks meshes, the server
 still stands them up, and the grouping is baked into `MapCollision.boxGroups`,
-so it is data both sides have to agree on. The `WorldBox` list keeps one entry
+so it is data both sides have to agree on — and since `BABYLON_EXIT.md` X2.1 it
+is what a body's SWEEP breaks ties by (`RayWorld`'s rank: the order the client
+made its collider meshes, singles first and then the clusters). The `WorldBox` list keeps one entry
 per prop either way, which is why nothing derived from geometry can tell.
 So every blocking prop
 on the map, across all regions, is gathered into one mesh per 12 m square after
@@ -1957,7 +1959,8 @@ one mesh per region standing over it (~500 meshes for the same props).
 
 The boxes themselves stay in `colliderBoxes`, one per prop: the nav grid, the
 cover bake, the obstacle field and the AO all still see individual trunks, and
-the merge is about nothing but what a ray meets. The grouping is carried to the
+the merged MESH is met by nothing at all (the editor builds them unmerged,
+below); only the grouping's order reaches the game. The grouping is carried to the
 server on `MapCollision.boxGroups` — see `docs/multiplayer.md`. The editor gets
 them unmerged, for the reason it also skips `BlockMerge` and the strut merge:
 `repositionItem` walks colliders, local specs and boxes in step.
@@ -2123,7 +2126,7 @@ the pane nor the drawing.
 
 Everything below follows from that split, and the sharpest consequence is that
 **a sheet which is not `breakable` is geometry and nothing else**: no
-`WorldPane`, no collider, no bucket in the sweep, no row in the collision bake,
+`WorldPane`, no collider, no box in any sweep, no row in the collision bake,
 no index on the wire. The city's glazing is drawn by the same code and known to
 no other part of the game.
 
@@ -2266,8 +2269,11 @@ holds a range into them and nothing ever will.
 
 **Breaking a pane is five writes and nothing deferred.** The visual
 range collapses; `RayWorld.remove` takes the box out of both questions every
-ray asks, and `metadata.solid` is cleared beside it for the editor's own
-predicate; `checkCollisions` is cleared, which is the movement half; `ObstacleField.remove` takes it out of the sub-cell push-out the bots and
+ray asks and out of every body's sweep (a sweep gathers through
+`RayWorld.bodyNear`, off the same body bit), and `metadata.solid` is cleared
+beside it for the editor's own predicate; `checkCollisions` is cleared, which
+was the movement half while the sweep was Babylon's and now only keeps the mesh
+describing itself; `ObstacleField.remove` takes it out of the sub-cell push-out the bots and
 the server's move validator both read; and `NavGrid.openBox` relinks the ground
 it was severing, floods walkability into whatever that opened, and relaxes the
 flow fields over the result. All of that is local and cheap.
@@ -2376,8 +2382,8 @@ below is what the switch rested on, kept so nobody re-runs it from scratch.
 **That probe is a POINT and a body is not, so a body can come to REST inside a
 collider — and no sweep gets it out again.** Gravity is added to `y` and never
 swept, so a body coming down beside a 0.16 m guard rail arrives in the timber,
-and `moveWithCollisions` from an embedded start is an EJECTION rather than a
-sweep: measured in a round, a body standing in a rail left it at a seventh of
+and the sweep (Babylon's `moveWithCollisions`, ported) from an embedded start
+is an EJECTION rather than a sweep: measured in a round, a body standing in a rail left it at a seventh of
 walking pace and pressing AWAY from the rail moved it the other way. That is why
 every body owes a push-out through `ObstacleField.resolve` (`CLAUDE.md`, the
 collider section). The authority agrees by construction: `server/validate.ts`

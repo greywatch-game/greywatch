@@ -258,7 +258,7 @@ machine that is not the one where the import was written, and it goes away on
 its own the moment anyone looks hard enough to restart the server. There is no
 version of "be careful with deep imports" that survives that.
 
-## A Babylon upgrade owes geometry-check, math-check, then `npm run merge:hash`
+## A Babylon upgrade owes geometry-check, math-check, sweep-check, then `npm run merge:hash`
 
 **The map build used to lean on Babylon's INTERNALS in four places, none of
 which failed loudly when an upgrade moved what it leaned on, and since
@@ -280,9 +280,11 @@ buffers, and the world becomes meshes once, at the end of the build.
   through it: `VertexData.applyToMesh` on a fresh `Mesh`, and
   `Mesh.setVerticesData` to make a pane block's positions writable.
 - **The colliders**, which are still `MeshBuilder.CreateBox` boxes merged by
-  `Mesh.MergeMeshes` (`MapBuilder.clusterColliders`, `struts`) — on purpose,
-  because `moveWithCollisions` walks a mesh's submeshes; they are
-  BABYLON_EXIT.md X2.1's.
+  `Mesh.MergeMeshes` (`MapBuilder.clusterColliders`, `struts`). Nothing that
+  moves or shoots reads them since BABYLON_EXIT.md X2.1 — the rays and the
+  sweeps both answer off the `WorldBox`es — so on the client they are the
+  editor's centre-screen pick's, which walks a mesh's submeshes, and on the
+  server an inert mirror X2.3 deletes.
 
 **And the copies, which an upgrade cannot move but can make WRONG.** The
 geometry every model and every structure is built and merged from is ours
@@ -294,7 +296,14 @@ the INSTALLED Babylon: `scripts/geometry-check.mjs` (the generators, the merge
 reference the copy is checked against — the transform and the normals), and
 `scripts/math-check.mjs` (`Vector3`, `Quaternion`, `Matrix`: the compose,
 decompose, multiply and Euler conversions `worldMatrixOf`, `detachPart` and
-`flattenParts` are built from). After an upgrade a difference in either means
+`flattenParts` are built from). **The body sweep is a third copy**:
+`src/world/ellipsoidSweep.ts` is Babylon 9.28's `moveWithCollisions` — the
+collider's triangle test, its response and the coordinator's retry loop —
+ported operation for operation against each `WorldBox`'s twelve triangles
+(Apache-2.0 notice in its header), and `scripts/sweep-check.mjs` holds it to
+the BIT against the installed Babylon in its default `exact` mode (it builds
+each map as the authority does, under a `NullEngine`, so it needs no browser).
+After an upgrade a difference in any of the three means
 Babylon changed under the copy, not that the map moved — and since the copy is
 what Babylon 9.28 did, which version it should now follow is a decision, not a
 fix.
@@ -302,7 +311,8 @@ fix.
 **So an upgrade is three runs, in this order, on the same machine.** Take
 `npm run merge:hash -- --out before.json` (and the same with `--editor`) on
 the OLD version. Upgrade. Run `node scripts/geometry-check.mjs` and
-`node scripts/math-check.mjs` — the copies against the new library — then
+`node scripts/math-check.mjs` and `node scripts/sweep-check.mjs` — the copies
+against the new library — then
 `npm run merge:hash -- --against before.json` (and `--editor`). A merge:hash
-difference with both checks clean is Babylon's own output changing under the
+difference with all three checks clean is Babylon's own output changing under the
 adapter or a collider.

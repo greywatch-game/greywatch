@@ -1152,11 +1152,15 @@ part is not a real mesh; what it does not yet do is let one avoid BEING one.
   to be rebuilt.
   `plans/physics-ref/drop.mjs` covers anything that changes what a body stands
   on.
-- **The collider half is BLOCKED and this does not unblock it.** `boxMesh`
-  aggregates to 669 ms at 1500/0 (~430 at 900/300 before the flatten), but
-  `moveWithCollisions` walks `mesh.subMeshes` and a part has none — see
-  `parts.ts`'s header. A collider is not a merge candidate, so the mechanism
-  above does not reach it.
+- **The collider half was BLOCKED, and since `BABYLON_EXIT.md` X2.1 the block
+  is the editor's alone.** `boxMesh` aggregates to 669 ms at 1500/0 (~430 at
+  900/300 before the flatten), and Babylon's `moveWithCollisions` walked
+  `mesh.subMeshes`, which a part has none of. The sweeps read `WorldBox`es
+  now, so the only reader of a collider mesh's submeshes is the editor's
+  centre-screen pick (`parts.ts`'s header) — on the server the meshes are an
+  inert mirror X2.3 deletes. A collider is still not a merge candidate, so the
+  mechanism above does not reach it; not building the meshes outside the
+  editor would, and is unmeasured.
 - **The AO bake is now the second-largest named cost** — `occlusionAt` is
   1,738 ms subtree and 1,399 self, 9.3% — and it is not in the placement loop at
   all. It has never been questioned; `segmentHitsBox` under it is another
@@ -1203,6 +1207,7 @@ the largest single thing in the authority's install**, which is S3/S4/S5's
 inheritance arriving exactly where they said it would — and a 1.25 s build is a
 rotation cost nobody is watching, not a tick cost. (Measured 2026-08-28, on the
 proving ground, before 82242d9 put a `CollisionField` in the server's build
+(since `BABYLON_EXIT.md` X2.1 one that builds nothing of its own)
 and d1dcd90 changed `NavGrid`: the absolute figures are history, while the
 attribution's SHAPE — the cover bake largest — is likely still current.
 Cinderhaven is the shipped 1500 m map to re-measure it on.)
@@ -1228,7 +1233,8 @@ entry has it at 52.6 warm fps and a 19.3 ms median; the same map, same
 resolution, same instrument class, profiler armed (which costs ~1.5%), now reads
 94-99 fps and a 10.1-10.6 ms median. 1.9x is well past the ~1/3
 cross-session drift this entry warns about, so most of it is real and is
-presumably `narrowedMove` and the rig culling landing after it. **This entry's
+presumably `narrowedMove` (since replaced by X2.1's own sweep) and the rig
+culling landing after it. **This entry's
 table is stale enough to mislead anyone sizing a lever against it.**
 
 ### What was measured
@@ -2238,3 +2244,31 @@ the bodies' `frictionCombine`), then watch a few deaths and some rubble on a
 slope, and re-take every `plans/physics-ref/` bank in the same commit, saying
 why. If 0.5 is the feel that shipped, the fix is to set the config to 0.5 and
 say so, so the number stops being wrong.
+
+---
+
+## 54. A netplay drive sample is refused for "speed" after a long frame, and the hull never went that fast
+
+**Status:** open. Found while verifying `BABYLON_EXIT.md` X2.1 and
+pre-existing: none of the code below changed in that step. Not re-run on the
+step's parent.
+
+**Measured** in a netplay round, driving with the main thread stalled 60 ms
+every 1.5 s: **3 refusals for speed (`hullcorrect`) in ~25 s**,
+against none in 391 drive samples of X2.1's unstalled, botless netplay
+round (its C2 commit). After a long frame two drive uploads go out ~7 ms
+apart by `Date.now()`; the server clamps the interval to 1/60 s, so the next
+sample covers 0.84 m in 33 ms, 1.72x the limit. The hull itself never exceeded
+11 m/s.
+
+**Derived from the code:** two things put the error into the sample rather
+than the drive. The timestamp is the SEND time (`time: Date.now()`,
+`src/net/NetSession.ts` ~326), so a stall moves it and not the position. And
+the position it carries is a frame old: `Game.updateNetWorld` calls
+`updateNet` (~8136, which uploads) before `vehicles.update` (~8158, which
+moves the hull), while the timestamp is taken now.
+
+**What would settle it:** stamp a drive sample with the simulation time of
+the frame that produced the position, or upload after `vehicles.update`, and
+re-run the same stalled drive: zero refusals is the fix. Check `move` (the
+body on foot) for the same ordering while there.

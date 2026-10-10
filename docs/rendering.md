@@ -3049,7 +3049,9 @@ line of code:
 - **The shadow map**, whose casters are an explicit `renderList`.
 - **Every cube probe**, whose render list is explicit too — which matters
   because the bake now spends itself over frames and would otherwise bake holes.
-- **`moveWithCollisions`**, which walks the collidable meshes.
+- **Every body's sweep**, which walked the collidable meshes when it was
+  Babylon's `moveWithCollisions` and now reads no mesh at all (`CollisionField`,
+  off `RayWorld`'s boxes).
 
 Contrast `setEnabled(false)`, which costs all four of those AND buys less: a
 disabled mesh is still in the walk, and merely shortens what the walk does with

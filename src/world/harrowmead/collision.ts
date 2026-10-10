@@ -19,7 +19,8 @@
  *
  * `boxGroups` is a third view of the SAME boxes: 428 of them, in
  * 316 groups, that the client merged into one collider mesh
- * each because they are a scatter region's props and a pick costs per mesh.
+ * each because they are a scatter region's props. What reads it now is a
+ * body's sweep, whose ties go in the order the client made those meshes.
  * Indices into `boxes`, not boxes — everything derived from geometry still
  * reads them one at a time. Anything named here is not also given a mesh of
  * its own.

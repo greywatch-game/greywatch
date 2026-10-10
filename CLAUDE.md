@@ -780,11 +780,11 @@ agree on a field key, the source-scan properties a save rests on, and
 
 ### Visual meshes and collider proxies are separate things
 
-The single most load-bearing rule in the world layer. Every ray test filters on
-`metadata.solid === true` — `CombatSystem`'s hitscan (every shot),
-`BattleSystem`'s LOS, the grenade's step ray, the death cam's pull-in — and
-`moveWithCollisions` walks every mesh with `checkCollisions`. At village scale,
-visual geometry must stay out of both.
+The single most load-bearing rule in the world layer. Every ray test —
+`CombatSystem`'s hitscan (every shot), `BattleSystem`'s LOS, the grenade's step
+ray, the death cam's pull-in — and every body's sweep is answered off the
+COLLIDERS, and the editor's pick filters on `metadata.solid === true`. At
+village scale, visual geometry must stay out of all of it.
 
 **The ground under a body's feet is the one question no longer asked with a
 ray**: `Player.probeGround` reads the `WorldBox` list through
@@ -853,16 +853,17 @@ colliders were built from. **`map.rays` is where a system gets it**, beside
 `nav`, `cover` and `obstacles`, and the authority builds one off the bake. A NEW
 RAY GOES THERE; nothing may reach for the scene.
 
-**…and the ONE whole-scene walk that survived that is `moveWithCollisions`,
-which is narrowed rather than replaced** (`CollisionField.ts`'s header). **There
-are exactly THREE sweeps and all of them go through `narrowedMove`** —
-`Vehicle.update`, `Vehicle.coast` (a wreck) and `Player.update` — over
-`map.collidables` ([`src/world/CollisionField.ts`](src/world/CollisionField.ts)),
-the same collider set bucketed as MESHES and handed to Babylon's own
-`surroundingMeshes`. **That list must be a SUPERSET of what the sweep can
-reach**, so `narrowedMove` CHECKS the promise and re-runs the whole walk when a
-sweep outran it. **A FOURTH sweep goes through `narrowedMove` too, or it is a
-body walking the whole map.**
+**…and NO SWEEP WALKS A MESH EITHER** (`CollisionField.ts`'s header). **There
+are exactly THREE sweeps and all of them go through `CollisionField`**
+(`moveBody`, `map.collidables`) — `Player.update`, `Vehicle.update` and
+`Vehicle.coast` (a wreck), on both sides — Babylon's ellipsoid collider ported
+(`world/ellipsoidSweep.ts`) and fed **`RayWorld.bodyNear`'s candidates**. So
+whatever changes what blocks a body changes it THERE: a hull through
+`rays.hulls`, a broken pane through `RayWorld.remove`. **The list is CHECKED
+against the path the centre took**, and re-gathered when the sweep outran it.
+**Ties go in the CLIENT's collider-mesh order, which both sides derive from
+`boxGroups`** — so that grouping is load-bearing for MOVEMENT, on both sides.
+**A FOURTH sweep goes through `CollisionField` too.**
 
 **Colliders are still MERGED, and the grouping is DATA**: `rayGroups` is how
 the struts reach the queries (`MapBuilder.struts`, one mesh per placement), the
@@ -879,9 +880,9 @@ Non-blocking props are exempt: a fern over a capture point is dressing.
 bending it: the heightfield has no box that could stand in for it, so each block's
 collider is an invisible *clone of the visual's vertex data* — same shape, two
 separate meshes, only the clone marked `solid`. It emits no `WorldBox` and
-`NavGrid` reads `TerrainField` directly. It is also the only `solid` mesh with
-`checkCollisions = false`: `moveWithCollisions` is horizontal-only, vertical
-placement is the ground probe's job, and bots never touch the collidable list.
+`NavGrid` reads `TerrainField` directly. It is also in no sweep (a sweep reads
+`WorldBox`es): every sweep asks a horizontal step, vertical placement is the ground
+probe's job, and bots never sweep.
 ### Mesh metadata is a contract
 
 Seven flags and two values, all read elsewhere; new geometry that omits them
@@ -969,7 +970,7 @@ cover next, roofs last. **A surface ID is `cellBase[cell]` plus the slot, never
 arrays with it, and re-deriving the retired stride form addresses the wrong spot
 in silence. One flow field per objective is precomputed and nothing is
 recomputed: **bots read `nav.steer()`, never run their own pathfinding, and
-never use `moveWithCollisions`**. `ObstacleField` is the sub-cell half, and its
+never sweep**. `ObstacleField` is the sub-cell half, and its
 push-out is a preference, never a veto.
 
 **Three things carry the frame budget and undoing any costs ~10x draw calls or a
@@ -1064,8 +1065,9 @@ they reach and neither ever moves a PERSON**. **A driver's frame is not a
 body's**: `Player.update` is not called, so the hull's ground REPLACES the
 probe.
 
-**A hull is the one MOVING `solid` mesh in the game**: in both pick predicates
-and carrying `checkCollisions`, but emitting **no `WorldBox`** — so the nav
+**A hull is the one MOVING solid thing in the game**: every ray and every
+SWEEP meets it through `rays.hulls` and `rayBox()`, behind one gate (`hide`
+ends both), but it emits **no `WorldBox`** — so the nav
 graph, the cover bake, the obstacle field and the collision bake have never
 heard of it, and **bots walk through a parked tank as they walk through a
 corpse**. **Anything picking a hull out of its own way owes two property writes

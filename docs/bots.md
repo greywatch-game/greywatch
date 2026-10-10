@@ -142,9 +142,10 @@ the top of the type and stands for ground the goal cannot reach, so it loses
 every `<` a steer makes exactly as `Infinity` used to. Seven of them over a
 1500 m map is the reason the width is a rule rather than a detail
 (`ENGINE_UPGRADE.md` S4); anything that wants a real cost or a real distance per
-surface belongs in an array beside this one. **Bots do not use `moveWithCollisions`** — a cell being
+surface belongs in an array beside this one. **Bots do not sweep** (`CollisionField`) — a cell being
 walkable *is* the collision test, and it already accounts for headroom and step
-height; 16 agents walking the collidable mesh list every frame is not affordable.
+height; 16 agents sweeping every frame is not affordable (it was 16 agents
+walking the collidable mesh list when the sweep was still Babylon's).
 
 **The grid is too coarse to be the whole collision test, though.** One column per
 cell *centre* means a collider narrower than 1.5 m — every scattered tree (1.1 m),

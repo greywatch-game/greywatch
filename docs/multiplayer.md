@@ -1314,13 +1314,14 @@ It rebuilds the solid world instead, from `src/world/<map>/collision.ts`
 `MapBuilder.collider()` is the only place a collider is made and the `WorldBox`
 it records is everything `MeshBuilder.CreateBox` needs. Both sides then pick
 against that geometry through the same `RayWorld` the client builds, off the
-same `colliderBoxes` and `rayGroups` — one ray implementation, not two. **The
-collider MESHES this file stands up are no longer what a shot is resolved
-against, and they are still required**: they were there so the server's
-`scene.pickWithRay` had something to pick, and every ray on both sides is a box
-query now — but `Vehicle.update` drives a hull with `body.moveWithCollisions`, and
-the authority simulates its own hulls. So the geometry stays, for the legs' old
-reason turned on its head.
+same `colliderBoxes` and `rayGroups` — one ray implementation, not two — and a
+driven hull SWEEPS through the same `CollisionField` the client's does, off the
+same boxes and in the same tie order (`RayWorld`'s rank, from the baked
+`boxGroups`). **The collider MESHES this file stands up are read by nothing on
+this side any more**: they were there first so the server's `scene.pickWithRay`
+had something to pick, then so a driven hull's `moveWithCollisions` had
+something to walk, and both are box queries now (`BABYLON_EXIT.md` X2.1). They
+stay as an inert mirror of the client's until the scene goes (X2.3).
 
 **The FLOOR is the one part of that world which is not baked and is no longer
 on the layout either.** It is a `TerrainField` over the map's heightfield,
@@ -1353,15 +1354,19 @@ process.
 new geometry.** `boxGroups` is which of them the client merged into one collider
 mesh each — indices, not boxes, because these ARE the solid world and are
 already in `boxes`, so the nav grid, the cover bake and the obstacle field on
-both sides still read every one of them separately. What the grouping decides is
-only how many bounding tests a ray pays to meet them, and `clusterMesh` is the
-second merge in `server/world.ts` for exactly the reason `strutMesh` is the
-first: this process resolves every shot in every match it is running. Greyfen's
-jungle is ~1,390 one-metre trunks and its scatter comes to ~180 cluster meshes;
-unmerged that would be more collider meshes than the rest of the map put
-together, and the authority would pay a bounding test for each on every rewound
-round. Anything named in a group is left out of the one-mesh-per-box pass, so a
-box belongs to exactly one mesh either way — and nothing porous or glass is ever
+both sides still read every one of them separately. **What the grouping decides
+now is a body's SWEEP's tie order** (`BABYLON_EXIT.md` X2.1): a sweep keeps the
+first of two contacts at one distance, `RayWorld` ranks the static boxes in the
+order the CLIENT made its collider meshes — every box no group names, then each
+group in turn — and both sides derive that rank from `boxGroups` alone, so a
+hull wedged on two boxes slides the same way on the authority as on the client
+that drove it. (Under Babylon the server made its clusters first and broke those
+ties apart from the client.) It began as a pick budget, when a ray paid a
+bounding test per mesh and Greyfen's ~1,390 one-metre trunks would have been
+more collider meshes than the rest of the map put together; `clusterMesh` still
+merges them in `server/world.ts`, but nothing on this side reads the result.
+Anything named in a group is left out of the one-mesh-per-box pass, so a box
+belongs to exactly one mesh either way — and nothing porous or glass is ever
 grouped, because one mesh cannot carry two answers about porosity and a pane has
 to stay addressable a sheet at a time.
 
@@ -1390,8 +1395,10 @@ sides resolved different shots. The pane hash includes each pane's `box`,
 because a pane pointing at a different collider is two sides agreeing about the
 window and not about the wall. The box-group hash is the extreme case of the
 same argument: a server that ignored `boxGroups` would agree with the client
-about every box on the map and quietly do a hundred times the picking work per
-shot, with nothing visible on either side to say so. Note also that the bake's `sourceHash` covers a map's
+about every box on the map and quietly rank them in another order, so a hull
+wedged on two boxes would slide one way on the authority and another on the
+client that drove it, with nothing visible on either side to say so (it used to
+be a hundred times the picking work per shot, before the rays were boxes). Note also that the bake's `sourceHash` covers a map's
 `layout.ts` and `heights.ts` — **a `porous` flag, a `strut` and a `pane` all live
 in a BUILDER, so changing one is a bake the staleness guard will not notice.
 Re-run `npm run collision` by hand after touching a collider's flags, a
@@ -1454,9 +1461,10 @@ runs a p99 of 0.055 ms — 0.33% of the step — and the two most expensive tick
 belong to the two maps with ARMOUR on them rather than to the two biggest. A
 driven hull was `moveWithCollisions` against every collidable mesh in the map,
 which was the last O(map) thing this process did per tick and the only term in
-it that grew with area: 0.039 ms a call on Coldharbour, 0.402 at 1500 m. It is
-narrowed now (`world/CollisionField.ts`, `docs/vehicles.md`): 11 us a call, and
-Sarab's tick p50 went 0.691 ms to 0.053.
+it that grew with area: 0.039 ms a call on Coldharbour, 0.402 at 1500 m. It was
+narrowed (11 us a call, Sarab's tick p50 0.691 ms to 0.053) and is now the
+game's own sweep over `RayWorld`'s boxes, with no scene behind it
+(`world/CollisionField.ts`, `docs/vehicles.md`): 10-33 us a move.
 
 **Nothing that instrument reports includes a person.** No rewind runs, no
 snapshot is encoded, and `Match`'s own per-tick work — the sockets,
