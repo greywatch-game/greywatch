@@ -139,7 +139,6 @@ import {
   type ProfilePoint,
   type Station,
 } from "./facet";
-import { drawnMesh } from "../world/parts";
 import {
   type Box,
   type Cyl,
@@ -421,7 +420,7 @@ export function buildTruck(
 
   /** A round member from `a` to `b` — an arm, a spring, a wiper, a strap, a chute. */
   const rod = (a: Point3, b: Point3, d: number, color: string, tess = 6, dTop = d): Shape => [
-    drawnMesh(rodBetween("truck-rod", a, b, d, tess, dTop), scene),
+    rodBetween("truck-rod", a, b, d, tess, dTop),
     color,
   ];
   /** A side profile extruded across X — the body. */
@@ -431,13 +430,13 @@ export function buildTruck(
     bevel: number,
     x: number,
     color: string,
-  ): Shape => [drawnMesh(extrude("truck-slab", profile, width, bevel, x), scene), color];
+  ): Shape => [extrude("truck-slab", profile, width, bevel, x), color];
   /** A convex solid between two end faces — the V under the cab. */
   const solid = (from: readonly Point3[], to: readonly Point3[], color: string): Shape =>
-    [drawnMesh(solidBetween("truck-solid", from, to), scene), color];
+    [solidBetween("truck-solid", from, to), color];
   /** A loft lying along Z — the hood, the tarp and its straps. */
   const lofted = (stations: readonly Station[], color: string): Shape =>
-    [drawnMesh(loftAlongZ("truck-loft", stations), scene), color];
+    [loftAlongZ("truck-loft", stations), color];
 
   // ==========================================================================
   // THE WHEELS: four discs with two patterns on them

@@ -706,7 +706,11 @@ src/
                         #   the per-colour merge and the outline pass every
                         #   model draws with, the one whip builder (`whip`)
                         #   and the one `reset` (`resetRigPose`) all three
-                        #   kinds share. No geometry and no numbers
+                        #   kinds share. A hull is `Part`s until `segment`
+                        #   merges it (`mergeParts`) and `drawnMesh` makes the
+                        #   meshes, in the scene order the old meshes had; the
+                        #   joints stay `TransformNode`s. No geometry and no
+                        #   numbers
     TankModel.ts        # ~180 boxes and cylinders merged to twenty-five, with
                         #   a SPRUNG body over running gear that is not, a
                         #   turret and a gun that turn, a CUPOLA gun on a ring

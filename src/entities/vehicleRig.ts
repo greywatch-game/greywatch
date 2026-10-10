@@ -9,6 +9,16 @@
  * `HeliModel.ts` are the ART, one file per kind; this is the shape they all
  * come out in, and the one thing `entities/Vehicle.ts` has ever heard of.
  *
+ * **A hull's geometry is PARTS until `segment` merges it** (BABYLON_EXIT.md
+ * X1.3): a box or a cylinder is a `Part` on `src/geometry/`'s generators, a
+ * `Shape` is a `Part` from `facet.ts`, `mergeParts` is the per-colour merge,
+ * and `drawnMesh` is the one place any of it becomes a Babylon mesh — the mesh
+ * then hung off a live joint. The JOINTS are still Babylon `TransformNode`s
+ * (the rig is X4's), and so is the collider box `Vehicle` builds, which is a
+ * collider and not a drawing. The meshes are MADE in the order the scene used
+ * to receive them, which `mergeByColor` explains; `kit:hash --models` hashes
+ * that order.
+ *
  * ## The rig is CLOSED over its own model, which is what buys the second kind
  *
  * A tank's running gear is two belts of scrolling links and a truck's is four
@@ -46,18 +56,14 @@
  *   has — see `Vehicle`. A pickable visual would put the hitscan's wall ray,
  *   the bots' LOS and the ground probe on sixty triangles of track link.
  *
- * `segmentOf` enforces both by construction, which is why neither model may
- * build a mesh any other way.
+ * `segmentOf` enforces both by construction, which is why no model may build
+ * a mesh any other way — a model hands it parts, never meshes.
  */
-import {
-  type Material,
-  Mesh,
-  MeshBuilder,
-  Scene,
-  TransformNode,
-} from "@babylonjs/core";
+import { type Material, type Mesh, type Scene, TransformNode } from "@babylonjs/core";
 import type { VehicleSpec } from "../config/vehicles";
+import { createBox, createCylinder } from "../geometry/primitives";
 import { type CelMaterialFactory } from "../shaders/CelShader";
+import { drawnMesh, mergeParts, Part } from "../world/parts";
 
 /**
  * `[width, height, depth, x, y, z, colour, rotX?, rotY?]`, as `SoldierModel`'s
@@ -104,14 +110,15 @@ export type Cyl = [
 ];
 
 /**
- * `[mesh, colour]` — a part already BUILT, for the shapes neither a box nor a
+ * `[part, colour]` — a part already BUILT, for the shapes neither a box nor a
  * cylinder can be: a profile extruded, a solid between two faces, a rod laid
- * at an angle (`entities/facet.ts`). The mesh is built at the origin in the
- * segment's own frame, may carry a position and rotation of its own, and is
- * merged exactly as a box is — which is why it must carry positions, normals
- * AND uvs, the three attributes every box has.
+ * at an angle (`entities/facet.ts`). The part is built at the origin in the
+ * segment's own frame, may carry a position and rotation of its own, has no
+ * parent, and is merged exactly as a box is — which is why it must carry
+ * positions, normals AND uvs, the three attributes every box has. It is a
+ * `Part` and not a mesh: nothing on a hull becomes a mesh before `segment`.
  */
-export type Shape = readonly [Mesh, string];
+export type Shape = readonly [Part, string];
 
 /**
  * What a destroyed hull is repainted in. One colour for the whole vehicle —
@@ -440,9 +447,9 @@ export function resetRigPose(
  * The two lists a model draws into and the one function that turns parts into
  * meshes, handed back together so a builder holds one thing.
  *
- * Both models call `segment` and neither may build a mesh any other way: this
+ * Every model calls `segment` and none may build a mesh any other way: this
  * is where the per-colour merge, the pickability rule and the mesh/livery
- * bookkeeping are enforced, and a part built past it is a part that is picked,
+ * bookkeeping are enforced, and a mesh built past it is one that is picked,
  * unmerged and never repainted when the hull burns.
  */
 export interface Segments {
@@ -475,19 +482,15 @@ export function segmentOf(scene: Scene, mats: CelMaterialFactory): Segments {
     cyls: Cyl[] = [],
     shapes: readonly Shape[] = [],
   ): void => {
-    const parts: Mesh[] = [];
+    const parts: Part[] = [];
     for (let i = 0; i < boxes.length; i++) {
       const [w, h, d, x, y, z, color, rotX = 0, rotY = 0] = boxes[i];
-      const m = MeshBuilder.CreateBox(
-        `${name}${i}`,
-        { width: w, height: h, depth: d },
-        scene,
-      );
-      m.position.set(x, y, z);
-      m.rotation.x = rotX;
-      m.rotation.y = rotY;
-      m.material = mats.get(color);
-      parts.push(m);
+      const p = new Part(`${name}${i}`, createBox({ width: w, height: h, depth: d }));
+      p.position.set(x, y, z);
+      p.rotation.x = rotX;
+      p.rotation.y = rotY;
+      p.material = mats.get(color);
+      parts.push(p);
     }
     for (let i = 0; i < cyls.length; i++) {
       const [dia, len, x, y, z, color, axis, diaTop = dia] = cyls[i];
@@ -495,29 +498,28 @@ export function segmentOf(scene: Scene, mats: CelMaterialFactory): Segments {
       // silhouette. The cel shader flat-shades from screen-space derivatives,
       // so what a facet costs is an edge the light bands break on — and at
       // 20 cm there is no such edge to see.
-      const m = MeshBuilder.CreateCylinder(
+      const p = new Part(
         `${name}c${i}`,
-        {
+        createCylinder({
           height: len,
           diameterTop: diaTop,
           diameterBottom: dia,
           tessellation: dia >= 0.5 ? 12 : 8,
-        },
-        scene,
+        }),
       );
-      // Babylon builds a cylinder along +Y; these two put it along the axis
-      // asked for. Same convention as `weaponKit`'s tube/pin.
-      if (axis === "x") m.rotation.z = Math.PI / 2;
-      else if (axis === "z") m.rotation.x = Math.PI / 2;
-      m.position.set(x, y, z);
-      m.material = mats.get(color);
-      parts.push(m);
+      // A cylinder is built along +Y; these two put it along the axis asked
+      // for. Same convention as `weaponKit`'s tube/pin.
+      if (axis === "x") p.rotation.z = Math.PI / 2;
+      else if (axis === "z") p.rotation.x = Math.PI / 2;
+      p.position.set(x, y, z);
+      p.material = mats.get(color);
+      parts.push(p);
     }
-    for (const [m, color] of shapes) {
-      m.material = mats.get(color);
-      parts.push(m);
+    for (const [p, color] of shapes) {
+      p.material = mats.get(color);
+      parts.push(p);
     }
-    for (const merged of mergeByColor(parts, name)) {
+    for (const merged of mergeByColor(scene, parts, name, shapes.length)) {
       merged.parent = parent;
       // The collider box is the only pickable thing a vehicle has — see
       // `Vehicle`. A pickable visual would put the hitscan's wall ray, the
@@ -531,26 +533,60 @@ export function segmentOf(scene: Scene, mats: CelMaterialFactory): Segments {
   return { meshes, livery, segment };
 }
 
-/** Merges a segment's parts into one mesh per colour, at identity. */
-function mergeByColor(parts: Mesh[], name: string): Mesh[] {
-  const groups = new Map<unknown, Mesh[]>();
-  for (const m of parts) {
-    const key = m.material;
+/**
+ * Merges a segment's parts into one mesh per colour, at identity, and hands
+ * the meshes back in COLOUR order — the order a colour first appears among
+ * the boxes, then the cylinders, then the shapes, which is the order
+ * `VehicleRig.meshes` and `livery` are in.
+ *
+ * **A colour with ONE part is drawn as that part, transform and all**, rather
+ * than merged into a mesh at identity: a merge of one is a copy, and the part
+ * keeps its own frame on the mesh exactly as the lone mesh `MergeMeshes` was
+ * never asked about kept its own.
+ *
+ * **The meshes are MADE in the order the scene used to receive them**, which
+ * is not the colour order. When the parts were meshes, a shape was built
+ * before its segment was called and a box or a cylinder inside it, so a lone
+ * part's mesh stood in the scene at its PART's moment — shapes first, then
+ * boxes, then cylinders — and every merge was minted after all of them. So the
+ * lone colours are drawn first, in that order, and the merged ones after, in
+ * colour order; `kit:hash --models` hashes scene order, and a reordered scene
+ * is a reordered draw list.
+ */
+function mergeByColor(
+  scene: Scene,
+  parts: readonly Part[],
+  name: string,
+  shapeCount: number,
+): Mesh[] {
+  const groups = new Map<unknown, Part[]>();
+  for (const p of parts) {
+    const key = p.material;
     const g = groups.get(key);
-    if (g) g.push(m);
-    else groups.set(key, [m]);
+    if (g) g.push(p);
+    else groups.set(key, [p]);
   }
-  const out: Mesh[] = [];
-  for (const group of groups.values()) {
+  const list = [...groups.values()];
+  // Where each part's mesh used to be made: the shapes (the last
+  // `shapeCount` parts) before the boxes and cylinders, which keep their order.
+  const made = (p: Part): number => {
+    const i = parts.indexOf(p);
+    const first = parts.length - shapeCount;
+    return i >= first ? i - first : shapeCount + i;
+  };
+  const when = list.map((g, k) => (g.length === 1 ? made(g[0]) : parts.length + k));
+  const order = list.map((_, k) => k).sort((a, b) => when[a] - when[b]);
+  const out: Mesh[] = new Array(list.length);
+  for (const k of order) {
+    const group = list[k];
     const mat = group[0].material;
     const merged =
       group.length === 1
-        ? group[0]
-        : Mesh.MergeMeshes(group, true, true, undefined, false, false);
-    if (!merged) continue;
+        ? drawnMesh(group[0], scene)
+        : drawnMesh(`${group[0].name}_merged`, mergeParts(group), scene);
     merged.name = name;
     merged.material = mat;
-    out.push(merged as Mesh);
+    out[k] = merged;
   }
   return out;
 }

@@ -250,7 +250,6 @@ import {
   type Station,
   stationAt,
 } from "./facet";
-import { drawnMesh } from "../world/parts";
 import {
   type Box,
   type Cyl,
@@ -524,7 +523,7 @@ export function buildHeli(
 
   /** A round member from `a` to `b`; `d` at `a` and `dTop` at `b`. */
   const rod = (a: Point3, b: Point3, d: number, color: string, tess = 8, dTop = d): Shape => [
-    drawnMesh(rodBetween("heli-rod", a, b, d, tess, dTop), scene),
+    rodBetween("heli-rod", a, b, d, tess, dTop),
     color,
   ];
   /**
@@ -548,7 +547,7 @@ export function buildHeli(
   };
   /** A solid between two matching faces — a wing, a blade, a fin plate. */
   const solid = (from: readonly Point3[], to: readonly Point3[], color: string): Shape => [
-    drawnMesh(solidBetween("heli-solid", from, to), scene),
+    solidBetween("heli-solid", from, to),
     color,
   ];
   /** A side profile extruded across X — the fin, a pylon, a cap. */
@@ -558,10 +557,10 @@ export function buildHeli(
     bevel: number,
     x: number,
     color: string,
-  ): Shape => [drawnMesh(extrude("heli-slab", profile, width, bevel, x), scene), color];
+  ): Shape => [extrude("heli-slab", profile, width, bevel, x), color];
   /** A loft along Z through `stations`. */
   const body = (stations: readonly Station[], color: string): Shape => [
-    drawnMesh(loftAlongZ("heli-loft", stations), scene),
+    loftAlongZ("heli-loft", stations),
     color,
   ];
   /**
