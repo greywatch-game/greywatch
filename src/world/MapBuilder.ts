@@ -1241,15 +1241,6 @@ export class MapBuilder {
       );
     }
 
-    // The ink for everything that sways, and it is built HERE — after the bake
-    // and before the freeze — for two reasons that are both about the twin
-    // SHARING its source's geometry rather than copying it.
-    //
-    // After the bake, because a shared `Geometry` means the colour buffer the
-    // bake just wrote is already on the twin: it reads the same weights, sways
-    // by the same amount, and cannot drift from the surface it wraps. Baking
-    // afterwards would walk the same vertices a second time to write them the
-    // same values.
     record("markVisual", () => {
       for (const m of visuals) this.markVisual(m);
     });
@@ -1920,16 +1911,13 @@ export class MapBuilder {
   /**
    * Drawn, never tested. Unpickable and non-colliding so it stays out of every
    * ray pick and the collision broadphase; frozen because none of it moves.
+   * A visual has no children to mark: the ink twins that were one went with
+   * the ink hull (`CelInk`).
    */
   private markVisual(mesh: Mesh): void {
     mesh.isPickable = false;
     mesh.checkCollisions = false;
     mesh.freezeWorldMatrix();
-    for (const child of mesh.getChildMeshes()) {
-      child.isPickable = false;
-      child.checkCollisions = false;
-      child.freezeWorldMatrix();
-    }
   }
 
   /** Where a builder's local `BoxSpec` lands once the placement is applied. */

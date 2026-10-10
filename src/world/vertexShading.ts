@@ -5,14 +5,24 @@
  * wear ramp in the BLUE. All four channels are spoken for; a fifth per-vertex
  * quantity has nowhere to go and owes a second buffer and the argument for it.
  * Owns: the occlusion estimate, the sway ramp, the wear ramp, and the
- * vertex-colour write.
+ * vertex-colour write — as a CORE over arrays (`shadingContext` once per bake,
+ * then `shadeVertices` per surface: positions, normals, a world matrix's
+ * sixteen numbers and the sway layer in, the colour `Float32Array` out, and
+ * nothing read or written but those) and the one caller it has today,
+ * `bakeVertexShading`, which walks the merged MESHES, asks each for exactly
+ * those arrays (stored as stored, so float32 positions on a pane block made
+ * updatable) and `computeWorldMatrix(true)`'s numbers, and writes what comes
+ * back. `BABYLON_EXIT.md` X1.4 moves that caller onto the merge's `Part`s; the
+ * core is what both read.
  * Owns no geometry and no materials; `MapBuilder` calls it, `world/sway.ts`
  * says what a mesh's weight means and `CelShader` reads what it wrote.
  * Invariants: AO lives in the ALPHA and 1.0 means UNOCCLUDED (see below — the
  * whole design rests on it), every channel's NEUTRAL value is the GL default
  * of the disabled attrib, the walk runs AFTER every merge, only CEL-SHADED
- * meshes are written to (see the guard in `walk`), and `hasVertexAlpha` must
- * stay false. Contract: `docs/rendering.md`.
+ * surfaces are written to (`takesShading`), and `hasVertexAlpha` must stay
+ * false. A visual has no CHILD to walk: the ink twins that were one are gone
+ * with the ink hull (`CelInk`), and nothing else parents a mesh to a visual.
+ * Contract: `docs/rendering.md`.
  *
  * **Four channels, one walk, and one reason they share a file.** Each is a
  * per-vertex quantity that can only be known once the merges are done and that
@@ -136,14 +146,14 @@
  * is the honest limit of the technique on geometry this coarse, and tessellating
  * the world to sharpen it would cost far more than the effect is worth.
  */
-import { Mesh, ShaderMaterial, VertexBuffer } from "@babylonjs/core";
+import { type Material, type Mesh, ShaderMaterial, VertexBuffer } from "@babylonjs/core";
 import { CONFIG } from "../config";
 import { isEmissiveWorld } from "../shaders/EmissiveWorld";
 import { isFlame } from "../shaders/FlameShader";
 import { halfDepth, slabThickness, turnX, turnZ } from "./boxGeometry";
 import { type BoxIndex, boxesNear, buildBoxIndex } from "./boxIndex";
 import type { WorldBox } from "./MapBuilder";
-import { swayLayerOf, swayWeight } from "./sway";
+import { type SwayLayer, swayLayerOf, swayWeight } from "./sway";
 import type { TerrainField } from "./TerrainField";
 
 /**
@@ -417,18 +427,29 @@ function shelteredAt(
 }
 
 /**
- * Writes a colour buffer onto every finished visual: `rgb = (0, 1, 0)` and
- * `a = ao`, where 1 is unoccluded.
- *
- * Returns the number of vertices shaded, which is the only number worth having
- * about the cost — everything here is linear in it.
+ * Everything the bake reads besides one surface's own arrays: the occluders
+ * bucketed ONCE for the whole map, the floor, and the config read once. Built
+ * by `shadingContext` per bake and handed to every `shadeVertices` call.
  */
-export function bakeVertexShading(
-  meshes: readonly Mesh[],
+export interface ShadingContext {
+  readonly index: Bucketed;
+  readonly terrain: TerrainField;
+  readonly radius: number;
+  readonly strength: number;
+  readonly wearHeight: number;
+  readonly wearProbe: number;
+  readonly wearCover: number;
+}
+
+/**
+ * The bake's per-map half, or null when there is nothing to bake
+ * (`ao.strength` at 0 — see the note on the early return).
+ */
+export function shadingContext(
   boxes: readonly WorldBox[],
   terrain: TerrainField,
   size: number,
-): number {
+): ShadingContext | null {
   const cfg = CONFIG.ao;
   const wearCfg = CONFIG.wear;
   const wearHeight = wearCfg.height;
@@ -444,7 +465,7 @@ export function bakeVertexShading(
   // same reason — its strength is the MAP's (`EnvironmentSpec.wear`), spent at
   // fragment time, so a clean map costs one divide per vertex at build and
   // exactly nothing per frame.
-  if (cfg.strength <= 0) return 0;
+  if (cfg.strength <= 0) return null;
   // Glass occludes nothing: it is transparent while it stands and gone after,
   // and a pane that darkened the reveal it sits in would leave that shadow
   // painted on the wall once the round took the glass away. A `porous` fence is
@@ -454,154 +475,204 @@ export function bakeVertexShading(
     ? boxes.filter((b) => !b.glass)
     : boxes;
   const index = bucket(occluders, size, cfg.radius);
+  return {
+    index,
+    terrain,
+    radius: cfg.radius,
+    strength: cfg.strength,
+    wearHeight,
+    wearProbe,
+    wearCover,
+  };
+}
+
+/**
+ * Whether a surface painted with `material` is given the buffer at all.
+ *
+ * **Only the cel shader may be given this buffer.** It is a lighting term
+ * dressed as a vertex colour, and the one material in the tree that reads it
+ * as a lighting term is the cel shader; `StandardMaterial` reads a colour
+ * buffer as a COLOUR and multiplies its output by it, with
+ * `Mesh.useVertexColors` defaulting to true and nothing to turn the
+ * VERTEXCOLOR define off but the buffer's absence.
+ *
+ * `visuals` is not all cel materials. `mergeByMaterial` emits one mesh per
+ * material, and every lit window, brazier flame, ember and sign in the map
+ * came out of it as a `block<x>,<y>-emissive-#rrggbb-noInk` drawn with an
+ * unlit emissive `StandardMaterial` — 42 of them on Hollowmere. Writing
+ * `rgb = (0, 1, 0)` onto those multiplied every one by pure green: the
+ * village's lanterns and fires rendered as green blobs inside their own
+ * correctly-coloured bloom, since the glow builds its halo from
+ * `material.emissiveColor` and never saw the vertex buffer.
+ */
+export function takesShading(material: Material | null): boolean {
+  if (!(material instanceof ShaderMaterial)) return false;
+  // The fire is a ShaderMaterial and not a cel one: it reads no lighting
+  // term, and a colour buffer it does not declare is an attribute Babylon
+  // would bind to it anyway.
+  if (isFlame(material)) return false;
+  // Nor is the emissive palette (`EmissiveWorld.ts`): it is the same unlit
+  // colour the `StandardMaterial` above was, read per vertex, and the first
+  // reason here is still the reason.
+  if (isEmissiveWorld(material)) return false;
+  return true;
+}
+
+/**
+ * Writes a colour buffer onto every finished visual: `rgb = (0, 1, 0)` and
+ * `a = ao`, where 1 is unoccluded — the core below, over each mesh's own
+ * arrays.
+ *
+ * Returns the number of vertices shaded, which is the only number worth having
+ * about the cost — everything here is linear in it.
+ */
+export function bakeVertexShading(
+  meshes: readonly Mesh[],
+  boxes: readonly WorldBox[],
+  terrain: TerrainField,
+  size: number,
+): number {
+  const ctx = shadingContext(boxes, terrain, size);
+  if (!ctx) return 0;
   let total = 0;
-
-  const walk = (mesh: Mesh): void => {
-    // **Only the cel shader may be given this buffer.** It is a lighting term
-    // dressed as a vertex colour, and the one material in the tree that reads
-    // it as a lighting term is the cel shader; `StandardMaterial` reads a
-    // colour buffer as a COLOUR and multiplies its output by it, with
-    // `Mesh.useVertexColors` defaulting to true and nothing to turn the
-    // VERTEXCOLOR define off but the buffer's absence.
-    //
-    // `visuals` is not all cel materials. `mergeByMaterial` emits one mesh per
-    // material, and every lit window, brazier flame, ember and sign in the map
-    // comes out of it as a `block<x>,<y>-emissive-#rrggbb-noInk` drawn
-    // with an unlit emissive `StandardMaterial` — 42 of them on Hollowmere.
-    // Writing `rgb = (0, 1, 0)` onto those multiplied every one by pure green:
-    // the village's lanterns and fires rendered as green blobs inside their own
-    // correctly-coloured bloom, since the glow builds its halo from
-    // `material.emissiveColor` and never saw the vertex buffer.
-    if (!(mesh.material instanceof ShaderMaterial)) return;
-    // The fire is a ShaderMaterial and not a cel one: it reads no lighting
-    // term, and a colour buffer it does not declare is an attribute Babylon
-    // would bind to it anyway.
-    if (isFlame(mesh.material)) return;
-    // Nor is the emissive palette (`EmissiveWorld.ts`): it is the same unlit
-    // colour the `StandardMaterial` above was, read per vertex, and the first
-    // reason in this walk is still the reason.
-    if (isEmissiveWorld(mesh.material)) return;
-
+  for (const mesh of meshes) {
+    if (!takesShading(mesh.material)) continue;
+    // The arrays AS STORED — a pane block holding a breakable pane was made
+    // updatable before this runs, which stored its positions as float32 — so
+    // the core reads exactly the numbers the mesh holds.
     const positions = mesh.getVerticesData(VertexBuffer.PositionKind);
     const normals = mesh.getVerticesData(VertexBuffer.NormalKind);
-    if (!positions || !normals) return;
-
+    if (!positions || !normals) continue;
     // Merged blocks sit at identity and merged structures do not, and the
     // terrain blocks are placed as well — so nothing may assume, and the matrix
     // is recomputed rather than read off a possibly stale cache.
-    const world = mesh.computeWorldMatrix(true);
-    const m = world.m;
-    const count = positions.length / 3;
-    const colors = new Float32Array(count * 4);
+    const m = mesh.computeWorldMatrix(true).m;
     // Read once per mesh, never per vertex: `mergeByMaterial` keys on the mark,
     // so a merged mesh is unanimously foliage or unanimously not — which is
     // also what lets the shader's branch be coherent. Null is every mesh in the
     // map that is not leaf, and it costs the loop one compare.
-    const layer = swayLayerOf(mesh);
-
-    for (let i = 0; i < count; i++) {
-      const x = positions[i * 3];
-      const y = positions[i * 3 + 1];
-      const z = positions[i * 3 + 2];
-      const px = m[0] * x + m[4] * y + m[8] * z + m[12];
-      const py = m[1] * x + m[5] * y + m[9] * z + m[13];
-      const pz = m[2] * x + m[6] * y + m[10] * z + m[14];
-
-      const ax = normals[i * 3];
-      const ay = normals[i * 3 + 1];
-      const az = normals[i * 3 + 2];
-      let nx = m[0] * ax + m[4] * ay + m[8] * az;
-      let ny = m[1] * ax + m[5] * ay + m[9] * az;
-      let nz = m[2] * ax + m[6] * ay + m[10] * az;
-      const len = Math.hypot(nx, ny, nz) || 1;
-      nx /= len;
-      ny /= len;
-      nz /= len;
-
-      const occ = occlusionAt(px, py, pz, nx, ny, nz, index, terrain, cfg.radius);
-      const ao = 1 - Math.min(1, occ) * cfg.strength;
-      // Height above the GROUND under this vertex, not above sea level: the
-      // valley falls two metres under a stand of trees and dips to -1.34 in a
-      // riverbed, and a ramp measured from y = 0 would plant the ferns on one
-      // bank and let the ones on the other slide.
-      //
-      // HOISTED, and it is now unconditional where it used to be foliage's
-      // alone. Both the sway ramp and the wear ramp are functions of exactly
-      // this number, so a second `heightAt` here would be the same bilinear
-      // sample of the same field twice per vertex. What the hoist costs is that
-      // every NON-foliage vertex now takes one it did not before — see the
-      // measurement in the header.
-      const above = py - terrain.heightAt(px, pz);
-      colors[i * 4] = layer ? swayWeight(above, layer) : 0;
-      colors[i * 4 + 1] = 1;
-      // The wear ramp: the STRAIGHT LINE through 1 at the footing and 0 at
-      // `wearCfg.height`, and deliberately NOT the curve the shader draws off
-      // it.
-      //
-      // WHY THE CURVE IS NOT BAKED. A box part has eight corners and no
-      // vertical subdivision, so a wall's only samples here are its footing and
-      // its eaves — and whatever is written at those two, the rasteriser joins
-      // them with a straight line. Bake `pow` and that line runs from 1 to 0
-      // across the WHOLE wall: on a 3 m wall head height still carries 0.47 of
-      // full grime, and the height and falloff this file thinks it is spending
-      // reach the screen as neither. Height above ground is itself linear up a
-      // vertical face, so the LINE is exact under interpolation where the curve
-      // is not. `pow` is a uniform's job now (`CelShader`'s WEAR block).
-      //
-      // AND IT IS NOT CLAMPED BELOW, which is the part that looks like an
-      // oversight. The ZERO CROSSING is what puts the stain's top edge where
-      // `wearCfg.height` says, and a vertex clamped to 0 at the eaves drags
-      // that crossing up to the eaves with it — the same bug as baking the
-      // curve, wearing a clamp's clothes. So the eaves of a 6 m wall store
-      // -1.3 and the shader clamps after interpolation, where it is free. The
-      // TOP clamp stays: `above` goes negative on anything founded below
-      // grade — a sunken wall, a quay's face, the terrain's own skirt — and a
-      // weight over 1 pushes the mix past the dirt colour into whatever lies
-      // beyond it.
-      //
-      // This is the ramp ALONE, with no strength folded in: how dirty the place
-      // is belongs to `EnvironmentSpec.wear` and is spent as a uniform, which is
-      // what lets a map be dirtied without a rebuild. Nothing here knows which
-      // map it is baking.
-      //
-      // AND IT IS NOTHING AT ALL UNDER A ROOF. See `shelteredAt`: the ramp on
-      // its own is a function of height above ground, so it climbed the INSIDE
-      // of every building in the village as readily as the street front, and
-      // one wall box's two faces came out identical because they are the same
-      // corners with opposite normals. A sheltered vertex is written the
-      // channel's neutral 0 — CLEAN, the same value every rig and every effect
-      // mesh gets by carrying no buffer at all — rather than a scaled ramp,
-      // because a room is dry rather than less wet.
-      //
-      // The probe is SKIPPED where the line has already gone negative, and that
-      // is the cheap half as well as the safe half. Cheap: every vertex over
-      // `wearCfg.height` above the ground — eaves, roofs, upper storeys — pays
-      // nothing, which is most of a village. Safe: writing 0 over a negative
-      // would RAISE it, and a face reading 1 at its footing and 0 at its eaves
-      // is grime up the whole wall. `shelteredAt`'s own `py` test is the other
-      // half of that ordering.
-      const line = wearHeight > 0 ? Math.min(1, 1 - above / wearHeight) : 0;
-      colors[i * 4 + 2] =
-        line > 0 &&
-        shelteredAt(px, py, pz, nx, nz, index, terrain, wearProbe, wearCover)
-          ? 0
-          : line;
-      colors[i * 4 + 3] = ao;
-    }
-
+    const colors = shadeVertices(ctx, positions, normals, m, swayLayerOf(mesh));
     mesh.setVerticesData(VertexBuffer.ColorKind, colors, false);
     // Writing a colour buffer does not set this by itself, and it must not
     // become true: the world is opaque, and vertex alpha here is a lighting
     // term rather than a transparency.
     mesh.hasVertexAlpha = false;
-    total += count;
-  };
-
-  for (const mesh of meshes) {
-    walk(mesh);
-    for (const child of mesh.getChildMeshes()) {
-      if (child instanceof Mesh) walk(child);
-    }
+    total += positions.length / 3;
   }
   return total;
+}
+
+/**
+ * One surface's colour buffer — the whole of the per-vertex work, and PURE:
+ * it reads `positions` and `normals` (local space, three numbers a vertex) and
+ * `m`, the sixteen numbers of the surface's world matrix (column-major as
+ * Babylon's `Matrix.m`), and returns a new `Float32Array` of four numbers a
+ * vertex. Nothing it is handed is written, and nothing but what it is handed
+ * (and `ctx`) is read — so it is the same answer whether the arrays came off a
+ * mesh or off a part.
+ *
+ * `layer` is the surface's sway mark (`swayLayerOf`), null for anything that
+ * does not sway.
+ */
+export function shadeVertices(
+  ctx: ShadingContext,
+  positions: ArrayLike<number>,
+  normals: ArrayLike<number>,
+  m: ArrayLike<number>,
+  layer: SwayLayer | null,
+): Float32Array {
+  const { index, terrain, radius, strength, wearHeight, wearProbe, wearCover } = ctx;
+  const count = positions.length / 3;
+  const colors = new Float32Array(count * 4);
+
+  for (let i = 0; i < count; i++) {
+    const x = positions[i * 3];
+    const y = positions[i * 3 + 1];
+    const z = positions[i * 3 + 2];
+    const px = m[0] * x + m[4] * y + m[8] * z + m[12];
+    const py = m[1] * x + m[5] * y + m[9] * z + m[13];
+    const pz = m[2] * x + m[6] * y + m[10] * z + m[14];
+
+    const ax = normals[i * 3];
+    const ay = normals[i * 3 + 1];
+    const az = normals[i * 3 + 2];
+    let nx = m[0] * ax + m[4] * ay + m[8] * az;
+    let ny = m[1] * ax + m[5] * ay + m[9] * az;
+    let nz = m[2] * ax + m[6] * ay + m[10] * az;
+    const len = Math.hypot(nx, ny, nz) || 1;
+    nx /= len;
+    ny /= len;
+    nz /= len;
+
+    const occ = occlusionAt(px, py, pz, nx, ny, nz, index, terrain, radius);
+    const ao = 1 - Math.min(1, occ) * strength;
+    // Height above the GROUND under this vertex, not above sea level: the
+    // valley falls two metres under a stand of trees and dips to -1.34 in a
+    // riverbed, and a ramp measured from y = 0 would plant the ferns on one
+    // bank and let the ones on the other slide.
+    //
+    // HOISTED, and it is now unconditional where it used to be foliage's
+    // alone. Both the sway ramp and the wear ramp are functions of exactly
+    // this number, so a second `heightAt` here would be the same bilinear
+    // sample of the same field twice per vertex. What the hoist costs is that
+    // every NON-foliage vertex now takes one it did not before — see the
+    // measurement in the header.
+    const above = py - terrain.heightAt(px, pz);
+    colors[i * 4] = layer ? swayWeight(above, layer) : 0;
+    colors[i * 4 + 1] = 1;
+    // The wear ramp: the STRAIGHT LINE through 1 at the footing and 0 at
+    // `CONFIG.wear.height`, and deliberately NOT the curve the shader draws off
+    // it.
+    //
+    // WHY THE CURVE IS NOT BAKED. A box part has eight corners and no
+    // vertical subdivision, so a wall's only samples here are its footing and
+    // its eaves — and whatever is written at those two, the rasteriser joins
+    // them with a straight line. Bake `pow` and that line runs from 1 to 0
+    // across the WHOLE wall: on a 3 m wall head height still carries 0.47 of
+    // full grime, and the height and falloff this file thinks it is spending
+    // reach the screen as neither. Height above ground is itself linear up a
+    // vertical face, so the LINE is exact under interpolation where the curve
+    // is not. `pow` is a uniform's job now (`CelShader`'s WEAR block).
+    //
+    // AND IT IS NOT CLAMPED BELOW, which is the part that looks like an
+    // oversight. The ZERO CROSSING is what puts the stain's top edge where
+    // `CONFIG.wear.height` says, and a vertex clamped to 0 at the eaves drags
+    // that crossing up to the eaves with it — the same bug as baking the
+    // curve, wearing a clamp's clothes. So the eaves of a 6 m wall store
+    // -1.3 and the shader clamps after interpolation, where it is free. The
+    // TOP clamp stays: `above` goes negative on anything founded below
+    // grade — a sunken wall, a quay's face, the terrain's own skirt — and a
+    // weight over 1 pushes the mix past the dirt colour into whatever lies
+    // beyond it.
+    //
+    // This is the ramp ALONE, with no strength folded in: how dirty the place
+    // is belongs to `EnvironmentSpec.wear` and is spent as a uniform, which is
+    // what lets a map be dirtied without a rebuild. Nothing here knows which
+    // map it is baking.
+    //
+    // AND IT IS NOTHING AT ALL UNDER A ROOF. See `shelteredAt`: the ramp on
+    // its own is a function of height above ground, so it climbed the INSIDE
+    // of every building in the village as readily as the street front, and
+    // one wall box's two faces came out identical because they are the same
+    // corners with opposite normals. A sheltered vertex is written the
+    // channel's neutral 0 — CLEAN, the same value every rig and every effect
+    // mesh gets by carrying no buffer at all — rather than a scaled ramp,
+    // because a room is dry rather than less wet.
+    //
+    // The probe is SKIPPED where the line has already gone negative, and that
+    // is the cheap half as well as the safe half. Cheap: every vertex over
+    // `CONFIG.wear.height` above the ground — eaves, roofs, upper storeys — pays
+    // nothing, which is most of a village. Safe: writing 0 over a negative
+    // would RAISE it, and a face reading 1 at its footing and 0 at its eaves
+    // is grime up the whole wall. `shelteredAt`'s own `py` test is the other
+    // half of that ordering.
+    const line = wearHeight > 0 ? Math.min(1, 1 - above / wearHeight) : 0;
+    colors[i * 4 + 2] =
+      line > 0 &&
+      shelteredAt(px, py, pz, nx, nz, index, terrain, wearProbe, wearCover)
+        ? 0
+        : line;
+    colors[i * 4 + 3] = ao;
+  }
+  return colors;
 }

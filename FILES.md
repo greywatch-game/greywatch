@@ -1135,11 +1135,12 @@ src/
                         #   Superset or nothing — read it
     vertexShading.ts    # The world's baked vertex-colour buffer, written after
                         #   every merge: AO in the ALPHA, the world mark in the
-                        #   GREEN, the wind's sway weight in the RED
+                        #   GREEN, the wind's sway weight in the RED, the wear
+                        #   ramp in the BLUE. A pure core over one surface's
+                        #   arrays (shadeVertices) and the mesh walk that is
+                        #   its caller (bakeVertexShading)
     sway.ts             # Which foliage the wind moves and how much of it moves
-                        #   at a given height. Marks, layers, the weight ramp.
-                        #   A marked group leaves Babylon's outline pass and
-                        #   gets an ink twin (MapBuilder.inkTwin) instead
+                        #   at a given height. Marks, layers, the weight ramp
     flame.ts            # An open fire's geometry — outer tongues wound inside
                         #   out, a core, embers, a bounds marker — in one
                         #   GeometryBuffer whose UVs FlameShader decodes.

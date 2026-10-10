@@ -49,9 +49,8 @@
  * - **Blocked** — drawn map geometry carrying `metadata.block`, filed one cull
  *   cell per map block — 48 m on every shipped map, `MapLayout.blockSize` where
  *   one states otherwise — and offered only while the camera is inside `reach`
- *   of that cell's own bounds. That is `BlockMerge`'s output, the ink twins of
- *   it and the merged glazing, which between them are every STRUCTURE on the
- *   map.
+ *   of that cell's own bounds. That is `BlockMerge`'s output and the merged
+ *   glazing, which between them are every STRUCTURE on the map.
  * - **Pooled** — a body's rig, filed under the rig ROOT whose `setEnabled` the
  *   roster already writes, and offered only while that root is enabled. A pool
  *   is built once per roster and re-posed forever, so a rig that is not in the
