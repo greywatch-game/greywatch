@@ -84,11 +84,12 @@ import {
   type MolotovMeshes,
 } from "../entities/MolotovModel";
 import type { ThrowableId } from "../entities/throwables";
+import { babylonRayHit } from "../math/babylon";
 import type { CelMaterialFactory } from "../shaders/CelShader";
 import type { EnvironmentSpec } from "../world/environment";
 import { TerrainField } from "../world/TerrainField";
 import { flameData } from "../world/flame";
-import { newRayHit, type RayWorld } from "../world/RayWorld";
+import type { RayWorld } from "../world/RayWorld";
 import { BlastFx } from "./BlastFx";
 import type { DamageKind, Hittable } from "./CombatSystem";
 
@@ -304,7 +305,7 @@ export class GrenadeSystem {
    * backstop, which is what an empty scene answered.
    */
   private rays: RayWorld | null = null;
-  private readonly hit = newRayHit();
+  private readonly hit = babylonRayHit();
   /** Names the next flight. Never reset — see `Grenade.id`. */
   private nextId = 0;
   /** The burning ground a molotov leaves — see `Fire`. */

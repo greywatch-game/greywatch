@@ -73,7 +73,7 @@
  * pointing away from itself (a wall met from inside a doorway) and the blast
  * probe flips one pointing down. Do not "fix" it into a near-face hit.
  */
-import { Vector3 } from "@babylonjs/core";
+import { Vector3, type Vector3Like, type Vector3Ref } from "../math";
 import type { WorldBox } from "./MapBuilder";
 import type { TerrainField } from "./TerrainField";
 
@@ -124,14 +124,19 @@ const COINCIDENT = 1e-4;
  * `surface` is `CombatSystem.ImpactKind`'s two world answers, stated rather
  * than looked up: it was `metadata.surface`, present on exactly one thing (the
  * floor's collider clone) and absent everywhere else.
+ *
+ * `V` is whose vectors `point` and `normal` are. A cast writes them through
+ * `set` and nothing else, so it fills either library's; `newRayHit` makes
+ * ours, and a caller still reading them with Babylon's methods keeps one made
+ * by `src/math/babylon.ts`'s `babylonRayHit` instead.
  */
-export interface RayHit {
+export interface RayHit<V extends Vector3Ref = Vector3> {
   /** Metres along the ray. */
   distance: number;
   /** Where it landed. */
-  point: Vector3;
+  point: V;
   /** The OUTWARD normal of the face that stopped it — see the header. */
-  normal: Vector3;
+  normal: V;
   surface: "ground" | "hard";
   /**
    * The moving hull the cast stopped ON, or null for the static world.
@@ -306,10 +311,10 @@ export class RayWorld {
    * is kept: nothing here allocates per cast.
    */
   castBody(
-    origin: Vector3,
-    dir: Vector3,
+    origin: Vector3Like,
+    dir: Vector3Like,
     length: number,
-    out: RayHit,
+    out: RayHit<Vector3Ref>,
     skip: RayHull | null = null,
   ): boolean {
     return this.cast(origin, dir, length, BLOCKS_BODY, out, skip);
@@ -329,10 +334,10 @@ export class RayWorld {
    * knows which hull to take out, never this.
    */
   castRound(
-    origin: Vector3,
-    dir: Vector3,
+    origin: Vector3Like,
+    dir: Vector3Like,
     length: number,
-    out: RayHit,
+    out: RayHit<Vector3Ref>,
     skip: RayHull | null = null,
   ): boolean {
     return this.cast(origin, dir, length, BLOCKS_ROUND, out, skip);
@@ -349,7 +354,7 @@ export class RayWorld {
    * which blocked first. At sixteen bots and `thinkRate` that is the difference
    * between a whole segment and a few metres of one.
    */
-  blocked(from: Vector3, to: Vector3): boolean {
+  blocked(from: Vector3Like, to: Vector3Like): boolean {
     const dx = to.x - from.x;
     const dy = to.y - from.y;
     const dz = to.z - from.z;
@@ -400,11 +405,11 @@ export class RayWorld {
    * the LENGTH of the segment — is bounded by all three.
    */
   private cast(
-    origin: Vector3,
-    dir: Vector3,
+    origin: Vector3Like,
+    dir: Vector3Like,
     length: number,
     mask: number,
-    out: RayHit | null,
+    out: RayHit<Vector3Ref> | null,
     skip: RayHull | null,
   ): boolean {
     if (!(length > 0)) return false;

@@ -23,6 +23,7 @@ import {
   StandardMaterial,
   Vector3,
 } from "@babylonjs/core";
+import type { Vector3Like } from "../math";
 import { flagMount } from "../systems/CaptureZoneSystem";
 import { isScatterRect, type ScatterSpec } from "../world/layout";
 import type { GameMap } from "../world/MapBuilder";
@@ -136,7 +137,7 @@ export class ProxyLayer {
     this.meshes.push(mesh);
   }
 
-  private ring(at: Vector3, radius: number, hex: string, ref: SelectionRef): void {
+  private ring(at: Vector3Like, radius: number, hex: string, ref: SelectionRef): void {
     const m = MeshBuilder.CreateTorus(
       "ed-ring",
       { diameter: radius * 2, thickness: 0.35, tessellation: 48 },
@@ -180,7 +181,7 @@ export class ProxyLayer {
     }
   }
 
-  private pole(at: Vector3, height: number, hex: string, ref: SelectionRef): void {
+  private pole(at: Vector3Like, height: number, hex: string, ref: SelectionRef): void {
     const m = MeshBuilder.CreateCylinder(
       "ed-pole",
       { height, diameter: 0.25, tessellation: 6 },
@@ -190,7 +191,7 @@ export class ProxyLayer {
     this.adopt(m, ref, hex, 0.7);
   }
 
-  private arrow(at: Vector3, yaw: number, hex: string, ref: SelectionRef): void {
+  private arrow(at: Vector3Like, yaw: number, hex: string, ref: SelectionRef): void {
     // A flat triangle on the ground pointing along the spawn's facing — the
     // yaw is half of what a spawn point means and is invisible otherwise.
     const m = MeshBuilder.CreateCylinder(

@@ -24,7 +24,7 @@
  * `kit/city/index.ts`'s per-builder figures; what the map actually bakes is
  * `GameMap.colliderBoxes.length`, and that is the number to quote.
  */
-import { Vector3 } from "@babylonjs/core";
+import { Vector3 } from "../../math";
 import type {
   ControlPointDef,
   MapLayout,

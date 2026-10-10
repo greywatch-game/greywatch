@@ -35,8 +35,9 @@ import type { Combatant, Team } from "../entities/Combatant";
 import type { EquipmentId } from "../entities/equipment";
 import { buildMineBody } from "../entities/MineModel";
 import { buildRocket } from "../entities/RpgModel";
+import { babylonRayHit } from "../math/babylon";
 import type { CelMaterialFactory } from "../shaders/CelShader";
-import { newRayHit, type RayWorld } from "../world/RayWorld";
+import type { RayWorld } from "../world/RayWorld";
 import { TerrainField } from "../world/TerrainField";
 import type { Hittable } from "./CombatSystem";
 
@@ -159,7 +160,7 @@ export class AntiTankSystem {
    * own terrain backstop catches it.
    */
   private rays: RayWorld | null = null;
-  private readonly hit = newRayHit();
+  private readonly hit = babylonRayHit();
   private terrain = new TerrainField();
   private nextLaid = 0;
   /** The next flight id. Monotonic for the life of the system — see `Rocket.id`. */

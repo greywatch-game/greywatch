@@ -106,7 +106,9 @@ then the frame loop itself, at which point taking the frame is mostly deletion.
    it through the seam. It never copies it and never owns a second one.
 6. **`src/render/` and `src/math/` never import `@babylonjs/core`.** X2.3 adds
    a build gate for `server/` and the simulation; X3.2 adds these two
-   directories to it; X6.1 widens it to the whole tree.
+   directories to it; X6.1 widens it to the whole tree. The one exception is
+   `src/math/babylon.ts`, the crossing X1.1 made: the gate names it, and it is
+   deleted at X6.1.
 7. **A step that breaks a contract rewrites it in the same commit** —
    `CLAUDE.md`, the companion under `docs/`, `FILES.md`, and any contract
    header it invalidates. "Contracts this plan rewrites" below lists where.

@@ -3992,7 +3992,7 @@ writeFileSync(
  *
  * ${placementCount} placements, ${scatterCount} scatter regions.
  */
-import { Vector3 } from "@babylonjs/core";
+import { Vector3 } from "../../math";
 import type {
   ControlPointDef,
   GrassRect,

@@ -57,7 +57,8 @@ scripts/                      # Node tooling, run by hand or by `npm run build`,
                               #   through Vite (a dev server, a browser, or
                               #   ssrLoadModule), except the few .ts files
                               #   imported by name under Node's type stripping
-                              #   (roadPaths.ts, roads.ts, rng.ts), which
+                              #   (roadPaths.ts, roads.ts, rng.ts, src/math/),
+                              #   which
                               #   therefore hold only erasable syntax. Each
                               #   header carries its argument, and package.json
                               #   says which npm script runs which file
@@ -123,6 +124,13 @@ scripts/                      # Node tooling, run by hand or by `npm run build`,
                               #   how parts are built or merged proves it moved
                               #   nothing; `--editor` does the editor's unmerged
                               #   build. Same machine and Babylon only. Not a
+                              #   gate
+  math-check.mjs              # `node scripts/math-check.mjs`: runs every
+                              #   method in src/math/ and Babylon's of the
+                              #   same name on seeded inputs and compares the
+                              #   answers BIT for bit; fails on a member no
+                              #   case covers. Owed by every method added
+                              #   there. Deleted with Babylon (X6.1). Not a
                               #   gate
   loc.mjs                     # `npm run loc`: how big the project is, off `git
                               #   ls-files` — hand-written code split into
@@ -336,6 +344,22 @@ src/
                         #   figures (the enter radius, the exit offset, the
                         #   respawn and wreck clocks, the AI crew) sit above
                         #   both
+  math/             # The game's own Vector3, Quaternion, Matrix, Color3 and
+                    #   Color4: Babylon's subset under Babylon's names and
+                    #   bit-identical answers (BABYLON_EXIT.md X1.1). All but
+                    #   babylon.ts import nothing and name their .ts imports,
+                    #   so Node loads them
+    index.ts            # The re-exports. NOT babylon.ts
+    vector.ts           # Vector3, Quaternion, Matrix, and the parameter types
+                        #   that let a Babylon vector in: Vector3Like (read)
+                        #   and Vector3Ref (written through set alone). One of
+                        #   ours handed to a BABYLON method reads `_x` and gets
+                        #   NaN — the header says which way is safe
+    color.ts            # Color3 and Color4
+    babylon.ts          # THE crossing into Babylon's math (toBabylon, and
+                        #   babylonRayHit for a system still reading a hit
+                        #   with Babylon's methods). The one file here that
+                        #   imports Babylon; shrinks to nothing by X6.1
   core/
     Game.ts             # Orchestrator + main loop + all cross-system wiring.
                         #   Constructor is construction only; wiring is

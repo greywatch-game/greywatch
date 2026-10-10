@@ -50,8 +50,9 @@ import {
   Vector3,
 } from "@babylonjs/core";
 import { CONFIG } from "../config";
+import { babylonRayHit } from "../math/babylon";
 import type { CelMaterialFactory } from "../shaders/CelShader";
-import { newRayHit, type RayHull, type RayWorld } from "../world/RayWorld";
+import type { RayHull, RayWorld } from "../world/RayWorld";
 import type { Rand } from "./RoundRandom";
 import { BulletMarks } from "./BulletMarks";
 
@@ -399,7 +400,7 @@ export class CombatSystem {
   private rays: RayWorld | null = null;
 
   /** The wall query's result. Scratch: read inside `fire`, never held. */
-  private readonly wall = newRayHit();
+  private readonly wall = babylonRayHit();
 
   /**
    * The world every round is capped against. Wired from `installMap` on the

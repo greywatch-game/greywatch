@@ -17,7 +17,7 @@
  * `src/editor/sourceScan.ts` requires. Re-running the generator discards
  * editor edits.
  */
-import { Vector3 } from "@babylonjs/core";
+import { Vector3 } from "../../math";
 import type {
   ControlPointDef,
   GrassRect,

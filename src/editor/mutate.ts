@@ -27,6 +27,11 @@
  */
 import { Vector3 } from "@babylonjs/core";
 import { CONFIG } from "../config";
+// A layout's positions are src/math's, and `serialize.ts` tells them apart by
+// class; the editor's own vectors (a gizmo, a pick) stay Babylon's until X5.3
+// moves the editor, so the layout's class goes by another name in here.
+import { Vector3 as LayoutVector3, type Vector3Ref } from "../math";
+import { toBabylon } from "../math/babylon";
 import type { BuilderKind } from "../world/BuildingKit";
 import type { EnvironmentSpec } from "../world/environment";
 import {
@@ -77,9 +82,9 @@ export function originOf(
       return s ? lift(s.x, s.y ?? 0, s.z) : null;
     }
     case "controlPoints":
-      return layout.controlPoints[ref.index]?.pos.clone() ?? null;
+      return layout.controlPoints[ref.index] ? toBabylon(layout.controlPoints[ref.index].pos) : null;
     case "spawns":
-      return layout.spawns[ref.index]?.pos.clone() ?? null;
+      return layout.spawns[ref.index] ? toBabylon(layout.spawns[ref.index].pos) : null;
     case "water": {
       const r = layout.water?.[ref.index];
       return r ? new Vector3(r.x, waterY(r, terrain), r.z) : null;
@@ -499,7 +504,7 @@ export function setField(
   if (head === "params") return setParam(entry, tail, value);
   if (head === "scale") return setScale(entry, Number(tail), value);
   if (head === "pos") {
-    const pos = entry.pos as Vector3 | undefined;
+    const pos = entry.pos as Vector3Ref | undefined;
     if (!pos || typeof value !== "number") return;
     if (tail === "x") pos.x = q(value);
     else if (tail === "y") pos.y = q(value);
@@ -604,7 +609,7 @@ export function addItem(
       array.push({
         id,
         name: `Point ${id}`,
-        pos: new Vector3(x, world, z),
+        pos: new LayoutVector3(x, world, z),
         radius: 12,
       });
       break;
@@ -616,7 +621,7 @@ export function addItem(
       array.push({
         team: near ? null : 0,
         ...(near ? { controlPoint: near } : {}),
-        pos: new Vector3(x, world, z),
+        pos: new LayoutVector3(x, world, z),
         yaw: 0,
       });
       break;

@@ -66,6 +66,7 @@ import {
   type WebGPUEngine,
 } from "@babylonjs/core";
 import { CONFIG } from "../config";
+import { toBabylon } from "../math/babylon";
 import {
   CelMaterialFactory,
   fogAmountAt,
@@ -5304,8 +5305,8 @@ export class Game {
       return;
     }
     const points: Vector3[] = [];
-    for (const sp of map.spawns) if (sp.team !== null) points.push(sp.pos);
-    for (const cp of map.controlPoints) points.push(cp.pos);
+    for (const sp of map.spawns) if (sp.team !== null) points.push(toBabylon(sp.pos));
+    for (const cp of map.controlPoints) points.push(toBabylon(cp.pos));
     this.warmBodies.length = 0;
     const body = this.deathCam.body;
     if (body) this.warmBodies.push({ rig: body });

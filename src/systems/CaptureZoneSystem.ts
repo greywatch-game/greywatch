@@ -149,7 +149,7 @@ const MOUNT_SKY = 80;
 const UP = new Vector3(0, 1, 0);
 const DOWN = new Vector3(0, -1, 0);
 const MOUNT_FROM = new Vector3();
-const MOUNT_HIT: RayHit = {
+const MOUNT_HIT: RayHit<Vector3> = {
   distance: 0,
   point: new Vector3(),
   normal: new Vector3(),

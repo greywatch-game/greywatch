@@ -14,6 +14,8 @@
 import { Vector3 } from "@babylonjs/core";
 import { CONFIG } from "../config";
 import { clamp } from "../core/math";
+import type { Vector3Like } from "../math";
+import { toBabylon } from "../math/babylon";
 import type { Bot, BotZone } from "../entities/Bot";
 import type { Combatant, Team } from "../entities/Combatant";
 import type { ControlPointDef, GameMap, SpawnPointDef } from "../world/MapBuilder";
@@ -402,7 +404,7 @@ export class ConquestSystem {
     // just defends whatever is closest to the home spawn. It is a fraction of
     // the MAP rather than a rate per metre, because "mild" is relative to how
     // far there is to walk: see `span`, and `squad.distancePenalty`.
-    score -= (Vector3.Distance(from, p.def.pos) / this.span) * s.distancePenalty;
+    score -= (Vector3.Distance(from, toBabylon(p.def.pos, DEF_POS)) / this.span) * s.distancePenalty;
     return score;
   }
 
@@ -413,7 +415,10 @@ export class ConquestSystem {
   }
 }
 
-function near(a: Vector3, b: Vector3, dist: number): boolean {
+/** `pointValue`'s flag position, crossed into Babylon's math without allocating. */
+const DEF_POS = new Vector3();
+
+function near(a: Vector3Like, b: Vector3Like, dist: number): boolean {
   const dx = a.x - b.x;
   const dz = a.z - b.z;
   return dx * dx + dz * dz < dist * dist;
@@ -433,7 +438,7 @@ function near(a: Vector3, b: Vector3, dist: number): boolean {
  * stands decides the fight it walks into.
  */
 export function scatterSpawn(
-  pick: { pos: Vector3; yaw: number },
+  pick: { pos: Vector3Like; yaw: number },
   rand: Rand,
 ): {
   pos: Vector3;
@@ -441,7 +446,7 @@ export function scatterSpawn(
 } {
   const s = CONFIG.conquest.spawnScatter;
   return {
-    pos: pick.pos.add(new Vector3((rand() - 0.5) * s, 0, (rand() - 0.5) * s)),
+    pos: toBabylon(pick.pos).addInPlace(new Vector3((rand() - 0.5) * s, 0, (rand() - 0.5) * s)),
     yaw: pick.yaw,
   };
 }

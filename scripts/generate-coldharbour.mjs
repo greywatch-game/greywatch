@@ -1654,7 +1654,7 @@ function readTemplate() {
  * a control point's pos must NOT sit inside a collider (surfaceAt returns -1);
  * scatter clearance values must match prop collider extents.
  */
-import { Vector3 } from "@babylonjs/core";
+import { Vector3 } from "../../math";
 import type {
   ControlPointDef,
   GrassRect,

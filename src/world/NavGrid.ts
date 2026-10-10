@@ -22,7 +22,7 @@
  * match ObstacleField. Too coarse to be the only collision test — see
  * ObstacleField.
  */
-import { Vector3 } from "@babylonjs/core";
+import type { Vector3Like, Vector3Ref } from "../math";
 import { CONFIG } from "../config";
 import {
   clampToTopFace,
@@ -866,7 +866,7 @@ export class NavGrid {
   }
 
   /** World centre of a surface's cell. */
-  positionOf(surface: number, into: Vector3): Vector3 {
+  positionOf<T extends Vector3Ref>(surface: number, into: T): T {
     const cell = this.surfaceCell[surface];
     return into.set(
       this.toWorld(cell % this.dim),
@@ -890,7 +890,7 @@ export class NavGrid {
    * FASTER either — see ENGINE_UPGRADE.md S4, which took the reading. It is
    * here for what it does not allocate.
    */
-  buildField(name: string, goal: Vector3, radius: number): FlowField {
+  buildField(name: string, goal: Vector3Like, radius: number): FlowField {
     const dist = new Uint16Array(this.surfaceCount).fill(FLOW_UNREACHED);
     const queue = new Int32Array(this.surfaceCount);
     let tail = 0;
@@ -938,7 +938,7 @@ export class NavGrid {
    * neighbouring surface with the lowest remaining distance. Returns a zero
    * vector at the goal or when stranded.
    */
-  steer(field: FlowField, pos: Vector3, into: Vector3): Vector3 {
+  steer<T extends Vector3Ref>(field: FlowField, pos: Vector3Like, into: T): T {
     into.setAll(0);
     const here = this.surfaceAt(pos.x, pos.y, pos.z);
     if (here < 0) return into;
@@ -977,7 +977,7 @@ export class NavGrid {
    * blend cuts the corner without ever aiming hard through it, and the caller's
    * stuck watchdog covers what is left.
    */
-  steerAhead(field: FlowField, pos: Vector3, steps: number, into: Vector3): Vector3 {
+  steerAhead<T extends Vector3Ref>(field: FlowField, pos: Vector3Like, steps: number, into: T): T {
     into.setAll(0);
     let here = this.surfaceAt(pos.x, pos.y, pos.z);
     if (here < 0) return into;
@@ -1023,7 +1023,7 @@ export class NavGrid {
   }
 
   /** True when a field can reach the surface under `pos` at all. */
-  reachable(field: FlowField, pos: Vector3): boolean {
+  reachable(field: FlowField, pos: Vector3Like): boolean {
     const s = this.surfaceAt(pos.x, pos.y, pos.z);
     return s >= 0 && field.dist[s] !== FLOW_UNREACHED;
   }

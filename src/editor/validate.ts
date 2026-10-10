@@ -20,6 +20,7 @@
  */
 import { Vector3 } from "@babylonjs/core";
 import { CONFIG } from "../config";
+import { toBabylon } from "../math/babylon";
 import type { Heightfield, MapLayout } from "../world/layout";
 import type { GameMap } from "../world/MapBuilder";
 import { MAX_WALKABLE_GRADE } from "../world/TerrainField";
@@ -148,7 +149,7 @@ export function validate(
       out.push({
         severity: "error",
         text: `flag ${cp.id} centre is not standable (inside a collider?)`,
-        at: cp.pos.clone(),
+        at: toBabylon(cp.pos),
         ref: { list: "controlPoints", index: i },
       });
     }
@@ -163,7 +164,7 @@ export function validate(
         out.push({
           severity: "error",
           text: `flag ${cp.id} is unreachable from team ${team}'s spawn`,
-          at: cp.pos.clone(),
+          at: toBabylon(cp.pos),
           ref: { list: "controlPoints", index: i },
         });
       }
@@ -174,7 +175,7 @@ export function validate(
       out.push({
         severity: "error",
         text: `spawn #${i} is not standable`,
-        at: s.pos.clone(),
+        at: toBabylon(s.pos),
         ref: { list: "spawns", index: i },
       });
     }
@@ -362,7 +363,7 @@ function structure(layout: MapLayout): Finding[] {
       out.push({
         severity: "error",
         text: `two flags share the id "${cp.id}" (#${first} and #${i})`,
-        at: cp.pos.clone(),
+        at: toBabylon(cp.pos),
         ref: { list: "controlPoints", index: i },
       });
     } else {
@@ -382,7 +383,7 @@ function structure(layout: MapLayout): Finding[] {
       out.push({
         severity: "error",
         text: `spawn #${i} belongs to flag "${s.controlPoint ?? "?"}", which does not exist`,
-        at: s.pos.clone(),
+        at: toBabylon(s.pos),
         ref: { list: "spawns", index: i },
       });
     }

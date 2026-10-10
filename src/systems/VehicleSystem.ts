@@ -54,6 +54,7 @@ import {
   type GunInput,
 } from "../entities/Vehicle";
 import { kindOf } from "../entities/vehicleKinds";
+import { toBabylon } from "../math/babylon";
 import type { CelMaterialFactory } from "../shaders/CelShader";
 import type { GameMap, VehicleSpawnDef } from "../world/MapBuilder";
 import type { CollisionField } from "../world/CollisionField";
@@ -253,7 +254,7 @@ export class VehicleSystem {
       const tank = new Vehicle(this.scene, this.mats, def.team, kindOf(def.kind));
       tank.setGround(map.terrain, map.obstacles, map.collidables);
       tank.onDestroyed = () => this.onDestroyed(tank);
-      tank.placeAt(def.pos, def.yaw);
+      tank.placeAt(toBabylon(def.pos), def.yaw);
       // A hull in a match refuses local damage and answers to the wire for
       // when it burns and when a fresh one arrives — see `Vehicle.predicted` and
       // the clocks in `update`. Set here rather than by the caller so a fleet
@@ -344,7 +345,7 @@ export class VehicleSystem {
       stand.respawnIn -= dt;
       if (stand.respawnIn > 0) continue;
       stand.respawnIn = 0;
-      tank.placeAt(stand.def.pos, stand.def.yaw);
+      tank.placeAt(toBabylon(stand.def.pos), stand.def.yaw);
       this.onRespawned(tank);
     }
   }

@@ -15,7 +15,8 @@
  * `MapBuilder.ts` (`collider()`, `recordBox`, `repositionItem`) or in
  * `merge.ts` (`PaneBlocks`), never beside the shape.
  */
-import type { Mesh, Vector3 } from "@babylonjs/core";
+import type { Mesh } from "@babylonjs/core";
+import type { Vector3 } from "../math";
 import type { WaterAmbienceId } from "../core/Sfx";
 import type { VehicleKind } from "../entities/vehicleKinds";
 import type { BoxSpec } from "./BuildingKit";

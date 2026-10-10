@@ -177,7 +177,7 @@
  *
  * 828 placements, 72 scatter regions.
  */
-import { Vector3 } from "@babylonjs/core";
+import { Vector3 } from "../../math";
 import type {
   ControlPointDef,
   GrassRect,

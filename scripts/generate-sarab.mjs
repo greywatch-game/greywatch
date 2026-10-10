@@ -2381,7 +2381,7 @@ writeFileSync(
  * requires, so F2 edits it and Ctrl+S patches it exactly as it patches
  * Harrowmead's. Re-running the generator discards those edits.
  */
-import { Vector3 } from "@babylonjs/core";
+import { Vector3 } from "../../math";
 import type {
   ControlPointDef,
   GrassRect,

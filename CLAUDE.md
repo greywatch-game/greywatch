@@ -1443,6 +1443,17 @@ regions' two headers, and what is not built.
 - `CONFIG` is `as const`, so a field like `bots.engageRange` has a *literal* type.
   `let x = CONFIG.bots.engageRange` then reassigning it fails to compile — annotate
   `let x: number` instead.
+- **There are TWO `Vector3`s until the exit's X6.1, and they do not mix.**
+  `src/math/` is the game's own — Babylon's subset under Babylon's names, bit
+  for bit (`scripts/math-check.mjs`) — and a map's LAYOUT positions and the
+  world's data layer are made of it; the rest of the tree still holds
+  Babylon's. **One of ours handed to a Babylon method reads `_x` and writes
+  NaN without a word**, so a crossing is a copy through `src/math/babylon.ts`,
+  and a function both sides reach takes `Vector3Like` (read) or `Vector3Ref`
+  (written through `set`), which Babylon's satisfies. The types catch every
+  crossing but two: an `instanceof` (the editor's serializer knows a position
+  by its CLASS) and a push into an untyped array (the editor's new entries) —
+  so a vector put INTO a layout is `src/math/`'s.
 - Smoothing is normally the frame-lerp idiom `Math.min(1, dt * rate)`. **Anything
   that moves where bullets go, or that a player will read as recoil, is stepped
   EXACTLY instead**, because burst climb must not vary with frame rate.

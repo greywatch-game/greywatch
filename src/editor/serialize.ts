@@ -27,7 +27,7 @@
  * entry's line is dropped, an added entry is written fresh at the end of its
  * array, and every line in between is still copied byte for byte.
  */
-import { Vector3 } from "@babylonjs/core";
+import { Vector3 } from "../math";
 import type { MapLayout } from "../world/layout";
 import {
   itemsOf,

@@ -1626,7 +1626,7 @@ function readTemplate() {
  * \`src/editor/sourceScan.ts\` requires. Re-running the generator discards
  * editor edits — and its header says what it checks that hand-editing did not.
  */
-import { Vector3 } from "@babylonjs/core";
+import { Vector3 } from "../../math";
 import type {
   ControlPointDef,
   GrassRect,
