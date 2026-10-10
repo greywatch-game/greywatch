@@ -495,7 +495,69 @@ box did.
   within noise. Babylon's `Vector3` dirties itself on every write, so plain
   fields may be faster; say which.
 
-### X1.2 — Geometry as typed arrays: the `Build` layer and the kit — **M**
+### X1.2 — Geometry as typed arrays: the `Build` layer and the kit — **M** — **LANDED** (df89358)
+
+**Landed.** `src/geometry/` holds `GeometryBuffer` and the six generators.
+The buffer stores positions, normals, uvs, uv2, colours and indices as typed
+arrays, with `VertexData`'s merge, transform and `ComputeNormals`. The
+generators are box, cylinder, torus, icosphere, sphere and polyhedron. All of
+it is copied from Babylon 9.28 operation for operation, with the Apache-2.0
+notice in each header (the licence obligation is the notice, which is kept).
+One rule came out of matching bits: **an array's type is its precision**.
+Babylon keeps whatever array it is given. A merge whose first member is a
+`Float32Array` rounds what it copies, and one whose first member is a
+`number[]` keeps doubles. So a buffer holds a `Float64Array` where Babylon
+held a `number[]` and a `Float32Array` where it held one, and never converts
+between the two. `scripts/geometry-check.mjs` builds every generator both
+ways over seeded options, runs merge, transform and normals against
+`VertexData`'s, and compares every number with `Object.is`. It fails on an
+export with no case.
+
+`Build` and every scatter prop now make `Part`s (`world/parts.ts`): a buffer,
+a local transform, a material and metadata, with the members a builder used
+to touch on a mesh under the same names. **The 52 `.parent =` became data,
+and the transform is applied at emit time, not at build time.** The
+placement is set on a prop's ROOT after the builder returns, so the whole
+transform is not known until `MapBuilder` places it. `flattenParts` runs
+there. It composes each link into the part's own transform the way Babylon's
+`setParent(null)` did, in the same float32 steps and in Babylon's child order,
+because that order is the merge's vertex order. Composing at build time would
+have needed an extra multiply by the placement, which moves bits. `partMesh`
+is the one adapter into Babylon (`MapBuilder.structureMeshes`, `propMeshes`).
+It hands back the arrays in the types Babylon held, by a loop, because
+`Array.from` over a typed array cost +15% of a map build on its own. Scatter
+builders no longer take a scene. Kit builders still do, for materials and
+textures. Pulled forward from X1.3, because the kit uses them: `flame.ts`
+(the molotov adapts it through `vertexDataOf`), `TerrainField`'s accumulator
+(the roads are built from it, and the terrain patches with them), and the
+fire drum's torus. `kit:hash` now hashes a prop after `flattenParts`
+(713bdcd, committed before any conversion, and the baseline for this step).
+
+**Measured:**
+- **geometry-check:** 33,000 comparisons, all identical. A planted constant
+  in the icosphere was caught. Past ~3,000 trials Node runs out of heap. The
+  leak is Babylon's `CreateSphereVertexData` (1,588 MB against our 67 over
+  3,000 calls).
+- **math-check:** 1,520,000 comparisons, identical, with the four `Vector3`
+  members the generators added.
+- **kit:hash:** identical on all 3,722 builds of 105 kinds, drawing and
+  colliders. A planted flatten error moved palm and pine and not cottage.
+- **merge:hash:** identical on all eight maps, shipped and `--editor`, before
+  and after the copy fix.
+- **`npm run collision`:** no diff. **parity:** passes on all eight maps.
+- **simulate, seed 777:** fought X1.1's fights (Greyfen `6ef4707c3c7a8414`,
+  Sarab `c109c06104830c4a`).
+- **The benchmark at `--max`:** played both rounds to the end and fought
+  X0.4's fights (Greyfen `7ee089c174427e3d`, Sarab `1cab861b4ea23f7f`). One
+  run each, so no frame figure is quoted. The scene is the same geometry by
+  `merge:hash`.
+- **`build:total`**, median of 5 per side, parent / this step / parent again:
+  Greyfen 9,932 / 10,047 / 9,840 ms, Coldharbour 3,587 / 3,599 / 3,541. That
+  is +1-2%, inside the 8% bar. The placement phase is +11-13% (~140 ms), which
+  is the adapter's copies. X1.4 deletes them.
+- **What was not run:** a live match against `server/`. Its one change is
+  that the terrain patches go through `vertexDataOf`, which parity exercises.
+- **`npm run build`:** passes.
 
 The kit makes 2,316 calls through its own layer (`Build`, `StoneBatch`,
 `Mesher`, `Lapidary`, `Joinery`). About 30 call Babylon's vertex generators
@@ -527,8 +589,10 @@ The same for what is not in the kit:
 - `vehicleRig` and the three hull models
 - `SoldierModel`'s geometry (the rig itself is X4.1)
 - the grenade, molotov, rocket and mine models
-- `flame.ts`, the capture zone's polyhedron, `fireDrum`'s torus
-- `TerrainField`'s `VertexData`
+- the capture zone's polyhedron (`createPolyhedron` exists and is checked)
+
+(`flame.ts`, `fireDrum`'s torus and `TerrainField`'s `VertexData` landed with
+X1.2, because the kit and the props are built from them.)
 
 - **First:** none of these is hashed today. Extend `kit:hash` with a models
   mode that fingerprints them, commit it, and only then convert anything.
@@ -550,8 +614,10 @@ metadata, so `WorldCulling` and every reader of `metadata.*` are untouched.
   it.
 - **Verify:** `npm run merge:hash` identical, shipped and `--editor`;
   `build:total` before and after on Greyfen and Coldharbour (typed arrays
-  should be faster; say by how much). Three of the four Babylon internals
-  `docs/build.md` lists should be gone. Name what is left.
+  should be faster; say by how much — X1.2's adapter costs ~140 ms of
+  Greyfen's placement phase in copies this removes). X1.2 took the fourth
+  internal `docs/build.md` listed; of the three left, the merge's two should
+  be gone. Name what is left.
 
 ---
 
