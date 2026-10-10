@@ -167,7 +167,12 @@ export const bots = {
   detourTime: 1.0,
   /** How far to the side the watchdog looks when choosing a way round. */
   detourProbe: 1.6,
-  /** Distance past which the pose is frozen (still translates). */
+  /**
+   * Distance from the camera past which the RIG's pose is frozen (it still
+   * translates). Drawing only: the pose is still FILLED every frame, because
+   * a bot's muzzle is replayed off it and an outcome may not depend on the
+   * camera (`Bot.update`).
+   */
   lodFreezeDistance: 35,
   /**
    * Distance past which the rig is not drawn at all — the fog wall, where

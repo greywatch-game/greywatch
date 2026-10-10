@@ -1023,8 +1023,10 @@ export class BattleSystem {
       }
       const d = Vector3.Distance(bot.position, cameraPos);
       if (d > fogEnd) {
-        // Past the fog the bot is invisible anyway; skip drawing and posing,
-        // but keep integrating so the battle line still moves.
+        // Past the fog the bot is invisible anyway; skip drawing it and
+        // posing its rig, but keep integrating so the battle line still moves
+        // (its pose is still FILLED — `Bot.update` — since its muzzle is read
+        // off that).
         bot.setEnabled(false);
         bot.update(dt, this.ctx, false);
         continue;

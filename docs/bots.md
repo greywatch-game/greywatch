@@ -318,8 +318,15 @@ budget is the one thing here that does not scale.
   the root `syncTransform` last wrote and the pose last solved onto the joints
   — the same float32 node chain Babylon's forced `computeWorldMatrix(true)`
   walked, bit for bit (BABYLON_EXIT.md X2.2 C5 proved it against the rig at
-  every read over whole rounds on all seven maps). The round's own ray is
-  `eyePos` and does not move with it.
+  every read over whole rounds on all seven maps). **The pose is FILLED every
+  frame for every live bot, and only WRITING it onto the rig is the LOD's**
+  (`lodFreezeDistance`) — solving it is deferred to whoever reads it, the rig
+  or a shot (`Bot.solved`), which is the same numbers since `SoldierMotion.fill`
+  is the stateful half — because the muzzle used to be the frozen rig's: the
+  authority, whose "camera" is the origin, answered with a live pose only for
+  bots within 35 m of the map's centre, and offline the camera decided (X2.2
+  C6, a named fight-hash change). The round's own ray is `eyePos` and does not
+  move with it.
 - **A shot is heard differently by the two sides, and the difference is WHERE
   the cue lands.** To the side being shot at, the noise IS the shooter: the cue
   is the muzzle, which is the thing worth looking at. To the shooter's own side

@@ -3455,7 +3455,9 @@ unmoved by it (p50 0.101 ms before, 0.086 after, p95 0.201 both). **Since
 the body's own position and meets every other hull at its `rayBox()`, which
 reads the body's position too, so a sweep on the authority reads no world
 matrix at all. Every OTHER read of a hull's world matrix the authority can
-reach still forces its own (the rule `CLAUDE.md` states).
+reach still forces its own (the rule `CLAUDE.md` states). A bot's muzzle, the
+one forced read on the authority that was not a hull's, needs none since
+`BABYLON_EXIT.md` X2.2 C5: it is replayed off numbers (`soldierPose.ts`).
 
 ### What it does, measured
 

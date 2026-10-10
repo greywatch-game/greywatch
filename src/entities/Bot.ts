@@ -295,12 +295,17 @@ export class Bot implements Combatant {
   hitRadius = CONFIG.bots.hitRadius;
 
   /**
-   * The pose last SOLVED onto this bot's rig — what its joints hold, as
-   * numbers. Written wherever the rig is posed (`update` inside the LOD, and
-   * `REST_POSE` at a respawn), and read by `muzzleWorld`, which replays the
-   * node chain off it rather than asking the rig.
+   * This bot's pose, SOLVED — its joints as numbers — as of the last `fill`
+   * (or `REST_POSE` at a respawn). Read through `solved`, which solves it
+   * only when something asks: the rig inside the LOD every frame, and
+   * `muzzleWorld` at a shot or a rocket. `fill` itself runs every frame
+   * whatever the camera, so a deferred solve is the same numbers an eager one
+   * would have been — it is the same function of the same pose — paid only
+   * for the bodies drawn and the rifles fired.
    */
-  readonly joints: SoldierJoints = newSoldierJoints();
+  private readonly joints: SoldierJoints = newSoldierJoints();
+  /** `motion.pose` was filled since `joints` was last solved from it. */
+  private jointsStale = false;
   /**
    * Where `syncTransform` last stood the rig's ROOT: the body centre and the
    * feet's yaw. The root of `muzzleWorld`'s chain — the LAST written one,
@@ -686,6 +691,7 @@ export class Bot implements Combatant {
     this.motion.reset();
     resetSoldierPose(this.rig);
     solveSoldier(REST_POSE, this.joints);
+    this.jointsStale = false;
     this.setEnabled(true);
   }
 
@@ -947,21 +953,25 @@ export class Bot implements Combatant {
     this.trackAim(dt);
     this.shoot(dt, ctx);
     this.syncTransform();
-    if (animate) {
-      poseSoldier(
-        this.rig,
-        solveSoldier(this.motion.fill(
-          dt,
-          this.moveBlend,
-          this.aimPitch(),
-          this.torsoTwist,
-          this.crouchBlend,
-          // Rifle up for the whole of a fight, a search included — not only
-          // while there is somebody in the sights.
-          this.target !== null || this.alerted,
-        ), this.joints),
-      );
-    }
+    // The pose is FILLED every frame, wherever the camera is: the muzzle is
+    // replayed off it, and the muzzle is an outcome (where the next shot is
+    // heard from, where a rocket leaves), so it may not depend on what anybody
+    // is looking at — and `fill` eases the rifle's ready and carry frame by
+    // frame, so skipping frames would change the pose it arrives at. Only
+    // WRITING it onto the rig is the LOD's to skip: a body nobody can make out
+    // holds its last drawn pose. Solving it is deferred to whoever reads it.
+    this.motion.fill(
+      dt,
+      this.moveBlend,
+      this.aimPitch(),
+      this.torsoTwist,
+      this.crouchBlend,
+      // Rifle up for the whole of a fight, a search included — not only while
+      // there is somebody in the sights.
+      this.target !== null || this.alerted,
+    );
+    this.jointsStale = true;
+    if (animate) poseSoldier(this.rig, this.solved);
   }
 
   /**
@@ -2047,17 +2057,31 @@ export class Bot implements Combatant {
     );
   }
 
+  /** The pose last filled, solved to its joints (see `joints`). */
+  get solved(): Readonly<SoldierJoints> {
+    if (this.jointsStale) {
+      solveSoldier(this.motion.pose, this.joints);
+      this.jointsStale = false;
+    }
+    return this.joints;
+  }
+
   /**
    * The rifle's muzzle in world space: where the tracer is flown from, where
    * the flash is lit, and where the shot is HEARD from.
    *
    * **Replayed off numbers, never read off the rig** (`soldierMuzzleToRef`):
-   * the root `syncTransform` last wrote and the pose last solved onto the
-   * joints (`joints`), through the same float32 chain Babylon composes, so it
-   * is the value `rig.muzzle.computeWorldMatrix(true)` returned bit for bit —
-   * proved against it over whole rounds on all seven maps (BABYLON_EXIT.md
-   * X2.2 C5). That forced call recomputed every ancestor; UNFORCED it had
-   * answered with the rig's pose at the first read for the life of the server
+   * the root `syncTransform` last wrote and the pose last filled (`solved`),
+   * through the same float32 chain Babylon composes — so it is the value
+   * `rig.muzzle.computeWorldMatrix(true)` would return for a rig posed from
+   * `joints`, bit for bit (proved against the rig over whole rounds on all
+   * seven maps, BABYLON_EXIT.md X2.2 C5). It is the CURRENT pose's muzzle at
+   * any distance: the rig is posed only inside `lodFreezeDistance`, and
+   * before X2.2 C6 the muzzle was that frozen rig's — so the authority
+   * answered with a live pose only for bots within 35 m of the map's centre,
+   * and offline the camera decided. That forced call recomputed every
+   * ancestor; UNFORCED it had answered with the rig's pose at the first read
+   * for the life of the server
    * process, since a joint is only invalidated by its parent being recomputed
    * and the authority does not render — measured on Sarab, (0.2, 0.8), the
    * ORIGIN a pooled rig is built at, which put every bot's `hearGunshot` cue at
@@ -2067,7 +2091,7 @@ export class Bot implements Combatant {
    * The shared vector comes back; a caller that keeps it copies it.
    */
   muzzleWorld(): Vector3 {
-    soldierMuzzleToRef(this.rootX, this.rootY, this.rootZ, this.rootYaw, this.joints, this.muzzleAt);
+    soldierMuzzleToRef(this.rootX, this.rootY, this.rootZ, this.rootYaw, this.solved, this.muzzleAt);
     return this.muzzleAt;
   }
 

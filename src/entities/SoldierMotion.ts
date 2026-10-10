@@ -10,7 +10,10 @@
  * person moving, shooting and reloading alike are drawn alike, and nothing on
  * screen says which slots are AI. Everything here is a function of distance or
  * of time since an event, or smoothed by an exact exponential, so a body looks
- * the same at 30 fps and 144.
+ * the same at 30 fps and 144. **`fill` is stateful** (the ready and carry
+ * eases), so a bot fills EVERY frame whether or not its rig is drawn: its
+ * muzzle is replayed off the pose (`Bot.muzzleWorld`), and a fill skipped
+ * while the body was out of sight would leave that outcome to the camera.
  * Never: allocates per frame, or reads anything but what it is handed.
  */
 import { REST_POSE, type SoldierPose } from "./soldierPose";
