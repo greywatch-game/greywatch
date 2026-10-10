@@ -41,7 +41,7 @@ import {
 import { CONFIG } from "../config";
 import { clamp } from "../core/math";
 import {
-  writeBufferPaletteIndex,
+  writePaletteIndex,
   type CelMaterialFactory,
 } from "../shaders/CelShader";
 import type { Team } from "./Combatant";
@@ -981,7 +981,7 @@ export function buildSoldier(
       p.material = mats.get(color);
       return;
     }
-    writeBufferPaletteIndex(p.geometry, slot);
+    writePaletteIndex(p.geometry, slot);
     p.material = kitCel;
   };
 

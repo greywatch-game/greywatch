@@ -64,7 +64,6 @@
 import {
   type BaseTexture,
   Color3,
-  Mesh,
   Scene,
   ShaderLanguage,
   ShaderMaterial,
@@ -73,11 +72,9 @@ import {
   Vector2,
   Vector3,
   Vector4,
-  VertexBuffer,
 } from "@babylonjs/core";
 import { CONFIG } from "../config";
 import type { GeometryBuffer } from "../geometry/buffer";
-import { setPartVerticesData } from "../world/parts";
 import { attachEmissiveFog, setEmissiveFog } from "./EmissiveFog";
 import { EmissiveWorldMaterial, MAX_EMISSIVE_PALETTE } from "./EmissiveWorld";
 import { FlameMaterial } from "./FlameShader";
@@ -177,13 +174,14 @@ if (MAX_LOCAL_SLOTS !== MAX_POINT_LIGHTS) {
 export const MAX_PALETTE = 128;
 
 /**
- * Stamps one source mesh's palette slot into `uv2.x`, before it is merged.
+ * Stamps one source part's palette slot into its buffer's `uv2.x`, before it
+ * is merged.
  *
- * **Before, because after is too late**: `MergeMeshes` concatenates vertex
- * buffers, so the index has to already be per vertex for the merge to carry it.
- * That is also what makes the whole scheme safe against interpolation — a merge
- * never re-triangulates, so every corner of a triangle keeps the index of the
- * mesh it came from.
+ * **Before, because after is too late**: a merge (`mergeTransformed`, as
+ * `MergeMeshes` before it) concatenates vertex buffers, so the index has to
+ * already be per vertex for the merge to carry it. That is also what makes the
+ * whole scheme safe against interpolation — a merge never re-triangulates, so
+ * every corner of a triangle keeps the index of the part it came from.
  *
  * `uv2` and not the colour buffer, which has the room: the colour buffer is
  * written by `vertexShading.ts` AFTER every merge and from scratch, so a value
@@ -191,40 +189,22 @@ export const MAX_PALETTE = 128;
  * preserve a channel would couple it to this. `uv2` is untouched by all of it.
  *
  * The all-or-nothing rule `CLAUDE.md` records for `colors` applies here too —
- * `VertexData.merge` throws when one mesh in a group has an attribute and
- * another does not — and it is kept by construction rather than by a check:
- * a mesh gets a slot exactly when it is going into the paletteised group, and
- * every mesh in that group got one.
+ * the merge throws when one member of a group has an attribute and another
+ * does not — and it is kept by construction rather than by a check: a part
+ * gets a slot exactly when it is going into the paletteised group, and every
+ * part in that group got one.
  *
  * **It lives here rather than with either caller because there are TWO**, and
  * the two index different tables: the map's merge (`world/merge.ts`) writes
  * slots in the map palette `setPalette` publishes, and `SoldierModel` writes
  * slots in the kit palette `getBodyCel` holds. What they share is this
  * attribute and the varying that reads it, which is the shader's, so the one
- * thing neither of them may state twice is where the index goes. **Both now
- * write a BUFFER (`writeBufferPaletteIndex`, below)**: since BABYLON_EXIT.md
- * X1.4 the map merges parts rather than meshes, and this mesh form is called
- * by nothing until that step's last commit deletes it and gives the buffer
- * form its name.
+ * thing neither of them may state twice is where the index goes. Both write a
+ * `GeometryBuffer`, never a mesh: the map merges parts (BABYLON_EXIT.md X1.4)
+ * and a soldier merges buffers (`SoldierModel`'s `mergeByColor`), so a merge
+ * of parts carries the array exactly as `MergeMeshes` carried a mesh's.
  */
-export function writePaletteIndex(mesh: Mesh, slot: number): void {
-  // Through `parts.ts` because the map's merge hands this PARTS on their way
-  // into `BlockMerge`: Babylon's own call would put this one buffer on the
-  // device a moment before the merge disposes it.
-  setPartVerticesData(
-    mesh,
-    VertexBuffer.UV2Kind,
-    paletteIndexArray(mesh.getTotalVertices(), slot),
-  );
-}
-
-/**
- * `writePaletteIndex` for a part that is still a BUFFER — a soldier's, which
- * is merged as `GeometryBuffer`s (`SoldierModel`'s `mergeByColor`) and is
- * never a mesh to write onto. The same attribute and the same array, so a
- * merge of parts carries it exactly as `MergeMeshes` carried the mesh's.
- */
-export function writeBufferPaletteIndex(buffer: GeometryBuffer, slot: number): void {
+export function writePaletteIndex(buffer: GeometryBuffer, slot: number): void {
   buffer.uvs2 = paletteIndexArray(buffer.vertexCount, slot);
 }
 

@@ -181,9 +181,10 @@ function fingerprintMap() {
       indices: m.getTotalIndices(),
       subMeshes: m.subMeshes ? m.subMeshes.length : 0,
       delayLoadState: geo ? geo.delayLoadState : null,
-      // Whether the mesh is on the DEVICE. A part that reaches the world draws
-      // nothing and throws nothing (`world/parts.ts`), so this is checked on
-      // its own below, against no baseline at all.
+      // Whether the mesh is on the DEVICE. A mesh whose buffers were
+      // postponed and never created (the part mesh X1.4 deleted was one) draws
+      // nothing and throws nothing, so this is checked on its own below,
+      // against no baseline at all.
       onDevice: Boolean(geo?.getVertexBuffer("position")?.getBuffer()),
       sceneRank,
       positionUpdatable: geo?.getVertexBuffer("position")?.isUpdatable() ?? null,

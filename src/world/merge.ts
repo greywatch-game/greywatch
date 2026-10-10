@@ -30,7 +30,7 @@
  * of `getEmissive`'s unlit colours (`plainEmissive`), each into its own table.
  */
 import type { Material } from "@babylonjs/core";
-import { writeBufferPaletteIndex } from "../shaders/CelShader";
+import { writePaletteIndex } from "../shaders/CelShader";
 import type { EditorItem, EditorRef, WorldPane } from "./mapTypes";
 import { bakePartTransform, mergeParts, Part, type PartMetadata } from "./parts";
 import { marksSway, type SwayLayer, swayLayerOf } from "./sway";
@@ -381,7 +381,7 @@ export function mergeByMaterial(
     // to the same pixel. Never into the ALBEDO table — the two never share a
     // material, so they never share a merge group either.
     const picked = palette ? paletteFor(mat0.name, palette) : null;
-    if (picked) writeBufferPaletteIndex(m.geometry, picked.slot);
+    if (picked) writePaletteIndex(m.geometry, picked.slot);
     const mat = picked ? picked.material : mat0;
     let byExemption = groups.get(mat);
     if (!byExemption) groups.set(mat, (byExemption = new Map()));

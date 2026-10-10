@@ -12,11 +12,7 @@
  * `drawnMesh` for a model, `worldMeshes` for the world's surfaces (the
  * floor, the rim and every merged surface, each surface's arrays released as
  * its mesh takes them), `vertexDataOf` for a bare buffer (through a build's
- * `PlainArrays` memo where two meshes must share one copy). Still here and called by nothing since
- * BABYLON_EXIT.md X1.4 moved the world's merge onto parts (deleted by its C5):
- * `partMesh`, `partSurface`, `uploadPart`, `bakePart`, and
- * `setPartVerticesData`, whose only caller is `CelShader`'s equally unused
- * `writePaletteIndex`.
+ * `PlainArrays` memo where two meshes must share one copy).
  * Invariants: a `Part` is plain data — nothing in it has heard of Babylon but
  * the material it carries — and `drawnMesh` is the ONE place one becomes a
  * mesh (`worldMeshes` makes every world mesh through it), handing Babylon
@@ -61,12 +57,14 @@
  * `createVertexBuffer` around them, against an 8,802 ms build. Half the build
  * was uploading geometry that was thrown away before a frame was drawn.
  *
- * The first answer was the part MESH (`partSurface`): a mesh holding vertices
- * with nothing on the device, by holding `Geometry.delayLoadState` at
- * NOTLOADED for the one call that would have created its buffers, and an
- * `uploadPart` every path out of a merge owed. The second, X1.4's, is that
- * there is no mesh at all until the merges are done: they run on parts, and
- * `worldMeshes` uploads each surface the world keeps, once.
+ * The first answer was the part MESH: a mesh holding vertices with nothing on
+ * the device, by holding `Geometry.delayLoadState` at NOTLOADED for the one
+ * call that would have created its buffers — a Babylon internal leaned on —
+ * and an upload every path out of a merge owed. The second, BABYLON_EXIT.md
+ * X1.4's, is that there is no mesh at all until the merges and the vertex
+ * bake are done: they run on parts, and `worldMeshes` uploads each surface the
+ * world keeps, once, through public API. The part mesh, and every helper that
+ * kept it honest, is deleted.
  *
  * **Colliders are deliberately NOT parts.** `moveWithCollisions` walks
  * `mesh.subMeshes`, and a collider built without them would stop nothing,
@@ -74,14 +72,11 @@
  * X2.1's), and that is a rule rather than an omission.
  */
 import {
-  Constants,
-  Geometry,
   Mesh,
   Quaternion as BabylonQuaternion,
   VertexBuffer,
   type Material,
   type Scene,
-  Vector3 as BabylonVector3,
   VertexData,
 } from "@babylonjs/core";
 import { mergeTransformed, type FloatArray, type GeometryBuffer } from "../geometry/buffer";
@@ -329,23 +324,6 @@ export function vertexDataOf(buffer: GeometryBuffer, plain?: PlainArrays): Verte
 }
 
 /**
- * The one place a `Part` becomes a Babylon mesh for the WORLD's merge: a part
- * MESH (`partSurface`, nothing on the device) carrying the part's arrays,
- * transform, material and metadata — the mesh the kit used to build itself,
- * member for member.
- *
- * Refuses a part that still has a parent: the link is `flattenParts`'s to cut,
- * and a mesh made without it would stand where its builder put it in its
- * parent's frame, not where its parent put it.
- */
-export function partMesh(part: Part, scene: Scene): Mesh {
-  if (part.parent) {
-    throw new Error(`partMesh: "${part.name}" still has a parent — flattenParts first`);
-  }
-  return dress(partSurface(part.name, vertexDataOf(part.geometry), scene), part);
-}
-
-/**
  * The one place a MODEL's surface becomes a Babylon mesh — a weapon's, an
  * optic's, a hull's, a soldier's, a thrown thing's: an ordinary mesh with its
  * buffers on the device, ready to draw, hang off a live joint and move. It is
@@ -449,159 +427,4 @@ function dress(mesh: Mesh, part: Part): Mesh {
   mesh.material = part.material;
   if (part.metadata) mesh.metadata = part.metadata;
   return mesh;
-}
-
-/**
- * A mesh carrying `data` with nothing on the device.
- *
- * The order is the whole of it: the `Geometry` is built with no mesh on it, so
- * every buffer it is given is postponed; it is marked NOTLOADED for the one
- * call that would create them; and it is ready again before anybody reads it.
- */
-export function partSurface(
-  name: string,
-  data: VertexData,
-  scene: Scene,
-): Mesh {
-  const mesh = new Mesh(name, scene);
-  const geometry = new Geometry(Geometry.RandomId(), scene);
-  geometry.setAllVerticesData(data, false);
-  geometry.delayLoadState = Constants.DELAYLOADSTATE_NOTLOADED;
-  geometry.applyToMesh(mesh);
-  geometry.delayLoadState = Constants.DELAYLOADSTATE_NONE;
-  return mesh;
-}
-
-/**
- * Puts a part on the normal path: device buffers created, bounding info built,
- * global submesh made — everything `applyToMesh` skipped.
- *
- * **Every path out of a merge owes this**, including the ones that look like
- * they cannot be reached: the group-of-one hand-bake, which keeps its source
- * rather than making a new mesh, and the material-less mesh both merges skip.
- * A part that reaches the scene without it draws nothing at all and throws
- * nothing at all.
- *
- * A part is recognised by having vertices and no device buffer under them,
- * which is the condition itself rather than a flag standing in for it. That is
- * what lets this be called blind — `mergeByMaterial` runs over already-merged
- * meshes twice (`BlockMerge`, the road pass) and cannot tell which kind it has
- * — and it is why nothing here has to be kept in step with `partSurface`.
- *
- * The release-and-reapply is not a trick: `applyToMesh` returns immediately
- * when the mesh already carries the geometry, so the only way to ask for the
- * work it skipped is to hand the geometry back and give it again.
- */
-export function uploadPart(mesh: Mesh): Mesh {
-  const geometry = mesh.geometry;
-  if (!geometry) return mesh;
-  const positions = geometry.getVertexBuffer(VertexBuffer.PositionKind);
-  if (!positions || positions.getBuffer()) return mesh;
-  geometry.releaseForMesh(mesh, false);
-  geometry.applyToMesh(mesh);
-  return mesh;
-}
-
-/**
- * `mesh.setVerticesData(kind, data, false)`, except that a part stays a part.
- *
- * Babylon creates a buffer's device copy at once whenever its geometry
- * already has a mesh on it, which a part's always does — so a buffer ADDED to
- * a part (the palette's `uv2`, written as a group goes into `BlockMerge`)
- * landed on the device a moment before the merge threw it away, and left the
- * part half uploaded. This postpones that buffer as `partSurface` postpones
- * the rest, and `uploadPart` creates it with them. A mesh already on the
- * device takes Babylon's own call.
- */
-export function setPartVerticesData(
-  mesh: Mesh,
-  kind: string,
-  data: Float32Array | number[],
-): void {
-  const geometry = mesh.geometry;
-  const positions = geometry?.getVertexBuffer(VertexBuffer.PositionKind);
-  if (!geometry || !positions || positions.getBuffer()) {
-    mesh.setVerticesData(kind, data, false);
-    return;
-  }
-  // `Geometry.setVerticesData`'s own buffer, with the postponement it gives
-  // a geometry that has no mesh yet.
-  geometry.setVerticesBuffer(
-    new VertexBuffer(mesh.getEngine(), data, kind, {
-      updatable: false,
-      postponeInternalCreation: true,
-      label: `Geometry_${geometry.id}_${kind}`,
-    }),
-  );
-}
-
-/**
- * `uploadPart(mesh).bakeCurrentTransformIntoVertices()` with ONE upload, or
- * none at all when `upload` is false — the merge's group-of-one path, which a
- * lone colour in a building or a block takes.
- *
- * **That chain uploaded twice**: `uploadPart` creates every device buffer, and
- * the bake then writes new positions and normals through `setVerticesData`,
- * which creates their buffers AGAIN and drops the first pair. And where the
- * result is going to be merged again (`mergeByMaterial`'s `again`), neither
- * upload was ever drawn.
- *
- * **It is Babylon's bake on the part's own arrays**: the world matrix computed
- * the same way, the same arrays read through the same `getVerticesData`, each
- * vertex through the same `TransformCoordinatesFromFloatsToRef` and each
- * normal through `TransformNormalFromFloatsToRef` and `normalize` — then the
- * arrays put on a fresh part geometry rather than uploaded one kind at a
- * time, and the local matrix reset exactly as `bakeCurrentTransformIntoVertices`
- * resets it. The mesh keeps its identity, name and metadata.
- *
- * **A mirrored transform and a mesh with tangents go the old way**: Babylon
- * flips the winding through a re-application this does not reproduce, and no
- * part in the kit has either — the fallback is exactness, not speed.
- */
-export function bakePart(mesh: Mesh, upload: boolean): Mesh {
-  const geometry = mesh.geometry;
-  const world = mesh.computeWorldMatrix(true);
-  const positionBuffer = geometry?.getVertexBuffer(VertexBuffer.PositionKind);
-  if (
-    !geometry ||
-    !positionBuffer ||
-    positionBuffer.getBuffer() ||
-    world.determinant() < 0 ||
-    mesh.isVerticesDataPresent(VertexBuffer.TangentKind)
-  ) {
-    return uploadPart(mesh).bakeCurrentTransformIntoVertices();
-  }
-  const data = new VertexData();
-  for (const kind of geometry.getVerticesDataKinds()) {
-    const stored = geometry.getVertexBuffer(kind)?.getData();
-    if (stored) data.set(stored as number[], kind);
-  }
-  const temp = BabylonVector3.Zero();
-  const positions = mesh.getVerticesData(VertexBuffer.PositionKind)!;
-  for (let i = 0; i < positions.length; i += 3) {
-    BabylonVector3.TransformCoordinatesFromFloatsToRef(
-      positions[i], positions[i + 1], positions[i + 2], world, temp,
-    ).toArray(positions, i);
-  }
-  data.positions = positions;
-  const normals = mesh.getVerticesData(VertexBuffer.NormalKind);
-  if (normals) {
-    for (let i = 0; i < normals.length; i += 3) {
-      BabylonVector3.TransformNormalFromFloatsToRef(
-        normals[i], normals[i + 1], normals[i + 2], world, temp,
-      )
-        .normalize()
-        .toArray(normals, i);
-    }
-    data.normals = normals;
-  }
-  data.indices = geometry.getIndices(false, false);
-  geometry.releaseForMesh(mesh, true);
-  const fresh = new Geometry(Geometry.RandomId(), mesh.getScene());
-  fresh.setAllVerticesData(data, false);
-  fresh.delayLoadState = Constants.DELAYLOADSTATE_NOTLOADED;
-  fresh.applyToMesh(mesh);
-  fresh.delayLoadState = Constants.DELAYLOADSTATE_NONE;
-  mesh.resetLocalMatrix(true);
-  return upload ? uploadPart(mesh) : mesh;
 }

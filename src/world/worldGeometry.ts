@@ -170,8 +170,8 @@ export function surfaceOf(part: Part, born: number): WorldSurface {
 
 /**
  * A built structure's parts, admitted: `meshes` then `paneMeshes`, each
- * minted a birth in that order — the order `structureMeshes` made their part
- * meshes in.
+ * minted a birth in that order — the order `MapBuilder` made their part
+ * meshes in while the merge still ran on meshes.
  */
 export function admitStructure(
   built: Structure,

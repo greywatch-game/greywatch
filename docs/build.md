@@ -258,42 +258,51 @@ machine that is not the one where the import was written, and it goes away on
 its own the moment anyone looks hard enough to restart the server. There is no
 version of "be careful with deep imports" that survives that.
 
-## A Babylon upgrade owes `npm run merge:hash` against the version before it
+## A Babylon upgrade owes geometry-check, math-check, then `npm run merge:hash`
 
-**The map build leaned on Babylon's internals in three places, none of which
-failed loudly when an upgrade moved what it copied, and since BABYLON_EXIT.md
-X1.4 the world's merges call none of them.** Each was a claim that it did
-exactly what a Babylon routine does, minus a GPU upload:
+**The map build used to lean on Babylon's INTERNALS in four places, none of
+which failed loudly when an upgrade moved what it leaned on, and since
+BABYLON_EXIT.md X1.4 it leans on none.** Each was a claim that it did exactly
+what a Babylon routine does, minus a GPU upload or a mesh: a cached
+`CreateBoxVertexData` cube scaled per box (gone with X1.2); a part MESH that
+held `Geometry.delayLoadState` at NOTLOADED for one `applyToMesh`, relying on
+how `setVerticesData` postpones a buffer and when `applyToMesh` skips
+`_applyToMesh`; a hand-copied `bakeTransformIntoVertices` over that mesh's own
+arrays; and a hand-copied `Mesh.MergeMeshes` that called
+`VertexData._mergeCoroutine` — an underscore member, which nothing in Babylon's
+semver covers. All three of the last went with X1.4, and so did the mesh they
+served: the world's merges, its vertex bake and its palette run on our own
+buffers, and the world becomes meshes once, at the end of the build.
 
-- `partSurface` held `Geometry.delayLoadState` at NOTLOADED for one
-  `applyToMesh`, relying on `setVerticesData` postponing a buffer for a
-  geometry with no mesh yet and on `applyToMesh` skipping `_applyToMesh` while
-  the geometry is not ready.
-- `bakePart` was `bakeTransformIntoVertices` on a part's own arrays.
-- `mergeToPart` was `Mesh.MergeMeshes` step for step, and called
-  `VertexData._mergeCoroutine` — an underscore member, so nothing in Babylon's
-  semver covers it. It is gone.
+**What is left is no internal at all, only public API**, in two places:
 
-The first two are still in `src/world/parts.ts` and called by nothing, until
-X1.4's last commit deletes them. There were four until BABYLON_EXIT.md X1.2.
-The fourth was `boxVertexData`, which scaled one cached `CreateBoxVertexData`
-cube; the kit's and the props' geometry is now OURS (`src/geometry/`: the
-primitive generators, the merge, the transform and the normals, copied
-operation for operation), so an upgrade cannot move a vertex the kit builds.
-Since X1.3 the models (weapons, optics, hulls, soldiers, thrown things) build
-on the same layer and merge on it too (`mergeTransformed`, `bake`), and since
-X1.4 so does the world's merge (`mergeParts`, `bakePartTransform`), so an
-upgrade cannot move a vertex of either. `scripts/geometry-check.mjs` compares
-ours with the INSTALLED Babylon, so after an upgrade a difference there means
-Babylon's generators changed, not ours: worth knowing, and worth nothing to
-the map, which no longer calls them.
+- **The one adapter** — `drawnMesh` (`src/world/parts.ts`), and `worldMeshes`
+  through it: `VertexData.applyToMesh` on a fresh `Mesh`, and
+  `Mesh.setVerticesData` to make a pane block's positions writable.
+- **The colliders**, which are still `MeshBuilder.CreateBox` boxes merged by
+  `Mesh.MergeMeshes` (`MapBuilder.clusterColliders`, `struts`) — on purpose,
+  because `moveWithCollisions` walks a mesh's submeshes; they are
+  BABYLON_EXIT.md X2.1's.
 
-What an upgrade can still move is the ONE adapter (`drawnMesh`, and
-`worldMeshes` through it: `VertexData.applyToMesh`, a public API, and
-`Mesh.setVerticesData` for a writable pane block) and the colliders, which
-are still `MeshBuilder` boxes and `Mesh.MergeMeshes` (BABYLON_EXIT.md X2.1's).
-So take `npm run merge:hash -- --out before.json` (and the same with
-`--editor`) on the OLD version, upgrade, and run `--against` on the new one,
-on the same machine. A difference is Babylon's own output changing under the
-adapter or a collider; `node scripts/geometry-check.mjs` says whether our
-copies still agree with the installed generators.
+**And the copies, which an upgrade cannot move but can make WRONG.** The
+geometry every model and every structure is built and merged from is ours
+(`src/geometry/`: the primitive generators, `mergeTransformed`, the transform,
+the bake, the normals — Babylon 9.28's, operation for operation), and so is the
+math under every transform (`src/math/`). Two scripts compare each copy with
+the INSTALLED Babylon: `scripts/geometry-check.mjs` (the generators, the merge
+— it is now the only caller of `VertexData._mergeCoroutine` in the tree, as the
+reference the copy is checked against — the transform and the normals), and
+`scripts/math-check.mjs` (`Vector3`, `Quaternion`, `Matrix`: the compose,
+decompose, multiply and Euler conversions `worldMatrixOf`, `detachPart` and
+`flattenParts` are built from). After an upgrade a difference in either means
+Babylon changed under the copy, not that the map moved — and since the copy is
+what Babylon 9.28 did, which version it should now follow is a decision, not a
+fix.
+
+**So an upgrade is three runs, in this order, on the same machine.** Take
+`npm run merge:hash -- --out before.json` (and the same with `--editor`) on
+the OLD version. Upgrade. Run `node scripts/geometry-check.mjs` and
+`node scripts/math-check.mjs` — the copies against the new library — then
+`npm run merge:hash -- --against before.json` (and `--editor`). A merge:hash
+difference with both checks clean is Babylon's own output changing under the
+adapter or a collider.

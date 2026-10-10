@@ -1111,16 +1111,15 @@ src/
                         #   floor, the rim and every part are WorldSurfaces;
                         #   the merges and the vertex bake run on those, and
                         #   bake() makes them meshes once (worldMeshes) and
-                        #   keeps the record as GameMap.world. structureMeshes
-                        #   / propMeshes are the part-mesh adapters nothing
-                        #   calls any more
+                        #   keeps the record as GameMap.world
     mapTypes.ts         # GameMap, WorldBox, WorldPane, PaneGroup, the layout's
                         #   flag/spawn/water/grass shapes and the editor index.
                         #   Types only; MapBuilder re-exports every one
     merge.ts            # The visual merges, on WorldSurfaces: mergeByMaterial,
                         #   then BlockMerge and PaneBlocks per map block (one
-                        #   key, one metadata.block), tag, BLOCK_SIZE. Nothing
-                        #   in it touches the device
+                        #   key, one metadata.block), tag, BLOCK_SIZE; the
+                        #   palette slot through CelShader's writePaletteIndex.
+                        #   Nothing in it touches the device
     worldGeometry.ts    # The world's geometry as a record: WorldSurface (a
                         #   Part, its block, its piece ranges, whether its
                         #   positions stay writable, its BIRTH — the scene
@@ -1172,11 +1171,9 @@ src/
                         #   model (uploaded, ready to draw), worldMeshes for
                         #   the world's surfaces (made in BIRTH order, arrays
                         #   released, the floor sharing its clone's through
-                        #   the PlainArrays memo), vertexDataOf. Plus the part MESHES the world's
-                        #   merge ran on until X1.4 (partMesh, partSurface,
-                        #   uploadPart, bakePart), which nothing calls now.
-                        #   Colliders are NOT parts — a part mesh has no
-                        #   submeshes and would stop nothing
+                        #   the PlainArrays memo), vertexDataOf. Only public
+                        #   Babylon API. Colliders are NOT parts — a collider
+                        #   needs submeshes or it stops nothing
     BuildingKit.ts      # Facade: shared types + BUILDERS registry
     kit/core.ts         #   Build accumulator (box/wall/guard/flight/...),
                         #   palette, builder contract, and the forest's
@@ -1805,7 +1802,9 @@ src/
                         #   the content-hashed rest
   shaders/
     CelShader.ts        # Custom cel ShaderMaterial. Both stages WGSL; six
-                        #   defines, six UBO layouts
+                        #   defines, six UBO layouts. writePaletteIndex stamps
+                        #   a part's palette slot into its buffer's uv2 for
+                        #   both palette merges (the map's, the soldier's)
     ShadowBindings.ts   # Every shadow a lit material samples (world, bodies,
                         #   lamps' atlas, lightning, clouds, foliage) bound
                         #   onto the factory's cache and the grass/water

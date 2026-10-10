@@ -11,8 +11,8 @@
  * preview would build it.
  *
  * **A part is hashed as the Babylon mesh it used to be made into**
- * (`hashPart`), so the fingerprint is the one `MapBuilder.structureMeshes` and
- * `propMeshes` gave before `BABYLON_EXIT.md` X1.4 took the merge off meshes:
+ * (`hashPart`), so the fingerprint is the one `MapBuilder`'s part meshes gave
+ * before `BABYLON_EXIT.md` X1.4 took the merge off meshes and deleted them:
  * the transform as a mesh holds it (a quaternion zeroes the Euler angles, as
  * Babylon's setter does), each attribute cut to the vertex count and hashed as
  * float32 bytes, the indices as Uint32. A baseline taken through the meshes
@@ -210,7 +210,7 @@ const ATTRIBUTES = [
 
 /**
  * One part's transform and geometry into `draw`, as the part MESH it was made
- * into until X1.4 (`partMesh`) hashed — byte for byte, so a baseline taken
+ * into until X1.4 hashed — byte for byte, so a baseline taken
  * through meshes still compares. Each caller writes its own header line first
  * — the name and material, and whatever else its kind of build can see — so a
  * structure's hash is what it was before scatter shared this.
@@ -219,10 +219,10 @@ const ATTRIBUTES = [
  * angles (Babylon's `rotationQuaternion` setter, run after `rotation` was
  * set); `getVerticesData` cut every attribute to the vertex count (positions
  * over three) times its size (`GetFloatData`); and a part never had a parent
- * by then, because `partMesh` refused one — as this does.
+ * by then, because the adapter refused one — as this does.
  */
 function hashPart(draw, p) {
-  if (p.parent) throw new Error(`partMesh: "${p.name}" still has a parent — flattenParts first`);
+  if (p.parent) throw new Error(`hashPart: "${p.name}" still has a parent — flattenParts first`);
   const q = p.rotationQuaternion;
   const v = (a) => [a.x, a.y, a.z];
   draw.update(

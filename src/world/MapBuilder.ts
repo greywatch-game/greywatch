@@ -90,7 +90,6 @@ import {
   flattenParts,
   mergeParts,
   Part,
-  partMesh,
   type PlainArrays,
   vertexDataOf,
   worldMatrixOf,
@@ -190,36 +189,6 @@ type ScatterBuilder = (
   sub: () => number,
   foliage: number,
 ) => Part;
-
-/**
- * A built structure with its parts made into part MESHES (`partMesh`), which
- * is what the merges and the bookkeeping beside them ran on until X1.4 of
- * BABYLON_EXIT.md moved them onto parts. Nothing calls it or `propMeshes`
- * now; X1.4's last commit deletes both.
- */
-type MeshStructure = Omit<Structure, "meshes" | "paneMeshes" | "freeform"> & {
-  meshes: Mesh[];
-  paneMeshes: Mesh[];
-  freeform: Set<Mesh>;
-};
-
-/** `MeshStructure` from a builder's `Structure`, every part through `partMesh`. */
-export function structureMeshes(s: Structure, scene: Scene): MeshStructure {
-  const meshes = s.meshes.map((p) => partMesh(p, scene));
-  const freeform = new Set<Mesh>();
-  s.meshes.forEach((p, i) => {
-    if (s.freeform.has(p)) freeform.add(meshes[i]);
-  });
-  return { ...s, meshes, paneMeshes: s.paneMeshes.map((p) => partMesh(p, scene)), freeform };
-}
-
-/**
- * A scatter prop's parts, placed and flattened (`flattenParts`), as part
- * meshes in `flattenParts`' order — the root, then every descendant.
- */
-export function propMeshes(root: Part, scene: Scene): Mesh[] {
-  return flattenParts(root).map((p) => partMesh(p, scene));
-}
 
 /**
  * Scatter props, keyed by the name the layout data uses. Exported for

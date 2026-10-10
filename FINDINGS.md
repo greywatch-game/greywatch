@@ -1025,10 +1025,13 @@ would remove. If nothing here is taken up, delete the entry.
 `StoneBatch` and `Mesher` (`kit/core.ts`) take the first sub-thread below
 locally, for the stone and tile runs that opt in. Since BABYLON_EXIT.md X1.2 a
 builder's part is plain data (`Part`, a `GeometryBuffer` built by
-`src/geometry/`, whose `createBox` shares one unit tessellation), but
-`MapBuilder` still makes a part MESH of every one on the way into the merge
-(`partMesh`), so the round trip below is still paid; X1.4 moves the merge onto
-buffers, which is this entry's first sub-thread.
+`src/geometry/`, whose `createBox` shares one unit tessellation), and since
+X1.4 the merge and the vertex bake run on those buffers and no part is ever a
+mesh: the world becomes meshes once, at the end of the build (`worldMeshes`),
+and the part mesh and its helpers are deleted. That is this entry's first
+sub-thread, taken; the round trip described below no longer exists, and what
+is left open is the paragraph above (the colliders, the GC share, the final
+upload's plain-array conversion).
 
 ### The instrument
 
