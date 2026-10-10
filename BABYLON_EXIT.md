@@ -746,6 +746,10 @@ Every divergence over a few centimetres is investigated, not averaged away.
 
 - **Verify:** the comparison harness; `drop.mjs --check` on every map;
   `npm run parity`; a played round on foot and in each vehicle kind.
+- **The played round is the USER's** (decided 2026-10-10). The scripted
+  comparison and the automated checks do not land the step on their own: when
+  they pass, stop and hand the user a build to play on foot and in all three
+  vehicle kinds, and land only on their word.
 - **Rewrites:** `CLAUDE.md`, "Visual meshes and collider proxies" — "exactly
   three sweeps through `narrowedMove`" becomes the new primitive's rule;
   `CollisionField.ts`'s header.
@@ -805,17 +809,52 @@ wrapper over it.
 - **Verify:** `drop.mjs --check` on every map. In a real round: a bullet drops
   a body, a blast throws one, shards fall, rubble falls, and the pool evicts
   the oldest corpse when full.
+- **Must not:** fix `FINDINGS.md` 53 (the static world's friction is 0.5, not
+  the configured 0.8, because Havok combines by minimum). Decided 2026-10-10:
+  the port keeps 0.5, so `drop.mjs --check` stays a bit-for-bit oracle for this
+  step. Raising the world to 0.8 is a separate commit after X2.4 lands. It
+  changes the feel, so it is the user's to ask for, and it re-takes
+  `drop.mjs`'s bank.
 - **Rewrites:** `docs/deaths.md`. The `scene.physicsEnabled` rule stays until
   the scene is gone.
 
-### X2.5 — One simulation core (optional) — **L** (decision)
+### X2.5 — One simulation core — **L** (decided 2026-10-10: yes)
 
 Not needed to leave Babylon, and cheapest right here, with both simulations
 Babylon-free. `Game` offline and `HeadlessGame` on the authority become one
-core; offline play runs it in-process, or in a Worker as `PERF_PLAN.md` C4
-describes. This ends the class of bug where the two drift apart
-(`paysKiller`, the capture awards). **Verify:** `parity`, `simulate`, the
-scoring rules exercised offline and online.
+core. This ends the class of bug where the two drift apart (`paysKiller`, the
+capture awards).
+
+**Where it runs, decided 2026-10-10: in the page, behind an interface built
+for a Worker.**
+- **Offline, the core runs on the main thread.** P0 measured the simulation at
+  0.5-1.0 ms of a 9.5-12 ms phone tick (5-8%, `PERF_PLAN.md`). The phone's
+  frame is bound by the GPU and by draw-call CPU, so a Worker would buy about a
+  millisecond. It would also cost what `PERF_PLAN.md` C4 lists:
+  - cross-origin isolation on every server of the page, including the
+    navigations the service worker answers offline;
+  - the local player split from the world it reads;
+  - a frame of bot latency;
+  - one more place for two seeded runs to diverge.
+- **The interface is the Worker's anyway**, so moving later is plumbing rather
+  than a redesign. Inputs (the local player's commands, net events) go in.
+  `step(dt)` runs. State as plain data and an event queue (shots, hits, kills,
+  captures, blasts, sound cues) come out. The core has no DOM, no Babylon and
+  no reference to anything the view owns. `Game` reads the queue and does its
+  wiring there, which keeps "systems never import each other" true. Nothing in
+  the core may assume it shares a heap with its caller.
+- **The gate that moves it.** Re-measure the simulation's share of the phone's
+  main-thread tick (`?bench=` on Sarab and Greyfen, P0's split) at the end of
+  Phase 3, at the end of Phase 5, and whenever a map larger than any shipped
+  one, or one with more bodies, lands. When the share passes ~15%, moving it
+  into a Worker as `PERF_PLAN.md` C4 describes becomes a step of its own.
+- **The authority runs the same core**, in-process as `HeadlessGame` does
+  today.
+
+**Verify:** `parity`; `simulate`; the scoring rules exercised offline and
+online; the benchmark's fights (X0.4's hashes, or new ones with the reason
+named); and the interface checked by a test that drives the core with no
+`Game` at all.
 
 ---
 
@@ -1228,7 +1267,10 @@ Phase 1 actually took.
 | any time | Should the bots' movement streams take the round's seed, so they move less alike from round to round? Not part of the exit. | Optional, and a one-line change. Leave the per-squad skill draw constant either way, or balance becomes chance. |
 | end of X0.4 | The frame targets: device, map, render scale and statistic for each. | **Decided** 2026-10-09: X0.4's table. |
 | X0.4 | Bring Sarab to final detail first, as a heavier "before"? | Optional. If yes, do it after X0.3 and take the "before" twice, once on each side of the rework. |
-| X2.5 | One simulation core, offline and online? | Yes, here, while it is cheapest. |
+| X2.1 | Who judges the feel? | **Decided** 2026-10-10: the user play-tests a round on foot and in each vehicle kind before the step lands (X2.1). |
+| X2.4 | Fix `FINDINGS.md` 53 (world friction 0.5, not 0.8) while porting Havok? | **Decided** 2026-10-10: no. The port keeps 0.5, so `drop.mjs` stays an oracle. A fix is a separate commit afterwards, on the user's word (X2.4). |
+| X2.5 | One simulation core, offline and online? | **Decided** 2026-10-10: yes. |
+| X2.5 | In the page or in a Worker? | **Decided** 2026-10-10: in the page, behind a Worker-ready interface. It moves to a Worker when the simulation passes ~15% of the phone's main-thread tick, re-measured at the end of Phases 3 and 5 and with any larger map (X2.5). |
 | X3.4 | Scatter AO: baked per kind (cheaper, changes the look) or per instance? | Per kind, judged in the bank. |
 | X4.2 | Which hull parts drop at range (the tank's links and wheels, the MG rings)? | An art call; PERF_PLAN A3 measured +6.5% at 300 m on Cinderhaven. |
 | X6.2 | Is it ready to merge to `develop`? | Only when X6.2's "Before" list passes in full. |
