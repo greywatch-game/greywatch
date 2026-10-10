@@ -294,10 +294,11 @@ export function placeVantage(page, vantage) {
     // front of the roster — they are hidden again by the next row.
     if (v.rigs) {
       const soldier = await import("/src/entities/SoldierModel.ts");
+      const { REST_POSE } = await import("/src/entities/soldierPose.ts");
       v.rigs.forEach((r, i) => {
         const rig = g.battle.bots[i].rig;
         soldier.resetSoldierPose(rig);
-        soldier.animateSoldier(rig, { ...soldier.REST_POSE, ...(r.pose ?? {}) });
+        soldier.animateSoldier(rig, { ...REST_POSE, ...(r.pose ?? {}) });
         const [rx, rz] = r.at;
         rig.root.position.set(rx, g.map.terrain.surfaceAt(rx, rz, true) + rig.centerHeight, rz);
         rig.root.rotation.y = r.yaw ?? 0;
