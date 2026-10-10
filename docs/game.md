@@ -117,8 +117,8 @@ both rely on.
 
 **It also lets go of the map's DATA, and that half is proved rather than
 reviewed.** `BattleSystem`'s nav and cover, `Player`'s ground, the `rays` six
-systems were handed, `GlassSystem`'s panes, the deploy screen's and the
-minimap's copies, `MapBuilder`'s own build scratch and `WorldCulling`'s
+systems were handed, `GlassSystem`'s panes and `GlassFx`'s meshes, the deploy
+screen's and the minimap's copies, `MapBuilder`'s own build scratch and `WorldCulling`'s
 candidate array all held the last map through the menu; none of them was
 stepped, drawn or heard there, so what they cost was memory — the whole map,
 until the next one was built over it. They were found by holding a `WeakRef`

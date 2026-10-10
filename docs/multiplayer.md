@@ -1499,9 +1499,11 @@ world nobody checked is a measurement of the wrong thing.
 may only decide half of it.** The split is the point:
 
 - The **visual** is predicted. `CombatSystem.onShotPath` runs on the client's own
-  shot and `GlassSystem.shoot(..., authoritative = false)` collapses the pane and
-  throws the shards on the spot. There is nothing to be wrong about: a sheet that
-  vanished on the shooter's screen and not on the server's is pixels, and a
+  shot and `GlassSystem.shoot(..., authoritative = false)` breaks the pane on
+  the spot — `GlassFx` collapses it off `onBroken` and the shards fly off
+  `onBreak` — and leaves the box standing, so `onCleared` waits for the word.
+  There is nothing to be wrong about: a sheet that vanished on the shooter's
+  screen and not on the server's is pixels, and a
   window that shatters a round trip after the round went through it is a window
   that reads as broken by somebody else.
 - The **collider** is not, and every pane has one — a pane that breaks is a pane

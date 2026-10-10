@@ -591,11 +591,13 @@ export class Bot implements Combatant {
   }
 
   /** Brings a pooled bot back to life at a spawn point. */
-  spawn(at: Vector3, yaw: number): void {
+  spawn(at: Vector3Like, yaw: number): void {
     this.hp = CONFIG.bots.maxHealth;
     this.alive = true;
     this.state = "advance";
-    this.position.copyFrom(at);
+    // By its fields: `scatterSpawn` hands out a `src/math` vector, and
+    // Babylon's `copyFrom` reads `_x` (the NaN trap, `src/math/vector.ts`).
+    this.position.copyFromFloats(at.x, at.y, at.z);
     this.yaw = yaw;
     this.bodyYaw = yaw;
     this.torsoTwist = 0;

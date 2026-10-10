@@ -1287,7 +1287,7 @@ export class MapBuilder {
     // meshes — the floor and the rim first, as they were — with each surface's
     // arrays released as its mesh takes them. The glazing groups are handed
     // their meshes on the way past, which is the shape `GameMap.paneGroups`
-    // and `GlassSystem` read.
+    // and `GlassFx` read.
     const { meshes, records } = record("upload", () =>
       worldMeshes(surfaces, this.scene, plain),
     );
@@ -2359,7 +2359,8 @@ export class MapBuilder {
    * A breakable pane's collider is an ordinary `collider()` box, one mesh each,
    * which is affordable for the same reason the flag is rare: there is a room
    * behind twenty-four sheets on this map and behind none of the rest. Breaking one
-   * is then two property writes rather than vertex surgery — see `GlassSystem`.
+   * is then two property writes rather than vertex surgery — see `GlassSystem`
+   * for the box and `GlassFx` for the mesh.
    */
   private paneGroup(
     name: string,
@@ -2459,7 +2460,7 @@ export class MapBuilder {
         // It records its own place in `colliderBoxes` on the pane,
         // which is what the server and the fingerprint name it by; the mesh
         // carries the pane index back the other way, which is what
-        // `GlassSystem` finds it with. Neither side can be derived from the
+        // `GlassFx` finds it with. Neither side can be derived from the
         // other — `colliders` holds struts and terrain that `boxes` does not.
         const spawned: BoxSpec = {
           w: spec.w,

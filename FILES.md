@@ -822,7 +822,8 @@ src/
     BattleSystem.ts     # Bot pool, AI scheduling, LOS, distance LOD
     ConquestSystem.ts   # Flags, meters, tickets, bleed, spawns, planSquads,
                         #   what a bot's flag means to it (`zoneFor`), and
-                        #   `scatterSpawn` — both simulations ask all three
+                        #   `scatterSpawn` — both simulations ask all three.
+                        #   Babylon-free; a scattered spawn is `src/math`'s
     ScoreBook.ts        # The round's board: points, kills and deaths, one row
                         #   per roster SLOT. A ledger, not a system — no update,
                         #   reaches nothing. One per simulation (Game offline,
@@ -882,12 +883,17 @@ src/
                         #   clock), posed off `rocketSlots`/`mineSlots`. Client
                         #   only
     GlassSystem.ts      # Breakable panes: the segment sweep and the break —
-                        #   the visual, the collider, and the nav graph with
-                        #   the fields over it, all on the frame it happens.
-                        #   The one mutable thing in the world, monotonically
-                        #   so, and every CLEARED pane comes out of the list
-                        #   `openBox` re-severs against or a second break puts
-                        #   the first one's wall back
+                        #   the box out of the queries and the push-out, and
+                        #   the nav graph with the fields over it, all on the
+                        #   frame it happens. The one mutable thing in the
+                        #   world, monotonically so, and every CLEARED pane
+                        #   comes out of the list `openBox` re-severs against
+                        #   or a second break puts the first one's wall back.
+                        #   Raises `onBreak`/`onBroken`/`onCleared`.
+                        #   Babylon-free
+    GlassFx.ts          # A break's PICTURE: the pane's vertex range collapsed
+                        #   in its merged glazing (`onBroken`) and the collider
+                        #   mesh's editor flags (`onCleared`). Client only
     PhysicsWorld.ts     # The ONLY Havok in the game: the plugin, the map as
                         #   one static body per 48 m block (a single compound is
                         #   quadratic in its shapes), and the fixed-step clock.

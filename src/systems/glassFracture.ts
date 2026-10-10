@@ -60,7 +60,7 @@
  * and `DebrisSystem` builds every shard mesh with exactly that many so a burst
  * rewrites vertices rather than rebuilding topology — a piece with fewer
  * corners repeats its last one, which collapses the spare triangles exactly as
- * `GlassSystem.collapse` collapses a broken pane's.
+ * `GlassFx.collapse` collapses a broken pane's.
  */
 // The only import, and it keeps the "pure arithmetic, no Babylon" invariant
 // above rather than bending it: `core/math` imports nothing itself.

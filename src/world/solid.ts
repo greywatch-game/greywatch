@@ -44,7 +44,7 @@
  * **A fourth kind is a `porous` box that stops being one, and it needs no term
  * anywhere at all.** A breakable pane (`Build.pane({ breakable: true })`) is
  * glass: a body walks into it, a round goes through it, which is `porous`
- * exactly. When `GlassSystem` breaks it, `solid` itself is cleared and the box
+ * exactly. When `GlassSystem` breaks it, `GlassFx` clears `solid` itself and the box
  * leaves BOTH answers in one write — a `RayWorld.remove` for the queries and
  * this flag for the editor. That is deliberate: the map is otherwise static, so
  * the one mutable thing in the world pays for itself with a property write

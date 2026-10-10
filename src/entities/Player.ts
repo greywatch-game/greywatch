@@ -1419,8 +1419,10 @@ export class Player implements Combatant {
     this.health = this.regen.step(this.health, dt);
   }
 
-  placeAt(spawn: Vector3): void {
-    this.root.position.copyFrom(spawn);
+  placeAt(spawn: Vector3Like): void {
+    // By its fields: a spawn is `scatterSpawn`'s `src/math` vector or the
+    // wire's Babylon one, and Babylon's `copyFrom` reads `_x`.
+    this.root.position.copyFromFloats(spawn.x, spawn.y, spawn.z);
     this.root.position.y = spawn.y + this.groundY;
     this.velY = 0;
     this.grounded = true;

@@ -2,14 +2,18 @@
  * GlassSystem.ts — The one mutable thing in the world: panes of glass, and what
  * a round crossing one does to them.
  * Owns: which panes are intact, the segment sweep that finds the ones a shot
- * crossed, and the break itself — the visual, the collider, and the nav graph
- * with the flow fields over it.
+ * crossed, and the break itself on the WORLD's side — the box out of the
+ * queries and the push-out, and the nav graph with the flow fields over it.
  * Invariants: breaking is MONOTONIC — a pane never mends inside a round, and
  * `setMap` is the only thing that puts them all back, which is exactly right
  * because a round IS a fresh map build and there is no other way to start one.
  * It never decides that a pane broke in a netplay round; the authority does,
  * and this applies what it is told (see `shoot` and `applyBreak`). It holds no
- * reference to any other system.
+ * reference to any other system, imports nothing from `@babylonjs/core`, and
+ * draws nothing: the PICTURE of a break — the collapsed vertex range and the
+ * collider mesh's editor flags — is `GlassFx`'s, which only the client builds
+ * and which hears of a pane through `onBroken` and `onCleared`
+ * (`BABYLON_EXIT.md` X2.2 C4). The authority runs this file alone.
  *
  * ## Why the sweep is analytic and not a pick
  *
@@ -44,19 +48,20 @@
  *
  * ## The three things a break touches
  *
- * The VISUAL is a vertex range in a merged mesh: collapsing it onto its own
- * first vertex makes every triangle in the pane degenerate, which draws nothing
- * and takes the outline shell with it (see `MapBuilder.paneGroup`).
+ * The VISUAL is a vertex range in a merged mesh, collapsed onto its own first
+ * vertex so every triangle in the pane is degenerate. That is `GlassFx`'s, and
+ * this file says only WHEN: `onBroken` the moment a pane goes, by whichever
+ * path (a crossing, the authority's word, a late joiner's catch-up).
  *
  * The COLLIDER is every pane's, because a pane with a room behind it is the
  * only thing in the way while it stands. `RayWorld.remove` takes it out of both
  * questions every ray asks AND out of every body's sweep in one write (a sweep
  * gathers through `RayWorld.bodyNear`, off the same body bit);
  * `ObstacleField.remove` takes it out of the sub-cell push-out the bots and the
- * server's move validator both read. The MESH's `solid` flag is written with
- * them and is the editor's alone now — `world/solid.ts` is all that still reads
- * it — and its `checkCollisions` and enabled flag describe a mesh nothing walks
- * any more.
+ * server's move validator both read. Those are the BOX's and are here. The
+ * collider MESH's `solid` flag — the editor's alone now, `world/solid.ts` being
+ * all that still reads it — and its `checkCollisions` and enabled flag are
+ * `GlassFx`'s, told by `onCleared`: nothing that moves or shoots reads a mesh.
  *
  * The NAV GRAPH is `NavGrid.openBox`, which relinks the ground the pane was
  * severing AND relaxes the flow fields over what that opened. Both are local
@@ -88,13 +93,10 @@
  * a window that was no longer there — for the rest of the round, not for seven
  * frames.
  */
-import type { Mesh, Vector3 } from "@babylonjs/core";
-import { VertexBuffer } from "@babylonjs/core";
 import { CONFIG } from "../config";
-import type { GameMap, WorldBox, WorldPane } from "../world/MapBuilder";
+import type { GameMap, WorldBox, WorldPane } from "../world/mapTypes";
 import { BLOCK_SIZE } from "../world/blocks";
-import type { Vector3Like } from "../math";
-import { toBabylon } from "../math/babylon";
+import { Vector3, type Vector3Like } from "../math";
 
 /** One pane a segment crossed, and how far along it the crossing was. */
 export interface GlassHit {
@@ -128,13 +130,6 @@ export class GlassSystem {
   private buckets: PaneBucket[] = [];
   /** Intact is 0, broken is 1. Indexed by pane. */
   private broken = new Uint8Array(0);
-  /**
-   * A pane's collider mesh, by pane index. The authority stamps `metadata.pane`
-   * itself when it rebuilds its colliders from the bake (see
-   * `buildServerWorld`), so this is filled on both sides from the two places
-   * that make the same mark.
-   */
-  private colliders = new Map<number, Mesh>();
 
   /**
    * Reusable result buffer. A sweep runs on every shot from every shooter, and
@@ -144,11 +139,31 @@ export class GlassSystem {
   private readonly hits: GlassHit[] = [];
 
   /**
-   * Called when a pane breaks, whoever decided it. `at` is where the round
-   * crossed, `dir` the way it was going — the pair the shards are thrown from.
-   * `Game` wires this to the debris and the sound.
+   * Called when a pane breaks with a crossing, whoever decided it — the EVENT
+   * of a break, which `catchUp` never raises. `at` is where the round crossed;
+   * `dir` the way it was going — the pair the shards are thrown from. Both are
+   * `Vector3Like` and only to be READ inside the call, except that `shoot`
+   * hands a fresh `at` per pane, which the authority's handler keeps. A
+   * handler feeding Babylon copies at its own boundary. `Game` wires this to
+   * the debris and the sound, `HeadlessGame` to the wire.
    */
-  onBreak: (pane: number, at: Vector3, dir: Vector3) => void = () => {};
+  onBreak: (pane: number, at: Vector3Like, dir: Vector3Like) => void = () => {};
+
+  /**
+   * Called the moment a pane stops standing, by EVERY path — a crossing, the
+   * authority's word on one, a late joiner's `catchUp` — and once per pane.
+   * Raised before `onBreak`. The client's `GlassFx` collapses the pane's
+   * vertex range off it; nothing on the authority listens.
+   */
+  onBroken: (pane: number) => void = () => {};
+
+  /**
+   * Called when a pane's box has left the world — the authoritative half of a
+   * break, once per pane, after the queries, the push-out and the nav graph
+   * have all been told. The client's `GlassFx` writes the collider MESH's
+   * editor flags off it; nothing on the authority listens.
+   */
+  onCleared: (pane: number) => void = () => {};
 
   /**
    * Takes a freshly built map. Called from `installMap`, which is the only
@@ -158,23 +173,17 @@ export class GlassSystem {
     this.map = map;
     this.panes = map.panes;
     this.broken = new Uint8Array(map.panes.length);
-    this.colliders.clear();
-    for (const mesh of map.colliders) {
-      const pane = mesh.metadata?.pane;
-      if (typeof pane === "number") this.colliders.set(pane, mesh);
-    }
     this.buckets = bucketPanes(map.panes);
   }
 
   /**
    * No map at all: `Game.teardownMap`, for the menu. Every pane reads as
-   * broken (out of range) and no disposed collider is held.
+   * broken (out of range) and no torn-down map is held.
    */
   clearMap(): void {
     this.map = null;
     this.panes = [];
     this.broken = new Uint8Array(0);
-    this.colliders.clear();
     this.buckets = [];
   }
 
@@ -258,19 +267,20 @@ export class GlassSystem {
   ): number[] {
     const hits = this.sweep(origin, dir, maxDist);
     if (hits.length === 0) return [];
-    // The segment arrives as `CombatSystem.onShotPath`'s, whose direction is
-    // `src/math`'s; the break and everything `onBreak` hands it to are still
-    // Babylon's, so both are COPIED across here, once per shot that crosses a
-    // pane — the one crossing this file holds (`BABYLON_EXIT.md` X2.2 C4 takes
-    // it away). Fresh rather than scratch: `dir` reaches `onBreak`'s handlers.
-    const o = toBabylon(origin);
-    const d = toBabylon(dir);
     const broke: number[] = [];
     const limit = Math.min(hits.length, CONFIG.glass.maxPerShot);
     for (let i = 0; i < limit; i++) {
       const { pane, dist } = hits[i];
-      const at = o.add(d.scale(dist));
-      if (this.applyBreak(pane, at, d, authoritative)) broke.push(pane);
+      // Fresh per pane, and on purpose: `onBreak`'s handlers may keep it (the
+      // authority's catches the FIRST crossing of a shot and reads it after
+      // the loop). Once per pane broken, which is rare, so it is not a pool.
+      // The operations are Babylon's `origin.add(dir.scale(dist))`, in order.
+      const at = new Vector3(
+        origin.x + dir.x * dist,
+        origin.y + dir.y * dist,
+        origin.z + dir.z * dist,
+      );
+      if (this.applyBreak(pane, at, dir, authoritative)) broke.push(pane);
     }
     return broke;
   }
@@ -285,15 +295,15 @@ export class GlassSystem {
    */
   applyBreak(
     pane: number,
-    at: Vector3,
-    dir: Vector3,
+    at: Vector3Like,
+    dir: Vector3Like,
     authoritative: boolean,
   ): boolean {
     if (pane < 0 || pane >= this.broken.length) return false;
     const first = this.broken[pane] === 0;
     if (first) {
       this.broken[pane] = 1;
-      this.collapse(pane);
+      this.onBroken(pane);
       this.onBreak(pane, at, dir);
     }
     if (authoritative) this.clearCollider(pane);
@@ -314,32 +324,10 @@ export class GlassSystem {
       if (pane < 0 || pane >= this.broken.length) continue;
       if (this.broken[pane] === 0) {
         this.broken[pane] = 1;
-        this.collapse(pane);
+        this.onBroken(pane);
       }
       this.clearCollider(pane);
     }
-  }
-
-  /** Collapses a pane's vertex range onto its own first vertex. */
-  private collapse(pane: number): void {
-    const p = this.panes[pane];
-    // No group on the authority, which holds panes as geometry and draws none.
-    if (p.group < 0 || !this.map) return;
-    const group = this.map.paneGroups[p.group];
-    if (!group) return;
-    const positions = group.mesh.getVerticesData(VertexBuffer.PositionKind);
-    if (!positions) return;
-    const base = p.vertexStart * 3;
-    const x = positions[base];
-    const y = positions[base + 1];
-    const z = positions[base + 2];
-    for (let v = 1; v < p.vertexCount; v++) {
-      const o = base + v * 3;
-      positions[o] = x;
-      positions[o + 1] = y;
-      positions[o + 2] = z;
-    }
-    group.mesh.updateVerticesData(VertexBuffer.PositionKind, positions);
   }
 
   /**
@@ -363,19 +351,10 @@ export class GlassSystem {
     // not relink the same ground twice for nothing.
     delete box.glass;
 
-    const mesh = this.colliders.get(pane);
-    if (mesh) {
-      // The MESH's own three writes. `solid` is read by `world/solid.ts` and so
-      // by the editor's centre-screen pick; `checkCollisions` and disabling
-      // keep the mesh describing itself as what it now is. Nothing that moves
-      // or shoots reads any of them: the rays stopped at `ENGINE_UPGRADE.md`
-      // wall 2 and the sweeps at `BABYLON_EXIT.md` X2.1, and both read the BOX
-      // instead, below.
-      mesh.metadata.solid = false;
-      mesh.checkCollisions = false;
-      mesh.setEnabled(false);
-    }
-
+    // The collider MESH is not touched here: nothing that moves or shoots
+    // reads one (the rays stopped at `ENGINE_UPGRADE.md` wall 2 and the sweeps
+    // at `BABYLON_EXIT.md` X2.1), and its three editor-facing writes are
+    // `GlassFx.clear`'s, off `onCleared` below.
     map.obstacles.remove(box);
     // And out of every ray in the game, which is the write that used to be
     // `mesh.metadata.solid = false` — one flag, clearing both questions at
@@ -411,6 +390,7 @@ export class GlassSystem {
     // Which relinks the ground and relaxes every field over it, in this call.
     // Nothing is owed afterwards, and there is nothing here to drain.
     map.nav.openBox(box, standing);
+    this.onCleared(pane);
   }
 }
 
@@ -423,7 +403,7 @@ export class GlassSystem {
  * a merged mesh's and never on the wire — so it has nothing to agree with, and
  * what it wants from a big map is the opposite of what the merge wants: a
  * bucket is a slab rejection whose only cost is the panes left inside it. See
- * `BLOCK_SIZE` in `world/merge.ts`, where the split is argued.
+ * `BLOCK_SIZE` in `world/blocks.ts`, where the split is argued.
  */
 function bucketPanes(panes: readonly WorldPane[]): PaneBucket[] {
   const byBlock = new Map<string, PaneBucket>();

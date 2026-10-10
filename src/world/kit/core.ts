@@ -135,7 +135,7 @@ export interface BoxSpec {
    *
    * Intact, it is exactly `porous` — a body walks into it, a round goes
    * through — which is why the two pick predicates in `solid.ts` need no new
-   * term for glass at all. Broken, `GlassSystem` clears `solid` outright and
+   * term for glass at all. Broken, `GlassFx` clears `solid` outright and
    * it leaves both. That is the whole of the mechanism; the flag exists so the
    * things that must NOT see a pane can name it.
    *
@@ -1105,7 +1105,7 @@ export class Build implements Structure {
    * world drawn SEE-THROUGH (`CelMaterialFactory.getGlass` — a reflection of
    * the sky over the tint of whatever stands behind it). A `breakable` one
    * also keeps an identity through both of `MapBuilder`'s merges, so
-   * `GlassSystem` can collapse this sheet and no other when something crosses
+   * `GlassFx` can collapse this sheet and no other when something crosses
    * it; the rest are glazing, drawn and nothing more. See `PaneSpec` for which
    * a sheet should be and why the answer is what is BEHIND it.
    *

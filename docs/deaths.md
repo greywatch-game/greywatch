@@ -420,7 +420,7 @@ polygon. So every shard mesh is an eight-cornered prism built once (the bound is
 exact: a convex quad clipped against four half-planes gains at most one corner
 per plane), and a burst rewrites its 48 vertices in a buffer the mesh already
 owns. A piece with fewer corners repeats its last one, which leaves the spare
-triangles degenerate — the same trick `GlassSystem.collapse` takes a broken pane
+triangles degenerate — the same trick `GlassFx.collapse` takes a broken pane
 off the screen with. Each shard owns its own position and normal arrays rather
 than sharing a scratch pair, because Babylon keeps the array it was handed as
 the mesh's CPU-side copy. The body is still sized by its SHAPE, cached by

@@ -1194,7 +1194,10 @@ analytically; the same code runs on the authority, off the collision bake. **A
 pane's index in `GameMap.panes` is its identity** on both sides and on the wire,
 `npm run parity` proves both build the list in the same order, and breaking is
 the AUTHORITY's. **A pane is see-through, a FAIRNESS rule and not a look**:
-`castRound` already lets a bot shoot through a window.
+`castRound` already lets a bot shoot through a window. **`GlassSystem` is the
+simulation and draws nothing** — the box, the push-out and the nav graph;
+the collapsed glazing and the collider MESH's editor flags are `GlassFx`'s,
+told by `onBroken` and `onCleared`, and the authority builds none.
 
 → **[`docs/world.md`](docs/world.md)** for the builder's side and
 **[`docs/multiplayer.md`](docs/multiplayer.md)** for the wire's.

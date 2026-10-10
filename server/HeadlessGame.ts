@@ -54,6 +54,7 @@ import {
   ConquestSystem,
   scatterSpawn,
   type ControlPoint,
+  type SpawnPick,
 } from "../src/systems/ConquestSystem";
 import { GlassSystem } from "../src/systems/GlassSystem";
 import { RoundRandom, UNDRAWN, freshSeed } from "../src/systems/RoundRandom";
@@ -115,10 +116,11 @@ export class HeadlessGame {
   readonly conquest = new ConquestSystem(this.random);
   readonly grenades: GrenadeSystem;
   /**
-   * Breakable glazing. The same system the client runs, on the same panes —
-   * this side gets them off the collision bake instead of off a build, and
-   * draws none of them (`paneGroups` is empty here, so the vertex collapse is a
-   * no-op and the sweep and the collider are all that happen).
+   * Breakable glazing. The same simulation the client runs, on the same panes
+   * — this side gets them off the collision bake instead of off a build, and
+   * builds no `GlassFx`: nothing collapses and no collider mesh is written, so
+   * the sweep, the box and the nav graph are all that happen, and nothing
+   * listens to `onBroken` or `onCleared`.
    */
   readonly glass = new GlassSystem();
 
@@ -739,7 +741,9 @@ export class HeadlessGame {
     // The first crossing is caught off `onBreak` rather than recomputed,
     // because `shoot` has already worked out where every pane on the segment
     // was met and the nearest is the one it reports first.
-    let firstAt: Vector3 | null = null;
+    // `at` is fresh per pane (`GlassSystem.shoot`), which is what makes keeping
+    // it past the call safe.
+    let firstAt: Vector3Like | null = null;
     this.glass.onBreak = (_pane, at) => {
       firstAt ??= at;
     };
@@ -1304,7 +1308,7 @@ export class HeadlessGame {
   }
 
   /** Where a human of `team` should deploy — the same picker the bots use. */
-  spawnFor(team: Team): { pos: Vector3; yaw: number } | null {
+  spawnFor(team: Team): SpawnPick | null {
     return this.spawnPointFor(team);
   }
 
@@ -1511,7 +1515,7 @@ export class HeadlessGame {
   onNeutralisedEvent: (point: ControlPoint) => void = () => {};
 
   /** Wired by `Match`: a person has been placed in the world. */
-  onPlayerSpawned: (player: NetPlayer, at: Vector3, yaw: number) => void = () => {};
+  onPlayerSpawned: (player: NetPlayer, at: Vector3Like, yaw: number) => void = () => {};
 
   /**
    * Wired by `Match`: a blast went off here, and how big it LOOKS.
@@ -1553,7 +1557,7 @@ export class HeadlessGame {
    * the direction with it — see the `glass` event. Both vectors are the
    * caller's and are read inside the call.
    */
-  onGlassBroken: (panes: number[], at: Vector3, dir: Vector3Like) => void = () => {};
+  onGlassBroken: (panes: number[], at: Vector3Like, dir: Vector3Like) => void = () => {};
 
   /**
    * Wired by `Match`: a round passed close to this person without hitting them.
@@ -1614,7 +1618,7 @@ export class HeadlessGame {
   private spawnPointFor(
     team: Team,
     requested?: number | null,
-  ): { pos: Vector3; yaw: number } | null {
+  ): SpawnPick | null {
     const pick =
       (requested != null ? this.conquest.deployAt(team, requested) : null) ??
       this.conquest.spawnFor(team);

@@ -321,7 +321,7 @@ export class NetPlayer implements Combatant {
     this.health = this.healing.step(this.health, dt);
   }
 
-  spawn(at: Vector3, yaw: number): void {
+  spawn(at: Vector3Like, yaw: number): void {
     this.health = CONFIG.player.maxHealth;
     this.healing.clear();
     // Death is the only resupply. See the fields' notes — the AT pouch follows

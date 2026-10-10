@@ -181,7 +181,7 @@ export class BattleSystem {
   /** Wired by Game: a bot put a foot down. Short-range sound only. */
   onBotStepped: (bot: Bot) => void = () => {};
   /** Wired by Game: where should this bot deploy? */
-  spawnPointFor: (bot: Bot) => { pos: Vector3; yaw: number } | null = () => null;
+  spawnPointFor: (bot: Bot) => { pos: Vector3Like; yaw: number } | null = () => null;
   /**
    * Wired by Game: orders for one team's squads, given each squad's centroid
    * and what it is currently doing. Resolved as a group so squads can be spread
@@ -1072,7 +1072,7 @@ export class BattleSystem {
           // Nobody left: plan from the home spawn, which is where they will
           // come back from anyway.
           const spawn = this.spawnPointFor(this.bots.find((b) => b.team === team)!);
-          if (spawn) centroids[i].copyFrom(spawn.pos);
+          if (spawn) centroids[i].copyFromFloats(spawn.pos.x, spawn.pos.y, spawn.pos.z);
         }
       }
       this.squadOrders[team] = this.planSquads(team, centroids, held);

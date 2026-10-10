@@ -90,7 +90,7 @@ export interface WorldSurface {
   pieces: PieceRange[];
   /**
    * The position buffer must be uploaded WRITABLE: a pane block holding a
-   * breakable pane, which `GlassSystem` collapses in place.
+   * breakable pane, which `GlassFx` collapses in place.
    */
   updatable: boolean;
   /** Where its mesh stands in the scene's creation order. See the header. */

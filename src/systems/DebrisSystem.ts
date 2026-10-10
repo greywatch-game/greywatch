@@ -47,7 +47,7 @@
  * **The topology is fixed even though the outline is not**, which is what keeps
  * that affordable: every shard mesh is an eight-cornered prism built once, and
  * a piece with fewer corners repeats its last one so the spare triangles come
- * out degenerate — the same trick `GlassSystem.collapse` breaks a pane with. A
+ * out degenerate — the same trick `GlassFx.collapse` breaks a pane with. A
  * burst rewrites 48 vertices per shard into a buffer it already owns; it never
  * builds a mesh, an index buffer or a geometry.
  *

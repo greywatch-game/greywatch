@@ -277,26 +277,26 @@ export async function buildServerWorld(scene: Scene, def: MapDef): Promise<GameM
     byBox[i] = colliderBox(scene, box, i);
     colliders.push(byBox[i]!);
   }
-  // A pane's collider carries the pane index back, exactly as
-  // `MapBuilder.paneGroup` stamps it on the client — so `GlassSystem` finds the
-  // same mesh on both sides and a broken pane leaves the pick predicates here
-  // too. A pane is never clustered (glass has to stay addressable one sheet at
-  // a time, and the client refuses to group it), so `byBox` always has its mesh.
+  // A pane's BOX carries `glass`, as `MapBuilder.paneGroup` marks it on the
+  // client. A pane is never clustered (glass has to stay addressable one sheet
+  // at a time, and the client refuses to group it), so `byBox` always has its
+  // mesh, and the guard is the same test it has always been.
+  //
+  // The client also stamps the pane index on the collider MESH, for `GlassFx`
+  // to write the editor's flags on; nothing here draws or picks, the authority
+  // builds no `GlassFx`, and `GlassSystem` reads only the box — so the mesh
+  // here is left unmarked.
   const panes = toWorldPanes(collision);
-  for (const [i, p] of panes.entries()) {
+  for (const p of panes) {
     if (p.box < 0 || !byBox[p.box]) continue;
-    // Two marks, in the two places the client's `MapBuilder` puts them. The
-    // mesh carries the pane index back, so `GlassSystem` finds the same mesh on
-    // both sides. The BOX carries `glass`, which is what `clearCollider` reads
-    // as its own idempotence flag — without it the authority breaks the visual
-    // nobody here draws and leaves the collider standing, so a player who shot
-    // a shopfront out is snapped back out of it by `validateMove`.
+    // `glass` is what `clearCollider` reads as its own idempotence flag —
+    // without it the authority leaves the collider standing, so a player who
+    // shot a shopfront out is snapped back out of it by `validateMove`.
     //
     // Derived from `panes` rather than baked as a tenth tuple entry: the pane
     // list already says which boxes are glass, and two sources for one fact is
     // one that can go stale. `porous` IS baked, because it is a property of the
     // box independent of any pane.
-    byBox[p.box]!.metadata.pane = i;
     boxes[p.box].glass = true;
   }
   const rayGroups = toRayGroups(collision);
@@ -362,7 +362,7 @@ export async function buildServerWorld(scene: Scene, def: MapDef): Promise<GameM
     // there is nothing to draw here. The authority needs a pane's rect to know
     // a round crossed it and its `box` to stop blocking a body — both of which
     // are on the pane itself. See `GlassSystem`, which reads exactly those two
-    // fields on both sides and touches `paneGroups` only where it draws.
+    // fields on both sides; `paneGroups` is `GlassFx`'s, which only draws.
     panes,
     paneGroups: [],
     terrainColliders: floor,

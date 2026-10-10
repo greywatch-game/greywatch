@@ -29,7 +29,7 @@
  * index in `scene.meshes` — creation order, which is the order `WorldCulling`
  * offers candidates in and so reaches the glow mask and the transparent
  * tie-breaks), `positionUpdatable` (whether the position buffer is writable,
- * which `GlassSystem` needs on a pane block holding a breakable pane),
+ * which `GlassFx` needs on a pane block holding a breakable pane),
  * `hasVertexAlpha` and `frozen` (`isWorldMatrixFrozen`).
  *
  * **It is the other half of `npm run kit:hash`, and the half `FINDINGS.md` 26

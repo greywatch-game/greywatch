@@ -2037,7 +2037,7 @@ merge stays a verbatim copy of Babylon's. So after `BlockMerge` has made a
 dozen buildings one mesh, which vertices and which triangles are each
 building's is still written down. **Nothing reads it yet: it is what
 DESTRUCTIBLE BUILDINGS need** — collapsing, hiding or re-uploading one
-placement's span of a block, the way `GlassSystem` already collapses a pane's
+placement's span of a block, the way `GlassFx` already collapses a pane's
 — and it costs a few numbers a surface. The floor and the rim carry none.
 **Its extension point is a builder-declared SUB-piece** (a
 `Part.metadata.piece`: this wall is its own piece of the cottage), which
@@ -2267,16 +2267,21 @@ shophouses' 7.8 and 11.6, the latter cut into one bay or two by the unit's own
 width — which a pattern cut at about a metre accounts for. The tower's bays are cut to the same rhythm for the look alone — nothing
 holds a range into them and nothing ever will.
 
-**Breaking a pane is five writes and nothing deferred.** The visual
-range collapses; `RayWorld.remove` takes the box out of both questions every
-ray asks and out of every body's sweep (a sweep gathers through
-`RayWorld.bodyNear`, off the same body bit), and `metadata.solid` is cleared
-beside it for the editor's own predicate; `checkCollisions` is cleared, which
-was the movement half while the sweep was Babylon's and now only keeps the mesh
-describing itself; `ObstacleField.remove` takes it out of the sub-cell push-out the bots and
-the server's move validator both read; and `NavGrid.openBox` relinks the ground
-it was severing, floods walkability into whatever that opened, and relaxes the
-flow fields over the result. All of that is local and cheap.
+**Breaking a pane is five writes and nothing deferred, and they are split
+between the simulation and its picture** (`BABYLON_EXIT.md` X2.2 C4). The
+visual range collapses — `GlassFx`, off `GlassSystem.onBroken`; `RayWorld.remove`
+takes the box out of both questions every ray asks and out of every body's
+sweep (a sweep gathers through `RayWorld.bodyNear`, off the same body bit), and
+`metadata.solid` is cleared beside it for the editor's own predicate — the
+first `GlassSystem`'s, the second `GlassFx`'s off `onCleared`;
+`checkCollisions` is cleared (`GlassFx` again), which was the movement half
+while the sweep was Babylon's and now only keeps the mesh describing itself;
+`ObstacleField.remove` takes it out of the sub-cell push-out the bots and the
+server's move validator both read; and `NavGrid.openBox` relinks the ground it
+was severing, floods walkability into whatever that opened, and relaxes the
+flow fields over the result. All of that is local and cheap. The authority runs
+the simulation's half alone: it builds no `GlassFx`, draws no glazing and
+reads no collider mesh.
 
 **The flow fields used to be deferred, and the deferral was the wrong axis.** A
 field is a breadth-first sweep over every walkable surface, so `GlassSystem`

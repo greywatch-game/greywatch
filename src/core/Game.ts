@@ -139,6 +139,7 @@ import {
   ConquestSystem,
   scatterSpawn,
   type ControlPoint,
+  type SpawnPick,
 } from "../systems/ConquestSystem";
 import { DeathCam } from "../systems/DeathCam";
 import { VehicleCamera } from "../systems/VehicleCamera";
@@ -151,6 +152,7 @@ import { GrassSystem } from "../systems/GrassSystem";
 import { BlastDebrisSystem, type DebrisGround } from "../systems/BlastDebrisSystem";
 import { DebrisSystem } from "../systems/DebrisSystem";
 import { GlassSystem } from "../systems/GlassSystem";
+import { GlassFx } from "../systems/GlassFx";
 import { AntiTankFx } from "../systems/AntiTankFx";
 import { AntiTankSystem } from "../systems/AntiTankSystem";
 import {
@@ -515,6 +517,8 @@ export class Game {
   private blastDebris: BlastDebrisSystem;
   /** Breakable glazing — the one part of the world that is not static. */
   private glass: GlassSystem;
+  /** The picture of a pane going in — `glass`'s view. Client only. */
+  private glassFx: GlassFx;
   /** The player's own death: a stand-in body, and the camera that watches it. */
   private deathCam: DeathCam;
   private aimAssist: AimAssistSystem;
@@ -685,7 +689,7 @@ export class Game {
    * `leaveMatch` — because the position belongs to the build it arrived
    * during, and both of those get a fresh seat or no session at all.
    */
-  private pendingSpawn: { pos: Vector3; yaw: number } | null = null;
+  private pendingSpawn: { pos: Vector3Like; yaw: number } | null = null;
   /**
    * How much of the map the frame's own mesh walk is offered. Owns nothing
    * that draws and writes nothing onto a mesh — see `WorldCulling`, which is
@@ -1604,6 +1608,14 @@ export class Game {
     this.debris = new DebrisSystem(this.scene, this.mats, this.physics);
     this.blastDebris = new BlastDebrisSystem(this.scene, this.mats, this.physics);
     this.glass = new GlassSystem();
+    this.glassFx = new GlassFx();
+    // The two events a break's picture needs, wired here beside `onRound` for
+    // that line's reason: the simulation keeps the panes, the boxes and the
+    // nav graph and draws nothing; the view collapses the glazing when a pane
+    // goes (by any path, a late joiner's catch-up included) and writes the
+    // collider mesh's editor flags when its box leaves the world.
+    this.glass.onBroken = (pane) => this.glassFx.collapse(pane);
+    this.glass.onCleared = (pane) => this.glassFx.clear(pane);
     this.deathCam = new DeathCam(this.scene, this.mats);
     this.vehicles = new VehicleSystem(this.scene, this.mats, this.random);
     this.vehicleCam = new VehicleCamera();
@@ -2083,10 +2095,15 @@ export class Game {
     // burst is cut from the PANE, so the sheet is what it is handed. The map is
     // where that comes from rather than the event, because the pane's index is
     // its identity on both sides of the wire and its geometry is the map's.
+    //
+    // Both arrive as the simulation's (`Vector3Like`) and both readers are
+    // still Babylon's, so they are COPIED across here — fresh, once per pane
+    // broken, which is rare and leaves the burst free to keep what it is given.
     this.glass.onBreak = (pane, at, dir) => {
-      this.sfx.impact(at, "glass");
+      const p = toBabylon(at);
+      this.sfx.impact(p, "glass");
       const geom = this.map?.panes[pane];
-      if (geom) this.debris.burst(geom, at, dir, this.cameraSys.camera.position);
+      if (geom) this.debris.burst(geom, p, toBabylon(dir), this.cameraSys.camera.position);
     };
     this.battle.spawnPointFor = (bot) => this.spawnPointFor(bot.team);
     // Squad orders are planned as a group, so squads can be spread across
@@ -4601,6 +4618,7 @@ export class Game {
     this.deathCam.setWorld(null);
     this.vehicleCam.setWorld(null);
     this.glass.clearMap();
+    this.glassFx.clearMap();
     this.deployScreen.clearMap();
     this.minimap.clearMap();
     this.mapBuilder.release();
@@ -4842,9 +4860,10 @@ export class Game {
     this.physics.setMap(map, opts?.editor === true);
     // The panes, and the collider meshes standing behind them. Same
     // reason as every line above it: a system holding last build's geometry is
-    // holding meshes that are already disposed, and glass is the one that would
-    // then write vertices into them.
+    // holding meshes that are already disposed, and the glass's view is the one
+    // that would then write vertices into them.
     this.glass.setMap(map);
+    this.glassFx.setMap(map);
     // The armour, last, and it is the one line in this method with two reasons
     // to build NOTHING.
     //
@@ -5593,7 +5612,7 @@ export class Game {
    * client having a second opinion about where somebody is, which is the one
    * thing `onDeploy`'s netplay branch exists to prevent.
    */
-  private spawnPlayer(at?: { pos: Vector3; yaw: number }): void {
+  private spawnPlayer(at?: { pos: Vector3Like; yaw: number }): void {
     this.player.fullReset();
     // A fresh body has never been anywhere, least of all outside the map. The
     // clock is not merely stopped by a death — it has to be FORGOTTEN, or a
@@ -5601,7 +5620,10 @@ export class Game {
     // seconds already spent.
     this.leash.clear();
     const spawn = at ?? this.spawnPointFor(this.player.team);
-    this.player.placeAt(spawn ? spawn.pos.clone() : new Vector3(0, 0, 0));
+    // Read by its fields (`placeAt` takes `Vector3Like`): a spawn resolved
+    // here is `scatterSpawn`'s, which is `src/math`'s, and one from the wire is
+    // a Babylon copy — either is copied INTO the body, never kept.
+    this.player.placeAt(spawn ? spawn.pos : new Vector3(0, 0, 0));
     this.cameraSys.reset(spawn ? spawn.yaw : 0);
     // The aim just jumped to the spawn heading. Reprojecting through that jump
     // would greet the player with one frame smeared across the whole screen.
@@ -5645,7 +5667,7 @@ export class Game {
    * Where a combatant of `team` deploys. Home spawns only until
    * ConquestSystem starts handing out captured flags.
    */
-  private spawnPointFor(team: 0 | 1): { pos: Vector3; yaw: number } | null {
+  private spawnPointFor(team: 0 | 1): SpawnPick | null {
     if (!this.map) return null;
     const pick = this.conquest.spawnFor(team);
     if (!pick) return null;
