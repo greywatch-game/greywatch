@@ -2354,11 +2354,12 @@ function buildArm(
   const merged: Mesh[] = [];
   for (const [color, group] of parts) {
     for (const p of group) detachPart(p);
+    const meshName = `view_${name}_${color.slice(1)}`;
     const m =
       group.length === 1
         ? drawnMesh(bakePartTransform(group[0]), scene)
-        : drawnMesh(`${group[0].name}_merged`, mergeParts(group), scene);
-    m.name = `view_${name}_${color.slice(1)}`;
+        : drawnMesh(meshName, mergeParts(group), scene);
+    m.name = meshName;
     m.material = mats.get(color);
     m.parent = parent;
     m.isPickable = false;

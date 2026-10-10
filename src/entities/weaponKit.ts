@@ -729,15 +729,16 @@ export class WeaponBuild {
       // from a merge and is why this path is kept rather than handed to
       // `mergeParts`. Same rule, and same reason, as ViewModel's arms and
       // mergeByMaterial (world/merge.ts).
+      const meshName = `${this.prefix}_${suffix}_${name}`;
       let merged: Mesh;
       if (parts.length === 1) {
         detachPart(parts[0]);
         merged = drawnMesh(bakePartTransform(parts[0]), this.scene);
       } else {
-        merged = drawnMesh(`${parts[0].name}_merged`, mergeParts(parts), this.scene);
+        merged = drawnMesh(meshName, mergeParts(parts), this.scene);
         merged.material = parts[0].material;
       }
-      merged.name = `${this.prefix}_${suffix}_${name}`;
+      merged.name = meshName;
       merged.parent = parent;
       merged.isPickable = false;
       if (finished) this.finish.push({ mesh: merged, group: name as FinishGroup });

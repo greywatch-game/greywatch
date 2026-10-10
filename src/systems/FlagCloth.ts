@@ -327,13 +327,8 @@ export class FlagCloth {
     );
     finial.position.set(x, topY, z);
     // `Mesh.MergeMeshes([shaft, plinth, finial], true)`, which is what this
-    // was: the three merged in world space and the mesh named as it named it.
-    const pole = drawnMesh(
-      `${shaft.name}_merged`,
-      mergeParts([shaft, plinth, finial]),
-      this.scene,
-    );
-    pole.name = `${name}-pole`;
+    // was: the three merged in world space.
+    const pole = drawnMesh(`${name}-pole`, mergeParts([shaft, plinth, finial]), this.scene);
     pole.material = this.mats.get(POLE_HEX);
     annotate(pole);
     return pole;

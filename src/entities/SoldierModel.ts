@@ -1904,7 +1904,7 @@ function mergeByColor(parts: Part[], name: string, scene: Scene): Mesh[] {
     const merged =
       group.length === 1
         ? drawnMesh(group[0], scene)
-        : drawnMesh(`${group[0].name}_merged`, mergeParts(group), scene);
+        : drawnMesh(name, mergeParts(group), scene);
     merged.name = name;
     merged.material = mat;
     out.push(merged);
