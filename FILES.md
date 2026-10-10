@@ -1071,8 +1071,9 @@ src/
                         #   authored grid on a map whose boundary is open
     Ridge.ts            # The valley rim, in two forms — an escarpment and the
                         #   downs — and, on a `rolling` downs, the summits,
-                        #   knolls and the woods sown on it. Shape only: no
-                        #   collider, nothing inside the boundary it is handed
+                        #   knolls and the woods sown on it. Shape only, as
+                        #   GeometryBuffers: no collider, no Babylon, nothing
+                        #   inside the boundary it is handed
     leash.ts            # What stops a player leaving a map that has no wall:
                         #   one clock per body, and the verdict it reaches.
                         #   Pure — the caller does the killing, and offline that
@@ -1106,11 +1107,13 @@ src/
                         #   stripping through scripts/lib/mapgen.mjs, the
                         #   helpers the seven generate-<map>.mjs share
     MapBuilder.ts       # Builds the map; merges visuals, emits colliders.
-                        #   build() is a list of phases, one method each. Its
-                        #   parts enter the merge as WorldSurfaces and become
-                        #   meshes once, at the end of mergeBlocks
-                        #   (worldMeshes). structureMeshes / propMeshes are
-                        #   the part-mesh adapters nothing calls any more
+                        #   build() is a list of phases, one method each. The
+                        #   floor, the rim and every part are WorldSurfaces;
+                        #   the merges and the vertex bake run on those, and
+                        #   bake() makes them meshes once (worldMeshes) and
+                        #   keeps the record as GameMap.world. structureMeshes
+                        #   / propMeshes are the part-mesh adapters nothing
+                        #   calls any more
     mapTypes.ts         # GameMap, WorldBox, WorldPane, PaneGroup, the layout's
                         #   flag/spawn/water/grass shapes and the editor index.
                         #   Types only; MapBuilder re-exports every one
@@ -1118,11 +1121,13 @@ src/
                         #   then BlockMerge and PaneBlocks per map block (one
                         #   key, one metadata.block), tag, BLOCK_SIZE. Nothing
                         #   in it touches the device
-    worldGeometry.ts    # The world's merged geometry as a record: WorldSurface
-                        #   (a Part, its block, its piece ranges, whether its
+    worldGeometry.ts    # The world's geometry as a record: WorldSurface (a
+                        #   Part, its block, its piece ranges, whether its
                         #   positions stay writable, its BIRTH — the scene
                         #   order its mesh is made in — and its editor item),
-                        #   PaneSurfaceGroup, WorldGeometry, and admission
+                        #   PaneSurfaceGroup, SurfaceRecord / WorldGeometry
+                        #   (GameMap.world: everything kept but the arrays,
+                        #   which releaseArrays drops at upload), and admission
                         #   (admitStructure / admitProp), the one door a part
                         #   enters the merge by, refusing a shared array in DEV
     solid.ts            # SOLID_ONLY — the one mesh pick predicate left, and the
@@ -1144,11 +1149,11 @@ src/
                         #   matrix because the AUTHORITY never renders one.
                         #   Superset or nothing — read it
     vertexShading.ts    # The world's baked vertex-colour buffer, written after
-                        #   every merge: AO in the ALPHA, the world mark in the
-                        #   GREEN, the wind's sway weight in the RED, the wear
-                        #   ramp in the BLUE. A pure core over one surface's
-                        #   arrays (shadeVertices) and the mesh walk that is
-                        #   its caller (bakeVertexShading)
+                        #   every merge and before the upload: AO in the ALPHA,
+                        #   the world mark in the GREEN, the wind's sway weight
+                        #   in the RED, the wear ramp in the BLUE. A pure core
+                        #   over one surface's arrays (shadeVertices) and the
+                        #   walk over the record's parts (bakeVertexShading)
     sway.ts             # Which foliage the wind moves and how much of it moves
                         #   at a given height. Marks, layers, the weight ramp
     flame.ts            # An open fire's geometry — outer tongues wound inside
@@ -1165,8 +1170,9 @@ src/
                         #   bakeCurrentTransformIntoVertices, for the models),
                         #   and the adapters into Babylon: drawnMesh for a
                         #   model (uploaded, ready to draw), worldMeshes for
-                        #   the world's merged surfaces (made in BIRTH order),
-                        #   vertexDataOf. Plus the part MESHES the world's
+                        #   the world's surfaces (made in BIRTH order, arrays
+                        #   released, the floor sharing its clone's through
+                        #   the PlainArrays memo), vertexDataOf. Plus the part MESHES the world's
                         #   merge ran on until X1.4 (partMesh, partSurface,
                         #   uploadPart, bakePart), which nothing calls now.
                         #   Colliders are NOT parts — a part mesh has no

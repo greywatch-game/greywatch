@@ -1,17 +1,19 @@
 /**
  * worldGeometry.ts — The WORLD's geometry as a record rather than as meshes:
- * `WorldSurface` (one merged surface — a `Part`, the map block it was filed
- * under, which layout items its vertex ranges came from, whether its
- * positions must stay writable, when its mesh is BORN, and the editor item it
- * joins), `PaneSurfaceGroup` (a glazing surface and the breakable panes that
- * live in it), `WorldGeometry` (the list a build ends in), and ADMISSION: the
- * one place a builder's parts enter the merge (`admitStructure`,
- * `admitProp`), each minted a birth.
+ * `WorldSurface` (one surface of the world — the floor's patches, the rim's
+ * runs, and every merged surface: a `Part`, the map block it was filed under,
+ * which layout items its vertex ranges came from, whether its positions must
+ * stay writable, when its mesh is BORN, and the editor item it joins),
+ * `PaneSurfaceGroup` (a glazing surface and the breakable panes that live in
+ * it), `SurfaceRecord` and `WorldGeometry` (what `GameMap.world` keeps of a
+ * build once its meshes are made — everything but the arrays), and
+ * ADMISSION: the one place a builder's parts enter the merge
+ * (`admitStructure`, `admitProp`), each minted a birth.
  * Owns: nothing that outlasts a build but the DEV-only set of admitted
- * arrays. No Babylon — the `Part`, `Structure` and `EditorItem` it names are
- * TYPES — so the merge that runs on these (`merge.ts`) moves nothing on the
- * device and the one adapter that does (`worldMeshes` in `parts.ts`) is the
- * only crossing.
+ * arrays. No Babylon — the `Part`, `Structure`, `Material` and `EditorItem`
+ * it names are TYPES — so the merge and the bake that run on these
+ * (`merge.ts`, `vertexShading.ts`) move nothing on the device and the one
+ * adapter that does (`worldMeshes` in `parts.ts`) is the only crossing.
  * Invariants: `born` is the SCENE ORDER the surface's mesh must be created in
  * — the order Babylon made it when the merge still ran on meshes — and it is
  * minted from ONE counter per build, at the points Babylon used to create a
@@ -25,7 +27,9 @@
  * admission.
  * Must NOT hold a mesh, read a scene, or let a part in by any other door.
  */
-import type { Part } from "./parts";
+import type { Material } from "@babylonjs/core";
+import { GeometryBuffer } from "../geometry/buffer";
+import type { Part, PartMetadata } from "./parts";
 import type { Structure } from "./kit/core";
 import type { EditorItem, EditorRef } from "./mapTypes";
 
@@ -82,11 +86,72 @@ export interface PaneSurfaceGroup {
   block: string;
 }
 
-/** What a build's merges end in: every surface in `visuals` order, and what a piece id names. */
+/**
+ * What the map KEEPS of a surface once its mesh is made (`GameMap.world`):
+ * its name, its material, its METADATA (the very object its mesh carries —
+ * `block`, the exemptions, `sway`, `editorRef`), its block, its piece ranges,
+ * whether its positions are writable, and how many vertices and indices it
+ * holds — which is the merge's KEY (block, material, sway, exemptions) and
+ * everything a piece range is measured against.
+ *
+ * **Never the vertex ARRAYS.** Those are the device's, in the arrays Babylon
+ * keeps for the mesh; holding them here as well would hold the world's
+ * geometry twice on the CPU (Greyfen is ~6 M vertices), and nothing reads
+ * them back. `worldMeshes` releases each surface's arrays as it uploads them
+ * (`releaseArrays`). Whether a renderer of our own wants them kept is
+ * BABYLON_EXIT.md X3.3's question.
+ */
+export interface SurfaceRecord {
+  name: string;
+  /**
+   * The material the BUILD gave it, and the merge keyed it on. Not
+   * necessarily the mesh's for the life of the map: `ReflectionSystem` hands
+   * each glazing block a probe material of its own once its cube is baked.
+   */
+  material: Material | null;
+  metadata: PartMetadata | null;
+  block: string | null;
+  pieces: PieceRange[];
+  updatable: boolean;
+  vertexCount: number;
+  indexCount: number;
+}
+
+/**
+ * What a build ends in (`GameMap.world`): a record per surface, ALIGNED with
+ * `GameMap.visuals` (the floor's patches, the rim, then every merged surface),
+ * and what a piece id names. Empty on the authority, which draws nothing.
+ */
 export interface WorldGeometry {
-  surfaces: WorldSurface[];
+  surfaces: SurfaceRecord[];
   /** Piece id -> the layout item it is. */
   pieces: EditorRef[];
+}
+
+/** A surface's record — see `SurfaceRecord`. Taken BEFORE its arrays are released. */
+export function recordOf(surface: WorldSurface): SurfaceRecord {
+  const { part } = surface;
+  return {
+    name: part.name,
+    material: part.material,
+    metadata: part.metadata,
+    block: surface.block,
+    pieces: surface.pieces,
+    updatable: surface.updatable,
+    vertexCount: part.geometry.vertexCount,
+    indexCount: part.geometry.indices.length,
+  };
+}
+
+/**
+ * The buffer a part holds once its arrays are on the device: empty, and
+ * FROZEN, so a late write through it throws rather than vanishing.
+ */
+const RELEASED = Object.freeze(new GeometryBuffer({ positions: [], indices: [] }));
+
+/** Drops a part's arrays — see `SurfaceRecord`. */
+export function releaseArrays(part: Part): void {
+  part.geometry = RELEASED;
 }
 
 /** One build's birth counter: each call is the next mesh the scene would have made. */

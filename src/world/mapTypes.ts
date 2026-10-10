@@ -27,6 +27,7 @@ import type { ObstacleField } from "./ObstacleField";
 import type { RayWorld } from "./RayWorld";
 import type { RoadFootprint } from "./roads";
 import type { TerrainField } from "./TerrainField";
+import type { WorldGeometry } from "./worldGeometry";
 
 /** A capturable flag. */
 export interface ControlPointDef {
@@ -471,6 +472,15 @@ export interface GameMap {
   terrainColliders: Mesh[];
   /** Drawn geometry, merged per colour. */
   visuals: Mesh[];
+  /**
+   * What the build KEPT of the record `visuals` were made of — one
+   * `SurfaceRecord` per entry, aligned with `visuals`: its block, its piece
+   * ranges, its material and the very metadata object its mesh carries,
+   * whether its positions are writable, and its counts. **Not its vertex
+   * arrays**, which went to the device with the mesh — see `SurfaceRecord`.
+   * Empty on the authority, which draws nothing (`paneGroups`' reason).
+   */
+  world: WorldGeometry;
   /** Walkable-surface graph with one precomputed flow field per objective. */
   nav: NavGrid;
   /** Sub-cell collision the nav grid is too coarse to express. */

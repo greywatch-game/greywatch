@@ -8,20 +8,21 @@
  * vertex-colour write — as a CORE over arrays (`shadingContext` once per bake,
  * then `shadeVertices` per surface: positions, normals, a world matrix's
  * sixteen numbers and the sway layer in, the colour `Float32Array` out, and
- * nothing read or written but those) and the one caller it has today,
- * `bakeVertexShading`, which walks the merged MESHES, asks each for exactly
- * those arrays (stored as stored, so float32 positions on a pane block made
- * updatable) and `computeWorldMatrix(true)`'s numbers, and writes what comes
- * back. `BABYLON_EXIT.md` X1.4 moves that caller onto the merge's `Part`s; the
- * core is what both read.
+ * nothing read or written but those) and its caller, `bakeVertexShading`,
+ * which walks the PARTS of the world's record (`WorldSurface`,
+ * `worldGeometry.ts`) after every merge and before any of them is a mesh,
+ * hands the core each part's own arrays (as held, so float32 positions on a
+ * pane block `PaneBlocks` made writable) and `worldMatrixOf`'s numbers (the
+ * float32 matrix `computeWorldMatrix(true)` made of the mesh when the bake
+ * still ran on meshes), and stores what comes back as the part's `colors`.
+ * The adapter (`worldMeshes`) uploads it with the rest.
  * Owns no geometry and no materials; `MapBuilder` calls it, `world/sway.ts`
- * says what a mesh's weight means and `CelShader` reads what it wrote.
+ * says what a surface's weight means and `CelShader` reads what it wrote.
  * Invariants: AO lives in the ALPHA and 1.0 means UNOCCLUDED (see below — the
  * whole design rests on it), every channel's NEUTRAL value is the GL default
  * of the disabled attrib, the walk runs AFTER every merge, only CEL-SHADED
- * surfaces are written to (`takesShading`), and `hasVertexAlpha` must stay
- * false. A visual has no CHILD to walk: the ink twins that were one are gone
- * with the ink hull (`CelInk`), and nothing else parents a mesh to a visual.
+ * surfaces are written to (`takesShading`), and a mesh made of a baked
+ * surface keeps `hasVertexAlpha` false (the adapter writes it).
  * Contract: `docs/rendering.md`.
  *
  * **Four channels, one walk, and one reason they share a file.** Each is a
@@ -103,13 +104,14 @@
  * know, and which side of a wall a face is on is the second thing in that
  * class.
  *
- * AFTER THE MERGE, NEVER BEFORE. `VertexData.merge` throws outright —
- * "Cannot merge vertex data that do not have the same set of attributes" — the
- * moment one mesh in a group has `colors` and another does not, and
- * `mergeByMaterial` passes `disposeSource = true`, which is what turns Babylon's
- * attribute-aligning path off. Baking per structure and then merging would work
- * only while every mesh in every group happened to be baked. Baking last cannot
- * fail that way.
+ * AFTER THE MERGE, NEVER BEFORE. The merge (`mergeTransformed`, as
+ * `VertexData.merge` before it) throws outright — "Cannot merge vertex data
+ * that do not have the same set of attributes" — the moment one member of a
+ * group has `colors` and another does not, and it has no attribute-aligning
+ * path to fall back on. Baking per structure and then merging would work only
+ * while every part in every group happened to be baked. Baking last cannot
+ * fail that way — and last is still before the UPLOAD, because the record is
+ * what is baked and the mesh is made of it afterwards.
  *
  * It also buys the property that makes a positional estimate legitimate: two
  * meshes that meet at a corner are in DIFFERENT merge groups (the merge is per
@@ -146,13 +148,15 @@
  * is the honest limit of the technique on geometry this coarse, and tessellating
  * the world to sharpen it would cost far more than the effect is worth.
  */
-import { type Material, type Mesh, ShaderMaterial, VertexBuffer } from "@babylonjs/core";
+import { type Material, ShaderMaterial } from "@babylonjs/core";
 import { CONFIG } from "../config";
 import { isEmissiveWorld } from "../shaders/EmissiveWorld";
 import { isFlame } from "../shaders/FlameShader";
 import { halfDepth, slabThickness, turnX, turnZ } from "./boxGeometry";
 import { type BoxIndex, boxesNear, buildBoxIndex } from "./boxIndex";
 import type { WorldBox } from "./MapBuilder";
+import { Matrix } from "../math";
+import { type Part, worldMatrixOf } from "./parts";
 import { type SwayLayer, swayLayerOf, swayWeight } from "./sway";
 import type { TerrainField } from "./TerrainField";
 
@@ -519,15 +523,16 @@ export function takesShading(material: Material | null): boolean {
 }
 
 /**
- * Writes a colour buffer onto every finished visual: `rgb = (0, 1, 0)` and
- * `a = ao`, where 1 is unoccluded — the core below, over each mesh's own
- * arrays.
+ * Writes a colour buffer onto every finished surface of the world's record:
+ * `rgb = (sway, 1, wear)` and `a = ao`, where 1 is unoccluded — the core
+ * below, over each part's own arrays, stored as the part's `colors` for the
+ * adapter to upload.
  *
  * Returns the number of vertices shaded, which is the only number worth having
  * about the cost — everything here is linear in it.
  */
 export function bakeVertexShading(
-  meshes: readonly Mesh[],
+  parts: readonly Part[],
   boxes: readonly WorldBox[],
   terrain: TerrainField,
   size: number,
@@ -535,28 +540,23 @@ export function bakeVertexShading(
   const ctx = shadingContext(boxes, terrain, size);
   if (!ctx) return 0;
   let total = 0;
-  for (const mesh of meshes) {
-    if (!takesShading(mesh.material)) continue;
-    // The arrays AS STORED — a pane block holding a breakable pane was made
-    // updatable before this runs, which stored its positions as float32 — so
-    // the core reads exactly the numbers the mesh holds.
-    const positions = mesh.getVerticesData(VertexBuffer.PositionKind);
-    const normals = mesh.getVerticesData(VertexBuffer.NormalKind);
-    if (!positions || !normals) continue;
-    // Merged blocks sit at identity and merged structures do not, and the
-    // terrain blocks are placed as well — so nothing may assume, and the matrix
-    // is recomputed rather than read off a possibly stale cache.
-    const m = mesh.computeWorldMatrix(true).m;
-    // Read once per mesh, never per vertex: `mergeByMaterial` keys on the mark,
-    // so a merged mesh is unanimously foliage or unanimously not — which is
-    // also what lets the shader's branch be coherent. Null is every mesh in the
-    // map that is not leaf, and it costs the loop one compare.
-    const colors = shadeVertices(ctx, positions, normals, m, swayLayerOf(mesh));
-    mesh.setVerticesData(VertexBuffer.ColorKind, colors, false);
-    // Writing a colour buffer does not set this by itself, and it must not
-    // become true: the world is opaque, and vertex alpha here is a lighting
-    // term rather than a transparency.
-    mesh.hasVertexAlpha = false;
+  const world = new Matrix();
+  for (const part of parts) {
+    if (!takesShading(part.material)) continue;
+    // The arrays AS HELD — a pane block holding a breakable pane already
+    // holds float32 positions (`PaneBlocks`), which is what the device will —
+    // so the core reads exactly the numbers the mesh will.
+    const { positions, normals } = part.geometry;
+    if (!normals) continue;
+    // Merged blocks sit at identity, and an editor build's surfaces and a
+    // pane block of one do not — so nothing may assume, and the matrix is
+    // composed as `computeWorldMatrix(true)` composed the mesh's, in float32.
+    const m = worldMatrixOf(part, world).m;
+    // Read once per surface, never per vertex: `mergeByMaterial` keys on the
+    // mark, so a merged surface is unanimously foliage or unanimously not —
+    // which is also what lets the shader's branch be coherent. Null is every
+    // surface in the map that is not leaf, and it costs the loop one compare.
+    part.geometry.colors = shadeVertices(ctx, positions, normals, m, swayLayerOf(part));
     total += positions.length / 3;
   }
   return total;
@@ -568,8 +568,7 @@ export function bakeVertexShading(
  * `m`, the sixteen numbers of the surface's world matrix (column-major as
  * Babylon's `Matrix.m`), and returns a new `Float32Array` of four numbers a
  * vertex. Nothing it is handed is written, and nothing but what it is handed
- * (and `ctx`) is read — so it is the same answer whether the arrays came off a
- * mesh or off a part.
+ * (and `ctx`) is read.
  *
  * `layer` is the surface's sway mark (`swayLayerOf`), null for anything that
  * does not sway.

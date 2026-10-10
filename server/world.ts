@@ -368,6 +368,9 @@ export async function buildServerWorld(scene: Scene, def: MapDef): Promise<GameM
     paneGroups: [],
     terrainColliders: floor,
     visuals: [],
+    // Empty for `paneGroups`' reason: it is the record the DRAWN world was
+    // made of, and there is nothing drawn here.
+    world: { surfaces: [], pieces: [] },
     nav,
     obstacles,
     cover,

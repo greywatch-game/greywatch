@@ -9,8 +9,10 @@
  * `flattenParts` (a prop's parent links resolved into each part's own
  * transform at EMIT time), `mergeParts` (`MergeMeshes`' geometry) and
  * `bakePartTransform` (`bakeCurrentTransformIntoVertices`); the adapters —
- * `drawnMesh` for a model, `worldMeshes` for the world's merged surfaces,
- * `vertexDataOf` for a bare buffer. Still here and called by nothing since
+ * `drawnMesh` for a model, `worldMeshes` for the world's surfaces (the
+ * floor, the rim and every merged surface, each surface's arrays released as
+ * its mesh takes them), `vertexDataOf` for a bare buffer (through a build's
+ * `PlainArrays` memo where two meshes must share one copy). Still here and called by nothing since
  * BABYLON_EXIT.md X1.4 moved the world's merge onto parts (deleted by its C5):
  * `partMesh`, `partSurface`, `uploadPart`, `bakePart`, and
  * `setPartVerticesData`, whose only caller is `CelShader`'s equally unused
@@ -84,7 +86,7 @@ import {
 } from "@babylonjs/core";
 import { mergeTransformed, type FloatArray, type GeometryBuffer } from "../geometry/buffer";
 import { Matrix, Quaternion, Vector3 } from "../math";
-import type { WorldSurface } from "./worldGeometry";
+import { recordOf, releaseArrays, type SurfaceRecord, type WorldSurface } from "./worldGeometry";
 
 /** A mesh's metadata bag, which is what the merge and the bake read flags off. */
 export type PartMetadata = { [flag: string]: unknown };
@@ -274,8 +276,16 @@ export function bakePartTransform(part: Part): Part {
 }
 
 /** A float attribute as Babylon held it: doubles as a `number[]`, float32 as itself. */
-function babylonFloats(a: FloatArray): number[] | Float32Array {
-  return a instanceof Float32Array ? a : plainArray(a);
+function babylonFloats(a: FloatArray, plain?: PlainArrays): number[] | Float32Array {
+  return a instanceof Float32Array ? a : plainOnce(a, plain);
+}
+
+/** `plainArray`, through the build's memo when there is one. */
+function plainOnce(a: Float64Array | Uint32Array, plain?: PlainArrays): number[] {
+  if (!plain) return plainArray(a);
+  let out = plain.get(a);
+  if (!out) plain.set(a, (out = plainArray(a)));
+  return out;
 }
 
 /**
@@ -290,19 +300,31 @@ function plainArray(a: ArrayLike<number>): number[] {
 }
 
 /**
+ * The plain arrays one build has already made of a buffer's typed arrays,
+ * keyed by the typed array — so two meshes made of ONE buffer (the floor and
+ * its collider clone, `MapBuilder.buildValley`) hold one `number[]` between
+ * them, as they did when both were applied from one `VertexData`. Per build,
+ * and weak, so it holds nothing once the build's buffers are gone.
+ */
+export type PlainArrays = WeakMap<object, number[]>;
+
+/**
  * A buffer as the `VertexData` Babylon would have built: every array in the
  * type Babylon held (see the header) and every one a COPY but a
  * `Float32Array`'s, so nothing Babylon does to its own arrays in place — a
  * merge extends its first member's indices — reaches a buffer through them.
+ *
+ * Given `plain`, a typed array this build has already copied comes back as the
+ * SAME copy rather than a second one — see `PlainArrays`.
  */
-export function vertexDataOf(buffer: GeometryBuffer): VertexData {
+export function vertexDataOf(buffer: GeometryBuffer, plain?: PlainArrays): VertexData {
   const data = new VertexData();
-  data.positions = babylonFloats(buffer.positions);
-  if (buffer.normals) data.normals = babylonFloats(buffer.normals);
-  if (buffer.uvs) data.uvs = babylonFloats(buffer.uvs);
-  if (buffer.uvs2) data.uvs2 = babylonFloats(buffer.uvs2);
-  if (buffer.colors) data.colors = babylonFloats(buffer.colors);
-  data.indices = plainArray(buffer.indices);
+  data.positions = babylonFloats(buffer.positions, plain);
+  if (buffer.normals) data.normals = babylonFloats(buffer.normals, plain);
+  if (buffer.uvs) data.uvs = babylonFloats(buffer.uvs, plain);
+  if (buffer.uvs2) data.uvs2 = babylonFloats(buffer.uvs2, plain);
+  if (buffer.colors) data.colors = babylonFloats(buffer.colors, plain);
+  data.indices = plainOnce(buffer.indices, plain);
   return data;
 }
 
@@ -336,25 +358,32 @@ export function partMesh(part: Part, scene: Scene): Mesh {
  * Babylon's, so a part's build-time frame is detached or baked before it is a
  * mesh. Given a bare buffer (a merge's), the mesh stands at identity.
  */
-export function drawnMesh(part: Part, scene: Scene): Mesh;
+export function drawnMesh(part: Part, scene: Scene, plain?: PlainArrays): Mesh;
 export function drawnMesh(name: string, buffer: GeometryBuffer, scene: Scene): Mesh;
-export function drawnMesh(a: Part | string, b: Scene | GeometryBuffer, c?: Scene): Mesh {
+export function drawnMesh(
+  a: Part | string,
+  b: Scene | GeometryBuffer,
+  c?: Scene | PlainArrays,
+): Mesh {
   if (a instanceof Part) {
     if (a.parent) throw new Error(`drawnMesh: "${a.name}" still has a parent — detach or bake it first`);
     const mesh = new Mesh(a.name, b as Scene);
-    vertexDataOf(a.geometry).applyToMesh(mesh);
+    vertexDataOf(a.geometry, c as PlainArrays | undefined).applyToMesh(mesh);
     return dress(mesh, a);
   }
-  const mesh = new Mesh(a, c!);
+  const mesh = new Mesh(a, c as Scene);
   vertexDataOf(b as GeometryBuffer).applyToMesh(mesh);
   return mesh;
 }
 
 /**
- * The one place the WORLD's merged surfaces become Babylon meshes — every
- * structure, scatter field, road and glazing block a map build merged
- * (`merge.ts`), each through `drawnMesh`, carrying its part's transform,
- * material and metadata object unchanged.
+ * The one place the WORLD's surfaces become Babylon meshes — the floor, the
+ * rim, and every structure, scatter field, road and glazing block a map build
+ * merged (`merge.ts`) and baked (`vertexShading.ts`), each through
+ * `drawnMesh`, carrying its part's transform, material and metadata object
+ * unchanged. A surface the bake gave colours is given `hasVertexAlpha =
+ * false`, as the bake gave its mesh: the alpha is a lighting term, and the
+ * world is opaque.
  *
  * **The meshes are CREATED in birth order (`WorldSurface.born`) and RETURNED
  * in list order**, and the two are not the same: a surface's birth is when
@@ -368,8 +397,19 @@ export function drawnMesh(a: Part | string, b: Scene | GeometryBuffer, c?: Scene
  * the call that made them writable before. Each editor surface's mesh joins
  * its item's `visuals`, in list order: a placement's merged surfaces, then its
  * glazing.
+ *
+ * **A surface's ARRAYS are released as its mesh is made** (`releaseArrays`):
+ * the record the map keeps (`SurfaceRecord`, `GameMap.world`) is everything
+ * else, so the CPU holds the world's geometry once — in the arrays Babylon
+ * keeps — rather than twice. `plain` is the build's `PlainArrays`, which is
+ * how the floor's mesh comes out holding the arrays its collider clone was
+ * already made of.
  */
-export function worldMeshes(surfaces: readonly WorldSurface[], scene: Scene): Mesh[] {
+export function worldMeshes(
+  surfaces: readonly WorldSurface[],
+  scene: Scene,
+  plain: PlainArrays,
+): { meshes: Mesh[]; records: SurfaceRecord[] } {
   const order = surfaces.map((_, i) => i).sort((a, b) => surfaces[a].born - surfaces[b].born);
   if (import.meta.env.DEV) {
     for (let k = 1; k < order.length; k++) {
@@ -382,17 +422,21 @@ export function worldMeshes(surfaces: readonly WorldSurface[], scene: Scene): Me
     }
   }
   const meshes = new Array<Mesh>(surfaces.length);
+  const records = new Array<SurfaceRecord>(surfaces.length);
   for (const i of order) {
     const surface = surfaces[i];
-    const mesh = drawnMesh(surface.part, scene);
+    const mesh = drawnMesh(surface.part, scene, plain);
+    if (surface.part.geometry.colors) mesh.hasVertexAlpha = false;
     if (surface.updatable) {
       const positions = mesh.getVerticesData(VertexBuffer.PositionKind);
       if (positions) mesh.setVerticesData(VertexBuffer.PositionKind, positions, true);
     }
     meshes[i] = mesh;
+    records[i] = recordOf(surface);
+    releaseArrays(surface.part);
   }
   surfaces.forEach((surface, i) => surface.owner?.visuals.push(meshes[i]));
-  return meshes;
+  return { meshes, records };
 }
 
 /** A part's transform, material and metadata onto the mesh made of it. */

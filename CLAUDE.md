@@ -574,9 +574,10 @@ defaults, not ours** — baked occlusion in the **alpha**, a world marker in the
 **blue**, because a mesh with no such buffer reads the disabled attrib's
 `(0, 0, 0, 1)`: unoccluded, not world, planted, clean. **All four channels are
 now spoken for**, so a fifth per-vertex quantity owes a second buffer and the
-argument for it. The bake (`world/vertexShading.ts`) runs **after every merge**:
-the merge (`mergeTransformed`, as `VertexData.merge` before it) refuses a
-group where one member has `colors` and another does not.
+argument for it. The bake (`world/vertexShading.ts`) runs **on the record
+after every merge and before the upload**: the merge (`mergeTransformed`, as
+`VertexData.merge` before it) refuses a group where one member has `colors`
+and another does not, and the mesh is made of the baked arrays.
 
 **A map's GRIME is the MAP's and its ramp is not** (`EnvironmentSpec.wear`
 against `CONFIG.wear`); absent is CLEAN. **It is only on the OUTSIDE, and the
@@ -884,7 +885,10 @@ placement is the ground probe's job, and bots never touch the collidable list.
 ### Mesh metadata is a contract
 
 Seven flags and two values, all read elsewhere; new geometry that omits them
-misbehaves silently:
+misbehaves silently. **On the world's drawn geometry they are written on the
+RECORD, not the mesh** — the surface's part (`WorldSurface.part.metadata`,
+`world/worldGeometry.ts`) — and the one adapter (`worldMeshes`) hands its mesh
+that same object, unchanged; `GameMap.world` keeps it beside the mesh:
 
 - `solid: true` — collider proxies only. Unmarked geometry is shot through, seen
   through, and walked through.

@@ -28,13 +28,14 @@
  * Builders arrive with PARTS (world/parts.ts) — plain geometry, a transform
  * and a material — which enter the merge in one place (`admitStructure`,
  * `admitProp` in world/worldGeometry.ts) as `WorldSurface`s, each minted the
- * BIRTH its mesh will be made in. Every merge runs on those and touches no
- * device; the world becomes meshes once, at the end of `mergeBlocks`
+ * BIRTH its mesh will be made in; the floor's patches and the rim's runs are
+ * surfaces too, minted first. Every merge, and then the vertex bake, runs on
+ * those and touches no device; the world becomes meshes once, in `bake`
  * (`worldMeshes`), in birth order, which is the scene order the meshes had
- * when the merge still ran on them — and the vertex bake and the freeze then
- * run on those meshes. collider() is deliberately NOT on that path: a
- * collider has to be a real mesh with submeshes, because moveWithCollisions
- * walks them.
+ * when the merge still ran on them — and only the freeze runs on the meshes.
+ * What the map keeps of the record is `GameMap.world`: everything but the
+ * arrays. collider() is deliberately NOT on that path: a collider has to be a
+ * real mesh with submeshes, because moveWithCollisions walks them.
  * `build(..., { editor: true })` keeps geometry per layout item, tags it with
  * metadata.editorRef and indexes it — at the cost of the BlockMerge pass and
  * roughly 10x the draw calls. Authoring only; never measure frame cost there.
@@ -90,6 +91,7 @@ import {
   mergeParts,
   Part,
   partMesh,
+  type PlainArrays,
   vertexDataOf,
   worldMatrixOf,
   worldMeshes,
@@ -102,6 +104,7 @@ import {
   mintFrom,
   type PaneSurfaceGroup,
   surfaceOf,
+  type WorldGeometry,
   type WorldSurface,
 } from "./worldGeometry";
 import {
@@ -524,18 +527,22 @@ function halfExtentsOf(part: Part): { x: number; y: number; z: number } {
 interface BuildRun {
   layout: MapLayout;
   terrain: TerrainField;
-  /**
-   * Becomes `GameMap.visuals`: the floor and the rim, made as meshes first,
-   * then `surfaces` once the adapter has made them meshes too.
-   */
+  /** Becomes `GameMap.visuals`: `surfaces`, once the adapter has made them meshes. */
   visuals: Mesh[];
   /**
-   * Every merged surface after the floor and the rim, in `visuals` order —
-   * what `worldMeshes` turns into meshes at the end of `mergeBlocks`.
+   * Every surface the world draws, in `visuals` order — the floor's patches,
+   * the rim's runs, then every merged surface — which the vertex bake colours
+   * and `worldMeshes` turns into meshes, in `bake`.
    */
   surfaces: WorldSurface[];
   /** The build's birth counter — see `WorldSurface.born`. */
   mint: Mint;
+  /**
+   * The build's plain-array memo (`PlainArrays`), so the floor's collider
+   * clones, made in `buildValley`, and the floor's meshes, made by the adapter
+   * at the end, hold one copy of each array between them.
+   */
+  plain: PlainArrays;
   /** Becomes `GameMap.colliders`. */
   colliders: Mesh[];
   /** The opaque block merge, fed by the placements and the scatter. */
@@ -841,6 +848,7 @@ export class MapBuilder {
       visuals: [],
       surfaces: [],
       mint,
+      plain: new WeakMap(),
       colliders: [],
       // One size, handed to both, because `ReflectionSystem.encloses` asks a
       // glazing group and the wall behind it whether they are the same
@@ -866,8 +874,8 @@ export class MapBuilder {
       this.waterAmbience(layout.water ?? [], terrain, size / 2 + terrain.margin),
     );
 
-    this.mergeBlocks(run);
-    this.bake(run, size);
+    const glazing = this.mergeBlocks(run);
+    const world = this.bake(run, size, glazing);
     const { nav, cover, obstacles, rays, collidables } = this.derive(run, size);
     since("build:total", buildStart);
 
@@ -894,6 +902,7 @@ export class MapBuilder {
       paneGroups: this.paneGroups,
       terrainColliders,
       visuals,
+      world,
       water: layout.water ?? [],
       grass: layout.grass ?? [],
       roads: this.roads,
@@ -1029,7 +1038,6 @@ export class MapBuilder {
             : undefined,
         roads: isRoad ? network.footprint : undefined,
       });
-      const s = built;
       // Its parts enter the merge here and nowhere else, each minted the birth
       // its mesh will be made in (`worldGeometry.ts`).
       const admitted = admitStructure(built, mint);
@@ -1037,12 +1045,12 @@ export class MapBuilder {
       // is painted, weighted by how much of each there is. Taken HERE, before
       // the merge below bakes these parts — what it hands back wears the
       // palette material, which has no single colour to read.
-      this.albedoFromParts(s.meshes);
+      this.albedoFromParts(built.meshes);
       // …and where its parts stand, for the same reason and against the same
       // deadline: after the merge there is no part left to ask. A road is not
       // asked at all — its footprint is `this.roads`, which feathers the grass
       // into the verge where a box would cut it off square.
-      if (!isRoad) this.recordParts(s, origin, rotY, terrain);
+      if (!isRoad) this.recordParts(built, origin, rotY, terrain);
 
       for (const merged of mergeByMaterial(admitted.meshes, p.kind, { mint })) {
         place(merged.part, origin, rotY);
@@ -1068,7 +1076,7 @@ export class MapBuilder {
       }
       // Body boxes first, then the struts, so `item`'s three parallel arrays
       // agree on the order whichever kinds a structure declares.
-      for (const box of s.colliders) {
+      for (const box of built.colliders) {
         if (box.rayOnly) continue;
         const mesh = this.collider(`${p.kind}-col`, box, origin, rotY);
         if (item) {
@@ -1077,7 +1085,7 @@ export class MapBuilder {
         }
         colliders.push(mesh);
       }
-      const strutSpecs = s.colliders.filter((box) => box.rayOnly);
+      const strutSpecs = built.colliders.filter((box) => box.rayOnly);
       if (strutSpecs.length > 0) {
         const meshes = this.struts(
           `${p.kind}-timber`,
@@ -1099,10 +1107,10 @@ export class MapBuilder {
       // first: `item`'s parallel arrays are written in this order on both
       // sides, so a breakable pane's collider lands at a known place in them
       // whichever kinds a structure declares.
-      if (s.panes.length > 0) {
+      if (built.panes.length > 0) {
         const glazing = this.paneGroup(
           `${p.kind}-glass`,
-          s,
+          built,
           admitted.panes,
           origin,
           rotY,
@@ -1114,7 +1122,7 @@ export class MapBuilder {
         }
         colliders.push(...glazing.colliders);
       }
-      for (const l of s.lights) {
+      for (const l of built.lights) {
         const at = rotateY(l.x, l.y, l.z, rotY).addInPlace(origin);
         this.lighting.add(at, l.color, l.range, l.intensity, l.flicker);
       }
@@ -1122,7 +1130,7 @@ export class MapBuilder {
       // rotation and the same origin. A placement can be turned, so a sound
       // hung off one is a LOCAL point exactly as a light is — the brazier on
       // the far side of a watchtower has to end up on the far side of it.
-      for (const snd of s.sounds) {
+      for (const snd of built.sounds) {
         const at = rotateY(snd.x, snd.y, snd.z, rotY).addInPlace(origin);
         this.ambience.add(at.x, at.y, at.z, AMBIENCE_KINDS[snd.kind]);
       }
@@ -1185,10 +1193,11 @@ export class MapBuilder {
 
   /**
    * The second merge pass, over the opaque world and then over the glazing,
-   * and the palette the first of them discovers.
+   * and the palette the first of them discovers. Hands back the glazing's
+   * groups, which become `GameMap.paneGroups` once their surfaces are meshes.
    */
-  private mergeBlocks(run: BuildRun): void {
-    const { visuals, surfaces, blocks, paneBlocks } = run;
+  private mergeBlocks(run: BuildRun): PaneSurfaceGroup[] {
+    const { surfaces, blocks, paneBlocks } = run;
     // One more merge across neighbouring structures — see BlockMerge. This is
     // the ONE merge that paletteises, which is also what exempts the editor for
     // free: an editor build files its meshes on the item instead and never
@@ -1240,13 +1249,57 @@ export class MapBuilder {
       };
       surfaces.push(surface);
     }
+    return glazing;
+  }
 
-    // **The one place the merged world becomes meshes** (`worldMeshes`): every
-    // surface above, made in the order Babylon made them when the merge still
-    // ran on meshes and listed after the floor and the rim, which were made
-    // first. The glazing groups are handed their meshes on the way past, which
-    // is the shape `GameMap.paneGroups` and `GlassSystem` read.
-    const meshes = record("upload", () => worldMeshes(surfaces, this.scene));
+  /**
+   * The vertex-colour bake over the finished record, the upload, and the
+   * freeze — and what the map keeps of the record (`GameMap.world`).
+   */
+  private bake(run: BuildRun, size: number, glazing: PaneSurfaceGroup[]): WorldGeometry {
+    const { terrain, visuals, surfaces, plain } = run;
+    // The vertex-colour bake — occlusion, the world mark, the wind's sway
+    // weight and the wear ramp — and its position in `build` is the whole of
+    // it.
+    //
+    // AFTER every merge, because the merge (`mergeTransformed`) refuses a
+    // group where some members carry `colors` and some do not, and has no
+    // attribute-aligning path to fall back on. Baking last cannot hit that.
+    // It runs on the RECORD — each surface's part, its arrays as held and its
+    // world matrix composed as Babylon composed the mesh's — and the colours
+    // it writes are uploaded with everything else.
+    //
+    // BEFORE the upload, then, and so before `markVisual`'s freeze; and
+    // before the nav graph, which wants `this.boxes` for its own reasons and
+    // is not affected either way.
+    //
+    // `this.boxes` is complete here — every `collider()` has run — and it is
+    // the whole input besides the terrain. See `world/vertexShading.ts` for
+    // what each channel of the colour buffer carries and why.
+    const bakeStart = performance.now();
+    const bakedVerts = record("aoBake", () =>
+      bakeVertexShading(
+        surfaces.map((surface) => surface.part),
+        this.boxes,
+        terrain,
+        size,
+      ),
+    );
+    if (import.meta.env.DEV) {
+      console.info(
+        `[bake] ${bakedVerts} vertices in ${(performance.now() - bakeStart).toFixed(1)} ms`,
+      );
+    }
+
+    // **The one place the world becomes meshes** (`worldMeshes`): every
+    // surface, made in the order Babylon made them when the merge still ran on
+    // meshes — the floor and the rim first, as they were — with each surface's
+    // arrays released as its mesh takes them. The glazing groups are handed
+    // their meshes on the way past, which is the shape `GameMap.paneGroups`
+    // and `GlassSystem` read.
+    const { meshes, records } = record("upload", () =>
+      worldMeshes(surfaces, this.scene, plain),
+    );
     const meshOf = new Map<WorldSurface, Mesh>();
     surfaces.forEach((surface, i) => meshOf.set(surface, meshes[i]));
     for (const mesh of meshes) visuals.push(mesh);
@@ -1255,42 +1308,11 @@ export class MapBuilder {
       panes: g.panes,
       block: g.block,
     }));
-  }
-
-  /**
-   * The vertex-colour bake and the freeze, over every visual the merges left.
-   */
-  private bake(run: BuildRun, size: number): void {
-    const { terrain, visuals } = run;
-    // The vertex-colour bake — occlusion, the world mark and the wind's sway
-    // weight — and its position in `build` is the whole of it.
-    //
-    // AFTER every merge, because the merge (`mergeTransformed`) refuses a
-    // group where some members carry `colors` and some do not, and has no
-    // attribute-aligning path to fall back on. Baking last cannot hit that.
-    // It still runs on the MESHES `worldMeshes` made at the end of
-    // `mergeBlocks`, reading their arrays as stored.
-    //
-    // BEFORE `markVisual`, which freezes the world matrices the bake needs to
-    // recompute, and before the nav graph, which wants `this.boxes` for its own
-    // reasons and is not affected either way.
-    //
-    // `this.boxes` is complete here — every `collider()` has run — and it is
-    // the whole input besides the terrain. See `world/vertexShading.ts` for
-    // what each channel of the colour buffer carries and why.
-    const bakeStart = performance.now();
-    const bakedVerts = record("aoBake", () =>
-      bakeVertexShading(visuals, this.boxes, terrain, size),
-    );
-    if (import.meta.env.DEV) {
-      console.info(
-        `[bake] ${bakedVerts} vertices in ${(performance.now() - bakeStart).toFixed(1)} ms`,
-      );
-    }
 
     record("markVisual", () => {
       for (const m of visuals) this.markVisual(m);
     });
+    return { surfaces: records, pieces: [] };
   }
 
   /**
@@ -1364,7 +1386,7 @@ export class MapBuilder {
     /** The floor's blocks alone — see `GameMap.terrainColliders`. */
     terrainColliders: Mesh[],
   ): void {
-    const { terrain, visuals, colliders } = run;
+    const { terrain, surfaces, mint, plain, colliders } = run;
     const ridge = run.layout.ridge;
     const floorMat = floorMaterial(
       this.mats,
@@ -1375,21 +1397,24 @@ export class MapBuilder {
     for (const patch of record("terrainPatches", () =>
       terrainPatches(terrain, size, terrainBlock),
     )) {
-      const ground = new Mesh(`terrain-${patch.key}`, this.scene);
-      // One copy for both meshes, which share its arrays as they always did.
-      const data = vertexDataOf(patch.data);
-      data.applyToMesh(ground);
+      // A surface of the world's record, minted before anything else so its
+      // mesh is made first, as it always was; the bake colours it and the
+      // adapter makes it a mesh with the rest.
+      const ground = new Part(`terrain-${patch.key}`, patch.data);
       ground.material = floorMat;
       // Receiver only: a floor casting into its own depth map is pure acne.
       ground.metadata = { noShadowCaster: true };
-      visuals.push(ground);
+      surfaces.push(surfaceOf(ground, mint()));
 
       // The floor is the one place a collider shares the visual's vertices.
       // `collider()` builds boxes and records a WorldBox for the nav grid, and
       // a heightfield is neither — NavGrid reads the TerrainField directly
-      // instead, so this deliberately bypasses it.
+      // instead, so this deliberately bypasses it. Made NOW, and through the
+      // build's memo (`plain`), so the floor's mesh, made at the end of the
+      // build of the same buffer, holds the very arrays this one does — one
+      // copy for both, as when both were applied from one `VertexData`.
       const col = new Mesh(`terrain-${patch.key}-col`, this.scene);
-      data.applyToMesh(col);
+      vertexDataOf(patch.data, plain).applyToMesh(col);
       col.isVisible = false;
       col.isPickable = true;
       // Vertical placement is the ground probe's job and bots never touch the
@@ -1445,19 +1470,19 @@ export class MapBuilder {
     // The rim, as landform. Built outward from the boundary only, so it costs
     // no playable area — see Ridge.ts, which owns the shape and its invariants.
     for (const seg of ridgeSegments(ridge, extent, terrain)) {
-      const mesh = new Mesh(`ridge-${seg.key}`, this.scene);
-      seg.data.applyToMesh(mesh);
+      const part = new Part(`ridge-${seg.key}`, seg.data);
       if (seg.tone === "scree" || seg.tone === "rock") {
-        mesh.material = this.mats.get(
+        part.material = this.mats.get(
           seg.tone === "scree" ? env.ridgeScreeColor : env.ridgeColor,
         );
       } else {
-        // The woods on a rolling rim, in the near trees' own paint. They go
-        // into `visuals` like the rock, so the vertex bake gives them the same
-        // colour buffer the merged pines carry — which is what makes sharing
-        // the pines' cached material safe (see `CelMaterialFactory.remember`).
+        // The woods on a rolling rim, in the near trees' own paint. They are
+        // surfaces of the record like the rock, so the vertex bake gives them
+        // the same colour buffer the merged pines carry — which is what makes
+        // sharing the pines' cached material safe (see
+        // `CelMaterialFactory.remember`).
         const wood = RIM_WOOD[seg.tone];
-        mesh.material =
+        part.material =
           wood.trans === null
             ? this.mats.get(wood.hex)
             : this.mats.getTranslucent(
@@ -1469,8 +1494,8 @@ export class MapBuilder {
       // shadow window is a fixed 110 m square that follows the player — so a
       // casting rim would end its shadow in a hard line that slides across open
       // ground as you walk. It is a receiver only.
-      mesh.metadata = { noShadowCaster: true };
-      visuals.push(mesh);
+      part.metadata = { noShadowCaster: true };
+      surfaces.push(surfaceOf(part, mint()));
     }
   }
 

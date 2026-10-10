@@ -153,7 +153,13 @@ Six rules about it, and the first is the one everything else rests on:
   `VertexData.merge` before it) throws `"Cannot merge vertex data that do not
   have the same set of attributes"` the moment one member of a group carries
   `colors` and another does not, and it has no attribute-aligning path to turn
-  on. Baking last also makes a positional
+  on. **Last is still before the UPLOAD**: it runs on the world's record
+  (`WorldSurface`, `world/worldGeometry.ts` — the floor's patches, the rim and
+  every merged surface), reading each part's arrays and its world matrix as
+  `worldMatrixOf` composes it (the float32 numbers `computeWorldMatrix(true)`
+  made of the mesh when the bake ran on meshes), and the adapter
+  (`worldMeshes`) uploads the colours with the rest and keeps
+  `hasVertexAlpha` false. Baking last also makes a positional
   estimate legitimate: two meshes meeting at a corner are in different merge
   groups (the merge is per colour), and shading a vertex from where it *is*
   rather than from what it belongs to is what makes the two sides agree.
@@ -315,8 +321,8 @@ buffer, bones or morph targets after its first draw keeps the effect it
 compiled first — a silently wrong draw rather than a crash. The one row the
 fast path does re-check is instancing, thin instances included
 (`_wasPreviouslyUsingInstances`). Nothing here does any of the rest today:
-`vertexShading` bakes the colour buffer after the merge and before any frame
-draws the mesh. A mesh that must change one of those after it has been drawn
+`vertexShading` bakes the colour buffer into the record before the mesh even
+exists. A mesh that must change one of those after it has been drawn
 owes `resetDrawCache()` on it, which throws its wrappers away.
 
 **Freezing at creation is deliberate.** The fast path also requires the wrapper

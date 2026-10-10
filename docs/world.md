@@ -1629,7 +1629,7 @@ after.
   splitting each span divides it. `refineProfile` keeps the band and the back
   toe unsplit, because both have special-cased heights.
 - **The woods are the RIM's, not scatter.** They are built into the rim's own
-  VertexData, so they emit no collider, no `WorldBox`, nothing in the collision
+  geometry (a `GeometryBuffer` per run), so they emit no collider, no `WorldBox`, nothing in the collision
   bake, and draw nothing from the map's seeded stream — nothing inside the play
   square can reroll because a tree on a hill moved. They are sown per QUAD and
   weighted by its plan area, never per station, or every corner fan (ninety-odd
@@ -1640,7 +1640,8 @@ after.
   range running down into the sea.
 - **They wear the near trees' paint** (`RIM_WOOD`, `props/palette.ts`): the
   pine's needles and bark, and the dark broadleaf — the ash's spring green came out as a
-  field of bright diamonds under a low sun. They go into `visuals`, so the
+  field of bright diamonds under a low sun. They are surfaces of the world's
+  record like the rock (`visuals`, in the end), so the
   vertex bake gives them the colour buffer the merged pines carry, which is
   what makes sharing the pines' cached materials safe. **Every tree has a
   trunk**: at 150 m a crown with nothing under it reads as hanging in the air
@@ -1991,9 +1992,14 @@ or a prop's parts are ADMITTED in one place (`admitStructure`, `admitProp` in
 `world/worldGeometry.ts`) as `WorldSurface`s, and both merge passes and the
 glazing's run on those: `mergeParts` for two or more (`Mesh.MergeMeshes`'
 arithmetic, `mergeTransformed`), `bakePartTransform` for one, the palette slot
-written into the buffer's `uv2`, the metadata written on the part. Nothing
-touches the device until the end of `MapBuilder.mergeBlocks`, where
-`worldMeshes` (`parts.ts`) makes every merged surface a mesh at once. It used to
+written into the buffer's `uv2`, the metadata written on the part. The floor's
+patches and the rim's runs are surfaces of the same record, minted first; the
+vertex bake runs on the record after the last merge; and nothing touches the
+device until `MapBuilder.bake`, where `worldMeshes` (`parts.ts`) makes every
+surface a mesh at once and releases its arrays. What the map keeps of the
+record is `GameMap.world` — each surface's block, piece ranges, material,
+metadata and counts, aligned with `visuals`, and never the arrays, which the
+device holds. It used to
 be the other way round: every plank was a Babylon mesh, uploaded the instant it
 existed, read back out of the CPU copies by the merge and disposed — HALF the
 build at 1500 m (161 seconds of a 186-second one), until `parts.ts` stopped
@@ -2008,7 +2014,11 @@ would draw it. And **the adapter makes the meshes in BIRTH order**
 inherited by a merge of one) — the order Babylon made them in while the merge
 ran on meshes, and the order `scene.meshes` holds them in, which `WorldCulling`
 offers candidates in. `npm run merge:hash` records that order per mesh
-(`sceneRank`) and fails on it.
+(`sceneRank`) and fails on it. **The floor's collider clone shares its patch's
+arrays** although the two meshes are made at opposite ends of the build: the
+clone in `buildValley`, the patch by the adapter, both through the build's
+`PlainArrays` memo, which hands the second the very `number[]` the first was
+given.
 
 A **second merge pass** (`BlockMerge`) collapses neighbouring structures and scatter
 fields into one surface per (map block, material) — the block's side is
