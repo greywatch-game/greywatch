@@ -625,7 +625,7 @@ the map moved.
 
 `Game.updateWorld` returns early in a netplay round, and the line it draws is
 "decides an outcome", not "moves something". Conquest and the bots are the
-authority's and are skipped. **`CombatSystem`, `GrenadeSystem` and
+authority's and are skipped. **`CombatFx`, `GrenadeSystem` and
 `RagdollSystem` are still stepped**, because what they hold between frames is
 this client's own effects and nobody else advances them.
 
@@ -839,15 +839,15 @@ bot that is good.
 
 **The `fire` event carried a report, a reveal and no bullet, and that is the
 half a shooter's screen is actually missing.** Offline every tracer in the
-village is `CombatSystem.fire` throwing one off as a side effect of resolving
-the round, because that machine resolves every round in it. A client resolves
+village is `CombatSystem.fire` raising one (`onRound`, drawn by `CombatFx`) as
+a side effect of resolving the round, because that machine resolves every round in it. A client resolves
 exactly one shooter's — its own — so in a match the other forty-seven fired
 rounds that made a noise, moved a minimap blip and left the barrel as nothing
 at all. What that costs is the cue a tracer mostly IS: not that somebody is
 shooting, which the report says, but WHERE FROM and WHICH WAY, which is what
 tells you whether the fire two streets over is meant for you.
 
-`CombatSystem.drawRounds` is the answer and it is `drawBlast`'s counterpart
+`CombatFx.drawRounds` is the answer and it is `drawBlast`'s counterpart
 exactly — public for the same reason, that the authority raises the thing with
 almost nothing on it and this client owes the picture. It does the wall query
 and nothing else: **no target list is walked, no near miss is raised and
@@ -870,7 +870,7 @@ which is the split `BattleSystem.botFire` already makes offline.
 and a haunting.** Server messages are dispatched off the socket, so a `fire`
 handler runs whenever a packet lands and in whatever state the game is in —
 including the menu, the round-over card and the build, none of which step
-`CombatSystem`. A tracer is a streak `update` flies out of the barrel and hides
+`CombatFx`. A tracer is a streak `update` flies out of the barrel and hides
 again; spawned where nothing flies it, it is a lit dot hanging in the air where
 the muzzle was, one per shot, forever. So `Game.onNetFire` QUEUES a slot and
 `drawNetShots` draws it inside `updateNetWorld`, one line above the `stepShots`

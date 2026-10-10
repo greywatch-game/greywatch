@@ -4,7 +4,7 @@
  * Owns: the grenade pool (a frag and a bottle per slot), the fire pool a broken
  * bottle burns in, the ground probe under a blast, and the `BlastFx` that draws
  * six of a blast's eight layers. All FIXED SIZE and allocated once — this is
- * the same rule CombatSystem's tracers follow, and for the same reason: a
+ * the same rule CombatFx's tracers follow, and for the same reason: a
  * firefight must not allocate.
  *
  * This is the one thing in the game that is not hitscan, and everything here is

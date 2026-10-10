@@ -211,7 +211,10 @@ export class HeadlessGame {
     // Order matters on the client because `Game`'s GlowLayer scan runs at
     // construction; here it does not, but the pair is kept in the same order so
     // the two files read the same way.
-    this.combat = new CombatSystem(this.scene, this.mats);
+    // The simulation half alone: the tracer, spark, disc and mark pools are
+    // `CombatFx`'s, which only a client builds, so `onRound` is left unwired
+    // and every round's picture is a no-op here (`BABYLON_EXIT.md` X2.2).
+    this.combat = new CombatSystem();
     this.battle = new BattleSystem(this.scene, this.mats, this.combat, this.random);
     // **The authority's pool is the ceiling, once, for the life of the
     // process.** A slot index is a bot index and a match rotates maps under one
@@ -624,7 +627,6 @@ export class HeadlessGame {
     // never going to make would only make the authority disagree with the
     // clients about where that bot is.
     this.battle.update(dt, ORIGIN);
-    this.combat.update(dt);
     // After the bots, so a grenade thrown on this frame's think tick flies on
     // this frame rather than sitting in the thrower's hand until the next —
     // the same order `Game.updateWorld` uses.
@@ -1552,7 +1554,7 @@ export class HeadlessGame {
    * the direction with it — see the `glass` event. Both vectors are the
    * caller's and are read inside the call.
    */
-  onGlassBroken: (panes: number[], at: Vector3, dir: Vector3) => void = () => {};
+  onGlassBroken: (panes: number[], at: Vector3, dir: Vector3Like) => void = () => {};
 
   /**
    * Wired by `Match`: a round passed close to this person without hitting them.
@@ -1561,7 +1563,7 @@ export class HeadlessGame {
    * scratch vector — read it inside the call or copy it; it is overwritten by
    * the next near miss, which in a firefight is the next round.
    */
-  onNearMiss: (player: NetPlayer, at: Vector3) => void = () => {};
+  onNearMiss: (player: NetPlayer, at: Vector3Like) => void = () => {};
 
   /** Wired by `Match`: a person took a hit. */
   onPlayerDamaged: (

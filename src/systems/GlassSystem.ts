@@ -93,6 +93,8 @@ import { VertexBuffer } from "@babylonjs/core";
 import { CONFIG } from "../config";
 import type { GameMap, WorldBox, WorldPane } from "../world/MapBuilder";
 import { BLOCK_SIZE } from "../world/blocks";
+import type { Vector3Like } from "../math";
+import { toBabylon } from "../math/babylon";
 
 /** One pane a segment crossed, and how far along it the crossing was. */
 export interface GlassHit {
@@ -193,7 +195,7 @@ export class GlassSystem {
    * The returned array is BORROWED and is overwritten by the next call. Read it
    * or copy it before sweeping again.
    */
-  sweep(origin: Vector3, dir: Vector3, maxDist: number): GlassHit[] {
+  sweep(origin: Vector3Like, dir: Vector3Like, maxDist: number): GlassHit[] {
     this.hits.length = 0;
     if (this.panes.length === 0) return this.hits;
 
@@ -249,19 +251,26 @@ export class GlassSystem {
    * Returns the panes it broke, so the caller can put them on the wire.
    */
   shoot(
-    origin: Vector3,
-    dir: Vector3,
+    origin: Vector3Like,
+    dir: Vector3Like,
     maxDist: number,
     authoritative: boolean,
   ): number[] {
     const hits = this.sweep(origin, dir, maxDist);
     if (hits.length === 0) return [];
+    // The segment arrives as `CombatSystem.onShotPath`'s, whose direction is
+    // `src/math`'s; the break and everything `onBreak` hands it to are still
+    // Babylon's, so both are COPIED across here, once per shot that crosses a
+    // pane — the one crossing this file holds (`BABYLON_EXIT.md` X2.2 C4 takes
+    // it away). Fresh rather than scratch: `dir` reaches `onBreak`'s handlers.
+    const o = toBabylon(origin);
+    const d = toBabylon(dir);
     const broke: number[] = [];
     const limit = Math.min(hits.length, CONFIG.glass.maxPerShot);
     for (let i = 0; i < limit; i++) {
       const { pane, dist } = hits[i];
-      const at = origin.add(dir.scale(dist));
-      if (this.applyBreak(pane, at, dir, authoritative)) broke.push(pane);
+      const at = o.add(d.scale(dist));
+      if (this.applyBreak(pane, at, d, authoritative)) broke.push(pane);
     }
     return broke;
   }
@@ -500,8 +509,8 @@ function segmentHitsAabb(
  */
 function segmentHitsPane(
   p: WorldPane,
-  origin: Vector3,
-  dir: Vector3,
+  origin: Vector3Like,
+  dir: Vector3Like,
   maxDist: number,
 ): number | null {
   const c = Math.cos(p.rotY);

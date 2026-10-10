@@ -927,7 +927,7 @@ export class Sfx {
    * this cue a player can act on. A blurred bearing costs more than a missing
    * Doppler.
    */
-  nearMiss(at: Vector3): void {
+  nearMiss(at: Point): void {
     const bus = this.bus("nearMiss", "impact");
     if (!this.ctx) return;
     const v = 0.9 + Math.random() * 0.2;

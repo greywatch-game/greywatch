@@ -122,7 +122,7 @@ import { MAX_CORNERS, fracture, makePieces, type ShardPiece } from "./glassFract
  * imported: `src/world/kit/core.ts` is the world layer's palette and a system
  * may not reach into it. If the two ever disagree the shards are the wrong
  * colour and nothing else breaks, which is the right failure for a duplicated
- * art constant — see `CombatSystem`, whose spark colours are literals for the
+ * art constant — see `CombatFx`, whose spark colours are literals for the
  * same reason.
  *
  * **A shard is drawn OPAQUE in it, unlike the pane it came out of.** That is

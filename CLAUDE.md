@@ -941,10 +941,11 @@ that same object, unchanged; `GameMap.world` keeps it beside the mesh:
   it is a **value with a default**, not a flag, and **absent means `"hard"`**.
   `MapBuilder` sets it on exactly one thing — the terrain floor's collider clone
   — so every wall, prop and roof in the village answers by omission and a new
-  collider needs no thought at all. Read by `CombatSystem` to pick the impact's
-  spark, its dust disc and its sound. Adding `"wood"`/`"metal"` is one member of
-  `ImpactKind`, one row in that file's `IMPACTS` table, one arm in `Sfx.impact`
-  and a `surface` argument on `collider()`; no signature in between moves.
+  collider needs no thought at all. Read by `CombatSystem` to name the impact,
+  which `CombatFx` turns into its spark, its dust disc and its sound. Adding
+  `"wood"`/`"metal"` is one member of `ImpactKind`, one row in `CombatFx`'s
+  `IMPACTS` table, one arm in `Sfx.impact` and a `surface` argument on
+  `collider()`; no signature in between moves.
 
 ### Bots: navigation, scaling, perception and squads
 
@@ -1526,9 +1527,11 @@ regions' two headers, and what is not built.
 - **Every ROUND is hitscan** — player and bots share `CombatSystem.fire()`, which
   takes the shooter's target list (so friendly fire is excluded by construction
   rather than by a team check inside) and the shooter's own `range`, which bounds
-  the wall pick and the near-miss sweep as well as the damage. Tracers, sparks,
-  impact discs and bullet MARKS are pooled; add effects to a pool rather than
-  allocating per shot. **The mark pool is the one whose slots outlive the shot**
+  the wall pick and the near-miss sweep as well as the damage. **The PICTURE of a
+  round is `systems/CombatFx.ts`'s and the shot never draws**: `fire` raises
+  `onRound` once per round and `Game` wires it to the view, which the authority
+  never builds. Tracers, sparks, impact discs and bullet MARKS are pooled there;
+  add effects to a pool rather than allocating per shot. **The mark pool is the one whose slots outlive the shot**
   (`systems/BulletMarks.ts`): it is the one effect wearing a CEL material rather
   than `getEmissive`, because a hole still there a minute later has to be lit by
   the same map the wall is — which also puts it inside `WorldCulling`'s size

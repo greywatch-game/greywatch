@@ -4403,7 +4403,7 @@ inverted depth tests PARTITION the emissive pixels exactly (926 + 748 against
 
 ## Impacts: the one pooled effect that reads the world
 
-`CombatSystem` throws three pools — tracers, sparks, and the **impact disc**,
+`CombatFx` throws three pools — tracers, sparks, and the **impact disc**,
 which is the half a sphere could never do. A spark has no orientation; a disc
 lies on the face the round was thrown from, using the surface normal the wall
 pick already computed and used to discard.
@@ -4433,7 +4433,7 @@ Three constraints hold it together, and undoing any of them is silent:
 
 **The impact rides the tracer, and so does its sound.** Both are spawned when
 the streak's head arrives rather than when the damage resolved, which is the
-ordering `CombatSystem`'s header calls load-bearing: an impact seen or heard
+ordering `CombatFx`'s header calls load-bearing: an impact seen or heard
 before its round gets there is what makes a slowed tracer read as fake. One
 `spawnImpact` raises all three so the picture and the noise cannot drift apart.
 

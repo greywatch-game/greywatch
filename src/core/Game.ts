@@ -129,6 +129,7 @@ import { AimAssistSystem } from "../systems/AimAssistSystem";
 import { Atmosphere } from "../systems/Atmosphere";
 import { BattleSystem } from "../systems/BattleSystem";
 import { CaptureZoneSystem } from "../systems/CaptureZoneSystem";
+import { CombatFx } from "../systems/CombatFx";
 import {
   CombatSystem,
   type DamageKind,
@@ -470,7 +471,13 @@ export class Game {
   private profChip: ProfileChip;
   private sfx: Sfx;
   private mapBuilder: MapBuilder;
+  /** Every round's resolve — the simulation half (`BABYLON_EXIT.md` X2.2). */
   private combat: CombatSystem;
+  /**
+   * Every round's PICTURE: the tracer, spark, disc and mark pools. Fed by
+   * `combat.onRound` and by `drawNetShots`, and never writes the simulation.
+   */
+  private combatFx: CombatFx;
   /** Thrown grenades — the one thing on the map that is not hitscan. */
   private grenades: GrenadeSystem;
   /**
@@ -1549,7 +1556,15 @@ export class Game {
       this.lighting,
       this.ambience,
     );
-    this.combat = new CombatSystem(this.scene, this.mats);
+    this.combat = new CombatSystem();
+    this.combatFx = new CombatFx(this.scene, this.mats);
+    // The one event the picture of a round needs, and it is wired here rather
+    // than with the cues in `wireBattle` because it is the PAIR's: the
+    // simulation raises it once per resolved round and draws nothing, the view
+    // flies the streak and spawns the impact on arrival. Systems never import
+    // each other; this line is where the two meet.
+    this.combat.onRound = (muzzle, to, kind, normal, mark) =>
+      this.combatFx.drawRound(muzzle, to, kind, normal, mark);
     this.grenades = new GrenadeSystem(this.scene, this.mats);
     // The one physics engine, and its three clients. `PhysicsWorld` is INJECTED
     // into each rather than imported by any — see its header, and the
@@ -1998,6 +2013,8 @@ export class Game {
     // isn't a bot, so both handlers can take every near miss.
     // `at` is CombatSystem's scratch vector — `suppress` keeps only `from`
     // and `nearMiss` reads it inside the call, so nothing outlives it here.
+    // Both are `src/math`-or-either (`Vector3Like`), and both readers take
+    // the fields.
     this.combat.onNearMiss = (near, from, at) => {
       this.battle.suppress(near, from);
       if (near === this.player) {
@@ -2006,11 +2023,12 @@ export class Game {
       }
     };
     // A round arriving. Routed here rather than called directly for the same
-    // reason the near miss is: `CombatSystem` fires the player's rounds and
-    // all sixteen bots' and has no business knowing what `Sfx` is. Every gate
-    // on this — distance, rate, the voice reserve — is on the far side, with
-    // the budget it protects.
-    this.combat.onImpact = (at, kind) => this.sfx.impact(at, kind);
+    // reason the near miss is: `CombatFx` draws the player's rounds and all
+    // sixteen bots' and has no business knowing what `Sfx` is. It rides the
+    // TRACER's clock, which is the view's, so it is the view's event. Every
+    // gate on this — distance, rate, the voice reserve — is on the far side,
+    // with the budget it protects.
+    this.combatFx.onImpact = (at, kind) => this.sfx.impact(at, kind);
     // The segment a round flew, offered to the glass. Every round from every
     // shooter comes through here, so the sweep is bounded on the far side and
     // this is one call.
@@ -4477,7 +4495,7 @@ export class Game {
     this.sfx.ambienceAllOff();
     this.map?.dispose();
     this.map = null;
-    this.combat.clearTransient();
+    this.combatFx.clearTransient();
     // A grenade whose fuse outlived the map it was thrown across would go off
     // over terrain that no longer exists — and, in the editor, in the middle
     // of a rebuild.
@@ -4534,6 +4552,7 @@ export class Game {
     this.battle.clearMap();
     this.player.clearGround();
     this.combat.setWorld(null);
+    this.combatFx.setWorld(null);
     this.grenades.setWorld(null);
     this.grenades.setTerrain(new TerrainField());
     this.antiTank.setWorld(null);
@@ -4748,6 +4767,7 @@ export class Game {
     // exceptions: both are handed the whole `GameMap` already, and both take it
     // off `map.rays` where they take `nav`, `cover` and `obstacles`.
     this.combat.setWorld(map.rays);
+    this.combatFx.setWorld(map.rays);
     this.grenades.setWorld(map.rays);
     // Whether a molotov that breaks on THIS screen lights anything: in a match
     // the fire is the authority's and arrives as a `blaze` event, so the
@@ -5338,7 +5358,7 @@ export class Game {
     // the frame it was first needed. An idle member of each, posed as it is in
     // flight, for this frame.
     this.deathCam.warm(vantage);
-    this.combat.warm(true);
+    this.combatFx.warm(true);
     this.grenades.warm(true);
     this.blastDebris.warm(true);
     this.shadows.warmBlob(true, this.player);
@@ -5354,7 +5374,7 @@ export class Game {
     this.scene.skipFrustumClipping = false;
     this.culling.setWarm(false);
     this.deathCam.warm(null);
-    this.combat.warm(false);
+    this.combatFx.warm(false);
     this.grenades.warm(false);
     this.blastDebris.warm(false);
     this.shadows.warmBlob(false, this.player);
@@ -7819,7 +7839,7 @@ export class Game {
       shooter.kick(shot.rounds, shot.spacing);
       const muzzle = this.netMuzzle.copyFrom(shooter.muzzleWorld());
       shooter.aimDirToRef(this.netShotDir);
-      this.combat.drawRounds(
+      this.combatFx.drawRounds(
         shooter.eyePos,
         this.netShotDir,
         muzzle,
@@ -7854,7 +7874,7 @@ export class Game {
       tank.mgMuzzleToRef(muzzle);
       tank.mgDirToRef(this.netShotDir);
     }
-    this.combat.drawRounds(
+    this.combatFx.drawRounds(
       muzzle,
       this.netShotDir,
       muzzle,
@@ -8417,7 +8437,7 @@ export class Game {
    */
   private stepShots(dt: number): void {
     this.prof.begin(P.combat);
-    this.combat.update(dt);
+    this.combatFx.update(dt);
     this.prof.end(P.combat);
     this.prof.begin(P.grenades);
     this.grenades.update(dt);

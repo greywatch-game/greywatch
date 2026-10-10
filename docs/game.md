@@ -152,10 +152,11 @@ on the far side; the loop settles in two passes. A fetch that FAILS is
 `leaveUnknownMap`'s move — there is no honest half-build of a map with no
 ground under it, and leaving the card up would wedge `buildPending` forever.
 
-**Six of those hand-offs are one line each and one object**, and they are worth
+**Seven of those hand-offs are one line each and one object**, and they are worth
 naming because they are new and because they look skippable. `map.rays` is the
 segment query every ray in the game asks (`world/RayWorld.ts`), and `installMap`
-pushes it to `CombatSystem`, `GrenadeSystem`, `AntiTankSystem`,
+pushes it to `CombatSystem`, `CombatFx` (whose `drawRounds` casts for itself),
+`GrenadeSystem`, `AntiTankSystem`,
 `AimAssistSystem`, `DeathCam` and `VehicleCamera`. `BattleSystem` and
 `VehicleSystem` are absent from that list and are not exceptions: both are
 handed the whole `GameMap`, and both take it off `map.rays` where they take

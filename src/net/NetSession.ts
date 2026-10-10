@@ -20,6 +20,7 @@
  */
 import { Scene, Vector3 } from "@babylonjs/core";
 import type { Team } from "../entities/Combatant";
+import type { Vector3Like } from "../math";
 import type { CelMaterialFactory } from "../shaders/CelShader";
 import type { ControlPoint } from "../systems/ConquestSystem";
 import { Connection, type ConnectionState, type JoinOptions } from "./Connection";
@@ -382,7 +383,7 @@ export class NetSession {
    * drawn `interpDelay` in the past, so that is the instant the server has to
    * rewind them to for the shot to have meant anything.
    */
-  sendShot(origin: Vector3, dir: Vector3, weaponSlot: number): void {
+  sendShot(origin: Vector3Like, dir: Vector3Like, weaponSlot: number): void {
     if (!this.seated) return;
     this.conn.send({
       t: "shot",

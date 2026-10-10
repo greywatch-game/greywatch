@@ -848,7 +848,13 @@ src/
     BulletMarks.ts      # The holes a round leaves behind: a ring of pooled decal
                         #   quads, cel-lit so a mark belongs to the wall on
                         #   every map, and stood on the STATIC world only
-    CombatSystem.ts     # Hitscan, fall-off, the head zone; pooled tracers, sparks, impacts
+                        #   (`CombatFx`'s fourth pool)
+    CombatFx.ts         # A round's PICTURE: pooled tracers, sparks, dust discs
+                        #   and the marks, fed by `CombatSystem.onRound` and
+                        #   `drawRounds`; the impact (and its sound) on the
+                        #   tracer's arrival clock. Client only
+    CombatSystem.ts     # Hitscan, fall-off, the head zone, the cone; raises
+                        #   `onNearMiss`, `onRound`, `onShotPath`. Babylon-free
     GrenadeSystem.ts    # The one thing that isn't hitscan: the flight, the
                         #   fuse, the molotov's fire, and the ground probe
                         #   under a blast. `blastAt` is the one blast in the

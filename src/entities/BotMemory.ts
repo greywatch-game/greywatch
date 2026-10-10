@@ -103,9 +103,11 @@ export class BotMemory {
   }
 
   /** A round cracked past without connecting. */
-  nearMiss(from: Vector3): void {
+  nearMiss(from: Vector3Like): void {
     const p = CONFIG.bots.perception;
-    this.threat.copyFrom(from);
+    // On the fields: `from` is whatever the shooter fired from, and may be
+    // either library's vector (`CombatSystem.onNearMiss`).
+    this.threat.copyFromFloats(from.x, from.y, from.z);
     this.threatT = CONFIG.bots.combat.threatMemory;
     this.alert = Math.min(1, this.alert + p.suppressPerMiss);
     this.suppression = Math.min(1, this.suppression + p.suppressPerMiss);

@@ -1,17 +1,17 @@
 /**
  * BulletMarks.ts — The holes a round leaves BEHIND, as a fixed pool of decal
- * quads owned by `CombatSystem`.
+ * quads owned by `CombatFx`.
  * Owns: the mark geometry, the ring of pooled meshes and where each one is
  * stood. Nothing else in the game knows it exists — it is reached only from
- * `CombatSystem.spawnImpact`, on the frame the tracer's head arrives, so the
+ * `CombatFx.spawnImpact`, on the frame the tracer's head arrives, so the
  * mark and the spark and the dust are one event.
- * Invariants: it is a POOL and never allocates per shot (the `CombatSystem`
+ * Invariants: it is a POOL and never allocates per shot (the `CombatFx`
  * rule, and this pool's slots are long-lived where the others' are not); it
  * marks the STATIC world only; it holds no clock at all.
  * Contract: this header. `docs/rendering.md` for the depth bias it borrows.
  *
  * WHY THE MARK IS A CEL MATERIAL AND THE DUST DISC IS NOT. Every other effect
- * in `CombatSystem` is `getEmissive` — unlit, because a spark and a puff of
+ * in `CombatFx` is `getEmissive` — unlit, because a spark and a puff of
  * dust are their own light and are gone in a fifth of a second. A mark is
  * neither: it is a bit of the WALL, it is still there a minute later, and an
  * unlit one is a sticker. Hollowmere is a night village and Sarab is a desert
@@ -162,7 +162,7 @@ function chipData(rand: () => number): VertexData {
  * oldest reused.
  *
  * Built once with the scene and never rebuilt — a map change clears it
- * (`CombatSystem.clearTransient`) rather than disposing it, exactly as the
+ * (`CombatFx.clearTransient`) rather than disposing it, exactly as the
  * tracer, spark and disc pools are.
  */
 export class BulletMarks {
@@ -199,7 +199,7 @@ export class BulletMarks {
    * Stand a mark on the surface a round stopped on.
    *
    * `normal` is the face's outward normal, and is read here rather than held —
-   * `CombatSystem` hands over its tracer's own copy.
+   * `CombatFx` hands over its tracer's own copy.
    *
    * `radius` and `hex` are the impact KIND's, off the `IMPACTS` table beside
    * the spark and the dust, because what a round takes out of packed earth and

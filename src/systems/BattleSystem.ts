@@ -882,7 +882,7 @@ export class BattleSystem {
    * `CombatSystem.onNearMiss`, which rides the target loop every shot already
    * walks — no new rays, no new iteration.
    */
-  suppress(near: Hittable, from: Vector3): void {
+  suppress(near: Hittable, from: Vector3Like): void {
     if (near instanceof Bot && near.alive) near.memory.nearMiss(from);
   }
 
