@@ -1,6 +1,7 @@
 /**
- * primitives.ts — The six primitive surfaces the tree builds from: box,
- * cylinder, torus, icosphere, sphere and polyhedron, as `GeometryBuffer`s.
+ * primitives.ts — The eight primitive surfaces the tree builds from: box,
+ * cylinder, torus, icosphere, sphere, polyhedron, plane and disc, as
+ * `GeometryBuffer`s (the last two for the optics' glass, X1.3).
  * Owns: the generators, their option shapes, and the side-orientation step
  * they share. No state but one cached unit cube (`createBox`); imports nothing
  * but `src/math/` and `buffer.ts`.
@@ -1229,3 +1230,97 @@ POLYHEDRA[14] = {
     [22, 17, 11, 5, 4, 8, 14, 19, 23, 24],
   ],
 };
+
+// --- plane -------------------------------------------------------------------
+
+export interface PlaneOptions {
+  size?: number;
+  width?: number;
+  height?: number;
+  sideOrientation?: number;
+}
+
+/** `CreatePlaneVertexData`: a `width` by `height` quad in XY, facing -Z. */
+export function createPlane(options: PlaneOptions): GeometryBuffer {
+  const indices: number[] = [];
+  const positions: number[] = [];
+  const normals: number[] = [];
+  const uvs: number[] = [];
+  const width = options.width !== undefined ? options.width : options.size !== undefined ? options.size : 1;
+  const height = options.height !== undefined ? options.height : options.size !== undefined ? options.size : 1;
+  const sideOrientation = sideOf(options.sideOrientation);
+  // Vertices
+  const halfWidth = width / 2.0;
+  const halfHeight = height / 2.0;
+  positions.push(-halfWidth, -halfHeight, 0);
+  normals.push(0, 0, -1.0);
+  uvs.push(0.0, 0.0);
+  positions.push(halfWidth, -halfHeight, 0);
+  normals.push(0, 0, -1.0);
+  uvs.push(1.0, 0.0);
+  positions.push(halfWidth, halfHeight, 0);
+  normals.push(0, 0, -1.0);
+  uvs.push(1.0, 1.0);
+  positions.push(-halfWidth, halfHeight, 0);
+  normals.push(0, 0, -1.0);
+  uvs.push(0.0, 1.0);
+  // Indices
+  indices.push(0);
+  indices.push(1);
+  indices.push(2);
+  indices.push(0);
+  indices.push(2);
+  indices.push(3);
+  // Sides
+  computeSides(sideOrientation, positions, indices, normals, uvs);
+  return result(positions, normals, uvs, indices);
+}
+
+// --- disc --------------------------------------------------------------------
+
+export interface DiscOptions {
+  radius?: number;
+  tessellation?: number;
+  arc?: number;
+  sideOrientation?: number;
+}
+
+/** `CreateDiscVertexData`: a fan in XY around its centre, the first vertex. */
+export function createDisc(options: DiscOptions): GeometryBuffer {
+  const positions: number[] = [];
+  const indices: number[] = [];
+  const normals: number[] = [];
+  const uvs: number[] = [];
+  const radius = options.radius || 0.5;
+  const tessellation = options.tessellation || 64;
+  const arc = options.arc && (options.arc <= 0 || options.arc > 1) ? 1.0 : options.arc || 1.0;
+  const sideOrientation = sideOf(options.sideOrientation);
+  // positions and uvs
+  positions.push(0, 0, 0); // disc center first
+  uvs.push(0.5, 0.5);
+  const theta = Math.PI * 2 * arc;
+  const step = arc === 1 ? theta / tessellation : theta / (tessellation - 1);
+  let a = 0;
+  for (let t = 0; t < tessellation; t++) {
+    const x = Math.cos(a);
+    const y = Math.sin(a);
+    const u = (x + 1) / 2;
+    const v = (1 - y) / 2;
+    positions.push(radius * x, radius * y, 0);
+    uvs.push(u, v);
+    a += step;
+  }
+  if (arc === 1) {
+    positions.push(positions[3], positions[4], positions[5]); // close the circle
+    uvs.push(uvs[2], uvs[3]);
+  }
+  //indices
+  const vertexNb = positions.length / 3;
+  for (let i = 1; i < vertexNb - 1; i++) {
+    indices.push(i + 1, 0, i);
+  }
+  // result
+  computeNormalsInto(positions, indices, normals);
+  computeSides(sideOrientation, positions, indices, normals, uvs);
+  return result(positions, normals, uvs, indices);
+}

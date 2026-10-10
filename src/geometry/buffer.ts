@@ -1,16 +1,19 @@
 /**
  * buffer.ts — `GeometryBuffer`: one surface's vertex arrays, as typed arrays,
- * with the three things the kit does to one — `merge`, `transform` and
- * `computeNormals` — done exactly as Babylon's `VertexData` does them.
+ * with what the kit and the models do to one — `merge`, `mergeTransformed`
+ * (`Mesh.MergeMeshes`' arithmetic, each member under its own matrix),
+ * `transform`, `bake` (`Mesh.bakeTransformIntoVertices`) and
+ * `computeNormals` — done exactly as Babylon's `VertexData` and `Mesh` do them.
  * Owns: the buffer class, `FloatArray`, and the conversions in and out of
  * plain arrays. No state, no tunable, and imports nothing but `src/math/` — not
  * `@babylonjs/core`, not `CONFIG` — so a Node script loads it by type stripping
  * (`scripts/geometry-check.mjs`), and so will the server and the renderer.
  *
  * **It exists so the world's geometry stops being Babylon's** (BABYLON_EXIT.md
- * X1.2): the kit and the scatter props build these, `world/parts.ts` is the
- * one place one becomes a Babylon mesh, and the merge moves onto them next
- * (X1.4).
+ * X1.2, X1.3): the kit, the scatter props and the models (weapons, optics,
+ * hulls, soldiers, throwables) build these, `world/parts.ts` is the one place
+ * one becomes a Babylon mesh, the models already merge on them, and the
+ * world's merge moves onto them next (X1.4).
  *
  * ## The one rule: the same bits as Babylon
  *
@@ -40,7 +43,8 @@
  * The Babylon.js team" (its NOTICE). Changes from the original: typed arrays in
  * place of `number[]`, only the attributes the tree carries (no tangents, no
  * skinning, no third UV set onward), no material infos, no completion, no
- * coroutine, and `ComputeNormals` without its facet options.
+ * coroutine, `mergeTransformed` returning a new buffer where Babylon writes
+ * onto its first member, and `ComputeNormals` without its facet options.
  */
 import { Vector3, type MatrixLike } from "../math/index.ts";
 
@@ -118,7 +122,7 @@ export class GeometryBuffer {
    * normal through its upper 3x3 and NOT renormalised, and the winding turned
    * over when the matrix mirrors. In place, as Babylon's is.
    */
-  transform(matrix: MatrixLike & { determinant(): number }): this {
+  transform(matrix: MergeMatrix): this {
     const flip = matrix.determinant() < 0;
     transformCoordinates(this.positions, matrix, 0, this.positions.length);
     if (this.normals) transformNormals(this.normals, matrix, 0, this.normals.length);
@@ -137,37 +141,44 @@ export class GeometryBuffer {
    */
   merge(others: GeometryBuffer | readonly GeometryBuffer[]): this {
     const list = Array.isArray(others) ? (others as readonly GeometryBuffer[]) : [others as GeometryBuffer];
-    validate(this);
-    for (const other of list) {
-      validate(other);
-      if (
-        !this.normals !== !other.normals ||
-        !this.uvs !== !other.uvs ||
-        !this.uvs2 !== !other.uvs2 ||
-        !this.colors !== !other.colors
-      ) {
-        throw new Error("Cannot merge vertex data that do not have the same set of attributes");
+    const merged = mergeTransformed(
+      { buffer: this, transform: null },
+      list.map((buffer) => ({ buffer, transform: null })),
+    );
+    this.indices = merged.indices;
+    this.positions = merged.positions;
+    this.normals = merged.normals;
+    this.uvs = merged.uvs;
+    this.uvs2 = merged.uvs2;
+    this.colors = merged.colors;
+    return this;
+  }
+
+  /**
+   * `Mesh.bakeTransformIntoVertices(matrix)`: every position through the full
+   * matrix and every normal through its upper 3x3 AND renormalised — which is
+   * where it differs from `transform`, and why a part baked on its own and the
+   * same part merged are not the same bits — then the winding turned over when
+   * the matrix mirrors. In place, as Babylon's is.
+   */
+  bake(matrix: MergeMatrix): this {
+    transformCoordinates(this.positions, matrix, 0, this.positions.length);
+    const normals = this.normals;
+    if (normals) {
+      for (let index = 0; index < normals.length; index += 3) {
+        Vector3.TransformNormalFromFloatsToRef(
+          normals[index],
+          normals[index + 1],
+          normals[index + 2],
+          matrix,
+          scratch,
+        ).normalize();
+        normals[index] = scratch.x;
+        normals[index + 1] = scratch.y;
+        normals[index + 2] = scratch.z;
       }
     }
-    let totalIndices = this.indices.length;
-    for (const other of list) totalIndices += other.indices.length;
-    const indices = new Uint32Array(totalIndices);
-    indices.set(this.indices);
-    let indicesOffset = this.indices.length;
-    let positionsOffset = this.positions.length / 3;
-    for (const other of list) {
-      for (let index = 0; index < other.indices.length; index++) {
-        indices[indicesOffset + index] = other.indices[index] + positionsOffset;
-      }
-      positionsOffset += other.positions.length / 3;
-      indicesOffset += other.indices.length;
-    }
-    this.indices = indices;
-    this.positions = mergeElement(this.positions, list.map((o) => o.positions));
-    if (this.normals) this.normals = mergeElement(this.normals, list.map((o) => o.normals!));
-    if (this.uvs) this.uvs = mergeElement(this.uvs, list.map((o) => o.uvs!));
-    if (this.uvs2) this.uvs2 = mergeElement(this.uvs2, list.map((o) => o.uvs2!));
-    if (this.colors) this.colors = mergeElement(this.colors, list.map((o) => o.colors!));
+    if (matrix.determinant() < 0) flipFaces(this.indices, 0, this.indices.length);
     return this;
   }
 
@@ -184,19 +195,105 @@ export class GeometryBuffer {
   }
 }
 
+/** A matrix a buffer can be put through and asked whether it mirrors. */
+export type MergeMatrix = MatrixLike & { determinant(): number };
+
+/** One member of `mergeTransformed`: a buffer, and the matrix it goes through, if any. */
+export interface MergeMember {
+  buffer: GeometryBuffer;
+  transform: MergeMatrix | null;
+}
+
 /**
- * `VertexData._MergeElement` without a transform: the source's values, then
- * each other's, in an array of the SOURCE's type — a `Float32Array` source
- * rounds what it copies, anything else keeps doubles.
+ * `VertexData._mergeCoroutine(transform, others)` — what `Mesh.MergeMeshes`
+ * runs, each member under its own WORLD matrix — returning a NEW buffer and
+ * leaving every member's arrays as they were.
+ *
+ * **The transform happens INSIDE the merge, and that is the whole reason
+ * this is not `transform` then `merge`.** Babylon copies each member into the
+ * output array first and transforms it there, so a `Float32Array` first
+ * member rounds a double member's values BEFORE they are transformed, and a
+ * double first member transforms a float32 member's values in doubles.
+ * Transforming first and merging after rounds at the other end, and moves a
+ * bit.
+ *
+ * Babylon's two quirks are kept: the first member's winding is turned over
+ * only when somebody after it adds indices (its flip sits inside the branch
+ * that grows the index array), and each later member's only over its own
+ * range. Refuses members that disagree on which attributes they carry.
  */
-function mergeElement(source: FloatArray, others: readonly FloatArray[]): FloatArray {
+export function mergeTransformed(first: MergeMember, others: readonly MergeMember[]): GeometryBuffer {
+  const root = first.buffer;
+  validate(root);
+  for (const { buffer: other } of others) {
+    validate(other);
+    if (
+      !root.normals !== !other.normals ||
+      !root.uvs !== !other.uvs ||
+      !root.uvs2 !== !other.uvs2 ||
+      !root.colors !== !other.colors
+    ) {
+      throw new Error("Cannot merge vertex data that do not have the same set of attributes");
+    }
+  }
+  let totalIndices = root.indices.length;
+  for (const { buffer: other } of others) totalIndices += other.indices.length;
+  const indices = new Uint32Array(totalIndices);
+  indices.set(root.indices);
+  let indicesOffset = root.indices.length;
+  if (indicesOffset !== totalIndices && first.transform && first.transform.determinant() < 0) {
+    flipFaces(indices, 0, indicesOffset);
+  }
+  let positionsOffset = root.positions.length / 3;
+  for (const { buffer: other, transform } of others) {
+    for (let index = 0; index < other.indices.length; index++) {
+      indices[indicesOffset + index] = other.indices[index] + positionsOffset;
+    }
+    if (transform && transform.determinant() < 0) flipFaces(indices, indicesOffset, other.indices.length);
+    positionsOffset += other.positions.length / 3;
+    indicesOffset += other.indices.length;
+  }
+  const element = (pick: (b: GeometryBuffer) => FloatArray | null, range: TransformRange | null) =>
+    mergeElement(
+      pick(root)!,
+      first.transform,
+      others.map((o) => [pick(o.buffer)!, o.transform] as const),
+      range,
+    );
+  return new GeometryBuffer({
+    positions: element((b) => b.positions, transformCoordinates),
+    normals: root.normals ? element((b) => b.normals, transformNormals) : null,
+    uvs: root.uvs ? element((b) => b.uvs, null) : null,
+    uvs2: root.uvs2 ? element((b) => b.uvs2, null) : null,
+    colors: root.colors ? element((b) => b.colors, null) : null,
+    indices,
+  });
+}
+
+type TransformRange = (values: FloatArray, matrix: MatrixLike, offset: number, length: number) => void;
+
+/**
+ * `VertexData._MergeElement`: the source's values, then each other's, in an
+ * array of the SOURCE's type — a `Float32Array` source rounds what it copies,
+ * anything else keeps doubles — each range put through its own member's
+ * matrix in place once it is in the output (positions and normals; a UV or a
+ * colour has no `range`).
+ */
+function mergeElement(
+  source: FloatArray,
+  transform: MergeMatrix | null,
+  others: readonly (readonly [FloatArray, MergeMatrix | null])[],
+  range: TransformRange | null,
+): FloatArray {
   let len = source.length;
-  for (const o of others) len += o.length;
+  for (const [o] of others) len += o.length;
   const out = source instanceof Float32Array ? new Float32Array(len) : new Float64Array(len);
   out.set(source);
+  if (transform && range) range(out, transform, 0, source.length);
   let offset = source.length;
-  for (const o of others) {
+  for (const [o, matrix] of others) {
     out.set(o, offset);
+    if (matrix && range) range(out, matrix, offset, o.length);
     offset += o.length;
   }
   return out;

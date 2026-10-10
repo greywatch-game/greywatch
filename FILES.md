@@ -129,8 +129,9 @@ scripts/                      # Node tooling, run by hand or by `npm run build`,
   geometry-check.mjs          # `node scripts/geometry-check.mjs`: builds every
                               #   generator in src/geometry/ and Babylon's of
                               #   the same name over seeded options, and runs
-                              #   merge, transform and computeNormals against
-                              #   VertexData's, comparing every number BIT for
+                              #   merge (with and without each member's
+                              #   matrix), transform, bake and computeNormals
+                              #   against Babylon's, comparing every number BIT for
                               #   bit; fails on an export no case covers.
                               #   Deleted with Babylon (X6.1). Not a gate
   math-check.mjs              # `node scripts/math-check.mjs`: runs every
@@ -368,16 +369,20 @@ src/
                         #   babylonRayHit for a system still reading a hit
                         #   with Babylon's methods). The one file here that
                         #   imports Babylon; shrinks to nothing by X6.1
-  geometry/         # Surfaces as typed arrays (BABYLON_EXIT.md X1.2): what
-                    #   the world kit and the scatter props build, Babylon's
-                    #   arithmetic copied bit for bit. Imports nothing but
+  geometry/         # Surfaces as typed arrays (BABYLON_EXIT.md X1.2, X1.3):
+                    #   what the world kit, the scatter props and the models
+                    #   build, Babylon's arithmetic copied bit for bit. Imports nothing but
                     #   src/math/ and names its .ts imports, so Node loads it
     buffer.ts           # GeometryBuffer (positions, normals, uvs, uv2,
                         #   colours, indices — Float64Array where Babylon held
                         #   a number[], Float32Array where it held one) and
-                        #   VertexData's merge, transform and ComputeNormals
+                        #   VertexData's merge, transform and ComputeNormals;
+                        #   mergeTransformed (MergeMeshes' merge, each member
+                        #   under its own matrix) and bake (Mesh's
+                        #   bakeTransformIntoVertices)
     primitives.ts       # createBox / createCylinder / createTorus /
-                        #   createIcoSphere / createSphere / createPolyhedron:
+                        #   createIcoSphere / createSphere / createPolyhedron /
+                        #   createPlane / createDisc:
                         #   Babylon's Create*VertexData, same vertex order,
                         #   normals and UVs. createBox scales one cached cube
   core/
@@ -1120,12 +1125,18 @@ src/
                         #   out, a core, embers, a bounds marker — in one
                         #   GeometryBuffer whose UVs FlameShader decodes.
                         #   flamePart for the kit's Build.flame
-    parts.ts            # Part — what the kit and the props build: a
-                        #   GeometryBuffer, a transform, a material, metadata,
-                        #   a prop's parent — flattenParts (the links composed
-                        #   at emit time, Babylon's setParent(null) step for
-                        #   step), and partMesh/vertexDataOf, THE adapter into
-                        #   Babylon. Plus the part MESHES the merge runs on,
+    parts.ts            # Part — what the kit, the props and the models
+                        #   build: a GeometryBuffer, a transform, a material,
+                        #   metadata, a parent (a Part or a PartNode, a build
+                        #   frame that draws nothing) — flattenParts (the links
+                        #   composed at emit time, Babylon's setParent(null)
+                        #   step for step: detachPart), mergeParts and
+                        #   bakePartTransform (MergeMeshes and
+                        #   bakeCurrentTransformIntoVertices, for the models),
+                        #   and the adapters into Babylon: partMesh for the
+                        #   world's merge, drawnMesh for a model (uploaded,
+                        #   ready to draw), vertexDataOf. Plus the part MESHES
+                        #   the world's merge runs on,
                         #   built without ever reaching the GPU: uploading
                         #   geometry that a merge throws away was half of a
                         #   1500 m build. partSurface, and uploadPart, which

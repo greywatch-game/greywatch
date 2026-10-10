@@ -276,10 +276,12 @@ exactly what a Babylon routine does, minus a GPU upload:
 
 There were four until BABYLON_EXIT.md X1.2. The fourth was `boxVertexData`,
 which scaled one cached `CreateBoxVertexData` cube; the kit's and the props'
-geometry is now OURS (`src/geometry/`: the six primitive generators, the merge,
+geometry is now OURS (`src/geometry/`: the primitive generators, the merge,
 the transform and the normals, copied operation for operation), so an upgrade
 cannot move a vertex the kit builds — what it can still move is the merge
-above. `scripts/geometry-check.mjs` compares ours with the INSTALLED Babylon,
+above. Since X1.3 the models (weapons, optics, hulls, soldiers, thrown things)
+build on the same layer and merge on it too (`mergeTransformed`, `bake`), so
+an upgrade cannot move a vertex of theirs either. `scripts/geometry-check.mjs` compares ours with the INSTALLED Babylon,
 so after an upgrade a difference there means Babylon's generators changed, not
 ours: worth knowing, and worth nothing to the map, which no longer calls
 them. X1.4 takes the merge onto buffers too, and with it the three above.

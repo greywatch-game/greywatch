@@ -4,9 +4,11 @@
  *
  *   node scripts/geometry-check.mjs [--trials 400] [--seed 1]
  *
- * `src/geometry/` is a port of the six primitive generators the tree builds
- * from and of the three things the kit does to vertex data — merge it,
- * transform it, compute its normals (BABYLON_EXIT.md X1.2) — and its whole
+ * `src/geometry/` is a port of the eight primitive generators the tree builds
+ * from and of what the kit and the models do to vertex data — merge it (with
+ * each member under its own matrix, as `Mesh.MergeMeshes` does), transform
+ * it, bake a transform into it as `Mesh.bakeTransformIntoVertices` does,
+ * compute its normals (BABYLON_EXIT.md X1.2, X1.3) — and its whole
  * claim is that a surface built through it is the surface Babylon built: one
  * vertex out of place moves every building made of it, and `kit:hash` and
  * `merge:hash` compare bits. This builds each one both ways over seeded
@@ -29,7 +31,7 @@
  */
 import * as B from "@babylonjs/core";
 import * as G from "../src/geometry/primitives.ts";
-import { GeometryBuffer, computeNormals } from "../src/geometry/buffer.ts";
+import { GeometryBuffer, computeNormals, mergeTransformed } from "../src/geometry/buffer.ts";
 import { Matrix as OurMatrix, Quaternion as OurQuaternion, Vector3 as OurVector3 } from "../src/math/index.ts";
 import { mulberry32 } from "../src/world/rng.ts";
 
@@ -171,6 +173,18 @@ caseOf("createPolyhedron", G.createPolyhedron, B.CreatePolyhedronVertexData, () 
   }),
 );
 
+caseOf("createPlane", G.createPlane, B.CreatePlaneVertexData, () =>
+  clean({ size: maybe(dim()), width: maybe(dim()), height: maybe(dim()), sideOrientation: side() }),
+);
+caseOf("createDisc", G.createDisc, B.CreateDiscVertexData, () =>
+  clean({
+    radius: maybe(dim()),
+    tessellation: maybe(pick([3, 6, 12, 24, 64])),
+    arc: maybe(pick([0.25, 0.5, 1, 1.5, -1, 0])),
+    sideOrientation: side(),
+  }),
+);
+
 // ---------------------------------------------------------------------------
 // The buffer: normals, transform and merge, against VertexData's.
 
@@ -208,6 +222,18 @@ function withNormals(a) {
   return { ...a, normals };
 }
 
+/** A scale (sometimes mirrored), a rotation and a translation (sometimes -0). */
+function drawMatrix() {
+  return {
+    s: [rand() < 0.3 ? -1 : 1, 1 + rand(), rand() < 0.2 ? 1 : 0.5 + rand()],
+    q: [rand() * 2 - 1, rand() * 2 - 1, rand() * 2 - 1, rand() * 2 - 1],
+    t: [rand() * 10, rand() * 10, rand() < 0.2 ? -0 : rand() * 10],
+  };
+}
+
+/** The one scene the bake case builds its meshes in: a mesh needs one. */
+const bakeScene = new B.Scene(new B.NullEngine());
+
 const BUFFER_CASES = {
   computeNormals() {
     const a = soup();
@@ -240,6 +266,63 @@ const BUFFER_CASES = {
       parts.map((p) => p.f32),
       `ours ${ours.positions.constructor.name}, Babylon's ${theirs.positions.constructor.name}`,
     );
+  },
+  mergeTransformed() {
+    // What `Mesh.MergeMeshes` runs: every member under its own world matrix,
+    // transformed INSIDE the merge (see `buffer.ts`), mirrors included.
+    const count = 1 + Math.floor(rand() * 4);
+    const uv = rand() < 0.8;
+    const parts = Array.from({ length: count }, () => ({
+      a: withNormals(soup(uv)),
+      f32: rand() < 0.3,
+      m: rand() < 0.15 ? null : drawMatrix(),
+    }));
+    const [first, ...rest] = parts;
+    const theirMatrix = (m) => (m ? B.Matrix.Compose(new B.Vector3(...m.s), new B.Quaternion(...m.q), new B.Vector3(...m.t)) : undefined);
+    const ourMatrix = (m) => (m ? OurMatrix.Compose(new OurVector3(...m.s), new OurQuaternion(...m.q), new OurVector3(...m.t)) : null);
+    const steps = theirsOf(first.a, first.f32)._mergeCoroutine(
+      theirMatrix(first.m),
+      rest.map((p) => ({ vertexData: theirsOf(p.a, p.f32), transform: theirMatrix(p.m) })),
+      true,
+      false,
+      false,
+    );
+    let step = steps.next();
+    while (!step.done) step = steps.next();
+    const theirs = step.value;
+    const members = parts.map((p) => ({ buffer: oursOf(p.a, p.f32), transform: ourMatrix(p.m) }));
+    const before = members.map((m) => m.buffer.clone());
+    const ours = mergeTransformed(members[0], members.slice(1));
+    sameData("mergeTransformed", ours, theirs, parts);
+    sameValue(
+      "mergeTransformed keeps the first member's precision",
+      (ours.positions instanceof Float32Array) === (theirs.positions instanceof Float32Array),
+      parts.map((p) => p.f32),
+      `ours ${ours.positions.constructor.name}, Babylon's ${theirs.positions.constructor.name}`,
+    );
+    // Babylon writes the merge onto its first member; ours must not touch any.
+    members.forEach((m, i) =>
+      sameData("mergeTransformed leaves its members alone", m.buffer, before[i], parts[i]),
+    );
+  },
+  bake() {
+    // `Mesh.bakeTransformIntoVertices`, on a real mesh: normals renormalised,
+    // a mirror turning the winding over.
+    const a = withNormals(soup());
+    const f32 = rand() < 0.3;
+    const m = drawMatrix();
+    const mesh = new B.Mesh("bake", bakeScene);
+    theirsOf(a, f32).applyToMesh(mesh);
+    mesh.bakeTransformIntoVertices(B.Matrix.Compose(new B.Vector3(...m.s), new B.Quaternion(...m.q), new B.Vector3(...m.t)));
+    const theirs = {
+      positions: mesh.getVerticesData("position"),
+      normals: mesh.getVerticesData("normal"),
+      uvs: mesh.getVerticesData("uv"),
+      indices: mesh.getIndices(),
+    };
+    const ours = oursOf(a, f32).bake(OurMatrix.Compose(new OurVector3(...m.s), new OurQuaternion(...m.q), new OurVector3(...m.t)));
+    sameData("bake", ours, theirs, { a, f32, m });
+    mesh.dispose();
   },
   mergeRefusesMismatch() {
     const a = withNormals(soup(true));
