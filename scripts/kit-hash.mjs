@@ -40,8 +40,9 @@
  * and since a layout places a REGION rather than a prop, each kind is built
  * over `SCATTER_SEEDS` fixed seeds at every rung of `CONFIG.graphics.foliage`
  * instead of over its placements. Its two halves are the scatter's own: the
- * DRAWING is the prop as `flatten` (`world/merge.ts`) would hand it to the
- * merge — the root and every child mesh, in that order, metadata included,
+ * DRAWING is the prop as `flatten` (`world/merge.ts`) hands it to the merge
+ * — the root and every child mesh, in that order, each child's parent
+ * composed into its own transform and the link cut, metadata included,
  * because `noInk`/`noGlow`/`noShadowCaster` are part of the merge key — and the
  * COLLIDERS are what decides where a blocking field's boxes go: the kind's
  * `PROP_BODIES` row, and how many numbers the builder drew from the REGION's
@@ -267,6 +268,7 @@ async function hashJobs(jobs) {
     B.Logger.LogLevels = B.Logger.NoneLogLevel;
     const { BUILDERS } = await server.ssrLoadModule("/src/world/BuildingKit.ts");
     const { SCATTER_BUILDERS, PROP_BODIES } = await server.ssrLoadModule("/src/world/MapBuilder.ts");
+    const { flatten } = await server.ssrLoadModule("/src/world/merge.ts");
     const engine = new B.NullEngine();
     let scene = new B.Scene(engine);
     // A material is named for the factory call that asked for it, so a
@@ -293,7 +295,7 @@ async function hashJobs(jobs) {
       cache.clear();
       try {
         if (p.scatter) {
-          out[key] = hashScatter(SCATTER_BUILDERS[p.kind], PROP_BODIES[p.kind], scene, mats, p);
+          out[key] = hashScatter(SCATTER_BUILDERS[p.kind], PROP_BODIES[p.kind], flatten, scene, mats, p);
           continue;
         }
         const floor = p.bare ? 0 : swell(p.x, p.z);
@@ -324,12 +326,17 @@ async function hashJobs(jobs) {
  * One scatter prop, built off `p.seed` at foliage `p.foliage` and hashed in
  * two halves — see the header for what each one is.
  */
-function hashScatter(build, body, scene, mats, p) {
+function hashScatter(build, body, flatten, scene, mats, p) {
   const rng = counted(mulberry32(p.seed));
   const root = build(scene, mats, rng, mulberry32(p.seed ^ 0x2545f491), p.foliage);
   const draw = createHash("sha256");
-  // `flatten`'s order (`world/merge.ts`): the root, then its child meshes.
-  for (const m of [root, ...root.getChildMeshes()]) {
+  // What `flatten` (`world/merge.ts`) hands the merge: the root, then every
+  // child mesh with its parent's transform composed into its own and the
+  // link cut. Hashed AFTER that rather than before, so the fingerprint is of
+  // what the merge reads and not of how a builder chose to say it — a child
+  // parented to a trunk and one placed where the trunk would have put it are
+  // the same drawing.
+  for (const m of flatten(root)) {
     draw.update(`|${m.name}|${m.material?.name}|${JSON.stringify(m.metadata ?? null)}|`);
     hashMesh(draw, m);
   }
