@@ -380,7 +380,7 @@ Five things are load-bearing:
 the squad's FIRST body when it cuts the squads — a fixed slot rather than a roll,
 so a team fields exactly `perSquad` of them however the pool is seeded. It rides
 the pool slot the way the skill seed does, so it survives a bench, a respawn and
-a round.
+a round. It is a plain field; the tube on the back is `BotRig`'s, which reads it.
 
 **A bot's launcher is for ARMOUR and nothing else**, and that test is the first
 line of `considerRocket` rather than a band or a chance, because it is the rule

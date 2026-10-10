@@ -206,8 +206,15 @@ Three things carry the frame budget; undoing any costs ~10× draw calls or a
 permanent hitch:
 
 - **The rig pool is built once per ROSTER SIZE and never disposed inside a
-  round.** Death hides a rig, respawn re-poses it. `new Bot()` allocates a dozen
-  meshes and their GL buffers, and Conquest respawns continuously.
+  round.** Death takes a body out of the world (`Bot.shown`) and its rig
+  follows; respawn puts it back and counts a new `life`, on which the rig is
+  put back in its rest pose. A rig is a dozen meshes and their GPU buffers,
+  and Conquest respawns continuously. **The pool is two halves since
+  BABYLON_EXIT.md X2.2 C7**: `BattleSystem` holds the `Bot`s — simulation on
+  `src/math`, no rig, no scene, no camera — and a client's `BattleView` holds
+  one `BotRig` per bot, which reads the bot and never writes it. The
+  authority builds no rig at all (its peak RSS on Sarab fell from 471 MB to
+  426).
 - **Bot rigs are fourteen merged meshes and two materials** (`SoldierModel`) —
   forty-odd boxes and faceted lofts merged one mesh per SEGMENT, which is one
   per joint. **What a rig costs is therefore JOINTS, and no longer colours or
@@ -234,7 +241,9 @@ is exactly that roster rather than a ceiling every map pays for.
 `CONFIG.bots.maxPerTeam` (24); Sarab is the only map that states one, and
 `perTeamOf` is where the default and the bound live. `Game.buildRound` pushes it
 through `BattleSystem.setRoster`, which is a no-op at the same size and
-otherwise disposes the pool and builds a new one — so a map that says nothing
+otherwise builds a new pool (bumping `poolVersion`), and then
+`BattleView.syncPool`, which rebuilds the rigs when that version or the
+viewer's side moved — so a map that says nothing
 gets the same sixteen bodies with the same squads, the same launchers, the same
 molotov carriers (each squad's LAST body, the launcher's rule from the other end
 — `docs/grenades.md`) and the same movement seeds it always had, bit for bit.
@@ -249,8 +258,9 @@ placed where a map change already disposes the world, rebuilds it and holds a
 loading card over the wait, and `setRoster` is called from `buildRound` and
 never from `installMap` — the editor is that method's other caller and has no
 round, no player and no bots. It runs after `RagdollSystem.reset` and
-`VehicleCrew.clear`, the two things that hold a body, and before
-`setDifficulty`, which draws a skill for every bot in the pool it is handed.
+`VehicleCrew.clear`, the two things that hold a body (the ragdolls a RIG, the
+crews a BOT), and before `setDifficulty`, which draws a skill for every bot in
+the pool it is handed.
 
 **Nothing else in this layer knows a size.** The squads come out of
 `squadSize` (24 a side is six squads rather than two, and `planSquads` has never
@@ -263,7 +273,8 @@ the ~64-body roster that note names as the point to revisit it.
 
 **On the AUTHORITY `setRoster` is called exactly once and the pool IS the
 ceiling**, which is the mirror image of everything above and is the right trade
-there for the opposite reason: that process draws nothing and walks no meshes,
+there for the opposite reason: that process draws nothing, builds no rig and
+walks no meshes,
 and it needs team 1's block to begin at the same slot index on every map a match
 rotates onto, because a slot index IS a bot index and a table that grew and
 shrank under the humans sitting in it would take `ScoreBook`'s rows, the wire's
@@ -315,12 +326,13 @@ budget is the one thing here that does not scale.
 - **A bot's MUZZLE is an outcome, so it is ARITHMETIC and never a rig read.**
   It is where a bot's shot is heard from and where its rocket leaves, and
   `Bot.muzzleWorld` replays it (`soldierPose.ts`'s `soldierMuzzleToRef`) off
-  the root `syncTransform` last wrote and the pose last solved onto the joints
+  the root `syncTransform` last stood (`Bot.rootX`..`rootYaw`, which `BotRig`
+  writes onto the rig's root unchanged) and the pose last solved
   — the same float32 node chain Babylon's forced `computeWorldMatrix(true)`
   walked, bit for bit (BABYLON_EXIT.md X2.2 C5 proved it against the rig at
   every read over whole rounds on all seven maps). **The pose is FILLED every
   frame for every live bot, and only WRITING it onto the rig is the LOD's**
-  (`lodFreezeDistance`) — solving it is deferred to whoever reads it, the rig
+  (`lodFreezeDistance`, `BattleView`) — solving it is deferred to whoever reads it, the rig
   or a shot (`Bot.solved`), which is the same numbers since `SoldierMotion.fill`
   is the stateful half — because the muzzle used to be the frozen rig's: the
   authority, whose "camera" is the origin, answered with a live pose only for

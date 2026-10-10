@@ -465,7 +465,7 @@ grade check, and `buildServerWorld`. Three things a larger map owes:
 **`EnvironmentSpec.fogEnd` — how far you can see.** `FOG_WALL` in
 `config/fogWall.ts` used to be the answer and is now only the DEFAULT: a map's
 `fogEnd` is pushed by `Game.installMap` into the three systems that gate on it —
-`BattleSystem` (where a rig stops being drawn), `RagdollSystem` (where a corpse
+`BattleView` (where a rig stops being drawn), `RagdollSystem` (where a corpse
 is not worth tumbling) and `NetRoster` (the same call for a remote body). The
 old dev warning that checked the two against each other is gone, because the
 disagreement it reported is now the feature.
@@ -531,8 +531,9 @@ or not — `WorldCulling` is explicit that a disabled mesh is skipped CHEAPLY an
 not skipped, which is the whole reason that file exists. So a pool built to
 `CONFIG.bots.maxPerTeam` (24) on every map would put six hundred meshes nobody
 is fighting into a village whose entire frame is under 2 ms.
-`BattleSystem.setRoster` therefore disposes the pool and builds a new one when
-the number MOVES, which is the one place the "built once and never disposed"
+`BattleSystem.setRoster` therefore builds a new pool when the number MOVES (and
+`BattleView.syncPool` new rigs for it), which is the one place the "built once
+and never disposed"
 rule bends, and it bends at a map change — where the whole world is being
 rebuilt anyway and a loading card is already up. Measured on the box this was
 written on, Sarab is 15.2-15.7 ms a frame at 24 a side against 10.8 at 8, warm

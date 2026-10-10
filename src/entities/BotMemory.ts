@@ -7,11 +7,11 @@
  * on respawn, never reallocated. Never raycasts and never touches the scene: a
  * cue is a *bearing*, not an enemy, and promoting one to a target would let a
  * bot shoot at a noise. Everything here decays; nothing is permanent knowledge.
+ * `src/math` throughout, like the `Bot` that holds it.
  */
-import { Vector3 } from "@babylonjs/core";
 import { CONFIG } from "../config";
 import type { Combatant } from "./Combatant";
-import type { Vector3Like } from "../math";
+import { Vector3, type Vector3Like } from "../math";
 
 /**
  * What a bot remembers.

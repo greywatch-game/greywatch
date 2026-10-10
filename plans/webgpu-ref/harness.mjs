@@ -250,7 +250,7 @@ export function placeVantage(page, vantage) {
     // vantage's frame is a function of its own row and never of the one shot
     // before it in the same boot.
     // The place, not the fight: no bodies, no rings, no beacons.
-    for (const bot of g.battle.bots) bot.rig.root.setEnabled(false);
+    for (const body of g.battleView.rigs) body.rig.root.setEnabled(false);
     // HIDDEN rather than disposed, which is what a row asking for them needs:
     // a boot shoots the whole table in order and a disposed ring is gone for
     // every row after the one that took it.
@@ -296,7 +296,7 @@ export function placeVantage(page, vantage) {
       const soldier = await import("/src/entities/SoldierModel.ts");
       const { REST_POSE } = await import("/src/entities/soldierPose.ts");
       v.rigs.forEach((r, i) => {
-        const rig = g.battle.bots[i].rig;
+        const rig = g.battleView.rigs[i].rig;
         soldier.resetSoldierPose(rig);
         soldier.animateSoldier(rig, { ...REST_POSE, ...(r.pose ?? {}) });
         const [rx, rz] = r.at;
@@ -315,7 +315,7 @@ export function placeVantage(page, vantage) {
     // shadow window cannot check it. Focus as `updateCameraAndLighting` puts
     // it: ahead of the eye along the view.
     const focus = target.subtract(cam.position).normalize().scaleInPlace(8).addInPlace(cam.position);
-    g.updateSceneForCamera(0, focus, null, [], g.battle.bots);
+    g.updateSceneForCamera(0, focus, null, [], g.battleView.rigs);
 
     // A blast in the air: the real `BlastFx` raised at a point and aged by
     // a fixed number of fixed steps, so it is posed in flight the same way

@@ -116,7 +116,7 @@ try {
     }
     await page.evaluate(({ px, pz, rot, v, keepZones }) => {
       const g = window.__celshock;
-      for (const bot of g.battle.bots) bot.rig.root.setEnabled(false);
+      for (const body of g.battleView.rigs) body.rig.root.setEnabled(false);
       if (!keepZones) g.zones?.dispose?.();
       const c = Math.cos(rot);
       const s = Math.sin(rot);

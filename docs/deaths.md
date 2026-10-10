@@ -91,9 +91,11 @@ above; a full pool no longer refuses but evicts (see below). What is left is a
 death past `death.maxDistance`, and that number has to be exactly where a rig
 stops being drawn rather than merely near it — because a body refused inside the
 fog would stand where it died until `death.hideTime`, with the tween that used to
-lay it down gone. `Bot.update`'s dead branch is what remains: while a ragdoll owns
-the joints it stands aside, and otherwise it hides the rig on the clock and poses
-nothing.
+lay it down gone. `Bot.update`'s dead branch is what remains: it takes the body
+out of the world on the clock (`Bot.shown`) and poses nothing, and the rig
+(`BotRig`) follows that unless a ragdoll owns its joints, in which case the rig
+stays drawn and nothing writes its root or its pose. The simulation no longer
+knows a ragdoll exists (BABYLON_EXIT.md X2.2 C7).
 
 That tween was exempt from the pose-freeze LOD *because it was five property
 writes*; **a ragdoll needs no such exemption**, because it poses through the proxy
@@ -146,11 +148,12 @@ session, and headless absolutes are inflated anyway. The PAIR is the measurement
 
 **The gate is the FOG WALL, and it is one number for everything that stops at it
 — the MAP's number.** Three systems gate on the same distance for the same
-reason (there is nothing to see past it): `BattleSystem`, where a rig stops being
-drawn; `NetRoster`, the same call for a body coming off the wire; and
-`death.maxDistance` here, one metre past which the solver would be tumbling
-something nobody can see. `BattleSystem` wrote its own `78` out by hand before
-any of this, which is how the ragdoll gate came to be keyed off an unrelated LOD.
+reason (there is nothing to see past it): `BattleView` (it was `BattleSystem`
+until the rigs left it), where a rig stops being drawn; `NetRoster`, the same
+call for a body coming off the wire; and `death.maxDistance` here, one metre
+past which the solver would be tumbling something nobody can see.
+`BattleSystem` wrote its own `78` out by hand before any of this, which is how
+the ragdoll gate came to be keyed off an unrelated LOD.
 
 What each of the three now holds is a FIELD that `Game.installMap` pushes one
 resolved distance into, and `FOG_WALL` in `config/fogWall.ts` is what they carry
@@ -221,7 +224,11 @@ FINDINGS #8's older 1.37 ms for four does not reproduce; see the note there.
 - **`resetSoldierPose` is the authoritative restore, and `animateSoldier(rig,
   REST_POSE)` is not a substitute.** That call writes Euler channels and the rifle's
   place in the torso, and never a `parent`, a `rotationQuaternion`, a `scaling` or the
-  position of any joint but `body` and `gun`. `Bot.spawn` calls the former. Verified across three lives on one rig — a leak
+  position of any joint but `body` and `gun`. `BotRig` calls the former on every
+  new `Bot.life` — at any distance, and before it writes a pose — since the rig
+  left `Bot.spawn` with the rest of the drawing (BABYLON_EXIT.md X2.2 C7, checked
+  live: a bullet death, a ragdoll, a respawn, no quaternion on any joint and the
+  body animating again). Verified across three lives on one rig — a leak
   shows on life 2.
 - **The map is registered as one static body PER 48 m BLOCK** — a
   `PhysicsShapeContainer` per block holding that block's collider boxes plus its
@@ -333,8 +340,13 @@ splash, both anti-tank items and a HULL BREWING UP with somebody inside it
 **The pool holds `RagdollSubject`s and cannot tell the two kinds apart.** That
 interface lives in `SoldierModel.ts`, beside the rig and bone table it is a fact
 about — not in `RagdollSystem`, because `DeathCam` needs it too and a system may not
-import another one. `Bot` satisfies it structurally and imports nothing, which keeps
-`Bot.ts` free of any knowledge that a physics engine exists. `retire(subject)` is
+import another one. A bot's `BotRig` satisfies it structurally and imports nothing
+of the pool's, which keeps it free of any knowledge that a physics engine exists
+— and the `Bot` itself is not a subject at all, having no rig: `Game` offers the
+pool `BattleView.corpseOf(bot)`, which first catches the rig's root and pose up
+to the bot (a crewman is set down beside his wreck and killed on the same line,
+between two frames of the view), and the three vectors the pool reads are
+`Vector3Like` because a bot's are `src/math`. `retire(subject)` is
 the one thing the player's corpse needs that a bot's does not: a bot's body outlives
 the death cam's window and goes on its own clock, while the player's has to be gone
 before the deploy screen comes up over it.
@@ -484,7 +496,7 @@ without that subtract turns feedback into a punishment.
   of death — fourteen merged meshes and their GL buffers is not a cost to pay on
   the frame the player is killed on.
 - **It is the third rig in the game and it is filed with the CULL like the other
-  two.** `buildSoldier` has three callers — `Bot`, `NetSoldier` and this — and this
+  two.** `buildSoldier` has three callers — `BotRig`, `NetSoldier` and this — and this
   one is not in either roster, so `Game.installBodyPools` has to name it
   explicitly (`DeathCam.body`). It was left out for a long time, and what that
   cost was the player's own corpse ragdolling with its head missing: nothing had

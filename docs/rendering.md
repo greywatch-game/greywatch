@@ -2267,7 +2267,8 @@ Lights come in three flavors: static fixtures (`lighting.add()`, registered by
 lights (`setCarried()`/`removeCarried()`). Transient and carried lights always get a
 slot; static fixtures compete nearest-first. **That is why bot muzzle flashes are
 budgeted**: 16 bots firing would take all 16 slots with transients and black out the
-village's lanterns, so `BattleSystem` only records flash positions and
+village's lanterns, so `BattleView` only records flash positions (told by
+`BattleSystem.onBotFired`) and
 `Game.spendMuzzleLightBudget` spends `CONFIG.lighting.muzzleBudgetPerFrame` on the
 nearest few. Any new per-bot transient light needs the same treatment. Fixture
 lights are hand-placed and must stay **spatially spread** — clustering lanterns
@@ -3089,7 +3090,7 @@ nodes — twenty meshes and a root apiece — or **1,008**, and every one of the
 was offered to the walk whether the
 body was in the round or not — a bot past `bodyDrawDistance`, a bot benched for
 a human, a bot crewing a tank, and on a netplay round the whole of
-`BattleSystem`'s sixteen, which are built and never enabled at all.
+`BattleView`'s sixteen, which are built and never enabled at all.
 `Game.installBodyPools` files them and `WorldCulling.update` polls each
 rig ROOT once a frame, marking the list dirty only on a transition — 48 property
 reads against the 1,008 nodes a rebuild answers for.

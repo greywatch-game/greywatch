@@ -39,7 +39,8 @@ export const bots = {
    *
    * It is NOT a pool size on a CLIENT and nothing there is built to it: the
    * pool is the map's own roster and is rebuilt when that changes
-   * (`BattleSystem.setRoster`, `NetRoster.setFielded`), which is what keeps a
+   * (`BattleSystem.setRoster` with `BattleView.syncPool`, `NetRoster.setFielded`),
+   * which is what keeps a
    * 240 m village paying for sixteen bodies rather than forty-eight.
    *
    * **The AUTHORITY is the exception and builds exactly this, once.** It draws
@@ -169,9 +170,9 @@ export const bots = {
   detourProbe: 1.6,
   /**
    * Distance from the camera past which the RIG's pose is frozen (it still
-   * translates). Drawing only: the pose is still FILLED every frame, because
-   * a bot's muzzle is replayed off it and an outcome may not depend on the
-   * camera (`Bot.update`).
+   * translates) — `BattleView`'s. Drawing only: the pose is still FILLED every
+   * frame, because a bot's muzzle is replayed off it and an outcome may not
+   * depend on the camera (`Bot.update`).
    */
   lodFreezeDistance: 35,
   /**
@@ -179,7 +180,7 @@ export const bots = {
    * there is nothing to see. The bot keeps integrating, so the battle line
    * still moves out there; only the drawing and posing stop.
    *
-   * **What runs is the MAP's** (`BattleSystem.viewDistance`, pushed by
+   * **What runs is the MAP's** (`BattleView.viewDistance`, pushed by
    * `Game.installMap`): its `fogEnd`, or its `EnvironmentSpec.bodyDrawDistance`
    * where it states one. This value is what the system carries before any map
    * is installed — and it is also, by arithmetic rather than by wiring, what
@@ -645,11 +646,11 @@ export const bots = {
      *
      * It is deliberately NOT `lodFreezeDistance` (35), which is what this was
      * pinned to and why nothing dying across the square ever fell over. That
-     * LOD only skips `animateSoldier`, and `Bot.update`'s dead branch already
-     * skips it while `ragdolling` — a ragdoll poses through the proxy nodes
+     * LOD only skips posing, and a bot's rig is not posed at all while
+     * `BotRig.ragdolling` — a ragdoll poses through the proxy nodes
      * its joints are parented to, which the solver writes whatever the LOD
      * says. Verified: a corpse at 50 m driven through the real
-     * `BattleSystem.update` tumbles from a 0.64 m standing joint spread to
+     * `BattleSystem.update` (the LOD is `BattleView`'s now) tumbles from a 0.64 m standing joint spread to
      * 0.002 m face-down on the floor, rig still enabled.
      *
      * This costs nothing per frame on its own — `maxConcurrent` is what

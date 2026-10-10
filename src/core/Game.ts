@@ -128,6 +128,7 @@ import {
 import { AimAssistSystem } from "../systems/AimAssistSystem";
 import { Atmosphere } from "../systems/Atmosphere";
 import { BattleSystem } from "../systems/BattleSystem";
+import { BattleView } from "../systems/BattleView";
 import { CaptureZoneSystem } from "../systems/CaptureZoneSystem";
 import { CombatFx } from "../systems/CombatFx";
 import {
@@ -549,6 +550,12 @@ export class Game {
    */
   private crew: VehicleCrew;
   private battle: BattleSystem;
+  /**
+   * The roster's PICTURE: a rig per pooled bot, the distance LOD over them and
+   * the muzzle flashes their shots leave. Stepped right after `battle` and
+   * reading it, never writing it — the `GrenadeFx` split one system over.
+   */
+  private battleView: BattleView;
   private conquest: ConquestSystem;
   /** The flags' in-world markers — rings, skirts and beacons. */
   private zones: CaptureZoneSystem;
@@ -1654,7 +1661,8 @@ export class Game {
     this.antiTank = new AntiTankSystem();
     this.antiTankFx = new AntiTankFx(this.scene, this.mats, this.antiTank);
     this.aimAssist = new AimAssistSystem();
-    this.battle = new BattleSystem(this.scene, this.mats, this.combat, this.random);
+    this.battle = new BattleSystem(this.combat, this.random);
+    this.battleView = new BattleView(this.scene, this.mats, this.battle);
     this.conquest = new ConquestSystem(this.random);
     this.zones = new CaptureZoneSystem(this.scene, this.mats);
     // The weapon is parented to the camera, so the camera has to exist first.
@@ -1909,7 +1917,7 @@ export class Game {
     this.shadows.corpseShadow = (cbt, out) => {
       const subject =
         cbt instanceof Bot
-          ? cbt
+          ? this.battleView.rigFor(cbt)
           : cbt === this.player
             ? this.deathCam.subject
             : null;
@@ -2040,7 +2048,10 @@ export class Game {
   private wireBattle(): void {
     // Bots fire constantly and all over the map, so their shots are
     // spatialised and voice-capped rather than played flat like the player's.
-    this.battle.onBotFired = (bot, at) => {
+    // The flash is kept for the frame's light budget (`BattleView`), and the
+    // copy it hands back is what the report is placed at.
+    this.battle.onBotFired = (bot, muzzle) => {
+      const at = this.battleView.flash(muzzle);
       this.sfx.botShot(at);
       // Gunfire gives an enemy away on the minimap for a couple of seconds.
       if (bot.team !== this.player.team) this.minimap.reveal(bot);
@@ -4294,6 +4305,7 @@ export class Game {
     this.hud.setCapture(null);
     this.hud.setLeash(null);
     this.battle.reset();
+    this.battleView.hideAll();
     document.exitPointerLock();
     // Same gate the round-over screen uses: the confirm that got here must not
     // fall through into starting the next round.
@@ -4730,7 +4742,7 @@ export class Game {
     // `ENGINE_UPGRADE.md` S8, and note that the fourth reader below is
     // deliberately NOT on it.
     const bodyDraw = bodyDrawDistanceOf(environment);
-    this.battle.setViewDistance(bodyDraw);
+    this.battleView.setViewDistance(bodyDraw);
     this.ragdolls.setViewDistance(bodyDraw);
     this.net?.roster.setViewDistance(bodyDraw);
     // And a fourth reader of the FOG, for the same reason turned inside out:
@@ -5175,6 +5187,10 @@ export class Game {
     // before the skill draw below, which is handed the pool it seeds.
     const perTeam = perTeamOf(this.mapDef.layout);
     this.battle.setRoster(this.net ? CONFIG.bots.perTeam : perTeam);
+    // …and the rigs to that pool, painted for the viewer's side — rebuilt only
+    // when one of the two moved (`BattleView.syncPool`). After the ragdolls'
+    // reset above, which is the other thing that holds a rig.
+    this.battleView.syncPool();
     this.net?.roster.setFielded(perTeam);
     // Re-draw skills for the chosen tier. The pool is rebuilt only when a map
     // changes the size of the roster, so this is the only place the roster's
@@ -5183,6 +5199,7 @@ export class Game {
 
     this.battle.setMap(map);
     this.battle.reset();
+    this.battleView.hideAll();
     // **The round's seed**, and every outcome stream in the round rewound to
     // it (`RoundRandom`) — here because everything that draws has now been
     // built (the pool above, the fleet inside `installMap`) and nothing has
@@ -5283,7 +5300,7 @@ export class Game {
    * round. It runs after both pools have been sized and before anything draws.
    *
    * **BOTH pools, every time, and neither of them is conditional.** A netplay
-   * round builds `battle`'s rigs and never enables one — sixteen bodies that
+   * round builds `battleView`'s rigs and never enables one — sixteen bodies that
    * are pure walk and nothing else, which is exactly the case this is for — and
    * an offline round's `NetRoster` is empty and files nothing. Asking which one
    * is this round's would be a second place for the answer in `buildRound` to
@@ -5308,7 +5325,7 @@ export class Game {
    */
   private installBodyPools(): void {
     const bodies: PooledBody[] = [];
-    for (const bot of this.battle.bots) bodies.push(bot.rig);
+    for (const body of this.battleView.rigs) bodies.push(body.rig);
     for (const soldier of this.net?.roster.soldiers ?? []) {
       bodies.push(soldier.rig);
     }
@@ -8128,7 +8145,7 @@ export class Game {
    */
   private readonly netShots = new NetShotQueue();
   /**
-   * The muzzle flashes those shots are owed — `BattleSystem.muzzleFlashes` and
+   * The muzzle flashes those shots are owed — `BattleView.muzzleFlashes` and
    * its `flashPool` exactly, because they feed the same budget. Filled and
    * emptied inside `drawNetShots`, which is what makes the pool safe to reuse
    * from the start again.
@@ -8466,8 +8483,13 @@ export class Game {
 
     // --- bots ---
     this.prof.begin(P.bots);
-    this.battle.update(dt, this.cameraSys.camera.position);
-    this.spendMuzzleLightBudget(this.battle.muzzleFlashes);
+    this.battleView.beginFrame();
+    this.battle.update(dt);
+    // The picture follows the fight at once, before anything reads a rig: the
+    // bodies' shadow map and the mesh walk below, a ragdoll built off a bot's
+    // joints in `stepShots`.
+    this.battleView.update(this.cameraSys.camera.position);
+    this.spendMuzzleLightBudget(this.battleView.muzzleFlashes);
     this.prof.end(P.bots);
     // After the bots, so a grenade thrown on this frame's think tick flies on
     // this frame rather than sitting in the thrower's hand until the next one.
@@ -8816,11 +8838,12 @@ export class Game {
     if (this.map?.rays.castBody(anchor, this.benchDir, len, this.benchHit)) {
       reach = Math.max(0.4, this.benchHit.distance - 0.3);
     }
-    this.benchEye.copyFrom(anchor).addInPlace(this.benchDir.scaleInPlace(reach));
+    // By fields: a bot's eye is `src/math`, and Babylon's `copyFrom` reads `_x`.
+    this.benchEye.copyFromFloats(anchor.x, anchor.y, anchor.z).addInPlace(this.benchDir.scaleInPlace(reach));
     // Down onto the body from over its shoulder, at a point eight metres on.
     const pitch = Math.atan2(anchor.y - 0.5 - this.benchEye.y, 8);
     this.aimBench(yaw, pitch);
-    this.shadowFocus.copyFrom(anchor);
+    this.shadowFocus.copyFromFloats(anchor.x, anchor.y, anchor.z);
   }
 
   /**
@@ -8999,7 +9022,7 @@ export class Game {
     // The bodies the two shadow passes draw. The roster's, but for the
     // building card's warm-up, which has no roster in the field and hands in
     // the death cam's stand-in instead — see `stageWarmFrame`.
-    bodies: readonly ShadowBody[] = this.battle.bots,
+    bodies: readonly ShadowBody[] = this.battleView.rigs,
   ): void {
     this.shadows.update(shadowFocus, this.mats);
     // The bodies' map follows the same focus and is rebuilt from whatever is
@@ -9424,6 +9447,7 @@ export class Game {
     this.overlayT = 0;
     this.minimap.setVisible(false);
     this.battle.reset();
+    this.battleView.hideAll();
     document.exitPointerLock();
     const won = winner === this.player.team;
     // The card's two sides are `mine` and `theirs`, so the tickets go in the
@@ -9622,7 +9646,10 @@ export class Game {
     // the body has to be offered to the physics pool. It needs no impact
     // vector passed down: `Bot.takeDamage` already captured where the killing
     // blow came from, which every damage path in the game hands it.
-    this.ragdolls.spawn(bot, this.cameraSys.camera.position);
+    // The bot's RIG, caught up to where the bot is this instant — the corpse is
+    // built from where its joints stand (`BattleView.corpseOf`).
+    const corpse = this.battleView.corpseOf(bot);
+    if (corpse) this.ragdolls.spawn(corpse, this.cameraSys.camera.position);
     this.sfx.enemyDie();
     this.conquest.registerDeath(bot.team);
     const slot = this.battle.bots.indexOf(bot);
@@ -10120,7 +10147,7 @@ export class Game {
    * village's own lanterns, so only the nearest few close-range flashes get one.
    *
    * The list is a parameter because there are two of them and never both at
-   * once: offline it is `BattleSystem.muzzleFlashes`, filled as the bots pull
+   * once: offline it is `BattleView.muzzleFlashes`, filled as the bots pull
    * their triggers, and in a match it is `netFlashes`, filled by the `fire`
    * events of a frame. One budget over either, so a match cannot spend more
    * light than a round of bots can — which matters more there, not less, since

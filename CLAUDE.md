@@ -692,7 +692,7 @@ so that a map saying nothing is unaffected:
 | `EnvironmentSpec.fogEnd` — how far you can see | `FOG_WALL` | it is the reach `WorldCulling` walks to and the default for the row below; `audio.maxDistance` (70) and `bots.perception.engageRange` (55) did **not** move with it, so a clear map must be laid out knowing that |
 | `EnvironmentSpec.bodyDrawDistance` — how far a BODY is worth drawing | its own `fogEnd` | resolved ONCE (`bodyDrawDistanceOf`, clamped to `fogEnd`) and pushed to `BattleSystem`, `NetRoster` and `RagdollSystem` together, which is what keeps `bots.lodDisableDistance` and `bots.death.maxDistance` one distance; a body it drops POPS. **A map's `fogEnd` is a distance from the EYE and a LANDMARK is a fixed thing in the world** — a fog wall chosen for the cull budget put Cinderhaven's volcano in flat `fogColor` from everywhere anybody played, and the fix was to buy the fog back and take the saving out of this row |
 | `MapLayout.surfaces` — how deep it stacks | `CONFIG.nav.maxSurfaces`, 3 | only a map that stacks FLOORS raises it; overflow drops candidates silently (see the bots section) |
-| `MapLayout.perTeam` — how many bodies a side | `CONFIG.bots.perTeam`, 8 | it is DENSITY, bounded by `CONFIG.bots.maxPerTeam` (24), and it is spent in RIGS — `BattleSystem.setRoster` rebuilds a CLIENT's pool when it moves. The squads and the scoreboard follow it; `CONFIG.conquest.tickets` deliberately does not, so a denser map is a shorter round. **It reaches a match too**: the authority's slot table is the ceiling, `setFielded` says how many a round fights, and the SEATS stay at sixteen |
+| `MapLayout.perTeam` — how many bodies a side | `CONFIG.bots.perTeam`, 8 | it is DENSITY, bounded by `CONFIG.bots.maxPerTeam` (24), and it is spent in RIGS — `BattleSystem.setRoster` resizes the pool and a CLIENT's `BattleView` rebuilds its rigs when it moves. The squads and the scoreboard follow it; `CONFIG.conquest.tickets` deliberately does not, so a denser map is a shorter round. **It reaches a match too**: the authority's slot table is the ceiling, `setFielded` says how many a round fights, and the SEATS stay at sixteen |
 | `MapLayout.blockSize` — how big a merge block is | `BLOCK_SIZE`, 48 | it is DRAW CALLS and cull granularity and nothing else; `ReflectionSystem.encloses` and `WorldCulling` follow it for free because they read the block KEY rather than a size, and the world layer's unit of LOCALITY (the physics buckets, the pane index) deliberately does **not** |
 | `MapLayout.terrainBlock` — how big a floor patch is | `BLOCK_SIZE`, 48, **independently of `blockSize`** | a whole number of terrain cells, and the same value in all three callers of `terrainPatches` — `buildValley`, the server's `terrainColliders` and the editor's brush — or the two sides tessellate different floors |
 | `EnvironmentSpec.lighting.shadowWindow` — how far its shadows reach | `CONFIG.graphics.shadows.frustumSize`, 110 | shadow length is `h / tan(elevation)`, and `shadowVisibility` is FULLY LIT outside the window, the last `edgeFade` of the volume ramping back to it — so an undersized one puts that transition on ground the player can see, and an OVERSIZED one moves it not at all while costing texel density (`ShadowSystem` DEV-warns) |
@@ -955,9 +955,10 @@ that same object, unchanged; `GameMap.world` keeps it beside the mesh:
 
 **How many bots there ARE is the MAP's on both sides** (`MapLayout.perTeam`, 8
 on the five smaller maps, 24 on Sarab and Cinderhaven), and the two sides spend it differently. On a CLIENT
-the rig pool IS that roster and `BattleSystem.setRoster` rebuilds it when the
-number moves — from `buildRound`, never from `installMap` — which is the one
-place "built once and never disposed" bends. **The AUTHORITY builds the ceiling
+the pool IS that roster: `BattleSystem.setRoster` rebuilds it when the number
+moves and `BattleView.syncPool` rebuilds the rigs beside it — from
+`buildRound`, never from `installMap` — which is the one place "built once and
+never disposed" bends. **The AUTHORITY builds the ceiling
 once** (`CONFIG.bots.maxPerTeam` a side, because a slot index is a bot index and
 a match rotates maps under one slot table) and `setFielded` takes the surplus
 out of each round, which is the third reason a bot can be `aside`. **Nothing
@@ -978,9 +979,15 @@ recomputed: **bots read `nav.steer()`, never run their own pathfinding, and
 never sweep**. `ObstacleField` is the sub-cell half, and its
 push-out is a preference, never a veto.
 
-**Three things carry the frame budget and undoing any costs ~10x draw calls or a
-permanent hitch**: the rig pool is built once per roster size and never disposed
-inside a round, a rig is fourteen merged meshes and two materials — one per
+**`Bot` and `BattleSystem` are the SIMULATION and draw nothing** (`src/math`,
+no Babylon, no camera): a client's `BotRig` (one per bot, `BattleView`'s pool)
+owns the rig, follows the bot and never writes it, and **whether a body is in
+the world is `Bot.shown`, which the rig follows** — so the distance LOD and a
+ragdoll holding a corpse are the view's, and nothing about the camera reaches
+an outcome. **Three things carry the frame budget and undoing any costs ~10x
+draw calls or a permanent hitch**: the rig pool is built once per roster size
+and never disposed inside a round, a rig is fourteen merged meshes and two
+materials — one per
 JOINT, the albedo having moved into `uv2.x` off a kit palette exactly as the
 village's did — and AI is staggered round-robin
 at `CONFIG.bots.thinkRate`. **Everything a bot notices without seeing it is
@@ -1018,7 +1025,9 @@ the death cam's stand-in body, a broken pane's shards and a blast's rubble.
 `NavGrid`, not in `ObstacleField`, not in `hittablesAgainst`, and neither a shard
 nor a chunk is either. `scene.physicsEnabled` is **false and must stay false**
 (the game renders in every state, so a scene-driven step would tumble corpses
-under the pause card) and Havok never touches a rig node.
+under the pause card) and Havok never touches a rig node. **What the pool holds
+for a bot is its RIG** (`BotRig`, caught up to the bot at the kill by
+`BattleView.corpseOf`), never the simulation's `Bot`.
 
 **The engine is required and there is no fallback.** A full pool **evicts the
 oldest corpse** rather than refusing, which protects the death cam's body for
@@ -1395,7 +1404,7 @@ authority's index. **A side is chosen when a rig is BUILT** rather than worn
 over one, so `buildRound` sets the viewer before `installMap` and the pools, and
 a welcome that disagrees rebuilds the round instead of repainting it. **The side
 is therefore half of each rig POOL's identity** beside its size
-(`BattleSystem.setRoster`, `NetRoster.setFielded`). **Nothing outside `teamLook`
+(`BattleView.syncPool`, `NetRoster.setFielded`). **Nothing outside `teamLook`
 may index `CONFIG.teams` with a live team.**
 
 **The server cannot run `MapBuilder`**: it has no canvas, so `DynamicTexture`

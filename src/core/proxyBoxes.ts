@@ -20,7 +20,10 @@ import { Matrix, Quaternion, Vector3, type Mesh } from "@babylonjs/core";
 import { CONFIG } from "../config";
 import { RAGDOLL_BONES, type SoldierRig } from "../entities/SoldierModel";
 
-/** What a shadow needs of a soldier: a rig to read joints off. `Bot` satisfies it. */
+/**
+ * What a shadow needs of a soldier: a rig to read joints off. A bot's `BotRig`
+ * satisfies it (the `Bot` itself has no rig), and so does a netplay body.
+ */
 export interface ShadowBody {
   readonly rig: SoldierRig;
 }

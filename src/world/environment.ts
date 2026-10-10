@@ -397,7 +397,7 @@ export interface EnvironmentSpec {
   /**
    * How far a BODY is worth drawing, in metres, overriding `fogEnd` for the
    * three gates that ask that question — the bots' rig LOD
-   * (`BattleSystem.viewDistance`), the remote roster's
+   * (`BattleView.viewDistance`), the remote roster's
    * (`NetRoster.viewDistance`) and the ragdoll pool's one remaining refusal
    * (`RagdollSystem.viewDistance`). Absent is `fogEnd`, which is what every
    * shipped map states by saying nothing, so this changes no map that does not

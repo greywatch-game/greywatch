@@ -780,8 +780,14 @@ src/
     callsigns.ts        # What to call an AI on the scoreboard: roster index ->
                         #   phonetic name, derived on both sides, never sent
     Bot.ts              # Bot FSM (advance/hunt/engage/takeCover/suppressed/
-                        #   retreat/capture) + movement, aim, magazine, peek
-    BotMemory.ts        # One bot's decaying picture of the fight
+                        #   retreat/capture) + movement, aim, magazine, peek.
+                        #   Simulation only: src/math, no rig, no Babylon;
+                        #   `shown` says whether the body is in the world
+    BotRig.ts           # A bot's PICTURE: its SoldierRig, root and pose
+                        #   written off the Bot, the launcher tube, and the
+                        #   RagdollSubject (`ragdolling`). Reads, never writes.
+                        #   Client only
+    BotMemory.ts        # One bot's decaying picture of the fight (src/math)
     SquadRadio.ts       # One TEAM's board: its squads' contact calls and the
                         #   marks its own deaths leave. Cues, never targets
     BotSkill.ts         # skill scalar -> BotProfile; difficulty tiers
@@ -824,7 +830,11 @@ src/
     MineModel.ts        # The mine in the hands and the plate in the road. The
                         #   one thing in the kit that is not a weapon at all
   systems/
-    BattleSystem.ts     # Bot pool, AI scheduling, LOS, distance LOD
+    BattleSystem.ts     # Bot pool, AI scheduling, LOS, squads, the bench.
+                        #   Simulation only: src/math, no scene, no camera
+    BattleView.ts       # The roster's PICTURE: a BotRig per bot (rebuilt on
+                        #   `poolVersion` or the viewer's side), the distance
+                        #   LOD, the muzzle flashes. Client only
     ConquestSystem.ts   # Flags, meters, tickets, bleed, spawns, planSquads,
                         #   what a bot's flag means to it (`zoneFor`), and
                         #   `scatterSpawn` — both simulations ask all three.

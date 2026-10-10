@@ -1540,7 +1540,7 @@ export class Sfx {
    * MOTOR in it — the layer the fourth burst below exists for — and leaves the
    * tail to the shared convolver.
    */
-  launcher(at: Vector3): void {
+  launcher(at: Point): void {
     const bus = this.bus("launcher", "explosion");
     const a = CONFIG.audio;
     const dist = this.distanceToListener(at);
@@ -2360,7 +2360,7 @@ export class Sfx {
    * different sentence: it is the difference between a second and a half of
    * window and three and a half.
    */
-  botReload(at: Vector3, voice: ReportVoice = FLAT_REPORT): void {
+  botReload(at: Point, voice: ReportVoice = FLAT_REPORT): void {
     const bus = this.bus("botReload", "mechanism");
     const dist = this.distanceToListener(at);
     if (dist > CONFIG.audio.maxDistance) return;
@@ -2387,7 +2387,7 @@ export class Sfx {
    * sound is for, which is knowing that someone is moving *now*, close, and
    * roughly over there.
    */
-  botStep(at: Vector3): void {
+  botStep(at: Point): void {
     const bus = this.bus("botStep", "footstep");
     const f = CONFIG.audio.footstep;
     const dist = this.distanceToListener(at);

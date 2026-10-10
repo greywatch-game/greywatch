@@ -215,15 +215,18 @@ export class HeadlessGame {
     // `CombatFx`'s, which only a client builds, so `onRound` is left unwired
     // and every round's picture is a no-op here (`BABYLON_EXIT.md` X2.2).
     this.combat = new CombatSystem();
-    this.battle = new BattleSystem(this.scene, this.mats, this.combat, this.random);
+    // …and the roster's simulation without a rig in it: the bodies, their
+    // poses as numbers and the LOD are `BattleView`'s, which only a client
+    // builds (`BABYLON_EXIT.md` X2.2 C7).
+    this.battle = new BattleSystem(this.combat, this.random);
     // **The authority's pool is the ceiling, once, for the life of the
     // process.** A slot index is a bot index and a match rotates maps under one
     // slot table, so team 1's block has to begin at the same number on every
     // map there is — which is `CONFIG.bots.maxPerTeam` and not the standing
     // map's roster. How many of it a round actually fights is `setFielded`'s,
     // pushed per round from `startRound`. Here rather than in `startRound`
-    // because rebuilding the pool disposes every rig in it, and this side has
-    // no loading card to do that behind.
+    // because the pool is a slot table that must never be rebuilt under a
+    // match.
     this.battle.setRoster(CONFIG.bots.maxPerTeam);
     // Ballistics without the picture. Where a grenade lands and who it hurts
     // is a rule and belongs here; what it looks like is `GrenadeFx`'s, which
@@ -621,13 +624,11 @@ export class HeadlessGame {
       if (tank) player.apply(dt, tank.position.x, tank.position.y, tank.position.z, player.yaw, player.pitch, false, false);
     }
 
-    // The camera position every LOD test keys off. There is no camera here, so
-    // it is the map centre — which puts every bot inside `lodDisableDistance`
-    // and keeps them all fully simulated. That is what the server wants: LOD is
-    // a drawing budget, and skipping a bot's pose to save a draw call it was
-    // never going to make would only make the authority disagree with the
-    // clients about where that bot is.
-    this.battle.update(dt, ORIGIN);
+    // No camera: the LOD is a drawing budget and belongs to `BattleView`,
+    // which this side never builds. It used to be handed the map's centre
+    // here, and what that decided about the fight was the last thing to go
+    // (X2.2 C6, C7).
+    this.battle.update(dt);
     // After the bots, so a grenade thrown on this frame's think tick flies on
     // this frame rather than sitting in the thrower's hand until the next —
     // the same order `Game.updateWorld` uses.
@@ -1626,5 +1627,3 @@ export class HeadlessGame {
   }
 }
 
-/** The LOD reference point — see `step`. */
-const ORIGIN = new Vector3(0, 0, 0);

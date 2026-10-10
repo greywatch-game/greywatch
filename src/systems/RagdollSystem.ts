@@ -6,9 +6,10 @@
  * names `@babylonjs/havok`, builds the static map, or steps anything. See that
  * file's header for why the split exists.
  *
- * It holds `RagdollSubject`s, not `Bot`s, and deliberately cannot tell the two
- * kinds apart: a bot killed in the fight and the stand-in body `DeathCam`
- * stands up where the player fell are the same thing to this file. Every rule
+ * It holds `RagdollSubject`s, not `Bot`s, and deliberately cannot tell the
+ * kinds apart: a bot's rig killed in the fight (`BotRig` — the `Bot` itself is
+ * simulation and has no rig) and the stand-in body `DeathCam` stands up where
+ * the player fell are the same thing to this file. Every rule
  * below applies to both, which is what stopped the player's corpse needing a
  * second copy of any of it.
  *
@@ -132,7 +133,7 @@ export class RagdollSystem implements PhysicsClient {
   /**
    * Past this a body is not worth tumbling, because it is not worth drawing —
    * the map's body draw distance, pushed by `Game.installMap` beside the same
-   * number going to `BattleSystem` and `NetRoster`. It is where the rig stops
+   * number going to `BattleView` and `NetRoster`. It is where the rig stops
    * being drawn by construction rather than by coincidence (see
    * `bots.death.maxDistance`), and the construction is that all three are
    * handed one number resolved once (`bodyDrawDistanceOf`); `CONFIG` holds
@@ -221,7 +222,8 @@ export class RagdollSystem implements PhysicsClient {
    * a corpse does not move, and re-testing per frame would switch a tumble off
    * halfway through because the player backed away from it. Past
    * `viewDistance` the rig is not drawn at all, so what is refused is a body
-   * nobody can see; `Bot.update` hides it on its own clock.
+   * nobody can see; the bot's own clock takes it out of the world
+   * (`Bot.update`'s dead branch) and its rig follows.
    */
   spawn(subject: RagdollSubject, camPos: Vector3): boolean {
     // There is a map to land on. The only thing `PhysicsWorld` can still say
@@ -229,7 +231,12 @@ export class RagdollSystem implements PhysicsClient {
     // being built — which is not a window anything dies in, but a body spawned
     // in it would fall for ever.
     if (!this.physics.hasWorld || this.slots.length === 0) return false;
-    if (Vector3.Distance(subject.position, camPos) > this.viewDistance) {
+    // By fields: a bot's body is `src/math`, and Babylon's `Distance` reads
+    // `_x` (the NaN trap, `src/math/vector.ts`).
+    const gx = subject.position.x - camPos.x;
+    const gy = subject.position.y - camPos.y;
+    const gz = subject.position.z - camPos.z;
+    if (Math.sqrt(gx * gx + gy * gy + gz * gz) > this.viewDistance) {
       return false;
     }
     // A body already held is not offered twice. `registerBotKill` is the one
@@ -269,8 +276,8 @@ export class RagdollSystem implements PhysicsClient {
       if (rest) slot.restParent.set(bone.joint, rest.parent);
     }
     subject.ragdolling = true;
-    // The rig must be visible for the corpse to be worth simulating; the LOD
-    // in BattleSystem re-enables it every frame while `state === "dead"`.
+    // The rig must be visible for the corpse to be worth simulating; a bot's
+    // LOD (`BattleView`) keeps it on every frame while this pool holds it.
     subject.setEnabled(true);
 
     for (const bone of slot.bones) {
@@ -622,7 +629,9 @@ export class RagdollSystem implements PhysicsClient {
 
     // Direction is free: `deathFrom` is the shooter's eye or the blast centre.
     // Y is kept, so a round from a rooftop pushes a body down.
-    subject.center.subtractToRef(subject.deathFrom, this.v1);
+    const c = subject.center;
+    const from = subject.deathFrom;
+    this.v1.set(c.x - from.x, c.y - from.y, c.z - from.z);
     if (this.v1.lengthSquared() < 1e-6) this.v1.copyFrom(UP);
     this.v1.normalize();
     if (blast) {
@@ -766,10 +775,10 @@ export class RagdollSystem implements PhysicsClient {
    * Hands the rig back, restored exactly, and frees the slot. Idempotent.
    *
    * The ordering is deliberate: the rig is put back and hidden BEFORE
-   * `ragdolling` is cleared, so `Bot.update` never sees a half-restored rig.
-   * The frame after this, its dead branch takes over an already-hidden rig and
-   * has nothing left to do to it — harmless, and it means `Bot.spawn` has one
-   * case to handle rather than two.
+   * `ragdolling` is cleared, so a bot's view (`BotRig.follow`) never sees a
+   * half-restored rig. The frame after this it takes over an already-hidden
+   * rig that the bot's clock has already taken out of the world — harmless,
+   * and it means a new life has one case to handle rather than two.
    */
   private release(slot: Slot): void {
     const { subject, rig } = slot;
@@ -781,13 +790,13 @@ export class RagdollSystem implements PhysicsClient {
     for (const bone of slot.bones) this.park(bone);
     // Both of these belong to a CORPSE, and `update`'s guard can hand this a
     // body that came back to life while the pool was holding it. Hiding a live
-    // bot costs a frame of invisibility (`BattleSystem` re-enables it on the
+    // bot costs a frame of invisibility (`BattleView` re-enables it on the
     // next one) and writing its root would drop it at the dead one's sink
     // height for that frame. The joints still have to go back, which is the
     // whole reason that guard releases rather than just forgetting the slot.
     if (!subject.alive) {
       // Undo the sink before handing the rig back: `root.position` is the
-      // bot's own, and a respawn writes it through `syncTransform` — but a rig
+      // bot's own, and a respawn writes it through `BotRig` — but a rig
       // retired by `reset()` mid-sink would otherwise keep the offset.
       if (slot.sinking) rig.root.position.y = slot.sinkFromY;
       subject.setEnabled(false);

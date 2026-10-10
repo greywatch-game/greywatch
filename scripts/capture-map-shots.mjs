@@ -212,7 +212,7 @@ async function captureMap(browser, url, id, vantage) {
         poll();
       });
       // The place, not the fight: no bodies, no rings, no beacons.
-      for (const bot of g.battle.bots) bot.rig.root.setEnabled(false);
+      for (const body of g.battleView.rigs) body.rig.root.setEnabled(false);
       g.zones.dispose();
 
       const cam = g.cameraSys.camera;

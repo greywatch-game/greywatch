@@ -949,21 +949,27 @@ is one machine's:
   — which is drift being measured rather than the lever. That growth with frame
   distance is the tell; if you see it, something is still moving.
 - **Teleporting a bot needs the RIG moved and enabled, not just `bot.position`.**
-  The rig follows that field inside `Bot.update`, and `BattleSystem`'s distance
-  LOD — also in that update — is what switched the root off in the first place,
-  so a staging that pins the AI first leaves every body where it was and
-  switched off. Set `bot.rig.root.position` to `(x, y + rig.centerHeight, z)`
-  and `rig.root.setEnabled(true)` beside `bot.position.set(...)`, THEN pin.
+  The rig is `g.battleView.rigs[i].rig` (the `Bot` has none since BABYLON_EXIT.md
+  X2.2 C7) and it follows the bot's ROOT (`bot.rootX`..`rootYaw`, written by
+  `Bot.update`/`nudgeTo`, never by `position.set`) in `BattleView.update`, which
+  runs right after `battle.update` and is also the distance LOD that switched
+  the root off — so a staging that pins the AI first leaves every body where it
+  was and switched off. `bot.nudgeTo(v)` moves the bot's root with it; or set
+  `rig.root.position` to `(x, y + rig.centerHeight, z)` and
+  `rig.root.setEnabled(true)` by hand, THEN pin. A bot's vectors are
+  `src/math`'s: hand them to a Babylon method through `copyFromFloats`, never
+  `copyFrom`, or it writes NaN.
 - **`bot.takeDamage(999, ...)` kills a bot and produces NO RAGDOLL**, and the
   result reads as the physics being broken. `Game.registerBotKill` is the one
   place all three death paths converge and the one place the body is offered to
   the pool, so a direct `takeDamage` leaves a dead bot whose rig is simply
   switched off — `ragdolling` false, the torso never falls, nothing drawn. Call
-  `g.ragdolls.spawn(victim, g.cameraSys.camera.position)` immediately after, which
-  is exactly what that method does. With it: `ragdolling` true, the rig stays
-  ENABLED for the life of the corpse (`BattleSystem`'s LOD re-enables it every
-  frame while the bot is dead), and the torso drops — measured 3.20 m to 2.32 in
-  300 ms.
+  `g.registerBotKill(victim, team, true)` immediately after, which offers the
+  pool the bot's RIG caught up to it (`g.battleView.corpseOf(victim)` — the
+  `Bot` itself is not a `RagdollSubject`). With it: `ragdolling` (on the
+  `BotRig`) true, the rig stays ENABLED for the life of the corpse
+  (`BattleView`'s LOD keeps it on while the pool holds it), and the torso drops
+  — measured 3.20 m to 2.32 in 300 ms.
 - **Bots are not alive on the frame `playing` arrives**, so a script that stages
   the roster immediately stages nothing: `battle.bots.filter(b => b.alive)` is
   empty and every downstream count reads zero without erroring. Wait several

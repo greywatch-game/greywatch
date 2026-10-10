@@ -413,14 +413,14 @@ export class VehicleCrew {
     if (!crew) return null;
     const bot = crew.bot;
     this.remove(crew);
-    // Beside the hull and back on its feet, in that order: the rig has been
-    // disabled for the whole drive and a body re-enabled at the middle of a
-    // tank is standing inside a live collider.
+    // Beside the hull and back on its feet, in that order: the body has been
+    // out of the world for the whole drive and one put back at the middle of
+    // a tank is standing inside a live collider.
     bot.nudgeTo(this.ctx.exitSpot(tank));
     // `alive` rather than `true`: the defensive sweep in `update` reaches here
-    // with a body that is already dead, and a re-enabled corpse is a soldier
-    // standing to attention beside the wreck he burned in.
-    bot.setEnabled(bot.alive);
+    // with a body that is already dead, and a corpse put back in the world is
+    // a soldier standing to attention beside the wreck he burned in.
+    bot.shown = bot.alive;
     return bot;
   }
 
@@ -453,7 +453,7 @@ export class VehicleCrew {
     for (let i = this.crews.length - 1; i >= 0; i--) {
       const crew = this.crews[i];
       this.remove(crew);
-      crew.bot.setEnabled(crew.bot.alive);
+      crew.bot.shown = crew.bot.alive;
     }
     // The sweep's copy too: it is only rewritten by the next `update`, and
     // until then it holds every crew — and through them every hull — it last
@@ -533,7 +533,7 @@ export class VehicleCrew {
         let bestDist = reach;
         for (const bot of this.ctx.roster()) {
           if (!bot.alive || bot.team !== tank.team || this.ctx.aside(bot)) continue;
-          const d = Vector3.DistanceSquared(bot.position, tank.center);
+          const d = MathVector3.DistanceSquared(bot.position, tank.center);
           if (d < bestDist) {
             bestDist = d;
             best = bot;
@@ -589,10 +589,11 @@ export class VehicleCrew {
       left: false,
     });
     this.ctx.setOccupied(tank, seat, true);
-    // The rig goes away for the same reason the player's viewmodel does: there
-    // is no crewman modelled on this hull, and a soldier standing at the
-    // middle of a moving tank is a body being dragged through the street.
-    bot.setEnabled(false);
+    // The body leaves the world for the same reason the player's viewmodel
+    // goes away: there is no crewman modelled on this hull, and a soldier
+    // standing at the middle of a moving tank is a body being dragged through
+    // the street. The rig follows (`BotRig`).
+    bot.shown = false;
     bot.target = null;
     this.onBoarded(bot, tank);
   }

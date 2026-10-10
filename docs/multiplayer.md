@@ -128,7 +128,9 @@ What it does NOT do is size the slot table.
 
 - **The TABLE is `CONFIG.bots.maxPerTeam` a side (24, so 48 slots), on every
   map, for the life of the process.** `HeadlessGame`'s constructor calls
-  `BattleSystem.setRoster` with it once and never again.
+  `BattleSystem.setRoster` with it once and never again. It is forty-eight
+  `Bot`s and no rig: the bodies' drawing is `BattleView`'s, which the
+  authority never builds (BABYLON_EXIT.md X2.2 C7).
 - **The ROUND is the map's**, pushed by `HeadlessGame.startRound` through
   `BattleSystem.setFielded` and mirrored onto the table by
   `Roster.setFielded`. Bots outside it are set aside exactly as a benched one
@@ -196,10 +198,12 @@ before `installMap` and the rig pools, and `onSeated` answers a side that
 disagrees exactly as it answers a map that disagrees, with `startRound`.
 
 **The two rig POOLS outlive a round, so the side is half of each one's
-identity.** `BattleSystem.setRoster` and `NetRoster.setFielded` are already
-no-ops at an unchanged size, and both now also compare the side they were
+identity.** `BattleView.syncPool` and `NetRoster.setFielded` are already
+no-ops at an unchanged pool, and both now also compare the side they were
 painted for — without which the rebuild above reaches nothing, since neither
-pool's size moved. `NetRoster`'s is the one that made it necessary: its bodies
+pool's size moved. (`BattleView` rebuilds RIGS and not bots: the simulation's
+pool, `BattleSystem.setRoster`, follows size alone, since a side is a
+picture.) `NetRoster`'s is the one that made it necessary: its bodies
 are built in the CONSTRUCTOR, which runs when the session opens and therefore
 before the welcome that says which way round to paint them.
 
@@ -603,7 +607,7 @@ silent in both directions: rounds simply ran long, which reads as mistuned
 config rather than a missing call.
 
 **While the pool owns a rig, `NetSoldier.update` stands aside entirely** — the
-same one-line answer `Bot.update` gives in its own dead branch, and for the same
+same one-line answer `BotRig.follow` gives a bot's rig, and for the same
 reason: the solver writes proxy nodes the joints hang off, and a second writer on
 those nodes is two things posing one body. `alive` is still read from the samples
 ahead of that guard, because it is the pool's own self-defence — a slot whose
@@ -890,7 +894,7 @@ and the rate is as much of the read by eye as it is by ear.
 
 **The muzzle flash is the same budget offline spends.** Transient lights always
 win a shader slot, so `spendMuzzleLightBudget` takes the list as a parameter and
-there are two of them, never both at once: `BattleSystem.muzzleFlashes` offline,
+there are two of them, never both at once: `BattleView.muzzleFlashes` offline,
 `Game.netFlashes` in a match. One budget over either, which matters more here
 rather than less — the authority's roster is three times a village's. It is one
 flash per SHOOTER where offline it is one per shot, and that is the coalescing

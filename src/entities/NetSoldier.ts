@@ -220,8 +220,8 @@ export class NetSoldier implements Combatant, RagdollSubject {
 
     // While the pool owns this rig it owns the joints AND the root, and it
     // poses through proxy nodes the solver writes. Everything below is a second
-    // writer on the same nodes — the trap `Bot.update` stands aside from in its
-    // own dead branch, for the same reason and with the same one-line answer.
+    // writer on the same nodes — the trap `BotRig.follow` stands aside from for
+    // a bot's rig, for the same reason and with the same one-line answer.
     //
     // `hasPosition` goes with it so the frame the rig comes back reports no
     // travel: `position` froze where the body died and the respawn is somewhere
@@ -432,9 +432,9 @@ export class NetSoldier implements Combatant, RagdollSubject {
     this.alive = false;
     this.deathDamage = 0;
     this.deathKind = "bullet";
-    // Belt to `RagdollSystem.release`'s braces, exactly as `Bot.spawn` clears
-    // it: a rig handed back late must never come up with a live body still
-    // claiming its joints.
+    // Belt to `RagdollSystem.release`'s braces, exactly as `BotRig` clears it
+    // on a bot's new life: a rig handed back late must never come up with a
+    // live body still claiming its joints.
     this.ragdolling = false;
     resetSoldierPose(this.rig);
     this.setEnabled(false);

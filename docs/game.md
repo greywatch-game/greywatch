@@ -190,7 +190,13 @@ went off, or a fuse that never burns down, or a corpse that takes a rig and hang
 in the air; each of those reads as a bug in that system rather than as a missing
 line in a method nobody was looking at. **Anything new that both worlds owe per
 frame goes in one of the two, and a system that only one of them owes goes at
-its own call site with the reason written there.**
+its own call site with the reason written there.** The bots' picture is the
+worked example: `BattleView.update` runs right after `battle.update` in
+`updateWorld` alone (a match steps no local bot), before anything reads a rig —
+the bodies' shadow map, the mesh walk, a ragdoll built off a bot's joints in
+`stepShots` — and `BattleView.hideAll` sits beside every `battle.reset`, so a
+reset round shows no body for a frame. The body draw distance `installMap`
+pushes goes to `BattleView`, `RagdollSystem` and `NetRoster` together.
 
 **They are TWO blocks rather than one because the armour goes between them, and
 it goes in a different place on each side**: offline the fleet is stepped before

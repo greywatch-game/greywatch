@@ -65,7 +65,7 @@ try {
       const poll = () => (g.state === "deploy" ? r() : setTimeout(poll, 50));
       poll();
     });
-    if (!bots) for (const b of g.battle.bots) b.rig.root.setEnabled(false);
+    if (!bots) for (const r of g.battleView.rigs) r.rig.root.setEnabled(false);
   }, args.includes("--bots"));
   for (const [name, v] of Object.entries(views)) {
     if (only && !only.has(name)) continue;

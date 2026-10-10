@@ -56,7 +56,7 @@ try {
   for (const [name, v] of Object.entries(V)) {
     await page.evaluate(({ px, pz, rot, v }) => {
       const g = window.__celshock;
-      for (const bot of g.battle.bots) bot.rig.root.setEnabled(false);
+      for (const body of g.battleView.rigs) body.rig.root.setEnabled(false);
       const c = Math.cos(rot);
       const s = Math.sin(rot);
       const W = (p) => [px + p[0] * c + p[2] * s, p[1], pz - p[0] * s + p[2] * c];
