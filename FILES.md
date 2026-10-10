@@ -596,7 +596,10 @@ src/
                         #   catch/handle/bolt/slide a dry reload closes),
                         #   and the five colour groups a weapon merges into —
                         #   which are also what a finish repaints — and the
-                        #   primitives: box, slab, upright, picatinny, shell
+                        #   primitives: box, slab, upright, picatinny, shell,
+                        #   built as Parts on src/geometry/ buffers under a
+                        #   build-time frame; `merge` (and `lit`, for a
+                        #   reticle) is where they become meshes
     RifleModel.ts       # Low-poly SCAR-H battle rifle — the first
                         #   weapon SCULPTED rather than stacked: bevelled
                         #   profile slabs and contoured lofts, the design

@@ -551,7 +551,7 @@ export function buildRifle(
     [0.548, BORE_Y + 0.024],
   ], 0.04, 0.004);
   b.pin("gasRegulator", BODY, 0.018, 0.056, 0, BORE_Y + 0.004, 0.575);
-  b.box("regulatorLever", BODY, 0.004, 0.024, 0.008, -0.03, BORE_Y + 0.012, 0.575, b.root, 0.4);
+  b.box("regulatorLever", BODY, 0.004, 0.024, 0.008, -0.03, BORE_Y + 0.012, 0.575, b.frame, 0.4);
   b.tube("barrel", BODY, 0.024, 0.03, 0.18, 0, BORE_Y, 0.692);
   b.tube("barrelShoulder", BODY, 0.03, 0.03, 0.02, 0, BORE_Y, 0.612);
   // Birdcage: rear collar, four struts with the slots between them, open front
@@ -619,7 +619,6 @@ export function buildRifle(
 
   const optics = buildOptics(b, MOUNT, prefix);
   meshes.push(...optics.meshes);
-  b.disposePivots();
 
   return {
     root,

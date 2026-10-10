@@ -8,7 +8,9 @@
  * identity and merged before it is moved — `weaponKit.ts` owns that contract
  * and the primitives. The laid mine is DRESSING: no `solid` flag, no
  * `WorldBox`, not pickable. A tank drives THROUGH it and the trigger is a
- * distance test, never a collision.
+ * distance test, never a collision. Both are built as `Part`s on
+ * `src/geometry/` buffers, and `drawnMesh` is where they become meshes
+ * (`WeaponBuild.merge` and `lit` for the carried one).
  *
  * Two builders in one file for the reason `RpgModel` is one: the plate a
  * player is holding and the plate lying in the road are the same object, and
@@ -22,8 +24,10 @@
  * closer to the eye and does nothing else, which is exactly what looking hard
  * at a thing in your hands does.
  */
-import { Mesh, MeshBuilder, Scene, TransformNode, Vector3 } from "@babylonjs/core";
+import { Mesh, Scene, TransformNode, Vector3 } from "@babylonjs/core";
+import { createCylinder, createSphere } from "../geometry/primitives";
 import { type CelMaterialFactory } from "../shaders/CelShader";
+import { drawnMesh, Part } from "../world/parts";
 import {
   BODY,
   METAL,
@@ -96,7 +100,6 @@ export function buildMine(
   const finish = b.takeFinish();
 
   const sight = buildMineTell(b, root, prefix);
-  b.disposePivots();
 
   return {
     root,
@@ -131,11 +134,7 @@ function buildMineTell(
   node.parent = parent;
 
   const lamp = b.lit(
-    MeshBuilder.CreateSphere(
-      `${prefix}_mineLamp`,
-      { diameter: 0.03, segments: 6 },
-      b.scene,
-    ),
+    new Part(`${prefix}_mineLamp`, createSphere({ diameter: 0.03, segments: 6 })),
     node,
   );
   // Proud of the fuze's own ink shell, the rule every lit part in the kit
@@ -179,17 +178,15 @@ export function buildMineBody(
   // Nothing here is derived from `CONFIG.equipment.mine`: the trigger radius
   // is four metres of ground a hull has to be over, and a plate drawn that
   // size would be a manhole cover. What the mine LOOKS like is a mine.
-  const mesh = MeshBuilder.CreateCylinder(
-    name,
-    { height: 0.08, diameter: 0.34, tessellation: 10 },
+  const mesh = drawnMesh(
+    new Part(name, createCylinder({ height: 0.08, diameter: 0.34, tessellation: 10 })),
     scene,
   );
   mesh.material = mats.get("#3a3f34");
   mesh.isPickable = false;
 
-  const plate = MeshBuilder.CreateCylinder(
-    `${name}Plate`,
-    { height: 0.04, diameter: 0.22, tessellation: 10 },
+  const plate = drawnMesh(
+    new Part(`${name}Plate`, createCylinder({ height: 0.04, diameter: 0.22, tessellation: 10 })),
     scene,
   );
   plate.parent = mesh;
@@ -197,9 +194,8 @@ export function buildMineBody(
   plate.material = mats.get("#22261f");
   plate.isPickable = false;
 
-  const lamp = MeshBuilder.CreateSphere(
-    `${name}Lamp`,
-    { diameter: 0.07, segments: 6 },
+  const lamp = drawnMesh(
+    new Part(`${name}Lamp`, createSphere({ diameter: 0.07, segments: 6 })),
     scene,
   );
   lamp.parent = mesh;

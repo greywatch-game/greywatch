@@ -24,9 +24,23 @@
  * Invariants: each optic is merged into its OWN meshes rather than into the
  * weapon's, which is what lets one be swapped for another without rebuilding
  * the gun under it. Emissive parts go through `build.lit`, never `collect`.
+ * Everything is built as `Part`s on `src/geometry/` buffers, as the weapon
+ * is (`weaponKit.ts`): a housing becomes meshes at `build.merge`, a bead or
+ * a reticle at `build.lit` (a reticle's bars merged by `mergeParts` first),
+ * and the glass, the one surface drawn with a material of its own, at
+ * `drawnMesh` here.
  */
-import { MeshBuilder, Mesh, Color3, StandardMaterial, TransformNode, Vector3 } from "@babylonjs/core";
+import { Mesh, Color3, StandardMaterial, TransformNode, Vector3 } from "@babylonjs/core";
 import { CONFIG } from "../config";
+import {
+  createBox,
+  createDisc,
+  createPlane,
+  createSphere,
+  createTorus,
+  DOUBLESIDE,
+} from "../geometry/primitives";
+import { drawnMesh, mergeParts, Part, type PartNode } from "../world/parts";
 import { SIGHT_IDS, type SightId } from "./sights";
 import {
   FACETS,
@@ -683,7 +697,7 @@ export function buildOptics(
           x + (dx * len) / 2,
           y + (dy * len) / 2,
           frontZ,
-          b.root,
+          b.frame,
           -side * lean,
         );
         x += dx * len;
@@ -694,11 +708,7 @@ export function buildOptics(
     b.box("ironPost", METAL, 0.005 * k, postH, 0.007 * k, 0, floor + postH / 2, frontZ);
     b.merge("iron", node);
     const bead = b.lit(
-      MeshBuilder.CreateSphere(
-        `${prefix}_ironBead`,
-        { diameter: 0.005 * IRON_K, segments: 6 },
-        b.scene,
-      ),
+      new Part(`${prefix}_ironBead`, createSphere({ diameter: 0.005 * IRON_K, segments: 6 })),
       node,
     );
     bead.position.set(0, ironY, mount.ironFrontZ);
@@ -785,11 +795,7 @@ export function buildOptics(
     // thing this has over the irons. Smaller than the holo's, because there is
     // no ring around it to give it a scale.
     const dot = b.lit(
-      MeshBuilder.CreateSphere(
-        `${prefix}_reflexDot`,
-        { diameter: 0.0028 * REFLEX_K, segments: 6 },
-        b.scene,
-      ),
+      new Part(`${prefix}_reflexDot`, createSphere({ diameter: 0.0028 * REFLEX_K, segments: 6 })),
       node,
     );
     dot.position.set(0, reflexY, winZ);
@@ -807,13 +813,15 @@ export function buildOptics(
     // area, and a tint that sits politely in a 0.072 bore is a green filter
     // across the whole picture at this size.
     glassMat.alpha = 0.07;
-    const glass = MeshBuilder.CreatePlane(
-      `${prefix}_reflexGlass`,
-      {
-        width: REFLEX_WIN_W,
-        height: REFLEX_WIN_H,
-        sideOrientation: Mesh.DOUBLESIDE,
-      },
+    const glass = drawnMesh(
+      new Part(
+        `${prefix}_reflexGlass`,
+        createPlane({
+          width: REFLEX_WIN_W,
+          height: REFLEX_WIN_H,
+          sideOrientation: DOUBLESIDE,
+        }),
+      ),
       b.scene,
     );
     glass.parent = node;
@@ -883,10 +891,9 @@ export function buildOptics(
     // is an angle, and one left at its old size in a smaller window would fill
     // the picture it is supposed to sit in.
     const ring = b.lit(
-      MeshBuilder.CreateTorus(
+      new Part(
         `${prefix}_reticleRing`,
-        { diameter: 0.016 * k, thickness: 0.002 * k, tessellation: 24 },
-        b.scene,
+        createTorus({ diameter: 0.016 * k, thickness: 0.002 * k, tessellation: 24 }),
       ),
       node,
     );
@@ -894,11 +901,7 @@ export function buildOptics(
     ring.position.set(0, winY, winZ - 0.003 * k);
 
     const dot = b.lit(
-      MeshBuilder.CreateSphere(
-        `${prefix}_reticleDot`,
-        { diameter: 0.0032 * k, segments: 6 },
-        b.scene,
-      ),
+      new Part(`${prefix}_reticleDot`, createSphere({ diameter: 0.0032 * k, segments: 6 })),
       node,
     );
     dot.position.set(0, winY, winZ - 0.003 * k);
@@ -912,9 +915,11 @@ export function buildOptics(
     glassMat.specularColor = Color3.Black();
     glassMat.disableLighting = true;
     glassMat.alpha = 0.12;
-    const glass = MeshBuilder.CreateDisc(
-      `${prefix}_holoGlass`,
-      { radius: BORE / 2, tessellation: FACETS, sideOrientation: Mesh.DOUBLESIDE },
+    const glass = drawnMesh(
+      new Part(
+        `${prefix}_holoGlass`,
+        createDisc({ radius: BORE / 2, tessellation: FACETS, sideOrientation: DOUBLESIDE }),
+      ),
       b.scene,
     );
     glass.parent = node;
@@ -965,13 +970,9 @@ export function buildOptics(
     const armMid = (armIn + armOut) / 2;
     const t = o.line;
     const mid = Math.floor(o.hashes.length / 2);
-    const bars: Mesh[] = [];
+    const bars: Part[] = [];
     const bar = (w: number, h: number, x: number, y: number): void => {
-      const m = MeshBuilder.CreateBox(
-        `${prefix}_${name}`,
-        { width: w, height: h, depth: t },
-        b.scene,
-      );
+      const m = new Part(`${prefix}_${name}`, createBox({ width: w, height: h, depth: t }));
       m.position.set(x, y0 + y, retZ);
       bars.push(m);
     };
@@ -986,19 +987,11 @@ export function buildOptics(
       });
     }
     if (o.dot) {
-      const dot = MeshBuilder.CreateSphere(
-        `${prefix}_${name}Dot`,
-        { diameter: o.dot, segments: 6 },
-        b.scene,
-      );
+      const dot = new Part(`${prefix}_${name}Dot`, createSphere({ diameter: o.dot, segments: 6 }));
       dot.position.set(0, y0, retZ);
       bars.push(dot);
     }
-    const posts = Mesh.MergeMeshes(bars, true, true);
-    if (posts) {
-      posts.name = `${prefix}_${name}`;
-      b.lit(posts, node, POSTS);
-    }
+    b.lit(drawnMesh(`${prefix}_${name}`, mergeParts(bars), b.scene), node, POSTS);
   };
 
   /**
@@ -1142,11 +1135,7 @@ export function buildOptics(
 
     // The dot — green, on the axis, alone in the middle of the gap.
     const dot = b.lit(
-      MeshBuilder.CreateSphere(
-        `${prefix}_greenDot`,
-        { diameter: DOT2_DOT, segments: 6 },
-        b.scene,
-      ),
+      new Part(`${prefix}_greenDot`, createSphere({ diameter: DOT2_DOT, segments: 6 })),
       node,
       DOT2_COLOUR,
     );
@@ -1169,7 +1158,7 @@ export function buildOptics(
     x: number,
     y: number,
     z: number,
-  ): TransformNode => {
+  ): PartNode => {
     const p = b.pivot(name, x, y, z, 0);
     if (axis === "y") p.rotation.z = Math.PI / 2;
     else if (axis === "z") p.rotation.y = Math.PI / 2;
@@ -1401,17 +1390,16 @@ export function buildOptics(
     const retZ = objectiveZ - 0.03;
     const clearR = PRISM_CONE * (eyeDistance("prism") + retZ - ocularZ);
     const armLen = clearR * 0.5;
-    const bars: Mesh[] = [];
+    const bars: Part[] = [];
     for (const side of [-1, 1] as const) {
       // The caret's arms: each hung from the axis so its top end lands ON it,
       // which is what makes the apex the aim point rather than something near
       // it. Babylon's rotation about z takes the bar's own +y to
       // `(-sin, cos)`, so the centre is half a length back down that vector.
       const a = 0.6;
-      const arm = MeshBuilder.CreateBox(
+      const arm = new Part(
         `${prefix}_prismRetCaret`,
-        { width: 0.0011, height: armLen, depth: 0.0012 },
-        b.scene,
+        createBox({ width: 0.0011, height: armLen, depth: 0.0012 }),
       );
       arm.rotation.z = side * a;
       arm.position.set(
@@ -1421,11 +1409,7 @@ export function buildOptics(
       );
       bars.push(arm);
     }
-    const reticle = Mesh.MergeMeshes(bars, true, true);
-    if (reticle) {
-      reticle.name = `${prefix}_prismReticle`;
-      b.lit(reticle, node);
-    }
+    b.lit(drawnMesh(`${prefix}_prismReticle`, mergeParts(bars), b.scene), node);
 
     // The eye reference is the ocular rim, exactly as the scope's is: the eye
     // goes behind the glass it looks through, not behind the middle of a body.
@@ -1515,7 +1499,7 @@ export function buildOptics(
         Math.sin(a) * hoodMid,
         scopeY + Math.cos(a) * hoodMid,
         objectiveZ + len / 2,
-        b.root,
+        b.frame,
         -a,
       );
     }
@@ -1730,19 +1714,17 @@ export function buildOptics(
     const armOut = clearR - 0.004;
     const armLen = armOut - armIn;
     const armMid = (armIn + armOut) / 2;
-    const bars: Mesh[] = [];
+    const bars: Part[] = [];
     for (const side of [-1, 1] as const) {
-      const v = MeshBuilder.CreateBox(
+      const v = new Part(
         `${prefix}_longRetV`,
-        { width: LONG_RET_ARM, height: armLen, depth: LONG_RET_ARM },
-        b.scene,
+        createBox({ width: LONG_RET_ARM, height: armLen, depth: LONG_RET_ARM }),
       );
       v.position.set(0, longY + side * armMid, retZ);
       bars.push(v);
-      const h = MeshBuilder.CreateBox(
+      const h = new Part(
         `${prefix}_longRetH`,
-        { width: armLen, height: LONG_RET_ARM, depth: LONG_RET_ARM },
-        b.scene,
+        createBox({ width: armLen, height: LONG_RET_ARM, depth: LONG_RET_ARM }),
       );
       h.position.set(side * armMid, longY, retZ);
       bars.push(h);
@@ -1752,26 +1734,17 @@ export function buildOptics(
     // caret is sized, so they keep their place against the picture if the cone
     // is ever re-solved.
     for (let i = 1; i <= 2; i++) {
-      const tick = MeshBuilder.CreateBox(
+      const tick = new Part(
         `${prefix}_longRetTick`,
-        { width: clearR * 0.13, height: LONG_RET_ARM, depth: LONG_RET_ARM },
-        b.scene,
+        createBox({ width: clearR * 0.13, height: LONG_RET_ARM, depth: LONG_RET_ARM }),
       );
       tick.position.set(0, longY - clearR * 0.3 * i, retZ);
       bars.push(tick);
     }
-    const centre = MeshBuilder.CreateSphere(
-      `${prefix}_longRetDot`,
-      { diameter: LONG_RET_DOT, segments: 6 },
-      b.scene,
-    );
+    const centre = new Part(`${prefix}_longRetDot`, createSphere({ diameter: LONG_RET_DOT, segments: 6 }));
     centre.position.set(0, longY, retZ);
     bars.push(centre);
-    const reticle = Mesh.MergeMeshes(bars, true, true);
-    if (reticle) {
-      reticle.name = `${prefix}_longReticle`;
-      b.lit(reticle, node);
-    }
+    b.lit(drawnMesh(`${prefix}_longReticle`, mergeParts(bars), b.scene), node);
 
     // The ocular rim, as on the scope: a sight's eye relief is measured to the
     // glass the eye goes behind, and here it is the number the camera's near

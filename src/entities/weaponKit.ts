@@ -8,16 +8,31 @@
  * and `optics.ts`
  * is the seventh.
  *
+ * **It builds `Part`s, and `merge` is where they become meshes** (BABYLON_EXIT.md
+ * X1.3). Every helper makes a `Part` (`world/parts.ts`) on a `src/geometry/`
+ * buffer — `createBox`, `createCylinder`, `facet`'s lofts and slabs — and hangs
+ * it from a `PartNode`: the build's `frame`, which stands in for the weapon's
+ * live root, or a raking `pivot` under it. Nothing is in the scene until
+ * `merge` hands one buffer per colour group to `drawnMesh` and parents that
+ * mesh to the LIVE node it was given (the root, the magazine, the bolt, a
+ * sight). So the pivots are build-time frames that are never meshes and never
+ * nodes, and there is nothing to dispose once the build is done. A reticle or
+ * a bead is drawn on its own, and `lit` is where it becomes a mesh; an optic's
+ * glass, which wears a material of its own, is made one in `optics.ts`.
+ *
  * Invariants:
  * - A builder assembles at the ORIGIN with its root at identity and merges
- *   before anything is moved. `MergeMeshes` bakes world matrices, so a merge
- *   under a transformed root bakes that transform in twice. Same rule, same
- *   reason, as `BuildingKit` and `mergeByMaterial` (`world/merge.ts`).
- * - Nothing may be scaled non-uniformly. `VertexData.transform` carries
- *   normals across without re-normalising them and `renderOutline` extrudes
- *   each vertex along its own normal, so a squashed part grows an ink shell
- *   that is fat on the squashed axis. Round shells are faceted slab rings
- *   (`shell`) for exactly that reason.
+ *   before anything is moved. `mergeParts` bakes world matrices, as
+ *   `MergeMeshes` did, so a merge under a transformed root bakes that
+ *   transform in twice — which is also why the `frame` that stands in for the
+ *   root during the build is a `PartNode` at identity and never moves. Same
+ *   rule, same reason, as `BuildingKit` and `mergeByMaterial`
+ *   (`world/merge.ts`).
+ * - Nothing may be scaled non-uniformly. `mergeParts` carries normals across
+ *   without re-normalising them, as `VertexData.transform` did, and
+ *   `renderOutline` extrudes each vertex along its own normal, so a squashed
+ *   part grows an ink shell that is fat on the squashed axis. Round shells are
+ *   faceted slab rings (`shell`) for exactly that reason.
  * - A colour absent from `SECTIONS` is silently never merged: anything handed
  *   to `collect` has to appear there, or have been named by `paint` first.
  *   `paint` is for OPTICS — a colour an optic wears that no weapon does — and
@@ -38,15 +53,22 @@
  */
 import {
   Mesh,
-  MeshBuilder,
   Scene,
   TransformNode,
   Vector3,
 } from "@babylonjs/core";
 import { CONFIG } from "../config";
+import { createBox, createCylinder } from "../geometry/primitives";
 import type { CelMaterialFactory } from "../shaders/CelShader";
 import { extrude, loft, type ProfilePoint, type Ring } from "./facet";
-import { drawnMesh } from "../world/parts";
+import {
+  bakePartTransform,
+  detachPart,
+  drawnMesh,
+  mergeParts,
+  Part,
+  PartNode,
+} from "../world/parts";
 import type { SightId } from "./sights";
 
 export const BODY = "#2b2b33"; // aluminium upper receiver, barrel, hinge block
@@ -383,8 +405,20 @@ export type WeaponBuilder = (
  * never end up inside the weapon's colour groups.
  */
 export class WeaponBuild {
-  private target = new Map<string, Mesh[]>();
-  private readonly pivots: TransformNode[] = [];
+  private target = new Map<string, Part[]>();
+  /**
+   * The ROOT, as the build sees it: a `PartNode` at identity that every part
+   * and pivot hangs from by default, standing where `root` stands while the
+   * weapon is assembled — at identity, and unmoved until the builder has
+   * returned (see the header). The parts were once hung from `root` itself;
+   * a merge under this is the same arithmetic, and nothing built here
+   * reaches the scene but the meshes `merge` and `lit` make.
+   *
+   * A builder passes it where it names the root as a PART's parent, and
+   * passes `root` where it hangs a LIVE node (a magazine, a sight) from the
+   * weapon.
+   */
+  readonly frame: PartNode;
   /** Merged colour groups since the last `takeFinish()` — see there. */
   private finish: FinishPart[] = [];
   /**
@@ -398,21 +432,22 @@ export class WeaponBuild {
     private readonly mats: CelMaterialFactory,
     private readonly prefix: string,
     readonly root: TransformNode,
-  ) {}
+  ) {
+    this.frame = new PartNode(root.name);
+  }
 
-  private collect(color: string, m: Mesh): Mesh {
+  private collect(color: string, p: Part): Part {
     // The small metal parts are a weapon's only glossy surface — a hard moon
     // glint on the rails/fittings sells them as steel against the matte
     // receiver and polymer.
-    m.material =
+    p.material =
       color === METAL || this.paints.get(color)?.glossy
         ? this.mats.getGlossy(color, CONFIG.graphics.spec.rifle)
         : this.mats.get(color);
-    m.isPickable = false;
     const g = this.target.get(color);
-    if (g) g.push(m);
-    else this.target.set(color, [m]);
-    return m;
+    if (g) g.push(p);
+    else this.target.set(color, [p]);
+    return p;
   }
 
   /**
@@ -442,18 +477,14 @@ export class WeaponBuild {
     x: number,
     y: number,
     z: number,
-    parent: TransformNode = this.root,
+    parent: PartNode = this.frame,
     rotZ = 0,
-  ): Mesh {
-    const m = MeshBuilder.CreateBox(
-      `${this.prefix}_${name}`,
-      { width: w, height: h, depth: d },
-      this.scene,
-    );
-    m.parent = parent;
-    m.position.set(x, y, z);
-    m.rotation.z = rotZ;
-    return this.collect(color, m);
+  ): Part {
+    const p = new Part(`${this.prefix}_${name}`, createBox({ width: w, height: h, depth: d }));
+    p.parent = parent;
+    p.position.set(x, y, z);
+    p.rotation.z = rotZ;
+    return this.collect(color, p);
   }
 
   /** Cylinder laid along the barrel axis. */
@@ -466,16 +497,15 @@ export class WeaponBuild {
     x: number,
     y: number,
     z: number,
-  ): Mesh {
-    const m = MeshBuilder.CreateCylinder(
+  ): Part {
+    const p = new Part(
       `${this.prefix}_${name}`,
-      { height: len, diameterTop: dFront, diameterBottom: dRear, tessellation: 10 },
-      this.scene,
+      createCylinder({ height: len, diameterTop: dFront, diameterBottom: dRear, tessellation: 10 }),
     );
-    m.parent = this.root;
-    m.rotation.x = Math.PI / 2; // +y axis -> +z barrel axis
-    m.position.set(x, y, z);
-    return this.collect(color, m);
+    p.parent = this.frame;
+    p.rotation.x = Math.PI / 2; // +y axis -> +z barrel axis
+    p.position.set(x, y, z);
+    return this.collect(color, p);
   }
 
   /** Cylinder across the weapon: pins, hinges, turrets, battery caps. */
@@ -488,16 +518,15 @@ export class WeaponBuild {
     y: number,
     z: number,
     axis: "x" | "y" = "x",
-  ): Mesh {
-    const m = MeshBuilder.CreateCylinder(
+  ): Part {
+    const p = new Part(
       `${this.prefix}_${name}`,
-      { height: len, diameter: dia, tessellation: 10 },
-      this.scene,
+      createCylinder({ height: len, diameter: dia, tessellation: 10 }),
     );
-    m.parent = this.root;
-    if (axis === "x") m.rotation.z = Math.PI / 2; // +y axis -> +x
-    m.position.set(x, y, z);
-    return this.collect(color, m);
+    p.parent = this.frame;
+    if (axis === "x") p.rotation.z = Math.PI / 2; // +y axis -> +x
+    p.position.set(x, y, z);
+    return this.collect(color, p);
   }
 
   /**
@@ -514,11 +543,11 @@ export class WeaponBuild {
     width: number,
     bevel: number,
     x = 0,
-    parent: TransformNode = this.root,
-  ): Mesh {
-    const m = drawnMesh(extrude(`${this.prefix}_${name}`, profile, width, bevel, x), this.scene);
-    m.parent = parent;
-    return this.collect(color, m);
+    parent: PartNode = this.frame,
+  ): Part {
+    const p = extrude(`${this.prefix}_${name}`, profile, width, bevel, x);
+    p.parent = parent;
+    return this.collect(color, p);
   }
 
   /**
@@ -531,11 +560,11 @@ export class WeaponBuild {
     name: string,
     color: string,
     rings: readonly Ring[],
-    parent: TransformNode = this.root,
-  ): Mesh {
-    const m = drawnMesh(loft(`${this.prefix}_${name}`, rings), this.scene);
-    m.parent = parent;
-    return this.collect(color, m);
+    parent: PartNode = this.frame,
+  ): Part {
+    const p = loft(`${this.prefix}_${name}`, rings);
+    p.parent = parent;
+    return this.collect(color, p);
   }
 
   /**
@@ -588,7 +617,7 @@ export class WeaponBuild {
         x + Math.sin(a) * rMid,
         y + Math.cos(a) * rMid,
         z,
-        this.root,
+        this.frame,
         -a,
       );
     }
@@ -626,45 +655,44 @@ export class WeaponBuild {
     }: { width: number; height: number; pitch?: number; facing?: "up" | "down" | "left" | "right" },
   ): void {
     const rotZ = { up: 0, down: Math.PI, left: Math.PI / 2, right: -Math.PI / 2 }[facing];
-    const n = new TransformNode(`${this.prefix}_${name}`, this.scene);
-    n.parent = this.root;
+    const n = new PartNode(`${this.prefix}_${name}`);
+    n.parent = this.frame;
     n.position.set(x, y, z0);
     n.rotation.z = rotZ;
-    this.pivots.push(n);
     const len = (count - 1) * pitch;
     const tooth = pitch * 0.55;
     const neck = height * 0.4;
     // The spine: continuous under the whole run, as deep as the slots are cut.
     this.box(`${name}Spine`, BODY, width * 0.62, neck, len + tooth, 0, neck / 2, len / 2, n);
     for (let i = 0; i < count; i++) {
-      const m = drawnMesh(
-        loft(`${this.prefix}_${name}Tooth`, [
-          { y: neck * 0.8, w: width * 0.66, d: tooth, z: i * pitch },
-          { y: height * 0.55, w: width, d: tooth, z: i * pitch },
-          { y: height * 0.8, w: width, d: tooth, z: i * pitch },
-          { y: height, w: width * 0.86, d: tooth, z: i * pitch },
-        ]),
-        this.scene,
-      );
-      m.parent = n;
-      this.collect(METAL, m);
+      const p = loft(`${this.prefix}_${name}Tooth`, [
+        { y: neck * 0.8, w: width * 0.66, d: tooth, z: i * pitch },
+        { y: height * 0.55, w: width, d: tooth, z: i * pitch },
+        { y: height * 0.8, w: width, d: tooth, z: i * pitch },
+        { y: height, w: width * 0.86, d: tooth, z: i * pitch },
+      ]);
+      p.parent = n;
+      this.collect(METAL, p);
     }
   }
 
-  /** Raked sub-assembly (grip, magazine, foregrip) hung off its own pivot. */
+  /**
+   * Raked sub-assembly (grip, magazine, foregrip) hung off its own pivot — a
+   * build-time frame (`PartNode`) that goes with its parts once they are
+   * merged, and is never a node in the scene.
+   */
   pivot(
     name: string,
     x: number,
     y: number,
     z: number,
     rotX: number,
-    parent: TransformNode = this.root,
-  ): TransformNode {
-    const n = new TransformNode(`${this.prefix}_${name}`, this.scene);
+    parent: PartNode = this.frame,
+  ): PartNode {
+    const n = new PartNode(`${this.prefix}_${name}`);
     n.parent = parent;
     n.position.set(x, y, z);
     n.rotation.x = rotX;
-    this.pivots.push(n);
     return n;
   }
 
@@ -675,8 +703,13 @@ export class WeaponBuild {
    * optic — which is what keeps a loadout change from touching the weapon
    * underneath it, and what lets the magazine leave the weapon at all.
    *
-   * Everything is still at identity under `root` here, so the bake leaves the
-   * geometry exactly where it was built.
+   * Everything is still at identity under `frame` here, so the bake leaves the
+   * geometry exactly where it was built. `parent` is the LIVE node a group
+   * hangs from: the root the frame stands in for, or a node at identity
+   * under it (the magazine, the round, the bolt, a sight).
+   *
+   * This is where a weapon's surface first reaches the scene: each group's
+   * mesh is made here by `drawnMesh`, and nowhere else but `lit`.
    */
   merge(suffix: string, parent: TransformNode): Mesh[] {
     const groups = this.target;
@@ -687,16 +720,23 @@ export class WeaponBuild {
     for (const [name, color, finished] of all) {
       const parts = groups.get(color);
       if (!parts || parts.length === 0) continue;
-      // A colour group of ONE is the case MergeMeshes will not do for you —
-      // it hands the mesh straight back with its transform intact, which the
-      // new parent would then apply a second time. Bake it by hand instead,
-      // detached first because the bake resets the local matrix. Same rule,
-      // and same reason, as ViewModel's arms and mergeByMaterial (world/merge.ts).
-      const merged =
-        parts.length === 1
-          ? (parts[0].setParent(null), parts[0].bakeCurrentTransformIntoVertices())
-          : Mesh.MergeMeshes(parts, true, true);
-      if (!merged) continue;
+      // A colour group of ONE is the case MergeMeshes would not do: it handed
+      // the mesh straight back with its transform intact, which the new
+      // parent would then apply a second time. So it is baked by hand,
+      // detached first because the bake resets the local matrix — Babylon's
+      // `setParent(null)` and `bakeCurrentTransformIntoVertices`, step for
+      // step (`detachPart`, `bakePartTransform`), which rounds differently
+      // from a merge and is why this path is kept rather than handed to
+      // `mergeParts`. Same rule, and same reason, as ViewModel's arms and
+      // mergeByMaterial (world/merge.ts).
+      let merged: Mesh;
+      if (parts.length === 1) {
+        detachPart(parts[0]);
+        merged = drawnMesh(bakePartTransform(parts[0]), this.scene);
+      } else {
+        merged = drawnMesh(`${parts[0].name}_merged`, mergeParts(parts), this.scene);
+        merged.material = parts[0].material;
+      }
       merged.name = `${this.prefix}_${suffix}_${name}`;
       merged.parent = parent;
       merged.isPickable = false;
@@ -726,9 +766,13 @@ export class WeaponBuild {
 
   /**
    * Dresses a reticle or a tritium bead: unlit, un-outlined, and deliberately
-   * NOT run through `collect` — see the header.
+   * NOT run through `collect` — see the header. A `Part` is made a mesh here
+   * (`drawnMesh`), so a bead is in the scene from the line that built it, as
+   * it was when it was a `MeshBuilder` sphere; a merged reticle arrives as the
+   * mesh `drawnMesh` already made of its bars.
    */
-  lit(m: Mesh, parent: TransformNode, colour: string = RETICLE): Mesh {
+  lit(part: Mesh | Part, parent: TransformNode, colour: string = RETICLE): Mesh {
+    const m = part instanceof Part ? drawnMesh(part, this.scene) : part;
     m.parent = parent;
     m.material = this.mats.getEmissive(colour);
     m.metadata = { noInk: true };
@@ -736,9 +780,4 @@ export class WeaponBuild {
     return m;
   }
 
-  /** Drops the raking pivots once their children have been merged out. */
-  disposePivots(): void {
-    for (const p of this.pivots) p.dispose();
-    this.pivots.length = 0;
-  }
 }

@@ -78,8 +78,12 @@
  *   against. Anything else attached to it (Player's muzzle flash) must join
  *   that group or it will be hidden behind the gun it belongs to.
  * - Arms are built at the origin and merged per colour before being parented,
- *   the same rule as BuildingKit and the weapon models: MergeMeshes bakes
- *   world matrices, so the merge is only correct at identity.
+ *   the same rule as BuildingKit and the weapon models: `mergeParts` bakes
+ *   world matrices, as MergeMeshes did, so the merge is only correct at
+ *   identity. Like the weapons, they are built as `Part`s (`world/parts.ts`)
+ *   on `src/geometry/` buffers, and `drawnMesh` is where each colour group,
+ *   the throwing fist's grenade and the kit card become meshes; everything
+ *   from there on — the rig, the poses, the nodes — is Babylon's.
  * - The loadout screen's turntable (`beginInspect`/`updateInspect`) is the one
  *   pose that is not the carried one, and it is the only thing here that may
  *   write `rotationQuaternion`. While one is set Babylon ignores `rotation`
@@ -95,7 +99,6 @@ import {
   DynamicTexture,
   Matrix,
   Mesh,
-  MeshBuilder,
   type Node,
   Quaternion,
   Scene,
@@ -127,7 +130,16 @@ import {
 import { buildMine } from "./MineModel";
 import { buildRpg } from "./RpgModel";
 import { loft, type Ring } from "./facet";
-import { drawnMesh } from "../world/parts";
+import { createPlane, createSphere } from "../geometry/primitives";
+import { Vector3 as PartVector3 } from "../math";
+import {
+  bakePartTransform,
+  detachPart,
+  drawnMesh,
+  mergeParts,
+  Part,
+  PartNode,
+} from "../world/parts";
 import { ReloadGesture, type ReloadInput, type ReloadPose, type ReloadRig } from "./ReloadGesture";
 import { OWN_KIT } from "./SoldierModel";
 import {
@@ -249,7 +261,7 @@ function buildKitBackdrop(scene: Scene): { card: Mesh; tex: DynamicTexture } {
   mat.depthFunction = Constants.ALWAYS;
   mat.backFaceCulling = false;
 
-  const card = MeshBuilder.CreatePlane("viewmodel_kitBackdrop", { size: 1 }, scene);
+  const card = drawnMesh(new Part("viewmodel_kitBackdrop", createPlane({ size: 1 })), scene);
   card.material = mat;
   // Last of every blended mesh in the scene, and INFINITY is what that takes:
   // Babylon's default `alphaIndex` is already `Number.MAX_VALUE`, so any
@@ -869,18 +881,16 @@ export class ViewModel {
       { hand: Vector3.Zero(), elbow: THROW_ELBOW },
       this.throwHand,
     );
-    const ball = MeshBuilder.CreateSphere(
-      "view_throwGrenade",
-      { diameter: THROW_BALL * 2, segments: 6 },
+    const ball = drawnMesh(
+      new Part("view_throwGrenade", createSphere({ diameter: THROW_BALL * 2, segments: 6 })),
       scene,
     );
     ball.parent = this.throwHand;
     ball.position.set(0, 0.04, 0.06);
     ball.material = mats.get("#3f4a33");
     ball.isPickable = false;
-    const pip = MeshBuilder.CreateSphere(
-      "view_throwGrenadePip",
-      { diameter: THROW_BALL * 0.62, segments: 4 },
+    const pip = drawnMesh(
+      new Part("view_throwGrenadePip", createSphere({ diameter: THROW_BALL * 0.62, segments: 4 })),
       scene,
     );
     pip.parent = ball;
@@ -2257,11 +2267,15 @@ function addScaled(
  * the side the camera sees of a hand on a pistol grip and of one under a
  * handguard), and the thumb goes to whichever end of the knuckle row is nearer
  * the muzzle and the top — the top of a pistol grip, the front of a handguard.
- * Every part is then detached with `setParent(null)` — which folds the frame
- * node's transform into the part's own — BEFORE the merge, because
- * `bakeCurrentTransformIntoVertices` (the one-mesh path, as in MapBuilder)
- * resets the local matrix and would leave a still-parented mesh transformed
- * twice.
+ * Every part is then detached (`detachPart`, Babylon's `setParent(null)`) —
+ * which folds the frame's transform into the part's own — BEFORE the merge,
+ * because `bakePartTransform` (the one-part path, as in MapBuilder) resets the
+ * local matrix and would leave a still-parented part transformed twice.
+ *
+ * The frame is a `PartNode`, a build-time frame that is never in the scene
+ * (a `TransformNode` used to be made here and disposed). The parts are
+ * `facet` lofts, and each colour group becomes a mesh at the merge
+ * (`drawnMesh`), hung from the live `parent` the caller gives.
  */
 function buildArm(
   scene: Scene,
@@ -2270,30 +2284,33 @@ function buildArm(
   grip: GripSpec,
   parent: TransformNode,
 ): Mesh[] {
-  const parts = new Map<string, Mesh[]>();
-  const frame = new TransformNode(`view_${name}Frame`, scene);
+  const parts = new Map<string, Part[]>();
+  const frame = new PartNode(`view_${name}Frame`);
   const collect = (color: string, part: string, rings: Ring[]) => {
-    const m = drawnMesh(loft(`view_${name}${part}`, rings), scene);
-    m.parent = frame;
+    const p = loft(`view_${name}${part}`, rings);
+    p.parent = frame;
     const g = parts.get(color);
-    if (g) g.push(m);
-    else parts.set(color, [m]);
+    if (g) g.push(p);
+    else parts.set(color, [p]);
   };
 
   // --- the frame: +y up the forearm, +z into the palm, x along the knuckles.
-  const toElbow = grip.elbow.subtract(grip.hand);
+  // In `src/math/`'s vectors, which are Babylon's bit for bit: this is
+  // arithmetic for a build-time frame and touches no node.
+  const hand = new PartVector3(grip.hand.x, grip.hand.y, grip.hand.z);
+  const toElbow = new PartVector3(grip.elbow.x, grip.elbow.y, grip.elbow.z).subtract(hand);
   const len = toElbow.length();
   const ay = toElbow.scale(1 / len);
   const out = Math.sign(grip.elbow.x - grip.hand.x) || 1;
-  const back = new Vector3(out, 0.45, 0);
+  const back = new PartVector3(out, 0.45, 0);
   // Gram-Schmidt the back of the hand off the forearm, then flip it: +z is
   // the PALM, so the loft's rings read "d" as back-to-palm thickness.
-  const az = back.subtract(ay.scale(Vector3.Dot(back, ay))).normalize().scaleInPlace(-1);
-  const ax = Vector3.Cross(ay, az);
-  frame.position.copyFrom(grip.hand);
-  frame.rotation = Vector3.RotationFromAxis(ax, ay, az);
+  const az = back.subtract(ay.scale(PartVector3.Dot(back, ay))).normalize().scaleInPlace(-1);
+  const ax = PartVector3.Cross(ay, az);
+  frame.position.copyFrom(hand);
+  frame.rotation.copyFrom(PartVector3.RotationFromAxis(ax, ay, az));
   // Which end of the knuckle row the index finger — and so the thumb — is at.
-  const tx = Math.sign(Vector3.Dot(ax, new Vector3(0, 1, 1))) || 1;
+  const tx = Math.sign(PartVector3.Dot(ax, new PartVector3(0, 1, 1))) || 1;
 
   const glove = OWN_KIT.webbing;
   const sleeve = OWN_KIT.suit;
@@ -2336,18 +2353,16 @@ function buildArm(
 
   const merged: Mesh[] = [];
   for (const [color, group] of parts) {
-    for (const m of group) m.setParent(null);
+    for (const p of group) detachPart(p);
     const m =
       group.length === 1
-        ? group[0].bakeCurrentTransformIntoVertices()
-        : Mesh.MergeMeshes(group, true, true);
-    if (!m) continue;
+        ? drawnMesh(bakePartTransform(group[0]), scene)
+        : drawnMesh(`${group[0].name}_merged`, mergeParts(group), scene);
     m.name = `view_${name}_${color.slice(1)}`;
     m.material = mats.get(color);
     m.parent = parent;
     m.isPickable = false;
     merged.push(m);
   }
-  frame.dispose();
   return merged;
 }

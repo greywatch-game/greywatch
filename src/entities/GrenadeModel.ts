@@ -6,6 +6,8 @@
  * Invariants: a grenade is DRESSING WITH A TIMER, never a collider. It carries
  * no `solid` flag and no `WorldBox`, so nothing shoots it, walks into it or
  * treats it as cover, and it must stay that way on both sides of the wire.
+ * Both meshes are `Part`s on `src/geometry/` spheres made meshes by
+ * `drawnMesh` (BABYLON_EXIT.md X1.3).
  *
  * It is a file of its own for the reason `SoldierModel` is one: two things
  * build a grenade now. `GrenadeSystem` builds the pool it SIMULATES, and
@@ -15,9 +17,11 @@
  * blinking at the same rate — and the way that stays true is one description
  * of it rather than two that agree on the day they were written.
  */
-import { Mesh, MeshBuilder, Scene } from "@babylonjs/core";
+import { Mesh, Scene } from "@babylonjs/core";
 import { CONFIG } from "../config";
+import { createSphere } from "../geometry/primitives";
 import { type CelMaterialFactory } from "../shaders/CelShader";
+import { drawnMesh, Part } from "../world/parts";
 
 /** One grenade's meshes. The pip is parented to the body and moves with it. */
 export interface GrenadeMeshes {
@@ -35,9 +39,8 @@ export function buildGrenade(
   name: string,
 ): GrenadeMeshes {
   const g = CONFIG.grenade;
-  const mesh = MeshBuilder.CreateSphere(
-    name,
-    { diameter: g.radius * 2, segments: 6 },
+  const mesh = drawnMesh(
+    new Part(name, createSphere({ diameter: g.radius * 2, segments: 6 })),
     scene,
   );
   mesh.material = mats.get("#3f4a33");
@@ -47,9 +50,8 @@ export function buildGrenade(
   // cover — it is dressing with a timer.
   mesh.isPickable = false;
 
-  const pip = MeshBuilder.CreateSphere(
-    `${name}Pip`,
-    { diameter: g.radius * 0.62, segments: 4 },
+  const pip = drawnMesh(
+    new Part(`${name}Pip`, createSphere({ diameter: g.radius * 0.62, segments: 4 })),
     scene,
   );
   pip.parent = mesh;

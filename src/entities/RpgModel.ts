@@ -7,7 +7,10 @@
  * Invariants: the launcher is assembled at the origin with the root at
  * identity and merged before it is moved — `weaponKit.ts` owns that contract
  * and the primitives. The rocket is DRESSING: no `solid` flag, no `WorldBox`,
- * not pickable, exactly as a grenade is.
+ * not pickable, exactly as a grenade is. Both are built as `Part`s on
+ * `src/geometry/` buffers, and `drawnMesh` is where they become meshes
+ * (`WeaponBuild.merge` and `lit` for the launcher; the rocket's head, merged
+ * tail and flame here).
  *
  * Two builders in one file for the reason `GrenadeModel` is one file: what a
  * rocket looks like and what threw it are the same object seen twice, and the
@@ -24,9 +27,11 @@
  * reticle is still the point of impact: the derivation never cared which way
  * the sight sat, only where its centre is.
  */
-import { Mesh, MeshBuilder, Scene, TransformNode, Vector3 } from "@babylonjs/core";
+import { Mesh, Scene, TransformNode, Vector3 } from "@babylonjs/core";
 import { CONFIG } from "../config";
+import { createBox, createCylinder } from "../geometry/primitives";
 import { type CelMaterialFactory } from "../shaders/CelShader";
+import { bakePartTransform, drawnMesh, mergeParts, Part } from "../world/parts";
 import { eyeDistance, PRISM_CONE, PRISM_WALL } from "./optics";
 import {
   BODY,
@@ -272,7 +277,6 @@ export function buildRpg(
   const finish = b.takeFinish();
 
   const sight = buildRpgSight(b, root, prefix);
-  b.disposePivots();
 
   return {
     root,
@@ -369,11 +373,7 @@ function buildRpgSight(
   for (const side of [-1, 1] as const) {
     const a = 0.6;
     const bar = b.lit(
-      MeshBuilder.CreateBox(
-        `${prefix}_rpgChevron`,
-        { width: 0.0012, height: armLen, depth: 0.0013 },
-        b.scene,
-      ),
+      new Part(`${prefix}_rpgChevron`, createBox({ width: 0.0012, height: armLen, depth: 0.0013 })),
       node,
     );
     // Each arm is hung from the axis so its TOP end lands on it, which is what
@@ -421,42 +421,32 @@ export function buildRocket(
   name: string,
 ): RocketMeshes {
   const r = CONFIG.equipment.rpg.rocket.radius;
-  const head = MeshBuilder.CreateCylinder(
+  const headPart = new Part(
     name,
-    { height: r * 2.4, diameterTop: r * 0.4, diameterBottom: r * 2, tessellation: 8 },
-    scene,
+    createCylinder({ height: r * 2.4, diameterTop: r * 0.4, diameterBottom: r * 2, tessellation: 8 }),
   );
-  head.rotation.x = Math.PI / 2;
-  head.bakeCurrentTransformIntoVertices();
+  headPart.rotation.x = Math.PI / 2;
+  const head = drawnMesh(bakePartTransform(headPart), scene);
   head.material = mats.get("#4b4f42");
   head.isPickable = false;
 
   // The boom and its fins, behind the head. Merged in rather than parented, so
   // a pooled rocket is one mesh and one draw.
-  const boom = MeshBuilder.CreateCylinder(
-    `${name}Boom`,
-    { height: r * 3, diameter: r * 0.7, tessellation: 6 },
-    scene,
-  );
+  const boom = new Part(`${name}Boom`, createCylinder({ height: r * 3, diameter: r * 0.7, tessellation: 6 }));
   boom.rotation.x = Math.PI / 2;
   boom.position.z = -r * 2.6;
-  const fins: Mesh[] = [boom];
+  const fins: Part[] = [boom];
   for (let i = 0; i < 4; i++) {
-    const fin = MeshBuilder.CreateBox(
-      `${name}Fin`,
-      { width: r * 1.6, height: r * 0.12, depth: r * 1.2 },
-      scene,
-    );
+    const fin = new Part(`${name}Fin`, createBox({ width: r * 1.6, height: r * 0.12, depth: r * 1.2 }));
     fin.rotation.z = (i / 4) * Math.PI * 2;
     fin.position.z = -r * 3.6;
     fins.push(fin);
   }
-  const tail = Mesh.MergeMeshes(fins, true, true);
-  if (tail) {
-    tail.parent = head;
-    tail.material = mats.get("#2f3229");
-    tail.isPickable = false;
-  }
+  // `MergeMeshes`' mesh, name and all: the boom's name and `_merged`.
+  const tail = drawnMesh(`${boom.name}_merged`, mergeParts(fins), scene);
+  tail.parent = head;
+  tail.material = mats.get("#2f3229");
+  tail.isPickable = false;
 
   // **A parked rocket is DISABLED, not invisible**, and that is the one
   // Babylon fact this pool turns on: `isVisible` hides the mesh it is set on
@@ -470,13 +460,12 @@ export function buildRocket(
   // The motor. Unlit, un-outlined and deliberately a stubby cone rather than a
   // sphere: it is what says which way the thing is pointing at the range a
   // rocket is actually read at.
-  const flame = MeshBuilder.CreateCylinder(
+  const flamePart = new Part(
     `${name}Flame`,
-    { height: r * 4, diameterTop: r * 1.5, diameterBottom: r * 0.2, tessellation: 6 },
-    scene,
+    createCylinder({ height: r * 4, diameterTop: r * 1.5, diameterBottom: r * 0.2, tessellation: 6 }),
   );
-  flame.rotation.x = -Math.PI / 2;
-  flame.bakeCurrentTransformIntoVertices();
+  flamePart.rotation.x = -Math.PI / 2;
+  const flame = drawnMesh(bakePartTransform(flamePart), scene);
   flame.parent = head;
   flame.position.z = -r * 6;
   flame.material = mats.getEmissive("#ffb046");

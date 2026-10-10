@@ -592,7 +592,7 @@ export function buildSniper(
     BOLT_DIR.x * 0.05,
     BOLT_DIR.y * 0.05,
     BOLT_Z,
-    root,
+    b.frame,
     -BOLT_REST,
   );
   b.pin("boltKnob", METAL, 0.036, 0.03, BOLT_DIR.x * 0.094, BOLT_DIR.y * 0.094, BOLT_Z, "x");
@@ -605,7 +605,7 @@ export function buildSniper(
     BOLT_DIR.x * 0.02,
     BOLT_DIR.y * 0.02,
     BOLT_Z,
-    root,
+    b.frame,
     -BOLT_REST,
   );
   meshes.push(...b.merge("sniperBolt", bolt));
@@ -617,7 +617,6 @@ export function buildSniper(
 
   const optics = buildOptics(b, MOUNT, prefix);
   meshes.push(...optics.meshes);
-  b.disposePivots();
 
   return {
     root,

@@ -24,8 +24,10 @@
  * numbers. Units are the models' throughout: ~1.4 per metre, which puts this
  * weapon at 0.33 long against the rifle's 1.27.
  */
-import { Mesh, MeshBuilder, Scene, TransformNode, Vector3 } from "@babylonjs/core";
+import { Mesh, Scene, TransformNode, Vector3 } from "@babylonjs/core";
+import { createSphere } from "../geometry/primitives";
 import type { CelMaterialFactory } from "../shaders/CelShader";
+import { Part } from "../world/parts";
 import {
   BODY,
   METAL,
@@ -380,7 +382,6 @@ export function buildPistol(
   // reload, which has already broken the aim.
   const sight = buildFixedIrons(b, prefix, slide);
   meshes.push(...sight.meshes);
-  b.disposePivots();
 
   return {
     root,
@@ -470,11 +471,7 @@ function buildFixedIrons(
     { x: 0, z: FRONT_SIGHT_Z - 0.011 },
   ]) {
     const bead = b.lit(
-      MeshBuilder.CreateSphere(
-        `${prefix}_sightDot`,
-        { diameter: 0.005, segments: 6 },
-        b.scene,
-      ),
+      new Part(`${prefix}_sightDot`, createSphere({ diameter: 0.005, segments: 6 })),
       node,
     );
     bead.position.set(dot.x, SIGHT_Y - 0.004, dot.z);

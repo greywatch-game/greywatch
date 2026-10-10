@@ -8,6 +8,8 @@
  * pickable — on every side of the wire, for `GrenadeModel`'s reason. Built at
  * the origin with the bottle's middle there, so a tumble about the mesh's own
  * origin is a bottle turning end over end rather than swinging round its base.
+ * Each mesh is a `Part` on a `src/geometry/` buffer made a mesh by
+ * `drawnMesh` (BABYLON_EXIT.md X1.3).
  *
  * A file of its own for `GrenadeModel`'s reason, and there are THREE builders
  * of it rather than two: `GrenadeSystem`'s pool, `net/NetGrenades`' drawn
@@ -16,8 +18,10 @@
  * is what the RAG is for: a lit wick is the one detail that says "this will be
  * on fire" from across a street and from inside your own hand.
  */
-import { Mesh, MeshBuilder, Scene } from "@babylonjs/core";
+import { Mesh, Scene } from "@babylonjs/core";
+import { createCylinder, createSphere } from "../geometry/primitives";
 import type { CelMaterialFactory } from "../shaders/CelShader";
+import { drawnMesh, Part } from "../world/parts";
 
 /** One bottle's meshes. The neck and the rag are parented to the body. */
 export interface MolotovMeshes {
@@ -48,23 +52,24 @@ export function buildMolotov(
   mats: CelMaterialFactory,
   name: string,
 ): MolotovMeshes {
-  const mesh = MeshBuilder.CreateCylinder(
-    name,
-    { height: BODY_H, diameter: BODY_D, tessellation: 8 },
+  const mesh = drawnMesh(
+    new Part(name, createCylinder({ height: BODY_H, diameter: BODY_D, tessellation: 8 })),
     scene,
   );
   mesh.material = mats.get(GLASS);
   mesh.isVisible = false;
   mesh.isPickable = false;
 
-  const neck = MeshBuilder.CreateCylinder(
-    `${name}Neck`,
-    {
-      height: NECK_H,
-      diameterTop: NECK_D,
-      diameterBottom: NECK_D * 1.6,
-      tessellation: 6,
-    },
+  const neck = drawnMesh(
+    new Part(
+      `${name}Neck`,
+      createCylinder({
+        height: NECK_H,
+        diameterTop: NECK_D,
+        diameterBottom: NECK_D * 1.6,
+        tessellation: 6,
+      }),
+    ),
     scene,
   );
   neck.parent = mesh;
@@ -75,9 +80,8 @@ export function buildMolotov(
 
   // The rag: a collar of cloth round the mouth, which is what the wick is
   // tied off with and what stops the lit end reading as a bulb on a stalk.
-  const cloth = MeshBuilder.CreateCylinder(
-    `${name}Cloth`,
-    { height: 0.045, diameter: NECK_D * 1.35, tessellation: 6 },
+  const cloth = drawnMesh(
+    new Part(`${name}Cloth`, createCylinder({ height: 0.045, diameter: NECK_D * 1.35, tessellation: 6 })),
     scene,
   );
   cloth.parent = neck;
@@ -86,9 +90,8 @@ export function buildMolotov(
   cloth.isPickable = false;
   cloth.isVisible = false;
 
-  const wick = MeshBuilder.CreateSphere(
-    `${name}Wick`,
-    { diameter: 0.05, segments: 4 },
+  const wick = drawnMesh(
+    new Part(`${name}Wick`, createSphere({ diameter: 0.05, segments: 4 })),
     scene,
   );
   wick.parent = cloth;

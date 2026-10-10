@@ -31,7 +31,10 @@
  * the viewmodel (and the blob shadow ShadowSystem draws underfoot). The flash
  * mesh and casing pool are player-only visuals (bots get neither — see
  * CONFIG.gunfeel), and the flash must join VIEWMODEL_GROUP with the rifle it
- * hangs off. Damage flows out via the onDamaged callback wired in Game.
+ * hangs off. Both are built as `Part`s on `src/geometry/` buffers and made
+ * meshes by `drawnMesh` (BABYLON_EXIT.md X1.3); the capsule is a COLLIDER,
+ * not a drawing, and stays `MeshBuilder`'s until the sweeps are ours (X2.1).
+ * Damage flows out via the onDamaged callback wired in Game.
  * The RECOIL VECTOR is built here (`recoilKick`) and nowhere else: every number
  * in it is the weapon's or the body's, and Game only wires the result to the
  * camera. Its arithmetic is `core/recoilVector.ts`'s and its STATE is this
@@ -70,6 +73,8 @@ import {
   Vector3,
 } from "@babylonjs/core";
 import { CONFIG } from "../config";
+import { createBox, createPlane, DOUBLESIDE } from "../geometry/primitives";
+import { drawnMesh, Part } from "../world/parts";
 import {
   RecoilAxis,
   recoilGain,
@@ -746,9 +751,11 @@ export class Player implements Combatant {
     this.flashRoot.setEnabled(false);
     const flashMat = mats.getEmissive("#ffd9a0");
     for (let i = 0; i < 3; i++) {
-      const petal = MeshBuilder.CreatePlane(
-        `player_flashPetal${i}`,
-        { width: 0.34, height: 0.15, sideOrientation: Mesh.DOUBLESIDE },
+      const petal = drawnMesh(
+        new Part(
+          `player_flashPetal${i}`,
+          createPlane({ width: 0.34, height: 0.15, sideOrientation: DOUBLESIDE }),
+        ),
         scene,
       );
       petal.parent = this.flashRoot;
@@ -767,9 +774,8 @@ export class Player implements Combatant {
 
     const casingMat = mats.get("#b99b4e");
     for (let i = 0; i < CONFIG.gunfeel.casingPool; i++) {
-      const m = MeshBuilder.CreateBox(
-        `player_casing${i}`,
-        { width: 0.016, height: 0.016, depth: 0.05 },
+      const m = drawnMesh(
+        new Part(`player_casing${i}`, createBox({ width: 0.016, height: 0.016, depth: 0.05 })),
         scene,
       );
       m.material = casingMat;
