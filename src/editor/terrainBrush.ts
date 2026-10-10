@@ -45,6 +45,7 @@ import { clamp } from "../core/math";
 import type { Heightfield } from "../world/layout";
 import type { GameMap } from "../world/MapBuilder";
 import { MAX_WALKABLE_GRADE, terrainPatches } from "../world/TerrainField";
+import { vertexDataOf } from "../world/parts";
 import { EDITOR } from "./tuning";
 
 /** Lift the highlight clear of the ground it traces. */
@@ -433,7 +434,7 @@ export class TerrainBrush {
     for (const patch of patches) {
       if (!blocks.has(patch.key)) continue;
       const mesh = this.scene.getMeshByName(`terrain-${patch.key}`);
-      if (mesh) patch.data.applyToMesh(mesh as Mesh, true);
+      if (mesh) vertexDataOf(patch.data).applyToMesh(mesh as Mesh, true);
     }
   }
 

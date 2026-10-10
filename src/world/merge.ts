@@ -3,8 +3,8 @@
  * material within a structure or a scatter field (`mergeByMaterial`), then per
  * map block across neighbours (`BlockMerge` for everything opaque,
  * `PaneBlocks` for the glazing, which has to keep its breakable panes'
- * vertex ranges). Plus `flatten`, which readies a prop hierarchy for the
- * first, `tag`, the editor's per-item mark, and `BLOCK_SIZE`.
+ * vertex ranges). Plus `tag`, the editor's per-item mark, and `BLOCK_SIZE`.
+ * A prop's hierarchy arrives already flattened (`flattenParts` in `parts.ts`).
  * Owns: no state outlasting a call but the two passes' own block lists, and no
  * collider — `MapBuilder` drives every function here and is still the only
  * place a collider is made.
@@ -285,22 +285,6 @@ export class PaneBlocks {
     }
     return meshes;
   }
-}
-
-/**
- * Flattens a prop hierarchy into a plain mesh list, unparenting each child so
- * its world transform survives the merge. `MergeMeshes` reads world matrices,
- * so the children have to be detached but left where they are.
- */
-export function flatten(root: Mesh): Mesh[] {
-  const out: Mesh[] = [root];
-  for (const child of root.getChildMeshes()) {
-    const m = child as Mesh;
-    m.computeWorldMatrix(true);
-    m.setParent(null);
-    out.push(m);
-  }
-  return out;
 }
 
 /**

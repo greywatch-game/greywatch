@@ -25,9 +25,11 @@
  * collider share vertices (an invisible clone per block); a heightfield has no
  * box to stand in for it, and splitting it per block is what keeps ray picks
  * rejecting it as cheaply as the old flat box did.
- * Builders arrive with PARTS (world/parts.ts) rather than ordinary meshes: no
- * device buffer under them, because uploading geometry a merge throws away was
- * half of a 1500 m build. So every path out of a merge that KEEPS its source
+ * Builders arrive with PARTS (world/parts.ts) — plain geometry, a transform
+ * and a material, which `structureMeshes` and `propMeshes` turn into part
+ * MESHES in one place (`partMesh`) on the way into the merge — and a part mesh
+ * has no device buffer under it, because uploading geometry a merge throws
+ * away was half of a 1500 m build. So every path out of a merge that KEEPS its source
  * owes uploadPart() — the group-of-one hand-bake in mergeByMaterial and in
  * paneGroup, and the material-less mesh both of them skip — unless it is
  * merged AGAIN: a placement's or scatter field's merge on its way into
@@ -85,11 +87,10 @@ import { RayWorld } from "./RayWorld";
 import { CollisionField } from "./CollisionField";
 import { CoverMap } from "./CoverMap";
 import { ObstacleField } from "./ObstacleField";
-import { uploadPart } from "./parts";
+import { flattenParts, type Part, partMesh, uploadPart, vertexDataOf } from "./parts";
 import {
   BLOCK_SIZE,
   BlockMerge,
-  flatten,
   mergeByMaterial,
   PaneBlocks,
   tag,
@@ -151,24 +152,55 @@ export type {
 export { BLOCK_SIZE } from "./merge";
 
 /**
- * One scatter prop's factory.
+ * One scatter prop's factory: the prop's ROOT part, with the rest of it
+ * parented under it (`world/parts.ts`). No scene — a prop is geometry and
+ * paint, and becomes meshes only here, after `flattenParts`.
  *
- * **Typed rather than inferred, and the fourth argument is why.** Only
+ * **Typed rather than inferred, and the third argument is why.** Only
  * `buildJungleTree` reads `sub`, and a `Record` of the builders as written
- * would be a UNION of their signatures — which a four-argument call cannot
- * satisfy, because most members declare three. The fifth is the same story
+ * would be a UNION of their signatures — which a three-argument call cannot
+ * satisfy, because most members declare two. The fourth is the same story
  * for `buildAshTree`, `buildMaple` and `buildJungleTree`, the readers of
  * `foliage`. Widening the whole table instead is free: a builder that ignores
  * the stream is assignable to a type that offers it, and a builder that wants
  * one now has a place to say so.
  */
 type ScatterBuilder = (
-  scene: Scene,
   mats: CelMaterialFactory,
   rng: () => number,
   sub: () => number,
   foliage: number,
-) => Mesh;
+) => Part;
+
+/**
+ * A built structure with its parts made into part MESHES (`partMesh`), which
+ * is what the merges and the bookkeeping beside them still run on until X1.4
+ * of BABYLON_EXIT.md moves them onto buffers. The one place `MapBuilder`
+ * crosses from a builder's parts to Babylon's meshes.
+ */
+type MeshStructure = Omit<Structure, "meshes" | "paneMeshes" | "freeform"> & {
+  meshes: Mesh[];
+  paneMeshes: Mesh[];
+  freeform: Set<Mesh>;
+};
+
+/** `MeshStructure` from a builder's `Structure`, every part through `partMesh`. */
+export function structureMeshes(s: Structure, scene: Scene): MeshStructure {
+  const meshes = s.meshes.map((p) => partMesh(p, scene));
+  const freeform = new Set<Mesh>();
+  s.meshes.forEach((p, i) => {
+    if (s.freeform.has(p)) freeform.add(meshes[i]);
+  });
+  return { ...s, meshes, paneMeshes: s.paneMeshes.map((p) => partMesh(p, scene)), freeform };
+}
+
+/**
+ * A scatter prop's parts, placed and flattened (`flattenParts`), as part
+ * meshes in `flattenParts`' order — the root, then every descendant.
+ */
+export function propMeshes(root: Part, scene: Scene): Mesh[] {
+  return flattenParts(root).map((p) => partMesh(p, scene));
+}
 
 /**
  * Scatter props, keyed by the name the layout data uses. Exported for
@@ -738,7 +770,8 @@ export class MapBuilder {
     // times itself whole and names the parts worth naming under it, so the
     // remainder is what is left over. See `buildProfile.ts`, and
     // `ENGINE_UPGRADE.md` S0 for what it found — 87% of a 1500 m build was the
-    // placement loop in `placeStructures`, before the flatten in `parts.ts`.
+    // placement loop in `placeStructures`, before `parts.ts` stopped
+    // uploading the parts the merge throws away.
     beginProfile();
     const buildStart = performance.now();
     // The map's own extent, not the global — a village and a downtown are not
@@ -959,7 +992,7 @@ export class MapBuilder {
       // need to read the ground under its footprint — one sample at the centre
       // is not enough for 130 m of road. The result is still origin-local.
       const builder = BUILDERS[p.kind];
-      const s: Structure = builder(this.scene, this.mats, p.params ?? {}, {
+      const built: Structure = builder(this.scene, this.mats, p.params ?? {}, {
         terrain,
         x: p.x,
         y: origin.y,
@@ -972,6 +1005,7 @@ export class MapBuilder {
             : undefined,
         roads: isRoad ? network.footprint : undefined,
       });
+      const s = structureMeshes(built, this.scene);
       // What light bounces off this structure's boxes: the average of what it
       // is painted, weighted by how much of each there is. Taken HERE, before
       // the merge below disposes these meshes — what it hands back wears the
@@ -1304,7 +1338,9 @@ export class MapBuilder {
       terrainPatches(terrain, size, terrainBlock),
     )) {
       const ground = new Mesh(`terrain-${patch.key}`, this.scene);
-      patch.data.applyToMesh(ground);
+      // One copy for both meshes, which share its arrays as they always did.
+      const data = vertexDataOf(patch.data);
+      data.applyToMesh(ground);
       ground.material = floorMat;
       // Receiver only: a floor casting into its own depth map is pure acne.
       ground.metadata = { noShadowCaster: true };
@@ -1315,7 +1351,7 @@ export class MapBuilder {
       // a heightfield is neither — NavGrid reads the TerrainField directly
       // instead, so this deliberately bypasses it.
       const col = new Mesh(`terrain-${patch.key}-col`, this.scene);
-      patch.data.applyToMesh(col);
+      data.applyToMesh(col);
       col.isVisible = false;
       col.isPickable = true;
       // Vertical placement is the ground probe's job and bots never touch the
@@ -1615,7 +1651,7 @@ export class MapBuilder {
       // per prop and not per region so that changing a region's `count`
       // leaves the props it still places drawing what they drew.
       const sub = mulberry32(this.propSeed ^ (index * 7919 + i));
-      const prop = build(this.scene, this.mats, rng, sub, this.foliage);
+      const prop = build(this.mats, rng, sub, this.foliage);
       prop.scaling.setAll(scale);
       prop.position.x = spot.lx;
       prop.position.z = spot.lz;
@@ -1626,10 +1662,11 @@ export class MapBuilder {
       // the only way a headstone or a fallen log gets a box that means anything.
       const yaw = rng() * Math.PI * 2;
       prop.rotation.y = yaw;
-      // Bake the placement into the vertices, then hand the flattened
-      // hierarchy to the merge — the same identity-transform trick the
-      // structures use, applied one level up.
-      const flat = flatten(prop);
+      // Compose the placement into every part and cut the links
+      // (`flattenParts`), then hand the parts to the merge as meshes — the
+      // merge bakes each one's transform into its vertices, the same
+      // identity-transform trick the structures use, applied one level up.
+      const flat = propMeshes(prop, this.scene);
       // Its box, if it gets one, bounces light in its own colours.
       if (spec.blocking) this.albedoFromMeshes(flat);
       parts.push(...flat);
@@ -1644,9 +1681,9 @@ export class MapBuilder {
         );
       }
       // Beside the light and on the same terms: the prop's own position, taken
-      // here because nothing downstream still has one. `flatten` above bakes
-      // this placement into the vertices and the merge then takes the mesh
-      // away entirely, so an emitter that is not recorded on this line has no
+      // here because nothing downstream still has one. `propMeshes` above composes
+      // this placement into every part, the merge bakes it into the vertices
+      // and then takes the mesh away entirely, so an emitter that is not recorded on this line has no
       // second chance to be — see `AmbienceSystem`.
       if (sound) {
         this.ambience.add(
@@ -2027,7 +2064,7 @@ export class MapBuilder {
    * 900 m town's roofs and upper floors out of the list.
    */
   private recordParts(
-    s: Structure,
+    s: MeshStructure,
     origin: Vector3,
     rotY: number,
     terrain: TerrainField,
@@ -2270,7 +2307,7 @@ export class MapBuilder {
    */
   private paneGroup(
     name: string,
-    s: Structure,
+    s: MeshStructure,
     origin: Vector3,
     parentRotY: number,
     placement: number,

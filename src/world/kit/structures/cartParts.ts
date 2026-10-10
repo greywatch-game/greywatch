@@ -7,7 +7,8 @@
  * (`reframe` writes Euler angles back, which is what `MapBuilder` composes
  * with).
  */
-import { Matrix, Quaternion, Vector3, type Mesh } from "@babylonjs/core";
+import { Matrix, Quaternion, Vector3 } from "../../../math";
+import type { Part } from "../../parts";
 import {
   Build,
   IRON,
@@ -25,7 +26,7 @@ import {
  * as an ordinary position, rotation and scaling — never as a quaternion, which
  * `MapBuilder` would then have to know to compose its own `rotation.y` with.
  */
-export function reframe(meshes: readonly Mesh[], m: Matrix): void {
+export function reframe(meshes: readonly Part[], m: Matrix): void {
   const s = new Vector3();
   const q = new Quaternion();
   const t = new Vector3();
@@ -64,7 +65,7 @@ export function cartWheel(
   color: string,
   phase: number,
   broken = false,
-): Mesh[] {
+): Part[] {
   const from = b.meshes.length;
   /** Tyre and felloe segments: enough that the rim reads round at arm's length. */
   const segs = spokes + 6;
@@ -129,7 +130,7 @@ export function cartWheel(
  * shoulder that slumps down into the tie, and the whole of it is squashed
  * flatter than it is wide, the way a full sack settles on a floor.
  */
-export function cartSack(b: Build): Mesh[] {
+export function cartSack(b: Build): Part[] {
   const from = b.meshes.length;
   // Each piece is a cylinder laid along X (`z: PI/2` puts its top at -X, and
   // `-PI/2` at +X) and squashed upright, its own X being what stands after
@@ -147,7 +148,7 @@ export function cartSack(b: Build): Mesh[] {
 }
 
 /** A hay fork lying along X, tines at +X, on its own shaft. */
-export function cartFork(b: Build): Mesh[] {
+export function cartFork(b: Build): Part[] {
   const from = b.meshes.length;
   b.cyl(1.5, 0.035, 0.04, 6, 0, 0, 0, TIMBER, { z: Math.PI / 2 });
   b.box(0.1, 0.035, 0.035, 0.78, 0, 0, IRON);
@@ -157,7 +158,7 @@ export function cartFork(b: Build): Mesh[] {
 }
 
 /** A cask standing on end, its foot at y = 0. */
-export function cartCask(b: Build, h: number, d: number): Mesh[] {
+export function cartCask(b: Build, h: number, d: number): Part[] {
   const from = b.meshes.length;
   b.cyl(h / 2, d, d * 0.86, 10, 0, h / 4, 0, PLANK);
   b.cyl(h / 2, d * 0.86, d, 10, 0, (h * 3) / 4, 0, PLANK);

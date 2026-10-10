@@ -4,7 +4,9 @@
  * Part of the structures set: follows the contract in kit/core.ts, and the
  * cover heights and round-collider rule in `./index.ts`.
  */
-import { Matrix, Scene, type Mesh } from "@babylonjs/core";
+import type { Scene } from "@babylonjs/core";
+import { Matrix } from "../../../math";
+import type { Part } from "../../parts";
 import { CONFIG } from "../../../config";
 import type { CelMaterialFactory } from "../../../shaders/CelShader";
 import { mulberry32 } from "../../rng";
@@ -290,7 +292,7 @@ export function buildStall(
   }
 
   // ================================================================ the goods
-  const onTop = (meshes: Mesh[], m: Matrix): void => reframe(meshes, m.multiply(Matrix.Translation(0, TOP, 0)));
+  const onTop = (meshes: Part[], m: Matrix): void => reframe(meshes, m.multiply(Matrix.Translation(0, TOP, 0)));
   if (trade === 0) {
     // Three trays tipped to the customer on a batten, each heaped with one
     // thing; baskets and the scales behind.
@@ -401,7 +403,7 @@ export function buildStall(
 }
 
 /** A shallow slatted tray at y = 0, heaped with one thing. */
-function stallTray(b: Build, w: number, d: number, color: string, big: number, rnd: () => number): Mesh[] {
+function stallTray(b: Build, w: number, d: number, color: string, big: number, rnd: () => number): Part[] {
   const from = b.meshes.length;
   b.box(w, 0.02, d, 0, 0.01, 0, PLANK);
   for (const sz of [-1, 1]) b.box(w, 0.08, 0.02, 0, 0.05, sz * (d / 2 - 0.01), PLANK);
@@ -427,7 +429,7 @@ function stallTray(b: Build, w: number, d: number, color: string, big: number, r
 }
 
 /** A round wicker basket at y = 0, its rim bound darker, filled with `fill`. */
-function stallBasket(b: Build, d: number, h: number, fill: string, rnd: () => number): Mesh[] {
+function stallBasket(b: Build, d: number, h: number, fill: string, rnd: () => number): Part[] {
   const from = b.meshes.length;
   b.cyl(h, d, d * 0.8, 8, 0, h / 2, 0, STRAW);
   b.cyl(0.03, d + 0.03, d + 0.03, 8, 0, h - 0.01, 0, PLANK);
@@ -441,7 +443,7 @@ function stallBasket(b: Build, d: number, h: number, fill: string, rnd: () => nu
 }
 
 /** A sack stood open with its neck rolled down, at y = 0 — a scoop in it or not. */
-function stallOpenSack(b: Build, d: number, h: number, fill: string, scoop: boolean): Mesh[] {
+function stallOpenSack(b: Build, d: number, h: number, fill: string, scoop: boolean): Part[] {
   const from = b.meshes.length;
   b.cyl(h * 0.3, d * 1.08, d * 0.95, 8, 0, h * 0.15, 0, SAILCLOTH);
   b.cyl(h * 0.7, d, d * 1.08, 8, 0, h * 0.65, 0, SAILCLOTH);
@@ -461,7 +463,7 @@ function stallOpenSack(b: Build, d: number, h: number, fill: string, scoop: bool
  * two frustums base to base, which is the cheapest shape that is round from
  * every side the ink sees it from. A single frustum read as a pyramid.
  */
-function stallRound(b: Build, s: number, color: string): Mesh[] {
+function stallRound(b: Build, s: number, color: string): Part[] {
   const from = b.meshes.length;
   b.cyl(s * 0.36, s, s * 0.72, 7, 0, -s * 0.18, 0, color);
   b.cyl(s * 0.36, s * 0.72, s, 7, 0, s * 0.18, 0, color);
@@ -469,7 +471,7 @@ function stallRound(b: Build, s: number, color: string): Mesh[] {
 }
 
 /** An onion hung by its neck, the neck's tip at the origin. */
-function stallOnion(b: Build, s: number): Mesh[] {
+function stallOnion(b: Build, s: number): Part[] {
   const from = b.meshes.length;
   b.cyl(s * 0.55, s * 0.25, s, 6, 0, -s * 0.275, 0, STRAW);
   b.cyl(s * 0.4, s, s * 0.45, 6, 0, -s * 0.75, 0, STRAW);
@@ -477,7 +479,7 @@ function stallOnion(b: Build, s: number): Mesh[] {
 }
 
 /** A pair of shop scales at y = 0: a post on a foot, a beam, two pans. */
-function stallScales(b: Build): Mesh[] {
+function stallScales(b: Build): Part[] {
   const from = b.meshes.length;
   b.box(0.2, 0.03, 0.14, 0, 0.015, 0, TIMBER);
   b.box(0.025, 0.36, 0.025, 0, 0.21, 0, IRON);
@@ -490,7 +492,7 @@ function stallScales(b: Build): Mesh[] {
 }
 
 /** An earthenware jar at y = 0: belly, shoulder, neck and lip. */
-function stallJar(b: Build, h: number, d: number): Mesh[] {
+function stallJar(b: Build, h: number, d: number): Part[] {
   const from = b.meshes.length;
   b.cyl(h * 0.45, d, d * 0.6, 8, 0, h * 0.225, 0, BRICK);
   b.cyl(h * 0.3, d * 0.45, d, 8, 0, h * 0.6, 0, BRICK);

@@ -1,25 +1,43 @@
 /**
- * parts.ts — A structure's PART meshes, built without ever reaching the GPU.
- * Owns: the three factories the kit (`kit/core.ts`) and the scatter props
- * (`props/`) build visual geometry with, the cached unit box behind `partBox`,
- * the two ways a part is changed and STAYS one (`bakePart` without an upload,
- * `setPartVerticesData`), and the one call that puts a part back on the normal
- * path when it turns out to be the thing that survives (`uploadPart`).
- * Invariants: a part carries its vertex data in CPU memory and NOTHING on the
- * device — no vertex buffer, no index buffer, no bounding info, no submesh. So
- * a part may be read, transformed, merged and disposed, and may never be
- * DRAWN, PICKED or COLLIDED WITH. Anything handed to the rest of the world
- * owes `uploadPart` first; a mesh that reaches the scene without it is
- * silently invisible, which is the one failure this module can cause. That is
- * why `mergeByMaterial` uploads on every path out of it rather than only the
- * ones it believes can survive — EXCEPT when its caller says it will merge
- * the result `again` (a placement or scatter field into `BlockMerge`, a road
- * into the road merge), where every path out stays a part on purpose and the
- * final pass is what uploads. `npm run merge:hash` fails on any mesh the world
- * is handed that is still a part.
+ * parts.ts — A structure's PARTS: the `Part` every kit builder and scatter
+ * prop builds, the one place a part becomes a Babylon mesh, and the
+ * Babylon-side part meshes the merge still runs on.
+ * Owns: `Part` (a `GeometryBuffer` with a name, a local transform, a material
+ * and its metadata — and, for a prop, a parent), `flattenParts` (the parent
+ * links resolved into each part's own transform at EMIT time), `partMesh` and
+ * `vertexDataOf` (the adapter: a part or a buffer into Babylon), and the
+ * Babylon-side helpers the merge runs on — `partSurface`, `uploadPart`,
+ * `bakePart`, `setPartVerticesData`.
+ * Invariants: a `Part` is plain data — nothing in it has heard of Babylon but
+ * the material it carries — and `partMesh` is the ONE place one becomes a
+ * mesh (BABYLON_EXIT.md X1.2), handing Babylon exactly the arrays and the
+ * transform it held when the kit built meshes itself, so `kit:hash` and
+ * `merge:hash` cannot tell the difference. A part has no parent by the time
+ * it is adapted: `flattenParts` cuts every link first. A part MESH carries
+ * its vertex data in CPU memory and NOTHING on the device — no vertex buffer,
+ * no index buffer, no bounding info, no submesh. So a part mesh may be read,
+ * transformed, merged and disposed, and may never be DRAWN, PICKED or
+ * COLLIDED WITH. Anything handed to the rest of the world owes `uploadPart`
+ * first; a mesh that reaches the scene without it is silently invisible,
+ * which is the one failure this module can cause. That is why
+ * `mergeByMaterial` uploads on every path out of it rather than only the ones
+ * it believes can survive — EXCEPT when its caller says it will merge the
+ * result `again` (a placement or scatter field into `BlockMerge`, a road into
+ * the road merge), where every path out stays a part on purpose and the final
+ * pass is what uploads. `npm run merge:hash` fails on any mesh the world is
+ * handed that is still a part.
  *
- * **It exists because 87% of a 1500 m build was the placement loop, and the
- * placement loop is not what anybody thought it was.** `ENGINE_UPGRADE.md`
+ * **Why the geometry is ours and the meshes are still Babylon's.** The kit
+ * builds `GeometryBuffer`s through `src/geometry/` (Babylon's generators,
+ * copied operation for operation and checked by `scripts/geometry-check.mjs`),
+ * and the merge still runs on Babylon meshes until X1.4 moves it onto buffers.
+ * The adapter is the seam between the two, and it is deliberately dumb: a
+ * `Float64Array` goes back as the `number[]` Babylon held, a `Float32Array` as
+ * itself, the indices as a plain array — never a `Float64Array` handed to a
+ * Babylon buffer, which would upload eight-byte doubles as if they were four.
+ *
+ * **Part MESHES exist because 87% of a 1500 m build was the placement loop,
+ * and the placement loop is not what anybody thought it was.** `ENGINE_UPGRADE.md`
  * wall 4 derived the cost as `Scene.removeMesh`'s `indexOf` over a
  * `scene.meshes` growing to 23,014 — `O(built x live)`, which is the shape the
  * table had. Measured on the 900/300 proving ground it is not: `removeMesh` is
@@ -28,8 +46,8 @@
  * an element, and the derivation was pricing it as a memory access.
  *
  * **Where the time actually goes is `device.createBuffer` and
- * `queue.writeBuffer`.** Every part a builder makes — a plank, a mullion, a
- * pane — is a real `Mesh`, and `VertexData.applyToMesh` uploads its positions,
+ * `queue.writeBuffer`.** Every part a builder made — a plank, a mullion, a
+ * pane — was a real `Mesh`, and `VertexData.applyToMesh` uploads its positions,
  * normals, UVs and indices to the GPU the instant it is created.
  * `MergeMeshes` then reads them back out of the CPU copies Babylon kept
  * anyway, uploads the merged result, and DISPOSES every source — destroying
@@ -61,20 +79,199 @@
  */
 import {
   Constants,
-  CreateBoxVertexData,
-  CreateCylinderVertexData,
   Geometry,
   Mesh,
+  Quaternion as BabylonQuaternion,
   VertexBuffer,
+  type Material,
   type Scene,
-  Vector3,
+  Vector3 as BabylonVector3,
   VertexData,
 } from "@babylonjs/core";
+import type { FloatArray, GeometryBuffer } from "../geometry/buffer";
+import { Matrix, Quaternion, Vector3 } from "../math";
 
-/** The options `MeshBuilder.CreateBox` takes, minus the ones a part cannot use. */
-type BoxOptions = Parameters<typeof CreateBoxVertexData>[0];
-/** The same for `MeshBuilder.CreateCylinder`. */
-type CylinderOptions = Parameters<typeof CreateCylinderVertexData>[0];
+/** A mesh's metadata bag, which is what the merge and the bake read flags off. */
+export type PartMetadata = { [flag: string]: unknown };
+
+/**
+ * One part of a structure or a prop: a surface, where it stands in its
+ * builder's frame, and what it is painted with.
+ *
+ * **Mesh-shaped on purpose.** It carries the members a builder ever touched on
+ * the Babylon mesh it replaces — `position`, `rotation`, `scaling`,
+ * `rotationQuaternion`, `material`, `metadata`, `parent` — under the same
+ * names and with the same meaning, Euler order included (Babylon turns a mesh
+ * by Z, then X, then Y), so a builder written against a mesh reads the same
+ * against a part, and `partMesh` is a copy rather than a translation.
+ *
+ * **`parent` is how a prop says where a part goes, never where it IS.** It
+ * keeps Babylon's child order — a part joins the END of its new parent's
+ * `children` and leaves its old one's — because that order is the order
+ * `flattenParts` emits them in, and the order a merge concatenates is the
+ * vertex order of the world.
+ */
+export class Part {
+  readonly position = new Vector3();
+  readonly rotation = new Vector3();
+  readonly scaling = new Vector3(1, 1, 1);
+  rotationQuaternion: Quaternion | null = null;
+  material: Material | null = null;
+  metadata: PartMetadata | null = null;
+  /** In the order they were parented, as Babylon's `_children`. */
+  readonly children: Part[] = [];
+  private parentPart: Part | null = null;
+  name: string;
+  geometry: GeometryBuffer;
+
+  constructor(name: string, geometry: GeometryBuffer) {
+    this.name = name;
+    this.geometry = geometry;
+  }
+
+  get parent(): Part | null {
+    return this.parentPart;
+  }
+
+  /** Babylon's `Node.parent` setter, minus everything about a scene. */
+  set parent(parent: Part | null) {
+    if (this.parentPart === parent) return;
+    if (this.parentPart) {
+      const index = this.parentPart.children.indexOf(this);
+      if (index !== -1) this.parentPart.children.splice(index, 1);
+    }
+    this.parentPart = parent;
+    if (parent) parent.children.push(this);
+  }
+}
+
+const TMP_SCALE = new Vector3();
+const TMP_ROTATION = new Quaternion();
+const TMP_DECOMPOSED = new Quaternion();
+
+/**
+ * `TransformNode.computeWorldMatrix` for a part: its local matrix, times its
+ * parent's world matrix when it has one — in float32, as Babylon's is.
+ */
+function worldMatrixOf(part: Part, out: Matrix): Matrix {
+  // Babylon multiplies the scaling by `scalingDeterminant` (1) first: `x * 1`
+  // is `x` for every float, the sign of a zero included.
+  TMP_SCALE.copyFromFloats(part.scaling.x * 1, part.scaling.y * 1, part.scaling.z * 1);
+  const rotation =
+    part.rotationQuaternion ??
+    Quaternion.RotationYawPitchRollToRef(part.rotation.y, part.rotation.x, part.rotation.z, TMP_ROTATION);
+  Matrix.ComposeToRef(TMP_SCALE, rotation, part.position, out);
+  if (part.parent) out.multiplyToRef(worldMatrixOf(part.parent, new Matrix()), out);
+  return out;
+}
+
+/**
+ * A prop's parts, its parent links resolved: the root, then every descendant
+ * with its parent's transform composed into its own and the link cut — the
+ * transform applied at EMIT time that a `.parent =` used to leave to the merge.
+ *
+ * **It is Babylon's `TransformNode.setParent(null)`, run over the tree in
+ * `getChildMeshes` order, step for step**, because the merge after it reads
+ * what this writes and `merge:hash` compares bits: the part's own matrix
+ * composed (unscaled by the determinant, as `setParent` composes it), times
+ * its parent's world matrix, decomposed into a scaling, a rotation — written
+ * back as Euler angles unless the part carries a quaternion — and a position.
+ * The order is the whole tree's, taken BEFORE any link is cut, and a
+ * grandchild is composed with its parent AFTER that parent was flattened —
+ * which is not the same float32 matrix as before it was, and is what Babylon
+ * did.
+ *
+ * Why at all, rather than keeping the links: the placement is set on the ROOT
+ * after the builder returns (`MapBuilder.scatterRegion`), so this is the first
+ * moment the whole transform is known, and after it nothing downstream has to
+ * know a part can have a parent.
+ */
+export function flattenParts(root: Part): Part[] {
+  const order: Part[] = [];
+  const walk = (node: Part): void => {
+    for (const child of node.children) {
+      order.push(child);
+      walk(child);
+    }
+  };
+  walk(root);
+  const composed = new Matrix();
+  const scale = new Vector3();
+  const position = new Vector3();
+  for (const part of order) {
+    const parent = part.parent;
+    if (!parent) continue;
+    const rotation =
+      part.rotationQuaternion ??
+      Quaternion.RotationYawPitchRollToRef(part.rotation.y, part.rotation.x, part.rotation.z, TMP_ROTATION);
+    Matrix.ComposeToRef(part.scaling, rotation, part.position, composed);
+    composed.multiplyToRef(worldMatrixOf(parent, new Matrix()), composed);
+    composed.decompose(scale, TMP_DECOMPOSED, position);
+    if (part.rotationQuaternion) part.rotationQuaternion.copyFrom(TMP_DECOMPOSED);
+    else TMP_DECOMPOSED.toEulerAnglesToRef(part.rotation);
+    part.scaling.copyFrom(scale);
+    part.position.copyFrom(position);
+    part.parent = null;
+  }
+  return [root, ...order];
+}
+
+/** A float attribute as Babylon held it: doubles as a `number[]`, float32 as itself. */
+function babylonFloats(a: FloatArray): number[] | Float32Array {
+  return a instanceof Float32Array ? a : plainArray(a);
+}
+
+/**
+ * A typed array's values as a plain array, by a loop: `Array.from` walks a
+ * typed array through its iterator, ~28 times slower measured here, and this
+ * runs once per attribute of every part in a map.
+ */
+function plainArray(a: ArrayLike<number>): number[] {
+  const out = new Array<number>(a.length);
+  for (let i = 0; i < a.length; i++) out[i] = a[i];
+  return out;
+}
+
+/**
+ * A buffer as the `VertexData` Babylon would have built: every array in the
+ * type Babylon held (see the header) and every one a COPY but a
+ * `Float32Array`'s, so nothing Babylon does to its own arrays in place — a
+ * merge extends its first member's indices — reaches a buffer through them.
+ */
+export function vertexDataOf(buffer: GeometryBuffer): VertexData {
+  const data = new VertexData();
+  data.positions = babylonFloats(buffer.positions);
+  if (buffer.normals) data.normals = babylonFloats(buffer.normals);
+  if (buffer.uvs) data.uvs = babylonFloats(buffer.uvs);
+  if (buffer.uvs2) data.uvs2 = babylonFloats(buffer.uvs2);
+  if (buffer.colors) data.colors = babylonFloats(buffer.colors);
+  data.indices = plainArray(buffer.indices);
+  return data;
+}
+
+/**
+ * The one place a `Part` becomes a Babylon mesh: a part MESH (`partSurface`,
+ * nothing on the device) carrying the part's arrays, transform, material and
+ * metadata — the mesh the kit used to build itself, member for member.
+ *
+ * Refuses a part that still has a parent: the link is `flattenParts`'s to cut,
+ * and a mesh made without it would stand where its builder put it in its
+ * parent's frame, not where its parent put it.
+ */
+export function partMesh(part: Part, scene: Scene): Mesh {
+  if (part.parent) {
+    throw new Error(`partMesh: "${part.name}" still has a parent — flattenParts first`);
+  }
+  const mesh = partSurface(part.name, vertexDataOf(part.geometry), scene);
+  mesh.position.set(part.position.x, part.position.y, part.position.z);
+  mesh.rotation.set(part.rotation.x, part.rotation.y, part.rotation.z);
+  mesh.scaling.set(part.scaling.x, part.scaling.y, part.scaling.z);
+  const q = part.rotationQuaternion;
+  if (q) mesh.rotationQuaternion = new BabylonQuaternion(q.x, q.y, q.z, q.w);
+  mesh.material = part.material;
+  if (part.metadata) mesh.metadata = part.metadata;
+  return mesh;
+}
 
 /**
  * A mesh carrying `data` with nothing on the device.
@@ -95,79 +292,6 @@ export function partSurface(
   geometry.applyToMesh(mesh);
   geometry.delayLoadState = Constants.DELAYLOADSTATE_NONE;
   return mesh;
-}
-
-/**
- * `MeshBuilder.CreateBox` without the upload.
- *
- * `sideOrientation` is left alone on purpose. `CreateBox` writes
- * `Mesh._GetDefaultSideOrientation(undefined)` onto both the options and
- * `_originalBuilderSideOrientation`, and both of those are `FRONTSIDE`, which
- * is what `CreateBoxVertexData` reads from an absent one and what the `Mesh`
- * constructor already put there. Setting it would be writing back what is
- * there — and `MergeMeshes` refuses a group whose members disagree, so a
- * divergence here would be loud rather than subtle.
- */
-export function partBox(name: string, options: BoxOptions, scene: Scene): Mesh {
-  return partSurface(name, boxVertexData(options), scene);
-}
-
-/**
- * `CreateBoxVertexData`, bit for bit, without its tessellation loop.
- *
- * **Every box in the kit is the same 24 vertices** — one unit cube, scaled —
- * and Babylon rebuilds it from scratch per call, its positions by a `reduce`
- * that `concat`s a fresh array for each of 72 numbers. That loop was 10.6% of
- * a whole map install (`FINDINGS.md` 26). So the cube is taken from Babylon
- * ONCE, at a half-extent of exactly 1, and every box after it is that cube's
- * positions times its own half-extents: the same `base * (size / 2)` product
- * Babylon computes, so not a bit moves (`npm run merge:hash` is the proof).
- *
- * **Only for the options the kit actually passes** — `width`, `height` and
- * `depth`. Anything else (a `size`, `faceUV`, `wrap`, a side orientation)
- * goes to Babylon unchanged rather than being reimplemented here.
- *
- * **Every array is the part's OWN copy**, never the cached one: a merge
- * transforms its sources' vertex data in place and a group of one is baked
- * in place (`mergeByMaterial`), so a shared normal or index array would be
- * rewritten under every other box holding it.
- */
-function boxVertexData(options: BoxOptions): VertexData {
-  for (const key in options) {
-    if (key !== "width" && key !== "height" && key !== "depth") {
-      return CreateBoxVertexData(options);
-    }
-  }
-  const unit = (UNIT_BOX ??= CreateBoxVertexData({ width: 2, height: 2, depth: 2 }));
-  // Babylon's own defaulting, `||` and all: a zero or absent extent is 1.
-  const hx = (options.width || 1) / 2;
-  const hy = (options.height || 1) / 2;
-  const hz = (options.depth || 1) / 2;
-  const base = unit.positions!;
-  const positions = new Array<number>(base.length);
-  for (let i = 0; i < base.length; i += 3) {
-    positions[i] = base[i] * hx;
-    positions[i + 1] = base[i + 1] * hy;
-    positions[i + 2] = base[i + 2] * hz;
-  }
-  const data = new VertexData();
-  data.indices = Array.from(unit.indices!);
-  data.positions = positions;
-  data.normals = Array.from(unit.normals!);
-  data.uvs = Array.from(unit.uvs!);
-  return data;
-}
-
-/** The cube `boxVertexData` scales, built by Babylon on first use. */
-let UNIT_BOX: VertexData | undefined;
-
-/** `MeshBuilder.CreateCylinder` without the upload. See `partBox`. */
-export function partCylinder(
-  name: string,
-  options: CylinderOptions,
-  scene: Scene,
-): Mesh {
-  return partSurface(name, CreateCylinderVertexData(options), scene);
 }
 
 /**
@@ -274,10 +398,10 @@ export function bakePart(mesh: Mesh, upload: boolean): Mesh {
     const stored = geometry.getVertexBuffer(kind)?.getData();
     if (stored) data.set(stored as number[], kind);
   }
-  const temp = Vector3.Zero();
+  const temp = BabylonVector3.Zero();
   const positions = mesh.getVerticesData(VertexBuffer.PositionKind)!;
   for (let i = 0; i < positions.length; i += 3) {
-    Vector3.TransformCoordinatesFromFloatsToRef(
+    BabylonVector3.TransformCoordinatesFromFloatsToRef(
       positions[i], positions[i + 1], positions[i + 2], world, temp,
     ).toArray(positions, i);
   }
@@ -285,7 +409,7 @@ export function bakePart(mesh: Mesh, upload: boolean): Mesh {
   const normals = mesh.getVerticesData(VertexBuffer.NormalKind);
   if (normals) {
     for (let i = 0; i < normals.length; i += 3) {
-      Vector3.TransformNormalFromFloatsToRef(
+      BabylonVector3.TransformNormalFromFloatsToRef(
         normals[i], normals[i + 1], normals[i + 2], world, temp,
       )
         .normalize()

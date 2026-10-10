@@ -3,17 +3,12 @@
  * structure kit's crate stack borrows (`kit/structures/small.ts`). Part of the
  * scatter set: follows the contract in `./index.ts`.
  */
-import {
-  CreateBoxVertexData,
-  CreateCylinderVertexData,
-  Material,
-  Matrix,
-  Mesh,
-  Scene,
-  VertexData,
-} from "@babylonjs/core";
+import type { Material } from "@babylonjs/core";
+import { GeometryBuffer } from "../../geometry/buffer";
+import { createBox, createCylinder } from "../../geometry/primitives";
+import { Matrix } from "../../math";
 import type { CelMaterialFactory } from "../../shaders/CelShader";
-import { partSurface } from "../parts";
+import { Part } from "../parts";
 import {
   newSheet,
   type Sheet,
@@ -83,20 +78,19 @@ function caskR(y: number): number {
  * also the dark behind the joints, inside the cask and in the water.
  */
 export function buildBarrel(
-  scene: Scene,
   mats: CelMaterialFactory,
   _rng: () => number,
   sub: () => number,
-): Mesh {
+): Part {
   const parts = caskData(sub);
-  const cask = partSurface("barrel", parts.wood, scene);
+  const cask = new Part("barrel", parts.wood);
   cask.material = mats.get(CASK_WOOD);
-  const rest: [string, VertexData, Material][] = [
+  const rest: [string, GeometryBuffer, Material][] = [
     ["barrel-iron", parts.iron, mats.get(DARK_METAL)],
     ["barrel-head", parts.head, mats.get(BARK)],
   ];
   for (const [name, data, material] of rest) {
-    const mesh = partSurface(name, data, scene);
+    const mesh = new Part(name, data);
     mesh.parent = cask;
     mesh.material = material;
   }
@@ -112,11 +106,11 @@ export function buildBarrel(
  */
 export interface CaskParts {
   /** The staves, their end grain and inside, and the closing disc under them. */
-  wood: VertexData;
+  wood: GeometryBuffer;
   /** The head's boards, the floating board and the bung. Never empty. */
-  head: VertexData;
+  head: GeometryBuffer;
   /** The hoops, the dark behind the joints, the dark or water inside, the bung hole. */
-  iron: VertexData;
+  iron: GeometryBuffer;
 }
 
 /**
@@ -130,8 +124,8 @@ export function caskData(sub: () => number, fall?: { a: number; spread: number }
   const wood = newSheet();
   const board = newSheet();
   const iron = newSheet();
-  const boardExtra: VertexData[] = [];
-  const ironExtra: VertexData[] = [];
+  const boardExtra: GeometryBuffer[] = [];
+  const ironExtra: GeometryBuffer[] = [];
 
   // --- what this one has suffered -------------------------------------------
   const staves = 18 + Math.floor(sub() * 4);
@@ -345,7 +339,7 @@ export function caskData(sub: () => number, fall?: { a: number; spread: number }
   // An open cask's head went into the water, one board of it still afloat.
   if (open) {
     boardExtra.push(
-      CreateBoxVertexData({ width: rh * 1.5, height: 0.025, depth: 0.12 + sub() * 0.04 }).transform(
+      createBox({ width: rh * 1.5, height: 0.025, depth: 0.12 + sub() * 0.04 }).transform(
         Matrix.RotationYawPitchRoll(sub() * Math.PI, (sub() - 0.5) * 0.15, 0.05 + sub() * 0.1).multiply(
           Matrix.Translation((sub() - 0.5) * 0.1, floorY + 0.004, (sub() - 0.5) * 0.1),
         ),
@@ -363,13 +357,13 @@ export function caskData(sub: () => number, fall?: { a: number; spread: number }
       Matrix.RotationX(Math.PI / 2)
         .multiply(Matrix.RotationY(am))
         .multiply(Matrix.Translation(Math.sin(am) * d, CASK_H / 2, Math.cos(am) * d));
-    ironExtra.push(CreateCylinderVertexData({ height: 0.004, diameter: 0.072, tessellation: 10 }).transform(out(r + 0.001)));
-    boardExtra.push(CreateCylinderVertexData({ height: 0.03, diameter: 0.052, tessellation: 8 }).transform(out(r + 0.004)));
+    ironExtra.push(createCylinder({ height: 0.004, diameter: 0.072, tessellation: 10 }).transform(out(r + 0.001)));
+    boardExtra.push(createCylinder({ height: 0.03, diameter: 0.052, tessellation: 8 }).transform(out(r + 0.004)));
   }
 
   // An open cask has no head boards, but always the floating board and the
   // bung, so no list here is ever empty.
-  const merged = (list: VertexData[]): VertexData => {
+  const merged = (list: GeometryBuffer[]): GeometryBuffer => {
     const full = list.filter((d) => (d.positions?.length ?? 0) > 0);
     return full[0].merge(full.slice(1));
   };

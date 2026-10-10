@@ -154,6 +154,8 @@ caseOf(["Vector3#addToRef"], () => { const a = v3(), b = v3(); return [[a, b], (
 caseOf(["Vector3#subtractInPlace"], () => { const a = v3(), b = v3(); return [[a, b], (L) => V(L, a).subtractInPlace(V(L, b))]; });
 caseOf(["Vector3#subtract"], () => { const a = v3(), b = v3(); return [[a, b], (L) => V(L, a).subtract(V(L, b))]; });
 caseOf(["Vector3#subtractToRef", "Vector3#subtractFromFloatsToRef"], () => { const a = v3(), b = v3(); return [[a, b], (L) => V(L, a).subtractToRef(V(L, b), new L.Vector3())]; });
+caseOf(["Vector3#multiply", "Vector3#multiplyByFloats"], () => { const a = v3(), b = v3(); return [[a, b], (L) => V(L, a).multiply(V(L, b))]; });
+caseOf(["Vector3#divide"], () => { const a = v3(), b = v3(); return [[a, b], (L) => V(L, a).divide(V(L, b))]; });
 caseOf(["Vector3#negate"], () => { const a = v3(); return [a, (L) => V(L, a).negate()]; });
 caseOf(["Vector3#scaleInPlace"], () => { const a = v3(), s = num(); return [[a, s], (L) => V(L, a).scaleInPlace(s)]; });
 caseOf(["Vector3#scale"], () => { const a = v3(), s = num(); return [[a, s], (L) => V(L, a).scale(s)]; });
@@ -176,7 +178,9 @@ caseOf(["Vector3.FromArray"], () => { const a = [num(), num(), num(), num()]; re
 caseOf(["Vector3.Zero", "Vector3.One", "Vector3.Up", "Vector3.Right", "Vector3.Forward", "Vector3.UpReadOnly", "Vector3.ZeroReadOnly"], () => [null, (L) => [L.Vector3.Zero(), L.Vector3.One(), L.Vector3.Up(), L.Vector3.Right(), L.Vector3.Forward(), L.Vector3.Forward(true), L.Vector3.UpReadOnly, L.Vector3.ZeroReadOnly]]);
 caseOf(["Vector3.TransformCoordinates", "Vector3.TransformCoordinatesToRef", "Vector3.TransformCoordinatesFromFloatsToRef"], () => { const a = v3(), r = matRecipe(); return [[a, r], (L) => L.Vector3.TransformCoordinates(V(L, a), build(L, r))]; });
 caseOf(["Vector3.TransformNormalToRef", "Vector3.TransformNormalFromFloatsToRef"], () => { const a = v3(), r = matRecipe(); return [[a, r], (L) => L.Vector3.TransformNormalToRef(V(L, a), build(L, r), new L.Vector3())]; });
+caseOf(["Vector3.TransformNormal"], () => { const a = v3(), r = matRecipe(); return [[a, r], (L) => L.Vector3.TransformNormal(V(L, a), build(L, r))]; });
 caseOf(["Vector3.LerpToRef"], () => { const a = v3(), b = v3(), t = num(1); return [[a, b, t], (L) => L.Vector3.LerpToRef(V(L, a), V(L, b), t, new L.Vector3())]; });
+caseOf(["Vector3.Lerp"], () => { const a = v3(), b = v3(), t = num(1); return [[a, b, t], (L) => L.Vector3.Lerp(V(L, a), V(L, b), t)]; });
 caseOf(["Vector3.Dot"], () => { const a = v3(), b = v3(); return [[a, b], (L) => L.Vector3.Dot(V(L, a), V(L, b))]; });
 caseOf(["Vector3.Cross", "Vector3.CrossToRef"], () => { const a = v3(), b = v3(); return [[a, b], (L) => L.Vector3.Cross(V(L, a), V(L, b))]; });
 caseOf(["Vector3.Distance", "Vector3.DistanceSquared"], () => { const a = v3(), b = v3(); return [[a, b], (L) => [L.Vector3.Distance(V(L, a), V(L, b)), L.Vector3.DistanceSquared(V(L, a), V(L, b))]]; });

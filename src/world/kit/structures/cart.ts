@@ -4,7 +4,9 @@
  * Part of the structures set: follows the contract in kit/core.ts, and the
  * cover heights and round-collider rule in `./index.ts`.
  */
-import { Matrix, Scene, Vector3, type Mesh } from "@babylonjs/core";
+import type { Scene } from "@babylonjs/core";
+import { Matrix, Vector3 } from "../../../math";
+import type { Part } from "../../parts";
 import type { CelMaterialFactory } from "../../../shaders/CelShader";
 import {
   Build,
@@ -252,7 +254,7 @@ export function buildCart(
 
   // ---- the load, on the floor.
   const loadFrom = b.meshes.length;
-  const onFloor = (meshes: Mesh[], x: number, z: number, yaw: number, lift = 0, roll = 0): void =>
+  const onFloor = (meshes: Part[], x: number, z: number, yaw: number, lift = 0, roll = 0): void =>
     reframe(
       meshes,
       Matrix.RotationX(roll).multiply(Matrix.RotationY(yaw)).multiply(Matrix.Translation(x, FLOOR + lift, z)),
@@ -387,7 +389,7 @@ export function buildCart(
   // The near hind wheel is off and the body has come down on that corner,
   // pitched back and rolled toward it about the turntable, with the axle's end
   // propped on a log somebody got under it.
-  const loose: Mesh[] = [];
+  const loose: Part[] = [];
   if (ruined) {
     const sit = about(XF, SILL - 0.1, 0, Matrix.RotationZ(0.12).multiply(Matrix.RotationX(-0.26)));
     reframe([...body, ...loadMeshes], sit);

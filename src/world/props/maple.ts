@@ -2,10 +2,12 @@
  * props/maple.ts — The temple valley's three: buildMaple, buildLeafLitter and
  * buildBamboo. Part of the scatter set: follows the contract in `./index.ts`.
  */
-import { Matrix, Mesh, Scene, VertexData } from "@babylonjs/core";
+import { GeometryBuffer } from "../../geometry/buffer";
+import { createBox, createCylinder } from "../../geometry/primitives";
+import { Matrix } from "../../math";
 import { CONFIG } from "../../config";
 import type { CelMaterialFactory } from "../../shaders/CelShader";
-import { partBox, partCylinder, partSurface } from "../parts";
+import { Part } from "../parts";
 import { mulberry32 } from "../rng";
 import { boughRig, frondBend, marksSway, rigPhase } from "../sway";
 import {
@@ -258,12 +260,11 @@ const MAPLE_SKIN: BillowSkin = {
  * group of their own — one draw a block the slab crown did not cost.
  */
 export function buildMaple(
-  scene: Scene,
   mats: CelMaterialFactory,
   rng: () => number,
   _sub: () => number = rng,
   detail = 1,
-): Mesh {
+): Part {
   const [lz, lx, pick] = mapleSharedDraws(rng);
   const crown = Math.floor(pick * MAPLE_CROWNS.length);
   const [shadeHex, litHex] = MAPLE_CROWNS[crown];
@@ -318,10 +319,10 @@ export function buildMaple(
   const SPAN = 4.2;
   const rigAt = (p: V3, phase: number, tilt = 0, leaf = 0): [number, number] =>
     boughRig(frondBend(v3dist(p, fork) / SPAN), phase, tilt, leaf);
-  const rigged = (data: VertexData, phase: number): VertexData => rigVerts(data, (p) => rigAt(p, phase));
+  const rigged = (data: GeometryBuffer, phase: number): GeometryBuffer => rigVerts(data, (p) => rigAt(p, phase));
 
   // The bole, to a little over the fork, where the limbs bury their roots.
-  const boleParts: VertexData[] = [
+  const boleParts: GeometryBuffer[] = [
     loftData(
       GIRTH.filter(([h]) => h < FORK + 0.4).map(([h]) => bole(h)).concat([bole(FORK + 0.4)]),
       SIDES,
@@ -356,7 +357,7 @@ export function buildMaple(
   }
 
   // The CROWN: its wood, every member rigged, and the billows it carries.
-  const wood: VertexData[] = [];
+  const wood: GeometryBuffer[] = [];
   const clumps: Billow[] = [];
   // No billow's belly under this — what holds the lowest leaf where the
   // header says it is.
@@ -464,17 +465,17 @@ export function buildMaple(
   const shade = newSheet();
   const hearts = skinBillows(clumps, seed, detail, MAPLE_SKIN, rigAt, rigged, lit, shade);
 
-  const trunk = partSurface("maple-trunk", boleParts[0].merge(boleParts.slice(1)), scene);
+  const trunk = new Part("maple-trunk", boleParts[0].merge(boleParts.slice(1)));
   trunk.material = bark;
   // A garden tree leans, but its collider does not, so not by much.
   trunk.rotation.z = (lz - 0.5) * 0.04;
   trunk.rotation.x = (lx - 0.5) * 0.03;
   // Emitted leaf first and hearts last: the merge keeps the order, so the
   // depth test rejects the heart behind the leaves instead of shading it.
-  crownPart(scene, trunk, "maple-leaf-lit", lit, leafMat(litHex), true);
-  crownPart(scene, trunk, "maple-leaf", shade, leafMat(shadeHex), true);
-  crownPart(scene, trunk, "maple-limbs", wood, bark, true);
-  crownPart(scene, trunk, "maple-hearts", hearts, mats.get(MAPLE_HEARTS[crown]), true);
+  crownPart(trunk, "maple-leaf-lit", lit, leafMat(litHex), true);
+  crownPart(trunk, "maple-leaf", shade, leafMat(shadeHex), true);
+  crownPart(trunk, "maple-limbs", wood, bark, true);
+  crownPart(trunk, "maple-hearts", hearts, mats.get(MAPLE_HEARTS[crown]), true);
   return trunk;
 }
 
@@ -490,15 +491,13 @@ export function buildMaple(
  * its edge is about the chip's own thickness.
  */
 export function buildLeafLitter(
-  scene: Scene,
   mats: CelMaterialFactory,
   rng: () => number,
-): Mesh {
-  const chip = (i: number): Mesh => {
-    const m = partBox(
+): Part {
+  const chip = (i: number): Part => {
+    const m = new Part(
       `leaves${i}`,
-      { width: 0.15 + rng() * 0.12, height: 0.025, depth: 0.12 + rng() * 0.1 },
-      scene,
+      createBox({ width: 0.15 + rng() * 0.12, height: 0.025, depth: 0.12 + rng() * 0.1 }),
     );
     m.material = mats.get(FALLEN[Math.floor(rng() * FALLEN.length)]);
     m.rotation.y = rng() * Math.PI * 2;
@@ -531,20 +530,18 @@ export function buildLeafLitter(
  * the height, far clear of the hit sphere.
  */
 export function buildBamboo(
-  scene: Scene,
   mats: CelMaterialFactory,
   rng: () => number,
-): Mesh {
-  let root: Mesh | null = null;
+): Part {
+  let root: Part | null = null;
   const culms = 8 + Math.floor(rng() * 4);
   for (let i = 0; i < culms; i++) {
     const h = 7.5 + rng() * 3;
     const a = rng() * Math.PI * 2;
     const r = i === 0 ? 0 : 0.2 + rng() * 0.7;
-    const culm = partCylinder(
+    const culm = new Part(
       `bamboo${i}`,
-      { height: h, diameterTop: 0.07, diameterBottom: 0.12 + rng() * 0.05, tessellation: 5 },
-      scene,
+      createCylinder({ height: h, diameterTop: 0.07, diameterBottom: 0.12 + rng() * 0.05, tessellation: 5 }),
     );
     culm.material = mats.get(rng() < 0.3 ? BAMBOO_OLD : BAMBOO_CULM);
     const lean = 0.03 + r * 0.06;
@@ -560,10 +557,9 @@ export function buildBamboo(
     culm.rotation.x = Math.sin(a) * lean;
     const tufts = 3;
     for (let k = 0; k < tufts; k++) {
-      const tuft = partBox(
+      const tuft = new Part(
         `bamboo-leaf${i}-${k}`,
-        { width: 1.5 + rng() * 0.6, height: 0.4, depth: 0.8 + rng() * 0.4 },
-        scene,
+        createBox({ width: 1.5 + rng() * 0.6, height: 0.4, depth: 0.8 + rng() * 0.4 }),
       );
       tuft.parent = culm;
       const f = 0.55 + (k / tufts) * 0.42;

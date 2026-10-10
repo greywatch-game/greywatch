@@ -3,10 +3,10 @@
  * its fronds are laid as. Part of the scatter set: follows the contract in
  * `./index.ts`.
  */
-import { Mesh, Scene } from "@babylonjs/core";
+import { createCylinder } from "../../geometry/primitives";
 import { CONFIG } from "../../config";
 import type { CelMaterialFactory } from "../../shaders/CelShader";
-import { partCylinder, partSurface } from "../parts";
+import { Part } from "../parts";
 import { frondBend, marksSway, swayRig } from "../sway";
 import {
   loft,
@@ -193,11 +193,10 @@ function pinnateBlade(
  * plank fern wore, so it costs no draw call the old one did not.
  */
 export function buildFernClump(
-  scene: Scene,
   mats: CelMaterialFactory,
   rng: () => number,
   sub: () => number,
-): Mesh {
+): Part {
   // The plank fern's draws, taken and not spent (see the header).
   const planks = 7 + Math.floor(rng() * 4);
   for (let i = 0; i < 1 + planks * 4; i++) rng();
@@ -209,10 +208,9 @@ export function buildFernClump(
   // The rootstock: a low green mound of old frond bases the fronds grow out
   // of. Sunk under the foot so a slope cannot lift it out, and NOT marked —
   // it is the one part of a fern that is genuinely planted.
-  const stock = partCylinder(
+  const stock = new Part(
     "fern-stock",
-    { height: 0.22, diameterTop: 0.15, diameterBottom: 0.3, tessellation: 6 },
-    scene,
+    createCylinder({ height: 0.22, diameterTop: 0.15, diameterBottom: 0.3, tessellation: 6 }),
   );
   stock.position.y = 0.03;
   stock.material = mats.get(LEAF);
@@ -286,7 +284,7 @@ export function buildFernClump(
 
   const surface = (name: string, s: Sheet, material: typeof frondLit): void => {
     if (!s.indices.length) return;
-    const mesh = partSurface(name, sheetData(s), scene);
+    const mesh = new Part(name, sheetData(s));
     mesh.parent = stock;
     mesh.position.y = -stock.position.y;
     mesh.material = material;
@@ -316,7 +314,7 @@ export function buildFernClump(
       const r = rc * (1 - 0.62 * f);
       rings.push(at(0.03 + rc + Math.cos(th) * r, tall + Math.sin(th) * r, 0.016 - 0.008 * f));
     }
-    const head = loft(`fern-head${h}`, rings, 4, scene);
+    const head = loft(`fern-head${h}`, rings, 4);
     head.parent = stock;
     head.position.y = -stock.position.y;
     head.material = frondLit;

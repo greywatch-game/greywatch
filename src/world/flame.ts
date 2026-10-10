@@ -1,7 +1,7 @@
 /**
  * flame.ts — The geometry of an open fire: a ring of outer tongues and the
  * whips over them, a core inside them, embers at the bed and a bounds marker,
- * as ONE vertex-data block for `FlameMaterial` to animate.
+ * as ONE `GeometryBuffer` (`src/geometry/`) for `FlameMaterial` to animate.
  * Owns: the tongue profile, the layout of a fire's tongues and
  * embers, and the UV vocabulary `shaders/FlameShader.ts` decodes — layer in
  * `uv.x`'s whole part, a seed in its fraction; height up the tongue (or an
@@ -15,17 +15,12 @@
  * `noShadowCaster` — it moves, and a moving caster turns the world's shadow
  * map into a per-frame redraw.
  */
-import {
-  CreateCylinderVertexData,
-  CreateIcoSphereVertexData,
-  Matrix,
-  Mesh,
-  VertexData,
-  type Scene,
-} from "@babylonjs/core";
 import { CONFIG } from "../config";
+import { GeometryBuffer, computeNormals } from "../geometry/buffer";
+import { NO_CAP, createCylinder, createIcoSphere } from "../geometry/primitives";
+import { Matrix } from "../math";
 import type { CelMaterialFactory } from "../shaders/CelShader";
-import { partSurface } from "./parts";
+import { Part } from "./parts";
 
 /** How a fire is sized. The bed is at y = 0 and the flame stands on it. */
 export interface FlameSpec {
@@ -79,15 +74,15 @@ function tongue(
   layer: number,
   seed: number,
   inward: boolean,
-): VertexData {
-  const vd = CreateCylinderVertexData({
+): GeometryBuffer {
+  const vd = createCylinder({
     height: 1,
     diameter: 1,
     tessellation: SIDES,
     subdivisions: RINGS,
-    cap: Mesh.NO_CAP,
+    cap: NO_CAP,
   });
-  const pos = vd.positions!;
+  const pos = vd.positions;
   const uvs = new Float32Array((pos.length / 3) * 2);
   for (let i = 0; i < pos.length; i += 3) {
     const t = pos[i + 1] + 0.5;
@@ -100,16 +95,14 @@ function tongue(
   }
   vd.uvs = uvs;
   if (inward) {
-    const idx = vd.indices!;
+    const idx = vd.indices;
     for (let i = 0; i < idx.length; i += 3) {
       const a = idx[i + 1];
       idx[i + 1] = idx[i + 2];
       idx[i + 2] = a;
     }
   }
-  const normals: number[] = [];
-  VertexData.ComputeNormals(pos, vd.indices!, normals);
-  vd.normals = normals;
+  vd.normals = computeNormals(pos, vd.indices);
   return vd;
 }
 
@@ -119,11 +112,11 @@ function tongue(
  * standing over it, so the top edge is a crown of licks rather than one point;
  * the core is three narrower tongues inside. A wick is one of each.
  */
-export function flameData(spec: FlameSpec): VertexData {
+export function flameData(spec: FlameSpec): GeometryBuffer {
   const { radius: R, height: H } = spec;
   const f = CONFIG.graphics.flame;
-  const parts: VertexData[] = [];
-  const place = (vd: VertexData, x: number, z: number, lean = 0, bearing = 0): VertexData => {
+  const parts: GeometryBuffer[] = [];
+  const place = (vd: GeometryBuffer, x: number, z: number, lean = 0, bearing = 0): GeometryBuffer => {
     vd.transform(
       Matrix.RotationZ(lean)
         .multiply(Matrix.RotationY(bearing))
@@ -175,11 +168,11 @@ export function flameData(spec: FlameSpec): VertexData {
   const er = f.embers.radius;
   const count = spec.embers ?? 8;
   for (let i = 0; i < count; i++) {
-    const vd = CreateIcoSphereVertexData({ radius: er, subdivisions: 1, flat: false });
+    const vd = createIcoSphere({ radius: er, subdivisions: 1, flat: false });
     const a = i * 2.39996;
     const d = R * (0.25 + 0.5 * ((i * 0.618) % 1));
     const seed = ((i + 1) * 0.3819) % 1;
-    const n = vd.positions!.length / 3;
+    const n = vd.positions.length / 3;
     const uvs = new Float32Array(n * 2);
     for (let v = 0; v < n; v++) {
       uvs[v * 2] = LAYER_EMBER + seed * 0.99;
@@ -193,15 +186,17 @@ export function flameData(spec: FlameSpec): VertexData {
   // lean, the lick, the hook and the embers can reach.
   const reach = R + H * Math.max(f.embers.drift * 3, f.lean + f.writhe + f.hook);
   const top = H * (1.25 + f.lick + f.embers.rise);
-  const bounds = new VertexData();
-  bounds.positions = [-reach, 0, -reach, reach, top, reach, 0, top / 2, 0];
-  bounds.normals = [0, 1, 0, 0, 1, 0, 0, 1, 0];
-  bounds.uvs = [LAYER_BOUNDS, 0, LAYER_BOUNDS, 0, LAYER_BOUNDS, 0];
-  bounds.indices = [0, 1, 2];
-  parts.push(bounds);
+  parts.push(
+    new GeometryBuffer({
+      positions: [-reach, 0, -reach, reach, top, reach, 0, top / 2, 0],
+      normals: [0, 1, 0, 0, 1, 0, 0, 1, 0],
+      uvs: [LAYER_BOUNDS, 0, LAYER_BOUNDS, 0, LAYER_BOUNDS, 0],
+      indices: [0, 1, 2],
+    }),
+  );
 
   const out = parts[0];
-  out.merge(parts.slice(1), true);
+  out.merge(parts.slice(1));
   return out;
 }
 
@@ -209,14 +204,9 @@ export function flameData(spec: FlameSpec): VertexData {
  * A fire as a PART (`parts.ts`): for the building kit, whose parts are merged
  * and uploaded by the block merge. Wears the factory's one flame material.
  */
-export function flamePart(
-  name: string,
-  spec: FlameSpec,
-  scene: Scene,
-  mats: CelMaterialFactory,
-): Mesh {
-  const mesh = partSurface(name, flameData(spec), scene);
-  mesh.material = mats.getFlame();
-  mesh.metadata = { noInk: true, noShadowCaster: true };
-  return mesh;
+export function flamePart(name: string, spec: FlameSpec, mats: CelMaterialFactory): Part {
+  const part = new Part(name, flameData(spec));
+  part.material = mats.getFlame();
+  part.metadata = { noInk: true, noShadowCaster: true };
+  return part;
 }

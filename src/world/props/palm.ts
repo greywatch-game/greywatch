@@ -2,8 +2,8 @@
  * props/palm.ts — buildPalm: the date palm and its colours. Part of the scatter
  * set: follows the contract in `./index.ts`.
  */
-import { Mesh, Scene } from "@babylonjs/core";
-import { partBox, partCylinder } from "../parts";
+import { createBox, createCylinder } from "../../geometry/primitives";
+import { Part } from "../parts";
 import { CONFIG } from "../../config";
 import type { CelMaterialFactory } from "../../shaders/CelShader";
 import { marksSway } from "../sway";
@@ -55,15 +55,13 @@ const DATE_FRUIT = "#8a5a2a";
  *   two props in the same place.
  */
 export function buildPalm(
-  scene: Scene,
   mats: CelMaterialFactory,
   rng: () => number,
-): Mesh {
+): Part {
   const height = 7.6 + rng() * 1.6;
-  const trunk = partCylinder(
+  const trunk = new Part(
     "palm-trunk",
-    { height, diameterTop: 0.44, diameterBottom: 0.68, tessellation: 7 },
-    scene,
+    createCylinder({ height, diameterTop: 0.44, diameterBottom: 0.68, tessellation: 7 }),
   );
   trunk.position.y = height / 2;
   trunk.material = mats.get(PALM_BARK);
@@ -78,14 +76,13 @@ export function buildPalm(
   const rings = 6;
   for (let i = 0; i < rings; i++) {
     const t = (i + 0.5) / rings;
-    const ring = partCylinder(
+    const ring = new Part(
       `palm-ring${i}`,
-      {
+      createCylinder({
         height: 0.24,
         diameter: 0.78 - t * 0.2,
         tessellation: 7,
-      },
-      scene,
+      }),
     );
     ring.parent = trunk;
     ring.position.y = -height / 2 + t * height;
@@ -95,10 +92,9 @@ export function buildPalm(
 
   // The boss at the head of the bole: unmarked, and what buries every frond's
   // root. See the header.
-  const boss = partCylinder(
+  const boss = new Part(
     "palm-boss",
-    { height: 0.7, diameterTop: 0.9, diameterBottom: 1.1, tessellation: 7 },
-    scene,
+    createCylinder({ height: 0.7, diameterTop: 0.9, diameterBottom: 1.1, tessellation: 7 }),
   );
   boss.parent = trunk;
   boss.position.y = height / 2 - 0.1;
@@ -111,10 +107,9 @@ export function buildPalm(
     // Two thirds of them arch up and out; the rest are older and hang. Both
     // start at the axis, so the root is inside the boss whatever the droop.
     const droop = i % 3 === 0 ? -0.62 - rng() * 0.3 : 0.16 + rng() * 0.24;
-    const frond = partBox(
+    const frond = new Part(
       `palm-frond${i}`,
-      { width: len, height: 0.06, depth: 0.52 },
-      scene,
+      createBox({ width: len, height: 0.06, depth: 0.52 }),
     );
     frond.parent = trunk;
     frond.position.set(
@@ -138,10 +133,9 @@ export function buildPalm(
   // Two bunches of dates under the crown, on the fruiting side.
   for (let i = 0; i < 2; i++) {
     const a = rng() * Math.PI * 2;
-    const bunch = partCylinder(
+    const bunch = new Part(
       `palm-dates${i}`,
-      { height: 0.8, diameterTop: 0.16, diameterBottom: 0.5, tessellation: 6 },
-      scene,
+      createCylinder({ height: 0.8, diameterTop: 0.16, diameterBottom: 0.5, tessellation: 6 }),
     );
     bunch.parent = trunk;
     bunch.position.set(Math.cos(a) * 0.62, height / 2 - 0.35, Math.sin(a) * 0.62);

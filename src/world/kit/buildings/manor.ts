@@ -131,7 +131,8 @@
  * Fixed geometry apart from `litWindows`, so what varies between the shutters
  * and the growth is drawn from one fixed seed rather than a placement's.
  */
-import { Scene, VertexData } from "@babylonjs/core";
+import { Scene } from "@babylonjs/core";
+import { computeNormals, GeometryBuffer } from "../../../geometry/buffer";
 import type { CelMaterialFactory } from "../../../shaders/CelShader";
 import { mulberry32 } from "../../rng";
 import {
@@ -421,14 +422,8 @@ class Sheet {
       indices.push(i);
       uvs.push(this.pos[i * 3], this.pos[i * 3 + 1]);
     }
-    const normals: number[] = [];
-    VertexData.ComputeNormals(this.pos, indices, normals);
-    const data = new VertexData();
-    data.positions = this.pos;
-    data.indices = indices;
-    data.uvs = uvs;
-    data.normals = normals;
-    b.surface(data, color);
+    const normals = computeNormals(this.pos, indices);
+    b.surface(new GeometryBuffer({ positions: this.pos, indices, uvs, normals }), color);
     this.pos = [];
   }
 }

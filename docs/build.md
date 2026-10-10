@@ -19,7 +19,8 @@ file is not the renderer's contract to carry.
 kit, the cupola gun all three hulls mount, the shoulder tube the third slot
 carries, the two halves of the player's own magazine change, the four beats of
 a bolt cycle and the two blasts, and nothing else in the game is recorded at
-all** — every mesh is built from Babylon primitives at runtime, and every sound
+all** — every mesh is built from primitives at runtime (Babylon's, or for the
+world kit and the scatter props the copies of them in `src/geometry/`), and every sound
 is synthesized WebAudio (`src/core/Sfx.ts`) but for those seventeen. Do not add
 asset files unless explicitly asked. Five exceptions, none authored by hand but
 the fifth, each with a generator in `package.json`:
@@ -259,8 +260,8 @@ version of "be careful with deep imports" that survives that.
 
 ## A Babylon upgrade owes `npm run merge:hash` against the version before it
 
-**The map build leans on Babylon's internals in four places, and none of them
-fails loudly when an upgrade moves what it copied.** All four are in
+**The map build leans on Babylon's internals in three places, and none of them
+fails loudly when an upgrade moves what it copied.** All three are in
 `src/world/parts.ts` and `src/world/merge.ts`, and each is a claim that it does
 exactly what a Babylon routine does, minus a GPU upload:
 
@@ -268,12 +269,20 @@ exactly what a Babylon routine does, minus a GPU upload:
   `applyToMesh`, relying on `setVerticesData` postponing a buffer for a
   geometry with no mesh yet and on `applyToMesh` skipping `_applyToMesh` while
   the geometry is not ready.
-- `boxVertexData` scales one cached `CreateBoxVertexData` cube, claiming the
-  same `base * (size / 2)` product Babylon computes per call.
 - `bakePart` is `bakeTransformIntoVertices` on a part's own arrays.
 - `mergeToPart` is `Mesh.MergeMeshes` step for step, and calls
   `VertexData._mergeCoroutine` — an underscore member, so nothing in Babylon's
   semver covers it.
+
+There were four until BABYLON_EXIT.md X1.2. The fourth was `boxVertexData`,
+which scaled one cached `CreateBoxVertexData` cube; the kit's and the props'
+geometry is now OURS (`src/geometry/`: the six primitive generators, the merge,
+the transform and the normals, copied operation for operation), so an upgrade
+cannot move a vertex the kit builds — what it can still move is the merge
+above. `scripts/geometry-check.mjs` compares ours with the INSTALLED Babylon,
+so after an upgrade a difference there means Babylon's generators changed, not
+ours: worth knowing, and worth nothing to the map, which no longer calls
+them. X1.4 takes the merge onto buffers too, and with it the three above.
 
 If an upgrade changes any of those routines, the copy silently stops matching:
 vertices move, or a mesh reaches the scene with nothing on the device and draws
@@ -282,5 +291,5 @@ nothing. So take `npm run merge:hash -- --out before.json` (and the same with
 on the same machine. A difference is either the upgrade changing Babylon's own
 output or one of these copies having drifted; to tell which, hash the new
 version once more with the copies swapped back for the calls they stand in for
-(`CreateBoxVertexData`, `uploadPart(m).bakeCurrentTransformIntoVertices()`,
-`Mesh.MergeMeshes`) and see which side the difference follows.
+(`uploadPart(m).bakeCurrentTransformIntoVertices()`, `Mesh.MergeMeshes`) and
+see which side the difference follows.

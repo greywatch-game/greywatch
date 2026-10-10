@@ -197,6 +197,18 @@ export class Vector3 {
     return result;
   }
 
+  multiply(otherVector: Vector3Like): Vector3 {
+    return this.multiplyByFloats(otherVector.x, otherVector.y, otherVector.z);
+  }
+
+  multiplyByFloats(x: number, y: number, z: number): Vector3 {
+    return new Vector3(this.x * x, this.y * y, this.z * z);
+  }
+
+  divide(otherVector: Vector3Like): Vector3 {
+    return new Vector3(this.x / otherVector.x, this.y / otherVector.y, this.z / otherVector.z);
+  }
+
   negate(): Vector3 {
     return new Vector3(-this.x, -this.y, -this.z);
   }
@@ -388,6 +400,12 @@ export class Vector3 {
     return result;
   }
 
+  static TransformNormal(vector: Vector3Like, transformation: MatrixLike): Vector3 {
+    const result = Vector3.Zero();
+    Vector3.TransformNormalToRef(vector, transformation, result);
+    return result;
+  }
+
   static TransformNormalToRef<T extends Vector3>(vector: Vector3Like, transformation: MatrixLike, result: T): T {
     Vector3.TransformNormalFromFloatsToRef(vector.x, vector.y, vector.z, transformation, result);
     return result;
@@ -404,6 +422,12 @@ export class Vector3 {
     result.x = x * m[0] + y * m[4] + z * m[8];
     result.y = x * m[1] + y * m[5] + z * m[9];
     result.z = x * m[2] + y * m[6] + z * m[10];
+    return result;
+  }
+
+  static Lerp(start: Vector3Like, end: Vector3Like, amount: number): Vector3 {
+    const result = new Vector3(0, 0, 0);
+    Vector3.LerpToRef(start, end, amount, result);
     return result;
   }
 

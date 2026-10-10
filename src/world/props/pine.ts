@@ -2,10 +2,10 @@
  * props/pine.ts — buildPine: the spruce-habit conifer. Part of the scatter set:
  * follows the contract in `./index.ts`.
  */
-import { Mesh, Scene, VertexData } from "@babylonjs/core";
 import { CONFIG } from "../../config";
 import type { CelMaterialFactory } from "../../shaders/CelShader";
-import { partSurface } from "../parts";
+import { GeometryBuffer } from "../../geometry/buffer";
+import { Part } from "../parts";
 import { mulberry32 } from "../rng";
 import { marksSway } from "../sway";
 import { type Flat, loft, prism, type Ring, tri } from "./geometry";
@@ -68,10 +68,9 @@ const PINE_SHARED_DRAWS = 17;
  * old one did not.
  */
 export function buildPine(
-  scene: Scene,
   mats: CelMaterialFactory,
   rng: () => number,
-): Mesh {
+): Part {
   const bark = mats.get(BARK);
   // Translucent for the reason the cones were: a pine with the light behind it
   // should have a lit edge, and a stand of them between you and the moon should
@@ -123,7 +122,7 @@ export function buildPine(
   // Deeper than the ash's flutes: pine bark is plates and furrows, and a
   // section this far out of round is what the bands find as bark running up.
   const flute = Array.from({ length: SIDES }, () => (own() - 0.5) * 0.12);
-  const trunk = loft("pine-trunk", GIRTH.map(([h]) => bole(h)), SIDES, scene, flute);
+  const trunk = loft("pine-trunk", GIRTH.map(([h]) => bole(h)), SIDES, flute);
   trunk.position.y = -FOOT;
   trunk.material = bark;
   trunk.rotation.z = (lean - 0.5) * 0.04;
@@ -148,7 +147,6 @@ export function buildPine(
         [end - 0.05, -0.4],
       ],
       [0.17, 0.17, 0.15, 0.11, 0.06, 0.06],
-      scene,
       // Inside the bole, and under the ground.
       { skip: [0, 5] },
     );
@@ -187,12 +185,7 @@ export function buildPine(
       }
       tri(indices, positions, first, first + 1, first + 2, nrm);
     }
-    const data = new VertexData();
-    data.positions = positions;
-    data.normals = normals;
-    data.uvs = uvs;
-    data.indices = indices;
-    const mesh = partSurface(name, data, scene);
+    const mesh = new Part(name, new GeometryBuffer({ positions, normals, uvs, indices }));
     mesh.parent = trunk;
     mesh.material = lit ? needleLit : needle;
     marksSway(mesh, "canopy");

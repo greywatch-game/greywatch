@@ -65,12 +65,12 @@ try {
         const s = kit.BUILDERS[kind](g.scene, g.mats, p);
         let verts = 0;
         const colours = new Set();
+        // Parts (`world/parts.ts`), not meshes: nothing was put in the scene.
         for (const m of s.meshes) {
-          verts += m.getTotalVertices();
+          verts += m.geometry.vertexCount;
           colours.add(m.material?.name ?? "?");
         }
         out.push({ params: p, parts: s.meshes.length, verts, colours: colours.size, colliders: s.colliders.length, lights: s.lights.length });
-        for (const m of s.meshes) m.dispose();
       }
       return out;
     }, { kind: statsKind, variants });

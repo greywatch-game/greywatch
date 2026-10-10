@@ -5,7 +5,8 @@
  * Part of the structures set: follows the contract in kit/core.ts, and the
  * cover heights and round-collider rule in `./index.ts`.
  */
-import { Matrix, Scene } from "@babylonjs/core";
+import { Scene } from "@babylonjs/core";
+import { Matrix } from "../../../math";
 import type { CelMaterialFactory } from "../../../shaders/CelShader";
 import { caskData } from "../../props/cask";
 import { mulberry32 } from "../../rng";

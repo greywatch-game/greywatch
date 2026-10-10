@@ -3,8 +3,8 @@
  * buildPalletStack, buildTrafficCone and buildLitter. Part of the scatter set:
  * follows the contract in `./index.ts`.
  */
-import { Mesh, Scene } from "@babylonjs/core";
-import { partBox, partCylinder } from "../parts";
+import { createBox, createCylinder } from "../../geometry/primitives";
+import { Part } from "../parts";
 import type { CelMaterialFactory } from "../../shaders/CelShader";
 import { DARK_METAL } from "./palette";
 
@@ -39,34 +39,30 @@ const SCRAP_CARD = "#8a7355";
  * worth stopping a round through.
  */
 export function buildSkip(
-  scene: Scene,
   mats: CelMaterialFactory,
   rng: () => number,
-): Mesh {
-  const body = partBox(
+): Part {
+  const body = new Part(
     "skip",
-    { width: 1.9, height: 1.1, depth: 1.2 },
-    scene,
+    createBox({ width: 1.9, height: 1.1, depth: 1.2 }),
   );
   body.position.y = 0.55;
   // A skip is dropped where it fits and never squared to the kerb.
   body.rotation.y = (rng() - 0.5) * 0.24;
   body.material = mats.get(SKIP_PAINT);
 
-  const rim = partBox(
+  const rim = new Part(
     "skip-rim",
-    { width: 2.04, height: 0.12, depth: 1.34 },
-    scene,
+    createBox({ width: 2.04, height: 0.12, depth: 1.34 }),
   );
   rim.parent = body;
   rim.position.y = 0.58;
   rim.material = mats.get(DARK_METAL);
 
   for (const sx of [-1, 1]) {
-    const lug = partBox(
+    const lug = new Part(
       `skip-lug${sx}`,
-      { width: 0.12, height: 0.34, depth: 0.5 },
-      scene,
+      createBox({ width: 0.12, height: 0.34, depth: 0.5 }),
     );
     lug.parent = body;
     lug.position.set(sx * 0.98, 0.1, 0);
@@ -80,43 +76,38 @@ export function buildSkip(
  * for the building bases and back closes a skip is too big for.
  */
 export function buildBinPair(
-  scene: Scene,
   mats: CelMaterialFactory,
   rng: () => number,
-): Mesh {
-  const root = partBox(
+): Part {
+  const root = new Part(
     "bin",
-    { width: 0.5, height: 1.0, depth: 0.56 },
-    scene,
+    createBox({ width: 0.5, height: 1.0, depth: 0.56 }),
   );
   root.position.y = 0.5;
   root.rotation.y = (rng() - 0.5) * 0.5;
   root.material = mats.get(BIN_BODY);
 
-  const lid = partBox(
+  const lid = new Part(
     "bin-lid",
-    { width: 0.54, height: 0.08, depth: 0.6 },
-    scene,
+    createBox({ width: 0.54, height: 0.08, depth: 0.6 }),
   );
   lid.parent = root;
   lid.position.y = 0.52;
   lid.material = mats.get(BIN_LID);
 
   // The second bin, leaning in slightly — a pair nobody lined up.
-  const mate = partBox(
+  const mate = new Part(
     "bin-mate",
-    { width: 0.48, height: 0.92, depth: 0.54 },
-    scene,
+    createBox({ width: 0.48, height: 0.92, depth: 0.54 }),
   );
   mate.parent = root;
   mate.position.set(0.56, -0.04, 0.06 + rng() * 0.1);
   mate.rotation.y = (rng() - 0.5) * 0.4;
   mate.material = mats.get(BIN_BODY);
 
-  const mateLid = partBox(
+  const mateLid = new Part(
     "bin-mate-lid",
-    { width: 0.52, height: 0.08, depth: 0.58 },
-    scene,
+    createBox({ width: 0.52, height: 0.08, depth: 0.58 }),
   );
   mateLid.parent = mate;
   mateLid.position.y = 0.48;
@@ -126,14 +117,12 @@ export function buildBinPair(
 
 /** A stack of pallets against a wall: back lots, depot yards, loading bays. */
 export function buildPalletStack(
-  scene: Scene,
   mats: CelMaterialFactory,
   rng: () => number,
-): Mesh {
-  const root = partBox(
+): Part {
+  const root = new Part(
     "pallet",
-    { width: 1.2, height: 0.14, depth: 1.0 },
-    scene,
+    createBox({ width: 1.2, height: 0.14, depth: 1.0 }),
   );
   root.position.y = 0.07;
   root.rotation.y = rng() * Math.PI;
@@ -142,10 +131,9 @@ export function buildPalletStack(
   // Four or five more on top, each skewed a little — a stack nobody squared.
   const count = 4 + Math.floor(rng() * 2);
   for (let i = 0; i < count; i++) {
-    const slat = partBox(
+    const slat = new Part(
       `pallet${i}`,
-      { width: 1.2, height: 0.14, depth: 1.0 },
-      scene,
+      createBox({ width: 1.2, height: 0.14, depth: 1.0 }),
     );
     slat.parent = root;
     slat.position.set((rng() - 0.5) * 0.14, (i + 1) * 0.17, (rng() - 0.5) * 0.12);
@@ -170,33 +158,29 @@ export function buildPalletStack(
  * scatter of them read across a carriageway rather than only underfoot.
  */
 export function buildTrafficCone(
-  scene: Scene,
   mats: CelMaterialFactory,
   rng: () => number,
-): Mesh {
-  const base = partBox(
+): Part {
+  const base = new Part(
     "cone-base",
-    { width: 0.42, height: 0.05, depth: 0.42 },
-    scene,
+    createBox({ width: 0.42, height: 0.05, depth: 0.42 }),
   );
   base.position.y = 0.025;
   base.rotation.y = rng() * Math.PI;
   base.material = mats.get(CONE_ORANGE);
 
-  const body = partCylinder(
+  const body = new Part(
     "cone",
-    { height: 0.62, diameterTop: 0.06, diameterBottom: 0.3, tessellation: 8 },
-    scene,
+    createCylinder({ height: 0.62, diameterTop: 0.06, diameterBottom: 0.3, tessellation: 8 }),
   );
   body.parent = base;
   body.position.y = 0.33;
   body.material = mats.get(CONE_ORANGE);
 
   // The reflective band. A cone without one reads as a lump.
-  const band = partCylinder(
+  const band = new Part(
     "cone-band",
-    { height: 0.1, diameterTop: 0.17, diameterBottom: 0.21, tessellation: 8 },
-    scene,
+    createCylinder({ height: 0.1, diameterTop: 0.17, diameterBottom: 0.21, tessellation: 8 }),
   );
   band.parent = body;
   band.position.y = 0.08;
@@ -223,14 +207,12 @@ export function buildTrafficCone(
  * `PROP_BODIES` is what keeps `findSpot`'s burial check honest about that.
  */
 export function buildLitter(
-  scene: Scene,
   mats: CelMaterialFactory,
   rng: () => number,
-): Mesh {
-  const root = partBox(
+): Part {
+  const root = new Part(
     "litter",
-    { width: 0.24, height: 0.012, depth: 0.19 },
-    scene,
+    createBox({ width: 0.24, height: 0.012, depth: 0.19 }),
   );
   root.position.y = 0.006;
   root.rotation.y = rng() * Math.PI;
@@ -238,10 +220,9 @@ export function buildLitter(
 
   const scraps = 2 + Math.floor(rng() * 3);
   for (let i = 0; i < scraps; i++) {
-    const scrap = partBox(
+    const scrap = new Part(
       `scrap${i}`,
-      { width: 0.1 + rng() * 0.2, height: 0.01, depth: 0.08 + rng() * 0.16 },
-      scene,
+      createBox({ width: 0.1 + rng() * 0.2, height: 0.01, depth: 0.08 + rng() * 0.16 }),
     );
     scrap.parent = root;
     scrap.position.set(
@@ -253,10 +234,9 @@ export function buildLitter(
     scrap.material = mats.get(rng() < 0.5 ? SCRAP_PAPER : SCRAP_CARD);
   }
 
-  const can = partCylinder(
+  const can = new Part(
     "can",
-    { height: 0.11, diameter: 0.06, tessellation: 6 },
-    scene,
+    createCylinder({ height: 0.11, diameter: 0.06, tessellation: 6 }),
   );
   can.parent = root;
   can.position.set((rng() - 0.5) * 0.8, 0.028, (rng() - 0.5) * 0.8);

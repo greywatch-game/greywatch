@@ -113,8 +113,9 @@ scripts/                      # Node tooling, run by hand or by `npm run build`,
   kit-hash.mjs                # `npm run kit:hash`: fingerprints every kit
                               #   builder over every placement, and every
                               #   scatter prop over fixed seeds and foliage
-                              #   rungs, under a NullEngine — the DRAWING and
-                              #   the COLLIDERS hashed apart, so a refactor
+                              #   rungs, under a NullEngine — the DRAWING (as
+                              #   the merge is handed it: a prop flattened)
+                              #   and the COLLIDERS hashed apart, so a refactor
                               #   proves it moved nothing. `--feet` measures the
                               #   kinds against lib/footprints.mjs. Not a gate
   merge-hash.mjs              # `npm run merge:hash`: kit:hash's other half —
@@ -125,6 +126,13 @@ scripts/                      # Node tooling, run by hand or by `npm run build`,
                               #   nothing; `--editor` does the editor's unmerged
                               #   build. Same machine and Babylon only. Not a
                               #   gate
+  geometry-check.mjs          # `node scripts/geometry-check.mjs`: builds every
+                              #   generator in src/geometry/ and Babylon's of
+                              #   the same name over seeded options, and runs
+                              #   merge, transform and computeNormals against
+                              #   VertexData's, comparing every number BIT for
+                              #   bit; fails on an export no case covers.
+                              #   Deleted with Babylon (X6.1). Not a gate
   math-check.mjs              # `node scripts/math-check.mjs`: runs every
                               #   method in src/math/ and Babylon's of the
                               #   same name on seeded inputs and compares the
@@ -360,6 +368,18 @@ src/
                         #   babylonRayHit for a system still reading a hit
                         #   with Babylon's methods). The one file here that
                         #   imports Babylon; shrinks to nothing by X6.1
+  geometry/         # Surfaces as typed arrays (BABYLON_EXIT.md X1.2): what
+                    #   the world kit and the scatter props build, Babylon's
+                    #   arithmetic copied bit for bit. Imports nothing but
+                    #   src/math/ and names its .ts imports, so Node loads it
+    buffer.ts           # GeometryBuffer (positions, normals, uvs, uv2,
+                        #   colours, indices — Float64Array where Babylon held
+                        #   a number[], Float32Array where it held one) and
+                        #   VertexData's merge, transform and ComputeNormals
+    primitives.ts       # createBox / createCylinder / createTorus /
+                        #   createIcoSphere / createSphere / createPolyhedron:
+                        #   Babylon's Create*VertexData, same vertex order,
+                        #   normals and UVs. createBox scales one cached cube
   core/
     Game.ts             # Orchestrator + main loop + all cross-system wiring.
                         #   Constructor is construction only; wiring is
@@ -1021,7 +1041,7 @@ src/
                         #   map-data vocabulary, map-agnostic. The floor is
                         #   NOT a field on MapLayout: see MapDef.heights
     TerrainField.ts     # The floor's height and the ONLY place that knows it:
-                        #   heightAt() + per-block VertexData + terrainSlab(),
+                        #   heightAt() + per-block GeometryBuffer + terrainSlab(),
                         #   terrainRibbon()/terrainFan() for a PATH road's strip
                         #   and junction patch, and the BORDERLAND past the
                         #   authored grid on a map whose boundary is open
@@ -1062,13 +1082,15 @@ src/
                         #   stripping through scripts/lib/mapgen.mjs, the
                         #   helpers the seven generate-<map>.mjs share
     MapBuilder.ts       # Builds the map; merges visuals, emits colliders.
-                        #   build() is a list of phases, one method each
+                        #   build() is a list of phases, one method each.
+                        #   structureMeshes / propMeshes: where a builder's
+                        #   parts become part meshes for the merge
     mapTypes.ts         # GameMap, WorldBox, WorldPane, PaneGroup, the layout's
                         #   flag/spawn/water/grass shapes and the editor index.
                         #   Types only; MapBuilder re-exports every one
     merge.ts            # The visual merges: mergeByMaterial, then BlockMerge
                         #   and PaneBlocks per map block (one key, one
-                        #   metadata.block), flatten, tag, BLOCK_SIZE
+                        #   metadata.block), tag, BLOCK_SIZE
     solid.ts            # SOLID_ONLY — the one mesh pick predicate left, and the
                         #   editor's alone. The three-way table of what a
                         #   collider answers a body and a round is still here
@@ -1095,15 +1117,21 @@ src/
                         #   A marked group leaves Babylon's outline pass and
                         #   gets an ink twin (MapBuilder.inkTwin) instead
     flame.ts            # An open fire's geometry — outer tongues wound inside
-                        #   out, a core, embers, a bounds marker — in one vertex
-                        #   block whose UVs FlameShader decodes. flamePart for
-                        #   the kit's Build.flame
-    parts.ts            # A structure's PART meshes, built without ever reaching
-                        #   the GPU: uploading geometry that a merge throws away
-                        #   was half of a 1500 m build. partBox / partCylinder /
-                        #   partSurface, and uploadPart, which every path out of
-                        #   a merge owes. Colliders are NOT parts — a part has no
-                        #   submeshes and would stop nothing
+                        #   out, a core, embers, a bounds marker — in one
+                        #   GeometryBuffer whose UVs FlameShader decodes.
+                        #   flamePart for the kit's Build.flame
+    parts.ts            # Part — what the kit and the props build: a
+                        #   GeometryBuffer, a transform, a material, metadata,
+                        #   a prop's parent — flattenParts (the links composed
+                        #   at emit time, Babylon's setParent(null) step for
+                        #   step), and partMesh/vertexDataOf, THE adapter into
+                        #   Babylon. Plus the part MESHES the merge runs on,
+                        #   built without ever reaching the GPU: uploading
+                        #   geometry that a merge throws away was half of a
+                        #   1500 m build. partSurface, and uploadPart, which
+                        #   every path out of a merge owes. Colliders are NOT
+                        #   parts — a part mesh has no submeshes and would stop
+                        #   nothing
     BuildingKit.ts      # Facade: shared types + BUILDERS registry
     kit/core.ts         #   Build accumulator (box/wall/guard/flight/...),
                         #   palette, builder contract, and the forest's

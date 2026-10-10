@@ -7,7 +7,8 @@
  * must stay within CONFIG.nav.stepHeight of adjacent ground and ramps need
  * rotX on the COLLIDER, not just the visual.
  */
-import { Scene, VertexData } from "@babylonjs/core";
+import { Scene } from "@babylonjs/core";
+import { GeometryBuffer } from "../../geometry/buffer";
 import type { CelMaterialFactory } from "../../shaders/CelShader";
 import {
   ROAD_DEPTH_UNITS,
@@ -632,11 +633,7 @@ function kerbStone(
 function flushKerbs(b: Build, site: KerbSite): void {
   for (const [color, sink] of site.sinks) {
     if (sink.indices.length === 0) continue;
-    const data = new VertexData();
-    data.positions = sink.positions;
-    data.normals = sink.normals;
-    data.indices = sink.indices;
-    b.surface(data, color);
+    b.surface(new GeometryBuffer({ positions: sink.positions, normals: sink.normals, indices: sink.indices }), color);
   }
 }
 

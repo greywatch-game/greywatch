@@ -7,8 +7,8 @@
  * Invariants: pure geometry — never makes a material, never draws from a
  * stream, and never imports a prop.
  */
-import { Mesh, Scene, VertexData } from "@babylonjs/core";
-import { partSurface } from "../parts";
+import { GeometryBuffer } from "../../geometry/buffer";
+import { Part } from "../parts";
 
 /** A point in a part's own plane — see `prism`. */
 export type Flat = readonly [number, number];
@@ -95,13 +95,8 @@ export function sheetVert(s: Sheet, p: V3, n: V3, uv?: readonly [number, number]
 export function sheetFace(s: Sheet, a: number, b: number, c: number): void {
   tri(s.indices, s.positions, a, b, c, s.normals.slice(a * 3, a * 3 + 3));
 }
-export function sheetData(s: Sheet): VertexData {
-  const data = new VertexData();
-  data.positions = s.positions;
-  data.normals = s.normals;
-  data.uvs = s.uvs;
-  data.indices = s.indices;
-  return data;
+export function sheetData(s: Sheet): GeometryBuffer {
+  return new GeometryBuffer({ positions: s.positions, normals: s.normals, uvs: s.uvs, indices: s.indices });
 }
 
 /** One station of a rachis: along it, across the blade, and out of its face. */
@@ -161,10 +156,9 @@ export function prism(
   name: string,
   outline: readonly Flat[],
   thick: number | readonly number[],
-  scene: Scene,
   opts: { plane?: "xy" | "xz"; centre?: boolean; skip?: readonly number[] } = {},
-): Mesh {
-  return partSurface(name, prismData(outline, thick, opts), scene);
+): Part {
+  return new Part(name, prismData(outline, thick, opts));
 }
 
 /**
@@ -175,7 +169,7 @@ export function prismData(
   outline: readonly Flat[],
   thick: number | readonly number[],
   opts: { plane?: "xy" | "xz"; centre?: boolean; skip?: readonly number[] } = {},
-): VertexData {
+): GeometryBuffer {
   const n = outline.length;
   const at = (u: number, v: number, w: number): number[] =>
     opts.plane === "xz" ? [u, w, v] : [u, v, w];
@@ -233,12 +227,7 @@ export function prismData(
     tri(indices, positions, q[0], q[1], q[2], nrm);
     tri(indices, positions, q[0], q[2], q[3], nrm);
   }
-  const data = new VertexData();
-  data.positions = positions;
-  data.normals = normals;
-  data.uvs = uvs;
-  data.indices = indices;
-  return data;
+  return new GeometryBuffer({ positions, normals, uvs, indices });
 }
 
 /**
@@ -257,14 +246,13 @@ export function loft(
   name: string,
   rings: readonly Ring[],
   sides: number,
-  scene: Scene,
   flute?: readonly number[],
-): Mesh {
-  return partSurface(name, loftData(rings, sides, flute), scene);
+): Part {
+  return new Part(name, loftData(rings, sides, flute));
 }
 
 /** `loft`'s geometry without the mesh — `prismData`'s twin. */
-export function loftData(rings: readonly Ring[], sides: number, flute?: readonly number[]): VertexData {
+export function loftData(rings: readonly Ring[], sides: number, flute?: readonly number[]): GeometryBuffer {
   const positions: number[] = [];
   const normals: number[] = [];
   const uvs: number[] = [];
@@ -328,12 +316,7 @@ export function loftData(rings: readonly Ring[], sides: number, flute?: readonly
       tri(indices, positions, a + 1, b, b + 1, na);
     }
   }
-  const data = new VertexData();
-  data.positions = positions;
-  data.normals = normals;
-  data.uvs = uvs;
-  data.indices = indices;
-  return data;
+  return new GeometryBuffer({ positions, normals, uvs, indices });
 }
 
 /** Unit geodesic spheres by subdivision level, built once and shared. */

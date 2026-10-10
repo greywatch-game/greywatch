@@ -2,10 +2,11 @@
  * props/ash.ts — buildAshTree: the hedgerow ash, its leaf cluster and its
  * colours. Part of the scatter set: follows the contract in `./index.ts`.
  */
-import { Matrix, Mesh, Scene, VertexData } from "@babylonjs/core";
+import { GeometryBuffer } from "../../geometry/buffer";
+import { Matrix } from "../../math";
 import { CONFIG } from "../../config";
 import type { CelMaterialFactory } from "../../shaders/CelShader";
-import { partSurface } from "../parts";
+import { Part } from "../parts";
 import { mulberry32 } from "../rng";
 import { boughRig, frondBend, rigPhase } from "../sway";
 import {
@@ -173,12 +174,11 @@ const ASH_SHARED_DRAWS = 56;
  * states: a squashed part's normals are not renormalised by the merge.
  */
 export function buildAshTree(
-  scene: Scene,
   mats: CelMaterialFactory,
   rng: () => number,
   _sub: () => number = rng,
   detail = 1,
-): Mesh {
+): Part {
   const bark = mats.get(ASH_BARK);
   const heart = mats.get(ASH_HEART);
   const leaf = mats.getTranslucent(ASH_LEAF, CONFIG.graphics.translucency.canopy);
@@ -251,16 +251,16 @@ export function buildAshTree(
     boughRig(frondBend(v3dist(p, fork) / SPAN), phase, tilt, leaf);
   // Writes `rigAt` over every vertex of `data`, for a part the bough carries
   // whole — wood, a heart.
-  const rigged = (data: VertexData, phase: number): VertexData => rigVerts(data, (p) => rigAt(p, phase));
+  const rigged = (data: GeometryBuffer, phase: number): GeometryBuffer => rigVerts(data, (p) => rigAt(p, phase));
   // A part's geometry turned and moved, as a mesh's rotation and position
   // would have — so a knee or an ivy leaf can be merged rather than parented.
-  const placed = (data: VertexData, x: number, y: number, z: number, ry: number, rx = 0, rz = 0): VertexData => {
+  const placed = (data: GeometryBuffer, x: number, y: number, z: number, ry: number, rx = 0, rz = 0): GeometryBuffer => {
     data.transform(Matrix.RotationYawPitchRoll(ry, rx, rz).multiply(Matrix.Translation(x, y, z)));
     return data;
   };
 
   // The bole, to a little over the fork, where the boughs bury their roots.
-  const boleParts: VertexData[] = [
+  const boleParts: GeometryBuffer[] = [
     loftData(
       GIRTH.filter(([h]) => h < FORK + 0.3).map(([h]) => bole(h)).concat([bole(FORK + 0.3)]),
       SIDES,
@@ -294,7 +294,7 @@ export function buildAshTree(
   }
 
   // The CROWN's wood, every member of it rigged, and the billows it carries.
-  const wood: VertexData[] = [];
+  const wood: GeometryBuffer[] = [];
   const clumps: Billow[] = [];
   // No billow's belly under this — what holds the lowest leaf where the
   // header says it is. A cluster hangs at most ~0.2 m under the belly.
@@ -419,9 +419,9 @@ export function buildAshTree(
   const shade = newSheet();
   const hearts = skinBillows(clumps, seed, detail, ASH_SKIN, rigAt, rigged, lit, shade);
 
-  const part = (name: string, data: VertexData[] | Sheet, material: typeof bark, sways: boolean): void =>
-    crownPart(scene, trunk, name, data, material, sways);
-  const trunk = partSurface("ash-trunk", boleParts[0].merge(boleParts.slice(1)), scene);
+  const part = (name: string, data: GeometryBuffer[] | Sheet, material: typeof bark, sways: boolean): void =>
+    crownPart(trunk, name, data, material, sways);
+  const trunk = new Part("ash-trunk", boleParts[0].merge(boleParts.slice(1)));
   trunk.position.y = -FOOT;
   trunk.material = bark;
   trunk.rotation.z = (lean - 0.5) * 0.05;
@@ -451,7 +451,7 @@ export function buildAshTree(
       return { x: b.x + Math.sin(th) * r, y: b.y, z: b.z + Math.cos(th) * r, r: 0, th };
     };
     const steps = 8;
-    const vineParts: VertexData[] = [
+    const vineParts: GeometryBuffer[] = [
       loftData(
         Array.from({ length: steps }, (_, i) => ({
           ...wind(i / (steps - 1), 0.025),
@@ -460,7 +460,7 @@ export function buildAshTree(
         4,
       ),
     ];
-    const darkParts: VertexData[] = [];
+    const darkParts: GeometryBuffer[] = [];
     const count = 12 + Math.floor(own() * 8);
     for (let k = 0; k < count; k++) {
       const at = wind((k + 0.5 + (own() - 0.5) * 0.8) / count, 0.03);

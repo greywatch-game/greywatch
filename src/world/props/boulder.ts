@@ -2,9 +2,10 @@
  * props/boulder.ts — buildBoulder: the glacial erratic, and the rock it is cut
  * from. Part of the scatter set: follows the contract in `./index.ts`.
  */
-import { Matrix, Mesh, Scene, Vector3, VertexData } from "@babylonjs/core";
+import { GeometryBuffer } from "../../geometry/buffer";
+import { Matrix, Vector3 } from "../../math";
 import type { CelMaterialFactory } from "../../shaders/CelShader";
-import { partSurface } from "../parts";
+import { Part } from "../parts";
 import { type Flat, geodesic, prismData, tri } from "./geometry";
 
 /**
@@ -44,14 +45,14 @@ interface RockCut {
 
 /** A rock's geometry in its two colours, either of which may be empty. */
 interface RockSheets {
-  skin: VertexData[];
-  dark: VertexData[];
+  skin: GeometryBuffer[];
+  dark: GeometryBuffer[];
 }
 
 /**
  * A rock: the geodesic at `level` carried out to `place(direction)`, then cut
  * flat by each of `cuts` in turn, then moved by `m` (a rotation and a
- * translation only — `VertexData.transform` does not re-normalise).
+ * translation only — `GeometryBuffer.transform` does not re-normalise).
  *
  * **Rounded where the ice wore it, flat where it broke.** A face lying wholly
  * on one cut is FLAT-shaded in that cut's normal, so a joint face is one tone
@@ -171,11 +172,7 @@ function rockData(
 
   for (const [s, list] of [[skin, out.skin], [dark, out.dark]] as const) {
     if (!s.indices.length) continue;
-    const data = new VertexData();
-    data.positions = s.positions;
-    data.normals = s.normals;
-    data.uvs = s.uvs;
-    data.indices = s.indices;
+    const data = new GeometryBuffer({ positions: s.positions, normals: s.normals, uvs: s.uvs, indices: s.indices });
     data.transform(m);
     list.push(data);
   }
@@ -276,11 +273,10 @@ function wornShape(
  * mesh the install pays for (see `buildDeadTree`).
  */
 export function buildBoulder(
-  scene: Scene,
   mats: CelMaterialFactory,
   rng: () => number,
   sub: () => number,
-): Mesh {
+): Part {
   // The octahedron's draws, taken and not spent (see the header).
   for (let i = 0; i < BOULDER_SHARED_DRAWS; i++) rng();
   const own = sub;
@@ -463,10 +459,10 @@ export function buildBoulder(
     out.dark.push(flake);
   }
 
-  const rock = partSurface("boulder", out.skin[0].merge(out.skin.slice(1)), scene);
+  const rock = new Part("boulder", out.skin[0].merge(out.skin.slice(1)));
   rock.material = mats.get(BOULDER);
   if (out.dark.length) {
-    const rest = partSurface("boulder-dark", out.dark[0].merge(out.dark.slice(1)), scene);
+    const rest = new Part("boulder-dark", out.dark[0].merge(out.dark.slice(1)));
     rest.parent = rock;
     rest.material = mats.get(BOULDER_DARK);
   }

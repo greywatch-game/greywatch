@@ -332,12 +332,13 @@ engine. Seven things came out of building it and all of them outlive it:
   already refuses what grows; what a big region still owes a check against is
   water, a pad and a flag's ring.
 - **A prop a map sows by the thousand is built from PARTS**
-  (`world/parts.ts`), which the older props are not. The maple, the leaf drift
-  and the bamboo clump were first built with `MeshBuilder` like everything else
-  in `world/props/`, and some 130,000 small meshes, each uploaded to the device
-  on the way to being merged away took this map's build from 15 s to 86 s; as parts it
-  is 11-13 s. The maple is BLOCKING and built this way, and the collision bake,
-  `npm run parity` and a live round all pass with it, so a blocking prop may be.
+  (`world/parts.ts`) — and since BABYLON_EXIT.md X1.2 every prop is. The maple,
+  the leaf drift and the bamboo clump were first built with `MeshBuilder` like
+  everything else in `world/props/` then was, and some 130,000 small meshes,
+  each uploaded to the device on the way to being merged away took this map's
+  build from 15 s to 86 s; as parts it is 11-13 s. The maple is BLOCKING and
+  built this way, and the collision bake, `npm run parity` and a live round all
+  pass with it, so a blocking prop may be.
 - **A floor surface is judged under the map's own sun.** At 14.5 degrees
   `dirt` and `turf` both carve plates that read as a cracked desert pan, and
   `sand` reads as dunes. Kurenai was `flat` for that reason and read as one
@@ -1971,24 +1972,37 @@ and before it did, every colour used by a single part of a rotated building (the
 tavern's sign, the smithy's forge glow, the boathouse lamp) was translated into
 place without being rotated.
 
-**A builder's parts never reach the GPU, and that is a rule rather than a
-tuning knob.** Everything `Build` makes — every box, cylinder and surface — is
-a `partBox`/`partCylinder`/`partSurface` from `src/world/parts.ts`: a real
-`Mesh` holding real vertices with no device buffer, no bounding info and no
-submesh under it. Uploading them was HALF the build. `VertexData.applyToMesh`
-sends a part's positions, normals, UVs and indices to the device the instant it
+**A builder's geometry is not Babylon's, and its parts never reach the GPU.**
+Everything `Build` makes — every box, cylinder and surface — and everything a
+scatter prop makes is a `Part` (`src/world/parts.ts`): a `GeometryBuffer` of
+typed arrays built through `src/geometry/` (`createBox`, `createCylinder`,
+`computeNormals`, a merge and a transform — Babylon's generators copied
+operation for operation, `scripts/geometry-check.mjs` proving every number),
+with a name, a local transform, a material and its metadata, and no Babylon
+object under it (BABYLON_EXIT.md X1.2). A builder that reaches for
+`MeshBuilder` or `VertexData` is building outside the kit. A prop's
+`.parent =` is how it says where a part goes in its parent's frame:
+`flattenParts` composes it into the part's own transform at EMIT time — after
+`MapBuilder` has placed the root — exactly as Babylon's `setParent(null)`
+did, in its child order.
+
+`MapBuilder` turns parts into part MESHES in one place (`partMesh`, through
+`structureMeshes` and `propMeshes`) on the way into the merge, and a part mesh
+holds real vertices with no device buffer, no bounding info and no submesh
+under it. Uploading them was HALF the build. `VertexData.applyToMesh` sends a
+mesh's positions, normals, UVs and indices to the device the instant it
 exists, `mergeByMaterial` reads them back out of the CPU copies Babylon kept
 anyway, and the merge disposes the source — so a cottage's twenty planks were
 twenty round trips for geometry no frame would ever draw. At 1500 m that was
 161 seconds of a 186-second build; it is 9.4 of 17.4 now (`ENGINE_UPGRADE.md` S5).
 
-Two consequences a builder has to know. **A part may never be drawn, picked or
-collided with** — it has no submeshes, so it would silently do nothing — which
-is why `MapBuilder.collider()` stays on `MeshBuilder` and colliders are not
-parts. And **every path out of a merge that KEEPS its source owes
-`uploadPart`**: the group-of-one hand-bake in both `mergeByMaterial` and
-`paneGroup`, and the material-less mesh both of them skip. A part that reaches
-the scene without it draws nothing and throws nothing.
+Two consequences a builder has to know. **A part mesh may never be drawn,
+picked or collided with** — it has no submeshes, so it would silently do
+nothing — which is why `MapBuilder.collider()` stays on `MeshBuilder` and
+colliders are not parts. And **every path out of a merge that KEEPS its source
+owes `uploadPart`**: the group-of-one hand-bake in both `mergeByMaterial` and
+`paneGroup`, and the material-less mesh both of them skip. A part mesh that
+reaches the scene without it draws nothing and throws nothing.
 
 A **second merge pass** (`BlockMerge`) collapses neighbouring structures and scatter
 fields into one mesh per (map block, material) — the block's side is

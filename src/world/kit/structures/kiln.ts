@@ -3,7 +3,8 @@
  * Part of the structures set: follows the contract in kit/core.ts, and the
  * cover heights and round-collider rule in `./index.ts`.
  */
-import { Scene, type Mesh } from "@babylonjs/core";
+import type { Scene } from "@babylonjs/core";
+import type { Part } from "../../parts";
 import type { CelMaterialFactory } from "../../../shaders/CelShader";
 import { mulberry32 } from "../../rng";
 import {
@@ -134,14 +135,14 @@ export function buildKiln(
    * `roll` in the face's own plane (X toward face-up). A `disc` is a cylinder
    * whose axis is the face normal.
    */
-  const place = (m: Mesh, f: Frustum, k: number, u: number, y: number, d: number, proud: number, roll = 0, disc = false): Mesh => {
+  const place = (m: Part, f: Frustum, k: number, u: number, y: number, d: number, proud: number, roll = 0, disc = false): Part => {
     const p = facePt(f, k, u, y, proud - d / 2);
     m.position.set(p[0], p[1], p[2]);
     const t = lean(f);
     m.rotation.set(disc ? Math.PI / 2 - t : -t, Math.PI + k * STEP, roll);
     return m;
   };
-  const brick = (f: Frustum, k: number, u: number, y: number, w: number, h: number, proud: number, color: string, roll = 0): Mesh =>
+  const brick = (f: Frustum, k: number, u: number, y: number, w: number, h: number, proud: number, color: string, roll = 0): Part =>
     place(b.box(w, h, proud + 0.04, 0, 0, 0, color), f, k, u, y, proud + 0.04, proud, roll);
   /** A 9-sided band hugging `f` between y ± h/2, stood `proud` off it. */
   const ring = (f: Frustum, y: number, h: number, proud: number, color: string): void => {

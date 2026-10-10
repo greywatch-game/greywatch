@@ -1,7 +1,7 @@
 /**
  * TerrainField.ts — The valley floor's height, and the one place that knows it.
  * Owns: sampling a map's Heightfield at any (x, z), editing it, and
- * tessellating it into per-block VertexData for MapBuilder to hang meshes on —
+ * tessellating it into per-block `GeometryBuffer`s for MapBuilder to hang meshes on —
  * plus `terrainSlab`, which bends a flat footprint (a road) onto that same
  * surface, so ground-hugging dressing is cut against the floor by the one file
  * that knows its shape, and its two siblings for a road that bends in plan
@@ -23,10 +23,12 @@
  * level map costs exactly what it used to.
  *
  * This file must NOT create meshes, materials or colliders — it hands back
- * VertexData and lets MapBuilder own the scene.
+ * `GeometryBuffer`s (`src/geometry/`) and lets MapBuilder own the scene, and it
+ * imports nothing from Babylon: the server and the editor read it too, and
+ * each turns a patch into a mesh through `world/parts.ts`'s `vertexDataOf`.
  */
-import { VertexData } from "@babylonjs/core";
 import { CONFIG } from "../config";
+import { computeNormals, GeometryBuffer } from "../geometry/buffer";
 import { clamp } from "../core/math";
 import type { Heightfield, WaterRect } from "./layout";
 
@@ -34,7 +36,7 @@ import type { Heightfield, WaterRect } from "./layout";
 export interface TerrainPatch {
   /** Map-block key, `${bx},${bz}` — the same convention BlockMerge uses. */
   key: string;
-  data: VertexData;
+  data: GeometryBuffer;
 }
 
 /**
@@ -310,7 +312,7 @@ export function waterY(r: WaterRect, terrain: TerrainField): number {
 export const MAX_WALKABLE_GRADE = CONFIG.nav.stepHeight / CONFIG.nav.cellSize;
 
 /**
- * Tessellates the floor, one VertexData per map block.
+ * Tessellates the floor, one `GeometryBuffer` per map block.
  *
  * Two fast paths keep a mostly-level map cheap. With no heightfield at all the
  * whole floor is a single quad — the same two triangles the old flat ground box
@@ -474,7 +476,7 @@ function uniformHeight(
 export function terrainSlab(
   terrain: TerrainField,
   s: SlabSpec,
-): VertexData | null {
+): GeometryBuffer | null {
   const f = terrain.field;
   if (!f) return null;
   // The field's own extent, for `TerrainField.half`'s reason: this is what the
@@ -672,7 +674,7 @@ export function terrainRibbon(
   top: number,
   thickness: number,
   caps: readonly [boolean, boolean],
-): VertexData {
+): GeometryBuffer {
   let minX = Infinity;
   let minZ = Infinity;
   let maxX = -Infinity;
@@ -776,7 +778,7 @@ export function terrainFan(
   kerb: readonly boolean[],
   top: number,
   thickness: number,
-): VertexData {
+): GeometryBuffer {
   const step = drapeStep(
     terrain,
     Math.min(cx, ...xs),
@@ -992,16 +994,10 @@ class Accum {
    * `facesUp` is the floor's own invariant, not every caller's: a slab's skirt
    * points sideways by design, so only the ground asserts it.
    */
-  finish(facesUp = true): VertexData {
-    const data = new VertexData();
-    data.positions = this.positions;
-    data.uvs = this.uvs;
-    data.indices = this.indices;
-    const normals: number[] = [];
-    VertexData.ComputeNormals(this.positions, this.indices, normals);
-    data.normals = normals;
+  finish(facesUp = true): GeometryBuffer {
+    const normals = computeNormals(this.positions, this.indices);
     if (facesUp) assertFacesUp(normals);
-    return data;
+    return new GeometryBuffer({ positions: this.positions, uvs: this.uvs, indices: this.indices, normals });
   }
 }
 
@@ -1014,7 +1010,7 @@ class Accum {
  * clean console. Worth a dev-time assertion precisely because nothing else
  * catches it.
  */
-function assertFacesUp(normals: readonly number[]): void {
+function assertFacesUp(normals: ArrayLike<number>): void {
   if (!import.meta.env.DEV) return;
   for (let i = 1; i < normals.length; i += 3) {
     if (normals[i] < 0) {

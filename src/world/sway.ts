@@ -73,7 +73,6 @@
  * never a position or a direction, because the merge bakes a placement into
  * positions and normals and leaves `uv` exactly as it found it.
  */
-import type { Mesh } from "@babylonjs/core";
 import { CONFIG } from "../config";
 
 /**
@@ -82,6 +81,12 @@ import { CONFIG } from "../config";
  * follows for the kit.
  */
 export type SwayLayer = keyof typeof CONFIG.wind.foliage.layers;
+
+/**
+ * Anything that carries the mark: a kit `Part` while it is being built, and
+ * the Babylon mesh it becomes and is merged into. Both keep it in `metadata`.
+ */
+type Marked = { metadata: { [flag: string]: unknown } | null };
 
 /**
  * Marks a mesh as foliage the wind moves.
@@ -93,12 +98,12 @@ export type SwayLayer = keyof typeof CONFIG.wind.foliage.layers;
  * no collider at all. `PROP_BODIES` is the list to check against before
  * marking anything new.
  */
-export function marksSway(mesh: Mesh, layer: SwayLayer): void {
+export function marksSway(mesh: Marked, layer: SwayLayer): void {
   mesh.metadata = { ...(mesh.metadata ?? {}), sway: layer };
 }
 
 /** The layer a mesh was marked with, or null. */
-export function swayLayerOf(mesh: Mesh): SwayLayer | null {
+export function swayLayerOf(mesh: Marked): SwayLayer | null {
   const layer = mesh.metadata?.sway;
   return typeof layer === "string" && layer in CONFIG.wind.foliage.layers
     ? (layer as SwayLayer)

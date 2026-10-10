@@ -60,6 +60,7 @@ import { RayWorld } from "../src/world/RayWorld";
 import { CollisionField } from "../src/world/CollisionField";
 import { roadNetwork } from "../src/world/roadPaths";
 import { TerrainField, terrainPatches } from "../src/world/TerrainField";
+import { vertexDataOf } from "../src/world/parts";
 
 /**
  * Builds one collider box, matching `MapBuilder.collider()` exactly.
@@ -202,7 +203,7 @@ function terrainColliders(
   const out: Mesh[] = [];
   for (const patch of terrainPatches(terrain, size, terrainBlock)) {
     const col = new Mesh(`terrain-${patch.key}-col`, scene);
-    patch.data.applyToMesh(col);
+    vertexDataOf(patch.data).applyToMesh(col);
     col.isVisible = false;
     col.isPickable = true;
     // Vertical placement is the ground probe's job — the same reason the client

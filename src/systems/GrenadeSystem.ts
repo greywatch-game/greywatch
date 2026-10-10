@@ -89,6 +89,7 @@ import type { CelMaterialFactory } from "../shaders/CelShader";
 import type { EnvironmentSpec } from "../world/environment";
 import { TerrainField } from "../world/TerrainField";
 import { flameData } from "../world/flame";
+import { vertexDataOf } from "../world/parts";
 import type { RayWorld } from "../world/RayWorld";
 import { BlastFx } from "./BlastFx";
 import type { DamageKind, Hittable } from "./CombatSystem";
@@ -436,7 +437,7 @@ export class GrenadeSystem {
     const m = CONFIG.molotov;
     const source = draws ? new Mesh("molotovFlameSource", scene) : null;
     if (source) {
-      flameData({ radius: m.flameRadius, height: m.flameHeight }).applyToMesh(source);
+      vertexDataOf(flameData({ radius: m.flameRadius, height: m.flameHeight })).applyToMesh(source);
       source.material = mats.getFlame();
       source.metadata = { noInk: true, noShadowCaster: true };
       source.isPickable = false;

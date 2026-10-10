@@ -2,20 +2,13 @@
  * props/fireDrum.ts — buildFireDrum: the open burn barrel. Part of the scatter
  * set: follows the contract in `./index.ts`.
  */
-import {
-  CreateBoxVertexData,
-  CreateCylinderVertexData,
-  CreateTorusVertexData,
-  Material,
-  Matrix,
-  Mesh,
-  Scene,
-  Vector3,
-  VertexData,
-} from "@babylonjs/core";
+import type { Material } from "@babylonjs/core";
+import { GeometryBuffer } from "../../geometry/buffer";
+import { createBox, createCylinder, createTorus, CAP_START, NO_CAP, BACKSIDE } from "../../geometry/primitives";
+import { Matrix, Vector3 } from "../../math";
 import type { CelMaterialFactory } from "../../shaders/CelShader";
 import { flameData } from "../flame";
-import { partSurface } from "../parts";
+import { Part, type PartMetadata } from "../parts";
 import { BARK, DARK_METAL, DEAD_BARK } from "./palette";
 
 const RUST = "#5d4a3c";
@@ -34,7 +27,7 @@ const EMBER = "#8f2610";
  * point out, the winding is Babylon's front face, and it carries UVs so it
  * merges with the primitives beside it.
  */
-function drumSheet(r: number, cols: readonly { a: number; y0: number; y1: number }[]): VertexData {
+function drumSheet(r: number, cols: readonly { a: number; y0: number; y1: number }[]): GeometryBuffer {
   const positions: number[] = [];
   const normals: number[] = [];
   const uvs: number[] = [];
@@ -52,12 +45,7 @@ function drumSheet(r: number, cols: readonly { a: number; y0: number; y1: number
     // Babylon's front face for an outward normal.
     indices.push(b, b + 1, b + 2, b + 2, b + 1, b + 3);
   });
-  const vd = new VertexData();
-  vd.positions = positions;
-  vd.normals = normals;
-  vd.uvs = uvs;
-  vd.indices = indices;
-  return vd;
+  return new GeometryBuffer({ positions, normals, uvs, indices });
 }
 
 /** `n + 1` columns evenly across `a0`..`a1`, each spanning `y0`..`y1`. */
@@ -98,17 +86,16 @@ function drumPatch(a0: number, a1: number, y0: number, y1: number, n: number) {
  * firewood shares with the trees, so on a wooded map it costs no draw call.
  */
 export function buildFireDrum(
-  scene: Scene,
   mats: CelMaterialFactory,
   _rng: () => number,
   sub: () => number,
-): Mesh {
-  const rust: VertexData[] = [];
-  const dark: VertexData[] = [];
-  const ember: VertexData[] = [];
-  const char: VertexData[] = [];
-  const wood: VertexData[] = [];
-  const put = (into: VertexData[], vd: VertexData, m: Matrix): void => {
+): Part {
+  const rust: GeometryBuffer[] = [];
+  const dark: GeometryBuffer[] = [];
+  const ember: GeometryBuffer[] = [];
+  const char: GeometryBuffer[] = [];
+  const wood: GeometryBuffer[] = [];
+  const put = (into: GeometryBuffer[], vd: GeometryBuffer, m: Matrix): void => {
     vd.transform(m);
     into.push(vd);
   };
@@ -120,30 +107,30 @@ export function buildFireDrum(
   // to the coals. The chime laid over the rim closes the gap between them.
   put(
     rust,
-    CreateCylinderVertexData({ height: DRUM_H, diameter: DRUM_R * 2, tessellation: 20, cap: Mesh.CAP_START }),
+    createCylinder({ height: DRUM_H, diameter: DRUM_R * 2, tessellation: 20, cap: CAP_START }),
     at(0, DRUM_H / 2, 0),
   );
   const innerH = DRUM_H - DRUM_COALS + 0.12;
   put(
     dark,
-    CreateCylinderVertexData({
+    createCylinder({
       height: innerH,
       diameter: (DRUM_R - 0.02) * 2,
       tessellation: 20,
-      cap: Mesh.NO_CAP,
-      sideOrientation: Mesh.BACKSIDE,
+      cap: NO_CAP,
+      sideOrientation: BACKSIDE,
     }),
     at(0, DRUM_H - innerH / 2, 0),
   );
   // The chimes, rolled steel at the head and the foot. The head is heat-blued
   // with everything else up there; the foot is the barrel's own rust.
-  const chime = (y: number): VertexData =>
-    CreateTorusVertexData({ diameter: (DRUM_R - 0.005) * 2, thickness: 0.045, tessellation: 18 }).transform(at(0, y, 0));
+  const chime = (y: number): GeometryBuffer =>
+    createTorus({ diameter: (DRUM_R - 0.005) * 2, thickness: 0.045, tessellation: 18 }).transform(at(0, y, 0));
   dark.push(chime(DRUM_H));
   rust.push(chime(0.025));
   // The two rolling hoops pressed into the barrel at its thirds.
   for (const y of [DRUM_H / 3, (DRUM_H * 2) / 3]) {
-    put(rust, CreateCylinderVertexData({ height: 0.04, diameter: (DRUM_R + 0.014) * 2, tessellation: 20 }), at(0, y, 0));
+    put(rust, createCylinder({ height: 0.04, diameter: (DRUM_R + 0.014) * 2, tessellation: 20 }), at(0, y, 0));
   }
 
   // The heat line: the top of the drum blued and sooted, its lower edge a slow
@@ -217,7 +204,7 @@ export function buildFireDrum(
     const c = n.scale(DRUM_R + 0.008).add(dir.scale(w / 2));
     put(
       rust,
-      CreateBoxVertexData({ width: w, height: 0.23, depth: 0.012 }),
+      createBox({ width: w, height: 0.23, depth: 0.012 }),
       Matrix.RotationY(Math.atan2(-dir.z, dir.x)).multiply(at(c.x, 0.185, c.z)),
     );
   }
@@ -226,7 +213,7 @@ export function buildFireDrum(
   // The coal bed, heaped a little to the middle, and charred lumps lying in it.
   put(
     ember,
-    CreateCylinderVertexData({ height: 0.1, diameterTop: 0.62, diameterBottom: (DRUM_R - 0.02) * 2, tessellation: 12 }),
+    createCylinder({ height: 0.1, diameterTop: 0.62, diameterBottom: (DRUM_R - 0.02) * 2, tessellation: 12 }),
     at(0, DRUM_COALS - 0.05, 0),
   );
   for (let i = 0; i < 6; i++) {
@@ -234,7 +221,7 @@ export function buildFireDrum(
     const r = sub() * 0.3;
     put(
       char,
-      CreateBoxVertexData({ width: 0.1 + sub() * 0.08, height: 0.05 + sub() * 0.03, depth: 0.06 + sub() * 0.04 }),
+      createBox({ width: 0.1 + sub() * 0.08, height: 0.05 + sub() * 0.03, depth: 0.06 + sub() * 0.04 }),
       Matrix.RotationYawPitchRoll(sub() * Math.PI, (sub() - 0.5) * 0.6, (sub() - 0.5) * 0.6).multiply(
         at(Math.sin(a) * r, DRUM_COALS - 0.01 + (0.3 - r) * 0.08, Math.cos(a) * r),
       ),
@@ -252,7 +239,7 @@ export function buildFireDrum(
     // fire rather than over the rim.
     put(
       char,
-      CreateCylinderVertexData({ height: len, diameter: 0.1 + sub() * 0.03, tessellation: 3 }),
+      createCylinder({ height: len, diameter: 0.1 + sub() * 0.03, tessellation: 3 }),
       at(0, len / 2, 0)
         .multiply(Matrix.RotationX(-lean))
         .multiply(Matrix.RotationY(a + (sub() - 0.5) * 0.6))
@@ -264,7 +251,7 @@ export function buildFireDrum(
   for (const o of [-0.13, 0.11]) {
     put(
       dark,
-      CreateCylinderVertexData({ height: DRUM_R * 2 + 0.08, diameter: 0.018, tessellation: 5 }),
+      createCylinder({ height: DRUM_R * 2 + 0.08, diameter: 0.018, tessellation: 5 }),
       Matrix.RotationZ(Math.PI / 2)
         .multiply(Matrix.RotationY(grill))
         .multiply(at(Math.sin(grill) * o, DRUM_H + 0.031, Math.cos(grill) * o)),
@@ -284,7 +271,7 @@ export function buildFireDrum(
     const along = pileA + Math.PI / 2 + (top ? 0.5 : (sub() - 0.5) * 0.3);
     put(
       wood,
-      CreateCylinderVertexData({ height: len, diameter: d, tessellation: 3 }),
+      createCylinder({ height: len, diameter: d, tessellation: 3 }),
       Matrix.RotationY(sub() * Math.PI * 2)
         .multiply(Matrix.RotationZ(Math.PI / 2))
         .multiply(Matrix.RotationY(along))
@@ -300,10 +287,10 @@ export function buildFireDrum(
 
   // Hidden layers after what hides them: the inner wall and the coals are
   // emitted after the barrel and the chime that cover their edges.
-  const merged = (list: VertexData[]): VertexData => list[0].merge(list.slice(1));
-  const drum = partSurface("drum", merged(rust), scene);
+  const merged = (list: GeometryBuffer[]): GeometryBuffer => list[0].merge(list.slice(1));
+  const drum = new Part("drum", merged(rust));
   drum.material = mats.get(RUST);
-  const parts: [string, VertexData[], Material, object?][] = [
+  const parts: [string, GeometryBuffer[], Material, PartMetadata?][] = [
     ["drum-scale", dark, mats.get(DARK_METAL)],
     ["drum-char", char, mats.get(DEAD_BARK)],
     ["drum-wood", wood, mats.get(BARK)],
@@ -311,7 +298,7 @@ export function buildFireDrum(
     ["drum-coals", ember, mats.getEmissive(EMBER), { noInk: true, noShadowCaster: true }],
   ];
   for (const [name, list, material, metadata] of parts) {
-    const mesh = partSurface(name, merged(list), scene);
+    const mesh = new Part(name, merged(list));
     mesh.parent = drum;
     mesh.material = material;
     if (metadata) mesh.metadata = metadata;
@@ -319,8 +306,7 @@ export function buildFireDrum(
 
   // The fire itself — animated, so it is never a shadow caster (`flame.ts`).
   // Rooted in the coals and reaching the height it always did.
-  const fire = new Mesh("drum-fire", scene);
-  flameData({ radius: 0.36, height: 2.1 - DRUM_COALS + 0.05 }).applyToMesh(fire);
+  const fire = new Part("drum-fire", flameData({ radius: 0.36, height: 2.1 - DRUM_COALS + 0.05 }));
   fire.parent = drum;
   fire.position.y = DRUM_COALS - 0.05;
   fire.material = mats.getFlame();

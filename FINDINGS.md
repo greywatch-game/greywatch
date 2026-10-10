@@ -1023,8 +1023,12 @@ plain-array conversion, which only a change that rounds vertices differently
 would remove. If nothing here is taken up, delete the entry.
 
 `StoneBatch` and `Mesher` (`kit/core.ts`) take the first sub-thread below
-locally, for the stone and tile runs that opt in; the general path in
-`parts.ts` still builds a `Mesh` per part.
+locally, for the stone and tile runs that opt in. Since BABYLON_EXIT.md X1.2 a
+builder's part is plain data (`Part`, a `GeometryBuffer` built by
+`src/geometry/`, whose `createBox` shares one unit tessellation), but
+`MapBuilder` still makes a part MESH of every one on the way into the merge
+(`partMesh`), so the round trip below is still paid; X1.4 moves the merge onto
+buffers, which is this entry's first sub-thread.
 
 ### The instrument
 

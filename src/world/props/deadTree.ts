@@ -2,9 +2,10 @@
  * props/deadTree.ts — buildDeadTree: the stag-headed snag. Part of the scatter
  * set: follows the contract in `./index.ts`.
  */
-import { Matrix, Mesh, Scene, VertexData } from "@babylonjs/core";
+import { GeometryBuffer } from "../../geometry/buffer";
+import { Matrix } from "../../math";
 import type { CelMaterialFactory } from "../../shaders/CelShader";
-import { partSurface } from "../parts";
+import { Part } from "../parts";
 import { mulberry32 } from "../rng";
 import { type Flat, loftData, prismData, type Ring } from "./geometry";
 import { BARK, DEAD_BARK } from "./palette";
@@ -63,10 +64,9 @@ import { BARK, DEAD_BARK } from "./palette";
  * same vertices took a second longer to install on Hollowmere.
  */
 export function buildDeadTree(
-  scene: Scene,
   mats: CelMaterialFactory,
   rng: () => number,
-): Mesh {
+): Part {
   const bark = mats.get(BARK);
   const dead = mats.get(DEAD_BARK);
   // The first shared draw is the lean and the seed of this tree's own stream;
@@ -147,12 +147,12 @@ export function buildDeadTree(
   // end: the tree is sixty-odd members, and as sixty parts the install paid
   // for each one as a mesh (a second on Hollowmere) for a merge that was
   // always going to make them two.
-  const wood: VertexData[] = [loftData(GIRTH.map(([h]) => bole(h)), SIDES, flute)];
-  const fine: VertexData[] = [];
+  const wood: GeometryBuffer[] = [loftData(GIRTH.map(([h]) => bole(h)), SIDES, flute)];
+  const fine: GeometryBuffer[] = [];
   // A piece in the trunk's frame, yawed and pitched about its own origin and
   // then set where it goes — the order a mesh's own transform applies them.
   const put = (
-    data: VertexData,
+    data: GeometryBuffer,
     rotten: boolean,
     at?: { x?: number; y?: number; z?: number; yaw?: number; pitch?: number },
   ): void => {
@@ -422,11 +422,11 @@ export function buildDeadTree(
   }
   // The bole carries every other piece of BARK and is the root; the fine and
   // rotten wood is its one child.
-  const trunk = partSurface("dead-trunk", wood[0].merge(wood.slice(1)), scene);
+  const trunk = new Part("dead-trunk", wood[0].merge(wood.slice(1)));
   trunk.position.y = -FOOT;
   trunk.material = bark;
   if (fine.length) {
-    const rest = partSurface("dead-fine", fine[0].merge(fine.slice(1)), scene);
+    const rest = new Part("dead-fine", fine[0].merge(fine.slice(1)));
     rest.parent = trunk;
     rest.material = dead;
   }

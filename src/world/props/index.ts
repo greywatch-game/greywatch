@@ -1,8 +1,11 @@
 /**
  * props/index.ts — Scatter prop factories (trees, gravestones, lanterns,
  * fungus, logs, fire drums, rubble, boulders, brambles, barrels, jungle
- * trees). Pure mesh builders: each assembles at the origin and returns a
- * hierarchy; placement/merging/colliders are the caller's job.
+ * trees). Pure geometry builders: each assembles PARTS (`world/parts.ts`) at
+ * the origin and returns the root of a parented hierarchy; placement, the
+ * flatten, merging and colliders are the caller's job. Nothing here touches a
+ * scene or a Babylon mesh — every surface is a `GeometryBuffer` built through
+ * `src/geometry/`, and `MapBuilder.propMeshes` is where one becomes a mesh.
  * Invariants: emissive parts (lantern glow, fire, fungus) MUST set
  * metadata.noInk (and noGlow where they shouldn't feed the bloom).
  * Foliage the wind moves calls `marksSway`, and NOTHING a collider stands in
@@ -28,8 +31,11 @@
  *
  * Scatter props for Hollowmere — the loose dressing that fills space between
  * the authored buildings. Harvested from the retired room themes; each builder
- * takes `(scene, mats)` — plus an `rng` where the prop is randomised —
- * assembles a parented primitive hierarchy at the origin, and returns the root.
+ * takes `mats` — plus an `rng` where the prop is randomised —
+ * assembles a parented hierarchy of parts at the origin, and returns the root.
+ * A `.parent =` here says where a part goes in its parent's frame and nothing
+ * more: `flattenParts` composes it into the part's own transform at emit time,
+ * and keeps Babylon's child order, which is the order the merge concatenates.
  * Emissive children are tagged `noInk` so the outline shell doesn't swallow
  * their glow.
  *

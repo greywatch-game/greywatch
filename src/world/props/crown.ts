@@ -7,9 +7,10 @@
  * Invariants: every leaf is drawn from the billow's own stream, never from the
  * shared scatter stream. Never imports a prop.
  */
-import { Material, Mesh, Scene, VertexData } from "@babylonjs/core";
+import type { Material } from "@babylonjs/core";
+import { floats, GeometryBuffer } from "../../geometry/buffer";
 import { CONFIG } from "../../config";
-import { partSurface } from "../parts";
+import { Part } from "../parts";
 import { mulberry32 } from "../rng";
 import { marksSway, rigPhase } from "../sway";
 import {
@@ -42,7 +43,7 @@ export interface Billow {
  * Writes a bough rig over every vertex of `data` — `rig` asked of where the
  * vertex is — for a part the bough carries whole: wood, a heart.
  */
-export function rigVerts(data: VertexData, rig: (p: V3) => readonly [number, number]): VertexData {
+export function rigVerts(data: GeometryBuffer, rig: (p: V3) => readonly [number, number]): GeometryBuffer {
   const pos = data.positions!;
   const uvs = new Array<number>((pos.length / 3) * 2);
   for (let i = 0; i < pos.length / 3; i++) {
@@ -50,7 +51,7 @@ export function rigVerts(data: VertexData, rig: (p: V3) => readonly [number, num
     uvs[i * 2] = u;
     uvs[i * 2 + 1] = v;
   }
-  data.uvs = uvs;
+  data.uvs = floats(uvs);
   return data;
 }
 
@@ -60,10 +61,9 @@ export function rigVerts(data: VertexData, rig: (p: V3) => readonly [number, num
  * puts it on the rigged `bough` layer.
  */
 export function crownPart(
-  scene: Scene,
-  trunk: Mesh,
+  trunk: Part,
   name: string,
-  data: VertexData[] | Sheet,
+  data: GeometryBuffer[] | Sheet,
   material: Material,
   sways: boolean,
 ): void {
@@ -75,7 +75,7 @@ export function crownPart(
       ? sheetData(data)
       : null;
   if (!merged) return;
-  const mesh = partSurface(name, merged, scene);
+  const mesh = new Part(name, merged);
   mesh.parent = trunk;
   mesh.material = material;
   if (sways) marksSway(mesh, "bough");
@@ -204,11 +204,11 @@ export function skinBillows(
   detail: number,
   skin: BillowSkin,
   rigAt: (p: V3, phase: number, tilt?: number, leaf?: number) => [number, number],
-  rigged: (data: VertexData, phase: number) => VertexData,
+  rigged: (data: GeometryBuffer, phase: number) => GeometryBuffer,
   lit: Sheet,
   shade: Sheet,
-): VertexData[] {
-  const hearts: VertexData[] = [];
+): GeometryBuffer[] {
+  const hearts: GeometryBuffer[] = [];
   const crestY = Math.max(...clumps.map((k) => k.c[1]));
   const baseY = Math.min(...clumps.map((k) => k.c[1]));
   const sphere = geodesic(1);
@@ -250,12 +250,9 @@ export function skinBillows(
     }
     const hi: number[] = [];
     for (const [a, b, c] of sphere.faces) tri(hi, hp, a, b, c, hn.slice(a * 3, a * 3 + 3));
-    const hd = new VertexData();
-    hd.positions = hp;
-    hd.normals = hn;
-    hd.indices = hi;
-    hd.uvs = [];
-    hearts.push(rigged(hd, k.phase));
+    // An empty UV set, which `rigged` fills: a buffer carries the attribute
+    // from the start, as Babylon's did, so a merge sees one set throughout.
+    hearts.push(rigged(new GeometryBuffer({ positions: hp, normals: hn, indices: hi, uvs: [] }), k.phase));
 
     // The leaves, sown over the billow on a Fibonacci spiral so they cover it
     // evenly, as many as its area wants at full detail and a share of that

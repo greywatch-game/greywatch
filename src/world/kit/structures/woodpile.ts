@@ -3,7 +3,8 @@
  * Part of the structures set: follows the contract in kit/core.ts, and the
  * cover heights and round-collider rule in `./index.ts`.
  */
-import { Scene, VertexData } from "@babylonjs/core";
+import { Scene } from "@babylonjs/core";
+import { GeometryBuffer } from "../../../geometry/buffer";
 import type { CelMaterialFactory } from "../../../shaders/CelShader";
 import { mulberry32 } from "../../rng";
 import {
@@ -383,12 +384,7 @@ export function buildWoodpile(
 
   // ---- the billets, then the dark of the stack they hide (last: see craft notes on emission order).
   for (const [colour, a] of accs) {
-    const data = new VertexData();
-    data.positions = a.pos;
-    data.normals = a.nrm;
-    data.uvs = a.uv;
-    data.indices = a.idx;
-    b.surface(data, colour);
+    b.surface(new GeometryBuffer({ positions: a.pos, normals: a.nrm, uvs: a.uv, indices: a.idx }), colour);
   }
   const low = Math.min(0, ground(-len / 2, -0.6), ground(len / 2, -0.6), ground(-len / 2, 0.6), ground(len / 2, 0.6)) - 0.02;
   // Short of the end billets by most of their width, so their bark stands out of it.
