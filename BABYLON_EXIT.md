@@ -946,7 +946,57 @@ here.
 - **Rewrites:** `CLAUDE.md`'s forced-world-matrix rule (its server reason
   ends), `docs/game.md`.
 
-### X2.3 — The authority without Babylon — **M**
+### X2.3 — The authority without Babylon — **M** — **LANDED** (8a4831d)
+
+**Landed** 2026-10-10: 3f69200, and the review's fixes 8a4831d.
+- **`buildServerWorld(def)`** builds from the bake with no mesh and no scene;
+  `GameMap.colliders`/`terrainColliders` are empty on the authority (every
+  reader is a client view). **`HeadlessGame` and `parity.ts` have no engine.**
+  `dist-server` imports no `@babylonjs` at all — before, the SSR build had left
+  Babylon EXTERNAL and loaded it from `node_modules` at runtime.
+- **The gate**, `scripts/check-babylon-free.mjs`, runs in `npm run build`
+  after `check-deep-imports.mjs`. Roots: every file in `server/` plus the
+  eleven simulations of X2.2's table, named one by one (so `Player`, which the
+  server never reaches, is covered for being a simulation). A new simulation
+  joins `SIMULATIONS` in the commit that creates it (CLAUDE.md "Ownership and
+  wiring"). It skips only erased imports, counts `export … from` and
+  `import()`, and FAILS on what it cannot follow: a computed `import()`,
+  `import.meta.glob`, an unresolvable relative path; the package reached by a
+  relative path into `node_modules` is caught by the resolved file.
+  `DIRECTORIES`/`NOT_ROOTS` are where X3.2 adds `src/render/`, `src/math/` and
+  the `src/math/babylon.ts` exception. Each refusal was proved with a probe and
+  reverted. **`vite.server.config.ts`'s `no-babylon` plugin** is the same rule
+  at the bundler (`enforce: "pre"`, before Vite marks a dependency external),
+  so `build:server` and `simulate` refuse too.
+- **`sweep-check --reference server`** rebuilds the old server scene itself
+  (clusters first, then each ungrouped box); every mode identical to the parent.
+
+**Measured** (median of 3 interleaved `simulate <map> 1 1 777` runs, d0fa2b7 →
+3f69200):
+
+| map | world build ms | tick p50 / p95 / p99 ms | peak RSS MB |
+| --- | --- | --- | --- |
+| Sarab | 623 → 461 | 0.112/0.166/0.270 → 0.112/0.171/0.282 | 406 → 132 |
+| Cinderhaven | 931 → 761 | 0.103/0.157/0.248 → 0.102/0.157/0.259 | 468 → 237 |
+| Greyfen | 262 → 171 | 0.024/0.041/0.071 → 0.024/0.042/0.082 | 315 → 101 |
+
+- **Server boot** (to listening): 1.42-1.47 s at 190 MB → 72-76 ms at 57 MB.
+- **p99 rose ~0.01 ms** (Greyfen +15%, over the noise bar): the smaller heap
+  runs ~6x the young-generation GCs (56 → 370 on Greyfen), and
+  `--min-semi-space-size=16` halves the gap. Left as it is; the p50 and p95 did
+  not move.
+- **simulate:** the seven C6 hashes on every map. **parity**, **build**,
+  **sweep-check** (every mode, both references) identical. **Netplay** (the
+  scripted two-client match): Coldharbour botless with B driving, and Sarab with
+  bots, both green — tickets every tick, the board at a common tick, 0 hull
+  corrections.
+
+**Rewritten:** CLAUDE.md ("Ownership and wiring", "Multiplayer", the
+`terrainBlock` row), `docs/multiplayer.md`, `server/README.md`,
+`docs/build.md` (the gate), `docs/world.md`, FILES.md, VERIFYING.md, and the
+headers of `check-deep-imports.mjs`, `bake-collision.mjs`,
+`vite.server.config.ts`, `HeadlessGame`, `world`, `parity` and the world data
+modules.
 
 - **Do:**
   - `buildServerWorld` builds from the bake with no meshes.
