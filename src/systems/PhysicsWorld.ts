@@ -43,6 +43,11 @@
  * - The sim is a FIXED step with a CARRIED remainder, so a tumble is identical
  *   at 30, 60 and 144 fps and reproducible headless, where `dt` is clamped to
  *   0.05. Both halves are load-bearing and both have already been wrong once.
+ *   The step IS `death.substep`, every substep, and has been only since the
+ *   plugin left: Babylon's engine reset the plugin's step to its own 1/60
+ *   straight after it was set, so the setting said nothing until X2.4 — and is
+ *   1/60 itself, which is why taking the plugin out moved no bits (see the
+ *   constructor).
  * - Everything under it is COSMETIC. Nothing here feeds navigation, cover or
  *   hit detection, and nothing under it may ever decide anything — that rule
  *   outlived the fallbacks and is the one that has not moved.

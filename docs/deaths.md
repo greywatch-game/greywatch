@@ -3,8 +3,8 @@
 Havok's only appearance in the tree — what a ragdoll may and may not touch, and
 why there is nothing standing behind it — and the four seconds after the player
 is killed. Split out of [`CLAUDE.md`](../CLAUDE.md), which keeps the summary;
-this file is the contract for `PhysicsWorld`, `RagdollSystem`, `DebrisSystem`
-and `DeathCam`.
+this file is the contract for `PhysicsWorld`, `havok.ts`, `poseView.ts`,
+`RagdollSystem`, `DebrisSystem`, `BlastDebrisSystem` and `DeathCam`.
 
 ## Havok is required, and the boot screen is where that is enforced
 
@@ -32,15 +32,17 @@ second renderer for corpses.
 
 ## The engine is a system of its own, and owns no bodies
 
-`src/systems/PhysicsWorld.ts` holds the `HavokPlugin`, the map as one static
-body per 48 m block and the fixed-substep clock. It is the only place `@babylonjs/havok` is
-reached and the only place `_step` is called. It has three clients —
-`RagdollSystem` for corpses, `DebrisSystem` for the shards a broken pane throws,
-and `BlastDebrisSystem` for the rubble a blast tears out of the ground — and all
-three are handed it by `Game` in their constructor, which is the
-`BattleSystem`←`CombatSystem` precedent in `CLAUDE.md`: injected, never imported
-system-to-system. **The three pools are one budget** (80 corpse bodies, 48
-shards, 30 chunks) and want raising together or not at all.
+`src/systems/PhysicsWorld.ts` holds Havok's world, the map as one static body
+per 48 m block, the fixed-substep clock and the table of every client body
+(`WorldBody`). With `src/systems/havok.ts` — the raw `HP_*` API in one dialect
+— it is the only place `@babylonjs/havok` is reached, and `update` is the only
+place a step is taken. It has three clients — `RagdollSystem` for corpses,
+`DebrisSystem` for the shards a broken pane throws, and `BlastDebrisSystem` for
+the rubble a blast tears out of the ground — and all three are handed it by
+`Game` in their constructor, which is the `BattleSystem`←`CombatSystem`
+precedent in `CLAUDE.md`: injected, never imported system-to-system. **The
+three pools are one budget** (96 corpse bodies — eight corpses of twelve bones
+— 48 shards and 30 chunks: 174) and want raising together or not at all.
 
 **It was `RagdollSystem`'s privately, and the split is not tidiness.** Two things
 made a second consumer impossible rather than merely awkward, and both would
@@ -50,9 +52,9 @@ have failed silently:
   motionless whenever nobody was dying. That test is now a register: each client
   answers `physicsActive()` and the engine advances if anybody says yes, so a
   quiet round still costs nothing at all.
-- **The plugin was a private field**, so the alternative was a second
-  `enablePhysics` on the same scene, which is not a second world but the same
-  one with two owners.
+- **The engine was a private field** — Babylon's plugin on the scene, then —
+  so the alternative was a second `enablePhysics` on the same scene, which is
+  not a second world but the same one with two owners.
 
 There was a third and it is now moot: the ragdoll SETTING called `clearWorld()`,
 so glass would have fallen through the floor for anyone who turned corpses off.
@@ -74,6 +76,97 @@ of the ragdoll pool takes `1 << (1 + i % 30)`, so bits 1 through 30; and
 shards must not shove corpses (a body knocked over by falling glass is a corpse
 DECIDING something) and shard-on-shard buys a pile nobody looks at for a solver
 cost quadratic in the burst.
+
+## Havok, called directly — and a pose is seven numbers
+
+**There is no Babylon plugin between the game and Havok** (`BABYLON_EXIT.md`
+X2.4). `@babylonjs/havok` is a standalone WASM with its own API and Babylon's
+`HavokPlugin` was a wrapper over it; the four files that used the wrapper now
+make its raw calls, and **the bar they were ported to is BITS**: the same `HP_*`
+calls, in the same order, with the same values. `havok.ts` is that dialect —
+the handle types, the `[Result, value]` unwrapping, the enums, and each method
+naming the plugin method it replaces, down to the READS the plugin made beside
+a write (the mass properties rebuilt off the shape before a mass is laid over
+them, the other half of a filter read back before it is set). Two things the
+plugin did are kept on purpose and both are findings: no world shape has a
+material, so Havok's default friction of 0.5 wins every pairing by MINIMUM
+(`FINDINGS.md` 53), and a corpse's impulse lands before its teleport
+(`FINDINGS.md` 57). **Nothing sets a speed limit** — Havok's defaults are what
+every tumble was tuned under, and 57's 100 rad/s is one of them.
+
+**The world is `PhysicsWorld`'s own** — `HP_World_Create` and its gravity, no
+query collector (nothing casts against it: every ray is `RayWorld`'s) — and
+**`scene.getPhysicsEngine()` is null**: there is no physics engine on the scene
+at all. **The step is `death.substep` and it is honoured**, which it was not
+before: the engine `enablePhysics` built reset the plugin's step to its own 1/60
+straight after it was set, and `death.substep` is 1/60, which is why the port
+moved no bits.
+
+**A substep is the plugin's `executeStep`, written out** over every client body
+in CREATION order — the corpses' bones (built first), then the shards', then
+the chunks', which was the plugin engine's own list, and creation order is
+handle order, which the solver walks. Every pending TELEPORT first
+(`HP_Body_SetQTransform` from the body's pose, raw and unnormalised), then
+`HP_World_SetIdealStepTime` and `HP_World_Step`, then every DYNAMIC body's pose
+read back with `HP_Body_GetQTransform` — position `+ 0`, which turns Havok's
+`-0` into a `0` as the plugin's floating-origin addition did, and the
+quaternion as Havok holds it. Static bodies are never read back, because the
+plugin's `disableSync` was true exactly while a body was static.
+
+**A body's pose is `WorldBody.pose`: seven numbers in a `Float64Array`**,
+`[px, py, pz, qx, qy, qz, qw]`, and it is exactly what the plugin's node was to
+it — the plugin teleported from an unparented node's raw `position` and
+`rotationQuaternion` and synced back into the same two, so the array is those
+seven numbers, read and written the same way. A client PLACES a body by writing
+the pose and turning `teleport` on (read at the next substep, not when it is
+set: a frame that takes no substep keeps it pending, and the client's
+`afterFirstStep` clears it), or parks one through `PhysicsWorld.park`, which
+writes it into Havok at once. **`PhysicsWorld` reaches no node, no mesh and no
+scene**, and `scripts/check-babylon-free.mjs` holds it there beside `havok.ts`.
+The floor is handed to it as DATA for the same reason —
+`GameMap.terrainGeometry`, the terrain colliders' own vertex and index arrays —
+and the mesh shape it builds is the plugin's to the bit: each coordinate
+`x + 0` (the plugin's scale-by-one arithmetic, whose only effect on a finite
+number is a `-0` made `0`), every triangle reversed for Babylon's left-handed
+winding, and the bucket keyed off the bounding box's centre computed as Babylon
+computed it, because a 48 m patch's centre can land exactly on a block edge.
+
+**What a body is DRAWN as is its client's VIEW, written from the pose.**
+`src/systems/poseView.ts` is the one place the two meet: `absolutePose` is the
+plugin's read when a body is created on a node (its world matrix computed, so
+float32, then decomposed), `applyPose` is the plugin's sync write onto a node's
+raw `position` and `rotationQuaternion`. Each client draws at the points
+something READS the drawing, which are the points the solver's per-substep sync
+used to leave the node standing:
+
+| client | drawn onto | when |
+| --- | --- | --- |
+| `RagdollSystem` | each bone's pool-owned PROXY, which the rig's joint hangs off | at the top of `update` (`drawSlot`), which `Game` runs straight after the step and before `freeze` reparents joints off the proxies; in `spawn` before the joint is hung off its proxy; in `park` |
+| `DebrisSystem` | the shard's mesh | when `burst` places it; last in `update` (`drawLive`), after the step and the sink; in `release` |
+| `BlastDebrisSystem` | the chunk's mesh | the same three places |
+
+**Three readers outside a client read the drawing, and the order is what keeps
+them right**: `shadowFor` reads the corpse's torso joint, the death cam anchors
+on its chest joint, and the render draws all of it. All three come after
+`Game.stepAftermath` (the engine, then its three clients' `update`s, with
+nothing between), so there is no point in a frame where a body has moved and
+its drawing has not. A new reader that runs between `physics.update` and the
+clients' `update`s would see last frame's picture. **Two things the views draw
+faithfully and are wrong anyway**, both older than the port and both left
+alone by it: blast rubble is never on screen at all (`FINDINGS.md` 58, a stale
+bounding sphere that `WorldCulling` latches on), and a shard or a chunk does not
+actually sink — the sink lowers a pose that the next substep writes back over
+(`FINDINGS.md` 59).
+
+**`plans/physics-ref/` is the oracle and it grades two things.** `drop.mjs`
+drops sixty-four free boxes on every map and hashes where they come to rest —
+the static world. `clients.mjs` plays a fixed script of corpses, bursts and
+rubble through the three real clients and hashes every live body through
+`HP_Body_GetQTransform` — the bodies — and, since the poses left the nodes, a
+digest of every node the three clients WRITE (proxies, shard and chunk meshes,
+the stand-ins' rig roots and joints, raw local transforms bit for bit) at the
+end of every frame, banked against the commit before the poses moved. A change
+that must move nothing passes both on bits.
 
 ## Deaths
 
@@ -99,7 +192,7 @@ knows a ragdoll exists (BABYLON_EXIT.md X2.2 C7).
 
 That tween was exempt from the pose-freeze LOD *because it was five property
 writes*; **a ragdoll needs no such exemption**, because it poses through the proxy
-nodes its joints are parented to and the solver writes those whatever the LOD says.
+nodes its joints are parented to and its view writes those whatever the LOD says.
 Reading those two as one fact is what pinned `maxDistance` to `lodFreezeDistance`
 (35) and stopped anything dying across the square from falling over at all — a
 marksman rifle's whole range. The two are still not the same question, and the
@@ -209,18 +302,23 @@ FINDINGS #8's older 1.37 ms for four does not reproduce; see the note there.
 - **`scene.physicsEnabled` is FALSE and must stay false.** Babylon steps physics
   from `scene.animate()` on every RENDERED frame, and this game renders in every state
   — so a scene-driven step would leave corpses tumbling under the pause card, under the
-  deploy map and behind the menu. `PhysicsWorld.update` steps the world by hand and
-  is called only from `Game.updateGameplay` and `updateNetWorld`, which is what a
-  pause already stops. Measured: bit-identical body position across 12 rendered
-  frames while paused, corpses and shards alike.
-- **Havok never touches a rig node.** It writes pool-owned PROXY `TransformNode`s
-  and the rig's joints are parented to those. Havok's sync calls
-  `decomposeToTransformNode` on any node with a parent, which force-creates a
-  `rotationQuaternion` — and while one is set Babylon ignores `rotation`, which is what
-  `animateSoldier` writes. One leaked quaternion is a bot that respawns frozen
-  mid-tumble for the rest of the round with its position still updating underneath.
-  `setParent` is safe in both directions (verified: it writes Euler when there is no
-  quaternion), which is what makes the hand-off and hand-back clean.
+  deploy map and behind the menu. The scene has no physics engine any more, so
+  there is nothing for it to step; `Game` writes the flag false straight after
+  constructing the scene anyway, because the rule stands until the scene goes.
+  `PhysicsWorld.update` steps the world by hand and is called only from
+  `Game.stepAftermath` — reached from the frames that simulate (`updateWorld`,
+  and the netplay frame), which is what a pause already stops. Measured:
+  bit-identical body position across 12 rendered frames while paused, corpses
+  and shards alike.
+- **Havok never touches a rig node — it touches no node at all.** A bone's pose
+  is an array, and the ragdoll's VIEW writes it onto a pool-owned, unparented
+  PROXY `TransformNode` that the rig's joint is parented to. The proxy is what
+  carries the pose's `rotationQuaternion`, and it has to be the proxy: while a
+  node has one, Babylon ignores `rotation`, which is what `animateSoldier` writes.
+  One leaked quaternion is a bot that respawns frozen mid-tumble for the rest of
+  the round with its position still updating underneath. `setParent` is safe in
+  both directions (verified: it writes Euler when there is no quaternion), which
+  is what makes the hand-off and hand-back clean.
 - **`resetSoldierPose` is the authoritative restore, and `animateSoldier(rig,
   REST_POSE)` is not a substitute.** That call writes Euler channels and the rifle's
   place in the torso, and never a `parent`, a `rotationQuaternion`, a `scaling` or the
@@ -235,17 +333,17 @@ FINDINGS #8's older 1.37 ms for four does not reproduce; see the note there.
   live: a bullet death, a ragdoll, a respawn, no quaternion on any joint and the
   body animating again). Verified across three lives on one rig — a leak
   shows on life 2.
-- **The map is registered as one static body PER 48 m BLOCK** — a
-  `PhysicsShapeContainer` per block holding that block's collider boxes plus its
-  terrain patch as a mesh shape (the floor has no `WorldBox`, hence
-  `GameMap.terrainColliders`), and Hollowmere is 35 of them. Built in
+- **The map is registered as one static body PER 48 m BLOCK** — a container
+  shape per block holding that block's collider boxes plus its terrain patch as
+  a mesh shape (the floor has no `WorldBox`, hence `GameMap.terrainGeometry`,
+  the terrain colliders as data), and Hollowmere is 35 of them. Built in
   `installMap`, skipped on editor builds, and torn down body by body, container
   by container and leaf by leaf, or the WASM heap grows one map build at a time
   — measured flat at 193 bodies and 35 nodes across three rebuilds, and back to
   none on a teardown.
   **It was ONE body until `ENGINE_UPGRADE.md` S5b**, and what moved it is that a
-  single compound is QUADRATIC in the shapes put into it: `HavokPlugin.addChild`
-  is one `HP_Shape_AddChild` and Havok rebuilds the container's acceleration
+  single compound is QUADRATIC in the shapes put into it: an `addChild` is one
+  `HP_Shape_AddChild` and Havok rebuilds the container's acceleration
   structure on each, so 16,526 boxes cost 13.4 seconds where 5,929 cost 1.7.
   Bucketing turns `n^2` into `k(n/k)^2` and took those two builds to 682 ms and
   268. The shapes are unmoved — every bucket's node stands at the origin and
@@ -295,7 +393,7 @@ body to the pool.
 split in `RagdollSystem.applyImpulse`, and it is why `CONFIG.bots.death.impulse`
 has a second row rather than a multiplier on its first. A rifle round arrives at
 a point: the top-level figures are a newton-second on the CHEST, applied `lift`
-above its centre of mass so the fold falls out of the geometry, and the nine
+above its centre of mass so the fold falls out of the geometry, and the eleven
 other bones follow because they hang off it — a body dropped where it stood. A
 blast arrives on all of a body at once, so `impulse.blast` is a SPEED, spent as
 `speed * mass` on every bone at its own origin. Every bone leaves at the same
@@ -303,7 +401,7 @@ velocity and nothing is dragged through a joint to catch up.
 
 **Putting a blast's whole throw on the chest instead is a body coming apart, not
 a body thrown**, and that is the trap worth naming: 34 kg of torso leaving at 12
-m/s with nine limbs on constraints behind it is a corpse with its legs trailing
+m/s with eleven bones on constraints behind it is a corpse with its legs trailing
 a metre back. The units differ between the two rows for the same reason and the
 config says so — do not read `blast.max` as another 22.
 
@@ -423,16 +521,16 @@ one or two pieces of every twelve landed, slid, and then sank through the road
 for the rest of the burst. The cost is a piece lying ~3 cm proud of what it
 landed on, which nothing about a dark plate on a dark road shows.
 
-**A shard's body is on the MESH, with no proxy node.** A ragdoll needs proxies
-because Havok's sync force-creates a `rotationQuaternion` on any node with a
-parent and the rig is posed through Euler channels; a shard is parented to
-nothing, posed by nobody and handed back to nothing, so the quaternion Havok
-writes is the only thing that ever orients it.
+**A shard is drawn straight onto its MESH, with no proxy node.** A ragdoll
+needs proxies because a pose carries a `rotationQuaternion` and the rig is posed
+through Euler channels; a shard is parented to nothing, posed by nobody and
+handed back to nothing, so the quaternion its view writes from Havok's pose is
+the only thing that ever orients it.
 
 **The outline is in the VERTICES, and the topology is fixed even though the
 outline is not.** The mesh was a unit box with `mesh.scaling` for a size, which
-that same sync makes safe — it writes position and orientation onto an
-unparented node and leaves scaling alone — but a scaling cannot express a
+the view makes safe — it writes position and orientation onto an unparented
+node and leaves scaling alone — but a scaling cannot express a
 polygon. So every shard mesh is an eight-cornered prism built once (the bound is
 exact: a convex quad clipped against four half-planes gains at most one corner
 per plane), and a burst rewrites its 48 vertices in a buffer the mesh already
@@ -462,9 +560,10 @@ never stolen, because glass that vanishes mid-fall is worse than glass that neve
 flew, while one lying on the pavement is fair game.
 
 The budget is one budget with the corpses'. `glass.shards` (12) times
-`glass.maxConcurrent` (4) is 48 bodies, about five corpses — against eight
-corpses (80 bodies) measured at 0.121 ms/frame with the whole roster's AI at
-0.39–0.42 ms in the same run. Raise either and raise the other knowingly.
+`glass.maxConcurrent` (4) is 48 bodies, four corpses' worth — against eight
+corpses (96 bodies today; the reading was taken on the six-bone body) measured
+at 0.121 ms/frame with the whole roster's AI at 0.39–0.42 ms in the same run.
+Raise either and raise the other knowingly.
 
 **The pool is one phase, and it used to be two.** The meshes were built in the
 constructor and `attachBodies` hung rigid bodies on them from a `physicsStarted`
@@ -545,7 +644,7 @@ without that subtract turns feedback into a punishment.
   `followRate`, which makes one set of numbers work at both ends of the fall: a
   standing body puts the chest at ~1.1 m and a fallen one at ~0.3 m. The joint is read
   with `computeWorldMatrix(true)` first — while the ragdoll owns it, its parent is a
-  proxy node the solver moved this frame.
+  proxy node the ragdoll's view moved this frame.
 - **This body is never refused, and it needs no exception to say so.** It is at the
   camera, so the distance gate — the pool's one remaining refusal — cannot reach it,
   and a full pool evicts its oldest corpse, which for the whole four seconds is never

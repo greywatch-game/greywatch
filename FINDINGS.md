@@ -2223,8 +2223,9 @@ explaining why Greyfen's physics bank needs 2400 steps (`drop.mjs`'s header).
 
 **Derived from the code:** `PhysicsWorld.buildWorld` gives the static world's
 shapes (every collider box and terrain patch) no material, so they carry the
-default friction of 0.5. Babylon's Havok plugin combines friction by MINIMUM
-unless a material says otherwise (`havokPlugin.js`, `setMaterial`). So
+default friction of 0.5. Every body's material combines friction by MINIMUM —
+`havok.ts`'s `setMaterial`, which is Babylon's Havok plugin's call for call
+(`BABYLON_EXIT.md` X2.4 kept it, so the physics oracles stayed bit-for-bit). So
 `CONFIG.bots.death.friction` (0.8), which `RagdollSystem`, `DebrisSystem`
 (glass shards) and `BlastDebrisSystem` (rubble) all set, never applies against
 anything static: every body slides on 0.5, which holds on a grade up to about
@@ -2239,8 +2240,9 @@ bank. Neither run settled by 480. So friction does not cause the rocking, but
 it does decide how far a body slides.
 
 **What would settle it:** decide whether 0.8 is what a body should feel. If
-so, give the world's shapes a material in `PhysicsWorld.buildWorld` (or set
-the bodies' `frictionCombine`), then watch a few deaths and some rubble on a
+so, give the world's shapes a material in `PhysicsWorld.buildWorld` (or have
+`havok.ts`'s `setMaterial` combine friction by something other than MINIMUM),
+then watch a few deaths and some rubble on a
 slope, and re-take every `plans/physics-ref/` bank in the same commit, saying
 why. If 0.5 is the feel that shipped, the fix is to set the config to 0.5 and
 say so, so the number stops being wrong.
@@ -2340,14 +2342,16 @@ because X2.4 is graded on reproducing the plugin bit for bit and a fix moves
 every corpse. It is a separate commit, with a re-take of `clients.mjs`'s
 bank that says why.
 
-**Derived from the code:** `RagdollSystem.spawn` (~283-309) writes each
-bone's PROXY node to the joint's world pose and sets `disablePreStep = false`,
-which TELEPORTS the body onto the proxy on the next substep's pre-step — and
-then calls `applyImpulse` immediately, in the same call. Havok still holds the
-body where it was parked (`park`: `(0, PARKED_Y, 0)`), so
-`HP_Body_ApplyImpulse(id, point, J)` — `point` being the chest's world
-position plus `lift` for a round, or each bone's proxy origin for a blast —
-takes its lever arm from 1 km below the map's origin. The LINEAR velocity is
+**Derived from the code:** `RagdollSystem.spawn` writes each bone's POSE
+(`WorldBody.pose`, and its proxy with it) to the joint's world pose and turns
+the body's `teleport` on, which `HP_Body_SetQTransform`s the body onto that
+pose at the next substep's pre-step — and then calls `applyImpulse`
+immediately, in the same call. (Under Babylon's plugin the same thing was
+spelled `disablePreStep = false` on the proxy; the raw port reproduces it bit
+for bit.) Havok still holds the body where it was parked (`park`:
+`(0, PARKED_Y, 0)`), so `HP_Body_ApplyImpulse(id, point, J)` — `point` being
+the chest proxy's world position plus `lift` for a round, or each bone's pose
+for a blast — takes its lever arm from 1 km below the map's origin. The LINEAR velocity is
 right (an impulse's `J / m` does not depend on the point); the ANGULAR one is
 `r x J` with `|r|` of a kilometre. The teleport that follows changes the
 position and keeps the velocity.
@@ -2374,9 +2378,79 @@ seeded from the map position rather than from `impulse.spin` and `lift`, and
 `lift`'s "the fold falls out of the geometry" is not what is folding the body.
 
 **What would settle it:** apply the impulse after the bodies are where it
-assumes — teleport each bone onto its proxy before `applyImpulse` (the probe
-above did it with `setPhysicsBodyTransformation`), or defer the impulse to
-`afterFirstStep` — then watch rounds and blasts kill bodies on open ground and
+assumes — teleport each bone onto its pose before `applyImpulse` (an immediate
+`HP_Body_SetQTransform`, which is what `PhysicsWorld.park` already does for a
+parked body; the probe above did it through the plugin), or defer the impulse
+to `afterFirstStep` — then watch rounds and blasts kill bodies on open ground and
 check the fold still reads; `impulse.spin`, `lift` and `blast.spin` were tuned
 against the bug and may want re-tuning. Re-take `clients.mjs`'s bank in the
 same commit.
+
+---
+
+## 58. Blast rubble is never drawn: every chunk's world bounds are left at the place it was parked, so `WorldCulling` drops it for good
+
+**Status:** open, and pre-existing — a rubble burst is thrown, simulated and
+parked correctly and nobody has ever seen one. Found at `BABYLON_EXIT.md` X2.4
+C2 and reproduced identically on the commit before X2.4 started (fb90b7d);
+deliberately not fixed during X2.4, whose bar was that nothing on screen moves.
+C5 took the poses off the meshes into arrays and its view writes exactly the
+nodes the solver's sync used to (`plans/physics-ref/clients.mjs`'s node digest),
+so it left this as it found it.
+
+**Measured** in a live round on Coldharbour at C5 (a frag thrown along the
+view onto open ground, render loop running): all ten chunks of the burst enabled,
+their poses climbing as high as 15 m and falling back exactly as Havok holds them, and
+**0 of the 10 in `scene.getActiveMeshes()`** on frame 6 and on frame 46 — while
+a glass burst in the same page had **12 of 12** shards in it. At C2, forcing
+`computeWorldMatrix(true)` on the chunks each frame made them render.
+
+**Derived from the code:** this is `docs/rendering.md`'s "a WRONG DROP
+LATCHES", arriving from a fourth direction. `WorldCulling.offer`'s size gate
+reads a mesh's WORLD bounding sphere, which Babylon refreshes only when it
+computes that mesh's world matrix — inside the active-mesh pass, for
+CANDIDATES. A chunk's sphere was last computed when the pool was built, at
+`PARKED_Y` (the creation read, `poseView.absolutePose`, computes it there), so
+the gate measures a 15 cm box from a kilometre under the map, finds it under a
+pixel, never offers it, and so never computes the matrix that would correct
+it. A shard escapes only by accident: `DebrisSystem.cut` calls
+`updateVerticesData(..., true)` on every burst, which rebuilds its bounding
+info at the shard's current transform.
+
+**What would settle it:** decide how a pooled mesh that teleports owes its
+bounds, once, for all pools — a `computeWorldMatrix(true)` in each chunk's draw
+(`BlastDebrisSystem.drawLive` and `burst`) is the smallest fix, and filing the
+pools with `WorldCulling` the way a body's rig is (measured once, off a root,
+forced) is the general one. Either makes rubble DRAW, which is a change to the
+picture: re-take `bank.mjs`'s `blast` row if it moves and say why, and look at
+a frag and a shell on earth and on stone, since the rubble's look — `RUBBLE`,
+the sizes, the 1.6x cap — has never been seen in a round.
+
+---
+
+## 59. A glass shard and a rubble chunk do not sink: the sink lowers a pose the next substep writes back over
+
+**Status:** open, pre-existing and small. Found while porting the two pools'
+poses into arrays at `BABYLON_EXIT.md` X2.4 C5, which kept the behaviour bit for
+bit (the sink used to be written on the mesh, which the solver's sync overwrote
+just the same).
+
+**Derived from the code:** `DebrisSystem.update` and `BlastDebrisSystem.update`
+sink an expiring burst by `y -= drop * dt * 8` each frame, `drop` ramping to 0.5
+over `shardSink` / `debris.sink` (1.2 s) — written as an accumulation, which
+would take a piece about 2.4 m down through the floor before it is released.
+But a sinking piece's body is still DYNAMIC and its pool still answers
+`physicsActive()`, so the engine is stepped every frame and the substep's sync
+writes Havok's resting height back into the pose before the next subtraction.
+What is drawn is one frame's drop below where the piece lies, and never more.
+
+**Measured** (Coldharbour, the pools stepped by hand at 1/60, a glass burst
+and a rubble burst on earth): the drawn height sits at most **0.0667 m** under
+Havok's — `0.5 * 8 / 60`, on the last frame before each release — for a shard
+and a chunk alike. Then the piece vanishes from where it was lying.
+
+**What would settle it:** make the sink accumulate — take the bodies out of the
+simulation when the sink starts (static, as a frozen corpse is) and lower the
+pose from there, or keep an offset beside the pose that the view adds — and
+watch a burst expire, which is the first time anybody will have seen the sink.
+Rubble needs finding 58 first.

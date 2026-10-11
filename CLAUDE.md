@@ -1032,8 +1032,10 @@ the death cam's stand-in body, a broken pane's shards and a blast's rubble.
 **Nothing under it feeds navigation, cover or hit detection** — a corpse is not in
 `NavGrid`, not in `ObstacleField`, not in `hittablesAgainst`, and neither a shard
 nor a chunk is either. `scene.physicsEnabled` is **false and must stay false**
-(the game renders in every state, so a scene-driven step would tumble corpses
-under the pause card) and Havok never touches a rig node. **What the pool holds
+until the scene goes (the game renders in every state, so a scene-driven step
+would tumble corpses under the pause card) — `Game` writes it, though the scene
+has no physics engine left to step — and Havok never touches a node at all.
+**What the pool holds
 for a bot is its RIG** (`BotRig`, caught up to the bot at the kill by
 `BattleView.corpseOf`), never the simulation's `Bot`.
 
@@ -1050,7 +1052,16 @@ be kept in step with it. `DamageKind` picks, and the test is "not a bullet".
 **`PhysicsWorld` owns the engine and no client owns any of it.** It is INJECTED
 into `RagdollSystem`, `DebrisSystem` and `BlastDebrisSystem` by `Game` — the
 `BattleSystem`←`CombatSystem` precedent — and `Game` steps the engine and *then*
-its three clients, never the other way round.
+its three clients, never the other way round. **It calls Havok's RAW `HP_*` API**
+(`systems/havok.ts`) — no Babylon plugin, no physics engine on the scene — and
+**a body's pose is seven numbers in an array** (`WorldBody.pose`), which each
+client's VIEW writes onto what it draws (`systems/poseView.ts`): the ragdoll at
+the top of its `update`, before `freeze` reparents joints, so **anything new
+that reads a corpse's drawing between `physics.update` and the clients'
+`update`s reads last frame's**. `PhysicsWorld` reaches no node, mesh or scene —
+the floor reaches it as `GameMap.terrainGeometry` — and
+`scripts/check-babylon-free.mjs` holds it there. **The port's bar is bits**:
+`plans/physics-ref/` grades Havok's poses and the nodes the views write.
 
 `dying` is a **step in the state machine, not a lid**: `updateWorld` runs in full
 underneath the death cam, so the tickets bleed and your killer walks past while
@@ -1058,9 +1069,10 @@ you watch — and it costs no time, because `enterDeploy` is opened with
 `respawnDelay` minus what the shot already spent.
 
 → **[`docs/deaths.md`](docs/deaths.md)** — the boot gate and what the optional
-version cost, the pool's three tiers, the quaternion leak that freezes a
-respawned bot, the fog-wall gate shared with the LOD, the shard pool, and the
-death cam's camera hand-off.
+version cost, Havok called directly (the dialect, the substep, the pose array
+and where each view draws it), the pool's three tiers, the quaternion leak that
+freezes a respawned bot, the fog-wall gate shared with the LOD, the shard pool,
+and the death cam's camera hand-off.
 
 ### Vehicles: three kinds, one hull, and the exceptions it is
 

@@ -49,7 +49,7 @@
  * - **A round DROPS a body and an explosion THROWS it, and they are not one
  *   number scaled.** A round is a newton-second on the chest; a blast is a SPEED
  *   spent on every bone at once, because the same throw on the 34 kg chest alone
- *   drags nine limbs through their constraints to catch up. `subject.deathKind`
+ *   drags eleven bones through their constraints to catch up. `subject.deathKind`
  *   picks and the test is "not a bullet or a burn"; how far it flies is the falloff-scaled
  *   `deathDamage` the corpse already recorded, so a blast's `power` is left
  *   alone. See `applyImpulse`.
@@ -614,7 +614,7 @@ export class RagdollSystem implements PhysicsClient {
    * **A round is a blow and an explosion is a velocity**, which is the whole of
    * the split and the reason it is not a multiplier. A rifle round lands at a
    * point: `imp` is a newton-second on the chest, applied `lift` above the
-   * centre of mass so the fold falls out of the geometry, and the nine other
+   * centre of mass so the fold falls out of the geometry, and the eleven other
    * bones follow because they are hanging off it. A blast arrives on all of a
    * body at once, so `imp.blast` is a SPEED spent as `speed * mass` on every
    * bone at its own origin — every one of them leaves at the same velocity and

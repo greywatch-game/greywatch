@@ -584,7 +584,8 @@ is one machine's:
   device and a ~2 MB physics binary as well as on the bundle — give
   `waitForFunction` a generous timeout and do not read the absence of the handle
   as a construction failure. The upside is unchanged and is the whole point of
-  keeping the constructor synchronous: `g.engine`, `g.physics.plugin` and both
+  keeping the constructor synchronous: `g.engine`, `g.physics.havok` (the raw
+  module and world, `havok.ts` — there is no Babylon plugin any more) and the
   pools are non-null on the FIRST evaluate, so nothing has to wait for anything
   separately. To exercise the failure branch, `page.route("**/*.wasm", r
   => r.abort())` before `goto` and assert on `#boot.failed`'s message — the
@@ -1633,7 +1634,10 @@ is one machine's:
 - **A THROWN corpse is measured off the PROXY and only until it FREEZES**, and
   both halves have already cost time. `slot.bones[i].proxy.position` is the
   corpse while the solver owns it — a root node, so the local position IS the
-  world one and no `computeWorldMatrix` is owed. But `freeze` bakes the pose
+  world one and no `computeWorldMatrix` is owed. It is the VIEW of
+  `slot.bones[i].body.pose`, written once a frame in `ragdolls.update`, so
+  step `physics.update` AND `ragdolls.update` before reading it, or read the
+  pose itself (the same numbers, a substep sooner). But `freeze` bakes the pose
   back into the rig and parks the bodies, and a parked proxy sits at the ORIGIN:
   keep sampling past that and a corpse on Hollowmere's north spawn reads as
   having flown 138.62 m, which is exactly the distance from that spawn to

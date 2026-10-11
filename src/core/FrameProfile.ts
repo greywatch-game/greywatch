@@ -236,10 +236,11 @@ function describeScript(s: LoafScript): string {
  * counter belongs to a frame one to three rows BACK, and filing it against the
  * row that happened to read it would attribute a hitch's GPU cost to the frame
  * after it. `_gpuTimeInFrameId` is which frame the counter currently holds.
- * It is private in Babylon and there is no public equivalent; the precedent for
- * reaching in anyway is `PhysicsWorld`'s two handles onto the plugin, and the
- * justification is the same — the alternative is not a simpler instrument but a
- * wrong one.
+ * It is private in Babylon and there is no public equivalent, and it is read
+ * anyway because the alternative is not a simpler instrument but a wrong one.
+ * (The precedent this used to cite — `PhysicsWorld`'s two handles onto Babylon's
+ * Havok plugin — went with the plugin at `BABYLON_EXIT.md` X2.4; this is the one
+ * private field left.)
  */
 interface GpuCounter {
   readonly counter: { readonly current: number };

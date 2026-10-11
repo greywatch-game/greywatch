@@ -712,9 +712,9 @@ export const bots = {
        *
        * - **These figures are METRES PER SECOND of the whole body**, not
        *   impulses. `RagdollSystem.applyImpulse` spends `speed * mass` on
-       *   every bone at its own origin, so all ten leave at the same velocity
+       *   every bone at its own origin, so all twelve leave at the same velocity
        *   and nothing is sheared through a joint. The alternative — the same
-       *   throw applied to the 34 kg chest alone — is nine limbs being caught
+       *   throw applied to the 34 kg chest alone — is eleven bones being caught
        *   up by their constraints, which is a body coming apart rather than a
        *   body being thrown.
        * - **`base` is small and `perDamage` carries it**, because the blast

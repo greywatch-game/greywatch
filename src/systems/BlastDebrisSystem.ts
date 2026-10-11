@@ -35,7 +35,7 @@
  *
  * **The POOL** is `debris.bursts` bursts of `debris.chunks` bodies, built once
  * and never rebuilt. At 3 and 10 that is 30 bodies, against `DebrisSystem`'s 48
- * and `RagdollSystem`'s 80 at full stretch; the three are one budget and want
+ * and `RagdollSystem`'s 96 at full stretch; the three are one budget and want
  * raising together or not at all.
  *
  * **A chunk's SIZE is decided at construction, not at the burst.** Each of the

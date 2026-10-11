@@ -576,8 +576,8 @@ units.
 deliberate rather than an oversight. `PhysicsWorld`'s static containers and
 `GlassSystem`'s pane index are spelled with the same key and stay on the
 constant: neither is an identity — nothing reads either one — and what they
-want from a big map is the opposite of what the merge wants. `HavokPlugin.addChild`
-is quadratic in a container's children, so a bucket that grew to 128 m would
+want from a big map is the opposite of what the merge wants. Havok's
+`HP_Shape_AddChild` is quadratic in a container's children, so a bucket that grew to 128 m would
 hand back most of what S5b bought.
 
 **`MapLayout.terrainBlock` — how big a floor patch is** (`BLOCK_SIZE`, 48,

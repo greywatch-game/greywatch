@@ -77,8 +77,9 @@
  *
  * **The POOL** is `glass.maxConcurrent` bursts of `glass.shards` bodies, built
  * once in the constructor and never rebuilt. At four and twelve that is 48
- * bodies, about five corpses — against eight corpses (80 bodies) measured at
- * 0.121 ms/frame, with the whole roster's AI at 0.39–0.42 ms in the same run.
+ * bodies, four corpses' worth at twelve bones each — against eight corpses
+ * measured at 0.121 ms/frame (on the six-bone body; 96 bodies today), with the
+ * whole roster's AI at 0.39–0.42 ms in the same run.
  * The two are one budget and want raising together or not at all.
  *
  * **The DISTANCE** is `glass.shardDistance` and is deliberately not the fog wall

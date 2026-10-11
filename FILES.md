@@ -972,11 +972,14 @@ src/
                         #   mesh's editor flags (`onCleared`). Client only
     PhysicsWorld.ts     # The ONLY Havok in the game: the engine, the map as
                         #   one static body per 48 m block (a single compound is
-                        #   quadratic in its shapes) built on the raw API, and
-                        #   the fixed-step clock, whose substep teleports and
-                        #   syncs the clients' raw bodies (`WorldBody`) in the
-                        #   plugin's order. Owns no bodies but the world's —
-                        #   its three clients do. Exports
+                        #   quadratic in its shapes) built on the raw API — the
+                        #   floor from GameMap.terrainGeometry — and the
+                        #   fixed-step clock, whose substep teleports and syncs
+                        #   the clients' raw bodies (`WorldBody`) in the
+                        #   plugin's order. A body's pose is seven numbers in an
+                        #   array; it reaches no node, mesh or scene (Babylon-
+                        #   free, held by check-babylon-free). Owns no bodies
+                        #   but the world's — its three clients do. Exports
                         #   loadHavok(), which main.ts awaits before there is a
                         #   Game
     havok.ts            # Havok's raw HP_* API in one dialect: the world
@@ -986,9 +989,15 @@ src/
                         #   spelled it (reads and 6-DoF constraints included),
                         #   so the port off the plugin is bit-for-bit.
                         #   Babylon-free; imports @babylonjs/havok as a type only
+    poseView.ts         # Where a body's pose array meets the node it is drawn
+                        #   as: the creation read (absolutePose) and the sync's
+                        #   write (applyPose). The three clients' views share it;
+                        #   PhysicsWorld never imports it
     RagdollSystem.ts    # Corpses under that engine. One refusal left (past the
                         #   fog wall); a full pool evicts its oldest. Cannot
-                        #   tell a dead bot from the player's stand-in
+                        #   tell a dead bot from the player's stand-in. Its view
+                        #   draws each bone's pose onto a pool-owned proxy the
+                        #   rig's joint hangs off
     DebrisSystem.ts     # Glass shards under it. A burst is CUT from the pane's
                         #   own face along the cracks a round put in it; refuses
                         #   past its own apparent-size gate, and evicts only a
