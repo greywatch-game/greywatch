@@ -5,10 +5,12 @@
  * root's placement, the pose written onto the joints, the launcher's tube,
  * whether the root is enabled, and `ragdolling` — the one fact about a body
  * that only a picture can have.
- * Reads the `Bot` and NEVER writes it: the root is the bot's own
- * `rootX`..`rootYaw`, the pose is `Bot.solved`, and whether it is in the world
- * is `Bot.shown`. The one call that looks like a write — `solved` — fills a
- * cache of a pure function of the pose, which the muzzle reads the same way.
+ * Reads a `BotRead` and NEVER writes it: the root is the bot's own
+ * `rootX`..`rootYaw`, the pose is its `solved` joints, and whether it is in
+ * the world is `shown`. Offline that is a `BotMirror` — the core's FRAME's
+ * copy of the bot, its joints unpacked bit for bit (`BABYLON_EXIT.md` X2.5a
+ * C5) — and any `Bot` would do as well; on a `Bot` the one read that looks
+ * like a write — `solved` — fills a cache of a pure function of the pose.
  * Invariants:
  * - **It implements `RagdollSubject`, and the bot does not.** `RagdollSystem`
  *   reparents this rig's joints onto Havok proxies and writes the root's
@@ -29,7 +31,7 @@ import type { Scene } from "@babylonjs/core";
 import type { Vector3Like } from "../math";
 import type { CelMaterialFactory } from "../shaders/CelShader";
 import type { DamageKind } from "../systems/CombatSystem";
-import type { Bot } from "./Bot";
+import type { BotRead } from "../sim/mirror";
 import {
   buildSoldier,
   poseSoldier,
@@ -56,7 +58,7 @@ export class BotRig implements RagdollSubject {
   constructor(
     scene: Scene,
     mats: CelMaterialFactory,
-    readonly bot: Bot,
+    readonly bot: BotRead,
   ) {
     // The side is the VIEWER's read of the bot's team, chosen here for good:
     // the kits differ in silhouette as well as in hue (`core/teamView.ts`).

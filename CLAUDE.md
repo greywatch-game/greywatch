@@ -239,7 +239,11 @@ callbacks (`battle.onBotKill/onBotFired`, `conquest.onCaptured/onNeutralised`,
 rebuilt per frame. **The page's systems and views meet in `src/core/Game.ts`**,
 which hears what the core decided through ONE switch over its event ring
 (`onSimEvent`; a match's `onNetEvent` is its twin, and both end in the same
-presentation methods for the player). New cross-system behavior belongs in
+presentation methods for the player) **and reads its STATE off one frame and
+nothing else** (`SimCore.frame`, `src/sim/frame.ts`, read through
+`src/sim/mirror.ts`, X2.5a C5): `Game` holds the core as a `SimDoor`, so a
+view that wants something the frame does not carry owes the frame a field and
+`simCheck` a line, never a reach into the core. New cross-system behavior belongs in
 that wiring, not in an import between systems. Type-only imports between
 systems are fine and common — they are erased, so the runtime module graph
 still has no system→system edge.

@@ -4,7 +4,13 @@
  *
  *   node plans/webgpu-ref/bench.mjs [map...] [--runs 3] [--capped] [--headed]
  *        [--gpu] [--max] [--size 3440x1440] [--url http://host:port]
- *        [--out f.json] [--against f.json]
+ *        [--query simcopy&simcheck] [--out f.json] [--against f.json]
+ *
+ * **`--query` is appended to every run's URL** after the `?bench=<map>` —
+ * the page's own switches: `simcopy` (every command, frame and drain
+ * through `structuredClone`, whose fight must hash the same) and, against a
+ * DEV server (no `--url`), `simcheck` (every reader held against the live
+ * core; each mismatch is a console error, so a run with any says so).
  *
  * **`--max` is every graphics setting at its top rung** (`MAX_SETTINGS`),
  * written into the page's settings store before it boots, which is the
@@ -92,7 +98,8 @@ const URL_ARG = value("--url", null);
 const OUT = value("--out", null);
 const [VW, VH] = value("--size", "3440x1440").split("x").map(Number);
 const AGAINST = value("--against", null);
-const valued = new Set(["--runs", "--url", "--out", "--against", "--size"]);
+const QUERY = value("--query", null);
+const valued = new Set(["--runs", "--url", "--out", "--against", "--size", "--query"]);
 const maps = args.filter((a, i) => !a.startsWith("--") && !valued.has(args[i - 1]));
 const targets = maps.length ? maps : MAP_IDS;
 /** A run that has not ended in this long is stuck, not slow. */
@@ -132,6 +139,7 @@ for (const id of targets) {
           g[k] ? `${k} ${g[k].fps.toFixed(1)} fps p95 ${g[k].p95.toFixed(1)}` : `${k} -`,
         ).join("  ") +
         `  fight ${run.bench?.fight.hash ?? "?"}` +
+        (run.simcheck ? `  simcheck ${run.simcheck.checks} passes ${run.simcheck.mismatches} mismatches` : "") +
         (run.errors.length ? `  ! ${run.errors.length} errors` : ""),
     );
     for (const e of run.errors.slice(0, 3)) console.log(`   ! ${e.slice(0, 200)}`);
@@ -224,7 +232,7 @@ async function benchOnce(id) {
     }, stored);
   }
   const t0 = Date.now();
-  await page.goto(`${url}/?bench=${id}${GPU ? "&gpu" : ""}`);
+  await page.goto(`${url}/?bench=${id}${GPU ? "&gpu" : ""}${QUERY ? `&${QUERY}` : ""}`);
   await page.waitForFunction(() => window.__celshock?.state === "bench", null, {
     timeout: RUN_TIMEOUT_MS,
   });
@@ -250,6 +258,10 @@ async function benchOnce(id) {
       gpu: r.gpu,
       groups: r.segments?.groups ?? [],
       list: r.segments?.list ?? [],
+      // `?simcheck`'s tally (DEV): passes run, mismatches, the first by name.
+      simcheck: window.__simcheck
+        ? { checks: window.__simcheck.checks, mismatches: window.__simcheck.mismatches, first: window.__simcheck.first.slice(0, 4) }
+        : null,
     };
   });
   await page.close();

@@ -5,8 +5,10 @@
  * off those channels.
  * Owns: `SoldierPose` and `REST_POSE`, `SoldierJoints` and `solveSoldier` (the
  * crouch, the gait's two legs, the spine, the head and the rifle — every joint
- * a pose moves except the two ARMS), the skeleton constants those read, and
- * `soldierMuzzleToRef`.
+ * a pose moves except the two ARMS), the skeleton constants those read,
+ * `soldierMuzzleToRef`, and the channels' FIXED-STRIDE PACK (`packJoints`,
+ * `unpackJoints`, `JOINT_STRIDE`) the simulation core's frame carries a solved
+ * pose across in, bits preserved.
  * Invariants:
  * - **No `@babylonjs/core`.** It is `src/math` and `CONFIG` only, so the
  *   simulation can ask where a bot's rifle is without a rig, and the server
@@ -539,3 +541,87 @@ export function soldierMuzzleToRef<T extends Vector3Ref>(
   out.set(m[12], m[13], m[14]);
   return out;
 }
+
+/**
+ * How many float64s one body's `SoldierJoints` packs to — `packJoints`'
+ * stride, one slot per channel, in the order the interface declares them.
+ */
+export const JOINT_STRIDE = 22;
+
+/**
+ * Writes `j` into `out` at `at`, one channel per float64 — **bits preserved**,
+ * since a float64 holds every number a channel can be, `-0` and `NaN`
+ * included. The simulation core's frame (`src/sim/frame.ts`) carries every
+ * bot's solved pose this way, and a rig posed from `unpackJoints` of it is the
+ * rig posed from the bot's own `solved`, bit for bit (`BABYLON_EXIT.md` X2.5a
+ * C5). Field by field rather than over a key list, because it runs per body
+ * per step and a key walk is a property lookup by string.
+ */
+export function packJoints(j: Readonly<SoldierJoints>, out: Float64Array, at: number): void {
+  out[at] = j.bodyY;
+  out[at + 1] = j.torsoX;
+  out[at + 2] = j.torsoY;
+  out[at + 3] = j.torsoZ;
+  out[at + 4] = j.headX;
+  out[at + 5] = j.headY;
+  out[at + 6] = j.headZ;
+  out[at + 7] = j.gunX;
+  out[at + 8] = j.gunY;
+  out[at + 9] = j.gunZ;
+  out[at + 10] = j.gunPX;
+  out[at + 11] = j.gunPY;
+  out[at + 12] = j.gunPZ;
+  out[at + 13] = j.hipLX;
+  out[at + 14] = j.hipLZ;
+  out[at + 15] = j.hipRX;
+  out[at + 16] = j.hipRZ;
+  out[at + 17] = j.kneeL;
+  out[at + 18] = j.kneeR;
+  out[at + 19] = j.ankleL;
+  out[at + 20] = j.ankleR;
+  out[at + 21] = j.reload;
+}
+
+/** `packJoints`' inverse: the channels at `at` in `src`, into `out`. */
+export function unpackJoints(src: Float64Array, at: number, out: SoldierJoints): SoldierJoints {
+  out.bodyY = src[at];
+  out.torsoX = src[at + 1];
+  out.torsoY = src[at + 2];
+  out.torsoZ = src[at + 3];
+  out.headX = src[at + 4];
+  out.headY = src[at + 5];
+  out.headZ = src[at + 6];
+  out.gunX = src[at + 7];
+  out.gunY = src[at + 8];
+  out.gunZ = src[at + 9];
+  out.gunPX = src[at + 10];
+  out.gunPY = src[at + 11];
+  out.gunPZ = src[at + 12];
+  out.hipLX = src[at + 13];
+  out.hipLZ = src[at + 14];
+  out.hipRX = src[at + 15];
+  out.hipRZ = src[at + 16];
+  out.kneeL = src[at + 17];
+  out.kneeR = src[at + 18];
+  out.ankleL = src[at + 19];
+  out.ankleR = src[at + 20];
+  out.reload = src[at + 21];
+  return out;
+}
+
+/**
+ * The channel names in `packJoints`' order — for a reader that has to name
+ * a channel (the DEV mirror check, `src/sim/simCheck.ts`), never for the hot
+ * path. Typed against the interface, so a channel added there and not here
+ * does not compile.
+ */
+export const JOINT_KEYS = [
+  "bodyY", "torsoX", "torsoY", "torsoZ", "headX", "headY", "headZ",
+  "gunX", "gunY", "gunZ", "gunPX", "gunPY", "gunPZ",
+  "hipLX", "hipLZ", "hipRX", "hipRZ", "kneeL", "kneeR", "ankleL", "ankleR", "reload",
+] as const satisfies readonly (keyof SoldierJoints)[];
+
+/** `true` only while `JOINT_KEYS` names every channel — a channel left out fails here. */
+export const JOINT_KEYS_COMPLETE: [Exclude<keyof SoldierJoints, (typeof JOINT_KEYS)[number]>] extends [never]
+  ? true
+  : never = true;

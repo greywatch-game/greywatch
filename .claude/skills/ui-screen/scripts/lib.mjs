@@ -73,7 +73,7 @@ export const SCREENS = {
       " const s = g.simSlot; for (let i = 0; i < 6; i++) g.core.scores.award(s, 'kill');" +
       " for (let i = 0; i < 9; i++) g.core.scores.award((i * 5) % g.core.battle.bots.length, 'kill');" +
       " g.core.scores.registerDeath(s); g.core.scores.registerDeath(s);" +
-      " g.core.conquest.tickets[1 - g.player.team] = 0; g.endRound(g.player.team);",
+      " g.core.conquest.tickets[1 - g.player.team] = 0; g.core.publish(); g.simSync(); g.endRound(g.player.team);",
     root: "#overlay",
   },
   pause: {
@@ -89,7 +89,7 @@ export const SCREENS = {
       "g.startRound(); await until(() => g.state === 'deploy'); g.spawnPlayer(); await wait(300);" +
       " const s = g.simSlot; for (let i = 0; i < 5; i++) g.core.scores.award(s, 'kill');" +
       " for (let i = 0; i < 14; i++) g.core.scores.award((i * 5) % g.core.battle.bots.length, 'kill');" +
-      " g.core.scores.registerDeath(s);" +
+      " g.core.scores.registerDeath(s); g.core.publish(); g.simSync();" +
       " Object.defineProperty(g.input, 'scoreboard', { get: () => true, set() {}, configurable: true });",
     root: "#scoreboard",
   },
@@ -109,6 +109,7 @@ export const SCREENS = {
       "g.startRound(); await until(() => g.state === 'deploy'); g.spawnPlayer(); await wait(300);" +
       " const s = g.simSlot; for (let i = 0; i < 5; i++) g.core.scores.award(s, 'kill');" +
       " for (let i = 0; i < 14; i++) g.core.scores.award((i * 5) % g.core.battle.bots.length, 'kill');" +
+      " g.core.publish(); g.simSync();" +
       " const f = g.hud.setScoreboard.bind(g.hud);" +
       " g.hud.setScoreboard = (v, r) => f(v, r && { ...r, pings: true, rows: r.rows.map((x, i) => ({ ...x," +
       "   name: i === 3 ? 'WWWWWWWWWWWWWWWWWWWW' : i === 12 ? 'The_Longest_Callsign' : x.name," +

@@ -15,9 +15,16 @@
  * camera), the hull under that player when they drive one or the cupola gun
  * when they lay one (reported as `drive`/`gun`, offline and in a match alike —
  * X2.5a C4b), and, in a match, the netplay prediction systems (`combat`,
- * `grenades`, `antiTank`, `glass`); its views read the core's live
- * objects through `core.live`, temporary and enumerated (`SimLive`), until C5's
- * mirrors.
+ * `grenades`, `antiTank`, `glass`). **Its views read the round off the
+ * core's FRAME and nothing else** (X2.5a C5): `core` is held as a `SimDoor`
+ * (the calls a host makes, and `frame`), so no object of the core's is
+ * nameable here, and `simSync` copies each frame the core publishes into
+ * `sim` (`src/sim/mirror.ts`) — the roster `BattleView`'s rigs follow, the
+ * fleet the posed hulls are told by, the pools, the board, the persons, the
+ * target list — and the flags onto this page's own `conquest`, as a match
+ * writes them off the wire. `?simcheck` (DEV) holds every reader to the live
+ * object with `Object.is` each frame; `?simcopy` round-trips every command,
+ * frame and drain through `structuredClone` first — X2.5b's Worker, rehearsed.
  * WHERE THINGS ARE, because this is a long file and a change should not need a
  * read of it: the constructor is CONSTRUCTION ONLY (a linear list of `new X`,
  * which has to stay there — those fields are what strictPropertyInitialization
@@ -146,7 +153,7 @@ import {
 } from "../entities/weapons";
 import { AimAssistSystem } from "../systems/AimAssistSystem";
 import { Atmosphere } from "../systems/Atmosphere";
-import { BattleView, type RosterRead } from "../systems/BattleView";
+import { BattleView } from "../systems/BattleView";
 import { CaptureZoneSystem } from "../systems/CaptureZoneSystem";
 import { CombatFx } from "../systems/CombatFx";
 import {
@@ -179,7 +186,7 @@ import {
 import type { KillLedger } from "../systems/killRules";
 import { GrenadeFx } from "../systems/GrenadeFx";
 import { GrenadeSystem, type BlastGround } from "../systems/GrenadeSystem";
-import { SimCore } from "../sim/SimCore";
+import { SimCore, type SimDoor } from "../sim/SimCore";
 import type {
   DriveCommand,
   GrenadeCommand,
@@ -200,7 +207,13 @@ import {
   SURFACES,
   VICTIM_KINDS,
 } from "../sim/events";
-import { FleetMirror } from "../sim/mirror";
+import {
+  BotMirror,
+  SimMirror,
+  type BotRead,
+  type RosterRead,
+} from "../sim/mirror";
+import { simCheck } from "../sim/simCheck";
 import type { NetVehicles } from "../net/NetVehicles";
 import { PhysicsWorld, type HavokInstance } from "../systems/PhysicsWorld";
 import { RagdollSystem } from "../systems/RagdollSystem";
@@ -299,6 +312,8 @@ const EMPTY_PUSHERS: readonly Combatant[] = [];
  * `Game.rosterRead`.
  */
 const NO_ROSTER: RosterRead = { bots: [], poolVersion: -1 };
+/** …and the blob shadows' bots in a match: none, for `NO_ROSTER`'s reason. */
+const NO_BOTS: readonly BotMirror[] = [];
 
 /** "Let me out" — `ask`ed of the core as it is, holding nothing. */
 const DISMOUNT: SimCommand = { t: "dismount" };
@@ -556,8 +571,11 @@ export class Game {
    * the page reaches it through two doors and no third: `ask`, which submits
    * the local player's acts (`src/sim/commands.ts`), and `drainSim`, which
    * reads what it said (`src/sim/events.ts`) into `onSimEvent`. What the
-   * page's VIEWS read of its state goes through `core.live`, which is
-   * temporary and enumerated (`SimLive`) until C5's mirrors replace it.
+   * page's VIEWS read of its state is its FRAME (`src/sim/frame.ts`), copied
+   * into `sim` by `simSync` after every call made on it — and nothing else:
+   * the field is typed as the `SimDoor`, so no object of the core's can be
+   * named from this file (`BABYLON_EXIT.md` X2.5a C5). `publish`, so the frame
+   * is kept.
    *
    * `hostHoldsRespawn`, because the page holds the respawn clock: nothing
    * steps under the deploy screen (D21), so a `deploy` is honoured the moment
@@ -568,7 +586,27 @@ export class Game {
    * fight is the authority's and the page runs its netplay prediction systems
    * below instead, exactly as it always has.
    */
-  private readonly core = new SimCore({ hostHoldsRespawn: true });
+  private readonly core: SimDoor;
+  /**
+   * What the page READS of the round: the core's frame, copied in by
+   * `simSync` — the roster, the fleet, the pools, the board, the persons and
+   * the target list (`src/sim/mirror.ts`).
+   */
+  private readonly sim = new SimMirror();
+  /**
+   * `?simcopy`: every command, frame and drain round-tripped through
+   * `structuredClone` before the other side reads it — the transfer X2.5b's
+   * Worker makes, rehearsed in one process. The fight must be the same fight
+   * (the bench's hash), which is what says nothing crosses by reference.
+   */
+  private readonly simCopy = urlFlag("simcopy");
+  /**
+   * `?simcheck`, DEV only: one pass of `simCheck` — every reader against the
+   * live object it stands for — after each drain. Null otherwise, and the
+   * closure that holds the core whole is built only inside the DEV branch, so
+   * a production bundle carries neither it nor the check.
+   */
+  private readonly mirrorCheck: (() => void) | null;
   /** What `core` said since the last `drainSim` — see `onSimEvent`. */
   private readonly simEvents = new EventCursor();
   /** True inside `drainSim`, so a handler's own `ask` cannot drain under it. */
@@ -582,8 +620,6 @@ export class Game {
   private simSlot = -1;
   /** The core's tick when the benchmark's fight began — `FightHash`'s zero. */
   private benchTick0 = 0;
-  /** The core's fleet, read as the posed fleet reads the wire — `syncFleet`. */
-  private readonly fleetMirror = new FleetMirror(() => this.core.live.vehicles.hulls);
   /**
    * Every round's resolve — the simulation half (`BABYLON_EXIT.md` X2.2) —
    * and on this page only ever a PREDICTION now: a netplay client's own shot,
@@ -1298,7 +1334,7 @@ export class Game {
     remoteGunFor: (tank) => {
       if (tank === this.driving && this.drivingSeat === GUNNER) return null;
       const i = this.vehicles.hulls.indexOf(tank);
-      return this.net ? this.net.vehicles.mgFor(i) : this.fleetMirror.mgFor(i);
+      return this.net ? this.net.vehicles.mgFor(i) : this.sim.fleet.mgFor(i);
     },
     /**
      * Every hull but the one under this player is posed from where the
@@ -1317,7 +1353,7 @@ export class Game {
     remoteFor: (tank) => {
       if (tank === this.driving && this.drivingSeat === DRIVER) return null;
       const i = this.vehicles.hulls.indexOf(tank);
-      return this.net ? this.net.vehicles.stateFor(i) : this.fleetMirror.stateFor(i);
+      return this.net ? this.net.vehicles.stateFor(i) : this.sim.fleet.stateFor(i);
     },
   };
 
@@ -1399,6 +1435,35 @@ export class Game {
   ) {
     this.canvas = canvas;
     this.engine = engine;
+    // **The simulation core, and the one place this file holds it WHOLE** —
+    // stored as the `SimDoor` it is reached through, and handed whole only to
+    // the DEV mirror check, inside the branch a production bundle folds away.
+    const core = new SimCore({ hostHoldsRespawn: true, publish: true });
+    this.core = core;
+    // The tally is on `window.__simcheck` for a script to read back —
+    // `checks` passes run, `mismatches` summed, `first` the opening few by
+    // name — and each mismatch is also a console error, which the bench
+    // wrapper counts.
+    this.mirrorCheck =
+      import.meta.env.DEV && urlFlag("simcheck")
+        ? (() => {
+            const tally = { checks: 0, mismatches: 0, first: [] as string[] };
+            (window as unknown as { __simcheck: typeof tally }).__simcheck = tally;
+            const report = (what: string): void => {
+              if (tally.first.length < 32) tally.first.push(`tick ${this.sim.tick} ${what}`);
+              console.error(`[simcheck] tick ${this.sim.tick} ${what}`);
+            };
+            return () => {
+              tally.checks++;
+              tally.mismatches += simCheck(
+                core,
+                this.sim,
+                { flags: this.conquest, glass: this.glass },
+                report,
+              );
+            };
+          })()
+        : null;
     this.engine.customAnimationFrameRequester = this.frameCap.requester;
     this.scene = new Scene(this.engine);
     // The `Scene` constructor sets this true, and it is held FALSE: Babylon
@@ -1942,7 +2007,7 @@ export class Game {
     // has no rig to have fallen anywhere, and the corpse does.
     this.shadows.corpseShadow = (cbt, out) => {
       const subject =
-        cbt instanceof Bot
+        cbt instanceof BotMirror
           ? this.battleView.rigFor(cbt)
           : cbt === this.player
             ? this.deathCam.subject
@@ -3697,13 +3762,7 @@ export class Game {
    * that is the honest answer.
    */
   private countAliveBots(): number {
-    if (this.net) return 0;
-    const battle = this.core.live.battle;
-    let n = 0;
-    for (const bot of battle.bots) {
-      if (bot.alive && !battle.aside(bot)) n++;
-    }
-    return n;
+    return this.net ? 0 : this.sim.roster.aliveCount();
   }
 
   /**
@@ -4494,6 +4553,7 @@ export class Game {
     // kept would be a second Cinderhaven under the photograph. A round puts a
     // fresh one in `buildRound`.
     this.core.releaseWorld();
+    this.simSync();
     // The fleet's drawing first — every view lets go of its hull's picture and
     // takes its body and rig out of the scene — then the fleet.
     this.vehicleViews.dispose();
@@ -5110,8 +5170,16 @@ export class Game {
     // again below only offline — so every offline round a person joins is a
     // fresh match's first (their slot's bot benched, the hulls ahead of them
     // in the fight), and a match or a benchmark holds no seat in it at all.
-    if (this.simSlot >= 0) this.core.removePlayer(this.simSlot);
+    if (this.simSlot >= 0) {
+      this.core.removePlayer(this.simSlot);
+      this.simSync();
+    }
     this.simSlot = -1;
+    // The flags this page DRAWS, on both sides a mirror: written off the
+    // wire in a match and off the core's frame offline (`simSync`). Started
+    // before the core's round so the first sync below lands on this map's
+    // points.
+    this.conquest.start(map);
     if (!this.net) {
       // **The round, on the simulation core** (`BABYLON_EXIT.md` X2.5a C4a):
       // its world rebuilt as DATA off the map just built — `collisionOf` is
@@ -5128,6 +5196,7 @@ export class Game {
         fielded: perTeam,
         seed,
       });
+      this.simSync();
     }
     // …and the rigs to that pool, painted for the viewer's side — rebuilt only
     // when one of the two moved (`BattleView.syncPool`). After the ragdolls'
@@ -5146,9 +5215,6 @@ export class Game {
     }
     this.debris.reset();
     this.blastDebris.reset();
-    // The flags a MATCH mirrors from the wire. Offline the flags are the
-    // core's, started inside its `startRound`, and this one is never read.
-    if (this.net) this.conquest.start(map);
     // The flags' markers read the same radius ConquestSystem tests against,
     // and lay the ring's stones on the same ground a body stands on.
     this.zones.build(
@@ -5198,6 +5264,7 @@ export class Game {
     if (!this.net && !this.bench) {
       this.simSlot = this.core.firstSlotOf(team);
       this.core.addPlayer(this.simSlot, team);
+      this.simSync();
     }
     // Anything the round's own build said, which is nothing today — read
     // through the one switch all the same, so nothing is left in the ring.
@@ -7004,8 +7071,8 @@ export class Game {
    * for both readers: it is the one chair `canSwapSeat` is never asked about,
    * and the crew line marks it from `drivingSeat` rather than from here.
    *
-   * Offline the crew table is the CORE's (`SimLive.crew`), asked about the
-   * core's copy of the same hardstanding — this page has no crew of its own.
+   * Offline the chairs are the CORE's, as its frame says them
+   * (`FleetMirror.seatHolder`) — this page has no crew of its own.
    */
   private seatHeldBy(tank: Vehicle, seat: CrewSeat): SeatHolder {
     if (this.net) {
@@ -7017,10 +7084,7 @@ export class Game {
       if (by < 0) return "open";
       return this.botSlotIn(by) ? "bot" : "player";
     }
-    const live = this.core.live;
-    const held = live.vehicles.hulls[this.vehicles.hulls.indexOf(tank)];
-    if (!held || !held.seats[seat]) return "open";
-    return live.crew.crewOf(held, seat) ? "bot" : "player";
+    return this.sim.fleet.seatHolder(this.vehicles.hulls.indexOf(tank), seat);
   }
 
   /**
@@ -7550,9 +7614,25 @@ export class Game {
    */
   private ask(cmd: SimCommand, drain = true): boolean {
     if (this.simSlot < 0) return false;
-    const acted = this.core.submit(this.simSlot, cmd);
+    // Under `?simcopy` the command crosses as a structured clone — what a
+    // Worker would be posted — so nothing the page holds is handed over by
+    // reference.
+    const acted = this.core.submit(this.simSlot, this.simCopy ? structuredClone(cmd) : cmd);
+    this.simSync();
     if (drain) this.drainSim();
     return acted;
+  }
+
+  /**
+   * The core's frame, read into `sim` — **after every call made on the
+   * core** (`step`, `ask`, and the round's own calls), before anything reads
+   * a mirror or draws what the call said. Offline the flags go onto this
+   * page's `conquest` too (`flagsInto`), as a match's arrive off the wire.
+   * Under `?simcopy` it is a structured clone of the frame that is read.
+   */
+  private simSync(): void {
+    this.sim.sync(this.simCopy ? structuredClone(this.core.frame) : this.core.frame);
+    if (!this.net) this.sim.flagsInto(this.conquest);
   }
 
   /**
@@ -7571,11 +7651,31 @@ export class Game {
         this.core.drain(this.simEvents);
         const n = this.simEvents.count;
         if (n === 0) break;
+        if (this.simCopy) this.cloneEvents();
         for (let i = 0; i < n; i++) this.onSimEvent(i);
       }
     } finally {
       this.simDraining = false;
     }
+    // Everything the core said is drawn and its frame is read: the mirrors
+    // and the live objects must agree now, to the bit (`?simcheck`, DEV) —
+    // offline, where the page's conquest and glass are the core's mirrors.
+    if (!this.net) this.mirrorCheck?.();
+  }
+
+  /**
+   * `?simcopy`: the drained arrays replaced by structured clones of
+   * themselves, as a Worker's `postMessage` would hand them over. The next
+   * drain swaps the clones into the ring, which is the cursor's contract
+   * (`EventRing.drainInto`) whatever arrays it holds.
+   */
+  private cloneEvents(): void {
+    const c = this.simEvents;
+    const copy = structuredClone({ kinds: c.kinds, ticks: c.ticks, data: c.data, ints: c.ints });
+    c.kinds = copy.kinds;
+    c.ticks = copy.ticks;
+    c.data = copy.data;
+    c.ints = copy.ints;
   }
 
   /** Scratch the switch below reads an event's vectors into — never kept. */
@@ -7597,9 +7697,9 @@ export class Game {
    * What the core said, drawn — **the page's half of every fact the
    * simulation decides**, as `onNetEvent` is a match's. Presentation only:
    * nothing here writes the simulation, and every number is read off the
-   * event (captured where it happened) rather than off a live object, except
-   * the BODY a bot's news is about, which the page draws from the core's own
-   * pool through `SimLive` until C5's mirrors.
+   * event (captured where it happened) rather than off a live object, and
+   * the BODY a bot's news is about is its `BotMirror` — the frame's copy of
+   * that slot, synced before this drain (`simSync`).
    *
    * Every news a match also has ends in the method its netplay handler ends
    * in — `playerHit`/`playerDown`, `seatAnswer`, `playerSpawned`,
@@ -7628,7 +7728,7 @@ export class Game {
       // placed at the copy it hands back, and — for an enemy — a couple of
       // seconds on the minimap.
       case EV.botFired: {
-        const bot = this.core.live.battle.bots[c.f(i, 0)];
+        const bot = this.sim.roster.bots[c.f(i, 0)];
         if (!bot) break;
         const at = this.battleView.flash(this.evVec(i, 1, this.evA));
         this.sfx.botShot(at);
@@ -7639,12 +7739,12 @@ export class Game {
       // be audible; boots from bots close enough to carry. Both spatialised,
       // and `Sfx` rejects the far ones.
       case EV.botReload: {
-        const bot = this.core.live.battle.bots[c.f(i, 0)];
+        const bot = this.sim.roster.bots[c.f(i, 0)];
         if (bot) this.sfx.botReload(bot.position);
         break;
       }
       case EV.botStep: {
-        const bot = this.core.live.battle.bots[c.f(i, 0)];
+        const bot = this.sim.roster.bots[c.f(i, 0)];
         if (bot) this.sfx.botStep(bot.position);
         break;
       }
@@ -7719,7 +7819,7 @@ export class Game {
         break;
       }
       case EV.botDown: {
-        const bot = this.core.live.battle.bots[c.f(i, 0)];
+        const bot = this.sim.roster.bots[c.f(i, 0)];
         if (!bot) break;
         const by = c.f(i, 2);
         this.botDown(bot, c.f(i, 1) as Team, me >= 0 && by === me);
@@ -7749,12 +7849,12 @@ export class Game {
         break;
       }
       case EV.captured: {
-        const point = this.core.live.conquest.points[c.f(i, 0)];
+        const point = this.conquest.points[c.f(i, 0)];
         if (point) this.flagCaptured(point.def.name, c.f(i, 1) as Team);
         break;
       }
       case EV.neutralised: {
-        const point = this.core.live.conquest.points[c.f(i, 0)];
+        const point = this.conquest.points[c.f(i, 0)];
         if (point) this.flagNeutralised(point.def.name);
         break;
       }
@@ -7936,34 +8036,36 @@ export class Game {
   }
 
   /**
-   * The roster `BattleView` draws: the core's offline, none in a match —
-   * see `NO_ROSTER`.
+   * The roster `BattleView` draws: the core's offline, as its frame says it
+   * (`RosterMirror`), none in a match — see `NO_ROSTER`.
    */
   private get rosterRead(): RosterRead {
-    return this.net ? NO_ROSTER : this.core.live.battle;
+    return this.net ? NO_ROSTER : this.sim.roster;
   }
 
   /** The bodies the shadows' blobs are placed under — `rosterRead`'s bots. */
-  private liveBots(): readonly Bot[] {
-    return this.rosterRead.bots;
+  private liveBots(): readonly BotMirror[] {
+    return this.net ? NO_BOTS : this.sim.roster.bots;
   }
 
   /**
-   * The flags and the tickets every gauge draws: the core's offline, the
-   * wire's mirror in a match (`conquest`).
+   * The flags and the tickets every gauge draws: this page's own `conquest`,
+   * which is a MIRROR either way — written off the core's frame offline
+   * (`simSync`, `SimMirror.flagsInto`) and off the wire in a match. The deploy
+   * screen's offer is answered off the same points and the map's spawns.
    */
   private get flags(): ConquestSystem {
-    return this.net ? this.conquest : this.core.live.conquest;
+    return this.conquest;
   }
 
   /** Whichever grenade pool is flying this round's grenades — `flags`' rule. */
   private simGrenades(): Pick<GrenadeSystem, "flights" | "fireSlots" | "forEachFire"> {
-    return this.net ? this.grenades : this.core.live.grenades;
+    return this.net ? this.grenades : this.sim.ordnance;
   }
 
   /** …and rockets and mines. */
   private simAntiTank(): Pick<AntiTankSystem, "rocketSlots" | "mineSlots"> {
-    return this.net ? this.antiTank : this.core.live.antiTank;
+    return this.net ? this.antiTank : this.sim.ordnance;
   }
 
   /** What `GrenadeFx` reads: the pools of whichever system `simGrenades` names. */
@@ -7992,9 +8094,7 @@ export class Game {
 
   /** How many of this player's mines the core has on the field. */
   private simMinesLaid(): number {
-    const live = this.core.live;
-    const me = live.players.get(this.simSlot);
-    return me ? live.antiTank.minesFor(me) : 0;
+    return this.sim.person(this.simSlot)?.mines ?? 0;
   }
 
   /** The held commands the per-frame and per-round acts submit — see `ask`. */
@@ -8646,10 +8746,11 @@ export class Game {
    * requires — both callers do.
    */
   private enemyTargets(): Hittable[] {
-    // Offline the CORE's list (`SimLive.battle`) — its bots and its hulls,
-    // which is what the core resolves this player's rounds against, so the
-    // assist holds an aim on exactly what a round can hit.
-    if (!this.net) return this.core.live.battle.hittablesAgainst(this.player.team);
+    // Offline the CORE's list as its frame says it (`SimMirror`) — its bots
+    // and its hulls, in its own order, which is what the core resolves this
+    // player's rounds against, so the assist holds an aim on exactly what a
+    // round can hit.
+    if (!this.net) return this.sim.hittablesAgainst(this.player.team);
     // The bodies, plus the armour. A hull is a `Hittable` on this side too and
     // has to be in the list for the local cue a hit is owed — without it a
     // round fired at a tank sparks off the collider with no hitmarker, and the
@@ -8684,8 +8785,8 @@ export class Game {
    * missing feature so much as a list that had quietly gone empty — the panel
    * still drew, the flags still moved, and only the blips were gone.
    *
-   * Offline it is the core's pool (`SimLive.battle`), the bodies the fight
-   * is actually fought with.
+   * Offline it is the core's pool as its frame says it (`RosterMirror`), the
+   * bodies the fight is actually fought with.
    *
    * Unlike `enemyTargets` this is a plain READ — no shot is resolved against
    * it, no team is filtered out of it — so it hands back the array as it
@@ -8698,7 +8799,7 @@ export class Game {
    * sitting under the arrow that already stands for the player.
    */
   private mapBodies(): readonly Combatant[] {
-    return this.net ? this.net.roster.soldiers : this.core.live.battle.bots;
+    return this.net ? this.net.roster.soldiers : this.sim.roster.bots;
   }
 
   /**
@@ -9086,6 +9187,7 @@ export class Game {
     // refilled by this step's `botFired`s, which are read below.
     this.battleView.beginFrame();
     const live = this.core.step(dt);
+    this.simSync();
     // The hull trigger this frame's driver pulled, asked NOW — the core has
     // just posed its copy of the player's hull to the report `updateDriver`
     // made, and this page's has not stepped yet, so the round leaves the gun
@@ -9104,7 +9206,7 @@ export class Game {
     // (`reportHull`), the prediction a match's client runs (X2.5a C4b).
     if (!this.vehicles.empty) {
       this.prof.begin(P.vehicles);
-      this.syncFleet(this.fleetMirror);
+      this.syncFleet(this.sim.fleet);
       this.vehicles.update(dt, this.vehicleOrders);
       this.prof.end(P.vehicles);
       // The hulls have moved, which is everything `pushHullEngines` reads off
@@ -9136,7 +9238,7 @@ export class Game {
     // What the grass bends around: the player and every body in the core's
     // pool, assembled once — no hull, armour captures nothing.
     this.combatants.length = 0;
-    this.combatants.push(this.player, ...this.core.live.battle.bots);
+    this.combatants.push(this.player, ...this.sim.roster.bots);
 
     // --- bots ---
     // The picture follows the fight at once, before anything reads a rig: the
@@ -9365,7 +9467,7 @@ export class Game {
     this.player.alive = false;
     // The fight's zero: every award and death is stamped with the core's
     // tick less this (`FightHash`), which is the step it landed on.
-    this.benchTick0 = this.core.tick;
+    this.benchTick0 = this.sim.tick;
     this.cameraSys.reset(0);
     this.go("bench");
   }
@@ -9466,13 +9568,12 @@ export class Game {
    * the fight follows from the seed, so the camera is the same on every run.
    */
   private chaseBench(run: BenchRun, script: BenchScript, dt: number): void {
-    const battle = this.core.live.battle;
-    const bots = battle.bots;
+    const bots = this.sim.roster.bots;
     const held = run.focus >= 0 ? bots[run.focus] : null;
-    if (!held || !held.alive || battle.aside(held)) {
+    if (!held || !held.alive || held.aside) {
       run.focus = -1;
       for (let i = 0; i < bots.length; i++) {
-        if (bots[i].alive && !battle.aside(bots[i])) {
+        if (bots[i].alive && !bots[i].aside) {
           run.focus = i;
           break;
         }
@@ -10285,7 +10386,7 @@ export class Game {
    * that landed rather than the body that fell, and they belong with whichever
    * weapon put it there (`hit`).
    */
-  private botDown(bot: Bot, killer: Team, byPlayer: boolean): void {
+  private botDown(bot: BotRead, killer: Team, byPlayer: boolean): void {
     // The one place every way a bot can die converges, so the one place the
     // body has to be offered to the physics pool. It needs no impact vector
     // passed down: `Bot.takeDamage` already captured where the killing blow
@@ -10506,18 +10607,17 @@ export class Game {
       return rows;
     }
     // Offline the whole board is one loop over the CORE's pool and its book
-    // (`SimLive`), the player's line included: they hold a slot like
+    // as its frame says them (`SimMirror`), the player's line included: they hold a slot like
     // everybody else and the bot in it is benched for as long as they do
     // (`SimCore.addPlayer`), so their row is simply the row at their own slot.
     // Drawing both would put a seventeenth body on a sixteen-slot board and
     // count one that is not in the fight into the team totals.
     // Every offline row's ping is -1 and the board draws no column for it:
     // there is no server in a single-player round to be any distance from.
-    const live = this.core.live;
-    const bots = live.battle.bots;
+    const bots = this.sim.roster.bots;
     for (let i = 0; i < bots.length; i++) {
       const you = i === this.simSlot;
-      const row = live.scores.row(i);
+      const row = this.sim.scores.row(i);
       rows.push({
         name: you ? "YOU" : callsign(i),
         team: you ? this.player.team : bots[i].team,

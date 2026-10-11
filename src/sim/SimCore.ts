@@ -25,9 +25,13 @@
  * it the round's seed in `RoundSpec`, its world as the data `buildSimWorld`
  * takes (the page's is `collisionOf` its own build), and its wall-clock anchor
  * through `anchor` and `drop`. Nothing in this directory may import from
- * `server/`. The page's VIEWS read this core's live objects through `live`
- * (`SimLive`), which is temporary and enumerated until C5's mirrors, and the
- * page lets the world go between rounds with `releaseWorld`.
+ * `server/`. **The page reads its STATE off the frame and its NEWS off the
+ * ring and nothing else** (`BABYLON_EXIT.md` X2.5a C5): a core built with
+ * `publish` refreshes `frame` (`src/sim/frame.ts`) at the end of every call
+ * that can change it — `step`, `submit`, `startRound`, `addPlayer`,
+ * `removePlayer`, `releaseWorld` — and the page's views read that copy
+ * through `src/sim/mirror.ts`, never an object of this class. The page lets
+ * the world go between rounds with `releaseWorld`.
  *
  * **Everything it has to SAY leaves through one event ring and nothing else**
  * (`src/sim/events.ts`, `BABYLON_EXIT.md` X2.5a C2). There is no outward
@@ -152,6 +156,7 @@ import { TerrainField } from "../world/TerrainField";
 import { LagComp } from "./LagComp";
 import { SimPlayer } from "./SimPlayer";
 import { buildSimWorld } from "./simWorld";
+import { fillFrame, newFrame, type SimFrame } from "./frame";
 import type { ShotCommand, SimCommand } from "./commands";
 import {
   EV,
@@ -212,7 +217,7 @@ export interface RoundSpec {
 }
 
 /**
- * The three ways the hosts' roles differ, as switches on the one core. Every
+ * The ways the hosts' roles differ, as switches on the one core. Every
  * one defaults to OFF, and none changes a rule — each is a question about who
  * holds what.
  */
@@ -241,46 +246,41 @@ export interface SimCoreOptions {
    * so the option set is the one the hosts will pass.
    */
   timing?: boolean;
+  /**
+   * Keep `frame` filled — the STATE a host reads the round off without an
+   * object of this class (`src/sim/frame.ts`, `BABYLON_EXIT.md` X2.5a C5). The
+   * offline page's, whose views read nothing else, and the shape X2.5b posts
+   * out of a Worker. **Off on the authority**: `Match` reads its validators'
+   * and its snapshot's answers off this process's own objects, in-process,
+   * and a frame nobody reads is a copy of every body paid every tick.
+   * `simulate --frame` turns it on to price it.
+   */
+  publish?: boolean;
 }
 
 /**
- * **TEMPORARY — `BABYLON_EXIT.md` X2.5a C4a to C5.** The core's LIVE objects
- * the offline page's VIEWS read, and every one of them, enumerated so that C5
- * — which replaces each with a mirror off the `SimFrame` and the event ring —
- * has a list to delete rather than a search to run. Nothing on the page may
- * write through any of it: the page changes the simulation through `submit`
- * and nothing else, and these are read for drawing.
- *
- * What each is read FOR, which is what C5 owes a mirror of:
- *
- * - `battle` — the pool's bots (every `BotRig` follows one, and the minimap,
- *   the blob shadows, the sounds, the bench's spectator and the scoreboard's
- *   names read them), `poolVersion` (the rigs' rebuild), `aside` (the
- *   profiler's body count, the bench's spectator) and `hittablesAgainst` (the
- *   aim assist's targets).
- * - `conquest` — the flags and the tickets every gauge draws, `pointAt` (the
- *   capture panel), and the deploy screen's offer (`deployOptions`,
- *   `spawnIndex`, `pointById`), handed to it whole.
- * - `vehicles` — the hulls, which the page's own fleet is posed off
- *   (`FleetMirror`).
- * - `crew` — `crewOf`, which chair a BOT holds, for the seat prompts.
- * - `grenades` — the flights and the fires `GrenadeFx` poses, `forEachFire`
- *   for each fire's light and voice.
- * - `antiTank` — the rockets and mines `AntiTankFx` poses, `minesFor` for the
- *   HUD's laid count.
- * - `scores` — the board's rows.
- * - `players` — the person a `minesFor` is asked about.
+ * **The page's door into a core** (`BABYLON_EXIT.md` X2.5a C5): the calls a
+ * host that reads the round off the FRAME makes, and the frame — and no
+ * object of the core's. `core/Game.ts` holds its core as this type, so
+ * nothing in that file can name the core's bots, flags, hulls, pools or board:
+ * the compiler is the proof that the offline page reads `frame` and the ring
+ * and nothing else. It is also the whole of what X2.5b has to carry across a
+ * Worker boundary: each method a message, `frame` and `drain` what comes back.
  */
-export interface SimLive {
-  readonly battle: Pick<BattleSystem, "bots" | "poolVersion" | "aside" | "hittablesAgainst">;
-  readonly conquest: ConquestSystem;
-  readonly vehicles: Pick<VehicleSystem, "hulls">;
-  readonly crew: Pick<VehicleCrew, "crewOf">;
-  readonly grenades: Pick<GrenadeSystem, "flights" | "fireSlots" | "forEachFire">;
-  readonly antiTank: Pick<AntiTankSystem, "rocketSlots" | "mineSlots" | "minesFor">;
-  readonly scores: Pick<ScoreBook, "row">;
-  readonly players: ReadonlyMap<number, SimPlayer>;
-}
+export type SimDoor = Pick<
+  SimCore,
+  | "startRound"
+  | "removePlayer"
+  | "firstSlotOf"
+  | "releaseWorld"
+  | "submit"
+  | "step"
+  | "drain"
+  | "frame"
+> & {
+  /** `SimCore.addPlayer`, without the `SimPlayer` it hands an in-process host. */
+  addPlayer(slot: number, team: Team): void;
+};
 
 export class SimCore {
   /** Whether a person's round is rewound — `SimCoreOptions.rewind`. */
@@ -289,6 +289,16 @@ export class SimCore {
   readonly hostHoldsRespawn: boolean;
   /** `SimCoreOptions.timing`, held for C6. */
   readonly timing: boolean;
+  /** Whether `frame` is kept filled — `SimCoreOptions.publish`. */
+  readonly publishing: boolean;
+  /**
+   * The standing round as numbers (`src/sim/frame.ts`): refreshed at the end
+   * of every call that can change it when this core `publishing`, and empty
+   * otherwise. The object stands for the life of the core; a section inside
+   * it is rebuilt when its count moves (a new pool, a new map), so a reader
+   * holds the frame and never a section of it.
+   */
+  readonly frame: SimFrame = newFrame();
 
   readonly combat: CombatSystem;
   readonly battle: BattleSystem;
@@ -433,6 +443,7 @@ export class SimCore {
     this.rewind = options.rewind ?? false;
     this.hostHoldsRespawn = options.hostHoldsRespawn ?? false;
     this.timing = options.timing ?? false;
+    this.publishing = options.publish ?? false;
     // No scene and no material factory: the last thing that wanted a factory
     // was the fleet's rigs, which are the client's `VehicleViews` since
     // `BABYLON_EXIT.md` X2.2 C9, and the last thing that wanted a scene was
@@ -522,23 +533,14 @@ export class SimCore {
   }
 
   /**
-   * The core's live objects, for the offline page's views — **temporary**,
-   * and the whole list of them; see `SimLive`. Built once: every member is a
-   * field that never changes identity.
+   * Refreshes `frame` off the live objects, when this core is `publishing` —
+   * at the end of every call below that can change what is in it. Public for
+   * a harness that has written the core's state directly and wants the
+   * readers to see it; nothing in the game calls it.
    */
-  get live(): SimLive {
-    return (this.liveView ??= {
-      battle: this.battle,
-      conquest: this.conquest,
-      vehicles: this.vehicles,
-      crew: this.crew,
-      grenades: this.grenades,
-      antiTank: this.antiTank,
-      scores: this.scores,
-      players: this.players,
-    });
+  publish(): void {
+    if (this.publishing) fillFrame(this.frame, this);
   }
-  private liveView: SimLive | null = null;
 
   /**
    * Lets go of the standing round's world — the host's teardown, for a host
@@ -575,6 +577,7 @@ export class SimCore {
     this.battle.clearMap();
     this.map?.dispose();
     this.map = null;
+    this.publish();
   }
 
   /**
@@ -817,6 +820,7 @@ export class SimCore {
     for (const player of this.players.values()) {
       this.battle.setBenched(this.battle.bots[player.slot], true);
     }
+    this.publish();
     // The wall clock is NOT read here: the host calls `anchor` the moment this
     // returns, which is where the anchor has always been taken — LAST, after
     // the dispose, the build and the reset. See `anchor` for why that place.
@@ -830,6 +834,13 @@ export class SimCore {
    * already in the air. Returns false on the tick the round ended.
    */
   step(dt: number): boolean {
+    const live = this.advance(dt);
+    this.publish();
+    return live;
+  }
+
+  /** `step`'s simulation, before the frame is refreshed off it. */
+  private advance(dt: number): boolean {
     if (!this.map) return false;
     this.tick++;
     // The clock moves with the world and by the same amount, which is the
@@ -1341,6 +1352,13 @@ export class SimCore {
    * a `kit` or a `deploy` before there is a world.
    */
   submit(slot: number, cmd: SimCommand): boolean {
+    const acted = this.apply(slot, cmd);
+    this.publish();
+    return acted;
+  }
+
+  /** `submit`'s simulation, before the frame is refreshed off it. */
+  private apply(slot: number, cmd: SimCommand): boolean {
     const player = this.players.get(slot);
     if (!player) return false;
     switch (cmd.t) {
@@ -1996,6 +2014,7 @@ export class SimCore {
     // it); the round's own re-bench, last of `startRound`, covers that person.
     const bot = this.battle.bots[slot];
     if (bot) this.battle.setBenched(bot, true);
+    this.publish();
     return player;
   }
 
@@ -2022,6 +2041,7 @@ export class SimCore {
     this.battle.removeHuman(player);
     const bot = this.battle.bots[slot];
     if (bot) this.battle.setBenched(bot, false);
+    this.publish();
   }
 
   /** Where a human of `team` should deploy — the same picker the bots use. */

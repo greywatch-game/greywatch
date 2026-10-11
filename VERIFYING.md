@@ -718,14 +718,15 @@ is one machine's:
   view of a hull is `g.vehicleViews.views.find((v) => v.hull === tank)`.
   **The signature takes a LOOKUP rather than a hull and a stick**, because a bot
   crew can be driving one hull while the player drives another. **Offline the
-  fleet that decides is the simulation core's** (`g.core.live.vehicles`, stepped
-  inside `g.core.step`; `BABYLON_EXIT.md` X2.5a C4a) and `g.vehicles` is the
-  page's copy POSED off it — **except the hull under the player's own DRIVER,
+  fleet that decides is the simulation core's** (`g.core.vehicles.hulls`,
+  stepped inside `g.core.step` — a script may reach the core whole, the
+  page's own code may not; `BABYLON_EXIT.md` X2.5a C4a) and `g.vehicles` is
+  the page's copy POSED off it — **except the hull under the player's own DRIVER,
   which the page PREDICTS** (C4b): drive it with the sticks (`g.input.moveY`
   and friends written after `g.input.update`, or hold the keys) and the page
   steps it through `driveFor` and reports it as `drive`, so the core's copy is
   exactly the page's of ONE FRAME EARLIER (x, z, yaw, turret, gun). Everything
-  else is answered by the core's crew (`g.core.live.crew`). **For a frame-exact
+  else is answered by the core's crew (`g.core.crew`). **For a frame-exact
   comparison pin the step** — `g.frameCap.elapsed = () => 1 / 60` — and script
   the inputs by frame; the drive is then deterministic run to run. Two things that have already cost time: **do not read `speed` after
   a phase with the throttle at zero** (the brake is 9 m/s², so a second of
@@ -2032,7 +2033,29 @@ is one machine's:
   `Match` behind a fake socket, which must leave the identical award/death
   list. A couple of seconds, no browser, exits non-zero on a failure; `--
   --list` prints the lists it compared. Run it after touching `src/sim/`,
-  `server/Match.ts`, `killRules`, `ScoreBook` or `hullRules`.
+  `server/Match.ts`, `killRules`, `ScoreBook` or `hullRules`. Its second core
+  run PUBLISHES and reads a structured clone of the frame back through the
+  page's readers after every drain, held to the live core by `simCheck` —
+  the one place the frame is checked with a PERSON in it.
+- **`?simcheck` is the oracle for the page's readers, and it needs a DEV
+  build** (`npm run dev`, or `bench.mjs` with no `--url`, which starts one):
+  after every drain the offline page holds every answer `src/sim/mirror.ts`
+  gives — each bot's fields and every solved joint, the flags as its own
+  `conquest` holds them, the persons, the hulls and their chairs, the four
+  pools, the board, the panes (the frame's and the page's glass) and the aim
+  assist's list in order — against the live core with `Object.is`. The tally
+  is `window.__simcheck` (`checks`, `mismatches`, `first`), each mismatch is
+  also a console error, and `bench.mjs --query simcheck` prints the tally per
+  run. In a production bundle the flag does nothing: the check is not in it.
+- **`?simcopy` works in any build**: every command, frame and drain goes
+  through `structuredClone` before the other side reads it — X2.5b's Worker
+  transfer, rehearsed. The benchmark's `fight.hash` under it must equal the
+  plain one (`bench.mjs --query simcopy`); a difference means something
+  crossed by reference. The two combine (`--query "simcheck&simcopy"`).
+- **A harness that writes the core directly** (`g.core.scores.award(...)`,
+  `g.core.conquest.tickets[...]`) is invisible to the page until the core
+  publishes again — which a step does. To draw it at once, follow the writes
+  with `g.core.publish(); g.simSync()`.
 - **The DEV-only proving ground needs `npm run simulate:dev`**, which is the
   dev-mode server build; the production one folds that map away and answers
   "no map". Its collision bake is `npm run collision -- proving`, and it takes

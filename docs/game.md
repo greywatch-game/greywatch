@@ -17,8 +17,8 @@ below.
 
 ## Offline, the round is the core's
 
-`Game` holds a `SimCore({ hostHoldsRespawn: true })` (`core`) and simulates no
-round of its own. **Three doors, and no fourth**:
+`Game` holds a `SimCore({ hostHoldsRespawn: true, publish: true })` (`core`)
+and simulates no round of its own. **Three doors, and no fourth**:
 
 - **`ask`** submits one of the local player's acts as a `SimCommand`
   (`src/sim/commands.ts`) — the walk every frame (`move`, after
@@ -32,6 +32,11 @@ round of its own. **Three doors, and no fourth**:
   the core still refuses what its own state makes impossible.
 - **`core.step(dt)`** once a frame, in `updateWorld` — in every state that
   steps the world (`playing`, `dying`, `bench`) and none that holds it.
+  **Every call made on the core is followed by `simSync`** — the step, every
+  `ask`, and the round's own calls (`startRound`, `addPlayer`,
+  `removePlayer`, `releaseWorld`) — which reads the frame the core has just
+  published into the page's readers (below) BEFORE anything draws what the
+  call said.
 - **`drainSim`** after every call made on the core, which hands every event the
   core wrote to **`onSimEvent`**, one switch, in emission order. It is
   presentation only — the tracer, the corpse, the killfeed line, the marker,
@@ -42,14 +47,17 @@ round of its own. **Three doors, and no fourth**:
   for the player.
 
 **The frame's order offline** (`updateWorld`): `BattleView.beginFrame` → the
-core's step → the hull trigger (`pullHullTrigger`) → this page's fleet POSED
-off the core's (`syncFleet` with `FleetMirror`, `vehicles.update` answering
-`remoteFor` for every hull but the one under a driver) → the driver carried
-after his hull (D4) → `drainSim` → `VehicleViews.update` → `BattleView.update`
-and the flash budget → `stepShots` → `stepAftermath`. The fleet is posed BEFORE
-the drain so every event that names a hull finds it where the step left it; the
-views update AFTER it so a gun the core fired this step has kicked
-(`Vehicle.mirrorShot`).
+core's step → `simSync` → the hull trigger (`pullHullTrigger`, an `ask` and so
+a `simSync` of its own) → this page's fleet POSED off the core's (`syncFleet`
+with the frame's `FleetMirror`, `vehicles.update` answering `remoteFor` for
+every hull but the one under a driver) → the driver carried after his hull
+(D4) → `drainSim` (and, under `?simcheck`, the mirror check) →
+`VehicleViews.update` → `BattleView.update` and the flash budget →
+`stepShots` → `stepAftermath`. The mirrors sync BEFORE the drain so a corpse
+built off a `botDown` finds the rig caught up to the frame the death was in,
+and the fleet is posed before it so every event that names a hull finds it
+where the step left it; the views update AFTER it so a gun the core fired this
+step has kicked (`Vehicle.mirrorShot`).
 
 **The hull under a DRIVER is this page's prediction, as in a match** (X2.5a
 C4b): `driveFor` steps it off the sticks inside that `vehicles.update`, and
@@ -75,15 +83,54 @@ core's `spawned` answer to a `deploy` — which, with no respawn clock of the
 core's own to wait for, is honoured at submit (D21) through the same
 `deployPerson` door the reinforcement pass uses.
 
-**What the page's VIEWS read of the core** — the bots `BattleView`'s rigs
-follow, the flags and the tickets the gauges draw, the pools `GrenadeFx` and
-`AntiTankFx` pose, the crew table the seat prompts ask, the book the board is
-drawn from — goes through `core.live`, **temporary and enumerated**
-(`SimLive`): C5 replaces each member with a mirror off the frame and the ring,
-and `live` goes. Which roster, which flags and which pools a view reads is
-asked through one accessor each (`rosterRead`, `flags`, `simGrenades`,
-`simAntiTank`), the core's offline and the page's own netplay mirror or
-prediction in a match.
+**What the page's VIEWS read of the core is its FRAME and nothing else**
+(X2.5a C5). `SimCore.frame` (`src/sim/frame.ts`) is the round as plain typed
+arrays — every bot's root, centre, eye, team, life, death and SOLVED joints
+(packed bit for bit, `packJoints`), the flags and tickets, the persons, the
+hulls and who holds each chair, the four pools, the board, the broken panes and
+the order of the target list — refreshed by the core at the end of every call
+that can change it. `simSync` copies it into `sim` (`SimMirror`,
+`src/sim/mirror.ts`): a `BotMirror` per pool slot (`RosterMirror`, what
+`BattleView`'s rigs follow and what the minimap, the blob shadows, the grass,
+the sounds, the scoreboard and the bench's spectator read), `FleetMirror`
+(what the posed fleet is told by, and `seatHolder` for the seat prompts),
+`OrdnanceMirror` (what `GrenadeFx`, `AntiTankFx` and the fire lights read),
+`ScoresMirror`, the persons (the HUD's laid-mine count) and
+`hittablesAgainst` (the aim assist's list, in the core's own order). **The
+flags are written onto this page's own `conquest`** (`flagsInto`), exactly as
+a match's `NetRoster` writes them off the wire, so the capture zones, the HUD,
+the minimap and the deploy screen hold one set of points on both sides and the
+deploy screen's offer is answered off them. Which roster and which pools a
+view reads is still asked through one accessor each (`rosterRead`,
+`simGrenades`, `simAntiTank`) — the mirror offline, the page's own netplay
+mirror or prediction in a match — and `flags` is `conquest` on both.
+
+**The proof is the TYPE.** `core` is held as a `SimDoor` (`SimCore.ts`): the
+host calls and `frame`, nothing else — so no object of the core's is nameable
+in `Game.ts`, and `npm run typecheck` is the assertion that the offline page
+reads the frame and the ring and nothing else. The one place the core is held
+whole is the DEV mirror check's closure, built inside the `import.meta.env.DEV`
+branch a production bundle folds away.
+
+**Two URL switches hold the boundary to account.** `?simcheck` (DEV builds
+only — `simCheck` is a module function, and the production bundle carries
+none of it) runs `src/sim/simCheck.ts` after every drain: every reader against
+the live object it stands for, with `Object.is` — every bot field and every
+joint, the flags on this page's `conquest`, the persons, the hulls, the
+pools, the board, the frame's panes AND this page's glass, and the target list
+in order — tallying on `window.__simcheck` and logging each mismatch as a
+console error. `?simcopy` (every build) round-trips every command, every frame
+and every drain through `structuredClone` before the other side reads it —
+the transfer X2.5b's Worker makes, rehearsed in one process; the benchmark's
+fight hash under it must be the plain one. `server/corecheck.ts` runs the same
+check headless, with a person in it.
+
+**A frame costs a copy, and the authority does not pay it**: `publish` is
+off on `Match` (its validators and its snapshot read its own objects,
+in-process) and on `simulate` unless `--frame` asks — which is how the copy's
+price is measured. A bot's joints are solved at every publish rather than only
+for the bodies inside the page's freeze distance; the solve is a pure function
+of the pose, so that moved its cost and not its answer.
 
 **The page keeps only its netplay prediction systems** — `combat`, `grenades`,
 `antiTank`, the fleet, `glass` and `conquest` as the wire's mirror — and steps

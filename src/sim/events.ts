@@ -135,6 +135,11 @@ const DAMAGE_CODE = {
 } as const satisfies Record<DamageKind, number>;
 export const DAMAGE_KINDS = inverse<DamageKind>(DAMAGE_CODE);
 
+/** The code a `DamageKind` is written as — here and in the frame's `deathKind`. */
+export function damageCode(kind: DamageKind): number {
+  return DAMAGE_CODE[kind];
+}
+
 const CAUSE_CODE = {
   round: 0,
   blast: 1,

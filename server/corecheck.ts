@@ -73,6 +73,8 @@ import type { Heightfield } from "../src/world/layout";
 import { SimCore, type RoundSpec, type SimCoreOptions } from "../src/sim/SimCore";
 import type { KitCommand } from "../src/sim/commands";
 import type { SimPlayer } from "../src/sim/SimPlayer";
+import { SimMirror } from "../src/sim/mirror";
+import { simCheck } from "../src/sim/simCheck";
 import {
   EV,
   EventCursor,
@@ -216,9 +218,19 @@ class CoreHost implements Host {
   readonly log = new Log();
   private readonly cursor = new EventCursor();
   private readonly dir = new Vector3();
+  /**
+   * With `mirror`, the page's readers (`src/sim/mirror.ts`) off a structured
+   * clone of the core's frame, held against the live core by `simCheck`
+   * after every drain — the page's `?simcheck` and `?simcopy` together, with
+   * the PERSON paths in it that a bench never has.
+   */
+  private readonly mirror: SimMirror | null;
+  /** `simCheck` passes run and mismatches summed, and the first few by name. */
+  readonly mirrorChecks = { passes: 0, mismatches: 0, first: [] as string[] };
 
-  constructor(options: SimCoreOptions = { rewind: true }) {
-    this.core = new SimCore(options);
+  constructor(options: SimCoreOptions = { rewind: true }, mirror = false) {
+    this.core = new SimCore(mirror ? { ...options, publish: true } : options);
+    this.mirror = mirror ? new SimMirror() : null;
   }
 
   start(world: World): void {
@@ -238,6 +250,16 @@ class CoreHost implements Host {
   flush(): void {
     this.core.drain(this.cursor);
     this.log.absorb(this.cursor);
+    if (!this.mirror) return;
+    // Published again first: a fixture may have written the core directly,
+    // which no door of the core's publishes (`SimCore.publish`'s note).
+    this.core.publish();
+    this.mirror.sync(structuredClone(this.core.frame));
+    const tally = this.mirrorChecks;
+    tally.passes++;
+    tally.mismatches += simCheck(this.core, this.mirror, {}, (what) => {
+      if (tally.first.length < 8) tally.first.push(`tick ${this.core.tick} ${what}`);
+    });
   }
 
   /** `Match.onDeploy`'s two submits: the kit the deploy confirms, then the ask. */
@@ -1119,8 +1141,8 @@ interface Run {
   host: Host;
 }
 
-async function runCore(world: World, script: Script, tag: string): Promise<Run> {
-  const host = new CoreHost();
+async function runCore(world: World, script: Script, tag: string, mirror = false): Promise<Run> {
+  const host = new CoreHost(undefined, mirror);
   host.start(world);
   const checks = new Checks(tag);
   await script(host, checks);
@@ -1141,7 +1163,7 @@ async function runMatch(world: World, script: Script, tag: string): Promise<Run>
   }
 }
 
-/** The per-body state the core exposes today, as plain numbers — what X2.5a C5's frame will carry. */
+/** The per-body state the core exposes, as plain numbers — a summary of what X2.5a C5's frame carries. */
 function bodyState(core: SimCore): unknown {
   return {
     tick: core.tick,
@@ -1164,7 +1186,11 @@ function bodyState(core: SimCore): unknown {
       team: b.team,
       aside: core.battle.aside(b),
       deathFrom: [b.deathFrom.x, b.deathFrom.y, b.deathFrom.z],
-      joints: structuredClone(b["joints"]),
+      // The SOLVED pose, not the private cache behind it: a core that
+      // publishes solves every bot's joints each step and one that does not
+      // solves only on a read, so the caches differ while the answer — a pure
+      // function of the pose — cannot.
+      joints: { ...b.solved },
     })),
     players: [...core.players.values()].map((p) => ({
       slot: p.slot,
@@ -1206,7 +1232,9 @@ async function main(): Promise<void> {
     const world: World = { def, ...(await loadSimWorld(def)) };
 
     const a = await runCore(world, script, `${id}/core`);
-    const b = await runCore(world, script, `${id}/core#2`);
+    // The repeat PUBLISHES and reads the frame back after every drain: the
+    // same stream from it is what says the frame costs the fight nothing.
+    const b = await runCore(world, script, `${id}/core#2`, true);
     const m = await runMatch(world, script, `${id}/match`);
 
     // The first core run's assertions are the pass list; the repeat and the
@@ -1233,6 +1261,12 @@ async function main(): Promise<void> {
       name: `same seed + same commands twice: identical event-stream hash (${a.log.digest()}, ${a.log.events.length} events)`,
       ok: a.log.digest() === b.log.digest(),
       detail: `${a.log.digest()} vs ${b.log.digest()}`,
+    });
+    const mc = (b.host as CoreHost).mirrorChecks;
+    report(tag, {
+      name: `the frame's readers equal the live core, Object.is, after every drain (${mc.passes} passes)`,
+      ok: mc.passes > 0 && mc.mismatches === 0,
+      detail: `${mc.mismatches} mismatches: ${mc.first.join("; ")}`,
     });
     const coreScore = scoreList(a.log.events);
     const matchScore = scoreList(m.log.events);

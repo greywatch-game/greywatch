@@ -440,8 +440,11 @@ src/
                         #   twin, both ending in the same player methods). The
                         #   player's own hull is PREDICTED here and reported
                         #   (`reportHull`/`reportGun`), its trigger asked after
-                        #   the core's step (`pullHullTrigger`). Views
-                        #   read the core through `core.live` (temporary, C5).
+                        #   the core's step (`pullHullTrigger`). Holds the
+                        #   core as a `SimDoor` and reads it only off its
+                        #   FRAME (`simSync` into `sim`, src/sim/mirror.ts);
+                        #   `?simcheck` (DEV) and `?simcopy` hold that to
+                        #   account.
                         #   Constructor is construction only; wiring is
                         #   wireSystems (+ subject methods),
                         #   installDomListeners, wireScreens; tick dispatches
@@ -1925,19 +1928,34 @@ src/
                       #   has no engine and no scene. `startRound(RoundSpec)` is
                       #   synchronous (`pool` + `fielded`); `anchor`/`drop` are
                       #   the host's clock; `SimCoreOptions` (rewind,
-                      #   hostHoldsRespawn) are the hosts' roles. A person
+                      #   hostHoldsRespawn, publish) are the hosts' roles. A person
                       #   reaches it through `submit` alone (commands.ts), and
                       #   the rules a command meets — pouches, seat policy,
                       #   `deployPerson` — are here once. No outward callback:
                       #   it SAYS everything through events.ts, and the host
-                      #   `drain`s after every call. `live` (SimLive) is the
-                      #   TEMPORARY list of live objects the page's views read
-                      #   until C5; `releaseWorld` is a host's teardown
-    mirror.ts         #   The page-side READERS of the core in the wire's
-                      #   shapes: `FleetMirror`, the core's hulls read as
-                      #   NetVehicles answers (stateFor/mgFor/present/alive/
-                      #   health/occupant/gunner), which the page's posed fleet
-                      #   is synced and posed off. Writes nothing it reads
+                      #   `drain`s after every call. With `publish` it keeps
+                      #   `frame` (frame.ts) filled at the end of every call;
+                      #   `SimDoor` is the page's whole view of it (the host
+                      #   calls + `frame`); `releaseWorld` is a host's teardown
+    frame.ts          #   SimFrame: the round as plain typed arrays, sized per
+                      #   pool and filled without allocating (`fillFrame`, the
+                      #   one writer) — header, flags, bots (root, centre, eye,
+                      #   life, death, SOLVED joints packed bit for bit),
+                      #   persons, hulls + chairs, the four pools, the board,
+                      #   the target list's order, broken panes, a `timing`
+                      #   row for C6. Postable: structuredClone is the same frame
+    mirror.ts         #   The page-side READERS of the frame, in the shapes the
+                      #   views ask: SimMirror — RosterMirror (a BotMirror per
+                      #   slot, what a BotRig follows; `BotRead`/`RosterRead`
+                      #   are the interfaces a Bot also satisfies), FleetMirror
+                      #   (NetVehicles' answers + seatHolder), OrdnanceMirror,
+                      #   ScoresMirror, persons, hittablesAgainst, flagsInto
+                      #   the page's own ConquestSystem. Holds no core object
+    simCheck.ts       #   The DEV mirror check (`?simcheck`, corecheck): every
+                      #   reader against its live object with Object.is — bots
+                      #   and every joint, flags, persons, hulls, pools, board,
+                      #   panes, the target list. A module function, so a
+                      #   production bundle drops it whole
     commands.ts       #   The SimCommand vocabulary `SimCore.submit` takes:
                       #   the gameplay ClientMessages after validation, with
                       #   host-resolved data (WeaponSetup, kit pouch sizes).

@@ -667,6 +667,15 @@ export class BattleSystem {
     if (!this.humans.includes(human)) this.humans.push(human);
   }
 
+  /**
+   * The non-bot combatants, in the order `hittablesAgainst` lists them after
+   * the bots — read by the simulation core's frame (`src/sim/frame.ts`), so
+   * the page's target list off it is this one in this order. Read-only.
+   */
+  get humanList(): readonly Combatant[] {
+    return this.humans;
+  }
+
   removeHuman(human: Combatant): void {
     const i = this.humans.indexOf(human);
     if (i >= 0) this.humans.splice(i, 1);

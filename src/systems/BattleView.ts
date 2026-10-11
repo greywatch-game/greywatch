@@ -7,14 +7,14 @@
  * `BattleSystem.poolVersion` — or when the VIEWER's side does, and never
  * inside a round), `viewDistance` (the map's body draw distance), the flash
  * list and its backing store.
- * Reads a ROSTER — a `BattleSystem`'s bots and its `poolVersion`, nothing else
- * (`RosterRead`) — and NEVER writes it: everything it decides is whether a
- * node is enabled, where it stands and how it is posed. Which roster is
- * `Game`'s answer, asked through a function on every `syncPool`: offline the
- * simulation core's (`SimCore`, `BABYLON_EXIT.md` X2.5a C4a — C5 replaces it
- * with a mirror), and in a match none, because the bodies there are
- * `NetRoster`'s. This file imports the simulation as a type, which the wiring
- * rules allow.
+ * Reads a ROSTER — its bots and its `poolVersion`, nothing else
+ * (`RosterRead`, `src/sim/mirror.ts`) — and NEVER writes it: everything it
+ * decides is whether a node is enabled, where it stands and how it is posed.
+ * Which roster is `Game`'s answer, asked through a function on every
+ * `syncPool`: offline the simulation core's pool as its FRAME says it
+ * (`RosterMirror`, `BABYLON_EXIT.md` X2.5a C5 — a `BotMirror` per slot), and
+ * in a match none, because the bodies there are `NetRoster`'s. A `Bot`
+ * satisfies `BotRead` too, so a rig follows either.
  * Invariants:
  * - The LOD decides nothing about the fight. Past `viewDistance` a rig is
  *   switched off; past `CONFIG.bots.lodFreezeDistance` its pose stops being
@@ -33,23 +33,16 @@
 import { Vector3, type Scene } from "@babylonjs/core";
 import { CONFIG, FOG_WALL } from "../config";
 import { viewerTeam } from "../core/teamView";
-import type { Bot } from "../entities/Bot";
 import { BotRig } from "../entities/BotRig";
 import type { Team } from "../entities/Combatant";
 import type { Vector3Like } from "../math";
 import type { CelMaterialFactory } from "../shaders/CelShader";
-import type { BattleSystem } from "./BattleSystem";
-
-/**
- * What this view reads of a roster: the pool, and the number that moves when
- * the pool is rebuilt. Nothing it could write.
- */
-export type RosterRead = Pick<BattleSystem, "bots" | "poolVersion">;
+import type { BotRead, RosterRead } from "../sim/mirror";
 
 export class BattleView {
   /** One rig per pooled bot, in the pool's order. */
   readonly rigs: BotRig[] = [];
-  private readonly byBot = new Map<Bot, BotRig>();
+  private readonly byBot = new Map<BotRead, BotRig>();
   /** Muzzle positions from this frame, for `Game` to spend its light budget on. */
   readonly muzzleFlashes: Vector3[] = [];
   /**
@@ -137,7 +130,7 @@ export class BattleView {
   }
 
   /** This bot's rig, or null for a body this view did not build. */
-  rigFor(bot: Bot): BotRig | null {
+  rigFor(bot: BotRead): BotRig | null {
     return this.byBot.get(bot) ?? null;
   }
 
@@ -145,7 +138,7 @@ export class BattleView {
    * This bot's rig, caught up to the bot this instant (`BotRig.catchUp`), to
    * hand to `RagdollSystem` — the one place a body is offered to the pool.
    */
-  corpseOf(bot: Bot): BotRig | null {
+  corpseOf(bot: BotRead): BotRig | null {
     const rig = this.byBot.get(bot) ?? null;
     rig?.catchUp();
     return rig;
