@@ -1109,7 +1109,92 @@ measures today:
 The two sub-steps land separately, each with its own oracle, because a
 divergence after both at once could not be placed in either.
 
-#### X2.5a — One core, in the page — **M**
+#### X2.5a — One core, in the page — **M** (ran **L**) — **LANDED** (e328d43)
+
+**Landed** 2026-10-11, after a three-way review whose fixes are 3e154cd and
+e328d43, and the USER's offline play-test of C4b in the tank, the truck and the
+helicopter ("Everything feels fine. I tested all, and noticed no issues").
+
+**What exists.**
+- **`SimCore`** (`src/sim/`, `HeadlessGame` moved and generalised) is the one
+  simulation. `Match`, `simulate`, `corecheck` and the page all host it. Its
+  systems meet only inside it. It reads no clock and draws no seed: the host
+  supplies `RoundSpec.seed`, `anchor`/`drop`, and an optional timing clock.
+- **Commands in.** `SimCore.submit(slot, SimCommand)` (`commands.ts`) is the one
+  door. `Match` VALIDATES, then submits; the page's commands are trusted.
+- **Events out.** Events go into an allocation-free typed ring (`events.ts`),
+  with every number captured at emission. `Match` drains and relays them;
+  `Game.onSimEvent` draws them.
+- **State out.** A plain-data `SimFrame` (`frame.ts`) is read by the page's
+  mirrors (`mirror.ts`). `Game` holds the core only as a `SimDoor`.
+- **The local `Player` is outside the core**, offline as in a match: a
+  prediction that submits `move`/`shot`/`grenade`/`ordnance`/`deploy`/`mount`/
+  `drive`/`gun`. Its throw and launch start points are command INPUTS (FINDINGS
+  55). Its own hull is predicted on the page and reported (C4b).
+- **`hostHoldsRespawn`** keeps the offline deploy screen over a held world.
+  `RoundSpec.pool`/`fielded` keeps offline's per-map pool, which keeps the
+  bench.
+- **Twenty-one drifts between the two old simulations are gone** (the brief's
+  D1-D22). Among them:
+  - the player's death or ticket could be dropped by UI state;
+  - bots heard the player's rifle at the VIEWMODEL muzzle;
+  - offline deaths were filed with no cause;
+  - offline riders lagged their hull by a frame;
+  - offline spawns skipped the authority's check.
+
+Commits: C0 a81895e, C1 2f34bca, C2 0ae6474, C3 e5b9cc3, C4a-1 115432b, C4a-2
+159cec3, C4b bb8345e, be031a6 (FINDINGS 60), C5 22bc7ec, C6 f707238, C7
+d91dcfa, review 3e154cd + e328d43.
+
+**Measured:**
+- **The bench's seven fight hashes** (bot-only, recorded at C0): identical at
+  every commit, plain and under `?simcopy` (every command, frame and event
+  through `structuredClone`). Greyfen `83e8e74ef36916ba`, Hollowmere
+  `549487ba93bceefe`, Coldharbour `de5622634abca6e7`, Harrowmead
+  `3ae90f2f08fb0643`, Sarab `986c2e35557fb679`, Cinderhaven `2f97c9072ab1762b`,
+  Kurenai `cd58b73111eacbdd`.
+- **simulate:** X2.2's seven C6 hashes and every map's `--events` list
+  identical at every commit.
+- **`?simcheck`** (DEV: every mirror read equals the live object, `Object.is`):
+  0 mismatches over the bench on all seven maps and an offline round with a
+  person.
+- **`npm run corecheck`**, new: 108 assertions driving the core with no `Game`.
+  They cover the scoring rules (attack, defend, headshot keyed on the victim's
+  flag, capture paid to present bodies, `paysKiller`, the hull pays nobody, crew
+  deaths), deploy and seats, the leash, and reported landings. The same scripts
+  through a real `Match` with fake peers give the identical event stream.
+- **The core's cost** (the profiler's `sim` phase, v14): 0.14-0.52 ms per
+  desktop fight frame (Sarab 0.52). Offline the page builds no `CoverMap` and no
+  flow fields (Cinderhaven: 15.5 + 13.6 MB). The core's own world adds ~28 MB on
+  Sarab and ~75 MB on Cinderhaven, and `core.startRound` adds 0.44 / 0.71 s to
+  the build.
+- **parity**, **build** (the gate walks `server/`, `src/sim/` and the
+  simulations), **gate.mjs** all seven maps, **bank.mjs**, **clients.mjs**, and
+  the scripted netplay match (Coldharbour botless, Sarab with bots, Sarab in the
+  helicopter): green throughout.
+
+**Found and fixed on the way:**
+- **FINDINGS 60:** a helicopter a person flew never took crash damage, in a
+  match always. It is now charged off the accepted drive reports
+  (`reportedLanding.ts`) by one rule on both sides, matching the bot path to
+  6e-11 at 60 Hz.
+- **The leash never killed a seated flier.** It now puts the person on foot,
+  then kills them.
+- **A client's raw stamps could dodge or deal crash damage** and buy ~10x the
+  movement allowance. `Match.onStamp` now holds each peer's stamp lead to
+  ±250 ms; an honest peer's numbers are bit-unchanged.
+- **A correction mid-descent charged a phantom crash.** A `resync` on the first
+  drive after a `hullcorrect` now rebases the history without making a landing
+  free.
+
+**Open for X2.5b**, from the review (session notes): `RoundSpec.def` holds
+import thunks and cannot be posted; the timing clock is a function with a
+different `timeOrigin` in a Worker; five page call sites use `submit`'s
+boolean synchronously; `ShotCommand.weapon` carries the whole `WeaponSetup`;
+some mirror readers read the frame lazily; the frame's counts and header live
+outside its typed arrays; one frame must be applied before that call's events;
+`?simcheck` needs the core in-process. FINDINGS 61: `BotMirror.read` allocates
+~3.2 kB a frame.
 
 - **Do:** extract the core behind the interface the Worker will use.
   - Inputs go in: the local player's commands and the net events.
