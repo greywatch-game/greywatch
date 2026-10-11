@@ -777,9 +777,10 @@ export class Game {
   private readonly overrides = new UrlOverrides();
   /**
    * The round's seed and every outcome stream drawn from it
-   * (`systems/RoundRandom.ts`) — this simulation's, as `SimCore` holds
-   * the authority's. Handed to every system that decides an outcome when it
-   * is built, and reseeded once per round in `buildRound`.
+   * (`systems/RoundRandom.ts`) — the PAGE's, which since X2.5a decides no
+   * outcome but the player's own cone (`STREAM.player`, rolled here and
+   * submitted as a direction); every other stream is the core's. Reseeded
+   * once per round in `buildRound`, from the same seed the core is handed.
    */
   private readonly random = new RoundRandom();
   /**
@@ -4404,9 +4405,9 @@ export class Game {
    * Enters or leaves the map editor. Dev-only, and the import is dynamic so
    * `src/editor` never reaches a production bundle.
    *
-   * Leaving always restarts the round rather than resuming. BattleSystem,
-   * ConquestSystem, Minimap and DeployScreen all cache the GameMap they were
-   * handed, so the only safe way back from a session that may have rebuilt the
+   * Leaving always restarts the round rather than resuming. The core (its
+   * world is DATA off the map, `collisionOf`), ConquestSystem, Minimap and
+   * DeployScreen all hold the GameMap they were handed, so the only safe way back from a session that may have rebuilt the
    * map is to build a fresh one and re-point all of them — which is exactly
    * what `startRound` does.
    */
@@ -4831,9 +4832,10 @@ export class Game {
     // has changed — see `world/RayWorld.ts` for the two questions and which
     // caller asks which.
     //
-    // `BattleSystem` and `VehicleSystem` are not in this list and are not
-    // exceptions: both are handed the whole `GameMap` already, and both take it
-    // off `map.rays` where they take `nav`, `cover` and `obstacles`.
+    // `VehicleSystem` is not in this list and is not an exception: it is
+    // handed the whole `GameMap` already, and takes it off `map.rays` where it
+    // takes `obstacles`. The bots' `BattleSystem` is the core's, off its own
+    // world (`buildSimWorld`).
     this.combat.setWorld(map.rays);
     this.combatFx.setWorld(map.rays);
     this.grenades.setWorld(map.rays);
@@ -5634,10 +5636,10 @@ export class Game {
    * between the two things this method is reached with. A point is a place —
    * the whole of a team's reinforcement wave is sent to the same one — so the
    * scatter that stops a squad arriving inside itself belongs to resolving it
-   * (`scatterSpawn`, which `spawnPointFor` and the deploy screen's offline
-   * branch both go through), not to arriving. The authority's `spawn` is the
-   * case that makes the distinction load-bearing rather than tidy: the server
-   * scatters in its own `spawnPointFor` and then TELLS us where the body is,
+   * (`scatterSpawn`, inside the core's `spawnPointFor`), not to arriving.
+   * The core's `spawned` and the authority's `spawn` are the case that makes
+   * the distinction load-bearing rather than tidy: the simulation scatters in
+   * its own `spawnPointFor` and then TELLS us where the body is,
    * so a second helping applied here put the client's body up to a couple of
    * metres from the position the authority holds for it. `validate.ts` absorbs
    * that and the correction path would have covered the rest, but it is the
@@ -6870,8 +6872,8 @@ export class Game {
     return true;
   }
 
-  // What the TRACKS kill is `hullRules.crushSweep`, run from `updateWorld`
-  // right after the hulls move — the authority runs the same function.
+  // What the TRACKS kill is `hullRules.crushSweep`, run inside the core's
+  // step right after the hulls move — offline and on the authority alike.
 
   /**
    * The camera half of a driver's frame, after the hull has moved.
@@ -7101,7 +7103,7 @@ export class Game {
    * It is a seat's question because everything reading it names a chair:
    * which one a boarder is offered (`offeredSeat`, through `chooseSeat`),
    * whether this player may cross into one, and what the crew line on the HUD
-   * says about it. Offline it is `VehicleCrew`'s own pairing; in a match it is
+   * says about it. Offline it is the core's pairing, off its frame; in a match it is
    * `VehicleState.by`/`by2` against the roster — **the one exception to "a
    * client never learns which slots are bots"**, and it is allowed because
    * what this decides is a PROMPT: a prompt offering to evict a person would
@@ -7401,8 +7403,8 @@ export class Game {
    * What a networked session needs from the rest of the game: where the
    * authority puts this player and their hull, which side and which map the
    * match is on, what its events and bodies do to this screen, and what a
-   * refusal or a lost socket leaves behind. `wireBattle`'s counterpart for a
-   * round whose fight is somebody else's to simulate — every line here is the
+   * refusal or a lost socket leaves behind. `onSimEvent`'s counterpart for a
+   * round whose fight is the authority's to simulate — every line here is the
    * screen hearing the AUTHORITY, never deciding for it.
    */
   private wireNet(net: NetSession): void {
@@ -7562,8 +7564,8 @@ export class Game {
     // `bodyDrawDistance`.
     net.roster.setViewDistance(bodyDrawDistanceOf(this.mapDef.environment));
 
-    // Boots. The exact counterpart of `wireBattle`'s `onBotStepped`, down to
-    // the callback being handed the body rather than a position, and the one
+    // Boots. The exact counterpart of `onSimEvent`'s `botStep` arm, down to
+    // the sound being played at the body's own position, and the one
     // sound in a netplay round that crosses no wire at all: a footfall is a
     // point on the walk cycle, and that cycle is already being integrated from
     // the ground this body covers (see `NetSoldier.onStep`). It fires for all
@@ -8228,8 +8230,8 @@ export class Game {
       case "neutralised":
         this.flagNeutralised(event.point);
         break;
-      // We were paid for something. Offline the same line comes off
-      // `ScoreBook.onAward`; in a match it is a receipt the authority
+      // We were paid for something. Offline the same line comes off the
+      // core's `award` event; in a match it is a receipt the authority
       // addressed to us, and the client neither adds it up nor checks it —
       // what the board shows is the `scores` table, and this is the reason.
       case "score":
@@ -8276,8 +8278,8 @@ export class Game {
 
       // Somebody is changing a magazine. Spatialised, because knowing WHICH of
       // the enemies in front of you has just gone dry is the whole point of
-      // hearing it, and it is the same `Sfx.botReload` offline hangs off
-      // `BattleSystem.onBotReloaded`.
+      // hearing it, and it is the same `Sfx.botReload` offline plays off
+      // the core's `botReload` event.
       //
       // Our own is skipped for the reason our own fire is: `player.onReload`
       // played it locally and sent the announcement that came back as this.
@@ -8551,11 +8553,10 @@ export class Game {
   /**
    * Somebody's weapon went off.
    *
-   * Worth exactly what offline's `BattleSystem.onBotFired` is worth: a report
-   * to place by ear, and — for an enemy — a couple of seconds on the minimap.
-   * Both are `wireBattle` reading a callback offline, and that callback fires
-   * on nothing here, because this client runs no AI and never hears another
-   * person's trigger. So the authority says it instead.
+   * Worth exactly what offline's `botFired` event is worth: a report to place
+   * by ear, and — for an enemy — a couple of seconds on the minimap. Offline
+   * the core raises it (`onSimEvent`); here this client runs no AI and never
+   * hears another person's trigger, so the authority says it instead.
    *
    * The two halves differ in who they are about, exactly as offline: every shot
    * in the village is audible whoever fired it, while the reveal is the enemy's
@@ -10621,8 +10622,8 @@ export class Game {
   /**
    * One row per body in the round, for the scoreboard.
    *
-   * **The two sources meet HERE and nowhere else.** Offline the board is this
-   * client's own `ScoreBook`, one line per roster slot. In a match it is the
+   * **The two sources meet HERE and nowhere else.** Offline the board is the
+   * core's, off its frame (`ScoresMirror`), one line per roster slot. In a match it is the
    * authority's, read off the session: a PERSON's name from the roster, every
    * row's points, kills and deaths from the last `scores` message indexed by
    * slot, and the row order straight from the roster — a slot index is the same

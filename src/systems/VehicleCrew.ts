@@ -6,9 +6,9 @@
  * onto its drive is `crewPilot.ts`'s, called from `stepCrew`.
  * Owns NO hull and no body: `VehicleSystem` builds the armour and
  * `BattleSystem` holds the roster. This asks both of them questions through a
- * `CrewCtx` `Game` builds once, exactly as `BattleSystem` asks the world
+ * `CrewCtx` `SimCore` builds once, exactly as `BattleSystem` asks the world
  * through a `BattleCtx` — nothing in here reaches for another system, and
- * everything it announces goes out as a callback `Game` wires.
+ * everything it announces goes out as a callback `SimCore` wires.
  *
  * ## Two seats, two bots, one shape
  *
@@ -318,7 +318,7 @@ export class VehicleCrew {
   private boardT = 0;
 
   /**
-   * Wired by `Game`: this bot is now inside a hull, or is no longer. Both are
+   * Wired by `SimCore`: this bot is now inside a hull, or is no longer. Both are
    * one-way announcements — what being crewed COSTS a bot (its place in every
    * target list, every think tick and every movement pass) is
    * `BattleSystem`'s to apply, exactly as `Game.mount` applies it to the
@@ -327,7 +327,7 @@ export class VehicleCrew {
   onBoarded: (bot: Bot, tank: Vehicle) => void = () => {};
   onLeft: (bot: Bot, tank: Vehicle) => void = () => {};
   /**
-   * Wired by `Game`: this crewman's hull burned and he is dead in it. Raised
+   * Wired by `SimCore`: this crewman's hull burned and he is dead in it. Raised
    * with the body already put down beside the wreck and already back in the
    * fight, so the handler has nothing to do but kill it through the ordinary
    * door — the same shape `VehicleSystem.onDestroyed` hands the player's own

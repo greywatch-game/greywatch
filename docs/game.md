@@ -8,12 +8,17 @@ end-of-frame order; this file is the contract for `src/core/Game.ts` and for
 anything proposing to make it smaller.
 
 The rule this file exists under is in the spine and is not repeated here:
-**systems never import each other; `Game` wires them with callbacks.** Everything
-below is a consequence of that, including the reasons a refactor keeps wanting
-to undo it. **Since `BABYLON_EXIT.md` X2.5a C4a the systems that DECIDE a round
-are not among them**: offline they are the simulation core's (`src/sim/SimCore.ts`),
-as they are the authority's in a match — see "Offline, the round is the core's"
-below.
+**systems never import each other, and they meet in exactly two places** — the
+systems that DECIDE a round in `src/sim/SimCore.ts`, wired once there for every
+host, and the VIEWS in `Game`, wired to the core's EVENTS. Everything below is a
+consequence of that, including the reasons a refactor keeps wanting to undo it.
+**Since `BABYLON_EXIT.md` X2.5a C4a no system that decides a round is wired
+here**: offline they are the simulation core's, as they are the authority's in a
+match — see "Offline, the round is the core's" below. The core's own wiring
+keeps the one injection the spine names — `BattleSystem` takes `CombatSystem`
+in its constructor and calls `combat.fire` for a bot's shot. A callback would
+not do — the shot has to resolve synchronously inside the bot's think tick so
+the result is available to the same frame's kill handling.
 
 ## Offline, the round is the core's
 
@@ -76,7 +81,8 @@ seats off its own copy — a frame behind, which is a match's arrangement with
 the latency taken out.
 
 **The page's own `Player` is the prediction a match's client runs**: its
-sweep, its ground, its stance, its regen for the HUD and the camera. Its health
+sweep, its ground, its stance, its regen for the HUD and the camera — and it
+keeps its `SIMULATIONS` entry (`docs/build.md`) because it sweeps. Its health
 is ASSIGNED from the core's `damaged` (`applyServerHealth`), its death is the
 core's (a leash expiry included, D3), and its body is put in the world by the
 core's `spawned` answer to a `deploy` — which, with no respawn clock of the
@@ -179,8 +185,8 @@ where it is explained.
 ## What may leave `Game.ts`, and what may not
 
 **`Game.ts` is long on purpose, and what may leave it is mechanical so nobody
-has to re-argue the line count.** It is the only place systems meet, so most of
-its length *is* its job — and splitting the wiring re-creates exactly the
+has to re-argue the line count.** It is the only place the VIEWS meet the core
+and each other, so most of its length *is* its job — and splitting the wiring re-creates exactly the
 system→system edges the rule above spends itself preventing. What may leave is a
 cluster of **private fields that answers only to itself**: nothing else in the
 file reads them, and the methods over them touch no system, no mesh and no
@@ -237,10 +243,11 @@ minimap.
 **A simulation and its view are handed the map on adjacent lines, and a view
 is handed only what its own picture reads.** The split is `CLAUDE.md`'s
 ("Ownership and wiring"): the simulation owns the state on `src/math`, the view
-reads it and never writes it, and the authority builds the simulations alone —
-so every view's line here has no twin in `SimCore`. The one node an
-outcome still reads is offline, the player's throw hand and launcher muzzle
-(`FINDINGS.md` 55). `CombatFx` takes
+reads it and never writes it, and the core builds the simulations alone — so
+every view's line here has no twin in `SimCore`. **No node decides an outcome**:
+the player's throw hand, launcher muzzle and mine point are read HERE and
+submitted as the command's `origin` (`FINDINGS.md` 55), so the core reads none.
+`CombatFx` takes
 `map.rays` (its `drawRounds` casts for itself); `GrenadeFx` takes `map.rays`,
 the terrain and the environment (a fire's flames stand on their own floor
 probe, and the map decides what colour a blast's dust is); `GlassFx` takes the map,
@@ -316,10 +323,12 @@ segment query every ray in the game asks (`world/RayWorld.ts`), and `installMap`
 pushes it to `CombatSystem`, `CombatFx` (whose `drawRounds` casts for itself),
 `GrenadeSystem`, `GrenadeFx` (which stands a fire's flames on their floors
 with its own probe), `AntiTankSystem`,
-`AimAssistSystem`, `DeathCam` and `VehicleCamera`. `BattleSystem` and
-`VehicleSystem` are absent from that list and are not exceptions: both are
-handed the whole `GameMap`, and both take it off `map.rays` where they take
-`nav`, `cover` and `obstacles`. A system that misses this one does not throw
+`AimAssistSystem`, `DeathCam` and `VehicleCamera` — the page's netplay
+predictions and its views; the core's own systems take `rays` off the world
+`buildSimWorld` builds it. `VehicleSystem` is absent from that list and is not
+an exception: it is handed the whole `GameMap` and takes it off `map.rays`
+where it takes `nav`, `cover` and `obstacles`, as the core's `BattleSystem`
+does off its own. A system that misses this one does not throw
 either — it casts against a null world and reports that nothing is in the way,
 which reads as a bot with a wallhack or a round that never stops.
 
@@ -336,9 +345,9 @@ day to attribute.
 `updateWorld` is the offline round and `updateNetWorld` is the client's half of
 a networked one, and the second is not a subset of the first — it runs `net`
 where the other steps the core, and it poses the fleet off the wire where the
-other poses it off the core. What they DO share is ten system updates
-that are identical on both sides, in the same relative order, and those were
-written out twice.
+other poses it off the core. What they DO share is ten system updates in the
+same relative order — two of them, the grenades' and the rockets' prediction,
+stepped in a match alone — and those were written out twice.
 
 **They are one call each now, `stepShots` and `stepAftermath`, and the argument
 is `installMap`'s exactly.** A system added to the offline sequence and
@@ -409,7 +418,7 @@ site:
 | `followEye` — `rotorWash.update`, `water.setWash`; and `pushHullEngines` | every state, gated on `fleetStepped` (read ONCE) | a held world is a fleet frozen in place, so these owe it stillness and SILENCE rather than nothing |
 | `stageWarmFrame` | while the building card's pipeline warm-up stands | BEFORE `followEye`, which is what carries its vantage into the cull, the water and the grass; `unstageWarmFrame` after the render undoes all of it, so a wait `go` abandons leaves nothing behind (`docs/states.md`) |
 | `gi.update` | every state with a map, but never a warm-up frame | the bounce is owed to every picture with a map in it, and converges behind the loading card — around the CAMERA, so not around each vantage the warm-up stands at |
-| `sfx.setListener`, `pushAmbience` | every state; the listener never from a warm-up frame | the EAR, for the eye's reason; a fire is a property of the map and the ear, both true behind a deploy card |
+| `sfx.setListener`, `pushAmbience` | every state; the listener never from a warm-up frame | the EAR, the same bug with a different symptom — a listener placed only by the frames that simulate sits at the origin, so a fire in the village pans from the map's corner while the menu is up; a fire is a property of the map and the ear, both true behind a deploy card |
 | `pushTouchControls`, `pushScoreboard` | the state the frame ENDS in | see below |
 | `updateBakeWait` | while a reflection bake drains, and then while the pipeline warm-up runs | after the render, which released the bake's share or compiled the warm frame's pipelines; not an arm, because `loading` simulates nothing |
 

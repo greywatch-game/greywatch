@@ -15,8 +15,8 @@
  * person's door is driven through the door the CORE itself calls, and each
  * case below says which door it uses.
  *
- * **Why it exists** (`BABYLON_EXIT.md` X2.5a C3): the offline page is about to
- * host the core the authority already hosts, and `simulate` cannot see a
+ * **Why it exists** (`BABYLON_EXIT.md` X2.5a C3): the offline page hosts the
+ * core the authority hosts (since C4a), and `simulate` cannot see a
  * person — it seats nobody, so every rule about a person's death, a person's
  * award and a person's seat had no instrument at all. This is that
  * instrument, and the second half is the point: the same script run through

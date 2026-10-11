@@ -30,6 +30,11 @@ inside and taken that away. `VERIFYING.md` says how to wait for it from a script
 `Game`'s state machine is `menu -> loading -> deploy -> playing -> dying ->
 deploy`, with `roundover` when a side runs out of tickets. The 3D scene renders
 in **every** state, which is what lets the deploy screen sit over a live view.
+**Offline that view is HELD**: `deploy` steps no world — `tick`'s arm runs the
+deploy screen and the page's own respawn wait and nothing else, and the
+simulation core is built `hostHoldsRespawn` (`docs/game.md`), so no bot fights
+behind the deploy map and a `deploy` is honoured the moment it is submitted.
+In a match the authority's round carries on behind it (`roundBehind`, below).
 The menu does NOT: it stands on a photograph of the chosen map, and entering it
 tears the round's map down (`Game.teardownMap`, `installMap`'s other half), so
 nothing of an abandoned round is drawn, heard or simulated behind the title

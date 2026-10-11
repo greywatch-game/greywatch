@@ -1,7 +1,8 @@
 # server/
 
-The authoritative multiplayer server. Runs the same simulation the game does —
-`BattleSystem`, `ConquestSystem`, `CombatSystem` and the rest — with no window,
+The authoritative multiplayer server. Hosts the same simulation core the
+offline page hosts — `SimCore`, with `BattleSystem`, `ConquestSystem`,
+`CombatSystem` and the rest wired inside it — with no window,
 no GPU, no rendering and **no Babylon**: nothing reachable from this directory
 imports `@babylonjs/core`, and `scripts/check-babylon-free.mjs` fails
 `npm run build` if anything ever does (`BABYLON_EXIT.md` X2.3; it ran under
@@ -16,14 +17,18 @@ here. What follows is only the shape of the directory.
 `SimPlayer` (a connected human as the simulation sees one), `LagComp` (the
 rewind around a shot) and `buildSimWorld` (the solid world rebuilt from the
 bake as data) live in [`src/sim/`](../src/sim/), moved out of here at
-`BABYLON_EXIT.md` X2.5a because the offline page is to host the same core.
+`BABYLON_EXIT.md` X2.5a because the offline page hosts the same core.
 What stays here is the HOST: `Match` and `simulate` LOAD the world
 (`world.ts`'s `loadSimWorld`), DRAW the round's seed (`freshSeed()`, or the
 one `simulate` was given) and ANCHOR the clock (`SimCore.anchor(Date.now())`
 once `startRound` returns) — the three things the core does not do for itself,
-because it reads no clock and no entropy. Nothing in `src/sim/` may import
-from this directory, and `scripts/check-babylon-free.mjs` holds every file in
-it as it holds every file here.
+because it reads no clock and no entropy. **`Match` VALIDATES and the core
+DECIDES**: each accepted message is handed over as one `SimCommand`
+(`SimCore.submit`), the core's event ring is drained after every call, and
+`Match.relay` puts what it says on the wire — no rule (a pouch, the seat
+policy, a spawn) lives in `Match`, and no claim gate in the core. Nothing in
+`src/sim/` may import from this directory, and `scripts/check-babylon-free.mjs`
+holds every file in it as it holds every file here.
 
 ## The one test
 

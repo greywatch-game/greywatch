@@ -14,8 +14,9 @@ Quick facts:
 
 - Babylon.js + TypeScript + Vite browser game; `npm run typecheck` is the only
   automated gate — run it after every change.
-- `src/core/Game.ts` is the only place systems meet; never add imports between
-  systems.
+- Systems meet in exactly two places — the simulation's in `src/sim/SimCore.ts`,
+  the views in `src/core/Game.ts` (wired to the core's events) — and never
+  import each other.
 - Every source file has a **contract header** at the top stating what it owns
   and its invariants — read it before editing that file.
 - `README.md` is user-facing (game, controls, setup), not contributor guidance.

@@ -104,7 +104,7 @@ export interface Hittable {
    * in `killRules.ts` narrows on it to the class.
    *
    * A flag rather than an `instanceof` for `armoured`'s reason one level
-   * down: the one reader is `settleKill`, which both simulations reach, and
+   * down: the one reader is `settleKill`, which every door onto a kill reaches, and
    * an `instanceof` is a VALUE import of `Bot` — which pulled the whole
    * soldier rig and the scene behind it into a module that only books a kill
    * (`BABYLON_EXIT.md` X2.2). Absent on everything that is not one.
@@ -249,7 +249,7 @@ const SCRATCH = new Vector3();
  */
 export class CombatSystem {
   /**
-   * Wired by Game: a round passed within `suppressRadius` of `near` without
+   * Wired by `SimCore`: a round passed within `suppressRadius` of `near` without
    * hitting it. `from` is the shooter's origin.
    *
    * A callback rather than a direct call because this system must not know

@@ -12,8 +12,8 @@
  * `rocketSlots`/`mineSlots` every frame and never writes a slot.
  * Contract: `docs/antitank.md`.
  * Owns NO blast. What a detonation is worth is `entities/equipment.ts`'s and
- * spending it is `resolveOrdnance`'s beside it, which both simulations call
- * from their `onDetonated` — because the direct hit is a `Hittable` and the
+ * spending it is `resolveOrdnance`'s beside it, which `SimCore` calls from
+ * its `onDetonated` (a match client's predicted copy spends nothing) — because the direct hit is a `Hittable` and the
  * splash is `GrenadeSystem.blastAt` — the one implementation of an explosion
  * in this game, exactly as the tank shell uses it.
  *

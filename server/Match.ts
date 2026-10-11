@@ -17,7 +17,7 @@
  * then hands what it accepted to `SimCore.submit` as one `SimCommand`
  * (`src/sim/commands.ts`). Everything that is a rule — the pouch counts, the
  * seat policy, the rewound round, when a person comes back in — is the core's,
- * the one copy the offline page will submit to as well. What it still reads
+ * the one copy the offline page submits to as well. What it still reads
  * off the core is in-process state its validators and snapshot need
  * (`players`, `hullOf`, `reportedHull`, the fleet, the board).
  * `server/corecheck.ts` drives a real instance through a fake socket and steps
@@ -601,7 +601,7 @@ export class Match {
    *
    * The audience is carried on the queue rather than kept in a second list so
    * that ORDER survives it. Events are a single stream to a client — the hit
-   * credits `Game.claimPredictedHit` pairs off are FIFO with no shot id on the
+   * credits `HitCredits.claim` pairs off are FIFO with no shot id on the
    * wire — and two lists flushed one after the other would put a tick's shared
    * events either wholly before or wholly after that client's own, whichever
    * way round the flush happened to be written.

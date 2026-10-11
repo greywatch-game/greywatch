@@ -19,12 +19,12 @@
  * anywhere to fight FROM.
  *
  * **The same class runs on both sides and only one of them is real.** The
- * authority holds one per `SimPlayer` and its verdict is what kills; the client
- * holds one for its own player and, in a netplay round, uses it for nothing but
- * the number on the HUD. That is the ordinary split — a client predicts its
- * movement, and this is a pure function of movement — and it is why the leash
- * costs the wire nothing at all. Offline the client's is the only one there is,
- * and it kills.
+ * simulation core holds one per `SimPlayer` and its verdict is what kills —
+ * on the authority and, since `BABYLON_EXIT.md` X2.5a C4a, offline too; the
+ * page holds one for its own player and uses it for nothing but the number on
+ * the HUD. That is the ordinary split — a client predicts its movement, and
+ * this is a pure function of movement — and it is why the leash costs the
+ * wire nothing at all.
  *
  * Invariants:
  * - **Bots are not leashed and must never be.** They read `nav.steer()` and the
@@ -41,8 +41,9 @@ import { CONFIG } from "../config";
  * What the killfeed calls a leash death.
  *
  * It lives here rather than in either killfeed because both of them draw it and
- * the two must not drift: offline `Game` writes the line straight, and in a
- * match the authority sends `killer: -1` and every client writes it. A death
+ * the two must not drift: a death nobody dealt is the leash — offline the
+ * core's `damaged` with no `from`, in a match the authority's `killer: -1` —
+ * and the page writes the line off it either way. A death
  * with no killer is the only kind in the game — friendly fire is excluded by
  * construction, so every other one is the other side — which is exactly why the
  * feed cannot be left to derive it.

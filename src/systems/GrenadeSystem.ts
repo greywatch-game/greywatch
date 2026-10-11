@@ -339,7 +339,7 @@ export class GrenadeSystem {
   onBlast: (at: Vector3Like, power: number, ground: BlastGround) => void = () => {};
 
   /**
-   * Wired by Game: a blast happened here, and this is what it landed on.
+   * Wired by `SimCore`: a blast happened here, and this is what it landed on.
    *
    * The light, the sound, the camera's concussion and the two ground layers —
    * the chunks and the scorch mark — all hang off this. None of them are this
@@ -354,7 +354,7 @@ export class GrenadeSystem {
     () => {};
 
   /**
-   * Wired by Game: the blast hurt someone. `killed` is whether it finished
+   * Wired by `SimCore`: the blast hurt someone. `killed` is whether it finished
    * them, `thrower` is the team to credit, and `by` is the combatant who threw
    * it — the one thing a kill needs that cannot be worked out at the far end.
    *
@@ -388,7 +388,7 @@ export class GrenadeSystem {
   onBurntOut: (id: number) => void = () => {};
 
   /**
-   * Wired by Game: a fire burned someone. `onBlastHit`'s four arguments, and a
+   * Wired by `SimCore`: a fire burned someone. `onBlastHit`'s four arguments, and a
    * callback of its own rather than that one, because what a BURN owes the
    * thrower is not what a blast does: it arrives four times a second for as
    * long as somebody stands in it, so a hitmarker per tick would be a strobe.

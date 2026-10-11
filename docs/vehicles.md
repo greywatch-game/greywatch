@@ -1827,7 +1827,7 @@ entirely, and the shape a round is tested against is the shape that is drawn.
 ## The TRACKS, and the one thing armour does that is not a weapon
 
 **A hull kills what it drives through.** `crushSweep` (`systems/hullRules.ts`,
-one function both simulations call) runs immediately after
+one function, which the core calls for every host) runs immediately after
 `VehicleSystem.update`, once per frame per moving hull, and puts down
 every enemy body the collider is standing in.
 
@@ -1874,7 +1874,7 @@ moves one.
 | --- | --- |
 | `tank.alive` | a wreck mowing down whatever it was rolling toward when it died. **The one gate here that stops something that would otherwise HAPPEN**: a wreck keeps the momentum it was killed with and `coast` carries it, so a burning hull genuinely does slide through the street it died in — it simply cannot kill anybody doing it |
 | `speed >= crush.minSpeed` (1.5 m/s) | a hardstanding becoming a mincer. Bots walk into parked armour all round, for the reason at the top of this section, and a hull with no speed gate would fill its own side's ticket count while sitting still |
-| a DRIVER | crediting a kill to nobody. It is barely a rule — an empty hull is also one that is not moving — but `by` is what a kill is filed against, and `hullRules.driverOf` is where a person's seat and the bot crew are asked in `VehicleSystem`'s own order — each simulation answers the person half (`HullRules.personIn`) |
+| a DRIVER | crediting a kill to nobody. It is barely a rule — an empty hull is also one that is not moving — but `by` is what a kill is filed against, and `hullRules.driverOf` is where a person's seat and the bot crew are asked in `VehicleSystem`'s own order — each `HullRules` host — the core, and a match client's prediction — answers the person half (`HullRules.personIn`) |
 
 The gunner is never the killer: the man on the cupola gun moves nothing.
 

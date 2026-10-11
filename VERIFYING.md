@@ -812,11 +812,11 @@ is one machine's:
 - **A BOT CREW is stepped with `crew.update(dt)` immediately before the
   fleet**, in that order and never the other way round — it writes the drive
   input `vehicles.update` then consumes. Offline both are the simulation
-  core's (`g.core.crew`, `g.core.vehicles`, in `g.core.step`'s own order); read
-  `g.crew` below as `g.core.crew`. Four things that have already cost time:
+  core's (`g.core.crew`, `g.core.vehicles`, in `g.core.step`'s own order).
+  Four things that have already cost time:
   - **Boarding is on its own 1.5 s clock** (`crew.boardDelay`), so a script that
     spawns a bot beside a hardstanding and steps two frames sees nothing. Step
-    ~2 s of game time, or read `g.crew.crews.length` rather than asserting on
+    ~2 s of game time, or read `g.core.crew.crews.length` rather than asserting on
     the first tick. The bot has to be ALIVE, of its hull's own team, within
     `crew.boardRadius` and not `g.core.battle.aside(...)` — and the player's
     `addPlayer` has already benched the lowest slot on their side, so picking
@@ -830,9 +830,9 @@ is one machine's:
     hull's cupola sits five centimetres above the top of its own collider, so
     every sightline to anything shorter dives back into the box: the raw call
     reports no visibility in any direction and looks like a broken map.
-    `g.crew.ctx.visibleFrom(tank, point)` is the one that takes the hull out of
+    `g.core.crew.ctx.visibleFrom(tank, point)` is the one that takes the hull out of
     the pick.
-  - `g.crew.clearAlong(tank, yaw)` and `g.crew.pickBearing(tank, wantYaw)` are
+  - `g.core.crew.clearAlong(tank, yaw)` and `g.core.crew.pickBearing(tank, wantYaw)` are
     the whiskers, and sweeping 24 bearings through the first is the fastest way
     to see what a stuck driver thinks the world looks like. A hull with the
     throttle at 1.0 and `travel` near zero is the sweep refusing —
@@ -1950,8 +1950,9 @@ is one machine's:
   `g.mapDef.id` — the end state alone cannot tell one build from two.
 - **The whole of spawn selection is testable without a browser, and two of the
   three ways are faster than one.** `dist-server/assets/SimCore-*.js`
-  exports the simulation (`H`) and the world chunk exports `MAPS`/`CONFIG`
-  (`M`/`C`), so a scratch `.mjs` can `addPlayer`, set `deployRequest`, step at
+  exports the simulation (`S` today — the letter is the minifier's, so read the
+  chunk's export list) and the world chunk exports `MAPS`/`CONFIG` (`M`/`C`),
+  so a scratch `.mjs` can `addPlayer`, `submit` a `deploy`, step at
   `1/60` and assert on the clock in milliseconds of wall time — including
   `takeDamage(999)` for a death the rules actually dealt. A raw `ws` client
   covers the protocol half (join, refuse, fall back) with no rendering at all.
@@ -2012,6 +2013,26 @@ is one machine's:
   same command run before the change, must print the same one. A change that
   moves a draw (a new outcome stream, a different order of draws) is expected
   to change it, and says so.
+- **When the hash moves, `--events` says WHERE**: `node dist-server/simulate.js
+  <map> 1 1 <seed> --events` (after `npx vite build -c vite.server.config.ts`)
+  prints every event the core wrote, one `<tick> <kind> <fields>` line each in
+  emission order at full precision, so two runs diff line by line and the
+  first differing line names the divergence (`grep -E "^[0-9]+ [a-z]"` keeps
+  only the events; an md5 of that is the quick equality check). `--frame`
+  builds the core `publish`ing, so the tick printed carries the frame's fill
+  and its price; `--phases` hands the core a clock and prints its five step
+  phases beside the tick. Neither moves the fight — the hash and the event
+  list must be the plain run's.
+- **The BENCHMARK's fight is the page's oracle for the same claim**, and it
+  is read off a static build: `npx vite build --outDir <scratch>/dist-x`, `node
+  node_modules/vite/bin/vite.js preview --outDir <scratch>/dist-x --port 4931
+  --strictPort`, then `node plans/webgpu-ref/bench.mjs <maps> --runs 2 --size
+  1280x720 --url http://localhost:4931 --out f.json`, which reads
+  `__profile.last().bench.fight.hash` and fails on runs that disagree (about a
+  minute and a half a map; the hash is viewport-independent). A static build is
+  not rebuilt by an edit mid-run, which is the point. `--query simcopy` (any
+  build) and `--query simcheck` (no `--url`, so a dev server) ride the same
+  run.
 - **It is also where a server TIMING question is answered, and no browser can
   answer one.** The same run prints the per-tick distribution against the
   16.67 ms step, the ticks filed by how many bots were in contact, and where

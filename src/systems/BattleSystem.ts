@@ -48,15 +48,17 @@
  * benches the local player's, which is what makes a single-player round 8v8
  * rather than 8v9.
  * HOW BIG THE ROSTER IS is the MAP's on both sides now (`MapLayout.perTeam`,
- * resolved by `perTeamOf`), and the two sides spend it differently. Offline
- * `Game.buildRound` sizes the POOL to it through `setRoster` (and `BattleView`
- * follows with the rigs, rebuilt off `poolVersion`). On the authority
+ * resolved by `perTeamOf`), and the two hosts of the core spend it
+ * differently (`RoundSpec.pool`/`fielded`). Offline `Game.buildRound` hands
+ * `SimCore.startRound` a POOL of exactly that size, which reaches `setRoster`
+ * (and the page's `BattleView` follows with the rigs, rebuilt off the frame's
+ * `poolVersion`). On the authority
  * the pool is `CONFIG.bots.maxPerTeam` a side once and for ever — a slot index
  * is a bot index there and team 1's block must start at the same number on
  * every map a match rotates onto — and `setFielded` is what says how many of
  * it this round is fighting. Nothing in this file is written against a
  * particular size, and the two numbers are the same one offline, where
- * `setFielded` is a no-op.
+ * the whole pool is fielded.
  */
 import { CONFIG } from "../config";
 import { Bot, type BattleCtx, type BotZone } from "../entities/Bot";
@@ -132,7 +134,7 @@ export class BattleSystem {
   poolVersion = 0;
 
   /**
-   * Wired by Game: a bot's round killed somebody.
+   * Wired by `SimCore`: a bot's round killed somebody.
    *
    * The VICTIM is whatever the ray found and may be anybody a bot is allowed to
    * shoot — another bot, the local player, a person on the server's roster — so
@@ -145,30 +147,30 @@ export class BattleSystem {
    *
    * `by` is the bot that fired, and it is the only thing here that cannot be
    * derived: a victim's death is already counted at the victim's own door
-   * (`registerBotKill` on the client, `onPlayerDamaged` for a person), and the
+   * (`settleKill`'s bot door, `SimPlayer.onDamaged` for a person), and the
    * killer's team is `by.team`. What the scoreboard needs is who to credit,
    * which is why this carries an identity rather than a side.
    */
   onBotKill: (victim: Hittable, by: Bot) => void = () => {};
-  /** Wired by Game: a bot pulled the trigger, at this world position. */
+  /** Wired by SimCore: a bot pulled the trigger, at this world position. */
   onBotFired: (bot: Bot, at: Vector3Like) => void = () => {};
-  /** Wired by Game: a bot ran its magazine dry and started reloading. */
+  /** Wired by SimCore: a bot ran its magazine dry and started reloading. */
   onBotReloaded: (bot: Bot) => void = () => {};
-  /** Wired by Game: a bot put a foot down. Short-range sound only. */
+  /** Wired by `SimCore`: a bot put a foot down. Short-range sound only. */
   onBotStepped: (bot: Bot) => void = () => {};
-  /** Wired by Game: where should this bot deploy? */
+  /** Wired by `SimCore`: where should this bot deploy? */
   spawnPointFor: (bot: Bot) => { pos: Vector3Like; yaw: number } | null = () => null;
   /**
-   * Wired by Game: orders for one team's squads, given each squad's centroid
+   * Wired by `SimCore`: orders for one team's squads, given each squad's centroid
    * and what it is currently doing. Resolved as a group so squads can be spread
    * (or deliberately stacked) relative to each other.
    */
   planSquads: (team: Team, centroids: readonly Vector3Like[], previous: string[]) => SquadOrder[] =
     () => [];
-  /** Wired by Game: what is this bot standing on? */
+  /** Wired by `SimCore`: what is this bot standing on? */
   zoneFor: (bot: Bot) => BotZone = () => "none";
   /**
-   * Wired by Game: lob a grenade from `from`, aimed to land at `at`. False when
+   * Wired by `SimCore`: lob a grenade from `from`, aimed to land at `at`. False when
    * the throw cannot be made, and the bot then spends nothing.
    *
    * A callback for the same reason `spawnPointFor` is one — the grenades are
@@ -183,7 +185,7 @@ export class BattleSystem {
     false;
 
   /**
-   * Wired by `Game`: a launcher bot's rocket, from `from` toward `at`.
+   * Wired by `SimCore`: a launcher bot's rocket, from `from` toward `at`.
    *
    * The same shape as the grenade's and for the same reasons — the pool and
    * the flight are `AntiTankSystem`'s, this file forwards the ask and its
@@ -266,7 +268,7 @@ export class BattleSystem {
    * it does NOT do is walk, shoot a rifle, take cover or get shot at — the
    * hull is what is being shot at, exactly as it is for a mounted player.
    *
-   * Written only through `setCrewed`, which `Game` wires to `VehicleCrew`'s two
+   * Written only through `setCrewed`, which `SimCore` wires to `VehicleCrew`'s two
    * announcements. Nothing in this file decides who is driving.
    */
   private readonly crewed = new Set<Bot>();

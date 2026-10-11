@@ -177,10 +177,10 @@ export interface BattleCtx {
    * grenade's ballistics are not: a bot says what it wants to hit and is told
    * whether the launcher could oblige.
    *
-   * Wired on BOTH sides — `Game` offline and `SimCore` in a match — and
-   * it has to be: the authority fields the same hulls, so a launcher bot that
-   * only fired offline would leave a netplay tank with nothing but the other
-   * team's tank to answer it. The rocket is the AUTHORITY's object in a match
+   * Wired by `SimCore`, which is the bots' simulation offline and in a match
+   * alike — and it has to be one copy: the authority fields the same hulls,
+   * so a launcher bot that only fired offline would leave a netplay tank with
+   * nothing but the other team's tank to answer it. The rocket is the AUTHORITY's object in a match
    * exactly as the bot's rounds are.
    */
   fireRocket(bot: Bot, at: Vector3Like): boolean;
@@ -269,8 +269,8 @@ export class Bot implements Combatant {
    * centre — and how much of it there was. Both are already handed to
    * `takeDamage` by every damage path in the game (`CombatSystem.fire` passes
    * the shot's origin, `GrenadeSystem` the detonation point), so a ragdoll
-   * needs no new parameter threaded through the three call sites that converge
-   * on `Game.registerBotKill`. `BotMemory.tookHit` has been reading the same
+   * needs no new parameter threaded through the doors that converge on the
+   * core's `botDown` event (`settleKill`). `BotMemory.tookHit` has been reading the same
    * vector for a different purpose all along.
    */
   readonly deathFrom = new Vector3();

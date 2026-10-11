@@ -49,7 +49,8 @@ server/               # The authoritative match server. Node, no Babylon (the
                       #   round SEED (4th argument) and prints `fight`, a hash
                       #   of the kill list the same seed must reproduce —
                       #   folded off the core's drained events, as is
-                      #   `--events`, the ordered list
+                      #   `--events`, the ordered list; `--frame` prices the
+                      #   published frame, `--phases` the core's own timing
   parity.ts           #   Fingerprint dump for `npm run parity`
   corecheck.ts        #   `npm run corecheck`: the project's one test. Drives
                       #   SimCore with a scripted person and no Game, asserts
@@ -320,8 +321,8 @@ src/
                         #   resolves ONE number into the three body gates
     conquest.ts         # Flags, capture meter, tickets, bleed
     score.ts            # What a kill, a bonus and a flag are worth on the
-                        #   board. Spent by both simulations, so a value here
-                        #   moves the offline round and the authority together
+                        #   board. Spent by the one core (SimCore), so a value
+                        #   here moves the offline round and the authority together
     bots.ts             # Bot AI + the nav grid (bots, nav)
     player.ts           # Movement, crouch, ground probe, vitals
     weapons.ts          # The weapon table, the round, gunfeel (weapons, combat,
@@ -567,18 +568,21 @@ src/
                         #   armed by a setting or ?profile, and costs nothing
                         #   at all while it is off. Allocates nothing while
                         #   recording (GC is what it exists to catch). Game
-                        #   brackets the phases it already sequences; no system
-                        #   has heard of it. Handle: `window.__profile`.
+                        #   brackets the phases it already sequences, and
+                        #   `file`s the core's own step timing under `sim`; no
+                        #   system has heard of it. Handle: `window.__profile`.
                         #   The RECORDER only: lends the ring to profileReport
                         #   at a capture. A benchmark's ring is sized to its
                         #   script, labelled by segment, and HALTED at its end
                         #   rather than disarmed, so it can still be read
     profilePhases.ts    # The profiler's phase list (PHASES, the slot ids P
                         #   and SLOTS) and the tree it nests in (PARENT_OF,
-                        #   ROOTS). Both halves read it, which is why it is
+                        #   ROOTS) — `sim` under `world`, with the core's five
+                        #   children. Both halves read it, which is why it is
                         #   neither's — kept in either, they would be a cycle
     profileReport.ts    # What a capture SAYS: the ProfileReport shape (the
-                        #   JSON the viewer reads), buildReport, buildTrace and
+                        #   JSON the viewer reads; v14 adds SegmentStat.sim),
+                        #   buildReport, buildTrace and
                         #   the stats. Allocates freely and never writes the
                         #   ProfileRing it is lent
     PipelineWarmup.ts   # Where the building card stands the camera while the
@@ -623,6 +627,8 @@ src/
                         #   draws, and Player.recoilKick is still the one door
   entities/
     Player.ts           # Movement, sprint, crouch, jump, weapon state — the
+                        #   local player as a PREDICTION, offline as in a match
+                        #   (the core holds the real one, a SimPlayer); the
                         #   body is fields (mid, ellipsoid) the sweep moves as
                         #   a SweepBody; draws nothing and imports no Babylon,
                         #   telling its PlayerPicture what happened
@@ -710,7 +716,7 @@ src/
                         #   reload, `magSize` IS a life's ammunition) and into
                         #   the OrdnanceEffect a detonation is spent through —
                         #   and `resolveOrdnance`, the one place it is spent,
-                        #   called by both simulations
+                        #   called by the core alone (a client predicts no blast)
     throwables.ts       # ThrowableId (frag | molotov), the kit order, and the
                         #   pouch size every side asks — the throwable slot's
                         #   `equipment.ts`, with no WeaponSetup behind it
@@ -864,7 +870,8 @@ src/
                         #   Simulation only: src/math, no rig, no Babylon;
                         #   `shown` says whether the body is in the world
     BotRig.ts           # A bot's PICTURE: its SoldierRig, root and pose
-                        #   written off the Bot, the launcher tube, and the
+                        #   written off a BotRead (the core's BotMirror
+                        #   offline), the launcher tube, and the
                         #   RagdollSubject (`ragdolling`). Reads, never writes.
                         #   Client only
     BotMemory.ts        # One bot's decaying picture of the fight (src/math)
@@ -880,7 +887,9 @@ src/
                         #   the rifle's kick, carry and reload), solveSoldier
                         #   to the joint channels, the skeleton's measures the
                         #   rig is built from, and the bot's MUZZLE replayed
-                        #   off them in src/math, bit for bit the node chain
+                        #   off them in src/math, bit for bit the node chain.
+                        #   packJoints/unpackJoints: the solved joints as the
+                        #   core's frame carries them, bit for bit
     SoldierMotion.ts    # One body's motion turned into a SoldierPose: gait
                         #   phase and stepLength, velocity in the feet's frame,
                         #   kick, reload, ready. Bot and NetSoldier drive the
@@ -912,6 +921,7 @@ src/
                         #   one thing in the kit that is not a weapon at all
   systems/
     BattleSystem.ts     # Bot pool, AI scheduling, LOS, squads, the bench.
+                        #   The core's alone (the page builds none).
                         #   Simulation only: src/math, no scene, no camera
     BattleView.ts       # The roster's PICTURE: a BotRig per bot of a
                         #   `RosterRead` Game names (the core's offline, none in
@@ -925,30 +935,33 @@ src/
                         #   `teardownMap`. Client only
     ConquestSystem.ts   # Flags, meters, tickets, bleed, spawns, planSquads,
                         #   what a bot's flag means to it (`zoneFor`), and
-                        #   `scatterSpawn` — both simulations ask all three.
+                        #   `scatterSpawn` — the core asks all three.
                         #   Babylon-free; a scattered spawn is `src/math`'s
     ScoreBook.ts        # The round's board: points, kills and deaths, one row
                         #   per roster SLOT. A ledger, not a system — no update,
-                        #   reaches nothing. One per simulation (Game offline,
-                        #   SimCore on the authority), and `awardKill` and
-                        #   `awardZone` are the one place each that a payout's
-                        #   shape is decided — both sides call the same two
+                        #   reaches nothing. ONE, held by SimCore offline and
+                        #   on the authority alike, and `awardKill`, `awardZone`
+                        #   and `paysKiller` are the one place each that a
+                        #   payout's shape is decided — called by that one core
     RoundRandom.ts      # The ROUND's seed and every outcome stream drawn from
                         #   it (the cones, the spawns, a crew's lay), one per
-                        #   shooter, reseeded in place once a round by each
-                        #   simulation. Not a system — reaches nothing. Also
+                        #   shooter, reseeded in place once a round by the
+                        #   core; the page keeps its own for STREAM.player (its
+                        #   cone) alone. Not a system — reaches nothing. Also
                         #   `freshSeed`, `parseSeed` and `UNDRAWN`
     killRules.ts        # `settleKill`: the killer's row, then the victim's door
-                        #   if a bot fell. Every door onto a kill, both sides,
-                        #   goes through it, against each side's `KillLedger`.
+                        #   if a bot fell. Every door onto a kill in the core
+                        #   goes through it, against SimCore's `KillLedger` (a
+                        #   match client's predicted round hands NO_LEDGER).
                         #   Also `DeathCause`, the vocabulary simulate files,
                         #   and the person's AUDIT door (`personDown`) SimCore
                         #   files a person's death under
-    hullRules.ts        # What a hull does, once for both simulations: the main
+    hullRules.ts        # What a hull does, stated once, for the core: the main
                         #   gun, the cupola gun, the tracks (`crushSweep`), the
                         #   driver a crush is credited to, and a crew's death.
                         #   No picture — Game draws off what the guns return;
-                        #   each side hands in a `HullRules` context
+                        #   SimCore hands in a `HullRules` context, and Game a
+                        #   second only for a match client's PREDICTED round
     CaptureZoneSystem.ts# Flags drawn in the world: ring, skirt, flag on its pole
     FlagCloth.ts        # One flag: the pole and a Verlet cloth flown in the wind
     BulletMarks.ts      # The holes a round leaves behind: a ring of pooled decal
@@ -1249,8 +1262,9 @@ src/
                         #   inside the boundary it is handed
     leash.ts            # What stops a player leaving a map that has no wall:
                         #   one clock per body, and the verdict it reaches.
-                        #   Pure — the caller does the killing, and offline that
-                        #   is Game while in a match it is SimCore
+                        #   Pure — the caller does the killing, which is
+                        #   SimCore offline and in a match; the page only runs
+                        #   the clock to draw the countdown
     roads.ts            # The road FOOTPRINT — rectangles, plus the convex
                         #   pieces a path resolves to — and the two questions
                         #   it answers: is this ground PAVED, and where two
@@ -1924,15 +1938,18 @@ src/
                       #   imports nothing from server/. Every file is a root of
                       #   check-babylon-free.mjs
     SimCore.ts        #   The simulation, on the authority AND offline (the
-                      #   page holds one since X2.5a C4a), wired by the same
-                      #   rules as core/Game.ts. Owns the armour
-                      #   too — the fleet, the bot crews and the AT kit — plus
-                      #   `seat`, which is `Game.mount`/`clearVehicle` as one
-                      #   method. Builds the SIMULATIONS only, never a view, and
+                      #   page holds one since X2.5a C4a): the one place the
+                      #   simulation's systems meet, wired once here by
+                      #   callbacks (systems never import each other). Owns
+                      #   the armour too — the fleet, the bot crews and the AT
+                      #   kit — plus `seat`, the one writer of a chair (the
+                      #   page's `mount`/`clearVehicle` are only its picture
+                      #   half). Builds the SIMULATIONS only, never a view, and
                       #   has no engine and no scene. `startRound(RoundSpec)` is
                       #   synchronous (`pool` + `fielded`); `anchor`/`drop` are
                       #   the host's clock; `SimCoreOptions` (rewind,
-                      #   hostHoldsRespawn, publish) are the hosts' roles. A person
+                      #   hostHoldsRespawn, timing, publish) are the hosts'
+                      #   roles and change no rule. A person
                       #   reaches it through `submit` alone (commands.ts), and
                       #   the rules a command meets — pouches, seat policy,
                       #   `deployPerson` — are here once. No outward callback:
@@ -1946,8 +1963,10 @@ src/
                       #   one writer) — header, flags, bots (root, centre, eye,
                       #   life, death, SOLVED joints packed bit for bit),
                       #   persons, hulls + chairs, the four pools, the board,
-                      #   the target list's order, broken panes, a `timing`
-                      #   row for C6. Postable: structuredClone is the same frame
+                      #   the target list's order, broken panes, the step's
+                      #   `timing` (filled only while `timeSteps` is on, off
+                      #   the host's injected clock). Postable: structuredClone
+                      #   is the same frame
     mirror.ts         #   The page-side READERS of the frame, in the shapes the
                       #   views ask: SimMirror — RosterMirror (a BotMirror per
                       #   slot, what a BotRig follows; `BotRead`/`RosterRead`
@@ -1971,14 +1990,17 @@ src/
                       #   Every number captured at emission; kind byte + tick +
                       #   12 float64s a record, an int side array for pane
                       #   lists. Allocation-free to write
-    SimPlayer.ts      #   A connected human as the simulation sees one — the
-                      #   only position anything on the server trusts
+    SimPlayer.ts      #   A person as the simulation sees one — a match's
+                      #   peer or the offline page's player — driven by
+                      #   commands; the only position the core trusts
     simWorld.ts       #   buildSimWorld: the solid world rebuilt from the baked
                       #   boxes and the floor as DATA (queries, nav, cover — no
                       #   mesh): the collider half of MapBuilder and nothing
                       #   else. Loads nothing; the host does
-    LagComp.ts        #   Position history + the rewind around a shot. `resolve`
-                      #   takes a callback so the restore cannot be skipped
+    LagComp.ts        #   Position history + the rewind around a shot, kept
+                      #   only under `SimCoreOptions.rewind` (the authority's).
+                      #   `resolve` takes a callback so the restore cannot be
+                      #   skipped
     reportedLanding.ts #  The crash of a hull a PERSON flies (FINDINGS 60):
                       #   `Vehicle.update`'s jolt asked of the accepted `drive`
                       #   reports (plank via `Vehicle.restAt`, the reporter's

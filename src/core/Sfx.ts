@@ -888,10 +888,10 @@ export class Sfx {
    * A round cracking past the player's head. Not a hit and not a hit sound —
    * the supersonic N-wave, which arrives *before* the report of the rifle that
    * fired it and is the only thing that tells you you are being shot at rather
-   * than shot near. Wired from `CombatSystem.onNearMiss` for the player only
-   * offline, and from the authority's `nearmiss` event in a match — ONE method
-   * for both, so the two simulations cannot make different noises about the
-   * same round.
+   * than shot near. Wired from the core's `nearMiss` event offline and from the
+   * authority's `nearmiss` event in a match (`Game.roundPassed`, the one
+   * door) — ONE method for both, so the two cannot make different noises
+   * about the same round.
    *
    * **FIVE LAYERS MODELLED ON A RECORDED FLYBY**, and the shape they make
    * between them is the whole of why this is no longer one bandpassed burst.

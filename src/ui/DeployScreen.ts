@@ -15,8 +15,9 @@
  * round belongs in `draw`. The offer is derived from flag ownership and changes
  * UNDER the cursor, so the cursor is held by identity (`selectedSpawn`) and
  * never as an index. Every per-frame write is compared before it is made. What
- * `onDeploy` means is the caller's: offline Game deploys, in a netplay round it
- * sends a request and `setPending` is how this screen says so. Reads no input:
+ * `onDeploy` means is the caller's: offline Game submits a `deploy` to the
+ * core, in a netplay round it sends a request and `setPending` is how this
+ * screen says so. Reads no input:
  * `Game` calls the verbs (`moveSelection`, `confirm`) and pushes the device.
  *
  * **IT IS A FRONT END, NOT A FORM.** It read as one: a heading reading "Select

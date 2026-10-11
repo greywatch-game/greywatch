@@ -22,15 +22,17 @@ The kit is six things and one line of map data:
 | `systems/AntiTankSystem.ts` | the rocket pool, the mine pool, the arm clocks and the trigger test — a SIMULATION: a rocket's and a mine's position is its own `src/math` `pos` field, nothing here is a mesh, and the authority runs it whole |
 | `systems/AntiTankFx.ts` | the PICTURE of both pools: a `RocketBody` per rocket slot (faced down its velocity, the motor guttering off metres flown) and a `MineBody` per mine (the lamp off the arm clock), posed off `rocketSlots`/`mineSlots` after every `update` and never writing them. Client only; `net/NetOrdnance` draws the wire's copies through the same two bodies |
 
-`Game` is the only place they meet, exactly as with every other system. It holds
-the pick (`Game.equipment`), decides whether there is a slot for it
-(`armourOffered`), branches the trigger into `fireOrdnance`, and answers the one
+They meet where every other system does: the simulation's half in `SimCore`,
+the page's in `Game`. `Game` holds the pick (`Game.equipment`), decides whether
+there is a slot for it (`armourOffered`), branches the trigger into
+`fireOrdnance` (an `ordnance` command offline), and the core answers the one
 question the system asks about a world it may not know.
 
 **There is no third system-to-system edge.** `AntiTankSystem` has never heard of
 a `VehicleSystem`, a `Vehicle`, a `Player` or a `GrenadeSystem`: it asks "is there a
 hostile hull within this many metres of this point" through `hullNear` and
-announces "this went off, on this" through `onDetonated`, and `Game` wires both.
+announces "this went off, on this" through `onDetonated`, and `SimCore` wires
+both (`Game` wires `hullNear` again for a match client's predicted rocket).
 
 ## One slot, two items, and why they are one decision
 

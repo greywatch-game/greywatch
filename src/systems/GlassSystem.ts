@@ -87,7 +87,7 @@
  * rather than approximate: measured against a full re-sweep of all seven
  * fields, all 7.1 M step counts on Cinderhaven agree.
  *
- * That also puts the two simulations back in step. The drain was a second call
+ * That also put the offline round and the authority back in step. The drain was a second call
  * a caller had to remember and `SimCore` never made it, so on the
  * authority a break relinked the graph and left every field routing bots round
  * a window that was no longer there — for the rest of the round, not for seven

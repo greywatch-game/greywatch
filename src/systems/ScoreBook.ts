@@ -17,19 +17,18 @@
  * kind and writes it, and nothing else. The two functions below are where that
  * is decided, and they are free functions rather than methods for the reason
  * each states: what they need (a victim, the flag they fell on, who holds it,
- * what a slot means on this side) is three systems' worth of fact, gathered by
- * the wiring — `Game.creditKill`/`awardZone` and `SimCore`'s pair — and
- * handed in.
+ * what a slot means) is three systems' worth of fact, gathered by the wiring
+ * — `SimCore.creditKill`/`awardZone` — and handed in.
  *
- * **There is one of these per simulation, and that is the point.** The offline
- * round and the authority used to keep a `slotKills`/`slotDeaths` pair each,
- * with a `creditKill` and a `registerDeath` each, written twice and documented
- * twice; adding a third column to that arrangement would have been a third
- * thing to keep in step across two files that can only be compared by reading
- * them. A client in a NETPLAY round still owns one and never writes to it —
- * the board there is the authority's and arrives whole (`NetSession`), because
- * a client adding up the events it happened to receive would show a different
- * board on every screen.
+ * **There is ONE of these, the simulation core's, and that is the point**
+ * (`SimCore.scores`, offline and on the authority alike since `BABYLON_EXIT.md`
+ * X2.5a C4a). The offline round and the authority used to keep a
+ * `slotKills`/`slotDeaths` pair each, with a `creditKill` and a
+ * `registerDeath` each, written twice and documented twice, and later one of
+ * these each. The page draws the core's off its frame (`ScoresMirror`); a
+ * client in a NETPLAY round draws the authority's, which arrives whole
+ * (`NetSession`), because a client adding up the events it happened to
+ * receive would show a different board on every screen.
  */
 import { CONFIG } from "../config";
 import type { Combatant, Team } from "../entities/Combatant";
@@ -151,8 +150,8 @@ export interface ZoneOwnership {
  *
  * Structural for `ZoneOwnership`'s reason — it keeps this file free of
  * `CombatSystem`, and every `Hittable` and every `Combatant` satisfies it by
- * construction, which is what lets both simulations hand in whatever they have
- * in their hand at the door.
+ * construction, which is what lets every door hand in whatever it has in its
+ * hand.
  */
 export interface KillVictim {
   readonly armoured?: boolean;
@@ -171,15 +170,15 @@ export interface KillVictim {
  *
  * **Stated here because it was stated at six doors and had already drifted at
  * three of them.** Every site guarded its own credit by hand, and the two
- * simulations reached for two different tests — `instanceof Bot` on the client,
+ * simulations there were then reached for two different tests — `instanceof Bot` on the client,
  * `!armoured` on the authority — which are not the same question: the first
  * also excludes a PERSON, so a bot crew running the player over or putting a
  * shell into them scored on the authority and scored nothing offline. That is
  * the failure `awardKill` exists to prevent, arriving one level up from it:
  * not a crash, but a player learning in practice a scoring rule the match they
- * take it into does not run. It is applied inside `Game.creditKill` and
- * `SimCore.creditKill` rather than at the call sites, so a new door onto
- * a kill inherits it instead of having to remember it.
+ * take it into does not run. It is applied inside `SimCore.creditKill` — the one
+ * `creditKill` there is now — rather than at the call sites, so a new door
+ * onto a kill inherits it instead of having to remember it.
  *
  * A `null` victim pays the kill and no zone bonus, which is what the authority
  * has always done with one: every path that resolves a kill has a body in hand
@@ -193,8 +192,8 @@ export function paysKiller(victim: KillVictim | null | undefined): boolean {
 /**
  * Everything one kill pays, in the order it is paid.
  *
- * **The one place the shape of a payout is decided.** The offline round and
- * the authority both reach it with the same facts, so a kill is worth the same
+ * **The one place the shape of a payout is decided.** The one core reaches
+ * it offline and on the authority with the same facts, so a kill is worth the same
  * on a single-player board as it is on sixteen networked ones — the
  * failure this replaces is not a crash but a quiet disagreement, where a
  * player learns a scoring rule in practice that the match they take it into
@@ -225,8 +224,8 @@ export function awardKill(
 /**
  * Pays everyone of `by` standing in `point` for what the flag just did.
  *
- * **`awardKill`'s sibling, and here for the same reason.** The offline round
- * and the authority both run this pass over their own bodies, and it was
+ * **`awardKill`'s sibling, and here for the same reason.** The core runs this
+ * pass over its bodies, offline and on the authority; it was once
  * written out twice — identically, and documented twice — while the payout it
  * pays through was already stated once, one function up. A capture is worth
  * the same on a single-player board as it is on sixteen networked ones, and
@@ -244,9 +243,8 @@ export function awardKill(
  * `ZoneOwnership` keeps it free of `ControlPoint`: what is compared is
  * IDENTITY, and the caller says what a point is and how a body is found in
  * one. `slotOf` is handed in for the same reason it is not a method here — a
- * slot is a bot index on one side and a `SimPlayer`'s own number on the other,
- * and that is the one thing about this pass the two simulations genuinely
- * disagree about.
+ * slot is a bot index for a bot and a `SimPlayer`'s own number for a person,
+ * which is the core's to know and not the board's.
  */
 export function awardZone<P>(
   book: ScoreBook,

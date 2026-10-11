@@ -2,18 +2,18 @@
  * killRules.ts — what a kill owes once something has put a body down: the
  * killer's row, and the victim's door when the victim was a bot.
  * Owns: `settleKill`, the one statement of that pairing; `KillLedger`, the two
- * doors each simulation implements for it; and `DeathCause`, the vocabulary
+ * doors the simulation core implements for it; and `DeathCause`, the vocabulary
  * those doors are filed under.
  * Invariants: the KILL is credited at the killer's door and the DEATH counted
  * at the victim's, once each (`ScoreBook`'s rule). The credit is asked FIRST,
  * whoever fell, and the death door is reached only for a `Bot` — a person's
  * death has already been COUNTED by its own `onDamaged` by the time anything
- * here runs, on both sides of the wire, so what a person is owed here is only
+ * here runs, so what a person is owed here is only
  * the AUDIT of that death (`personDown`): which door, and whether anybody was
  * paid. A bot is told by `Hittable.isBot`, never by `instanceof`: this module
  * imports `Bot` as a TYPE only, so the kill path pulls no rig and no scene
- * into either simulation.
- * Never: decide WHETHER a body pays (`paysKiller`, inside each `creditKill`)
+ * into the core.
+ * Never: decide WHETHER a body pays (`paysKiller`, inside `SimCore.creditKill`)
  * or what it pays (`awardKill`), and never hold state — the ledger is the
  * simulation's, handed in.
  *
@@ -22,7 +22,8 @@
  * cupola gun, the tracks — used to write "credit the killer, then if it was a
  * bot charge its death" out by hand, on the client and again on the
  * authority, and the two had already disagreed about what `creditKill`
- * returned. A door that goes through `settleKill` cannot forget either half.
+ * returned. A door that goes through `settleKill` cannot forget either half —
+ * and since `BABYLON_EXIT.md` X2.5a C4a every door is the core's.
  */
 import type { Bot } from "../entities/Bot";
 import type { Combatant, Team } from "../entities/Combatant";
@@ -62,9 +63,10 @@ export type DeathCause =
   | "other";
 
 /**
- * The two doors a kill reaches, as one simulation keeps them. `Game` and
- * `SimCore` each build one, once, out of their own `creditKill` and their
- * own bot-death bookkeeping.
+ * The two doors a kill reaches, as the simulation keeps them. `SimCore`
+ * builds the one that pays, once, out of its `creditKill` and its bot-death
+ * bookkeeping; a match client's predicted hull round hands in one that pays
+ * nobody (`Game`'s `NO_LEDGER`).
  */
 export interface KillLedger {
   /**
@@ -93,9 +95,9 @@ export interface KillLedger {
    * anybody to pay — and nothing else. The ticket, the row and the feed are
    * all spent before this runs and none of them reads it.
    *
-   * Optional because only `SimCore` keeps the audit: the offline `Game`
-   * files no cause for anybody until it hosts the core (`BABYLON_EXIT.md`
-   * X2.5a C4a). Reached for every victim that is neither a bot nor armour,
+   * Optional because only the core's ledger keeps the audit: the other
+   * ledger there is, a match client's `NO_LEDGER` for its predicted hull
+   * round, pays and files nothing. Reached for every victim that is neither a bot nor armour,
    * so a ledger that keeps it checks for its own kind of person.
    */
   personDown?(victim: Hittable, cause: DeathCause, credited: boolean): void;
@@ -123,7 +125,7 @@ export function settleKill(
     ledger.botDown(victim, killer, by, cause, credited, headshot);
   } else if (!victim.armoured) {
     // A person — a hull is no body and its crew are filed at their own doors
-    // (`crewLost`, and each simulation's `onDestroyed` for a person aboard).
+    // (`crewLost`, and `SimCore`'s `onDestroyed` for a person aboard).
     ledger.personDown?.(victim, cause, credited);
   }
 }

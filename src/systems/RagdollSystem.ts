@@ -251,8 +251,9 @@ export class RagdollSystem implements PhysicsClient {
     if (Math.sqrt(gx * gx + gy * gy + gz * gz) > this.viewDistance) {
       return false;
     }
-    // A body already held is not offered twice. `registerBotKill` is the one
-    // caller and fires once, but a rig in two slots would be two sets of
+    // A body already held is not offered twice. Each death has one caller
+    // (`Game.botDown`, a match's `NetRoster.onDeath`, the death cam) and fires
+    // once, but a rig in two slots would be two sets of
     // bodies fighting over the same joints.
     if (subject.ragdolling || this.slots.some((s) => s.subject === subject)) {
       return false;

@@ -73,10 +73,10 @@ export class ConquestSystem {
   /** Set once a side runs out; null while the round is live. */
   winner: Team | null = null;
 
-  /** Wired by Game: a flag changed hands (for the HUD and a sound). */
+  /** Wired by `SimCore`: a flag changed hands (the capture awards, then its `captured` event). */
   onCaptured: (point: ControlPoint, by: Team) => void = () => {};
   /**
-   * Wired by Game: a flag went neutral, and which side pushed it there.
+   * Wired by `SimCore`: a flag went neutral, and which side pushed it there.
    *
    * The team is carried rather than looked up by the handler, because by the
    * time one runs the only trace of who did it is who is standing in the ring
@@ -90,8 +90,8 @@ export class ConquestSystem {
    * Which spawn a body takes and where inside it — the ROUND's stream
    * (`RoundRandom`, `STREAM.spawn`), one for every body on both sides, since a
    * spawn is the round's decision rather than a shooter's. Public for the
-   * other half of the same decision, `scatterSpawn`, which both simulations
-   * call with it.
+   * other half of the same decision, `scatterSpawn`, which `SimCore` calls
+   * with it.
    */
   readonly spawnRand: Rand;
 
@@ -170,7 +170,7 @@ export class ConquestSystem {
    * flag it merely walked across — is `none`.
    *
    * A conquest rule rather than wiring, which is why it is here and not a
-   * lambda in each simulation: whether a bot is holding or contesting is the
+   * lambda in the wiring: whether a bot is holding or contesting is the
    * squad's POSTURE (`defending`) read against who owns the ring, and the
    * client and the authority used to state that test once each.
    */
@@ -426,12 +426,12 @@ function near(a: Vector3Like, b: Vector3Like, dist: number): boolean {
  * A spawn POINT scattered into a POSITION, so a whole reinforcement wave sent
  * to one point does not arrive inside itself.
  *
- * **Both simulations resolve a spawn through this and nothing else** — the
- * offline round in `Game.spawnPointFor` and the deploy screen, the authority
- * in `SimCore.spawnPointFor` — and a body is never scattered again on
- * ARRIVAL, because a client handed the authority's position must put the body
+ * **The simulation resolves a spawn through this and nothing else** —
+ * `SimCore.spawnPointFor`, offline and on the authority alike (the page asks
+ * with a `deploy` and is TOLD where the body stands) — and a body is never
+ * scattered again on ARRIVAL, because a client handed the authority's position must put the body
  * exactly there (see `Game.spawnPlayer`). The side that scatters is the side
- * that says where the body is, and it draws from that side's round stream —
+ * that says where the body is, and it draws from its round stream —
  * `ConquestSystem.spawnRand`, which every caller passes — because where a body
  * stands decides the fight it walks into.
  *

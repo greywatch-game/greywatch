@@ -44,9 +44,12 @@
  *    reused or renumbered silently re-rolls every round anybody wrote down.
  *  - Asking twice for one key hands back the SAME stream, so a pool rebuilt
  *    mid-session (`BattleSystem.setRoster`) picks up where its slots were.
- *  - One `RoundRandom` per simulation — `Game` offline, `SimCore` on the
- *    authority — and each calls `seedRound` once per round, AFTER everything
- *    that draws has been built and BEFORE the first body spawns.
+ *  - One `RoundRandom` in the simulation — `SimCore`'s, offline and on the
+ *    authority — reseeded by `startRound` once per round, AFTER everything
+ *    that draws has been built and BEFORE the first body spawns. The page
+ *    keeps one more (`Game.random`) for the one stream it still draws, the
+ *    player's own cone (`STREAM.player`), reseeded from the same round seed
+ *    in `buildRound`; the core never registers that key.
  * Never: be drawn from by anything that only makes a PICTURE or a SOUND (the
  * casings, the blast's billows, a voice's pitch) — those stay on
  * `Math.random`, and a picture drawing from an outcome stream would make the
@@ -68,8 +71,10 @@ export const STREAM = {
   /** A bot's spread cone, by the authority's slot. */
   botShot: 2,
   /**
-   * The offline player's shooting: the spread cone, the recoil's drift and
-   * the flinch on taking a hit — everything random about where their rounds go.
+   * The player's shooting: the spread cone, the recoil's drift and the flinch
+   * on taking a hit — everything random about where their rounds go. Drawn on
+   * the PAGE (`Game.random`) and submitted with the round as a direction;
+   * never registered in the core.
    */
   player: 3,
   /** A hull's cupola gun's cone, by hardstanding index. */

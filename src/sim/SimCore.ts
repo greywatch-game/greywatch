@@ -1,11 +1,13 @@
 /**
- * src/sim/SimCore.ts — The authoritative simulation: the systems that
- * decide a round, and the wiring between them. No engine and no scene.
- * Owns: the map's lifetime and the per-tick order. It is the
- * server's answer to `core/Game.ts` and follows that file's rules — systems
- * never import each other, every cross-system behaviour is a callback installed
- * here, and `ConquestSystem.update` runs BEFORE `BattleSystem.update` so a
- * bot's think tick sees this frame's flag ownership.
+ * src/sim/SimCore.ts — The simulation: the systems that decide a round, and
+ * the wiring between them. No engine and no scene. ONE copy, on every host —
+ * the authority, `simulate` and the offline page.
+ * Owns: the map's lifetime and the per-tick order. It is the one place the
+ * SIMULATION's systems meet, as `core/Game.ts` is the one place the page's
+ * views meet its events — systems never import each other, every
+ * cross-system behaviour is a callback installed here, and
+ * `ConquestSystem.update` runs BEFORE `BattleSystem.update` so a bot's think
+ * tick sees this frame's flag ownership.
  * Invariants: NOTHING here may render, and nothing may reach a canvas — see
  * `server/README.md`. **Nothing here imports `@babylonjs/core`, and every
  * vector is `src/math`'s**, as every system this file builds is — the last
@@ -40,7 +42,7 @@
  * (`src/sim/events.ts`, `BABYLON_EXIT.md` X2.5a C2). There is no outward
  * callback on this class: every fact a host used to be called back with — a
  * death, an award, a flag, a blast, a seat, a person's damage — and every
- * presentation fact the page will draw from (a round's tracer, a footstep, a
+ * presentation fact the page draws from (a round's tracer, a footstep, a
  * hull's kick) is WRITTEN, as numbers captured at the moment it happened, in
  * the order it happened, and the host `drain`s after every call it makes on
  * the core. A writer here reads whatever it states off the live object inside
@@ -358,9 +360,9 @@ export class SimCore {
   readonly vehicles: VehicleSystem;
 
   /**
-   * The bots that drive, exactly as they do offline: same FSM, same whisker
-   * fan, same squad order. There is nothing about a crew that is presentation,
-   * so nothing about it changes on this side.
+   * The bots that drive: one FSM, one whisker fan, one squad order, on every
+   * host. There is nothing about a crew that is presentation, so none of it
+   * is anywhere but here.
    */
   readonly crew: VehicleCrew;
 
@@ -610,9 +612,9 @@ export class SimCore {
    * somewhere else entirely.
    *
    * `Game.vehicleOrders`'s counterpart, and the two are mirror images: on a
-   * client every hull but the player's own answers `remoteFor`, and here only
-   * the hulls with a PERSON in them do. A bot crew is simulated on this side
-   * exactly as it is offline, because there is nobody on the far end of a
+   * page every hull but the player's own answers `remoteFor`, and here only
+   * the hulls with a PERSON in them do. A bot crew is simulated here and
+   * nowhere else, on every host, because there is nobody on the far end of a
    * socket to simulate it.
    *
    * `remoteFor` is asked first by `VehicleSystem.update`, which is what makes
@@ -676,10 +678,11 @@ export class SimCore {
   /**
    * Builds a map and starts a round on it.
    *
-   * The same sequence as `Game.buildRound`, minus everything about presentation:
-   * skills are re-drawn for the tier, the world is rebuilt, the roster is reset
-   * and conquest starts. The rig pool is never disposed, so this is the only
-   * place the roster's difficulty can change — exactly as on the client.
+   * The round's SIMULATION half — `Game.buildRound` calls it offline after
+   * building the map's picture, `Match` at every rotation: skills are re-drawn
+   * for the tier, the world is rebuilt, the roster is reset and conquest
+   * starts. The rig pool is never disposed, so this is the only place the
+   * roster's difficulty can change.
    *
    * `spec.seed` is the round's seed (`RoundRandom`), and it is always the
    * HOST's: `npm run simulate` passes the one it was asked to play again, and a
@@ -749,7 +752,7 @@ export class SimCore {
     }
     this.conquest.start(this.map);
     // **Everybody is put back on their feet before the fleet under them is
-    // thrown away**, which is `Game.installMap`'s own first line — "the seat,
+    // thrown away**, which is `Game.teardownMap`'s own first line — "the seat,
     // because the hull it belongs to is about to stop existing" — arriving on
     // the side that never had it. The comment below used to ASSERT this
     // instead, on the grounds that `Match` retires every peer across a
@@ -790,8 +793,8 @@ export class SimCore {
     for (const tank of this.vehicles.hulls) this.battle.removeHuman(tank);
     this.vehicles.build(this.map);
     // Each hull's three told-not-polled moments, as events — the page's
-    // `VehicleView` will be told them off the ring rather than off a hull it
-    // holds. Attached after the build, so the round's own first placing is
+    // `VehicleView` is told them off the ring (onto the page's own posed
+    // hull) rather than off a hull it holds. Attached after the build, so the round's own first placing is
     // not news; a respawn's is. A picture decides nothing (`HullPicture`), so
     // the hull runs the same arithmetic with this as without it.
     for (const [i, tank] of this.vehicles.hulls.entries()) {
@@ -864,9 +867,9 @@ export class SimCore {
   /**
    * One simulation step.
    *
-   * The order is `Game.updateWorld`'s, and for the same reasons: conquest
-   * first so bots see this frame's ownership, bots second, then the rounds
-   * already in the air. Returns false on the tick the round ended.
+   * The order is the round's, on every host (`Game.updateWorld` offline is
+   * this call and the page's views after it): conquest first so bots see
+   * this frame's ownership, bots second, then the rounds already in the air. Returns false on the tick the round ended.
    */
   step(dt: number): boolean {
     const clock = this.timed ? this.clock : null;
@@ -940,7 +943,8 @@ export class SimCore {
       if (player.alive) {
         player.regen(dt);
         // The leash, on a map whose boundary is open — and this is the one that
-        // counts. The client runs the same clock so the countdown is on screen
+        // counts, offline as in a match. The page runs the same clock so the
+        // countdown is on screen
         // the moment the line is crossed, but a client is not asked whether it
         // is still inside the map any more than it is asked whether it was hit.
         //
@@ -948,13 +952,13 @@ export class SimCore {
         // also what makes a player who walks out and then stops sending
         // anything die out there rather than wait it out.
         //
-        // The kill goes through `takeDamage` for the same reason the client's
-        // does: it is the door that charges the ticket, files the death and
-        // tells this player's own screen. No `from` — nobody shot them, so
+        // The kill goes through `takeDamage` like any other death: it is the
+        // door that charges the ticket, files the death and tells this
+        // player's own screen. No `from` — nobody shot them, so
         // there is no bearing to draw an arc from.
-        // **A driver is not leashed**, which is the rule armour already
-        // follows offline — `Game.updateDriver` never steps the clock, because
-        // a tank is not a body walking out of the world. It is a rule with
+        // **A driver is not leashed** (the page's `Game.updateDriver` draws
+        // the same exemption), because a tank is not a body walking out of the
+        // world. It is a rule with
         // teeth on Harrowmead, the one map that has both an open boundary and
         // a hardstanding on it: without this, the first driver to take the
         // long way round a flank would be counted out and burned in his own
@@ -1020,8 +1024,7 @@ export class SimCore {
       return false;
     }
 
-    // The armour, before the bots and after the flags, in `Game.updateWorld`'s
-    // order and for its reasons: a bot's think tick tests line of sight
+    // The armour, before the bots and after the flags, for this reason: a bot's think tick tests line of sight
     // against the solid world and a hull is part of it, so a tank that has
     // just pulled across a street breaks the sightline on the same frame it
     // visibly blocked it. The crews go first because what they write is the
@@ -1041,14 +1044,13 @@ export class SimCore {
       landing.owed = 0;
       if (tank?.alive) tank.crash(cost);
     }
-    // What the tracks killed, in `Game.updateWorld`'s place and for its
-    // reason: immediately after the hulls have moved and before the bots
+    // What the tracks killed, immediately after the hulls have moved and before the bots
     // think, so a body taken by a tank is not a target on the same frame's
     // acquisition. Before the loop below as well, which only rides bodies that
     // are still in a seat.
     crushSweep(this.hullRules);
-    // A driver rides their hull, exactly as `Game.updateDriver` slaves the
-    // player to it: the conquest count above, the rewind, the snapshot and
+    // A driver rides their hull, exactly as the page's `Game.updateWorld`
+    // carries its own player after the fleet it predicts: the conquest count above, the rewind, the snapshot and
     // every bot's idea of where that person is all ask this object where it
     // is, and the honest answer is "in that tank". Done AFTER the hulls have
     // moved, so a body is never a frame behind the thing carrying it.
@@ -1067,12 +1069,11 @@ export class SimCore {
     this.battle.update(dt);
     if (timed) this.closePhase(SIM_BOTS);
     // After the bots, so a grenade thrown on this frame's think tick flies on
-    // this frame rather than sitting in the thrower's hand until the next —
-    // the same order `Game.updateWorld` uses.
+    // this frame rather than sitting in the thrower's hand until the next.
     if (timed) this.openPhase(SIM_GRENADES);
     this.grenades.update(dt);
     if (timed) this.closePhase(SIM_GRENADES);
-    // Beside them, and after `vehicles.update` for the reason `Game` gives: a
+    // Beside them, and after `vehicles.update`: a
     // mine's trigger is a distance test against where a hull IS, and running it
     // before the hull moved would arm the road a frame behind the tank.
     if (timed) this.openPhase(SIM_ANTITANK);
@@ -1160,8 +1161,8 @@ export class SimCore {
   /**
    * Everything the systems need from each other, and everything they say.
    *
-   * The client's `Game.wireBattle` installs sounds and minimap reveals here
-   * too; none of those exist on this side, so what is left is the callbacks
+   * The sounds and the minimap reveals are the page's (`Game.onSimEvent`,
+   * off the events below), so what is here is the callbacks
    * that are actually about the fight — and, since X2.5a C2, a ring write at
    * the end of every one that has news in it. **Every system callback here is
    * this method's and none is a host's**: a callback has one owner, the owner
@@ -1176,14 +1177,14 @@ export class SimCore {
    *   first** and then write the news, so `captured` follows its awards.
    * - **The presentation callbacks** — a round's tracer, a footstep, a fire
    *   going out, a hull's kick — decide nothing and cost a ring write each.
-   *   They are written whether or not anybody draws them, so the page will
-   *   read the same ring the authority's host does.
+   *   They are written whether or not anybody draws them, so the page
+   *   reads the same ring the authority's host does.
    */
   private wire(): void {
-    // A death costs the dying side a reinforcement. This is the whole of what
-    // `Game.registerBotKill` does that is about RULES rather than about feel —
-    // the ragdoll, the sound and the killfeed line are all presentation, and
-    // the board is this side's to keep and the clients' to draw. Without this
+    // A death costs the dying side a reinforcement. This is the whole of a
+    // bot's death that is about RULES rather than about feel — the ragdoll,
+    // the sound and the killfeed line are all presentation (the page's, off
+    // `botDown`), and the board is this side's to keep and the views' to draw. Without this
     // the only thing draining tickets is the flag bleed, and a round runs
     // several times too long in a way that looks like mistuned config rather
     // than a missing callback.
@@ -1199,8 +1200,8 @@ export class SimCore {
     // A round that went past somebody without connecting, which is two
     // different pieces of news and neither of them reaches anyone otherwise.
     //
-    // For a BOT it is suppression, and the client's `Game.wireBattle` has
-    // always wired this — but a bot in a match is simulated here and nowhere
+    // For a BOT it is suppression, which the page's own wiring had always
+    // installed offline — but a bot in a match is simulated here and nowhere
     // else, so without this line the sixteen bots on a server were the only
     // ones in the game that could be sprayed at all day and never flinch.
     //
@@ -1289,7 +1290,7 @@ export class SimCore {
     this.battle.zoneFor = (bot) => this.conquest.zoneFor(bot);
     // A bot asking for a grenade on a position. The arm has the last word: a
     // solve it cannot make returns false and the bot spends nothing.
-    // What leaves the hand is the bot's own pouch, exactly as `Game` wires it.
+    // What leaves the hand is the bot's own pouch.
     this.battle.throwGrenadeFor = (bot, from, at) =>
       this.grenades.throwAt(from, at, bot.team, bot, bot.throwable);
     // A blast resolves against the THROWER's target list, the same way a bullet
@@ -1304,8 +1305,8 @@ export class SimCore {
       emitBlast(this.events, this.tick, at, power, ground.surface, ground.normal);
     // The thrower's row, whoever the blast finished, and a bot's death charged
     // here — a person's already left through `SimPlayer.onDamaged`, which
-    // `takeDamage` raised before this callback ran. `settleKill`, the door the
-    // client's handler goes through too.
+    // `takeDamage` raised before this callback ran. `settleKill`, the door every
+    // kill goes through.
     // The `hit` first — the thrower's hitmarker, for every body the blast
     // reached, killed or not — then the kill.
     this.grenades.onBlastHit = (victim, thrower, by, killed) => {
@@ -1326,7 +1327,7 @@ export class SimCore {
       emitIgnited(this.events, this.tick, id, at, ground.surface, ground.normal);
     this.grenades.onBurntOut = (id) => emitBurntOut(this.events, this.tick, id);
     // A launcher bot's rocket, flown toward the POINT it asked for
-    // (`AntiTankSystem.launchToward`) exactly as `Game` wires it.
+    // (`AntiTankSystem.launchToward`).
     // `considerRocket` has already decided the target is armour.
     this.battle.fireRocketFor = (bot, from, at) => {
       const dir = this.antiTank.launchToward(from, at, bot.team, bot);
@@ -1347,9 +1348,10 @@ export class SimCore {
     // of a blast in the game reporting itself, exactly as it does for a
     // grenade and for a shell.
     this.antiTank.onDetonated = (hit) => resolveOrdnance(hit, this.grenades);
-    // The hull burning, and what it costs whoever was inside it. The two
-    // halves are `Game.wireVehicles`'s, with the toast taken out: a bot crew
-    // dies through `onCrewLost` below, and a person dies here.
+    // The hull burning, and what it costs whoever was inside it — the toast,
+    // the corpse and the camera are the page's, off `hullDestroyed` and the
+    // person's `damaged`: a bot crew dies through `onCrewLost` below, and a
+    // person dies here.
     this.vehicles.onDestroyed = (tank) => {
       emitPair(this.events, EV.hullDestroyed, this.tick, this.vehicles.hulls.indexOf(tank), tank.team);
       this.crew.hullDestroyed(tank);
@@ -1364,8 +1366,7 @@ export class SimCore {
         player.apply(0, spot.x, spot.y, spot.z, player.yaw, 0, false, false);
         this.seatAnswer(player, -1, spot, player.yaw);
         // **The hull BREWING UP is the blow**, and saying so is what gets the
-        // corpse, the damage arc and the killfeed line right at once — the
-        // same three things `Game.wireVehicles` argues at length. Nobody can
+        // corpse, the damage arc and the killfeed line right at once. Nobody can
         // destroy their own side's armour, so the enemy team the feed derives
         // from `from` is right by the same derivation every other death uses.
         // Filed `crew` and uncredited, as a bot crewman's is by `crewLost`:
@@ -1408,8 +1409,8 @@ export class SimCore {
   };
 
   /**
-   * What `hullRules` asks of the authority: the guns, the tracks and the crew
-   * run here exactly as they run offline. A person on the sticks is asked for
+   * What `hullRules` asks of the core: the guns, the tracks and the crew,
+   * on every host. A person on the sticks is asked for
    * first, then the bot crew — `driverOf`'s order, and this side's
    * `vehicleOrders`'.
    *
@@ -1716,8 +1717,8 @@ export class SimCore {
     // not cover. It is also what raises the `kill` event those deaths need, so
     // a bot a person shoots gets a killfeed line and a corpse to throw.
     //
-    // The client's `Game` charges the same kill in the same place for the same
-    // reason, one line after its own `combat.fire` — see `registerBotKill`.
+    // Offline the player's rifle reaches this same line through `submit`
+    // (`shot`), so the page charges no kill of its own.
     if (result?.killed && result.target) {
       // The shooter's row first, whoever fell — a person killing a person
       // reaches this line and nothing else on the server would ever credit it,
@@ -1734,7 +1735,7 @@ export class SimCore {
     // The shooter's own verdict, LAST — after every death, award and piece of
     // news the round caused, which is where `Match.onShot` used to queue its
     // `hit` and where the shooter's client still expects it (the hit credits
-    // `Game.claimPredictedHit` pairs off are FIFO with no shot id).
+    // `HitCredits.claim` pairs off are FIFO with no shot id).
     if (result?.target) {
       emitHit(this.events, this.tick, shooter.slot, this.victimIndex(result.target),
         this.victimKind(result.target), result.killed, result.headshot, "round");
@@ -1743,9 +1744,9 @@ export class SimCore {
   }
 
   /**
-   * Puts a person into a hull, or takes them out of one. `Game.mount` and
-   * `Game.clearVehicle` as one method, and it must be read the way that pair
-   * is: everything that changes while somebody is in a seat is here, and the
+   * Puts a person into a hull, or takes them out of one — the rule, of which
+   * the page's `Game.mount`/`clearVehicle` are the picture (off the `seat`
+   * event) — and it must be read the way that pair is: everything that changes while somebody is in a seat is here, and the
    * `null` branch undoes every line of it.
    *
    * **It is the ONE writer of `SimPlayer.seat` and of `driven`**, which is
@@ -2248,16 +2249,16 @@ export class SimCore {
   /**
    * Pays everyone of `by` standing in `point` for what the flag just did.
    *
-   * The authority's half of `Game.awardZone`, and it is the same code rather
-   * than the same rule written twice: both hand `ScoreBook`'s `awardZone` the
-   * three things the two simulations disagree about — whose bodies, what a
-   * point is, and what a slot means — and the rule itself (presence at the
+   * `ScoreBook`'s `awardZone`, handed the three things that are this
+   * simulation's — whose bodies, what a point is, and what a slot means —
+   * while the rule itself (presence at the
    * moment the meter moved, tested with the same `pointAt` that moved it, not
    * split between the bodies that earned it, the dead and the benched out
    * through `alive`) is stated once, there.
    *
-   * `slotOf` is the disagreement worth naming: here a body is a `Bot` or a
-   * `SimPlayer` with its own slot, and on a client it is a bot or the player.
+   * `slotOf` is the one worth naming: a body is a `Bot` or a `SimPlayer`
+   * with its own slot, offline as on the authority (the page's player is a
+   * `SimPlayer` here, `addPlayer`).
    */
   private awardZone(
     point: ControlPoint,
@@ -2404,9 +2405,9 @@ export class SimCore {
    * about the BODY in that slot, which is what makes benching invisible here
    * exactly as it is everywhere else. Sized to the roster in `startRound`.
    *
-   * The same class the offline round keeps, holding the same three columns and
-   * spending the same point table, which is what makes a kill worth what a
-   * player learned it was worth wherever they learned it. `Match` watches its
+   * The ONE board, offline as on the authority — the page draws it off the
+   * frame (`ScoresMirror`) — which is what makes a kill worth what a player
+   * learned it was worth wherever they learned it. `Match` watches its
    * `version` to decide when the table has to go out again.
    */
   readonly scores = new ScoreBook();
@@ -2414,10 +2415,10 @@ export class SimCore {
   /**
    * Where a combatant of `team` deploys.
    *
-   * `Game.spawnPointFor`'s logic, including the scatter (`scatterSpawn`) — a
-   * whole squad landing on one point is as bad here as it is on the client.
-   * The server decides where people appear and tells them, so there is
-   * nothing for a client to reproduce.
+   * The spawn pick, including the scatter (`scatterSpawn`) — a whole squad
+   * landing on one point is as bad for people as for bots. The core decides
+   * where people appear and tells them (`spawned`), offline as in a match, so
+   * there is nothing for a page to reproduce.
    *
    * `requested` is a person's pick off their deploy screen, and it is the only
    * thing here a client has any say in. It is not trusted: `deployAt` answers

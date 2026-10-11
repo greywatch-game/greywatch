@@ -55,8 +55,21 @@ make — `mount`/`dismount` around `seat`) and when a person comes back in.
 `submit` answers only whether the core acted, which is what the shell, mg and
 ordnance buckets spend on; every outcome is an event. `npm run corecheck`
 drives the same script through `submit` directly (the trusted door the page
-will use) and through `Match` (the validated door), and the two leave the
+uses) and through `Match` (the validated door), and the two leave the
 identical event stream.
+
+**Offline the page is that same client, of a core in its own process**
+(`BABYLON_EXIT.md` X2.5a C4a): `Player` is the PREDICTION it is in a match
+(the sweep, the ground, regen for the HUD — it keeps its `SIMULATIONS` entry
+because it sweeps), every act is a `SimCommand` submitted trusted rather than
+validated, and the page holds the respawn clock (`hostHoldsRespawn`). **The
+driven HULL is predicted on the page too** (X2.5a C4b): stepped by `Vehicle.update`
+off the player's sticks and reported every frame as `drive` (a gunner's ring as
+`gun`), the core posing its copy as the authority poses a peer's — no command
+carries a stick, and `validateDrive`/`hullcorrect` are a match's alone. So
+`Match` and the page are two HOSTS of one core and differ only in the door:
+`Match` relays the events it drains onto the wire, the page draws them
+(`docs/game.md`).
 
 **A person's death is filed like a bot's** (X2.5a C3): counted at their own
 door inside `takeDamage`, as `other`, and AUDITED a moment later in the same
@@ -738,7 +751,7 @@ that result deals damage.
 
 **The minimap reads the same substitution, and it is the second place that
 empty list had gone unnoticed.** `Game.mapBodies` is where the choice is made —
-the bot pool offline, `NetRoster.soldiers` in a match — and without it a netplay
+the core's roster mirror offline (`sim.roster.bots`), `NetRoster.soldiers` in a match — and without it a netplay
 round drew no blips at all: the panel was up, the backdrop was right and the
 flags moved on it, so what was missing did not read as a broken list so much as
 a map of an empty village. Unlike `enemyTargets` this is a plain READ, so it
@@ -749,7 +762,7 @@ is left dead for the life of the session — `NetRoster.applyRoster` resets it a
 under the arrow that already stands for them.
 
 **Gunfire gives an enemy away, and in a match only the authority can say so.**
-Offline that rule is `wireBattle` reading `BattleSystem.onBotFired`; here no
+Offline that rule is the page's `onSimEvent` reading the core's `botFired`; here no
 client runs the AI that pulled the trigger and none of them hears another
 person's, so the server raises a public `fire` event carrying a slot and nothing
 else. A position on it would be a second copy of one the snapshot has already
@@ -815,7 +828,7 @@ the wire: a report from anywhere else would come from somewhere the rifle
 visibly is not. Its own slot is skipped, because `sfx.shoot` played that round at
 the player's own ear the frame the trigger went, and the roster's copy of the
 local body is never sampled. Both teams are audible and only the enemy is
-revealed, which is the split `wireBattle` already makes offline.
+revealed, which is the split `onSimEvent` makes offline off the core's `botFired`.
 
 **The count on that event is what stops coalescing costing the report its
 rate.** A reveal is a timer being refreshed, so one event is as good as three; a
@@ -874,11 +887,11 @@ the last round leaving the magazine inside `tryShot`) and the second is exactly
 the one a call site forgets.
 
 **A round going past you is ADDRESSED to you, and the authority is the only
-thing that can see one.** Offline the crack is `CombatSystem.onNearMiss` finding
-the player inside the target loop of somebody else's shot; in a match no client
-resolves anybody else's rounds at all, so `SimCore` wires that callback, writes
-a `nearMiss` event, and `Match` relays a `nearmiss` to the one person it
-happened to. It carries the
+thing that can see one.** The crack is `CombatSystem.onNearMiss` finding the
+person inside the target loop of somebody else's shot, and only the core
+resolves anybody else's rounds — so `SimCore` wires that callback and writes a
+`nearMiss` event, which the offline page draws and `Match` relays as a
+`nearmiss` to the one person it happened to. It carries the
 point of CLOSEST APPROACH and no victim field — the only client it is ever sent
 to is the one it is about — and the client spends it on both halves of the
 offline handler, the crack and `Player.suppress`. Broadcasting it would say in
@@ -904,7 +917,8 @@ all day and never flinch — `BattleSystem.suppress` had no caller. And a person
 round reached `CombatSystem.fire` through `resolveShot`, which never called
 `hearGunshot`, so bots were deaf to human gunfire specifically: you could empty
 a magazine into a squad's backs and nothing would look for you. Both are one
-line, both are what the client's `wireBattle` has always done, and both are
+line, both are what the offline page's wiring had always done (the core's
+`wire` does both now, for every host), and both are
 invisible until you go looking for them — a bot that does not flinch reads as a
 bot that is good.
 
@@ -937,7 +951,7 @@ screen for another tenth of a second — spent, it draws a streak leaving from
 beside the gun rather than out of it. So `NetSoldier` keeps the interpolated
 `aimYaw`/`aimPitch` it just posed the rig from, the round is cast from that
 body's EYE along that aim and the streak is flown from its `muzzleWorld()`,
-which is the split `BattleSystem.botFire` already makes offline.
+which is the split `BattleSystem.botFire` already makes in the core.
 
 **An event is not a frame, and this is the difference between a missing effect
 and a haunting.** Server messages are dispatched off the socket, so a `fire`
@@ -1231,6 +1245,15 @@ killer, and that is the whole of the attack/defend rule — a marksman clearing
 attackers off their own flag from the next street is defending it, however far
 outside the ring they are standing.
 
+**`paysKiller` is the one that proved it**: guarded by hand at six doors
+instead, the client reached for `instanceof Bot` where the authority reached for
+`!armoured`, which also excludes a PERSON — so a bot crew crushing or shelling
+the player scored online and scored nothing offline. That was while the page
+and the authority were two simulations with a ledger each (`Game` offline,
+`HeadlessGame` on the authority). Since X2.5a C4a there is one core and one
+ledger, the guard is inside `SimCore.creditKill`, and every new door inherits
+it — `npm run corecheck`'s bot-crew shell and crush cases are the assertion.
+
 **A team's totals are SUMMED from the rows and stored nowhere.** Two counters
 for one fact is two counters that can disagree, and the one that would be wrong
 is the one nothing on screen can check. `SimCore.teamScore` is that sum on
@@ -1270,7 +1293,7 @@ re-resolve that bullet rather than a differently jittered one.
 
 **Health REGENERATES on the server, and the client predicts the curve.** Regen
 is a rule about a number the authority owns, so `SimPlayer.regen` runs it off the
-same `regenDelay` and `regenRate` `Player.update` uses offline — a networked
+same `regenDelay` and `regenRate` `Player.update` predicts with — a networked
 round whose pool never refilled would be precisely the respawn queue
 `config/player.ts` calls that rule load-bearing against, with the twist that only
 the multiplayer half of the game had it. Nothing on the wire announces a healed
@@ -2397,7 +2420,8 @@ reason to write it down rather than to relax about it.** The only yield between
 `admit` and its guards is the collision module's dynamic `import()`, which does
 not reliably turn the I/O phase, so neither race fires on the build path today;
 both were confirmed by forcing the window open with a temporary await inside
-`buildServerWorld`, which produced two worlds and a match running at 120.8 ticks
+`buildServerWorld` (the build `Match` then awaited; it loads with `loadSimWorld`
+now), which produced two worlds and a match running at 120.8 ticks
 a second, and a peer seated into a slot its own departure had already released.
 **Anything that adds a genuinely asynchronous step to a build — a larger map, a
 bake read off disk, a fetch — opens that window for free**, and these rules are

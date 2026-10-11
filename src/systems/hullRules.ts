@@ -1,10 +1,11 @@
 /**
- * hullRules.ts — what a hull DOES to the world, stated once for both
- * simulations: a round out of the main gun, a round out of the cupola gun,
+ * hullRules.ts — what a hull DOES to the world, stated once — for the
+ * simulation core, and for a match client's PREDICTED hull round: a round out
+ * of the main gun, a round out of the cupola gun,
  * what the tracks run over, and what a crew owes when its hull brews up.
  * Owns: `fireHullGun`, `fireHullMg`, `crushSweep`, `driverOf` and `crewLost`,
- * and `HullRules`, the context `Game` and `SimCore` each build once to
- * run them against.
+ * and `HullRules`, the context `SimCore` builds once to run them against
+ * (and `Game` once for its netplay prediction, which pays nobody).
  * Invariants: a hull's round goes down the GUN's axis and never the camera's;
  * friendly fire is excluded by construction (every list is the hull's own
  * side's enemies); the direct hit and the splash are two resolutions that
@@ -27,8 +28,9 @@
  * damage, the splash, the hearing or the crush gate is a second thing to keep
  * in step.
  *
- * **What the two sides still differ in is HANDED IN, never branched on.** In a
- * match the client's copy of a round is a PREDICTION: its targets refuse local
+ * **What the two callers differ in is HANDED IN, never branched on.** In a
+ * match the client's copy of a round is a PREDICTION (offline the guns and
+ * the tracks are the core's alone): its targets refuse local
  * damage (`NetSoldier.takeDamage`, `Vehicle.predicted`), so `shot.killed` is
  * false and nothing here can credit a kill, and its `blastAt` declines to draw
  * a splash the authority's `explode` event will draw instead. Neither fact is
@@ -45,8 +47,8 @@ import { settleKill, type KillLedger } from "./killRules";
 import { UNDRAWN } from "./RoundRandom";
 
 /**
- * Everything a hull's rules ask of the rest of the game, built once per
- * simulation. Methods rather than captured values, because what they answer
+ * Everything a hull's rules ask of the rest of the game, built once by each
+ * caller. Methods rather than captured values, because what they answer
  * with — the roster, the fleet, whether a match is live — changes under them.
  */
 export interface HullRules {
@@ -163,8 +165,8 @@ export function fireHullGun(
   // **A HULL is not a row on the scoreboard** — `shot.target` can be one, armour
   // being answered by its collider rather than by a sphere (`CombatSystem.fire`),
   // and what a burning tank pays is its CREW, through `crewLost` and the
-  // driver's own death. That guard is `paysKiller`'s, inside each side's
-  // `creditKill`, so this site says only WHEN.
+  // driver's own death. That guard is `paysKiller`'s, inside
+  // `SimCore.creditKill`, so this site says only WHEN.
   if (shot.killed && shot.target) {
     settleKill(ctx.ledger, by, shot.target, tank.team, "shell");
   }
@@ -237,7 +239,7 @@ function driverOf(ctx: HullRules, tank: Vehicle): Combatant | null {
 /**
  * What the TRACKS killed this frame: every enemy body a moving hull is
  * standing in, put down and credited to whoever is driving. Run right after
- * `VehicleSystem.update` on both sides.
+ * `VehicleSystem.update` inside `SimCore.step`, on every host.
  *
  * **This is the one thing armour does that is not a weapon**, and it exists
  * because of a rule this game cannot bend: a tank is in no baked structure, so
@@ -311,7 +313,7 @@ export function crushSweep(ctx: HullRules): void {
  * thrown clear of his own hull, which is the only reading of a burning tank
  * that is not a man lying down beside one, and it takes BOTH — a round drops a
  * body where an explosion throws it. A person inside the same hull dies of the
- * same pair, through each simulation's own `onDestroyed`.
+ * same pair, through `SimCore`'s `onDestroyed`.
  *
  * **The ONE door that credits nobody**, and the reason `DeathCause` has a
  * `crew`: the rocket or the shell that destroyed the hull was paid at its own

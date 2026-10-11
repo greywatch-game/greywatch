@@ -2302,18 +2302,20 @@ i.e. a DRAWING (the hand's pose, the weapon's sway and kick) deciding an
 OUTCOME, since the start point is where the flight's first
 collision ray begins. `handAhead` and `launchAhead` floor the point along the
 aim, so a wall at the shoulder is covered, but everything above the floor is
-the picture's. The rifle's `muzzleWorld()` reaches `CombatSystem.fire` too,
-and is harmless: that argument is the tracer's origin and nothing else. In a
-match the client sends the point as `origin` and the authority accepts it
-within a slip of the eye (`MAX_ORIGIN_SLIP` for a grenade,
-`ORDNANCE_ORIGIN_SLACK` for a rocket), so online it is a claim, gated.
+the picture's. The rifle's `muzzleWorld()` rides the `shot` command too, and
+is harmless: it is the tracer's origin (`ShotCommand.muzzle`) and nothing else.
+The page submits each point as the command's `origin`; in a match the client
+sends it as `origin` and the authority accepts it within a slip of the eye
+(`MAX_ORIGIN_SLIP` for a grenade, `ORDNANCE_ORIGIN_SLACK` for a rocket), so
+online it is a claim, gated, and offline it is trusted.
 
-**What would settle it:** X2.5's one core cannot call into a view. State both
-start points ANALYTICALLY off the eye and the aim (a fixed offset in the
-camera's frame, chosen to match today's rest pose), or have the core take them
-as INPUT the way a match already does. Either way, measure the change in
-where a throw lands from rest and mid-sway before choosing: a few centimetres
-at the hand can decide which side of a sill a grenade bounces off.
+**What would settle it:** the core already takes the points as INPUT (C4a),
+which was the half X2.5 needed — it cannot call into a view. What remains is
+whether the PAGE should state them ANALYTICALLY off the eye and the aim (a
+fixed offset in the camera's frame, chosen to match today's rest pose) rather
+than off the hand and the muzzle. Measure the change in where a throw lands
+from rest and mid-sway before choosing: a few centimetres at the hand can
+decide which side of a sill a grenade bounces off.
 
 ---
 
