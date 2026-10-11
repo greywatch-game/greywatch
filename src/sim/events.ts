@@ -51,7 +51,7 @@
  * | `hit` | shooter, victim, victimKind, killed, head, cause | a person's round (`resolveShot`), a hull gun, a blast, a burn, the tracks |
  * | `damaged` | slot, team, amount, hasFrom, from·3, killed, kind, health, respawnIn | a PERSON took a hit (`SimPlayer.onDamaged`) |
  * | `botDown` | slot, killer, by, cause, credited, head, from·3, damage, kind | a bot died (`KillLedger.botDown`) — the killfeed and the corpse |
- * | `death` | slot, cause, credited | every body's death on the board (`registerDeath`) |
+ * | `death` | slot, cause, credited | every body's death on the board (`registerDeath`); a person's cause and credit are filed into it by the blow's own door (`amendDeath`) before the call returns |
  * | `spawned` | slot, pos·3, yaw | a person deployed |
  * | `award` | slot, kind, points, person | `ScoreBook.onAward`; `person` is whether a SimPlayer held the slot |
  * | `captured` | point, by | a flag changed hands (after its awards) |
@@ -449,17 +449,35 @@ export function emitBotDown(
   d[o + 10] = DAMAGE_CODE[kind];
 }
 
+/** Returns the record's offset, so a person's audit can be filed afterwards (`amendDeath`). */
 export function emitDeath(
   r: EventRing,
   tick: number,
   slot: number,
   cause: DeathCause,
   credited: boolean,
-): void {
+): number {
   const o = r.open(EV.death, tick);
   r.data[o] = slot;
   r.data[o + 1] = CAUSE_CODE[cause];
   r.data[o + 2] = credited ? 1 : 0;
+  return o;
+}
+
+/**
+ * Files the audit of a `death` already written — a PERSON's, whose door
+ * counts the death inside `takeDamage` before the blow's own door (the one
+ * that knows the cause and whether anybody was paid) has run. Same call, same
+ * drain, so the record has not left the ring; `setRoundShooter`'s pattern.
+ */
+export function amendDeath(
+  r: EventRing,
+  offset: number,
+  cause: DeathCause,
+  credited: boolean,
+): void {
+  r.data[offset + 1] = CAUSE_CODE[cause];
+  r.data[offset + 2] = credited ? 1 : 0;
 }
 
 export function emitSpawned(

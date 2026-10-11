@@ -39,6 +39,13 @@
  * in `wire`) are the INWARD wiring and stay; they simply end in a ring write
  * where they used to end in a host's handler.
  *
+ * **Every death is filed with the door that dealt it**, a person's as a
+ * bot's: the victim's door counts it and the blow's own door audits it in
+ * the same call (`fileDeath`, `KillLedger.personDown`). `simulate` seats no
+ * person, so `server/corecheck.ts` is what holds this file's person paths —
+ * the awards, the deaths, the seat — to the events they write, here and
+ * through `Match`.
+ *
  * A slot index IS a bot index, by construction: `Roster` lays its slots out
  * team 0 then team 1, `BattleSystem` builds its pool the same way, and both are
  * sized from `CONFIG.bots.maxPerTeam`. That is what makes benching a bot for a
@@ -125,6 +132,7 @@ import { buildSimWorld } from "./simWorld";
 import {
   EV,
   EventRing,
+  amendDeath,
   emitAward,
   emitBlast,
   emitBotDown,
@@ -292,6 +300,15 @@ export class SimCore {
   private pendingRound = -1;
   /** Whether `roundOver` has been written for the standing round. */
   private ended = false;
+  /**
+   * A person's `death` record still waiting for its AUDIT, by slot: the ring
+   * offset `registerDeath` returned inside their `onDamaged`, which runs
+   * inside `takeDamage` — before the blow's own door (`settleKill`, or the
+   * hull burning) knows to say which door it was and whether anybody was
+   * paid. Filed by `fileDeath` in the same call; cleared by every drain, so
+   * an offset never outlives the ring it points into.
+   */
+  private readonly personDeaths = new Map<number, number>();
 
   constructor() {
     // No scene and no material factory: the last thing that wanted a factory
@@ -384,6 +401,7 @@ export class SimCore {
   drain(out: EventCursor): void {
     this.events.drainInto(out);
     this.pendingRound = -1;
+    this.personDeaths.clear();
   }
 
   /**
@@ -1013,7 +1031,12 @@ export class SimCore {
         // same three things `Game.wireVehicles` argues at length. Nobody can
         // destroy their own side's armour, so the enemy team the feed derives
         // from `from` is right by the same derivation every other death uses.
-        player.takeDamage(player.health, tank.center, "shell");
+        // Filed `crew` and uncredited, as a bot crewman's is by `crewLost`:
+        // whatever burned the hull was paid at its own door, against the HULL,
+        // which `paysKiller` refuses.
+        if (player.takeDamage(player.health, tank.center, "shell")) {
+          this.fileDeath(player.slot, "crew", false);
+        }
       }
     };
     // …and what it costs a bot crew. The body has already been put down beside
@@ -1030,15 +1053,21 @@ export class SimCore {
   }
 
   /**
-   * The two doors a kill reaches on the authority, as `settleKill` asks for
-   * them: the killer's row, and a bot's death — which is where a `cause` and a
-   * `credited` are filed for `simulate`. The client builds the same pair out
-   * of its own two.
+   * The doors a kill reaches on the authority, as `settleKill` asks for them:
+   * the killer's row, a bot's death — which is where a `cause` and a
+   * `credited` are filed for `simulate` — and a person's AUDIT, filed into the
+   * death their own door already counted. The client builds the first two out
+   * of its own and keeps no audit (`KillLedger.personDown`).
    */
   private readonly ledger: KillLedger = {
     credit: (by, victim, headshot) => this.creditKill(by, victim, headshot),
     botDown: (bot, killer, by, cause, credited, headshot) =>
       this.onKill(bot, killer, by, cause, credited, headshot),
+    // A person's death was COUNTED at their own door, inside `takeDamage`;
+    // this is the door that knows what it was, filing it into that record.
+    personDown: (victim, cause, credited) => {
+      if (victim instanceof SimPlayer) this.fileDeath(victim.slot, cause, credited);
+    },
   };
 
   /**
@@ -1485,19 +1514,20 @@ export class SimCore {
       if (killed) {
         this.conquest.registerDeath(player.team);
         // The victim's door for a person, and the counterpart of the line in
-        // `onKill` that counts a bot's. Whoever killed them was credited at
+        // `onKill` that counts a bot's. Whoever killed them is credited at
         // their own door, wherever the round or the blast came from.
         //
-        // Which is exactly why the audit is left at its default here: this
-        // door is handed a body and a number and cannot see which door dealt
-        // the blow, so `other` is a refusal to answer rather than a cause, and
-        // a reader must not read it as an uncredited death. Claiming
-        // `credited` would be worse than not knowing — it is true of every
-        // person's death but one, the body that went up with the hull it was
-        // riding, and a number that is right most of the time is the kind that
-        // gets believed. `simulate` fields nobody, so this stays at zero
-        // there; a tool that grows synthetic players owes this line a cause.
-        this.registerDeath(player.slot);
+        // **Counted here and AUDITED there.** This door is handed a body and
+        // a number and cannot see which door dealt the blow, so the death is
+        // written as `other`, uncredited — and the blow's own door, which runs
+        // in this same call once `takeDamage` returns, files the cause and
+        // whether anybody was paid into this very record (`personDown`, or
+        // the hull burning's `crew`). A death no door settles keeps `other`:
+        // the leash, which nobody dealt. The record is filed in place rather
+        // than written late so the event ORDER — the death before the
+        // `damaged`, both before the killer's awards — is the order `Match`
+        // has always relayed. Nothing on the wire reads the audit.
+        this.personDeaths.set(player.slot, this.registerDeath(player.slot));
       }
       // Everything the victim's own screen is owed, read NOW: the health the
       // blow left and the respawn clock it armed, which regen and the step
@@ -1695,11 +1725,25 @@ export class SimCore {
    * true, so an audit hung on it (`simulate`'s reconciliation, its fight hash)
    * counts what the board counts by construction instead of by two callers
    * agreeing to fire it. `cause` and `credited` are the AUDIT: nothing on the
-   * wire is derived from them.
+   * wire is derived from them. Returns the record's offset, which a person's
+   * door keeps so the blow's own door can file the audit into it
+   * (`fileDeath`).
    */
-  registerDeath(slot: number, cause: DeathCause = "other", credited = false): void {
+  registerDeath(slot: number, cause: DeathCause = "other", credited = false): number {
     this.scores.registerDeath(slot);
-    emitDeath(this.events, this.tick, slot, cause, credited);
+    return emitDeath(this.events, this.tick, slot, cause, credited);
+  }
+
+  /**
+   * A person's death, AUDITED: `cause` and `credited` written into the
+   * `death` record their own door wrote a moment earlier in the same call
+   * (`personDeaths`). Once per death — a second filing finds nothing waiting.
+   */
+  private fileDeath(slot: number, cause: DeathCause, credited: boolean): void {
+    const offset = this.personDeaths.get(slot);
+    if (offset === undefined) return;
+    this.personDeaths.delete(slot);
+    amendDeath(this.events, offset, cause, credited);
   }
 
   /**

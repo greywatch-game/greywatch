@@ -37,6 +37,21 @@ does not carry (a footstep, a tracer, a hull gun's `hit`) is drained and
 dropped undecoded. `simulate` reads the same ring for its fight hash and
 `--events`, folding each event's own `tick`.
 
+**A person's death is filed like a bot's** (X2.5a C3): counted at their own
+door inside `takeDamage`, as `other`, and AUDITED a moment later in the same
+call by the blow's own door — `settleKill`'s `KillLedger.personDown` writes
+the cause and whether anybody was paid into that very `death` record, and a
+person going up with the hull they rode is `crew`, uncredited, as a bot
+crewman is. A death no door settles keeps `other`: the leash. The audit
+moves no event and reaches no wire — `Match` relays a person's death off
+`damaged`, as it always has. **`npm run corecheck` is the instrument for
+everything about a person**, since `simulate` seats nobody: the kill awards
+keyed on the victim's flag, a capture, the hull cases, the leash, the respawn
+clock and seat/evict, asserted off the drained events with no `Game` — and the
+same script through a real `Match` behind a fake socket, the validated door,
+which must leave the identical award and death list (it leaves the identical
+event stream).
+
 **The authority imports nothing from `@babylonjs/core`, and a build gate says
 so** (`BABYLON_EXIT.md` X2.3). It used to run under Babylon's `NullEngine`,
 with a scene that existed for one thing at the end — the collider meshes

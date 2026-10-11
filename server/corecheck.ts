@@ -1,0 +1,1093 @@
+/**
+ * server/corecheck.ts — The scoring rules, exercised with no `Game` and no
+ * socket: `SimCore` driven by a scripted person and asserted from the events
+ * it drains — and then the SAME script through `Match` with a fake peer,
+ * which must produce the same awards and deaths. `npm run corecheck`.
+ * Owns: nothing the game runs. It is a test, the project's only one, and it
+ * exits non-zero on any failed assertion.
+ * Invariants: everything asserted is read off the core's drained events
+ * (`src/sim/events.ts`), never off a callback — that ring is the one thing a
+ * host hears. Every scenario is DETERMINISTIC: a fixed seed, the core's fixed
+ * step, and every body that matters PLACED by the script rather than left to
+ * the AI to happen to bring there. Imports nothing from `@babylonjs/core`
+ * (`scripts/check-babylon-free.mjs` holds this directory).
+ * Never: reach into `Game` or the page. A case that cannot be set up through a
+ * person's door is driven through the door the CORE itself calls, and each
+ * case below says which door it uses.
+ *
+ * **Why it exists** (`BABYLON_EXIT.md` X2.5a C3): the offline page is about to
+ * host the core the authority already hosts, and `simulate` cannot see a
+ * person — it seats nobody, so every rule about a person's death, a person's
+ * award and a person's seat had no instrument at all. This is that
+ * instrument, and the second half is the point: the same script run through
+ * `Match`'s VALIDATED door (a fake socket, the client messages a real one
+ * would send, every claim gate in the path) must leave the identical award
+ * and death list — the scoring rules exercised offline and online.
+ *
+ * **The hosts.** `CoreHost` is what the offline page will be: it calls the
+ * core directly and trusts its commands. `MatchHost` is the authority: a real
+ * `Match`, its loop timer stopped so the script steps it by hand, fed JSON
+ * through the socket's own `message` handler. Each records every event the
+ * core drained, in order, raw (`Log`). Setup that no person's message could
+ * do — placing a body, setting a flag's owner, lowering a victim's health,
+ * seating a bot crew — is done identically on both, between calls, on the
+ * live core; it is a fixture, not a door.
+ *
+ * The person is always slot 0, team 0: the first seat `Roster.claim` hands
+ * out, which `MatchHost` asserts. `-- --list` also prints each map's event
+ * counts and the award/death list the hosts are compared on.
+ */
+import { createHash, type Hash } from "node:crypto";
+import { isDeepStrictEqual } from "node:util";
+import type { WebSocket } from "ws";
+import { CONFIG } from "../src/config";
+import { Vector3, type Vector3Like } from "../src/math";
+import { TICK_HZ } from "../src/net/protocol";
+import type { Bot } from "../src/entities/Bot";
+import type { Team } from "../src/entities/Combatant";
+import type { Vehicle } from "../src/entities/Vehicle";
+import { DRIVER, GUNNER, type CrewSeat } from "../src/entities/hullSeats";
+import { DEFAULT_WEAPON, PRIMARY_SLOT, weaponSetup } from "../src/entities/weapons";
+import { DEFAULT_EQUIPMENT, equipmentSetup } from "../src/entities/equipment";
+import { DEFAULT_THROWABLE, throwableCarried } from "../src/entities/throwables";
+import { crushSweep, type HullRules } from "../src/systems/hullRules";
+import type { ControlPoint } from "../src/systems/ConquestSystem";
+import { MAPS, type MapDef } from "../src/world/maps";
+import type { MapCollision } from "../src/world/collision";
+import type { Heightfield } from "../src/world/layout";
+import { SimCore } from "../src/sim/SimCore";
+import type { SimPlayer } from "../src/sim/SimPlayer";
+import {
+  EV,
+  EventCursor,
+  STRIDE,
+  decode,
+  type SimEvent,
+  type Vec3,
+} from "../src/sim/events";
+import { Match } from "./Match";
+import { claimedDir } from "./claimGates";
+import { loadSimWorld } from "./world";
+
+const SEED = 777;
+const DT = 1 / TICK_HZ;
+/** The wall-clock anchor both hosts give `SimCore.now`, so a shot's render time is the same number on both. */
+const ANCHOR = 1_000_000_000_000;
+const PERSON_SLOT = 0;
+const PERSON_TEAM: Team = 0;
+/** Ticks the respawn clock holds a body down for — `SimCore.step`'s countdown. */
+const RESPAWN_TICKS = Math.round(CONFIG.conquest.respawnDelay * TICK_HZ);
+
+// ---------------------------------------------------------------------------
+// What a host heard.
+
+/**
+ * Every event a host drained, decoded for the assertions and folded RAW into
+ * a hash: the kind byte, the tick, all `STRIDE` float64s of the record (NaN
+ * normals and the zero-filled tail included) and a glass event's pane run.
+ * Each drain's cursor and decoded batch are also put through
+ * `structuredClone` and compared back, which is the transfer X2.5b will make.
+ */
+class Log {
+  readonly events: SimEvent[] = [];
+  private readonly hash: Hash = createHash("sha256");
+  cloneFailures = 0;
+  drains = 0;
+
+  absorb(c: EventCursor): void {
+    this.drains++;
+    const batch: SimEvent[] = [];
+    const head = Buffer.alloc(5);
+    for (let i = 0; i < c.count; i++) {
+      head.writeUInt8(c.kinds[i], 0);
+      head.writeUInt32LE(c.ticks[i], 1);
+      this.hash.update(head);
+      this.hash.update(
+        Buffer.from(c.data.buffer, c.data.byteOffset + i * STRIDE * 8, STRIDE * 8),
+      );
+      if (c.kinds[i] === EV.glass) {
+        const start = c.data[i * STRIDE + 6];
+        const n = c.data[i * STRIDE + 7];
+        const ints = c.ints.subarray(start, start + n);
+        this.hash.update(Buffer.from(ints.buffer, ints.byteOffset, ints.byteLength));
+      }
+      batch.push(decode(c, i));
+    }
+    if (c.count > 0) {
+      const raw = {
+        kinds: c.kinds.slice(0, c.count),
+        ticks: c.ticks.slice(0, c.count),
+        data: c.data.slice(0, c.count * STRIDE),
+        ints: c.ints.slice(),
+      };
+      if (!isDeepStrictEqual(structuredClone(raw), raw)) this.cloneFailures++;
+      if (!isDeepStrictEqual(structuredClone(batch), batch)) this.cloneFailures++;
+    }
+    for (const ev of batch) this.events.push(ev);
+  }
+
+  digest(): string {
+    return this.hash.copy().digest("hex").slice(0, 16);
+  }
+}
+
+/** Every `award` and `death`, in order, with its tick — the list the two hosts must agree on. */
+function scoreList(events: readonly SimEvent[]): string[] {
+  const out: string[] = [];
+  for (const ev of events) {
+    if (ev.type === "award") out.push(`${ev.tick} award ${ev.slot} ${ev.kind} ${ev.points} ${ev.person ? 1 : 0}`);
+    else if (ev.type === "death") out.push(`${ev.tick} death ${ev.slot} ${ev.cause} ${ev.credited ? 1 : 0}`);
+  }
+  return out;
+}
+
+// ---------------------------------------------------------------------------
+// The two hosts.
+
+interface World {
+  def: MapDef;
+  collision: MapCollision;
+  floor: Heightfield | undefined;
+}
+
+/** What a scenario may do. The first group are a PERSON's doors; `step` and `flush` are the host's. */
+interface Host {
+  readonly name: string;
+  readonly core: SimCore;
+  readonly log: Log;
+  player(): SimPlayer;
+  /** Ask to come back at spawn `spawn` — Match's `deploy`. */
+  deploy(spawn: number): Promise<void>;
+  /** Report a look without moving — Match's `move`, at the body's own position. */
+  aim(yaw: number, pitch: number): Promise<void>;
+  /** A round fired from `origin` toward `dir` (unnormalised) — Match's `shot`. */
+  shot(origin: Vector3Like, dir: Vec3): Promise<void>;
+  mount(tank: number, seat: CrewSeat): Promise<void>;
+  dismount(): Promise<void>;
+  step(): void;
+  /** Drain whatever a fixture's direct call on the core raised. */
+  flush(): void;
+}
+
+/** The person's kit as `Match.setKit` resolves the defaults — written on both hosts so the pouch agrees. */
+function giveKit(p: SimPlayer): void {
+  p.ordnanceCarried = equipmentSetup(DEFAULT_EQUIPMENT).magSize;
+  p.ordnance = p.ordnanceCarried;
+  p.grenadesCarried = throwableCarried(DEFAULT_THROWABLE);
+  p.grenades = p.grenadesCarried;
+}
+
+const RIFLE = weaponSetup(DEFAULT_WEAPON);
+
+/** The offline page's shape: the core called directly, commands trusted. */
+class CoreHost implements Host {
+  readonly name = "core";
+  readonly core = new SimCore();
+  readonly log = new Log();
+  private readonly cursor = new EventCursor();
+  private readonly dir = new Vector3();
+
+  start(world: World): void {
+    this.core.startRound({ ...world, difficulty: 1, bots: true, seed: SEED });
+    this.core.anchor(ANCHOR);
+    this.flush();
+    const p = this.core.addPlayer(PERSON_SLOT, PERSON_TEAM);
+    this.flush();
+    giveKit(p);
+  }
+
+  player(): SimPlayer {
+    return this.core.players.get(PERSON_SLOT)!;
+  }
+
+  flush(): void {
+    this.core.drain(this.cursor);
+    this.log.absorb(this.cursor);
+  }
+
+  async deploy(spawn: number): Promise<void> {
+    const p = this.player();
+    if (p.alive) return;
+    giveKit(p);
+    p.deployRequest = spawn;
+  }
+
+  async aim(yaw: number, pitch: number): Promise<void> {
+    const p = this.player();
+    if (!p.alive || p.seat >= 0) return;
+    p.apply(0.1, p.position.x, p.position.y, p.position.z, yaw, pitch, false, false);
+  }
+
+  async shot(origin: Vector3Like, dir: Vec3): Promise<void> {
+    const p = this.player();
+    if (!p.alive || p.seat >= 0 || !claimedDir(dir, this.dir)) return;
+    this.core.resolveShot(p, new Vector3(origin.x, origin.y, origin.z), this.dir, this.core.now, RIFLE);
+    this.flush();
+  }
+
+  /** `Match.onMount`'s policy around `SimCore.seat`, as the page will hold it. */
+  async mount(tank: number, seat: CrewSeat): Promise<void> {
+    const p = this.player();
+    if (!p.alive) return;
+    const offered = this.core.seatOffered(p);
+    const hull = offered && this.core.vehicles.hulls.indexOf(offered) === tank ? offered : null;
+    const taken = hull ? this.core.seat(p, hull, seat) : null;
+    this.core.seatAnswer(p, taken ? tank : -1, p.position, p.yaw);
+    this.flush();
+  }
+
+  /** `Match.onDismount`'s. */
+  async dismount(): Promise<void> {
+    const p = this.player();
+    const tank = this.core.hullOf(p);
+    if (!tank || !this.core.vehicles.dismountable(tank)) return;
+    const spot = this.core.vehicles.exitSpot(tank);
+    const { x, y, z } = spot;
+    this.core.seat(p, null);
+    p.apply(0, x, y, z, p.yaw, 0, false, false);
+    this.core.seatAnswer(p, -1, p.position, p.yaw);
+    this.flush();
+  }
+
+  step(): void {
+    this.core.step(DT);
+    this.flush();
+  }
+}
+
+/** A `ws` socket as `Match` uses one: records what is sent, delivers what the script says. */
+class FakeSocket {
+  readonly OPEN = 1;
+  readyState = 1;
+  readonly frames: Array<{ t: string; [k: string]: unknown }> = [];
+  private readonly handlers = new Map<string, (data: unknown) => void>();
+
+  on(event: string, fn: (data: unknown) => void): this {
+    this.handlers.set(event, fn);
+    return this;
+  }
+  send(data: string): void {
+    this.frames.push(JSON.parse(data));
+  }
+  ping(): void {}
+  close(): void {
+    this.readyState = 3;
+  }
+  deliver(msg: object): void {
+    this.handlers.get("message")?.(JSON.stringify(msg));
+  }
+}
+
+/** Waits out `RateGate`'s wall-clock spacing so the rifle's bucket is never what refuses a scripted round. */
+const settle = (ms: number) => new Promise<void>((done) => setTimeout(done, ms));
+
+/** The authority: a real `Match`, stepped by hand, fed through its socket's own handler. */
+class MatchHost implements Host {
+  readonly name = "match";
+  readonly match: Match;
+  readonly core: SimCore;
+  readonly log = new Log();
+  readonly socket = new FakeSocket();
+  private seq = 0;
+  private clock = 1000;
+
+  constructor(def: MapDef) {
+    this.match = new Match("corecheck", def.id, true);
+    this.core = this.match.game;
+    // Hear every drain `Match` makes — the tee is the whole of the
+    // instrumentation, and `relay` still gets the cursor as it always did.
+    const drain = this.core.drain.bind(this.core);
+    this.core.drain = (out) => {
+      drain(out);
+      this.log.absorb(out);
+    };
+  }
+
+  async start(world: World): Promise<void> {
+    // The round is built BEFORE the first peer arrives, from the same seed
+    // and anchor as the core run, so `Match.start` finds a map standing and
+    // skips its own `freshSeed()` round.
+    this.core.startRound({ ...world, difficulty: 1, bots: true, seed: SEED });
+    this.core.anchor(ANCHOR);
+    await this.match.admit(this.socket as unknown as WebSocket, "corecheck");
+    // No macrotask has run since `start` armed the loop: stopped before its
+    // first tick, so every step from here is the script's.
+    clearInterval(this.match["timer"] ?? undefined);
+    const welcome = this.socket.frames.find((f) => f.t === "welcome");
+    if (welcome?.slot !== PERSON_SLOT || welcome?.team !== PERSON_TEAM) {
+      throw new Error(`Match seated the peer at slot ${welcome?.slot} team ${welcome?.team}`);
+    }
+  }
+
+  player(): SimPlayer {
+    return this.core.players.get(PERSON_SLOT)!;
+  }
+
+  flush(): void {
+    this.match["relay"]();
+  }
+
+  async deploy(spawn: number): Promise<void> {
+    this.socket.deliver({ t: "deploy", spawn });
+  }
+
+  async aim(yaw: number, pitch: number): Promise<void> {
+    const p = this.player().position;
+    this.clock += 100;
+    this.socket.deliver({
+      t: "move",
+      seq: ++this.seq,
+      time: this.clock,
+      pos: [p.x, p.y, p.z],
+      yaw,
+      pitch,
+      crouching: false,
+      sprinting: false,
+    });
+  }
+
+  async shot(origin: Vector3Like, dir: Vec3): Promise<void> {
+    await settle(RIFLE.shotInterval * 1000 + 20);
+    this.socket.deliver({
+      t: "shot",
+      seq: ++this.seq,
+      time: this.core.now,
+      origin: [origin.x, origin.y, origin.z],
+      dir,
+      slot: PRIMARY_SLOT,
+    });
+  }
+
+  async mount(tank: number, seat: CrewSeat): Promise<void> {
+    this.socket.deliver({ t: "mount", tank, seat });
+  }
+
+  async dismount(): Promise<void> {
+    this.socket.deliver({ t: "dismount" });
+  }
+
+  step(): void {
+    this.match["step"]();
+  }
+
+  /** Every event of kind `e` the peer was sent, in order. */
+  wireEvents(e: string): Array<Record<string, unknown>> {
+    const out: Array<Record<string, unknown>> = [];
+    for (const f of this.socket.frames) {
+      if (f.t !== "events") continue;
+      for (const ev of f.events as Array<Record<string, unknown>>) if (ev.e === e) out.push(ev);
+    }
+    return out;
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Assertions.
+
+interface Result {
+  name: string;
+  ok: boolean;
+  detail: string;
+}
+
+class Checks {
+  readonly results: Result[] = [];
+  constructor(readonly tag: string) {}
+  that(name: string, ok: boolean, detail = ""): boolean {
+    this.results.push({ name, ok, detail });
+    return ok;
+  }
+  get failed(): Result[] {
+    return this.results.filter((r) => !r.ok);
+  }
+}
+
+/** Events since `mark`. */
+function since(h: Host, mark: number): SimEvent[] {
+  return h.log.events.slice(mark);
+}
+
+function awardsOf(evs: readonly SimEvent[], slot: number): string[] {
+  const out: string[] = [];
+  for (const ev of evs) if (ev.type === "award" && ev.slot === slot) out.push(ev.kind);
+  return out;
+}
+
+function deathOf(evs: readonly SimEvent[], slot: number): Extract<SimEvent, { type: "death" }> | null {
+  for (const ev of evs) if (ev.type === "death" && ev.slot === slot) return ev;
+  return null;
+}
+
+function fmtDeath(d: Extract<SimEvent, { type: "death" }> | null): string {
+  return d ? `death ${d.slot} ${d.cause} credited=${d.credited}` : "no death";
+}
+
+// ---------------------------------------------------------------------------
+// Fixtures — the same calls on either host.
+
+function map(h: Host) {
+  return h.core.map!;
+}
+
+function groundY(h: Host, x: number, z: number): number {
+  return map(h).terrain.heightAt(x, z);
+}
+
+/** A spot a body can stand on: inside the play square, on the floor, no wall through it. */
+function standable(h: Host, x: number, z: number): boolean {
+  const m = map(h);
+  const half = m.size / 2 - 3;
+  if (Math.abs(x) > half || Math.abs(z) > half) return false;
+  const y = groundY(h, x, z);
+  return !m.obstacles.wallAt(x, z, y + 0.35, y + 2);
+}
+
+function placePerson(h: Host, x: number, y: number, z: number): void {
+  const p = h.player();
+  p.apply(0, x, y, z, p.yaw, p.pitch, false, false);
+}
+
+/** A bot put down at `x, z` — and recorded, so a rewind to `now` finds it there rather than a tick back. */
+function placeBot(h: Host, bot: Bot, x: number, z: number): void {
+  bot.nudgeTo({ x, y: groundY(h, x, z), z });
+  h.core.lag.record(h.core.now);
+}
+
+function slotOfBot(h: Host, bot: Bot): number {
+  return h.core.battle.bots.indexOf(bot);
+}
+
+/** Living, fielded bots of `team` that nothing has taken out of the fight. */
+function freeBots(h: Host, team: Team, used: ReadonlySet<Bot>): Bot[] {
+  return h.core.battle.bots.filter(
+    (b) => b.alive && b.team === team && !h.core.battle.aside(b) && !used.has(b),
+  );
+}
+
+function homeSpawn(h: Host, team: Team): number {
+  return map(h).spawns.findIndex((s) => s.team === team);
+}
+
+/** Steps until slot 0 deploys; returns the tick it did, or -1. */
+function stepUntilSpawned(h: Host, limit: number): number {
+  for (let i = 0; i < limit; i++) {
+    const mark = h.log.events.length;
+    h.step();
+    for (const ev of since(h, mark)) {
+      if (ev.type === "spawned" && ev.slot === PERSON_SLOT) return ev.tick;
+    }
+  }
+  return -1;
+}
+
+/** Turns the person to look from its eye at `to`, then fires there. Returns the events the round raised. */
+async function shootAt(h: Host, to: Vector3Like): Promise<SimEvent[]> {
+  const p = h.player();
+  const eye = p.eyePos;
+  const dx = to.x - eye.x;
+  const dy = to.y - eye.y;
+  const dz = to.z - eye.z;
+  await h.aim(Math.atan2(dx, dz), Math.atan2(dy, Math.hypot(dx, dz)));
+  const mark = h.log.events.length;
+  await h.shot({ x: eye.x, y: eye.y, z: eye.z }, [dx, dy, dz]);
+  return since(h, mark);
+}
+
+/**
+ * A line through `point` with clear sight both ways: an INNER spot a few
+ * metres from its centre and an OUTER one past its radius, on the first of
+ * sixteen bearings where both are standable and nothing solid lies between
+ * them at body height. Deterministic: the same map answers the same bearing.
+ */
+function lineThrough(h: Host, point: ControlPoint): { inner: Vector3; outer: Vector3 } | null {
+  const { pos, radius } = point.def;
+  for (let k = 0; k < 16; k++) {
+    const a = (k / 16) * Math.PI * 2;
+    const ux = Math.sin(a);
+    const uz = Math.cos(a);
+    for (const r of [0, 2, 4]) {
+      const ix = pos.x + ux * r;
+      const iz = pos.z + uz * r;
+      const ox = pos.x + ux * (radius + 4);
+      const oz = pos.z + uz * (radius + 4);
+      if (r >= radius - 1 || !standable(h, ix, iz) || !standable(h, ox, oz)) continue;
+      const inner = new Vector3(ix, groundY(h, ix, iz), iz);
+      const outer = new Vector3(ox, groundY(h, ox, oz), oz);
+      const eyeIn = new Vector3(ix, inner.y + 1.55, iz);
+      const eyeOut = new Vector3(ox, outer.y + 1.55, oz);
+      const chestIn = new Vector3(ix, inner.y + 0.9, iz);
+      const chestOut = new Vector3(ox, outer.y + 0.9, oz);
+      const rays = map(h).rays;
+      if (rays.blocked(eyeOut, chestIn) || rays.blocked(eyeIn, chestOut)) continue;
+      if (rays.blocked(eyeOut, new Vector3(ix, inner.y + 1.55, iz))) continue;
+      return { inner, outer };
+    }
+  }
+  return null;
+}
+
+// ---------------------------------------------------------------------------
+// The scripts.
+
+/**
+ * Greyfen: the kill awards keyed on the VICTIM's flag, a capture, the leash
+ * and the respawn clock.
+ */
+async function greyfen(h: Host, c: Checks): Promise<void> {
+  const core = h.core;
+  const used = new Set<Bot>();
+
+  // --- deploy: nobody unasked comes in, an ask is honoured -----------------
+  // Door: `deploy` (Match.onDeploy → SimPlayer.deployRequest), spent by the
+  // reinforcement pass in `SimCore.step`.
+  for (let i = 0; i < 30; i++) h.step();
+  c.that(
+    "deploy: an unasked person is never put in (30 ticks, no spawned)",
+    !h.log.events.some((e) => e.type === "spawned") && !h.player().alive,
+  );
+  await h.deploy(homeSpawn(h, PERSON_TEAM));
+  const first = stepUntilSpawned(h, 120);
+  c.that("deploy: an ask with the clock run out deploys on the next tick", first > 0, `spawned at ${first}`);
+  if (first < 0) return;
+
+  // --- the kill awards, keyed on the VICTIM's flag -------------------------
+  // Door: `shot` (Match.onShot's rate/cone/origin gates → SimCore.resolveShot,
+  // rewind at `now`). Fixture: the victim is placed and its health lowered so
+  // one round settles it; the flag's owner is set.
+  let line: { inner: Vector3; outer: Vector3 } | null = null;
+  let flag: ControlPoint | null = null;
+  for (const p of core.conquest.points) {
+    line = lineThrough(h, p);
+    if (line) {
+      flag = p;
+      break;
+    }
+  }
+  if (!c.that("fixture: a flag with a clear line through it", !!line && !!flag) || !line || !flag) return;
+  const flagIndex = core.conquest.points.indexOf(flag);
+
+  const killCase = async (
+    name: string,
+    owner: Team | null,
+    killerAt: Vector3,
+    victimAt: Vector3,
+    head: boolean,
+    expect: string[],
+  ): Promise<void> => {
+    flag!.owner = owner;
+    flag!.meter = owner === null ? 0 : owner === 0 ? -1 : 1;
+    const victim = freeBots(h, 1, used)[0];
+    if (!c.that(`${name}: a living enemy to shoot`, !!victim) || !victim) return;
+    used.add(victim);
+    victim.hp = 1;
+    placePerson(h, killerAt.x, killerAt.y, killerAt.z);
+    placeBot(h, victim, victimAt.x, victimAt.z);
+    const slot = slotOfBot(h, victim);
+    const target = head ? victim.eyePos : victim.center;
+    const evs = await shootAt(h, { x: target.x, y: target.y, z: target.z });
+    const hit = evs.find((e) => e.type === "hit");
+    const awards = awardsOf(evs, PERSON_SLOT);
+    const death = deathOf(evs, slot);
+    const zone = core.conquest.pointAt(victim.eyePos);
+    const killerZone = core.conquest.pointAt(h.player().eyePos);
+    c.that(
+      `${name}: awards ${expect.join("+")}`,
+      isDeepStrictEqual(awards, expect) &&
+        hit?.type === "hit" && hit.victim === slot && hit.killed && hit.head === head &&
+        death?.cause === "round" && death.credited,
+      `awards [${awards.join(",")}], ${fmtDeath(death)}, victim zone ${zone?.def.id ?? "none"}, killer zone ${killerZone?.def.id ?? "none"}`,
+    );
+  };
+
+  // Killer OUTSIDE, victim INSIDE a flag the enemy holds: an attack.
+  await killCase("attack (victim in enemy flag, killer outside)", 1, line.outer, line.inner, false, ["kill", "attack"]);
+  // Killer OUTSIDE, victim INSIDE a flag the killer's side holds: a defence.
+  await killCase("defend (victim in own flag, killer outside)", 0, line.outer, line.inner, false, ["kill", "defend"]);
+  // The same, through the head zone: the headshot is an upgrade, the zone still the victim's.
+  await killCase("headshot (victim in own flag)", 0, line.outer, line.inner, true, ["kill", "headshot", "defend"]);
+  // Killer INSIDE the flag, victim OUTSIDE it: no zone bonus, whoever stands where.
+  await killCase("no bonus (killer in flag, victim outside)", 0, line.inner, line.outer, false, ["kill"]);
+
+  // --- a capture pays the bodies present, and never a benched bot ----------
+  // Door: `ConquestSystem.update` inside `SimCore.step` (its `onCaptured` →
+  // `awardZone`). Fixture: the person, one fielded teammate and the BENCHED
+  // bot of the person's own slot all stood in the ring; the meter one step
+  // short of team 0's end.
+  {
+    const mate = freeBots(h, 0, used)[0];
+    const benched = core.battle.bots[PERSON_SLOT];
+    if (c.that("capture: a living teammate", !!mate) && mate) {
+      used.add(mate);
+      placePerson(h, line.inner.x, line.inner.y, line.inner.z);
+      flag.owner = null;
+      flag.meter = -0.999;
+      const mateSlot = slotOfBot(h, mate);
+      let captured = false;
+      let evs: SimEvent[] = [];
+      for (let i = 0; i < 10 && !captured; i++) {
+        placeBot(h, mate, line.inner.x + 1.2, line.inner.z);
+        benched.nudgeTo({ x: line.inner.x - 1.2, y: line.inner.y, z: line.inner.z });
+        const mark = h.log.events.length;
+        h.step();
+        evs = since(h, mark);
+        captured = evs.some((e) => e.type === "captured" && e.point === flagIndex && e.by === 0);
+      }
+      const paid = evs.filter((e) => e.type === "award" && e.kind === "capture");
+      const personPaid = paid.filter((e) => e.type === "award" && e.slot === PERSON_SLOT);
+      const matePaid = paid.filter((e) => e.type === "award" && e.slot === mateSlot);
+      const capIdx = evs.findIndex((e) => e.type === "captured");
+      let lastPay = -1;
+      evs.forEach((e, i) => {
+        if (e.type === "award" && e.kind === "capture") lastPay = i;
+      });
+      c.that(
+        "capture: paid to the person and the teammate standing in it, once each, before the news",
+        captured && personPaid.length === 1 && matePaid.length === 1 &&
+          personPaid[0].type === "award" && personPaid[0].person && lastPay < capIdx,
+        `captured=${captured}, capture awards to [${paid.map((e) => (e.type === "award" ? e.slot : -1)).join(",")}]`,
+      );
+      c.that(
+        "capture: the benched bot in the ring is not alive and earned nothing on its slot",
+        !benched.alive && core.battle.aside(benched) && personPaid.length === 1,
+        `benched alive=${benched.alive} aside=${core.battle.aside(benched)}`,
+      );
+    }
+  }
+
+  // --- the leash: killer -1, cause `other`; then the respawn clock ---------
+  // Door: the leash clock in `SimCore.step` (`SimPlayer.takeDamage` with no
+  // origin). Fixture: the person stood just past the play square's edge.
+  {
+    const m = map(h);
+    const x = m.size / 2 + 6;
+    const z = 0;
+    placePerson(h, x, groundY(h, x, z), z);
+    let died = -1;
+    let evs: SimEvent[] = [];
+    for (let i = 0; i < Math.ceil(CONFIG.map.leash.seconds * TICK_HZ) + 30 && died < 0; i++) {
+      const mark = h.log.events.length;
+      h.step();
+      const now = since(h, mark);
+      if (deathOf(now, PERSON_SLOT)) {
+        died = now[0]?.tick ?? -1;
+        evs = now;
+      }
+    }
+    const dmg = evs.find((e) => e.type === "damaged" && e.slot === PERSON_SLOT);
+    const death = deathOf(evs, PERSON_SLOT);
+    c.that(
+      "leash: the person dies out of bounds, from nobody, filed `other` and uncredited",
+      died > 0 && dmg?.type === "damaged" && dmg.from === null && dmg.killed &&
+        death?.cause === "other" && !death.credited &&
+        !evs.some((e) => e.type === "award"),
+      `died at ${died} after ${died - first} ticks out, ${fmtDeath(death)}, from=${dmg?.type === "damaged" ? JSON.stringify(dmg.from) : "?"}`,
+    );
+
+    // Door: `deploy`, asked at once — KEPT and not honoured until the clock
+    // the death armed has run out.
+    await h.deploy(homeSpawn(h, PERSON_TEAM));
+    let early = false;
+    let back = -1;
+    for (let i = 0; i < RESPAWN_TICKS + 30 && back < 0; i++) {
+      const mark = h.log.events.length;
+      h.step();
+      for (const ev of since(h, mark)) {
+        if (ev.type === "spawned" && ev.slot === PERSON_SLOT) back = ev.tick;
+      }
+      if (back < 0 && h.player().alive) early = true;
+    }
+    c.that(
+      `deploy: refused until respawnT runs out (${RESPAWN_TICKS} ticks), honoured after`,
+      died > 0 && !early && back - died >= RESPAWN_TICKS,
+      `died ${died}, spawned ${back} (+${back - died})`,
+    );
+  }
+}
+
+/** Coldharbour: the hull cases — a crew's shell and its tracks, a hull that pays nobody, a crew filed `crew`, seat and evict. */
+async function coldharbour(h: Host, c: Checks): Promise<void> {
+  const core = h.core;
+  const hulls = core.vehicles.hulls;
+  const t0 = hulls.findIndex((t) => t.team === 0);
+  const t1 = hulls.findIndex((t) => t.team === 1 && !!t.spec.gun);
+  if (!c.that("fixture: a hull a side", t0 >= 0 && t1 >= 0) || t0 < 0 || t1 < 0) return;
+  const own = hulls[t0];
+  const enemy = hulls[t1];
+  const used = new Set<Bot>();
+
+  await h.deploy(homeSpawn(h, PERSON_TEAM));
+  if (!c.that("deploy: the person comes in", stepUntilSpawned(h, 120) > 0)) return;
+  // Long enough for both sides' first reinforcements to be standing.
+  for (let i = 0; i < 30; i++) h.step();
+
+  /** `tank`'s `seat` crewed by a bot — the one already in it, or one TAKEN (`VehicleCrew`'s own boarding door). */
+  const crewed = (tank: Vehicle, seat: CrewSeat): Bot | null => {
+    const held = core.crew.crewOf(tank, seat);
+    if (held) return held;
+    if (tank.seats[seat]) return null;
+    const bot = freeBots(h, tank.team, used)
+      .sort((a, b) => Vector3.DistanceSquared(a.position, tank.center) - Vector3.DistanceSquared(b.position, tank.center))[0];
+    if (!bot) return null;
+    core.crew["take"](bot, tank, seat);
+    h.flush();
+    return bot;
+  };
+  const respawn = async (): Promise<boolean> => {
+    await h.deploy(homeSpawn(h, PERSON_TEAM));
+    return stepUntilSpawned(h, RESPAWN_TICKS + 60) > 0;
+  };
+  const rules = core["hullRules"] as HullRules;
+
+  // --- a bot crew's SHELL on the person: credited to the bot ---------------
+  // Door: `SimCore.resolveShell(tank, crewman)` — exactly what the crew's
+  // `fireShell` calls. Fixture: the person stood three metres down the gun.
+  {
+    const gunner = crewed(enemy, DRIVER);
+    if (c.that("shell: the enemy hull has a bot on the gun", !!gunner && enemy.gunReady) && gunner) {
+      const muzzle = enemy.muzzleToRef(new Vector3());
+      const dir = enemy.gunDirToRef(new Vector3());
+      const at = new Vector3(muzzle.x + dir.x * 3, muzzle.y + dir.y * 3, muzzle.z + dir.z * 3);
+      const p = h.player();
+      placePerson(h, at.x, at.y, at.z);
+      placePerson(h, at.x, at.y - (p.center.y - p.position.y), at.z);
+      const mark = h.log.events.length;
+      const fired = core.resolveShell(enemy, gunner);
+      h.flush();
+      const evs = since(h, mark);
+      const death = deathOf(evs, PERSON_SLOT);
+      const slot = slotOfBot(h, gunner);
+      const dmg = evs.find((e) => e.type === "damaged" && e.slot === PERSON_SLOT && e.killed);
+      c.that(
+        "shell: a bot crew's shell kills the person, filed by its door and credited, the kill on the bot's row",
+        fired && !!death && (death.cause === "shell" || death.cause === "blast") && death.credited &&
+          awardsOf(evs, slot)[0] === "kill" && dmg?.type === "damaged" && dmg.from !== null,
+        `fired=${fired}, ${fmtDeath(death)}, bot slot ${slot} awards [${awardsOf(evs, slot).join(",")}]`,
+      );
+    }
+  }
+
+  // --- a bot crew's TRACKS on the person: credited to the driver -----------
+  // Door: `crushSweep(hullRules)` — the call `SimCore.step` makes right after
+  // `VehicleSystem.update`. Fixture: the hull given its crush speed and the
+  // person stood inside its footprint.
+  if (c.that("crush: the person redeploys", await respawn())) {
+    const driver = crewed(enemy, DRIVER);
+    if (c.that("crush: the enemy hull has a bot driving", !!driver && enemy.alive) && driver) {
+      const speed = enemy.speed;
+      enemy.speed = enemy.spec.crush.minSpeed + 0.5;
+      placePerson(h, enemy.center.x, enemy.position.y, enemy.center.z);
+      const mark = h.log.events.length;
+      crushSweep(rules);
+      h.flush();
+      enemy.speed = speed;
+      const evs = since(h, mark);
+      const death = deathOf(evs, PERSON_SLOT);
+      const slot = slotOfBot(h, driver);
+      const crushed = evs.find((e) => e.type === "crushed");
+      c.that(
+        "crush: the tracks kill the person, filed `tracks`, credited, the kill on the driver's row",
+        death?.cause === "tracks" && death.credited && awardsOf(evs, slot)[0] === "kill" &&
+          crushed?.type === "crushed" && crushed.tank === t1 && crushed.by === slot &&
+          crushed.victim === PERSON_SLOT && crushed.victimKind === "person",
+        `${fmtDeath(death)}, driver slot ${slot} awards [${awardsOf(evs, slot).join(",")}]`,
+      );
+    }
+  }
+
+  // --- seat and evict ------------------------------------------------------
+  // Doors: `mount` and `dismount` (Match.onMount/onDismount's policy around
+  // `SimCore.seat`). Fixture: both chairs of the person's own hull crewed by
+  // bots, the person stood at its exit spot.
+  if (c.that("seat: the person redeploys", await respawn())) {
+    const driver = crewed(own, DRIVER);
+    const gunner = crewed(own, GUNNER);
+    if (c.that("seat: both chairs of the own hull held by bots", !!driver && !!gunner) && driver && gunner) {
+      const spot = core.vehicles.exitSpot(own);
+      placePerson(h, spot.x, spot.y, spot.z);
+      let mark = h.log.events.length;
+      await h.mount(t0, DRIVER);
+      let evs = since(h, mark);
+      const seat = evs.find((e) => e.type === "seat");
+      const p = h.player();
+      c.that(
+        "seat: a mount on a full own hull turns the bot driver out and seats the person",
+        seat?.type === "seat" && seat.slot === PERSON_SLOT && seat.tank === t0 && seat.seat === DRIVER &&
+          p.seat === t0 && p.crewSeat === DRIVER && p.invulnerable &&
+          core.crew.crewOf(own, DRIVER) === null && core.crew.crewOf(own, GUNNER) === gunner &&
+          !core.battle.aside(driver) && driver.alive,
+        `seat event ${JSON.stringify(seat)}, player seat ${p.seat}/${p.crewSeat}`,
+      );
+      mark = h.log.events.length;
+      await h.dismount();
+      evs = since(h, mark);
+      const out = evs.find((e) => e.type === "seat");
+      c.that(
+        "seat: a dismount puts the person down on foot and frees the chair",
+        out?.type === "seat" && out.tank === -1 && p.seat === -1 && !p.invulnerable && !own.seats[DRIVER],
+        `seat event ${JSON.stringify(out)}`,
+      );
+    }
+  }
+
+  // --- a hull pays nobody; its crew are filed `crew`, uncredited -----------
+  // Door: `shot` — the person's rifle round on the enemy hull. Fixture: the
+  // hull's health lowered so one round burns it, the person stood in clear
+  // sight of it.
+  {
+    const crew = [core.crew.crewOf(enemy, DRIVER), core.crew.crewOf(enemy, GUNNER)].filter(
+      (b): b is Bot => b !== null,
+    );
+    const p = h.player();
+    let spot: Vector3 | null = null;
+    for (let k = 0; k < 16 && !spot; k++) {
+      const a = (k / 16) * Math.PI * 2;
+      const x = enemy.center.x + Math.sin(a) * 10;
+      const z = enemy.center.z + Math.cos(a) * 10;
+      if (!standable(h, x, z)) continue;
+      const eye = new Vector3(x, groundY(h, x, z) + 1.55, z);
+      if (map(h).rays.blocked(eye, enemy.center, enemy)) continue;
+      spot = new Vector3(x, groundY(h, x, z), z);
+    }
+    if (c.that("hull: a clear line to the enemy hull, a crew in it", !!spot && crew.length > 0 && p.alive) && spot) {
+      placePerson(h, spot.x, spot.y, spot.z);
+      enemy.health = 0.01;
+      const evs = await shootAt(h, enemy.center);
+      const hit = evs.find((e) => e.type === "hit" && e.shooter === PERSON_SLOT);
+      const destroyed = evs.some((e) => e.type === "hullDestroyed" && e.tank === t1);
+      const crewDeaths = crew.map((b) => deathOf(evs, slotOfBot(h, b)));
+      const downs = evs.filter((e) => e.type === "botDown" && e.cause === "crew");
+      c.that(
+        "hull: the round that burns a hull pays the shooter nothing",
+        destroyed && hit?.type === "hit" && hit.victimKind === "hull" && hit.killed &&
+          awardsOf(evs, PERSON_SLOT).length === 0,
+        `destroyed=${destroyed}, hit ${JSON.stringify(hit)}, awards [${awardsOf(evs, PERSON_SLOT).join(",")}]`,
+      );
+      c.that(
+        `hull: its ${crew.length} bot crew die filed \`crew\`, uncredited, nobody paid`,
+        crewDeaths.every((d) => d?.cause === "crew" && !d.credited) &&
+          downs.length === crew.length && downs.every((e) => e.type === "botDown" && e.by === -1) &&
+          !evs.some((e) => e.type === "award"),
+        crewDeaths.map(fmtDeath).join("; "),
+      );
+    }
+  }
+
+  // --- a PERSON riding a hull that burns: `crew`, uncredited ---------------
+  // Door: `Vehicle.takeDamage` — what every round and blast calls on a hull —
+  // raising `VehicleSystem.onDestroyed`. Fixture: the hull's health lowered.
+  {
+    const p = h.player();
+    const spot = core.vehicles.exitSpot(own);
+    placePerson(h, spot.x, spot.y, spot.z);
+    await h.mount(t0, DRIVER);
+    if (c.that("burn: the person is aboard the own hull", p.seat === t0)) {
+      own.health = 0.01;
+      const mark = h.log.events.length;
+      own.takeDamage(1, enemy.center, "shell");
+      h.flush();
+      const evs = since(h, mark);
+      const death = deathOf(evs, PERSON_SLOT);
+      const out = evs.find((e) => e.type === "seat" && e.slot === PERSON_SLOT);
+      c.that(
+        "burn: a person going up with the hull is filed `crew`, uncredited, and put out of the seat",
+        death?.cause === "crew" && !death.credited && out?.type === "seat" && out.tank === -1 &&
+          !evs.some((e) => e.type === "award"),
+        fmtDeath(death),
+      );
+    }
+  }
+}
+
+// ---------------------------------------------------------------------------
+// The run.
+
+type Script = (h: Host, c: Checks) => Promise<void>;
+
+interface Run {
+  checks: Checks;
+  log: Log;
+  host: Host;
+}
+
+async function runCore(world: World, script: Script, tag: string): Promise<Run> {
+  const host = new CoreHost();
+  host.start(world);
+  const checks = new Checks(tag);
+  await script(host, checks);
+  return { checks, log: host.log, host };
+}
+
+async function runMatch(world: World, script: Script, tag: string): Promise<Run> {
+  const log = console.log;
+  console.log = () => {};
+  try {
+    const host = new MatchHost(world.def);
+    await host.start(world);
+    const checks = new Checks(tag);
+    await script(host, checks);
+    return { checks, log: host.log, host };
+  } finally {
+    console.log = log;
+  }
+}
+
+/** The per-body state the core exposes today, as plain numbers — what X2.5a C5's frame will carry. */
+function bodyState(core: SimCore): unknown {
+  return {
+    tick: core.tick,
+    now: core.now,
+    scores: {
+      kills: [...core.scores.kills],
+      deaths: [...core.scores.deaths],
+      points: [...core.scores.points],
+      version: core.scores.version,
+    },
+    tickets: [...core.conquest.tickets],
+    flags: core.conquest.points.map((p) => ({ owner: p.owner, meter: p.meter, present: [...p.present] })),
+    bots: core.battle.bots.map((b) => ({
+      pos: [b.position.x, b.position.y, b.position.z],
+      center: [b.center.x, b.center.y, b.center.z],
+      eye: [b.eyePos.x, b.eyePos.y, b.eyePos.z],
+      yaw: b.facing,
+      alive: b.alive,
+      hp: b.hp,
+      team: b.team,
+      aside: core.battle.aside(b),
+      deathFrom: [b.deathFrom.x, b.deathFrom.y, b.deathFrom.z],
+      joints: structuredClone(b["joints"]),
+    })),
+    players: [...core.players.values()].map((p) => ({
+      slot: p.slot,
+      pos: [p.position.x, p.position.y, p.position.z],
+      alive: p.alive,
+      health: p.health,
+      seat: p.seat,
+      crewSeat: p.crewSeat,
+      respawnT: p.respawnT,
+      grenades: p.grenades,
+      ordnance: p.ordnance,
+    })),
+    hulls: core.vehicles.hulls.map((t) => ({
+      pos: [t.position.x, t.position.y, t.position.z],
+      yaw: t.yaw,
+      health: t.health,
+      alive: t.alive,
+      seats: [...t.seats],
+    })),
+  };
+}
+
+async function main(): Promise<void> {
+  const started = performance.now();
+  const lines: string[] = [];
+  let failures = 0;
+  const report = (tag: string, r: Result) => {
+    if (!r.ok) failures++;
+    lines.push(`${r.ok ? "  ok  " : "  FAIL"} ${tag.padEnd(18)} ${r.name}${r.ok ? "" : `  -- ${r.detail}`}`);
+  };
+
+  const plan: Array<{ id: string; script: Script }> = [
+    { id: "greyfen", script: greyfen },
+    { id: "coldharbour", script: coldharbour },
+  ];
+  for (const { id, script } of plan) {
+    const def = MAPS.find((m) => m.id === id);
+    if (!def) throw new Error(`no map ${id}`);
+    const world: World = { def, ...(await loadSimWorld(def)) };
+
+    const a = await runCore(world, script, `${id}/core`);
+    const b = await runCore(world, script, `${id}/core#2`);
+    const m = await runMatch(world, script, `${id}/match`);
+
+    // The first core run's assertions are the pass list; the repeat and the
+    // authority's must pass the same ones and print only a failure.
+    for (const r of a.checks.results) report(a.checks.tag, r);
+    for (const run of [b, m]) {
+      for (const r of run.checks.results) if (!r.ok) report(run.checks.tag, r);
+      const same = run.checks.results.length === a.checks.results.length;
+      report(run.checks.tag, {
+        name: `the same ${a.checks.results.length} assertions pass`,
+        ok: same && run.checks.failed.length === 0,
+        detail: `${run.checks.results.length} run, ${run.checks.failed.length} failed`,
+      });
+    }
+
+    if (process.argv.includes("--list")) {
+      const kinds = new Map<string, number>();
+      for (const e of a.log.events) kinds.set(e.type, (kinds.get(e.type) ?? 0) + 1);
+      lines.push(`  -- ${id}: ${[...kinds].map(([k, n]) => `${k} ${n}`).join(", ")}`);
+      for (const l of scoreList(a.log.events)) lines.push(`  -- ${id}: ${l}`);
+    }
+    const tag = `${id}`;
+    report(tag, {
+      name: `same seed + same commands twice: identical event-stream hash (${a.log.digest()}, ${a.log.events.length} events)`,
+      ok: a.log.digest() === b.log.digest(),
+      detail: `${a.log.digest()} vs ${b.log.digest()}`,
+    });
+    const coreScore = scoreList(a.log.events);
+    const matchScore = scoreList(m.log.events);
+    const firstDiff = coreScore.findIndex((l, i) => l !== matchScore[i]);
+    report(tag, {
+      name: `Match (fake peer, validated door) gives the identical award/death list (${coreScore.length} lines)`,
+      ok: isDeepStrictEqual(coreScore, matchScore),
+      detail: `core ${coreScore.length} vs match ${matchScore.length}; first difference at ${firstDiff}: ` +
+        `${coreScore[firstDiff] ?? "(end)"} | ${matchScore[firstDiff] ?? "(end)"}`,
+    });
+    report(tag, {
+      name: `Match's whole event stream equals the core's (${m.log.digest()})`,
+      ok: a.log.digest() === m.log.digest(),
+      detail: `${a.log.digest()} vs ${m.log.digest()}`,
+    });
+    // What the authority actually SENT the person: every award of theirs as a
+    // `score`, in order — and the leash's `kill` naming no killer.
+    const mh = m.host as MatchHost;
+    const sent = mh.wireEvents("score").map((e) => `${e.kind} ${e.points}`);
+    const owed = a.log.events
+      .filter((e): e is Extract<SimEvent, { type: "award" }> => e.type === "award" && e.person)
+      .map((e) => `${e.kind} ${e.points}`);
+    report(tag, {
+      name: `the wire's \`score\` feed is the person's awards, in order (${owed.length})`,
+      ok: isDeepStrictEqual(sent, owed),
+      detail: `sent [${sent.join(", ")}] owed [${owed.join(", ")}]`,
+    });
+    if (id === "greyfen") {
+      const leash = mh.wireEvents("kill").filter((e) => e.victim === PERSON_SLOT && e.killer === -1);
+      report(tag, {
+        name: "the wire's leash `kill` names no killer (killer -1)",
+        ok: leash.length === 1,
+        detail: `${leash.length} such kill events`,
+      });
+    }
+    report(tag, {
+      name: `structuredClone round-trips every drain (cursor arrays and decoded events, ${a.log.drains + m.log.drains} drains)`,
+      ok: a.log.cloneFailures + b.log.cloneFailures + m.log.cloneFailures === 0,
+      detail: `${a.log.cloneFailures}/${b.log.cloneFailures}/${m.log.cloneFailures} failures`,
+    });
+    const state = bodyState(a.host.core);
+    report(tag, {
+      name: "structuredClone round-trips the per-body state (bots, persons, hulls, flags, board)",
+      ok: isDeepStrictEqual(structuredClone(state), state),
+      detail: "",
+    });
+    report(tag, {
+      name: "the two core runs end in the same per-body state; so does the authority's",
+      ok: isDeepStrictEqual(state, bodyState(b.host.core)) && isDeepStrictEqual(state, bodyState(m.host.core)),
+      detail: "",
+    });
+    for (const run of [a, b, m]) run.host.core.dispose();
+  }
+
+  console.log(lines.join("\n"));
+  const secs = ((performance.now() - started) / 1000).toFixed(1);
+  if (failures > 0) {
+    console.log(`\ncorecheck: ${failures} FAILED (${secs} s)`);
+    process.exit(1);
+  }
+  console.log(`\ncorecheck: all passed (${secs} s)`);
+  process.exit(0);
+}
+
+main().catch((err: unknown) => {
+  console.error(err);
+  process.exit(1);
+});

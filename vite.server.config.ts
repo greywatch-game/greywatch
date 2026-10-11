@@ -73,14 +73,17 @@ export default defineConfig(({ mode }) => ({
     // bundled 5 MB server file is otherwise unreadable.
     sourcemap: true,
     rollupOptions: {
-      // Three entries: the server proper, the headless round runner that is the
-      // only way to watch the simulation with nobody connected to it, and the
+      // Four entries: the server proper, the headless round runner that is the
+      // only way to watch the simulation with nobody connected to it, the
       // fingerprint dump that `npm run parity` diffs against a real browser
-      // build.
+      // build, and `npm run corecheck` — the scoring rules asserted off the
+      // core's events, offline and through `Match` (X2.5a C3). Only `index`
+      // is deployed; the other three are instruments.
       input: {
         index: "server/index.ts",
         simulate: "server/simulate.ts",
         parity: "server/parity.ts",
+        corecheck: "server/corecheck.ts",
       },
       // Runtime dependencies stay external; everything in `src/` is bundled so
       // the resolution problems above are settled at build time rather than at

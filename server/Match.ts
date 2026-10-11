@@ -10,6 +10,9 @@
  * accepted message — and `relay` turns what it drained into wire events. It
  * installs no callback on the core and reads nothing back off a live object
  * to finish an event (`src/sim/events.ts`).
+ * `server/corecheck.ts` drives a real instance through a fake socket and steps
+ * it by hand — it reaches `step`, `relay` and `timer` by name — so renaming
+ * one of those owes that file a look.
  * Invariants: a peer's slot is assigned here and nowhere else, and a peer never
  * names its own slot. The loop is fixed-step and drift-corrected: a `dt` taken
  * from wall clock would make the simulation run at the speed of the server's

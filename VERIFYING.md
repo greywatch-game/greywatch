@@ -2010,6 +2010,19 @@ is one machine's:
   mean, exactly as `ENGINE_UPGRADE.md` S2 and S8 had to force a fight on the
   client side. And a round on a 900 m map often hits the 45-minute cap, so
   check `winner: NONE` before averaging it with one that finished.
+- **`npm run corecheck` is the oracle for anything about a PERSON on the
+  authority**, which `simulate` cannot see — it seats nobody. It builds the
+  server bundle, then on Greyfen and Coldharbour drives `SimCore` with a
+  scripted person and no `Game`, asserting off the drained events: the kill
+  awards keyed on the victim's flag, a capture paid to the bodies present and
+  not to a benched bot, a bot crew's shell and tracks credited to the bot, a
+  hull that pays nobody and a crew filed `crew`, the leash (`other`, killer
+  -1), the respawn clock, seat and evict. It runs every script twice (same
+  seed, same commands, identical event-stream hash) and then through a real
+  `Match` behind a fake socket, which must leave the identical award/death
+  list. A couple of seconds, no browser, exits non-zero on a failure; `--
+  --list` prints the lists it compared. Run it after touching `src/sim/`,
+  `server/Match.ts`, `killRules`, `ScoreBook` or `hullRules`.
 - **The DEV-only proving ground needs `npm run simulate:dev`**, which is the
   dev-mode server build; the production one folds that map away and answers
   "no map". Its collision bake is `npm run collision -- proving`, and it takes

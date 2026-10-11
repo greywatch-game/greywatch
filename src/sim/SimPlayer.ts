@@ -256,11 +256,15 @@ export class SimPlayer implements Combatant {
   }
 
   /**
-   * Wired by `Match`: this player took a hit, for the vignette and the arc.
+   * Wired by `SimCore.addPlayer`: this player took a hit — the victim's door,
+   * where a death is counted and the `damaged` event written.
    *
    * A callback rather than a return value because `CombatSystem` calls
    * `takeDamage` and cares only whether it killed — the whole event, with the
-   * bearing and the remaining health on it, has to leave by another door.
+   * bearing and the remaining health on it, has to leave by another door. It
+   * is told the wound and not the CAUSE: which door dealt the blow and
+   * whether anybody was paid are filed into the death afterwards, in the same
+   * call, by that door (`KillLedger.personDown`).
    */
   onDamaged: (
     amount: number,

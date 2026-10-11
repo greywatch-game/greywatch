@@ -49,6 +49,14 @@ server/               # The authoritative match server. Node, no Babylon (the
                       #   folded off the core's drained events, as is
                       #   `--events`, the ordered list
   parity.ts           #   Fingerprint dump for `npm run parity`
+  corecheck.ts        #   `npm run corecheck`: the project's one test. Drives
+                      #   SimCore with a scripted person and no Game, asserts
+                      #   the scoring and person rules off its drained events
+                      #   (victim-keyed kill awards, capture, hull cases,
+                      #   leash, respawn clock, seat/evict, determinism,
+                      #   structuredClone), then runs the same script through
+                      #   a real Match behind a fake socket and requires the
+                      #   identical award/death list. Exits non-zero on a fail
 scripts/                      # Node tooling, run by hand or by `npm run build`,
                               #   never shipped. Plain .mjs outside both
                               #   tsconfigs. The game's own code is reached
@@ -267,7 +275,7 @@ vite.config.ts      # The client build, and the two plugins only it can hold:
                     #   inline a sound, and optimizeDeps.exclude for Havok.
                     #   Outside tsconfig's include, so it stays thin
 vite.server.config.ts # Builds server/ into dist-server/, for
-                    #   `npm run build:server` and `simulate` — and with
+                    #   `npm run build:server`, `simulate` and `corecheck` — and with
                     #   `--mode development` into dist-server-dev/ with
                     #   import.meta.env.DEV forced true, the only way the
                     #   authority runs the proving ground (`simulate:dev`)
@@ -909,7 +917,9 @@ src/
     killRules.ts        # `settleKill`: the killer's row, then the victim's door
                         #   if a bot fell. Every door onto a kill, both sides,
                         #   goes through it, against each side's `KillLedger`.
-                        #   Also `DeathCause`, the vocabulary simulate files
+                        #   Also `DeathCause`, the vocabulary simulate files,
+                        #   and the person's AUDIT door (`personDown`) SimCore
+                        #   files a person's death under
     hullRules.ts        # What a hull does, once for both simulations: the main
                         #   gun, the cupola gun, the tracks (`crushSweep`), the
                         #   driver a crush is credited to, and a crew's death.
