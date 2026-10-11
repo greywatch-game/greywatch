@@ -664,7 +664,7 @@ export class NetSession {
         this.vehicles.reset();
         this.ordnance.reset();
         // Last round's ASK, over last round's spawn table — and this is the
-        // exact half of a rule the far side already keeps. `NetPlayer.retire`
+        // exact half of a rule the far side already keeps. `SimPlayer.retire`
         // drops the authority's copy across a rotation because the index names
         // a spawn on the OLD map, and this side held its own copy for a
         // different reason (an unanswered request is re-sent on the next

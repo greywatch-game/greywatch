@@ -2,7 +2,7 @@
  * config/score.ts — what each thing a player does is worth on the board.
  * Owns: the point table and nothing else. Which award a kill EARNS is a rule
  * about the round and lives in the wiring that can see both the body and the
- * flag it fell on (`Game.creditKill`, `HeadlessGame.creditKill`); this file
+ * flag it fell on (`Game.creditKill`, `SimCore.creditKill`); this file
  * only says what each one pays.
  *
  * Read `systems/ScoreBook.ts` before changing a number: the same table is

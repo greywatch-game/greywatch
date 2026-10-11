@@ -14,7 +14,7 @@
  * stamps are useless raw. (What that clock IS is the server's business and
  * deliberately not this file's: it is the SIMULATION's, advancing by exactly
  * one step per tick, because a stamp is only ever read against the position it
- * arrived with — `HeadlessGame.now`.)
+ * arrived with — `SimCore.now`.)
  *
  * One sample is `serverNow - localNow` measured when the message is HANDLED,
  * which is `trueOffset - delay` for a delay made of transit plus however long
@@ -51,7 +51,7 @@
  * even 33.3 ms apart at instants 31, 36, 33 ms apart: every remote body
  * stutters, and `NetSoldier` reads the same jitter as a change of walking pace.
  * So `now` and `renderTime` are read at the frame's REFRESH timestamp, handed
- * in once a frame by `setFrame` — the client's half of the rule `HeadlessGame.now`
+ * in once a frame by `setFrame` — the client's half of the rule `SimCore.now`
  * is the server's half of, a stamp on the clock the motion is actually on. It
  * is also what the authority's REWIND is owed: a shot's `time` is the instant
  * the bodies on screen were posed at, exactly, rather than a few milliseconds

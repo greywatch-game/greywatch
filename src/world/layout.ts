@@ -163,7 +163,7 @@ export function isScatterRect(s: ScatterSpec): s is ScatterRect {
  * would need. It arrives through `MapDef.heights` instead, a lazy `import()`
  * beside `MapDef.collision` and for that field's reason, and everything that
  * needs the floor is HANDED one: `MapBuilder.build` takes it as an argument,
- * `buildServerWorld` awaits it, and `Game` holds the standing map's. See
+ * `loadSimWorld` awaits it, and `Game` holds the standing map's. See
  * ENGINE_UPGRADE.md S7.
  *
  * What that gives up is the pair being checkable by the compiler. `size *
@@ -635,7 +635,7 @@ export interface MapLayout {
    * match rotates maps under one table and a table sized per map would
    * renumber every player on team 1 at every rotation — and this is how many
    * of each team's block a round actually fields, pushed by
-   * `HeadlessGame.startRound` through `BattleSystem.setFielded`. So Sarab is
+   * `SimCore.startRound` through `BattleSystem.setFielded`. So Sarab is
    * twenty-four a side online as well as off. **How many PEOPLE a match seats
    * does not follow it**: that stays at sixteen on every map, because it is
    * bounded by the SMALLEST roster in the rotation and a rotation may never

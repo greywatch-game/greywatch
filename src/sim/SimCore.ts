@@ -1,5 +1,5 @@
 /**
- * server/HeadlessGame.ts — The authoritative simulation: the systems that
+ * src/sim/SimCore.ts — The authoritative simulation: the systems that
  * decide a round, and the wiring between them. No engine and no scene.
  * Owns: the map's lifetime and the per-tick order. It is the
  * server's answer to `core/Game.ts` and follows that file's rules — systems
@@ -9,13 +9,21 @@
  * Invariants: NOTHING here may render, and nothing may reach a canvas — see
  * `server/README.md`. **Nothing here imports `@babylonjs/core`, and every
  * vector is `src/math`'s**, as every system this file builds is — the last
- * scene, a NullEngine's that stood `buildServerWorld`'s collider meshes up,
+ * scene, a NullEngine's that stood the server world's collider meshes up,
  * went at `BABYLON_EXIT.md` X2.3, and `scripts/check-babylon-free.mjs` fails
- * the build on any import path from `server/` that reaches Babylon again.
+ * the build on any import path from `server/` or `src/sim/` that reaches
+ * Babylon again.
  * `GrenadeSystem` and `AntiTankSystem` are here as the
  * SIMULATIONS they are — where a grenade or a rocket goes and whom it hurts
  * is a rule and belongs to the authority — and their pictures, `GrenadeFx`
  * and `AntiTankFx`, are never built on this side (`BABYLON_EXIT.md` X2.2).
+ *
+ * **It lives in `src/sim/` rather than `server/` because it is not the
+ * server's** (`BABYLON_EXIT.md` X2.5a): the core reads no clock and draws no
+ * seed of its own, so a host — `Match`, `simulate`, and from X2.5a C4a the
+ * offline page — hands it the round's seed in `RoundSpec`, its world as the
+ * data `buildSimWorld` takes, and its wall-clock anchor through `anchor` and
+ * `drop`. Nothing in this directory may import from `server/`.
  *
  * A slot index IS a bot index, by construction: `Roster` lays its slots out
  * team 0 then team 1, `BattleSystem` builds its pool the same way, and both are
@@ -34,74 +42,94 @@
  *
  * A person enters the world through the reinforcement pass in `step` and
  * nowhere else, and only once they have both waited out the clock and ASKED:
- * `Match` records the ask on `NetPlayer.deployRequest` and this class is what
+ * `Match` records the ask on `SimPlayer.deployRequest` and this class is what
  * spends it, against `ConquestSystem.deployAt` rather than against the index
  * itself. That pair is the whole of spawn selection on this side — see
  * `docs/multiplayer.md`.
  */
-import { CONFIG } from "../src/config";
-import type { Vector3, Vector3Like } from "../src/math";
-import { Bot } from "../src/entities/Bot";
-import type { Combatant, Team } from "../src/entities/Combatant";
-import type { WeaponSetup } from "../src/entities/weapons";
-import { BattleSystem } from "../src/systems/BattleSystem";
+import { CONFIG } from "../config";
+import type { Vector3, Vector3Like } from "../math";
+import { Bot } from "../entities/Bot";
+import type { Combatant, Team } from "../entities/Combatant";
+import type { WeaponSetup } from "../entities/weapons";
+import { BattleSystem } from "../systems/BattleSystem";
 import {
   CombatSystem,
   type DamageKind,
   type Hittable,
   type ShotResult,
-} from "../src/systems/CombatSystem";
+} from "../systems/CombatSystem";
 import {
   ConquestSystem,
   scatterSpawn,
   type ControlPoint,
   type SpawnPick,
-} from "../src/systems/ConquestSystem";
-import { GlassSystem } from "../src/systems/GlassSystem";
-import { RoundRandom, UNDRAWN, freshSeed } from "../src/systems/RoundRandom";
-import { GrenadeSystem } from "../src/systems/GrenadeSystem";
-import { AntiTankSystem } from "../src/systems/AntiTankSystem";
+} from "../systems/ConquestSystem";
+import { GlassSystem } from "../systems/GlassSystem";
+import { RoundRandom, UNDRAWN } from "../systems/RoundRandom";
+import { GrenadeSystem } from "../systems/GrenadeSystem";
+import { AntiTankSystem } from "../systems/AntiTankSystem";
 import {
   crewLost,
   crushSweep,
   fireHullGun,
   fireHullMg,
   type HullRules,
-} from "../src/systems/hullRules";
+} from "../systems/hullRules";
 import {
   settleKill,
   type DeathCause,
   type KillLedger,
-} from "../src/systems/killRules";
+} from "../systems/killRules";
 import {
   ScoreBook,
   awardKill,
   awardZone,
   paysKiller,
-} from "../src/systems/ScoreBook";
-import { VehicleCrew } from "../src/systems/VehicleCrew";
+} from "../systems/ScoreBook";
+import { VehicleCrew } from "../systems/VehicleCrew";
 import {
   VehicleSystem,
   type RemoteHull,
   type VehicleOrders,
-} from "../src/systems/VehicleSystem";
-import { Vehicle, type GunAngles } from "../src/entities/Vehicle";
+} from "../systems/VehicleSystem";
+import { Vehicle, type GunAngles } from "../entities/Vehicle";
 import {
   DRIVER,
   GUNNER,
   chooseSeat,
   type CrewSeat,
   type SeatHolder,
-} from "../src/entities/hullSeats";
-import { resolveOrdnance } from "../src/entities/equipment";
-import type { GameMap } from "../src/world/MapBuilder";
-import type { MapDef } from "../src/world/maps";
-import { perTeamOf } from "../src/world/layout";
-import { LagComp } from "./lagComp";
-import { NetPlayer } from "./NetPlayer";
-import { buildServerWorld } from "./world";
+} from "../entities/hullSeats";
+import { resolveOrdnance } from "../entities/equipment";
+import type { GameMap } from "../world/MapBuilder";
+import type { MapDef } from "../world/maps";
+import type { MapCollision } from "../world/collision";
+import { perTeamOf, type Heightfield } from "../world/layout";
+import { LagComp } from "./LagComp";
+import { SimPlayer } from "./SimPlayer";
+import { buildSimWorld } from "./simWorld";
 
-export class HeadlessGame {
+/**
+ * Everything a round is, as its HOST hands it over: the map, its world as data
+ * (the collider bake and the floor — `buildSimWorld`'s two inputs, already
+ * loaded, so `startRound` is one synchronous turn), the tier, whether bots are
+ * fielded, and the SEED. The seed is the host's because drawing one is
+ * reading a source of entropy, and the core reads none: `Match` passes
+ * `freshSeed()`, `simulate` the one it was given.
+ */
+export interface RoundSpec {
+  def: MapDef;
+  collision: MapCollision;
+  /** `def.heights`' floor, or undefined for a flat map. */
+  floor: Heightfield | undefined;
+  difficulty: number;
+  /** False for a match created without bots — see `startRound`. */
+  bots: boolean;
+  seed: number;
+}
+
+export class SimCore {
   readonly combat: CombatSystem;
   readonly battle: BattleSystem;
   /**
@@ -168,7 +196,7 @@ export class HeadlessGame {
   perTeam: number = CONFIG.bots.perTeam;
 
   /** Connected humans, by slot. Sparse — most slots are bots. */
-  readonly players = new Map<number, NetPlayer>();
+  readonly players = new Map<number, SimPlayer>();
 
   /** Position history, so a shot resolves against what its shooter saw. */
   readonly lag = new LagComp();
@@ -197,8 +225,12 @@ export class HeadlessGame {
    * second window of samples: a clock that silently fell behind would hold
    * that stale maximum for the whole window and drag every body to the end of
    * its buffer. `drop` is what keeps the anchor — see it.
+   *
+   * **The HOST anchors it and this class never reads a clock**: zero until the
+   * first `anchor`, which `Match` and `simulate` call with `Date.now()` right
+   * after `startRound` — see `anchor`.
    */
-  now = Date.now();
+  now = 0;
 
   private readonly combatants: Combatant[] = [];
 
@@ -311,9 +343,9 @@ export class HeadlessGame {
   /**
    * The last hull state each DRIVING player reported, by hardstanding index.
    *
-   * The hull's half of `NetPlayer`, and it is a map here rather than a field
+   * The hull's half of `SimPlayer`, and it is a map here rather than a field
    * there for the reason `seat` is an index rather than a `Vehicle`: what a
-   * `NetPlayer` may know about is its own body, and which tank is under it is
+   * `SimPlayer` may know about is its own body, and which tank is under it is
    * a fact about the match. An entry exists for exactly as long as somebody is
    * in that hull — `seat` writes both ends — so `remoteFor` answering null is
    * the same statement as "nobody is driving this one".
@@ -328,19 +360,18 @@ export class HeadlessGame {
    * and conquest starts. The rig pool is never disposed, so this is the only
    * place the roster's difficulty can change — exactly as on the client.
    *
-   * `seed` fixes the round's seed (`RoundRandom`) — `npm run simulate` passes
-   * one to play a round again — and a match leaves it out and gets a fresh
-   * one per round, which `Match` logs.
+   * `spec.seed` is the round's seed (`RoundRandom`), and it is always the
+   * HOST's: `npm run simulate` passes the one it was asked to play again, and a
+   * match passes `freshSeed()` per round, which `Match` logs. Synchronous: the
+   * bake and the floor arrive already loaded (`server/world.ts`'s
+   * `loadSimWorld` on the authority), and the host anchors `now` once this
+   * returns.
    */
-  async startRound(
-    def: MapDef,
-    difficulty: number,
-    bots = true,
-    seed: number = freshSeed(),
-  ): Promise<void> {
+  startRound(spec: RoundSpec): void {
+    const { def, difficulty, bots, seed } = spec;
     this.battle.setDifficulty(difficulty);
     this.map?.dispose();
-    this.map = await buildServerWorld(def);
+    this.map = buildSimWorld(def, spec.collision, spec.floor);
     this.battle.setMap(this.map);
     this.battle.reset();
     // **How many bodies a side this map fields**, out of the pool the
@@ -462,26 +493,9 @@ export class HeadlessGame {
     // still seated — a rotation that left last round's kills on sixteen
     // screens is exactly the kind of stale state a client cannot detect.
     this.scores.reset(this.battle.bots.length);
-    // Back onto the wall clock, and LAST rather than first. Everything above
-    // is real time the simulation does not step — seconds of it, nearly all of
-    // it inside `buildServerWorld` — so an anchor taken before the build leaves
-    // this clock exactly the build behind the wall, which is the one thing the
-    // line exists to prevent. Taken here it absorbs the dispose, the build and
-    // the reset together, and the round's first tick is stamped on the wall.
-    //
-    // Which DIRECTION it is out by is what makes the placement load-bearing
-    // rather than tidy. A client estimates the offset to this clock as the
-    // MAXIMUM of a five-second window, so a clock that jumped FORWARD is
-    // adopted on the next snapshot it stamps, while one that quietly fell
-    // BEHIND is disbelieved for the whole of that window with every body
-    // dragged to the end of its buffer. Anchoring first put the build on the
-    // wrong side of that, and was only ever safe because `ROUND_OVER_MS` is
-    // longer than a map takes to build — a coincidence between two unrelated
-    // numbers, and the map that builds slowest is the biggest in the tree.
-    //
-    // See `now` for what this clock is, and `drop` for the driver's half of
-    // the same anchor.
-    this.now = Date.now();
+    // The wall clock is NOT read here: the host calls `anchor` the moment this
+    // returns, which is where the anchor has always been taken — LAST, after
+    // the dispose, the build and the reset. See `anchor` for why that place.
   }
 
   /**
@@ -637,6 +651,36 @@ export class HeadlessGame {
   }
 
   /**
+   * Puts `now` back onto the wall clock, at `ms` — the host's `Date.now()`,
+   * taken the moment `startRound` returns.
+   *
+   * Back onto the wall clock, and LAST rather than first. Everything in
+   * `startRound` is real time the simulation does not step — seconds of it,
+   * nearly all of it inside `buildSimWorld` and the load in front of it — so
+   * an anchor taken before the build leaves this clock exactly the build
+   * behind the wall, which is the one thing the line exists to prevent. Taken
+   * after it, it absorbs the dispose, the build and the reset together, and
+   * the round's first tick is stamped on the wall.
+   *
+   * Which DIRECTION it is out by is what makes the placement load-bearing
+   * rather than tidy. A client estimates the offset to this clock as the
+   * MAXIMUM of a five-second window, so a clock that jumped FORWARD is
+   * adopted on the next snapshot it stamps, while one that quietly fell
+   * BEHIND is disbelieved for the whole of that window with every body
+   * dragged to the end of its buffer. Anchoring first put the build on the
+   * wrong side of that, and was only ever safe because `ROUND_OVER_MS` is
+   * longer than a map takes to build — a coincidence between two unrelated
+   * numbers, and the map that builds slowest is the biggest in the tree.
+   *
+   * A HOST's call rather than a `Date.now()` in here because the core reads
+   * no clock (`BABYLON_EXIT.md` X2.5a, D18). See `now` for what this clock
+   * is, and `drop` for the driver's half of the same anchor.
+   */
+  anchor(ms: number): void {
+    this.now = ms;
+  }
+
+  /**
    * Wall time that passed without the world being stepped through it.
    *
    * The driver's half of `now`'s anchor. A fixed-step loop that has fallen
@@ -697,7 +741,7 @@ export class HeadlessGame {
     // people — so the two halves of a kill are taken separately: `creditKill`
     // for the bot that fired, whoever it hit, and the ticket-and-killfeed
     // bookkeeping only when what fell was a bot. A person's death arrives at
-    // its own door (`NetPlayer.onDamaged`, wired in `addPlayer`), which is
+    // its own door (`SimPlayer.onDamaged`, wired in `addPlayer`), which is
     // where it is charged and announced.
     this.battle.onBotKill = (victim, by) =>
       settleKill(this.ledger, by, victim, by.team, "round");
@@ -716,7 +760,7 @@ export class HeadlessGame {
     // call, which is what `Match` does with it.
     this.combat.onNearMiss = (near, from, at) => {
       this.battle.suppress(near, from);
-      if (near instanceof NetPlayer) this.onNearMiss(near, at);
+      if (near instanceof SimPlayer) this.onNearMiss(near, at);
     };
     // Glass, and it is the authority's for one reason with teeth: the movement
     // validator rejects a client standing inside `map.obstacles`, so a player
@@ -773,7 +817,7 @@ export class HeadlessGame {
     // reads. See the `explode` event.
     this.grenades.onExploded = (at, power) => this.onExplosion(at, power);
     // The thrower's row, whoever the blast finished, and a bot's death charged
-    // here — a person's already left through `NetPlayer.onDamaged`, which
+    // here — a person's already left through `SimPlayer.onDamaged`, which
     // `takeDamage` raised before this callback ran. `settleKill`, the door the
     // client's handler goes through too.
     this.grenades.onBlastHit = (victim, thrower, by, killed) => {
@@ -881,7 +925,7 @@ export class HeadlessGame {
    * a client claiming a shot fired backwards.
    */
   resolveShot(
-    shooter: NetPlayer,
+    shooter: SimPlayer,
     origin: Vector3,
     dir: Vector3,
     renderTime: number,
@@ -958,7 +1002,7 @@ export class HeadlessGame {
    * is: everything that changes while somebody is in a seat is here, and the
    * `null` branch undoes every line of it.
    *
-   * **It is the ONE writer of `NetPlayer.seat` and of `driven`**, which is
+   * **It is the ONE writer of `SimPlayer.seat` and of `driven`**, which is
    * what keeps the two from disagreeing about who is in what — a `driven`
    * entry without a seat is a hull nobody can steer and nothing can free, and
    * a seat without one is a driver whose reports go nowhere.
@@ -970,7 +1014,7 @@ export class HeadlessGame {
    * are either way, and a player who pressed the key a metre too far from
    * their own tank has lost nothing but the press.
    */
-  seat(player: NetPlayer, tank: Vehicle | null, want: CrewSeat = DRIVER): Vehicle | null {
+  seat(player: SimPlayer, tank: Vehicle | null, want: CrewSeat = DRIVER): Vehicle | null {
     const held = player.seat >= 0 ? this.vehicles.hulls[player.seat] : null;
     // **The old chair is given up whenever it is not the one being asked for,
     // and that is what makes a SWAP the same call as a mount.** A peer already
@@ -1063,7 +1107,7 @@ export class HeadlessGame {
    * leaves a hull and once when they cross inside one — and the pair of maps
    * is exactly the thing a second copy would get wrong.
    */
-  private release(player: NetPlayer, held: Vehicle): void {
+  private release(player: SimPlayer, held: Vehicle): void {
     if (player.crewSeat === DRIVER) this.driven.delete(player.seat);
     else this.laid.delete(player.seat);
     this.vehicles.setOccupied(held, player.crewSeat, false);
@@ -1094,7 +1138,7 @@ export class HeadlessGame {
    * rule `LagComp` and the snapshot scratch already follow.
    */
   applyDrive(
-    player: NetPlayer,
+    player: SimPlayer,
     x: number,
     y: number,
     z: number,
@@ -1120,7 +1164,7 @@ export class HeadlessGame {
    * and for the same reason. There is nothing to validate: a bearing claims
    * nothing about the world — see `GunnerMessage`.
    */
-  applyGun(player: NetPlayer, yaw: number, pitch: number): void {
+  applyGun(player: SimPlayer, yaw: number, pitch: number): void {
     if (player.crewSeat !== GUNNER) return;
     const laid = this.laid.get(player.seat);
     if (!laid) return;
@@ -1129,7 +1173,7 @@ export class HeadlessGame {
   }
 
   /** The hull this player is in, or null on foot. */
-  hullOf(player: NetPlayer): Vehicle | null {
+  hullOf(player: SimPlayer): Vehicle | null {
     return player.seat >= 0 ? (this.vehicles.hulls[player.seat] ?? null) : null;
   }
 
@@ -1149,7 +1193,7 @@ export class HeadlessGame {
    * HARDSTANDING: a gunner riding in a hull somebody else is driving would
    * otherwise be handed the driver's own sample.
    */
-  reportedHull(player: NetPlayer): RemoteHull | null {
+  reportedHull(player: SimPlayer): RemoteHull | null {
     if (player.seat < 0 || player.crewSeat !== DRIVER) return null;
     return this.driven.get(player.seat) ?? null;
   }
@@ -1164,7 +1208,7 @@ export class HeadlessGame {
    * and this is what decides whether that was true. Empty first, for the
    * reason that method gives — given the choice, take the tank nobody is using.
    */
-  seatOffered(player: NetPlayer): Vehicle | null {
+  seatOffered(player: SimPlayer): Vehicle | null {
     if (this.vehicles.empty || !player.alive || player.seat >= 0) return null;
     // A hull with a CHAIR left, which with two seats is the ordinary case: the
     // player climbs on beside whoever is already aboard and nobody is turned
@@ -1207,7 +1251,7 @@ export class HeadlessGame {
    * not debit the pouch — `AntiTankSystem.launch`'s contract, unchanged by
    * being reached over a socket.
    */
-  launchRocket(from: Vector3, dir: Vector3, by: NetPlayer): boolean {
+  launchRocket(from: Vector3, dir: Vector3, by: SimPlayer): boolean {
     if (!this.antiTank.launch(from, dir, by.team, by)) return false;
     // Heard exactly as a rifle is, and by the same door: a rocket leaving is
     // the loudest thing on the map after a tank gun, and the side that fired
@@ -1217,7 +1261,7 @@ export class HeadlessGame {
   }
 
   /** A person's mine, laid by the authority on their behalf. */
-  layMine(at: Vector3, by: NetPlayer): boolean {
+  layMine(at: Vector3, by: SimPlayer): boolean {
     return this.antiTank.place(at, by.team, by);
   }
 
@@ -1238,8 +1282,8 @@ export class HeadlessGame {
    * reinforcement for somebody joining the game, which is a ticket the round
    * should never lose. `BattleSystem.setBenched` owns what that means.
    */
-  addPlayer(slot: number, team: Team): NetPlayer {
-    const player = new NetPlayer(slot, team);
+  addPlayer(slot: number, team: Team): SimPlayer {
+    const player = new SimPlayer(slot, team);
     // A hit taken by a person needs a ticket charged and an event sent, and
     // neither is `CombatSystem`'s business — it calls `takeDamage` and reads
     // only whether that killed. Routed here for the same reason every other
@@ -1338,7 +1382,7 @@ export class HeadlessGame {
    * **The kill is counted at the KILLER's door and the death at the victim's,
    * once each.** They are separate doors because they are separate facts with
    * separate witnesses — every death in the game already arrives somewhere
-   * (`onKill` for a bot, `NetPlayer.onDamaged` for a person, whatever dealt it)
+   * (`onKill` for a bot, `SimPlayer.onDamaged` for a person, whatever dealt it)
    * while the killer is known only to whatever fired, and pairing them would
    * mean one of the two paths inventing the half it cannot see. It is also what
    * lets a kill be credited when the victim is a person, which the old
@@ -1396,7 +1440,7 @@ export class HeadlessGame {
    * through `alive`) is stated once, there.
    *
    * `slotOf` is the disagreement worth naming: here a body is a `Bot` or a
-   * `NetPlayer` with its own slot, and on a client it is a bot or the player.
+   * `SimPlayer` with its own slot, and on a client it is a bot or the player.
    */
   private awardZone(
     point: ControlPoint,
@@ -1442,7 +1486,7 @@ export class HeadlessGame {
   /**
    * One death on `slot`'s row. Called once per body that goes down, and the
    * one funnel both doors take — a bot's through `onKill`, a person's through
-   * `NetPlayer.onDamaged`.
+   * `SimPlayer.onDamaged`.
    *
    * `onDeath` is raised from here rather than from the two doors for that
    * reason: it is the place where "exactly once per body" is already true, so
@@ -1463,7 +1507,7 @@ export class HeadlessGame {
   private slotOf(c: Combatant | null): number {
     if (!c) return -1;
     if (c instanceof Bot) return this.battle.bots.indexOf(c);
-    return c instanceof NetPlayer ? c.slot : -1;
+    return c instanceof SimPlayer ? c.slot : -1;
   }
 
   /**
@@ -1504,7 +1548,7 @@ export class HeadlessGame {
   onNeutralisedEvent: (point: ControlPoint) => void = () => {};
 
   /** Wired by `Match`: a person has been placed in the world. */
-  onPlayerSpawned: (player: NetPlayer, at: Vector3Like, yaw: number) => void = () => {};
+  onPlayerSpawned: (player: SimPlayer, at: Vector3Like, yaw: number) => void = () => {};
 
   /**
    * Wired by `Match`: a blast went off here, and how big it LOOKS.
@@ -1532,7 +1576,7 @@ export class HeadlessGame {
    * way out — the caller's vector, read inside the call.
    */
   onSeatChanged: (
-    player: NetPlayer,
+    player: SimPlayer,
     tank: number,
     at: Vector3Like,
     yaw: number,
@@ -1555,11 +1599,11 @@ export class HeadlessGame {
    * scratch vector — read it inside the call or copy it; it is overwritten by
    * the next near miss, which in a firefight is the next round.
    */
-  onNearMiss: (player: NetPlayer, at: Vector3Like) => void = () => {};
+  onNearMiss: (player: SimPlayer, at: Vector3Like) => void = () => {};
 
   /** Wired by `Match`: a person took a hit. */
   onPlayerDamaged: (
-    player: NetPlayer,
+    player: SimPlayer,
     amount: number,
     from: Vector3Like | undefined,
     killed: boolean,

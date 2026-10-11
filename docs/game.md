@@ -104,7 +104,7 @@ round alone owns what is about a *fight* — battle, conquest, flag markers, min
 is handed only what its own picture reads.** The split is `CLAUDE.md`'s
 ("Ownership and wiring"): the simulation owns the state on `src/math`, the view
 reads it and never writes it, and the authority builds the simulations alone —
-so every view's line here has no twin in `HeadlessGame`. The one node an
+so every view's line here has no twin in `SimCore`. The one node an
 outcome still reads is offline, the player's throw hand and launcher muzzle
 (`FINDINGS.md` 55). `CombatFx` takes
 `map.rays` (its `drawRounds` casts for itself); `GrenadeFx` takes `map.rays`,

@@ -10,6 +10,21 @@ Babylon's `NullEngine` until then).
 Read [`docs/multiplayer.md`](../docs/multiplayer.md) before changing anything in
 here. What follows is only the shape of the directory.
 
+## The simulation is not in this directory
+
+`SimCore` (the round: every simulation system and the wiring between them),
+`SimPlayer` (a connected human as the simulation sees one), `LagComp` (the
+rewind around a shot) and `buildSimWorld` (the solid world rebuilt from the
+bake as data) live in [`src/sim/`](../src/sim/), moved out of here at
+`BABYLON_EXIT.md` X2.5a because the offline page is to host the same core.
+What stays here is the HOST: `Match` and `simulate` LOAD the world
+(`world.ts`'s `loadSimWorld`), DRAW the round's seed (`freshSeed()`, or the
+one `simulate` was given) and ANCHOR the clock (`SimCore.anchor(Date.now())`
+once `startRound` returns) — the three things the core does not do for itself,
+because it reads no clock and no entropy. Nothing in `src/sim/` may import
+from this directory, and `scripts/check-babylon-free.mjs` holds every file in
+it as it holds every file here.
+
 ## Why the two tsconfigs
 
 `tsconfig.json` at the root pins `"types": []`, so the browser compile sees no
@@ -56,7 +71,7 @@ things to inline.
 
 - **No Babylon.** No engine, no scene, no mesh, no material — not even a
   `NullEngine`. A value import of `@babylonjs/core` anywhere on a path from
-  this directory fails `npm run build` (`scripts/check-babylon-free.mjs`, which
+  this directory or `src/sim/` fails `npm run build` (`scripts/check-babylon-free.mjs`, which
   prints the chain). What draws belongs in a client VIEW beside its
   simulation (`CLAUDE.md`, "Ownership and wiring"), and a vector is
   `src/math`'s.
@@ -65,8 +80,8 @@ things to inline.
   and would have to cross the gate above to get here.
 - **No `MapBuilder`.** It builds meshes and reaches a texture through
   `floorMaterial`. The solid world is rebuilt as data from the baked boxes in
-  `src/world/<map>/collision.ts` instead — see `scripts/bake-collision.mjs` for
-  why that is sound.
+  `src/world/<map>/collision.ts` instead (`src/sim/simWorld.ts`) — see
+  `scripts/bake-collision.mjs` for why that is sound.
 - **No trusting a client.** A client reports where it is and what it shot; the
   server decides whether either is true.
 - **No unbounded input.** Every socket costs a bounded amount of this process

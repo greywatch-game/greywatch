@@ -788,11 +788,11 @@ export class BattleSystem {
    * at the sky or at the floor) leads nowhere and stays at the muzzle.
    *
    * `dir` need not be a unit vector — the lead normalises what it uses, which
-   * it owes anyway because one caller is `HeadlessGame.resolveShot`, where the
+   * it owes anyway because one caller is `SimCore.resolveShot`, where the
    * direction came off the wire and `server/wire.ts` proves only that it is
    * three finite numbers.
    *
-   * Called internally for bot fire and by `Game`/`HeadlessGame` for a person's,
+   * Called internally for bot fire and by `Game`/`SimCore` for a person's,
    * a launcher's and a hull's two guns.
    */
   hearGunshot(at: Vector3Like, shooter: Team, dir: Vector3Like): void {

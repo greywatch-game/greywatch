@@ -44,7 +44,7 @@
  *    reused or renumbered silently re-rolls every round anybody wrote down.
  *  - Asking twice for one key hands back the SAME stream, so a pool rebuilt
  *    mid-session (`BattleSystem.setRoster`) picks up where its slots were.
- *  - One `RoundRandom` per simulation — `Game` offline, `HeadlessGame` on the
+ *  - One `RoundRandom` per simulation — `Game` offline, `SimCore` on the
  *    authority — and each calls `seedRound` once per round, AFTER everything
  *    that draws has been built and BEFORE the first body spawns.
  * Never: be drawn from by anything that only makes a PICTURE or a SOUND (the

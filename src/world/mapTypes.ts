@@ -399,7 +399,7 @@ export interface GameMap {
    * what `GlassFx` and `WorldCulling` index. **Client-only and EMPTY on the
    * authority**, like `visuals`: no ray and no sweep reads a mesh on either
    * side (they answer off `colliderBoxes`, `rayGroups` and the floor through
-   * `rays`), and `buildServerWorld` builds none (`BABYLON_EXIT.md` X2.3).
+   * `rays`), and `buildSimWorld` builds none (`BABYLON_EXIT.md` X2.3).
    */
   colliders: Mesh[];
   /** The same colliders as plain boxes, for the nav grid. */
@@ -522,7 +522,7 @@ export interface GameMap {
    * Here beside `nav`, `cover` and `obstacles` rather than built by whoever
    * wants one, for the reason all three are: it is derived from the finished
    * collider set, it is built once per map, and the authority gets the same
-   * object off `buildServerWorld` without a server-only variant. See
+   * object off `buildSimWorld` without a server-only variant. See
    * `world/RayWorld.ts`, and `ENGINE_UPGRADE.md` wall 2 for what it replaced.
    */
   rays: RayWorld;

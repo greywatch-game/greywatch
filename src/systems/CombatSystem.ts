@@ -82,7 +82,7 @@ export type DamageKind = "bullet" | "blast" | "shell" | "crush" | "fire";
  * **Its vectors are either library's** (`BABYLON_EXIT.md` X2.2): `center` and
  * `eyePos` are `Vector3Ref` — read through their fields, and written through
  * `set`/`copyFromFloats` by the one thing that moves them from outside,
- * `server/lagComp.ts`'s rewind — so nothing that reaches a target through
+ * `src/sim/LagComp.ts`'s rewind — so nothing that reaches a target through
  * this interface may hand either to a Babylon method, which would read `_x`
  * off one of ours and write NaN. The types refuse it.
  */

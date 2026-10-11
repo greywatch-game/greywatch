@@ -1,5 +1,5 @@
 /**
- * server/NetPlayer.ts — A connected human, as the simulation sees one.
+ * src/sim/SimPlayer.ts — A connected human, as the simulation sees one.
  * Owns: the authoritative position, stance, health and team of one player. NOT
  * the position history a shot is rewound against — that is `LagComp`'s, which
  * records every `Hittable` the same way and so cannot drift between a bot and a
@@ -18,16 +18,16 @@
  * ordinary. See `docs/multiplayer.md` for the trade that was taken and why
  * input replay was not.
  */
-import { CONFIG } from "../src/config";
-import type { Combatant, Team } from "../src/entities/Combatant";
-import { Vector3, type Vector3Like } from "../src/math";
-import { HealthRegen } from "../src/entities/HealthRegen";
-import { easeStance, stanceCentre, stanceEye } from "../src/entities/stance";
-import { DRIVER, type CrewSeat } from "../src/entities/hullSeats";
-import type { DamageKind } from "../src/systems/CombatSystem";
-import { Leash } from "../src/world/leash";
+import { CONFIG } from "../config";
+import type { Combatant, Team } from "../entities/Combatant";
+import { Vector3, type Vector3Like } from "../math";
+import { HealthRegen } from "../entities/HealthRegen";
+import { easeStance, stanceCentre, stanceEye } from "../entities/stance";
+import { DRIVER, type CrewSeat } from "../entities/hullSeats";
+import type { DamageKind } from "../systems/CombatSystem";
+import { Leash } from "../world/leash";
 
-export class NetPlayer implements Combatant {
+export class SimPlayer implements Combatant {
   readonly position = new Vector3();
   readonly eyePos = new Vector3();
   readonly center = new Vector3();
@@ -53,7 +53,7 @@ export class NetPlayer implements Combatant {
    * boundary is open.
    *
    * Per body and not per match, because it is a fact about one person's walk;
-   * `HeadlessGame` points it at the map and steps it, exactly as the client's
+   * `SimCore` points it at the map and steps it, exactly as the client's
    * `Game` does with its own. **This is the one that decides**: the client runs
    * the same clock off its own predicted movement so the countdown is on screen
    * the instant the line is crossed, and it draws it rather than acting on it.
@@ -75,7 +75,7 @@ export class NetPlayer implements Combatant {
    * A person is deployed only once this is set, which is the whole of spawn
    * selection on this side: the reinforcement clock says WHEN and this says
    * WHERE, and neither is enough alone. It is a request and not a placement —
-   * `HeadlessGame` resolves it against what the team may actually use at the
+   * `SimCore` resolves it against what the team may actually use at the
    * moment it acts, so an index naming a flag that fell while the message was
    * in flight costs the player nothing but the position they picked.
    *
@@ -139,7 +139,7 @@ export class NetPlayer implements Combatant {
    * driver is inside the hull, so `invulnerable` goes up for exactly as long as
    * this is set, and what is being shot at is the tank.
    *
-   * Written only through `HeadlessGame.seat`, which is the pair of
+   * Written only through `SimCore.seat`, which is the pair of
    * `Game.mount`/`clearVehicle` on this side and must be read as one thing with
    * them.
    */
@@ -147,7 +147,7 @@ export class NetPlayer implements Combatant {
 
   /**
    * …and WHICH of that hull's two jobs — `DRIVER` or `GUNNER`. Meaningless
-   * while `seat` is -1, and written only through `HeadlessGame.seat` beside
+   * while `seat` is -1, and written only through `SimCore.seat` beside
    * it.
    *
    * It is what decides whether a reported hull (`drive`) is believed or
@@ -328,7 +328,7 @@ export class NetPlayer implements Combatant {
     this.grenades = this.grenadesCarried;
     this.ordnance = this.ordnanceCarried;
     // A fresh body is on foot. A driver who died inside a hull was put out of
-    // it by `HeadlessGame.seat` on the frame it burned, so this is belt and
+    // it by `SimCore.seat` on the frame it burned, so this is belt and
     // braces — and it is the belt that matters: a seat left set across a death
     // would send every one of this player's reported walks through the hull
     // validator.
@@ -351,7 +351,7 @@ export class NetPlayer implements Combatant {
   /** Takes this player out of the fight without killing them — a disconnect. */
   retire(): void {
     this.alive = false;
-    // Out of whatever they were in. `HeadlessGame.removePlayer` gives the hull
+    // Out of whatever they were in. `SimCore.removePlayer` gives the hull
     // up through `seat` before this runs, so this is the same belt `spawn`
     // fastens: a retired player holding a seat index is one whose hull can
     // never be offered to anybody again.

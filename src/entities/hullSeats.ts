@@ -11,7 +11,7 @@
  * roster, its players and the hull rules all name a seat without wanting a
  * vehicle**: these sat in `Vehicle.ts`, and a value import of `DRIVER` from
  * there pulled the hull's model, its rig and Babylon behind it into
- * `server/Match.ts` and `server/NetPlayer.ts`, which only ever wanted the
+ * `server/Match.ts` and `src/sim/SimPlayer.ts`, which only ever wanted the
  * number (`BABYLON_EXIT.md` X2.2).
  */
 

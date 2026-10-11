@@ -3,7 +3,7 @@
  * none, and the world layer's fixed unit of LOCALITY.
  * Owns: that one number, and nothing else.
  * Never: import anything. **A file of its own because the authority reads it**
- * — `server/world.ts` defaults a map's `blockSize` and `terrainBlock` to it
+ * — `src/sim/simWorld.ts` defaults a map's `blockSize` and `terrainBlock` to it
  * and `GlassSystem` buckets its pane index by it — and it sat in `merge.ts`, whose readers reached it through
  * `MapBuilder`: one number pulled the whole map builder, every kit builder
  * and Babylon behind them into the server (`BABYLON_EXIT.md` X2.2).

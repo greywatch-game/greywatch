@@ -249,7 +249,7 @@ between.
 **The client's own half of a deploy ask has the same shape and is cleared in
 the same spirit** — `NetSession.pendingDeploy` on a `roundstart`. A request
 stands until the authority answers it, which is what lets it survive a socket;
-a rotation is where standing stops being true, because `NetPlayer.retire` drops
+a rotation is where standing stops being true, because `SimPlayer.retire` drops
 the authority's `deployRequest` across one and the index names a spawn on a map
 nobody is playing any more. Left standing, a reconnect's `flushDeploy` re-sent
 it, the authority resolved a stale index by picking a spawn itself, and the

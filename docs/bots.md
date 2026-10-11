@@ -278,7 +278,7 @@ walks no meshes,
 and it needs team 1's block to begin at the same slot index on every map a match
 rotates onto, because a slot index IS a bot index and a table that grew and
 shrank under the humans sitting in it would take `ScoreBook`'s rows, the wire's
-identities and the bench with it. `HeadlessGame`'s constructor sizes the pool to
+identities and the bench with it. `SimCore`'s constructor sizes the pool to
 `CONFIG.bots.maxPerTeam` and `startRound` calls **`BattleSystem.setFielded`**
 with the map's own `perTeamOf` — so a match on Sarab or Cinderhaven is 24v24
 and a match anywhere else is 8v8 out of the same pool.
@@ -354,7 +354,7 @@ budget is the one thing here that does not scale.
   x/z and a lead spent on a steep shot would put it in the air or under the
   floor; a shot with no ground bearing at all leads nowhere and stays at the
   muzzle. And it is normalised where it is spent rather than trusted, because
-  one caller is `HeadlessGame.resolveShot`, where the direction came off the
+  one caller is `SimCore.resolveShot`, where the direction came off the
   wire and `server/wire.ts` proves only that it is three finite numbers.
 - **A friendly shot inside `friendlyHearMin` (12 m) is not a cue at all.** A bot
   standing next to the man firing learns nothing from the noise — it can see him
@@ -615,7 +615,7 @@ rounds:
 | Greyfen | 0.251 | 0.082 |
 | Coldharbour | 0.334 | 0.150 |
 
-Three 240 s rounds a side per map at `Regular`, through `HeadlessGame` — the
+Three 240 s rounds a side per map at `Regular`, through `SimCore` — the
 harness `npm run simulate` drives. Read it beside the engage fractions above
 rather than on its own: the point is a squad that spreads without fighting less.
 

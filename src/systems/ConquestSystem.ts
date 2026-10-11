@@ -428,7 +428,7 @@ function near(a: Vector3Like, b: Vector3Like, dist: number): boolean {
  *
  * **Both simulations resolve a spawn through this and nothing else** — the
  * offline round in `Game.spawnPointFor` and the deploy screen, the authority
- * in `HeadlessGame.spawnPointFor` — and a body is never scattered again on
+ * in `SimCore.spawnPointFor` — and a body is never scattered again on
  * ARRIVAL, because a client handed the authority's position must put the body
  * exactly there (see `Game.spawnPlayer`). The side that scatters is the side
  * that says where the body is, and it draws from that side's round stream —
@@ -436,7 +436,7 @@ function near(a: Vector3Like, b: Vector3Like, dist: number): boolean {
  * stands decides the fight it walks into.
  *
  * The position is a fresh `src/math` vector the caller owns; everything that
- * takes it reads it as `Vector3Like` (`Bot.spawn`, `NetPlayer.spawn`,
+ * takes it reads it as `Vector3Like` (`Bot.spawn`, `SimPlayer.spawn`,
  * `Player.placeAt`) or copies it by its fields.
  */
 export function scatterSpawn(

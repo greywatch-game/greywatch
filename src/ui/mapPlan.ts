@@ -250,7 +250,7 @@ function byRise(a: PlanMass, b: PlanMass): number {
  * states directly and the convex pieces a PATH road's network was cut into.
  *
  * Both sides of the game build a `RoadFootprint` off the same placements
- * (`MapBuilder` here, `server/world.ts` there), so this is the one place in
+ * (`MapBuilder` here, `src/sim/simWorld.ts` there), so this is the one place in
  * the interface that knows a carriageway's shape, and it knows it from the
  * same object the grass and the scatter are held off.
  */

@@ -411,9 +411,9 @@ at range, in one silhouette. `Bot.launcher` is a property rather than a field so
 that the write and the mesh are one statement.
 
 **On the server this runs exactly as it does offline**, and it has to: the bots
-in a match are simulated there and nowhere else, so a `HeadlessGame` that wired
+in a match are simulated there and nowhere else, so a `SimCore` that wired
 nothing would field the only squads in the game with no answer to a tank.
-`HeadlessGame.wire` installs the same `fireRocketFor` `Game` does, less the
+`SimCore.wire` installs the same `fireRocketFor` `Game` does, less the
 sound — which is the authority's to ANNOUNCE (`hearGunshot`, and the `fire`
 event `Match.onOrdnance` raises) rather than to play.
 

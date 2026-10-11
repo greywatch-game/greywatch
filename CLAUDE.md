@@ -688,7 +688,7 @@ FLOOR, which grows with the square of the map. **There is no
 `MapLayout.terrain`**: everything that needs the ground is HANDED it —
 `MapBuilder.build` takes it as an argument, `Game.floor` holds the standing
 map's because `installMap` is one synchronous turn that cannot contain a fetch,
-`buildServerWorld` awaits it, and the editor writes through `map.terrain.field`,
+`loadSimWorld` awaits it, and the editor writes through `map.terrain.field`,
 which is that same object. `size * cell` must still equal the map's extent and
 nothing typed can see the pair any more, so `build` asserts it in a DEV build.
 
@@ -1215,7 +1215,7 @@ monotonicity is a claim about the LIST `openBox` re-severs against, so every
 CLEARED pane must come out of it and not merely the one breaking (or a second
 break in the same frontage puts the first window's wall back); and the fields
 belong to `openBox` rather than to its caller, because a caller that has to
-remember them can forget them, and the authority did — `HeadlessGame` never
+remember them can forget them, and the authority did — `SimCore` never
 drained the deferral at all.
 
 **A round has to pass THROUGH glass, so a pane can never stop a `castRound` —
@@ -1243,7 +1243,7 @@ assembles each frame. The player's health regenerates after
 
 **A round is SCORED as well as counted, and the score is not the kills.**
 `ScoreBook` is one ledger per simulation — one row per roster SLOT, held by
-`Game` offline and by `HeadlessGame` on the authority, so the two boards cannot
+`Game` offline and by `SimCore` on the authority, so the two boards cannot
 drift — and **the payout rules are one function each, in that same file, called
 by both simulations**: `awardKill`, keyed on **the flag the VICTIM was standing
 in, never the killer's own position**; `awardZone`, which pays everyone of a
@@ -1440,8 +1440,11 @@ guard hashes the LAYOUT — a flag changed in a builder needs `npm run collision
 by hand.
 
 **A SERVER TIME IS THE SIMULATION'S CLOCK AND NEVER `Date.now()`**
-(`HeadlessGame.now`): anchored rather than free-running, **every stamped message
-uses it**, and `LagComp` records and clamps against it too.
+(`SimCore.now`): anchored rather than free-running, **every stamped message
+uses it**, and `LagComp` records and clamps against it too. **The core lives in
+`src/sim/` and reads no clock and draws no seed itself**: the HOST (`Match`,
+`simulate`) loads the world (`loadSimWorld`), passes `RoundSpec.seed` and calls
+`SimCore.anchor`/`drop`, and nothing in `src/sim/` imports from `server/`.
 
 **Each sound cue comes from whichever side actually knows** — including the
 crack of a round going past, which is ADDRESSED to the one player it happened
@@ -1598,7 +1601,7 @@ regions' two headers, and what is not built.
   new that decides who lives. A system asks its simulation's `RoundRandom` for
   a stream when it builds what draws — **one per SHOOTER**, keyed by the
   authority's slot or the hardstanding — and both simulations reseed it once a
-  round (`Game.buildRound`, `HeadlessGame.startRound`) from `?seed=`,
+  round (`Game.buildRound`, `SimCore.startRound`) from `?seed=`,
   `simulate`'s fourth argument, or a fresh draw. **A picture or a sound stays
   on `Math.random` and never draws from an outcome stream**, or the fight
   depends on the camera. `npm run simulate -- <map> 1 2 <seed>` prints a

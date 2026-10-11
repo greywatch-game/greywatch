@@ -12,7 +12,7 @@
  * grenade goes, whom a blast hurts or where a fire burns, and every random in
  * it is a PICTURE's (`Math.random`, never a round stream). The authority never
  * builds one (`BABYLON_EXIT.md` X2.2): the simulation half is all
- * `server/HeadlessGame.ts` holds, so nothing here has to survive a NullEngine.
+ * `src/sim/SimCore.ts` holds, so nothing here has to survive a NullEngine.
  * Contract: `docs/grenades.md`.
  *
  * Split out of `GrenadeSystem` at X2.2 C3, on the line `CombatFx` drew one

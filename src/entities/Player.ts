@@ -456,7 +456,7 @@ export class Player implements Combatant {
   }
   /**
    * The predicted half of a person's regen — the curve and the lock are
-   * `HealthRegen`'s, shared with the authority's `NetPlayer`.
+   * `HealthRegen`'s, shared with the authority's `SimPlayer`.
    */
   private readonly regen = new HealthRegen();
   private reloadT = 0;

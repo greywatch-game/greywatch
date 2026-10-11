@@ -165,7 +165,7 @@ const socketsPerAddress = new Map<string, number>();
  * nothing at all: TCP keepalive is what eventually notices, and Node leaves
  * that at the OS default, which on Linux is TWO HOURS before the first probe.
  * For all of that time the peer's roster slot is held, the bot that would have
- * backfilled it stays benched, `HeadlessGame` keeps a `NetPlayer` nobody owns
+ * backfilled it stays benched, `SimCore` keeps a `SimPlayer` nobody owns
  * in the rewind history, and the socket counts against `MAX_SOCKETS_PER_IP`
  * for the very address the player is reconnecting from — the cap above makes
  * the last of those worse than it was, which is what turned this from a known

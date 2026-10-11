@@ -1199,7 +1199,7 @@ is one machine's:
   "trees with sky behind them" depending on where you stand.
 - **Bot BEHAVIOUR is measured in the headless simulation, not in the browser.**
   At ~2 fps nothing crosses a map, so anything about squads, spacing, cover or
-  state occupancy wants `HeadlessGame` instead: build a throwaway entry against
+  state occupancy wants `SimCore` instead: build a throwaway entry against
   it with `vite build` (copy `vite.server.config.ts`, point `input` at a
   scratchpad file; the bundle may live outside the tree, since the authority
   imports no `@babylonjs/core` to resolve and `ws` is all `server/index.ts`
@@ -1577,7 +1577,7 @@ is one machine's:
   8.3, 7.9, 7.9, 7.6, 8.1 and 7.8 after, against a 7–8 ms median either side.
   To compare a field against ground truth, sweep it again by hand —
   `nav.buildField` with the same goal and radius `MapBuilder` and
-  `server/world.ts` both use (a control point's `pos` and `radius * 0.6`, a
+  `buildSimWorld` both use (a control point's `pos` and `radius * 0.6`, a
   spawn's `pos` and 6) — and diff the `dist` arrays. That needs no browser at
   all: `NavGrid` takes a size, the baked boxes and a `TerrainField`, so an
   esbuild bundle of the three run under node is the whole harness, and
@@ -1938,7 +1938,7 @@ is one machine's:
   bleed. To record which world each build actually got, wrap `g.installMap` and push
   `g.mapDef.id` — the end state alone cannot tell one build from two.
 - **The whole of spawn selection is testable without a browser, and two of the
-  three ways are faster than one.** `dist-server/assets/HeadlessGame-*.js`
+  three ways are faster than one.** `dist-server/assets/SimCore-*.js`
   exports the simulation (`H`) and the world chunk exports `MAPS`/`CONFIG`
   (`M`/`C`), so a scratch `.mjs` can `addPlayer`, set `deployRequest`, step at
   `1/60` and assert on the clock in milliseconds of wall time — including
@@ -1950,7 +1950,7 @@ is one machine's:
 - **A stationary body at a REAR flag is not killed, and that reads exactly like
   a broken death path.** Four minutes at the chapel spawn drew nothing; the
   square kills one in about forty seconds, which `does-a-human-die`-style
-  stepping of a `HeadlessGame` will tell you in three. Bots do engage a person
+  stepping of a `SimCore` will tell you in three. Bots do engage a person
   — check where you parked before believing anything else.
 - **`page.waitForFunction(fn, { timeout })` silently uses the DEFAULT 30 s.**
   The second parameter is the argument passed INTO the page function; options

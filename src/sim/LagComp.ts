@@ -1,5 +1,5 @@
 /**
- * server/lagComp.ts — What every body looked like a moment ago, so a shot can
+ * src/sim/LagComp.ts — What every body looked like a moment ago, so a shot can
  * be resolved against what the shooter actually saw.
  * Owns: the per-slot position history and the rewind/restore pair around a
  * shot. Owns no combat rules — it moves hit spheres and puts them back, and
@@ -29,9 +29,9 @@
  * older than that is clamped rather than honoured: unbounded rewind lets
  * someone shoot at where you stood a second ago.
  */
-import { Vector3 } from "../src/math";
-import type { Hittable } from "../src/systems/CombatSystem";
-import { REWIND_WINDOW_MS, TICK_HZ } from "../src/net/protocol";
+import { Vector3 } from "../math";
+import type { Hittable } from "../systems/CombatSystem";
+import { REWIND_WINDOW_MS, TICK_HZ } from "../net/protocol";
 
 /** One body at one instant. Only what resolving a shot reads. */
 interface Frame {
@@ -111,7 +111,7 @@ export class LagComp {
    *
    * `now` is the SIMULATION's clock and never `Date.now()`, because the window
    * it bounds is measured against the stamps `record` filed — see
-   * `HeadlessGame.now`. Reading the wall clock here would clamp a history
+   * `SimCore.now`. Reading the wall clock here would clamp a history
    * written on one clock against another, and the difference between them is
    * exactly the fixed-step accumulator's residue: up to a tick, oscillating,
    * and worth two thirds of a metre on something moving at gunship speed.

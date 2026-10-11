@@ -450,7 +450,7 @@ had to change is the handful of readers that took it from nothing — `TerrainFi
 and `terrainSlab` (which now take their half-extent from the heightfield's own
 `size * cell`, since the grid states it twice), the grass mask's extent,
 `Ridge`'s outside-play assertion, the editor's coordinate spinners and terrain
-grade check, and `buildServerWorld`. Three things a larger map owes:
+grade check, and `buildSimWorld`. Three things a larger map owes:
 
 - `terrain.size * terrain.cell` must equal it. Nothing checks; the floor simply
   samples against the wrong origin and comes back as garbage.
@@ -817,7 +817,8 @@ needs the floor is HANDED one:
   `Game.floor` is where the standing map's is put down — `installMap` is one
   synchronous turn and cannot contain a fetch, so the two async doors into a
   build (`buildRound`, `toggleEditor`) resolve it first.
-- `buildServerWorld` awaits it beside the collision bake.
+- `loadSimWorld` (`server/world.ts`) awaits it beside the collision bake, and
+  hands both to `buildSimWorld`.
 - The editor reads `map.terrain.field`, which IS that object: the terrain
   brush writes through it and the rebuild tier reads the edits straight back,
   exactly as it did when the field hung off the layout constant.
@@ -1894,7 +1895,7 @@ and a blast can throw that body further still, so 78 + 69 is 147 and the margin
 is 180.
 
 **The same class runs on both sides and only one of them is real.** The authority
-holds one per `NetPlayer` and steps it in `HeadlessGame` against the last
+holds one per `SimPlayer` and steps it in `SimCore` against the last
 position that player reported; that verdict is what kills. The client holds one
 for its own player and, in a match, draws it and nothing more — the ordinary
 prediction split, since this is a pure function of movement, and it is why the

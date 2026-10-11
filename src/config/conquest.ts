@@ -48,7 +48,7 @@ export const conquest = {
    * inside itself.
    *
    * Read on BOTH sides, and it is the authority's copy that decides where a
-   * body actually is: `HeadlessGame.spawnPointFor` scatters and tells the
+   * body actually is: `SimCore.spawnPointFor` scatters and tells the
    * client, and the client places what it is told without a second helping.
    */
   spawnScatter: 6,

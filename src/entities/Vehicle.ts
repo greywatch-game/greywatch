@@ -378,7 +378,7 @@ export interface GunAngles {
  *
  * It lives on the gun rather than in whoever pulls the trigger, because there
  * are two of those and they are in different PROCESSES: `Game` fires a
- * player's shell and `HeadlessGame` re-fires it, and two copies of a statement
+ * player's shell and `SimCore` re-fires it, and two copies of a statement
  * about what a shell is would be two things to keep in step across a wire whose
  * whole point is that they agree.
  */

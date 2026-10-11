@@ -10,14 +10,22 @@ The shape in one sentence: **a dedicated Node server runs the real simulation
 with no Babylon in it, clients render it, and a roster slot is a slot whether a
 person or a bot is in it.**
 
+**The simulation it runs is not in `server/`.** `SimCore`, `SimPlayer`,
+`LagComp` and `buildSimWorld` live in `src/sim/` (`BABYLON_EXIT.md` X2.5a),
+and the core reads no clock and draws no seed: `Match` is its HOST, which loads
+the world (`server/world.ts`'s `loadSimWorld`), hands each round
+`freshSeed()` in `RoundSpec` and anchors `SimCore.now` itself. `simulate` is
+the other host, with the seed it was given. Nothing in `src/sim/` imports from
+`server/`, and the gate below walks both directories.
+
 **The authority imports nothing from `@babylonjs/core`, and a build gate says
 so** (`BABYLON_EXIT.md` X2.3). It used to run under Babylon's `NullEngine`,
 with a scene that existed for one thing at the end — the collider meshes
 `buildServerWorld` stood up, which no ray and no sweep read any more (below).
 Those went with the scene, the scene with the engine, and
 `scripts/check-babylon-free.mjs` now walks the value-import graph from every
-file in `server/` (and from every simulation module, which a client builds
-too) and fails `npm run build` on any path that reaches Babylon. So
+file in `server/` and `src/sim/` (and from every simulation module, which a
+client builds too) and fails `npm run build` on any path that reaches Babylon. So
 `dist-server` loads no Babylon at all, and what the client is gated on — an
 adapter, a device, the two WASMs it must never fetch — is the client's alone.
 The one place the two sides still have to agree is the world they stand in,
@@ -50,7 +58,7 @@ rather than one.** `MapLayout.borderland` (Harrowmead; see
 and standing out there is ordinary rather than a cheat — so `validate.ts`
 measures its extent against `map.size / 2 + map.margin`, and what runs a player
 back in is `src/world/leash.ts` instead. **The authority holds the one that
-counts**: `NetPlayer` owns a `Leash`, `HeadlessGame` steps it against the last
+counts**: `SimPlayer` owns a `Leash`, `SimCore` steps it against the last
 position that player reported and kills through `takeDamage` like any other
 death, which is also what makes a player who walks out and then stops sending
 anything die out there rather than wait it out. **The client runs the same clock
@@ -131,11 +139,11 @@ Cinderhaven are 24 and every other map is 8 — and **a match fields it too**.
 What it does NOT do is size the slot table.
 
 - **The TABLE is `CONFIG.bots.maxPerTeam` a side (24, so 48 slots), on every
-  map, for the life of the process.** `HeadlessGame`'s constructor calls
+  map, for the life of the process.** `SimCore`'s constructor calls
   `BattleSystem.setRoster` with it once and never again. It is forty-eight
   `Bot`s and no rig: the bodies' drawing is `BattleView`'s, which the
   authority never builds (BABYLON_EXIT.md X2.2 C7).
-- **The ROUND is the map's**, pushed by `HeadlessGame.startRound` through
+- **The ROUND is the map's**, pushed by `SimCore.startRound` through
   `BattleSystem.setFielded` and mirrored onto the table by
   `Roster.setFielded`. Bots outside it are set aside exactly as a benched one
   is — dead, off the field, no ticket, no target, no squad — through the third
@@ -247,7 +255,7 @@ Two consequences to preserve:
   reported by the client. An animation flag a client sets is one it can lie
   about.
 - **A person's body falls over on the same field a bot's does.**
-  `NetPlayer.deathProgress` is `Bot.deathProgress` derived from the respawn
+  `SimPlayer.deathProgress` is `Bot.deathProgress` derived from the respawn
   clock, and it rides `EntityState.dead`. Both are keyed to `death.hideTime`, and
   what a client does with the field is hide a body when it reaches 1 — so sending
   a bare `1` instead, which is what it did, makes a killed player VANISH on the
@@ -264,13 +272,13 @@ Two consequences to preserve:
 ## A stance is drawn where the authority has it, or it is worse than not drawn
 
 The client sends `crouching` as a boolean, the authority eases it into
-`NetPlayer.crouchBlend`, and **the SNAPSHOT carries the blend** — not the
+`SimPlayer.crouchBlend`, and **the SNAPSHOT carries the blend** — not the
 boolean, and not nothing.
 
 Not nothing, because a drawn body that does not crouch is an invisible
 advantage. The authority drops a crouching body's eye to `crouchEyeHeight` and
 its hit sphere to `crouchCenterHeight`, half a metre each — a player's in
-`NetPlayer`, a bot's in `Bot.syncTransform`, and both ask `entities/stance.ts`
+`SimPlayer`, a bot's in `Bot.syncTransform`, and both ask `entities/stance.ts`
 for it; an observer drawing
 them upright aims at a helmet the sphere no longer reaches, and the round the
 shooter watched land is a miss the server never saw a reason for. The same body
@@ -278,7 +286,7 @@ is also drawn head-up over a wall it is genuinely hidden behind. Both are the
 `visible but unhittable` failure `config/player.ts` argues at length, arriving
 over a wire instead of out of a config.
 
-Not the boolean, because a client cannot ease it. `NetPlayer` runs the same
+Not the boolean, because a client cannot ease it. `SimPlayer` runs the same
 `crouchBlendSpeed` ease `Player` runs (`easeStance`), so the eye and the sphere
 take a quarter of a second to travel — and a client running its own ease against
 that one would disagree with it for that whole window, by up to the same half
@@ -312,7 +320,7 @@ the rest of this document argues for a bullet, applied to the one question a
 shooter cannot afford two opinions about — where somebody is.
 
 **A person is deployed only when they have BOTH waited and asked.** The
-reinforcement clock in `HeadlessGame.step` says when and `NetPlayer.deployRequest`
+reinforcement clock in `SimCore.step` says when and `SimPlayer.deployRequest`
 says where, and neither is enough alone. There is deliberately no timeout into
 the world: a player looking at the map is doing the thing the screen is for, and
 the alternative is yanking them out of it mid-decision. A slot whose person is
@@ -354,7 +362,7 @@ already put away — so a person who switches to the sniper on their third death
 has been carrying it locally ever since. `Match.admit` resolved
 `Join.weapon` into the slot's loadout at the handshake and nothing ever wrote it
 again, and since the authority is what pays a round out
-(`HeadlessGame.resolveShot` reads `weapon.damage` and the fall-off off that
+(`SimCore.resolveShot` reads `weapon.damage` and the fall-off off that
 entry), every round the player fired for the rest of the match was worth
 whatever they had joined with.
 
@@ -464,7 +472,7 @@ until the reload has run out on the simulation's 60 Hz tick grid, with no slack
 at all, so a gunner firing at exactly 9/s was refused whenever a round landed
 six ticks after the last instead of seven. The authority therefore asks that
 clock with `HULL_EARLY` (`SHOT_SLACK`, 150 ms) of tolerance for a person's
-round (`early` through `HeadlessGame.resolveShell`/`resolveMg`), and **the
+round (`early` through `SimCore.resolveShell`/`resolveMg`), and **the
 bucket is the rate limit for it**. The clock is still asked because it is the
 HULL's and a seat changes hands: a person who turns a bot out of the driver's
 seat the moment it fired cannot fire through its reload. On the cupola gun
@@ -523,7 +531,7 @@ alike, so the panel follows the round rather than the weapon in your hands.
 the things a pause normally freezes alongside the world have to be let go with
 it. The HUD keeps its real `dt` — a killfeed held at zero stacks the kills that
 arrive while the card is up and fades the lot on the resume. The reinforcement
-countdown keeps running, because it is the server's `NetPlayer.respawnT` that
+countdown keeps running, because it is the server's `SimPlayer.respawnT` that
 gates the deploy and the local copy is a number on a card plus the gate on its
 own button: a lid that stops it makes a player wait out time the authority has
 already given back. The audio clock is left running, which is the least obvious
@@ -599,7 +607,7 @@ not know where a bot's killing blow came from. The killer's team on a person's
 death is DERIVED (`1 - victim.team`) rather than carried, because friendly fire
 is excluded by construction everywhere in this game.
 
-**`HeadlessGame.resolveShot` is the third way a bot can die, and it is the one
+**`SimCore.resolveShot` is the third way a bot can die, and it is the one
 that was not charging for it.** `BattleSystem.onBotKill` fires for a bot shot
 by another bot and the grenade handler fires for a blast, but a person's round
 reaches `CombatSystem.fire` through `resolveShot` and touches neither — so every
@@ -812,7 +820,7 @@ the one a call site forgets.
 **A round going past you is ADDRESSED to you, and the authority is the only
 thing that can see one.** Offline the crack is `CombatSystem.onNearMiss` finding
 the player inside the target loop of somebody else's shot; in a match no client
-resolves anybody else's rounds at all, so `HeadlessGame` wires that callback and
+resolves anybody else's rounds at all, so `SimCore` wires that callback and
 `Match` sends a `nearmiss` to the one person it happened to. It carries the
 point of CLOSEST APPROACH and no victim field — the only client it is ever sent
 to is the one it is about — and the client spends it on both halves of the
@@ -833,7 +841,7 @@ exactly as offline: that is the death cam and `playerHurt`, not somebody else
 falling over.
 
 **Two things were missing on the server side of the near-miss path as well, and
-neither was about sound.** `HeadlessGame` never wired `onNearMiss` at all, so
+neither was about sound.** `SimCore` never wired `onNearMiss` at all, so
 the sixteen bots in a match were the only ones in the game that could be sprayed
 all day and never flinch — `BattleSystem.suppress` had no caller. And a person's
 round reached `CombatSystem.fire` through `resolveShot`, which never called
@@ -953,7 +961,7 @@ rotation, or the first sample of a session.
 
 **The timeline is the authority's; WHERE ON IT a frame is posed is the
 client's, and it is read at the instant the frame is SEEN.** Nothing about
-this decides when anything happened — the stamps do, on `HeadlessGame.now`.
+this decides when anything happened — the stamps do, on `SimCore.now`.
 What a client's own clock decides is which instant of that history to draw this
 frame at, and `renderTime` used to read `Date.now()` whenever `NetSession.update`
 got the thread: under a 30 cap, frames shown an even 33.3 ms apart were posed at
@@ -988,7 +996,7 @@ position against those stamps, so the spread is rendered directly as SPEED —
 through the timer instead of the ratio, and it is invisible in the arithmetic
 because every individual number in it is correct.
 
-`HeadlessGame.now` is the answer: a clock advanced by exactly `dt` per step,
+`SimCore.now` is the answer: a clock advanced by exactly `dt` per step,
 which `Match` stamps every `snap`, `welcome` and `roundstart` with, and which
 `LagComp` records and clamps its window against. Remeasured through a real
 socket it is 50.0 ms at every percentile, min to max, and rendered speed is
@@ -997,11 +1005,13 @@ socket it is 50.0 ms at every percentile, min to max, and rendered speed is
 Two rules hold it up. **It is anchored to the wall clock and not free-running**,
 because the offset estimate on the far side is a maximum over five seconds: a
 clock that quietly fell behind would hold a stale maximum for the whole window
-and drag every body to the end of its buffer. `startRound` re-anchors, and does
+and drag every body to the end of its buffer. Every round re-anchors, and does
 it at the END of the build rather than the start (a map is seconds of real time
 the world is not stepped through, so an anchor taken before it leaves the clock
-exactly the build behind the wall — the thing the anchor exists to prevent), and
-`HeadlessGame.drop` takes the backlog the loop discards on a long stall — one
+exactly the build behind the wall — the thing the anchor exists to prevent) —
+the HOST's call, `SimCore.anchor(Date.now())` the moment `startRound` returns,
+because the core reads no clock of its own (`BABYLON_EXIT.md` X2.5a) — and
+`SimCore.drop` takes the backlog the loop discards on a long stall — one
 honest jump on the tick the world jumped anyway. **And every stamped message
 uses it**, because a client samples the offset from all of them and keeps the
 maximum, so one message on a clock running even slightly ahead of the
@@ -1019,7 +1029,7 @@ the same measurement is 40–66 and the worst-case buffer goes from 36 ms to
 
 ## Lag compensation
 
-`server/lagComp.ts` keeps `REWIND_WINDOW_MS` of every body's `center` and
+`src/sim/LagComp.ts` keeps `REWIND_WINDOW_MS` of every body's `center` and
 `eyePos` and moves them back around a shot.
 
 **`resolve` takes a callback and restores in a `finally`, and it must stay that
@@ -1101,7 +1111,7 @@ new client in front of a server that still broadcasts, and neither event's shape
 changed, so the handshake's version check would not catch it.
 
 **The scoreboard is STATE and is sent as state, not added up from events.** The
-authority keeps one line per slot — `HeadlessGame.scores`, a `ScoreBook` of
+authority keeps one line per slot — `SimCore.scores`, a `ScoreBook` of
 points, kills and deaths — and `Match` broadcasts all three columns whole as a
 `scores` message on the ticks it has moved, which it learns by comparing the
 book's `version` against what it last sent. A client that instead counted the
@@ -1135,7 +1145,7 @@ for an event no client would be sent.
 **A flag pays the bodies standing on it, so `ConquestSystem`'s two callbacks are
 the SIMULATION's and not `Match`'s.** They used to be wired straight to the
 event queue; a callback has one owner, and the owner has to be the side that
-decides something. `HeadlessGame.wire` takes both, pays everyone of the
+decides something. `SimCore.wire` takes both, pays everyone of the
 capturing side inside the ring (`awardZone`, the same `pointAt` that moved the
 meter), and hands the news back out through `onCapturedEvent` /
 `onNeutralisedEvent` for `Match` to put on the wire — the shape `onKillEvent`
@@ -1145,10 +1155,10 @@ capture awards off in the one tool that can check them.
 
 **A kill is counted at the KILLER's door and a death at the VICTIM's, once
 each.** They are separate facts with separate witnesses: every death in the game
-already arrives somewhere (`onKill` for a bot, `NetPlayer.onDamaged` for a
+already arrives somewhere (`onKill` for a bot, `SimPlayer.onDamaged` for a
 person) while who fired is known only to whatever pulled the trigger, so a
 single door would mean one path inventing the half it cannot see. That is what
-`HeadlessGame.creditKill` is, and it is why `BattleSystem.onBotKill` hands over
+`SimCore.creditKill` is, and it is why `BattleSystem.onBotKill` hands over
 the shooting BOT and any victim rather than the falling bot and a team — the
 older shape dropped every kill whose victim was a person, which on a server is
 half the roster. The client's `Game` runs the identical pair offline.
@@ -1156,7 +1166,7 @@ half the roster. The client's `Game` runs the identical pair offline.
 **What a kill is WORTH is decided in one place for both sides.**
 `ScoreBook.awardKill` is a free function over the book, the killer's team, the
 control point the VICTIM was standing in and whether it was a headshot, and both
-`Game.creditKill` and `HeadlessGame.creditKill` reach it with those four facts.
+`Game.creditKill` and `SimCore.creditKill` reach it with those four facts.
 The failure it prevents is not a crash but a quiet disagreement: a player who
 learns in a single-player round that clearing attackers off a flag pays extra,
 taking that into a match where it does not. Keyed on the victim rather than the
@@ -1166,7 +1176,7 @@ outside the ring they are standing.
 
 **A team's totals are SUMMED from the rows and stored nowhere.** Two counters
 for one fact is two counters that can disagree, and the one that would be wrong
-is the one nothing on screen can check. `HeadlessGame.teamScore` is that sum on
+is the one nothing on screen can check. `SimCore.teamScore` is that sum on
 the server (`npm run simulate` prints it); `Game.updateHud` does the same on the
 client, over the same rows the columns under it are drawn from.
 
@@ -1202,7 +1212,7 @@ applied, because `CombatSystem.fire` jitters internally and the server has to
 re-resolve that bullet rather than a differently jittered one.
 
 **Health REGENERATES on the server, and the client predicts the curve.** Regen
-is a rule about a number the authority owns, so `NetPlayer.regen` runs it off the
+is a rule about a number the authority owns, so `SimPlayer.regen` runs it off the
 same `regenDelay` and `regenRate` `Player.update` uses offline — a networked
 round whose pool never refilled would be precisely the respawn queue
 `config/player.ts` calls that rule load-bearing against, with the twist that only
@@ -1223,7 +1233,7 @@ always been. A health that only ever *falls* to the truth is the shape of this
 failure, and the cause is a client running half of a two-part rule.
 
 **A position on the wire is the FEET**, and the whole of a body is built up from
-it on the far side: the validator asks what is solid at that height, `NetPlayer`
+it on the far side: the validator asks what is solid at that height, `SimPlayer`
 raises the eye and the hit sphere off it, and `NetSoldier` stands a rig on it.
 Nothing sends a height twice and nothing sends a height for a part of a body, so
 a `y` that means anything else is wrong in three places at once and looks like
@@ -1240,7 +1250,7 @@ geometry, not a detail of one entity.
 **The two ends of a body must agree about its middle, too.** A standing hit
 sphere is centred at `height / 2` (0.9), which is what puts its top the 0.05 m
 above the eye that `config/player.ts` argues for — and `SoldierModel`'s rig
-centre, `Player.center` and `NetPlayer.center` are all that same number. Deriving
+centre, `Player.center` and `SimPlayer.center` are all that same number. Deriving
 it from `eyeHeight` instead is the near miss: it is the *top* of the sphere that
 the eye is 0.05 below, not the centre, and reading that comment as a centre put
 the authority's idea of a player 0.6 m up their own chest — so the client drew a
@@ -1337,10 +1347,10 @@ always were — every reader of either is a client view.
 on the layout either.** It is a `TerrainField` over the map's heightfield,
 which is pure arithmetic and so cannot go stale — but the heightfield is a lazy
 `import()` now (`MapDef.heights`, ENGINE_UPGRADE.md S7), exactly as the bake
-beside it is, so `buildServerWorld` awaits both. Nothing about what is baked
-changed, and `sourceHash` still covers `layout.ts` and `heights.ts`: the two
-files a map's boxes depend on are the same two files, wherever they are
-imported from.
+beside it is, so `server/world.ts`'s `loadSimWorld` awaits both. Nothing about
+what is baked changed, and `sourceHash` still covers `layout.ts` and
+`heights.ts`: the two files a map's boxes depend on are the same two files,
+wherever they are imported from.
 
 **A baked box carries its `porous` flag as a ninth tuple entry, and the bake
 carries a second list beside `boxes` for the `rayOnly` geometry.** Both are what
@@ -1477,7 +1487,7 @@ game's own sweep over `RayWorld`'s boxes, with no scene behind it
 
 **Nothing that instrument reports includes a person.** No rewind runs, no
 snapshot is encoded, and `Match`'s own per-tick work — the sockets,
-`validateMove`, the interest sets — is outside `HeadlessGame.step` and therefore
+`validateMove`, the interest sets — is outside `SimCore.step` and therefore
 outside every number it prints. It measures the SIMULATION, which is the half
 that scales with the map; the other half scales with the PEOPLE, and the SEATS
 are fixed at sixteen. The bots are not — the simulation fields 48 on Sarab and
@@ -1627,7 +1637,7 @@ belongs here is the wire's half of it.
 
 **The authority's fleet is the SIMULATION alone** (`BABYLON_EXIT.md` X2.2 C9):
 `Vehicle` and `VehicleSystem` need no scene and no material factory, and
-`HeadlessGame` builds neither — it was holding a `CelMaterialFactory` for the
+`SimCore` builds neither — it was holding a `CelMaterialFactory` for the
 fleet's rigs and nothing else, and that factory and the whole cel-shader chain
 under it left the server's closure with them. The body box, the rig, the belts,
 the whips and the charred paint are each hull's `VehicleView`, which only a
@@ -1674,7 +1684,7 @@ that particular object is not a cosmetic difference.
 BEARING.** `DriveMessage` and `GunnerMessage` each replace `MoveMessage` for as
 long as the seat is held, because neither person has a body of their own to
 report: the tank carries them, and both sides slave `Player.position` /
-`NetPlayer.position` to it. `Match.onMove` refuses ANY seated player for
+`SimPlayer.position` to it. `Match.onMove` refuses ANY seated player for
 exactly that reason — the gate is `seat >= 0` and not which chair — and
 `onShot` and `onGrenade` refuse one for a plainer reason: there is no rifle in
 either crewman's hands.
@@ -1789,7 +1799,7 @@ old client falls through the switch and behaves exactly as it did before the
 field existed — `Join.map`'s own precedent.
 
 **Getting in and getting out are asks the authority answers.** `mount` names a
-hardstanding and — optionally — a SEAT, and `HeadlessGame.seatOffered` and
+hardstanding and — optionally — a SEAT, and `SimCore.seatOffered` and
 `seat` re-derive the whole offer against the server's own copy of the hull, the
 team, the distance, which chairs are free and which crew may be turned out. The
 seat field is a PREFERENCE and never a claim: asked for one that is taken, the
@@ -2135,7 +2145,7 @@ duration rather than a deadline on the server's clock, so it owes the offset
 machinery in `Connection` nothing and cannot be read against a position. What
 actually shuts the window is `Match`'s own `setTimeout`, on the wall clock —
 which is the one place on that server where the wall clock is right rather than
-a lapse from `HeadlessGame.now`, because the simulation is not stepped at all
+a lapse from `SimCore.now`, because the simulation is not stepped at all
 while `rotating` and its clock is frozen for the whole of the pause.
 
 **Additive on both halves, so no `PROTOCOL_VERSION` bump.** An older client has
@@ -2162,7 +2172,7 @@ everybody already had, and a positive `bots: true` would make the safe reading
 the one a mangled frame is least likely to produce.
 
 **What it does on the authority is field ZERO bodies a side**, and that is the
-point of it: `HeadlessGame.startRound` takes `bots` and sets `perTeam` to 0
+point of it: `SimCore.startRound` takes `bots` and sets `perTeam` to 0
 instead of the map's `perTeamOf`, which `BattleSystem.setFielded` spends exactly
 as it spends a map that fields eight out of a pool of twenty-four. Every bot in
 the pool is set aside — dead, off the field, thought for by nobody, shootable by
@@ -2258,7 +2268,7 @@ than remembered as permanently in progress.
 **`admit` asks whether its peer is still connected on the far side of the
 await.** The socket's `close` handler is wired before the build, so a peer that
 drops during one has already been through `drop`, which released its roster slot
-and put the bot back — and seating it anyway puts a `NetPlayer` nobody owns into
+and put the bot back — and seating it anyway puts a `SimPlayer` nobody owns into
 `players` and into the rewind history, with the bot in that slot benched for the
 life of the match. Nothing can ever remove either, because the removal has been
 and gone. The peer map is the test, because that map is what `drop` empties and
@@ -2275,8 +2285,9 @@ one assignment, and a new per-slot field is a field on the record.
 
 **`rotating` is what says the world is not the match's to touch**, and it gates
 `step` as well as the three client messages that reach into it — `move`, `shot`
-and `grenade`. For the length of `rotate`'s rebuild, `HeadlessGame.map` points
-at the map `startRound` has already disposed. That has never crashed, and the
+and `grenade`. For the length of `rotate`'s rebuild, `SimCore.map` points
+at the map of the round that ended (the next one is still loading, and
+`startRound` swaps it only once the load is in). That has never crashed, and the
 reason is worth naming rather than resting on: `conquest.winner` is still set
 from the round that ended, so the step returns before it reaches `battle` — a
 safety that holds only while a second flag agrees with the first, and that ends
@@ -2469,7 +2480,7 @@ mapping: none of them says anything at all, and what eventually notices is TCP
 keepalive, which Node leaves at the OS default — **two hours** on Linux before
 the first probe. Until then that peer's roster slot is held, the bot that would
 have backfilled it stays benched (so its team plays the round with a statue in
-it), `HeadlessGame` keeps a `NetPlayer` nobody owns in the rewind history, and
+it), `SimCore` keeps a `SimPlayer` nobody owns in the rewind history, and
 the socket counts against `MAX_SOCKETS_PER_IP` for the very address the player
 is reconnecting from. `IDLE_DISPOSE_MS` does not help: the match is not idle,
 it has a peer in it as far as anything there can tell.

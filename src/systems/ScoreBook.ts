@@ -18,7 +18,7 @@
  * is decided, and they are free functions rather than methods for the reason
  * each states: what they need (a victim, the flag they fell on, who holds it,
  * what a slot means on this side) is three systems' worth of fact, gathered by
- * the wiring — `Game.creditKill`/`awardZone` and `HeadlessGame`'s pair — and
+ * the wiring — `Game.creditKill`/`awardZone` and `SimCore`'s pair — and
  * handed in.
  *
  * **There is one of these per simulation, and that is the point.** The offline
@@ -178,7 +178,7 @@ export interface KillVictim {
  * the failure `awardKill` exists to prevent, arriving one level up from it:
  * not a crash, but a player learning in practice a scoring rule the match they
  * take it into does not run. It is applied inside `Game.creditKill` and
- * `HeadlessGame.creditKill` rather than at the call sites, so a new door onto
+ * `SimCore.creditKill` rather than at the call sites, so a new door onto
  * a kill inherits it instead of having to remember it.
  *
  * A `null` victim pays the kill and no zone bonus, which is what the authority
@@ -244,7 +244,7 @@ export function awardKill(
  * `ZoneOwnership` keeps it free of `ControlPoint`: what is compared is
  * IDENTITY, and the caller says what a point is and how a body is found in
  * one. `slotOf` is handed in for the same reason it is not a method here — a
- * slot is a bot index on one side and a `NetPlayer`'s own number on the other,
+ * slot is a bot index on one side and a `SimPlayer`'s own number on the other,
  * and that is the one thing about this pass the two simulations genuinely
  * disagree about.
  */

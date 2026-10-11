@@ -173,7 +173,7 @@ export function attachEmissiveFog(material: StandardMaterial): void {
   // cause: off WebGPU, `Material._createUniformBuffer` picks GLSL for a
   // `StandardMaterial`, `isCompatible` above answers false, and `_addPlugin`
   // THROWS on the mismatch rather than declining — which once killed every
-  // match server inside `new HeadlessGame()` with a message about a shader
+  // match server inside `new SimCore()` with a message about a shader
   // language and nothing about where. A fog is a PICTURE; skipping it there
   // costs nothing.
   if (!material.getScene().getEngine().isWebGPU) return;

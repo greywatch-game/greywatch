@@ -28,19 +28,9 @@ server/               # The authoritative match server. Node, no Babylon (the
                       #   what the rotation would have picked, which is also
                       #   what an empty ballot and a tie resolve to. Owns no
                       #   transport and no timer
-  HeadlessGame.ts     #   The simulation: the server's answer to core/Game.ts,
-                      #   wired by the same rules. Owns the armour too — the
-                      #   fleet, the bot crews and the AT kit — plus `seat`,
-                      #   which is `Game.mount`/`clearVehicle` as one method.
-                      #   Builds the SIMULATIONS only, never a view, and
-                      #   has no engine and no scene
-  NetPlayer.ts        #   A connected human as the simulation sees one — the
-                      #   only position anything on the server trusts
-  world.ts            #   Rebuilds the solid world from the baked boxes as
-                      #   DATA (queries, nav, cover — no mesh): the collider
-                      #   half of MapBuilder and nothing else
-  lagComp.ts          #   Position history + the rewind around a shot. `resolve`
-                      #   takes a callback so the restore cannot be skipped
+  world.ts            #   LOADS a map's world for the authority — the collider
+                      #   bake and the floor, the two lazy imports — and hands
+                      #   them to src/sim's buildSimWorld. Nothing else
   wire.ts             #   Is a client message shaped like what it claims to be?
                       #   The one door a frame becomes a ClientMessage through,
                       #   so no handler past it re-checks a field
@@ -74,9 +64,10 @@ scripts/                      # Node tooling, run by hand or by `npm run build`,
                               #   @babylonjs/core under src/ and main.ts — an
                               #   absolute rule tsc cannot see
   check-babylon-free.mjs      # BUILD GATE: refuses any VALUE import path to
-                              #   @babylonjs/core from server/ or a simulation
-                              #   module (its SIMULATIONS list, which a new
-                              #   simulation joins); prints the chain. Paths
+                              #   @babylonjs/core from server/, src/sim/ or a
+                              #   simulation module (its SIMULATIONS list,
+                              #   which a new simulation joins); prints the
+                              #   chain. Paths
                               #   on the command line walk from those instead.
                               #   Widens to src/render/ + src/math/ at X3.2
   check-audio.mjs             # BUILD GATE: audio/ stale against its masters,
@@ -606,12 +597,12 @@ src/
                         #   only; told by Player (fired/stepped/cleared/stowed)
     HealthRegen.ts      # A person's regen: the lock after a hit and the curve
                         #   back to full. One held by Player (predicting) and
-                        #   one by server/NetPlayer (authoritative), so the two
+                        #   one by src/sim/SimPlayer (authoritative), so the two
                         #   heal to the same cap at the same rate
     stance.ts           # The crouch's geometry: the eye and the hit sphere's
                         #   centre above the feet for a blend, and the blend's
                         #   easing. One copy for all five bodies that crouch
-                        #   (Player, Bot, NetSoldier, server/NetPlayer, the
+                        #   (Player, Bot, NetSoldier, src/sim/SimPlayer, the
                         #   death cam's corpse), so the eye and the sphere
                         #   cannot come down apart
     ViewModel.ts        # The first-person weapon: carried gun + gloved arms
@@ -903,7 +894,7 @@ src/
     ScoreBook.ts        # The round's board: points, kills and deaths, one row
                         #   per roster SLOT. A ledger, not a system — no update,
                         #   reaches nothing. One per simulation (Game offline,
-                        #   HeadlessGame on the authority), and `awardKill` and
+                        #   SimCore on the authority), and `awardKill` and
                         #   `awardZone` are the one place each that a payout's
                         #   shape is decided — both sides call the same two
     RoundRandom.ts      # The ROUND's seed and every outcome stream drawn from
@@ -1049,7 +1040,7 @@ src/
                         #   no player and no AI — `update` asks a `VehicleOrders`
                         #   four questions per hull: who is at the sticks, who
                         #   is on the cupola gun, and which of the two somebody
-                        #   ELSE is deciding. `Game`/`HeadlessGame` are
+                        #   ELSE is deciding. `Game`/`SimCore` are
                         #   the only things that can answer. A `predicted` fleet
                         #   is a netplay client's: both clocks stand down.
                         #   Simulation only: src/math, no scene, no materials
@@ -1221,7 +1212,7 @@ src/
     leash.ts            # What stops a player leaving a map that has no wall:
                         #   one clock per body, and the verdict it reaches.
                         #   Pure — the caller does the killing, and offline that
-                        #   is Game while in a match it is HeadlessGame
+                        #   is Game while in a match it is SimCore
     roads.ts            # The road FOOTPRINT — rectangles, plus the convex
                         #   pieces a path resolves to — and the two questions
                         #   it answers: is this ground PAVED, and where two
@@ -1885,6 +1876,26 @@ src/
                         #   band, shared by the scoreboard's column and the
                         #   lobby's reading so the two cannot disagree. No
                         #   markup and no stylesheet of its own
+  sim/                # The simulation core (BABYLON_EXIT.md X2.5a): moved out
+                      #   of server/ because it is not the server's. Reads no
+                      #   clock and draws no seed — the HOST hands it both — and
+                      #   imports nothing from server/. Every file is a root of
+                      #   check-babylon-free.mjs
+    SimCore.ts        #   The simulation: the authority's answer to
+                      #   core/Game.ts, wired by the same rules. Owns the armour
+                      #   too — the fleet, the bot crews and the AT kit — plus
+                      #   `seat`, which is `Game.mount`/`clearVehicle` as one
+                      #   method. Builds the SIMULATIONS only, never a view, and
+                      #   has no engine and no scene. `startRound(RoundSpec)` is
+                      #   synchronous; `anchor`/`drop` are the host's clock
+    SimPlayer.ts      #   A connected human as the simulation sees one — the
+                      #   only position anything on the server trusts
+    simWorld.ts       #   buildSimWorld: the solid world rebuilt from the baked
+                      #   boxes and the floor as DATA (queries, nav, cover — no
+                      #   mesh): the collider half of MapBuilder and nothing
+                      #   else. Loads nothing; the host does
+    LagComp.ts        #   Position history + the rewind around a shot. `resolve`
+                      #   takes a callback so the restore cannot be skipped
   net/                # Multiplayer, client side. Nothing here is constructed
     protocol.ts       #   in an offline round.
                       #   The wire format — the ONLY module the server also

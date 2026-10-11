@@ -3,7 +3,7 @@
  * simulations: a round out of the main gun, a round out of the cupola gun,
  * what the tracks run over, and what a crew owes when its hull brews up.
  * Owns: `fireHullGun`, `fireHullMg`, `crushSweep`, `driverOf` and `crewLost`,
- * and `HullRules`, the context `Game` and `HeadlessGame` each build once to
+ * and `HullRules`, the context `Game` and `SimCore` each build once to
  * run them against.
  * Invariants: a hull's round goes down the GUN's axis and never the camera's;
  * friendly fire is excluded by construction (every list is the hull's own
@@ -18,7 +18,7 @@
  * along.
  *
  * **There is one of these because there were two**, `Game.resolveShell` and
- * `HeadlessGame.resolveShell` (and the cupola gun's and the tracks' pairs
+ * `SimCore.resolveShell` (and the cupola gun's and the tracks' pairs
  * beside them), each the other "with the presentation taken out" — which held
  * until it did not: the client's `creditKill` returned nothing while the
  * authority's said whether it paid, and the credit itself had once been

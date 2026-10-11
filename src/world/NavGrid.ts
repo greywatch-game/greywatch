@@ -662,7 +662,7 @@ export class NavGrid {
    * edge, and relax the fields over what that added. **The fields are part of
    * it and are no longer the caller's to defer** — a caller that had to
    * remember them is a caller that can forget them, and the authority DID:
-   * `HeadlessGame` never drained the deferral at all, so a break relinked the
+   * `SimCore` never drained the deferral at all, so a break relinked the
    * server's graph and left all seven of its fields describing the wall.
    *
    * Returns the number of surfaces that became walkable, which is 0 for the

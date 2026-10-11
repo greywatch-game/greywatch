@@ -22,7 +22,7 @@
  * `TerrainField` over the map's heightfield, which is pure arithmetic — so the
  * server reads all three from the map's own modules directly and they cannot
  * go stale. The heightfield is a lazy `import()` of its own now
- * (`MapDef.heights`) rather than a field on the layout; `buildServerWorld`
+ * (`MapDef.heights`) rather than a field on the layout; `loadSimWorld`
  * awaits it beside this bake, and nothing about what is baked here changed.
  *
  * **Staleness is the one risk, and it is guarded.** The emitted file carries a

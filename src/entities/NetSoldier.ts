@@ -288,7 +288,7 @@ export class NetSoldier implements Combatant, RagdollSubject {
     // zone is centred on and what LOS is tested against — sit where a bot's do.
     //
     // The stance moves both, down the same half metre and off the same blend
-    // the authority derived ITS pair from (`NetPlayer.apply`), so the sphere a
+    // the authority derived ITS pair from (`SimPlayer.apply`), so the sphere a
     // shooter's own hitmarker is guessed against is the sphere the server will
     // rewind. It is the `player` numbers on both sides even though this body
     // may be a bot, and that is not an inconsistency: the crouch is one stance

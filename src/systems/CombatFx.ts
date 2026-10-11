@@ -9,7 +9,7 @@
  * call, and nothing here deals damage, raises a near miss or breaks glass.
  * Every pool is fixed-size: add new effects to a pool, NEVER allocate per
  * shot. The authority never builds one (`BABYLON_EXIT.md` X2.2) — the
- * simulation half is all `server/HeadlessGame.ts` holds.
+ * simulation half is all `src/sim/SimCore.ts` holds.
  * Contract: this header. `docs/rendering.md` "Impacts" for the disc and the
  * mark, `docs/multiplayer.md` for `drawRounds`.
  *

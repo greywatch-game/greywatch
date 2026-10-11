@@ -335,7 +335,7 @@ const KURENAI: MapDef = {
  * Everything S0 through S8 priced was a client frame; a match server steps the
  * same simulation for sixteen slots at a fixed 60 Hz with no engine, has no
  * canvas and so cannot run `MapBuilder`, and rebuilds the solid world from this
- * bake and nothing else (`server/world.ts`). Without one, the one process whose
+ * bake and nothing else (`src/sim/simWorld.ts`). Without one, the one process whose
  * budget is a TICK could be run on every map in the tree except the only one
  * the size of the map this document exists for. `npm run simulate:dev proving`
  * is what that bought.

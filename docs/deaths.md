@@ -632,7 +632,7 @@ without that subtract turns feedback into a punishment.
   the boots planted, and `RagdollSubject.center` comes down to `crouchCenterHeight`
   because that is where the round landed and what the throw is aimed away from. The
   ROOT does not move — the crouch lives inside the rig, so a root pulled down with it
-  puts the feet through the floor. It is the same split `NetPlayer` draws for a remote
+  puts the feet through the floor. It is the same split `SimPlayer` draws for a remote
   body.
 - **The camera leaves the head through `CameraSystem.place`, the one exception to
   that system's own invariant**, and `update` is simply not called in that window — so

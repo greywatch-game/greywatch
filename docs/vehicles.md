@@ -1005,7 +1005,7 @@ and its barrel reaches past the hull at every bearing the turret has.
 
 The skip is `ShotOptions.fromHull`, and it is on the GUN rather than at the
 trigger for `shellShotFor`'s reason — there are two triggers and they are in
-different processes, so `Game` and `HeadlessGame` are fixed by one field. It is
+different processes, so `Game` and `SimCore` are fixed by one field. It is
 also what stops a third gun bolted to a hull reintroducing this: the options
 object belongs to the hull, so it carries the hull. **The hitscan is the only
 path that needed it**, because `updateDriver` REPLACES `updateOnFoot` — the
@@ -1514,7 +1514,7 @@ five of them are one line:
    the hull, or an ortho window forty metres up drags the shadows out from under
    the aircraft on any map with a low sun.
 7. `Game.pushTouchControls` — whether the collective's two buttons are drawn.
-8. `server/HeadlessGame` — the leash again, on the authority.
+8. `server/SimCore` — the leash again, on the authority.
 9. `server/Match.onDrive` — `tank.spec.flight?.ceiling ?? null`, which is
    `resolveShell`'s blessed data read rather than a kind test.
 10. `Vehicle.gearLoad` — how much of its own weight the running gear is
@@ -1873,7 +1873,7 @@ them; a bot crew gets none of it.
 
 On the client `crushSweep` is offline by construction and is never guarded for:
 `updateWorld` returns at its first line in a match. The authority calls the same
-function from `HeadlessGame.step`, and the one way the two calls differ is that
+function from `SimCore.step`, and the one way the two calls differ is that
 the authority's sweeps **every** hull on the field, the ones a PERSON is driving
 included — because its `personIn` answers for every peer, where the client's
 answers only for its own player. Those are posed on
@@ -1896,7 +1896,7 @@ pair of booleans indexed by `DRIVER` (0) and `GUNNER` (1), and the split is:
 
 **The first person aboard drives**, and that rule is stated in exactly one
 place — `chooseSeat` in `entities/hullSeats.ts`, which `Game.offeredSeat` asks to
-word the prompt and `HeadlessGame.seat` asks to grant it, so the chair a prompt
+word the prompt and `SimCore.seat` asks to grant it, so the chair a prompt
 names is the chair the server seats you in. It takes who holds each chair
 (`SeatHolder`: open, a bot, a person — each process answering from its own
 tables) and the chair asked for, and answers in one order: that chair if free,
@@ -1951,16 +1951,16 @@ either side: `Game.seatHeldBy` is what tells the three kinds apart — offline
 through `VehicleCrew.crewOf`, in a match through `VehicleState.by`/`by2` against
 the roster, which is the one exception to "a client never learns which slots
 are bots", made because this draws a PROMPT. The authority's twin is
-`HeadlessGame.seatHolder`, reading the crew table the client cannot.
+`SimCore.seatHolder`, reading the crew table the client cannot.
 
 **The authority makes the same move and needed a line of its own for it.**
-`HeadlessGame.seat` is one method for mounting and crossing, and its fall-back
+`SimCore.seat` is one method for mounting and crossing, and its fall-back
 when the chair asked for is taken is *the other chair* — which on a crossing is
 the chair the player just left, so a swap against a bot gunner silently put
 them back where they started. The eviction below it was unreachable from that
 path, because after the release a crossing never sees both chairs taken. **A
 crossing is `chooseSeat` with `only` set** — the chair named or nothing — on
-both sides: `Game.canSwapSeat` offers the key with it, and `HeadlessGame.seat`
+both sides: `Game.canSwapSeat` offers the key with it, and `SimCore.seat`
 asks it BEFORE releasing the chair the player is in, so a refused crossing
 leaves them sitting where they were rather than in no chair at all.
 
@@ -3150,7 +3150,7 @@ it disposes the fleet.** `Game.installMap` opens with exactly that —
 `clearVehicle` before a single thing is thrown away, "because the hull it
 belongs to is about to stop existing" — and the authority did not: it ASSERTED
 instead that a rotation had already emptied every seat, on the grounds that
-`Match` retires every peer, and `NetPlayer.retire` is exactly the half that
+`Match` retires every peer, and `SimPlayer.retire` is exactly the half that
 clears the SEAT and not the list. What that left was a person nothing in the
 round could see: out of `hittablesAgainst` and out of `acquire` for the rest of
 the match, so no bot ever fired at them again, no round could land on them and
@@ -3748,7 +3748,7 @@ makes "the first man aboard drives" a fact about the server's own copy of the
 fleet at the instant the ask arrives rather than something a client decided.
 
 **A SEAT SWAP is the same message**, from a peer already in that hull naming
-the other chair, and it goes through the same `HeadlessGame.seat`: the chair
+the other chair, and it goes through the same `SimCore.seat`: the chair
 under them is released and the new one taken on the same frame, while
 everything a body owes while it is aboard — the invulnerability, the absence
 from every bot's target list — is left standing, because none of it was ever
@@ -3780,7 +3780,7 @@ being shot at.
 **A driver reports a hull INSTEAD of a body, not beside one.** `DriveMessage`
 replaces `MoveMessage` for as long as the seat is held, because a driver has no
 body of their own — `Game.updateDriver` slaves `Player.position` to the hull
-and `HeadlessGame.step` does the same on the far side. A client sending both
+and `SimCore.step` does the same on the far side. A client sending both
 would be reporting one person in two places, and `Match.onMove` refuses a
 seated player for exactly that reason (as `onShot` and `onGrenade` refuse one:
 there is no rifle in a driver's hands).

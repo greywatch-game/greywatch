@@ -18,6 +18,10 @@
  * **The roots are two kinds, and the rule for adding one is mechanical.**
  *
  *   - `server/`, every file in it: the authority imports no Babylon at all.
+ *   - `src/sim/`, every file in it: the simulation core the authority runs
+ *     and the offline page will host (`SimCore`, `SimPlayer`, `LagComp`,
+ *     `buildSimWorld` — moved out of `server/` at `BABYLON_EXIT.md` X2.5a), so
+ *     a file added there is held whoever builds it.
  *   - Every SIMULATION module, named one by one — the left column of
  *     `BABYLON_EXIT.md` X2.2's table. Most of them the server reaches anyway,
  *     and they are listed regardless, so a simulation is held because it IS
@@ -71,7 +75,7 @@ import { fileURLToPath } from "node:url";
 const REPO = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 
 /** Every source file under these is a root. */
-const DIRECTORIES = ["server"];
+const DIRECTORIES = ["server", "src/sim"];
 
 /**
  * The simulation modules, one by one: `BABYLON_EXIT.md` X2.2's left column.

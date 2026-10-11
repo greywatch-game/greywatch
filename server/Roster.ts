@@ -67,7 +67,7 @@ export class Roster {
 
   /**
    * How many of each team's block this round fields — the standing map's
-   * `perTeamOf`, pushed by `Match` off `HeadlessGame.perTeam` so the table and
+   * `perTeamOf`, pushed by `Match` off `SimCore.perTeam` so the table and
    * the simulation cannot disagree about which bodies exist.
    *
    * `CONFIG.bots.perTeam` until a round has been built, which is what a map

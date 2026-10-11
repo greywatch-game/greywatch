@@ -488,7 +488,7 @@ figure to re-measure if the burn numbers move.
 A bottle in the air is a `GrenadeState` with `k: "molotov"` (absent is a frag,
 which is what every grenade on the wire was before), drawn by the same
 `NetGrenades` ghost (a `GrenadeBody`) with a bottle in place of the frag. **The fire is the
-AUTHORITY's**: `HeadlessGame` raises `onBlaze` from `onIgnited`, `Match` queues
+AUTHORITY's**: `SimCore` raises `onBlaze` from `onIgnited`, `Match` queues
 a `blaze` event with a position and nothing else, and every client — the
 thrower included — draws it through `drawFire`, a fire with no rules. The
 thrower's own local bottle still flies (it is what they watched leave their

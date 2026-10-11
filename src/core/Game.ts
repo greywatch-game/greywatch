@@ -304,7 +304,7 @@ interface Seat {
   tank: Vehicle;
   /**
    * Which of the hull's two jobs this offer is for. `chooseSeat` decides it,
-   * the same call `HeadlessGame.seat` grants with, so the "first man drives"
+   * the same call `SimCore.seat` grants with, so the "first man drives"
    * rule and the eviction order are stated in one place for both processes.
    */
   seat: CrewSeat;
@@ -615,7 +615,7 @@ export class Game {
   private readonly overrides = new UrlOverrides();
   /**
    * The round's seed and every outcome stream drawn from it
-   * (`systems/RoundRandom.ts`) — this simulation's, as `HeadlessGame` holds
+   * (`systems/RoundRandom.ts`) — this simulation's, as `SimCore` holds
    * the authority's. Handed to every system that decides an outcome when it
    * is built, and reseeded once per round in `buildRound`.
    */
@@ -1245,7 +1245,7 @@ export class Game {
 
   /**
    * The two doors a kill reaches OFFLINE, as `settleKill` asks for them: the
-   * killer's row, and a bot's death. `HeadlessGame` builds its own pair, and
+   * killer's row, and a bot's death. `SimCore` builds its own pair, and
    * every door onto a kill on either side goes through `settleKill`.
    */
   private readonly ledger: KillLedger = {
@@ -8427,7 +8427,7 @@ export class Game {
    * the wrong one silently: the row is next to the four that are right.
    *
    * The clock is here rather than in `updateDeployScreen` because it is the
-   * ROUND's and not the screen's. The authority runs `NetPlayer.respawnT` down
+   * ROUND's and not the screen's. The authority runs `SimPlayer.respawnT` down
    * whatever this client has on top, and the local copy is a countdown drawn on
    * the card plus the gate on its own Deploy button — so a lid that stops it
    * makes a player wait out time the server has already given them back, and the
@@ -9983,7 +9983,7 @@ export class Game {
    * Which roster slot a body holds, or -1 for one that holds none.
    *
    * The player's is `BattleSystem.seatPlayer`'s and a bot's IS its index in the
-   * pool — the same identity the authority's `HeadlessGame.slotOf` rests on,
+   * pool — the same identity the authority's `SimCore.slotOf` rests on,
    * which is what lets one `ScoreBook` mean the same thing on both sides.
    */
   private slotOf(c: Combatant | null): number {

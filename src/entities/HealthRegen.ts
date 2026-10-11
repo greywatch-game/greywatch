@@ -3,7 +3,7 @@
  * seconds after a hit, then `regenRate` a second back to full.
  * Owns: the lock clock, and the one statement of the curve.
  * Invariants: held by exactly two things — `Player`, which PREDICTS the curve,
- * and `server/NetPlayer`, which is authoritative over it — and both step it
+ * and `src/sim/SimPlayer`, which is authoritative over it — and both step it
  * off the same two numbers to the same cap, `CONFIG.player.maxHealth`. A hit
  * re-arms the lock (`hit`); a fresh body clears it (`clear`).
  * Never: hold the health itself. The number is the body's, because the

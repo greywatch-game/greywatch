@@ -290,7 +290,7 @@ if (failures > 0) {
   console.error(
     "\nThe server is not rebuilding the same world the client builds.\n" +
       "Usually this means the bake is stale (`npm run collision`) or that\n" +
-      "`server/world.ts` has drifted from `MapBuilder`'s collider half.\n",
+      "`src/sim/simWorld.ts` has drifted from `MapBuilder`'s collider half.\n",
   );
 }
 if (unready > 0) {

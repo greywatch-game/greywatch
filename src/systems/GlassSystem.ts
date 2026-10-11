@@ -88,7 +88,7 @@
  * fields, all 7.1 M step counts on Cinderhaven agree.
  *
  * That also puts the two simulations back in step. The drain was a second call
- * a caller had to remember and `HeadlessGame` never made it, so on the
+ * a caller had to remember and `SimCore` never made it, so on the
  * authority a break relinked the graph and left every field routing bots round
  * a window that was no longer there — for the rest of the round, not for seven
  * frames.
@@ -145,7 +145,7 @@ export class GlassSystem {
    * `Vector3Like` and only to be READ inside the call, except that `shoot`
    * hands a fresh `at` per pane, which the authority's handler keeps. A
    * handler feeding Babylon copies at its own boundary. `Game` wires this to
-   * the debris and the sound, `HeadlessGame` to the wire.
+   * the debris and the sound, `SimCore` to the wire.
    */
   onBreak: (pane: number, at: Vector3Like, dir: Vector3Like) => void = () => {};
 

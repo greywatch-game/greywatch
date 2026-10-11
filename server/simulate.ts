@@ -61,7 +61,8 @@ import { CONFIG } from "../src/config";
 import { MAPS } from "../src/world/maps";
 import { freshSeed, parseSeed } from "../src/systems/RoundRandom";
 import type { DeathCause } from "../src/systems/killRules";
-import { HeadlessGame } from "./HeadlessGame";
+import { SimCore } from "../src/sim/SimCore";
+import { loadSimWorld } from "./world";
 
 /** Give up rather than spin forever if a round somehow cannot end. */
 const MAX_SIM_MINUTES = 45;
@@ -134,7 +135,7 @@ async function runRound(mapId: string, difficulty: number, seed: number) {
   const def = MAPS.find((m) => m.id === mapId);
   if (!def) throw new Error(`no map "${mapId}" (have ${MAPS.map((m) => m.id).join(", ")})`);
 
-  const game = new HeadlessGame();
+  const game = new SimCore();
   // `--events`: one line per event, stamped with the tick it was raised on —
   // see the header. Null when not asked for, so a plain run builds no string.
   const log = printEvents
@@ -224,13 +225,18 @@ async function runRound(mapId: string, difficulty: number, seed: number) {
   // an omission.** This tool exists to measure the ROUND a player actually
   // gets, which on Sarab is `MapLayout.perTeam`'s twenty-four a side; it used
   // to have to say so itself, because the authority fielded sixteen on every
-  // map. It does not any more — `HeadlessGame.startRound` fields the map's own
+  // map. It does not any more — `SimCore.startRound` fields the map's own
   // number through `BattleSystem.setFielded` — so asking again here would be a
   // second opinion about a number that now has one owner. See
   // `server/Roster.ts`.
 
   const built = Date.now();
-  await game.startRound(def, difficulty, true, seed);
+  // The host's three jobs (`SimCore`'s header): load the world, hand over the
+  // seed, anchor the clock. The anchor decides nothing here — nobody is seated,
+  // so nothing is ever rewound against it — and is taken as `Match` takes it.
+  const { collision, floor } = await loadSimWorld(def);
+  game.startRound({ def, collision, floor, difficulty, bots: true, seed });
+  game.anchor(Date.now());
   const buildMs = Date.now() - built;
 
   const dt = 1 / TICK_HZ;
@@ -358,7 +364,7 @@ async function runRound(mapId: string, difficulty: number, seed: number) {
     winner: game.conquest.winner,
     tickets: [...game.conquest.tickets] as [number, number],
     // Summed out of the per-slot board rather than kept alongside it — see
-    // `HeadlessGame.teamScore`.
+    // `SimCore.teamScore`.
     kills: [game.teamScore(0).kills, game.teamScore(1).kills] as [number, number],
     losses: [game.teamScore(0).deaths, game.teamScore(1).deaths] as [number, number],
     // The board's third column, which a whole headless round is the cheapest

@@ -256,7 +256,7 @@ export interface EntityState {
    *
    * **The authority's own blend, not the key a client is holding**, and that is
    * the point of sending a number rather than the boolean the client already
-   * sends up. `NetPlayer` eases this exactly as `Player.syncCombatant` does,
+   * sends up. `SimPlayer` eases this exactly as `Player.syncCombatant` does,
    * and drops the eye and the hit sphere along it; a client draws the body from
    * the same number and puts its local copy of those spheres in the same place.
    * So what an observer aims at and what the server rewinds are the same shape
@@ -1011,7 +1011,7 @@ export interface Rejected {
  * missed message is corrected by the next one and a joiner is right on arrival.
  *
  * **Sent only when it changes**, which is a few times a minute rather than
- * twenty times a second: `Match` compares `HeadlessGame.scores.version` against
+ * twenty times a second: `Match` compares `SimCore.scores.version` against
  * what it last sent, on the same tick the snapshot goes out. Thirty-two numbers
  * on a snapshot that carries none of them is the trade the `fire` event makes
  * next door — the wire says a thing once rather than repeating it at the
@@ -1020,7 +1020,7 @@ export interface Rejected {
  * All three arrays are indexed by slot and always the full roster's length, so
  * a client indexes them with the same number it indexes everything else with.
  * Deaths are counted at the victim's door and kills at the killer's, once each
- * — see `HeadlessGame.creditKill`.
+ * — see `SimCore.creditKill`.
  *
  * Additive, like `fire`: an older client ignores a message type it has no case
  * for, and a newer client against an older server simply shows a board of
@@ -1239,7 +1239,7 @@ export interface Join {
    * arrived mangled, is the game everybody already had.
    *
    * What it does on the authority is field ZERO bodies a side out of the bot
-   * pool (`HeadlessGame.startRound`), which is `MapLayout.perTeam` reaching a
+   * pool (`SimCore.startRound`), which is `MapLayout.perTeam` reaching a
    * match through the number that was already there rather than a new kind of
    * absence — a bot in a botless match is set aside exactly as a bot on a map
    * that does not field its slot is. The SEATS are untouched: sixteen people

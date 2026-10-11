@@ -177,7 +177,7 @@ export interface BattleCtx {
    * grenade's ballistics are not: a bot says what it wants to hit and is told
    * whether the launcher could oblige.
    *
-   * Wired on BOTH sides — `Game` offline and `HeadlessGame` in a match — and
+   * Wired on BOTH sides — `Game` offline and `SimCore` in a match — and
    * it has to be: the authority fields the same hulls, so a launcher bot that
    * only fired offline would leave a netplay tank with nothing but the other
    * team's tank to answer it. The rocket is the AUTHORITY's object in a match

@@ -96,7 +96,7 @@ export function validateMove(
   // map whose edge is open. Being outside the play square is not a cheat there
   // and must not be treated as one: it is ordinary ground with ordinary floor
   // under it, and what a player standing on it is doing is running out of time
-  // — the leash's business, in `HeadlessGame`, and nothing to do with whether
+  // — the leash's business, in `SimCore`, and nothing to do with whether
   // the step they just reported was possible. Past the borderland there is
   // genuinely nothing: no floor, no nav cell and four boundary colliders in
   // the way, so a position out there is a claim about a place that does not
@@ -412,7 +412,7 @@ export function validateDrive(
 /**
  * The verdict `validateDrive` hands back, reused so the path that runs at
  * `INPUT_HZ` per driver allocates nothing — `SCRATCH`'s rule below, and
- * `HeadlessGame.applyDrive`'s, which writes into the object `remoteFor` has
+ * `SimCore.applyDrive`'s, which writes into the object `remoteFor` has
  * already handed out for the same reason.
  */
 const DRIVE: DriveVerdict = {

@@ -91,7 +91,7 @@ COPY docs ./docs
 # errored, the root one exited 0, and `build:server` emitted a bundle in 1.43s.
 # So a type error anywhere in `server/` passed both RUN lines and reached
 # production, which matters most for the client/server twins `Game.ts` and
-# `HeadlessGame.ts` deliberately keep in step by hand — a shared type that moved
+# `SimCore.ts` deliberately keep in step by hand — a shared type that moved
 # on one side and not the other is exactly the failure this gate is for, and
 # exactly the one it could not see. Keep this as `npm run typecheck`; a `tsc
 # --noEmit` here is that hole reopening, and it reopens silently.

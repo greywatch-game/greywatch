@@ -40,7 +40,7 @@ import type { Hittable } from "./CombatSystem";
  * reader; the client is handed it and files nothing under it.
  *
  * `other` is the honest answer at the one door that does not know: a PERSON's
- * death arrives through `NetPlayer.onDamaged`, where whatever killed them was
+ * death arrives through `SimPlayer.onDamaged`, where whatever killed them was
  * credited at its own door and the authority cannot see which. `simulate`
  * never reaches it — there are no people in a headless round — so it is a gap
  * only a tool that grows synthetic players would have to close.
@@ -58,7 +58,7 @@ export type DeathCause =
 
 /**
  * The two doors a kill reaches, as one simulation keeps them. `Game` and
- * `HeadlessGame` each build one, once, out of their own `creditKill` and their
+ * `SimCore` each build one, once, out of their own `creditKill` and their
  * own bot-death bookkeeping.
  */
 export interface KillLedger {

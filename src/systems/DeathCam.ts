@@ -285,7 +285,7 @@ export class DeathCam {
 
     corpse.position.copyFrom(feet);
     // The CENTRE rides the stance and the ROOT does not, which is the same
-    // split `NetPlayer` draws for a remote body: the crouch lives inside the
+    // split `SimPlayer` draws for a remote body: the crouch lives inside the
     // rig — `animateSoldier` drops the hips and plants the boots — so a root
     // pulled down with it would put the feet through the floor. The centre is
     // where the round landed and where the throw is aimed away from, so it goes

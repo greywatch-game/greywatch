@@ -3,7 +3,7 @@
  * the snapshots that go out from it.
  * Owns: the fixed-step clock, the peer set, and the bridge between a roster slot
  * changing hands and the bot in that slot being benched or released. It owns no
- * game rules — those are `HeadlessGame`'s — and no transport details beyond
+ * game rules — those are `SimCore`'s — and no transport details beyond
  * `send`/`broadcast`, which are the one place a dead socket is handled.
  * Invariants: a peer's slot is assigned here and nowhere else, and a peer never
  * names its own slot. The loop is fixed-step and drift-corrected: a `dt` taken
@@ -55,12 +55,14 @@ import {
   type ThrowableId,
 } from "../src/entities/throwables";
 import { DRIVER, GUNNER, type CrewSeat } from "../src/entities/hullSeats";
-import { MAPS } from "../src/world/maps";
-import { HeadlessGame } from "./HeadlessGame";
+import { MAPS, type MapDef } from "../src/world/maps";
+import { freshSeed } from "../src/systems/RoundRandom";
+import { SimCore } from "../src/sim/SimCore";
 import { MapVote } from "./MapVote";
 import { HUMANS_PER_TEAM, Roster, SLOT_COUNT } from "./Roster";
 import { validateDrive, validateMove } from "./validate";
 import { readClientMessage } from "./wire";
+import { loadSimWorld } from "./world";
 import {
   claimedDir,
   lookDir,
@@ -235,7 +237,7 @@ const STEP_MS = 1000 / TICK_HZ;
  * Polled at `STEP_MS` a wake-up is late as often as not, so the tick a snapshot
  * rides on runs anywhere in a 16 ms window and the twenty sends a second land
  * 31 to 80 ms apart. That spread is not rendered as speed any more (the stamps
- * are the simulation's own clock — `HeadlessGame.now`), but it is still spent:
+ * are the simulation's own clock — `SimCore.now`), but it is still spent:
  * a client draws bodies `CONFIG.net.interpDelay` behind the newest sample it
  * holds, and a send that is early shortens that buffer by exactly its
  * earliness. Half the spread came off the budget meant for the NETWORK's
@@ -509,7 +511,7 @@ let nextPeerId = 1;
 
 export class Match {
   readonly roster = new Roster();
-  readonly game = new HeadlessGame();
+  readonly game = new SimCore();
 
   private readonly peers = new Map<string, Peer>();
   private timer: ReturnType<typeof setInterval> | null = null;
@@ -636,7 +638,7 @@ export class Match {
   private mapVote: MapVote | null = null;
   /**
    * When the window shuts, on the WALL clock — the one place on this server
-   * that is right rather than a lapse from `HeadlessGame.now`.
+   * that is right rather than a lapse from `SimCore.now`.
    *
    * The simulation is not stepped while `rotating`, so its clock is frozen for
    * the whole of the window and a countdown measured against it would read the
@@ -689,7 +691,7 @@ export class Match {
         kind: bot.deathKind,
       });
     };
-    // A bot pulled its trigger. Taken HERE rather than in `HeadlessGame.wire`
+    // A bot pulled its trigger. Taken HERE rather than in `SimCore.wire`
     // because nothing in the simulation wants it — it is news for a screen, and
     // the queue that carries news to a screen is this class's. It is also the
     // only way the fact can reach one: a client runs none of the AI, so a bot's
@@ -709,7 +711,7 @@ export class Match {
       this.queueTo(player.slot, { e: "nearmiss", at: [at.x, at.y, at.z] });
     // Through the simulation rather than off `ConquestSystem` directly: a flag
     // changing hands pays everybody standing on it, which is a rule, so
-    // `HeadlessGame` takes the conquest callbacks and hands the news back out
+    // `SimCore` takes the conquest callbacks and hands the news back out
     // — the same shape `onKillEvent` has, and for the same reason.
     this.game.onCapturedEvent = (point, by) =>
       this.queue({ e: "captured", point: point.def.id, by });
@@ -955,7 +957,7 @@ export class Match {
     // connection that never really came up — and `close` was wired above it, so
     // `drop` has ALREADY run: it released the roster slot and put the bot back.
     // Seating the player now would bench that bot for the life of the match and
-    // leave a body in `HeadlessGame.players` that no peer owns and nothing ever
+    // leave a body in `SimCore.players` that no peer owns and nothing ever
     // removes, because the only thing that removes one is the drop that has
     // been and gone. The team plays a body short and the ghost is tracked for
     // rewind forever.
@@ -980,7 +982,7 @@ export class Match {
     // once in a match, and the second is `onDeploy`.
     this.setKit(slot.index, weapon, equipment, throwable);
     // Not spawned here: a fresh player is dead with a zero timer, which is
-    // exactly the state the reinforcement pass in `HeadlessGame.step` picks up.
+    // exactly the state the reinforcement pass in `SimCore.step` picks up.
     // Joining and redeploying are the same act and go through the same door.
 
     this.send(peer, {
@@ -1061,7 +1063,7 @@ export class Match {
    * **Both callers reach this with the player DEAD** — the handshake seats a
    * body that is dead with a zero timer, and the kit screen is reachable from
    * the deploy screen and nowhere else — which is what lets the pouch be
-   * written straight: `NetPlayer.spawn` refills `ordnance` from
+   * written straight: `SimPlayer.spawn` refills `ordnance` from
    * `ordnanceCarried`, so the body that comes back is the first one that
    * carries this. It is also what keeps `fire`'s `w` and `onReload`'s gate
    * honest, both of which read the loadout of a player who is shooting and
@@ -1219,7 +1221,7 @@ export class Match {
    * bots it fields, and in a botless match is not the same number.
    *
    * The two questions have always been distinct and only ever had one answer
-   * before this: "how many bots are in the fight" (`HeadlessGame.perTeam`,
+   * before this: "how many bots are in the fight" (`SimCore.perTeam`,
    * spent on `BattleSystem.setFielded`) and "how many slots hold a body a
    * client must pool, draw and be shot by" (`Roster.setFielded`). On an
    * ordinary match every fielded slot is a bot until a person takes it, so the
@@ -1248,10 +1250,10 @@ export class Match {
   private async start(): Promise<void> {
     if (!this.game.map) {
       const def = MAPS.find((m) => m.id === this.mapId) ?? MAPS[0];
-      await this.game.startRound(def, 1, this.withBots);
+      await this.startRound(def);
     }
     // What this map fields, onto the table. The simulation has already been
-    // told (`HeadlessGame.startRound`); this is the same decision reaching the
+    // told (`SimCore.startRound`); this is the same decision reaching the
     // one thing that decides what goes out on the wire, derived from the
     // simulation rather than resolved a second time so the two cannot drift.
     this.roster.setFielded(this.fieldedSlots());
@@ -1283,7 +1285,7 @@ export class Match {
         // What is dropped is real time the world will never be stepped
         // through, and the simulation's own clock is told so — that clock is
         // what every snapshot is stamped with, and one left quietly behind the
-        // wall is one no client can follow. See `HeadlessGame.drop`.
+        // wall is one no client can follow. See `SimCore.drop`.
         if (carried > 250) {
           this.game.drop(carried - 250);
           carried = 250;
@@ -1300,6 +1302,26 @@ export class Match {
     console.log(`[${this.id}] round started on ${this.mapId}, seed ${this.game.random.seed}`);
   }
 
+  /**
+   * A round on `def`, as this host owes it to the core: the bake and the floor
+   * LOADED (the one await), the seed DRAWN, and the clock ANCHORED — the three
+   * things `SimCore` does not do for itself, because it reads no clock and no
+   * entropy (`BABYLON_EXIT.md` X2.5a). The anchor is taken the moment the
+   * build returns, which is where `SimCore.anchor` says it must be.
+   */
+  private async startRound(def: MapDef): Promise<void> {
+    const { collision, floor } = await loadSimWorld(def);
+    this.game.startRound({
+      def,
+      collision,
+      floor,
+      difficulty: 1,
+      bots: this.withBots,
+      seed: freshSeed(),
+    });
+    this.game.anchor(Date.now());
+  }
+
   private stop(): void {
     if (!this.timer) return;
     clearInterval(this.timer);
@@ -1312,13 +1334,13 @@ export class Match {
     // A rotation owns the world until it hands it back, and the loop keeps
     // firing across the whole of it — the round-over pause and then the rebuild
     // — because nothing here stops the interval. For the length of `rotate`'s
-    // await, `HeadlessGame.map` still points at the map `startRound` has
-    // already DISPOSED, so a step taken there walks a scene whose meshes are
-    // gone.
+    // await, `SimCore.map` still points at the map of the round that ended —
+    // the next one is still LOADING (`loadSimWorld`) — so a step taken there
+    // would play on a world the round is over in.
     //
     // It does not currently crash, and that is an accident worth naming rather
     // than relying on: `conquest.winner` is still set from the round that
-    // ended, so `HeadlessGame.step` returns before it reaches `battle`, and it
+    // ended, so `SimCore.step` returns before it reaches `battle`, and it
     // stops being true the moment anything resets that earlier. This flag is
     // the fact itself, so the safety no longer rests on a second one agreeing
     // with it.
@@ -1393,7 +1415,7 @@ export class Match {
    * MATCH, not about the round, so a rotation rebuilds the world and restarts
    * the fight without anybody being re-seated or having to rejoin. Every seated
    * player is dead with a zero timer afterwards, which is exactly the state
-   * `HeadlessGame.step` deploys them from.
+   * `SimCore.step` deploys them from.
    *
    * What the new map DOES bring is how many bodies a side it fields
    * (`setFielded`), and the whole reason that is safe to change here is that it
@@ -1418,7 +1440,7 @@ export class Match {
     this.mapId = next;
     const def = MAPS.find((m) => m.id === next) ?? MAPS[0];
 
-    await this.game.startRound(def, 1, this.withBots);
+    await this.startRound(def);
     // The new map's roster, onto the table — see `start`. FIRST, because
     // everything below it either re-benches over the top of what
     // `setFielded` decided or sends a list this filters.
@@ -1498,7 +1520,7 @@ export class Match {
           crouch: player.crouchBlend,
           alive: player.alive,
           // The same tween a bot's body plays, off the same field — see
-          // `NetPlayer.deathProgress` for why this is not a bare 1.
+          // `SimPlayer.deathProgress` for why this is not a bare 1.
           dead: player.deathProgress,
         });
         continue;
@@ -1635,7 +1657,7 @@ export class Match {
       // for a `SNAPSHOT_HZ` that does not divide `TICK_HZ`, reached through the
       // timer instead of the ratio, and it is worst on the fastest thing in the
       // game: a gunship moves a metre and a half a snapshot, so ±60% of it is
-      // the picture shaking for the man on its gun. See `HeadlessGame.now`.
+      // the picture shaking for the man on its gun. See `SimCore.now`.
       now: this.game.now,
       entities: this.entityScratch,
       points,
@@ -1842,8 +1864,8 @@ export class Match {
       case "ordnance":
         // The ones that belong to a round in progress, gated on the same fact
         // `step` is: between a round ending and the next one being built there
-        // is a window in which `game.map` is the map `startRound` has already
-        // disposed, and a message is the one thing that can arrive inside it —
+        // is a window in which `game.map` is the map of the round that ended,
+        // and a message is the one thing that can arrive inside it —
         // a client whose own round is over still has a socket, and its last
         // shots are in flight. Dropping them is right on its own terms as well:
         // a round fired into a fight that has finished has nothing left to hit,
@@ -1999,7 +2021,7 @@ export class Match {
    * A player asking to come back in, where, and CARRYING WHAT.
    *
    * All this does about the spawn is RECORD the ask. The simulation spends it
-   * — see the reinforcement pass in `HeadlessGame.step` — because when a
+   * — see the reinforcement pass in `SimCore.step` — because when a
    * person may deploy is the reinforcement clock's answer and where they land
    * is conquest's, and neither of those questions is a transport's business.
    *
@@ -2035,7 +2057,7 @@ export class Match {
     // fallback to what this slot already carries rather than a second call to
     // the tables. It is spent here, on a player who is by definition dead
     // (checked above), rather than at the spawn: `setKit` writes the pouch and
-    // `NetPlayer.spawn` is what fills it.
+    // `SimPlayer.spawn` is what fills it.
     const held = this.slots[peer.slot];
     this.setKit(
       peer.slot,
@@ -2508,7 +2530,7 @@ export class Match {
     // and it is granted here rather than through the offer below because
     // `seatOffered` refuses a player who is already seated — which is right
     // for the question it answers (may this body climb aboard) and wrong for
-    // this one. `HeadlessGame.seat` is still the one door: it releases the old
+    // this one. `SimCore.seat` is still the one door: it releases the old
     // chair, turns a BOT out of the new one, and leaves everything about the
     // BODY standing, because none of that was ever about which seat.
     //
@@ -2550,7 +2572,7 @@ export class Match {
     // faith: a client whose own prompt reads LAND TO GET OUT never asks. What
     // it is holding back is the whole of the hole — there is no fall damage
     // anywhere in this game, so a dismount at altitude is a free ride to any
-    // roof on the map. The policy is here rather than in HeadlessGame.seat
+    // roof on the map. The policy is here rather than in SimCore.seat
     // because that method is the MECHANISM and this file is where policy goes.
     if (!this.game.vehicles.dismountable(tank)) return;
     // Read BEFORE the seat is given up: `exitSpot` measures from the hull, and
@@ -2762,7 +2784,7 @@ export class Match {
    *
    * Derived at the snapshot rather than tracked, and that is deliberate: the
    * two things that can be in a tank keep the fact in two different places
-   * (`NetPlayer.seat` for a person, `VehicleCrew`'s pairing for a bot), and a
+   * (`SimPlayer.seat` for a person, `VehicleCrew`'s pairing for a bot), and a
    * third copy kept in step with both is the copy that would be wrong. It is
    * sixteen comparisons twenty times a second on a map with armour, twice
    * over now that a hull holds two.
