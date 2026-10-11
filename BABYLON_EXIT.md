@@ -59,6 +59,12 @@ has nothing to revert.
   play is that each bot's movement stream restarts every round (X0.2). So
   X6.2's merge carries Phase 1 onwards, and its `revert -m 1` leaves the
   instruments on `develop`, which is what is wanted.
+- **A second early merge, after X2.5b**, by the user's call on 2026-10-11:
+  once X2.5b lands and has been code-reviewed, the branch is merged `--no-ff`
+  into `develop`, so the phone can install and run the deployed build (X2.5b's
+  Verify). That merge carries Phases 1 and 2 to `develop`, so from then on
+  X6.2's merge carries Phase 3 onwards, and its `revert -m 1` no longer takes
+  Phases 1 and 2 back out.
 - **If the exit is abandoned,** `develop` is untouched and the branch is kept
   for its findings, not deleted.
 
@@ -1219,7 +1225,7 @@ outside its typed arrays; one frame must be applied before that call's events;
   where systems meet) and "Conquest rules" (one ledger, one core); `docs/game.md`;
   `docs/multiplayer.md`.
 
-#### X2.5b — The core in a Worker — **M**
+#### X2.5b — The core in a Worker — **M** (decision)
 
 As `PERF_PLAN.md` C4 states it:
 - **The shared state.** Per-body state and the event queue are double-buffered
@@ -1230,7 +1236,31 @@ As `PERF_PLAN.md` C4 states it:
   code).
 - **Bots and everything else run a frame ahead** in the Worker.
 - **The authority** runs the core in-process or in `worker_threads`, whichever
-  measures better.
+  measures better. (Open: see "Decisions that are yours".)
+
+**Decided 2026-10-11, before the step:**
+- **Shared memory, not posted frames.** Posting the frame and transferring its
+  buffers was weighed. It needs no isolation, and `?simcopy` already proves
+  the clone boundary. But every message allocates on the receiving thread (the
+  event, and new buffers that need new views), so it cannot meet the
+  allocation-free rule below. Shared memory allocates nothing on either
+  thread, and Phase 4's instanced bodies can upload straight from it. The speed
+  difference (an estimated 0.1-0.3 ms a phone frame) is below the measurement
+  protocol's floor and did not decide it. **The transport is one small module
+  behind one interface**, and the frame's layout is the same for both, so
+  posting can replace shared memory later as a contained change if isolation
+  causes trouble.
+- **Offline shots are rewound.** With the bots a frame ahead, a person's shot
+  resolves about two steps after the picture it was aimed at (15-20 cm at a
+  run). The offline core is built with `rewind` in both modes, so a shot is
+  resolved against what was drawn, by the same rule as a match. The bench is
+  bot-only, so its hashes are not expected to move.
+- **The phone check is restated** (see Verify): the simulation's share of a
+  phone tick (5-8% at P0) is at or under the protocol's ~8% floor, so "the main
+  thread gets faster by roughly that share" could not be read either way.
+- **The phone run goes through `develop`.** After the step lands, it is
+  reviewed and then merged `--no-ff` into `develop` by the user's call, so the
+  deployed build can be installed and run on the phone (see "The branch").
 
 **Cross-origin isolation** (COOP `same-origin`, COEP `require-corp`) is owed on
 EVERY document response:
@@ -1255,17 +1285,28 @@ against `require-corp` before turning it on.
 - **Fallback:** a browser without cross-origin isolation (or without
   `SharedArrayBuffer`) runs the core in the page, exactly as X2.5a left it. It
   stays one code path behind one interface, and the boot says which one is
-  running.
+  running. The in-page mode also stays selectable by a flag, because
+  `?simcheck` needs the core in-process.
+- **Offline rewind** (decided above): the offline core is built with `rewind`
+  in both modes.
+- **FINDINGS 61 is fixed in the step.** `BotMirror.read`'s ~3.2 kB a frame
+  breaks the allocation-free rule this step extends to both threads.
 
 **Verify:**
 - `crossOriginIsolated` is true in dev, in the docker image, and in the
   installed app OFFLINE.
 - The benchmark's fights are unchanged from X2.5a.
 - `parity` and `simulate`.
-- A netplay round, and an offline round on the phone.
-- The phone's main-thread tick, before and after, against P0's split. **If the
-  main thread does not get faster by roughly the simulation's share, stop and
-  find out why before going on**, as C4's own verify says.
+- A netplay round, and an offline round on the phone (on the deployed
+  `develop` build, after the review and merge decided above).
+- **The phone, before and after, read off the profiler rather than the frame
+  rate** (restated 2026-10-11):
+  - the main thread's `sim` phase goes to about zero;
+  - the page's new per-frame costs (publishing, syncing the mirrors) are
+    measured and named;
+  - the main thread's frame is no slower than X2.5a's.
+  **If `sim` does not leave the main thread, or the new costs eat what it
+  freed, stop and find out why before going on.**
 
 **Rewrites:**
 - `CLAUDE.md`: "Ownership and wiring" (the simulation runs off the main
@@ -1689,6 +1730,11 @@ Phase 1 actually took.
 | X2.4 | Fix `FINDINGS.md` 53 (world friction 0.5, not 0.8) while porting Havok? | **Decided** 2026-10-10: no. The port keeps 0.5, so `drop.mjs` stays an oracle. A fix is a separate commit afterwards, on the user's word (X2.4). |
 | X2.5 | One simulation core, offline and online? | **Decided** 2026-10-10: yes. |
 | X2.5 | In the page or in a Worker? | **Decided** 2026-10-10: in a Worker. X2.5a makes the one core in the page behind a Worker-shaped interface, and X2.5b moves it into a Worker with cross-origin isolation, keeping the in-page core as the fallback for a browser without isolation (X2.5). |
+| X2.5b | Shared memory (with cross-origin isolation) or posted frames? | **Decided** 2026-10-11: shared memory, with the transport behind one interface so posting can replace it (X2.5b). |
+| X2.5b | Rewind offline shots, now that the bots run a frame ahead? | **Decided** 2026-10-11: yes, in both modes (X2.5b). |
+| X2.5b | The phone check sits under the noise floor. How is it read? | **Decided** 2026-10-11: off the profiler: `sim` leaves the main thread, the new costs are named, and the frame is no slower (X2.5b). |
+| X2.5b | How does the branch reach the phone? | **Decided** 2026-10-11: a code review, then a `--no-ff` merge to `develop` ("The branch"). |
+| X2.5b | Does the authority run the core in-process or in `worker_threads`? | In-process, with no measurement owed. A server runs one core per match and draws nothing, so a Worker there only adds a hop to every relayed command and event, and the server is in no X0.4 target. |
 | X3.4 | Scatter AO: baked per kind (cheaper, changes the look) or per instance? | Per kind, judged in the bank. |
 | X4.2 | Which hull parts drop at range (the tank's links and wheels, the MG rings)? | An art call; PERF_PLAN A3 measured +6.5% at 300 m on Cinderhaven. |
 | X6.2 | Is it ready to merge to `develop`? | Only when X6.2's "Before" list passes in full. |
