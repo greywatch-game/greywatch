@@ -1011,7 +1011,54 @@ modules.
   `MapBuilder` because it has no canvas; that stays true, but `NullEngine`
   goes), `docs/multiplayer.md`, `server/README.md`.
 
-### X2.4 — Havok, called directly — **M**
+### X2.4 — Havok, called directly — **M** — **LANDED** (823906c)
+
+**Landed** 2026-10-11, after a two-way review whose fixes are f60ae44 and
+823906c. Babylon's `HavokPlugin` is gone: `src/systems/havok.ts` is the one
+dialect over `@babylonjs/havok`'s raw `HP_*` API, the four clients speak it,
+and `PhysicsWorld` (Babylon-free, a root of the gate beside `havok.ts`) owns
+the world, a `WorldBody` table whose pose is seven numbers in a
+`Float64Array`, and the substep (pending teleports, step, read back). The
+ragdoll and both debris pools draw those poses onto their proxies and meshes
+(`poseView.ts`) before anything reads a node. The floor reaches the physics as
+data (`GameMap.terrainGeometry`). `scene.physicsEnabled = false` is `Game`'s.
+
+Commits: C0 fb90b7d (the oracles), C1 728d046 (the static world), C2 ea7bb95
+(shards and rubble; `PhysicsWorld` owns the substep), C3 8b0382b (ragdolls,
+constraints), C4 f56a1e3 (the plugin dropped), C5 8a49494 (poses in arrays,
+drawn by views), C6 4c2c35d (docs), review f60ae44 + 823906c.
+
+**The bar was bits, and it held at every commit.** The port replays the
+plugin's own calls in its own order — the lazily created bucket containers,
+the reversed terrain winding, the material-free world (FINDINGS 53's 0.5
+kept), the two mass-property sets that keep the shape's inertia, park keeping
+the current orientation, the sync's `p + 0`.
+- **`drop.mjs --check --exact`:** "bits identical" on all seven maps, against a
+  full-precision fingerprint banked at the parent (`ref/exact.json`).
+- **`clients.mjs --check`**, new: ragdolls (a bullet death, a blast death, an
+  eviction), glass bursts with re-shapes, and rubble, stepped 600 frames. It
+  hashes every live body, every pooled body including the PARKED ones (each
+  must sit at y = -1000), and every node the views draw. It rebuilds the world
+  twice first and counts Havok's bodies. Banked on the PRE-PORT tree, and
+  identical on the port; a park with its teleport removed fails it.
+- **simulate**, the seven C6 hashes, unchanged. **bank.mjs** 47 rows, 0 moved.
+  **gate.mjs** all seven maps.
+- **A real round:** a bullet drops a body, a blast throws one, the ninth corpse
+  evicts the oldest, shards fall, the death cam's stand-in falls.
+- **Main bundle:** 9,390.8 kB → 9,345.1 kB.
+
+**Found on the way, all pre-existing, none fixed here** (each changes the
+picture, so each is the user's call):
+- **FINDINGS 57:** a ragdoll's impulse lands while its bodies are still parked
+  1 km down, so the chest spins at Havok's 100 rad/s cap. Reproduced bit for
+  bit.
+- **FINDINGS 58:** debris is culled off a stale bounding sphere. Rubble never
+  draws, and a glass shard's sphere sits at the map ORIGIN, so on Cinderhaven
+  only 6-8 of a pane's 12 shards draw.
+- **FINDINGS 59:** shards and chunks never sink more than one frame's step.
+
+`death.substep` now really is the step: Babylon's engine had overwritten the
+plugin's timestep with its own 1/60 default, the same value today.
 
 `PhysicsWorld`, `RagdollSystem`, `DebrisSystem` and `BlastDebrisSystem` use
 Babylon's plugin (`HavokPlugin`, `PhysicsBody`, `Physics6DoFConstraint`, …).
