@@ -79,7 +79,10 @@
  * what it accepts; the offline page submits its player's acts trusted. What
  * DECIDES is here, once, for both: whose body moves, which round is resolved
  * against what, the pouches, the seat policy (`mount`/`dismount` around
- * `seat`) and when a person comes back in. The `SimCoreOptions` say how the
+ * `seat`), when a person comes back in, and what a person's REPORTED landing
+ * costs their helicopter (`applyDrive` → `src/sim/reportedLanding.ts`, spent
+ * after the hulls move — a posed hull charges itself nothing, FINDINGS.md
+ * 60). The `SimCoreOptions` say how the
  * hosts' roles differ — a rewind for remote shooters, a respawn clock the
  * host holds — and none of them changes a rule.
  *
@@ -155,6 +158,7 @@ import type { Heightfield } from "../world/layout";
 import { TerrainField } from "../world/TerrainField";
 import { LagComp } from "./LagComp";
 import { SimPlayer } from "./SimPlayer";
+import { ReportedLanding } from "./reportedLanding";
 import { buildSimWorld } from "./simWorld";
 import { fillFrame, newFrame, type SimFrame } from "./frame";
 import type { ShotCommand, SimCommand } from "./commands";
@@ -562,6 +566,7 @@ export class SimCore {
     this.crew.clear();
     this.crew.setMap(null);
     this.driven.clear();
+    this.landings.clear();
     this.laid.clear();
     for (const tank of this.vehicles.hulls) this.battle.removeHuman(tank);
     this.vehicles.dispose();
@@ -633,6 +638,15 @@ export class SimCore {
    * the same statement as "nobody is driving this one".
    */
   private readonly driven = new Map<number, RemoteHull>();
+
+  /**
+   * The crash test of each hull a PERSON flies, by hardstanding index — the
+   * reports `applyDrive` accepts, read as the vertical motion they describe
+   * (`src/sim/reportedLanding.ts`, FINDINGS.md 60). Reset when a person takes
+   * the sticks (`seat`); what it charges is spent in `advance`, right after
+   * the hulls move, where a stepped hull's own crash lands.
+   */
+  private readonly landings = new Map<number, ReportedLanding>();
 
   /** Scratch a person's rocket or round is copied into on arrival. */
   private readonly cmdFrom = new Vector3();
@@ -743,6 +757,7 @@ export class SimCore {
     // down beside a hull that is about to stop existing.
     this.crew.clear();
     this.driven.clear();
+    this.landings.clear();
     this.laid.clear();
     // **Last round's hulls come OUT of the fight before they are disposed.**
     // `BattleSystem.reset` deliberately does not touch the human list — the
@@ -955,6 +970,18 @@ export class SimCore {
     // drive input the step below consumes.
     this.crew.update(dt);
     this.vehicles.update(dt, this.vehicleOrders);
+    // The crashes a PERSON's reports ran up since the last step, spent where a
+    // stepped hull's own crash is spent — inside the hulls' move, before the
+    // tracks and the bots — through the same door (`Vehicle.crash`), so the
+    // burn, the crew and the person in the seat follow as from any blow. A
+    // hull that has burned meanwhile owes nothing more.
+    for (const [index, landing] of this.landings) {
+      if (landing.owed <= 0) continue;
+      const tank = this.vehicles.hulls[index];
+      const cost = landing.owed;
+      landing.owed = 0;
+      if (tank?.alive) tank.crash(cost);
+    }
     // What the tracks killed, in `Game.updateWorld`'s place and for its
     // reason: immediately after the hulls have moved and before the bots
     // think, so a body taken by a tank is not a target on the same frame's
@@ -1425,7 +1452,7 @@ export class SimCore {
         if (!player.alive || player.seat < 0) return false;
         player.yaw = cmd.aimYaw;
         player.pitch = cmd.aimPitch;
-        this.applyDrive(player, cmd.x, cmd.y, cmd.z, cmd.yaw, cmd.turretYaw, cmd.gunPitch);
+        this.applyDrive(player, cmd.x, cmd.y, cmd.z, cmd.yaw, cmd.turretYaw, cmd.gunPitch, cmd.time);
         return true;
       case "gun":
         if (!player.alive || player.seat < 0 || player.crewSeat !== GUNNER) return false;
@@ -1739,6 +1766,11 @@ export class SimCore {
     // read as "this one is not mine to simulate": a gunner who set it would
     // freeze a tank a bot was still driving.
     if (use === DRIVER) {
+      // A new pilot's reports start a new history: nothing is measured
+      // across the change of hands.
+      let landing = this.landings.get(index);
+      if (!landing) this.landings.set(index, (landing = new ReportedLanding()));
+      landing.reset();
       this.driven.set(index, {
         x: tank.position.x,
         y: tank.position.y,
@@ -1800,6 +1832,7 @@ export class SimCore {
     yaw: number,
     turretYaw: number,
     gunPitch: number,
+    time: number,
   ): void {
     if (player.crewSeat !== DRIVER) return;
     const state = this.driven.get(player.seat);
@@ -1810,6 +1843,15 @@ export class SimCore {
     state.yaw = yaw;
     state.turretYaw = turretYaw;
     state.gunPitch = gunPitch;
+    // **What the report says the hull's ARRIVAL cost** — the crash a hull
+    // stepped here charges itself in `Vehicle.update`, asked of the motion a
+    // person reported instead (FINDINGS.md 60). Every accepted sample, in
+    // order, on every host: each `drive` the page submits offline, each one
+    // `validateDrive` accepts on the authority.
+    const tank = this.vehicles.hulls[player.seat];
+    if (tank?.flies && tank.alive) {
+      this.landings.get(player.seat)?.sample(tank, x, y, z, yaw, time);
+    }
   }
 
   /**

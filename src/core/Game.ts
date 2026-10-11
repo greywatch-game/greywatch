@@ -5937,8 +5937,21 @@ export class Game {
     cmd.gunPitch = tank.gunPitch;
     cmd.aimYaw = this.drive.aimYaw;
     cmd.aimPitch = this.drive.aimPitch;
+    cmd.time = this.hullClock;
     this.ask(cmd);
   }
+
+  /**
+   * The clock this page's fleet has been stepped through, seconds — advanced
+   * by exactly the `dt` each offline fleet step takes, so the hull `reportHull`
+   * reports was standing where it says at this time. It is the report's
+   * `time` (`DriveCommand.time`): the core charges a person's crash off the
+   * rate their reports describe (`src/sim/reportedLanding.ts`), and with this
+   * clock that rate is the predicted hull's own step to float noise, so the
+   * offline pilot's landing costs what a bot's costs. Never reset: only
+   * intervals are read.
+   */
+  private hullClock = 0;
 
   /** `localGun` told to the offline core (`gun`), `reportHull`'s twin. */
   private reportGun(tank: Vehicle): void {
@@ -8149,6 +8162,7 @@ export class Game {
     gunPitch: 0,
     aimYaw: 0,
     aimPitch: 0,
+    time: 0,
   };
   private readonly gunCmd: GunCommand = { t: "gun", yaw: 0, pitch: 0 };
   /** Offline the trigger is all a hull gun's command says (`early` 0). */
@@ -9208,6 +9222,7 @@ export class Game {
       this.prof.begin(P.vehicles);
       this.syncFleet(this.sim.fleet);
       this.vehicles.update(dt, this.vehicleOrders);
+      this.hullClock += dt;
       this.prof.end(P.vehicles);
       // The hulls have moved, which is everything `pushHullEngines` reads off
       // them at the end of the frame.

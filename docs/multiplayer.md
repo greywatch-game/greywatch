@@ -1767,8 +1767,10 @@ code in the same world and has nothing to be caught at, so no `hullcorrect`
 is ever owed offline and `Vehicle.correctTo` stays this wire's door alone. The
 core poses the hull through `remoteFor` as the authority poses a peer's, and
 the person who drives it gets one machine whichever side of the wire they are
-on — which is also why a gap in the remote half is now a gap offline too: a
-person-flown helicopter takes no crash damage on either (`FINDINGS.md` 60).
+on — which is also why a gap in the remote half is a gap offline too, and why
+the one it had is closed on both by one rule: a posed hull charges itself no
+crash, so the core charges a person-flown landing off the accepted reports
+(below, and `FINDINGS.md` 60).
 
 **`validateDrive` is the speed bound that knows what a player is sitting in.**
 Running a tank through `validateMove` would reject every honest driver at a
@@ -1819,6 +1821,22 @@ THE BOUNDARY, `applyDrive` is handed the verdict's position rather than the
 message's, and the client is told where it actually ended up. `DriveVerdict`
 carries the split, and `Match` is where the policy lives, because
 `server/validate.ts` returns a verdict and decides nothing.
+
+**An ACCEPTED sample is also a CRASH TEST, and a refused one is not.** A hull a
+person flies is posed from their reports and never stepped, so nothing on the
+authority would ever charge it for hitting the ground; `SimCore.applyDrive`
+hands every accepted sample — the verdict's position and the client's own
+stamp, `time: msg.time / 1000` — to `src/sim/reportedLanding.ts`, which asks of
+the report series the jolt `Vehicle.update` asks of a stepped hull and charges
+it through the same `Vehicle.crash` (`docs/vehicles.md`, "A person's landing
+is charged off their REPORTS"). The interval is between ACCEPTED samples, so a
+refusal in between is a longer interval rather than a doubled rate, and a
+lid's clamped height is the height the test sees. At `INPUT_HZ` it is exact
+for a steady descent on an exact clock and moved ±21 points (of ~129) by a
+whole-ms `Date.now()` stamp read a millisecond or so late, and it charges a
+flare inside the last interval HIGH — `npm run corecheck`'s `sarab/crash`
+measures all of it through this door with a fake peer, and holds it equal to
+the trusted door's charge.
 
 **THE CEILING IS A RATE AND NOT A HEIGHT**, which is the specific thing the
 first version got wrong. `FlightModel.collective` fades the commanded climb to

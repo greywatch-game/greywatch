@@ -167,6 +167,15 @@ export interface DriveCommand {
   gunPitch: number;
   aimYaw: number;
   aimPitch: number;
+  /**
+   * The REPORTER's clock, seconds, at the moment the hull stood where this
+   * says — any origin, monotonic. What the core reads it for is the interval
+   * between two accepted samples: a person's crash is charged off the rate
+   * their reports describe (`src/sim/reportedLanding.ts`). The authority's is
+   * `DriveMessage.time`; the offline page's is the clock its predicted hull
+   * has been stepped through (`Game.hullClock`).
+   */
+  time: number;
 }
 
 /** A GUNNER's cupola-gun bearing (`remoteGunFor`), which is also their look. */

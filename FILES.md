@@ -62,7 +62,11 @@ server/               # The authoritative match server. Node, no Babylon (the
                       #   (`submit`) and the validated one agreeing — plus the
                       #   `hostHoldsRespawn` deploy and the reported hull
                       #   (`drive`/`gun` pose the core's copy; the shell leaves
-                      #   the reported muzzle). Exits non-zero on a fail
+                      #   the reported muzzle), and `sarab/crash`: a person's
+                      #   helicopter charged off its reports — every step, at
+                      #   INPUT_HZ with clock jitter, through Match — against
+                      #   the bot path's own charge on the same flights.
+                      #   Exits non-zero on a fail
 scripts/                      # Node tooling, run by hand or by `npm run build`,
                               #   never shipped. Plain .mjs outside both
                               #   tsconfigs. The game's own code is reached
@@ -1975,6 +1979,10 @@ src/
                       #   else. Loads nothing; the host does
     LagComp.ts        #   Position history + the rewind around a shot. `resolve`
                       #   takes a callback so the restore cannot be skipped
+    reportedLanding.ts #  The crash of a hull a PERSON flies (FINDINGS 60):
+                      #   `Vehicle.update`'s jolt asked of the accepted `drive`
+                      #   reports (plank via `Vehicle.restAt`, the reporter's
+                      #   clock), cost owed until SimCore spends it
   net/                # Multiplayer, client side. Nothing here is constructed
     protocol.ts       #   in an offline round.
                       #   The wire format — the ONLY module the server also

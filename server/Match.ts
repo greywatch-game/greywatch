@@ -2575,6 +2575,11 @@ export class Match {
       gunPitch: msg.gun,
       aimYaw: msg.aimYaw,
       aimPitch: msg.aimPitch,
+      // The client's own stamp, which is what the crash test measures a
+      // descent over (`src/sim/reportedLanding.ts`) — the interval between
+      // ACCEPTED samples, so a refused one between them is simply a longer
+      // interval rather than a doubled rate.
+      time: msg.time / 1000,
     });
     // Accepted, but not where they said. The step counts — `seq` has already
     // advanced — and the client is told where it actually ended up, which is

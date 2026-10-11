@@ -180,7 +180,11 @@
  * did to the hull's vertical motion this frame", which on a machine that flies
  * is the whole of a touchdown, so the skids compress through
  * `HullSprings.flexHeave` with no new code and the crash check is a reading of a
- * number that was already there. And a hull nobody is in winds its rotor down,
+ * number that was already there (`crashCost`, `crash`). **That check charges a
+ * hull this class STEPS** — a bot's or nobody's; one a person flies is posed
+ * from their reports, and the core charges it off them through the same two
+ * methods and `restAt`, this file's plank asked of a reported position
+ * (`src/sim/reportedLanding.ts`). And a hull nobody is in winds its rotor down,
  * `lift` returns to 0, and the parked-hull skip stops the probe exactly as it
  * does for armour.
  *
@@ -2175,11 +2179,16 @@ export class Vehicle implements Combatant, RayHull {
       // vertical motion this frame", which on a machine that flies is the whole
       // of an arrival — so this reads a number that was already there rather
       // than detecting a landing. Spent as `shell` so `resist` cannot shrug it
-      // off, and through the one door damage takes.
-      const over = this.jolt - fl.spec.crashJolt;
-      if (over > 0) {
-        this.takeDamage(over * fl.spec.crashDamage, undefined, "shell");
-      }
+      // off, and through the one door damage takes (`crashCost`, `crash`).
+      //
+      // **This is the crash of a hull the simulation STEPS** — a bot's, or
+      // nobody's. A hull a PERSON flies is `update`d only as their page's
+      // prediction, whose `takeDamage` refuses (`predicted`), and posed in the
+      // simulation from their reports (`updateRemote`), so its crash is the
+      // same arithmetic asked of the REPORTED motion instead:
+      // `src/sim/reportedLanding.ts`, which reproduces this `jolt` from the
+      // reports and is held to this line by `npm run corecheck`.
+      this.crash(this.crashCost(this.jolt));
     }
     // ...and climbing costs speed, for the same reason walking into a wall
     // does. Spent here rather than inside the ground so it lands BEFORE the
@@ -3104,6 +3113,128 @@ export class Vehicle implements Combatant, RayHull {
   }
 
   /**
+   * The PLANK the ten contacts hold up, for a hull at `x, z` heading `yaw`
+   * whose tracks are at `tracks` — the resting plane's height under the
+   * centre, in feet terms (`floorY`), with the attitude it was solved at left
+   * in `plankRise` (nose-up, positive) and `plankRoll`. The two passes the
+   * header of `standOnGround` describes, and nothing else: no state of the
+   * hull's is read but its spec, its world and the arguments, and none is
+   * written but `h` and those two angles.
+   *
+   * **A function of its arguments so that two callers ask ONE question.**
+   * `standOnGround` asks it where the hull stands; `restAt` asks it where a
+   * REPORT says the hull stood (`src/sim/reportedLanding.ts`), which is how
+   * the core charges a person's landing exactly as this method's own `jolt`
+   * charges a bot's. `tracks` sets the band (`climbHeight` over it, `probeLength`
+   * under it), so a caller wanting `standOnGround`'s answer passes the height
+   * the tracks were at BEFORE the vertical step, as it does.
+   */
+  private plankUnder(
+    x: number,
+    z: number,
+    yaw: number,
+    tracks: number,
+    h: Float64Array,
+  ): number {
+    const c = this.spec.drive;
+    const ceiling = tracks + c.climbHeight;
+    const floor = tracks - c.probeLength;
+    // Forward is `(sin yaw, cos yaw)`, so right is `(cos yaw, -sin yaw)`.
+    const fx = Math.sin(yaw);
+    const fz = Math.cos(yaw);
+    const reach = this.frame.contactReach;
+    const wide = this.frame.gauge / 2;
+    // Fore to aft; right belt then left within each row. `contactLong` and
+    // `contactLat` reproduce this order and both passes below walk it.
+    for (let i = 0; i < CONTACT_COUNT; i++) {
+      const l = contactLong(i, reach);
+      const lat = contactLat(i, wide);
+      h[i] = this.supportAt(
+        x + fx * l + fz * lat,
+        z + fz * l - fx * lat,
+        ceiling,
+        floor,
+      );
+    }
+
+    // --- the attitude the contacts are asking for ---
+    const lim = c.tiltLimit;
+    // Named apart from `core/math`'s `clamp` on purpose: this one is the hull's
+    // own tilt limit closed over, not the general three-argument one, and a
+    // local shadowing that name is how the two get confused.
+    const toTiltLimit = (v: number) => Math.max(-lim, Math.min(lim, v));
+    const front = Math.max(h[0], h[1]);
+    const rear = Math.max(h[CONTACT_COUNT - 2], h[CONTACT_COUNT - 1]);
+    let right = -Infinity;
+    let left = -Infinity;
+    for (let i = 0; i < CONTACT_COUNT; i += 2) {
+      if (h[i] > right) right = h[i];
+      if (h[i + 1] > left) left = h[i + 1];
+    }
+    // Nose-up, and positive. A positive X rotation tips the nose DOWN, so what
+    // the drawn node is given is the negative of it.
+    const rise = toTiltLimit(Math.atan2(front - rear, reach * 2));
+    const roll = toTiltLimit(Math.atan2(right - left, wide * 2));
+    this.plankRise = rise;
+    this.plankRoll = roll;
+
+    // --- the height that attitude needs ---
+    const tanRise = Math.tan(rise);
+    const tanRoll = Math.tan(roll);
+    let plank = -Infinity;
+    for (let i = 0; i < CONTACT_COUNT; i++) {
+      // What this contact would put the hull's centre at, given the lean: the
+      // plane is `y + l * tanRise + lat * tanRoll`, so the centre it demands is
+      // the contact less those two.
+      const need =
+        h[i] - contactLong(i, reach) * tanRise - contactLat(i, wide) * tanRoll;
+      if (need > plank) plank = need;
+    }
+    return plank;
+  }
+
+  /** `plankUnder`'s attitude, read back by its caller on the next line. */
+  private plankRise = 0;
+  private plankRoll = 0;
+  /** `restAt`'s contacts, apart from `contacts` so a report never disturbs the hull's own. */
+  private readonly restContacts = new Float64Array(CONTACT_COUNT);
+
+  /**
+   * Where this hull's CENTRE would rest on its plank at `x, z` heading `yaw`,
+   * with its tracks banded off `tracks` — `standOnGround`'s `target`, asked
+   * of a position the hull is not at. The core's one reader is a person's
+   * REPORTED landing (`src/sim/reportedLanding.ts`); writes nothing the hull
+   * is standing on.
+   */
+  restAt(x: number, z: number, yaw: number, tracks: number): number {
+    return this.plankUnder(x, z, yaw, tracks, this.restContacts) + this.spec.hull.height / 2;
+  }
+
+  /**
+   * What an arrival of `jolt` m/s costs this machine, in hull points before
+   * `resist` — `(jolt - crashJolt) * crashDamage` over the threshold, and 0
+   * under it or on a hull that cannot fly. The ONE copy of the crash's
+   * arithmetic: `update` spends it on its own `jolt` (a bot's or nobody's
+   * hull), and the core on the jolt a person's REPORTS made
+   * (`src/sim/reportedLanding.ts`). Both spend it through `crash`.
+   */
+  crashCost(jolt: number): number {
+    const fl = this.flight;
+    if (!fl) return 0;
+    const over = jolt - fl.spec.crashJolt;
+    return over > 0 ? over * fl.spec.crashDamage : 0;
+  }
+
+  /**
+   * The crash, spent: `cost` as a `shell`, so `resist` cannot shrug it off,
+   * and through the one door damage takes — whose consequences (the burn, the
+   * crew, the person in the seat) are therefore every other blow's.
+   */
+  crash(cost: number): void {
+    if (cost > 0) this.takeDamage(cost, undefined, "shell");
+  }
+
+  /**
    * Stands the hull on its tracks, and lets it fall off anything it drives
    * over the edge of.
    *
@@ -3162,61 +3293,11 @@ export class Vehicle implements Combatant, RayHull {
     if (Math.abs(this.speed) > 1e-3 || this.lift > 0) this.needsGround = true;
     if (!this.needsGround && this.grounded) return;
 
-    const tracks = p.y - half;
-    const ceiling = tracks + c.climbHeight;
-    const floor = tracks - c.probeLength;
-    // Forward is `(sin yaw, cos yaw)`, so right is `(cos yaw, -sin yaw)`.
-    const fx = Math.sin(this.yaw);
-    const fz = Math.cos(this.yaw);
-    const reach = this.frame.contactReach;
-    const wide = this.frame.gauge / 2;
-    const h = this.contacts;
-    // Fore to aft; right belt then left within each row. `contactLong` and
-    // `contactLat` reproduce this order and both passes below walk it.
-    for (let i = 0; i < CONTACT_COUNT; i++) {
-      const l = contactLong(i, reach);
-      const lat = contactLat(i, wide);
-      h[i] = this.supportAt(
-        p.x + fx * l + fz * lat,
-        p.z + fz * l - fx * lat,
-        ceiling,
-        floor,
-      );
-    }
-
-    // --- the attitude the contacts are asking for ---
-    const lim = c.tiltLimit;
-    // Named apart from `core/math`'s `clamp` on purpose: this one is the hull's
-    // own tilt limit closed over, not the general three-argument one, and a
-    // local shadowing that name is how the two get confused.
-    const toTiltLimit = (v: number) => Math.max(-lim, Math.min(lim, v));
-    const front = Math.max(h[0], h[1]);
-    const rear = Math.max(h[CONTACT_COUNT - 2], h[CONTACT_COUNT - 1]);
-    let right = -Infinity;
-    let left = -Infinity;
-    for (let i = 0; i < CONTACT_COUNT; i += 2) {
-      if (h[i] > right) right = h[i];
-      if (h[i + 1] > left) left = h[i + 1];
-    }
-    // Nose-up, and positive. A positive X rotation tips the nose DOWN, so what
-    // the drawn node is given is the negative of it.
-    const rise = toTiltLimit(Math.atan2(front - rear, reach * 2));
-    const roll = toTiltLimit(Math.atan2(right - left, wide * 2));
-    this.groundPitchTarget = -rise;
-    this.groundRollTarget = roll;
-
-    // --- the height that attitude needs ---
-    const tanRise = Math.tan(rise);
-    const tanRoll = Math.tan(roll);
-    let plank = -Infinity;
-    for (let i = 0; i < CONTACT_COUNT; i++) {
-      // What this contact would put the hull's centre at, given the lean: the
-      // plane is `y + l * tanRise + lat * tanRoll`, so the centre it demands is
-      // the contact less those two.
-      const need =
-        h[i] - contactLong(i, reach) * tanRise - contactLat(i, wide) * tanRoll;
-      if (need > plank) plank = need;
-    }
+    // The plank under where the hull stands now, banded off where its tracks
+    // are — see `plankUnder`, which `restAt` asks the same question through.
+    const plank = this.plankUnder(p.x, p.z, this.yaw, p.y - half, this.contacts);
+    this.groundPitchTarget = -this.plankRise;
+    this.groundRollTarget = this.plankRoll;
     this.floorY = plank;
 
     const target = plank + half;

@@ -47,6 +47,16 @@
  * authority — and the shell asked between the step and the next report leaves
  * the reported pose's muzzle.
  *
+ * And `crashCalibration` (`sarab/crash`, FINDINGS.md 60), on botless Sarab:
+ * scripted flights of the person's helicopter — hard, firm, under the
+ * threshold, gentle, a late flare, a landing at speed, a low cruise with a
+ * climb and a descent — flown once by `Vehicle.update` (the bot path, its own
+ * crash charging it) and then REPORTED to a core with the person in the seat:
+ * every step (the offline page: the same charge to float noise), at `INPUT_HZ`
+ * on jittered whole-ms stamps (a match's client: within the clock's slack),
+ * and the same uploads through `Match` (the identical charge, the snapshot's
+ * `hp` saying so, nothing corrected). It prints the calibration table.
+ *
  * The person is always slot 0, team 0: the first seat `Roster.claim` hands
  * out, which `MatchHost` asserts. `-- --list` also prints each map's event
  * counts and the award/death list the hosts are compared on.
@@ -56,10 +66,10 @@ import { isDeepStrictEqual } from "node:util";
 import type { WebSocket } from "ws";
 import { CONFIG } from "../src/config";
 import { Vector3, type Vector3Like } from "../src/math";
-import { TICK_HZ } from "../src/net/protocol";
+import { INPUT_HZ, TICK_HZ } from "../src/net/protocol";
 import type { Bot } from "../src/entities/Bot";
 import type { Team } from "../src/entities/Combatant";
-import type { Vehicle } from "../src/entities/Vehicle";
+import type { DriveInput, Vehicle } from "../src/entities/Vehicle";
 import { DRIVER, GUNNER, type CrewSeat } from "../src/entities/hullSeats";
 import { DEFAULT_WEAPON, PRIMARY_SLOT, weaponSetup } from "../src/entities/weapons";
 import { DEFAULT_EQUIPMENT, equipmentSetup } from "../src/entities/equipment";
@@ -196,13 +206,16 @@ const KIT: KitCommand = {
 
 const RIFLE = weaponSetup(DEFAULT_WEAPON);
 
-/** The round both hosts build: `Match`'s pool and fielding, the script's seed. */
-function roundOf(world: World): RoundSpec {
+/**
+ * The round both hosts build: `Match`'s pool and fielding, the script's seed.
+ * `fielded` 0 is a botless round — `Match`'s `bots: false`.
+ */
+function roundOf(world: World, fielded = perTeamOf(world.def.layout)): RoundSpec {
   return {
     ...world,
     difficulty: 1,
     pool: CONFIG.bots.maxPerTeam,
-    fielded: perTeamOf(world.def.layout),
+    fielded,
     seed: SEED,
   };
 }
@@ -233,8 +246,8 @@ class CoreHost implements Host {
     this.mirror = mirror ? new SimMirror() : null;
   }
 
-  start(world: World): void {
-    this.core.startRound(roundOf(world));
+  start(world: World, fielded?: number): void {
+    this.core.startRound(roundOf(world, fielded));
     this.core.anchor(ANCHOR);
     this.flush();
     this.core.addPlayer(PERSON_SLOT, PERSON_TEAM);
@@ -351,8 +364,8 @@ class MatchHost implements Host {
   private seq = 0;
   private clock = 1000;
 
-  constructor(def: MapDef) {
-    this.match = new Match("corecheck", def.id, true);
+  constructor(def: MapDef, bots = true) {
+    this.match = new Match("corecheck", def.id, bots);
     this.core = this.match.game;
     // Hear every drain `Match` makes — the tee is the whole of the
     // instrumentation, and `relay` still gets the cursor as it always did.
@@ -363,11 +376,11 @@ class MatchHost implements Host {
     };
   }
 
-  async start(world: World): Promise<void> {
+  async start(world: World, fielded?: number): Promise<void> {
     // The round is built BEFORE the first peer arrives, from the same seed
     // and anchor as the core run, so `Match.start` finds a map standing and
     // skips its own `freshSeed()` round.
-    this.core.startRound(roundOf(world));
+    this.core.startRound(roundOf(world, fielded));
     this.core.anchor(ANCHOR);
     await this.match.admit(this.socket as unknown as WebSocket, "corecheck");
     // No macrotask has run since `start` armed the loop: stopped before its
@@ -1074,7 +1087,7 @@ function reportedHull(world: World, c: Checks): void {
   const turretYaw = tank.turretYaw + 0.4;
   const gunPitch = 0.06;
   const took = core.submit(PERSON_SLOT, {
-    t: "drive", x, y, z, yaw, turretYaw, gunPitch, aimYaw: turretYaw, aimPitch: gunPitch,
+    t: "drive", x, y, z, yaw, turretYaw, gunPitch, aimYaw: turretYaw, aimPitch: gunPitch, time: 0,
   });
   h.flush();
   h.step();
@@ -1112,7 +1125,7 @@ function reportedHull(world: World, c: Checks): void {
   // …and a `drive` from this chair moves nothing: reported far away.
   const away = { x: tank.position.x + 50, z: tank.position.z + 50 };
   core.submit(PERSON_SLOT, {
-    t: "drive", x: away.x, y, z: away.z, yaw, turretYaw, gunPitch, aimYaw: mgYaw, aimPitch: mgPitch,
+    t: "drive", x: away.x, y, z: away.z, yaw, turretYaw, gunPitch, aimYaw: mgYaw, aimPitch: mgPitch, time: 0.1,
   });
   mark = h.log.events.length;
   h.step();
@@ -1128,6 +1141,457 @@ function reportedHull(world: World, c: Checks): void {
     `hull ${tank.position.x},${tank.position.z}`,
   );
   core.dispose();
+}
+
+// ---------------------------------------------------------------------------
+// A person's helicopter crashes as a bot's does (FINDINGS.md 60).
+
+/** One scripted phase of a flight: the sticks held, until `done` says so. */
+interface Phase {
+  input: Partial<DriveInput>;
+  /**
+   * Seconds into the phase, the skids' height over the floor and over the
+   * cruise height (`low`'s climb ends on the second).
+   */
+  done: (t: number, above: number, overCruise: number) => boolean;
+}
+
+interface Profile {
+  name: string;
+  /** Must this flight cost nothing at all, on every path? */
+  free: boolean;
+  /**
+   * How far its `INPUT_HZ` charge may land from the bot path's, hull points:
+   * the clock's share for a steady descent (`WIRE_SLACK`), more for one whose
+   * rate CHANGES in its last tenth of a second — see `reportedLanding.ts`.
+   */
+  slack?: number;
+  phases: Phase[];
+}
+
+/** Where a flown hull stood after each fixed step, and when — what a pilot's page reports. */
+interface Sample {
+  x: number;
+  y: number;
+  z: number;
+  yaw: number;
+  turretYaw: number;
+  gunPitch: number;
+  /** Seconds since the flight began. */
+  t: number;
+}
+
+const forSecs = (secs: number) => (t: number) => t >= secs;
+/** The rotor up to speed: `spoolTime` is 4.5 s and lift starts at 55% of it. */
+const SPOOL: Phase = { input: {}, done: forSecs(5) };
+/** Up 15 m or so and settled: full collective for 1.8 s, then a second centred. */
+const CLIMB: Phase[] = [
+  { input: { lift: 1 }, done: forSecs(1.8) },
+  { input: {}, done: forSecs(1) },
+];
+
+/**
+ * The flights. Each is flown by `Vehicle.update` (a bot's path) and by
+ * reports of that same flight (a person's), and the two must charge alike.
+ * Every one is flown with the nose on `clearBearing`'s corridor; the cruise
+ * holds `CRUISE` metres over the highest surface on it.
+ */
+const CRASH_PROFILES: Profile[] = [
+  {
+    name: "hard: collective full down from 15 m",
+    free: false,
+    phases: [SPOOL, ...CLIMB,
+      { input: { throttle: 1 }, done: forSecs(1.5) },
+      { input: {}, done: forSecs(2.5) },
+      { input: { lift: -1 }, done: forSecs(4) },
+      { input: {}, done: forSecs(1) }],
+  },
+  {
+    name: "firm: 95% down",
+    free: false,
+    phases: [SPOOL, ...CLIMB,
+      { input: { lift: -0.95 }, done: forSecs(4.5) },
+      { input: {}, done: forSecs(1) }],
+  },
+  {
+    name: "firm but under the threshold: 80% down",
+    free: true,
+    phases: [SPOOL, ...CLIMB,
+      { input: { lift: -0.8 }, done: forSecs(5) },
+      { input: {}, done: forSecs(1) }],
+  },
+  {
+    name: "gentle: 30% down",
+    free: true,
+    phases: [SPOOL, ...CLIMB,
+      { input: { lift: -0.3 }, done: forSecs(9) },
+      { input: {}, done: forSecs(1) }],
+  },
+  {
+    name: "late flare: full down, full up at 0.6 m",
+    free: false,
+    // The flare is the last 75 ms of the descent, inside one upload
+    // interval, so the wire sees the rate before it: charged HIGH by what
+    // the flare took off, the exact clock included.
+    slack: 90,
+    phases: [SPOOL, ...CLIMB,
+      { input: { lift: -1 }, done: (_t, above) => above < 0.6 },
+      { input: { lift: 1 }, done: forSecs(0.3) },
+      { input: {}, done: forSecs(1) }],
+  },
+  {
+    name: "moving: full down at speed",
+    free: false,
+    phases: [SPOOL,
+      { input: { lift: 1 }, done: forSecs(1.8) },
+      { input: { throttle: 1 }, done: forSecs(2) },
+      { input: { throttle: 0.6, lift: -1 }, done: forSecs(4) },
+      { input: {}, done: forSecs(2) }],
+  },
+  {
+    name: "low cruise, a climb and a descent in the air, a gentle landing",
+    free: true,
+    phases: [SPOOL,
+      { input: { lift: 1 }, done: (_t, _above, over) => over >= 0 },
+      { input: {}, done: forSecs(1) },
+      { input: { throttle: 1 }, done: forSecs(9) },
+      { input: {}, done: forSecs(3) },
+      { input: { lift: 1 }, done: forSecs(1.2) },
+      { input: {}, done: forSecs(1) },
+      { input: { lift: -1 }, done: forSecs(0.8) },
+      { input: {}, done: forSecs(1.5) },
+      { input: { lift: -0.3 }, done: forSecs(12) },
+      { input: {}, done: forSecs(1) }],
+  },
+];
+
+/** Metres of skid clearance the low cruise holds over the corridor's highest surface. */
+const CRUISE = 1.5;
+
+/**
+ * How far a jittered `INPUT_HZ` landing may charge from the bot path's, hull
+ * points, for a steady descent: a stamp read up to `WIRE_LATE` ms late moves
+ * a 50 ms interval's rate by up to ~5%, which at 8 m/s is ~0.4 m/s of jolt and
+ * ~50 points at `crashDamage` 130 — measured ±21 over `WIRE_SEEDS` wires.
+ */
+const WIRE_SLACK = 30;
+/** Jittered wires flown per flight, and how late a stamp may be read, ms. */
+const WIRE_SEEDS = 8;
+const WIRE_LATE = 1.5;
+
+/**
+ * The bearing out of the hardstanding whose corridor — the hull's width
+ * either side, 420 m out — has the lowest highest surface (terrain or a box
+ * top), and that height. Deterministic: sixteen bearings, first lowest wins.
+ */
+function clearBearing(core: SimCore, tank: Vehicle): { yaw: number; top: number; low: number } {
+  const m = core.map!;
+  let best = { yaw: tank.yaw, top: Infinity, low: Infinity };
+  for (let k = 0; k < 16; k++) {
+    const yaw = (k / 16) * Math.PI * 2;
+    const fx = Math.sin(yaw);
+    const fz = Math.cos(yaw);
+    let top = -Infinity;
+    let low = Infinity;
+    for (let d = 0; d <= 420; d += 2) {
+      for (const lat of [-4, 0, 4]) {
+        const x = tank.position.x + fx * d + fz * lat;
+        const z = tank.position.z + fz * d - fx * lat;
+        const box = m.obstacles.groundAt(x, z, 1e6, -1e6);
+        const ground = m.terrain.surfaceAt(x, z);
+        top = Math.max(top, box !== null && box > ground ? box : ground);
+        low = Math.min(low, ground);
+      }
+    }
+    if (top < best.top) best = { yaw, top, low };
+  }
+  return best;
+}
+
+/** The helicopter of the person's side, by hardstanding index, or -1. */
+function heliOf(core: SimCore): number {
+  return core.vehicles.hulls.findIndex((t) => t.team === PERSON_TEAM && t.flies);
+}
+
+/**
+ * Path (a), the BOT's: the hull stepped by `Vehicle.update` from the sticks
+ * at a fixed step, its own crash check charging it — what a bot pilot's hull
+ * runs, and what a person's page runs as its prediction. Returns the flight as
+ * the samples that page would report, and what the hull lost.
+ */
+function flyStepped(
+  world: World,
+  profile: Profile,
+  route: { yaw: number; top: number; low: number },
+): { track: Sample[]; damage: number; landedAt: number } {
+  const core = new SimCore({});
+  core.startRound(roundOf(world, 0));
+  core.anchor(ANCHOR);
+  const tank = core.vehicles.hulls[heliOf(core)];
+  core.vehicles.setOccupied(tank, DRIVER, true);
+  const hp0 = tank.health;
+  const terrain = core.map!.terrain;
+  const sample = (t: number): Sample => ({
+    x: tank.position.x, y: tank.position.y, z: tank.position.z,
+    yaw: tank.yaw, turretYaw: tank.turretYaw, gunPitch: tank.gunPitch, t,
+  });
+  const track: Sample[] = [sample(0)];
+  const input: DriveInput = { throttle: 0, steer: 0, lift: 0, aimYaw: route.yaw, aimPitch: 0 };
+  const cruise = route.top + CRUISE;
+  let k = 0;
+  let landedAt = -1;
+  for (const phase of profile.phases) {
+    let t = 0;
+    for (;;) {
+      const p = tank.position;
+      if (phase.done(t, p.y - terrain.surfaceAt(p.x, p.z), p.y - cruise) || t > 30) break;
+      input.throttle = phase.input.throttle ?? 0;
+      input.steer = phase.input.steer ?? 0;
+      input.lift = phase.input.lift ?? 0;
+      const hp = tank.health;
+      tank.update(DT, input);
+      k++;
+      t += DT;
+      if (tank.health < hp && landedAt < 0) landedAt = k * DT;
+      track.push(sample(k * DT));
+    }
+  }
+  const damage = hp0 - tank.health;
+  core.dispose();
+  return { track, damage, landedAt };
+}
+
+/** A seeded uniform 0..1, so the jittered wire is the same wire every run. */
+function seeded(seed: number): () => number {
+  let a = seed >>> 0;
+  return () => {
+    a = (a + 0x6d2b79f5) >>> 0;
+    let t = a;
+    t = Math.imul(t ^ (t >>> 15), t | 1);
+    t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+
+/** One `DriveMessage`'s worth of a sample: what it says, when it was stamped, which step it lands before. */
+interface Wire {
+  s: Sample;
+  /** The client's stamp, ms — a whole-ms `Date.now()`, or the exact clock (`wireOf`'s `late` 0). */
+  stamp: number;
+  /** The authority step it arrives before. */
+  at: number;
+}
+
+/**
+ * The flight as a MATCH's client uploads it: `NetSession`'s accumulator at
+ * `INPUT_HZ` over 60 Hz frames, arriving 3–6 ticks later and in order — so
+ * two sometimes land in one tick. Each is stamped as `NetSession` stamps it,
+ * a whole-ms `Date.now()` read up to `late` ms after the frame it samples
+ * began (the work done before the upload line varies frame to frame); `late`
+ * 0 is the EXACT clock instead, the frame's own time to the bit, which is
+ * what separates the clock's share of the error from the sampling's.
+ */
+function wireOf(track: readonly Sample[], seed: number, late: number): Wire[] {
+  const rnd = seeded(seed);
+  const out: Wire[] = [];
+  const CLIENT0 = 1_700_000_000_000;
+  let upload = 0;
+  let last = 0;
+  for (let k = 1; k < track.length; k++) {
+    upload += DT;
+    if (upload < 1 / INPUT_HZ) continue;
+    upload = 0;
+    const exact = CLIENT0 + track[k].t * 1000;
+    const stamp = late > 0 ? Math.floor(exact + rnd() * late) : exact;
+    const at = Math.max(last, k + 3 + Math.floor(rnd() * 4));
+    last = at;
+    out.push({ s: track[k], stamp, at });
+  }
+  return out;
+}
+
+/** The person seated as DRIVER of hull `tank`, on either host. */
+async function seatPilot(h: Host, tank: number): Promise<boolean> {
+  await h.deploy(homeSpawn(h, PERSON_TEAM));
+  if (!h.player().alive && stepUntilSpawned(h, 60) < 0) return false;
+  const hull = h.core.vehicles.hulls[tank];
+  const spot = h.core.vehicles.exitSpot(hull);
+  placePerson(h, spot.x, spot.y, spot.z);
+  await h.mount(tank, DRIVER);
+  h.flush();
+  return h.player().seat === tank && h.player().crewSeat === DRIVER;
+}
+
+/**
+ * Path (b), the PERSON's, on the trusted door: every sample a `drive`, one
+ * per step, as the offline page reports its predicted hull — or, with `wire`,
+ * the jittered `INPUT_HZ` uploads a match's client sends, submitted as
+ * `Match.onDrive` would (the stamp in seconds). Returns what the core's hull
+ * lost.
+ */
+async function flyReportedCore(world: World, track: readonly Sample[], wire: Wire[] | null): Promise<number> {
+  const h = new CoreHost({ hostHoldsRespawn: true });
+  h.start(world, 0);
+  const core = h.core;
+  const index = heliOf(core);
+  if (!(await seatPilot(h, index))) throw new Error("crash: the pilot was not seated");
+  const tank = core.vehicles.hulls[index];
+  const hp0 = tank.health;
+  const send = (s: Sample, time: number) => {
+    core.submit(PERSON_SLOT, {
+      t: "drive", x: s.x, y: s.y, z: s.z, yaw: s.yaw, turretYaw: s.turretYaw, gunPitch: s.gunPitch,
+      aimYaw: s.yaw, aimPitch: 0, time,
+    });
+  };
+  if (!wire) {
+    for (const s of track) {
+      send(s, s.t);
+      h.step();
+    }
+  } else {
+    let w = 0;
+    const end = (wire.at(-1)?.at ?? 0) + 2;
+    for (let step = 0; step <= end; step++) {
+      while (w < wire.length && wire[w].at === step) {
+        send(wire[w].s, wire[w].stamp / 1000);
+        w++;
+      }
+      h.step();
+    }
+  }
+  const damage = hp0 - tank.health;
+  core.dispose();
+  return damage;
+}
+
+/**
+ * Path (c), the person's through `Match` — the VALIDATED door, a fake peer
+ * sending the same jittered uploads as real `drive` messages. Returns what the
+ * authority's hull lost, what the last snapshot told the client it has left,
+ * and how many `hullcorrect`s the flight cost.
+ */
+async function flyReportedMatch(
+  world: World,
+  wire: Wire[],
+): Promise<{ damage: number; hp: number | null; left: number; corrections: number }> {
+  const log = console.log;
+  console.log = () => {};
+  try {
+    const h = new MatchHost(world.def, false);
+    await h.start(world, 0);
+    const core = h.core;
+    const index = heliOf(core);
+    if (!(await seatPilot(h, index))) throw new Error("crash: the pilot was not seated (match)");
+    const tank = core.vehicles.hulls[index];
+    const hp0 = tank.health;
+    let seq = 1000;
+    let w = 0;
+    const end = (wire.at(-1)?.at ?? 0) + 2;
+    for (let step = 0; step <= end; step++) {
+      while (w < wire.length && wire[w].at === step) {
+        const s = wire[w].s;
+        // The socket's message budget is a WALL-CLOCK bucket (`spendMessage`)
+        // and this flight is delivered as fast as the script runs: topped up
+        // per message, so the bucket is never what drops a sample here.
+        for (const peer of h.match["peers"].values()) peer.budget = 1;
+        h.socket.deliver({
+          t: "drive", seq: ++seq, time: wire[w].stamp, tank: index,
+          pos: [s.x, s.y, s.z], yaw: s.yaw, tyaw: s.turretYaw, gun: s.gunPitch, aimYaw: s.yaw, aimPitch: 0,
+        });
+        w++;
+      }
+      h.step();
+    }
+    // Snapshots after the last of it, so the client's gauge is read off the
+    // state the flight ended in.
+    for (let i = 0; i < 6; i++) h.step();
+    let hp: number | null = null;
+    for (const f of h.socket.frames) {
+      if (f.t !== "snap") continue;
+      const v = (f.vehicles as Array<{ i: number; hp: number }> | undefined)?.find((s) => s.i === index);
+      if (v) hp = v.hp;
+    }
+    const corrections = h.socket.frames.filter((f) => f.t === "hullcorrect").length;
+    const damage = hp0 - tank.health;
+    core.dispose();
+    return { damage, hp, left: tank.health, corrections };
+  } finally {
+    console.log = log;
+  }
+}
+
+/**
+ * **A helicopter a person flies crashes as a bot's does** (FINDINGS.md 60).
+ *
+ * Each flight in `CRASH_PROFILES` is flown once by `Vehicle.update` — the bot
+ * path, whose own `jolt` charges the crash — and the samples that flight
+ * leaves are then REPORTED to a core with a person in the same seat: one per
+ * step as the offline page reports (which must charge what the bot path
+ * charged, to float noise), and at `INPUT_HZ` with a client's clock jitter as
+ * a match's peer uploads, on the trusted door and through `Match`'s validated
+ * one (which must agree with each other exactly, and with the bot path within
+ * `WIRE_SLACK`). A flight the bot path does not charge must cost nothing on
+ * every path, and the snapshot must tell the client what the authority's hull
+ * has left. Returns the calibration table's lines.
+ */
+async function crashCalibration(world: World, c: Checks): Promise<string[]> {
+  const tag = "crash";
+  const lines: string[] = [];
+  // The corridor, off a core of its own: the same seed, the same pad.
+  const probe = new SimCore({});
+  probe.startRound(roundOf(world, 0));
+  const index = heliOf(probe);
+  if (!c.that(`${tag}: fixture — the person's side has a helicopter`, index >= 0)) {
+    probe.dispose();
+    return lines;
+  }
+  const route = clearBearing(probe, probe.vehicles.hulls[index]);
+  probe.dispose();
+  lines.push(
+    `  -- ${tag}: hull ${index}, bearing ${route.yaw.toFixed(3)} rad, corridor floor ${route.low.toFixed(2)}..${route.top.toFixed(2)} m, cruise ${CRUISE} m over its top; hull points lost.`,
+    `  -- ${tag}: rep20 = ${WIRE_SEEDS} jittered wires (whole-ms stamps up to ${WIRE_LATE} ms late), min..max; exact = the same uploads on an exact clock`,
+    `  -- ${tag}: ${"flight".padEnd(64)} ${"bot".padStart(7)} ${"rep60".padStart(7)} ${"rep20".padStart(15)} ${"exact".padStart(7)} ${"match".padStart(7)}`,
+  );
+  const f = (v: number, w = 7) => v.toFixed(1).padStart(w);
+  for (const [n, profile] of CRASH_PROFILES.entries()) {
+    const { track, damage: bot, landedAt } = flyStepped(world, profile, route);
+    const rep60 = await flyReportedCore(world, track, null);
+    const wires = Array.from({ length: WIRE_SEEDS }, (_, i) => wireOf(track, 9000 + 100 * n + i, WIRE_LATE));
+    const rep20: number[] = [];
+    for (const wire of wires) rep20.push(await flyReportedCore(world, track, wire));
+    const exact = await flyReportedCore(world, track, wireOf(track, 9000 + 100 * n, 0));
+    const m = await flyReportedMatch(world, wires[0]);
+    const lo = Math.min(...rep20);
+    const hi = Math.max(...rep20);
+    lines.push(
+      `  -- ${tag}: ${profile.name.padEnd(64)} ${f(bot)} ${f(rep60)} ${`${f(lo, 0)}..${f(hi, 0)}`.padStart(15)} ${f(exact)} ${f(m.damage)}` +
+        (landedAt >= 0 ? `   (bot charged at ${landedAt.toFixed(2)} s)` : ""),
+    );
+    if (profile.free) {
+      c.that(
+        `${tag}: ${profile.name} — costs nothing: bot, reported every step, at ${INPUT_HZ} Hz (every wire), through Match`,
+        bot === 0 && rep60 === 0 && hi === 0 && exact === 0 && m.damage === 0,
+        `bot ${bot} rep60 ${rep60} rep20 ${lo}..${hi} exact ${exact} match ${m.damage}`,
+      );
+    } else {
+      c.that(
+        `${tag}: ${profile.name} — the bot path charges it, reported every step charges the same (${Math.abs(rep60 - bot).toExponential(1)} apart)`,
+        bot > 0 && Math.abs(rep60 - bot) < 1e-6,
+        `bot ${bot} rep60 ${rep60}`,
+      );
+      c.that(
+        `${tag}: ${profile.name} — at ${INPUT_HZ} Hz on every jittered wire, within ${profile.slack ?? WIRE_SLACK} of it`,
+        Math.abs(lo - bot) <= (profile.slack ?? WIRE_SLACK) && Math.abs(hi - bot) <= (profile.slack ?? WIRE_SLACK),
+        `bot ${bot} rep20 ${rep20.join(", ")}`,
+      );
+    }
+    c.that(
+      `${tag}: ${profile.name} — Match's validated door charges what the trusted one does, the snapshot says so, nothing corrected`,
+      m.damage === rep20[0] && m.hp === m.left && m.corrections === 0,
+      `match ${m.damage} vs core ${rep20[0]}, snapshot hp ${m.hp} of ${m.left}, ${m.corrections} hullcorrects`,
+    );
+  }
+  return lines;
 }
 
 // ---------------------------------------------------------------------------
@@ -1330,6 +1794,18 @@ async function main(): Promise<void> {
       reportedHull(world, checks);
       for (const r of checks.results) report(checks.tag, r);
     }
+  }
+
+  // A person's helicopter, on the one map that has them in the corecheck's
+  // reach (FINDINGS.md 60): botless, so nothing but the ground hurts it.
+  {
+    const def = MAPS.find((m) => m.id === "sarab");
+    if (!def) throw new Error("no map sarab");
+    const world: World = { def, ...(await loadSimWorld(def)) };
+    const checks = new Checks("sarab/crash");
+    const table = await crashCalibration(world, checks);
+    for (const r of checks.results) report(checks.tag, r);
+    lines.push(...table);
   }
 
   console.log(lines.join("\n"));

@@ -2517,10 +2517,61 @@ Rubble needs finding 58 first.
 
 ## 60. A helicopter a PERSON flies takes no crash damage — in a match always, and offline since the hull was predicted
 
-**Status:** open, pre-existing in netplay and newly true offline. Made visible
-at `BABYLON_EXIT.md` X2.5a C4b, which moved the offline player's hull onto the
-page's prediction exactly as a match's client has it — so what the remote half
-lacks, the offline round now lacks too. Bots are unaffected.
+**Status:** FIXED at `BABYLON_EXIT.md` X2.5a C4b FIX (the commit after
+`22bc7ec`), before C4b landed — offline and in a match by one rule. Was:
+pre-existing in netplay and newly true offline, made visible at X2.5a C4b,
+which moved the offline player's hull onto the page's prediction exactly as a
+match's client has it. Bots were never affected.
+
+**The fix** (`src/sim/reportedLanding.ts`, `docs/vehicles.md` "A person's
+landing is charged off their REPORTS"): the core asks of every ACCEPTED `drive`
+report the jolt `Vehicle.update` asks of a stepped hull — the plank under the
+reported position banded off the previous sample's tracks (`Vehicle.restAt`,
+`standOnGround`'s own `plankUnder` factored out), the plank's rate if the
+reported centre stands on it and the report's own vertical rate otherwise, the
+change across the sample clamped to `joltLimit`, charged by `crashCost` and
+spent after the hulls move through the same `Vehicle.crash` (a `shell`, so the
+burn, the crew and the person in the seat follow as from any blow). The
+interval is the reporter's clock: `DriveCommand.time` (the page's `hullClock`,
+the client's `DriveMessage.time`). Bots, `simulate` (all seven `--events` md5s)
+and the seven bench hashes are unmoved.
+
+**Measured after** (`npm run corecheck`, `sarab/crash`, botless Sarab; hull
+points lost of 340; bot = `Vehicle.update`'s own charge, rep60 = reported every
+step, rep20 = the same flight uploaded at `INPUT_HZ` on 8 wires of whole-ms
+stamps read up to 1.5 ms late, exact = those uploads on an exact clock, match =
+wire 1 through `Match` with a fake peer):
+
+| flight | bot | rep60 | rep20 | exact | match |
+| --- | --- | --- | --- | --- | --- |
+| hard: full down from 15 m | 129.1 | 129.1 | 108.5..128.9 | 128.9 | 128.9 |
+| firm: 95% down | 77.3 | 77.3 | 77.2..97.4 | 77.2 | 77.2 |
+| 80% down (under the threshold) | 0 | 0 | 0 | 0 | 0 |
+| gentle: 30% down | 0 | 0 | 0 | 0 | 0 |
+| late flare: full up at 0.6 m | 70.3 | 70.3 | 102.0..143.3 | 122.3 | 122.3 |
+| moving: full down at speed | 129.1 | 129.1 | 108.6..128.9 | 128.9 | 128.9 |
+| low cruise 1.5 m over 8 m of uneven ground, a climb, a descent, a gentle landing | 0 | 0 | 0 | 0 | 0 |
+
+rep60 is the bot's charge to 6e-11. Offline in the browser (Sarab, the
+player's own helicopter, `scratchpad/c4bfix/heli.mjs` — `c4b/drive.mjs`'s
+script): the hard landing costs **155.92**, which is exactly what the page's
+own predicted hull's crash check computes on the same flight (155.92, to
+1e-10) — not C4a-2's 129, because the C4b trajectory lands ~14 m further on
+and higher (y -2.31 against the pad's -2.60), off the C4a-2 track from about
+frame 880; the gentle landing and a long low level run cost 0. In a live match
+(`netplay.mjs --map sarab --heli`, botless, real keys): the hard landing cost
+118.33 on the authority and B's client showed 118.33; the climbs, the level
+runs, a descent in the air and two gentle landings cost 0; no `hullcorrect`.
+
+**What is left, measured:** at `INPUT_HZ` the charge is moved by the CLIENT's
+clock — `NetSession` stamps a whole-ms `Date.now()`, and a stamp read a
+millisecond late moves a 50 ms interval's rate a few percent (±21 points at
+8 m/s; the "exact" column is what a physics-clock stamp would give) — and a
+descent whose rate changes inside its last upload interval is charged off the
+rate before the change, so a late flare is charged HIGH (122 against 70; it
+cannot err low, a descent cannot steepen past `descentRate`). A stamp off the
+predicted hull's own step clock (sum of the frame `dt`s) would take the first
+away; the second is the sampling's.
 
 **Derived from the code:** the crash is one check inside `Vehicle.update`'s
 flight branch — `jolt - flight.crashJolt`, spent as a `shell` through
@@ -2545,9 +2596,8 @@ alternates sign in the same trace) — a `jolt` off that would crash helicopters
 in level flight. Offline the reports arrive every step and would be clean, but
 one rule must hold on both sides.
 
-**What would settle it:** a crash test the authority can make off the REPORTED
+**What was proposed, and is what landed:** a crash test the authority can make off the REPORTED
 motion — e.g. the descent rate over the last accepted samples at the moment the
 reported height meets the plank (`validateDrive` already holds the previous
 accepted sample) — asserted against the bot's `update` figure on the same
-landing, then the same rule offline for free. Until then a person cannot be
-hurt by flying into the ground in either mode.
+landing, then the same rule offline for free.

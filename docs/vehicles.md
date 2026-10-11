@@ -1481,7 +1481,11 @@ was already there:
   vertical motion this frame — which on a machine that flies is the whole of a
   touchdown. The skids compress and rebound through `flexHeave` with no new
   code, and **nothing in the suspension knows a helicopter landed rather than a
-  tank driving off a kerb.**
+  tank driving off a kerb.** The CRASH reads the same number —
+  `crashCost(jolt)`, `(jolt - crashJolt) * crashDamage` over the threshold,
+  spent as a `shell` through `crash` — on a hull the simulation steps; on one a
+  PERSON flies it reads the jolt their reports describe (below, "A person's
+  landing is charged off their REPORTS").
 - **`grounded` swaps the tilt rate**, so the frame the skids leave the pad the
   hull stops following the ground and starts following the cyclic.
 - **A parked helicopter costs the frame what a parked tank costs.** With nobody
@@ -1498,8 +1502,8 @@ without going anywhere is a machine whose ground answer can still go stale.
 `Vehicle.flies` is that resolved once — `gun`/`armed`'s shape and `gun`/`armed`'s
 reason. It is the SECOND capability question in the file and there are still
 only two, but it is worth being as exact about its readers as the section above
-is about `armed`'s six, or a third kind erodes the bargain by stealth. Ten, and
-five of them are one line:
+is about `armed`'s six, or a third kind erodes the bargain by stealth. Eleven,
+and six of them are one line:
 
 1. `Vehicle.update`'s drive block — `flyStep` in place of the throttle walk.
 2. `Vehicle.update`'s tail — the commanded attitude overrides the ground's while
@@ -1521,6 +1525,9 @@ five of them are one line:
     carrying, which is 1 wherever the block is null and is what takes the
     weight transfer out of a hull hanging from its rotor. `flexSuspension` is
     its only caller, and see the suspension note under the flight section.
+11. `SimCore.applyDrive` — a person's accepted `drive` is a crash test
+    (`src/sim/reportedLanding.ts`) only on a hull that flies, because only that
+    kind's `update` charges one.
 
 **`standOnGround` is not on that list and that is the point of the whole
 design.** It has never heard of `flies`.
@@ -1728,6 +1735,44 @@ which was never the thing that was wrong.
 - **No autorotation.** A rotor that stops lifting simply stops lifting, and the
   machine falls at gravity. That is correct and it is also what makes leaving a
   hull in the air a decision.
+
+### A person's landing is charged off their REPORTS
+
+**The crash is one check in `Vehicle.update`, and a hull a person flies never
+runs `update` anywhere that may be hurt.** Their page PREDICTS it (`predicted`
+refuses every blow) and the simulation POSES its copy from what they report
+(`updateRemote`) — so until `FINDINGS.md` 60 was fixed a person-flown
+helicopter took no crash damage at all, in a match always and offline from
+`BABYLON_EXIT.md` X2.5a C4b. The posed copy's own `jolt` cannot stand in: the
+authority poses at 60 Hz off reports arriving at ~20, so its measured vertical
+rate is a train of spikes and zeros and `standOnGround`'s airborne branch
+extrapolates a step past each report — a `jolt` off that crashes helicopters in
+level flight.
+
+**So the simulation asks the same arithmetic of the REPORT series**
+(`src/sim/reportedLanding.ts`, run by `SimCore.applyDrive` on every accepted
+`drive`, spent by `SimCore.advance` right after the hulls move through the same
+`Vehicle.crash`). Per sample: the plank under the reported position, banded off
+the previous sample's tracks (`Vehicle.restAt`, `standOnGround`'s own
+`plankUnder`); the rise rate is the PLANK's if the reported centre stands on it
+and the report's own vertical motion otherwise; the jolt is the change in rise
+rate across the sample, clamped to `joltLimit`; `crashCost` charges it. The
+interval is the REPORTER's clock (`DriveCommand.time`): the page's
+`hullClock`, the client's `DriveMessage.time`. Nothing reported is a velocity —
+where the hull was and when, the `updateRemote` bargain.
+
+**Offline every step is a sample, and the rule IS `standOnGround`'s arithmetic**
+— measured on Sarab (`npm run corecheck`, `sarab/crash`) to 6e-11 of 129
+points against the bot path on the same flight. **At `INPUT_HZ` it errs two
+ways, both measured there**: on the client's clock — a whole-ms `Date.now()`
+read a millisecond or so late moves a 50 ms interval's rate a few percent,
+±21 points at 8 m/s — and HIGH on a descent whose rate changes inside its last
+interval, because the wire sees the rate before the change: a full-up flare at
+0.6 m costs 70 to a bot and 122 on the wire, exact clock or not. It cannot err
+the other way on purpose: a descent cannot steepen past `descentRate`, so a
+late dive has nothing to hide. A gentle landing, a firm one under the
+threshold, low level flight over 8 m of uneven ground and a climb and a
+descent in the air cost nothing on every path.
 
 ## What a hit is worth: `DamageKind`
 
@@ -3623,9 +3668,11 @@ replaced by a `drive` command submitted every frame and trusted rather than
 validated. So the hull a person drives is ONE machine on both sides of the wire
 — the driver's picture (the linkage steer, the lean off the drive, the gun's
 kick on the frame it fires) and the driver's handling alike — and what the
-remote half lacks, it lacks offline too: **a person-flown helicopter takes no
-crash damage** in a match or out of one, because the crash check reads `jolt`
-inside `update` and a posed hull runs `updateRemote` (`FINDINGS.md` 60). Offline
+remote half lacks, it lacks offline too. **The crash is the one thing that
+gap cost and it is closed on both at once**: a posed hull runs `updateRemote`,
+which charges nothing, so the core charges a person-flown landing off the
+reports themselves (`src/sim/reportedLanding.ts`, "A person's landing is
+charged off their REPORTS" above, `FINDINGS.md` 60). Offline
 the trigger is asked of the core between its step and the page's fleet, the one
 moment the two copies stand in the same place (`Game.pullHullTrigger`,
 `docs/game.md`).
