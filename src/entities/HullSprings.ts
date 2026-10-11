@@ -1,51 +1,35 @@
 /**
- * HullFlex.ts — What a hull's own mass does to its DRAWING: the sprung body
- * rocking on its springs, the body heaving against its running gear, and the
- * two whip antennae.
- * Owns: the suspension's pitch and roll springs, the heave spring, the rate
- * the mast feet are turning at, both whips, and the wind's clock for them.
- * Writes `rig.sprung` (its rotation and its Y) and the antennae's bend, and
- * nothing else — and every write to `sprung` into the hull's `HullPose` beside
- * it, in the same guarded branch.
- * Owns NO rule. Nothing here moves the collider, the gun's aim or a body's
- * footing — but it is on a MUZZLE's path: the turret and both guns hang off
- * `sprung`, so where a round leaves is read off the springs AS DRAWN, guard
- * and all (`entities/hullFrame.ts`). So the springs are simulated on the
- * authority too, the pose record is written exactly where and when the node
- * is, and a change to either guard moves the fight hash. It reads the rig, the
- * spec and the frame it was built with and the numbers `Vehicle` hands it each
- * frame, never a node, and it never asks what KIND of hull it is drawing: a
- * hull with no masts has an empty `rig.antennae`, and a hull whose rotor is
- * carrying it is handed a `load` of 0.
+ * HullSprings.ts — What a hull's own mass does to its sprung body: the body
+ * rocking on its springs and heaving against its running gear.
+ * Owns: the suspension's pitch and roll springs and the heave spring. Writes
+ * the three `sprung` channels of the hull's `HullPose` — behind the guards the
+ * node writes always had — and nothing else.
+ * Owns NO rule, and no node: **no `@babylonjs/core`**. Nothing here moves the
+ * collider, the gun's aim or a body's footing — but it is on a MUZZLE's path:
+ * the turret and both guns hang off `sprung`, so where a round leaves is read
+ * off the springs AS DRAWN, guard and all (`entities/hullFrame.ts`). So the
+ * springs are SIMULATION — stepped on the authority too — the pose record is
+ * written exactly where and when the node used to be, a view copies the record
+ * onto the node and never the other way (`entities/VehicleView.ts`), and a
+ * change to either guard moves the fight hash. It reads the spec and the frame
+ * it was built with and the numbers `Vehicle` hands it each frame, and it never
+ * asks what KIND of hull it is: a hull whose rotor is carrying it is handed a
+ * `load` of 0.
  *
- * ## The ground half of the attitude is not here
+ * ## The ground half of the attitude is not here, and neither are the whips
  *
  * Where the slope under the tracks puts the hull — `groundPitch`/`groundRoll`
  * on `rig.hull` — is `Vehicle`'s, because `standOnGround` measures it and the
- * flying branch overrides it. This class is the OTHER half, on `rig.sprung`,
- * and the one place the two are summed is `lean`, for the mast feet. See
- * `docs/vehicles.md`.
+ * flying branch overrides it. This class is the OTHER half, on `rig.sprung`.
+ * The two whip antennae were here until `BABYLON_EXIT.md` X2.2 C9 and are a
+ * picture with nothing downstream of them, so they are the client's
+ * (`entities/HullWhips.ts`), told the two halves SUMMED — the mast feet's
+ * attitude — by `Vehicle`'s `HullPicture`. See `docs/vehicles.md`.
  */
-import { CONFIG } from "../config";
 import type { VehicleSpec } from "../config/vehicles";
 import type { HullFrame, HullPose } from "./hullFrame";
-import { setAntennaBend, type VehicleRig } from "./vehicleRig";
 
-/**
- * The one wind's bearing, normalised once — `CONFIG.wind.dir` is documented as
- * un-normalised and every reader owes this.
- *
- * The masts are the third layer to lean on it, after the grass field and the
- * world's foliage, and they take the BEARING alone: what a gust does to a blade
- * of grass, to ten metres of canopy and to a steel whip are three different
- * answers to the same question, which is exactly the split `config/wind.ts`
- * makes. See `CONFIG.vehicles.tank.antenna.wind`.
- */
-const WIND_HYP = Math.hypot(CONFIG.wind.dir[0], CONFIG.wind.dir[1]);
-const WIND_X = CONFIG.wind.dir[0] / WIND_HYP;
-const WIND_Z = CONFIG.wind.dir[1] / WIND_HYP;
-
-export class HullFlex {
+export class HullSprings {
   /**
    * The suspension's half of the drawn attitude, and how fast each axis is
    * moving — the spring `flexSuspension` steps. See `Vehicle.groundPitch` for
@@ -68,54 +52,24 @@ export class HullFlex {
    */
   private heave = 0;
   private heaveVel = 0;
-  /**
-   * The hull node's attitude as it was LAST frame, and how fast it is turning.
-   *
-   * Kept because the whips answer to it: a mast bolted to a rocking hull bends
-   * because its foot is ROTATING, which is a rate and not an angle, and the
-   * rate has to be read off the two halves SUMMED — a tank climbing a kerb
-   * cracks its antennae exactly as one firing its gun does, and only one of
-   * those is the suspension's.
-   */
-  private leanX = 0;
-  private leanZ = 0;
-  private leanRateX = 0;
-  private leanRateZ = 0;
-  /**
-   * The two whips: the bow each spring is holding, its velocity, and the LAGGED
-   * angle the tip has actually got to. Long mast first, `ANTENNA_LENGTHS`' own
-   * order. Pictures, every one of them — see `flexAntennae`.
-   */
-  private readonly whipX: [number, number] = [0, 0];
-  private readonly whipZ: [number, number] = [0, 0];
-  private readonly whipVelX: [number, number] = [0, 0];
-  private readonly whipVelZ: [number, number] = [0, 0];
-  private readonly tipX: [number, number] = [0, 0];
-  private readonly tipZ: [number, number] = [0, 0];
-  /** The idle stir's own clock. Held by whatever holds the world, as the wind is. */
-  private windT = 0;
-
   constructor(
-    private readonly rig: VehicleRig,
     private readonly spec: VehicleSpec,
     /** The kind's extents — `wheelReach` and `gauge` bound the travel. */
     private readonly frame: HullFrame,
     /**
      * The hull's drawn pose, `Vehicle`'s record: this class writes the three
-     * `sprung` channels wherever it writes the node, and reads `turretY` for
-     * the masts' frame. See `HullPose`.
+     * `sprung` channels, each behind its guard. See `HullPose`.
      */
     private readonly pose: HullPose,
   ) {}
 
   /**
-   * A fresh hull's springs: at rest, level, and both whips straight. Part of
-   * `Vehicle.placeAt`, and for its reason — the rig is pooled, so the only
-   * guarantee worth having is that what comes back is clean.
+   * A fresh hull's springs: at rest and level. Part of `Vehicle.placeAt`, and
+   * for its reason — the hull is pooled, so the only guarantee worth having is
+   * that what comes back is clean.
    *
-   * The wind's clock is left running, because the wind did not stop. The
-   * pose's `sprung` channels are not zeroed here: `Vehicle.placeAt` zeroes the
-   * whole record beside `rig.reset`, which is what zeroes the nodes.
+   * The pose's `sprung` channels are not zeroed here: `Vehicle.placeAt` zeroes
+   * the whole record, and the view resets the rig on the same placing.
    */
   reset(): void {
     this.suspPitch = 0;
@@ -124,18 +78,6 @@ export class HullFlex {
     this.suspRollVel = 0;
     this.heave = 0;
     this.heaveVel = 0;
-    this.leanX = 0;
-    this.leanZ = 0;
-    this.leanRateX = 0;
-    this.leanRateZ = 0;
-    for (let i = 0; i < 2; i++) {
-      this.whipX[i] = 0;
-      this.whipZ[i] = 0;
-      this.whipVelX[i] = 0;
-      this.whipVelZ[i] = 0;
-      this.tipX[i] = 0;
-      this.tipZ[i] = 0;
-    }
   }
 
   /**
@@ -160,46 +102,25 @@ export class HullFlex {
     const s = this.spec.suspension;
     this.suspPitchVel -= s.gunKick * along;
     this.suspRollVel += s.gunKick * across;
-    // ...and the MASTS crack, which is a third fact and belongs here for the
-    // same reason the second one does. The hull is shoved back along the GUN's
-    // axis, so both whips are thrown out along it; the only thing the drive
-    // terms would ever see of a shot is the quarter second afterwards where the
-    // tracks brake that shove out, which lays them BACK — so said here, the
-    // pair come out as one crack and a lay-back after it. See `antenna.gunKick`.
-    //
-    // No bearing on this one, and that is the whole point rather than an
-    // omission: a whip's axes are the TURRET's and so is the gun's, so the
-    // direction a shot throws a mast is the one thing on this vehicle that
-    // traversing cannot change. A positive X bend tips a tip toward the
-    // turret's +Z, which is where the gun points.
-    const kick = this.spec.antenna.gunKick;
-    for (let i = 0; i < this.rig.antennae.length; i++) this.whipVelX[i] += kick;
+    // ...and the MASTS crack, which is a third fact off the same shot and a
+    // picture's alone — `Vehicle.fireGun` tells the view (`HullWhips.kick`).
   }
 
   /**
-   * The suspension's half of the attitude, stepped and drawn on `rig.sprung`,
-   * and then how fast the MAST FEET are turning — which is the one place the
-   * two halves are summed.
+   * The suspension's half of the attitude, stepped and written into the pose's
+   * `sprung` channels. `load` is `Vehicle.gearLoad`.
    *
-   * `groundPitch`/`groundRoll` are the other half as `Vehicle.leanHull` has
-   * just drawn it on `rig.hull`, and `load` is `Vehicle.gearLoad`.
-   *
-   * The write is guarded rather than unconditional because two of these are
-   * parked on hardstandings doing nothing for most of a round, and an
-   * assignment to a `TransformNode`'s rotation is a world matrix to recompute
-   * whether or not the number changed.
+   * The write is guarded rather than unconditional, and the guard is on the
+   * muzzle's path: it was there because two of these are parked on
+   * hardstandings doing nothing for most of a round, and an assignment to a
+   * `TransformNode`'s rotation is a world matrix to recompute whether or not
+   * the number changed — and a muzzle has always been read off the node AS
+   * DRAWN, so the record keeps the guard the node had.
    */
-  lean(
-    dt: number,
-    accel: number,
-    lateral: number,
-    load: number,
-    groundPitch: number,
-    groundRoll: number,
-  ): void {
+  lean(dt: number, accel: number, lateral: number, load: number): void {
     this.flexSuspension(dt, accel, lateral, load);
-    // Compared against what is DRAWN, which the pose record holds — the node
-    // and the record are written together and nowhere else.
+    // Compared against what is DRAWN, which the pose record holds — the view
+    // copies the record onto `rig.sprung` and nothing else writes either.
     const shown = this.pose;
     if (
       Math.abs(this.suspPitch - shown.sprungX) > 1e-5 ||
@@ -207,23 +128,19 @@ export class HullFlex {
     ) {
       shown.sprungX = this.suspPitch;
       shown.sprungZ = this.suspRoll;
-      const b = this.rig.sprung.rotation;
-      b.x = shown.sprungX;
-      b.z = shown.sprungZ;
     }
-    // How fast the MAST FEET are turning, which is what the antennae bend
-    // against, and it is still the SUM: a whip hangs off the turret, which
-    // rides on the sprung body, which hangs off the hull, so its foot carries
-    // both halves. A hull tipping onto a kerb rotates it exactly as one
-    // rocking on its own springs does, and a whip cannot tell the two apart.
-    const pitch = groundPitch + this.suspPitch;
-    const roll = groundRoll + this.suspRoll;
-    if (dt > 0) {
-      this.leanRateX = (pitch - this.leanX) / dt;
-      this.leanRateZ = (roll - this.leanZ) / dt;
-    }
-    this.leanX = pitch;
-    this.leanZ = roll;
+  }
+
+  /**
+   * The suspension's half of the attitude as the springs HOLD it — not as
+   * drawn — for the one sum `Vehicle` makes of the two halves: the mast feet's
+   * attitude, which the whips bend against.
+   */
+  get pitch(): number {
+    return this.suspPitch;
+  }
+  get roll(): number {
+    return this.suspRoll;
   }
 
   /**
@@ -483,118 +400,6 @@ export class HullFlex {
     // moved or not.
     if (Math.abs(this.heave - this.pose.sprungY) > 1e-5) {
       this.pose.sprungY = this.heave;
-      this.rig.sprung.position.y = this.pose.sprungY;
-    }
-  }
-
-  /**
-   * Bends the two whip antennae.
-   *
-   * **This is the suspension's own argument one derivative further out, and it
-   * is why there is no physics engine anywhere near it.** A mast is a thin
-   * cantilever bolted to the turret: it bends because of the acceleration the
-   * drive achieved, because of how fast the thing it is bolted to is rotating,
-   * and because there is a wind. All three of those numbers are already to
-   * hand, and what a whip does with them is one damped spring per axis. A
-   * Havok chain would need a kinematic body per link, a constraint per joint
-   * and a transform read back per frame — for a picture, on a hull that is
-   * moved by `moveWithCollisions` and SNAPPED up to `stepHeight` by the ground
-   * probe, which is a teleport as far as a solver is concerned and cracks a
-   * jointed chain every time a tank climbs a kerb. See `docs/vehicles.md`.
-   *
-   * Four terms, and every one of them is in the TURRET's frame rather than the
-   * hull's, because that is what the masts hang off: a hull diving under a
-   * turret traversed ninety degrees bends its whips SIDEWAYS, and terms written
-   * in the hull's axes would lay them back along a tank that was stopping
-   * beside them.
-   *
-   * - **The drive's acceleration**, clamped by `suspension.accelLimit` — the
-   *   same clamp for the same one-frame reason, deliberately not restated in
-   *   the antenna block. A whip trails what is thrown at it, so the tip goes
-   *   the OPPOSITE way to the acceleration: a hull pulling away lays its masts
-   *   back, and one that has just hit a building throws them forward.
-   * - **Sideways is `speed * yawRate`**, as the hull's roll is, so a
-   *   neutral-steer pivot whips nothing sideways. There is no lateral
-   *   acceleration in one to whip against.
-   * - **The base's own rotation RATE**, which is the term that makes the gun
-   *   visible from outside the tank: `fireGun` rocks the hull nose-up in a
-   *   fifth of a second, the mast feet go with it and the tips do not, so both
-   *   whips bend back and ring. It costs nothing extra and it arrives through
-   *   the ground lean too, so kerbs and shell craters crack them for free.
-   * - **The wind**, so a parked hull is not two steel rods. Bearing from
-   *   `CONFIG.wind.dir` because there is one wind; amplitude and speed its own,
-   *   because a mast is not a blade of grass.
-   *
-   * Then the bow is handed on in two pieces. The spring's angle is the whip's,
-   * and the TIP's angle is a lagged copy of it — so during a fast event the
-   * upper link is bent back against the lower one and the mast is an S, and
-   * once it settles the two agree and it is a smooth bow. See
-   * `setAntennaBend`.
-   *
-   * Stepped semi-implicit Euler like the suspension, and it holds for the same
-   * reason: the frame's `dt` is clamped at 0.05 and the faster of the two masts
-   * runs at 3.8 Hz, which is `w * dt` of 1.2 against Euler's ceiling of 2. What
-   * would break it is a stiffer spring, not a slower frame.
-   */
-  flexAntennae(dt: number, accel: number, lateral: number): void {
-    const a = this.spec.antenna;
-    const lim = this.spec.suspension.accelLimit;
-    const bound = (v: number, l: number) => Math.max(-l, Math.min(l, v));
-    // Into the turret's own frame: its world yaw is `turretYaw`, so the local
-    // one is what the drawn node already carries — the pose's `turretY`.
-    const phi = this.pose.turretY;
-    const cs = Math.cos(phi);
-    const sn = Math.sin(phi);
-    const ax = bound(lateral, lim);
-    const az = bound(accel, lim);
-    const localAX = ax * cs - az * sn;
-    const localAZ = ax * sn + az * cs;
-    const rateX = this.leanRateX * cs - this.leanRateZ * sn;
-    const rateZ = this.leanRateX * sn + this.leanRateZ * cs;
-    const windX = WIND_X * cs - WIND_Z * sn;
-    const windZ = WIND_X * sn + WIND_Z * cs;
-    // Wrapped at the two sines' COMMON period rather than at either one's, so
-    // the gust is continuous across the wrap and the clock does not grow for
-    // the length of a round. Same rule as `setTrackRun`'s modulo.
-    this.windT = (this.windT + dt) % (200 * Math.PI / a.wind.speed);
-    for (let i = 0; i < this.rig.antennae.length; i++) {
-      const whip = this.rig.antennae[i];
-      // Two sines well off a whole ratio, so the gust does not come round on a
-      // metronome — the same trick the grass shader plays, at a mast's rate.
-      const t = this.windT * a.wind.speed + whip.phase;
-      // The flutter rides on top of the drift: a quicker beat, about a second
-      // at the speed every kind states, swelling and fading on a slower
-      // envelope so it comes in gusts rather than on a metronome. Mostly along
-      // the wind and partly across it — a whip in a steady wind is shaken
-      // sideways by its own wake — and both ride the same whip's phase, so a
-      // pair are shaken out of step. 0 on a kind that states none, where this
-      // is the drift exactly as it always was.
-      const beat = a.wind.flutter * (0.6 + 0.4 * Math.sin(t * 0.73));
-      const along = a.wind.sway * (Math.sin(t) * 0.7 + Math.sin(t * 0.41) * 0.3)
-        + beat * Math.sin(t * 5.3 + whip.phase);
-      const across = beat * 0.5 * Math.sin(t * 4.1 + whip.phase * 1.7);
-      // A positive X rotation tips the mast's top toward +Z and a positive Z
-      // rotation tips it toward -X, which is where both signs below come from.
-      // `across` is the wind's bearing turned a quarter, (-windZ, windX).
-      const wantX = -localAZ * a.swayPerAccel - rateX * a.lagPerRate + windZ * along + windX * across;
-      const wantZ = localAX * a.swayPerAccel - rateZ * a.lagPerRate - windX * along + windZ * across;
-      // One spring per mast, scaled off the long one by its length — see
-      // `Whip.rate`. Stiffness goes as the square of the rate and damping as
-      // the rate itself, which is what keeps both at the same damping RATIO:
-      // scaling only the stiffness would leave the short mast ringing.
-      const rate = whip.rate;
-      const k = a.stiffness * rate * rate;
-      const c = a.damping * rate;
-      this.whipVelX[i] += (k * (wantX - this.whipX[i]) - c * this.whipVelX[i]) * dt;
-      this.whipX[i] = bound(this.whipX[i] + this.whipVelX[i] * dt, a.bendLimit);
-      this.whipVelZ[i] += (k * (wantZ - this.whipZ[i]) - c * this.whipVelZ[i]) * dt;
-      this.whipZ[i] = bound(this.whipZ[i] + this.whipVelZ[i] * dt, a.bendLimit);
-      // The tip chases the bow and never leads it. This is the only reason the
-      // mast is drawn as two links rather than one.
-      const follow = Math.min(1, dt * a.lagRate);
-      this.tipX[i] += (this.whipX[i] - this.tipX[i]) * follow;
-      this.tipZ[i] += (this.whipZ[i] - this.tipZ[i]) * follow;
-      setAntennaBend(whip, a.baseShare, this.whipX[i], this.whipZ[i], this.tipX[i], this.tipZ[i]);
     }
   }
 }

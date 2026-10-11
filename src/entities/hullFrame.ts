@@ -2,9 +2,10 @@
  * hullFrame.ts — Where a hull's guns and its sight ARE, as numbers: the offsets
  * of every joint on the path from the collider box to a muzzle, the three
  * extents the drive reads off the drawing, and the replay of that node chain.
- * Owns: `HullFrame` (one per kind, stated by its model file), `HullPose` (the
- * channels those joints hold, written by `Vehicle` and `HullFlex` wherever a
- * node is written), and `hullPointToRef`.
+ * Owns: `HullFrame` (one per kind, stated by its frame file), `HullPose` (the
+ * channels those joints hold, written by `Vehicle` and `HullSprings` behind
+ * the guards the node writes had, and copied onto the nodes by the client's
+ * `VehicleView`), and `hullPointToRef`.
  * Invariants:
  * - **No `@babylonjs/core`.** `src/math` only, so the simulation can ask where
  *   a hull's barrel is without a rig and the authority without a scene.
@@ -17,12 +18,15 @@
  *   `src/math`'s copies of those classes. A float64 trig version of the same
  *   geometry is a different number and moves the fight hash.
  * - **A `HullPose` is what the NODES hold, not what the springs want.** The
- *   lean, the heave and the suspension's tilt are written to their nodes
+ *   lean, the heave and the suspension's tilt were written to their nodes
  *   behind a 1e-5 guard, so a drawn joint trails its spring by up to that
  *   much — and the muzzle was always read off the drawn joint. So the record
- *   is written exactly where, and exactly when, the node is.
- * - **A frame is the DRAWING's**: each model file states its own and places
- *   its nodes FROM it (`TANK_FRAME`, `TRUCK_FRAME`, `HELI_FRAME`), so the
+ *   keeps the guards, and since `BABYLON_EXIT.md` X2.2 C9 it is the record
+ *   that is written and the view that copies it: the node is what the record
+ *   says, never the other way round.
+ * - **A frame is the DRAWING's**: each kind states its own in a Babylon-free
+ *   frame file (`TANK_FRAME` in `tankFrame.ts`, `TRUCK_FRAME`, `HELI_FRAME`),
+ *   and its model IMPORTS those numbers and places its nodes FROM them, so the
  *   arithmetic and the picture cannot drift. No node on the path has a pivot,
  *   a billboard, a quaternion or a scale; the channels no pose writes are the
  *   zeros the builders leave.

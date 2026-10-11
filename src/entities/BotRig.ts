@@ -160,7 +160,7 @@ export class BotRig implements RagdollSubject {
    * (`mats.get`, `mats.getEmissive`), so disposing this rig's materials would
    * dispose the paint every other body and the map itself are holding, and
    * the factory would hand the dead material out again on the next `get`. See
-   * `Vehicle.dispose`, where the same flag took most of a city off the screen.
+   * `VehicleView.dispose`, where the same flag took most of a city off the screen.
    */
   dispose(): void {
     this.rig.root.dispose(false);

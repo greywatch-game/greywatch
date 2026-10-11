@@ -695,7 +695,7 @@ src/
                         #   where the hull is ABOUT to be, which is the whole
                         #   of an AI driver's road graph), and what a hull
                         #   feels of each DamageKind. Takes a `VehicleSpec` and
-                        #   a rig BUILDER and knows no kinds; `armed` and
+                        #   a `HullFrame` and knows no kinds; `armed` and
                         #   `flies` are the only two questions anything asks
                         #   about one. It also FLIES, on a hull that states a
                         #   `flight` block — and `standOnGround` has never heard
@@ -703,13 +703,22 @@ src/
                         #   `lift`, an addend that is 0 on anything else, so a
                         #   hover is an equality and the plank is a landing
                         #   floor. Its three muzzles are ARITHMETIC off those
-                        #   fields and the drawn pose (`hullFrame.ts`); the
-                        #   body mesh and the rig only FOLLOW. Knows nothing
-                        #   about a player
+                        #   fields and the drawn pose (`hullFrame.ts`).
+                        #   SIMULATION only — src/math, no mesh, no rig, no
+                        #   scene; what it looks like is `VehicleView`, told
+                        #   through one `HullPicture` the four things a picture
+                        #   cannot poll. Knows nothing about a player
+    VehicleView.ts      # One hull's PICTURE: the invisible body box (the
+                        #   rig's parent, the shadow maps' box, the editor's
+                        #   pick), the rig its kind's model builds, the belts'
+                        #   run, the whips and the paint. Copies `Vehicle.pose`
+                        #   onto the joints and follows `present`/`alive`;
+                        #   reads its hull and never writes it. Client only
     hullFrame.ts        # Where a hull's guns and sight ARE, no Babylon:
                         #   `HullFrame` (a kind's joint offsets and the three
                         #   extents the drive reads off the drawing, stated by
-                        #   each model, which places its nodes from it),
+                        #   each kind's frame file, which its model imports and
+                        #   places its nodes from),
                         #   `HullPose` (what those joints hold AS DRAWN) and
                         #   `hullPointToRef`, the float32 node chain replayed
                         #   bit for bit
@@ -719,13 +728,18 @@ src/
                         #   driver's first, one rule for both processes).
                         #   Imports nothing, so the authority's roster names a
                         #   seat without pulling in a hull
-    HullFlex.ts         # What a hull's own mass does to its DRAWING: the
-                        #   sprung body's pitch, roll and heave springs on one
-                        #   travel budget, the rate the mast feet turn at, and
-                        #   the two whips in the wind. Writes `rig.sprung` (and
-                        #   the pose record beside it — a muzzle rides it) and
-                        #   the antennae and nothing else; handed the drive's
-                        #   acceleration, the ground's jolt and the gear's load
+    HullSprings.ts      # What a hull's own mass does to its sprung body: the
+                        #   pitch, roll and heave springs on one travel budget.
+                        #   Writes the pose's `sprung` channels behind the
+                        #   guards the node had (a muzzle rides them, so they
+                        #   are simulated on both sides) and nothing else;
+                        #   handed the drive's acceleration, the ground's jolt
+                        #   and the gear's load. No Babylon
+    HullWhips.ts        # The two whip antennae bending in the drive, the
+                        #   mast feet's rotation and the wind — the one part of
+                        #   a hull's picture with springs of its own. Told each
+                        #   step by `VehicleView`; nothing reads it back.
+                        #   Client only
     FlightModel.ts      # The rotor, for a hull whose spec states `flight`:
                         #   the spool, the disc's commanded attitude, the
                         #   cyclic, thrust and collective, and the attitude a
@@ -733,10 +747,24 @@ src/
                         #   its motion. Owns no position or velocity — those
                         #   stay `Vehicle`'s and are handed in
     vehicleKinds.ts     # The list of kinds that exist, and the ONE place a
-                        #   kind becomes a name, a spec, a frame and a model. A map's
-                        #   `VehicleSpawnDef.kind` is resolved here, and the
-                        #   default (a tank) is written down once
-    vehicleRig.ts       # What every vehicle's MESH is: the joints `Vehicle`
+                        #   kind becomes a name, a spec and a frame — no Babylon,
+                        #   the authority builds from it. A map's
+                        #   `VehicleSpawnDef.kind` is resolved here
+                        #   (`resolveKind`), and the default (a tank) is written
+                        #   down once
+    vehicleModels.ts    # What each kind LOOKS like: `Record<VehicleKind,
+                        #   VehicleModel>`, the client's twin of `VEHICLE_KINDS`
+                        #   keyed by the same union, so a kind cannot have a
+                        #   row in one and not the other. Client only
+    tankFrame.ts        # The tank's joints and running-gear extents as
+                        #   numbers (`TANK_FRAME` and the constants it is
+                        #   derived from) — no Babylon; `TankModel` imports them
+                        #   and places its nodes from them
+    truckFrame.ts       # The truck's (`TRUCK_FRAME`): the wheels' extents and
+                        #   the roof station's joints. `tankFrame.ts`'s rule
+    heliFrame.ts        # The helicopter's (`HELI_FRAME`): the skids' extents
+                        #   and the chin gun's joints. `tankFrame.ts`'s rule
+    vehicleRig.ts       # What every vehicle's MESH is: the joints a hull's view
                         #   writes and the three CLOSURES a model hands back — `setRun`,
                         #   `reset`, `paint`. `setRun`'s FOURTH argument is the
                         #   rotor, for the reason its third is the steer: a
@@ -757,7 +785,8 @@ src/
                         #   and a toothed sprocket a side that RUN, two whip
                         #   antennae that BOW, and the charred repaint a wreck
                         #   takes.
-                        #   Art only — the extents that are RULES are CONFIG's
+                        #   Art only — the extents that are RULES are CONFIG's,
+                        #   and the joints the simulation reads `tankFrame.ts`'s
     TruckModel.ts       # The gun truck: a CLOSED armoured 4x4 drawn off the
                         #   Oshkosh JLTV — arches cut out of an extruded body,
                         #   a clamshell hood, a V belly over four independent
@@ -845,6 +874,11 @@ src/
     BattleView.ts       # The roster's PICTURE: a BotRig per bot (rebuilt on
                         #   `poolVersion` or the viewer's side), the distance
                         #   LOD, the muzzle flashes. Client only
+    VehicleViews.ts     # The fleet's PICTURE: one VehicleView per hull, by
+                        #   hardstanding, each with its kind's model; built by
+                        #   `installMap`, stepped after every
+                        #   `VehicleSystem.update`, taken down by
+                        #   `teardownMap`. Client only
     ConquestSystem.ts   # Flags, meters, tickets, bleed, spawns, planSquads,
                         #   what a bot's flag means to it (`zoneFor`), and
                         #   `scatterSpawn` — both simulations ask all three.
@@ -978,7 +1012,8 @@ src/
                         #   is on the cupola gun, and which of the two somebody
                         #   ELSE is deciding. `Game`/`HeadlessGame` are
                         #   the only things that can answer. A `predicted` fleet
-                        #   is a netplay client's: both clocks stand down
+                        #   is a netplay client's: both clocks stand down.
+                        #   Simulation only: src/math, no scene, no materials
     VehicleCamera.ts    # The view from twelve metres behind a hull: its own yaw
                         #   and pitch, its occlusion pull-in, and the gun's kick.
                         #   `DeathCam`'s shape — it produces an eye and a look

@@ -1421,7 +1421,7 @@ export const vehicles = {
        * author: it is `heaveBump`/`heaveDroop` over the distance to the
        * outermost road wheel, because a tilt is one end of the suspension
        * compressing and the other end extending, and both ends run out of
-       * travel at the stops the heave uses. `HullFlex.flexSuspension` spends
+       * travel at the stops the heave uses. `HullSprings.flexSuspension` spends
        * what `flexHeave` has left of ONE budget, so a hull already sitting on
        * its bump stops cannot also dive — which is what bottoming out is.
        *
@@ -1571,7 +1571,7 @@ export const vehicles = {
      * bends because of that same acceleration AND because of how fast the thing
      * it is bolted to is turning — the mast trails a rotating base exactly as a
      * body thrown back in a seat trails an accelerating one. So there is no new
-     * measurement here: `HullFlex.flexAntennae` reads the numbers
+     * measurement here: `HullWhips.step` reads the numbers
      * `flexSuspension` already has, plus the rate the hull node is leaning at,
      * and everything below is a gain on one of them.
      *
@@ -1579,7 +1579,7 @@ export const vehicles = {
      * two `TransformNode`s per whip and nothing else. Nothing aims, walks,
      * collides or is picked against an antenna.
      *
-     * The input clamp is deliberately NOT restated here — `flexAntennae` bounds
+     * The input clamp is deliberately NOT restated here — `HullWhips.step` bounds
      * its accelerations with `suspension.accelLimit`, because a whip and a hull
      * that disagreed about how hard a hull just hit a building would come apart
      * in exactly the frame the picture matters most.

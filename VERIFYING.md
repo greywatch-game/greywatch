@@ -689,6 +689,10 @@ is one machine's:
   `g.vehicles.update(dt, g.vehicleOrders)` is the real drive path with no
   rendering in it — sixty calls at `1/20` is three seconds of driving in one
   synchronous `evaluate`, which is the only way to move a vehicle at 0.1 fps.
+  **The DRAWING does not follow a direct call** (since X2.2 C9): a hull is
+  the simulation and its rig is its view's, so follow it with
+  `g.vehicleViews.update()` before reading a joint or photographing — the
+  view of a hull is `g.vehicleViews.views.find((v) => v.hull === tank)`.
   **The signature takes a LOOKUP rather than a hull and a stick**, because a bot
   crew can be driving one hull while the player drives another: write the sticks
   into `g.drive` for the hull `g.driving` points at, and everything else is
@@ -701,7 +705,8 @@ is one machine's:
   Photograph a vehicle from `deploy`, exactly as `capture-map-shots.mjs` does.
 - **The TRACKS are read off the rig, not off a screenshot.** At 2 fps two
   photographs of a moving strip prove nothing about which way it went;
-  `tank.rig.tracks[i]` is `{lower, upper, sprocket}` per side, and the three
+  `view.rig.tracks[i]` (the hull's VIEW — the hull has no rig since X2.2 C9) is
+  `{lower, upper, sprocket}` per side, and the three
   numbers that settle it are `lower.position.z` (in `(-LINK_PITCH, 0]`),
   `upper.position.z` (its mirror) and `sprocket.rotation.x`. Drive a straight
   run and the two sprockets step together; drive `steer: 1` at `throttle: 0`
@@ -748,15 +753,16 @@ is one machine's:
   world-matrix read still does not follow it.** Since X2.2 C8 the hull's
   position IS `pos` (`placeAt`/`correctTo` write it too): the sweep starts
   from it, every other hull meets it at its `rayBox()`, and the three muzzles
-  are replayed off it, so none of those involve a matrix. The body mesh is a
-  FOLLOWER that `sync` overwrites from `pos` at the end of every hull step — a
-  write to it moves nothing and is undone. Anything that still asks
+  are replayed off it, so none of those involve a matrix. The body mesh is the
+  VIEW's (`VehicleView.body`), a FOLLOWER `VehicleView.update` overwrites from
+  `pos` after every fleet step — a write to it moves nothing and is undone. Anything that still asks
   `getAbsolutePosition()` (a rig joint's world position) reads the world
   matrix, and
   `computeWorldMatrix()` early-outs while `_currentRenderId` equals
   `scene.getRenderId()` — which never advances inside one synchronous
-  `page.evaluate`. **Call `body.computeWorldMatrix(true)` after a position
-  write before any such read.** (Under Babylon this was the SWEEP's start too,
+  `page.evaluate`. **Call `g.vehicleViews.update()` and then
+  `view.body.computeWorldMatrix(true)` after a position write before any such
+  read.** (Under Babylon this was the SWEEP's start too,
   and it cost an afternoon: a harness reported the walk colliding with a
   `compoundWall-col` 600 m from where the test had put the body.)
 - **A scripted DRIVE is not a test of anything a hull hits.** Measured over
@@ -854,7 +860,7 @@ is one machine's:
   `bot.target = tank` is what the decision is about, and it will never fire at a
   body however long the loop runs — that is the rule, not a flaky test.
 - **The ANTENNAE are read off the rig too, and the number you want is the SUM of
-  two nodes.** `tank.rig.antennae[i]` is `{base, tip}`, and the tip's rotation is
+  two nodes.** `view.rig.antennae[i]` is `{base, tip}`, and the tip's rotation is
   LOCAL — the mast's actual angle is `base.rotation.x + tip.rotation.x` (and the
   same in `z`), so reading either alone reports a bend that is not there. Two
   more things that have already cost time: the terms are in the TURRET's frame,
@@ -876,10 +882,10 @@ is one machine's:
   off is a FALL and not the climb mirrored** — `tank.grounded` goes false for
   about 18 frames and `position.y` drops under gravity — so a script asserting
   a symmetric shape is reading the fix as a bug. **The SUSPENSION is
-  `tank.heave`, which is `tank.rig.sprung.position.y`**: negative is
+  `tank.pose.sprungY`, which the view copies onto `rig.sprung.position.y`**: negative is
   compressed, it bottoms out at `suspension.heaveBump` landing off the car, and
   it is the one part of the vehicle whose Y moves against tracks that do not. A
-  `heave` that never leaves zero on a drive usually means `standOnGround` found
+  `sprungY` that never leaves zero on a drive usually means `standOnGround` found
   nothing — read `tank.floorY` before believing the springs are broken. **Find
   the car by its collider rather than by eye** — it is the only 4.4 x 1.1 x 1.86
   box on the map — and check the run-up is clear of everything else solid, or

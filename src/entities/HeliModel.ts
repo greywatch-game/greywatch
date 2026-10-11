@@ -240,7 +240,12 @@ import { CONFIG } from "../config";
 import type { CelMaterialFactory } from "../shaders/CelShader";
 import type { Team } from "./Combatant";
 import { viewTeam } from "../core/teamView";
-import type { HullFrame } from "./hullFrame";
+import {
+  HELI_FRAME,
+  MG_Z,
+  SKID_REACH,
+  SKID_X,
+} from "./heliFrame";
 import {
   extrude,
   loftAlongZ,
@@ -314,18 +319,13 @@ const KITS: readonly HeliKit[] = [
 
 // --- the airframe, in the rig's coordinates --------------------------------
 //
-// `Vehicle` parents the rig half a hull below the collider's origin, so y = 0
-// here is the BOTTOM of the box and the skids stand on it. +z is the nose and
-// +x is starboard.
+// `VehicleView` parents the rig half a hull below the collider's origin, so
+// y = 0 here is the BOTTOM of the box and the skids stand on it. +z is the nose
+// and +x is starboard. The skids' extents and the chin gun's joints — what the
+// simulation reads — are `heliFrame.ts`'s, imported above.
 
-/** How far out the two skid runners stand. The gauge, and the roll stance. */
-const SKID_X = 1.16;
-/** Half the skid's length — the contact patch, fore and aft. */
-const SKID_REACH = 1.9;
 /** Skid tube radius, and therefore how high the fuselage floats over the pad. */
 const SKID_R = 0.085;
-/** The gauge `Vehicle` splits one hull speed into two side speeds with. */
-const SKID_TRACK = SKID_X * 2;
 /** Where each cross tube meets the runners, fore and aft. */
 const SKID_STATIONS = [1.16, -0.92] as const;
 
@@ -388,39 +388,6 @@ const WING_DROP = 0.7;
 const WING_OVERHANG = 0.4;
 /** Where the rocket pod's pylon stands, and therefore the pod's centreline. */
 const PYLON_X = 1.0;
-
-/**
- * The chin turret's trunnion, and how far the muzzle reaches from it.
- *
- * `MG_REACH` is spent twice and they are the same number by construction: it is
- * where `mgMuzzle` sits, and it is therefore the RADIUS of the circle the
- * barrel sweeps under the nose. Nothing on the belly may be inside it.
- */
-const MG_Y = 0.6;
-const MG_Z = 4.75;
-const MG_REACH = 0.7;
-
-/**
- * This kind's joints as numbers (`entities/hullFrame.ts`), which `buildHeli`
- * places its nodes FROM, so the simulation's replay and the drawn chin gun
- * cannot drift. The ring is INERT and at the sprung body's origin, the gun
- * hangs at its mount's own origin, and there is no main gun. The skids ARE
- * the suspension and the contact patch at once, exactly as a truck's axles
- * are, so the two reaches are the same number here — stated twice rather than
- * aliased, because the day one of them moves is the day that matters.
- */
-export const HELI_FRAME: HullFrame = {
-  gauge: SKID_TRACK,
-  contactReach: SKID_REACH,
-  wheelReach: SKID_REACH,
-  turretAt: [0, 0, 0],
-  gun: null,
-  mgMountAt: [0, MG_Y, MG_Z],
-  mgGunAt: [0, 0, 0],
-  mgMuzzleAt: [0, 0, MG_REACH],
-  // The gunner's eye — see `mgSight` for the three clearances that bound it.
-  mgSightAt: [-0.32, 0.13, 0.3],
-};
 
 /** The two aerials' lengths, both off the boom top and both bounded by the DISC. */
 const ANTENNA_LENGTH = 0.66;
@@ -1316,7 +1283,7 @@ export function buildHeli(
  * `VehicleRig.setRun`.
  *
  * **The gear ratio between the two is a DRAWING decision and lives here**, not
- * in the config: what `Vehicle` holds is one rotor angle, and how much faster
+ * in the config: what the hull holds is one rotor angle, and how much faster
  * the tail turns than the main is a fact about this aircraft's transmission and
  * about nothing else. The remainder is taken the long way for `setWheelRun`'s
  * reason — `%` keeps the sign of its left operand in JS.

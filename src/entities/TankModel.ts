@@ -57,28 +57,48 @@
  * road wheels are not. Widen the pitch or shrink an end wheel and links appear
  * out of the air at the ends of the tracks.
  *
- * `Vehicle` owns how far each track has run and this file owns what that looks
- * like; `TRACK_GAUGE` is exported because splitting one hull speed into two
- * track speeds needs the distance between them, and that distance is a drawing
- * decision made here.
+ * The hull's VIEW owns how far each track has run (`VehicleView`) and this file
+ * owns what that looks like; `TRACK_GAUGE` is a frame number
+ * (`tankFrame.ts`) because splitting one hull speed into two track speeds
+ * needs the distance between them, and that distance is a drawing decision
+ * the simulation also reads.
  *
  * ## Four more move, and they are the two antennae
  *
  * A whip is the one part of a tank that is not a rigid body, and it is drawn as
  * two links so that it can BOW: the lower turns at the mast foot and the upper
- * hangs off its top, taking the leftover angle. `Vehicle` owns the bend for the
- * same reason it owns the track run — it is a consequence of the drive, and of
- * how fast the hull the mast is bolted to is leaning — and this file owns what
- * it looks like. `ANTENNA_LENGTHS` is exported on `TRACK_GAUGE`'s precedent:
- * the two lengths are a drawing decision, and the spring that bends them is
- * scaled by their ratio rather than tuned twice.
+ * hangs off its top, taking the leftover angle. `HullWhips` owns the bend — it
+ * is a consequence of the drive, and of how fast the hull the mast is bolted
+ * to is leaning, as the hull tells its view — and this file owns what it looks
+ * like. `ANTENNA_LENGTHS` is exported because the two lengths are a drawing
+ * decision, and the spring that bends them is scaled by their ratio rather
+ * than tuned twice.
+ *
+ * ## The numbers the simulation reads are not in this file
+ *
+ * Everything on the path from the collider box to a muzzle — the deck, the
+ * turret ring, the trunnion, the barrel's end, the cupola gun's mount — and the
+ * running gear's three extents are `tankFrame.ts`'s, Babylon-free, so the
+ * authority can replay a muzzle without importing a drawing. This file IMPORTS
+ * them and places its nodes from them, so the two cannot drift.
  */
 import { Scene, TransformNode } from "@babylonjs/core";
 import { CONFIG } from "../config";
 import type { CelMaterialFactory } from "../shaders/CelShader";
 import type { Team } from "./Combatant";
 import { viewTeam } from "../core/teamView";
-import type { HullFrame } from "./hullFrame";
+import {
+  BARREL_END,
+  CUPOLA_Y,
+  DECK_Y,
+  END_Z,
+  TANK_FRAME,
+  TANK_GUN,
+  TRACK_W,
+  TRACK_X,
+  TURRET_Y,
+  WHEEL_REACH,
+} from "./tankFrame";
 import { extrude, rodBetween, solidBetween, type Point3, type ProfilePoint } from "./facet";
 import {
   paintRig,
@@ -166,9 +186,6 @@ const KITS: readonly TankKit[] = [
   },
 ];
 
-/** The gun barrel's length, which the muzzle node sits at the end of. */
-const BARREL_LENGTH = 4.4;
-
 // --- the running gear's own frame, in the rig's coordinates ----------------
 //
 // Everything about a track hangs off these five numbers, and three of them are
@@ -181,25 +198,12 @@ const BARREL_LENGTH = 4.4;
 const BELT = 0.16;
 /** The top of the return run, above the ground face the hull stands on. */
 const LOOP = 1.0;
-/** How wide the band is. The wheels are proud of it; nothing else is. */
-const TRACK_W = 0.66;
 /** Sprocket and idler: exactly loop-sized, which is what hides the strips' seam. */
 const END_R = LOOP / 2;
 /** Every wheel on the vehicle turns about this height. */
 const HUB_Y = LOOP / 2;
 /** Road wheels, which are smaller than the two that close the loop. */
 const ROAD_R = 0.34;
-/**
- * How far the road wheels reach fore and aft of the hull's centre.
- *
- * Exported on `TRACK_GAUGE`'s precedent, and it is NOT `TRACK_REACH`: the
- * suspension's travel is bounded at the wheel STATIONS rather than at the ends
- * of the belt, because a bump stop is something a road-wheel arm reaches and
- * the sprocket and the idler have no arms at all. `Vehicle` cannot say how far
- * the body may tilt without knowing where the outermost wheel is, and where it
- * is is a drawing decision made here.
- */
-const WHEEL_REACH = 2.11;
 /**
  * How far the tub's floor stands above the face the tracks stand on — this
  * vehicle's ground clearance, and therefore the ceiling on how far its body
@@ -236,86 +240,18 @@ const TURRET_W = 2.56;
  */
 const ANTENNA_FEET = [[1.08, -1.5], [-1.08, -1.7]] as const;
 
-/** Half the hull, less half a band, less the 6 cm the sponson overhangs by. */
-const TRACK_X = CONFIG.vehicles.tank.hull.width / 2 - TRACK_W / 2 - 0.06;
-/** Where the sprocket and the idler stand, fore and aft of the hull's centre. */
-const END_Z = CONFIG.vehicles.tank.hull.length / 2 - 0.6;
-
-/**
- * How far fore and aft of the hull's centre the ground run actually reaches —
- * the sprocket at one end and the idler at the other, which is where a track
- * stops touching anything.
- *
- * Exported on `TRACK_GAUGE`'s precedent and for the same reason: `Vehicle` stands
- * the hull on six TRACK CONTACTS and cannot place them without knowing where
- * the tracks are, and where they are is a drawing decision made here. Using
- * the collider's own half-length instead would sample 0.6 m past the end of
- * the belt at each end, which is a hull rearing up on a kerb its tracks have
- * not reached yet.
- */
-const TRACK_REACH = END_Z;
-
-/**
- * The distance between the two tracks' centrelines.
- *
- * Exported because `Vehicle` splits one hull speed into two track speeds and
- * cannot do it without this — a hull turning at `w` rad/s runs its outer track
- * `w * TRACK_GAUGE / 2` faster than its inner one, which is the whole of why a
- * tank pivoting on the spot has its tracks going opposite ways. It is a
- * DRAWING decision (the bands could be anywhere across the hull), so it is
- * decided here and read there rather than restated in `CONFIG`.
- */
-export const TRACK_GAUGE = TRACK_X * 2;
-
 /**
  * The two whip antennae's lengths in metres, the long one first.
  *
- * Exported for the same reason `TRACK_GAUGE` is: it is a DRAWING decision made
- * here (the masts could be any length), and `Vehicle` cannot bend them without it.
+ * Exported for the reason `TRACK_GAUGE` is a frame number: it is a DRAWING
+ * decision made here (the masts could be any length), and the whips cannot be
+ * bent without it.
  * A cantilever's natural frequency goes as 1/L^2, so the ratio between these
  * two numbers is the whole of why the pair never swing in step — one config
  * spring is scaled by it rather than the short mast being given figures of its
  * own. See `CONFIG.vehicles.tank.antenna`.
  */
 export const ANTENNA_LENGTHS = [1.5, 1.2] as const;
-
-/**
- * The hull's top, and therefore where the turret ring sits. Derived from the
- * collider's own height rather than authored, so that raising the box raises
- * the vehicle drawn inside it: what is left above this is the 0.95 m the ring
- * and the turret need to reach the top of the box exactly.
- */
-const DECK_Y = CONFIG.vehicles.tank.hull.height - 0.95;
-/** The turret ring, 6 cm proud of the deck. */
-const TURRET_Y = DECK_Y + 0.06;
-/** Where the commander stands, in the turret's own frame. */
-const CUPOLA_Y = CONFIG.vehicles.tank.cupolaHeight - TURRET_Y;
-/** Where the barrel ends, along the gun's own axis. */
-const BARREL_END = 0.45 + BARREL_LENGTH;
-
-/** The main gun's trunnion on the turret, and its muzzle just past the barrel. */
-const TANK_GUN = {
-  at: [0, 0.45, 1.25],
-  muzzleAt: [0, 0, BARREL_END + 0.2],
-} as const;
-
-/**
- * This kind's joints as numbers (`entities/hullFrame.ts`), which `buildTank`
- * places its nodes FROM — so the muzzle the simulation replays off these and
- * the one drawn on the rig cannot drift apart. The three extents are the
- * drawing decisions `Vehicle` cannot get anywhere else: see `HullFrame`.
- */
-export const TANK_FRAME: HullFrame = {
-  gauge: TRACK_GAUGE,
-  contactReach: TRACK_REACH,
-  wheelReach: WHEEL_REACH,
-  turretAt: [0, TURRET_Y, -0.3],
-  gun: TANK_GUN,
-  mgMountAt: [-0.62, CUPOLA_Y + 0.3, 0.15],
-  mgGunAt: [0, 0.12, 0.16],
-  mgMuzzleAt: [0, 0.02, 1.1],
-  mgSightAt: [0, 0.22, 0.3],
-};
 
 /** One side's moving parts: the two link strips and the toothed sprocket. */
 interface TrackSide {
@@ -1126,8 +1062,9 @@ export function buildTank(
  *
  * The two figures are per TRACK and not per hull: a tank pivoting on the spot
  * has one of them positive and the other negative, which is the read that says
- * "tracks" rather than "wheels". `Vehicle` owns them — how far a track has run is
- * a consequence of the drive — and everything below is the picture.
+ * "tracks" rather than "wheels". The hull's view owns them (`VehicleView`) — how
+ * far a track has run is a consequence of the drive, which the hull tells it —
+ * and everything below is the picture.
  *
  * **The strips are slid modulo the pitch and the sprocket is turned modulo a
  * revolution**, both because the alternative is a coordinate that grows without

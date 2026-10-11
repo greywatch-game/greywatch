@@ -101,8 +101,8 @@ round alone owns what is about a *fight* — battle, conquest, flag markers, min
 
 **Its disposal half is a method of its own, `teardownMap`, and the MENU calls it
 alone.** It puts every system `installMap` hands a map to back as it was at
-boot: the map disposed and `Game.map` null, the fleet, crews and rotor rings let
-go, the water and grass disposed, the reflection probes parked, the mote field
+boot: the map disposed and `Game.map` null, the fleet's views (`VehicleViews`,
+before the fleet they draw), the fleet, crews and rotor rings let go, the water and grass disposed, the reflection probes parked, the mote field
 stopped, both shadow maps' casters and the lamps' atlas emptied, the bodies' blob shadows hidden, the traced
 bounce's buffers dropped, the candidate list and the physics world cleared (with
 their corpses, shards and rubble), and the fires' voices and the storm's thunder
@@ -196,7 +196,15 @@ worked example: `BattleView.update` runs right after `battle.update` in
 the bodies' shadow map, the mesh walk, a ragdoll built off a bot's joints in
 `stepShots` — and `BattleView.hideAll` sits beside every `battle.reset`, so a
 reset round shows no body for a frame. The body draw distance `installMap`
-pushes goes to `BattleView`, `RagdollSystem` and `NetRoster` together.
+pushes goes to `BattleView`, `RagdollSystem` and `NetRoster` together. **The
+fleet's picture is the same shape on BOTH sides**: `VehicleViews.update` runs
+right after `vehicles.update` at each of its two call sites — after
+`crushSweep` offline, after `syncNetVehicles` and the step in a match — before
+anything reads a node (the two shadow maps' boxes are off each view's body);
+`installMap` builds the views right after `vehicles.build`, one per hull by
+hardstanding, and `teardownMap` takes them down before the fleet. What a view
+must hear between two of those updates — a placing, a shot, each step's belts
+and mass — it is told as it happens, through the hull's `HullPicture`.
 
 **They are TWO blocks rather than one because the armour goes between them, and
 it goes in a different place on each side**: offline the fleet is stepped before

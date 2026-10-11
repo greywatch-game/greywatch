@@ -27,6 +27,7 @@
  * its arguments, or decide a policy — a size, a weapon, a seat.
  */
 import { Vector3 } from "@babylonjs/core";
+import type { Vector3Like } from "../src/math";
 import type { Vec3 } from "../src/net/protocol";
 
 /**
@@ -125,7 +126,7 @@ export function withinCone(look: Vector3, dir: Vector3, cos: number): boolean {
 }
 
 /** Whether a claimed `origin` is within `max` metres of where the authority holds it. */
-export function withinSlip(origin: Vec3, expected: Vector3, max: number): boolean {
+export function withinSlip(origin: Vec3, expected: Vector3Like, max: number): boolean {
   const [x, y, z] = origin;
   return Math.hypot(x - expected.x, y - expected.y, z - expected.z) <= max;
 }

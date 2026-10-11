@@ -73,7 +73,7 @@ export interface LocalState {
 export interface LocalHull {
   /** The hardstanding index — the hull's identity on the wire. */
   tank: number;
-  position: Vector3;
+  position: Vector3Like;
   yaw: number;
   turretYaw: number;
   gunPitch: number;
@@ -556,7 +556,7 @@ export class NetSession {
    * down its own copy of that axis regardless — this is what the cone check
    * bounds, not what the round is resolved along.
    */
-  sendShell(origin: Vector3, dir: Vector3): void {
+  sendShell(origin: Vector3Like, dir: Vector3Like): void {
     if (!this.seated) return;
     this.conn.send({
       t: "shell",
@@ -576,7 +576,7 @@ export class NetSession {
    * `dir` is the machine gun's own axis and not the camera's, which is the
    * same half of the reticle rule the shell's is.
    */
-  sendMg(origin: Vector3, dir: Vector3): void {
+  sendMg(origin: Vector3Like, dir: Vector3Like): void {
     if (!this.seated) return;
     this.conn.send({
       t: "mg",

@@ -1620,6 +1620,17 @@ walking is trusted about their own legs, and about nothing else.** The full
 argument is in [`docs/vehicles.md`](vehicles.md) under "Armour in a match"; what
 belongs here is the wire's half of it.
 
+**The authority's fleet is the SIMULATION alone** (`BABYLON_EXIT.md` X2.2 C9):
+`Vehicle` and `VehicleSystem` need no scene and no material factory, and
+`HeadlessGame` builds neither — it was holding a `CelMaterialFactory` for the
+fleet's rigs and nothing else, and that factory and the whole cel-shader chain
+under it left the server's closure with them. The body box, the rig, the belts,
+the whips and the charred paint are each hull's `VehicleView`, which only a
+client constructs, over the same hulls it poses from the wire. So none of the
+picture travels — the lean, the springs, the belts and the masts are worked out
+on each screen as they always were — and what a muzzle is replayed off (the
+pose, guards and all) is simulated on both sides.
+
 `PROTOCOL_VERSION` went to 4 for this, and it is worth being clear about why,
 because every field added was additive in the ordinary sense. A version-3
 client would ignore `Snapshot.vehicles`, draw no hulls and send no `mount` —

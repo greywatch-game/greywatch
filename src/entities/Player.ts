@@ -1445,7 +1445,7 @@ export class Player implements Combatant {
    *
    * `feet`, like everything else that crosses the wire — see `position`.
    */
-  nudgeTo(feet: Vector3): void {
+  nudgeTo(feet: Vector3Like): void {
     this.root.position.set(feet.x, feet.y + this.groundY, feet.z);
     this.syncCombatant();
   }

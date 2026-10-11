@@ -1,24 +1,30 @@
 /**
  * vehicleKinds.ts — The list of vehicles that exist, and the ONE place a kind
- * is turned into the two things a hull is made of.
- * Owns: the `VehicleKind` union and the table pairing each kind's
- * `VehicleSpec` and `HullFrame` with the function that builds its mesh.
- * Owns NO behaviour. `entities/Vehicle.ts` is one hull of any kind and has
- * never heard of this file; `systems/VehicleSystem.ts` is the only reader, and
- * it reads it once per hardstanding at map load.
+ * is turned into what a hull is made of.
+ * Owns: the `VehicleKind` union, the default kind (`resolveKind`), and the
+ * table pairing each kind's name with its `VehicleSpec` and its `HullFrame`.
+ * Owns NO behaviour and NO drawing: **no `@babylonjs/core`**, because the
+ * authority builds its fleet from this table and has no scene to build a rig
+ * in. What a kind LOOKS like is the client's own table,
+ * `entities/vehicleModels.ts`, keyed by the same union.
+ * `entities/Vehicle.ts` is one hull of any kind and has never heard of either
+ * file; `systems/VehicleSystem.ts` reads this one once per hardstanding at map
+ * load, and the client's `systems/VehicleViews.ts` reads the other beside it.
  *
  * ## Why a table and not a branch
  *
  * A vehicle in this game is exactly two things — a block of numbers
- * (`CONFIG.vehicles.<kind>`, shaped by `VehicleSpec`) and a model that draws
- * them, which hands over a `VehicleRig` and states a `HullFrame` (where its
- * joints are, which the simulation reads instead of the rig) — and
- * everything else about it, the collider and the drive and
+ * (`CONFIG.vehicles.<kind>`, shaped by `VehicleSpec`, with the `HullFrame` its
+ * model states beside it: where its joints are, which the simulation reads
+ * instead of a rig) and a model that draws them, which hands over a
+ * `VehicleRig` — and everything else about it, the collider and the drive and
  * the ten ground contacts and the two seats and the chase camera and the
  * crush, is machinery that reads those two and nothing else. So a fourth kind
- * is a row here, a block in `config/vehicles.ts` and a model file, and NO
- * `if` anywhere: the moment a system asks which kind it is holding, that
- * bargain is broken.
+ * is a member of `VehicleKind`, a row here, a block in `config/vehicles.ts`, a
+ * frame file, a model file and a row in `vehicleModels.ts` — and both tables
+ * are `Record<VehicleKind, …>`, so a kind with a row in one and not the other
+ * does not compile. And NO `if` anywhere: the moment a system asks which kind
+ * it is holding, that bargain is broken.
  *
  * **The helicopter was the test of that and it held.** It is the one kind so
  * far that needed anything the other two did not, and what it needed was a
@@ -40,21 +46,17 @@
  *
  * `VehicleSpawnDef.kind` is a string in a layout file, defaulting to `"tank"`
  * so that the maps written before there was a second kind say nothing and are
- * unaffected. That default is stated once, here, rather than at each of the
- * three readers (the fleet, `MapBuilder.keepClear`, the editor) — three copies
- * of a default is three places for a map to mean different things to different
- * halves of the game.
+ * unaffected. That default is stated once, here (`resolveKind`), rather than
+ * at each of the readers (the fleet, its views, `MapBuilder.keepClear`, the
+ * editor) — copies of a default are places for a map to mean different things
+ * to different halves of the game.
  */
 import { CONFIG } from "../config";
 import type { VehicleSpec } from "../config/vehicles";
-import type { Team } from "./Combatant";
-import { buildHeli, HELI_FRAME } from "./HeliModel";
+import { HELI_FRAME } from "./heliFrame";
 import type { HullFrame } from "./hullFrame";
-import { buildTank, TANK_FRAME } from "./TankModel";
-import { buildTruck, TRUCK_FRAME } from "./TruckModel";
-import type { VehicleRig } from "./vehicleRig";
-import type { CelMaterialFactory } from "../shaders/CelShader";
-import type { Scene } from "@babylonjs/core";
+import { TANK_FRAME } from "./tankFrame";
+import { TRUCK_FRAME } from "./truckFrame";
 
 /**
  * What kinds of vehicle exist. A map's hardstanding names one of these, and a
@@ -62,7 +64,7 @@ import type { Scene } from "@babylonjs/core";
  */
 export type VehicleKind = "tank" | "truck" | "heli";
 
-/** The two halves of one kind, as `VehicleSystem` needs them, and its name. */
+/** One kind as the SIMULATION needs it: its name, its numbers and its joints. */
 export interface VehicleType {
   /**
    * What the HUD calls it, upper case — `ENTER TANK`, `TAKE OVER TRUCK`,
@@ -84,11 +86,6 @@ export interface VehicleType {
    * the rig.
    */
   readonly frame: HullFrame;
-  readonly build: (
-    scene: Scene,
-    mats: CelMaterialFactory,
-    team: Team,
-  ) => VehicleRig;
 }
 
 /**
@@ -96,15 +93,21 @@ export interface VehicleType {
  * member of `VehicleKind` fails to compile until it has a row.
  */
 const VEHICLE_KINDS: Record<VehicleKind, VehicleType> = {
-  tank: { name: "TANK", spec: CONFIG.vehicles.tank, frame: TANK_FRAME, build: buildTank },
-  truck: { name: "TRUCK", spec: CONFIG.vehicles.truck, frame: TRUCK_FRAME, build: buildTruck },
-  heli: { name: "HELI", spec: CONFIG.vehicles.heli, frame: HELI_FRAME, build: buildHeli },
+  tank: { name: "TANK", spec: CONFIG.vehicles.tank, frame: TANK_FRAME },
+  truck: { name: "TRUCK", spec: CONFIG.vehicles.truck, frame: TRUCK_FRAME },
+  heli: { name: "HELI", spec: CONFIG.vehicles.heli, frame: HELI_FRAME },
 };
 
 /**
  * The kind a hardstanding stands for, resolved. **The one place the default is
- * written down** — see the header.
+ * written down** — see the header. `vehicleModels.modelOf` resolves through
+ * this too, so a hardstanding's numbers and its drawing cannot be of two kinds.
  */
+export function resolveKind(kind: VehicleKind | undefined): VehicleKind {
+  return kind ?? "tank";
+}
+
+/** The kind a hardstanding stands for, as the simulation needs it. */
 export function kindOf(kind: VehicleKind | undefined): VehicleType {
-  return VEHICLE_KINDS[kind ?? "tank"];
+  return VEHICLE_KINDS[resolveKind(kind)];
 }

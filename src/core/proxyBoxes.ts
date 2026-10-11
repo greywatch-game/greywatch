@@ -30,7 +30,7 @@ export interface ShadowBody {
 
 /**
  * What a shadow needs of a vehicle: its collider box and that box's size.
- * `Vehicle` satisfies this structurally. See `BodyShadows` for why the
+ * `VehicleView` satisfies this structurally — its body box follows the hull. See `BodyShadows` for why the
  * COLLIDER rather than the drawn rig.
  */
 export interface ShadowHull {

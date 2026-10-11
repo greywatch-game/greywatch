@@ -4,9 +4,13 @@ What a vehicle IS to each subsystem that meets one, why it is the only moving
 `solid` mesh in the game, how a driver's frame differs from a body's, and what
 is deliberately not built. Split out of [`CLAUDE.md`](../CLAUDE.md), which keeps
 the summary; this file is the contract for `src/entities/Vehicle.ts`,
-`src/entities/vehicleRig.ts`, `src/entities/vehicleKinds.ts`,
+`src/entities/VehicleView.ts`, `src/entities/HullSprings.ts`,
+`src/entities/HullWhips.ts`, `src/entities/vehicleRig.ts`,
+`src/entities/vehicleKinds.ts`, `src/entities/vehicleModels.ts`, the three
+frame files (`tankFrame.ts`, `truckFrame.ts`, `heliFrame.ts`),
 `src/entities/TankModel.ts`, `src/entities/TruckModel.ts`,
-`src/entities/HeliModel.ts`, `src/systems/VehicleSystem.ts`, `src/systems/VehicleCamera.ts`,
+`src/entities/HeliModel.ts`, `src/systems/VehicleSystem.ts`,
+`src/systems/VehicleViews.ts`, `src/systems/VehicleCamera.ts`,
 `src/systems/VehicleCrew.ts`, `src/systems/crewPilot.ts` and for `Game`'s
 `updateDriver` / `frameVehicleCamera` / `mount` / `dismount` /
 `clearVehicle` / `resolveShell` / `offeredSeat`.
@@ -25,21 +29,28 @@ same arithmetic it always was on both older kinds. See "Flying, and what
 ## The shape of it
 
 A vehicle is a block of NUMBERS and a MESH, and everything else is machinery
-that reads those two:
+that reads those two — and since `BABYLON_EXIT.md` X2.2 C9 the machinery is in
+two halves, the SIMULATION (everything the authority builds, no Babylon) and the
+PICTURE (only a client builds it); see "The hull and its picture" below:
 
 | the thing | what it owns |
 | --- | --- |
 | `MapLayout.vehicles` | where each side's vehicles stand, and WHAT stands there. One `VehicleSpawnDef` per hardstanding; absent on two of the five shipped maps |
 | `MapLayout.vehicles` (again) | and on Sarab, THREE a side — a tank, a gun truck and a helicopter |
 | `config/vehicles.ts` | `VehicleSpec` — the shape of one kind — and the three kinds: the TANK, the gun TRUCK and the HELICOPTER |
-| `entities/vehicleKinds.ts` | the ONE place a kind becomes a name, a spec and a model, and the one place the default (a tank) is written down |
-| `entities/vehicleRig.ts` | what every vehicle's mesh IS: the joints `Vehicle` writes, the three extents the physics needs off the drawing, and the three closures a model hands back |
+| `entities/vehicleKinds.ts` | the ONE place a kind becomes a name, a spec and a frame (no Babylon — the authority reads it), and the one place the default (a tank) is written down (`resolveKind`) |
+| `entities/tankFrame.ts`, `truckFrame.ts`, `heliFrame.ts` | each kind's `HullFrame` — the three extents the physics needs off the drawing and the offset of every joint between the collider box and a muzzle — and the drawing constants they are derived from, which the model files IMPORT |
+| `entities/vehicleModels.ts` | the client's twin of `VEHICLE_KINDS`: kind to the model that draws it, a `Record` over the same union |
+| `entities/vehicleRig.ts` | what every vehicle's mesh IS: the joints a hull's view writes and the three closures a model hands back |
 | `entities/TankModel.ts`, `entities/TruckModel.ts`, `entities/HeliModel.ts` | the ART, one file per kind — the boxes, the running gear, the whips and the guns as JOINTS over them, and the charred repaint a wreck takes |
 | `entities/hullSeats.ts` | the two chairs (`CrewSeat`: `DRIVER`, `GUNNER`), the order they fill in (`SEATS`), and `chooseSeat`, the one boarding rule — no vehicle, no import, so the authority's roster can name a seat without pulling in a hull |
-| `entities/Vehicle.ts` | one hull of any kind: its collider, its drive, its turret, its two guns' clocks and angles, which of its two seats are filled, its health, and the ground half of its lean |
-| `entities/HullFlex.ts` | what the hull's own mass does to the drawing: the sprung body's three springs and the antennae |
+| `entities/Vehicle.ts` | one hull of any kind: its collider, its drive, its turret, its two guns' clocks and angles, which of its two seats are filled, its health, the ground half of its lean, and the `HullPose` its joints are drawn at — the SIMULATION, no mesh |
+| `entities/HullSprings.ts` | what the hull's own mass does to its sprung body: three springs on one travel budget, on the muzzle's path, so simulated |
+| `entities/VehicleView.ts` | one hull's PICTURE: the body box, the rig, the belts' run, the whips and the paint, copied and followed off the hull |
+| `entities/HullWhips.ts` | the two antennae bending — the picture's one simulation of its own |
 | `entities/FlightModel.ts` | the rotor, on a kind that states `flight`: the spool, the disc's attitude, the cyclic, thrust and collective, and the attitude a hull on the wire is drawn at |
 | `systems/VehicleSystem.ts` | the fleet: build, the respawn clock, the wreck clock, which seat a boarder gets, and where a dismount lands |
+| `systems/VehicleViews.ts` | the fleet's picture: one `VehicleView` per hull, by hardstanding, built and taken down with the map |
 | `systems/VehicleCamera.ts` | the view from behind a hull, and its pull-in |
 | `systems/VehicleCrew.ts` | the bots that crew: which body is in which SEAT of which hull, where it is taking it, and what each of its guns is laid on |
 | `systems/crewPilot.ts` | the bot at the sticks of a hull that flies: the held heading, the air fan, the collective and the cyclic, and the flow-field `route` both seats ask |
@@ -53,12 +64,16 @@ hardstanding.
 ## Three kinds, and the TWO capabilities between them
 
 **There are three vehicles and no code that knows it.** `Vehicle` is handed a
-`VehicleSpec` and a rig BUILDER by `VehicleSystem` and never learns which kind
+`VehicleSpec` and a `HullFrame` by `VehicleSystem` and never learns which kind
 it is — `CONFIG.vehicles.tank` used to be read in forty-three places in that
-file and every one of them is `this.spec` now. A fourth kind is a row in
-`VEHICLE_KINDS`, a block in `config/vehicles.ts` and a model file, and no `if`
-anywhere. **The moment a system asks which kind it is holding, that bargain is
-broken.**
+file and every one of them is `this.spec` now. A fourth kind is a member of
+`VehicleKind`, a block in `config/vehicles.ts`, a frame file, a model file and a
+row in each of TWO tables — `VEHICLE_KINDS` (name, spec, frame) and the one in
+`vehicleModels.ts` (the model) — both `Record<VehicleKind, …>`, so a kind with a
+row in one and not the other does not compile; and no `if` anywhere. The view
+pool looks the model up BY the hardstanding's kind (`modelOf`, through the same
+`resolveKind` default), which is a lookup and not a branch. **The moment a
+system asks which kind it is holding, that bargain is broken.**
 
 **Two things a kind genuinely differs by in code, and neither is asked as a
 kind.** Both are one nullable block in the spec resolved once into one boolean,
@@ -101,16 +116,18 @@ The first, in full:
 without an interface that lies. A tank's running gear is two belts of scrolling
 links and a truck's is four wheels that turn and two that steer, and no shape
 over both is honest — so `VehicleRig` does not describe running gear at all. It
-carries `setRun(left, right, steer)`, a closure the builder made, and `Vehicle`
-hands it the two distances and the stick it already has. `reset` and `paint` are
-the same bargain for the respawn and the wreck. The three numbers the physics
-cannot get anywhere else — `gauge`, `contactReach`, `wheelReach` — are stated on
-the model's `HullFrame` (`entities/hullFrame.ts`), beside the offset of every
-joint between the collider box and a muzzle, and `vehicleKinds.ts` hands it to
-the hull with the spec: that is what stopped `Vehicle` importing from a model
-file at all, and since `BABYLON_EXIT.md` X2.2 C8 it is what keeps the
-simulation off the rig. Each model places its nodes FROM its frame, so the two
-cannot drift.
+carries `setRun(left, right, steer, rotor)`, a closure the builder made, and the
+hull's VIEW hands it the two distances, the stick and the disc the hull told it
+(`HullPicture.rolled`). `reset` and `paint` are the same bargain for the respawn
+and the wreck. The three numbers the physics cannot get anywhere else —
+`gauge`, `contactReach`, `wheelReach` — are stated on the kind's `HullFrame`
+(`entities/hullFrame.ts`), beside the offset of every joint between the
+collider box and a muzzle, in a frame file of its own that the model IMPORTS
+and places its nodes FROM, so the two cannot drift; `vehicleKinds.ts` hands it
+to the hull with the spec. That is what stopped `Vehicle` importing from a
+model file at all, since `BABYLON_EXIT.md` X2.2 C8 it is what keeps the
+simulation off the rig, and since C9 it is what keeps the model files off the
+authority.
 
 ### What the TRUCK is, and the trade it is
 
@@ -157,7 +174,7 @@ frame-rate exact by construction rather than through the `Math.min(1, dt *
 rate)` idiom, which never quite arrives and arrives differently at 30 Hz. It is
 deliberately the same three lines as the throttle's walk toward its wanted
 speed: both are a control the driver ASKS with and the hull answers at its own
-rate. The DRAWN wheels take it too (`steerShown` is fed from the linkage), or a
+rate. The DRAWN wheels take it too (the view is told the linkage, not the stick), or a
 truck would be telling two stories about one mechanism.
 
 The tank's is 8 — a tenth of a second, a hand pulling a tiller, near enough
@@ -227,9 +244,10 @@ whose turning can be SEEN**. A road wheel is a disc, and a disc rotating about
 its own axis is indistinguishable from a disc at rest; giving each one a node
 would be twelve more meshes to animate nothing.
 
-**Two figures go in and they are per TRACK, not per hull.** `Vehicle` keeps
-`trackRun[2]`, adds `speed ± yawRate * TRACK_GAUGE / 2` to them each frame and
-hands both to `setTrackRun`. That is what makes a neutral-steer pivot — which
+**Two figures go in and they are per TRACK, not per hull.** The hull's view
+(`VehicleView`) keeps `trackRun[2]`, adds `speed ± yawRate * TRACK_GAUGE / 2`
+to them each step the hull tells it about (`HullPicture.rolled`) and hands both
+to `setTrackRun`. That is what makes a neutral-steer pivot — which
 this vehicle can do at a standstill — come out as the two tracks running
 opposite ways, and it is derived rather than decided: the drive is still one
 speed and one yaw rate. Nothing in the game may read it back. A track that has
@@ -673,7 +691,7 @@ one that carries the weight. `VehicleRig.sprung` is everything the springs carry
 the tub, the sponson, the stowage, the marking and the whole turret with the
 gun and the masts on it — and it hangs off `VehicleRig.hull` with the RUNNING GEAR
 left behind on the hull node: the belts, the road wheels, the idlers, the
-sprockets and the link strips. `HullFlex.flexHeave` moves it in Y and never rotates
+sprockets and the link strips. `HullSprings.flexHeave` moves it in Y and never rotates
 it, so a compressing hull compresses along its own up axis rather than the
 world's.
 
@@ -761,7 +779,7 @@ The two whips are the third picture on this vehicle and the furthest out from
 the drive. A mast is a thin cantilever bolted to the turret roof, and the three
 things that bend one are all numbers the hull already has: the acceleration
 the drive achieved, how fast the hull node the foot is bolted to is ROTATING,
-and the wind. So it is two damped springs a mast (`HullFlex.flexAntennae`), and it
+and the wind. So it is two damped springs a mast (`HullWhips.step`), and it
 was asked whether it should be a physics chain instead. It should not, and the
 reasons are worth writing down because the question will come back:
 
@@ -814,8 +832,9 @@ is greatest at the root — and the upper takes what is left over, which is wher
 the shape comes from. The angle handed to the upper link is a LAGGED copy of the
 spring's, so while the mast is moving the leftover goes negative and the two
 links bend against each other into an S, and when it settles they agree and it
-is one smooth bow. `setAntennaBend` is the whole of that, and `Vehicle` owns the
-numbers exactly as it owns `trackRun`.
+is one smooth bow. `setAntennaBend` is the whole of that, and `HullWhips` owns
+the numbers exactly as the view owns `trackRun` — a picture's, told each step
+the hull takes (`HullPicture.flexed`, `kicked`) and read back by nothing.
 
 **The two masts are one spring scaled by their own lengths.** A cantilever's
 natural frequency goes as 1/L^2, so `ANTENNA_LENGTHS` (1.5 and 1.2) is exported
@@ -1004,7 +1023,7 @@ been carried away out of every ray, every sweep, the deck and the crush in one
 write. It used to be `body.isEnabled() && body.isPickable`, the terms
 `SOLID_ONLY` reads; since `BABYLON_EXIT.md` X2.2 C8 it is a field and the body
 mesh merely follows it (enabled, and pickable for the editor, exactly while
-present). **The bug that found the pickable term was the ground probe's**, back
+present) — since C9 the body mesh is the VIEW's (`VehicleView.update`). **The bug that found the pickable term was the ground probe's**, back
 when the ground was a ray: it started INSIDE the box it was meant to ignore,
 found the hull's own underside, pinned `floorY` to whatever height the tracks
 already had, and a hull lifted by anything — Babylon's own collision response
@@ -1033,16 +1052,56 @@ firing and sighting all three kinds.
 
 **The pose is what the joints hold AS DRAWN, and that is not what the springs
 want.** The ground lean (`leanHull`) and the suspension's tilt and heave
-(`HullFlex.lean`, `flexHeave`) are written to their nodes only when they have
-moved by more than 1e-5, so a drawn joint trails its spring by up to that —
-and the muzzle was always read off the drawn joint. So `HullPose` is written
-exactly where, and exactly when, its node is (and zeroed beside `rig.reset`),
+(`HullSprings.lean`, `flexHeave`) were written to their nodes only when they
+had moved by more than 1e-5, so a drawn joint trails its spring by up to that —
+and the muzzle was always read off the drawn joint. So `HullPose` keeps those
+guards (and is zeroed by `placeAt`, as the rig is reset on the same placing),
 and the guards are on the muzzle's path: changing one moves the fight hash.
+Since C9 it is the RECORD that is written and the view that copies it onto the
+nodes, never the other way (see "The hull and its picture").
 Measured: on a seed-777 Sarab round 15,090 of 27,707 reads were taken while
 the drawn lean was behind the ground's. **The lean and the springs are
 therefore SIMULATED on the authority** — a picture to everything that aims,
 never to where a round starts. `fireGun`'s recoil bearing reads the pose's
 `turretY` too, which is the value the turret node carried.
+
+## The hull and its picture
+
+**`Vehicle` is the simulation and nothing else** (`BABYLON_EXIT.md` X2.2 C9):
+no `@babylonjs/core`, no mesh, no rig, no scene, every vector `src/math`'s — so
+the authority builds the same hull a client does, and `VehicleSystem` takes no
+scene and no material factory. **What a hull looks like is a `VehicleView`**,
+one per hull, which only a client builds (`VehicleViews`, from `installMap`
+right after `VehicleSystem.build`, by hardstanding index, each with its kind's
+model off `vehicleModels.modelOf`; torn down by `teardownMap` before the fleet).
+A view owns the body box (invisible: the rig's parent, the shadow maps' box —
+`ShadowHull` is the view — and `metadata.solid`/`isPickable` for the editor's
+pick), the rig, the belts' run, the whips (`HullWhips`) and the paint.
+
+**A view READS its hull and never writes it.** Everything that is STATE is
+read in `VehicleView.update`, which runs right after every
+`VehicleSystem.update` (both call sites, offline and in a match) before
+anything reads a node: the body at `pos` turned `yaw`, enabled and pickable
+exactly while `present`, charred exactly while `!alive`, and each joint copied
+off `Vehicle.pose` where it differs — the hull wrote the record behind the
+guards the node writes had, so a node is exactly what the record says.
+
+**Four things it is TOLD, and only these, through `Vehicle.picture`
+(`HullPicture`)**, because polling would get each wrong:
+
+| told | when | why it cannot be read afterwards |
+| --- | --- | --- |
+| `placed()` | `placeAt` | the rig goes back to rest and to its livery, and the whips straighten — a reset the hull may be stepped past again (a netplay placing lands BEFORE the step that frame) before the view next looks |
+| `kicked()` | `fireGun` | the masts crack once, between two steps — the springs' half of the shot is the hull's own (`HullSprings.kick`), on the muzzle's path |
+| `rolled(dt, speed, yawRate, steer, rotor, moved, linkage)` | each `update`/`updateRemote` | the belts are an INTEGRATOR: the view keeps the run and the stick and disc last drawn, and the gate (skip a hull that neither moved nor turned and whose linkage and disc are as drawn) is its own |
+| `flexed(dt, accel, lateral, footPitch, footRoll)` | after each `leanHull` | the whips are an integrator too, against the mast feet's attitude — the ground lean and the springs summed as HELD — whose rate is a difference across one step |
+
+**Nothing a picture is told comes back.** Each call is made after the hull has
+decided, with numbers it has already decided; a hull with no picture runs the
+same arithmetic to the bit, which is why the authority, which builds none,
+fights the same fight (the seven fight hashes did not move). The mast feet's
+lean RATE used to live in `HullFlex` beside the springs; it is the whips' alone
+and moved with them, computed off the attitude the hull hands over.
 
 ## Driving OVER things: the ten contacts and the climb
 
@@ -2075,8 +2134,8 @@ node further out.
 
 **Its bearing is a WORLD angle, and that is the single decision the feature
 rests on.** `Vehicle.mgYaw`/`mgPitch` are held in the world exactly as
-`turretYaw`/`gunPitch` are, and `Vehicle.aimMg` writes the DIFFERENCE onto
-`rig.mgMount`. The mount is parented to the turret, so a bearing held
+`turretYaw`/`gunPitch` are, and `Vehicle.aimMg` writes the DIFFERENCE into
+the pose a view draws `rig.mgMount` from. The mount is parented to the turret, so a bearing held
 *relative* to it would be dragged round by every traverse the driver asked
 for — a gunner laid on a doorway would be swept off it the moment the main gun
 moved, which is the same failure a hull turning under a held turret would be

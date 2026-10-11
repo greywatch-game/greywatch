@@ -240,7 +240,7 @@ export class DeathCam {
     // Nodes only, never the materials: the body is painted from
     // `CelMaterialFactory`'s shared caches, so disposing them here takes the
     // paint out from under every bot on the field and the map with them. See
-    // `Vehicle.dispose`.
+    // `VehicleView.dispose`.
     this.corpse?.rig.root.dispose(false);
     const rig = buildSoldier(this.scene, this.mats, team);
     rig.root.setEnabled(false);

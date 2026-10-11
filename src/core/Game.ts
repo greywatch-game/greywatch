@@ -66,7 +66,7 @@ import {
   type WebGPUEngine,
 } from "@babylonjs/core";
 import { CONFIG } from "../config";
-import type { Vector3Like } from "../math";
+import { Vector3 as MathVector3, type Vector3Like } from "../math";
 import { toBabylon } from "../math/babylon";
 import {
   CelMaterialFactory,
@@ -149,6 +149,7 @@ import {
   VehicleSystem,
   type VehicleOrders,
 } from "../systems/VehicleSystem";
+import { VehicleViews } from "../systems/VehicleViews";
 import { GrassSystem } from "../systems/GrassSystem";
 import { BlastDebrisSystem, type DebrisGround } from "../systems/BlastDebrisSystem";
 import { DebrisSystem } from "../systems/DebrisSystem";
@@ -534,6 +535,12 @@ export class Game {
    * `docs/vehicles.md`.
    */
   private vehicles: VehicleSystem;
+  /**
+   * What the fleet LOOKS like — one `VehicleView` per hull, built over
+   * `vehicles` by `installMap` and torn down by `teardownMap`, stepped right
+   * after every `vehicles.update`. The authority has no such thing.
+   */
+  private vehicleViews: VehicleViews;
   /** The view from outside the hull you are driving. `DeathCam`'s shape. */
   private vehicleCam: VehicleCamera;
   /**
@@ -1218,6 +1225,8 @@ export class Game {
   private readonly hullPlace = new Vector3();
   /** Scratch for the shell: the muzzle, the gun's axis, and the marker's point. */
   private readonly shellFrom = new Vector3();
+  /** A hull's centre, copied for the engine voice, which is on Babylon's math. */
+  private readonly engineAt = new Vector3();
   private readonly shellDir = new Vector3();
   /** …and for where a rocket leaves the tube, or a mine goes down. */
   private readonly ordnanceAt = new Vector3();
@@ -1624,7 +1633,8 @@ export class Game {
     this.glass.onBroken = (pane) => this.glassFx.collapse(pane);
     this.glass.onCleared = (pane) => this.glassFx.clear(pane);
     this.deathCam = new DeathCam(this.scene, this.mats);
-    this.vehicles = new VehicleSystem(this.scene, this.mats, this.random);
+    this.vehicles = new VehicleSystem(this.random);
+    this.vehicleViews = new VehicleViews(this.scene, this.mats);
     this.vehicleCam = new VehicleCamera();
     // The crew's context, built once exactly as `BattleSystem`'s `BattleCtx`
     // is: everything a driver may ask about the rest of the game, and nothing
@@ -4582,6 +4592,9 @@ export class Game {
     // Out of the fight's target list before they stop existing: `buildRound`
     // put every hull there (`addHuman`), and nothing else takes one out.
     for (const tank of this.vehicles.hulls) this.battle.removeHuman(tank);
+    // The fleet's drawing first — every view lets go of its hull's picture and
+    // takes its body and rig out of the scene — then the fleet.
+    this.vehicleViews.dispose();
     this.vehicles.dispose();
     // The dust rings under that fleet, which would otherwise go on asking the
     // hulls just disposed for a wash.
@@ -4893,6 +4906,9 @@ export class Game {
     // centre-screen pick can land on and fail to resolve. The last map's fleet
     // and its crews are already gone — `teardownMap`, at the top.
     if (opts?.editor !== true) this.vehicles.build(map, this.net !== null);
+    // …and what it looks like: one view per hull, by hardstanding, each with
+    // its kind's model (`VehicleViews`). The editor's empty fleet draws none.
+    this.vehicleViews.build(this.vehicles.hulls, map.vehicleSpawns);
     // The bearing half of a driver's steering. Null in the editor, and null in
     // a NETPLAY round for a different reason worth stating: the hulls are
     // there, but the crews inside them are the authority's — this client runs
@@ -6571,7 +6587,9 @@ export class Game {
       this.net?.sendShell(muzzle, dir);
       this.hullHitCue(round);
     }
-    this.drawCannon(tank, muzzle);
+    // Into Babylon's vector for the light, the report and the shake, which are
+    // still on its math; the rule's muzzle is `src/math`'s.
+    this.drawCannon(tank, toBabylon(muzzle, this.shellFrom));
     return true;
   }
 
@@ -6674,13 +6692,15 @@ export class Game {
       this.net?.sendMg(muzzle, dir);
       this.hullHitCue(round);
     }
-    this.flashMuzzle(muzzle);
+    // Copied for the light and the report, `resolveShell`'s reason.
+    const at = toBabylon(muzzle, this.shellFrom);
+    this.flashMuzzle(at);
     // Placed at the muzzle rather than voiced in the ear, so it is panned like
     // every other gun in the world — but a crew riding THIS hull hears it at
     // arm's length rather than from the chase camera twelve metres back, which
     // is `Sfx.aboard`. `report` is what makes it a heavy machine gun rather
     // than a rifle — see `CONFIG…mg.report`.
-    this.sfx.botShot(muzzle, 0, tank.spec.mg.report, tank === this.driving);
+    this.sfx.botShot(at, 0, tank.spec.mg.report, tank === this.driving);
     return true;
   }
 
@@ -6714,7 +6734,9 @@ export class Game {
     // is the thing the frame is about and it is already twelve metres inside
     // the window, so pushing the window further along the view would walk the
     // vehicle's own shadow out of it.
-    this.shadowFocus.copyFrom(tank.center);
+    // By its floats: the hull's centre is `src/math`'s.
+    const c = tank.center;
+    this.shadowFocus.copyFromFloats(c.x, c.y, c.z);
     // …except that on a hull which can be forty metres up, the thing the window
     // has to cover is the GROUND under it and not the vehicle. The window is
     // snapped in the light's own basis, so lifting the focus slides it along
@@ -6848,7 +6870,7 @@ export class Game {
       const [load, rev] = tank.powerplant(
         Math.min(1, tank.travel / tank.spec.drive.maxSpeed),
       );
-      this.sfx.hullEngine(i, tank.center, load, rev, tank.spec.engine);
+      this.sfx.hullEngine(i, toBabylon(tank.center, this.engineAt), load, rev, tank.spec.engine);
     }
   }
 
@@ -7294,7 +7316,7 @@ export class Game {
     net.onHullCorrection = (tank, pos, reason) => {
       const hull = this.vehicles.hulls[tank];
       if (!hull || hull !== this.driving || this.drivingSeat !== DRIVER) return;
-      const off = Vector3.Distance(hull.position, pos);
+      const off = MathVector3.Distance(hull.position, pos);
       hull.correctTo(pos.x, pos.y, pos.z);
       // Said out loud only when it was a JUMP. The two lids — the map's edge
       // and the machine's ceiling — correct by centimetres every frame a pilot
@@ -8250,6 +8272,8 @@ export class Game {
       this.prof.begin(P.vehicles);
       this.syncNetVehicles();
       this.vehicles.update(dt, this.vehicleOrders);
+      // The drawing follows the hulls before anything reads a node.
+      this.vehicleViews.update();
       this.prof.end(P.vehicles);
       // Posing a hull off the wire is still stepping it, and an engine heard
       // from outside is a position and a speed either way — so a match's
@@ -8470,6 +8494,9 @@ export class Game {
     // sees where the armour ENDED this frame rather than where it started,
     // which is the whole of what running somebody over is.
     crushSweep(this.hullRules);
+    // The drawing follows the hulls before anything reads a node — the two
+    // shadow maps' boxes and the mesh walk, both later in the frame.
+    this.vehicleViews.update();
     this.prof.end(P.vehicles);
     // The hulls have moved and the crews are aboard, which is everything
     // `pushHullEngines` reads off them at the end of the frame.
@@ -9029,7 +9056,7 @@ export class Game {
       shadowFocus,
       this.mats,
       bodies,
-      this.vehicles.hulls,
+      this.vehicleViews.views,
     );
     if (player) {
       this.shadows.updateBlobs(
@@ -9074,7 +9101,7 @@ export class Game {
       this.lighting.activeLights,
       this.cameraSys.camera.position,
       bodies,
-      this.vehicles.hulls,
+      this.vehicleViews.views,
     );
     this.prof.end(P.localShadows);
     // Water reads the same camera and the same winning light set, so it
@@ -10017,7 +10044,7 @@ export class Game {
     const g = CONFIG.grenade;
     const reach = g.blastRadius * 2 * power;
     const tank = this.driving;
-    const d = Vector3.Distance(
+    const d = MathVector3.Distance(
       at,
       tank ? tank.center : this.cameraSys.camera.position,
     );
@@ -10055,7 +10082,7 @@ export class Game {
     if (this.state !== "playing") return;
     const tank = this.driving;
     const from = tank ? tank.center : this.cameraSys.camera.position;
-    const d = Vector3.Distance(at, from);
+    const d = MathVector3.Distance(at, from);
     if (d >= reach) return;
     const f = 1 - d / reach;
     const worth = amount * f * f;

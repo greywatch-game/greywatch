@@ -84,7 +84,8 @@
  * - the four pooled bodies that fly or lie (`grenade`, `molotov`, `rocket`
  *   with its flame, `mine`, the laid one);
  * - every vehicle kind (`vehicle:<kind>`: the `CONFIG.vehicles` blocks
- *   `kindOf` pairs with a builder), for both sides, in its livery and wrecked;
+ *   `kindOf` pairs with a spec, each built by `vehicleModels.modelOf`), for
+ *   both sides, in its livery and wrecked;
  * - a soldier of each side (`soldier`), as `Bot` and `NetSoldier` build one;
  * - `CaptureZoneSystem`'s rings, poles and flags (`zone`), over every map's
  *   control points at their own positions and radii. They stand on
@@ -659,7 +660,7 @@ async function hashModelJobs(jobs) {
         "/src/entities/MolotovModel.ts",
         "/src/entities/RpgModel.ts",
         "/src/entities/MineModel.ts",
-        "/src/entities/vehicleKinds.ts",
+        "/src/entities/vehicleModels.ts",
         "/src/entities/SoldierModel.ts",
         "/src/systems/CaptureZoneSystem.ts",
         "/src/entities/finishes.ts",
@@ -717,8 +718,9 @@ async function hashModelJobs(jobs) {
         } else if (p.kind === "mine") {
           data = MINE.buildMineBody(scene, mats, "mine0");
         } else if (p.kind.startsWith("vehicle:")) {
-          const type = VK.kindOf(p.kind.slice("vehicle:".length));
-          const rig = type.build(scene, mats, p.team);
+          // The client's table (`vehicleModels.ts`), keyed by the same kind
+          // `vehicleKinds.ts` pairs with its spec.
+          const rig = VK.modelOf(p.kind.slice("vehicle:".length))(scene, mats, p.team);
           if (p.wrecked) rig.paint(true);
           data = rig;
         } else if (p.kind === "soldier") {

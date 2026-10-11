@@ -22,7 +22,7 @@
  * nose-DOWN and a positive roll raises the hull's own right side. See
  * `docs/vehicles.md`.
  */
-import type { Vector3 } from "@babylonjs/core";
+import type { Vector3 } from "../math";
 import type { VehicleSpec } from "../config/vehicles";
 import type { DriveInput } from "./Vehicle";
 
@@ -84,7 +84,7 @@ export class FlightModel {
    * here alone, as are `rotorRun`, `tiltPitch` and `tiltRoll`.
    */
   rotor = 0;
-  /** Radians of disc, accumulated mod 2pi. `trackRun`'s metres, for a rotor. */
+  /** Radians of disc, accumulated mod 2pi. A belt's run in metres, for a rotor. */
   rotorRun = 0;
   /**
    * The attitude the CYCLIC is commanding, radians, in the DRAWN sense — so

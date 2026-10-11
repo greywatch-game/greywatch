@@ -115,14 +115,13 @@
  *   pilot that put its skids down would be one more thing to decide when to
  *   take off again.
  */
-import { Vector3 } from "@babylonjs/core";
 import { CONFIG } from "../config";
 import type { Bot } from "../entities/Bot";
 import type { Combatant, Team } from "../entities/Combatant";
 import { angleDelta } from "../core/math";
 import type { DriveInput, GunInput, Vehicle } from "../entities/Vehicle";
 import { DRIVER, GUNNER, SEATS, type CrewSeat } from "../entities/hullSeats";
-import { Vector3 as MathVector3, type Vector3Like } from "../math";
+import { Vector3, type Vector3Like } from "../math";
 import type { GameMap } from "../world/MapBuilder";
 import type { NavGrid } from "../world/NavGrid";
 import { fly, route } from "./crewPilot";
@@ -535,7 +534,7 @@ export class VehicleCrew {
         let bestDist = reach;
         for (const bot of this.ctx.roster()) {
           if (!bot.alive || bot.team !== tank.team || this.ctx.aside(bot)) continue;
-          const d = MathVector3.DistanceSquared(bot.position, tank.center);
+          const d = Vector3.DistanceSquared(bot.position, tank.center);
           if (d < bestDist) {
             bestDist = d;
             best = bot;
@@ -704,7 +703,7 @@ export class VehicleCrew {
       held &&
       held.alive &&
       !(soft && held.armoured) &&
-      MathVector3.Distance(tank.center, held.position) < range &&
+      Vector3.Distance(tank.center, held.position) < range &&
       this.ctx.visibleFrom(tank, held.eyePos)
     ) {
       return;
@@ -724,7 +723,7 @@ export class VehicleCrew {
     for (const t of this.ctx.targetsFor(tank.team)) {
       if (!t.alive) continue;
       if (soft && t.armoured) continue;
-      const d = MathVector3.Distance(tank.center, t.position);
+      const d = Vector3.Distance(tank.center, t.position);
       if (d >= range) continue;
       if (t.armoured) {
         if (d < hullDist) {
@@ -772,7 +771,7 @@ export class VehicleCrew {
       crew.aimAt.setAll(0);
       return;
     }
-    const d = MathVector3.Distance(crew.tank.center, target.position);
+    const d = Vector3.Distance(crew.tank.center, target.position);
     const spread = c.scatter * Math.min(1, d / c.engageRange);
     crew.aimAt.set(
       (this.layRand() * 2 - 1) * spread,

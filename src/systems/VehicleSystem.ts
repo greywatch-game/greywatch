@@ -8,6 +8,10 @@
  * Owns NO player: nothing in here knows what a player is. `Game` decides who is
  * driving and hands the drive in, exactly as it hands `BattleSystem` a
  * `BattleCtx` rather than letting it reach for one.
+ * Owns NO drawing: **no `@babylonjs/core`**, no scene and no materials
+ * (`BABYLON_EXIT.md` X2.2 C9). The hulls are the simulation; what they look
+ * like is the client's `VehicleViews`, built by `Game.installMap` over this
+ * fleet in hardstanding order, so the authority builds this file as it is.
  *
  * ## A hull is not in the nav graph, and that is the ragdoll's rule not a bug
  *
@@ -41,7 +45,6 @@
  * the round because a bot was loitering, which is a far worse failure than a
  * shove.
  */
-import { type Scene, Vector3 } from "@babylonjs/core";
 import { CONFIG } from "../config";
 import type { Team } from "../entities/Combatant";
 import {
@@ -52,8 +55,7 @@ import {
 } from "../entities/Vehicle";
 import { DRIVER, GUNNER, type CrewSeat } from "../entities/hullSeats";
 import { kindOf } from "../entities/vehicleKinds";
-import type { Vector3Like } from "../math";
-import type { CelMaterialFactory } from "../shaders/CelShader";
+import { Vector3, type Vector3Like } from "../math";
 import type { GameMap, VehicleSpawnDef } from "../world/MapBuilder";
 import { newRayHit, type RayWorld } from "../world/RayWorld";
 import { STREAM, type RoundRandom } from "./RoundRandom";
@@ -173,8 +175,6 @@ export class VehicleSystem {
   private readonly spot = new Vector3();
 
   constructor(
-    private scene: Scene,
-    private mats: CelMaterialFactory,
     // The simulation's round seed, for each hull's cupola-gun cone — see `build`.
     private readonly random: RoundRandom,
   ) {}
@@ -217,11 +217,12 @@ export class VehicleSystem {
   /**
    * Builds the fleet for a freshly installed map.
    *
-   * Disposes the last one outright rather than pooling across maps: the rigs
-   * are painted per TEAM and a map states which team owns which hardstanding,
-   * so a pool carried over would have to be re-painted anyway — and this runs
-   * once per round, next to a map build that takes the better part of a second.
-   * Inside a round nothing here is ever disposed; see `Vehicle.placeAt`.
+   * Drops the last one outright rather than pooling across maps: a map states
+   * which team owns which hardstanding and of what kind, so a pool carried over
+   * would have to be re-sorted anyway — and this runs once per round, next to a
+   * map build that takes the better part of a second. Inside a round nothing
+   * here is ever replaced; see `Vehicle.placeAt`. (The rigs, painted per TEAM,
+   * are the client's `VehicleViews`, rebuilt beside this.)
    *
    * There is deliberately no `reset()` beside `BattleSystem`'s and
    * `RagdollSystem`'s. A round always starts with a fresh `installMap`, and
@@ -240,9 +241,9 @@ export class VehicleSystem {
     for (const def of map.vehicleSpawns) {
       // **The one place a KIND becomes a hull**, and the whole of what a second
       // kind costs this system: a `VehicleSpawnDef` names one, `kindOf` hands
-      // back the numbers and the model, and nothing below this line — nor
+      // back the numbers and the joints, and nothing below this line — nor
       // anywhere else in the file — asks what it is holding.
-      const tank = new Vehicle(this.scene, this.mats, def.team, kindOf(def.kind));
+      const tank = new Vehicle(def.team, kindOf(def.kind));
       tank.setGround(map.terrain, map.obstacles, map.collidables);
       tank.onDestroyed = () => this.onDestroyed(tank);
       tank.placeAt(def.pos, def.yaw);
@@ -381,7 +382,7 @@ export class VehicleSystem {
    * accident here it would mean a hardstanding's respawn timer feeding the
    * wrong team for the rest of the round.
    */
-  enterable(at: Vector3, team: Team): Vehicle | null {
+  enterable(at: Vector3Like, team: Team): Vehicle | null {
     return this.nearestOwn(at, team, false);
   }
 
@@ -405,7 +406,7 @@ export class VehicleSystem {
    * Still team-locked, for `enterable`'s reason: this offers a seat, and the
    * side's own hull is the only seat it may offer.
    */
-  occupiedNear(at: Vector3, team: Team): Vehicle | null {
+  occupiedNear(at: Vector3Like, team: Team): Vehicle | null {
     return this.nearestOwn(at, team, true);
   }
 
@@ -418,7 +419,7 @@ export class VehicleSystem {
    * aboard; only a hull with BOTH seats taken is a hull that has to be evicted
    * to be joined.
    */
-  private nearestOwn(at: Vector3, team: Team, full: boolean): Vehicle | null {
+  private nearestOwn(at: Vector3Like, team: Team, full: boolean): Vehicle | null {
     const r = CONFIG.vehicles.enterRadius;
     let best: Vehicle | null = null;
     let bestDist = r * r;
@@ -564,7 +565,6 @@ export class VehicleSystem {
   }
 
   dispose(): void {
-    for (const stand of this.stands) stand.tank.dispose();
     this.stands = [];
     // Out of the segment query as well as off the field. `build` installs a
     // fresh map's own `RayWorld` a line later, so this only matters when no

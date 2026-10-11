@@ -1,23 +1,26 @@
 /**
  * vehicleRig.ts — What every vehicle's MESH is, whatever kind it is, and the
  * helpers every model is drawn with.
- * Owns: the `VehicleRig` contract — the joints `Vehicle` writes and the three
- * closures it calls — plus `Box`/`Cyl`/`Shape`, the per-colour merge and the outline
- * pass every model owes, the one way a whip antenna is built (`whip`) and the
- * one pose a rig is reset to (`resetRigPose`).
+ * Owns: the `VehicleRig` contract — the joints a hull's VIEW writes and the
+ * three closures it calls — plus `Box`/`Cyl`/`Shape`, the per-colour merge and
+ * the outline pass every model owes, the one way a whip antenna is built
+ * (`whip`) and the one pose a rig is reset to (`resetRigPose`).
  * Owns NO geometry and no numbers. `TankModel.ts`, `TruckModel.ts` and
  * `HeliModel.ts` are the ART, one file per kind; this is the shape they all
- * come out in, and the one thing `entities/Vehicle.ts` has ever heard of.
+ * come out in, and the one thing `entities/VehicleView.ts` draws. CLIENT-only:
+ * `entities/Vehicle.ts` has never heard of it — the simulation reads a
+ * `HullFrame` and writes a `HullPose`, and the view copies the pose onto these
+ * joints (`BABYLON_EXIT.md` X2.2 C9).
  *
  * **A hull's geometry is PARTS until `segment` merges it** (BABYLON_EXIT.md
  * X1.3): a box or a cylinder is a `Part` on `src/geometry/`'s generators, a
  * `Shape` is a `Part` from `facet.ts`, `mergeParts` is the per-colour merge,
  * and `drawnMesh` is the one place any of it becomes a Babylon mesh — the mesh
  * then hung off a live joint. The JOINTS are still Babylon `TransformNode`s
- * (the rig is X4's), and so is the collider box `Vehicle` builds, which is a
- * collider and not a drawing. The meshes are MADE in the order the scene used
- * to receive them, which `mergeByColor` explains; `kit:hash --models` hashes
- * that order.
+ * (the rig is X4's), and so is the body box `VehicleView` builds, which is a
+ * follower of the hull's collider and not a drawing. The meshes are MADE in
+ * the order the scene used to receive them, which `mergeByColor` explains;
+ * `kit:hash --models` hashes that order.
  *
  * ## The rig is CLOSED over its own model, which is what buys the second kind
  *
@@ -25,14 +28,16 @@
  * wheels that turn and two that steer, and no interface over both of those is
  * anything but a lie in one direction. So the rig does not DESCRIBE its running
  * gear at all — it carries `setRun`, a closure its own builder made, and
- * `Vehicle` hands it the two figures it has (how far each side has covered, and
- * how hard the stick is over) without ever learning which of the two it is
- * driving. `reset` and `paint` are the same bargain for the respawn and the
- * wreck.
+ * `VehicleView` hands it the figures the hull tells it (how far each side has
+ * covered, how hard the stick is over, how far the rotor has turned) without
+ * ever learning which of the kinds it is drawing. `reset` and `paint` are the
+ * same bargain for the respawn and the wreck.
  *
- * That is why there is no `kind` field here and no branch in `Vehicle`: what a
- * vehicle IS lives in `config/vehicles.ts` as a `VehicleSpec` and in a model
- * file as this, and the pair are married once in `entities/vehicleKinds.ts`.
+ * That is why there is no `kind` field here and no branch in `Vehicle` or its
+ * view: what a vehicle IS lives in `config/vehicles.ts` as a `VehicleSpec`,
+ * in a frame file as a `HullFrame` and in a model file as this — the first two
+ * married once in `entities/vehicleKinds.ts`, the third keyed by the same kind
+ * in `entities/vehicleModels.ts`.
  *
  * ## What a model must state, because `Vehicle` cannot see the geometry
  *
@@ -40,10 +45,12 @@
  * do without — `gauge`, `contactReach`, `wheelReach`, all DRAWING decisions —
  * and the offsets of every joint between the collider box and a muzzle, which
  * the simulation replays as numbers rather than reading off these nodes. Each
- * model exports its own and places its nodes FROM it, and
- * `entities/vehicleKinds.ts` hands it to the hull beside the spec, so
- * `Vehicle` still imports from no model file. They rode on this rig until
- * `BABYLON_EXIT.md` X2.2 C8 took the simulation off it.
+ * kind's lives in a Babylon-free frame file of its own (`tankFrame.ts`,
+ * `truckFrame.ts`, `heliFrame.ts`) that its model IMPORTS and places its
+ * nodes FROM, and `entities/vehicleKinds.ts` hands it to the hull beside the
+ * spec, so neither `Vehicle` nor the authority imports a model file. They rode
+ * on this rig until `BABYLON_EXIT.md` X2.2 C8 took the simulation off it, and
+ * in the model files until C9 took the model files off the authority.
  *
  * ## Two rules every model owes, both inherited and both already broken once
  *
@@ -51,8 +58,8 @@
  *   one-shot scan at construction, which a hull built per round could never
  *   join. The bloom reads `noGlow` every frame now (`GlowPass`), so a glowing
  *   part is possible — it is still a look nobody has chosen.
- * - **Nothing pickable.** The collider box is the only pickable thing a vehicle
- *   has — see `Vehicle`. A pickable visual would put the hitscan's wall ray,
+ * - **Nothing pickable.** The body box is the only pickable thing a vehicle
+ *   has, and only for the editor — see `VehicleView`. A pickable visual would put the hitscan's wall ray,
  *   the bots' LOS and the ground probe on sixty triangles of track link.
  *
  * `segmentOf` enforces both by construction, which is why no model may build
@@ -136,8 +143,8 @@ const CHARRED = "#221f1c";
  * The lower link turns at the mast foot and the upper hangs off its top, so the
  * pair describe a CURVE rather than a lever — which is the whole read, and the
  * reason meshes were spent on the only parts of a vehicle that are not rigid.
- * `Vehicle` owns how far each is bent and `setAntennaBend` is what that looks
- * like, exactly the split `trackRun`/`setRun` has.
+ * `HullWhips` owns how far each is bent and `setAntennaBend` is what that
+ * looks like, exactly the split the view's run and `setRun` have.
  */
 export interface Whip {
   /** Turns at the mast foot. Takes `antenna.baseShare` of the bend. */
@@ -168,7 +175,7 @@ export interface Whip {
  * the hull respawns or burns.
  */
 export interface VehicleRig {
-  /** Positioned and yawed by `Vehicle`. Nothing else may write it. */
+  /** Hung off the view's body box, which is positioned and yawed off the hull. */
   root: TransformNode;
   /**
    * The lean onto the GROUND, and nothing else. Separate from `root` because
@@ -185,8 +192,8 @@ export interface VehicleRig {
   hull: TransformNode;
   /**
    * The sprung mass — everything the springs carry, and therefore everything
-   * the springs may move: `HullFlex.flexHeave` writes its Y and
-   * `HullFlex.flexSuspension` writes its pitch and roll, all three in the frame
+   * the springs may move: `HullSprings.flexHeave` holds its Y and
+   * `HullSprings.flexSuspension` its pitch and roll, all three in the frame
    * of the `hull` node it hangs off, so a compressing body compresses along its
    * OWN up axis rather than the world's.
    *

@@ -34,12 +34,11 @@
  * a splash the authority's `explode` event will draw instead. Neither fact is
  * known in this file.
  */
-import { Vector3 } from "@babylonjs/core";
 import type { Bot } from "../entities/Bot";
 import { OTHER_TEAM, type Combatant, type Team } from "../entities/Combatant";
 import type { Vehicle } from "../entities/Vehicle";
 import { DRIVER, type CrewSeat } from "../entities/hullSeats";
-import type { Vector3Like } from "../math";
+import { Vector3, type Vector3Like } from "../math";
 import type { CombatSystem, Hittable, ShotResult } from "./CombatSystem";
 import type { GrenadeSystem } from "./GrenadeSystem";
 import { settleKill, type KillLedger } from "./killRules";

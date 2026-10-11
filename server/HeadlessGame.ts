@@ -93,7 +93,6 @@ import {
   type SeatHolder,
 } from "../src/entities/hullSeats";
 import { resolveOrdnance } from "../src/entities/equipment";
-import { CelMaterialFactory } from "../src/shaders/CelShader";
 import type { GameMap } from "../src/world/MapBuilder";
 import type { MapDef } from "../src/world/maps";
 import { perTeamOf } from "../src/world/layout";
@@ -202,15 +201,13 @@ export class HeadlessGame {
    */
   now = Date.now();
 
-  private readonly mats: CelMaterialFactory;
   private readonly combatants: Combatant[] = [];
 
   constructor() {
     this.scene = new Scene(this.engine);
-    this.mats = new CelMaterialFactory(this.scene);
-    // Order matters on the client because `Game`'s GlowLayer scan runs at
-    // construction; here it does not, but the pair is kept in the same order so
-    // the two files read the same way.
+    // No material factory: the last thing that wanted one was the fleet's rigs,
+    // which are the client's `VehicleViews` since `BABYLON_EXIT.md` X2.2 C9.
+    // The scene is `buildServerWorld`'s alone.
     // The simulation half alone: the tracer, spark, disc and mark pools are
     // `CombatFx`'s, which only a client builds, so `onRound` is left unwired
     // and every round's picture is a no-op here (`BABYLON_EXIT.md` X2.2).
@@ -233,7 +230,7 @@ export class HeadlessGame {
     // needs a GPU device and is never built on this side, so `onBlast` is
     // left unwired and every blast's picture is a no-op here.
     this.grenades = new GrenadeSystem();
-    this.vehicles = new VehicleSystem(this.scene, this.mats, this.random);
+    this.vehicles = new VehicleSystem(this.random);
     this.antiTank = new AntiTankSystem();
     // The crew's context, and it is `Game`'s to the line — a crew asks the same
     // eight questions wherever it is running, because there is nothing about
@@ -1540,7 +1537,7 @@ export class HeadlessGame {
   onSeatChanged: (
     player: NetPlayer,
     tank: number,
-    at: Vector3,
+    at: Vector3Like,
     yaw: number,
   ) => void = () => {};
 

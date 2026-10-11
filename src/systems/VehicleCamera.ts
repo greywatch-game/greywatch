@@ -341,8 +341,11 @@ export class VehicleCamera {
     if (optic) return this.sight(tank);
     const v = tank.spec.camera;
     this.fov = CONFIG.camera.fovHip;
+    // Copied by its floats: the hull's centre is `src/math`'s, and Babylon's
+    // `copyFrom` reads `_x` off what it is handed.
+    const c = tank.center;
     this.anchor
-      .copyFrom(tank.center)
+      .copyFromFloats(c.x, c.y, c.z)
       .addInPlaceFromFloats(0, v.anchorHeight, 0);
     const pitch = this.pitch + this.kick;
     const cp = Math.cos(pitch);

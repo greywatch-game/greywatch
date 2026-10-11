@@ -22,7 +22,7 @@ substitute: read the companion before changing that subsystem.
 | [`docs/editor.md`](docs/editor.md) | anything under `src/editor/` or the dev write endpoint |
 | [`docs/bots.md`](docs/bots.md) | navigation, perception, cover, squads, bot cost |
 | [`docs/deaths.md`](docs/deaths.md) | ragdolls, glass shards, Havok, the death cam |
-| [`docs/vehicles.md`](docs/vehicles.md) | a vehicle of either kind, a new kind, its hull collider, the chase camera, mounting, the respawn |
+| [`docs/vehicles.md`](docs/vehicles.md) | a vehicle of either kind, a new kind, its hull collider, its picture (`VehicleView`), the chase camera, mounting, the respawn |
 | [`docs/antitank.md`](docs/antitank.md) | the third slot, the launcher, the mine, the rocket that flies, a bot with a tube |
 | [`docs/audio.md`](docs/audio.md) | a sound, a sample, `audio/`, the audio budget |
 | [`docs/pwa.md`](docs/pwa.md) | `public/`, `src/pwa/`, the service worker |
@@ -1060,7 +1060,9 @@ death cam's camera hand-off.
 `MapLayout.vehicles` is one hardstanding per vehicle — absent on three of the
 seven maps — and `Game.driving` plus `Game.drivingSeat` are the two facts the
 feature turns on. **There are THREE KINDS and no code that knows it**: a fourth
-is a row in `VEHICLE_KINDS`, a block of numbers and a model file, and **no `if`
+is a block of numbers, a frame file, a model file and a row in each of TWO
+`Record<VehicleKind, …>` tables — `VEHICLE_KINDS` (what the authority builds a
+hull from) and `vehicleModels.ts` (what a client draws it with) — and **no `if`
 anywhere** — the moment a system asks which kind it is holding, that is broken.
 **TWO capabilities stand in for that branch**, each one nullable block in the
 spec resolved once into one boolean, and the boolean is what a yes-or-no reader
@@ -1078,6 +1080,11 @@ board and `F` to cross** (and two buttons that APPEAR on glass, which
 they reach and neither ever moves a PERSON**. **A driver's frame is not a
 body's**: `Player.update` is not called, so the hull's ground REPLACES the
 probe.
+
+**`Vehicle` is the simulation and a `VehicleView` its picture** (client-only,
+built per hull by `installMap`, taken down by `teardownMap`): **a view READS its
+hull and is TOLD only what cannot be polled**, through one `HullPicture`, and
+nothing it is told comes back — the authority's hulls have no picture.
 
 **A hull is the one MOVING solid thing in the game**: every ray and every
 SWEEP meets it through `rays.hulls` and `rayBox()`, behind one gate
@@ -1120,7 +1127,9 @@ every frame — **which is why no simulation reads a node at all any more**: a
 hull's three muzzles (`entities/hullFrame.ts`) and a bot's
 (`soldierPose.ts`) are the node chains replayed off fields, bit for bit. A
 hull's are read off its joints AS DRAWN, so the 1e-5 guards on the lean and the
-springs are on a muzzle's path, and both are simulated on the authority too.
+springs are on a muzzle's path, and both are simulated on the authority too —
+the guards live in the pose record (`HullPose`), and the view copies the record
+onto the nodes, never the other way.
 
 **A hull is HEARD whoever is in it**, pushed per FRAME by `Game.pushHullEngines`
 rather than opened on a mount, and **what drives the voice is asked of the HULL**
@@ -1134,7 +1143,8 @@ STEP the fleet owes `Sfx.enginesOff` and a wash of zero** (`Game.fleetStepped`,
 **read ONCE**).
 
 → **[`docs/vehicles.md`](docs/vehicles.md)** — the kinds, their trades and
-models, and every reader of `flies`; the seats and the crew of two; the pilot's
+models, and every reader of `flies`; the hull and its view, and what a picture
+is told; the seats and the crew of two; the pilot's
 held bearing and the flight model; the collider's three answers; the crush's
 gates; the gunner's sight and the framing bug it found; the engine voices and
 the rotor's dust, spray and ripple; the plank, the climb and the leading-end
