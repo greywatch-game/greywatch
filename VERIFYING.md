@@ -56,13 +56,30 @@ you are on before you believe anything else in this section.
   own observables. `performance.getEntriesByType("resource")` is where the real
   URL is written down; assert the identity (`B.Vector3 ===
   camera.position.constructor`) rather than trusting the spelling.
-  `plans/physics-ref/drop.mjs` is the worked version.
+  `plans/webgpu-ref/depth.mjs` is the worked version. **A script that only
+  needs a Babylon VALUE can skip the timeline** and import a game module that
+  makes one — `/src/math/babylon.ts`'s `toBabylon` — because Vite serves each
+  `/src` file at one URL, so the page gets the module the game already
+  holds and its Babylon with it; `plans/physics-ref/clients.mjs` does that
+  and asserts the same identity.
 - **`plans/physics-ref/drop.mjs` is the physics oracle**, and it is the only
   thing in the tree that can check a change to `PhysicsWorld`: `npm run parity`
   fingerprints the nav graph and `bank.mjs` diffs pixels, and Havok is in
   neither. It drops sixty-four boxes on a seeded lattice, settles them and
   hashes the resting transforms; `--check` grades a run against
-  `plans/physics-ref/ref/<map>.json`. Two of its lessons generalise to any
+  `plans/physics-ref/ref/<map>.json`, and prints a BIT verdict against
+  `ref/exact.json` beside it (`--check --exact` grades that too — the bar for
+  a change that must move nothing). Its bodies are built on Havok's RAW
+  `HP_*` calls, the plugin's own replayed one for one, so it reads the same
+  through `BABYLON_EXIT.md` X2.4. **`plans/physics-ref/clients.mjs` is its
+  other half**: a fixed script of corpses (bullet, frag and shell deaths, the
+  pool's eviction, an early retire), glass bursts and rubble played through
+  the three real clients and hashed off `HP_Body_GetQTransform` in flight and
+  at rest, banked as `ref/clients-<map>.json` and graded on bits; it has to
+  hold the game's own step and the pools' doors shut from before
+  `startRound`, or a bot killed under the deploy screen would put a corpse
+  into the world first. `plans/physics-ref/lib.mjs` is where both reach the
+  engine. Two of drop's lessons generalise to any
   script that steps the engine: **a settled body's VELOCITY is frozen at
   whatever it held when Havok deactivated it**, so "has it stopped" is a
   displacement over the last N substeps and never `getLinearVelocity()`; and

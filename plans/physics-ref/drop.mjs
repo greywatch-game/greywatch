@@ -11,6 +11,21 @@
  * number and a re-take keeps it. A check run at a DIFFERENT number is refused
  * rather than graded: a set settled for longer is a different drop.
  *
+ * **Every check also prints a BIT verdict** — `bits identical` or `BITS MOVED`
+ * — against `ref/exact.json`, a fingerprint of every body's full-precision
+ * pose in flight and at rest (`exactFile` below says why it is a file of its
+ * own). It is reported and not graded, because a legitimate change to the
+ * solver moves it; `--check --exact` grades it, and that is the bar for a
+ * change that must move NOTHING, such as `BABYLON_EXIT.md` X2.4's port of the
+ * engine off Babylon's plugin.
+ *
+ * **The dropped bodies are built on Havok's RAW `HP_*` API** (since X2.4 C0),
+ * replaying the plugin's own calls one for one — `drop`'s header lists them —
+ * while the static world they land on is still `PhysicsWorld`'s, built by the
+ * game. Where the engine lives (the module, the world handle, the step) is
+ * one function each in `lib.mjs`, shared with `clients.mjs`, the oracle for
+ * everything this one does not drop: corpses, shards and rubble.
+ *
  * **Greyfen's is 2400, and that is the physics, not the test.** Body 23 lands
  * on the open bank above the east arm's water, an 11-degree grade with no
  * collider near it, and ROCKS: every substep it alternates between lifting off
@@ -109,7 +124,6 @@
  * meaningless at the next; run it there for a matched pair inside one session
  * and let the file stay untracked.
  */
-import { createHash } from "node:crypto";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import {
@@ -120,9 +134,12 @@ import {
   root,
   startDevServer,
 } from "../webgpu-ref/harness.mjs";
+import { pageHelpers, sha } from "./lib.mjs";
 
 const args = process.argv.slice(2);
 const CHECK = args.includes("--check");
+/** `--check --exact`: a run whose BITS moved fails, not merely one out of tolerance. */
+const EXACT = args.includes("--exact");
 const stepArg = args.indexOf("--steps");
 /** `--steps`, or null: each map then runs at its bank's number, or this. */
 const STEPS_ARG = stepArg >= 0 ? Number(args[stepArg + 1]) : null;
@@ -152,6 +169,13 @@ const REST_DRIFT = 0.001;
  * cannot tell 25 us from 55.
  */
 const REST_WINDOW = 600;
+/**
+ * The substep the bit fingerprint takes its in-flight sample at: thirty steps
+ * is half a second, by which a body dropped 1.2 m under the death gravity has
+ * landed (0.37 s) and is in the middle of toppling — the chaotic stretch only
+ * an identical run reproduces. See `exact` in the bank.
+ */
+const MID_STEP = 29;
 /**
  * What a banked body may have moved before this is a regression: `TOL_Y`
  * vertically, `TOL_POS` in total, `TOL_ROT` on the unit quaternion (0.1 is
@@ -198,39 +222,94 @@ const REPRO_ROT = 0.05;
 
 const refDir = join(root, "plans", "physics-ref", "ref");
 mkdirSync(refDir, { recursive: true });
+/**
+ * The BIT bank, beside the resting rows rather than in them: `{ map: { steps,
+ * exact } }`, where `exact` fingerprints every body's full-precision pose at
+ * `MID_STEP` and at rest. Kept in its own file so that adding it re-took no
+ * resting set — Harrowmead's rows are still the pre-X1.1 ones it is graded
+ * "within tol" against, and its `exact` is what the tree does now.
+ *
+ * **It is what a change that must move NOTHING is graded on**: `BABYLON_EXIT.md`
+ * X2.4 ports `PhysicsWorld` and its clients off Babylon's plugin onto the raw
+ * API, every call the plugin's, and a port that is call-for-call right is
+ * bit-for-bit right. The rows cannot say that — four decimals agree while the
+ * floats under them differ — and the tolerance grading is deliberately blind
+ * to it. A change that legitimately moves the solver (a regrouped world, a
+ * new Havok) moves these and owes a re-take, said in its commit; that is
+ * why a moved fingerprint is only REPORTED unless `--exact` is passed.
+ */
+const exactFile = join(refDir, "exact.json");
+const exactBank = existsSync(exactFile) ? JSON.parse(readFileSync(exactFile, "utf8")) : {};
 
 /**
  * Everything that happens inside the page, as one function, because every part
  * of it has to see the same bodies: the drop builds them, the run steps them
  * and the read hands back where they stopped.
+ *
+ * **The sixty-four bodies are built on Havok's RAW API, and every call is the
+ * one Babylon's plugin made for them**, in the plugin's order and with the
+ * plugin's values (`BABYLON_EXIT.md` X2.4 C0). They were a `TransformNode`, a
+ * `PhysicsShapeBox` and a `PhysicsBody` each, and that spelling stops existing
+ * when the plugin goes; the static world they land on is still built by the
+ * game's own `PhysicsWorld`, which is what the oracle is FOR. So this is the
+ * replay, call for call, read out of `havokPlugin.js` rather than guessed:
+ *
+ *   - `PhysicsShapeBox(Zero, Identity, (0.5, 0.35, 0.7))` → `initShape`:
+ *     `HP_Shape_CreateBox([0,0,0], [0,0,0,1], [0.5,0.35,0.7])`.
+ *   - `shape.material = {friction, restitution}` → `setMaterial`:
+ *     `HP_Shape_SetMaterial(s, [f, f, r, MINIMUM, MAXIMUM])` — the static
+ *     friction defaults to the dynamic one, and the combine modes are the
+ *     plugin's defaults.
+ *   - `new PhysicsBody(node, DYNAMIC, false)` → `initBody`: `HP_Body_Create`,
+ *     `HP_Body_SetMotionType(DYNAMIC)`, `HP_Body_SetQTransform` with the node's
+ *     `absolutePosition` and `absoluteRotationQuaternion`, and
+ *     `HP_World_AddBody(world, id, false)`. **Those two are the node's WORLD
+ *     matrix, not its fields**: the translation went through the matrix's
+ *     `Float32Array` and the quaternion was DECOMPOSED back out of it, so it is
+ *     not the quaternion the node was handed. `src/math`'s `Matrix` is
+ *     Babylon's bit for bit, `ComposeToRef` is what `computeWorldMatrix` does
+ *     for an unparented node at unit scale, and `decompose` is what
+ *     `_syncAbsoluteScalingAndRotation` does — so the same floats go in.
+ *   - `body.shape = shape` → `setShape`: `HP_Body_SetShape`, then
+ *     `_internalUpdateMassProperties`: `HP_Body_GetShape`,
+ *     `HP_Shape_BuildMassProperties`, `HP_Body_SetMassProperties` with no user
+ *     override yet.
+ *   - `setMassProperties({ mass: 12 })` → the same three again with ONLY `[1]`
+ *     replaced. So every body takes TWO `SetMassProperties`, and the inertia it
+ *     ends with is the shape's density-derived one, not a 12 kg box's.
+ *   - `setLinearDamping`, `setAngularDamping` → the two `HP_Body_Set*Damping`.
+ *   - the first substep's prestep (`disablePreStep = false`) →
+ *     `setPhysicsBodyTransformation`: `HP_Body_SetQTransform` from the node's
+ *     RAW `position` and `rotationQuaternion` — the unparented branch of
+ *     `_getTransformInfos`, which does NOT go through the matrix. That is the
+ *     quaternion the node was handed, which is why the first substep TELEPORTS
+ *     each body by a rounding error. Replayed before the step, which is where
+ *     the pre-step ran: no other body in the engine has its prestep on while a
+ *     round is idle (every pool parks with it off), so the order of the calls
+ *     into Havok is the plugin's.
+ *   - every substep → `HP_World_SetIdealStepTime` + `HP_World_Step`, taken
+ *     through the engine exactly as the game takes one (`lib.mjs`'s `step`),
+ *     then the sync's `HP_Body_GetQTransform` per body, read here.
+ *   - `body.dispose()`, `shape.dispose()` → `HP_World_RemoveBody` +
+ *     `HP_Body_Release` per body, then `HP_Shape_Release` per shape.
+ *
+ * **The pass bar for that replay is the PARENT's hash, bit for bit**, which is
+ * what the `exact` fingerprint is for: the rounded rows can agree while the
+ * floats under them do not, and a port graded on bits needs a bar in bits.
  */
 function drop(page, opts) {
   return page.evaluate(
-    async ([GRID, DROP_HEIGHT, STEPS, REST_DRIFT, REST_WINDOW]) => {
+    async ([GRID, DROP_HEIGHT, STEPS, REST_DRIFT, REST_WINDOW, MID_STEP]) => {
       const g = window.__celshock;
-      // **The module the GAME loaded, found by asking the browser which URL
-      // that was, because every other spelling is a SECOND copy.** Vite
-      // pre-bundles `@babylonjs/core` into `/node_modules/.vite/deps/` under a
-      // content hash that moves with the lockfile, and importing the package
-      // by its own path (`/node_modules/@babylonjs/core/index.js`) or through
-      // `/@id/` evaluates the library again: the second graph has its own
-      // classes, so a shape built from it is registered against a plugin this
-      // scene has never heard of, and `/@id/` does not even get that far — it
-      // throws redefining Babylon's own observables. The resource timeline is
-      // the one place the real URL, hash and all, is written down.
-      const src = performance
-        .getEntriesByType("resource")
-        .map((e) => e.name)
-        .find((n) => /@babylonjs_core\.js/.test(n));
-      if (!src) throw new Error("cannot find the page's own @babylonjs/core");
-      const B = await import(/* @vite-ignore */ src);
-      if (B.Vector3 !== g.cameraSys.camera.position.constructor) {
-        throw new Error("imported a second copy of @babylonjs/core");
-      }
+      const ref = window.__physref;
+      // `src/math` rather than Babylon's classes: the same bits (its header),
+      // the game's own module instance (Vite serves one URL per file), and the
+      // half of this that outlives Babylon.
+      const M = await import("/src/math/index.ts");
       const { CONFIG } = await import("/src/config/index.ts");
       const d = CONFIG.bots.death;
-      const scene = g.scene;
-      const engine = scene.getPhysicsEngine();
+      const { HK, world } = ref.hp(g);
+      const OK = HK.Result.RESULT_OK;
 
       // The game's own step must not run while this one does. Nothing is
       // registered as a client with anything moving, so `update` is already a
@@ -262,12 +341,13 @@ function drop(page, opts) {
       const cell = g.map.size / GRID;
       const hit = {
         distance: 0,
-        point: new B.Vector3(),
-        normal: new B.Vector3(0, 1, 0),
+        point: new M.Vector3(),
+        normal: new M.Vector3(0, 1, 0),
         surface: "hard",
+        hull: null,
       };
-      const down = new B.Vector3(0, -1, 0);
-      const from = new B.Vector3();
+      const down = new M.Vector3(0, -1, 0);
+      const from = new M.Vector3();
       const sites = [];
       for (let iz = 0; iz < GRID; iz++) {
         for (let ix = 0; ix < GRID; ix++) {
@@ -292,45 +372,74 @@ function drop(page, opts) {
         }
       }
 
+      // `_internalUpdateMassProperties`, as the plugin spells it: the shape's
+      // own mass properties, with the user's mass (if any) replacing `[1]`
+      // and nothing else. The fallback is the plugin's too, and never taken.
+      const updateMass = (id, mass) => {
+        let props = [[0, 0, 0], 1, [1, 1, 1], [0, 0, 0, 1]];
+        const shapeRes = HK.HP_Body_GetShape(id);
+        if (shapeRes[0] == OK) {
+          const shapeMass = HK.HP_Shape_BuildMassProperties(shapeRes[1]);
+          if (shapeMass[0] == OK) props = shapeMass[1];
+        }
+        if (mass != undefined) props[1] = mass;
+        HK.HP_Body_SetMassProperties(id, props);
+      };
+      const unit = new M.Vector3(1, 1, 1);
+      const worldMatrix = new M.Matrix();
+      const absolute = new M.Quaternion();
+      const absoluteScale = new M.Vector3();
+
       /** One whole drop: build, settle, read, tear down. */
       const run = () => {
-        const nodes = [];
         const shapes = [];
         const bodies = [];
-        for (const [i, s] of sites.entries()) {
-          const node = new B.TransformNode(`drop-${i}`, scene);
-          node.position.set(s.x, s.y, s.z);
-          node.rotationQuaternion = B.Quaternion.RotationYawPitchRoll(
-            s.yaw,
-            s.pitch,
-            s.roll,
-          );
-          const shape = new B.PhysicsShapeBox(
-            B.Vector3.Zero(),
-            B.Quaternion.Identity(),
-            new B.Vector3(0.5, 0.35, 0.7),
-            scene,
-          );
+        const quats = [];
+        for (const s of sites) {
+          // What the node was handed: its `rotationQuaternion`.
+          const q = M.Quaternion.RotationYawPitchRoll(s.yaw, s.pitch, s.roll);
+          quats.push(q);
+          const shape = HK.HP_Shape_CreateBox(
+            [0, 0, 0],
+            [0, 0, 0, 1],
+            [0.5, 0.35, 0.7],
+          )[1];
           // A corpse's surface, so that what this rests like is what a corpse
           // rests like. See the header on why that coupling is wanted.
-          shape.material = { friction: d.friction, restitution: d.restitution };
-          const body = new B.PhysicsBody(
-            node,
-            B.PhysicsMotionType.DYNAMIC,
-            false,
-            scene,
-          );
-          body.shape = shape;
-          body.setMassProperties({ mass: 12 });
-          body.setLinearDamping(d.linearDamping);
-          body.setAngularDamping(d.angularDamping);
-          // The two-phase teleport `RagdollSystem` does: one step reads the
-          // node into the sim, and from there the sim owns it.
-          body.disablePreStep = false;
-          nodes.push(node);
+          HK.HP_Shape_SetMaterial(shape, [
+            d.friction,
+            d.friction,
+            d.restitution,
+            HK.MaterialCombine.MINIMUM,
+            HK.MaterialCombine.MAXIMUM,
+          ]);
+          const id = HK.HP_Body_Create()[1];
+          HK.HP_Body_SetMotionType(id, HK.MotionType.DYNAMIC);
+          // The node's world matrix and what is decomposed back out of it —
+          // see this function's header.
+          M.Matrix.ComposeToRef(unit, q, s, worldMatrix);
+          worldMatrix.decompose(absoluteScale, absolute);
+          const m = worldMatrix.m;
+          HK.HP_Body_SetQTransform(id, [
+            [m[12] - 0, m[13] - 0, m[14] - 0],
+            [absolute.x, absolute.y, absolute.z, absolute.w],
+          ]);
+          HK.HP_World_AddBody(world, id, false);
+          HK.HP_Body_SetShape(id, shape);
+          updateMass(id, undefined);
+          updateMass(id, 12);
+          HK.HP_Body_SetLinearDamping(id, d.linearDamping);
+          HK.HP_Body_SetAngularDamping(id, d.angularDamping);
           shapes.push(shape);
-          bodies.push(body);
+          bodies.push(id);
         }
+
+        const poses = bodies.map(() => null);
+        /** One substep and the sync's read of every body, as the plugin's. */
+        const stepAndRead = () => {
+          ref.step(g, d.substep);
+          for (const [i, id] of bodies.entries()) poses[i] = ref.pose(HK, id);
+        };
 
         // **Every figure is ONE bracket around many steps, never a bracket per
         // step.** `performance.now()` is clamped to 100 us in a page that is
@@ -350,12 +459,28 @@ function drop(page, opts) {
         // a resting transform needs proved about it is that it stopped MOVING,
         // so the instrument measures the movement.
         let pre = null;
+        let mid = null;
         for (let i = 0; i < STEPS; i++) {
-          engine._step(d.substep);
-          if (i === 0) for (const b of bodies) b.disablePreStep = true;
+          // The first substep's pre-step: the TELEPORT from the node's raw
+          // fields, which `disablePreStep = false` asked for and which the
+          // plugin made before the step — see this function's header.
+          if (i === 0) {
+            for (const [k, id] of bodies.entries()) {
+              const s = sites[k];
+              const q = quats[k];
+              HK.HP_Body_SetQTransform(id, [
+                [s.x - 0, s.y - 0, s.z - 0],
+                [q.x, q.y, q.z, q.w],
+              ]);
+            }
+          }
+          stepAndRead();
+          // In the air and landing: the chaotic half, which only an identical
+          // run reproduces — the bit bar's other sample.
+          if (i === MID_STEP) mid = poses.map((p) => p.slice());
           // The last tenth of the run, by which everything has stopped: the
           // same per-step walk with nothing moving in it.
-          if (i === STEPS - driftSteps) pre = nodes.map((n) => n.position.clone());
+          if (i === STEPS - driftSteps) pre = poses.map((p) => p.slice());
         }
         const stepMs = performance.now() - started;
 
@@ -363,27 +488,22 @@ function drop(page, opts) {
         let fell = 0;
         let worstDrift = 0;
         const rows = [];
-        for (const [i, body] of bodies.entries()) {
-          const p = nodes[i].position;
-          const q = nodes[i].rotationQuaternion;
-          const drift = B.Vector3.Distance(p, pre[i]);
+        for (const [i, p] of poses.entries()) {
+          const o = pre[i];
+          const drift = Math.sqrt(
+            (p[0] - o[0]) ** 2 + (p[1] - o[1]) ** 2 + (p[2] - o[2]) ** 2,
+          );
           worstDrift = Math.max(worstDrift, drift);
           if (drift > REST_DRIFT) moving++;
           // Under the floor is the failure this whole instrument is for: a
           // collider that stopped being in the world is a body that keeps
           // going. Two metres of tolerance because the floor is a heightfield
           // and a body may legitimately be lying in a dip.
-          if (p.y < g.map.terrain.heightAt(p.x, p.z) - 2) fell++;
-          rows.push([
-            +p.x.toFixed(4),
-            +p.y.toFixed(4),
-            +p.z.toFixed(4),
-            +q.x.toFixed(4),
-            +q.y.toFixed(4),
-            +q.z.toFixed(4),
-            +q.w.toFixed(4),
-          ]);
+          if (p[1] < g.map.terrain.heightAt(p[0], p[2]) - 2) fell++;
+          rows.push(p.map((v) => +v.toFixed(4)));
         }
+        // Full precision, taken where the rows are: the bit bar.
+        const exact = { mid, rest: poses.map((p) => p.slice()) };
 
         // **The step cost with the pile alive, measured AFTER the transforms
         // have been read**, so nothing this window does can reach the bank —
@@ -394,14 +514,17 @@ function drop(page, opts) {
         // microseconds, and a bracket around fifty steps cannot see that
         // through a 100 us clock.
         const restStart = performance.now();
-        for (let i = 0; i < REST_WINDOW; i++) engine._step(d.substep);
+        for (let i = 0; i < REST_WINDOW; i++) stepAndRead();
         const restMs = performance.now() - restStart;
 
-        for (const b of bodies) b.dispose();
-        for (const s of shapes) s.dispose();
-        for (const n of nodes) n.dispose();
+        for (const id of bodies) {
+          HK.HP_World_RemoveBody(world, id);
+          HK.HP_Body_Release(id);
+        }
+        for (const s of shapes) HK.HP_Shape_Release(s);
         return {
           rows,
+          exact,
           moving,
           fell,
           worstDrift: +worstDrift.toFixed(5),
@@ -413,26 +536,35 @@ function drop(page, opts) {
       const first = run();
       const second = run();
       g.physics.update = realUpdate;
+      // What the world was actually built as, which is the fact S5b moves:
+      // the static bodies in Babylon's physics engine, pooled corpses and all.
+      // Null once there is no such engine (X2.4 C4), where it is only a
+      // reading and nothing grades it.
+      const engine = g.scene.getPhysicsEngine?.();
+      const staticBodies = engine
+        ? engine.getBodies().filter((b) => b.getMotionType() === 0).length
+        : null;
       return {
         first,
         second,
         bodies: sites.length,
         colliderBoxes: g.map.colliderBoxes.length,
         terrainColliders: g.map.terrainColliders.length,
-        // What the world was actually built as, which is the fact S5b moves.
-        staticBodies: engine
-          .getBodies()
-          .filter((b) => b.getMotionType() === B.PhysicsMotionType.STATIC)
-          .length,
+        staticBodies,
         size: g.map.size,
       };
     },
-    [opts.grid, opts.dropHeight, opts.steps, opts.restDrift, opts.restWindow],
+    [
+      opts.grid,
+      opts.dropHeight,
+      opts.steps,
+      opts.restDrift,
+      opts.restWindow,
+      opts.midStep,
+    ],
   );
 }
 
-const sha = (rows) =>
-  createHash("sha256").update(JSON.stringify(rows)).digest("hex").slice(0, 16);
 
 /**
  * The worst body: how far it moved, how far it moved VERTICALLY, and how far
@@ -480,15 +612,18 @@ for (const id of targets) {
   }
   const { page, pageErrors } = await bootMap(browser, vite.url, id);
   await installRound(page);
+  await page.evaluate(pageHelpers);
   const r = await drop(page, {
     grid: GRID,
     dropHeight: DROP_HEIGHT,
     steps: STEPS,
     restDrift: REST_DRIFT,
     restWindow: REST_WINDOW,
+    midStep: MID_STEP,
   });
   const { first, second } = r;
   const hash = sha(first.rows);
+  const exact = sha(first.exact);
   const label = id.padEnd(12);
   const pad = " ".repeat(12);
   // The static count is the ENGINE's, pooled corpses and all, because reading
@@ -564,12 +699,24 @@ for (const id of targets) {
         console.log(`${pad} ${cost}`);
       }
     }
+    const bits = exactBank[id];
+    if (!bits || bits.steps !== STEPS) {
+      console.log(`${pad} bits ${exact} (no bit bank at ${STEPS} substeps)`);
+    } else if (bits.exact === exact) {
+      console.log(`${pad} bits identical ${exact}`);
+    } else {
+      console.log(`${pad} BITS MOVED ${exact}, banked ${bits.exact}`);
+      if (EXACT) problems.push(`${id}: bits moved — ${exact} against ${bits.exact}`);
+    }
   } else {
     writeFileSync(
       out,
       `${JSON.stringify({ map: id, steps: STEPS, grid: GRID, hash, rows: first.rows }, null, 1)}\n`,
     );
-    console.log(`${label} banked ${hash}  ${shape}`);
+    exactBank[id] = { steps: STEPS, exact };
+    writeFileSync(exactFile, `${JSON.stringify(exactBank, null, 1)}
+`);
+    console.log(`${label} banked ${hash}  bits ${exact}  ${shape}`);
     console.log(`${pad} ${cost}`);
   }
   if (first.fell) console.log(`${pad} ${first.fell} BELOW THE FLOOR`);

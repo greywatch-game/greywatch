@@ -1,0 +1,221 @@
+{
+ "map": "cinderhaven",
+ "frames": 600,
+ "hash": "56af2d3e3197ecbd",
+ "snapshots": [
+  {
+   "frame": 1,
+   "live": 46,
+   "hash": "40d239cb740f8663"
+  },
+  {
+   "frame": 2,
+   "live": 46,
+   "hash": "ce8db8f511d7c107"
+  },
+  {
+   "frame": 6,
+   "live": 68,
+   "hash": "2d58f639a727e3c2"
+  },
+  {
+   "frame": 14,
+   "live": 92,
+   "hash": "854b25acd5cc786f"
+  },
+  {
+   "frame": 15,
+   "live": 92,
+   "hash": "62f4aa97c5559e63"
+  },
+  {
+   "frame": 30,
+   "live": 128,
+   "hash": "a35a1769ad621c55"
+  },
+  {
+   "frame": 49,
+   "live": 140,
+   "hash": "2afa7b12ae833beb"
+  },
+  {
+   "frame": 50,
+   "live": 140,
+   "hash": "ce3b13ac4b430baa"
+  },
+  {
+   "frame": 51,
+   "live": 140,
+   "hash": "d966f9e001ea17c3"
+  },
+  {
+   "frame": 72,
+   "live": 164,
+   "hash": "f6dafb94212cc791"
+  },
+  {
+   "frame": 120,
+   "live": 164,
+   "hash": "005541ee872d35da"
+  },
+  {
+   "frame": 121,
+   "live": 164,
+   "hash": "c64e5dc6262fe900"
+  },
+  {
+   "frame": 151,
+   "live": 159,
+   "hash": "4951e3a86628b54b"
+  },
+  {
+   "frame": 240,
+   "live": 75,
+   "hash": "474cf1ba0b7d0eb4"
+  },
+  {
+   "frame": 420,
+   "live": 27,
+   "hash": "93f09d8c6c71862a"
+  },
+  {
+   "frame": 600,
+   "live": 0,
+   "hash": "4f53cda18c2baa0c"
+  }
+ ],
+ "rest": {
+  "count": 174,
+  "hash": "b3b61db7110f5221"
+ },
+ "accepted": [
+  [
+   0,
+   [
+    true,
+    true,
+    true,
+    true
+   ]
+  ],
+  [
+   6,
+   [
+    true,
+    true
+   ]
+  ],
+  [
+   12,
+   true
+  ],
+  [
+   13,
+   true
+  ],
+  [
+   18,
+   true
+  ],
+  [
+   24,
+   true
+  ],
+  [
+   30,
+   true
+  ],
+  [
+   36,
+   true
+  ],
+  [
+   50,
+   true
+  ],
+  [
+   60,
+   true
+  ],
+  [
+   66,
+   true
+  ],
+  [
+   120,
+   true
+  ],
+  [
+   130,
+   true
+  ],
+  [
+   150,
+   true
+  ],
+  [
+   200,
+   "retired"
+  ]
+ ],
+ "audit": [
+  [
+   49,
+   "before the ninth",
+   "111111110"
+  ],
+  [
+   51,
+   "after the ninth",
+   "011111111"
+  ],
+  [
+   201,
+   "after the retire",
+   "011110111"
+  ]
+ ],
+ "shardShapes": 43,
+ "probe": {
+  "bullet": {
+   "offered": true,
+   "body": "corpse0.torso",
+   "bodyAt": [
+    0,
+    -1000,
+    0
+   ],
+   "angular": [
+    40.064,
+    46.554,
+    -77.9
+   ],
+   "spin": 99.201,
+   "linear": [
+    0.221,
+    -0.019,
+    0.083
+   ]
+  },
+  "blast": {
+   "offered": true,
+   "body": "corpse1.torso",
+   "bodyAt": [
+    0,
+    -1000,
+    0
+   ],
+   "angular": [
+    -72.497,
+    -39.868,
+    56.167
+   ],
+   "spin": 100,
+   "linear": [
+    -2.961,
+    3.434,
+    -1.579
+   ]
+  }
+ }
+}

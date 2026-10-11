@@ -2329,3 +2329,54 @@ None is confirmed.
 frame `dt`, and the distance it reported, and see which of the three it is.
 Stamping with the simulation time of the frame that produced the position (54's
 fix) should then be tried against both findings at once.
+
+---
+
+## 57. A corpse's killing impulse is applied while its body is still parked 1 km under the map, so the throw starts at Havok's 100 rad/s spin cap
+
+**Status:** open. Found while building `plans/physics-ref/clients.mjs` for
+`BABYLON_EXIT.md` X2.4 C0, and pre-existing; deliberately NOT fixed there,
+because X2.4 is graded on reproducing the plugin bit for bit and a fix moves
+every corpse. It is a separate commit, with a re-take of `clients.mjs`'s
+bank that says why.
+
+**Derived from the code:** `RagdollSystem.spawn` (~283-309) writes each
+bone's PROXY node to the joint's world pose and sets `disablePreStep = false`,
+which TELEPORTS the body onto the proxy on the next substep's pre-step — and
+then calls `applyImpulse` immediately, in the same call. Havok still holds the
+body where it was parked (`park`: `(0, PARKED_Y, 0)`), so
+`HP_Body_ApplyImpulse(id, point, J)` — `point` being the chest's world
+position plus `lift` for a round, or each bone's proxy origin for a blast —
+takes its lever arm from 1 km below the map's origin. The LINEAR velocity is
+right (an impulse's `J / m` does not depend on the point); the ANGULAR one is
+`r x J` with `|r|` of a kilometre. The teleport that follows changes the
+position and keeps the velocity.
+
+**Measured** on Coldharbour (the scratch probe behind `clients.mjs`'s
+`probe`, one stand-in rig at the first flag, read through
+`HP_Body_GetAngularVelocity` the instant the corpse is offered, and again
+after one substep), against the same offer with every bone teleported onto
+its proxy BEFORE the impulse:
+
+| death | chest spin at the offer | after one substep |
+| --- | --- | --- |
+| rifle round, 34 damage, as shipped | 99.35 rad/s | 22.8 rad/s |
+| the same, teleported first | 1.01 rad/s | 1.33 rad/s |
+| frag, 70 damage, as shipped | 100.00 rad/s | 11.1 rad/s |
+| the same, teleported first | 19.6 rad/s | 4.0 rad/s |
+
+`HP_World_GetSpeedLimit` reads 200 m/s and **100 rad/s** — Havok's defaults,
+since nothing sets a limit — so the blast's figure is the cap and the round's
+is just under it. The linear velocities agree to every digit. The constraints
+and damping take most of it out in the first substep, which is presumably why
+nobody has seen a corpse spin: the first frame of every death carries a spin
+seeded from the map position rather than from `impulse.spin` and `lift`, and
+`lift`'s "the fold falls out of the geometry" is not what is folding the body.
+
+**What would settle it:** apply the impulse after the bodies are where it
+assumes — teleport each bone onto its proxy before `applyImpulse` (the probe
+above did it with `setPhysicsBodyTransformation`), or defer the impulse to
+`afterFirstStep` — then watch rounds and blasts kill bodies on open ground and
+check the fold still reads; `impulse.spin`, `lift` and `blast.spin` were tuned
+against the bug and may want re-tuning. Re-take `clients.mjs`'s bank in the
+same commit.
