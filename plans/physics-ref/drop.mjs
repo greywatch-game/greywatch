@@ -537,13 +537,13 @@ function drop(page, opts) {
       const second = run();
       g.physics.update = realUpdate;
       // What the world was actually built as, which is the fact S5b moves:
-      // the static bodies in Babylon's physics engine, pooled corpses and all.
-      // Null once there is no such engine (X2.4 C4), where it is only a
-      // reading and nothing grades it.
+      // the static bodies in the engine, pooled ones and all — the world's
+      // own on the raw API since X2.4 C1, beside whatever still lives in
+      // Babylon's physics engine. Only a reading; nothing grades it.
       const engine = g.scene.getPhysicsEngine?.();
-      const staticBodies = engine
-        ? engine.getBodies().filter((b) => b.getMotionType() === 0).length
-        : null;
+      const staticBodies =
+        (g.physics.worldBodyCount ?? 0) +
+        (engine ? engine.getBodies().filter((b) => b.getMotionType() === 0).length : 0);
       return {
         first,
         second,

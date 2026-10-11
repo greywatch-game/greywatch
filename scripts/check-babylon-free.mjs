@@ -89,6 +89,9 @@ const SIMULATIONS = [
   "src/systems/VehicleSystem.ts",
   "src/entities/Player.ts",
   "src/systems/ConquestSystem.ts",
+  // Not a simulation but held as one: the raw Havok dialect every physics
+  // client shares from X2.4 on, whose whole point is that it is not Babylon.
+  "src/systems/havok.ts",
 ];
 
 /**

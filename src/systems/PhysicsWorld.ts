@@ -1,12 +1,14 @@
 /**
- * PhysicsWorld.ts — The one physics engine: the Havok plugin, the map as one
- * static body per 48 m block, and the fixed-step clock everything under it
- * advances on.
- * Owns: the plugin, the static world, the substep accumulator, and the register
- * of clients that have bodies in it.
- * Owns NO bodies of its own. `RagdollSystem` has the corpses, `DebrisSystem` the
- * glass shards and `BlastDebrisSystem` the rubble a blast throws; this file is
- * what the three share, and it is the only place `@babylonjs/havok` is reached.
+ * PhysicsWorld.ts — The one physics engine: Havok, the map as one static body
+ * per 48 m block, and the fixed-step clock everything under it advances on.
+ * Owns: the engine (Babylon's `HavokPlugin` still creates and steps the world
+ * until `BABYLON_EXIT.md` X2.4 C4; everything else reaches it through the raw
+ * API in [`havok.ts`](havok.ts)), the static world, the substep accumulator,
+ * and the register of clients that have bodies in it.
+ * Owns no body but the static world's. `RagdollSystem` has the corpses,
+ * `DebrisSystem` the glass shards and `BlastDebrisSystem` the rubble a blast
+ * throws; this file is what the three share, and with `havok.ts` it is the only
+ * place `@babylonjs/havok` is reached.
  *
  * ## Havok is REQUIRED, and that is what makes this file short
  *
@@ -67,32 +69,23 @@
 import {
   HavokPlugin,
   Mesh,
-  PhysicsBody,
-  PhysicsMotionType,
-  PhysicsShape,
-  PhysicsShapeBox,
-  PhysicsShapeContainer,
-  PhysicsShapeMesh,
-  Quaternion,
   Scene,
-  TransformNode,
   Vector3,
+  VertexBuffer,
 } from "@babylonjs/core";
 import { CONFIG } from "../config";
+import { Quaternion as MathQuaternion } from "../math";
 import { BLOCK_SIZE } from "../world/blocks";
+import { Havok, type BodyId, type HavokInstance, type ShapeId } from "./havok";
 import type { GameMap } from "../world/MapBuilder";
 
 /**
- * The instantiated WASM module, as `HavokPlugin` wants it.
- *
- * Spelled as an import TYPE rather than a named import, which is erased
- * outright — so this file's one real reference to `@babylonjs/havok` is still
- * the dynamic `import()` in `loadHavok`, and the rule below about never naming
- * the binary still holds.
+ * The instantiated WASM module. Spelled in `havok.ts` as an import TYPE, which
+ * is erased outright — so this file's one real reference to `@babylonjs/havok`
+ * is still the dynamic `import()` in `loadHavok`, and the rule below about
+ * never naming the binary still holds.
  */
-export type HavokInstance = Awaited<
-  ReturnType<typeof import("@babylonjs/havok")["default"]>
->;
+export type { HavokInstance };
 
 /**
  * Fetches and instantiates the engine. Awaited ONCE, by `main.ts`, before
@@ -190,22 +183,29 @@ export class PhysicsWorld {
   private accum = 0;
 
   /**
-   * The map as one static body per 48 m block — see `buildWorld`, which is
-   * where the grouping is argued. Four parallel lists rather than four fields
-   * on a record, because the only thing anything does with them is build them
-   * and dispose them, and `worldLeaves` was already the shape of the last one.
+   * The raw API over the plugin's own world — see `havok.ts`. The static world
+   * is built through it rather than through the plugin's `PhysicsBody` and
+   * `PhysicsShape` classes, into the SAME Havok world the plugin steps
+   * (`BABYLON_EXIT.md` X2.4 C1); the clients follow it there.
    */
-  private worldNodes: TransformNode[] = [];
-  private worldBodies: PhysicsBody[] = [];
-  private worldShapes: PhysicsShapeContainer[] = [];
-  private worldLeaves: PhysicsShape[] = [];
+  private hp: Havok;
+
+  /**
+   * The map as one static body per 48 m block — see `buildWorld`, which is
+   * where the grouping is argued. Three parallel lists of raw handles rather
+   * than fields on a record, because the only thing anything does with them is
+   * build them and release them, in the order `clearWorld` gives.
+   */
+  private worldBodies: BodyId[] = [];
+  private worldShapes: ShapeId[] = [];
+  private worldLeaves: ShapeId[] = [];
 
   /**
    * Stands the engine up, synchronously, on a module `main.ts` has already
    * awaited. Nothing in the game is ever handed a half-built physics world.
    */
   constructor(
-    private scene: Scene,
+    scene: Scene,
     havok: HavokInstance,
   ) {
     // `false` = do NOT use the frame delta for the world step. The plugin then
@@ -227,6 +227,7 @@ export class PhysicsWorld {
     scene.physicsEnabled = false;
     this.engine = scene.getPhysicsEngine()!;
     this.hkPlugin = plugin;
+    this.hp = new Havok(havok, plugin.world);
   }
 
   /** True once there is ground to land on. A body without it falls forever. */
@@ -237,6 +238,16 @@ export class PhysicsWorld {
   /** The concrete plugin, for the one call the engine's union type lacks. */
   get plugin(): HavokPlugin {
     return this.hkPlugin;
+  }
+
+  /** The raw API, on the world every body here lives in. */
+  get havok(): Havok {
+    return this.hp;
+  }
+
+  /** How many static bodies the map was built as — one per bucket. */
+  get worldBodyCount(): number {
+    return this.worldBodies.length;
   }
 
   register(client: PhysicsClient): void {
@@ -369,41 +380,38 @@ export class PhysicsWorld {
    * Nothing that DECIDES anything reads these bodies.
    */
   private buildWorld(map: GameMap): void {
+    const hp = this.hp;
     // Insertion-ordered, so the containers are built in the order the boxes
     // first reach them and the world is the same world on every boot. The
     // colliders are seeded and ordered; nothing here may make them less so.
-    const buckets = new Map<string, PhysicsShapeContainer>();
-    const bucket = (x: number, z: number): PhysicsShapeContainer => {
+    // A container is created the first time a shape REACHES its bucket, after
+    // that shape — the order the plugin's `PhysicsShapeContainer` was built
+    // in, and creation order is handle order.
+    const buckets = new Map<string, ShapeId>();
+    const bucket = (x: number, z: number): ShapeId => {
       const key = `${Math.floor(x / BLOCK_SIZE)},${Math.floor(z / BLOCK_SIZE)}`;
       let container = buckets.get(key);
       if (!container) {
-        container = new PhysicsShapeContainer(this.scene);
+        container = hp.container();
         buckets.set(key, container);
       }
       return container;
     };
 
     for (const b of map.colliderBoxes) {
-      const shape = new PhysicsShapeBox(
-        Vector3.Zero(),
-        Quaternion.Identity(),
-        new Vector3(b.w, b.h, b.d),
-        this.scene,
-      );
+      const shape = hp.box([0, 0, 0], [0, 0, 0, 1], [b.w, b.h, b.d]);
       // MapBuilder.collider writes `mesh.rotation.set(rotX, rotY, 0)` and
       // Babylon's Euler order is yaw-pitch-roll, so this is the same
       // orientation — which is what carries the ramps across for free.
+      // `src/math`'s quaternion is Babylon's bit for bit.
       //
       // Bucketed by the box's CENTRE, and a box wider than a block is
       // therefore in one bucket and hanging out of it — which the four rim
       // boundary boxes always are. That is a locality hint being imprecise,
       // not a shape being wrong: the child still carries the same world-space
       // transform it did when there was one container.
-      bucket(b.cx, b.cz).addChild(
-        shape,
-        new Vector3(b.cx, b.cy, b.cz),
-        Quaternion.RotationYawPitchRoll(b.rotY, b.rotX, 0),
-      );
+      const q = MathQuaternion.RotationYawPitchRoll(b.rotY, b.rotX, 0);
+      hp.addChild(bucket(b.cx, b.cz), shape, [b.cx, b.cy, b.cz], [q.x, q.y, q.z, q.w], [1, 1, 1]);
       this.worldLeaves.push(shape);
     }
 
@@ -417,29 +425,70 @@ export class PhysicsWorld {
     // bounding box rather than parsed out of the mesh's name, which is the
     // string-sniffing `GameMap.terrainColliders` exists to avoid.
     for (const mesh of map.terrainColliders) {
-      const shape = new PhysicsShapeMesh(mesh as Mesh, this.scene);
+      const shape = this.meshShape(mesh);
       const centre = mesh.getBoundingInfo().boundingBox.centerWorld;
-      bucket(centre.x, centre.z).addChild(shape);
+      hp.addChild(bucket(centre.x, centre.z), shape, [0, 0, 0], [0, 0, 0, 1], [1, 1, 1]);
       this.worldLeaves.push(shape);
     }
 
-    for (const [key, container] of buckets) {
-      const node = new TransformNode(`physics-world-${key}`, this.scene);
-      const body = new PhysicsBody(
-        node,
-        PhysicsMotionType.STATIC,
-        false,
-        this.scene,
-      );
-      body.shape = container;
-      this.worldNodes.push(node);
+    // One static body per bucket, standing at the origin with no turn — what
+    // the plugin read off a fresh `TransformNode` (measured: exactly
+    // `[0, 0, 0]` and `[0, 0, 0, 1]`, no negative zero) — given its container
+    // and the mass properties built off it. NO material on any world shape:
+    // Havok's default friction (0.5) is what every body here lands on, and
+    // `FINDINGS.md` 53 is what that costs. Keep it until somebody asks.
+    for (const container of buckets.values()) {
+      const body = hp.createBody("static", [0, 0, 0], [0, 0, 0, 1]);
+      hp.setShape(body, container);
       this.worldBodies.push(body);
       this.worldShapes.push(container);
     }
   }
 
   /**
-   * Releases the whole static world.
+   * One terrain patch as a Havok mesh shape — `PhysicsShapeMesh`'s
+   * `MeshAccumulator`, without the class.
+   *
+   * The positions are the mesh's LOCAL ones through its absolute SCALING
+   * alone, which is what the plugin baked (a rigid transform is the body's
+   * business, and these bodies stand at the origin). The arithmetic is
+   * `Vector3.TransformCoordinates` over `Matrix.Scaling` written out, zero
+   * terms and all, because those terms are what turn a `-0` into a `0` and
+   * the float32 copy keeps the sign bit. The triangles are REVERSED, each
+   * one, in a left-handed scene: Havok wants the winding that lets it skip
+   * interior edges, and Babylon's default is the other one.
+   */
+  private meshShape(mesh: Mesh): ShapeId {
+    mesh.computeWorldMatrix(true);
+    const s = mesh.absoluteScaling;
+    const sx = s.x;
+    const sy = s.y;
+    const sz = s.z;
+    const data = mesh.getVerticesData(VertexBuffer.PositionKind) || [];
+    const positions = new Float64Array(data.length);
+    for (let i = 0; i < data.length; i += 3) {
+      const x = data[i];
+      const y = data[i + 1];
+      const z = data[i + 2];
+      const rw = 1 / (x * 0 + y * 0 + z * 0 + 1);
+      positions[i] = (x * sx + y * 0 + z * 0 + 0) * rw;
+      positions[i + 1] = (x * 0 + y * sy + z * 0 + 0) * rw;
+      positions[i + 2] = (x * 0 + y * 0 + z * sz + 0) * rw;
+    }
+    const indices = mesh.getIndices() ?? [];
+    const rightHanded = mesh.getScene().useRightHandedSystem;
+    const triangles = new Int32Array(indices.length - (indices.length % 3));
+    for (let i = 0; i + 2 < indices.length; i += 3) {
+      triangles[i] = indices[rightHanded ? i : i + 2];
+      triangles[i + 1] = indices[i + 1];
+      triangles[i + 2] = indices[rightHanded ? i + 2 : i];
+    }
+    return this.hp.mesh(positions, triangles);
+  }
+
+  /**
+   * Releases the whole static world, in the plugin's order: every body out of
+   * the world and released, then every container, then every leaf.
    *
    * **Every list, and all of them**: the world used to be one body, one
    * container and its leaves, and it is now one body and one container PER
@@ -449,15 +498,13 @@ export class PhysicsWorld {
    * `buildWorld`.
    */
   private clearWorld(): void {
-    for (const b of this.worldBodies) b.dispose();
-    for (const c of this.worldShapes) c.dispose();
+    for (const b of this.worldBodies) this.hp.destroyBody(b);
+    for (const c of this.worldShapes) this.hp.releaseShape(c);
     // Every leaf, or the WASM heap grows one map build at a time.
-    for (const s of this.worldLeaves) s.dispose();
-    for (const n of this.worldNodes) n.dispose();
+    for (const s of this.worldLeaves) this.hp.releaseShape(s);
     this.worldBodies = [];
     this.worldShapes = [];
     this.worldLeaves = [];
-    this.worldNodes = [];
   }
 
   dispose(): void {

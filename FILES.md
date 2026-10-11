@@ -970,12 +970,19 @@ src/
     GlassFx.ts          # A break's PICTURE: the pane's vertex range collapsed
                         #   in its merged glazing (`onBroken`) and the collider
                         #   mesh's editor flags (`onCleared`). Client only
-    PhysicsWorld.ts     # The ONLY Havok in the game: the plugin, the map as
+    PhysicsWorld.ts     # The ONLY Havok in the game: the engine, the map as
                         #   one static body per 48 m block (a single compound is
-                        #   quadratic in its shapes), and the fixed-step clock.
+                        #   quadratic in its shapes) built on the raw API, and
+                        #   the fixed-step clock.
                         #   Owns no bodies — its three clients do. Exports
                         #   loadHavok(), which main.ts awaits before there is a
                         #   Game
+    havok.ts            # Havok's raw HP_* API in one dialect: the handle
+                        #   types, [Result, value] unwrapped, the enums, and
+                        #   each call spelled as Babylon's HavokPlugin spelled
+                        #   it (reads included), so the port off the plugin is
+                        #   bit-for-bit. Babylon-free; imports @babylonjs/havok
+                        #   as a type only
     RagdollSystem.ts    # Corpses under that engine. One refusal left (past the
                         #   fog wall); a full pool evicts its oldest. Cannot
                         #   tell a dead bot from the player's stand-in
