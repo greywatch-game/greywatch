@@ -27,8 +27,11 @@
  *   decide anything — what a body is for is its client's business.
  */
 import type {
+  ConstraintAxis,
+  ConstraintAxisLimitMode,
   HavokPhysicsWithBindings,
   HP_BodyId,
+  HP_ConstraintId,
   HP_ShapeId,
   HP_WorldId,
   MassProperties,
@@ -45,6 +48,7 @@ export type HavokInstance = HavokPhysicsWithBindings;
 export type BodyId = HP_BodyId;
 export type ShapeId = HP_ShapeId;
 export type WorldId = HP_WorldId;
+export type ConstraintId = HP_ConstraintId;
 /** `[x, y, z]`, as every `HP_*` call takes a vector. */
 export type Vec3 = HpVector3;
 /** `[x, y, z, w]`, as every `HP_*` call takes a quaternion. */
@@ -54,12 +58,37 @@ export type Pose = QTransform;
 /** The two motion types anything here uses (no KINEMATIC body exists). */
 export type Motion = "static" | "dynamic";
 
+/** The six axes a 6-DoF constraint limits — `PhysicsConstraintAxis` less the distance. */
+export type ConstraintAxisName =
+  | "LINEAR_X"
+  | "LINEAR_Y"
+  | "LINEAR_Z"
+  | "ANGULAR_X"
+  | "ANGULAR_Y"
+  | "ANGULAR_Z";
+
+/** One axis's range, as a 6-DoF constraint's `limits` entry stated it. */
+export interface AxisLimit {
+  axis: ConstraintAxisName;
+  min: number;
+  max: number;
+}
+
+/** Where a constraint holds a body, in that body's own space: a pivot and two axes. */
+export interface Anchor {
+  pivot: Vec3;
+  axis: Vec3;
+  perp: Vec3;
+}
+
 export class Havok {
   /** The module's own enum values — embind objects, so never a literal. */
   private readonly STATIC: MotionType;
   private readonly DYNAMIC: MotionType;
   private readonly MINIMUM: MaterialCombine;
   private readonly MAXIMUM: MaterialCombine;
+  private readonly LOCKED: ConstraintAxisLimitMode;
+  private readonly LIMITED: ConstraintAxisLimitMode;
 
   constructor(
     readonly hk: HavokInstance,
@@ -69,6 +98,8 @@ export class Havok {
     this.DYNAMIC = hk.MotionType.DYNAMIC;
     this.MINIMUM = hk.MaterialCombine.MINIMUM;
     this.MAXIMUM = hk.MaterialCombine.MAXIMUM;
+    this.LOCKED = hk.ConstraintAxisLimitMode.LOCKED;
+    this.LIMITED = hk.ConstraintAxisLimitMode.LIMITED;
   }
 
   // --- the world ------------------------------------------------------------
@@ -256,6 +287,53 @@ export class Havok {
   /** Where Havok holds the body: `[[x, y, z], [x, y, z, w]]`, unnormalised. */
   pose(id: BodyId): Pose {
     return this.hk.HP_Body_GetQTransform(id)[1];
+  }
+
+  // --- constraints ----------------------------------------------------------
+
+  /**
+   * `initConstraint` for a `SIX_DOF` constraint, call for call: created, the
+   * parent body then the child, the anchor in the parent then in the child,
+   * each limit in the order given — an axis whose range is exactly `[0, 0]`
+   * LOCKED, any other LIMITED and given its minimum, then LIMITED again and
+   * given its maximum (the plugin set the mode once per bound) — then the
+   * collision between the two bodies, then enabled.
+   */
+  sixDof(
+    parent: BodyId,
+    child: BodyId,
+    inParent: Anchor,
+    inChild: Anchor,
+    limits: readonly AxisLimit[],
+    collisions: boolean,
+  ): ConstraintId {
+    const hk = this.hk;
+    const id = hk.HP_Constraint_Create()[1];
+    hk.HP_Constraint_SetParentBody(id, parent);
+    hk.HP_Constraint_SetChildBody(id, child);
+    hk.HP_Constraint_SetAnchorInParent(id, inParent.pivot, inParent.axis, inParent.perp);
+    hk.HP_Constraint_SetAnchorInChild(id, inChild.pivot, inChild.axis, inChild.perp);
+    for (const l of limits) {
+      const axis: ConstraintAxis = hk.ConstraintAxis[l.axis];
+      if (l.min == 0 && l.max == 0) {
+        hk.HP_Constraint_SetAxisMode(id, axis, this.LOCKED);
+      } else {
+        hk.HP_Constraint_SetAxisMode(id, axis, this.LIMITED);
+        hk.HP_Constraint_SetAxisMinLimit(id, axis, l.min);
+        hk.HP_Constraint_SetAxisMode(id, axis, this.LIMITED);
+        hk.HP_Constraint_SetAxisMaxLimit(id, axis, l.max);
+      }
+    }
+    // The plugin handed both of these a boolean; embind's wire value is 1/0.
+    hk.HP_Constraint_SetCollisionsEnabled(id, collisions ? 1 : 0);
+    hk.HP_Constraint_SetEnabled(id, 1);
+    return id;
+  }
+
+  /** `disposeConstraint`: disabled, then released. */
+  releaseConstraint(id: ConstraintId): void {
+    this.hk.HP_Constraint_SetEnabled(id, 0);
+    this.hk.HP_Constraint_Release(id);
   }
 
   private motionOf(motion: Motion): MotionType {

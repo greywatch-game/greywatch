@@ -10,7 +10,7 @@
  * `PhysicsWorld.update` takes one (since X2.4 C2); X2.4 C4 points `hp` at
  * `PhysicsWorld`'s own world, and C2/C3 point `clientBodies` at wherever the
  * three clients then keep their raw body handles (C2 moved the shards' and
- * the chunks'). A hash read through
+ * the chunks', C3 the corpses'). A hash read through
  * `HP_Body_GetQTransform` reads the same floats either side of that move,
  * which is what lets the oracles grade it.
  *
@@ -54,15 +54,15 @@ export function pageHelpers() {
      * Every pooled body of the three clients, in pool order, as
      * `[label, hpBodyId]`. A body's handle is fixed for the life of the
      * process — the pools are built once — so this is asked once per run.
-     * The shards and chunks are on the raw API since X2.4 C2 (a
-     * `PhysicsWorld` `WorldBody`, whose `id` is the handle); the corpses
-     * still reach through Babylon's `PhysicsBody._pluginData` until C3.
+     * All three are on the raw API — the shards and chunks since X2.4 C2,
+     * the corpses' bones since C3 — each a `PhysicsWorld` `WorldBody`, whose
+     * `id` is the handle.
      */
     clientBodies(g) {
       const out = [];
       for (const [s, slot] of g.ragdolls.slots.entries()) {
         for (const bone of slot.bones) {
-          out.push([`corpse${s}.${bone.joint}`, bone.body._pluginData.hpBodyId]);
+          out.push([`corpse${s}.${bone.joint}`, bone.body.id]);
         }
       }
       for (const [b, burst] of g.debris.bursts.entries()) {

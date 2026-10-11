@@ -179,8 +179,10 @@ export interface PhysicsClient {
  * **The node is UNPARENTED**, which is the plugin's simple branch both ways —
  * a teleport reads the node's raw `position` and `rotationQuaternion`, and a
  * sync writes them, neither normalised. A shard and a chunk are bodies on their
- * own meshes and satisfy it; a body on a parented node would need the branch
- * that composes against the parent, and there is none here.
+ * own meshes and a corpse's bone is a body on a pool-owned proxy that is
+ * parented to nothing (the rig's joint hangs off IT), so all three satisfy it;
+ * a body on a parented node would need the branch that composes against the
+ * parent, and there is none here.
  */
 export interface WorldBody {
   readonly id: BodyId;
@@ -203,9 +205,9 @@ export interface WorldBody {
 export class PhysicsWorld {
   /**
    * Two handles onto the same plugin, deliberately, until X2.4 C4 takes both
-   * away. `engine` is what lists the bodies still on the plugin (the
-   * ragdolls'); `plugin` is the concrete type, held because `substep` runs its
-   * prestep and sync over that list and `RagdollSystem` parks through it.
+   * away. `engine` is what lists the bodies still on the plugin — none since
+   * X2.4 C3 moved the ragdolls' onto the raw API, so `substep`'s prestep and
+   * sync over that list walk nothing; `plugin` is the concrete type.
    */
   private engine: PhysicsEngineV2;
   private hkPlugin: HavokPlugin;
@@ -234,8 +236,9 @@ export class PhysicsWorld {
 
   /**
    * Every client body on the raw API, in creation order — which is the order
-   * the plugin's engine listed them in, and so the order a substep teleports
-   * and syncs them. See `substep`.
+   * the plugin's engine listed them in (the corpses' bones, built first, then
+   * the shards', then the chunks'), and so the order a substep teleports and
+   * syncs them. See `substep`.
    */
   private bodies: WorldBody[] = [];
 

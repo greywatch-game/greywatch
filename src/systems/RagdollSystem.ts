@@ -45,18 +45,7 @@
  *   depends on it — `afterFirstStep` is this file's share of the teleport
  *   read-in, and it is per client precisely because each owns its own bodies.
  */
-import {
-  PhysicsBody,
-  PhysicsConstraintAxis,
-  PhysicsMotionType,
-  PhysicsShape,
-  PhysicsShapeBox,
-  Physics6DoFConstraint,
-  Quaternion,
-  Scene,
-  TransformNode,
-  Vector3,
-} from "@babylonjs/core";
+import { Quaternion, Scene, TransformNode, Vector3 } from "@babylonjs/core";
 import { CONFIG, FOG_WALL } from "../config";
 import {
   RAGDOLL_BONES,
@@ -67,14 +56,20 @@ import {
   type SoldierRig,
 } from "../entities/SoldierModel";
 import { mulberry32 } from "../world/rng";
-import type { PhysicsClient, PhysicsWorld } from "./PhysicsWorld";
+import type { AxisLimit, ConstraintId, ShapeId } from "./havok";
+import type { PhysicsClient, PhysicsWorld, WorldBody } from "./PhysicsWorld";
 
 /** One bone of one pooled corpse. */
 interface Bone {
   joint: BoneJoint;
   /** The node Havok writes. The rig's joint is parented to it while active. */
   proxy: TransformNode;
-  body: PhysicsBody;
+  /**
+   * On Havok's raw API, through `PhysicsWorld` (`BABYLON_EXIT.md` X2.4 C3) —
+   * a `WorldBody` on the proxy, which is unparented, so the world's teleport
+   * and sync are the plugin's simple branch both ways.
+   */
+  body: WorldBody;
   /**
    * `RAGDOLL_BONES`' own mass, kept because a blast's throw is a SPEED and an
    * impulse is what Havok takes — see `applyImpulse`. Copied rather than read
@@ -87,7 +82,7 @@ interface Bone {
 /** One corpse's worth of bodies, reused for the life of the process. */
 interface Slot {
   bones: Bone[];
-  constraints: Physics6DoFConstraint[];
+  constraints: ConstraintId[];
   /** Null when the slot is free. */
   subject: RagdollSubject | null;
   rig: SoldierRig | null;
@@ -150,7 +145,7 @@ export class RagdollSystem implements PhysicsClient {
   private rand: () => number = mulberry32(SPIN_SEED);
 
   /** Every bone shape in the pool, held flat for disposal — see `buildShapes`. */
-  private shapes: PhysicsShape[] = [];
+  private shapes: ShapeId[] = [];
   private slots: Slot[] = [];
 
   // Scratch — this runs every frame with up to `maxConcurrent` corpses live,
@@ -200,7 +195,7 @@ export class RagdollSystem implements PhysicsClient {
   afterFirstStep(): void {
     for (const slot of this.slots) {
       if (!slot.subject || slot.frozen) continue;
-      for (const bone of slot.bones) bone.body.disablePreStep = true;
+      for (const bone of slot.bones) bone.body.teleport = false;
     }
   }
 
@@ -280,6 +275,7 @@ export class RagdollSystem implements PhysicsClient {
     // LOD (`BattleView`) keeps it on every frame while this pool holds it.
     subject.setEnabled(true);
 
+    const hp = this.physics.havok;
     for (const bone of slot.bones) {
       const joint = rig[bone.joint];
       // Place the proxy exactly where the joint currently is in the world, so
@@ -297,13 +293,13 @@ export class RagdollSystem implements PhysicsClient {
       joint.setParent(bone.proxy);
 
       // The body is pooled and still carries the last corpse's motion.
-      bone.body.setLinearVelocity(Vector3.ZeroReadOnly);
-      bone.body.setAngularVelocity(Vector3.ZeroReadOnly);
-      bone.body.setMotionType(PhysicsMotionType.DYNAMIC);
+      hp.setLinearVelocity(bone.body.id, [0, 0, 0]);
+      hp.setAngularVelocity(bone.body.id, [0, 0, 0]);
+      this.physics.setMotion(bone.body, "dynamic");
       // Two-phase teleport: one step reads the node into the sim, then the sim
-      // owns it. `setTargetTransform` is NOT this — it is a kinematic target
-      // the body accelerates toward.
-      bone.body.disablePreStep = false;
+      // owns it (`afterFirstStep`). A kinematic target the body accelerates
+      // toward is NOT this.
+      bone.body.teleport = true;
     }
 
     this.applyImpulse(slot, subject);
@@ -398,15 +394,16 @@ export class RagdollSystem implements PhysicsClient {
 
   dispose(): void {
     this.reset();
+    const hp = this.physics.havok;
     for (const slot of this.slots) {
-      for (const c of slot.constraints) c.dispose();
+      for (const c of slot.constraints) hp.releaseConstraint(c);
       for (const b of slot.bones) {
-        b.body.dispose();
+        this.physics.removeBody(b.body);
         b.proxy.dispose();
       }
     }
     this.slots = [];
-    for (const s of this.shapes) s.dispose();
+    for (const s of this.shapes) hp.releaseShape(s);
     this.shapes = [];
   }
 
@@ -423,30 +420,30 @@ export class RagdollSystem implements PhysicsClient {
    * so a shape shared between slots could only turn every corpse's
    * self-collision off together with every corpse-against-corpse one, and two
    * bodies landing on each other is worth keeping. Bit 0 is left to the world
-   * (`PhysicsShape` defaults to membership 1), so slot `i` takes bit `i + 1`
+   * (`WORLD_GROUP`, Havok's default membership), so slot `i` takes bit `i + 1`
    * and collides with everything except itself.
    *
    * The wrap at 30 is a backstop, not a design: past thirty slots two corpses
    * would share a group and pass through each other, which is the mildest
    * failure available and far better than shifting into the sign bit.
    */
-  private buildShapes(slot: number): Map<BoneJoint, PhysicsShape> {
+  private buildShapes(slot: number): Map<BoneJoint, ShapeId> {
     const d = CONFIG.bots.death;
+    const hp = this.physics.havok;
     const group = 1 << (1 + (slot % 30));
-    const shapes = new Map<BoneJoint, PhysicsShape>();
+    const shapes = new Map<BoneJoint, ShapeId>();
     for (const bone of RAGDOLL_BONES) {
-      const shape = new PhysicsShapeBox(
-        new Vector3(...bone.center),
-        Quaternion.Identity(),
-        new Vector3(...bone.size),
-        this.scene,
-      );
-      shape.material = { friction: d.friction, restitution: d.restitution };
-      shape.filterMembershipMask = group;
+      // Centred on `center` in the bone's own space, which is what offsets
+      // each bone's centre of mass from its joint. FULL extents.
+      const [cx, cy, cz] = bone.center;
+      const [sx, sy, sz] = bone.size;
+      const shape = hp.box([cx, cy, cz], [0, 0, 0, 1], [sx, sy, sz]);
+      hp.setMaterial(shape, d.friction, d.restitution);
+      hp.setFilterMembership(shape, group);
       // Written unsigned, because this crosses into the WASM as a uint32. It
       // reads back out of Havok as the same bits signed (-3 for slot 0), and
       // both forms answer a `&` test identically.
-      shape.filterCollideMask = ~group >>> 0;
+      hp.setFilterCollide(shape, ~group >>> 0);
       shapes.set(bone.joint, shape);
       this.shapes.push(shape);
     }
@@ -455,6 +452,7 @@ export class RagdollSystem implements PhysicsClient {
 
   private buildPool(): void {
     const d = CONFIG.bots.death;
+    const hp = this.physics.havok;
     for (let i = 0; i < d.maxConcurrent; i++) {
       const shapes = this.buildShapes(i);
       const bones: Bone[] = RAGDOLL_BONES.map((spec) => {
@@ -463,21 +461,20 @@ export class RagdollSystem implements PhysicsClient {
         // a quaternion is allowed to exist anywhere near this rig.
         proxy.rotationQuaternion = Quaternion.Identity();
         proxy.position.y = PARKED_Y;
-        const body = new PhysicsBody(
-          proxy,
-          PhysicsMotionType.STATIC,
-          false,
-          this.scene,
-        );
-        body.shape = shapes.get(spec.joint)!;
-        body.setMassProperties({ mass: spec.mass });
-        body.setLinearDamping(d.linearDamping);
-        body.setAngularDamping(d.angularDamping);
+        // Created where the proxy stands, static, then shaped, weighed and
+        // damped: the plugin's calls in its order (`PhysicsWorld.addBody`).
+        // The pool is built before the debris pools, so these are the first
+        // client bodies in the world's table, as they were in the plugin's.
+        const body = this.physics.addBody(proxy, "static");
+        hp.setShape(body.id, shapes.get(spec.joint)!);
+        hp.setMass(body.id, spec.mass);
+        hp.setLinearDamping(body.id, d.linearDamping);
+        hp.setAngularDamping(body.id, d.angularDamping);
         return { joint: spec.joint, proxy, body, mass: spec.mass };
       });
 
       const byJoint = new Map(bones.map((b) => [b.joint, b]));
-      const constraints: Physics6DoFConstraint[] = [];
+      const constraints: ConstraintId[] = [];
       for (const [joint, link] of Object.entries(RAGDOLL_LINKS)) {
         if (!link) continue;
         const child = byJoint.get(joint as BoneJoint);
@@ -488,45 +485,31 @@ export class RagdollSystem implements PhysicsClient {
         // second hip.
         const parent = byJoint.get(link.parent);
         if (!child || !parent) continue;
-        const c = new Physics6DoFConstraint(
-          {
-            pivotA: new Vector3(...link.pivot),
-            pivotB: Vector3.Zero(),
-            // Identical axes on both sides: every joint is at identity
-            // relative to its parent in the carried pose, so the standing pose
-            // is the ZERO of all three angular axes and the limits below read
-            // as plain ranges rather than offsets from an authored rest angle.
-            axisA: new Vector3(1, 0, 0),
-            axisB: new Vector3(1, 0, 0),
-            perpAxisA: new Vector3(0, 1, 0),
-            perpAxisB: new Vector3(0, 1, 0),
-            // Constrained bodies overlap by construction; letting them collide
-            // is what makes a ragdoll jitter itself apart.
-            collision: false,
-          },
-          [
-            { axis: PhysicsConstraintAxis.LINEAR_X, minLimit: 0, maxLimit: 0 },
-            { axis: PhysicsConstraintAxis.LINEAR_Y, minLimit: 0, maxLimit: 0 },
-            { axis: PhysicsConstraintAxis.LINEAR_Z, minLimit: 0, maxLimit: 0 },
-            {
-              axis: PhysicsConstraintAxis.ANGULAR_X,
-              minLimit: link.x[0],
-              maxLimit: link.x[1],
-            },
-            {
-              axis: PhysicsConstraintAxis.ANGULAR_Y,
-              minLimit: link.y[0],
-              maxLimit: link.y[1],
-            },
-            {
-              axis: PhysicsConstraintAxis.ANGULAR_Z,
-              minLimit: link.z[0],
-              maxLimit: link.z[1],
-            },
-          ],
-          this.scene,
+        // The three linear axes are pinned (a range of exactly zero, which
+        // Havok is told as LOCKED) and the three angular ones are ranges.
+        const limits: AxisLimit[] = [
+          { axis: "LINEAR_X", min: 0, max: 0 },
+          { axis: "LINEAR_Y", min: 0, max: 0 },
+          { axis: "LINEAR_Z", min: 0, max: 0 },
+          { axis: "ANGULAR_X", min: link.x[0], max: link.x[1] },
+          { axis: "ANGULAR_Y", min: link.y[0], max: link.y[1] },
+          { axis: "ANGULAR_Z", min: link.z[0], max: link.z[1] },
+        ];
+        const [px, py, pz] = link.pivot;
+        const c = hp.sixDof(
+          parent.body.id,
+          child.body.id,
+          // Identical axes on both sides: every joint is at identity relative
+          // to its parent in the carried pose, so the standing pose is the
+          // ZERO of all three angular axes and the limits read as plain ranges
+          // rather than offsets from an authored rest angle.
+          { pivot: [px, py, pz], axis: [1, 0, 0], perp: [0, 1, 0] },
+          { pivot: [0, 0, 0], axis: [1, 0, 0], perp: [0, 1, 0] },
+          limits,
+          // Constrained bodies overlap by construction; letting them collide
+          // is what makes a ragdoll jitter itself apart.
+          false,
         );
-        parent.body.addConstraint(child.body, c);
         constraints.push(c);
       }
 
@@ -644,6 +627,7 @@ export class RagdollSystem implements PhysicsClient {
       this.v1.normalize();
     }
 
+    const hp = this.physics.havok;
     if (blast) {
       const speed = Math.min(
         imp.blast.max,
@@ -657,7 +641,13 @@ export class RagdollSystem implements PhysicsClient {
         // centre is offset from it by `RAGDOLL_BONES`, so each bone picks up a
         // little turn of its own, which is exactly the free tumble the round's
         // `lift` is asking for by hand.
-        bone.body.applyImpulse(this.v2, bone.proxy.position);
+        //
+        // **It lands BEFORE the teleport**: Havok still holds the body parked
+        // at `PARKED_Y`, and the location is the proxy's NEW position, a
+        // kilometre away (`FINDINGS.md` 57). Reproduced exactly as the plugin
+        // made it; fixing it is a change of its own.
+        const p = bone.proxy.position;
+        hp.applyImpulse(bone.body.id, [this.v2.x, this.v2.y, this.v2.z], [p.x, p.y, p.z]);
       }
     } else {
       this.v1.scaleInPlace(
@@ -669,7 +659,12 @@ export class RagdollSystem implements PhysicsClient {
         this.v2.copyFrom(UP).scaleInPlace(imp.lift),
         this.v2,
       );
-      chest.body.applyImpulse(this.v1, this.v2);
+      // Before the teleport, as the blast's is — see above.
+      hp.applyImpulse(
+        chest.body.id,
+        [this.v1.x, this.v1.y, this.v1.z],
+        [this.v2.x, this.v2.y, this.v2.z],
+      );
     }
 
     // A seeded kick so two identical deaths do not fall identically. THIS
@@ -684,7 +679,7 @@ export class RagdollSystem implements PhysicsClient {
       (this.rand() * 2 - 1) * spin,
       (this.rand() * 2 - 1) * spin,
     );
-    chest.body.applyAngularImpulse(this.v2);
+    hp.applyAngularImpulse(chest.body.id, [this.v2.x, this.v2.y, this.v2.z]);
   }
 
   /**
@@ -699,13 +694,16 @@ export class RagdollSystem implements PhysicsClient {
    */
   private hasSettled(slot: Slot, dt: number): boolean {
     const d = CONFIG.bots.death;
+    const hp = this.physics.havok;
     let fastest = 0;
     let spinniest = 0;
     for (const bone of slot.bones) {
-      bone.body.getLinearVelocityToRef(this.v1);
-      fastest = Math.max(fastest, this.v1.length());
-      bone.body.getAngularVelocityToRef(this.v1);
-      spinniest = Math.max(spinniest, this.v1.length());
+      // Written out as `Vector3.length` spells it, so the thresholds see the
+      // same floats the plugin's read-back gave them.
+      const [lx, ly, lz] = hp.linearVelocity(bone.body.id);
+      fastest = Math.max(fastest, Math.sqrt(lx * lx + ly * ly + lz * lz));
+      const [ax, ay, az] = hp.angularVelocity(bone.body.id);
+      spinniest = Math.max(spinniest, Math.sqrt(ax * ax + ay * ay + az * az));
     }
     if (fastest > d.sleepSpeed || spinniest > d.sleepSpin) {
       slot.stillT = 0;
@@ -746,29 +744,28 @@ export class RagdollSystem implements PhysicsClient {
    * Takes a bone's body out of the world and holds it at `PARKED_Y`.
    *
    * Moving the proxy node is NOT enough, and that is the whole reason this
-   * exists. The plugin copies a node's transform into its body during the
-   * pre-step and only while prestep is enabled, so a body parked with
-   * `disablePreStep` still true stays exactly where the corpse settled — an
+   * exists. The world copies a node's transform into its body during the
+   * pre-step and only while a teleport is pending, so a body whose proxy alone
+   * was moved stays exactly where the corpse settled — an
    * invisible static box lying on the street. Measured before this: a downward
    * physics ray over open ground read 0.000 m before a death and **0.303 m
    * after the body had been retired and its slot freed**, which the next corpse
    * to fall there would have landed on.
    *
-   * Writing the transform through the plugin by hand is what makes the park
-   * immediate. Waiting for the next step will not do: the step is skipped
+   * Writing the transform into the engine by hand (`PhysicsWorld.park`) is
+   * what makes the park immediate. Waiting for the next step will not do: the step is skipped
    * exactly when nothing is simulating, which is the state a release usually
    * leaves behind.
    */
   private park(bone: Bone): void {
-    bone.body.setLinearVelocity(Vector3.ZeroReadOnly);
-    bone.body.setAngularVelocity(Vector3.ZeroReadOnly);
+    const hp = this.physics.havok;
+    hp.setLinearVelocity(bone.body.id, [0, 0, 0]);
+    hp.setAngularVelocity(bone.body.id, [0, 0, 0]);
     bone.proxy.position.set(0, PARKED_Y, 0);
     bone.proxy.rotationQuaternion!.copyFrom(Quaternion.Identity());
-    // TELEPORT for the length of the write, then back to the pooled state.
-    bone.body.disablePreStep = false;
-    this.physics.plugin.setPhysicsBodyTransformation(bone.body, bone.proxy);
-    bone.body.disablePreStep = true;
-    bone.body.setMotionType(PhysicsMotionType.STATIC);
+    // A TELEPORT now with any pending one cleared, then the pooled state.
+    this.physics.park(bone.body);
+    this.physics.setMotion(bone.body, "static");
   }
 
   /**
