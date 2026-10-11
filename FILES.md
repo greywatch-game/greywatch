@@ -588,7 +588,13 @@ src/
                         #   and no random draws — Player holds the string and
                         #   draws, and Player.recoilKick is still the one door
   entities/
-    Player.ts           # Movement, sprint, crouch, jump, weapon state
+    Player.ts           # Movement, sprint, crouch, jump, weapon state — the
+                        #   body is fields (mid, ellipsoid) the sweep moves as
+                        #   a SweepBody; draws nothing and imports no Babylon,
+                        #   telling its PlayerPicture what happened
+    PlayerView.ts       # The player's PICTURE: the ViewModel on the camera,
+                        #   the muzzle flash star and the brass pool. Client
+                        #   only; told by Player (fired/stepped/cleared/stowed)
     HealthRegen.ts      # A person's regen: the lock after a hit and the curve
                         #   back to full. One held by Player (predicting) and
                         #   one by server/NetPlayer (authoritative), so the two

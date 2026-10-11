@@ -1092,8 +1092,8 @@ export class Vehicle implements Combatant, RayHull {
     // however generous the ground query was. Lifting the floor means anything
     // shorter than `climbHeight` is simply not in the way horizontally, and
     // `standOnGround` — which accepts a surface from exactly the same band —
-    // then rides the hull up over it. It is the same trick the player's capsule
-    // plays with its own 5 cm, at the scale tracks deserve.
+    // then rides the hull up over it. It is the same trick the player's sweep
+    // ellipsoid plays with its own 5 cm, at the scale tracks deserve.
     //
     // What it costs is that the bottom `climbHeight` of the hull is not a
     // collider: a tank shoulders THROUGH the bottom of a barrier for the few
@@ -2694,8 +2694,8 @@ export class Vehicle implements Combatant, RayHull {
    *   `update` now aims it on a turn as well, which turns the teleport into
    *   the rate above — and a rate is a thing this can beat.
    *
-   * A body has neither problem: `Player`'s capsule is round, centred, and
-   * turning it moves nothing.
+   * A body has neither problem: `Player`'s sweep ellipsoid is round, centred,
+   * and has no yaw to turn.
    *
    * ## Why the engine cannot do it
    *

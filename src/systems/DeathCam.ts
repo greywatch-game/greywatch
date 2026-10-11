@@ -19,7 +19,7 @@
  *   meshes, is already what `RAGDOLL_BONES` is measured against, and hands to
  *   `RagdollSystem` with nothing adapted.
  * - **It is a stand-in, not the player.** `Player` has no rig and never grows
- *   one: it is a capsule, a viewmodel and an eye. The corpse is a separate
+ *   one: it is a sweep ellipsoid, a viewmodel and an eye, and owns no mesh. The corpse is a separate
  *   `RagdollSubject` stood up at the player's last position on the frame they
  *   die and hidden again when the cam ends, so nothing in movement, collision
  *   or hit detection ever gains a mesh to disagree with.
@@ -259,9 +259,9 @@ export class DeathCam {
    * whether the player watches their own body fold where it stood or leave the
    * ground, and a player killed by a grenade should never be shown the first.
    *
-   * `feet` is the player's FEET, not `Player.position`, which is the middle of
-   * the collider capsule. `Player.floorY` is the height to use and is already
-   * probed this frame, so it costs nothing.
+   * `feet` is the ground under the player: `Player.position`'s x and z at
+   * `Player.floorY`, the height already probed this frame, so it costs
+   * nothing — never the sweep body's centre, half a body up.
    *
    * `crouch` is the player's own eased stance blend, and the body is posed in
    * it before it is offered. It is the same number `Player.syncCombatant` has

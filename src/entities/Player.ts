@@ -1,8 +1,13 @@
 /**
  * Player.ts — Player controller: movement/sprint/crouch/jump physics,
- * health/regen, weapon state (fire/reload/spread), gunfeel dressing (muzzle
- * flash mesh, ejected brass), and the first-person viewmodel wiring.
- * Owns: the player Combatant, and the ViewModel hanging off the camera.
+ * health/regen, weapon state (fire/reload/spread), and the smoothed signals
+ * the first-person viewmodel is posed from.
+ * Owns: the player Combatant — the body's centre, its sweep ellipsoid and
+ * every clock above as plain `src/math` fields. It draws NOTHING: what the
+ * player looks like (the viewmodel, the muzzle flash, the brass) is
+ * `PlayerView`'s, built by `Game` and told what happened through
+ * `PlayerPicture`. **No `@babylonjs/core` here** — the camera and the input
+ * it reads are type-only, and `Game` is where a vector crosses.
  * The carried weapon is a resolved `WeaponSetup`, never CONFIG read at the
  * use site: damage, rate, magazine, spread, range and the recoil multipliers
  * all come off it, so swapping guns is one assignment in `setWeapon`.
@@ -17,23 +22,24 @@
  * load, the heightfield, and the fleet's decks — and no longer a scene pick, so
  * it costs the same on a 400 m map as on a 240 m one. It filters nothing on
  * `metadata.solid`, because the structures it reads only ever held solids.
- * `position` is the FEET, as `Combatant` requires, and is NOT `root.position`
- * — the capsule's centre, half a body higher. Anything wanting the middle of
- * the body wants `center`. The three exported points (`position`, `center`,
- * `eyePos`) are derived in `syncCombatant` and are the only ones anything
- * outside this file may read.
+ * `position` is the FEET, as `Combatant` requires, and is NOT `mid` — the
+ * sweep body's centre, half a body higher, and the one point the movement
+ * writes. Anything wanting the middle of the body wants `center`. The three
+ * exported points (`position`, `center`, `eyePos`) are derived in
+ * `syncCombatant` and are the only ones anything outside this file may read.
+ * There is no collider MESH: the sweep is `CollisionField`'s and takes a
+ * `SweepBody` record (`sweepBody`, over `mid` and `ellipsoid`), the probe and
+ * the push-out read the same two fields, and nothing else ever looked at the
+ * capsule this used to keep (BABYLON_EXIT.md X2.2 C10).
  * Crouch moves `eyePos` AND `center` on one blend — the eye is the camera, the
  * LOS target and the bots' aim point at once, so lowering it without lowering
  * the hit sphere makes crouching a liability rather than cover.
  * Health regenerates after CONFIG.player.regenDelay — with 8 hostile bots and
  * no medics this is load-bearing, not decoration. The player has no world body
  * mesh at all: the camera is inside the head, so the only thing on screen is
- * the viewmodel (and the blob shadow ShadowSystem draws underfoot). The flash
- * mesh and casing pool are player-only visuals (bots get neither — see
- * CONFIG.gunfeel), and the flash must join VIEWMODEL_GROUP with the rifle it
- * hangs off. Both are built as `Part`s on `src/geometry/` buffers and made
- * meshes by `drawnMesh` (BABYLON_EXIT.md X1.3); the capsule is a COLLIDER,
- * not a drawing, and stays `MeshBuilder`'s until the sweeps are ours (X2.1).
+ * the viewmodel (and the blob shadow ShadowSystem draws underfoot). A shot's
+ * flash and brass are pictures too, and `PlayerPicture.fired` is where this
+ * file says one happened; their randomness never reaches a round.
  * Damage flows out via the onDamaged callback wired in Game.
  * The RECOIL VECTOR is built here (`recoilKick`) and nowhere else: every number
  * in it is the weapon's or the body's, and Game only wires the result to the
@@ -63,17 +69,7 @@
  * changes nothing here but the count a life starts with and what the hand is
  * seen holding — the gesture is the same one for both.
  */
-import {
-  Mesh,
-  MeshBuilder,
-  type Node,
-  Scene,
-  TransformNode,
-  Vector3,
-} from "@babylonjs/core";
 import { CONFIG } from "../config";
-import { createBox, createPlane, DOUBLESIDE } from "../geometry/primitives";
-import { drawnMesh, Part } from "../world/parts";
 import {
   RecoilAxis,
   recoilGain,
@@ -91,7 +87,6 @@ import {
   sweepDrift,
   type AimKick,
 } from "../core/recoilVector";
-import { CelMaterialFactory } from "../shaders/CelShader";
 import type { CameraSystem } from "../core/CameraSystem";
 import type { InputManager } from "../core/InputManager";
 import {
@@ -119,18 +114,17 @@ import {
   type WeaponId,
   type WeaponSetup,
 } from "./weapons";
-import {
-  ViewModel,
-  VIEWMODEL_GROUP,
-  type StageBay,
-  type ViewModelParams,
-} from "./ViewModel";
+import type { StageBay, ViewModel, ViewModelParams } from "./ViewModel";
 import type { ReloadActionKind } from "./weaponKit";
-import { moveBody, type CollisionField } from "../world/CollisionField";
+import {
+  moveBody,
+  type CollisionField,
+  type SweepBody,
+} from "../world/CollisionField";
 import type { ObstacleField } from "../world/ObstacleField";
 import { TerrainField } from "../world/TerrainField";
 import type { Combatant, Team } from "./Combatant";
-import type { Vector3Like } from "../math";
+import { Vector3, type Vector3Like } from "../math";
 import { HealthRegen } from "./HealthRegen";
 import { easeStance, stanceCentre, stanceEye } from "./stance";
 import type { DamageKind, ShotOptions } from "../systems/CombatSystem";
@@ -206,16 +200,38 @@ function equipHolster(id: EquipmentId): Holster {
   return { setup, ammo: setup.magSize, mode: 0 };
 }
 
-/** One live brass case: world-space ballistic, despawned on `t` expiry. */
-interface Casing {
-  mesh: Mesh;
-  vel: Vector3;
-  spin: number;
-  t: number;
+/**
+ * Who is drawing the player — `PlayerView`, which only the client builds —
+ * and the four things it is TOLD as they happen, because a strobe, a case of
+ * brass and a reset cannot be polled. `Vehicle`'s `HullPicture` is the
+ * precedent.
+ *
+ * The viewmodel is reached directly as `model` rather than through a fifth
+ * verb: its pose IS this file's smoothed signals (`animate` fills one
+ * `ViewModelParams` a frame), and the weapon in the hands, the optic and the
+ * turntable are pushed at it from the loadout calls below. Two owners of one
+ * gesture is the thing the split must not make, so the line is drawn round
+ * the parts that are only pictures — the flash and the brass.
+ */
+export interface PlayerPicture {
+  /** The rifle and hands on screen. Type-only here, so no mesh crosses. */
+  readonly model: ViewModel;
+  /** A round left a GUN (never an anti-tank item): the strobe and a case. */
+  fired(): void;
+  /** A frame was stepped: the strobe burns down, brass falls to `feetY`. */
+  stepped(dt: number, feetY: number): void;
+  /** A fresh body: no strobe and no brass left over from the last one. */
+  cleared(): void;
+  /** The weapon put away (`hidden`) or taken out — not an inspection. */
+  stowed(hidden: boolean): void;
 }
 
-/** Scratch for the eject direction — no allocation per shot. */
-const _casingDir = new Vector3();
+/**
+ * The sweep ellipsoid's offset from `mid`: none. The body's centre IS the
+ * ellipsoid's, which is what the collider capsule's default `ellipsoidOffset`
+ * was and what `scripts/sweep-check.mjs` checks the player's body at.
+ */
+const NO_OFFSET: Vector3Like = { x: 0, y: 0, z: 0 };
 
 /**
  * Bob phase of the first of the two footfalls in a stride.
@@ -264,26 +280,25 @@ export interface PlayerEvents {
 }
 
 /**
- * Player pawn: movement (walk/jump/gravity) with Babylon collision sliding,
+ * Player pawn: movement (walk/jump/gravity) with the ported collision slide,
  * weapon state (ammo/reload/fire cooldown), and the smoothed signals that
  * drive the first-person weapon (movement, sprint, reload, turn rate, kick).
  *
- * The invisible root capsule stays the physics collider. In first person the
- * pawn has no visible body — the camera sits at its eye — so the only meshes
- * it owns are the viewmodel's, the muzzle flash and the brass.
+ * The body is two fields — `mid` and `ellipsoid` — and the sweep moves them
+ * as a `SweepBody`. In first person the pawn has no visible body — the camera
+ * sits at its eye — and everything that IS drawn is `PlayerPicture`'s.
  */
 export class Player implements Combatant {
-  root: Mesh;
   /** Which side the player fights for. Set by Game when a round starts. */
   team: Team = 0;
   /**
-   * FEET, as `Combatant` requires — NOT `root.position`, which is the collider
-   * capsule's centre and sits `groundY` above them.
+   * FEET, as `Combatant` requires — NOT `mid`, which is the sweep body's
+   * centre and sits `groundY` above them.
    *
    * The distinction is invisible offline, where nothing outside this file reads
    * the `y` at all, and it is the whole ballgame over a wire: the server and
    * every other client take a combatant's `position.y` as the ground under it
-   * and build the body, the centre and the eye up from there. Handed a capsule
+   * and build the body, the centre and the eye up from there. Handed the body's
    * centre they build all three half a body too high — the remote body floats,
    * its hit spheres float with it, and the movement validator asks whether
    * there is room for a player standing 0.9 m in the air, which is how a door
@@ -304,8 +319,10 @@ export class Player implements Combatant {
     from?: Vector3Like,
     kind?: DamageKind,
   ) => void = () => {};
-  /** The rifle and hands on screen; the only visible thing the player owns. */
-  private view: ViewModel;
+  /** Who draws the player — see `PlayerPicture`. */
+  private readonly picture: PlayerPicture;
+  /** The rifle and hands on screen — `picture.model`, held for brevity. */
+  private readonly view: ViewModel;
   /** Whether the viewmodel is hidden (menu, deploy screen, editor). */
   private bodyHidden = true;
   /**
@@ -633,13 +650,6 @@ export class Player implements Combatant {
    * round, one number, however many things spend it.
    */
   private shotOwed = 0;
-  /** Muzzle flash star: shown for `gunfeel.flashTime` after each shot. */
-  private flashRoot!: TransformNode;
-  private flashT = 0;
-  /** Ejected brass pool; a case is live while its `t > 0`. */
-  private casings: Casing[] = [];
-  /** Scratch for casing integration — no per-frame allocation. */
-  private readonly casingStep = new Vector3();
   /**
    * Scratch for the camera-relative movement basis. Two, because the vector
    * being built and the one being added into it are live at the same moment.
@@ -675,6 +685,37 @@ export class Player implements Combatant {
   };
 
   private readonly groundY = CONFIG.player.height / 2;
+  /**
+   * The body's CENTRE — the one point the movement writes, `groundY` above
+   * the feet. The sweep moves it (through `sweepBody`), gravity and the floor
+   * snap set its `y`, the push-out walks its `x`/`z`, and `syncCombatant`
+   * derives the three exported points from it. Private, and deliberately not
+   * called `position`: that name is the FEET, which is what `Combatant`
+   * promises and what the wire carries.
+   *
+   * It is the collider capsule's `position` as it was, moved onto a field —
+   * same float64s, same operations in the same order — and nothing outside
+   * this file ever read the capsule, so nothing outside had to change.
+   */
+  private readonly mid = new Vector3(0, this.groundY, 0);
+  /**
+   * The sweep's ellipsoid radii: `CONFIG.player.radius` across, and half the
+   * body's height less 5 cm up, so a lip that low is under the body rather than
+   * in its way. Axis-aligned and never turned, so the body has no yaw to keep.
+   * Also the push-out's radius and band (`freeFromProps`), which is what keeps
+   * the two from arguing.
+   */
+  private readonly ellipsoid = new Vector3(
+    CONFIG.player.radius,
+    CONFIG.player.height / 2 - 0.05,
+    CONFIG.player.radius,
+  );
+  /** What `moveBody` is handed: `mid` and `ellipsoid`, no offset. */
+  private readonly sweepBody: SweepBody = {
+    position: this.mid,
+    ellipsoid: this.ellipsoid,
+    ellipsoidOffset: NO_OFFSET,
+  };
   /**
    * The surface height `probeGround` found under the feet this frame — the
    * floor the body is standing on, or falling toward.
@@ -717,67 +758,9 @@ export class Player implements Combatant {
    */
   private terrain: TerrainField = new TerrainField();
 
-  constructor(scene: Scene, mats: CelMaterialFactory, camera: Node) {
-    const p = CONFIG.player;
-
-    // Invisible collider capsule — physics only, never rendered.
-    this.root = MeshBuilder.CreateCapsule(
-      "player",
-      { height: p.height, radius: p.radius },
-      scene,
-    );
-    this.root.position = new Vector3(0, this.groundY, 0);
-    this.root.isVisible = false;
-    this.root.ellipsoid = new Vector3(p.radius, p.height / 2 - 0.05, p.radius);
-
-    // The weapon hangs off the camera, not off this capsule: in first person
-    // the rifle you see is a viewmodel, posed in camera space.
-    this.view = new ViewModel(scene, mats, camera);
-
-    // --- gunfeel dressing: muzzle flash star + brass pool (player only) ---
-    // The flash is three crossed emissive petals at the muzzle; per shot it
-    // gets a random roll and scale so no two shots strobe identically.
-    this.flashRoot = new TransformNode("player_muzzleFlash", scene);
-    // The viewmodel's own muzzle node, not the carried model's: the model can
-    // be switched off under a loadout change and the flash must not go with it.
-    this.flashRoot.parent = this.view.muzzle;
-    this.flashRoot.setEnabled(false);
-    const flashMat = mats.getEmissive("#ffd9a0");
-    for (let i = 0; i < 3; i++) {
-      const petal = drawnMesh(
-        new Part(
-          `player_flashPetal${i}`,
-          createPlane({ width: 0.34, height: 0.15, sideOrientation: DOUBLESIDE }),
-        ),
-        scene,
-      );
-      petal.parent = this.flashRoot;
-      petal.rotation.y = Math.PI / 2; // length runs along the barrel
-      petal.rotation.z = (i * Math.PI) / 3;
-      petal.position.z = 0.14;
-      petal.material = flashMat;
-      petal.metadata = { noInk: true };
-      petal.isPickable = false;
-      // The flash lives on the viewmodel, so it has to be drawn in the same
-      // depth-cleared pass — left in the world group it would be hidden
-      // behind the very barrel it sits on.
-      petal.renderingGroupId = VIEWMODEL_GROUP;
-      petal.alwaysSelectAsActiveMesh = true;
-    }
-
-    const casingMat = mats.get("#b99b4e");
-    for (let i = 0; i < CONFIG.gunfeel.casingPool; i++) {
-      const m = drawnMesh(
-        new Part(`player_casing${i}`, createBox({ width: 0.016, height: 0.016, depth: 0.05 })),
-        scene,
-      );
-      m.material = casingMat;
-      m.isPickable = false;
-      m.isVisible = false;
-      this.casings.push({ mesh: m, vel: new Vector3(), spin: 0, t: 0 });
-    }
-    // Brass is thrown into the WORLD, not onto the camera, so it stays in the
-    // ordinary rendering group and is occluded by geometry like anything else.
+  constructor(picture: PlayerPicture) {
+    this.picture = picture;
+    this.view = picture.model;
 
     this.applyVisibility();
     // `position`, `center` and `eyePos` are read by things that run before the
@@ -1377,12 +1360,7 @@ export class Player implements Combatant {
     // life's kick and finish it in the new one's first frames.
     this.kick.reset();
     this.kickDrift = 0;
-    this.flashT = 0;
-    this.flashRoot.setEnabled(false);
-    for (const c of this.casings) {
-      c.t = 0;
-      c.mesh.isVisible = false;
-    }
+    this.picture.cleared();
     this.crouching = false;
     this.crouchBlend = 0;
     this.moveBlend = 0;
@@ -1421,9 +1399,9 @@ export class Player implements Combatant {
 
   placeAt(spawn: Vector3Like): void {
     // By its fields: a spawn is `scatterSpawn`'s `src/math` vector or the
-    // wire's Babylon one, and Babylon's `copyFrom` reads `_x`.
-    this.root.position.copyFromFloats(spawn.x, spawn.y, spawn.z);
-    this.root.position.y = spawn.y + this.groundY;
+    // wire's Babylon one, and `Vector3Like` is all either is read as.
+    this.mid.copyFromFloats(spawn.x, spawn.y, spawn.z);
+    this.mid.y = spawn.y + this.groundY;
     this.velY = 0;
     this.grounded = true;
     // The spawn IS a standable surface, so it is the right answer until the
@@ -1446,7 +1424,7 @@ export class Player implements Combatant {
    * `feet`, like everything else that crosses the wire — see `position`.
    */
   nudgeTo(feet: Vector3Like): void {
-    this.root.position.set(feet.x, feet.y + this.groundY, feet.z);
+    this.mid.set(feet.x, feet.y + this.groundY, feet.z);
     this.syncCombatant();
   }
 
@@ -1504,7 +1482,7 @@ export class Player implements Combatant {
    */
   private probeGround(): number {
     const p = CONFIG.player;
-    const pos = this.root.position;
+    const pos = this.mid;
     const ceiling = pos.y - this.groundY + p.stepHeight + 0.05;
     const floor = ceiling - p.groundProbeLength;
     // The floor of last resort, and never banded — see above.
@@ -1525,8 +1503,8 @@ export class Player implements Combatant {
    * The sweep is HORIZONTAL and the ground probe is a POINT. Nothing sweeps
    * the vertical — gravity is a number added to `y` — so a body coming down
    * beside something whose top face is above its feet arrives INSIDE it, and
-   * the probe cannot notice, because it is one column at `root.position` and
-   * the capsule around that column is 0.9 m wide. A guard rail is 0.16 m of
+   * the probe cannot notice, because it is one column at `mid` and the body
+   * around that column is 0.9 m wide. A guard rail is 0.16 m of
    * it. Jumping at one and letting go of the stick over it is the everyday
    * way in: the apex of a jump is 1.64 m and `GUARD_HEIGHT` is 1.1, so the
    * body clears the top, the sweep stops being able to see the rail at all
@@ -1553,7 +1531,7 @@ export class Player implements Combatant {
    * `ObstacleField.resolve` — the same bucketed push-out that keeps a bot out
    * of a tree and a hull out of a shopfront — in the BODY's own band: a top
    * face within `stepHeight` is a step to walk up rather than something to be
-   * ejected from, and an underside above the capsule is a doorway to walk
+   * ejected from, and an underside above the body is a doorway to walk
    * under. The radius is the sweep's own `ellipsoid.x` and not a number of its
    * own, which is what keeps the two from arguing: the push can never ask for
    * room the sweep does not already hold a body out to, so on every frame the
@@ -1579,8 +1557,8 @@ export class Player implements Combatant {
     const obstacles = this.obstacles;
     if (!obstacles) return;
     const p = CONFIG.player;
-    const pos = this.root.position;
-    const e = this.root.ellipsoid;
+    const pos = this.mid;
+    const e = this.ellipsoid;
     const feet = pos.y - this.groundY;
     if (
       !obstacles.resolve(
@@ -1658,7 +1636,7 @@ export class Player implements Combatant {
     // Sprint outranks crouch, and is resolved first so the two can't argue:
     // asking to run stands the player up. Crouch is deliberately NOT gated on
     // `grounded` — jumping out of it would pop the camera half a metre at the
-    // worst possible moment, and the collider capsule never changes size, so
+    // worst possible moment, and the sweep body never changes size, so
     // there is nothing underfoot to reconcile.
     //
     // **A LATCH IS SPENT BY WHAT OVERRIDES IT, NEVER SUSPENDED BY IT**, and
@@ -1703,7 +1681,7 @@ export class Player implements Combatant {
       // rather than trusted, and the case that check exists for is not
       // theoretical here: a hull respawning on its hardstanding arrives around
       // whoever is standing on it, and the body is ejected rather than swept.
-      moveBody(this.collidables, this.root, move.scaleInPlace(speed * dt));
+      moveBody(this.collidables, this.sweepBody, move.scaleInPlace(speed * dt));
     }
 
     // --- jump & gravity, against whatever surface is actually underfoot ---
@@ -1713,7 +1691,7 @@ export class Player implements Combatant {
       ev.jumped = true;
     }
     this.velY -= p.gravity * dt;
-    this.root.position.y += this.velY * dt;
+    this.mid.y += this.velY * dt;
 
     // Hollowmere has terraces, embankments, ramps and a hayloft, so the floor
     // is wherever the probe finds it rather than a fixed plane. Ground rising
@@ -1730,7 +1708,7 @@ export class Player implements Combatant {
     // only thing the snap resolves is one frame's worth of overlap.
     const floorY = this.probeGround();
     this.floorY = floorY;
-    const foot = this.root.position.y - this.groundY;
+    const foot = this.mid.y - this.groundY;
     const stick = this.grounded ? p.stepHeight : 0;
     if (foot <= floorY + stick) {
       // Report the arrival before the snap eats the speed it arrived at. Only
@@ -1745,7 +1723,7 @@ export class Player implements Combatant {
         // an event, because audio is Game's.
         cam.land(ev.landed);
       }
-      this.root.position.y = floorY + this.groundY;
+      this.mid.y = floorY + this.groundY;
       this.velY = 0;
       this.grounded = true;
     } else {
@@ -1758,12 +1736,6 @@ export class Player implements Combatant {
     // because a frame that ended anywhere else would end with the body
     // somewhere this had already rejected.
     this.freeFromProps(dt);
-
-    // --- the capsule still faces the camera yaw ---
-    // Nothing renders off it any more, but the blob shadow underfoot is
-    // oriented from it, and a capsule that never turned would drag an
-    // unturning oval around with the player.
-    this.root.rotation.y = cam.yaw;
 
     this.updateVitals(dt);
 
@@ -1838,7 +1810,7 @@ export class Player implements Combatant {
     }
 
     this.syncCombatant();
-    this.updateGunfeel(dt);
+    this.picture.stepped(dt, this.position.y);
     this.animate(dt, moveInput, cam);
     return ev;
   }
@@ -2127,14 +2099,10 @@ export class Player implements Combatant {
       if (this.ammo === 0) this.drawSlot(PRIMARY_SLOT);
       return true;
     }
-    // Muzzle flash: a single-frame-scale strobe with a random roll and scale,
-    // so full-auto reads as flicker rather than one static sprite.
-    const g = CONFIG.gunfeel;
-    this.flashT = g.flashTime;
-    this.flashRoot.setEnabled(true);
-    this.flashRoot.rotation.z = Math.random() * Math.PI;
-    this.flashRoot.scaling.setAll(0.85 + Math.random() * 0.4);
-    this.ejectCasing();
+    // The strobe at the muzzle and a case of brass out of the port — both
+    // pictures, drawn by whoever the picture is, before the reload below
+    // takes the hands.
+    this.picture.fired();
     if (this.ammo === 0) this.startReload();
     return true;
   }
@@ -2208,74 +2176,6 @@ export class Player implements Combatant {
    */
   spendGrenade(): void {
     this.grenades -= 1;
-  }
-
-  /** Where the throwing hand is, which is where the grenade leaves from. */
-  throwHandWorld(): Vector3 {
-    return this.view.throwHandWorld();
-  }
-
-  /**
-   * Pops one brass case out of the eject port: sideways off the rifle with a
-   * random upward toss and tumble. Pool-starved shots just skip the case.
-   */
-  private ejectCasing(): void {
-    const c = this.casings.find((c) => c.t <= 0);
-    if (!c) return;
-    const g = CONFIG.gunfeel;
-    // The port is on the viewmodel, so this is a camera-space frame resolved
-    // to world: the brass leaves the gun you can see and then falls in the
-    // world, which is exactly where it should end up. The node is the
-    // viewmodel's rather than the model's, so it follows a weapon swap.
-    const port = this.view.ejectPort;
-    c.mesh.position.copyFrom(port.getAbsolutePosition());
-    Vector3.TransformNormalToRef(
-      _casingDir.set(1, 0, -0.2),
-      port.getWorldMatrix(),
-      c.vel,
-    );
-    c.vel.normalize().scaleInPlace(g.casingEject * (0.8 + Math.random() * 0.4));
-    c.vel.y += g.casingUp * (0.7 + Math.random() * 0.6);
-    c.spin = (Math.random() * 2 - 1) * 25;
-    c.mesh.rotation.set(Math.random() * 3, Math.random() * 3, Math.random() * 3);
-    c.t = g.casingLife;
-    c.mesh.isVisible = !this.bodyHidden;
-  }
-
-  /**
-   * Advances the flash strobe and the live brass. Cases fall ballistically
-   * and come to rest on the ground plane under the player (an approximation
-   * — they're never more than a toss away) until their lifetime expires.
-   */
-  private updateGunfeel(dt: number): void {
-    if (this.flashT > 0) {
-      this.flashT -= dt;
-      if (this.flashT <= 0) this.flashRoot.setEnabled(false);
-    }
-    const g = CONFIG.gunfeel;
-    const restY = this.root.position.y - this.groundY + 0.02;
-    for (const c of this.casings) {
-      if (c.t <= 0) continue;
-      c.t -= dt;
-      if (c.t <= 0) {
-        c.mesh.isVisible = false;
-        continue;
-      }
-      if (c.vel.y !== 0 || c.mesh.position.y > restY) {
-        c.vel.y -= g.casingGravity * dt;
-        c.mesh.position.addInPlace(
-          this.casingStep.copyFrom(c.vel).scaleInPlace(dt),
-        );
-        if (c.mesh.position.y <= restY && c.vel.y < 0) {
-          c.mesh.position.y = restY;
-          c.vel.setAll(0); // bounced to rest; tumble stops with it
-          c.spin = 0;
-        } else {
-          c.mesh.rotation.x += c.spin * dt;
-          c.mesh.rotation.z += c.spin * 0.7 * dt;
-        }
-      }
-    }
   }
 
   startReload(): boolean {
@@ -2437,11 +2337,6 @@ export class Player implements Combatant {
     return this.cycleProgress < 1 ? this.weapon.shotInterval : 0;
   }
 
-  /** World position of the rifle muzzle (tracer origin). */
-  muzzleWorld(): Vector3 {
-    return this.view.muzzleWorld();
-  }
-
   /** Returns true if this damage killed the player. */
   /**
    * Keeps `center`/`eyePos` current; called once per frame from `update`.
@@ -2454,12 +2349,12 @@ export class Player implements Combatant {
    * metre keeps the sphere's top the same 0.05 m above the eye it is when
    * standing, so the profile shrinks honestly.
    *
-   * The collider capsule itself is untouched: `moveWithCollisions` is
-   * horizontal-only and the ground probe places the feet, so a shorter body
-   * would buy nothing and would need a stand-up clearance test to be safe.
+   * The sweep body itself is untouched: the sweep is horizontal-only and the
+   * ground probe places the feet, so a shorter body would buy nothing and
+   * would need a stand-up clearance test to be safe.
    */
   private syncCombatant(): void {
-    const p = this.root.position;
+    const p = this.mid;
     const feet = p.y - this.groundY;
     this.position.set(p.x, feet, p.z);
     this.center.set(p.x, feet + stanceCentre(this.groundY, this.crouchBlend), p.z);
@@ -2573,25 +2468,10 @@ export class Player implements Combatant {
 
   private applyVisibility(): void {
     this.view.setVisible(!this.bodyHidden || this.inspecting);
-    // The flash goes out with the weapon, and it has to be ENDED here rather
-    // than left to retire itself. It hangs off the viewmodel's muzzle node but
-    // is not one of the viewmodel's meshes, so the call above does not reach
-    // it, and the strobe that would switch it off is `updateGunfeel` — which
-    // stops being called the moment the body is put away. A death taken inside
-    // the 50 ms of a shot's flash would otherwise freeze the star mid-strobe
-    // and, because it draws in the viewmodel's depth-cleared group, hang it
-    // over the middle of the screen for the whole death cam. It never *starts*
-    // while the weapon is stowed, which is what made this look self-managing;
-    // being stowed part-way through one is the case that was missing.
-    if (this.bodyHidden) {
-      this.flashT = 0;
-      this.flashRoot.setEnabled(false);
-    }
-    // Live brass goes with it. Brass is deliberately NOT part of an
-    // inspection: it is thrown into the world, and the world is not what the
-    // kit screen is showing.
-    for (const c of this.casings) {
-      c.mesh.isVisible = c.t > 0 && !this.bodyHidden;
-    }
+    // The flash and the brass go with the weapon — but not into an
+    // inspection: brass is thrown into the world, and the world is not what
+    // the kit screen is showing. See `PlayerView.stowed` for why the flash
+    // has to be ENDED rather than left to retire itself.
+    this.picture.stowed(this.bodyHidden);
   }
 }

@@ -101,6 +101,7 @@ import {
 } from "../net/protocol";
 import { type FinishId } from "../entities/finishes";
 import { Player } from "../entities/Player";
+import { PlayerView } from "../entities/PlayerView";
 import type { DriveInput, GunInput, Vehicle } from "../entities/Vehicle";
 import {
   DRIVER,
@@ -765,6 +766,14 @@ export class Game {
   /** The environment the sky is currently painted for — see applySky(). */
   private skyEnv: EnvironmentSpec | null = null;
   private player: Player;
+  /**
+   * What the player LOOKS like — the viewmodel, the flash and the brass.
+   * `player` is told through `PlayerPicture`; `Game` reads it directly for the
+   * two world points only the drawing knows — the muzzle and the throwing
+   * hand — which is where the rifle on screen decides where a tracer, a
+   * rocket and a grenade start.
+   */
+  private playerView: PlayerView;
   private canvas: HTMLCanvasElement;
   /**
    * The bloom — mask, blur and compose — which `shaders/GlowPass.ts` owns.
@@ -1670,7 +1679,8 @@ export class Game {
     this.conquest = new ConquestSystem(this.random);
     this.zones = new CaptureZoneSystem(this.scene, this.mats);
     // The weapon is parented to the camera, so the camera has to exist first.
-    this.player = new Player(this.scene, this.mats, this.cameraSys.camera);
+    this.playerView = new PlayerView(this.scene, this.mats, this.cameraSys.camera);
+    this.player = new Player(this.playerView);
     this.player.shotRand = this.random.stream(STREAM.player);
     this.player.setBodyHidden(true); // hidden until a round starts
     // The sky hangs behind every state (menu included), so it is dressed
@@ -6218,7 +6228,7 @@ export class Game {
     // Tracers, the flash light and the noise all start at the viewmodel's
     // muzzle — about half a metre in front of the eye. That is the rifle
     // on screen, so it is the one the shot has to appear to come from.
-    const muzzle = this.player.muzzleWorld();
+    const muzzle = this.playerView.model.muzzleWorld();
     const shot = this.combat.fire(
       this.cameraSys.camera.position,
       this.cameraSys.forward,
@@ -6431,7 +6441,7 @@ export class Game {
     const cfg = CONFIG.equipment.rpg.rocket;
     const eye = this.cameraSys.camera.position;
     const forward = this.cameraSys.forward;
-    this.ordnanceAt.copyFrom(this.player.muzzleWorld());
+    this.ordnanceAt.copyFrom(this.playerView.model.muzzleWorld());
     const ahead =
       (this.ordnanceAt.x - eye.x) * forward.x +
       (this.ordnanceAt.y - eye.y) * forward.y +
@@ -7295,7 +7305,7 @@ export class Game {
     // refusal is not a visible jerk; a large one is a genuine desync and
     // easing it would mean spending seconds visibly inside a wall.
     net.onCorrection = (pos, reason) => {
-      const off = Vector3.Distance(this.player.position, pos);
+      const off = MathVector3.Distance(this.player.position, pos);
       if (off > CONFIG.net.correctionSnap) {
         this.player.placeAt(pos.clone());
         this.hud.toast(`resynced (${reason})`);
@@ -8926,7 +8936,7 @@ export class Game {
     const g = CONFIG.grenade;
     const eye = this.cameraSys.camera.position;
     const forward = this.cameraSys.forward;
-    this.grenadeHand.copyFrom(this.player.throwHandWorld());
+    this.grenadeHand.copyFrom(this.playerView.model.throwHandWorld());
     const ahead =
       (this.grenadeHand.x - eye.x) * forward.x +
       (this.grenadeHand.y - eye.y) * forward.y +
@@ -9014,8 +9024,9 @@ export class Game {
     // window covers what's ahead); outline ink thins with the same camera.
     // From the body's CENTRE, not its feet: the shadow window is placed around
     // this point and it should sit in the middle of the body it follows.
+    const mid = this.player.center;
     this.shadowFocus
-      .copyFrom(this.player.center)
+      .copyFromFloats(mid.x, mid.y, mid.z)
       .addInPlace(this.cameraSys.forwardToRef(this.shadowForward).scaleInPlace(8));
     this.updateSceneForCamera(dt, this.shadowFocus, this.player, this.combatants);
   }

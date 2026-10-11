@@ -79,8 +79,10 @@
  *   what the fit derives from the geometry: the aimed pose off the worn
  *   sight's centre, the hip pose, the turntable pivot, and each rig's magazine
  *   pivots, which are MEASURED off the magazine's bounds;
- * - the `Player` (`player`): its capsule, flash petals and casing pool, over
- *   a `ViewModel` of its own;
+ * - the `PlayerView` (`player`): its flash petals and casing pool, over a
+ *   `ViewModel` of its own, as the `Player` it is handed to leaves it.
+ *   `Player` itself draws nothing and owns no mesh (BABYLON_EXIT.md X2.2 C10
+ *   took its collider capsule away);
  * - the four pooled bodies that fly or lie (`grenade`, `molotov`, `rocket`
  *   with its flame, `mine`, the laid one);
  * - every vehicle kind (`vehicle:<kind>`: the `CONFIG.vehicles` blocks
@@ -651,11 +653,12 @@ async function hashModelJobs(jobs) {
     const B = await server.ssrLoadModule("@babylonjs/core");
     B.Logger.LogLevels = B.Logger.NoneLogLevel;
     const load = (p) => server.ssrLoadModule(p);
-    const [W, VM, PL, GR, MO, RPG, MINE, VK, SM, CZ, FIN, TV] = await Promise.all(
+    const [W, VM, PL, PV, GR, MO, RPG, MINE, VK, SM, CZ, FIN, TV] = await Promise.all(
       [
         "/src/entities/weapons.ts",
         "/src/entities/ViewModel.ts",
         "/src/entities/Player.ts",
+        "/src/entities/PlayerView.ts",
         "/src/entities/GrenadeModel.ts",
         "/src/entities/MolotovModel.ts",
         "/src/entities/RpgModel.ts",
@@ -708,7 +711,9 @@ async function hashModelJobs(jobs) {
           };
         } else if (p.kind === "player") {
           const camera = new B.TransformNode("camera", scene);
-          new PL.Player(scene, mats, camera);
+          // As `Game` builds the pair: the picture, then the player that
+          // puts it away (`applyVisibility`) — which is part of the record.
+          new PL.Player(new PV.PlayerView(scene, mats, camera));
         } else if (p.kind === "grenade") {
           data = GR.buildGrenade(scene, mats, "grenade0");
         } else if (p.kind === "molotov") {

@@ -67,6 +67,7 @@ import {
   type CarriedId,
 } from "../entities/weapons";
 import type { InputManager } from "./InputManager";
+import type { Vector3Like, Vector3Ref } from "../math";
 import type { GyroMode } from "./settings";
 
 /**
@@ -573,8 +574,11 @@ export class CameraSystem {
     return this.flatForwardToRef(new Vector3());
   }
 
-  /** As `flatForward`, into `out`. See `forwardToRef` on why both exist. */
-  flatForwardToRef(out: Vector3): Vector3 {
+  /**
+   * As `flatForward`, into `out`. See `forwardToRef` on why both exist.
+   * Either library's vector: `Player`'s movement basis is `src/math`'s.
+   */
+  flatForwardToRef<T extends Vector3Ref>(out: T): T {
     return out.set(Math.sin(this.yaw), 0, Math.cos(this.yaw));
   }
 
@@ -582,8 +586,8 @@ export class CameraSystem {
     return this.flatRightToRef(new Vector3());
   }
 
-  /** As `flatRight`, into `out`. See `forwardToRef` on why both exist. */
-  flatRightToRef(out: Vector3): Vector3 {
+  /** As `flatRight`, into `out` — either library's, as `flatForwardToRef`. */
+  flatRightToRef<T extends Vector3Ref>(out: T): T {
     return out.set(Math.cos(this.yaw), 0, -Math.sin(this.yaw));
   }
 
@@ -930,7 +934,7 @@ export class CameraSystem {
   update(
     dt: number,
     input: InputManager,
-    eyePos: Vector3,
+    eyePos: Vector3Like,
     assist: { stickMult: number; yaw: number; pitch: number } | null = null,
   ): void {
     const c = CONFIG.camera;
@@ -1178,7 +1182,9 @@ export class CameraSystem {
 
     // --- position: the eye, plus the two cosmetic offsets ---
     const dir = this.forward;
-    this.eye.copyFrom(eyePos);
+    // By its fields: the eye is `Player.eyePos` (`src/math`) or a Babylon
+    // one off the death cam, and Babylon's `copyFrom` reads `_x`.
+    this.eye.copyFromFloats(eyePos.x, eyePos.y, eyePos.z);
     if (bobW > 0.001) {
       // Vertical at twice the lateral rate: one dip per footfall, one sway
       // per stride. The lateral term rides the flat right axis so it stays

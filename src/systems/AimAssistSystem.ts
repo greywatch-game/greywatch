@@ -145,7 +145,7 @@ export class AimAssistSystem {
   update(
     dt: number,
     input: InputManager,
-    origin: Vector3,
+    origin: Vector3Like,
     forward: Vector3,
     aimYaw: number,
     aimPitch: number,
@@ -339,7 +339,8 @@ export class AimAssistSystem {
     }
 
     this.prevCenter.copyFromFloats(best.center.x, best.center.y, best.center.z);
-    this.prevOrigin.copyFrom(origin);
+    // By its fields: the origin is `Player.eyePos`, which is `src/math`'s.
+    this.prevOrigin.copyFromFloats(origin.x, origin.y, origin.z);
     this.haveHistory = true;
     return { stickMult, yaw, pitch };
   }

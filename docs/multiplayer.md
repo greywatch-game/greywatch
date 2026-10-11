@@ -1223,8 +1223,9 @@ it on the far side: the validator asks what is solid at that height, `NetPlayer`
 raises the eye and the hit sphere off it, and `NetSoldier` stands a rig on it.
 Nothing sends a height twice and nothing sends a height for a part of a body, so
 a `y` that means anything else is wrong in three places at once and looks like
-one bug in none of them. It has been wrong once: the client uploaded
-`Player.root.position` — the collider capsule's CENTRE, half a body higher — and
+one bug in none of them. It has been wrong once: the client uploaded the
+collider capsule's position — the body's CENTRE, half a body higher (there is no
+capsule any more; that centre is `Player`'s private `mid`) — and
 so remote players floated 0.9 m off the ground, their hit spheres floated with
 them, and the movement validator asked whether there was room for someone
 standing 0.9 m in the air, which is how a **door lintel became a wall** and a

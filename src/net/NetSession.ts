@@ -41,12 +41,12 @@ const UPLOAD_INTERVAL = 1 / INPUT_HZ;
 /** What the local player looks like this frame, for the upload. */
 export interface LocalState {
   /**
-   * FEET — `Player.position`, never the collider capsule's centre. Every
+   * FEET — `Player.position`, never the sweep body's centre. Every
    * consumer downstream (the validator, the rewind, the other clients' bodies)
    * builds upward from this `y` and takes it as the ground the player stands
    * on. See `Player.position` for what a half-body of error does to all three.
    */
-  position: Vector3;
+  position: Vector3Like;
   yaw: number;
   pitch: number;
   crouching: boolean;

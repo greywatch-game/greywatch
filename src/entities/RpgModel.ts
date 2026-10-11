@@ -283,8 +283,8 @@ export function buildRpg(
     // The tip of the warhead. It is where the rocket leaves, so the flash and
     // the launch point are both here rather than at the tube's own mouth.
     muzzle: new Vector3(0, 0, 1.24),
-    // Nothing is ejected — see `Player.tryShot`, which does not call
-    // `ejectCasing` for an AT item. The port is the venturi so that anything
+    // Nothing is ejected — see `Player.tryShot`, which does not tell its
+    // picture `fired` for an AT item. The port is the venturi so that anything
     // that reads this landmark reads the end the gas actually leaves by.
     ejectPort: new Vector3(0, 0, -0.15),
     grip: { hand: GRIP_HAND, elbow: GRIP_ELBOW },

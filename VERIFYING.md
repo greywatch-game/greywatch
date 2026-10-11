@@ -1203,7 +1203,8 @@ is one machine's:
   minutes, which is exactly long enough to be tempted. Finish the run, or copy
   the tree.
 - The muzzle flash is unhittable at 2 fps (`gunfeel.flashTime` 0.05 s); force it
-  with `player.flashRoot.setEnabled(true)`.
+  with `g.playerView.flashRoot.setEnabled(true)` (the flash is `PlayerView`'s;
+  `Player` draws nothing).
 - **A soldier is judged in a picture, and the rig can be photographed without
   fighting a round for it.** `await import("/src/entities/SoldierModel.ts")`
   inside `page.evaluate` hands back the real module — the same URL Vite already

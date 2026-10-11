@@ -506,9 +506,9 @@ without that subtract turns feedback into a punishment.
   either. `docs/rendering.md` has the measurement and the general rule under it.
   **A fourth rig would owe the same line**, and the failure is silent.
 - **It is a stand-in, not the player.** `Player` has no rig and never grows one: it
-  is a capsule, a viewmodel and an eye. The corpse is a separate object stood up at
-  `Player.floorY` (the FEET — `Player.position` is the middle of the collider capsule)
-  and hidden again at the end, so nothing in movement, collision or hit detection ever
+  is a sweep ellipsoid, a viewmodel and an eye, and owns no mesh at all. The corpse is
+  a separate object stood up at `Player.floorY` under `Player.position` (the FEET, not
+  the sweep body's centre half a body up) and hidden again at the end, so nothing in movement, collision or hit detection ever
   gains a mesh to disagree with.
 - **It is stood up in the STANCE they died in**, off `Player.stance` — the eased
   blend, not the `crouching` intent, which would round a body a third of the way into

@@ -2056,8 +2056,8 @@ export class MapBuilder {
     // are asked of this mesh: it IS the solid world to a body (movement, the
     // ground probe) and is not there at all to a round. The flag is carried onto
     // the `WorldBox`, which is what `RayWorld` reads; dropping `solid` instead
-    // would let the player fall through a fence top their own capsule is still
-    // being held out of.
+    // would let the player fall through a fence top their own sweep body is
+    // still being held out of.
     //
     // A breakable pane is `porous` and says so twice: once for the predicates,
     // which need nothing new to get glass right, and once as `glass` for the

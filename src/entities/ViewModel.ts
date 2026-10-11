@@ -58,7 +58,7 @@
  *   same trick the optics use: a loadout change is a handful of boolean
  *   writes and a re-derivation, never a rebuild. That is also why the muzzle
  *   and the ejection port are nodes owned HERE rather than the model's — they
- *   have things hanging off them (Player's flash) that must survive a swap.
+ *   have things hanging off them (`PlayerView`'s flash) that must survive a swap.
  * - Everything here is cosmetic WITH ONE EXCEPTION, and it is a read rather
  *   than a write: `throwHandWorld` is where the grenade leaves from, so the
  *   throwing hand's pose is the one thing on this rig that something in the

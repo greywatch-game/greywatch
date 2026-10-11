@@ -206,7 +206,7 @@ function vite() {
 // The bodies, off CONFIG as their owners derive them.
 
 /**
- * The player's capsule (`Player`'s constructor): no offset. The hull's sphere
+ * The player's body (`Player.ellipsoid`, its `sweepBody`): no offset. The hull's sphere
  * (`Vehicle`'s constructor and `aimCollider`): lifted half the climb band and
  * carried `bias` along the yaw to whichever end leads.
  */
