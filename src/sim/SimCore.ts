@@ -132,9 +132,7 @@ import {
 } from "../systems/VehicleSystem";
 import {
   Vehicle,
-  type DriveInput,
   type GunAngles,
-  type GunInput,
   type HullPicture,
 } from "../entities/Vehicle";
 import {
@@ -563,8 +561,6 @@ export class SimCore {
     this.crew.setMap(null);
     this.driven.clear();
     this.laid.clear();
-    this.steered.clear();
-    this.ordered.clear();
     for (const tank of this.vehicles.hulls) this.battle.removeHuman(tank);
     this.vehicles.dispose();
     this.grenades.reset();
@@ -596,15 +592,13 @@ export class SimCore {
    * no entry for it either way, but nothing here has to rely on that.
    */
   private readonly vehicleOrders: VehicleOrders = {
-    // A person's STICKS first (`driveInput`, C4a only), then the bot crew —
-    // `Game.vehicleOrders`' player-first order, for its reason. The maps are
-    // empty on the authority, so it asks the crew and nothing else.
-    driveFor: (tank) =>
-      (this.steered.size > 0 ? this.steered.get(this.vehicles.hulls.indexOf(tank)) : undefined) ??
-      this.crew.driveFor(tank),
-    gunFor: (tank) =>
-      (this.ordered.size > 0 ? this.ordered.get(this.vehicles.hulls.indexOf(tank)) : undefined) ??
-      this.crew.gunFor(tank),
+    // Only a bot crew is ever STEPPED from input on this side: a person's hull
+    // is posed from what they reported (`remoteFor`, asked first), on every
+    // host — the authority's peers and, since `BABYLON_EXIT.md` X2.5a C4b, the
+    // offline page's one player, whose page predicts the hull as a match's
+    // client does.
+    driveFor: (tank) => this.crew.driveFor(tank),
+    gunFor: (tank) => this.crew.gunFor(tank),
     remoteFor: (tank) => this.driven.get(this.vehicles.hulls.indexOf(tank)) ?? null,
     /**
      * A PERSON's cupola gun, where he last said it was pointing.
@@ -636,18 +630,6 @@ export class SimCore {
    * the same statement as "nobody is driving this one".
    */
   private readonly driven = new Map<number, RemoteHull>();
-
-  /**
-   * **C4a only.** The STICKS of each person driving a hull this core steps
-   * from raw input (`driveInput`), by hardstanding index — `Game.drive`, held
-   * here. A hull is in `driven` (posed from a report) or in this (stepped
-   * from input), never both: each command takes the hull out of the other
-   * map, and `release` clears both. Empty on the authority. Goes at C4b.
-   */
-  private readonly steered = new Map<number, DriveInput>();
-
-  /** **C4a only.** `steered`'s twin for a GUNNER's order (`gunOrder`), against `laid`. */
-  private readonly ordered = new Map<number, GunInput>();
 
   /** Scratch a person's rocket or round is copied into on arrival. */
   private readonly cmdFrom = new Vector3();
@@ -759,8 +741,6 @@ export class SimCore {
     this.crew.clear();
     this.driven.clear();
     this.laid.clear();
-    this.steered.clear();
-    this.ordered.clear();
     // **Last round's hulls come OUT of the fight before they are disposed.**
     // `BattleSystem.reset` deliberately does not touch the human list — the
     // people in it are still connected and still in their slots across a
@@ -1448,10 +1428,6 @@ export class SimCore {
         if (!tank) return false;
         return this.resolveMg(tank, player, cmd.early);
       }
-      case "driveInput":
-        return this.steer(player, cmd);
-      case "gunOrder":
-        return this.orderGun(player, cmd.aimYaw, cmd.aimPitch);
       default: {
         const unhandled: never = cmd;
         void unhandled;
@@ -1541,46 +1517,6 @@ export class SimCore {
     // rather than eased from whatever the drive left it at.
     player.apply(0, x, y, z, player.yaw, 0, false, false);
     this.seatAnswer(player, -1, player.position, player.yaw);
-    return true;
-  }
-
-  /**
-   * **C4a only.** A DRIVER's sticks, stepped by this core: the hull leaves
-   * `driven` (posed from reports) for `steered`, and `vehicleOrders.driveFor`
-   * hands `VehicleSystem` these numbers exactly as `Game.vehicleOrders` hands
-   * it `Game.drive`. Written into one held object per hull.
-   */
-  private steer(player: SimPlayer, input: DriveInput): boolean {
-    if (!player.alive || player.seat < 0 || player.crewSeat !== DRIVER) return false;
-    let held = this.steered.get(player.seat);
-    if (!held) {
-      held = { throttle: 0, steer: 0, lift: 0, aimYaw: 0, aimPitch: 0 };
-      this.steered.set(player.seat, held);
-      this.driven.delete(player.seat);
-    }
-    held.throttle = input.throttle;
-    held.steer = input.steer;
-    held.lift = input.lift;
-    held.aimYaw = input.aimYaw;
-    held.aimPitch = input.aimPitch;
-    player.yaw = input.aimYaw;
-    player.pitch = input.aimPitch;
-    return true;
-  }
-
-  /** **C4a only.** `steer`'s twin for a GUNNER's order, against `laid`. */
-  private orderGun(player: SimPlayer, aimYaw: number, aimPitch: number): boolean {
-    if (!player.alive || player.seat < 0 || player.crewSeat !== GUNNER) return false;
-    let held = this.ordered.get(player.seat);
-    if (!held) {
-      held = { aimYaw: 0, aimPitch: 0 };
-      this.ordered.set(player.seat, held);
-      this.laid.delete(player.seat);
-    }
-    held.aimYaw = aimYaw;
-    held.aimPitch = aimPitch;
-    player.yaw = aimYaw;
-    player.pitch = aimPitch;
     return true;
   }
 
@@ -1808,13 +1744,8 @@ export class SimCore {
    * is exactly the thing a second copy would get wrong.
    */
   private release(player: SimPlayer, held: Vehicle): void {
-    if (player.crewSeat === DRIVER) {
-      this.driven.delete(player.seat);
-      this.steered.delete(player.seat);
-    } else {
-      this.laid.delete(player.seat);
-      this.ordered.delete(player.seat);
-    }
+    if (player.crewSeat === DRIVER) this.driven.delete(player.seat);
+    else this.laid.delete(player.seat);
     this.vehicles.setOccupied(held, player.crewSeat, false);
     player.seat = -1;
     player.crewSeat = DRIVER;
@@ -1839,10 +1770,9 @@ export class SimCore {
    * A driving player's reported hull state, accepted.
    *
    * Written into the same object `remoteFor` hands out rather than a fresh one,
-   * so the path that runs at `INPUT_HZ` per driver allocates nothing — the
-   * rule `LagComp` and the snapshot scratch already follow. A hull that was
-   * being STEPPED from a `driveInput` (C4a only) goes back to being posed from
-   * reports on the first one, which is the one allocation.
+   * so the path that runs at `INPUT_HZ` per driver — every frame, offline —
+   * allocates nothing: the rule `LagComp` and the snapshot scratch already
+   * follow. The entry itself is `seat`'s to make and `release`'s to take.
    */
   private applyDrive(
     player: SimPlayer,
@@ -1854,11 +1784,7 @@ export class SimCore {
     gunPitch: number,
   ): void {
     if (player.crewSeat !== DRIVER) return;
-    let state = this.driven.get(player.seat);
-    if (!state && this.steered.delete(player.seat)) {
-      state = { x, y, z, yaw, turretYaw, gunPitch };
-      this.driven.set(player.seat, state);
-    }
+    const state = this.driven.get(player.seat);
     if (!state) return;
     state.x = x;
     state.y = y;
@@ -1877,11 +1803,7 @@ export class SimCore {
    */
   private applyGun(player: SimPlayer, yaw: number, pitch: number): void {
     if (player.crewSeat !== GUNNER) return;
-    let laid = this.laid.get(player.seat);
-    if (!laid && this.ordered.delete(player.seat)) {
-      laid = { yaw, pitch };
-      this.laid.set(player.seat, laid);
-    }
+    const laid = this.laid.get(player.seat);
     if (!laid) return;
     laid.yaw = yaw;
     laid.pitch = pitch;

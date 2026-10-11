@@ -1757,6 +1757,19 @@ authority against the same cone check every other shot takes. `MgMessage` is
 that round, and it is a separate verb from `ShellMessage` because the server's
 gate for each is the CHAIR rather than the weapon.
 
+**Offline the page is the same driver of a core in its own process**
+(`BABYLON_EXIT.md` X2.5a C4b). The hull under the player is predicted by the
+page's `Vehicle.update` exactly as here, and what reaches the core is the
+`drive` (or `gun`) command `Match.onDrive`/`onGunner` would submit — the same
+fields, every frame rather than at `INPUT_HZ`, and TRUSTED: there is no
+`validateDrive` in front of it, because the page steps the hull with the same
+code in the same world and has nothing to be caught at, so no `hullcorrect`
+is ever owed offline and `Vehicle.correctTo` stays this wire's door alone. The
+core poses the hull through `remoteFor` as the authority poses a peer's, and
+the person who drives it gets one machine whichever side of the wire they are
+on — which is also why a gap in the remote half is now a gap offline too: a
+person-flown helicopter takes no crash damage on either (`FINDINGS.md` 60).
+
 **`validateDrive` is the speed bound that knows what a player is sitting in.**
 Running a tank through `validateMove` would reject every honest driver at a
 stroke: the bound there is a sprint and a hull at road speed covers three times

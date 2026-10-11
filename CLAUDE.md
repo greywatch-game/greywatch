@@ -1399,9 +1399,11 @@ arrival; everything else a client steps is DRESSING.
 (`BABYLON_EXIT.md` X2.5a C4a): `Player` is the PREDICTION it is in a match
 (the sweep, the ground, regen for the HUD — it keeps its `SIMULATIONS` entry
 because it sweeps), every act is a `SimCommand` submitted trusted rather than
-validated, and the page holds the respawn clock (`hostHoldsRespawn`). The one
-difference left is the driven HULL, which the offline core steps from raw input
-(`driveInput`/`gunOrder`) until C4b moves it onto page-side prediction.
+validated, and the page holds the respawn clock (`hostHoldsRespawn`). **The
+driven HULL is predicted on the page too** (X2.5a C4b): stepped by `Vehicle.update`
+off the player's sticks and reported every frame as `drive` (a gunner's ring as
+`gun`), the core posing its copy as the authority poses a peer's — no command
+carries a stick, and `validateDrive`/`hullcorrect` are a match's alone.
 
 **The slot table is forty-eight slots, built once, never resized or reordered**
 — `CONFIG.bots.maxPerTeam` a side, on every map, because a match rotates maps

@@ -60,7 +60,9 @@ server/               # The authoritative match server. Node, no Babylon (the
                       #   a real Match behind a fake socket and requires the
                       #   identical award/death list — the trusted door
                       #   (`submit`) and the validated one agreeing — plus the
-                      #   `hostHoldsRespawn` deploy. Exits non-zero on a fail
+                      #   `hostHoldsRespawn` deploy and the reported hull
+                      #   (`drive`/`gun` pose the core's copy; the shell leaves
+                      #   the reported muzzle). Exits non-zero on a fail
 scripts/                      # Node tooling, run by hand or by `npm run build`,
                               #   never shipped. Plain .mjs outside both
                               #   tsconfigs. The game's own code is reached
@@ -435,7 +437,10 @@ src/
                         #   (`core`), submits the player's acts (`ask`), steps
                         #   it once a frame and draws what it said through ONE
                         #   switch (`onSimEvent`; `onNetEvent` is a match's
-                        #   twin, both ending in the same player methods). Views
+                        #   twin, both ending in the same player methods). The
+                        #   player's own hull is PREDICTED here and reported
+                        #   (`reportHull`/`reportGun`), its trigger asked after
+                        #   the core's step (`pullHullTrigger`). Views
                         #   read the core through `core.live` (temporary, C5).
                         #   Constructor is construction only; wiring is
                         #   wireSystems (+ subject methods),
@@ -1935,8 +1940,9 @@ src/
                       #   is synced and posed off. Writes nothing it reads
     commands.ts       #   The SimCommand vocabulary `SimCore.submit` takes:
                       #   the gameplay ClientMessages after validation, with
-                      #   host-resolved data (WeaponSetup, kit pouch sizes),
-                      #   plus C4a's driveInput/gunOrder. Plain data only
+                      #   host-resolved data (WeaponSetup, kit pouch sizes).
+                      #   A person's hull is REPORTED (drive/gun), never
+                      #   steered — no command carries a stick. Plain data only
     events.ts         #   The event ring: the vocabulary (EV), each kind's
                       #   payload layout, the writers SimCore calls, the
                       #   EventCursor a drain swaps into, and decode/toObjects.

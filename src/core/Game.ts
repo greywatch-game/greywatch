@@ -12,8 +12,10 @@
  * the player (`playerHit`, `playerDown`, `seatAnswer`, `playerSpawned`), so
  * offline and online cannot drift. What the page still SIMULATES is its own
  * player as a PREDICTION (the sweep, the ground, regen for the HUD, the
- * camera) and, in a match, the netplay prediction systems (`combat`,
- * `grenades`, `antiTank`, the fleet, `glass`); its views read the core's live
+ * camera), the hull under that player when they drive one or the cupola gun
+ * when they lay one (reported as `drive`/`gun`, offline and in a match alike —
+ * X2.5a C4b), and, in a match, the netplay prediction systems (`combat`,
+ * `grenades`, `antiTank`, `glass`); its views read the core's live
  * objects through `core.live`, temporary and enumerated (`SimLive`), until C5's
  * mirrors.
  * WHERE THINGS ARE, because this is a long file and a change should not need a
@@ -179,9 +181,9 @@ import { GrenadeFx } from "../systems/GrenadeFx";
 import { GrenadeSystem, type BlastGround } from "../systems/GrenadeSystem";
 import { SimCore } from "../sim/SimCore";
 import type {
-  DriveInputCommand,
+  DriveCommand,
   GrenadeCommand,
-  GunOrderCommand,
+  GunCommand,
   MoveCommand,
   OrdnanceCommand,
   ShotCommand,
@@ -1271,9 +1273,9 @@ export class Game {
    * whichever order they land in.
    */
   private readonly vehicleOrders: VehicleOrders = {
-    // Only the hull a MATCH's player is predicting is ever stepped from input
-    // here: offline every hull is posed off the core (`remoteFor` below), and
-    // there is no crew on this page in either — the bots that drive are the
+    // Only the hull this player is PREDICTING is ever stepped from input here
+    // — offline exactly as in a match (`BABYLON_EXIT.md` X2.5a C4b) — and
+    // there is no crew on this page in either: the bots that drive are the
     // core's offline and the authority's in a match.
     driveFor: (tank) =>
       tank === this.driving && this.drivingSeat === DRIVER ? this.drive : null,
@@ -1286,43 +1288,36 @@ export class Game {
     gunFor: (tank) =>
       tank === this.driving && this.drivingSeat === GUNNER ? this.gunOrder : null,
     /**
-     * Where a machine gun somebody ELSE is laying has got to.
-     *
-     * Offline, EVERY gun on the field: the core lays them all — a bot's and
-     * the player's own (`gunOrder`, C4a) — and this page draws where they
-     * got to (`FleetMirror`). In a match it is the snapshot's, except for the
-     * one gun this player is holding — which is the same carve-out `remoteFor`
-     * makes for the hull under a driver, made independently because the two
-     * seats can be two different people.
+     * Where a machine gun somebody ELSE is laying has got to: the core's
+     * (`FleetMirror`) offline and the snapshot's in a match — except for the
+     * one gun this player is holding, on both sides, which is laid HERE off
+     * `gunFor` and reported (`gun` to the core, `gunner` to the authority).
+     * The same carve-out `remoteFor` makes for the hull under a driver, made
+     * independently because the two seats can be two different people.
      */
     remoteGunFor: (tank) => {
+      if (tank === this.driving && this.drivingSeat === GUNNER) return null;
       const i = this.vehicles.hulls.indexOf(tank);
-      if (!this.net) return this.fleetMirror.mgFor(i);
-      return !(tank === this.driving && this.drivingSeat === GUNNER)
-        ? this.net.vehicles.mgFor(i)
-        : null;
+      return this.net ? this.net.vehicles.mgFor(i) : this.fleetMirror.mgFor(i);
     },
     /**
-     * In a netplay round every hull but the one under this player is posed
-     * from the wire — the mirror of the authority's own answer, where only the
-     * hulls with a PERSON in them are.
+     * Every hull but the one under this player is posed from where the
+     * simulation has it — the wire's in a match, the core's own fleet offline
+     * (`FleetMirror`) — the mirror of the simulation's own answer, where only
+     * the hulls with a PERSON in them are posed from a report.
      *
-     * Asked before `driveFor` by `VehicleSystem.update`, so the player's own
-     * hull needs no term here: `stateFor` answers null for it, because
-     * `NetVehicles` skips the samples for a hull carrying the local slot.
-     *
-     * Offline it is EVERY hull, the player's own included: the core steps the
-     * fleet (the player's hull from `driveInput`, C4a) and this page poses its
-     * copy of each to where the core's got to (`FleetMirror`) — the copy every
-     * ray, sweep and camera on this page meets. C4b moves the player's own
-     * hull onto prediction, as a match has it.
+     * **The one under a DRIVER is this page's PREDICTION on both sides**
+     * (`BABYLON_EXIT.md` X2.5a C4b): stepped by `driveFor` off this player's
+     * sticks through `Vehicle.update`, and reported — a `drive` command to the
+     * core every frame offline, a `DriveMessage` to the authority at
+     * `INPUT_HZ` in a match — so the machine a person drives is the same one
+     * either way, picture included. Asked before `driveFor` by
+     * `VehicleSystem.update`, which is why the carve-out is here.
      */
     remoteFor: (tank) => {
+      if (tank === this.driving && this.drivingSeat === DRIVER) return null;
       const i = this.vehicles.hulls.indexOf(tank);
-      if (!this.net) return this.fleetMirror.stateFor(i);
-      return !(tank === this.driving && this.drivingSeat === DRIVER)
-        ? this.net.vehicles.stateFor(i)
-        : null;
+      return this.net ? this.net.vehicles.stateFor(i) : this.fleetMirror.stateFor(i);
     },
   };
 
@@ -4816,9 +4811,11 @@ export class Game {
     // **And offline the fleet is not this page's either** (`BABYLON_EXIT.md`
     // X2.5a C4a): the simulation core fleets its own off the same spawns, and
     // this one is posed off it (`syncFleet`, `FleetMirror`) exactly as a
-    // match's is off the wire — so it is `predicted` on both sides of the
-    // wire now, refusing local damage and running neither hardstanding clock.
-    // It is still the fleet this page's rays, sweeps, decks and cameras meet.
+    // match's is off the wire, the hull under a driver predicted here and
+    // reported on both sides alike (C4b) — so it is `predicted` on both sides
+    // of the wire now, refusing local damage and running neither hardstanding
+    // clock. It is still the fleet this page's rays, sweeps, decks and cameras
+    // meet.
     if (opts?.editor !== true) this.vehicles.build(map, true);
     // …and what it looks like: one view per hull, by hardstanding, each with
     // its kind's model (`VehicleViews`). The editor's empty fleet draws none.
@@ -5849,6 +5846,73 @@ export class Game {
   private readonly gunReport: LocalGun = { tank: -1, yaw: 0, pitch: 0 };
 
   /**
+   * `localHull` told to the offline core — the `drive` command, carrying what
+   * a match's upload carries in a `DriveMessage` (the hull's feet, its yaw,
+   * the gun's bearing and elevation, and the chase camera's aim the shell's
+   * cone is measured against) — **every frame, from `updateDriver`, before
+   * the step**, so the core's copy is posed to where this page's prediction
+   * stands as the step runs (`BABYLON_EXIT.md` X2.5a C4b).
+   *
+   * Trusted, not validated: `validateDrive` is the authority's answer to a
+   * claim from a machine it does not run, and the page's hull is stepped by
+   * the same `Vehicle.update` the core's crews are, in the same world — so a
+   * `hullcorrect` is never owed offline, and `Vehicle.correctTo` stays a
+   * match's door alone.
+   */
+  private reportHull(tank: Vehicle): void {
+    const cmd = this.driveCmd;
+    const p = tank.position;
+    cmd.x = p.x;
+    cmd.y = p.y;
+    cmd.z = p.z;
+    cmd.yaw = tank.yaw;
+    cmd.turretYaw = tank.turretYaw;
+    cmd.gunPitch = tank.gunPitch;
+    cmd.aimYaw = this.drive.aimYaw;
+    cmd.aimPitch = this.drive.aimPitch;
+    this.ask(cmd);
+  }
+
+  /** `localGun` told to the offline core (`gun`), `reportHull`'s twin. */
+  private reportGun(tank: Vehicle): void {
+    const cmd = this.gunCmd;
+    cmd.yaw = tank.mgYaw;
+    cmd.pitch = tank.mgPitch;
+    this.ask(cmd);
+  }
+
+  /**
+   * The seat whose trigger this frame's offline driver or gunner pulled, or
+   * -1 — `updateDriver` sets it and `pullHullTrigger` spends it inside the
+   * same frame's world step.
+   */
+  private hullTrigger: CrewSeat | -1 = -1;
+
+  /**
+   * The offline hull trigger, asked of the core between its step and this
+   * page's fleet (`updateWorld`).
+   *
+   * **That moment is the one where the two copies of the player's hull are
+   * the same hull**: the step has just posed the core's to the `drive` (or
+   * `gun`) `updateDriver` reported off this page's, and this page's has not
+   * moved since — so the shell leaves the muzzle the player is looking at,
+   * and its kick lands on this page's hull BEFORE its step, as a match's
+   * predicted shell does (`fireShell`). Asked at the trigger instead, the
+   * core's hull would still stand where the previous report put it, a frame
+   * behind. Spent only from the seat it was pulled in: a crossing in the same
+   * frame consumed the press for the gun just arrived at (`swapSeat`), and a
+   * hull that burned on this step refuses it in the core.
+   */
+  private pullHullTrigger(): void {
+    const seat = this.hullTrigger;
+    this.hullTrigger = -1;
+    const tank = this.driving;
+    if (seat === -1 || !tank || seat !== this.drivingSeat) return;
+    if (seat === DRIVER) this.fireShell(tank);
+    else this.fireMg(tank);
+  }
+
+  /**
    * The vehicle verb, offered or withdrawn — the ONE door, because the same
    * fact has to reach two places that draw it differently and a second caller
    * is how they come to disagree.
@@ -6016,9 +6080,9 @@ export class Game {
     // countdown — asks where the player IS, and the honest answer is "in that
     // tank". `nudgeTo` rather than `placeAt` because this is a body being
     // carried, not one arriving: `placeAt` would zero a fall and claim the
-    // ground every frame. A match's hull is this page's prediction and moves
-    // in `updateNetWorld`; offline the core moves it and the body is carried
-    // AFTER (`updateWorld`, D4), so it is never a frame behind its hull.
+    // ground every frame. A match's hull moves in `updateNetWorld`; offline
+    // in `updateWorld`, after which the body is carried again (D4), so it is
+    // never a frame behind its hull there.
     if (this.net) this.player.nudgeTo(tank.position);
 
     // The look, into the ORDERS one of the two guns walks toward. Never into
@@ -6035,17 +6099,14 @@ export class Game {
       this.drive.lift = this.input.lift;
       this.drive.aimYaw = this.vehicleCam.yaw;
       this.drive.aimPitch = this.vehicleCam.pitch;
-      // Offline the core steps the hull from these sticks (C4a; C4b moves
-      // the hull onto this page's prediction, as a match has it).
-      if (!this.net) {
-        const cmd = this.driveCmd;
-        cmd.throttle = this.drive.throttle;
-        cmd.steer = this.drive.steer;
-        cmd.lift = this.drive.lift;
-        cmd.aimYaw = this.drive.aimYaw;
-        cmd.aimPitch = this.drive.aimPitch;
-        this.ask(cmd);
-      }
+      // These sticks step THIS PAGE's hull — `driveFor`, in the world step —
+      // offline exactly as in a match (`BABYLON_EXIT.md` X2.5a C4b), and what
+      // the core is told is where that prediction has the hull: the `drive` a
+      // match's client sends the authority, every frame rather than at
+      // `INPUT_HZ` and trusted rather than validated (`localHull`'s fields,
+      // the state the LAST step left). The core poses its copy to it on the
+      // step below, so at the trigger (`pullHullTrigger`) the two agree.
+      if (!this.net) this.reportHull(tank);
     } else {
       // A gunner has no sticks at all. The hull is somebody else's problem —
       // a bot's, another player's, or nobody's — and the stick axes are
@@ -6053,12 +6114,10 @@ export class Game {
       // seat whose controls half work is worse than one whose controls do not.
       this.gunOrder.aimYaw = this.vehicleCam.yaw;
       this.gunOrder.aimPitch = this.vehicleCam.pitch;
-      if (!this.net) {
-        const cmd = this.gunOrderCmd;
-        cmd.aimYaw = this.gunOrder.aimYaw;
-        cmd.aimPitch = this.gunOrder.aimPitch;
-        this.ask(cmd);
-      }
+      // The ring is laid HERE (`gunFor`) and its bearing reported, the
+      // driver's bargain for the second seat: `gun` to the core, `gunner` to
+      // the authority (`localGun`'s fields).
+      if (!this.net) this.reportGun(tank);
     }
 
     // The same three-way gate the rifle's trigger takes, and for the same
@@ -6071,8 +6130,16 @@ export class Game {
       this.input.gamepadConnected ||
       this.input.touchActive;
     if (this.input.fire && canFire) {
-      if (driving) this.fireShell(tank);
-      else this.fireMg(tank);
+      // In a match the round is predicted now and reported. Offline it is
+      // asked of the core AFTER its step (`pullHullTrigger`), the one moment
+      // its copy of the hull stands exactly where this page's does — the
+      // report above has just been applied and this page's step has not run.
+      if (this.net) {
+        if (driving) this.fireShell(tank);
+        else this.fireMg(tank);
+      } else {
+        this.hullTrigger = this.drivingSeat;
+      }
     }
 
     // The way out, said out loud. A driver used to be told nothing at all,
@@ -6528,8 +6595,17 @@ export class Game {
   private fireShell(tank: Vehicle): void {
     // Offline the trigger is an ask and the round the core's (`shell`): its
     // `round`, `hit` and `cannon` answers draw it, and a `true` is the gun
-    // having gone off. In a match the round is predicted here and reported.
-    const fired = this.net ? this.resolveShell(tank, this.player) : this.ask(this.shellCmd);
+    // having gone off. Asked WITHOUT a drain — `pullHullTrigger` runs between
+    // the core's step and this page's fleet, and the step's news is drawn
+    // after the fleet is posed — and answered on THIS page's hull at once:
+    // the loader's clock, the shove, the rock and the masts, on the frame the
+    // gun went off, which a match's driver gets from `fireGun` on its own
+    // predicted shell (`Vehicle.mirrorShot`; the core's `hullKicked` for this
+    // hull is therefore not mirrored again). In a match the round is
+    // predicted here and reported.
+    let fired: boolean;
+    if (this.net) fired = this.resolveShell(tank, this.player);
+    else if ((fired = this.ask(this.shellCmd, false))) tank.mirrorShot(true);
     if (!fired) return;
     // Everything below this line is about the person holding the trigger, and
     // that is the whole of the split: a bot crew's round goes through the same
@@ -6646,8 +6722,9 @@ export class Game {
    * the trigger.
    */
   private fireMg(tank: Vehicle): void {
-    // `fireShell`'s split exactly — the core's `mg` offline.
-    const fired = this.net ? this.resolveMg(tank, this.player) : this.ask(this.mgCmd);
+    // `fireShell`'s split exactly — the core's `mg` offline, asked without a
+    // drain for its reason. A machine gun kicks nothing on the hull.
+    const fired = this.net ? this.resolveMg(tank, this.player) : this.ask(this.mgCmd, false);
     if (!fired) return;
     this.vehicleCam.addKick(tank.spec.mg.cameraKick);
     const haptic = CONFIG.rumble;
@@ -7465,11 +7542,16 @@ export class Game {
    * offline page changes the simulation through.** Returns the core's own
    * answer (`SimCore.submit`): whether it acted at all, never what happened.
    * False with no slot to submit for — a benchmark, a match, no round.
+   *
+   * `drain` false leaves the news in the ring for the next drain, in emission
+   * order: the one caller is `pullHullTrigger`, which asks between the core's
+   * step and this page's fleet, where the step's own news is still waiting to
+   * be drawn after the fleet is posed.
    */
-  private ask(cmd: SimCommand): boolean {
+  private ask(cmd: SimCommand, drain = true): boolean {
     if (this.simSlot < 0) return false;
     const acted = this.core.submit(this.simSlot, cmd);
-    this.drainSim();
+    if (drain) this.drainSim();
     return acted;
   }
 
@@ -7738,10 +7820,14 @@ export class Game {
         break;
       }
       // The main gun's kick on this page's posed copy of the hull: the
-      // loader's clock, the rock and the masts (`Vehicle.mirrorShot`).
-      case EV.hullKicked:
-        this.vehicles.hulls[c.f(i, 0)]?.mirrorShot();
+      // loader's clock, the rock and the masts (`Vehicle.mirrorShot`). Not on
+      // the hull this player DRIVES: that one is predicted here, and took its
+      // kick from `fireShell` on the frame its `shell` was answered.
+      case EV.hullKicked: {
+        const tank = this.vehicles.hulls[c.f(i, 0)];
+        if (tank && !(tank === this.driving && this.drivingSeat === DRIVER)) tank.mirrorShot();
         break;
+      }
       case EV.hullRespawned: {
         const tank = this.vehicles.hulls[c.f(i, 0)];
         if (tank) this.hullReady(tank);
@@ -7953,15 +8039,18 @@ export class Game {
     tank: -1,
     seat: DRIVER,
   };
-  private readonly driveCmd: DriveInputCommand = {
-    t: "driveInput",
-    throttle: 0,
-    steer: 0,
-    lift: 0,
+  private readonly driveCmd: DriveCommand = {
+    t: "drive",
+    x: 0,
+    y: 0,
+    z: 0,
+    yaw: 0,
+    turretYaw: 0,
+    gunPitch: 0,
     aimYaw: 0,
     aimPitch: 0,
   };
-  private readonly gunOrderCmd: GunOrderCommand = { t: "gunOrder", aimYaw: 0, aimPitch: 0 };
+  private readonly gunCmd: GunCommand = { t: "gun", yaw: 0, pitch: 0 };
   /** Offline the trigger is all a hull gun's command says (`early` 0). */
   private readonly shellCmd: SimCommand = { t: "shell", early: 0 };
   private readonly mgCmd: SimCommand = { t: "mg", early: 0 };
@@ -8997,13 +9086,22 @@ export class Game {
     // refilled by this step's `botFired`s, which are read below.
     this.battleView.beginFrame();
     const live = this.core.step(dt);
+    // The hull trigger this frame's driver pulled, asked NOW — the core has
+    // just posed its copy of the player's hull to the report `updateDriver`
+    // made, and this page's has not stepped yet, so the round leaves the gun
+    // the player is looking at (`pullHullTrigger`).
+    if (live) this.pullHullTrigger();
+    else this.hullTrigger = -1;
 
-    // --- the armour, posed ---
+    // --- the armour, posed and predicted ---
     // This page's copy of every hull to where the core's got to, before
     // anything reads one: the player's sweep and deck, the cameras, the rays
     // the views cast and every event below that names a hull. It is
     // `updateNetWorld`'s posing with the core as the wire (`syncFleet`,
-    // `FleetMirror`) — the burn and the respawn arrive as the same edges.
+    // `FleetMirror`) — the burn and the respawn arrive as the same edges —
+    // and, as there, the hull under a DRIVER is the one exception: stepped
+    // here off their sticks (`driveFor`) and reported next frame
+    // (`reportHull`), the prediction a match's client runs (X2.5a C4b).
     if (!this.vehicles.empty) {
       this.prof.begin(P.vehicles);
       this.syncFleet(this.fleetMirror);

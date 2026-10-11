@@ -2514,3 +2514,40 @@ simulation when the sink starts (static, as a frozen corpse is) and lower the
 pose from there, or keep an offset beside the pose that the view adds — and
 watch a burst expire, which is the first time anybody will have seen the sink.
 Rubble needs finding 58 first.
+
+## 60. A helicopter a PERSON flies takes no crash damage — in a match always, and offline since the hull was predicted
+
+**Status:** open, pre-existing in netplay and newly true offline. Made visible
+at `BABYLON_EXIT.md` X2.5a C4b, which moved the offline player's hull onto the
+page's prediction exactly as a match's client has it — so what the remote half
+lacks, the offline round now lacks too. Bots are unaffected.
+
+**Derived from the code:** the crash is one check inside `Vehicle.update`'s
+flight branch — `jolt - flight.crashJolt`, spent as a `shell` through
+`takeDamage`. A person's hull runs `update` only as a PREDICTION, whose
+`takeDamage` refuses every blow (`Vehicle.predicted`), and the simulation's
+copy of it is POSED from the reports (`updateRemote`), which has no crash check
+at all. So the landing is computed on the one copy that may not be hurt and
+never on the one that may. A bot-flown helicopter is `update`d by the
+simulation itself and crashes as designed.
+
+**Measured** (Sarab, the player's own helicopter, a fixed 1/60 step, the same
+scripted inputs on both builds — `scratchpad/c4b/drive.mjs`): climbed to 15 m,
+flown, then full collective-down to the ground. At C4a-2 (`159cec3`, the core
+stepping the hull from raw input) the landing cost **129** of its 340 (to
+211.01); at C4b, **0**.
+
+**Why not simply put the check in `updateRemote`:** the authority poses a hull
+at 60 Hz off reports arriving at ~18 Hz, and the airborne branch of
+`standOnGround` extrapolates a step past the reported height, so the vertical
+rate it measures swings frame to frame (the posed copy's `speed` visibly
+alternates sign in the same trace) — a `jolt` off that would crash helicopters
+in level flight. Offline the reports arrive every step and would be clean, but
+one rule must hold on both sides.
+
+**What would settle it:** a crash test the authority can make off the REPORTED
+motion — e.g. the descent rate over the last accepted samples at the moment the
+reported height meets the plank (`validateDrive` already holds the previous
+accepted sample) — asserted against the bot's `update` figure on the same
+landing, then the same rule offline for free. Until then a person cannot be
+hurt by flying into the ground in either mode.

@@ -1870,20 +1870,20 @@ because `takeDamage` is the one door a death offline takes. A player DRIVER
 gets the hitmarker and its note, on the same terms a shell's direct hit gets
 them; a bot crew gets none of it.
 
-### In a match it is the authority's, and a driven hull is swept like any other
+### It is the simulation's, and a driven hull is swept like any other
 
-On the client `crushSweep` is offline by construction and is never guarded for:
-`updateWorld` returns at its first line in a match. The authority calls the same
-function from `SimCore.step`, and the one way the two calls differ is that
-the authority's sweeps **every** hull on the field, the ones a PERSON is driving
-included — because its `personIn` answers for every peer, where the client's
-answers only for its own player. Those are posed on
-that side from the wire — but `Vehicle.updateRemote` measures `speed` out of the
-ground the hull covered, precisely so everything downstream reads a remote hull
-the way it reads a local one, so a person running a squad over resolves there
-exactly as a bot crew's hull does. Nothing about it is predicted on the client:
-the driver learns of the kill when the killfeed says so, which is the same round
-trip a shell's blast already takes.
+The page never calls `crushSweep`. The simulation core does, from
+`SimCore.step` — the authority's in a match and the offline page's own since
+`BABYLON_EXIT.md` X2.5a C4a — and it sweeps **every** hull on the field, the
+ones a PERSON is driving included, because its `personIn` answers for every
+person it holds. Those are posed from the person's report (`drive`: off the
+wire on the authority, off the page's own prediction offline since C4b) — but
+`Vehicle.updateRemote` measures `speed` out of the ground the hull covered,
+precisely so everything downstream reads a remote hull the way it reads a local
+one, so a person running a squad over resolves there exactly as a bot crew's
+hull does. Nothing about it is predicted on the page: the driver learns of the
+kill when the killfeed says so — a round trip in a match, the next drain
+offline.
 
 ## Two seats, and what each of them is
 
@@ -3616,6 +3616,19 @@ are mirror images of each other:
 | --- | --- | --- |
 | **client** | the one hull this player is DRIVING | every other hull |
 | **authority** | every bot-driven hull | the hulls with a person at the sticks |
+
+**Offline the page is that client and its core is that authority**
+(`BABYLON_EXIT.md` X2.5a C4b): the same two rows, with the `DriveMessage`
+replaced by a `drive` command submitted every frame and trusted rather than
+validated. So the hull a person drives is ONE machine on both sides of the wire
+— the driver's picture (the linkage steer, the lean off the drive, the gun's
+kick on the frame it fires) and the driver's handling alike — and what the
+remote half lacks, it lacks offline too: **a person-flown helicopter takes no
+crash damage** in a match or out of one, because the crash check reads `jolt`
+inside `update` and a posed hull runs `updateRemote` (`FINDINGS.md` 60). Offline
+the trigger is asked of the core between its step and the page's fleet, the one
+moment the two copies stand in the same place (`Game.pullHullTrigger`,
+`docs/game.md`).
 
 **The second seat is a second pair of questions and NOT a mode on the first**,
 because the two chairs in one hull can be filled by two different kinds of

@@ -718,11 +718,16 @@ is one machine's:
   view of a hull is `g.vehicleViews.views.find((v) => v.hull === tank)`.
   **The signature takes a LOOKUP rather than a hull and a stick**, because a bot
   crew can be driving one hull while the player drives another. **Offline the
-  fleet that decides is the simulation core's** (`g.core.vehicles`, stepped
+  fleet that decides is the simulation core's** (`g.core.live.vehicles`, stepped
   inside `g.core.step`; `BABYLON_EXIT.md` X2.5a C4a) and `g.vehicles` is the
-  page's copy POSED off it — so drive the player's hull by submitting
-  `driveInput` (`g.ask(g.driveCmd)` with the sticks written in, or hold the keys),
-  and everything else is answered by the core's crew (`g.core.crew`). Two things that have already cost time: **do not read `speed` after
+  page's copy POSED off it — **except the hull under the player's own DRIVER,
+  which the page PREDICTS** (C4b): drive it with the sticks (`g.input.moveY`
+  and friends written after `g.input.update`, or hold the keys) and the page
+  steps it through `driveFor` and reports it as `drive`, so the core's copy is
+  exactly the page's of ONE FRAME EARLIER (x, z, yaw, turret, gun). Everything
+  else is answered by the core's crew (`g.core.live.crew`). **For a frame-exact
+  comparison pin the step** — `g.frameCap.elapsed = () => 1 / 60` — and script
+  the inputs by frame; the drive is then deterministic run to run. Two things that have already cost time: **do not read `speed` after
   a phase with the throttle at zero** (the brake is 9 m/s², so a second of
   turning takes 11 down to 2 and it looks like a stall that is not there), and
   **do not call `spawnPlayer()` if you are placing the camera by hand** —

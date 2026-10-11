@@ -27,9 +27,9 @@ round of its own. **Three doors, and no fourth**:
   only), a throw and a rocket from the viewmodel's hand and muzzle, a mine at
   the `standableAt` point, the kit and the deploy, a mount, a crossing (a
   `mount` naming the hull the player is in), a dismount, the hull's guns, and
-  the C4a-only `driveInput`/`gunOrder` that let the core step the player's hull
-  from raw input. Every one is trusted; the core still refuses what its own
-  state makes impossible.
+  — every frame a seat is held — the hull or the ring this page PREDICTS
+  (`drive`/`gun`, `reportHull`/`reportGun`, X2.5a C4b). Every one is trusted;
+  the core still refuses what its own state makes impossible.
 - **`core.step(dt)`** once a frame, in `updateWorld` — in every state that
   steps the world (`playing`, `dying`, `bench`) and none that holds it.
 - **`drainSim`** after every call made on the core, which hands every event the
@@ -42,13 +42,30 @@ round of its own. **Three doors, and no fourth**:
   for the player.
 
 **The frame's order offline** (`updateWorld`): `BattleView.beginFrame` → the
-core's step → this page's fleet POSED off the core's (`syncFleet` with
-`FleetMirror`, `vehicles.update` answering `remoteFor` for every hull) → the
-driver carried after his hull (D4) → `drainSim` → `VehicleViews.update` →
-`BattleView.update` and the flash budget → `stepShots` → `stepAftermath`. The
-fleet is posed BEFORE the drain so every event that names a hull finds it
-where the step left it; the views update AFTER it so a gun the core fired this
-step has kicked (`Vehicle.mirrorShot`).
+core's step → the hull trigger (`pullHullTrigger`) → this page's fleet POSED
+off the core's (`syncFleet` with `FleetMirror`, `vehicles.update` answering
+`remoteFor` for every hull but the one under a driver) → the driver carried
+after his hull (D4) → `drainSim` → `VehicleViews.update` → `BattleView.update`
+and the flash budget → `stepShots` → `stepAftermath`. The fleet is posed BEFORE
+the drain so every event that names a hull finds it where the step left it; the
+views update AFTER it so a gun the core fired this step has kicked
+(`Vehicle.mirrorShot`).
+
+**The hull under a DRIVER is this page's prediction, as in a match** (X2.5a
+C4b): `driveFor` steps it off the sticks inside that `vehicles.update`, and
+`updateDriver` reports where the LAST step left it (`drive`, before the core's
+step), so the core's copy is posed one frame behind and stands exactly where
+this page's does at one moment of the frame — between the core's step and this
+page's fleet, which is why the trigger is asked THERE rather than at the key
+(`hullTrigger`, set in `updateDriver`): the round leaves the gun the player is
+looking at, and its kick (`mirrorShot(true)` — the loader, the shove, the rock,
+the masts) lands before this page's hull steps, as a match's predicted shell
+does; the core's `hullKicked` for that hull is not mirrored again. That ask is
+made WITHOUT a drain (`ask(cmd, false)`), so its news waits in the ring behind
+the step's and is drawn after the fleet. A gunner's ring is the same bargain
+(`gunFor` lays it here, `gun` reports it). The core still crushes, burns and
+seats off its own copy — a frame behind, which is a match's arrangement with
+the latency taken out.
 
 **The page's own `Player` is the prediction a match's client runs**: its
 sweep, its ground, its stance, its regen for the HUD and the camera. Its health
@@ -70,8 +87,8 @@ prediction in a match.
 
 **The page keeps only its netplay prediction systems** — `combat`, `grenades`,
 `antiTank`, the fleet, `glass` and `conquest` as the wire's mirror — and steps
-none of them offline but the fleet (posed) and the glass (the core's `glass`
-applied). There is no `BattleSystem`, `VehicleCrew` or `ScoreBook` on the page.
+none of them offline but the fleet (posed, and the player's own hull predicted)
+and the glass (the core's `glass` applied). There is no `BattleSystem`, `VehicleCrew` or `ScoreBook` on the page.
 
 **The core's world is the page's map as DATA**: `buildRound` hands it
 `collisionOf(map)` (the bake's own read of the build, `src/world/collision.ts`)

@@ -37,11 +37,15 @@
  * victim's health, seating a bot crew — is done identically on both, between
  * calls, on the live core; it is a fixture, not a door.
  *
- * One case is the core's alone (`holdsRespawn`): a core built with
- * `hostHoldsRespawn` — the offline page's respawn clock — must honour a
- * deploy AT SUBMIT through the same door and the same spawn stream the
- * authority's reinforcement pass uses, where the default core (above) keeps
- * the request until its own clock runs out.
+ * Two cases are the core's alone, on a core built as the offline page builds
+ * it. `holdsRespawn`: a core built with `hostHoldsRespawn` — the offline
+ * page's respawn clock — must honour a deploy AT SUBMIT through the same door
+ * and the same spawn stream the authority's reinforcement pass uses, where the
+ * default core (above) keeps the request until its own clock runs out.
+ * `reportedHull` (X2.5a C4b): a person's hull is POSED from their `drive` and
+ * `gun` reports — the page's predicted hull offline, a peer's on the
+ * authority — and the shell asked between the step and the next report leaves
+ * the reported pose's muzzle.
  *
  * The person is always slot 0, team 0: the first seat `Roster.claim` hands
  * out, which `MatchHost` asserts. `-- --list` also prints each map's event
@@ -1005,6 +1009,105 @@ function holdsRespawn(world: World, c: Checks): void {
   plain.core.dispose();
 }
 
+/**
+ * **A person's hull is REPORTED, never steered** (`BABYLON_EXIT.md` X2.5a C4b)
+ * — the offline page's driver exactly as the authority's peer, so the door is
+ * asserted on a core built as the page builds it (`hostHoldsRespawn`, no
+ * rewind). A driver's `drive` is where the core's copy stands after its next
+ * step — position, heading, the gun's bearing and elevation — with the person
+ * riding it and the look on the body; the shell asked after that step leaves
+ * the muzzle of the REPORTED pose; a gunner's `gun` is where the cupola gun
+ * points; and a report from the wrong chair moves nothing.
+ */
+function reportedHull(world: World, c: Checks): void {
+  const tag = "reported";
+  const h = new CoreHost({ hostHoldsRespawn: true });
+  h.start(world);
+  const core = h.core;
+  const t0 = core.vehicles.hulls.findIndex((t) => t.team === PERSON_TEAM && !!t.spec.gun);
+  void h.deploy(homeSpawn(h, PERSON_TEAM));
+  for (let i = 0; i < 10; i++) h.step();
+  const p = h.player();
+  if (!c.that(`${tag}: fixture — the person standing, an armed hull of their own`, t0 >= 0 && p.alive)) {
+    core.dispose();
+    return;
+  }
+  const tank = core.vehicles.hulls[t0];
+  const spot = core.vehicles.exitSpot(tank);
+  placePerson(h, spot.x, spot.y, spot.z);
+  void h.mount(t0, DRIVER);
+  const held = core.reportedHull(p);
+  c.that(
+    `${tag}: a mount as DRIVER puts the hull in \`driven\` where it stands`,
+    p.seat === t0 && p.crewSeat === DRIVER && !!held &&
+      held.x === tank.position.x && held.z === tank.position.z && held.yaw === tank.yaw,
+    `seat ${p.seat}/${p.crewSeat}, held ${JSON.stringify(held)}`,
+  );
+
+  // One report a metre and a half up the road, turned, the turret swung.
+  const x = tank.position.x + Math.sin(tank.yaw) * 1.5;
+  const y = tank.position.y;
+  const z = tank.position.z + Math.cos(tank.yaw) * 1.5;
+  const yaw = tank.yaw + 0.05;
+  const turretYaw = tank.turretYaw + 0.4;
+  const gunPitch = 0.06;
+  const took = core.submit(PERSON_SLOT, {
+    t: "drive", x, y, z, yaw, turretYaw, gunPitch, aimYaw: turretYaw, aimPitch: gunPitch,
+  });
+  h.flush();
+  h.step();
+  c.that(
+    `${tag}: a \`drive\` is where the core's hull stands after its next step, the person riding it`,
+    took && tank.position.x === x && tank.position.z === z && tank.yaw === yaw &&
+      tank.turretYaw === turretYaw && tank.gunPitch === gunPitch &&
+      p.position.x === x && p.position.z === z && p.yaw === turretYaw && p.pitch === gunPitch,
+    `hull ${tank.position.x},${tank.position.z} yaw ${tank.yaw} turret ${tank.turretYaw} gun ${tank.gunPitch}`,
+  );
+
+  // The trigger, asked between the step and the next report — the page's
+  // `pullHullTrigger` moment: the round leaves the reported pose's muzzle.
+  const muzzle = tank.muzzleToRef(new Vector3());
+  let mark = h.log.events.length;
+  const fired = tank.gunReady && core.submit(PERSON_SLOT, { t: "shell", early: 0 });
+  h.flush();
+  const cannon = since(h, mark).find((e) => e.type === "cannon");
+  c.that(
+    `${tag}: the shell asked after that step leaves the reported pose's muzzle`,
+    fired && cannon?.type === "cannon" && cannon.tank === t0 &&
+      isDeepStrictEqual(cannon.muzzle, [muzzle.x, muzzle.y, muzzle.z]),
+    `fired=${fired}, cannon ${JSON.stringify(cannon)}, muzzle ${muzzle.x},${muzzle.y},${muzzle.z}`,
+  );
+  c.that(
+    `${tag}: a driver's \`gun\` is refused`,
+    !core.submit(PERSON_SLOT, { t: "gun", yaw: 1, pitch: 0 }),
+  );
+
+  // Across to the gun: the hull leaves `driven`, the ring is laid by report.
+  void h.mount(t0, GUNNER);
+  const mgYaw = tank.turretYaw - 0.7;
+  const mgPitch = 0.1;
+  const laid = core.submit(PERSON_SLOT, { t: "gun", yaw: mgYaw, pitch: mgPitch });
+  // …and a `drive` from this chair moves nothing: reported far away.
+  const away = { x: tank.position.x + 50, z: tank.position.z + 50 };
+  core.submit(PERSON_SLOT, {
+    t: "drive", x: away.x, y, z: away.z, yaw, turretYaw, gunPitch, aimYaw: mgYaw, aimPitch: mgPitch,
+  });
+  mark = h.log.events.length;
+  h.step();
+  c.that(
+    `${tag}: across to the gun, the hull leaves \`driven\` and a \`gun\` is where the ring points`,
+    p.crewSeat === GUNNER && core.reportedHull(p) === null && laid &&
+      tank.mgYaw === mgYaw && tank.mgPitch === mgPitch,
+    `seat ${p.seat}/${p.crewSeat}, mg ${tank.mgYaw}/${tank.mgPitch}`,
+  );
+  c.that(
+    `${tag}: a gunner's \`drive\` moves nothing`,
+    Math.hypot(tank.position.x - away.x, tank.position.z - away.z) > 40,
+    `hull ${tank.position.x},${tank.position.z}`,
+  );
+  core.dispose();
+}
+
 // ---------------------------------------------------------------------------
 // The run.
 
@@ -1186,6 +1289,11 @@ async function main(): Promise<void> {
     if (id === "greyfen") {
       const checks = new Checks("greyfen/held");
       holdsRespawn(world, checks);
+      for (const r of checks.results) report(checks.tag, r);
+    }
+    if (id === "coldharbour") {
+      const checks = new Checks("coldharbour/drive");
+      reportedHull(world, checks);
       for (const r of checks.results) report(checks.tag, r);
     }
   }

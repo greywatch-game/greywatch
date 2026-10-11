@@ -23,12 +23,15 @@
  * (`src/net/protocol.ts`) after validation, with host-resolved data in
  * place of ids the core could not resolve for itself** — the weapon's whole
  * `WeaponSetup` rather than its id, the throwable and equipment the host's
- * kit record names, the pouch SIZES a kit fills. Two kinds have no wire
- * message: `kit` (the wire resolves a kit inside `join`/`deploy`) and the
- * C4a-only pair `driveInput`/`gunOrder`, which let a host step its person's
- * hull FROM RAW INPUT inside the core, as the offline `Game` steps it today;
- * `BABYLON_EXIT.md` X2.5a C4b replaces them with the page predicting the hull
- * and reporting it through `drive`/`gun`, exactly as a netplay client does.
+ * kit record names, the pouch SIZES a kit fills. One kind has no wire
+ * message: `kit` (the wire resolves a kit inside `join`/`deploy`).
+ *
+ * **A person's HULL is reported, never steered** (`BABYLON_EXIT.md` X2.5a
+ * C4b): `drive` and `gun` carry where the host's own prediction put the hull
+ * and the cupola gun, and the core poses its copy to them on its next step —
+ * the offline page's player exactly as the authority's peers. There is no
+ * command carrying a stick: raw input is the predicting host's, which is what
+ * keeps the hull a person drives the same machine offline and in a match.
  *
  * There is no `swapSeat`: on the wire and here a swap is a `mount` naming the
  * hull the person is already in, with the other chair — `SimCore`'s seat
@@ -147,7 +150,12 @@ export interface DismountCommand {
 /**
  * A DRIVER's validated hull state, which the core poses the hull to on its
  * next step (`VehicleOrders.remoteFor`), and the look the shell's cone is
- * measured against (`aimYaw`/`aimPitch`, onto the body).
+ * measured against (`aimYaw`/`aimPitch`, onto the body). `y` is the hull's
+ * FEET (`DriveMessage.pos`'s convention); the core's own probe owns the
+ * height of a hull on the ground and the report owns a flying one's
+ * (`Vehicle.updateRemote`). The authority's is `validateDrive`'s verdict; the
+ * offline page's is its predicted hull as it stands, every frame, before the
+ * step.
  */
 export interface DriveCommand {
   t: "drive";
@@ -184,33 +192,6 @@ export interface MgCommand {
   early: number;
 }
 
-/**
- * **C4a only.** The DRIVER's sticks, as the offline `Game` feeds
- * `VehicleSystem.update` today (`Game.drive`, written in `updateDriver`):
- * the hull is then STEPPED by the core from this rather than posed from a
- * report, until the person reports a `drive` or leaves the chair. The look
- * rides onto the body, as `drive`'s does. Removed at C4b.
- */
-export interface DriveInputCommand {
-  t: "driveInput";
-  throttle: number;
-  steer: number;
-  lift: number;
-  aimYaw: number;
-  aimPitch: number;
-}
-
-/**
- * **C4a only.** The GUNNER's order to the cupola gun (`Game.gunOrder`): the
- * ring is then WALKED by the core toward it rather than set to a reported
- * bearing, until a `gun` arrives or the chair is left. Removed at C4b.
- */
-export interface GunOrderCommand {
-  t: "gunOrder";
-  aimYaw: number;
-  aimPitch: number;
-}
-
 /** Everything `SimCore.submit` takes. */
 export type SimCommand =
   | MoveCommand
@@ -224,6 +205,4 @@ export type SimCommand =
   | DriveCommand
   | GunCommand
   | ShellCommand
-  | MgCommand
-  | DriveInputCommand
-  | GunOrderCommand;
+  | MgCommand;
