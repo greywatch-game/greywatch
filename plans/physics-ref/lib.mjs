@@ -5,12 +5,12 @@
  *
  * **Every helper that names where the engine LIVES is one short function in
  * `pageHelpers`, and the sub-commit that moves it edits that function and
- * nothing else.** Today the world handle and the module are the plugin's
- * (`_hknp`, `world`) and a step is `PhysicsWorld`'s own substep, exactly as
- * `PhysicsWorld.update` takes one (since X2.4 C2); X2.4 C4 points `hp` at
- * `PhysicsWorld`'s own world, and C2/C3 point `clientBodies` at wherever the
- * three clients then keep their raw body handles (C2 moved the shards' and
- * the chunks', C3 the corpses'). A hash read through
+ * nothing else.** The module and the world handle are `PhysicsWorld`'s own
+ * (`havok.hk`, `havok.world`, since X2.4 C4 took Babylon's plugin out), a
+ * step is `PhysicsWorld`'s own substep, exactly as `PhysicsWorld.update`
+ * takes one (since C2), and `clientBodies` reads the raw handles the three
+ * clients keep (the shards' and the chunks' since C2, the corpses' since
+ * C3). A hash read through
  * `HP_Body_GetQTransform` reads the same floats either side of that move,
  * which is what lets the oracles grade it.
  *
@@ -31,21 +31,20 @@ export const sha = (value) =>
 export function pageHelpers() {
   window.__physref = {
     /**
-     * The raw module and the world handle every `HP_*` call takes. The
-     * plugin's today (`HavokPlugin` keeps the module in `_hknp` and the
-     * default region's world in `world`); `PhysicsWorld`'s own from X2.4 C4.
+     * The raw module and the world handle every `HP_*` call takes:
+     * `PhysicsWorld`'s own (`havok.ts`'s `hk` and `world`) since X2.4 C4.
+     * Until then they were Babylon's plugin's (`_hknp`, `world`).
      */
     hp(g) {
-      const plugin = g.physics.plugin;
-      return { HK: plugin._hknp, world: plugin.world };
+      const havok = g.physics.havok;
+      return { HK: havok.hk, world: havok.world };
     },
     /**
      * One substep, taken exactly as `PhysicsWorld.update` takes one: its own
-     * `substep` (private to TypeScript, reachable here), which since X2.4 C2
-     * pre-steps the plugin's bodies and then the raw ones, calls
-     * `HP_World_SetIdealStepTime` and `HP_World_Step` at `death.substep`
-     * (the `dt` handed in is that), and syncs both kinds back. X2.4 C4 takes
-     * the plugin out from under it and this does not change.
+     * `substep` (private to TypeScript, reachable here): every pending
+     * teleport, `HP_World_SetIdealStepTime` and `HP_World_Step` at
+     * `death.substep` (the `dt` handed in is that), and every dynamic body
+     * synced back. Unchanged since X2.4 C2.
      */
     step(g, dt) {
       g.physics.substep(dt);

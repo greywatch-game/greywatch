@@ -2,15 +2,15 @@
  * havok.ts — Havok's raw `HP_*` API in the one dialect the physics code
  * speaks: the handle types, the `[Result, value]` unwrapping, the enums, and
  * every call spelled exactly as Babylon's `HavokPlugin` spelled it.
- * Owns: nothing that lives — no body, no shape, no world. It holds the module
- * and the world handle it was given and turns a call into the call the plugin
- * would have made.
+ * Owns: the WORLD handle (`createWorld`), and nothing else that lives — no
+ * body and no shape. It holds the module and that world and turns a call into
+ * the call the plugin would have made.
  * Invariants:
  * - **Babylon-free.** Its one import is `@babylonjs/havok`, and that one is a
  *   TYPE: the module itself is what `loadHavok` fetched and `main.ts` awaited,
  *   handed down through `PhysicsWorld`. Vectors and quaternions cross as
  *   Havok's own tuples (`[x, y, z]`, `[x, y, z, w]`), never as a class.
- * - **Call for call the plugin's.** `BABYLON_EXIT.md` X2.4 ports
+ * - **Call for call the plugin's.** `BABYLON_EXIT.md` X2.4 ported
  *   `PhysicsWorld` and its three clients off the plugin, and the bar is bits:
  *   the oracles (`plans/physics-ref/`) hash Havok's own poses, and a port that
  *   makes the plugin's calls in the plugin's order with the plugin's values is
@@ -24,7 +24,10 @@
  *   which fall back to a unit inertia exactly as it did. A handle is
  *   `[bigint]` and is passed back as the same array it came in.
  * Must never: hold state between calls beyond the module and the world, or
- *   decide anything — what a body is for is its client's business.
+ *   decide anything — what a body is for is its client's business. Nor make a
+ *   call the plugin did not: no speed limit (`HP_World_SetSpeedLimit`) above
+ *   all, whose default every tumble was tuned under (`FINDINGS.md` 57's
+ *   100 rad/s is that default).
  */
 import type {
   ConstraintAxis,
@@ -103,6 +106,18 @@ export class Havok {
   }
 
   // --- the world ------------------------------------------------------------
+
+  /**
+   * A new Havok world with its gravity — the plugin's constructor's
+   * `HP_World_Create` and `enablePhysics`' `HP_World_SetGravity`, without the
+   * query collector the plugin also made at boot (nothing casts against this
+   * world: every ray in the game is `RayWorld`'s).
+   */
+  static createWorld(hk: HavokInstance, gravity: Vec3): Havok {
+    const world = hk.HP_World_Create()[1];
+    hk.HP_World_SetGravity(world, gravity);
+    return new Havok(hk, world);
+  }
 
   /**
    * One step of `dt` — `executeStep`'s two calls for the default region, in

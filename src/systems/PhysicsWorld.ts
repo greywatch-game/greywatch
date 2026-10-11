@@ -1,10 +1,10 @@
 /**
  * PhysicsWorld.ts — The one physics engine: Havok, the map as one static body
  * per 48 m block, and the fixed-step clock everything under it advances on.
- * Owns: the engine (Babylon's `HavokPlugin` still creates and steps the world
- * until `BABYLON_EXIT.md` X2.4 C4; everything else reaches it through the raw
- * API in [`havok.ts`](havok.ts)), the static world, the substep accumulator,
- * and the register of clients that have bodies in it.
+ * Owns: the engine — Havok's own world, created and stepped through the raw
+ * API in [`havok.ts`](havok.ts), with no Babylon plugin and no scene physics
+ * engine between (`BABYLON_EXIT.md` X2.4 C4) — the static world, the substep
+ * accumulator, and the register of clients that have bodies in it.
  * Owns no body but the static world's. `RagdollSystem` has the corpses,
  * `DebrisSystem` the glass shards and `BlastDebrisSystem` the rubble a blast
  * throws; this file is what the three share, and with `havok.ts` it is the only
@@ -29,11 +29,14 @@
  * machine that can run the rest of this game, does not happen.
  *
  * Invariants, each of which has a way of failing silently:
- * - `scene.physicsEnabled` is FALSE and stays false. Babylon steps physics from
- *   `scene.animate()` on every RENDERED frame, and this game renders under the
- *   menu, the deploy map and a pause — so a scene-driven step would be the one
- *   thing still moving behind a pause card. Stepping is `update()`'s job and it
- *   is only ever called from a gameplay path.
+ * - `scene.physicsEnabled` is FALSE and stays false. Babylon steps a scene's
+ *   physics engine from `scene.animate()` on every RENDERED frame, and this game
+ *   renders under the menu, the deploy map and a pause — so a scene-driven step
+ *   would be the one thing still moving behind a pause card. The scene has no
+ *   physics engine at all now, so there is nothing for it to step; the flag is
+ *   still written (the `Scene` constructor sets it true) because the rule
+ *   stands until the scene goes. Stepping is `update()`'s job and it is only
+ *   ever called from a gameplay path.
  * - The sim is a FIXED step with a CARRIED remainder, so a tumble is identical
  *   at 30, 60 and 144 fps and reproducible headless, where `dt` is clamped to
  *   0.05. Both halves are load-bearing and both have already been wrong once.
@@ -46,16 +49,16 @@
  * It was `RagdollSystem`'s, privately, and two things made a second consumer
  * impossible rather than merely awkward. The step ran only while a corpse slot
  * was unfrozen, so a shard would have sat motionless whenever nobody was dying.
- * And the plugin was a private field, so the alternative was a second
- * `enablePhysics` on the same scene — which is not a second world, it is the
- * same one with two owners. (There was a third: the ragdoll SETTING tore the
- * static world down as a side effect, so glass would have fallen through the
- * floor for anyone who turned corpses off. That setting is gone with the
+ * And the engine was a private field (then Babylon's plugin, on the scene), so
+ * the alternative was a second `enablePhysics` on the same scene — which is not
+ * a second world, it is the same one with two owners. (There was a third: the
+ * ragdoll SETTING tore the static world down as a side effect, so glass would
+ * have fallen through the floor for anyone who turned corpses off. That setting is gone with the
  * fallbacks it chose between, and the teardown it abused is now only the map's.)
  *
  * The split is the `BattleSystem`←`CombatSystem` precedent in `CLAUDE.md`:
  * INJECTED by `Game`, never imported system-to-system, and it is a constructor
- * argument rather than a callback because a client needs the plugin
+ * argument rather than a callback because a client needs the engine
  * synchronously while it is building bodies.
  *
  * ## Collision filtering
@@ -66,15 +69,7 @@
  * anything, and neither may shove the other or a corpse. A client picking a
  * group takes it from here, so the whole allocation is readable in one place.
  */
-import {
-  HavokPlugin,
-  Mesh,
-  PhysicsEngineV2,
-  Scene,
-  TransformNode,
-  Vector3,
-  VertexBuffer,
-} from "@babylonjs/core";
+import { Mesh, Scene, TransformNode, VertexBuffer } from "@babylonjs/core";
 import { CONFIG } from "../config";
 import { Quaternion as MathQuaternion } from "../math";
 import { BLOCK_SIZE } from "../world/blocks";
@@ -110,8 +105,8 @@ export function loadHavok(): Promise<HavokInstance> {
 }
 
 /**
- * The world's own collision bit — `PhysicsShape` defaults membership to 1, and
- * the static world's shapes take that default. Anything that must land on the
+ * The world's own collision bit — Havok's default membership is 1, and the
+ * static world's shapes take that default. Anything that must land on the
  * map collides with this and, in `DebrisSystem`'s case, with nothing else.
  */
 export const WORLD_GROUP = 1;
@@ -155,12 +150,11 @@ export interface PhysicsClient {
    *
    * This is the teleport read-in point, and it is per client because each owns
    * its own freshly-spawned bodies: a body is spawned with its teleport on
-   * (`WorldBody.teleport`, or `disablePreStep = false` on a body still on the
-   * plugin) so one step reads its node into the sim, and from there the sim
-   * owns it and must not be overwritten. Inside the loop rather than after it — a
-   * frame running two substeps would otherwise re-teleport a body onto the
-   * transform the first step had just synced back, which Havok does not come
-   * out of in the state it went in.
+   * (`WorldBody.teleport`) so one step reads its node into the sim, and from
+   * there the sim owns it and must not be overwritten. Inside the loop rather
+   * than after it — a frame running two substeps would otherwise re-teleport a
+   * body onto the transform the first step had just synced back, which Havok
+   * does not come out of in the state it went in.
    */
   afterFirstStep(): void;
   /**
@@ -188,7 +182,7 @@ export interface WorldBody {
   readonly id: BodyId;
   readonly node: TransformNode;
   /**
-   * Teleport from the node at the NEXT substep — the plugin's
+   * Teleport from the node at the NEXT substep — what the plugin called
    * `disablePreStep = false`. It is read at the substep, not when it is set,
    * so a frame that takes no substep keeps it pending, and it stays set for
    * every substep until the client clears it (`afterFirstStep`). `park` clears
@@ -203,24 +197,15 @@ export interface WorldBody {
 }
 
 export class PhysicsWorld {
-  /**
-   * Two handles onto the same plugin, deliberately, until X2.4 C4 takes both
-   * away. `engine` is what lists the bodies still on the plugin — none since
-   * X2.4 C3 moved the ragdolls' onto the raw API, so `substep`'s prestep and
-   * sync over that list walk nothing; `plugin` is the concrete type.
-   */
-  private engine: PhysicsEngineV2;
-  private hkPlugin: HavokPlugin;
   private clients: PhysicsClient[] = [];
 
   /** Sim time owed but not yet stepped — see `update`. */
   private accum = 0;
 
   /**
-   * The raw API over the plugin's own world — see `havok.ts`. The static world
-   * is built through it rather than through the plugin's `PhysicsBody` and
-   * `PhysicsShape` classes, into the SAME Havok world the plugin steps
-   * (`BABYLON_EXIT.md` X2.4 C1); the clients follow it there.
+   * The raw API over this world's own Havok world — see `havok.ts`. Every body
+   * in the game is built and stepped through it: the static world here, the
+   * clients' through `addBody` and `havok`.
    */
   private hp: Havok;
 
@@ -250,37 +235,27 @@ export class PhysicsWorld {
     scene: Scene,
     havok: HavokInstance,
   ) {
-    // `false` = do NOT use the frame delta for the world step. The plugin then
-    // ignores whatever it is handed and advances a fixed amount, which is what
-    // makes a tumble frame-rate independent.
-    const plugin = new HavokPlugin(false, havok);
-    // ...and this line was meant to be the amount, and never was: the engine
-    // `enablePhysics` builds calls `setTimeStep()` with its own default of
-    // 1/60 straight after, overwriting it. So the step the PLUGIN would take is
-    // 1/60 whatever `death.substep` says. It no longer matters: `substep` below
-    // makes the world step itself, with `death.substep` as the length, which is
-    // exactly 1/60 today and so the same bits — and lowering it to 1/120 for a
-    // finer tumble now does what it says. (The knob's history: the argument to
-    // `_step` is discarded in this mode, so before this file stepped the world
-    // itself `death.substep` only divided the frame.) The line stays for
-    // `drop.mjs`, which still steps through the plugin until X2.4 C4.
-    plugin.setTimeStep(CONFIG.bots.death.substep);
-    scene.enablePhysics(new Vector3(0, CONFIG.bots.death.gravity, 0), plugin);
-    // enablePhysics sets this true. It must not stay true — see the header.
+    // The world and its gravity, and nothing else: no speed limit (the
+    // plugin set none, and Havok's own defaults are what every tumble was
+    // tuned under) and no query collector (nothing here casts against this
+    // world — every ray in the game is `RayWorld`'s).
+    //
+    // The step is `death.substep`, taken by `substep` below. Under Babylon's
+    // plugin it was 1/60 whatever that said — the engine `enablePhysics`
+    // built reset the plugin's step to its own default straight after it was
+    // set — and `death.substep` is exactly 1/60 today, which is why the port
+    // moved no bits; lowering it to 1/120 for a finer tumble now does what it
+    // says.
+    this.hp = Havok.createWorld(havok, [0, CONFIG.bots.death.gravity, 0]);
+    // The `Scene` constructor sets this true. There is no physics engine on
+    // the scene for it to step any more, and it is held false regardless —
+    // see the header.
     scene.physicsEnabled = false;
-    this.engine = scene.getPhysicsEngine() as PhysicsEngineV2;
-    this.hkPlugin = plugin;
-    this.hp = new Havok(havok, plugin.world);
   }
 
   /** True once there is ground to land on. A body without it falls forever. */
   get hasWorld(): boolean {
     return this.worldBodies.length > 0;
-  }
-
-  /** The concrete plugin, for the one call the engine's union type lacks. */
-  get plugin(): HavokPlugin {
-    return this.hkPlugin;
   }
 
   /** The raw API, on the world every body here lives in. */
@@ -324,7 +299,8 @@ export class PhysicsWorld {
 
   /**
    * Teleports a body to its node NOW and clears any teleport pending — what a
-   * client parking a body did through `setPhysicsBodyTransformation`. A
+   * client parking a body did through the plugin's
+   * `setPhysicsBodyTransformation`. A
    * static body whose node alone was moved leaves its collision proxy where it
    * stopped (`RagdollSystem.park` carries the measurement).
    */
@@ -399,34 +375,22 @@ export class PhysicsWorld {
   }
 
   /**
-   * One substep: the plugin's `executeStep`, for the bodies still on the plugin
-   * AND the bodies on the raw API, with everything in the order the plugin
-   * walked them.
-   *
-   * **Why this is not `engine._step` with the raw bodies either side of it.**
-   * Every body used to be one list in the plugin's engine, in creation order —
-   * the ragdolls' (built first), then the shards', then the chunks' — and a
-   * prestep walked it in that order. Raw teleports made BEFORE `_step` would
-   * land ahead of the ragdolls' and after it would be a substep late, and the
-   * oracles grade Havok's state bit for bit. So the plugin's own prestep runs
-   * over its own bodies first, then this world's teleports, then the step —
-   * `SetIdealStepTime` and `Step`, at `death.substep` (see the constructor) —
-   * then the plugin's sync and this world's. What `executeStep` also did and
-   * this does not: re-region bodies for a floating origin (off: no scene sets
-   * one) and read the collision and trigger events (none: no body asks for
-   * any, and reading them changes nothing).
+   * One substep: what Babylon's plugin's `executeStep` did, over every client
+   * body in creation order — the corpses' bones (built first), then the
+   * shards', then the chunks', which was the plugin engine's list — and the
+   * oracles (`plans/physics-ref/`) grade Havok's state bit for bit, so the
+   * order is kept: every pending teleport, then the step (`SetIdealStepTime`
+   * and `Step`, at `death.substep` — see the constructor), then every dynamic
+   * body's pose written back. What `executeStep` also did and this does not:
+   * re-region bodies for a floating origin (off: no scene set one) and read
+   * the collision and trigger events (none: no body asks for any, and reading
+   * them changes nothing).
    */
   private substep(dt: number): void {
-    const plugin = this.hkPlugin;
-    const engineBodies = this.engine.getBodies();
-    for (const b of engineBodies) {
-      if (!b.disablePreStep) plugin.setPhysicsBodyTransformation(b, b.transformNode);
-    }
     for (const b of this.bodies) if (b.teleport) this.teleport(b);
 
     this.hp.step(dt);
 
-    for (const b of engineBodies) if (!b.disableSync) plugin.sync(b);
     for (const b of this.bodies) {
       if (!b.dynamic) continue;
       // The plugin's sync for an unparented node: the position plus the world

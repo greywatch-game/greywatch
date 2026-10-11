@@ -979,12 +979,13 @@ src/
                         #   its three clients do. Exports
                         #   loadHavok(), which main.ts awaits before there is a
                         #   Game
-    havok.ts            # Havok's raw HP_* API in one dialect: the handle
-                        #   types, [Result, value] unwrapped, the enums, and
-                        #   each call spelled as Babylon's HavokPlugin spelled
-                        #   it (reads included), so the port off the plugin is
-                        #   bit-for-bit. Babylon-free; imports @babylonjs/havok
-                        #   as a type only
+    havok.ts            # Havok's raw HP_* API in one dialect: the world
+                        #   (created with its gravity — there is no plugin), the
+                        #   handle types, [Result, value] unwrapped, the enums,
+                        #   and each call spelled as Babylon's HavokPlugin
+                        #   spelled it (reads and 6-DoF constraints included),
+                        #   so the port off the plugin is bit-for-bit.
+                        #   Babylon-free; imports @babylonjs/havok as a type only
     RagdollSystem.ts    # Corpses under that engine. One refusal left (past the
                         #   fog wall); a full pool evicts its oldest. Cannot
                         #   tell a dead bot from the player's stand-in
