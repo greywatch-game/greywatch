@@ -17,7 +17,9 @@ server/               # The authoritative match server. Node, no Babylon (the
                       #   socket in the process is swept against. Owns no
                       #   game rules
   Match.ts            #   One match: fixed-step loop, snapshots, the gates on
-                      #   what a client may claim, round rotation
+                      #   what a client may claim, round rotation. The core's
+                      #   HOST: drains its event ring after every call and
+                      #   `relay`s it onto the wire
   claimGates.ts       #   HOW a claimed round is gated — the RateGate bucket,
                       #   the look vector, the cone, the origin slip and the
                       #   one zero-length threshold. Match's five claim arms
@@ -43,7 +45,9 @@ server/               # The authoritative match server. Node, no Babylon (the
                       #   budget this process has. Times every step, files them
                       #   by bots in contact, and names the spikes. Takes a
                       #   round SEED (4th argument) and prints `fight`, a hash
-                      #   of the kill list the same seed must reproduce
+                      #   of the kill list the same seed must reproduce —
+                      #   folded off the core's drained events, as is
+                      #   `--events`, the ordered list
   parity.ts           #   Fingerprint dump for `npm run parity`
 scripts/                      # Node tooling, run by hand or by `npm run build`,
                               #   never shipped. Plain .mjs outside both
@@ -1887,7 +1891,15 @@ src/
                       #   `seat`, which is `Game.mount`/`clearVehicle` as one
                       #   method. Builds the SIMULATIONS only, never a view, and
                       #   has no engine and no scene. `startRound(RoundSpec)` is
-                      #   synchronous; `anchor`/`drop` are the host's clock
+                      #   synchronous; `anchor`/`drop` are the host's clock.
+                      #   No outward callback: it SAYS everything through
+                      #   events.ts, and the host `drain`s after every call
+    events.ts         #   The event ring: the vocabulary (EV), each kind's
+                      #   payload layout, the writers SimCore calls, the
+                      #   EventCursor a drain swaps into, and decode/toObjects.
+                      #   Every number captured at emission; kind byte + tick +
+                      #   12 float64s a record, an int side array for pane
+                      #   lists. Allocation-free to write
     SimPlayer.ts      #   A connected human as the simulation sees one — the
                       #   only position anything on the server trusts
     simWorld.ts       #   buildSimWorld: the solid world rebuilt from the baked

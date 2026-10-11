@@ -25,6 +25,20 @@
  * data `buildSimWorld` takes, and its wall-clock anchor through `anchor` and
  * `drop`. Nothing in this directory may import from `server/`.
  *
+ * **Everything it has to SAY leaves through one event ring and nothing else**
+ * (`src/sim/events.ts`, `BABYLON_EXIT.md` X2.5a C2). There is no outward
+ * callback on this class: every fact a host used to be called back with — a
+ * death, an award, a flag, a blast, a seat, a person's damage — and every
+ * presentation fact the page will draw from (a round's tracer, a footstep, a
+ * hull's kick) is WRITTEN, as numbers captured at the moment it happened, in
+ * the order it happened, and the host `drain`s after every call it makes on
+ * the core. A writer here reads whatever it states off the live object inside
+ * the call that raised it — the health after the blow, the respawn clock just
+ * armed, the bearing of the killing round — so no reader ever has to go back
+ * for it. The system callbacks the core installs on its own systems (below,
+ * in `wire`) are the INWARD wiring and stay; they simply end in a ring write
+ * where they used to end in a host's handler.
+ *
  * A slot index IS a bot index, by construction: `Roster` lays its slots out
  * team 0 then team 1, `BattleSystem` builds its pool the same way, and both are
  * sized from `CONFIG.bots.maxPerTeam`. That is what makes benching a bot for a
@@ -55,7 +69,6 @@ import type { WeaponSetup } from "../entities/weapons";
 import { BattleSystem } from "../systems/BattleSystem";
 import {
   CombatSystem,
-  type DamageKind,
   type Hittable,
   type ShotResult,
 } from "../systems/CombatSystem";
@@ -93,7 +106,7 @@ import {
   type RemoteHull,
   type VehicleOrders,
 } from "../systems/VehicleSystem";
-import { Vehicle, type GunAngles } from "../entities/Vehicle";
+import { Vehicle, type GunAngles, type HullPicture } from "../entities/Vehicle";
 import {
   DRIVER,
   GUNNER,
@@ -109,6 +122,31 @@ import { perTeamOf, type Heightfield } from "../world/layout";
 import { LagComp } from "./LagComp";
 import { SimPlayer } from "./SimPlayer";
 import { buildSimWorld } from "./simWorld";
+import {
+  EV,
+  EventRing,
+  emitAward,
+  emitBlast,
+  emitBotDown,
+  emitBurntOut,
+  emitCrushed,
+  emitDamaged,
+  emitDeath,
+  emitGlass,
+  emitHit,
+  emitIgnited,
+  emitPair,
+  emitRound,
+  emitRoundOver,
+  emitSeat,
+  emitShot,
+  emitSlot,
+  emitSlotAt,
+  emitSpawned,
+  setRoundShooter,
+  victimCode,
+  type EventCursor,
+} from "./events";
 
 /**
  * Everything a round is, as its HOST hands it over: the map, its world as data
@@ -234,14 +272,35 @@ export class SimCore {
 
   private readonly combatants: Combatant[] = [];
 
+  /**
+   * What the simulation has said since the host last drained it — see
+   * `src/sim/events.ts`. Every writer below reads `tick` for its stamp, so a
+   * fact raised between two steps (a person's round, resolved on arrival) is
+   * stamped with the step it followed.
+   */
+  private readonly events = new EventRing();
+
+  /**
+   * Whose round `CombatSystem.fire` is resolving, for the `round` event, or
+   * -1. Set around the three fires this class makes itself (`resolveShot`,
+   * `resolveShell`, `resolveMg`); a bot's fire happens inside `BattleSystem`,
+   * so its `round` is written with -1 and named by the `botFired` that
+   * follows it in the same call (`pendingRound`).
+   */
+  private shooter = -1;
+  /** The offset of a `round` still waiting for its shooter's name, or -1. */
+  private pendingRound = -1;
+  /** Whether `roundOver` has been written for the standing round. */
+  private ended = false;
+
   constructor() {
     // No scene and no material factory: the last thing that wanted a factory
     // was the fleet's rigs, which are the client's `VehicleViews` since
     // `BABYLON_EXIT.md` X2.2 C9, and the last thing that wanted a scene was
     // `buildServerWorld`'s collider meshes, which went at X2.3.
     // The simulation half alone: the tracer, spark, disc and mark pools are
-    // `CombatFx`'s, which only a client builds, so `onRound` is left unwired
-    // and every round's picture is a no-op here (`BABYLON_EXIT.md` X2.2).
+    // `CombatFx`'s, which only a client builds (`BABYLON_EXIT.md` X2.2), so
+    // `onRound` is wired to a `round` EVENT and nothing more (X2.5a C2).
     this.combat = new CombatSystem();
     // …and the roster's simulation without a rig in it: the bodies, their
     // poses as numbers and the LOD are `BattleView`'s, which only a client
@@ -259,7 +318,8 @@ export class SimCore {
     // Ballistics without the picture. Where a grenade lands and who it hurts
     // is a rule and belongs here; what it looks like is `GrenadeFx`'s, which
     // needs a GPU device and is never built on this side, so `onBlast` is
-    // left unwired and every blast's picture is a no-op here.
+    // left unwired — the `blast` event is written off `onExploded`, which
+    // carries the same ground probe.
     this.grenades = new GrenadeSystem();
     this.vehicles = new VehicleSystem(this.random);
     this.antiTank = new AntiTankSystem();
@@ -299,8 +359,31 @@ export class SimCore {
         return null;
       },
       crewOf: (tank, seat) => this.crew.crewOf(tank, seat),
+      // The tracks killed somebody: the kill is already settled, so this is
+      // news and nothing else — the driver's hitmarker and the run-over line.
+      onCrushed: (by, victim) => {
+        const tank = this.hullDrivenBy(by);
+        emitHit(this.events, this.tick, this.slotOf(by), this.victimIndex(victim),
+          this.victimKind(victim), true, false, "tracks");
+        emitCrushed(this.events, this.tick, tank, this.slotOf(by),
+          this.victimIndex(victim), this.victimKind(victim));
+      },
     };
     this.wire();
+  }
+
+  /**
+   * Hands everything said since the last drain to `out`, in emission order.
+   *
+   * **A host drains after EVERY call it makes on the core** — each `step`,
+   * each accepted message's call — and that is what keeps its outgoing order
+   * the order the immediate callbacks this replaced used to produce: nothing
+   * the host does between two calls can land in the middle of one call's
+   * events. `out` holds them until the next drain into it.
+   */
+  drain(out: EventCursor): void {
+    this.events.drainInto(out);
+    this.pendingRound = -1;
   }
 
   /**
@@ -452,6 +535,14 @@ export class SimCore {
     // one body here.
     for (const tank of this.vehicles.hulls) this.battle.removeHuman(tank);
     this.vehicles.build(this.map);
+    // Each hull's three told-not-polled moments, as events — the page's
+    // `VehicleView` will be told them off the ring rather than off a hull it
+    // holds. Attached after the build, so the round's own first placing is
+    // not news; a respawn's is. A picture decides nothing (`HullPicture`), so
+    // the hull runs the same arithmetic with this as without it.
+    for (const [i, tank] of this.vehicles.hulls.entries()) {
+      tank.picture = this.hullPicture(i, tank);
+    }
     this.crew.setMap(this.vehicles.empty ? null : this.map);
     // A hull is in the fight for the two reasons `Game.buildRound` gives and
     // neither is optional: bots must be able to ACQUIRE one (nothing else
@@ -487,6 +578,7 @@ export class SimCore {
     // construction, the fleet above) and before anything has spawned or fired.
     this.random.seedRound(seed);
     this.tick = 0;
+    this.ended = false;
     // A new round is a new board. Sized here rather than at construction
     // because the pool is what says how many slots there are, and `reset`
     // bumping the version is what makes the cleared table go out to everybody
@@ -591,7 +683,7 @@ export class SimCore {
       if (!spawn) continue;
       player.deployRequest = null;
       player.spawn(spawn.pos, spawn.yaw);
-      this.onPlayerSpawned(player, spawn.pos, spawn.yaw);
+      emitSpawned(this.events, this.tick, player.slot, spawn.pos, spawn.yaw);
     }
 
     // Both kinds of body, in one list. `ConquestSystem` counts occupancy off
@@ -601,7 +693,16 @@ export class SimCore {
     this.combatants.push(...this.battle.bots);
     for (const player of this.players.values()) this.combatants.push(player);
     this.conquest.update(dt, this.combatants);
-    if (this.conquest.winner !== null) return false;
+    if (this.conquest.winner !== null) {
+      // Once, on the tick it happened, and LAST of that tick's events — the
+      // place `Match` used to queue it, after everything the deciding flag
+      // paid.
+      if (!this.ended) {
+        this.ended = true;
+        emitRoundOver(this.events, this.tick, this.conquest.winner);
+      }
+      return false;
+    }
 
     // The armour, before the bots and after the flags, in `Game.updateWorld`'s
     // order and for its reasons: a bot's think tick tests line of sight
@@ -702,31 +803,26 @@ export class SimCore {
   }
 
   /**
-   * Everything the bots need from the rest of the game.
+   * Everything the systems need from each other, and everything they say.
    *
    * The client's `Game.wireBattle` installs sounds and minimap reveals here
-   * too; none of those exist on a server, so what is left is the callbacks
-   * that are actually about the fight. Their absence is the point — a server
-   * that had to stub `Sfx` would be a server that had imported it.
+   * too; none of those exist on this side, so what is left is the callbacks
+   * that are actually about the fight — and, since X2.5a C2, a ring write at
+   * the end of every one that has news in it. **Every system callback here is
+   * this method's and none is a host's**: a callback has one owner, the owner
+   * is the side that decides, and what the host hears it hears off the ring
+   * (`drain`). `onBotFired`, `onBotReloaded`, `scores.onAward` and the
+   * conquest pair used to be wired by `Match` directly, and are not any more.
    *
-   * Two of those presentation callbacks are nonetheless taken, because the
-   * FACT under each of them belongs to the authority and to nothing else — no
-   * client runs the AI that pulled a trigger, and none of them resolves
-   * anybody else's rounds. They are taken at different doors, and the
-   * difference is whether the fight cares:
-   *
-   * - **`onBotFired` and `onBotReloaded` are `Match`'s**, wired straight to the
-   *   event queue. Nothing here decides anything on them, so nothing here has
-   *   to see them.
-   * - **`onNearMiss` is this method's**, because half of it is suppression —
-   *   which is the fight, and which had no caller on this side at all until it
-   *   was wired. The other half is a person's crack past the ear, and that
-   *   leaves through `onNearMiss` below for `Match` to address to them.
-   * - **`conquest.onCaptured` and `onNeutralised` are this method's**, and they
-   *   were `Match`'s until a flag started paying the bodies standing on it.
-   *   That is a rule, a callback has one owner, and the owner has to be the
-   *   side that decides: the news goes back out through `onCapturedEvent` /
-   *   `onNeutralisedEvent` for `Match` to put on the wire.
+   * - **`onNearMiss` is half suppression** — which is the fight — and half a
+   *   person's crack past the ear, which leaves as a `nearMiss` event for
+   *   `Match` to address to them.
+   * - **`conquest.onCaptured` and `onNeutralised` pay the bodies on the flag
+   *   first** and then write the news, so `captured` follows its awards.
+   * - **The presentation callbacks** — a round's tracer, a footstep, a fire
+   *   going out, a hull's kick — decide nothing and cost a ring write each.
+   *   They are written whether or not anybody draws them, so the page will
+   *   read the same ring the authority's host does.
    */
   private wire(): void {
     // A death costs the dying side a reinforcement. This is the whole of what
@@ -757,10 +853,20 @@ export class SimCore {
     // thing that can report it: no client resolves anybody else's rounds, so a
     // networked player had no warning whatever that the fire was meant for
     // them. `at` is `CombatSystem`'s module scratch and must be read inside the
-    // call, which is what `Match` does with it.
+    // call, which is what the ring write does with it.
     this.combat.onNearMiss = (near, from, at) => {
       this.battle.suppress(near, from);
-      if (near instanceof SimPlayer) this.onNearMiss(near, at);
+      if (near instanceof SimPlayer) {
+        emitSlotAt(this.events, EV.nearMiss, this.tick, near.slot, at);
+      }
+    };
+    // The picture of every round from every shooter — the tracer, the impact
+    // and whether it may leave a mark. `normal` is the wall query's scratch,
+    // copied by the write. A bot's round is fired inside `BattleSystem`, so it
+    // is written unnamed and named by the `botFired` the same call raises.
+    this.combat.onRound = (muzzle, to, kind, normal, mark) => {
+      const at = emitRound(this.events, this.tick, this.shooter, muzzle, to, kind, normal, mark);
+      this.pendingRound = this.shooter < 0 ? at : -1;
     };
     // Glass, and it is the authority's for one reason with teeth: the movement
     // validator rejects a client standing inside `map.obstacles`, so a player
@@ -783,21 +889,45 @@ export class SimCore {
     this.combat.onShotPath = (origin, dir, dist) => {
       firstAt = null;
       const broke = this.glass.shoot(origin, dir, dist, true);
-      if (broke.length > 0 && firstAt) this.onGlassBroken(broke, firstAt, dir);
+      if (broke.length > 0 && firstAt) {
+        emitGlass(this.events, this.tick, broke, firstAt, dir);
+      }
     };
     // A flag changing hands pays whoever was standing on it, which is a RULE
-    // and so is taken here — the events the clients need are raised back out
-    // for `Match` to queue, exactly as `onKillEvent` is. It used to be
-    // `Match`'s callback outright; a callback has one owner, and the half that
-    // decides something has to be the half that lives on this side.
+    // and so is taken here — the news the clients need is written to the
+    // ring after the awards, exactly as a death's is. It used to be `Match`'s
+    // callback outright; a callback has one owner, and the half that decides
+    // something has to be the half that lives on this side.
     this.conquest.onCaptured = (point, by) => {
       this.awardZone(point, by, "capture");
-      this.onCapturedEvent(point, by);
+      emitPair(this.events, EV.captured, this.tick, this.conquest.points.indexOf(point), by);
     };
     this.conquest.onNeutralised = (point, by) => {
       this.awardZone(point, by, "neutralise");
-      this.onNeutralisedEvent(point);
+      emitPair(this.events, EV.neutralised, this.tick, this.conquest.points.indexOf(point), by);
     };
+    // Somebody was paid — every slot, all round. `person` is captured here
+    // because it is the one thing `Match` filters on (a feed line goes only to
+    // a slot somebody is sitting in), and asking afterwards would be asking a
+    // roster that may have changed.
+    this.scores.onAward = (slot, kind, points) =>
+      emitAward(this.events, this.tick, slot, kind, points, this.players.has(slot));
+    // A bot pulled its trigger, worked its magazine, or put a foot down. News
+    // for a screen and nothing else — no client runs the AI, so this is the
+    // only way the fact reaches one. The trigger also NAMES the `round` it
+    // just wrote, which `BattleSystem.botFire` raised a line earlier.
+    this.battle.onBotFired = (bot, at) => {
+      const slot = this.battle.bots.indexOf(bot);
+      if (this.pendingRound >= 0) {
+        setRoundShooter(this.events, this.pendingRound, slot);
+        this.pendingRound = -1;
+      }
+      emitSlotAt(this.events, EV.botFired, this.tick, slot, at);
+    };
+    this.battle.onBotReloaded = (bot) =>
+      emitSlot(this.events, EV.botReload, this.tick, this.battle.bots.indexOf(bot));
+    this.battle.onBotStepped = (bot) =>
+      emitSlot(this.events, EV.botStep, this.tick, this.battle.bots.indexOf(bot));
     this.battle.spawnPointFor = (bot) => this.spawnPointFor(bot.team);
     this.battle.planSquads = (team, centroids, previous) =>
       this.conquest.planSquads(team, centroids, previous);
@@ -815,21 +945,31 @@ export class SimCore {
     // a grenade is 1 by definition, a tank shell is 1.85 and the AT kit has
     // its own, and it is the SIZE of the picture rather than anything a rule
     // reads. See the `explode` event.
-    this.grenades.onExploded = (at, power) => this.onExplosion(at, power);
+    this.grenades.onExploded = (at, power, ground) =>
+      emitBlast(this.events, this.tick, at, power, ground.surface, ground.normal);
     // The thrower's row, whoever the blast finished, and a bot's death charged
     // here — a person's already left through `SimPlayer.onDamaged`, which
     // `takeDamage` raised before this callback ran. `settleKill`, the door the
     // client's handler goes through too.
+    // The `hit` first — the thrower's hitmarker, for every body the blast
+    // reached, killed or not — then the kill.
     this.grenades.onBlastHit = (victim, thrower, by, killed) => {
+      emitHit(this.events, this.tick, this.slotOf(by), this.victimIndex(victim),
+        this.victimKind(victim), killed, false, "blast");
       if (killed) settleKill(this.ledger, by, victim, thrower, "blast");
     };
     // A molotov's burn, on the blast's terms exactly.
     this.grenades.onBurnHit = (victim, thrower, by, killed) => {
+      emitHit(this.events, this.tick, this.slotOf(by), this.victimIndex(victim),
+        this.victimKind(victim), killed, false, "fire");
       if (killed) settleKill(this.ledger, by, victim, thrower, "fire");
     };
     // A fire starting is news for every client, which draws it; where it burns
-    // and whom it hurts stay here.
-    this.grenades.onIgnited = (_id, at) => this.onBlaze(at);
+    // and whom it hurts stay here. `ground` is `GrenadeSystem`'s scratch,
+    // copied by the write.
+    this.grenades.onIgnited = (id, at, ground) =>
+      emitIgnited(this.events, this.tick, id, at, ground.surface, ground.normal);
+    this.grenades.onBurntOut = (id) => emitBurntOut(this.events, this.tick, id);
     // A launcher bot's rocket, flown toward the POINT it asked for
     // (`AntiTankSystem.launchToward`) exactly as `Game` wires it.
     // `considerRocket` has already decided the target is armour.
@@ -837,6 +977,7 @@ export class SimCore {
       const dir = this.antiTank.launchToward(from, at, bot.team, bot);
       if (!dir) return false;
       this.battle.hearGunshot(from, bot.team, dir);
+      emitShot(this.events, EV.rocket, this.tick, this.battle.bots.indexOf(bot), from, dir);
       return true;
     };
     // Hostile by construction: the team passed is the ordnance's own and
@@ -855,6 +996,7 @@ export class SimCore {
     // halves are `Game.wireVehicles`'s, with the toast taken out: a bot crew
     // dies through `onCrewLost` below, and a person dies here.
     this.vehicles.onDestroyed = (tank) => {
+      emitPair(this.events, EV.hullDestroyed, this.tick, this.vehicles.hulls.indexOf(tank), tank.team);
       this.crew.hullDestroyed(tank);
       for (const player of this.players.values()) {
         if (player.seat < 0 || this.vehicles.hulls[player.seat] !== tank) continue;
@@ -865,7 +1007,7 @@ export class SimCore {
         const spot = this.vehicles.exitSpot(tank);
         this.seat(player, null);
         player.apply(0, spot.x, spot.y, spot.z, player.yaw, 0, false, false);
-        this.onSeatChanged(player, -1, spot, player.yaw);
+        this.seatAnswer(player, -1, spot, player.yaw);
         // **The hull BREWING UP is the blow**, and saying so is what gets the
         // corpse, the damage arc and the killfeed line right at once — the
         // same three things `Game.wireVehicles` argues at length. Nobody can
@@ -877,6 +1019,8 @@ export class SimCore {
     // …and what it costs a bot crew. The body has already been put down beside
     // the wreck and handed back to the fight by the time this runs, so there is
     // nothing to do but kill it through the door every other bot death takes.
+    this.vehicles.onRespawned = (tank) =>
+      emitPair(this.events, EV.hullRespawned, this.tick, this.vehicles.hulls.indexOf(tank), tank.team);
     this.crew.onBoarded = (bot) => this.battle.setCrewed(bot, true);
     this.crew.onLeft = (bot) => this.battle.setCrewed(bot, false);
     // `crewLost` is the ONE door that credits nobody, and the reason
@@ -893,8 +1037,8 @@ export class SimCore {
    */
   private readonly ledger: KillLedger = {
     credit: (by, victim, headshot) => this.creditKill(by, victim, headshot),
-    botDown: (bot, killer, _by, cause, credited, headshot) =>
-      this.onKill(bot, killer, cause, credited, headshot),
+    botDown: (bot, killer, by, cause, credited, headshot) =>
+      this.onKill(bot, killer, by, cause, credited, headshot),
   };
 
   /**
@@ -941,6 +1085,7 @@ export class SimCore {
     // roster can shoot at a squad from behind and never be looked for.
     this.battle.hearGunshot(origin, shooter.team, dir);
 
+    this.shooter = shooter.slot;
     const result = this.lag.resolve(renderTime, this.now, shooter, () =>
       this.combat.fire(
         origin,
@@ -967,6 +1112,7 @@ export class SimCore {
         },
       ),
     );
+    this.shooter = -1;
 
     // A bot this round put down is charged HERE, and it is the only path that
     // could. `BattleSystem.onBotKill` fires for a bot shot by another bot and
@@ -992,6 +1138,14 @@ export class SimCore {
         "round",
         result.headshot,
       );
+    }
+    // The shooter's own verdict, LAST — after every death, award and piece of
+    // news the round caused, which is where `Match.onShot` used to queue its
+    // `hit` and where the shooter's client still expects it (the hit credits
+    // `Game.claimPredictedHit` pairs off are FIFO with no shot id).
+    if (result?.target) {
+      emitHit(this.events, this.tick, shooter.slot, this.victimIndex(result.target),
+        this.victimKind(result.target), result.killed, result.headshot, "round");
     }
     return result;
   }
@@ -1229,8 +1383,11 @@ export class SimCore {
    * a person's claimed round, which arrives on the network's schedule.
    */
   resolveShell(tank: Vehicle, by: Combatant, early = 0): boolean {
-    if (!fireHullGun(this.hullRules, tank, by, early)) return false;
-    this.onCannon(tank);
+    this.shooter = this.slotOf(by);
+    const round = fireHullGun(this.hullRules, tank, by, early);
+    this.shooter = -1;
+    if (!round) return false;
+    this.hullRound(EV.cannon, tank, by, round.shot, round.muzzle, round.dir, "shell");
     return true;
   }
 
@@ -1239,9 +1396,34 @@ export class SimCore {
    * `fireHullMg`, shared with the client. `early` is `resolveShell`'s.
    */
   resolveMg(tank: Vehicle, by: Combatant, early = 0): boolean {
-    if (!fireHullMg(this.hullRules, tank, by, early)) return false;
-    this.onMg(tank);
+    this.shooter = this.slotOf(by);
+    const round = fireHullMg(this.hullRules, tank, by, early);
+    this.shooter = -1;
+    if (!round) return false;
+    this.hullRound(EV.mg, tank, by, round.shot, round.muzzle, round.dir, "mg");
     return true;
+  }
+
+  /**
+   * What one hull round SAYS, after everything it did: the firer's `hit` if
+   * it found somebody, then the gun going off — `cannon` or `mg`, the event
+   * `Match` used to be called back with at this exact point. `muzzle` and
+   * `dir` are `hullRules`' module scratch, copied by the write.
+   */
+  private hullRound(
+    kind: typeof EV.cannon | typeof EV.mg,
+    tank: Vehicle,
+    by: Combatant,
+    shot: ShotResult,
+    muzzle: Vector3Like,
+    dir: Vector3Like,
+    cause: "shell" | "mg",
+  ): void {
+    if (shot.target) {
+      emitHit(this.events, this.tick, this.slotOf(by), this.victimIndex(shot.target),
+        this.victimKind(shot.target), shot.killed, shot.headshot, cause);
+    }
+    emitShot(this.events, kind, this.tick, this.vehicles.hulls.indexOf(tank), muzzle, dir);
   }
 
   /**
@@ -1252,7 +1434,11 @@ export class SimCore {
    * being reached over a socket.
    */
   launchRocket(from: Vector3, dir: Vector3, by: SimPlayer): boolean {
-    if (!this.antiTank.launch(from, dir, by.team, by)) return false;
+    if (!this.antiTank.launch(from, dir, by.team, by)) {
+      emitPair(this.events, EV.ordnanceRefused, this.tick, by.slot, 0);
+      return false;
+    }
+    emitShot(this.events, EV.rocket, this.tick, by.slot, from, dir);
     // Heard exactly as a rifle is, and by the same door: a rocket leaving is
     // the loudest thing on the map after a tank gun, and the side that fired
     // it has just told everybody where it is.
@@ -1262,18 +1448,25 @@ export class SimCore {
 
   /** A person's mine, laid by the authority on their behalf. */
   layMine(at: Vector3, by: SimPlayer): boolean {
-    return this.antiTank.place(at, by.team, by);
+    if (this.antiTank.place(at, by.team, by)) return true;
+    emitPair(this.events, EV.ordnanceRefused, this.tick, by.slot, 1);
+    return false;
   }
 
-  /** Wired by `Match`: a tank gun went off, for the fifteen other screens. */
-  onCannon: (tank: Vehicle) => void = () => {};
-
   /**
-   * Wired by `Match`: a cupola gun went off, for every screen but the
-   * gunner's own — `onCannon`'s twin one calibre down, and raised per ROUND
-   * because `Match` coalesces it per snapshot exactly as it does a body's.
+   * The answer to a person's mount or dismount, as a `seat` event — and the
+   * hull burning under them, which is the one seat change nobody asked for.
+   * `tank` is the hardstanding they are in afterwards, or -1 on foot; `at`
+   * and `yaw` are where the body was put down, and mean something only on
+   * the way out. Every number is read here, so `at` may be scratch.
+   *
+   * Public because the mount and the dismount are still `Match`'s policy
+   * (`seatOffered`, `dismountable`) around `seat`'s mechanism, and it is
+   * `Match` that knows when an answer is owed — a refusal is answered too.
    */
-  onMg: (tank: Vehicle) => void = () => {};
+  seatAnswer(player: SimPlayer, tank: number, at: Vector3Like, yaw: number): void {
+    emitSeat(this.events, this.tick, player.slot, tank, player.crewSeat, at, yaw);
+  }
 
   /**
    * Seats a human in a slot, and takes the bot that was there off the field.
@@ -1306,7 +1499,11 @@ export class SimCore {
         // there; a tool that grows synthetic players owes this line a cause.
         this.registerDeath(player.slot);
       }
-      this.onPlayerDamaged(player, amount, from, killed, kind);
+      // Everything the victim's own screen is owed, read NOW: the health the
+      // blow left and the respawn clock it armed, which regen and the step
+      // would otherwise have moved by the time anybody looked.
+      emitDamaged(this.events, this.tick, player.slot, player.team, amount, from,
+        killed, kind, player.health, player.respawnT);
     };
     if (this.map) player.leash.setMap(this.map.size, this.map.margin);
     this.players.set(slot, player);
@@ -1347,10 +1544,9 @@ export class SimCore {
 
   /**
    * A bot went down. Charges the ticket, counts the death and reports it
-   * upward.
-   *
-   * `Match` wires `onKill` to turn this into a killfeed event for the clients;
-   * this class does not know what a client is.
+   * upward, as a `death` and then a `botDown` — which `Match` turns into a
+   * killfeed event for the clients; this class does not know what a client
+   * is.
    *
    * The DEATH is counted here and the kill is not — see `creditKill`. This is
    * the victim's door and there is exactly one of it per bot death, which is
@@ -1366,13 +1562,19 @@ export class SimCore {
   private onKill(
     bot: Bot,
     killer: Team,
+    by: Combatant | null,
     cause: DeathCause,
     credited: boolean,
     headshot = false,
   ): void {
     this.conquest.registerDeath(bot.team);
-    this.registerDeath(this.battle.bots.indexOf(bot), cause, credited);
-    this.onKillEvent(bot, killer, headshot);
+    const slot = this.battle.bots.indexOf(bot);
+    this.registerDeath(slot, cause, credited);
+    // The killfeed line and the corpse's throw. The bearing, the size and the
+    // KIND of the killing blow are `Bot.takeDamage`'s, captured before this
+    // ran — the triple a client throws the body with.
+    emitBotDown(this.events, this.tick, slot, killer, this.slotOf(by), cause, credited,
+      headshot, bot.deathFrom, bot.deathDamage, bot.deathKind);
   }
 
   /**
@@ -1488,14 +1690,16 @@ export class SimCore {
    * one funnel both doors take — a bot's through `onKill`, a person's through
    * `SimPlayer.onDamaged`.
    *
-   * `onDeath` is raised from here rather than from the two doors for that
-   * reason: it is the place where "exactly once per body" is already true, so
-   * an audit hung on it counts what the board counts by construction instead
-   * of by two callers agreeing to fire it.
+   * The `death` event is written from here rather than from the two doors
+   * for that reason: it is the place where "exactly once per body" is already
+   * true, so an audit hung on it (`simulate`'s reconciliation, its fight hash)
+   * counts what the board counts by construction instead of by two callers
+   * agreeing to fire it. `cause` and `credited` are the AUDIT: nothing on the
+   * wire is derived from them.
    */
   registerDeath(slot: number, cause: DeathCause = "other", credited = false): void {
     this.scores.registerDeath(slot);
-    this.onDeath(slot, cause, credited);
+    emitDeath(this.events, this.tick, slot, cause, credited);
   }
 
   /**
@@ -1511,104 +1715,51 @@ export class SimCore {
   }
 
   /**
-   * Wired by `Match`: a body went down, for the killfeed and for the corpse.
-   *
-   * `headshot` defaults false and is true only where the resolving path knows
-   * it — a person's round through `resolveShot`. A bot's rifle never tests the
-   * head zone at all (see the `headMult` note there), so false is the answer
-   * rather than a missing one, and a blast has no such zone to hit.
+   * What a `hit` or `crushed` says it landed on — `victimCode`'s kind — and
+   * which one: a slot for a bot or a person, a hardstanding for a hull, -1
+   * for anything that is neither.
    */
-  onKillEvent: (bot: Bot, killer: Team, headshot: boolean) => void = () => {};
+  private victimKind(h: Hittable): number {
+    if (h instanceof Bot) return victimCode("bot");
+    if (h instanceof SimPlayer) return victimCode("person");
+    if (h instanceof Vehicle) return victimCode("hull");
+    return victimCode("none");
+  }
+
+  private victimIndex(h: Hittable): number {
+    if (h instanceof Vehicle) return this.vehicles.hulls.indexOf(h);
+    return this.slotOf(h as Combatant);
+  }
 
   /**
-   * Every death on the board, with the door it came through and whether
-   * anybody was credited for it. An AUDIT hook: `Match` does not wire it and
-   * nothing on the wire is derived from it.
-   *
-   * It is here rather than reconstructed by the reader because the two facts
-   * are only knowable at the moment the blow lands. A tool watching from
-   * outside sees a stream of kill awards and a stream of deaths and can
-   * subtract them, which gives a COUNT of the unexplained; what it cannot do
-   * is say which of the seven doors produced them, and that is the whole
-   * difference between "six deaths went uncredited" and "six tank crews went
-   * down with their hulls, which is what is supposed to happen".
+   * The hull `by` is driving, as a hardstanding index, or -1 — the tank a
+   * `crushed` names. `driverOf`'s question asked backwards: a person on the
+   * sticks first, then the bot crew.
    */
-  onDeath: (slot: number, cause: DeathCause, credited: boolean) => void = () => {};
+  private hullDrivenBy(by: Combatant): number {
+    if (by instanceof SimPlayer) return by.crewSeat === DRIVER ? by.seat : -1;
+    const hulls = this.vehicles.hulls;
+    for (let i = 0; i < hulls.length; i++) {
+      if (this.crew.crewOf(hulls[i], DRIVER) === by) return i;
+    }
+    return -1;
+  }
 
   /**
-   * Wired by `Match`: a flag was taken, or driven to neutral, for the clients
-   * to hear about.
-   *
-   * The presentation half of the two conquest callbacks this class now takes
-   * for the scoring in `wire`. `Match` queues an event on each and decides
-   * nothing, which is why they are shaped as the events rather than as the
-   * points that were paid a line earlier.
+   * One hull's `HullPicture`, on this side: the three moments a view must be
+   * TOLD about (`placed`, `kicked`, `wrecked`) written as events, and the two
+   * integrators a view steps every frame (`rolled`, `flexed`) left to the
+   * page, which reads them off the hull's state.
    */
-  onCapturedEvent: (point: ControlPoint, by: Team) => void = () => {};
-  onNeutralisedEvent: (point: ControlPoint) => void = () => {};
-
-  /** Wired by `Match`: a person has been placed in the world. */
-  onPlayerSpawned: (player: SimPlayer, at: Vector3Like, yaw: number) => void = () => {};
-
-  /**
-   * Wired by `Match`: a blast went off here, and how big it LOOKS.
-   *
-   * `power` is `BlastSpec.power` — the grenade is 1 and everything else is a
-   * multiple of it. It is on the callback rather than derived at the far end
-   * because the far end is a socket: a client cannot know whether the thing
-   * that just went off was a frag, a shell or a rocket, and the difference is
-   * the whole size of the fireball.
-   */
-  onExplosion: (at: Vector3Like, power: number) => void = () => {};
-
-  /**
-   * Wired by `Match`: a molotov caught here. A position and nothing else — see
-   * the `blaze` event. `at` is `GrenadeSystem`'s own vector, read inside the
-   * call.
-   */
-  onBlaze: (at: Vector3Like) => void = () => {};
-
-  /**
-   * Wired by `Match`: this person got into a hull or was put out of one, and
-   * this is the answer their own client is waiting for.
-   *
-   * `at`/`yaw` are where the body was put down and are meaningful only on the
-   * way out — the caller's vector, read inside the call.
-   */
-  onSeatChanged: (
-    player: SimPlayer,
-    tank: number,
-    at: Vector3Like,
-    yaw: number,
-  ) => void = () => {};
-
-  /**
-   * Wired by `Match`: one or more panes just went in.
-   *
-   * `origin`/`dir`/`dist` describe the round that crossed them rather than the
-   * panes themselves, because `Match` puts the FIRST crossing on the wire and
-   * the direction with it — see the `glass` event. Both vectors are the
-   * caller's and are read inside the call.
-   */
-  onGlassBroken: (panes: number[], at: Vector3Like, dir: Vector3Like) => void = () => {};
-
-  /**
-   * Wired by `Match`: a round passed close to this person without hitting them.
-   *
-   * `at` is the point of closest approach and is `CombatSystem`'s module
-   * scratch vector — read it inside the call or copy it; it is overwritten by
-   * the next near miss, which in a firefight is the next round.
-   */
-  onNearMiss: (player: SimPlayer, at: Vector3Like) => void = () => {};
-
-  /** Wired by `Match`: a person took a hit. */
-  onPlayerDamaged: (
-    player: SimPlayer,
-    amount: number,
-    from: Vector3Like | undefined,
-    killed: boolean,
-    kind: DamageKind,
-  ) => void = () => {};
+  private hullPicture(i: number, tank: Vehicle): HullPicture {
+    return {
+      placed: () => emitPair(this.events, EV.hullPlaced, this.tick, i, tank.team),
+      kicked: () => emitPair(this.events, EV.hullKicked, this.tick, i, tank.team),
+      wrecked: () => emitPair(this.events, EV.hullWrecked, this.tick, i, tank.team),
+      rolled: () => {},
+      flexed: () => {},
+    };
+  }
 
   /**
    * The round's board: points, kills and deaths per SLOT, in slot order.

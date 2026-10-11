@@ -12,17 +12,25 @@
  * award in the order they happened, each with its tick, its slot and its
  * kind — the whole kill list, where the board beside it is only its totals.
  *
+ * **Everything here is read off the core's event ring** (`src/sim/events.ts`),
+ * drained after every step exactly as `Match` drains it, and folded in the
+ * order the core wrote it: the hash folds each `award` and `death` with the
+ * tick it was STAMPED with, which is the tick the step that raised it ran.
+ * Nothing is wired onto the core; this host is a reader of what it says.
+ *
  * **`--events` prints the list itself**, one line per event in the order the
  * simulation raised it, before the summary: every death and award the hash
- * folds, and every piece of news the authority hands `Match` to put on the
- * wire — a bot's kill, shot and reload, a capture, a neutralisation, a blast,
- * a fire, a tank gun, a cupola gun, a pane, a seat, a spawn, a person's damage
- * and near miss. Each line is `<tick> <kind> <fields>`, numbers printed in
- * full, so two runs of one seed diff line by line and a divergence is named
- * by the first line that differs rather than by a hash that moved. A bot's
- * footstep is the one callback left out: it is presentation nobody wires on
- * this side, and it would be most of the file. The lines are written from
- * inside `step`, so an `--events` run's tick timings are not a measurement.
+ * folds, and every piece of news `Match` puts on the wire — a bot's kill,
+ * shot and reload, a capture, a neutralisation, a blast, a fire, a tank gun, a
+ * cupola gun, a pane, a seat, a spawn, a person's damage and near miss. Each
+ * line is `<tick> <kind> <fields>`, numbers printed in full, so two runs of
+ * one seed diff line by line and a divergence is named by the first line that
+ * differs rather than by a hash that moved. The kinds and the line format are
+ * the C0 set (`BABYLON_EXIT.md` X2.5a) and are kept byte for byte: the ring's
+ * presentation-only kinds — a footstep, a tracer, a hit, a hull's kick, a
+ * rocket, a fire going out — are left out, being most of the file and
+ * nothing `Match` sends. The lines are written between steps, outside the
+ * timed region.
  *
  * This is the server's equivalent of playing a round, and it is the only way to
  * see the simulation on its own — no clients, no rendering, no wall clock. A
@@ -62,6 +70,7 @@ import { MAPS } from "../src/world/maps";
 import { freshSeed, parseSeed } from "../src/systems/RoundRandom";
 import type { DeathCause } from "../src/systems/killRules";
 import { SimCore } from "../src/sim/SimCore";
+import { EV, EventCursor, decode, type EventKind, type Vec3 } from "../src/sim/events";
 import { loadSimWorld } from "./world";
 
 /** Give up rather than spin forever if a round somehow cannot end. */
@@ -139,70 +148,22 @@ async function runRound(mapId: string, difficulty: number, seed: number) {
   // `--events`: one line per event, stamped with the tick it was raised on —
   // see the header. Null when not asked for, so a plain run builds no string.
   const log = printEvents
-    ? (line: string) => process.stdout.write(`${game.tick} ${line}
+    ? (tick: number, line: string) => process.stdout.write(`${tick} ${line}
 `)
     : null;
   const captures: string[] = [];
   let blasts = 0;
-  game.onExplosion = (at, power) => {
-    blasts++;
-    if (log) log(`explode ${v3(at)} ${power}`);
-  };
   let blazes = 0;
-  game.onBlaze = (at) => {
-    blazes++;
-    if (log) log(`blaze ${v3(at)}`);
-  };
-  // `onCapturedEvent` and NOT `conquest.onCaptured`, which is the simulation's
-  // own and pays everybody standing on the flag: a callback has one owner, and
-  // taking that one here would have quietly turned the capture awards off in
-  // the one tool that exists to check them.
-  game.onCapturedEvent = (point, by) => {
-    captures.push(`${point.def.id}->${by}`);
-    if (log) log(`captured ${point.def.id} ${by}`);
-  };
-  // The rest of what `Match` wires, taken only for the list: each is a
-  // callback the simulation raises and nothing on this side decides on, so
-  // hooking it here moves nothing in the fight (the hash proves it).
-  if (log) {
-    game.onNeutralisedEvent = (point) => log(`neutralised ${point.def.id}`);
-    game.onKillEvent = (bot, killer, headshot) =>
-      log(
-        `kill ${killer} ${game.battle.bots.indexOf(bot)} ${headshot ? 1 : 0} ` +
-          `${v3(bot.deathFrom)} ${bot.deathDamage} ${bot.deathKind}`,
-      );
-    game.battle.onBotFired = (bot, at) => log(`fire ${game.battle.bots.indexOf(bot)} ${v3(at)}`);
-    game.battle.onBotReloaded = (bot) => log(`reload ${game.battle.bots.indexOf(bot)}`);
-    game.onCannon = (tank) => log(`cannon ${game.vehicles.hulls.indexOf(tank)}`);
-    game.onMg = (tank) => log(`mg ${game.vehicles.hulls.indexOf(tank)}`);
-    game.onGlassBroken = (panes, at, dir) => log(`glass ${panes.join(",")} ${v3(at)} ${v3(dir)}`);
-    // Nobody is seated in a simulated round, so the four below never fire
-    // today; they are hooked so a tool that grows synthetic players lists them.
-    game.onNearMiss = (player, at) => log(`nearmiss ${player.slot} ${v3(at)}`);
-    game.onPlayerSpawned = (player, at, yaw) => log(`spawn ${player.slot} ${v3(at)} ${yaw}`);
-    game.onSeatChanged = (player, tank, at, yaw) =>
-      log(`seat ${player.slot} ${tank} ${player.crewSeat} ${v3(at)} ${yaw}`);
-    game.onPlayerDamaged = (player, amount, from, killed, kind) =>
-      log(
-        `damage ${player.slot} ${amount} ${from ? v3(from) : "-"} ${killed ? 1 : 0} ` +
-          `${kind} ${player.health} ${player.respawnT}`,
-      );
-  }
   // Every award paid, by kind. The cheapest check there is that the scoring
   // rules actually fire in a whole round: no `capture` line means the flags
   // paid nobody, and no `defend` line means the attack/defend split is not
   // being reached at all.
   const awards: Record<string, number> = {};
   // The fight as a list, hashed as it happens — see the header. Fed from the
-  // two hooks below, which between them see every death and every payout.
+  // `award` and `death` events, which between them are every death and every
+  // payout.
   const fight = createHash("sha256");
   let events = 0;
-  game.scores.onAward = (slot, kind, points) => {
-    awards[kind] = (awards[kind] ?? 0) + 1;
-    fight.update(`${game.tick} a ${slot} ${kind} ${points}\n`);
-    events++;
-    if (log) log(`award ${slot} ${kind} ${points}`);
-  };
   // Every death, filed by the door it came through and by whether anybody was
   // paid for it. The two checks under `reconcile` are what this is for; the
   // per-cause breakdown is what makes a failure readable rather than merely
@@ -211,14 +172,58 @@ async function runRound(mapId: string, difficulty: number, seed: number) {
   const uncredited: Partial<Record<DeathCause, number>> = {};
   let bodies = 0;
   let creditedBodies = 0;
-  game.onDeath = (slot, cause, credited) => {
-    fight.update(`${game.tick} d ${slot} ${cause} ${credited ? 1 : 0}\n`);
-    events++;
-    if (log) log(`death ${slot} ${cause} ${credited ? 1 : 0}`);
-    bodies++;
-    deaths[cause] = (deaths[cause] ?? 0) + 1;
-    if (credited) creditedBodies++;
-    else uncredited[cause] = (uncredited[cause] ?? 0) + 1;
+
+  /**
+   * Drains what the core said on its last call and folds it — the hash, the
+   * tallies, and the `--events` line. Called after every call made on the
+   * core, which is the host's half of the ring's contract.
+   */
+  const drained = new EventCursor();
+  const read = (): void => {
+    game.drain(drained);
+    for (let i = 0; i < drained.count; i++) {
+      if (!READ.has(drained.kind(i))) continue;
+      const ev = decode(drained, i);
+      const t = ev.tick;
+      switch (ev.type) {
+        case "blast":
+          blasts++;
+          if (log) log(t, `explode ${v3(ev.at)} ${ev.power}`);
+          break;
+        case "ignited":
+          blazes++;
+          if (log) log(t, `blaze ${v3(ev.at)}`);
+          break;
+        case "captured": {
+          const id = game.conquest.points[ev.point].def.id;
+          captures.push(`${id}->${ev.by}`);
+          if (log) log(t, `captured ${id} ${ev.by}`);
+          break;
+        }
+        case "award":
+          awards[ev.kind] = (awards[ev.kind] ?? 0) + 1;
+          fight.update(`${t} a ${ev.slot} ${ev.kind} ${ev.points}\n`);
+          events++;
+          if (log) log(t, `award ${ev.slot} ${ev.kind} ${ev.points}`);
+          break;
+        case "death":
+          fight.update(`${t} d ${ev.slot} ${ev.cause} ${ev.credited ? 1 : 0}\n`);
+          events++;
+          if (log) log(t, `death ${ev.slot} ${ev.cause} ${ev.credited ? 1 : 0}`);
+          bodies++;
+          deaths[ev.cause] = (deaths[ev.cause] ?? 0) + 1;
+          if (ev.credited) creditedBodies++;
+          else uncredited[ev.cause] = (uncredited[ev.cause] ?? 0) + 1;
+          break;
+        // The rest of what `Match` relays, taken only for the list. Nobody is
+        // seated in a simulated round, so `nearmiss`, `spawn`, `seat` and
+        // `damage` never appear today; they are printed so a tool that grows
+        // synthetic players lists them.
+        default:
+          if (log) log(t, describe(ev, game));
+          break;
+      }
+    }
   };
 
   // **Nothing sets the roster here any more, and that is the fix rather than
@@ -237,6 +242,7 @@ async function runRound(mapId: string, difficulty: number, seed: number) {
   const { collision, floor } = await loadSimWorld(def);
   game.startRound({ def, collision, floor, difficulty, bots: true, seed });
   game.anchor(Date.now());
+  read();
   const buildMs = Date.now() - built;
 
   const dt = 1 / TICK_HZ;
@@ -275,6 +281,8 @@ async function runRound(mapId: string, difficulty: number, seed: number) {
     const ms = performance.now() - t0;
     samples[ticks] = ms;
     startedAt[ticks] = t0;
+    // What the step said, folded outside the clock above.
+    read();
     // Counted AFTER the clock is read, so the instrument is never inside its
     // own measurement. A target is the honest test of contact: it is what
     // gates the line-of-sight ray, the shot and the aim, which is where a
@@ -468,8 +476,68 @@ function reconcileProblems(r: Awaited<ReturnType<typeof runRound>>): string[] {
 }
 
 /** A vector as three full-precision numbers, for `--events`. */
-function v3(v: { x: number; y: number; z: number }): string {
-  return `${v.x},${v.y},${v.z}`;
+function v3(v: Vec3): string {
+  return `${v[0]},${v[1]},${v[2]}`;
+}
+
+/**
+ * The event kinds this tool reads: the two the hash folds, the two counted,
+ * and the rest of what `Match` relays — the C0 list, which `--events` prints
+ * byte for byte. Everything else is drained and left undecoded.
+ */
+const READ: ReadonlySet<EventKind> = new Set<EventKind>([
+  EV.blast,
+  EV.ignited,
+  EV.captured,
+  EV.neutralised,
+  EV.award,
+  EV.death,
+  EV.botDown,
+  EV.botFired,
+  EV.botReload,
+  EV.cannon,
+  EV.mg,
+  EV.glass,
+  EV.nearMiss,
+  EV.spawned,
+  EV.seat,
+  EV.damaged,
+]);
+
+/** One `--events` line for a kind the round does not otherwise fold. */
+function describe(ev: ReturnType<typeof decode>, game: SimCore): string {
+  switch (ev.type) {
+    case "neutralised":
+      return `neutralised ${game.conquest.points[ev.point].def.id}`;
+    case "botDown":
+      return (
+        `kill ${ev.killer} ${ev.slot} ${ev.head ? 1 : 0} ` +
+        `${v3(ev.from)} ${ev.damage} ${ev.kind}`
+      );
+    case "botFired":
+      return `fire ${ev.slot} ${v3(ev.muzzle)}`;
+    case "botReload":
+      return `reload ${ev.slot}`;
+    case "cannon":
+      return `cannon ${ev.tank}`;
+    case "mg":
+      return `mg ${ev.tank}`;
+    case "glass":
+      return `glass ${ev.panes.join(",")} ${v3(ev.at)} ${v3(ev.dir)}`;
+    case "nearMiss":
+      return `nearmiss ${ev.slot} ${v3(ev.at)}`;
+    case "spawned":
+      return `spawn ${ev.slot} ${v3(ev.pos)} ${ev.yaw}`;
+    case "seat":
+      return `seat ${ev.slot} ${ev.tank} ${ev.seat} ${v3(ev.at)} ${ev.yaw}`;
+    case "damaged":
+      return (
+        `damage ${ev.slot} ${ev.amount} ${ev.from ? v3(ev.from) : "-"} ${ev.killed ? 1 : 0} ` +
+        `${ev.kind} ${ev.health} ${ev.respawnIn}`
+      );
+    default:
+      return ev.type;
+  }
 }
 
 const argv = process.argv.slice(2);

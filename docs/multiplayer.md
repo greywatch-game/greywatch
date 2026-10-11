@@ -18,6 +18,25 @@ the world (`server/world.ts`'s `loadSimWorld`), hands each round
 the other host, with the seed it was given. Nothing in `src/sim/` imports from
 `server/`, and the gate below walks both directories.
 
+**The core SPEAKS IN EVENTS, and a host hears it no other way**
+(`src/sim/events.ts`, X2.5a C2). There is no outward callback on `SimCore`:
+every death, award, flag, blast, seat, spawn and person's damage — and every
+presentation fact the page will draw from, a round's tracer, a footstep, a
+hull's kick — is written to one typed ring as NUMBERS CAPTURED AT EMISSION, in
+emission order, and the host `drain`s after every call it makes on the core.
+`Match.relay` is the bodies of the callbacks it used to install, reading the
+event where they read the live object: a `damaged` carries the health the blow
+left and the respawn clock it armed, a `botDown` the bearing, size and kind of
+the killing blow, an `award` whether a person held the slot. **The drain after
+EVERY call is what keeps the outgoing order the immediate callbacks' order**:
+`Match` drains after each step and at the end of each message it handles, so
+nothing it queues itself can land inside one call's events — and the core
+writes a person's `hit` LAST of its round's events, where `Match.onShot` used
+to queue it, because the shooter's hit credits pair off FIFO. A kind the wire
+does not carry (a footstep, a tracer, a hull gun's `hit`) is drained and
+dropped undecoded. `simulate` reads the same ring for its fight hash and
+`--events`, folding each event's own `tick`.
+
 **The authority imports nothing from `@babylonjs/core`, and a build gate says
 so** (`BABYLON_EXIT.md` X2.3). It used to run under Babylon's `NullEngine`,
 with a scene that existed for one thing at the end — the collider meshes
@@ -599,9 +618,10 @@ local player has no roster soldier to arm), and `Game` holds the triple in
 `died` that spends it on the death cam.
 
 **One `kill` event per death, and the server has two doors onto that.**
-`onKillEvent` sees every bot go down and `onPlayerDamaged` sees every person,
-whoever dealt it — a rifle, a blast, another client's round. `Match.onShot` must
-raise only the `hit`: a second `kill` from there would put two lines in the
+The core's `botDown` event is written for every bot that goes down and its
+`damaged` (with `killed`) for every person, whoever dealt it — a rifle, a
+blast, another client's round — and `Match.relay` turns each into the `kill`.
+A person's round raises only the `hit` besides: a second `kill` from there would put two lines in the
 killfeed for one body, and it is the poorer of the two anyway, because it does
 not know where a bot's killing blow came from. The killer's team on a person's
 death is DERIVED (`1 - victim.team`) rather than carried, because friendly fire
@@ -820,8 +840,9 @@ the one a call site forgets.
 **A round going past you is ADDRESSED to you, and the authority is the only
 thing that can see one.** Offline the crack is `CombatSystem.onNearMiss` finding
 the player inside the target loop of somebody else's shot; in a match no client
-resolves anybody else's rounds at all, so `SimCore` wires that callback and
-`Match` sends a `nearmiss` to the one person it happened to. It carries the
+resolves anybody else's rounds at all, so `SimCore` wires that callback, writes
+a `nearMiss` event, and `Match` relays a `nearmiss` to the one person it
+happened to. It carries the
 point of CLOSEST APPROACH and no victim field — the only client it is ever sent
 to is the one it is about — and the client spends it on both halves of the
 offline handler, the crack and `Player.suppress`. Broadcasting it would say in
@@ -1138,7 +1159,7 @@ attack bonus the flag under the body earned. Addressed rather than broadcast on
 `hit` and `nearmiss`'s rule: it is feedback about one person's own round, and
 sixteen clients hearing every award anybody earns is a live feed of who is doing
 what and where. `Match` queues it only for a slot a person is actually sitting
-in — bots earn all round with nobody behind them to show a feed to, and queueing
+in (the core's `award` event says so, captured the moment it paid) — bots earn all round with nobody behind them to show a feed to, and queueing
 theirs would push every tick with a bot kill on it onto the per-peer flush path
 for an event no client would be sent.
 
@@ -1147,9 +1168,8 @@ the SIMULATION's and not `Match`'s.** They used to be wired straight to the
 event queue; a callback has one owner, and the owner has to be the side that
 decides something. `SimCore.wire` takes both, pays everyone of the
 capturing side inside the ring (`awardZone`, the same `pointAt` that moved the
-meter), and hands the news back out through `onCapturedEvent` /
-`onNeutralisedEvent` for `Match` to put on the wire — the shape `onKillEvent`
-already had. `npm run simulate` is the worked example of why that matters: it
+meter), and then writes `captured` / `neutralised` events for `Match` to put on
+the wire — after the awards, the shape a death's `botDown` already had. `npm run simulate` is the worked example of why that matters: it
 took `conquest.onCaptured` for its own tally and would have silently turned the
 capture awards off in the one tool that can check them.
 

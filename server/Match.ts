@@ -5,6 +5,11 @@
  * changing hands and the bot in that slot being benched or released. It owns no
  * game rules — those are `SimCore`'s — and no transport details beyond
  * `send`/`broadcast`, which are the one place a dead socket is handled.
+ * It is the core's HOST: it hears the simulation only through the core's
+ * event ring, DRAINED after every call it makes on the core — each step, each
+ * accepted message — and `relay` turns what it drained into wire events. It
+ * installs no callback on the core and reads nothing back off a live object
+ * to finish an event (`src/sim/events.ts`).
  * Invariants: a peer's slot is assigned here and nowhere else, and a peer never
  * names its own slot. The loop is fixed-step and drift-corrected: a `dt` taken
  * from wall clock would make the simulation run at the speed of the server's
@@ -58,6 +63,7 @@ import { DRIVER, GUNNER, type CrewSeat } from "../src/entities/hullSeats";
 import { MAPS, type MapDef } from "../src/world/maps";
 import { freshSeed } from "../src/systems/RoundRandom";
 import { SimCore } from "../src/sim/SimCore";
+import { EV, EventCursor, decode, type EventKind } from "../src/sim/events";
 import { MapVote } from "./MapVote";
 import { HUMANS_PER_TEAM, Roster, SLOT_COUNT } from "./Roster";
 import { validateDrive, validateMove } from "./validate";
@@ -223,6 +229,31 @@ interface PendingEvent {
 
 /** `PendingEvent.to` for an event every client gets. */
 const ALL_PEERS = -1;
+
+/**
+ * The core's event kinds `relay` puts on the wire. Everything else — a
+ * footstep, a tracer, a death's audit, a hull's kick — is drained and
+ * dropped without being decoded.
+ */
+const RELAYED: ReadonlySet<EventKind> = new Set<EventKind>([
+  EV.botDown,
+  EV.botFired,
+  EV.botReload,
+  EV.nearMiss,
+  EV.captured,
+  EV.neutralised,
+  EV.award,
+  EV.damaged,
+  EV.blast,
+  EV.ignited,
+  EV.cannon,
+  EV.mg,
+  EV.seat,
+  EV.glass,
+  EV.spawned,
+  EV.hit,
+  EV.roundOver,
+]);
 
 const STEP_MS = 1000 / TICK_HZ;
 
@@ -556,6 +587,13 @@ export class Match {
    */
   private readonly pending: PendingEvent[] = [];
 
+  /**
+   * What the core said on its last call, drained into here by `relay`. Held
+   * for the life of the match: a drain swaps arrays with it rather than
+   * allocating.
+   */
+  private readonly drained = new EventCursor();
+
   /** Reused so a snapshot allocates nothing per tick beyond its own arrays. */
   private readonly entityScratch: EntityState[] = [];
 
@@ -675,174 +713,8 @@ export class Match {
   constructor(readonly id: string, wantedMap?: string, bots = true) {
     this.mapId = MAPS.find((m) => m.id === wantedMap)?.id ?? MAPS[0].id;
     this.withBots = bots;
-    // A bot went down, however it was done. The bearing, the size and the KIND
-    // of the killing blow ride along because a client throws its corpse with
-    // them — `Bot.takeDamage` captured all three before this fired, which is
-    // the same triple the offline game hands `RagdollSystem` and the reason it
-    // does not need a second copy of any of it.
-    this.game.onKillEvent = (bot, killer, headshot) => {
-      this.queue({
-        e: "kill",
-        killer,
-        victim: this.game.battle.bots.indexOf(bot),
-        headshot,
-        from: [bot.deathFrom.x, bot.deathFrom.y, bot.deathFrom.z],
-        amount: bot.deathDamage,
-        kind: bot.deathKind,
-      });
-    };
-    // A bot pulled its trigger. Taken HERE rather than in `SimCore.wire`
-    // because nothing in the simulation wants it — it is news for a screen, and
-    // the queue that carries news to a screen is this class's. It is also the
-    // only way the fact can reach one: a client runs none of the AI, so a bot's
-    // shot is otherwise silent and invisible on every machine but this one.
-    this.game.battle.onBotFired = (bot) =>
-      this.noteFire(this.game.battle.bots.indexOf(bot));
-    // A bot working its magazine, taken here for exactly the reason its trigger
-    // is: the fact belongs to the authority (no client runs the AI) and what it
-    // is FOR belongs to a screen — or in this case an ear, since a reload is
-    // the cue to push whoever has just gone dry.
-    this.game.battle.onBotReloaded = (bot) =>
-      this.noteReload(this.game.battle.bots.indexOf(bot));
-    // A round that went past somebody. Addressed to the one person it happened
-    // to, and the copy is not optional: `at` is `CombatSystem`'s module scratch
-    // and the next round in the firefight overwrites it.
-    this.game.onNearMiss = (player, at) =>
-      this.queueTo(player.slot, { e: "nearmiss", at: [at.x, at.y, at.z] });
-    // Through the simulation rather than off `ConquestSystem` directly: a flag
-    // changing hands pays everybody standing on it, which is a rule, so
-    // `SimCore` takes the conquest callbacks and hands the news back out
-    // — the same shape `onKillEvent` has, and for the same reason.
-    this.game.onCapturedEvent = (point, by) =>
-      this.queue({ e: "captured", point: point.def.id, by });
-    this.game.onNeutralisedEvent = (point) =>
-      this.queue({ e: "neutralised", point: point.def.id });
-    // Somebody was paid. Addressed to the one slot that earned it, and only
-    // when a PERSON is sitting in it: bots earn all round and there is nobody
-    // behind them to show a feed to, so queueing theirs would push every tick
-    // with a bot kill on it onto `flushEvents`'s per-peer path for an event no
-    // client would be sent.
-    this.game.scores.onAward = (slot, kind, points) => {
-      if (this.game.players.has(slot)) {
-        this.queueTo(slot, { e: "score", kind, points });
-      }
-    };
-    this.game.onPlayerDamaged = (player, amount, from, killed, kind) => {
-      // Addressed to the victim, and the sharpest case for it: this is the ONE
-      // message in the protocol carrying a health, so broadcasting it published
-      // every player's exact pool to everybody, live, along with the bearing
-      // they were shot from. That is the read a wallhack wants — who is hurt
-      // and which way they are facing it — handed over for free.
-      //
-      // The `kill` below stays public, and the pair is the line: that somebody
-      // DIED is everyone's business, because the killfeed and the corpse are on
-      // every screen. How close they were to dying is nobody's but theirs.
-      this.queueTo(player.slot, {
-        e: "damage",
-        victim: player.slot,
-        amount,
-        from: from ? [from.x, from.y, from.z] : [0, 0, 0],
-        health: player.health,
-        // The victim's own corpse is thrown from this rather than from the
-        // `kill` below: a client reads its OWN death off the `damage`/`died`
-        // pair, and only somebody else's off the kill.
-        kind,
-      });
-      if (killed) {
-        // The other half of "one kill event per death". A person goes down
-        // through this callback whoever pulled the trigger — a bot's rifle, a
-        // blast, another client's round — so it is the only place that sees
-        // every one of them, exactly as `onKillEvent` is for a bot.
-        //
-        // The killer's team is DERIVED and not carried: friendly fire is
-        // excluded by construction everywhere in this game (`fire` takes the
-        // shooter's own target list), so the side that killed a person is
-        // always the other one, and plumbing a killer down through
-        // `CombatSystem.takeDamage` to be told what is already known would be
-        // the kind of wire field that can disagree with the world.
-        //
-        // `headshot` is false rather than unknown: the flag is the SHOOTER's
-        // feedback and reaches them on their own `hit` event, which is
-        // resolved where the head zone was actually tested. Nothing renders it
-        // for a victim.
-        this.queue({
-          e: "kill",
-          // …and the one death that has no killer to derive. The leash passes
-          // no origin because nothing shot this player, and -1 is what stops
-          // the feed on sixteen screens announcing that the other side did.
-          killer: from ? 1 - player.team : -1,
-          victim: player.slot,
-          headshot: false,
-          from: from ? [from.x, from.y, from.z] : [0, 0, 0],
-          amount,
-          kind,
-        });
-        this.queue({
-          e: "died",
-          slot: player.slot,
-          by: -1,
-          respawnIn: player.respawnT,
-        });
-      }
-    };
-    // How big it LOOKS goes with it now that more than one thing explodes: a
-    // grenade is 1 by definition, a tank shell 1.85, the AT kit its own. Left
-    // off at 1 for the reason `fire`'s `n` is left off at one round — that is
-    // what the field's absence has always meant and what every grenade in the
-    // game still is.
-    this.game.onExplosion = (at, power) =>
-      this.queue(
-        power === 1
-          ? { e: "explode", at: [at.x, at.y, at.z] }
-          : { e: "explode", at: [at.x, at.y, at.z], power },
-      );
-    // A molotov caught. Public for `explode`'s reason — every client draws the
-    // fire, the thrower included, because their own bottle lit nothing on
-    // their screen (`GrenadeSystem.predicted`). The burn is this side's and
-    // leaves as `damage`, like any other hit.
-    this.game.onBlaze = (at) => this.queue({ e: "blaze", at: [at.x, at.y, at.z] });
-    // A tank gun. Public, and `fire`'s counterpart for the one weapon nobody
-    // is carrying — it reaches a client no other way, because no client runs
-    // the crew that pulled the trigger or resolves the round it fired.
-    this.game.onCannon = (tank) => {
-      const i = this.game.vehicles.hulls.indexOf(tank);
-      if (i >= 0) this.queue({ e: "cannon", tank: i });
-    };
-    // …and its cupola gun, counted rather than queued — see `firedMg`.
-    this.game.onMg = (tank) => {
-      const i = this.game.vehicles.hulls.indexOf(tank);
-      if (i >= 0) this.firedMg.set(i, (this.firedMg.get(i) ?? 0) + 1);
-    };
-    // The answer to a mount or a dismount, addressed to the one person who
-    // asked — see the `seat` event. It is raised for the hull BURNING as well,
-    // which is the one seat change nobody asked for and the one a client can
-    // least afford to miss: without it the driver's own screen keeps the chase
-    // camera on a wreck for the rest of the round.
-    this.game.onSeatChanged = (player, tank, at, yaw) =>
-      this.queueTo(
-        player.slot,
-        tank >= 0
-          ? { e: "seat", slot: player.slot, tank, seat: player.crewSeat }
-          : { e: "seat", slot: player.slot, tank, pos: [at.x, at.y, at.z], yaw },
-      );
-    // Glass. One event for however many panes the round crossed, carrying the
-    // FIRST crossing and the round's direction — see the `glass` event for why
-    // the shards of the panes behind it are thrown from a point a few metres
-    // off rather than paying a message each.
-    this.game.onGlassBroken = (panes, at, dir) =>
-      this.queue({
-        e: "glass",
-        panes,
-        at: [at.x, at.y, at.z],
-        dir: [dir.x, dir.y, dir.z],
-      });
-    this.game.onPlayerSpawned = (player, at, yaw) =>
-      this.queue({
-        e: "spawn",
-        slot: player.slot,
-        pos: [at.x, at.y, at.z],
-        yaw,
-      });
+    // Nothing is wired onto the core: everything it has to say arrives on its
+    // event ring and leaves through `relay`.
   }
 
   hasBotSlot(): boolean {
@@ -972,6 +844,7 @@ export class Match {
     // it is called from the deploy door too, where there is no fresh one to
     // hold.
     this.game.addPlayer(slot.index, slot.team);
+    this.relay();
     // A slot changing hands inherits nothing from whoever last sat in it — the
     // travel least of all: the walk cycle is derived from how far a body moved
     // between snapshots, so a stale entry makes the new arrival's first frame
@@ -1109,6 +982,7 @@ export class Match {
     // next cadence instead of one per departure.
     if (this.mapVote?.clear(peer.slot)) this.voteDirty = true;
     this.game.removePlayer(peer.slot);
+    this.relay();
     // Everything this match held about the person, in one assignment — the
     // slot goes back to a bot carrying nothing of theirs.
     this.slots[peer.slot] = freshSlot();
@@ -1320,6 +1194,7 @@ export class Match {
       seed: freshSeed(),
     });
     this.game.anchor(Date.now());
+    this.relay();
   }
 
   private stop(): void {
@@ -1361,13 +1236,15 @@ export class Match {
     }
 
     const live = this.game.step(1 / TICK_HZ);
+    this.relay();
     this.ticks++;
 
     // No `!this.rotating` here any more: the guard at the top of this method is
     // that test, made once for the whole step rather than for this branch
     // alone.
     if (!live && this.game.conquest.winner !== null) {
-      this.queue({ e: "roundover", winner: this.game.conquest.winner });
+      // The `roundover` event is already queued: the core wrote `roundOver`
+      // last of this tick's events and `relay` put it on the queue above.
       // The round is over but the match is not. Everyone stays seated, the
       // card goes up on every client, and the next map is built after a pause
       // — a server that stopped here would leave sixteen people looking at a
@@ -1735,6 +1612,206 @@ export class Match {
   }
 
   /**
+   * Drains the core and turns what it said into wire events, in the order it
+   * said it — the bodies of the callbacks this class used to install on the
+   * core, reading the EVENT's numbers where they read the live objects.
+   *
+   * Called after every call this class makes on the core (`step`, each
+   * message, `startRound`, a seat changing hands), so nothing of this class's
+   * own can land between two of one call's events. Most kinds are not the
+   * wire's — a footstep, a tracer, a hull's kick are the page's, and a death's
+   * audit is `simulate`'s — so the kind is tested before anything is decoded.
+   */
+  private relay(): void {
+    const c = this.drained;
+    this.game.drain(c);
+    for (let i = 0; i < c.count; i++) {
+      if (!RELAYED.has(c.kind(i))) continue;
+      const ev = decode(c, i);
+      switch (ev.type) {
+        // A bot went down, however it was done. The bearing, the size and the
+        // KIND of the killing blow ride along because a client throws its
+        // corpse with them — captured off `Bot.takeDamage` at the death, the
+        // same triple the offline game hands `RagdollSystem`.
+        case "botDown":
+          this.queue({
+            e: "kill",
+            killer: ev.killer,
+            victim: ev.slot,
+            headshot: ev.head,
+            from: ev.from,
+            amount: ev.damage,
+            kind: ev.kind,
+          });
+          break;
+        // A bot pulled its trigger. News for a screen, and the only way the
+        // fact reaches one: a client runs none of the AI, so a bot's shot is
+        // otherwise silent and invisible on every machine but this one.
+        case "botFired":
+          this.noteFire(ev.slot);
+          break;
+        // A bot working its magazine, for exactly the reason its trigger is:
+        // the fact is the authority's and what it is FOR is an ear — a reload
+        // is the cue to push whoever has just gone dry.
+        case "botReload":
+          this.noteReload(ev.slot);
+          break;
+        // A round that went past somebody. Addressed to the one person it
+        // happened to — a broadcast is the read a wallhack wants.
+        case "nearMiss":
+          this.queueTo(ev.slot, { e: "nearmiss", at: ev.at });
+          break;
+        // The flag's news, after the awards the core paid for it.
+        case "captured":
+          this.queue({ e: "captured", point: this.pointId(ev.point), by: ev.by });
+          break;
+        case "neutralised":
+          this.queue({ e: "neutralised", point: this.pointId(ev.point) });
+          break;
+        // Somebody was paid. Addressed to the one slot that earned it, and
+        // only when a PERSON was sitting in it: bots earn all round and there
+        // is nobody behind them to show a feed to, so queueing theirs would
+        // push every tick with a bot kill on it onto `flushEvents`'s per-peer
+        // path for an event no client would be sent.
+        case "award":
+          if (ev.person) this.queueTo(ev.slot, { e: "score", kind: ev.kind, points: ev.points });
+          break;
+        case "damaged":
+          // Addressed to the victim, and the sharpest case for it: this is the
+          // ONE message in the protocol carrying a health, so broadcasting it
+          // published every player's exact pool to everybody, live, along with
+          // the bearing they were shot from. That is the read a wallhack wants
+          // — who is hurt and which way they are facing it — handed over free.
+          //
+          // The `kill` below stays public, and the pair is the line: that
+          // somebody DIED is everyone's business, because the killfeed and the
+          // corpse are on every screen. How close they were to dying is
+          // nobody's but theirs.
+          this.queueTo(ev.slot, {
+            e: "damage",
+            victim: ev.slot,
+            amount: ev.amount,
+            from: ev.from ?? [0, 0, 0],
+            health: ev.health,
+            // The victim's own corpse is thrown from this rather than from the
+            // `kill` below: a client reads its OWN death off the `damage`/
+            // `died` pair, and only somebody else's off the kill.
+            kind: ev.kind,
+          });
+          if (ev.killed) {
+            // The other half of "one kill event per death". A person goes down
+            // through this event whoever pulled the trigger — a bot's rifle, a
+            // blast, another client's round — so it is the only place that
+            // sees every one of them, exactly as `botDown` is for a bot.
+            //
+            // The killer's team is DERIVED and not carried: friendly fire is
+            // excluded by construction everywhere in this game (`fire` takes
+            // the shooter's own target list), so the side that killed a person
+            // is always the other one.
+            //
+            // `headshot` is false rather than unknown: the flag is the
+            // SHOOTER's feedback and reaches them on their own `hit` event,
+            // which is resolved where the head zone was actually tested.
+            this.queue({
+              e: "kill",
+              // …and the one death that has no killer to derive. The leash
+              // passes no origin because nothing shot this player, and -1 is
+              // what stops the feed on sixteen screens announcing that the
+              // other side did.
+              killer: ev.from ? 1 - ev.team : -1,
+              victim: ev.slot,
+              headshot: false,
+              from: ev.from ?? [0, 0, 0],
+              amount: ev.amount,
+              kind: ev.kind,
+            });
+            // The respawn clock the blow armed, as it stood at the blow.
+            this.queue({ e: "died", slot: ev.slot, by: -1, respawnIn: ev.respawnIn });
+          }
+          break;
+        // How big it LOOKS goes with it now that more than one thing explodes:
+        // a grenade is 1 by definition, a tank shell 1.85, the AT kit its own.
+        // Left off at 1, which is what the field's absence has always meant.
+        case "blast":
+          this.queue(
+            ev.power === 1
+              ? { e: "explode", at: ev.at }
+              : { e: "explode", at: ev.at, power: ev.power },
+          );
+          break;
+        // A molotov caught. Public for `explode`'s reason — every client draws
+        // the fire, the thrower included, because their own bottle lit nothing
+        // on their screen (`GrenadeSystem.predicted`). The burn is this side's
+        // and leaves as `damage`, like any other hit.
+        case "ignited":
+          this.queue({ e: "blaze", at: ev.at });
+          break;
+        // A tank gun. Public, and `fire`'s counterpart for the one weapon
+        // nobody is carrying — no client runs the crew that pulled the trigger
+        // or resolves the round it fired.
+        case "cannon":
+          if (ev.tank >= 0) this.queue({ e: "cannon", tank: ev.tank });
+          break;
+        // …and its cupola gun, counted rather than queued — see `firedMg`.
+        case "mg":
+          if (ev.tank >= 0) this.firedMg.set(ev.tank, (this.firedMg.get(ev.tank) ?? 0) + 1);
+          break;
+        // The answer to a mount or a dismount, addressed to the one person who
+        // asked — see the `seat` event. Written for the hull BURNING as well,
+        // the one seat change nobody asked for and the one a client can least
+        // afford to miss: without it the driver's own screen keeps the chase
+        // camera on a wreck for the rest of the round.
+        case "seat":
+          this.queueTo(
+            ev.slot,
+            ev.tank >= 0
+              ? { e: "seat", slot: ev.slot, tank: ev.tank, seat: ev.seat as CrewSeat }
+              : { e: "seat", slot: ev.slot, tank: ev.tank, pos: ev.at, yaw: ev.yaw },
+          );
+          break;
+        // Glass. One event for however many panes the round crossed, carrying
+        // the FIRST crossing and the round's direction — see the `glass` event
+        // for why the shards of the panes behind it are thrown from a point a
+        // few metres off rather than paying a message each.
+        case "glass":
+          this.queue({ e: "glass", panes: ev.panes, at: ev.at, dir: ev.dir });
+          break;
+        case "spawned":
+          this.queue({ e: "spawn", slot: ev.slot, pos: ev.pos, yaw: ev.yaw });
+          break;
+        // A PERSON's round, resolved: addressed to the shooter, because it is
+        // feedback about their own trigger and nobody else's screen has
+        // anything to do with it. Broadcast, it told fifteen other clients who
+        // is hitting whom and — through `killed` — that a body across the map
+        // is going down, a tick before the snapshot that would honestly show
+        // either. Every other cause's `hit` is the page's (a hull gun's, a
+        // blast's, the tracks'), which this wire has never carried. A hull
+        // victim is -1 on the wire, which names slots.
+        case "hit":
+          if (ev.cause !== "round") break;
+          this.queueTo(ev.shooter, {
+            e: "hit",
+            shooter: ev.shooter,
+            victim: ev.victimKind === "hull" ? -1 : ev.victim,
+            killed: ev.killed,
+            headshot: ev.head,
+          });
+          break;
+        case "roundOver":
+          this.queue({ e: "roundover", winner: ev.winner });
+          break;
+        default:
+          break;
+      }
+    }
+  }
+
+  /** A control point's id, from the index a `captured`/`neutralised` names. */
+  private pointId(index: number): string {
+    return this.game.conquest.points[index]?.def.id ?? "";
+  }
+
+  /**
    * A weapon went off in this slot, whoever was holding it.
    *
    * The one entry point for both kinds of shooter — `BattleSystem.onBotFired`
@@ -1896,6 +1973,13 @@ export class Match {
         void unhandled;
       }
     }
+    // Whatever the core said while answering this message, onto the queue
+    // NOW — before the next message or the next step can add to it. A
+    // handler makes its core calls one after another with nothing of this
+    // class's own queued between them, so one drain at its end is the drain
+    // after each of them, and the queue's order is the order the immediate
+    // callbacks this replaced produced.
+    this.relay();
   }
 
   /**
@@ -2275,34 +2359,15 @@ export class Match {
     this.noteFire(peer.slot);
 
     SHOT_ORIGIN.fromArray(msg.origin);
-    const result = this.game.resolveShot(
-      player,
-      SHOT_ORIGIN,
-      SHOT_DIR,
-      msg.time,
-      weapon,
-    );
-    if (!result?.target) return;
+    // The verdict comes back as the core's `hit` event, written LAST of the
+    // round's events and relayed to the shooter alone — see `relay`.
+    this.game.resolveShot(player, SHOT_ORIGIN, SHOT_DIR, msg.time, weapon);
 
-    const victimSlot = this.slotOf(result.target);
-    // Addressed to the shooter, because it is feedback about their own trigger
-    // and nobody else's screen has anything to do with it. Broadcast, it told
-    // fifteen other clients who is hitting whom and — through `killed` — that a
-    // body across the map is going down, a tick before the snapshot that would
-    // honestly show either.
-    this.queueTo(peer.slot, {
-      e: "hit",
-      shooter: peer.slot,
-      victim: victimSlot,
-      killed: result.killed,
-      headshot: result.headshot,
-    });
-
-    // The `hit` above and NOTHING ELSE. Everything a death owes — the ticket,
+    // The `hit` and NOTHING ELSE. Everything a death owes — the ticket,
     // the `kill` line, the `died` clock — is raised by whichever of the two
-    // authority callbacks saw the body go down: `onPlayerDamaged` for a person,
-    // `onKillEvent` for a bot, and each of those fires for every death of its
-    // kind however it was dealt. Pushing a second `kill` from here would put
+    // core events saw the body go down: `damaged` for a person, `botDown` for
+    // a bot, and each of those is written for every death of its kind however
+    // it was dealt. Pushing a second `kill` from here would put
     // two lines in the killfeed for one body, and the one this method could
     // build would be the poorer of the two — it does not know where a bot's
     // killing blow came from, which is what the corpse is thrown with.
@@ -2542,7 +2607,7 @@ export class Match {
     if (player.seat === msg.tank && player.seat >= 0) {
       const hull = this.game.hullOf(player);
       if (hull && want !== player.crewSeat) this.game.seat(player, hull, want);
-      this.game.onSeatChanged(player, player.seat, player.position, player.yaw);
+      this.game.seatAnswer(player, player.seat, player.position, player.yaw);
       return;
     }
     const offered = this.game.seatOffered(player);
@@ -2555,12 +2620,7 @@ export class Match {
         ? offered
         : null;
     const taken = tank ? this.game.seat(player, tank, want) : null;
-    this.game.onSeatChanged(
-      player,
-      taken ? msg.tank : -1,
-      player.position,
-      player.yaw,
-    );
+    this.game.seatAnswer(player, taken ? msg.tank : -1, player.position, player.yaw);
   }
 
   /** "Let me out." Where the body lands is the authority's — see the `seat` event. */
@@ -2586,7 +2646,7 @@ export class Match {
     // `dt` of 0 so the stance blend is written rather than eased from
     // whatever the drive left it at.
     player.apply(0, x, y, z, player.yaw, 0, false, false);
-    this.game.onSeatChanged(player, -1, player.position, player.yaw);
+    this.game.seatAnswer(player, -1, player.position, player.yaw);
   }
 
   /**
