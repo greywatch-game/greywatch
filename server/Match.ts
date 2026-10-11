@@ -12,7 +12,9 @@
  * to finish an event (`src/sim/events.ts`).
  * **It VALIDATES and the core DECIDES** (`BABYLON_EXIT.md` X2.5a C4a): each
  * message handler runs this side's claim gates — the shape (`server/wire.ts`),
- * the sequence and clock, the rate buckets, the cones and origin slips,
+ * the sequence and the clock (a peer's stamps BOUNDED against when its
+ * messages arrive, `onStamp` — the state is this class's `Peer`, never the
+ * core's object), the rate buckets, the cones and origin slips,
  * `validateMove`/`validateDrive` and the corrections they answer with — and
  * then hands what it accepted to `SimCore.submit` as one `SimCommand`
  * (`src/sim/commands.ts`). Everything that is a rule — the pouch counts, the
@@ -21,8 +23,8 @@
  * off the core is in-process state its validators and snapshot need
  * (`players`, `hullOf`, `reportedHull`, the fleet, the board).
  * `server/corecheck.ts` drives a real instance through a fake socket and steps
- * it by hand — it reaches `step`, `relay` and `timer` by name — so renaming
- * one of those owes that file a look.
+ * it by hand — it reaches `step`, `relay`, `timer`, `peers` and
+ * `arrivalClock` by name — so renaming one of those owes that file a look.
  * Invariants: a peer's slot is assigned here and nowhere else, and a peer never
  * names its own slot. The loop is fixed-step and drift-corrected: a `dt` taken
  * from wall clock would make the simulation run at the speed of the server's
@@ -198,8 +200,31 @@ interface Peer {
   socket: WebSocket;
   /** The roster slot this peer holds, which is also its entity id on the wire. */
   slot: number;
-  /** Last input sequence accepted from this peer. */
+  /**
+   * Last input sequence accepted from this peer — the one a correction names,
+   * and the floor below which a `move`, `drive` or `gunner` is stale. The
+   * VALIDATOR's state, so it is this class's and never the core's object's.
+   */
   seq: number;
+  /**
+   * The peer's clock as `onStamp` keeps it: the last `move`/`drive` stamp it
+   * read (client ms, NaN before the first), when that one ARRIVED (this
+   * process's `arrivalClock`), how far the stamps have run ahead of their
+   * arrivals since the first (`lead`, ms, held within `STAMP_SLACK`), and how
+   * far the BOUNDED clock has fallen behind the raw one (`behind`, ms) — so
+   * the bounded clock is `stamp - behind`, and an honest peer's is its own
+   * stamp to the bit.
+   */
+  stamp: number;
+  arrived: number;
+  lead: number;
+  behind: number;
+  /**
+   * A `hullcorrect` that moved this peer's hull vertically has gone out and
+   * no `drive` has yet answered it with `resync` — the one window in which
+   * that flag is honoured (`onDrive`, `reportedLanding.ts` "A broken series").
+   */
+  resyncOwed: boolean;
   /**
    * Inbound messages this peer may still send, and when that was last topped
    * up. A bucket rather than a counter per window — see `spendMessage`.
@@ -302,6 +327,52 @@ const POLL_MS = 4;
  * the rest of the gap is simply lost.
  */
 const MAX_MOVE_GAP = 0.5;
+
+/**
+ * How far, in ms, a peer's stamps may run ahead of — or fall behind — the
+ * clock their messages ARRIVE on, before the excess is not believed.
+ *
+ * **The stamp is the client's word for how long a step took, and every bound
+ * downstream is priced in it**: `validateMove`'s and `validateDrive`'s
+ * allowance is a speed times this interval, and the crash test's rate is a
+ * height over it (`reportedLanding.ts`). Clamped per sample alone
+ * (`MAX_MOVE_GAP`), a client adding half a second to every stamp at
+ * `INPUT_HZ` bought ten times the legal ground forever, and one adding a
+ * second measured every descent over a second and landed free. So the sum is
+ * bounded too: each interval is held to what ARRIVED in the same time plus
+ * whatever of this slack the stamps have not already used, and a stamp
+ * running ahead of its arrivals spends the slack once and then advances at
+ * the arrival rate. Symmetric, so a client cannot bank slow stamps to spend
+ * on one long interval later.
+ *
+ * **An honest client never touches it.** Its stamps and its arrivals are one
+ * wall clock read at the two ends of a socket, so the lead moves only by the
+ * network's jitter — a packet held back, then the bunch behind it — and it
+ * comes back. Latency swinging by up to twice this, peak to peak, passes
+ * every stamp through to the bit; past that the lead re-centres and gives the
+ * excess away rather than holding it against the client. What it costs a
+ * client whose clock steps forward mid-match (an NTP jump) is that one step,
+ * and a few intervals clipped by however far its latency then dips below the
+ * level it stepped at — which is the price of not believing a clock that
+ * jumped.
+ */
+const STAMP_SLACK = 250;
+
+/**
+ * The shortest interval two of a person's `drive` reports may be apart and
+ * still be a RATE for the crash test — `SimCoreOptions.reportGap`, seconds.
+ * Half an upload interval: `NetSession` never sends closer than
+ * `1 / INPUT_HZ`, so only a crowded stamp is skipped, and a skipped sample is
+ * measured into the next one rather than lost.
+ */
+const REPORT_GAP = 0.5 / INPUT_HZ;
+
+/**
+ * A correction that moved the hull by more than this vertically, in metres,
+ * stopped the client's vertical motion (`Vehicle.correctTo`'s own threshold)
+ * — so its first report after it is a rebase (`Peer.resyncOwed`).
+ */
+const RESYNC_RISE = 1e-3;
 
 /**
  * How far off their own reported aim a claimed shot may leave, as a cosine.
@@ -563,7 +634,14 @@ export class Match {
    * (`hostHoldsRespawn` off): a `deploy` is a request the reinforcement pass
    * spends once that clock runs out.
    */
-  readonly game = new SimCore({ rewind: true });
+  readonly game = new SimCore({ rewind: true, reportGap: REPORT_GAP });
+  /**
+   * When a message ARRIVED, in ms — what `onStamp` holds each peer's stamps
+   * against. Monotonic and never compared with a client stamp directly: only
+   * its INTERVALS are read. A harness that steps the match by hand replaces
+   * it with its own (`server/corecheck.ts`, the simulation's time).
+   */
+  private arrivalClock: () => number = () => performance.now();
 
   private readonly peers = new Map<string, Peer>();
   private timer: ReturnType<typeof setInterval> | null = null;
@@ -798,6 +876,11 @@ export class Match {
       socket,
       slot: slot.index,
       seq: 0,
+      stamp: NaN,
+      arrived: 0,
+      lead: 0,
+      behind: 0,
+      resyncOwed: false,
       budget: MESSAGE_BURST,
       budgetAt: Date.now(),
       ping: -1,
@@ -2173,36 +2256,71 @@ export class Match {
    * `server/validate.ts` for what is and is not caught, and why the tolerance
    * leans toward letting a laggy honest player through.
    */
+  /**
+   * A `move` or `drive` stamp, read: the interval since this peer's last one
+   * that the validators may price a step at, in seconds — BOUNDED twice. Per
+   * sample to [1 / `TICK_HZ`, `MAX_MOVE_GAP`], as it always was; and in sum
+   * by the clock the messages ARRIVE on, so the stamps may lead or trail
+   * their arrivals by `STAMP_SLACK` and no further (see it). Keeps the
+   * BOUNDED clock too, as `Peer.behind`, which the crash test reads off the
+   * same interval.
+   *
+   * Exact for an honest peer: the raw interval comes back to the bit, and the
+   * bounded clock IS its stamp. The first stamp has nothing to measure
+   * against, so it is assumed to cover one INPUT interval — the cadence a
+   * client actually sends at. Assuming a single TICK instead (which this did
+   * at first) gives the very first packet a 16 ms budget it has no way of
+   * knowing about.
+   */
+  private onStamp(peer: Peer, stamp: number): number {
+    const now = this.arrivalClock();
+    if (Number.isNaN(peer.stamp)) {
+      peer.stamp = stamp;
+      peer.arrived = now;
+      return 1 / INPUT_HZ;
+    }
+    const raw = stamp - peer.stamp;
+    const arrived = now - peer.arrived;
+    // The interval the lead allows: what arrived meanwhile, plus whatever is
+    // left of the slack either way. Returns `raw` ITSELF whenever it is in
+    // range, which is what keeps an honest peer's numbers bit for bit.
+    const d = Math.min(
+      Math.max(raw, arrived - STAMP_SLACK - peer.lead),
+      arrived + STAMP_SLACK - peer.lead,
+    );
+    peer.lead += d - arrived;
+    // The bounded clock never runs backwards and never takes more than one
+    // sample's worth at once — the crash test's interval is the validators'.
+    peer.behind += raw - Math.min(Math.max(d, 0), MAX_MOVE_GAP * 1000);
+    peer.stamp = stamp;
+    peer.arrived = now;
+    return Math.min(Math.max(d / 1000, 1 / TICK_HZ), MAX_MOVE_GAP);
+  }
+
   private onMove(peer: Peer, msg: Extract<ClientMessage, { t: "move" }>): void {
     const player = this.game.players.get(peer.slot);
     if (!player || !this.game.map) return;
 
     // Stale or replayed. Sequence numbers are the client's own counter, so an
     // out-of-order arrival is dropped rather than applied backwards.
-    if (msg.seq <= player.seq) return;
+    if (msg.seq <= peer.seq) return;
 
-    // Elapsed CLIENT time since the last sample, clamped. Unclamped, a client
-    // that claims a huge gap buys itself a proportionally huge legal step,
-    // which is the obvious way to dress a teleport as a lag spike.
+    // Elapsed CLIENT time since the last sample, BOUNDED (`onStamp`): by the
+    // clock the messages arrive on, and per sample to `MAX_MOVE_GAP`.
+    // Unbounded, a client that claims a huge gap buys itself a
+    // proportionally huge legal step, which is the obvious way to dress a
+    // teleport as a lag spike.
     //
-    // The first sample has nothing to measure against, so it is assumed to
-    // cover one INPUT interval — the cadence a client actually sends at.
-    // Assuming a single TICK instead (which this did at first) gives the very
-    // first packet a 16 ms budget it has no way of knowing about.
-    const raw =
-      player.lastTime > 0 ? (msg.time - player.lastTime) / 1000 : 1 / INPUT_HZ;
-    const dt = Math.min(Math.max(raw, 1 / TICK_HZ), MAX_MOVE_GAP);
-
     // The CLOCK advances whether or not the POSITION is accepted, and this is
     // load-bearing. Updating it only on success means one rejected move leaves
-    // `lastTime` behind forever: every later sample is then measured against
-    // the whole elapsed gap — or, on the very first move, against the
-    // first-sample assumption above — and a player whose opening packet was a
+    // the last stamp behind forever: every later sample is then measured
+    // against the whole elapsed gap — or, on the very first move, against the
+    // first-sample assumption — and a player whose opening packet was a
     // fraction too long is judged against a 16 ms budget for the rest of the
     // match and can never move again. It presents as movement simply not
     // working, with corrections streaming, and it cost a debugging session.
-    // Advancing it here is safe because the gap is clamped anyway.
-    player.lastTime = msg.time;
+    // Advancing it here is safe because the gap is bounded anyway.
+    const dt = this.onStamp(peer, msg.time);
 
     // A dead player reports nothing worth keeping. Their body is wherever they
     // fell and the server owns it until they redeploy.
@@ -2225,13 +2343,12 @@ export class Match {
       this.send(peer, {
         t: "correct",
         pos: [player.position.x, player.position.y, player.position.z],
-        seq: player.seq,
+        seq: peer.seq,
         reason: verdict.reason!,
       });
       return;
     }
 
-    player.seq = msg.seq;
     peer.seq = msg.seq;
     this.game.submit(peer.slot, {
       t: "move",
@@ -2482,14 +2599,12 @@ export class Match {
   private onDrive(peer: Peer, msg: Extract<ClientMessage, { t: "drive" }>): void {
     const player = this.game.players.get(peer.slot);
     if (!player || !this.game.map) return;
-    if (msg.seq <= player.seq) return;
+    if (msg.seq <= peer.seq) return;
     // The clock advances whether or not the step is accepted, for the reason
-    // `onMove` spells out at length: a rejection that left `lastTime` behind
-    // measures every later sample against the whole elapsed gap.
-    const raw =
-      player.lastTime > 0 ? (msg.time - player.lastTime) / 1000 : 1 / INPUT_HZ;
-    const dt = Math.min(Math.max(raw, 1 / TICK_HZ), MAX_MOVE_GAP);
-    player.lastTime = msg.time;
+    // `onMove` spells out at length: a rejection that left the stamp behind
+    // measures every later sample against the whole elapsed gap. Bounded the
+    // same way, and the same bounded clock is what the crash test reads below.
+    const dt = this.onStamp(peer, msg.time);
     if (!player.alive || player.seat !== msg.tank) return;
 
     const tank = this.game.hullOf(player);
@@ -2551,14 +2666,21 @@ export class Match {
         t: "hullcorrect",
         tank: msg.tank,
         pos: [tank.position.x, tank.position.y, tank.position.z],
-        seq: player.seq,
+        seq: peer.seq,
         reason: verdict.reason!,
       });
+      if (Math.abs(tank.position.y - y) > RESYNC_RISE) peer.resyncOwed = true;
       return;
     }
 
-    player.seq = msg.seq;
     peer.seq = msg.seq;
+    // **A `resync` is the authority's to grant**: honoured — the crash test
+    // rebases here (`reportedLanding.ts`, "A broken series") — only while a
+    // correction that stopped this hull vertically is unanswered, and spent
+    // by the first accepted drive that answers it. A client cannot rebase at
+    // will, and the rebase it is granted still pays a touchdown.
+    const resync = peer.resyncOwed && msg.resync === 1;
+    if (resync) peer.resyncOwed = false;
     // The VERDICT's position and never the message's: a lid is accepted at the
     // boundary rather than where the client asked to be, and applying the claim
     // here would make the clamp a fiction the correction below then contradicts.
@@ -2575,11 +2697,13 @@ export class Match {
       gunPitch: msg.gun,
       aimYaw: msg.aimYaw,
       aimPitch: msg.aimPitch,
-      // The client's own stamp, which is what the crash test measures a
-      // descent over (`src/sim/reportedLanding.ts`) — the interval between
-      // ACCEPTED samples, so a refused one between them is simply a longer
-      // interval rather than a doubled rate.
-      time: msg.time / 1000,
+      // The peer's BOUNDED clock (`onStamp`), which is what the crash test
+      // measures a descent over (`src/sim/reportedLanding.ts`, "The clock") —
+      // the interval between ACCEPTED samples, so a refused one between them
+      // is simply a longer interval rather than a doubled rate. An honest
+      // client's is its own stamp to the bit.
+      time: (msg.time - peer.behind) / 1000,
+      resync,
     });
     // Accepted, but not where they said. The step counts — `seq` has already
     // advanced — and the client is told where it actually ended up, which is
@@ -2593,6 +2717,9 @@ export class Match {
         seq: msg.seq,
         reason: verdict.reason!,
       });
+      // A ceiling lid stops the climb; the map's edge moves nothing vertical
+      // and breaks nothing — a pilot landing against it is measured as usual.
+      if (Math.abs(verdict.y - y) > RESYNC_RISE) peer.resyncOwed = true;
     }
   }
 
@@ -2646,9 +2773,8 @@ export class Match {
   private onGunner(peer: Peer, msg: Extract<ClientMessage, { t: "gunner" }>): void {
     const player = this.game.players.get(peer.slot);
     if (!player || !player.alive) return;
-    if (msg.seq <= player.seq) return;
+    if (msg.seq <= peer.seq) return;
     if (player.seat !== msg.tank || player.crewSeat !== GUNNER) return;
-    player.seq = msg.seq;
     peer.seq = msg.seq;
     // The bearing, which is also the LOOK kept on the body — the chase
     // camera's aim, and what the machine gun's own cone is measured against,

@@ -2575,6 +2575,18 @@ cannot err low, a descent cannot steepen past `descentRate`). A stamp off the
 predicted hull's own step clock (sum of the frame `dt`s) would take the first
 away; the second is the sampling's.
 
+**And three holes the X2.5a review found in the fix, closed there:** the
+interval was the client's RAW stamp, so a client adding a second to every
+stamp landed free (0 of 129) and one crowding a stamp a millisecond onto the
+last pinned the next jolt at `joltLimit` and burned the hull (340 of 340) — the
+stamps are now bounded against when they arrive (`Match.onStamp`) and a gap
+under half an upload interval is no rate (`SimCoreOptions.reportGap`); and a
+refused sample in a full-rate descent was charged as a landing in mid-air (70
+in `corecheck`'s case, up to ~130) — a correction that stops the hull is now a
+rebase (`DriveMessage.resync`), and a touchdown right after one still pays.
+`npm run corecheck`'s `sarab/clock` and `sarab/break`; what stays trusted is in
+`docs/multiplayer.md`, "What is NOT defended against".
+
 **Derived from the code:** the crash is one check inside `Vehicle.update`'s
 flight branch — `jolt - flight.crashJolt`, spent as a `shell` through
 `takeDamage`. A person's hull runs `update` only as a PREDICTION, whose

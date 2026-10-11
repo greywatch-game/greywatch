@@ -1758,8 +1758,17 @@ the previous sample's tracks (`Vehicle.restAt`, `standOnGround`'s own
 and the report's own vertical motion otherwise; the jolt is the change in rise
 rate across the sample, clamped to `joltLimit`; `crashCost` charges it. The
 interval is the REPORTER's clock (`DriveCommand.time`): the page's
-`hullClock`, the client's `DriveMessage.time`. Nothing reported is a velocity —
-where the hull was and when, the `updateRemote` bargain.
+`hullClock` offline, and in a match the client's `DriveMessage.time` BOUNDED
+against when its messages arrive (`Match.onStamp`, `STAMP_SLACK` — an honest
+client's own stamp to the bit, a stretched one spent at the arrival rate), with
+two samples closer than half an upload interval taken as one
+(`SimCoreOptions.reportGap`). Nothing reported is a velocity — where the hull
+was and when, the `updateRemote` bargain. **A correction breaks the series**:
+the authority's `hullcorrect` stops the client's machine where it puts it, so
+the first report after one (`resync`) is a rebase rather than a rate, and the
+descent it cut is carried to the next rate, which a touchdown pays —
+`reportedLanding.ts`, "A broken series", and `npm run corecheck`'s
+`sarab/break`.
 
 **Offline every step is a sample, and the rule IS `standOnGround`'s arithmetic**
 — measured on Sarab (`npm run corecheck`, `sarab/crash`) to 6e-11 of 129
@@ -3892,7 +3901,13 @@ lid a wall.
 offline and one with teeth on Harrowmead, the single map with both an open
 boundary and a hardstanding. Without it the first driver to take the long way
 round a flank is counted out and burned in his own tank by a countdown he was
-never shown.
+never shown. **A FLYING hull's crew are** — pilot and gunner both, because a
+machine forty metres up clears the boundary boxes — and when the count runs
+out the core puts the person out of the chair first and then kills them from
+nobody, filed `other`: a seat makes its person invulnerable, so a kill aimed
+at a seated body was refused every step and a pilot past the margin flew on
+for ever (the X2.5a review). The hull is not burned; it is left where it was,
+as any machine its crew got out of.
 
 **The shell is re-fired rather than rewound.** `ShellMessage` takes `onShot`'s
 gates — a rate, a cone and an origin — and then uses none of the claim: the

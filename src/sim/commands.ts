@@ -173,9 +173,20 @@ export interface DriveCommand {
    * between two accepted samples: a person's crash is charged off the rate
    * their reports describe (`src/sim/reportedLanding.ts`). The authority's is
    * `DriveMessage.time`; the offline page's is the clock its predicted hull
-   * has been stepped through (`Game.hullClock`).
+   * has been stepped through (`Game.hullClock`). **On the authority it is
+   * the peer's BOUNDED clock** (`Match.onStamp`), never the raw stamp.
    */
   time: number;
+  /**
+   * The first report since the authority PUT THIS HULL BACK with a
+   * correction that moved it vertically — so the motion between the last
+   * sample and this one is the correction's, and the crash test rebases here
+   * rather than measuring across it (`reportedLanding.ts`, "A broken
+   * series"). The authority's word, never the client's: `Match` sets it only
+   * for a `DriveMessage.resync` answering a correction it sent. Absent
+   * offline, where nothing is ever corrected.
+   */
+  resync?: boolean;
 }
 
 /** A GUNNER's cupola-gun bearing (`remoteGunFor`), which is also their look. */

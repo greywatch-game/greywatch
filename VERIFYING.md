@@ -2052,7 +2052,13 @@ is one machine's:
   -1), the respawn clock, seat and evict. It runs every script twice (same
   seed, same commands, identical event-stream hash) and then through a real
   `Match` behind a fake socket, which must leave the identical award/death
-  list. A couple of seconds, no browser, exits non-zero on a failure; `--
+  list. On botless Sarab it then calibrates a person's helicopter crash
+  (`sarab/crash`) and runs the X2.5a review's cases: a seated flier leashed
+  (`sarab/leash`), a peer's stamps bounded by when they arrive
+  (`sarab/clock` — `MatchHost` replaces `Match.arrivalClock` with the
+  simulation's time, so an upload delivered before step `at` arrived then),
+  and a correction rebasing the crash series (`sarab/break`). Under a minute,
+  no browser, exits non-zero on a failure; `--
   --list` prints the lists it compared. Run it after touching `src/sim/`,
   `server/Match.ts`, `killRules`, `ScoreBook` or `hullRules`. Its second core
   run PUBLISHES and reads a structured clone of the frame back through the

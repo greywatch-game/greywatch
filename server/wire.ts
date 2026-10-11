@@ -157,7 +157,8 @@ export function readClientMessage(raw: string): ClientMessage | null {
         isNum(m.tyaw) &&
         isNum(m.gun) &&
         isNum(m.aimYaw) &&
-        isNum(m.aimPitch)
+        isNum(m.aimPitch) &&
+        (m.resync === undefined || m.resync === 1)
         ? msg
         : null;
 

@@ -70,7 +70,8 @@ const MAX_SPEED = CONFIG.player.moveSpeed * CONFIG.player.sprintMult;
  * Checks one reported step.
  *
  * `dt` is the elapsed CLIENT time between this sample and the last accepted
- * one. It is clamped by the caller — a client that claims a huge `dt` would
+ * one. It is bounded by the caller (`Match.onStamp`: per sample, and in sum by
+ * when the samples ARRIVED) — a client that claims a huge `dt` would
  * otherwise buy itself a proportionally huge legal step, which is the obvious
  * way to dress a teleport up as a lag spike.
  */

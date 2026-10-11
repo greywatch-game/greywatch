@@ -1462,6 +1462,17 @@ export interface DriveMessage {
    */
   aimYaw: number;
   aimPitch: number;
+  /**
+   * Set on the FIRST drive sent after this client applied a `hullcorrect`
+   * (`NetSession`), and on no other. It tells the authority the motion since
+   * the last report is the correction's — the hull was put back and its
+   * vertical motion stopped (`Vehicle.correctTo`) — so the crash test rebases
+   * here instead of reading the stop as a landing (`reportedLanding.ts`, "A
+   * broken series"). A CLAIM like everything else here: honoured only while
+   * a correction the authority sent is unanswered (`Match.onDrive`), and a
+   * rebase it buys still pays any touchdown it was hiding.
+   */
+  resync?: 1;
 }
 
 /**

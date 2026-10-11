@@ -10,7 +10,11 @@
  * stepped hull, so that for the same flight the two agree — exactly when every
  * step is reported (offline), and within the reporter's clock at `INPUT_HZ`
  * (a match). Reads no clock of the core's: an interval is the REPORTER's
- * (`DriveCommand.time`).
+ * (`DriveCommand.time`) — **and on the authority that is the BOUNDED one**,
+ * `Match`'s per-peer clock held to within `STAMP_SLACK` of when the reports
+ * arrived, never a raw client stamp (see "The clock" below). A series the
+ * authority BROKE with a correction is rebased rather than measured across
+ * (`DriveCommand.resync`, "A broken series" below).
  * Never: damages anything itself (`SimCore` spends `owed` through
  * `Vehicle.crash`, in the step, where a stepped hull's crash lands), or reads a
  * reported VELOCITY — nothing is reported but where the hull was and when,
@@ -60,6 +64,41 @@
  *     8 m/s over the corecheck's jittered wires.
  *
  * `npm run corecheck` (`sarab/crash`) holds all three to the bot path.
+ *
+ * ## The clock
+ *
+ * A rate is a height over an interval, so whoever owns the interval owns the
+ * charge: a reporter that could stretch its stamps would measure every
+ * descent over a second and land free, and one that could crowd two stamps a
+ * millisecond apart would pin the next jolt at `joltLimit` — 910 points, a
+ * helicopter and its gunner, on demand. So on the authority `time` is never a
+ * raw `DriveMessage.time`: `Match` bounds each peer's stamps against the
+ * clock their messages ARRIVE on (`Match.onStamp`, `STAMP_SLACK`), so a
+ * stretched stamp is spent at the arrival rate once its slack is used, and
+ * an honest client's stamps — which never drift from their arrivals by more
+ * than the network's jitter — pass through to the bit. And no interval under
+ * `gap` (`SimCoreOptions.reportGap`, half an upload interval on the authority)
+ * is a rate at all: the sample is skipped and the next measured from the one
+ * before, so a crowded stamp measures nothing. What stays the reporter's is
+ * the TRAJECTORY — see `docs/multiplayer.md`, "What is NOT defended against".
+ *
+ * ## A broken series
+ *
+ * A `hullcorrect` that moves the hull vertically puts the client's machine
+ * back where the authority holds it, and `Vehicle.correctTo` stops its
+ * vertical motion there. The first report after that (`resync`) is measured
+ * across the correction's jump and the stop it made — a descent at 8 m/s
+ * followed by a sample that has not moved reads as a landing in mid-air, up
+ * to ~130 points of the authority's own doing. So a resync sample is a
+ * REBASE, not a rate. **And the break is not a pass**: a client that provokes
+ * a refusal on the sample before touchdown must not land free, so the descent
+ * rate the break cut is CARRIED to the first rate after it, and if that rate
+ * stands on its plank — a touchdown — it is charged against the carried rate
+ * as the landing it is. In the air the carried rate is dropped and the series
+ * starts again, which is what an honest client, stopped by the correction,
+ * then reports. `Match` honours a `resync` only while a correction that moved
+ * the hull vertically is unanswered, so the break is the authority's to grant
+ * and a client cannot rebase at will.
  */
 import type { Vehicle } from "../entities/Vehicle";
 
@@ -80,6 +119,12 @@ const REST = 1e-4;
 const MIN_INTERVAL = 1e-3;
 
 export class ReportedLanding {
+  /**
+   * The shortest interval that is a rate, seconds — `MIN_INTERVAL` offline,
+   * where every step is a sample, and `SimCoreOptions.reportGap` on the
+   * authority (see "The clock").
+   */
+  private readonly gap: number;
   /** Samples held: 0 (none), 1 (a position, no rate yet), 2 (both). */
   private held = 0;
   private time = 0;
@@ -92,6 +137,16 @@ export class ReportedLanding {
    * `resist`. Spent and zeroed by the step, and by nothing else.
    */
   owed = 0;
+  /**
+   * The descent rate a break cut, m/s (<= 0), owed to the first rate after it
+   * if that rate is a touchdown — NaN when nothing is carried. See "A broken
+   * series".
+   */
+  private carried = NaN;
+
+  constructor(gap = MIN_INTERVAL) {
+    this.gap = gap;
+  }
 
   /**
    * A new pilot: no history, so nothing is measured across the change of
@@ -100,14 +155,27 @@ export class ReportedLanding {
    */
   reset(): void {
     this.held = 0;
+    this.carried = NaN;
   }
 
   /**
    * One ACCEPTED report of `tank` — its feet at `x, feet, z`, heading `yaw`,
    * at the reporter's clock `time` (seconds). Adds to `owed` what the arrival
    * it describes costs. Asked only of a hull that flies and is alive.
+   *
+   * `resync` is the authority's word that this is the first report since a
+   * correction put the machine back (`DriveCommand.resync`): a rebase, the
+   * rate before it carried — see "A broken series".
    */
-  sample(tank: Vehicle, x: number, feet: number, z: number, yaw: number, time: number): void {
+  sample(
+    tank: Vehicle,
+    x: number,
+    feet: number,
+    z: number,
+    yaw: number,
+    time: number,
+    resync = false,
+  ): void {
     const half = tank.spec.hull.height / 2;
     const centre = feet + half;
     // Banded off the tracks as they stood at the LAST sample — the height
@@ -118,16 +186,35 @@ export class ReportedLanding {
       this.held = 1;
       return;
     }
+    // A rebase, ahead of the interval test: a break must land whatever the
+    // clock says, or a resync crowded onto the last sample would be skipped
+    // and the next report measured across the very jump it marks. The rate
+    // the break cut is kept unless one is already carried — a second break
+    // before any rate after the first must not trade the real descent for
+    // nothing.
+    if (resync) {
+      if (this.held === 2 && Number.isNaN(this.carried)) this.carried = Math.min(0, this.rise);
+      this.store(time, feet, centre, target, 0);
+      this.held = 1;
+      return;
+    }
     const dt = time - this.time;
-    if (!(dt >= MIN_INTERVAL)) return;
-    const rise =
-      Math.abs(centre - target) <= REST
-        ? (target - this.target) / dt
-        : (centre - this.centre) / dt;
+    if (!(dt >= this.gap)) return;
+    const standing = Math.abs(centre - target) <= REST;
+    const rise = standing ? (target - this.target) / dt : (centre - this.centre) / dt;
+    const jl = tank.spec.suspension.joltLimit;
     if (this.held === 2) {
-      const jl = tank.spec.suspension.joltLimit;
       const jolt = Math.max(-jl, Math.min(jl, rise - this.rise));
       this.owed += tank.crashCost(jolt);
+    } else if (!Number.isNaN(this.carried)) {
+      // The first rate after a break: a TOUCHDOWN is charged against the
+      // descent the break cut, and anything in the air starts the series
+      // afresh — which is all an honest client the correction stopped can
+      // report.
+      if (standing) {
+        this.owed += tank.crashCost(Math.max(-jl, Math.min(jl, rise - this.carried)));
+      }
+      this.carried = NaN;
     }
     this.store(time, feet, centre, target, rise);
     this.held = 2;

@@ -1899,10 +1899,21 @@ holds one per `SimPlayer` and steps it in `SimCore` against the last
 position that player reported; that verdict is what kills. The client holds one
 for its own player and, in a match, draws it and nothing more — the ordinary
 prediction split, since this is a pure function of movement, and it is why the
-leash costs the wire nothing at all. Offline the client's is the only one there
-is. Bots are not leashed and must not be: they read `nav.steer()` and the graph
-stops at the play square, so a bot cannot reach the borderland to be warned about
-it.
+leash costs the wire nothing at all. Offline the CORE's is the one that kills,
+exactly as the authority's does (`BABYLON_EXIT.md` X2.5a D3), and the page's
+only draws. Bots are not leashed and must not be: they read `nav.steer()` and the
+graph stops at the play square, so a bot cannot reach the borderland to be warned
+about it.
+
+**A seat in a FLYING hull does not stop it** (`docs/vehicles.md` — a ground
+hull's crew are exempt, a flier's are not, pilot and gunner alike), **and the
+kill puts the person on foot first.** A seat makes a body invulnerable — the
+hull is the target — and the leash kills through `takeDamage`, which refuses
+every blow while that holds; so a pilot who flew past the margin was told
+"expired" every step and was never killed, offline or in a match, until the
+core learned to give up the chair (`SimCore.seat(player, null)`, answered with
+a `seat` event) before the blow. The hull is left as any abandoned machine is:
+it never left the world, its crew did.
 
 **Scatter placement is seeded** (`layout.seed`, via `src/world/rng.ts`). This is not
 cosmetic: blocking scatter emits colliders, colliders feed `NavGrid` and

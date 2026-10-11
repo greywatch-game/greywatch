@@ -258,6 +258,13 @@ export class NetSession {
 
   private uploadT = 0;
   private seq = 0;
+  /**
+   * A `hullcorrect` has arrived since the last `drive` went out — said ONCE,
+   * on the next one, as `DriveMessage.resync`: the motion that report
+   * describes is the correction's, and the authority's crash test rebases
+   * on it rather than reading the stop as a landing.
+   */
+  private hullResync = false;
   private readonly scratch = new Vector3();
 
   constructor(scene: Scene, mats: CelMaterialFactory) {
@@ -337,7 +344,11 @@ export class NetSession {
         // cone is measured against on the far side.
         aimYaw: local.yaw,
         aimPitch: local.pitch,
+        // Absent (undefined, which the encoder drops) on every drive but the
+        // first after a correction.
+        resync: this.hullResync ? 1 : undefined,
       });
+      this.hullResync = false;
       return;
     }
     // **A gunner reports one BEARING and nothing else**, and it replaces the
@@ -781,6 +792,7 @@ export class NetSession {
       // not a body, and the only hull this client predicts is the one under its
       // own driver.
       case "hullcorrect":
+        this.hullResync = true;
         this.scratch.set(msg.pos[0], msg.pos[1], msg.pos[2]);
         this.onHullCorrection(msg.tank, this.scratch, msg.reason);
         break;

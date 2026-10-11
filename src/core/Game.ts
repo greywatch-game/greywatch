@@ -6310,9 +6310,12 @@ export class Game {
     // flies over them, and past them there is no floor, no nav cell and no
     // terrain — so on a FLYING hull the exemption has nothing left holding the
     // other end of it, and the countdown goes back on. It is the same clock the
-    // body uses, so a pilot gets the same warning on the same HUD — and the
-    // kill is the simulation's, the core's offline and the authority's in a
-    // match, for the reason the body's is (D3).
+    // body uses, so a pilot gets the same warning on the same HUD — and this
+    // one only DRAWS it: the kill is the simulation's, the core's offline and
+    // the authority's in a match, for the reason the body's is (D3). The core
+    // puts the person out of the chair before it kills them (a seat makes a
+    // body invulnerable), so what reaches this page is a `seat` putting the
+    // player on foot and then the death, and the hull is left where it was.
     if (tank.flies) {
       this.leash.update(tank.position.x, tank.position.z, dt);
     } else {

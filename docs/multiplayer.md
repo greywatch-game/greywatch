@@ -129,7 +129,11 @@ back in is `src/world/leash.ts` instead. **The authority holds the one that
 counts**: `SimPlayer` owns a `Leash`, `SimCore` steps it against the last
 position that player reported and kills through `takeDamage` like any other
 death, which is also what makes a player who walks out and then stops sending
-anything die out there rather than wait it out. **The client runs the same clock
+anything die out there rather than wait it out. **A person in a flying hull
+is leashed too, and is put on foot before the kill** — a seat makes its
+person invulnerable, so the kill used to be refused every step and a pilot
+past the margin flew on for ever; the core gives up the chair (a `seat` event
+saying so), then kills from nobody, and the hull is left where it was. **The client runs the same clock
 and only draws it** — the countdown has to be on screen the instant the line is
 crossed rather than a round trip later, and being a pure function of movement it
 is prediction of exactly the kind this model already allows. **The leash costs
@@ -157,6 +161,31 @@ sand.
   letting a laggy honest player through, because a legitimate player yanked
   backwards has a worse experience than everyone has from a cheat worth 19%
   speed.
+- **A clock bent inside its slack.** Every bound on a reported step is priced
+  in the CLIENT's interval — the validators' allowance is a speed times it and
+  the crash test's rate is a height over it — so the stamps are bounded: each
+  peer's may lead or trail the clock its messages ARRIVE on by `STAMP_SLACK`
+  (250 ms) and no further (`Match.onStamp`), on top of the per-sample
+  `MAX_MOVE_GAP`. Before it, a client adding half a second to every stamp
+  bought ten times the legal ground at `INPUT_HZ` for as long as it liked, and
+  one adding a second measured every descent over a second and landed a
+  helicopter free; now a stretched stamp spends the slack once and then
+  advances at the arrival rate. What is left is the slack itself: a client
+  that holds its stamps back by up to 250 ms and spends it on ONE interval
+  stretches that interval by up to half a second — one sample's worth of
+  extra ground, or one landing measured over 0.55 s instead of 0.05. An honest
+  client never moves its lead by more than its network's jitter, and passes
+  through to the bit (`npm run corecheck`'s `sarab/clock`).
+- **A trajectory nobody flew.** The crash test charges what the reports
+  DESCRIBE, and the descent is not bounded (`validateDrive`: falling is
+  gravity's), so a client can report a gentle approach it never made and land
+  free, or report a drop it never took and wreck its own helicopter — and its
+  gunner with it — which is no more than flying it into the ground does. What
+  the authority owns is the interval (above), the samples too close together
+  to be a rate (`SimCoreOptions.reportGap`, skipped), and its OWN corrections:
+  one that stopped the hull vertically is a rebase rather than a landing, and a
+  rebase still pays a touchdown it was hiding (`src/sim/reportedLanding.ts`, "A
+  broken series"; `sarab/break`).
 - **A player who reloads quietly.** The `reload` message is the one thing a
   client tells the authority about itself that nothing can check, so a client
   that simply never sends one changes its magazine in silence and loses the cue
@@ -1848,8 +1877,9 @@ carries the split, and `Match` is where the policy lives, because
 **An ACCEPTED sample is also a CRASH TEST, and a refused one is not.** A hull a
 person flies is posed from their reports and never stepped, so nothing on the
 authority would ever charge it for hitting the ground; `SimCore.applyDrive`
-hands every accepted sample — the verdict's position and the client's own
-stamp, `time: msg.time / 1000` — to `src/sim/reportedLanding.ts`, which asks of
+hands every accepted sample — the verdict's position and the peer's BOUNDED
+clock (`Match.onStamp`; an honest client's own stamp to the bit, see "What is
+NOT defended against") — to `src/sim/reportedLanding.ts`, which asks of
 the report series the jolt `Vehicle.update` asks of a stepped hull and charges
 it through the same `Vehicle.crash` (`docs/vehicles.md`, "A person's landing
 is charged off their REPORTS"). The interval is between ACCEPTED samples, so a
@@ -1859,7 +1889,16 @@ for a steady descent on an exact clock and moved ±21 points (of ~129) by a
 whole-ms `Date.now()` stamp read a millisecond or so late, and it charges a
 flare inside the last interval HIGH — `npm run corecheck`'s `sarab/crash`
 measures all of it through this door with a fake peer, and holds it equal to
-the trusted door's charge.
+the trusted door's charge. Two samples closer than half an upload interval are
+one sample (`SimCoreOptions.reportGap`), so a crowded stamp measures nothing.
+**A correction BREAKS the series**: a `hullcorrect` that moved the hull
+vertically stopped the client's machine (`Vehicle.correctTo`), so the client's
+first drive after one says `resync` (`DriveMessage.resync`, set by
+`NetSession`), and `Match` passes it on only while such a correction is
+unanswered (`Peer.resyncOwed`) — the core rebases there instead of reading the
+stop as a landing in mid-air, and carries the cut descent to the first rate
+after it, which a touchdown pays. Before it, a refused sample in a full-rate
+descent cost the honest pilot up to ~130 points of the authority's own doing.
 
 **THE CEILING IS A RATE AND NOT A HEIGHT**, which is the specific thing the
 first version got wrong. `FlightModel.collective` fades the commanded climb to

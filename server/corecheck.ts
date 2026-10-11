@@ -57,6 +57,16 @@
  * and the same uploads through `Match` (the identical charge, the snapshot's
  * `hp` saying so, nothing corrected). It prints the calibration table.
  *
+ * And the X2.5a review's three, on the same botless Sarab: `sarab/leash` — a
+ * person in a FLYING hull past the play square (pilot and gunner, trusted
+ * door and `Match`) is put on foot and killed by the leash, the hull left
+ * standing; `sarab/clock` — a peer's stamps are bounded against when they
+ * arrive (`Match.onStamp`): an honest sprint is never corrected, a stretched
+ * one is refused, a hard landing on a lying clock is still charged, and a
+ * sample crowded a millisecond onto the last is no rate; `sarab/break` — a
+ * refused sample mid-descent followed by the client's `resync` costs nothing,
+ * and a lie on the sample before touchdown still pays the landing.
+ *
  * The person is always slot 0, team 0: the first seat `Roster.claim` hands
  * out, which `MatchHost` asserts. `-- --list` also prints each map's event
  * counts and the award/death list the hosts are compared on.
@@ -367,6 +377,11 @@ class MatchHost implements Host {
   constructor(def: MapDef, bots = true) {
     this.match = new Match("corecheck", def.id, bots);
     this.core = this.match.game;
+    // The ARRIVAL clock a peer's stamps are bounded against (`Match.onStamp`)
+    // is the script's own: the simulation's time, which advances with each
+    // scripted step exactly as a real match's wall clock advances with its
+    // loop — so an upload delivered before step `at` arrived at that step.
+    this.match["arrivalClock"] = () => this.core.now;
     // Hear every drain `Match` makes — the tee is the whole of the
     // instrumentation, and `relay` still gets the cursor as it always did.
     const drain = this.core.drain.bind(this.core);
@@ -1380,6 +1395,11 @@ interface Wire {
   stamp: number;
   /** The authority step it arrives before. */
   at: number;
+  /**
+   * Sent as `DriveMessage.resync` — the client's first report since it took
+   * a `hullcorrect` (`NetSession`), which the scripts below set by hand.
+   */
+  resync?: boolean;
 }
 
 /**
@@ -1410,16 +1430,16 @@ function wireOf(track: readonly Sample[], seed: number, late: number): Wire[] {
   return out;
 }
 
-/** The person seated as DRIVER of hull `tank`, on either host. */
-async function seatPilot(h: Host, tank: number): Promise<boolean> {
+/** The person seated in `chair` (DRIVER by default) of hull `tank`, on either host. */
+async function seatPilot(h: Host, tank: number, chair: CrewSeat = DRIVER): Promise<boolean> {
   await h.deploy(homeSpawn(h, PERSON_TEAM));
   if (!h.player().alive && stepUntilSpawned(h, 60) < 0) return false;
   const hull = h.core.vehicles.hulls[tank];
   const spot = h.core.vehicles.exitSpot(hull);
   placePerson(h, spot.x, spot.y, spot.z);
-  await h.mount(tank, DRIVER);
+  await h.mount(tank, chair);
   h.flush();
-  return h.player().seat === tank && h.player().crewSeat === DRIVER;
+  return h.player().seat === tank && h.player().crewSeat === chair;
 }
 
 /**
@@ -1497,6 +1517,7 @@ async function flyReportedMatch(
         h.socket.deliver({
           t: "drive", seq: ++seq, time: wire[w].stamp, tank: index,
           pos: [s.x, s.y, s.z], yaw: s.yaw, tyaw: s.turretYaw, gun: s.gunPitch, aimYaw: s.yaw, aimPitch: 0,
+          ...(wire[w].resync ? { resync: 1 } : {}),
         });
         w++;
       }
@@ -1592,6 +1613,312 @@ async function crashCalibration(world: World, c: Checks): Promise<string[]> {
     );
   }
   return lines;
+}
+
+// ---------------------------------------------------------------------------
+// The X2.5a review: the leash in a seat, the bounded clock, the broken series.
+
+/** Runs `fn` with `console.log` silenced — a `Match` narrates its round. */
+async function quietly<T>(fn: () => Promise<T>): Promise<T> {
+  const log = console.log;
+  console.log = () => {};
+  try {
+    return await fn();
+  } finally {
+    console.log = log;
+  }
+}
+
+/** One message onto a Match host's socket, its wall-clock budget topped up first (`flyReportedMatch`'s reason). */
+function deliver(h: MatchHost, msg: object): void {
+  for (const peer of h.match["peers"].values()) peer.budget = 1;
+  h.socket.deliver(msg);
+}
+
+/** Wire-clock origin the review's scripted peers stamp from, ms. */
+const PEER0 = 1_700_000_000_000;
+
+/**
+ * **The leash kills a person in a flying hull** (the X2.5a review, item 1).
+ * The person's own helicopter out past the play square — flown there as its
+ * PILOT, reporting a hover twenty metres up, or set down there with them on
+ * its GUN — on a core built as the offline page builds it and through
+ * `Match`'s validated door. Inside the count they are put on foot (`seat`
+ * -1) and killed from nobody, filed `other` and uncredited, exactly as the
+ * leash kills a body; the hull is left standing, out of its chair; and both
+ * hosts kill on the same tick.
+ */
+async function leashSeated(world: World, c: Checks): Promise<void> {
+  for (const chair of [DRIVER, GUNNER] as const) {
+    const name = chair === DRIVER ? "pilot" : "gunner";
+    const ticks: number[] = [];
+    for (const which of ["core", "match"] as const) {
+      const tag = `leash/${name}/${which}`;
+      await quietly(async () => {
+        const h: CoreHost | MatchHost =
+          which === "core" ? new CoreHost({ hostHoldsRespawn: true }) : new MatchHost(world.def, false);
+        if (h instanceof CoreHost) h.start(world, 0);
+        else await h.start(world, 0);
+        const core = h.core;
+        const index = heliOf(core);
+        const tank = core.vehicles.hulls[index];
+        const m = core.map!;
+        const x = m.size / 2 + 40;
+        const z = tank?.position.z ?? 0;
+        const feet = m.terrain.heightAt(x, z) + (chair === DRIVER ? 20 : 0);
+        // Nobody drives a gunner's hull: it is the core's to step, so it is
+        // set down out there as a fresh hull is, before anybody boards.
+        if (tank && chair === GUNNER) tank.placeAt({ x, y: feet, z }, tank.yaw);
+        if (!c.that(`${tag}: fixture — seated in the person's helicopter`, index >= 0 && (await seatPilot(h, index, chair)))) {
+          core.dispose();
+          return;
+        }
+        const p = h.player();
+        if (chair === DRIVER) {
+          // The pilot's report is where the core poses the hull: written as
+          // the accepted sample, so the reports below are a hover THERE.
+          const held = core.reportedHull(p)!;
+          held.x = x;
+          held.y = feet;
+          held.z = z;
+        }
+        let seq = 2000;
+        const from = core.tick;
+        let died = -1;
+        let evs: SimEvent[] = [];
+        const limit = Math.ceil(CONFIG.map.leash.seconds * TICK_HZ) + 120;
+        for (let i = 0; i < limit && died < 0; i++) {
+          if (chair === DRIVER && p.seat >= 0) {
+            const time = i * DT;
+            if (h instanceof CoreHost) {
+              core.submit(PERSON_SLOT, {
+                t: "drive", x, y: feet, z, yaw: tank.yaw, turretYaw: tank.turretYaw, gunPitch: tank.gunPitch,
+                aimYaw: tank.yaw, aimPitch: 0, time,
+              });
+            } else if (i % 3 === 0) {
+              deliver(h, {
+                t: "drive", seq: ++seq, time: PEER0 + time * 1000, tank: index,
+                pos: [x, feet, z], yaw: tank.yaw, tyaw: tank.turretYaw, gun: tank.gunPitch, aimYaw: tank.yaw, aimPitch: 0,
+              });
+            }
+          }
+          const mark = h.log.events.length;
+          h.step();
+          const now = since(h, mark);
+          if (deathOf(now, PERSON_SLOT)) {
+            died = core.tick;
+            evs = now;
+          }
+        }
+        ticks.push(died - from);
+        const seat = evs.findIndex((e) => e.type === "seat" && e.slot === PERSON_SLOT && e.tank === -1);
+        const dmg = evs.findIndex((e) => e.type === "damaged" && e.slot === PERSON_SLOT);
+        const d = evs[dmg];
+        const death = deathOf(evs, PERSON_SLOT);
+        c.that(
+          `${tag}: out past the play square in a flying hull, the person is put on foot and then killed — from nobody, filed \`other\`, uncredited`,
+          died > from && seat >= 0 && dmg > seat && d?.type === "damaged" && d.killed && d.from === null &&
+            death?.cause === "other" && !death.credited && !evs.some((e) => e.type === "award"),
+          `died at ${died}, seat event at ${seat}, damaged at ${dmg}, ${fmtDeath(death)}`,
+        );
+        c.that(
+          `${tag}: the hull is left standing and out of that chair; the person holds no seat`,
+          tank.alive && !tank.seats[chair] && p.seat === -1 && !p.alive,
+          `hull alive ${tank.alive} seats ${JSON.stringify(tank.seats)}, person seat ${p.seat} alive ${p.alive}`,
+        );
+        core.dispose();
+      });
+    }
+    c.that(
+      `leash/${name}: the trusted door and Match's validated one kill as many ticks after the fixture (${ticks.join(" / ")})`,
+      ticks.length === 2 && ticks[0] > 0 && ticks[0] === ticks[1],
+    );
+  }
+}
+
+/**
+ * **A peer's clock is BOUNDED by when its reports arrive** (the review, item
+ * 2), on botless Sarab through `Match` with a fake peer:
+ *
+ * - a body sprinting honestly on honest stamps is never corrected, and one
+ *   claiming three sprints a second on stamps inflated by half a second each
+ *   is refused — the stretched stamp no longer buys the ground;
+ * - a hard landing uploaded on stamps inflated by a second each is CHARGED,
+ *   where an unbounded clock measured every rate over a second and landed it
+ *   free;
+ * - a gentle descent with one sample stamped a millisecond after the last is
+ *   not a crash — a one-millisecond rate is no rate (`SimCoreOptions.reportGap`),
+ *   where it used to pin the jolt at `joltLimit` and burn the hull.
+ */
+async function clockBound(world: World, c: Checks, route: { yaw: number; top: number; low: number }): Promise<void> {
+  const tag = "clock";
+  // --- the body: an honest sprint, then a fast one on stretched stamps ---
+  await quietly(async () => {
+    const h = new MatchHost(world.def, false);
+    await h.start(world, 0);
+    await h.deploy(homeSpawn(h, PERSON_TEAM));
+    if (!c.that(`${tag}: fixture — the person deployed`, stepUntilSpawned(h, 120) > 0)) {
+      h.core.dispose();
+      return;
+    }
+    // A straight run of open ground from where they stand: the first of
+    // sixteen bearings standable every half metre for 90 m.
+    const p0 = h.player().position.clone();
+    let dir: { x: number; z: number } | null = null;
+    for (let k = 0; k < 16 && !dir; k++) {
+      const a = (k / 16) * Math.PI * 2;
+      const ux = Math.sin(a);
+      const uz = Math.cos(a);
+      let ok = true;
+      for (let d = 0; d <= 90 && ok; d += 0.5) ok = standable(h, p0.x + ux * d, p0.z + uz * d);
+      if (ok) dir = { x: ux, z: uz };
+    }
+    if (!c.that(`${tag}: fixture — 90 m of open ground from the spawn`, !!dir) || !dir) {
+      h.core.dispose();
+      return;
+    }
+    const sprint = CONFIG.player.moveSpeed * CONFIG.player.sprintMult;
+    let seq = 3000;
+    let stamp = PEER0;
+    let d = 0;
+    const run = (n: number, speed: number, stretch: number): number => {
+      const before = h.socket.frames.filter((f) => f.t === "correct").length;
+      for (let i = 0; i < n; i++) {
+        d += speed / INPUT_HZ;
+        stamp += 1000 / INPUT_HZ + stretch;
+        const x = p0.x + dir!.x * d;
+        const z = p0.z + dir!.z * d;
+        deliver(h, {
+          t: "move", seq: ++seq, time: stamp, pos: [x, groundY(h, x, z), z],
+          yaw: Math.atan2(dir!.x, dir!.z), pitch: 0, crouching: false, sprinting: true,
+        });
+        for (let k = 0; k < TICK_HZ / INPUT_HZ; k++) h.step();
+      }
+      return h.socket.frames.filter((f) => f.t === "correct").length - before;
+    };
+    const honest = run(40, sprint, 0);
+    const stretched = run(40, sprint * 3, 500);
+    c.that(
+      `${tag}: an honest sprint on honest stamps is never corrected (${honest} of 40)`,
+      honest === 0,
+    );
+    c.that(
+      `${tag}: three sprints a second on stamps stretched half a second each are refused (${stretched} of 40 corrected)`,
+      stretched >= 35,
+    );
+    h.core.dispose();
+  });
+
+  // --- the helicopter: a hard landing on a lying clock, a 1 ms gap ---
+  // On an EVEN network — each upload arriving three ticks after the step it
+  // samples — so the arrivals are the flight's own clock and what the bound
+  // leaves a lying stamp is exactly the honest interval.
+  const hard = CRASH_PROFILES[0];
+  const { track } = flyStepped(world, hard, route);
+  const honestWire = wireOf(track, 9500, 0).map((w) => ({ ...w, at: Math.round(w.s.t / DT) + 3 }));
+  const honest = await flyReportedMatch(world, honestWire);
+  const lying = honestWire.map((w, k) => ({ ...w, stamp: w.stamp + 1000 * (k + 1) }));
+  const lied = await flyReportedMatch(world, lying);
+  c.that(
+    `${tag}: a hard landing uploaded on stamps a second fast each is still charged (${lied.damage.toFixed(1)}, honest ${honest.damage.toFixed(1)})`,
+    honest.damage > 0 && lied.damage >= 0.5 * honest.damage,
+    `honest ${honest.damage}, lying ${lied.damage} (${lied.corrections} hullcorrects)`,
+  );
+
+  const gentle = CRASH_PROFILES.find((p) => p.name.startsWith("gentle"))!;
+  const g = flyStepped(world, gentle, route);
+  const gw = wireOf(g.track, 9600, 0);
+  // A sample on the way down, a metre or more a second, stamped 1 ms after the last.
+  let j = -1;
+  for (let k = 2; k < gw.length && j < 0; k++) {
+    const rate = (gw[k].s.y - gw[k - 1].s.y) / ((gw[k].stamp - gw[k - 1].stamp) / 1000);
+    if (rate < -1 && gw[k].s.y - route.top > 3) j = k;
+  }
+  if (c.that(`${tag}: fixture — a sample in the gentle descent`, j > 0)) {
+    const gap = gw.map((w, k) => (k === j ? { ...w, stamp: gw[k - 1].stamp + 1 } : w));
+    const r = await flyReportedMatch(world, gap);
+    c.that(
+      `${tag}: a gentle descent with one sample 1 ms after the last costs nothing (${r.damage.toFixed(1)})`,
+      r.damage === 0,
+      `charged ${r.damage}, left ${r.left}, ${r.corrections} hullcorrects`,
+    );
+  }
+}
+
+/**
+ * **A correction BREAKS the reported series, and the break is not a pass**
+ * (the review, item 3), on botless Sarab through `Match`:
+ *
+ * - a pilot refused once in the middle of a full-rate descent, put back where
+ *   the authority holds them, who reports their first sample since with
+ *   `resync` and then flies down gently, is charged nothing — the stop the
+ *   correction made is the authority's, not a landing;
+ * - a pilot who LIES on the sample before touchdown (refused) and resyncs on
+ *   the touchdown is charged the landing anyway: the descent the break cut is
+ *   carried to the first rate after it, and a rate on the plank is a landing.
+ */
+async function correctionBreak(world: World, c: Checks, route: { yaw: number; top: number; low: number }): Promise<void> {
+  const tag = "break";
+  const hard = CRASH_PROFILES[0];
+  const { track } = flyStepped(world, hard, route);
+  const wire = wireOf(track, 9700, 0);
+  const honest = await flyReportedMatch(world, wire);
+  // The plank under a point, as feet, off a probe of the same pad.
+  const probe = new SimCore({});
+  probe.startRound(roundOf(world, 0));
+  const hull = probe.vehicles.hulls[heliOf(probe)];
+  const half = hull.spec.hull.height / 2;
+  const floorFeet = (s: Sample) => hull.restAt(s.x, s.z, s.yaw, s.y) - half;
+  const rateAt = (k: number) => (wire[k].s.y - wire[k - 1].s.y) / ((wire[k].stamp - wire[k - 1].stamp) / 1000);
+
+  // (1) refused mid-descent, then a resync and a gentle way down.
+  let j = -1;
+  for (let k = 3; k < wire.length && j < 0; k++) {
+    if (rateAt(k - 1) < -7.5 && wire[k].s.y - floorFeet(wire[k].s) > 5) j = k;
+  }
+  if (c.that(`${tag}: fixture — a sample in a full-rate descent, 5 m up`, j > 0)) {
+    const a = wire[j - 1];
+    const ground = floorFeet(a.s);
+    const out: Wire[] = wire.slice(0, j);
+    // The lie: sixty metres sideways in one upload — refused, `hullcorrect`.
+    out.push({ ...wire[j], s: { ...wire[j].s, x: wire[j].s.x + 60 } });
+    let stamp = wire[j].stamp;
+    let at = wire[j].at;
+    let y = a.s.y;
+    // Put back where the authority holds it, the client holds there a round
+    // trip (its first report says `resync`), then comes down at 1 m/s and sits.
+    for (let n = 0; n < 400; n++) {
+      stamp += 1000 / INPUT_HZ;
+      at += 3;
+      if (n >= 3) y = Math.max(ground, y - 1 / INPUT_HZ);
+      out.push({ s: { ...a.s, y, t: 0 }, stamp, at, resync: n === 0 });
+      if (y === ground && n > 60) break;
+    }
+    const r = await flyReportedMatch(world, out);
+    c.that(
+      `${tag}: refused mid-descent, put back, resynced and flown down gently — charged nothing (${r.damage.toFixed(1)})`,
+      r.damage === 0 && r.corrections >= 1,
+      `charged ${r.damage}, ${r.corrections} hullcorrects`,
+    );
+  }
+
+  // (2) a lie on the sample before touchdown, a resync on the touchdown.
+  let t = -1;
+  for (let k = 2; k < wire.length && t < 0; k++) {
+    if (wire[k].s.y - floorFeet(wire[k].s) < 0.02 && rateAt(k) < -4) t = k;
+  }
+  if (c.that(`${tag}: fixture — the touchdown sample`, t > 1)) {
+    const out = wire.map((w, k) =>
+      k === t - 1 ? { ...w, s: { ...w.s, x: w.s.x + 60 } } : k === t ? { ...w, resync: true } : w,
+    );
+    const r = await flyReportedMatch(world, out);
+    c.that(
+      `${tag}: a lie before touchdown and a resync on it still pays the landing (${r.damage.toFixed(1)}, uninterrupted ${honest.damage.toFixed(1)})`,
+      honest.damage > 0 && Math.abs(r.damage - honest.damage) <= WIRE_SLACK,
+      `charged ${r.damage} against ${honest.damage}, ${r.corrections} hullcorrects`,
+    );
+  }
+  probe.dispose();
 }
 
 // ---------------------------------------------------------------------------
@@ -1806,6 +2133,23 @@ async function main(): Promise<void> {
     const table = await crashCalibration(world, checks);
     for (const r of checks.results) report(checks.tag, r);
     lines.push(...table);
+
+    // The review's three (X2.5a): the leash in a seat, the bounded clock,
+    // the broken series — on the same botless Sarab and the same corridor.
+    const probe = new SimCore({});
+    probe.startRound(roundOf(world, 0));
+    const route = clearBearing(probe, probe.vehicles.hulls[heliOf(probe)]);
+    probe.dispose();
+    const review: Array<[string, (c: Checks) => Promise<void>]> = [
+      ["sarab/leash", (c) => leashSeated(world, c)],
+      ["sarab/clock", (c) => clockBound(world, c, route)],
+      ["sarab/break", (c) => correctionBreak(world, c, route)],
+    ];
+    for (const [tag, run] of review) {
+      const c = new Checks(tag);
+      await run(c);
+      for (const r of c.results) report(c.tag, r);
+    }
   }
 
   console.log(lines.join("\n"));

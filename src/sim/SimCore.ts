@@ -277,6 +277,17 @@ export interface SimCoreOptions {
    * `simulate --frame` turns it on to price it.
    */
   publish?: boolean;
+  /**
+   * The shortest interval between two of a person's `drive` reports that is
+   * a RATE, seconds — closer than this and the second is no sample for the
+   * crash test (`src/sim/reportedLanding.ts`, "The clock"). Absent, a
+   * millisecond: offline every step is a report and every step is a rate.
+   * The authority's is half an upload interval (`Match`): an honest client
+   * never reports closer than `1 / INPUT_HZ`, and a stamp crowded onto the
+   * last one is a client choosing the interval its next rate is measured
+   * over.
+   */
+  reportGap?: number;
 }
 
 /**
@@ -317,6 +328,8 @@ export class SimCore {
   private phaseT0 = 0;
   /** Whether `frame` is kept filled — `SimCoreOptions.publish`. */
   readonly publishing: boolean;
+  /** `SimCoreOptions.reportGap`, handed to every `ReportedLanding`. */
+  private readonly reportGap: number | undefined;
   /**
    * The standing round as numbers (`src/sim/frame.ts`): refreshed at the end
    * of every call that can change it when this core `publishing`, and empty
@@ -470,6 +483,7 @@ export class SimCore {
     this.hostHoldsRespawn = options.hostHoldsRespawn ?? false;
     this.clock = options.timing ?? null;
     this.publishing = options.publish ?? false;
+    this.reportGap = options.reportGap;
     // No scene and no material factory: the last thing that wanted a factory
     // was the fleet's rigs, which are the client's `VehicleViews` since
     // `BABYLON_EXIT.md` X2.2 C9, and the last thing that wanted a scene was
@@ -979,6 +993,19 @@ export class SimCore {
           player.leash.update(player.position.x, player.position.z, dt) ===
           "expired"
         ) {
+          // **Out of the seat FIRST**, or the count kills nobody: a seat
+          // makes its person `invulnerable` (the hull is the target, `seat`),
+          // and `takeDamage` refuses every blow while it is — so a pilot past
+          // the margin was told "expired" every step and flew on. Put on
+          // foot where the hull carried them and then killed through the
+          // same door a walking body is, from nobody and filed `other`; the
+          // hull is left as any abandoned machine is — it never left the
+          // world, its person did. Answered with a `seat` like every way out
+          // of a chair, so the person's own screen puts them on foot first.
+          if (player.seat >= 0) {
+            this.seat(player, null);
+            this.seatAnswer(player, -1, player.position, player.yaw);
+          }
           player.takeDamage(player.health);
         }
         continue;
@@ -1519,7 +1546,7 @@ export class SimCore {
         if (!player.alive || player.seat < 0) return false;
         player.yaw = cmd.aimYaw;
         player.pitch = cmd.aimPitch;
-        this.applyDrive(player, cmd.x, cmd.y, cmd.z, cmd.yaw, cmd.turretYaw, cmd.gunPitch, cmd.time);
+        this.applyDrive(player, cmd.x, cmd.y, cmd.z, cmd.yaw, cmd.turretYaw, cmd.gunPitch, cmd.time, cmd.resync === true);
         return true;
       case "gun":
         if (!player.alive || player.seat < 0 || player.crewSeat !== GUNNER) return false;
@@ -1836,7 +1863,7 @@ export class SimCore {
       // A new pilot's reports start a new history: nothing is measured
       // across the change of hands.
       let landing = this.landings.get(index);
-      if (!landing) this.landings.set(index, (landing = new ReportedLanding()));
+      if (!landing) this.landings.set(index, (landing = new ReportedLanding(this.reportGap)));
       landing.reset();
       this.driven.set(index, {
         x: tank.position.x,
@@ -1900,6 +1927,7 @@ export class SimCore {
     turretYaw: number,
     gunPitch: number,
     time: number,
+    resync: boolean,
   ): void {
     if (player.crewSeat !== DRIVER) return;
     const state = this.driven.get(player.seat);
@@ -1917,7 +1945,7 @@ export class SimCore {
     // `validateDrive` accepts on the authority.
     const tank = this.vehicles.hulls[player.seat];
     if (tank?.flies && tank.alive) {
-      this.landings.get(player.seat)?.sample(tank, x, y, z, yaw, time);
+      this.landings.get(player.seat)?.sample(tank, x, y, z, yaw, time, resync);
     }
   }
 

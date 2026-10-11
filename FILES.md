@@ -66,7 +66,11 @@ server/               # The authoritative match server. Node, no Babylon (the
                       #   the reported muzzle), and `sarab/crash`: a person's
                       #   helicopter charged off its reports — every step, at
                       #   INPUT_HZ with clock jitter, through Match — against
-                      #   the bot path's own charge on the same flights.
+                      #   the bot path's own charge on the same flights; and
+                      #   the X2.5a review's `sarab/leash` (a seated flier is
+                      #   leashed), `sarab/clock` (a peer's stamps bounded by
+                      #   their arrivals) and `sarab/break` (a correction
+                      #   rebases the crash series, a touchdown still pays).
                       #   Exits non-zero on a fail
 scripts/                      # Node tooling, run by hand or by `npm run build`,
                               #   never shipped. Plain .mjs outside both
@@ -2004,7 +2008,9 @@ src/
     reportedLanding.ts #  The crash of a hull a PERSON flies (FINDINGS 60):
                       #   `Vehicle.update`'s jolt asked of the accepted `drive`
                       #   reports (plank via `Vehicle.restAt`, the reporter's
-                      #   clock), cost owed until SimCore spends it
+                      #   clock — Match's BOUNDED one on the authority), cost
+                      #   owed until SimCore spends it; a correction's
+                      #   `resync` rebases, a touchdown after one still pays
   net/                # Multiplayer, client side. Nothing here is constructed
     protocol.ts       #   in an offline round.
                       #   The wire format — the ONLY module the server also

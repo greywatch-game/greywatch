@@ -60,11 +60,6 @@ export class SimPlayer implements Combatant {
    */
   readonly leash = new Leash();
 
-  /** Highest input sequence accepted. A correction names this. */
-  seq = 0;
-  /** Client clock reading of the last accepted sample, for rate limiting. */
-  lastTime = 0;
-
   /** Seconds until this player may deploy again. */
   respawnT = 0;
 
