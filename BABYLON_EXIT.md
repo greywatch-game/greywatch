@@ -1225,7 +1225,7 @@ outside its typed arrays; one frame must be applied before that call's events;
   where systems meet) and "Conquest rules" (one ledger, one core); `docs/game.md`;
   `docs/multiplayer.md`.
 
-#### X2.5b — The core in a Worker — **M** (decision)
+#### X2.5b — The core in a Worker — **M**
 
 As `PERF_PLAN.md` C4 states it:
 - **The shared state.** Per-body state and the event queue are double-buffered
@@ -1235,8 +1235,8 @@ As `PERF_PLAN.md` C4 states it:
   published state and runs its own sweep there (X2.1's primitive, now plain
   code).
 - **Bots and everything else run a frame ahead** in the Worker.
-- **The authority** runs the core in-process or in `worker_threads`, whichever
-  measures better. (Open: see "Decisions that are yours".)
+- **The authority** runs the core in-process (decided 2026-10-11, below).
+  C4 left it to whichever measured better; no measurement is owed.
 
 **Decided 2026-10-11, before the step:**
 - **Shared memory, not posted frames.** Posting the frame and transferring its
@@ -1261,6 +1261,10 @@ As `PERF_PLAN.md` C4 states it:
 - **The phone run goes through `develop`.** After the step lands, it is
   reviewed and then merged `--no-ff` into `develop` by the user's call, so the
   deployed build can be installed and run on the phone (see "The branch").
+- **The authority stays in-process.** A server runs one core per match and
+  draws nothing, so a Worker there would only add a thread hop to every
+  command and event `Match` relays. The server is in no X0.4 target, so a
+  measurement would have nothing to be graded against.
 
 **Cross-origin isolation** (COOP `same-origin`, COEP `require-corp`) is owed on
 EVERY document response:
@@ -1734,7 +1738,7 @@ Phase 1 actually took.
 | X2.5b | Rewind offline shots, now that the bots run a frame ahead? | **Decided** 2026-10-11: yes, in both modes (X2.5b). |
 | X2.5b | The phone check sits under the noise floor. How is it read? | **Decided** 2026-10-11: off the profiler: `sim` leaves the main thread, the new costs are named, and the frame is no slower (X2.5b). |
 | X2.5b | How does the branch reach the phone? | **Decided** 2026-10-11: a code review, then a `--no-ff` merge to `develop` ("The branch"). |
-| X2.5b | Does the authority run the core in-process or in `worker_threads`? | In-process, with no measurement owed. A server runs one core per match and draws nothing, so a Worker there only adds a hop to every relayed command and event, and the server is in no X0.4 target. |
+| X2.5b | Does the authority run the core in-process or in `worker_threads`? | **Decided** 2026-10-11: in-process, with no measurement owed. A server runs one core per match and draws nothing, so a Worker there only adds a hop to every relayed command and event, and the server is in no X0.4 target. |
 | X3.4 | Scatter AO: baked per kind (cheaper, changes the look) or per instance? | Per kind, judged in the bank. |
 | X4.2 | Which hull parts drop at range (the tank's links and wheels, the MG rings)? | An art call; PERF_PLAN A3 measured +6.5% at 300 m on Cinderhaven. |
 | X6.2 | Is it ready to merge to `develop`? | Only when X6.2's "Before" list passes in full. |
