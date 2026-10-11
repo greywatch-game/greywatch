@@ -225,7 +225,12 @@ FINDINGS #8's older 1.37 ms for four does not reproduce; see the note there.
   REST_POSE)` is not a substitute.** That call writes Euler channels and the rifle's
   place in the torso, and never a `parent`, a `rotationQuaternion`, a `scaling` or the
   position of any joint but `body` and `gun`. `BotRig` calls the former on every
-  new `Bot.life` — at any distance, and before it writes a pose — since the rig
+  new `Bot.life` — at any distance, and before EITHER of its writers poses the
+  rig (`syncLife`, at the top of `follow` and of `catchUp`): a bot put back and
+  killed inside one `battle.update` reaches `catchUp` before any `follow` has
+  seen the new life, and a reset left for `follow` lands after `RagdollSystem`
+  has taken the joints, so the corpse stood to attention until it sank (the X2.2
+  review, reproduced live by forcing both in one frame) — since the rig
   left `Bot.spawn` with the rest of the drawing (BABYLON_EXIT.md X2.2 C7, checked
   live: a bullet death, a ragdoll, a respawn, no quaternion on any joint and the
   body animating again). Verified across three lives on one rig — a leak

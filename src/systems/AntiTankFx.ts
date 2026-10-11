@@ -30,9 +30,9 @@ const _ahead = new Vector3();
 
 /** One rocket on screen: the body, and the motor parented to it. */
 export class RocketBody {
-  readonly mesh: Mesh;
+  private readonly mesh: Mesh;
   /** The motor — the tell a driver actually reads. */
-  readonly flame: Mesh;
+  private readonly flame: Mesh;
   private shown = false;
 
   constructor(scene: Scene, mats: CelMaterialFactory, name: string) {
@@ -83,9 +83,9 @@ export class RocketBody {
 
 /** One laid mine on screen: the plate, and the fuze lamp parented to it. */
 export class MineBody {
-  readonly mesh: Mesh;
+  private readonly mesh: Mesh;
   /** The fuze lamp: dark while arming, lit once live. */
-  readonly lamp: Mesh;
+  private readonly lamp: Mesh;
 
   constructor(scene: Scene, mats: CelMaterialFactory, name: string) {
     const { mesh, lamp } = buildMineBody(scene, mats, name);

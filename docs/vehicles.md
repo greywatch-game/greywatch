@@ -268,8 +268,9 @@ Four things the model may not do, each of which has already been done once:
   The bloom reads `noGlow` every frame now (`GlowPass`), so that reason is gone;
   a glowing part on a hull is still a look nobody has chosen. The headlights are
   boxes.
-- **Nothing pickable.** The collider box is the only pickable thing a tank has.
-  A pickable visual would put the hitscan's wall ray, the bots' LOS and the
+- **Nothing pickable.** Not even the collider box's mesh, since the X2.2
+  review: a hull is answered by `rayBox` off its fields, and the editor — the
+  one mesh pick left — builds no hulls. A pickable visual would put the hitscan's wall ray, the bots' LOS and the
   ground probe on sixty triangles of track link.
 - **Nothing above the deck inside the turret's sweep.** The ring is at the deck
   and the turret's underside is 11 cm above it, so a raised engine deck, a
@@ -872,8 +873,8 @@ established: things that MOVE cannot be in structures that are BAKED.
 What the hull's collider box is:
 
 - A box to both questions, and neither `porous` nor `rayOnly` (the body MESH
-  carries `metadata.solid` for the editor's centre-screen pick and nothing
-  else reads it). Those two describe a fence — a thing that is a wall to a body and mostly air to a bullet, or the
+  carries no `metadata.solid` and is not pickable: the editor builds no hulls,
+  and nothing else picks a mesh). Those two describe a fence — a thing that is a wall to a body and mostly air to a bullet, or the
   reverse. A tank is both to both, which is the plain case. So it answers both
   of `RayWorld`'s questions: a round stops on it and a sightline breaks on it.
   It reaches those queries as `RayWorld.hulls` — a list `VehicleSystem` keeps
@@ -1022,17 +1023,27 @@ returns null unless the hull is on the field, so `hide` takes a wreck that has
 been carried away out of every ray, every sweep, the deck and the crush in one
 write. It used to be `body.isEnabled() && body.isPickable`, the terms
 `SOLID_ONLY` reads; since `BABYLON_EXIT.md` X2.2 C8 it is a field and the body
-mesh merely follows it (enabled, and pickable for the editor, exactly while
-present) — since C9 the body mesh is the VIEW's (`VehicleView.update`). **The bug that found the pickable term was the ground probe's**, back
+mesh merely follows it (enabled exactly while present) — since C9 the body
+mesh is the VIEW's (`VehicleView.update`), and since the X2.2 review it is
+neither pickable nor `solid`, the editor (the predicate's one caller) building
+no hulls at all. **The bug that found the pickable term was the ground probe's**, back
 when the ground was a ray: it started INSIDE the box it was meant to ignore,
 found the hull's own underside, pinned `floorY` to whatever height the tracks
 already had, and a hull lifted by anything — Babylon's own collision response
 climbing a barrier — stayed there for the rest of the round and could not fall.
 That probe is gone (see below), and the rule it argued for is that a caster
-takes its OWN hull out by `skip`, never by a write to the hull. The editor's
-predicate in `world/solid.ts` still ends on `isPickable`, for the mesh.
+takes its OWN hull out by `skip`, never by a write to the hull.
 
 ### Where a round leaves is read off the hull AS DRAWN, and it is arithmetic
+
+**No simulation reads a node — the authority builds no rig and no hull model
+to read one off.** A hull's three muzzles (`entities/hullFrame.ts`) and a bot's
+(`soldierPose.ts`) are the float32 node chains REPLAYED off fields, bit for
+bit. A hull's are read off its joints AS DRAWN, so the 1e-5 guards on the lean
+and the springs sit on a muzzle's path and are simulated on both sides: they
+live in the pose record (`HullPose`), which the view copies onto the nodes and
+never the reverse. The one node an outcome still reads is offline, the
+player's throw hand and launcher muzzle (`FINDINGS.md` 55).
 
 `Vehicle.muzzleToRef`, `mgMuzzleToRef` and `mgSightToRef` were node reads —
 `computeWorldMatrix(true)` and `getAbsolutePosition()` on `rig.muzzle` (the
@@ -1067,6 +1078,11 @@ never to where a round starts. `fireGun`'s recoil bearing reads the pose's
 
 ## The hull and its picture
 
+**`Vehicle` is the simulation and a `VehicleView` its picture** (client-only,
+built per hull by `installMap`, taken down by `teardownMap`): **a view READS its
+hull and is TOLD only what cannot be polled**, through one `HullPicture`, and
+nothing it is told comes back — the authority's hulls have no picture.
+
 **`Vehicle` is the simulation and nothing else** (`BABYLON_EXIT.md` X2.2 C9):
 no `@babylonjs/core`, no mesh, no rig, no scene, every vector `src/math`'s — so
 the authority builds the same hull a client does, and `VehicleSystem` takes no
@@ -1075,26 +1091,28 @@ one per hull, which only a client builds (`VehicleViews`, from `installMap`
 right after `VehicleSystem.build`, by hardstanding index, each with its kind's
 model off `vehicleModels.modelOf`; torn down by `teardownMap` before the fleet).
 A view owns the body box (invisible: the rig's parent, the shadow maps' box —
-`ShadowHull` is the view — and `metadata.solid`/`isPickable` for the editor's
-pick), the rig, the belts' run, the whips (`HullWhips`) and the paint.
+`ShadowHull` is the view; never pickable and never `solid`, since the editor
+builds no hulls), the rig, the belts' run, the whips (`HullWhips`) and the
+paint.
 
 **A view READS its hull and never writes it.** Everything that is STATE is
 read in `VehicleView.update`, which runs right after every
 `VehicleSystem.update` (both call sites, offline and in a match) before
-anything reads a node: the body at `pos` turned `yaw`, enabled and pickable
-exactly while `present`, charred exactly while `!alive`, and each joint copied
+anything reads a node: the body at `pos` turned `yaw`, enabled exactly while
+`present`, and each joint copied
 off `Vehicle.pose` where it differs — the hull wrote the record behind the
 guards the node writes had, so a node is exactly what the record says.
 
-**Four things it is TOLD, and only these, through `Vehicle.picture`
+**Five things it is TOLD, and only these, through `Vehicle.picture`
 (`HullPicture`)**, because polling would get each wrong:
 
 | told | when | why it cannot be read afterwards |
 | --- | --- | --- |
 | `placed()` | `placeAt` | the rig goes back to rest and to its livery, and the whips straighten — a reset the hull may be stepped past again (a netplay placing lands BEFORE the step that frame) before the view next looks |
 | `kicked()` | `fireGun` | the masts crack once, between two steps — the springs' half of the shot is the hull's own (`HullSprings.kick`), on the muzzle's path |
+| `wrecked()` | `wreck` | the charred paint — the battle, the grenades and the rockets that wreck a hull step AFTER the frame's `VehicleViews.update`, so a view reading `alive` painted the wreck a frame late (the X2.2 review) |
 | `rolled(dt, speed, yawRate, steer, rotor, moved, linkage)` | each `update`/`updateRemote` | the belts are an INTEGRATOR: the view keeps the run and the stick and disc last drawn, and the gate (skip a hull that neither moved nor turned and whose linkage and disc are as drawn) is its own |
-| `flexed(dt, accel, lateral, footPitch, footRoll)` | after each `leanHull` | the whips are an integrator too, against the mast feet's attitude — the ground lean and the springs summed as HELD — whose rate is a difference across one step |
+| `flexed(dt, accel, lateral, footPitch, footRoll)` | after each `leanHull` | the whips are an integrator too, against the mast feet's attitude — the ground lean and the springs summed as HELD — whose rate `HullWhips.step` takes as a difference across one step |
 
 **Nothing a picture is told comes back.** Each call is made after the hull has
 decided, with numbers it has already decided; a hull with no picture runs the
@@ -1799,7 +1817,7 @@ under a bridge a tank is crossing — nothing at all of him is inside the box.
 
 `rotX` is 0 on this box and stays 0 (`rayBox` writes it once; the collider never
 tilts, only the picture leans), which is what lets both height terms be
-unrotated. The enabled/pickable gate is `rayBox`'s, so a hull that has been
+unrotated. The `present` gate is `rayBox`'s, so a hull that has been
 taken away crushes nothing; a WRECK still could, and never does, because
 `tank.alive` is the first of the three gates below — and that gate is doing real
 work now rather than restating a fact about wrecks, because `Vehicle.coast`
@@ -2222,6 +2240,9 @@ weapon has. The report was a gunner who could not see what he was shooting at.
 fixed separately and neither fix knows a kind.
 
 ### The eye, the anchor and the look point were COLLINEAR
+
+**A chase camera's look point may never sit on its own eye ray** —
+`CONFIG.vehicles.frameLift` is an ANGLE that fades out as the view looks down.
 
 `place` took `look = anchor + dir * distance * 0.9` and `eye = anchor - dir *
 distance`, with a comment saying that looked "a little PAST the tank rather than

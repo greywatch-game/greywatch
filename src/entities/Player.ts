@@ -26,7 +26,10 @@
  * sweep body's centre, half a body higher, and the one point the movement
  * writes. Anything wanting the middle of the body wants `center`. The three
  * exported points (`position`, `center`, `eyePos`) are derived in
- * `syncCombatant` and are the only ones anything outside this file may read.
+ * `syncCombatant` and are the only ones anything outside this file may read
+ * — and they are `src/math`'s, so they are read by their FIELDS: handed to a
+ * Babylon method (`copyFrom`, `Vector3.Distance`) one reads `_x` and writes
+ * NaN without a word, and a crossing is a copy (`src/math/babylon.ts`).
  * There is no collider MESH: the sweep is `CollisionField`'s and takes a
  * `SweepBody` record (`sweepBody`, over `mid` and `ellipsoid`), the probe and
  * the push-out read the same two fields, and nothing else ever looked at the

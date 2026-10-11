@@ -104,7 +104,9 @@ round alone owns what is about a *fight* — battle, conquest, flag markers, min
 is handed only what its own picture reads.** The split is `CLAUDE.md`'s
 ("Ownership and wiring"): the simulation owns the state on `src/math`, the view
 reads it and never writes it, and the authority builds the simulations alone —
-so every view's line here has no twin in `HeadlessGame`. `CombatFx` takes
+so every view's line here has no twin in `HeadlessGame`. The one node an
+outcome still reads is offline, the player's throw hand and launcher muzzle
+(`FINDINGS.md` 55). `CombatFx` takes
 `map.rays` (its `drawRounds` casts for itself); `GrenadeFx` takes `map.rays`,
 the terrain and the environment (a fire's flames stand on their own floor
 probe, and the map decides what colour a blast's dust is); `GlassFx` takes the map,
@@ -223,7 +225,12 @@ anything reads a node (the two shadow maps' boxes are off each view's body);
 `installMap` builds the views right after `vehicles.build`, one per hull by
 hardstanding, and `teardownMap` takes them down before the fleet. What a view
 must hear between two of those updates — a placing, a shot, each step's belts
-and mass — it is told as it happens, through the hull's `HullPicture`.
+and mass, and a wreck (the battle, the grenades and the rockets that wreck a
+hull all step after the view's update) — it is told as it happens, through the
+hull's `HullPicture`. A bot's rig is the same case once: a body put back and
+killed inside one `battle.update` reaches `BattleView.corpseOf` before
+`BattleView.update` has seen its new life, so `BotRig.catchUp` re-derives the
+life itself before the ragdoll takes the joints.
 
 **They are TWO blocks rather than one because the armour goes between them, and
 it goes in a different place on each side**: offline the fleet is stepped before

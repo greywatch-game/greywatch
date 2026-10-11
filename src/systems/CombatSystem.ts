@@ -232,9 +232,8 @@ export interface ShotOptions {
  * marks only the terrain floor's collider clone (`surface: "ground"`), and
  * every box `collider()` makes leaves the field absent. Adding "wood" or
  * "metal" is one member here, one row in `CombatFx`'s `IMPACTS`, one arm in
- * `Sfx.impact`
- * and a `surface` argument on `collider()` — no signature between here and
- * the world layer moves.
+ * `Sfx.impact` and a `surface` argument on `collider()` — no signature
+ * between here and the world layer moves.
  */
 export type ImpactKind = "flesh" | "ground" | "hard" | "glass";
 
@@ -332,7 +331,7 @@ export class CombatSystem {
 
   /**
    * A hitscan shot. Used by the player and by every bot — same ray, same
-   * spread model, same tracer; only the target list and the origin differ.
+   * spread model, same `onRound`; only the target list and the origin differ.
    *
    * Every vector it is handed is read through its FIELDS — the camera's and
    * the viewmodel's muzzle are still Babylon's — and every vector it makes
@@ -482,9 +481,10 @@ export class CombatSystem {
     // The DAMAGE is instant — everyone is hitscan and nothing below may gate
     // it. The IMPACT is not: it is handed to the tracer (`onRound`, drawn by
     // `CombatFx`) and spawned when the streak's head arrives, so nothing is
-    // seen or heard before the round that caused it gets there. At `tracerSpeed` that is up to ~0.4 s at the range
-    // cap, which is exactly how long the tell was. The sound rides the same
-    // clock as the visual for the same reason.
+    // seen or heard before the round that caused it gets there. At
+    // `tracerSpeed` that is up to ~0.4 s at the range cap, which is exactly
+    // how long the tell was. The sound rides the same clock as the visual for
+    // the same reason.
     //
     // The surface comes off the query this method already paid for. `hard` is
     // what everything but the floor answers, exactly as only the terrain
@@ -517,7 +517,6 @@ export class CombatSystem {
     this.onShotPath(origin, dir, hitDist);
     return { target: hitTarget, killed, hitWall, headshot, dir, hitPoint };
   }
-
 }
 
 /**

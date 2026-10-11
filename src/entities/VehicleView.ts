@@ -12,17 +12,21 @@
  *   differ — the hull wrote the record behind the guards the node writes had,
  *   so a node is exactly what the record says and the muzzles the simulation
  *   replays off the record are the muzzles drawn here (`entities/hullFrame.ts`).
- * - **Four things it is TOLD, as `Vehicle`'s `HullPicture`**: a placing (the
- *   rig back to rest), a shot (the masts crack), each step of the running gear
- *   and each step of the hull's mass — because a reset and two integrators
- *   cannot be polled. Everything else is read in `update`, which runs right
- *   after `VehicleSystem.update`, before anything reads a node.
- * - **The body box follows the hull**: at `pos`, turned `yaw`, enabled and
- *   pickable exactly while `present`. It is the node the rig hangs off, the
- *   box the two shadow maps draw (`core/proxyBoxes.ts`), and `metadata.solid`
- *   with `isPickable` for one more reader — the editor's centre-screen pick
- *   (`world/solid.ts`). No ray and no sweep in the game reads it: a hull is
- *   answered by `Vehicle.rayBox`.
+ * - **Five things it is TOLD, as `Vehicle`'s `HullPicture`**: a placing (the
+ *   rig back to rest), a shot (the masts crack), a wreck (the charred paint),
+ *   each step of the running gear and each step of the hull's mass — because a
+ *   reset and two integrators cannot be polled, and a wreck lands later in the
+ *   frame than `update` runs. Everything else is read in `update`, which runs
+ *   right after `VehicleSystem.update` and BEFORE the battle, the grenades and
+ *   the rockets step: nothing after the fleet moves a hull, but any of the
+ *   three can wreck one, and a poll would paint that a frame late.
+ * - **The body box follows the hull**: at `pos`, turned `yaw`, enabled
+ *   exactly while `present`. It is the node the rig hangs off and the box the
+ *   two shadow maps draw (`core/proxyBoxes.ts`), and nothing else: never
+ *   pickable and never `metadata.solid`, because the one mesh pick left in the
+ *   game is the editor's (`world/solid.ts`) and the editor builds no hulls. No
+ *   ray and no sweep in the game reads it: a hull is answered by
+ *   `Vehicle.rayBox`.
  * Never: `dispose(false, true)` — see `dispose`.
  */
 import { MeshBuilder, type Mesh, type Scene } from "@babylonjs/core";
@@ -35,7 +39,7 @@ import type { VehicleRig } from "./vehicleRig";
 export class VehicleView implements HullPicture {
   /**
    * The collider box's MESH, invisible, and a FOLLOWER of the hull — see the
-   * header for its three readers. Built before the rig, in the order the scene
+   * header for its two readers. Built before the rig, in the order the scene
    * always received the two.
    */
   readonly body: Mesh;
@@ -63,8 +67,6 @@ export class VehicleView implements HullPicture {
   private steerShown = 0;
   /** The disc's run last drawn, so a turning rotor redraws a hull that is still. */
   private rotorShown = 0;
-  /** Whether the charred paint is on. Follows `!hull.alive`. */
-  private charred = false;
   /** Whether the body is on the field as drawn. Follows `hull.present`. */
   private shownPresent = true;
 
@@ -82,11 +84,10 @@ export class VehicleView implements HullPicture {
       scene,
     );
     this.body.isVisible = false;
-    // The editor's pick and nothing else (`world/solid.ts`): what a hull is to
-    // a body and to a round — both, to both; neither `porous` nor `rayOnly`,
-    // which describe a fence — is `Vehicle.rayBox`, and it reads no mesh.
-    this.body.isPickable = true;
-    this.body.metadata = { solid: true };
+    // Out of every pick: what a hull is to a body and to a round — both, to
+    // both; neither `porous` nor `rayOnly`, which describe a fence — is
+    // `Vehicle.rayBox`, and it reads no mesh.
+    this.body.isPickable = false;
     this.rig = model(scene, mats, hull.team);
     this.rig.root.parent = this.body;
     // The rig is drawn with `y = 0` at the bottom of the tracks and the
@@ -95,8 +96,10 @@ export class VehicleView implements HullPicture {
     this.rig.root.position.y = -t.hull.height / 2;
     this.whips = new HullWhips(this.rig.antennae, t);
     // The hull was placed before there was a picture to tell, so the rig goes
-    // through the placing it missed, exactly as a respawned one does.
+    // through the placing it missed, exactly as a respawned one does — and
+    // through the wreck, if it missed that too.
     this.placed();
+    if (!hull.alive) this.wrecked();
     this.update();
   }
 
@@ -115,11 +118,15 @@ export class VehicleView implements HullPicture {
     this.trackRun[1] = 0;
     this.steerShown = 0;
     this.rotorShown = 0;
-    this.charred = false;
   }
 
   kicked(): void {
     this.whips.kick();
+  }
+
+  /** The charred paint, on the call that wrecked the hull. */
+  wrecked(): void {
+    this.rig.paint(true);
   }
 
   /**
@@ -169,9 +176,10 @@ export class VehicleView implements HullPicture {
 
   /**
    * Everything that is STATE, read off the hull and written onto the nodes:
-   * where the body stands, whether it is drawn and picked, the paint, and the
-   * joints from the pose. Run right after the fleet has been stepped, before
-   * anything reads a node — the two shadow maps' boxes are off `body`.
+   * where the body stands, whether it is drawn, and the joints from the pose.
+   * Run right after the fleet has been stepped (`Game.updateWorld`) and
+   * before the rest of the fight, which can wreck a hull but never move one —
+   * which is why the wreck's paint is told (`wrecked`) rather than read here.
    *
    * A joint is written only where it differs from the pose: an assignment to
    * a `TransformNode`'s rotation is a world matrix to recompute whether the
@@ -184,12 +192,6 @@ export class VehicleView implements HullPicture {
     if (present !== this.shownPresent) {
       this.shownPresent = present;
       this.body.setEnabled(present);
-      this.body.isPickable = present;
-    }
-    const charred = !hull.alive;
-    if (charred !== this.charred) {
-      this.charred = charred;
-      this.rig.paint(charred);
     }
     const p = hull.pos;
     this.body.position.set(p.x, p.y, p.z);

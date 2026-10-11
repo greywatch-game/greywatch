@@ -133,7 +133,7 @@ export class GlassSystem {
 
   /**
    * Reusable result buffer. A sweep runs on every shot from every shooter, and
-   * the caller reads it and drops it — the same reason `CombatSystem` pools its
+   * the caller reads it and drops it — the same reason `CombatFx` pools its
    * tracers rather than allocating one per round.
    */
   private readonly hits: GlassHit[] = [];

@@ -1,8 +1,8 @@
 /**
- * HullWhips.ts — A hull's two whip antennae, bending: the one part of a
+ * HullWhips.ts — A hull's whip antennae, bending: the one part of a
  * vehicle's drawing that is a simulation of its own and has nothing downstream
  * of it.
- * Owns: both whips' springs (the bow each holds, its velocity and the lagged
+ * Owns: every whip's springs (the bow each holds, its velocity and the lagged
  * tip), the rate the mast feet are turning at, and the wind's clock for them.
  * Writes the antennae's two links (`setAntennaBend`) and nothing else.
  * Owns NO rule and reads no hull: it is CLIENT-only (`entities/VehicleView.ts`
@@ -13,7 +13,9 @@
  * C9 split the springs, which ARE on a muzzle's path, into the simulation
  * (`entities/HullSprings.ts`).
  * It never asks what KIND of hull it is drawing: a hull with no masts has an
- * empty `antennae`, and every loop here is over that list.
+ * empty `antennae`, and every loop here is over that list — and so is every
+ * spring array's length, sized off it once, so a kind with three masts is a
+ * third spring rather than a write past the end of a pair.
  */
 import { CONFIG } from "../config";
 import type { VehicleSpec } from "../config/vehicles";
@@ -48,16 +50,17 @@ export class HullWhips {
   private leanRateX = 0;
   private leanRateZ = 0;
   /**
-   * The two whips: the bow each spring is holding, its velocity, and the LAGGED
-   * angle the tip has actually got to. Long mast first, `VehicleRig.antennae`'s
-   * own order. Pictures, every one of them — see `step`.
+   * The whips: the bow each spring is holding, its velocity, and the LAGGED
+   * angle the tip has actually got to. One slot per mast, long mast first,
+   * `VehicleRig.antennae`'s own order and length. Pictures, every one of them
+   * — see `step`.
    */
-  private readonly whipX: [number, number] = [0, 0];
-  private readonly whipZ: [number, number] = [0, 0];
-  private readonly whipVelX: [number, number] = [0, 0];
-  private readonly whipVelZ: [number, number] = [0, 0];
-  private readonly tipX: [number, number] = [0, 0];
-  private readonly tipZ: [number, number] = [0, 0];
+  private readonly whipX: Float64Array;
+  private readonly whipZ: Float64Array;
+  private readonly whipVelX: Float64Array;
+  private readonly whipVelZ: Float64Array;
+  private readonly tipX: Float64Array;
+  private readonly tipZ: Float64Array;
   /** The idle stir's own clock. Held by whatever holds the world, as the wind is. */
   private windT = 0;
 
@@ -65,7 +68,15 @@ export class HullWhips {
     /** The rig's masts, longest first. May be empty. */
     private readonly antennae: readonly Whip[],
     private readonly spec: VehicleSpec,
-  ) {}
+  ) {
+    const n = antennae.length;
+    this.whipX = new Float64Array(n);
+    this.whipZ = new Float64Array(n);
+    this.whipVelX = new Float64Array(n);
+    this.whipVelZ = new Float64Array(n);
+    this.tipX = new Float64Array(n);
+    this.tipZ = new Float64Array(n);
+  }
 
   /**
    * A fresh hull's whips: straight and still, and the feet's attitude back at
@@ -79,14 +90,12 @@ export class HullWhips {
     this.leanZ = 0;
     this.leanRateX = 0;
     this.leanRateZ = 0;
-    for (let i = 0; i < 2; i++) {
-      this.whipX[i] = 0;
-      this.whipZ[i] = 0;
-      this.whipVelX[i] = 0;
-      this.whipVelZ[i] = 0;
-      this.tipX[i] = 0;
-      this.tipZ[i] = 0;
-    }
+    this.whipX.fill(0);
+    this.whipZ.fill(0);
+    this.whipVelX.fill(0);
+    this.whipVelZ.fill(0);
+    this.tipX.fill(0);
+    this.tipZ.fill(0);
   }
 
   /**
@@ -111,7 +120,7 @@ export class HullWhips {
   }
 
   /**
-   * One step of the two whips — the hull has just been stepped, and these are
+   * One step of the whips — the hull has just been stepped, and these are
    * the numbers it hands its picture (`HullPicture.flexed`).
    *
    * **This is the suspension's own argument one derivative further out, and it
@@ -122,7 +131,7 @@ export class HullWhips {
    * hand, and what a whip does with them is one damped spring per axis. A
    * Havok chain would need a kinematic body per link, a constraint per joint
    * and a transform read back per frame — for a picture, on a hull that is
-   * moved by `moveWithCollisions` and SNAPPED up to `stepHeight` by the ground
+   * moved by a sweep (`moveBody`) and SNAPPED up to `stepHeight` by the ground
    * probe, which is a teleport as far as a solver is concerned and cracks a
    * jointed chain every time a tank climbs a kerb. See `docs/vehicles.md`.
    *

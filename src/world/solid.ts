@@ -63,7 +63,8 @@
  * pull-in, the dismount's floor test and a crew's sightline; all pass their
  * hull to `RayWorld`'s `skip` now. `Vehicle.rayBox` used to read these same two
  * terms off the hull's body mesh and reads `Vehicle.present` instead (C8); the
- * mesh's `isPickable` follows that field, for this predicate. It is LAST so the
+ * body mesh is neither `solid` nor pickable now, the editor building no hulls.
+ * It is LAST so the
  * metadata rejection still short-circuits ahead of it for the ~1,800 visuals
  * that are not solid, and it must stay a flag rather than an `isEnabled()`
  * call, which walks the parent chain.

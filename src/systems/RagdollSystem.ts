@@ -776,9 +776,12 @@ export class RagdollSystem implements PhysicsClient {
    *
    * The ordering is deliberate: the rig is put back and hidden BEFORE
    * `ragdolling` is cleared, so a bot's view (`BotRig.follow`) never sees a
-   * half-restored rig. The frame after this it takes over an already-hidden
-   * rig that the bot's clock has already taken out of the world — harmless,
-   * and it means a new life has one case to handle rather than two.
+   * half-restored rig. The frame after this it takes over a rig in its rest
+   * pose, and draws it or not off the bot's own clock: almost always that has
+   * already taken the body out of the world (`death.hideTime`, under a second,
+   * against a corpse held for seconds), but a corpse EVICTED inside that window
+   * (`takeSlot`) is drawn standing at rest until the clock runs out — the pop
+   * eviction accepts. Either way a new life has one case to handle, not two.
    */
   private release(slot: Slot): void {
     const { subject, rig } = slot;

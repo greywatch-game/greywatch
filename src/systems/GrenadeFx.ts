@@ -17,9 +17,11 @@
  *
  * Split out of `GrenadeSystem` at X2.2 C3, on the line `CombatFx` drew one
  * system over: the simulation keeps the name, the pools and every rule, and
- * this file keeps everything a GPU is needed for. It imports two PURE helpers
- * from the simulation's module (`floorUnder`, `fireStrength`) and is handed
- * the instance by `Game` — it holds no other system.
+ * this file keeps everything a GPU is needed for. It imports two helpers from
+ * the simulation's module that hold no state of the simulation's —
+ * `fireStrength`, a pure function of a fire's age, and `floorUnder`, which
+ * casts against the world it is handed and writes only the buffers its caller
+ * passes in — and is handed the instance by `Game`; it holds no other system.
  *
  * - **A body follows its SLOT and starts over on a new FLIGHT.** A slot's
  *   `id` is monotonic and never reused, so a body that sees a different id in
@@ -75,11 +77,11 @@ import {
  * one set of moves rather than two that agree on the day they were written.
  */
 export class GrenadeBody {
-  readonly mesh: Mesh;
+  private readonly mesh: Mesh;
   /** The fuse tell — blinks faster as the fuse runs out. */
-  readonly pip: Mesh;
+  private readonly pip: Mesh;
   /** The bottle, when this flight is a molotov. Hidden otherwise. */
-  readonly bottle: MolotovMeshes;
+  private readonly bottle: MolotovMeshes;
   /** Which of the two is on screen, or null while hidden. */
   private shown: ThrowableId | null = null;
 

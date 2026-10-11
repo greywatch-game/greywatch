@@ -76,9 +76,10 @@ import {
  *   climb dropped you off the end or stopped you against a wall.
  * - **The foot runs on PAST the ground** (`rampDrop`) rather than stopping
  *   level with the tower's own floor, where it left 0.31 m of end grain. The
- *   ground probe would have stepped up that happily; `moveWithCollisions` is
- *   what refuses, because the collision capsule's ellipsoid bottoms out 0.05 m
- *   above the feet and a 0.31 m face is a wall to it. Hence "I have to jump".
+ *   ground probe would have stepped up that happily; the sweep (`moveBody`) is
+ *   what refuses, because the body's ellipsoid (`Player.ellipsoid`) bottoms
+ *   out 0.05 m above the feet and a 0.31 m face is a wall to it. Hence "I
+ *   have to jump".
  *
  * The rails are `guardSpec`s — `Build.guard`'s collider without its slab —
  * which is what makes them solid and stands them off the deck and the ramp;

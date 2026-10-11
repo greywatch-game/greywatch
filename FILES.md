@@ -713,14 +713,15 @@ src/
                         #   fields and the drawn pose (`hullFrame.ts`).
                         #   SIMULATION only — src/math, no mesh, no rig, no
                         #   scene; what it looks like is `VehicleView`, told
-                        #   through one `HullPicture` the four things a picture
+                        #   through one `HullPicture` the five things a picture
                         #   cannot poll. Knows nothing about a player
     VehicleView.ts      # One hull's PICTURE: the invisible body box (the
-                        #   rig's parent, the shadow maps' box, the editor's
-                        #   pick), the rig its kind's model builds, the belts'
-                        #   run, the whips and the paint. Copies `Vehicle.pose`
-                        #   onto the joints and follows `present`/`alive`;
-                        #   reads its hull and never writes it. Client only
+                        #   rig's parent and the shadow maps' box; never
+                        #   pickable), the rig its kind's model builds, the
+                        #   belts' run, the whips and the paint. Copies
+                        #   `Vehicle.pose` onto the joints, follows `present`
+                        #   and chars on the `wrecked` it is told; reads its
+                        #   hull and never writes it. Client only
     hullFrame.ts        # Where a hull's guns and sight ARE, no Babylon:
                         #   `HullFrame` (a kind's joint offsets and the three
                         #   extents the drive reads off the drawing, stated by
@@ -742,7 +743,7 @@ src/
                         #   are simulated on both sides) and nothing else;
                         #   handed the drive's acceleration, the ground's jolt
                         #   and the gear's load. No Babylon
-    HullWhips.ts        # The two whip antennae bending in the drive, the
+    HullWhips.ts        # The whip antennae bending in the drive, the
                         #   mast feet's rotation and the wind — the one part of
                         #   a hull's picture with springs of its own. Told each
                         #   step by `VehicleView`; nothing reads it back.

@@ -170,7 +170,7 @@ export class BattleView {
   }
 
   /** Frees every rig and empties the pool. Only `syncPool` reaches it. */
-  disposeAll(): void {
+  private disposeAll(): void {
     for (const rig of this.rigs) rig.dispose();
     this.rigs.length = 0;
     this.byBot.clear();

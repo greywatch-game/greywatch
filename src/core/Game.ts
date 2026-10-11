@@ -9024,9 +9024,9 @@ export class Game {
     // window covers what's ahead); outline ink thins with the same camera.
     // From the body's CENTRE, not its feet: the shadow window is placed around
     // this point and it should sit in the middle of the body it follows.
-    const mid = this.player.center;
+    const centre = this.player.center;
     this.shadowFocus
-      .copyFromFloats(mid.x, mid.y, mid.z)
+      .copyFromFloats(centre.x, centre.y, centre.z)
       .addInPlace(this.cameraSys.forwardToRef(this.shadowForward).scaleInPlace(8));
     this.updateSceneForCamera(dt, this.shadowFocus, this.player, this.combatants);
   }

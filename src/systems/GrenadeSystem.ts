@@ -186,10 +186,13 @@ interface Fire {
   rules: boolean;
 }
 
-/** One fire as the PICTURE reads it — `fireSlots`. `GrenadeFlight`'s terms. */
+/**
+ * One fire as the PICTURE reads it — `fireSlots`. `GrenadeFlight`'s terms.
+ * Where it burns is not here: the view is told that once, on `onIgnited`,
+ * and stands its flames there for the length of the burn.
+ */
 export interface FireSlot {
   readonly id: number;
-  readonly at: Vector3Like;
   readonly t: number;
 }
 

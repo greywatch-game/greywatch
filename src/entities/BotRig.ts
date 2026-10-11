@@ -15,7 +15,8 @@
  *   height while it sinks, so while `ragdolling` is set nothing here writes
  *   the root or the pose — two writers on one node is the trap.
  * - **A new `life` puts the rig back in its rest pose with
- *   `resetSoldierPose`**, ragdoll or not, at any distance — never a bare pose
+ *   `resetSoldierPose`** before either writer (`follow`, `catchUp`) poses it,
+ *   ragdoll or not, at any distance — never a bare pose
  *   write: a corpse leaves residue in the parent, the quaternion and the
  *   scaling, and a quaternion left behind freezes the bot for the round (the
  *   quaternion leak, `docs/deaths.md`).
@@ -109,16 +110,7 @@ export class BotRig implements RagdollSubject {
    */
   follow(eye: Vector3Like, viewDistance: number, freezeDistance: number): void {
     const bot = this.bot;
-    if (bot.life !== this.life) {
-      this.life = bot.life;
-      this.ragdolling = false;
-      // The authoritative restore: parents, positions, rotations, quaternions
-      // and scalings on every posed node — whatever the last life ended in,
-      // the pose a corpse settled in or the stride it was refused a fall
-      // mid-way through. At every distance, or a bot respawning past the
-      // freeze walks around in a dead man's shape until the camera closes in.
-      resetSoldierPose(this.rig);
-    }
+    this.syncLife();
     if (bot.launcher !== this.tube) {
       this.tube = bot.launcher;
       this.rig.launcher.setEnabled(this.tube);
@@ -144,6 +136,13 @@ export class BotRig implements RagdollSubject {
    * hull (`Bot.nudgeTo`) and killed on the same line.
    */
   catchUp(): void {
+    // The new life FIRST, here as in `follow`: a bot put back and killed in
+    // one `battle.update` reaches this before any `follow` has seen the new
+    // life, and a reset left for that `follow` would land after
+    // `RagdollSystem` had taken the joints — clearing `ragdolling` and
+    // reparenting them off the proxies under a slot still holding the corpse,
+    // which then stands to attention until it sinks.
+    this.syncLife();
     if (this.ragdolling) return;
     this.placeRoot();
     poseSoldier(this.rig, this.bot.solved);
@@ -164,6 +163,22 @@ export class BotRig implements RagdollSubject {
    */
   dispose(): void {
     this.rig.root.dispose(false);
+  }
+
+  /**
+   * A new `life` is a rig back in its rest pose, before anything writes a
+   * pose onto it — so BOTH writers call this first. The authoritative
+   * restore: parents, positions, rotations, quaternions and scalings on every
+   * posed node — whatever the last life ended in, the pose a corpse settled
+   * in or the stride it was refused a fall mid-way through. At every
+   * distance, or a bot respawning past the freeze walks around in a dead
+   * man's shape until the camera closes in.
+   */
+  private syncLife(): void {
+    if (this.bot.life === this.life) return;
+    this.life = this.bot.life;
+    this.ragdolling = false;
+    resetSoldierPose(this.rig);
   }
 
   /**

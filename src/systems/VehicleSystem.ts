@@ -374,7 +374,7 @@ export class VehicleSystem {
    * The nearest hull of `team` a body standing at `at` could get into: live,
    * with a SEAT still free, and inside `enterRadius` of its centre.
    *
-   * "Free" is either seat — `chooseSeat` (`entities/Vehicle.ts`) is what
+   * "Free" is either seat — `chooseSeat` (`entities/hullSeats.ts`) is what
    * decides which one a boarder takes, and the driver's is taken first.
    *
    * Team-locked on purpose. Stealing the other side's armour is a real design

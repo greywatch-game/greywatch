@@ -59,8 +59,8 @@
  * - It is a box to every ray (`rayBox`, through `RayWorld.hulls`), both
  *   questions: a round stops on it, a sightline breaks on it, and a player can
  *   climb onto the deck (`deckAt`). That is the whole of what a tank is to
- *   anything holding a rifle. A view's body MESH is `solid` too, for the
- *   editor's pick alone.
+ *   anything holding a rifle. A view's body MESH is no collider at all: never
+ *   `solid`, never pickable, the editor building no hulls.
  * - It is in every SWEEP — the player's and the other hulls' — because
  *   `rayBox` is what `RayWorld.bodyNear` hands a sweep as well as what a ray
  *   meets, behind the same gate (`hide` ends both).
@@ -580,6 +580,12 @@ export interface HullPicture {
   placed(): void;
   /** The main gun has fired (`fireGun`): the masts crack. */
   kicked(): void;
+  /**
+   * The hull has been destroyed (`wreck`): the charred paint goes on. Told
+   * rather than read off `alive`, because the fight that wrecks a hull runs
+   * AFTER the frame's view update, and a poll would paint it a frame late.
+   */
+  wrecked(): void;
   /**
    * The running gear's frame — what the belts and the wheels are drawn off.
    * `moved` is whether the hull moved or turned; `linkage` is true when
@@ -1762,8 +1768,11 @@ export class Vehicle implements Combatant, RayHull {
     // moment it most obviously does.
     this.flight?.stop();
     this.lift = 0;
-    // The charred repaint is the view's, off `alive`: a picture of a wreck is a
-    // reading of one, and nothing told here would say more than `alive` does.
+    // The charred repaint is the view's, TOLD on the same call: the battle,
+    // the grenades and the rockets that wreck a hull all step after the
+    // frame's `VehicleViews.update`, so a view reading `alive` would paint the
+    // wreck on the next frame and draw one frame of a live hull burning.
+    this.picture?.wrecked();
     this.wreckT = CONFIG.vehicles.wreckTime;
     this.onDestroyed();
   }
@@ -2213,8 +2222,9 @@ export class Vehicle implements Combatant, RayHull {
     const lateral = this.speed * yawRate;
     this.leanHull(dt, accel, lateral);
     // After the hull, never before it: the whips answer to how fast the node
-    // they hang off is turning, and that rate is a difference off the
-    // attitude `leanHull` has only just finished computing.
+    // they hang off is turning, and `HullWhips.step` takes that rate as a
+    // difference across steps of the attitude handed over here — which has
+    // to be the one `leanHull` has just finished computing, not last step's.
     this.flexed(dt, accel, lateral);
     this.sync();
   }
@@ -2373,7 +2383,8 @@ export class Vehicle implements Combatant, RayHull {
       // freeze-frame, and a wreck whose whips settle and then move in the
       // wind is the only thing on it still saying the world is running. After
       // the hull, never before it, for `update`'s reason: the rate they bend
-      // against is a difference `leanHull` has only just finished computing.
+      // against is `HullWhips.step`'s difference across the attitudes handed
+      // over, so what is handed over must be the one `leanHull` just set.
       this.flexed(dt, 0, 0);
     }
     this.sync();

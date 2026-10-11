@@ -409,20 +409,20 @@ frame, a pool that **refuses rather than stealing a live slot**, and a blast
 resolved against the **thrower's** target list fetched at detonation, so friendly
 fire is excluded by construction as in `CombatSystem.fire`.
 
-**The pouch holds a FRAG or a MOLOTOV, never both** (`entities/throwables.ts`,
-a kit row on every map, riding the join and the deploy like the weapon). **A
+**The pouch holds a FRAG or a MOLOTOV, never both** (`entities/throwables.ts`, a
+kit row on every map, riding the join and the deploy like the weapon). **A
 molotov is the same pool, the same arc and the same ray** — thrown on the frag's
 `throwSpeed`/`throwLift`/`gravity`, which the bots' measured band depends on —
 and it BREAKS on first contact into a FIRE: a second pool in `GrenadeSystem`
 that burns the thrower's target list on a tick, skips hulls, and is drawn (by
-`GrenadeFx`) in the world's one `FlameMaterial`. Three rules reach outside it. **A burn is
-`DamageKind` `"fire"`, which DROPS a body** — `RagdollSystem`'s test is "not a
-bullet or a burn". **A fire's held-open sound is keyed NEGATIVE**
-(`Game.fireSoundKey`), because `AmbienceSystem` spends 0 and up and an
-emitter's index is its identity. **In a match the burn is the authority's**:
-it arrives as a `blaze` event (`fire` is a gunshot on this wire) and a client
-draws it through `drawFire`, with `GrenadeSystem.predicted` stopping the
-thrower's own local bottle lighting a second one.
+`GrenadeFx`) in the world's one `FlameMaterial`. Three rules reach outside it.
+**A burn is `DamageKind` `"fire"`, which DROPS a body** — `RagdollSystem`'s test
+is "not a bullet or a burn". **A fire's held-open sound is keyed NEGATIVE**
+(`Game.fireSoundKey`), because `AmbienceSystem` spends 0 and up and an emitter's
+index is its identity. **In a match the burn is the authority's**: it arrives as
+a `blaze` event (`fire` is a gunshot on this wire) and a client draws it through
+`drawFire`, with `GrenadeSystem.predicted` stopping the thrower's own local
+bottle lighting a second one.
 
 **There is ONE blast in the game and one set of numbers describing it.**
 `blastAt` takes a `power`, the grenade passes 1 and is the reference exactly as
@@ -430,18 +430,18 @@ the rifle is for a weapon's `report`, and the tank shell is `blastPower` (1.85)
 of the same eight layers — which is why ONE recording is every explosion in the
 game, with `power` spent on it as playback rate (`docs/audio.md`). **`power`
 scales SIZE and COUNT, never TIME**, because the order the layers arrive in is
-what the effect is. **What a blast throws is
-keyed on what it went off ON** — one downward ray reading the same
-`metadata.surface` a bullet's impact reads — and `drawBlast` is the one place a
-blast is DRAWN (it raises `onBlast`, the only event the picture starts on),
-public because the authority raises one with nothing but a position on it.
-**Six of the layers are DRAWN** (`systems/BlastFx.ts`, `BlastShader`): every
-shape in the air is an opaque, lit, thin-instanced billow that is fire while
-hot and smoke once not, so the ink draws between billows — one draw call per
-blast, never built on the authority. **Both flying things are a SIMULATION and
-a PICTURE**: `GrenadeSystem` and `AntiTankSystem` hold their positions as
-plain `src/math` fields and import no Babylon, and `GrenadeFx`/`AntiTankFx`
-read their pools after each `update` and never write them (`docs/grenades.md`).
+what the effect is. **What a blast throws is keyed on what it went off ON** —
+one downward ray reading the same `metadata.surface` a bullet's impact reads —
+and `drawBlast` is the one place a blast is DRAWN (it raises `onBlast`, the only
+event the picture starts on), public because the authority raises one with
+nothing but a position on it. **Six of the layers are DRAWN**
+(`systems/BlastFx.ts`, `BlastShader`): every shape in the air is an opaque, lit,
+thin-instanced billow that is fire while hot and smoke once not, so the ink
+draws between billows — one draw call per blast, never built on the authority.
+**Both flying things are a SIMULATION and a PICTURE**: `GrenadeSystem` and
+`AntiTankSystem` hold their positions as plain `src/math` fields and import no
+Babylon, and `GrenadeFx`/`AntiTankFx` read their pools after each `update` and
+never write them (`docs/grenades.md`).
 
 → **[`docs/grenades.md`](docs/grenades.md)** — the bounce, resting and terrain
 backstop rules, the eight layers and the four rules holding them together, the
@@ -960,17 +960,17 @@ that same object, unchanged; `GameMap.world` keeps it beside the mesh:
 ### Bots: navigation, scaling, perception and squads
 
 **How many bots there ARE is the MAP's on both sides** (`MapLayout.perTeam`, 8
-on the five smaller maps, 24 on Sarab and Cinderhaven), and the two sides spend it differently. On a CLIENT
-the pool IS that roster: `BattleSystem.setRoster` rebuilds it when the number
-moves and `BattleView.syncPool` rebuilds the rigs beside it — from
-`buildRound`, never from `installMap` — which is the one place "built once and
-never disposed" bends. **The AUTHORITY builds the ceiling
-once** (`CONFIG.bots.maxPerTeam` a side, because a slot index is a bot index and
-a match rotates maps under one slot table) and `setFielded` takes the surplus
-out of each round, which is the third reason a bot can be `aside`. **Nothing
-else in this layer may know a size**: the squads, the radio's boards, the squad
-orders and the skill draw are all grown from the pool they are handed, and the
-think budget from the number of bodies actually in the round.
+on the five smaller maps, 24 on Sarab and Cinderhaven), and the two sides spend
+it differently. On a CLIENT the pool IS that roster: `BattleSystem.setRoster`
+rebuilds it when the number moves and `BattleView.syncPool` rebuilds the rigs
+beside it — from `buildRound`, never from `installMap` — which is the one place
+"built once and never disposed" bends. **The AUTHORITY builds the ceiling once**
+(`CONFIG.bots.maxPerTeam` a side, because a slot index is a bot index and a
+match rotates maps under one slot table) and `setFielded` takes the surplus out
+of each round, which is the third reason a bot can be `aside`. **Nothing else in
+this layer may know a size**: the squads, the radio's boards, the squad orders
+and the skill draw are all grown from the pool they are handed, and the think
+budget from the number of bodies actually in the round.
 
 `NavGrid` is built from the finished collider set at map load, and its node is a
 **surface** — a (cell, height) pair — not a cell. The cap is
@@ -985,18 +985,17 @@ recomputed: **bots read `nav.steer()`, never run their own pathfinding, and
 never sweep**. `ObstacleField` is the sub-cell half, and its
 push-out is a preference, never a veto.
 
-**`Bot` and `BattleSystem` are the SIMULATION and draw nothing** (`src/math`,
-no Babylon, no camera): a client's `BotRig` (one per bot, `BattleView`'s pool)
-owns the rig, follows the bot and never writes it, and **whether a body is in
-the world is `Bot.shown`, which the rig follows** — so the distance LOD and a
-ragdoll holding a corpse are the view's, and nothing about the camera reaches
-an outcome. **Three things carry the frame budget and undoing any costs ~10x
-draw calls or a permanent hitch**: the rig pool is built once per roster size
-and never disposed inside a round, a rig is fourteen merged meshes and two
-materials — one per
-JOINT, the albedo having moved into `uv2.x` off a kit palette exactly as the
-village's did — and AI is staggered round-robin
-at `CONFIG.bots.thinkRate`. **Everything a bot notices without seeing it is
+**`Bot` and `BattleSystem` are the SIMULATION and draw nothing** (`src/math`, no
+Babylon, no camera): a client's `BotRig` (one per bot, `BattleView`'s pool) owns
+the rig, follows the bot and never writes it, and **whether a body is in the
+world is `Bot.shown`, which the rig follows** — so the distance LOD and a
+ragdoll holding a corpse are the view's, and nothing about the camera reaches an
+outcome. **Three things carry the frame budget and undoing any costs ~10x draw
+calls or a permanent hitch**: the rig pool is built once per roster size and
+never disposed inside a round, a rig is fourteen merged meshes and two materials
+— one per JOINT, the albedo having moved into `uv2.x` off a kit palette exactly
+as the village's did — and AI is staggered round-robin at
+`CONFIG.bots.thinkRate`. **Everything a bot notices without seeing it is
 ray-free by construction** — cover is baked, never probed, and skill is one
 scalar drawn **per squad** from a seeded generator.
 
@@ -1087,25 +1086,23 @@ they reach and neither ever moves a PERSON**. **A driver's frame is not a
 body's**: `Player.update` is not called, so the hull's ground REPLACES the
 probe.
 
-**`Vehicle` is the simulation and a `VehicleView` its picture** (client-only,
-built per hull by `installMap`, taken down by `teardownMap`): **a view READS its
-hull and is TOLD only what cannot be polled**, through one `HullPicture`, and
-nothing it is told comes back — the authority's hulls have no picture.
+**`Vehicle` is the simulation and a `VehicleView` its picture**, TOLD through
+one `HullPicture` only what it cannot poll; **no simulation reads a node** —
+the muzzles are replayed off fields (`docs/vehicles.md`).
 
-**A hull is the one MOVING solid thing in the game**: every ray and every
-SWEEP meets it through `rays.hulls` and `rayBox()`, behind one gate
+**A hull is the one MOVING solid thing in the game**: every ray and every SWEEP
+meets it through `rays.hulls` and `rayBox()`, behind one gate
 (`Vehicle.present`, which `hide` ends), off its own fields and never its mesh,
-but it emits **no `WorldBox`** — so the nav
-graph, the cover bake, the obstacle field and the collision bake have never
-heard of it, and **bots walk through a parked tank as they walk through a
-corpse**. **Anything taking a hull out of its own way passes it as the query's
-`skip`** (`castBody`, `castRound`, `blocked`) — never a predicate
-(`world/solid.ts` forbids minting one) and never a write to the hull. **It is also
-the one TARGET answered by its collider rather than by a hit sphere** —
-`RayHit.hull` says which hull a cast stopped on, and **nothing reads
-`Vehicle.hitRadius` any more** — **which is why a hull's own ROUNDS leave that
-collider out too** (`ShotOptions.fromHull`, stated on the GUN rather than at
-the trigger).
+but it emits **no `WorldBox`** — so the nav graph, the cover bake, the obstacle
+field and the collision bake have never heard of it, and **bots walk through a
+parked tank as they walk through a corpse**. **Anything taking a hull out of its
+own way passes it as the query's `skip`** (`castBody`, `castRound`, `blocked`) —
+never a predicate (`world/solid.ts` forbids minting one) and never a write to
+the hull. **It is also the one TARGET answered by its collider rather than by a
+hit sphere** — `RayHit.hull` says which hull a cast stopped on, and **nothing
+reads `Vehicle.hitRadius` any more** — **which is why a hull's own ROUNDS leave
+that collider out too** (`ShotOptions.fromHull`, stated on the GUN rather than
+at the trigger).
 
 **A hull drives over PEOPLE**, which is what `crushSweep` is
 (`systems/hullRules.ts`, beside the two guns — ONE copy that both simulations
@@ -1120,21 +1117,11 @@ it is pickable.
 **A GUNNER may put a SIGHT up, and it is the one thing in a hull that reads the
 player's ADS** (`Game.opticUp`). It is a question about the SEAT and never
 about the kind, and `CameraSystem.place` takes the FIELD as a third argument
-for it. **A chase camera's look point may never sit on its own eye ray** —
-`CONFIG.vehicles.frameLift` is an ANGLE that fades out as the view looks down.
+for it.
 
 **BOTS CREW BOTH CHAIRS, and a crewman is not a bot with a vehicle attached.** A
 crewed bot leaves `Bot`'s FSM entirely (the bots section's `aside` rule) while
 keeping its LIFE, its POSITION slaved to the hull and its SQUAD'S ORDER.
-
-**No simulation reads a node — the authority builds no rig and no hull model
-to read one off.** A hull's three muzzles (`entities/hullFrame.ts`) and a bot's
-(`soldierPose.ts`) are the float32 node chains REPLAYED off fields, bit for
-bit. A hull's are read off its joints AS DRAWN, so the 1e-5 guards on the lean
-and the springs sit on a muzzle's path and are simulated on both sides: they
-live in the pose record (`HullPose`), which the view copies onto the nodes and
-never the reverse. The one node an outcome still reads is offline, the
-player's throw hand and launcher muzzle (`FINDINGS.md` 55).
 
 **A hull is HEARD whoever is in it**, pushed per FRAME by `Game.pushHullEngines`
 rather than opened on a mount, and **what drives the voice is asked of the HULL**
@@ -1149,12 +1136,12 @@ STEP the fleet owes `Sfx.enginesOff` and a wash of zero** (`Game.fleetStepped`,
 
 → **[`docs/vehicles.md`](docs/vehicles.md)** — the kinds, their trades and
 models, and every reader of `flies`; the hull and its view, and what a picture
-is told; the seats and the crew of two; the pilot's
-held bearing and the flight model; the collider's three answers; the crush's
-gates; the gunner's sight and the framing bug it found; the engine voices and
-the rotor's dust, spray and ripple; the plank, the climb and the leading-end
-sphere; the authority's unforced world matrix; the damage kinds, the shell,
-what a map and its GENERATOR owe, and what is not built.
+is told; the seats and the crew of two; the pilot's held bearing and the flight
+model; the collider's three answers; the crush's gates; the gunner's sight and
+the framing bug it found; the engine voices and the rotor's dust, spray and
+ripple; the plank, the climb and the leading-end sphere; the authority's
+unforced world matrix; the damage kinds, the shell, what a map and its GENERATOR
+owe, and what is not built.
 
 ### Anti-tank: the third slot, and the only thing a hull is afraid of
 
@@ -1561,14 +1548,15 @@ regions' two headers, and what is not built.
   wears which is the VIEWER's**, not the authority's — see the multiplayer
   section — so a kit table is indexed through `viewTeam` and a name or a colour
   through `teamLook`.
-- **Every ROUND is hitscan** — player and bots share `CombatSystem.fire()`, which
-  takes the shooter's target list (so friendly fire is excluded by construction
-  rather than by a team check inside) and the shooter's own `range`, which bounds
-  the wall pick and the near-miss sweep as well as the damage. **The PICTURE of a
-  round is `systems/CombatFx.ts`'s and the shot never draws**: `fire` raises
-  `onRound` once per round and `Game` wires it to the view, which the authority
-  never builds. Tracers, sparks, impact discs and bullet MARKS are pooled there;
-  add effects to a pool rather than allocating per shot. **The mark pool is the one whose slots outlive the shot**
+- **Every ROUND is hitscan** — player and bots share `CombatSystem.fire()`,
+  which takes the shooter's target list (so friendly fire is excluded by
+  construction rather than by a team check inside) and the shooter's own
+  `range`, which bounds the wall pick and the near-miss sweep as well as the
+  damage. **The PICTURE of a round is `systems/CombatFx.ts`'s and the shot never
+  draws**: `fire` raises `onRound` once per round and `Game` wires it to the
+  view, which the authority never builds. Tracers, sparks, impact discs and
+  bullet MARKS are pooled there; add effects to a pool rather than allocating
+  per shot. **The mark pool is the one whose slots outlive the shot**
   (`systems/BulletMarks.ts`): it is the one effect wearing a CEL material rather
   than `getEmissive`, because a hole still there a minute later has to be lit by
   the same map the wall is — which also puts it inside `WorldCulling`'s size

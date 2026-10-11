@@ -243,33 +243,6 @@ export function newSoldierJoints(): SoldierJoints {
   return solveSoldier(REST_POSE, j);
 }
 
-/** Copies one solved pose onto another. */
-export function copySoldierJoints(from: Readonly<SoldierJoints>, to: SoldierJoints): SoldierJoints {
-  to.bodyY = from.bodyY;
-  to.torsoX = from.torsoX;
-  to.torsoY = from.torsoY;
-  to.torsoZ = from.torsoZ;
-  to.headX = from.headX;
-  to.headY = from.headY;
-  to.headZ = from.headZ;
-  to.gunX = from.gunX;
-  to.gunY = from.gunY;
-  to.gunZ = from.gunZ;
-  to.gunPX = from.gunPX;
-  to.gunPY = from.gunPY;
-  to.gunPZ = from.gunPZ;
-  to.hipLX = from.hipLX;
-  to.hipLZ = from.hipLZ;
-  to.hipRX = from.hipRX;
-  to.hipRZ = from.hipRZ;
-  to.kneeL = from.kneeL;
-  to.kneeR = from.kneeR;
-  to.ankleL = from.ankleL;
-  to.ankleR = from.ankleR;
-  to.reload = from.reload;
-  return to;
-}
-
 /** How far into a reload the rifle is canted and the head is down, 0..1. */
 function reloadEnvelope(p: number): number {
   if (p <= 0 || p >= 1) return 0;

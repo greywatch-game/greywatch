@@ -228,7 +228,7 @@ export class BlastDebrisSystem implements PhysicsClient {
    * What this map's rubble is made of.
    *
    * Called from `installMap` with the environment the map was built against,
-   * the same place `GrenadeSystem.setEnvironment` tints the dust — and for the
+   * the same place `GrenadeFx.setEnvironment` tints the dust — and for the
    * same reason: a blast is only ever seen against the map it went off on.
    *
    * **The scorch is deliberately not in here.** It multiplies rather than
