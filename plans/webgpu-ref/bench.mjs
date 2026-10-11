@@ -37,8 +37,10 @@
  *   first is a failure, not noise: it fought a different fight, and its
  *   `fight` segment measured a different workload.
  * - The simulation core's own timing of its step in each group (`sim`,
- *   report version 14) and, for the fight, its five phases — the core's
- *   share of the tick, which the X2.5b Worker would take off this thread.
+ *   report version 14) and, for the fight, its phases — and (version 15)
+ *   the PAGE's half of the hop, `wait` and `sync`, beside them. Each run's
+ *   line says which thread the core stepped on (`sim worker` or `sim page`,
+ *   `BABYLON_EXIT.md` X2.5b); `--query simpage` asks for the page.
  * - `install`, from the URL to the first bench frame — `VERIFYING.md`'s free
  *   control: when the installs differ, the frame rates are not comparable.
  * - `--against f.json` (a previous `--out`): each group's median mean as a
@@ -142,6 +144,7 @@ for (const id of targets) {
           g[k] ? `${k} ${g[k].fps.toFixed(1)} fps p95 ${g[k].p95.toFixed(1)}` : `${k} -`,
         ).join("  ") +
         `  fight ${run.bench?.fight.hash ?? "?"}` +
+        `  sim ${run.simMode ?? "?"}` +
         (run.simcheck ? `  simcheck ${run.simcheck.checks} passes ${run.simcheck.mismatches} mismatches` : "") +
         (run.errors.length ? `  ! ${run.errors.length} errors` : ""),
     );
@@ -175,12 +178,16 @@ const simRows = targets.filter((id) => results[id].groups.fight?.simPhases);
 if (simRows.length) {
   const kids = Object.keys(results[simRows[0]].groups.fight.simPhases);
   console.log("\nthe core's step in the fight (median ms per stepped frame)");
-  console.log(`map              sim ${kids.map((k) => k.replace(/^sim/, "").padStart(10)).join("")}`);
+  console.log(
+    `map              sim ${kids.map((k) => k.replace(/^sim/, "").padStart(10)).join("")}` +
+      "      wait      sync   (the page's half of the hop, X2.5b)",
+  );
   for (const id of simRows) {
     const f = results[id].groups.fight;
     console.log(
       `${id.padEnd(13)} ${f.sim.toFixed(3).padStart(6)} ` +
-        kids.map((k) => (f.simPhases[k] ?? 0).toFixed(3).padStart(10)).join(""),
+        kids.map((k) => (f.simPhases[k] ?? 0).toFixed(3).padStart(10)).join("") +
+        (f.hop ? `${f.hop.wait.toFixed(3).padStart(10)}${f.hop.sync.toFixed(3).padStart(10)}` : ""),
     );
   }
 }
@@ -271,6 +278,7 @@ async function benchOnce(id) {
       reason: r.reason,
       version: r.version,
       seed: r.seed,
+      simMode: r.simMode ?? null,
       bench: r.bench,
       device: r.device,
       graphics: r.graphics,
@@ -330,6 +338,11 @@ function summarise(id, runs) {
         ? Object.fromEntries(
             Object.keys(per[0].sim.phases).map((k) => [k, med((g) => g.sim.phases[k] ?? 0)]),
           )
+        : null,
+      // The page's half of the hop (report version 15): the main thread's
+      // wait on the Worker and its mirror sync, per stepped frame.
+      hop: per.every((g) => g.sim?.hop)
+        ? { wait: med((g) => g.sim.hop.wait), sync: med((g) => g.sim.hop.sync) }
         : null,
       spread: (Math.max(...means) - Math.min(...means)) / median(means),
       runs: means,

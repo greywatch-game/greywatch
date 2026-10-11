@@ -44,12 +44,20 @@
  * keeps `Game`'s constructor synchronous and `window.__celshock` non-null the
  * moment it returns (`VERIFYING.md`), and makes the engine exactly the move
  * `havok` already made rather than a second, differently-shaped one.
+ *
+ * **The simulation's host is the third** (`BABYLON_EXIT.md` X2.5b): a Worker
+ * is a module that has to load and answer before the core in it can be
+ * handed a round, so `openSimHost` is awaited here and injected too. Unlike
+ * the other two it cannot fail the boot — no isolation, no growable shared
+ * memory or a Worker that does not come up all fall back to the core in this
+ * thread — and the console line it leaves says which one is running and why.
  */
 import "./src/ui/base.css";
 import { WebGPUEngine } from "@babylonjs/core";
 import { Game } from "./src/core/Game";
 import { disposeReleasedPipelines } from "./src/core/webgpuLeaks";
 import { loadHavok } from "./src/systems/PhysicsWorld";
+import { openSimHost } from "./src/sim/simHost";
 import { registerServiceWorker } from "./src/pwa/register";
 
 registerServiceWorker();
@@ -392,13 +400,27 @@ window.addEventListener("DOMContentLoaded", async () => {
     );
     throw err;
   }
+  // **Where the simulation runs** (`BABYLON_EXIT.md` X2.5b): its core in a
+  // Worker over shared memory when this page is cross-origin isolated, in this
+  // thread otherwise — chosen here, awaited (a Worker's module has to load and
+  // say it is up) and INJECTED like the engine, so the constructor stays
+  // synchronous. It never fails the boot: every way a Worker cannot be had
+  // falls back to the page, and the console says which and why.
+  bootStage("Starting the simulation");
+  const query = new URLSearchParams(location.search);
+  const sim = await openSimHost({
+    simpage: query.has("simpage"),
+    simcheck: import.meta.env.DEV && query.has("simcheck"),
+    simcopy: query.has("simcopy"),
+  });
+  console.info(`[sim] the simulation runs in ${sim.mode === "worker" ? "a Worker" : "the page"}: ${sim.why}`);
   // The constructor is the longest step on a phone and a single synchronous
   // block, so its name has to be PAINTED before it starts or it is never seen:
   // the plate would say "graphics device" through seconds of building a world.
   bootStage("Building the world");
   await painted();
   try {
-    new Game(canvas, havok, engine);
+    new Game(canvas, havok, engine, sim);
   } catch (err) {
     // Re-thrown: the message is for the player, the console is for whoever
     // has to work out which of a hundred systems failed to construct.

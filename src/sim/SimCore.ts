@@ -37,8 +37,11 @@
  * `startRound`, `addPlayer`, `removePlayer`, `releaseWorld` mark it stale
  * rather than filling it, so a host that submits three reports between two
  * steps pays for one fill, not four — and the page's views read that copy
- * through `src/sim/mirror.ts`, never an object of this class. The page lets
- * the world go between rounds with `releaseWorld`.
+ * through `src/sim/mirror.ts`, never an object of this class — through its
+ * HOST (`src/sim/simHost.ts`, `BABYLON_EXIT.md` X2.5b), which holds this class
+ * in the page's own thread or in a Worker (`src/sim/simWorker.ts`) and hands
+ * the page the frame and the news as numbers either way. The page lets the
+ * world go between rounds with `releaseWorld`.
  *
  * **Everything it has to SAY leaves through one event ring and nothing else**
  * (`src/sim/events.ts`, `BABYLON_EXIT.md` X2.5a C2). There is no outward
@@ -203,6 +206,7 @@ const SIM_VEHICLES = SIM_PHASES.indexOf("vehicles");
 const SIM_BOTS = SIM_PHASES.indexOf("bots");
 const SIM_GRENADES = SIM_PHASES.indexOf("grenades");
 const SIM_ANTITANK = SIM_PHASES.indexOf("antiTank");
+const SIM_PUBLISH = SIM_PHASES.indexOf("publish");
 
 /**
  * Everything a round is, as its HOST hands it over: the map, its world as data
@@ -291,31 +295,6 @@ export interface SimCoreOptions {
    */
   reportGap?: number;
 }
-
-/**
- * **The page's door into a core** (`BABYLON_EXIT.md` X2.5a C5): the calls a
- * host that reads the round off the FRAME makes, and the frame — and no
- * object of the core's. `core/Game.ts` holds its core as this type, so
- * nothing in that file can name the core's bots, flags, hulls, pools or board:
- * the compiler is the proof that the offline page reads `frame` and the ring
- * and nothing else. It is also the whole of what X2.5b has to carry across a
- * Worker boundary: each method a message, `frame` and `drain` what comes back.
- */
-export type SimDoor = Pick<
-  SimCore,
-  | "startRound"
-  | "removePlayer"
-  | "firstSlotOf"
-  | "releaseWorld"
-  | "submit"
-  | "step"
-  | "timeSteps"
-  | "drain"
-  | "frame"
-> & {
-  /** `SimCore.addPlayer`, without the `SimPlayer` it hands an in-process host. */
-  addPlayer(slot: number, team: Team): void;
-};
 
 export class SimCore {
   /** Whether a person's round is rewound — `SimCoreOptions.rewind`. */
@@ -930,8 +909,12 @@ export class SimCore {
       t.start = clock();
     }
     const live = this.advance(dt);
+    if (clock) this.openPhase(SIM_PUBLISH);
     this.publish();
-    if (clock) t.total = clock() - t.start;
+    if (clock) {
+      this.closePhase(SIM_PUBLISH);
+      t.total = clock() - t.start;
+    }
     return live;
   }
 

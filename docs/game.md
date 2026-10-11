@@ -22,8 +22,14 @@ the result is available to the same frame's kill handling.
 
 ## Offline, the round is the core's
 
-`Game` holds a `SimCore({ hostHoldsRespawn: true, publish: true })` (`core`)
-and simulates no round of its own. **Three doors, and no fourth**:
+`Game` holds the simulation core through its HOST (`core`, a `SimHost` —
+`src/sim/simHost.ts`, `BABYLON_EXIT.md` X2.5b) and simulates no round of its
+own. **The core is in a WORKER wherever the page is cross-origin isolated**
+(`WorkerSimHost`, `src/sim/simWorker.ts`) **and in this thread otherwise**
+(`PageSimHost`, X2.5a's arrangement exactly) — chosen by `main.ts` before
+`Game` is built and injected as `havok` and `engine` are, the boot's console
+line saying which and why. Either way it is a `SimCore({ hostHoldsRespawn:
+true, publish: true, rewind: true })`. **Three doors, and no fourth**:
 
 - **`ask`** submits one of the local player's acts as a `SimCommand`
   (`src/sim/commands.ts`) — the walk every frame (`move`, after
@@ -34,9 +40,20 @@ and simulates no round of its own. **Three doors, and no fourth**:
   `mount` naming the hull the player is in), a dismount, the hull's guns, and
   — every frame a seat is held — the hull or the ring this page PREDICTS
   (`drive`/`gun`, `reportHull`/`reportGun`, X2.5a C4b). Every one is trusted;
-  the core still refuses what its own state makes impossible.
+  the core still refuses what its own state makes impossible. **`ask`
+  returns nothing**: in the page an act's news is drained inside the call,
+  from a Worker it arrives with the next step or `pumpSim`, and nothing may
+  wait to find out which (below).
 - **`core.step(dt)`** once a frame, in `updateWorld` — in every state that
-  steps the world (`playing`, `dying`, `bench`) and none that holds it.
+  steps the world (`playing`, `dying`, `bench`) and none that holds it. **From
+  a Worker the step OVERLAPS the frame**: `step` takes in the step started a
+  frame ago (spinning for it only if the Worker has not finished — the
+  profiler's `simWait`) and starts this one, so the frame read after it is
+  the PREVIOUS step's and `live` is that step's answer. On a frame that does
+  not step, `tick` calls **`pumpSim`** after the state's arm instead: what
+  came back is taken in, synced and drained, and what the frame asked is
+  sent — which is how the deploy screen's `deploy` reaches the core and its
+  `spawned` comes back.
   **Every call made on the core is followed by `simSync`** — the step, every
   `ask`, and the round's own calls (`startRound`, `addPlayer`,
   `removePlayer`, `releaseWorld`) — which reads the frame into the page's
@@ -47,7 +64,9 @@ and simulates no round of its own. **Three doors, and no fourth**:
   own sync follows within the frame. The core fills the frame at the end of
   each step and lazily on the first read after any other call
   (`SimCore.frame`), so a frame pays one fill for the step and one per
-  non-report ask, not one per call.
+  non-report ask, not one per call. A sync is skipped when the host's
+  `version` has not moved since the last — from a Worker, every `ask` between
+  two steps.
 - **`drainSim`** after every call made on the core, which hands every event the
   core wrote to **`onSimEvent`**, one switch, in emission order. It is
   presentation only — the tracer, the corpse, the killfeed line, the marker,
@@ -69,6 +88,20 @@ built off a `botDown` finds the rig caught up to the frame the death was in,
 and the fleet is posed before it so every event that names a hull finds it
 where the step left it; the views update AFTER it so a gun the core fired this
 step has kicked (`Vehicle.mirrorShot`).
+
+**Nothing the page does depends on WHEN the core answers** (X2.5b), which is
+the whole of what made one code path serve both hosts. `SimCore.submit`'s
+boolean is the authority's courtesy and the page no longer reads it: what it
+predicts it decides off its own state, as a match's client does — the main
+gun off its own hull's `gunReady`, the cupola gun off its own `fireMg` (the
+core's clocks are never behind the page's, having stepped first, so what the
+page fires the core fires), a thrown grenade booked off the pouch BEFORE the
+ask and given back by the core's `ordnanceRefused` (`Player.returnGrenade`),
+a mine heard going down as in a match. **A person's round is REWOUND**
+(`rewind`): it carries the frame it was aimed at (`renderTime`, the synced
+frame's `time`), so a shot from a page drawing a step behind the core is
+resolved against the picture, by the authority's own rule. In the page the
+picture IS the core's present and the rewind moves nobody, bit for bit.
 
 **The hull under a DRIVER is this page's prediction, as in a match** (X2.5a
 C4b): `driveFor` steps it off the sticks inside that `vehicles.update`, and
@@ -117,14 +150,31 @@ view reads is still asked through one accessor each (`rosterRead`,
 `simGrenades`, `simAntiTank`) — the mirror offline, the page's own netplay
 mirror or prediction in a match — and `flags` is `conquest` on both.
 
-**The proof is the TYPE.** `core` is held as a `SimDoor` (`SimCore.ts`): the
-host calls and `frame`, nothing else — so no object of the core's is nameable
-in `Game.ts`, and `npm run typecheck` is the assertion that the offline page
-reads the frame and the ring and nothing else. The one place the core is held
-whole is the DEV mirror check's closure, built inside the `import.meta.env.DEV`
-branch a production bundle folds away.
+**The proof is the TYPE.** `core` is held as a `SimHost`: the host calls and
+`frame`, nothing else — so no object of the core's is nameable in `Game.ts`,
+and `npm run typecheck` is the assertion that the offline page reads the
+frame and the ring and nothing else. The one place the core is held whole is
+the DEV mirror check's closure (`SimHost.local`, null from a Worker), built
+inside the `import.meta.env.DEV` branch a production bundle folds away.
 
-**Two URL switches hold the boundary to account.** `?simcheck` (DEV builds
+**What crosses to a Worker is numbers in shared memory, and nothing crosses
+by reference** (`src/sim/simHost.ts`'s header has the handshake): commands
+are encoded into one of two growable `SharedArrayBuffer`s
+(`commandCodec.ts`, `ShotCommand.weapon` narrowed to the five numbers
+resolving a round reads), each operation's frame and news are published into
+one of two more (`publication.ts`, the layout derived from `newFrame()` so a
+field added to the frame crosses by itself), and the signal is an `Atomics`
+store the Worker waits on. The page never sends an operation before it has
+taken in the last, which is what makes each buffer one side's at a time. A
+posted message is a ROUND's cost — `startRound` (the map named by id, since a
+`MapDef` holds import thunks), `addPlayer`, `removePlayer`, `releaseWorld` —
+and the page spins for its answer, as it waited for the in-page call. The
+page's readers keep the frame they were synced with for the whole frame,
+which is why there are two publications: the Worker writes the other one.
+
+**Three URL switches hold the boundary to account, and all three put the core
+in THIS thread** (`openSimHost`): `?simpage` asks for it outright, and the two
+below need it. `?simcheck` (DEV builds
 only — `simCheck` is a module function, and the production bundle carries
 none of it) runs `src/sim/simCheck.ts` after every drain: every reader against
 the live object it stands for, with `Object.is` — every bot field and every
@@ -133,8 +183,9 @@ pools, the board, the frame's panes AND this page's glass, and the target list
 in order — tallying on `window.__simcheck` and logging each mismatch as a
 console error. `?simcopy` (every build) round-trips every command, every frame
 and every drain through `structuredClone` before the other side reads it —
-the transfer X2.5b's Worker makes, rehearsed in one process; the benchmark's
-fight hash under it must be the plain one. `server/corecheck.ts` runs the same
+the clone boundary rehearsed in one process (a clone of a view onto shared
+memory shares it, so the rehearsal is the in-page core's); the benchmark's
+fight hash under it, and from a Worker, must be the plain one. `server/corecheck.ts` runs the same
 check headless, with a person in it.
 
 **A frame costs a copy, and the authority does not pay it**: `publish` is

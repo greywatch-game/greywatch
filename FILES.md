@@ -276,8 +276,10 @@ index.html          # The head, and NO interface CSS beyond the two things shown
                     #   are hashed, and a drawn one read as clip art).
 main.ts             # Bootstrap. Imports src/ui/base.css FIRST. Awaits the two
                     #   things the game cannot start without — the WebGPU device
-                    #   and the Havok WASM — then builds the Game, which takes
-                    #   both as arguments. Owns the boot screen: names each
+                    #   and the Havok WASM — and the simulation's host
+                    #   (`openSimHost`: a Worker, or the page, never a
+                    #   failure), then builds the Game, which takes all three
+                    #   as arguments. Owns the boot screen: names each
                     #   await on its load plate, paints before the constructor,
                     #   fades it on the first drawn frame, or fills plate and
                     #   note with one of the four failures.
@@ -287,7 +289,9 @@ vite.config.ts      # The client build, and the two plugins only it can hold:
                     #   three per map) and the build-only service worker
                     #   substitution (src/pwa/sw.js's PRECACHE, split
                     #   immutable/mutable, into dist/sw.js). Also: never
-                    #   inline a sound, and optimizeDeps.exclude for Havok.
+                    #   inline a sound, optimizeDeps.exclude for Havok, the
+                    #   COOP/COEP pair on both servers and the ES-module
+                    #   Worker format (X2.5b).
                     #   Outside tsconfig's include, so it stays thin
 vite.server.config.ts # Builds server/ into dist-server/, for
                     #   `npm run build:server`, `simulate` and `corecheck` — and with
@@ -442,18 +446,21 @@ src/
                         #   normals and UVs. createBox scales one cached cube
   core/
     Game.ts             # Orchestrator + main loop + all the PAGE's wiring.
-                        #   Simulates no round: offline it holds a SimCore
-                        #   (`core`), submits the player's acts (`ask`), steps
+                        #   Simulates no round: offline it holds the core
+                        #   through its SimHost (`core` — in a Worker or this
+                        #   thread, X2.5b), submits the player's acts (`ask`), steps
                         #   it once a frame and draws what it said through ONE
                         #   switch (`onSimEvent`; `onNetEvent` is a match's
                         #   twin, both ending in the same player methods). The
                         #   player's own hull is PREDICTED here and reported
                         #   (`reportHull`/`reportGun`), its trigger asked after
                         #   the core's step (`pullHullTrigger`). Holds the
-                        #   core as a `SimDoor` and reads it only off its
+                        #   core as a `SimHost` and reads it only off its
                         #   FRAME (`simSync` into `sim`, src/sim/mirror.ts);
-                        #   `?simcheck` (DEV) and `?simcopy` hold that to
-                        #   account.
+                        #   depends on nothing about WHEN it answers (`ask`
+                        #   returns nothing; `pumpSim` on a frame that does
+                        #   not step); `?simcheck` (DEV) and `?simcopy` hold
+                        #   that to account.
                         #   Constructor is construction only; wiring is
                         #   wireSystems (+ subject methods),
                         #   installDomListeners, wireScreens; tick dispatches
@@ -573,7 +580,9 @@ src/
                         #   at all while it is off. Allocates nothing while
                         #   recording (GC is what it exists to catch). Game
                         #   brackets the phases it already sequences, and
-                        #   `file`s the core's own step timing under `sim`; no
+                        #   files the core's own step timing under `sim`, a
+                        #   root (`fileTiming`, one call), and the wait for a
+                        #   Worker under `simWait` (`fileWait`); no
                         #   system has heard of it. Handle: `window.__profile`.
                         #   The RECORDER only: lends the ring to profileReport
                         #   at a capture. A benchmark's ring is sized to its
@@ -1964,7 +1973,7 @@ src/
                       #   `drain`s after every call. With `publish` it fills
                       #   `frame` (frame.ts) at the end of every step and on
                       #   the first read after any other call (lazy);
-                      #   `SimDoor` is the page's whole view of it (the host
+                      #   the page reaches it through simHost.ts (the host
                       #   calls + `frame`); `releaseWorld` is a host's teardown
     frame.ts          #   SimFrame: the round as plain typed arrays, sized per
                       #   pool and filled without allocating (`fillFrame`, the
@@ -1987,9 +1996,36 @@ src/
                       #   and every joint, flags, persons, hulls, pools, board,
                       #   panes, the target list. A module function, so a
                       #   production bundle drops it whole
+    simHost.ts        #   The page's door into the core, wherever it runs
+                      #   (X2.5b): `SimHost`, PageSimHost (the core in this
+                      #   thread, X2.5a exactly) and WorkerSimHost (in a
+                      #   Worker over shared memory: the handshake, the two
+                      #   command buffers, the two publications, the spin a
+                      #   step's take-in may cost — `waitMs`), and
+                      #   `openSimHost`, the boot's choice (isolated + growable
+                      #   SAB, else the page; `?simpage`/`?simcheck`/`?simcopy`)
+    simWorker.ts      #   The Worker: one SimCore, one operation at a time
+                      #   (`Atomics.wait` between them; a round's call returns
+                      #   to the event loop for its posted message), commands
+                      #   decoded in, the frame and the drain published out.
+                      #   A failure is marked in the control block, never a hang
+    hostWire.ts       #   The words both threads share: the control block's
+                      #   slots, the operation codes, the round-call messages.
+                      #   Its own module so the Worker never imports simHost.ts
+    commandCodec.ts   #   A SimCommand as float64s: `encodeCommand` (page),
+                      #   `CommandDecoder` (Worker, one held object per kind).
+                      #   Allocation-free both sides, bits preserved; `CODE`
+                      #   is a Record over the union, so a new kind must cross
+    publication.ts    #   The frame + one drain in a growable SharedArrayBuffer:
+                      #   the layout DERIVED from newFrame() (leaves, scalars,
+                      #   sections) with per-round lengths and a version in
+                      #   the header; PublicationWriter (Worker) and
+                      #   PublicationReader (page: a SimFrame of views, events
+                      #   appended to a ring). Double-buffered by the caller
     commands.ts       #   The SimCommand vocabulary `SimCore.submit` takes:
                       #   the gameplay ClientMessages after validation, with
-                      #   host-resolved data (WeaponSetup, kit pouch sizes).
+                      #   host-resolved data (ShotWeapon's five numbers, kit
+                      #   pouch sizes).
                       #   A person's hull is REPORTED (drive/gun), never
                       #   steered — no command carries a stick. Plain data only
     events.ts         #   The event ring: the vocabulary (EV), each kind's
@@ -2006,7 +2042,8 @@ src/
                       #   mesh): the collider half of MapBuilder and nothing
                       #   else. Loads nothing; the host does
     LagComp.ts        #   Position history + the rewind around a shot, kept
-                      #   only under `SimCoreOptions.rewind` (the authority's).
+                      #   only under `SimCoreOptions.rewind` (the authority's,
+                      #   and since X2.5b the offline core's).
                       #   `resolve` takes a callback so the restore cannot be
                       #   skipped
     reportedLanding.ts #  The crash of a hull a PERSON flies (FINDINGS 60):
@@ -2089,7 +2126,9 @@ src/
     sw.js               # The service worker, as a TEMPLATE — not typechecked,
                         #   never imported; vite.config.ts emits dist/sw.js.
                         #   Network-first for the navigation, cache-first for
-                        #   the content-hashed rest
+                        #   the content-hashed rest; every response it answers
+                        #   carries the COOP/COEP pair (`isolated`), so the
+                        #   installed app stays isolated offline (X2.5b)
   shaders/
     CelShader.ts        # Custom cel ShaderMaterial. Both stages WGSL; six
                         #   defines, six UBO layouts. writePaletteIndex stamps

@@ -22,7 +22,8 @@
  *   anything calls the core again.
  * Never: a gameplay path. It is the oracle that says the readers lost
  * nothing, so the frame can cross a Worker boundary (X2.5b) with nothing
- * left behind on the far side.
+ * left behind on the far side. It needs the core in THIS thread, which is
+ * why `?simcheck` puts it there (`openSimHost`).
  */
 import { JOINT_KEYS } from "../entities/soldierPose";
 import { DRIVER, GUNNER, type CrewSeat } from "../entities/hullSeats";

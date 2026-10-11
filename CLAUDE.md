@@ -242,11 +242,21 @@ this step's flags. **The VIEWS meet the core's EVENTS in `src/core/Game.ts`**,
 which simulates no round: it submits the player's acts (`SimCore.submit`),
 steps the core once a frame, hears it through ONE switch (`onSimEvent`,
 `onNetEvent`'s twin — both end in the same methods for the player) and **reads
-it through `SimDoor` and the FRAME's mirrors and nothing else**
-(`src/sim/frame.ts`, `mirror.ts`): a view wanting what the frame lacks owes the
-frame a field and `simCheck` a line, never a reach into the core. So "systems
-never import each other" holds on the main thread, and new cross-system
-behaviour goes in one of the two wirings. Type-only imports are fine — erased.
+it through its HOST (`src/sim/simHost.ts`) and the FRAME's mirrors and nothing
+else** (`src/sim/frame.ts`, `mirror.ts`): a view wanting what the frame lacks
+owes the frame a field and `simCheck` a line, never a reach into the core. So
+"systems never import each other" holds on the main thread, and new
+cross-system behaviour goes in one of the two wirings. Type-only imports are
+fine — erased. **Offline the core runs OFF THE MAIN THREAD**, in a Worker over
+shared memory (`BABYLON_EXIT.md` X2.5b), wherever the page is cross-origin
+isolated — and in the page otherwise, or under `?simpage`, `?simcheck` or
+`?simcopy`, by ONE code path: **nothing on the page may depend on WHEN the
+core answers** (`ask` returns nothing; a step's frame is the PREVIOUS step's
+from a Worker; what the page predicts it decides off its own state and the
+core's refusal takes back), and **nothing crosses but numbers** — commands
+encoded into shared float64s (`commandCodec.ts`), the frame and the news
+published into views both threads hold (`publication.ts`), a posted message
+only for a round's own calls. The authority runs the same core IN-PROCESS.
 **Offline the local `Player` is a PREDICTION exactly as in a match** — its
 sweep, its ground, its stance, the HUD's regen and, in a hull, the DRIVE — and
 everything it decides is the core's, answered as events (`docs/game.md`).
@@ -1318,12 +1328,13 @@ first exception is `render`: `FrameProfile.hookRender` hangs four spans off the
 SCENE's own observables when the profiler arms and takes them off when it
 disarms, so no system knows about those either.
 
-**The second is `present`, and it is the one phase that is NOT inside `frame`.**
+**The second is `present`, and it is NOT inside `frame`.**
 The engine's `endFrame` — closing the render pass and `queue.submit` — runs
 after `tick` has RETURNED, so no line in `Game.ts` could hold it and
 `hookEngine` hangs it off the engine's own end-of-frame notification. **There
-are therefore TWO ROOTS** (`ROOTS`, derived from `PHASES` minus `PARENT_OF` so
-it cannot drift, and shipped in every capture as `ProfileReport.roots`). **What
+are therefore THREE ROOTS with `sim` below** (`ROOTS`, derived from `PHASES`
+minus `PARENT_OF` so it cannot drift, and shipped in every capture as
+`ProfileReport.roots`). **What
 is left over is the answer, not a gap**: `frame` + `present` short of the wall
 clock is the rAF wait, the compositor, the panel — and naming it would be
 claiming to know which.
@@ -1332,8 +1343,13 @@ claiming to know which.
 (`SimCoreOptions.timing`), offline the round being one `SimCore.step` with no
 line of `Game.ts` between its phases — into `frame.timing`, only while
 `timeSteps` is on (`Game` keeps it with `FrameProfile.armed`) and **never for
-an outcome** — and `Game` files it (`FrameProfile.file`). **`sim` is
-`world`'s today, shaped to be a THIRD ROOT** when X2.5b moves the core off it.
+an outcome** — and `Game` files it (`FrameProfile.fileTiming`). **`sim` is a
+THIRD ROOT** (X2.5b): from a Worker it runs on another thread, its clock moved onto
+the page's `timeOrigin`, and it is filed against the frame that TAKES IN its
+answer; every capture says which thread it ran on (`simMode`). The page's
+half of the hop is `world`'s — `simWait` (blocked on a Worker that had not
+finished) and `simSync` (the frame into the mirrors) — and **the
+no-allocation rule holds on BOTH threads**.
 
 **THE BENCHMARK IS A URL** (`?bench=<map>`, `bench/BenchScript.ts`): the bank's
 vantages at eight headings, a path through the densest quarter and a bot-only
@@ -1379,8 +1395,17 @@ offline. Four files carry it — `public/manifest.webmanifest`, `public/icons/`,
 it exists. **There are TWO navigable documents now**, the game and
 `public/profile_viewer.html`, and a navigation is answered with the shell unless
 its path is in `sw.js`'s `DOCS` — a second page not listed there works online
-and silently becomes the game offline. Three rules are about the DEVICE rather than the game: a tap arrives
-twice (the second as a synthesized mouse event, disbelieved for
+and silently becomes the game offline. **Beside `DOCS` and of the same shape:
+every response owes COOP `same-origin` and COEP `require-corp`**, which is what
+gives the page `SharedArrayBuffer` and the simulation its Worker — stated in
+`vite.config.ts` (both servers), the nginx template (the server level AND every
+location with an `add_header` of its own) and `sw.js` (every response it
+answers, cache and network alike, or the installed app loses isolation offline
+alone). Losing it is not an error: the core quietly moves back onto the main
+thread, so **a new cross-origin load owes `require-corp` a look first**.
+
+Three rules are about the DEVICE rather than the game: a tap arrives twice
+(the second as a synthesized mouse event, disbelieved for
 `CONFIG.touch.mouseGrace`), a mouse that has not MOVED is not a mouse being used,
 and the trigger's gate takes `touchActive` beside the pointer lock and the pad.
 
@@ -1395,8 +1420,9 @@ five to ten refreshes.
 
 → **[`docs/pwa.md`](docs/pwa.md)** — the version hash over names *and* contents,
 the `no-cache` requirement, the two assumptions that made a deploy take five
-launches, and the phone-shaped details (fullscreen on the document element,
-and why no screen is scaled to a short viewport any more).
+launches, the isolation headers' four places, and the phone-shaped details
+(fullscreen on the document element, and why no screen is scaled to a short
+viewport any more).
 
 ### Multiplayer: the server is the authority, and a slot is a slot
 
@@ -1411,8 +1437,10 @@ every target is rewound and `CombatSystem.fire` runs again on the server, the
 only thing that deals damage. **A client predicts its own MOVEMENT, its own
 health regeneration and — in a hull — its own DRIVE**, each validated on
 arrival; everything else a client steps is DRESSING. **Offline the page is that
-same client** of a core in its own process, its commands trusted rather than
-validated and its respawn clock its own (`hostHoldsRespawn`).
+same client** of a core in a Worker (or, without isolation, in its own
+thread), its commands trusted rather than validated, its respawn clock its own
+(`hostHoldsRespawn`) and a person's round rewound to the frame it drew
+(`rewind`), as the authority rewinds a peer's.
 
 **The slot table is forty-eight slots, built once, never resized or reordered**
 — `CONFIG.bots.maxPerTeam` a side, on every map, because a match rotates maps
@@ -1636,7 +1664,11 @@ regions' two headers, and what is not built.
   depends on the camera. `npm run simulate -- <map> 1 2 <seed>` prints a
   `fight` hash the same seed must reproduce.
 - TypeScript is strict with `noUnusedLocals`/`noUnusedParameters` — the typecheck
-  fails on dead variables.
+  fails on dead variables. **`useDefineForClassFields` is FALSE and must stay
+  false**: under ES2022's [[Define]] default a field declared without an
+  initializer (`x: number;` — every `Vector3`) starts as `undefined`, and V8
+  boxes every number stored into it afterwards, at every tier
+  (`docs/profiling.md`). Nothing fails; the game just allocates on every store.
 - `Bot` holds a small FSM and drives a joint rig built by `SoldierModel` (invisible
   root + `TransformNode` joints). Animation is procedural, so a new behavior means new
   FSM states, never new clips.

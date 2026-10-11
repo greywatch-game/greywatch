@@ -7,7 +7,8 @@
  * is `profilePhases.ts`'s and what a capture SAYS is `profileReport.ts`'s,
  * which this hands a `ProfileRing` at the moment of a capture. Owns NO game
  * state and reads none: `Game` brackets the phases it already sequences,
- * files the simulation core's own timing of its step (`file`), and pushes
+ * files the simulation core's own timing of its step (`fileTiming`, and the
+ * page's wait for it, `fileWait`), and pushes
  * the per-frame context, so nothing here imports a system and no system has
  * heard of this.
  *
@@ -608,6 +609,8 @@ export class FrameProfile {
   private mapId = "?";
   /** The round's seed, pushed by `Game` like the map. See `ProfileReport.seed`. */
   private seed: number | null = null;
+  /** Where the simulation runs, pushed by `Game` once. See `ProfileReport.simMode`. */
+  private simMode: "worker" | "page" | null = null;
   /**
    * The labels a benchmark's rows may carry, and the one the frame being
    * recorded carries (an index into the list plus one, 0 for none). Pushed by
@@ -661,6 +664,11 @@ export class FrameProfile {
    */
   setSeed(seed: number | null): void {
     this.seed = seed;
+  }
+
+  /** Which thread the simulation core steps on (`SimHost.mode`). Set by `Game` at construction. */
+  setSimMode(mode: "worker" | "page"): void {
+    this.simMode = mode;
   }
 
   /**
@@ -952,10 +960,12 @@ export class FrameProfile {
    * Closes a span that may open MORE THAN ONCE in a frame, adding to whatever
    * the frame already has in that slot.
    *
-   * **Every one of `hookRender`'s spans needs this and none of `Game`'s does**,
-   * which is the whole reason it is a second method rather than `end` growing a
-   * flag: a rendering group is entered once per group per camera, and a plain
-   * `end` would report the LAST of those as the phase's whole cost.
+   * **Every one of `hookRender`'s spans needs this, and of `Game`'s only
+   * `simSync`** (the core's frame read after a step, a pump and every `ask`
+   * that is not a report — `BABYLON_EXIT.md` X2.5b), which is the whole reason
+   * it is a second method rather than `end` growing a flag: a rendering group
+   * is entered once per group per camera, and a plain `end` would report the
+   * LAST of those as the phase's whole cost.
    *
    * **`entered` is what says "first this frame", and it is sound because
    * `endFrame` clears the slots of the frame it is about to overwrite** — the
@@ -965,7 +975,7 @@ export class FrameProfile {
    * export wants: the pieces of one of these phases are contiguous in the
    * frame's order, so a flame chart draws one bar in the right place.
    */
-  private endAdd(slot: number): void {
+  endAdd(slot: number): void {
     if (!this.on) return;
     const t0 = this.openAt[slot];
     if (t0 === 0) return;
@@ -982,25 +992,68 @@ export class FrameProfile {
   }
 
   /**
-   * Files a span measured ELSEWHERE, by whoever ran it, on this file's own
-   * clock: its start (a `performance.now()` reading) and its length.
+   * Files a step's whole timing row (`frame.timing`, the simulation core's
+   * — `BABYLON_EXIT.md` X2.5a C6) in ONE call: the step into `root`, and each
+   * phase the step reached into `slots[i]` — a span measured ELSEWHERE, by
+   * whoever ran it, on this file's own clock. Like `endAdd`, a slot filed
+   * twice in a frame ADDS (a benchmark's lead steps the core several times a
+   * frame) and keeps the first piece's start for the trace.
    *
-   * **The simulation core's phases are the one user** (`sim` and its five,
-   * `Game.fileSimTiming`): the core times its own step with the clock the
-   * page injects (`SimCoreOptions.timing`) because no line in `Game.ts` sits
-   * between its phases, and `Game` files what it reports. Like `endAdd`, a
-   * slot filed twice in a frame ADDS — a benchmark's lead steps the core
-   * several times a frame — and keeps the first piece's start for the trace.
-   * Nothing allocates: four numbers in, three typed-array writes.
+   * **One call with objects in, rather than a call per phase with doubles in**,
+   * because a double handed to a call that is not inlined is a heap number,
+   * and the filing runs once a frame — the tier that does not inline
+   * (`docs/profiling.md`, "Finding WHO allocates"). Measured with the core in
+   * a Worker on Sarab: `Game.fileSimTiming`'s seven such calls were ~660 B a
+   * frame, the profiler's own recording path breaking its own rule. Here the
+   * doubles go from the row's typed arrays into the ring's without crossing
+   * a call.
    */
-  file(slot: number, startAt: number, ms: number): void {
+  fileTiming(
+    root: number,
+    slots: readonly number[],
+    t: { readonly start: number; readonly total: number; readonly at: Float64Array; readonly ms: Float64Array },
+  ): void {
+    if (!this.on || !this.frameOpen || t.total < 0) return;
+    const row = this.cursor * SLOTS;
+    const entered = this.entered!;
+    const dur = this.durMs!;
+    const start = this.startMs!;
+    const base = t.start - this.frameT0;
+    let at = row + root;
+    if (entered[at] === 1) dur[at] += t.total;
+    else {
+      start[at] = base;
+      dur[at] = t.total;
+      entered[at] = 1;
+    }
+    for (let i = 0; i < slots.length; i++) {
+      if (t.at[i] < 0) continue;
+      at = row + slots[i];
+      if (entered[at] === 1) {
+        dur[at] += t.ms[i];
+        continue;
+      }
+      start[at] = base + t.at[i];
+      dur[at] = t.ms[i];
+      entered[at] = 1;
+    }
+  }
+
+  /**
+   * Files `ms` ending NOW into `slot` — a wait measured elsewhere
+   * (`SimHost.waitMs`, the profiler's `simWait`), read off its holder inside
+   * this call so no double crosses one (`fileTiming`).
+   */
+  fileWait(slot: number, holder: { readonly waitMs: number }): void {
     if (!this.on || !this.frameOpen) return;
+    const ms = holder.waitMs;
+    if (ms <= 0) return;
     const at = this.cursor * SLOTS + slot;
     if (this.entered![at] === 1) {
       this.durMs![at] += ms;
       return;
     }
-    this.startMs![at] = startAt - this.frameT0;
+    this.startMs![at] = performance.now() - ms - this.frameT0;
     this.durMs![at] = ms;
     this.entered![at] = 1;
   }
@@ -1540,6 +1593,7 @@ export class FrameProfile {
       overheadUs: this.overheadUs,
       mapId: this.mapId,
       seed: this.seed,
+      simMode: this.simMode,
       graphics: this.graphics,
       graphicsAt: this.graphicsAt,
       gpuRequested: this.gpuRequested,

@@ -84,9 +84,16 @@ export class LagComp {
     if (i >= 0) this.tracked.splice(i, 1);
   }
 
-  /** Records where everything is right now. Called once per simulation tick. */
+  /**
+   * Records where everything is right now. Called once per simulation tick —
+   * by an indexed loop, because a `for...of` here allocates its iterator every
+   * step on the tier a once-a-step function runs on (`docs/profiling.md`),
+   * and since `BABYLON_EXIT.md` X2.5b the offline core records every step too.
+   */
   record(now: number): void {
-    for (const t of this.tracked) {
+    const tracked = this.tracked;
+    for (let i = 0; i < tracked.length; i++) {
+      const t = tracked[i];
       const f = t.frames[t.head];
       f.t = now;
       f.cx = t.body.center.x;

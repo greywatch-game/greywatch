@@ -2626,32 +2626,3 @@ motion — e.g. the descent rate over the last accepted samples at the moment th
 reported height meets the plank (`validateDrive` already holds the previous
 accepted sample) — asserted against the bot's `update` figure on the same
 landing, then the same rule offline for free.
-
----
-
-## 61. The offline page's bot mirror allocates ~3.2 kB a frame on Sarab, and the core's `advance` ~360 B
-
-**Status:** open; found by the X2.5a review's allocation A/B, not chased.
-
-**Measured** (CDP sampling heap profiler with both collected-object flags,
-`docs/profiling.md` "Finding WHO allocates", 64 B interval, 10 s of a Sarab
-bench FIGHT on a dev server, attributed to the innermost `src/` frame):
-`BotMirror.read` (`src/sim/mirror.ts`) 3.2–3.5 kB a frame — ~66 B per bot of
-48, in a method that only copies numbers off the frame into held fields and
-`unpackJoints` into a held `SoldierJoints` — and `SimCore.advance`'s own body
-~364 B a frame, the same before and after the review took its spread and its
-two `Map` walks out (so those were not it). The review's other targets did
-fall: `Game.syncFleet` 507 → 1 B a frame (its `entries()` walk), the fire
-visit 111 → 0, `OrdnanceMirror.sync` 261 → 224 (its five per-sync closures).
-
-**Suspected, not confirmed:** boxed doubles — `docs/profiling.md`'s note that a
-function run once a frame stays on Maglev, where a double stored into a
-tagged field or passed through a call that is not inlined is a heap number.
-`read` writes some twenty doubles per bot and `unpackJoints` the whole joint
-set.
-
-**What would settle it:** `%GetOptimizationStatus` on `read` and `advance` in a
-live round (calibrated as that section says), then the same A/B after giving
-the joint object and the mirror's numeric fields a double representation from
-construction (initialise every one with a non-integer), or after unpacking the
-joints lazily, on the rig's read rather than on every sync.

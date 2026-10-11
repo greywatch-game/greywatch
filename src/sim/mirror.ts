@@ -16,8 +16,11 @@
  *   C5). Nothing here holds or is handed an object of the simulation's (the
  *   one value it imports from a system is `fireStrength`, a pure function of
  *   a fire's age); `sync` takes a frame — the core's own, or a structured
- *   clone of it under `?simcopy`, or (X2.5b) one posted out of a Worker — and
- *   every answer is a copy of a number in it. The DEV check
+ *   clone of it under `?simcopy`, or (X2.5b) one made of views onto the
+ *   shared memory a Worker publishes into (`src/sim/publication.ts`) — and
+ *   every answer is a copy of a number in it. A reader that keeps the frame
+ *   to read later in the frame (`FleetMirror`, `ScoresMirror`) may: the
+ *   Worker writes the OTHER publication until the page takes the next one. The DEV check
  *   (`src/sim/simCheck.ts`, `?simcheck`) asserts every answer here equals the
  *   live object's with `Object.is`, every frame.
  * - **Identity is stable within a pool.** A `BotMirror` is a slot's for as
@@ -175,8 +178,11 @@ export class RosterMirror implements RosterRead {
 
   /** Bodies up and in the fight — `BattleSystem`'s own count, `aside` skipped. */
   aliveCount(): number {
+    // Indexed: a `for...of` here was an iterator a frame (the HUD asks every
+    // frame), and the page's readers allocate nothing per frame.
+    const bots = this.bots;
     let n = 0;
-    for (const bot of this.bots) if (bot.alive && !bot.aside) n++;
+    for (let i = 0; i < bots.length; i++) if (bots[i].alive && !bots[i].aside) n++;
     return n;
   }
 }
@@ -512,7 +518,9 @@ export class SimMirror {
   hittablesAgainst(team: Team): Hittable[] {
     const out = this.targets[team];
     out.length = 0;
-    for (const bot of this.roster.bots) {
+    const bots = this.roster.bots;
+    for (let i = 0; i < bots.length; i++) {
+      const bot = bots[i];
       if (bot.alive && bot.team !== team && !bot.aside) out.push(bot);
     }
     const hu = this.frame.humans;

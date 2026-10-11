@@ -335,8 +335,35 @@ function serviceWorker(): Plugin {
   };
 }
 
+/**
+ * **Cross-origin isolation, on every response either server sends**
+ * (`BABYLON_EXIT.md` X2.5b): COOP `same-origin` and COEP `require-corp` are
+ * what put `crossOriginIsolated` on the page, without which there is no
+ * `SharedArrayBuffer` and the simulation runs in the page rather than in its
+ * Worker (`src/sim/simHost.ts` — a fallback, never an error). On every
+ * response rather than the document alone because the Worker's own script is
+ * a response too, and a Worker is isolated by its own headers. The same pair
+ * is stated three more times and they must agree: the nginx template, the
+ * service worker's cached navigations (`src/pwa/sw.js`) and `docs/pwa.md`'s
+ * list of them.
+ */
+const ISOLATION = {
+  "Cross-Origin-Opener-Policy": "same-origin",
+  "Cross-Origin-Embedder-Policy": "require-corp",
+};
+
 export default defineConfig({
   plugins: [layoutWriter(), serviceWorker()],
+
+  server: { headers: ISOLATION },
+  preview: { headers: ISOLATION },
+
+  /**
+   * The simulation's Worker (`src/sim/simWorker.ts`) is an ES module, and it
+   * has to be: it reaches `MAPS`, whose floors and bakes are lazy `import()`s,
+   * and Rollup cannot split chunks into the default `iife` worker format.
+   */
+  worker: { format: "es" },
 
   build: {
     /**

@@ -9,9 +9,14 @@
  * Invariants:
  * - **Postable.** A frame is plain objects of typed arrays and numbers and
  *   nothing else: no class, no prototype, no getter, no reference back into
- *   the simulation. `structuredClone(frame)` is the same frame, and its
- *   arrays can be transferred whole — which is what X2.5b's Worker does with
- *   it, and what `?simcopy` rehearses every step on the page today.
+ *   the simulation. `structuredClone(frame)` is the same frame, which is
+ *   what `?simcopy` rehearses every step, and its layout is derivable from
+ *   `newFrame()` alone — which is what a core in a Worker publishes it
+ *   through (`src/sim/publication.ts`, `BABYLON_EXIT.md` X2.5b): every array
+ *   a leaf at an offset in shared memory, so an array added here crosses
+ *   without a line there, and every number a header scalar, which owes
+ *   `FRAME_SCALARS` and its two copies a line (the publication's load-time
+ *   check refuses a frame they do not cover).
  * - **Bits preserved.** Every number a reader compares is a float64 (or an
  *   integer code that cannot be `-0`), so a reader of the frame reads the
  *   simulation's own value, `Object.is`-equal — which is what the DEV mirror
@@ -72,11 +77,14 @@ export const HOLDER = { open: 0, bot: 1, person: 2 } as const;
  * into `FrameTiming.at` and `FrameTiming.ms`. `conquest` is the combatant
  * list and the flags; `vehicles` the crews, the hulls, a person's reported
  * crashes, the tracks and the riders; `bots` `BattleSystem.update`;
- * `grenades` and `antiTank` their pools. What the step does outside them —
- * the persons' regen, leash and deploy, the rewind's record and the frame's
- * own fill — is the `sim` span's unattributed remainder.
+ * `grenades` and `antiTank` their pools; `publish` is the frame's own fill
+ * (`fillFrame`) and, on a core in a Worker, the copy of the frame and the
+ * news into shared memory (`BABYLON_EXIT.md` X2.5b — the Worker adds its
+ * copy to this phase and to `total` after the step returns). What the step
+ * does outside them — the persons' regen, leash and deploy and the rewind's
+ * record — is the `sim` span's unattributed remainder.
  */
-export const SIM_PHASES = ["conquest", "vehicles", "bots", "grenades", "antiTank"] as const;
+export const SIM_PHASES = ["conquest", "vehicles", "bots", "grenades", "antiTank", "publish"] as const;
 export type SimPhase = (typeof SIM_PHASES)[number];
 
 /**
@@ -300,6 +308,69 @@ export function newFrame(): SimFrame {
     panes: new Uint8Array(0),
     timing: newTiming(),
   };
+}
+
+/**
+ * Every number of a frame that is not in an array, in `newFrame()`'s own key
+ * order (`section.key` for a section's) — the scalars a Worker's publication
+ * carries in its header (`src/sim/publication.ts`, `BABYLON_EXIT.md` X2.5b).
+ * WRITTEN OUT rather than walked, with the two copies below, because a copy
+ * through computed keys is a megamorphic store that boxes every double it
+ * writes, and a publication allocates nothing. `publication.ts` checks this
+ * list against its own walk of the template when it loads, so a scalar added
+ * to the frame and not here fails on the first load rather than in a reading.
+ */
+export const FRAME_SCALARS = [
+  "tick", "time", "seed", "poolVersion", "fielded", "winner",
+  "flags.count", "bots.count", "players.count", "hulls.count", "grenades.count",
+  "fires.count", "rockets.count", "mines.count", "scores.count", "scores.version",
+  "humans.count", "timing.start", "timing.total",
+] as const;
+
+/** `f`'s scalars into `out` from `at`, in `FRAME_SCALARS` order. */
+export function writeScalars(f: SimFrame, out: Float64Array, at: number): void {
+  out[at] = f.tick;
+  out[at + 1] = f.time;
+  out[at + 2] = f.seed;
+  out[at + 3] = f.poolVersion;
+  out[at + 4] = f.fielded;
+  out[at + 5] = f.winner;
+  out[at + 6] = f.flags.count;
+  out[at + 7] = f.bots.count;
+  out[at + 8] = f.players.count;
+  out[at + 9] = f.hulls.count;
+  out[at + 10] = f.grenades.count;
+  out[at + 11] = f.fires.count;
+  out[at + 12] = f.rockets.count;
+  out[at + 13] = f.mines.count;
+  out[at + 14] = f.scores.count;
+  out[at + 15] = f.scores.version;
+  out[at + 16] = f.humans.count;
+  out[at + 17] = f.timing.start;
+  out[at + 18] = f.timing.total;
+}
+
+/** …and back: `src` from `at` into `f`'s scalars. */
+export function readScalars(src: Float64Array, at: number, f: SimFrame): void {
+  f.tick = src[at];
+  f.time = src[at + 1];
+  f.seed = src[at + 2];
+  f.poolVersion = src[at + 3];
+  f.fielded = src[at + 4];
+  f.winner = src[at + 5];
+  f.flags.count = src[at + 6];
+  f.bots.count = src[at + 7];
+  f.players.count = src[at + 8];
+  f.hulls.count = src[at + 9];
+  f.grenades.count = src[at + 10];
+  f.fires.count = src[at + 11];
+  f.rockets.count = src[at + 12];
+  f.mines.count = src[at + 13];
+  f.scores.count = src[at + 14];
+  f.scores.version = src[at + 15];
+  f.humans.count = src[at + 16];
+  f.timing.start = src[at + 17];
+  f.timing.total = src[at + 18];
 }
 
 /**

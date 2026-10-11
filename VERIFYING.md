@@ -43,6 +43,28 @@ you are on before you believe anything else in this section.
   constructed, and the script fails as `waitForFunction` timing out on
   `window.__celshock` — which says nothing about why. `scripts/browser.mjs`
   exists to get this right once; go there before you suspect the game.
+- **The page is CROSS-ORIGIN ISOLATED, and whatever serves it to a script
+  has to be too** (`BABYLON_EXIT.md` X2.5b). `scripts/dev-server.mjs` (Vite)
+  and `vite preview` send COOP `same-origin` and COEP `require-corp` on every
+  response, so a page either serves has `crossOriginIsolated` and the
+  simulation core runs in its Worker. **A script serving the build off its
+  own `node:http` server owes the same pair on EVERY response** — the Worker's
+  script is a response too — or the page quietly runs the core on the main
+  thread instead: nothing fails, the boot's one `[sim] the simulation runs
+  in …` console line says so, and every capture's `simMode` does. Assert on
+  one of those, never on the frame rate. Two things a script must know:
+  **from a Worker an `ask` is answered on a LATER frame** — `g.spawnPlayer()`
+  returns before the body exists, so poll `g.player.alive` or
+  `g.state === "playing"` rather than reading it on the next line — and
+  **`?simpage` puts the core back in the page** for a script that needs it
+  answered at once (as `?simcheck` and `?simcopy` do, which need it there).
+  Measured headless on the Windows box: `crossOriginIsolated` true under
+  both servers, and false on the first load from a bare `node:http` server
+  that sends no headers, with the boot falling back to the page — and true
+  on that same server once the production build's service worker controls
+  the page, because `sw.js` stamps the pair on every response it answers
+  (`docs/pwa.md`). So a script testing the fallback serves a build it has
+  not let install a worker, or a dev build, which has none.
 - **`scripts/browser.mjs` and `scripts/dev-server.mjs` are the only places a
   launch flag or a server spawn is written**, and the harness under
   `plans/webgpu-ref/` imports both rather than copying either.

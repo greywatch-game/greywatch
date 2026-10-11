@@ -6,7 +6,9 @@
  * Invariants: **a command is PLAIN DATA** — numbers, booleans, string ids and
  * `{x, y, z}` records, never a class the far side would need the prototype
  * of, a closure or a reference into the simulation — so a host can hand one
- * over in process today and post one to a worker at X2.5b. **A command is a
+ * over in process, and the page can encode one into the shared float64s its
+ * Worker reads (`src/sim/commandCodec.ts`, `BABYLON_EXIT.md` X2.5b), whose
+ * `CODE` table does not compile until a new kind can cross. **A command is a
  * request the host has already VALIDATED**: `Match` runs every claim gate it
  * has (the rate buckets, the cones, the origin slips, `validateMove` and
  * `validateDrive`) and only then submits; the offline page's commands are
@@ -21,9 +23,10 @@
  *
  * **The vocabulary is the gameplay half of `ClientMessage`
  * (`src/net/protocol.ts`) after validation, with host-resolved data in
- * place of ids the core could not resolve for itself** — the weapon's whole
- * `WeaponSetup` rather than its id, the throwable and equipment the host's
- * kit record names, the pouch SIZES a kit fills. One kind has no wire
+ * place of ids the core could not resolve for itself** — the five numbers of
+ * the weapon a round leaves that resolving it reads (`ShotWeapon`) rather than
+ * its id, the throwable and equipment the host's kit record names, the pouch
+ * SIZES a kit fills. One kind has no wire
  * message: `kit` (the wire resolves a kit inside `join`/`deploy`).
  *
  * **A person's HULL is reported, never steered** (`BABYLON_EXIT.md` X2.5a
@@ -44,6 +47,19 @@ import type { CrewSeat } from "../entities/hullSeats";
 import type { EquipmentId } from "../entities/equipment";
 import type { ThrowableId } from "../entities/throwables";
 import type { WeaponSetup } from "../entities/weapons";
+
+/**
+ * What resolving a person's round reads of the weapon it left — the damage
+ * slope and where the ray stops (`SimCore.resolveShot`), and nothing else.
+ * A `WeaponSetup` is one (the authority hands its peer's whole loadout row);
+ * the page hands its held weapon. Five numbers rather than the whole setup
+ * because that is what crosses a Worker boundary (`BABYLON_EXIT.md` X2.5b,
+ * `src/sim/commandCodec.ts`): the core had no use for the other thirty.
+ */
+export type ShotWeapon = Pick<
+  WeaponSetup,
+  "damage" | "damageFar" | "falloffNear" | "falloffFar" | "range"
+>;
 
 /**
  * A body's validated position and stance — `SimPlayer.apply`'s arguments.
@@ -78,7 +94,7 @@ export interface ShotCommand {
   origin: Vector3Like;
   dir: Vector3Like;
   muzzle?: Vector3Like;
-  weapon: WeaponSetup;
+  weapon: ShotWeapon;
   renderTime?: number;
 }
 

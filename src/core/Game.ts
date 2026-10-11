@@ -16,15 +16,18 @@
  * when they lay one (reported as `drive`/`gun`, offline and in a match alike —
  * X2.5a C4b), and, in a match, the netplay prediction systems (`combat`,
  * `grenades`, `antiTank`, `glass`). **Its views read the round off the
- * core's FRAME and nothing else** (X2.5a C5): `core` is held as a `SimDoor`
- * (the calls a host makes, and `frame`), so no object of the core's is
- * nameable here, and `simSync` copies each frame the core publishes into
+ * core's FRAME and nothing else** (X2.5a C5): `core` is held as a `SimHost`
+ * (`src/sim/simHost.ts` — the calls a host makes, and `frame`), in this
+ * thread or in a Worker (X2.5b), so no object of the core's is nameable here
+ * and nothing here depends on when it answers; `simSync` copies each frame
+ * the core publishes into
  * `sim` (`src/sim/mirror.ts`) — the roster `BattleView`'s rigs follow, the
  * fleet the posed hulls are told by, the pools, the board, the persons, the
  * target list — and the flags onto this page's own `conquest`, as a match
  * writes them off the wire. `?simcheck` (DEV) holds every reader to the live
  * object with `Object.is` each frame; `?simcopy` round-trips every command,
- * frame and drain through `structuredClone` first — X2.5b's Worker, rehearsed.
+ * frame and drain through `structuredClone` first — the clone boundary,
+ * rehearsed with the core in this thread, where both switches put it.
  * WHERE THINGS ARE, because this is a long file and a change should not need a
  * read of it: the constructor is CONSTRUCTION ONLY (a linear list of `new X`,
  * which has to stay there — those fields are what strictPropertyInitialization
@@ -185,7 +188,7 @@ import {
 import type { KillLedger } from "../systems/killRules";
 import { GrenadeFx } from "../systems/GrenadeFx";
 import { GrenadeSystem, type BlastGround } from "../systems/GrenadeSystem";
-import { SimCore, type SimDoor } from "../sim/SimCore";
+import type { SimHost } from "../sim/simHost";
 import type {
   DriveCommand,
   GrenadeCommand,
@@ -326,6 +329,7 @@ const SIM_SLOT: Readonly<Record<SimPhase, number>> = {
   bots: P.simBots,
   grenades: P.simGrenades,
   antiTank: P.simAntiTank,
+  publish: P.simPublish,
 };
 /** …indexed as `frame.timing` is. */
 const SIM_SLOTS: readonly number[] = SIM_PHASES.map((name) => SIM_SLOT[name]);
@@ -580,28 +584,42 @@ export class Game {
   private mapBuilder: MapBuilder;
   /**
    * **The simulation, offline** (`BABYLON_EXIT.md` X2.5a C4a): the same core
-   * the authority runs (`src/sim/SimCore.ts`), built once and handed a round
-   * by `buildRound`. Offline it is the ONLY thing that decides — who is where,
-   * what a round hit, who died, who owns a flag, who sits in which chair — and
-   * the page reaches it through two doors and no third: `ask`, which submits
-   * the local player's acts (`src/sim/commands.ts`), and `drainSim`, which
-   * reads what it said (`src/sim/events.ts`) into `onSimEvent`. What the
-   * page's VIEWS read of its state is its FRAME (`src/sim/frame.ts`), copied
-   * into `sim` by `simSync` after every call made on it — and nothing else:
-   * the field is typed as the `SimDoor`, so no object of the core's can be
-   * named from this file (`BABYLON_EXIT.md` X2.5a C5). `publish`, so the frame
-   * is kept.
+   * the authority runs (`src/sim/SimCore.ts`), handed a round by
+   * `buildRound`, and held through its HOST (`src/sim/simHost.ts`, X2.5b) —
+   * in a Worker over shared memory where the page is cross-origin isolated,
+   * in this thread otherwise. Offline it is the ONLY thing that decides — who
+   * is where, what a round hit, who died, who owns a flag, who sits in which
+   * chair — and the page reaches it through two doors and no third: `ask`,
+   * which submits the local player's acts (`src/sim/commands.ts`), and
+   * `drainSim`, which reads what it said (`src/sim/events.ts`) into
+   * `onSimEvent`. What the page's VIEWS read of its state is its FRAME
+   * (`src/sim/frame.ts`), copied into `sim` by `simSync` — and nothing else:
+   * the field is a `SimHost`, so no object of the core's can be named from
+   * this file.
    *
-   * `hostHoldsRespawn`, because the page holds the respawn clock: nothing
-   * steps under the deploy screen (D21), so a `deploy` is honoured the moment
-   * it is submitted. No rewind — the shooter is in this process and sees the
-   * world as it stands.
+   * **Nothing here depends on WHEN it answers**: in the page a command's news
+   * is drained inside the `ask` and a step's frame is the step just taken; from
+   * a Worker both arrive with the NEXT step (or the next `pumpSim`), and the
+   * frame a step leaves readable is the one before it. So `ask` returns
+   * nothing, and what the page predicts — a hull gun's readiness, a thrown
+   * grenade off the pouch — it decides off its own state, as a match's client
+   * does, the core's refusal arriving as an event that takes it back.
+   *
+   * Built (by the host) with `hostHoldsRespawn`, because the page holds the
+   * respawn clock: nothing steps under the deploy screen (D21), so a `deploy`
+   * is honoured the moment the core applies it. And with `rewind`: a person's
+   * round is resolved against the instant its frame was DRAWN (`renderTime`,
+   * the frame's `time`), which from a Worker is a step behind the core's.
    *
    * In a match it is idle and holds no world (`teardownMap` releases it): the
    * fight is the authority's and the page runs its netplay prediction systems
    * below instead, exactly as it always has.
    */
-  private readonly core: SimDoor;
+  private readonly core: SimHost;
+  /** The `SimHost.version` `sim` was last synced at — `simSync` skips a frame it has read. */
+  private simSynced = -1;
+  /** Whether this frame stepped the core — `tick` pumps it when it did not (`pumpSim`). */
+  private simStepped = false;
   /**
    * What the page READS of the round: the core's frame, copied in by
    * `simSync` — the roster, the fleet, the pools, the board, the persons and
@@ -1455,27 +1473,25 @@ export class Game {
     canvas: HTMLCanvasElement,
     havok: HavokInstance,
     engine: WebGPUEngine,
+    sim: SimHost,
   ) {
     this.canvas = canvas;
     this.engine = engine;
-    // **The simulation core, and the one place this file holds it WHOLE** —
-    // stored as the `SimDoor` it is reached through, and handed whole only to
-    // the DEV mirror check, inside the branch a production bundle folds away.
-    // The clock is this page's, the one every profiler span is stamped
-    // with, so the core's timing of its own step files without a conversion
-    // (`fileSimTiming`). It is read only into `frame.timing`.
-    const core = new SimCore({
-      hostHoldsRespawn: true,
-      publish: true,
-      timing: () => performance.now(),
-    });
-    this.core = core;
+    // **The simulation core, through the one door it is reached by** — in
+    // this thread or in a Worker (`src/sim/simHost.ts`, `BABYLON_EXIT.md`
+    // X2.5b), chosen by the boot and handed in as `havok` and `engine` are.
+    // The core WHOLE is the DEV mirror check's alone, and only when it is in
+    // this thread (`SimHost.local`), inside the branch a production bundle
+    // folds away.
+    this.core = sim;
+    this.prof.setSimMode(sim.mode);
+    const core = sim.local;
     // The tally is on `window.__simcheck` for a script to read back —
     // `checks` passes run, `mismatches` summed, `first` the opening few by
     // name — and each mismatch is also a console error, which the bench
     // wrapper counts.
     this.mirrorCheck =
-      import.meta.env.DEV && urlFlag("simcheck")
+      import.meta.env.DEV && urlFlag("simcheck") && core
         ? (() => {
             const tally = { checks: 0, mismatches: 0, first: [] as string[] };
             (window as unknown as { __simcheck: typeof tally }).__simcheck = tally;
@@ -3629,6 +3645,14 @@ export class Game {
         break;
     }
 
+    // The simulation's traffic on a frame that did not step it (`pumpSim`):
+    // what the core said since — a Worker's answer to the deploy screen's
+    // ask, the last step a death cam or a pause left in flight — taken in and
+    // drawn, and what this frame asked sent. After the arm, so a frame's asks
+    // leave in the same frame; a step's frame did both inside `updateWorld`.
+    if (this.simStepped) this.simStepped = false;
+    else this.pumpSim();
+
     // Whatever the wire queued for a netplay frame that this state did not
     // run. It is DROPPED rather than carried: a `fire` event is a moment, and
     // a state with no frame under it — the menu, the round-over card, the
@@ -5218,6 +5242,12 @@ export class Game {
     // says null.
     const seed =
       this.overrides.seed ?? (this.bench ? CONFIG.profiling.bench.seed : freshSeed());
+    // Whatever the core still owes the LAST round — a step a Worker was
+    // running when the round was restarted (`SimHost`) — taken in and
+    // dropped: nothing it says is about the round being built. In the page
+    // every call was drained as it was made, and this is nothing.
+    this.core.settle();
+    this.core.drain(this.simEvents);
     // The player leaves the core first, whatever this round is, and is seated
     // again below only offline — so every offline round a person joins is a
     // fresh match's first (their slot's bot benched, the hulls ahead of them
@@ -6414,6 +6444,11 @@ export class Game {
       );
       this.shotMuzzle.copyFromFloats(muzzle.x, muzzle.y, muzzle.z);
       cmd.weapon = this.player.heldSetup;
+      // Resolved against the world as this page DREW it — the frame its
+      // views were read off (`SimCoreOptions.rewind`). From a Worker the
+      // core is a step past that picture by the time the round reaches it;
+      // in the page it is that picture, and the rewind moves nobody.
+      cmd.renderTime = this.sim.frame.time;
     }
     // Recoil: kick the aim up and off toward the weapon's own bias, softened
     // braced and stiffened on the move. It decays on its own, so the burst
@@ -6614,14 +6649,16 @@ export class Game {
     // **Offline the rocket is the core's** (D10, D11): from this point and
     // down this axis, which is the command's — the core reads no node — out
     // of the pouch the core counts. The pool has the last word, and a refusal
-    // gives the rocket back (`ordnanceRefused`, in `onSimEvent`); a launch is
-    // heard by the bots there and heard by the player off its own `rocket`.
+    // gives the rocket back (`ordnanceRefused`, in `onSimEvent`) whenever it
+    // arrives — with the core in a Worker, after the tube has flashed, as a
+    // match's refusal would; a launch is heard by the bots there and heard by
+    // the player off its own `rocket`.
     if (!this.net) {
       const cmd = this.ordnanceCmd;
       cmd.kind = "rpg";
       this.ordnanceFrom.copyFromFloats(this.ordnanceAt.x, this.ordnanceAt.y, this.ordnanceAt.z);
       this.ordnanceDir.copyFromFloats(forward.x, forward.y, forward.z);
-      if (!this.ask(cmd)) return;
+      this.ask(cmd);
     } else {
       // The pool has the last word, and a refusal gives the rocket back — the
       // same contract the grenade pool has with `spendGrenade`, arrived at
@@ -6707,12 +6744,14 @@ export class Game {
     // Offline the plate is the core's, laid at this point (D10) — the
     // `standableAt` probe above is the command's input, the core reads no
     // ground of its own for it. A refusal gives the mine back
-    // (`ordnanceRefused`, in `onSimEvent`).
+    // (`ordnanceRefused`, in `onSimEvent`); the plate is heard going down as
+    // it is in a match, before anybody has said yes.
     const cmd = this.ordnanceCmd;
     cmd.kind = "mine";
     this.ordnanceFrom.copyFromFloats(this.ordnanceAt.x, this.ordnanceAt.y, this.ordnanceAt.z);
     this.ordnanceDir.copyFromFloats(forward.x, forward.y, forward.z);
-    if (this.ask(cmd)) this.sfx.mineSet();
+    this.ask(cmd);
+    this.sfx.mineSet();
   }
 
   /**
@@ -6733,18 +6772,25 @@ export class Game {
    */
   private fireShell(tank: Vehicle): void {
     // Offline the trigger is an ask and the round the core's (`shell`): its
-    // `round`, `hit` and `cannon` answers draw it, and a `true` is the gun
-    // having gone off. Asked WITHOUT a drain — `pullHullTrigger` runs between
-    // the core's step and this page's fleet, and the step's news is drawn
-    // after the fleet is posed — and answered on THIS page's hull at once:
-    // the loader's clock, the shove, the rock and the masts, on the frame the
-    // gun went off, which a match's driver gets from `fireGun` on its own
-    // predicted shell (`Vehicle.mirrorShot`; the core's `hullKicked` for this
-    // hull is therefore not mirrored again). In a match the round is
-    // predicted here and reported.
+    // `round`, `hit` and `cannon` answers draw it. Whether the gun is LOADED
+    // is this page's hull's to say (`gunReady`) — the prediction a match's
+    // driver runs, because from a Worker the core's answer arrives a step
+    // later (`SimHost`); the core's own clock is never behind this one (it
+    // stepped first), so what this page fires the core fires. Asked WITHOUT
+    // a drain — `pullHullTrigger` runs between the core's step and this
+    // page's fleet, and the step's news is drawn after the fleet is posed —
+    // and answered on THIS page's hull at once: the loader's clock, the
+    // shove, the rock and the masts, on the frame the gun went off, which a
+    // match's driver gets from `fireGun` on its own predicted shell
+    // (`Vehicle.mirrorShot`; the core's `hullKicked` for this hull is
+    // therefore not mirrored again). In a match the round is predicted here
+    // and reported.
     let fired: boolean;
     if (this.net) fired = this.resolveShell(tank, this.player);
-    else if ((fired = this.ask(this.shellCmd, false))) tank.mirrorShot(true);
+    else if ((fired = tank.gunReady)) {
+      this.ask(this.shellCmd, false);
+      tank.mirrorShot(true);
+    }
     if (!fired) return;
     // Everything below this line is about the person holding the trigger, and
     // that is the whole of the split: a bot crew's round goes through the same
@@ -6863,8 +6909,12 @@ export class Game {
    */
   private fireMg(tank: Vehicle): void {
     // `fireShell`'s split exactly — the core's `mg` offline, asked without a
-    // drain for its reason. A machine gun kicks nothing on the hull.
-    const fired = this.net ? this.resolveMg(tank, this.player) : this.ask(this.mgCmd, false);
+    // drain for its reason, and only when this page's hull says the belt's
+    // rate has come round (`fireMg`, which keeps that clock). A machine gun
+    // kicks nothing on the hull.
+    let fired: boolean;
+    if (this.net) fired = this.resolveMg(tank, this.player);
+    else if ((fired = tank.fireMg())) this.ask(this.mgCmd, false);
     if (!fired) return;
     this.vehicleCam.addKick(tank.spec.mg.cameraKick);
     const haptic = CONFIG.rumble;
@@ -7660,11 +7710,12 @@ export class Game {
   // the same news, in the same method a netplay handler ends in.
 
   /**
-   * One of the local player's acts, submitted to the core — and what it said
-   * about it, drained and drawn before this returns. **The one door the
-   * offline page changes the simulation through.** Returns the core's own
-   * answer (`SimCore.submit`): whether it acted at all, never what happened.
-   * False with no slot to submit for — a benchmark, a match, no round.
+   * One of the local player's acts, submitted to the core — and whatever it
+   * has said since, drained and drawn before this returns. **The one door the
+   * offline page changes the simulation through.** Returns nothing: in the
+   * page the act's news is in that drain, from a Worker it arrives with the
+   * next step or `pumpSim` (`SimHost`), and nothing here may wait to find out
+   * which. Ignored with no slot to submit for — a benchmark, a match, no round.
    *
    * `drain` false leaves the news in the ring for the next drain, in emission
    * order: the one caller is `pullHullTrigger`, which asks between the core's
@@ -7679,45 +7730,66 @@ export class Game {
    * `?simcheck` that would hold a mirror the step is about to refresh: two to
    * four fills and syncs a frame, none of which anything read.
    */
-  private ask(cmd: SimCommand, drain = true): boolean {
-    if (this.simSlot < 0) return false;
+  private ask(cmd: SimCommand, drain = true): void {
+    if (this.simSlot < 0) return;
     // Under `?simcopy` the command crosses as a structured clone — what a
     // Worker would be posted — so nothing the page holds is handed over by
     // reference.
-    const acted = this.core.submit(this.simSlot, this.simCopy ? structuredClone(cmd) : cmd);
+    this.core.submit(this.simSlot, this.simCopy ? structuredClone(cmd) : cmd);
     const report = cmd.t === "move" || cmd.t === "drive" || cmd.t === "gun";
     if (!report) this.simSync();
     if (drain) this.drainSim(!report);
-    return acted;
   }
 
   /**
    * The core's frame, read into `sim` — **after every call made on the
    * core** (`step`, `ask` but a per-frame report — see it — and the round's
    * own calls), before anything reads a mirror or draws what the call said.
-   * The read is what FILLS the frame on any call but a step
-   * (`SimCore.frame`), so a report that skips it costs no fill either. Offline the flags go onto this
-   * page's `conquest` too (`flagsInto`), as a match's arrive off the wire.
-   * Under `?simcopy` it is a structured clone of the frame that is read.
+   * The read is what FILLS the frame on any call but a step in the page
+   * (`SimCore.frame`), so a report that skips it costs no fill either. A frame
+   * the host has not moved since the last read (`SimHost.version` — from a
+   * Worker, every `ask` between two steps) is not read again. Offline the
+   * flags go onto this page's `conquest` too (`flagsInto`), as a match's
+   * arrive off the wire. Under `?simcopy` it is a structured clone of the
+   * frame that is read.
    */
   private simSync(): void {
+    if (this.core.version === this.simSynced) return;
+    this.simSynced = this.core.version;
+    this.prof.begin(P.simSync);
     this.sim.sync(this.simCopy ? structuredClone(this.core.frame) : this.core.frame);
     if (!this.net) this.sim.flagsInto(this.conquest);
+    this.prof.endAdd(P.simSync);
+  }
+
+  /**
+   * A frame that stepped nothing — the deploy screen, a pause, the menu, a
+   * death's last frame — still owes the core its traffic (`SimHost.pump`):
+   * what came back from a Worker since the last step or pump is taken in,
+   * synced and drawn, and what this frame asked is sent. Called from `tick`
+   * once the state's own arm has run, when that arm did not step the world;
+   * a no-op with the core in the page, where every `ask` was answered at once.
+   * Its sync and drain are the same two calls a step's are, in the same
+   * order, so the deploy's `spawned` reaches `playerSpawned` by the same door.
+   */
+  private pumpSim(): void {
+    if (this.net) return;
+    if (this.core.pump()) {
+      this.simSync();
+      this.drainSim();
+    }
   }
 
   /**
    * The core's own timing of the step just taken, filed as the profiler's
-   * `sim` span and its five phases (`FrameProfile.file`) — the one span this
+   * `sim` span and its phases (`FrameProfile.fileTiming`) — the one span this
    * file does not stamp itself, because no line here sits between the core's
    * phases. Read off the synced frame, so under `?simcopy` it is the clone's.
    */
   private fileSimTiming(): void {
-    const t = this.sim.frame.timing;
-    if (t.total < 0) return;
-    this.prof.file(P.sim, t.start, t.total);
-    for (let i = 0; i < SIM_PHASES.length; i++) {
-      if (t.at[i] >= 0) this.prof.file(SIM_SLOTS[i], t.start + t.at[i], t.ms[i]);
-    }
+    // One call, objects in: a call per phase with doubles in allocated
+    // ~660 B a frame (`FrameProfile.fileTiming`).
+    this.prof.fileTiming(P.sim, SIM_SLOTS, this.sim.frame.timing);
   }
 
   /**
@@ -8023,12 +8095,13 @@ export class Game {
           this.seatAnswer(c.f(i, 1), c.f(i, 2), this.evVec(i, 3, this.evA), c.f(i, 6));
         }
         break;
-      // The pool would not take a rocket or a mine this page had already
-      // spent out of its pouch: give it back (D11). A refused throw spent
-      // nothing — `releaseGrenade` spends only on the core's yes.
+      // The pool would not take what this page had already booked out of its
+      // pouch (D11): a rocket or a mine goes back into the hands, a grenade
+      // back into the pouch (`releaseGrenade` books it before the ask).
       case EV.ordnanceRefused:
-        if (c.f(i, 0) === me && me >= 0 && REFUSED_ITEMS[c.f(i, 1)] !== "grenade") {
-          this.player.returnRound();
+        if (c.f(i, 0) === me && me >= 0) {
+          if (REFUSED_ITEMS[c.f(i, 1)] === "grenade") this.player.returnGrenade();
+          else this.player.returnRound();
         }
         break;
       // Said by the core, drawn by something else: a hull's placing and
@@ -8202,6 +8275,7 @@ export class Game {
     dir: this.shotOrigin,
     muzzle: this.shotMuzzle,
     weapon: null!,
+    renderTime: 0,
   };
   private readonly grenadeFrom = new MathVector3();
   private readonly grenadeDir = new MathVector3();
@@ -9278,20 +9352,34 @@ export class Game {
     // to the world this frame — the player's walk, round, throw, sticks and
     // seat — reached it already, through `ask`, before this step.
     //
+    // **From a Worker the step OVERLAPS the frame** (`SimHost`, X2.5b): this
+    // call takes in the step started a frame ago — waiting for it only if the
+    // Worker has not finished (`simWait`) — and starts this one, so what is
+    // synced and drawn below is the step before, and `live` is its answer.
+    // In the page it is the step just taken. Nothing below can tell which.
+    //
     // The flashes the bots' triggers leave are emptied first: they are
-    // refilled by this step's `botFired`s, which are read below.
+    // refilled by the drawn step's `botFired`s, which are read below.
     this.battleView.beginFrame();
     if (this.prof.armed !== this.simTimed) {
       this.simTimed = this.prof.armed;
       this.core.timeSteps(this.simTimed);
     }
+    const read = this.core.version;
     const live = this.core.step(dt);
+    this.simStepped = true;
+    if (this.core.waitMs > 0) {
+      this.prof.fileWait(P.simWait, this.core);
+      this.core.clearWait();
+    }
     this.simSync();
-    if (this.simTimed) this.fileSimTiming();
+    if (this.simTimed && this.core.version !== read) this.fileSimTiming();
     // The hull trigger this frame's driver pulled, asked NOW — the core has
     // just posed its copy of the player's hull to the report `updateDriver`
     // made, and this page's has not stepped yet, so the round leaves the gun
-    // the player is looking at (`pullHullTrigger`).
+    // the player is looking at (`pullHullTrigger`). From a Worker the ask
+    // waits for the step just started, and is applied right after it — after
+    // the same posing, so the same gun.
     if (live) this.pullHullTrigger();
     else this.hullTrigger = -1;
 
@@ -9721,6 +9809,14 @@ export class Game {
   private endBench(completed: boolean): void {
     const run = this.bench;
     if (!run) return;
+    // The step still in flight (`SimHost`: from a Worker the last frame's step
+    // is answered by the next), taken in and drawn BEFORE the hash is read —
+    // its awards and deaths are the fight's, as they were inside the frame
+    // that stepped it in the page. Before `bench` is cleared, so the drain
+    // still folds them in.
+    this.core.settle();
+    this.simSync();
+    this.drainSim();
     this.bench = null;
     this.prof.setSegment(-1);
     this.prof.halt();
@@ -9782,14 +9878,18 @@ export class Game {
     }
     // Offline the throw is the core's (D10, D11), from this hand and down this
     // axis — the command's, the core reads no node — out of the pouch it
-    // counts; a refused throw costs nothing on either side. In a match the
-    // arc flies here as the thrower's prediction and is reported below.
+    // counts. The page books it as thrown, as a match's thrower does: a
+    // throw the core's pool refuses is given back by its `ordnanceRefused`
+    // (`returnGrenade`), which from a Worker arrives a step later. In a match
+    // the arc flies here as the thrower's prediction and is reported below.
     if (!this.net) {
       const cmd = this.grenadeCmd;
       cmd.kind = this.player.throwable;
       this.grenadeFrom.copyFromFloats(this.grenadeHand.x, this.grenadeHand.y, this.grenadeHand.z);
       this.grenadeDir.copyFromFloats(forward.x, forward.y, forward.z);
-      if (!this.ask(cmd)) return;
+      // Booked BEFORE the ask: in the page the refusal is drawn inside it.
+      this.player.spendGrenade();
+      this.ask(cmd);
     } else if (
       !this.grenades.throwAlong(
         this.grenadeHand,
@@ -9800,8 +9900,9 @@ export class Game {
       )
     ) {
       return;
+    } else {
+      this.player.spendGrenade();
     }
-    this.player.spendGrenade();
     // Networked: the authority throws its own copy and owns the blast. The
     // local one above still flies — it is what the thrower watches arc — but
     // it hurts nobody, because `hittablesFor` hands this page's grenades an

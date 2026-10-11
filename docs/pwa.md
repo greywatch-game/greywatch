@@ -1,7 +1,8 @@
 # The installable app
 
 The four files that make the build install to a home screen and launch offline,
-and the phone-shaped details behind each. Split out of
+the phone-shaped details behind each, and the headers every response owes so
+the simulation can run off the main thread. Split out of
 [`CLAUDE.md`](../CLAUDE.md), which keeps the summary; this file is the contract
 for `public/`, `src/pwa/` and the service-worker plugin.
 
@@ -185,6 +186,48 @@ Three rules come with it:
 Verified against a real build served over localhost, with the worker installed
 off the game's own launch and the context then taken offline: `/` is the game,
 `/profile_viewer.html` is the viewer, and `/nope.html` is still the game.
+
+## Cross-origin isolation, the fourth thing every response owes
+
+**The page is cross-origin isolated, and that is what puts the simulation in
+a Worker** (`BABYLON_EXIT.md` X2.5b). `SharedArrayBuffer` exists only where
+`crossOriginIsolated` is true, `crossOriginIsolated` is true only where the
+document was served with **COOP `same-origin` and COEP `require-corp`**, and
+`src/sim/simHost.ts` runs the core in a Worker over shared memory only when
+it has both — otherwise in the page, as X2.5a left it, with one console line
+at boot saying so and why. So losing isolation is never an error, and that is
+exactly what makes it worth writing down: **the game keeps working and the
+simulation quietly moves back onto the main thread**.
+
+The pair is stated in FOUR places and they must agree:
+
+- **`vite.config.ts`**, as `server.headers` and `preview.headers` — the dev
+  server and `vite preview`.
+- **`docker/default.conf.template`**, at the server level AND in every
+  location with an `add_header` of its own, because a location with any
+  `add_header` silently drops every one the server level declared. Seven
+  places in one file, and the six location copies are the ones a new location
+  forgets.
+- **`src/pwa/sw.js`**, on every same-origin response it hands back
+  (`isolated`) — and this is the one that bites offline. A navigation
+  answered from the cache is answered with the headers that were STORED, and
+  a shell stored by a build from before the pair existed, or an asset the
+  install copied across from an older cache, carries none: the installed app
+  would lose isolation in flight mode alone, which is the same failure shape
+  as `DOCS` above and is guarded the same way, in the worker rather than in
+  the hope that every stored copy is recent.
+- **`server/`** serves no page — only `/matches` and `/health`, which the
+  lobby fetches CORS-mode (`access-control-allow-origin: *`), which
+  `require-corp` accepts. If it ever serves the client, it owes the pair.
+
+**Every response rather than the document alone**, because a Worker is
+isolated by its OWN script's headers, and the Worker's script is just another
+`/assets/` file. **What `require-corp` refuses is a cross-origin load with
+neither CORS nor a `Cross-Origin-Resource-Policy`**, and the page makes none:
+no fonts, no CDN, no third-party script. The one cross-origin request is the
+lobby's match list from another region, which is CORS. Anything added that
+loads from another origin owes that check first, or it fails to load —
+silently, in a console nobody on a phone reads.
 
 ## The controls a phone plays with
 

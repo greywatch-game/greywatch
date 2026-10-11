@@ -14,7 +14,7 @@
  *    ids, the slot count, the roots. A phase added here owes a parent in
  *    `PARENT_OF` (it does not compile otherwise) and a `begin`/`end` pair in
  *    `Game` — or, for a span measured where `Game` cannot stamp it (the
- *    simulation core's, `sim`), a `FrameProfile.file` of what was measured;
+ *    simulation core's, `sim`), a `FrameProfile.fileTiming` of what was measured;
  *    the ring, the report and the trace follow by themselves.
  *  - It imports nothing, so it can never be the reason a disarmed profiler
  *    loads something.
@@ -48,21 +48,37 @@ export const PHASES = [
   "world",
   "net",
   /**
-   * The SIMULATION's step (`SimCore.step`, offline) and its five phases — the
+   * The PAGE's half of the simulation's hop (`BABYLON_EXIT.md` X2.5b), both
+   * inside `world`. `simWait` is the time the page spent waiting for the
+   * Worker to finish the step it is taking in — zero whenever the Worker
+   * kept up, and never entered with the core in this thread. `simSync` is
+   * the copy of the core's frame into the page's readers (`SimMirror.sync`
+   * and the flags) after the step, in either mode.
+   */
+  "simWait",
+  "simSync",
+  /**
+   * The SIMULATION's step (`SimCore.step`, offline) and its six phases — the
    * one span in this list that `Game` does not stamp. **The core times itself
    * with a clock the page hands it** (`SimCoreOptions.timing`, switched by
    * `SimCore.timeSteps` while this profiler is armed) and `Game` FILES what
-   * it reports (`frame.timing`, `FrameProfile.file`) — so the brackets are
-   * the core's and the slots are this list's, and moving the core into a
-   * Worker (`BABYLON_EXIT.md` X2.5b) moves where the step runs and not one
-   * line of the core's timing. A step run more than once a frame (a
-   * benchmark's lead) is summed.
+   * it reports (`frame.timing`, `FrameProfile.fileTiming`) — so the brackets are
+   * the core's and the slots are this list's. A step run more than once a
+   * frame (a benchmark's lead) is summed.
+   *
+   * **It is a ROOT** (X2.5b): with the core in a Worker the step runs on
+   * another thread, overlapping the page's frame rather than inside it, and
+   * it is filed against the frame that TAKES IN its answer — the frame whose
+   * picture it is. With the core in the page (`SimHost.mode`, in every
+   * capture) the same span ran inside `world`, and is still filed as a root
+   * so one tree reads both.
    *
    * `simConquest` is the combatant list and the flags; `simVehicles` the
    * crews, the hulls, the tracks and the riders; `simBots` the bots' think
-   * and move; `simGrenades` and `simAntiTank` what is in the air. What `sim`
-   * holds outside them is the persons' regen, leash and deploy and the
-   * frame's fill (`publish`).
+   * and move; `simGrenades` and `simAntiTank` what is in the air;
+   * `simPublish` the frame's fill and, from a Worker, its copy into shared
+   * memory. What `sim` holds outside them is the persons' regen, leash and
+   * deploy and the rewind's record.
    */
   "sim",
   "simConquest",
@@ -70,6 +86,7 @@ export const PHASES = [
   "simBots",
   "simGrenades",
   "simAntiTank",
+  "simPublish",
   /**
    * The PAGE's armour: offline the fleet posed off the core's frame and the
    * player's hull predicted, plus the views; in a match the wire's posing.
@@ -164,22 +181,23 @@ export const P = Object.fromEntries(
  * every capture** (`ProfileReport.tree`) — a report states its own shape for
  * the same reason it states its own clock grain and its own overhead.
  *
- * `Exclude<Phase, "frame" | "present">` is what makes it safe: every phase but
- * the two ROOTS must name a parent, so **a phase added to `PHASES` does not
+ * `Exclude<Phase, "frame" | "present" | "sim">` is what makes it safe: every
+ * phase but the three ROOTS must name a parent, so **a phase added to `PHASES` does not
  * compile until it has said where it sits** — the arrangement `ScreenStack`'s
  * `SCREENS` uses to stop a new screen shipping without answering its four
  * questions.
  *
- * **There are two roots because the frame has two parts and only one of them
- * is the tick.** `frame` is `Game.tick`, wall to wall; `present` is what the
- * engine does after it returns. Neither contains the other, they cannot
- * overlap, and a reader that drew `present` inside `frame` would be drawing a
- * containment that does not exist — which is exactly what the fallback tree in
+ * **There are three roots because the frame has two parts and only one of
+ * them is the tick — and the simulation is no longer either.** `frame` is
+ * `Game.tick`, wall to wall; `present` is what the engine does after it
+ * returns; `sim` is the core's step, on the Worker's thread (X2.5b). None
+ * contains another, and a reader that drew `present` or `sim` inside `frame`
+ * would be drawing a containment that does not exist — which is exactly what the fallback tree in
  * `public/profile_viewer.html` does to any phase it has not been told about, so
  * that copy must gain this one too.
  */
 export const PARENT_OF: Readonly<
-  Record<Exclude<Phase, "frame" | "present">, Phase>
+  Record<Exclude<Phase, "frame" | "present" | "sim">, Phase>
 > = {
   input: "frame",
   roundBehind: "frame",
@@ -188,16 +206,17 @@ export const PARENT_OF: Readonly<
   onFoot: "gameplay",
   world: "gameplay",
   net: "world",
-  // The core's step runs inside `updateWorld` today, so it is `world`'s.
-  // X2.5b's Worker steps it OFF this thread, and then `sim` is a third ROOT:
-  // out of this table, into the `Exclude` above, and into the viewer's
-  // `FALLBACK_ROOTS` — its five children stay where they are.
-  sim: "world",
+  simWait: "world",
+  simSync: "world",
+  // The core's step is a third ROOT (X2.5b): in a Worker it runs off this
+  // thread, so it is in the `Exclude` above and the viewer's
+  // `FALLBACK_ROOTS`, and its six children stay its own.
   simConquest: "sim",
   simVehicles: "sim",
   simBots: "sim",
   simGrenades: "sim",
   simAntiTank: "sim",
+  simPublish: "sim",
   vehicles: "world",
   bots: "world",
   combat: "world",
@@ -222,8 +241,8 @@ export const PARENT_OF: Readonly<
 };
 
 /**
- * The phases nothing contains: `frame` (the tick) and `present` (what the
- * engine does after it).
+ * The phases nothing contains: `frame` (the tick), `present` (what the
+ * engine does after it) and `sim` (the core's step, on its own thread).
  *
  * DERIVED from the two tables above rather than written out, so it cannot go
  * stale the way a hand-kept list would, and SHIPPED in every capture — because

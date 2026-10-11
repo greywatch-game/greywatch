@@ -1,9 +1,20 @@
 {
   "compilerOptions": {
     "target": "ES2022",
+    // [[Set]] class fields, not ES2022's [[Define]] — and that is a PERFORMANCE
+    // setting (`FINDINGS.md` 61, `BABYLON_EXIT.md` X2.5b). Under [[Define]]
+    // a field DECLARED without an initializer (`x: number;`, every `Vector3`)
+    // is emitted as `x;`, which defines it as `undefined` before the
+    // constructor stores a number; V8 then keeps the field TAGGED, and every
+    // double stored into it afterwards is a fresh heap number. Measured: 12 B
+    // a store, ~110 B a `BotMirror.read`. With this false the declaration
+    // emits nothing and the constructor's first store decides the field.
+    "useDefineForClassFields": false,
     "module": "ESNext",
     "moduleResolution": "bundler",
-    "lib": ["ES2022", "DOM"],
+    // ES2024 for the growable `SharedArrayBuffer` the simulation's Worker
+    // publishes through (`src/sim/publication.ts`, BABYLON_EXIT.md X2.5b).
+    "lib": ["ES2024", "DOM"],
     "strict": true,
     "noUnusedLocals": true,
     "noUnusedParameters": true,

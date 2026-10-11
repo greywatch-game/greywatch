@@ -43,8 +43,9 @@ message handler runs this side's claim gates — `readClientMessage`'s shape,
 the sequence number and client clock, the rate buckets, the cones and origin
 slips, `validateMove`/`validateDrive` and the `correct`/`hullcorrect` they
 answer with — and hands what it accepted over as one `SimCommand`: `move`,
-`shot` (the claimed direction normalised, the server's `WeaponSetup`, the
-client's render time for the rewind), `grenade` and `ordnance` (the kind from
+`shot` (the claimed direction normalised, the server's `WeaponSetup` — the
+command reads five numbers of it, `ShotWeapon` — and the client's render time
+for the rewind), `grenade` and `ordnance` (the kind from
 this side's kit record), `deploy`, `kit` (the pouch sizes `setKit` resolves),
 `mount`/`dismount`, `drive`, `gun`, `shell`, `mg`. What DECIDES is the core's,
 once, for every host: whose body moves, the rewound round (`rewind`, the
@@ -53,13 +54,19 @@ pool took — a refused one raises `ordnanceRefused`, a throw included), the
 SEAT POLICY (the swap, the offer, the named hull, the dismount the hull cannot
 make — `mount`/`dismount` around `seat`) and when a person comes back in.
 `submit` answers only whether the core acted, which is what the shell, mg and
-ordnance buckets spend on; every outcome is an event. `npm run corecheck`
+ordnance buckets spend on; every outcome is an event. **The page never reads
+that answer** (`BABYLON_EXIT.md` X2.5b): from a Worker it would arrive a step
+late, so the page predicts what it fires off its own state, as a client of
+this side does. `npm run corecheck`
 drives the same script through `submit` directly (the trusted door the page
 uses) and through `Match` (the validated door), and the two leave the
 identical event stream.
 
-**Offline the page is that same client, of a core in its own process**
-(`BABYLON_EXIT.md` X2.5a C4a): `Player` is the PREDICTION it is in a match
+**Offline the page is that same client, of a core in a Worker** — or, with no
+cross-origin isolation, in its own thread (`BABYLON_EXIT.md` X2.5a C4a,
+X2.5b; `src/sim/simHost.ts`), and a person's round is rewound to the frame it
+was aimed at as a peer's is here (`rewind`, the page's `renderTime` the frame
+it drew): `Player` is the PREDICTION it is in a match
 (the sweep, the ground, regen for the HUD — it keeps its `SIMULATIONS` entry
 because it sweeps), every act is a `SimCommand` submitted trusted rather than
 validated, and the page holds the respawn clock (`hostHoldsRespawn`). **The
@@ -1809,8 +1816,8 @@ authority against the same cone check every other shot takes. `MgMessage` is
 that round, and it is a separate verb from `ShellMessage` because the server's
 gate for each is the CHAIR rather than the weapon.
 
-**Offline the page is the same driver of a core in its own process**
-(`BABYLON_EXIT.md` X2.5a C4b). The hull under the player is predicted by the
+**Offline the page is the same driver of a core in a Worker, or in its own
+thread** (`BABYLON_EXIT.md` X2.5a C4b, X2.5b). The hull under the player is predicted by the
 page's `Vehicle.update` exactly as here, and what reaches the core is the
 `drive` (or `gun`) command `Match.onDrive`/`onGunner` would submit — the same
 fields, every frame rather than at `INPUT_HZ`, and TRUSTED: there is no

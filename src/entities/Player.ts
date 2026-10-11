@@ -2192,6 +2192,18 @@ export class Player implements Combatant {
     this.grenades -= 1;
   }
 
+  /**
+   * Gives back a grenade booked for a throw the simulation then refused — the
+   * offline core's `ordnanceRefused` (`Game.onSimEvent`), which arrives AFTER
+   * the booking whenever the core is not in this thread (`BABYLON_EXIT.md`
+   * X2.5b): the page books the throw it predicts, as a match's client does,
+   * and this is the refusal taking it back. Bounded by what is carried, as
+   * `returnRound` is by the magazine.
+   */
+  returnGrenade(): void {
+    this.grenades = Math.min(throwableCarried(this.throwable), this.grenades + 1);
+  }
+
   startReload(): boolean {
     // Not during a swap: the magazine being worked would be on a weapon that
     // is halfway into a holster.
