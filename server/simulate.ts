@@ -1,6 +1,6 @@
 /**
  * server/simulate.ts — Runs a whole Conquest round headlessly and prints what
- * happened. `npm run simulate [map] [difficulty] [rounds] [seed]`.
+ * happened. `npm run simulate [map] [difficulty] [rounds] [seed] [--events]`.
  *
  * **A round is a function of its map, its difficulty and its SEED**
  * (`src/systems/RoundRandom.ts`), and every round printed says which seed it
@@ -11,6 +11,18 @@
  * does. **`fight` is what to compare**: a hash over every death and every
  * award in the order they happened, each with its tick, its slot and its
  * kind — the whole kill list, where the board beside it is only its totals.
+ *
+ * **`--events` prints the list itself**, one line per event in the order the
+ * simulation raised it, before the summary: every death and award the hash
+ * folds, and every piece of news the authority hands `Match` to put on the
+ * wire — a bot's kill, shot and reload, a capture, a neutralisation, a blast,
+ * a fire, a tank gun, a cupola gun, a pane, a seat, a spawn, a person's damage
+ * and near miss. Each line is `<tick> <kind> <fields>`, numbers printed in
+ * full, so two runs of one seed diff line by line and a divergence is named
+ * by the first line that differs rather than by a hash that moved. A bot's
+ * footstep is the one callback left out: it is presentation nobody wires on
+ * this side, and it would be most of the file. The lines are written from
+ * inside `step`, so an `--events` run's tick timings are not a measurement.
  *
  * This is the server's equivalent of playing a round, and it is the only way to
  * see the simulation on its own — no clients, no rendering, no wall clock. A
@@ -123,16 +135,58 @@ async function runRound(mapId: string, difficulty: number, seed: number) {
   if (!def) throw new Error(`no map "${mapId}" (have ${MAPS.map((m) => m.id).join(", ")})`);
 
   const game = new HeadlessGame();
+  // `--events`: one line per event, stamped with the tick it was raised on —
+  // see the header. Null when not asked for, so a plain run builds no string.
+  const log = printEvents
+    ? (line: string) => process.stdout.write(`${game.tick} ${line}
+`)
+    : null;
   const captures: string[] = [];
   let blasts = 0;
-  game.onExplosion = () => blasts++;
+  game.onExplosion = (at, power) => {
+    blasts++;
+    if (log) log(`explode ${v3(at)} ${power}`);
+  };
   let blazes = 0;
-  game.onBlaze = () => blazes++;
+  game.onBlaze = (at) => {
+    blazes++;
+    if (log) log(`blaze ${v3(at)}`);
+  };
   // `onCapturedEvent` and NOT `conquest.onCaptured`, which is the simulation's
   // own and pays everybody standing on the flag: a callback has one owner, and
   // taking that one here would have quietly turned the capture awards off in
   // the one tool that exists to check them.
-  game.onCapturedEvent = (point, by) => captures.push(`${point.def.id}->${by}`);
+  game.onCapturedEvent = (point, by) => {
+    captures.push(`${point.def.id}->${by}`);
+    if (log) log(`captured ${point.def.id} ${by}`);
+  };
+  // The rest of what `Match` wires, taken only for the list: each is a
+  // callback the simulation raises and nothing on this side decides on, so
+  // hooking it here moves nothing in the fight (the hash proves it).
+  if (log) {
+    game.onNeutralisedEvent = (point) => log(`neutralised ${point.def.id}`);
+    game.onKillEvent = (bot, killer, headshot) =>
+      log(
+        `kill ${killer} ${game.battle.bots.indexOf(bot)} ${headshot ? 1 : 0} ` +
+          `${v3(bot.deathFrom)} ${bot.deathDamage} ${bot.deathKind}`,
+      );
+    game.battle.onBotFired = (bot, at) => log(`fire ${game.battle.bots.indexOf(bot)} ${v3(at)}`);
+    game.battle.onBotReloaded = (bot) => log(`reload ${game.battle.bots.indexOf(bot)}`);
+    game.onCannon = (tank) => log(`cannon ${game.vehicles.hulls.indexOf(tank)}`);
+    game.onMg = (tank) => log(`mg ${game.vehicles.hulls.indexOf(tank)}`);
+    game.onGlassBroken = (panes, at, dir) => log(`glass ${panes.join(",")} ${v3(at)} ${v3(dir)}`);
+    // Nobody is seated in a simulated round, so the four below never fire
+    // today; they are hooked so a tool that grows synthetic players lists them.
+    game.onNearMiss = (player, at) => log(`nearmiss ${player.slot} ${v3(at)}`);
+    game.onPlayerSpawned = (player, at, yaw) => log(`spawn ${player.slot} ${v3(at)} ${yaw}`);
+    game.onSeatChanged = (player, tank, at, yaw) =>
+      log(`seat ${player.slot} ${tank} ${player.crewSeat} ${v3(at)} ${yaw}`);
+    game.onPlayerDamaged = (player, amount, from, killed, kind) =>
+      log(
+        `damage ${player.slot} ${amount} ${from ? v3(from) : "-"} ${killed ? 1 : 0} ` +
+          `${kind} ${player.health} ${player.respawnT}`,
+      );
+  }
   // Every award paid, by kind. The cheapest check there is that the scoring
   // rules actually fire in a whole round: no `capture` line means the flags
   // paid nobody, and no `defend` line means the attack/defend split is not
@@ -146,6 +200,7 @@ async function runRound(mapId: string, difficulty: number, seed: number) {
     awards[kind] = (awards[kind] ?? 0) + 1;
     fight.update(`${game.tick} a ${slot} ${kind} ${points}\n`);
     events++;
+    if (log) log(`award ${slot} ${kind} ${points}`);
   };
   // Every death, filed by the door it came through and by whether anybody was
   // paid for it. The two checks under `reconcile` are what this is for; the
@@ -158,6 +213,7 @@ async function runRound(mapId: string, difficulty: number, seed: number) {
   game.onDeath = (slot, cause, credited) => {
     fight.update(`${game.tick} d ${slot} ${cause} ${credited ? 1 : 0}\n`);
     events++;
+    if (log) log(`death ${slot} ${cause} ${credited ? 1 : 0}`);
     bodies++;
     deaths[cause] = (deaths[cause] ?? 0) + 1;
     if (credited) creditedBodies++;
@@ -405,7 +461,17 @@ function reconcileProblems(r: Awaited<ReturnType<typeof runRound>>): string[] {
   return out;
 }
 
-const [mapId = "hollowmere", difficulty = "1", rounds = "1", seedArg] = process.argv.slice(2);
+/** A vector as three full-precision numbers, for `--events`. */
+function v3(v: { x: number; y: number; z: number }): string {
+  return `${v.x},${v.y},${v.z}`;
+}
+
+const argv = process.argv.slice(2);
+/** `--events`: print the ordered event list — see the header. */
+const printEvents = argv.includes("--events");
+const [mapId = "hollowmere", difficulty = "1", rounds = "1", seedArg] = argv.filter(
+  (a) => a !== "--events",
+);
 // Refused rather than ignored: a typo that quietly drew a fresh seed would
 // print a different fight and call it the one that was asked for.
 const fixedSeed = seedArg === undefined ? null : parseSeed(seedArg);
