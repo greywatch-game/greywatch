@@ -973,8 +973,10 @@ src/
     PhysicsWorld.ts     # The ONLY Havok in the game: the engine, the map as
                         #   one static body per 48 m block (a single compound is
                         #   quadratic in its shapes) built on the raw API, and
-                        #   the fixed-step clock.
-                        #   Owns no bodies — its three clients do. Exports
+                        #   the fixed-step clock, whose substep teleports and
+                        #   syncs the clients' raw bodies (`WorldBody`) in the
+                        #   plugin's order. Owns no bodies but the world's —
+                        #   its three clients do. Exports
                         #   loadHavok(), which main.ts awaits before there is a
                         #   Game
     havok.ts            # Havok's raw HP_* API in one dialect: the handle

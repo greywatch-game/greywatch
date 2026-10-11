@@ -6,10 +6,11 @@
  * **Every helper that names where the engine LIVES is one short function in
  * `pageHelpers`, and the sub-commit that moves it edits that function and
  * nothing else.** Today the world handle and the module are the plugin's
- * (`_hknp`, `world`) and a step goes through Babylon's physics engine exactly
- * as `PhysicsWorld.update` takes one; X2.4 C4 points `hp` and `step` at
- * `PhysicsWorld`'s own, and C2/C3 point `clientBodies` at wherever the three
- * clients then keep their raw body handles. A hash read through
+ * (`_hknp`, `world`) and a step is `PhysicsWorld`'s own substep, exactly as
+ * `PhysicsWorld.update` takes one (since X2.4 C2); X2.4 C4 points `hp` at
+ * `PhysicsWorld`'s own world, and C2/C3 point `clientBodies` at wherever the
+ * three clients then keep their raw body handles (C2 moved the shards' and
+ * the chunks'). A hash read through
  * `HP_Body_GetQTransform` reads the same floats either side of that move,
  * which is what lets the oracles grade it.
  *
@@ -39,22 +40,23 @@ export function pageHelpers() {
       return { HK: plugin._hknp, world: plugin.world };
     },
     /**
-     * One substep, taken the way `PhysicsWorld.update` takes it: through
-     * Babylon's physics engine, which pre-steps every body whose prestep is
-     * on, calls `HP_World_SetIdealStepTime` and `HP_World_Step` with the
-     * plugin's FIXED step (the argument is only clamped and then discarded —
-     * `PhysicsWorld`'s constructor notes) and syncs every non-static body
-     * back onto its node. X2.4 C4 makes this the raw pair.
+     * One substep, taken exactly as `PhysicsWorld.update` takes one: its own
+     * `substep` (private to TypeScript, reachable here), which since X2.4 C2
+     * pre-steps the plugin's bodies and then the raw ones, calls
+     * `HP_World_SetIdealStepTime` and `HP_World_Step` at `death.substep`
+     * (the `dt` handed in is that), and syncs both kinds back. X2.4 C4 takes
+     * the plugin out from under it and this does not change.
      */
     step(g, dt) {
-      g.scene.getPhysicsEngine()._step(dt);
+      g.physics.substep(dt);
     },
     /**
      * Every pooled body of the three clients, in pool order, as
      * `[label, hpBodyId]`. A body's handle is fixed for the life of the
      * process — the pools are built once — so this is asked once per run.
-     * Reaches through Babylon's `PhysicsBody._pluginData` today; X2.4 C2/C3
-     * point it at the raw handles the ported clients hold.
+     * The shards and chunks are on the raw API since X2.4 C2 (a
+     * `PhysicsWorld` `WorldBody`, whose `id` is the handle); the corpses
+     * still reach through Babylon's `PhysicsBody._pluginData` until C3.
      */
     clientBodies(g) {
       const out = [];
@@ -65,12 +67,12 @@ export function pageHelpers() {
       }
       for (const [b, burst] of g.debris.bursts.entries()) {
         for (const [i, shard] of burst.shards.entries()) {
-          out.push([`shard${b}.${i}`, shard.body._pluginData.hpBodyId]);
+          out.push([`shard${b}.${i}`, shard.body.id]);
         }
       }
       for (const [b, burst] of g.blastDebris.bursts.entries()) {
         for (const [i, chunk] of burst.chunks.entries()) {
-          out.push([`chunk${b}.${i}`, chunk.body._pluginData.hpBodyId]);
+          out.push([`chunk${b}.${i}`, chunk.body.id]);
         }
       }
       return out;

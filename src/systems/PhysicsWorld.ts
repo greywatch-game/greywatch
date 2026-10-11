@@ -69,14 +69,16 @@
 import {
   HavokPlugin,
   Mesh,
+  PhysicsEngineV2,
   Scene,
+  TransformNode,
   Vector3,
   VertexBuffer,
 } from "@babylonjs/core";
 import { CONFIG } from "../config";
 import { Quaternion as MathQuaternion } from "../math";
 import { BLOCK_SIZE } from "../world/blocks";
-import { Havok, type BodyId, type HavokInstance, type ShapeId } from "./havok";
+import { Havok, type BodyId, type HavokInstance, type Motion, type ShapeId } from "./havok";
 import type { GameMap } from "../world/MapBuilder";
 
 /**
@@ -152,9 +154,10 @@ export interface PhysicsClient {
    * Called after the FIRST substep of a frame and no other.
    *
    * This is the teleport read-in point, and it is per client because each owns
-   * its own freshly-spawned bodies: a body is spawned with `disablePreStep =
-   * false` so one step reads its node into the sim, and from there the sim owns
-   * it and must not be overwritten. Inside the loop rather than after it — a
+   * its own freshly-spawned bodies: a body is spawned with its teleport on
+   * (`WorldBody.teleport`, or `disablePreStep = false` on a body still on the
+   * plugin) so one step reads its node into the sim, and from there the sim
+   * owns it and must not be overwritten. Inside the loop rather than after it — a
    * frame running two substeps would otherwise re-teleport a body onto the
    * transform the first step had just synced back, which Havok does not come
    * out of in the state it went in.
@@ -168,14 +171,43 @@ export interface PhysicsClient {
   worldCleared(): void;
 }
 
+/**
+ * A client's body on the raw API, held here so the step can do for it what the
+ * plugin's `executeStep` did for a `PhysicsBody`: teleport it from its node
+ * before a substep, and write its pose back onto the node after one.
+ *
+ * **The node is UNPARENTED**, which is the plugin's simple branch both ways —
+ * a teleport reads the node's raw `position` and `rotationQuaternion`, and a
+ * sync writes them, neither normalised. A shard and a chunk are bodies on their
+ * own meshes and satisfy it; a body on a parented node would need the branch
+ * that composes against the parent, and there is none here.
+ */
+export interface WorldBody {
+  readonly id: BodyId;
+  readonly node: TransformNode;
+  /**
+   * Teleport from the node at the NEXT substep — the plugin's
+   * `disablePreStep = false`. It is read at the substep, not when it is set,
+   * so a frame that takes no substep keeps it pending, and it stays set for
+   * every substep until the client clears it (`afterFirstStep`). `park` clears
+   * it and writes at once.
+   */
+  teleport: boolean;
+  /**
+   * Written back after every substep — the plugin's `!disableSync`, which is
+   * true exactly while the body is DYNAMIC. Set only through `setMotion`.
+   */
+  dynamic: boolean;
+}
+
 export class PhysicsWorld {
   /**
-   * Two handles onto the same plugin, deliberately. `engine` is what `_step` is
-   * reached through; `plugin` is the concrete type, held because
-   * `getPhysicsEngine()`'s union does not carry `setTimeStep` or
-   * `setPhysicsBodyTransformation` and a client needs the second one.
+   * Two handles onto the same plugin, deliberately, until X2.4 C4 takes both
+   * away. `engine` is what lists the bodies still on the plugin (the
+   * ragdolls'); `plugin` is the concrete type, held because `substep` runs its
+   * prestep and sync over that list and `RagdollSystem` parks through it.
    */
-  private engine: NonNullable<ReturnType<Scene["getPhysicsEngine"]>>;
+  private engine: PhysicsEngineV2;
   private hkPlugin: HavokPlugin;
   private clients: PhysicsClient[] = [];
 
@@ -201,6 +233,13 @@ export class PhysicsWorld {
   private worldLeaves: ShapeId[] = [];
 
   /**
+   * Every client body on the raw API, in creation order — which is the order
+   * the plugin's engine listed them in, and so the order a substep teleports
+   * and syncs them. See `substep`.
+   */
+  private bodies: WorldBody[] = [];
+
+  /**
    * Stands the engine up, synchronously, on a module `main.ts` has already
    * awaited. Nothing in the game is ever handed a half-built physics world.
    */
@@ -212,20 +251,21 @@ export class PhysicsWorld {
     // ignores whatever it is handed and advances a fixed amount, which is what
     // makes a tumble frame-rate independent.
     const plugin = new HavokPlugin(false, havok);
-    // ...and THIS is the amount. The argument to `_step` is discarded in this
-    // mode (`executeStep`: `_useDeltaForWorldStep ? delta : _fixedTimeStep`),
-    // so without this line `death.substep` is not the step length at all — it
-    // only divides the frame, and the world advances by the plugin's own
-    // default of 1/60 however many times that comes to. The two agreed by
-    // coincidence, so the knob was inert: lowering it to 1/120 for a finer
-    // tumble would have run the sim at double speed instead. Verified before
-    // this line existed by stepping with 1/600 and 1/10 and measuring the same
-    // 2.5 m fall in 30 steps.
+    // ...and this line was meant to be the amount, and never was: the engine
+    // `enablePhysics` builds calls `setTimeStep()` with its own default of
+    // 1/60 straight after, overwriting it. So the step the PLUGIN would take is
+    // 1/60 whatever `death.substep` says. It no longer matters: `substep` below
+    // makes the world step itself, with `death.substep` as the length, which is
+    // exactly 1/60 today and so the same bits — and lowering it to 1/120 for a
+    // finer tumble now does what it says. (The knob's history: the argument to
+    // `_step` is discarded in this mode, so before this file stepped the world
+    // itself `death.substep` only divided the frame.) The line stays for
+    // `drop.mjs`, which still steps through the plugin until X2.4 C4.
     plugin.setTimeStep(CONFIG.bots.death.substep);
     scene.enablePhysics(new Vector3(0, CONFIG.bots.death.gravity, 0), plugin);
     // enablePhysics sets this true. It must not stay true — see the header.
     scene.physicsEnabled = false;
-    this.engine = scene.getPhysicsEngine()!;
+    this.engine = scene.getPhysicsEngine() as PhysicsEngineV2;
     this.hkPlugin = plugin;
     this.hp = new Havok(havok, plugin.world);
   }
@@ -252,6 +292,49 @@ export class PhysicsWorld {
 
   register(client: PhysicsClient): void {
     this.clients.push(client);
+  }
+
+  // --- client bodies on the raw API -------------------------------------------
+
+  /**
+   * A body on `node`, added to the world where the node stands — `new
+   * PhysicsBody(node, motion, false)`, call for call: the node's ABSOLUTE pose
+   * as the plugin read it (the world matrix computed, then decomposed), and
+   * never asleep. The shape, the mass and the dampings are the client's,
+   * through `havok`, in the order it always made them.
+   */
+  addBody(node: TransformNode, motion: Motion): WorldBody {
+    if (node.parent) node.computeWorldMatrix(true);
+    const p = node.absolutePosition;
+    const q = node.absoluteRotationQuaternion;
+    const id = this.hp.createBody(motion, [p.x, p.y, p.z], [q.x, q.y, q.z, q.w]);
+    const body: WorldBody = { id, node, teleport: false, dynamic: motion === "dynamic" };
+    this.bodies.push(body);
+    return body;
+  }
+
+  /** `PhysicsBody.setMotionType`: the sync follows the motion type. */
+  setMotion(body: WorldBody, motion: Motion): void {
+    body.dynamic = motion === "dynamic";
+    this.hp.setMotion(body.id, motion);
+  }
+
+  /**
+   * Teleports a body to its node NOW and clears any teleport pending — what a
+   * client parking a body did through `setPhysicsBodyTransformation`. A
+   * static body whose node alone was moved leaves its collision proxy where it
+   * stopped (`RagdollSystem.park` carries the measurement).
+   */
+  park(body: WorldBody): void {
+    body.teleport = false;
+    this.teleport(body);
+  }
+
+  /** `PhysicsBody.dispose`: out of the world and released. */
+  removeBody(body: WorldBody): void {
+    const i = this.bodies.indexOf(body);
+    if (i >= 0) this.bodies.splice(i, 1);
+    this.hp.destroyBody(body.id);
   }
 
   /**
@@ -303,13 +386,67 @@ export class PhysicsWorld {
     this.accum = Math.min(this.accum + dt, d.substep * d.maxSteps);
     let first = true;
     while (this.accum >= d.substep) {
-      this.engine._step(d.substep);
+      this.substep(d.substep);
       this.accum -= d.substep;
       if (first) {
         first = false;
         for (const c of this.clients) c.afterFirstStep();
       }
     }
+  }
+
+  /**
+   * One substep: the plugin's `executeStep`, for the bodies still on the plugin
+   * AND the bodies on the raw API, with everything in the order the plugin
+   * walked them.
+   *
+   * **Why this is not `engine._step` with the raw bodies either side of it.**
+   * Every body used to be one list in the plugin's engine, in creation order —
+   * the ragdolls' (built first), then the shards', then the chunks' — and a
+   * prestep walked it in that order. Raw teleports made BEFORE `_step` would
+   * land ahead of the ragdolls' and after it would be a substep late, and the
+   * oracles grade Havok's state bit for bit. So the plugin's own prestep runs
+   * over its own bodies first, then this world's teleports, then the step —
+   * `SetIdealStepTime` and `Step`, at `death.substep` (see the constructor) —
+   * then the plugin's sync and this world's. What `executeStep` also did and
+   * this does not: re-region bodies for a floating origin (off: no scene sets
+   * one) and read the collision and trigger events (none: no body asks for
+   * any, and reading them changes nothing).
+   */
+  private substep(dt: number): void {
+    const plugin = this.hkPlugin;
+    const engineBodies = this.engine.getBodies();
+    for (const b of engineBodies) {
+      if (!b.disablePreStep) plugin.setPhysicsBodyTransformation(b, b.transformNode);
+    }
+    for (const b of this.bodies) if (b.teleport) this.teleport(b);
+
+    this.hp.step(dt);
+
+    for (const b of engineBodies) if (!b.disableSync) plugin.sync(b);
+    for (const b of this.bodies) {
+      if (!b.dynamic) continue;
+      // The plugin's sync for an unparented node: the position plus the world
+      // region's floating origin (zero, and the `+ 0` is what turns a Havok
+      // `-0` into a `0`, as that addition did) and the orientation as Havok
+      // holds it, unnormalised.
+      const [p, q] = this.hp.pose(b.id);
+      b.node.position.set(p[0] + 0, p[1] + 0, p[2] + 0);
+      b.node.rotationQuaternion!.set(q[0], q[1], q[2], q[3]);
+    }
+  }
+
+  /**
+   * The plugin's TELEPORT for an unparented node: its raw position (less a
+   * floating origin of zero) and its raw quaternion, unnormalised — or the
+   * Euler angles' quaternion when it has none, which no node here lacks.
+   */
+  private teleport(b: WorldBody): void {
+    const n = b.node;
+    const p = n.position;
+    const q = n.rotationQuaternion;
+    if (!q) throw new Error(`physics body on ${n.name} has no rotationQuaternion`);
+    this.hp.setPose(b.id, [p.x, p.y, p.z], [q.x, q.y, q.z, q.w]);
   }
 
   /**

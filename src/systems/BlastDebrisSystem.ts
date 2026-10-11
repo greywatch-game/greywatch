@@ -58,10 +58,6 @@ import {
   DynamicTexture,
   Mesh,
   MeshBuilder,
-  PhysicsBody,
-  PhysicsMotionType,
-  PhysicsShape,
-  PhysicsShapeBox,
   Quaternion,
   Scene,
   StandardMaterial,
@@ -73,11 +69,13 @@ import { attachEmissiveFog } from "../shaders/EmissiveFog";
 import type { ShaderMaterial } from "@babylonjs/core";
 import type { EnvironmentSpec } from "../world/environment";
 import type { BlastGround } from "./GrenadeSystem";
+import type { ShapeId } from "./havok";
 import {
   DEBRIS_GROUP,
   WORLD_GROUP,
   type PhysicsClient,
   type PhysicsWorld,
+  type WorldBody,
 } from "./PhysicsWorld";
 
 /**
@@ -142,8 +140,9 @@ const PARKED_Y = -1000;
 /** One chunk: its mesh, the body that moves it, and the shape cut to its size. */
 interface Chunk {
   mesh: Mesh;
-  body: PhysicsBody;
-  shape: PhysicsShape;
+  /** On Havok's raw API, through `PhysicsWorld` — see `buildPool`. */
+  body: WorldBody;
+  shape: ShapeId;
   /** Half-extents (m). The mesh, the shape and the mass all come off these. */
   hx: number;
   hy: number;
@@ -213,7 +212,7 @@ export class BlastDebrisSystem implements PhysicsClient {
   afterFirstStep(): void {
     for (const burst of this.bursts) {
       if (burst.t < 0) continue;
-      for (const c of burst.chunks) c.body.disablePreStep = true;
+      for (const c of burst.chunks) c.body.teleport = false;
     }
   }
 
@@ -296,6 +295,7 @@ export class BlastDebrisSystem implements PhysicsClient {
     );
     slot.t = 0;
     slot.live = wanted;
+    const hp = this.physics.havok;
 
     // An orthonormal pair across the surface, so the spread is laid out ON the
     // ground rather than in world XZ — a blast on a 30-degree bank throws its
@@ -371,13 +371,13 @@ export class BlastDebrisSystem implements PhysicsClient {
         (this.rand() - 0.5) * spin,
       );
 
-      chunk.body.setMotionType(PhysicsMotionType.DYNAMIC);
+      this.physics.setMotion(chunk.body, "dynamic");
       // Two-phase teleport, exactly as a corpse's bones and a glass shard take:
       // one step reads the node into the sim, and `afterFirstStep` hands
       // ownership over.
-      chunk.body.disablePreStep = false;
-      chunk.body.setLinearVelocity(_vel);
-      chunk.body.setAngularVelocity(_spin);
+      chunk.body.teleport = true;
+      hp.setLinearVelocity(chunk.body.id, [_vel.x, _vel.y, _vel.z]);
+      hp.setAngularVelocity(chunk.body.id, [_spin.x, _spin.y, _spin.z]);
     }
     return true;
   }
@@ -432,19 +432,19 @@ export class BlastDebrisSystem implements PhysicsClient {
   private release(burst: Burst): void {
     burst.t = -1;
     burst.live = 0;
+    const hp = this.physics.havok;
     for (const c of burst.chunks) {
       c.mesh.setEnabled(false);
-      c.body.setLinearVelocity(Vector3.ZeroReadOnly);
-      c.body.setAngularVelocity(Vector3.ZeroReadOnly);
-      c.body.setMotionType(PhysicsMotionType.STATIC);
-      // Parked THROUGH the plugin, not just by moving the node: a static body
+      hp.setLinearVelocity(c.body.id, [0, 0, 0]);
+      hp.setAngularVelocity(c.body.id, [0, 0, 0]);
+      this.physics.setMotion(c.body, "static");
+      // Parked THROUGH the engine, not just by moving the node: a static body
       // whose transform was only written on the mesh leaves its collision proxy
       // where it stopped — an invisible box lying in the street that rounds and
-      // bodies stop on. `RagdollSystem.park` carries the measurement.
+      // bodies stop on. `RagdollSystem.park` carries the measurement. Only the
+      // position is reset; the orientation is whatever the chunk last wore.
       c.mesh.position.set(0, PARKED_Y, 0);
-      c.body.disablePreStep = false;
-      this.physics.plugin.setPhysicsBodyTransformation(c.body, c.mesh);
-      c.body.disablePreStep = true;
+      this.physics.park(c.body);
     }
   }
 
@@ -465,6 +465,7 @@ export class BlastDebrisSystem implements PhysicsClient {
     const d = CONFIG.grenade.debris;
     const death = CONFIG.bots.death;
     const span = d.sizeMax - d.sizeMin;
+    const hp = this.physics.havok;
     for (let i = 0; i < d.bursts; i++) {
       const chunks: Chunk[] = [];
       for (let j = 0; j < d.chunks; j++) {
@@ -492,33 +493,26 @@ export class BlastDebrisSystem implements PhysicsClient {
         // ordering `DebrisSystem`'s pool relies on.
         mesh.metadata = { noGlow: true };
 
-        const shape = new PhysicsShapeBox(
-          Vector3.Zero(),
-          Quaternion.Identity(),
-          new Vector3(hx * 2, hy * 2, hz * 2),
-          this.scene,
-        );
-        shape.material = { friction: death.friction, restitution: 0.2 };
-        shape.filterMembershipMask = DEBRIS_GROUP;
+        const shape = hp.box([0, 0, 0], [0, 0, 0, 1], [hx * 2, hy * 2, hz * 2]);
+        hp.setMaterial(shape, death.friction, 0.2);
+        hp.setFilterMembership(shape, DEBRIS_GROUP);
         // The world and nothing else — see `DEBRIS_GROUP`. Rubble must not
         // shove corpses, and chunk-on-chunk buys a pile nobody looks at for a
         // solver cost quadratic in the burst.
-        shape.filterCollideMask = WORLD_GROUP;
+        hp.setFilterCollide(shape, WORLD_GROUP);
 
         // The body is on the MESH with no proxy node, which a chunk can do and
         // a ragdoll's bone cannot: it is parented to nothing and posed by
         // nobody, so the quaternion Havok writes is the only thing that ever
         // orients it.
-        const body = new PhysicsBody(
-          mesh,
-          PhysicsMotionType.STATIC,
-          false,
-          this.scene,
-        );
-        body.shape = shape;
-        body.setMassProperties({ mass: (d.mass * (hx * hy * hz)) / (d.sizeMax ** 3) });
-        body.setLinearDamping(death.linearDamping);
-        body.setAngularDamping(death.angularDamping);
+        //
+        // Created where the mesh stands, static, then shaped, weighed and
+        // damped: the plugin's calls in its order (`PhysicsWorld.addBody`).
+        const body = this.physics.addBody(mesh, "static");
+        hp.setShape(body.id, shape);
+        hp.setMass(body.id, (d.mass * (hx * hy * hz)) / (d.sizeMax ** 3));
+        hp.setLinearDamping(body.id, death.linearDamping);
+        hp.setAngularDamping(body.id, death.angularDamping);
 
         chunks.push({ mesh, body, shape, hx, hy, hz });
       }
@@ -545,8 +539,8 @@ export class BlastDebrisSystem implements PhysicsClient {
     this.reset();
     for (const burst of this.bursts) {
       for (const c of burst.chunks) {
-        c.body.dispose();
-        c.shape.dispose();
+        this.physics.removeBody(c.body);
+        this.physics.havok.releaseShape(c.shape);
         c.mesh.dispose();
       }
     }

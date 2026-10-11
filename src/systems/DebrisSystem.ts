@@ -100,10 +100,6 @@
  */
 import {
   Mesh,
-  PhysicsBody,
-  PhysicsMotionType,
-  PhysicsShape,
-  PhysicsShapeBox,
   Quaternion,
   Scene,
   Vector3,
@@ -114,7 +110,14 @@ import { CONFIG } from "../config";
 import { clamp } from "../core/math";
 import type { CelMaterialFactory } from "../shaders/CelShader";
 import type { WorldPane } from "../world/MapBuilder";
-import { DEBRIS_GROUP, WORLD_GROUP, type PhysicsClient, type PhysicsWorld } from "./PhysicsWorld";
+import type { ShapeId } from "./havok";
+import {
+  DEBRIS_GROUP,
+  WORLD_GROUP,
+  type PhysicsClient,
+  type PhysicsWorld,
+  type WorldBody,
+} from "./PhysicsWorld";
 import { MAX_CORNERS, fracture, makePieces, type ShardPiece } from "./glassFracture";
 
 /**
@@ -198,12 +201,20 @@ const SHARD_VERTS = MAX_CORNERS * 6;
 /** One piece of glass: its mesh, the body that moves it, and the outline both wear. */
 interface Shard {
   mesh: Mesh;
-  body: PhysicsBody;
+  /** On Havok's raw API, through `PhysicsWorld` — see `buildPool`. */
+  body: WorldBody;
   /** The mesh's own vertex buffers, rewritten per burst and never reallocated. */
   pos: Float32Array;
   nrm: Float32Array;
   /** Which collision shape this body currently holds, by `shapeKey`. */
   key: number;
+  /**
+   * The mass last set on this body. A new shape rebuilds the mass properties
+   * and lays THIS over them before `cut` sets the new piece's — the plugin
+   * remembered a body's user mass and re-applied it on every shape change, and
+   * the port makes the same two calls.
+   */
+  mass: number;
 }
 
 /** One pane's worth of shards, reused for the life of the process. */
@@ -223,7 +234,7 @@ export class DebrisSystem implements PhysicsClient {
    * frame a window breaks on is the worst one available to spend it, so the
    * first burst that wants a given size pays for it and no later one does.
    */
-  private shapes = new Map<number, PhysicsShape>();
+  private shapes = new Map<number, ShapeId>();
   /**
    * The pieces the current burst is cut into, refilled in place. One buffer,
    * because a burst is resolved before the next one can start.
@@ -277,7 +288,7 @@ export class DebrisSystem implements PhysicsClient {
   afterFirstStep(): void {
     for (const burst of this.bursts) {
       if (burst.t < 0) continue;
-      for (const s of burst.shards) s.body.disablePreStep = true;
+      for (const s of burst.shards) s.body.teleport = false;
     }
   }
 
@@ -373,6 +384,7 @@ export class DebrisSystem implements PhysicsClient {
     if (!slot) return false;
     slot.t = 0;
     slot.live = count;
+    const hp = this.physics.havok;
 
     // --- which way it leaves ------------------------------------------------
     //
@@ -439,12 +451,12 @@ export class DebrisSystem implements PhysicsClient {
         (rand() - 0.5) * spin,
       );
 
-      shard.body.setMotionType(PhysicsMotionType.DYNAMIC);
+      this.physics.setMotion(shard.body, "dynamic");
       // Two-phase teleport, exactly as a corpse's bones take: one step reads
       // the node into the sim, and `afterFirstStep` hands ownership over.
-      shard.body.disablePreStep = false;
-      shard.body.setLinearVelocity(this.vel);
-      shard.body.setAngularVelocity(this.spin);
+      shard.body.teleport = true;
+      hp.setLinearVelocity(shard.body.id, [this.vel.x, this.vel.y, this.vel.z]);
+      hp.setAngularVelocity(shard.body.id, [this.spin.x, this.spin.y, this.spin.z]);
     }
     return true;
   }
@@ -557,34 +569,35 @@ export class DebrisSystem implements PhysicsClient {
     shard.mesh.updateVerticesData(VertexBuffer.PositionKind, pos, true);
     shard.mesh.updateVerticesData(VertexBuffer.NormalKind, shard.nrm);
 
+    const hp = this.physics.havok;
     const key = shapeKey(piece.hw * 2, piece.hh * 2);
     if (key !== shard.key) {
       shard.key = key;
-      shard.body.shape = this.shapeFor(key);
+      // The shape is found (or built) first, then set — and setting it lays
+      // the PREVIOUS piece's mass over the rebuilt properties. See `mass`.
+      const shape = this.shapeFor(key);
+      hp.setShape(shard.body.id, shape, shard.mass);
     }
     // After the shape, which recomputes the mass properties from it.
-    shard.body.setMassProperties({ mass: massFor(piece.area) });
+    shard.mass = massFor(piece.area);
+    hp.setMass(shard.body.id, shard.mass);
   }
 
   /** The shared collision shape for a piece of this rounded size, built once. */
-  private shapeFor(key: number): PhysicsShape {
+  private shapeFor(key: number): ShapeId {
     const found = this.shapes.get(key);
     if (found) return found;
+    const hp = this.physics.havok;
     const d = CONFIG.bots.death;
-    const shape = new PhysicsShapeBox(
-      Vector3.Zero(),
-      Quaternion.Identity(),
-      new Vector3(
-        Math.floor(key / 1000) * SIZE_STEP,
-        (key % 1000) * SIZE_STEP,
-        CONFIG.glass.shardCollide,
-      ),
-      this.scene,
+    const shape = hp.box(
+      [0, 0, 0],
+      [0, 0, 0, 1],
+      [Math.floor(key / 1000) * SIZE_STEP, (key % 1000) * SIZE_STEP, CONFIG.glass.shardCollide],
     );
-    shape.material = { friction: d.friction, restitution: 0.12 };
-    shape.filterMembershipMask = DEBRIS_GROUP;
+    hp.setMaterial(shape, d.friction, 0.12);
+    hp.setFilterMembership(shape, DEBRIS_GROUP);
     // The world and nothing else — see `DEBRIS_GROUP`.
-    shape.filterCollideMask = WORLD_GROUP;
+    hp.setFilterCollide(shape, WORLD_GROUP);
     this.shapes.set(key, shape);
     return shape;
   }
@@ -593,20 +606,20 @@ export class DebrisSystem implements PhysicsClient {
   private release(burst: Burst): void {
     burst.t = -1;
     burst.live = 0;
+    const hp = this.physics.havok;
     for (const s of burst.shards) {
       s.mesh.setEnabled(false);
-      s.body.setLinearVelocity(Vector3.ZeroReadOnly);
-      s.body.setAngularVelocity(Vector3.ZeroReadOnly);
-      s.body.setMotionType(PhysicsMotionType.STATIC);
-      // Parked THROUGH the plugin, not just by moving the node. A static body
+      hp.setLinearVelocity(s.body.id, [0, 0, 0]);
+      hp.setAngularVelocity(s.body.id, [0, 0, 0]);
+      this.physics.setMotion(s.body, "static");
+      // Parked THROUGH the engine, not just by moving the node. A static body
       // whose transform was only written on the mesh leaves its collision
       // proxy where it stopped — an invisible box lying in the street that
       // rounds and bodies stop on. `RagdollSystem.park` carries the measurement
-      // that found it.
+      // that found it. The orientation is whatever the mesh last wore, as it
+      // always was: only the position is reset.
       s.mesh.position.set(0, PARKED_Y, 0);
-      s.body.disablePreStep = false;
-      this.physics.plugin.setPhysicsBodyTransformation(s.body, s.mesh);
-      s.body.disablePreStep = true;
+      this.physics.park(s.body);
     }
   }
 
@@ -642,6 +655,7 @@ export class DebrisSystem implements PhysicsClient {
     const w0 = (g.shardMin + g.shardMax) / 2;
     const key0 = shapeKey(w0, w0);
     const shape = this.shapeFor(key0);
+    const hp = this.physics.havok;
     for (let i = 0; i < g.maxConcurrent; i++) {
       const shards: Shard[] = [];
       for (let j = 0; j < g.shards; j++) {
@@ -672,18 +686,16 @@ export class DebrisSystem implements PhysicsClient {
         // this system before it builds the glow layer's exclusions.
         mesh.metadata = { noGlow: true };
 
-        const body = new PhysicsBody(
-          mesh,
-          PhysicsMotionType.STATIC,
-          false,
-          this.scene,
-        );
-        body.shape = shape;
-        body.setMassProperties({ mass: massFor(w0 * w0) });
-        body.setLinearDamping(d.linearDamping);
-        body.setAngularDamping(d.angularDamping);
+        // Created where the mesh stands, static, then shaped, weighed and
+        // damped: the plugin's calls in its order (`PhysicsWorld.addBody`).
+        const body = this.physics.addBody(mesh, "static");
+        const mass = massFor(w0 * w0);
+        hp.setShape(body.id, shape);
+        hp.setMass(body.id, mass);
+        hp.setLinearDamping(body.id, d.linearDamping);
+        hp.setAngularDamping(body.id, d.angularDamping);
 
-        shards.push({ mesh, body, pos, nrm, key: key0 });
+        shards.push({ mesh, body, pos, nrm, key: key0, mass });
       }
       this.bursts.push({ shards, t: -1, live: 0 });
     }
@@ -699,12 +711,12 @@ export class DebrisSystem implements PhysicsClient {
     this.reset();
     for (const burst of this.bursts) {
       for (const s of burst.shards) {
-        s.body.dispose();
+        this.physics.removeBody(s.body);
         s.mesh.dispose();
       }
     }
     this.bursts = [];
-    for (const s of this.shapes.values()) s.dispose();
+    for (const s of this.shapes.values()) this.physics.havok.releaseShape(s);
     this.shapes.clear();
   }
 }
