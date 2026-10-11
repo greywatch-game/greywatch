@@ -166,25 +166,16 @@ class EmissiveFogPlugin extends MaterialPluginBase {
  * with it — a plugin added after an effect is built does not reach that effect.
  */
 export function attachEmissiveFog(material: StandardMaterial): void {
-  // **The one engine this is skipped on is the one that cannot draw.** The
-  // authority ran under `NullEngine` until `BABYLON_EXIT.md` X2.3 (it builds no
-  // material since X2.2 and no engine since X2.3; the dev scripts under
-  // `scripts/` still build under one). A NullEngine is not WebGPU, so
-  // `Material._createUniformBuffer` picks GLSL for a `StandardMaterial` and
-  // `isCompatible` above answers false — and `_addPlugin` THROWS on the
-  // mismatch rather than declining. That threw inside `CombatSystem`'s
-  // constructor, which builds its tracer pool out of `getEmissive("#ffe680")`,
-  // which is to say inside `new HeadlessGame()`: every match server and every
-  // `npm run simulate` died on the first material the simulation built, with a
-  // message about a shader language and nothing about where.
-  //
-  // Skipped rather than given a GLSL arm, and rather than the caller learning
-  // about plugins. This is a PICTURE — a per-pixel fade over an unlit colour —
-  // and the authority draws no pixels: it builds these materials only because
-  // it runs the same pooled systems a client does, and never binds one. A GLSL
-  // arm would be a second copy of the injected code that nothing in the tree
-  // compiles (see `isCompatible`), kept alive for a process that would not
-  // look at it.
+  // **Defensive: nothing reaches this under an engine that cannot draw any
+  // more.** The authority built its pools' materials under `NullEngine` until
+  // `BABYLON_EXIT.md` X2.2 and had an engine until X2.3; no script builds an
+  // emissive under one. Kept because the failure it guards is silent about its
+  // cause: off WebGPU, `Material._createUniformBuffer` picks GLSL for a
+  // `StandardMaterial`, `isCompatible` above answers false, and `_addPlugin`
+  // THROWS on the mismatch rather than declining — which once killed every
+  // match server inside `new HeadlessGame()` with a message about a shader
+  // language and nothing about where. A fog is a PICTURE; skipping it there
+  // costs nothing.
   if (!material.getScene().getEngine().isWebGPU) return;
   new EmissiveFogPlugin(material);
 }

@@ -48,14 +48,17 @@
  *     re-export loads its module exactly as an import does.
  *   - **A dynamic `import()` counts**, and must take a string literal: a lazy
  *     import still lands in the bundle and still loads, and one the gate
- *     cannot follow is a hole in it, so a computed specifier fails.
+ *     cannot follow is a hole in it, so a computed specifier fails. So does
+ *     Vite's `import.meta.glob`, whose pattern nothing here can resolve.
  *   - **A relative specifier that does not resolve fails** for the same
  *     reason. Resolution is the bundler's, minus aliases (the tree has none):
  *     the name as written (so `src/math`'s `./vector.ts` resolves as is), `.js`
  *     read as `.ts`, `.ts` appended, and a directory's `index.ts`.
  *   - **Bare specifiers are leaves**, and the one refused is `@babylonjs/core`
- *     and its subpaths. `ws`, `node:*` and `@babylonjs/havok` (a standalone
- *     WASM, X2.4's) are not this gate's business.
+ *     and its subpaths — and the same package reached by a RELATIVE path into
+ *     `node_modules`, which the resolved file betrays where the specifier does
+ *     not. `ws`, `node:*` and `@babylonjs/havok` (a standalone WASM, X2.4's)
+ *     are not this gate's business.
  *
  * Prints one line on success. On failure prints every module that imports
  * Babylon, the line, and the shortest chain from a root to it, and exits 1.
@@ -97,6 +100,8 @@ const NOT_ROOTS = [];
 
 const SOURCE = [".ts", ".tsx", ".mts", ".js", ".mjs"];
 const BANNED = /^@babylonjs\/core(?:\/|$)/;
+/** The same package found by resolving a relative path into node_modules. */
+const BANNED_FILE = /\/node_modules\/@babylonjs\/core\//;
 
 const abs = (p) => resolve(REPO, p);
 const rel = (p) => relative(REPO, p).replaceAll("\\", "/");
@@ -154,6 +159,16 @@ function valueImports(file) {
       ts.isStringLiteral(n.moduleReference.expression)
     ) {
       out.push({ spec: n.moduleReference.expression.text, line: lineOf(n) });
+    } else if (
+      ts.isCallExpression(n) &&
+      ts.isPropertyAccessExpression(n.expression) &&
+      n.expression.name.text === "glob" &&
+      ts.isMetaProperty(n.expression.expression) &&
+      n.expression.expression.keywordToken === ts.SyntaxKind.ImportKeyword
+    ) {
+      // `import.meta.glob` is Vite's, and loads whatever the pattern matches:
+      // nothing this walk can resolve, so it is refused like a computed import().
+      out.push({ dynamic: true, line: lineOf(n), why: "import.meta.glob — the gate cannot follow a pattern" });
     } else if (ts.isCallExpression(n) && n.expression.kind === ts.SyntaxKind.ImportKeyword) {
       const arg = n.arguments[0];
       if (arg && (ts.isStringLiteral(arg) || ts.isNoSubstitutionTemplateLiteral(arg))) {
@@ -192,7 +207,11 @@ while (queue.length) {
   const file = queue.shift();
   for (const imp of valueImports(file)) {
     if (imp.dynamic) {
-      problems.push({ file, line: imp.line, why: "dynamic import() with a computed specifier — the gate cannot follow it" });
+      problems.push({
+        file,
+        line: imp.line,
+        why: imp.why ?? "dynamic import() with a computed specifier — the gate cannot follow it",
+      });
       continue;
     }
     if (BANNED.test(imp.spec)) {
@@ -203,6 +222,12 @@ while (queue.length) {
     const target = resolveSpec(file, imp.spec);
     if (!target) {
       problems.push({ file, line: imp.line, why: `"${imp.spec}" does not resolve` });
+      continue;
+    }
+    // The package reached by a RELATIVE path into node_modules is still the
+    // package: the specifier test above cannot see it, the resolved file can.
+    if (BANNED_FILE.test(target.replaceAll("\\", "/"))) {
+      hits.push({ file, line: imp.line, spec: imp.spec });
       continue;
     }
     if (!SOURCE.includes(extname(target)) || parent.has(target)) continue;

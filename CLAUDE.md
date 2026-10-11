@@ -1371,9 +1371,9 @@ and why no screen is scaled to a short viewport any more).
 A dedicated Node process runs the real simulation and clients render it; there
 is no host client. **The authority imports nothing from Babylon** — no engine,
 no scene, no mesh — and `scripts/check-babylon-free.mjs` fails the build on any
-import path from `server/` that reaches `@babylonjs/core`. A shooter's hitmarker is a
-**guess** — every target is rewound and `CombatSystem.fire` runs again on the
-server, the only thing that deals damage. **A client predicts its own MOVEMENT,
+import path from `server/` that reaches `@babylonjs/core`. A shooter's hitmarker
+is a **guess** — every target is rewound and `CombatSystem.fire` runs again on
+the server, the only thing that deals damage. **A client predicts its own MOVEMENT,
 its own health regeneration and — in a hull — its own DRIVE**, each validated on
 arrival; everything else a client steps is DRESSING.
 
@@ -1423,10 +1423,10 @@ may index `CONFIG.teams` with a live team.**
 **The server cannot run `MapBuilder`**: it has no canvas, so `DynamicTexture`
 throws. It rebuilds the solid world from the generated
 `src/world/<map>/collision.ts` as data with no mesh, including each box's
-`porous` flag, so **`npm run
-parity` should be run after anything touching the world layer**. `npm run build`
-refuses a bake older than its layout, but that guard hashes the LAYOUT — a flag
-changed in a builder needs `npm run collision` by hand.
+`porous` flag, so **`npm run parity` should be run after anything touching the
+world layer**. `npm run build` refuses a bake older than its layout, but that
+guard hashes the LAYOUT — a flag changed in a builder needs `npm run collision`
+by hand.
 
 **A SERVER TIME IS THE SIMULATION'S CLOCK AND NEVER `Date.now()`**
 (`HeadlessGame.now`): anchored rather than free-running, **every stamped message
