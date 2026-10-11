@@ -1642,11 +1642,11 @@ is one machine's:
   world one and no `computeWorldMatrix` is owed. It is the VIEW of
   `slot.bones[i].body.pose`, written once a frame in `ragdolls.update`, so
   step `physics.update` AND `ragdolls.update` before reading it, or read the
-  pose itself (the same numbers, a substep sooner). But `freeze` bakes the pose
-  back into the rig and parks the bodies, and a parked proxy sits at the ORIGIN:
-  keep sampling past that and a corpse on Hollowmere's north spawn reads as
-  having flown 138.62 m, which is exactly the distance from that spawn to
-  (0, 0, 0) and is the tell. Break on `slot.subject !== bot || slot.frozen`.
+  pose itself, which holds the same numbers once `physics.update` has run.
+  But `freeze` bakes the pose back into the rig and parks the bodies, and a
+  parked proxy sits at the ORIGIN: keep sampling past that and a corpse on
+  Hollowmere's north spawn reads as having flown 138.62 m, which is exactly
+  the distance from that spawn to (0, 0, 0) and is the tell. Break on `slot.subject !== bot || slot.frozen`.
   Two more that look like the throw not working: a body placed by hand needs
   `rig.root` at `position.y + rig.centerHeight` and NOT at the feet (the root is
   the body's middle, so feet-aligning it buries the corpse to the hip and the

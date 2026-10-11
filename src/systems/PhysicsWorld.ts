@@ -320,13 +320,6 @@ export class PhysicsWorld {
     this.teleport(body);
   }
 
-  /** `PhysicsBody.dispose`: out of the world and released. */
-  removeBody(body: WorldBody): void {
-    const i = this.bodies.indexOf(body);
-    if (i >= 0) this.bodies.splice(i, 1);
-    this.hp.destroyBody(body.id);
-  }
-
   /**
    * `installMap`'s hook: drop last build's static world and register this one.
    *
@@ -395,10 +388,10 @@ export class PhysicsWorld {
    * body's pose written back into its array. The clients' views read those
    * arrays after `update` returns (`Game` runs each client's `update` straight
    * after it) — a once-a-frame write of the last substep's pose, which is
-   * every number the plugin's per-substep node writes left standing. What `executeStep` also did and this does not:
-   * re-region bodies for a floating origin (off: no scene set one) and read
-   * the collision and trigger events (none: no body asks for any, and reading
-   * them changes nothing).
+   * every number the plugin's per-substep node writes left standing. What
+   * `executeStep` also did and this does not: re-region bodies for a floating
+   * origin (off: no scene set one) and read the collision and trigger events
+   * (none: no body asks for any, and reading them changes nothing).
    */
   private substep(dt: number): void {
     for (const b of this.bodies) if (b.teleport) this.teleport(b);
@@ -437,17 +430,18 @@ export class PhysicsWorld {
    * The map as ONE static body PER 48 m BLOCK, because a single compound is
    * quadratic in the colliders put into it.
    *
-   * **`HavokPlugin.addChild` is one `HP_Shape_AddChild`, and Havok rebuilds the
-   * container's acceleration structure on every one of them.** Profiled on the
-   * proving ground: 5,929 boxes into one container is
-   * 1,726 ms and 16,526 is 13,433 — 2.79x the boxes for 7.78x the time, an
-   * exponent of 1.94, with 13,244 of those milliseconds inside `addChild`
-   * rather than in shape construction. There is no batch entry point through
-   * the plugin, so the lever is the SIZE of each container: `k` buckets turn
-   * `n^2` into `k(n/k)^2`. Measured on the same two grounds, 420 and 1,023
-   * buckets of ~14 and ~16 boxes take the same builds to 268 ms and 682 —
-   * 6.4x and 19.7x — and the exponent with them, to 0.89, which is a straight
-   * line with the rounding off (`ENGINE_UPGRADE.md` S5b).
+   * **Every child is one `HP_Shape_AddChild` (`Havok.addChild`), and Havok
+   * rebuilds the container's acceleration structure on every one of them.**
+   * Profiled on the proving ground while this still went through Babylon's
+   * plugin, whose `addChild` was that one call: 5,929 boxes into one
+   * container is 1,726 ms and 16,526 is 13,433 — 2.79x the boxes for 7.78x
+   * the time, an exponent of 1.94, with 13,244 of those milliseconds inside
+   * `addChild` rather than in shape construction. The raw API has no batch
+   * entry point either, so the lever is the SIZE of each container: `k`
+   * buckets turn `n^2` into `k(n/k)^2`. Measured on the same two grounds, 420
+   * and 1,023 buckets of ~14 and ~16 boxes take the same builds to 268 ms and
+   * 682 — 6.4x and 19.7x — and the exponent with them, to 0.89, which is a
+   * straight line with the rounding off (`ENGINE_UPGRADE.md` S5b).
    *
    * **48 m is `BLOCK_SIZE`, the world layer's fixed unit of LOCALITY, and the
    * key is spelled exactly as `BlockMerge` spells its own**, so the physics
@@ -475,12 +469,14 @@ export class PhysicsWorld {
    * move.
    *
    * **What it spends is the per-step body walk, and the answer is that it does
-   * not.** The plugin's `executeStep` walks every body in the engine three
-   * times, and a static one is a `continue` in each — which is why the
+   * not.** The plugin's `executeStep` walked every body in the engine three
+   * times, and a static one was a `continue` in each — which is why the
    * single-body version's argument was about DYNAMIC bodies rather than about
-   * a list length. Measured with sixty-four boxes resting on the 1500 m
-   * ground, a step costs 36/36 us with one static body and 35/31 with 1,023,
-   * which is inside the scatter of the same reading taken twice. What does
+   * a list length (and `substep` now walks only the clients' bodies, so the
+   * map's cost it nothing at all). Measured, through the plugin, with
+   * sixty-four boxes resting on the 1500 m ground, a step costs 36/36 us with
+   * one static body and 35/31 with 1,023, which is inside the scatter of the
+   * same reading taken twice. What does
    * show is the FALLING phase: the whole 480-substep settle goes from ~52 ms
    * to ~60, or about 18 us a substep with sixty-four bodies in contact at
    * once, which is a tenth of a percent of a frame and only while something is
@@ -639,10 +635,5 @@ export class PhysicsWorld {
     this.worldBodies = [];
     this.worldShapes = [];
     this.worldLeaves = [];
-  }
-
-  dispose(): void {
-    this.clearWorld();
-    this.clients = [];
   }
 }

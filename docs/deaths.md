@@ -135,7 +135,9 @@ computed it, because a 48 m patch's centre can land exactly on a block edge.
 `src/systems/poseView.ts` is the one place the two meet: `absolutePose` is the
 plugin's read when a body is created on a node (its world matrix computed, so
 float32, then decomposed), `applyPose` is the plugin's sync write onto a node's
-raw `position` and `rotationQuaternion`. Each client draws at the points
+raw `position` and `rotationQuaternion`, and `storePose`, `parkPose` and
+`drawPieces` are the placing, parking and per-burst drawing the clients would
+otherwise each spell out. Each client draws at the points
 something READS the drawing, which are the points the solver's per-substep sync
 used to leave the node standing:
 
@@ -153,8 +155,10 @@ nothing between), so there is no point in a frame where a body has moved and
 its drawing has not. A new reader that runs between `physics.update` and the
 clients' `update`s would see last frame's picture. **Two things the views draw
 faithfully and are wrong anyway**, both older than the port and both left
-alone by it: blast rubble is never on screen at all (`FINDINGS.md` 58, a stale
-bounding sphere that `WorldCulling` latches on), and a shard or a chunk does not
+alone by it: blast rubble is never on screen at all, and a glass shard far from
+the map's origin often is not (`FINDINGS.md` 58 — stale bounding spheres, a
+chunk's at the park and a shard's at the origin, where `cut` rebuilds them,
+that `WorldCulling` latches on), and a shard or a chunk does not
 actually sink — the sink lowers a pose that the next substep writes back over
 (`FINDINGS.md` 59).
 

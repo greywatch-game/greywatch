@@ -4,7 +4,12 @@
  * every call spelled exactly as Babylon's `HavokPlugin` spelled it.
  * Owns: the WORLD handle (`createWorld`), and nothing else that lives — no
  * body and no shape. It holds the module and that world and turns a call into
- * the call the plugin would have made.
+ * the call the plugin would have made. **The world lives for the page**:
+ * nothing calls `HP_World_Release` (nor did the plugin era — the game never
+ * disposed its physics engine), so there is no teardown here to keep in
+ * order, and the bodies, shapes and constraints the three pools build in it
+ * are never released either. Only the static world is, map by map
+ * (`PhysicsWorld.clearWorld`).
  * Invariants:
  * - **Babylon-free.** Its one import is `@babylonjs/havok`, and that one is a
  *   TYPE: the module itself is what `loadHavok` fetched and `main.ts` awaited,
@@ -343,12 +348,6 @@ export class Havok {
     hk.HP_Constraint_SetCollisionsEnabled(id, collisions ? 1 : 0);
     hk.HP_Constraint_SetEnabled(id, 1);
     return id;
-  }
-
-  /** `disposeConstraint`: disabled, then released. */
-  releaseConstraint(id: ConstraintId): void {
-    this.hk.HP_Constraint_SetEnabled(id, 0);
-    this.hk.HP_Constraint_Release(id);
   }
 
   private motionOf(motion: Motion): MotionType {

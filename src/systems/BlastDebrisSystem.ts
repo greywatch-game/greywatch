@@ -72,7 +72,6 @@ import { attachEmissiveFog } from "../shaders/EmissiveFog";
 import type { ShaderMaterial } from "@babylonjs/core";
 import type { EnvironmentSpec } from "../world/environment";
 import type { BlastGround } from "./GrenadeSystem";
-import type { ShapeId } from "./havok";
 import {
   DEBRIS_GROUP,
   WORLD_GROUP,
@@ -80,7 +79,7 @@ import {
   type PhysicsWorld,
   type WorldBody,
 } from "./PhysicsWorld";
-import { absolutePose, applyPose, storePose } from "./poseView";
+import { absolutePose, applyPose, drawPieces, parkPose, storePose } from "./poseView";
 
 /**
  * What a blast went off on, as THIS system reads it: `GrenadeSystem`'s
@@ -141,13 +140,12 @@ const EARTH_DARKEN = 0.85;
 /** Where a body waits between bursts, well under any map. `DebrisSystem`'s. */
 const PARKED_Y = -1000;
 
-/** One chunk: its mesh, the body that moves it, and the shape cut to its size. */
+/** One chunk: its mesh, the body that moves it, and its size. */
 interface Chunk {
   /** The chunk as drawn, from `body.pose` — see the header. */
   mesh: Mesh;
   /** On Havok's raw API, through `PhysicsWorld` — see `buildPool`. */
   body: WorldBody;
-  shape: ShapeId;
   /** Half-extents (m). The mesh, the shape and the mass all come off these. */
   hx: number;
   hy: number;
@@ -342,12 +340,14 @@ export class BlastDebrisSystem implements PhysicsClient {
       storePose(chunk.body.pose, _place, _turn);
       applyPose(chunk.body.pose, chunk.mesh);
       // The surface's own size multiplier, and the ONE place the mesh and its
-      // collision box are allowed to disagree: Havok's transform sync writes
-      // position and orientation onto an unparented node and leaves scaling
-      // alone, so a chunk drawn at 1.25 rests up to 3 cm inside the road it
-      // landed on. That is under the ground's own vertex noise, against a piece
-      // of dressing that is gone in seven seconds; the alternative is a second
-      // shape per size, which is a WASM allocation for a shadow-thin gain.
+      // collision box are allowed to disagree: the view writes a body's
+      // position and orientation onto the mesh (`applyPose`, the two writes
+      // the plugin's sync made) and leaves scaling alone, while the box is cut
+      // to the unscaled size — so a chunk drawn at 1.25 rests up to 3 cm
+      // inside the road it landed on. That is under the ground's own vertex
+      // noise, against a piece of dressing that is gone in seven seconds; the
+      // alternative is a second shape per size, which is a WASM allocation for
+      // a shadow-thin gain.
       chunk.mesh.scaling.setAll(look.size);
       chunk.mesh.setEnabled(true);
 
@@ -384,7 +384,7 @@ export class BlastDebrisSystem implements PhysicsClient {
 
       this.physics.setMotion(chunk.body, "dynamic");
       // Two-phase teleport, exactly as a corpse's bones and a glass shard take:
-      // one step reads the node into the sim, and `afterFirstStep` hands
+      // one step reads the pose into the sim, and `afterFirstStep` hands
       // ownership over.
       chunk.body.teleport = true;
       hp.setLinearVelocity(chunk.body.id, [_vel.x, _vel.y, _vel.z]);
@@ -431,11 +431,7 @@ export class BlastDebrisSystem implements PhysicsClient {
    */
   private drawLive(): void {
     for (const burst of this.bursts) {
-      if (burst.t < 0) continue;
-      for (let i = 0; i < burst.live; i++) {
-        const c = burst.chunks[i];
-        applyPose(c.body.pose, c.mesh);
-      }
+      if (burst.t >= 0) drawPieces(burst.chunks, burst.live);
     }
   }
 
@@ -473,11 +469,7 @@ export class BlastDebrisSystem implements PhysicsClient {
       // bodies stop on. `RagdollSystem.park` carries the measurement. Only the
       // position is reset; the orientation is whatever the chunk last wore.
       // Drawn there at once, as `DebrisSystem.release` draws a shard.
-      const pose = c.body.pose;
-      pose[0] = 0;
-      pose[1] = PARKED_Y;
-      pose[2] = 0;
-      applyPose(pose, c.mesh);
+      parkPose(c.body.pose, c.mesh, PARKED_Y);
       this.physics.park(c.body);
     }
   }
@@ -535,10 +527,10 @@ export class BlastDebrisSystem implements PhysicsClient {
         // solver cost quadratic in the burst.
         hp.setFilterCollide(shape, WORLD_GROUP);
 
-        // The body is on the MESH with no proxy node, which a chunk can do and
-        // a ragdoll's bone cannot: it is parented to nothing and posed by
-        // nobody, so the quaternion Havok writes is the only thing that ever
-        // orients it.
+        // The body is drawn straight onto the MESH with no proxy node, which a
+        // chunk can do and a ragdoll's bone cannot: it is parented to nothing
+        // and posed by nobody, so the quaternion the view copies off the
+        // body's pose is the only thing that ever orients it.
         //
         // Created where the mesh stands, static, then shaped, weighed and
         // damped: the plugin's calls in its order (`PhysicsWorld.addBody`).
@@ -548,7 +540,7 @@ export class BlastDebrisSystem implements PhysicsClient {
         hp.setLinearDamping(body.id, death.linearDamping);
         hp.setAngularDamping(body.id, death.angularDamping);
 
-        chunks.push({ mesh, body, shape, hx, hy, hz });
+        chunks.push({ mesh, body, hx, hy, hz });
       }
       this.bursts.push({ chunks, t: -1, live: 0 });
     }
@@ -567,19 +559,6 @@ export class BlastDebrisSystem implements PhysicsClient {
     for (const burst of this.bursts) if (burst.t >= 0) this.release(burst);
     this.scorch.reset();
     this.seed = 0x5bd1;
-  }
-
-  dispose(): void {
-    this.reset();
-    for (const burst of this.bursts) {
-      for (const c of burst.chunks) {
-        this.physics.removeBody(c.body);
-        this.physics.havok.releaseShape(c.shape);
-        c.mesh.dispose();
-      }
-    }
-    this.bursts = [];
-    this.scorch.dispose();
   }
 }
 
@@ -748,12 +727,6 @@ class ScorchMarks {
       m.t = -1;
       m.mesh.isVisible = false;
     }
-  }
-
-  dispose(): void {
-    for (const m of this.marks) m.mesh.dispose();
-    this.marks = [];
-    this.material.dispose();
   }
 }
 

@@ -1060,8 +1060,7 @@ the top of its `update`, before `freeze` reparents joints, so **anything new
 that reads a corpse's drawing between `physics.update` and the clients'
 `update`s reads last frame's**. `PhysicsWorld` reaches no node, mesh or scene —
 the floor reaches it as `GameMap.terrainGeometry` — and
-`scripts/check-babylon-free.mjs` holds it there. **The port's bar is bits**:
-`plans/physics-ref/` grades Havok's poses and the nodes the views write.
+`scripts/check-babylon-free.mjs` holds it there.
 
 `dying` is a **step in the state machine, not a lid**: `updateWorld` runs in full
 underneath the death cam, so the tickets bleed and your killer walks past while

@@ -346,7 +346,8 @@ export class DeathCam {
 
     // The chest, computed rather than read: outside the render loop
     // `getAbsolutePosition` returns a stale cache, and while the ragdoll owns
-    // this joint its parent is a proxy node the solver moved this frame.
+    // this joint its parent is a proxy node `RagdollSystem`'s view moved to
+    // the solver's pose this frame.
     rig.torso.computeWorldMatrix(true);
     const chest = rig.torso.getAbsolutePosition();
     chest.subtractToRef(this.anchor, this.dir);

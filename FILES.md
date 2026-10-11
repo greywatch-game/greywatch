@@ -990,9 +990,12 @@ src/
                         #   so the port off the plugin is bit-for-bit.
                         #   Babylon-free; imports @babylonjs/havok as a type only
     poseView.ts         # Where a body's pose array meets the node it is drawn
-                        #   as: the creation read (absolutePose) and the sync's
-                        #   write (applyPose). The three clients' views share it;
-                        #   PhysicsWorld never imports it
+                        #   as: the creation read (absolutePose), the sync's
+                        #   write (applyPose), placing a body (storePose), a
+                        #   debris park (parkPose) and a burst's draw
+                        #   (drawPieces). The three clients' views share it;
+                        #   PhysicsWorld does not import it (a convention — its
+                        #   Babylon imports are types, so no gate can tell)
     RagdollSystem.ts    # Corpses under that engine. One refusal left (past the
                         #   fog wall); a full pool evicts its oldest. Cannot
                         #   tell a dead bot from the player's stand-in. Its view

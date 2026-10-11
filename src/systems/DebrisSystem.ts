@@ -125,7 +125,7 @@ import {
   type WorldBody,
 } from "./PhysicsWorld";
 import { MAX_CORNERS, fracture, makePieces, type ShardPiece } from "./glassFracture";
-import { absolutePose, applyPose } from "./poseView";
+import { absolutePose, applyPose, drawPieces, parkPose, storePose } from "./poseView";
 
 /**
  * The glazing's own colour, and it is the kit's `GLASS` restated rather than
@@ -238,9 +238,10 @@ export class DebrisSystem implements PhysicsClient {
   private bursts: Burst[] = [];
   /**
    * Collision shapes by rounded size, shared by every body of that size and
-   * never disposed until this system is. A shape is a WASM allocation and the
-   * frame a window breaks on is the worst one available to spend it, so the
-   * first burst that wants a given size pays for it and no later one does.
+   * never released: like the pool, they live as long as the page. A shape is
+   * a WASM allocation and the frame a window breaks on is the worst one
+   * available to spend it, so the first burst that wants a given size pays
+   * for it and no later one does.
    */
   private shapes = new Map<number, ShapeId>();
   /**
@@ -271,7 +272,8 @@ export class DebrisSystem implements PhysicsClient {
   // straight to the body and never read back.
   private readonly vel = new Vector3();
   private readonly spin = new Vector3();
-  /** A piece's turn, built here and copied into its pose. */
+  /** A piece's place and turn, built here and copied into its pose. */
+  private readonly place = new Vector3();
   private readonly turn = new Quaternion();
 
   constructor(
@@ -422,10 +424,11 @@ export class DebrisSystem implements PhysicsClient {
       // is still standing until the authority says otherwise. `LEAN` is the
       // last term of it: what the tilt below is allowed to add.
       const standoff = side * (thick / 2 + g.shardCollide / 2 + LEAN + 0.02);
-      const pose = shard.body.pose;
-      pose[0] = geom.cx + piece.u * ux + standoff * nx;
-      pose[1] = geom.cy + piece.v;
-      pose[2] = geom.cz + piece.u * uz + standoff * nz;
+      this.place.set(
+        geom.cx + piece.u * ux + standoff * nx,
+        geom.cy + piece.v,
+        geom.cz + piece.u * uz + standoff * nz,
+      );
       // Turned onto the pane's own normal, then nudged off it. The nudge is
       // small on purpose: the first frame is a cracked pane and not a cloud,
       // and Havok has the rest of the fall to make it one. The out-of-plane
@@ -438,13 +441,10 @@ export class DebrisSystem implements PhysicsClient {
         (rand() - 0.5) * ROLL,
         this.turn,
       );
-      pose[3] = this.turn.x;
-      pose[4] = this.turn.y;
-      pose[5] = this.turn.z;
-      pose[6] = this.turn.w;
+      storePose(shard.body.pose, this.place, this.turn);
       // Drawn where it was placed, now: a burst on a frame that takes no
       // substep is a pane of pieces standing in the frame until the next one.
-      applyPose(pose, shard.mesh);
+      applyPose(shard.body.pose, shard.mesh);
       shard.mesh.setEnabled(true);
 
       // **What the round did, and what gravity is about to do.** A piece at the
@@ -469,7 +469,7 @@ export class DebrisSystem implements PhysicsClient {
 
       this.physics.setMotion(shard.body, "dynamic");
       // Two-phase teleport, exactly as a corpse's bones take: one step reads
-      // the node into the sim, and `afterFirstStep` hands ownership over.
+      // the pose into the sim, and `afterFirstStep` hands ownership over.
       shard.body.teleport = true;
       hp.setLinearVelocity(shard.body.id, [this.vel.x, this.vel.y, this.vel.z]);
       hp.setAngularVelocity(shard.body.id, [this.spin.x, this.spin.y, this.spin.z]);
@@ -519,11 +519,7 @@ export class DebrisSystem implements PhysicsClient {
    */
   private drawLive(): void {
     for (const burst of this.bursts) {
-      if (burst.t < 0) continue;
-      for (let i = 0; i < burst.live; i++) {
-        const s = burst.shards[i];
-        applyPose(s.body.pose, s.mesh);
-      }
+      if (burst.t >= 0) drawPieces(burst.shards, burst.live);
     }
   }
 
@@ -548,9 +544,10 @@ export class DebrisSystem implements PhysicsClient {
    * collision box cut to the same extents.
    *
    * **The outline is in the VERTICES, and nothing here scales anything.** It
-   * was a unit box with `mesh.scaling` for a size, which Havok's transform sync
-   * makes safe — it writes position and orientation onto an unparented node and
-   * leaves scaling alone — but a scaling cannot express a polygon. So the piece
+   * was a unit box with `mesh.scaling` for a size, which the plugin's transform
+   * sync made safe — it wrote position and orientation onto an unparented node
+   * and left scaling alone, as the view (`applyPose`) does now — but a scaling
+   * cannot express a polygon. So the piece
    * is written flat into the buffer this shard already owns, in its own local
    * frame, and the body is sized by its shape as before. The two are cut from
    * the same numbers here and nowhere else; a mismatch shows as a piece resting
@@ -604,7 +601,9 @@ export class DebrisSystem implements PhysicsClient {
     VertexData.ComputeNormals(pos, this.indices, shard.nrm);
     // `true` is the extents: the bounding box is what the frustum test reads,
     // and a shard that kept the last piece's would be culled by the outline of
-    // a piece that is no longer there.
+    // a piece that is no longer there. It rebuilds them under NO world matrix,
+    // though — the world sphere lands on the map's origin, which is what
+    // `WorldCulling`'s size gate then measures (`FINDINGS.md` 58).
     shard.mesh.updateVerticesData(VertexBuffer.PositionKind, pos, true);
     shard.mesh.updateVerticesData(VertexBuffer.NormalKind, shard.nrm);
 
@@ -658,11 +657,7 @@ export class DebrisSystem implements PhysicsClient {
       // that found it. The orientation is whatever the shard last wore, as it
       // always was: only the position is reset. Drawn there at once — the
       // pose may be a step ahead of the mesh when this runs inside `update`.
-      const pose = s.body.pose;
-      pose[0] = 0;
-      pose[1] = PARKED_Y;
-      pose[2] = 0;
-      applyPose(pose, s.mesh);
+      parkPose(s.body.pose, s.mesh, PARKED_Y);
       this.physics.park(s.body);
     }
   }
@@ -683,12 +678,13 @@ export class DebrisSystem implements PhysicsClient {
    * rewrite of vertices the mesh already has, and never a geometry, an index
    * buffer or — once a size has been seen — a shape.
    *
-   * **A shard's body is on the MESH, with no proxy node**, which is the one way
-   * this is simpler than a corpse. A ragdoll needs proxies because Havok's sync
-   * force-creates a `rotationQuaternion` on any node with a parent and the rig
-   * is posed through Euler channels — but a shard is parented to nothing, is
-   * posed by nobody, and is handed back to nothing. The quaternion Havok writes
-   * is the only thing that ever orients it.
+   * **A shard's body is drawn straight onto the MESH, with no proxy node**,
+   * which is the one way this is simpler than a corpse. A ragdoll needs proxies
+   * because the view writes a `rotationQuaternion` onto whatever it draws a
+   * body on (`applyPose`) and the rig is posed through Euler channels, which a
+   * quaternion would silently override — but a shard is parented to nothing,
+   * is posed by nobody, and is handed back to nothing. The quaternion the view
+   * copies off the body's pose is the only thing that ever orients it.
    */
   private buildPool(): void {
     const g = CONFIG.glass;
@@ -749,19 +745,6 @@ export class DebrisSystem implements PhysicsClient {
   reset(): void {
     for (const burst of this.bursts) if (burst.t >= 0) this.release(burst);
     this.seed = 0x91a5;
-  }
-
-  dispose(): void {
-    this.reset();
-    for (const burst of this.bursts) {
-      for (const s of burst.shards) {
-        this.physics.removeBody(s.body);
-        s.mesh.dispose();
-      }
-    }
-    this.bursts = [];
-    for (const s of this.shapes.values()) this.physics.havok.releaseShape(s);
-    this.shapes.clear();
   }
 }
 

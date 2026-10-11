@@ -2,7 +2,7 @@
  * poseView.ts — Where a physics body's pose meets the Babylon node it is drawn
  * as: the one read that places a new body where its node stands, and the
  * writes that carry a pose between a node's vectors and the body's array.
- * Owns: nothing — three functions, shared by the three physics clients' VIEWS
+ * Owns: nothing — five functions, shared by the three physics clients' VIEWS
  * (`RagdollSystem`'s proxies, `DebrisSystem`'s shards, `BlastDebrisSystem`'s
  * chunks). `PhysicsWorld` keeps each body's pose as seven plain numbers
  * (`WorldBody.pose`, `BABYLON_EXIT.md` X2.4 C5) and never sees a node; this is
@@ -22,8 +22,10 @@
  *   `PhysicsWorld.addBody`. On a mesh that computation also refreshes its
  *   bounding info, which the plugin's read did too — see `FINDINGS.md` on the
  *   rubble that never draws for why that is not a detail to tidy away.
- * Must never: be imported by `PhysicsWorld` or `havok.ts`, which reach no
- *   node; or decide anything — it copies numbers.
+ * Must never: decide anything — it copies numbers. (`PhysicsWorld` and
+ *   `havok.ts` reach no node and do not import it, by CONVENTION: this file's
+ *   Babylon imports are types, so `scripts/check-babylon-free.mjs` could not
+ *   tell if they did.)
  */
 import type { Quaternion, TransformNode, Vector3 } from "@babylonjs/core";
 
@@ -56,4 +58,34 @@ export function storePose(pose: Float64Array, position: Vector3, rotation: Quate
   pose[4] = rotation.y;
   pose[5] = rotation.z;
   pose[6] = rotation.w;
+}
+
+/**
+ * Parks a debris body's pose at `(0, y, 0)` with its orientation KEPT — a
+ * shard or a chunk keeps whatever turn it last wore, as it always has — and
+ * draws it there at once. The engine half of a park is the caller's
+ * (`PhysicsWorld.park`), after this.
+ */
+export function parkPose(pose: Float64Array, node: TransformNode, y: number): void {
+  pose[0] = 0;
+  pose[1] = y;
+  pose[2] = 0;
+  applyPose(pose, node);
+}
+
+/** A pooled piece of debris as its view sees it: a pose, and the mesh it is drawn on. */
+export interface PosedPiece {
+  readonly body: { readonly pose: ArrayLike<number> };
+  readonly mesh: TransformNode;
+}
+
+/**
+ * Draws a burst: the first `live` of its pieces, each from its body's pose
+ * onto its mesh, in pool order — a debris pool's `drawLive`, once per burst.
+ */
+export function drawPieces(pieces: readonly PosedPiece[], live: number): void {
+  for (let i = 0; i < live; i++) {
+    const p = pieces[i];
+    applyPose(p.body.pose, p.mesh);
+  }
 }

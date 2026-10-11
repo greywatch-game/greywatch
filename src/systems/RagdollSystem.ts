@@ -70,7 +70,7 @@ import {
   type SoldierRig,
 } from "../entities/SoldierModel";
 import { mulberry32 } from "../world/rng";
-import type { AxisLimit, ConstraintId, ShapeId } from "./havok";
+import type { AxisLimit, ShapeId } from "./havok";
 import type { PhysicsClient, PhysicsWorld, WorldBody } from "./PhysicsWorld";
 import { absolutePose, applyPose, storePose } from "./poseView";
 
@@ -100,7 +100,6 @@ interface Bone {
 /** One corpse's worth of bodies, reused for the life of the process. */
 interface Slot {
   bones: Bone[];
-  constraints: ConstraintId[];
   /** Null when the slot is free. */
   subject: RagdollSubject | null;
   rig: SoldierRig | null;
@@ -164,8 +163,6 @@ export class RagdollSystem implements PhysicsClient {
   /** The tumble's jitter. See `SPIN_SEED`. */
   private rand: () => number = mulberry32(SPIN_SEED);
 
-  /** Every bone shape in the pool, held flat for disposal — see `buildShapes`. */
-  private shapes: ShapeId[] = [];
   private slots: Slot[] = [];
 
   // Scratch — this runs every frame with up to `maxConcurrent` corpses live,
@@ -318,7 +315,7 @@ export class RagdollSystem implements PhysicsClient {
       hp.setLinearVelocity(bone.body.id, [0, 0, 0]);
       hp.setAngularVelocity(bone.body.id, [0, 0, 0]);
       this.physics.setMotion(bone.body, "dynamic");
-      // Two-phase teleport: one step reads the node into the sim, then the sim
+      // Two-phase teleport: one step reads the pose into the sim, then the sim
       // owns it (`afterFirstStep`). A kinematic target the body accelerates
       // toward is NOT this.
       bone.body.teleport = true;
@@ -424,21 +421,6 @@ export class RagdollSystem implements PhysicsClient {
     this.rand = mulberry32(SPIN_SEED);
   }
 
-  dispose(): void {
-    this.reset();
-    const hp = this.physics.havok;
-    for (const slot of this.slots) {
-      for (const c of slot.constraints) hp.releaseConstraint(c);
-      for (const b of slot.bones) {
-        this.physics.removeBody(b.body);
-        b.proxy.dispose();
-      }
-    }
-    this.slots = [];
-    for (const s of this.shapes) hp.releaseShape(s);
-    this.shapes = [];
-  }
-
   // --- construction -------------------------------------------------------
 
   /**
@@ -477,7 +459,6 @@ export class RagdollSystem implements PhysicsClient {
       // both forms answer a `&` test identically.
       hp.setFilterCollide(shape, ~group >>> 0);
       shapes.set(bone.joint, shape);
-      this.shapes.push(shape);
     }
     return shapes;
   }
@@ -489,8 +470,8 @@ export class RagdollSystem implements PhysicsClient {
       const shapes = this.buildShapes(i);
       const bones: Bone[] = RAGDOLL_BONES.map((spec) => {
         const proxy = new TransformNode(`ragdoll${i}-${spec.joint}`, this.scene);
-        // Pre-created so Havok's sync only ever copies into it — the one place
-        // a quaternion is allowed to exist anywhere near this rig.
+        // Pre-created so the view (`applyPose`) only ever copies into it — the
+        // one place a quaternion is allowed to exist anywhere near this rig.
         proxy.rotationQuaternion = Quaternion.Identity();
         proxy.position.y = PARKED_Y;
         // Created where the proxy stands, static, then shaped, weighed and
@@ -506,7 +487,6 @@ export class RagdollSystem implements PhysicsClient {
       });
 
       const byJoint = new Map(bones.map((b) => [b.joint, b]));
-      const constraints: ConstraintId[] = [];
       for (const [joint, link] of Object.entries(RAGDOLL_LINKS)) {
         if (!link) continue;
         const child = byJoint.get(joint as BoneJoint);
@@ -528,7 +508,7 @@ export class RagdollSystem implements PhysicsClient {
           { axis: "ANGULAR_Z", min: link.z[0], max: link.z[1] },
         ];
         const [px, py, pz] = link.pivot;
-        const c = hp.sixDof(
+        hp.sixDof(
           parent.body.id,
           child.body.id,
           // Identical axes on both sides: every joint is at identity relative
@@ -542,12 +522,10 @@ export class RagdollSystem implements PhysicsClient {
           // is what makes a ragdoll jitter itself apart.
           false,
         );
-        constraints.push(c);
       }
 
       this.slots.push({
         bones,
-        constraints,
         subject: null,
         rig: null,
         t: 0,

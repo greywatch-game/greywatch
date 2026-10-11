@@ -2388,43 +2388,81 @@ same commit.
 
 ---
 
-## 58. Blast rubble is never drawn: every chunk's world bounds are left at the place it was parked, so `WorldCulling` drops it for good
+## 58. Blast rubble is never drawn, and a glass shard far from the map's origin often is not: each pool's world bounds are left where Babylon last computed them, so `WorldCulling` drops the pieces for good
 
-**Status:** open, and pre-existing — a rubble burst is thrown, simulated and
-parked correctly and nobody has ever seen one. Found at `BABYLON_EXIT.md` X2.4
-C2 and reproduced identically on the commit before X2.4 started (fb90b7d);
-deliberately not fixed during X2.4, whose bar was that nothing on screen moves.
-C5 took the poses off the meshes into arrays and its view writes exactly the
-nodes the solver's sync used to (`plans/physics-ref/clients.mjs`'s node digest),
-so it left this as it found it.
+**Status:** open, and pre-existing — both pools throw, simulate and park their
+pieces correctly; the size gate then measures them from the wrong place. Found
+at `BABYLON_EXIT.md` X2.4 C2 (rubble) and at its review (shards), reproduced
+identically on the commit before X2.4 started (fb90b7d); deliberately not fixed
+during X2.4, whose bar was that nothing on screen moves. C5 took the poses off
+the meshes into arrays and its view writes exactly the nodes the solver's sync
+used to (`plans/physics-ref/clients.mjs`'s node digest), so it left this as it
+found it.
 
-**Measured** in a live round on Coldharbour at C5 (a frag thrown along the
-view onto open ground, render loop running): all ten chunks of the burst enabled,
-their poses climbing as high as 15 m and falling back exactly as Havok holds them, and
-**0 of the 10 in `scene.getActiveMeshes()`** on frame 6 and on frame 46 — while
-a glass burst in the same page had **12 of 12** shards in it. At C2, forcing
-`computeWorldMatrix(true)` on the chunks each frame made them render.
+**The mechanism is one, arriving at the two pools from two directions.**
+`WorldCulling.offer`'s size gate reads a mesh's WORLD bounding sphere, which
+Babylon refreshes only when it computes that mesh's world matrix — inside the
+active-mesh pass, for CANDIDATES. A piece the gate drops is never a candidate,
+so its matrix is never computed and its sphere never corrected: this is
+`docs/rendering.md`'s "a WRONG DROP LATCHES", from a fourth and a fifth
+direction. Nothing in either pool computes a piece's matrix after placing it —
+the view (`poseView.applyPose`) writes `position` and `rotationQuaternion` and
+nothing else, as the plugin's sync did.
+- **A RUBBLE chunk's** sphere was last computed when the pool was built, at
+  `PARKED_Y` (the creation read, `poseView.absolutePose`, computes the world
+  matrix there), and nothing touches its bounds again. So the gate measures a
+  15 cm box from a kilometre under the map, finds it under a pixel, and never
+  offers it. Every chunk, every burst, every map.
+- **A glass SHARD's** sphere is rebuilt on every burst, at the ORIGIN.
+  `DebrisSystem.cut` writes the piece into the mesh with
+  `updateVerticesData(PositionKind, pos, true)`, and `true` (update extents)
+  runs `Geometry._updateBoundingInfo`, which calls
+  `mesh.getBoundingInfo().reConstruct(min, max)` with NO world matrix — so
+  `BoundingSphere.reConstruct` and `BoundingBox.reConstruct` fall back to
+  `Matrix.IdentityReadOnly` (Babylon 9.28's `Meshes/geometry.js`,
+  `Culling/boundingSphere.js`, `Culling/boundingBox.js`). A piece is cut in
+  its own local frame round its own centre, so its world sphere lands on
+  (0, 0, 0) — and `cut` runs before the burst places the shard (`applyPose`),
+  so nothing moves it off. The gate therefore measures each piece's true
+  RADIUS from the EYE TO THE MAP'S ORIGIN, once per burst, and latches: a
+  piece is dropped when that distance exceeds `2 r * perRad / minPixels`, with
+  `perRad` the render height in CSS pixels over the FOV — about `758 r` metres
+  at a 1080-pixel-high view, `fovHip` 0.95 and `minPixels` 3. A 0.12 m piece
+  (`shardMin`, sphere radius ~0.085 m) is lost beyond ~64 m from the origin
+  and a 0.3 m one (~0.21 m) beyond ~160 m; a piece that passes is offered,
+  computed, and right from then on.
 
-**Derived from the code:** this is `docs/rendering.md`'s "a WRONG DROP
-LATCHES", arriving from a fourth direction. `WorldCulling.offer`'s size gate
-reads a mesh's WORLD bounding sphere, which Babylon refreshes only when it
-computes that mesh's world matrix — inside the active-mesh pass, for
-CANDIDATES. A chunk's sphere was last computed when the pool was built, at
-`PARKED_Y` (the creation read, `poseView.absolutePose`, computes it there), so
-the gate measures a 15 cm box from a kilometre under the map, finds it under a
-pixel, never offers it, and so never computes the matrix that would correct
-it. A shard escapes only by accident: `DebrisSystem.cut` calls
-`updateVerticesData(..., true)` on every burst, which rebuilds its bounding
-info at the shard's current transform.
+**Measured**, live rounds with the render loop running, a 1080-pixel view:
+- Rubble, Coldharbour at C5 (a frag thrown along the view onto open ground):
+  all ten chunks of the burst enabled, their poses climbing as high as 15 m
+  and falling back exactly as Havok holds them, and **0 of the 10 in
+  `scene.getActiveMeshes()`** on frame 6 and on frame 46. At C2, forcing
+  `computeWorldMatrix(true)` on the chunks each frame made them render.
+- Shards, at the review (each pane broken through `debris.burst` from 5 m off
+  its face; every shard's sphere read back at exactly (0, 0, 0) before the
+  first frame). **Cinderhaven**, whose four breakable panes stand 298-364 m
+  from the origin and cut into pieces of sphere radius 0.285-1.08 m: **8 of
+  12** shards in the active meshes for the nearest pane and **6 of 12** for
+  the farthest, unchanged from frame 1 to frame 30, the dropped ones' spheres
+  still at the origin. One `computeWorldMatrix(true)` per shard straight after
+  the burst: **12 of 12**, every sphere on its shard. **Coldharbour**, whose
+  panes stand 24-172 m from the origin with the same piece sizes (the smallest
+  drops beyond ~216 m): 12 of 12 — which is why C5's glass burst there drew in
+  full, and why this first read as a rubble-only bug.
 
 **What would settle it:** decide how a pooled mesh that teleports owes its
-bounds, once, for all pools — a `computeWorldMatrix(true)` in each chunk's draw
-(`BlastDebrisSystem.drawLive` and `burst`) is the smallest fix, and filing the
-pools with `WorldCulling` the way a body's rig is (measured once, off a root,
-forced) is the general one. Either makes rubble DRAW, which is a change to the
-picture: re-take `bank.mjs`'s `blast` row if it moves and say why, and look at
-a frag and a shell on earth and on stone, since the rubble's look — `RUBBLE`,
-the sizes, the 1.6x cap — has never been seen in a round.
+bounds, once, for BOTH pools — a `computeWorldMatrix(true)` on each piece after
+the burst places it (`DebrisSystem.burst`, after `cut` and `applyPose`;
+`BlastDebrisSystem.burst`, after `applyPose`) is the smallest fix, enough for
+the shards; the rubble, born a kilometre off, may want it in `drawLive` too, or
+a chunk that falls under the gate at its new distance latches there. Filing
+the pools with `WorldCulling` the way a body's rig is (measured once, off a
+root, forced) is the general one. Either makes debris DRAW — every rubble burst
+and, on Cinderhaven, half the glass — which is a change to the picture: re-take
+`bank.mjs`'s `blast` row if it moves and say why, and look at a frag and a shell
+on earth and on stone and at a Cinderhaven shopfront going in, since the
+rubble's look — `RUBBLE`, the sizes, the 1.6x cap — has never been seen in a
+round.
 
 ---
 
@@ -2440,14 +2478,24 @@ sink an expiring burst by `y -= drop * dt * 8` each frame, `drop` ramping to 0.5
 over `shardSink` / `debris.sink` (1.2 s) — written as an accumulation, which
 would take a piece about 2.4 m down through the floor before it is released.
 But a sinking piece's body is still DYNAMIC and its pool still answers
-`physicsActive()`, so the engine is stepped every frame and the substep's sync
-writes Havok's resting height back into the pose before the next subtraction.
-What is drawn is one frame's drop below where the piece lies, and never more.
+`physicsActive()`, so the engine is stepped and the substep's sync writes
+Havok's resting height back into the pose before the subtraction can build up.
+What is drawn is the drop accumulated SINCE THE LAST SUBSTEP below where the
+piece lies, and never more. The step is a fixed 1/60 with the remainder
+carried (`PhysicsWorld.update`), so how much that is depends on the frame rate:
+- **at 60 Hz and below** every frame takes at least one substep, so it is one
+  frame's subtraction, `drop * 8 * dt` — at the full `drop` of 0.5 that is
+  `4 * dt`: **0.0667 m at 60 fps, 0.133 m at 30, 0.2 m at the 0.05 s clamp**;
+- **above 60 Hz** some frames take no substep and their subtractions pile up
+  until the next one, so it is `4 *` the frame time since the last substep —
+  about a substep's worth, bounded by `4 * (1/60 + dt)`, and 0.083 m
+  (three frames' worth) at a steady 144 Hz.
 
-**Measured** (Coldharbour, the pools stepped by hand at 1/60, a glass burst
-and a rubble burst on earth): the drawn height sits at most **0.0667 m** under
-Havok's — `0.5 * 8 / 60`, on the last frame before each release — for a shard
-and a chunk alike. Then the piece vanishes from where it was lying.
+**Measured** (Coldharbour, the pools stepped by hand at exactly 1/60, a glass
+burst and a rubble burst on earth): the drawn height sits at most **0.0667 m**
+under Havok's — `0.5 * 8 / 60`, on the last frame before each release — for a
+shard and a chunk alike, which is the 60 Hz case above. Then the piece vanishes
+from where it was lying.
 
 **What would settle it:** make the sink accumulate — take the bodies out of the
 simulation when the sink starts (static, as a frozen corpse is) and lower the
