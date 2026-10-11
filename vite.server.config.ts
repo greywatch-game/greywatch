@@ -1,23 +1,20 @@
 /**
  * vite.server.config.ts — Builds `server/` into `dist-server/`.
  *
- * Vite rather than `tsc` emitting to disk, because three things in the shared
- * `src/` tree do not survive bare Node resolution and all three are Vite's job:
+ * Vite rather than `tsc` emitting to disk, because the shared `src/` tree does
+ * not survive bare Node resolution: it imports without extensions,
+ * `TerrainField.ts` reads `import.meta.env.DEV` (a Vite substitution that is
+ * `undefined` under Node), and a map's collision bake and floor are lazy
+ * `import()`s that are worth a chunk each.
  *
- *   1. `CelShader.ts` imports
- *      `@babylonjs/core/Shaders/ShadersInclude/bonesDeclaration` with no file
- *      extension. `@babylonjs/core` declares no `exports` map, so Node treats
- *      the specifier as a literal path and cannot find it. Those two imports
- *      are load-bearing (see CLAUDE.md) and are not to be edited for this.
- *   2. `TerrainField.ts` reads `import.meta.env.DEV`, a Vite substitution that
- *      is `undefined` under Node.
- *   3. Babylon is ~7 MB and the server reaches a fraction of it.
- *
- * Note this is the opposite side of CLAUDE.md's rule about never adding deep
- * `@babylonjs/core` subpath imports: that rule is about Vite's DEV dep
- * optimizer rewriting chunks out from under a running page. Nothing here runs
- * in a browser and nothing is optimized, so the server may import
- * `Engines/nullEngine` — which it must, since the engine is not in the barrel.
+ * **The bundle carries no Babylon and loads none** (`BABYLON_EXIT.md` X2.3).
+ * It used to import `@babylonjs/core` and `Engines/nullEngine.js` at runtime —
+ * an SSR build leaves a dependency external — for a scene whose collider
+ * meshes nothing read. The source gate is `scripts/check-babylon-free.mjs`,
+ * run by `npm run build`; the `no-babylon` plugin below is the same rule at
+ * the BUNDLER, so `npm run build:server` and `npm run simulate` refuse too.
+ * It sees only what esbuild left after stripping types, so it is the runtime
+ * truth where the gate is the stricter syntactic one.
  *
  * **There are TWO builds out of this file and the second one is a measuring
  * instrument.** `--mode development` emits to `dist-server-dev/` with
@@ -41,6 +38,23 @@
 import { defineConfig } from "vite";
 
 export default defineConfig(({ mode }) => ({
+  plugins: [
+    {
+      name: "no-babylon",
+      // Before Vite's own resolver, which marks a dependency EXTERNAL in an SSR
+      // build without asking any later plugin.
+      enforce: "pre" as const,
+      resolveId(id: string, importer?: string) {
+        if (/^@babylonjs\/core(?:\/|$)/.test(id)) {
+          this.error(
+            `${importer ?? "?"} imports "${id}": the authority imports no Babylon ` +
+              "(BABYLON_EXIT.md X2.3). Run node scripts/check-babylon-free.mjs for the chain.",
+          );
+        }
+        return null;
+      },
+    },
+  ],
   // Written as a replacement rather than left to the mode, for the reason in
   // the header: `vite build` pins NODE_ENV to production and `isProduction`
   // reads that and not `mode`. `PROD` moves with it, so nothing downstream can
@@ -68,9 +82,9 @@ export default defineConfig(({ mode }) => ({
         simulate: "server/simulate.ts",
         parity: "server/parity.ts",
       },
-      // Runtime dependencies stay external; everything in `src/` and Babylon is
-      // bundled so the three resolution problems above are settled at build
-      // time rather than at import time.
+      // Runtime dependencies stay external; everything in `src/` is bundled so
+      // the resolution problems above are settled at build time rather than at
+      // import time. There is no Babylon to decide about (see the header).
       external: ["ws", /^node:/],
       output: { entryFileNames: "[name].js" },
       /**

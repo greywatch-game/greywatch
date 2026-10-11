@@ -11,14 +11,14 @@
  * built (`src/ui/mapPlan.ts`). Only the server EXPANDS them into a world; the
  * interface reads the tuples and draws them.
  *
- * Why the data exists: the server simulates under Babylon's NullEngine, which
- * has no canvas, so `DynamicTexture` throws and `MapBuilder` (which reaches one
- * through `floorMaterial`) cannot run there. It rebuilds the solid world from
- * these boxes instead. That is sound because `MapBuilder.collider()` is the one
- * place a collider is made and a `WorldBox` records everything
- * `MeshBuilder.CreateBox` needs to reproduce it — so both sides end up picking
- * against the same geometry with the same predicates from `solid.ts`, rather
- * than against two implementations that can drift. That includes `porous`,
+ * Why the data exists: the server simulates with no Babylon and no canvas
+ * (`BABYLON_EXIT.md` X2.3), and `MapBuilder` builds meshes and reaches a
+ * `DynamicTexture` through `floorMaterial`, so it cannot run there. The server
+ * rebuilds the solid world from these boxes instead, as data. That is sound
+ * because `MapBuilder.collider()` is the one place a collider is made and a
+ * `WorldBox` records everything a ray or a sweep asks of it — so both sides
+ * answer every query off the same geometry through the same `RayWorld`,
+ * rather than through two implementations that can drift. That includes `porous`,
  * which is a flag on the box and therefore part of the geometry: a server that
  * dropped it would rebuild a world whose fences stop rounds the client sent
  * through them.

@@ -20,10 +20,12 @@
  * it — an empty allow-list is the only kind that stays empty.
  *
  * **Scoped to `src/` and `main.ts`**, which is what ships to a browser through
- * Vite. `server/` is deliberately outside it: `NullEngine` is imported by
- * subpath there ON PURPOSE, because the server has no Vite optimizer in front
- * of it and pulling the whole barrel into a headless process costs seconds of
- * boot for a class it does not use.
+ * Vite. `server/` is outside it because it needs no rule of this shape: it
+ * once imported `NullEngine` by subpath on purpose (no optimizer in front of a
+ * headless process, and a class the barrel does not carry), and since
+ * `BABYLON_EXIT.md` X2.3 it imports no Babylon at all — which
+ * `check-babylon-free.mjs`, run beside this, enforces for every path out of
+ * it, subpath or barrel.
  *
  * Matches an import STATEMENT and not the string, so the several places that
  * name one of these paths in prose — the argument for why they are gone is

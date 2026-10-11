@@ -333,7 +333,7 @@ const KURENAI: MapDef = {
  *
  * **It has one because the AUTHORITY is a thing that has to be measured too.**
  * Everything S0 through S8 priced was a client frame; a match server steps the
- * same simulation for sixteen slots at a fixed 60 Hz under NullEngine, has no
+ * same simulation for sixteen slots at a fixed 60 Hz with no engine, has no
  * canvas and so cannot run `MapBuilder`, and rebuilds the solid world from this
  * bake and nothing else (`server/world.ts`). Without one, the one process whose
  * budget is a TICK could be run on every map in the tree except the only one

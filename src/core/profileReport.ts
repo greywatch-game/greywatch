@@ -78,7 +78,7 @@ const LOAF_FLOOR_MS = 50;
  * is not style: `server/tsconfig.json` narrows `types` to `["node"]` and still
  * includes `../src`, so the bare identifier is undeclared in the authority's
  * typecheck even though it is declared in the client's — and it is undefined
- * at RUNTIME there too, under `NullEngine`.
+ * at RUNTIME there too, in plain Node.
  */
 function gpuFrameMeasurable(): boolean {
   const ctor = (

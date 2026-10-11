@@ -1,15 +1,18 @@
 /**
- * server/HeadlessGame.ts — The authoritative simulation: a NullEngine scene,
- * the three systems that decide a round, and the wiring between them.
- * Owns: the engine/scene lifetime, the map, and the per-tick order. It is the
+ * server/HeadlessGame.ts — The authoritative simulation: the systems that
+ * decide a round, and the wiring between them. No engine and no scene.
+ * Owns: the map's lifetime and the per-tick order. It is the
  * server's answer to `core/Game.ts` and follows that file's rules — systems
  * never import each other, every cross-system behaviour is a callback installed
  * here, and `ConquestSystem.update` runs BEFORE `BattleSystem.update` so a
  * bot's think tick sees this frame's flag ownership.
  * Invariants: NOTHING here may render, and nothing may reach a canvas — see
- * `server/README.md`. **Every vector here is `src/math`'s**, as every system
- * this file builds is: the NullEngine scene exists for `buildServerWorld`'s
- * collider meshes alone, and both go at `BABYLON_EXIT.md` X2.3. `GrenadeSystem` and `AntiTankSystem` are here as the
+ * `server/README.md`. **Nothing here imports `@babylonjs/core`, and every
+ * vector is `src/math`'s**, as every system this file builds is — the last
+ * scene, a NullEngine's that stood `buildServerWorld`'s collider meshes up,
+ * went at `BABYLON_EXIT.md` X2.3, and `scripts/check-babylon-free.mjs` fails
+ * the build on any import path from `server/` that reaches Babylon again.
+ * `GrenadeSystem` and `AntiTankSystem` are here as the
  * SIMULATIONS they are — where a grenade or a rocket goes and whom it hurts
  * is a rule and belongs to the authority — and their pictures, `GrenadeFx`
  * and `AntiTankFx`, are never built on this side (`BABYLON_EXIT.md` X2.2).
@@ -36,10 +39,6 @@
  * itself. That pair is the whole of spawn selection on this side — see
  * `docs/multiplayer.md`.
  */
-import { Scene } from "@babylonjs/core";
-// The `.js` is required and must stay: `@babylonjs/core` declares no `exports`
-// map, and the null engine is not in the package barrel.
-import { NullEngine } from "@babylonjs/core/Engines/nullEngine.js";
 import { CONFIG } from "../src/config";
 import type { Vector3, Vector3Like } from "../src/math";
 import { Bot } from "../src/entities/Bot";
@@ -103,8 +102,6 @@ import { NetPlayer } from "./NetPlayer";
 import { buildServerWorld } from "./world";
 
 export class HeadlessGame {
-  readonly engine = new NullEngine();
-  readonly scene: Scene;
   readonly combat: CombatSystem;
   readonly battle: BattleSystem;
   /**
@@ -206,10 +203,10 @@ export class HeadlessGame {
   private readonly combatants: Combatant[] = [];
 
   constructor() {
-    this.scene = new Scene(this.engine);
-    // No material factory: the last thing that wanted one was the fleet's rigs,
-    // which are the client's `VehicleViews` since `BABYLON_EXIT.md` X2.2 C9.
-    // The scene is `buildServerWorld`'s alone.
+    // No scene and no material factory: the last thing that wanted a factory
+    // was the fleet's rigs, which are the client's `VehicleViews` since
+    // `BABYLON_EXIT.md` X2.2 C9, and the last thing that wanted a scene was
+    // `buildServerWorld`'s collider meshes, which went at X2.3.
     // The simulation half alone: the tracer, spark, disc and mark pools are
     // `CombatFx`'s, which only a client builds, so `onRound` is left unwired
     // and every round's picture is a no-op here (`BABYLON_EXIT.md` X2.2).
@@ -343,7 +340,7 @@ export class HeadlessGame {
   ): Promise<void> {
     this.battle.setDifficulty(difficulty);
     this.map?.dispose();
-    this.map = await buildServerWorld(this.scene, def);
+    this.map = await buildServerWorld(def);
     this.battle.setMap(this.map);
     this.battle.reset();
     // **How many bodies a side this map fields**, out of the pool the
@@ -658,8 +655,6 @@ export class HeadlessGame {
   dispose(): void {
     this.vehicles.dispose();
     this.map?.dispose();
-    this.scene.dispose();
-    this.engine.dispose();
   }
 
   /**

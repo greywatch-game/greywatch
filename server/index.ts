@@ -8,7 +8,8 @@
  * Invariants: nothing here trusts a client. A socket that does not open with a
  * well-formed `join` at the right protocol version is closed, and a peer is
  * only ever given the slot the roster hands out. Never import a rendering
- * system; see `server/README.md` for what a NullEngine cannot do.
+ * system, or anything else that reaches Babylon — `server/README.md`, and
+ * `scripts/check-babylon-free.mjs`, which fails the build on the path.
  *
  * **Everything an anonymous socket may spend is bounded here**, because this is
  * the only place one exists: a peer that has not said `join` holds no slot and

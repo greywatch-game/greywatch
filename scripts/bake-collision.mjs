@@ -6,14 +6,15 @@
  * `public/icons/` — see `docs/multiplayer.md` for why this file exists at all.
  *
  * **Why a bake and not a server-side build.** The server runs the simulation
- * under Babylon's NullEngine, and a NullEngine has no canvas: `DynamicTexture`
- * throws `OffscreenCanvas is not defined`. `MapBuilder` reaches one through
- * `floorMaterial` → `textures.ts`, so the server cannot run a build at all.
- * What it CAN do is reproduce the solid world from the boxes, because
- * `MapBuilder.collider()` is the only place a collider is made and the
- * `WorldBox` it records (`w/h/d`, `cx/cy/cz`, `rotX/rotY`) is everything
- * `MeshBuilder.CreateBox` needs to build the same mesh. So this emits the boxes
- * and the server rebuilds from them — one ray implementation, not two.
+ * with no Babylon and no canvas (`BABYLON_EXIT.md` X2.3; it had a NullEngine
+ * before that, and a NullEngine has no canvas either), and `MapBuilder` builds
+ * meshes and reaches a `DynamicTexture` through `floorMaterial` →
+ * `textures.ts`, so the server cannot run a build at all. What it CAN do is
+ * reproduce the solid world from the boxes, because `MapBuilder.collider()` is
+ * the only place a collider is made and the `WorldBox` it records (`w/h/d`,
+ * `cx/cy/cz`, `rotX/rotY`) is everything a ray or a sweep asks of it. So this
+ * emits the boxes and the server rebuilds its queries from them — one ray
+ * implementation, not two, and no mesh on that side.
  *
  * Only the boxes are baked. Control points and spawns pass straight through
  * from the layout untouched (`MapBuilder.build` assigns `layout.controlPoints`

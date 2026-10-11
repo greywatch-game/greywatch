@@ -6,8 +6,9 @@ subsystem contracts under [`docs/`](docs/) that it points to carry the rules
 these modules obey; this file is for finding your way to the right one.
 
 ```
-server/               # The authoritative match server. Node, NullEngine, no
-  index.ts            #   rendering and no canvas — see server/README.md.
+server/               # The authoritative match server. Node, no Babylon (the
+  index.ts            #   gate below holds it), no rendering and no canvas —
+                      #   see server/README.md.
                       #   Process entry: /health, /matches, the ws listener and
                       #   the match registry — which IS the lobby, because
                       #   matches live in this process. Routes a join (named,
@@ -31,12 +32,13 @@ server/               # The authoritative match server. Node, NullEngine, no
                       #   wired by the same rules. Owns the armour too — the
                       #   fleet, the bot crews and the AT kit — plus `seat`,
                       #   which is `Game.mount`/`clearVehicle` as one method.
-                      #   Builds the SIMULATIONS only, never a view; its
-                      #   NullEngine scene is `buildServerWorld`'s alone
+                      #   Builds the SIMULATIONS only, never a view, and
+                      #   has no engine and no scene
   NetPlayer.ts        #   A connected human as the simulation sees one — the
                       #   only position anything on the server trusts
-  world.ts            #   Rebuilds the solid world from the baked boxes: the
-                      #   collider half of MapBuilder and nothing else
+  world.ts            #   Rebuilds the solid world from the baked boxes as
+                      #   DATA (queries, nav, cover — no mesh): the collider
+                      #   half of MapBuilder and nothing else
   lagComp.ts          #   Position history + the rewind around a shot. `resolve`
                       #   takes a callback so the restore cannot be skipped
   wire.ts             #   Is a client message shaped like what it claims to be?
@@ -69,9 +71,14 @@ scripts/                      # Node tooling, run by hand or by `npm run build`,
                               #   heights (collision-hash.mjs's hash), the
                               #   DEV-only maps included
   check-deep-imports.mjs      # BUILD GATE: refuses a deep static import into
-                              #   @babylonjs/core under src/ and main.ts — the
-                              #   one absolute rule tsc cannot see. server/ is
-                              #   outside it on purpose
+                              #   @babylonjs/core under src/ and main.ts — an
+                              #   absolute rule tsc cannot see
+  check-babylon-free.mjs      # BUILD GATE: refuses any VALUE import path to
+                              #   @babylonjs/core from server/ or a simulation
+                              #   module (its SIMULATIONS list, which a new
+                              #   simulation joins); prints the chain. Paths
+                              #   on the command line walk from those instead.
+                              #   Widens to src/render/ + src/math/ at X3.2
   check-audio.mjs             # BUILD GATE: audio/ stale against its masters,
                               #   over its mono-seconds budget, an encoded file
                               #   samples.ts does not load (or a url it loads
@@ -168,7 +175,8 @@ scripts/                      # Node tooling, run by hand or by `npm run build`,
                               #   diagnoses every miss over 1 mm; `walk` chains
                               #   fixed-step trajectories and reports drift.
                               #   `--tight` forces the re-gathers, `--reference
-                              #   server` the authority's scene. Owed by a
+                              #   server` the authority's pre-X2.3 scene,
+                              #   rebuilt here (clusters first). Owed by a
                               #   Babylon upgrade (docs/build.md). Deleted with
                               #   Babylon (X6.1). Not a gate
   loc.mjs                     # `npm run loc`: how big the project is, off `git

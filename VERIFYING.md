@@ -1178,9 +1178,9 @@ is one machine's:
   At ~2 fps nothing crosses a map, so anything about squads, spacing, cover or
   state occupancy wants `HeadlessGame` instead: build a throwaway entry against
   it with `vite build` (copy `vite.server.config.ts`, point `input` at a
-  scratchpad file, and either write the bundle inside the repo or set
-  `ssr: { noExternal: true }` — a bundle outside the tree cannot resolve
-  `@babylonjs/core`), then step `game.step(1/TICK_HZ)` and sample
+  scratchpad file; the bundle may live outside the tree, since the authority
+  imports no `@babylonjs/core` to resolve and `ws` is all `server/index.ts`
+  needs), then step `game.step(1/TICK_HZ)` and sample
   `game.battle.bots`. Two things make it a comparison rather than a number:
   `CONFIG` is `as const` to the typechecker and a plain object at runtime, so a
   probe can override any tunable from an env var and ablate one change at a

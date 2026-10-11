@@ -20,11 +20,14 @@
  * else. So the first mode compares with `Object.is`, and the other two say
  * how far the production sweep is from what shipped and WHY.
  *
- * Every map is built as the authority builds it (`buildServerWorld` under a
- * `NullEngine`), which hands over the collider boxes, the `RayWorld` whose
- * `bodyNear` every sweep gathers from, the `CollisionField` over it
- * (`map.collidables`), and a scene of collider meshes as the clients had
- * them. The bodies are the player and the three vehicle kinds, their
+ * Every map is built as the authority builds it (`buildServerWorld`, off the
+ * bake, with no engine and no mesh), which hands over the collider boxes, the
+ * `RayWorld` whose `bodyNear` every sweep gathers from and the
+ * `CollisionField` over it (`map.collidables`). Every Babylon scene a mode
+ * compares against is built HERE, from those boxes, on a `NullEngine` of this
+ * script's own — the authority has had no scene to borrow since
+ * BABYLON_EXIT.md X2.3, and this file is a dev oracle that keeps Babylon until
+ * X6.1 deletes it. The bodies are the player and the three vehicle kinds, their
  * ellipsoids and offsets DERIVED from `CONFIG` as `Player` and `Vehicle`
  * derive them, so a retune is checked without anybody telling this file.
  *
@@ -57,9 +60,11 @@
  *   start. Two things differ on purpose (`CollisionField.ts`'s header): the
  *   start (float64 against Babylon's float32), and a merged box's triangles,
  *   which bake the world matrix in before the ellipsoid scale and so round at
- *   the other end. `--reference server` puts the authority's own scene there
- *   instead, which made its clusters FIRST, so it adds tie order as a third
- *   difference. Agreement is a HISTOGRAM, and every sample over
+ *   the other end. `--reference server` puts the authority's scene there
+ *   instead — the one `buildServerWorld` stood up under Babylon until X2.3,
+ *   rebuilt here as it built it (each cluster merged, FIRST, then every other
+ *   box as its own mesh; its struts and floor never walked) — so it adds tie
+ *   order as a third difference. Agreement is a HISTOGRAM, and every sample over
  *   a millimetre is DIAGNOSED: (a) ours again from Babylon's float32 start —
  *   if that agrees to 1e-6 the start was the whole of it ("start"); (b)
  *   Babylon against itself from starts nudged a float32 step either way in x
@@ -308,13 +313,12 @@ const same = (a, b) => Object.is(a.x, b.x) && Object.is(a.y, b.y) && Object.is(a
 
 async function buildWorld(env, def) {
   const engine = new env.B.NullEngine();
-  const scene = new env.B.Scene(engine);
-  const map = await env.buildServerWorld(scene, def);
+  const map = await env.buildServerWorld(def);
   if (map.rays.hulls.length !== 0) {
     throw new Error(`${def.id}: the server world arrived with ${map.rays.hulls.length} hulls; the reference has none`);
   }
   const anchors = map.colliderBoxes.filter((b) => !(b.w > 200 || b.d > 200));
-  return { engine, scene, map, anchors };
+  return { engine, map, anchors };
 }
 
 /**
@@ -351,7 +355,7 @@ function clientOrder(map) {
   return [...map.colliderBoxes.keys()].filter((i) => !grouped.has(i)).concat(map.boxGroups.flat());
 }
 
-/** The AUTHORITY's under Babylon (`buildServerWorld`): every cluster first, then the rest. */
+/** The AUTHORITY's under Babylon (`buildServerWorld` until X2.3): every cluster first, then the rest. */
 function serverOrder(map) {
   const grouped = new Set(map.boxGroups.flat());
   return map.boxGroups.flat().concat([...map.colliderBoxes.keys()].filter((i) => !grouped.has(i)));
@@ -407,12 +411,39 @@ function clientScene(env, engine, map) {
 }
 
 /**
+ * The scene the AUTHORITY stood up under Babylon until X2.3, as
+ * `buildServerWorld` built it: each `boxGroups` cluster MERGED (a cluster of
+ * one kept as its mesh), FIRST, then every box no cluster holds as its own
+ * mesh in collider order. Its fence struts and floor clones are left out:
+ * both were `checkCollisions = false`, which Babylon's walk skips, so they
+ * never took part in a sweep.
+ */
+function serverScene(env, engine, map) {
+  const { B } = env;
+  const scene = new B.Scene(engine);
+  map.boxGroups.forEach((group, g) => {
+    const parts = group.map((i, j) => boxMesh(B, scene, `clump${g}-${j}`, map.colliderBoxes[i]));
+    const mesh = parts.length === 1 ? parts[0] : B.Mesh.MergeMeshes(parts, true, true, undefined, false, false);
+    if (!mesh) throw new Error(`cluster ${g} failed to merge`);
+    mesh.name = `clump${g}`;
+    mesh.isVisible = false;
+    mesh.checkCollisions = true;
+    mesh.freezeWorldMatrix();
+  });
+  const grouped = new Set(map.boxGroups.flat());
+  map.colliderBoxes.forEach((box, i) => {
+    if (!grouped.has(i)) boxMesh(B, scene, `col${i}`, box).freezeWorldMatrix();
+  });
+  return scene;
+}
+
+/**
  * `shipped` and `walk`'s Babylon world. The client's is the default, because
  * it is the scene the feel was tuned in and the order `RayWorld` ranks by; the
- * server's (`--reference server`) is the authority's own, clusters first.
+ * server's (`--reference server`) is the authority's old one, clusters first.
  */
-function shippedReference(env, engine, serverScene, map) {
-  if (REFERENCE === "server") return { scene: serverScene, ids: serverOrder(map) };
+function shippedReference(env, engine, map) {
+  if (REFERENCE === "server") return { scene: serverScene(env, engine, map), ids: serverOrder(map) };
   return { scene: clientScene(env, engine, map), ids: clientOrder(map) };
 }
 
@@ -588,7 +619,7 @@ const fmt = (v) => (v === 0 ? "0" : v.toExponential(2));
 
 async function runExact(env, def, state) {
   const { B, CONFIG, CollisionField, mulberry32 } = env;
-  const { engine, scene: serverScene, map, anchors } = await buildWorld(env, def);
+  const { engine, map, anchors } = await buildWorld(env, def);
   const { scene, meshOf } = oneMeshPerBox(env, engine, map, clientOrder(map));
   const rand = mulberry32(streamSeed(def.id));
   const hulls = addHulls(env, scene, map, rand, anchors, meshOf);
@@ -668,7 +699,6 @@ async function runExact(env, def, state) {
     state.rows.push(row);
   }
   scene.dispose();
-  serverScene.dispose();
   engine.dispose();
   return map.colliderBoxes.length;
 }
@@ -697,8 +727,8 @@ function reportExact(state) {
 
 async function runShipped(env, def, state) {
   const { B, CONFIG, mulberry32 } = env;
-  const { engine, scene: serverScene, map, anchors } = await buildWorld(env, def);
-  const { scene, ids } = shippedReference(env, engine, serverScene, map);
+  const { engine, map, anchors } = await buildWorld(env, def);
+  const { scene, ids } = shippedReference(env, engine, map);
   const rand = mulberry32(streamSeed(def.id));
   const hulls = addHulls(env, scene, map, rand, anchors, null);
   checkMaterials(scene, def.id);
@@ -842,7 +872,6 @@ async function runShipped(env, def, state) {
   }
   unmerged?.scene.dispose();
   scene.dispose();
-  if (scene !== serverScene) serverScene.dispose();
   engine.dispose();
   return map.colliderBoxes.length;
 }
@@ -1117,8 +1146,8 @@ function walkSequence(env, map, anchors, probe, body, seq, defId) {
 
 async function runWalk(env, def, state) {
   const { B, CONFIG } = env;
-  const { engine, scene: serverScene, map, anchors } = await buildWorld(env, def);
-  const { scene } = shippedReference(env, engine, serverScene, map);
+  const { engine, map, anchors } = await buildWorld(env, def);
+  const { scene } = shippedReference(env, engine, map);
   checkMaterials(scene, def.id);
   const probe = new B.Mesh("probe", scene);
   for (const body of bodiesOf(CONFIG)) {
@@ -1152,7 +1181,6 @@ async function runWalk(env, def, state) {
     state.rows.push(row);
   }
   scene.dispose();
-  if (scene !== serverScene) serverScene.dispose();
   engine.dispose();
   return map.colliderBoxes.length;
 }

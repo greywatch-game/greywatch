@@ -11,24 +11,25 @@
  * argued, and checked on the derived structures rather than on the input:
  * matching box counts would prove very little, whereas a matching nav graph
  * means every box ended up in the same place and the same shape.
+ *
+ * It builds the world exactly as the authority does — `buildServerWorld`, off
+ * the bake, with no engine and no scene — so what it fingerprints is what a
+ * match stands in rather than a stand-in for it.
  */
-import { NullEngine } from "@babylonjs/core/Engines/nullEngine.js";
-import { Scene } from "@babylonjs/core";
 import { MAPS } from "../src/world/maps";
 import { buildServerWorld } from "./world";
 import { worldFingerprint } from "../src/world/fingerprint";
 
-const engine = new NullEngine();
 const out: Record<string, unknown> = {};
 
 for (const def of MAPS) {
-  const scene = new Scene(engine);
-  const map = await buildServerWorld(scene, def);
+  const map = await buildServerWorld(def);
   out[def.id] = worldFingerprint(map);
   map.dispose();
-  scene.dispose();
 }
 
-// The only thing this process writes to stdout, so the caller can parse it
-// whole. Babylon's own banner goes to stdout too, hence the marker.
+// The only thing this process means to write to stdout, so the caller can
+// parse it whole. The marker is kept although Babylon's banner, which used to
+// share stdout, went with the engine (`BABYLON_EXIT.md` X2.3): anything else a
+// shared module ever logs there must not be able to break the parse either.
 console.log(`__PARITY__${JSON.stringify(out)}`);

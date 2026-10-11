@@ -25,7 +25,7 @@
  * see `net.onSeated`.
  *
  * The default is 0, which is the identity remap: an offline round, and the
- * authority's own NullEngine build, both want exactly that and neither has to
+ * authority's own build, both want exactly that and neither has to
  * know this file exists.
  */
 import { CONFIG } from "../config";

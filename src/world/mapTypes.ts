@@ -383,7 +383,13 @@ export interface GameMap {
    * modules. See `VehicleSpawnDef`.
    */
   vehicleSpawns: VehicleSpawnDef[];
-  /** Invisible collider proxies — the only pickable, collidable geometry. */
+  /**
+   * Invisible collider proxies — the only geometry the editor's pick takes, and
+   * what `GlassFx` and `WorldCulling` index. **Client-only and EMPTY on the
+   * authority**, like `visuals`: no ray and no sweep reads a mesh on either
+   * side (they answer off `colliderBoxes`, `rayGroups` and the floor through
+   * `rays`), and `buildServerWorld` builds none (`BABYLON_EXIT.md` X2.3).
+   */
   colliders: Mesh[];
   /** The same colliders as plain boxes, for the nav grid. */
   colliderBoxes: WorldBox[];
@@ -468,9 +474,10 @@ export interface GameMap {
    * behind it (a heightfield is not a box — see `MapBuilder.buildValley`), so
    * anything that wants the whole solid world as geometry has to take
    * `colliderBoxes` for the boxes and these for the floor.
-   * `RagdollSystem` is the caller: it needs the real mesh to rest a body on.
+   * `PhysicsWorld` is the caller: it needs the real mesh to rest a body on.
    * Picking them out of `colliders` by name would work and is exactly the sort
-   * of string-sniffing that breaks silently when a name changes.
+   * of string-sniffing that breaks silently when a name changes. **Empty on
+   * the authority**, with `colliders`: it has no Havok and no scene.
    */
   terrainColliders: Mesh[];
   /** Drawn geometry, merged per colour. */

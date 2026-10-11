@@ -2257,11 +2257,12 @@ export class MapBuilder {
    * a tank's chase camera.
    *
    * **NONE OF THOSE IS A PICK ANY MORE** (`RayWorld`, `ENGINE_UPGRADE.md` wall
-   * 2), so the frame no longer cares how these are grouped. Three things do,
-   * and they are why this stays: the editor still picks meshes, the server
-   * still stands them up, and the grouping rides to it as
-   * `MapCollision.boxGroups` — a decision this side made that the other side
-   * has to reproduce. `colliderBoxes` keeps one entry per prop however the
+   * 2), so the frame no longer cares how these are grouped. Two things do,
+   * and they are why this stays: the editor still picks meshes, and the
+   * grouping rides to the server as `MapCollision.boxGroups` — the order a
+   * body's sweep breaks a tie in, a decision this side made that the other
+   * side has to reproduce (it builds no mesh from it since `BABYLON_EXIT.md`
+   * X2.3). `colliderBoxes` keeps one entry per prop however the
    * meshes are grouped, which is why nothing derived from geometry — the ray
    * queries now included — can tell either way. Greyfen's five belts were 354
    * loose tree boxes out of
@@ -2282,9 +2283,9 @@ export class MapBuilder {
    * geometry reads that list and a cluster is not a shape: the nav grid, the
    * cover bake, the obstacle field and the AO all still see individual trunks.
    * What is merged is only what a ray meets. The grouping is carried on
-   * `boxGroups` so the SERVER can rebuild the same meshes from the bake — a
-   * flat list cannot say which boxes were one cluster, exactly as with
-   * `rayGroups`.
+   * `boxGroups` so the SERVER can rank the same boxes in the same order from
+   * the bake — a flat list cannot say which boxes were one cluster, exactly as
+   * with `rayGroups`.
    *
    * The editor never gets here: it needs one mesh per box so `repositionItem`
    * can walk colliders and boxes in step, which is the same reason it skips the

@@ -326,9 +326,10 @@ export function terrainPatches(
   /**
    * The patch's side, in metres — `MapLayout.terrainBlock`, or `BLOCK_SIZE`.
    * **A whole number of terrain cells**, or the round below cuts somewhere
-   * other than where the caller said. All three callers — `buildValley`, the
-   * server's `terrainColliders` and the editor's brush — must pass the same
-   * map's value or they tessellate different floors.
+   * other than where the caller said. Both callers — `buildValley` and the
+   * editor's brush — must pass the same map's value or the brush re-cuts
+   * patches the floor was never cut into. (The server's `terrainColliders`
+   * was a third until `BABYLON_EXIT.md` X2.3; the authority builds no mesh.)
    */
   blockSize: number,
 ): TerrainPatch[] {
@@ -384,8 +385,8 @@ export function terrainPatches(
   //
   // `size` is not consulted, here or above: the extent is the FIELD's, and the
   // borderland is the field's too. That is what lets both callers — the client's
-  // `buildValley` and the server's `terrainColliders` — get the same floor
-  // without either of them being told the margin exists.
+  // `buildValley` and the editor's brush — get the same floor without either of
+  // them being told the margin exists.
   const m = Math.round(terrain.margin / f.cell);
   if (m > 0) {
     // Blocks four times the floor's, because nobody fights out here: what the

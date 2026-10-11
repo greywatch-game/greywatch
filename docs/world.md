@@ -589,11 +589,13 @@ its floor, and the floor stays where it is until the map moves it.
 
 It owes a whole number of terrain cells and nothing checks — `terrainPatches`
 takes `Math.round(terrainBlock / cell)` and cuts on grid lines, so a value that
-is not a multiple simply cuts somewhere other than where it says. **Three
-callers must pass the same map's value**: `buildValley`, the server's
-`terrainColliders` (or line of sight runs over a different rise from the one the
-clients are standing on) and the editor's brush (or a stroke re-tessellates
-meshes it never touched and leaves the ones under the cursor stale). The patch
+is not a multiple simply cuts somewhere other than where it says. **Both
+callers must pass the same map's value**: `buildValley` and the editor's brush
+(or a stroke re-tessellates meshes it never touched and leaves the ones under
+the cursor stale). The server's `terrainColliders` was a third until
+`BABYLON_EXIT.md` X2.3 took the authority's meshes away; line of sight over a
+rise is `RayWorld`'s march over the field's own cells on both sides, which no
+patch lattice reaches. The patch
 key is a mesh NAME and has never lined up with the merge's seams, which is fine
 and always was: a floor mesh carries no `metadata.block` at all.
 
@@ -1504,8 +1506,8 @@ through to the skybox running the whole way round the map. `latticeBands` cuts
 its blocks so they break at 0 and at `size` and never straddle, or the two loops
 would emit the same ground twice and z-fight. It carries the same clone collider
 the floor does, so the borderland is real: you walk it, rounds spark on it and a
-corpse lands on it. Neither caller — `buildValley` or the server's
-`terrainColliders` — is told the margin exists; the extent is the field's.
+corpse lands on it. Neither `buildValley` nor `RayWorld` is told the margin
+exists; the extent is the field's.
 
 **The rim moves out with the boundary, and takes a second form.** The four boxes
 stand at `±(size/2 + margin)` and `ridgeSegments` is handed `size + 2 * margin`,
@@ -2473,8 +2475,8 @@ Every ray in the game is answered by `RayWorld` off the colliders' own boxes
 (`CLAUDE.md`, the collider section). This is how the substitution was proved,
 and the two classes of disagreement it found.
 
-Under a NullEngine, off `buildServerWorld` (which still stands the collider
-meshes up), **8,000 seeded rays per map per question** — 4,000 eye-height at
+Under a NullEngine, off `buildServerWorld` (which stood the collider meshes up
+then; `BABYLON_EXIT.md` X2.3 took them away), **8,000 seeded rays per map per question** — 4,000 eye-height at
 55/120/180 m, 2,000 short from inside geometry, 2,000 straight down — compared
 `scene.pickWithRay` against `RayWorld` on all four shipped maps. **32,000 rays
 each way. Every disagreement is one of two things and neither is a geometry

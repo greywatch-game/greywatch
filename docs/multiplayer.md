@@ -7,18 +7,22 @@ violate even if they never open this file; everything below is the argument
 under it.
 
 The shape in one sentence: **a dedicated Node server runs the real simulation
-under Babylon's NullEngine, clients render it, and a roster slot is a slot
-whether a person or a bot is in it.**
+with no Babylon in it, clients render it, and a roster slot is a slot whether a
+person or a bot is in it.**
 
-**The WebGPU port did not touch any of it, and that is the first thing the next
-reader wants to know.** `NullEngine` has no backend to swap: it draws nothing,
-compiles nothing and never asked which shading language the tree is written in,
-so `server/HeadlessGame.ts`, `server/parity.ts`, `npm run parity` and
-`npm run simulate` all came through the migration unedited. What the client is
-gated on — an adapter, a device, the two WASMs it must never fetch — is the
-client's alone. The one place the two sides still have to agree is the world
-they pick against, and that is `collision.ts` and `src/world/solid.ts` below,
-neither of which is a rendering question.
+**The authority imports nothing from `@babylonjs/core`, and a build gate says
+so** (`BABYLON_EXIT.md` X2.3). It used to run under Babylon's `NullEngine`,
+with a scene that existed for one thing at the end — the collider meshes
+`buildServerWorld` stood up, which no ray and no sweep read any more (below).
+Those went with the scene, the scene with the engine, and
+`scripts/check-babylon-free.mjs` now walks the value-import graph from every
+file in `server/` (and from every simulation module, which a client builds
+too) and fails `npm run build` on any path that reaches Babylon. So
+`dist-server` loads no Babylon at all, and what the client is gated on — an
+adapter, a device, the two WASMs it must never fetch — is the client's alone.
+The one place the two sides still have to agree is the world they stand in,
+and that is `collision.ts` and `src/world/solid.ts` below, neither of which is
+a rendering question.
 
 ## The three decisions everything else follows from
 
@@ -1309,24 +1313,25 @@ cross-origin case then costs is a header and a cleared buffer — see "Regions".
 
 ## The world the server stands in
 
-The server has no canvas. `DynamicTexture.getContext()` throws
-`OffscreenCanvas is not defined` and `GPUParticleSystem.IsSupported` is false,
-so **`MapBuilder` cannot run there at all** — it reaches a texture through
-`floorMaterial`.
+The server has no canvas and no engine, so **`MapBuilder` cannot run there at
+all** — it builds meshes and materials, and reaches a canvas through
+`floorMaterial` (`DynamicTexture.getContext()`).
 
 It rebuilds the solid world instead, from `src/world/<map>/collision.ts`
-(generated; see `scripts/bake-collision.mjs`). That is sound because
-`MapBuilder.collider()` is the only place a collider is made and the `WorldBox`
-it records is everything `MeshBuilder.CreateBox` needs. Both sides then pick
-against that geometry through the same `RayWorld` the client builds, off the
-same `colliderBoxes` and `rayGroups` — one ray implementation, not two — and a
-driven hull SWEEPS through the same `CollisionField` the client's does, off the
-same boxes and in the same tie order (`RayWorld`'s rank, from the baked
-`boxGroups`). **The collider MESHES this file stands up are read by nothing on
-this side any more**: they were there first so the server's `scene.pickWithRay`
-had something to pick, then so a driven hull's `moveWithCollisions` had
-something to walk, and both are box queries now (`BABYLON_EXIT.md` X2.1). They
-stay as an inert mirror of the client's until the scene goes (X2.3).
+(generated; see `scripts/bake-collision.mjs`), and rebuilds it as DATA. That is
+sound because `MapBuilder.collider()` is the only place a collider is made and
+the `WorldBox` it records is everything a query needs. Both sides then answer
+every ray off that geometry through the same `RayWorld` the client builds, off
+the same `colliderBoxes` and `rayGroups` — one ray implementation, not two —
+and a driven hull SWEEPS through the same `CollisionField` the client's does,
+off the same boxes and in the same tie order (`RayWorld`'s rank, from the baked
+`boxGroups`). **There are no collider MESHES on this side**: they were there
+first so the server's `scene.pickWithRay` had something to pick, then so a
+driven hull's `moveWithCollisions` had something to walk; both became box
+queries (`BABYLON_EXIT.md` X2.1), the meshes stood on as an inert mirror of
+the client's, and X2.3 took them away with the scene. `GameMap.colliders` and
+`terrainColliders` are EMPTY on the authority, as `visuals` and `paneGroups`
+always were — every reader of either is a client view.
 
 **The FLOOR is the one part of that world which is not baked and is no longer
 on the layout either.** It is a `TerrainField` over the map's heightfield,
@@ -1347,13 +1352,12 @@ to report, because the client drew the outcome and the authority is the only
 side that counts.
 
 `rayGroups` stays **grouped as the client merged it**, one inner array per
-collider mesh, and the server merges the same way — `strutMesh` is the one merge
-in `server/world.ts`, and it is allowed there because it produces geometry to
-pick against rather than anything to draw. The grouping is not cosmetic: merged
-per fence, the timber costs a shot 0.2%; merged into one mesh for the map it
-would wrap a single bounding box around every fence in the village and charge
-every ray for all of them; not merged at all it costs ~17% on every ray in the
-process.
+collider mesh, and `RayWorld` indexes it group by group on both sides. The
+grouping is not cosmetic: it was measured when every ray was a mesh pick —
+merged per fence, the timber cost a shot 0.2%; merged into one mesh for the map
+it wrapped a single bounding box around every fence in the village; not merged
+at all it cost ~17% on every ray in the process — and the server is told it
+rather than inventing one, because it is a decision the CLIENT made.
 
 **The bake carries a third list, and it is a third VIEW of `boxes` rather than
 new geometry.** `boxGroups` is which of them the client merged into one collider
@@ -1368,8 +1372,8 @@ hull wedged on two boxes slides the same way on the authority as on the client
 that drove it. (Under Babylon the server made its clusters first and broke those
 ties apart from the client.) It began as a pick budget, when a ray paid a
 bounding test per mesh and Greyfen's ~1,390 one-metre trunks would have been
-more collider meshes than the rest of the map put together; `clusterMesh` still
-merges them in `server/world.ts`, but nothing on this side reads the result.
+more collider meshes than the rest of the map put together; the server merged
+them too until X2.3, and now reads the grouping and builds nothing from it.
 Anything named in a group is left out of the one-mesh-per-box pass, so a box
 belongs to exactly one mesh either way — and nothing porous or glass is ever
 grouped, because one mesh cannot carry two answers about porosity and a pane has
@@ -2246,7 +2250,7 @@ lobby row two people click on, or a restart everybody reconnects to — each fou
 it. The failure is not a match that runs slowly: the second assignment to
 `timer` orphans the first interval, so `stop` can never clear it, the match
 steps twice per tick for the rest of its life, and the orphan goes on calling
-`step` after `retire` has disposed the scene — a throw inside a timer callback,
+`step` after `retire` has disposed the game — a throw inside a timer callback,
 which takes every other match in the process down with it. `starting` is cleared
 in a `finally`, so a build that FAILED is retried by the next arrival rather
 than remembered as permanently in progress.

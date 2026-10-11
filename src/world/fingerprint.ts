@@ -4,8 +4,8 @@
  * agree. Read by `server/parity.ts` and by the browser half of
  * `scripts/check-world-parity.mjs`.
  * Invariants: pure — takes a `GameMap`, allocates a small object, touches
- * nothing. It must stay runnable in both a browser and a NullEngine process,
- * so no DOM and no rendering. Every field must be deterministic: anything
+ * nothing. It must stay runnable in both a browser and the authority's plain
+ * Node process, so no DOM, no rendering and no Babylon. Every field must be deterministic: anything
  * seeded from `Math.random()` or from frame timing would make two correct
  * builds disagree and turn this from a check into noise.
  *

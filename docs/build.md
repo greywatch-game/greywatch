@@ -246,17 +246,51 @@ the project that `tsc` cannot see: a subpath import compiles, typechecks and
 reviews clean, and what it breaks is a session on somebody else's machine. The
 gate matches an import STATEMENT rather than the string, so the several places
 that argue about these paths in prose do not fail the build for naming them, and
-it is scoped to `src/` and `main.ts` — `server/` imports `NullEngine` by subpath
-DELIBERATELY, because there is no Vite optimizer in front of a headless process
-and the barrel would cost seconds of boot for a class it does not use. **An
-empty allow-list is the only kind that stays empty**, which is why the gate went
-in on the milestone that emptied it rather than being left for later.
+it is scoped to `src/` and `main.ts`. `server/` was outside it because it
+imported `NullEngine` by subpath on purpose; since `BABYLON_EXIT.md` X2.3 it
+imports no Babylon at all, which is the next section's gate rather than this
+one's. **An empty allow-list is the only kind that stays empty**, which is why
+the gate went in on the milestone that emptied it rather than being left for
+later.
 
 The reason this one is stated as an absolute rather than as a caution: the
 symptom appears in a subsystem that has nothing to do with the import, on a
 machine that is not the one where the import was written, and it goes away on
 its own the moment anyone looks hard enough to restart the server. There is no
 version of "be careful with deep imports" that survives that.
+
+## The authority and the simulation import no Babylon: `check-babylon-free.mjs`
+
+**`scripts/check-babylon-free.mjs` runs from `npm run build` beside the
+deep-import gate, and it is the other rule `tsc` cannot see** — a property of
+the import GRAPH rather than of a file. Phase 2 of `BABYLON_EXIT.md` took the
+simulation off the scene and the authority off its engine: every system that
+decides an outcome holds its state on `src/math` and leaves its picture to a
+view module (`CLAUDE.md`, "Ownership and wiring"), and `server/` builds its
+world from the collision bake with no mesh, no scene and no `NullEngine`. The
+way back is one innocent import — a simulation pulls in a helper that pulls in
+a mesh builder — and nothing else would notice: it typechecks, it plays, and
+`dist-server` quietly loads Babylon again.
+
+It walks the VALUE imports from two kinds of root: every file in `server/`, and
+every SIMULATION module, named one by one in its `SIMULATIONS` list (the left
+column of X2.2's table — `Player` among them, a simulation the authority never
+builds). **A new module that simulates, or a system split into a simulation and
+a view, joins that list in the commit that makes it**; a view never does, and a
+listed file that no longer exists fails rather than dropping out. Type-only
+imports (`import type`, an all-`type` named list, and the `export … from`
+twins) are skipped, because naming a Babylon type loads none of it — `GameMap`
+still names `Mesh` for the client's fields. Re-exports and `import()` are
+followed, a computed `import()` or an unresolvable relative specifier FAILS (the
+gate would otherwise have a hole), and resolution takes a name as written, so
+`src/math`'s `./vector.ts` style resolves. A failure prints the importing line
+and the shortest chain from a root to it.
+
+**It widens on a schedule, not on a whim** (`BABYLON_EXIT.md` rule 6): X3.2
+adds `src/render/` and `src/math/` to its `DIRECTORIES`, naming
+`src/math/babylon.ts` — the crossing X1.1 made — in `NOT_ROOTS`, which exempts a
+file from being a root and never from being REACHED; X6.1 widens it to the
+whole tree, the day the package goes.
 
 ## A Babylon upgrade owes geometry-check, math-check, sweep-check, then `npm run merge:hash`
 
@@ -283,8 +317,8 @@ buffers, and the world becomes meshes once, at the end of the build.
   `Mesh.MergeMeshes` (`MapBuilder.clusterColliders`, `struts`). Nothing that
   moves or shoots reads them since BABYLON_EXIT.md X2.1 — the rays and the
   sweeps both answer off the `WorldBox`es — so on the client they are the
-  editor's centre-screen pick's, which walks a mesh's submeshes, and on the
-  server an inert mirror X2.3 deletes.
+  editor's centre-screen pick's, which walks a mesh's submeshes. The server
+  builds none since X2.3.
 
 **And the copies, which an upgrade cannot move but can make WRONG.** The
 geometry every model and every structure is built and merged from is ours
@@ -302,7 +336,8 @@ collider's triangle test, its response and the coordinator's retry loop —
 ported operation for operation against each `WorldBox`'s twelve triangles
 (Apache-2.0 notice in its header), and `scripts/sweep-check.mjs` holds it to
 the BIT against the installed Babylon in its default `exact` mode (it builds
-each map as the authority does, under a `NullEngine`, so it needs no browser).
+each map as the authority does, off the bake, and its Babylon reference scenes
+on a `NullEngine` of its own, so it needs no browser).
 After an upgrade a difference in any of the three means
 Babylon changed under the copy, not that the map moved — and since the copy is
 what Babylon 9.28 did, which version it should now follow is a decision, not a

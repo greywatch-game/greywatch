@@ -1,34 +1,39 @@
 /**
- * server/world.ts — Rebuilds a map's SOLID world under a NullEngine, from the
- * baked collider set plus the layout.
- * Owns: the collider meshes, the terrain floor's collider clones, and the
- * nav/cover/obstacle/ray/sweep structures built from the same boxes.
+ * server/world.ts — Rebuilds a map's SOLID world from the baked collider set
+ * plus the layout, as data and nothing else: no engine, no scene, no mesh.
+ * Owns: the nav/cover/obstacle/ray/sweep structures built from the baked
+ * boxes and the map's floor, and the `GameMap` that carries them.
  *
- * **NOTHING ON THIS SIDE READS THE MESHES ANY MORE.** They existed first so
- * this process's `scene.pickWithRay` had something to pick, and then so a
- * driven hull's `moveWithCollisions` had something to walk. Every ray is a box
- * query now (`RayWorld`, `ENGINE_UPGRADE.md` wall 2) and so is every sweep
- * (`CollisionField`, `BABYLON_EXIT.md` X2.1), both off `colliderBoxes` — so
- * the hulls the authority drives meet exactly the walls its clients' meet,
- * without a mesh in between. The meshes still mirror the client's so the two
- * worlds stay one shape for whoever reads them next, and they go with the
- * scene (`BABYLON_EXIT.md` X2.3).
- * Invariants: this is the collider half of `MapBuilder.build` and nothing else
- * — no visuals, no materials, no textures, no AO bake, and the two merges here
- * (`strutMesh`, `clusterMesh`) merge COLLIDERS and draw nothing. It must produce
- * geometry that lines up with the client's exactly, or a shot that lands on a
- * wall here passes through it there.
+ * **There are no collider meshes on this side any more, and that is the end of
+ * a road rather than a shortcut.** They existed first so this process's
+ * `scene.pickWithRay` had something to pick, and then so a driven hull's
+ * `moveWithCollisions` had something to walk. Every ray became a box query
+ * (`RayWorld`, `ENGINE_UPGRADE.md` wall 2) and so did every sweep
+ * (`CollisionField`, `BABYLON_EXIT.md` X2.1), both off `colliderBoxes`, which
+ * left the meshes an inert mirror of the client's that nothing read; X2.3 took
+ * them away with the scene they stood in. `GameMap.colliders` and
+ * `terrainColliders` are therefore EMPTY here, as `visuals` and `paneGroups`
+ * always were — every reader of either is a client view (`GlassFx`,
+ * `WorldCulling`, `PhysicsWorld`), and the authority builds none of them.
+ * Invariants: this is the collider half of `MapBuilder.build` and nothing else,
+ * and it imports nothing from `@babylonjs/core` — `scripts/check-babylon-free.mjs`
+ * fails the build if any path from `server/` reaches it. What it builds must
+ * line up with the client's exactly, or a shot that lands on a wall here passes
+ * through it there: the same boxes, the same `rayGroups`, the same
+ * `boxGroups` (the sweep's tie order), the same floor, and `npm run parity`
+ * proving the derived structures agree.
  *
- * Why a rebuild and not a build: the server has no canvas, so
- * `DynamicTexture.getContext()` throws and `MapBuilder` cannot run at all (it
- * reaches one through `floorMaterial`). See `scripts/bake-collision.mjs`.
+ * Why a rebuild and not a build: `MapBuilder` builds meshes and materials and
+ * reaches a canvas through `floorMaterial` (`DynamicTexture.getContext()`), and
+ * this process has neither a canvas nor, now, an engine. See
+ * `scripts/bake-collision.mjs`.
  *
  * Two sources, and the split is not arbitrary:
  *
  *   - **The boxes are baked**, because they come out of the structure builders
- *     and those build meshes and read textures. `MapBuilder.collider()` is the
- *     only place a collider is made and the `WorldBox` it records carries
- *     everything `CreateBox` needs, so the bake is lossless.
+ *     and those build geometry and read textures. `MapBuilder.collider()` is
+ *     the only place a collider is made and the `WorldBox` it records carries
+ *     everything a query needs, so the bake is lossless.
  *   - **Everything else is read from the map's own data**, because it is
  *     already data or already arithmetic: control points and spawns pass
  *     through `MapBuilder.build` untouched off the layout, and the floor is
@@ -42,7 +47,6 @@
  * d > 200` shape that `NavGrid`, `ObstacleField` and `CoverMap` identify the
  * boundary by.
  */
-import { Mesh, MeshBuilder, Scene, Vector3 } from "@babylonjs/core";
 import { CONFIG } from "../src/config";
 import {
   toRayGroups,
@@ -51,7 +55,7 @@ import {
   type MapCollision,
 } from "../src/world/collision";
 import { CoverMap } from "../src/world/CoverMap";
-import type { GameMap, WorldBox } from "../src/world/MapBuilder";
+import type { GameMap } from "../src/world/MapBuilder";
 import { BLOCK_SIZE } from "../src/world/blocks";
 import type { MapDef } from "../src/world/maps";
 import { NavGrid } from "../src/world/NavGrid";
@@ -59,175 +63,20 @@ import { ObstacleField } from "../src/world/ObstacleField";
 import { RayWorld } from "../src/world/RayWorld";
 import { CollisionField } from "../src/world/CollisionField";
 import { roadNetwork } from "../src/world/roadPaths";
-import { TerrainField, terrainPatches } from "../src/world/TerrainField";
-import { vertexDataOf } from "../src/world/parts";
+import { TerrainField } from "../src/world/TerrainField";
 
 /**
- * Builds one collider box, matching `MapBuilder.collider()` exactly.
- *
- * The flags are copied even though nothing here reads them any more, and that
- * is deliberate: `MapBuilder`'s mesh carries them, the editor's predicate
- * reads them there, and a mesh on this side that describes itself differently
- * from its twin is a difference a future reader would have to rediscover. The
- * flags that DECIDE anything travel on the `WorldBox` — that is what
- * `RayWorld`, `NavGrid`, `CoverMap` and `ObstacleField` all read. They are
- * copied rather than shared because the two functions build from different
- * inputs — one from a `BoxSpec` in a structure's local frame, one from a
- * `WorldBox` already in world space — and the only thing they have in common
- * is the result.
- */
-function colliderBox(scene: Scene, box: WorldBox, i: number): Mesh {
-  const mesh = MeshBuilder.CreateBox(
-    `col${i}`,
-    { width: box.w, height: box.h, depth: box.d },
-    scene,
-  );
-  mesh.position.set(box.cx, box.cy, box.cz);
-  mesh.rotation.set(box.rotX, box.rotY, 0);
-  mesh.isVisible = false;
-  mesh.isPickable = true;
-  // Copied from `MapBuilder.collider()` like the flags below, so the mesh
-  // describes itself as its twin does. Nothing walks it: a driven hull sweeps
-  // off the boxes (`CollisionField`), a client does its own movement, and
-  // `validateMove` checks the result analytically.
-  mesh.checkCollisions = true;
-  // `porous` copied through so the mesh describes itself the way the client's
-  // twin does. The flag that DECIDES a shot rides on the `WorldBox` and is read
-  // by `RayWorld`; see the header on why both sides still carry it.
-  mesh.metadata = box.porous ? { solid: true, porous: true } : { solid: true };
-  mesh.freezeWorldMatrix();
-  return mesh;
-}
-
-/**
- * One group of `strut` boxes as the single collider mesh the client merged them
- * into — a fence's posts and rails.
- *
- * **This is the one merge on the server**, and it is here because the client
- * merges the same group and the two worlds must be the same shape. The
- * header's "no merges" is about visuals: there is nothing to draw here and
- * this produces no material, no texture and no draw call. Group by group,
- * exactly as baked, because a merge is a decision the CLIENT made and this
- * side has to reproduce it rather than invent one.
- *
- * **A strut stops a round and is no body at all, so `checkCollisions` is off
- * and this mesh is now inert on this side** — what a round meets is
- * `RayWorld`'s copy of `rayGroups`, and what a hull meets is the boxes above.
- * Nothing here is in `colliderBoxes`, so the nav graph, the cover bake and the
- * obstacle field never see a rail either, which is what keeps this world
- * identical to the one `npm run parity` compares.
- */
-/**
- * One group of a scatter region's boxes as the single collider mesh the client
- * merged them into — a dozen tree trunks in a 12 m square.
- *
- * **The second merge on the server, and it exists for the same reason as the
- * first**: the client merged these and the two worlds must be the same shape.
- * It used to be a budget argument as well — a pick costs per mesh before it
- * costs per triangle, and Greyfen's ~950 one-metre trunks unmerged would be
- * more collider meshes than the rest of the map put together — and that half
- * went with the picks. Group by group exactly as baked, never all in one.
- *
- * Unlike a strut, every box in here IS in `colliderBoxes`, so the nav grid, the
- * cover bake and the obstacle field still see individual trunks. The merge
- * meets nothing any more — rays and sweeps both answer off the boxes — but the
- * GROUPING still decides the sweep's tie order (`RayWorld`'s rank), which is
- * why it is baked and read. `MapBuilder.clusterColliders` is the
- * client's half, and both refuse to group anything but plain `solid` boxes —
- * one mesh cannot carry two answers about porosity, and glass has to stay
- * addressable a sheet at a time.
- */
-function clusterMesh(scene: Scene, group: WorldBox[], i: number): Mesh {
-  const parts = group.map((box, j) => {
-    const part = MeshBuilder.CreateBox(
-      `clump${i}-${j}`,
-      { width: box.w, height: box.h, depth: box.d },
-      scene,
-    );
-    part.position.set(box.cx, box.cy, box.cz);
-    part.rotation.set(box.rotX, box.rotY, 0);
-    return part;
-  });
-  const merged =
-    parts.length === 1
-      ? parts[0]
-      : Mesh.MergeMeshes(parts, true, true, undefined, false, false);
-  if (!merged) throw new Error(`cluster ${i} failed to merge`);
-  merged.name = `clump${i}`;
-  merged.isVisible = false;
-  merged.isPickable = true;
-  merged.checkCollisions = true;
-  merged.metadata = { solid: true };
-  merged.freezeWorldMatrix();
-  return merged;
-}
-
-function strutMesh(scene: Scene, group: WorldBox[], i: number): Mesh {
-  const parts = group.map((box, j) => {
-    const part = MeshBuilder.CreateBox(
-      `timber${i}-${j}`,
-      { width: box.w, height: box.h, depth: box.d },
-      scene,
-    );
-    part.position.set(box.cx, box.cy, box.cz);
-    part.rotation.set(box.rotX, box.rotY, 0);
-    return part;
-  });
-  const merged = Mesh.MergeMeshes(parts, true, true, undefined, false, false);
-  if (!merged) throw new Error(`strut group ${i} failed to merge`);
-  merged.name = `timber${i}`;
-  merged.isVisible = false;
-  merged.isPickable = true;
-  merged.checkCollisions = false;
-  merged.metadata = { solid: true, rayOnly: true };
-  merged.freezeWorldMatrix();
-  return merged;
-}
-
-/**
- * The floor, as collider clones — one mesh per terrain block.
- *
- * This is the one collider in the game that is not a box, and the one that
- * carries `surface: "ground"`. It matters here for the same reason it matters
- * on the client: without it, line of sight runs straight through hills, and a
- * bot on the far side of a rise is visible to one that should not see it.
- * `terrainPatches` is pure arithmetic over the heightfield, so it costs the
- * server nothing that the bake would have saved.
- */
-function terrainColliders(
-  scene: Scene,
-  terrain: TerrainField,
-  size: number,
-  /** `MapLayout.terrainBlock`, or `BLOCK_SIZE`. See `buildServerWorld`. */
-  terrainBlock: number,
-): Mesh[] {
-  const out: Mesh[] = [];
-  for (const patch of terrainPatches(terrain, size, terrainBlock)) {
-    const col = new Mesh(`terrain-${patch.key}-col`, scene);
-    vertexDataOf(patch.data).applyToMesh(col);
-    col.isVisible = false;
-    col.isPickable = true;
-    // Vertical placement is the ground probe's job — the same reason the client
-    // keeps the floor out of every sweep (it emits no `WorldBox`).
-    col.checkCollisions = false;
-    col.metadata = { solid: true, surface: "ground" };
-    col.freezeWorldMatrix();
-    out.push(col);
-  }
-  return out;
-}
-
-/**
- * Rebuilds `def`'s solid world into `scene`.
+ * Rebuilds `def`'s solid world.
  *
  * Returns a real `GameMap` so the systems that consume one need no server-only
  * variant — `BattleSystem.setMap` reads `nav`/`cover`/`obstacles` and
  * `ConquestSystem.start` reads `controlPoints`/`spawns`, and both get exactly
- * what they get on the client. The two fields that are genuinely absent are
- * `visuals` (there is nothing to draw) and `editor` (there is no editor); both
+ * what they get on the client. The fields that are genuinely absent are the
+ * MESH lists (`colliders`, `terrainColliders`, `visuals`, `paneGroups` —
+ * there is no scene to stand one in) and `editor` (there is no editor); all
  * are empty rather than faked.
  */
-export async function buildServerWorld(scene: Scene, def: MapDef): Promise<GameMap> {
+export async function buildServerWorld(def: MapDef): Promise<GameMap> {
   const collision: MapCollision = (await def.collision()).default;
   // The layout's own extent, exactly as `MapBuilder.build` reads it: a server
   // that took the global would rasterize a larger map's nav grid over a 240 m
@@ -236,16 +85,15 @@ export async function buildServerWorld(scene: Scene, def: MapDef): Promise<GameM
   // How far the floor carries on past that square. Read from the layout for the
   // same reason `size` is: a server that took the default would put the ground
   // to an abrupt stop at ±size/2 and reject every honest player standing in the
-  // borderland its clients are drawing. `terrainColliders` needs no telling —
-  // the extent is the FIELD's, and `terrainPatches` reads it off this object.
+  // borderland its clients are drawing. `RayWorld` needs no telling — the
+  // extent is the FIELD's, and it reads it off this object.
   const margin = def.layout.borderland?.margin ?? 0;
   // How the map is CUT, read off the layout for the third time the same reason
-  // `size` and `margin` are: a server that took the defaults would tessellate a
-  // floor on a different lattice from the one its clients are standing on, and
-  // line of sight over a rise is measured against these meshes. `blockSize`
-  // decides nothing here — there is no merge and nothing to draw — but it is
-  // carried on the map so that a `GameMap` from this file cannot disagree with
-  // one from `MapBuilder` about what the map IS.
+  // `size` and `margin` are. Neither decides anything here — there is no merge,
+  // nothing to draw and no floor patch to tessellate (the floor's line of sight
+  // is `RayWorld`'s march over the field's own cells) — but both are carried on
+  // the map so that a `GameMap` from this file cannot disagree with one from
+  // `MapBuilder` about what the map IS.
   const blockSize = def.layout.blockSize ?? BLOCK_SIZE;
   const terrainBlock = def.layout.terrainBlock ?? BLOCK_SIZE;
   // The floor, which is no longer on the layout: it is a lazy `import()` of its
@@ -261,34 +109,21 @@ export async function buildServerWorld(scene: Scene, def: MapDef): Promise<GameM
   );
   const boxes = toWorldBoxes(collision);
 
-  // A box gets one mesh, unless the client merged it with its neighbours into a
-  // cluster — see `MapCollision.boxGroups`. `byBox` is what keeps the pane
-  // wiring below able to name a box's mesh either way; a clustered box has
-  // none of its own and never is a pane.
-  const byBox: (Mesh | null)[] = boxes.map(() => null);
-  const grouped = new Set<number>();
-  const colliders: Mesh[] = [];
-  for (const [i, group] of (collision.boxGroups ?? []).entries()) {
-    for (const b of group) grouped.add(b);
-    colliders.push(clusterMesh(scene, group.map((b) => boxes[b]), i));
-  }
-  for (const [i, box] of boxes.entries()) {
-    if (grouped.has(i)) continue;
-    byBox[i] = colliderBox(scene, box, i);
-    colliders.push(byBox[i]!);
-  }
+  // The boxes the client merged with their neighbours into a scatter cluster —
+  // see `MapCollision.boxGroups`. Read here for one guard: a clustered box was
+  // never a mesh of its own, so it is never a pane.
+  const grouped = new Set((collision.boxGroups ?? []).flat());
   // A pane's BOX carries `glass`, as `MapBuilder.paneGroup` marks it on the
   // client. A pane is never clustered (glass has to stay addressable one sheet
-  // at a time, and the client refuses to group it), so `byBox` always has its
-  // mesh, and the guard is the same test it has always been.
+  // at a time, and the client refuses to group it), so the guard is the test it
+  // was when it asked whether the box had a collider mesh of its own.
   //
   // The client also stamps the pane index on the collider MESH, for `GlassFx`
-  // to write the editor's flags on; nothing here draws or picks, the authority
-  // builds no `GlassFx`, and `GlassSystem` reads only the box — so the mesh
-  // here is left unmarked.
+  // to write the editor's flags on; there is no mesh here, the authority builds
+  // no `GlassFx`, and `GlassSystem` reads only the box.
   const panes = toWorldPanes(collision);
   for (const p of panes) {
-    if (p.box < 0 || !byBox[p.box]) continue;
+    if (p.box < 0 || p.box >= boxes.length || grouped.has(p.box)) continue;
     // `glass` is what `clearCollider` reads as its own idempotence flag —
     // without it the authority leaves the collider standing, so a player who
     // shot a shopfront out is snapped back out of it by `validateMove`.
@@ -300,20 +135,16 @@ export async function buildServerWorld(scene: Scene, def: MapDef): Promise<GameM
     boxes[p.box].glass = true;
   }
   const rayGroups = toRayGroups(collision);
-  colliders.push(...rayGroups.map((group, i) => strutMesh(scene, group, i)));
-  const floor = terrainColliders(scene, terrain, size, terrainBlock);
-  colliders.push(...floor);
 
   // Same order and same inputs as `MapBuilder.build`: the graph is derived from
   // the finished collider set, never from the geometry that suggested it.
   const nav = new NavGrid(size, boxes, terrain, def.layout.surfaces);
   const cover = new CoverMap(nav, boxes);
   const obstacles = new ObstacleField(size, boxes);
-  // The segment query, off the same two lists the meshes above were built from
-  // plus the same floor. It is what makes those meshes a convenience rather
-  // than the reason this file exists: every ray the shared systems fire — the
-  // rewound hitscan, sixteen bots' line of sight, the grenade, the rocket —
-  // goes through this and never through the scene.
+  // The segment query, off the same two lists the client's colliders were
+  // built from plus the same floor: every ray the shared systems fire — the
+  // rewound hitscan, the bots' line of sight, the grenade, the rocket — goes
+  // through this. There is no scene here to go through instead.
   const rays = new RayWorld(size, boxes, rayGroups, terrain, collision.boxGroups ?? []);
   // And the sweep a driven hull moves by, over the same boxes: the authority's
   // one sweep is a hull's, and it is answered off `rays` exactly as the
@@ -353,7 +184,11 @@ export async function buildServerWorld(scene: Scene, def: MapDef): Promise<GameM
     // `docs/multiplayer.md` on hulls and `docs/vehicles.md` on the driver's
     // report.
     vehicleSpawns: def.layout.vehicles ?? [],
-    colliders,
+    // The collider MESHES, which stand in the client's scene and nowhere else:
+    // no ray and no sweep reads one on either side, and every reader left is a
+    // client view (`GlassFx`'s pane index, `WorldCulling`, `PhysicsWorld`'s
+    // floor). Empty, as `visuals` is — see the header.
+    colliders: [],
     colliderBoxes: boxes,
     rayGroups,
     boxGroups: (collision.boxGroups ?? []).map((g) => [...g]),
@@ -365,7 +200,7 @@ export async function buildServerWorld(scene: Scene, def: MapDef): Promise<GameM
     // fields on both sides; `paneGroups` is `GlassFx`'s, which only draws.
     panes,
     paneGroups: [],
-    terrainColliders: floor,
+    terrainColliders: [],
     visuals: [],
     // Empty for `paneGroups`' reason: it is the record the DRAWN world was
     // made of, and there is nothing drawn here.
@@ -389,16 +224,8 @@ export async function buildServerWorld(scene: Scene, def: MapDef): Promise<GameM
     // the map contains is a trap for whoever next writes something that does.
     roads: roadNetwork(def.layout.placements).footprint,
     terrain,
-    dispose(): void {
-      for (const mesh of colliders) mesh.dispose();
-    },
+    // Nothing to release: every structure above is plain arrays the collector
+    // takes with the map.
+    dispose(): void {},
   };
 }
-
-/** Where the ground is at a point — what movement validation measures against. */
-export function groundAt(map: GameMap, x: number, z: number): number {
-  return map.terrain.heightAt(x, z);
-}
-
-/** Scratch so the helpers above never allocate per call. */
-export const scratch = new Vector3();

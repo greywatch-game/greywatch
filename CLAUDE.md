@@ -249,6 +249,9 @@ Babylon; its PICTURE is a view module beside it (`CombatFx`, `BattleView`,
 `VehicleView`, `PlayerView`, …) that reads it and never writes it.** `Game`
 builds both and wires them, and the authority builds the simulations alone —
 so nothing that decides an outcome may read a node (`docs/game.md`).
+`scripts/check-babylon-free.mjs` fails the build on any value import path from
+a simulation or from `server/` to `@babylonjs/core`, so **a new simulation
+joins its `SIMULATIONS` list** (`docs/build.md`).
 
 **`Game.ts` is long on purpose**: most of its length *is* its job, and splitting
 the wiring re-creates the system→system edges the rule above exists to prevent.
@@ -700,7 +703,7 @@ so that a map saying nothing is unaffected:
 | `MapLayout.surfaces` — how deep it stacks | `CONFIG.nav.maxSurfaces`, 3 | only a map that stacks FLOORS raises it; overflow drops candidates silently (see the bots section) |
 | `MapLayout.perTeam` — how many bodies a side | `CONFIG.bots.perTeam`, 8 | it is DENSITY, bounded by `CONFIG.bots.maxPerTeam` (24), and it is spent in RIGS — `BattleSystem.setRoster` resizes the pool and a CLIENT's `BattleView` rebuilds its rigs when it moves. The squads and the scoreboard follow it; `CONFIG.conquest.tickets` deliberately does not, so a denser map is a shorter round. **It reaches a match too**: the authority's slot table is the ceiling, `setFielded` says how many a round fights, and the SEATS stay at sixteen |
 | `MapLayout.blockSize` — how big a merge block is | `BLOCK_SIZE`, 48 | it is DRAW CALLS and cull granularity and nothing else; `ReflectionSystem.encloses` and `WorldCulling` follow it for free because they read the block KEY rather than a size, and the world layer's unit of LOCALITY (the physics buckets, the pane index) deliberately does **not** |
-| `MapLayout.terrainBlock` — how big a floor patch is | `BLOCK_SIZE`, 48, **independently of `blockSize`** | a whole number of terrain cells, and the same value in all three callers of `terrainPatches` — `buildValley`, the server's `terrainColliders` and the editor's brush — or the two sides tessellate different floors |
+| `MapLayout.terrainBlock` — how big a floor patch is | `BLOCK_SIZE`, 48, **independently of `blockSize`** | a whole number of terrain cells, and the same value in both callers of `terrainPatches` — `buildValley` and the editor's brush — or a stroke re-cuts patches the floor was never cut into |
 | `EnvironmentSpec.lighting.shadowWindow` — how far its shadows reach | `CONFIG.graphics.shadows.frustumSize`, 110 | shadow length is `h / tan(elevation)`, and `shadowVisibility` is FULLY LIT outside the window, the last `edgeFade` of the volume ramping back to it — so an undersized one puts that transition on ground the player can see, and an OVERSIZED one moves it not at all while costing texel density (`ShadowSystem` DEV-warns) |
 
 **A map is CLOSED one of two ways, and NO map takes the first one any more** —
@@ -1365,8 +1368,10 @@ and why no screen is scaled to a short viewport any more).
 
 ### Multiplayer: the server is the authority, and a slot is a slot
 
-A dedicated Node process runs the real simulation under Babylon's **NullEngine**
-and clients render it; there is no host client. A shooter's hitmarker is a
+A dedicated Node process runs the real simulation and clients render it; there
+is no host client. **The authority imports nothing from Babylon** — no engine,
+no scene, no mesh — and `scripts/check-babylon-free.mjs` fails the build on any
+import path from `server/` that reaches `@babylonjs/core`. A shooter's hitmarker is a
 **guess** — every target is rewound and `CombatSystem.fire` runs again on the
 server, the only thing that deals damage. **A client predicts its own MOVEMENT,
 its own health regeneration and — in a hull — its own DRIVE**, each validated on
@@ -1417,7 +1422,8 @@ may index `CONFIG.teams` with a live team.**
 
 **The server cannot run `MapBuilder`**: it has no canvas, so `DynamicTexture`
 throws. It rebuilds the solid world from the generated
-`src/world/<map>/collision.ts`, including each box's `porous` flag, so **`npm run
+`src/world/<map>/collision.ts` as data with no mesh, including each box's
+`porous` flag, so **`npm run
 parity` should be run after anything touching the world layer**. `npm run build`
 refuses a bake older than its layout, but that guard hashes the LAYOUT — a flag
 changed in a builder needs `npm run collision` by hand.

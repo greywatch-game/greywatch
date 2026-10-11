@@ -167,7 +167,9 @@ class EmissiveFogPlugin extends MaterialPluginBase {
  */
 export function attachEmissiveFog(material: StandardMaterial): void {
   // **The one engine this is skipped on is the one that cannot draw.** The
-  // authority runs under `NullEngine`, which is not WebGPU, so
+  // authority ran under `NullEngine` until `BABYLON_EXIT.md` X2.3 (it builds no
+  // material since X2.2 and no engine since X2.3; the dev scripts under
+  // `scripts/` still build under one). A NullEngine is not WebGPU, so
   // `Material._createUniformBuffer` picks GLSL for a `StandardMaterial` and
   // `isCompatible` above answers false — and `_addPlugin` THROWS on the
   // mismatch rather than declining. That threw inside `CombatSystem`'s
