@@ -839,7 +839,89 @@ Every divergence over a few centimetres is investigated, not averaged away.
   three sweeps through `narrowedMove`" becomes the new primitive's rule;
   `CollisionField.ts`'s header.
 
-### X2.2 — State off the nodes, and every mixed system split (PERF_PLAN C3) — **L**
+### X2.2 — State off the nodes, and every mixed system split (PERF_PLAN C3) — **L** — **LANDED** (11f731f)
+
+**Landed** 2026-10-10, after a five-way code review whose findings are
+11f731f. Every system that simulated and drew is now two modules: the
+SIMULATION keeps the old name, holds its state on `src/math` and imports
+nothing from Babylon; its VIEW sits beside it, reads it and never writes it;
+`Game` builds both and wires them; the authority builds the simulations only.
+CLAUDE.md "Ownership and wiring" states the rule. The list, confirmed against
+the code:
+
+| simulation | view |
+| --- | --- |
+| `CombatSystem` (the shot, `onRound`) | `CombatFx` (tracers, sparks, discs, `BulletMarks`) |
+| `GrenadeSystem`, `AntiTankSystem` (`pos`/`vel` fields, `onBlast`) | `GrenadeFx`, `AntiTankFx` (shared with `NetGrenades`/`NetOrdnance`) |
+| `GlassSystem` (`onBroken`, `onCleared`) | `GlassFx` (the collapse, the collider's editor flags) |
+| `Bot`, `BattleSystem` (`shown`, `life`, `poolVersion`) | `BotRig`, `BattleView` (the rig pool, LOD, flashes) |
+| `Vehicle`, `HullSprings`, `VehicleSystem` (`HullPose`, `HullPicture` events) | `VehicleView`, `HullWhips`, `VehicleViews`; `vehicleModels.ts` beside the Babylon-free `vehicleKinds.ts` and per-kind frames |
+| `Player` (`mid`, `ellipsoid`, `PlayerPicture` events) | `PlayerView` (viewmodel, flash, brass) |
+| `ConquestSystem` | — (it drew nothing) |
+
+Commits: C1 3075f89 (the shared `Hittable`/`Combatant` contract reads either
+library's vector; `takeDamage` and the cross-system callbacks are PROPERTIES so
+`strictFunctionTypes` checks them; `hullSeats.ts`, `blocks.ts`), C2 97e966f,
+C3 54415ed, C4 d4678d5, C5 af2fc79 + 4ee3066, C6 f327ca9, C7 2ba6f69,
+C8 96adb2b, C9 8f1d287, C10 242cdd8, C11 1ce7529, review 11f731f.
+
+**No outcome reads a node any more.** The bot's muzzle (`soldierPose.ts`'s
+`soldierMuzzleToRef`) and the hull's three (`hullFrame.ts`) replay Babylon's
+forced float32 node chain from fields. Babylon's `computeWorldMatrix(true)`
+forces every ancestor (`transformNode.pure.js` ~1003), so there was no stale
+matrix to model. The hull's 1e-5 pose guards are simulation state
+(`HullPose`), because the nodes trailed the fields by them. CLAUDE.md's
+forced-world-matrix rule became its converse.
+
+**One named fight change, C6.** The authority posed only bots within 35 m of
+the map centre, and offline the camera decided; an outcome may not depend on
+the camera. Every live bot's pose is now filled each frame (solved on demand).
+New hashes at seed 777, held from C6 to the end: Greyfen `fc958d7e0d0e65c1`,
+Hollowmere `1c14cd10dad9cead`, Coldharbour `da7b7d7ed3355f4f`, Harrowmead
+`c5650f9f2ba94654`, Sarab `d13d7fe62cf059e5`, Cinderhaven `d0519088626918ec`,
+Kurenai `471b692bc45bc1be`. The parent with every bot forced to animate fights
+these exact seven fights, so the change is the pose and nothing else.
+
+**Measured:**
+- **simulate, seed 777:** every other commit held its parent's seven hashes
+  (baseline f6a9d56: Greyfen `6ef4707c3c7a8414`, Hollowmere
+  `50368db11f538d0f`, Coldharbour `81e262436c7af253`, Harrowmead
+  `6c61e93be2cffcbc`, Sarab `dd2ee4abacfda2fe`, Cinderhaven
+  `0e09b2c0616d9fa7`, Kurenai `9f3486e3b7e07880`).
+- **Equivalence of the replayed muzzles:** bots 28,913 server reads and 157
+  live, 0 mismatches (`Object.is`); hulls 300,000+ server reads over four maps
+  and three seeds plus live driving of all three kinds, 0 mismatches.
+- **The player's movement replay** (fixed-step, fixed input, walls, stairs,
+  roofs, push-out, broken panes, boarding): 81,433 steps over Greyfen,
+  Coldharbour and Sarab, bit-identical to the parent.
+- **The authority** (median of 3 interleaved runs; C6 changed the fight, so
+  compare per tick): tick p50/p95 flat on Sarab (0.110/0.172 → 0.113/0.170 ms)
+  and Cinderhaven (0.104/0.170 → 0.104/0.161); peak RSS down 12-16% (Sarab
+  483 → 405 MB); `dist-server` JS 5.03 → 4.59 MB. It builds no rig, no hull
+  model, no pool and no material.
+- **The server's import closure:** 263 modules with 104 importing Babylon
+  directly, down to 136 with 4 — `HeadlessGame` (its `Scene`/`NullEngine`),
+  `parity.ts`, `world.ts` and `world/parts.ts`, which X2.3 removes.
+- **parity**, **build**, **gate.mjs** on all seven maps, **bank.mjs --check**
+  (47 rows, 0%), **sweep-check** (exact, `--tight`, shipped) identical to the
+  parent, **kit:hash --models** identical but for the rig fields and the
+  player capsule that moved out on purpose.
+- **Netplay** (a scripted two-client match plus a raw observer, Coldharbour
+  botless and Sarab with bots): green throughout; client and authority agree on
+  tickets every tick and on the board at a common tick; 0 hull corrections.
+
+**Review findings fixed (11f731f):** a bot respawned and killed in one frame
+stood up as a corpse (`BotRig.syncLife`), and a wreck painted a frame late
+(`HullPicture.wrecked`); both were reproduced, then fixed. Plus `HullWhips`
+sized from the kind's antennae, dead editor-pick flags on the hull body, and
+the stale text.
+
+**Found on the way** (`FINDINGS.md`): 55 — offline, the local player's
+grenade and rocket START POINTS are read off the viewmodel's nodes, so a
+drawing still decides those two outcomes; 56 — long sprints in a netplay round
+collect `speed` corrections, cause not identified. `Player` still drives its
+`ViewModel` through `PlayerPicture.model` (no outcome reads it); X2.5 must
+settle both before the local player is split from the core.
 
 As `PERF_PLAN.md` C3 states it — the player off its capsule, a hull's body
 into fields, grenades and rockets as `{pos, vel}`, analytic muzzles, the
