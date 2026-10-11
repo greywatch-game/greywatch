@@ -1322,6 +1322,15 @@ export class Game {
     this.engine = engine;
     this.engine.customAnimationFrameRequester = this.frameCap.requester;
     this.scene = new Scene(this.engine);
+    // The `Scene` constructor sets this true, and it is held FALSE: Babylon
+    // steps a scene's physics engine from `scene.animate()` on every RENDERED
+    // frame, and this game renders under the menu, the deploy map and a pause.
+    // The scene has no physics engine any more (`PhysicsWorld` owns Havok's
+    // world outright and is stepped from `stepAftermath` alone), so there is
+    // nothing for it to step — the flag is written because the rule stands
+    // until the scene goes (`CLAUDE.md`, "Deaths, glass, and the one physics
+    // engine").
+    this.scene.physicsEnabled = false;
     // The scene has no Babylon lights at all: cel materials carry their own
     // key/ambient/point-light uniforms (fed by the LightingSystem) and every
     // effect material is unlit emissive.
@@ -1628,7 +1637,7 @@ export class Game {
     // synchronously on the module `main.ts` already awaited, so all three
     // clients build their pools in their own constructors and nothing below
     // ever has to ask whether physics has arrived yet.
-    this.physics = new PhysicsWorld(this.scene, havok);
+    this.physics = new PhysicsWorld(havok);
     this.ragdolls = new RagdollSystem(this.scene, this.physics);
     this.debris = new DebrisSystem(this.scene, this.mats, this.physics);
     this.blastDebris = new BlastDebrisSystem(this.scene, this.mats, this.physics);

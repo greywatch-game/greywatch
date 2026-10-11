@@ -123,6 +123,7 @@ import type {
   EditorRef,
   GameMap,
   PaneGroup,
+  TerrainGeometry,
   WaterRect,
   WorldBox,
   WorldPane,
@@ -166,6 +167,7 @@ export type {
   GrassRect,
   PaneGroup,
   SpawnPointDef,
+  TerrainGeometry,
   VehicleSpawnDef,
   WaterRect,
   WorldBox,
@@ -800,6 +802,7 @@ export class MapBuilder {
     const terrainBlock = layout.terrainBlock ?? BLOCK_SIZE;
     // A view onto the floor's own blocks within `colliders` — see GameMap.
     const terrainColliders: Mesh[] = [];
+    const terrainGeometry: TerrainGeometry[] = [];
     // The carriageways, derived before anything is built because `findSpot`
     // asks about them and the scatter pass runs after the placement loop that
     // draws them. Nothing else about a road changes: it is still visual-only,
@@ -843,7 +846,7 @@ export class MapBuilder {
     };
     const { visuals, colliders, index } = run;
     record("valley", () =>
-      this.buildValley(run, size, margin, terrainBlock, env, terrainColliders),
+      this.buildValley(run, size, margin, terrainBlock, env, terrainColliders, terrainGeometry),
     );
     // The floor's patches and the rim's runs, which are no layout item and
     // carry no piece — see `assertPieces` below.
@@ -888,6 +891,7 @@ export class MapBuilder {
       panes: this.panes,
       paneGroups: this.paneGroups,
       terrainColliders,
+      terrainGeometry,
       visuals,
       world,
       water: layout.water ?? [],
@@ -1373,6 +1377,8 @@ export class MapBuilder {
     env: EnvironmentSpec,
     /** The floor's blocks alone — see `GameMap.terrainColliders`. */
     terrainColliders: Mesh[],
+    /** The same blocks as data — see `GameMap.terrainGeometry`. */
+    terrainGeometry: TerrainGeometry[],
   ): void {
     const { terrain, surfaces, mint, plain, colliders } = run;
     const ridge = run.layout.ridge;
@@ -1402,7 +1408,8 @@ export class MapBuilder {
       // build of the same buffer, holds the very arrays this one does — one
       // copy for both, as when both were applied from one `VertexData`.
       const col = new Mesh(`terrain-${patch.key}-col`, this.scene);
-      vertexDataOf(patch.data, plain).applyToMesh(col);
+      const colData = vertexDataOf(patch.data, plain);
+      colData.applyToMesh(col);
       col.isVisible = false;
       col.isPickable = true;
       // Vertical placement is the ground probe's job, so the floor is in no
@@ -1420,6 +1427,9 @@ export class MapBuilder {
       col.freezeWorldMatrix();
       colliders.push(col);
       terrainColliders.push(col);
+      // The clone's own arrays, for `PhysicsWorld`, which rests bodies on the
+      // floor without reaching a mesh.
+      terrainGeometry.push({ positions: colData.positions!, indices: colData.indices! });
     }
 
     // The boundary itself: four boxes, and they are the ONLY thing stopping

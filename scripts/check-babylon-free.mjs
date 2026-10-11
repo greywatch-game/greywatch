@@ -92,6 +92,11 @@ const SIMULATIONS = [
   // Not a simulation but held as one: the raw Havok dialect every physics
   // client shares from X2.4 on, whose whole point is that it is not Babylon.
   "src/systems/havok.ts",
+  // Not a simulation either, and held as one for the same reason: the engine
+  // that dialect speaks for — Havok's world, the static map and the substep —
+  // which keeps every body's pose in a plain array and reaches no node
+  // (X2.4 C5). Its three clients are views and are not roots.
+  "src/systems/PhysicsWorld.ts",
 ];
 
 /**

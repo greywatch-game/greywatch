@@ -29,6 +29,17 @@ import type { RoadFootprint } from "./roads";
 import type { TerrainField } from "./TerrainField";
 import type { WorldGeometry } from "./worldGeometry";
 
+/**
+ * One floor block's collider as data: the positions it was built from (three
+ * a vertex, in the world's space — the clone stands at identity) and its
+ * triangles, three indices each, wound for Babylon's left-handed default as
+ * every triangle in the world is. The arrays are the mesh's own, not copies.
+ */
+export interface TerrainGeometry {
+  readonly positions: ArrayLike<number>;
+  readonly indices: ArrayLike<number>;
+}
+
 /** A capturable flag. */
 export interface ControlPointDef {
   /** Single letter shown on the HUD strip: A..E. */
@@ -473,13 +484,21 @@ export interface GameMap {
    * They are called out because they are the one collider with no `WorldBox`
    * behind it (a heightfield is not a box — see `MapBuilder.buildValley`), so
    * anything that wants the whole solid world as geometry has to take
-   * `colliderBoxes` for the boxes and these for the floor.
-   * `PhysicsWorld` is the caller: it needs the real mesh to rest a body on.
-   * Picking them out of `colliders` by name would work and is exactly the sort
-   * of string-sniffing that breaks silently when a name changes. **Empty on
-   * the authority**, with `colliders`: it has no Havok and no scene.
+   * `colliderBoxes` for the boxes and these for the floor (or, without a
+   * mesh, `terrainGeometry`). Picking them out of `colliders` by name would
+   * work and is exactly the sort of string-sniffing that breaks silently when
+   * a name changes. **Empty on the authority**, with `colliders`: it has no
+   * Havok and no scene.
    */
   terrainColliders: Mesh[];
+  /**
+   * The same floor blocks as GEOMETRY, one entry per `terrainColliders` mesh
+   * and in its order: the very vertex and index arrays each clone was made
+   * of. `PhysicsWorld` is the reader — it rests a body on the floor and
+   * reaches no mesh to do it (`BABYLON_EXIT.md` X2.4 C5). **Empty on the
+   * authority**, with `terrainColliders`.
+   */
+  terrainGeometry: TerrainGeometry[];
   /** Drawn geometry, merged per colour. */
   visuals: Mesh[];
   /**

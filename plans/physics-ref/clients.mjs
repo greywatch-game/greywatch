@@ -42,6 +42,18 @@
  * Each snapshot keeps its own hash, so a check that fails says WHICH frame
  * first disagreed, and the run's hash is over all of them.
  *
+ * **And, graded apart from that, the NODES the clients write** (`nodes` in
+ * the bank, added at X2.4 C5 and banked against the parent before that
+ * commit touched a line of source): a digest at the end of EVERY frame over
+ * the raw local transform of each corpse slot's proxies, every shard and
+ * chunk mesh, and the nine stand-ins' rig roots and posed joints — parent,
+ * enabled flag, position, Euler, quaternion and scaling, bit for bit. C5 took
+ * the poses off those nodes into plain arrays that a view writes back; this
+ * is what says the view writes the SAME nodes the solver's sync used to, on
+ * the same frames, the reparenting at a freeze and the sink included. A
+ * failure names the first frame whose nodes differ. It reads no matrix, so
+ * taking it makes Babylon compute nothing.
+ *
  * **It also probes one thing it does not grade** (`probe` in the bank): the
  * chest's angular velocity the instant a corpse is offered, before any step.
  * `RagdollSystem.applyImpulse` applies the killing impulse at the joint's
@@ -295,6 +307,57 @@ function play(page, opts) {
       };
       const audit = [];
 
+      // --- the nodes ---------------------------------------------------------
+      // Every node the three clients WRITE, in a fixed order: each corpse
+      // slot's proxies, every shard's mesh, every chunk's mesh, and each of
+      // the nine stand-ins' rig root and posed joints (`rig.rest`, the
+      // build-time list, so a joint reparented onto a proxy is still found).
+      // Digested at the end of every frame over the raw local transform —
+      // parent, own enabled flag, position, Euler rotation, quaternion and
+      // scaling, bit for bit (a -0 is not a 0) — and nothing that would make
+      // Babylon compute a matrix, so reading it changes nothing it reads.
+      const nodeList = [];
+      for (const slot of g.ragdolls.slots) for (const bone of slot.bones) nodeList.push(bone.proxy);
+      for (const burst of g.debris.bursts) for (const s of burst.shards) nodeList.push(s.mesh);
+      for (const burst of g.blastDebris.bursts) for (const c of burst.chunks) nodeList.push(c.mesh);
+      for (const c of corpses) {
+        nodeList.push(c.rig.root);
+        for (const r of c.rig.rest) nodeList.push(r.node);
+      }
+      const f64 = new Float64Array(1);
+      const u8 = new Uint8Array(f64.buffer);
+      const nodeDigest = () => {
+        let h1 = 0x811c9dc5;
+        let h2 = 0x9747b28c;
+        const byte = (b) => {
+          h1 = Math.imul(h1 ^ b, 16777619);
+          h2 = Math.imul(h2 ^ b, 0x5bd1e995);
+          h2 ^= h2 >>> 15;
+        };
+        const num = (x) => {
+          f64[0] = x;
+          for (let i = 0; i < 8; i++) byte(u8[i]);
+        };
+        const str = (s) => {
+          for (let i = 0; i < s.length; i++) byte(s.charCodeAt(i) & 0xff);
+          byte(0);
+        };
+        for (const n of nodeList) {
+          str(n.parent ? n.parent.name : "-");
+          num(n.isEnabled(false) ? 1 : 0);
+          const p = n.position;
+          num(p.x); num(p.y); num(p.z);
+          const r = n.rotation;
+          num(r.x); num(r.y); num(r.z);
+          const q = n.rotationQuaternion;
+          if (q) { num(q.x); num(q.y); num(q.z); num(q.w); } else str("noquat");
+          const s = n.scaling;
+          num(s.x); num(s.y); num(s.z);
+        }
+        return (h1 >>> 0).toString(16).padStart(8, "0") + (h2 >>> 0).toString(16).padStart(8, "0");
+      };
+      const nodeFrames = [];
+
       const wanted = new Set(SNAPSHOTS);
       const snapshots = [];
       const rest = [];
@@ -324,6 +387,7 @@ function play(page, opts) {
             rest.push([label, f, lastPose.get(label)]);
           }
         }
+        nodeFrames.push(nodeDigest());
         if (AUDIT[f]) {
           audit.push([f, AUDIT[f], corpses.map((c) => (c.ragdolling ? 1 : 0)).join("")]);
         }
@@ -346,6 +410,8 @@ function play(page, opts) {
         probe,
         accepted,
         audit,
+        nodeFrames,
+        nodeCount: nodeList.length,
         shardShapes: g.debris.shapes.size,
         panes: panes.length,
         bodies: bodies.length,
@@ -376,6 +442,9 @@ for (const id of targets) {
   }));
   const restHash = sha(r.rest);
   const hash = sha({ snaps: snaps.map((s) => s.hash), rest: restHash });
+  // The applied-node digest — graded beside the engine's hash, never folded
+  // into it, so a bank taken before it existed still grades the physics.
+  const nodeHash = sha(r.nodeFrames);
   const label = id.padEnd(12);
   const pad = " ".repeat(12);
   const last = r.snapshots[r.snapshots.length - 1];
@@ -403,6 +472,18 @@ for (const id of targets) {
       problems.push(`${id}: bits moved, ${where}`);
       console.log(`${label} MOVED      ${hash} (banked ${banked.hash}), ${where}`);
     }
+    if (banked && banked.frames === FRAMES) {
+      if (!banked.nodes) {
+        problems.push(`${id}: no node digest banked`);
+        console.log(`${pad} nodes NOT GRADED — nothing banked  ${nodeHash}`);
+      } else if (banked.nodes.hash === nodeHash) {
+        console.log(`${pad} nodes identical  ${nodeHash}  (${r.nodeCount} nodes x ${r.nodeFrames.length} frames)`);
+      } else {
+        const at = r.nodeFrames.findIndex((d, i) => banked.nodes.frames[i] !== d);
+        problems.push(`${id}: applied nodes moved, first at frame ${at}`);
+        console.log(`${pad} nodes MOVED  ${nodeHash} (banked ${banked.nodes.hash}), first at frame ${at}`);
+      }
+    }
   } else {
     writeFileSync(
       out,
@@ -416,6 +497,7 @@ for (const id of targets) {
           accepted: r.accepted,
           audit: r.audit,
           shardShapes: r.shardShapes,
+          nodes: { count: r.nodeCount, hash: nodeHash, frames: r.nodeFrames },
           probe: r.probe,
         },
         null,
@@ -423,6 +505,7 @@ for (const id of targets) {
       )}\n`,
     );
     console.log(`${label} banked ${hash}  ${summary}`);
+    console.log(`${pad} nodes banked ${nodeHash}  (${r.nodeCount} nodes)`);
   }
   console.log(
     `${pad} snapshots ${snaps.map((s) => `${s.frame}:${s.live}`).join(" ")}`,

@@ -8,6 +8,11 @@
  * Invariants: it is the second `PhysicsClient` and owns no engine — see
  * `PhysicsWorld`. Nothing here feeds navigation, cover or hit detection: a shard
  * is dressing, exactly as a corpse is, and rounds and bodies pass through it.
+ * A shard's place is its body's `pose` (`BABYLON_EXIT.md` X2.4 C5): a burst
+ * writes it, the step moves it, the sink lowers it — and the VIEW writes it
+ * onto the mesh (`drawLive`, `poseView.applyPose`) when a burst places it,
+ * at the end of `update`, and when a release parks it, which are the points
+ * the solver's own sync and those writes used to leave the mesh standing.
  *
  * ## A shard is a fraction of its pane, not a fixed chip
  *
@@ -119,6 +124,7 @@ import {
   type WorldBody,
 } from "./PhysicsWorld";
 import { MAX_CORNERS, fracture, makePieces, type ShardPiece } from "./glassFracture";
+import { absolutePose, applyPose } from "./poseView";
 
 /**
  * The glazing's own colour, and it is the kit's `GLASS` restated rather than
@@ -200,6 +206,7 @@ const SHARD_VERTS = MAX_CORNERS * 6;
 
 /** One piece of glass: its mesh, the body that moves it, and the outline both wear. */
 interface Shard {
+  /** The shard as drawn, from `body.pose` — see the header. */
   mesh: Mesh;
   /** On Havok's raw API, through `PhysicsWorld` — see `buildPool`. */
   body: WorldBody;
@@ -263,6 +270,8 @@ export class DebrisSystem implements PhysicsClient {
   // straight to the body and never read back.
   private readonly vel = new Vector3();
   private readonly spin = new Vector3();
+  /** A piece's turn, built here and copied into its pose. */
+  private readonly turn = new Quaternion();
 
   constructor(
     private scene: Scene,
@@ -412,11 +421,10 @@ export class DebrisSystem implements PhysicsClient {
       // is still standing until the authority says otherwise. `LEAN` is the
       // last term of it: what the tilt below is allowed to add.
       const standoff = side * (thick / 2 + g.shardCollide / 2 + LEAN + 0.02);
-      shard.mesh.position.set(
-        geom.cx + piece.u * ux + standoff * nx,
-        geom.cy + piece.v,
-        geom.cz + piece.u * uz + standoff * nz,
-      );
+      const pose = shard.body.pose;
+      pose[0] = geom.cx + piece.u * ux + standoff * nx;
+      pose[1] = geom.cy + piece.v;
+      pose[2] = geom.cz + piece.u * uz + standoff * nz;
       // Turned onto the pane's own normal, then nudged off it. The nudge is
       // small on purpose: the first frame is a cracked pane and not a cloud,
       // and Havok has the rest of the fall to make it one. The out-of-plane
@@ -427,8 +435,15 @@ export class DebrisSystem implements PhysicsClient {
         yaw + (rand() - 0.5) * swing,
         (rand() - 0.5) * swing,
         (rand() - 0.5) * ROLL,
-        shard.mesh.rotationQuaternion!,
+        this.turn,
       );
+      pose[3] = this.turn.x;
+      pose[4] = this.turn.y;
+      pose[5] = this.turn.z;
+      pose[6] = this.turn.w;
+      // Drawn where it was placed, now: a burst on a frame that takes no
+      // substep is a pane of pieces standing in the frame until the next one.
+      applyPose(pose, shard.mesh);
       shard.mesh.setEnabled(true);
 
       // **What the round did, and what gravity is about to do.** A piece at the
@@ -479,12 +494,35 @@ export class DebrisSystem implements PhysicsClient {
       // shared by everything of that colour, so a fade here would dim every
       // shard in the pool at once rather than the burst that is expiring. A
       // shard goes down through the floor instead.
+      //
+      // It lowers the POSE, which the next substep's sync writes back over
+      // while the body is still live — so a shard sinks only by this frame's
+      // drop and the few centimetres it comes to are all the sink there is.
+      // That is how it always behaved (the drop was written on the mesh, which
+      // the sync overwrote just the same); it is kept, not endorsed.
       const sinking = burst.t - g.shardLife;
       if (sinking > 0) {
         const drop = (sinking / g.shardSink) * 0.5;
-        for (let i = 0; i < burst.live; i++) burst.shards[i].mesh.position.y -= drop * dt * 8;
+        for (let i = 0; i < burst.live; i++) burst.shards[i].body.pose[1] -= drop * dt * 8;
       }
       if (burst.t > g.shardLife + g.shardSink) this.release(burst);
+    }
+    this.drawLive();
+  }
+
+  /**
+   * The VIEW: every live shard drawn where its body is — the pose the step
+   * and the sink left, onto its mesh. Run last in `update`, after the step
+   * that moved them and the sink that lowered them; a parked shard was drawn
+   * where `release` put it.
+   */
+  private drawLive(): void {
+    for (const burst of this.bursts) {
+      if (burst.t < 0) continue;
+      for (let i = 0; i < burst.live; i++) {
+        const s = burst.shards[i];
+        applyPose(s.body.pose, s.mesh);
+      }
     }
   }
 
@@ -616,9 +654,14 @@ export class DebrisSystem implements PhysicsClient {
       // whose transform was only written on the mesh leaves its collision
       // proxy where it stopped — an invisible box lying in the street that
       // rounds and bodies stop on. `RagdollSystem.park` carries the measurement
-      // that found it. The orientation is whatever the mesh last wore, as it
-      // always was: only the position is reset.
-      s.mesh.position.set(0, PARKED_Y, 0);
+      // that found it. The orientation is whatever the shard last wore, as it
+      // always was: only the position is reset. Drawn there at once — the
+      // pose may be a step ahead of the mesh when this runs inside `update`.
+      const pose = s.body.pose;
+      pose[0] = 0;
+      pose[1] = PARKED_Y;
+      pose[2] = 0;
+      applyPose(pose, s.mesh);
       this.physics.park(s.body);
     }
   }
@@ -688,7 +731,7 @@ export class DebrisSystem implements PhysicsClient {
 
         // Created where the mesh stands, static, then shaped, weighed and
         // damped: the plugin's calls in its order (`PhysicsWorld.addBody`).
-        const body = this.physics.addBody(mesh, "static");
+        const body = this.physics.addBody("static", absolutePose(mesh));
         const mass = massFor(w0 * w0);
         hp.setShape(body.id, shape);
         hp.setMass(body.id, mass);

@@ -7,7 +7,10 @@
  * Invariants: it is the THIRD `PhysicsClient` and owns no engine — see
  * `PhysicsWorld`. Nothing here feeds navigation, cover or hit detection: a
  * chunk is dressing exactly as a corpse and a glass shard are, and rounds and
- * bodies pass through it.
+ * bodies pass through it. A chunk's place is its body's `pose`
+ * (`BABYLON_EXIT.md` X2.4 C5), drawn onto its mesh by the VIEW (`drawLive`,
+ * `poseView.applyPose`) exactly where `DebrisSystem` draws a shard: when a
+ * burst places it, at the end of `update`, and when a release parks it.
  *
  * ## What makes this worth having is that it knows what it went off ON
  *
@@ -77,6 +80,7 @@ import {
   type PhysicsWorld,
   type WorldBody,
 } from "./PhysicsWorld";
+import { absolutePose, applyPose, storePose } from "./poseView";
 
 /**
  * What a blast went off on, as THIS system reads it: `GrenadeSystem`'s
@@ -139,6 +143,7 @@ const PARKED_Y = -1000;
 
 /** One chunk: its mesh, the body that moves it, and the shape cut to its size. */
 interface Chunk {
+  /** The chunk as drawn, from `body.pose` — see the header. */
   mesh: Mesh;
   /** On Havok's raw API, through `PhysicsWorld` — see `buildPool`. */
   body: WorldBody;
@@ -164,6 +169,8 @@ const _spin = new Vector3();
 const _tangent = new Vector3();
 const _bitangent = new Vector3();
 const _along = new Vector3();
+const _place = new Vector3();
+const _turn = new Quaternion();
 
 export class BlastDebrisSystem implements PhysicsClient {
   private bursts: Burst[] = [];
@@ -318,7 +325,7 @@ export class BlastDebrisSystem implements PhysicsClient {
       const yaw = ((i + this.rand()) / wanted) * Math.PI * 2;
       const spread = CONFIG.grenade.flash.radius * 0.35 * power * this.rand();
       const clear = Math.max(chunk.hx, chunk.hy, chunk.hz) + 0.04;
-      chunk.mesh.position
+      _place
         .copyFrom(_tangent)
         .scaleInPlace(Math.cos(yaw) * spread)
         .addInPlace(_along.copyFrom(_bitangent).scaleInPlace(Math.sin(yaw) * spread))
@@ -328,8 +335,12 @@ export class BlastDebrisSystem implements PhysicsClient {
         this.rand() * Math.PI * 2,
         this.rand() * Math.PI * 2,
         this.rand() * Math.PI * 2,
-        chunk.mesh.rotationQuaternion!,
+        _turn,
       );
+      // Into the body's pose, which the next substep teleports from, and drawn
+      // there now — see `DebrisSystem.burst`.
+      storePose(chunk.body.pose, _place, _turn);
+      applyPose(chunk.body.pose, chunk.mesh);
       // The surface's own size multiplier, and the ONE place the mesh and its
       // collision box are allowed to disagree: Havok's transform sync writes
       // position and orientation onto an unparented node and leaves scaling
@@ -399,14 +410,32 @@ export class BlastDebrisSystem implements PhysicsClient {
       // alpha 1.0 and one instance of it is shared by everything of that
       // colour, so a fade here would dim every chunk in the pool at once rather
       // than the burst that is expiring. A chunk goes down through the floor.
+      // It lowers the POSE, which the next substep's sync writes back over
+      // while the body is live — `DebrisSystem.update` says what that costs
+      // the sink, and it is kept as it always behaved.
       const sinking = burst.t - d.life;
       if (sinking > 0) {
         const drop = (sinking / d.sink) * 0.5;
         for (let i = 0; i < burst.live; i++) {
-          burst.chunks[i].mesh.position.y -= drop * dt * 8;
+          burst.chunks[i].body.pose[1] -= drop * dt * 8;
         }
       }
       if (burst.t > d.life + d.sink) this.release(burst);
+    }
+    this.drawLive();
+  }
+
+  /**
+   * The VIEW: every live chunk drawn where its body is, last in `update` —
+   * `DebrisSystem.drawLive`'s rule.
+   */
+  private drawLive(): void {
+    for (const burst of this.bursts) {
+      if (burst.t < 0) continue;
+      for (let i = 0; i < burst.live; i++) {
+        const c = burst.chunks[i];
+        applyPose(c.body.pose, c.mesh);
+      }
     }
   }
 
@@ -443,7 +472,12 @@ export class BlastDebrisSystem implements PhysicsClient {
       // where it stopped — an invisible box lying in the street that rounds and
       // bodies stop on. `RagdollSystem.park` carries the measurement. Only the
       // position is reset; the orientation is whatever the chunk last wore.
-      c.mesh.position.set(0, PARKED_Y, 0);
+      // Drawn there at once, as `DebrisSystem.release` draws a shard.
+      const pose = c.body.pose;
+      pose[0] = 0;
+      pose[1] = PARKED_Y;
+      pose[2] = 0;
+      applyPose(pose, c.mesh);
       this.physics.park(c.body);
     }
   }
@@ -508,7 +542,7 @@ export class BlastDebrisSystem implements PhysicsClient {
         //
         // Created where the mesh stands, static, then shaped, weighed and
         // damped: the plugin's calls in its order (`PhysicsWorld.addBody`).
-        const body = this.physics.addBody(mesh, "static");
+        const body = this.physics.addBody("static", absolutePose(mesh));
         hp.setShape(body.id, shape);
         hp.setMass(body.id, (d.mass * (hx * hy * hz)) / (d.sizeMax ** 3));
         hp.setLinearDamping(body.id, death.linearDamping);

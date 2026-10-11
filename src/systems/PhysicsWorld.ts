@@ -29,14 +29,17 @@
  * machine that can run the rest of this game, does not happen.
  *
  * Invariants, each of which has a way of failing silently:
- * - `scene.physicsEnabled` is FALSE and stays false. Babylon steps a scene's
- *   physics engine from `scene.animate()` on every RENDERED frame, and this game
- *   renders under the menu, the deploy map and a pause — so a scene-driven step
- *   would be the one thing still moving behind a pause card. The scene has no
- *   physics engine at all now, so there is nothing for it to step; the flag is
- *   still written (the `Scene` constructor sets it true) because the rule
- *   stands until the scene goes. Stepping is `update()`'s job and it is only
- *   ever called from a gameplay path.
+ * - **Babylon-free** (`scripts/check-babylon-free.mjs` holds it, beside
+ *   `havok.ts`). It reaches no node, no mesh and no scene: a body's pose is a
+ *   plain array (`WorldBody.pose`) that a client's VIEW writes onto whatever
+ *   it draws (`BABYLON_EXIT.md` X2.4 C5), and the floor arrives as the
+ *   collider clones' own vertex arrays (`GameMap.terrainGeometry`), not as
+ *   the meshes.
+ * - Stepping is `update()`'s job and it is only ever called from a gameplay
+ *   path — `Game.stepAftermath`, and nowhere else. The scene has no physics
+ *   engine for `scene.animate()` to step behind a pause card, and `Game`,
+ *   which owns the scene, still holds `scene.physicsEnabled` false until the
+ *   scene goes (see `CLAUDE.md`, "Deaths, glass, and the one physics engine").
  * - The sim is a FIXED step with a CARRIED remainder, so a tumble is identical
  *   at 30, 60 and 144 fps and reproducible headless, where `dt` is clamped to
  *   0.05. Both halves are load-bearing and both have already been wrong once.
@@ -69,12 +72,11 @@
  * anything, and neither may shove the other or a corpse. A client picking a
  * group takes it from here, so the whole allocation is readable in one place.
  */
-import { Mesh, Scene, TransformNode, VertexBuffer } from "@babylonjs/core";
 import { CONFIG } from "../config";
 import { Quaternion as MathQuaternion } from "../math";
 import { BLOCK_SIZE } from "../world/blocks";
 import { Havok, type BodyId, type HavokInstance, type Motion, type ShapeId } from "./havok";
-import type { GameMap } from "../world/MapBuilder";
+import type { GameMap, TerrainGeometry } from "../world/mapTypes";
 
 /**
  * The instantiated WASM module. Spelled in `havok.ts` as an import TYPE, which
@@ -150,7 +152,7 @@ export interface PhysicsClient {
    *
    * This is the teleport read-in point, and it is per client because each owns
    * its own freshly-spawned bodies: a body is spawned with its teleport on
-   * (`WorldBody.teleport`) so one step reads its node into the sim, and from
+   * (`WorldBody.teleport`) so one step reads its pose into the sim, and from
    * there the sim owns it and must not be overwritten. Inside the loop rather
    * than after it — a frame running two substeps would otherwise re-teleport a
    * body onto the transform the first step had just synced back, which Havok
@@ -167,22 +169,31 @@ export interface PhysicsClient {
 
 /**
  * A client's body on the raw API, held here so the step can do for it what the
- * plugin's `executeStep` did for a `PhysicsBody`: teleport it from its node
- * before a substep, and write its pose back onto the node after one.
+ * plugin's `executeStep` did for a `PhysicsBody`: teleport it from its pose
+ * before a substep, and write its pose back after one.
  *
- * **The node is UNPARENTED**, which is the plugin's simple branch both ways —
- * a teleport reads the node's raw `position` and `rotationQuaternion`, and a
- * sync writes them, neither normalised. A shard and a chunk are bodies on their
- * own meshes and a corpse's bone is a body on a pool-owned proxy that is
- * parented to nothing (the rig's joint hangs off IT), so all three satisfy it;
- * a body on a parented node would need the branch that composes against the
- * parent, and there is none here.
+ * **The pose is a plain array, not a node** (`BABYLON_EXIT.md` X2.4 C5), and
+ * it is exactly what the plugin's node was to it: the plugin teleported from
+ * an UNPARENTED node's raw `position` and `rotationQuaternion` and synced back
+ * into the same two, neither normalised — so this array is those seven
+ * numbers, read and written the same way. Whatever a client draws the body as
+ * (a proxy a rig's joint hangs off, a shard's mesh, a chunk's) is the client's
+ * VIEW of it, written FROM this array (`poseView.ts`) at the points something
+ * reads the drawing; nothing here ever writes one.
  */
 export interface WorldBody {
   readonly id: BodyId;
-  readonly node: TransformNode;
   /**
-   * Teleport from the node at the NEXT substep — what the plugin called
+   * `[px, py, pz, qx, qy, qz, qw]`: where the body is, as the last substep
+   * left it — or as its client put it, for a teleport. A client writes it to
+   * place a body (with `teleport` on, or through `park`) and reads it to draw
+   * one; the substep writes it after every step while the body is DYNAMIC.
+   * A `Float64Array`, so it holds what Havok hands back bit for bit, a `-0`
+   * included.
+   */
+  readonly pose: Float64Array;
+  /**
+   * Teleport from `pose` at the NEXT substep — what the plugin called
    * `disablePreStep = false`. It is read at the substep, not when it is set,
    * so a frame that takes no substep keeps it pending, and it stays set for
    * every substep until the client clears it (`afterFirstStep`). `park` clears
@@ -231,10 +242,7 @@ export class PhysicsWorld {
    * Stands the engine up, synchronously, on a module `main.ts` has already
    * awaited. Nothing in the game is ever handed a half-built physics world.
    */
-  constructor(
-    scene: Scene,
-    havok: HavokInstance,
-  ) {
+  constructor(havok: HavokInstance) {
     // The world and its gravity, and nothing else: no speed limit (the
     // plugin set none, and Havok's own defaults are what every tumble was
     // tuned under) and no query collector (nothing here casts against this
@@ -247,10 +255,6 @@ export class PhysicsWorld {
     // moved no bits; lowering it to 1/120 for a finer tumble now does what it
     // says.
     this.hp = Havok.createWorld(havok, [0, CONFIG.bots.death.gravity, 0]);
-    // The `Scene` constructor sets this true. There is no physics engine on
-    // the scene for it to step any more, and it is held false regardless —
-    // see the header.
-    scene.physicsEnabled = false;
   }
 
   /** True once there is ground to land on. A body without it falls forever. */
@@ -275,18 +279,20 @@ export class PhysicsWorld {
   // --- client bodies on the raw API -------------------------------------------
 
   /**
-   * A body on `node`, added to the world where the node stands — `new
-   * PhysicsBody(node, motion, false)`, call for call: the node's ABSOLUTE pose
-   * as the plugin read it (the world matrix computed, then decomposed), and
-   * never asleep. The shape, the mass and the dampings are the client's,
-   * through `havok`, in the order it always made them.
+   * A body added to the world at `at` — `new PhysicsBody(node, motion,
+   * false)`, call for call, and never asleep. `at` is `[px, py, pz, qx, qy,
+   * qz, qw]` and it is the pose the plugin read off the node it was built on,
+   * which was the node's ABSOLUTE pose (its world matrix computed, then
+   * decomposed) — so a client building one on a node hands in that read
+   * (`poseView.absolutePose`), and the body's `pose` starts as it. The shape,
+   * the mass and the dampings are the client's, through `havok`, in the order
+   * it always made them.
    */
-  addBody(node: TransformNode, motion: Motion): WorldBody {
-    if (node.parent) node.computeWorldMatrix(true);
-    const p = node.absolutePosition;
-    const q = node.absoluteRotationQuaternion;
-    const id = this.hp.createBody(motion, [p.x, p.y, p.z], [q.x, q.y, q.z, q.w]);
-    const body: WorldBody = { id, node, teleport: false, dynamic: motion === "dynamic" };
+  addBody(motion: Motion, at: ArrayLike<number>): WorldBody {
+    const id = this.hp.createBody(motion, [at[0], at[1], at[2]], [at[3], at[4], at[5], at[6]]);
+    const pose = new Float64Array(7);
+    for (let i = 0; i < 7; i++) pose[i] = at[i];
+    const body: WorldBody = { id, pose, teleport: false, dynamic: motion === "dynamic" };
     this.bodies.push(body);
     return body;
   }
@@ -298,11 +304,11 @@ export class PhysicsWorld {
   }
 
   /**
-   * Teleports a body to its node NOW and clears any teleport pending — what a
-   * client parking a body did through the plugin's
-   * `setPhysicsBodyTransformation`. A
-   * static body whose node alone was moved leaves its collision proxy where it
-   * stopped (`RagdollSystem.park` carries the measurement).
+   * Teleports a body to its `pose` NOW and clears any teleport pending — what
+   * a client parking a body did through the plugin's
+   * `setPhysicsBodyTransformation`. A static body whose pose alone was
+   * rewritten leaves its collision proxy where it stopped
+   * (`RagdollSystem.park` carries the measurement).
    */
   park(body: WorldBody): void {
     body.teleport = false;
@@ -381,7 +387,10 @@ export class PhysicsWorld {
    * oracles (`plans/physics-ref/`) grade Havok's state bit for bit, so the
    * order is kept: every pending teleport, then the step (`SetIdealStepTime`
    * and `Step`, at `death.substep` — see the constructor), then every dynamic
-   * body's pose written back. What `executeStep` also did and this does not:
+   * body's pose written back into its array. The clients' views read those
+   * arrays after `update` returns (`Game` runs each client's `update` straight
+   * after it) — a once-a-frame write of the last substep's pose, which is
+   * every number the plugin's per-substep node writes left standing. What `executeStep` also did and this does not:
    * re-region bodies for a floating origin (off: no scene set one) and read
    * the collision and trigger events (none: no body asks for any, and reading
    * them changes nothing).
@@ -398,22 +407,25 @@ export class PhysicsWorld {
       // `-0` into a `0`, as that addition did) and the orientation as Havok
       // holds it, unnormalised.
       const [p, q] = this.hp.pose(b.id);
-      b.node.position.set(p[0] + 0, p[1] + 0, p[2] + 0);
-      b.node.rotationQuaternion!.set(q[0], q[1], q[2], q[3]);
+      const o = b.pose;
+      o[0] = p[0] + 0;
+      o[1] = p[1] + 0;
+      o[2] = p[2] + 0;
+      o[3] = q[0];
+      o[4] = q[1];
+      o[5] = q[2];
+      o[6] = q[3];
     }
   }
 
   /**
    * The plugin's TELEPORT for an unparented node: its raw position (less a
-   * floating origin of zero) and its raw quaternion, unnormalised — or the
-   * Euler angles' quaternion when it has none, which no node here lacks.
+   * floating origin of zero) and its raw quaternion, unnormalised — the seven
+   * numbers `pose` holds in their place.
    */
   private teleport(b: WorldBody): void {
-    const n = b.node;
-    const p = n.position;
-    const q = n.rotationQuaternion;
-    if (!q) throw new Error(`physics body on ${n.name} has no rotationQuaternion`);
-    this.hp.setPose(b.id, [p.x, p.y, p.z], [q.x, q.y, q.z, q.w]);
+    const o = b.pose;
+    this.hp.setPose(b.id, [o[0], o[1], o[2]], [o[3], o[4], o[5], o[6]]);
   }
 
   /**
@@ -521,17 +533,16 @@ export class PhysicsWorld {
 
     // The floor is the documented collider exception: a heightfield has no box
     // to stand in for it, so its blocks are mesh clones and come across as
-    // mesh shapes. They are static, so each BVH is built once per map and
-    // never again — and they are bucketed by their CENTRE exactly as a box is,
-    // so a patch cut on a lattice of its own (`GameMap.terrainBlock`) is in one
-    // bucket and hanging out of it, which is a locality hint being imprecise
-    // rather than a shape being wrong. Its centre is read off the
-    // bounding box rather than parsed out of the mesh's name, which is the
-    // string-sniffing `GameMap.terrainColliders` exists to avoid.
-    for (const mesh of map.terrainColliders) {
-      const shape = this.meshShape(mesh);
-      const centre = mesh.getBoundingInfo().boundingBox.centerWorld;
-      hp.addChild(bucket(centre.x, centre.z), shape, [0, 0, 0], [0, 0, 0, 1], [1, 1, 1]);
+    // mesh shapes — built from the clones' own vertex arrays
+    // (`GameMap.terrainGeometry`), never from the meshes. They are static, so
+    // each BVH is built once per map and never again — and they are bucketed
+    // by their CENTRE exactly as a box is, so a patch cut on a lattice of its
+    // own (`GameMap.terrainBlock`) is in one bucket and hanging out of it,
+    // which is a locality hint being imprecise rather than a shape being
+    // wrong. See `floorShape` for the centre.
+    for (const patch of map.terrainGeometry) {
+      const [shape, cx, cz] = this.floorShape(patch);
+      hp.addChild(bucket(cx, cz), shape, [0, 0, 0], [0, 0, 0, 1], [1, 1, 1]);
       this.worldLeaves.push(shape);
     }
 
@@ -550,44 +561,58 @@ export class PhysicsWorld {
   }
 
   /**
-   * One terrain patch as a Havok mesh shape — `PhysicsShapeMesh`'s
-   * `MeshAccumulator`, without the class.
+   * One terrain patch as a Havok mesh shape, and the centre it is bucketed by
+   * — `PhysicsShapeMesh`'s `MeshAccumulator` and the collider clone's bounding
+   * box, both without the mesh.
    *
-   * The positions are the mesh's LOCAL ones through its absolute SCALING
-   * alone, which is what the plugin baked (a rigid transform is the body's
-   * business, and these bodies stand at the origin). The arithmetic is
-   * `Vector3.TransformCoordinates` over `Matrix.Scaling` written out, zero
-   * terms and all, because those terms are what turn a `-0` into a `0` and
-   * the float32 copy keeps the sign bit. The triangles are REVERSED, each
-   * one, in a left-handed scene: Havok wants the winding that lets it skip
-   * interior edges, and Babylon's default is the other one.
+   * **The positions are the clone's own LOCAL ones and the shape's space is
+   * the world's**, because the clone stands at identity: the plugin baked
+   * them through the mesh's absolute scaling (exactly 1) as
+   * `Vector3.TransformCoordinates` over `Matrix.Scaling`, and every term that
+   * arithmetic added was a zero — which changes no finite number but a `-0`,
+   * into a `0`. So each coordinate is `x + 0` here, which is the same float
+   * to the bit; the float32 copy into the heap keeps the sign bit, so it is
+   * not a detail.
+   *
+   * **The triangles are REVERSED, each one**: every triangle in the world is
+   * wound for Babylon's left-handed default (`scene.useRightHandedSystem` is
+   * false and nothing sets it), and Havok wants the other winding, the one
+   * that lets it skip interior edges. The plugin reversed them for exactly
+   * that scene.
+   *
+   * **The centre is the bounding box's, computed as Babylon computed it**:
+   * the extremes found by strict comparison from `+-Number.MAX_VALUE`, then
+   * `(max + min) * 0.5`. Not an approximation of it — a 240 m map's patches
+   * are cut from -120 in 48 m blocks, so a patch's centre can sit exactly on a
+   * multiple of 48 (-96 is `-2 * 48`), where `Math.floor` at the key flips on
+   * the last bit.
    */
-  private meshShape(mesh: Mesh): ShapeId {
-    mesh.computeWorldMatrix(true);
-    const s = mesh.absoluteScaling;
-    const sx = s.x;
-    const sy = s.y;
-    const sz = s.z;
-    const data = mesh.getVerticesData(VertexBuffer.PositionKind) || [];
+  private floorShape(patch: TerrainGeometry): [ShapeId, number, number] {
+    const data = patch.positions;
     const positions = new Float64Array(data.length);
-    for (let i = 0; i < data.length; i += 3) {
+    let minX = Number.MAX_VALUE;
+    let minZ = Number.MAX_VALUE;
+    let maxX = -Number.MAX_VALUE;
+    let maxZ = -Number.MAX_VALUE;
+    for (let i = 0; i + 2 < data.length; i += 3) {
       const x = data[i];
-      const y = data[i + 1];
       const z = data[i + 2];
-      const rw = 1 / (x * 0 + y * 0 + z * 0 + 1);
-      positions[i] = (x * sx + y * 0 + z * 0 + 0) * rw;
-      positions[i + 1] = (x * 0 + y * sy + z * 0 + 0) * rw;
-      positions[i + 2] = (x * 0 + y * 0 + z * sz + 0) * rw;
+      positions[i] = x + 0;
+      positions[i + 1] = data[i + 1] + 0;
+      positions[i + 2] = z + 0;
+      if (x < minX) minX = x;
+      if (z < minZ) minZ = z;
+      if (x > maxX) maxX = x;
+      if (z > maxZ) maxZ = z;
     }
-    const indices = mesh.getIndices() ?? [];
-    const rightHanded = mesh.getScene().useRightHandedSystem;
+    const indices = patch.indices;
     const triangles = new Int32Array(indices.length - (indices.length % 3));
     for (let i = 0; i + 2 < indices.length; i += 3) {
-      triangles[i] = indices[rightHanded ? i : i + 2];
+      triangles[i] = indices[i + 2];
       triangles[i + 1] = indices[i + 1];
-      triangles[i + 2] = indices[rightHanded ? i + 2 : i];
+      triangles[i + 2] = indices[i];
     }
-    return this.hp.mesh(positions, triangles);
+    return [this.hp.mesh(positions, triangles), (maxX + minX) * 0.5, (maxZ + minZ) * 0.5];
   }
 
   /**

@@ -201,6 +201,7 @@ export async function buildServerWorld(def: MapDef): Promise<GameMap> {
     panes,
     paneGroups: [],
     terrainColliders: [],
+    terrainGeometry: [],
     visuals: [],
     // Empty for `paneGroups`' reason: it is the record the DRAWN world was
     // made of, and there is nothing drawn here.
