@@ -1225,7 +1225,120 @@ outside its typed arrays; one frame must be applied before that call's events;
   where systems meet) and "Conquest rules" (one ledger, one core); `docs/game.md`;
   `docs/multiplayer.md`.
 
-#### X2.5b — The core in a Worker — **M**
+#### X2.5b — The core in a Worker — **M** — **LANDED** (e454421)
+
+**Landed** 2026-10-11, at the end of one session; **two Verify items are owed
+by the deploy, not by this commit**: the phone run (the user's review, then the
+`--no-ff` merge to `develop`, then the deployed build — "The branch") and
+`crossOriginIsolated` in the docker image (no docker or nginx on this box; the
+template's pair is untested until that deploy, and the installed app's own
+service worker stamps the pair whatever the server sends — below).
+
+**What exists.**
+- **`SimHost`** (`src/sim/simHost.ts`) is the page's one door into the core,
+  wherever it runs. `PageSimHost` is X2.5a's arrangement exactly;
+  `WorkerSimHost` runs the core in a Worker (`src/sim/simWorker.ts`) over
+  shared memory. `openSimHost` chooses at boot (`main.ts`, awaited and
+  injected as `havok` and `engine` are): a Worker when the page is
+  cross-origin isolated and has growable `SharedArrayBuffer`s, the page
+  otherwise, under `?simpage`, `?simcheck` (DEV) or `?simcopy`, or when a
+  Worker fails or stays silent for 20 s. The boot's console line says which
+  and why; every capture says it as `simMode`. `SimDoor` is gone.
+- **The transport allocates nothing per frame on either thread.** Commands are
+  encoded into one of two growable float64 buffers (`commandCodec.ts`, one held
+  object per kind on the decode side; `ShotCommand.weapon` is now `ShotWeapon`,
+  the five numbers resolving a round reads). Each operation's frame and news
+  are published into one of two growable buffers (`publication.ts`: the layout
+  derived from `newFrame()`, per-round lengths and a version in the header,
+  the scalars through `frame.ts`' written-out `FRAME_SCALARS` pair, checked
+  against the walk at load). The signal is an `Atomics` store the Worker
+  `Atomics.wait`s on; the page never sends before it has taken in, so each
+  buffer is one side's at a time. A posted message is a round's cost
+  (`startRound` names the map by id; `addPlayer`, `removePlayer`,
+  `releaseWorld`), answered while the page spins (`hostWire.ts`).
+- **One code path in `Game`, which depends on nothing about WHEN the core
+  answers.** `ask` returns nothing; the five sites that read `submit`'s boolean
+  decide off the page's own state as a match's client does — the main gun off
+  `gunReady`, the cupola gun off the page hull's `fireMg`, the grenade booked
+  before the ask and returned by `ordnanceRefused` (`Player.returnGrenade`),
+  the rocket and the mine as in a match. **From a Worker the step overlaps the
+  frame**: `step` takes in the step started a frame ago and starts this one,
+  so the frame drawn is the step before; a frame that does not step calls
+  `pumpSim` (the deploy's `spawned` comes back that way); the bench `settle`s
+  before its hash and a round build drops what the last round still owed.
+- **Offline shots are rewound** (decided): the page's core is built with
+  `rewind` in both modes, and a round carries `renderTime`, the synced frame's
+  `time`. In the page that is the core's present and moves nobody.
+- **The profiler sees the Worker** (report version 15): `sim` is a third ROOT,
+  filed against the frame that takes its answer in, its clock moved onto the
+  page's `timeOrigin`; `simPublish` is the fill plus the shared copy; `world`
+  gains `simWait` (the page blocked on the Worker) and `simSync`;
+  `SegmentStat.sim.hop` and `bench.mjs` print both. `FrameProfile.fileTiming`
+  files the row in one call (`file` is gone).
+- **Isolation** (COOP `same-origin`, COEP `require-corp`) on every response
+  from the Vite dev and preview servers, the nginx template (server level and
+  every location with its own `add_header`), and every response `sw.js`
+  answers. `server/` serves no page; the lobby's cross-region list is CORS,
+  which `require-corp` accepts; the page makes no other cross-origin load.
+- **FINDINGS 61, fixed at its root, and the entry deleted.** It was boxed
+  doubles, as suspected — but from the COMPILER, not the tier: under ES2022's
+  [[Define]] class fields `x: number;` is emitted as `x;`, the field starts
+  `undefined`, and V8 holds it Tagged, so every `Vector3` store was a fresh heap
+  number even on TurboFan. `useDefineForClassFields: false` (`tsconfig.json`,
+  now a `CLAUDE.md` convention). Beside it: `RosterMirror.aliveCount`'s
+  `for...of`, `LagComp.record`'s, and the per-phase `file` (~660 B a frame).
+
+**Measured:**
+- **The benchmark's seven fights, from the Worker: X2.5a's hashes, every one**
+  (Greyfen `83e8e74ef36916ba`, Hollowmere `549487ba93bceefe`, Coldharbour
+  `de5622634abca6e7`, Harrowmead `3ae90f2f08fb0643`, Sarab `986c2e35557fb679`,
+  Cinderhaven `2f97c9072ab1762b`, Kurenai `cd58b73111eacbdd`), and Sarab's the
+  same with `?simpage`. `?simcheck&simcopy` (the page): Hollowmere and
+  Coldharbour 5,402 checks each, 0 mismatches, the same hashes; an offline
+  round with a PERSON in it under `?simcheck` (a rewound rifle round that
+  hit, a grenade, a seat, the main gun) 449 checks, 0 mismatches.
+- **simulate, seed 777:** X2.2's seven C6 hashes and every map's `--events`
+  list identical (the timing lines aside), and the authority's round 7-16%
+  faster on wall clock on every map (Cinderhaven 5,315 → 4,487 ms) from the
+  class-field setting alone. **corecheck** all passed; **parity** every map;
+  **merge:hash** identical on all eight against the parent; **kit:hash**
+  identical; **bank.mjs --check** 47 rows within the floor; **drop.mjs
+  --check** bits identical and **clients.mjs --check** identical on every map;
+  **build** green (the babylon-free gate walks the five new files).
+- **`crossOriginIsolated`**: true in dev and under `vite preview`; the
+  production build installed, then OFFLINE — still true, the core in the
+  Worker, a round deployed and stepping. A bare server sending no headers: false
+  on the first load, the boot falling back to the page and saying so — and true
+  once the service worker controls the page, online and offline (it stamps the
+  pair). Docker: owed (above).
+- **A netplay round** (Coldharbour, a local match server, `?mp`): joined,
+  deployed, played; left to the menu and played an offline round on the Worker.
+- **The phone check, read off the profiler — on the desktop, the phone owed**
+  (Sarab fight, 3440x1440, two runs a side in one session, final code):
+  - `sim` OFF the main thread: 0.27 ms of step on the Worker, `simWait`
+    0.000 ms (the Worker always finished inside the frame), `simSync`
+    0.015 ms, `simPublish` 0.029 ms (on the Worker).
+  - **The main thread's frame against X2.5a's** (the parent, my work
+    stashed, same session): fight tick **10.04 vs 10.48 ms (−4.2%)**, wall
+    10.39 vs 10.84 ms, run spreads 0.2–0.3%. Under the protocol's 8% floor,
+    and the size of X2.5a's `sim` (0.39 ms) — the expected reading.
+  - The same code with the core in the page (`?simpage`): tick 10.58 ms,
+    `sim` 0.37 inside it — the page and the Worker are within this
+    desktop's spread once the class-field fix cut the step, which is why
+    the phone, where the step is a larger share, is the reading that
+    matters.
+- **Allocation** (CDP sampler, both collected-object flags, Sarab fight):
+  `BotMirror.read` 117 → 6.5 B a call (the empty loop's floor), ~3 µs → 34 ns;
+  the page's whole frame 692 → 620 kB with the core in the page, 357 kB with
+  it in the Worker (the core's allocation leaves with it); the hop's own code
+  on the main thread at the sampler's floor (`take`, the mirrors, `pumpSim`,
+  `fileSimTiming` all gone from the list); the Worker's publish path ~80 B a
+  frame (getter boxing inside `fillFrame`, sampling-level) and its timing
+  ~4 B.
+- **The cost**: the Worker's bundle is a second copy of the simulation and the
+  map data, 568 kB (127 kB gzipped) beside a 9.2 MB entry.
+
+The step as handed over follows.
 
 As `PERF_PLAN.md` C4 states it:
 - **The shared state.** Per-body state and the event queue are double-buffered
