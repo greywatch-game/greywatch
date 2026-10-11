@@ -430,9 +430,15 @@ src/
                         #   Babylon's Create*VertexData, same vertex order,
                         #   normals and UVs. createBox scales one cached cube
   core/
-    Game.ts             # Orchestrator + main loop + all cross-system wiring.
+    Game.ts             # Orchestrator + main loop + all the PAGE's wiring.
+                        #   Simulates no round: offline it holds a SimCore
+                        #   (`core`), submits the player's acts (`ask`), steps
+                        #   it once a frame and draws what it said through ONE
+                        #   switch (`onSimEvent`; `onNetEvent` is a match's
+                        #   twin, both ending in the same player methods). Views
+                        #   read the core through `core.live` (temporary, C5).
                         #   Constructor is construction only; wiring is
-                        #   wireSystems (+ four subject methods),
+                        #   wireSystems (+ subject methods),
                         #   installDomListeners, wireScreens; tick dispatches
                         #   one method per screen. Holds ONE ScreenStack and
                         #   never assigns a state — go/raiseLid/lowerLid, and
@@ -895,9 +901,11 @@ src/
   systems/
     BattleSystem.ts     # Bot pool, AI scheduling, LOS, squads, the bench.
                         #   Simulation only: src/math, no scene, no camera
-    BattleView.ts       # The roster's PICTURE: a BotRig per bot (rebuilt on
-                        #   `poolVersion` or the viewer's side), the distance
-                        #   LOD, the muzzle flashes. Client only
+    BattleView.ts       # The roster's PICTURE: a BotRig per bot of a
+                        #   `RosterRead` Game names (the core's offline, none in
+                        #   a match; rebuilt on a new roster, its `poolVersion`
+                        #   or the viewer's side), the distance LOD, the muzzle
+                        #   flashes. Client only
     VehicleViews.ts     # The fleet's PICTURE: one VehicleView per hull, by
                         #   hardstanding, each with its kind's model; built by
                         #   `installMap`, stepped after every
@@ -1506,7 +1514,9 @@ src/
                         #   end of, and it samples `BuildCtx.terrain` for the
                         #   far end's height
     NavGrid.ts          # Walkable-surface graph + precomputed flow fields
-    CoverMap.ts         # Baked per-surface directional cover masks
+    CoverMap.ts         # Baked per-surface directional cover masks — baked
+                        #   only where an AI runs (buildSimWorld); the page's
+                        #   build carries none (`GameMap.cover` null)
     boxGeometry.ts      # Analytic WorldBox primitives, shared by NavGrid /
                         #   ObstacleField / CoverMap
     ObstacleField.ts    # Sub-cell collision push-out for thin props, and two
@@ -1580,7 +1590,9 @@ src/
                         #   server is no longer its only reader — the menu's
                         #   schematic draws a map nothing has built yet, and
                         #   this is the only description of its buildings that
-                        #   exists outside a built world
+                        #   exists outside a built world. `collisionOf(map)` is
+                        #   the bake's read of a BUILT map — the offline page
+                        #   hands it to the simulation core as its world
     fingerprint.ts      # A comparable summary of a built world — the nav graph,
                         #   not the boxes. What `npm run parity` diffs
     hollowmere/layout.ts      # A MAP — every placement, flag and spawn
@@ -1899,8 +1911,9 @@ src/
                       #   clock and draws no seed — the HOST hands it both — and
                       #   imports nothing from server/. Every file is a root of
                       #   check-babylon-free.mjs
-    SimCore.ts        #   The simulation: the authority's answer to
-                      #   core/Game.ts, wired by the same rules. Owns the armour
+    SimCore.ts        #   The simulation, on the authority AND offline (the
+                      #   page holds one since X2.5a C4a), wired by the same
+                      #   rules as core/Game.ts. Owns the armour
                       #   too — the fleet, the bot crews and the AT kit — plus
                       #   `seat`, which is `Game.mount`/`clearVehicle` as one
                       #   method. Builds the SIMULATIONS only, never a view, and
@@ -1912,7 +1925,14 @@ src/
                       #   the rules a command meets — pouches, seat policy,
                       #   `deployPerson` — are here once. No outward callback:
                       #   it SAYS everything through events.ts, and the host
-                      #   `drain`s after every call
+                      #   `drain`s after every call. `live` (SimLive) is the
+                      #   TEMPORARY list of live objects the page's views read
+                      #   until C5; `releaseWorld` is a host's teardown
+    mirror.ts         #   The page-side READERS of the core in the wire's
+                      #   shapes: `FleetMirror`, the core's hulls read as
+                      #   NetVehicles answers (stateFor/mgFor/present/alive/
+                      #   health/occupant/gunner), which the page's posed fleet
+                      #   is synced and posed off. Writes nothing it reads
     commands.ts       #   The SimCommand vocabulary `SimCore.submit` takes:
                       #   the gameplay ClientMessages after validation, with
                       #   host-resolved data (WeaponSetup, kit pouch sizes),

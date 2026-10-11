@@ -627,8 +627,8 @@ make that work and each has a way of failing quietly.
 
 **The trigger is the interpolated death, not the `kill` event.** `NetRoster`
 reads the `alive` edge either side of the one call that can move it and raises
-`onDeath`; `Game` wires that to `ragdolls.spawn` exactly as `onBotKill` is
-wired to `registerBotKill`. Two reasons it is not the event. The event arrives in
+`onDeath`; `Game` wires that to `ragdolls.spawn` exactly as the offline core's
+`botDown` event reaches `Game.botDown`. Two reasons it is not the event. The event arrives in
 real time and the body is drawn `interpDelay` behind it, so spawning from the
 event throws a corpse a tenth of a second before the round that killed it appears
 to land. And every death is in the snapshot stream by construction, whereas an
@@ -669,8 +669,8 @@ by another bot and the grenade handler fires for a blast, but a person's round
 reaches `CombatSystem.fire` through `resolveShot` and touches neither — so every
 bot a human killed cost that team no reinforcement at all, and the only thing
 draining their tickets was the flag bleed. It is charged there now, one line
-after the resolve, exactly where the client's `Game` charges the same kill
-through `registerBotKill`. The failure mode is worth remembering because it is
+after the resolve — and since `BABYLON_EXIT.md` X2.5a C4a it is the offline
+round's charge too, because the offline round is the same core. The failure mode is worth remembering because it is
 silent in both directions: rounds simply ran long, which reads as mistuned
 config rather than a missing call.
 
@@ -888,9 +888,9 @@ a property of the server, which is the argument `hit` and `damage` already make
 next door.
 
 **Two flat cues were missing for the plainer reason that the events carrying
-them were already arriving.** Offline, `registerBotKill` plays `enemyDie` for
-every body that goes down and `wireConquest` plays `capture`/`flagLost` when a
-flag changes hands; in a match neither of those callbacks runs, because no
+them were already arriving.** Offline, `Game.botDown` plays `enemyDie` for
+every body that goes down and `flagCaptured` plays `capture`/`flagLost` when a
+flag changes hands, both off the core's events; in a match neither of those callbacks runs, because no
 client registers a kill or steps a `ConquestSystem`. Both now hang off the
 authority's own `kill` and `captured` events, which were already on screen as a
 killfeed line and a banner. The local player's own death is the one exception,
@@ -1217,12 +1217,13 @@ single door would mean one path inventing the half it cannot see. That is what
 `SimCore.creditKill` is, and it is why `BattleSystem.onBotKill` hands over
 the shooting BOT and any victim rather than the falling bot and a team — the
 older shape dropped every kill whose victim was a person, which on a server is
-half the roster. The client's `Game` runs the identical pair offline.
+half the roster. Offline it is the same core and the same pair.
 
 **What a kill is WORTH is decided in one place for both sides.**
 `ScoreBook.awardKill` is a free function over the book, the killer's team, the
-control point the VICTIM was standing in and whether it was a headshot, and both
-`Game.creditKill` and `SimCore.creditKill` reach it with those four facts.
+control point the VICTIM was standing in and whether it was a headshot, and
+`SimCore.creditKill` — the one door, offline and on the authority alike since
+X2.5a C4a — reaches it with those four facts.
 The failure it prevents is not a crash but a quiet disagreement: a player who
 learns in a single-player round that clearing attackers off a flag pays extra,
 taking that into a match where it does not. Keyed on the victim rather than the

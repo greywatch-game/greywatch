@@ -1863,8 +1863,9 @@ derived from the bearing, which is right by the same derivation every other
 death uses.
 
 The kill itself takes the ordinary doors: `creditKill` files the row (keyed on
-the flag the VICTIM fell in, like every other kill), `registerBotKill` charges
-the ticket and offers the corpse to the pool, and a player victim needs neither
+the flag the VICTIM fell in, like every other kill), the bot's death door
+(`SimCore.onKill`) charges the ticket and the page offers the corpse to the pool
+off its `botDown`, and a player victim needs neither
 because `takeDamage` is the one door a death offline takes. A player DRIVER
 gets the hitmarker and its note, on the same terms a shell's direct hit gets
 them; a bot crew gets none of it.
@@ -3168,7 +3169,7 @@ Three things a driver keeps that a benched bot does not:
 
 - **Its life.** Still `alive`, still holding its roster slot and its scoreboard
   row. Burning the hull kills the crew and charges the ticket, through the
-  ordinary door — `Bot.takeDamage` then `Game.registerBotKill`, with the hull's
+  ordinary door — `Bot.takeDamage` then the core's bot death door, with the hull's
   own centre as the bearing the blow came from, so the corpse is thrown clear of
   the wreck rather than lying down beside it.
 - **Its position**, slaved to the hull every frame by `Bot.nudgeTo` —

@@ -537,8 +537,19 @@ export interface GameMap {
    * one, which is why it is a field of its own rather than a method on `rays`.
    */
   collidables: CollisionField;
-  /** Baked directional cover over the nav graph, for the AI. */
-  cover: CoverMap;
+  /**
+   * Baked directional cover over the nav graph, for the AI — or null on a
+   * world no AI is stepped on.
+   *
+   * **The page's build carries none** (`BABYLON_EXIT.md` X2.5a C4a): its one
+   * reader is `BattleSystem`, and the page has none — offline the bots are the
+   * simulation core's, whose world `buildSimWorld` rebuilds from the same boxes
+   * and bakes its own cover over, and in a match they are the authority's. Baking
+   * it here as well cost the page a second copy of the largest per-map table
+   * after the nav graph (15.5 MB on Cinderhaven) and its build time, for nothing.
+   * Every world a `BattleSystem` is handed (`buildSimWorld`'s) has one.
+   */
+  cover: CoverMap | null;
   /** Shallow-water bodies from the layout; empty when the map is dry. */
   water: WaterRect[];
   /** Grass fields from the layout; empty when the map is bald. */

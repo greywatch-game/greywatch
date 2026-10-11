@@ -70,10 +70,10 @@ export const SCREENS = {
   roundover: {
     open:
       "g.startRound(); await until(() => g.state === 'deploy'); g.spawnPlayer(); await wait(300);" +
-      " const s = g.battle.playerSlot; for (let i = 0; i < 6; i++) g.scores.award(s, 'kill');" +
-      " for (let i = 0; i < 9; i++) g.scores.award((i * 5) % g.battle.bots.length, 'kill');" +
-      " g.scores.registerDeath(s); g.scores.registerDeath(s);" +
-      " g.conquest.tickets[1 - g.player.team] = 0; g.endRound(g.player.team);",
+      " const s = g.simSlot; for (let i = 0; i < 6; i++) g.core.scores.award(s, 'kill');" +
+      " for (let i = 0; i < 9; i++) g.core.scores.award((i * 5) % g.core.battle.bots.length, 'kill');" +
+      " g.core.scores.registerDeath(s); g.core.scores.registerDeath(s);" +
+      " g.core.conquest.tickets[1 - g.player.team] = 0; g.endRound(g.player.team);",
     root: "#overlay",
   },
   pause: {
@@ -87,9 +87,9 @@ export const SCREENS = {
   scoreboard: {
     open:
       "g.startRound(); await until(() => g.state === 'deploy'); g.spawnPlayer(); await wait(300);" +
-      " const s = g.battle.playerSlot; for (let i = 0; i < 5; i++) g.scores.award(s, 'kill');" +
-      " for (let i = 0; i < 14; i++) g.scores.award((i * 5) % g.battle.bots.length, 'kill');" +
-      " g.scores.registerDeath(s);" +
+      " const s = g.simSlot; for (let i = 0; i < 5; i++) g.core.scores.award(s, 'kill');" +
+      " for (let i = 0; i < 14; i++) g.core.scores.award((i * 5) % g.core.battle.bots.length, 'kill');" +
+      " g.core.scores.registerDeath(s);" +
       " Object.defineProperty(g.input, 'scoreboard', { get: () => true, set() {}, configurable: true });",
     root: "#scoreboard",
   },
@@ -107,8 +107,8 @@ export const SCREENS = {
   "scoreboard-net": {
     open:
       "g.startRound(); await until(() => g.state === 'deploy'); g.spawnPlayer(); await wait(300);" +
-      " const s = g.battle.playerSlot; for (let i = 0; i < 5; i++) g.scores.award(s, 'kill');" +
-      " for (let i = 0; i < 14; i++) g.scores.award((i * 5) % g.battle.bots.length, 'kill');" +
+      " const s = g.simSlot; for (let i = 0; i < 5; i++) g.core.scores.award(s, 'kill');" +
+      " for (let i = 0; i < 14; i++) g.core.scores.award((i * 5) % g.core.battle.bots.length, 'kill');" +
       " const f = g.hud.setScoreboard.bind(g.hud);" +
       " g.hud.setScoreboard = (v, r) => f(v, r && { ...r, pings: true, rows: r.rows.map((x, i) => ({ ...x," +
       "   name: i === 3 ? 'WWWWWWWWWWWWWWWWWWWW' : i === 12 ? 'The_Longest_Callsign' : x.name," +

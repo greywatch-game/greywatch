@@ -520,17 +520,25 @@ export class BenchScript {
  * Two FNV-1a lanes with different bases, which is 64 bits of "same or not" for
  * a comparison between a handful of runs. Nothing here allocates: an event is
  * folded in as it is reported, a string by its char codes.
+ *
+ * **The step an event is stamped with is the EVENT's** (`BABYLON_EXIT.md`
+ * X2.5a C4a): offline the fight is the simulation core's, which says what
+ * happened through its event ring with the tick it happened on, and `Game`
+ * hands that tick less the fight's first back in. It is the same number
+ * `step` counts — one step, one tick — and folding the one the event carries
+ * is what keeps the hash a statement about the core's fight rather than about
+ * when the page got round to reading it.
  */
 export class FightHash {
-  /** The fixed step the fight has reached, advanced by `Game` per step. */
+  /** The fixed steps the fight has run, advanced by `Game` per step. */
   step = 0;
   /** Awards and deaths folded in. */
   events = 0;
   private a = 0x811c9dc5;
   private b = 0x9e3779b9;
 
-  award(slot: number, kind: string, points: number): void {
-    this.fold(this.step);
+  award(step: number, slot: number, kind: string, points: number): void {
+    this.fold(step);
     this.fold(1);
     this.fold(slot);
     for (let i = 0; i < kind.length; i++) this.fold(kind.charCodeAt(i));
@@ -538,8 +546,8 @@ export class FightHash {
     this.events++;
   }
 
-  death(slot: number): void {
-    this.fold(this.step);
+  death(step: number, slot: number): void {
+    this.fold(step);
     this.fold(2);
     this.fold(slot);
     this.events++;

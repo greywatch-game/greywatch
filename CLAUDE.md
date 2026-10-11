@@ -229,13 +229,20 @@ one without. Anything with a PICTURE in it needs the first kind.
 
 ### Ownership and wiring
 
-`src/core/Game.ts` is the only place systems meet. Systems never import each
-other; `Game` wires them with callbacks (`battle.onBotKill/onBotFired`,
-`conquest.onCaptured/onNeutralised`, `player.onDamaged`, `deployScreen.onDeploy`)
-and hands bot AI a `BattleCtx` (in `entities/Bot.ts`) built once rather than
-rebuilt per frame. New cross-system behavior belongs in that wiring, not in an
-import between systems. Type-only imports between systems are fine and common —
-they are erased, so the runtime module graph still has no system→system edge.
+Systems never import each other; they meet in exactly two places. **The
+systems that DECIDE a round meet in `src/sim/SimCore.ts`** — on the authority
+and, since `BABYLON_EXIT.md` X2.5a C4a, OFFLINE too: `Game` holds a `SimCore`
+and no simulation of its own, submits its player's acts to it (`ask`, a
+`SimCommand`) and steps it once a frame. SimCore wires its systems with
+callbacks (`battle.onBotKill/onBotFired`, `conquest.onCaptured/onNeutralised`,
+…) and hands bot AI a `BattleCtx` (in `entities/Bot.ts`) built once rather than
+rebuilt per frame. **The page's systems and views meet in `src/core/Game.ts`**,
+which hears what the core decided through ONE switch over its event ring
+(`onSimEvent`; a match's `onNetEvent` is its twin, and both end in the same
+presentation methods for the player). New cross-system behavior belongs in
+that wiring, not in an import between systems. Type-only imports between
+systems are fine and common — they are erased, so the runtime module graph
+still has no system→system edge.
 
 **There is one system that calls another directly, and it is injected rather
 than imported**: `BattleSystem` takes `CombatSystem` in its constructor (`Game`
@@ -1237,15 +1244,15 @@ told by `onBroken` and `onCleared`, and the authority builds none.
 
 `ConquestSystem` owns flags, the capture meter, tickets and bleed. The meter runs
 -1..+1 and ownership flips only by crossing 0, so a flag must be neutralised
-before it changes hands, and occupancy is counted from the combatant list `Game`
-assembles each frame. The player's health regenerates after
+before it changes hands, and occupancy is counted from the combatant list
+`SimCore` assembles each step (bots, then people). The player's health regenerates after
 `CONFIG.player.regenDelay`, without which the round is a respawn queue.
 
 **A round is SCORED as well as counted, and the score is not the kills.**
-`ScoreBook` is one ledger per simulation — one row per roster SLOT, held by
-`Game` offline and by `SimCore` on the authority, so the two boards cannot
-drift — and **the payout rules are one function each, in that same file, called
-by both simulations**: `awardKill`, keyed on **the flag the VICTIM was standing
+`ScoreBook` is ONE ledger — one row per roster SLOT, held by `SimCore`, which
+is the simulation offline and on the authority alike (X2.5a C4a), so the two
+boards cannot drift — and **the payout rules are one function each, in that
+same file, called by that one core**: `awardKill`, keyed on **the flag the VICTIM was standing
 in, never the killer's own position**; `awardZone`, which pays everyone of a
 side standing in the flag at the moment its meter moved; and `paysKiller`,
 which is **WHICH BODIES PAY AT ALL** — a hull is not a row on the scoreboard,
@@ -1256,11 +1263,11 @@ match they take it into does not run. **`paysKiller` is the one that proves
 it**: guarded by hand at six doors instead, the client reached for `instanceof
 Bot` where the authority reached for `!armoured`, which also excludes a PERSON
 — so a bot crew crushing or shelling the player scored online and scored
-nothing offline. **A credit guard belongs in `creditKill`, never at the door**,
-which is why both sides' now hold it and every new door inherits it.
-**`ConquestSystem.onCaptured`/`onNeutralised` are the SIMULATION's callbacks on
-both sides**, so taking the conquest callback directly (as `npm run simulate`
-did) silently turns the capture awards off.
+nothing offline. **A credit guard belongs in `SimCore.creditKill`, never at
+the door**, and every new door inherits it. **`ConquestSystem.onCaptured`/
+`onNeutralised` are the SIMULATION's callbacks**, so taking the conquest
+callback directly (as `npm run simulate` did) silently turns the capture awards
+off — a host hears a capture as the core's `captured` event, after its awards.
 
 **A capture zone is DRAWN, not just counted** (`CaptureZoneSystem`, plus
 `HUD.setCapture`), and the one rule reaching outside the drawing is that **the
@@ -1387,6 +1394,14 @@ is a **guess** — every target is rewound and `CombatSystem.fire` runs again on
 the server, the only thing that deals damage. **A client predicts its own MOVEMENT,
 its own health regeneration and — in a hull — its own DRIVE**, each validated on
 arrival; everything else a client steps is DRESSING.
+
+**Offline the page is that same client, of a core in its own process**
+(`BABYLON_EXIT.md` X2.5a C4a): `Player` is the PREDICTION it is in a match
+(the sweep, the ground, regen for the HUD — it keeps its `SIMULATIONS` entry
+because it sweeps), every act is a `SimCommand` submitted trusted rather than
+validated, and the page holds the respawn clock (`hostHoldsRespawn`). The one
+difference left is the driven HULL, which the offline core steps from raw input
+(`driveInput`/`gunOrder`) until C4b moves it onto page-side prediction.
 
 **The slot table is forty-eight slots, built once, never resized or reordered**
 — `CONFIG.bots.maxPerTeam` a side, on every map, because a match rotates maps

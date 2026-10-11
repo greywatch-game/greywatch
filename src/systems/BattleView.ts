@@ -7,10 +7,14 @@
  * `BattleSystem.poolVersion` — or when the VIEWER's side does, and never
  * inside a round), `viewDistance` (the map's body draw distance), the flash
  * list and its backing store.
- * Reads `BattleSystem` and its bots and NEVER writes either: everything it
- * decides is whether a node is enabled, where it stands and how it is posed.
- * `Game` builds both and wires them — this file imports the simulation as a
- * type, which the wiring rules allow.
+ * Reads a ROSTER — a `BattleSystem`'s bots and its `poolVersion`, nothing else
+ * (`RosterRead`) — and NEVER writes it: everything it decides is whether a
+ * node is enabled, where it stands and how it is posed. Which roster is
+ * `Game`'s answer, asked through a function on every `syncPool`: offline the
+ * simulation core's (`SimCore`, `BABYLON_EXIT.md` X2.5a C4a — C5 replaces it
+ * with a mirror), and in a match none, because the bodies there are
+ * `NetRoster`'s. This file imports the simulation as a type, which the wiring
+ * rules allow.
  * Invariants:
  * - The LOD decides nothing about the fight. Past `viewDistance` a rig is
  *   switched off; past `CONFIG.bots.lodFreezeDistance` its pose stops being
@@ -21,7 +25,8 @@
  *   spawned from a bot's joints), and `hideAll` runs beside every
  *   `BattleSystem.reset`, so a reset round never shows a body for a frame.
  * - A side is chosen when a rig is BUILT (`core/teamView.ts`): the pool's
- *   identity is its size AND the viewer's side, and `syncPool` checks both.
+ *   identity is its ROSTER, its version AND the viewer's side, and `syncPool`
+ *   checks all three — two rosters can stand at the same `poolVersion`.
  * - Rigs are disposed WITHOUT their materials (`BotRig.dispose`), and only
  *   by a pool rebuild — after `RagdollSystem.reset` has handed every rig back.
  */
@@ -34,6 +39,12 @@ import type { Team } from "../entities/Combatant";
 import type { Vector3Like } from "../math";
 import type { CelMaterialFactory } from "../shaders/CelShader";
 import type { BattleSystem } from "./BattleSystem";
+
+/**
+ * What this view reads of a roster: the pool, and the number that moves when
+ * the pool is rebuilt. Nothing it could write.
+ */
+export type RosterRead = Pick<BattleSystem, "bots" | "poolVersion">;
 
 export class BattleView {
   /** One rig per pooled bot, in the pool's order. */
@@ -79,11 +90,14 @@ export class BattleView {
    * match.
    */
   private paintedFor: Team = viewerTeam();
+  /** The roster the rigs were built over — see `RosterRead`. */
+  private builtFrom: RosterRead | null = null;
 
   constructor(
     private readonly scene: Scene,
     private readonly mats: CelMaterialFactory,
-    private readonly battle: BattleSystem,
+    /** Which roster to draw, asked on every `syncPool` — see the header. */
+    private readonly roster: () => RosterRead,
   ) {
     this.syncPool();
   }
@@ -98,11 +112,19 @@ export class BattleView {
    */
   syncPool(): void {
     const side = viewerTeam();
-    if (this.builtFor === this.battle.poolVersion && this.paintedFor === side) return;
-    this.builtFor = this.battle.poolVersion;
+    const roster = this.roster();
+    if (
+      this.builtFrom === roster &&
+      this.builtFor === roster.poolVersion &&
+      this.paintedFor === side
+    ) {
+      return;
+    }
+    this.builtFrom = roster;
+    this.builtFor = roster.poolVersion;
     this.paintedFor = side;
     this.disposeAll();
-    for (const bot of this.battle.bots) {
+    for (const bot of roster.bots) {
       const rig = new BotRig(this.scene, this.mats, bot);
       this.rigs.push(rig);
       this.byBot.set(bot, rig);

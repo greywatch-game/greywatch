@@ -119,7 +119,7 @@ for (const id of targets) {
         medianMs: +times[Math.floor(times.length / 2)].toFixed(2),
         p95Ms: +times[Math.floor(times.length * 0.95)].toFixed(2),
         state: g.state,
-        bots: g.battle.bots.length,
+        bots: (g.core?.live.battle ?? g.battle).bots.length,
         activeMeshes: g.scene.getActiveMeshes().length,
         isWebGPU: !!g.engine.isWebGPU,
         engine: g.engine.constructor.name,

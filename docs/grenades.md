@@ -280,9 +280,12 @@ dip of its own would be a second integrator writing the same offset — the RATT
 on top of it (`core/cameraShake.ts`, `CONFIG.camera.shake`) writes only angles,
 reaches further than the dip, and is the one half a hull's crew gets, through
 `Game.shakeFrom` picking whichever camera is running; and **a
-blast kills through `Game.registerBotKill`**, the one place a bot's death reaches
-the scoreboard, tickets and killfeed from all three causes (the hitmarker and rumble
-stay with the weapon, being about the shot that landed rather than the body).
+blast kills through the one ledger** (`settleKill`, in the simulation core —
+offline as on the authority since `BABYLON_EXIT.md` X2.5a C4a), the one place a
+bot's death reaches the scoreboard and tickets from every cause, and the page draws
+the corpse and the killfeed line off the core's `botDown` (`Game.botDown`; the
+hitmarker and rumble stay with the weapon's own `hit`, being about the shot that
+landed rather than the body).
 
 **What a grenade LOOKS like is `entities/GrenadeModel.ts` and not this system**,
 for the reason the bot rig is `SoldierModel`: two things build one now, both

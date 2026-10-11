@@ -856,6 +856,17 @@ export class Player implements Combatant {
     this.carried.ammo = rounds;
   }
 
+  /**
+   * The whole `WeaponSetup` in the hands — what an offline round is resolved
+   * with by the simulation core (`ShotCommand.weapon`), the page's half of the
+   * table `Match` reads a netplay round's damage out of. The same object
+   * `damage`, `shotOptions` and `range` are read off, so the core and those
+   * three cannot name different guns.
+   */
+  get heldSetup(): WeaponSetup {
+    return this.weapon;
+  }
+
   /** Which weapon is in the hands — for the camera's fit and the HUD's caption. */
   get carriedWeapon(): CarriedId {
     return this.weapon.id;

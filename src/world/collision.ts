@@ -11,6 +11,13 @@
  * built (`src/ui/mapPlan.ts`). Only the server EXPANDS them into a world; the
  * interface reads the tuples and draws them.
  *
+ * **It is written in BOTH directions now** (`BABYLON_EXIT.md` X2.5a C4a):
+ * `collisionOf` is the bake's own read of a built map, so the offline page —
+ * which builds the map with `MapBuilder` and hands the simulation core
+ * (`src/sim/SimCore.ts`) its world as DATA — gives the core exactly the set
+ * the committed bake would have, without a fetch and without the bake being
+ * current. `scripts/bake-collision.mjs` reads the same four lists the same way.
+ *
  * Why the data exists: the server simulates with no Babylon and no canvas
  * (`BABYLON_EXIT.md` X2.3), and `MapBuilder` builds meshes and reaches a
  * `DynamicTexture` through `floorMaterial`, so it cannot run there. The server
@@ -23,7 +30,7 @@
  * dropped it would rebuild a world whose fences stop rounds the client sent
  * through them.
  */
-import type { WorldBox, WorldPane } from "./MapBuilder";
+import type { GameMap, WorldBox, WorldPane } from "./MapBuilder";
 
 /**
  * One collider, as `[w, h, d, cx, cy, cz, rotX, rotY]`, plus a ninth entry on
@@ -134,6 +141,42 @@ export interface MapCollision {
    * map with no glazing, which is what every map but Coldharbour is.
    */
   panes?: readonly CollisionPane[];
+}
+
+/**
+ * One `WorldBox` as the tuple the bake writes — full precision, the ninth
+ * entry only when `porous`, exactly `scripts/bake-collision.mjs`'s `row`.
+ * `glass` is not written: `buildSimWorld` derives it from `panes`, as it does
+ * for a committed bake.
+ */
+function toTuple(b: WorldBox): CollisionBox {
+  return b.porous
+    ? [b.w, b.h, b.d, b.cx, b.cy, b.cz, b.rotX, b.rotY, 1]
+    : [b.w, b.h, b.d, b.cx, b.cy, b.cz, b.rotX, b.rotY];
+}
+
+/**
+ * A built map's collider set as the data `buildSimWorld` rebuilds an identical
+ * solid world from — the bake's own read of a `GameMap`, taken by the page
+ * rather than by `npm run collision`, so it is current by construction.
+ *
+ * Read off the map as `MapBuilder.build` leaves it and BEFORE anything has
+ * broken a pane: a cleared pane's box is taken out of the queries, not out of
+ * `colliderBoxes`, so the read is the same either way, but the fresh map is
+ * the one the bake photographs. `sourceHash` is empty — it is the staleness
+ * guard of a committed file, and a set read off the map it describes cannot
+ * be stale.
+ */
+export function collisionOf(map: GameMap): MapCollision {
+  return {
+    sourceHash: "",
+    boxes: map.colliderBoxes.map(toTuple),
+    rayGroups: map.rayGroups.map((group) => group.map(toTuple)),
+    boxGroups: map.boxGroups.map((g) => [...g]),
+    panes: map.panes.map(
+      (p): CollisionPane => [p.w, p.h, p.d, p.cx, p.cy, p.cz, p.rotY, p.box],
+    ),
+  };
 }
 
 function toWorldBox([

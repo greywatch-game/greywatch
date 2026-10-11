@@ -558,8 +558,14 @@ function raySphere(
  * Perturbs an aim direction inside a cone (uniform over the disc), drawing
  * from the shooter's own stream — and drawing NOTHING at a zero half-angle,
  * which is what `UNDRAWN` relies on.
+ *
+ * Exported for the one caller outside `fire` (`BABYLON_EXIT.md` X2.5a D9):
+ * the offline page rolls its player's cone HERE, on its own `STREAM.player`,
+ * and submits the round to the simulation core with the cone already in it —
+ * exactly as a netplay client rolls its own and the authority fires spread 0.
+ * One function, so the cone the page draws is the cone `fire` would have.
  */
-function jitterDirection(aim: Vector3Like, halfAngle: number, rand: Rand): Vector3 {
+export function jitterDirection(aim: Vector3Like, halfAngle: number, rand: Rand): Vector3 {
   // Babylon's arithmetic on `src/math`'s vectors, which reproduce it bit for
   // bit (`scripts/math-check.mjs`): the aim is copied off its FIELDS first,
   // because the camera's forward is still Babylon's.

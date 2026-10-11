@@ -2,7 +2,9 @@
  * MapBuilder.ts — Turns layout data into a GameMap: merges visual meshes per
  * material (frozen, unpickable) and then again per map block (BlockMerge —
  * neighbouring structures share a draw call), emits collider proxies,
- * registers fixture lights, builds NavGrid + CoverMap + ObstacleField.
+ * registers fixture lights, builds NavGrid + ObstacleField (and no CoverMap:
+ * the AI that reads one is the simulation core's, which bakes its own — see
+ * `GameMap.cover`).
  * Invariants: collider() is the ONLY place colliders are created — invisible,
  * pickable, checkCollisions, metadata.solid === true, never merged — and it
  * records the WorldBox for navigation. It sets no `metadata.surface`, and that
@@ -85,7 +87,6 @@ import { TerrainField, terrainPatches, waterY } from "./TerrainField";
 import { NavGrid } from "./NavGrid";
 import { RayWorld } from "./RayWorld";
 import { CollisionField } from "./CollisionField";
-import { CoverMap } from "./CoverMap";
 import { ObstacleField } from "./ObstacleField";
 import {
   bakePartTransform,
@@ -866,7 +867,7 @@ export class MapBuilder {
     const glazing = this.mergeBlocks(run);
     const world = this.bake(run, size, glazing);
     if (import.meta.env.DEV) assertPieces(world, unpieced, index !== undefined);
-    const { nav, cover, obstacles, rays, collidables } = this.derive(run, size);
+    const { nav, obstacles, rays, collidables } = this.derive(run, size);
     since("build:total", buildStart);
 
     return {
@@ -875,7 +876,7 @@ export class MapBuilder {
       blockSize,
       terrainBlock,
       nav,
-      cover,
+      cover: null,
       obstacles,
       rays,
       collidables,
@@ -1317,7 +1318,7 @@ export class MapBuilder {
   private derive(
     run: BuildRun,
     size: number,
-  ): Pick<GameMap, "nav" | "cover" | "obstacles" | "rays" | "collidables"> {
+  ): Pick<GameMap, "nav" | "obstacles" | "rays" | "collidables"> {
     const { layout, terrain, colliders } = run;
     if (import.meta.env.DEV) {
       assertSweepOrder(colliders, this.boxes.length, this.boxGroups, this.clusterMeshes);
@@ -1342,12 +1343,11 @@ export class MapBuilder {
         );
       }
     }
-    // Cover needs the finished graph as well as the finished colliders, so it
-    // is built last. Baked once here and only read from then on. Both of these
-    // are named rather than inlined into the returned object for one reason:
-    // the build's own clock has to stop after them and before the object is
-    // assembled, or the profile's total excludes two of its own phases.
-    const cover = record("coverMap", () => new CoverMap(nav, this.boxes));
+    // No cover: the AI that reads it is the simulation core's, whose world
+    // bakes its own (`GameMap.cover`). The field below is named rather than
+    // inlined into the returned object for one reason: the build's own clock
+    // has to stop after it and before the object is assembled, or the
+    // profile's total excludes one of its own phases.
     const obstacles = record(
       "obstacleField",
       () => new ObstacleField(size, this.boxes),
@@ -1363,7 +1363,7 @@ export class MapBuilder {
     // `rays.bodyNear`'s, so it holds nothing to build and nothing to go stale
     // apart from `rays`. No collider mesh is walked by anything any more.
     const collidables = new CollisionField(rays);
-    return { nav, cover, obstacles, rays, collidables };
+    return { nav, obstacles, rays, collidables };
   }
 
   /** The valley floor plus the rim that bounds play. */

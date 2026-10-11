@@ -394,8 +394,9 @@ The bone table, pivots and joint limits live in `SoldierModel.ts` with the boxes
 they are measured from; `CONFIG.bots.death` owns the sim (impulse, gravity, damping,
 corpse life). The impulse needs no new plumbing: `takeDamage` is already handed the
 shooter's origin (or the blast centre) and what delivered it, so `Bot` captures
-`deathFrom`/`deathDamage`/`deathKind` there and `Game.registerBotKill` offers the
-body to the pool.
+`deathFrom`/`deathDamage`/`deathKind` there and `Game.botDown` — the page's half
+of the simulation core's `botDown` event, offline (`BABYLON_EXIT.md` X2.5a C4a) —
+offers the body to the pool.
 
 ## The throw is TWO throws, and a round is not an explosion
 

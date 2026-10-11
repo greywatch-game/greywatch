@@ -1,13 +1,29 @@
 /**
  * Game.ts — Orchestrator: scene init, main loop, and ALL cross-system
- * wiring. The only place systems meet — systems never import each other; new
- * cross-system behavior is a callback wired here.
+ * wiring on the PAGE. The only place the page's systems and views meet —
+ * systems never import each other; new cross-system behavior is a callback
+ * wired here.
+ * **The round is not simulated here** (`BABYLON_EXIT.md` X2.5a C4a). Offline it
+ * is the simulation core's (`src/sim/SimCore.ts`, the same core the authority
+ * runs, held in `core`): the page submits its player's acts through `ask`,
+ * steps the core once a frame in `updateWorld`, and draws what it said through
+ * one switch, `onSimEvent`. In a match it is the authority's and arrives
+ * through `onNetEvent`. Both switches end in the same presentation methods for
+ * the player (`playerHit`, `playerDown`, `seatAnswer`, `playerSpawned`), so
+ * offline and online cannot drift. What the page still SIMULATES is its own
+ * player as a PREDICTION (the sweep, the ground, regen for the HUD, the
+ * camera) and, in a match, the netplay prediction systems (`combat`,
+ * `grenades`, `antiTank`, the fleet, `glass`); its views read the core's live
+ * objects through `core.live`, temporary and enumerated (`SimLive`), until C5's
+ * mirrors.
  * WHERE THINGS ARE, because this is a long file and a change should not need a
  * read of it: the constructor is CONSTRUCTION ONLY (a linear list of `new X`,
  * which has to stay there — those fields are what strictPropertyInitialization
  * checks) and ends in three calls. Cross-system callbacks are `wireSystems` and
- * the four subject methods under it (`wireDeaths`, `wireGrenades`, `wireBattle`,
- * `wireConquest`) — a new one goes in whichever names its subject. Browser
+ * the subject methods under it (`wireDeaths`, `wireGrenades`, `wireBattle`,
+ * `wireVehicles`, `wireAntiTank`) — a new one goes in whichever names its
+ * subject; what the SIMULATION says is `onSimEvent` offline and `onNetEvent` in
+ * a match. Browser
  * listeners are `installDomListeners`. Screen callbacks are `wireScreens`.
  * `tick` is a dispatch: the input handling for each screen is its own
  * `update*Screen`/`updateMenuCard`/`updatePauseMenu` method, and only `playing`,
@@ -32,13 +48,13 @@
  * simulate, and a fogged frame or a panned fire is wrong in exactly the states
  * that do not. Nothing may move the camera after any of them.
  * ConquestSystem.update runs before BattleSystem.update (bots see this frame's
- * flag ownership). Muzzle-flash light budget is spent here
- * (spendMuzzleLightBudget) — new per-bot transient lights need the same
- * treatment; a grenade's blast light is deliberately outside it (seconds
- * apart, not eighty a second). A bot goes down through registerBotKill
- * whichever of the three things killed it — rifle, player rifle, grenade — and
- * whoever put it there is credited through creditKill, one door each: the
- * victim's death is known where it fell and the kill only where it was fired.
+ * flag ownership) — inside `SimCore.step`, which keeps the order. Muzzle-flash
+ * light budget is spent here (spendMuzzleLightBudget) — new per-bot transient
+ * lights need the same treatment; a grenade's blast light is deliberately
+ * outside it (seconds apart, not eighty a second). A bot's death, its killer's
+ * credit and every award are the simulation's (one ledger, in `SimCore`); the
+ * page draws the corpse, the killfeed line and the feed off the core's
+ * `botDown`/`award` (`botDown`, `onSimEvent`).
  * The map is a `MapDef` held in one field (`mapDef`) and built in one method
  * (`installMap`), which both a round start and an editor rebuild go through —
  * no map's layout or environment may be named anywhere else in here.
@@ -111,7 +127,7 @@ import {
   type SeatHolder,
   type CrewSeat,
 } from "../entities/hullSeats";
-import { resolveOrdnance, type EquipmentId } from "../entities/equipment";
+import { equipmentSetup, type EquipmentId } from "../entities/equipment";
 import { type SightId } from "../entities/sights";
 import {
   throwableCarried,
@@ -128,24 +144,18 @@ import {
 } from "../entities/weapons";
 import { AimAssistSystem } from "../systems/AimAssistSystem";
 import { Atmosphere } from "../systems/Atmosphere";
-import { BattleSystem } from "../systems/BattleSystem";
-import { BattleView } from "../systems/BattleView";
+import { BattleView, type RosterRead } from "../systems/BattleView";
 import { CaptureZoneSystem } from "../systems/CaptureZoneSystem";
 import { CombatFx } from "../systems/CombatFx";
 import {
   CombatSystem,
+  jitterDirection,
   type DamageKind,
   type Hittable,
 } from "../systems/CombatSystem";
-import {
-  ConquestSystem,
-  scatterSpawn,
-  type ControlPoint,
-  type SpawnPick,
-} from "../systems/ConquestSystem";
+import { ConquestSystem } from "../systems/ConquestSystem";
 import { DeathCam } from "../systems/DeathCam";
 import { VehicleCamera } from "../systems/VehicleCamera";
-import { VehicleCrew } from "../systems/VehicleCrew";
 import {
   VehicleSystem,
   type VehicleOrders,
@@ -159,22 +169,42 @@ import { GlassFx } from "../systems/GlassFx";
 import { AntiTankFx } from "../systems/AntiTankFx";
 import { AntiTankSystem } from "../systems/AntiTankSystem";
 import {
-  crewLost,
-  crushSweep,
   fireHullGun,
   fireHullMg,
   type HullRound,
   type HullRules,
 } from "../systems/hullRules";
-import { settleKill, type KillLedger } from "../systems/killRules";
+import type { KillLedger } from "../systems/killRules";
 import { GrenadeFx } from "../systems/GrenadeFx";
 import { GrenadeSystem, type BlastGround } from "../systems/GrenadeSystem";
+import { SimCore } from "../sim/SimCore";
+import type {
+  DriveInputCommand,
+  GrenadeCommand,
+  GunOrderCommand,
+  MoveCommand,
+  OrdnanceCommand,
+  ShotCommand,
+  SimCommand,
+} from "../sim/commands";
+import {
+  DAMAGE_KINDS,
+  DEATH_CAUSES,
+  EV,
+  EventCursor,
+  IMPACT_KINDS,
+  REFUSED_ITEMS,
+  SCORE_KINDS,
+  SURFACES,
+  VICTIM_KINDS,
+} from "../sim/events";
+import { FleetMirror } from "../sim/mirror";
+import type { NetVehicles } from "../net/NetVehicles";
 import { PhysicsWorld, type HavokInstance } from "../systems/PhysicsWorld";
 import { RagdollSystem } from "../systems/RagdollSystem";
 import { ReflectionSystem } from "../systems/ReflectionSystem";
 import { RotorWash } from "../systems/RotorWash";
 import { RoundRandom, STREAM, freshSeed } from "../systems/RoundRandom";
-import { ScoreBook, awardKill, awardZone, paysKiller } from "../systems/ScoreBook";
 import { LightingSystem, type RoomLight } from "../systems/LightingSystem";
 import { AmbienceSystem } from "../systems/AmbienceSystem";
 import { BodyShadows, type ShadowBody } from "../systems/BodyShadows";
@@ -197,6 +227,7 @@ import type { MixerSession } from "../dev/mixer";
 import type { BenchScript, FightHash } from "../bench/BenchScript";
 import { MAPS, loadHeights, type MapDef } from "../world/maps";
 import { MapBuilder, type BuildOptions, type GameMap } from "../world/MapBuilder";
+import { collisionOf } from "../world/collision";
 import { TerrainField } from "../world/TerrainField";
 import { newRayHit } from "../world/RayWorld";
 import { DeployScreen } from "../ui/DeployScreen";
@@ -259,6 +290,43 @@ import { forgetBindGroups } from "./webgpuLeaks";
 
 /** Grass bends around combatants; in the editor there are none. */
 const EMPTY_PUSHERS: readonly Combatant[] = [];
+
+/**
+ * The roster `BattleView` draws in a MATCH: none. The bodies there are
+ * `NetRoster`'s, and the offline roster is the simulation core's — see
+ * `Game.rosterRead`.
+ */
+const NO_ROSTER: RosterRead = { bots: [], poolVersion: -1 };
+
+/** "Let me out" — `ask`ed of the core as it is, holding nothing. */
+const DISMOUNT: SimCommand = { t: "dismount" };
+
+/** Nobody — what the page's prediction systems are handed to hurt. */
+const NO_TARGETS: Hittable[] = [];
+/** …and the same nobody, as the bodies a crush would sweep. */
+const NO_BODIES: Combatant[] = [];
+
+/**
+ * The ledger the page's own hull rules hold: a door no kill reaches. Those
+ * rules run only as a netplay PREDICTION (`resolveShell`/`resolveMg`), where
+ * every target refuses local damage, so nothing is ever credited or charged
+ * through them — the round's kills are the authority's in a match and the
+ * simulation core's offline (`BABYLON_EXIT.md` X2.5a C4a).
+ */
+const NO_LEDGER: KillLedger = {
+  credit: () => false,
+  botDown: () => {},
+};
+
+/**
+ * What the posed fleet is told by — `NetVehicles` in a match, the core's
+ * `FleetMirror` offline. The same seven answers either way, which is what lets
+ * one `syncFleet` pose both.
+ */
+type FleetRead = Pick<
+  NetVehicles,
+  "stateFor" | "mgFor" | "present" | "alive" | "health" | "occupant" | "gunner"
+>;
 
 /**
  * A benchmark, from the moment `?bench=` books one to the frame it ends — see
@@ -478,7 +546,48 @@ export class Game {
   private profChip: ProfileChip;
   private sfx: Sfx;
   private mapBuilder: MapBuilder;
-  /** Every round's resolve — the simulation half (`BABYLON_EXIT.md` X2.2). */
+  /**
+   * **The simulation, offline** (`BABYLON_EXIT.md` X2.5a C4a): the same core
+   * the authority runs (`src/sim/SimCore.ts`), built once and handed a round
+   * by `buildRound`. Offline it is the ONLY thing that decides — who is where,
+   * what a round hit, who died, who owns a flag, who sits in which chair — and
+   * the page reaches it through two doors and no third: `ask`, which submits
+   * the local player's acts (`src/sim/commands.ts`), and `drainSim`, which
+   * reads what it said (`src/sim/events.ts`) into `onSimEvent`. What the
+   * page's VIEWS read of its state goes through `core.live`, which is
+   * temporary and enumerated (`SimLive`) until C5's mirrors replace it.
+   *
+   * `hostHoldsRespawn`, because the page holds the respawn clock: nothing
+   * steps under the deploy screen (D21), so a `deploy` is honoured the moment
+   * it is submitted. No rewind — the shooter is in this process and sees the
+   * world as it stands.
+   *
+   * In a match it is idle and holds no world (`teardownMap` releases it): the
+   * fight is the authority's and the page runs its netplay prediction systems
+   * below instead, exactly as it always has.
+   */
+  private readonly core = new SimCore({ hostHoldsRespawn: true });
+  /** What `core` said since the last `drainSim` — see `onSimEvent`. */
+  private readonly simEvents = new EventCursor();
+  /** True inside `drainSim`, so a handler's own `ask` cannot drain under it. */
+  private simDraining = false;
+  /**
+   * The local player's roster slot in `core`, or -1 when they hold none — a
+   * benchmark (bot-only), a match, or no round. `core.firstSlotOf(0)`, taken
+   * by `buildRound`: offline the player is team 0 and takes the side's first
+   * slot, the one `Roster.claim` hands a match's first joiner.
+   */
+  private simSlot = -1;
+  /** The core's tick when the benchmark's fight began — `FightHash`'s zero. */
+  private benchTick0 = 0;
+  /** The core's fleet, read as the posed fleet reads the wire — `syncFleet`. */
+  private readonly fleetMirror = new FleetMirror(() => this.core.live.vehicles.hulls);
+  /**
+   * Every round's resolve — the simulation half (`BABYLON_EXIT.md` X2.2) —
+   * and on this page only ever a PREDICTION now: a netplay client's own shot,
+   * shell and belt, resolved here for the tracer and the hitmarker guess
+   * while the authority decides. Offline every round is `core`'s.
+   */
   private combat: CombatSystem;
   /**
    * Every round's PICTURE: the tracer, spark, disc and mark pools. Fed by
@@ -545,25 +654,18 @@ export class Game {
   /** The view from outside the hull you are driving. `DeathCam`'s shape. */
   private vehicleCam: VehicleCamera;
   /**
-   * The bots that drive. Empty on a map with no hardstandings, because the
-   * boarding sweep walks a fleet that has nothing in it — and empty in a
-   * NETPLAY round for a different reason: the hulls are there, but this client
-   * runs no AI at all, so the crews inside them are the authority's and a
-   * local one would be a second brain steering a hull posed from the wire.
-   *
-   * It is a system of its own rather than a branch inside `BattleSystem`
-   * because a bot in a hull is not a bot doing something unusual: it is out of
-   * `Bot`'s FSM entirely, and everything about how it moves, what it can see
-   * and what it shoots with belongs to the vehicle. See `VehicleCrew`'s header.
-   */
-  private crew: VehicleCrew;
-  private battle: BattleSystem;
-  /**
    * The roster's PICTURE: a rig per pooled bot, the distance LOD over them and
-   * the muzzle flashes their shots leave. Stepped right after `battle` and
-   * reading it, never writing it — the `GrenadeFx` split one system over.
+   * the muzzle flashes their shots leave. Stepped right after the core's step
+   * and reading its roster (`rosterRead`), never writing it — the `GrenadeFx`
+   * split one system over.
    */
   private battleView: BattleView;
+  /**
+   * The flags and the tickets as a MATCH has them — the netplay MIRROR,
+   * written from the wire (`NetRoster`, `updateNet`) and stepped by nobody.
+   * Offline the flags are the core's; everything that draws them asks
+   * `flags`, which answers with whichever of the two the round has.
+   */
   private conquest: ConquestSystem;
   /** The flags' in-world markers — rings, skirts and beacons. */
   private zones: CaptureZoneSystem;
@@ -777,9 +879,8 @@ export class Game {
   private canvas: HTMLCanvasElement;
   /**
    * The bloom — mask, blur and compose — which `shaders/GlowPass.ts` owns.
-   * Held for the profiler, and public for the reason `scene` and `battle`
-   * are: the smoke scripts that check the glow read its mask off
-   * `window.__celshock`.
+   * Held for the profiler, and public for the reason `scene` is: the smoke
+   * scripts that check the glow read its mask off `window.__celshock`.
    */
   readonly glow: GlowPass;
   /** Non-null only while the state is "editor". Dev builds only. */
@@ -1170,10 +1271,12 @@ export class Game {
    * whichever order they land in.
    */
   private readonly vehicleOrders: VehicleOrders = {
+    // Only the hull a MATCH's player is predicting is ever stepped from input
+    // here: offline every hull is posed off the core (`remoteFor` below), and
+    // there is no crew on this page in either — the bots that drive are the
+    // core's offline and the authority's in a match.
     driveFor: (tank) =>
-      tank === this.driving && this.drivingSeat === DRIVER
-        ? this.drive
-        : this.crew.driveFor(tank),
+      tank === this.driving && this.drivingSeat === DRIVER ? this.drive : null,
     /**
      * The cupola gun's own owner, asked the same way and with the same
      * player-first ordering — and it is a genuinely independent answer: the
@@ -1181,22 +1284,24 @@ export class Game {
      * bot is gunning, and both are ordinary.
      */
     gunFor: (tank) =>
-      tank === this.driving && this.drivingSeat === GUNNER
-        ? this.gunOrder
-        : this.crew.gunFor(tank),
+      tank === this.driving && this.drivingSeat === GUNNER ? this.gunOrder : null,
     /**
      * Where a machine gun somebody ELSE is laying has got to.
      *
-     * Null offline, always: there is no wire, so every gun on the field is
-     * laid by something in this process. In a match it is the snapshot's,
-     * except for the one gun this player is holding — which is the same
-     * carve-out `remoteFor` makes for the hull under a driver, made
-     * independently because the two seats can be two different people.
+     * Offline, EVERY gun on the field: the core lays them all — a bot's and
+     * the player's own (`gunOrder`, C4a) — and this page draws where they
+     * got to (`FleetMirror`). In a match it is the snapshot's, except for the
+     * one gun this player is holding — which is the same carve-out `remoteFor`
+     * makes for the hull under a driver, made independently because the two
+     * seats can be two different people.
      */
-    remoteGunFor: (tank) =>
-      this.net && !(tank === this.driving && this.drivingSeat === GUNNER)
-        ? this.net.vehicles.mgFor(this.vehicles.hulls.indexOf(tank))
-        : null,
+    remoteGunFor: (tank) => {
+      const i = this.vehicles.hulls.indexOf(tank);
+      if (!this.net) return this.fleetMirror.mgFor(i);
+      return !(tank === this.driving && this.drivingSeat === GUNNER)
+        ? this.net.vehicles.mgFor(i)
+        : null;
+    },
     /**
      * In a netplay round every hull but the one under this player is posed
      * from the wire — the mirror of the authority's own answer, where only the
@@ -1205,11 +1310,20 @@ export class Game {
      * Asked before `driveFor` by `VehicleSystem.update`, so the player's own
      * hull needs no term here: `stateFor` answers null for it, because
      * `NetVehicles` skips the samples for a hull carrying the local slot.
+     *
+     * Offline it is EVERY hull, the player's own included: the core steps the
+     * fleet (the player's hull from `driveInput`, C4a) and this page poses its
+     * copy of each to where the core's got to (`FleetMirror`) — the copy every
+     * ray, sweep and camera on this page meets. C4b moves the player's own
+     * hull onto prediction, as a match has it.
      */
-    remoteFor: (tank) =>
-      this.net && !(tank === this.driving && this.drivingSeat === DRIVER)
-        ? this.net.vehicles.stateFor(this.vehicles.hulls.indexOf(tank))
-        : null,
+    remoteFor: (tank) => {
+      const i = this.vehicles.hulls.indexOf(tank);
+      if (!this.net) return this.fleetMirror.stateFor(i);
+      return !(tank === this.driving && this.drivingSeat === DRIVER)
+        ? this.net.vehicles.stateFor(i)
+        : null;
+    },
   };
 
   /**
@@ -1244,21 +1358,12 @@ export class Game {
   private readonly markerViewport = new Viewport(0, 0, 1, 1);
 
   /**
-   * The two doors a kill reaches OFFLINE, as `settleKill` asks for them: the
-   * killer's row, and a bot's death. `SimCore` builds its own pair, and
-   * every door onto a kill on either side goes through `settleKill`.
-   */
-  private readonly ledger: KillLedger = {
-    credit: (by, victim, headshot) => this.creditKill(by, victim, headshot),
-    botDown: (bot, killer, by) =>
-      this.registerBotKill(bot, killer, by === this.player),
-  };
-
-  /**
-   * What `hullRules` asks of this simulation — built once in the constructor,
-   * after the systems it reaches exist. Where a match differs from an offline
-   * round it differs HERE, never in the rule: a hull's round in a match is a
-   * prediction, so it aims at `enemyTargets` and draws no splash.
+   * What `hullRules` asks of this page — built once in the constructor, after
+   * the systems it reaches exist. **A netplay PREDICTION's and nothing else's
+   * now**: offline a hull's guns and tracks are the core's (`SimCore`'s own
+   * `hullRules`), and what is left here is the driver's and the gunner's own
+   * round in a match, which aims at `enemyTargets`, draws no splash, and kills
+   * nobody (every target refuses local damage) — hence `NO_LEDGER`.
    */
   private readonly hullRules: HullRules;
   /**
@@ -1269,27 +1374,6 @@ export class Game {
   private deathRespawnIn: number = CONFIG.conquest.respawnDelay;
   /** Where the player's feet were when they died — scratch for `enterDying`. */
   private readonly deathFeet = new Vector3();
-  /**
-   * The round's board, OFFLINE: kills, deaths and points, one row per roster
-   * SLOT.
-   *
-   * Per body rather than per team, because the team totals are the sum of the
-   * rows and a second set of counters for them is a second set that can drift.
-   * Indexed by slot rather than split between the bot pool and a pair of
-   * fields for the player, which is what it was before points arrived: a human
-   * holds a roster slot like everybody else (`BattleSystem.seatPlayer`) and the
-   * bot sitting in it is benched, so the player's line simply IS that slot's
-   * line and nothing has to reconcile a seventeenth body with a sixteen-row
-   * board.
-   *
-   * **Netplay writes none of this.** In a match the board is the authority's
-   * and arrives whole (`NetSession.slotKills`): this client runs no AI, its
-   * local `BattleSystem` is a pool of dead bodies nobody steps, and a client
-   * that added up the kill events it happened to receive would show a
-   * different board on every screen. `scoreRows` is where the two sources
-   * meet, and it is the only reader of either.
-   */
-  private readonly scores = new ScoreBook();
 
   /**
    * **The two things the game cannot start without are both arguments now, and
@@ -1625,7 +1709,10 @@ export class Game {
     this.combat.onRound = (muzzle, to, kind, normal, mark) =>
       this.combatFx.drawRound(muzzle, to, kind, normal, mark);
     this.grenades = new GrenadeSystem();
-    this.grenadeFx = new GrenadeFx(this.scene, this.mats, this.grenades);
+    // The grenades' picture reads WHICHEVER pool is flying this round's
+    // grenades: the core's offline, this page's prediction in a match — the
+    // same two fields either way (`simGrenades`).
+    this.grenadeFx = new GrenadeFx(this.scene, this.mats, this.grenadeRead);
     // The one event a blast's picture needs, wired here beside `onRound` for
     // that line's reason: the simulation probes the ground and draws nothing,
     // the view puts the six billowed layers up. Raised by every resolved
@@ -1654,37 +1741,14 @@ export class Game {
     this.vehicles = new VehicleSystem(this.random);
     this.vehicleViews = new VehicleViews(this.scene, this.mats);
     this.vehicleCam = new VehicleCamera();
-    // The crew's context, built once exactly as `BattleSystem`'s `BattleCtx`
-    // is: everything a driver may ask about the rest of the game, and nothing
-    // else. The two lists are asked for rather than captured, because what
-    // `vehicles` and `battle` hand out is replaced every round.
-    this.crew = new VehicleCrew({
-      hulls: () => this.vehicles.hulls,
-      roster: () => this.battle.bots,
-      aside: (bot) => this.battle.aside(bot),
-      setOccupied: (tank, seat, on) => this.vehicles.setOccupied(tank, seat, on),
-      exitSpot: (tank) => this.vehicles.exitSpot(tank),
-      targetsFor: (team) => this.battle.hittablesAgainst(team),
-      // The hull is taken out of its own answer for the length of the ray,
-      // which is `VehicleCamera`'s trick and `VehicleSystem.groundAt`'s: a
-      // crew's eye sits five centimetres above the top of its own collider, so
-      // every sightline to anything shorter than the cupola dives straight
-      // back into it. It is the query's `skip` — no write to the hull and no
-      // allocation; `world/solid.ts` forbids minting a predicate that closes
-      // over the hull, and this is a per-think call.
-      visibleFrom: (tank, to) => this.battle.losBetween(tank.eyePos, to, tank),
-      fireShell: (tank, by) => this.resolveShell(tank, by),
-      fireMg: (tank, by) => this.resolveMg(tank, by),
-    }, this.random);
     // The anti-tank kit in the world. It owns the flight and the trigger and
     // nothing else: what a detonation is WORTH is `ordnanceEffect`'s and
     // spending it is `resolveOrdnance`'s, through the same `blastAt` the tank
     // shell already goes through.
     this.antiTank = new AntiTankSystem();
-    this.antiTankFx = new AntiTankFx(this.scene, this.mats, this.antiTank);
+    this.antiTankFx = new AntiTankFx(this.scene, this.mats, this.antiTankRead);
     this.aimAssist = new AimAssistSystem();
-    this.battle = new BattleSystem(this.combat, this.random);
-    this.battleView = new BattleView(this.scene, this.mats, this.battle);
+    this.battleView = new BattleView(this.scene, this.mats, () => this.rosterRead);
     this.conquest = new ConquestSystem(this.random);
     this.zones = new CaptureZoneSystem(this.scene, this.mats);
     // The weapon is parented to the camera, so the camera has to exist first.
@@ -1702,35 +1766,29 @@ export class Game {
     this.applySky();
 
     this.hullRules = {
-      ledger: this.ledger,
+      ledger: NO_LEDGER,
       combat: this.combat,
       hulls: () => this.vehicles.hulls,
-      // The tank's own side's enemies. In a match `battle`'s list is empty for
-      // the reason `enemyTargets` gives at length, and the driver's team is
-      // the hull's — a bot crew fires only offline.
-      gunTargets: (team) =>
-        this.net ? this.enemyTargets() : this.battle.hittablesAgainst(team),
-      bodies: (team) => this.battle.hittablesAgainst(team),
-      // **Skipped outright in a match**, which is where a shell differs from a
-      // grenade: a thrown grenade's local copy is the ARC the thrower watched
-      // and its blast goes off a few centimetres from the authority's, while a
-      // shell's local blast would go off at whatever this client's own ray
-      // happened to find — a body the server rewound somewhere else, a pane it
-      // has already broken — which can be a street away. The authority's
-      // `explode` event draws the only fireball.
-      blastAt: (at, team, by, spec) => {
-        if (!this.net) this.grenades.blastAt(at, team, by, spec);
-      },
-      hearGunshot: (at, team, dir) => this.battle.hearGunshot(at, team, dir),
+      // The bodies the wire is drawing, and the hulls — `enemyTargets`, whose
+      // every member refuses local damage in a match.
+      gunTargets: () => this.enemyTargets(),
+      // The crush is never swept on this page: the tracks are the core's
+      // offline and the authority's in a match.
+      bodies: () => NO_BODIES,
+      // **Skipped outright**, which is where a shell differs from a grenade:
+      // a thrown grenade's local copy is the ARC the thrower watched and its
+      // blast goes off a few centimetres from the authority's, while a shell's
+      // local blast would go off at whatever this client's own ray happened to
+      // find — a body the server rewound somewhere else, a pane it has already
+      // broken — which can be a street away. The authority's `explode` event
+      // draws the only fireball.
+      blastAt: () => {},
+      // No bot on this page hears anything: the AI is the core's offline and
+      // the authority's in a match, and each hears the shot it resolves.
+      hearGunshot: () => {},
       personIn: (tank, seat) =>
         tank === this.driving && this.drivingSeat === seat ? this.player : null,
-      crewOf: (tank, seat) => this.crew.crewOf(tank, seat),
-      // The driver's own screen, on the terms a shell's direct hit gets it: a
-      // kill flash and the note under it. A bot crew's gets none of it.
-      onCrushed: (by) => {
-        if (by !== this.player) return;
-        this.hitCue(true, false);
-      },
+      crewOf: () => null,
     };
 
     // Everything above is CONSTRUCTION, and stays here because the fields it
@@ -1772,7 +1830,14 @@ export class Game {
   /**
    * Installs every cross-system callback. **This is the wiring rule's one
    * home**: systems never import each other, so anything one has to tell
-   * another is a callback assigned here or in one of the four methods below.
+   * another is a callback assigned here or in one of the methods below.
+   *
+   * **What is wired here is the page's PICTURE and its netplay PREDICTION —
+   * no rule** (`BABYLON_EXIT.md` X2.5a C4a). The systems that decide a round
+   * meet inside `SimCore`, whose own `wire` is their wiring on both sides of
+   * the wire; offline the page hears what they decided through one switch,
+   * `onSimEvent`, and in a match through `onNetEvent`, and both end in the
+   * same presentation methods so the two cannot drift for the player.
    *
    * Split by SUBJECT rather than by system, because that is how a change
    * arrives — a grenade behaviour is `wireGrenades`, a death is
@@ -1781,30 +1846,15 @@ export class Game {
    */
   private wireSystems(): void {
     // Systems never import each other; every cross-system behaviour is a
-    // callback installed here.
+    // callback installed here. Nothing on this page damages the local
+    // `Player` any more — its hits are the core's offline (`damaged`) and the
+    // authority's in a match (`damage`), both of which reach `playerHit` —
+    // so this is the door's presentation half and nothing reaches it.
     this.player.onDamaged = (amount, died, from, kind) =>
       this.onPlayerDamaged(amount, died, from, kind);
-    this.battle.setPlayer(this.player);
-    // A bot's round killed somebody. The two halves are taken separately
-    // because they are known in different places: the shooter is credited
-    // whoever it hit — including the player, which is the one kill on the board
-    // a bot used to be denied — while the ticket, the killfeed line and the
-    // corpse are owed only when a BOT fell. The player's own death goes through
-    // `onPlayerDamaged`, which `takeDamage` reached before this callback ran.
-    this.battle.onBotKill = (victim, by) =>
-      settleKill(this.ledger, by, victim, by.team, "round");
-    // The score feed, OFFLINE: every body on the roster earns, and the one
-    // row this screen belongs to is the filter. In a match the same feed is
-    // fed by the `score` event instead, because the awards are the
-    // authority's — see `onNetEvent`.
-    this.scores.onAward = (slot, kind, points) => {
-      if (slot === this.battle.playerSlot) this.hud.addScore(kind, points);
-      this.bench?.fight.award(slot, kind, points);
-    };
     this.wireDeaths();
     this.wireGrenades();
     this.wireBattle();
-    this.wireConquest();
     this.wireVehicles();
     this.wireAntiTank();
   }
@@ -1835,22 +1885,18 @@ export class Game {
     // lists make everywhere else in this game.
     this.antiTank.hullNear = (at, radius, team) =>
       this.vehicles.hostileNear(at, radius, team);
-    // One rocket or one mine going off — `resolveOrdnance`, the same function
-    // the authority spends it through.
-    //
-    // **In a match none of it is ours.** The rocket that reached here is the
-    // local PREDICTION of one the authority is also flying — see
-    // `launchRocket` — and it decides nothing: the hull refuses local damage
-    // (`Vehicle.predicted`), the splash has an empty list to resolve against,
-    // and the fireball arrives on the server's `explode` event with the right
-    // power on it. Drawing one here as well would be two blasts a round trip
-    // apart, at two points that agree only to within the flight — which for a
-    // rocket that detonated on a hull this client has drawn a tenth of a
-    // second behind is metres, not centimetres. A hull's shell skips its own
-    // splash for the same reason (`hullRules.blastAt`).
-    this.antiTank.onDetonated = (hit) => {
-      if (!this.net) resolveOrdnance(hit, this.grenades);
-    };
+    // One rocket going off, and **none of it is ours**: this page's AT kit only
+    // ever flies a match's local PREDICTION of a rocket the authority is also
+    // flying — see `launchRocket` — and it decides nothing: the hull refuses
+    // local damage (`Vehicle.predicted`) and the fireball arrives on the
+    // server's `explode` event with the right power on it. Drawing one here as
+    // well would be two blasts a round trip apart, at two points that agree
+    // only to within the flight — which for a rocket that detonated on a hull
+    // this client has drawn a tenth of a second behind is metres, not
+    // centimetres. A hull's shell skips its own splash for the same reason
+    // (`hullRules.blastAt`). Offline every rocket is the core's, which spends
+    // it through `resolveOrdnance` and says so with a `blast`.
+    this.antiTank.onDetonated = () => {};
   }
 
   /**
@@ -1862,67 +1908,29 @@ export class Game {
    * reason.
    */
   private wireVehicles(): void {
+    // A hull burned: raised by THIS page's copy of it, which a match's wire
+    // and the core's fleet (`syncFleet`) both wreck through the same door. The
+    // toast and nothing else — **what it costs whoever was inside is decided
+    // where the hull burned** (`SimCore`'s `onDestroyed`, D14): the body put
+    // down beside the wreck arrives as a `seat` answer and the death as the
+    // `damaged`/`died` pair, offline and in a match alike, so this page charges
+    // no ticket and starts no clock of its own.
     this.vehicles.onDestroyed = (tank) => {
       if (tank.team === this.player.team) {
         this.hud.toast(
           `${tank.name} DESTROYED - ${Math.round(CONFIG.vehicles.respawnDelay)}s`,
         );
       }
-      // The hull burning is not the same event as the crew dying, and only one
-      // of the two is conditional: everybody hears the toast, and the body is
-      // only killed if it was the one inside THIS hull.
-      // A bot crew burns with the hull exactly as the player does, and the
-      // two are mutually exclusive by construction: `Vehicle.occupied` is written
-      // on both transitions, so nobody can be in a hull somebody else is in.
-      this.crew.hullDestroyed(tank);
-      if (tank !== this.driving) return;
-      // **In a match none of the rest is this client's.** The authority put
-      // this body down beside the wreck and killed it before this frame ever
-      // ran: the `seat` event is what takes the camera off the hull and the
-      // `damage`/`died` pair is what raises the death cam, exactly as they do
-      // for a round through the chest. Running the three lines below as well
-      // would place the body a second time, charge a local ticket and start a
-      // respawn clock the server already owns.
-      if (this.net) return;
-      // Beside the wreck, not inside it — the death cam stands a corpse at the
-      // player's last position, and a body falling through a hull that is still
-      // solid is the one thing this ordering exists to avoid. Then the kill
-      // goes through `takeDamage`, which is the one door a death offline takes:
-      // it is what charges the ticket, files the row and raises the cam.
-      //
-      // **The hull BREWING UP is the blow, and saying so is what fixes three
-      // things at once** — this is the same event `onCrewLost` spends on a bot
-      // crew below and the two must say the same thing about it. `tank.center`
-      // is where it came from, so the corpse is thrown clear of its own wreck
-      // rather than lying down beside it and the damage arc points at the
-      // thing that killed them; `"shell"` is what it was, so a driver burned
-      // out of a hull leaves the ground exactly as anyone else caught by an
-      // explosion does; and the bearing is also what `onPlayerDamaged` derives
-      // the KILLFEED from, which without one read `OUT OF BOUNDS killed YOU` —
-      // the leash's line, on a death the leash had nothing to do with. Nobody
-      // can destroy their own side's hull (every list a shell, a rocket and a
-      // mine resolve against is the other team's by construction), so the
-      // enemy team that line names is right by the same derivation every other
-      // death uses.
-      this.player.placeAt(this.vehicles.exitSpot(tank));
-      this.clearVehicle();
-      this.player.takeDamage(this.player.health, tank.center, "shell");
     };
-    this.vehicles.onRespawned = (tank) => {
-      if (tank.team === this.player.team) this.hud.toast(`${tank.name} READY`);
-    };
-    // What being in a hull COSTS a bot, applied here rather than inside
-    // `VehicleCrew` for the reason every cross-system consequence is applied
-    // here: that system owns the pairing and `BattleSystem` owns the roster,
-    // and neither may reach for the other. It is the same pair of lines
-    // `mount`/`clearVehicle` spend on the player, one layer along.
-    this.crew.onBoarded = (bot) => this.battle.setCrewed(bot, true);
-    this.crew.onLeft = (bot) => this.battle.setCrewed(bot, false);
-    // …and what it costs him when it burns: `crewLost`, the authority's door
-    // too. `tank.center` as the bearing and `"shell"` as what it was — the
-    // player's half of this event is in `onDestroyed` above and passes the same
-    // pair; they are one thing happening to whoever was inside.
-    this.crew.onCrewLost = (bot, tank) => crewLost(this.ledger, bot, tank);
+    // A fresh hull on its pad. The page's fleet is posed and runs no
+    // hardstanding clock, so this never fires from it; the core's says so
+    // with `hullRespawned`, which lands in the same method.
+    this.vehicles.onRespawned = (tank) => this.hullReady(tank);
+  }
+
+  /** A hull back on its pad — the READY toast, for the player's own side. */
+  private hullReady(tank: Vehicle): void {
+    if (tank.team === this.player.team) this.hud.toast(`${tank.name} READY`);
   }
 
   /**
@@ -1967,143 +1975,71 @@ export class Game {
    * The one non-hitscan weapon: who a blast may hurt, and what a hit reports.
    */
   private wireGrenades(): void {
-    // Grenades resolve their blast against the thrower's own target list, the
-    // same way a bullet does — so friendly fire is excluded by construction
-    // here too, and this system never learns what a team is.
-    this.grenades.hittablesFor = (team) => this.battle.hittablesAgainst(team);
-    // Netplay: the blast belongs to the authority and arrives as an `explode`
-    // event, which reaches the thrower like everybody else. The local copy is
-    // the ARC — the thing the thrower watched leave their hand — and firing
-    // this as well would flash, bang and shake twice, a fraction of a second
-    // apart, at two points that agree only to within the round trip.
-    this.grenades.onExploded = (at, power, ground) => {
-      if (!this.net) this.onExplosion(at, power, ground);
-    };
-    this.grenades.onBlastHit = (victim, thrower, by, killed) => {
-      // "Was that ours" is a comparison against our own `Player`, which is why
-      // the grenade carries the thrower rather than a flag saying so — that
-      // system has no way to know what a player is.
-      // The killer's row whoever fell, and the bot's death if a bot did: a
-      // blast that finishes the player is still a kill somebody threw, and the
-      // player's own death has already been handled, all the way down to the
-      // deploy screen, by `onPlayerDamaged`.
-      if (killed) settleKill(this.ledger, by, victim, thrower, "blast");
-      // The marker is a bot's alone — the player is not a target of their own.
-      if (by === this.player && victim instanceof Bot) {
-        this.hud.flashHitmarker(killed);
-      }
-    };
-    // A molotov's burn: `onBlastHit`'s shape exactly, minus the hitmarker on
-    // every tick — a fire hurts somebody four times a second for as long as
-    // they stand in it, and a marker at that rate is a strobe that says
-    // nothing the first one did not. The KILL still gets one, because a kill
-    // is the one thing about a burn the thrower cannot see from where they
-    // threw it.
-    this.grenades.onBurnHit = (victim, thrower, by, killed) => {
-      if (!killed) return;
-      settleKill(this.ledger, by, victim, thrower, "fire");
-      if (by === this.player && victim instanceof Bot) {
-        this.hud.flashHitmarker(true);
-      }
-    };
-    // A fire starting: the bottle's noise, the mark the burn leaves, and a
-    // light that stands where it burns until `onBurntOut` takes it away.
-    // Raised on both sides of the wire — offline by the bottle breaking, in a
-    // match by the authority's `blaze` event through `drawFire` — so none of
-    // this is gated on `net` the way a blast's `onExploded` is.
-    //
-    // The flames and the ignition's billows first, because that is where they
-    // always were: inside the ignition, ahead of the event. `at` is
-    // `src/math`'s and every reader after the view is still Babylon's, so one
-    // COPY serves them all.
-    this.grenades.onIgnited = (id, at, ground) => {
-      const lc = CONFIG.molotov.light;
-      this.grenadeFx.ignite(id, at);
-      const fire = toBabylon(at, this.fireAt);
-      this.sfx.molotov(fire);
-      this.blastDebris.scorchAt(fire, CONFIG.molotov.scorch, this.debrisGroundOf(ground));
-      this.fireLightAt.copyFrom(fire);
-      this.fireLightAt.y += lc.y;
-      // A FIXTURE, in `LightingSystem`'s own words for this case: it stands
-      // still for the whole of its life, so its shadows are baked once like a
-      // lantern's — and `fast`, because it burns up and dies down faster than
-      // the irradiance volume's averaged sweep can follow (see `RoomLight`).
-      // Its intensity starts at nothing and is eased by `pushFires`.
-      this.fireLights.set(
-        id,
-        this.lighting.add(this.fireLightAt, lc.color, lc.range, 0, lc.flicker, true),
-      );
-    };
-    this.grenades.onBurntOut = (id) => {
-      this.grenadeFx.burntOut(id);
-      const light = this.fireLights.get(id);
-      if (light) {
-        this.lighting.remove(light);
-        this.fireLights.delete(id);
-      }
-      this.sfx.ambienceOff(fireSoundKey(id));
-    };
-    // A bot asking for a grenade on a position. The arm has the last word — a
-    // solve it cannot make returns false and the bot spends nothing. What
-    // leaves the hand is the bot's own pouch (`Bot.throwable`), on the same
-    // arc either way.
-    this.battle.throwGrenadeFor = (bot, from, at) =>
-      this.grenades.throwAt(from, at, bot.team, bot, bot.throwable);
-    // A launcher bot's rocket, flown toward the POINT it asked for
-    // (`AntiTankSystem.launchToward`). `considerRocket` has already decided
-    // the target is armour.
-    this.battle.fireRocketFor = (bot, from, at) => {
-      const dir = this.antiTank.launchToward(from, at, bot.team, bot);
-      if (!dir) return false;
-      // Heard exactly as the player's launcher is, and by the same door: a
-      // rocket leaving is the loudest thing on the map after a tank gun, and
-      // the side that fired it has just told everybody where it is.
-      this.battle.hearGunshot(from, bot.team, dir);
-      this.sfx.launcher(from);
-      return true;
-    };
+    // This page's grenades are a match's PREDICTION and nothing else — the
+    // arc the thrower watched leave their hand (`releaseGrenade`), whose blast
+    // the authority owns. So it may hurt nobody: the list is empty, where it
+    // used to be a local roster the match never stepped.
+    this.grenades.hittablesFor = () => NO_TARGETS;
+    // `onExploded` is left unwired on purpose: the blast belongs to the
+    // authority and arrives as an `explode` event, which reaches the thrower
+    // like everybody else, and firing one here as well would flash, bang and
+    // shake twice, a fraction of a second apart, at two points that agree only
+    // to within the round trip. Offline nothing detonates in this pool at all —
+    // the core's blasts arrive as `blast` events (`onSimEvent`).
+    // A fire starting and going out, on this page's pool: a match's `blaze`
+    // through `drawFire`. Offline the core's `ignited`/`burntOut` reach the
+    // same two methods (`onSimEvent`), so a fire is lit one way.
+    this.grenades.onIgnited = (id, at, ground) => this.fireLit(id, at, ground);
+    this.grenades.onBurntOut = (id) => this.fireOut(id);
   }
 
   /**
-   * What the bots need from the rest of the game: their sounds, their spawns,
-   * their squad orders, and what standing on a flag means to them.
+   * A fire starting: the bottle's noise, the mark the burn leaves, and a light
+   * that stands where it burns until `fireOut` takes it away — wherever the
+   * fire was decided (the core's `ignited` offline, the authority's `blaze` in
+   * a match).
+   *
+   * The flames and the ignition's billows first, because that is where they
+   * always were: inside the ignition, ahead of the event. `at` is
+   * `src/math`'s and every reader after the view is still Babylon's, so one
+   * COPY serves them all.
+   */
+  private fireLit(id: number, at: Vector3Like, ground: BlastGround): void {
+    const lc = CONFIG.molotov.light;
+    this.grenadeFx.ignite(id, at);
+    const fire = toBabylon(at, this.fireAt);
+    this.sfx.molotov(fire);
+    this.blastDebris.scorchAt(fire, CONFIG.molotov.scorch, this.debrisGroundOf(ground));
+    this.fireLightAt.copyFrom(fire);
+    this.fireLightAt.y += lc.y;
+    // A FIXTURE, in `LightingSystem`'s own words for this case: it stands
+    // still for the whole of its life, so its shadows are baked once like a
+    // lantern's — and `fast`, because it burns up and dies down faster than
+    // the irradiance volume's averaged sweep can follow (see `RoomLight`).
+    // Its intensity starts at nothing and is eased by `pushFires`.
+    this.fireLights.set(
+      id,
+      this.lighting.add(this.fireLightAt, lc.color, lc.range, 0, lc.flicker, true),
+    );
+  }
+
+  /** The fire `fireLit` named is out: its flames, its light and its voice. */
+  private fireOut(id: number): void {
+    this.grenadeFx.burntOut(id);
+    const light = this.fireLights.get(id);
+    if (light) {
+      this.lighting.remove(light);
+      this.fireLights.delete(id);
+    }
+    this.sfx.ambienceOff(fireSoundKey(id));
+  }
+
+  /**
+   * The rounds' picture and the glass's, on this page. The bots' sounds, their
+   * spawns, their squad orders and the flags they stand on are the core's
+   * (`SimCore.wire`) and reach this page as events (`onSimEvent`).
    */
   private wireBattle(): void {
-    // Bots fire constantly and all over the map, so their shots are
-    // spatialised and voice-capped rather than played flat like the player's.
-    // The flash is kept for the frame's light budget (`BattleView`), and the
-    // copy it hands back is what the report is placed at.
-    this.battle.onBotFired = (bot, muzzle) => {
-      const at = this.battleView.flash(muzzle);
-      this.sfx.botShot(at);
-      // Gunfire gives an enemy away on the minimap for a couple of seconds.
-      if (bot.team !== this.player.team) this.minimap.reveal(bot);
-    };
-    // A bot reloading is a window the player can push into, so it has to be
-    // audible. Spatialised for the same reason bot fire is.
-    this.battle.onBotReloaded = (bot) => this.sfx.botReload(bot.position);
-    // Boots, from bots close enough for them to carry. `Sfx.botStep` rejects
-    // the rest on distance — this fires for all 16 of them, so nothing
-    // upstream should do work per step.
-    this.battle.onBotStepped = (bot) => this.sfx.botStep(bot.position);
-    // A round cracking past is a cue, not a hit. CombatSystem finds these
-    // inside the target loop it already runs per shot, and has no business
-    // knowing what a bot is — so the routing happens here.
-    // The same event is the player's only warning that the rounds are meant
-    // for them: a bot's report is spatialised and late, but the round itself
-    // goes supersonic past the ear first. `suppress` ignores anything that
-    // isn't a bot, so both handlers can take every near miss.
-    // `at` is CombatSystem's scratch vector — `suppress` keeps only `from`
-    // and `nearMiss` reads it inside the call, so nothing outlives it here.
-    // Both are `src/math`-or-either (`Vector3Like`), and both readers take
-    // the fields.
-    this.combat.onNearMiss = (near, from, at) => {
-      this.battle.suppress(near, from);
-      if (near === this.player) {
-        this.sfx.nearMiss(at);
-        this.player.suppress();
-      }
-    };
     // A round arriving. Routed here rather than called directly for the same
     // reason the near miss is: `CombatFx` draws the player's rounds and all
     // sixteen bots' and has no business knowing what `Sfx` is. It rides the
@@ -2111,16 +2047,11 @@ export class Game {
     // gate on this — distance, rate, the voice reserve — is on the far side,
     // with the budget it protects.
     this.combatFx.onImpact = (at, kind) => this.sfx.impact(at, kind);
-    // The segment a round flew, offered to the glass. Every round from every
-    // shooter comes through here, so the sweep is bounded on the far side and
-    // this is one call.
-    //
-    // **The client is authoritative over glass only when there is no server.**
-    // In a netplay round its own shot is a prediction: the pane goes and the
-    // shards fly at once, and the collider is left standing until the
-    // authority's `glass` event confirms it. Bots' rounds in a netplay round
-    // decide nothing at all here — a bot on this side is a body being drawn,
-    // and `BattleSystem` is not stepped in a match.
+    // The segment a round flew, offered to the glass — a match's PREDICTED
+    // round, the only one this page resolves: the pane goes and the shards
+    // fly at once, and the collider is left standing until the authority's
+    // `glass` event confirms it. Offline the core breaks the glass and says
+    // so (`glass`), and this page applies it.
     this.combat.onShotPath = (origin, dir, dist) => {
       this.glass.shoot(origin, dir, dist, !this.net);
     };
@@ -2139,69 +2070,23 @@ export class Game {
       const geom = this.map?.panes[pane];
       if (geom) this.debris.burst(geom, p, toBabylon(dir), this.cameraSys.camera.position);
     };
-    this.battle.spawnPointFor = (bot) => this.spawnPointFor(bot.team);
-    // Squad orders are planned as a group, so squads can be spread across
-    // objectives — or deliberately stacked on the one that decides the round.
-    this.battle.planSquads = (team, centroids, previous) =>
-      this.conquest.planSquads(team, centroids, previous);
-    // A bot is "on" a flag only when it is the one it was sent to. Whether that
-    // means contesting it or holding it is the squad's posture — a conquest
-    // rule, and the authority asks the same method.
-    this.battle.zoneFor = (bot) => this.conquest.zoneFor(bot);
   }
 
   /**
-   * Flags changing hands, and the two ways the player is told about it.
+   * A flag changed hands — the sound and the banner, wherever it was decided:
+   * the core's `captured` offline, the authority's in a match. The awards it
+   * paid are the core's and arrive as their own events.
    */
-  private wireConquest(): void {
-    this.conquest.onCaptured = (point, by) => {
-      this.awardZone(point, by, "capture");
-      if (by === this.player.team) this.sfx.capture();
-      else this.sfx.flagLost();
-      const who = teamLook(by).name.toUpperCase();
-      this.hud.showMessage(`${point.def.name.toUpperCase()} CAPTURED BY ${who}`, 2.5);
-    };
-    this.conquest.onNeutralised = (point, by) => {
-      this.awardZone(point, by, "neutralise");
-      this.hud.toast(`${point.def.name} — neutralised`);
-    };
+  private flagCaptured(name: string, by: Team): void {
+    if (by === this.player.team) this.sfx.capture();
+    else this.sfx.flagLost();
+    const who = teamLook(by).name.toUpperCase();
+    this.hud.showMessage(`${name.toUpperCase()} CAPTURED BY ${who}`, 2.5);
   }
 
-  /**
-   * Pays everyone of `by` standing in `point` for what the flag just did.
-   *
-   * **Presence at the moment it happened is the whole rule**, which is why
-   * this runs from inside the conquest callback rather than off a snapshot of
-   * who was there a moment ago: the meter moved because those bodies were in
-   * the ring, and the ring is `pointAt` — the same test that moved it, so the
-   * board cannot pay somebody the capture never counted.
-   *
-   * Not split between them. A squad that takes a flag in a third of the time
-   * one body would has done the thing the mode is about, and dividing the
-   * award would pay each of them less for doing it better.
-   *
-   * Offline only, and by construction rather than by a gate: no client steps
-   * `ConquestSystem`, so neither callback above ever fires in a match. There
-   * the authority runs the SAME PASS over its own bodies — literally the same
-   * one, `ScoreBook`'s `awardZone`, which is where the rest of the rule lives
-   * (the `alive` skip and why a benched bot must not be paid). This method is
-   * the wiring that hands it the three things the two simulations disagree
-   * about: whose bodies, what a point is, and what a slot means.
-   */
-  private awardZone(
-    point: ControlPoint,
-    by: Team,
-    kind: "capture" | "neutralise",
-  ): void {
-    awardZone(
-      this.scores,
-      this.combatants,
-      point,
-      by,
-      kind,
-      (unit) => this.conquest.pointAt(unit.position),
-      (unit) => this.slotOf(unit),
-    );
+  /** A flag went neutral — `flagCaptured`'s twin. */
+  private flagNeutralised(name: string): void {
+    this.hud.toast(`${name} — neutralised`);
   }
 
   /**
@@ -2455,11 +2340,14 @@ export class Game {
         this.deployScreen.setPending();
         return;
       }
-      // Scattered HERE rather than on the way in: this is a spawn POINT, and
-      // turning one into a position is what `scatterSpawn` is. The netplay
-      // branch above returns before it, because the position that branch is
-      // eventually answered with has already been scattered by the authority.
-      this.spawnPlayer(scatterSpawn(spawn, this.conquest.spawnRand));
+      // Offline it is the SAME request, made of the core (`BABYLON_EXIT.md`
+      // X2.5a D5, D21): the kit, then the ask, which a core that holds no
+      // respawn clock of its own honours on the spot — through the one door
+      // the reinforcement pass uses, against what this team may use NOW
+      // (`ConquestSystem.deployAt`), scattered there. Its `spawned` answer is
+      // what puts the body in the world, through `spawnPlayer` exactly as a
+      // match's `spawn` does.
+      this.deployLocal(this.flags.spawnIndex(spawn));
     };
   }
 
@@ -3433,7 +3321,7 @@ export class Game {
    *
    * **Only from the menu or the lobby over it, and that guard is the whole
    * safety argument.** `startRound` reads `mapDef` to apply the environment,
-   * paint the sky and build the map, and hands the result to battle, conquest,
+   * paint the sky and build the map, and hands the result to the core's round,
    * the flag markers and the minimap. Writing this field at any other time
    * leaves all four pointing into a `GameMap` that `installMap` has already
    * disposed — which throws nothing and renders last round's world over this
@@ -3814,9 +3702,11 @@ export class Game {
    * that is the honest answer.
    */
   private countAliveBots(): number {
+    if (this.net) return 0;
+    const battle = this.core.live.battle;
     let n = 0;
-    for (const bot of this.battle.bots) {
-      if (bot.alive && !this.battle.aside(bot)) n++;
+    for (const bot of battle.bots) {
+      if (bot.alive && !battle.aside(bot)) n++;
     }
     return n;
   }
@@ -4318,16 +4208,15 @@ export class Game {
     // (`clearVehicle`), which is what stands down the player's own unpanned
     // engine: `pushHullEngines` skips the hull the player is sitting in, so a
     // helicopter quit out of once kept its rotor running under the main menu.
-    // The seat is also what puts the body back in `battle.humans` and takes the
-    // invulnerability off it, and this must stay ABOVE the line below because
-    // giving up a seat puts the viewmodel back. And above `battle.reset`, for
-    // the crews' reason in `teardownMap`.
+    // The seat is also what takes the invulnerability off the body, and this
+    // must stay ABOVE the line below because giving up a seat puts the
+    // viewmodel back. And it lets the core's world go (`SimCore.releaseWorld`),
+    // seats first, for the crews' reason in `teardownMap`.
     this.teardownMap();
     this.player.setBodyHidden(true);
     this.hud.clearDamageDirections();
     this.hud.setCapture(null);
     this.hud.setLeash(null);
-    this.battle.reset();
     this.battleView.hideAll();
     document.exitPointerLock();
     // Same gate the round-over screen uses: the confirm that got here must not
@@ -4602,15 +4491,14 @@ export class Game {
     // its own, and the menu has none.
     this.lightning.setSpec(null, 0);
     this.sfx.thunderAllOff();
-    // Everybody out BEFORE the fleet is torn down, and before `battle.reset()`
-    // kills the roster: a crew left holding a disposed hull is the same stale
-    // pointer `clearVehicle` is called from here to prevent, and one holding a
-    // bot the reset has just killed would steer a tank with a corpse in it.
-    this.crew.clear();
-    this.crew.setMap(null);
-    // Out of the fight's target list before they stop existing: `buildRound`
-    // put every hull there (`addHuman`), and nothing else takes one out.
-    for (const tank of this.vehicles.hulls) this.battle.removeHuman(tank);
+    // **The simulation's world, and the round on it** — the core lets go of
+    // its own map, fleet, crews and everything in the air (`SimCore.releaseWorld`),
+    // which is `teardownMap`'s own list on the other side of the boundary.
+    // Here because this is the one place a map is torn down: the menu, the
+    // editor and a match all build none for the core to step, and a world it
+    // kept would be a second Cinderhaven under the photograph. A round puts a
+    // fresh one in `buildRound`.
+    this.core.releaseWorld();
     // The fleet's drawing first — every view lets go of its hull's picture and
     // takes its body and rig out of the scene — then the fleet.
     this.vehicleViews.dispose();
@@ -4641,8 +4529,8 @@ export class Game {
     // part through a quit and asking a heap snapshot who kept it: these are
     // every holder that answer named. What they cost was memory rather than
     // behaviour, which is why nothing had ever noticed — a Cinderhaven's worth
-    // of it, sitting under a photograph.
-    this.battle.clearMap();
+    // of it, sitting under a photograph. (The roster's own handle was one of
+    // them, and is the core's now — `releaseWorld` above.)
     this.player.clearGround();
     this.combat.setWorld(null);
     this.combatFx.setWorld(null);
@@ -4683,7 +4571,7 @@ export class Game {
    * about: the round applies the environment and repaints the sky, while the
    * editor drives `applyEnvironment` itself so it can toggle its work light;
    * and the round alone owns the things that are about a FIGHT rather than a
-   * map — battle, conquest, the flag markers and the minimap.
+   * map — the core's round, the flag markers and the minimap.
    *
    * The particle field is the one thing the editor gains by being folded in
    * here, and it is a fix rather than a side effect: `atmosphere.apply` used to
@@ -4924,16 +4812,20 @@ export class Game {
     // solid, pickable mesh with no `SelectionRef` behind it is something the
     // centre-screen pick can land on and fail to resolve. The last map's fleet
     // and its crews are already gone — `teardownMap`, at the top.
-    if (opts?.editor !== true) this.vehicles.build(map, this.net !== null);
+    //
+    // **And offline the fleet is not this page's either** (`BABYLON_EXIT.md`
+    // X2.5a C4a): the simulation core fleets its own off the same spawns, and
+    // this one is posed off it (`syncFleet`, `FleetMirror`) exactly as a
+    // match's is off the wire — so it is `predicted` on both sides of the
+    // wire now, refusing local damage and running neither hardstanding clock.
+    // It is still the fleet this page's rays, sweeps, decks and cameras meet.
+    if (opts?.editor !== true) this.vehicles.build(map, true);
     // …and what it looks like: one view per hull, by hardstanding, each with
     // its kind's model (`VehicleViews`). The editor's empty fleet draws none.
     this.vehicleViews.build(this.vehicles.hulls, map.vehicleSpawns);
-    // The bearing half of a driver's steering. Null in the editor, and null in
-    // a NETPLAY round for a different reason worth stating: the hulls are
-    // there, but the crews inside them are the authority's — this client runs
-    // no AI at all, and a local `VehicleCrew` would be a second brain steering a
-    // hull that is being posed from the wire.
-    this.crew.setMap(!this.net && !this.vehicles.empty ? map : null);
+    // There is no crew on this page: the bots that drive are the core's
+    // offline and the authority's in a match, and a local `VehicleCrew` would
+    // be a second brain steering a hull that is being posed from elsewhere.
     // And the dust under whatever of that fleet has a rotor — after the build,
     // because it is handed the hulls themselves and there are none until the
     // line above. It is a PICTURE and the editor gets it too: an editor build
@@ -4961,11 +4853,11 @@ export class Game {
    * The editor's rebuild. Called on entry and again whenever it changes
    * something the builders read — a param, a kind, an added or deleted entry.
    *
-   * Deliberately does NOT re-point battle/conquest/minimap: `teardownMap` at
-   * the top of `installMap` has let go of the last map in battle and the
-   * minimap, and conquest keeps only its flags' definitions, none of which an
-   * editor frame steps. That is safe only because leaving the editor always
-   * runs `startRound` and hands them a fresh, properly merged build.
+   * Deliberately does NOT start a round on the core or re-point the minimap:
+   * `teardownMap` at the top of `installMap` has released the core's world and
+   * let go of the minimap's, and nothing an editor frame runs steps either.
+   * That is safe only because leaving the editor always runs `startRound` and
+   * hands them a fresh, properly merged build.
    */
   private buildEditorMap(): GameMap {
     return this.installMap({ editor: true });
@@ -5067,7 +4959,7 @@ export class Game {
       index: MAPS.indexOf(this.mapDef),
       solo: !this.net,
       enemy: this.net ? null : (difficultyNames()[this.difficulty] ?? "Bots"),
-      flagsMine: this.conquest.flagsHeld(us),
+      flagsMine: this.flags.flagsHeld(us),
       board: this.scoreRows().map((r) => ({
         name: r.name,
         mine: r.team === us,
@@ -5188,78 +5080,78 @@ export class Game {
     const map = this.installMap();
 
     // Every rig goes back to the pool restored; a corpse cannot outlive the
-    // round it fell in. FIRST of the four lines below, and no longer beside the
+    // round it fell in. FIRST of the lines below, and no longer beside the
     // two debris resets it used to sit with, because a ragdoll is the one thing
-    // in the game that holds a bot's RIG — and the next line may be about to
-    // free every rig there is.
+    // in the game that holds a bot's RIG — and the round's build may be about
+    // to free every rig there is.
     this.ragdolls.reset();
     // How many bodies a side this map fields, which is the size of the pool.
     //
-    // **It is the MAP's on both sides now** — `MapLayout.perTeam`, a statement
+    // **It is the MAP's on both sides** — `MapLayout.perTeam`, a statement
     // about the density of ONE map (Sarab is 24 a side over 900 m of play;
     // every other map says nothing and is the shipped 8) — and the two sides
-    // spend it in different pools. Offline it is the bot pool below. In a
-    // netplay round `battle` is a pool nothing steps (see `enemyTargets`) and
-    // the bodies are `NetRoster`'s, so the same number goes there instead: the
-    // authority is already fielding it, and a client drawing a different count
-    // would be numbering bodies nobody else is.
-    //
-    // The two pools deliberately do NOT both learn it. A netplay round leaves
-    // `battle` at the shipped 8 a side because nothing in it is ever built,
-    // drawn or stepped, and sizing a dead pool to a big map would be
-    // twenty-four rigs a side of pure cost.
-    //
-    // Here rather than in `installMap`, unlike the other map-derived pushes,
-    // because this is the ROUND's roster and that method's other caller is the
-    // editor, which has no round. It runs after the ragdolls above and after
-    // `installMap`'s own `crew.clear()` — the two holders of a body — and
-    // before the skill draw below, which is handed the pool it seeds.
+    // spend it in different pools. Offline it is the core's bot pool below,
+    // built per map and fielded whole (`RoundSpec.pool`/`fielded`, D15) —
+    // which is what keeps the benchmark's slot layout, and so its fight, the
+    // one it has always been. In a netplay round the bodies are `NetRoster`'s,
+    // so the same number goes there instead: the authority is already fielding
+    // it, and a client drawing a different count would be numbering bodies
+    // nobody else is.
     const perTeam = perTeamOf(this.mapDef.layout);
-    this.battle.setRoster(this.net ? CONFIG.bots.perTeam : perTeam);
-    // …and the rigs to that pool, painted for the viewer's side — rebuilt only
-    // when one of the two moved (`BattleView.syncPool`). After the ragdolls'
-    // reset above, which is the other thing that holds a rig.
-    this.battleView.syncPool();
-    this.net?.roster.setFielded(perTeam);
-    // Re-draw skills for the chosen tier. The pool is rebuilt only when a map
-    // changes the size of the roster, so this is the only place the roster's
-    // difficulty can change.
-    this.battle.setDifficulty(this.difficulty);
-
-    this.battle.setMap(map);
-    this.battle.reset();
-    this.battleView.hideAll();
-    // **The round's seed**, and every outcome stream in the round rewound to
-    // it (`RoundRandom`) — here because everything that draws has now been
-    // built (the pool above, the fleet inside `installMap`) and nothing has
-    // spawned or fired yet. Fresh each round unless the URL fixed it, which is
-    // how a round is played again; written where a person can read it back,
-    // since a round's seed is the only handle on a bug in it. In a match the
-    // fight is the authority's and so is its seed (the server logs it): this
-    // one draws nothing but this client's own cone, and the capture says null.
+    // **The round's seed** — fresh each round unless the URL fixed it, which
+    // is how a round is played again; written where a person can read it
+    // back, since a round's seed is the only handle on a bug in it. Offline it
+    // is the CORE's, which reseeds every outcome stream from it inside
+    // `startRound`, and this page's own `random` takes the same one below for
+    // the one stream it still draws (the player's cone, `STREAM.player`). In a
+    // match the fight is the authority's and so is its seed (the server logs
+    // it): this one draws nothing but this client's own cone, and the capture
+    // says null.
     const seed =
       this.overrides.seed ?? (this.bench ? CONFIG.profiling.bench.seed : freshSeed());
+    // The player leaves the core first, whatever this round is, and is seated
+    // again below only offline — so every offline round a person joins is a
+    // fresh match's first (their slot's bot benched, the hulls ahead of them
+    // in the fight), and a match or a benchmark holds no seat in it at all.
+    if (this.simSlot >= 0) this.core.removePlayer(this.simSlot);
+    this.simSlot = -1;
+    if (!this.net) {
+      // **The round, on the simulation core** (`BABYLON_EXIT.md` X2.5a C4a):
+      // its world rebuilt as DATA off the map just built — `collisionOf` is
+      // the bake's own read of it — plus the floor, the tier, the per-map pool
+      // fielded whole, and the seed. Synchronous, and inside the building
+      // card's freeze with the rest of this method, ahead of the reflection
+      // bake's frames.
+      this.core.startRound({
+        def: this.mapDef,
+        collision: collisionOf(map),
+        floor: this.floor ?? undefined,
+        difficulty: this.difficulty,
+        pool: perTeam,
+        fielded: perTeam,
+        seed,
+      });
+    }
+    // …and the rigs to that pool, painted for the viewer's side — rebuilt only
+    // when one of the two moved (`BattleView.syncPool`). After the ragdolls'
+    // reset above, which is the other thing that holds a rig, and after the
+    // core's `startRound`, which is what sizes the pool.
+    this.battleView.syncPool();
+    this.net?.roster.setFielded(perTeam);
+    this.battleView.hideAll();
+    // The page's own streams to the round's seed — the player's cone above
+    // all, which offline is drawn HERE and submitted with the round (D9) and
+    // is the same `deriveSeed(seed, STREAM.player, 0)` it always was.
     this.random.seedRound(seed);
     this.prof.setSeed(this.net ? null : seed);
     if (import.meta.env.DEV && !this.net) {
       console.info(`[round] ${this.mapDef.id} seed ${seed} (replay: ?seed=${seed})`);
     }
-    // Who is in the fight but is not a bot: the player, and every hull on the
-    // field. `setPlayer` resets that list to the player alone, which is exactly
-    // what makes this safe to run every round — last round's tanks were
-    // disposed by `installMap` and a bare `addHuman` would leave them in it.
-    //
-    // A tank is in the list for two reasons and neither is optional: bots must
-    // be able to ACQUIRE one (nothing else would make them fire at it) and
-    // `hittablesAgainst` must return one (nothing else would let a round land
-    // on it). It is deliberately NOT in `this.combatants`, which is the list
-    // `ConquestSystem` counts occupancy from — armour does not capture flags,
-    // and the crew inside it already counts for itself.
-    this.battle.setPlayer(this.player);
-    for (const tank of this.vehicles.hulls) this.battle.addHuman(tank);
     this.debris.reset();
     this.blastDebris.reset();
-    this.conquest.start(map);
+    // The flags a MATCH mirrors from the wire. Offline the flags are the
+    // core's, started inside its `startRound`, and this one is never read.
+    if (this.net) this.conquest.start(map);
     // The flags' markers read the same radius ConquestSystem tests against,
     // and lay the ring's stones on the same ground a body stands on.
     this.zones.build(
@@ -5297,21 +5189,22 @@ export class Game {
     // welcome may have landed before this map existed to apply them to. See
     // `NetSession.brokenPanes`, and `onSeated` for the other half.
     if (this.net?.brokenPanes.length) this.glass.catchUp(this.net.brokenPanes);
-    // …and offline they take a SLOT on that side rather than standing beside
-    // the roster: the bot in it is benched, so the fight is whatever this map
-    // fields a side with the player as one of them — eight on four of the five
-    // maps and twenty-four on Sarab. In a match the authority does this on its
-    // own roster and the local pool is not the fight — see
-    // `BattleSystem.seatPlayer`.
+    // …and offline the player takes a SLOT in the core's roster rather than
+    // standing beside it (`SimCore.addPlayer`): the bot in it is benched, so
+    // the fight is whatever this map fields a side with the player as one of
+    // them — eight on most maps and twenty-four on Sarab. The side's FIRST
+    // slot, as `Roster.claim` seats a match's first joiner. They come into the
+    // round dead and are put in it by their own deploy (`deployLocal`).
     //
     // A BENCHMARK seats nobody: its round is bot-only, every slot fielded, and
     // the player's body stays out of it (`enterBench`).
-    if (!this.net && !this.bench) this.battle.seatPlayer(this.player.team);
-    // A new round is a new board. Sized from the pool here rather than at
-    // construction, so it is the roster that says how many rows there are —
-    // and after `seatPlayer` above, so the slot the player's own line is kept
-    // in is one this book has a row for.
-    this.scores.reset(this.battle.bots.length);
+    if (!this.net && !this.bench) {
+      this.simSlot = this.core.firstSlotOf(team);
+      this.core.addPlayer(this.simSlot, team);
+    }
+    // Anything the round's own build said, which is nothing today — read
+    // through the one switch all the same, so nothing is left in the ring.
+    this.drainSim();
     // The card does NOT come down here, because the build is not the whole of
     // what it covers. Everything above is one synchronous turn and no frame
     // has rendered inside it, so the reflection bake `installMap` queued has
@@ -5622,10 +5515,10 @@ export class Game {
     this.minimap.setMap(map, team, this.mapDef.environment);
     this.hud.setTickets(
       [teamLook(0).name, teamLook(1).name],
-      this.conquest.tickets,
+      this.flags.tickets,
       team,
     );
-    this.hud.setFlags(this.conquest.points, team);
+    this.hud.setFlags(this.flags.points, team);
     // Only when it is already up. `enterDeploy` shows it a moment after a
     // build, so doing it there too would be the same paint twice — and a team
     // that changed UNDER a standing deploy screen has to go back through
@@ -5633,7 +5526,7 @@ export class Game {
     if (this.deployScreen.visible) {
       this.deployScreen.show(
         map,
-        this.conquest,
+        this.flags,
         team,
         this.mapDef.environment,
         this.mapDef.name,
@@ -5659,6 +5552,14 @@ export class Game {
    * thing `onDeploy`'s netplay branch exists to prevent.
    */
   private spawnPlayer(at?: { pos: Vector3Like; yaw: number }): void {
+    // No position, offline: the ASK rather than the arrival. The body is the
+    // core's to place, so this deploys "anywhere" (`deployLocal`) and comes
+    // back through here with the core's answer. Kept for the callers that
+    // drive a round from outside it — the smoke scripts' `spawnPlayer()`.
+    if (!at && !this.net) {
+      this.deployLocal();
+      return;
+    }
     this.player.fullReset();
     // A fresh body has never been anywhere, least of all outside the map. The
     // clock is not merely stopped by a death — it has to be FORGOTTEN, or a
@@ -5666,9 +5567,9 @@ export class Game {
     // seconds already spent.
     this.leash.clear();
     const spawn = at ?? this.spawnPointFor(this.player.team);
-    // Read by its fields (`placeAt` takes `Vector3Like`): a spawn resolved
-    // here is `scatterSpawn`'s, which is `src/math`'s, and one from the wire is
-    // a Babylon copy — either is copied INTO the body, never kept.
+    // Read by its fields (`placeAt` takes `Vector3Like`): a spawn the core
+    // resolved is `src/math`'s, one from the wire is a Babylon copy — either
+    // is copied INTO the body, never kept.
     this.player.placeAt(spawn ? spawn.pos : new Vector3(0, 0, 0));
     this.cameraSys.reset(spawn ? spawn.yaw : 0);
     // The aim just jumped to the spawn heading. Reprojecting through that jump
@@ -5710,14 +5611,13 @@ export class Game {
   }
 
   /**
-   * Where a combatant of `team` deploys. Home spawns only until
-   * ConquestSystem starts handing out captured flags.
+   * Where a body with no position named would go — a match's fallback for a
+   * spawn that arrived without one, which none does: the authority always
+   * names it. The flag-or-home pick the mirror can make, unscattered.
    */
-  private spawnPointFor(team: 0 | 1): SpawnPick | null {
+  private spawnPointFor(team: 0 | 1): { pos: Vector3Like; yaw: number } | null {
     if (!this.map) return null;
-    const pick = this.conquest.spawnFor(team);
-    if (!pick) return null;
-    return scatterSpawn(pick, this.conquest.spawnRand);
+    return this.conquest.spawnFor(team);
   }
 
   private updateGameplay(dt: number): void {
@@ -5760,7 +5660,7 @@ export class Game {
     this.prof.begin(P.zones);
     this.zones.update(
       dt,
-      this.conquest.points,
+      this.flags.points,
       this.cameraSys.camera.position,
     );
     this.prof.end(P.zones);
@@ -5780,7 +5680,13 @@ export class Game {
    */
   private updateOnFoot(dt: number): void {
     // --- player ---
+    // The page's own body, PREDICTED exactly as a match's client predicts it
+    // (`BABYLON_EXIT.md` X2.5a): its sweep, its ground, its stance and its
+    // regen for the HUD are all this page's, and offline the core is TOLD
+    // where it went (`move`) as the authority is — straight after, so every
+    // act this frame makes is made from where the body now is.
     const ev = this.player.update(dt, this.input, this.cameraSys);
+    if (!this.net) this.submitMove(dt);
     if (ev.jumped) this.sfx.jump();
     if (ev.footstep > 0) this.sfx.step(ev.footstep);
     // The bolt an aimed shot left shut, worked now the sight has come down —
@@ -5842,23 +5748,12 @@ export class Game {
     // delay is a frame of a player walking out of the world with nothing on
     // screen to say so.
     //
-    // **The kill is offline's alone.** In a match the authority runs the same
-    // clock against the position this client reported and issues the death like
-    // any other; killing here as well would charge the round two deaths for one
-    // walk, and the local one would arrive first and be wrong about when.
-    const leash = this.leash.update(
-      this.player.position.x,
-      this.player.position.z,
-      dt,
-    );
-    if (leash === "expired" && !this.net) {
-      // Through `takeDamage` rather than by setting health to 0, because that
-      // is the one door a death goes through offline: it is what charges the
-      // ticket, files the row on the board and raises the death cam. `from` is
-      // undefined on purpose — nobody shot you, so there is no bearing for a
-      // damage arc and nothing for the flinch to lean away from.
-      this.player.takeDamage(this.player.health);
-    }
+    // **The kill is never this page's** (D3). The simulation — the core
+    // offline, the authority in a match — runs the same clock against the
+    // position it was told and issues the death like any other; killing here
+    // as well would charge the round two deaths for one walk, and the local one
+    // would arrive first and be wrong about when. This is the countdown.
+    this.leash.update(this.player.position.x, this.player.position.z, dt);
 
     // --- shooting (hitscan from the camera down the aim axis) ---
     // Mouse fire requires pointer lock so UI clicks never discharge the gun.
@@ -6117,12 +6012,14 @@ export class Game {
   private updateDriver(dt: number, tank: Vehicle): void {
     this.player.updateVitals(dt);
     // The body rides the hull. Slaved rather than simulated: every downstream
-    // reader — the conquest occupancy count, the minimap arrow, the audio
-    // listener's fallback, the leash — asks where the player IS, and the honest
-    // answer is "in that tank". `nudgeTo` rather than `placeAt` because this is
-    // a body being carried, not one arriving: `placeAt` would zero a fall and
-    // claim the ground every frame.
-    this.player.nudgeTo(tank.position);
+    // reader — the minimap arrow, the audio listener's fallback, the leash's
+    // countdown — asks where the player IS, and the honest answer is "in that
+    // tank". `nudgeTo` rather than `placeAt` because this is a body being
+    // carried, not one arriving: `placeAt` would zero a fall and claim the
+    // ground every frame. A match's hull is this page's prediction and moves
+    // in `updateNetWorld`; offline the core moves it and the body is carried
+    // AFTER (`updateWorld`, D4), so it is never a frame behind its hull.
+    if (this.net) this.player.nudgeTo(tank.position);
 
     // The look, into the ORDERS one of the two guns walks toward. Never into
     // either gun itself — see `VehicleCamera`, which is one camera whichever
@@ -6138,6 +6035,17 @@ export class Game {
       this.drive.lift = this.input.lift;
       this.drive.aimYaw = this.vehicleCam.yaw;
       this.drive.aimPitch = this.vehicleCam.pitch;
+      // Offline the core steps the hull from these sticks (C4a; C4b moves
+      // the hull onto this page's prediction, as a match has it).
+      if (!this.net) {
+        const cmd = this.driveCmd;
+        cmd.throttle = this.drive.throttle;
+        cmd.steer = this.drive.steer;
+        cmd.lift = this.drive.lift;
+        cmd.aimYaw = this.drive.aimYaw;
+        cmd.aimPitch = this.drive.aimPitch;
+        this.ask(cmd);
+      }
     } else {
       // A gunner has no sticks at all. The hull is somebody else's problem —
       // a bot's, another player's, or nobody's — and the stick axes are
@@ -6145,6 +6053,12 @@ export class Game {
       // seat whose controls half work is worse than one whose controls do not.
       this.gunOrder.aimYaw = this.vehicleCam.yaw;
       this.gunOrder.aimPitch = this.vehicleCam.pitch;
+      if (!this.net) {
+        const cmd = this.gunOrderCmd;
+        cmd.aimYaw = this.gunOrder.aimYaw;
+        cmd.aimPitch = this.gunOrder.aimPitch;
+        this.ask(cmd);
+      }
     }
 
     // The same three-way gate the rifle's trigger takes, and for the same
@@ -6184,10 +6098,19 @@ export class Game {
     // …and the way ACROSS. Refused outright when the other chair is taken
     // rather than silently doing nothing: `canSwapSeat` is what the HUD draws
     // its prompt from, so the key and the caption cannot disagree.
+    // A crossing is a `mount` naming the hull the player is already in, with
+    // the other chair — to the authority and to the core alike, whose `seat`
+    // answer is where `swapSeat` is called.
     if (this.input.seatPressed && this.canSwapSeat(tank)) {
       const to: CrewSeat = driving ? GUNNER : DRIVER;
-      if (this.net) this.net.sendMount(this.vehicles.hulls.indexOf(tank), to);
-      else this.swapSeat(tank, to);
+      const index = this.vehicles.hulls.indexOf(tank);
+      if (this.net) this.net.sendMount(index, to);
+      else {
+        const cmd = this.mountCmd;
+        cmd.tank = index;
+        cmd.seat = to;
+        this.ask(cmd);
+      }
     }
 
     // …and getting out is an ask too, for the reason getting in is: WHERE the
@@ -6196,7 +6119,7 @@ export class Game {
     // fifteen other clients are about to be told about.
     if (this.input.usePressed && canLeave) {
       if (this.net) this.net.sendDismount();
-      else this.dismount();
+      else this.ask(DISMOUNT);
     }
 
     // --- the leash, and this is the one seat that owes it ---
@@ -6209,14 +6132,11 @@ export class Game {
     // flies over them, and past them there is no floor, no nav cell and no
     // terrain — so on a FLYING hull the exemption has nothing left holding the
     // other end of it, and the countdown goes back on. It is the same clock the
-    // body uses, so a pilot gets the same warning on the same HUD, and the kill
-    // is offline's alone for the reason it is below: in a match the authority
-    // runs its own against the position this client reported.
+    // body uses, so a pilot gets the same warning on the same HUD — and the
+    // kill is the simulation's, the core's offline and the authority's in a
+    // match, for the reason the body's is (D3).
     if (tank.flies) {
-      const out = this.leash.update(tank.position.x, tank.position.z, dt);
-      if (out === "expired" && !this.net) {
-        this.player.takeDamage(this.player.health);
-      }
+      this.leash.update(tank.position.x, tank.position.z, dt);
     } else {
       this.leash.clear();
     }
@@ -6238,21 +6158,10 @@ export class Game {
     // muzzle — about half a metre in front of the eye. That is the rifle
     // on screen, so it is the one the shot has to appear to come from.
     const muzzle = this.playerView.model.muzzleWorld();
-    const shot = this.combat.fire(
-      this.cameraSys.camera.position,
-      this.cameraSys.forward,
-      spread,
-      this.player.shotRand,
-      this.player.damage,
-      muzzle,
-      this.enemyTargets(),
-      this.player.range,
-      this.player.shotOptions,
-    );
-    // Networked: report the round. Everything above stays exactly as it is —
-    // the local resolve is what draws the tracer, flashes the hitmarker and
+    // Networked: the round is resolved here as a PREDICTION and reported.
+    // The local resolve is what draws the tracer, flashes the hitmarker and
     // kicks the weapon, and none of that may wait on a round trip. What it
-    // no longer does is decide anything: in a netplay round `enemyTargets`
+    // does not do is decide anything: in a netplay round `enemyTargets`
     // answers with the `NetSoldier`s the roster is drawing, whose
     // `takeDamage` returns false and changes nothing, so the hitmarker below
     // is a PREDICTION and the server's `hit` event is the truth.
@@ -6262,16 +6171,48 @@ export class Game {
     // differently-jittered one.
     // The SLOT and not a constant: the authority reads this round's damage
     // off it, and the sidearm is not the primary — see `ShotMessage.slot`.
-    this.net?.sendShot(
-      this.cameraSys.camera.position,
-      shot.dir,
-      this.player.carriedSlot,
-    );
-
-    // Bots hear the player's rifle the same way they hear each other's. This
-    // is the only place the player's own gunfire enters the world, so it is
-    // the only place that can say so.
-    this.battle.hearGunshot(muzzle, this.player.team, shot.dir);
+    //
+    // **Offline it is the same bargain with the core** (`BABYLON_EXIT.md`
+    // X2.5a D8, D9): the cone is rolled HERE, on this page's own
+    // `STREAM.player` exactly as `fire` would have rolled it, and the round
+    // leaves for the core with its direction decided — from the EYE, which is
+    // where the bots hear it too, and with the viewmodel's muzzle for the
+    // tracer and nothing else. The core resolves it against the world as it
+    // stands and says what it hit (`hit`, and everything a death owes), which
+    // `onSimEvent` turns into the marker, the note and the rumble.
+    const shot = this.net
+      ? this.combat.fire(
+          this.cameraSys.camera.position,
+          this.cameraSys.forward,
+          spread,
+          this.player.shotRand,
+          this.player.damage,
+          muzzle,
+          this.enemyTargets(),
+          this.player.range,
+          this.player.shotOptions,
+        )
+      : null;
+    if (shot) {
+      this.net?.sendShot(
+        this.cameraSys.camera.position,
+        shot.dir,
+        this.player.carriedSlot,
+      );
+    } else {
+      // Rolled HERE, where `fire` rolled it — before `recoilKick` below,
+      // which draws from the same stream — and submitted once the shot's own
+      // cues are out, so the hit's rumble lands over the shot's as it did.
+      const cmd = this.shotCmd;
+      cmd.dir = jitterDirection(this.cameraSys.forward, spread, this.player.shotRand);
+      this.shotOrigin.copyFromFloats(
+        this.cameraSys.camera.position.x,
+        this.cameraSys.camera.position.y,
+        this.cameraSys.camera.position.z,
+      );
+      this.shotMuzzle.copyFromFloats(muzzle.x, muzzle.y, muzzle.z);
+      cmd.weapon = this.player.heldSetup;
+    }
     // Recoil: kick the aim up and off toward the weapon's own bias, softened
     // braced and stiffened on the move. It decays on its own, so the burst
     // climbs and settles.
@@ -6319,41 +6260,14 @@ export class Game {
     if (cycle > 0) this.sfx.boltCycle(cycle, this.player.report);
     const haptic = CONFIG.rumble;
     this.input.rumble(haptic.shotStrong, haptic.shotWeak, haptic.shotMs);
-    if (shot.target) {
-      // A BODY went down, which is what the marker and the rumble are about
-      // — the two cues that say "stop shooting". Not what the BOARD pays:
-      // that is `creditKill`'s to refuse through `paysKiller`, one door for
-      // every kill in the game, and the two questions are kept apart here
-      // for the reason `hullHitCue` gives.
-      const killedBody = shot.killed && shot.target instanceof Bot;
-      // Resolved before the marker so a kill gets the red one — the cue to
-      // stop putting rounds into a body that is already going down. A
-      // headshot is the second axis and loses to a kill on the marker,
-      // because "stop shooting" is the more urgent thing to say; it keeps
-      // its own sound either way, which is where the read actually lands.
-      this.hitCue(killedBody, shot.headshot);
-      // Netplay: this marker is a guess, and remembering that it was made is
-      // what keeps the authority's answer from repeating it a round trip
-      // later. See `HitCredits`.
-      if (this.net) this.hitCredits.note(shot.headshot);
-      this.input.rumble(
-        killedBody ? haptic.killStrong : haptic.hitStrong,
-        killedBody ? haptic.killWeak : haptic.hitWeak,
-        killedBody ? haptic.killMs : haptic.hitMs,
-      );
-      if (shot.killed) {
-        // Both doors, one line apart: our row, and the body's. Offline only
-        // — in a netplay round `shot.killed` is false, because the roster's
-        // bodies refuse local damage and the authority scores this round.
-        settleKill(
-          this.ledger,
-          this.player,
-          shot.target,
-          this.player.team,
-          "round",
-          shot.headshot,
-        );
-      }
+    if (!shot) this.ask(this.shotCmd);
+    if (shot?.target) {
+      // A netplay round's GUESS at what it hit — offline the core's `hit`
+      // reaches `roundLanded`, the same cue, from the round's own resolve.
+      // Remembering that the guess was made is what keeps the authority's
+      // answer from repeating it a round trip later. See `HitCredits`.
+      this.roundLanded(shot.killed && shot.target instanceof Bot, shot.headshot);
+      this.hitCredits.note(shot.headshot);
     }
     // Nothing here for the reload the last round in the magazine just
     // started: `tryShot` began it, and `player.onReload` is what hears about
@@ -6361,8 +6275,32 @@ export class Game {
   }
 
   /**
+   * One of this player's ROUNDS landed on something: the marker, the note
+   * and the rumble. A BODY going down is what the marker and the rumble are
+   * about — the two cues that say "stop shooting" — and not what the BOARD
+   * pays, which is the simulation's (`paysKiller`); the two questions are kept
+   * apart for the reason `hullHitCue` gives. A kill gets the red marker, the
+   * cue to stop putting rounds into a body that is already going down; a
+   * headshot is the second axis and loses to a kill on the marker, because
+   * "stop shooting" is the more urgent thing to say, and keeps its own sound
+   * either way.
+   *
+   * Reached by a match's predicted resolve and by the core's `hit` offline.
+   */
+  private roundLanded(killedBody: boolean, head: boolean): void {
+    this.hitCue(killedBody, head);
+    const haptic = CONFIG.rumble;
+    this.input.rumble(
+      killedBody ? haptic.killStrong : haptic.hitStrong,
+      killedBody ? haptic.killWeak : haptic.hitWeak,
+      killedBody ? haptic.killMs : haptic.hitMs,
+    );
+  }
+
+  /**
    * The vehicle verb on foot: offered when a hull is in reach, taken when the
-   * key is pressed — an ASK in a match, a mount offline.
+   * key is pressed — an ASK, of the authority in a match and of the core
+   * offline, whose `seat` answer is where `mount` is finally called.
    */
   private updateBoarding(): void {
     const seat = this.vehicles.empty ? null : this.offeredSeat();
@@ -6374,17 +6312,20 @@ export class Game {
     // which is where `mount` is finally called. Mounting locally and letting
     // the server catch up would be a client deciding it is inside a tank
     // somebody else may already be sitting in.
+    const tank = this.vehicles.hulls.indexOf(seat.tank);
     if (this.net) {
-      this.net.sendMount(this.vehicles.hulls.indexOf(seat.tank), seat.seat);
+      this.net.sendMount(tank, seat.seat);
       return;
     }
-    // The eviction and the mount are one gesture and must land on the same
-    // frame: `mount` writes `Vehicle.seats` through `setOccupied`, and a crew
-    // taken out without somebody taking its place would leave the hull open
-    // for the boarding sweep to re-crew before the player's key is even read
-    // again.
-    if (seat.crewed) this.crew.evict(seat.tank, seat.seat);
-    this.mount(seat.tank, seat.seat);
+    // Offline the same ask, of the core (D12): `SimCore.seat` is the one
+    // writer of a seat on both sides now, and it is where a bot crew is
+    // turned out of the chair on the same frame — the eviction and the mount
+    // are one gesture, or the boarding sweep re-crews the hull before the
+    // key is even read again. Its `seat` answer arrives inside this call.
+    const cmd = this.mountCmd;
+    cmd.tank = tank;
+    cmd.seat = seat.seat;
+    this.ask(cmd);
   }
 
   /**
@@ -6464,36 +6405,46 @@ export class Game {
           forward.z * cfg.launchAhead,
         );
     }
-    // The pool has the last word, and a refusal gives the rocket back — the
-    // same contract the grenade pool has with `spendGrenade`, arrived at from
-    // the other direction because the trigger and the round are one call here.
-    // It cannot happen with eight slots and five possible shooters; what
-    // matters is that it costs a cooldown rather than a rocket if it ever does.
-    if (
-      !this.antiTank.launch(
-        this.ordnanceAt,
-        forward,
-        this.player.team,
-        this.player,
-      )
-    ) {
-      this.player.returnRound();
-      return;
+    // **Offline the rocket is the core's** (D10, D11): from this point and
+    // down this axis, which is the command's — the core reads no node — out
+    // of the pouch the core counts. The pool has the last word, and a refusal
+    // gives the rocket back (`ordnanceRefused`, in `onSimEvent`); a launch is
+    // heard by the bots there and heard by the player off its own `rocket`.
+    if (!this.net) {
+      const cmd = this.ordnanceCmd;
+      cmd.kind = "rpg";
+      this.ordnanceFrom.copyFromFloats(this.ordnanceAt.x, this.ordnanceAt.y, this.ordnanceAt.z);
+      this.ordnanceDir.copyFromFloats(forward.x, forward.y, forward.z);
+      if (!this.ask(cmd)) return;
+    } else {
+      // The pool has the last word, and a refusal gives the rocket back — the
+      // same contract the grenade pool has with `spendGrenade`, arrived at
+      // from the other direction because the trigger and the round are one
+      // call here. It cannot happen with eight slots and five possible
+      // shooters; what matters is that it costs a cooldown rather than a
+      // rocket if it ever does.
+      if (
+        !this.antiTank.launch(
+          this.ordnanceAt,
+          forward,
+          this.player.team,
+          this.player,
+        )
+      ) {
+        this.player.returnRound();
+        return;
+      }
+      // **Networked: the authority fires its own rocket and owns everything
+      // it does.** The local one above still flies — it is what the shooter
+      // watches leave the tube, and a warhead that appeared six metres
+      // downrange a round trip later would read as a misfire — but it hurts
+      // nobody: `hullNear` answers with hulls that refuse local damage and the
+      // splash goes through `hittablesFor`, which is empty on this page. The
+      // authority's copy comes back with our slot on it and `NetOrdnance`
+      // filters it out, exactly as it does for a thrown grenade.
+      this.net.sendOrdnance(this.ordnanceAt, forward);
+      this.sfx.launcher(this.ordnanceAt);
     }
-    // **Networked: the authority fires its own rocket and owns everything it
-    // does.** The local one above still flies — it is what the shooter
-    // watches leave the tube, and a warhead that appeared six metres downrange
-    // a round trip later would read as a misfire — but it hurts nobody:
-    // `hullNear` answers with hulls that refuse local damage and the splash
-    // goes through `hittablesFor`, which is `battle`'s empty list in a match.
-    // The authority's copy comes back with our slot on it and `NetOrdnance`
-    // filters it out, exactly as it does for a thrown grenade.
-    this.net?.sendOrdnance(this.ordnanceAt, forward);
-    // Bots hear a launcher the way they hear a rifle. This is the only place
-    // the player's own launcher enters the world as a noise, so it is the only
-    // place that can say so.
-    this.battle.hearGunshot(this.ordnanceAt, this.player.team, forward);
-    this.sfx.launcher(this.ordnanceAt);
     // The next rocket going into the tube, laid out across the fire cooldown
     // the shot above has just set — which on a two-shot weapon IS the loader,
     // and which `ViewModel` is playing the gesture off at the same moment.
@@ -6547,11 +6498,15 @@ export class Game {
       this.sfx.mineSet();
       return;
     }
-    if (!this.antiTank.place(this.ordnanceAt, this.player.team, this.player)) {
-      this.player.returnRound();
-      return;
-    }
-    this.sfx.mineSet();
+    // Offline the plate is the core's, laid at this point (D10) — the
+    // `standableAt` probe above is the command's input, the core reads no
+    // ground of its own for it. A refusal gives the mine back
+    // (`ordnanceRefused`, in `onSimEvent`).
+    const cmd = this.ordnanceCmd;
+    cmd.kind = "mine";
+    this.ordnanceFrom.copyFromFloats(this.ordnanceAt.x, this.ordnanceAt.y, this.ordnanceAt.z);
+    this.ordnanceDir.copyFromFloats(forward.x, forward.y, forward.z);
+    if (this.ask(cmd)) this.sfx.mineSet();
   }
 
   /**
@@ -6571,7 +6526,11 @@ export class Game {
    * by it is no longer `alive` and no longer in the list.
    */
   private fireShell(tank: Vehicle): void {
-    if (!this.resolveShell(tank, this.player)) return;
+    // Offline the trigger is an ask and the round the core's (`shell`): its
+    // `round`, `hit` and `cannon` answers draw it, and a `true` is the gun
+    // having gone off. In a match the round is predicted here and reported.
+    const fired = this.net ? this.resolveShell(tank, this.player) : this.ask(this.shellCmd);
+    if (!fired) return;
     // Everything below this line is about the person holding the trigger, and
     // that is the whole of the split: a bot crew's round goes through the same
     // call above and gets none of it.
@@ -6687,7 +6646,9 @@ export class Game {
    * the trigger.
    */
   private fireMg(tank: Vehicle): void {
-    if (!this.resolveMg(tank, this.player)) return;
+    // `fireShell`'s split exactly — the core's `mg` offline.
+    const fired = this.net ? this.resolveMg(tank, this.player) : this.ask(this.mgCmd);
+    if (!fired) return;
     this.vehicleCam.addKick(tank.spec.mg.cameraKick);
     const haptic = CONFIG.rumble;
     this.input.rumble(0.35, 0.5, haptic.shotMs);
@@ -6906,13 +6867,11 @@ export class Game {
     // The viewmodel goes away: there is no rifle in a driver's hands, and it is
     // parented to the camera that is now twelve metres behind a tank.
     this.player.setBodyHidden(true);
-    // Nothing may hurt the body — the HULL is what is being shot at. Both of
-    // the next two lines are needed and they do different jobs: this one stops
-    // rounds landing, and the one below stops bots AIMING. A bot that could
-    // still acquire an unkillable target would stand there firing at it for the
-    // rest of the round.
+    // Nothing may hurt the body — the HULL is what is being shot at. On this
+    // page that is a flag on a body nothing here shoots: what stops rounds
+    // landing and bots AIMING is the simulation's own seat (`SimCore.seat`),
+    // offline and in a match alike.
     this.player.invulnerable = true;
-    this.battle.removeHuman(this.player);
     this.vehicleCam.take(tank);
     this.sfx.engineOn(tank.spec.engine);
     // A gunner starts the drive laying his gun exactly where the camera opened,
@@ -6926,37 +6885,6 @@ export class Game {
     // held down should not fire the main gun on the frame they arrive.
     this.input.consumeFire();
     this.offerUse(null);
-  }
-
-  /**
-   * Getting out because the player asked. The body is put down beside the hull
-   * and the camera is handed back to the head.
-   *
-   * `cameraSys.reset` rather than leaving the aim where it was: the first-person
-   * camera has not been updated for as long as the drive lasted, so its yaw is
-   * wherever the player was looking when they walked up to the tank — a snap of
-   * up to half a turn on the frame they step out. Resetting to the CHASE
-   * camera's own yaw is the only answer that keeps facing what you were facing,
-   * and it clears the recoil, punch and landing springs that have been sitting
-   * frozen the whole time as a side effect worth having.
-   */
-  private dismount(): void {
-    const tank = this.driving;
-    if (!tank) return;
-    // Guarded again, and deliberately not only at the key: this is the one door
-    // out and its two callers must not each have to remember. See
-    // `VehicleSystem.dismountable` — with no fall damage in the game, a body
-    // put down beside a hull at altitude is a free ride to any roof.
-    if (!this.vehicles.dismountable(tank)) return;
-    this.player.placeAt(this.vehicles.exitSpot(tank));
-    const yaw = this.vehicleCam.yaw;
-    this.clearVehicle();
-    this.cameraSys.reset(yaw);
-    // The aim just jumped. Reprojecting through it would greet the player with
-    // one frame smeared across the whole screen — the same reason `spawnPlayer`
-    // does this.
-    this.motionBlur.reset();
-    this.input.consumeFire();
   }
 
   /**
@@ -6974,7 +6902,6 @@ export class Game {
     this.driving = null;
     this.player.invulnerable = false;
     this.player.setBodyHidden(false);
-    this.battle.addHuman(this.player);
     this.sfx.engineOff();
     this.hud.setVehicle(null);
     this.hud.setGunMarker(null);
@@ -6999,6 +6926,9 @@ export class Game {
    * Note that the player's OWN chair comes back `"player"`, which is correct
    * for both readers: it is the one chair `canSwapSeat` is never asked about,
    * and the crew line marks it from `drivingSeat` rather than from here.
+   *
+   * Offline the crew table is the CORE's (`SimLive.crew`), asked about the
+   * core's copy of the same hardstanding — this page has no crew of its own.
    */
   private seatHeldBy(tank: Vehicle, seat: CrewSeat): SeatHolder {
     if (this.net) {
@@ -7010,8 +6940,10 @@ export class Game {
       if (by < 0) return "open";
       return this.botSlotIn(by) ? "bot" : "player";
     }
-    if (!tank.seats[seat]) return "open";
-    return this.crew.crewOf(tank, seat) ? "bot" : "player";
+    const live = this.core.live;
+    const held = live.vehicles.hulls[this.vehicles.hulls.indexOf(tank)];
+    if (!held || !held.seats[seat]) return "open";
+    return live.crew.crewOf(held, seat) ? "bot" : "player";
   }
 
   /**
@@ -7097,8 +7029,9 @@ export class Game {
   }
 
   /**
-   * Crossing to the other chair, offline. The hull does not change and neither
-   * does anything `mount` set up about the BODY — it is still hidden, still
+   * Crossing to the other chair, as the simulation answered it (`seatAnswer`).
+   * The hull does not change and neither does anything `mount` set up about
+   * the BODY — it is still hidden, still
    * invulnerable, still out of every bot's target list, and the camera is
    * already where it should be.
    *
@@ -7112,16 +7045,13 @@ export class Game {
    * frame, and a throttle left at full in it would be what the next person to
    * sit down inherited.
    *
-   * **A bot in the chair being crossed into is turned out on this frame**,
-   * which is `updateOnFoot`'s eviction moved inside the hull and lands the
-   * same way for the same reason: a seat given up and not immediately taken is
-   * one the boarding sweep can re-crew before the player's key is read again.
-   * `canSwapSeat` is what proved it is a bot and not a person — this only
-   * carries the decision out.
+   * **A bot in the chair being crossed into was turned out by the
+   * simulation** on the frame it granted the crossing (`SimCore.seat`), which
+   * is the eviction a mount from the ground makes and for the same reason; this
+   * only follows the answer.
    */
   private swapSeat(tank: Vehicle, to: CrewSeat): void {
     if (to === this.drivingSeat) return;
-    if (this.crew.crewOf(tank, to)) this.crew.evict(tank, to);
     this.vehicles.setOccupied(tank, this.drivingSeat, false);
     this.vehicles.setOccupied(tank, to, true);
     this.drivingSeat = to;
@@ -7296,19 +7226,9 @@ export class Game {
     // The server placed us. This is the only thing that spawns the local body
     // in a networked round — there is no local respawn timer, because a
     // reinforcement is the authority's to spend.
-    net.onSpawn = (pos, yaw) => {
-      // Cloned either way: the session hands this out of a scratch vector that
-      // the next message overwrites, and a held one outlives more of them.
-      const at = { pos: pos.clone(), yaw };
-      // No world to arrive in yet — held rather than applied or dropped. See
-      // `pendingSpawn`, and `NetSession.onSeated`, which defers on the same
-      // test because it is the same window.
-      if (this.buildPending()) {
-        this.pendingSpawn = at;
-        return;
-      }
-      this.spawnPlayer(at);
-    };
+    // Cloned either way: the session hands this out of a scratch vector that
+    // the next message overwrites, and a held one outlives more of them.
+    net.onSpawn = (pos, yaw) => this.playerSpawned({ pos: pos.clone(), yaw });
 
     // A rejected position. Small disagreements are eased so an occasional
     // refusal is not a visible jerk; a large one is a genuine desync and
@@ -7438,10 +7358,8 @@ export class Game {
     net.onEvent = (event) => this.onNetEvent(event);
 
     // Somebody else's body went down. The same pool and the same offer every
-    // bot's corpse goes through — the only difference is that offline
-    // `registerBotKill` reaches this line having just charged a ticket and
-    // written a killfeed line, and here the authority did both before the news
-    // arrived. A callback rather than a reach into the roster for the reason
+    // bot's corpse goes through — offline `botDown` reaches it off the core's
+    // event, here the roster does off the authority's. A callback rather than a reach into the roster for the reason
     // every other cross-system effect in this file is one.
     //
     // The one refusal left is the view distance, and a body refused there is
@@ -7535,26 +7453,533 @@ export class Game {
     this.pendingSpawn = null;
   }
 
+  // ---------------------------------------------------------------------------
+  // The simulation core, offline (`BABYLON_EXIT.md` X2.5a C4a). Two doors and
+  // one switch: `ask` submits the local player's acts, `drainSim` reads what
+  // the core said, and `onSimEvent` draws it — ending, wherever a match has
+  // the same news, in the same method a netplay handler ends in.
+
+  /**
+   * One of the local player's acts, submitted to the core — and what it said
+   * about it, drained and drawn before this returns. **The one door the
+   * offline page changes the simulation through.** Returns the core's own
+   * answer (`SimCore.submit`): whether it acted at all, never what happened.
+   * False with no slot to submit for — a benchmark, a match, no round.
+   */
+  private ask(cmd: SimCommand): boolean {
+    if (this.simSlot < 0) return false;
+    const acted = this.core.submit(this.simSlot, cmd);
+    this.drainSim();
+    return acted;
+  }
+
+  /**
+   * Everything the core has said since the last drain, through `onSimEvent`
+   * in emission order. **Drained after every call made on the core** — each
+   * `step`, each `ask` — which is what keeps the order the page hears things
+   * in the order they happened. A handler's own `ask` (none makes one today)
+   * leaves its news in the ring for the loop's next pass rather than swapping
+   * the cursor out from under the one being read.
+   */
+  private drainSim(): void {
+    if (this.simDraining) return;
+    this.simDraining = true;
+    try {
+      for (;;) {
+        this.core.drain(this.simEvents);
+        const n = this.simEvents.count;
+        if (n === 0) break;
+        for (let i = 0; i < n; i++) this.onSimEvent(i);
+      }
+    } finally {
+      this.simDraining = false;
+    }
+  }
+
+  /** Scratch the switch below reads an event's vectors into — never kept. */
+  private readonly evA = new MathVector3();
+  private readonly evB = new MathVector3();
+  private readonly evN = new MathVector3();
+  /** …and the Babylon one for the readers still on its math. */
+  private readonly evBab = new Vector3();
+  /** What a blast or a fire went off on, as the core said it. Scratch. */
+  private readonly evGround: BlastGround = { surface: "hard", normal: new MathVector3(0, 1, 0) };
+
+  /** Field `k..k+2` of event `i` as a vector, into `out`. */
+  private evVec(i: number, k: number, out: MathVector3): MathVector3 {
+    const c = this.simEvents;
+    return out.set(c.f(i, k), c.f(i, k + 1), c.f(i, k + 2));
+  }
+
+  /**
+   * What the core said, drawn — **the page's half of every fact the
+   * simulation decides**, as `onNetEvent` is a match's. Presentation only:
+   * nothing here writes the simulation, and every number is read off the
+   * event (captured where it happened) rather than off a live object, except
+   * the BODY a bot's news is about, which the page draws from the core's own
+   * pool through `SimLive` until C5's mirrors.
+   *
+   * Every news a match also has ends in the method its netplay handler ends
+   * in — `playerHit`/`playerDown`, `seatAnswer`, `playerSpawned`,
+   * `roundPassed`, `flagCaptured`, `breakPane`, `fireLit` — so the two cannot
+   * drift for the player.
+   */
+  private onSimEvent(i: number): void {
+    const c = this.simEvents;
+    const me = this.simSlot;
+    const ev = c.kind(i);
+    switch (ev) {
+      // Every round from every shooter: the tracer, the impact, the mark.
+      case EV.round: {
+        const impact = c.f(i, 7);
+        const hasNormal = !Number.isNaN(c.f(i, 8));
+        this.combatFx.drawRound(
+          this.evVec(i, 1, this.evA),
+          this.evVec(i, 4, this.evB),
+          impact < 0 ? null : IMPACT_KINDS[impact],
+          hasNormal ? this.evVec(i, 8, this.evN) : null,
+          c.f(i, 11) === 1,
+        );
+        break;
+      }
+      // A bot's trigger: the flash for the frame's light budget, the report
+      // placed at the copy it hands back, and — for an enemy — a couple of
+      // seconds on the minimap.
+      case EV.botFired: {
+        const bot = this.core.live.battle.bots[c.f(i, 0)];
+        if (!bot) break;
+        const at = this.battleView.flash(this.evVec(i, 1, this.evA));
+        this.sfx.botShot(at);
+        if (bot.team !== this.player.team) this.minimap.reveal(bot);
+        break;
+      }
+      // A bot reloading is a window the player can push into, so it has to
+      // be audible; boots from bots close enough to carry. Both spatialised,
+      // and `Sfx` rejects the far ones.
+      case EV.botReload: {
+        const bot = this.core.live.battle.bots[c.f(i, 0)];
+        if (bot) this.sfx.botReload(bot.position);
+        break;
+      }
+      case EV.botStep: {
+        const bot = this.core.live.battle.bots[c.f(i, 0)];
+        if (bot) this.sfx.botStep(bot.position);
+        break;
+      }
+      case EV.nearMiss:
+        if (c.f(i, 0) === me) this.roundPassed(this.evVec(i, 1, this.evA));
+        break;
+      // One of this player's rounds, shells, belts, blasts, burns or tracks
+      // found somebody — the core's verdict, in the place the round's own
+      // resolve used to cue it. What the marker says per cause is the rule
+      // each weapon's cue always had.
+      case EV.hit: {
+        if (c.f(i, 0) !== me || me < 0) break;
+        const killed = c.f(i, 3) === 1;
+        const head = c.f(i, 4) === 1;
+        const bot = VICTIM_KINDS[c.f(i, 2)] === "bot";
+        switch (DEATH_CAUSES[c.f(i, 5)]) {
+          case "round":
+            this.roundLanded(killed && bot, head);
+            break;
+          case "shell":
+          case "mg":
+            // `hullHitCue`'s rule: a hull going up is not a body.
+            this.hitCue(killed && bot, false);
+            break;
+          case "blast":
+            // A blast's victims marked as `onBlastHit` marked them — a bot's
+            // alone, the player is not a target of their own.
+            if (bot) this.hud.flashHitmarker(killed);
+            break;
+          case "fire":
+            // A burn marks the KILL and nothing else: a fire hurts somebody
+            // four times a second, and a marker at that rate is a strobe.
+            if (killed && bot) this.hud.flashHitmarker(true);
+            break;
+          case "tracks":
+            // The driver's own screen, on the terms a shell's direct hit gets
+            // it: a kill flash and the note under it.
+            this.hitCue(true, false);
+            break;
+          default:
+            break;
+        }
+        break;
+      }
+      // We were hit, and perhaps killed — the core's person door.
+      case EV.damaged: {
+        if (c.f(i, 0) !== me || me < 0) break;
+        const hasFrom = c.f(i, 3) === 1;
+        const killed = c.f(i, 7) === 1;
+        this.playerHit(
+          c.f(i, 9),
+          c.f(i, 2),
+          hasFrom ? this.evVec(i, 4, this.evA) : undefined,
+          DAMAGE_KINDS[c.f(i, 8)],
+          killed,
+        );
+        if (killed) {
+          // Who to blame, and the test is `from`. Friendly fire is excluded by
+          // construction everywhere in this game, so the side that killed a
+          // player is always the other one — and **the leash is the ONLY death
+          // without a bearing**, which is a thing to keep true rather than a
+          // thing that is: burning inside a hull passed none once and announced
+          // itself as `OUT OF BOUNDS`. The core hands one over (the wreck's
+          // own centre), the same vector the corpse is thrown by.
+          this.hud.addKill(
+            hasFrom ? teamLook(OTHER_TEAM[this.player.team]).name : LEASH_KILLER,
+            "YOU",
+            true,
+          );
+          this.playerDown(c.f(i, 10));
+        }
+        break;
+      }
+      case EV.botDown: {
+        const bot = this.core.live.battle.bots[c.f(i, 0)];
+        if (!bot) break;
+        const by = c.f(i, 2);
+        this.botDown(bot, c.f(i, 1) as Team, me >= 0 && by === me);
+        break;
+      }
+      // Every body's death on the board — which the board itself reads off
+      // the core's book; the benchmark folds it into its fight.
+      case EV.death:
+        this.bench?.fight.death(c.tick(i) - this.benchTick0, c.f(i, 0));
+        break;
+      case EV.spawned:
+        if (c.f(i, 0) === me && me >= 0) {
+          this.playerSpawned({
+            pos: new MathVector3(c.f(i, 1), c.f(i, 2), c.f(i, 3)),
+            yaw: c.f(i, 4),
+          });
+        }
+        break;
+      // Somebody was paid — every slot, all round. The one row this screen
+      // belongs to is the feed's filter; the benchmark folds every one.
+      case EV.award: {
+        const slot = c.f(i, 0);
+        const kind = SCORE_KINDS[c.f(i, 1)];
+        const points = c.f(i, 2);
+        if (slot === me && me >= 0) this.hud.addScore(kind, points);
+        this.bench?.fight.award(c.tick(i) - this.benchTick0, slot, kind, points);
+        break;
+      }
+      case EV.captured: {
+        const point = this.core.live.conquest.points[c.f(i, 0)];
+        if (point) this.flagCaptured(point.def.name, c.f(i, 1) as Team);
+        break;
+      }
+      case EV.neutralised: {
+        const point = this.core.live.conquest.points[c.f(i, 0)];
+        if (point) this.flagNeutralised(point.def.name);
+        break;
+      }
+      case EV.roundOver:
+        this.endRound(c.f(i, 0) as Team);
+        break;
+      // Every blast in the round, whatever went off: the six drawn layers,
+      // then the light, the noise, the rubble and the concussion.
+      case EV.blast: {
+        const at = this.evVec(i, 0, this.evA);
+        const ground = this.evGround;
+        ground.surface = SURFACES[c.f(i, 4)];
+        this.evVec(i, 5, ground.normal);
+        const power = c.f(i, 3);
+        this.grenadeFx.blast(at, power, ground);
+        this.onExplosion(at, power, ground);
+        break;
+      }
+      case EV.ignited: {
+        const ground = this.evGround;
+        ground.surface = SURFACES[c.f(i, 4)];
+        this.evVec(i, 5, ground.normal);
+        this.fireLit(c.f(i, 0), this.evVec(i, 1, this.evA), ground);
+        break;
+      }
+      case EV.burntOut:
+        this.fireOut(c.f(i, 0));
+        break;
+      // A rocket left a tube — the player's or a launcher bot's. Its flight is
+      // drawn off the core's pool (`antiTankRead`); this is the report.
+      case EV.rocket:
+        this.sfx.launcher(this.evVec(i, 1, this.evA));
+        break;
+      // Panes the core broke: applied to this page's glass exactly as a
+      // match's `glass` is — the collider out of this world, the sheet
+      // collapsed, the crack and the shards.
+      case EV.glass: {
+        const at = this.evVec(i, 0, this.evA);
+        const dir = this.evVec(i, 3, this.evB);
+        const start = c.f(i, 6);
+        const end = start + c.f(i, 7);
+        for (let k = start; k < end; k++) this.breakPane(c.ints[k], at, dir);
+        break;
+      }
+      // A tank gun or a cupola gun went off, whoever fired it: the picture
+      // `resolveShell`/`resolveMg` used to draw beside their own round.
+      case EV.cannon: {
+        const tank = this.vehicles.hulls[c.f(i, 0)];
+        if (!tank) break;
+        const at = this.evBab.set(c.f(i, 1), c.f(i, 2), c.f(i, 3));
+        this.drawCannon(tank, at);
+        break;
+      }
+      case EV.mg: {
+        const tank = this.vehicles.hulls[c.f(i, 0)];
+        if (!tank) break;
+        const at = this.evBab.set(c.f(i, 1), c.f(i, 2), c.f(i, 3));
+        this.flashMuzzle(at);
+        // Placed at the muzzle rather than voiced in the ear, so it is panned
+        // like every other gun in the world — but a crew riding THIS hull
+        // hears it at arm's length (`Sfx.aboard`).
+        this.sfx.botShot(at, 0, tank.spec.mg.report, tank === this.driving);
+        break;
+      }
+      // The main gun's kick on this page's posed copy of the hull: the
+      // loader's clock, the rock and the masts (`Vehicle.mirrorShot`).
+      case EV.hullKicked:
+        this.vehicles.hulls[c.f(i, 0)]?.mirrorShot();
+        break;
+      case EV.hullRespawned: {
+        const tank = this.vehicles.hulls[c.f(i, 0)];
+        if (tank) this.hullReady(tank);
+        break;
+      }
+      case EV.seat:
+        if (c.f(i, 0) === me && me >= 0) {
+          this.seatAnswer(c.f(i, 1), c.f(i, 2), this.evVec(i, 3, this.evA), c.f(i, 6));
+        }
+        break;
+      // The pool would not take a rocket or a mine this page had already
+      // spent out of its pouch: give it back (D11). A refused throw spent
+      // nothing — `releaseGrenade` spends only on the core's yes.
+      case EV.ordnanceRefused:
+        if (c.f(i, 0) === me && me >= 0 && REFUSED_ITEMS[c.f(i, 1)] !== "grenade") {
+          this.player.returnRound();
+        }
+        break;
+      // Said by the core, drawn by something else: a hull's placing and
+      // burning are this page's own copy's edges (`syncFleet`), its
+      // destruction's toast is that copy's `onDestroyed`, and a crush's
+      // marker is its `hit`.
+      case EV.hullPlaced:
+      case EV.hullWrecked:
+      case EV.hullDestroyed:
+      case EV.crushed:
+        break;
+      default: {
+        const unhandled: never = ev;
+        void unhandled;
+      }
+    }
+  }
+
+  /**
+   * The local body's walk, told to the core every frame it is on foot —
+   * `move`, the authority's copy of `Player.update` (`SimPlayer.apply`), on
+   * the frame's own `dt`. Held rather than built, as every per-frame
+   * command here is.
+   */
+  private submitMove(dt: number): void {
+    if (!this.player.alive) return;
+    const cmd = this.moveCmd;
+    const p = this.player.position;
+    cmd.dt = dt;
+    cmd.x = p.x;
+    cmd.y = p.y;
+    cmd.z = p.z;
+    cmd.yaw = this.cameraSys.aimYaw;
+    cmd.pitch = this.cameraSys.aimPitch;
+    cmd.crouch = this.player.crouching;
+    cmd.sprint = this.player.sprinting;
+    this.ask(cmd);
+  }
+
+  /**
+   * "Bring me back in", offline: the kit the next body carries, then the ask
+   * — at spawn index `spawn`, or the conquest's own pick with none. The core
+   * holds no respawn clock (`hostHoldsRespawn`), so it is honoured on the spot
+   * through its one deploy door, and its `spawned` answer, drained inside the
+   * ask, is what puts the body in the world (`playerSpawned`).
+   */
+  private deployLocal(spawn?: number): void {
+    this.ask({
+      t: "kit",
+      grenades: throwableCarried(this.throwable),
+      ordnance: equipmentSetup(this.equipment).magSize,
+    });
+    this.ask(spawn === undefined ? { t: "deploy" } : { t: "deploy", spawn });
+  }
+
+  /**
+   * The simulation put the local body in the world — **the one door, offline
+   * and in a match**: the core's `spawned` and the wire's `spawn`.
+   *
+   * No world to arrive in yet is a match's case alone (a `spawn` can land
+   * while a build is pending) — held rather than applied or dropped; see
+   * `pendingSpawn`, and `NetSession.onSeated`, which defers on the same test
+   * because it is the same window.
+   */
+  private playerSpawned(at: { pos: Vector3Like; yaw: number }): void {
+    if (this.buildPending()) {
+      this.pendingSpawn = at;
+      return;
+    }
+    this.spawnPlayer(at);
+  }
+
+  /**
+   * A round cracked past us — **the one door, offline and in a match**: the
+   * supersonic N-wave the player hears, and what it does to their hands.
+   */
+  private roundPassed(at: Vector3Like): void {
+    this.sfx.nearMiss(at);
+    this.player.suppress();
+  }
+
+  /**
+   * A pane the simulation broke, applied to this page's glass — **the one
+   * door, offline and in a match**. `applyBreak` is idempotent for the visual
+   * and reports false for a pane already gone, so a match's predicted break
+   * plays its shards once.
+   */
+  private breakPane(pane: number, at: Vector3Like, dir: Vector3Like): void {
+    this.glass.applyBreak(pane, at, dir, true);
+  }
+
+  /**
+   * The roster `BattleView` draws: the core's offline, none in a match —
+   * see `NO_ROSTER`.
+   */
+  private get rosterRead(): RosterRead {
+    return this.net ? NO_ROSTER : this.core.live.battle;
+  }
+
+  /** The bodies the shadows' blobs are placed under — `rosterRead`'s bots. */
+  private liveBots(): readonly Bot[] {
+    return this.rosterRead.bots;
+  }
+
+  /**
+   * The flags and the tickets every gauge draws: the core's offline, the
+   * wire's mirror in a match (`conquest`).
+   */
+  private get flags(): ConquestSystem {
+    return this.net ? this.conquest : this.core.live.conquest;
+  }
+
+  /** Whichever grenade pool is flying this round's grenades — `flags`' rule. */
+  private simGrenades(): Pick<GrenadeSystem, "flights" | "fireSlots" | "forEachFire"> {
+    return this.net ? this.grenades : this.core.live.grenades;
+  }
+
+  /** …and rockets and mines. */
+  private simAntiTank(): Pick<AntiTankSystem, "rocketSlots" | "mineSlots"> {
+    return this.net ? this.antiTank : this.core.live.antiTank;
+  }
+
+  /** What `GrenadeFx` reads: the pools of whichever system `simGrenades` names. */
+  private readonly grenadeRead: Pick<GrenadeSystem, "flights" | "fireSlots"> = ((
+    game: Game,
+  ) => ({
+    get flights() {
+      return game.simGrenades().flights;
+    },
+    get fireSlots() {
+      return game.simGrenades().fireSlots;
+    },
+  }))(this);
+
+  /** …and `AntiTankFx`. */
+  private readonly antiTankRead: Pick<AntiTankSystem, "rocketSlots" | "mineSlots"> = ((
+    game: Game,
+  ) => ({
+    get rocketSlots() {
+      return game.simAntiTank().rocketSlots;
+    },
+    get mineSlots() {
+      return game.simAntiTank().mineSlots;
+    },
+  }))(this);
+
+  /** How many of this player's mines the core has on the field. */
+  private simMinesLaid(): number {
+    const live = this.core.live;
+    const me = live.players.get(this.simSlot);
+    return me ? live.antiTank.minesFor(me) : 0;
+  }
+
+  /** The held commands the per-frame and per-round acts submit — see `ask`. */
+  private readonly moveCmd: MoveCommand = {
+    t: "move",
+    dt: 0,
+    x: 0,
+    y: 0,
+    z: 0,
+    yaw: 0,
+    pitch: 0,
+    crouch: false,
+    sprint: false,
+  };
+  private readonly shotOrigin = new MathVector3();
+  private readonly shotMuzzle = new MathVector3();
+  private readonly shotCmd: ShotCommand = {
+    t: "shot",
+    origin: this.shotOrigin,
+    dir: this.shotOrigin,
+    muzzle: this.shotMuzzle,
+    weapon: null!,
+  };
+  private readonly grenadeFrom = new MathVector3();
+  private readonly grenadeDir = new MathVector3();
+  private readonly grenadeCmd: GrenadeCommand = {
+    t: "grenade",
+    origin: this.grenadeFrom,
+    dir: this.grenadeDir,
+    kind: "frag",
+  };
+  private readonly ordnanceFrom = new MathVector3();
+  private readonly ordnanceDir = new MathVector3();
+  private readonly ordnanceCmd: OrdnanceCommand = {
+    t: "ordnance",
+    kind: "rpg",
+    origin: this.ordnanceFrom,
+    dir: this.ordnanceDir,
+  };
+  private readonly mountCmd: { t: "mount"; tank: number; seat: CrewSeat } = {
+    t: "mount",
+    tank: -1,
+    seat: DRIVER,
+  };
+  private readonly driveCmd: DriveInputCommand = {
+    t: "driveInput",
+    throttle: 0,
+    steer: 0,
+    lift: 0,
+    aimYaw: 0,
+    aimPitch: 0,
+  };
+  private readonly gunOrderCmd: GunOrderCommand = { t: "gunOrder", aimYaw: 0, aimPitch: 0 };
+  /** Offline the trigger is all a hull gun's command says (`early` 0). */
+  private readonly shellCmd: SimCommand = { t: "shell", early: 0 };
+  private readonly mgCmd: SimCommand = { t: "mg", early: 0 };
+
   /** What a server event does to this client's screen. Presentation only. */
   private onNetEvent(event: ServerEvent): void {
     switch (event.e) {
       case "kill":
         this.onNetKill(event);
         break;
-      // The same pair `wireConquest` plays offline, from the authority's
-      // version of the same event: a flag taken is worth hearing and a flag
-      // lost is worth hearing more, and neither `ConquestSystem` callback fires
-      // on a client that is not stepping one.
+      // The same pair the core's `captured` plays offline, from the
+      // authority's version of the same event: a flag taken is worth hearing
+      // and a flag lost is worth hearing more.
       case "captured":
-        if (event.by === this.player.team) this.sfx.capture();
-        else this.sfx.flagLost();
-        this.hud.showMessage(
-          `${event.point.toUpperCase()} CAPTURED BY ${teamLook(event.by).name.toUpperCase()}`,
-          2.5,
-        );
+        this.flagCaptured(event.point, event.by);
         break;
       case "neutralised":
-        this.hud.toast(`${event.point} — neutralised`);
+        this.flagNeutralised(event.point);
         break;
       // We were paid for something. Offline the same line comes off
       // `ScoreBook.onAward`; in a match it is a receipt the authority
@@ -7640,8 +8065,7 @@ export class Game {
       // the event's own note.
       case "nearmiss":
         this.netNearPoint.set(event.at[0], event.at[1], event.at[2]);
-        this.sfx.nearMiss(this.netNearPoint);
-        this.player.suppress();
+        this.roundPassed(this.netNearPoint);
         break;
 
       // A molotov the authority lit. `drawBlast`'s twin: the flames, the
@@ -7710,7 +8134,7 @@ export class Game {
         this.netScratch.set(event.at[0], event.at[1], event.at[2]);
         this.netGlassDir.set(event.dir[0], event.dir[1], event.dir[2]);
         for (const pane of event.panes) {
-          this.glass.applyBreak(pane, this.netScratch, this.netGlassDir, true);
+          this.breakPane(pane, this.netScratch, this.netGlassDir);
         }
         break;
       }
@@ -7755,8 +8179,8 @@ export class Game {
    * `interpDelay` behind it, so throwing it here would throw a body that has
    * not visibly been hit yet.
    *
-   * The cue is what offline every bot death gets through `registerBotKill` —
-   * this event is the authority's version of that call, raised once per death
+   * The cue is what offline every bot death gets through `botDown` — this
+   * event is the authority's version of the core's `botDown`, raised once per death
    * whoever fell. Our own is the one exception, exactly as offline: a player's
    * own death is the death cam and `playerHurt`, not somebody else falling
    * over.
@@ -7794,16 +8218,67 @@ export class Game {
    */
   private onNetDamage(event: NetEvent<"damage">): void {
     if (event.victim !== this.net?.slot) return;
-    this.player.applyServerHealth(event.health);
-    this.netDamageFrom.set(event.from[0], event.from[1], event.from[2]);
-    this.netDamageAmount = event.amount;
-    this.netDamageKind = event.kind ?? "bullet";
-    this.onPlayerDamaged(
-      event.amount,
-      false,
-      this.netDamageFrom,
-      this.netDamageKind,
-    );
+    this.netScratch.set(event.from[0], event.from[1], event.from[2]);
+    this.playerHit(event.health, event.amount, this.netScratch, event.kind ?? "bullet", false);
+  }
+
+  /**
+   * We were hit — **the one door, offline and in a match**: the core's
+   * `damaged` and the authority's `damage` both land here, so the two cannot
+   * drift for the player.
+   *
+   * Health is the simulation's, so it is ASSIGNED rather than subtracted — a
+   * page that decremented its own would drift out of step with whatever
+   * decided the hit and disagree about who is alive. `applyServerHealth` also
+   * arms the regen lock, which is the half of the hit that is never told: the
+   * simulation holds the health down for `regenDelay` and then heals it back,
+   * and this page runs the identical curve locally rather than being told
+   * about every point of it (D2).
+   *
+   * The bearing, the amount and the kind are kept past this call because the
+   * death that may follow carries none of them — see `playerDown`. `from` is
+   * absent for the one death nobody dealt, the leash's.
+   */
+  private playerHit(
+    health: number,
+    amount: number,
+    from: Vector3Like | undefined,
+    kind: DamageKind,
+    died: boolean,
+  ): void {
+    this.player.applyServerHealth(health);
+    this.netDamageHasFrom = from !== undefined;
+    if (from) this.netDamageFrom.set(from.x, from.y, from.z);
+    this.netDamageAmount = amount;
+    this.netDamageKind = kind;
+    this.onPlayerDamaged(amount, died, from, kind);
+  }
+
+  /**
+   * Our own death, decided elsewhere — **the one door, offline and in a
+   * match**: the core's killing `damaged` and the authority's `died`.
+   *
+   * What it owes is the four seconds of watching, because a death cam decides
+   * nothing — it is a camera and a stand-in body, and the round carries on
+   * underneath it either way. The bearing and the size of the killing blow
+   * are `playerHit`'s, which the simulation said immediately ahead of this.
+   * `enterDying` falls through to the deploy screen on its own if the cam
+   * cannot come up, so this is not a state that can strand a player.
+   * `respawnIn` is the simulation's clock, armed by the blow.
+   */
+  private playerDown(respawnIn: number): void {
+    this.player.health = 0;
+    this.player.alive = false;
+    if (this.state === "playing") {
+      this.enterDying(
+        this.netDamageHasFrom ? this.netDamageFrom : undefined,
+        this.netDamageAmount,
+        this.netDamageKind,
+        respawnIn,
+      );
+    } else {
+      this.enterDeploy(respawnIn);
+    }
   }
 
   /**
@@ -7823,18 +8298,7 @@ export class Game {
    */
   private onNetDied(event: NetEvent<"died">): void {
     if (event.slot !== this.net?.slot) return;
-    this.player.health = 0;
-    this.player.alive = false;
-    if (this.state === "playing") {
-      this.enterDying(
-        this.netDamageFrom,
-        this.netDamageAmount,
-        this.netDamageKind,
-        event.respawnIn,
-      );
-    } else {
-      this.enterDeploy(event.respawnIn);
-    }
+    this.playerDown(event.respawnIn);
   }
 
   /**
@@ -8022,46 +8486,68 @@ export class Game {
    */
   private onNetSeat(event: NetEvent<"seat">): void {
     if (event.slot !== this.net?.slot) return;
-    if (event.tank >= 0) {
-      const tank = this.vehicles.hulls[event.tank];
+    let at: Vector3Like | null = null;
+    if (event.pos) {
+      this.netScratch.set(event.pos[0], event.pos[1], event.pos[2]);
+      at = this.netScratch;
+    }
+    this.seatAnswer(event.tank, event.seat ?? DRIVER, at, event.yaw ?? null);
+  }
+
+  /**
+   * Where the simulation says this player sits — **the one door, offline and
+   * in a match** (D12): the core's `seat` and the authority's, the answer to a
+   * mount, a crossing or a dismount, and the hull burning under them (D14).
+   *
+   * A hull this player was not in is a MOUNT and the same hull with the other
+   * chair is the CROSSING they asked for; `-1` is on foot. Getting out puts
+   * the body where the simulation set it down — BEFORE the seat is given up,
+   * because `clearVehicle` deliberately moves nobody and the camera hand-off
+   * reads the chase yaw that is about to be gone — and resets the first-person
+   * camera to `yaw`, the chase camera's own: its yaw is wherever the player
+   * was looking when they walked up to the hull, a snap of up to half a turn
+   * otherwise, and the reset clears the springs that sat frozen the whole
+   * drive. A refusal is an answer naming where they already are, which every
+   * branch reads as nothing to do.
+   */
+  private seatAnswer(
+    tankIndex: number,
+    seatIndex: number,
+    at: Vector3Like | null,
+    yaw: number | null,
+  ): void {
+    if (tankIndex >= 0) {
+      const tank = this.vehicles.hulls[tankIndex];
       if (!tank) return;
-      const seat: CrewSeat = event.seat === GUNNER ? GUNNER : DRIVER;
+      const seat: CrewSeat = seatIndex === GUNNER ? GUNNER : DRIVER;
       if (tank !== this.driving) this.mount(tank, seat);
       else if (seat !== this.drivingSeat) this.swapSeat(tank, seat);
       return;
     }
     if (!this.driving) return;
-    // Where the body goes is the authority's, exactly as a spawn's is — and it
-    // is placed BEFORE the seat is given up for `dismount`'s reason:
-    // `clearVehicle` deliberately does not move anybody, and the camera
-    // hand-off below reads the chase yaw that is about to be gone.
-    if (event.pos) {
-      this.netScratch.set(event.pos[0], event.pos[1], event.pos[2]);
-      this.player.placeAt(this.netScratch);
-    }
-    const yaw = event.yaw ?? this.vehicleCam.yaw;
+    if (at) this.player.placeAt(at);
+    const facing = yaw ?? this.vehicleCam.yaw;
     this.clearVehicle();
-    // The aim just jumped a long way — see `dismount`, which spends the same
-    // two lines for the same reason on the offline path.
-    this.cameraSys.reset(yaw);
+    this.cameraSys.reset(facing);
+    // The aim just jumped a long way: reprojecting through it would greet the
+    // player with one frame smeared across the whole screen — the same reason
+    // `spawnPlayer` does this.
     this.motionBlur.reset();
     this.input.consumeFire();
   }
 
   /**
-   * Who the local player's own rounds may find: the bots offline, the bodies
-   * drawn from the wire in a netplay round.
+   * Who the local player's own rounds may find: the core's bots and hulls
+   * offline, the bodies drawn from the wire in a netplay round.
    *
    * Two callers — the shot resolve and the gamepad aim assist — and the whole
    * reason this is a method is that they must never be handed different lists:
    * the assist's job is to hold an aim the rounds can use.
    *
-   * `battle` is not merely the wrong list in a netplay round, it is an EMPTY
-   * one, and empty in a way no team check reveals. `buildRound` calls
-   * `battle.reset()`, which leaves every bot in the pool dead, and `updateWorld`
-   * returns before `battle.update` is ever reached, so nothing respawns them;
-   * the only other combatant that side knows about is the local player, whom the
-   * team check drops. Reading that list there cost the shooter every local cue a
+   * A local roster is not merely the wrong list in a netplay round, it is an
+   * EMPTY one, and empty in a way no team check reveals: the page's old pool was
+   * reset dead and never stepped in a match, and the core holds no round there
+   * at all. Reading that list there cost the shooter every local cue a
    * hit is owed — sparks landed on the wall behind the man who was hit, no
    * hitmarker arrived until the server's `hit` event had made the round trip,
    * and aim assist had nothing to hold on to at all.
@@ -8071,7 +8557,10 @@ export class Game {
    * requires — both callers do.
    */
   private enemyTargets(): Hittable[] {
-    if (!this.net) return this.battle.hittablesAgainst(this.player.team);
+    // Offline the CORE's list (`SimLive.battle`) — its bots and its hulls,
+    // which is what the core resolves this player's rounds against, so the
+    // assist holds an aim on exactly what a round can hit.
+    if (!this.net) return this.core.live.battle.hittablesAgainst(this.player.team);
     // The bodies, plus the armour. A hull is a `Hittable` on this side too and
     // has to be in the list for the local cue a hit is owed — without it a
     // round fired at a tank sparks off the collider with no hitmarker, and the
@@ -8100,11 +8589,14 @@ export class Game {
    * Every body but the local player's, as the minimap draws them.
    *
    * The same substitution `enemyTargets` makes, for the same reason and with
-   * the same failure behind it: in a netplay round `battle.bots` is a pool
-   * `battle.reset()` left dead and `updateWorld` never steps again, so the map
-   * drew no friendlies at all and a reveal had nobody to name. It was not a
+   * the same failure behind it: in a netplay round a local pool is one nobody
+   * steps, so the map drew no friendlies at all and a reveal had nobody to
+   * name. It was not a
    * missing feature so much as a list that had quietly gone empty — the panel
    * still drew, the flags still moved, and only the blips were gone.
+   *
+   * Offline it is the core's pool (`SimLive.battle`), the bodies the fight
+   * is actually fought with.
    *
    * Unlike `enemyTargets` this is a plain READ — no shot is resolved against
    * it, no team is filtered out of it — so it hands back the array as it
@@ -8117,7 +8609,7 @@ export class Game {
    * sitting under the arrow that already stands for the player.
    */
   private mapBodies(): readonly Combatant[] {
-    return this.net ? this.net.roster.soldiers : this.battle.bots;
+    return this.net ? this.net.roster.soldiers : this.core.live.battle.bots;
   }
 
   /**
@@ -8169,6 +8661,12 @@ export class Game {
    * what every death on the wire was before a blast could throw a body.
    */
   private netDamageKind: DamageKind = "bullet";
+  /**
+   * …and whether that hit had a bearing at all — false for the one death
+   * nobody dealt, the leash's, which the core says with no `from`. True by
+   * default, which is what every netplay death has always been read as.
+   */
+  private netDamageHasFrom = true;
 
   /** Scratch for a drawn net round's muzzle and axis. See `drawNetShots`. */
   private readonly netMuzzle = new Vector3();
@@ -8336,13 +8834,24 @@ export class Game {
   private syncNetVehicles(): void {
     const net = this.net;
     if (!net) return;
+    this.syncFleet(net.vehicles);
+  }
+
+  /**
+   * `syncNetVehicles`' three transitions and two writes, from whichever
+   * source poses this round's fleet — the wire in a match, the core's own
+   * fleet offline (`FleetMirror`, `BABYLON_EXIT.md` X2.5a C4a). One method,
+   * so a hull goes live, burns and leaves the field the same way on both
+   * sides of the wire.
+   */
+  private syncFleet(src: FleetRead): void {
     for (const [i, tank] of this.vehicles.hulls.entries()) {
-      const present = net.vehicles.present(i);
+      const present = src.present(i);
       if (!present) {
         if (tank.present) tank.hide();
         continue;
       }
-      const state = net.vehicles.stateFor(i);
+      const state = src.stateFor(i);
       if (!tank.present) {
         // A fresh hull, and it is placed at the position that arrived rather
         // than at the hardstanding: the two are the same on a respawn, and
@@ -8356,14 +8865,14 @@ export class Game {
       // `takeDamage` — which a `predicted` hull refuses by design. This is the
       // number the driver's own armour gauge draws, and it is the authority's
       // in a match exactly as the player's own health is.
-      tank.health = net.vehicles.health(i);
-      if (!net.vehicles.alive(i)) tank.wreck();
+      tank.health = src.health(i);
+      if (!src.alive(i)) tank.wreck();
       // Both seats, and each from its own field on the wire: `by` is the
       // driver's and `by2` the gunner's, exactly as `VehicleState` states
       // them. Written straight in rather than derived, because the whole point
       // of the pair travelling is that a client never has to guess.
-      this.vehicles.setOccupied(tank, DRIVER, net.vehicles.occupant(i) >= 0);
-      this.vehicles.setOccupied(tank, GUNNER, net.vehicles.gunner(i) >= 0);
+      this.vehicles.setOccupied(tank, DRIVER, src.occupant(i) >= 0);
+      this.vehicles.setOccupied(tank, GUNNER, src.gunner(i) >= 0);
     }
   }
 
@@ -8475,70 +8984,72 @@ export class Game {
       return true;
     }
 
-    // --- objectives ---
-    // Runs before the bots so their think tick sees this frame's ownership.
-    this.prof.begin(P.conquest);
-    this.combatants.length = 0;
-    this.combatants.push(this.player, ...this.battle.bots);
-    this.conquest.update(dt, this.combatants);
-    this.prof.end(P.conquest);
-    if (this.conquest.winner !== null) {
-      this.endRound(this.conquest.winner);
-      return false;
-    }
+    // **Offline the simulation is the CORE** (`BABYLON_EXIT.md` X2.5a C4a),
+    // stepped once here by the frame's own `dt` — in the order `SimCore.step`
+    // keeps, which is the order this method used to keep itself: the flags
+    // first so a bot's think tick sees this frame's ownership, the crews and
+    // the hulls before the bots, the tracks right after the hulls, then the
+    // bots, the grenades and the mines and rockets. Everything this page did
+    // to the world this frame — the player's walk, round, throw, sticks and
+    // seat — reached it already, through `ask`, before this step.
+    //
+    // The flashes the bots' triggers leave are emptied first: they are
+    // refilled by this step's `botFired`s, which are read below.
+    this.battleView.beginFrame();
+    const live = this.core.step(dt);
 
-    // --- the armour ---
-    // Before the bots, for the reason `ConquestSystem` runs before them: a
-    // bot's think tick tests line of sight against the solid world, and a hull
-    // is part of that world. Stepped after the flags and before the AI, a tank
-    // that has just pulled across a street breaks the sightline on the same
-    // frame it visibly blocked it rather than one frame late.
-    //
-    // It is also what MOVES the hull the camera is about to be framed against —
-    // see `VehicleCamera`'s note on why its two halves straddle this call.
-    //
-    // The bot crews go first, for the reason `updateDriver` runs before this
-    // for the player: what they write is the drive input this step consumes,
-    // so a crew stepped afterwards would be steering a hull on last frame's
-    // orders. It is also where a crew's shell is fired, which is why it lands
-    // before the bots think — a hull destroyed by one is not a target on the
-    // same frame's acquisition, exactly as a flag taken by `conquest.update`
-    // is not still contested.
-    this.prof.begin(P.vehicles);
-    this.crew.update(dt);
-    this.vehicles.update(dt, this.vehicleOrders);
-    // Immediately after the hulls have moved, and before the bots think: a
-    // body taken by the tracks is not a target on the same frame's
-    // acquisition, exactly as a hull destroyed by a crew's shell is not. It
-    // sees where the armour ENDED this frame rather than where it started,
-    // which is the whole of what running somebody over is.
-    crushSweep(this.hullRules);
+    // --- the armour, posed ---
+    // This page's copy of every hull to where the core's got to, before
+    // anything reads one: the player's sweep and deck, the cameras, the rays
+    // the views cast and every event below that names a hull. It is
+    // `updateNetWorld`'s posing with the core as the wire (`syncFleet`,
+    // `FleetMirror`) — the burn and the respawn arrive as the same edges.
+    if (!this.vehicles.empty) {
+      this.prof.begin(P.vehicles);
+      this.syncFleet(this.fleetMirror);
+      this.vehicles.update(dt, this.vehicleOrders);
+      this.prof.end(P.vehicles);
+      // The hulls have moved, which is everything `pushHullEngines` reads off
+      // them at the end of the frame.
+      this.fleetStepped = true;
+    }
+    // A driver rides their hull, and AFTER it has moved (D4), so the body is
+    // never a frame behind the thing carrying it — the core rides its person
+    // the same way inside the step.
+    if (this.driving) this.player.nudgeTo(this.driving.position);
+
+    // --- what the core said ---
+    // Every death, award, flag, blast, seat and footstep of this step, in the
+    // order it happened, drawn by the one switch (`onSimEvent`) — after the
+    // fleet is posed, so a corpse thrown or a wreck named finds the world
+    // where the step left it. A round that ended on this step says so LAST,
+    // and the round-over card goes up from in here.
+    this.drainSim();
     // The drawing follows the hulls before anything reads a node — the two
-    // shadow maps' boxes and the mesh walk, both later in the frame.
-    this.vehicleViews.update();
-    this.prof.end(P.vehicles);
-    // The hulls have moved and the crews are aboard, which is everything
-    // `pushHullEngines` reads off them at the end of the frame.
-    this.fleetStepped = true;
+    // shadow maps' boxes and the mesh walk, both later in the frame — and
+    // after the events, so a gun the core fired this step has kicked.
+    if (!this.vehicles.empty) {
+      this.prof.begin(P.vehicles);
+      this.vehicleViews.update();
+      this.prof.end(P.vehicles);
+    }
+    if (!live) return false;
+
+    // What the grass bends around: the player and every body in the core's
+    // pool, assembled once — no hull, armour captures nothing.
+    this.combatants.length = 0;
+    this.combatants.push(this.player, ...this.core.live.battle.bots);
 
     // --- bots ---
-    this.prof.begin(P.bots);
-    this.battleView.beginFrame();
-    this.battle.update(dt);
     // The picture follows the fight at once, before anything reads a rig: the
     // bodies' shadow map and the mesh walk below, a ragdoll built off a bot's
-    // joints in `stepShots`.
+    // joints in `stepAftermath`.
+    this.prof.begin(P.bots);
     this.battleView.update(this.cameraSys.camera.position);
     this.spendMuzzleLightBudget(this.battleView.muzzleFlashes);
     this.prof.end(P.bots);
-    // After the bots, so a grenade thrown on this frame's think tick flies on
-    // this frame rather than sitting in the thrower's hand until the next one.
+    // The pictures of what is in the air, which the core has just moved.
     this.stepShots(dt);
-    // ...and after the grenades, because a blast kill resolves in there. The
-    // armour moved further up this method rather than just above the call, so
-    // the mine's trigger still sees where a hull IS; the ordering `stepAftermath`
-    // asks for is satisfied by both callers in different places, which is the
-    // only reason the two blocks are two.
     this.stepAftermath(dt);
     return true;
   }
@@ -8566,7 +9077,9 @@ export class Game {
     this.combatFx.update(dt);
     this.prof.end(P.combat);
     this.prof.begin(P.grenades);
-    this.grenades.update(dt);
+    // This page's grenades fly only a match's prediction; offline the core
+    // flew them in its step, and the picture reads its pool (`grenadeRead`).
+    if (this.net) this.grenades.update(dt);
     this.grenadeFx.update(dt);
     this.pushFires();
     this.prof.end(P.grenades);
@@ -8583,7 +9096,7 @@ export class Game {
    * keyed off the drums' index space (`fireSoundKey`).
    */
   private pushFires(): void {
-    this.grenades.forEachFire(this.pushFire);
+    this.simGrenades().forEachFire(this.pushFire);
   }
 
   /** `pushFires`' visitor, bound once so a frame with a fire in it mints no closure. */
@@ -8624,7 +9137,8 @@ export class Game {
    */
   private stepAftermath(dt: number): void {
     this.prof.begin(P.antiTank);
-    this.antiTank.update(dt);
+    // A match's own predicted rocket; offline the core flew them all.
+    if (this.net) this.antiTank.update(dt);
     this.antiTankFx.update();
     this.prof.end(P.antiTank);
     this.prof.begin(P.physics);
@@ -8660,7 +9174,7 @@ export class Game {
     this.updateSceneForCamera(dt, this.shadowFocus, this.player, this.combatants);
     this.zones.update(
       dt,
-      this.conquest.points,
+      this.flags.points,
       this.cameraSys.camera.position,
     );
     this.updateHud(dt, true);
@@ -8727,11 +9241,9 @@ export class Game {
    * before it — not the menu, not the build. The chip goes up because it is
    * the only sign the ring is recording and the only way off the device.
    *
-   * **The player is taken out of the fight by being DEAD, and that is the
-   * whole of it.** `buildRound` already seated nobody, so every slot on both
-   * sides is a fielded bot; a dead combatant is skipped by conquest's count,
-   * by acquisition and by every damage path, which is the state the death cam
-   * already runs the world in.
+   * **The player is not in the fight at all.** `buildRound` seated nobody in
+   * the core, so every slot on both sides is a fielded bot, and the page's own
+   * body is left dead so nothing on this side draws or offers it.
    */
   private enterBench(): void {
     const run = this.bench;
@@ -8753,6 +9265,9 @@ export class Game {
     this.deployScreen.hide();
     this.minimap.setVisible(true);
     this.player.alive = false;
+    // The fight's zero: every award and death is stamped with the core's
+    // tick less this (`FightHash`), which is the step it landed on.
+    this.benchTick0 = this.core.tick;
     this.cameraSys.reset(0);
     this.go("bench");
   }
@@ -8813,14 +9328,14 @@ export class Game {
     // carried lamp over a body nobody is standing in.
     this.shadows.updateBlobs(
       this.player,
-      this.battle.bots,
+      this.liveBots(),
       this.cameraSys.camera.position,
       this.player.floorY,
     );
     this.updateSceneForCamera(dt, this.shadowFocus, null, this.combatants);
     this.prof.end(P.camera);
     this.prof.begin(P.zones);
-    this.zones.update(dt, this.conquest.points, this.cameraSys.camera.position);
+    this.zones.update(dt, this.flags.points, this.cameraSys.camera.position);
     this.prof.end(P.zones);
     this.prof.begin(P.hud);
     this.updateHud(dt, true);
@@ -8853,12 +9368,13 @@ export class Game {
    * the fight follows from the seed, so the camera is the same on every run.
    */
   private chaseBench(run: BenchRun, script: BenchScript, dt: number): void {
-    const bots = this.battle.bots;
+    const battle = this.core.live.battle;
+    const bots = battle.bots;
     const held = run.focus >= 0 ? bots[run.focus] : null;
-    if (!held || !held.alive || this.battle.aside(held)) {
+    if (!held || !held.alive || battle.aside(held)) {
       run.focus = -1;
       for (let i = 0; i < bots.length; i++) {
-        if (bots[i].alive && !this.battle.aside(bots[i])) {
+        if (bots[i].alive && !battle.aside(bots[i])) {
           run.focus = i;
           break;
         }
@@ -8958,7 +9474,17 @@ export class Game {
         forward.z * d,
       );
     }
-    if (
+    // Offline the throw is the core's (D10, D11), from this hand and down this
+    // axis — the command's, the core reads no node — out of the pouch it
+    // counts; a refused throw costs nothing on either side. In a match the
+    // arc flies here as the thrower's prediction and is reported below.
+    if (!this.net) {
+      const cmd = this.grenadeCmd;
+      cmd.kind = this.player.throwable;
+      this.grenadeFrom.copyFromFloats(this.grenadeHand.x, this.grenadeHand.y, this.grenadeHand.z);
+      this.grenadeDir.copyFromFloats(forward.x, forward.y, forward.z);
+      if (!this.ask(cmd)) return;
+    } else if (
       !this.grenades.throwAlong(
         this.grenadeHand,
         forward,
@@ -8972,9 +9498,8 @@ export class Game {
     this.player.spendGrenade();
     // Networked: the authority throws its own copy and owns the blast. The
     // local one above still flies — it is what the thrower watches arc — but
-    // it hurts nobody, because `hittablesFor` is wired to `battle`, and in a
-    // netplay round that list is empty: the local bot pool is reset dead and
-    // never stepped. A bullet is given the roster's bodies instead
+    // it hurts nobody, because `hittablesFor` hands this page's grenades an
+    // empty list. A bullet is given the roster's bodies instead
     // (`enemyTargets`) because a shot owes the shooter an immediate tracer and
     // hitmarker; a blast owes nothing of the kind — its light, noise and
     // concussion all arrive on the server's `explode` event — so pointing this
@@ -9081,7 +9606,7 @@ export class Game {
     if (player) {
       this.shadows.updateBlobs(
         player,
-        this.battle.bots,
+        this.liveBots(),
         this.cameraSys.camera.position,
         player.floorY,
       );
@@ -9233,10 +9758,10 @@ export class Game {
     this.hud.setViewYaw(this.aimViewYaw(dying));
     this.hud.setTickets(
       [teamLook(0).name, teamLook(1).name],
-      this.conquest.tickets,
+      this.flags.tickets,
       this.player.team,
     );
-    this.hud.setFlags(this.conquest.points, this.player.team);
+    this.hud.setFlags(this.flags.points, this.player.team);
     // Null while dying: `captureStatus` asks which zone the PLAYER is standing
     // in, and a body on the ground is not standing in one — a panel counting a
     // capture nobody is contributing to is worse than no panel.
@@ -9258,7 +9783,7 @@ export class Game {
       // The cam's own bearing, so the map keeps agreeing with the picture
       // above it while the camera orbits away from the player's last heading.
       this.viewYaw(dying),
-      this.conquest.points,
+      this.flags.points,
       this.mapBodies(),
       this.player.team,
     );
@@ -9355,7 +9880,7 @@ export class Game {
   }
 
   private captureStatus(): CaptureStatus | null {
-    const p = this.conquest.pointAt(this.player.position);
+    const p = this.flags.pointAt(this.player.position);
     if (!p) return null;
     const mine = this.player.team;
     const theirs = 1 - mine;
@@ -9412,7 +9937,7 @@ export class Game {
     if (this.map) {
       this.deployScreen.show(
         this.map,
-        this.conquest,
+        this.flags,
         this.player.team,
         this.mapDef.environment,
         this.mapDef.name,
@@ -9481,13 +10006,15 @@ export class Game {
     // otherwise the ticket bar sits frozen a frame behind the result text.
     this.hud.setTickets(
       [teamLook(0).name, teamLook(1).name],
-      this.conquest.tickets,
+      this.flags.tickets,
       this.player.team,
     );
-    this.hud.setFlags(this.conquest.points, this.player.team);
+    this.hud.setFlags(this.flags.points, this.player.team);
     this.overlayT = 0;
     this.minimap.setVisible(false);
-    this.battle.reset();
+    // The bodies off the screen. The core's roster is left where the round
+    // ended — nothing steps it under this card, and the next round's
+    // `startRound` resets it — because the page writes no simulation.
     this.battleView.hideAll();
     document.exitPointerLock();
     const won = winner === this.player.team;
@@ -9504,10 +10031,10 @@ export class Game {
       winnerName: teamLook(winner).name,
       loserName: teamLook(OTHER_TEAM[winner]).name,
       playerWon: won,
-      ticketsMine: this.conquest.tickets[us],
-      ticketsTheirs: this.conquest.tickets[them],
-      flagsMine: this.conquest.flagsHeld(us),
-      flagsTheirs: this.conquest.flagsHeld(them),
+      ticketsMine: this.flags.tickets[us],
+      ticketsTheirs: this.flags.tickets[them],
+      flagsMine: this.flags.flagsHeld(us),
+      flagsTheirs: this.flags.flagsHeld(them),
       // The same rows the Tab board is drawn from — this client's ledger
       // offline and the authority's in a match — read ONCE, because the round
       // is over and nothing on this card is a live figure. SIDES, not teams:
@@ -9533,7 +10060,17 @@ export class Game {
     });
   }
 
-  /** Called from `Player.takeDamage`, whoever pulled the trigger. */
+  /**
+   * What a hit on the player looks, sounds and feels like — the vignette, the
+   * arc, the flinch, the grain's flash, the hurt sound and the rumble — and,
+   * for a killing blow, NOTHING ELSE: the death is `playerDown`'s.
+   *
+   * **No rule is left in here** (`BABYLON_EXIT.md` X2.5a D6): the ticket and
+   * the death on the board are counted where the blow landed — the core's
+   * person door offline, the authority's in a match — unconditionally, where
+   * this method's `playing` gate used to be able to drop both. Reached from
+   * `playerHit`, the one door both sides' hits come through.
+   */
   private onPlayerDamaged(
     amount: number,
     died: boolean,
@@ -9575,33 +10112,6 @@ export class Game {
       died ? haptic.deathWeak : haptic.hurtWeak,
       died ? haptic.deathMs : haptic.hurtMs,
     );
-    if (died) {
-      this.conquest.registerDeath(this.player.team);
-      // Our own row's death, offline: the victim's door, and the bot that shot
-      // us was credited at its own by `battle.onBotKill`. The row is the SLOT
-      // we are sitting in, which is the same one the board draws us on.
-      this.scores.registerDeath(this.battle.playerSlot);
-      // Who to blame, and the test is `from`. Friendly fire is excluded by
-      // construction everywhere in this game, so the side that killed a player
-      // is always the other one — every death in the game was that until the
-      // leash, which kills with nothing behind it and passes no origin. `from`
-      // is already what says "nobody shot you" two blocks up, where it decides
-      // whether there is a damage arc to draw at all.
-      //
-      // **The leash is the ONLY death without one, and that is a thing to keep
-      // true rather than a thing that is.** Burning inside a hull passed no
-      // origin once and so announced itself here as `OUT OF BOUNDS` — a death
-      // the enemy had earned, credited to the map. `wireVehicles` hands one
-      // over now (the wreck's own centre), which is the same vector the corpse
-      // is thrown by. A new way to die owes this line an origin unless nobody
-      // caused it.
-      this.hud.addKill(
-        from ? teamLook(OTHER_TEAM[this.player.team]).name : LEASH_KILLER,
-        "YOU",
-        true,
-      );
-      this.enterDying(from, amount, kind);
-    }
   }
 
   /**
@@ -9665,37 +10175,31 @@ export class Game {
   }
 
   /**
-   * A bot went down: the sound, the ticket, its line on the board and the
-   * killfeed.
+   * A bot went down, offline: the corpse, the sound and the killfeed — the
+   * core's `botDown`, raised once per bot death however it was dealt.
    *
-   * One method rather than three copies because there are now three ways to
-   * kill one — a bot's rifle, the player's rifle, and either side's grenade —
-   * and they disagree about nothing except whose name goes on the line.
-   * `byPlayer` is what separates the player's own kill from their team's, and
-   * it is the only thing the three callers pass differently.
-   *
-   * This is the VICTIM's door, so it counts the death and not the kill: the
-   * killer is credited by `creditKill` at whichever call site actually knows
-   * who they were. Every caller here raises both, one line apart.
+   * **Presentation only** (`BABYLON_EXIT.md` X2.5a C4a): the ticket, the
+   * death on the board and the killer's credit are the core's, counted where
+   * the blow landed, and reach this page as the board it draws. `byPlayer` is
+   * what separates the player's own kill from their team's on the line.
    *
    * Deliberately NOT the hitmarker or the rumble: those are about the shot
    * that landed rather than the body that fell, and they belong with whichever
-   * weapon put it there.
+   * weapon put it there (`hit`).
    */
-  private registerBotKill(bot: Bot, killer: Team, byPlayer: boolean): void {
-    // The one place all three ways a bot can die converge, so the one place
-    // the body has to be offered to the physics pool. It needs no impact
-    // vector passed down: `Bot.takeDamage` already captured where the killing
-    // blow came from, which every damage path in the game hands it.
+  private botDown(bot: Bot, killer: Team, byPlayer: boolean): void {
+    // The one place every way a bot can die converges, so the one place the
+    // body has to be offered to the physics pool. It needs no impact vector
+    // passed down: `Bot.takeDamage` already captured where the killing blow
+    // came from, which every damage path in the game hands it.
     // The bot's RIG, caught up to where the bot is this instant — the corpse is
-    // built from where its joints stand (`BattleView.corpseOf`).
+    // built from where its joints stand (`BattleView.corpseOf`). Offline that
+    // instant is the DRAIN after the call that killed it, which is the end of
+    // the step or of the player's own submit; a corpse's joints are written by
+    // nothing after its death, so the pose is the one it fell in.
     const corpse = this.battleView.corpseOf(bot);
     if (corpse) this.ragdolls.spawn(corpse, this.cameraSys.camera.position);
     this.sfx.enemyDie();
-    this.conquest.registerDeath(bot.team);
-    const slot = this.battle.bots.indexOf(bot);
-    this.scores.registerDeath(slot);
-    this.bench?.fight.death(slot);
     this.hud.addKill(
       byPlayer ? "YOU" : teamLook(killer).name,
       teamLook(bot.team).name,
@@ -9837,9 +10341,9 @@ export class Game {
     this.scoreboard.set(true, {
       map: this.mapDef.name,
       teams: [teamLook(0).name, teamLook(1).name],
-      tickets: this.conquest.tickets,
-      flags: [this.conquest.flagsHeld(0), this.conquest.flagsHeld(1)],
-      flagCount: this.conquest.points.length,
+      tickets: this.flags.tickets,
+      flags: [this.flags.flagsHeld(0), this.flags.flagsHeld(1)],
+      flagCount: this.flags.points.length,
       kills,
       score,
       playerTeam: this.player.team,
@@ -9903,21 +10407,22 @@ export class Game {
       }
       return rows;
     }
-    // Offline the whole board is one loop over the pool, the player's line
-    // included: they hold a slot like everybody else and the bot in it is
-    // benched for as long as they do (`BattleSystem.seatPlayer`), so the row
-    // that used to be pushed separately and then skipped in the loop is simply
-    // the row at their own slot. Drawing both would put a seventeenth body on a
-    // sixteen-slot board and count one that is not in the fight into the team
-    // totals.
+    // Offline the whole board is one loop over the CORE's pool and its book
+    // (`SimLive`), the player's line included: they hold a slot like
+    // everybody else and the bot in it is benched for as long as they do
+    // (`SimCore.addPlayer`), so their row is simply the row at their own slot.
+    // Drawing both would put a seventeenth body on a sixteen-slot board and
+    // count one that is not in the fight into the team totals.
     // Every offline row's ping is -1 and the board draws no column for it:
     // there is no server in a single-player round to be any distance from.
-    for (let i = 0; i < this.battle.bots.length; i++) {
-      const you = i === this.battle.playerSlot;
-      const row = this.scores.row(i);
+    const live = this.core.live;
+    const bots = live.battle.bots;
+    for (let i = 0; i < bots.length; i++) {
+      const you = i === this.simSlot;
+      const row = live.scores.row(i);
       rows.push({
         name: you ? "YOU" : callsign(i),
-        team: you ? this.player.team : this.battle.bots[i].team,
+        team: you ? this.player.team : bots[i].team,
         kills: row.kills,
         deaths: row.deaths,
         score: row.points,
@@ -9928,68 +10433,6 @@ export class Game {
     return rows;
   }
 
-  /**
-   * Somebody put a body down: the kill, and everything it earned, on their own
-   * row, OFFLINE.
-   *
-   * **The kill is counted at the killer's door and the death at the victim's,
-   * once each**, because the two are known in different places. Every death in
-   * the game already arrives somewhere — `registerBotKill` for a bot,
-   * `onPlayerDamaged` for the player — while who fired is known only to
-   * whatever pulled the trigger, and a single door would mean one of the two
-   * inventing the half it cannot see. It is also what lets a bot be credited
-   * for killing the PLAYER, which no bot-shaped kill callback could carry.
-   *
-   * Silent in a netplay round by the same rule that empties every other local
-   * count there: the board is the authority's, this is only ever the offline
-   * one, and a kill is credited to a bot the server is not simulating. Nothing
-   * gates it — the callers that could fire in a match are the ones whose local
-   * `takeDamage` returns false, so no kill is ever raised to be counted.
-   */
-  private creditKill(
-    by: Combatant | null,
-    victim: Hittable,
-    headshot = false,
-  ): boolean {
-    // WHETHER this body pays at all is `paysKiller`'s, and it is here rather
-    // than at the five doors below for the reason that function gives at
-    // length: guarded by hand at each of them, this side reached for
-    // `instanceof Bot` where the authority reached for `!armoured`, and the
-    // two are not the same question — the first also excludes a PERSON, so a
-    // bot crew crushing or shelling the player scored in a match and scored
-    // nothing offline. Every caller inherits the rule now instead of restating
-    // it, which is what stops the sixth door drifting too.
-    if (!by || !paysKiller(victim)) return false;
-    // The flag the VICTIM fell on decides whether this was an attack or a
-    // defence, and `awardKill` is where that rule lives — shared with the
-    // authority, so the two boards pay a kill the same way. A body that fell
-    // nowhere near a ring is `null` and earns the kill alone.
-    //
-    // `eyePos` rather than a body's feet because the victim is a `Hittable`
-    // here — every path that resolves a kill has one, and only some of them
-    // have a `Combatant`. It costs nothing: `pointAt` is a radius test on x
-    // and z, and a head is directly over the feet under it.
-    awardKill(
-      this.scores,
-      this.slotOf(by),
-      by.team,
-      this.conquest.pointAt(victim.eyePos),
-      headshot,
-    );
-    return true;
-  }
-
-  /**
-   * Which roster slot a body holds, or -1 for one that holds none.
-   *
-   * The player's is `BattleSystem.seatPlayer`'s and a bot's IS its index in the
-   * pool — the same identity the authority's `SimCore.slotOf` rests on,
-   * which is what lets one `ScoreBook` mean the same thing on both sides.
-   */
-  private slotOf(c: Combatant | null): number {
-    if (c === this.player) return this.battle.playerSlot;
-    return c instanceof Bot ? this.battle.bots.indexOf(c) : -1;
-  }
 
   /**
    * What a blast went off on, COPIED for `BlastDebrisSystem`, which is still
@@ -10151,11 +10594,7 @@ export class Game {
     // retires your oldest when you lay a third, so this is what a player is
     // deciding against.
     const laid =
-      id !== "mine"
-        ? 0
-        : this.net
-          ? this.net.ordnance.minesFor(this.net.slot)
-          : this.antiTank.minesFor(this.player);
+      id !== "mine" ? 0 : this.net ? this.net.ordnance.minesFor(this.net.slot) : this.simMinesLaid();
     this.hud.setAntiTank(
       laid > 0 ? `${cfg.short} · ${laid} SET` : cfg.short,
       // What is in the HANDS, which is not always what is carried: the slot

@@ -1691,6 +1691,27 @@ export class Vehicle implements Combatant, RayHull {
   }
 
   /**
+   * A POSED hull's picture of a main-gun round its SIMULATION fired somewhere
+   * else — the offline page's copy of a hull the simulation core is stepping
+   * (`BABYLON_EXIT.md` X2.5a C4a), told by the core's `hullKicked`.
+   *
+   * `fireGun`'s three facts that a hull drawn off `updateRemote` cannot work
+   * out from where it ended up: the loader's clock restarting (the HUD's
+   * `loadProgress`), the sprung body rocking off the gun's bearing, and the
+   * masts cracking. NOT the shove on `speed`, which `updateRemote` measures
+   * from the ground the real hull covered. Decides nothing — the round, its
+   * gate and the recoil the drive felt were all the simulation's.
+   */
+  mirrorShot(): void {
+    const g = this.spec.gun;
+    if (!g || !this.armed || !this.alive) return;
+    this.reloadT = g.cooldown;
+    const phi = this.shown.turretY;
+    this.springs.kick(Math.cos(phi), Math.sin(phi));
+    this.picture?.kicked();
+  }
+
+  /**
    * `from` and `kind` as `Hittable` describes them. The kind is the whole
    * reason this is not two lines: see `CONFIG.vehicles.tank.resist`.
    *

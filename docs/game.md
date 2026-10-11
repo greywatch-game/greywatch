@@ -10,7 +10,76 @@ anything proposing to make it smaller.
 The rule this file exists under is in the spine and is not repeated here:
 **systems never import each other; `Game` wires them with callbacks.** Everything
 below is a consequence of that, including the reasons a refactor keeps wanting
-to undo it.
+to undo it. **Since `BABYLON_EXIT.md` X2.5a C4a the systems that DECIDE a round
+are not among them**: offline they are the simulation core's (`src/sim/SimCore.ts`),
+as they are the authority's in a match — see "Offline, the round is the core's"
+below.
+
+## Offline, the round is the core's
+
+`Game` holds a `SimCore({ hostHoldsRespawn: true })` (`core`) and simulates no
+round of its own. **Three doors, and no fourth**:
+
+- **`ask`** submits one of the local player's acts as a `SimCommand`
+  (`src/sim/commands.ts`) — the walk every frame (`move`, after
+  `Player.update`), a round with the cone already rolled on the page's own
+  `STREAM.player` (`shot`, from the eye, the viewmodel muzzle for the tracer
+  only), a throw and a rocket from the viewmodel's hand and muzzle, a mine at
+  the `standableAt` point, the kit and the deploy, a mount, a crossing (a
+  `mount` naming the hull the player is in), a dismount, the hull's guns, and
+  the C4a-only `driveInput`/`gunOrder` that let the core step the player's hull
+  from raw input. Every one is trusted; the core still refuses what its own
+  state makes impossible.
+- **`core.step(dt)`** once a frame, in `updateWorld` — in every state that
+  steps the world (`playing`, `dying`, `bench`) and none that holds it.
+- **`drainSim`** after every call made on the core, which hands every event the
+  core wrote to **`onSimEvent`**, one switch, in emission order. It is
+  presentation only — the tracer, the corpse, the killfeed line, the marker,
+  the blast, the fire's light, the pane, the seat — and **wherever a match has
+  the same news it ends in the method `onNetEvent`'s arm ends in**
+  (`playerHit`/`playerDown`, `seatAnswer`, `playerSpawned`, `roundPassed`,
+  `flagCaptured`, `breakPane`, `fireLit`), so offline and online cannot drift
+  for the player.
+
+**The frame's order offline** (`updateWorld`): `BattleView.beginFrame` → the
+core's step → this page's fleet POSED off the core's (`syncFleet` with
+`FleetMirror`, `vehicles.update` answering `remoteFor` for every hull) → the
+driver carried after his hull (D4) → `drainSim` → `VehicleViews.update` →
+`BattleView.update` and the flash budget → `stepShots` → `stepAftermath`. The
+fleet is posed BEFORE the drain so every event that names a hull finds it
+where the step left it; the views update AFTER it so a gun the core fired this
+step has kicked (`Vehicle.mirrorShot`).
+
+**The page's own `Player` is the prediction a match's client runs**: its
+sweep, its ground, its stance, its regen for the HUD and the camera. Its health
+is ASSIGNED from the core's `damaged` (`applyServerHealth`), its death is the
+core's (a leash expiry included, D3), and its body is put in the world by the
+core's `spawned` answer to a `deploy` — which, with no respawn clock of the
+core's own to wait for, is honoured at submit (D21) through the same
+`deployPerson` door the reinforcement pass uses.
+
+**What the page's VIEWS read of the core** — the bots `BattleView`'s rigs
+follow, the flags and the tickets the gauges draw, the pools `GrenadeFx` and
+`AntiTankFx` pose, the crew table the seat prompts ask, the book the board is
+drawn from — goes through `core.live`, **temporary and enumerated**
+(`SimLive`): C5 replaces each member with a mirror off the frame and the ring,
+and `live` goes. Which roster, which flags and which pools a view reads is
+asked through one accessor each (`rosterRead`, `flags`, `simGrenades`,
+`simAntiTank`), the core's offline and the page's own netplay mirror or
+prediction in a match.
+
+**The page keeps only its netplay prediction systems** — `combat`, `grenades`,
+`antiTank`, the fleet, `glass` and `conquest` as the wire's mirror — and steps
+none of them offline but the fleet (posed) and the glass (the core's `glass`
+applied). There is no `BattleSystem`, `VehicleCrew` or `ScoreBook` on the page.
+
+**The core's world is the page's map as DATA**: `buildRound` hands it
+`collisionOf(map)` (the bake's own read of the build, `src/world/collision.ts`)
+with the floor, the tier, the per-map pool fielded whole and the round's seed,
+inside the building card's freeze. Per-map pool, because the slot layout IS
+the fight: the benchmark's seven fight hashes are the ones the page's own
+simulation fought. `teardownMap` releases it (`SimCore.releaseWorld`), so the
+menu, the editor and a match hold no second world.
 
 ## The constructor takes what it cannot build, and stays SYNCHRONOUS
 
@@ -98,7 +167,8 @@ nothing throws. **Anything new that consumes a `GameMap` or an `EnvironmentSpec`
 goes in `installMap`.** What stays with the callers is what they genuinely
 disagree about: the round applies the environment and repaints the sky while the
 editor drives `applyEnvironment` itself so it can toggle its work light, and the
-round alone owns what is about a *fight* — battle, conquest, flag markers, minimap.
+round alone owns what is about a *fight* — the core's round, flag markers,
+minimap.
 
 **A simulation and its view are handed the map on adjacent lines, and a view
 is handed only what its own picture reads.** The split is `CLAUDE.md`'s
@@ -115,15 +185,18 @@ with `RagdollSystem`; and `VehicleViews` builds one view per hull right after
 `vehicles.build`, by hardstanding. **Two views take nothing from a map**:
 `AntiTankFx` draws its simulation's pools and nothing else, and `PlayerView`
 is the viewmodel on the camera. `BattleView`'s rigs are the ROSTER's, not the
-map's: `buildRound` resizes them (`syncPool`) and every `battle.reset` owes a
-`hideAll` beside it.
+map's — offline the core's, none in a match (`rosterRead`): `buildRound`
+resizes them (`syncPool`) after the core's `startRound`, and every reset of
+the round owes a `hideAll` beside it.
 
 **Its disposal half is a method of its own, `teardownMap`, and the MENU calls it
 alone.** It puts every system `installMap` hands a map to back as it was at
 boot: the map disposed and `Game.map` null, the shots' tracers and marks
 (`CombatFx.clearTransient`), both ordnance pools AND their pictures
 (`GrenadeFx`, `AntiTankFx`), the fleet's views (`VehicleViews`, before the
-fleet they draw), the fleet, crews and rotor rings let go, the water and grass disposed, the reflection probes parked, the mote field
+fleet they draw), the fleet and rotor rings let go, the simulation core's
+whole world released (`SimCore.releaseWorld` — its map, fleet, crews and
+everything in the air), the water and grass disposed, the reflection probes parked, the mote field
 stopped, both shadow maps' casters and the lamps' atlas emptied, the bodies' blob shadows hidden, the traced
 bounce's buffers dropped, the candidate list and the physics world cleared (with
 their corpses, shards and rubble), and the fires' voices and the storm's thunder
@@ -137,7 +210,7 @@ with nothing standing, which the boot and a build that failed its floor fetch
 both rely on.
 
 **It also lets go of the map's DATA, and that half is proved rather than
-reviewed.** `BattleSystem`'s nav and cover, `Player`'s ground, the `rays` eight
+reviewed.** The core's world (released, above), `Player`'s ground, the `rays` eight
 systems and views were handed, `GlassSystem`'s panes and `GlassFx`'s meshes, the deploy
 screen's and the minimap's copies, `MapBuilder`'s own build scratch and `WorldCulling`'s
 candidate array all held the last map through the menu; none of them was
@@ -198,8 +271,8 @@ day to attribute.
 
 `updateWorld` is the offline round and `updateNetWorld` is the client's half of
 a networked one, and the second is not a subset of the first — it runs `net`
-where the other runs `conquest` and the bots, and it poses the fleet off the
-wire rather than stepping a crew. What they DO share is ten system updates
+where the other steps the core, and it poses the fleet off the wire where the
+other poses it off the core. What they DO share is ten system updates
 that are identical on both sides, in the same relative order, and those were
 written out twice.
 
@@ -212,15 +285,16 @@ in the air; each of those reads as a bug in that system rather than as a missing
 line in a method nobody was looking at. **Anything new that both worlds owe per
 frame goes in one of the two, and a system that only one of them owes goes at
 its own call site with the reason written there.** The bots' picture is the
-worked example: `BattleView.update` runs right after `battle.update` in
-`updateWorld` alone (a match steps no local bot), before anything reads a rig —
+worked example: `BattleView.update` runs right after the core's step and its
+drain in `updateWorld` alone (a match draws no local bot), before anything
+reads a rig —
 the bodies' shadow map, the mesh walk, a ragdoll built off a bot's joints in
-`stepShots` — and `BattleView.hideAll` sits beside every `battle.reset`, so a
-reset round shows no body for a frame. The body draw distance `installMap`
+`stepShots` — and `BattleView.hideAll` sits beside every reset of the round,
+so a reset round shows no body for a frame. The body draw distance `installMap`
 pushes goes to `BattleView`, `RagdollSystem` and `NetRoster` together. **The
 fleet's picture is the same shape on BOTH sides**: `VehicleViews.update` runs
-right after `vehicles.update` at each of its two call sites — after
-`crushSweep` offline, after `syncNetVehicles` and the step in a match — before
+right after `vehicles.update` at each of its two call sites — after the
+core's drain offline, after `syncNetVehicles` and the step in a match — before
 anything reads a node (the two shadow maps' boxes are off each view's body);
 `installMap` builds the views right after `vehicles.build`, one per hull by
 hardstanding, and `teardownMap` takes them down before the fleet. What a view
@@ -228,15 +302,16 @@ must hear between two of those updates — a placing, a shot, each step's belts
 and mass, and a wreck (the battle, the grenades and the rockets that wreck a
 hull all step after the view's update) — it is told as it happens, through the
 hull's `HullPicture`. A bot's rig is the same case once: a body put back and
-killed inside one `battle.update` reaches `BattleView.corpseOf` before
-`BattleView.update` has seen its new life, so `BotRig.catchUp` re-derives the
-life itself before the ragdoll takes the joints.
+killed inside one core step reaches `BattleView.corpseOf` (off the core's
+`botDown`, at the drain) before `BattleView.update` has seen its new life, so
+`BotRig.catchUp` re-derives the life itself before the ragdoll takes the joints.
 
 **They are TWO blocks rather than one because the armour goes between them, and
-it goes in a different place on each side**: offline the fleet is stepped before
-the bots think, so a hull that has just pulled across a street breaks the
-sightline on the frame it visibly blocked it; in a match it is posed from the
-wire after the shots, because none of it decides anything. What both orders
+it goes in a different place on each side**: offline the core steps the fleet
+before its bots think (so a hull that has just pulled across a street breaks the
+sightline on the frame it visibly blocked it) and the page poses its copy before
+the drain; in a match it is posed from the wire after the shots, because none
+of it decides anything. What both orders
 guarantee is the only thing `stepAftermath` asks of a caller — that the hulls
 have already moved this frame, since a mine's trigger is a distance test against
 where a hull IS. **`stepAftermath` is also now the ONE place the physics world

@@ -20,10 +20,14 @@
  *
  * **It lives in `src/sim/` rather than `server/` because it is not the
  * server's** (`BABYLON_EXIT.md` X2.5a): the core reads no clock and draws no
- * seed of its own, so a host — `Match`, `simulate`, and from X2.5a C4a the
- * offline page — hands it the round's seed in `RoundSpec`, its world as the
- * data `buildSimWorld` takes, and its wall-clock anchor through `anchor` and
- * `drop`. Nothing in this directory may import from `server/`.
+ * seed of its own, so a host — `Match`, `simulate`, and since X2.5a C4a the
+ * offline page (`core/Game.ts`, which simulates no round of its own) — hands
+ * it the round's seed in `RoundSpec`, its world as the data `buildSimWorld`
+ * takes (the page's is `collisionOf` its own build), and its wall-clock anchor
+ * through `anchor` and `drop`. Nothing in this directory may import from
+ * `server/`. The page's VIEWS read this core's live objects through `live`
+ * (`SimLive`), which is temporary and enumerated until C5's mirrors, and the
+ * page lets the world go between rounds with `releaseWorld`.
  *
  * **Everything it has to SAY leaves through one event ring and nothing else**
  * (`src/sim/events.ts`, `BABYLON_EXIT.md` X2.5a C2). There is no outward
@@ -60,7 +64,7 @@
  * it, which is what makes Sarab twenty-four a side in a match and every other
  * map eight. See `server/Roster.ts` for the whole argument, including why
  * human capacity stays at sixteen whatever the map fields. A host whose pool
- * is the map's own (the offline page, from C4a-2) states it and fields all of
+ * is the map's own (the offline page, since C4a) states it and fields all of
  * it. Either way `startRound` re-benches every seated person over the bot in
  * their slot itself, last.
  *
@@ -68,7 +72,7 @@
  * (`src/sim/commands.ts`), applied on arrival, its results written to the
  * ring. `Match` validates a client's claim (the rate buckets, the cones, the
  * slips, the movement and drive validators, the corrections) and submits
- * what it accepts; the page will submit its player's acts trusted. What
+ * what it accepts; the offline page submits its player's acts trusted. What
  * DECIDES is here, once, for both: whose body moves, which round is resolved
  * against what, the pouches, the seat policy (`mount`/`dismount` around
  * `seat`) and when a person comes back in. The `SimCoreOptions` say how the
@@ -146,6 +150,7 @@ import type { GameMap } from "../world/MapBuilder";
 import type { MapDef } from "../world/maps";
 import type { MapCollision } from "../world/collision";
 import type { Heightfield } from "../world/layout";
+import { TerrainField } from "../world/TerrainField";
 import { LagComp } from "./LagComp";
 import { SimPlayer } from "./SimPlayer";
 import { buildSimWorld } from "./simWorld";
@@ -238,6 +243,45 @@ export interface SimCoreOptions {
    * so the option set is the one the hosts will pass.
    */
   timing?: boolean;
+}
+
+/**
+ * **TEMPORARY — `BABYLON_EXIT.md` X2.5a C4a to C5.** The core's LIVE objects
+ * the offline page's VIEWS read, and every one of them, enumerated so that C5
+ * — which replaces each with a mirror off the `SimFrame` and the event ring —
+ * has a list to delete rather than a search to run. Nothing on the page may
+ * write through any of it: the page changes the simulation through `submit`
+ * and nothing else, and these are read for drawing.
+ *
+ * What each is read FOR, which is what C5 owes a mirror of:
+ *
+ * - `battle` — the pool's bots (every `BotRig` follows one, and the minimap,
+ *   the blob shadows, the sounds, the bench's spectator and the scoreboard's
+ *   names read them), `poolVersion` (the rigs' rebuild), `aside` (the
+ *   profiler's body count, the bench's spectator) and `hittablesAgainst` (the
+ *   aim assist's targets).
+ * - `conquest` — the flags and the tickets every gauge draws, `pointAt` (the
+ *   capture panel), and the deploy screen's offer (`deployOptions`,
+ *   `spawnIndex`, `pointById`), handed to it whole.
+ * - `vehicles` — the hulls, which the page's own fleet is posed off
+ *   (`FleetMirror`).
+ * - `crew` — `crewOf`, which chair a BOT holds, for the seat prompts.
+ * - `grenades` — the flights and the fires `GrenadeFx` poses, `forEachFire`
+ *   for each fire's light and voice.
+ * - `antiTank` — the rockets and mines `AntiTankFx` poses, `minesFor` for the
+ *   HUD's laid count.
+ * - `scores` — the board's rows.
+ * - `players` — the person a `minesFor` is asked about.
+ */
+export interface SimLive {
+  readonly battle: Pick<BattleSystem, "bots" | "poolVersion" | "aside" | "hittablesAgainst">;
+  readonly conquest: ConquestSystem;
+  readonly vehicles: Pick<VehicleSystem, "hulls">;
+  readonly crew: Pick<VehicleCrew, "crewOf">;
+  readonly grenades: Pick<GrenadeSystem, "flights" | "fireSlots" | "forEachFire">;
+  readonly antiTank: Pick<AntiTankSystem, "rocketSlots" | "mineSlots" | "minesFor">;
+  readonly scores: Pick<ScoreBook, "row">;
+  readonly players: ReadonlyMap<number, SimPlayer>;
 }
 
 export class SimCore {
@@ -477,6 +521,64 @@ export class SimCore {
     this.events.drainInto(out);
     this.pendingRound = -1;
     this.personDeaths.clear();
+  }
+
+  /**
+   * The core's live objects, for the offline page's views — **temporary**,
+   * and the whole list of them; see `SimLive`. Built once: every member is a
+   * field that never changes identity.
+   */
+  get live(): SimLive {
+    return (this.liveView ??= {
+      battle: this.battle,
+      conquest: this.conquest,
+      vehicles: this.vehicles,
+      crew: this.crew,
+      grenades: this.grenades,
+      antiTank: this.antiTank,
+      scores: this.scores,
+      players: this.players,
+    });
+  }
+  private liveView: SimLive | null = null;
+
+  /**
+   * Lets go of the standing round's world — the host's teardown, for a host
+   * that will not start another one at once (the offline page going back to
+   * its menu, or into a match or the editor, none of which steps this core).
+   *
+   * `startRound`'s first half without its second: every seated person put
+   * back on foot before the fleet under them goes, the crews disbanded, the
+   * hulls out of the fight and disposed, nothing left in the air, every
+   * system's handle on the map's queries dropped, and the map itself. The
+   * people stay seated in their SLOTS — a host that is done with them says so
+   * with `removePlayer`. After this `step` refuses (there is no map) and so
+   * does every `submit` but a `kit` or a `deploy`, until `startRound`.
+   */
+  releaseWorld(): void {
+    for (const player of this.players.values()) {
+      if (player.seat >= 0) this.seat(player, null);
+    }
+    this.crew.clear();
+    this.crew.setMap(null);
+    this.driven.clear();
+    this.laid.clear();
+    this.steered.clear();
+    this.ordered.clear();
+    for (const tank of this.vehicles.hulls) this.battle.removeHuman(tank);
+    this.vehicles.dispose();
+    this.grenades.reset();
+    this.grenades.setWorld(null);
+    this.grenades.setTerrain(new TerrainField());
+    this.antiTank.reset();
+    this.antiTank.setWorld(null);
+    this.antiTank.setTerrain(new TerrainField());
+    this.combat.setWorld(null);
+    this.glass.clearMap();
+    this.battle.reset();
+    this.battle.clearMap();
+    this.map?.dispose();
+    this.map = null;
   }
 
   /**

@@ -717,9 +717,12 @@ is one machine's:
   `g.vehicleViews.update()` before reading a joint or photographing — the
   view of a hull is `g.vehicleViews.views.find((v) => v.hull === tank)`.
   **The signature takes a LOOKUP rather than a hull and a stick**, because a bot
-  crew can be driving one hull while the player drives another: write the sticks
-  into `g.drive` for the hull `g.driving` points at, and everything else is
-  answered by `g.crew`. Two things that have already cost time: **do not read `speed` after
+  crew can be driving one hull while the player drives another. **Offline the
+  fleet that decides is the simulation core's** (`g.core.vehicles`, stepped
+  inside `g.core.step`; `BABYLON_EXIT.md` X2.5a C4a) and `g.vehicles` is the
+  page's copy POSED off it — so drive the player's hull by submitting
+  `driveInput` (`g.ask(g.driveCmd)` with the sticks written in, or hold the keys),
+  and everything else is answered by the core's crew (`g.core.crew`). Two things that have already cost time: **do not read `speed` after
   a phase with the throttle at zero** (the brake is 9 m/s², so a second of
   turning takes 11 down to 2 and it looks like a stall that is not there), and
   **do not call `spawnPlayer()` if you are placing the camera by hand** —
@@ -739,8 +742,9 @@ is one machine's:
   each way. **Take that delta modulo 2 pi before believing it**: the angle is
   wrapped, so a track running backwards reads as a large positive step (5.104
   is -1.179) rather than as a negative one.
-- **The ANTI-TANK kit is easiest to drive through `g.antiTank`, and the trap is
-  the SAME world-matrix one the fleet has.** `g.antiTank.launch(from, dir, team,
+- **The ANTI-TANK kit is easiest to drive through its system — offline the
+  core's, `g.core.antiTank` (`g.antiTank` is a match's prediction only) — and
+  the trap is the SAME world-matrix one the fleet has.** `g.antiTank.launch(from, dir, team,
   by)` and `g.antiTank.place(at, team, by)` are the real entry points, and
   `g.antiTank.update(1/60)` in a `while (rockets.some(r => r.live))` loop flies a
   rocket home inside one synchronous `evaluate`. **The world-matrix trap this
@@ -799,21 +803,22 @@ is one machine's:
   in the same loop as the real comparison. The two-arm version of the above
   reported 3 m divergences that were entirely the harness's own doing, and the
   control is the one line that would have said so immediately.
-- **A BOT CREW is stepped with `g.crew.update(dt)` immediately before the
+- **A BOT CREW is stepped with `crew.update(dt)` immediately before the
   fleet**, in that order and never the other way round — it writes the drive
-  input `vehicles.update` then consumes, exactly as `updateDriver` writes the
-  player's. Four things that have already cost time:
+  input `vehicles.update` then consumes. Offline both are the simulation
+  core's (`g.core.crew`, `g.core.vehicles`, in `g.core.step`'s own order); read
+  `g.crew` below as `g.core.crew`. Four things that have already cost time:
   - **Boarding is on its own 1.5 s clock** (`crew.boardDelay`), so a script that
     spawns a bot beside a hardstanding and steps two frames sees nothing. Step
     ~2 s of game time, or read `g.crew.crews.length` rather than asserting on
     the first tick. The bot has to be ALIVE, of its hull's own team, within
-    `crew.boardRadius` and not `g.battle.aside(...)` — and `seatPlayer` has
-    already benched the lowest slot on the player's side, so picking
+    `crew.boardRadius` and not `g.core.battle.aside(...)` — and the player's
+    `addPlayer` has already benched the lowest slot on their side, so picking
     `bots.find(b => b.team === 0)` hands you a benched body that can never crew.
   - **A driver steers on `Bot.objective`, which is a squad ORDER and is empty
     until `battle.update` has planned one.** A crew with no objective holds
     station and fights, which is correct and looks exactly like a driver that is
-    broken. Set `bot.objective = g.conquest.points[i].def.id` by hand (it is
+    broken. Set `bot.objective = g.core.conquest.points[i].def.id` by hand (it is
     `def.id`, not `id`) or step `battle.update` for a second first.
   - **Ask line of sight through the crew's own door, not `battle.losBetween`.** A
     hull's cupola sits five centimetres above the top of its own collider, so
@@ -994,11 +999,11 @@ is one machine's:
   `src/math`'s: hand them to a Babylon method through `copyFromFloats`, never
   `copyFrom`, or it writes NaN.
 - **`bot.takeDamage(999, ...)` kills a bot and produces NO RAGDOLL**, and the
-  result reads as the physics being broken. `Game.registerBotKill` is the one
-  place all three death paths converge and the one place the body is offered to
-  the pool, so a direct `takeDamage` leaves a dead bot whose rig is simply
-  switched off — `ragdolling` false, the torso never falls, nothing drawn. Call
-  `g.registerBotKill(victim, team, true)` immediately after, which offers the
+  result reads as the physics being broken. `Game.botDown` — the page's half of
+  the core's `botDown` event — is the one place the body is offered to the pool,
+  and a direct `takeDamage` raises no event, so it leaves a dead bot whose rig is
+  simply switched off — `ragdolling` false, the torso never falls, nothing
+  drawn. Call `g.botDown(victim, team, true)` immediately after, which offers the
   pool the bot's RIG caught up to it (`g.battleView.corpseOf(victim)` — the
   `Bot` itself is not a `RagdollSubject`). With it: `ragdolling` (on the
   `BotRig`) true, the rig stays ENABLED for the life of the corpse

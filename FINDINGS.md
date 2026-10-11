@@ -2279,9 +2279,21 @@ body on foot) for the same ordering while there.
 
 ## 55. Offline, where the player's grenade and rocket LEAVE FROM is read off the viewmodel's nodes
 
-**Status:** open. Found during `BABYLON_EXIT.md` X2.2, which took every other
-node read out of the simulation; pre-existing and deliberately left, since
-X2.2's oracle is the authority's fight hash and this is client-only.
+**Status:** BOUNDARY SETTLED at `BABYLON_EXIT.md` X2.5a C4a; the analytic
+start point is still open. Offline the round is the simulation core's now, and
+the core reads no node: the throw's and the rocket's start points (and the
+mine's `standableAt` point) are command INPUTS (`GrenadeCommand.origin`,
+`OrdnanceCommand.origin`) the page computes exactly as before — bit-identical
+offline, and the same field a match already gates as a claim. What is left
+below is whether to state them analytically instead, which is now a change to
+what the page submits and nothing else. Found during X2.2, which took every
+other node read out of the simulation.
+
+**A third drawing deciding an outcome was found beside it, and C4a fixed it
+(D8):** offline, bots HEARD the player's rifle at the viewmodel's MUZZLE
+(`battle.hearGunshot(muzzle, …)`), where the authority hears it at the eye. The
+offline round now hears it where the core resolves it — the command's eye
+origin — and the muzzle reaches nothing but the tracer (`ShotCommand.muzzle`).
 
 **Derived from the code:** `Game.releaseGrenade` starts a throw at
 `playerView.model.throwHandWorld()` and `Game.launchRocket` starts a rocket at

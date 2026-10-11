@@ -364,10 +364,14 @@ frame                       the whole tick, wall to wall
 │  ├─ driver / onFoot       whichever half of a body's frame this is
 │  ├─ world                 updateWorld entire
 │  │  ├─ net                updateNetWorld — a match's dressing
-│  │  ├─ conquest           flags, tickets, the combatant list
-│  │  ├─ vehicles           crews, hulls, the tracks' sweep
-│  │  ├─ bots               battle.update + the muzzle-light budget
-│  │  ├─ combat, grenades, antiTank
+│  │  ├─ (the core's step)  OFFLINE since X2.5a C4a: SimCore.step, one call,
+│  │  │                     UNBRACKETED inside `world` until C6 files its own
+│  │  │                     timing — so `conquest` is not entered offline
+│  │  ├─ conquest           flags, tickets, the combatant list (unused offline)
+│  │  ├─ vehicles           offline the page's fleet POSED off the core's and
+│  │  │                     its views; in a match the wire's posing
+│  │  ├─ bots               BattleView.update + the muzzle-light budget
+│  │  ├─ combat, grenades, antiTank   the pictures (and a match's prediction)
 │  │  └─ physics            Havok and its three clients
 │  ├─ camera                the eye, the lights, the chase cam
 │  │  └─ localShadows       which lamps cast, their proxies packed (the passes
