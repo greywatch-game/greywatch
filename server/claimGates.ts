@@ -26,8 +26,7 @@
  * Must never: allocate (a firefight calls these per round), read anything but
  * its arguments, or decide a policy — a size, a weapon, a seat.
  */
-import { Vector3 } from "@babylonjs/core";
-import type { Vector3Like } from "../src/math";
+import { Vector3, type Vector3Like } from "../src/math";
 import type { Vec3 } from "../src/net/protocol";
 
 /**

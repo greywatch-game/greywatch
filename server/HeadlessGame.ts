@@ -7,7 +7,9 @@
  * here, and `ConquestSystem.update` runs BEFORE `BattleSystem.update` so a
  * bot's think tick sees this frame's flag ownership.
  * Invariants: NOTHING here may render, and nothing may reach a canvas — see
- * `server/README.md`. `GrenadeSystem` and `AntiTankSystem` are here as the
+ * `server/README.md`. **Every vector here is `src/math`'s**, as every system
+ * this file builds is: the NullEngine scene exists for `buildServerWorld`'s
+ * collider meshes alone, and both go at `BABYLON_EXIT.md` X2.3. `GrenadeSystem` and `AntiTankSystem` are here as the
  * SIMULATIONS they are — where a grenade or a rocket goes and whom it hurts
  * is a rule and belongs to the authority — and their pictures, `GrenadeFx`
  * and `AntiTankFx`, are never built on this side (`BABYLON_EXIT.md` X2.2).
@@ -34,12 +36,12 @@
  * itself. That pair is the whole of spawn selection on this side — see
  * `docs/multiplayer.md`.
  */
-import { Scene, Vector3 } from "@babylonjs/core";
+import { Scene } from "@babylonjs/core";
 // The `.js` is required and must stay: `@babylonjs/core` declares no `exports`
 // map, and the null engine is not in the package barrel.
 import { NullEngine } from "@babylonjs/core/Engines/nullEngine.js";
 import { CONFIG } from "../src/config";
-import type { Vector3Like } from "../src/math";
+import type { Vector3, Vector3Like } from "../src/math";
 import { Bot } from "../src/entities/Bot";
 import type { Combatant, Team } from "../src/entities/Combatant";
 import type { WeaponSetup } from "../src/entities/weapons";

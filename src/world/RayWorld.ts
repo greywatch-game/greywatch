@@ -129,8 +129,8 @@ const COINCIDENT = 1e-4;
  *
  * `V` is whose vectors `point` and `normal` are. A cast writes them through
  * `set` and nothing else, so it fills either library's; `newRayHit` makes
- * ours, and a caller still reading them with Babylon's methods keeps one made
- * by `src/math/babylon.ts`'s `babylonRayHit` instead.
+ * ours, and a caller still reading them with Babylon's methods writes its own
+ * literal of Babylon's (`CaptureZoneSystem`'s `MOUNT_HIT`, the last one).
  */
 export interface RayHit<V extends Vector3Ref = Vector3> {
   /** Metres along the ray. */

@@ -11,7 +11,7 @@
  * load, and every recoil, bleed and reload timer in `CONFIG` is written against
  * real seconds.
  */
-import { Vector3 } from "@babylonjs/core";
+import { Vector3 } from "../src/math";
 import type { WebSocket } from "ws";
 import {
   encode,

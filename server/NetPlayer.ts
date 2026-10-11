@@ -18,10 +18,9 @@
  * ordinary. See `docs/multiplayer.md` for the trade that was taken and why
  * input replay was not.
  */
-import { Vector3 } from "@babylonjs/core";
 import { CONFIG } from "../src/config";
 import type { Combatant, Team } from "../src/entities/Combatant";
-import type { Vector3Like } from "../src/math";
+import { Vector3, type Vector3Like } from "../src/math";
 import { HealthRegen } from "../src/entities/HealthRegen";
 import { easeStance, stanceCentre, stanceEye } from "../src/entities/stance";
 import { DRIVER, type CrewSeat } from "../src/entities/hullSeats";

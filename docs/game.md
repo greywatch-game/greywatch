@@ -89,7 +89,8 @@ place.
 starting and an editor rebuild — go through it. It disposes the standing map,
 builds `this.mapDef`, and hands the result to every system that reads geometry or
 environment off it: shadows (casters, key light, fog range), atmosphere, water,
-grass, the player's terrain, the grenade pool, the physics body. It was once two
+grass, the player's terrain, the grenade pool, the physics body — and every
+simulation's PICTURE beside it (below). It was once two
 copies that had drifted apart, and the failure is silent: a system added to the
 round's copy and forgotten in the editor's keeps a cached pointer into a *disposed*
 map, so the editor renders last build's water over this build's terrain and
@@ -99,10 +100,28 @@ disagree about: the round applies the environment and repaints the sky while the
 editor drives `applyEnvironment` itself so it can toggle its work light, and the
 round alone owns what is about a *fight* — battle, conquest, flag markers, minimap.
 
+**A simulation and its view are handed the map on adjacent lines, and a view
+is handed only what its own picture reads.** The split is `CLAUDE.md`'s
+("Ownership and wiring"): the simulation owns the state on `src/math`, the view
+reads it and never writes it, and the authority builds the simulations alone —
+so every view's line here has no twin in `HeadlessGame`. `CombatFx` takes
+`map.rays` (its `drawRounds` casts for itself); `GrenadeFx` takes `map.rays`,
+the terrain and the environment (a fire's flames stand on their own floor
+probe, and the map decides what colour a blast's dust is); `GlassFx` takes the map,
+whose merged glazing it collapses; `BattleView` takes the body draw distance
+with `RagdollSystem`; and `VehicleViews` builds one view per hull right after
+`vehicles.build`, by hardstanding. **Two views take nothing from a map**:
+`AntiTankFx` draws its simulation's pools and nothing else, and `PlayerView`
+is the viewmodel on the camera. `BattleView`'s rigs are the ROSTER's, not the
+map's: `buildRound` resizes them (`syncPool`) and every `battle.reset` owes a
+`hideAll` beside it.
+
 **Its disposal half is a method of its own, `teardownMap`, and the MENU calls it
 alone.** It puts every system `installMap` hands a map to back as it was at
-boot: the map disposed and `Game.map` null, the fleet's views (`VehicleViews`,
-before the fleet they draw), the fleet, crews and rotor rings let go, the water and grass disposed, the reflection probes parked, the mote field
+boot: the map disposed and `Game.map` null, the shots' tracers and marks
+(`CombatFx.clearTransient`), both ordnance pools AND their pictures
+(`GrenadeFx`, `AntiTankFx`), the fleet's views (`VehicleViews`, before the
+fleet they draw), the fleet, crews and rotor rings let go, the water and grass disposed, the reflection probes parked, the mote field
 stopped, both shadow maps' casters and the lamps' atlas emptied, the bodies' blob shadows hidden, the traced
 bounce's buffers dropped, the candidate list and the physics world cleared (with
 their corpses, shards and rubble), and the fires' voices and the storm's thunder
@@ -116,8 +135,8 @@ with nothing standing, which the boot and a build that failed its floor fetch
 both rely on.
 
 **It also lets go of the map's DATA, and that half is proved rather than
-reviewed.** `BattleSystem`'s nav and cover, `Player`'s ground, the `rays` six
-systems were handed, `GlassSystem`'s panes and `GlassFx`'s meshes, the deploy
+reviewed.** `BattleSystem`'s nav and cover, `Player`'s ground, the `rays` eight
+systems and views were handed, `GlassSystem`'s panes and `GlassFx`'s meshes, the deploy
 screen's and the minimap's copies, `MapBuilder`'s own build scratch and `WorldCulling`'s
 candidate array all held the last map through the menu; none of them was
 stepped, drawn or heard there, so what they cost was memory — the whole map,

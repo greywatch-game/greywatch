@@ -3,7 +3,7 @@
  * place a value made by one is handed to code still written against the other
  * goes through a function here, so the crossings can be found by one import
  * and counted down to none.
- * Owns: `toBabylon` and `babylonRayHit`. Owns NO state.
+ * Owns: `toBabylon`. Owns NO state.
  *
  * **Deleted at X6.1** (`BABYLON_EXIT.md`), with Babylon; it is the one file
  * under `src/math/` that imports `@babylonjs/core`, and `index.ts` does not
@@ -22,7 +22,6 @@
  * Babylon vector satisfies as it is.
  */
 import { Vector3 as BabylonVector3 } from "@babylonjs/core";
-import type { RayHit } from "../world/RayWorld";
 import type { Vector3Like } from "./vector.ts";
 
 /**
@@ -31,19 +30,4 @@ import type { Vector3Like } from "./vector.ts";
  */
 export function toBabylon(v: Vector3Like, into = new BabylonVector3()): BabylonVector3 {
   return into.copyFromFloats(v.x, v.y, v.z);
-}
-
-/**
- * `newRayHit`, with BABYLON vectors in it — for a system that reads a hit's
- * `point` and `normal` with Babylon's methods. `RayWorld` writes them through
- * `set`, which is safe on either library's.
- */
-export function babylonRayHit(): RayHit<BabylonVector3> {
-  return {
-    distance: 0,
-    point: new BabylonVector3(),
-    normal: new BabylonVector3(0, 1, 0),
-    surface: "hard",
-    hull: null,
-  };
 }

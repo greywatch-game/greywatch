@@ -334,9 +334,9 @@ export class CombatSystem {
    * A hitscan shot. Used by the player and by every bot — same ray, same
    * spread model, same tracer; only the target list and the origin differ.
    *
-   * Every vector it is handed is read through its FIELDS — the camera's, a
-   * bot's eye and a hull's muzzle are still Babylon's — and every vector it
-   * makes is `src/math`'s.
+   * Every vector it is handed is read through its FIELDS — the camera's and
+   * the viewmodel's muzzle are still Babylon's — and every vector it makes
+   * is `src/math`'s.
    *
    * `targets` is whatever the shooter is allowed to hit, so friendly fire is
    * excluded by construction rather than by a team check in here.

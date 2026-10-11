@@ -30,7 +30,9 @@ server/               # The authoritative match server. Node, NullEngine, no
   HeadlessGame.ts     #   The simulation: the server's answer to core/Game.ts,
                       #   wired by the same rules. Owns the armour too — the
                       #   fleet, the bot crews and the AT kit — plus `seat`,
-                      #   which is `Game.mount`/`clearVehicle` as one method
+                      #   which is `Game.mount`/`clearVehicle` as one method.
+                      #   Builds the SIMULATIONS only, never a view; its
+                      #   NullEngine scene is `buildServerWorld`'s alone
   NetPlayer.ts        #   A connected human as the simulation sees one — the
                       #   only position anything on the server trusts
   world.ts            #   Rebuilds the solid world from the baked boxes: the
@@ -393,10 +395,9 @@ src/
                         #   ours handed to a BABYLON method reads `_x` and gets
                         #   NaN — the header says which way is safe
     color.ts            # Color3 and Color4
-    babylon.ts          # THE crossing into Babylon's math (toBabylon, and
-                        #   babylonRayHit for a system still reading a hit
-                        #   with Babylon's methods). The one file here that
-                        #   imports Babylon; shrinks to nothing by X6.1
+    babylon.ts          # THE crossing into Babylon's math (toBabylon). The
+                        #   one file here that imports Babylon; shrinks to
+                        #   nothing by X6.1
   geometry/         # Surfaces as typed arrays (BABYLON_EXIT.md X1.2, X1.3):
                     #   what the world kit, the scatter props and the models
                     #   build, Babylon's arithmetic copied bit for bit. Imports nothing but
@@ -863,11 +864,12 @@ src/
                         #   interpolation buffer behind it, the gait its boots
                         #   are heard off, no behaviour at all
     GrenadeModel.ts     # What a grenade looks like — body, fuse pip, and the
-                        #   blink that reads the fuse. Built by the system that
-                        #   simulates them and by the one that only draws them
+                        #   blink that reads the fuse. Built by GrenadeFx's
+                        #   `GrenadeBody`, which the wire's ghosts reuse
     MolotovModel.ts     # What a molotov looks like — bottle, neck, and the lit
-                        #   rag that is its tell. Built three ways: the pool, the
-                        #   wire's ghosts, and the viewmodel's fist
+                        #   rag that is its tell. Built twice: GrenadeFx's
+                        #   `GrenadeBody` (the pool's and the wire's ghosts') and
+                        #   the viewmodel's fist
     RpgModel.ts         # The launcher on the shoulder and the rocket that
                         #   leaves it. Built from its VENTURI, not its middle,
                         #   the one weapon with a `hipYaw` of its own, and the

@@ -3562,8 +3562,10 @@ C8**: the three muzzles, the last node reads the authority made on one, were
 FORCED (a forced read walks every ancestor, so they were never stale), and are
 now the same float32 chain replayed off the hull's fields (`hullFrame.ts`; see
 "Where a round leaves", above). A bot's muzzle, the other forced read, needs
-none since C5 (`soldierPose.ts`). So the rule `CLAUDE.md` states — a node read
-on the authority owes a forced matrix — has no hull or bot reader left.
+none since C5 (`soldierPose.ts`). So the rule `CLAUDE.md` used to state — a
+node read on the authority owes a forced matrix — had no reader left, and since
+C11 it states the converse: no simulation reads a node, and the authority
+builds no rig and no hull model it could read one off.
 
 ### What it does, measured
 

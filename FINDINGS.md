@@ -2272,3 +2272,60 @@ moves the hull), while the timestamp is taken now.
 the frame that produced the position, or upload after `vehicles.update`, and
 re-run the same stalled drive: zero refusals is the fix. Check `move` (the
 body on foot) for the same ordering while there.
+
+---
+
+## 55. Offline, where the player's grenade and rocket LEAVE FROM is read off the viewmodel's nodes
+
+**Status:** open. Found during `BABYLON_EXIT.md` X2.2, which took every other
+node read out of the simulation; pre-existing and deliberately left, since
+X2.2's oracle is the authority's fight hash and this is client-only.
+
+**Derived from the code:** `Game.releaseGrenade` starts a throw at
+`playerView.model.throwHandWorld()` and `Game.launchRocket` starts a rocket at
+`playerView.model.muzzleWorld()` — world positions of `ViewModel` joints,
+i.e. a DRAWING (the hand's pose, the weapon's sway and kick) deciding an
+OUTCOME, since the start point is where the flight's first
+collision ray begins. `handAhead` and `launchAhead` floor the point along the
+aim, so a wall at the shoulder is covered, but everything above the floor is
+the picture's. The rifle's `muzzleWorld()` reaches `CombatSystem.fire` too,
+and is harmless: that argument is the tracer's origin and nothing else. In a
+match the client sends the point as `origin` and the authority accepts it
+within a slip of the eye (`MAX_ORIGIN_SLIP` for a grenade,
+`ORDNANCE_ORIGIN_SLACK` for a rocket), so online it is a claim, gated.
+
+**What would settle it:** X2.5's one core cannot call into a view. State both
+start points ANALYTICALLY off the eye and the aim (a fixed offset in the
+camera's frame, chosen to match today's rest pose), or have the core take them
+as INPUT the way a match already does. Either way, measure the change in
+where a throw lands from rest and mid-sway before choosing: a few centimetres
+at the hand can decide which side of a sill a grenade bounces off.
+
+---
+
+## 56. A long sprint in a netplay round collects `speed` corrections, and the body never went that fast
+
+**Status:** open; cause not identified. Found while verifying
+`BABYLON_EXIT.md` X2.2 and pre-existing — the same counts come back on
+f6a9d56-era builds. Related to finding 54 (the drive's twin), which names the
+send-time stamp as one suspect; this one is on foot, with no imposed stall.
+
+**Measured** with the scratch netplay smoke (two headless clients and an
+observer) on Sarab, a client sprinting for a long time at 6–7 m/s: `speed`
+body corrections of 0–0.42 m, one every 0.4–5 s, 0–24 a minute, varying from
+run to run. Botless Coldharbour shows about one, right after the spawn.
+
+**Derived from the code:** `server/validate.ts` allows
+`moveSpeed * sprintMult * SPEED_TOLERANCE * dt` = 4.6 × 1.5 × 1.35 × dt
+horizontally, where `dt` (`Match.onMove`) is the gap between the client's
+`time: Date.now()` stamps (`src/net/NetSession.ts`), clamped to
+[1/`TICK_HZ`, `MAX_MOVE_GAP`]. A sprint at 6.9 m/s has 35% headroom, so a
+correction needs a sample whose distance and stamp gap disagree by more than
+that: a send-time stamp moved by a late frame (finding 54's mechanism), a
+position a frame older than its stamp, or two samples bunched by the timer.
+None is confirmed.
+
+**What would settle it:** log, per refused sample, the client's stamp gap, its
+frame `dt`, and the distance it reported, and see which of the three it is.
+Stamping with the simulation time of the frame that produced the position (54's
+fix) should then be tried against both findings at once.

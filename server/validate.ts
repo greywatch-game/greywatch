@@ -26,7 +26,7 @@
  * player yanked backwards by a bad rejection has a worse experience than
  * everyone has from a cheat that buys 19% speed.
  */
-import { Vector3 } from "@babylonjs/core";
+import { Vector3, type Vector3Like } from "../src/math";
 import { CONFIG } from "../src/config";
 import type { GameMap } from "../src/world/MapBuilder";
 
@@ -76,7 +76,7 @@ const MAX_SPEED = CONFIG.player.moveSpeed * CONFIG.player.sprintMult;
  */
 export function validateMove(
   map: GameMap,
-  from: Vector3,
+  from: Vector3Like,
   to: { x: number; y: number; z: number },
   dt: number,
 ): Verdict {

@@ -244,6 +244,12 @@ would not do — the shot has to resolve synchronously inside the bot's think ti
 so the result is available to the same frame's kill handling. Read the rule as
 "never reach for another system", not "never mention its type".
 
+**A system that SIMULATES owns its state on `src/math` and never imports
+Babylon; its PICTURE is a view module beside it (`CombatFx`, `BattleView`,
+`VehicleView`, `PlayerView`, …) that reads it and never writes it.** `Game`
+builds both and wires them, and the authority builds the simulations alone —
+so nothing that decides an outcome may read a node (`docs/game.md`).
+
 **`Game.ts` is long on purpose**: most of its length *is* its job, and splitting
 the wiring re-creates the system→system edges the rule above exists to prevent.
 What may leave is a cluster of **private fields that answers only to itself** —
@@ -1121,15 +1127,14 @@ for it. **A chase camera's look point may never sit on its own eye ray** —
 crewed bot leaves `Bot`'s FSM entirely (the bots section's `aside` rule) while
 keeping its LIFE, its POSITION slaved to the hull and its SQUAD'S ORDER.
 
-**ANY world position read off a node on the AUTHORITY owes a forced world
-matrix, and the failure is invisible on a client**, whose render walk writes one
-every frame — **which is why no simulation reads a node at all any more**: a
-hull's three muzzles (`entities/hullFrame.ts`) and a bot's
-(`soldierPose.ts`) are the node chains replayed off fields, bit for bit. A
-hull's are read off its joints AS DRAWN, so the 1e-5 guards on the lean and the
-springs are on a muzzle's path, and both are simulated on the authority too —
-the guards live in the pose record (`HullPose`), and the view copies the record
-onto the nodes, never the other way.
+**No simulation reads a node — the authority builds no rig and no hull model
+to read one off.** A hull's three muzzles (`entities/hullFrame.ts`) and a bot's
+(`soldierPose.ts`) are the float32 node chains REPLAYED off fields, bit for
+bit. A hull's are read off its joints AS DRAWN, so the 1e-5 guards on the lean
+and the springs sit on a muzzle's path and are simulated on both sides: they
+live in the pose record (`HullPose`), which the view copies onto the nodes and
+never the reverse. The one node an outcome still reads is offline, the
+player's throw hand and launcher muzzle (`FINDINGS.md` 55).
 
 **A hull is HEARD whoever is in it**, pushed per FRAME by `Game.pushHullEngines`
 rather than opened on a mount, and **what drives the voice is asked of the HULL**
