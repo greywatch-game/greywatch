@@ -287,8 +287,8 @@ and a match anywhere else is 8v8 out of the same pool.
 aside exactly as a benched one is: dead, off the field, no ticket, no target, no
 squad, nothing torn down. It is a separate set from `benched` because the two
 are cleared by different things — a human leaving un-benches one slot, a
-rotation re-decides all of them — and because `Match` re-benches its humans over
-the top of whatever a rotation just decided. It is EMPTY offline, where the pool
+rotation re-decides all of them — and because `SimCore.startRound` re-benches its
+seated humans over the top of whatever a rotation just decided. It is EMPTY offline, where the pool
 is already the map's. The one thing that had to follow it is the think budget:
 the pass skips an aside bot without spending on it, so a budget taken from a
 pool three times the size of the fight would have given the bodies that ARE

@@ -79,10 +79,10 @@ export class SimPlayer implements Combatant {
    * moment it acts, so an index naming a flag that fell while the message was
    * in flight costs the player nothing but the position they picked.
    *
-   * Written by `Match` from a client message after the shape check, exactly as
-   * `seq` and `lastTime` are, and read nowhere else in this class. Cleared when
-   * it is spent and on `retire`, because a map rotation renumbers the table it
-   * indexes into.
+   * Written by `SimCore.submit`'s `deploy` (-1 for "anywhere", which no
+   * spawn is) and read nowhere else in this class. Cleared when it is spent
+   * and on `retire`, because a map rotation renumbers the table it indexes
+   * into.
    */
   deployRequest: number | null = null;
 
@@ -125,7 +125,7 @@ export class SimPlayer implements Combatant {
    * The SERVER's count, for `grenades`' reason exactly: there is no resupply,
    * the pouch is refilled by death and nothing else, and a client keeping its
    * own would fire as many as it liked. What the number MEANS is the
-   * loadout's; `Match` holds that and debits this.
+   * loadout's, which the host holds; `SimCore.submit` debits this.
    */
   ordnance = 0;
 
@@ -182,7 +182,7 @@ export class SimPlayer implements Combatant {
 
   /**
    * How many AT items a full pouch is for the item this player brought, which
-   * `Match` writes off the resolved loadout.
+   * the host resolves off the loadout and hands over as a `kit` command.
    *
    * Here rather than looked up at each respawn because this class must not
    * import the equipment table to find out: what is in the third slot is the
@@ -193,7 +193,7 @@ export class SimPlayer implements Combatant {
 
   /**
    * How many throwables a full pouch is — two frags or two bottles, whichever
-   * this player brought. `Match` writes it off the resolved kit, on
+   * this player brought. Handed over in the same `kit` command, on
    * `ordnanceCarried`'s terms and for its reason.
    */
   grenadesCarried: number = CONFIG.grenade.carried;
@@ -328,7 +328,7 @@ export class SimPlayer implements Combatant {
     this.health = CONFIG.player.maxHealth;
     this.healing.clear();
     // Death is the only resupply. See the fields' notes — the AT pouch follows
-    // the same rule, and `Match` is what knows how many that is.
+    // the same rule, and the host's `kit` is what says how many that is.
     this.grenades = this.grenadesCarried;
     this.ordnance = this.ordnanceCarried;
     // A fresh body is on foot. A driver who died inside a hull was put out of

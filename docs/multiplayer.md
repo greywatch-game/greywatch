@@ -37,6 +37,27 @@ does not carry (a footstep, a tracer, a hull gun's `hit`) is drained and
 dropped undecoded. `simulate` reads the same ring for its fight hash and
 `--events`, folding each event's own `tick`.
 
+**A person reaches the core through ONE door, `SimCore.submit`, and `Match`
+VALIDATES while the core DECIDES** (`src/sim/commands.ts`, X2.5a C4a). Each
+message handler runs this side's claim gates — `readClientMessage`'s shape,
+the sequence number and client clock, the rate buckets, the cones and origin
+slips, `validateMove`/`validateDrive` and the `correct`/`hullcorrect` they
+answer with — and hands what it accepted over as one `SimCommand`: `move`,
+`shot` (the claimed direction normalised, the server's `WeaponSetup`, the
+client's render time for the rewind), `grenade` and `ordnance` (the kind from
+this side's kit record), `deploy`, `kit` (the pouch sizes `setKit` resolves),
+`mount`/`dismount`, `drive`, `gun`, `shell`, `mg`. What DECIDES is the core's,
+once, for every host: whose body moves, the rewound round (`rewind`, the
+authority's `SimCoreOptions`), the POUCH COUNTS (debited only for an item the
+pool took — a refused one raises `ordnanceRefused`, a throw included), the
+SEAT POLICY (the swap, the offer, the named hull, the dismount the hull cannot
+make — `mount`/`dismount` around `seat`) and when a person comes back in.
+`submit` answers only whether the core acted, which is what the shell, mg and
+ordnance buckets spend on; every outcome is an event. `npm run corecheck`
+drives the same script through `submit` directly (the trusted door the page
+will use) and through `Match` (the validated door), and the two leave the
+identical event stream.
+
 **A person's death is filed like a bot's** (X2.5a C3): counted at their own
 door inside `takeDamage`, as `other`, and AUDITED a moment later in the same
 call by the blow's own door — `settleKill`'s `KillLedger.personDown` writes
@@ -355,7 +376,7 @@ shooter cannot afford two opinions about — where somebody is.
 
 **A person is deployed only when they have BOTH waited and asked.** The
 reinforcement clock in `SimCore.step` says when and `SimPlayer.deployRequest`
-says where, and neither is enough alone. There is deliberately no timeout into
+(written by the core's `deploy` command) says where, and neither is enough alone. There is deliberately no timeout into
 the world: a player looking at the map is doing the thing the screen is for, and
 the alternative is yanking them out of it mid-decision. A slot whose person is
 still choosing is simply a slot with nobody on the field — which is what it was
@@ -1834,8 +1855,8 @@ old client falls through the switch and behaves exactly as it did before the
 field existed — `Join.map`'s own precedent.
 
 **Getting in and getting out are asks the authority answers.** `mount` names a
-hardstanding and — optionally — a SEAT, and `SimCore.seatOffered` and
-`seat` re-derive the whole offer against the server's own copy of the hull, the
+hardstanding and — optionally — a SEAT, and the core's `mount`
+(`SimCore.submit`: `seatOffered` and `seat`) re-derives the whole offer against the server's own copy of the hull, the
 team, the distance, which chairs are free and which crew may be turned out. The
 seat field is a PREFERENCE and never a claim: asked for one that is taken, the
 other is granted if it is free, which is what makes "the first man aboard
@@ -2207,8 +2228,8 @@ everybody already had, and a positive `bots: true` would make the safe reading
 the one a mangled frame is least likely to produce.
 
 **What it does on the authority is field ZERO bodies a side**, and that is the
-point of it: `SimCore.startRound` takes `bots` and sets `perTeam` to 0
-instead of the map's `perTeamOf`, which `BattleSystem.setFielded` spends exactly
+point of it: `Match` hands `SimCore.startRound` `fielded: 0` instead of the
+map's `perTeamOf` (the pool is the ceiling either way), which `BattleSystem.setFielded` spends exactly
 as it spends a map that fields eight out of a pool of twenty-four. Every bot in
 the pool is set aside — dead, off the field, thought for by nobody, shootable by
 nobody, holding neither a ticket nor a place in a squad's formation, and refused

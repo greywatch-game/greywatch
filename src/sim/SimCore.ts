@@ -51,28 +51,41 @@
  * sized from `CONFIG.bots.maxPerTeam`. That is what makes benching a bot for a
  * human a single array index rather than a mapping that can disagree.
  *
- * **The pool is the CEILING and the round is the MAP's**, which is the one
- * place this file differs from `Game.buildRound`. `setRoster` is called ONCE,
- * in the constructor, at `CONFIG.bots.maxPerTeam` a side and never again — a
- * match rotates maps under one slot table, and a table sized per map would
- * renumber every player on team 1 at every rotation. `startRound` then calls
- * `setFielded` with the map's own `perTeamOf`, which is what makes Sarab
- * twenty-four a side in a match and every other map eight. See
- * `server/Roster.ts` for the whole argument, including why human capacity stays
- * at sixteen whatever the map fields.
+ * **The POOL and the ROUND are two numbers the host states** (`RoundSpec`'s
+ * `pool` and `fielded`, `BABYLON_EXIT.md` X2.5a D15). The authority asks for
+ * the CEILING, `CONFIG.bots.maxPerTeam` a side, on every round — `setRoster`
+ * builds it on the first and is a no-op after, because a match rotates maps
+ * under one slot table and a table sized per map would renumber every player
+ * on team 1 at every rotation — and fields the map's own `perTeamOf` out of
+ * it, which is what makes Sarab twenty-four a side in a match and every other
+ * map eight. See `server/Roster.ts` for the whole argument, including why
+ * human capacity stays at sixteen whatever the map fields. A host whose pool
+ * is the map's own (the offline page, from C4a-2) states it and fields all of
+ * it. Either way `startRound` re-benches every seated person over the bot in
+ * their slot itself, last.
  *
- * A person enters the world through the reinforcement pass in `step` and
- * nowhere else, and only once they have both waited out the clock and ASKED:
- * `Match` records the ask on `SimPlayer.deployRequest` and this class is what
- * spends it, against `ConquestSystem.deployAt` rather than against the index
- * itself. That pair is the whole of spawn selection on this side — see
- * `docs/multiplayer.md`.
+ * **A person reaches the simulation through ONE door: `submit`**
+ * (`src/sim/commands.ts`), applied on arrival, its results written to the
+ * ring. `Match` validates a client's claim (the rate buckets, the cones, the
+ * slips, the movement and drive validators, the corrections) and submits
+ * what it accepts; the page will submit its player's acts trusted. What
+ * DECIDES is here, once, for both: whose body moves, which round is resolved
+ * against what, the pouches, the seat policy (`mount`/`dismount` around
+ * `seat`) and when a person comes back in. The `SimCoreOptions` say how the
+ * hosts' roles differ — a rewind for remote shooters, a respawn clock the
+ * host holds — and none of them changes a rule.
+ *
+ * A person enters the world through `deployPerson` and nowhere else, and only
+ * once they have ASKED (`deploy`) — spent by the reinforcement pass in `step`
+ * once the core's clock has run out, or at submit when the host holds that
+ * clock (`hostHoldsRespawn`) — against `ConquestSystem.deployAt` rather than
+ * against the index itself. That pair is the whole of spawn selection on this
+ * side — see `docs/multiplayer.md`.
  */
 import { CONFIG } from "../config";
-import type { Vector3, Vector3Like } from "../math";
+import { Vector3, type Vector3Like } from "../math";
 import { Bot } from "../entities/Bot";
 import type { Combatant, Team } from "../entities/Combatant";
-import type { WeaponSetup } from "../entities/weapons";
 import { BattleSystem } from "../systems/BattleSystem";
 import {
   CombatSystem,
@@ -113,7 +126,13 @@ import {
   type RemoteHull,
   type VehicleOrders,
 } from "../systems/VehicleSystem";
-import { Vehicle, type GunAngles, type HullPicture } from "../entities/Vehicle";
+import {
+  Vehicle,
+  type DriveInput,
+  type GunAngles,
+  type GunInput,
+  type HullPicture,
+} from "../entities/Vehicle";
 import {
   DRIVER,
   GUNNER,
@@ -122,13 +141,15 @@ import {
   type SeatHolder,
 } from "../entities/hullSeats";
 import { resolveOrdnance } from "../entities/equipment";
+import type { ThrowableId } from "../entities/throwables";
 import type { GameMap } from "../world/MapBuilder";
 import type { MapDef } from "../world/maps";
 import type { MapCollision } from "../world/collision";
-import { perTeamOf, type Heightfield } from "../world/layout";
+import type { Heightfield } from "../world/layout";
 import { LagComp } from "./LagComp";
 import { SimPlayer } from "./SimPlayer";
 import { buildSimWorld } from "./simWorld";
+import type { ShotCommand, SimCommand } from "./commands";
 import {
   EV,
   EventRing,
@@ -151,6 +172,7 @@ import {
   emitSlot,
   emitSlotAt,
   emitSpawned,
+  refusedCode,
   setRoundShooter,
   victimCode,
   type EventCursor,
@@ -159,10 +181,19 @@ import {
 /**
  * Everything a round is, as its HOST hands it over: the map, its world as data
  * (the collider bake and the floor — `buildSimWorld`'s two inputs, already
- * loaded, so `startRound` is one synchronous turn), the tier, whether bots are
- * fielded, and the SEED. The seed is the host's because drawing one is
- * reading a source of entropy, and the core reads none: `Match` passes
- * `freshSeed()`, `simulate` the one it was given.
+ * loaded, so `startRound` is one synchronous turn), the tier, the bot POOL and
+ * how much of it the round FIELDS, and the SEED. The seed is the host's
+ * because drawing one is reading a source of entropy, and the core reads
+ * none: `Match` passes `freshSeed()`, `simulate` the one it was given.
+ *
+ * **`pool` and `fielded` are two numbers because the two hosts spend them
+ * differently** (`BABYLON_EXIT.md` X2.5a D15). A slot index is a bot index and
+ * every outcome stream is keyed by slot, so the slot LAYOUT is the fight: the
+ * authority builds the ceiling (`CONFIG.bots.maxPerTeam` a side, so a match
+ * rotating maps under one slot table never renumbers team 1) and fields the
+ * map's `perTeamOf` out of it — zero in a botless match — while the offline
+ * page builds a per-map pool and fields all of it, which is what keeps the
+ * bench's fight the one it has always been.
  */
 export interface RoundSpec {
   def: MapDef;
@@ -170,12 +201,53 @@ export interface RoundSpec {
   /** `def.heights`' floor, or undefined for a flat map. */
   floor: Heightfield | undefined;
   difficulty: number;
-  /** False for a match created without bots — see `startRound`. */
-  bots: boolean;
+  /** Bot slots a side — `BattleSystem.setRoster`; rebuilt only when it MOVES. */
+  pool: number;
+  /** Of those, how many a side this round puts in the fight — `setFielded`. */
+  fielded: number;
   seed: number;
 }
 
+/**
+ * The three ways the hosts' roles differ, as switches on the one core. Every
+ * one defaults to OFF, and none changes a rule — each is a question about who
+ * holds what.
+ */
+export interface SimCoreOptions {
+  /**
+   * Keep every body's position history (`LagComp`) and resolve a person's
+   * round against the instant its `renderTime` names. The AUTHORITY's: a
+   * remote shooter saw the world a round trip ago. Offline the shooter is in
+   * this process and sees the world as it stands, so there is nothing to
+   * rewind and no history worth recording.
+   */
+  rewind?: boolean;
+  /**
+   * The HOST holds a person's respawn clock, and a `deploy` is honoured the
+   * moment it is submitted rather than once this core's clock has run out.
+   * The offline page's: nothing steps under its deploy screen (the bots do
+   * not fight while the player chooses), so the core's clock cannot be the
+   * one that decides — the page owns the wait, as it always has. Either way
+   * the spawn goes through `deployPerson`, the door the reinforcement pass
+   * uses: one door, two triggers, the spawn stream drawn the same way.
+   */
+  hostHoldsRespawn?: boolean;
+  /**
+   * Time the step's phases for a host that files them (`BABYLON_EXIT.md`
+   * X2.5a C6, the profiler's `sim` phase). Recorded by nothing yet: declared
+   * so the option set is the one the hosts will pass.
+   */
+  timing?: boolean;
+}
+
 export class SimCore {
+  /** Whether a person's round is rewound — `SimCoreOptions.rewind`. */
+  readonly rewind: boolean;
+  /** Whether the host holds the respawn clock — `SimCoreOptions.hostHoldsRespawn`. */
+  readonly hostHoldsRespawn: boolean;
+  /** `SimCoreOptions.timing`, held for C6. */
+  readonly timing: boolean;
+
   readonly combat: CombatSystem;
   readonly battle: BattleSystem;
   /**
@@ -229,9 +301,10 @@ export class SimCore {
   map: GameMap | null = null;
 
   /**
-   * How many BOTS a side the STANDING round fields — the standing map's own
-   * `perTeamOf`, resolved once per round by `startRound`, and ZERO in a match
-   * created without bots.
+   * How many BOTS a side the STANDING round fields — the host's
+   * `RoundSpec.fielded`, set once per round by `startRound`: on the authority
+   * the standing map's own `perTeamOf`, and ZERO in a match created without
+   * bots.
    *
    * Read by `Match`, which spends it on the simulation's half of the round and
    * deliberately not on the wire's: what goes out is the slots that can hold a
@@ -244,7 +317,11 @@ export class SimCore {
   /** Connected humans, by slot. Sparse — most slots are bots. */
   readonly players = new Map<number, SimPlayer>();
 
-  /** Position history, so a shot resolves against what its shooter saw. */
+  /**
+   * Position history, so a shot resolves against what its shooter saw —
+   * tracked and recorded only on a core built with `rewind`, and empty
+   * otherwise.
+   */
   readonly lag = new LagComp();
 
   /** Server tick count since the round started. */
@@ -310,7 +387,10 @@ export class SimCore {
    */
   private readonly personDeaths = new Map<number, number>();
 
-  constructor() {
+  constructor(options: SimCoreOptions = {}) {
+    this.rewind = options.rewind ?? false;
+    this.hostHoldsRespawn = options.hostHoldsRespawn ?? false;
+    this.timing = options.timing ?? false;
     // No scene and no material factory: the last thing that wanted a factory
     // was the fleet's rigs, which are the client's `VehicleViews` since
     // `BABYLON_EXIT.md` X2.2 C9, and the last thing that wanted a scene was
@@ -323,15 +403,10 @@ export class SimCore {
     // poses as numbers and the LOD are `BattleView`'s, which only a client
     // builds (`BABYLON_EXIT.md` X2.2 C7).
     this.battle = new BattleSystem(this.combat, this.random);
-    // **The authority's pool is the ceiling, once, for the life of the
-    // process.** A slot index is a bot index and a match rotates maps under one
-    // slot table, so team 1's block has to begin at the same number on every
-    // map there is — which is `CONFIG.bots.maxPerTeam` and not the standing
-    // map's roster. How many of it a round actually fights is `setFielded`'s,
-    // pushed per round from `startRound`. Here rather than in `startRound`
-    // because the pool is a slot table that must never be rebuilt under a
-    // match.
-    this.battle.setRoster(CONFIG.bots.maxPerTeam);
+    // The pool is NOT built here: its size is the round's `RoundSpec.pool`,
+    // and `startRound` builds it (`setRoster` is a no-op when the size has not
+    // moved, so the authority's ceiling is built once, on its first round,
+    // and never again). Nothing reaches the pool before the first round.
     // Ballistics without the picture. Where a grenade lands and who it hurts
     // is a rule and belongs here; what it looks like is `GrenadeFx`'s, which
     // needs a GPU device and is never built on this side, so `onBlast` is
@@ -419,8 +494,15 @@ export class SimCore {
    * no entry for it either way, but nothing here has to rely on that.
    */
   private readonly vehicleOrders: VehicleOrders = {
-    driveFor: (tank) => this.crew.driveFor(tank),
-    gunFor: (tank) => this.crew.gunFor(tank),
+    // A person's STICKS first (`driveInput`, C4a only), then the bot crew —
+    // `Game.vehicleOrders`' player-first order, for its reason. The maps are
+    // empty on the authority, so it asks the crew and nothing else.
+    driveFor: (tank) =>
+      (this.steered.size > 0 ? this.steered.get(this.vehicles.hulls.indexOf(tank)) : undefined) ??
+      this.crew.driveFor(tank),
+    gunFor: (tank) =>
+      (this.ordered.size > 0 ? this.ordered.get(this.vehicles.hulls.indexOf(tank)) : undefined) ??
+      this.crew.gunFor(tank),
     remoteFor: (tank) => this.driven.get(this.vehicles.hulls.indexOf(tank)) ?? null,
     /**
      * A PERSON's cupola gun, where he last said it was pointing.
@@ -454,6 +536,23 @@ export class SimCore {
   private readonly driven = new Map<number, RemoteHull>();
 
   /**
+   * **C4a only.** The STICKS of each person driving a hull this core steps
+   * from raw input (`driveInput`), by hardstanding index — `Game.drive`, held
+   * here. A hull is in `driven` (posed from a report) or in this (stepped
+   * from input), never both: each command takes the hull out of the other
+   * map, and `release` clears both. Empty on the authority. Goes at C4b.
+   */
+  private readonly steered = new Map<number, DriveInput>();
+
+  /** **C4a only.** `steered`'s twin for a GUNNER's order (`gunOrder`), against `laid`. */
+  private readonly ordered = new Map<number, GunInput>();
+
+  /** Scratch a person's rocket or round is copied into on arrival. */
+  private readonly cmdFrom = new Vector3();
+  private readonly cmdDir = new Vector3();
+  private readonly cmdMuzzle = new Vector3();
+
+  /**
    * Builds a map and starts a round on it.
    *
    * The same sequence as `Game.buildRound`, minus everything about presentation:
@@ -469,21 +568,32 @@ export class SimCore {
    * returns.
    */
   startRound(spec: RoundSpec): void {
-    const { def, difficulty, bots, seed } = spec;
+    const { def, difficulty, seed } = spec;
+    // **The pool, at the size the host asked for** — and rebuilt only when
+    // that size MOVES (`setRoster` is a no-op otherwise). The authority asks
+    // for the ceiling every round, so its slot table is built on the first
+    // round and stands for the life of the match; the offline page asks for
+    // the map's own roster. A rebuilt pool is new bodies, so the old ones'
+    // history is let go first. First of all, because `setDifficulty` deals the
+    // skills over whatever pool is standing.
+    if (this.battle.bots.length !== spec.pool * 2) {
+      for (const bot of this.battle.bots) this.lag.untrack(bot);
+      this.battle.setRoster(spec.pool);
+    }
     this.battle.setDifficulty(difficulty);
     this.map?.dispose();
     this.map = buildSimWorld(def, spec.collision, spec.floor);
     this.battle.setMap(this.map);
     this.battle.reset();
-    // **How many bodies a side this map fields**, out of the pool the
-    // constructor built at the ceiling. This is the whole of a map's roster
+    // **How many bodies a side this map fields**, out of the pool built above
+    // — on the authority, at the ceiling. This is the whole of a map's roster
     // reaching a match: the slot table does not move, nobody is re-seated, and
     // what changes is how many of each team's block are in the fight — Sarab's
     // twenty-four against every other map's eight.
     //
     // After `reset`, whose "everybody dead with a zero timer" is the state the
-    // fielded half is picked back up from, and before `Match` re-benches the
-    // humans over the top of it. Bots the map does not field are set aside
+    // fielded half is picked back up from, and before the end of this method
+    // re-benches the humans over the top of it. Bots the map does not field are set aside
     // exactly as a benched one is, so nothing downstream — the target lists,
     // the tickets, the squads, the board — has to be told twice.
     //
@@ -502,7 +612,11 @@ export class SimCore {
     // rather than one nobody can join — `Roster` is untouched, sixteen still
     // fit, and `Match` fields the seatable block on the wire so a slot a person
     // walks out of goes back to being a body nobody is drawing.
-    this.perTeam = bots ? perTeamOf(def.layout) : 0;
+    //
+    // The number is the HOST's (`RoundSpec.fielded`): `Match` passes the map's
+    // `perTeamOf`, or zero for a botless match; a host whose pool is the map's
+    // own passes the pool, and this takes nobody out.
+    this.perTeam = spec.fielded;
     this.battle.setFielded(this.perTeam);
     // Where this map's edge is, for everybody already seated. A rotation can
     // put a rim-closed map up after an open one and back, and `setMap` is what
@@ -543,6 +657,8 @@ export class SimCore {
     this.crew.clear();
     this.driven.clear();
     this.laid.clear();
+    this.steered.clear();
+    this.ordered.clear();
     // **Last round's hulls come OUT of the fight before they are disposed.**
     // `BattleSystem.reset` deliberately does not touch the human list — the
     // people in it are still connected and still in their slots across a
@@ -590,7 +706,7 @@ export class SimCore {
     // client, so anything else here would be an authority holding glass its
     // clients have just put back up.
     this.glass.setMap(this.map);
-    for (const bot of this.battle.bots) this.lag.track(bot);
+    if (this.rewind) for (const bot of this.battle.bots) this.lag.track(bot);
     // **The round's seed**, with every outcome stream rewound to it — `Game`'s
     // line in `buildRound`, after everything that draws is built (the pool at
     // construction, the fleet above) and before anything has spawned or fired.
@@ -603,6 +719,22 @@ export class SimCore {
     // still seated — a rotation that left last round's kills on sixteen
     // screens is exactly the kind of stale state a client cannot detect.
     this.scores.reset(this.battle.bots.length);
+    // **Everybody already seated comes into the new round DEAD WITH A ZERO
+    // TIMER, and benched over the bot in their slot** — the state the
+    // reinforcement pass deploys a person from, and the half of a rotation
+    // that used to be `Match.rotate`'s. `reset` above put every bot in the
+    // pool back in the fight and `setFielded` reshaped which of them this map
+    // fields; a bot in a slot somebody is sitting in would otherwise walk
+    // back into a fight its person is already standing in. `retire` also
+    // drops a deploy request, which is an index into the OLD map's spawns.
+    // Last, so it lands over everything the round's build decided.
+    for (const player of this.players.values()) {
+      player.retire();
+      player.respawnT = 0;
+    }
+    for (const player of this.players.values()) {
+      this.battle.setBenched(this.battle.bots[player.slot], true);
+    }
     // The wall clock is NOT read here: the host calls `anchor` the moment this
     // returns, which is where the anchor has always been taken — LAST, after
     // the dispose, the build and the reset. See `anchor` for why that place.
@@ -626,14 +758,15 @@ export class SimCore {
     // this is the human half, and it runs before conquest counts occupancy so a
     // player who came back this tick is standing on the flag this tick.
     //
-    // This is the ONE place a person is put into the world — a fresh join
+    // This is where the authority puts a person into the world — a fresh join
     // arrives here as `alive === false, respawnT === 0` and is deployed by the
-    // same line that redeploys a corpse. Spawning from `Match.admit` as well
-    // would be a second door onto the same act, which is how one of them comes
-    // to disagree with the other.
+    // same door (`deployPerson`) that redeploys a corpse. Spawning from
+    // `Match.admit` as well would be a second door onto the same act, which is
+    // how one of them comes to disagree with the other; the one other trigger,
+    // `submit`'s under `hostHoldsRespawn`, calls the same door.
     //
-    // It takes TWO facts, not one: the clock has to have run out and the player
-    // has to have asked. A person chooses where they come back in — that is the
+    // It takes TWO facts, not one: the clock has to have run out (unless the
+    // host holds it) and the player has to have asked. A person chooses where they come back in — that is the
     // deploy screen, and it is as much of the game in a match as it is offline
     // — so an unasked player is simply not deployed, however long they stand
     // there. Nothing here times them out into the world: a player looking at
@@ -686,9 +819,13 @@ export class SimCore {
         }
         continue;
       }
+      // The clock runs whoever holds it — it is what `deathProgress` reads —
+      // but it GATES the deploy only when this core holds it. Under
+      // `hostHoldsRespawn` the request was tried at submit, and one still
+      // standing here is a pick the conquest could not place then.
       if (player.respawnT > 0) {
         player.respawnT -= dt;
-        continue;
+        if (!this.hostHoldsRespawn) continue;
       }
       // A request that arrived before the clock ran out is KEPT and spent here,
       // rather than refused for being early. The two clocks are a round trip
@@ -696,12 +833,7 @@ export class SimCore {
       // the frame it reaches zero legitimately lands a little ahead of this
       // one; refusing it would drop the deploy of every honest player whose
       // ping is worse than their patience.
-      if (player.deployRequest === null) continue;
-      const spawn = this.spawnPointFor(player.team, player.deployRequest);
-      if (!spawn) continue;
-      player.deployRequest = null;
-      player.spawn(spawn.pos, spawn.yaw);
-      emitSpawned(this.events, this.tick, player.slot, spawn.pos, spawn.yaw);
+      this.deployPerson(player);
     }
 
     // Both kinds of body, in one list. `ConquestSystem` counts occupancy off
@@ -765,7 +897,26 @@ export class SimCore {
     // the middle of one. Recording first would put every body's history half a
     // tick ahead of the positions the snapshot on that tick reports, and a
     // rewind would land between two states that never coexisted.
-    this.lag.record(this.now);
+    if (this.rewind) this.lag.record(this.now);
+    return true;
+  }
+
+  /**
+   * Puts a dead person into the world at the spawn they asked for, if they
+   * asked — **the ONE door a person is spawned through**, which the
+   * reinforcement pass in `step` calls once the clock has run out and
+   * `submit` calls at once under `hostHoldsRespawn` (`BABYLON_EXIT.md` X2.5a
+   * D21). One door, two triggers: the request is resolved against what the
+   * team may use NOW (`spawnPointFor`, the spawn stream drawn exactly as
+   * before), and a pick the conquest cannot place keeps the request standing.
+   */
+  private deployPerson(player: SimPlayer): boolean {
+    if (player.deployRequest === null) return false;
+    const spawn = this.spawnPointFor(player.team, player.deployRequest);
+    if (!spawn) return false;
+    player.deployRequest = null;
+    player.spawn(spawn.pos, spawn.yaw);
+    emitSpawned(this.events, this.tick, player.slot, spawn.pos, spawn.yaw);
     return true;
   }
 
@@ -1083,28 +1234,288 @@ export class SimCore {
   private readonly hullRules: HullRules;
 
   /**
+   * One thing a person asked for, applied ON ARRIVAL — **the one door a
+   * host's person reaches the simulation through** (`src/sim/commands.ts`).
+   *
+   * Everything a command causes is written to the event ring as it happens,
+   * in the order it happens, and the host drains after this call as after any
+   * other. The boolean says only whether the core ACTED on it — a round
+   * fired, an item taken by its pool, a seat granted — for the authority's
+   * rate buckets, which spend only on a round that left; it carries no
+   * outcome.
+   *
+   * **The split with `Match` is validation against simulation.** A claim gate
+   * — a rate bucket, a cone, an origin slip, `validateMove`, `validateDrive`,
+   * a sequence number, a correction — is the authority's and stays there; it
+   * runs first and submits only what it accepts. What is HERE is everything
+   * that decides: which body moves, which round is resolved and against what,
+   * the pouches (the count is this side's), who sits in which chair and
+   * whether a hull may set a body down, and when a person comes back in. So
+   * the refusals below are the ones the simulation's own state makes — a dead
+   * body's round, a throw from a seat, an empty pouch — and a trusted host
+   * meets exactly the rules a validated one does.
+   *
+   * Refused in silence for a slot nobody is sitting in, and for anything but
+   * a `kit` or a `deploy` before there is a world.
+   */
+  submit(slot: number, cmd: SimCommand): boolean {
+    const player = this.players.get(slot);
+    if (!player) return false;
+    switch (cmd.t) {
+      // Between lives, so neither needs a world: a kit describes the next
+      // body, and a deploy is a request a later moment spends.
+      case "kit":
+        // Refused for a living body: only death refills a pouch.
+        if (player.alive) return false;
+        player.grenadesCarried = cmd.grenades;
+        player.grenades = cmd.grenades;
+        player.ordnanceCarried = cmd.ordnance;
+        player.ordnance = cmd.ordnance;
+        return true;
+      case "deploy":
+        // A living player asking is a confused host — a request queued now
+        // would deploy them out of a firefight the moment they next died —
+        // and a second ask from a dead one replaces the first. No index is
+        // -1, which `deployAt` refuses: "anywhere", the conquest's own pick.
+        if (player.alive) return false;
+        player.deployRequest = cmd.spawn ?? -1;
+        // One door, two triggers (`deployPerson`): at once when the host
+        // holds the clock, else by the reinforcement pass when this one runs
+        // out.
+        if (this.hostHoldsRespawn) this.deployPerson(player);
+        return true;
+      default:
+        break;
+    }
+    if (!this.map) return false;
+    switch (cmd.t) {
+      case "move":
+        // A dead body reports nothing worth keeping, and a seated one's is
+        // the HULL's — written by the step off the tank every tick.
+        if (!player.alive || player.seat >= 0) return false;
+        player.apply(cmd.dt, cmd.x, cmd.y, cmd.z, cmd.yaw, cmd.pitch, cmd.crouch, cmd.sprint);
+        return true;
+      case "shot":
+        // There is no rifle in a seat: the trigger there fires a hull's gun.
+        if (!player.alive || player.seat >= 0) return false;
+        this.resolveShot(player, cmd);
+        return true;
+      case "grenade":
+        return this.throwGrenade(player, cmd.origin, cmd.dir, cmd.kind);
+      case "ordnance": {
+        // The third slot is carried by a body, never out of a hull.
+        if (!player.alive || player.ordnance <= 0 || player.seat >= 0) return false;
+        const placed =
+          cmd.kind === "mine"
+            ? this.layMine(cmd.origin, player)
+            : this.launchRocket(cmd.origin, cmd.dir, player);
+        // Debited only for an item that reached the world — the refusal
+        // contract `AntiTankSystem` states.
+        if (placed) player.ordnance -= 1;
+        return placed;
+      }
+      case "mount":
+        return this.mount(player, cmd.tank, cmd.seat);
+      case "dismount":
+        return this.dismount(player);
+      case "drive":
+        // The look first, onto the body it belongs to — the chase camera's
+        // aim, which the shell's cone is measured against — then the hull,
+        // which `applyDrive` takes only from the DRIVER's chair.
+        if (!player.alive || player.seat < 0) return false;
+        player.yaw = cmd.aimYaw;
+        player.pitch = cmd.aimPitch;
+        this.applyDrive(player, cmd.x, cmd.y, cmd.z, cmd.yaw, cmd.turretYaw, cmd.gunPitch);
+        return true;
+      case "gun":
+        if (!player.alive || player.seat < 0 || player.crewSeat !== GUNNER) return false;
+        player.yaw = cmd.yaw;
+        player.pitch = cmd.pitch;
+        this.applyGun(player, cmd.yaw, cmd.pitch);
+        return true;
+      case "shell": {
+        // The main gun is the DRIVER's, and a hull with none refuses outright.
+        if (!player.alive || player.crewSeat !== DRIVER) return false;
+        const tank = this.hullOf(player);
+        if (!tank || !tank.spec.gun) return false;
+        return this.resolveShell(tank, player, cmd.early);
+      }
+      case "mg": {
+        if (!player.alive || player.crewSeat !== GUNNER) return false;
+        const tank = this.hullOf(player);
+        if (!tank) return false;
+        return this.resolveMg(tank, player, cmd.early);
+      }
+      case "driveInput":
+        return this.steer(player, cmd);
+      case "gunOrder":
+        return this.orderGun(player, cmd.aimYaw, cmd.aimPitch);
+      default: {
+        const unhandled: never = cmd;
+        void unhandled;
+        return false;
+      }
+    }
+  }
+
+  /**
+   * A person's throw, from the pouch this side counts. Spent only if the arm
+   * accepts it — the pool refuses rather than stealing a live slot, and a
+   * refused throw costs nothing but says so (`ordnanceRefused`, so a host
+   * that predicted the pouch can take its throw back).
+   */
+  private throwGrenade(
+    player: SimPlayer,
+    origin: Vector3Like,
+    dir: Vector3Like,
+    kind: ThrowableId,
+  ): boolean {
+    // Nothing is thrown from inside a hull, for the rifle's reason exactly.
+    if (!player.alive || player.seat >= 0 || player.grenades <= 0) return false;
+    if (this.grenades.throwAlong(origin, dir, player.team, player, kind)) {
+      player.grenades--;
+      return true;
+    }
+    emitPair(this.events, EV.ordnanceRefused, this.tick, player.slot, refusedCode("grenade"));
+    return false;
+  }
+
+  /**
+   * "Put me in that hull" — the POLICY around `seat`'s mechanism, answered
+   * with a `seat` event either way: the asker mounted nothing on their own
+   * side and is waiting to be told what they are in, and the answer to a
+   * refusal is "on foot", which is true.
+   *
+   * **A person already in this hull naming its other chair is a SWAP**, and
+   * it is granted here rather than through the offer below because
+   * `seatOffered` refuses a body that is already seated — right for the
+   * question it answers (may this body climb aboard) and wrong for this one.
+   * `seat` is still the one door: it releases the old chair, turns a BOT out
+   * of the new one, and leaves everything about the BODY standing. The gate
+   * is a PERSON in the other chair, never the chair being taken — `chooseSeat`
+   * with `only` set, inside `seat`, the call `Game.canSwapSeat` offers the key
+   * with. Gated on `seats[want]` it refused every crossing against a bot, so
+   * TAKE OVER GUN / TAKE OVER TANK did nothing in a match.
+   *
+   * Otherwise the named hull and the OFFERED hull must be the same hull: the
+   * person picked one, `seatOffered` is this side's own answer to the same
+   * question, and granting whatever is nearest instead would seat somebody
+   * in a tank they did not choose on the day a map states two.
+   */
+  private mount(player: SimPlayer, tank: number, want: CrewSeat): boolean {
+    if (!player.alive) return false;
+    if (player.seat === tank && player.seat >= 0) {
+      const hull = this.hullOf(player);
+      if (hull && want !== player.crewSeat) this.seat(player, hull, want);
+      this.seatAnswer(player, player.seat, player.position, player.yaw);
+      return true;
+    }
+    const offered = this.seatOffered(player);
+    const hull = offered && this.vehicles.hulls.indexOf(offered) === tank ? offered : null;
+    const taken = hull ? this.seat(player, hull, want) : null;
+    this.seatAnswer(player, taken ? tank : -1, player.position, player.yaw);
+    return taken !== null;
+  }
+
+  /**
+   * "Let me out." Where the body lands is this side's, and it is refused in
+   * SILENCE where the hull cannot set a body down (`dismountable`): a client
+   * whose own prompt reads LAND TO GET OUT never asks, and what is held back
+   * is the whole of the hole — there is no fall damage anywhere in this game,
+   * so a dismount at altitude is a free ride to any roof on the map.
+   */
+  private dismount(player: SimPlayer): boolean {
+    const tank = this.hullOf(player);
+    if (!tank) return false;
+    if (!this.vehicles.dismountable(tank)) return false;
+    // Read BEFORE the seat is given up: `exitSpot` measures from the hull, and
+    // `seat` is what stops this player being on it.
+    const spot = this.vehicles.exitSpot(tank);
+    const x = spot.x;
+    const y = spot.y;
+    const z = spot.z;
+    this.seat(player, null);
+    // Placed as a spawn is, with `dt` of 0 so the stance blend is written
+    // rather than eased from whatever the drive left it at.
+    player.apply(0, x, y, z, player.yaw, 0, false, false);
+    this.seatAnswer(player, -1, player.position, player.yaw);
+    return true;
+  }
+
+  /**
+   * **C4a only.** A DRIVER's sticks, stepped by this core: the hull leaves
+   * `driven` (posed from reports) for `steered`, and `vehicleOrders.driveFor`
+   * hands `VehicleSystem` these numbers exactly as `Game.vehicleOrders` hands
+   * it `Game.drive`. Written into one held object per hull.
+   */
+  private steer(player: SimPlayer, input: DriveInput): boolean {
+    if (!player.alive || player.seat < 0 || player.crewSeat !== DRIVER) return false;
+    let held = this.steered.get(player.seat);
+    if (!held) {
+      held = { throttle: 0, steer: 0, lift: 0, aimYaw: 0, aimPitch: 0 };
+      this.steered.set(player.seat, held);
+      this.driven.delete(player.seat);
+    }
+    held.throttle = input.throttle;
+    held.steer = input.steer;
+    held.lift = input.lift;
+    held.aimYaw = input.aimYaw;
+    held.aimPitch = input.aimPitch;
+    player.yaw = input.aimYaw;
+    player.pitch = input.aimPitch;
+    return true;
+  }
+
+  /** **C4a only.** `steer`'s twin for a GUNNER's order, against `laid`. */
+  private orderGun(player: SimPlayer, aimYaw: number, aimPitch: number): boolean {
+    if (!player.alive || player.seat < 0 || player.crewSeat !== GUNNER) return false;
+    let held = this.ordered.get(player.seat);
+    if (!held) {
+      held = { aimYaw: 0, aimPitch: 0 };
+      this.ordered.set(player.seat, held);
+      this.laid.delete(player.seat);
+    }
+    held.aimYaw = aimYaw;
+    held.aimPitch = aimPitch;
+    player.yaw = aimYaw;
+    player.pitch = aimPitch;
+    return true;
+  }
+
+  /**
+   * The first slot of `team`'s block — where a host seats its one person
+   * (`addPlayer(firstSlotOf(team), team)`). The pool is laid out team 0 then
+   * team 1 in two equal blocks, so team 1's begins at the pool's half.
+   */
+  firstSlotOf(team: Team): number {
+    return team === 0 ? 0 : this.battle.bots.length / 2;
+  }
+
+  /**
    * A player's round, resolved by the authority.
    *
    * The client already fired this locally and flashed a hitmarker at whatever
    * its own ray found. That marker is a GUESS. This is where it becomes true or
-   * doesn't: the ray is re-run here, against every target rewound to the instant
-   * the shooter was actually looking at, and only this result deals damage.
+   * doesn't: the ray is re-run here — against every target rewound to the
+   * instant the shooter was actually looking at, on a core built with
+   * `rewind` — and only this result deals damage.
    *
    * `dir` is the direction the round actually flew, spread already applied by
-   * the client — so this fires with a spread of zero. `CombatSystem.fire`
+   * the host — so this fires with a spread of zero. `CombatSystem.fire`
    * jitters internally, and jittering again here would resolve a different
    * bullet from the one the player saw leave the barrel. The cost of trusting
    * the direction is bounded by the cone check in `Match`, which is what stops
-   * a client claiming a shot fired backwards.
+   * a client claiming a shot fired backwards. Reached through `submit`'s
+   * `shot` and nowhere else.
    */
-  resolveShot(
-    shooter: SimPlayer,
-    origin: Vector3,
-    dir: Vector3,
-    renderTime: number,
-    weapon: WeaponSetup,
-  ): ShotResult | null {
+  private resolveShot(shooter: SimPlayer, cmd: ShotCommand): ShotResult | null {
     if (!this.map || !shooter.alive) return null;
+    const origin = this.cmdFrom.copyFrom(cmd.origin);
+    const dir = this.cmdDir.copyFrom(cmd.dir);
+    // The tracer's start and nothing else — `round`'s muzzle; the eye when
+    // the host names none, which is what the authority has always drawn from.
+    const muzzle = cmd.muzzle ? this.cmdMuzzle.copyFrom(cmd.muzzle) : origin;
+    const weapon = cmd.weapon;
     const targets = this.battle.hittablesAgainst(shooter.team);
 
     // Bots hear a person's rifle exactly as they hear each other's. This is the
@@ -1115,16 +1526,16 @@ export class SimCore {
     this.battle.hearGunshot(origin, shooter.team, dir);
 
     this.shooter = shooter.slot;
-    const result = this.lag.resolve(renderTime, this.now, shooter, () =>
+    const fire = () =>
       this.combat.fire(
         origin,
         dir,
-        // Zero: the client's direction already carries its own spread, drawn
-        // from the client's own stream — so there is nothing here to draw.
+        // Zero: the host's direction already carries its own spread, drawn
+        // from the shooter's own stream — so there is nothing here to draw.
         0,
         UNDRAWN,
         weapon.damage,
-        origin,
+        muzzle,
         targets,
         weapon.range,
         {
@@ -1139,8 +1550,11 @@ export class SimCore {
           // accurate bot shot a headshot, since they aim at `eyePos`.
           headMult: CONFIG.combat.headshotMult,
         },
-      ),
-    );
+      );
+    const result =
+      this.rewind && cmd.renderTime !== undefined
+        ? this.lag.resolve(cmd.renderTime, this.now, shooter, fire)
+        : fire();
     this.shooter = -1;
 
     // A bot this round put down is charged HERE, and it is the only path that
@@ -1193,11 +1607,12 @@ export class SimCore {
    * Returns the hull the player is in afterwards: the one taken, or null for a
    * refused mount or a dismount — and for a refused CROSSING the hull they are
    * still sitting in, since refusing a swap moves nobody. A refusal is SILENT
-   * beyond the answer: `Match` tells the asker where they
-   * are either way, and a player who pressed the key a metre too far from
-   * their own tank has lost nothing but the press.
+   * beyond the answer: `mount` tells the asker where they are either way, and
+   * a player who pressed the key a metre too far from their own tank has lost
+   * nothing but the press. The MECHANISM; the policy around it — which hull
+   * may be asked for, when a body may get out — is `mount` and `dismount`.
    */
-  seat(player: SimPlayer, tank: Vehicle | null, want: CrewSeat = DRIVER): Vehicle | null {
+  private seat(player: SimPlayer, tank: Vehicle | null, want: CrewSeat = DRIVER): Vehicle | null {
     const held = player.seat >= 0 ? this.vehicles.hulls[player.seat] : null;
     // **The old chair is given up whenever it is not the one being asked for,
     // and that is what makes a SWAP the same call as a mount.** A peer already
@@ -1291,8 +1706,13 @@ export class SimCore {
    * is exactly the thing a second copy would get wrong.
    */
   private release(player: SimPlayer, held: Vehicle): void {
-    if (player.crewSeat === DRIVER) this.driven.delete(player.seat);
-    else this.laid.delete(player.seat);
+    if (player.crewSeat === DRIVER) {
+      this.driven.delete(player.seat);
+      this.steered.delete(player.seat);
+    } else {
+      this.laid.delete(player.seat);
+      this.ordered.delete(player.seat);
+    }
     this.vehicles.setOccupied(held, player.crewSeat, false);
     player.seat = -1;
     player.crewSeat = DRIVER;
@@ -1318,9 +1738,11 @@ export class SimCore {
    *
    * Written into the same object `remoteFor` hands out rather than a fresh one,
    * so the path that runs at `INPUT_HZ` per driver allocates nothing — the
-   * rule `LagComp` and the snapshot scratch already follow.
+   * rule `LagComp` and the snapshot scratch already follow. A hull that was
+   * being STEPPED from a `driveInput` (C4a only) goes back to being posed from
+   * reports on the first one, which is the one allocation.
    */
-  applyDrive(
+  private applyDrive(
     player: SimPlayer,
     x: number,
     y: number,
@@ -1330,7 +1752,11 @@ export class SimCore {
     gunPitch: number,
   ): void {
     if (player.crewSeat !== DRIVER) return;
-    const state = this.driven.get(player.seat);
+    let state = this.driven.get(player.seat);
+    if (!state && this.steered.delete(player.seat)) {
+      state = { x, y, z, yaw, turretYaw, gunPitch };
+      this.driven.set(player.seat, state);
+    }
     if (!state) return;
     state.x = x;
     state.y = y;
@@ -1347,9 +1773,13 @@ export class SimCore {
    * and for the same reason. There is nothing to validate: a bearing claims
    * nothing about the world — see `GunnerMessage`.
    */
-  applyGun(player: SimPlayer, yaw: number, pitch: number): void {
+  private applyGun(player: SimPlayer, yaw: number, pitch: number): void {
     if (player.crewSeat !== GUNNER) return;
-    const laid = this.laid.get(player.seat);
+    let laid = this.laid.get(player.seat);
+    if (!laid && this.ordered.delete(player.seat)) {
+      laid = { yaw, pitch };
+      this.laid.set(player.seat, laid);
+    }
     if (!laid) return;
     laid.yaw = yaw;
     laid.pitch = pitch;
@@ -1411,7 +1841,7 @@ export class SimCore {
    * hull's own reload in the same tick it is ready, and `Match`'s tolerance for
    * a person's claimed round, which arrives on the network's schedule.
    */
-  resolveShell(tank: Vehicle, by: Combatant, early = 0): boolean {
+  private resolveShell(tank: Vehicle, by: Combatant, early = 0): boolean {
     this.shooter = this.slotOf(by);
     const round = fireHullGun(this.hullRules, tank, by, early);
     this.shooter = -1;
@@ -1424,7 +1854,7 @@ export class SimCore {
    * One round out of a hull's CUPOLA gun, whoever pulled the trigger —
    * `fireHullMg`, shared with the client. `early` is `resolveShell`'s.
    */
-  resolveMg(tank: Vehicle, by: Combatant, early = 0): boolean {
+  private resolveMg(tank: Vehicle, by: Combatant, early = 0): boolean {
     this.shooter = this.slotOf(by);
     const round = fireHullMg(this.hullRules, tank, by, early);
     this.shooter = -1;
@@ -1460,11 +1890,11 @@ export class SimCore {
    *
    * Returns false when the pool refused it, and a caller that gets a false must
    * not debit the pouch — `AntiTankSystem.launch`'s contract, unchanged by
-   * being reached over a socket.
+   * being reached over a socket. `submit`'s `ordnance` is the caller.
    */
-  launchRocket(from: Vector3, dir: Vector3, by: SimPlayer): boolean {
+  private launchRocket(from: Vector3Like, dir: Vector3Like, by: SimPlayer): boolean {
     if (!this.antiTank.launch(from, dir, by.team, by)) {
-      emitPair(this.events, EV.ordnanceRefused, this.tick, by.slot, 0);
+      emitPair(this.events, EV.ordnanceRefused, this.tick, by.slot, refusedCode("rocket"));
       return false;
     }
     emitShot(this.events, EV.rocket, this.tick, by.slot, from, dir);
@@ -1476,9 +1906,9 @@ export class SimCore {
   }
 
   /** A person's mine, laid by the authority on their behalf. */
-  layMine(at: Vector3, by: SimPlayer): boolean {
+  private layMine(at: Vector3Like, by: SimPlayer): boolean {
     if (this.antiTank.place(at, by.team, by)) return true;
-    emitPair(this.events, EV.ordnanceRefused, this.tick, by.slot, 1);
+    emitPair(this.events, EV.ordnanceRefused, this.tick, by.slot, refusedCode("mine"));
     return false;
   }
 
@@ -1489,11 +1919,10 @@ export class SimCore {
    * and `yaw` are where the body was put down, and mean something only on
    * the way out. Every number is read here, so `at` may be scratch.
    *
-   * Public because the mount and the dismount are still `Match`'s policy
-   * (`seatOffered`, `dismountable`) around `seat`'s mechanism, and it is
-   * `Match` that knows when an answer is owed — a refusal is answered too.
+   * Written by `mount` (a refusal is answered too), `dismount` and the hull
+   * burning — the three moments an answer is owed.
    */
-  seatAnswer(player: SimPlayer, tank: number, at: Vector3Like, yaw: number): void {
+  private seatAnswer(player: SimPlayer, tank: number, at: Vector3Like, yaw: number): void {
     emitSeat(this.events, this.tick, player.slot, tank, player.crewSeat, at, yaw);
   }
 
@@ -1537,9 +1966,12 @@ export class SimCore {
     };
     if (this.map) player.leash.setMap(this.map.size, this.map.margin);
     this.players.set(slot, player);
-    this.lag.track(player);
+    if (this.rewind) this.lag.track(player);
     this.battle.addHuman(player);
-    this.battle.setBenched(this.battle.bots[slot], true);
+    // Before the first round there is no pool to bench in (`startRound` builds
+    // it); the round's own re-bench, last of `startRound`, covers that person.
+    const bot = this.battle.bots[slot];
+    if (bot) this.battle.setBenched(bot, true);
     return player;
   }
 
@@ -1564,7 +1996,8 @@ export class SimCore {
     this.players.delete(slot);
     this.lag.untrack(player);
     this.battle.removeHuman(player);
-    this.battle.setBenched(this.battle.bots[slot], false);
+    const bot = this.battle.bots[slot];
+    if (bot) this.battle.setBenched(bot, false);
   }
 
   /** Where a human of `team` should deploy — the same picker the bots use. */

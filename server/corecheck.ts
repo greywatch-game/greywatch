@@ -24,14 +24,24 @@
  * would send, every claim gate in the path) must leave the identical award
  * and death list — the scoring rules exercised offline and online.
  *
- * **The hosts.** `CoreHost` is what the offline page will be: it calls the
- * core directly and trusts its commands. `MatchHost` is the authority: a real
- * `Match`, its loop timer stopped so the script steps it by hand, fed JSON
- * through the socket's own `message` handler. Each records every event the
- * core drained, in order, raw (`Log`). Setup that no person's message could
- * do — placing a body, setting a flag's owner, lowering a victim's health,
- * seating a bot crew — is done identically on both, between calls, on the
- * live core; it is a fixture, not a door.
+ * **The hosts.** `CoreHost` is the TRUSTED door, the offline page's shape:
+ * it submits each of the person's acts as a `SimCommand`
+ * (`src/sim/commands.ts`) with nothing in front of it. `MatchHost` is the
+ * VALIDATED door: a real `Match`, its loop timer stopped so the script steps
+ * it by hand, fed JSON through the socket's own `message` handler — every
+ * claim gate runs and then `Match` submits the same command. So the identity
+ * below is the proof that the two doors agree: the rules are the core's, once
+ * (`SimCore.submit`), and nothing in either host restates one. Each records
+ * every event the core drained, in order, raw (`Log`). Setup that no person's
+ * message could do — placing a body, setting a flag's owner, lowering a
+ * victim's health, seating a bot crew — is done identically on both, between
+ * calls, on the live core; it is a fixture, not a door.
+ *
+ * One case is the core's alone (`holdsRespawn`): a core built with
+ * `hostHoldsRespawn` — the offline page's respawn clock — must honour a
+ * deploy AT SUBMIT through the same door and the same spawn stream the
+ * authority's reinforcement pass uses, where the default core (above) keeps
+ * the request until its own clock runs out.
  *
  * The person is always slot 0, team 0: the first seat `Roster.claim` hands
  * out, which `MatchHost` asserts. `-- --list` also prints each map's event
@@ -50,12 +60,14 @@ import { DRIVER, GUNNER, type CrewSeat } from "../src/entities/hullSeats";
 import { DEFAULT_WEAPON, PRIMARY_SLOT, weaponSetup } from "../src/entities/weapons";
 import { DEFAULT_EQUIPMENT, equipmentSetup } from "../src/entities/equipment";
 import { DEFAULT_THROWABLE, throwableCarried } from "../src/entities/throwables";
+import { perTeamOf } from "../src/world/layout";
 import { crushSweep, type HullRules } from "../src/systems/hullRules";
 import type { ControlPoint } from "../src/systems/ConquestSystem";
 import { MAPS, type MapDef } from "../src/world/maps";
 import type { MapCollision } from "../src/world/collision";
 import type { Heightfield } from "../src/world/layout";
-import { SimCore } from "../src/sim/SimCore";
+import { SimCore, type RoundSpec, type SimCoreOptions } from "../src/sim/SimCore";
+import type { KitCommand } from "../src/sim/commands";
 import type { SimPlayer } from "../src/sim/SimPlayer";
 import {
   EV,
@@ -169,31 +181,50 @@ interface Host {
   flush(): void;
 }
 
-/** The person's kit as `Match.setKit` resolves the defaults — written on both hosts so the pouch agrees. */
-function giveKit(p: SimPlayer): void {
-  p.ordnanceCarried = equipmentSetup(DEFAULT_EQUIPMENT).magSize;
-  p.ordnance = p.ordnanceCarried;
-  p.grenadesCarried = throwableCarried(DEFAULT_THROWABLE);
-  p.grenades = p.grenadesCarried;
-}
+/** The person's kit as `Match.setKit` resolves the defaults — the `kit` it submits. */
+const KIT: KitCommand = {
+  t: "kit",
+  grenades: throwableCarried(DEFAULT_THROWABLE),
+  ordnance: equipmentSetup(DEFAULT_EQUIPMENT).magSize,
+};
 
 const RIFLE = weaponSetup(DEFAULT_WEAPON);
 
-/** The offline page's shape: the core called directly, commands trusted. */
+/** The round both hosts build: `Match`'s pool and fielding, the script's seed. */
+function roundOf(world: World): RoundSpec {
+  return {
+    ...world,
+    difficulty: 1,
+    pool: CONFIG.bots.maxPerTeam,
+    fielded: perTeamOf(world.def.layout),
+    seed: SEED,
+  };
+}
+
+/**
+ * The trusted door: every act a `SimCommand`, submitted with nothing in front
+ * of it. Built with `rewind` and handed the shooter's render time as `Match`
+ * hands the client's, so a round meets the same rewound world on both hosts.
+ */
 class CoreHost implements Host {
   readonly name = "core";
-  readonly core = new SimCore();
+  readonly core: SimCore;
   readonly log = new Log();
   private readonly cursor = new EventCursor();
   private readonly dir = new Vector3();
 
+  constructor(options: SimCoreOptions = { rewind: true }) {
+    this.core = new SimCore(options);
+  }
+
   start(world: World): void {
-    this.core.startRound({ ...world, difficulty: 1, bots: true, seed: SEED });
+    this.core.startRound(roundOf(world));
     this.core.anchor(ANCHOR);
     this.flush();
-    const p = this.core.addPlayer(PERSON_SLOT, PERSON_TEAM);
+    this.core.addPlayer(PERSON_SLOT, PERSON_TEAM);
     this.flush();
-    giveKit(p);
+    this.core.submit(PERSON_SLOT, KIT);
+    this.flush();
   }
 
   player(): SimPlayer {
@@ -205,47 +236,50 @@ class CoreHost implements Host {
     this.log.absorb(this.cursor);
   }
 
+  /** `Match.onDeploy`'s two submits: the kit the deploy confirms, then the ask. */
   async deploy(spawn: number): Promise<void> {
-    const p = this.player();
-    if (p.alive) return;
-    giveKit(p);
-    p.deployRequest = spawn;
+    this.core.submit(PERSON_SLOT, KIT);
+    this.core.submit(PERSON_SLOT, { t: "deploy", spawn });
+    this.flush();
   }
 
   async aim(yaw: number, pitch: number): Promise<void> {
-    const p = this.player();
-    if (!p.alive || p.seat >= 0) return;
-    p.apply(0.1, p.position.x, p.position.y, p.position.z, yaw, pitch, false, false);
+    const p = this.player().position;
+    this.core.submit(PERSON_SLOT, {
+      t: "move",
+      dt: 0.1,
+      x: p.x,
+      y: p.y,
+      z: p.z,
+      yaw,
+      pitch,
+      crouch: false,
+      sprint: false,
+    });
+    this.flush();
   }
 
   async shot(origin: Vector3Like, dir: Vec3): Promise<void> {
-    const p = this.player();
-    if (!p.alive || p.seat >= 0 || !claimedDir(dir, this.dir)) return;
-    this.core.resolveShot(p, new Vector3(origin.x, origin.y, origin.z), this.dir, this.core.now, RIFLE);
+    // The direction a round flew is a unit vector — `claimedDir` is the
+    // normalisation `Match` applies to the client's before it submits.
+    if (!claimedDir(dir, this.dir)) return;
+    this.core.submit(PERSON_SLOT, {
+      t: "shot",
+      origin: { x: origin.x, y: origin.y, z: origin.z },
+      dir: this.dir,
+      weapon: RIFLE,
+      renderTime: this.core.now,
+    });
     this.flush();
   }
 
-  /** `Match.onMount`'s policy around `SimCore.seat`, as the page will hold it. */
   async mount(tank: number, seat: CrewSeat): Promise<void> {
-    const p = this.player();
-    if (!p.alive) return;
-    const offered = this.core.seatOffered(p);
-    const hull = offered && this.core.vehicles.hulls.indexOf(offered) === tank ? offered : null;
-    const taken = hull ? this.core.seat(p, hull, seat) : null;
-    this.core.seatAnswer(p, taken ? tank : -1, p.position, p.yaw);
+    this.core.submit(PERSON_SLOT, { t: "mount", tank, seat });
     this.flush();
   }
 
-  /** `Match.onDismount`'s. */
   async dismount(): Promise<void> {
-    const p = this.player();
-    const tank = this.core.hullOf(p);
-    if (!tank || !this.core.vehicles.dismountable(tank)) return;
-    const spot = this.core.vehicles.exitSpot(tank);
-    const { x, y, z } = spot;
-    this.core.seat(p, null);
-    p.apply(0, x, y, z, p.yaw, 0, false, false);
-    this.core.seatAnswer(p, -1, p.position, p.yaw);
+    this.core.submit(PERSON_SLOT, { t: "dismount" });
     this.flush();
   }
 
@@ -307,7 +341,7 @@ class MatchHost implements Host {
     // The round is built BEFORE the first peer arrives, from the same seed
     // and anchor as the core run, so `Match.start` finds a map standing and
     // skips its own `freshSeed()` round.
-    this.core.startRound({ ...world, difficulty: 1, bots: true, seed: SEED });
+    this.core.startRound(roundOf(world));
     this.core.anchor(ANCHOR);
     await this.match.admit(this.socket as unknown as WebSocket, "corecheck");
     // No macrotask has run since `start` armed the loop: stopped before its
@@ -538,7 +572,7 @@ async function greyfen(h: Host, c: Checks): Promise<void> {
   const used = new Set<Bot>();
 
   // --- deploy: nobody unasked comes in, an ask is honoured -----------------
-  // Door: `deploy` (Match.onDeploy → SimPlayer.deployRequest), spent by the
+  // Door: `deploy` (`SimCore.submit` → `SimPlayer.deployRequest`), spent by the
   // reinforcement pass in `SimCore.step`.
   for (let i = 0; i < 30; i++) h.step();
   c.that(
@@ -551,9 +585,9 @@ async function greyfen(h: Host, c: Checks): Promise<void> {
   if (first < 0) return;
 
   // --- the kill awards, keyed on the VICTIM's flag -------------------------
-  // Door: `shot` (Match.onShot's rate/cone/origin gates → SimCore.resolveShot,
-  // rewind at `now`). Fixture: the victim is placed and its health lowered so
-  // one round settles it; the flag's owner is set.
+  // Door: `shot` (Match.onShot's rate/cone/origin gates → `SimCore.submit` →
+  // `resolveShot`, rewind at `now`). Fixture: the victim is placed and its
+  // health lowered so one round settles it; the flag's owner is set.
   let line: { inner: Vector3; outer: Vector3 } | null = null;
   let flag: ControlPoint | null = null;
   for (const p of core.conquest.points) {
@@ -751,7 +785,7 @@ async function coldharbour(h: Host, c: Checks): Promise<void> {
       placePerson(h, at.x, at.y, at.z);
       placePerson(h, at.x, at.y - (p.center.y - p.position.y), at.z);
       const mark = h.log.events.length;
-      const fired = core.resolveShell(enemy, gunner);
+      const fired = core["resolveShell"](enemy, gunner);
       h.flush();
       const evs = since(h, mark);
       const death = deathOf(evs, PERSON_SLOT);
@@ -795,8 +829,8 @@ async function coldharbour(h: Host, c: Checks): Promise<void> {
   }
 
   // --- seat and evict ------------------------------------------------------
-  // Doors: `mount` and `dismount` (Match.onMount/onDismount's policy around
-  // `SimCore.seat`). Fixture: both chairs of the person's own hull crewed by
+  // Doors: `mount` and `dismount` (`SimCore.submit`: the core's seat policy
+  // around `seat`, one copy for both hosts). Fixture: both chairs of the person's own hull crewed by
   // bots, the person stood at its exit spot.
   if (c.that("seat: the person redeploys", await respawn())) {
     const driver = crewed(own, DRIVER);
@@ -896,6 +930,79 @@ async function coldharbour(h: Host, c: Checks): Promise<void> {
       );
     }
   }
+}
+
+/**
+ * `hostHoldsRespawn`: a deploy honoured AT SUBMIT, through the same door.
+ *
+ * Two cores off one seed and one script — the default one (the authority's
+ * respawn clock) and one built with `hostHoldsRespawn` (the offline page's) —
+ * stepped to the same tick, where the person asks to come in. Door: `deploy`
+ * (`SimCore.submit`), spent by `deployPerson` from either trigger. The default
+ * core spends it in the reinforcement pass of the NEXT step; the held one in
+ * the submit itself, one step sooner — and since that pass runs first in a
+ * step, before any bot can draw a spawn, both spend the same draw of the
+ * spawn stream: the same spot, the same bearing. Then the person is killed
+ * (fixture: `SimPlayer.takeDamage`, the door every blow takes) and asks again
+ * at once: the held core puts them straight back in with its own clock still
+ * running, where the default core keeps the request until it runs out (the
+ * greyfen script's last case).
+ */
+function holdsRespawn(world: World, c: Checks): void {
+  const tag = "hostHoldsRespawn";
+  const held = new CoreHost({ rewind: true, hostHoldsRespawn: true });
+  const plain = new CoreHost();
+  held.start(world);
+  plain.start(world);
+  for (let i = 0; i < 30; i++) {
+    held.step();
+    plain.step();
+  }
+  const spawn = homeSpawn(held, PERSON_TEAM);
+  const spawnedIn = (h: CoreHost, mark: number) =>
+    since(h, mark).find((e): e is Extract<SimEvent, { type: "spawned" }> => e.type === "spawned" && e.slot === PERSON_SLOT) ?? null;
+
+  let mark = held.log.events.length;
+  void held.deploy(spawn);
+  const atSubmit = spawnedIn(held, mark);
+  mark = plain.log.events.length;
+  void plain.deploy(spawn);
+  const plainAtSubmit = spawnedIn(plain, mark);
+  plain.step();
+  const plainNext = spawnedIn(plain, mark);
+  c.that(
+    `${tag}: a deploy is honoured at submit (tick ${atSubmit?.tick ?? "-"}), the default core's on its next step (${plainNext?.tick ?? "-"})`,
+    !!atSubmit && held.player().alive && atSubmit.tick === held.core.tick &&
+      !plainAtSubmit && !!plainNext && plainNext.tick === atSubmit.tick + 1,
+  );
+  c.that(
+    `${tag}: one door, one spawn stream — the same spot and bearing as the reinforcement pass's`,
+    !!atSubmit && !!plainNext && isDeepStrictEqual(atSubmit.pos, plainNext.pos) && atSubmit.yaw === plainNext.yaw,
+    `held ${JSON.stringify(atSubmit?.pos)} ${atSubmit?.yaw} vs pass ${JSON.stringify(plainNext?.pos)} ${plainNext?.yaw}`,
+  );
+
+  // Killed, and asking again at once: the core's own clock has hardly moved.
+  const p = held.player();
+  const killed = p.takeDamage(p.health);
+  held.flush();
+  const respawnT = p.respawnT;
+  mark = held.log.events.length;
+  void held.deploy(spawn);
+  const again = spawnedIn(held, mark);
+  c.that(
+    `${tag}: asked again the moment it died, honoured at once — the host holds the clock, not the core (${respawnT.toFixed(2)} s left on it)`,
+    killed && respawnT > 0 && !!again && p.alive,
+    `respawnT ${respawnT}, spawned ${JSON.stringify(again)}`,
+  );
+  // …and a deploy from a LIVING body is refused, held clock or not.
+  mark = held.log.events.length;
+  const refused = !held.core.submit(PERSON_SLOT, { t: "deploy", spawn });
+  c.that(
+    `${tag}: a living body's deploy is refused`,
+    refused && !spawnedIn(held, mark),
+  );
+  held.core.dispose();
+  plain.core.dispose();
 }
 
 // ---------------------------------------------------------------------------
@@ -1075,6 +1182,12 @@ async function main(): Promise<void> {
       detail: "",
     });
     for (const run of [a, b, m]) run.host.core.dispose();
+
+    if (id === "greyfen") {
+      const checks = new Checks("greyfen/held");
+      holdsRespawn(world, checks);
+      for (const r of checks.results) report(checks.tag, r);
+    }
   }
 
   console.log(lines.join("\n"));

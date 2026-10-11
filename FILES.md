@@ -18,8 +18,10 @@ server/               # The authoritative match server. Node, no Babylon (the
                       #   game rules
   Match.ts            #   One match: fixed-step loop, snapshots, the gates on
                       #   what a client may claim, round rotation. The core's
-                      #   HOST: drains its event ring after every call and
-                      #   `relay`s it onto the wire
+                      #   HOST: VALIDATES each message, then hands what it
+                      #   accepted to `SimCore.submit` as a SimCommand; drains
+                      #   the event ring after every call and `relay`s it onto
+                      #   the wire. Holds no rule (pouches, seat policy, spawn)
   claimGates.ts       #   HOW a claimed round is gated — the RateGate bucket,
                       #   the look vector, the cone, the origin slip and the
                       #   one zero-length threshold. Match's five claim arms
@@ -56,7 +58,9 @@ server/               # The authoritative match server. Node, no Babylon (the
                       #   leash, respawn clock, seat/evict, determinism,
                       #   structuredClone), then runs the same script through
                       #   a real Match behind a fake socket and requires the
-                      #   identical award/death list. Exits non-zero on a fail
+                      #   identical award/death list — the trusted door
+                      #   (`submit`) and the validated one agreeing — plus the
+                      #   `hostHoldsRespawn` deploy. Exits non-zero on a fail
 scripts/                      # Node tooling, run by hand or by `npm run build`,
                               #   never shipped. Plain .mjs outside both
                               #   tsconfigs. The game's own code is reached
@@ -1901,9 +1905,18 @@ src/
                       #   `seat`, which is `Game.mount`/`clearVehicle` as one
                       #   method. Builds the SIMULATIONS only, never a view, and
                       #   has no engine and no scene. `startRound(RoundSpec)` is
-                      #   synchronous; `anchor`/`drop` are the host's clock.
-                      #   No outward callback: it SAYS everything through
-                      #   events.ts, and the host `drain`s after every call
+                      #   synchronous (`pool` + `fielded`); `anchor`/`drop` are
+                      #   the host's clock; `SimCoreOptions` (rewind,
+                      #   hostHoldsRespawn) are the hosts' roles. A person
+                      #   reaches it through `submit` alone (commands.ts), and
+                      #   the rules a command meets — pouches, seat policy,
+                      #   `deployPerson` — are here once. No outward callback:
+                      #   it SAYS everything through events.ts, and the host
+                      #   `drain`s after every call
+    commands.ts       #   The SimCommand vocabulary `SimCore.submit` takes:
+                      #   the gameplay ClientMessages after validation, with
+                      #   host-resolved data (WeaponSetup, kit pouch sizes),
+                      #   plus C4a's driveInput/gunOrder. Plain data only
     events.ts         #   The event ring: the vocabulary (EV), each kind's
                       #   payload layout, the writers SimCore calls, the
                       #   EventCursor a drain swaps into, and decode/toObjects.

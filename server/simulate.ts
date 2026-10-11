@@ -67,6 +67,7 @@ import { PerformanceObserver } from "node:perf_hooks";
 import { TICK_HZ } from "../src/net/protocol";
 import { CONFIG } from "../src/config";
 import { MAPS } from "../src/world/maps";
+import { perTeamOf } from "../src/world/layout";
 import { freshSeed, parseSeed } from "../src/systems/RoundRandom";
 import type { DeathCause } from "../src/systems/killRules";
 import { SimCore } from "../src/sim/SimCore";
@@ -144,7 +145,10 @@ async function runRound(mapId: string, difficulty: number, seed: number) {
   const def = MAPS.find((m) => m.id === mapId);
   if (!def) throw new Error(`no map "${mapId}" (have ${MAPS.map((m) => m.id).join(", ")})`);
 
-  const game = new SimCore();
+  // The AUTHORITY's options, because this is the authority's fight: the
+  // history is recorded every tick as `Match` records it, so the tick cost
+  // printed below is the one a match pays.
+  const game = new SimCore({ rewind: true });
   // `--events`: one line per event, stamped with the tick it was raised on —
   // see the header. Null when not asked for, so a plain run builds no string.
   const log = printEvents
@@ -226,13 +230,12 @@ async function runRound(mapId: string, difficulty: number, seed: number) {
     }
   };
 
-  // **Nothing sets the roster here any more, and that is the fix rather than
-  // an omission.** This tool exists to measure the ROUND a player actually
-  // gets, which on Sarab is `MapLayout.perTeam`'s twenty-four a side; it used
-  // to have to say so itself, because the authority fielded sixteen on every
-  // map. It does not any more — `SimCore.startRound` fields the map's own
-  // number through `BattleSystem.setFielded` — so asking again here would be a
-  // second opinion about a number that now has one owner. See
+  // **The roster is `Match`'s pair, stated as `Match` states it** — the
+  // ceiling as the pool and the map's own `perTeamOf` fielded out of it
+  // (`RoundSpec`). This tool exists to measure the ROUND a player actually
+  // gets, which on Sarab is `MapLayout.perTeam`'s twenty-four a side, and the
+  // slot layout is what every outcome stream is keyed by — so a pool sized
+  // any other way would be a different fight from the authority's. See
   // `server/Roster.ts`.
 
   const built = Date.now();
@@ -240,7 +243,15 @@ async function runRound(mapId: string, difficulty: number, seed: number) {
   // seed, anchor the clock. The anchor decides nothing here — nobody is seated,
   // so nothing is ever rewound against it — and is taken as `Match` takes it.
   const { collision, floor } = await loadSimWorld(def);
-  game.startRound({ def, collision, floor, difficulty, bots: true, seed });
+  game.startRound({
+    def,
+    collision,
+    floor,
+    difficulty,
+    pool: CONFIG.bots.maxPerTeam,
+    fielded: perTeamOf(def.layout),
+    seed,
+  });
   game.anchor(Date.now());
   read();
   const buildMs = Date.now() - built;

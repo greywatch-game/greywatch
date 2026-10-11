@@ -10,6 +10,16 @@
  * accepted message — and `relay` turns what it drained into wire events. It
  * installs no callback on the core and reads nothing back off a live object
  * to finish an event (`src/sim/events.ts`).
+ * **It VALIDATES and the core DECIDES** (`BABYLON_EXIT.md` X2.5a C4a): each
+ * message handler runs this side's claim gates — the shape (`server/wire.ts`),
+ * the sequence and clock, the rate buckets, the cones and origin slips,
+ * `validateMove`/`validateDrive` and the corrections they answer with — and
+ * then hands what it accepted to `SimCore.submit` as one `SimCommand`
+ * (`src/sim/commands.ts`). Everything that is a rule — the pouch counts, the
+ * seat policy, the rewound round, when a person comes back in — is the core's,
+ * the one copy the offline page will submit to as well. What it still reads
+ * off the core is in-process state its validators and snapshot need
+ * (`players`, `hullOf`, `reportedHull`, the fleet, the board).
  * `server/corecheck.ts` drives a real instance through a fake socket and steps
  * it by hand — it reaches `step`, `relay` and `timer` by name — so renaming
  * one of those owes that file a look.
@@ -64,6 +74,7 @@ import {
 } from "../src/entities/throwables";
 import { DRIVER, GUNNER, type CrewSeat } from "../src/entities/hullSeats";
 import { MAPS, type MapDef } from "../src/world/maps";
+import { perTeamOf } from "../src/world/layout";
 import { freshSeed } from "../src/systems/RoundRandom";
 import { SimCore } from "../src/sim/SimCore";
 import { EV, EventCursor, decode, type EventKind } from "../src/sim/events";
@@ -545,7 +556,14 @@ let nextPeerId = 1;
 
 export class Match {
   readonly roster = new Roster();
-  readonly game = new SimCore();
+  /**
+   * The simulation, built with `rewind` — the one option that is the
+   * authority's: every person here is a remote shooter whose round meets the
+   * world they saw a round trip ago. The respawn clock is the core's own
+   * (`hostHoldsRespawn` off): a `deploy` is a request the reinforcement pass
+   * spends once that clock runs out.
+   */
+  readonly game = new SimCore({ rewind: true });
 
   private readonly peers = new Map<string, Peer>();
   private timer: ReturnType<typeof setInterval> | null = null;
@@ -939,11 +957,11 @@ export class Match {
    * **Both callers reach this with the player DEAD** — the handshake seats a
    * body that is dead with a zero timer, and the kit screen is reachable from
    * the deploy screen and nowhere else — which is what lets the pouch be
-   * written straight: `SimPlayer.spawn` refills `ordnance` from
-   * `ordnanceCarried`, so the body that comes back is the first one that
-   * carries this. It is also what keeps `fire`'s `w` and `onReload`'s gate
-   * honest, both of which read the loadout of a player who is shooting and
-   * rest on it not changing under them.
+   * handed over straight (the core's `kit` refuses a living body):
+   * `SimPlayer.spawn` refills `ordnance` from `ordnanceCarried`, so the body
+   * that comes back is the first one that carries this. It is also what keeps
+   * `fire`'s `w` and `onReload`'s gate honest, both of which read the loadout
+   * of a player who is shooting and rest on it not changing under them.
    */
   private setKit(
     slot: number,
@@ -959,15 +977,13 @@ export class Match {
     held.equipment = kit;
     const pouch = isThrowableId(throwable) ? throwable : DEFAULT_THROWABLE;
     held.throwable = pouch;
-    const player = this.game.players.get(slot);
-    if (player) {
-      player.ordnanceCarried = equipmentSetup(kit).magSize;
-      player.ordnance = player.ordnanceCarried;
-      // The pouch on the ordnance's terms exactly: the count is this side's,
-      // the body is dead (see above), and `spawn` refills from this.
-      player.grenadesCarried = throwableCarried(pouch);
-      player.grenades = player.grenadesCarried;
-    }
+    // What a full pouch IS for this kit, handed to the core, whose count it
+    // is (`kit`): the body is dead (see above), and `spawn` refills from it.
+    this.game.submit(slot, {
+      t: "kit",
+      grenades: throwableCarried(pouch),
+      ordnance: equipmentSetup(kit).magSize,
+    });
   }
 
   /**
@@ -1193,7 +1209,11 @@ export class Match {
       collision,
       floor,
       difficulty: 1,
-      bots: this.withBots,
+      // The CEILING, on every map — a slot index is a bot index and a match
+      // rotates maps under one slot table — and the map's own roster fielded
+      // out of it, or none in a match created without bots. See `RoundSpec`.
+      pool: CONFIG.bots.maxPerTeam,
+      fielded: this.withBots ? perTeamOf(def.layout) : 0,
       seed: freshSeed(),
     });
     this.game.anchor(Date.now());
@@ -1322,21 +1342,11 @@ export class Match {
 
     await this.startRound(def);
     // The new map's roster, onto the table — see `start`. FIRST, because
-    // everything below it either re-benches over the top of what
-    // `setFielded` decided or sends a list this filters.
+    // everything below it sends a list this filters.
     this.roster.setFielded(this.fieldedSlots());
-    for (const player of this.game.players.values()) {
-      player.retire();
-      player.respawnT = 0;
-    }
-    // Re-bench, because `startRound` reset the whole bot roster and the bots in
-    // occupied slots would otherwise walk back into a fight somebody is
-    // already standing in.
-    for (const slot of this.roster.slots) {
-      if (slot.occupant.kind === "human") {
-        this.game.battle.setBenched(this.game.battle.bots[slot.index], true);
-      }
-    }
+    // Nobody is retired or re-benched here: `SimCore.startRound` puts every
+    // seated person back dead with a zero timer and benches the bot in their
+    // slot itself, last of the round's build.
     this.ticks = 0;
     this.rotating = false;
     // `startRound` cleared the board; this is what makes sure the cleared one
@@ -2107,8 +2117,8 @@ export class Match {
   /**
    * A player asking to come back in, where, and CARRYING WHAT.
    *
-   * All this does about the spawn is RECORD the ask. The simulation spends it
-   * — see the reinforcement pass in `SimCore.step` — because when a
+   * All this does about the spawn is SUBMIT the ask (`deploy`). The simulation
+   * spends it — see the reinforcement pass in `SimCore.step` — because when a
    * person may deploy is the reinforcement clock's answer and where they land
    * is conquest's, and neither of those questions is a transport's business.
    *
@@ -2152,7 +2162,7 @@ export class Match {
       msg.equipment ?? held.equipment ?? undefined,
       msg.throwable ?? held.throwable ?? undefined,
     );
-    player.deployRequest = msg.spawn;
+    this.game.submit(peer.slot, { t: "deploy", spawn: msg.spawn });
   }
 
   /**
@@ -2223,16 +2233,17 @@ export class Match {
 
     player.seq = msg.seq;
     peer.seq = msg.seq;
-    player.apply(
+    this.game.submit(peer.slot, {
+      t: "move",
       dt,
       x,
       y,
       z,
-      msg.yaw,
-      msg.pitch,
-      msg.crouching,
-      msg.sprinting,
-    );
+      yaw: msg.yaw,
+      pitch: msg.pitch,
+      crouch: msg.crouching,
+      sprint: msg.sprinting,
+    });
   }
 
   /**
@@ -2363,8 +2374,15 @@ export class Match {
 
     SHOT_ORIGIN.fromArray(msg.origin);
     // The verdict comes back as the core's `hit` event, written LAST of the
-    // round's events and relayed to the shooter alone — see `relay`.
-    this.game.resolveShot(player, SHOT_ORIGIN, SHOT_DIR, msg.time, weapon);
+    // round's events and relayed to the shooter alone — see `relay`. Rewound
+    // to the client's render clock, which is what `msg.time` is.
+    this.game.submit(peer.slot, {
+      t: "shot",
+      origin: SHOT_ORIGIN,
+      dir: SHOT_DIR,
+      weapon,
+      renderTime: msg.time,
+    });
 
     // The `hit` and NOTHING ELSE. Everything a death owes — the ticket,
     // the `kill` line, the `died` clock — is raised by whichever of the two
@@ -2385,7 +2403,9 @@ export class Match {
    * client's: a client that tracked its own would throw as many as it liked.
    */
   private onGrenade(peer: Peer, msg: Extract<ClientMessage, { t: "grenade" }>): void {
-    // Nothing is thrown from inside a hull, for `onShot`'s reason exactly.
+    // Nothing is thrown from inside a hull, for `onShot`'s reason exactly —
+    // and the core refuses it too; asked here first so a seated, dead or
+    // empty-handed peer costs no cone arithmetic.
     if ((this.game.players.get(peer.slot)?.seat ?? -1) >= 0) return;
     const player = this.game.players.get(peer.slot);
     if (!player || !player.alive) return;
@@ -2399,20 +2419,15 @@ export class Match {
     if (!withinSlip(msg.origin, player.eyePos, MAX_ORIGIN_SLIP)) return;
 
     SHOT_ORIGIN.fromArray(msg.origin);
-    // Spent only if the arm accepts it — the pool refuses rather than stealing
-    // a live slot, and a refused throw must cost nothing. WHAT is thrown is
-    // this side's record of the kit, never anything on the message.
-    if (
-      this.game.grenades.throwAlong(
-        SHOT_ORIGIN,
-        SHOT_DIR,
-        player.team,
-        player,
-        this.slots[peer.slot].throwable ?? DEFAULT_THROWABLE,
-      )
-    ) {
-      player.grenades--;
-    }
+    // Spent by the core only if the arm accepts it — the pool refuses rather
+    // than stealing a live slot, and a refused throw costs nothing. WHAT is
+    // thrown is this side's record of the kit, never anything on the message.
+    this.game.submit(peer.slot, {
+      t: "grenade",
+      origin: SHOT_ORIGIN,
+      dir: SHOT_DIR,
+      kind: this.slots[peer.slot].throwable ?? DEFAULT_THROWABLE,
+    });
   }
 
   /**
@@ -2544,24 +2559,23 @@ export class Match {
 
     player.seq = msg.seq;
     peer.seq = msg.seq;
-    // The LOOK, kept on the body it belongs to. It is the chase camera's aim
-    // rather than the gun's, and it is what the shell's cone is measured
-    // against — see `DriveMessage.aimYaw`. Nothing draws it: the snapshot
-    // sends the hull's angles, and a driver's own body is not on screen.
-    player.yaw = msg.aimYaw;
-    player.pitch = msg.aimPitch;
     // The VERDICT's position and never the message's: a lid is accepted at the
     // boundary rather than where the client asked to be, and applying the claim
     // here would make the clamp a fiction the correction below then contradicts.
-    this.game.applyDrive(
-      player,
-      verdict.x,
-      verdict.y,
-      verdict.z,
-      msg.yaw,
-      msg.tyaw,
-      msg.gun,
-    );
+    // The LOOK rides with it onto the body — the chase camera's aim rather
+    // than the gun's, and what the shell's cone is measured against (see
+    // `DriveMessage.aimYaw`).
+    this.game.submit(peer.slot, {
+      t: "drive",
+      x: verdict.x,
+      y: verdict.y,
+      z: verdict.z,
+      yaw: msg.yaw,
+      turretYaw: msg.tyaw,
+      gunPitch: msg.gun,
+      aimYaw: msg.aimYaw,
+      aimPitch: msg.aimPitch,
+    });
     // Accepted, but not where they said. The step counts — `seq` has already
     // advanced — and the client is told where it actually ended up, which is
     // what makes a lid a wall the pilot can feel instead of a divergence that
@@ -2578,8 +2592,10 @@ export class Match {
   }
 
   /**
-   * "Put me in that hull." The authority re-derives every term of the offer
-   * against its own copy and answers with a `seat` either way.
+   * "Put me in that hull." The core re-derives every term of the offer
+   * against its own copy and answers with a `seat` either way — the policy
+   * (the swap, the offer, the named hull) is `SimCore`'s `mount`, one copy
+   * for every host. This resolves the message's SHAPE and nothing else.
    *
    * Answered even on a refusal, and that is the point of it being addressed:
    * the client mounted nothing locally and is waiting to be told what it is
@@ -2594,62 +2610,17 @@ export class Match {
     // that is not the gunner's is the driver's, so a nonsense index is a
     // request for the ordinary thing rather than a refusal.
     const want: CrewSeat = msg.seat === GUNNER ? GUNNER : DRIVER;
-    // **A peer already in this hull asking for its other chair is a SWAP**,
-    // and it is granted here rather than through the offer below because
-    // `seatOffered` refuses a player who is already seated — which is right
-    // for the question it answers (may this body climb aboard) and wrong for
-    // this one. `SimCore.seat` is still the one door: it releases the old
-    // chair, turns a BOT out of the new one, and leaves everything about the
-    // BODY standing, because none of that was ever about which seat.
-    //
-    // **The gate is a PERSON in the other chair, never the chair being
-    // taken** — `chooseSeat` with `only` set, inside `seat`, which is the call
-    // `Game.canSwapSeat` offers the key with. Gated on `seats[want]` it
-    // refused every crossing against a bot, so TAKE OVER GUN / TAKE OVER TANK
-    // did nothing in a match.
-    if (player.seat === msg.tank && player.seat >= 0) {
-      const hull = this.game.hullOf(player);
-      if (hull && want !== player.crewSeat) this.game.seat(player, hull, want);
-      this.game.seatAnswer(player, player.seat, player.position, player.yaw);
-      return;
-    }
-    const offered = this.game.seatOffered(player);
-    // Named hull and offered hull must be the SAME hull. The client picked one
-    // and this is the authority's own answer to the same question; granting
-    // whatever is nearest instead would seat somebody in a tank they did not
-    // choose on the day a map states two.
-    const tank =
-      offered && this.game.vehicles.hulls.indexOf(offered) === msg.tank
-        ? offered
-        : null;
-    const taken = tank ? this.game.seat(player, tank, want) : null;
-    this.game.seatAnswer(player, taken ? msg.tank : -1, player.position, player.yaw);
+    this.game.submit(peer.slot, { t: "mount", tank: msg.tank, seat: want });
   }
 
-  /** "Let me out." Where the body lands is the authority's — see the `seat` event. */
+  /**
+   * "Let me out." Where the body lands is the core's, and so is the refusal
+   * of a dismount the hull cannot set a body down from — see `SimCore`'s
+   * `dismount` and the `seat` event.
+   */
   private onDismount(peer: Peer): void {
-    const player = this.game.players.get(peer.slot);
-    const tank = player ? this.game.hullOf(player) : null;
-    if (!player || !tank) return;
-    // Refused in SILENCE, which is the honest answer to a claim made in bad
-    // faith: a client whose own prompt reads LAND TO GET OUT never asks. What
-    // it is holding back is the whole of the hole — there is no fall damage
-    // anywhere in this game, so a dismount at altitude is a free ride to any
-    // roof on the map. The policy is here rather than in SimCore.seat
-    // because that method is the MECHANISM and this file is where policy goes.
-    if (!this.game.vehicles.dismountable(tank)) return;
-    // Read BEFORE the seat is given up: `exitSpot` measures from the hull, and
-    // `seat` is what stops this player being on it.
-    const spot = this.game.vehicles.exitSpot(tank);
-    const x = spot.x;
-    const y = spot.y;
-    const z = spot.z;
-    this.game.seat(player, null);
-    // The body is placed by the authority, exactly as a spawn is, and with
-    // `dt` of 0 so the stance blend is written rather than eased from
-    // whatever the drive left it at.
-    player.apply(0, x, y, z, player.yaw, 0, false, false);
-    this.game.seatAnswer(player, -1, player.position, player.yaw);
+    if (!this.game.players.has(peer.slot)) return;
+    this.game.submit(peer.slot, { t: "dismount" });
   }
 
   /**
@@ -2674,12 +2645,10 @@ export class Match {
     if (player.seat !== msg.tank || player.crewSeat !== GUNNER) return;
     player.seq = msg.seq;
     peer.seq = msg.seq;
-    // The LOOK, kept on the body it belongs to — the chase camera's aim, and
-    // what the machine gun's own cone is measured against, exactly as
-    // `onDrive` keeps a driver's for the shell's.
-    player.yaw = msg.myaw;
-    player.pitch = msg.mpitch;
-    this.game.applyGun(player, msg.myaw, msg.mpitch);
+    // The bearing, which is also the LOOK kept on the body — the chase
+    // camera's aim, and what the machine gun's own cone is measured against,
+    // exactly as `onDrive` keeps a driver's for the shell's.
+    this.game.submit(peer.slot, { t: "gun", yaw: msg.myaw, pitch: msg.mpitch });
   }
 
   /**
@@ -2729,8 +2698,9 @@ export class Match {
     // …and then nothing of the claim is used. The round goes down the
     // authority's own gun, from the authority's own muzzle, at the authority's
     // own reload — which is the whole security property, and the reason the
-    // checks above bound a LIE rather than measure an aim.
-    if (this.game.resolveShell(tank, player, HULL_EARLY)) gate.spend(interval);
+    // checks above bound a LIE rather than measure an aim. The bucket spends
+    // only on a shell that LEFT, which is what `submit`'s answer says.
+    if (this.game.submit(peer.slot, { t: "shell", early: HULL_EARLY })) gate.spend(interval);
   }
 
   /**
@@ -2764,16 +2734,17 @@ export class Match {
     // …and then nothing of the claim is used, which is `onShell`'s whole
     // security property one calibre down: the round goes down the authority's
     // own gun, from its own muzzle, at its own rate.
-    if (this.game.resolveMg(tank, player, HULL_EARLY)) gate.spend(interval);
+    if (this.game.submit(peer.slot, { t: "mg", early: HULL_EARLY })) gate.spend(interval);
   }
 
   /**
    * A rocket out of the tube, or a mine on the ground.
    *
-   * The pouch is the SERVER's, exactly as the grenade pouch is, and it is
-   * debited only on an item that actually reached the world — the refusal
-   * contract `AntiTankSystem` states and `Game` obeys, unchanged by arriving
-   * over a socket.
+   * The pouch is the SIMULATION's, exactly as the grenade pouch is, and the
+   * core debits it only on an item that actually reached the world — the
+   * refusal contract `AntiTankSystem` states, unchanged by arriving over a
+   * socket. This side spends its rate bucket on the same condition, which is
+   * what `submit`'s answer says.
    *
    * A mine ignores the direction and lands where the ORIGIN says, bounded to
    * arm's length of where the authority holds this player: a client that could
@@ -2800,21 +2771,23 @@ export class Match {
 
     if (!withinSlip(msg.origin, player.eyePos, ORDNANCE_ORIGIN_SLACK)) return;
 
-    let placed = false;
     ORDNANCE_AT.fromArray(msg.origin);
-    if (kind === "mine") {
-      placed = this.game.layMine(ORDNANCE_AT, player);
-    } else {
+    if (kind !== "mine") {
       // The same cone a rifle round is bounded by, and for the same reason —
       // it stops a claimed rocket leaving backwards or through the shooter's
       // own feet, and it stops nothing else.
       if (!claimedDir(msg.dir, ORDNANCE_DIR)) return;
       lookDir(player.yaw, player.pitch, CLAIM_LOOK);
       if (!withinCone(CLAIM_LOOK, ORDNANCE_DIR, SHOT_CONE_COS)) return;
-      placed = this.game.launchRocket(ORDNANCE_AT, ORDNANCE_DIR, player);
     }
+    // A mine ignores the direction and lands where the origin says.
+    const placed = this.game.submit(peer.slot, {
+      t: "ordnance",
+      kind,
+      origin: ORDNANCE_AT,
+      dir: ORDNANCE_DIR,
+    });
     if (!placed) return;
-    player.ordnance -= 1;
     gate.spend(interval);
     // Heard as a shot is, so the fifteen other clients get the report and the
     // minimap reveal a launcher earns. A mine is silent on the wire for the

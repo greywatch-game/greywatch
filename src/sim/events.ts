@@ -39,7 +39,7 @@
  * is the authority's team index; vectors are three consecutive floats; a
  * boolean is 0 or 1; enumerated strings are indices into the code tables
  * below (`DAMAGE_KINDS`, `DEATH_CAUSES`, `IMPACT_KINDS`, `SCORE_KINDS`,
- * `VICTIM_KINDS`, `SURFACES`). Field order is the order in `decode`.
+ * `VICTIM_KINDS`, `SURFACES`, `REFUSED_ITEMS`). Field order is the order in `decode`.
  *
  * | kind | payload | raised by |
  * | --- | --- | --- |
@@ -68,7 +68,7 @@
  * | `hullPlaced` / `hullKicked` / `hullWrecked` | tank, team | the hull's `HullPicture` hooks: put on a pad, main gun's kick, burned |
  * | `hullDestroyed` / `hullRespawned` | tank, team | `VehicleSystem.onDestroyed` / `onRespawned` |
  * | `seat` | slot, tank, seat, at·3, yaw | the answer to a person's mount/dismount, and the hull burning under them; `at`/`yaw` mean something only when `tank` is -1 |
- * | `ordnanceRefused` | slot, mine | the pool refused a person's rocket (0) or mine (1) |
+ * | `ordnanceRefused` | slot, item | the pool refused a person's rocket (0), mine (1) or throw (2) — `REFUSED_ITEMS` |
  *
  * **Glass is ONE event, not three.** `GlassSystem`'s `onBroken`/`onBreak`/
  * `onCleared` are per pane and describe what a pane's own VIEW must do; the
@@ -167,6 +167,16 @@ const VICTIM_CODE = {
   none: 3,
 } as const satisfies Record<VictimKind, number>;
 export const VICTIM_KINDS = inverse<VictimKind>(VICTIM_CODE);
+
+/** What a person's `ordnanceRefused` was refused: the tube, the mine, or a throw. */
+export type RefusedItem = "rocket" | "mine" | "grenade";
+const REFUSED_CODE = { rocket: 0, mine: 1, grenade: 2 } as const satisfies Record<RefusedItem, number>;
+export const REFUSED_ITEMS = inverse<RefusedItem>(REFUSED_CODE);
+
+/** The code a refused `item` is written as. */
+export function refusedCode(item: RefusedItem): number {
+  return REFUSED_CODE[item];
+}
 
 /** What a blast or a fire went off ON — `BlastGround.surface`. */
 export type Surface = "ground" | "hard";
@@ -710,7 +720,7 @@ export type SimEvent = { tick: number } & (
       team: Team;
     }
   | { type: "seat"; slot: number; tank: number; seat: number; at: Vec3; yaw: number }
-  | { type: "ordnanceRefused"; slot: number; mine: boolean }
+  | { type: "ordnanceRefused"; slot: number; item: RefusedItem }
 );
 
 const NAMES: EventName[] = [];
@@ -873,7 +883,7 @@ export function decode(c: EventCursor, i: number): SimEvent {
         yaw: d[o + 6],
       };
     case EV.ordnanceRefused:
-      return { tick, type: "ordnanceRefused", slot: d[o], mine: d[o + 1] === 1 };
+      return { tick, type: "ordnanceRefused", slot: d[o], item: REFUSED_ITEMS[d[o + 1]] };
     default: {
       const unknown: never = k;
       throw new Error(`event kind ${String(unknown)} has no decoder`);
