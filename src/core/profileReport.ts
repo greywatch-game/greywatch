@@ -321,7 +321,32 @@ export interface SegmentStat {
   activeMeshes: number;
   gpuFrame: number;
   gpuSamples: number;
+  /**
+   * The simulation core's step over the rows that ran one — the `fight` and
+   * its lead, never a vantage or the path, which step nothing — or null where
+   * no row did. Report version 14.
+   */
+  sim: SimSegment | null;
 }
+
+/**
+ * The `sim` span and its children over a segment's rows (report version 14):
+ * the frames that ran a step, the span's mean over those frames, and each
+ * child's mean over the SAME frames — so the children read as shares of
+ * `mean` and a child the step did not reach on a frame counts that frame as 0.
+ * The children are `PARENT_OF`'s, so a phase added under `sim` appears here
+ * by itself.
+ */
+export interface SimSegment {
+  frames: number;
+  mean: number;
+  phases: Record<string, number>;
+}
+
+/** The phases nested directly under `sim`, in `PHASES` order. */
+const SIM_CHILDREN: readonly Phase[] = PHASES.filter(
+  (name) => (PARENT_OF as Readonly<Record<string, Phase>>)[name] === "sim",
+);
 
 /**
  * What a benchmark says about its own run (`?bench=<map>`), pushed by `Game`
@@ -962,7 +987,14 @@ export function buildReport(
     // and every row labelled with what it was showing (`?bench=<map>`). Not a
     // change to any existing field: a v12 capture reads the same, and simply
     // has no labels.
-    version: 13,
+    // 14: `sim` and its five children — the simulation core's step, timed by
+    // the core itself (`SimCore.timeSteps`) and filed by `Game` — in the tree,
+    // the phase table and every hitch, plus `SegmentStat.sim`; and `conquest`
+    // is GONE from the tree, its work being `simConquest` now. Offline from
+    // X2.5a C4a until this, the step was inside `world` and named by nothing,
+    // so a v13 capture's `world` holds the whole simulation unattributed and
+    // its `conquest` was never entered. Nothing else changed meaning.
+    version: 14,
     takenAt: new Date().toISOString(),
     reason,
     map: r.mapId,
@@ -1214,9 +1246,21 @@ function segmentStat(
   let meshes = 0;
   let gpu = 0;
   let gpuN = 0;
+  let sim = 0;
+  let sims = 0;
+  const kids = new Float64Array(SIM_CHILDREN.length);
   for (let k = 0; k < m; k++) {
     const i = at[k];
     wall[k] = r.frameMs[i];
+    const c = i * SLOTS + P.sim;
+    if (r.entered[c] === 1) {
+      sim += r.durMs[c];
+      sims++;
+      for (let j = 0; j < SIM_CHILDREN.length; j++) {
+        const q = i * SLOTS + P[SIM_CHILDREN[j]];
+        if (r.entered[q] === 1) kids[j] += r.durMs[q];
+      }
+    }
     const f = i * SLOTS + P.frame;
     if (r.entered[f] === 1) tick[ticks++] = r.durMs[f];
     const g = i * SLOTS + P.render;
@@ -1254,6 +1298,16 @@ function segmentStat(
     activeMeshes: Math.round(meshes / m),
     gpuFrame: gpuN > 0 ? round(gpu / gpuN, 3) : 0,
     gpuSamples: gpuN,
+    sim:
+      sims > 0
+        ? {
+            frames: sims,
+            mean: round(sim / sims),
+            phases: Object.fromEntries(
+              SIM_CHILDREN.map((name, j) => [name, round(kids[j] / sims)]),
+            ),
+          }
+        : null,
   };
 }
 

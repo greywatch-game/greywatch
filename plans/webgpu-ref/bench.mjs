@@ -36,6 +36,9 @@
  * - The FIGHT's hash on every run, and a run whose hash differs from the
  *   first is a failure, not noise: it fought a different fight, and its
  *   `fight` segment measured a different workload.
+ * - The simulation core's own timing of its step in each group (`sim`,
+ *   report version 14) and, for the fight, its five phases — the core's
+ *   share of the tick, which the X2.5b Worker would take off this thread.
  * - `install`, from the URL to the first bench frame — `VERIFYING.md`'s free
  *   control: when the installs differ, the frame rates are not comparable.
  * - `--against f.json` (a previous `--out`): each group's median mean as a
@@ -148,7 +151,7 @@ for (const id of targets) {
 }
 
 console.log("\nmedians over the runs (mean / p95 / 1% low in ms, spread of the mean)");
-console.log("map           group      frames    mean     p95  1%low   tick  draws  spread");
+console.log("map           group      frames    mean     p95  1%low   tick    sim  draws  spread");
 for (const id of targets) {
   const s = results[id];
   for (const k of GROUPS) {
@@ -158,8 +161,26 @@ for (const id of targets) {
       `${id.padEnd(13)} ${k.padEnd(9)} ${String(g.frames).padStart(7)} ` +
         `${g.mean.toFixed(2).padStart(7)} ${g.p95.toFixed(2).padStart(7)} ` +
         `${g.onePercentLow.toFixed(1).padStart(6)} ${g.tick.toFixed(2).padStart(6)} ` +
+        `${(g.sim === null ? "-" : g.sim.toFixed(2)).padStart(6)} ` +
         `${String(g.drawCalls).padStart(6)}  ${(g.spread * 100).toFixed(1).padStart(5)}%` +
         (g.spread > SPREAD_FLAG ? "  OVER 8%" : ""),
+    );
+  }
+}
+
+// The simulation core's own timing of its step (report version 14, the
+// `sim` span and its children), over the fight's stepped frames — medians
+// over the runs, in ms per frame. A capture older than v14 has none.
+const simRows = targets.filter((id) => results[id].groups.fight?.simPhases);
+if (simRows.length) {
+  const kids = Object.keys(results[simRows[0]].groups.fight.simPhases);
+  console.log("\nthe core's step in the fight (median ms per stepped frame)");
+  console.log(`map              sim ${kids.map((k) => k.replace(/^sim/, "").padStart(10)).join("")}`);
+  for (const id of simRows) {
+    const f = results[id].groups.fight;
+    console.log(
+      `${id.padEnd(13)} ${f.sim.toFixed(3).padStart(6)} ` +
+        kids.map((k) => (f.simPhases[k] ?? 0).toFixed(3).padStart(10)).join(""),
     );
   }
 }
@@ -302,6 +323,14 @@ function summarise(id, runs) {
       render: med((g) => g.render),
       drawCalls: Math.round(med((g) => g.drawCalls)),
       gpuFrame: med((g) => g.gpuFrame),
+      // The core's step (report version 14): null on a group that stepped
+      // nothing, and on a capture from before the field.
+      sim: per.every((g) => g.sim) ? med((g) => g.sim.mean) : null,
+      simPhases: per.every((g) => g.sim)
+        ? Object.fromEntries(
+            Object.keys(per[0].sim.phases).map((k) => [k, med((g) => g.sim.phases[k] ?? 0)]),
+          )
+        : null,
       spread: (Math.max(...means) - Math.min(...means)) / median(means),
       runs: means,
     };

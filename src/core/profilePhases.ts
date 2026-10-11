@@ -13,7 +13,9 @@
  *  - **The list is stated once and everything is derived from it** — the slot
  *    ids, the slot count, the roots. A phase added here owes a parent in
  *    `PARENT_OF` (it does not compile otherwise) and a `begin`/`end` pair in
- *    `Game`; the ring, the report and the trace follow by themselves.
+ *    `Game` — or, for a span measured where `Game` cannot stamp it (the
+ *    simulation core's, `sim`), a `FrameProfile.file` of what was measured;
+ *    the ring, the report and the trace follow by themselves.
  *  - It imports nothing, so it can never be the reason a disarmed profiler
  *    loads something.
  */
@@ -45,8 +47,33 @@ export const PHASES = [
   "onFoot",
   "world",
   "net",
-  "conquest",
-  /** The crews, the hulls and the tracks' sweep — one span over the armour. */
+  /**
+   * The SIMULATION's step (`SimCore.step`, offline) and its five phases — the
+   * one span in this list that `Game` does not stamp. **The core times itself
+   * with a clock the page hands it** (`SimCoreOptions.timing`, switched by
+   * `SimCore.timeSteps` while this profiler is armed) and `Game` FILES what
+   * it reports (`frame.timing`, `FrameProfile.file`) — so the brackets are
+   * the core's and the slots are this list's, and moving the core into a
+   * Worker (`BABYLON_EXIT.md` X2.5b) moves where the step runs and not one
+   * line of the core's timing. A step run more than once a frame (a
+   * benchmark's lead) is summed.
+   *
+   * `simConquest` is the combatant list and the flags; `simVehicles` the
+   * crews, the hulls, the tracks and the riders; `simBots` the bots' think
+   * and move; `simGrenades` and `simAntiTank` what is in the air. What `sim`
+   * holds outside them is the persons' regen, leash and deploy and the
+   * frame's fill (`publish`).
+   */
+  "sim",
+  "simConquest",
+  "simVehicles",
+  "simBots",
+  "simGrenades",
+  "simAntiTank",
+  /**
+   * The PAGE's armour: offline the fleet posed off the core's frame and the
+   * player's hull predicted, plus the views; in a match the wire's posing.
+   */
   "vehicles",
   "bots",
   "combat",
@@ -161,7 +188,16 @@ export const PARENT_OF: Readonly<
   onFoot: "gameplay",
   world: "gameplay",
   net: "world",
-  conquest: "world",
+  // The core's step runs inside `updateWorld` today, so it is `world`'s.
+  // X2.5b's Worker steps it OFF this thread, and then `sim` is a third ROOT:
+  // out of this table, into the `Exclude` above, and into the viewer's
+  // `FALLBACK_ROOTS` — its five children stay where they are.
+  sim: "world",
+  simConquest: "sim",
+  simVehicles: "sim",
+  simBots: "sim",
+  simGrenades: "sim",
+  simAntiTank: "sim",
   vehicles: "world",
   bots: "world",
   combat: "world",

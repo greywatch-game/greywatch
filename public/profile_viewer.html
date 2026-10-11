@@ -660,7 +660,15 @@ table.compiles td.num { text-align: right; font-variant-numeric: tabular-nums; }
 const FALLBACK_TREE = {
   input: "frame", roundBehind: "frame", gameplay: "frame",
   driver: "gameplay", onFoot: "gameplay", world: "gameplay",
-  net: "world", conquest: "world", vehicles: "world", bots: "world",
+  /* `sim` is the simulation core's step and its five phases (report version
+     14). It is `world`'s while the core steps on the page; when X2.5b's
+     Worker steps it off the thread it becomes a ROOT — out of here and into
+     FALLBACK_ROOTS, its children staying under it. `conquest` and `glass`
+     are kept for the older traces that carry them. */
+  net: "world", sim: "world",
+  simConquest: "sim", simVehicles: "sim", simBots: "sim",
+  simGrenades: "sim", simAntiTank: "sim",
+  conquest: "world", vehicles: "world", bots: "world",
   combat: "world", grenades: "world", antiTank: "world", physics: "world",
   glass: "world",
   camera: "gameplay", zones: "gameplay", hud: "gameplay",
@@ -1283,7 +1291,7 @@ function renderBench(r) {
   $("n-bench").textContent = notes.join(" · ");
   if (!seg) return;
   const head = el("tr");
-  for (const k of ["", "frames", "fps", "mean", "p95", "1% low", "tick", "render", "draws", "gpu"]) {
+  for (const k of ["", "frames", "fps", "mean", "p95", "1% low", "tick", "render", "sim", "draws", "gpu"]) {
     head.appendChild(el("th", null, k));
   }
   table.appendChild(head);
@@ -1297,6 +1305,9 @@ function renderBench(r) {
     tr.appendChild(el("td", "num", fmt(s.onePercentLow, 1) + " ms"));
     tr.appendChild(el("td", "num", fmt(s.tick, 2) + " ms"));
     tr.appendChild(el("td", "num", fmt(s.render, 2) + " ms"));
+    // The core's step on the rows that ran one (report version 14); "—" on a
+    // stretch that stepped nothing and on an older capture, which never said.
+    tr.appendChild(el("td", "num", s.sim ? fmt(s.sim.mean, 2) + " ms" : "—"));
     tr.appendChild(el("td", "num", String(s.drawCalls)));
     tr.appendChild(el("td", "num", s.gpuSamples ? fmt(s.gpuFrame, 2) + " ms" : "—"));
     table.appendChild(tr);

@@ -34,6 +34,14 @@
  * prompts ask; the pools the grenade and anti-tank pictures pose; the board;
  * the broken panes; the target list the aim assist holds; and a `timing` row
  * for the profiler's `sim` phase (C6).
+ *
+ * **`timing` is the one section the core writes DURING a call rather than
+ * copying in at the end of one**, and the one `fillFrame` never touches: a
+ * core given a clock (`SimCoreOptions.timing`) and told to use it
+ * (`SimCore.timeSteps`) stamps it as `step` runs. It is MEASUREMENT, never
+ * state — nothing in the simulation reads it back and no outcome depends on
+ * it — so it is outside the mirror check, and a reader that compared two
+ * frames for equality would leave it out.
  */
 import { JOINT_STRIDE, packJoints } from "../entities/soldierPose";
 import { THROWABLE_IDS } from "../entities/throwables";
@@ -59,10 +67,46 @@ export const HOLDER = { open: 0, bot: 1, person: 2 } as const;
 
 /**
  * The phases of `SimCore.step` the profiler files under its `sim` phase
- * (`BABYLON_EXIT.md` X2.5a C6) — the frame's `timing` row, one float64 of
- * milliseconds each. Zero until a core built with `timing` records them.
+ * (`BABYLON_EXIT.md` X2.5a C6), in the order the step runs them — the index
+ * into `FrameTiming.at` and `FrameTiming.ms`. `conquest` is the combatant
+ * list and the flags; `vehicles` the crews, the hulls, a person's reported
+ * crashes, the tracks and the riders; `bots` `BattleSystem.update`;
+ * `grenades` and `antiTank` their pools. What the step does outside them —
+ * the persons' regen, leash and deploy, the rewind's record and the frame's
+ * own fill — is the `sim` span's unattributed remainder.
  */
 export const SIM_PHASES = ["conquest", "vehicles", "bots", "grenades", "antiTank"] as const;
+export type SimPhase = (typeof SIM_PHASES)[number];
+
+/**
+ * The last timed step, as the core's clock read it. Milliseconds, in the
+ * units of the clock the HOST handed the core (`SimCoreOptions.timing`) —
+ * offline that is the page's own `performance.now`, which is what lets the
+ * page file `start` against its frame without a conversion.
+ */
+export interface FrameTiming {
+  /** The clock as the step began; meaningful only while `total >= 0`. */
+  start: number;
+  /**
+   * The whole step — `advance` and the frame's fill — or -1 when the last
+   * step was not timed (no clock, timing off, or never stepped).
+   */
+  total: number;
+  /** Per `SIM_PHASES` entry: ms after `start` it began, or -1 when that step never reached it. */
+  at: Float64Array;
+  /** …and how long it ran, ms (0 when it did not run). */
+  ms: Float64Array;
+}
+
+/** A timing row no step has written. */
+export function newTiming(): FrameTiming {
+  return {
+    start: 0,
+    total: -1,
+    at: new Float64Array(SIM_PHASES.length).fill(-1),
+    ms: new Float64Array(SIM_PHASES.length),
+  };
+}
 
 /** The flags, one entry per control point in the map's order. */
 export interface FrameFlags {
@@ -228,8 +272,8 @@ export interface SimFrame {
   humans: FrameHumans;
   /** One per breakable pane of the standing map: 1 once it has broken. */
   panes: Uint8Array;
-  /** Milliseconds per `SIM_PHASES` entry for the last step (C6). */
-  timing: Float64Array;
+  /** How long the last step's phases took, when the core times them (C6). */
+  timing: FrameTiming;
 }
 
 /** An empty frame: every section at count 0. */
@@ -253,7 +297,7 @@ export function newFrame(): SimFrame {
     scores: scoresOf(0),
     humans: { count: 0, who: new Int32Array(0) },
     panes: new Uint8Array(0),
-    timing: new Float64Array(SIM_PHASES.length),
+    timing: newTiming(),
   };
 }
 

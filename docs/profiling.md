@@ -7,7 +7,8 @@ says), [`src/core/profilePhases.ts`](../src/core/profilePhases.ts) (the phase
 list both read), [`src/ui/ProfileChip.ts`](../src/ui/ProfileChip.ts) and
 [`src/config/profiling.ts`](../src/config/profiling.ts), and for the ~22 pairs
 of brackets in `Game.ts` that feed them, plus the four inside `render` that
-`FrameProfile` hangs off the scene itself — and for the BENCHMARK that rides
+`FrameProfile` hangs off the scene itself and the simulation core's timing of
+its own step (`SimCore.timeSteps`, filed as `sim`) — and for the BENCHMARK that rides
 on all of it, [`src/bench/BenchScript.ts`](../src/bench/BenchScript.ts),
 `Game.updateBench` and the desktop wrapper
 [`plans/webgpu-ref/bench.mjs`](../plans/webgpu-ref/bench.mjs). [`CLAUDE.md`](../CLAUDE.md) carries the
@@ -301,7 +302,9 @@ measurements — `rehearsal`, `settle` and `lead`. Report version 13 rolls them 
 `segments.list` (each label) and `segments.groups` (`vantages`, `path`,
 `fight`), each with the wall clock's mean, p50, p95, p99 and 1% low, the tick,
 `render`, the draw and mesh counts and `gpu.frame` over the rows that got a
-reading; `bench` carries the run's own facts (completed or not, the plan, the
+reading — and from version 14 `sim`, the core's step and its five phases over
+the rows that ran one, which is the fight and its lead and never a vantage or
+the path, where the world is held; `bench` carries the run's own facts (completed or not, the plan, the
 path's loop, the fight's hash and steps); `series.segment` labels every row of
 a SAVE. **A capture with `bench.completed` false was stopped** — Escape, or a
 round that ran out of tickets inside it — and its fight is short.
@@ -348,8 +351,8 @@ vantage's hold moved 23% between runs.
 
 `PHASES` in `profilePhases.ts` is the list, and **an index into it is a slot id**,
 which is what keeps the recording loop free of strings. The brackets are in
-`Game.ts` and nowhere else **except the four inside `render` and `present`
-after it**: `tick`,
+`Game.ts` and nowhere else **except the four inside `render`, `present` after
+it, and the simulation core's own timing of its step, which `Game` files**: `tick`,
 `updateGameplay`, `updateNetWorld` and `updateWorld` are where the frame's
 order is already declared with the argument for it written down, so **the phase
 list IS that order** and no system had to be taught the profiler exists. A
@@ -364,10 +367,13 @@ frame                       the whole tick, wall to wall
 │  ├─ driver / onFoot       whichever half of a body's frame this is
 │  ├─ world                 updateWorld entire
 │  │  ├─ net                updateNetWorld — a match's dressing
-│  │  ├─ (the core's step)  OFFLINE since X2.5a C4a: SimCore.step, one call,
-│  │  │                     UNBRACKETED inside `world` until C6 files its own
-│  │  │                     timing — so `conquest` is not entered offline
-│  │  ├─ conquest           flags, tickets, the combatant list (unused offline)
+│  │  ├─ sim                OFFLINE: SimCore.step, timed BY THE CORE and filed
+│  │  │  │                  (see "`sim`" below); never entered in a match
+│  │  │  ├─ simConquest     the combatant list and the flags
+│  │  │  ├─ simVehicles     the crews, the hulls, the tracks, the riders
+│  │  │  ├─ simBots         BattleSystem.update — think, move, fire
+│  │  │  ├─ simGrenades     the grenades and the fires
+│  │  │  └─ simAntiTank     the rockets and the mines
 │  │  ├─ vehicles           offline the page's fleet POSED off the core's and
 │  │  │                     its views; in a match the wire's posing
 │  │  ├─ bots               BattleView.update + the muzzle-light budget
@@ -594,8 +600,68 @@ interesting frame of a session would be the wrong kind of missing.
 
 **Adding a phase** is a name in `PHASES`, a parent in `PARENT_OF` (it will not
 compile without one) and a `begin`/`end` pair — or, inside `render`, a
-`begin`/`endAdd` pair on an observable in `hookRender`. Nothing else moves,
-unless it is a new ROOT, for which see `present` below.
+`begin`/`endAdd` pair on an observable in `hookRender`; or, inside the core's
+step, an entry in `SIM_PHASES` (`src/sim/frame.ts`), an `openPhase`/`closePhase`
+pair in `SimCore.advance` and a slot in `Game`'s `SIM_SLOT`, which is a
+`Record` over the core's names and will not compile without it. Nothing else
+moves, unless it is a new ROOT, for which see `present` below.
+
+### `sim`: the core times itself, and `Game` files it
+
+**Offline the round is the simulation core's** (`BABYLON_EXIT.md` X2.5a C4a):
+`updateWorld` makes one call, `SimCore.step`, and every system that decides
+an outcome runs inside it. There is no line in `Game.ts` between its phases,
+so a bracket there could only ever say how long the whole call took — and
+from C4a until C6 there was not even that: the step sat inside `world` named
+by nothing, and the page's `conquest` phase, which had timed the flags, was
+never entered again.
+
+So **the core times its own step, with a clock its host INJECTS**
+(`SimCoreOptions.timing`), and `Game` files the result:
+
+- **The clock is the host's and the core reads it only into `frame.timing`**
+  (`FrameTiming`: the step's `start`, its `total`, and per `SIM_PHASES` entry
+  an `at` and an `ms`). The core reads no clock of its own and draws no seed
+  of its own; this is the same rule. Nothing in the simulation reads a
+  reading back, so a timed step and an untimed one are the same step — the
+  seven bench fight hashes and `simulate --events` are unchanged by it — and
+  the authority, which passes no clock, cannot time anything at all.
+- **It costs nothing unless something is recording.** `SimCore.timeSteps(on)`
+  switches it, and `Game` keeps it in step with `FrameProfile.armed` before
+  each step, so an unwatched core reads no clock — the rule a disarmed
+  profiler holds itself to. Timed, it is twelve clock reads a step —
+  measured at about a microsecond on Sarab's authority tick
+  (`simulate --phases`, 0.119 → 0.120 ms mean), and armed against armed
+  on the page (C6 against its parent, Hollowmere, four pairs) inside the
+  run-to-run spread, with the span probe unchanged at 0.25 us.
+- **`Game.fileSimTiming` files it** through `FrameProfile.file(slot, start,
+  ms)` — a span measured ELSEWHERE, on this file's own clock. Offline the
+  injected clock IS the page's `performance.now`, so `start` lands in the
+  frame without a conversion and the trace draws `sim` where it ran. Like
+  `endAdd`, a slot filed twice in a frame ADDS: a benchmark's lead steps the
+  core several times a frame. Nothing allocates.
+- **`sim` is the whole of `step`, the frame's fill included**, and its five
+  children are where the decisions are. What `sim` holds outside them —
+  the persons' regen, leash and deploy, the rewind's record (off offline)
+  and `publish` — is its unattributed remainder, and that remainder is the
+  price of the frame copy the page reads. A person's act resolved on
+  SUBMIT (a round, a throw, a seat) is not inside the step: it is charged to
+  whichever page phase made the `ask`.
+
+**`sim` is a child of `world` today and is shaped to become a THIRD ROOT.**
+X2.5b moves the core into a Worker, where its step runs on another thread
+and overlaps nothing in `frame`. Then `sim` comes out of `PARENT_OF`, the
+`Exclude` in its type widens to three names, the viewer's `FALLBACK_ROOTS`
+gains it, and its children stay where they are; the core's timing does not
+change by a line. What does change is the clock: a Worker's
+`performance.now` has its own `timeOrigin`, so the Worker's host injects one
+the page can read (the two `timeOrigin`s are the conversion), and which
+page frame a step is filed against is a pairing question of exactly the kind
+`endFrame`'s argument above is about.
+
+`simulate --phases` is the authority-side reading of the same numbers: the
+core built with Node's `performance.now`, each phase's mean printed beside
+the tick.
 
 ### `present`, and the two roots
 
@@ -971,6 +1037,14 @@ details:
 - **A new graphics setting owes a field here**, in `ProfileGraphics`,
   `sameGraphics` and the viewer's `Graphics` row, or captures go on describing
   a configuration that no longer names everything the frame paid for.
+
+**From report version 14 a capture names the SIMULATION** — `sim` and its
+five children in the tree, the phase table, every hitch and the trace, and
+`SegmentStat.sim` — and `conquest` is gone from the tree, its work being
+`simConquest`'s now. A v13 capture taken offline after X2.5a C4a holds the
+whole simulation inside `world`, unattributed, and its `conquest` was never
+entered; a match's capture has no `sim` in either version, because the
+authority's step is not on the page.
 
 **From report version 13 a capture can be a BENCHMARK's** — `bench`,
 `segments` and `series.segment`, null and absent on every other ring — and

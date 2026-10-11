@@ -6,9 +6,10 @@
  * overhead and heap probes, and the `window.__profile` handle. The phase list
  * is `profilePhases.ts`'s and what a capture SAYS is `profileReport.ts`'s,
  * which this hands a `ProfileRing` at the moment of a capture. Owns NO game
- * state and reads none: `Game` brackets the phases it already sequences and
- * pushes the per-frame context, so nothing here imports a system and no
- * system has heard of this.
+ * state and reads none: `Game` brackets the phases it already sequences,
+ * files the simulation core's own timing of its step (`file`), and pushes
+ * the per-frame context, so nothing here imports a system and no system has
+ * heard of this.
  *
  * Invariants:
  *  - **It MEASURES and never decides.** No caller may read a phase back to
@@ -977,6 +978,30 @@ export class FrameProfile {
     }
     this.startMs![at] = t0 - this.frameT0;
     this.durMs![at] = t1 - t0;
+    this.entered![at] = 1;
+  }
+
+  /**
+   * Files a span measured ELSEWHERE, by whoever ran it, on this file's own
+   * clock: its start (a `performance.now()` reading) and its length.
+   *
+   * **The simulation core's phases are the one user** (`sim` and its five,
+   * `Game.fileSimTiming`): the core times its own step with the clock the
+   * page injects (`SimCoreOptions.timing`) because no line in `Game.ts` sits
+   * between its phases, and `Game` files what it reports. Like `endAdd`, a
+   * slot filed twice in a frame ADDS — a benchmark's lead steps the core
+   * several times a frame — and keeps the first piece's start for the trace.
+   * Nothing allocates: four numbers in, three typed-array writes.
+   */
+  file(slot: number, startAt: number, ms: number): void {
+    if (!this.on || !this.frameOpen) return;
+    const at = this.cursor * SLOTS + slot;
+    if (this.entered![at] === 1) {
+      this.durMs![at] += ms;
+      return;
+    }
+    this.startMs![at] = startAt - this.frameT0;
+    this.durMs![at] = ms;
     this.entered![at] = 1;
   }
 

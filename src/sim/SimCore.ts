@@ -24,7 +24,10 @@
  * offline page (`core/Game.ts`, which simulates no round of its own) — hands
  * it the round's seed in `RoundSpec`, its world as the data `buildSimWorld`
  * takes (the page's is `collisionOf` its own build), and its wall-clock anchor
- * through `anchor` and `drop`. Nothing in this directory may import from
+ * through `anchor` and `drop` — and, for a host that profiles, the clock its
+ * step's phases are timed with (`SimCoreOptions.timing`, `timeSteps`), read
+ * only into `frame.timing` and never by anything that decides (C6). Nothing
+ * in this directory may import from
  * `server/`. **The page reads its STATE off the frame and its NEWS off the
  * ring and nothing else** (`BABYLON_EXIT.md` X2.5a C5): a core built with
  * `publish` refreshes `frame` (`src/sim/frame.ts`) at the end of every call
@@ -160,7 +163,7 @@ import { LagComp } from "./LagComp";
 import { SimPlayer } from "./SimPlayer";
 import { ReportedLanding } from "./reportedLanding";
 import { buildSimWorld } from "./simWorld";
-import { fillFrame, newFrame, type SimFrame } from "./frame";
+import { SIM_PHASES, fillFrame, newFrame, type SimFrame } from "./frame";
 import type { ShotCommand, SimCommand } from "./commands";
 import {
   EV,
@@ -189,6 +192,13 @@ import {
   victimCode,
   type EventCursor,
 } from "./events";
+
+/** `SIM_PHASES` slots, by name — `step`'s timing writes (`frame.timing`). */
+const SIM_CONQUEST = SIM_PHASES.indexOf("conquest");
+const SIM_VEHICLES = SIM_PHASES.indexOf("vehicles");
+const SIM_BOTS = SIM_PHASES.indexOf("bots");
+const SIM_GRENADES = SIM_PHASES.indexOf("grenades");
+const SIM_ANTITANK = SIM_PHASES.indexOf("antiTank");
 
 /**
  * Everything a round is, as its HOST hands it over: the map, its world as data
@@ -245,11 +255,16 @@ export interface SimCoreOptions {
    */
   hostHoldsRespawn?: boolean;
   /**
-   * Time the step's phases for a host that files them (`BABYLON_EXIT.md`
-   * X2.5a C6, the profiler's `sim` phase). Recorded by nothing yet: declared
-   * so the option set is the one the hosts will pass.
+   * The CLOCK the step's phases are timed with, for a host that files them
+   * (`BABYLON_EXIT.md` X2.5a C6, the profiler's `sim` phase): milliseconds,
+   * in whatever units and origin the host wants `FrameTiming.start` in —
+   * offline the page's own `performance.now`, `simulate --phases` Node's.
+   * **Injected, because this class reads no clock of its own**, and read
+   * only to write `frame.timing`: nothing in the simulation ever sees a
+   * reading, so a timed step and an untimed one are the same step. Absent,
+   * `timeSteps` cannot turn timing on. The authority passes none.
    */
-  timing?: boolean;
+  timing?: () => number;
   /**
    * Keep `frame` filled — the STATE a host reads the round off without an
    * object of this class (`src/sim/frame.ts`, `BABYLON_EXIT.md` X2.5a C5). The
@@ -279,6 +294,7 @@ export type SimDoor = Pick<
   | "releaseWorld"
   | "submit"
   | "step"
+  | "timeSteps"
   | "drain"
   | "frame"
 > & {
@@ -291,8 +307,12 @@ export class SimCore {
   readonly rewind: boolean;
   /** Whether the host holds the respawn clock — `SimCoreOptions.hostHoldsRespawn`. */
   readonly hostHoldsRespawn: boolean;
-  /** `SimCoreOptions.timing`, held for C6. */
-  readonly timing: boolean;
+  /** `SimCoreOptions.timing` — the host's clock, or null. */
+  private readonly clock: (() => number) | null;
+  /** Whether `step` reads `clock` — `timeSteps`. */
+  private timed = false;
+  /** The clock as the phase being timed opened — `openPhase`. */
+  private phaseT0 = 0;
   /** Whether `frame` is kept filled — `SimCoreOptions.publish`. */
   readonly publishing: boolean;
   /**
@@ -446,7 +466,7 @@ export class SimCore {
   constructor(options: SimCoreOptions = {}) {
     this.rewind = options.rewind ?? false;
     this.hostHoldsRespawn = options.hostHoldsRespawn ?? false;
-    this.timing = options.timing ?? false;
+    this.clock = options.timing ?? null;
     this.publishing = options.publish ?? false;
     // No scene and no material factory: the last thing that wanted a factory
     // was the fleet's rigs, which are the client's `VehicleViews` since
@@ -849,9 +869,41 @@ export class SimCore {
    * already in the air. Returns false on the tick the round ended.
    */
   step(dt: number): boolean {
+    const clock = this.timed ? this.clock : null;
+    const t = this.frame.timing;
+    if (clock) {
+      t.at.fill(-1);
+      t.ms.fill(0);
+      t.start = clock();
+    }
     const live = this.advance(dt);
     this.publish();
+    if (clock) t.total = clock() - t.start;
     return live;
+  }
+
+  /**
+   * Whether `step` times its phases into `frame.timing` — the profiler's
+   * `sim` phase (`BABYLON_EXIT.md` X2.5a C6). A host turns it on while
+   * something is recording and off when nothing is, so an unwatched step
+   * reads no clock at all. A no-op on a core built without a clock. Off
+   * marks the row untimed (`total` -1), so a stale reading is never filed.
+   */
+  timeSteps(on: boolean): void {
+    this.timed = on && this.clock !== null;
+    if (!this.timed) this.frame.timing.total = -1;
+  }
+
+  /** Opens `SIM_PHASES[i]` on a timed step. MEASURES and never decides. */
+  private openPhase(i: number): void {
+    const t = this.clock!();
+    this.frame.timing.at[i] = t - this.frame.timing.start;
+    this.phaseT0 = t;
+  }
+
+  /** Closes `SIM_PHASES[i]`, opened by `openPhase`. */
+  private closePhase(i: number): void {
+    this.frame.timing.ms[i] = this.clock!() - this.phaseT0;
   }
 
   /** `step`'s simulation, before the frame is refreshed off it. */
@@ -944,13 +996,19 @@ export class SimCore {
       this.deployPerson(player);
     }
 
+    // The phases are timed only on a host that asked (`timeSteps`), and in
+    // `SIM_PHASES`' order — see `frame.timing`. Nothing reads a reading back.
+    const timed = this.timed;
+
     // Both kinds of body, in one list. `ConquestSystem` counts occupancy off
     // this and cannot tell them apart, which is the point — a flag does not
     // care who is standing on it.
+    if (timed) this.openPhase(SIM_CONQUEST);
     this.combatants.length = 0;
     this.combatants.push(...this.battle.bots);
     for (const player of this.players.values()) this.combatants.push(player);
     this.conquest.update(dt, this.combatants);
+    if (timed) this.closePhase(SIM_CONQUEST);
     if (this.conquest.winner !== null) {
       // Once, on the tick it happened, and LAST of that tick's events — the
       // place `Match` used to queue it, after everything the deciding flag
@@ -968,6 +1026,7 @@ export class SimCore {
     // just pulled across a street breaks the sightline on the same frame it
     // visibly blocked it. The crews go first because what they write is the
     // drive input the step below consumes.
+    if (timed) this.openPhase(SIM_VEHICLES);
     this.crew.update(dt);
     this.vehicles.update(dt, this.vehicleOrders);
     // The crashes a PERSON's reports ran up since the last step, spent where a
@@ -998,20 +1057,27 @@ export class SimCore {
       const tank = this.vehicles.hulls[player.seat];
       if (tank) player.apply(dt, tank.position.x, tank.position.y, tank.position.z, player.yaw, player.pitch, false, false);
     }
+    if (timed) this.closePhase(SIM_VEHICLES);
 
     // No camera: the LOD is a drawing budget and belongs to `BattleView`,
     // which this side never builds. It used to be handed the map's centre
     // here, and what that decided about the fight was the last thing to go
     // (X2.2 C6, C7).
+    if (timed) this.openPhase(SIM_BOTS);
     this.battle.update(dt);
+    if (timed) this.closePhase(SIM_BOTS);
     // After the bots, so a grenade thrown on this frame's think tick flies on
     // this frame rather than sitting in the thrower's hand until the next —
     // the same order `Game.updateWorld` uses.
+    if (timed) this.openPhase(SIM_GRENADES);
     this.grenades.update(dt);
+    if (timed) this.closePhase(SIM_GRENADES);
     // Beside them, and after `vehicles.update` for the reason `Game` gives: a
     // mine's trigger is a distance test against where a hull IS, and running it
     // before the hull moved would arm the road a frame behind the tank.
+    if (timed) this.openPhase(SIM_ANTITANK);
     this.antiTank.update(dt);
+    if (timed) this.closePhase(SIM_ANTITANK);
 
     // AFTER everything has moved, so a frame records the end of a tick and not
     // the middle of one. Recording first would put every body's history half a

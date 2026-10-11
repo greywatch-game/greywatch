@@ -1305,8 +1305,8 @@ the chip's buttons on glass). **Nothing allocates PER FRAME while it is
 recording** — no per-frame object, no label string, no closure — because a
 profiler that allocates per frame manufactures the bug it was built to catch.
 
-**The brackets live in `Game.ts` and nowhere else, with two exceptions, one
-INSIDE the render and one AFTER it.** `tick`, `updateGameplay`, `updateNetWorld`
+**The brackets live in `Game.ts` and nowhere else, with three exceptions, one
+INSIDE the render, one AFTER it and one inside the simulation core.** `tick`, `updateGameplay`, `updateNetWorld`
 and `updateWorld` are where the frame's order is already declared, so **the
 phase list IS that order** and no system had to be taught the profiler exists.
 A phase is a name in `PHASES`, a parent in `PARENT_OF` and a `begin`/`end` pair.
@@ -1324,6 +1324,15 @@ it cannot drift, and shipped in every capture as `ProfileReport.roots`). **What
 is left over is the answer, not a gap**: `frame` + `present` short of the wall
 clock is the rAF wait, the compositor, the panel — and naming it would be
 claiming to know which.
+
+**The third is `sim`, and the core TIMES ITSELF with a clock its host
+INJECTS** (`SimCoreOptions.timing`): offline the round is one `SimCore.step`
+with no line of `Game.ts` between its phases, so the core reads that clock
+into `frame.timing` — only while `SimCore.timeSteps` is on, which `Game` keeps
+in step with `FrameProfile.armed`, and **never for an outcome** — and `Game`
+files it (`FrameProfile.file`, which ADDS, a bench lead stepping several times
+a frame). **`sim` is `world`'s today and is shaped to be a THIRD ROOT** when
+X2.5b moves the core off the thread.
 
 **THE BENCHMARK IS A URL** (`?bench=<map>`, `bench/BenchScript.ts`): the bank's
 vantages at eight headings, a path through the densest quarter and a bot-only

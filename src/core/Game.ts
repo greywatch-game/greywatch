@@ -214,6 +214,7 @@ import {
   type RosterRead,
 } from "../sim/mirror";
 import { simCheck } from "../sim/simCheck";
+import { SIM_PHASES, type SimPhase } from "../sim/frame";
 import type { NetVehicles } from "../net/NetVehicles";
 import { PhysicsWorld, type HavokInstance } from "../systems/PhysicsWorld";
 import { RagdollSystem } from "../systems/RagdollSystem";
@@ -314,6 +315,21 @@ const EMPTY_PUSHERS: readonly Combatant[] = [];
 const NO_ROSTER: RosterRead = { bots: [], poolVersion: -1 };
 /** …and the blob shadows' bots in a match: none, for `NO_ROSTER`'s reason. */
 const NO_BOTS: readonly BotMirror[] = [];
+
+/**
+ * The profiler slot each of the core's timed phases is filed into
+ * (`fileSimTiming`). A `Record` over the core's phase names, so a phase the
+ * core adds does not compile here until it has a slot.
+ */
+const SIM_SLOT: Readonly<Record<SimPhase, number>> = {
+  conquest: P.simConquest,
+  vehicles: P.simVehicles,
+  bots: P.simBots,
+  grenades: P.simGrenades,
+  antiTank: P.simAntiTank,
+};
+/** …indexed as `frame.timing` is. */
+const SIM_SLOTS: readonly number[] = SIM_PHASES.map((name) => SIM_SLOT[name]);
 
 /** "Let me out" — `ask`ed of the core as it is, holding nothing. */
 const DISMOUNT: SimCommand = { t: "dismount" };
@@ -600,6 +616,12 @@ export class Game {
    * (the bench's hash), which is what says nothing crosses by reference.
    */
   private readonly simCopy = urlFlag("simcopy");
+  /**
+   * Whether the core is timing its steps for the profiler — kept in step
+   * with `prof.armed` before each `step` (`timeSteps`), so an unwatched core
+   * reads no clock.
+   */
+  private simTimed = false;
   /**
    * `?simcheck`, DEV only: one pass of `simCheck` — every reader against the
    * live object it stands for — after each drain. Null otherwise, and the
@@ -1438,7 +1460,14 @@ export class Game {
     // **The simulation core, and the one place this file holds it WHOLE** —
     // stored as the `SimDoor` it is reached through, and handed whole only to
     // the DEV mirror check, inside the branch a production bundle folds away.
-    const core = new SimCore({ hostHoldsRespawn: true, publish: true });
+    // The clock is this page's, the one every profiler span is stamped
+    // with, so the core's timing of its own step files without a conversion
+    // (`fileSimTiming`). It is read only into `frame.timing`.
+    const core = new SimCore({
+      hostHoldsRespawn: true,
+      publish: true,
+      timing: () => performance.now(),
+    });
     this.core = core;
     // The tally is on `window.__simcheck` for a script to read back —
     // `checks` passes run, `mismatches` summed, `first` the opening few by
@@ -7649,6 +7678,21 @@ export class Game {
   }
 
   /**
+   * The core's own timing of the step just taken, filed as the profiler's
+   * `sim` span and its five phases (`FrameProfile.file`) — the one span this
+   * file does not stamp itself, because no line here sits between the core's
+   * phases. Read off the synced frame, so under `?simcopy` it is the clone's.
+   */
+  private fileSimTiming(): void {
+    const t = this.sim.frame.timing;
+    if (t.total < 0) return;
+    this.prof.file(P.sim, t.start, t.total);
+    for (let i = 0; i < SIM_PHASES.length; i++) {
+      if (t.at[i] >= 0) this.prof.file(SIM_SLOTS[i], t.start + t.at[i], t.ms[i]);
+    }
+  }
+
+  /**
    * Everything the core has said since the last drain, through `onSimEvent`
    * in emission order. **Drained after every call made on the core** — each
    * `step`, each `ask` — which is what keeps the order the page hears things
@@ -9200,8 +9244,13 @@ export class Game {
     // The flashes the bots' triggers leave are emptied first: they are
     // refilled by this step's `botFired`s, which are read below.
     this.battleView.beginFrame();
+    if (this.prof.armed !== this.simTimed) {
+      this.simTimed = this.prof.armed;
+      this.core.timeSteps(this.simTimed);
+    }
     const live = this.core.step(dt);
     this.simSync();
+    if (this.simTimed) this.fileSimTiming();
     // The hull trigger this frame's driver pulled, asked NOW — the core has
     // just posed its copy of the player's hull to the report `updateDriver`
     // made, and this page's has not stepped yet, so the round leaves the gun

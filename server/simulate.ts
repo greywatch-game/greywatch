@@ -1,7 +1,7 @@
 /**
  * server/simulate.ts — Runs a whole Conquest round headlessly and prints what
  * happened. `npm run simulate [map] [difficulty] [rounds] [seed] [--events]
- * [--frame]`.
+ * [--frame] [--phases]`.
  *
  * **A round is a function of its map, its difficulty and its SEED**
  * (`src/systems/RoundRandom.ts`), and every round printed says which seed it
@@ -39,6 +39,15 @@
  * the copy in it and the difference is its price. The authority does not
  * fill one (`Match` reads its own objects), so the plain run is the one that
  * measures a match. The frame's size is printed beside it.
+ *
+ * **`--phases` hands the core a clock and turns its step timing on**
+ * (`SimCoreOptions.timing`, `SimCore.timeSteps`, `BABYLON_EXIT.md` X2.5a C6)
+ * — the timing the page's profiler files as `sim` and its five children — and
+ * prints each phase's mean beside the tick. The core reads that clock inside
+ * the timed region, twelve times a step, so the tick printed is the tick with
+ * the instrument in it; the plain run is still the one that measures a match,
+ * which passes no clock. The fight is the same fight either way: the clock is
+ * read into `frame.timing` and nothing else.
  *
  * This is the server's equivalent of playing a round, and it is the only way to
  * see the simulation on its own — no clients, no rendering, no wall clock. A
@@ -79,7 +88,7 @@ import { perTeamOf } from "../src/world/layout";
 import { freshSeed, parseSeed } from "../src/systems/RoundRandom";
 import type { DeathCause } from "../src/systems/killRules";
 import { SimCore } from "../src/sim/SimCore";
-import { frameBytes } from "../src/sim/frame";
+import { SIM_PHASES, frameBytes } from "../src/sim/frame";
 import { EV, EventCursor, decode, type EventKind, type Vec3 } from "../src/sim/events";
 import { loadSimWorld } from "./world";
 
@@ -157,7 +166,16 @@ async function runRound(mapId: string, difficulty: number, seed: number) {
   // The AUTHORITY's options, because this is the authority's fight: the
   // history is recorded every tick as `Match` records it, so the tick cost
   // printed below is the one a match pays.
-  const game = new SimCore({ rewind: true, publish: publishFrame });
+  const game = new SimCore({
+    rewind: true,
+    publish: publishFrame,
+    timing: timePhases ? () => performance.now() : undefined,
+  });
+  game.timeSteps(timePhases);
+  // `--phases`: the core's own timing of each step, summed per phase and
+  // read after the step's clock — see the header.
+  const phaseMs = new Float64Array(SIM_PHASES.length);
+  let phaseTotal = 0;
   // `--events`: one line per event, stamped with the tick it was raised on —
   // see the header. Null when not asked for, so a plain run builds no string.
   const log = printEvents
@@ -303,6 +321,11 @@ async function runRound(mapId: string, difficulty: number, seed: number) {
     startedAt[ticks] = t0;
     // What the step said, folded outside the clock above.
     read();
+    if (timePhases) {
+      const t = game.frame.timing;
+      phaseTotal += t.total;
+      for (let i = 0; i < SIM_PHASES.length; i++) phaseMs[i] += t.ms[i];
+    }
     // Counted AFTER the clock is read, so the instrument is never inside its
     // own measurement. A target is the honest test of contact: it is what
     // gates the line-of-sight ray, the shot and the aim, which is where a
@@ -365,6 +388,16 @@ async function runRound(mapId: string, difficulty: number, seed: number) {
     buildMs,
     /** The published frame's size in bytes, or 0 when `--frame` is off. */
     frameBytes: publishFrame ? frameBytes(game.frame) : 0,
+    /**
+     * `--phases`: the mean ms per step of the core's own timing — the whole
+     * step and each `SIM_PHASES` entry — or null when not asked for.
+     */
+    phases: timePhases
+      ? {
+          step: phaseTotal / Math.max(1, ticks),
+          each: SIM_PHASES.map((name, i) => ({ name, ms: phaseMs[i] / Math.max(1, ticks) })),
+        }
+      : null,
     wallMs,
     ticks,
     simSeconds: ticks / TICK_HZ,
@@ -567,8 +600,10 @@ const argv = process.argv.slice(2);
 const printEvents = argv.includes("--events");
 /** `--frame`: keep the page's frame filled, to price it — see the header. */
 const publishFrame = argv.includes("--frame");
+/** `--phases`: the core times its own step — see the header. */
+const timePhases = argv.includes("--phases");
 const [mapId = "hollowmere", difficulty = "1", rounds = "1", seedArg] = argv.filter(
-  (a) => a !== "--events" && a !== "--frame",
+  (a) => a !== "--events" && a !== "--frame" && a !== "--phases",
 );
 // Refused rather than ignored: a typo that quietly drew a fresh seed would
 // print a different fight and call it the one that was asked for.
@@ -599,6 +634,13 @@ for (let i = 0; i < Number(rounds); i++) {
       `           ${r.spikes.over} ticks over ${SPIKE_MS} ms, ${r.spikes.collected} of them ` +
         `during one of the round’s ${r.spikes.pauses} GC pauses (${r.spikes.gcMs.toFixed(0)} ms total)`,
       `           first spikes on ticks ${r.spikes.at.join(", ") || "(none)"}`,
+      ...(r.phases
+        ? [
+            `  phases:  step ${r.phases.step.toFixed(4)} ms mean, of which ` +
+              r.phases.each.map((p) => `${p.name} ${p.ms.toFixed(4)}`).join(", ") +
+              ` (the core's own clock, --phases)`,
+          ]
+        : []),
       `  contact: peak ${r.peakContact} of ${r.roster} bots on a target at once`,
       ...r.contact
         .filter((b) => b.ticks > 0)
