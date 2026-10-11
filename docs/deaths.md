@@ -165,8 +165,14 @@ rubble through the three real clients and hashes every live body through
 `HP_Body_GetQTransform` — the bodies — and, since the poses left the nodes, a
 digest of every node the three clients WRITE (proxies, shard and chunk meshes,
 the stand-ins' rig roots and joints, raw local transforms bit for bit) at the
-end of every frame, banked against the commit before the poses moved. A change
-that must move nothing passes both on bits.
+end of every frame. It also hashes EVERY pooled body every frame, parked ones
+included, and fails any parked body that is not exactly at the park — a park
+that rewrote a pose without telling the engine leaves a static box in the
+street and is invisible to a hash of live bodies — and it clears and rebuilds
+the static world twice before the script, requiring the Havok world's own body
+count to be the map's plus the pools' 174 after each. All of it is banked on the
+PRE-PORT tree (fb90b7d's `src/`, which `lib.mjs` still reaches) and graded on
+the port. A change that must move nothing passes both on bits.
 
 ## Deaths
 

@@ -42,6 +42,37 @@
  * Each snapshot keeps its own hash, so a check that fails says WHICH frame
  * first disagreed, and the run's hash is over all of them.
  *
+ * **And EVERY pooled body, every frame, parked ones included** (`everyBody`
+ * in the bank, graded apart): whether Havok is simulating it and its raw
+ * `HP_Body_GetQTransform`, bit for bit. The snapshots hash only LIVE bodies,
+ * which is blind to the one failure a park exists to prevent — a body put
+ * away by rewriting its pose without telling the engine is a static box left
+ * lying where it settled (`RagdollSystem.park` measured one), and it is no
+ * longer live. So every parked body must also be exactly AT the park,
+ * `(0, -1000, 0)`, on every frame; one that is not fails the run by name.
+ *
+ * **Before the script, a map change and a teardown, twice** (`cycle`): the
+ * static world cleared and rebuilt off the same map, with the Havok world's
+ * own body count (`HP_World_GetNumBodies`) read after each and required to be
+ * the map's static bodies plus the pools' 174 — the leak a teardown that
+ * dropped a bucket, or released a pooled body, would be. The script then
+ * plays on the REBUILT world, so a rebuilt world is graded as one the clients
+ * land on the same way. (Rebuilding changes the static bodies' handles and so
+ * the solver's contact order: the run's hashes are not the ones banked before
+ * this step was added, which is why it was re-banked on the pre-port tree.)
+ *
+ * **Then the whole script once more in the same page** — `drop.mjs`'s
+ * in-process floor — reported and never graded: the engine has the first
+ * run's history in it, and a parked shard keeps the orientation it last
+ * wore, so a second run is not the same input and does not come back the
+ * same (measured: rest poses up to 2.5 m apart, against bit-identical runs in
+ * two processes).
+ *
+ * **These checks are banked on the PRE-PORT tree**, or they would prove
+ * nothing about the port: `lib.mjs`'s helpers reach the engine in either era,
+ * so `git checkout fb90b7d -- src`, a plain run, `git checkout HEAD -- src`,
+ * then `--check` on the port — which must come back identical on every line.
+ *
  * **And, graded apart from that, the NODES the clients write** (`nodes` in
  * the bank, added at X2.4 C5 and banked against the parent before that
  * commit touched a line of source): a digest at the end of EVERY frame over
@@ -115,6 +146,33 @@ function quietRound(page) {
       poll();
     });
     g.engine.stopRenderLoop();
+  });
+}
+
+/**
+ * A map change and a teardown, twice, before the script: the static world
+ * cleared (`setMap(null, …)`, which is what leaving a round does) and built
+ * again off the same map (`setMap(map, …)`, an editor rebuild's or the next
+ * round's), reading after each how many bodies the Havok WORLD holds. Every
+ * reading must be the map's static bodies plus the pools' — a teardown that
+ * dropped a bucket, or a client that released a pooled body, shows here and
+ * nowhere else. Then the script runs on the REBUILT world, so it also says
+ * a rebuilt world is one the clients land on the same way.
+ */
+function cycle(page) {
+  return page.evaluate(() => {
+    const g = window.__celshock;
+    const ref = window.__physref;
+    const pooled = ref.clientBodies(g).length;
+    const read = (step) => ({ step, statics: ref.staticCount(g), world: ref.worldCount(g) });
+    const steps = [read("built")];
+    for (let i = 0; i < 2; i++) {
+      g.physics.setMap(null, false);
+      steps.push(read("cleared"));
+      g.physics.setMap(g.map, false);
+      steps.push(read("rebuilt"));
+    }
+    return { era: ref.era(g), pooled, steps };
   });
 }
 
@@ -326,7 +384,9 @@ function play(page, opts) {
       }
       const f64 = new Float64Array(1);
       const u8 = new Uint8Array(f64.buffer);
-      const nodeDigest = () => {
+      // Two 32-bit FNV/murmur-style lanes over raw bytes: every float is its
+      // eight bytes, so a -0 is not a 0 and nothing JSON would round is lost.
+      const hasher = () => {
         let h1 = 0x811c9dc5;
         let h2 = 0x9747b28c;
         const byte = (b) => {
@@ -334,14 +394,21 @@ function play(page, opts) {
           h2 = Math.imul(h2 ^ b, 0x5bd1e995);
           h2 ^= h2 >>> 15;
         };
-        const num = (x) => {
-          f64[0] = x;
-          for (let i = 0; i < 8; i++) byte(u8[i]);
+        return {
+          num(x) {
+            f64[0] = x;
+            for (let i = 0; i < 8; i++) byte(u8[i]);
+          },
+          str(t) {
+            for (let i = 0; i < t.length; i++) byte(t.charCodeAt(i) & 0xff);
+            byte(0);
+          },
+          done: () =>
+            (h1 >>> 0).toString(16).padStart(8, "0") + (h2 >>> 0).toString(16).padStart(8, "0"),
         };
-        const str = (s) => {
-          for (let i = 0; i < s.length; i++) byte(s.charCodeAt(i) & 0xff);
-          byte(0);
-        };
+      };
+      const nodeDigest = () => {
+        const { num, str, done } = hasher();
         for (const n of nodeList) {
           str(n.parent ? n.parent.name : "-");
           num(n.isEnabled(false) ? 1 : 0);
@@ -354,9 +421,18 @@ function play(page, opts) {
           const s = n.scaling;
           num(s.x); num(s.y); num(s.z);
         }
-        return (h1 >>> 0).toString(16).padStart(8, "0") + (h2 >>> 0).toString(16).padStart(8, "0");
+        return done();
       };
       const nodeFrames = [];
+      // Every POOLED body, live or parked, at the end of every frame: whether
+      // Havok is simulating it and its raw `HP_Body_GetQTransform`, bit for
+      // bit. The snapshots below hash only the LIVE ones, which is blind to a
+      // park that rewrote a pose without telling the engine — the static box
+      // left lying in the street that `RagdollSystem.park` measured. And
+      // every parked body must be exactly at the park, (0, PARKED_Y, 0).
+      const bodyFrames = [];
+      const unparked = [];
+      let unparkedCount = 0;
 
       const wanted = new Set(SNAPSHOTS);
       const snapshots = [];
@@ -375,18 +451,32 @@ function play(page, opts) {
         g.blastDebris.update(dt);
 
         const live = [];
+        const every = hasher();
         for (const [label, id] of bodies) {
-          if (ref.live(HK, id)) {
-            const pose = ref.pose(HK, id);
+          const isLive = ref.live(HK, id);
+          const [p, q] = HK.HP_Body_GetQTransform(id)[1];
+          every.num(isLive ? 1 : 0);
+          every.num(p[0]); every.num(p[1]); every.num(p[2]);
+          every.num(q[0]); every.num(q[1]); every.num(q[2]); every.num(q[3]);
+          if (isLive) {
+            // `lib.mjs`'s `pose`, off the same read.
+            const pose = [p[0] + 0, p[1] + 0, p[2] + 0, q[0], q[1], q[2], q[3]];
             lastPose.set(label, pose);
             wasLive.add(label);
             live.push([label, pose]);
-          } else if (wasLive.has(label)) {
-            // Put away this frame: where it was lying is the REST pose.
-            wasLive.delete(label);
-            rest.push([label, f, lastPose.get(label)]);
+          } else {
+            if (p[0] !== 0 || p[1] !== -1000 || p[2] !== 0) {
+              unparkedCount++;
+              if (unparked.length < 8) unparked.push([f, label, p.map((n) => +n.toFixed(3))]);
+            }
+            if (wasLive.has(label)) {
+              // Put away this frame: where it was lying is the REST pose.
+              wasLive.delete(label);
+              rest.push([label, f, lastPose.get(label)]);
+            }
           }
         }
+        bodyFrames.push(every.done());
         nodeFrames.push(nodeDigest());
         if (AUDIT[f]) {
           audit.push([f, AUDIT[f], corpses.map((c) => (c.ragdolling ? 1 : 0)).join("")]);
@@ -412,6 +502,9 @@ function play(page, opts) {
         audit,
         nodeFrames,
         nodeCount: nodeList.length,
+        bodyFrames,
+        unparked,
+        unparkedCount,
         shardShapes: g.debris.shapes.size,
         panes: panes.length,
         bodies: bodies.length,
@@ -432,7 +525,13 @@ for (const id of targets) {
   const { page, pageErrors } = await bootMap(browser, vite.url, id);
   await quietRound(page);
   await page.evaluate(pageHelpers);
+  const teardown = await cycle(page);
   const r = await play(page, { frames: FRAMES, snapshots: SNAPSHOTS });
+  // The same script again in the SAME page, after another teardown — the
+  // in-process floor `drop.mjs` measures. Reported, never graded: the engine
+  // has the first run's history in it.
+  const teardown2 = await cycle(page);
+  const r2 = await play(page, { frames: FRAMES, snapshots: SNAPSHOTS });
   await page.close();
 
   const snaps = r.snapshots.map((s) => ({
@@ -445,8 +544,49 @@ for (const id of targets) {
   // The applied-node digest — graded beside the engine's hash, never folded
   // into it, so a bank taken before it existed still grades the physics.
   const nodeHash = sha(r.nodeFrames);
+  // Every pooled body every frame, parked ones included — graded apart, as
+  // the nodes are.
+  const bodyHash = sha(r.bodyFrames);
   const label = id.padEnd(12);
   const pad = " ".repeat(12);
+  const firstStatics = teardown.steps[0].statics;
+  for (const t of [teardown, teardown2]) {
+    for (const st of t.steps) {
+      const want = st.statics + t.pooled;
+      if (st.world !== want) {
+        problems.push(`${id}: ${st.step} world holds ${st.world} bodies, want ${st.statics} + ${t.pooled}`);
+      }
+      const wantStatics = st.step === "cleared" ? 0 : firstStatics;
+      if (st.statics !== wantStatics) {
+        problems.push(`${id}: ${st.step} map is ${st.statics} static bodies, want ${wantStatics}`);
+      }
+    }
+  }
+  if (r.unparkedCount) {
+    problems.push(
+      `${id}: ${r.unparkedCount} parked body-frames off the park, first ${JSON.stringify(r.unparked[0])}`,
+    );
+  }
+  // The in-process repeat, against the first run.
+  const snaps2 = r2.snapshots.map((s) => sha(s.bodies));
+  const repeatAt = snaps.findIndex((s, i) => snaps2[i] !== s.hash);
+  const bodyAt2 = r.bodyFrames.findIndex((d, i) => r2.bodyFrames[i] !== d);
+  let repeatWorst = 0;
+  if (r2.rest.length === r.rest.length) {
+    for (let i = 0; i < r.rest.length; i++) {
+      const a = r.rest[i][2];
+      const b = r2.rest[i][2];
+      repeatWorst = Math.max(repeatWorst, Math.hypot(a[0] - b[0], a[1] - b[1], a[2] - b[2]));
+    }
+  }
+  const repeat =
+    bodyAt2 < 0
+      ? "identical"
+      : `differs from frame ${bodyAt2}` +
+        (repeatAt >= 0 ? ` (first live snapshot at ${snaps[repeatAt].frame})` : "") +
+        (r2.rest.length === r.rest.length
+          ? `, rest poses up to ${repeatWorst.toFixed(4)} m apart`
+          : `, ${r2.rest.length} put away against ${r.rest.length}`);
   const last = r.snapshots[r.snapshots.length - 1];
   const summary =
     `${r.bodies} pooled bodies, ${r.panes} panes, ${r.shardShapes} shard shapes, ` +
@@ -483,6 +623,19 @@ for (const id of targets) {
         problems.push(`${id}: applied nodes moved, first at frame ${at}`);
         console.log(`${pad} nodes MOVED  ${nodeHash} (banked ${banked.nodes.hash}), first at frame ${at}`);
       }
+      if (!banked.everyBody) {
+        problems.push(`${id}: no every-body digest banked`);
+        console.log(`${pad} every body NOT GRADED — nothing banked  ${bodyHash}`);
+      } else if (banked.everyBody.hash === bodyHash) {
+        console.log(`${pad} every body identical  ${bodyHash}  (${r.bodies} bodies x ${r.bodyFrames.length} frames, parked ones at the park)`);
+      } else {
+        const at = r.bodyFrames.findIndex((d, i) => banked.everyBody.frames[i] !== d);
+        problems.push(`${id}: pooled bodies moved, first at frame ${at}`);
+        console.log(`${pad} every body MOVED  ${bodyHash} (banked ${banked.everyBody.hash}), first at frame ${at}`);
+      }
+      if (banked.teardown && JSON.stringify(banked.teardown) !== JSON.stringify(teardown.steps)) {
+        problems.push(`${id}: the teardown read ${JSON.stringify(teardown.steps)}, banked ${JSON.stringify(banked.teardown)}`);
+      }
     }
   } else {
     writeFileSync(
@@ -498,6 +651,10 @@ for (const id of targets) {
           audit: r.audit,
           shardShapes: r.shardShapes,
           nodes: { count: r.nodeCount, hash: nodeHash, frames: r.nodeFrames },
+          everyBody: { hash: bodyHash, frames: r.bodyFrames },
+          teardown: teardown.steps,
+          era: teardown.era,
+          repeat,
           probe: r.probe,
         },
         null,
@@ -506,7 +663,13 @@ for (const id of targets) {
     );
     console.log(`${label} banked ${hash}  ${summary}`);
     console.log(`${pad} nodes banked ${nodeHash}  (${r.nodeCount} nodes)`);
+    console.log(`${pad} every body banked ${bodyHash}`);
   }
+  console.log(
+    `${pad} ${teardown.era} tree; teardown ` +
+      teardown.steps.map((t) => `${t.step} ${t.statics}+${teardown.pooled}=${t.world}`).join(", "),
+  );
+  console.log(`${pad} repeat in one process: ${repeat}`);
   console.log(
     `${pad} snapshots ${snaps.map((s) => `${s.frame}:${s.live}`).join(" ")}`,
   );

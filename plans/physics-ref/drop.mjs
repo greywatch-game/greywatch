@@ -538,10 +538,10 @@ function drop(page, opts) {
       g.physics.update = realUpdate;
       // What the world was actually built as, which is the fact S5b moves:
       // the static bodies in the engine, pooled ones and all — the world's
-      // own and the clients' on the raw API (every body there is since X2.4
-      // C4 took Babylon's plugin out). Only a reading; nothing grades it.
-      const staticBodies =
-        g.physics.worldBodyCount + g.physics.bodies.filter((b) => !b.dynamic).length;
+      // own and the clients' parked ones, counted the same way in the
+      // plugin-era tree and the raw one (`lib.mjs`). Only a reading; nothing
+      // grades it.
+      const staticBodies = ref.staticBodies(g);
       return {
         first,
         second,

@@ -75,11 +75,16 @@ you are on before you believe anything else in this section.
   other half**: a fixed script of corpses (bullet, frag and shell deaths, the
   pool's eviction, an early retire), glass bursts and rubble played through
   the three real clients and hashed off `HP_Body_GetQTransform` in flight and
-  at rest, banked as `ref/clients-<map>.json` and graded on bits; it has to
+  at rest — every POOLED body every frame too, parked ones required to sit
+  exactly at the park, after a map teardown and rebuild whose Havok body count
+  it checks — banked as `ref/clients-<map>.json` and graded on bits; it has to
   hold the game's own step and the pools' doors shut from before
   `startRound`, or a bot killed under the deploy screen would put a corpse
   into the world first. `plans/physics-ref/lib.mjs` is where both reach the
-  engine. Two of drop's lessons generalise to any
+  engine, in the plugin-era tree and the raw one alike — so **a new check is
+  banked on the PRE-PORT source** (`git checkout fb90b7d -- src`, run,
+  `git checkout HEAD -- src`) **and graded on the port**, or it proves
+  nothing about the port. Two of drop's lessons generalise to any
   script that steps the engine: **a settled body's VELOCITY is frozen at
   whatever it held when Havok deactivated it**, so "has it stopped" is a
   displacement over the last N substeps and never `getLinearVelocity()`; and
