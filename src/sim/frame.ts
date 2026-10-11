@@ -1,8 +1,9 @@
 /**
  * src/sim/frame.ts — The simulation core's STATE, as numbers: `SimFrame`, the
  * structure of typed arrays a host reads the standing round off, and
- * `fillFrame`, the one writer, which the core runs at the end of every call
- * that can change what is in it (`BABYLON_EXIT.md` X2.5a C5).
+ * `fillFrame`, the one writer, which the core runs at the end of every step
+ * and on the first read after any other call that changed the round
+ * (`SimCore.frame`; `BABYLON_EXIT.md` X2.5a C5).
  * Owns: the frame's layout — every section, every field, its type and its
  * stride — and the copy of the core's live objects into it.
  * Invariants:
@@ -318,7 +319,8 @@ export interface FrameSource {
   readonly antiTank: AntiTankSystem;
   readonly glass: GlassSystem;
   readonly scores: ScoreBook;
-  readonly players: ReadonlyMap<number, SimPlayer>;
+  /** The persons in join order — `SimCore.playerList`, walked by index. */
+  readonly playerList: readonly SimPlayer[];
 }
 
 /**
@@ -364,15 +366,16 @@ export function fillFrame(f: SimFrame, src: FrameSource): void {
   for (let i = 0; i < bots.length; i++) writeBot(b, i, bots[i], battle.aside(bots[i]));
 
   // --- persons ---
-  const players = src.players;
+  const players = src.playerList;
   // Capacity is the pool's slot count — a person's slot is always one of
   // them — so a person joining is not a reallocation.
-  const cap = Math.max(players.size, bots.length);
+  const cap = Math.max(players.length, bots.length);
   if (f.players.slot.length < cap) f.players = playersOf(cap);
   const pl = f.players;
-  pl.count = players.size;
+  pl.count = players.length;
   let k = 0;
-  for (const p of players.values()) {
+  for (let n = 0; n < players.length; n++) {
+    const p = players[n];
     pl.slot[k] = p.slot;
     pl.team[k] = p.team;
     pl.alive[k] = p.alive ? 1 : 0;

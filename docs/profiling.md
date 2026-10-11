@@ -363,7 +363,8 @@ the ring, the report and the trace are all sized and labelled off that list.
 frame                       the whole tick, wall to wall
 ├─ input                    InputManager.update
 ├─ roundBehind              the netplay round running under a lid
-├─ gameplay                 the `playing` arm
+├─ gameplay                 the `playing` arm, the `dying` one (the death
+│  │                        cam steps the world too) and the bench's
 │  ├─ driver / onFoot       whichever half of a body's frame this is
 │  ├─ world                 updateWorld entire
 │  │  ├─ net                updateNetWorld — a match's dressing

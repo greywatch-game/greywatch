@@ -32,9 +32,11 @@
  * in this directory may import from
  * `server/`. **The page reads its STATE off the frame and its NEWS off the
  * ring and nothing else** (`BABYLON_EXIT.md` X2.5a C5): a core built with
- * `publish` refreshes `frame` (`src/sim/frame.ts`) at the end of every call
- * that can change it — `step`, `submit`, `startRound`, `addPlayer`,
- * `removePlayer`, `releaseWorld` — and the page's views read that copy
+ * `publish` fills `frame` (`src/sim/frame.ts`) at the end of every `step`,
+ * and on the first READ after any other call that can change it — `submit`,
+ * `startRound`, `addPlayer`, `removePlayer`, `releaseWorld` mark it stale
+ * rather than filling it, so a host that submits three reports between two
+ * steps pays for one fill, not four — and the page's views read that copy
  * through `src/sim/mirror.ts`, never an object of this class. The page lets
  * the world go between rounds with `releaseWorld`.
  *
@@ -331,13 +333,24 @@ export class SimCore {
   /** `SimCoreOptions.reportGap`, handed to every `ReportedLanding`. */
   private readonly reportGap: number | undefined;
   /**
-   * The standing round as numbers (`src/sim/frame.ts`): refreshed at the end
-   * of every call that can change it when this core `publishing`, and empty
-   * otherwise. The object stands for the life of the core; a section inside
-   * it is rebuilt when its count moves (a new pool, a new map), so a reader
-   * holds the frame and never a section of it.
+   * The standing round as numbers (`src/sim/frame.ts`), when this core is
+   * `publishing` — empty otherwise. Filled at the end of every `step`; any
+   * other call that changes the round only marks it `stale`, and the first
+   * read after that fills it (`frame`), so what a reader sees is always the
+   * round as it stands and a host that never looks between two steps pays
+   * one fill a step. The object stands for the life of the core; a section
+   * inside it is rebuilt when its count moves (a new pool, a new map), so a
+   * reader holds the frame and never a section of it.
    */
-  readonly frame: SimFrame = newFrame();
+  private readonly framed: SimFrame = newFrame();
+  /** A call since the last fill changed what `framed` would say. */
+  private stale = false;
+
+  /** `framed`, filled first if a call since the last fill left it stale. */
+  get frame(): SimFrame {
+    if (this.stale) this.publish();
+    return this.framed;
+  }
 
   readonly combat: CombatSystem;
   readonly battle: BattleSystem;
@@ -407,6 +420,14 @@ export class SimCore {
 
   /** Connected humans, by slot. Sparse — most slots are bots. */
   readonly players = new Map<number, SimPlayer>();
+  /**
+   * `players`' values in the map's own order (join order), held as an array
+   * so the step and the frame walk them by INDEX — a `Map` iterator is an
+   * object, and the step runs every frame (`docs/profiling.md`: nothing
+   * allocates per frame while the profiler records). Written beside the map
+   * by `addPlayer` and `removePlayer` and by nothing else.
+   */
+  readonly playerList: SimPlayer[] = [];
 
   /**
    * Position history, so a shot resolves against what its shooter saw —
@@ -579,7 +600,18 @@ export class SimCore {
    * readers to see it; nothing in the game calls it.
    */
   publish(): void {
-    if (this.publishing) fillFrame(this.frame, this);
+    this.stale = false;
+    if (this.publishing) fillFrame(this.framed, this);
+  }
+
+  /**
+   * What the calls that change the round between steps say instead of
+   * `publish`: the frame is out of date, and the next READ fills it. Nothing
+   * is filled for a host that does not look — `Match`, which never does, and
+   * the page between its per-frame reports and its step.
+   */
+  private markStale(): void {
+    if (this.publishing) this.stale = true;
   }
 
   /**
@@ -603,6 +635,7 @@ export class SimCore {
     this.crew.setMap(null);
     this.driven.clear();
     this.landings.clear();
+    this.landingOrder.length = 0;
     this.laid.clear();
     for (const tank of this.vehicles.hulls) this.battle.removeHuman(tank);
     this.vehicles.dispose();
@@ -618,7 +651,7 @@ export class SimCore {
     this.battle.clearMap();
     this.map?.dispose();
     this.map = null;
-    this.publish();
+    this.markStale();
   }
 
   /**
@@ -683,6 +716,8 @@ export class SimCore {
    * the hulls move, where a stepped hull's own crash lands.
    */
   private readonly landings = new Map<number, ReportedLanding>();
+  /** `landings`' keys in the order they were filed — what the step walks. */
+  private readonly landingOrder: number[] = [];
 
   /** Scratch a person's rocket or round is copied into on arrival. */
   private readonly cmdFrom = new Vector3();
@@ -795,6 +830,7 @@ export class SimCore {
     this.crew.clear();
     this.driven.clear();
     this.landings.clear();
+    this.landingOrder.length = 0;
     this.laid.clear();
     // **Last round's hulls come OUT of the fight before they are disposed.**
     // `BattleSystem.reset` deliberately does not touch the human list — the
@@ -872,7 +908,7 @@ export class SimCore {
     for (const player of this.players.values()) {
       this.battle.setBenched(this.battle.bots[player.slot], true);
     }
-    this.publish();
+    this.markStale();
     // The wall clock is NOT read here: the host calls `anchor` the moment this
     // returns, which is where the anchor has always been taken — LAST, after
     // the dispose, the build and the reset. See `anchor` for why that place.
@@ -887,7 +923,7 @@ export class SimCore {
    */
   step(dt: number): boolean {
     const clock = this.timed ? this.clock : null;
-    const t = this.frame.timing;
+    const t = this.framed.timing;
     if (clock) {
       t.at.fill(-1);
       t.ms.fill(0);
@@ -908,19 +944,19 @@ export class SimCore {
    */
   timeSteps(on: boolean): void {
     this.timed = on && this.clock !== null;
-    if (!this.timed) this.frame.timing.total = -1;
+    if (!this.timed) this.framed.timing.total = -1;
   }
 
   /** Opens `SIM_PHASES[i]` on a timed step. MEASURES and never decides. */
   private openPhase(i: number): void {
     const t = this.clock!();
-    this.frame.timing.at[i] = t - this.frame.timing.start;
+    this.framed.timing.at[i] = t - this.framed.timing.start;
     this.phaseT0 = t;
   }
 
   /** Closes `SIM_PHASES[i]`, opened by `openPhase`. */
   private closePhase(i: number): void {
-    this.frame.timing.ms[i] = this.clock!() - this.phaseT0;
+    this.framed.timing.ms[i] = this.clock!() - this.phaseT0;
   }
 
   /** `step`'s simulation, before the frame is refreshed off it. */
@@ -949,7 +985,9 @@ export class SimCore {
     // there. Nothing here times them out into the world: a player looking at
     // the map is doing the thing the screen is for, and the alternative is
     // yanking them out of it mid-decision.
-    for (const player of this.players.values()) {
+    const people = this.playerList;
+    for (let i = 0; i < people.length; i++) {
+      const player = people[i];
       // A living one only ages its regen lock. Bots do not regenerate and never
       // have — the pool that has to refill is a person's, because a person is
       // the one combatant a round cannot afford to send back to a spawn queue
@@ -1035,10 +1073,14 @@ export class SimCore {
     // this and cannot tell them apart, which is the point — a flag does not
     // care who is standing on it.
     if (timed) this.openPhase(SIM_CONQUEST);
-    this.combatants.length = 0;
-    this.combatants.push(...this.battle.bots);
-    for (const player of this.players.values()) this.combatants.push(player);
-    this.conquest.update(dt, this.combatants);
+    // By index, both lists: a spread is an iterator and an argument list, and
+    // this runs every step.
+    const combatants = this.combatants;
+    const bots = this.battle.bots;
+    combatants.length = 0;
+    for (let i = 0; i < bots.length; i++) combatants.push(bots[i]);
+    for (let i = 0; i < people.length; i++) combatants.push(people[i]);
+    this.conquest.update(dt, combatants);
     if (timed) this.closePhase(SIM_CONQUEST);
     if (this.conquest.winner !== null) {
       // Once, on the tick it happened, and LAST of that tick's events — the
@@ -1064,7 +1106,12 @@ export class SimCore {
     // tracks and the bots — through the same door (`Vehicle.crash`), so the
     // burn, the crew and the person in the seat follow as from any blow. A
     // hull that has burned meanwhile owes nothing more.
-    for (const [index, landing] of this.landings) {
+    // In the order the reports were first filed (`landingOrder`), which is
+    // the map's own and decides whose burn is told first on a tick two
+    // crash — walked by index, for the reason the lists above are.
+    for (let i = 0; i < this.landingOrder.length; i++) {
+      const index = this.landingOrder[i];
+      const landing = this.landings.get(index)!;
       if (landing.owed <= 0) continue;
       const tank = this.vehicles.hulls[index];
       const cost = landing.owed;
@@ -1081,7 +1128,8 @@ export class SimCore {
     // every bot's idea of where that person is all ask this object where it
     // is, and the honest answer is "in that tank". Done AFTER the hulls have
     // moved, so a body is never a frame behind the thing carrying it.
-    for (const player of this.players.values()) {
+    for (let i = 0; i < people.length; i++) {
+      const player = people[i];
       if (player.seat < 0) continue;
       const tank = this.vehicles.hulls[player.seat];
       if (tank) player.apply(dt, tank.position.x, tank.position.y, tank.position.z, player.yaw, player.pitch, false, false);
@@ -1474,11 +1522,11 @@ export class SimCore {
    */
   submit(slot: number, cmd: SimCommand): boolean {
     const acted = this.apply(slot, cmd);
-    this.publish();
+    this.markStale();
     return acted;
   }
 
-  /** `submit`'s simulation, before the frame is refreshed off it. */
+  /** `submit`'s simulation, before the frame is marked stale off it. */
   private apply(slot: number, cmd: SimCommand): boolean {
     const player = this.players.get(slot);
     if (!player) return false;
@@ -1863,7 +1911,10 @@ export class SimCore {
       // A new pilot's reports start a new history: nothing is measured
       // across the change of hands.
       let landing = this.landings.get(index);
-      if (!landing) this.landings.set(index, (landing = new ReportedLanding(this.reportGap)));
+      if (!landing) {
+        this.landings.set(index, (landing = new ReportedLanding(this.reportGap)));
+        this.landingOrder.push(index);
+      }
       landing.reset();
       this.driven.set(index, {
         x: tank.position.x,
@@ -2000,7 +2051,7 @@ export class SimCore {
    * and this is what decides whether that was true. Empty first, for the
    * reason that method gives — given the choice, take the tank nobody is using.
    */
-  seatOffered(player: SimPlayer): Vehicle | null {
+  private seatOffered(player: SimPlayer): Vehicle | null {
     if (this.vehicles.empty || !player.alive || player.seat >= 0) return null;
     // A hull with a CHAIR left, which with two seats is the ordinary case: the
     // player climbs on beside whoever is already aboard and nobody is turned
@@ -2144,6 +2195,10 @@ export class SimCore {
         killed, kind, player.health, player.respawnT);
     };
     if (this.map) player.leash.setMap(this.map.size, this.map.margin);
+    // In the map's order: a slot re-added keeps its place, as `Map.set` does.
+    const held = this.players.get(slot);
+    if (held) this.playerList[this.playerList.indexOf(held)] = player;
+    else this.playerList.push(player);
     this.players.set(slot, player);
     if (this.rewind) this.lag.track(player);
     this.battle.addHuman(player);
@@ -2151,7 +2206,7 @@ export class SimCore {
     // it); the round's own re-bench, last of `startRound`, covers that person.
     const bot = this.battle.bots[slot];
     if (bot) this.battle.setBenched(bot, true);
-    this.publish();
+    this.markStale();
     return player;
   }
 
@@ -2174,16 +2229,12 @@ export class SimCore {
     this.seat(player, null);
     player.retire();
     this.players.delete(slot);
+    this.playerList.splice(this.playerList.indexOf(player), 1);
     this.lag.untrack(player);
     this.battle.removeHuman(player);
     const bot = this.battle.bots[slot];
     if (bot) this.battle.setBenched(bot, false);
-    this.publish();
-  }
-
-  /** Where a human of `team` should deploy — the same picker the bots use. */
-  spawnFor(team: Team): SpawnPick | null {
-    return this.spawnPointFor(team);
+    this.markStale();
   }
 
   /**
@@ -2343,7 +2394,7 @@ export class SimCore {
    * door keeps so the blow's own door can file the audit into it
    * (`fileDeath`).
    */
-  registerDeath(slot: number, cause: DeathCause = "other", credited = false): number {
+  private registerDeath(slot: number, cause: DeathCause = "other", credited = false): number {
     this.scores.registerDeath(slot);
     return emitDeath(this.events, this.tick, slot, cause, credited);
   }

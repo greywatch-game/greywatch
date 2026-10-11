@@ -126,7 +126,16 @@ export function simCheck(
     is("flags.winner", fl.winner, core.conquest.winner);
   }
 
-  // --- persons ---
+  // --- persons, both ways: the count, every mirror row a person of the
+  // core's in the core's own order, and (below) every person of the core's a
+  // mirror row — a row the core has dropped, or one it never had, is a
+  // mismatch rather than a silence.
+  is("persons.count", mirror.personCount, core.players.size);
+  for (let k = 0; k < mirror.personCount; k++) {
+    const m = mirror.personAt(k)!;
+    is(`person[${k}].slot`, m.slot, core.playerList[k]?.slot);
+    is(`person[${k}].inCore`, core.players.get(m.slot) !== undefined, true);
+  }
   for (const p of core.players.values()) {
     const m = mirror.person(p.slot);
     const at = `person ${p.slot}`;

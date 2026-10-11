@@ -243,11 +243,6 @@ export class EventRing {
     return o;
   }
 
-  /** The record index of the record `open` returned `offset` for. */
-  indexOf(offset: number): number {
-    return offset / STRIDE;
-  }
-
   /** Copies a list into the side array and returns where it starts. */
   pushInts(list: readonly number[]): number {
     const start = this.intCount;

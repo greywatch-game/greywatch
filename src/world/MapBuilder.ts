@@ -867,7 +867,7 @@ export class MapBuilder {
     const glazing = this.mergeBlocks(run);
     const world = this.bake(run, size, glazing);
     if (import.meta.env.DEV) assertPieces(world, unpieced, index !== undefined);
-    const { nav, obstacles, rays, collidables } = this.derive(run, size);
+    const { nav, obstacles, rays, collidables } = this.derive(run, size, opts?.navFields ?? true);
     since("build:total", buildStart);
 
     return {
@@ -1318,6 +1318,8 @@ export class MapBuilder {
   private derive(
     run: BuildRun,
     size: number,
+    /** `BuildOptions.navFields`: false builds the graph and no field. */
+    fields: boolean,
   ): Pick<GameMap, "nav" | "obstacles" | "rays" | "collidables"> {
     const { layout, terrain, colliders } = run;
     if (import.meta.env.DEV) {
@@ -1325,17 +1327,18 @@ export class MapBuilder {
     }
     // Navigation is derived from the finished collider set, then a flow field
     // is precomputed per objective: five flags plus both home spawns. The map
-    // is static, so this is the only time any of it is computed.
+    // is static, so this is the only time any of it is computed — and on the
+    // offline page none of the fields are (`BuildOptions.navFields`).
     const nav = record(
       "navGrid",
       () => new NavGrid(size, this.boxes, terrain, layout.surfaces),
     );
-    for (const cp of layout.controlPoints) {
+    for (const cp of fields ? layout.controlPoints : []) {
       record(`flowField:${cp.id}`, () =>
         nav.buildField(cp.id, cp.pos, cp.radius * 0.6),
       );
     }
-    for (const team of [0, 1] as const) {
+    for (const team of fields ? ([0, 1] as const) : []) {
       const home = layout.spawns.find((s) => s.team === team);
       if (home) {
         record(`flowField:home${team}`, () =>

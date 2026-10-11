@@ -371,7 +371,7 @@ export class OrdnanceMirror {
 
   sync(f: SimFrame): void {
     const g = f.grenades;
-    grow(this.flights, g.count, () => new FlightMirror());
+    grow(this.flights, g.count, newFlight);
     for (let i = 0; i < g.count; i++) {
       const n = this.flights[i];
       n.live = g.live[i] === 1;
@@ -383,7 +383,7 @@ export class OrdnanceMirror {
       at(g.vel, i, n.vel);
     }
     const fi = f.fires;
-    grow(this.fireSlots, fi.count, () => new FireMirror());
+    grow(this.fireSlots, fi.count, newFire);
     for (let i = 0; i < fi.count; i++) {
       const s = this.fireSlots[i];
       s.id = fi.id[i];
@@ -391,7 +391,7 @@ export class OrdnanceMirror {
       at(fi.at, i, s.at);
     }
     const r = f.rockets;
-    grow(this.rocketSlots, r.count, () => new RocketMirror());
+    grow(this.rocketSlots, r.count, newRocket);
     for (let i = 0; i < r.count; i++) {
       const s = this.rocketSlots[i];
       s.live = r.live[i] === 1;
@@ -400,7 +400,7 @@ export class OrdnanceMirror {
       at(r.vel, i, s.vel);
     }
     const m = f.mines;
-    grow(this.mineSlots, m.count, () => new MineMirror());
+    grow(this.mineSlots, m.count, newMine);
     for (let i = 0; i < m.count; i++) {
       const s = this.mineSlots[i];
       s.live = m.live[i] === 1;
@@ -411,7 +411,9 @@ export class OrdnanceMirror {
 
   /** `GrenadeSystem.forEachFire`, off the frame — the same visit, the same order. */
   forEachFire(fn: (id: number, at: Vector3, strength: number) => void): void {
-    for (const f of this.fireSlots) {
+    const slots = this.fireSlots;
+    for (let i = 0; i < slots.length; i++) {
+      const f = slots[i];
       if (f.t >= 0) fn(f.id, f.at, fireStrength(f.t));
     }
   }
@@ -443,8 +445,9 @@ export class ScoresMirror {
 
 /**
  * Everything the offline page reads of the round, off one frame. `sync` once
- * per frame the core publishes — after every `step`, every `submit` and every
- * round call — and before anything reads it.
+ * per frame the page reads — after every `step`, every `submit` but a
+ * per-frame report (`Game.ask`) and every round call — and before anything
+ * reads it.
  */
 export class SimMirror {
   readonly roster = new RosterMirror();
@@ -453,7 +456,7 @@ export class SimMirror {
   readonly scores = new ScoresMirror();
   /** The persons, in the frame's order. */
   private readonly persons: PersonMirror[] = [];
-  private personCount = 0;
+  private personsHeld = 0;
   /** The frame last synced — the header's numbers are read off it. */
   frame: SimFrame = newFrame();
   /** `hittablesAgainst`'s answer, one scratch list per side. */
@@ -466,9 +469,9 @@ export class SimMirror {
     this.ordnance.sync(f);
     this.scores.sync(f);
     const p = f.players;
-    grow(this.persons, p.count, () => new PersonMirror());
+    grow(this.persons, p.count, newPerson);
     for (let k = 0; k < p.count; k++) this.persons[k].read(f, k);
-    this.personCount = p.count;
+    this.personsHeld = p.count;
   }
 
   /** `SimCore.tick` as of the last sync. */
@@ -478,10 +481,20 @@ export class SimMirror {
 
   /** The person in `slot`, or null when nobody sits there. */
   person(slot: number): PersonMirror | null {
-    for (let k = 0; k < this.personCount; k++) {
+    for (let k = 0; k < this.personsHeld; k++) {
       if (this.persons[k].slot === slot) return this.persons[k];
     }
     return null;
+  }
+
+  /** How many persons the frame holds — `SimCore.players.size`. */
+  get personCount(): number {
+    return this.personsHeld;
+  }
+
+  /** The `k`th person in the frame's order (the core's join order), or null past the end. */
+  personAt(k: number): PersonMirror | null {
+    return k >= 0 && k < this.personsHeld ? this.persons[k] : null;
   }
 
   /** Whether pane `i` has broken, as the frame says. */
@@ -553,6 +566,18 @@ function at(src: Float64Array, i: number, out: Vector3): void {
   out.y = src[i * 3 + 1];
   out.z = src[i * 3 + 2];
 }
+
+/**
+ * The pools' constructors, held at module level and handed to `grow` — a
+ * closure written at the call would be a fresh function object every sync,
+ * which is to say every frame (`docs/profiling.md`: nothing allocates per
+ * frame while the profiler records).
+ */
+const newFlight = (): FlightMirror => new FlightMirror();
+const newFire = (): FireMirror => new FireMirror();
+const newRocket = (): RocketMirror => new RocketMirror();
+const newMine = (): MineMirror => new MineMirror();
+const newPerson = (): PersonMirror => new PersonMirror();
 
 /** Grows (never shrinks below need) a held pool to `n` entries. */
 function grow<T>(list: T[], n: number, make: () => T): void {

@@ -2341,6 +2341,17 @@ that: a send-time stamp moved by a late frame (finding 54's mechanism), a
 position a frame older than its stamp, or two samples bunched by the timer.
 None is confirmed.
 
+**Narrowed at the X2.5a review** (which bounded a peer's stamps against when
+they ARRIVE, `Match.onStamp`): logging every stamp's lead over its arrival on
+the authority, through a botless Coldharbour, a Sarab `--bots` and a Sarab
+`--heli` smoke (~7,000 samples), the lead never moved by more than **1.6 ms**
+and the bound clipped nothing — while those same runs drew their usual 0–4
+`speed` corrections, as many as the unbounded build did on the same three
+smokes run twice beside it. So it is **not** two samples bunched by a timer,
+nor a stamp drifting from its arrival: the stamps and the arrivals agree. What
+is left of the three suspects is a stamp read at a different moment of the
+frame from the POSITION it is sent with — finding 54's mechanism.
+
 **What would settle it:** log, per refused sample, the client's stamp gap, its
 frame `dt`, and the distance it reported, and see which of the three it is.
 Stamping with the simulation time of the frame that produced the position (54's
@@ -2615,3 +2626,32 @@ motion — e.g. the descent rate over the last accepted samples at the moment th
 reported height meets the plank (`validateDrive` already holds the previous
 accepted sample) — asserted against the bot's `update` figure on the same
 landing, then the same rule offline for free.
+
+---
+
+## 61. The offline page's bot mirror allocates ~3.2 kB a frame on Sarab, and the core's `advance` ~360 B
+
+**Status:** open; found by the X2.5a review's allocation A/B, not chased.
+
+**Measured** (CDP sampling heap profiler with both collected-object flags,
+`docs/profiling.md` "Finding WHO allocates", 64 B interval, 10 s of a Sarab
+bench FIGHT on a dev server, attributed to the innermost `src/` frame):
+`BotMirror.read` (`src/sim/mirror.ts`) 3.2–3.5 kB a frame — ~66 B per bot of
+48, in a method that only copies numbers off the frame into held fields and
+`unpackJoints` into a held `SoldierJoints` — and `SimCore.advance`'s own body
+~364 B a frame, the same before and after the review took its spread and its
+two `Map` walks out (so those were not it). The review's other targets did
+fall: `Game.syncFleet` 507 → 1 B a frame (its `entries()` walk), the fire
+visit 111 → 0, `OrdnanceMirror.sync` 261 → 224 (its five per-sync closures).
+
+**Suspected, not confirmed:** boxed doubles — `docs/profiling.md`'s note that a
+function run once a frame stays on Maglev, where a double stored into a
+tagged field or passed through a call that is not inlined is a heap number.
+`read` writes some twenty doubles per bot and `unpackJoints` the whole joint
+set.
+
+**What would settle it:** `%GetOptimizationStatus` on `read` and `advance` in a
+live round (calibrated as that section says), then the same A/B after giving
+the joint object and the mirror's numeric fields a double representation from
+construction (initialise every one with a non-integer), or after unpacking the
+joints lazily, on the rig's read rather than on every sync.

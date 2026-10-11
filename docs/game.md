@@ -39,9 +39,15 @@ and simulates no round of its own. **Three doors, and no fourth**:
   steps the world (`playing`, `dying`, `bench`) and none that holds it.
   **Every call made on the core is followed by `simSync`** — the step, every
   `ask`, and the round's own calls (`startRound`, `addPlayer`,
-  `removePlayer`, `releaseWorld`) — which reads the frame the core has just
-  published into the page's readers (below) BEFORE anything draws what the
-  call said.
+  `removePlayer`, `releaseWorld`) — which reads the frame into the page's
+  readers (below) BEFORE anything draws what the call said. **But a REPORT**
+  — `move`, `drive`, `gun`, each frame's word of where the player, their hull
+  and their gun already are on this page — raises no news and changes nothing
+  read before the step, so it is not synced (nor `?simcheck`ed); the step's
+  own sync follows within the frame. The core fills the frame at the end of
+  each step and lazily on the first read after any other call
+  (`SimCore.frame`), so a frame pays one fill for the step and one per
+  non-report ask, not one per call.
 - **`drainSim`** after every call made on the core, which hands every event the
   core wrote to **`onSimEvent`**, one switch, in emission order. It is
   presentation only — the tracer, the corpse, the killfeed line, the marker,
@@ -142,6 +148,11 @@ of the pose, so that moved its cost and not its answer.
 `antiTank`, the fleet, `glass` and `conquest` as the wire's mirror — and steps
 none of them offline but the fleet (posed, and the player's own hull predicted)
 and the glass (the core's `glass` applied). There is no `BattleSystem`, `VehicleCrew` or `ScoreBook` on the page.
+**Nor the AI's map data**: the page's build skips the cover bake and, offline,
+the seven flow fields (`BuildOptions.navFields` false — kept for the editor's
+overlay and in a match, where the scratch netplay smoke steers by them), since
+the core's own world bakes both for the bots that read them; the nav GRAPH is
+kept, for `standableAt` and the editor.
 
 **The core's world is the page's map as DATA**: `buildRound` hands it
 `collisionOf(map)` (the bake's own read of the build, `src/world/collision.ts`)
@@ -267,7 +278,10 @@ boot: the map disposed and `Game.map` null, the shots' tracers and marks
 (`GrenadeFx`, `AntiTankFx`), the fleet's views (`VehicleViews`, before the
 fleet they draw), the fleet and rotor rings let go, the simulation core's
 whole world released (`SimCore.releaseWorld` — its map, fleet, crews and
-everything in the air), the water and grass disposed, the reflection probes parked, the mote field
+everything in the air; what letting go SAYS, every fire put out as a
+`burntOut`, is drained and DROPPED there rather than left in the ring for the
+next round's first drain to draw on a map that never had those fires, and the
+fires' lights the page holds go with it), the water and grass disposed, the reflection probes parked, the mote field
 stopped, both shadow maps' casters and the lamps' atlas emptied, the bodies' blob shadows hidden, the traced
 bounce's buffers dropped, the candidate list and the physics world cleared (with
 their corpses, shards and rubble), and the fires' voices and the storm's thunder

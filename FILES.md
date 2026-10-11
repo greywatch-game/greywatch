@@ -1544,6 +1544,9 @@ src/
                         #   end of, and it samples `BuildCtx.terrain` for the
                         #   far end's height
     NavGrid.ts          # Walkable-surface graph + precomputed flow fields
+                        #   (the offline page's build has the graph and NO
+                        #   fields — `BuildOptions.navFields`; the core's world
+                        #   steers its bots)
     CoverMap.ts         # Baked per-surface directional cover masks — baked
                         #   only where an AI runs (buildSimWorld); the page's
                         #   build carries none (`GameMap.cover` null)
@@ -1958,8 +1961,9 @@ src/
                       #   the rules a command meets — pouches, seat policy,
                       #   `deployPerson` — are here once. No outward callback:
                       #   it SAYS everything through events.ts, and the host
-                      #   `drain`s after every call. With `publish` it keeps
-                      #   `frame` (frame.ts) filled at the end of every call;
+                      #   `drain`s after every call. With `publish` it fills
+                      #   `frame` (frame.ts) at the end of every step and on
+                      #   the first read after any other call (lazy);
                       #   `SimDoor` is the page's whole view of it (the host
                       #   calls + `frame`); `releaseWorld` is a host's teardown
     frame.ts          #   SimFrame: the round as plain typed arrays, sized per
