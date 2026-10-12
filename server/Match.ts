@@ -3,8 +3,9 @@
  * the snapshots that go out from it.
  * Owns: the fixed-step clock, the peer set, and the bridge between a roster slot
  * changing hands and the bot in that slot being benched or released. It owns no
- * game rules — those are `SimCore`'s — and no transport details beyond
- * `send`/`broadcast`, which are the one place a dead socket is handled.
+ * game rules — those are `SimCore`'s — and no transport: a peer is reached
+ * through a `PeerTransport` (a WebSocket on the server, `server/index.ts`),
+ * and `send`/`broadcast` are the one place a dead connection is handled.
  * It is the core's HOST: it hears the simulation only through the core's
  * event ring, DRAINED after every call it makes on the core — each step, each
  * accepted message — and `relay` turns what it drained into wire events. It
@@ -22,8 +23,8 @@
  * the one copy the offline page submits to as well. What it still reads
  * off the core is in-process state its validators and snapshot need
  * (`players`, `hullOf`, `reportedHull`, the fleet, the board).
- * `server/corecheck.ts` drives a real instance through a fake socket and steps
- * it by hand — it reaches `step`, `relay`, `timer`, `peers` and
+ * `server/corecheck.ts` drives a real instance through a fake transport and
+ * steps it by hand — it reaches `step`, `relay`, `timer`, `peers` and
  * `arrivalClock` by name — so renaming one of those owes that file a look.
  * Invariants: a peer's slot is assigned here and nowhere else, and a peer never
  * names its own slot. The loop is fixed-step and drift-corrected: a `dt` taken
@@ -32,7 +33,6 @@
  * real seconds.
  */
 import { Vector3 } from "../src/math";
-import type { WebSocket } from "ws";
 import {
   encode,
   MAX_NAME_LENGTH,
@@ -194,11 +194,55 @@ function freshSlot(): SlotRecord {
   };
 }
 
+/**
+ * The one connection a peer is reached over, as this class needs it
+ * (`BABYLON_EXIT.md` X2.5c C1): a WebSocket on the server (`server/index.ts`'s
+ * `wsTransport`), and a fake one in `server/corecheck.ts`. Everything about
+ * what is CARRIED — the JSON both ways, the claim gates, the rate bucket — is
+ * this class's and stays above it, so whatever carries a peer is told nothing
+ * a WebSocket was not.
+ */
+export interface PeerTransport {
+  /**
+   * Whether `send` and `ping` still reach the far end. False once a close has
+   * begun from either side, and `send`/`broadcast` test it, so they are still
+   * the one place a dead connection is handled.
+   */
+  readonly open: boolean;
+  /** One encoded `ServerMessage`. */
+  send(text: string): void;
+  /**
+   * Ends the connection. `closed` may follow a turn later (a WebSocket's
+   * closing handshake) or not at all, so a caller that needs the peer gone
+   * NOW drops it by hand, as `abandon` and `spendMessage` do.
+   */
+  close(): void;
+  /**
+   * Starts one round trip, answered by `pong` (`pingPeer`). **A transport
+   * shared with another pinger owns telling the answers apart**, so `pong`
+   * means THIS ping and nothing else — the WebSocket's is shared with the
+   * process's liveness sweep, and `wsTransport` tokens its pings for it.
+   */
+  ping(): void;
+  /** Hands this class its handlers. Called once, inside `admit`. */
+  listen(handlers: PeerHandlers): void;
+}
+
+/** What a transport raises into `Match`, one handler per thing it can say. */
+export interface PeerHandlers {
+  /** One inbound frame, as text: still a CLAIM until `server/wire.ts` reads it. */
+  message(text: string): void;
+  /** The connection ended or failed — either way the peer is gone. */
+  closed(): void;
+  /** The far end answered the outstanding `ping`. */
+  pong(): void;
+}
+
 /** One connected human. */
 interface Peer {
   id: string;
   name: string;
-  socket: WebSocket;
+  transport: PeerTransport;
   /** The roster slot this peer holds, which is also its entity id on the wire. */
   slot: number;
   /**
@@ -239,16 +283,6 @@ interface Peer {
   ping: number;
   /** When the outstanding ping went out, or 0 when there is not one. */
   pingAt: number;
-  /**
-   * What that ping carried, so a pong is matched to the ping it answers.
-   *
-   * The process-wide liveness sweep in `server/index.ts` pings the very same
-   * sockets, and its pongs arrive here too — without a token this class would
-   * time its own ping against somebody else's answer. The payload of a pong is
-   * the payload of the ping that caused it (RFC 6455), so the token is the
-   * whole of the test.
-   */
-  pingToken: number;
 }
 
 /**
@@ -846,7 +880,7 @@ export class Match {
   }
 
   /**
-   * Seats a connected socket.
+   * Seats a connected peer.
    *
    * A refused join is a full match, which the registry should have prevented by
    * routing elsewhere — but the check is kept here anyway, because the caller
@@ -854,7 +888,7 @@ export class Match {
    * moments and a race between them is exactly how a seventeenth player gets in.
    */
   async admit(
-    socket: WebSocket,
+    transport: PeerTransport,
     rawName: string,
     weapon?: string,
     equipment?: string,
@@ -867,15 +901,15 @@ export class Match {
     const name = cleanName(rawName);
     const slot = this.roster.claim(id, name);
     if (!slot) {
-      socket.send(encode({ t: "rejected", reason: "match full" }));
-      socket.close();
+      transport.send(encode({ t: "rejected", reason: "match full" }));
+      transport.close();
       return;
     }
 
     const peer: Peer = {
       id,
       name,
-      socket,
+      transport,
       slot: slot.index,
       seq: 0,
       stamp: NaN,
@@ -887,7 +921,6 @@ export class Match {
       budgetAt: Date.now(),
       ping: -1,
       pingAt: 0,
-      pingToken: 0,
     };
     this.peers.set(id, peer);
     // Somebody came back before the world was thrown away.
@@ -896,34 +929,35 @@ export class Match {
       this.idleTimer = null;
     }
 
-    socket.on("message", (raw) => {
-      // Gone: dropped by `spendMessage` below, or by a `close` whose remaining
-      // buffered messages are still being delivered. Either way this peer has
-      // no slot to act on any more, and the test is what stops a flooder being
-      // logged and refused once per message all the way through the close.
-      if (!this.peers.has(id)) return;
-      // Before the decode, because the parse is what a flood is spending.
-      if (!this.spendMessage(peer)) return;
-      // `readClientMessage` and never `decode`: the shape gate is what makes
-      // the `ClientMessage` type below a fact rather than a claim about a
-      // well-behaved client, and every handler past this line reads fields off
-      // it without checking them again. See `server/wire.ts` — a `move` with no
-      // `pos` on it used to throw out of this listener and take the process.
-      const msg = readClientMessage(String(raw));
-      if (msg) this.onMessage(peer, msg);
-    });
-    socket.on("close", () => this.drop(peer));
-    socket.on("error", () => this.drop(peer));
-    // The far end answered a ping, and the gap is what the scoreboard shows.
-    // A pong with any other payload is the liveness sweep's in `index.ts`,
-    // which pings the same socket on its own clock and would otherwise be
-    // timed against a ping this class sent at a different moment.
-    socket.on("pong", (data) => {
-      if (peer.pingAt === 0 || data.toString() !== String(peer.pingToken)) return;
-      const sample = Date.now() - peer.pingAt;
-      peer.pingAt = 0;
-      peer.ping =
-        peer.ping < 0 ? sample : peer.ping + (sample - peer.ping) * PING_SMOOTHING;
+    transport.listen({
+      message: (text) => {
+        // Gone: dropped by `spendMessage` below, or by a `close` whose
+        // remaining buffered messages are still being delivered. Either way
+        // this peer has no slot to act on any more, and the test is what stops
+        // a flooder being logged and refused once per message all the way
+        // through the close.
+        if (!this.peers.has(id)) return;
+        // Before the decode, because the parse is what a flood is spending.
+        if (!this.spendMessage(peer)) return;
+        // `readClientMessage` and never `decode`: the shape gate is what makes
+        // the `ClientMessage` type below a fact rather than a claim about a
+        // well-behaved client, and every handler past this line reads fields
+        // off it without checking them again. See `server/wire.ts` — a `move`
+        // with no `pos` on it used to throw out of this listener and take the
+        // process.
+        const msg = readClientMessage(text);
+        if (msg) this.onMessage(peer, msg);
+      },
+      closed: () => this.drop(peer),
+      // The far end answered this class's ping, and the gap is what the
+      // scoreboard shows.
+      pong: () => {
+        if (peer.pingAt === 0) return;
+        const sample = Date.now() - peer.pingAt;
+        peer.pingAt = 0;
+        peer.ping =
+          peer.ping < 0 ? sample : peer.ping + (sample - peer.ping) * PING_SMOOTHING;
+      },
     });
 
     // The round is built on the first arrival, not at construction: building a
@@ -931,8 +965,8 @@ export class Match {
     // has nothing to simulate.
     await this.ensureRunning();
 
-    // That await is long enough for the socket to have gone — a tab closed, a
-    // connection that never really came up — and `close` was wired above it, so
+    // That await is long enough for the peer to have gone — a tab closed, a
+    // connection that never really came up — and `closed` was wired above it, so
     // `drop` has ALREADY run: it released the roster slot and put the bot back.
     // Seating the player now would bench that bot for the life of the match and
     // leave a body in `SimCore.players` that no peer owns and nothing ever
@@ -1124,14 +1158,14 @@ export class Match {
    * through. Two callers: a rotation that threw, and a simulation step that
    * threw (`start`'s loop).
    *
-   * Closing the sockets is the honest answer rather than the harsh one: every
+   * Closing the connections is the honest answer rather than the harsh one: every
    * client reconnects on its own (`net/Connection.retry`) and lands in a fresh
    * match a second later, whereas a match left standing with a stopped loop is
    * a round that renders, never advances and never ends — and nothing on a
    * client can tell that from a server that has merely gone quiet.
    *
-   * The peer map is emptied here rather than left to each socket's `close`,
-   * which arrives a turn later: `retire` refuses to run while anybody is still
+   * The peer map is emptied here rather than left to each transport's
+   * `closed`, which arrives a turn later: `retire` refuses to run while anybody is still
    * seated, and the point of this method is that nobody is.
    */
   private abandon(reason: string): void {
@@ -1148,7 +1182,7 @@ export class Match {
     }
     for (const peer of this.peers.values()) {
       this.send(peer, { t: "rejected", reason });
-      peer.socket.close();
+      peer.transport.close();
     }
     this.peers.clear();
     this.retire();
@@ -2011,11 +2045,11 @@ export class Match {
     if (peer.budget <= -MESSAGE_DEBT) {
       console.warn(`[${this.id}] ${peer.name} (${peer.id}) flooded; dropped`);
       // Sent before the close, which `send` tests for, and dropped by hand
-      // rather than left to the socket's own `close` — that arrives a turn
-      // later, and until it does every buffered message would come back
+      // rather than left to the transport's own `closed` — that arrives a
+      // turn later, and until it does every buffered message would come back
       // through here.
       this.send(peer, { t: "rejected", reason: "too many messages" });
-      peer.socket.close();
+      peer.transport.close();
       this.drop(peer);
     }
     return false;
@@ -3033,7 +3067,8 @@ export class Match {
   }
 
   /**
-   * Starts one round trip to a peer, on the WebSocket's own ping frame.
+   * Starts one round trip to a peer, on its transport's own ping — the
+   * WebSocket's ping frame, on the server.
    *
    * A transport ping rather than a message pair of our own, which is the whole
    * reason this costs no protocol surface: a browser answers one from its
@@ -3050,10 +3085,10 @@ export class Match {
    * `server/index.ts`, which is the one thing here that terminates a socket.
    */
   private pingPeer(peer: Peer): void {
-    if (peer.socket.readyState !== peer.socket.OPEN) return;
+    if (!peer.transport.open) return;
     if (peer.pingAt > 0) return;
     peer.pingAt = Date.now();
-    peer.socket.ping(String(++peer.pingToken));
+    peer.transport.ping();
   }
 
   /**
@@ -3075,15 +3110,13 @@ export class Match {
   }
 
   private send(peer: Peer, msg: ServerMessage): void {
-    if (peer.socket.readyState === peer.socket.OPEN) {
-      peer.socket.send(encode(msg));
-    }
+    if (peer.transport.open) peer.transport.send(encode(msg));
   }
 
   private broadcast(msg: ServerMessage): void {
     const payload = encode(msg);
     for (const peer of this.peers.values()) {
-      if (peer.socket.readyState === peer.socket.OPEN) peer.socket.send(payload);
+      if (peer.transport.open) peer.transport.send(payload);
     }
   }
 }

@@ -20,7 +20,7 @@
  * person — it seats nobody, so every rule about a person's death, a person's
  * award and a person's seat had no instrument at all. This is that
  * instrument, and the second half is the point: the same script run through
- * `Match`'s VALIDATED door (a fake socket, the client messages a real one
+ * `Match`'s VALIDATED door (a fake transport, the client messages a real one
  * would send, every claim gate in the path) must leave the identical award
  * and death list — the scoring rules exercised offline and online.
  *
@@ -28,7 +28,7 @@
  * it submits each of the person's acts as a `SimCommand`
  * (`src/sim/commands.ts`) with nothing in front of it. `MatchHost` is the
  * VALIDATED door: a real `Match`, its loop timer stopped so the script steps
- * it by hand, fed JSON through the socket's own `message` handler — every
+ * it by hand, fed JSON through its transport's `message` handler — every
  * claim gate runs and then `Match` submits the same command. So the identity
  * below is the proof that the two doors agree: the rules are the core's, once
  * (`SimCore.submit`), and nothing in either host restates one. Each records
@@ -73,7 +73,6 @@
  */
 import { createHash, type Hash } from "node:crypto";
 import { isDeepStrictEqual } from "node:util";
-import type { WebSocket } from "ws";
 import { CONFIG } from "../src/config";
 import { Vector3, type Vector3Like } from "../src/math";
 import { INPUT_HZ, TICK_HZ } from "../src/net/protocol";
@@ -103,7 +102,7 @@ import {
   type SimEvent,
   type Vec3,
 } from "../src/sim/events";
-import { Match } from "./Match";
+import { Match, type PeerHandlers, type PeerTransport } from "./Match";
 import { claimedDir } from "./claimGates";
 import { loadSimWorld } from "./world";
 
@@ -338,39 +337,37 @@ class CoreHost implements Host {
   }
 }
 
-/** A `ws` socket as `Match` uses one: records what is sent, delivers what the script says. */
-class FakeSocket {
-  readonly OPEN = 1;
-  readyState = 1;
+/** A peer's connection as `Match` reaches one: records what is sent, delivers what the script says. */
+class FakeTransport implements PeerTransport {
+  open = true;
   readonly frames: Array<{ t: string; [k: string]: unknown }> = [];
-  private readonly handlers = new Map<string, (data: unknown) => void>();
+  private handlers: PeerHandlers | null = null;
 
-  on(event: string, fn: (data: unknown) => void): this {
-    this.handlers.set(event, fn);
-    return this;
+  listen(handlers: PeerHandlers): void {
+    this.handlers = handlers;
   }
-  send(data: string): void {
-    this.frames.push(JSON.parse(data));
+  send(text: string): void {
+    this.frames.push(JSON.parse(text));
   }
   ping(): void {}
   close(): void {
-    this.readyState = 3;
+    this.open = false;
   }
   deliver(msg: object): void {
-    this.handlers.get("message")?.(JSON.stringify(msg));
+    this.handlers?.message(JSON.stringify(msg));
   }
 }
 
 /** Waits out `RateGate`'s wall-clock spacing so the rifle's bucket is never what refuses a scripted round. */
 const settle = (ms: number) => new Promise<void>((done) => setTimeout(done, ms));
 
-/** The authority: a real `Match`, stepped by hand, fed through its socket's own handler. */
+/** The authority: a real `Match`, stepped by hand, fed through its transport's own handler. */
 class MatchHost implements Host {
   readonly name = "match";
   readonly match: Match;
   readonly core: SimCore;
   readonly log = new Log();
-  readonly socket = new FakeSocket();
+  readonly transport = new FakeTransport();
   private seq = 0;
   private clock = 1000;
 
@@ -397,11 +394,11 @@ class MatchHost implements Host {
     // skips its own `freshSeed()` round.
     this.core.startRound(roundOf(world, fielded));
     this.core.anchor(ANCHOR);
-    await this.match.admit(this.socket as unknown as WebSocket, "corecheck");
+    await this.match.admit(this.transport, "corecheck");
     // No macrotask has run since `start` armed the loop: stopped before its
     // first tick, so every step from here is the script's.
     clearInterval(this.match["timer"] ?? undefined);
-    const welcome = this.socket.frames.find((f) => f.t === "welcome");
+    const welcome = this.transport.frames.find((f) => f.t === "welcome");
     if (welcome?.slot !== PERSON_SLOT || welcome?.team !== PERSON_TEAM) {
       throw new Error(`Match seated the peer at slot ${welcome?.slot} team ${welcome?.team}`);
     }
@@ -416,13 +413,13 @@ class MatchHost implements Host {
   }
 
   async deploy(spawn: number): Promise<void> {
-    this.socket.deliver({ t: "deploy", spawn });
+    this.transport.deliver({ t: "deploy", spawn });
   }
 
   async aim(yaw: number, pitch: number): Promise<void> {
     const p = this.player().position;
     this.clock += 100;
-    this.socket.deliver({
+    this.transport.deliver({
       t: "move",
       seq: ++this.seq,
       time: this.clock,
@@ -436,7 +433,7 @@ class MatchHost implements Host {
 
   async shot(origin: Vector3Like, dir: Vec3): Promise<void> {
     await settle(RIFLE.shotInterval * 1000 + 20);
-    this.socket.deliver({
+    this.transport.deliver({
       t: "shot",
       seq: ++this.seq,
       time: this.core.now,
@@ -447,11 +444,11 @@ class MatchHost implements Host {
   }
 
   async mount(tank: number, seat: CrewSeat): Promise<void> {
-    this.socket.deliver({ t: "mount", tank, seat });
+    this.transport.deliver({ t: "mount", tank, seat });
   }
 
   async dismount(): Promise<void> {
-    this.socket.deliver({ t: "dismount" });
+    this.transport.deliver({ t: "dismount" });
   }
 
   step(): void {
@@ -461,7 +458,7 @@ class MatchHost implements Host {
   /** Every event of kind `e` the peer was sent, in order. */
   wireEvents(e: string): Array<Record<string, unknown>> {
     const out: Array<Record<string, unknown>> = [];
-    for (const f of this.socket.frames) {
+    for (const f of this.transport.frames) {
       if (f.t !== "events") continue;
       for (const ev of f.events as Array<Record<string, unknown>>) if (ev.e === e) out.push(ev);
     }
@@ -1510,11 +1507,11 @@ async function flyReportedMatch(
     for (let step = 0; step <= end; step++) {
       while (w < wire.length && wire[w].at === step) {
         const s = wire[w].s;
-        // The socket's message budget is a WALL-CLOCK bucket (`spendMessage`)
+        // The peer's message budget is a WALL-CLOCK bucket (`spendMessage`)
         // and this flight is delivered as fast as the script runs: topped up
         // per message, so the bucket is never what drops a sample here.
         for (const peer of h.match["peers"].values()) peer.budget = 1;
-        h.socket.deliver({
+        h.transport.deliver({
           t: "drive", seq: ++seq, time: wire[w].stamp, tank: index,
           pos: [s.x, s.y, s.z], yaw: s.yaw, tyaw: s.turretYaw, gun: s.gunPitch, aimYaw: s.yaw, aimPitch: 0,
           ...(wire[w].resync ? { resync: 1 } : {}),
@@ -1527,12 +1524,12 @@ async function flyReportedMatch(
     // state the flight ended in.
     for (let i = 0; i < 6; i++) h.step();
     let hp: number | null = null;
-    for (const f of h.socket.frames) {
+    for (const f of h.transport.frames) {
       if (f.t !== "snap") continue;
       const v = (f.vehicles as Array<{ i: number; hp: number }> | undefined)?.find((s) => s.i === index);
       if (v) hp = v.hp;
     }
-    const corrections = h.socket.frames.filter((f) => f.t === "hullcorrect").length;
+    const corrections = h.transport.frames.filter((f) => f.t === "hullcorrect").length;
     const damage = hp0 - tank.health;
     core.dispose();
     return { damage, hp, left: tank.health, corrections };
@@ -1629,10 +1626,10 @@ async function quietly<T>(fn: () => Promise<T>): Promise<T> {
   }
 }
 
-/** One message onto a Match host's socket, its wall-clock budget topped up first (`flyReportedMatch`'s reason). */
+/** One message onto a Match host's transport, its wall-clock budget topped up first (`flyReportedMatch`'s reason). */
 function deliver(h: MatchHost, msg: object): void {
   for (const peer of h.match["peers"].values()) peer.budget = 1;
-  h.socket.deliver(msg);
+  h.transport.deliver(msg);
 }
 
 /** Wire-clock origin the review's scripted peers stamp from, ms. */
@@ -1782,7 +1779,7 @@ async function clockBound(world: World, c: Checks, route: { yaw: number; top: nu
     let stamp = PEER0;
     let d = 0;
     const run = (n: number, speed: number, stretch: number): number => {
-      const before = h.socket.frames.filter((f) => f.t === "correct").length;
+      const before = h.transport.frames.filter((f) => f.t === "correct").length;
       for (let i = 0; i < n; i++) {
         d += speed / INPUT_HZ;
         stamp += 1000 / INPUT_HZ + stretch;
@@ -1794,7 +1791,7 @@ async function clockBound(world: World, c: Checks, route: { yaw: number; top: nu
         });
         for (let k = 0; k < TICK_HZ / INPUT_HZ; k++) h.step();
       }
-      return h.socket.frames.filter((f) => f.t === "correct").length - before;
+      return h.transport.frames.filter((f) => f.t === "correct").length - before;
     };
     const honest = run(40, sprint, 0);
     const stretched = run(40, sprint * 3, 500);

@@ -12,16 +12,18 @@ server/               # The authoritative match server. Node, no Babylon (the
                       #   Process entry: /health, /matches, the ws listener and
                       #   the match registry — which IS the lobby, because
                       #   matches live in this process. Routes a join (named,
-                      #   create, or wherever there is room), caps how many
-                      #   matches exist, and holds the pong deadline every
-                      #   socket in the process is swept against. Owns no
-                      #   game rules
+                      #   create, or wherever there is room) over the socket's
+                      #   PeerTransport (`wsTransport`, which tokens Match's
+                      #   pings), caps how many matches exist, and holds the
+                      #   pong deadline every socket in the process is swept
+                      #   against. Owns no game rules
   Match.ts            #   One match: fixed-step loop, snapshots, the gates on
                       #   what a client may claim, round rotation. The core's
                       #   HOST: VALIDATES each message, then hands what it
                       #   accepted to `SimCore.submit` as a SimCommand; drains
                       #   the event ring after every call and `relay`s it onto
                       #   the wire. Holds no rule (pouches, seat policy, spawn)
+                      #   and no transport: a peer is a PeerTransport
   claimGates.ts       #   HOW a claimed round is gated — the RateGate bucket,
                       #   the look vector, the cone, the origin slip and the
                       #   one zero-length threshold. Match's five claim arms
@@ -58,7 +60,7 @@ server/               # The authoritative match server. Node, no Babylon (the
                       #   (victim-keyed kill awards, capture, hull cases,
                       #   leash, respawn clock, seat/evict, determinism,
                       #   structuredClone), then runs the same script through
-                      #   a real Match behind a fake socket and requires the
+                      #   a real Match behind a fake transport and requires the
                       #   identical award/death list — the trusted door
                       #   (`submit`) and the validated one agreeing — plus the
                       #   `hostHoldsRespawn` deploy and the reported hull

@@ -35,7 +35,7 @@ holds every file in it as it holds every file here.
 `npm run corecheck` (`corecheck.ts`, a fourth entry in
 `vite.server.config.ts`) is the scoring and person rules asserted off the
 core's drained events with no `Game` and no socket, then the same script
-through a real `Match` behind a fake socket — the validated door — which must
+through a real `Match` behind a fake transport — the validated door — which must
 leave the identical award and death list. It exits non-zero on any failed
 assertion and prints a pass list. `simulate` cannot do this: it seats nobody,
 so a person's death, award or seat never happens in it.

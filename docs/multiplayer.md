@@ -89,7 +89,7 @@ moves no event and reaches no wire — `Match` relays a person's death off
 everything about a person**, since `simulate` seats nobody: the kill awards
 keyed on the victim's flag, a capture, the hull cases, the leash, the respawn
 clock and seat/evict, asserted off the drained events with no `Game` — and the
-same script through a real `Match` behind a fake socket, the validated door,
+same script through a real `Match` behind a fake transport, the validated door,
 which must leave the identical award and death list (it leaves the identical
 event stream).
 
@@ -1395,15 +1395,18 @@ the number is about the CONNECTION rather than about how busy the far end's page
 is. Nothing downstream reads it — every round is still re-resolved against
 rewound bodies whatever the column says.
 
-Three details in `Match` are load-bearing, and each is a way of not lying:
+Three details are load-bearing, and each is a way of not lying:
 
-- **The ping carries a token and the pong is matched against it.** The
-  process-wide sweep in `server/index.ts` pings the very same sockets on its own
-  fifteen-second clock, and its pongs arrive at this handler too — untokened,
-  this class would time its own ping against somebody else's answer. A pong
+- **The ping carries a token and the pong is matched against it** — by the
+  socket's `PeerTransport` (`wsTransport`, `server/index.ts`), since `Match`
+  reaches a peer through one and never through the socket itself (X2.5c C1).
+  The process-wide sweep beside it pings the very same sockets on its own
+  fifteen-second clock, and its pongs arrive on the same event — untokened,
+  `Match` would time its own ping against somebody else's answer. A pong
   echoes the payload of the ping that caused it (RFC 6455), so the token is the
-  whole of the test, and the sweep's own pongs (which carry none) are ignored
-  here and still clear its deadline where they are read.
+  whole of the test: only an echo of the latest token reaches `Match` as
+  `pong`, and the sweep's own pongs (which carry none) still clear its deadline
+  where they are read. A transport that is not shared owes no token.
 - **One outstanding ping per peer, and a peer that has not answered is not
   re-pinged.** Re-pinging would restart the clock on exactly the connection
   worth showing. Instead `pingFor` reports the WAIT once it passes the last

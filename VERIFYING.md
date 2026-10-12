@@ -2077,7 +2077,7 @@ is one machine's:
   hull that pays nobody and a crew filed `crew`, the leash (`other`, killer
   -1), the respawn clock, seat and evict. It runs every script twice (same
   seed, same commands, identical event-stream hash) and then through a real
-  `Match` behind a fake socket, which must leave the identical award/death
+  `Match` behind a fake transport, which must leave the identical award/death
   list. On botless Sarab it then calibrates a person's helicopter crash
   (`sarab/crash`) and runs the X2.5a review's cases: a seated flier leashed
   (`sarab/leash`), a peer's stamps bounded by when they arrive
