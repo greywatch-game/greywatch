@@ -1,0 +1,49 @@
+{
+ "seed": 777,
+ "difficulty": 1,
+ "rounds": 1,
+ "maps": {
+  "hollowmere": {
+   "fight": "1c14cd10dad9cead",
+   "events": 2482,
+   "md5": "2d44f2c269c7130365ca562996c7874d",
+   "at": "9e3bc86"
+  },
+  "greyfen": {
+   "fight": "fc958d7e0d0e65c1",
+   "events": 12753,
+   "md5": "1ac7047f7c5983192e4017aa444eb3b2",
+   "at": "9e3bc86"
+  },
+  "coldharbour": {
+   "fight": "da7b7d7ed3355f4f",
+   "events": 11885,
+   "md5": "96c404a804fcc9d9769d2d4d2ec20399",
+   "at": "9e3bc86"
+  },
+  "harrowmead": {
+   "fight": "c5650f9f2ba94654",
+   "events": 7314,
+   "md5": "4dbd58a66c03e78a89ca1fd722b45f73",
+   "at": "9e3bc86"
+  },
+  "sarab": {
+   "fight": "d13d7fe62cf059e5",
+   "events": 6043,
+   "md5": "35122921b3802f943b3ce3cb0467778e",
+   "at": "9e3bc86"
+  },
+  "cinderhaven": {
+   "fight": "d0519088626918ec",
+   "events": 6048,
+   "md5": "3a13cc6aa11054a8a2ac95a49b59adcd",
+   "at": "9e3bc86"
+  },
+  "kurenai": {
+   "fight": "471b692bc45bc1be",
+   "events": 2888,
+   "md5": "f74e46bdaded60034739465b9511e471",
+   "at": "9e3bc86"
+  }
+ }
+}

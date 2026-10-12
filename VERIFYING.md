@@ -2044,7 +2044,11 @@ is one machine's:
   builds the core `publish`ing, so the tick printed carries the frame's fill
   and its price; `--phases` hands the core a clock and prints its five step
   phases beside the tick. Neither moves the fight — the hash and the event
-  list must be the plain run's.
+  list must be the plain run's. **`node plans/sim-ref/sim.mjs` is all of that
+  at once**: every map's fight and event list at seed 777, every line
+  `corecheck` prints, and (with `--bench f.json`) the benchmark's fights below,
+  graded against the bank in `plans/sim-ref/ref/`; `--keep dir` before a step
+  and `--diff dir` after it name the first event that moved.
 - **The BENCHMARK's fight is the page's oracle for the same claim**, and it
   is read off a static build: `npx vite build --outDir <scratch>/dist-x`, `node
   node_modules/vite/bin/vite.js preview --outDir <scratch>/dist-x --port 4931

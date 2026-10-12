@@ -10,6 +10,7 @@ the **reference harnesses** built to grade them.
 | `done/` | Shipped plans, kept for their ARGUMENTS. A record, not a to-do. Each one opens with a status block saying when it landed and what in it is still true. |
 | `webgpu-ref/` | **LIVE.** The reference-image bank and harness the WGSL milestones diffed against, and still how a rendering change is graded — `gate.mjs`, `bank.mjs --check`, `depth.mjs`. Cited from `docs/build.md`, `docs/rendering.md`, `docs/world.md`, `VERIFYING.md` and `FINDINGS.md`. |
 | `physics-ref/` | **LIVE.** The same for Havok: `drop.mjs` is the oracle for anything that changes what a body stands on. Every shipped map has a bank in `ref/`, so a bare `--check` grades all seven, each at the step count its bank records (Greyfen's is 2400, because one body rocks down a bank until ~1540; `drop.mjs`'s header). A check at any other count is refused. A new map owes a bank. |
+| `sim-ref/` | **LIVE.** The same for the simulation's HOST (`BABYLON_EXIT.md` X2.5c): `sim.mjs` grades `simulate --events` on every map, every line `corecheck` prints, and the benchmark's seven fight hashes (read off a `bench.mjs --out`) against what `ref/` banked at a parent. The event lists are fingerprinted, not banked; `--keep`/`--diff` name the first line that moved. |
 
 **A plan being finished is not a reason to delete it.** These documents argue
 rather than describe, and the argument outlives the work — why the uniform
