@@ -101,7 +101,8 @@ export interface ShotCommand {
 /**
  * A throw: from `origin` along `dir` (unit), `kind` being what the host's
  * kit record says the pouch holds. Spent from the core's pouch only if the
- * pool takes it; a full pool raises `ordnanceRefused` (item `grenade`).
+ * pool takes it; any refusal — a full pool, or a body dead, seated or out of
+ * grenades — raises `ordnanceRefused` (item `grenade`).
  */
 export interface GrenadeCommand {
   t: "grenade";
@@ -112,8 +113,8 @@ export interface GrenadeCommand {
 
 /**
  * A rocket out of the tube (`dir` unit) or a mine at `origin` (`dir`
- * ignored). Spent from the core's pouch only if the pool takes it; a refusal
- * raises `ordnanceRefused`.
+ * ignored). Spent from the core's pouch only if the pool takes it; any
+ * refusal — the pool's, or the body's — raises `ordnanceRefused`.
  */
 export interface OrdnanceCommand {
   t: "ordnance";

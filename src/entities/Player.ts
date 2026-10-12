@@ -64,10 +64,11 @@
  * thrown body belongs to GrenadeSystem, which is Game's. The clock is what
  * makes the throw a gesture rather than an event: `beginThrow` starts it,
  * `throwReleaseDue` reports the frame the hand reaches full extension, and
- * only then does Game ask the pool to carry a grenade and `spendGrenade` book
- * it. The count is still debited last, for the reason it always was — the pool
- * may refuse, and a count spent on a grenade that never arrives is worse than
- * one not thrown. WHICH throwable the pouch holds (`throwable`, a frag or a
+ * only then does Game book the grenade (`spendGrenade`). Offline the count is
+ * PREDICTED: booked at the release, before the core is asked, because a core
+ * in a Worker answers a frame later — and given back by `returnGrenade` when
+ * its refusal arrives. In a match it is booked once this page's own pool has
+ * taken the predicted arc. WHICH throwable the pouch holds (`throwable`, a frag or a
  * molotov) is the kit's, set from the menu and the deploy screen only, and it
  * changes nothing here but the count a life starts with and what the hand is
  * seen holding — the gesture is the same one for both.
@@ -2182,11 +2183,12 @@ export class Player implements Combatant {
   }
 
   /**
-   * Books the grenade the pool has just agreed to carry. Deliberately separate
-   * from `throwReleaseDue`, and for the same reason it was always separate from
-   * `canThrowGrenade`: a count debited for a grenade that never made it into
-   * the air is the most confusing thing this feature could hand a player. A
-   * refused release costs the arm's cooldown and nothing else.
+   * Books the grenade this release throws. Offline it is a PREDICTION, booked
+   * before the core is asked, and the core's refusal takes it back
+   * (`returnGrenade`); in a match it is booked only once this page's own pool
+   * has taken the arc. Either way a refused release costs the arm's cooldown
+   * and nothing else. Deliberately separate from `throwReleaseDue`, because a
+   * release the caller does not throw must not touch the count.
    */
   spendGrenade(): void {
     this.grenades -= 1;

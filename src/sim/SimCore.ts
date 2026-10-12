@@ -1555,8 +1555,16 @@ export class SimCore {
       case "grenade":
         return this.throwGrenade(player, cmd.origin, cmd.dir, cmd.kind);
       case "ordnance": {
-        // The third slot is carried by a body, never out of a hull.
-        if (!player.alive || player.ordnance <= 0 || player.seat >= 0) return false;
+        // The third slot is carried by a body, never out of a hull. Refused
+        // ALOUD, as the pool's refusal is: the host that predicted the pouch
+        // spent the item before asking, and from a Worker it may have asked
+        // from a body this side has already killed or seated
+        // (`BABYLON_EXIT.md` X2.5b).
+        if (!player.alive || player.ordnance <= 0 || player.seat >= 0) {
+          emitPair(this.events, EV.ordnanceRefused, this.tick, player.slot,
+            refusedCode(cmd.kind === "mine" ? "mine" : "rocket"));
+          return false;
+        }
         const placed =
           cmd.kind === "mine"
             ? this.layMine(cmd.origin, player)
@@ -1608,9 +1616,12 @@ export class SimCore {
 
   /**
    * A person's throw, from the pouch this side counts. Spent only if the arm
-   * accepts it — the pool refuses rather than stealing a live slot, and a
+   * accepts it — the pool refuses rather than stealing a live slot — and a
    * refused throw costs nothing but says so (`ordnanceRefused`, so a host
-   * that predicted the pouch can take its throw back).
+   * that predicted the pouch can take its throw back), whichever gate refused
+   * it: the offline page books a throw before asking, and from a Worker it can
+   * ask from a body this side has already killed or seated
+   * (`BABYLON_EXIT.md` X2.5b).
    */
   private throwGrenade(
     player: SimPlayer,
@@ -1619,8 +1630,8 @@ export class SimCore {
     kind: ThrowableId,
   ): boolean {
     // Nothing is thrown from inside a hull, for the rifle's reason exactly.
-    if (!player.alive || player.seat >= 0 || player.grenades <= 0) return false;
-    if (this.grenades.throwAlong(origin, dir, player.team, player, kind)) {
+    if (player.alive && player.seat < 0 && player.grenades > 0 &&
+        this.grenades.throwAlong(origin, dir, player.team, player, kind)) {
       player.grenades--;
       return true;
     }

@@ -78,6 +78,7 @@ import { DRIVER, GUNNER, type CrewSeat } from "../src/entities/hullSeats";
 import { MAPS, type MapDef } from "../src/world/maps";
 import { perTeamOf } from "../src/world/layout";
 import { freshSeed } from "../src/systems/RoundRandom";
+import { HULL_EARLY } from "../src/systems/hullRules";
 import { SimCore } from "../src/sim/SimCore";
 import { EV, EventCursor, decode, type EventKind } from "../src/sim/events";
 import { MapVote } from "./MapVote";
@@ -490,17 +491,18 @@ type RoundMessage = Extract<
 >;
 
 /**
- * How far ahead of a HULL's own reload a person's round may arrive, in
- * seconds — `Vehicle.fireGun`'s `early`.
- *
- * The bucket is what bounds a person's rate; the hull's clock is asked as well
- * because it is the HULL's, and a seat changes hands. It is `SHOT_SLACK`
- * because that is the jitter the bucket was already sized to forgive, and it
- * is longer than the cupola gun's whole interval — so on that gun the clock
- * never refuses a round the bucket passed, and on the main gun it refuses only
- * a shell fired through somebody else's reload.
+ * `HULL_EARLY` — how far ahead of a HULL's own reload a person's round may
+ * arrive, in seconds (`Vehicle.fireGun`'s `early`) — is stated once, in
+ * `src/systems/hullRules.ts`, because the offline page asks its core with the
+ * same slack for its own reason. Here it is `SHOT_SLACK`: the bucket is what
+ * bounds a person's rate, the hull's clock is asked as well because it is the
+ * HULL's and a seat changes hands, and the jitter the bucket was sized to
+ * forgive is the jitter the clock must forgive too. So the two may not drift
+ * apart, and this module refuses to load if they have.
  */
-const HULL_EARLY = SHOT_SLACK / 1000;
+if (HULL_EARLY * 1000 !== SHOT_SLACK) {
+  throw new Error(`[match] HULL_EARLY (${HULL_EARLY} s) is not SHOT_SLACK (${SHOT_SLACK} ms)`);
+}
 
 /**
  * Inbound messages one peer may send per second, sustained.

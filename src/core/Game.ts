@@ -182,6 +182,7 @@ import { AntiTankSystem } from "../systems/AntiTankSystem";
 import {
   fireHullGun,
   fireHullMg,
+  HULL_EARLY,
   type HullRound,
   type HullRules,
 } from "../systems/hullRules";
@@ -6775,8 +6776,11 @@ export class Game {
     // `round`, `hit` and `cannon` answers draw it. Whether the gun is LOADED
     // is this page's hull's to say (`gunReady`) — the prediction a match's
     // driver runs, because from a Worker the core's answer arrives a step
-    // later (`SimHost`); the core's own clock is never behind this one (it
-    // stepped first), so what this page fires the core fires. Asked WITHOUT
+    // later (`SimHost`). The core's copy of the reload counts the same steps
+    // shifted by a frame — its hull steps before this trigger, this page's
+    // after it — so under a varying `dt` it can stand a fraction of a frame
+    // behind, and the ask carries `HULL_EARLY` of slack (`shellCmd`) so that
+    // what this page fires the core fires. Asked WITHOUT
     // a drain — `pullHullTrigger` runs between the core's step and this
     // page's fleet, and the step's news is drawn after the fleet is posed —
     // and answered on THIS page's hull at once: the loader's clock, the
@@ -6910,8 +6914,9 @@ export class Game {
   private fireMg(tank: Vehicle): void {
     // `fireShell`'s split exactly — the core's `mg` offline, asked without a
     // drain for its reason, and only when this page's hull says the belt's
-    // rate has come round (`fireMg`, which keeps that clock). A machine gun
-    // kicks nothing on the hull.
+    // rate has come round (`fireMg`, which keeps that clock) — asked with
+    // `HULL_EARLY` of slack for the shell's reason. A machine gun kicks
+    // nothing on the hull.
     let fired: boolean;
     if (this.net) fired = this.resolveMg(tank, this.player);
     else if ((fired = tank.fireMg())) this.ask(this.mgCmd, false);
@@ -8095,9 +8100,10 @@ export class Game {
           this.seatAnswer(c.f(i, 1), c.f(i, 2), this.evVec(i, 3, this.evA), c.f(i, 6));
         }
         break;
-      // The pool would not take what this page had already booked out of its
-      // pouch (D11): a rocket or a mine goes back into the hands, a grenade
-      // back into the pouch (`releaseGrenade` books it before the ask).
+      // The core would not take what this page had already booked out of its
+      // pouch (D11) — its pool was full, or the body was already dead or
+      // seated over there: a rocket or a mine goes back into the hands, a
+      // grenade back into the pouch (`releaseGrenade` books it before the ask).
       case EV.ordnanceRefused:
         if (c.f(i, 0) === me && me >= 0) {
           if (REFUSED_ITEMS[c.f(i, 1)] === "grenade") this.player.returnGrenade();
@@ -8311,9 +8317,15 @@ export class Game {
     time: 0,
   };
   private readonly gunCmd: GunCommand = { t: "gun", yaw: 0, pitch: 0 };
-  /** Offline the trigger is all a hull gun's command says (`early` 0). */
-  private readonly shellCmd: SimCommand = { t: "shell", early: 0 };
-  private readonly mgCmd: SimCommand = { t: "mg", early: 0 };
+  /**
+   * Offline the trigger is all a hull gun's command says. This page's own
+   * hull is the gate (`fireShell`, `fireMg`), and the core's clock is asked
+   * with the slack the authority's is (`HULL_EARLY`) — asked strictly, it
+   * refused in silence a round this page had already kicked and drawn,
+   * whenever a frame was shorter than the one the last round left in.
+   */
+  private readonly shellCmd: SimCommand = { t: "shell", early: HULL_EARLY };
+  private readonly mgCmd: SimCommand = { t: "mg", early: HULL_EARLY };
 
   /** What a server event does to this client's screen. Presentation only. */
   private onNetEvent(event: ServerEvent): void {

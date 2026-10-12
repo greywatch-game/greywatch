@@ -68,7 +68,7 @@
  * | `hullPlaced` / `hullKicked` / `hullWrecked` | tank, team | the hull's `HullPicture` hooks: put on a pad, main gun's kick, burned |
  * | `hullDestroyed` / `hullRespawned` | tank, team | `VehicleSystem.onDestroyed` / `onRespawned` |
  * | `seat` | slot, tank, seat, at·3, yaw | the answer to a person's mount/dismount, and the hull burning under them; `at`/`yaw` mean something only when `tank` is -1 |
- * | `ordnanceRefused` | slot, item | the pool refused a person's rocket (0), mine (1) or throw (2) — `REFUSED_ITEMS` |
+ * | `ordnanceRefused` | slot, item | a person's rocket (0), mine (1) or throw (2) was refused — by the pool, or because the body was dead, seated or out of them — `REFUSED_ITEMS` |
  *
  * **Glass is ONE event, not three.** `GlassSystem`'s `onBroken`/`onBreak`/
  * `onCleared` are per pane and describe what a pane's own VIEW must do; the

@@ -401,9 +401,16 @@ export async function openSimHost(flags: { simpage: boolean; simcheck: boolean; 
     return new PageSimHost(`the Worker did not come up (${up})`);
   }
   // After it is up, the Worker says nothing it is not asked; a script error
-  // inside an operation is reported through the control block instead.
+  // inside an operation is reported through the control block instead. Both
+  // boot handlers are REPLACED rather than left: the boot's `onerror` cancels
+  // the event it resolves on, and left standing it would silence every
+  // uncaught error the Worker throws for the rest of the session.
   worker.onmessage = (e: MessageEvent<WorkerMessage>) => {
     if (e.data.t === "error") console.error(`[sim] Worker: ${e.data.message}`);
+  };
+  worker.onerror = (e) => {
+    e.preventDefault();
+    console.error(`[sim] Worker: uncaught ${e.message || "error"} (${e.filename}:${e.lineno}:${e.colno})`);
   };
   return new WorkerSimHost("cross-origin isolated", worker, ctl, cmd, pub);
 }
