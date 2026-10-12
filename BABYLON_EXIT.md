@@ -1594,6 +1594,12 @@ wire comes later, for both at once, and only if a profiler capture asks for it.
 - **Validation now runs offline.** That is the point: one rule. But a refusal
   offline that an offline player could not trigger before is a finding, not
   noise.
+- **The client numbers slots by the ceiling** (found at C2). An owned match's
+  slot table is its map's own roster, so team 1 begins at slot `perTeam` (8 on
+  most maps), but `NetRoster.buildPool` places team 1 at
+  `CONFIG.bots.maxPerTeam` (24). Before C4 puts a client in front of an owned
+  match, the client must take the block width from the match rather than from
+  `CONFIG`. A remote match's width is still 24.
 - **The bench's fight must not move.** If the hashes differ, the slot layout
   (the pool), the step order around `Match.step`, and the seed's route are the
   suspects, in that order. Attribute the change to one cause, as X2.2 C6 did,

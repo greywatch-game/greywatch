@@ -20,7 +20,7 @@ bake as data) live in [`src/sim/`](../src/sim/), moved out of here at
 `BABYLON_EXIT.md` X2.5a because the offline page hosts the same core.
 What stays here is the HOST: `Match` and `simulate` LOAD the world
 (`world.ts`'s `loadSimWorld`), DRAW the round's seed (`freshSeed()`, or the
-one `simulate` was given) and ANCHOR the clock (`SimCore.anchor(Date.now())`
+one `simulate` was given, or an owned match's owner chose) and ANCHOR the clock (`SimCore.anchor(Date.now())`
 once `startRound` returns) — the three things the core does not do for itself,
 because it reads no clock and no entropy. **`Match` VALIDATES and the core
 DECIDES**: each accepted message is handed over as one `SimCommand`
@@ -36,8 +36,9 @@ holds every file in it as it holds every file here.
 `vite.server.config.ts`) is the scoring and person rules asserted off the
 core's drained events with no `Game` and no socket, then the same script
 through a real `Match` behind a fake transport — the validated door — which must
-leave the identical award and death list. It exits non-zero on any failed
-assertion and prints a pass list. `simulate` cannot do this: it seats nobody,
+leave the identical award and death list — and a match its OWNER drives
+(`Match`'s `owned`, X2.5c C2) playing the benchmark's round as the offline page
+plays it. It exits non-zero on any failed assertion and prints a pass list. `simulate` cannot do this: it seats nobody,
 so a person's death, award or seat never happens in it.
 
 ## Why the two tsconfigs

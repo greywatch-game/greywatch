@@ -208,8 +208,9 @@ sand.
 
 ## The roster is the feature
 
-`server/Roster.ts` holds **forty-eight slots, built once, never resized or
-reordered.** A slot is never created or destroyed — only who feeds it changes.
+`server/Roster.ts` holds **a slot table built once and never resized or
+reordered — forty-eight slots on every match the server hosts.** A slot is
+never created or destroyed — only who feeds it changes.
 
 - A match starts as soon as one person is present. Every unfilled slot is a bot
   — unless the match was created without them, which fields none and is the one
@@ -233,8 +234,10 @@ that file must skip the bench — respawn, the think budget, `hittablesAgainst`,
 
 **A slot index IS a bot index**, by construction: `Roster` lays slots out team 0
 then team 1, `BattleSystem` builds its pool the same way, and both are sized
-from `CONFIG.bots.maxPerTeam`. Keep that true or benching needs a mapping that
-can disagree with itself.
+from ONE number — `Roster.perTeam`, which `Match.startRound` hands the core as
+`RoundSpec.pool`: the ceiling, `CONFIG.bots.maxPerTeam`, on every match but an
+owned one (see "A match its OWNER drives"). Keep that true or benching needs a
+mapping that can disagree with itself.
 
 ### The table is the ceiling and the round is the map's
 
@@ -243,7 +246,8 @@ Cinderhaven are 24 and every other map is 8 — and **a match fields it too**.
 What it does NOT do is size the slot table.
 
 - **The TABLE is `CONFIG.bots.maxPerTeam` a side (24, so 48 slots), on every
-  map, for the life of the process.** `SimCore`'s constructor calls
+  map, for the life of the match** — on every match the server hosts; an
+  owned one is the exception below, and is sized to the one map it plays. `SimCore`'s constructor calls
   `BattleSystem.setRoster` with it once and never again. It is forty-eight
   `Bot`s and no rig: the bodies' drawing is `BattleView`'s, which the
   authority never builds (BABYLON_EXIT.md X2.2 C7).
@@ -1133,6 +1137,62 @@ shortens the client's interpolation buffer by exactly its earliness — half the
 spread came off the budget meant for the network, on a link with none. At 4 ms
 the same measurement is 40–66 and the worst-case buffer goes from 36 ms to
 51 ms. 2 ms and 1 ms measured no better.
+
+## A match its OWNER drives
+
+`Match` has two clocks and ONE accumulator (`BABYLON_EXIT.md` X2.5c C2). A
+match the server hosts FREE-RUNS: its interval polls the wall clock every
+`POLL_MS` and hands the elapsed milliseconds to `accrue`. A match built
+`owned` (`MatchOptions.owned`) arms no interval: its OWNER — the page, for
+the offline round, from X2.5c C4 — calls `advance(dt)`, which hands `dt` to
+the same `accrue`. The step is `STEP_MS` either way, and `1 / TICK_HZ`
+seconds is exactly `STEP_MS` in floating point, so a `dt` of one tick — the
+benchmark's `CONFIG.profiling.bench.dt` — is exactly one step, and any other
+cadence is the same steps taken at different moments. Nothing steps between
+calls, which is what a HOLD is: time the owner never hands over.
+
+Everything else an owned match changes follows from it having an owner rather
+than a lobby:
+
+- **Its rounds are BEGUN** — `begin`, with a `RoundChoice`: the seed and the
+  bots' difficulty, both the owner's. The server's match draws `freshSeed()`
+  and plays `MATCH_DIFFICULTY`, which nobody in a shared match may choose. A
+  peer admitted before the first `begin` is refused; one arriving inside it
+  waits on it, as one arriving inside the server's first build does.
+- **It stays on its one map**: no ballot, no rotation. A round that ends is
+  HELD — `roundOver`, nothing stepped, the `roundover` event sent like any
+  other — until the owner begins the next, which the seated hear as a
+  `roundstart` on the same map and which re-seats nobody: the tail is
+  `nextRound`, the one a rotation runs. A `begin` over a round still in play
+  (a restart) holds that round for the length of the build, as a rotation
+  does.
+- **Its table is its map's own roster** (`server/Roster.ts`), not the
+  ceiling — the one exception to "The table is the ceiling", and the argument
+  there is why it may be one: a table sized per map renumbers team 1 at a
+  ROTATION, and an owned match never rotates. It must be: every outcome
+  stream is keyed by slot and the offline round has always been played on the
+  map's own pool, so the ceiling would be a different fight. Measured by
+  forcing it: the bench's Greyfen fight `83e8e74ef36916ba` becomes
+  `a13c3e2563a98371`, Hollowmere's `549487ba93bceefe` becomes
+  `5abe2f117d9287fd`.
+- **Empty is not idle.** The last peer leaving stops nothing and arms no
+  `IDLE_DISPOSE_MS` — the benchmark drives one with nobody in it at all. It
+  ends when the owner calls `close`.
+- **A step that throws reaches the owner**, out of `advance`, rather than
+  `abandon`ing the match as the server's loop does: the owner is the one with
+  somewhere to say so, and it is the one that closes the match.
+
+`npm run corecheck`'s `greyfen/owned` asserts all of it, and plays the bench's
+round three ways — on a core built as the offline page builds it, through an
+owned match a tick an `advance`, and through one advanced at 144 Hz — which
+must be one event stream and fold the bench's own `FightHash`
+(`src/bench/fightHash.ts`). Through an owned match in Node, all seven of the
+bench's banked fight hashes reproduce.
+
+**Owed by X2.5c C4, which first puts a client in front of one**: the client
+still assumes the ceiling's layout (`NetRoster.buildPool` numbers team 1 from
+`CONFIG.bots.maxPerTeam`), and the claim gates that read the wall clock —
+the rate buckets, `arrivalClock` — do not know a hold happened.
 
 ## Lag compensation
 

@@ -18,7 +18,10 @@ server/               # The authoritative match server. Node, no Babylon (the
                       #   pong deadline every socket in the process is swept
                       #   against. Owns no game rules
   Match.ts            #   One match: fixed-step loop, snapshots, the gates on
-                      #   what a client may claim, round rotation. The core's
+                      #   what a client may claim, round rotation. Its clock
+                      #   free-runs on the server or is an OWNER's (`owned`:
+                      #   advance/begin/close, its map's own roster, no vote,
+                      #   no rotation, no idle retire). The core's
                       #   HOST: VALIDATES each message, then hands what it
                       #   accepted to `SimCore.submit` as a SimCommand; drains
                       #   the event ring after every call and `relay`s it onto
@@ -28,7 +31,9 @@ server/               # The authoritative match server. Node, no Babylon (the
                       #   the look vector, the cone, the origin slip and the
                       #   one zero-length threshold. Match's five claim arms
                       #   all call it; the SIZE of each gate stays in Match
-  Roster.ts           #   The 48 slots, 16 seats, team balance, human<->bot handover
+  Roster.ts           #   The slot table (48 on the server, the map's own on
+                      #   an owned match), 16 seats, team balance, human<->bot
+                      #   handover
   MapVote.ts          #   The ballot for the next map: the candidates, the
                       #   per-slot tally, the tie-break. Its first candidate is
                       #   what the rotation would have picked, which is also
@@ -72,8 +77,11 @@ server/               # The authoritative match server. Node, no Babylon (the
                       #   the X2.5a review's `sarab/leash` (a seated flier is
                       #   leashed), `sarab/clock` (a peer's stamps bounded by
                       #   their arrivals) and `sarab/break` (a correction
-                      #   rebases the crash series, a touchdown still pays).
-                      #   Exits non-zero on a fail
+                      #   rebases the crash series, a touchdown still pays);
+                      #   and `greyfen/owned` (X2.5c C2): the bench's round on
+                      #   the offline core and through an owned Match at two
+                      #   cadences is one stream and the bench's FightHash,
+                      #   plus the owned lifecycle. Exits non-zero on a fail
 scripts/                      # Node tooling, run by hand or by `npm run build`,
                               #   never shipped. Plain .mjs outside both
                               #   tsconfigs. The game's own code is reached
@@ -2113,8 +2121,12 @@ src/
                         #   the most built ground, the seeded bot-only round at
                         #   a fixed step. Counted in FRAMES, never wall clock,
                         #   and allocation-free per frame. Also the spectator's
-                        #   bearing and FightHash, one hash over every award and
-                        #   death. Answers in numbers; Game.updateBench spends
+                        #   bearing, and re-exports FightHash. Answers in
+                        #   numbers; Game.updateBench spends
+    fightHash.ts        # FightHash: one hash over every award and death of
+                        #   the bench's round, with the step it landed on.
+                        #   Imports nothing, so corecheck folds a local Match's
+                        #   round with it too
     vantages.ts         # The reference bank's pose table (DIFF_VANTAGES),
                         #   moved here so the bank and the benchmark stand at
                         #   one set of poses; plans/webgpu-ref/vantages.mjs

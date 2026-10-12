@@ -6,8 +6,9 @@
  * Owns: the PLAN — which frames are which segment, where the camera stands on
  * each frame that is a look, how many fixed steps each frame that is the
  * fight takes — and the two pieces of arithmetic the plan implies: the
- * spectator's bearing over the bot it follows, and `FightHash`, which says
- * whether two runs fought the same fight.
+ * spectator's bearing over the bot it follows, and `FightHash`
+ * (`fightHash.ts`, re-exported here for the page's one dynamic import), which
+ * says whether two runs fought the same fight.
  * Invariants:
  *  - **Counted in FRAMES and fixed steps, never in wall clock** — see
  *    `CONFIG.profiling.bench`. `next()` is the only clock, so a phone and a
@@ -30,6 +31,8 @@ import { CONFIG } from "../config";
 import { MAP_SHOTS } from "../ui/mapShots";
 import type { WorldBox } from "../world/mapTypes";
 import { DIFF_VANTAGES } from "./vantages";
+
+export { FightHash } from "./fightHash";
 
 /**
  * A labelled stretch of the run. `group` is what a report rolls segments up
@@ -508,70 +511,6 @@ export class BenchScript {
     }
     return { x: round1(cx), z: round1(cz), radius: round1(radius) };
   }
-}
-
-/**
- * A hash of the fight as it happens — every award and every death, in order,
- * stamped with the fixed step it landed on — so two runs can be compared by
- * one string. `npm run simulate`'s `fight` is the same idea on the authority;
- * the two do not print the same hash, because a client's round and the
- * authority's are fed by different hooks, and nothing compares across them.
- *
- * Two FNV-1a lanes with different bases, which is 64 bits of "same or not" for
- * a comparison between a handful of runs. Nothing here allocates: an event is
- * folded in as it is reported, a string by its char codes.
- *
- * **The step an event is stamped with is the EVENT's** (`BABYLON_EXIT.md`
- * X2.5a C4a): offline the fight is the simulation core's, which says what
- * happened through its event ring with the tick it happened on, and `Game`
- * hands that tick less the fight's first back in. It is the same number
- * `step` counts — one step, one tick — and folding the one the event carries
- * is what keeps the hash a statement about the core's fight rather than about
- * when the page got round to reading it.
- */
-export class FightHash {
-  /** The fixed steps the fight has run, advanced by `Game` per step. */
-  step = 0;
-  /** Awards and deaths folded in. */
-  events = 0;
-  private a = 0x811c9dc5;
-  private b = 0x9e3779b9;
-
-  award(step: number, slot: number, kind: string, points: number): void {
-    this.fold(step);
-    this.fold(1);
-    this.fold(slot);
-    for (let i = 0; i < kind.length; i++) this.fold(kind.charCodeAt(i));
-    this.fold(points);
-    this.events++;
-  }
-
-  death(step: number, slot: number): void {
-    this.fold(step);
-    this.fold(2);
-    this.fold(slot);
-    this.events++;
-  }
-
-  get hex(): string {
-    return hex8(this.a) + hex8(this.b);
-  }
-
-  private fold(v: number): void {
-    // Integers in practice (a step, a slot, a char, points); a fraction is
-    // folded as its thousandths rather than dropped.
-    let x = Math.round(v * 1000) | 0;
-    for (let k = 0; k < 4; k++) {
-      const byte = x & 0xff;
-      x >>>= 8;
-      this.a = Math.imul(this.a ^ byte, 0x01000193);
-      this.b = Math.imul(this.b ^ byte, 0x01000193);
-    }
-  }
-}
-
-function hex8(v: number): string {
-  return (v >>> 0).toString(16).padStart(8, "0");
 }
 
 function round1(v: number): number {

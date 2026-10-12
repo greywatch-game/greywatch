@@ -26,11 +26,20 @@
  * `server/corecheck.ts` drives a real instance through a fake transport and
  * steps it by hand — it reaches `step`, `relay`, `timer`, `peers` and
  * `arrivalClock` by name — so renaming one of those owes that file a look.
+ * **Its CLOCK is a choice** (`BABYLON_EXIT.md` X2.5c C2). A match the server
+ * hosts FREE-RUNS: an interval polls the wall clock into the accumulator
+ * (`accrue`), which steps it `1 / TICK_HZ` at a time. A match built `owned`
+ * is DRIVEN by its owner — the page, for the offline round — which feeds the
+ * same accumulator through `advance(dt)`, begins each round itself with its
+ * own seed and difficulty (`begin`) and ends the match (`close`). An owned
+ * match stays on the one map it was built for, fields that map's own roster
+ * as its pool (`server/Roster.ts`), opens no vote, never rotates and is never
+ * retired for being empty: whatever ends it is the owner's.
  * Invariants: a peer's slot is assigned here and nowhere else, and a peer never
- * names its own slot. The loop is fixed-step and drift-corrected: a `dt` taken
- * from wall clock would make the simulation run at the speed of the server's
- * load, and every recoil, bleed and reload timer in `CONFIG` is written against
- * real seconds.
+ * names its own slot. The loop is fixed-step and drift-corrected whoever drives
+ * it: a `dt` taken from wall clock would make the simulation run at the speed
+ * of the server's load, and every recoil, bleed and reload timer in `CONFIG` is
+ * written against real seconds.
  */
 import { Vector3 } from "../src/math";
 import {
@@ -82,7 +91,7 @@ import { HULL_EARLY } from "../src/systems/hullRules";
 import { SimCore } from "../src/sim/SimCore";
 import { EV, EventCursor, decode, type EventKind } from "../src/sim/events";
 import { MapVote } from "./MapVote";
-import { HUMANS_PER_TEAM, Roster, SLOT_COUNT } from "./Roster";
+import { Roster } from "./Roster";
 import { validateDrive, validateMove } from "./validate";
 import { readClientMessage } from "./wire";
 import { loadSimWorld } from "./world";
@@ -238,6 +247,36 @@ export interface PeerHandlers {
   pong(): void;
 }
 
+/**
+ * How a match is built: by `server/index.ts` for a join that found no match
+ * to sit in, or by the OWNER of a match the page hosts itself.
+ */
+export interface MatchOptions {
+  /**
+   * The map id asked for — the creating peer's, or the owner's. Resolved in
+   * the constructor, which says why that is the one door.
+   */
+  map?: string;
+  /** Whether the match fields bots — `Join.bots`. True when absent. */
+  bots?: boolean;
+  /**
+   * The match has an OWNER that drives its clock, begins its rounds and ends
+   * it (`BABYLON_EXIT.md` X2.5c C2) — see the header for everything that
+   * changes with it. False when absent: the server's free-running match.
+   */
+  owned?: boolean;
+}
+
+/**
+ * What a round is played FROM besides its map: the seed every outcome stream
+ * is keyed off (`RoundSpec.seed`) and the bots' difficulty. An owner chooses
+ * both (`begin`); the server draws a fresh seed and plays `MATCH_DIFFICULTY`.
+ */
+export interface RoundChoice {
+  seed: number;
+  difficulty: number;
+}
+
 /** One connected human. */
 interface Peer {
   id: string;
@@ -330,6 +369,12 @@ const RELAYED: ReadonlySet<EventKind> = new Set<EventKind>([
 ]);
 
 const STEP_MS = 1000 / TICK_HZ;
+
+/**
+ * The most clock the accumulator holds, in ms — anything beyond it is DROPPED
+ * rather than stepped through. See `accrue`.
+ */
+const MAX_CARRIED_MS = 250;
 
 /**
  * How often the loop LOOKS to see whether a step is due, in ms.
@@ -586,6 +631,13 @@ const IDLE_DISPOSE_MS = 60_000;
 /** How long the round-over card stays up before the next map is built. */
 const ROUND_OVER_MS = 8_000;
 
+/**
+ * The bots' difficulty on a match the server hosts. Nobody there may choose
+ * one — a match is shared, and its difficulty is no one person's to pick — so
+ * it is the default, and only an owned match plays another (`RoundChoice`).
+ */
+const MATCH_DIFFICULTY = 1;
+
 /** Scratch for shot resolution; reused so a firefight allocates nothing. */
 const SHOT_ORIGIN = new Vector3();
 const SHOT_DIR = new Vector3();
@@ -662,7 +714,12 @@ function cleanName(raw: unknown): string {
 let nextPeerId = 1;
 
 export class Match {
-  readonly roster = new Roster();
+  /**
+   * Who sits in each slot. Its block width is the bot POOL (`startRound`
+   * hands it to the core as `RoundSpec.pool`): the ceiling on a match that
+   * rotates, the map's own roster on an owned one — the constructor decides.
+   */
+  readonly roster: Roster;
   /**
    * The simulation, built with `rewind` — the one option that is the
    * authority's: every person here is a remote shooter whose round meets the
@@ -680,14 +737,31 @@ export class Match {
   private arrivalClock: () => number = () => performance.now();
 
   private readonly peers = new Map<string, Peer>();
+  /** The server's free-running loop while it is armed (`start`); never set on an owned match. */
   private timer: ReturnType<typeof setInterval> | null = null;
+  /**
+   * Whether an OWNER drives this match — `MatchOptions.owned`, fixed for its
+   * life. See the header.
+   */
+  private readonly owned: boolean;
+  /**
+   * Clock fed in and not yet stepped through, in ms — `accrue`'s accumulator,
+   * whichever clock feeds it. Always under one step between two feeds.
+   */
+  private carried = 0;
+  /**
+   * The world has been disposed (`retire`) and this match is finished: the
+   * server's registry has forgotten it, or its owner has closed it. Final.
+   */
+  private retired = false;
   /**
    * The map this match is on. The AUTHORITY's, from the moment it is built:
    * every client that joins is told it in the welcome and builds that world
    * locally, whatever its own menu had selected.
    *
-   * Assigned in the constructor from what the creating peer asked for, and
-   * `rotate` is the only thing that moves it afterwards.
+   * Assigned in the constructor from what the creating peer — or the owner —
+   * asked for, and `rotate` is the only thing that moves it afterwards. An
+   * owned match never rotates, so its map is the one it was built for.
    */
   private mapId: string;
   /**
@@ -746,7 +820,7 @@ export class Match {
    * type. Replaced whole when a slot changes hands, never cleared field by
    * field.
    */
-  private readonly slots: SlotRecord[] = Array.from({ length: SLOT_COUNT }, freshSlot);
+  private readonly slots: SlotRecord[];
 
   /**
    * The `AntiTankSystem.version` the clients have been told about, or -1 for
@@ -800,7 +874,8 @@ export class Match {
 
   /**
    * The ballot for the next map, open only between a round ending and the next
-   * one being built — which is exactly the span `rotating` is true for.
+   * one being built — which on the server is exactly the span `roundOver` is
+   * true for. An owned match opens none.
    *
    * Null the rest of the time, and that is the test every path here asks
    * rather than a second flag: a vote that arrives outside the window has no
@@ -813,7 +888,7 @@ export class Match {
    * When the window shuts, on the WALL clock — the one place on this server
    * that is right rather than a lapse from `SimCore.now`.
    *
-   * The simulation is not stepped while `rotating`, so its clock is frozen for
+   * The simulation is not stepped while `roundOver`, so its clock is frozen for
    * the whole of the window and a countdown measured against it would read the
    * same eight seconds forever. The wall clock is also what the rotation
    * itself is on (`setTimeout`), so this and the moment the vote actually
@@ -837,7 +912,8 @@ export class Match {
   private voteDirty = false;
 
   /**
-   * `wantedMap` is the map id the peer whose join created this match asked for.
+   * `options.map` is the map id the peer whose join created this match asked
+   * for, or the owner's.
    *
    * RESOLVED against the real table rather than taken as sent, exactly as the
    * weapon id is in `admit`: an id this build has never heard of — an older
@@ -845,9 +921,16 @@ export class Match {
    * map instead of standing up a match naming a world that does not exist here.
    * Nothing downstream re-checks it, which is why this is the one door.
    */
-  constructor(readonly id: string, wantedMap?: string, bots = true) {
-    this.mapId = MAPS.find((m) => m.id === wantedMap)?.id ?? MAPS[0].id;
-    this.withBots = bots;
+  constructor(readonly id: string, options: MatchOptions = {}) {
+    const def = MAPS.find((m) => m.id === options.map) ?? MAPS[0];
+    this.mapId = def.id;
+    this.withBots = options.bots ?? true;
+    this.owned = options.owned ?? false;
+    // The table, and with it the pool: the ceiling under a match that rotates
+    // maps, the map's own roster under one that never leaves it — see
+    // `server/Roster.ts` for why each.
+    this.roster = new Roster(this.owned ? perTeamOf(def.layout) : CONFIG.bots.maxPerTeam);
+    this.slots = Array.from({ length: this.roster.slots.length }, freshSlot);
     // Nothing is wired onto the core: everything it has to say arrives on its
     // event ring and leaves through `relay`.
   }
@@ -860,9 +943,10 @@ export class Match {
    * This match as the lobby lists it.
    *
    * `state` is read off what is actually running rather than tracked as a
-   * field, so it cannot disagree with the loop: the timer exists only while
-   * there are peers (`stop` clears it when the last one leaves) and `rotating`
-   * spans the gap between a round ending and the next map being built.
+   * field, so it cannot disagree with the loop: the server's timer exists only
+   * while there are peers (`stop` clears it when the last one leaves) and
+   * `roundOver` spans the gap between a round ending and the next map being
+   * built.
    */
   summary(): MatchSummary {
     return {
@@ -875,7 +959,7 @@ export class Match {
       // anybody. See `Roster.capacity`.
       slots: this.roster.capacity,
       bots: this.withBots,
-      state: this.rotating ? "rotating" : this.timer ? "live" : "empty",
+      state: this.roundOver ? "rotating" : this.running ? "live" : "empty",
     };
   }
 
@@ -1134,7 +1218,11 @@ export class Match {
     // rather than reloading it — but not forever. An idle match holds a scene,
     // sixteen rigs and a nav graph, and on a public server the matches nobody
     // came back to would accumulate for the life of the process.
-    if (this.peers.size === 0) {
+    //
+    // Not an OWNED match: it has no loop to stop, and an owner may drive one
+    // with nobody in it at all (the benchmark) — it ends when the owner
+    // closes it.
+    if (this.peers.size === 0 && !this.owned) {
       this.stop();
       this.idleTimer = setTimeout(() => this.retire(), IDLE_DISPOSE_MS);
     }
@@ -1148,9 +1236,10 @@ export class Match {
   private retire(): void {
     if (this.peers.size > 0) return;
     this.idleTimer = null;
+    this.retired = true;
     this.game.dispose();
     this.onRetired();
-    console.log(`[${this.id}] idle; world disposed`);
+    console.log(`[${this.id}] ${this.owned ? "closed" : "idle"}; world disposed`);
   }
 
   /**
@@ -1169,7 +1258,7 @@ export class Match {
    * seated, and the point of this method is that nobody is.
    */
   private abandon(reason: string): void {
-    this.rotating = false;
+    this.roundOver = false;
     this.mapVote = null;
     if (this.rotateTimer !== null) {
       clearTimeout(this.rotateTimer);
@@ -1219,13 +1308,29 @@ export class Match {
    * a fresh one over a fresh build.
    */
   private ensureRunning(): Promise<void> {
-    if (this.timer) return Promise.resolve();
+    if (this.running) return Promise.resolve();
     if (!this.starting) {
+      // An owned match's round is its owner's to begin, with a seed and a
+      // difficulty only the owner has — an arrival inside that build waits on
+      // it below. One with no build at all was admitted before the owner began
+      // a round, which is the owner's mistake and is refused here rather than
+      // guessed at.
+      if (this.owned) {
+        return Promise.reject(new Error(`[${this.id}] no round: the owner has not begun one`));
+      }
       this.starting = this.start().finally(() => {
         this.starting = null;
       });
     }
     return this.starting;
+  }
+
+  /**
+   * Whether there is a round to step and to seat people in: the server's loop
+   * is armed, or an owner has begun a round and not closed the match.
+   */
+  private get running(): boolean {
+    return this.owned ? this.game.map !== null && !this.retired : this.timer !== null;
   }
 
   /**
@@ -1243,7 +1348,7 @@ export class Match {
    * A botless match separates them, and the separation is the honest one: the
    * simulation fields no bots, and the wire still carries the SEATS, because a
    * seat is where a person goes and a person is a body whatever the round
-   * fields. `HUMANS_PER_TEAM` and not `perTeam` for two reasons that agree — it
+   * fields. `Roster.seats` and not `perTeam` for two reasons that agree — it
    * is exactly the set of slots a botless round can ever hold a body in
    * (`Roster.claim` seats nobody outside it), and it is the smallest roster any
    * map fields, so it is inside the pool every client built off its own map and
@@ -1256,13 +1361,13 @@ export class Match {
    * would stand in the street for the rest of the round.
    */
   private fieldedSlots(): number {
-    return this.withBots ? this.game.perTeam : HUMANS_PER_TEAM;
+    return this.withBots ? this.game.perTeam : this.roster.seats;
   }
 
   private async start(): Promise<void> {
     if (!this.game.map) {
       const def = MAPS.find((m) => m.id === this.mapId) ?? MAPS[0];
-      await this.startRound(def);
+      await this.startRound(def, { seed: freshSeed(), difficulty: MATCH_DIFFICULTY });
     }
     // What this map fields, onto the table. The simulation has already been
     // told (`SimCore.startRound`); this is the same decision reaching the
@@ -1274,7 +1379,7 @@ export class Match {
     // whenever the timer happened to run would speed up and slow down with the
     // host's load. Everything in `CONFIG` — reload times, bleed intervals,
     // recoil decay — is written against real seconds.
-    let carried = 0;
+    this.carried = 0;
     let last = Date.now();
     this.timer = setInterval(() => {
       // **A step that THROWS ends the match**, and it is caught here rather
@@ -1284,28 +1389,14 @@ export class Match {
       // `step` after the throw (the lag record, the snapshot) never ran: a
       // world clients stay connected to that no longer advances coherently.
       // The way out is the one a failed rotation already takes, and the catch
-      // is OUTSIDE the `while` on purpose: `abandon` has cleared this interval
-      // and disposed the world, and the loop must not take another step of it.
+      // is OUTSIDE `accrue`'s loop on purpose: `abandon` has cleared this
+      // interval and disposed the world, and the loop must not take another
+      // step of it.
       try {
         const now = Date.now();
-        carried += now - last;
+        const elapsed = now - last;
         last = now;
-        // Bounded so a long stall (a GC pause, a suspended container) is
-        // dropped rather than replayed as a burst of catch-up ticks that would
-        // teleport every body on every client at once.
-        //
-        // What is dropped is real time the world will never be stepped
-        // through, and the simulation's own clock is told so — that clock is
-        // what every snapshot is stamped with, and one left quietly behind the
-        // wall is one no client can follow. See `SimCore.drop`.
-        if (carried > 250) {
-          this.game.drop(carried - 250);
-          carried = 250;
-        }
-        while (carried >= STEP_MS) {
-          carried -= STEP_MS;
-          this.step();
-        }
+        this.accrue(elapsed);
       } catch (err: unknown) {
         console.error(`[${this.id}] step failed; abandoning match:`, err);
         this.abandon("the match server hit an error and ended the match");
@@ -1315,28 +1406,164 @@ export class Match {
   }
 
   /**
-   * A round on `def`, as this host owes it to the core: the bake and the floor
-   * LOADED (the one await), the seed DRAWN, and the clock ANCHORED — the three
-   * things `SimCore` does not do for itself, because it reads no clock and no
-   * entropy (`BABYLON_EXIT.md` X2.5a). The anchor is taken the moment the
-   * build returns, which is where `SimCore.anchor` says it must be.
+   * `ms` of clock into the accumulator, and as many fixed steps as it now
+   * holds — the ONE accumulator, whichever clock feeds it: the server's
+   * interval with the wall time since its last poll, an owner's `advance`
+   * with its `dt`. Steps are always `STEP_MS`, so how the clock arrives (one
+   * frame of exactly a tick, or a 4 ms poll that is late as often as not)
+   * decides only WHEN a step runs, never what it does.
    */
-  private async startRound(def: MapDef): Promise<void> {
+  private accrue(ms: number): void {
+    this.carried += ms;
+    // Bounded so a long stall (a GC pause, a suspended container) is dropped
+    // rather than replayed as a burst of catch-up ticks that would teleport
+    // every body on every client at once.
+    //
+    // What is dropped is real time the world will never be stepped through,
+    // and the simulation's own clock is told so — that clock is what every
+    // snapshot is stamped with, and one left quietly behind the wall is one no
+    // client can follow. See `SimCore.drop`.
+    if (this.carried > MAX_CARRIED_MS) {
+      this.game.drop(this.carried - MAX_CARRIED_MS);
+      this.carried = MAX_CARRIED_MS;
+    }
+    while (this.carried >= STEP_MS) {
+      this.carried -= STEP_MS;
+      this.step();
+    }
+  }
+
+  /**
+   * A round on `def`, as this host owes it to the core: the bake and the floor
+   * LOADED (the one await), the seed — drawn by the server, chosen by an
+   * owner — HANDED OVER, and the clock ANCHORED: the three things `SimCore`
+   * does not do for itself, because it reads no clock and no entropy
+   * (`BABYLON_EXIT.md` X2.5a). The anchor is taken the moment the build
+   * returns, which is where `SimCore.anchor` says it must be.
+   */
+  private async startRound(def: MapDef, round: RoundChoice): Promise<void> {
     const { collision, floor } = await loadSimWorld(def);
     this.game.startRound({
       def,
       collision,
       floor,
-      difficulty: 1,
-      // The CEILING, on every map — a slot index is a bot index and a match
-      // rotates maps under one slot table — and the map's own roster fielded
-      // out of it, or none in a match created without bots. See `RoundSpec`.
-      pool: CONFIG.bots.maxPerTeam,
+      difficulty: round.difficulty,
+      // The table's block width, because a slot index is a bot index: the
+      // CEILING on a match that rotates maps under one slot table, the map's
+      // own roster on an owned one (`Roster`'s constructor). The map's own
+      // roster is fielded out of it, or none in a match created without bots.
+      // See `RoundSpec`.
+      pool: this.roster.perTeam,
       fielded: this.withBots ? perTeamOf(def.layout) : 0,
-      seed: freshSeed(),
+      seed: round.seed,
     });
     this.game.anchor(Date.now());
     this.relay();
+  }
+
+  /**
+   * A round after the first, on `def`: built, fielded and ANNOUNCED — the
+   * tail a rotation and an owner's `begin` share, because both put the same
+   * people into a fresh round without re-seating anybody.
+   */
+  private async nextRound(def: MapDef, round: RoundChoice): Promise<void> {
+    await this.startRound(def, round);
+    // The new map's roster, onto the table — see `start`. FIRST, because
+    // everything below it sends a list this filters.
+    this.roster.setFielded(this.fieldedSlots());
+    // Nobody is retired or re-benched here: `SimCore.startRound` puts every
+    // seated person back dead with a zero timer and benches the bot in their
+    // slot itself, last of the round's build.
+    this.ticks = 0;
+    this.roundOver = false;
+    // `startRound` cleared the board; this is what makes sure the cleared one
+    // is sent. The version moved, so the test in `broadcastSnapshot` would
+    // catch it anyway — resetting here is what covers the case where it has not
+    // moved, which is a round nobody scored in.
+    this.sentScoreVersion = -1;
+    // …and the mines, for the same reason with a sharper edge: `startRound`
+    // cleared the field, and a round that left the last one's list standing
+    // would draw sixteen mines over a street that is not there.
+    this.sentMineVersion = -1;
+    // `game.now` and not the wall clock, for `welcome`'s reason: one stamp on a
+    // different clock poisons the offset window every body is drawn against.
+    this.broadcast({ t: "roundstart", mapId: this.mapId, now: this.game.now });
+    this.broadcastRoster();
+  }
+
+  /**
+   * The OWNER begins a round, on the map this match was built for, from its
+   * own seed and difficulty — the first, or the next one: after the last
+   * ended (an owned match holds the round that ended until this, where the
+   * server would open a ballot and rotate), or over one still in play (a
+   * restart). Everybody seated keeps their slot and is put back dead with a
+   * zero timer, exactly as a rotation does it.
+   *
+   * The owner awaits it before it advances, and before it admits its first
+   * peer: an arrival inside the first build waits on this same promise
+   * (`ensureRunning`), and one before any build is refused.
+   */
+  begin(round: RoundChoice): Promise<void> {
+    if (!this.owned) throw new Error(`[${this.id}] begin: only an owned match is begun by its owner`);
+    if (this.retired) throw new Error(`[${this.id}] begin: the match is closed`);
+    if (this.starting) throw new Error(`[${this.id}] begin: a round is already being built`);
+    this.starting = this.beginRound(round).finally(() => {
+      this.starting = null;
+    });
+    return this.starting;
+  }
+
+  private async beginRound(round: RoundChoice): Promise<void> {
+    const def = MAPS.find((m) => m.id === this.mapId) ?? MAPS[0];
+    if (this.game.map) {
+      // The round standing is over from here, as it is through a rotation's
+      // build: nothing steps it and no round message is spent on it.
+      this.roundOver = true;
+      await this.nextRound(def, round);
+    } else {
+      // The first — `start`'s shape without its loop. Nobody has been
+      // welcomed yet, so nothing is announced.
+      await this.startRound(def, round);
+      this.roster.setFielded(this.fieldedSlots());
+    }
+    // A round starts on a whole tick, with nothing carried over from the last.
+    this.carried = 0;
+    console.log(`[${this.id}] round begun on ${this.mapId}, seed ${round.seed}`);
+  }
+
+  /**
+   * The OWNER's clock: `dt` seconds into the accumulator the server's
+   * interval feeds (`accrue`), stepped `1 / TICK_HZ` at a time. A `dt` of
+   * exactly one tick — the benchmark's, `CONFIG.profiling.bench.dt` — is
+   * exactly one step; any other is the whole steps it holds, the rest
+   * carried. Nothing steps between calls, which is what holding the world
+   * is: time the owner does not hand over is time this match never sees.
+   *
+   * Synchronous, and a step that throws reaches the caller rather than
+   * ending the match as the server's loop does (`abandon`): the owner is the
+   * one with somewhere to report it, and it ends the match with `close`.
+   */
+  advance(dt: number): void {
+    if (!this.owned) throw new Error(`[${this.id}] advance: the server's match runs its own clock`);
+    if (this.starting) throw new Error(`[${this.id}] advance: a round is being built — await begin`);
+    if (!this.running) throw new Error(`[${this.id}] advance: no round standing`);
+    this.accrue(dt * 1000);
+  }
+
+  /**
+   * The OWNER is done with this match: every peer let go and the world
+   * disposed — what an empty server match's idle timer comes to, which an
+   * owned match never arms. Final. Not inside a `begin`: the build would go
+   * on to start a round on the world this disposed, so the owner awaits it
+   * first (a `begin` that failed has already let go of it).
+   */
+  close(): void {
+    if (!this.owned) throw new Error(`[${this.id}] close: only an owned match is closed by its owner`);
+    if (this.starting) throw new Error(`[${this.id}] close: a round is being built — await begin`);
+    if (this.retired) return;
+    for (const peer of this.peers.values()) peer.transport.close();
+    this.peers.clear();
+    this.retire();
   }
 
   private stop(): void {
@@ -1362,9 +1589,9 @@ export class Match {
     // the fact itself, so the safety no longer rests on a second one agreeing
     // with it.
     //
-    // The tick the round ends on is not affected: `rotating` is set BELOW,
+    // The tick the round ends on is not affected: `roundOver` is set BELOW,
     // after that tick has already run and broadcast its `roundover`.
-    if (this.rotating) {
+    if (this.roundOver) {
       // …but the window the round-over card is up for is this one, and the
       // ballot on it is live. This is the only thing that happens between a
       // round ending and the next map being built, and it is deliberately not
@@ -1381,28 +1608,36 @@ export class Match {
     this.relay();
     this.ticks++;
 
-    // No `!this.rotating` here any more: the guard at the top of this method is
+    // No `!this.roundOver` here any more: the guard at the top of this method is
     // that test, made once for the whole step rather than for this branch
     // alone.
     if (!live && this.game.conquest.winner !== null) {
-      // The `roundover` event is already queued: the core wrote `roundOver`
+      // The `roundover` event is already queued: the core wrote `EV.roundOver`
       // last of this tick's events and `relay` put it on the queue above.
       // The round is over but the match is not. Everyone stays seated, the
       // card goes up on every client, and the next map is built after a pause
       // — a server that stopped here would leave sixteen people looking at a
       // frozen world with no way out but reconnecting.
-      this.rotating = true;
+      this.roundOver = true;
       // The ballot goes out BEFORE the result does. The `roundover` event is
       // still in the queue that `broadcastSnapshot` flushes below, so opening
       // here means a client holds the candidates by the time the card it draws
       // them on is raised — rather than putting up a wait line and replacing it
       // a beat later with a vote.
+      //
+      // An OWNED match has neither: it holds the round that ended, the
+      // `roundover` event going out on this snapshot as on any other, until
+      // its owner begins the next (`begin`).
+      if (this.owned) {
+        this.broadcastSnapshot();
+        return;
+      }
       this.openVote();
       this.broadcastSnapshot();
       this.rotateTimer = setTimeout(() => {
         this.rotateTimer = null;
         // A rotation is the one place a failure would now be permanent. It is
-        // what clears `rotating`, and `rotating` is what lets the loop step, so
+        // what clears `roundOver`, and `roundOver` is what lets the loop step, so
         // a build that threw would leave sixteen people in a match that renders
         // and never advances — and an uncaught rejection out of a timer takes
         // the process, and every other match on it, down instead. Neither is
@@ -1418,7 +1653,13 @@ export class Match {
     if (this.ticks % TICKS_PER_SNAPSHOT === 0) this.broadcastSnapshot();
   }
 
-  private rotating = false;
+  /**
+   * The round has ended and the next is not built yet: a rotation's round-over
+   * pause and build on the server, an owned match's wait for its owner's
+   * `begin` (and that build). The world under it is the round that ended, so
+   * nothing steps it and no round message is spent on it.
+   */
+  private roundOver = false;
 
   /**
    * The round-over pause's timer, held so `abandon` can cancel it: a step that
@@ -1459,28 +1700,7 @@ export class Match {
     this.mapId = next;
     const def = MAPS.find((m) => m.id === next) ?? MAPS[0];
 
-    await this.startRound(def);
-    // The new map's roster, onto the table — see `start`. FIRST, because
-    // everything below it sends a list this filters.
-    this.roster.setFielded(this.fieldedSlots());
-    // Nobody is retired or re-benched here: `SimCore.startRound` puts every
-    // seated person back dead with a zero timer and benches the bot in their
-    // slot itself, last of the round's build.
-    this.ticks = 0;
-    this.rotating = false;
-    // `startRound` cleared the board; this is what makes sure the cleared one
-    // is sent. The version moved, so the test in `broadcastSnapshot` would
-    // catch it anyway — resetting here is what covers the case where it has not
-    // moved, which is a rotation nobody scored in.
-    this.sentScoreVersion = -1;
-    // …and the mines, for the same reason with a sharper edge: `startRound`
-    // cleared the field, and a rotation that left the last map's list standing
-    // would draw sixteen mines over a street that is not there.
-    this.sentMineVersion = -1;
-    // `game.now` and not the wall clock, for `welcome`'s reason: one stamp on a
-    // different clock poisons the offset window every body is drawn against.
-    this.broadcast({ t: "roundstart", mapId: this.mapId, now: this.game.now });
-    this.broadcastRoster();
+    await this.nextRound(def, { seed: freshSeed(), difficulty: MATCH_DIFFICULTY });
     console.log(`[${this.id}] rotated to ${this.mapId}, seed ${this.game.random.seed}`);
   }
 
@@ -2084,12 +2304,12 @@ export class Match {
         // `deploy` below is deliberately NOT here. It touches no geometry — it
         // writes an integer a later tick spends — and refusing it would drop a
         // request the client has no reason to send twice.
-        if (!this.rotating) this.onRoundMessage(peer, msg);
+        if (!this.roundOver) this.onRoundMessage(peer, msg);
         break;
       case "deploy":
         this.onDeploy(peer, msg);
         break;
-      // The one message that is only meaningful while `rotating`, which is why
+      // The one message that is only meaningful while `roundOver`, which is why
       // it is not in the block above and why `onVote` tests for a ballot
       // instead: everything there belongs to a round in progress and this
       // belongs to the gap between two.
@@ -2097,7 +2317,7 @@ export class Match {
         this.onVote(peer, msg);
         break;
       // Every member of the union has an arm above, so a new one fails to
-      // compile here until somebody has decided which side of the `rotating`
+      // compile here until somebody has decided which side of the `roundOver`
       // gate it belongs on — the `if`/`else` chain this replaced ran a type it
       // had not heard of as a RELOAD.
       default: {
@@ -2663,7 +2883,7 @@ export class Match {
     // 16.7, so anything that puts two arrivals into one turn of the event
     // loop does it: network jitter, a GC pause on the host, or the world
     // build a rotation spends 250 ms inside — and the round-over pause does
-    // it wholesale, because `step` returns early while `rotating` and the
+    // it wholesale, because `step` returns early while `roundOver` and the
     // hull is not carried anywhere for the length of it.
     //
     // Every refusal costs the driver a `hullcorrect`, which ARRESTS the hull

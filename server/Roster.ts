@@ -1,16 +1,17 @@
 /**
- * server/Roster.ts — Who is in each of the forty-eight roster slots, and which
- * of them this round fields.
+ * server/Roster.ts — Who is in each of a match's roster slots, and which of
+ * them this round fields.
  * Owns: the fixed slot table, team balance, the human↔bot handover in both
  * directions, and the map's roster laid over the table. Owns no simulation: it
  * says which slots are people and which are in this round, and `Match` benches
  * the corresponding bots.
  * Invariants: the slot table is built once and NEVER grows, shrinks or
- * reorders — a slot only ever changes who feeds it. `CONFIG.bots.maxPerTeam`
- * sizes it, and it must stay equal to the bot pool `BattleSystem` builds on the
- * authority, because a slot index IS a bot index. A slot with no human in it is
- * a bot, always: there is no such thing as an empty slot, which is what lets a
- * match start with one player in it.
+ * reorders — a slot only ever changes who feeds it. Its block width a team
+ * (`perTeam`) is the match's, given at construction, and it IS the bot pool
+ * `BattleSystem` builds: `Match` hands `perTeam` to the core as
+ * `RoundSpec.pool`, because a slot index IS a bot index. A slot with no human
+ * in it is a bot, always: there is no such thing as an empty slot, which is
+ * what lets a match start with one player in it.
  *
  * This is the whole of "matches start without a full lobby". Joining takes a
  * bot's place and leaving gives it back; nothing is created or destroyed on
@@ -20,14 +21,23 @@
  * **THE TABLE IS THE CEILING AND THE ROUND IS THE MAP'S**, and that split is
  * the whole design. `MapLayout.perTeam` is how many bodies a side a map fields
  * — Sarab is twenty-four and every other map is eight — and a match rotates
- * between maps under ONE table, so the table is built at the largest roster any
- * map may ask for (`CONFIG.bots.maxPerTeam`) and `setFielded` says how many of
- * each team's block are in THIS round. Sizing the table per map instead would
- * mean a slot index that moves under the humans sitting in it: team 1's block
- * begins at the team's own size, so a rotation would renumber every player on
- * that side — and a peer's slot is its entity id on the wire, its `ScoreBook`
- * row, its rewind history and the key of eight per-slot tables in `Match`.
- * `RoundStart` exists precisely so that a rotation re-seats nobody.
+ * between maps under ONE table, so the authority builds the table at the
+ * largest roster any map may ask for (`CONFIG.bots.maxPerTeam`, forty-eight
+ * slots) and `setFielded` says how many of each team's block are in THIS
+ * round. Sizing the table per map instead would mean a slot index that moves
+ * under the humans sitting in it: team 1's block begins at the team's own
+ * size, so a rotation would renumber every player on that side — and a peer's
+ * slot is its entity id on the wire, its `ScoreBook` row, its rewind history
+ * and the key of eight per-slot tables in `Match`. `RoundStart` exists
+ * precisely so that a rotation re-seats nobody.
+ *
+ * **A match that never rotates is the one exception, and it is sized to its
+ * map** (`BABYLON_EXIT.md` X2.5c C2): an OWNED match (`MatchOptions.owned`,
+ * the page's offline round) stays on the one map its owner named, so nothing
+ * can ever renumber it — and its table is that map's own roster, because every
+ * outcome stream is keyed by slot and the offline fight has always been played
+ * on a pool that size. The ceiling would move team 1's block and change the
+ * fight.
  *
  * **HUMAN CAPACITY IS THE SMALLEST MAP IN THE ROTATION, which is why it is
  * sixteen rather than forty-eight.** A person may only ever be seated in the
@@ -42,15 +52,6 @@ import { CONFIG } from "../src/config";
 import type { NetTeam, SlotState } from "../src/net/protocol";
 
 /**
- * Slots per team in the table — the largest roster any map may state, so that
- * team 1's block begins at the same index on every map a match rotates onto.
- */
-const PER_TEAM = CONFIG.bots.maxPerTeam;
-
-/** Total table size. Must equal the bot pool: a slot index is a bot index. */
-export const SLOT_COUNT = PER_TEAM * 2;
-
-/**
  * How many of each team's block a PERSON may sit in.
  *
  * The smallest roster any map fields, which is what a map that states nothing
@@ -61,6 +62,13 @@ export const HUMANS_PER_TEAM = CONFIG.bots.perTeam;
 
 export class Roster {
   readonly slots: SlotState[] = [];
+
+  /**
+   * How many of each team's block a person may sit in: `HUMANS_PER_TEAM`, or
+   * the whole block on a table narrower than that — a map that fields fewer
+   * than eight a side, which no shipped map does.
+   */
+  readonly seats: number;
 
   /** Peer id -> slot index, so a leaving socket is O(1) to find. */
   private readonly byPeer = new Map<string, number>();
@@ -76,12 +84,18 @@ export class Roster {
    */
   private fieldedPerTeam: number = CONFIG.bots.perTeam;
 
-  constructor() {
+  /**
+   * `perTeam` is the table's block width a team, and the bot pool's: the
+   * ceiling, `CONFIG.bots.maxPerTeam`, on a match that rotates; the map's own
+   * roster on one that does not — see the header.
+   */
+  constructor(readonly perTeam: number = CONFIG.bots.maxPerTeam) {
+    this.seats = Math.min(HUMANS_PER_TEAM, perTeam);
     // Laid out team 0 first, then team 1 — the same order `BattleSystem` builds
     // its pool in, which is what makes a slot index usable as a bot index
     // without a lookup table that could disagree with it.
     for (let team = 0; team < 2; team++) {
-      for (let i = 0; i < PER_TEAM; i++) {
+      for (let i = 0; i < perTeam; i++) {
         this.slots.push({
           index: this.slots.length,
           team: team as NetTeam,
@@ -93,7 +107,7 @@ export class Roster {
 
   /** How many people this match seats. See `HUMANS_PER_TEAM`. */
   get capacity(): number {
-    return HUMANS_PER_TEAM * 2;
+    return this.seats * 2;
   }
 
   /** How many humans are on a team. */
@@ -117,8 +131,8 @@ export class Roster {
   /**
    * How many bodies a side this round fields, pushed once per round by `Match`.
    *
-   * Nothing about the table changes: it is the same forty-eight slots it was
-   * before the call and every occupant is still in the slot it was in. What
+   * Nothing about the table changes: it is the same slots it was before the
+   * call and every occupant is still in the slot it was in. What
    * moves is only which of them `fielded` hands out — see the header.
    */
   setFielded(perTeam: number): void {
@@ -127,7 +141,7 @@ export class Roster {
 
   /** Is this slot one of the bodies in the standing round? */
   isFielded(index: number): boolean {
-    return index % PER_TEAM < this.fieldedPerTeam;
+    return index % this.perTeam < this.fieldedPerTeam;
   }
 
   /**
@@ -191,13 +205,13 @@ export class Roster {
   /**
    * May a PERSON sit here?
    *
-   * The first `HUMANS_PER_TEAM` of each team's block and no others, which is
-   * what makes a rotation onto a smaller map impossible to fail: those slots
-   * are fielded by every map there is. The rest of the table is bots for the
-   * life of the process.
+   * The first `seats` of each team's block and no others, which is what
+   * makes a rotation onto a smaller map impossible to fail: those slots are
+   * fielded by every map there is. The rest of the table is bots for the life
+   * of the process.
    */
   private seatable(slot: SlotState): boolean {
-    return slot.index % PER_TEAM < HUMANS_PER_TEAM;
+    return slot.index % this.perTeam < this.seats;
   }
 
   private firstBotSlot(team: NetTeam): SlotState | null {

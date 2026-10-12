@@ -67,6 +67,14 @@
  * refused sample mid-descent followed by the client's `resync` costs nothing,
  * and a lie on the sample before touchdown still pays the landing.
  *
+ * And `greyfen/owned` (X2.5c C2): a match its OWNER drives (`Match`'s
+ * `owned`) plays the benchmark's round — its seed, difficulty and length — as
+ * the offline page's core plays it, a tick an `advance` and at 144 Hz alike,
+ * one event stream and the bench's own `FightHash`; then the owned lifecycle:
+ * the map's own slot table, no admit before `begin`, a round that ends held
+ * with no ballot or rotation until the owner begins the next, empty is not
+ * idle, and `close`.
+ *
  * The person is always slot 0, team 0: the first seat `Roster.claim` hands
  * out, which `MatchHost` asserts. `-- --list` also prints each map's event
  * counts and the award/death list the hosts are compared on.
@@ -102,7 +110,8 @@ import {
   type SimEvent,
   type Vec3,
 } from "../src/sim/events";
-import { Match, type PeerHandlers, type PeerTransport } from "./Match";
+import { Match, type PeerHandlers, type PeerTransport, type RoundChoice } from "./Match";
+import { FightHash } from "../src/bench/fightHash";
 import { claimedDir } from "./claimGates";
 import { loadSimWorld } from "./world";
 
@@ -356,6 +365,11 @@ class FakeTransport implements PeerTransport {
   deliver(msg: object): void {
     this.handlers?.message(JSON.stringify(msg));
   }
+  /** The far end goes away, raised as a socket raises it. */
+  hangUp(): void {
+    this.open = false;
+    this.handlers?.closed();
+  }
 }
 
 /** Waits out `RateGate`'s wall-clock spacing so the rifle's bucket is never what refuses a scripted round. */
@@ -372,7 +386,7 @@ class MatchHost implements Host {
   private clock = 1000;
 
   constructor(def: MapDef, bots = true) {
-    this.match = new Match("corecheck", def.id, bots);
+    this.match = new Match("corecheck", { map: def.id, bots });
     this.core = this.match.game;
     // The ARRIVAL clock a peer's stamps are bounded against (`Match.onStamp`)
     // is the script's own: the simulation's time, which advances with each
@@ -1054,6 +1068,172 @@ function holdsRespawn(world: World, c: Checks): void {
   );
   held.core.dispose();
   plain.core.dispose();
+}
+
+/**
+ * The benchmark's round (`?bench=<map>`): its seed and the difficulty the
+ * page plays it at, and how many fixed steps it runs — the lead, then the
+ * measured fight (`BenchScript`'s two legs, each its seconds over the step).
+ */
+const BENCH = CONFIG.profiling.bench;
+const BENCH_ROUND: RoundChoice = { seed: BENCH.seed, difficulty: CONFIG.bots.skill.defaultDifficulty };
+const BENCH_STEPS = Math.round(BENCH.leadSeconds / BENCH.dt) + Math.round(BENCH.fightSeconds / BENCH.dt);
+
+/** The bench's fold (`Game.onSimEvent`): every award and death after `mark`, stamped from `tick0`. */
+function benchFight(log: Log, mark: number, tick0: number): FightHash {
+  const fight = new FightHash();
+  for (const ev of log.events.slice(mark)) {
+    if (ev.type === "death") fight.death(ev.tick - tick0, ev.slot);
+    else if (ev.type === "award") fight.award(ev.tick - tick0, ev.slot, ev.kind, ev.points);
+  }
+  return fight;
+}
+
+/** An OWNED match on `world`, every drain of its core heard, begun on the bench's round. */
+async function ownedOn(world: World): Promise<{ match: Match; log: Log; mark: number; tick0: number }> {
+  const match = new Match("local", { map: world.def.id, owned: true });
+  const log = new Log();
+  const drain = match.game.drain.bind(match.game);
+  match.game.drain = (out) => {
+    drain(out);
+    log.absorb(out);
+  };
+  await quietly(() => match.begin(BENCH_ROUND));
+  return { match, log, mark: log.events.length, tick0: match.game.tick };
+}
+
+/**
+ * **A match its OWNER drives plays the offline page's round** (`BABYLON_EXIT.md`
+ * X2.5c C2). The benchmark's round — its seed, its difficulty, its length —
+ * played three ways on the same map: on a core built as the offline page
+ * builds it (the map's own pool, fielded whole, `hostHoldsRespawn`) stepped
+ * by hand; through an owned `Match` advanced by the bench's own step, one
+ * `advance` a tick; and through another advanced in 144 Hz frames, most of
+ * which hold no whole step. All three must be one event stream, which is what
+ * says the owner's clock is the server's accumulator, the pool is the map's
+ * and the seed reaches the core unchanged — and the fold printed is the
+ * bench's own (`FightHash`), so the line carries the number the bench banks.
+ *
+ * Then the rest of what being OWNED means, on the first match: the slot table
+ * is the map's roster, not the ceiling; a peer may not be admitted before the
+ * owner has begun a round; a round that ends opens no ballot and arms no
+ * rotation, and holds — nothing steps — until the owner begins the next, which
+ * the seated peer hears as a `roundstart` on the same map; the last peer
+ * leaving retires nothing and the owner's clock still steps; and `close` ends
+ * it for good.
+ */
+async function ownedMatch(world: World, c: Checks): Promise<void> {
+  const tag = "owned";
+  const perTeam = perTeamOf(world.def.layout);
+
+  // The offline page's core, stepped by hand.
+  const core = new SimCore({ hostHoldsRespawn: true });
+  const coreLog = new Log();
+  const cursor = new EventCursor();
+  const heard = () => {
+    core.drain(cursor);
+    coreLog.absorb(cursor);
+  };
+  core.startRound({ ...world, ...BENCH_ROUND, pool: perTeam, fielded: perTeam });
+  heard();
+  const coreMark = coreLog.events.length;
+  const coreTick0 = core.tick;
+  for (let i = 0; i < BENCH_STEPS; i++) {
+    core.step(BENCH.dt);
+    heard();
+  }
+  const coreFight = benchFight(coreLog, coreMark, coreTick0);
+  core.dispose();
+
+  // The owner's clock at the bench's step: one `advance`, one tick.
+  const a = await ownedOn(world);
+  let uneven = 0;
+  for (let i = 0; i < BENCH_STEPS; i++) {
+    const before = a.match.game.tick;
+    a.match.advance(BENCH.dt);
+    if (a.match.game.tick !== before + 1) uneven++;
+  }
+  const aFight = benchFight(a.log, a.mark, a.tick0);
+  // …and in 144 Hz frames, until the same number of ticks has run.
+  const b = await ownedOn(world);
+  let frames = 0;
+  while (b.match.game.tick - b.tick0 < BENCH_STEPS) {
+    b.match.advance(1 / 144);
+    frames++;
+  }
+  const bFight = benchFight(b.log, b.mark, b.tick0);
+  await quietly(async () => b.match.close());
+
+  c.that(
+    `${tag}: the bench's round (${BENCH_STEPS} steps) — the offline page's core, an owned Match a tick an advance (${uneven} uneven) and one at 144 Hz (${frames} frames) are one event stream (${coreLog.digest()})`,
+    uneven === 0 && a.log.digest() === coreLog.digest() && b.log.digest() === coreLog.digest(),
+    `core ${coreLog.digest()} / per-tick ${a.log.digest()} / 144 Hz ${b.log.digest()}`,
+  );
+  c.that(
+    `${tag}: the bench's fight hash, all three (${coreFight.hex}, ${coreFight.events} awards and deaths)`,
+    coreFight.events > 0 && aFight.hex === coreFight.hex && bFight.hex === coreFight.hex,
+    `core ${coreFight.hex} / per-tick ${aFight.hex} / 144 Hz ${bFight.hex}`,
+  );
+
+  const m = a.match;
+  c.that(
+    `${tag}: the slot table and the bot pool are the map's own roster (${perTeam} a side), team 1 from slot ${perTeam}`,
+    m.roster.slots.length === 2 * perTeam && m.game.battle.bots.length === 2 * perTeam &&
+      m.roster.slots[perTeam].team === 1 && m.roster.slots[perTeam - 1].team === 0,
+    `${m.roster.slots.length} slots, ${m.game.battle.bots.length} bots`,
+  );
+
+  const early = new Match("local", { map: world.def.id, owned: true });
+  const refused = await early.admit(new FakeTransport(), "early").then(() => false, () => true);
+  c.that(`${tag}: a peer admitted before the owner begins a round is refused`, refused);
+
+  const peer = new FakeTransport();
+  await quietly(() => m.admit(peer, "corecheck"));
+  const welcome = peer.frames.find((f) => f.t === "welcome");
+  m.game.conquest.tickets[1] = 0;
+  m.advance(BENCH.dt);
+  const ended = m.game.tick;
+  m.advance(1);
+  const over = peer.frames.some(
+    (f) => f.t === "events" && (f.events as Array<{ e: string }>).some((e) => e.e === "roundover"),
+  );
+  c.that(
+    `${tag}: a round that ends is heard (\`roundover\`), opens no ballot, arms no rotation, and holds — a second's advance steps nothing`,
+    welcome?.slot === PERSON_SLOT && over && !peer.frames.some((f) => f.t === "mapvote") &&
+      m["rotateTimer"] === null && m.game.tick === ended,
+    `welcome ${JSON.stringify(welcome)}, roundover ${over}, tick ${ended} -> ${m.game.tick}`,
+  );
+
+  await quietly(() => m.begin({ seed: SEED + 1, difficulty: BENCH_ROUND.difficulty }));
+  const start = peer.frames.find((f) => f.t === "roundstart");
+  const begun = m.game.tick;
+  m.advance(BENCH.dt);
+  c.that(
+    `${tag}: the owner begins the next: the seated peer hears \`roundstart\` on the same map, the seed is the owner's, and the clock steps again`,
+    start?.mapId === world.def.id && m.game.random.seed === SEED + 1 && m.game.tick === begun + 1 &&
+      m.game.players.has(PERSON_SLOT),
+    `roundstart ${JSON.stringify(start)}, seed ${m.game.random.seed}, tick ${begun} -> ${m.game.tick}`,
+  );
+
+  await quietly(async () => peer.hangUp());
+  const left = m.game.tick;
+  m.advance(BENCH.dt);
+  c.that(
+    `${tag}: the last peer leaving retires nothing — no idle timer, and the owner's clock still steps`,
+    !m.game.players.has(PERSON_SLOT) && m["idleTimer"] === null && m.game.tick === left + 1,
+    `idle timer ${m["idleTimer"] !== null}, tick ${left} -> ${m.game.tick}`,
+  );
+
+  await quietly(async () => m.close());
+  const closed = (() => {
+    try {
+      m.advance(BENCH.dt);
+      return false;
+    } catch {
+      return true;
+    }
+  })();
+  c.that(`${tag}: \`close\` ends it — the world disposed, and the clock refuses to step it`, closed && m["retired"]);
 }
 
 /**
@@ -2112,6 +2292,9 @@ async function main(): Promise<void> {
       const checks = new Checks("greyfen/held");
       holdsRespawn(world, checks);
       for (const r of checks.results) report(checks.tag, r);
+      const owned = new Checks("greyfen/owned");
+      await ownedMatch(world, owned);
+      for (const r of owned.results) report(owned.tag, r);
     }
     if (id === "coldharbour") {
       const checks = new Checks("coldharbour/drive");

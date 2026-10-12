@@ -242,7 +242,7 @@ let nextMatchId = 1;
  * it, and nothing here needs to know what maps exist.
  */
 function createMatch(mapId?: string, bots = true): Match {
-  const match = new Match(`m${nextMatchId++}`, mapId, bots);
+  const match = new Match(`m${nextMatchId++}`, { map: mapId, bots });
   match.onRetired = () => matches.delete(match.id);
   matches.set(match.id, match);
   return match;
