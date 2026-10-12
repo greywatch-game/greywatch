@@ -1670,7 +1670,7 @@ wire comes later, for both at once, and only if a profiler capture asks for it.
 - **Fixed for BOTH at C4, by the step's rule** (found at C4 — each was a
   match's behaviour that offline would otherwise have inherited): bodies off
   the wire now cast body shadows, get blob shadows and bend the grass
-  (`mapBodies`, `fillCombatants`); a remote rocket's launch is heard
+  (`mapBodies`, `fillPushers`); a remote rocket's launch is heard
   (`NetOrdnance.onLaunch`); the shooter's mark for a blast, a killing burn, a
   hull gun's kill and the tracks rides the wire (`hit`'s new `cause`); a
   hull's return says READY; the player's own scoreboard row and own death on

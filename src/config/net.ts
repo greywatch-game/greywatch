@@ -63,9 +63,12 @@ export const net = {
    * match more than a frame costs the page, nothing else would stop the queue
    * between them growing for the length of the round, and with it how far
    * behind the page's picture the fight is. Four frames of slack absorbs a
-   * hitch on either side; past it the time still reaches the match, in one
-   * call, because the accumulator steps whatever it is handed in whole steps.
-   * The benchmark is exempt: it must post one advance per STEP.
+   * hitch on either side; past it the folded time reaches the match in one
+   * call, which steps it in whole steps — up to the accumulator's cap
+   * (`Match.accrue`, `MAX_CARRIED_MS`), past which the clock passes and
+   * nothing steps. So a host that cannot keep up plays the fight SLOWER than
+   * real time rather than further and further behind it. The benchmark is
+   * exempt: it must post one advance per STEP.
    */
   localBacklog: 4,
 

@@ -2367,9 +2367,8 @@ export class Match {
         case "hit": {
           // A blow nobody is named for (`slotOf` of no body) is nobody's
           // feedback — and -1 is `ALL_PEERS` to `queueTo`. A BOT's is
-          // nobody's either, for the `award` arm's reason: queued, every
-          // tick a bot landed something would take `flushEvents`' per-peer
-          // path for an event no client is sent.
+          // nobody's either: queued, every tick a bot landed something would
+          // take `flushEvents`' per-peer path for an event no client is sent.
           if (ev.shooter < 0 || !this.game.players.has(ev.shooter)) break;
           const body = ev.victimKind !== "hull";
           const victim = body ? ev.victim : -1;

@@ -35,7 +35,7 @@
 import { Scene, Vector3 } from "@babylonjs/core";
 import { CONFIG, FOG_WALL } from "../config";
 import { NetSoldier } from "../entities/NetSoldier";
-import type { Combatant, Team } from "../entities/Combatant";
+import type { Team } from "../entities/Combatant";
 import { viewerTeam } from "../core/teamView";
 import type { CelMaterialFactory } from "../shaders/CelShader";
 import type { Hittable } from "../systems/CombatSystem";
@@ -410,8 +410,8 @@ export class NetRoster {
    * in the man it hit rather than sparking off the wall behind him, and an
    * immediate hitmarker for the server's `hit` event to correct.
    *
-   * The local slot is skipped for the reason `update` and `combatants` skip it
-   * — that body is drawn as a viewmodel, not a soldier — though the team check
+   * The local slot is skipped for the reason `update` skips it — that body
+   * is drawn as a viewmodel, not a soldier — though the team check
    * would drop it anyway, since it is on the shooter's own side by definition.
    */
   hittablesAgainst(team: Team): Hittable[] {
@@ -428,13 +428,6 @@ export class NetRoster {
       if (soldier.alive && soldier.team !== team) out.push(soldier);
     }
     return out;
-  }
-
-  /** Everything drawable, for the systems that take a combatant list. */
-  combatants(into: Combatant[]): void {
-    for (const soldier of this.soldiers) {
-      if (soldier.slot !== this.localSlot) into.push(soldier);
-    }
   }
 
   dispose(): void {

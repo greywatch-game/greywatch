@@ -58,7 +58,7 @@ import { WebGPUEngine } from "@babylonjs/core";
 import { Game } from "./src/core/Game";
 import { disposeReleasedPipelines } from "./src/core/webgpuLeaks";
 import { loadHavok } from "./src/systems/PhysicsWorld";
-import { openMatchHost } from "./src/net/matchHost";
+import { openMatchHost, type MatchHost } from "./src/net/matchHost";
 import { registerServiceWorker } from "./src/pwa/register";
 
 registerServiceWorker();
@@ -407,12 +407,13 @@ window.addEventListener("DOMContentLoaded", async () => {
   // and answer) and INJECTED like the engine, so the constructor stays
   // synchronous. A Worker that will not come up never fails the boot — the
   // page hosts the match instead, and the console says which and why — but
-  // the page's own host is a module fetched on demand (`matchHost.ts`), and
-  // the fetch that failed the Worker can fail it too: then there is no game
+  // the in-page host is a module fetched on demand (`server/localMatch.ts`,
+  // through `matchHost.ts`'s one dynamic import), and the fetch that failed
+  // the Worker can fail it too: then there is no game
   // to boot, and the plate says so rather than hanging on this stage.
   bootStage("Starting the simulation");
   const query = new URLSearchParams(location.search);
-  let local: Awaited<ReturnType<typeof openMatchHost>>;
+  let local: MatchHost;
   try {
     local = await openMatchHost({ simpage: query.has("simpage") });
   } catch (err) {

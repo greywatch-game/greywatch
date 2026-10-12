@@ -8144,15 +8144,16 @@ export class Game {
   }
 
   /**
-   * `pushers`, refilled in place once a frame by `updateNetWorld`: the
-   * player and every LIVING body — a corpse is under Havok and bends no
-   * grass, and the player's own slot in the roster is left dead. No hull:
-   * armour captures nothing.
+   * `pushers`, refilled in place once a frame by `updateNetWorld`: every
+   * LIVING body, the player's included — a corpse is under Havok and bends
+   * no grass, the player's own slot in the roster is left dead, and a dead
+   * player (the death cam, a benchmark's never-placed body) is nowhere to
+   * bend it. No hull: armour captures nothing.
    */
   private fillPushers(): void {
     const into = this.pushers;
     into.length = 0;
-    into.push(this.player);
+    if (this.player.alive) into.push(this.player);
     const bodies = this.mapBodies();
     for (let i = 0; i < bodies.length; i++) if (bodies[i].alive) into.push(bodies[i]);
   }

@@ -2133,7 +2133,8 @@ every frame, so the conquest occupancy count, the minimap arrow, the audio
 listener's fallback and the leash all keep answering "where is the player" with
 "in that tank". A consequence worth naming: **a tank parked on a flag captures
 it**, because the crew inside it counts exactly as a body standing there would.
-The TANK is not in `Game.combatants` and never captures anything on its own.
+The TANK is not in the combatant list the authority counts occupancy from
+(`SimCore` assembles it each step) and never captures anything on its own.
 
 ## The turret is a MASS, and a rate limit alone could not say so
 
