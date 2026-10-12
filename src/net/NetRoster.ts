@@ -17,14 +17,20 @@
  * belonging to the local player is left disabled.
  *
  * **A SLOT IS NOT A POOL INDEX HERE, and that is the one thing to know before
- * touching this file.** The authority's slot table is the ceiling any map may
- * field — forty-eight, so that a rotation never renumbers a player (see
- * `server/Roster.ts`) — while a round fields the standing map's `perTeam` out
- * of each team's block. So on a map fielding eight a side the bodies are slots
- * 0-7 and 24-31, and this class keeps two views of one pool: `soldiers`, dense,
- * for everything that walks the roster, and `bySlot`, sparse, for everything
- * that arrives off the wire holding a slot number. They are built and thrown
- * away together by `setFielded`, which is the only thing that may write either.
+ * touching this file.** The authority's slot table is laid out in two BLOCKS,
+ * one a team, and a round fields the standing map's `perTeam` out of the
+ * front of each. How wide a block is, is the MATCH's: on a server's match it
+ * is the ceiling any map may field (`CONFIG.bots.maxPerTeam`, so that a
+ * rotation never renumbers a player — see `server/Roster.ts`), so on a map
+ * fielding eight a side the bodies are slots 0-7 and 24-31; on a match the
+ * page owns it is the map's own roster (`BABYLON_EXIT.md` X2.5c C2), so the
+ * same bodies are 0-7 and 8-15. The welcome says which (`Welcome.perTeam`,
+ * `setBlockWidth`), and until it has, the ceiling is assumed. So this class
+ * keeps two views of one pool: `soldiers`, dense, for everything that walks
+ * the roster, and `bySlot`, sparse, for everything that arrives off the wire
+ * holding a slot number. They are built and thrown away together by
+ * `setFielded`, and re-addressed together by `setBlockWidth`, the only two
+ * things that may write either.
  */
 import { Scene, Vector3 } from "@babylonjs/core";
 import { CONFIG, FOG_WALL } from "../config";
@@ -69,6 +75,13 @@ export class NetRoster {
 
   /** Mirrored from the server each snapshot. */
   readonly tickets: [number, number] = [0, 0];
+
+  /**
+   * The authority's slot-table block width a team — team 1's first slot. The
+   * ceiling until a welcome names the match's own (`setBlockWidth`): the only
+   * width a server's match has, and what a welcome that says nothing means.
+   */
+  private blockWidth: number = CONFIG.bots.maxPerTeam;
 
   /** The slot the local player owns, or -1 while spectating. */
   localSlot = -1;
@@ -202,6 +215,53 @@ export class NetRoster {
   }
 
   /**
+   * The match's table is `width` slots a team, as its welcome says
+   * (`Welcome.perTeam`): every body is RE-ADDRESSED to the slot the authority
+   * numbers it by — `team * width + i` for the `i`th of its team — and nothing
+   * is rebuilt. A no-op at the same width.
+   *
+   * **Re-addressed rather than rebuilt, because the welcome and the round's
+   * build arrive in either order.** `Game.buildRound` sizes the pool
+   * (`setFielded`) off the map, and the welcome comes off the wire whenever
+   * the transport delivers it, before or after that; rebuilding rigs here
+   * would dispose bodies the ragdoll pool may be holding, which `setFielded`
+   * may only do after a reset that only the build performs. A body's address
+   * is the one thing the welcome knows that the build did not, so the address
+   * is the one thing that moves — and `buildPool` reads the width too, so a
+   * pool rebuilt afterwards is numbered the same way.
+   *
+   * What hangs off a SLOT rather than a body goes with the old addressing:
+   * `riding` is cleared (the next snapshot restates it, hull by hull), and
+   * `localSlot` is restated by the roster message the authority sends right
+   * behind every welcome (`applyRoster`) — which is why `NetSession` calls
+   * this first thing in its welcome arm, ahead of anything that reads a slot.
+   */
+  setBlockWidth(width: number): void {
+    const was = this.blockWidth;
+    if (width === was) return;
+    this.blockWidth = width;
+    this.bySlot.length = 0;
+    this.riding.length = 0;
+    // `soldiers` is built team 0 first, each team in slot order, so the
+    // `i`th of a team is its `i`th body here — `buildPool`'s own order. A
+    // body's BLOCK is read off its old address, never off `team`: that is
+    // the occupant's side as the roster last said it, and a slot is in its
+    // block whoever sits in it.
+    const seen = [0, 0];
+    for (const soldier of this.soldiers) {
+      const team = soldier.slot < was ? 0 : 1;
+      soldier.slot = team * width + seen[team]++;
+      this.bySlot[soldier.slot] = soldier;
+    }
+    if (seen[0] > width || seen[1] > width) {
+      // A pool wider than the table: two teams' bodies on one address. Not a
+      // case either host produces — an owned match's table is the map the page
+      // built — so it is said rather than quietly drawn wrong.
+      console.error(`[net] a ${seen[0]}-a-side pool does not fit a table ${width} a side`);
+    }
+  }
+
+  /**
    * The body in a slot, or undefined for a slot this map does not field.
    *
    * The one door for everything that arrives off the wire holding a slot
@@ -217,15 +277,16 @@ export class NetRoster {
   /**
    * `perTeam` bodies a side, at the slots the authority will name them by.
    *
-   * The slot arithmetic is `server/Roster.ts`'s: team 1's block begins at
-   * `CONFIG.bots.maxPerTeam` on every map, and a round fills the first
+   * The slot arithmetic is `server/Roster.ts`'s: team 1's block begins at the
+   * table's block width (`blockWidth` — the ceiling on a server's match, the
+   * map's own roster on one the page owns), and a round fills the first
    * `perTeam` of each block. Getting this wrong is not a crash — it is bodies
    * that never move, because every snapshot would be addressed to a hole.
    */
   private buildPool(perTeam: number): void {
     for (let team = 0; team < 2; team++) {
       for (let i = 0; i < perTeam; i++) {
-        const slot = team * CONFIG.bots.maxPerTeam + i;
+        const slot = team * this.blockWidth + i;
         const soldier = new NetSoldier(this.scene, this.mats, slot, team as Team);
         // Wired at construction, because a soldier lives exactly as long as
         // the pool it is in — the same lifetime `BattleSystem` gives a bot's

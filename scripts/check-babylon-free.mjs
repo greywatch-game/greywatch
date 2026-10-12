@@ -1,6 +1,7 @@
 /**
  * Fails the build on any VALUE import path from the authority or from a
- * simulation module that reaches `@babylonjs/core`.
+ * simulation module that reaches `@babylonjs/core` — and on any from the
+ * LOCAL MATCH's two entries that reaches Node.
  *
  * Run from `npm run build`, beside `check-deep-imports.mjs`, and by hand as
  * `node scripts/check-babylon-free.mjs` (pass paths to walk from those roots
@@ -61,13 +62,31 @@
  *   - **Bare specifiers are leaves**, and the one refused is `@babylonjs/core`
  *     and its subpaths — and the same package reached by a RELATIVE path into
  *     `node_modules`, which the resolved file betrays where the specifier does
- *     not. `ws`, `node:*` and `@babylonjs/havok` (a standalone WASM, X2.4's)
- *     are not this gate's business.
+ *     not. `@babylonjs/havok` (a standalone WASM, X2.4's) is not this gate's
+ *     business, and neither is Node — on THIS walk (below).
  *
- * Prints one line on success. On failure prints every module that imports
- * Babylon, the line, and the shortest chain from a root to it, and exits 1.
+ * **The second walk is NODE, from the local match's two entries**
+ * (`BABYLON_EXIT.md` X2.5c C4, "Nothing yet enforces that the local match's
+ * reach imports no Node"). `server/localMatchWorker.ts` and
+ * `server/localMatch.ts` are the host the page runs — in a Worker, or in its
+ * own thread when the Worker does not come up — and everything they reach,
+ * `Match` included, runs in a BROWSER, while every other file in `server/`
+ * is free to be Node's (the socket server, `corecheck`'s `node:crypto`). So
+ * from those two roots, and only from them, a `node:` specifier, `ws`, or a
+ * bare Node built-in by its old name (`fs`, `path` — `node:module`'s
+ * `builtinModules`, so the list is the running Node's own) fails the build,
+ * by the same rules for what counts as an import and the same shortest chain
+ * printed. The browser bundle would refuse most of these too, but only for
+ * the Worker's chunk, only at `vite build`, and as a resolution error naming
+ * no chain; this names the line that brought it in.
+ *
+ * Prints one line per walk on success. On failure prints every module that
+ * imports what its walk refuses, the line, and the shortest chain from a root
+ * to it, and exits 1. Paths on the command line replace the BABYLON walk's
+ * roots and skip the Node walk: a diagnostic, never the gate.
  */
 import ts from "typescript";
+import { builtinModules } from "node:module";
 import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { dirname, extname, join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -114,6 +133,19 @@ const SOURCE = [".ts", ".tsx", ".mts", ".js", ".mjs"];
 const BANNED = /^@babylonjs\/core(?:\/|$)/;
 /** The same package found by resolving a relative path into node_modules. */
 const BANNED_FILE = /\/node_modules\/@babylonjs\/core\//;
+
+/**
+ * The local match's entries — the host the page runs in a browser. Roots of
+ * the NODE walk only; both are already roots of the Babylon walk, as files
+ * under `server/`. A root that does not exist fails, as a simulation's does.
+ */
+const BROWSER_HOSTS = ["server/localMatchWorker.ts", "server/localMatch.ts"];
+/** Node by any name: `node:*`, a built-in's bare name (and its subpaths), and `ws`. */
+const NODE_BUILTINS = new Set(builtinModules.filter((m) => !m.startsWith("_")));
+const NODE_BANNED = (spec) =>
+  spec.startsWith("node:") || spec === "ws" || spec.startsWith("ws/") || NODE_BUILTINS.has(spec.split("/")[0]);
+/** …and `ws` reached by a relative path into node_modules. */
+const NODE_BANNED_FILE = /\/node_modules\/ws\//;
 
 const abs = (p) => resolve(REPO, p);
 const rel = (p) => relative(REPO, p).replaceAll("\\", "/");
@@ -200,6 +232,57 @@ const asked = process.argv.slice(2);
 const dirs = asked.length ? asked.filter((p) => existsSync(abs(p)) && statSync(abs(p)).isDirectory()) : DIRECTORIES;
 const files = asked.length ? asked.filter((p) => !dirs.includes(p)) : SIMULATIONS;
 
+/**
+ * One walk: every value import reachable from `roots` (absolute paths),
+ * breadth first so the chain printed for a hit is the shortest one. A hit is
+ * an import `bannedSpec` refuses by its specifier or `bannedFile` by the file
+ * it resolves to; a problem is anything the walk could not follow.
+ */
+function walk(roots, bannedSpec, bannedFile) {
+  const parent = new Map(roots.map((f) => [f, null]));
+  const queue = [...roots];
+  const hits = [];
+  const problems = [];
+  while (queue.length) {
+    const file = queue.shift();
+    for (const imp of valueImports(file)) {
+      if (imp.dynamic) {
+        problems.push({
+          file,
+          line: imp.line,
+          why: imp.why ?? "dynamic import() with a computed specifier — the gate cannot follow it",
+        });
+        continue;
+      }
+      if (bannedSpec(imp.spec)) {
+        hits.push({ file, line: imp.line, spec: imp.spec });
+        continue;
+      }
+      if (!imp.spec.startsWith(".")) continue;
+      const target = resolveSpec(file, imp.spec);
+      if (!target) {
+        problems.push({ file, line: imp.line, why: `"${imp.spec}" does not resolve` });
+        continue;
+      }
+      // The package reached by a RELATIVE path into node_modules is still the
+      // package: the specifier test above cannot see it, the resolved file can.
+      if (bannedFile.test(target.replaceAll("\\", "/"))) {
+        hits.push({ file, line: imp.line, spec: imp.spec });
+        continue;
+      }
+      if (!SOURCE.includes(extname(target)) || parent.has(target)) continue;
+      parent.set(target, file);
+      queue.push(target);
+    }
+  }
+  const chain = (file) => {
+    const out = [];
+    for (let f = file; f; f = parent.get(f)) out.unshift(rel(f));
+    return out.join("\n        -> ");
+  };
+  return { hits, problems, chain, walked: parent.size };
+}
+
 const problems = [];
 const roots = [];
 for (const dir of dirs) {
@@ -210,56 +293,32 @@ for (const file of files) {
   if (!existsSync(abs(file))) problems.push({ root: file, why: "root does not exist (renamed? update SIMULATIONS)" });
   else roots.push(abs(file));
 }
+const babylon = walk(roots, (spec) => BANNED.test(spec), BANNED_FILE);
 
-// Breadth first, so the chain printed for a hit is the shortest one.
-const parent = new Map(roots.map((f) => [f, null]));
-const queue = [...roots];
-const hits = [];
-while (queue.length) {
-  const file = queue.shift();
-  for (const imp of valueImports(file)) {
-    if (imp.dynamic) {
-      problems.push({
-        file,
-        line: imp.line,
-        why: imp.why ?? "dynamic import() with a computed specifier — the gate cannot follow it",
-      });
-      continue;
-    }
-    if (BANNED.test(imp.spec)) {
-      hits.push({ file, line: imp.line, spec: imp.spec });
-      continue;
-    }
-    if (!imp.spec.startsWith(".")) continue;
-    const target = resolveSpec(file, imp.spec);
-    if (!target) {
-      problems.push({ file, line: imp.line, why: `"${imp.spec}" does not resolve` });
-      continue;
-    }
-    // The package reached by a RELATIVE path into node_modules is still the
-    // package: the specifier test above cannot see it, the resolved file can.
-    if (BANNED_FILE.test(target.replaceAll("\\", "/"))) {
-      hits.push({ file, line: imp.line, spec: imp.spec });
-      continue;
-    }
-    if (!SOURCE.includes(extname(target)) || parent.has(target)) continue;
-    parent.set(target, file);
-    queue.push(target);
+// The Node walk, from the local match's entries — skipped for a diagnostic
+// run, whose paths name Babylon roots.
+const nodeRoots = [];
+if (!asked.length) {
+  for (const file of BROWSER_HOSTS) {
+    if (!existsSync(abs(file))) problems.push({ root: file, why: "root does not exist (renamed? update BROWSER_HOSTS)" });
+    else nodeRoots.push(abs(file));
   }
 }
+const node = asked.length ? null : walk(nodeRoots, NODE_BANNED, NODE_BANNED_FILE);
 
-const chain = (file) => {
-  const out = [];
-  for (let f = file; f; f = parent.get(f)) out.unshift(rel(f));
-  return out.join("\n        -> ");
+const printProblems = (list, chain) => {
+  for (const p of list) {
+    console.error(p.root ? `  ${p.root}  ${p.why}` : `  ${rel(p.file)}:${p.line}  ${p.why}\n    via ${chain(p.file)}`);
+  }
 };
 
-if (hits.length || problems.length) {
-  if (hits.length) {
+const problemCount = problems.length + babylon.problems.length + (node?.problems.length ?? 0);
+if (babylon.hits.length || node?.hits.length || problemCount) {
+  if (babylon.hits.length) {
     console.error("\nA value import path from the authority or a simulation reaches @babylonjs/core:\n");
-    for (const { file, line, spec } of hits) {
+    for (const { file, line, spec } of babylon.hits) {
       console.error(`  ${rel(file)}:${line}  imports "${spec}"`);
-      console.error(`    via ${chain(file)}\n`);
+      console.error(`    via ${babylon.chain(file)}\n`);
     }
     console.error(
       "The authority runs without Babylon and a simulation never imports it (CLAUDE.md," +
@@ -267,11 +326,23 @@ if (hits.length || problems.length) {
         "\nsystem's VIEW, take the value off src/math, or make the import `import type`.\n",
     );
   }
-  if (problems.length) {
-    console.error("\ncheck-babylon-free could not walk the whole graph:\n");
-    for (const p of problems) {
-      console.error(p.root ? `  ${p.root}  ${p.why}` : `  ${rel(p.file)}:${p.line}  ${p.why}\n    via ${chain(p.file)}`);
+  if (node?.hits.length) {
+    console.error("\nA value import path from the local match's host reaches Node:\n");
+    for (const { file, line, spec } of node.hits) {
+      console.error(`  ${rel(file)}:${line}  imports "${spec}"`);
+      console.error(`    via ${node.chain(file)}\n`);
     }
+    console.error(
+      "server/localMatch.ts and everything it reaches run in a browser — in a Worker, or in" +
+        "\nthe page's own thread (BABYLON_EXIT.md X2.5c C4; server/localMatch.ts). Keep what" +
+        "\nneeds Node in server/index.ts or a script, or make the import `import type`.\n",
+    );
+  }
+  if (problemCount) {
+    console.error("\ncheck-babylon-free could not walk the whole graph:\n");
+    printProblems(problems, babylon.chain);
+    printProblems(babylon.problems, babylon.chain);
+    if (node) printProblems(node.problems, node.chain);
     console.error("");
   }
   process.exit(1);
@@ -280,4 +351,7 @@ if (hits.length || problems.length) {
 const named = asked.length
   ? asked.join(", ")
   : `${DIRECTORIES.map((d) => `${d}/`).join(", ")} or the ${SIMULATIONS.length} simulations`;
-console.log(`no path to @babylonjs/core from ${named} (${parent.size} modules walked)`);
+console.log(`no path to @babylonjs/core from ${named} (${babylon.walked} modules walked)`);
+if (node) {
+  console.log(`no path to Node from the local match's host, ${BROWSER_HOSTS.join(" or ")} (${node.walked} modules walked)`);
+}

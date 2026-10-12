@@ -41,7 +41,14 @@ on a `MessageChannel` in the page's own thread, or in Node under `corecheck` —
 so **nothing they reach may import Node**: no `node:` module and no `ws`.
 `Match` and everything it imports is inside that reach, which is why `Match`
 reaches a peer through a `PeerTransport` and the `ws` adapter lives in
-`index.ts`, the one file a page never loads.
+`index.ts`, the one file a page never loads. From X2.5c C4 that is a gate
+rather than a rule in the headers: `scripts/check-babylon-free.mjs` walks the
+two files' reach a second time for Node — a `node:` specifier, `ws`, or a
+built-in by its bare name — and `npm run build` fails on one, printing the
+chain. The page reaches them as a Worker URL (`src/net/localHost.ts`), and
+`localMatch.ts` also through that file's one dynamic `import()`, taken only
+when the Worker does not come up — the one value import of this directory
+anywhere in `src/`.
 
 ## The one test
 

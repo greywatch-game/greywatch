@@ -5,7 +5,8 @@
  * Owns: the open match, the benchmark's fight fold, and the two adapters a
  * port needs — `portPeer`, the `PeerTransport` a person's port is to `Match`,
  * and the handshake that reads a `join` off it, as `server/index.ts` reads
- * one off a socket.
+ * one off a socket, and hands the port to `Match.admit` — or to
+ * `Match.watch`, when the owner dialled a WATCHER (X2.5c C4).
  * Invariants:
  * - **The owner's calls run one at a time, in the order they were posted**
  *   (`LocalMatch`'s header): a call is answered only after every call before
@@ -24,11 +25,17 @@
  *   builds is the one way the two can disagree.
  * - **The host runs anywhere a port does** — in a Worker
  *   (`localMatchWorker.ts`), on a `MessageChannel` in the page's own thread,
- *   or in Node (`server/corecheck.ts`), the three being one code path.
- * Never: import Node (`node:*`, `ws`) — this file and everything it reaches,
- * `Match` included, runs in a browser; read a URL or the DOM; or read a
- * clock that decides anything — the step's clock is the owner's (`advance`),
- * and the one clock read here, the timing clock, only measures.
+ *   or in Node (`server/corecheck.ts`), the three being one code path. The
+ *   page's thread reaches this file through `src/net/localHost.ts`'s one
+ *   dynamic `import()`, taken only when the Worker did not come up — the one
+ *   value import of `server/` anywhere in `src/`.
+ * Never: import Node (`node:*`, `ws`, a built-in) — this file and
+ * everything it reaches, `Match` included, runs in a browser, and
+ * `scripts/check-babylon-free.mjs` walks its reach from here and from
+ * `localMatchWorker.ts` and fails the build on one; read a URL or the DOM;
+ * or read a clock that decides anything — the step's clock is the owner's
+ * (`advance`, and the time it held, `hold`), and the one clock read here,
+ * the timing clock, only measures.
  */
 import { MAPS } from "../src/world/maps";
 import { encode, PROTOCOL_VERSION } from "../src/net/protocol";
@@ -173,6 +180,9 @@ export function serveLocalMatch(owner: OwnerPort): void {
           timing: msg.timed && steps > 0 ? m.game.frame.timing : null,
         };
       }
+      case "hold":
+        need().hold(msg.dt);
+        return { t: "done", call };
       case "settle":
         return { t: "done", call };
       case "markFight":
@@ -194,9 +204,11 @@ export function serveLocalMatch(owner: OwnerPort): void {
    * A person's port, from `LocalMatch.dial`: its first message must be a
    * `join` at this build's protocol, and then `Match` owns it — `admit`
    * calls `listen` before its first await, so no frame falls between the
-   * two handlers.
+   * two handlers. `watch`, the OWNER's word on the `connect` and never the
+   * join's: the same handshake, and then `Match.watch` instead of `admit` —
+   * no seat, so the join's name and kit mean nothing either.
    */
-  const connect = (port: MessagePort): void => {
+  const connect = (port: MessagePort, watch: boolean): void => {
     const peer = portPeer(port);
     const refuse = (reason: string): void => {
       peer.send(encode({ t: "rejected", reason }));
@@ -216,15 +228,18 @@ export function serveLocalMatch(owner: OwnerPort): void {
       if (!match) return refuse("no match is open");
       // The join's match, map and bots are a server's routing and mean
       // nothing here: the owner chose the match, and this is it.
-      match.admit(peer, msg.name, msg.weapon, msg.equipment, msg.throwable).catch((err: unknown) => {
-        console.error("[local match] admit failed:", err);
+      const seated = watch
+        ? match.watch(peer)
+        : match.admit(peer, msg.name, msg.weapon, msg.equipment, msg.throwable);
+      seated.catch((err: unknown) => {
+        console.error(`[local match] ${watch ? "watch" : "admit"} failed:`, err);
         refuse("could not start a match");
       });
     };
   };
 
   const run = async (msg: OwnerMessage): Promise<void> => {
-    if (msg.t === "connect") return connect(msg.port);
+    if (msg.t === "connect") return connect(msg.port, msg.watch);
     try {
       reply(await answer(msg));
     } catch (err: unknown) {

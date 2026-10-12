@@ -57,15 +57,16 @@
  * everything. It ends on its own clock, and the deploy screen it opens subtracts
  * the time already spent, so a life costs what it always did.
  *
- * `deploy` simulates nothing and never may — offline the world is genuinely held
- * while the map is up. In a NETPLAY round it is the one state outside the fight
- * that still steps the netplay half of a frame, which is not the same thing: the
+ * `deploy` simulates nothing and never may — in the page's own match the world
+ * is genuinely held while the map is up (nothing advances it). In a SERVER's
+ * match it is the one state outside the fight that still steps the netplay
+ * half of a frame, which is not the same thing: the
  * authority has not paused, and everything this screen shows — the flags its
  * offer is derived from, the tickets on the strip under it, the bodies moving
  * behind it — arrives from a frame. That is `roundBehind` below, and it is the
  * one STEP that declares it. It is also the state a player LEAVES by asking
- * rather than by acting: `onDeploy` sends a request and the server's own spawn
- * event is what puts them in the world.
+ * rather than by acting: `onDeploy` sends a request and the authority's own
+ * spawn event is what puts them in the world.
  *
  * `editor` sits outside the cycle: a dev-only side state reachable from anywhere
  * with F2, and leaving it always restarts the round rather than resuming,
@@ -78,7 +79,7 @@
  * it — the camera stands where the script says, and for the round at the end
  * the world is stepped at a FIXED step with nobody in the player's slot — so
  * nothing the player does reaches it but Escape, which stops it. It ships, and
- * it is offline only.
+ * it is the page's own match only — joined as a watcher, never a seat.
  */
 export type StepState =
   | "menu"
@@ -96,9 +97,9 @@ export type StepState =
  * it covered rather than moving the game on.
  *
  * `paused` is the one that stops something. Nothing simulates while it is up
- * offline; the scene still renders, which is what makes a paused round look held
- * rather than gone. In a netplay round it stops nothing at all — see
- * `holdsWorld`.
+ * over the page's own match; the scene still renders, which is what makes a
+ * paused round look held rather than gone. Over a server's match it stops
+ * nothing at all — see `holdsWorld`.
  *
  * `loadout` is the kit screen, and it is deliberately unreachable from `playing`
  * and from the pause menu: a round you are already standing in is not somewhere
@@ -112,9 +113,9 @@ export type StepState =
  *
  * `lobby` covers `menu` and only `menu`. Picking a match out of it leaves
  * through `startRound` exactly as Deploy does, which is why the lobby is not a
- * step in the cycle — a networked round and a single-player one are the same
- * `loading -> deploy -> playing` cycle, differing only in whether `Game.net`
- * exists.
+ * step in the cycle — a server's round and the page's own are the same
+ * `loading -> deploy -> playing` cycle, differing only in who hosts the match
+ * (`NetSession.local`).
  */
 export type LidState = "paused" | "loadout" | "settings" | "lobby";
 
@@ -140,7 +141,7 @@ export type ScreenSpec = {
   covers: readonly GameState[] | null;
 
   /**
-   * OFFLINE: is the world under this screen genuinely STOPPED?
+   * In the page's OWN match: is the world under this screen genuinely STOPPED?
    *
    * Only the pause card is, and it is asked of the whole stack rather than of
    * the top of it (`ScreenStack.holdsWorld`) — the settings screen holds nothing
@@ -149,19 +150,20 @@ export type ScreenSpec = {
    * freeze with it and fade with it, and the failure either way round is a fight
    * fading off a still screen or a still screen catching up in one jump.
    *
-   * The deploy screen answers `false` even though offline it holds the world
-   * just as hard: the gauges under it are the ones a player reads while
+   * The deploy screen answers `false` even though it holds the page's own
+   * match just as hard: the gauges under it are the ones a player reads while
    * choosing, and the countdown on the card is a clock of its own.
    *
-   * In a NETPLAY round nothing holds the world, because the authority never
-   * heard the key — which is why `Game.worldHeld` asks whether there is a
-   * session at all before it asks this.
+   * In a SERVER's match nothing holds the world, because the authority never
+   * heard the key — which is why `Game.worldHeld` asks who hosts the round
+   * before it asks this.
    */
   holdsWorld: boolean;
 
   /**
-   * ONLINE: does the authority's fight carry on behind this screen with nothing
-   * else stepping the frame that draws it?
+   * In a SERVER's match: does the authority's fight carry on behind this screen
+   * with nothing else stepping the frame that draws it? (In the page's own
+   * match nothing is behind any of these to carry on — they hold it.)
    *
    * True for every lid, and the answer is the same for all four for one reason:
    * the round underneath does not care which screen is on top of it, only
@@ -215,8 +217,9 @@ const SCREENS: Record<GameState, ScreenSpec> = {
   roundover: { covers: null, holdsWorld: false, roundBehind: false, inRound: false },
   editor: { covers: null, holdsWorld: false, roundBehind: false, inRound: false },
   // A round is standing and the script is in it, so the board is owed; there
-  // is never a match behind it (offline only) and nothing may cover it — a
-  // pause over a benchmark would be frames of a pause card in its capture.
+  // is never a server's match behind it (the page's own only) and nothing may
+  // cover it — a pause over a benchmark would be frames of a pause card in its
+  // capture.
   bench: { covers: null, holdsWorld: false, roundBehind: false, inRound: true },
 
   // The three states a round is in are exactly the three a pause may cover, so
@@ -284,8 +287,8 @@ export class ScreenStack {
   }
 
   /**
-   * OFFLINE: is the world on screen genuinely stopped? Asked of the whole stack,
-   * because a pause under a settings screen is still a pause.
+   * In the page's OWN match: is the world on screen genuinely stopped? Asked of
+   * the whole stack, because a pause under a settings screen is still a pause.
    */
   get holdsWorld(): boolean {
     return (
@@ -293,7 +296,7 @@ export class ScreenStack {
     );
   }
 
-  /** ONLINE: does this frame owe the drawing half of the authority's? */
+  /** In a SERVER's match: does this frame owe the drawing half of the authority's? */
   get roundBehind(): boolean {
     return SCREENS[this.current].roundBehind;
   }

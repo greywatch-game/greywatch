@@ -82,6 +82,18 @@
  * the owner channel, and a person joins over a port through the page's real
  * `Connection` — welcomed, deployed, an honest report uncorrected, the
  * scoreboard's ping row filled, and told why when the owner closes the match.
+ * X2.5c C4 adds, on the same run: the welcome names the table's block width
+ * (the map's own); a deploy made while the owner HOLDS the clock is answered
+ * with no advance (the owner's respawn clock, the owned deploy's flush); and
+ * a `hold` passes the clock without a step, so the offset a client samples
+ * does not drop with it.
+ *
+ * And `greyfen/watch` (X2.5c C4): a WATCHER (`Match.watch`) connected for the
+ * whole of the bench's round over the local transport — welcomed at no slot,
+ * sent every snapshot and the shared events, and the fight hash still the
+ * core's; then, white-box on an owned `Match`, that an addressed event never
+ * reaches it, that it holds no seat, and that it is turned away when the
+ * match closes.
  *
  * The person is always slot 0, team 0: the first seat `Roster.claim` hands
  * out, which `MatchHost` asserts. `-- --list` also prints each map's event
@@ -1288,7 +1300,7 @@ async function until(ready: () => boolean, ms = 2000): Promise<boolean> {
  * dialled, so the protocol's JSON goes both ways and through `Match`'s own
  * door:
  * - welcomed at slot 0 of the map's table;
- * - a `deploy` answered by a `spawn` on the owner's clock;
+ * - a `deploy` answered by a `spawn` while the owner holds the clock;
  * - an honest `move` at the spawn never corrected;
  * - the scoreboard's ping row filled, answered by the host (`portPeer`);
  * - a second match refused while one is open;
@@ -1332,8 +1344,11 @@ async function localMatch(world: World, c: Checks, benchHex: string): Promise<vo
   // A person, through the page's own `Connection`.
   const conn = new Connection();
   const frames: ServerMessage[] = [];
+  /** When each of `frames` was handled, on the clock `Connection` samples its offset on. */
+  const handledAt: number[] = [];
   conn.onMessage = (m) => {
     frames.push(m);
+    handledAt.push(performance.now());
     // NetSession's answer to a refusal: the session ends, nothing redials.
     if (m.t === "rejected") conn.close();
   };
@@ -1346,11 +1361,19 @@ async function localMatch(world: World, c: Checks, benchHex: string): Promise<vo
       welcome.mapId === world.def.id,
     `welcomed ${welcomed}, state ${conn.state}, ${JSON.stringify(welcome)}`,
   );
+  const perTeam = perTeamOf(world.def.layout);
+  c.that(
+    `${tag}: the welcome names the slot table's block width — the map's own roster, ${perTeam} a side, where a server's is ${CONFIG.bots.maxPerTeam}`,
+    welcome?.perTeam === perTeam,
+    `perTeam ${welcome?.perTeam}`,
+  );
 
-  // The deploy is answered on the owner's clock: advanced a tick at a time
-  // until the `spawn` arrives.
+  // The deploy is answered while the owner HOLDS the clock (X2.5c C4): the
+  // owner holds the respawn clock, so the core honours it at submit, and an
+  // owned match flushes the answer at once rather than on a snapshot. The
+  // owner channel is settled first, so nothing it posted is still stepping,
+  // and no advance is posted until the `spawn` is in.
   const spawn = world.def.layout.spawns.findIndex((s) => s.team === PERSON_TEAM);
-  conn.send({ t: "deploy", spawn });
   const spawned = (): { pos: Vec3; yaw: number } | undefined => {
     for (const f of frames) {
       if (f.t !== "events") continue;
@@ -1358,16 +1381,19 @@ async function localMatch(world: World, c: Checks, benchHex: string): Promise<vo
     }
     return undefined;
   };
-  for (let i = 0; i < 4 * TICK_HZ && !spawned(); i++) {
-    owner.advance(1 / TICK_HZ, false);
-    await owner.settle();
-    await until(() => spawned() !== undefined, 5);
-  }
+  const snapCount = (): number => frames.filter((f) => f.t === "snap").length;
+  await owner.settle();
+  const snapsBefore = snapCount();
+  const advancedBefore = answers.length;
+  conn.send({ t: "deploy", spawn });
+  const answeredHeld = await until(() => spawned() !== undefined);
+  const snapsHeld = snapCount() - snapsBefore;
+  const advancesHeld = answers.length - advancedBefore;
   const at = spawned();
   c.that(
-    `${tag}: a \`deploy\` over the port is answered by a \`spawn\` as the owner advances`,
-    at !== undefined,
-    `${frames.length} frames, none a spawn for slot ${PERSON_SLOT}`,
+    `${tag}: a \`deploy\` made while the owner holds the clock is answered by a \`spawn\` with no advance and no snapshot — the respawn clock is the owner's, and the answer leaves at once`,
+    answeredHeld && snapsHeld === 0 && advancesHeld === 0,
+    `answered ${answeredHeld}, ${snapsHeld} snapshots and ${advancesHeld} advances meanwhile`,
   );
 
   // An honest report and a few seconds of clock: never corrected, the
@@ -1415,6 +1441,62 @@ async function localMatch(world: World, c: Checks, benchHex: string): Promise<vo
     `no pings row for slot ${PERSON_SLOT} in ${seconds} s`,
   );
 
+  // A HOLD (`Match.hold`): the owner keeps the world still for real time and
+  // then hands that time to the clock, as the page does for a pause or the
+  // deploy screen. The snapshot after it is stamped the hold past what its
+  // steps say — and so the offset sample a client takes off it (`serverNow -
+  // localNow`, `Connection`'s) does not drop by the hold, which is the whole
+  // point: a client's window keeps its MAXIMUM, so a stopped clock would park
+  // render time the hold ahead of every body. The steps themselves run
+  // faster than real time here, which offsets both samples alike. An honest
+  // `move` after it is still not corrected: a hold is no stamp jump.
+  const HOLD_S = 1;
+  await owner.settle();
+  await settle(50);
+  const snapIndex = (): number[] => frames.flatMap((f, i) => (f.t === "snap" ? [i] : []));
+  const heldFrom = snapIndex().length;
+  const lastBefore = snapIndex()[heldFrom - 1];
+  await settle(HOLD_S * 1000);
+  owner.hold(HOLD_S);
+  for (let i = 0; i < 2 * TICK_HZ / SNAPSHOT_HZ; i++) owner.advance(1 / TICK_HZ, false);
+  await owner.settle();
+  await until(() => snapIndex().length >= heldFrom + 2, 500);
+  const firstAfter = snapIndex()[heldFrom];
+  const stampOf = (i: number | undefined): number => {
+    const f = i === undefined ? undefined : frames[i];
+    return f?.t === "snap" ? f.now : NaN;
+  };
+  const heldGap = stampOf(firstAfter) - stampOf(lastBefore);
+  const sampleBefore = stampOf(lastBefore) - handledAt[lastBefore];
+  const sampleAfter = firstAfter === undefined ? NaN : stampOf(firstAfter) - handledAt[firstAfter];
+  const lookAfter = look + 0.25;
+  if (at) {
+    conn.send({
+      t: "move",
+      seq: 2,
+      time: performance.now(),
+      pos: at.pos,
+      yaw: lookAfter,
+      pitch: 0,
+      crouching: false,
+      sprinting: false,
+    });
+  }
+  const turnedAfter = (): boolean =>
+    frames.some((f) => f.t === "snap" && f.entities.some((e) => e.i === PERSON_SLOT && Math.abs(e.yaw - lookAfter) < 1e-3));
+  for (let i = 0; i < 4 && !turnedAfter(); i++) {
+    for (let k = 0; k < TICK_HZ / SNAPSHOT_HZ; k++) owner.advance(1 / TICK_HZ, false);
+    await owner.settle();
+    await until(turnedAfter, 50);
+  }
+  c.that(
+    `${tag}: a ${HOLD_S} s hold passes the clock and steps nothing — the next snapshot is stamped ${HOLD_S * 1000} ms past its steps, the offset a client samples does not drop with it, and an honest \`move\` after it is not corrected`,
+    Math.abs(heldGap - (HOLD_S * 1000 + 1000 / SNAPSHOT_HZ)) < 1e-3 &&
+      Math.abs(sampleAfter - sampleBefore) < (HOLD_S * 1000) / 2 &&
+      turnedAfter() && frames.every((f) => f.t !== "correct"),
+    `gap ${heldGap.toFixed(3)} ms, offset sample ${sampleBefore.toFixed(1)} -> ${sampleAfter.toFixed(1)} ms, turned ${turnedAfter()}, ${frames.filter((f) => f.t === "correct").length} corrections`,
+  );
+
   const twice = await owner.open(world.def.id).then(
     () => "opened",
     (err: Error) => err.message,
@@ -1442,7 +1524,126 @@ async function localMatch(world: World, c: Checks, benchHex: string): Promise<vo
     refused && reason?.reason === "match closed" && laterReason?.reason === "no match is open",
     `closed ${refused}, ${JSON.stringify(reason)}, then ${JSON.stringify(laterReason)}`,
   );
+  owner.dispose();
   channel.port1.close();
+}
+
+/**
+ * **A WATCHER sees the fight and is nobody in it** (`BABYLON_EXIT.md` X2.5c
+ * C4, "The benchmark has to WATCH its fight, and a peer is a seat"). The
+ * bench's round over the local transport again, with a watcher dialled by the
+ * owner (`LocalMatch.dial({ watch: true })`) through the page's real
+ * `Connection` and connected for the whole of it:
+ * - welcomed at slot -1, team 0, with the table's block width, and handed
+ *   the roster and the board;
+ * - the fight hash is still the core's (`benchHex`) — no seat was claimed,
+ *   no bot benched, no person added, so the fight cannot have moved;
+ * - every snapshot reaches it, and the round's shared events, and the ping
+ *   table it is sent has no row for it;
+ * - the owner's `close` turns it away as it turns a person away.
+ * Then the same match's TABLES, white-box on an owned `Match` with fake
+ * transports: an addressed event reaches the person it names and never the
+ * watcher, the shared one reaches both, the watcher holds no seat and no
+ * body; a watcher is refused before the owner's first `begin`, and a
+ * server's match refuses to be watched at all.
+ */
+async function watchMatch(world: World, c: Checks, benchHex: string): Promise<void> {
+  const tag = "watch";
+  const perTeam = perTeamOf(world.def.layout);
+  const channel = new MessageChannel();
+  serveLocalMatch(channel.port2);
+  const owner = new LocalMatch(channel.port1);
+  const failed: string[] = [];
+  owner.onFailed = (m) => failed.push(m);
+  await owner.open(world.def.id);
+  await quietly(() => owner.begin(BENCH_ROUND));
+
+  const conn = new Connection();
+  const frames: ServerMessage[] = [];
+  conn.onMessage = (m) => {
+    frames.push(m);
+    if (m.t === "rejected") conn.close();
+  };
+  await quietly(async () => {
+    conn.connect({ name: "watcher", dial: () => owner.dial({ watch: true }) });
+    await until(() => frames.some((f) => f.t === "welcome") && frames.some((f) => f.t === "scores"));
+  });
+  const welcome = frames.find((f): f is Extract<ServerMessage, { t: "welcome" }> => f.t === "welcome");
+  c.that(
+    `${tag}: a watcher the owner dials is welcomed at no slot (-1), team 0, with the table's block width (${perTeam} a side), and handed the roster and the board`,
+    conn.state === "open" && welcome?.slot === -1 && welcome.team === 0 && welcome.perTeam === perTeam &&
+      frames.some((f) => f.t === "roster") && frames.some((f) => f.t === "scores"),
+    `state ${conn.state}, ${JSON.stringify(welcome)}`,
+  );
+
+  await owner.markFight();
+  for (let i = 0; i < BENCH_STEPS; i++) owner.advance(BENCH.dt, false);
+  const fight = await owner.fight();
+  const snapsOwed = Math.floor(BENCH_STEPS / (TICK_HZ / SNAPSHOT_HZ));
+  const snaps = (): number => frames.filter((f) => f.t === "snap").length;
+  await until(() => snaps() >= snapsOwed);
+  c.that(
+    `${tag}: watched for the whole of the bench's round, the fight hash is still the core's (${fight.hex}) — the watcher moved nothing`,
+    fight.hex === benchHex && failed.length === 0,
+    `${fight.hex} vs ${benchHex}, failed [${failed.join("; ")}]`,
+  );
+  const kills = frames.reduce(
+    (n, f) => n + (f.t === "events" ? f.events.filter((e) => e.e === "kill").length : 0),
+    0,
+  );
+  const pings = frames.filter((f): f is Extract<ServerMessage, { t: "pings" }> => f.t === "pings");
+  c.that(
+    `${tag}: the watcher is sent every snapshot (${snapsOwed}), the round's shared events, and a ping table with no row for it`,
+    snaps() === snapsOwed && kills > 0 && pings.length > 0 &&
+      pings.every((p) => p.ms.length === 2 * perTeam && p.ms.every((ms) => ms === -1)),
+    `${snaps()} snapshots, ${kills} kills, ${pings.length} ping tables ${JSON.stringify(pings[0]?.ms)}`,
+  );
+
+  await quietly(() => owner.close());
+  const closed = await until(() => conn.state === "closed");
+  const reason = frames.find((f): f is Extract<ServerMessage, { t: "rejected" }> => f.t === "rejected");
+  c.that(
+    `${tag}: the owner's \`close\` turns the watcher away as it does a person (\`rejected: match closed\`)`,
+    closed && reason?.reason === "match closed",
+    `closed ${closed}, ${JSON.stringify(reason)}`,
+  );
+  owner.dispose();
+  channel.port1.close();
+
+  // The tables, white-box: a person and a watcher on one owned match.
+  const m = new Match("local", { map: world.def.id, owned: true });
+  const early = new FakeTransport();
+  await quietly(() => m.watch(early));
+  await quietly(() => m.begin(BENCH_ROUND));
+  const person = new FakeTransport();
+  const watcher = new FakeTransport();
+  await quietly(() => m.admit(person, "person"));
+  await quietly(() => m.watch(watcher));
+  m["queueTo"](PERSON_SLOT, { e: "nearmiss", at: [0, 0, 0] });
+  m["queue"]({ e: "neutralised", point: "watch" });
+  m["flushEvents"]();
+  const heard = (t: FakeTransport): string[] =>
+    t.frames.flatMap((f) => (f.t === "events" ? (f.events as Array<{ e: string }>).map((e) => e.e) : []));
+  const server = new Match("server", { map: world.def.id });
+  const refused = await server.watch(new FakeTransport()).then(
+    () => "watched",
+    (err: Error) => err.message,
+  );
+  c.that(
+    `${tag}: an addressed event reaches its person and never the watcher, a shared one reaches both; the watcher holds no seat and no body; one before the first \`begin\` is refused, and a server's match cannot be watched`,
+    heard(person).join() === "nearmiss,neutralised" && heard(watcher).join() === "neutralised" &&
+      m.roster.humanCount === 1 && m.game.players.size === 1 &&
+      early.frames.some((f) => f.t === "rejected" && f.reason === "no round begun") && !early.open &&
+      refused.includes("only an owned match"),
+    `person [${heard(person).join()}], watcher [${heard(watcher).join()}], humans ${m.roster.humanCount}, players ${m.game.players.size}, early ${JSON.stringify(early.frames)}, server ${refused}`,
+  );
+  await quietly(async () => m.close());
+  c.that(
+    `${tag}: \`close\` on the match itself dismisses its watchers with the person`,
+    watcher.frames.some((f) => f.t === "rejected" && f.reason === "match closed") && !watcher.open &&
+      person.frames.some((f) => f.t === "rejected" && f.reason === "match closed"),
+    `watcher ${JSON.stringify(watcher.frames.slice(-1))}`,
+  );
 }
 
 /**
@@ -2507,6 +2708,9 @@ async function main(): Promise<void> {
       const local = new Checks("greyfen/local");
       await localMatch(world, local, benchHex);
       for (const r of local.results) report(local.tag, r);
+      const watch = new Checks("greyfen/watch");
+      await watchMatch(world, watch, benchHex);
+      for (const r of watch.results) report(watch.tag, r);
     }
     if (id === "coldharbour") {
       const checks = new Checks("coldharbour/drive");

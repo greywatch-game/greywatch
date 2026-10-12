@@ -33,8 +33,13 @@ EVERY call is what keeps the outgoing order the immediate callbacks' order**:
 nothing it queues itself can land inside one call's events — and the core
 writes a person's `hit` LAST of its round's events, where `Match.onShot` used
 to queue it, because the shooter's hit credits pair off FIFO. A kind the wire
-does not carry (a footstep, a tracer, a hull gun's `hit`) is drained and
-dropped undecoded. `simulate` reads the same ring for its fight hash and
+does not carry (a footstep, a tracer) is drained and dropped undecoded. **A
+`hit` of any other cause rides the wire too, but only where the shooter's
+screen owes it a mark** (`BABYLON_EXIT.md` X2.5c C4): a blast on a body, a
+burn or a hull gun's round that killed one, and the tracks — what the page
+predicts none of, which offline had always marked off the core's own `hit`
+and a match never had. It carries a `cause`; absent is a round, which is
+what an older server sends. `simulate` reads the same ring for its fight hash and
 `--events`, folding each event's own `tick`.
 
 **A person reaches the core through ONE door, `SimCore.submit`, and `Match`
@@ -1149,7 +1154,8 @@ the same `accrue`. The step is `STEP_MS` either way, and `1 / TICK_HZ`
 seconds is exactly `STEP_MS` in floating point, so a `dt` of one tick — the
 benchmark's `CONFIG.profiling.bench.dt` — is exactly one step, and any other
 cadence is the same steps taken at different moments. Nothing steps between
-calls, which is what a HOLD is: time the owner never hands over.
+calls: time the owner does not hand to `advance` is never stepped, which is
+what a HOLD is — and what a hold still owes the CLOCK is below.
 
 Everything else an owned match changes follows from it having an owner rather
 than a lobby:
@@ -1181,6 +1187,15 @@ than a lobby:
 - **A step that throws reaches the owner**, out of `advance`, rather than
   `abandon`ing the match as the server's loop does: the owner is the one with
   somewhere to say so, and it is the one that closes the match.
+- **The RESPAWN clock is the owner's** (X2.5c C4): the core is built with
+  `hostHoldsRespawn`, as the offline page's own core always was, so a
+  `deploy` is honoured the moment it is submitted rather than once the core's
+  reinforcement clock runs out. Whoever owns the world's clock owns this one:
+  the page holds the world under its deploy screen and counts the respawn
+  down there, so a reinforcement clock that stepped only when the owner
+  advanced would hold the deploy hostage to a world the page is deliberately
+  not moving. One door either way (`SimCore.deployPerson`), the spawn stream
+  drawn the same way; the benchmark seats nobody, so its fight cannot move.
 
 `npm run corecheck`'s `greyfen/owned` asserts all of it, and plays the bench's
 round three ways — on a core built as the offline page builds it, through an
@@ -1189,10 +1204,101 @@ must be one event stream and fold the bench's own `FightHash`
 (`src/bench/fightHash.ts`). Through an owned match in Node, all seven of the
 bench's banked fight hashes reproduce.
 
-**Owed by X2.5c C4, which first puts a client in front of one**: the client
-still assumes the ceiling's layout (`NetRoster.buildPool` numbers team 1 from
-`CONFIG.bots.maxPerTeam`), and the claim gates that read the wall clock —
-the rate buckets, `arrivalClock` — do not know a hold happened.
+### Holding the world, and what a hold still owes
+
+The page holds an owned match's world whenever its lid or its deploy screen
+says the world stands still, and there are three things a hold must not
+break, each with its own answer.
+
+**The clock offset: a hold is HANDED OVER, as clock and not as steps.**
+`Connection` estimates the server's clock as the MAXIMUM of a window of
+samples (`serverNow - localNow`), so a server clock that simply STOPPED for a
+hold of P seconds would make every sample after it P lower, and the stale
+maximum would keep render time P ahead of the server for the length of the
+window: every body parked at its newest snapshot, every rewound shot stamped
+in the future. Resetting the client's window on release would fix it — for a
+client that knew a hold had happened, which is a special path, and a remote
+client must never take one. So the fix is on the authority's side of the
+wire: `Match.hold(dt)` (owner call `hold`, `LocalMatch.hold`) passes `dt` into
+the simulation's clock through `SimCore.drop` — the same honest jump a
+dropped backlog already is — and steps nothing. The page posts it every frame
+for the part of the frame's real time it did not step (a pause, the deploy
+screen, a frame cap's clip, a benchmark vantage), so the snapshot stamps stay
+continuous with the wall the client samples against and nothing on the
+client can tell a hold happened. It is not an outcome: `SimCore.now` stamps
+and rewinds and decides nothing. Refused as `advance` is — on a match that is
+not owned, inside a build, with no round standing, on a `dt` that is not a
+finite non-negative number.
+
+**The claim gates: they read the wall clock, and a hold is wall time.** The
+rate buckets refill over it and `onStamp` bounds a peer's stamps against
+when its messages ARRIVE — both on the clock a held page's own stamps are on,
+so an honest report after a hold reads as an honest interval, not a stamp
+jump, and nothing on that side needed to know.
+
+**An ask made while held must still be answered.** `Match` handles a message
+on arrival, not on a tick — but RELAYED events leave only with a snapshot
+(`flushEvents`, from `broadcastSnapshot`), and a snapshot is a step. The one
+ask the page makes while it holds the world is the deploy, so on an owned
+match `onDeploy` drains and FLUSHES the queue after it submits: the `spawn`
+answering it leaves on the person's own port while the clock stands still.
+Narrow on purpose, by this step's rule that the page's own match is no better
+a transport than a server's: every other answer still rides its snapshot.
+What the flush costs is order against the snapshot only — whatever the ticks
+since the last one queued leaves ahead of the snapshot that shows it, in its
+own order and with every event's audience intact.
+
+`greyfen/local` asserts all three: a deploy answered with no advance and no
+snapshot between, and a one-second hold after which the next snapshot is
+stamped a second past its steps, the offset sample a client takes does not
+drop, and an honest `move` is still not corrected.
+
+### A watcher: a connection with no seat
+
+**A peer is a seat** — `admit` claims a slot, benches the bot in it and adds a
+person to the core, which is right for a person and is a different FIGHT for
+anybody who only wants to see one. The benchmark is that somebody: it draws
+the round it measures, and once the page's frame and mirrors are gone the
+wire is the only picture there is. So an owned match lets its owner dial a
+WATCHER (`LocalMatch.dial({ watch: true })`, the `connect` call's `watch`, and
+`Match.watch`): the same handshake as a person, and then a welcome at
+`slot: -1` and `team: 0`, the table's width, the roster and the board — and
+then every broadcast (snapshots, the roster, the scores, the mines, the ping
+table) and every SHARED event, never an addressed one. Nothing about it
+reaches the core: no `Roster.claim`, no `addPlayer`, no `relay`, so the bench's
+fight hash cannot move with it. Watchers live in their own set, so `peers`
+stays a map of seats and nothing slot-indexed — the ping table, the ballot, an
+addressed event — ever meets one; `close` and `abandon` turn them away with
+the seated. What a watcher says is ignored.
+
+**It is the OWNER's door and never a peer's.** It rides the owner channel's
+`connect`, not the join, and no `ClientMessage` can ask for it: a public
+spectator on a match server would be a client sent every body on the map
+while being nobody in it, which is exactly the read a wallhack wants. On the
+page's own match, the only one watching is the page. `greyfen/watch` asserts
+it: a watcher connected for the whole of the bench's round over the local
+transport leaves the fight hash the core's, is sent every snapshot and the
+shared events and a ping table with no row for it, and is turned away when
+the owner closes; and, on an owned `Match` with fake transports, an addressed
+event reaches its person and never the watcher.
+
+### The table's width crosses the wire
+
+An owned match's table is its map's own roster, so team 1 begins at slot
+`perTeam` (8 on most maps) where a server's begins at 24 — and a client that
+numbers its bodies by `CONFIG` would address every snapshot about team 1 on an
+owned match to a hole. So the welcome says it: `Welcome.perTeam`, the table's
+block width a team (`Roster.perTeam`), set by `admit` and by `watch`. Absent
+means the ceiling, the only width a server's match has ever had, so it went
+in without a `PROTOCOL_VERSION` bump — and the version is matched for
+equality at the handshake, so a page and its own match are always one build.
+`NetSession`'s welcome arm hands it to `NetRoster.setBlockWidth` FIRST, ahead
+of anything that reads a slot, and that RE-ADDRESSES the pool rather than
+rebuilding it: each body's slot becomes `team * width + i`, the slot map is
+rebuilt and `riding` cleared, and no rig is touched. Re-addressed because the
+welcome and `Game.buildRound` arrive in either order, and rebuilding rigs is
+`setFielded`'s, which may only follow a ragdoll reset the build performs; a
+body's address is the one thing the welcome knows that the build did not.
 
 ### The local transport: an owner's port, and a port per person
 
@@ -1203,16 +1309,18 @@ common but the `postMessage`:
 - **The OWNER's channel** (`src/net/LocalMatch.ts` on the page,
   `server/localMatch.ts` hosting, the words both speak in
   `src/net/localWire.ts`): `open` a match on a map, `begin` a round on a seed
-  and a difficulty, `advance` it by `dt`, `settle`, `markFight` and read the
-  benchmark's `fight`, `close` it. **It is not a `ClientMessage`** — it has its
+  and a difficulty, `advance` it by `dt` or `hold` it for `dt` (above),
+  `settle`, `markFight` and read the benchmark's `fight`, `close` it. **It is not a `ClientMessage`** — it has its
   own port and its own words, the host reads it with no claim gate, and
   `server/wire.ts` never sees it, so nothing a remote client sends can begin a
   round or move a clock. The host answers its calls ONE AT A TIME, IN ORDER,
   each after every call before it has finished (`begin` builds a world), so
   ANY answer is a settle (`settle` is the one that does nothing else):
-  `fight`'s hash is the fold of every step posted ahead of it. `advance` is posted and never awaited — the page posts one a
-  frame and reads the newest answer (`onAdvanced`: the steps taken, whether
-  the round ended, and the last step's timing on the page's clock when asked).
+  `fight`'s hash is the fold of every step posted ahead of it. `advance` and
+  `hold` are posted and never awaited — the page posts them every frame and
+  reads the newest `advance` answer (`onAdvanced`: the steps taken, whether
+  the round ended, and the last step's timing on the page's clock when
+  asked); a `hold`'s `done` finds nobody waiting and is dropped.
   The fight is folded off `MatchOptions.hear`, an in-process ear on every
   drain, because no wire event carries a bot's award.
 - **A PERSON's port**, dialled by the owner (`LocalMatch.dial`) and held by
@@ -1221,9 +1329,11 @@ common but the `postMessage`:
   as `server/index.ts` reads one off a socket (the protocol version checked;
   no handshake window and no per-address cap, because a port exists only
   because its owner dialled it), and then `Match.admit` — every claim gate,
-  the rate bucket and `validateMove` exactly as a remote peer meets them. The
-  one word on a port that is not a frame is `PORT_CLOSE`: a closed port tells
-  the far end nothing, so whichever end closes says so first.
+  the rate bucket and `validateMove` exactly as a remote peer meets them — or
+  `Match.watch`, when the owner dialled a watcher (above), the one word on
+  the `connect` the join never carries. The one word on a port that is not a
+  frame is `PORT_CLOSE`: a closed port tells the far end nothing, so
+  whichever end closes says so first.
 
 **The two kinds are two ports, and a port promises order only within
 itself.** What the page says to the match as a person and what it says as the
@@ -1234,7 +1344,36 @@ answer on one of the two ports, never from the order it posted in.
 The host runs in a Worker (`server/localMatchWorker.ts`, which is nothing but
 `serveLocalMatch(self)`), on a `MessageChannel` in the page's own thread, or in
 Node under `corecheck` — one code path, so **nothing `Match` reaches may import
-Node** (`server/README.md`). `npm run corecheck`'s `greyfen/local` runs it on a
+Node** (`server/README.md`), and from X2.5c C4 that is a GATE:
+`scripts/check-babylon-free.mjs` walks the reach of the two entries a second
+time, refusing a `node:` specifier, `ws` or a built-in by its bare name, and
+`npm run build` fails on one with the chain that brought it in.
+
+**Which of the three the page gets is the boot's choice**
+(`src/net/localHost.ts`, `openLocalMatch`): a Worker, proved up by answering a
+`settle` inside twenty seconds, or else — or under `?simpage`, for a debugger
+— the page's own thread. The fallback reaches `server/localMatch.ts` through
+ONE dynamic `import()`, taken only on that path, which is **the one value
+import of `server/` anywhere in `src/`**: the Worker path's bundle carries
+none of the authority, since the Worker itself is reached as a URL and is a
+chunk of its own.
+
+**A port opens whoever is at the far end, so a dead host must be SAID.** A
+WebSocket to a dead server closes; a port into a Worker that died or wedged
+says nothing, so a person's `Connection` would sit `open` on a join nobody
+reads and every awaited owner call would hang for ever. Two signals end it,
+both into `LocalMatch.lost`: the Worker's `onerror` once it is up (the boot's
+handler is REPLACED, not left — it cancels the event it resolves on, and left
+standing it would silence every later error), and `LocalMatch`'s own watchdog,
+which calls the host lost when a call has been owed past its patience — ten
+seconds for anything but a build, two minutes while an `open` or `begin` is
+owed — measured only while the page's own thread was listening, so a
+breakpoint or a throttled tab is never the host's fault. Lost is final and
+raised once (`onLost`, which the owner answers by ending the session): every
+awaited call rejects, every later call rejects at once and posts nothing, and
+a later `dial` hears its port close — what a socket to a dead server hears.
+
+`npm run corecheck`'s `greyfen/local` runs it on a
 `MessageChannel`: the bench's round over the owner channel alone folds the
 bench's own Greyfen hash, and a person joining through the page's real
 `Connection` is welcomed at slot 0, deploys, sends an honest `move` that is

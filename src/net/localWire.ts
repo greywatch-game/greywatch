@@ -40,6 +40,12 @@ export type OwnerCall =
    * what that stepped. `timed`: time the steps for the profiler's `sim` root.
    */
   | { t: "advance"; dt: number; timed: boolean }
+  /**
+   * `dt` seconds the owner HELD the world (`Match.hold`): the match's clock
+   * passes and nothing steps, so its snapshot stamps stay continuous with the
+   * wall the clients sample it against. Answered `done`, which nobody awaits.
+   */
+  | { t: "hold"; dt: number }
   /** Nothing, answered once every call before it has run — the settle. */
   | { t: "settle" }
   /** The benchmark's fight starts here: awards and deaths folded from this tick. */
@@ -52,8 +58,14 @@ export type OwnerCall =
 /** What crosses the channel to the host: a call, or a person's port. */
 export type OwnerMessage =
   | (OwnerCall & { call: number })
-  /** A port for one more peer, transferred, its far end the page's (`LocalMatch.dial`). Unanswered. */
-  | { t: "connect"; port: MessagePort };
+  /**
+   * A port for one more peer, transferred, its far end the page's
+   * (`LocalMatch.dial`). Unanswered. `watch`: the peer WATCHES rather than
+   * sits (`Match.watch`) — welcomed at no slot, and nobody in the round. The
+   * owner's word alone: it is here and not on the `join`, so no
+   * `ClientMessage` can ask for it.
+   */
+  | { t: "connect"; port: MessagePort; watch: boolean };
 
 /** What `advance` stepped. */
 export interface Advanced {

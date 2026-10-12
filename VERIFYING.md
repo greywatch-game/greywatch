@@ -53,11 +53,15 @@ you are on before you believe anything else in this section.
   thread instead: nothing fails, the boot's one `[sim] the simulation runs
   in …` console line says so, and every capture's `simMode` does. Assert on
   one of those, never on the frame rate. Two things a script must know:
-  **from a Worker an `ask` is answered on a LATER frame** — `g.spawnPlayer()`
-  returns before the body exists, so poll `g.player.alive` or
-  `g.state === "playing"` rather than reading it on the next line — and
-  **`?simpage` puts the core back in the page** for a script that needs it
-  answered at once (as `?simcheck` and `?simcopy` do, which need it there).
+  **every round is a MATCH now** (`BABYLON_EXIT.md` X2.5c C4) — offline the
+  page joins a `Match` it hosts itself, in the Worker or (under `?simpage`,
+  or when the Worker cannot be had) on a channel in its own thread — **so an
+  ask is answered by a MESSAGE, never inside the call**: `g.spawnPlayer()`
+  sends a `deploy` and returns before the body exists, so poll
+  `g.player.alive` or `g.state === "playing"` rather than reading it on the
+  next line, and wait for `g.net.seated` before asking anything of a round
+  that has just been built. `?simcheck` and `?simcopy` do nothing any more
+  (X2.5c C5 deletes them).
   Measured headless on the Windows box: `crossOriginIsolated` true under
   both servers, and false on the first load from a bare `node:http` server
   that sends no headers, with the boot falling back to the page — and true
@@ -2104,7 +2108,9 @@ is one machine's:
   run PUBLISHES and reads a structured clone of the frame back through the
   page's readers after every drain, held to the live core by `simCheck` —
   the one place the frame is checked with a PERSON in it.
-- **`?simcheck` is the oracle for the page's readers, and it needs a DEV
+- **RETIRED at X2.5c C4 — the page reads no core frame any more, so the two
+  paragraphs below describe flags that now do nothing; C5 deletes them.**
+  **`?simcheck` is the oracle for the page's readers, and it needs a DEV
   build** (`npm run dev`, or `bench.mjs` with no `--url`, which starts one):
   after every drain the offline page holds every answer `src/sim/mirror.ts`
   gives — each bot's fields and every solved joint, the flags as its own
@@ -2119,10 +2125,12 @@ is one machine's:
   transfer, rehearsed. The benchmark's `fight.hash` under it must equal the
   plain one (`bench.mjs --query simcopy`); a difference means something
   crossed by reference. The two combine (`--query "simcheck&simcopy"`).
-- **A harness that writes the core directly** (`g.core.scores.award(...)`,
-  `g.core.conquest.tickets[...]`) is invisible to the page until the core
-  publishes again — which a step does. To draw it at once, follow the writes
-  with `g.core.publish(); g.simSync()`.
+- **A harness cannot write the core directly any more** (X2.5c C4): the
+  round's core is the authority's, inside the page's own `Match` — in the
+  Worker, out of reach — and the page holds only what the wire told it
+  (`g.net`). What a harness may still write is the page's own MIRROR (the
+  flags in `g.conquest`, the roster's bodies), which the next snapshot puts
+  back.
 - **The DEV-only proving ground needs `npm run simulate:dev`**, which is the
   dev-mode server build; the production one folds that map away and answers
   "no map". Its collision bake is `npm run collision -- proving`, and it takes

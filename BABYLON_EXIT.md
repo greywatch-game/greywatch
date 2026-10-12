@@ -1648,6 +1648,56 @@ wire comes later, for both at once, and only if a profiler capture asks for it.
   (the pool), the step order around `Match.step`, and the seed's route are the
   suspects, in that order. Attribute the change to one cause, as X2.2 C6 did,
   or do not land.
+- **The page's own match is built off the map's committed BAKE** (found at
+  C4). The old offline core was handed `collisionOf(map)`, the map the page
+  had just built; a `Match` reads `MapDef.collision`, as a server's does. So
+  an edit the editor saved plays against stale colliders on the authority's
+  side until `npm run collision` re-bakes it — the same rule a server match
+  has always had, now met in the dev loop. Not a bug in either half; a
+  workflow to know (`Game.toggleEditor`'s header says it).
+- **What C4 leaves C5** (found at C4). `Game` constructs no `BattleView` and
+  holds no `SimHost`, frame or mirror: every one of `simHost.ts`,
+  `simWorker.ts`, `hostWire.ts`, `commandCodec.ts`, `publication.ts`,
+  `mirror.ts`, `simCheck.ts`, `BattleView.ts` and (if nothing else draws a
+  bot) `BotRig.ts` is now unreachable from the page and still typechecks.
+  `src/sim/frame.ts` is still where `FrameTiming` and `SIM_PHASES` live, and
+  `localWire.ts` and `Game` read them — C5 moves those two before deleting
+  the rest. `?simcheck` and `?simcopy` now do nothing (`VERIFYING.md` says
+  so). `VehicleSystem.onRespawned` never fires on a page's fleet (it is always
+  `predicted`); the READY toast is the wire's arrival edge
+  (`Game.syncNetVehicles`).
+- **Fixed for BOTH at C4, by the step's rule** (found at C4 — each was a
+  match's behaviour that offline would otherwise have inherited): bodies off
+  the wire now cast body shadows, get blob shadows and bend the grass
+  (`mapBodies`, `fillCombatants`); a remote rocket's launch is heard
+  (`NetOrdnance.onLaunch`); the shooter's mark for a blast, a killing burn, a
+  hull gun's kill and the tracks rides the wire (`hit`'s new `cause`); a
+  hull's return says READY; the player's own scoreboard row and own death on
+  the feed read "YOU".
+- **Still different, and owed** (found at C4): the feed names a kill BY the
+  player as their team, never "YOU" — the `kill` event carries the killer's
+  team and not their slot, so a client cannot tell its own kills from its
+  squad's. Fixing it is a field on `kill`, for both.
+- **A person's FIRST `move` was budgeted one input interval, and that was a
+  match's bug** (found at C4, fixed for both). Validation runs offline now,
+  and a headless Sarab walk came back `speed`-corrected by a third of a
+  metre on `seq` 1 — once in fourteen walks, whenever the frames right after
+  a spawn ran long. A client sends on the first frame its upload clock
+  reaches an interval, so its first sample spans up to one interval plus a
+  frame, and a frame is capped at one interval. `Match.onStamp` now assumes
+  `FIRST_STAMP_GAP` (two intervals); every later sample is priced by its own
+  stamps. corecheck's every banked line is unchanged by it.
+- **The benchmark watches through interpolation** (found at C4): its bodies
+  are the watcher's, drawn `interpDelay` behind 20 Hz snapshots, and an
+  uncapped run steps the match faster than the wall, so the render clock
+  snaps forward as the offset estimate catches up. A picture, which the hash
+  does not fold; what it costs is that the bench's bodies are no longer the
+  core's exact pose each frame, which is the cost this step exists to measure.
+- **The contracts are C6's** (found at C4): `CLAUDE.md`'s "Ownership and
+  wiring", "Multiplayer" and "Measuring a frame", and `docs/game.md`,
+  `docs/states.md` and `docs/profiling.md`, still describe the core-in-a-Worker
+  page; C4 rewrote only `docs/multiplayer.md`, `FILES.md`, `VERIFYING.md`'s
+  misleading lines and the contract headers it touched.
 
 **Verify:**
 - The bench's seven fight hashes: X2.5a's table, identical, from the Worker and

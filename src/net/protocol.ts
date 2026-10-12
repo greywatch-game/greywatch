@@ -25,6 +25,7 @@
  */
 import type { DamageKind } from "../systems/CombatSystem";
 import type { ScoreKind } from "../systems/ScoreBook";
+import type { DeathCause } from "../systems/killRules";
 
 /**
  * Protocol version. Bumped on any incompatible change; a mismatch is refused.
@@ -661,8 +662,25 @@ export type ServerEvent =
    * before the snapshot shows it. `Match` sends it to one peer; the client still
    * checks `shooter`, because the two halves deploy separately and an older
    * server broadcasts it with this same shape.
+   *
+   * **`cause` says WHAT landed, and absent is a ROUND** — the only cause an
+   * older server sends, and the only one a client predicts in full
+   * (`HitCredits`). The others are the shooter's feedback for what nothing on
+   * the page resolves (`BABYLON_EXIT.md` X2.5c C4): a grenade's or a mine's
+   * BLAST on a body, a burn that KILLED, a body under the TRACKS, and a hull
+   * gun's round that KILLED — the page predicts a shell's and a belt's hit,
+   * and only the kill is the authority's to add. Each is sent only where the
+   * shooter's screen owes it a mark, so a burn ticking four times a second
+   * sends nothing until it kills.
    */
-  | { e: "hit"; shooter: number; victim: number; killed: boolean; headshot: boolean }
+  | {
+      e: "hit";
+      shooter: number;
+      victim: number;
+      killed: boolean;
+      headshot: boolean;
+      cause?: Exclude<DeathCause, "round" | "crew" | "other">;
+    }
   | { e: "died"; slot: number; by: number; respawnIn: number }
   /**
    * A weapon went off in this slot. Public, and the only thing on the wire that
@@ -875,8 +893,13 @@ export interface Welcome {
   t: "welcome";
   version: number;
   matchId: string;
-  /** The slot this client owns. */
+  /**
+   * The slot this client owns — or -1 for a WATCHER (`Match.watch`), which
+   * owns none: it is drawn the round and is nobody in it. Only the owner of a
+   * match the page hosts can be one; no `ClientMessage` asks for it.
+   */
   slot: number;
+  /** The side this client is on. A watcher's is 0: a side to paint from, deciding nothing. */
   team: NetTeam;
   mapId: string;
   now: number;
@@ -897,6 +920,25 @@ export interface Welcome {
    * and saying nothing is how it is said.
    */
   brokenPanes?: number[];
+  /**
+   * The slot table's block width a team (`Roster.perTeam`): team 1's first
+   * slot. `CONFIG.bots.maxPerTeam` on a server's match, whose table is the
+   * ceiling so a rotation never renumbers anybody; the map's OWN roster on a
+   * match the page owns (`BABYLON_EXIT.md` X2.5c C2), which never rotates and
+   * whose slots are the offline round's bot indices. A client numbers its
+   * bodies by it (`NetRoster.setBlockWidth`) rather than by `CONFIG`, or
+   * every snapshot about team 1 on an owned match is addressed to a hole.
+   *
+   * Absent from an older server, which reads as the ceiling — the only width
+   * a server's match has ever had — so this arrived without a
+   * `PROTOCOL_VERSION` bump: no number a version-7 server sends means
+   * anything different, and the version is checked for equality at the
+   * handshake, so a page and a local match are always one build.
+   *
+   * On a WATCHER's welcome (`slot: -1`, `Match.watch`) it is the same width,
+   * because a watcher draws the same table.
+   */
+  perTeam?: number;
 }
 
 /**

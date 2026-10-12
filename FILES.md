@@ -20,9 +20,12 @@ server/               # The authoritative match server. Node, no Babylon (the
   Match.ts            #   One match: fixed-step loop, snapshots, the gates on
                       #   what a client may claim, round rotation. Its clock
                       #   free-runs on the server or is an OWNER's (`owned`:
-                      #   advance/begin/close, its map's own roster, no vote,
-                      #   no rotation, no idle retire; `timing` and `hear` for
-                      #   the owner's profiler and fight fold). The core's
+                      #   advance/hold/begin/close, its map's own roster, the
+                      #   owner's respawn clock, a deploy answered while held,
+                      #   seatless WATCHERS (`watch`), no vote, no rotation,
+                      #   no idle retire; `timing` and `hear` for the owner's
+                      #   profiler and fight fold). The welcome names the
+                      #   table's block width (`perTeam`). The core's
                       #   HOST: VALIDATES each message, then hands what it
                       #   accepted to `SimCore.submit` as a SimCommand; drains
                       #   the event ring after every call and `relay`s it onto
@@ -30,14 +33,18 @@ server/               # The authoritative match server. Node, no Babylon (the
                       #   and no transport: a peer is a PeerTransport
   localMatch.ts       #   A match the PAGE hosts (X2.5c C3): one owned Match
                       #   at a time, the owner's calls (open, begin, advance,
-                      #   settle, markFight, fight, close) answered in order off one
-                      #   port, each person admitted off a port of their own
-                      #   (`portPeer`, which answers Match's ping itself) after
-                      #   a join read as index.ts reads one. Folds the bench's
-                      #   FightHash off `hear`. Runs in a Worker, on a
-                      #   MessageChannel in the page, or in corecheck
+                      #   hold, settle, markFight, fight, close) answered in
+                      #   order off one port, each person admitted — or a
+                      #   watcher let in, on the owner's `connect` — off a port
+                      #   of their own (`portPeer`, which answers Match's ping
+                      #   itself) after a join read as index.ts reads one.
+                      #   Folds the bench's FightHash off `hear`. Runs in a
+                      #   Worker, on a MessageChannel in the page (reached by
+                      #   src/net/localHost.ts's one dynamic import), or in
+                      #   corecheck. Its reach may import no Node — gated
   localMatchWorker.ts #   The Worker it runs in: `serveLocalMatch(self)`.
-                      #   The page reaches it only as a Worker URL
+                      #   The page reaches it only as a Worker URL, which
+                      #   src/net/localHost.ts names
   claimGates.ts       #   HOW a claimed round is gated — the RateGate bucket,
                       #   the look vector, the cone, the origin slip and the
                       #   one zero-length threshold. Match's five claim arms
@@ -79,7 +86,10 @@ server/               # The authoritative match server. Node, no Babylon (the
                       #   a real Match behind a fake transport and requires the
                       #   identical award/death list — the trusted door
                       #   (`submit`) and the validated one agreeing — plus the
-                      #   `hostHoldsRespawn` deploy and the reported hull
+                      #   `hostHoldsRespawn` deploy and the reported hull. Then
+                      #   an owned Match and the local transport (greyfen/
+                      #   owned, /local: the bench's hash, a person's join, a
+                      #   held deploy, a hold) and a WATCHER (greyfen/watch)
                       #   (`drive`/`gun` pose the core's copy; the shell leaves
                       #   the reported muzzle), and `sarab/crash`: a person's
                       #   helicopter charged off its reports — every step, at
@@ -118,9 +128,12 @@ scripts/                      # Node tooling, run by hand or by `npm run build`,
   check-babylon-free.mjs      # BUILD GATE: refuses any VALUE import path to
                               #   @babylonjs/core from server/, src/sim/ or a
                               #   simulation module (its SIMULATIONS list,
-                              #   which a new simulation joins); prints the
-                              #   chain. Paths
-                              #   on the command line walk from those instead.
+                              #   which a new simulation joins); and, a
+                              #   second walk, any path to Node (`node:*`, `ws`,
+                              #   a built-in) from the local match's two
+                              #   entries, which run in a browser. Prints the
+                              #   chain. Paths on the command line walk from
+                              #   those instead (Babylon only).
                               #   Widens to src/render/ + src/math/ at X3.2
   check-audio.mjs             # BUILD GATE: audio/ stale against its masters,
                               #   over its mono-seconds budget, an encoded file
@@ -471,21 +484,20 @@ src/
                         #   normals and UVs. createBox scales one cached cube
   core/
     Game.ts             # Orchestrator + main loop + all the PAGE's wiring.
-                        #   Simulates no round: offline it holds the core
-                        #   through its SimHost (`core` — in a Worker or this
-                        #   thread, X2.5b), submits the player's acts (`ask`), steps
-                        #   it once a frame and draws what it said through ONE
-                        #   switch (`onSimEvent`; `onNetEvent` is a match's
-                        #   twin, both ending in the same player methods). The
-                        #   player's own hull is PREDICTED here and reported
-                        #   (`reportHull`/`reportGun`), its trigger asked after
-                        #   the core's step (`pullHullTrigger`). Holds the
-                        #   core as a `SimHost` and reads it only off its
-                        #   FRAME (`simSync` into `sim`, src/sim/mirror.ts);
-                        #   depends on nothing about WHEN it answers (`ask`
-                        #   returns nothing; `pumpSim` on a frame that does
-                        #   not step); `?simcheck` (DEV) and `?simcopy` hold
-                        #   that to account.
+                        #   Simulates no round: EVERY round is a match
+                        #   (X2.5c C4) — a server's, or the page's own
+                        #   (`local`, a LocalMatch: opened per round by
+                        #   `openLocalRound`, stepped only by `updateWorld`'s
+                        #   `advance`, its held time handed over by
+                        #   `passLocalClock`) — joined through one NetSession
+                        #   and heard through ONE switch (`onNetEvent`). The
+                        #   player, their hull and their gun are PREDICTED
+                        #   here and reported. The authority questions are
+                        #   `remoteRound`/`localRound` (`NetSession.local`):
+                        #   restart, map, difficulty, and whether a pause or
+                        #   the deploy screen holds the world. The bench joins
+                        #   its own match as a WATCHER and reads the fight
+                        #   hash back over the owner channel.
                         #   Constructor is construction only; wiring is
                         #   wireSystems (+ subject methods),
                         #   installDomListeners, wireScreens; tick dispatches
@@ -494,8 +506,8 @@ src/
                         #   takeDown for what a screen means on screen
     ScreenStack.ts      # The state machine's shape as data: GameState, the
                         #   SCREENS table (what a lid covers, what holds the
-                        #   world offline, what owes the netplay frame, what is
-                        #   owed the scoreboard), and the raised-lid stack. A
+                        #   page's own match, what owes a server's frame, what
+                        #   is owed the scoreboard), and the raised-lid stack. A
                         #   new state does not compile without a row. `bench`
                         #   is the benchmark's step, outside the cycle
     InputManager.ts     # Keyboard/mouse + gamepad + TOUCH state, and rumble.
@@ -2077,8 +2089,8 @@ src/
                       #   clock — Match's BOUNDED one on the authority), cost
                       #   owed until SimCore spends it; a correction's
                       #   `resync` rebases, a touchdown after one still pays
-  net/                # Multiplayer, client side. Nothing here is constructed
-    protocol.ts       #   in an offline round.
+  net/                # Multiplayer, client side — and from X2.5c C4 every
+    protocol.ts       #   round's: offline is a session on a local match.
                       #   The wire format — with localWire.ts, the only
                       #   modules here the server imports. Pure types + the
                       #   rates both ends must agree on. No Babylon, no DOM,
@@ -2096,14 +2108,26 @@ src/
                       #   PORT_CLOSE, the one word a port cannot say itself)
     LocalMatch.ts     #   The OWNER's client to a match the page hosts
                       #   (server/localMatch.ts): calls awaited in order, so
-                      #   any is a settle (`settle` is the bare one), and
-                      #   `dial`, a person's port in. Not a ClientMessage:
-                      #   no remote client can say it
-    NetSession.ts     #   One networked round: the seam between Game and the
-                      #   wire. Game gains a field and a branch, not a protocol
+                      #   any is a settle (`settle` is the bare one); `advance`
+                      #   and `hold` posted every frame; `dial`, a person's
+                      #   port in (or a watcher's); `lost` and a stall
+                      #   watchdog, so a dead host is said (`onLost`). Not a
+                      #   ClientMessage: no remote client can say it
+    localHost.ts      #   Where the page's own match runs: `openLocalMatch`,
+                      #   the boot's choice — a Worker proved up by a settle,
+                      #   or (?simpage, or a Worker that did not come up)
+                      #   this thread on a MessageChannel, through the one
+                      #   value import of server/ in src/, a dynamic one.
+                      #   Routes the Worker's onerror to `LocalMatch.lost`
+    NetSession.ts     #   One networked round — every round, from X2.5c C4:
+                      #   the seam between Game and the wire. `local` says
+                      #   whether the page OWNS the match, the one authority
+                      #   question. A watcher's session is seated at slot -1
     NetRoster.ts      #   The pool of NetSoldiers + mirrored flags/tickets.
                       #   The client's stand-in for BattleSystem: same job on
-                      #   screen, none of the job underneath
+                      #   screen, none of the job underneath. Numbers its
+                      #   bodies by the match's table width (`setBlockWidth`,
+                      #   off the welcome), re-addressing, never rebuilding
     NetGrenades.ts    #   Everybody else's grenades in the air, interpolated on
                       #   the same clock as the bodies, drawn by GrenadeFx's
                       #   own `GrenadeBody`. The thrower's own is skipped —

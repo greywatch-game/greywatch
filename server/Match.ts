@@ -27,8 +27,8 @@
  * (`players`, `hullOf`, `reportedHull`, the fleet, the board).
  * `server/corecheck.ts` drives a real instance through a fake transport and
  * steps it by hand — it reaches `step`, `relay`, `timer`, `peers`,
- * `arrivalClock`, `rotateTimer`, `idleTimer` and `retired` by name — so
- * renaming one of those owes that file a look.
+ * `arrivalClock`, `rotateTimer`, `idleTimer`, `retired`, `queue`, `queueTo`
+ * and `flushEvents` by name — so renaming one of those owes that file a look.
  * **Its CLOCK is a choice** (`BABYLON_EXIT.md` X2.5c C2). A match the server
  * hosts FREE-RUNS: an interval polls the wall clock into the accumulator
  * (`accrue`), which steps it `1 / TICK_HZ` at a time. A match built `owned`
@@ -37,9 +37,14 @@
  * own seed and difficulty (`begin`) and ends the match (`close`). An owned
  * match stays on the one map it was built for, fields that map's own roster
  * as its pool (`server/Roster.ts`), opens no vote, never rotates and is never
- * retired for being empty: whatever ends it is the owner's.
+ * retired for being empty: whatever ends it is the owner's. Its owner also
+ * holds the RESPAWN clock (`game`), hands over the time it HELD as well as
+ * the time it stepped (`hold`), and may let a WATCHER in — a peer with no
+ * seat, which hears the round and is nobody in it (`watch`, X2.5c C4).
  * Invariants: a peer's slot is assigned here and nowhere else, and a peer never
- * names its own slot. The loop is fixed-step and drift-corrected whoever drives
+ * names its own slot. **A peer is a seat**: everything in `peers` holds one,
+ * and a watcher is never in it — the slot-indexed tables (`pings`, the vote,
+ * `queueTo`) never meet one. The loop is fixed-step and drift-corrected whoever drives
  * it: a `dt` taken from wall clock would make the simulation run at the speed
  * of the server's load, and every recoil, bleed and reload timer in `CONFIG` is
  * written against real seconds.
@@ -427,6 +432,23 @@ const POLL_MS = 4;
 const MAX_MOVE_GAP = 0.5;
 
 /**
+ * What a peer's FIRST stamped sample is assumed to cover, in seconds — it has
+ * no earlier stamp to be measured against (`onStamp`).
+ *
+ * TWO input intervals, because that is what a client's first sample can
+ * honestly span: it sends on the first frame its upload clock has reached one
+ * interval (`NetSession.update`), so the sample covers that interval plus
+ * whatever of the last frame overshot it — and a frame is capped at one
+ * interval (`Game.tick` clamps `dt` to 50 ms, `1 / INPUT_HZ`). One interval,
+ * which this was, refused an honest walk whenever the frames right after a
+ * spawn were long: Sarab's first `move` came back `speed`-corrected by a third
+ * of a metre (`BABYLON_EXIT.md` X2.5c C4, found when the page's own match
+ * began validating offline play). A step of two intervals' worth from the
+ * spawn is still a step, and every later sample is priced by its own stamps.
+ */
+const FIRST_STAMP_GAP = 2 / INPUT_HZ;
+
+/**
  * How far, in ms, a peer's stamps may run ahead of — or fall behind — the
  * clock their messages ARRIVE on, before the excess is not believed.
  *
@@ -741,9 +763,20 @@ export class Match {
   /**
    * The simulation, built with `rewind` — the one option that is the
    * authority's: every person here is a remote shooter whose round meets the
-   * world they saw a round trip ago. The respawn clock is the core's own
-   * (`hostHoldsRespawn` off): a `deploy` is a request the reinforcement pass
-   * spends once that clock runs out.
+   * world they saw a round trip ago.
+   *
+   * **Whose respawn clock it is follows from who owns the CLOCK.** On the
+   * server's match it is the core's own (`hostHoldsRespawn` off): a `deploy`
+   * is a request the reinforcement pass spends once that clock runs out,
+   * because nobody else is counting and the world never stops. On an OWNED
+   * match it is the OWNER's (`hostHoldsRespawn` on, as the offline page's own
+   * core has always been built — `src/sim/simHost.ts`): the page holds the
+   * world under its deploy screen and runs the countdown there, so a
+   * reinforcement clock that only steps when the owner advances would hold
+   * the deploy hostage to a world the page is deliberately not moving. The
+   * deploy is honoured at submit, through the same door (`deployPerson`) and
+   * the same spawn stream. The benchmark seats nobody, so its fight cannot
+   * move with this.
    */
   readonly game: SimCore;
   /**
@@ -755,6 +788,15 @@ export class Match {
   private arrivalClock: () => number = () => performance.now();
 
   private readonly peers = new Map<string, Peer>();
+  /**
+   * The connections WATCHING this match (`watch`): welcomed, sent every
+   * broadcast and every shared event, and nobody in the round. Kept apart
+   * from `peers` so that "a peer is a seat" stays a fact about that map rather
+   * than a test every loop over it owes — a watcher has no slot to index the
+   * ping table, the ballot or an addressed event with, and the core never
+   * hears of one. Only ever filled on an owned match.
+   */
+  private readonly watchers = new Set<PeerTransport>();
   /** The server's free-running loop while it is armed (`start`); never set on an owned match. */
   private timer: ReturnType<typeof setInterval> | null = null;
   /**
@@ -863,8 +905,9 @@ export class Match {
    * ear is three rounds and has to sound like three.
    *
    * Drained in `broadcastSnapshot`, which is also the only place `pending` is
-   * flushed, so a fire raised on any tick of the interval leaves on the same
-   * message as everything else that happened in it.
+   * flushed on a step (an owned match's deploy flushes too, between steps —
+   * see `onDeploy`), so a fire raised on any tick of the interval leaves on
+   * the same message as everything else that happened in it.
    */
   private readonly firedRounds = new Map<number, number>();
 
@@ -946,7 +989,13 @@ export class Match {
     this.mapId = def.id;
     this.withBots = options.bots ?? true;
     this.owned = options.owned ?? false;
-    this.game = new SimCore({ rewind: true, reportGap: REPORT_GAP, timing: options.timing });
+    this.game = new SimCore({
+      rewind: true,
+      reportGap: REPORT_GAP,
+      timing: options.timing,
+      // The owner holds the respawn clock — see `game`.
+      hostHoldsRespawn: this.owned,
+    });
     this.hear = options.hear ?? null;
     // The table, and with it the pool: the ceiling under a match that rotates
     // maps, the map's own roster under one that never leaves it — see
@@ -1124,6 +1173,10 @@ export class Match {
       slot: slot.index,
       team: slot.team,
       mapId: this.mapId,
+      // The table's block width, so the client numbers its bodies as this
+      // table does: the ceiling here, the map's own roster on an owned match
+      // (`Welcome.perTeam`).
+      perTeam: this.roster.perTeam,
       // The same clock the snapshots carry, and that is the load-bearing part:
       // a client samples the offset from EVERY stamped message and keeps the
       // maximum, so one message on a clock that runs even slightly ahead of the
@@ -1166,6 +1219,89 @@ export class Match {
     console.log(
       `[${this.id}] ${name} (${id}) took slot ${slot.index} on team ${slot.team}`,
     );
+  }
+
+  /**
+   * Lets a connection WATCH an owned match: welcomed, and then sent everything
+   * a seated peer is sent about the round — every snapshot, the roster, the
+   * board, the mines, the ping table, every SHARED event — and nothing that is
+   * one person's (`flushEvents`). **It holds no seat** (`BABYLON_EXIT.md`
+   * X2.5c C4, "The benchmark has to WATCH its fight, and a peer is a seat"):
+   * no `Roster.claim`, no `addPlayer`, no `relay` — the core never hears of
+   * it, so nothing about the fight can move with it, which is the whole of why
+   * it exists. The benchmark draws the round it measures off the wire, and
+   * `admit` would bench a bot to seat it and play a different fight.
+   *
+   * Its welcome says so in the one field the wire already has for it:
+   * `slot: -1`, which the client reads as "no body of my own" — nothing to
+   * draw as a viewmodel, nothing to upload — and `team: 0`, a side to paint
+   * from that decides nothing.
+   *
+   * **The OWNER's door and never a peer's.** Reached only through the owner
+   * channel's `connect` (`server/localMatch.ts`), never through a
+   * `ClientMessage`: a public spectator on a match server would be a client
+   * that is sent every body on the map and is nobody, which is exactly the
+   * read a wallhack wants, and on the page's own match the only one watching
+   * is the page. What it SAYS is ignored rather than refused — a `Connection`
+   * sends its join and nothing a watcher has a seat to mean.
+   *
+   * Gated as `admit` is on an owned match: refused before the owner's first
+   * `begin` and after `close`, and an arrival inside a build waits on it.
+   */
+  async watch(transport: PeerTransport): Promise<void> {
+    if (!this.owned) throw new Error(`[${this.id}] watch: only an owned match is watched, by its owner`);
+    if (this.retired || (!this.running && !this.starting)) {
+      transport.send(
+        encode({ t: "rejected", reason: this.retired ? "match closed" : "no round begun" }),
+      );
+      transport.close();
+      return;
+    }
+    // Wired before the await, as `admit` wires a peer, so a connection that
+    // goes inside the build is known to have gone; joined to `watchers` only
+    // after it, so nothing broadcast reaches it ahead of its welcome.
+    let gone = false;
+    transport.listen({
+      message: () => {},
+      closed: () => {
+        gone = true;
+        this.watchers.delete(transport);
+      },
+      // Never pinged: the ping table is a table of seats.
+      pong: () => {},
+    });
+    await this.ensureRunning();
+    if (gone) return;
+    // Closed by its owner while the build was finishing.
+    if (this.retired) {
+      transport.send(encode({ t: "rejected", reason: "match closed" }));
+      transport.close();
+      return;
+    }
+    this.watchers.add(transport);
+    // `admit`'s welcome minus the seat — the same clock, the same table width
+    // and the same glass, which are facts about the round and not about a body.
+    const say = (msg: ServerMessage): void => {
+      if (transport.open) transport.send(encode(msg));
+    };
+    say({
+      t: "welcome",
+      version: PROTOCOL_VERSION,
+      matchId: this.id,
+      slot: -1,
+      team: 0,
+      mapId: this.mapId,
+      perTeam: this.roster.perTeam,
+      now: this.game.now,
+      ...(this.game.glass.brokenPanes.length > 0
+        ? { brokenPanes: this.game.glass.brokenPanes }
+        : {}),
+    });
+    // The roster and the board as they stand, to this connection alone: the
+    // seat table did not change, so there is nothing to broadcast.
+    say({ t: "roster", slots: this.roster.fielded() });
+    say(this.scores());
+    console.log(`[${this.id}] a watcher joined`);
   }
 
   /**
@@ -1309,6 +1445,7 @@ export class Match {
       peer.transport.close();
     }
     this.peers.clear();
+    this.dismissWatchers(reason);
     this.retire();
   }
 
@@ -1590,6 +1727,36 @@ export class Match {
   }
 
   /**
+   * The OWNER held the world for `dt` seconds: the CLOCK passes and nothing
+   * steps — `advance`'s other half, and the time a hold is made of. The
+   * owner hands it over for every part of its real elapsed time it did not
+   * step: a pause, the deploy screen, a frame-cap's clip, a benchmark vantage.
+   *
+   * **Handed over rather than left out, for the client's clock offset.**
+   * `Connection` estimates the server's clock as the MAXIMUM of a window of
+   * samples, and a clock that STOPPED for a hold of P seconds would make
+   * every sample after it P lower, so the stale maximum would keep render time
+   * P ahead of every snapshot for the length of the window — bodies parked at
+   * their newest sample, a shot stamped in the future. Passed into the
+   * simulation's clock (`SimCore.drop`, the same honest jump a dropped backlog
+   * is), the stamps stay continuous with the wall the client samples against,
+   * so nothing on the client knows a hold happened and NOTHING THERE TAKES A
+   * SPECIAL PATH FOR ONE — which is the rule, because a remote client never
+   * may. It is not an outcome: `SimCore.now` stamps and rewinds and decides
+   * nothing, and no step runs.
+   *
+   * `advance`'s refusals, for its reasons. The accumulator is left alone: what
+   * it carries is a part of a step the owner already handed over.
+   */
+  hold(dt: number): void {
+    if (!this.owned) throw new Error(`[${this.id}] hold: the server's match runs its own clock`);
+    if (this.starting) throw new Error(`[${this.id}] hold: a round is being built — await begin`);
+    if (!this.running) throw new Error(`[${this.id}] hold: no round standing`);
+    if (!(dt >= 0 && dt < Infinity)) throw new Error(`[${this.id}] hold: dt ${dt}`);
+    this.game.drop(dt * 1000);
+  }
+
+  /**
    * The OWNER is done with this match: every peer let go and the world
    * disposed — what an empty server match's idle timer comes to, which an
    * owned match never arms. Final. Not inside a `begin`: the build would go
@@ -1607,6 +1774,7 @@ export class Match {
       peer.transport.close();
     }
     this.peers.clear();
+    this.dismissWatchers("match closed");
     this.retire();
   }
 
@@ -2186,19 +2354,51 @@ export class Match {
         // anything to do with it. Broadcast, it told fifteen other clients who
         // is hitting whom and — through `killed` — that a body across the map
         // is going down, a tick before the snapshot that would honestly show
-        // either. Every other cause's `hit` is the page's (a hull gun's, a
-        // blast's, the tracks'), which this wire has never carried. A hull
-        // victim is -1 on the wire, which names slots.
-        case "hit":
-          if (ev.cause !== "round") break;
-          this.queueTo(ev.shooter, {
-            e: "hit",
-            shooter: ev.shooter,
-            victim: ev.victimKind === "hull" ? -1 : ev.victim,
-            killed: ev.killed,
-            headshot: ev.head,
-          });
+        // either. A hull victim is -1 on the wire, which names slots.
+        //
+        // The other causes go too, each only where the shooter's screen owes
+        // it a mark (`ServerEvent`'s `hit`): a blast on a BODY, a burn or a
+        // hull gun's round that KILLED one, and the tracks — what nothing on
+        // the shooter's page resolves, so without it a grenade into a squad
+        // marks nothing (X2.5c C4: the page's own match is no better a
+        // transport than this, so the fix is this wire's).
+        case "hit": {
+          // A blow nobody is named for (`slotOf` of no body) is nobody's
+          // feedback — and -1 is `ALL_PEERS` to `queueTo`.
+          if (ev.shooter < 0) break;
+          const body = ev.victimKind !== "hull";
+          const victim = body ? ev.victim : -1;
+          switch (ev.cause) {
+            case "round":
+              this.queueTo(ev.shooter, {
+                e: "hit",
+                shooter: ev.shooter,
+                victim,
+                killed: ev.killed,
+                headshot: ev.head,
+              });
+              break;
+            case "blast":
+            case "tracks":
+            case "fire":
+            case "shell":
+            case "mg":
+              if (!body) break;
+              if (ev.cause !== "blast" && ev.cause !== "tracks" && !ev.killed) break;
+              this.queueTo(ev.shooter, {
+                e: "hit",
+                shooter: ev.shooter,
+                victim,
+                killed: ev.killed,
+                headshot: false,
+                cause: ev.cause,
+              });
+              break;
+            default:
+              break;
+          }
           break;
+        }
         case "roundOver":
           this.queue({ e: "roundover", winner: ev.winner });
           break;
@@ -2277,6 +2477,12 @@ export class Match {
           .filter((p) => p.to === ALL_PEERS || p.to === peer.slot)
           .map((p) => p.ev);
         if (events.length > 0) this.send(peer, { t: "events", events });
+      }
+      // A watcher holds no slot, so no addressed event is ever its business:
+      // it gets the shared ones, in their order, and nothing else.
+      if (this.watchers.size > 0 && shared.length > 0) {
+        const payload = encode({ t: "events", events: shared.map((p) => p.ev) });
+        for (const watcher of this.watchers) if (watcher.open) watcher.send(payload);
       }
     }
     this.pending.length = 0;
@@ -2510,6 +2716,25 @@ export class Match {
    * spends it — see the reinforcement pass in `SimCore.step` — because when a
    * person may deploy is the reinforcement clock's answer and where they land
    * is conquest's, and neither of those questions is a transport's business.
+   * (On an OWNED match the clock is the owner's, so the core honours it at
+   * submit — see `game`.)
+   *
+   * **On an owned match the answer leaves NOW, not on the next snapshot.**
+   * Relayed events leave only with a snapshot (`flushEvents`, from
+   * `broadcastSnapshot`), and a snapshot is a STEP — but the owner asks for a
+   * deploy while it is HOLDING the world (the deploy screen), so the `spawn`
+   * answering it would wait for a step that is waiting for it. So an owned
+   * match flushes the queue here, after the submit, and the `spawn` goes out
+   * on the person's own port while the clock stands still. It is narrow on
+   * purpose: the deploy is the one ask made while held, and the rule is that
+   * the page's own match is no better a transport than a server's — every
+   * other answer still rides its snapshot. What the flush costs is order, and
+   * only against the snapshot: whatever the ticks since the last one queued
+   * (at most `TICKS_PER_SNAPSHOT - 1` of them) leaves ahead of the snapshot
+   * that shows it, in its own order and with its audience intact, addressed
+   * events to their one peer and shared ones to everybody — and the `fire`
+   * counts still coalescing (`firedRounds`) ride that snapshot, a message
+   * after any kill they caused rather than beside it.
    *
    * The KIT is different, and is resolved here and now: it is this side's own
    * lookup rather than a rule the simulation owns, and it must be in place
@@ -2552,6 +2777,12 @@ export class Match {
       msg.throwable ?? held.throwable ?? undefined,
     );
     this.game.submit(peer.slot, { t: "deploy", spawn: msg.spawn });
+    // The answer, out while the owner holds the clock — see above. Drained
+    // first, since `onMessage` would only do it after this returns.
+    if (this.owned) {
+      this.relay();
+      this.flushEvents();
+    }
   }
 
   /**
@@ -2573,17 +2804,18 @@ export class Match {
    *
    * Exact for an honest peer: the raw interval comes back to the bit, and the
    * bounded clock IS its stamp. The first stamp has nothing to measure
-   * against, so it is assumed to cover one INPUT interval — the cadence a
-   * client actually sends at. Assuming a single TICK instead (which this did
-   * at first) gives the very first packet a 16 ms budget it has no way of
-   * knowing about.
+   * against, so it is assumed to cover `FIRST_STAMP_GAP` — what a client's
+   * first sample can honestly span. Assuming a single TICK instead (which this
+   * did at first) gave the very first packet a 16 ms budget it had no way of
+   * knowing about, and one INPUT interval (which it did next) was short by the
+   * frame that overshoots it.
    */
   private onStamp(peer: Peer, stamp: number): number {
     const now = this.arrivalClock();
     if (Number.isNaN(peer.stamp)) {
       peer.stamp = stamp;
       peer.arrived = now;
-      return 1 / INPUT_HZ;
+      return FIRST_STAMP_GAP;
     }
     const raw = stamp - peer.stamp;
     const arrived = now - peer.arrived;
@@ -3383,10 +3615,27 @@ export class Match {
     if (peer.transport.open) peer.transport.send(encode(msg));
   }
 
+  /** To every seated peer and every watcher — what the round looks like is everybody's. */
   private broadcast(msg: ServerMessage): void {
     const payload = encode(msg);
     for (const peer of this.peers.values()) {
       if (peer.transport.open) peer.transport.send(payload);
     }
+    for (const watcher of this.watchers) {
+      if (watcher.open) watcher.send(payload);
+    }
+  }
+
+  /**
+   * Turns every watcher away with `reason` and forgets them — `close`'s and
+   * `abandon`'s, which tell the seated the same thing.
+   */
+  private dismissWatchers(reason: string): void {
+    const payload = encode({ t: "rejected", reason });
+    for (const watcher of this.watchers) {
+      if (watcher.open) watcher.send(payload);
+      watcher.close();
+    }
+    this.watchers.clear();
   }
 }

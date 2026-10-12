@@ -135,10 +135,14 @@ export class NetSoldier implements Combatant, RagdollSubject {
   onStep: () => void = () => {};
 
   /**
-   * Which roster slot this draws. Fixed for the life of the pool entry — the
-   * slot's OCCUPANT changes, the slot does not.
+   * Which roster slot this draws. The slot's OCCUPANT changes and the body
+   * does not — and the slot's NUMBER moves only when a welcome names a table
+   * block width other than the one it was numbered by
+   * (`NetRoster.setBlockWidth`): the same body, re-addressed to where the
+   * authority numbers it. Written there and in the constructor and nowhere
+   * else, which is the only reason it is not `readonly`.
    */
-  readonly slot: number;
+  slot: number;
   team: Team;
 
   /** Ring of received samples, oldest first. */

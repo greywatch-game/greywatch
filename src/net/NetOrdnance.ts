@@ -69,6 +69,19 @@ interface Ghost {
 }
 
 export class NetOrdnance {
+  /**
+   * Wired by `Game`: somebody else's rocket has just left a tube, at the point
+   * it is first drawn — the report a launch makes.
+   *
+   * Raised off the INTERPOLATED flight rather than off the snapshot that
+   * first named it, for `NetRoster.onDeath`'s reason: the snapshot arrives in
+   * real time and the warhead is drawn `interpDelay` behind it, so a report
+   * played on arrival would be heard a tenth of a second before anybody saw
+   * the tube fire. No event says it, and none needs to: a flight appearing IS
+   * the launch, on the wire every client already reads.
+   */
+  onLaunch: (x: number, y: number, z: number) => void = () => {};
+
   private readonly rockets: Ghost[] = [];
   /** Flight id -> the ghost drawing it. Only ever holds claimed slots. */
   private readonly live = new Map<number, Ghost>();
@@ -193,6 +206,7 @@ export class NetOrdnance {
       if (!ghost.hasPosition) {
         ghost.hasPosition = true;
         ghost.body.show(true);
+        this.onLaunch(x, y, z);
       }
     }
   }

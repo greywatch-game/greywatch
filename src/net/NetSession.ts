@@ -7,10 +7,19 @@
  * socket and never to a game system it was not handed. It decides nothing about
  * the round — every outcome here arrived from the authority.
  *
- * It exists so that `Game` gains a field and a branch rather than a protocol.
- * The offline path is untouched: with no session, `updateWorld` runs
- * `ConquestSystem` and `BattleSystem` exactly as it always has, and nothing in
- * this file is constructed at all.
+ * It exists so that `Game` gains a field rather than a protocol — and from
+ * `BABYLON_EXIT.md` X2.5c C4 EVERY round has one. A match on a server is
+ * reached over a WebSocket; the offline round is a session on a match the
+ * page hosts itself (`LocalMatch`, `localHost.ts`), reached over a port, and
+ * this class cannot tell the two apart by anything it does: the same
+ * messages, the same prediction, the same validation on the far side. The
+ * one thing it is TOLD is `local` — whether the page OWNS the match — which
+ * is the authority question `Game` asks of it and nothing here reads.
+ *
+ * A WATCHER is a session too (`Match.watch`, the benchmark's): welcomed at
+ * slot -1, seated, and nobody — every body in the pool is drawn, nothing is
+ * uploaded (`update` reports nothing while not `alive`, and a watcher never
+ * is), and nothing it could send means anything on the far side.
  *
  * **Movement is uploaded, not commanded.** The local `Player` simulates itself
  * exactly as it does offline and this reports where it ended up at `INPUT_HZ`.
@@ -19,6 +28,7 @@
  * `docs/multiplayer.md`.
  */
 import { Scene, Vector3 } from "@babylonjs/core";
+import { CONFIG } from "../config";
 import type { Team } from "../entities/Combatant";
 import type { Vector3Like } from "../math";
 import type { CelMaterialFactory } from "../shaders/CelShader";
@@ -111,7 +121,10 @@ export class NetSession {
   /** …and the anti-tank kit: rockets in the air, mines on the ground. */
   readonly ordnance: NetOrdnance;
 
-  /** The roster slot this client owns, or -1 before the welcome lands. */
+  /**
+   * The roster slot this client owns, or -1 before the welcome lands — and
+   * after it, for a WATCHER, which owns none (see the header).
+   */
   slot = -1;
   team: Team = 0;
   mapId = "";
@@ -267,7 +280,20 @@ export class NetSession {
   private hullResync = false;
   private readonly scratch = new Vector3();
 
-  constructor(scene: Scene, mats: CelMaterialFactory) {
+  /**
+   * Whether the page OWNS this match — a match it hosts itself
+   * (`LocalMatch`), as the offline round is — rather than sits in one a
+   * server runs. **The AUTHORITY question, and the only one**
+   * (`BABYLON_EXIT.md` X2.5c C4): restarting the round, choosing its map and
+   * its difficulty, and pause and the deploy screen HOLDING the world are the
+   * owner's, so every door that asked whether there was a session at all now
+   * asks this. Nothing about PREDICTION may ask it — offline predicts exactly
+   * as a match client does — and nothing in this class reads it.
+   */
+  readonly local: boolean;
+
+  constructor(scene: Scene, mats: CelMaterialFactory, local: boolean) {
+    this.local = local;
     this.roster = new NetRoster(scene, mats);
     this.grenades = new NetGrenades(scene, mats);
     this.ordnance = new NetOrdnance(scene, mats);
@@ -624,6 +650,10 @@ export class NetSession {
   private receive(msg: ServerMessage): void {
     switch (msg.t) {
       case "welcome":
+        // The table's block width FIRST, before anything reads a slot: every
+        // body is re-addressed to the slot this match numbers it by — the
+        // ceiling when a server says nothing. See `NetRoster.setBlockWidth`.
+        this.roster.setBlockWidth(msg.perTeam ?? CONFIG.bots.maxPerTeam);
         this.slot = msg.slot;
         this.team = msg.team;
         this.mapId = msg.mapId;
