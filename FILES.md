@@ -2113,7 +2113,7 @@ src/
                       #   port in (or a watcher's); `lost` and a stall
                       #   watchdog (standing down until the host first
                       #   answers), so a dead host is said (`onLost`);
-                      #   `backlog`, the owner's back-pressure. Not a
+                      #   `behind`, the owner's back-pressure (seconds). Not a
                       #   ClientMessage: no remote client can say it
     matchHost.ts      #   Where the page's own match runs: `openMatchHost`,
                       #   the boot's choice — a Worker proved up by a settle,

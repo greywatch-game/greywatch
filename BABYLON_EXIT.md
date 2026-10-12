@@ -1716,12 +1716,14 @@ wire comes later, for both at once, and only if a profiler capture asks for it.
   line no longer claims an honest `move` after it is uncorrected, which no
   hold could change (the stamp gates read the wall clock).
 - **Open, and the user's to decide** (found at C4's third review):
-  - **The backlog counts CALLS, not seconds.** On a device the match cannot
-    keep up on, each folded advance grows to `MAX_CARRIED_MS`, so four of
-    them queue about a second of fight behind the picture rather than four
-    frames. Bounding the slack by owed seconds would make
-    `CONFIG.net.localBacklog` mean what it says; the phone run is where it
-    shows.
+  - ~~**The backlog counts CALLS, not seconds.**~~ **Decided and done**
+    (the user's call, 2026-10-12): on a device the match could not keep up
+    on, each folded advance grew to `MAX_CARRIED_MS`, so four of them queued
+    about a second of fight behind the picture rather than four frames. Now
+    `LocalMatch.behind` is SECONDS, and a frame steps only what fits under
+    `CONFIG.net.localSlack` (0.15 s, three frames at the `dt` clamp) and
+    holds the rest — slower than real time, never further behind than that.
+    The phone run is still where it shows.
   - **Any uncaught error in the Worker ends offline play for the page's
     life** (`matchHost.ts`'s `onerror` → `lost`), including a throw in a
     person-port handler that a server would log and survive and `?simpage`

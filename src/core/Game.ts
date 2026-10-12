@@ -584,12 +584,6 @@ export class Game {
    */
   private localStepped = 0;
   /**
-   * Seconds stepped on this page and not yet handed to the match — folded
-   * while it is behind (`updateWorld`). Zeroed with each advance and with
-   * each new round.
-   */
-  private localOwed = 0;
-  /**
    * Every round's resolve — the simulation half (`BABYLON_EXIT.md` X2.2) —
    * and on this page only ever a PREDICTION: this client's own shot, shell
    * and belt, resolved here for the tracer and the hitmarker guess while the
@@ -7123,7 +7117,6 @@ export class Game {
     this.wireNet(net);
     this.localBegun = false;
     this.localTiming = null;
-    this.localOwed = 0;
     const failed = (err: unknown): void =>
       this.failLocalRound(err instanceof Error ? err.message : String(err), net);
     host.open(this.mapDef.id).catch(failed);
@@ -8575,18 +8568,21 @@ export class Game {
     // and never awaited: the match answers between frames, and what it says
     // reaches this frame or the next as the wire, exactly as a server's does.
     //
-    // **Folded, not posted, while the match is behind** (`CONFIG.net.
-    // localBacklog`): a frame's time joins the next advance once too many are
-    // unanswered, so a device the match cannot keep up on does not queue the
-    // fight further and further behind its picture. Never the benchmark's,
-    // which posts one advance per step and folds nothing.
+    // **Only what fits under the slack is stepped** (`CONFIG.net.
+    // localSlack`): a frame posts as much of its `dt` as keeps the match's
+    // unanswered time under it, and the rest is HELD (`passLocalClock`, which
+    // hands over whatever this did not step), so a device the match cannot
+    // keep up on plays the fight slower than real time rather than further
+    // and further behind its picture. Never the benchmark's, which posts one
+    // advance per step and holds nothing back.
     if (this.localRound) {
       this.fileLocalTiming();
-      this.localStepped += dt;
-      this.localOwed += dt;
-      if (this.bench || this.local.backlog < CONFIG.net.localBacklog) {
-        this.local.advance(this.localOwed, this.prof.armed);
-        this.localOwed = 0;
+      const step = this.bench
+        ? dt
+        : Math.min(dt, CONFIG.net.localSlack - this.local.behind);
+      if (step > 0) {
+        this.local.advance(step, this.prof.armed);
+        this.localStepped += step;
       }
     }
     this.updateNetWorld(dt);

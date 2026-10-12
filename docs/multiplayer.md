@@ -1333,9 +1333,11 @@ common but the `postMessage`:
   taken, whether the round ended, and the last step's timing on the page's
   clock when asked); a `hold`'s `done` finds nobody waiting and is dropped.
   Each of the two is ONE held message rewritten per post, so the per-frame
-  calls allocate nothing of their own, and `LocalMatch.backlog` counts the
-  `advance`s still unanswered — the owner's back-pressure, since a host slower
-  than the page is otherwise a queue that grows a call a frame. The fight is
+  calls allocate nothing of their own, and `LocalMatch.behind` sums the
+  SECONDS the `advance`s still unanswered carry — the owner's back-pressure,
+  since a host slower than the page is otherwise a queue that grows a call a
+  frame. The page steps only what fits under `CONFIG.net.localSlack` and
+  holds the rest, so the fight is never more than that behind the picture. The fight is
   folded off `MatchOptions.hear`, an in-process ear on every drain, because no
   wire event carries a bot's award.
 - **A PERSON's port**, dialled by the owner (`LocalMatch.dial`) and held by

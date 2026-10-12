@@ -3,8 +3,8 @@
  * (`BABYLON_EXIT.md` X2.5c C3): the calls it makes, the answers it hears, and
  * the dial that puts a person into that match over a port.
  * Owns: the owner's half of the channel — the call counter, the calls
- * awaiting an answer, the `advance`s still unanswered (`backlog`), and the
- * watchdog over them. The words both halves speak are `localWire.ts`'s; the
+ * awaiting an answer, the `advance`s still unanswered and the seconds they
+ * carry (`behind`), and the watchdog over them. The words both halves speak are `localWire.ts`'s; the
  * host's half is `server/localMatch.ts`, reached in a Worker
  * (`server/localMatchWorker.ts`) or on a `MessageChannel` in this thread,
  * and this file cannot tell which: it is handed an `OwnerPort`.
@@ -39,8 +39,8 @@
  * in its own thread); or allocate per frame in its own code. `advance` and
  * `hold` are posted every frame, so each posts ONE held message with its
  * numbers rewritten (the structured clone copies it at the post, so reuse is
- * safe), the backlog is a ring of numbers grown only past its high-water
- * mark, and the watchdog is one interval and a few numbers, never a timer
+ * safe), the unanswered advances are two rings of numbers grown only past
+ * their high-water mark, and the watchdog is one interval and a few numbers, never a timer
  * per call. What the platform allocates to clone a message across and to
  * deliver its answer is the channel's price, not this file's.
  */
@@ -126,15 +126,19 @@ export class LocalMatch {
   /** The last build (`open`, `begin`) posted: while it is owed, the patience is a build's. */
   private buildCall = 0;
   /**
-   * The ids of the posted `advance`s not yet answered, oldest first — a ring,
-   * `advanceHead` the oldest and `owedAdvances` how many. Ids rather than a
-   * count because a failed `advance` is answered `failed`, as a refused
-   * `hold` is: only the id says which call came back. Doubled only past its
-   * high-water mark, which the owner's back-pressure bounds (`backlog`).
+   * The posted `advance`s not yet answered, oldest first — two rings in
+   * step, each one's id and its `dt`, `advanceHead` the oldest and
+   * `owedAdvances` how many. Ids rather than a count because a failed
+   * `advance` is answered `failed`, as a refused `hold` is: only the id says
+   * which call came back. Doubled only past their high-water mark, which the
+   * owner's back-pressure bounds (`behind`).
    */
   private advanceIds = new Float64Array(64);
+  private advanceDts = new Float64Array(64);
   private advanceHead = 0;
   private owedAdvances = 0;
+  /** The sum of the owed advances' `dt`s, in seconds — `behind`. */
+  private owedSeconds = 0;
   /** The per-frame calls' one message each, rewritten and posted — see the header. */
   private readonly advanceMsg: OwnerCall & { t: "advance"; call: number } = {
     t: "advance",
@@ -161,18 +165,21 @@ export class LocalMatch {
   }
 
   /**
-   * How many posted `advance`s the host has not answered yet — the owner's
-   * BACK-PRESSURE. The page posts one a frame and never waits, so a host
-   * slower than the page (a phone whose Worker takes longer to step a frame
-   * than the page takes to draw one) is a queue that grows by a call every
-   * frame, each one steps owed, and the world falls ever further behind the
-   * screen. The owner reads this and, while it is over a few, folds its `dt`
-   * into a later `advance` rather than posting one a frame — time handed
-   * over late is still handed over. 0 once the host is lost: nothing will
-   * answer, and nothing more is posted.
+   * How many SECONDS of posted `advance`s the host has not answered yet —
+   * the owner's BACK-PRESSURE, and how far the fight the host is stepping
+   * stands behind the time this page has handed it. The page posts one a
+   * frame and never waits, so a host slower than the page (a phone whose
+   * Worker takes longer to step a frame than the page takes to draw one) is
+   * a queue that grows every frame, and the world falls ever further behind
+   * the screen. The owner reads this and posts only what fits under its
+   * slack (`CONFIG.net.localSlack`), handing the rest over as HELD time.
+   * Seconds rather than calls because a call's size is the owner's to
+   * choose: four calls was four frames on a host keeping up and a second on
+   * one that was not. 0 once the host is lost: nothing will answer, and
+   * nothing more is posted.
    */
-  get backlog(): number {
-    return this.owedAdvances;
+  get behind(): number {
+    return this.owedSeconds;
   }
 
   open(map: string): Promise<void> {
@@ -183,7 +190,7 @@ export class LocalMatch {
     return this.call({ t: "begin", seed: round.seed, difficulty: round.difficulty }).then(() => {});
   }
 
-  /** Posted, never awaited: the answer arrives through `onAdvanced`, and it counts in `backlog` until then. */
+  /** Posted, never awaited: the answer arrives through `onAdvanced`, and it counts in `behind` until then. */
   advance(dt: number, timed: boolean): void {
     const msg = this.advanceMsg;
     msg.dt = dt;
@@ -191,8 +198,11 @@ export class LocalMatch {
     const id = this.post(msg);
     if (id === 0) return;
     if (this.owedAdvances === this.advanceIds.length) this.growAdvances();
-    this.advanceIds[(this.advanceHead + this.owedAdvances) % this.advanceIds.length] = id;
+    const at = (this.advanceHead + this.owedAdvances) % this.advanceIds.length;
+    this.advanceIds[at] = id;
+    this.advanceDts[at] = dt;
     this.owedAdvances++;
+    this.owedSeconds += dt;
   }
 
   /**
@@ -265,6 +275,7 @@ export class LocalMatch {
     this.lostWhy = reason;
     clearInterval(this.watchdog);
     this.owedAdvances = 0;
+    this.owedSeconds = 0;
     const err = new Error(`[local match] lost: ${reason}`);
     for (const waiting of this.waiting.values()) waiting.reject(err);
     this.waiting.clear();
@@ -306,12 +317,19 @@ export class LocalMatch {
     });
   }
 
-  /** The backlog's ring, doubled with its order kept — only past its high-water mark. */
+  /** The owed advances' rings, doubled with their order kept — only past their high-water mark. */
   private growAdvances(): void {
-    const old = this.advanceIds;
-    const grown = new Float64Array(old.length * 2);
-    for (let n = 0; n < this.owedAdvances; n++) grown[n] = old[(this.advanceHead + n) % old.length];
-    this.advanceIds = grown;
+    const ids = this.advanceIds;
+    const dts = this.advanceDts;
+    const grownIds = new Float64Array(ids.length * 2);
+    const grownDts = new Float64Array(ids.length * 2);
+    for (let n = 0; n < this.owedAdvances; n++) {
+      const at = (this.advanceHead + n) % ids.length;
+      grownIds[n] = ids[at];
+      grownDts[n] = dts[at];
+    }
+    this.advanceIds = grownIds;
+    this.advanceDts = grownDts;
     this.advanceHead = 0;
   }
 
@@ -359,9 +377,12 @@ export class LocalMatch {
     // Every advance up to this answer has been answered, since answers come
     // in order — whether this one was it or a call posted after it.
     while (this.owedAdvances > 0 && this.advanceIds[this.advanceHead] <= reply.call) {
+      this.owedSeconds -= this.advanceDts[this.advanceHead];
       this.advanceHead = (this.advanceHead + 1) % this.advanceIds.length;
       this.owedAdvances--;
     }
+    // A running sum of floats does not come back to zero on its own.
+    if (this.owedAdvances === 0) this.owedSeconds = 0;
     // Anything still owed has its wait counted from this answer: the moment
     // the host could start on it.
     this.owedSince = performance.now();

@@ -54,23 +54,33 @@ export const net = {
   hitCreditWindow: 0.5,
 
   /**
-   * How many of the page's own `advance`s may be unanswered before it stops
-   * posting one a frame and folds the frame's time into the next one instead
-   * (`Game.updateWorld`, `BABYLON_EXIT.md` X2.5c C4).
+   * How many SECONDS of the page's own `advance`s may be unanswered before
+   * it stops handing the match the frame's time to STEP and hands it over as
+   * HELD instead (`Game.updateWorld`, `LocalMatch.behind`; `BABYLON_EXIT.md`
+   * X2.5c C4).
    *
    * The page never waits for its own match — an advance is posted and its
    * answer read whenever it lands — so on a device where a step costs the
    * match more than a frame costs the page, nothing else would stop the queue
    * between them growing for the length of the round, and with it how far
-   * behind the page's picture the fight is. Four frames of slack absorbs a
-   * hitch on either side; past it the folded time reaches the match in one
-   * call, which steps it in whole steps — up to the accumulator's cap
-   * (`Match.accrue`, `MAX_CARRIED_MS`), past which the clock passes and
-   * nothing steps. So a host that cannot keep up plays the fight SLOWER than
-   * real time rather than further and further behind it. The benchmark is
-   * exempt: it must post one advance per STEP.
+   * behind the page's picture the fight is. So this is a bound on that lag,
+   * on top of `interpDelay`: a frame posts only what fits under it, and the
+   * rest of the frame passes the match's clock without a step
+   * (`Match.hold`). A host that cannot keep up therefore plays the fight
+   * SLOWER than real time, never more than this far behind it.
+   *
+   * 0.15 is three frames at the wire's `dt` clamp (`MAX_FRAME_DT`, 50 ms):
+   * on a host keeping pace, the answers to the last frame or two may still
+   * be in flight when a frame posts, and none of that may cost a step. On a
+   * 60 Hz page it is about nine frames, which absorbs a hitch on either side.
+   * It was a COUNT of calls until C4's third review, and the count let each
+   * folded call grow to the accumulator's cap — four calls, a second of fight
+   * behind the picture, on exactly the device it was there for.
+   *
+   * The benchmark is exempt: it posts one advance per STEP and holds nothing
+   * back, since its fight must be the same however slowly a device runs it.
    */
-  localBacklog: 4,
+  localSlack: 0.15,
 
   /**
    * Where a round trip stops reading as fine, and where it starts reading as a
