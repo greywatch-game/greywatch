@@ -59,9 +59,11 @@ has nothing to revert.
   play is that each bot's movement stream restarts every round (X0.2). So
   X6.2's merge carries Phase 1 onwards, and its `revert -m 1` leaves the
   instruments on `develop`, which is what is wanted.
-- **A second early merge, after X2.5b**, by the user's call on 2026-10-11:
-  once X2.5b lands and has been code-reviewed, the branch is merged `--no-ff`
-  into `develop`, so the phone can install and run the deployed build (X2.5b's
+- **A second early merge, after X2.5c**, by the user's call on 2026-10-11
+  (first planned for after X2.5b, then moved, because X2.5c deletes most of
+  X2.5b's transport and `develop` should not deploy it in between): once
+  X2.5c lands and has been code-reviewed, the branch is merged `--no-ff` into
+  `develop`, so the phone can install and run the deployed build (X2.5c's
   Verify). That merge carries Phases 1 and 2 to `develop`, so from then on
   X6.2's merge carries Phase 3 onwards, and its `revert -m 1` no longer takes
   Phases 1 and 2 back out.
@@ -1088,7 +1090,7 @@ wrapper over it.
 - **Rewrites:** `docs/deaths.md`. The `scene.physicsEnabled` rule stays until
   the scene is gone.
 
-### X2.5 — One simulation core, in a Worker — **L**, as two sub-steps (decided 2026-10-10)
+### X2.5 — One simulation core, in a Worker — **L**, as three sub-steps (two decided 2026-10-10, the third 2026-10-11)
 
 Not needed to leave Babylon, and cheapest right here, with both simulations
 Babylon-free. `Game` offline and `HeadlessGame` on the authority become one
@@ -1114,6 +1116,13 @@ measures today:
 
 The two sub-steps land separately, each with its own oracle, because a
 divergence after both at once could not be placed in either.
+
+**A third sub-step, X2.5c, was added after X2.5b landed** (the user's call,
+2026-10-11, after a review of the branch). X2.5a and X2.5b made one core but
+left the PAGE with two client models: a match client (snapshots, `ServerEvent`,
+`NetRoster`, local predictions) and an offline one (`SimFrame`, mirrors,
+`SimEvent`, bare asks). X2.5c makes offline a match client of a `Match` running
+in a Worker, so there is one client, and deletes most of X2.5b's transport.
 
 #### X2.5a — One core, in the page — **M** (ran **L**) — **LANDED** (e328d43)
 
@@ -1225,7 +1234,13 @@ outside its typed arrays; one frame must be applied before that call's events;
   where systems meet) and "Conquest rules" (one ledger, one core); `docs/game.md`;
   `docs/multiplayer.md`.
 
-#### X2.5b — The core in a Worker — **M** — **LANDED** (e454421)
+#### X2.5b — The core in a Worker — **M** — **LANDED** (e454421) — **transport SUPERSEDED by X2.5c**
+
+**Superseded in part, 2026-10-11.** X2.5c replaces this step's transport
+(shared memory, `SimHost`, the codec and the publication) with a local `Match`
+over the existing protocol, and its two owed Verify items (the phone run and
+the docker image's isolation) move to X2.5c. What X2.5c keeps from here is
+listed in its "Keep". The record below stays as it landed.
 
 **Landed** 2026-10-11, at the end of one session; **two Verify items are owed
 by the deploy, not by this commit**: the phone run (the user's review, then the
@@ -1431,6 +1446,195 @@ against `require-corp` before turning it on.
   installable app" (the isolation headers, beside `DOCS`);
 - `docs/pwa.md`, `docs/profiling.md`, `docs/game.md`;
 - `VERIFYING.md`, which has to say how a headless run gets isolation.
+
+#### X2.5c — Offline is a match client of a local `Match` — **M–L**
+
+**Why** (the user's call, 2026-10-11, after a review of the branch).
+"Single-player is a local server." After X2.5b the page had two client models,
+and they had begun to drift:
+- **Two event switches.** `Game.onSimEvent` and `Game.onNetEvent` shared about
+  half their arms. The hit cue already differed: offline picked it by cause,
+  while a match sends every hit through `hitCredits`.
+- **Two prediction models.** In a match the page predicts with its own
+  `CombatSystem`, `GrenadeSystem` and the rest. Offline the same acts were bare
+  asks. 23 methods in `Game.ts` forked on `this.net` (0 on `develop`).
+- **Two state vocabularies.** `SimFrame` and the mirrors offline; `Snapshot`
+  and `NetRoster` in a match. A field the page can see was added twice, and the
+  offline half took five edits, three of which failed silently if forgotten.
+- **Event payloads read by raw offset.** `onSimEvent` made 61 reads like
+  `c.f(i, 7)`, checked against nothing.
+- **The tank gun's reload clock kept twice**, reconciled by `HULL_EARLY` slack.
+
+**The rule this step sets: if anything about the online experience is not
+acceptable offline, it is fixed for BOTH.** Offline does not get a better
+transport than a match. The step uses the existing JSON protocol. A binary
+wire comes later, for both at once, and only if a profiler capture asks for it.
+
+**Read first:**
+- `server/Match.ts`: its header, `Peer`, `addPeer`, the step loop around
+  `TICK_HZ`, `broadcastSnapshot`, `retire`, the map vote and rotation.
+- `src/net/Connection.ts`: the whole header (the clock offset), and
+  `NetSession`.
+- `server/corecheck.ts`: the half that drives the core through a real `Match`
+  with fake peers. It is this step's model.
+- `docs/multiplayer.md`, `docs/game.md`, `docs/states.md` (pausing and its
+  netplay inversion), X2.5a's "What exists", and X2.5b's "What exists".
+
+**The shape.**
+- **The Worker hosts a `Match`** with one in-memory peer per person (offline:
+  one). The page joins it through the same `NetSession` and `Connection` a
+  remote match uses, so `Game.net` is non-null in every round.
+- **There is a second channel for the OWNER only:** start a round on a map
+  with a seed and a difficulty, advance by `dt`, settle, report the step's
+  timing and the bench's fight hash. It is not a `ClientMessage`, so no remote
+  client can send it, and `server/wire.ts` never sees it.
+- **The Worker's entry lives in `server/`** (e.g. `server/localMatch.ts`), and
+  the page reaches it only as a Worker URL. Nothing in `src/` value-imports
+  `server/`, so CLAUDE.md's "nothing in `src/sim/` imports from `server/`"
+  still holds, and the babylon-free gate already walks it.
+- **The page also keeps a same-thread local match**, hosted on a
+  `MessageChannel`, selected by `?simpage` and used when the Worker fails to
+  start. It is the same code path, and it is what a debugger steps through.
+
+**Do**, as commits each proven against its parent:
+- **C0, the oracle.** Record the bench's seven fight hashes, `simulate --events`
+  for every map, and `corecheck` at the parent. These are X2.5a's hashes,
+  unchanged through X2.5b.
+- **C1, Match off the socket.**
+  - Introduce a `Peer` transport (send, close, ping) with a `ws` adapter in
+    `server/index.ts`, replacing `peer.socket`, `socket.ping` and `on("pong")`.
+  - Behaviour unchanged. Verify with `corecheck`, `parity` and a netplay round.
+- **C2, a Match the owner drives.**
+  - Its clock becomes a choice. The server free-runs (today's wall-clock
+    accumulator). A local owner calls `advance(dt)`, and the same accumulator
+    steps `1 / TICK_HZ`.
+  - The bench's `dt` is already `1 / 60` (`CONFIG.profiling`), so a bench frame
+    stays one step.
+  - Add the options a local match needs:
+    - the seed (`?seed=`, the bench);
+    - the difficulty (`Match` hardcodes 1);
+    - the map named by the owner, with no vote and no rotation;
+    - no idle retire, since the bench is a match with no person;
+    - **the per-map pool**: `RoundSpec.pool` equal to the map's own roster,
+      as offline builds it today. A slot index is a bot index, and every
+      outcome stream is keyed by slot, so the authority's 48-slot ceiling
+      would renumber team 1 and change the fight. Keeping the per-map pool
+      keeps the fight hashes as the oracle.
+- **C3, the local transport.**
+  - The Worker entry, the owner channel, and `Connection` taking a transport
+    (a WebSocket, or a `MessagePort`).
+  - Nothing in `Game` uses it yet. `corecheck` gains a run through the local
+    transport.
+- **C4, offline is a local match.**
+  - `Game`'s offline round goes through `NetSession` over the local transport.
+  - **The forks about AUTHORITY stay, as one question:** `net.local`, true when
+    the page owns the match. Restart, choosing the map, the difficulty, and
+    pause and the deploy screen holding the world. Every door that asks
+    `!Game.net` today asks `!net.local` instead.
+  - **The forks about PREDICTION go.** Offline predicts exactly as a match
+    client does.
+  - **Holding the world is not stepping it.** While a lid holds the world, or
+    the deploy screen holds a respawn (`hostHoldsRespawn`'s job today), the
+    page does not call `advance`. An ask made while held (deploy, `spawned`)
+    must still be answered: `Match` handles a message on arrival, not on a
+    tick. Check that it is.
+  - The bench drives the local match. Its fight hash comes back over the owner
+    channel, after a `settle`.
+- **C5, delete.**
+  - `simHost.ts`, `simWorker.ts`, `hostWire.ts`, `commandCodec.ts`,
+    `publication.ts`.
+  - `frame.ts`, `mirror.ts` and `simCheck.ts`, wherever nothing outside the
+    page used them. `simulate`, `corecheck`, `BotRig` and `BattleView` read
+    them today: move each onto `SimCore` directly or onto the match path.
+  - `Game.onSimEvent`, the pump, settle and ask plumbing, `?simcheck` and
+    `?simcopy`.
+  - `ordnanceRefused` and `Player.returnGrenade`, if the match client already
+    has the same path; keep one.
+  - The profiler's `sim` root is now fed from the owner channel.
+- **C6, cross-origin isolation comes out, then the contracts** (decided
+  2026-10-11, below).
+  - Posting needs no cross-origin isolation; only `SharedArrayBuffer` did.
+    Remove the COOP `same-origin` / COEP `require-corp` pair from all four
+    places X2.5b put it:
+    - `vite.config.ts` (the dev and preview servers);
+    - `docker/default.conf.template` (the server level and every location
+      with its own `add_header`);
+    - `src/pwa/sw.js` (every response it answers);
+    - and any check left reading `crossOriginIsolated`.
+  - Verify: `grep -rE "crossOriginIsolated|Cross-Origin-(Opener|Embedder)|require-corp"`
+    finds nothing outside this file, `PERF_PLAN.md` and the docs' history.
+    The local match still runs in the Worker in dev, under `vite preview`, and
+    in the installed app offline, now with `crossOriginIsolated` false.
+  - Rewrite the contracts (below).
+
+**Keep from X2.5b:**
+- `useDefineForClassFields: false` and its CLAUDE.md convention;
+- `LagComp.record`'s allocation fix;
+- `ShotWeapon` (a shot carries five numbers, not the `WeaponSetup`);
+- `HULL_EARLY` as one constant shared with `Match`;
+- the Worker boot in `main.ts` (awaited, with a fallback, and a boot line
+  saying which one runs);
+- the round named by map id rather than by posted import thunks;
+- the profiler's `sim` root on the page's `timeOrigin` (report version 15),
+  re-pointed at `Match`'s step.
+
+**Traps:**
+- **A hold stops the server's clock and the client's offset estimate does not
+  know.** `Connection` estimates server time as the MAXIMUM sample in a
+  five-second window. After a hold of P seconds every new sample is P lower, so
+  the stale maximum keeps render time P ahead of the server for up to five
+  seconds. Bodies then stand at their newest snapshot, and rewound shots are
+  stamped in the future. Resetting the window on release is the likely fix.
+  Whatever the fix, a remote client must never take that path.
+- **The anti-cheat gates see the local peer.** Stamp leads are clamped to
+  ±250 ms (`Match.onStamp`), there is a message-rate bucket, and the move and
+  drive validation run on every report. An honest local peer must pass them
+  bit-unchanged, as an honest remote one does, and a hold must not read as a
+  stamp jump.
+- **Validation now runs offline.** That is the point: one rule. But a refusal
+  offline that an offline player could not trigger before is a finding, not
+  noise.
+- **The bench's fight must not move.** If the hashes differ, the slot layout
+  (the pool), the step order around `Match.step`, and the seed's route are the
+  suspects, in that order. Attribute the change to one cause, as X2.2 C6 did,
+  or do not land.
+
+**Verify:**
+- The bench's seven fight hashes: X2.5a's table, identical, from the Worker and
+  under `?simpage`.
+- `simulate --events` identical for every map; `corecheck` all passed,
+  including the new local-transport run; `parity`; `merge:hash` and
+  `kit:hash` identical; `npm run build`.
+- **A netplay round** on a local match server, then leave to the menu and play
+  an offline round on the local match: on foot, then in each vehicle kind. The
+  USER play-tests this, as for X2.1 and X2.5a.
+- **The phone, offline Sarab, off the profiler** (moved here from X2.5b). This
+  is where the 100 ms interpolation (`CONFIG.net.interpDelay`, 20 Hz
+  snapshots) and the JSON allocation would show. By this step's rule, anything
+  wrong there is fixed for both modes. Compare against X0.4's "before" and
+  against X2.5b's desktop reading.
+- `Game.ts` has no `onSimEvent`. Count the `this.net` forks and name each one
+  left: every one should be an authority question (`net.local`).
+- The docker image's isolation, owed from X2.5b, is no longer owed: the
+  headers are gone. What the deploy owes instead is the local match running in
+  the Worker from the deployed build, installed and offline, on the phone run
+  above.
+
+**Rewrites:**
+- `CLAUDE.md`, "Ownership and wiring": offline is a match client of a local
+  `Match`; `SimHost`, the frame and the mirrors are gone.
+- `CLAUDE.md`, "Multiplayer": the local match, the owner channel, and
+  `net.local`.
+- `CLAUDE.md`, "Measuring a frame": where the `sim` root's timing comes from.
+- `CLAUDE.md`, "The installable app": the isolation paragraph (every response
+  owes COOP and COEP, beside `DOCS`) is deleted, and so is the sentence on
+  `require-corp` in "Ownership and wiring".
+- `CLAUDE.md`, "Conquest rules": corecheck's two halves.
+- `docs/game.md`, `docs/multiplayer.md`, `docs/states.md` (a pause holds the
+  world in a LOCAL match, and still holds nothing in a remote one),
+  `docs/profiling.md`, `docs/pwa.md` (the isolation headers' four places),
+  `FILES.md`, `VERIFYING.md` (how a headless run gets isolation, no longer
+  needed), and every contract header the deletions touch.
 
 ---
 
@@ -1768,7 +1972,7 @@ to X0.3 (see "The branch"). It is the user's to start.
 | B4 who owns the frame | decided: X5.4 |
 | C1 | X0.2 |
 | C2, C3 | X2.1, X2.2 |
-| C4 Worker | X2.5b (decided 2026-10-10) |
+| C4 Worker | X2.5b (decided 2026-10-10), its transport replaced by X2.5c (2026-10-11) |
 | C5 Rust core | not in this plan |
 | C6 dynamic draws | X4.1 |
 
@@ -1850,8 +2054,11 @@ Phase 1 actually took.
 | X2.5b | Shared memory (with cross-origin isolation) or posted frames? | **Decided** 2026-10-11: shared memory, with the transport behind one interface so posting can replace it (X2.5b). |
 | X2.5b | Rewind offline shots, now that the bots run a frame ahead? | **Decided** 2026-10-11: yes, in both modes (X2.5b). |
 | X2.5b | The phone check sits under the noise floor. How is it read? | **Decided** 2026-10-11: off the profiler: `sim` leaves the main thread, the new costs are named, and the frame is no slower (X2.5b). |
-| X2.5b | How does the branch reach the phone? | **Decided** 2026-10-11: a code review, then a `--no-ff` merge to `develop` ("The branch"). |
+| X2.5b | How does the branch reach the phone? | **Decided** 2026-10-11: a code review, then a `--no-ff` merge to `develop` ("The branch"). Moved to after X2.5c the same day, so `develop` never deploys the transport X2.5c deletes. |
 | X2.5b | Does the authority run the core in-process or in `worker_threads`? | **Decided** 2026-10-11: in-process, with no measurement owed. A server runs one core per match and draws nothing, so a Worker there only adds a hop to every relayed command and event, and the server is in no X0.4 target. |
+| after X2.5b | Keep two client models, or make offline a match client? | **Decided** 2026-10-11: offline is a match client of a local `Match` in a Worker, over the existing protocol. Anything not acceptable offline is fixed for both; a binary wire comes later, for both, if needed (X2.5c). |
+| X2.5b | Revert X2.5b, or replace it? | **Decided** 2026-10-11: replace it with forward commits, keeping what X2.5c lists under "Keep". A revert would take the keepers out and conflict with 934b695. |
+| X2.5c | Keep cross-origin isolation (COOP/COEP) once nothing needs `SharedArrayBuffer`? | **Decided** 2026-10-11: remove it, in X2.5c's C6. It is a contract in four places that fails silently. The one thing it bought was finer `performance.now()` resolution for the profiler, whose phases average over many frames anyway. If a capture ever shows the coarser timer hurts, that is a new decision. |
 | X3.4 | Scatter AO: baked per kind (cheaper, changes the look) or per instance? | Per kind, judged in the bank. |
 | X4.2 | Which hull parts drop at range (the tank's links and wheels, the MG rings)? | An art call; PERF_PLAN A3 measured +6.5% at 300 m on Cinderhaven. |
 | X6.2 | Is it ready to merge to `develop`? | Only when X6.2's "Before" list passes in full. |
