@@ -87,9 +87,10 @@ export class Roster {
   /**
    * `perTeam` is the table's block width a team, and the bot pool's: the
    * ceiling, `CONFIG.bots.maxPerTeam`, on a match that rotates; the map's own
-   * roster on one that does not — see the header.
+   * roster on one that does not — see the header. No default: `Match` is the
+   * one place that decides which.
    */
-  constructor(readonly perTeam: number = CONFIG.bots.maxPerTeam) {
+  constructor(readonly perTeam: number) {
     this.seats = Math.min(HUMANS_PER_TEAM, perTeam);
     // Laid out team 0 first, then team 1 — the same order `BattleSystem` builds
     // its pool in, which is what makes a slot index usable as a bot index
@@ -105,7 +106,7 @@ export class Roster {
     }
   }
 
-  /** How many people this match seats. See `HUMANS_PER_TEAM`. */
+  /** How many people this match seats. See `seats`. */
   get capacity(): number {
     return this.seats * 2;
   }
@@ -150,7 +151,7 @@ export class Roster {
    * What goes on the wire, because a client draws one body and one scoreboard
    * row per slot it is told about, and a slot this map does not field is a body
    * nobody can see, shoot or score against. Every human is in it by
-   * construction: a person may only sit in the first `HUMANS_PER_TEAM` of a
+   * construction: a person may only sit in the first `seats` of a
    * block, and every map fields at least that many.
    */
   fielded(): SlotState[] {
@@ -158,7 +159,7 @@ export class Roster {
   }
 
   /**
-   * Seats a human, or returns null when all sixteen seats are already people.
+   * Seats a human, or returns null when every seat is already a person.
    *
    * The thinner team wins, so a match fills evenly however people arrive; a tie
    * goes to team 0, which is arbitrary but deterministic, and the joiner after
@@ -208,7 +209,7 @@ export class Roster {
    * The first `seats` of each team's block and no others, which is what
    * makes a rotation onto a smaller map impossible to fail: those slots are
    * fielded by every map there is. The rest of the table is bots for the life
-   * of the process.
+   * of the match.
    */
   private seatable(slot: SlotState): boolean {
     return slot.index % this.perTeam < this.seats;

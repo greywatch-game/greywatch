@@ -1444,7 +1444,8 @@ thread), its commands trusted rather than validated, its respawn clock its own
 
 **The slot table is forty-eight slots, built once, never resized or reordered**
 — `CONFIG.bots.maxPerTeam` a side, on every map, because a match rotates maps
-under ONE table. **What the map decides is the ROUND**: `MapLayout.perTeam`
+under ONE table (a match its OWNER drives never rotates and is its one map's
+roster — `docs/multiplayer.md`). **What the map decides is the ROUND**: `MapLayout.perTeam`
 reaches the authority through `setFielded`. **What the map may never decide is
 the SEATS**, which stay at sixteen — the smallest roster in the rotation, so a
 rotation takes bots off the field and never a person out of a seat. Every slot

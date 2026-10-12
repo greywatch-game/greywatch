@@ -1184,8 +1184,14 @@ async function ownedMatch(world: World, c: Checks): Promise<void> {
   );
 
   const early = new Match("local", { map: world.def.id, owned: true });
-  const refused = await early.admit(new FakeTransport(), "early").then(() => false, () => true);
-  c.that(`${tag}: a peer admitted before the owner begins a round is refused`, refused);
+  const turned = new FakeTransport();
+  await early.admit(turned, "early");
+  c.that(
+    `${tag}: a peer admitted before the owner begins a round is refused, and holds no seat`,
+    turned.frames.some((f) => f.t === "rejected") && !turned.open && early.roster.humanCount === 0,
+    `${JSON.stringify(turned.frames)}, open ${turned.open}, humans ${early.roster.humanCount}`,
+  );
+  await quietly(async () => early.close());
 
   const peer = new FakeTransport();
   await quietly(() => m.admit(peer, "corecheck"));
@@ -1193,7 +1199,7 @@ async function ownedMatch(world: World, c: Checks): Promise<void> {
   m.game.conquest.tickets[1] = 0;
   m.advance(BENCH.dt);
   const ended = m.game.tick;
-  m.advance(1);
+  for (let i = 0; i < TICK_HZ; i++) m.advance(BENCH.dt);
   const over = peer.frames.some(
     (f) => f.t === "events" && (f.events as Array<{ e: string }>).some((e) => e.e === "roundover"),
   );
@@ -1225,6 +1231,8 @@ async function ownedMatch(world: World, c: Checks): Promise<void> {
   );
 
   await quietly(async () => m.close());
+  const late = new FakeTransport();
+  await m.admit(late, "late");
   const closed = (() => {
     try {
       m.advance(BENCH.dt);
@@ -1233,7 +1241,10 @@ async function ownedMatch(world: World, c: Checks): Promise<void> {
       return true;
     }
   })();
-  c.that(`${tag}: \`close\` ends it — the world disposed, and the clock refuses to step it`, closed && m["retired"]);
+  c.that(
+    `${tag}: \`close\` ends it — the world disposed, the clock refuses to step it, and a late peer is turned away`,
+    closed && m["retired"] && late.frames.some((f) => f.t === "rejected" && f.reason === "match closed"),
+  );
 }
 
 /**

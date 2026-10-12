@@ -66,8 +66,9 @@
  *
  * A slot index IS a bot index, by construction: `Roster` lays its slots out
  * team 0 then team 1, `BattleSystem` builds its pool the same way, and both are
- * sized from `CONFIG.bots.maxPerTeam`. That is what makes benching a bot for a
- * human a single array index rather than a mapping that can disagree.
+ * sized from one number, `Roster.perTeam`, which `Match` passes as
+ * `RoundSpec.pool`. That is what makes benching a bot for a human a single
+ * array index rather than a mapping that can disagree.
  *
  * **The POOL and the ROUND are two numbers the host states** (`RoundSpec`'s
  * `pool` and `fielded`, `BABYLON_EXIT.md` X2.5a D15). The authority asks for
@@ -76,8 +77,10 @@
  * under one slot table and a table sized per map would renumber every player
  * on team 1 at every rotation — and fields the map's own `perTeamOf` out of
  * it, which is what makes Sarab twenty-four a side in a match and every other
- * map eight. See `server/Roster.ts` for the whole argument, including why
- * human capacity stays at sixteen whatever the map fields. A host whose pool
+ * map eight. An OWNED match (`BABYLON_EXIT.md` X2.5c C2) never rotates and
+ * asks for the map's own roster instead, as the offline page does. See
+ * `server/Roster.ts` for the whole argument, including why human capacity
+ * stays at sixteen whatever the map fields. A host whose pool
  * is the map's own (the offline page, since C4a) states it and fields all of
  * it. Either way `startRound` re-benches every seated person over the bot in
  * their slot itself, last.
@@ -214,7 +217,8 @@ const SIM_PUBLISH = SIM_PHASES.indexOf("publish");
  * loaded, so `startRound` is one synchronous turn), the tier, the bot POOL and
  * how much of it the round FIELDS, and the SEED. The seed is the host's
  * because drawing one is reading a source of entropy, and the core reads
- * none: `Match` passes `freshSeed()`, `simulate` the one it was given.
+ * none: `Match` passes `freshSeed()` (or its owner's, on an owned match),
+ * `simulate` the one it was given.
  *
  * **`pool` and `fielded` are two numbers because the two hosts spend them
  * differently** (`BABYLON_EXIT.md` X2.5a D15). A slot index is a bot index and
@@ -222,8 +226,8 @@ const SIM_PUBLISH = SIM_PHASES.indexOf("publish");
  * authority builds the ceiling (`CONFIG.bots.maxPerTeam` a side, so a match
  * rotating maps under one slot table never renumbers team 1) and fields the
  * map's `perTeamOf` out of it — zero in a botless match — while the offline
- * page builds a per-map pool and fields all of it, which is what keeps the
- * bench's fight the one it has always been.
+ * page, and a match its owner drives, builds a per-map pool and fields all of
+ * it, which is what keeps the bench's fight the one it has always been.
  */
 export interface RoundSpec {
   def: MapDef;

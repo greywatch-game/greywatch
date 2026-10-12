@@ -510,9 +510,10 @@ export class BattleSystem {
         // ROUNDS, since `reset` restarts it on the same constant.
         bot.seedRandom(moveSeed(team, i));
         // …and where its rounds go, which is the ROUND's (`RoundRandom`):
-        // keyed by the AUTHORITY's slot, which is this per-team index in a
-        // block `maxPerTeam` wide whatever this pool's size, so a body draws
-        // the same cone on both sides of the wire and on every map.
+        // keyed by the CEILING's slot numbering — this per-team index in a
+        // block `maxPerTeam` wide whatever this pool's or the table's size —
+        // so a body draws the same cone on both sides of the wire and on
+        // every map.
         bot.shotRand = this.random.stream(
           STREAM.botShot,
           team * CONFIG.bots.maxPerTeam + i,

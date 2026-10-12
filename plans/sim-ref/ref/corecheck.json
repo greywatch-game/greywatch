@@ -1,5 +1,5 @@
 {
- "at": "d1f5e98+",
+ "at": "02f2a60+",
  "lines": [
   "  ok   greyfen/core       deploy: an unasked person is never put in (30 ticks, no spawned)",
   "  ok   greyfen/core       deploy: an ask with the clock run out deploys on the next tick",
@@ -35,11 +35,11 @@
   "  ok   greyfen/owned      owned: the bench's round (5400 steps) — the offline page's core, an owned Match a tick an advance (0 uneven) and one at 144 Hz (12961 frames) are one event stream (a30193bd126366a2)",
   "  ok   greyfen/owned      owned: the bench's fight hash, all three (83e8e74ef36916ba, 58 awards and deaths)",
   "  ok   greyfen/owned      owned: the slot table and the bot pool are the map's own roster (8 a side), team 1 from slot 8",
-  "  ok   greyfen/owned      owned: a peer admitted before the owner begins a round is refused",
+  "  ok   greyfen/owned      owned: a peer admitted before the owner begins a round is refused, and holds no seat",
   "  ok   greyfen/owned      owned: a round that ends is heard (`roundover`), opens no ballot, arms no rotation, and holds — a second's advance steps nothing",
   "  ok   greyfen/owned      owned: the owner begins the next: the seated peer hears `roundstart` on the same map, the seed is the owner's, and the clock steps again",
   "  ok   greyfen/owned      owned: the last peer leaving retires nothing — no idle timer, and the owner's clock still steps",
-  "  ok   greyfen/owned      owned: `close` ends it — the world disposed, and the clock refuses to step it",
+  "  ok   greyfen/owned      owned: `close` ends it — the world disposed, the clock refuses to step it, and a late peer is turned away",
   "  ok   coldharbour/core   fixture: a hull a side",
   "  ok   coldharbour/core   deploy: the person comes in",
   "  ok   coldharbour/core   shell: the enemy hull has a bot on the gun",

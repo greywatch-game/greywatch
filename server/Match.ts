@@ -24,8 +24,9 @@
  * off the core is in-process state its validators and snapshot need
  * (`players`, `hullOf`, `reportedHull`, the fleet, the board).
  * `server/corecheck.ts` drives a real instance through a fake transport and
- * steps it by hand — it reaches `step`, `relay`, `timer`, `peers` and
- * `arrivalClock` by name — so renaming one of those owes that file a look.
+ * steps it by hand — it reaches `step`, `relay`, `timer`, `peers`,
+ * `arrivalClock`, `rotateTimer`, `idleTimer` and `retired` by name — so
+ * renaming one of those owes that file a look.
  * **Its CLOCK is a choice** (`BABYLON_EXIT.md` X2.5c C2). A match the server
  * hosts FREE-RUNS: an interval polls the wall clock into the accumulator
  * (`accrue`), which steps it `1 / TICK_HZ` at a time. A match built `owned`
@@ -959,6 +960,8 @@ export class Match {
       // anybody. See `Roster.capacity`.
       slots: this.roster.capacity,
       bots: this.withBots,
+      // An owned match's held round reads as "rotating" too; nothing lists
+      // one, since it is never in the server's registry.
       state: this.roundOver ? "rotating" : this.running ? "live" : "empty",
     };
   }
@@ -978,6 +981,17 @@ export class Match {
     equipment?: string,
     throwable?: string,
   ): Promise<void> {
+    // An owned match seats nobody before its owner has begun a round, or once
+    // it has closed the match — refused HERE, ahead of `claim`, because the
+    // await below comes after the seat is taken and a refusal there would
+    // leave a person in the roster over a bot nobody benched.
+    if (this.owned && (this.retired || (!this.running && !this.starting))) {
+      transport.send(
+        encode({ t: "rejected", reason: this.retired ? "match closed" : "no round begun" }),
+      );
+      transport.close();
+      return;
+    }
     const id = `p${nextPeerId++}`;
     // Cleaned HERE, at the one door into the roster, rather than at the
     // handshake — the same placement as the weapon lookup below, and for the
@@ -1312,9 +1326,9 @@ export class Match {
     if (!this.starting) {
       // An owned match's round is its owner's to begin, with a seed and a
       // difficulty only the owner has — an arrival inside that build waits on
-      // it below. One with no build at all was admitted before the owner began
-      // a round, which is the owner's mistake and is refused here rather than
-      // guessed at.
+      // it below. With no build at all there is nothing to wait on and
+      // nothing this side may build: `admit` refuses that arrival before it
+      // claims a seat, and this is the backstop that it never reaches `start`.
       if (this.owned) {
         return Promise.reject(new Error(`[${this.id}] no round: the owner has not begun one`));
       }
@@ -1366,8 +1380,7 @@ export class Match {
 
   private async start(): Promise<void> {
     if (!this.game.map) {
-      const def = MAPS.find((m) => m.id === this.mapId) ?? MAPS[0];
-      await this.startRound(def, { seed: freshSeed(), difficulty: MATCH_DIFFICULTY });
+      await this.startRound(this.def(), { seed: freshSeed(), difficulty: MATCH_DIFFICULTY });
     }
     // What this map fields, onto the table. The simulation has already been
     // told (`SimCore.startRound`); this is the same decision reaching the
@@ -1501,7 +1514,9 @@ export class Match {
    *
    * The owner awaits it before it advances, and before it admits its first
    * peer: an arrival inside the first build waits on this same promise
-   * (`ensureRunning`), and one before any build is refused.
+   * (`ensureRunning`), and one before any build is refused. A build that
+   * fails rejects it and leaves the round it was to replace HELD, as a
+   * restart holds it while building: the owner begins again or closes.
    */
   begin(round: RoundChoice): Promise<void> {
     if (!this.owned) throw new Error(`[${this.id}] begin: only an owned match is begun by its owner`);
@@ -1514,7 +1529,7 @@ export class Match {
   }
 
   private async beginRound(round: RoundChoice): Promise<void> {
-    const def = MAPS.find((m) => m.id === this.mapId) ?? MAPS[0];
+    const def = this.def();
     if (this.game.map) {
       // The round standing is over from here, as it is through a rotation's
       // build: nothing steps it and no round message is spent on it.
@@ -1547,6 +1562,9 @@ export class Match {
     if (!this.owned) throw new Error(`[${this.id}] advance: the server's match runs its own clock`);
     if (this.starting) throw new Error(`[${this.id}] advance: a round is being built — await begin`);
     if (!this.running) throw new Error(`[${this.id}] advance: no round standing`);
+    // NaN would poison the accumulator and freeze the match without a word,
+    // and a negative `dt` is a clock running backwards.
+    if (!(dt >= 0 && dt < Infinity)) throw new Error(`[${this.id}] advance: dt ${dt}`);
     this.accrue(dt * 1000);
   }
 
@@ -1561,9 +1579,19 @@ export class Match {
     if (!this.owned) throw new Error(`[${this.id}] close: only an owned match is closed by its owner`);
     if (this.starting) throw new Error(`[${this.id}] close: a round is being built — await begin`);
     if (this.retired) return;
-    for (const peer of this.peers.values()) peer.transport.close();
+    // Told why, as `abandon` tells them: a connection that simply ends reads
+    // as a network drop, which a client answers by reconnecting.
+    for (const peer of this.peers.values()) {
+      this.send(peer, { t: "rejected", reason: "match closed" });
+      peer.transport.close();
+    }
     this.peers.clear();
     this.retire();
+  }
+
+  /** The `MapDef` this match is standing on — `mapId`, resolved in the constructor. */
+  private def(): MapDef {
+    return MAPS.find((m) => m.id === this.mapId) ?? MAPS[0];
   }
 
   private stop(): void {
@@ -1698,7 +1726,7 @@ export class Match {
     // toward a ballot whose result has already been spent.
     this.mapVote = null;
     this.mapId = next;
-    const def = MAPS.find((m) => m.id === next) ?? MAPS[0];
+    const def = this.def();
 
     await this.nextRound(def, { seed: freshSeed(), difficulty: MATCH_DIFFICULTY });
     console.log(`[${this.id}] rotated to ${this.mapId}, seed ${this.game.random.seed}`);
