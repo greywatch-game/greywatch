@@ -54,6 +54,22 @@ export const net = {
   hitCreditWindow: 0.5,
 
   /**
+   * How many of the page's own `advance`s may be unanswered before it stops
+   * posting one a frame and folds the frame's time into the next one instead
+   * (`Game.updateWorld`, `BABYLON_EXIT.md` X2.5c C4).
+   *
+   * The page never waits for its own match — an advance is posted and its
+   * answer read whenever it lands — so on a device where a step costs the
+   * match more than a frame costs the page, nothing else would stop the queue
+   * between them growing for the length of the round, and with it how far
+   * behind the page's picture the fight is. Four frames of slack absorbs a
+   * hitch on either side; past it the time still reaches the match, in one
+   * call, because the accumulator steps whatever it is handed in whole steps.
+   * The benchmark is exempt: it must post one advance per STEP.
+   */
+  localBacklog: 4,
+
+  /**
    * Where a round trip stops reading as fine, and where it starts reading as a
    * problem, in milliseconds.
    *

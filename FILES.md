@@ -40,11 +40,11 @@ server/               # The authoritative match server. Node, no Babylon (the
                       #   itself) after a join read as index.ts reads one.
                       #   Folds the bench's FightHash off `hear`. Runs in a
                       #   Worker, on a MessageChannel in the page (reached by
-                      #   src/net/localHost.ts's one dynamic import), or in
+                      #   src/net/matchHost.ts's one dynamic import), or in
                       #   corecheck. Its reach may import no Node — gated
   localMatchWorker.ts #   The Worker it runs in: `serveLocalMatch(self)`.
                       #   The page reaches it only as a Worker URL, which
-                      #   src/net/localHost.ts names
+                      #   src/net/matchHost.ts names
   claimGates.ts       #   HOW a claimed round is gated — the RateGate bucket,
                       #   the look vector, the cone, the origin slip and the
                       #   one zero-length threshold. Match's five claim arms
@@ -2111,9 +2111,11 @@ src/
                       #   any is a settle (`settle` is the bare one); `advance`
                       #   and `hold` posted every frame; `dial`, a person's
                       #   port in (or a watcher's); `lost` and a stall
-                      #   watchdog, so a dead host is said (`onLost`). Not a
+                      #   watchdog (standing down until the host first
+                      #   answers), so a dead host is said (`onLost`);
+                      #   `backlog`, the owner's back-pressure. Not a
                       #   ClientMessage: no remote client can say it
-    localHost.ts      #   Where the page's own match runs: `openLocalMatch`,
+    matchHost.ts      #   Where the page's own match runs: `openMatchHost`,
                       #   the boot's choice — a Worker proved up by a settle,
                       #   or (?simpage, or a Worker that did not come up)
                       #   this thread on a MessageChannel, through the one

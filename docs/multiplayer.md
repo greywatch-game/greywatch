@@ -795,27 +795,27 @@ the authority re-resolves the same round against its own rewound copy, and only
 that result deals damage.
 
 **The minimap reads the same substitution, and it is the second place that
-empty list had gone unnoticed.** `Game.mapBodies` is where the choice is made —
-the core's roster mirror offline (`sim.roster.bots`), `NetRoster.soldiers` in a match — and without it a netplay
-round drew no blips at all: the panel was up, the backdrop was right and the
-flags moved on it, so what was missing did not read as a broken list so much as
-a map of an empty village. Unlike `enemyTargets` this is a plain READ, so it
-hands back both teams and the array as it stands, and the minimap decides for
-itself which half it may draw. The local player's own slot is in that array and
-is left dead for the life of the session — `NetRoster.applyRoster` resets it and
-`applySnapshot` skips it — which is what keeps a friendly blip from sitting
-under the arrow that already stands for them.
+empty list had gone unnoticed.** `Game.mapBodies` is the one read of the
+round's bodies — `NetRoster.soldiers`, on every round since the page's own
+match became one (X2.5c C4) — and before it a netplay round drew no blips at
+all: the panel was up, the backdrop was right and the flags moved on it, so
+what was missing did not read as a broken list so much as a map of an empty
+village. Unlike `enemyTargets` this is a plain READ, so it hands back both
+teams and the array as it stands, and the minimap decides for itself which half
+it may draw. The local player's own slot is in that array and is left dead for
+the life of the session — `NetRoster.applyRoster` resets it and `applySnapshot`
+skips it — which is what keeps a friendly blip from sitting under the arrow
+that already stands for them.
 
 **Gunfire gives an enemy away, and in a match only the authority can say so.**
-Offline that rule is the page's `onSimEvent` reading the core's `botFired`; here no
-client runs the AI that pulled the trigger and none of them hears another
-person's, so the server raises a public `fire` event carrying a slot and nothing
-else. A position on it would be a second copy of one the snapshot has already
-delivered, on a different clock, and could only disagree with the body being
-drawn. `Match.noteFire` is the one door — `onBotFired` for a bot, an accepted
-`shot` message for a person, so neither this side nor the far side can tell the
-two apart — and it is noted BEFORE the ray is re-run, because a miss gives a
-shooter away exactly as loudly as a hit. It is **one event per slot per
+No client runs the AI that pulled the trigger and none of them hears another
+person's, so the server raises a public `fire` event carrying a slot and
+nothing else. A position on it would be a second copy of one the snapshot has
+already delivered, on a different clock, and could only disagree with the body
+being drawn. `Match.noteFire` is the one door — `onBotFired` for a bot, an
+accepted `shot` message for a person, so neither this side nor the far side can
+tell the two apart — and it is noted BEFORE the ray is re-run, because a miss
+gives a shooter away exactly as loudly as a hit. It is **one event per slot per
 snapshot, carrying the rounds that slot spent in the interval**: the message
 count is bounded by the roster rather than by the rate of fire (sixteen
 automatic weapons at 600 rpm would otherwise be ten times the traffic), while
@@ -870,10 +870,11 @@ covered at the end.
 was already getting.** The client plays `Sfx.botShot` at the shooter's own
 `eyePos` — the body it is already drawing, which is why no position belongs on
 the wire: a report from anywhere else would come from somewhere the rifle
-visibly is not. Its own slot is skipped, because `sfx.shoot` played that round at
-the player's own ear the frame the trigger went, and the roster's copy of the
-local body is never sampled. Both teams are audible and only the enemy is
-revealed, which is the split `onSimEvent` makes offline off the core's `botFired`.
+visibly is not. Its own slot is skipped, because `sfx.shoot` played that round
+at the player's own ear the frame the trigger went, and the roster's copy of
+the local body is never sampled. Both teams are audible and only the enemy is
+revealed — on the page's own match exactly as on a server's, since that match
+is reached through this same event.
 
 **The count on that event is what stops coalescing costing the report its
 rate.** A reveal is a timer being refreshed, so one event is as good as three; a
@@ -1020,15 +1021,15 @@ own, so the pool stays a pool. It is the same interval the reports are laid back
 across, for the same reason: three streaks drawn on one instant are one streak,
 and the rate is as much of the read by eye as it is by ear.
 
-**The muzzle flash is the same budget offline spends.** Transient lights always
-win a shader slot, so `spendMuzzleLightBudget` takes the list as a parameter and
-there are two of them, never both at once: `BattleView.muzzleFlashes` offline,
-`Game.netFlashes` in a match. One budget over either, which matters more here
-rather than less — the authority's roster is three times a village's. It is one
-flash per SHOOTER where offline it is one per shot, and that is the coalescing
-showing through rather than a saving: a light is a position and a lifetime, the
-three rounds of a burst go off at one muzzle inside 50 ms, and `pulse` takes no
-delay to stagger them with. What the burst is read by is the streaks.
+**The muzzle flash spends one budget.** Transient lights always win a shader
+slot, so `spendMuzzleLightBudget` takes the list as a parameter —
+`Game.netFlashes`, filled by a frame's `fire` events, on every round now that
+the page's own match is one — and the budget matters more for it rather than
+less: the authority's roster is three times a village's. It is one flash per
+SHOOTER rather than one per shot, and that is the coalescing showing through
+rather than a saving: a light is a position and a lifetime, the three rounds of
+a burst go off at one muzzle inside 50 ms, and `pulse` takes no delay to
+stagger them with. What the burst is read by is the streaks.
 
 **A hull's two guns go through the same queue, and neither is a `fire`.**
 `fire` names a SLOT and is drawn off that slot's rig, and nobody is holding a
@@ -1188,21 +1189,21 @@ than a lobby:
   `abandon`ing the match as the server's loop does: the owner is the one with
   somewhere to say so, and it is the one that closes the match.
 - **The RESPAWN clock is the owner's** (X2.5c C4): the core is built with
-  `hostHoldsRespawn`, as the offline page's own core always was, so a
-  `deploy` is honoured the moment it is submitted rather than once the core's
-  reinforcement clock runs out. Whoever owns the world's clock owns this one:
-  the page holds the world under its deploy screen and counts the respawn
-  down there, so a reinforcement clock that stepped only when the owner
-  advanced would hold the deploy hostage to a world the page is deliberately
-  not moving. One door either way (`SimCore.deployPerson`), the spawn stream
-  drawn the same way; the benchmark seats nobody, so its fight cannot move.
+  `hostHoldsRespawn`, as the page's own core was before C4, so a `deploy` is
+  honoured the moment it is submitted rather than once the core's reinforcement
+  clock runs out. Whoever owns the world's clock owns this one: the page holds
+  the world under its deploy screen and counts the respawn down there, so a
+  reinforcement clock that stepped only when the owner advanced would hold the
+  deploy hostage to a world the page is deliberately not moving. One door
+  either way (`SimCore.deployPerson`), the spawn stream drawn the same way; the
+  benchmark seats nobody, so its fight cannot move.
 
 `npm run corecheck`'s `greyfen/owned` asserts all of it, and plays the bench's
-round three ways — on a core built as the offline page builds it, through an
-owned match a tick an `advance`, and through one advanced at 144 Hz — which
-must be one event stream and fold the bench's own `FightHash`
-(`src/bench/fightHash.ts`). Through an owned match in Node, all seven of the
-bench's banked fight hashes reproduce.
+round three ways — on a bare core built with `hostHoldsRespawn`, as the page's
+own core was built before C4, through an owned match a tick an `advance`, and
+through one advanced at 144 Hz — which must be one event stream and fold the
+bench's own `FightHash` (`src/bench/fightHash.ts`). Through an owned match in
+Node, all seven of the bench's banked fight hashes reproduce.
 
 ### Holding the world, and what a hold still owes
 
@@ -1211,24 +1212,24 @@ says the world stands still, and there are three things a hold must not
 break, each with its own answer.
 
 **The clock offset: a hold is HANDED OVER, as clock and not as steps.**
-`Connection` estimates the server's clock as the MAXIMUM of a window of
-samples (`serverNow - localNow`), so a server clock that simply STOPPED for a
-hold of P seconds would make every sample after it P lower, and the stale
-maximum would keep render time P ahead of the server for the length of the
-window: every body parked at its newest snapshot, every rewound shot stamped
-in the future. Resetting the client's window on release would fix it — for a
-client that knew a hold had happened, which is a special path, and a remote
-client must never take one. So the fix is on the authority's side of the
-wire: `Match.hold(dt)` (owner call `hold`, `LocalMatch.hold`) passes `dt` into
-the simulation's clock through `SimCore.drop` — the same honest jump a
-dropped backlog already is — and steps nothing. The page posts it every frame
-for the part of the frame's real time it did not step (a pause, the deploy
-screen, a frame cap's clip, a benchmark vantage), so the snapshot stamps stay
-continuous with the wall the client samples against and nothing on the
-client can tell a hold happened. It is not an outcome: `SimCore.now` stamps
-and rewinds and decides nothing. Refused as `advance` is — on a match that is
-not owned, inside a build, with no round standing, on a `dt` that is not a
-finite non-negative number.
+`Connection` estimates the server's clock as the MAXIMUM of a window of samples
+(`serverNow - localNow`), so a server clock that simply STOPPED for a hold of P
+seconds would make every sample after it P lower, and the stale maximum would
+keep render time P ahead of the server for the length of the window: every body
+parked at its newest snapshot, every rewound shot stamped in the future.
+Resetting the client's window on release would fix it — for a client that knew
+a hold had happened, which is a special path, and a remote client must never
+take one. So the fix is on the authority's side of the wire: `Match.hold(dt)`
+(owner call `hold`, `LocalMatch.hold`) passes `dt` into the simulation's clock
+through `SimCore.drop` — the same honest jump a dropped backlog already is —
+and steps nothing. The page posts it every frame for the part of the frame's
+real time it did not step (a pause, the deploy screen, what `Game.tick`'s
+`MAX_FRAME_DT` clamp cut off a long frame, a benchmark vantage), so the
+snapshot stamps stay continuous with the wall the client samples against and
+nothing on the client can tell a hold happened. It is not an outcome:
+`SimCore.now` stamps and rewinds and decides nothing. Refused as `advance` is —
+on a match that is not owned, inside a build, with no round standing, on a `dt`
+that is not a finite non-negative number.
 
 **The claim gates: they read the wall clock, and a hold is wall time.** The
 rate buckets refill over it and `onStamp` bounds a peer's stamps against
@@ -1236,17 +1237,18 @@ when its messages ARRIVE — both on the clock a held page's own stamps are on,
 so an honest report after a hold reads as an honest interval, not a stamp
 jump, and nothing on that side needed to know.
 
-**An ask made while held must still be answered.** `Match` handles a message
-on arrival, not on a tick — but RELAYED events leave only with a snapshot
+**An ask made while held must still be answered.** `Match` handles a message on
+arrival, not on a tick — but RELAYED events leave only with a snapshot
 (`flushEvents`, from `broadcastSnapshot`), and a snapshot is a step. The one
-ask the page makes while it holds the world is the deploy, so on an owned
-match `onDeploy` drains and FLUSHES the queue after it submits: the `spawn`
-answering it leaves on the person's own port while the clock stands still.
-Narrow on purpose, by this step's rule that the page's own match is no better
-a transport than a server's: every other answer still rides its snapshot.
-What the flush costs is order against the snapshot only — whatever the ticks
-since the last one queued leaves ahead of the snapshot that shows it, in its
-own order and with every event's audience intact.
+ask the page makes while it holds the world is the deploy, so on an owned match
+`onDeploy` drains and FLUSHES the queue after it submits: the `spawn` answering
+it leaves on the person's own port while the clock stands still. That flush is
+an EXCEPTION the hold forces, and it is kept narrow because of this step's rule
+that the page's own match is no better a transport than a server's: every other
+answer still rides its snapshot. What the flush costs is order against the
+snapshot only — whatever the ticks since the last one queued leaves ahead of
+the snapshot that shows it, in its own order and with every event's audience
+intact.
 
 `greyfen/local` asserts all three: a deploy answered with no advance and no
 snapshot between, and a one-second hold after which the next snapshot is
@@ -1287,13 +1289,15 @@ event reaches its person and never the watcher.
 An owned match's table is its map's own roster, so team 1 begins at slot
 `perTeam` (8 on most maps) where a server's begins at 24 — and a client that
 numbers its bodies by `CONFIG` would address every snapshot about team 1 on an
-owned match to a hole. So the welcome says it: `Welcome.perTeam`, the table's
-block width a team (`Roster.perTeam`), set by `admit` and by `watch`. Absent
-means the ceiling, the only width a server's match has ever had, so it went
-in without a `PROTOCOL_VERSION` bump — and the version is matched for
-equality at the handshake, so a page and its own match are always one build.
-`NetSession`'s welcome arm hands it to `NetRoster.setBlockWidth` FIRST, ahead
-of anything that reads a slot, and that RE-ADDRESSES the pool rather than
+owned match to a hole. So the welcome says it: `Welcome.blockWidth`, the
+table's block width a team (`Roster.perTeam`), set by `admit` and by `watch` —
+named for the TABLE, since a server's match says 24 there while its map fields
+`MapLayout.perTeam`'s 8, and a field called `perTeam` would read as the fielded
+count. Absent means the ceiling, the only width a server's match has ever had,
+so it went in without a `PROTOCOL_VERSION` bump — and the version is matched
+for equality at the handshake, so a page and its own match are always one
+build. `NetSession`'s welcome arm hands it to `NetRoster.setBlockWidth` FIRST,
+ahead of anything that reads a slot, and that RE-ADDRESSES the pool rather than
 rebuilding it: each body's slot becomes `team * width + i`, the slot map is
 rebuilt and `riding` cleared, and no rig is touched. Re-addressed because the
 welcome and `Game.buildRound` arrive in either order, and rebuilding rigs is
@@ -1310,19 +1314,23 @@ common but the `postMessage`:
   `server/localMatch.ts` hosting, the words both speak in
   `src/net/localWire.ts`): `open` a match on a map, `begin` a round on a seed
   and a difficulty, `advance` it by `dt` or `hold` it for `dt` (above),
-  `settle`, `markFight` and read the benchmark's `fight`, `close` it. **It is not a `ClientMessage`** — it has its
-  own port and its own words, the host reads it with no claim gate, and
-  `server/wire.ts` never sees it, so nothing a remote client sends can begin a
-  round or move a clock. The host answers its calls ONE AT A TIME, IN ORDER,
-  each after every call before it has finished (`begin` builds a world), so
-  ANY answer is a settle (`settle` is the one that does nothing else):
-  `fight`'s hash is the fold of every step posted ahead of it. `advance` and
-  `hold` are posted and never awaited — the page posts them every frame and
-  reads the newest `advance` answer (`onAdvanced`: the steps taken, whether
-  the round ended, and the last step's timing on the page's clock when
-  asked); a `hold`'s `done` finds nobody waiting and is dropped.
-  The fight is folded off `MatchOptions.hear`, an in-process ear on every
-  drain, because no wire event carries a bot's award.
+  `settle`, `markFight` and read the benchmark's `fight`, `close` it. **It is
+  not a `ClientMessage`** — it has its own port and its own words, the host
+  reads it with no claim gate, and `server/wire.ts` never sees it, so nothing a
+  remote client sends can begin a round or move a clock. The host answers its
+  calls ONE AT A TIME, IN ORDER, each after every call before it has finished
+  (`begin` builds a world), so ANY answer is a settle (`settle` is the one that
+  does nothing else): `fight`'s hash is the fold of every step posted ahead of
+  it. `advance` and `hold` are posted and never awaited — the page posts them
+  every frame and reads the newest `advance` answer (`onAdvanced`: the steps
+  taken, whether the round ended, and the last step's timing on the page's
+  clock when asked); a `hold`'s `done` finds nobody waiting and is dropped.
+  Each of the two is ONE held message rewritten per post, so the per-frame
+  calls allocate nothing of their own, and `LocalMatch.backlog` counts the
+  `advance`s still unanswered — the owner's back-pressure, since a host slower
+  than the page is otherwise a queue that grows a call a frame. The fight is
+  folded off `MatchOptions.hear`, an in-process ear on every drain, because no
+  wire event carries a bot's award.
 - **A PERSON's port**, dialled by the owner (`LocalMatch.dial`) and held by
   the page's own `Connection` (`JoinOptions.dial`, `src/net/transport.ts`'s
   `portTransport`): the protocol's JSON text both ways, the `join` read off it
@@ -1350,7 +1358,7 @@ time, refusing a `node:` specifier, `ws` or a built-in by its bare name, and
 `npm run build` fails on one with the chain that brought it in.
 
 **Which of the three the page gets is the boot's choice**
-(`src/net/localHost.ts`, `openLocalMatch`): a Worker, proved up by answering a
+(`src/net/matchHost.ts`, `openMatchHost`): a Worker, proved up by answering a
 `settle` inside twenty seconds, or else — or under `?simpage`, for a debugger
 — the page's own thread. The fallback reaches `server/localMatch.ts` through
 ONE dynamic `import()`, taken only on that path, which is **the one value
@@ -1367,11 +1375,15 @@ handler is REPLACED, not left — it cancels the event it resolves on, and left
 standing it would silence every later error), and `LocalMatch`'s own watchdog,
 which calls the host lost when a call has been owed past its patience — ten
 seconds for anything but a build, two minutes while an `open` or `begin` is
-owed — measured only while the page's own thread was listening, so a
-breakpoint or a throttled tab is never the host's fault. Lost is final and
-raised once (`onLost`, which the owner answers by ending the session): every
-awaited call rejects, every later call rejects at once and posts nothing, and
-a later `dial` hears its port close — what a socket to a dead server hears.
+owed — measured only while the page's own thread was listening, so a breakpoint
+or a throttled tab is never the host's fault, and only once the host has
+answered something: before that, whether a Worker is up at all is the boot's
+race to judge (twenty seconds, above), and the watchdog's ten would otherwise
+call a slow first-visit Worker lost while the boot was still waiting for it.
+Lost is final and raised once (`onLost`, which the owner answers by ending the
+session): every awaited call rejects, every later call rejects at once and
+posts nothing, and a later `dial` hears its port close — what a socket to a
+dead server hears.
 
 `npm run corecheck`'s `greyfen/local` runs it on a
 `MessageChannel`: the bench's round over the owner channel alone folds the

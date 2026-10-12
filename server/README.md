@@ -45,7 +45,7 @@ reaches a peer through a `PeerTransport` and the `ws` adapter lives in
 rather than a rule in the headers: `scripts/check-babylon-free.mjs` walks the
 two files' reach a second time for Node — a `node:` specifier, `ws`, or a
 built-in by its bare name — and `npm run build` fails on one, printing the
-chain. The page reaches them as a Worker URL (`src/net/localHost.ts`), and
+chain. The page reaches them as a Worker URL (`src/net/matchHost.ts`), and
 `localMatch.ts` also through that file's one dynamic `import()`, taken only
 when the Worker does not come up — the one value import of this directory
 anywhere in `src/`.

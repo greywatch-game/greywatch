@@ -3,10 +3,11 @@
  * (`BABYLON_EXIT.md` X2.5c C3): the calls it makes, the answers it hears, and
  * the dial that puts a person into that match over a port.
  * Owns: the owner's half of the channel — the call counter, the calls
- * awaiting an answer, and the watchdog over them. The words both halves speak are `localWire.ts`'s; the
- * host's half is `server/localMatch.ts`, reached in a
- * Worker (`server/localMatchWorker.ts`) or on a `MessageChannel` in this
- * thread, and this file cannot tell which: it is handed an `OwnerPort`.
+ * awaiting an answer, the `advance`s still unanswered (`backlog`), and the
+ * watchdog over them. The words both halves speak are `localWire.ts`'s; the
+ * host's half is `server/localMatch.ts`, reached in a Worker
+ * (`server/localMatchWorker.ts`) or on a `MessageChannel` in this thread,
+ * and this file cannot tell which: it is handed an `OwnerPort`.
  * Invariants:
  * - **This is not a `ClientMessage`, and no remote client can say it.** It
  *   travels its own port, the host reads it with no claim gate, and
@@ -25,17 +26,23 @@
  *   into a Worker that died or wedged says nothing at all, so every awaited
  *   call would hang for ever and a person's `Connection` would sit `open`
  *   on a join nobody reads. Two signals end it: whoever holds the Worker
- *   routes its `onerror` here (`lost`, `localHost.ts`), and this file's own
+ *   routes its `onerror` here (`lost`, `matchHost.ts`), and this file's own
  *   watchdog calls the host lost when a call has gone unanswered past its
- *   patience (`STALL_PATIENCE_MS`, a build's far longer). Lost is final and raised ONCE (`onLost`): every
- *   awaiting call rejects, every later one rejects at once and posts
- *   nothing, and a later `dial` hears its port close — what a socket to a
- *   dead server hears.
+ *   patience (`STALL_PATIENCE_MS`, a build's far longer) — once the host has
+ *   answered anything at all: before that, whether it is up is the boot's
+ *   question (`matchHost.ts`), not a stall. Lost is final and raised ONCE
+ *   (`onLost`): every awaiting call rejects, every later one rejects at once
+ *   and posts nothing, and a later `dial` hears its port close — what a
+ *   socket to a dead server hears.
  * Never: import from `server/` — the page reaches the host only through a
- * port (`localHost.ts` holds the one dynamic import, for the host it runs
- * in its own thread); or allocate per frame — `advance` and `hold` are
- * posted every frame, so the watchdog is one interval and a few numbers, never
- * a timer per call.
+ * port (`matchHost.ts` holds the one dynamic import, for the host it runs
+ * in its own thread); or allocate per frame in its own code. `advance` and
+ * `hold` are posted every frame, so each posts ONE held message with its
+ * numbers rewritten (the structured clone copies it at the post, so reuse is
+ * safe), the backlog is a ring of numbers grown only past its high-water
+ * mark, and the watchdog is one interval and a few numbers, never a timer
+ * per call. What the platform allocates to clone a message across and to
+ * deliver its answer is the channel's price, not this file's.
  */
 import { portTransport, type ClientTransport } from "./transport";
 import {
@@ -56,7 +63,7 @@ interface Waiting {
 /**
  * How long the host may owe an answer before it is called lost, in ms — two
  * numbers, because the calls are two kinds and one patience would be wrong
- * for one of them.
+ * for one of them. Neither runs until the host has answered once (`watch`).
  *
  * Everything but a build is a step or less — milliseconds even on a phone —
  * and the page posts one a frame, so ten seconds of silence while one is owed
@@ -68,16 +75,20 @@ interface Waiting {
  * simulation's world (nav, cover, the ray and sweep structures), seconds on a
  * desktop for the biggest map and several times that on a phone; and every
  * call posted behind it waits it out, since the host answers in order. So
- * while one is owed the patience is X2.5b's for the same build
- * (`src/sim/simHost.ts`'s round patience): two minutes, past anything a
- * device has been seen to take, against the alternative of a building card
- * for ever. A stall the page caused itself is not the host's (`watch`).
+ * while one is owed the patience is two minutes: past anything a device has
+ * been seen to take over that build, because what waits it out is the
+ * building card — a long patience costs a slow card, a short one calls a
+ * working round lost on a slow phone. A stall the page caused itself is not
+ * the host's (`watch`).
  */
 const STALL_PATIENCE_MS = 10_000;
 const BUILD_PATIENCE_MS = 120_000;
 
-/** How often the watchdog looks, in ms — once a second is plenty against thirty. */
+/** How often the watchdog looks, in ms — once a second is plenty against ten. */
 const WATCH_EVERY_MS = 1000;
+
+/** No transferables: one empty list for every post, never a literal each. */
+const NO_TRANSFER: Transferable[] = [];
 
 export class LocalMatch {
   /**
@@ -94,9 +105,9 @@ export class LocalMatch {
   /**
    * Wired by the owner: the host is LOST — its Worker raised an error, or a
    * call went unanswered past its patience (`STALL_PATIENCE_MS`, the
-   * header). Raised once, after
-   * every awaiting call has rejected; the owner ends the session on it, since
-   * nothing on the far side is ever going to answer again.
+   * header). Raised once, after every awaiting call has rejected; the owner
+   * ends the session on it, since nothing on the far side is ever going to
+   * answer again.
    */
   onLost: (reason: string) => void = (reason) => console.error(`[local match] lost: ${reason}`);
 
@@ -114,6 +125,24 @@ export class LocalMatch {
   private owedSince = 0;
   /** The last build (`open`, `begin`) posted: while it is owed, the patience is a build's. */
   private buildCall = 0;
+  /**
+   * The ids of the posted `advance`s not yet answered, oldest first — a ring,
+   * `advanceHead` the oldest and `owedAdvances` how many. Ids rather than a
+   * count because a failed `advance` is answered `failed`, as a refused
+   * `hold` is: only the id says which call came back. Doubled only past its
+   * high-water mark, which the owner's back-pressure bounds (`backlog`).
+   */
+  private advanceIds = new Float64Array(64);
+  private advanceHead = 0;
+  private owedAdvances = 0;
+  /** The per-frame calls' one message each, rewritten and posted — see the header. */
+  private readonly advanceMsg: OwnerCall & { t: "advance"; call: number } = {
+    t: "advance",
+    dt: 0,
+    timed: false,
+    call: 0,
+  };
+  private readonly holdMsg: OwnerCall & { t: "hold"; call: number } = { t: "hold", dt: 0, call: 0 };
   /** When the watchdog last looked, to tell the page's own stall from the host's. */
   private lastWatch = 0;
   private readonly watchdog: ReturnType<typeof setInterval>;
@@ -131,6 +160,21 @@ export class LocalMatch {
     return this.lostWhy !== null;
   }
 
+  /**
+   * How many posted `advance`s the host has not answered yet — the owner's
+   * BACK-PRESSURE. The page posts one a frame and never waits, so a host
+   * slower than the page (a phone whose Worker takes longer to step a frame
+   * than the page takes to draw one) is a queue that grows by a call every
+   * frame, each one steps owed, and the world falls ever further behind the
+   * screen. The owner reads this and, while it is over a few, folds its `dt`
+   * into a later `advance` rather than posting one a frame — time handed
+   * over late is still handed over. 0 once the host is lost: nothing will
+   * answer, and nothing more is posted.
+   */
+  get backlog(): number {
+    return this.owedAdvances;
+  }
+
   open(map: string): Promise<void> {
     return this.call({ t: "open", map, timeOrigin: performance.timeOrigin }).then(() => {});
   }
@@ -139,21 +183,31 @@ export class LocalMatch {
     return this.call({ t: "begin", seed: round.seed, difficulty: round.difficulty }).then(() => {});
   }
 
-  /** Posted, never awaited: the answer arrives through `onAdvanced`. */
+  /** Posted, never awaited: the answer arrives through `onAdvanced`, and it counts in `backlog` until then. */
   advance(dt: number, timed: boolean): void {
-    this.post({ t: "advance", dt, timed });
+    const msg = this.advanceMsg;
+    msg.dt = dt;
+    msg.timed = timed;
+    const id = this.post(msg);
+    if (id === 0) return;
+    if (this.owedAdvances === this.advanceIds.length) this.growAdvances();
+    this.advanceIds[(this.advanceHead + this.owedAdvances) % this.advanceIds.length] = id;
+    this.owedAdvances++;
   }
 
   /**
-   * `dt` seconds the owner HELD the world (`Match.hold`): the match's clock
-   * passes and nothing steps. Posted, never awaited, like `advance` — its
-   * `done` finds nobody waiting and is dropped (`answered`). The owner posts
-   * it every frame for the part of the frame's real time it did not step,
-   * and only while a round stands: a hold with none is refused, and the
-   * refusal arrives through `onFailed`.
+   * `dt` seconds the owner HELD the world: the match's clock passes and
+   * nothing steps — handed over rather than left out for the clients' clock
+   * offset, argued at `Match.hold`. Posted, never awaited, like `advance` —
+   * its `done` finds nobody waiting and is dropped (`answered`). The owner
+   * posts it every frame for the part of the frame's real time it did not
+   * step, and only while a round stands: a hold with none is refused, and
+   * the refusal arrives through `onFailed`.
    */
   hold(dt: number): void {
-    this.post({ t: "hold", dt });
+    const msg = this.holdMsg;
+    msg.dt = dt;
+    this.post(msg);
   }
 
   /** Resolves once every call posted before it has run. */
@@ -203,13 +257,14 @@ export class LocalMatch {
 
   /**
    * The host is gone, for `reason` — whoever holds the Worker calls this from
-   * its `onerror` (`localHost.ts`), and the watchdog calls it on a stall. See
+   * its `onerror` (`matchHost.ts`), and the watchdog calls it on a stall. See
    * the header. Idempotent: the first reason is the one kept and raised.
    */
   lost(reason: string): void {
     if (this.lostWhy !== null) return;
     this.lostWhy = reason;
     clearInterval(this.watchdog);
+    this.owedAdvances = 0;
     const err = new Error(`[local match] lost: ${reason}`);
     for (const waiting of this.waiting.values()) waiting.reject(err);
     this.waiting.clear();
@@ -225,41 +280,68 @@ export class LocalMatch {
     clearInterval(this.watchdog);
   }
 
-  /** The id posted, or 0 when the host is lost and nothing was posted. */
-  private post(call: OwnerCall): number {
+  /**
+   * Stamps `msg` with the next call id and posts it: the id, or 0 when the
+   * host is lost and nothing was posted. `msg` may be one held and rewritten
+   * every frame — the post clones it.
+   */
+  private post(msg: OwnerCall & { call: number }): number {
     if (this.lostWhy !== null) return 0;
     const id = this.nextCall++;
     // Nothing was owed: the wait starts with this call.
     if (id === this.answeredThrough + 1) this.owedSince = performance.now();
-    if (call.t === "open" || call.t === "begin") this.buildCall = id;
-    const msg: OwnerMessage = { ...call, call: id };
-    this.host.postMessage(msg, []);
+    if (msg.t === "open" || msg.t === "begin") this.buildCall = id;
+    msg.call = id;
+    this.host.postMessage(msg, NO_TRANSFER);
     return id;
   }
 
+  /** An awaited call — rare, so a message of its own each. */
   private call(call: OwnerCall): Promise<OwnerReply> {
     if (this.lostWhy !== null) {
       return Promise.reject(new Error(`[local match] lost: ${this.lostWhy}`));
     }
     return new Promise((resolve, reject) => {
-      this.waiting.set(this.post(call), { resolve, reject });
+      this.waiting.set(this.post({ ...call, call: 0 }), { resolve, reject });
     });
+  }
+
+  /** The backlog's ring, doubled with its order kept — only past its high-water mark. */
+  private growAdvances(): void {
+    const old = this.advanceIds;
+    const grown = new Float64Array(old.length * 2);
+    for (let n = 0; n < this.owedAdvances; n++) grown[n] = old[(this.advanceHead + n) % old.length];
+    this.advanceIds = grown;
+    this.advanceHead = 0;
   }
 
   /**
    * The watchdog's look: lost when calls are owed and the host has answered
-   * none of them for its patience (`STALL_PATIENCE_MS`). **A stall of the PAGE's own is not
-   * the host's** — a debugger paused on a breakpoint, a hidden tab whose
-   * timers the browser throttled, a long synchronous build on this thread —
-   * and through it the host's answers sit queued behind this very callback,
-   * unread. So a look that itself arrives far later than it was due restarts
-   * the wait instead of judging it: what is measured is the host's silence
-   * while this thread was LISTENING.
+   * none of them for its patience (`STALL_PATIENCE_MS`).
+   *
+   * **It stands down until the host has answered ONCE.** A host that has
+   * never answered is not one that stopped but one that may not have
+   * started: a Worker loads its own module graph — over the network, on a
+   * first visit — before it can answer anything, and whether it comes up at
+   * all is the boot's to judge, on a patience of its own (`matchHost.ts`'s
+   * race, which then terminates it and hosts the match in this thread).
+   * Judged here as well, the ordinary ten seconds would fire on the boot's
+   * own `settle` first and call a slow first-visit Worker lost at ten
+   * seconds that the boot meant to wait twenty for.
+   *
+   * **A stall of the PAGE's own is not the host's** — a debugger paused on a
+   * breakpoint, a hidden tab whose timers the browser throttled, a long
+   * synchronous build on this thread — and through it the host's answers sit
+   * queued behind this very callback, unread. So a look that itself arrives
+   * far later than it was due restarts the wait instead of judging it: what
+   * is measured is the host's silence while this thread was LISTENING.
    */
   private watch(): void {
     const now = performance.now();
     const late = now - this.lastWatch > 2 * WATCH_EVERY_MS;
     this.lastWatch = now;
+    // Never answered: the boot's question, not a stall (above).
+    if (this.answeredThrough === 0) return;
     if (this.answeredThrough >= this.nextCall - 1) return;
     if (late) {
       this.owedSince = now;
@@ -274,6 +356,12 @@ export class LocalMatch {
   private answered(reply: OwnerReply): void {
     if (this.lostWhy !== null) return;
     this.answeredThrough = reply.call;
+    // Every advance up to this answer has been answered, since answers come
+    // in order — whether this one was it or a call posted after it.
+    while (this.owedAdvances > 0 && this.advanceIds[this.advanceHead] <= reply.call) {
+      this.advanceHead = (this.advanceHead + 1) % this.advanceIds.length;
+      this.owedAdvances--;
+    }
     // Anything still owed has its wait counted from this answer: the moment
     // the host could start on it.
     this.owedSince = performance.now();

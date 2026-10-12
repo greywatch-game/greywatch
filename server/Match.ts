@@ -44,10 +44,10 @@
  * Invariants: a peer's slot is assigned here and nowhere else, and a peer never
  * names its own slot. **A peer is a seat**: everything in `peers` holds one,
  * and a watcher is never in it — the slot-indexed tables (`pings`, the vote,
- * `queueTo`) never meet one. The loop is fixed-step and drift-corrected whoever drives
- * it: a `dt` taken from wall clock would make the simulation run at the speed
- * of the server's load, and every recoil, bleed and reload timer in `CONFIG` is
- * written against real seconds.
+ * `queueTo`) never meet one. The loop is fixed-step and drift-corrected
+ * whoever drives it: a `dt` taken from wall clock would make the simulation
+ * run at the speed of the server's load, and every recoil, bleed and reload
+ * timer in `CONFIG` is written against real seconds.
  */
 import { Vector3 } from "../src/math";
 import {
@@ -56,6 +56,7 @@ import {
   PROTOCOL_VERSION,
   SNAPSHOT_HZ,
   INPUT_HZ,
+  MAX_FRAME_DT,
   TICK_HZ,
   type ClientMessage,
   type EntityState,
@@ -435,18 +436,19 @@ const MAX_MOVE_GAP = 0.5;
  * What a peer's FIRST stamped sample is assumed to cover, in seconds — it has
  * no earlier stamp to be measured against (`onStamp`).
  *
- * TWO input intervals, because that is what a client's first sample can
- * honestly span: it sends on the first frame its upload clock has reached one
- * interval (`NetSession.update`), so the sample covers that interval plus
- * whatever of the last frame overshot it — and a frame is capped at one
- * interval (`Game.tick` clamps `dt` to 50 ms, `1 / INPUT_HZ`). One interval,
+ * One input interval and one frame, because that is what a client's first
+ * sample can honestly span: it sends on the first frame its upload clock has
+ * reached one interval (`NetSession.update`), so the sample covers that
+ * interval plus whatever of the last frame overshot it — and a frame is
+ * capped at `MAX_FRAME_DT` (`protocol.ts`; 50 ms, which is one interval at
+ * today's `INPUT_HZ`, so the sum is two). One interval,
  * which this was, refused an honest walk whenever the frames right after a
  * spawn were long: Sarab's first `move` came back `speed`-corrected by a third
  * of a metre (`BABYLON_EXIT.md` X2.5c C4, found when the page's own match
  * began validating offline play). A step of two intervals' worth from the
  * spawn is still a step, and every later sample is priced by its own stamps.
  */
-const FIRST_STAMP_GAP = 2 / INPUT_HZ;
+const FIRST_STAMP_GAP = 1 / INPUT_HZ + MAX_FRAME_DT;
 
 /**
  * How far, in ms, a peer's stamps may run ahead of — or fall behind — the
@@ -769,8 +771,7 @@ export class Match {
    * server's match it is the core's own (`hostHoldsRespawn` off): a `deploy`
    * is a request the reinforcement pass spends once that clock runs out,
    * because nobody else is counting and the world never stops. On an OWNED
-   * match it is the OWNER's (`hostHoldsRespawn` on, as the offline page's own
-   * core has always been built — `src/sim/simHost.ts`): the page holds the
+   * match it is the OWNER's (`hostHoldsRespawn` on): the page holds the
    * world under its deploy screen and runs the countdown there, so a
    * reinforcement clock that only steps when the owner advances would hold
    * the deploy hostage to a world the page is deliberately not moving. The
@@ -1175,8 +1176,8 @@ export class Match {
       mapId: this.mapId,
       // The table's block width, so the client numbers its bodies as this
       // table does: the ceiling here, the map's own roster on an owned match
-      // (`Welcome.perTeam`).
-      perTeam: this.roster.perTeam,
+      // (`Welcome.blockWidth`).
+      blockWidth: this.roster.perTeam,
       // The same clock the snapshots carry, and that is the load-bearing part:
       // a client samples the offset from EVERY stamped message and keeps the
       // maximum, so one message on a clock that runs even slightly ahead of the
@@ -1291,7 +1292,7 @@ export class Match {
       slot: -1,
       team: 0,
       mapId: this.mapId,
-      perTeam: this.roster.perTeam,
+      blockWidth: this.roster.perTeam,
       now: this.game.now,
       ...(this.game.glass.brokenPanes.length > 0
         ? { brokenPanes: this.game.glass.brokenPanes }
@@ -1730,7 +1731,8 @@ export class Match {
    * The OWNER held the world for `dt` seconds: the CLOCK passes and nothing
    * steps — `advance`'s other half, and the time a hold is made of. The
    * owner hands it over for every part of its real elapsed time it did not
-   * step: a pause, the deploy screen, a frame-cap's clip, a benchmark vantage.
+   * step: a pause, the deploy screen, what the client's frame clamp
+   * (`MAX_FRAME_DT`, `Game.tick`) cut off a long frame, a benchmark vantage.
    *
    * **Handed over rather than left out, for the client's clock offset.**
    * `Connection` estimates the server's clock as the MAXIMUM of a window of
@@ -2364,38 +2366,42 @@ export class Match {
         // transport than this, so the fix is this wire's).
         case "hit": {
           // A blow nobody is named for (`slotOf` of no body) is nobody's
-          // feedback — and -1 is `ALL_PEERS` to `queueTo`.
-          if (ev.shooter < 0) break;
+          // feedback — and -1 is `ALL_PEERS` to `queueTo`. A BOT's is
+          // nobody's either, for the `award` arm's reason: queued, every
+          // tick a bot landed something would take `flushEvents`' per-peer
+          // path for an event no client is sent.
+          if (ev.shooter < 0 || !this.game.players.has(ev.shooter)) break;
           const body = ev.victimKind !== "hull";
           const victim = body ? ev.victim : -1;
-          switch (ev.cause) {
-            case "round":
-              this.queueTo(ev.shooter, {
-                e: "hit",
-                shooter: ev.shooter,
-                victim,
-                killed: ev.killed,
-                headshot: ev.head,
-              });
-              break;
-            case "blast":
-            case "tracks":
-            case "fire":
-            case "shell":
-            case "mg":
-              if (!body) break;
-              if (ev.cause !== "blast" && ev.cause !== "tracks" && !ev.killed) break;
-              this.queueTo(ev.shooter, {
-                e: "hit",
-                shooter: ev.shooter,
-                victim,
-                killed: ev.killed,
-                headshot: false,
-                cause: ev.cause,
-              });
-              break;
-            default:
-              break;
+          if (ev.cause === "round") {
+            this.queueTo(ev.shooter, {
+              e: "hit",
+              shooter: ev.shooter,
+              victim,
+              killed: ev.killed,
+              headshot: ev.head,
+            });
+            break;
+          }
+          // Off the shot path, only a BODY is a mark: a blast or the tracks
+          // whenever they land, a burn or a hull gun's round only when it
+          // killed (the page predicts the hull guns' hits itself, and a burn
+          // ticks too often to mark). Anything else is nobody's feedback.
+          const cause = ev.cause;
+          if (
+            body &&
+            (cause === "blast" ||
+              cause === "tracks" ||
+              ((cause === "fire" || cause === "shell" || cause === "mg") && ev.killed))
+          ) {
+            this.queueTo(ev.shooter, {
+              e: "hit",
+              shooter: ev.shooter,
+              victim,
+              killed: ev.killed,
+              headshot: false,
+              cause,
+            });
           }
           break;
         }
@@ -2725,16 +2731,17 @@ export class Match {
    * deploy while it is HOLDING the world (the deploy screen), so the `spawn`
    * answering it would wait for a step that is waiting for it. So an owned
    * match flushes the queue here, after the submit, and the `spawn` goes out
-   * on the person's own port while the clock stands still. It is narrow on
-   * purpose: the deploy is the one ask made while held, and the rule is that
-   * the page's own match is no better a transport than a server's — every
-   * other answer still rides its snapshot. What the flush costs is order, and
-   * only against the snapshot: whatever the ticks since the last one queued
-   * (at most `TICKS_PER_SNAPSHOT - 1` of them) leaves ahead of the snapshot
-   * that shows it, in its own order and with its audience intact, addressed
-   * events to their one peer and shared ones to everybody — and the `fire`
-   * counts still coalescing (`firedRounds`) ride that snapshot, a message
-   * after any kill they caused rather than beside it.
+   * on the person's own port while the clock stands still. It is an
+   * EXCEPTION the hold forces, not a feature of the transport, and it is kept
+   * narrow — the deploy, the one ask made while held — because of this step's
+   * rule that the page's own match is no better a transport than a server's:
+   * every other answer still rides its snapshot. What the flush costs is
+   * order, and only against the snapshot: whatever the ticks since the last
+   * one queued (at most `TICKS_PER_SNAPSHOT - 1` of them) leaves ahead of the
+   * snapshot that shows it, in its own order and with its audience intact,
+   * addressed events to their one peer and shared ones to everybody — and the
+   * `fire` counts still coalescing (`firedRounds`) ride that snapshot, a
+   * message after any kill they caused rather than beside it.
    *
    * The KIT is different, and is resolved here and now: it is this side's own
    * lookup rather than a rule the simulation owns, and it must be in place

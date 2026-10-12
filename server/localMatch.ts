@@ -26,7 +26,7 @@
  * - **The host runs anywhere a port does** — in a Worker
  *   (`localMatchWorker.ts`), on a `MessageChannel` in the page's own thread,
  *   or in Node (`server/corecheck.ts`), the three being one code path. The
- *   page's thread reaches this file through `src/net/localHost.ts`'s one
+ *   page's thread reaches this file through `src/net/matchHost.ts`'s one
  *   dynamic `import()`, taken only when the Worker did not come up — the one
  *   value import of `server/` anywhere in `src/`.
  * Never: import Node (`node:*`, `ws`, a built-in) — this file and

@@ -48,7 +48,7 @@
  * **The page's own match host is the third** (`BABYLON_EXIT.md` X2.5c C4):
  * every round that is not a server's is a `Match` the page hosts, in a Worker
  * that has to load and answer before it can be handed one, so
- * `openLocalMatch` is awaited here and injected too. Unlike the other two it
+ * `openMatchHost` is awaited here and injected too. Unlike the other two it
  * cannot fail the boot — a Worker that does not come up falls back to the
  * match on a channel in this thread — and the console line it leaves says
  * which one is running and why.
@@ -58,7 +58,7 @@ import { WebGPUEngine } from "@babylonjs/core";
 import { Game } from "./src/core/Game";
 import { disposeReleasedPipelines } from "./src/core/webgpuLeaks";
 import { loadHavok } from "./src/systems/PhysicsWorld";
-import { openLocalMatch } from "./src/net/localHost";
+import { openMatchHost } from "./src/net/matchHost";
 import { registerServiceWorker } from "./src/pwa/register";
 
 registerServiceWorker();
@@ -405,10 +405,23 @@ window.addEventListener("DOMContentLoaded", async () => {
   // Worker, or on a channel in this thread under `?simpage` and whenever the
   // Worker cannot be had — chosen here, awaited (a Worker's module has to load
   // and answer) and INJECTED like the engine, so the constructor stays
-  // synchronous. It never fails the boot, and the console says which and why.
+  // synchronous. A Worker that will not come up never fails the boot — the
+  // page hosts the match instead, and the console says which and why — but
+  // the page's own host is a module fetched on demand (`matchHost.ts`), and
+  // the fetch that failed the Worker can fail it too: then there is no game
+  // to boot, and the plate says so rather than hanging on this stage.
   bootStage("Starting the simulation");
   const query = new URLSearchParams(location.search);
-  const local = await openLocalMatch({ simpage: query.has("simpage") });
+  let local: Awaited<ReturnType<typeof openMatchHost>>;
+  try {
+    local = await openMatchHost({ simpage: query.has("simpage") });
+  } catch (err) {
+    bootFailed(
+      "Could not start",
+      "The game's simulation could not be loaded. Check the connection and reload.",
+    );
+    throw err;
+  }
   console.info(
     `[sim] the simulation runs in ${local.mode === "worker" ? "a Worker" : "the page"}: ${local.why}`,
   );

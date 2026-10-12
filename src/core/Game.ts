@@ -20,9 +20,12 @@
  * as `drive`/`gun`), and the prediction systems (`combat`, `grenades`,
  * `antiTank`, `glass`) that answer its own acts before the authority does.
  * Whether the page OWNS the match is asked as two getters, `remoteRound` and
- * `localRound`, and only where the answer is about AUTHORITY — who may
- * restart, choose the map and the difficulty, and whether a pause or the
- * deploy screen holds the world. **Its views read the round off the wire and
+ * `localRound`, and only where the answer is about WHO HOSTS it — who may
+ * restart, choose the map and the difficulty, whether a pause or the deploy
+ * screen holds the world, and the facts that follow from there being a
+ * server at all (the clouds' and the storm's shared clock, the ping column,
+ * whose seed a capture names, the flow fields a server match's smoke walker
+ * steers by). Never what the page PREDICTS. **Its views read the round off the wire and
  * nothing else**: the bodies (`net.roster`, read through `mapBodies`), the
  * posed hulls (`syncNetVehicles`), and the flags and tickets onto this page's
  * own `conquest`, all in `updateNetWorld` whoever hosts the match — so no
@@ -35,8 +38,7 @@
  * the subject methods under it (`wireDeaths`, `wireGrenades`, `wireBattle`,
  * `wireVehicles`, `wireAntiTank`) — a new one goes in whichever names its
  * subject; what the SIMULATION says is `onNetEvent`, whoever hosts the
- * match. Browser
- * listeners are `installDomListeners`. Screen callbacks are `wireScreens`.
+ * match. Browser listeners are `installDomListeners`. Screen callbacks are `wireScreens`.
  * `tick` is a dispatch: the input handling for each screen is its own
  * `update*Screen`/`updateMenuCard`/`updatePauseMenu` method, and only `playing`,
  * `dying` and `editor` are inline, because they are two lines each.
@@ -120,13 +122,14 @@ import { PipelineWarmup } from "./PipelineWarmup";
 import { P } from "./profilePhases";
 import { NetSession, type LocalGun, type LocalHull } from "../net/NetSession";
 import type { LocalMatch } from "../net/LocalMatch";
-import type { LocalHost } from "../net/localHost";
+import type { MatchHost } from "../net/matchHost";
 import { NetSoldier } from "../entities/NetSoldier";
 import { clearRequestTimings, fetchMatches } from "../net/lobby";
 import { HitCredits } from "../net/HitCredits";
 import { NetShotQueue, type PendingShot } from "../net/NetShotQueue";
 import { RegionBook } from "../net/RegionBook";
 import {
+  MAX_FRAME_DT,
   SNAPSHOT_HZ,
   TICK_HZ,
   type MapVoteMessage,
@@ -280,11 +283,12 @@ import { UrlOverrides, urlFlag } from "./urlOverrides";
 import { setViewerTeam, teamLook } from "./teamView";
 import { forgetBindGroups } from "./webgpuLeaks";
 
-/** Grass bends around combatants; in the editor there are none. */
-const EMPTY_PUSHERS: readonly Combatant[] = [];
-
-/** The rigs of the bodies in the round when there is no round — the menu, the editor. */
-const NO_RIGS: readonly ShadowBody[] = [];
+/**
+ * The bodies in the round when there is no round — the menu, the editor, the
+ * building card: nothing on the minimap, under a blob, in the bodies' shadow
+ * map or in the grass.
+ */
+const NO_SOLDIERS: readonly NetSoldier[] = [];
 
 /**
  * The profiler slot each of the core's timed phases is filed into
@@ -547,7 +551,7 @@ export class Game {
   /**
    * **The page's own match host** (`BABYLON_EXIT.md` X2.5c C4): the OWNER's
    * channel to a `Match` this page hosts — in a Worker, or on a channel in
-   * this thread (`src/net/localHost.ts`). Every round that is not a server's
+   * this thread (`src/net/matchHost.ts`). Every round that is not a server's
    * is one of its matches, opened, begun and closed from here
    * (`openLocalRound`, `leaveMatch`), and joined through a `NetSession`
    * exactly as a server's is — so the round is decided over there, by the
@@ -568,12 +572,6 @@ export class Game {
    */
   private localBegun = false;
   /**
-   * An `advanced` answer since `localBegun` said the round has a winner — the
-   * benchmark's fight stops on it (`updateBench`). The round's own end
-   * reaches the screen as the wire's `roundover`, as it does in any match.
-   */
-  private localEnded = false;
-  /**
    * The newest timed step's phases (`Advanced.timing`), on this page's clock,
    * not yet filed. An answer arrives BETWEEN frames, where the profiler files
    * nothing, so it waits here for the next frame that steps
@@ -585,6 +583,12 @@ export class Game {
    * `passLocalClock` hands it the rest as held. Zeroed there, once a frame.
    */
   private localStepped = 0;
+  /**
+   * Seconds stepped on this page and not yet handed to the match — folded
+   * while it is behind (`updateWorld`). Zeroed with each advance and with
+   * each new round.
+   */
+  private localOwed = 0;
   /**
    * Every round's resolve — the simulation half (`BABYLON_EXIT.md` X2.2) —
    * and on this page only ever a PREDICTION: this client's own shot, shell
@@ -1154,11 +1158,11 @@ export class Game {
   private playerName = "player";
 
   /**
-   * Reused each frame: the player plus every bot — what `ConquestSystem`
-   * counts occupancy from, what `awardZone` pays and what the grass bends
-   * around. No hull: armour captures nothing (see `buildRound`).
+   * What the grass bends around this frame — the player and every living
+   * body off the wire — refilled in place (`fillPushers`). It decides
+   * nothing: who stands in a flag is the authority's to count.
    */
-  private readonly combatants: Combatant[] = [];
+  private readonly pushers: Combatant[] = [];
   /** Scratch for the shadow focus point — no per-frame allocation. */
   private readonly shadowFocus = new Vector3();
   /**
@@ -1399,12 +1403,12 @@ export class Game {
     canvas: HTMLCanvasElement,
     havok: HavokInstance,
     engine: WebGPUEngine,
-    local: LocalHost,
+    local: MatchHost,
   ) {
     this.canvas = canvas;
     this.engine = engine;
     // **The page's own match host** — in a Worker or on a channel in this
-    // thread (`src/net/localHost.ts`, `BABYLON_EXIT.md` X2.5c C4), chosen by
+    // thread (`src/net/matchHost.ts`, `BABYLON_EXIT.md` X2.5c C4), chosen by
     // the boot and handed in as `havok` and `engine` are. Every round that is
     // not a server's is a match on it (`openLocalRound`).
     this.local = local.match;
@@ -2327,12 +2331,11 @@ export class Game {
       // it would decide is the one thing on this screen the authority cannot
       // afford to have a second opinion about: where somebody is.
       //
-      // In the page's own match it is the same request, and answered while
-      // HELD: the page owns
-      // the match and holds its respawn clock (the countdown on this screen),
-      // so the match honours the ask on arrival and says so at once, though
-      // nothing has stepped since the screen went up (`docs/multiplayer.md`,
-      // "A match its OWNER drives").
+      // In the page's own match it is the same request, answered while HELD:
+      // the page owns the match and holds its respawn clock (the countdown on
+      // this screen), so the match honours the ask on arrival and says so at
+      // once, though nothing has stepped since the screen went up
+      // (`docs/multiplayer.md`, "A match its OWNER drives").
       if (!this.net) return;
       // The kit goes with the ask. It is chosen on this screen — the kit
       // screen is one key away from it — and the authority resolves every
@@ -3429,8 +3432,10 @@ export class Game {
     // …except under a benchmark, where every frame is the FIXED step whatever
     // either clock says (`CONFIG.profiling.bench`): what a run compares is the
     // cost of the same frames, so the frames may not depend on the device.
+    // The clamp is the WIRE's (`MAX_FRAME_DT`): the authority prices a
+    // person's first movement sample on how long a frame here may be.
     const seen = this.frameCap.elapsed(real);
-    const dt = this.state === "bench" ? CONFIG.profiling.bench.dt : Math.min(seen, 0.05);
+    const dt = this.state === "bench" ? CONFIG.profiling.bench.dt : Math.min(seen, MAX_FRAME_DT);
     // The match's render clock is read at the same instant, and before anything
     // in this frame asks it: where on the authority's timeline this frame is
     // posed is a question about when it is SEEN (`Connection`'s header).
@@ -4908,7 +4913,7 @@ export class Game {
     this.shadowFocus
       .copyFrom(this.cameraSys.camera.position)
       .addInPlace(editor.forward.scale(8));
-    this.updateSceneForCamera(dt, this.shadowFocus, null, EMPTY_PUSHERS);
+    this.updateSceneForCamera(dt, this.shadowFocus, null, NO_SOLDIERS);
   }
 
   /**
@@ -5097,6 +5102,12 @@ export class Game {
         break;
       }
     }
+    // …and the fetch is a hole the ROUND can fall through as well: a refusal,
+    // a quit or the page's own match failing (`failLocalRound`) took the session
+    // and the state away while it was out, and `enterMenu` puts the map back
+    // to the same pick, so the loop above cannot see it. A build carried on
+    // behind the menu would open a deploy screen with no round under it.
+    if (this.net !== net || this.state !== "loading") return;
     // The card went up naming the map the player chose; a welcome that moved
     // it names another. A no-op for the same map, which is every round in the
     // page's own match.
@@ -5148,8 +5159,10 @@ export class Game {
     // The flags this page DRAWS, a mirror written off the wire.
     this.conquest.start(map);
     // …and the rigs to that pool, painted for the viewer's side — rebuilt only
-    // when one of the two moved. After the ragdolls' reset above, which is the
-    // other thing that holds a rig.
+    // when one of the two moved since the session's own pool was built (a
+    // server's session lives across rotations; the page's own match is a
+    // fresh session every round). After the ragdolls' reset above, which is
+    // the other thing that holds a rig.
     this.net?.roster.setFielded(perTeam);
     // The page's own streams to the round's seed — the player's cone, drawn
     // HERE and carried by the round as the direction it flew, the same
@@ -5348,7 +5361,7 @@ export class Game {
     this.blastDebris.warm(true);
     this.shadows.warmBlob(true, this.player);
     this.player.warmView(true);
-    this.updateSceneForCamera(0, this.shadowFocus, null, EMPTY_PUSHERS, this.warmBodies);
+    this.updateSceneForCamera(0, this.shadowFocus, null, NO_SOLDIERS, this.warmBodies);
     this.culling.setWarm(true);
     this.scene.skipFrustumClipping = true;
     return true;
@@ -5457,7 +5470,7 @@ export class Game {
     // actually drawn from, at `dt` 0 as the warm frames were.
     if (warmed) {
       this.shadowFocus.copyFrom(this.cameraSys.camera.position);
-      this.updateSceneForCamera(0, this.shadowFocus, null, EMPTY_PUSHERS);
+      this.updateSceneForCamera(0, this.shadowFocus, null, NO_SOLDIERS);
     }
     // Read and cleared BEFORE the two calls below, neither of which may find
     // it still standing: `spawnPlayer` is the answer to it, and `enterDeploy`
@@ -5541,9 +5554,9 @@ export class Game {
     // authority's to place, so this deploys "anywhere" (spawn -1, the
     // conquest's own pick) and comes back through here with its answer. Kept
     // for the callers that drive a round from outside it — the smoke scripts'
-    // `spawnPlayer()`.
-    if (!at && this.net) {
-      this.net.sendDeploy(-1, this.weapon, this.equipment, this.throwable);
+    // `spawnPlayer()`. With no round there is nobody to ask, and nowhere to be.
+    if (!at) {
+      this.net?.sendDeploy(-1, this.weapon, this.equipment, this.throwable);
       return;
     }
     this.player.fullReset();
@@ -5552,12 +5565,9 @@ export class Game {
     // player who died out in the borderland comes back inside a flag with four
     // seconds already spent.
     this.leash.clear();
-    const spawn = at ?? this.spawnPointFor(this.player.team);
-    // Read by its fields (`placeAt` takes `Vector3Like`): a spawn from the
-    // wire is a Babylon copy and the mirror's fallback (`spawnPointFor`) is
-    // `src/math`'s — either is copied INTO the body, never kept.
-    this.player.placeAt(spawn ? spawn.pos : new Vector3(0, 0, 0));
-    this.cameraSys.reset(spawn ? spawn.yaw : 0);
+    // Copied INTO the body (`placeAt` takes `Vector3Like`), never kept.
+    this.player.placeAt(at.pos);
+    this.cameraSys.reset(at.yaw);
     // The aim just jumped to the spawn heading. Reprojecting through that jump
     // would greet the player with one frame smeared across the whole screen.
     this.motionBlur.reset();
@@ -5594,16 +5604,6 @@ export class Game {
     // the screen and the look drag would read one long jump to it. Measured:
     // with the lock granted, both read exactly zero.
     if (!this.input.touchActive) this.requestLock();
-  }
-
-  /**
-   * Where a body with no position named would go — a match's fallback for a
-   * spawn that arrived without one, which none does: the authority always
-   * names it. The flag-or-home pick the mirror can make, unscattered.
-   */
-  private spawnPointFor(team: 0 | 1): { pos: Vector3Like; yaw: number } | null {
-    if (!this.map) return null;
-    return this.conquest.spawnFor(team);
   }
 
   private updateGameplay(dt: number): void {
@@ -6503,7 +6503,8 @@ export class Game {
    *
    * **A guess never says KILLED**, for the rifle's reason (`fire`): what this
    * page shoots at are the wire's bodies, and the red marker is the
-   * authority's to draw when its `hit` comes back (`HitCredits.claim`). What
+   * authority's to draw when its `hit` comes back — with the gun's `cause`,
+   * which it sends for a kill alone, and which never meets `HitCredits`. What
    * the MARKER says and what the BOARD pays are two questions, and only the
    * second is a rule — the core's (`hullRules`), on the authority.
    */
@@ -6610,7 +6611,7 @@ export class Game {
     // shadows out from under the aircraft on exactly the map that shows them
     // best. A hull that casts no shadow of its own loses nothing by this.
     if (tank.flies) this.shadowFocus.y = tank.floorY;
-    this.updateSceneForCamera(dt, this.shadowFocus, null, this.combatants);
+    this.updateSceneForCamera(dt, this.shadowFocus, null, this.pushers);
     // The stick is the THROTTLE the hull is actually being given, which is this
     // player's only while they are the one holding it. A gunner pushing a
     // stick that steers nothing used to rev an engine somebody else was
@@ -7111,10 +7112,10 @@ export class Game {
     this.net = net;
     this.wireNet(net);
     this.localBegun = false;
-    this.localEnded = false;
     this.localTiming = null;
+    this.localOwed = 0;
     const failed = (err: unknown): void =>
-      this.localFailed(err instanceof Error ? err.message : String(err), net);
+      this.failLocalRound(err instanceof Error ? err.message : String(err), net);
     host.open(this.mapDef.id).catch(failed);
     host
       .begin({ seed, difficulty: this.difficulty })
@@ -7141,18 +7142,26 @@ export class Game {
     this.local.onAdvanced = (advanced) => {
       // Anything before the round's `begin` was answered is the last match's.
       if (!this.localBegun) return;
-      if (advanced.ended) this.localEnded = true;
       if (advanced.timing) this.localTiming = advanced.timing;
     };
+    // A posted call that failed — gated as `onAdvanced` is, because the
+    // last match's last `advance` can be answered after this round opened,
+    // and a failure there is about a match already closed.
     this.local.onFailed = (message) => {
       console.error(`[local match] ${message}`);
-      if (this.localRound) this.localFailed(message, this.net!);
+      if (this.localRound && this.localBegun) this.failLocalRound(message, this.net!);
     };
+    // The host gone — final: `LocalMatch` refuses every call after it, so
+    // every later offline round fails at once, and the toast says so.
     this.local.onLost = (reason) => {
       console.error(`[local match] lost: ${reason}`);
-      if (this.localRound) this.localFailed(reason, this.net!);
+      this.localLost = true;
+      if (this.localRound) this.failLocalRound(reason, this.net!);
     };
   }
+
+  /** The page's own match host is gone for the life of the page (`wireLocal`). */
+  private localLost = false;
 
   /**
    * The page's own match failed under the round `net` is playing — a step
@@ -7160,11 +7169,15 @@ export class Game {
    * the round left: there is no authority left to play it. A stale round's
    * failure (one `openLocalRound` has already replaced) says nothing.
    */
-  private localFailed(reason: string, net: NetSession): void {
+  private failLocalRound(reason: string, net: NetSession): void {
     if (this.net !== net) return;
     console.error(`[local match] the round stopped: ${reason}`);
     this.enterMenu();
-    this.hud.toast(`the round stopped — ${reason}`);
+    this.hud.toast(
+      this.localLost
+        ? "the offline match has stopped — reload the page to play again"
+        : `the round stopped — ${reason}`,
+    );
   }
 
   /**
@@ -7381,7 +7394,7 @@ export class Game {
     // own match the host let it go, which leaves the round with no authority.
     net.onStateChange = (state) => {
       if (state !== "closed") return;
-      if (net.local) this.localFailed("the match let this page go", net);
+      if (net.local) this.failLocalRound("the match let this page go", net);
       else this.hud.toast("disconnected");
     };
 
@@ -7393,7 +7406,7 @@ export class Game {
       // The page's own match has no lobby to go back to: it is the round
       // failing, said as such.
       if (net.local) {
-        this.localFailed(reason, net);
+        this.failLocalRound(reason, net);
         return;
       }
       // `enterMenu` drops the session and tears the round down; the lobby then
@@ -7413,11 +7426,16 @@ export class Game {
    *
    * The field is cleared BEFORE the session is disposed: disposing closes its
    * connection, which raises `closed`, and the handlers that hear it ask
-   * whether the session is still the round's (`localFailed`).
+   * whether the session is still the round's (`failLocalRound`).
    */
   private leaveMatch(): void {
     const net = this.net;
     this.net = null;
+    // Its bodies out of the ragdoll pool FIRST: disposing the session disposes
+    // their rigs, and a corpse the pool still held would be released later —
+    // by the next round's `ragdolls.reset` — onto meshes that are gone. Every
+    // local restart comes through here with corpses on the ground.
+    if (net) for (const soldier of net.roster.soldiers) this.ragdolls.retire(soldier);
     net?.dispose();
     if (net?.local) {
       this.localBegun = false;
@@ -7510,12 +7528,12 @@ export class Game {
       // hitmarker for somebody else's round is exactly the failure a version
       // check at the handshake cannot catch, since the shape did not change.
       //
-      // The other causes are what this page predicts none of (`ServerEvent`'s
-      // `hit`), and each marks as its own weapon always did: a blast's victims
-      // with the marker alone, a burn and a hull gun's round only for the
-      // KILL (the gun's hit was predicted and marked at the trigger, and a
-      // burn marking four times a second is a strobe), the tracks with a kill
-      // flash and the note under it.
+      // The other causes are what this page predicts none of, and WHICH of
+      // them are sent is the authority's rule (`ServerEvent`'s `hit`): this
+      // arm only says how each marks, off the event's own `killed` — a blast
+      // or a burn or a hull gun's round with the marker alone (the gun's hit
+      // was predicted and marked at the trigger, so its note is not owed
+      // twice), the tracks with the marker and the note under it.
       case "hit":
         if (event.shooter !== this.net?.slot) break;
         switch (event.cause) {
@@ -7525,15 +7543,13 @@ export class Game {
             }
             break;
           case "blast":
-            this.hud.flashHitmarker(event.killed);
-            break;
           case "fire":
           case "shell":
           case "mg":
-            this.hud.flashHitmarker(true);
+            this.hud.flashHitmarker(event.killed);
             break;
           case "tracks":
-            this.hitCue(true, false);
+            this.hitCue(event.killed, false);
             break;
           default: {
             const unhandled: never = event.cause;
@@ -7812,8 +7828,7 @@ export class Game {
 
   /**
    * Our own death, decided by the authority — `playerDown`. The ticket and the
-   * respawn
-   * clock are the simulation's; this page owes the watching. The bearing and
+   * respawn clock are the simulation's; this page owes the watching. The bearing and
    * the size of the blow are the `damage` event's, queued immediately ahead
    * of this one: `died` carries a slot and a clock and nothing to throw a
    * body with.
@@ -8118,33 +8133,28 @@ export class Game {
    * `NetRoster.applyRoster` for the life of the session (its snapshots are
    * skipped, so nothing revives it). That is what keeps a friendly blip from
    * sitting under the arrow that already stands for the player — and a blob
-   * shadow from sitting under the player twice (`liveBodies`).
+   * shadow from sitting under the player twice.
+   *
+   * The one read of the round's bodies: the minimap, the blob shadows (a
+   * living body at its feet, a corpse where its ragdoll lies,
+   * `corpseShadow`), the bodies' shadow map and the grass all take it.
    */
-  private mapBodies(): readonly Combatant[] {
-    return this.net?.roster.soldiers ?? NO_BODIES;
+  private mapBodies(): readonly NetSoldier[] {
+    return this.net?.roster.soldiers ?? NO_SOLDIERS;
   }
 
   /**
-   * The bodies the blob shadows are placed under: every body in the round
-   * but the player's own, as `mapBodies` hands them — `ShadowSystem` places a
-   * living one at its feet and a corpse where its ragdoll lies
-   * (`corpseShadow`), and switches the rest off.
+   * `pushers`, refilled in place once a frame by `updateNetWorld`: the
+   * player and every LIVING body — a corpse is under Havok and bends no
+   * grass, and the player's own slot in the roster is left dead. No hull:
+   * armour captures nothing.
    */
-  private liveBodies(): readonly Combatant[] {
-    return this.mapBodies();
-  }
-
-  /**
-   * The bodies the grass bends around this frame — the player and every
-   * other body in the round — filled in place, once a frame, by
-   * `updateNetWorld`. No hull: armour captures nothing.
-   */
-  private fillCombatants(): void {
-    const into = this.combatants;
+  private fillPushers(): void {
+    const into = this.pushers;
     into.length = 0;
     into.push(this.player);
     const bodies = this.mapBodies();
-    for (let i = 0; i < bodies.length; i++) into.push(bodies[i]);
+    for (let i = 0; i < bodies.length; i++) if (bodies[i].alive) into.push(bodies[i]);
   }
 
   /**
@@ -8306,7 +8316,7 @@ export class Game {
     this.prof.end(P.net);
     // What the grass bends around, now the bodies stand where this frame
     // draws them.
-    this.fillCombatants();
+    this.fillPushers();
     // The rounds somebody else fired, drawn here and only here: the one
     // place in the frame where a streak spawned is a streak that will be
     // flown — `stepShots` below is what flies it.
@@ -8370,7 +8380,10 @@ export class Game {
    */
   private syncNetVehicles(): void {
     const src = this.net?.vehicles;
-    if (!src) return;
+    // Before the session's first snapshot every hull reads ABSENT, and posing
+    // off that would take the whole fleet off the field and then "arrive"
+    // each hull — a pop and a READY toast at every round start.
+    if (!src || !src.synced) return;
     // By index: `entries()` is an iterator and a pair per hull, every frame.
     const hulls = this.vehicles.hulls;
     for (let i = 0; i < hulls.length; i++) {
@@ -8529,10 +8542,20 @@ export class Game {
     // do not call this (the deploy screen, a pause) genuinely hold it. Posted
     // and never awaited: the match answers between frames, and what it says
     // reaches this frame or the next as the wire, exactly as a server's does.
+    //
+    // **Folded, not posted, while the match is behind** (`CONFIG.net.
+    // localBacklog`): a frame's time joins the next advance once too many are
+    // unanswered, so a device the match cannot keep up on does not queue the
+    // fight further and further behind its picture. Never the benchmark's,
+    // which posts one advance per step and folds nothing.
     if (this.localRound) {
       this.fileLocalTiming();
-      this.local.advance(dt, this.prof.armed);
       this.localStepped += dt;
+      this.localOwed += dt;
+      if (this.bench || this.local.backlog < CONFIG.net.localBacklog) {
+        this.local.advance(this.localOwed, this.prof.armed);
+        this.localOwed = 0;
+      }
     }
     this.updateNetWorld(dt);
   }
@@ -8554,16 +8577,10 @@ export class Game {
    * Hands the page's own match the rest of this frame's clock: whatever of
    * the `seen` seconds since the last frame `updateWorld` did not step, as
    * time the match HELD (`LocalMatch.hold`) — its clock passes and nothing
-   * steps. A pause, the deploy screen, the frame cap's clip and a benchmark's
-   * vantages are all that.
-   *
-   * **Why the clock must pass at all**: a client estimates the offset to the
-   * authority's clock as the MAXIMUM of a window of samples
-   * (`Connection`'s header), so a clock that stopped for a hold of P seconds
-   * would leave every later sample P lower and the bodies drawn P ahead of
-   * the snapshots for the whole window. Handed over, the stamps stay on the
-   * wall clock and the client needs no path of its own — and a remote
-   * client never takes one.
+   * steps. A pause, the deploy screen, the part of a long frame `tick`'s
+   * `dt` clamp cut off and a benchmark's vantages are all that. Why the clock
+   * must pass at all is `Match.hold`'s to argue: so the stamps stay on the
+   * wall clock and no client needs a path of its own for a hold.
    *
    * Only once the session is SEATED: before the welcome there is no round
    * standing on the host to hold (`begin` is still building it), and the
@@ -8629,9 +8646,9 @@ export class Game {
    * What the frame owes once the armour has moved: the mines, the physics
    * world, and the rebuild a broken pane left behind.
    *
-   * `stepShots`'s other half, shared for the same reason, and the ordering it
-   * asks of a caller is one line long: **the hulls must already have been
-   * stepped this frame.** A mine's trigger is a distance test against where a
+   * `stepShots`'s other half, and the ordering it asks of `updateNetWorld`
+   * is one line long: **the hulls must already have been posed this
+   * frame.** A mine's trigger is a distance test against where a
    * hull IS, and running it first would arm the road a frame behind the tank.
    *
    * **The ENGINE before its three clients, always.** A corpse tested for
@@ -8689,7 +8706,7 @@ export class Game {
     // to cover what is on screen, and what is on screen is wherever the tumble
     // ended up.
     this.shadowFocus.copyFrom(this.deathCam.look);
-    this.updateSceneForCamera(dt, this.shadowFocus, this.player, this.combatants);
+    this.updateSceneForCamera(dt, this.shadowFocus, this.player, this.pushers);
     this.zones.update(
       dt,
       this.conquest.points,
@@ -8831,15 +8848,9 @@ export class Game {
         this.updateWorld(dt);
       }
       this.prof.end(P.world);
-      // A round that ENDED inside the run — the match says so on the step it
-      // ended, a frame or two before this page hears it — ends the run with
-      // it, short, and its capture says so. Steps posted past the end are
-      // held by the match and fold nothing.
-      if (this.localEnded) {
-        run.roundEnded = true;
-        this.endBench(false);
-        return;
-      }
+      // A round that ENDS inside the run ends the run with it, off the wire's
+      // `roundover` as any match's end is heard (`endRound`). Steps posted
+      // past it are held by the match and fold nothing.
       this.prof.begin(P.camera);
       this.chaseBench(run, script, dt);
     } else {
@@ -8854,11 +8865,11 @@ export class Game {
     // carried lamp over a body nobody is standing in.
     this.shadows.updateBlobs(
       this.player,
-      this.liveBodies(),
+      this.mapBodies(),
       this.cameraSys.camera.position,
       this.player.floorY,
     );
-    this.updateSceneForCamera(dt, this.shadowFocus, null, this.combatants);
+    this.updateSceneForCamera(dt, this.shadowFocus, null, this.pushers);
     this.prof.end(P.camera);
     this.prof.begin(P.zones);
     this.zones.update(dt, this.conquest.points, this.cameraSys.camera.position);
@@ -9115,7 +9126,7 @@ export class Game {
     this.shadowFocus
       .copyFromFloats(centre.x, centre.y, centre.z)
       .addInPlace(this.cameraSys.forwardToRef(this.shadowForward).scaleInPlace(8));
-    this.updateSceneForCamera(dt, this.shadowFocus, this.player, this.combatants);
+    this.updateSceneForCamera(dt, this.shadowFocus, this.player, this.pushers);
   }
 
   /**
@@ -9141,7 +9152,7 @@ export class Game {
     // The bodies the two shadow passes draw. The roster's, but for the
     // building card's warm-up, which has no roster in the field and hands in
     // the death cam's stand-in instead — see `stageWarmFrame`.
-    bodies: readonly ShadowBody[] = this.net?.roster.soldiers ?? NO_RIGS,
+    bodies: readonly ShadowBody[] = this.mapBodies(),
   ): void {
     this.shadows.update(shadowFocus, this.mats);
     // The bodies' map follows the same focus and is rebuilt from whatever is
@@ -9159,7 +9170,7 @@ export class Game {
     if (player) {
       this.shadows.updateBlobs(
         player,
-        this.liveBodies(),
+        this.mapBodies(),
         this.cameraSys.camera.position,
         player.floorY,
       );
@@ -9209,9 +9220,8 @@ export class Game {
       this.cameraSys.camera.position,
       this.lighting.activeLights,
     );
-    // Grass reads the same camera and light set, plus the combatant list
-    // (assembled above for the conquest occupancy pass) as its pushers —
-    // that list is what bends the blades around running bodies.
+    // Grass reads the same camera and light set, plus the bodies that bend
+    // the blades around them (`pushers`, filled by `fillPushers`).
     this.grass.update(
       dt,
       this.cameraSys.camera.position,
@@ -9537,6 +9547,17 @@ export class Game {
   }
 
   private endRound(winner: Team): void {
+    // A benchmark's round that ended inside the run ends the run, short, and
+    // its capture says so — no card: the run goes back to the menu. Heard
+    // HERE, off the wire, because nothing else orders it: the owner's
+    // `advanced` saying the same is on another port, and the card this would
+    // otherwise raise would strand the run's capture behind it.
+    const run = this.bench;
+    if (run) {
+      run.roundEnded = true;
+      this.endBench(false);
+      return;
+    }
     // Ends under a lid for the same reason a death does: the authority's
     // `roundover` does not wait for the player to close their settings.
     this.go("roundover");

@@ -114,6 +114,21 @@ export const SNAPSHOT_HZ = 20;
 /** How often a client uploads its own movement. */
 export const INPUT_HZ = 20;
 
+/**
+ * The longest frame a client steps its own body by, in seconds: a longer
+ * frame is clamped to it (`Game.tick`), and the time past it is simply not
+ * walked.
+ *
+ * **Part of the wire's contract rather than a client's tuning**, because the
+ * authority prices a sample on it: a peer's FIRST stamped `move` has no
+ * earlier stamp to be measured against, so what it may honestly cover is one
+ * upload interval plus the most a single frame could overshoot it — this
+ * (`FIRST_STAMP_GAP`, `server/Match.ts`). A client that stepped longer frames
+ * would have its honest first walk refused as `speed`; one that stepped
+ * shorter merely leaves the budget unspent.
+ */
+export const MAX_FRAME_DT = 0.05;
+
 /** How much position history the server keeps per combatant, for rewind. */
 export const REWIND_WINDOW_MS = 400;
 
@@ -671,7 +686,20 @@ export type ServerEvent =
    * gun's round that KILLED — the page predicts a shell's and a belt's hit,
    * and only the kill is the authority's to add. Each is sent only where the
    * shooter's screen owes it a mark, so a burn ticking four times a second
-   * sends nothing until it kills.
+   * sends nothing until it kills. Only a cause-less `hit` is a round's
+   * VERDICT, and only that one may claim a `HitCredits` credit.
+   *
+   * **The causes arrived without a `PROTOCOL_VERSION` bump, and that has one
+   * cost, during a rolling deploy alone.** An older client has no `cause` to
+   * read, so it takes every `hit` for a round's verdict: one landing while a
+   * rifle round's credit is pending is paired off against it, the marker it
+   * owed is swallowed, and the rifle's own verdict then finds no credit and
+   * marks again — one wrong marker, late. Nothing else on that client moves:
+   * no state, no score, no body is decided by a `hit`, so the two ends never
+   * disagree about the round or about what a person is doing — the line a
+   * bump is for (3 to 7, above). A bump would instead refuse every older
+   * page at the handshake until it reloaded — a match nobody on a stale tab
+   * can join, to save a cosmetic mark that heals with that same reload.
    */
   | {
       e: "hit";
@@ -937,8 +965,15 @@ export interface Welcome {
    *
    * On a WATCHER's welcome (`slot: -1`, `Match.watch`) it is the same width,
    * because a watcher draws the same table.
+   *
+   * **Named for the TABLE and not `perTeam`, because the two differ.**
+   * `MapLayout.perTeam` is how many bodies a side the map FIELDS; this is how
+   * wide the table's block is. On an owned match they are one number, but a
+   * server's match on an 8-a-side map says 24 here while it fields 8, and a
+   * reader taking this for the fielded count would build sixteen bodies too
+   * many.
    */
-  perTeam?: number;
+  blockWidth?: number;
 }
 
 /**

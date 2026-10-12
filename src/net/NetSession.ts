@@ -10,7 +10,7 @@
  * It exists so that `Game` gains a field rather than a protocol — and from
  * `BABYLON_EXIT.md` X2.5c C4 EVERY round has one. A match on a server is
  * reached over a WebSocket; the offline round is a session on a match the
- * page hosts itself (`LocalMatch`, `localHost.ts`), reached over a port, and
+ * page hosts itself (`LocalMatch`, `matchHost.ts`), reached over a port, and
  * this class cannot tell the two apart by anything it does: the same
  * messages, the same prediction, the same validation on the far side. The
  * one thing it is TOLD is `local` — whether the page OWNS the match — which
@@ -21,8 +21,10 @@
  * uploaded (`update` reports nothing while not `alive`, and a watcher never
  * is), and nothing it could send means anything on the far side.
  *
- * **Movement is uploaded, not commanded.** The local `Player` simulates itself
- * exactly as it does offline and this reports where it ended up at `INPUT_HZ`.
+ * **Movement is uploaded, not commanded.** The local `Player` PREDICTS
+ * itself — its own sweep, ground and stance, on every round alike, the
+ * page's own match included — and this reports where it ended up at
+ * `INPUT_HZ`.
  * The server validates and, when it refuses, sends a correction — which is the
  * only thing that ever moves the local body from outside. See
  * `docs/multiplayer.md`.
@@ -653,7 +655,7 @@ export class NetSession {
         // The table's block width FIRST, before anything reads a slot: every
         // body is re-addressed to the slot this match numbers it by — the
         // ceiling when a server says nothing. See `NetRoster.setBlockWidth`.
-        this.roster.setBlockWidth(msg.perTeam ?? CONFIG.bots.maxPerTeam);
+        this.roster.setBlockWidth(msg.blockWidth ?? CONFIG.bots.maxPerTeam);
         this.slot = msg.slot;
         this.team = msg.team;
         this.mapId = msg.mapId;

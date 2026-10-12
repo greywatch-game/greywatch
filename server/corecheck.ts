@@ -1364,8 +1364,8 @@ async function localMatch(world: World, c: Checks, benchHex: string): Promise<vo
   const perTeam = perTeamOf(world.def.layout);
   c.that(
     `${tag}: the welcome names the slot table's block width — the map's own roster, ${perTeam} a side, where a server's is ${CONFIG.bots.maxPerTeam}`,
-    welcome?.perTeam === perTeam,
-    `perTeam ${welcome?.perTeam}`,
+    welcome?.blockWidth === perTeam,
+    `blockWidth ${welcome?.blockWidth}`,
   );
 
   // The deploy is answered while the owner HOLDS the clock (X2.5c C4): the
@@ -1571,7 +1571,7 @@ async function watchMatch(world: World, c: Checks, benchHex: string): Promise<vo
   const welcome = frames.find((f): f is Extract<ServerMessage, { t: "welcome" }> => f.t === "welcome");
   c.that(
     `${tag}: a watcher the owner dials is welcomed at no slot (-1), team 0, with the table's block width (${perTeam} a side), and handed the roster and the board`,
-    conn.state === "open" && welcome?.slot === -1 && welcome.team === 0 && welcome.perTeam === perTeam &&
+    conn.state === "open" && welcome?.slot === -1 && welcome.team === 0 && welcome.blockWidth === perTeam &&
       frames.some((f) => f.t === "roster") && frames.some((f) => f.t === "scores"),
     `state ${conn.state}, ${JSON.stringify(welcome)}`,
   );

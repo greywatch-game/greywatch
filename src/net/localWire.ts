@@ -41,9 +41,9 @@ export type OwnerCall =
    */
   | { t: "advance"; dt: number; timed: boolean }
   /**
-   * `dt` seconds the owner HELD the world (`Match.hold`): the match's clock
-   * passes and nothing steps, so its snapshot stamps stay continuous with the
-   * wall the clients sample it against. Answered `done`, which nobody awaits.
+   * `dt` seconds the owner HELD the world: the match's clock passes and
+   * nothing steps — why it is handed over at all is argued at `Match.hold`.
+   * Answered `done`, which nobody awaits.
    */
   | { t: "hold"; dt: number }
   /** Nothing, answered once every call before it has run — the settle. */

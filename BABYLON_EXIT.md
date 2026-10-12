@@ -1662,8 +1662,9 @@ wire comes later, for both at once, and only if a profiler capture asks for it.
   bot) `BotRig.ts` is now unreachable from the page and still typechecks.
   `src/sim/frame.ts` is still where `FrameTiming` and `SIM_PHASES` live, and
   `localWire.ts` and `Game` read them — C5 moves those two before deleting
-  the rest. `?simcheck` and `?simcopy` now do nothing (`VERIFYING.md` says
-  so). `VehicleSystem.onRespawned` never fires on a page's fleet (it is always
+  the rest — and drops `SIM_SLOT`'s `publish` row with it, which a `Match`'s
+  core (built without `publish`) never files. `?simcheck` and `?simcopy` now
+  do nothing (`VERIFYING.md` says so). `VehicleSystem.onRespawned` never fires on a page's fleet (it is always
   `predicted`); the READY toast is the wire's arrival edge
   (`Game.syncNetVehicles`).
 - **Fixed for BOTH at C4, by the step's rule** (found at C4 — each was a

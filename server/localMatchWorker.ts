@@ -7,7 +7,7 @@
  * Never: import a view or Babylon, or Node — `scripts/check-babylon-free.mjs`
  * walks this directory for the first and walks from THIS FILE for the second
  * (`localMatch.ts` says why). The page reaches it only as a Worker URL, which
- * `src/net/localHost.ts` names — and that URL is what puts it, and
+ * `src/net/matchHost.ts` names — and that URL is what puts it, and
  * everything it reaches, into the page's build.
  */
 import type { OwnerPort } from "../src/net/localWire";

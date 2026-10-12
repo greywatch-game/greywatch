@@ -12,8 +12,11 @@
  * answer has arrived, whatever it is — so a claim may never be made twice for
  * one event. Entries expire on their own, and `clear` is the boundary's version
  * of that rather than a second mechanism.
- * Never: hold anything but a bullet (`Match` raises `hit` from the shot path
- * and from nowhere else, so a blast can neither leave a credit nor claim one),
+ * Never: hold anything but a bullet. `Match` raises `hit` off the shot path
+ * too — a blast, a burn, the tracks, a hull gun's kill, each carrying its
+ * `cause` — but only a cause-less `hit` is a round's verdict, and the client
+ * routes only those to `claim`, so nothing else can leave a credit or spend
+ * one (an older client cannot tell them apart: `protocol.ts`'s `hit`). Nor
  * outlive a session, or decide what the marker looks like.
  */
 import { CONFIG } from "../config";

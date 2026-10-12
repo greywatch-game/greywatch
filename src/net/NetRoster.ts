@@ -24,7 +24,7 @@
  * rotation never renumbers a player — see `server/Roster.ts`), so on a map
  * fielding eight a side the bodies are slots 0-7 and 24-31; on a match the
  * page owns it is the map's own roster (`BABYLON_EXIT.md` X2.5c C2), so the
- * same bodies are 0-7 and 8-15. The welcome says which (`Welcome.perTeam`,
+ * same bodies are 0-7 and 8-15. The welcome says which (`Welcome.blockWidth`,
  * `setBlockWidth`), and until it has, the ceiling is assumed. So this class
  * keeps two views of one pool: `soldiers`, dense, for everything that walks
  * the roster, and `bySlot`, sparse, for everything that arrives off the wire
@@ -216,7 +216,7 @@ export class NetRoster {
 
   /**
    * The match's table is `width` slots a team, as its welcome says
-   * (`Welcome.perTeam`): every body is RE-ADDRESSED to the slot the authority
+   * (`Welcome.blockWidth`): every body is RE-ADDRESSED to the slot the authority
    * numbers it by — `team * width + i` for the `i`th of its team — and nothing
    * is rebuilt. A no-op at the same width.
    *

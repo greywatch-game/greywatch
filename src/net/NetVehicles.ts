@@ -104,6 +104,25 @@ export class NetVehicles {
   /** Which hulls this snapshot mentioned. Reused; never a fresh Set. */
   private readonly seen = new Set<number>();
 
+  private heard = false;
+
+  /**
+   * Whether a snapshot has been taken since this was built or last `reset` —
+   * false until the first `applySnapshot`, and false again after a `reset`.
+   *
+   * **Absent is only an answer once something has been heard.** Before the
+   * first snapshot every hull reads absent (`present` is false for all of
+   * them), and that is not the authority saying the fleet is off the field —
+   * it is this client not having been told anything yet. A reader that posed
+   * the fleet off it would hide every hull at every round start and then see
+   * each one ARRIVE on the first snapshot, with everything an arrival owes:
+   * the READY toast and a hull popping in where it was already standing. So
+   * whatever acts on a hull's presence skips until this is true.
+   */
+  get synced(): boolean {
+    return this.heard;
+  }
+
   /**
    * Takes a snapshot's hulls: a sample for every one still on the field, and
    * the end of every one that is not.
@@ -113,6 +132,7 @@ export class NetVehicles {
    * that is the only place that knows which SEAT it is in.
    */
   applySnapshot(snap: Snapshot): void {
+    this.heard = true;
     this.seen.clear();
     for (const v of snap.vehicles ?? []) {
       const ghost = this.ghost(v.i);
@@ -266,6 +286,7 @@ export class NetVehicles {
    */
   reset(): void {
     for (const ghost of this.ghosts) this.release(ghost);
+    this.heard = false;
   }
 
   private ghost(i: number): Ghost {
