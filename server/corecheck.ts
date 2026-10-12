@@ -1448,8 +1448,11 @@ async function localMatch(world: World, c: Checks, benchHex: string): Promise<vo
   // localNow`, `Connection`'s) does not drop by the hold, which is the whole
   // point: a client's window keeps its MAXIMUM, so a stopped clock would park
   // render time the hold ahead of every body. The steps themselves run
-  // faster than real time here, which offsets both samples alike. An honest
-  // `move` after it is still not corrected: a hold is no stamp jump.
+  // faster than real time here, which offsets both samples alike. Nothing
+  // here asks whether a `move` after it is corrected: the stamp gates price a
+  // move against the WALL clock its messages arrive on (`arrivalClock`),
+  // which a hold never touches, so no move could be — a claim this line
+  // cannot fail is not one it makes.
   const HOLD_S = 1;
   await owner.settle();
   await settle(50);
@@ -1469,32 +1472,11 @@ async function localMatch(world: World, c: Checks, benchHex: string): Promise<vo
   const heldGap = stampOf(firstAfter) - stampOf(lastBefore);
   const sampleBefore = stampOf(lastBefore) - handledAt[lastBefore];
   const sampleAfter = firstAfter === undefined ? NaN : stampOf(firstAfter) - handledAt[firstAfter];
-  const lookAfter = look + 0.25;
-  if (at) {
-    conn.send({
-      t: "move",
-      seq: 2,
-      time: performance.now(),
-      pos: at.pos,
-      yaw: lookAfter,
-      pitch: 0,
-      crouching: false,
-      sprinting: false,
-    });
-  }
-  const turnedAfter = (): boolean =>
-    frames.some((f) => f.t === "snap" && f.entities.some((e) => e.i === PERSON_SLOT && Math.abs(e.yaw - lookAfter) < 1e-3));
-  for (let i = 0; i < 4 && !turnedAfter(); i++) {
-    for (let k = 0; k < TICK_HZ / SNAPSHOT_HZ; k++) owner.advance(1 / TICK_HZ, false);
-    await owner.settle();
-    await until(turnedAfter, 50);
-  }
   c.that(
-    `${tag}: a ${HOLD_S} s hold passes the clock and steps nothing — the next snapshot is stamped ${HOLD_S * 1000} ms past its steps, the offset a client samples does not drop with it, and an honest \`move\` after it is not corrected`,
+    `${tag}: a ${HOLD_S} s hold passes the clock and steps nothing — the next snapshot is stamped ${HOLD_S * 1000} ms past its steps, and the offset a client samples does not drop with it`,
     Math.abs(heldGap - (HOLD_S * 1000 + 1000 / SNAPSHOT_HZ)) < 1e-3 &&
-      Math.abs(sampleAfter - sampleBefore) < (HOLD_S * 1000) / 2 &&
-      turnedAfter() && frames.every((f) => f.t !== "correct"),
-    `gap ${heldGap.toFixed(3)} ms, offset sample ${sampleBefore.toFixed(1)} -> ${sampleAfter.toFixed(1)} ms, turned ${turnedAfter()}, ${frames.filter((f) => f.t === "correct").length} corrections`,
+      Math.abs(sampleAfter - sampleBefore) < (HOLD_S * 1000) / 2,
+    `gap ${heldGap.toFixed(3)} ms, offset sample ${sampleBefore.toFixed(1)} -> ${sampleAfter.toFixed(1)} ms`,
   );
 
   const twice = await owner.open(world.def.id).then(

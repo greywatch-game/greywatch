@@ -5025,6 +5025,14 @@ export class Game {
    * why the two are not one method.
    */
   private async buildRound(): Promise<void> {
+    // Still wanted? `startRound` booked this two frames ago, and anything in
+    // them may have moved the page off `loading`: a server refusing the join
+    // it was booked for (`onRejected` → the menu, `this.net` gone), or an
+    // answer of the last local match's landing a death or a round's end
+    // under a Restart. Asked BEFORE the open below, or the page hosts and
+    // joins a match behind the menu that nothing plays and that turns the
+    // lobby's Join into a dead button (`joinMatch` refuses while one stands).
+    if (this.state !== "loading") return;
     // **The round's seed** — fresh each round unless the URL fixed it, which
     // is how a round is played again; written where a person can read it
     // back, since a round's seed is the only handle on a bug in it. In the
@@ -6216,7 +6224,9 @@ export class Game {
    * "stop shooting" is the more urgent thing to say, and keeps its own sound
    * either way.
    *
-   * Reached by this page's predicted resolve, whoever hosts the match.
+   * Reached by this page's predicted resolve, whoever hosts the match, which
+   * never says KILLED — and by the authority's verdict on a round, which is
+   * the one that can.
    */
   private roundLanded(killedBody: boolean, head: boolean): void {
     this.hitCue(killedBody, head);
@@ -7537,11 +7547,17 @@ export class Game {
       case "hit":
         if (event.shooter !== this.net?.slot) break;
         switch (event.cause) {
-          case undefined:
-            if (!this.hitCredits.claim(event.killed, event.headshot)) {
-              this.hitCue(event.killed, event.headshot);
-            }
+          case undefined: {
+            // A round's verdict. The guess drew the marker and the hit's
+            // rumble already (`fire`), so a credit it left swallows the
+            // answer — except a KILL, which no guess can say (`claim`), and
+            // which on a BODY is the red marker and the kill's rumble both:
+            // `roundLanded` with the kill the guess could not know.
+            const said = this.hitCredits.claim(event.killed, event.headshot);
+            if (event.killed && event.victim >= 0) this.roundLanded(true, event.headshot);
+            else if (!said) this.hitCue(event.killed, event.headshot);
             break;
+          }
           case "blast":
           case "fire":
           case "shell":
@@ -7657,6 +7673,13 @@ export class Game {
         const g = tank.spec.gun;
         if (g) this.netShots.push(event.tank, 1, 0, g.range, "cannon");
         this.drawCannon(tank, tank.muzzleToRef(this.shellFrom));
+        // …and its kick on this page's posed copy of the hull: the loader's
+        // clock (a gunner's loader row, and the clock a TAKE OVER inherits),
+        // the rock and the masts (`Vehicle.mirrorShot`). Offline read it off
+        // the core's `hullKicked` until C4; a match never did, so a server's
+        // hulls fired without rocking and a driver who took one over predicted
+        // a shell its authority was still loading.
+        tank.mirrorShot();
         break;
       }
 
@@ -7736,9 +7759,16 @@ export class Game {
         : victimSlot
           ? teamLook(victimSlot.team).name
           : "";
-    this.hud.addKill(killer, victim, event.killer === this.player.team);
+    // `mine` is a kill BY this player's side or this player's OWN death — the
+    // two lines on the feed that are about them.
+    const mine = event.killer === this.player.team || event.victim === this.net?.slot;
+    this.hud.addKill(killer, victim, mine);
     if (victimSlot) {
-      victimSlot.deathFrom.set(event.from[0], event.from[1], event.from[2]);
+      // A death nobody dealt (the leash, `killer: -1`) has no bearing, and
+      // `from` is the origin on the wire: thrown from the body's own centre,
+      // as `Bot.takeDamage` stands in for a blow with no origin, it drops.
+      if (event.killer < 0) victimSlot.deathFrom.copyFrom(victimSlot.center);
+      else victimSlot.deathFrom.set(event.from[0], event.from[1], event.from[2]);
       victimSlot.deathDamage = event.amount;
       victimSlot.deathKind = event.kind ?? "bullet";
     }
@@ -7765,7 +7795,8 @@ export class Game {
   private onNetDamage(event: NetEvent<"damage">): void {
     if (event.victim !== this.net?.slot) return;
     this.netScratch.set(event.from[0], event.from[1], event.from[2]);
-    this.playerHit(event.health, event.amount, this.netScratch, event.kind ?? "bullet", false);
+    const from = event.dealt === false ? undefined : this.netScratch;
+    this.playerHit(event.health, event.amount, from, event.kind ?? "bullet", false);
   }
 
   /**

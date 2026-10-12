@@ -2269,6 +2269,9 @@ export class Match {
             // `kill` below: a client reads its OWN death off the `damage`/
             // `died` pair, and only somebody else's off the kill.
             kind: ev.kind,
+            // …and the leash's blow has no bearing to throw it from, which
+            // the placeholder above cannot say on its own.
+            ...(ev.from ? {} : { dealt: false as const }),
           });
           if (ev.killed) {
             // The other half of "one kill event per death". A person goes down
@@ -2761,6 +2764,15 @@ export class Match {
     const player = this.game.players.get(peer.slot);
     if (!player || player.alive) return;
     if (!Number.isInteger(msg.spawn)) return;
+    // **An OWNED match's ended round deploys nobody.** On a server's the ask
+    // just waits — `step` returns early while `roundOver`, and the rotation
+    // retires every player — but an owned match spawns at submit (its owner
+    // holds the respawn clock) and flushes the answer at once, so a deploy
+    // crossing the advance that ended the round would put a body into a
+    // finished fight and take the owner's round-over card down with its
+    // `spawn`. An owned match never rotates; its next round is the owner's
+    // next `begin`.
+    if (this.owned && this.roundOver) return;
     // The kit the player confirmed this spawn with — the SECOND of the two
     // doors, and the one that catches every pick after the handshake. The kit
     // screen is reachable from the deploy screen, so a player who switches to

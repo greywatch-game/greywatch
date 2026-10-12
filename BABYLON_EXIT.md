@@ -1699,6 +1699,45 @@ wire comes later, for both at once, and only if a profiler capture asks for it.
   `docs/states.md` and `docs/profiling.md`, still describe the core-in-a-Worker
   page; C4 rewrote only `docs/multiplayer.md`, `FILES.md`, `VERIFYING.md`'s
   misleading lines and the contract headers it touched.
+- **Fixed at C4's third review** (each something C4 lost, or a match's
+  behaviour C4 handed offline): a posed hull's main-gun kick (the loader's
+  clock, the rock, the masts) is the wire's `cannon` arm's now, for both — a
+  match never had it, and offline lost it with `hullKicked`, so a gunner's
+  loader row stayed full and a TAKE OVER predicted a shell the authority was
+  still loading; the kill's rumble is back on the authority's verdict; a
+  leash death has no bearing (`damage`'s additive `dealt: false`, a corpse
+  thrown from its own centre on `killer: -1`); the player's own death is
+  highlighted on the feed again; `buildRound` asks whether it is still
+  wanted BEFORE opening the page's match (a join refused inside
+  `startRound`'s two frames left a seated match behind the lobby and Join
+  dead); an owned match's ended round deploys nobody; a `hit` is
+  addressed only while its author still holds the slot (`SimCore.markerSlot`
+  — a leaver's mine marked the slot's next person); and corecheck's hold
+  line no longer claims an honest `move` after it is uncorrected, which no
+  hold could change (the stamp gates read the wall clock).
+- **Open, and the user's to decide** (found at C4's third review):
+  - **The backlog counts CALLS, not seconds.** On a device the match cannot
+    keep up on, each folded advance grows to `MAX_CARRIED_MS`, so four of
+    them queue about a second of fight behind the picture rather than four
+    frames. Bounding the slack by owed seconds would make
+    `CONFIG.net.localBacklog` mean what it says; the phone run is where it
+    shows.
+  - **Any uncaught error in the Worker ends offline play for the page's
+    life** (`matchHost.ts`'s `onerror` → `lost`), including a throw in a
+    person-port handler that a server would log and survive and `?simpage`
+    survives too. Catch around the per-peer handlers in
+    `server/localMatch.ts`, or make `onerror` a log line and leave stalls to
+    the watchdog.
+  - **No watchdog covers `begin`'s answer to the welcome**: a Worker that
+    dies silently there leaves the deploy screen's Deploy dead; one that dies
+    in the menu is found by the next round's `open`, at the building card's
+    patience.
+  - Smaller, owed to C5 or a later pass: `ordnanceRefused` is not relayed,
+    so a refused throw is never given back (the pouch drifts until death);
+    `WorldCulling`'s pools hold the disposed session's rigs until the next
+    `installBodyPools` (all of an editor session after F2); a `sim` timing
+    taken before a pause is filed seconds later; the bench's round-end
+    capture path is still unexercised.
 
 **Verify:**
 - The bench's seven fight hashes: X2.5a's table, identical, from the Worker and

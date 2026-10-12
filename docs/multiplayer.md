@@ -149,13 +149,20 @@ saying so), then kills from nobody, and the hull is left where it was. **The cli
 and only draws it** — the countdown has to be on screen the instant the line is
 crossed rather than a round trip later, and being a pure function of movement it
 is prediction of exactly the kind this model already allows. **The leash costs
-the wire nothing**: no message, no field, no event — one existing field changes
-MEANING and that is all. `kill` carries the killer's TEAM and derives it as
-`1 - victim.team`, because friendly fire is excluded by construction and so the
-side that killed a person is always the other one; a leash death is the one that
-breaks that premise rather than the derivation, and it sends **`killer: -1`** so
-that sixteen killfeeds say `OUT OF BOUNDS` instead of blaming the enemy. A
-client must guard before indexing `CONFIG.teams` with it.
+the wire almost nothing**: no message and no event — one existing field changes
+MEANING, and one optional flag says what that meaning leaves out. `kill`
+carries the killer's TEAM and derives it as `1 - victim.team`, because
+friendly fire is excluded by construction and so the side that killed a person
+is always the other one; a leash death is the one that breaks that premise
+rather than the derivation, and it sends **`killer: -1`** so that sixteen
+killfeeds say `OUT OF BOUNDS` instead of blaming the enemy. A client must guard
+before indexing `CONFIG.teams` with it. Nobody dealt that blow, so it has no
+BEARING either: both events carry the origin as a placeholder `from`, the
+victim's own `damage` says so with **`dealt: false`** (no damage arc, and the
+death cam's body drops rather than flying off the map's centre), and somebody
+else's corpse is thrown from its own centre on `killer: -1` — which is to say
+it falls where it stood (X2.5c C4's review: a match's arc and bodies had
+always pointed at the origin, and C4 handed offline the same).
 
 ## What is NOT defended against
 

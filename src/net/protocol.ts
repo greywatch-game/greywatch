@@ -641,6 +641,16 @@ export type ServerEvent =
       health: number;
       /** As `kill`'s: optional, and absent is a round. */
       kind?: DamageKind;
+      /**
+       * `false` for the one blow NOBODY dealt — the leash's, `kill`'s
+       * `killer: -1` — whose `from` is then a placeholder (the origin) and no
+       * bearing: no damage arc points at it and no death cam is thrown off
+       * it. Absent is a blow somebody dealt, which is every blow an older
+       * server sends and every other blow this one does; additive, and an
+       * older client reads the placeholder as it always has, so no
+       * `PROTOCOL_VERSION` bump.
+       */
+      dealt?: false;
     }
   /**
    * A round cracked past this client's own head without connecting.

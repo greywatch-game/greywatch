@@ -552,7 +552,7 @@ export class SimCore {
       // news and nothing else — the driver's hitmarker and the run-over line.
       onCrushed: (by, victim) => {
         const tank = this.hullDrivenBy(by);
-        emitHit(this.events, this.tick, this.slotOf(by), this.victimIndex(victim),
+        emitHit(this.events, this.tick, this.markerSlot(by), this.victimIndex(victim),
           this.victimKind(victim), true, false, "tracks");
         emitCrushed(this.events, this.tick, tank, this.slotOf(by),
           this.victimIndex(victim), this.victimKind(victim));
@@ -1372,13 +1372,13 @@ export class SimCore {
     // The `hit` first — the thrower's hitmarker, for every body the blast
     // reached, killed or not — then the kill.
     this.grenades.onBlastHit = (victim, thrower, by, killed) => {
-      emitHit(this.events, this.tick, this.slotOf(by), this.victimIndex(victim),
+      emitHit(this.events, this.tick, this.markerSlot(by), this.victimIndex(victim),
         this.victimKind(victim), killed, false, "blast");
       if (killed) settleKill(this.ledger, by, victim, thrower, "blast");
     };
     // A molotov's burn, on the blast's terms exactly.
     this.grenades.onBurnHit = (victim, thrower, by, killed) => {
-      emitHit(this.events, this.tick, this.slotOf(by), this.victimIndex(victim),
+      emitHit(this.events, this.tick, this.markerSlot(by), this.victimIndex(victim),
         this.victimKind(victim), killed, false, "fire");
       if (killed) settleKill(this.ledger, by, victim, thrower, "fire");
     };
@@ -2107,7 +2107,7 @@ export class SimCore {
     cause: "shell" | "mg",
   ): void {
     if (shot.target) {
-      emitHit(this.events, this.tick, this.slotOf(by), this.victimIndex(shot.target),
+      emitHit(this.events, this.tick, this.markerSlot(by), this.victimIndex(shot.target),
         this.victimKind(shot.target), shot.killed, shot.headshot, cause);
     }
     emitShot(this.events, kind, this.tick, this.vehicles.hulls.indexOf(tank), muzzle, dir);
@@ -2419,6 +2419,24 @@ export class SimCore {
     if (!c) return -1;
     if (c instanceof Bot) return this.battle.bots.indexOf(c);
     return c instanceof SimPlayer ? c.slot : -1;
+  }
+
+  /**
+   * Whose hitmarker a `hit` is: `slotOf`, but only while `c` still HOLDS
+   * that slot — -1 (nobody's) once it does not. A round resolves in the
+   * step its shooter fired it, but a blast, a burn and a mine outlive their
+   * author: a person who LEFT keeps their slot number on a `SimPlayer` that
+   * is no longer the one seated there, and a bot BENCHED by a person keeps
+   * its index, which is now that person's. Either would mark the slot's new
+   * occupant for a mine they never laid (`Match` addresses a `hit` to the
+   * person in `shooter`). The KILL's credit is `slotOf`'s, not this — a
+   * marker is feedback to a person, and the board is the core's.
+   */
+  private markerSlot(c: Combatant | null): number {
+    const slot = this.slotOf(c);
+    if (slot < 0) return -1;
+    if (c instanceof SimPlayer) return this.players.get(slot) === c ? slot : -1;
+    return this.players.has(slot) ? -1 : slot;
   }
 
   /**

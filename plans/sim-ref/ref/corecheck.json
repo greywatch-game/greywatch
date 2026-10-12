@@ -1,5 +1,5 @@
 {
- "at": "77a5118+",
+ "at": "b54ebf1+",
  "lines": [
   "  ok   greyfen/core       deploy: an unasked person is never put in (30 ticks, no spawned)",
   "  ok   greyfen/core       deploy: an ask with the clock run out deploys on the next tick",
@@ -48,7 +48,7 @@
   "  ok   greyfen/local      local: a `deploy` made while the owner holds the clock is answered by a `spawn` with no advance and no snapshot — the respawn clock is the owner's, and the answer leaves at once",
   "  ok   greyfen/local      local: an honest `move` is not corrected, and every snapshot is stamped 50 ms of the owner's clock after the last",
   "  ok   greyfen/local      local: the scoreboard's ping row is filled for a port, answered by the host's end of it",
-  "  ok   greyfen/local      local: a 1 s hold passes the clock and steps nothing — the next snapshot is stamped 1000 ms past its steps, the offset a client samples does not drop with it, and an honest `move` after it is not corrected",
+  "  ok   greyfen/local      local: a 1 s hold passes the clock and steps nothing — the next snapshot is stamped 1000 ms past its steps, and the offset a client samples does not drop with it",
   "  ok   greyfen/local      local: a second `open` while a match is open is refused, over the channel",
   "  ok   greyfen/local      local: the owner's `close` is heard as `rejected: match closed`, and a dial after it is told there is no match",
   "  ok   greyfen/watch      watch: a watcher the owner dials is welcomed at no slot (-1), team 0, with the table's block width (8 a side), and handed the roster and the board",

@@ -1695,28 +1695,22 @@ export class Vehicle implements Combatant, RayHull {
   }
 
   /**
-   * This hull's half of a main-gun round its SIMULATION fired somewhere else
-   * — the offline page's copy of a hull the simulation core holds
-   * (`BABYLON_EXIT.md` X2.5a C4a), whose gate and round were the core's.
+   * This hull's half of a main-gun round fired somewhere else — a POSED
+   * hull's (`updateRemote`), whose gate and round were the authority's, told
+   * by the wire's `cannon` (`Game.onNetEvent`).
    *
    * `fireGun`'s three facts that a hull cannot work out from where it ended
    * up: the loader's clock restarting (the HUD's `loadProgress`), the sprung
-   * body rocking off the gun's bearing, and the masts cracking. A POSED hull
-   * (`updateRemote`, told by the core's `hullKicked`) stops there, because the
-   * shove on `speed` is measured from the ground the real hull covered. A hull
-   * this page is PREDICTING (`drives` — the offline driver's own, C4b, told by
-   * the core's yes to its `shell`) takes the shove as well, on the frame the
-   * gun went off, because its `update` is the drive that feels it — exactly
-   * what a match's driver gets from `fireGun` on its own predicted shell.
+   * body rocking off the gun's bearing, and the masts cracking. It stops
+   * there, because the shove on `speed` is measured from the ground the real
+   * hull covered; a hull this page PREDICTS fired through `fireGun` itself.
    * Decides nothing.
    */
-  mirrorShot(drives = false): void {
+  mirrorShot(): void {
     const g = this.spec.gun;
     if (!g || !this.armed || !this.alive) return;
     this.reloadT = g.cooldown;
     const phi = this.shown.turretY;
-    // `fireGun`'s shove, to the letter — only the share along the heading.
-    if (drives) this.speed -= g.recoilSpeed * Math.cos(phi);
     this.springs.kick(Math.cos(phi), Math.sin(phi));
     this.picture?.kicked();
   }
