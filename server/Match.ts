@@ -4,8 +4,10 @@
  * Owns: the fixed-step clock, the peer set, and the bridge between a roster slot
  * changing hands and the bot in that slot being benched or released. It owns no
  * game rules — those are `SimCore`'s — and no transport: a peer is reached
- * through a `PeerTransport` (a WebSocket on the server, `server/index.ts`),
- * and `send`/`broadcast` are the one place a dead connection is handled.
+ * through a `PeerTransport` (a WebSocket on the server, `server/index.ts`; a
+ * port on a match the page hosts, `server/localMatch.ts`), and
+ * `send`/`broadcast` are the one place a dead connection is handled. It
+ * imports nothing of Node's, for that second host: it runs in a browser.
  * It is the core's HOST: it hears the simulation only through the core's
  * event ring, DRAINED after every call it makes on the core — each step, each
  * accepted message — and `relay` turns what it drained into wire events. It
@@ -207,7 +209,8 @@ function freshSlot(): SlotRecord {
 /**
  * The one connection a peer is reached over, as this class needs it
  * (`BABYLON_EXIT.md` X2.5c C1): a WebSocket on the server (`server/index.ts`'s
- * `wsTransport`), and a fake one in `server/corecheck.ts`. Everything about
+ * `wsTransport`), a port on a match the page hosts (`server/localMatch.ts`'s
+ * `portPeer`), and a fake one in `server/corecheck.ts`. Everything about
  * what is CARRIED — the JSON both ways, the claim gates, the rate bucket — is
  * this class's and stays above it, so whatever carries a peer is told nothing
  * a WebSocket was not.
@@ -266,6 +269,20 @@ export interface MatchOptions {
    * changes with it. False when absent: the server's free-running match.
    */
   owned?: boolean;
+  /**
+   * The clock the core times its steps with, for an owner that files them
+   * (`SimCoreOptions.timing`, the profiler's `sim` root). The server passes
+   * none: nothing on it reads a step's cost.
+   */
+  timing?: () => number;
+  /**
+   * Hears everything the core says, one drain at a time, after this match has
+   * relayed it — the owner's ear on the round, for what no wire event carries
+   * (a bot's award, which the benchmark's fight hash folds). In-process only,
+   * read inside the call: the cursor is reused by the next drain. A peer
+   * hears the wire and never this.
+   */
+  hear?: (said: EventCursor) => void;
 }
 
 /**
@@ -728,7 +745,7 @@ export class Match {
    * (`hostHoldsRespawn` off): a `deploy` is a request the reinforcement pass
    * spends once that clock runs out.
    */
-  readonly game = new SimCore({ rewind: true, reportGap: REPORT_GAP });
+  readonly game: SimCore;
   /**
    * When a message ARRIVED, in ms — what `onStamp` holds each peer's stamps
    * against. Monotonic and never compared with a client stamp directly: only
@@ -803,6 +820,8 @@ export class Match {
    * allocating.
    */
   private readonly drained = new EventCursor();
+  /** `MatchOptions.hear`, or null. */
+  private readonly hear: ((said: EventCursor) => void) | null;
 
   /** Reused so a snapshot allocates nothing per tick beyond its own arrays. */
   private readonly entityScratch: EntityState[] = [];
@@ -927,6 +946,8 @@ export class Match {
     this.mapId = def.id;
     this.withBots = options.bots ?? true;
     this.owned = options.owned ?? false;
+    this.game = new SimCore({ rewind: true, reportGap: REPORT_GAP, timing: options.timing });
+    this.hear = options.hear ?? null;
     // The table, and with it the pool: the ceiling under a match that rotates
     // maps, the map's own roster under one that never leaves it — see
     // `server/Roster.ts` for why each.
@@ -2005,6 +2026,7 @@ export class Match {
   private relay(): void {
     const c = this.drained;
     this.game.drain(c);
+    this.hear?.(c);
     for (let i = 0; i < c.count; i++) {
       if (!RELAYED.has(c.kind(i))) continue;
       const ev = decode(c, i);

@@ -21,12 +21,23 @@ server/               # The authoritative match server. Node, no Babylon (the
                       #   what a client may claim, round rotation. Its clock
                       #   free-runs on the server or is an OWNER's (`owned`:
                       #   advance/begin/close, its map's own roster, no vote,
-                      #   no rotation, no idle retire). The core's
+                      #   no rotation, no idle retire; `timing` and `hear` for
+                      #   the owner's profiler and fight fold). The core's
                       #   HOST: VALIDATES each message, then hands what it
                       #   accepted to `SimCore.submit` as a SimCommand; drains
                       #   the event ring after every call and `relay`s it onto
                       #   the wire. Holds no rule (pouches, seat policy, spawn)
                       #   and no transport: a peer is a PeerTransport
+  localMatch.ts       #   A match the PAGE hosts (X2.5c C3): one owned Match
+                      #   at a time, the owner's calls (open, begin, advance,
+                      #   markFight, fight, close) answered in order off one
+                      #   port, each person admitted off a port of their own
+                      #   (`portPeer`, which answers Match's ping itself) after
+                      #   a join read as index.ts reads one. Folds the bench's
+                      #   FightHash off `hear`. Runs in a Worker, on a
+                      #   MessageChannel in the page, or in corecheck
+  localMatchWorker.ts #   The Worker it runs in: `serveLocalMatch(self)`.
+                      #   The page reaches it only as a Worker URL
   claimGates.ts       #   HOW a claimed round is gated — the RateGate bucket,
                       #   the look vector, the cone, the origin slip and the
                       #   one zero-length threshold. Match's five claim arms
@@ -81,7 +92,11 @@ server/               # The authoritative match server. Node, no Babylon (the
                       #   and `greyfen/owned` (X2.5c C2): the bench's round on
                       #   the offline core and through an owned Match at two
                       #   cadences is one stream and the bench's FightHash,
-                      #   plus the owned lifecycle. Exits non-zero on a fail
+                      #   plus the owned lifecycle; and `greyfen/local` (C3):
+                      #   the same round through the LOCAL TRANSPORT — the
+                      #   owner channel's fight hash, then a person through
+                      #   the page's real Connection over a port. Exits
+                      #   non-zero on a fail
 scripts/                      # Node tooling, run by hand or by `npm run build`,
                               #   never shipped. Plain .mjs outside both
                               #   tsconfigs. The game's own code is reached
@@ -2067,8 +2082,18 @@ src/
                       #   The wire format — the ONLY module the server also
                       #   imports. Pure types + the rates both ends must agree
                       #   on. No Babylon, no DOM, no CONFIG
-    Connection.ts     #   Socket lifetime, reconnect, and the server-clock
-                      #   offset every interpolated body is drawn against
+    Connection.ts     #   Connection lifetime, reconnect, and the server-clock
+                      #   offset every interpolated body is drawn against.
+                      #   Dials a ClientTransport: a WebSocket to `url`, or
+                      #   `JoinOptions.dial`'s (a local match's port)
+    transport.ts      #   ClientTransport and its two kinds: socketTransport
+                      #   and portTransport (protocol text both ways, and
+                      #   PORT_CLOSE, the one word a port cannot say itself)
+    LocalMatch.ts     #   The OWNER's channel to a match the page hosts
+                      #   (server/localMatch.ts): its calls and replies, the
+                      #   in-order answers that make any call a settle, and
+                      #   `dial`, a person's port in. Not a ClientMessage:
+                      #   no remote client can say it
     NetSession.ts     #   One networked round: the seam between Game and the
                       #   wire. Game gains a field and a branch, not a protocol
     NetRoster.ts      #   The pool of NetSoldiers + mirrored flags/tickets.

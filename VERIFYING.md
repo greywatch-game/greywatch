@@ -65,6 +65,14 @@ you are on before you believe anything else in this section.
   the page, because `sw.js` stamps the pair on every response it answers
   (`docs/pwa.md`). So a script testing the fallback serves a build it has
   not let install a worker, or a dev build, which has none.
+- **The local match's Worker can be driven with no game at all**, under the
+  dev server: open any document on its origin (`/FILES.md` will do — nothing
+  of the game boots), then in `page.evaluate` import
+  `/src/net/LocalMatch.ts` and `/src/net/Connection.ts`, construct
+  `new Worker("/server/localMatchWorker.ts", { type: "module" })`, and hand it
+  to `new LocalMatch(worker)`. Vite serves both trees as modules. Measured at
+  X2.5c C3: the bench's Greyfen round over the owner channel folds the
+  banked `83e8e74ef36916ba`, with a person dialled in and welcomed at slot 0.
 - **`scripts/browser.mjs` and `scripts/dev-server.mjs` are the only places a
   launch flag or a server spawn is written**, and the harness under
   `plans/webgpu-ref/` imports both rather than copying either.
@@ -2083,8 +2091,14 @@ is one machine's:
   (`sarab/leash`), a peer's stamps bounded by when they arrive
   (`sarab/clock` — `MatchHost` replaces `Match.arrivalClock` with the
   simulation's time, so an upload delivered before step `at` arrived then),
-  and a correction rebasing the crash series (`sarab/break`). Under a minute,
-  no browser, exits non-zero on a failure; `--
+  and a correction rebasing the crash series (`sarab/break`). On Greyfen it
+  also plays the bench's round through an owned `Match` (`greyfen/owned`) and
+  through the LOCAL TRANSPORT (`greyfen/local`: `server/localMatch.ts` on a
+  Node `MessageChannel`, the owner's `LocalMatch` client, and a person
+  through the page's real `Connection` over a port). A port delivers on a
+  later turn of the event loop, so that run waits for what it reads
+  (`until`) and grades snapshots by their STAMPS, never by how many have
+  arrived. Under a minute, no browser, exits non-zero on a failure; `--
   --list` prints the lists it compared. Run it after touching `src/sim/`,
   `server/Match.ts`, `killRules`, `ScoreBook` or `hullRules`. Its second core
   run PUBLISHES and reads a structured clone of the frame back through the

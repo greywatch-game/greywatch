@@ -30,6 +30,19 @@ policy, a spawn) lives in `Match`, and no claim gate in the core. Nothing in
 `src/sim/` may import from this directory, and `scripts/check-babylon-free.mjs`
 holds every file in it as it holds every file here.
 
+## Two files here run in a browser
+
+`localMatch.ts` and its Worker entry, `localMatchWorker.ts`, host a match the
+PAGE owns (`BABYLON_EXIT.md` X2.5c C3): one owned `Match`, its owner's calls
+answered off one port (`src/net/LocalMatch.ts` is the owner's half) and each
+person admitted off a port of their own, over the same JSON and through the
+same `Match` door a socket's peer goes through. They run in a browser Worker,
+on a `MessageChannel` in the page's own thread, or in Node under `corecheck` —
+so **nothing they reach may import Node**: no `node:` module and no `ws`.
+`Match` and everything it imports is inside that reach, which is why `Match`
+reaches a peer through a `PeerTransport` and the `ws` adapter lives in
+`index.ts`, the one file a page never loads.
+
 ## The one test
 
 `npm run corecheck` (`corecheck.ts`, a fourth entry in
@@ -38,7 +51,9 @@ core's drained events with no `Game` and no socket, then the same script
 through a real `Match` behind a fake transport — the validated door — which must
 leave the identical award and death list — and a match its OWNER drives
 (`Match`'s `owned`, X2.5c C2) playing the benchmark's round as the offline page
-plays it. It exits non-zero on any failed assertion and prints a pass list. `simulate` cannot do this: it seats nobody,
+plays it, then the same round through the local transport (`localMatch.ts` on
+a `MessageChannel`, C3), with a person joining through the page's own
+`Connection`. It exits non-zero on any failed assertion and prints a pass list. `simulate` cannot do this: it seats nobody,
 so a person's death, award or seat never happens in it.
 
 ## Why the two tsconfigs

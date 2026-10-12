@@ -1,9 +1,12 @@
 /**
- * net/Connection.ts — The socket to the match server: lifetime, reconnection,
- * and the clock offset every interpolated body is drawn against.
- * Owns: the WebSocket, the inbound message callback, and the estimate of what
- * time it is on the server. Owns no game state — it hands decoded messages
- * upward and knows nothing about rosters, soldiers or rounds.
+ * net/Connection.ts — The connection to a match: lifetime, reconnection, and
+ * the clock offset every interpolated body is drawn against.
+ * Owns: the transport it is dialled over (`transport.ts` — a WebSocket to a
+ * match server, or a port to a match the page hosts, `BABYLON_EXIT.md` X2.5c
+ * C3), the inbound message callback, and the estimate of what time it is on
+ * the server. Owns no game state — it hands decoded messages upward and knows
+ * nothing about rosters, soldiers or rounds, nor which kind of transport it
+ * is holding.
  * Invariants: never simulates and never interprets. A message arrives, is
  * decoded, and is handed on; anything that decides what a message MEANS belongs
  * to whoever wired `onMessage`.
@@ -65,6 +68,7 @@
  */
 import { CONFIG } from "../config";
 import { decode, encode, PROTOCOL_VERSION, type ClientMessage, type ServerMessage } from "./protocol";
+import { socketTransport, type ClientTransport } from "./transport";
 
 export type ConnectionState = "idle" | "connecting" | "open" | "closed";
 
@@ -105,8 +109,14 @@ const SNAP_MS = 250;
  */
 export interface JoinOptions {
   name: string;
-  /** Where to reach the server. Same-origin `/ws` when absent. */
+  /** Where to reach the server. Same-origin `/ws` when absent. Ignored with `dial`. */
   url?: string;
+  /**
+   * How to reach the match when it is not a server at a URL: a fresh
+   * transport per attempt, a retry dialling again — a local match's port
+   * (`LocalMatch.dial`). Absent, a WebSocket to `url`.
+   */
+  dial?: () => ClientTransport;
   weapon?: string;
   /**
    * The anti-tank item in the third slot. Resolved by the SERVER against its
@@ -139,7 +149,7 @@ export class Connection {
   /** Wired by the owner: the connection opened, or gave up for good. */
   onStateChange: (state: ConnectionState) => void = () => {};
 
-  private socket: WebSocket | null = null;
+  private transport: ClientTransport | null = null;
   private attempts = 0;
   private retryTimer: ReturnType<typeof setTimeout> | null = null;
   private join: JoinOptions = { name: "player" };
@@ -188,9 +198,9 @@ export class Connection {
    * Moves the applied offset toward the estimate, by however much real time has
    * passed since this last ran.
    *
-   * Driven from the READ rather than from the socket, because this is the only
-   * place that has to be right: `now` and `renderTime` are what the world is
-   * posed against, and they are asked several times a frame
+   * Driven from the READ rather than from the transport, because this is the
+   * only place that has to be right: `now` and `renderTime` are what the world
+   * is posed against, and they are asked several times a frame
    * (`NetSession.update`) at the one instant `setFrame` fixed — so the first
    * ask of a frame spends the gap since the last and the rest find none.
    * Stepping this on message ARRIVAL would make the rate a function of the
@@ -247,7 +257,7 @@ export class Connection {
     // default inline would narrow it to the literal `"/ws"` and refuse every
     // caller that passes a real URL. The documented gotcha in CLAUDE.md.
     const url: string = opts.url ?? CONFIG.net.url;
-    this.open(url);
+    this.open(opts.dial ?? (() => socketTransport(url)));
   }
 
   /**
@@ -266,63 +276,56 @@ export class Connection {
     this.join = { ...this.join, matchId, create: false };
   }
 
-  private open(url: string): void {
-    // A relative path so a deployed build reaches the same origin it was served
-    // from, which is what the nginx `/ws` proxy expects. An absolute ws:// URL
-    // is still accepted, for a dev client pointed at a server on another port.
-    const absolute = /^wss?:\/\//.test(url)
-      ? url
-      : `${location.protocol === "https:" ? "wss" : "ws"}://${location.host}${url}`;
-
+  private open(dial: () => ClientTransport): void {
     this.setState("connecting");
-    const socket = new WebSocket(absolute);
-    this.socket = socket;
+    const transport = dial();
+    this.transport = transport;
 
-    socket.addEventListener("open", () => {
-      this.attempts = 0;
-      this.setState("open");
-      this.send({
-        t: "join",
-        version: PROTOCOL_VERSION,
-        name: this.join.name,
-        matchId: this.join.matchId,
-        create: this.join.create,
-        map: this.join.map,
-        bots: this.join.bots,
-        weapon: this.join.weapon,
-        equipment: this.join.equipment,
-        throwable: this.join.throwable,
-      });
-      this.settleJoin();
+    transport.listen({
+      opened: () => {
+        this.attempts = 0;
+        this.setState("open");
+        this.send({
+          t: "join",
+          version: PROTOCOL_VERSION,
+          name: this.join.name,
+          matchId: this.join.matchId,
+          create: this.join.create,
+          map: this.join.map,
+          bots: this.join.bots,
+          weapon: this.join.weapon,
+          equipment: this.join.equipment,
+          throwable: this.join.throwable,
+        });
+        this.settleJoin();
+      },
+
+      message: (text) => {
+        const msg = decode(text) as ServerMessage | null;
+        if (!msg) return;
+        // Every stamped message is a clock sample, not just an explicit ping —
+        // snapshots arrive twenty times a second and carry `now`, so the
+        // estimate stays fresh for free.
+        if ("now" in msg && typeof msg.now === "number") this.sample(msg.now);
+        this.onMessage(msg);
+      },
+
+      closed: () => {
+        // An attempt this connection has already let go of — closed by us, or
+        // replaced — says nothing about the one standing.
+        if (this.transport !== transport) return;
+        this.transport = null;
+        // An attempt that never opened has nothing to send a join down, and a
+        // build waiting on it would wait out every retry behind a card. One
+        // attempt is the whole of what `joinSent` promises to wait for.
+        this.settleJoin();
+        if (this.closedByUs) return this.setState("closed");
+        this.retry(dial);
+      },
     });
-
-    socket.addEventListener("message", (ev) => {
-      const msg = decode(String(ev.data)) as ServerMessage | null;
-      if (!msg) return;
-      // Every stamped message is a clock sample, not just an explicit ping —
-      // snapshots arrive twenty times a second and carry `now`, so the estimate
-      // stays fresh for free.
-      if ("now" in msg && typeof msg.now === "number") this.sample(msg.now);
-      this.onMessage(msg);
-    });
-
-    socket.addEventListener("close", () => {
-      this.socket = null;
-      // An attempt that never opened has nothing to send a join down, and a
-      // build waiting on it would wait out every retry behind a card. One
-      // attempt is the whole of what `joinSent` promises to wait for.
-      this.settleJoin();
-      if (this.closedByUs) return this.setState("closed");
-      this.retry(url);
-    });
-
-    // `error` is always followed by `close`, so reconnection is handled there
-    // and this exists only so an unhandled event does not reach the console as
-    // an uncaught error.
-    socket.addEventListener("error", () => {});
   }
 
-  private retry(url: string): void {
+  private retry(dial: () => ClientTransport): void {
     if (this.attempts >= CONFIG.net.reconnectMax) {
       this.setState("closed");
       return;
@@ -333,7 +336,7 @@ export class Connection {
     // usually restarting, and a client that has backed off to thirty seconds
     // rejoins a round that is already over.
     const delay = CONFIG.net.reconnectDelay * 1000 * this.attempts;
-    this.retryTimer = setTimeout(() => this.open(url), delay);
+    this.retryTimer = setTimeout(() => this.open(dial), delay);
   }
 
   private sample(serverNow: number): void {
@@ -354,25 +357,23 @@ export class Connection {
   }
 
   send(msg: ClientMessage): void {
-    if (this.socket?.readyState === WebSocket.OPEN) {
-      this.socket.send(encode(msg));
-    }
+    if (this.transport?.open) this.transport.send(encode(msg));
   }
 
   close(): void {
     this.closedByUs = true;
     if (this.retryTimer !== null) clearTimeout(this.retryTimer);
     this.retryTimer = null;
-    this.socket?.close();
-    this.socket = null;
+    this.transport?.close();
+    this.transport = null;
     this.setState("closed");
     this.settleJoin();
   }
 
   /**
-   * Resolves once the socket that is opening has had its `join` sent down it —
-   * or has failed to open, or this connection was closed. Immediately when no
-   * socket is opening.
+   * Resolves once the transport that is opening has had its `join` sent down
+   * it — or has failed to open, or this connection was closed. Immediately
+   * when none is opening.
    *
    * **The server gives an anonymous socket ten seconds to say `join`, and the
    * clock starts at the UPGRADE, not when this page gets round to it**
@@ -387,7 +388,7 @@ export class Connection {
    * milliseconds.
    */
   joinSent(): Promise<void> {
-    if (this.socket?.readyState !== WebSocket.CONNECTING) return Promise.resolve();
+    if (!this.transport?.connecting) return Promise.resolve();
     return new Promise((resolve) => this.joinWaiters.push(resolve));
   }
 

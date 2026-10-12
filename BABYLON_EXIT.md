@@ -1600,6 +1600,23 @@ wire comes later, for both at once, and only if a profiler capture asks for it.
   `CONFIG.bots.maxPerTeam` (24). Before C4 puts a client in front of an owned
   match, the client must take the block width from the match rather than from
   `CONFIG`. A remote match's width is still 24.
+- **Two ports, and no order between them** (found at C3). The page speaks to
+  a local match as a PERSON on its `Connection`'s port and as the OWNER on
+  the owner channel, and a port promises order only within itself: a
+  `deploy` posted before an `advance` may be read after it. The benchmark
+  speaks only as the owner. Anything C4 needs ordered across the two (an ask
+  answered while held, a settle before a read) must come from an answer on
+  one port, never from the order the page posted in (`docs/multiplayer.md`,
+  "The local transport").
+- **The same-thread fallback is a value import of `server/`** (found at C3).
+  `serveLocalMatch` is one code path in a Worker and on a `MessageChannel`,
+  but running it in the page's thread means the page imports
+  `server/localMatch.ts`, which "nothing in `src/` value-imports `server/`"
+  forbids. C4 decides: a dynamic `import()` taken only on the fallback keeps
+  the Worker path's bundle free of it, and the rule is restated as "only the
+  fallback's one dynamic import". Until something references
+  `server/localMatchWorker.ts` as a Worker URL, `npm run build` does not
+  bundle it — C3 proved it under `vite dev` in a real Worker.
 - **The bench's fight must not move.** If the hashes differ, the slot layout
   (the pool), the step order around `Match.step`, and the seed's route are the
   suspects, in that order. Attribute the change to one cause, as X2.2 C6 did,

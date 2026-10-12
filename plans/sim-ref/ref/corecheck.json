@@ -1,5 +1,5 @@
 {
- "at": "02f2a60+",
+ "at": "337b945+",
  "lines": [
   "  ok   greyfen/core       deploy: an unasked person is never put in (30 ticks, no spawned)",
   "  ok   greyfen/core       deploy: an ask with the clock run out deploys on the next tick",
@@ -40,6 +40,15 @@
   "  ok   greyfen/owned      owned: the owner begins the next: the seated peer hears `roundstart` on the same map, the seed is the owner's, and the clock steps again",
   "  ok   greyfen/owned      owned: the last peer leaving retires nothing — no idle timer, and the owner's clock still steps",
   "  ok   greyfen/owned      owned: `close` ends it — the world disposed, the clock refuses to step it, and a late peer is turned away",
+  "  ok   greyfen/local      local: the bench's round over the owner channel — 5400 posted advances, each answered one step, all before `fight` is",
+  "  ok   greyfen/local      local: a step's timing comes back exactly when asked for (54 timed of 5400)",
+  "  ok   greyfen/local      local: the fight hash, back over the owner channel, is the core's (83e8e74ef36916ba, 58 awards and deaths)",
+  "  ok   greyfen/local      local: a person dialled over a port is welcomed by `Match` at slot 0, team 0, on greyfen (protocol 7)",
+  "  ok   greyfen/local      local: a `deploy` over the port is answered by a `spawn` as the owner advances",
+  "  ok   greyfen/local      local: an honest `move` is not corrected, and every snapshot is stamped 50 ms of the owner's clock after the last",
+  "  ok   greyfen/local      local: the scoreboard's ping row is filled for a port, answered by the host's end of it",
+  "  ok   greyfen/local      local: a second `open` while a match is open is refused, over the channel",
+  "  ok   greyfen/local      local: the owner's `close` is heard as `rejected: match closed`, and a dial after it is told there is no match",
   "  ok   coldharbour/core   fixture: a hull a side",
   "  ok   coldharbour/core   deploy: the person comes in",
   "  ok   coldharbour/core   shell: the enemy hull has a bot on the gun",

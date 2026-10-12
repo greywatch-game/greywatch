@@ -1194,6 +1194,55 @@ still assumes the ceiling's layout (`NetRoster.buildPool` numbers team 1 from
 `CONFIG.bots.maxPerTeam`), and the claim gates that read the wall clock —
 the rate buckets, `arrivalClock` — do not know a hold happened.
 
+### The local transport: an owner's port, and a port per person
+
+An owned match the PAGE hosts is reached over ports, not sockets
+(`BABYLON_EXIT.md` X2.5c C3), and there are two kinds of port with nothing in
+common but the `postMessage`:
+
+- **The OWNER's channel** (`src/net/LocalMatch.ts` on the page,
+  `server/localMatch.ts` hosting): `open` a match on a map, `begin` a round on
+  a seed and a difficulty, `advance` it by `dt`, `markFight` and read the
+  benchmark's `fight`, `close` it. **It is not a `ClientMessage`** — it has its
+  own port and its own words, the host reads it with no claim gate, and
+  `server/wire.ts` never sees it, so nothing a remote client sends can begin a
+  round or move a clock. The host answers its calls ONE AT A TIME, IN ORDER,
+  each after every call before it has finished (`begin` builds a world), so
+  ANY answer is a settle: `fight`'s hash is the fold of every step posted
+  ahead of it. `advance` is posted and never awaited — the page posts one a
+  frame and reads the newest answer (`onAdvanced`: the steps taken, whether
+  the round ended, and the last step's timing on the page's clock when asked).
+  The fight is folded off `MatchOptions.hear`, an in-process ear on every
+  drain, because no wire event carries a bot's award.
+- **A PERSON's port**, dialled by the owner (`LocalMatch.dial`) and held by
+  the page's own `Connection` (`JoinOptions.dial`, `src/net/transport.ts`'s
+  `portTransport`): the protocol's JSON text both ways, the `join` read off it
+  as `server/index.ts` reads one off a socket (the protocol version checked;
+  no handshake window and no per-address cap, because a port exists only
+  because its owner dialled it), and then `Match.admit` — every claim gate,
+  the rate bucket and `validateMove` exactly as a remote peer meets them. The
+  one word on a port that is not a frame is `PORT_CLOSE`: a closed port tells
+  the far end nothing, so whichever end closes says so first.
+
+**The two kinds are two ports, and a port promises order only within
+itself.** What the page says to the match as a person and what it says as the
+owner can arrive in either order — a `deploy` posted before an `advance` may be
+read after it. The benchmark needs no order across them, since it speaks only as
+the owner. Anything that comes to need one must get it from an answer on one
+of the two ports, never from the order it posted in.
+
+The host runs in a Worker (`server/localMatchWorker.ts`, which is nothing but
+`serveLocalMatch(self)`), on a `MessageChannel` in the page's own thread, or in
+Node under `corecheck` — one code path, so **nothing `Match` reaches may import
+Node** (`server/README.md`). `npm run corecheck`'s `greyfen/local` runs it on a
+`MessageChannel`: the bench's round over the owner channel alone folds the
+bench's own Greyfen hash, and a person joining through the page's real
+`Connection` is welcomed at slot 0, deploys, sends an honest `move` that is
+never corrected, sees every snapshot stamped one interval of the owner's clock
+after the last, gets a ping row, and hears `rejected: match closed` when the
+owner closes. The same flow in a real browser Worker under `vite dev` gives the
+same hash.
+
 ## Lag compensation
 
 `src/sim/LagComp.ts` keeps `REWIND_WINDOW_MS` of every body's `center` and
@@ -1466,7 +1515,11 @@ Three details are load-bearing, and each is a way of not lying:
   echoes the payload of the ping that caused it (RFC 6455), so the token is the
   whole of the test: only an echo of the latest token reaches `Match` as
   `pong`, and the sweep's own pongs (which carry none) still clear its deadline
-  where they are read. A transport that is not shared owes no token.
+  where they are read. A transport that is not shared owes no token. **A
+  local match's port answers its own ping** (`portPeer`, `server/localMatch.ts`):
+  a port has no connection to measure, and its far end is the page's busy
+  thread, which is the one thing this column must not time — so the row reads
+  the host's own delay in getting back to it, about 0.
 - **One outstanding ping per peer, and a peer that has not answered is not
   re-pinged.** Re-pinging would restart the clock on exactly the connection
   worth showing. Instead `pingFor` reports the WAIT once it passes the last
