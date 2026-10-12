@@ -93,7 +93,8 @@ import { CONFIG } from "../src/config";
 import { Vector3, type Vector3Like } from "../src/math";
 import { INPUT_HZ, PROTOCOL_VERSION, SNAPSHOT_HZ, TICK_HZ, type ServerMessage } from "../src/net/protocol";
 import { Connection } from "../src/net/Connection";
-import { LocalMatch, type Advanced } from "../src/net/LocalMatch";
+import { LocalMatch } from "../src/net/LocalMatch";
+import type { Advanced } from "../src/net/localWire";
 import type { Bot } from "../src/entities/Bot";
 import type { Team } from "../src/entities/Combatant";
 import type { DriveInput, Vehicle } from "../src/entities/Vehicle";
@@ -1359,7 +1360,7 @@ async function localMatch(world: World, c: Checks, benchHex: string): Promise<vo
   };
   for (let i = 0; i < 4 * TICK_HZ && !spawned(); i++) {
     owner.advance(1 / TICK_HZ, false);
-    await owner.fight();
+    await owner.settle();
     await until(() => spawned() !== undefined, 5);
   }
   const at = spawned();
@@ -1371,26 +1372,30 @@ async function localMatch(world: World, c: Checks, benchHex: string): Promise<vo
 
   // An honest report and a few seconds of clock: never corrected, the
   // scoreboard's ping answered across the port, snapshots at the wire's rate.
-  // The `pings` row is the barrier: a port delivers in order, so everything
-  // posted before it — a correction, the snapshots — has arrived with it.
+  // The report turns the look and nothing else, so a snapshot carrying that
+  // look says the host has read it — and a port delivers in order, so a
+  // correction it answered with arrived before that snapshot did.
+  const look = at ? at.yaw + 0.5 : 0;
   if (at) {
     conn.send({
       t: "move",
       seq: 1,
       time: performance.now(),
       pos: at.pos,
-      yaw: at.yaw,
+      yaw: look,
       pitch: 0,
       crouching: false,
       sprinting: false,
     });
   }
   const pinged = (): boolean => frames.some((f) => f.t === "pings" && f.ms[PERSON_SLOT] >= 0);
+  const turned = (): boolean =>
+    frames.some((f) => f.t === "snap" && f.entities.some((e) => e.i === PERSON_SLOT && Math.abs(e.yaw - look) < 1e-3));
   let seconds = 0;
-  while (seconds < 4 && !pinged()) {
+  while (seconds < 4 && !(pinged() && turned())) {
     for (let i = 0; i < TICK_HZ; i++) owner.advance(1 / TICK_HZ, false);
-    await owner.fight();
-    await until(pinged, 50);
+    await owner.settle();
+    await until(() => pinged() && turned(), 50);
     seconds++;
   }
   // Stamped, not counted: the owner's clock is what a snapshot is on, so
@@ -1400,7 +1405,7 @@ async function localMatch(world: World, c: Checks, benchHex: string): Promise<vo
   const corrections = frames.filter((f) => f.t === "correct").length;
   c.that(
     `${tag}: an honest \`move\` is not corrected, and every snapshot is stamped ${1000 / SNAPSHOT_HZ} ms of the owner's clock after the last`,
-    at !== undefined && pinged() && corrections === 0 && stamps.length >= seconds * SNAPSHOT_HZ &&
+    at !== undefined && turned() && corrections === 0 && stamps.length >= seconds * SNAPSHOT_HZ &&
       uneven.length === 0,
     `${stamps.length} snapshots (${uneven.length} uneven) in ${seconds} s, ${corrections} corrections`,
   );

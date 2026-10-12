@@ -276,8 +276,8 @@ export interface MatchOptions {
    */
   timing?: () => number;
   /**
-   * Hears everything the core says, one drain at a time, after this match has
-   * relayed it — the owner's ear on the round, for what no wire event carries
+   * Hears everything the core says, one drain at a time, as this match drains
+   * it and before it is relayed — the owner's ear on the round, for what no wire event carries
    * (a bot's award, which the benchmark's fight hash folds). In-process only,
    * read inside the call: the cursor is reused by the next drain. A peer
    * hears the wire and never this.

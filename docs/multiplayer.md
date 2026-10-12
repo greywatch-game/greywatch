@@ -1201,15 +1201,16 @@ An owned match the PAGE hosts is reached over ports, not sockets
 common but the `postMessage`:
 
 - **The OWNER's channel** (`src/net/LocalMatch.ts` on the page,
-  `server/localMatch.ts` hosting): `open` a match on a map, `begin` a round on
-  a seed and a difficulty, `advance` it by `dt`, `markFight` and read the
+  `server/localMatch.ts` hosting, the words both speak in
+  `src/net/localWire.ts`): `open` a match on a map, `begin` a round on a seed
+  and a difficulty, `advance` it by `dt`, `settle`, `markFight` and read the
   benchmark's `fight`, `close` it. **It is not a `ClientMessage`** — it has its
   own port and its own words, the host reads it with no claim gate, and
   `server/wire.ts` never sees it, so nothing a remote client sends can begin a
   round or move a clock. The host answers its calls ONE AT A TIME, IN ORDER,
   each after every call before it has finished (`begin` builds a world), so
-  ANY answer is a settle: `fight`'s hash is the fold of every step posted
-  ahead of it. `advance` is posted and never awaited — the page posts one a
+  ANY answer is a settle (`settle` is the one that does nothing else):
+  `fight`'s hash is the fold of every step posted ahead of it. `advance` is posted and never awaited — the page posts one a
   frame and reads the newest answer (`onAdvanced`: the steps taken, whether
   the round ended, and the last step's timing on the page's clock when asked).
   The fight is folded off `MatchOptions.hear`, an in-process ear on every
@@ -1227,9 +1228,8 @@ common but the `postMessage`:
 **The two kinds are two ports, and a port promises order only within
 itself.** What the page says to the match as a person and what it says as the
 owner can arrive in either order — a `deploy` posted before an `advance` may be
-read after it. The benchmark needs no order across them, since it speaks only as
-the owner. Anything that comes to need one must get it from an answer on one
-of the two ports, never from the order it posted in.
+read after it. Anything that needs an order across the two must get it from an
+answer on one of the two ports, never from the order it posted in.
 
 The host runs in a Worker (`server/localMatchWorker.ts`, which is nothing but
 `serveLocalMatch(self)`), on a `MessageChannel` in the page's own thread, or in

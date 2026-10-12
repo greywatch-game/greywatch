@@ -10,8 +10,10 @@
  * - **The owner's calls run one at a time, in the order they were posted**
  *   (`LocalMatch`'s header): a call is answered only after every call before
  *   it has finished, so any answer is a settle. A person's port is queued
- *   behind them too, so it is admitted into the match the owner's calls
- *   before it built.
+ *   behind them too, so its handshake is listening only once the calls
+ *   before it have run — but the `join` itself is read off the person's own
+ *   port, whenever it arrives, and admitted into whichever match is open
+ *   THEN: two ports promise no order between them (`docs/multiplayer.md`).
  * - **Everything a person says goes through `Match`'s own door**, the JSON
  *   and every claim gate (`server/wire.ts`), exactly as a remote peer's
  *   does: this file reads the `join` and nothing after it.
@@ -30,8 +32,7 @@
  */
 import { MAPS } from "../src/world/maps";
 import { encode, PROTOCOL_VERSION } from "../src/net/protocol";
-import { PORT_CLOSE } from "../src/net/transport";
-import type { OwnerCall, OwnerMessage, OwnerPort, OwnerReply } from "../src/net/LocalMatch";
+import { PORT_CLOSE, type OwnerCall, type OwnerMessage, type OwnerPort, type OwnerReply } from "../src/net/localWire";
 import { EV, SCORE_KINDS, type EventCursor } from "../src/sim/events";
 import { FightHash } from "../src/bench/fightHash";
 import { Match, type PeerHandlers, type PeerTransport } from "./Match";
@@ -42,9 +43,12 @@ const LOCAL_ID = "local";
 
 /**
  * A person's port as `Match` reaches a peer: protocol text both ways, and
- * `PORT_CLOSE` (`src/net/transport.ts`). Its own `close` raises nothing, as
- * `Match` expects of any transport (it drops a peer it closes by hand); the
- * far end's raises `closed`.
+ * `PORT_CLOSE` (`src/net/localWire.ts`). Either end closing raises `closed`
+ * — the far end's on arrival, this end's own a microtask later, as a
+ * socket's own `close` is followed by its `close` event. `Match` drops a
+ * peer it closes by hand and `drop` is idempotent, but the one closer that
+ * does not drop — the refusal of an `admit` that failed after claiming a
+ * seat — relies on it, exactly as `server/index.ts`'s does.
  *
  * **A ping is answered HERE, a microtask later.** The scoreboard's column
  * measures the CONNECTION and never how busy the far end's page is — which
@@ -69,6 +73,7 @@ function portPeer(port: MessagePort): PeerTransport {
       open = false;
       port.postMessage(PORT_CLOSE);
       port.close();
+      queueMicrotask(() => handlers?.closed());
     },
     ping() {
       // Never inside the call: a socket's pong cannot arrive while `Match`
@@ -168,6 +173,8 @@ export function serveLocalMatch(owner: OwnerPort): void {
           timing: msg.timed && steps > 0 ? m.game.frame.timing : null,
         };
       }
+      case "settle":
+        return { t: "done", call };
       case "markFight":
         fightFrom = need().game.tick;
         fight = new FightHash();
@@ -227,6 +234,10 @@ export function serveLocalMatch(owner: OwnerPort): void {
 
   owner.onmessage = (ev: MessageEvent<OwnerMessage>) => {
     const msg = ev.data;
-    queue = queue.then(() => run(msg));
+    // Caught, so a call that failed past its own reply cannot reject the
+    // chain and leave every later call unanswered.
+    queue = queue
+      .then(() => run(msg))
+      .catch((err: unknown) => console.error("[local match] owner message failed:", err));
   };
 }

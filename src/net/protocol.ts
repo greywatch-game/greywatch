@@ -1,6 +1,7 @@
 /**
- * net/protocol.ts — The wire format, and the ONLY module both the client and
- * the multiplayer server import.
+ * net/protocol.ts — The wire format, and with its local twin (`localWire.ts`,
+ * a match the page hosts) the only modules of `net/` the multiplayer server
+ * imports.
  * Owns: every message shape, the tick/rate constants both sides must agree on,
  * and the slot/entity vocabulary. Pure types and plain constants — no Babylon,
  * no DOM, no `CONFIG`, nothing with a side effect. It is imported by a Node

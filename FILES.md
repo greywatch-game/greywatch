@@ -30,7 +30,7 @@ server/               # The authoritative match server. Node, no Babylon (the
                       #   and no transport: a peer is a PeerTransport
   localMatch.ts       #   A match the PAGE hosts (X2.5c C3): one owned Match
                       #   at a time, the owner's calls (open, begin, advance,
-                      #   markFight, fight, close) answered in order off one
+                      #   settle, markFight, fight, close) answered in order off one
                       #   port, each person admitted off a port of their own
                       #   (`portPeer`, which answers Match's ping itself) after
                       #   a join read as index.ts reads one. Folds the bench's
@@ -2079,9 +2079,14 @@ src/
                       #   `resync` rebases, a touchdown after one still pays
   net/                # Multiplayer, client side. Nothing here is constructed
     protocol.ts       #   in an offline round.
-                      #   The wire format — the ONLY module the server also
-                      #   imports. Pure types + the rates both ends must agree
-                      #   on. No Babylon, no DOM, no CONFIG
+                      #   The wire format — with localWire.ts, the only
+                      #   modules here the server imports. Pure types + the
+                      #   rates both ends must agree on. No Babylon, no DOM,
+                      #   no CONFIG
+    localWire.ts      #   protocol.ts's twin for a match the page hosts: the
+                      #   owner channel's calls and replies, OwnerPort, and
+                      #   PORT_CLOSE. Pure types and one constant, loaded by
+                      #   the page, the Worker and Node alike
     Connection.ts     #   Connection lifetime, reconnect, and the server-clock
                       #   offset every interpolated body is drawn against.
                       #   Dials a ClientTransport: a WebSocket to `url`, or
@@ -2089,9 +2094,9 @@ src/
     transport.ts      #   ClientTransport and its two kinds: socketTransport
                       #   and portTransport (protocol text both ways, and
                       #   PORT_CLOSE, the one word a port cannot say itself)
-    LocalMatch.ts     #   The OWNER's channel to a match the page hosts
-                      #   (server/localMatch.ts): its calls and replies, the
-                      #   in-order answers that make any call a settle, and
+    LocalMatch.ts     #   The OWNER's client to a match the page hosts
+                      #   (server/localMatch.ts): calls awaited in order, so
+                      #   any is a settle (`settle` is the bare one), and
                       #   `dial`, a person's port in. Not a ClientMessage:
                       #   no remote client can say it
     NetSession.ts     #   One networked round: the seam between Game and the

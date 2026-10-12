@@ -2,8 +2,7 @@
  * net/transport.ts — What `Connection` talks to a match through: a WebSocket
  * to a match server, or a `MessagePort` to a match the page hosts itself
  * (`BABYLON_EXIT.md` X2.5c C3, `server/localMatch.ts`).
- * Owns: the `ClientTransport` shape, its two kinds, and the port's one
- * control word. Owns no message: what crosses either kind is the protocol's
+ * Owns: the `ClientTransport` shape and its two kinds. Owns no message: what crosses either kind is the protocol's
  * JSON text (`protocol.ts`), encoded and decoded above this file, so a local
  * match is reached over exactly the wire a remote one is.
  * Invariants: a transport is ONE attempt — it opens once, closes once and is
@@ -13,14 +12,11 @@
  * wait on it after closing.
  * Never: interpret a frame, or hold anything about a round.
  *
- * **A port carries text, and one word that is not.** A string is one
- * protocol frame, either way. `PORT_CLOSE` is what a WebSocket's closing
- * handshake says and a port cannot: a closed port tells the far end nothing,
- * so whichever end closes says so first. The host's half is
- * `server/localMatch.ts`'s `portPeer`, which answers `Match`'s ping itself:
- * the scoreboard's column measures the connection and never the page
- * (`docs/multiplayer.md`), and a port has no connection to measure.
+ * **A port carries text, and one word that is not** (`PORT_CLOSE`,
+ * `localWire.ts`). The host's half is `server/localMatch.ts`'s `portPeer`,
+ * which also answers `Match`'s ping — see there.
  */
+import { PORT_CLOSE } from "./localWire";
 
 /** What a transport raises into `Connection`, one handler per thing it can say. */
 export interface ClientHandlers {
@@ -45,9 +41,6 @@ export interface ClientTransport {
   /** Hands this transport its handlers. Called once, right after the dial. */
   listen(handlers: ClientHandlers): void;
 }
-
-/** A port's control word: the connection is over. See the header. */
-export const PORT_CLOSE = 0;
 
 /**
  * A WebSocket to `url` — a path on this page's own origin (the nginx `/ws`

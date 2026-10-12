@@ -4,10 +4,11 @@
  * `serveLocalMatch` is everything it does.
  * Owns: nothing — the host is `localMatch.ts`, which a page without this
  * Worker runs on a `MessageChannel` in its own thread, the same code path.
- * Never: import a view, the DOM or Babylon (`scripts/check-babylon-free.mjs`
- * walks this directory). The page reaches it only as a Worker URL.
+ * Never: import a view or Babylon (`scripts/check-babylon-free.mjs` walks
+ * this directory), or Node (`localMatch.ts`). The page reaches it only as a
+ * Worker URL.
  */
-import type { OwnerPort } from "../src/net/LocalMatch";
+import type { OwnerPort } from "../src/net/localWire";
 import { serveLocalMatch } from "./localMatch";
 
 // A Worker's own scope, which the DOM lib types as a window.

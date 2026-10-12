@@ -1603,11 +1603,38 @@ wire comes later, for both at once, and only if a profiler capture asks for it.
 - **Two ports, and no order between them** (found at C3). The page speaks to
   a local match as a PERSON on its `Connection`'s port and as the OWNER on
   the owner channel, and a port promises order only within itself: a
-  `deploy` posted before an `advance` may be read after it. The benchmark
-  speaks only as the owner. Anything C4 needs ordered across the two (an ask
-  answered while held, a settle before a read) must come from an answer on
-  one port, never from the order the page posted in (`docs/multiplayer.md`,
-  "The local transport").
+  `deploy` posted before an `advance` may be read after it. Anything C4
+  needs ordered across the two (an ask answered while held, a settle before a
+  read) must come from an answer on one port, never from the order the page
+  posted in (`docs/multiplayer.md`, "The local transport").
+- **The benchmark has to WATCH its fight, and a peer is a seat** (found at
+  C3's review). The bench draws the fight it measures — the bodies, the
+  tracers, the chase camera over a bot (`Game.chaseBench`, reading the
+  page's own core today) — and once the frame and the mirrors go (C5) the
+  wire is the only picture there is. But the wire reaches only an ADMITTED
+  peer, and `admit` claims a slot and benches its bot, which moves the fight
+  hash. C4 owes a peer with no seat — snapshots and events, never
+  `Roster.claim` — or another way to draw the round that leaves the slot
+  table alone.
+- **`advance` is seconds, and seconds do not sum to whole steps** (found at
+  C3's review). `accrue` adds milliseconds, so one `advance(9 / 60)` steps 8
+  and carries most of a ninth: 150 ms less nine `STEP_MS` in floating point
+  is a hair under a step. One `advance(1 / 60)` IS one step exactly (C2), so
+  the bench's multi-step lead-in frames post one advance per STEP, as
+  `Game.updateBench` already loops `updateWorld` per step, never one per
+  frame.
+- **A port opens whoever is at the far end** (found at C3's review). A
+  WebSocket to a dead server closes; a port into a Worker that died or
+  wedged says nothing, so `Connection` goes `open`, sends its join and waits
+  for ever, and `LocalMatch`'s awaited calls never settle. C4 owes the
+  Worker's own failure signal (`onerror`, and a call that does not answer)
+  routed to the session, as the boot already does for X2.5b's Worker.
+- **Nothing yet enforces that the local match's reach imports no Node.**
+  `server/localMatch.ts` and everything it reaches — `Match` included — run
+  in a browser, but `check-babylon-free.mjs` gates Babylon only and
+  `npm run build` does not bundle the Worker until C4 names it as a Worker
+  URL. From then the page build refuses a `node:` or `ws` import in its
+  reach; until then it is a rule in the headers alone.
 - **The same-thread fallback is a value import of `server/`** (found at C3).
   `serveLocalMatch` is one code path in a Worker and on a `MessageChannel`,
   but running it in the page's thread means the page imports
