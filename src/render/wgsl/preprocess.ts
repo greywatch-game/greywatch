@@ -1,17 +1,20 @@
 /**
  * render/wgsl/preprocess.ts — The two directives a shared WGSL body is
  * written with, resolved into text with neither left in it.
- * Owns: `preprocess` — `#include<name>` against a table, and `#define NAME`,
- * `#ifdef`, `#ifndef`, `#else`, `#endif` over a variant's define set; and the
- * comment strip that runs first.
+ * Owns: `preprocess` — `#include<name>` against a table, and `#ifdef`,
+ * `#ifndef`, `#else`, `#endif` over a variant's define set; and
+ * `stripComments`, which runs first here and which `shaders/wgsl/includes.ts`
+ * runs over everything it hands Babylon.
  * Invariants: the output carries no directive and no comment; every directive
  * it does not implement is REFUSED, by name and line, rather than passed
  * through — a line Babylon's processor would have read and ours dropped is a
  * shader that compiles and draws something else; a chunk is included at most
  * once per program, so a duplicate is an error here rather than a
  * redeclaration in the driver's words.
- * Never: imports Babylon; substitutes text — a `#define` with a VALUE is
- * refused, because a define is a flag here and a number is a WGSL `const`
+ * Never: imports Babylon; lets a body `#define` — the variant is the
+ * program's to state, because the DECLARATIONS are guarded by it
+ * (`assemble.ts`) and a define a body minted would reach the body's
+ * `#ifdef`s and not the guards. A number is a WGSL `const`, never a define
  * (`docs/rendering.md` has what Babylon's un-anchored substitution does to a
  * name that is a substring of another).
  * Contract: `docs/rendering.md`, "Hand-written WGSL".
@@ -27,8 +30,12 @@
  * `#`, so a commented-out one is already inert; what stripping buys is that a
  * body's PROSE is never read as code by the step after this one, which
  * rewrites `uniforms.` references (`assemble.ts`) and must not trip over one
- * quoted in a comment. Babylon's processor strips them first for the same
- * kind of reason.
+ * quoted in a comment. **Babylon's processor does NOT do this for an
+ * include** — it strips the top-level source and then pastes includes in
+ * whole, so a declaration quoted in an included comment is matched by its
+ * declaration regexes as if it were one, and mints a binding with nothing
+ * behind it. That is why `includes.ts` registers every chunk through this
+ * same function.
  */
 
 /** What a program is preprocessed against. */
@@ -53,7 +60,7 @@ interface Frame {
  * this variant, comment-free. Throws on anything it does not implement.
  */
 export function preprocess(source: string, options: PreprocessOptions): string {
-  const defined = new Set(options.defines);
+  const defined: ReadonlySet<string> = new Set(options.defines);
   const included = new Set<string>();
   const out: string[] = [];
 
@@ -93,8 +100,6 @@ export function preprocess(source: string, options: PreprocessOptions): string {
         const top = stack.pop();
         if (!top) throw new Error(`${at}: #endif with no #ifdef open`);
         live = top.outer;
-      } else if (directive === "define" && name && !rest) {
-        if (live) defined.add(name);
       } else {
         throw new Error(`${at}: "${t}" is not a directive a shared body may use`);
       }
@@ -108,12 +113,11 @@ export function preprocess(source: string, options: PreprocessOptions): string {
 
 /**
  * The text with its `//` and `/* *\/` comments blanked, line breaks kept so
- * the line an error names is the chunk's own.
- * WGSL has no string literals, so nothing that looks like a comment is
- * anything else.
+ * the line an error names is the chunk's own. One pass, so a `//` comment
+ * holding a `/*` is still a line comment. WGSL has no string literals, so
+ * nothing that looks like a comment is anything else; a NESTED block comment
+ * (which WGSL allows) is not handled, and no chunk writes one.
  */
-function stripComments(text: string): string {
-  return text
-    .replace(/\/\*[\s\S]*?\*\//g, (c) => c.replace(/[^\n]/g, ""))
-    .replace(/\/\/[^\n]*/g, "");
+export function stripComments(text: string): string {
+  return text.replace(/\/\*[\s\S]*?\*\/|\/\/[^\n]*/g, (c) => c.replace(/[^\n]/g, ""));
 }

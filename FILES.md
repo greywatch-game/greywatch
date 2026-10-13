@@ -2217,7 +2217,8 @@ src/
                         #   src/render/. MAX_POINT_LIGHTS and MAX_PALETTE
       includes.ts       # Babylon's half of chunks.ts: its DECLARATIONS for
                         #   each chunk, and every chunk registered as an
-                        #   include (declarations + body), plus our own
+                        #   include (declarations + body, comments stripped:
+                        #   Babylon never strips an include), plus our own
                         #   celInstances pair. Registered at import, so a
                         #   consumer imports it for the side effect
       giTrace.ts        # The irradiance volume's three COMPUTE passes (trace,
@@ -2271,7 +2272,8 @@ src/
     wgsl/
       preprocess.ts     # #include and the #ifdef family over a define set —
                         #   the subset a shared body may use; anything else is
-                        #   REFUSED by name
+                        #   REFUSED by name. stripComments, which includes.ts
+                        #   runs over every entry it hands Babylon
       assemble.ts       # Declarations as DATA, and assembleFragment: plain
                         #   WGSL with explicit @group/@binding, uniforms.<name>
                         #   routed to its block, strided arrays read via .el

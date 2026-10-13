@@ -56,8 +56,8 @@
  * variant DECLARES has to be BOUND, used or not** — which is why the sampler
  * declarations below sit under exactly the defines each material's own
  * `samplers` list is built from rather than under a looser one that would let
- * a variant declare what it never binds. And **the defines make FIVE UBO
- * LAYOUTS**, so a uniform moved into or out of an `#ifdef` moves offsets for
+ * a variant declare what it never binds. And **the defines make SIX UBO
+ * LAYOUTS** (CEL_SMOOTH declares nothing of its own), so a uniform moved into or out of an `#ifdef` moves offsets for
  * that variant alone. See `docs/rendering.md` for the rest of what the dialect
  * and Babylon's WGSL processor decide.
  *
@@ -93,6 +93,8 @@ import { ShadowBindings } from "./ShadowBindings";
 import "./wgsl/includes";
 import { MAX_PALETTE, MAX_POINT_LIGHTS } from "./wgsl/celSurface";
 
+export { MAX_PALETTE, MAX_POINT_LIGHTS };
+
 /**
  * Custom cel-shading: quantized diffuse bands, a hard stylized rim highlight,
  * flat colors (or a world-XZ-mapped texture albedo, for ground surfaces like
@@ -101,11 +103,12 @@ import { MAX_PALETTE, MAX_POINT_LIGHTS } from "./wgsl/celSurface";
  * also carry a matching height map (CEL_BUMP): the facet normal is perturbed
  * by the height slope, measured from world-space taps a texel apart — never
  * from screen-space derivatives, which make the relief boil as the player walks
- * (see perturbNormal) — so the light bands ripple across individual
+ * (see perturbNormal in wgsl/celSurface.ts, where every function this
+ * comment names lives) — so the light bands ripple across individual
  * cobblestones. The same height map is also marched for DEPTH — parallax and
  * a hard self-shadow toward the key (reliefParallax, reliefLit) — so a stone
  * hides the mortar behind it and throws a shadow off its far side.
- * Outlines are drawn with Babylon's outline renderer (inverted hull).
+ * Outlines are drawn by the ink's one full-screen pass (CelInk), not here.
  *
  * Lighting has four parts, all banded so the toon look survives:
  * - a directional key light (moon/sun) quantized into 4 hard bands and gated
@@ -145,8 +148,6 @@ import { MAX_PALETTE, MAX_POINT_LIGHTS } from "./wgsl/celSurface";
  * the shader avoids `convertToFlatShadedMesh()`, which would unweld vertices
  * on every prop, enemy, and clone.
  */
-
-export { MAX_PALETTE, MAX_POINT_LIGHTS };
 
 /**
  * Stamps one source part's palette slot into its buffer's `uv2.x`, before it
@@ -603,8 +604,8 @@ uniform camPos: vec3f;
 // things in the two passes. In the FRAME it is TRANSLUCENT COVERAGE, which
 // CelInk reads to know how much smoke got between it and the depth it is
 // drawing an edge off — see that file. In a reflection PROBE it is the cube's
-// own coverage mask, which is how the glazing below tells the city from the
-// sky above it (city.a), and there it has to be 1 or the bake comes back
+// own coverage mask, which is how the glazing (celSurface) tells the city
+// from the sky above it (city.a), and there it has to be 1 or the bake comes back
 // empty. CelMaterialFactory.setOpaqueAlpha is the flip and
 // ReflectionSystem is its only caller, on the same two hooks that lend the
 // bake the probe's eye.
@@ -635,7 +636,6 @@ uniform pointColor: array<vec3f, ${MAX_POINT_LIGHTS}>; // rgb premultiplied by i
 uniform pointRange: array<f32, ${MAX_POINT_LIGHTS}>;
 uniform pointCount: f32;
 
-
 // Toon specular: one hard two-band Blinn highlight from the key light.
 // specColor is premultiplied by intensity — black (the default) is matte.
 uniform specColor: vec3f;
@@ -643,7 +643,7 @@ uniform specShininess: f32;
 // The top rung of the gloss ladder, and the one that is not a highlight: how
 // much of the ENVIRONMENT a polished surface hands back instead of its own
 // shaded colour. Zero (the default, and every matte, satin and metal material
-// in the game) leaves the whole mirror block below unentered — a uniform
+// in the game) leaves the whole mirror block in celSurface unentered — a uniform
 // branch, which is the same shape the albedo weathering's mask already is.
 uniform specMirror: f32;
 
@@ -678,8 +678,8 @@ uniform skyZenithColor: vec3f;
 // The ALBEDO of the mass this sheet hangs on, named by the builder that hung
 // it (the backed argument of Build.pane). Unlit, because it is shaded here by
 // the same light the pane is: they are parallel faces a hand apart, so one
-// light term is right for both. See the composite below for why this is exact rather
-// than an approximation of the blend it replaces.
+// light term is right for both. See the composite in celSurface for why this
+// is exact rather than an approximation of the blend it replaces.
 uniform glassBackdrop: vec3f;
 #endif
 #endif
@@ -2647,7 +2647,7 @@ const windBearing = new Vector2(
 
 /**
  * How much of the fog colour a surface `dist` from the eye is buried under, on
- * the cel shader's own curve — the `t * t` in CEL_FRAGMENT's atmosphere block,
+ * the cel shader's own curve — the `t * t` in `celSurface`'s atmosphere block,
  * repeated here for the passes that cannot run that shader.
  *
  * **Anything drawn unshaded owes this curve**, through here or through a band

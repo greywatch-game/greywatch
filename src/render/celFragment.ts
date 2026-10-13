@@ -5,12 +5,12 @@
  * Owns: `CEL_FRAGMENT`, the declarations — the frame's uniforms and textures
  * (group 0), a material's (group 1) and the interpolated inputs — and
  * `celFragment`, one variant of it as a plain WGSL module.
- * Invariants: declares every name the shared body reads, under the variant
- * defines Babylon's declarations sit under (`CelShader.ts`'s
- * `celFragmentShader` and `shaders/wgsl/includes.ts`), and the names are
- * Babylon's, because the body reads them by name; a texture is declared with
- * its sampler, as Babylon's are; the inputs keep Babylon's order, so a vertex
- * stage that writes them in that order lines up.
+ * Invariants: declares every name the shared body reads, by Babylon's names
+ * because the body reads them by name, and under Babylon's guards
+ * (`CelShader.ts`'s `celFragmentShader`, `shaders/wgsl/includes.ts`) except
+ * where the frame's one layout overrides that (below); a texture is declared
+ * with its sampler, as Babylon's are; the inputs keep Babylon's order and its
+ * locations.
  * Never: imports Babylon; restates a body — what is different on this side is
  * a declaration, and a body edited here would be the second copy the shared
  * chunks exist to prevent.
@@ -20,11 +20,20 @@
  * WHY TWO GROUPS, AND WHICH NAME IS IN WHICH. Group 0 is what
  * `CelMaterialFactory` pushes onto EVERY cel material as shared state — the
  * environment, the camera, the point lights, every shadow, the irradiance
- * volume, the map's palette — and group 1 is what a material is born with
- * from its own spec: its albedo, its ground texture and relief, its gloss,
- * translucency and glazing, and a pane's own probe. That is the split the
- * factory already makes, read off the code rather than chosen; X3.2 owns the
- * frame's buffer and may move a name between the two without touching a body.
+ * volume, the map's palette, the Ground relief setting — and group 1 is what
+ * a material is born with from its own spec: its albedo, its ground texture
+ * and relief depth, its gloss, translucency and glazing, and a pane's own
+ * probe. That is the split the factory already makes, read off the code
+ * rather than chosen; X3.2 owns the frame's buffer and may move a name
+ * between the two without touching a body.
+ *
+ * **The frame is ONE layout in every variant but the last field**, because it
+ * is one buffer shared by every material: a frame name Babylon declares only
+ * for some variants (`skyZenithColor` for glazing, `reliefMarch` for the
+ * bumped ground) is declared here for all of them, which an unread member
+ * costs nothing, and the one that cannot be — the 2 KB palette — is guarded
+ * and LAST, so the variants that have it read the same offsets as the rest
+ * and a longer buffer.
  *
  * WHAT THIS DOES NOT DO YET, and owes before it draws (X3.2, X3.3):
  * Babylon flips `position.y` before the body runs when its pass draws into a
@@ -87,7 +96,7 @@ export const CEL_FRAGMENT: FragmentProgram = {
           { name: "keyWrap", type: "f32" },
           { name: "ambientColor", type: "vec3f" },
           { name: "skyLightColor", type: "vec3f" },
-          { name: "skyZenithColor", type: "vec3f", when: ["CEL_GLASS"] },
+          { name: "skyZenithColor", type: "vec3f" },
           { name: "rimColor", type: "vec3f" },
           { name: "fogColor", type: "vec3f" },
           { name: "fogParams", type: "vec2f" },
@@ -106,8 +115,10 @@ export const CEL_FRAGMENT: FragmentProgram = {
           { name: "pointCount", type: "f32" },
           { name: "foliageLightMatrix", type: "mat4x4f" },
           { name: "foliageParams", type: "vec4f" },
-          { name: "celPalette", type: "vec3f", count: MAX_PALETTE, when: ["CEL_PALETTE"] },
+          { name: "reliefMarch", type: "f32" },
           ...SHARED_FIELDS,
+          // Guarded, so LAST — see the header.
+          { name: "celPalette", type: "vec3f", count: MAX_PALETTE, when: ["CEL_PALETTE"] },
         ],
       },
       { kind: "sampled", name: "shadowMap", type: "texture_2d<f32>" },
@@ -138,7 +149,6 @@ export const CEL_FRAGMENT: FragmentProgram = {
           { name: "bumpScale", type: "f32", when: ["CEL_GROUND_TEX", "CEL_BUMP"] },
           { name: "reliefFade", type: "vec4f", when: ["CEL_GROUND_TEX", "CEL_BUMP"] },
           { name: "reliefShade", type: "vec2f", when: ["CEL_GROUND_TEX", "CEL_BUMP"] },
-          { name: "reliefMarch", type: "f32", when: ["CEL_GROUND_TEX", "CEL_BUMP"] },
           { name: "specColor", type: "vec3f" },
           { name: "specShininess", type: "f32" },
           { name: "specMirror", type: "f32" },

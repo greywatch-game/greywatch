@@ -35,8 +35,8 @@ import { CEL_SURFACE } from "./celSurface";
  * **`shadowParams` is a vec4 with all four slots spoken for** (bias, darkness,
  * normal offset, tap radius), and widening it is not the small change it
  * looks like: three consumers list those uniforms by name and the WebGPU
- * `LeftOver` UBO is built from those lists, which is the layout hazard the
- * header above exists to describe. This number never varies — not per map,
+ * `LeftOver` UBO is built from those lists, which is the layout hazard
+ * `wgsl/includes.ts`'s header exists to describe. This number never varies — not per map,
  * not per frame, not per material — so a compile-time literal is what it
  * actually is, and it costs no binding at all.
  *
@@ -48,7 +48,6 @@ import { CEL_SURFACE } from "./celSurface";
 const EDGE_FADE = Math.max(CONFIG.graphics.shadows.edgeFade, 1e-4);
 /** How many PIXELS the shadow edge is cut across — see `shadowTap`. */
 const SHADOW_EDGE_PX = CONFIG.graphics.shadows.edgePixels;
-
 
 /**
  * The hard-band quantizer, shared verbatim by every surface shader in the game.
@@ -161,7 +160,7 @@ fn cloudLitAir(p: vec3f) -> f32 {
 `;
 
 /**
- * The stepped shadow lookup, and the uniforms it reads. Included by the cel,
+ * The stepped shadow lookup (its uniforms are declared per side). Included by the cel,
  * grass and water fragment shaders so all three sample the SAME depth maps with
  * the SAME kernel.
  *
@@ -350,10 +349,9 @@ fn shadowCubic(tex: texture_2d<f32>, smp: sampler, uv: vec2f, size: vec2f, depth
 // parameter list it never touched. The alternative was a second copy of the
 // tap, which is the exact failure mode this file's header exists to describe.
 //
-// The declaration shape is deliberately not spelled out in this comment: the
-// processor's rewrite is a regex over the whole shader source, comments
-// included, so a sentence that quoted one would mint a binding with nothing
-// behind it — and a bind group that fails to build loses every draw silently.
+// Babylon's rewrite of those declarations is a regex over the whole shader
+// source, comments included, which is why wgsl/includes.ts strips every
+// entry's comments before registering it (its header has the rest).
 fn shadowTapW(
   m: mat4x4f,
   tex: texture_2d<f32>,

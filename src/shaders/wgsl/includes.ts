@@ -9,8 +9,10 @@
  * `var … sampler` lines in Babylon's dialect, which the shared bodies may not
  * carry.
  * Invariants: every entry is prefixed `cel`; an entry is Babylon's
- * declarations for a chunk followed by that chunk's body, VERBATIM — the body
- * is the text `src/render/` assembles too, and nothing here edits it; nothing
+ * declarations for a chunk followed by that chunk's body, and the body is the
+ * text `src/render/` assembles too, which nothing here edits — the whole entry
+ * goes through `stripComments` and nothing else (see "WHY THE COMMENTS GO",
+ * below); nothing
  * here declares a uniform or a sampler its consumer does not also list;
  * registration happens at import and must therefore precede the first effect
  * COMPILE, not merely the first material.
@@ -36,6 +38,16 @@
  * a name our side failed to declare is a loud failure where it assembles, and
  * a body that drifted between two copies would have been a silent one.
  *
+ * WHY THE COMMENTS GO, BEFORE BABYLON SEES AN ENTRY. Babylon's processor
+ * strips the comments of the TOP-LEVEL source only (`preProcessShaderCode`
+ * runs before `ProcessIncludes`), so an include reaches its declaration
+ * regexes with every comment still in it — and a sentence that quoted a
+ * texture or uniform declaration would be matched as one, minting a binding
+ * with nothing behind it and losing every draw that uses it. The cel
+ * fragment's body is ~700 lines of prose, and it was top-level until it was
+ * shared. Stripped here with the same function our preprocessor runs, an
+ * entry is code alone, and a body's comments are free to say anything.
+ *
  * WHY THE `cel` PREFIX IS THE COLLISION GUARD AND NOT A STYLE. Babylon
  * registers an include first-writer-wins (`if (!IncludesShadersStoreWGSL[name])`),
  * and its own library ships `instancesDeclaration`, `instancesVertex` and some
@@ -57,6 +69,7 @@
 import { ShaderStore } from "@babylonjs/core";
 import { WGSL_CHUNKS, type ChunkName } from "./chunks";
 import { MAX_POINT_LIGHTS } from "./celSurface";
+import { stripComments } from "../../render/wgsl/preprocess";
 
 /**
  * Registers one include, refusing to overwrite a DIFFERENT source under a name
@@ -85,7 +98,6 @@ function register(name: string, source: string): void {
  */
 const DECLARATIONS: Partial<Record<ChunkName, string>> = {
   celCloud: `
-// ---- THE CLOUDS' SHADOW (systems/cloudShadow.ts, driven by Sky) ----
 // x, y: the key-space corner of the field, z: 1 / its side in metres,
 // w: how LIT a point wholly inside a cloud's shadow is; 1 turns the term off.
 uniform cloudShadow: vec4f;
@@ -143,7 +155,7 @@ uniform localParams: vec4f;
 var localAtlasMapSampler: sampler;
 var localAtlasMap: texture_2d<f32>;
 
-// ---- THE LIGHTNING'S KEY (ShadowSystem.flash, LightningStrikes) ----
+// ---- THE LIGHTNING'S KEY: its light and its map (ShadowSystem.flash) ----
 uniform flashDir: vec3f;
 uniform flashColor: vec3f;
 uniform flashLightMatrix: mat4x4f;
@@ -209,7 +221,7 @@ uniform reflectBoxMax: vec3f;
 };
 
 for (const [name, body] of Object.entries(WGSL_CHUNKS) as [ChunkName, string][]) {
-  register(name, (DECLARATIONS[name] ?? "") + body);
+  register(name, stripComments((DECLARATIONS[name] ?? "") + body));
 }
 
 /**

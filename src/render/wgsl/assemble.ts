@@ -84,7 +84,10 @@ export type Binding =
       readonly when?: Guard;
     };
 
-/** One interpolated input, at the location its place in the list gives it. */
+/**
+ * One interpolated input. Locations are counted over the inputs the variant
+ * HAS, in list order — Babylon's rule, so a guarded input is best kept last.
+ */
 export interface Varying {
   readonly name: string;
   readonly type: string;
@@ -158,9 +161,9 @@ export function assembleFragment(
   for (const d of program.diagnosticsOff ?? []) lines.push(`diagnostic(off, ${d});`);
 
   lines.push("struct FragmentInputs {", "  @builtin(position) position: vec4f,");
-  program.varyings.forEach((v, location) => {
-    if (holds(v.when)) lines.push(`  @location(${location}) ${v.name}: ${v.type},`);
-  });
+  program.varyings
+    .filter((v) => holds(v.when))
+    .forEach((v, location) => lines.push(`  @location(${location}) ${v.name}: ${v.type},`));
   lines.push("}", "var<private> fragmentInputs: FragmentInputs;");
 
   const owner = new Map<string, string>();

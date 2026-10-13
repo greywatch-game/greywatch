@@ -761,7 +761,7 @@ this replaced, which scattered a few hundred filled ellipses per tile:
   paint a damp patch across it and the patch is what advertises the period. The
   slow change of soil across a valley is `graphics.groundVariation` instead — the
   same world-space drift the flat cel colours get, applied to the ground texture
-  path in `CelShader`, where it has no period to find.
+  path in the cel shader (`wgsl/celSurface.ts`), where it has no period to find.
 - **A height plane is a DEPTH, not only a slope.** The shader carves it —
   parallax and a hard self-shadow toward the key, at the surface's own
   `bumpScale` — so a recipe is judged by what it looks like CUT: the highest
@@ -1684,7 +1684,7 @@ around a farming valley that a 400 m map did not want to be.
 **The arithmetic is the same one `MIN_SLOPE` does for a crest, spent on distance
 instead of height, and it is measured from the player rather than from the play
 square.** The cel shader's fog is LINEAR between `fogStart` and `fogEnd`
-(`CelShader`, `clamp((dist - start) / (end - start))`), so a surface reaches
+(`wgsl/celSurface.ts`, `clamp((dist - start) / (end - start))`), so a surface reaches
 exactly `fogColor` at `fogEnd` and not one metre before it. The furthest an eye
 gets is the play boundary plus what the leash allows — 69 m at a sprint — so the
 margin a map owes is `fogEnd + 69`, which on Harrowmead's `fogEnd` of 520 is 589,

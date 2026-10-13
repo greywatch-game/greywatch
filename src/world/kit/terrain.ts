@@ -334,7 +334,7 @@ export function buildRoad(
 /*
  * A COBBLED STREET ENDS IN A KERB COURSE, because since the ground was given a
  * depth its edge cannot be a cut. The setts are carved down into the slab
- * (`CelShader`'s `reliefParallax`), and the slab's edge is a straight line the
+ * (`reliefParallax`, `wgsl/celSurface.ts`), and the slab's edge is a straight line the
  * world-mapped texture knows nothing about — so the street stopped by slicing
  * every stone along it in half, and the carving had no side to it: a
  * three-dimensional street that ended like a decal. A course of dressed stones

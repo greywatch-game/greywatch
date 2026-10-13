@@ -63,14 +63,15 @@ const maps = args.filter((a) => !a.startsWith("--"));
 const MAPS = maps.length > 0 ? maps : MAP_IDS;
 
 /**
- * The cel variants the four shipped maps must between them compile, keyed by
+ * The cel variants the shipped maps must between them compile, keyed by
  * the define set that makes each a separate effect.
  *
  * Seven shapes: matte, glossy and translucent are one compiled effect wearing
  * three sets of uniforms, and the cloth (`CEL_SMOOTH`), the paletted world
- * (`CEL_PALETTE`), the two glazings and the two grounds are each their own. A map missing one of these is not an error — Hollowmere has no
- * glazed block — which is why the requirement is on the UNION over every map
- * asked for, and why a run over a single map only reports.
+ * (`CEL_PALETTE`), the two glazings and the two grounds are each their own.
+ * A map missing one of these is not an error — Hollowmere has no glazed
+ * block — which is why the requirement is on the UNION over every map asked
+ * for, and why a run over a single map only reports.
  *
  * **This list rots the moment a variant is retired and the rot is a FAILING
  * GATE**, which is worth knowing because it has already happened once: the
@@ -135,7 +136,11 @@ async function oursCheck(shapes) {
       out.push({ error: String(e?.message ?? e), source: "" });
       continue;
     }
-    const inputs = /struct FragmentInputs \{([\s\S]*?)\n\}/.exec(m.code)[1];
+    const inputs = /struct FragmentInputs \{([\s\S]*?)\n\}/.exec(m.code)?.[1];
+    if (inputs === undefined) {
+      out.push({ error: `${m.label}: no FragmentInputs struct to stub`, source: "" });
+      continue;
+    }
     device.pushErrorScope("validation");
     const fs = device.createShaderModule({ label: m.label, code: m.code });
     const vs = device.createShaderModule({

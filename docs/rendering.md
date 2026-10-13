@@ -2811,7 +2811,10 @@ match the file, which is as unhelpful as it sounds.
 **It does NOT bite on the WGSL path, and that was checked rather than
 assumed.** The WGSL processor's `preProcessShaderCode` runs `RemoveComments`
 over the whole source before the cursor ever sees a line, so a comment is gone
-by the time anything splits on a `;`. Comment WGSL freely. **There is no GLSL
+by the time anything splits on a `;`. **That is the TOP-LEVEL source only**:
+includes are pasted in after the strip, comments and all, which is why
+`wgsl/includes.ts` strips every entry itself (the WGSL section below). With
+that, comment WGSL freely. **There is no GLSL
 string left in the tree for the rule above to be true of** — the trap is kept
 because it is a fact about Babylon's GLSL processor that would come back with
 any GLSL that came back, and because the WGSL section below states the one that
@@ -2908,6 +2911,17 @@ Each side declares for itself:
   finds a name nobody declared fails there. A strided scalar array's element
   is read through `.el`, Babylon's own layout for one.
 
+**Babylon never strips an include's comments, so `includes.ts` does.** Its
+processor removes comments from the top-level source and THEN pastes includes
+in whole. An included comment that quoted a texture or uniform declaration
+would therefore be matched by Babylon's declaration regexes, and would mint a
+binding with nothing behind it, losing every draw that uses it. So every
+registered entry goes through `stripComments` (`render/wgsl/preprocess.ts`,
+the same function our side runs first), and a body's prose can say anything
+on either side. The review of the split found this: the cel fragment's ~700
+lines of comments had been top-level, and stripped, until they became an
+include.
+
 **Two declaration lists are the price, and they are the cheap copy.** A name
 one side forgot is LOUD: a WGSL error on Babylon's side, an assembly error or
 a driver error on ours. `plans/webgpu-ref/shaders.mjs` builds our module for
@@ -2917,9 +2931,8 @@ limits are counted against what is bound. **The bumped ground is at 16 of 16
 sampled textures and 16 of 16 samplers on our side too.** A body that drifted
 between two copies would have been silent, which is why there is one. When
 the split landed it was proven by dumping every module Babylon compiles on
-every map, before and after. The only change was the cel fragment's `main`
-becoming a call to `celSurface()`; every other shader came out the same up to
-order.
+every map, before and after. Up to comments and order, the only change was
+the cel fragment's `main` becoming a call to `celSurface()`.
 
 **What our side does not do yet** is Babylon's flip of `fragmentInputs.position`
 for a pass that draws into a texture (`internals.yFactor_`, injected before
@@ -3753,7 +3766,7 @@ all in the counter this finding is named after. Not chased.
   one light that should carve a street — lit it as a mosaic with shading on it
   (`reference-media/visuals.jpg` is what it was measured against). Two marches
   over the same height map at the same `bumpScale` put the third dimension back
-  (`CelShader`'s `reliefParallax` and `reliefLit`, `CONFIG.graphics.relief`):
+  (`reliefParallax` and `reliefLit` in `wgsl/celSurface.ts`, `CONFIG.graphics.relief`):
   - **the sheet is the TOP of the relief** — height 1 — and everything is carved
     down into it, so no stone stands proud of the mesh the depth buffer and the
     ink know about. A recipe should put its highest features near 1: a whole

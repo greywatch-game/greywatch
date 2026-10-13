@@ -39,9 +39,10 @@
  * `BABYLON_EXIT.md` rule 6 widens this three times: X3.1 added `src/render/`
  * in the commit that made the directory, X3.2 adds `src/math/` to
  * `DIRECTORIES` with `src/math/babylon.ts` — the crossing, deleted at X6.1 —
- * named in `NOT_ROOTS`, and X6.1 widens it to the whole tree. **An entry in `NOT_ROOTS` is exempt from being a root, never from
- * being REACHED**: a simulation that imports the crossing still fails, which
- * is the point of having one door.
+ * named in `NOT_ROOTS`, and X6.1 widens it to the whole tree. **An entry in
+ * `NOT_ROOTS` is exempt from being a root, never from being REACHED**: a
+ * simulation that imports the crossing still fails, which is the point of
+ * having one door.
  *
  * What counts as an import, and why:
  *

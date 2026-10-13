@@ -631,7 +631,7 @@ export function shadeVertices(
     // full grime, and the height and falloff this file thinks it is spending
     // reach the screen as neither. Height above ground is itself linear up a
     // vertical face, so the LINE is exact under interpolation where the curve
-    // is not. `pow` is a uniform's job now (`CelShader`'s WEAR block).
+    // is not. `pow` is a uniform's job now (the WEAR block, `wgsl/celSurface.ts`).
     //
     // AND IT IS NOT CLAMPED BELOW, which is the part that looks like an
     // oversight. The ZERO CROSSING is what puts the stain's top edge where
