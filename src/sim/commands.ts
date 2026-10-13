@@ -31,9 +31,10 @@
  * **A person's HULL is reported, never steered** (`BABYLON_EXIT.md` X2.5a
  * C4b): `drive` and `gun` carry where the host's own prediction put the hull
  * and the cupola gun, and the core poses its copy to them on its next step —
- * the offline page's player exactly as the authority's peers. There is no
- * command carrying a stick: raw input is the predicting host's, which is what
- * keeps the hull a person drives the same machine offline and in a match.
+ * every person alike, the offline page's player being a peer of its own
+ * `Match` (`BABYLON_EXIT.md` X2.5c). There is no command carrying a stick: raw
+ * input is the predicting client's, which is what keeps the hull a person
+ * drives the same machine offline and in a match.
  *
  * There is no `swapSeat`: on the wire and here a swap is a `mount` naming the
  * hull the person is already in, with the other chair — `SimCore`'s seat
@@ -170,9 +171,10 @@ export interface DismountCommand {
  * measured against (`aimYaw`/`aimPitch`, onto the body). `y` is the hull's
  * FEET (`DriveMessage.pos`'s convention); the core's own probe owns the
  * height of a hull on the ground and the report owns a flying one's
- * (`Vehicle.updateRemote`). The authority's is `validateDrive`'s verdict; the
- * offline page's is its predicted hull as it stands, every frame, before the
- * step.
+ * (`Vehicle.updateRemote`). It is `validateDrive`'s verdict on a peer's
+ * report — offline too, the page's own round being a `Match` — and, on
+ * `corecheck`'s bare core, the trusted door, a predicted hull as it stands,
+ * submitted straight.
  */
 export interface DriveCommand {
   t: "drive";
@@ -188,10 +190,10 @@ export interface DriveCommand {
    * The REPORTER's clock, seconds, at the moment the hull stood where this
    * says — any origin, monotonic. What the core reads it for is the interval
    * between two accepted samples: a person's crash is charged off the rate
-   * their reports describe (`src/sim/reportedLanding.ts`). The authority's is
-   * `DriveMessage.time`; the offline page's is the clock its predicted hull
-   * has been stepped through (`Game.hullClock`). **On the authority it is
-   * the peer's BOUNDED clock** (`Match.onStamp`), never the raw stamp.
+   * their reports describe (`src/sim/reportedLanding.ts`). It is
+   * `DriveMessage.time` — the reporting client's own clock, the offline
+   * page's included — and **it is the peer's BOUNDED clock**
+   * (`Match.onStamp`), never the raw stamp.
    */
   time: number;
   /**

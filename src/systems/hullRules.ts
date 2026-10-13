@@ -101,22 +101,24 @@ const ROUND: HullRound = { muzzle: MUZZLE, dir: DIR, shot: null! };
 
 /**
  * How far ahead of a hull's own clock a PERSON's round may be asked, in
- * seconds — the `early` both of a person's hosts hand `fireHullGun` and
- * `fireHullMg` (a bot crew asks with none). The one number, because the two
- * hosts need it for the same reason: the gate on a person's rate is somewhere
- * else, and the hull's clock, asked strictly, refuses rounds that gate let
- * through.
- * - **The authority's** gate is `Match`'s rate bucket, and this is that
- *   bucket's slack (`SHOT_SLACK`, `server/claimGates.ts` — `Match` refuses to
- *   load if the two disagree): the jitter a claimed round arriving on the
- *   network's schedule is forgiven.
- * - **The offline page's** gate is its own predicted hull (`gunReady`,
+ * seconds — the `early` `Match` hands `fireHullGun` and `fireHullMg` for a
+ * person (a bot crew asks with none). The gate on a person's rate is
+ * somewhere else, and the hull's clock, asked strictly, refuses rounds that
+ * gate let through.
+ * - **That gate is `Match`'s rate bucket**, and this is that bucket's slack
+ *   (`SHOT_SLACK`, `server/claimGates.ts` — `Match` refuses to load if the
+ *   two disagree): the jitter a claimed round arriving on the network's
+ *   schedule is forgiven. Since `BABYLON_EXIT.md` X2.5c it is the only gate
+ *   there is, offline included — the page's own round is a `Match` too, and
+ *   its player a peer of it.
+ * - **The number was first a second host's.** While the page hosted a core
+ *   itself (X2.5b), its gate was its own predicted hull (`gunReady`,
  *   `fireMg`), stepped AFTER the trigger in its frame while the core's hull
- *   is stepped before it — so the two clocks count the same number of steps
- *   shifted by one frame, and under a varying `dt` the core's can stand up to
- *   a frame behind (`BABYLON_EXIT.md` X2.5b). Asked strictly it refused the
- *   round the page had already kicked and drawn, in silence. This is three
- *   times `Game.tick`'s 0.05 s frame clamp.
+ *   was stepped before it — so the two clocks counted the same number of
+ *   steps shifted by one frame, and under a varying `dt` the core's could
+ *   stand up to a frame behind. Asked strictly it refused the round the page
+ *   had already kicked and drawn, in silence. That is three times
+ *   `Game.tick`'s 0.05 s frame clamp.
  * Longer than the cupola gun's whole interval, so on that gun the hull's
  * clock never refuses a round the gate passed; on the main gun it refuses
  * only a shell fired through somebody else's reload.

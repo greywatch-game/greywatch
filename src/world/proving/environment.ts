@@ -16,16 +16,18 @@
  *   the cheapest thing in this tree that removes work — it is what S8 is about
  *   — and a proving ground fogged at Coldharbour's 480 would report a frame
  *   that a desert city at noon does not have. It is pushed into
- *   `BattleSystem`, `NetRoster` and `RagdollSystem` as the rig/body/corpse
- *   cutoff too, so every bot on the map is drawn at full rig, which is the
- *   honest worst case for wall 1.
+ *   `NetRoster` and `RagdollSystem` as the body/corpse cutoff too, so every
+ *   bot on the map is drawn at full rig, which is the honest worst case for
+ *   wall 1.
  * - **`bodyDrawDistance` is deliberately ABSENT**, which is the same decision
- *   one field along. S8 landed it — a map may now pull the three body gates in
- *   ahead of its fog — and stating one here would soften the instrument in
+ *   one field along. S8 landed it — a map may now pull the body gates (two since
+ *   `BABYLON_EXIT.md` X2.5c C5, `NetRoster` and `RagdollSystem`) in ahead of
+ *   its fog — and stating one here would soften the instrument in
  *   exactly the way a short `fogEnd` would: S8 prices the lever
  *   at **2.6 ms of a 9.2 ms frame** with the roster in view, and it prices it
- *   by toggling the three gates at runtime against this environment, which
- *   only works while this environment is the unlevered arm.
+ *   by toggling the gates at runtime (three when S8 measured it) against
+ *   this environment, which only works while this environment is the
+ *   unlevered arm.
  * - **`shadowWindow` is 200**, Coldharbour's, and deliberately NOT widened to
  *   the map. `shadowVisibility` is fully lit outside the window, ramped over
  *   its last `edgeFade`, so a wider one is more casters for a picture nobody

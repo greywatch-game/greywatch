@@ -88,7 +88,8 @@ export class LagComp {
    * Records where everything is right now. Called once per simulation tick —
    * by an indexed loop, because a `for...of` here allocates its iterator every
    * step on the tier a once-a-step function runs on (`docs/profiling.md`),
-   * and since `BABYLON_EXIT.md` X2.5b the offline core records every step too.
+   * and every host's core records every step — the page's own (offline)
+   * `Match` included (`BABYLON_EXIT.md` X2.5c).
    */
   record(now: number): void {
     const tracked = this.tracked;

@@ -364,7 +364,8 @@ src/
                         #   index.ts without an import cycle. The DEFAULT view
                         #   distance now: a map's `fogEnd`, or its
                         #   `bodyDrawDistance`, overrides it, and Game.installMap
-                        #   resolves ONE number into the three body gates
+                        #   resolves ONE number into the two body gates
+                        #   (NetRoster, RagdollSystem)
     conquest.ts         # Flags, capture meter, tickets, bleed
     score.ts            # What a kill, a bonus and a flag are worth on the
                         #   board. Spent by the one core (SimCore), so a value
@@ -949,7 +950,8 @@ src/
                         #   the slung launcher is still boxes
     NetSoldier.ts       # Somebody else, drawn from the wire: one rig, the
                         #   interpolation buffer behind it, the gait its boots
-                        #   are heard off, no behaviour at all
+                        #   are heard off, the slung launcher the roster says
+                        #   it carries (`setLauncher`), no behaviour at all
     GrenadeModel.ts     # What a grenade looks like — body, fuse pip, and the
                         #   blink that reads the fuse. Built by GrenadeFx's
                         #   `GrenadeBody`, which the wire's ghosts reuse
@@ -1658,9 +1660,9 @@ src/
                         #   server is no longer its only reader — the menu's
                         #   schematic draws a map nothing has built yet, and
                         #   this is the only description of its buildings that
-                        #   exists outside a built world. `collisionOf(map)` is
-                        #   the bake's read of a BUILT map — the offline page
-                        #   hands it to the simulation core as its world
+                        #   exists outside a built world. The page's own match
+                        #   loads this committed bake as the server does
+                        #   (`loadSimWorld`)
     fingerprint.ts      # A comparable summary of a built world — the nav graph,
                         #   not the boxes. What `npm run parity` diffs
     hollowmere/layout.ts      # A MAP — every placement, flag and spawn
@@ -2000,9 +2002,11 @@ src/
                       #   `drain`s after every call. Publishes no copy of its
                       #   state; `timing` is the last timed step's row
     stepTiming.ts     #   SIM_PHASES (the step's five timed phases, in order)
-                      #   and StepTiming, the row `SimCore.timing` holds —
-                      #   measurement only, filed by the page's profiler off
-                      #   its local match and printed by `simulate --phases`
+                      #   and StepTiming, the row `SimCore.timing` holds, and
+                      #   how rows SUM (`addStepTiming`) — the local match
+                      #   sums an advance's steps, the page every answer a
+                      #   frame files. Measurement only, filed by the page's
+                      #   profiler and printed by `simulate --phases`
     commands.ts       #   The SimCommand vocabulary `SimCore.submit` takes:
                       #   the gameplay ClientMessages after validation, with
                       #   host-resolved data (ShotWeapon's five numbers, kit

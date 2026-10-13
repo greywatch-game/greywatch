@@ -46,13 +46,16 @@ you are on before you believe anything else in this section.
 - **The page is CROSS-ORIGIN ISOLATED, and whatever serves it to a script
   has to be too** (`BABYLON_EXIT.md` X2.5b). `scripts/dev-server.mjs` (Vite)
   and `vite preview` send COOP `same-origin` and COEP `require-corp` on every
-  response, so a page either serves has `crossOriginIsolated` and the
-  simulation core runs in its Worker. **A script serving the build off its
-  own `node:http` server owes the same pair on EVERY response** — the Worker's
-  script is a response too — or the page quietly runs the core on the main
-  thread instead: nothing fails, the boot's one `[sim] the simulation runs
-  in …` console line says so, and every capture's `simMode` does. Assert on
-  one of those, never on the frame rate. Two things a script must know:
+  response, so a page either serves has `crossOriginIsolated`. **Since X2.5c
+  C4 nothing the game runs NEEDS it**: the page's own match runs in a Worker
+  that posts JSON (`src/net/matchHost.ts`) and wants no `SharedArrayBuffer`,
+  so a page served without the pair still runs its match in the Worker, and
+  the pair itself goes at X2.5c C6 (`src/pwa/sw.js`). What decides where the
+  match runs is whether the Worker COMES UP, and `?simpage`: the boot's one
+  `[sim] the simulation runs in …` console line says where and why, and every
+  capture's `simMode` does. Assert on one of those, never on the frame rate —
+  and read the measurement below as X2.5b's, when isolation was what the
+  Worker turned on. Two things a script must know:
   **every round is a MATCH now** (`BABYLON_EXIT.md` X2.5c C4) — offline the
   page joins a `Match` it hosts itself, in the Worker or (under `?simpage`,
   or when the Worker cannot be had) on a channel in its own thread — **so an
@@ -445,7 +448,11 @@ you are on before you believe anything else in this section.
   proving ground both. Standing the bots in a ring around the player
   (`bot.position.set(...)`) and re-standing them every second is what
   `ENGINE_UPGRADE.md` S2's measurements used; overriding
-  `battle.spawnPointFor` is the other way in.
+  `battle.spawnPointFor` is the other way in. **Both are the CORE's now**: a
+  page script reaches no `Bot` and no `BattleSystem` (X2.5c C4, every round
+  being the authority's), so the ring is stood in a headless probe against
+  `SimCore` (the bot-behaviour bullet below), and a page measures only the
+  rays its OWN side casts.
 - **A weapon FINISH is judged on the kit stage, and the stage is two calls
   away.** `g.openLoadout()` puts the real viewmodel on the turntable (it is a
   lid over `deploy`, so `installRound` is the whole of the setup),
@@ -469,9 +476,13 @@ you are on before you believe anything else in this section.
   occlusion test that way reported **1.73/255 mean and 230/255 worst** and the
   whole of it was motion — the same test in `deploy` came back with an A-vs-A
   control that was byte-identical. **Stage in `deploy`; if the arm needs a live
-  round, hold it by stubbing `battle.update` / `vehicles.update` /
-  `crew.update` after warming, which freezes the fight where it stands and
-  leaves the LOD's last word in place.**
+  round, hold the MATCH rather than a system.** The fight is the authority's
+  (X2.5c C4) and the page has no `battle` or `crew` to stub; what holds the
+  page's own match is the page itself — it steps only when the page hands it
+  time, and a lid or the deploy screen hands it none (`docs/multiplayer.md`),
+  which freezes the fight where it stands. Stubbing the page's
+  `vehicles.update` stops only the picture, and the next snapshot moves it
+  anyway.
 - **An A-vs-A control taken FIRST measures the post chain converging, not the
   floor — and it can come back LARGER than the lever it is grading.** The god
   rays and the motion blur are pinned by the CAMERA rather than by a constant
@@ -614,7 +625,9 @@ is one machine's:
   to 0.05, so **game time runs at ~25% of wall clock**. Don't wait for bots to cross a map (240 m, or
   Coldharbour's 320) — force a
   skirmish by overriding `battle.spawnPointFor`, or drive rules directly with
-  `conquest.update(1/60, fakeCombatants)` in a loop.
+  `conquest.update(1/60, fakeCombatants)` in a loop, **in a headless probe or
+  `corecheck`**: both are the authority's (X2.5c C4), and the page's
+  `g.conquest` is a MIRROR the next snapshot overwrites.
 - **`window.__celshock` now appears TWO awaits later than it used to.**
   `main.ts` awaits an adapter and a device (`checkWebGPU`, then
   `new WebGPUEngine(...)` + `initAsync()`) and then `loadHavok()` before
@@ -736,32 +749,42 @@ is one machine's:
   block can come from the teardown either side of it and show the card
   half-dismantled; take the middle 80% and let PNG payload size stand in for
   "did this frame contain the bright thing" across the lot.
-- **A tank is easiest to test by stepping the fleet directly, and the camera is
-  the trap.** `g.vehicles.hulls` is the fleet, `g.mount(tank, 0)` takes the DRIVER's
-  seat — the seat is a SECOND argument, and passing none writes
+- **A tank is tested through the WIRE, offline exactly as in a match, and the
+  camera is the trap.** Every round is a match (`BABYLON_EXIT.md` X2.5c C4):
+  the fleet that DECIDES is the authority's, inside the page's own `Match` in
+  its Worker (or its own thread under `?simpage`) and out of a script's reach,
+  and `g.vehicles.hulls` is the page's copy — built `predicted`, so no hull on
+  the page takes damage, and every hull but the one this player drives is
+  POSED off the snapshot (`syncNetVehicles`). So the netplay recipe below is
+  the recipe everywhere, minus the `?mp=`. **Board by ASKING**:
+  `g.net.sendMount(i, 0)`, where `i` indexes `g.vehicles.hulls` and the second
+  argument is the seat (0 the DRIVER, 1 the GUNNER — pass it, or the authority
+  picks), then `waitForFunction(() => !!g.driving)`: the authority's `seat`
+  event is what calls `g.mount`. **`g.mount(tank, 0)` by hand is a picture of
+  boarding and nothing more** — the authority never seated you, so every
+  `drive` the page reports is refused — and a `g.mount` with no seat writes
   `seats[undefined]`, which reads as a hull that IS being driven (`g.driving`
-  is right) while the rotor never spools: a helicopter sits on its pad at full
-  collective looking like a bug in the flight model — and
-  `g.vehicles.update(dt, g.vehicleOrders)` is the real drive path with no
-  rendering in it — sixty calls at `1/20` is three seconds of driving in one
-  synchronous `evaluate`, which is the only way to move a vehicle at 0.1 fps.
+  is right) while the rotor never spools. Once seated,
+  `g.vehicles.update(dt, g.vehicleOrders)` is still the real drive path with
+  no rendering in it — `driveFor` answers for the hull under this player and
+  for nothing else — **but the page REPORTS what it stepped**, at `INPUT_HZ`
+  and through `validateDrive` offline too, so sixty synchronous calls at
+  `1/20` is a three-second jump the authority refuses and a `hullcorrect`
+  puts back (`Vehicle.correctTo`). Drive in bursts of ~4 steps with a frame
+  between, or with the sticks (`g.input.moveY` and friends written after
+  `g.input.update`, or hold the keys).
   **The DRAWING does not follow a direct call** (since X2.2 C9): a hull is
   the simulation and its rig is its view's, so follow it with
   `g.vehicleViews.update()` before reading a joint or photographing — the
   view of a hull is `g.vehicleViews.views.find((v) => v.hull === tank)`.
   **The signature takes a LOOKUP rather than a hull and a stick**, because a bot
-  crew can be driving one hull while the player drives another. **Offline the
-  fleet that decides is the simulation core's** (`g.core.vehicles.hulls`,
-  stepped inside `g.core.step` — a script may reach the core whole, the
-  page's own code may not; `BABYLON_EXIT.md` X2.5a C4a) and `g.vehicles` is
-  the page's copy POSED off it — **except the hull under the player's own DRIVER,
-  which the page PREDICTS** (C4b): drive it with the sticks (`g.input.moveY`
-  and friends written after `g.input.update`, or hold the keys) and the page
-  steps it through `driveFor` and reports it as `drive`, so the core's copy is
-  exactly the page's of ONE FRAME EARLIER (x, z, yaw, turret, gun). Everything
-  else is answered by the core's crew (`g.core.crew`). **For a frame-exact
-  comparison pin the step** — `g.frameCap.elapsed = () => 1 / 60` — and script
-  the inputs by frame; the drive is then deterministic run to run. Two things that have already cost time: **do not read `speed` after
+  crew can be driving one hull while the player drives another — and on the
+  page the bot crew is the wire's (`remoteFor`), there being no crew here.
+  **For a frame-exact comparison pin the step** — `g.frameCap.elapsed = () =>
+  1 / 60` — and script the inputs by frame; the page's prediction is then
+  deterministic run to run, and what the authority made of it is
+  `g.net.vehicles.stateFor(i)` once you are out (the netplay bullet below).
+  Two things that have already cost time: **do not read `speed` after
   a phase with the throttle at zero** (the brake is 9 m/s², so a second of
   turning takes 11 down to 2 and it looks like a stall that is not there), and
   **do not call `spawnPlayer()` if you are placing the camera by hand** —
@@ -781,10 +804,14 @@ is one machine's:
   each way. **Take that delta modulo 2 pi before believing it**: the angle is
   wrapped, so a track running backwards reads as a large positive step (5.104
   is -1.179) rather than as a negative one.
-- **The ANTI-TANK kit is easiest to drive through its system — offline the
-  core's, `g.core.antiTank` (`g.antiTank` is a match's prediction only) — and
-  the trap is the SAME world-matrix one the fleet has.** `g.antiTank.launch(from, dir, team,
-  by)` and `g.antiTank.place(at, team, by)` are the real entry points, and
+- **The ANTI-TANK kit is easiest to drive through its system, and on the page
+  that system DECIDES NOTHING.** `g.antiTank` is the page's PREDICTION, offline
+  as in a match (X2.5c C4): its `onDetonated` spends nothing, so a rocket it
+  flies hits and draws and damages no hull. What a strike is WORTH is the
+  authority's — a `corecheck` case, or a headless probe against `SimCore`
+  (`core.antiTank`, the bot-behaviour bullet below), is where that is
+  asserted. For the FLIGHT, `g.antiTank.launch(from, dir, team, by)` and
+  `g.antiTank.place(at, team, by)` are the real entry points, and
   `g.antiTank.update(1/60)` in a `while (rockets.some(r => r.live))` loop flies a
   rocket home inside one synchronous `evaluate`. **The world-matrix trap this
   entry used to carry is gone and is worth knowing about anyway**, because the
@@ -795,7 +822,8 @@ is one machine's:
   reported a hit. The step ray is `RayWorld.castRound` now and the hull reaches
   it through `Vehicle.rayBox`, which reads `tank.pos` — always current, no
   matrix involved. Anything still asking `getAbsolutePosition()` needs a frame
-  driven first. Measured on Coldharbour: 1200 → 580 on a clean strike, which is `damage` exactly and
+  driven first. Measured on Coldharbour, on the core while a page script could
+  still reach one: 1200 → 580 on a clean strike, which is `damage` exactly and
   no splash — `blastAt` needs line of sight to the hull's centre and the hull is
   in the way.
 - **To A/B the sweep against Babylon's, run `scripts/sweep-check.mjs`; do not
@@ -842,37 +870,42 @@ is one machine's:
   in the same loop as the real comparison. The two-arm version of the above
   reported 3 m divergences that were entirely the harness's own doing, and the
   control is the one line that would have said so immediately.
-- **A BOT CREW is stepped with `crew.update(dt)` immediately before the
-  fleet**, in that order and never the other way round — it writes the drive
-  input `vehicles.update` then consumes. Offline both are the simulation
-  core's (`g.core.crew`, `g.core.vehicles`, in `g.core.step`'s own order).
-  Four things that have already cost time:
+- **A BOT CREW is the authority's, and no page script reaches it** (X2.5c C4):
+  the page has no crew — `Game.vehicleOrders` answers for this player's hull
+  and poses every other off the wire. Test one in a headless probe against
+  `SimCore` (the bot-behaviour bullet below; `?simpage` puts the page's own
+  match in its thread for a DEBUGGER, not for a script) or as a `corecheck`
+  case, where it is stepped with `core.crew.update(dt)` immediately before the
+  fleet, in that order and never the other way round — it writes the drive
+  input `core.vehicles.update` then consumes, and `core.step` keeps that order
+  itself. Four things that have already cost time:
   - **Boarding is on its own 1.5 s clock** (`crew.boardDelay`), so a script that
     spawns a bot beside a hardstanding and steps two frames sees nothing. Step
-    ~2 s of game time, or read `g.core.crew.crews.length` rather than asserting on
+    ~2 s of game time, or read `core.crew.crews.length` rather than asserting on
     the first tick. The bot has to be ALIVE, of its hull's own team, within
-    `crew.boardRadius` and not `g.core.battle.aside(...)` — and the player's
+    `crew.boardRadius` and not `core.battle.aside(...)` — and a person's
     `addPlayer` has already benched the lowest slot on their side, so picking
     `bots.find(b => b.team === 0)` hands you a benched body that can never crew.
   - **A driver steers on `Bot.objective`, which is a squad ORDER and is empty
     until `battle.update` has planned one.** A crew with no objective holds
     station and fights, which is correct and looks exactly like a driver that is
-    broken. Set `bot.objective = g.core.conquest.points[i].def.id` by hand (it is
+    broken. Set `bot.objective = core.conquest.points[i].def.id` by hand (it is
     `def.id`, not `id`) or step `battle.update` for a second first.
   - **Ask line of sight through the crew's own door, not `battle.losBetween`.** A
     hull's cupola sits five centimetres above the top of its own collider, so
     every sightline to anything shorter dives back into the box: the raw call
     reports no visibility in any direction and looks like a broken map.
-    `g.core.crew.ctx.visibleFrom(tank, point)` is the one that takes the hull out of
-    the pick.
-  - `g.core.crew.clearAlong(tank, yaw)` and `g.core.crew.pickBearing(tank, wantYaw)` are
-    the whiskers, and sweeping 24 bearings through the first is the fastest way
-    to see what a stuck driver thinks the world looks like. A hull with the
+    `core.crew.ctx.visibleFrom(tank, point)` is the one that takes the hull out
+    of the pick.
+  - `core.crew.clearAlong(tank, yaw)` and `core.crew.pickBearing(tank, wantYaw)`
+    are the whiskers, and sweeping 24 bearings through the first is the fastest
+    way to see what a stuck driver thinks the world looks like. A hull with the
     throttle at 1.0 and `travel` near zero is the sweep refusing —
     which means the whiskers said clear and were wrong, and the sweep is where
     that shows.
-- **A NETPLAY tank is driven the same way, and three things about the harness
-  bite before the feature does.** Point the page at `?mp=ws://host:port/ws`, set
+- **A tank on a SERVER's match is driven the same way — the offline round being
+  a match too, the bullet above — and three things about the harness bite
+  before the feature does.** Point the page at `?mp=ws://host:port/ws`, set
   `localStorage["greywatch.map"]` in an `addInitScript` (the map a match is
   created on is the one the JOINING client asks for, and there is no URL
   parameter for it), and deploy with
@@ -882,7 +915,7 @@ is one machine's:
   match keeps a bot crew from taking the hull first**: wrap `WebSocket` in an
   `addInitScript` and rewrite the outgoing `join` frame to `bots: false`
   (`Join.bots`; there is no URL parameter for it either). Then:
-  - **`g.mount()` is not the way in.** In a match the seat is an ask:
+  - **`g.mount()` is not the way in.** The seat is an ask, on every round:
     `g.net.sendMount(hullIndex)` and then `waitForFunction(() => !!g.driving)`.
     The authority refuses it unless the body IT holds is inside `enterRadius`,
     so the player has to genuinely walk there.
@@ -895,10 +928,10 @@ is one machine's:
     then carry the whole jump, get refused, and the player is snapped back with
     nothing on screen to say why. Wait ~500 ms per step, or accept that the
     walk never arrives.
-  - **Sixty synchronous `vehicles.update` calls will be REFUSED.** The
-    offline recipe above drives three seconds inside one `evaluate`; a netplay
-    driver reporting that jump has covered 19 m since its last accepted sample
-    and `validateDrive` allows about 7. At a low frame rate, drive in bursts of
+  - **Sixty synchronous `vehicles.update` calls will be REFUSED** — on a
+    server's match as on the page's own (above): a driver reporting three
+    seconds of driving from one `evaluate` has covered 19 m since its last
+    accepted sample and `validateDrive` allows about 7. At a low frame rate, drive in bursts of
     ~4 steps with a frame in between, which is what a real driver's reports
     look like; at 60 fps, drive with the keyboard instead.
   - **After a dismount, `g.net.vehicles.stateFor(i)` is the authority's own copy
@@ -911,7 +944,10 @@ is one machine's:
   `dt`, so at 2 fps the interpolator's catch-up divides out at 80 m/s. It is
   bounded to the hull's own top speed, which means a headless run reads exactly
   `drive.maxSpeed` while driving — treat that as "moving", not as a measurement.
-- **A stepped mine has to be told the hull moved.** The trigger is
+- **A stepped mine has to be told the hull moved** — on the core: the page
+  never predicts a mine (X2.5c), so a mine that should go off is the
+  authority's, and is stepped in a headless probe or a `corecheck` case. The
+  trigger is
   `hullNear(at, contactRadius, team)`, which reads `tank.center`; teleporting a
   hull by writing `.x` moves the centre and the collider agrees only at the next
   render, which is fine for the mine (no ray) and not for anything else in the
@@ -922,8 +958,9 @@ is one machine's:
   trigger pull returns false. Set `swapT = -1` and `swapPending = false` by hand
   after `completeSwap`, and clear `fireCooldown`/`triggerHeld` between shots —
   the AT items are semi-automatic, so a held trigger is refused on purpose.
-- **A bot's launcher is a per-tick CHANCE, so call `considerRocket` in a loop.**
-  `bot.rocketT = 0` before each call or the cooldown eats the run;
+- **A bot's launcher is a per-tick CHANCE, so call `considerRocket` in a loop**
+  — in a headless probe against `SimCore` (`core.battle.bots`), since no page
+  script reaches a `Bot` (X2.5c C4). `bot.rocketT = 0` before each call or the cooldown eats the run;
   `bot.target = tank` is what the decision is about, and it will never fire at a
   body however long the loop runs — that is the rule, not a flaky test.
 - **The ANTENNAE are read off the rig too, and the number you want is the SUM of
@@ -1021,14 +1058,17 @@ is one machine's:
   and make it the same KIND of change as the thing under test: a camera move is
   a bad one, because `cameraSys.update` rewrites the angles from the input on
   the next frame and it reads as no change either.
-- **Stubbing `battle.update` alone does not hold a round still if the map has
-  vehicles.** The hulls keep driving, and the diff then GROWS with the number of
+- **Holding the bots alone does not hold a round still if the map has
+  vehicles** (a probe's `battle.update` stubbed, as this was first found on a
+  page that still held a core). The hulls keep driving, and the diff then GROWS with the number of
   frames between two shots — 0.011 at three frames, 0.27 at six, 0.65 at twelve
   — which is drift being measured rather than the lever. That growth with frame
   distance is the tell; if you see it, something is still moving.
 - **Bots are not alive on the frame `playing` arrives**, so a script that stages
-  the roster immediately stages nothing: `battle.bots.filter(b => b.alive)` is
-  empty and every downstream count reads zero without erroring. Wait several
+  the roster immediately stages nothing: the page's bodies,
+  `g.net.roster.soldiers.filter((s) => s.alive)`, are empty (as a probe's
+  `core.battle.bots.filter((b) => b.alive)` is) and every downstream count
+  reads zero without erroring. Wait several
   seconds first — and assert on the count you staged rather than trusting it.
 - Getting into `playing` takes an indeterminate number of Enter presses (the menu
   gates confirm on `overlayT > 0.5`), so press until `state === "playing"`. A LONG

@@ -341,8 +341,9 @@ export interface BuildOptions {
   foliage?: number;
   /**
    * Precompute the nav graph's FLOW FIELDS — one per flag and both home
-   * spawns. Absent is true. **The offline page passes false**: the AI that
-   * steers by them is the simulation core's, whose own world builds its own
+   * spawns. Absent is true. **The page passes false for its own (offline)
+   * match**: the AI that steers by them is the authority's — that `Match`, in
+   * its host (`src/net/matchHost.ts`) — whose own world builds its own
    * (`buildSimWorld`), so on the page they were seven fields per map nobody
    * read, built behind the loading card and relaxed again on every broken
    * pane (`NavGrid.openBox` relaxes only the fields there are). The graph

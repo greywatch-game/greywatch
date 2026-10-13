@@ -1,8 +1,10 @@
 # server/
 
-The authoritative multiplayer server. Hosts the same simulation core the
-offline page hosts — `SimCore`, with `BattleSystem`, `ConquestSystem`,
-`CombatSystem` and the rest wired inside it — with no window,
+The authoritative multiplayer server — and, since `BABYLON_EXIT.md` X2.5c, the
+authority of the offline round too: the page hosts its own OWNED `Match`
+(`localMatch.ts`, in a Worker or on its own thread) and plays it as a client.
+`Match` hosts the simulation core — `SimCore`, with `BattleSystem`,
+`ConquestSystem`, `CombatSystem` and the rest wired inside it — with no window,
 no GPU, no rendering and **no Babylon**: nothing reachable from this directory
 imports `@babylonjs/core`, and `scripts/check-babylon-free.mjs` fails
 `npm run build` if anything ever does (`BABYLON_EXIT.md` X2.3; it ran under
@@ -17,7 +19,8 @@ here. What follows is only the shape of the directory.
 `SimPlayer` (a connected human as the simulation sees one), `LagComp` (the
 rewind around a shot) and `buildSimWorld` (the solid world rebuilt from the
 bake as data) live in [`src/sim/`](../src/sim/), moved out of here at
-`BABYLON_EXIT.md` X2.5a because the offline page hosts the same core.
+`BABYLON_EXIT.md` X2.5a because the offline page hosted the same core then
+(since X2.5c it hosts a `Match` instead, below, and holds no core at all).
 What stays here is the HOST: `Match` and `simulate` LOAD the world
 (`world.ts`'s `loadSimWorld`), DRAW the round's seed (`freshSeed()`, or the
 one `simulate` was given, or an owned match's owner chose) and ANCHOR the clock (`SimCore.anchor(Date.now())`

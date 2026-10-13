@@ -1327,8 +1327,9 @@ export class MapBuilder {
     }
     // Navigation is derived from the finished collider set, then a flow field
     // is precomputed per objective: five flags plus both home spawns. The map
-    // is static, so this is the only time any of it is computed — and on the
-    // offline page none of the fields are (`BuildOptions.navFields`).
+    // is static, so this is the only time any of it is computed — and for the
+    // page's own (offline) match none of the fields are, its bots being
+    // steered by that match's world in its host (`BuildOptions.navFields`).
     const nav = record(
       "navGrid",
       () => new NavGrid(size, this.boxes, terrain, layout.surfaces),

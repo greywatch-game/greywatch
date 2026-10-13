@@ -63,7 +63,8 @@ export class NetRoster {
    * standing). Past the fog there is nothing to see, and a map with no fog has no
    * such distance short of its own far side — which is why a map may now state
    * one outright as `EnvironmentSpec.bodyDrawDistance`, resolved by
-   * `bodyDrawDistanceOf` and pushed to the three body gates together.
+   * `bodyDrawDistanceOf` and pushed to the two body gates together (this
+   * and `RagdollSystem.viewDistance`).
    */
   private viewDistance = FOG_WALL;
 
