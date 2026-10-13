@@ -7512,6 +7512,11 @@ export class Game {
     // local restart comes through here with corpses on the ground.
     if (net) for (const soldier of net.roster.soldiers) this.ragdolls.retire(soldier);
     net?.dispose();
+    // …and out of the mesh walk's pools, which were filed off those rigs
+    // (`installBodyPools`): re-filed with no session, so the pools hold the
+    // death cam's body alone rather than freed meshes until the next round
+    // files its own — which an editor session after F2 never does.
+    if (net) this.installBodyPools();
     if (net?.local) {
       this.localBegun = false;
       // Posted behind everything the round said: the owner's port runs it

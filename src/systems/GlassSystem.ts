@@ -187,11 +187,6 @@ export class GlassSystem {
     this.buckets = [];
   }
 
-  /** Whether a pane is still standing. Out-of-range reads as broken. */
-  intact(pane: number): boolean {
-    return pane >= 0 && pane < this.broken.length && this.broken[pane] === 0;
-  }
-
   get brokenPanes(): number[] {
     const out: number[] = [];
     for (let i = 0; i < this.broken.length; i++) if (this.broken[i]) out.push(i);

@@ -22,7 +22,8 @@
  * then hands what it accepted to `SimCore.submit` as one `SimCommand`
  * (`src/sim/commands.ts`). Everything that is a rule — the pouch counts, the
  * seat policy, the rewound round, when a person comes back in — is the core's,
- * the one copy the offline page submits to as well. What it still reads
+ * the one copy every host steps: this class (a server's match, or the page's
+ * own local match offline), `simulate` and `corecheck`. What it still reads
  * off the core is in-process state its validators and snapshot need
  * (`players`, `hullOf`, `reportedHull`, the fleet, the board).
  * `server/corecheck.ts` drives a real instance through a fake transport and
@@ -624,8 +625,9 @@ type RoundMessage = Extract<
 /**
  * `HULL_EARLY` — how far ahead of a HULL's own reload a person's round may
  * arrive, in seconds (`Vehicle.fireGun`'s `early`) — is stated once, in
- * `src/systems/hullRules.ts`, because the offline page asks its core with the
- * same slack for its own reason. Here it is `SHOT_SLACK`: the bucket is what
+ * `src/systems/hullRules.ts` beside the guns whose clock it loosens, and
+ * passed by this class alone, for every person in a hull — a server's peers
+ * and the page's own player offline alike. Here it is `SHOT_SLACK`: the bucket is what
  * bounds a person's rate, the hull's clock is asked as well because it is the
  * HULL's and a seat changes hands, and the jitter the bucket was sized to
  * forgive is the jitter the clock must forgive too. So the two may not drift
@@ -1390,6 +1392,8 @@ export class Match {
     if (this.mapVote?.clear(peer.slot)) this.voteDirty = true;
     this.game.removePlayer(peer.slot);
     this.relay();
+    // …and nothing still queued for them may reach whoever sits here next.
+    this.unqueueTo(peer.slot);
     // Everything this match held about the person, in one assignment — the
     // slot goes back to a bot carrying nothing of theirs.
     this.slots[peer.slot] = freshSlot();
@@ -2444,7 +2448,9 @@ export class Match {
    * died. ONE path for every refusal — the core's (`relay`) and this class's
    * own claim gates (`onGrenade`, `onOrdnance`) — addressed to the one who
    * asked, and only while that body is ALIVE: a dead one's pouch is refilled
-   * by its next kit. Never for an empty pouch, which those gates return on
+   * by its next kit — and only to THAT person: a refusal still queued when
+   * they leave goes with them (`queueTo`), never to the slot's next
+   * occupant. Never for an empty pouch, which those gates return on
    * silently: the two counts move together, so empty means empty on both
    * sides. A refusal answered to a lying client is harmless — the give-back
    * is capped at the kit's count on the far side, and it only returns what
@@ -2497,9 +2503,31 @@ export class Match {
     this.pending.push({ to: ALL_PEERS, ev });
   }
 
-  /** Queues an event for one roster slot, and for nobody else. */
+  /**
+   * Queues an event for one roster slot, and for nobody else.
+   *
+   * **For the PERSON in it now, and never for the next one.** The queue is
+   * flushed at the tick's snapshot (`flushEvents`), which addresses it to
+   * whoever holds the slot THEN — and a person can leave and another be
+   * seated in that slot in between. So the person leaving takes what was
+   * queued for them with them (`unqueueTo`, from `drop`): a `refused` that
+   * reached the next occupant would hand them back an item their client
+   * never spent, and a `hit` a mark for a blow they never struck. The
+   * core's own half of that rule is `SimCore.markerSlot` — a blast's author
+   * who left is nobody's marker — and this is the wire's.
+   */
   private queueTo(slot: number, ev: ServerEvent): void {
     this.pending.push({ to: slot, ev });
+  }
+
+  /** Takes every event still queued for `slot` back out — see `queueTo`. */
+  private unqueueTo(slot: number): void {
+    let kept = 0;
+    for (let i = 0; i < this.pending.length; i++) {
+      const p = this.pending[i];
+      if (p.to !== slot) this.pending[kept++] = p;
+    }
+    this.pending.length = kept;
   }
 
   /**

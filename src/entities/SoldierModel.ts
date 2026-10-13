@@ -1538,7 +1538,7 @@ export function animateSoldier(rig: SoldierRig, p: Readonly<SoldierPose>): void 
  * reload all keep both fists where they belong without either being authored
  * per case.
  */
-export function poseSoldier(rig: SoldierRig, j: Readonly<SoldierJoints>): void {
+function poseSoldier(rig: SoldierRig, j: Readonly<SoldierJoints>): void {
   // This posed a DEATH too, on a `dead` progress argument no caller passes any
   // more: the collapse tween that stood in wherever the ragdoll pool refused a
   // body. Havok is required and the pool refuses nothing the player can see, so

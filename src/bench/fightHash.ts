@@ -25,16 +25,14 @@
  * folded in as it is reported, a string by its char codes.
  *
  * **The step an event is stamped with is the EVENT's** (`BABYLON_EXIT.md`
- * X2.5a C4a): offline the fight is the simulation core's, which says what
- * happened through its event ring with the tick it happened on, and `Game`
- * hands that tick less the fight's first back in. It is the same number
- * `step` counts — one step, one tick — and folding the one the event carries
- * is what keeps the hash a statement about the core's fight rather than about
- * when the page got round to reading it.
+ * X2.5a C4a): the fight is the simulation core's, which says what happened
+ * through its event ring with the tick it happened on, and the folder — the
+ * local match, as it drains — hands that tick less the fight's first in. One
+ * step is one tick, and folding the tick the event carries is what keeps the
+ * hash a statement about the core's fight rather than about when anybody got
+ * round to reading it.
  */
 export class FightHash {
-  /** The fixed steps the fight has run, advanced by `Game` per step. */
-  step = 0;
   /** Awards and deaths folded in. */
   events = 0;
   private a = 0x811c9dc5;

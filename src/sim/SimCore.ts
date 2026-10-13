@@ -84,7 +84,9 @@
  * ring. `Match` validates a client's claim (the rate buckets, the cones, the
  * slips, the movement and drive validators, the corrections) and submits
  * what it accepts — a remote peer's and, offline, the page's own player's
- * alike. What DECIDES is here, once, for every host: whose body moves, which round is resolved
+ * alike, the page being a peer of its own local match (`BABYLON_EXIT.md`
+ * X2.5c). `simulate` and `corecheck` submit without a `Match` in front, as
+ * trusted callers. What DECIDES is here, once, for every host: whose body moves, which round is resolved
  * against what, the pouches, the seat policy (`mount`/`dismount` around
  * `seat`), when a person comes back in, and what a person's REPORTED landing
  * costs their helicopter (`applyDrive` → `src/sim/reportedLanding.ts`, spent
@@ -381,7 +383,7 @@ export class SimCore {
    * allocates per frame while the profiler records). Written beside the map
    * by `addPlayer` and `removePlayer` and by nothing else.
    */
-  readonly playerList: SimPlayer[] = [];
+  private readonly playerList: SimPlayer[] = [];
 
   /**
    * Position history, so a shot resolves against what its shooter saw —
@@ -563,9 +565,9 @@ export class SimCore {
   private readonly vehicleOrders: VehicleOrders = {
     // Only a bot crew is ever STEPPED from input on this side: a person's hull
     // is posed from what they reported (`remoteFor`, asked first), on every
-    // host — the authority's peers and, since `BABYLON_EXIT.md` X2.5a C4b, the
-    // offline page's one player, whose page predicts the hull as a match's
-    // client does.
+    // host — every person is a match's peer, the offline page's player
+    // included (a peer of its own local match, `BABYLON_EXIT.md` X2.5c), and
+    // their page predicts the hull and reports it.
     driveFor: (tank) => this.crew.driveFor(tank),
     gunFor: (tank) => this.crew.gunFor(tank),
     remoteFor: (tank) => this.driven.get(this.vehicles.hulls.indexOf(tank)) ?? null,
@@ -637,8 +639,9 @@ export class SimCore {
     // **The pool, at the size the host asked for** — and rebuilt only when
     // that size MOVES (`setRoster` is a no-op otherwise). The authority asks
     // for the ceiling every round, so its slot table is built on the first
-    // round and stands for the life of the match; the offline page asks for
-    // the map's own roster. A rebuilt pool is new bodies, so the old ones'
+    // round and stands for the life of the match; an OWNED match (the page's
+    // own local match offline, `MatchOptions.owned`) asks for the map's own
+    // roster. A rebuilt pool is new bodies, so the old ones'
     // history is let go first. First of all, because `setDifficulty` deals the
     // skills over whatever pool is standing.
     if (this.battle.bots.length !== spec.pool * 2) {
