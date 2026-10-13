@@ -647,13 +647,19 @@ So **the core times its own step, with a clock its host INJECTS**
   (`simulate --phases`, 0.119 → 0.120 ms mean), and armed against armed
   on the page (C6 against its parent, Hollowmere, four pairs) inside the
   run-to-run spread, with the span probe unchanged at 0.25 us.
-- **`Game.fileSimTiming` files it** through `FrameProfile.fileTiming` — the
+- **`Game.fileLocalTiming` files it** through `FrameProfile.fileTiming` — the
   whole row in one call, a span measured ELSEWHERE, on this file's own
   clock. In the page the injected clock IS the page's `performance.now`, and
   from a Worker it is moved onto it (below), so `start` lands in the frame
-  without a conversion and the trace draws `sim` where it ran. Like
-  `endAdd`, a slot filed twice in a frame ADDS: a benchmark's lead steps the
-  core several times a frame. **Nothing allocates, and that took one call
+  without a conversion and the trace draws `sim` where it ran. **What one
+  frame files is every step answered since the last filing, SUMMED**
+  (`addStepTiming`, `src/sim/stepTiming.ts`): the local match sums the steps
+  of one `advance` (`MatchOptions.stepped`), the page sums every answer into
+  one held row and empties it when filed — so a benchmark's lead, several
+  steps a frame, reads as all of them — and a frame that HELD the world (a
+  pause, the deploy screen) drops the row and the answers still owed, rather
+  than charging steps taken seconds ago to the first frame back. Like
+  `endAdd`, a slot filed twice in a frame ADDS too. **Nothing allocates, and that took one call
   rather than seven**: a double handed to a call a once-a-frame function does
   not inline is a heap number, and the per-phase `file` it replaced was
   ~660 B a frame (X2.5b, "Finding WHO allocates").
