@@ -97,7 +97,7 @@ export function isVolumetricRung(s: string): s is VolumetricRung {
 
 /**
  * `CONFIG.graphics.shadows.edgeFade` as a WGSL literal, for the same reason
- * `wgsl/includes.ts` interpolates it rather than binding it: it never varies,
+ * `wgsl/chunks.ts` interpolates it rather than binding it: it never varies,
  * and a uniform that never varies is a binding that can be wrong.
  *
  * **The ramp has to be the SAME ramp the surfaces use.** `shadowVisibility`
@@ -178,7 +178,7 @@ fn linearise(d: f32, nf: vec2f) -> f32 {
 }
 
 // Is this POINT IN THE AIR lit by the moon? The surface form of this is
-// shadowVisibility in wgsl/includes.ts and the differences are both
+// shadowVisibility in wgsl/chunks.ts and the differences are both
 // deliberate: there is no facet to offset along, so the normal bias is gone and
 // the depth bias carries the whole job; and one tap rather than four, because
 // the 2x2 exists to dissolve a texel staircase along a visible EDGE and air has

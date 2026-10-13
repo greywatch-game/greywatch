@@ -2161,7 +2161,9 @@ src/
                         #   the content-hashed rest
   shaders/
     CelShader.ts        # Custom cel ShaderMaterial. Both stages WGSL; six
-                        #   defines, six UBO layouts. writePaletteIndex stamps
+                        #   defines, six UBO layouts. The fragment is Babylon's
+                        #   DECLARATIONS and a three-line main over the shared
+                        #   wgsl/celSurface.ts. writePaletteIndex stamps
                         #   a part's palette slot into its buffer's uv2 for
                         #   both palette merges (the map's, the soldier's)
     ShadowBindings.ts   # Every shadow a lit material samples (world, bodies,
@@ -2201,15 +2203,23 @@ src/
                         #   WGSL
     Dither.ts           # One LSB of triangular noise, in the three surface
                         #   shaders. Fixes 8-bit banding in the fog. Owns the
-                        #   ARGUMENT and the WGSL; wgsl/includes.ts registers
-                        #   it as celDither
+                        #   ARGUMENT and the WGSL; wgsl/chunks.ts files it as
+                        #   celDither
     wgsl/
-      includes.ts       # The shader text every surface shares, as Babylon WGSL
-                        #   includes: celBand, celShadow, celGi, celProbe,
-                        #   celProbeBox, celDither and our own celInstances
-                        #   pair. Registered
-                        #   at import, so a consumer imports it for the side
-                        #   effect
+      chunks.ts         # The WGSL BODIES every surface shares, Babylon-free:
+                        #   celBand, celCloud, celShadow, celGi, celProbe,
+                        #   celProbeBox, celDither, celSurface, as WGSL_CHUNKS —
+                        #   the one table both renderers include from. A body
+                        #   declares NOTHING; each side states its own
+      celSurface.ts     # The cel fragment's BODY as one function,
+                        #   celSurface(): every term the cel material lights a
+                        #   pixel with. Babylon-free; shared verbatim with
+                        #   src/render/. MAX_POINT_LIGHTS and MAX_PALETTE
+      includes.ts       # Babylon's half of chunks.ts: its DECLARATIONS for
+                        #   each chunk, and every chunk registered as an
+                        #   include (declarations + body), plus our own
+                        #   celInstances pair. Registered at import, so a
+                        #   consumer imports it for the side effect
       giTrace.ts        # The irradiance volume's three COMPUTE passes (trace,
                         #   compose, vis) and the params layout they share
                         #   with GiVolume. RayWorld's box and floor queries,
@@ -2252,4 +2262,17 @@ src/
                         #   depth: octaves fixed in world space, weighted by
                         #   distance. The player's setting is still stored as
                         #   `filmGrain`, which is what it used to be. WGSL
+  render/               # OUR renderer (BABYLON_EXIT.md Phase 3). Never imports
+                        #   Babylon — the build gate walks every file in it
+    celFragment.ts      # The cel fragment as WE declare it: frame (group 0)
+                        #   and material (group 1) uniforms and textures, the
+                        #   inputs, over the shared celSurface body. Compiled
+                        #   per variant by plans/webgpu-ref/shaders.mjs
+    wgsl/
+      preprocess.ts     # #include and the #ifdef family over a define set —
+                        #   the subset a shared body may use; anything else is
+                        #   REFUSED by name
+      assemble.ts       # Declarations as DATA, and assembleFragment: plain
+                        #   WGSL with explicit @group/@binding, uniforms.<name>
+                        #   routed to its block, strided arrays read via .el
 ```

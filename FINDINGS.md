@@ -252,8 +252,8 @@ priced**, and there the GPU is the wall (below).
   expensive term, and past ~100 m the reflection is motion and colour rather
   than a picture. Fading the cube's weight to zero over a band and branching the
   fetch out below a threshold is the shape. `reflectBoxDir` is WGSL now
-  (`src/shaders/wgsl/includes.ts` ~882), sampled with `textureSample`, still
-  unconditionally (`CelShader.ts` ~1589-1592), and the fade is not built. **It
+  (`src/shaders/wgsl/chunks.ts`), sampled with `textureSample`, still
+  unconditionally (`wgsl/celSurface.ts`'s glazing block), and the fade is not built. **It
   is a PHONE lever only** — the desktop frame is not fill-bound.
 
 Neither the resolution nor the ash field should be cut by default. If a graphics-quality preset

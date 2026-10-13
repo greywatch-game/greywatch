@@ -613,7 +613,7 @@ export const graphics = {
     nearNormalBiasTexels: 1.3,
     /**
      * How many pixels the shadow edge is cut across — see `shadowTap` in
-     * `shaders/wgsl/includes.ts`. Every map's lookup is the depth compare
+     * `shaders/wgsl/chunks.ts`. Every map's lookup is the depth compare
      * over the 4x4 texels round the receiver, weighted by a cubic B-spline
      * (four `textureGather`s), and the edge is that smooth field's 0.5
      * contour rather than a step on the map's grid. It is thresholded by a

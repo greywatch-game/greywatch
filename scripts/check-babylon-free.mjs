@@ -22,6 +22,10 @@
  *   - `src/sim/`, every file in it: the simulation core every `Match` runs,
  *     the page's own included (`SimCore`, `SimPlayer`, `LagComp`,
  *     `buildSimWorld`), so a file added there is held whoever builds it.
+ *   - `src/render/`, every file in it: our own renderer, which takes a GPU
+ *     device and never a Babylon type (`BABYLON_EXIT.md` rule 6) — and what
+ *     it reaches, so the shared shader bodies it assembles
+ *     (`src/shaders/wgsl/chunks.ts`) are held Babylon-free by the same walk.
  *   - Every SIMULATION module, named one by one (`SIMULATIONS`,
  *     `docs/build.md`). Most of them the server reaches anyway,
  *     and they are listed regardless, so a simulation is held because it IS
@@ -32,10 +36,10 @@
  *     it**; its view never does. A root that does not exist FAILS, so a
  *     rename cannot quietly drop one out.
  *
- * `BABYLON_EXIT.md` rule 6 widens this twice: X3.2 adds `src/render/` and
- * `src/math/` to `DIRECTORIES`, with `src/math/babylon.ts` — the crossing,
- * deleted at X6.1 — named in `NOT_ROOTS`; X6.1 widens it to the whole
- * tree. **An entry in `NOT_ROOTS` is exempt from being a root, never from
+ * `BABYLON_EXIT.md` rule 6 widens this three times: X3.1 added `src/render/`
+ * in the commit that made the directory, X3.2 adds `src/math/` to
+ * `DIRECTORIES` with `src/math/babylon.ts` — the crossing, deleted at X6.1 —
+ * named in `NOT_ROOTS`, and X6.1 widens it to the whole tree. **An entry in `NOT_ROOTS` is exempt from being a root, never from
  * being REACHED**: a simulation that imports the crossing still fails, which
  * is the point of having one door.
  *
@@ -92,7 +96,7 @@ import { fileURLToPath } from "node:url";
 const REPO = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 
 /** Every source file under these is a root. */
-const DIRECTORIES = ["server", "src/sim"];
+const DIRECTORIES = ["server", "src/sim", "src/render"];
 
 /**
  * The simulation modules, one by one.

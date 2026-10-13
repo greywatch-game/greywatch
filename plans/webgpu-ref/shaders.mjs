@@ -13,6 +13,14 @@
  * eighth cel variant failing to compile on the one map that carries it, because
  * a material that never binds costs a draw and no diagnostic.
  *
+ * **It compiles the cel fragment TWICE, once per renderer.** The body is one
+ * text (`shaders/wgsl/chunks.ts`) with two readers, Babylon's material and our
+ * own `src/render/`, and each declares what the body reads its own way — so a
+ * shape this page's factory compiled is also assembled by
+ * `render/celFragment.ts` and built into a pipeline (`oursCheck`). Nothing in
+ * the game draws with that module yet, which is exactly why it is compiled
+ * here: an unused module is one nobody else would ever find broken.
+ *
  * **A frame count is not coverage, so this asks the FACTORY rather than the
  * frame.** Every cel material in the game comes from one cache, so the check
  * is: walk it, ask each material for its effect, and assert the effect is ready
@@ -58,9 +66,9 @@ const MAPS = maps.length > 0 ? maps : MAP_IDS;
  * The cel variants the four shipped maps must between them compile, keyed by
  * the define set that makes each a separate effect.
  *
- * Seven materials and five shapes: matte, glossy and translucent are one
- * compiled effect wearing three sets of uniforms, and the other four are each
- * their own. A map missing one of these is not an error — Hollowmere has no
+ * Seven shapes: matte, glossy and translucent are one compiled effect wearing
+ * three sets of uniforms, and the cloth (`CEL_SMOOTH`), the paletted world
+ * (`CEL_PALETTE`), the two glazings and the two grounds are each their own. A map missing one of these is not an error — Hollowmere has no
  * glazed block — which is why the requirement is on the UNION over every map
  * asked for, and why a run over a single map only reports.
  *
@@ -73,6 +81,8 @@ const MAPS = maps.length > 0 ? maps : MAP_IDS;
  */
 const WANTED = [
   "",
+  "CEL_SMOOTH",
+  "CEL_PALETTE",
   "CEL_GLASS",
   "CEL_GLASS+CEL_GLASS_BACKED",
   "CEL_GROUND_TEX",
@@ -94,6 +104,82 @@ const HOOK = () => {
     return module;
   };
 };
+
+/**
+ * OUR renderer's half of the same shapes (`BABYLON_EXIT.md` X3.1): every cel
+ * shape this page's factory compiled, assembled by `render/celFragment.ts`
+ * into plain WGSL with explicit bind groups and built into a real pipeline,
+ * on a device of its own so nothing of Babylon's stands between the module and
+ * the driver.
+ *
+ * **The layout is EXPLICIT, made from the bindings the assembly reports**,
+ * not `"auto"`: an auto layout keeps only what the body happens to use, so it
+ * would pass a declaration list that disagrees with the module, and it would
+ * count against the per-stage limits only what is used rather than what is
+ * bound. The bumped ground is at 16 of 16 sampled textures and 16 of 16
+ * samplers; one more on either side of the split fails here, by name.
+ * The vertex stage is a stub that writes the fragment's own inputs, which is
+ * all a pipeline needs to link one.
+ */
+async function oursCheck(shapes) {
+  const { celFragment } = await import("/src/render/celFragment.ts");
+  const adapter = await navigator.gpu.requestAdapter();
+  const device = await adapter.requestDevice();
+  const FRAG = GPUShaderStage.FRAGMENT;
+  const out = [];
+  for (const shape of shapes) {
+    let m;
+    try {
+      m = celFragment(shape ? shape.split("+") : []);
+    } catch (e) {
+      out.push({ error: String(e?.message ?? e), source: "" });
+      continue;
+    }
+    const inputs = /struct FragmentInputs \{([\s\S]*?)\n\}/.exec(m.code)[1];
+    device.pushErrorScope("validation");
+    const fs = device.createShaderModule({ label: m.label, code: m.code });
+    const vs = device.createShaderModule({
+      label: `${m.label} stub`,
+      code: `struct VertexOutputs {${inputs}\n}\n@vertex fn main() -> VertexOutputs { var o: VertexOutputs; return o; }`,
+    });
+    const groups = [];
+    for (const b of m.bindings) {
+      (groups[b.group] ??= []).push(
+        b.kind === "uniform"
+          ? { binding: b.binding, visibility: FRAG, buffer: { type: "uniform" } }
+          : b.kind === "sampler"
+            ? { binding: b.binding, visibility: FRAG, sampler: { type: "filtering" } }
+            : {
+                binding: b.binding,
+                visibility: FRAG,
+                texture: { sampleType: "float", viewDimension: b.type.split("<")[0].slice(8) },
+              },
+      );
+    }
+    const layout = device.createPipelineLayout({
+      bindGroupLayouts: [...groups].map((entries) =>
+        device.createBindGroupLayout({ entries: entries ?? [] }),
+      ),
+    });
+    device.createRenderPipeline({
+      layout,
+      vertex: { module: vs, entryPoint: "main" },
+      fragment: { module: fs, entryPoint: "main", targets: [{ format: "rgba8unorm" }] },
+    });
+    const scope = await device.popErrorScope();
+    const info = await fs.getCompilationInfo();
+    const errors = [...info.messages]
+      .filter((x) => x.type === "error")
+      .map((e) => `${e.lineNum}:${e.linePos} ${e.message}`);
+    const all = [...errors, scope?.message].filter(Boolean);
+    out.push({
+      error: all.length > 0 ? `${m.label}: ${all.join("; ")}` : "",
+      source: errors.length > 0 ? m.code : "",
+    });
+  }
+  device.destroy();
+  return out;
+}
 
 const seen = new Set();
 const failures = [];
@@ -201,15 +287,26 @@ for (const id of MAPS) {
   });
 
   for (const v of out.cel) seen.add(v);
+  const ours = await page.evaluate(oursCheck, out.cel);
+  const badOurs = ours.filter((o) => o.error);
 
   const badMats = out.materials.filter((m) => !m.ready || m.error);
   const celCount = out.materials.filter((m) => m.cel).length;
-  const status = badMats.length === 0 && out.modules.length === 0 ? "ok" : "FAIL";
+  const status =
+    badMats.length === 0 && out.modules.length === 0 && badOurs.length === 0 ? "ok" : "FAIL";
   console.log(
     `${id.padEnd(13)} ${String(celCount).padStart(3)} cel materials  ` +
       `${String(out.moduleCount).padStart(3)} modules  ` +
-      `${out.cel.length} variants  ${status}`,
+      `${out.cel.length} variants  ${ours.length - badOurs.length}/${ours.length} ours  ${status}`,
   );
+  for (const o of badOurs) {
+    failures.push(`${id}: ours ${o.error}`);
+    if (o.source) {
+      const line = Number(/\]: (\d+):/.exec(o.error)?.[1] ?? 0);
+      const numbered = o.source.split("\n").map((l, i) => `${String(i + 1).padStart(4)}  ${l}`);
+      failures.push(numbered.slice(Math.max(0, line - 3), line + 2).join("\n"));
+    }
+  }
   if (LIST) {
     for (const v of out.cel) console.log(`    [${v || "(no defines)"}]`);
   }

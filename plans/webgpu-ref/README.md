@@ -49,11 +49,16 @@ node plans/webgpu-ref/bench.mjs [map...] [--runs 3] [--capped] [--gpu] [--max] [
 - **`shaders.mjs`** compiles every shader on every map and fails on anything
   the driver called an error. It asks the FACTORY rather than the frame — walk
   the cel cache, hand each material a probe mesh, poll `isReady` — so it reaches
-  the variants a still camera cannot see, and it asserts that the six cel
-  define-shapes were all compiled somewhere across the four maps. It also mints
+  the variants a still camera cannot see, and it asserts that the seven cel
+  define-shapes were all compiled somewhere across the maps. It also mints
   the one shape no shipped map does: a ground albedo with no height map beside
   it, which both call sites happen to pass, and which would otherwise rot
-  uncompiled. Exits non-zero, so it stands in front of a merge beside
+  uncompiled. And it builds OUR renderer's module for every shape a map
+  compiled (`src/render/celFragment.ts`, `BABYLON_EXIT.md` X3.1) into a real
+  pipeline against an explicit layout, on a device of its own, so the shared
+  body's second reader is compiled before anything draws with it — and the
+  per-stage texture and sampler limits are counted against what is bound.
+  Exits non-zero, so it stands in front of a merge beside
   `gate.mjs`. It is also the strongest place the transpiler tripwire is asked,
   because it forces the CACHED materials to compile rather than the drawn ones.
 - **`vantages.mjs`** is the table of poses `bank.mjs` shoots, one row per frame

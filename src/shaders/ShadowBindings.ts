@@ -36,7 +36,7 @@ import {
   Vector3,
   Vector4,
 } from "@babylonjs/core";
-import { MAX_LOCAL_SLOTS } from "./wgsl/includes";
+import { MAX_POINT_LIGHTS } from "./wgsl/celSurface";
 
 export class ShadowBindings {
   // Shadow-map state, pushed onto every cel material as it is created.
@@ -76,10 +76,10 @@ export class ShadowBindings {
   // assignment reaches every material without a walk: a `ShaderMaterial`
   // keeps the array it was given and re-reads it on every bind.
   private localAtlasMap: BaseTexture | null = null;
-  private readonly pointSpot = new Float32Array(MAX_LOCAL_SLOTS * 4).map(
+  private readonly pointSpot = new Float32Array(MAX_POINT_LIGHTS * 4).map(
     (_, i) => (i % 4 === 3 ? -2 : 0),
   );
-  private readonly pointShade = new Float32Array(MAX_LOCAL_SLOTS * 4).map(
+  private readonly pointShade = new Float32Array(MAX_POINT_LIGHTS * 4).map(
     (_, i) => (i % 4 === 1 || i % 4 === 2 ? -1 : 0),
   );
   private readonly localAtlas = new Vector4(1, 1, 1, 1);

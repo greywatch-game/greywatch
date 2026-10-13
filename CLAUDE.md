@@ -508,7 +508,8 @@ as a phone.
 
 **Every shader in the tree is hand-written WGSL** (`shaderLanguage` is
 load-bearing; the default is GLSL), and **a sampler a material DECLARES must be
-BOUND, used or not**, or the draw is silently lost.
+BOUND, used or not**, or the draw is silently lost. **A shared body declares
+NOTHING** (`wgsl/chunks.ts`): `src/render/` includes it too, so both sides declare.
 
 **Every cel material is FROZEN, and `CelMaterialFactory.remember` is the one
 door into the cache.** **What breaks it is a mesh that GAINS or LOSES a vertex

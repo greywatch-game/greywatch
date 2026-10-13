@@ -2869,12 +2869,13 @@ error but a patch that silently does nothing.
 
 **What several shaders share is a registered INCLUDE and not an interpolated
 string**, and the reason is specific to WGSL rather than tidiness.
-`src/shaders/wgsl/includes.ts` writes `celBand`, `celShadow`, `celProbe`,
-`celProbeBox` and `celDither` into `ShaderStore.IncludesShadersStoreWGSL`, and a
-consumer reaches them with `#include<celShadow>`. Four of the five state their
-own source; `celDither` reaches for `Dither.ts`'s, because there the argument is
-sixty lines against a six-line function and a reader arriving at either wants
-the other. The GLSL they replace were
+`src/shaders/wgsl/includes.ts` writes every chunk in `WGSL_CHUNKS` (`celBand`,
+`celCloud`, `celShadow`, `celGi`, `celProbe`, `celProbeBox`, `celDither`,
+`celSurface`) into `ShaderStore.IncludesShadersStoreWGSL`, and a consumer
+reaches them with `#include<celShadow>`. The bodies are `wgsl/chunks.ts`'s and
+`wgsl/celSurface.ts`'s (`celDither` reaches for `Dither.ts`'s, because there
+the argument is sixty lines against a six-line function and a reader arriving
+at either wants the other). The GLSL they replace were
 template literals pasted into three shaders, which was survivable because a copy
 that had drifted was a COMPILE ERROR in one of them: the uniform declarations
 and the code reading them travelled together and a mismatch did not link. Two of
@@ -2883,6 +2884,47 @@ auto-generated `LeftOver` UBO struct — so three copies that disagree are no
 longer a diagnostic anywhere. They are a **different UBO layout per shader**,
 which fails as plausible values read from the wrong offsets, on one surface,
 with nothing in the console.
+
+**A shared BODY declares nothing, because it has two readers and only one of
+them speaks Babylon's dialect** (`BABYLON_EXIT.md` X3.1). Our own renderer
+(`src/render/`) includes the same chunks by the same names, and it needs plain
+WGSL with explicit bind groups. So a chunk is a body with no `uniform`, no
+`varying` and no texture or sampler line. It reads a uniform as
+`uniforms.<name>`, an input as `fragmentInputs.<name>` and a texture by its
+own name, and its only directives are `#include<cel…>` and the `#ifdef` family.
+Each side declares for itself:
+
+- **Babylon's declarations** are text in its dialect. Each chunk's are in
+  `includes.ts`'s `DECLARATIONS`, and every registered entry is those
+  declarations followed by the body, verbatim, so grass, water and the air
+  include `celShadow` exactly as they did. The cel fragment's own are
+  `CelShader.ts`'s `celFragmentShader`, which ends in `#include<celSurface>`
+  and a `main` that writes `celSurface()`.
+- **Ours are DATA** (`render/celFragment.ts`). `render/wgsl/assemble.ts` turns
+  them into a module. It emits the structs and every `@group`/`@binding`, runs
+  the body through `render/wgsl/preprocess.ts` (which refuses any directive it
+  does not implement), and makes two rewrites. Each `uniforms.<name>` goes to
+  the block that declares it (`frame` or `material`), and an assembly that
+  finds a name nobody declared fails there. A strided scalar array's element
+  is read through `.el`, Babylon's own layout for one.
+
+**Two declaration lists are the price, and they are the cheap copy.** A name
+one side forgot is LOUD: a WGSL error on Babylon's side, an assembly error or
+a driver error on ours. `plans/webgpu-ref/shaders.mjs` builds our module for
+every shape each map's factory compiled, into a real pipeline against an
+EXPLICIT layout made from the bindings the assembly reports, so the per-stage
+limits are counted against what is bound. **The bumped ground is at 16 of 16
+sampled textures and 16 of 16 samplers on our side too.** A body that drifted
+between two copies would have been silent, which is why there is one. When
+the split landed it was proven by dumping every module Babylon compiles on
+every map, before and after. The only change was the cel fragment's `main`
+becoming a call to `celSurface()`; every other shader came out the same up to
+order.
+
+**What our side does not do yet** is Babylon's flip of `fragmentInputs.position`
+for a pass that draws into a texture (`internals.yFactor_`, injected before
+the body runs). The dither is keyed on that position, so a pass of ours that
+renders to a texture owes the same flip in its `main`.
 
 **Every entry is prefixed `cel`, and the prefix is a collision guard rather than
 a style.** Babylon registers an include first-writer-wins and its own library
@@ -4685,7 +4727,7 @@ soft edge, sliding over fields and rooftops at the ring's drift (a few metres a
 second). The cloud a player sees crossing the disc is the one
 whose shadow they are standing in, because it is the same ray.
 `systems/cloudShadow.ts` is the arithmetic, `Sky` drives it, and `celCloud`
-(`wgsl/includes.ts`) is how every lit surface reads it.
+(`wgsl/chunks.ts`) is how every lit surface reads it.
 
 - **A lookup in KEY space, not a shadow map.** A point's key is where its ray
   toward the light crosses y = 0 (`p.xz - s.xz * p.y / s.y`), so one 2D field

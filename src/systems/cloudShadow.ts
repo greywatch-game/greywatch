@@ -5,7 +5,7 @@
  * buffers, no clock — which is `cloudMasses.ts`'s shape and for its reason.
  * Owns: the projection of an ellipsoid along a direction, the field written per
  * texel, and how much of it is written per call. Owns no texture, no timing
- * and no light — `Sky` drives it and `wgsl/includes.ts` (`celCloud`) reads it.
+ * and no light — `Sky` drives it and `wgsl/chunks.ts` (`celCloud`) reads it.
  * Invariants: a texel no lobe reaches is 0; a texel's value is the MAX over
  * the lobes that reach it, so the union of lobes is one shape and the order
  * they are written in cannot change a byte; the value crosses 0.5 exactly on a

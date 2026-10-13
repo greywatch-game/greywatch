@@ -486,7 +486,8 @@ the failure is silent.
     colour format, the sample count, and the coverage alpha (opaque writes 0).
   - It states its attachment formats once — `docs/rendering.md`'s bundle
     trap.
-  - Add `src/render/` and `src/math/` to X2.3's gate.
+  - Add `src/math/` to X2.3's gate (X3.1 added `src/render/` with the
+    directory).
 - **Verify:** it draws nothing yet, so the bank shows no pixel moved; the gate
   passes; a DEV-only test draw shows up where expected and then comes out.
 - **Must not:** import `@babylonjs/core`; reach an internal from anywhere but

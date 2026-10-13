@@ -2,8 +2,8 @@
  * Dither.ts — One LSB of triangular noise, added to a colour immediately
  * before it is written out.
  * Owns: the ARGUMENT for the whole of it, and the source it argues about.
- * `wgsl/includes.ts` registers what is exported below as `celDither`; the
- * registration lives there because that is the one table, and the text lives
+ * `wgsl/chunks.ts` files what is exported below as `celDither`; the entry
+ * lives there because that is the one table, and the text lives
  * here because the argument is sixty lines and the function is six, and a
  * reader arriving at either wants the other. Owns no state, no uniforms and
  * no plugin — there is nothing here to configure.
@@ -81,7 +81,7 @@
  */
 
 /**
- * The body, registered as the `celDither` include by `wgsl/includes.ts`. A
+ * The body, the `celDither` chunk in `wgsl/chunks.ts`. A
  * surface shader writes `#include<celDither>` and calls `dither(col)` on the
  * last value before `fragmentOutputs.color`.
  *
