@@ -197,8 +197,8 @@ export interface FireSlot {
   /**
    * The floor it burns on — read by nothing that draws the FLAMES (they are
    * stood once, on `onIgnited`), and here for the readers that have to say
-   * where a fire is between two events: the simulation core's frame
-   * (`src/sim/frame.ts`) and `forEachFire`'s light and voice off its mirror.
+   * where a fire is between two events: the picture (`GrenadeFx`) and
+   * `forEachFire`'s light and voice.
    */
   readonly at: Vector3Like;
 }

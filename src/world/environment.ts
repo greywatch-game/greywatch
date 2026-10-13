@@ -396,8 +396,7 @@ export interface EnvironmentSpec {
   fogEnd: number;
   /**
    * How far a BODY is worth drawing, in metres, overriding `fogEnd` for the
-   * three gates that ask that question — the bots' rig LOD
-   * (`BattleView.viewDistance`), the remote roster's
+   * two gates that ask that question — the roster's
    * (`NetRoster.viewDistance`) and the ragdoll pool's one remaining refusal
    * (`RagdollSystem.viewDistance`). Absent is `fogEnd`, which is what every
    * shipped map states by saying nothing, so this changes no map that does not
@@ -425,9 +424,9 @@ export interface EnvironmentSpec {
    * as fog.
    *
    * **The two riders stay pinned to each other**, which is what
-   * `config/fogWall.ts` exists to say: `bots.lodDisableDistance` and
+   * `config/fogWall.ts` exists to say: the roster's draw gate and
    * `bots.death.maxDistance` are the same distance BY CONSTRUCTION, and they
-   * still are — all three systems above are handed the one number this
+   * still are — both systems above are handed the one number this
    * resolves to, so a corpse can never be refused a tumble somewhere its rig
    * is still being drawn.
    */

@@ -25,9 +25,8 @@
  * X2.5a C4a). The offline round and the authority used to keep a
  * `slotKills`/`slotDeaths` pair each, with a `creditKill` and a
  * `registerDeath` each, written twice and documented twice, and later one of
- * these each. The page draws the core's off its frame (`ScoresMirror`); a
- * client in a NETPLAY round draws the authority's, which arrives whole
- * (`NetSession`), because a client adding up the events it happened to
+ * these each. The page draws the authority's — a remote match's, or offline
+ * its own local match's — which arrives whole (`NetSession`), because a client adding up the events it happened to
  * receive would show a different board on every screen.
  */
 import { CONFIG } from "../config";

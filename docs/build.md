@@ -294,28 +294,33 @@ whole tree, the day the package goes.
 
 ## The simulation's Worker is a second bundle, and two compiler settings it rests on
 
-**`src/sim/simWorker.ts` is its own Rollup build** (`BABYLON_EXIT.md` X2.5b):
-Vite follows `new Worker(new URL("./simWorker.ts", import.meta.url))` in
-`simHost.ts` and bundles the Worker's graph separately, so the core, its
-systems, the world's data layer and every map's layout are emitted TWICE — once
-in the entry, once in `assets/simWorker-*.js` (568 kB, 127 kB gzipped at
-X2.5b; one copy of each map's lazy floor and bake, which the Worker never
-imports, since the page hands it both as data). It is content-hashed like
-every other asset and precached by the same walk of `dist/`. **`worker.format`
-is `es`**, because the Worker reaches `MAPS`, whose lazy `import()`s Rollup
-cannot split into the default `iife` format. And **a module the Worker imports
-may not import the module that constructs it** — Vite follows the `new
-Worker(...)` wherever it is written — which is why the control block's
-constants live in `hostWire.ts` rather than `simHost.ts`.
+**`server/localMatchWorker.ts` is its own Rollup build** (`BABYLON_EXIT.md`
+X2.5c): Vite follows `new Worker(new URL("../../server/localMatchWorker.ts",
+import.meta.url))` in `src/net/matchHost.ts` and bundles the Worker's graph
+separately, so `Match`, the core, its systems, the world's data layer and every
+map's layout are emitted TWICE — once in the entry, once in
+`assets/localMatchWorker-*.js` (605 kB, ~136 kB gzipped at X2.5c C5). Each
+map's lazy floor and bake stay chunks of their own, which the Worker now
+imports itself (`Match` loads its world through `loadSimWorld`), and `dist/`
+still holds one copy of each. It is
+content-hashed like every other asset and precached by the same walk of
+`dist/`. The same-thread fallback, `server/localMatch.ts`, is a third chunk
+(`assets/localMatch-*.js`), reached only through `matchHost.ts`'s one dynamic
+`import()`. **`worker.format` is `es`**, because the Worker reaches `MAPS`,
+whose lazy `import()`s Rollup cannot split into the default `iife` format. And
+**a module the Worker imports may not import the module that constructs it** —
+Vite follows the `new Worker(...)` wherever it is written — which is why the
+words both halves share live in `src/net/localWire.ts` rather than in
+`matchHost.ts` or `LocalMatch.ts`.
 
-**`tsconfig.json`'s `lib` is ES2024**, for the growable `SharedArrayBuffer`
-the Worker publishes through (`target` is unchanged), and **its
-`useDefineForClassFields` is false**, which is a performance setting and the
-one this build's every class rests on: `CLAUDE.md`'s conventions and
-`docs/profiling.md` ("Finding WHO allocates") have the measurement. esbuild
-reads both from the tsconfig nearest each file, so `server/tsconfig.json`
-inherits them for `dist-server` — the authority's tick got 7-16% faster the
-day the second one flipped.
+**`tsconfig.json`'s `useDefineForClassFields` is false**, which is a
+performance setting and the one this build's every class rests on:
+`CLAUDE.md`'s conventions and `docs/profiling.md` ("Finding WHO allocates") have
+the measurement. esbuild reads it from the tsconfig nearest each file, so
+`server/tsconfig.json` inherits it for `dist-server` — the authority's tick got
+7-16% faster the day it flipped. (`lib` went to ES2024 at X2.5b for the
+growable `SharedArrayBuffer` the core's old Worker published through, and back
+to ES2022 at X2.5c C5, when that Worker went.)
 
 ## A Babylon upgrade owes geometry-check, math-check, sweep-check, then `npm run merge:hash`
 

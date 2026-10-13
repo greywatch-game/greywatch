@@ -74,8 +74,8 @@ server/               # The authoritative match server. Node, no Babylon (the
                       #   round SEED (4th argument) and prints `fight`, a hash
                       #   of the kill list the same seed must reproduce —
                       #   folded off the core's drained events, as is
-                      #   `--events`, the ordered list; `--frame` prices the
-                      #   published frame, `--phases` the core's own timing
+                      #   `--events`, the ordered list; `--phases` the core's
+                      #   own timing
   parity.ts           #   Fingerprint dump for `npm run parity`
   corecheck.ts        #   `npm run corecheck`: the project's one test. Drives
                       #   SimCore with a scripted person and no Game, asserts
@@ -314,8 +314,8 @@ index.html          # The head, and NO interface CSS beyond the two things shown
                     #   are hashed, and a drawn one read as clip art).
 main.ts             # Bootstrap. Imports src/ui/base.css FIRST. Awaits the two
                     #   things the game cannot start without — the WebGPU device
-                    #   and the Havok WASM — and the simulation's host
-                    #   (`openSimHost`: a Worker, or the page, never a
+                    #   and the Havok WASM — and the page's own match's host
+                    #   (`openMatchHost`: a Worker, or the page, never a
                     #   failure), then builds the Game, which takes all three
                     #   as arguments. Owns the boot screen: names each
                     #   await on its load plate, paints before the constructor,
@@ -919,11 +919,6 @@ src/
                         #   retreat/capture) + movement, aim, magazine, peek.
                         #   Simulation only: src/math, no rig, no Babylon;
                         #   `shown` says whether the body is in the world
-    BotRig.ts           # A bot's PICTURE: its SoldierRig, root and pose
-                        #   written off a BotRead (the core's BotMirror
-                        #   offline), the launcher tube, and the
-                        #   RagdollSubject (`ragdolling`). Reads, never writes.
-                        #   Client only
     BotMemory.ts        # One bot's decaying picture of the fight (src/math)
     SquadRadio.ts       # One TEAM's board: its squads' contact calls and the
                         #   marks its own deaths leave. Cues, never targets
@@ -937,9 +932,7 @@ src/
                         #   the rifle's kick, carry and reload), solveSoldier
                         #   to the joint channels, the skeleton's measures the
                         #   rig is built from, and the bot's MUZZLE replayed
-                        #   off them in src/math, bit for bit the node chain.
-                        #   packJoints/unpackJoints: the solved joints as the
-                        #   core's frame carries them, bit for bit
+                        #   off them in src/math, bit for bit the node chain
     SoldierMotion.ts    # One body's motion turned into a SoldierPose: gait
                         #   phase and stepLength, velocity in the feet's frame,
                         #   kick, reload, ready. Bot and NetSoldier drive the
@@ -973,11 +966,6 @@ src/
     BattleSystem.ts     # Bot pool, AI scheduling, LOS, squads, the bench.
                         #   The core's alone (the page builds none).
                         #   Simulation only: src/math, no scene, no camera
-    BattleView.ts       # The roster's PICTURE: a BotRig per bot of a
-                        #   `RosterRead` Game names (the core's offline, none in
-                        #   a match; rebuilt on a new roster, its `poolVersion`
-                        #   or the viewer's side), the distance LOD, the muzzle
-                        #   flashes. Client only
     VehicleViews.ts     # The fleet's PICTURE: one VehicleView per hull, by
                         #   hardstanding, each with its kind's model; built by
                         #   `installMap`, stepped after every
@@ -1990,10 +1978,11 @@ src/
                       #   clock and draws no seed — the HOST hands it both — and
                       #   imports nothing from server/. Every file is a root of
                       #   check-babylon-free.mjs
-    SimCore.ts        #   The simulation, on the authority AND offline (the
-                      #   page holds one since X2.5a C4a): the one place the
-                      #   simulation's systems meet, wired once here by
-                      #   callbacks (systems never import each other). Owns
+    SimCore.ts        #   The simulation, on every host: `Match` (a remote
+                      #   authority, or the page's own local match offline),
+                      #   `simulate` and corecheck — no page holds one. The one
+                      #   place the simulation's systems meet, wired once here
+                      #   by callbacks (systems never import each other). Owns
                       #   the armour too — the fleet, the bot crews and the AT
                       #   kit — plus `seat`, the one writer of a chair (the
                       #   page's `mount`/`clearVehicle` are only its picture
@@ -2001,64 +1990,18 @@ src/
                       #   has no engine and no scene. `startRound(RoundSpec)` is
                       #   synchronous (`pool` + `fielded`); `anchor`/`drop` are
                       #   the host's clock; `SimCoreOptions` (rewind,
-                      #   hostHoldsRespawn, timing, publish) are the hosts'
+                      #   hostHoldsRespawn, timing, reportGap) are the hosts'
                       #   roles and change no rule. A person
                       #   reaches it through `submit` alone (commands.ts), and
                       #   the rules a command meets — pouches, seat policy,
                       #   `deployPerson` — are here once. No outward callback:
                       #   it SAYS everything through events.ts, and the host
-                      #   `drain`s after every call. With `publish` it fills
-                      #   `frame` (frame.ts) at the end of every step and on
-                      #   the first read after any other call (lazy);
-                      #   the page reaches it through simHost.ts (the host
-                      #   calls + `frame`); `releaseWorld` is a host's teardown
-    frame.ts          #   SimFrame: the round as plain typed arrays, sized per
-                      #   pool and filled without allocating (`fillFrame`, the
-                      #   one writer) — header, flags, bots (root, centre, eye,
-                      #   life, death, SOLVED joints packed bit for bit),
-                      #   persons, hulls + chairs, the four pools, the board,
-                      #   the target list's order, broken panes, the step's
-                      #   `timing` (filled only while `timeSteps` is on, off
-                      #   the host's injected clock). Postable: structuredClone
-                      #   is the same frame
-    mirror.ts         #   The page-side READERS of the frame, in the shapes the
-                      #   views ask: SimMirror — RosterMirror (a BotMirror per
-                      #   slot, what a BotRig follows; `BotRead`/`RosterRead`
-                      #   are the interfaces a Bot also satisfies), FleetMirror
-                      #   (NetVehicles' answers + seatHolder), OrdnanceMirror,
-                      #   ScoresMirror, persons, hittablesAgainst, flagsInto
-                      #   the page's own ConquestSystem. Holds no core object
-    simCheck.ts       #   The DEV mirror check (`?simcheck`, corecheck): every
-                      #   reader against its live object with Object.is — bots
-                      #   and every joint, flags, persons, hulls, pools, board,
-                      #   panes, the target list. A module function, so a
-                      #   production bundle drops it whole
-    simHost.ts        #   The page's door into the core, wherever it runs
-                      #   (X2.5b): `SimHost`, PageSimHost (the core in this
-                      #   thread, X2.5a exactly) and WorkerSimHost (in a
-                      #   Worker over shared memory: the handshake, the two
-                      #   command buffers, the two publications, the spin a
-                      #   step's take-in may cost — `waitMs`), and
-                      #   `openSimHost`, the boot's choice (isolated + growable
-                      #   SAB, else the page; `?simpage`/`?simcheck`/`?simcopy`)
-    simWorker.ts      #   The Worker: one SimCore, one operation at a time
-                      #   (`Atomics.wait` between them; a round's call returns
-                      #   to the event loop for its posted message), commands
-                      #   decoded in, the frame and the drain published out.
-                      #   A failure is marked in the control block, never a hang
-    hostWire.ts       #   The words both threads share: the control block's
-                      #   slots, the operation codes, the round-call messages.
-                      #   Its own module so the Worker never imports simHost.ts
-    commandCodec.ts   #   A SimCommand as float64s: `encodeCommand` (page),
-                      #   `CommandDecoder` (Worker, one held object per kind).
-                      #   Allocation-free both sides, bits preserved; `CODE`
-                      #   is a Record over the union, so a new kind must cross
-    publication.ts    #   The frame + one drain in a growable SharedArrayBuffer:
-                      #   the layout DERIVED from newFrame() (leaves, scalars,
-                      #   sections) with per-round lengths and a version in
-                      #   the header; PublicationWriter (Worker) and
-                      #   PublicationReader (page: a SimFrame of views, events
-                      #   appended to a ring). Double-buffered by the caller
+                      #   `drain`s after every call. Publishes no copy of its
+                      #   state; `timing` is the last timed step's row
+    stepTiming.ts     #   SIM_PHASES (the step's five timed phases, in order)
+                      #   and StepTiming, the row `SimCore.timing` holds —
+                      #   measurement only, filed by the page's profiler off
+                      #   its local match and printed by `simulate --phases`
     commands.ts       #   The SimCommand vocabulary `SimCore.submit` takes:
                       #   the gameplay ClientMessages after validation, with
                       #   host-resolved data (ShotWeapon's five numbers, kit

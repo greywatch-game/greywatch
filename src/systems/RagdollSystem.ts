@@ -7,7 +7,7 @@
  * file's header for why the split exists.
  *
  * It holds `RagdollSubject`s, not `Bot`s, and deliberately cannot tell the
- * kinds apart: a bot's rig killed in the fight (`BotRig` — the `Bot` itself is
+ * kinds apart: a body's rig killed in the fight (`NetSoldier` — a `Bot` is
  * simulation and has no rig) and the stand-in body `DeathCam` stands up where
  * the player fell are the same thing to this file. Every rule
  * below applies to both, which is what stopped the player's corpse needing a
@@ -147,9 +147,9 @@ export class RagdollSystem implements PhysicsClient {
   /**
    * Past this a body is not worth tumbling, because it is not worth drawing —
    * the map's body draw distance, pushed by `Game.installMap` beside the same
-   * number going to `BattleView` and `NetRoster`. It is where the rig stops
-   * being drawn by construction rather than by coincidence (see
-   * `bots.death.maxDistance`), and the construction is that all three are
+   * number going to `NetRoster`. It is where the rig stops being drawn by
+   * construction rather than by coincidence (see `bots.death.maxDistance`),
+   * and the construction is that both are
    * handed one number resolved once (`bodyDrawDistanceOf`); `CONFIG` holds
    * what a map with no opinion gets.
    *
@@ -289,8 +289,8 @@ export class RagdollSystem implements PhysicsClient {
       if (rest) slot.restParent.set(bone.joint, rest.parent);
     }
     subject.ragdolling = true;
-    // The rig must be visible for the corpse to be worth simulating; a bot's
-    // LOD (`BattleView`) keeps it on every frame while this pool holds it.
+    // The rig must be visible for the corpse to be worth simulating; the
+    // roster's LOD (`NetRoster`) keeps it on every frame while this pool holds it.
     subject.setEnabled(true);
 
     const hp = this.physics.havok;
@@ -800,7 +800,7 @@ export class RagdollSystem implements PhysicsClient {
    * Hands the rig back, restored exactly, and frees the slot. Idempotent.
    *
    * The ordering is deliberate: the rig is put back and hidden BEFORE
-   * `ragdolling` is cleared, so a bot's view (`BotRig.follow`) never sees a
+   * `ragdolling` is cleared, so a body's view (`NetSoldier`) never sees a
    * half-restored rig. The frame after this it takes over a rig in its rest
    * pose, and draws it or not off the bot's own clock: almost always that has
    * already taken the body out of the world (`death.hideTime`, under a second,
@@ -818,13 +818,13 @@ export class RagdollSystem implements PhysicsClient {
     for (const bone of slot.bones) this.park(bone);
     // Both of these belong to a CORPSE, and `update`'s guard can hand this a
     // body that came back to life while the pool was holding it. Hiding a live
-    // bot costs a frame of invisibility (`BattleView` re-enables it on the
+    // body costs a frame of invisibility (`NetRoster` re-enables it on the
     // next one) and writing its root would drop it at the dead one's sink
     // height for that frame. The joints still have to go back, which is the
     // whole reason that guard releases rather than just forgetting the slot.
     if (!subject.alive) {
       // Undo the sink before handing the rig back: `root.position` is the
-      // bot's own, and a respawn writes it through `BotRig` — but a rig
+      // body's own, and a respawn writes it through `NetSoldier` — but a rig
       // retired by `reset()` mid-sink would otherwise keep the offset.
       if (slot.sinking) rig.root.position.y = slot.sinkFromY;
       subject.setEnabled(false);

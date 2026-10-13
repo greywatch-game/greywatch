@@ -517,17 +517,4 @@ export class AntiTankSystem {
       if (m.live) fn(i, m.pos, m.team, m.armT <= 0, m.by);
     }
   }
-
-  /**
-   * Every mine this owner has live, for the HUD's count.
-   *
-   * A player wants to know how many of theirs are out there, because the cap
-   * means laying a third moves one — and the count in the hands is what they
-   * have LEFT, which is a different number.
-   */
-  minesFor(by: Combatant): number {
-    let n = 0;
-    for (const m of this.mines) if (m.live && m.by === by) n += 1;
-    return n;
-  }
 }

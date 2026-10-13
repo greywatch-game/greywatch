@@ -60,8 +60,7 @@ you are on before you believe anything else in this section.
   sends a `deploy` and returns before the body exists, so poll
   `g.player.alive` or `g.state === "playing"` rather than reading it on the
   next line, and wait for `g.net.seated` before asking anything of a round
-  that has just been built. `?simcheck` and `?simcopy` do nothing any more
-  (X2.5c C5 deletes them).
+  that has just been built.
   Measured headless on the Windows box: `crossOriginIsolated` true under
   both servers, and false on the first load from a bare `node:http` server
   that sends no headers, with the boot falling back to the page — and true
@@ -1027,28 +1026,6 @@ is one machine's:
   frames between two shots — 0.011 at three frames, 0.27 at six, 0.65 at twelve
   — which is drift being measured rather than the lever. That growth with frame
   distance is the tell; if you see it, something is still moving.
-- **Teleporting a bot needs the RIG moved and enabled, not just `bot.position`.**
-  The rig is `g.battleView.rigs[i].rig` (the `Bot` has none since BABYLON_EXIT.md
-  X2.2 C7) and it follows the bot's ROOT (`bot.rootX`..`rootYaw`, written by
-  `Bot.update`/`nudgeTo`, never by `position.set`) in `BattleView.update`, which
-  runs right after `battle.update` and is also the distance LOD that switched
-  the root off — so a staging that pins the AI first leaves every body where it
-  was and switched off. `bot.nudgeTo(v)` moves the bot's root with it; or set
-  `rig.root.position` to `(x, y + rig.centerHeight, z)` and
-  `rig.root.setEnabled(true)` by hand, THEN pin. A bot's vectors are
-  `src/math`'s: hand them to a Babylon method through `copyFromFloats`, never
-  `copyFrom`, or it writes NaN.
-- **`bot.takeDamage(999, ...)` kills a bot and produces NO RAGDOLL**, and the
-  result reads as the physics being broken. `Game.botDown` — the page's half of
-  the core's `botDown` event — is the one place the body is offered to the pool,
-  and a direct `takeDamage` raises no event, so it leaves a dead bot whose rig is
-  simply switched off — `ragdolling` false, the torso never falls, nothing
-  drawn. Call `g.botDown(victim, team, true)` immediately after, which offers the
-  pool the bot's RIG caught up to it (`g.battleView.corpseOf(victim)` — the
-  `Bot` itself is not a `RagdollSubject`). With it: `ragdolling` (on the
-  `BotRig`) true, the rig stays ENABLED for the life of the corpse
-  (`BattleView`'s LOD keeps it on while the pool holds it), and the torso drops
-  — measured 3.20 m to 2.32 in 300 ms.
 - **Bots are not alive on the frame `playing` arrives**, so a script that stages
   the roster immediately stages nothing: `battle.bots.filter(b => b.alive)` is
   empty and every downstream count reads zero without erroring. Wait several
@@ -2052,11 +2029,10 @@ is one machine's:
   prints every event the core wrote, one `<tick> <kind> <fields>` line each in
   emission order at full precision, so two runs diff line by line and the
   first differing line names the divergence (`grep -E "^[0-9]+ [a-z]"` keeps
-  only the events; an md5 of that is the quick equality check). `--frame`
-  builds the core `publish`ing, so the tick printed carries the frame's fill
-  and its price; `--phases` hands the core a clock and prints its five step
-  phases beside the tick. Neither moves the fight — the hash and the event
-  list must be the plain run's. **`node plans/sim-ref/sim.mjs` is all of that
+  only the events; an md5 of that is the quick equality check). `--phases`
+  hands the core a clock and prints its five step phases beside the tick. It
+  does not move the fight — the hash and the event list must be the plain
+  run's. **`node plans/sim-ref/sim.mjs` is all of that
   at once**: every map's fight and event list at seed 777, every line
   `corecheck` prints, and (with `--bench f.json`) the benchmark's fights below,
   graded against the bank in `plans/sim-ref/ref/`; `--keep dir` before a step
@@ -2068,9 +2044,9 @@ is one machine's:
   1280x720 --url http://localhost:4931 --out f.json`, which reads
   `__profile.last().bench.fight.hash` and fails on runs that disagree (about a
   minute and a half a map; the hash is viewport-independent). A static build is
-  not rebuilt by an edit mid-run, which is the point. `--query simcopy` (any
-  build) and `--query simcheck` (no `--url`, so a dev server) ride the same
-  run.
+  not rebuilt by an edit mid-run, which is the point. `--query simpage`
+  rides the same run (the local match in the page's thread rather than its
+  Worker), and its fight must hash the same.
 - **It is also where a server TIMING question is answered, and no browser can
   answer one.** The same run prints the per-tick distribution against the
   16.67 ms step, the ticks filed by how many bots were in contact, and where
@@ -2104,27 +2080,7 @@ is one machine's:
   (`until`) and grades snapshots by their STAMPS, never by how many have
   arrived. Under a minute, no browser, exits non-zero on a failure; `--
   --list` prints the lists it compared. Run it after touching `src/sim/`,
-  `server/Match.ts`, `killRules`, `ScoreBook` or `hullRules`. Its second core
-  run PUBLISHES and reads a structured clone of the frame back through the
-  page's readers after every drain, held to the live core by `simCheck` —
-  the one place the frame is checked with a PERSON in it.
-- **RETIRED at X2.5c C4 — the page reads no core frame any more, so the two
-  paragraphs below describe flags that now do nothing; C5 deletes them.**
-  **`?simcheck` is the oracle for the page's readers, and it needs a DEV
-  build** (`npm run dev`, or `bench.mjs` with no `--url`, which starts one):
-  after every drain the offline page holds every answer `src/sim/mirror.ts`
-  gives — each bot's fields and every solved joint, the flags as its own
-  `conquest` holds them, the persons, the hulls and their chairs, the four
-  pools, the board, the panes (the frame's and the page's glass) and the aim
-  assist's list in order — against the live core with `Object.is`. The tally
-  is `window.__simcheck` (`checks`, `mismatches`, `first`), each mismatch is
-  also a console error, and `bench.mjs --query simcheck` prints the tally per
-  run. In a production bundle the flag does nothing: the check is not in it.
-- **`?simcopy` works in any build**: every command, frame and drain goes
-  through `structuredClone` before the other side reads it — X2.5b's Worker
-  transfer, rehearsed. The benchmark's `fight.hash` under it must equal the
-  plain one (`bench.mjs --query simcopy`); a difference means something
-  crossed by reference. The two combine (`--query "simcheck&simcopy"`).
+  `server/Match.ts`, `killRules`, `ScoreBook` or `hullRules`.
 - **A harness cannot write the core directly any more** (X2.5c C4): the
   round's core is the authority's, inside the page's own `Match` — in the
   Worker, out of reach — and the page holds only what the wire told it

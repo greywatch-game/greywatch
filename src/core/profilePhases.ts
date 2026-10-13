@@ -51,9 +51,11 @@ export const PHASES = [
    * The PAGE's half of the simulation's hop (`BABYLON_EXIT.md` X2.5b), both
    * inside `world`. `simWait` is the time the page spent waiting for the
    * Worker to finish the step it is taking in — zero whenever the Worker
-   * kept up, and never entered with the core in this thread. `simSync` is
-   * the copy of the core's frame into the page's readers (`SimMirror.sync`
-   * and the flags) after the step, in either mode.
+   * kept up, and never entered with the core in this thread. `simSync` was
+   * the copy of the core's frame into the page's readers after the step.
+   * Neither is entered since the page became a client of its own local
+   * match (`BABYLON_EXIT.md` X2.5c); the list keeps them until the
+   * profiler's own pass takes them out.
    */
   "simWait",
   "simSync",

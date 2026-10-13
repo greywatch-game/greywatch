@@ -4,8 +4,8 @@
  * it back — respawning is continuous), AI scheduling, LOS. The SIMULATION and
  * nothing else, on `src/math`, importing nothing from Babylon: no scene, no
  * rig and no camera. What a body LOOKS like — the rig pool, the distance LOD,
- * the muzzle flashes — is `BattleView`'s, which only the client builds and
- * which reads this without writing it; the authority builds none.
+ * the muzzle flashes — is a client's (`NetRoster`, off the wire); the
+ * authority builds none.
  * Invariants: think ticks are staggered round-robin at CONFIG.bots.thinkRate,
  * and a dead bot must not consume a budget slot or the living think slower than
  * advertised. Target acquisition ray-tests candidates nearest-first, stops at
@@ -23,7 +23,7 @@
  * and collider boxes — the same geometry Player.probeGround reads, so a bot's
  * feet and a player's stand on one floor rather than on two descriptions of it.
  * Bot muzzle flashes are NOT pulsed or even recorded here — a bot's shot goes
- * out through onBotFired, `BattleView` keeps the positions and Game spends
+ * out through onBotFired, the client keeps the positions and Game spends
  * CONFIG.lighting.muzzleBudgetPerFrame on the nearest few (16 shader light
  * slots are absolute). Runs AFTER ConquestSystem.update each frame.
  * Cross-system effects go out via onBotKill/onBotFired callbacks wired in
@@ -49,10 +49,10 @@
  * rather than 8v9.
  * HOW BIG THE ROSTER IS is the MAP's on both sides now (`MapLayout.perTeam`,
  * resolved by `perTeamOf`), and the two hosts of the core spend it
- * differently (`RoundSpec.pool`/`fielded`). Offline `Game.buildRound` hands
- * `SimCore.startRound` a POOL of exactly that size, which reaches `setRoster`
- * (and the page's `BattleView` follows with the rigs, rebuilt off the frame's
- * `poolVersion`). On the authority
+ * differently (`RoundSpec.pool`/`fielded`). An OWNED match — the page's
+ * local match offline — hands `SimCore.startRound` a POOL of exactly that
+ * size, which reaches `setRoster` (and the page's `NetRoster` follows with
+ * the rigs, `setFielded`). On a rotating match
  * the pool is `CONFIG.bots.maxPerTeam` a side once and for ever — a slot index
  * is a bot index there and team 1's block must start at the same number on
  * every map a match rotates onto — and `setFielded` is what says how many of
@@ -101,12 +101,12 @@ function moveSeed(team: number, i: number): number {
 /**
  * Owns both teams: a fixed pool of bots and the AI schedule.
  *
- * Two decisions carry the frame budget here, and `BattleView` carries the
- * third (the distance LOD):
+ * Two decisions carry the frame budget here, and the client's roster
+ * (`NetRoster`) carries the third (the distance LOD):
  *
  * 1. **The pool is built once and never disposed.** A bot is one object and
- *    its RIG — a dozen Babylon meshes and their GPU buffers, `BattleView`'s
- *    — is built beside it on the same terms: in a roguelike that cost landed
+ *    its RIG — a dozen Babylon meshes and their GPU buffers, a client's
+ *    `NetSoldier` — is built on the same terms: in a roguelike that cost landed
  *    twelve times per room load, but Conquest respawns continuously and it
  *    would be a permanent source of frame spikes. Death takes a body out of
  *    the world (`Bot.shown`), respawn puts it back.
@@ -125,13 +125,6 @@ function moveSeed(team: number, i: number): number {
  */
 export class BattleSystem {
   readonly bots: Bot[] = [];
-  /**
-   * Counts the times `bots` has been rebuilt (`buildPool`). `BattleView`
-   * builds its rigs against the pool it last saw and compares this, which is
-   * how a client learns that a roster changed size without this file knowing
-   * a view exists.
-   */
-  poolVersion = 0;
 
   /**
    * Wired by `SimCore`: a bot's round killed somebody.
@@ -540,7 +533,6 @@ export class BattleSystem {
     // offline round is and what the authority's pool is until `setFielded`
     // says otherwise.
     this.inPlay = this.bots.length;
-    this.poolVersion++;
   }
 
   /**
@@ -556,9 +548,8 @@ export class BattleSystem {
    * village whose whole frame is 3.5 ms — because a disabled mesh is skipped
    * CHEAPLY and not skipped (see `WorldCulling`). A map that states nothing
    * therefore pays exactly what it always paid, which is the standard every
-   * other `MapLayout` lever is held to. The meshes are `BattleView`'s, which
-   * rebuilds its rigs when `poolVersion` moves; this file only says how many
-   * bodies there are.
+   * other `MapLayout` lever is held to. The meshes are a client's
+   * (`NetRoster.setFielded`); this file only says how many bodies there are.
    *
    * **Called from `buildRound` and never from `installMap`**, unlike the other
    * map-derived pushes: this is the ROUND's roster, and the editor rebuild —
@@ -571,7 +562,7 @@ export class BattleSystem {
    * A no-op at the same size, which is every round on every map but the first
    * one after a change of roster. A change of the viewer's SIDE rebuilds the
    * rigs and not the bots — a side is a picture (`core/teamView.ts`), and
-   * `BattleView` is what checks it.
+   * `NetRoster` is what checks it.
    */
   setRoster(perTeam: number): void {
     if (perTeam === this.perTeam) return;
@@ -643,20 +634,6 @@ export class BattleSystem {
   }
 
   /**
-   * No map at all: `Game.teardownMap`, for the menu. `update` returns on its
-   * first line without a nav graph, and the target scratch lists are emptied
-   * so no body from the last round — a hull above all — is held through them.
-   */
-  clearMap(): void {
-    this.nav = null;
-    this.cover = null;
-    this.obstacles = null;
-    this.terrain = null;
-    this.rays = null;
-    for (const list of this.hittableScratch) list.length = 0;
-  }
-
-  /**
    * The one non-bot combatant, offline. Replaces whatever was there, so calling
    * it twice does not put the player in the fight twice.
    */
@@ -668,15 +645,6 @@ export class BattleSystem {
   /** Adds a human to the fight. The server's path; `setPlayer` is the game's. */
   addHuman(human: Combatant): void {
     if (!this.humans.includes(human)) this.humans.push(human);
-  }
-
-  /**
-   * The non-bot combatants, in the order `hittablesAgainst` lists them after
-   * the bots — read by the simulation core's frame (`src/sim/frame.ts`), so
-   * the page's target list off it is this one in this order. Read-only.
-   */
-  get humanList(): readonly Combatant[] {
-    return this.humans;
   }
 
   removeHuman(human: Combatant): void {
@@ -880,8 +848,7 @@ export class BattleSystem {
 
   /**
    * Kills everyone and takes every body out of the world, without disposing
-   * the pool. A client's rigs follow at once — `Game` calls
-   * `BattleView.hideAll` beside every call to this.
+   * the pool. A client's rigs follow off the wire.
    */
   reset(): void {
     // A team's memory is a ROUND's memory: where the last round's bodies fell
@@ -927,8 +894,8 @@ export class BattleSystem {
   /**
    * One frame of the fight: respawns, squad orders, the staggered think pass
    * and every body's movement. No camera: nothing here is drawn, and nothing
-   * here may depend on where anybody is looking — the LOD is `BattleView`'s,
-   * stepped by `Game` right after this.
+   * here may depend on where anybody is looking — the LOD is a client's
+   * (`NetRoster`).
    */
   update(dt: number): void {
     if (!this.nav) return;
@@ -990,7 +957,7 @@ export class BattleSystem {
     // Every body in the round, at every distance: the battle line moves
     // whoever is watching, and the pose is FILLED for all of them (`Bot.update`)
     // since a muzzle is read off it. What is DRAWN of them, and posed, is the
-    // view's (`BattleView`). A corpse nobody respawned and that is out of the
+    // client's (`NetRoster`). A corpse nobody respawned and that is out of the
     // world is left alone — `shown` and not the rig's enabled flag, which the
     // render LOD used to write as well, so this skip no longer depends on where
     // the camera is.
@@ -1183,8 +1150,7 @@ export class BattleSystem {
       BOT_SHOT,
     );
     // The muzzle is the bot's own scratch (`muzzleWorld`), live only until its
-    // next shot — a listener that keeps it copies it, which is what
-    // `BattleView` does for the flash.
+    // next shot — a listener that keeps it copies it.
     this.onBotFired(bot, muzzle);
     // The AIM and not the bot's facing: a bot fires at a lagging aim point and
     // faces where it is walking often enough that the two disagree. This shot's

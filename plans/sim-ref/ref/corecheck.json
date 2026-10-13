@@ -1,5 +1,5 @@
 {
- "at": "b54ebf1+",
+ "at": "b85e6d1+",
  "lines": [
   "  ok   greyfen/core       deploy: an unasked person is never put in (30 ticks, no spawned)",
   "  ok   greyfen/core       deploy: an ask with the clock run out deploys on the next tick",
@@ -20,7 +20,6 @@
   "  ok   greyfen/core#2     the same 16 assertions pass",
   "  ok   greyfen/match      the same 16 assertions pass",
   "  ok   greyfen            same seed + same commands twice: identical event-stream hash (092262bdc80a6452, 871 events)",
-  "  ok   greyfen            the frame's readers equal the live core, Object.is, after every drain (1127 passes)",
   "  ok   greyfen            Match (fake peer, validated door) gives the identical award/death list (15 lines)",
   "  ok   greyfen            Match's whole event stream equals the core's (092262bdc80a6452)",
   "  ok   greyfen            the wire's `score` feed is the person's awards, in order (9)",
@@ -76,7 +75,6 @@
   "  ok   coldharbour/core#2 the same 16 assertions pass",
   "  ok   coldharbour/match  the same 16 assertions pass",
   "  ok   coldharbour        same seed + same commands twice: identical event-stream hash (204e52a1153b0251, 682 events)",
-  "  ok   coldharbour        the frame's readers equal the live core, Object.is, after every drain (1010 passes)",
   "  ok   coldharbour        Match (fake peer, validated door) gives the identical award/death list (8 lines)",
   "  ok   coldharbour        Match's whole event stream equals the core's (204e52a1153b0251)",
   "  ok   coldharbour        the wire's `score` feed is the person's awards, in order (0)",

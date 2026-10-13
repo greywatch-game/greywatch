@@ -192,11 +192,6 @@ export class GlassSystem {
     return pane >= 0 && pane < this.broken.length && this.broken[pane] === 0;
   }
 
-  /** How many breakable panes the standing map has — `intact`'s range. */
-  get paneCount(): number {
-    return this.broken.length;
-  }
-
   get brokenPanes(): number[] {
     const out: number[] = [];
     for (let i = 0; i < this.broken.length; i++) if (this.broken[i]) out.push(i);

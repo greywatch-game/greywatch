@@ -2,8 +2,8 @@
  * Bot.ts — AI combatant: FSM (advance/hunt/engage/takeCover/suppressed/retreat/
  * capture/dead), movement, perception, aiming, firing — the SIMULATION and
  * nothing else, on `src/math`, importing nothing from Babylon. There is no rig
- * here: `BotRig` draws this body on a client and reads it without writing it,
- * and the authority builds none. The pose is FILLED every frame and SOLVED by
+ * here: a client draws this body as a `NetSoldier` (`NetRoster`), off what
+ * the authority sends of it, and the authority builds none. The pose is FILLED every frame and SOLVED by
  * `soldierPose.ts`, and the rifle's muzzle — an outcome, being where a shot is
  * heard from and a rocket leaves — is replayed off that solved pose.
  * Whether the body is IN THE WORLD is `shown`, a plain field this class and
@@ -287,7 +287,8 @@ export class Bot implements Combatant {
    * taken out after `death.hideTime`, by the bench and the round
    * (`BattleSystem`) and by a hull's seat (`VehicleCrew`).
    *
-   * **Simulation state, and the rig FOLLOWS it** (`BotRig`). It used to be the
+   * **Simulation state, and the rig FOLLOWS it** (a client's `NetSoldier`,
+   * off the wire). It used to be the
    * rig root's own enabled flag, which the render LOD wrote too — so the one
    * line here that reads it (`BattleSystem.update`'s skip of a corpse nobody
    * respawned) answered off how far away the CAMERA was, and on the authority
@@ -323,9 +324,9 @@ export class Bot implements Combatant {
   private jointsStale = false;
   /**
    * Where `syncTransform` last stood the body's ROOT: the body centre and the
-   * feet's yaw. The root of `muzzleWorld`'s chain, and exactly what a drawn
-   * rig's root node is given (`BotRig`), so the picture and the outcome stand
-   * on one root. Read through the getters below; written only there.
+   * feet's yaw — the root of `muzzleWorld`'s chain, and the same split a drawn
+   * rig's root node is given (`NetSoldier`), so the picture and the outcome
+   * stand on one root. Written only by `syncTransform`.
    */
   private rx = 0;
   private ry = 0;
@@ -575,9 +576,9 @@ export class Bot implements Combatant {
    * It changes nothing about how the bot fights infantry: the rifle is still
    * the weapon, the rig still carries one, and the launcher exists only in
    * `considerRocket`. What a launcher bot IS, is the one body in its squad
-   * that can hurt a tank. The tube on its back is `BotRig`'s, which reads
-   * this — the field and the mesh used to be one setter, while the rig was
-   * this class's.
+   * that can hurt a tank. The tube on its back is the client's rig's, drawn
+   * off what the wire says of this — the field and the mesh used to be one
+   * setter, while the rig was this class's.
    */
   launcher = false;
   /** Rockets left this life. Refilled by `spawn`, like the grenade pouch. */
@@ -673,8 +674,8 @@ export class Bot implements Combatant {
     this.syncTransform();
     // Back to idle. The motion may still hold whatever the last life ended in,
     // and so may the solved joints. A drawn rig is put back in its rest pose by
-    // `BotRig` on the new `life` below — the quaternion-leak reset that used
-    // to be written here, which belongs to whoever owns the nodes.
+    // the client's view on the new `life` below — the quaternion-leak reset
+    // that used to be written here, which belongs to whoever owns the nodes.
     this.motion.reset();
     solveSoldier(REST_POSE, this.joints);
     this.jointsStale = false;
@@ -694,8 +695,8 @@ export class Bot implements Combatant {
    *
    * It is also what puts a crewman down beside the hull he has just been
    * burned out of: the corpse a ragdoll is built from is posed off the rig
-   * this root is written onto (`BattleView.corpseOf` catches it up first), so
-   * a body still standing at the middle of a wreck would fall through a
+   * drawn where this root says the body is, so a body still standing at the
+   * middle of a wreck would fall through a
    * collider that is deliberately still there.
    */
   nudgeTo(at: Vector3Like): void {
@@ -790,7 +791,7 @@ export class Bot implements Combatant {
     if (this.state === "dead") {
       this.deadT += dt;
       // Out of the world on the clock. A corpse a ragdoll is holding stays
-      // DRAWN past this — that is the view's (`BotRig`), which knows a ragdoll
+      // DRAWN past this — that is the view's (`NetSoldier`), which knows a ragdoll
       // exists; this class does not, and the simulation's answer is the same
       // whether anybody watched the body fall. What is left without one is a
       // body killed past `death.maxDistance`, which is the fog wall, where the
@@ -936,9 +937,8 @@ export class Bot implements Combatant {
     // heard from, where a rocket leaves), so it may not depend on what anybody
     // is looking at — and `fill` eases the rifle's ready and carry frame by
     // frame, so skipping frames would change the pose it arrives at. Only
-    // WRITING it onto a rig is the LOD's to skip (`BattleView`): a body nobody
-    // can make out holds its last drawn pose. Solving it is deferred to
-    // whoever reads it.
+    // WRITING it onto a rig is a client's to skip: a body nobody can make out
+    // holds its last drawn pose. Solving it is deferred to whoever reads it.
     this.motion.fill(
       dt,
       this.moveBlend,
@@ -1997,24 +1997,6 @@ export class Bot implements Combatant {
     return Math.atan2(dy, Math.max(flat, 0.1));
   }
 
-  /**
-   * The body's ROOT as `syncTransform` last stood it — the body centre over
-   * the feet and the feet's yaw. What `muzzleWorld` replays from, and what
-   * `BotRig` writes onto a drawn rig's root node, unchanged.
-   */
-  get rootX(): number {
-    return this.rx;
-  }
-  get rootY(): number {
-    return this.ry;
-  }
-  get rootZ(): number {
-    return this.rz;
-  }
-  get rootYaw(): number {
-    return this.ryaw;
-  }
-
   private syncTransform(): void {
     const c = CENTER_HEIGHT;
     // The ROOT does not move with the crouch. The stance lives inside the rig —
@@ -2065,13 +2047,13 @@ export class Bot implements Combatant {
    * the flash is lit, and where the shot is HEARD from.
    *
    * **Replayed off numbers, never read off the rig** (`soldierMuzzleToRef`):
-   * the root `syncTransform` last stood (`rootX`..`rootYaw`) and the pose
+   * the root `syncTransform` last stood (`rx`..`ryaw`) and the pose
    * last filled (`solved`),
    * through the same float32 chain Babylon composes — so it is the value
    * `rig.muzzle.computeWorldMatrix(true)` would return for a rig posed from
    * `joints`, bit for bit (proved against the rig over whole rounds on all
    * seven maps, BABYLON_EXIT.md X2.2 C5). It is the CURRENT pose's muzzle at
-   * any distance: the rig is posed only inside `lodFreezeDistance`, and
+   * any distance: a rig was posed only inside the LOD's freeze distance, and
    * before X2.2 C6 the muzzle was that frozen rig's — so the authority
    * answered with a live pose only for bots within 35 m of the map's centre,
    * and offline the camera decided. That forced call recomputed every

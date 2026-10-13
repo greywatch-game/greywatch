@@ -135,11 +135,6 @@ const DAMAGE_CODE = {
 } as const satisfies Record<DamageKind, number>;
 export const DAMAGE_KINDS = inverse<DamageKind>(DAMAGE_CODE);
 
-/** The code a `DamageKind` is written as — here and in the frame's `deathKind`. */
-export function damageCode(kind: DamageKind): number {
-  return DAMAGE_CODE[kind];
-}
-
 const CAUSE_CODE = {
   round: 0,
   blast: 1,
@@ -285,7 +280,6 @@ export class EventRing {
     out.data = this.data;
     out.ints = this.ints;
     out.count = this.count;
-    out.intCount = this.intCount;
     // A cursor that has never been drained into holds empty arrays; the ring
     // keeps its own capacity rather than taking those.
     if (kinds.length > 0) {
@@ -302,50 +296,11 @@ export class EventRing {
     this.count = 0;
     this.intCount = 0;
   }
-
-  /**
-   * Appends `count` records and `intCount` side ints, laid out as a drain
-   * hands them over (a cursor's arrays, or the shared copy of one a Worker
-   * publishes — `src/sim/publication.ts`), after whatever this ring already
-   * holds. The ONE place a record is moved between rings, because one kind
-   * points into the side array: a `glass` record's start is rebased onto
-   * where its panes land here. Allocates only when it grows.
-   */
-  append(
-    kinds: Uint8Array,
-    ticks: Uint32Array,
-    data: Float64Array,
-    ints: Int32Array,
-    count: number,
-    intCount: number,
-  ): void {
-    if (count === 0 && intCount === 0) return;
-    const base = this.intCount;
-    const needInts = base + intCount;
-    if (needInts > this.ints.length) {
-      let size = Math.max(64, this.ints.length * 2);
-      while (size < needInts) size *= 2;
-      const grown = new Int32Array(size);
-      grown.set(this.ints.subarray(0, base));
-      this.ints = grown;
-    }
-    for (let i = 0; i < intCount; i++) this.ints[base + i] = ints[i];
-    this.intCount = needInts;
-    for (let i = 0; i < count; i++) {
-      const o = this.open(kinds[i] as EventKind, ticks[i]);
-      const from = i * STRIDE;
-      const d = this.data;
-      for (let k = 0; k < STRIDE; k++) d[o + k] = data[from + k];
-      if (kinds[i] === EV.glass) d[o + 6] += base;
-    }
-  }
 }
 
 /**
  * The host's half: one drain's events, read by index. Valid until the next
- * drain into it. The arrays are plain typed arrays, so a cursor can be copied
- * whole — into shared memory by a Worker's publication and out again into the
- * page's own ring (`EventRing.append`, `BABYLON_EXIT.md` X2.5b).
+ * drain into it.
  */
 export class EventCursor {
   kinds: Uint8Array = new Uint8Array(0);
@@ -353,8 +308,6 @@ export class EventCursor {
   data: Float64Array = new Float64Array(0);
   ints: Int32Array = new Int32Array(0);
   count = 0;
-  /** Side ints in `ints` belonging to this drain — what a copy of it must carry. */
-  intCount = 0;
 
   kind(i: number): EventKind {
     return this.kinds[i] as EventKind;

@@ -4,13 +4,11 @@
  *
  *   node plans/webgpu-ref/bench.mjs [map...] [--runs 3] [--capped] [--headed]
  *        [--gpu] [--max] [--size 3440x1440] [--url http://host:port]
- *        [--query simcopy&simcheck] [--out f.json] [--against f.json]
+ *        [--query simpage] [--out f.json] [--against f.json]
  *
  * **`--query` is appended to every run's URL** after the `?bench=<map>` —
- * the page's own switches: `simcopy` (every command, frame and drain
- * through `structuredClone`, whose fight must hash the same) and, against a
- * DEV server (no `--url`), `simcheck` (every reader held against the live
- * core; each mismatch is a console error, so a run with any says so).
+ * the page's own switches, such as `simpage` (the local match in the page's
+ * own thread rather than its Worker, whose fight must hash the same).
  *
  * **`--max` is every graphics setting at its top rung** (`MAX_SETTINGS`),
  * written into the page's settings store before it boots, which is the
@@ -145,7 +143,6 @@ for (const id of targets) {
         ).join("  ") +
         `  fight ${run.bench?.fight.hash ?? "?"}` +
         `  sim ${run.simMode ?? "?"}` +
-        (run.simcheck ? `  simcheck ${run.simcheck.checks} passes ${run.simcheck.mismatches} mismatches` : "") +
         (run.errors.length ? `  ! ${run.errors.length} errors` : ""),
     );
     for (const e of run.errors.slice(0, 3)) console.log(`   ! ${e.slice(0, 200)}`);
@@ -287,10 +284,6 @@ async function benchOnce(id) {
       gpu: r.gpu,
       groups: r.segments?.groups ?? [],
       list: r.segments?.list ?? [],
-      // `?simcheck`'s tally (DEV): passes run, mismatches, the first by name.
-      simcheck: window.__simcheck
-        ? { checks: window.__simcheck.checks, mismatches: window.__simcheck.mismatches, first: window.__simcheck.first.slice(0, 4) }
-        : null,
     };
   });
   await page.close();

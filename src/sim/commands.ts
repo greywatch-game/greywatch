@@ -6,13 +6,12 @@
  * Invariants: **a command is PLAIN DATA** — numbers, booleans, string ids and
  * `{x, y, z}` records, never a class the far side would need the prototype
  * of, a closure or a reference into the simulation — so a host can hand one
- * over in process, and the page can encode one into the shared float64s its
- * Worker reads (`src/sim/commandCodec.ts`, `BABYLON_EXIT.md` X2.5b), whose
- * `CODE` table does not compile until a new kind can cross. **A command is a
+ * over in process. **A command is a
  * request the host has already VALIDATED**: `Match` runs every claim gate it
  * has (the rate buckets, the cones, the origin slips, `validateMove` and
- * `validateDrive`) and only then submits; the offline page's commands are
- * trusted. Either way the core still refuses what its own state makes
+ * `validateDrive`) and only then submits — a remote peer's and, offline, the
+ * page's own player's alike; only a harness (`server/corecheck.ts`'s core
+ * run) submits trusted. Either way the core still refuses what its own state makes
  * impossible — a dead body's round, a throw from a seat, an empty pouch — so
  * the trusted door and the validated one land on the same rules.
  * Never: carry a RESULT. What a command did (a hit, a seat, a spawn, a
@@ -52,9 +51,10 @@ import type { WeaponSetup } from "../entities/weapons";
  * What resolving a person's round reads of the weapon it left — the damage
  * slope and where the ray stops (`SimCore.resolveShot`), and nothing else.
  * A `WeaponSetup` is one (the authority hands its peer's whole loadout row);
- * the page hands its held weapon. Five numbers rather than the whole setup
- * because that is what crosses a Worker boundary (`BABYLON_EXIT.md` X2.5b,
- * `src/sim/commandCodec.ts`): the core had no use for the other thirty.
+ * the page's player's is resolved the same way, off the kit its deploy
+ * names. Five numbers rather than the whole setup because that is all
+ * resolving a round reads (`BABYLON_EXIT.md` X2.5b): the core had no use for
+ * the other thirty.
  */
 export type ShotWeapon = Pick<
   WeaponSetup,

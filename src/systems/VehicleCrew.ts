@@ -593,7 +593,7 @@ export class VehicleCrew {
     // The body leaves the world for the same reason the player's viewmodel
     // goes away: there is no crewman modelled on this hull, and a soldier
     // standing at the middle of a moving tank is a body being dragged through
-    // the street. The rig follows (`BotRig`).
+    // the street. A client's rig follows, off the wire.
     bot.shown = false;
     bot.target = null;
     this.onBoarded(bot, tank);

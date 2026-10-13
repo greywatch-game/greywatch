@@ -1,10 +1,11 @@
 /**
  * config/bots.ts — bot AI, and the nav grid it steers on.
  * Owns: squad sizes, skill tiers, perception, cover, the think budget and the
- * LOD/ragdoll gates. Contract: `docs/bots.md`.
- * Gotcha: three numbers here carry the frame budget — `thinkRate`, the rig
- * pool size and `lodDisableDistance`. Loosening any of them costs ~10x draw
- * calls or a permanent hitch.
+ * ragdoll gate. Contract: `docs/bots.md`.
+ * Gotcha: two numbers here carry the frame budget — `thinkRate` and the rig
+ * pool size (with the body draw distance, which is the MAP's —
+ * `bodyDrawDistanceOf`). Loosening any of them costs ~10x draw calls or a
+ * permanent hitch.
  */
 
 import { FOG_WALL } from "./fogWall";
@@ -39,7 +40,7 @@ export const bots = {
    *
    * It is NOT a pool size on a CLIENT and nothing there is built to it: the
    * pool is the map's own roster and is rebuilt when that changes
-   * (`BattleSystem.setRoster` with `BattleView.syncPool`, `NetRoster.setFielded`),
+   * (`BattleSystem.setRoster` with `NetRoster.setFielded`),
    * which is what keeps a
    * 240 m village paying for sixteen bodies rather than forty-eight.
    *
@@ -168,26 +169,6 @@ export const bots = {
   detourTime: 1.0,
   /** How far to the side the watchdog looks when choosing a way round. */
   detourProbe: 1.6,
-  /**
-   * Distance from the camera past which the RIG's pose is frozen (it still
-   * translates) — `BattleView`'s. Drawing only: the pose is still FILLED every
-   * frame, because a bot's muzzle is replayed off it and an outcome may not
-   * depend on the camera (`Bot.update`).
-   */
-  lodFreezeDistance: 35,
-  /**
-   * Distance past which the rig is not drawn at all — the fog wall, where
-   * there is nothing to see. The bot keeps integrating, so the battle line
-   * still moves out there; only the drawing and posing stop.
-   *
-   * **What runs is the MAP's** (`BattleView.viewDistance`, pushed by
-   * `Game.installMap`): its `fogEnd`, or its `EnvironmentSpec.bodyDrawDistance`
-   * where it states one. This value is what the system carries before any map
-   * is installed — and it is also, by arithmetic rather than by wiring, what
-   * the two valleys get, since both state a `fogEnd` of 78.
-   */
-  lodDisableDistance: FOG_WALL,
-
   /**
    * Fire discipline. Everything here is the same for every bot; anything that
    * should separate an ace from a rookie lives in `skill` below.
@@ -632,9 +613,9 @@ export const bots = {
      * body refused inside the fog would stand where it died until `hideTime`,
      * with nothing left to pose it.
      *
-     * It is the FOG WALL, and it is the same number as `lodDisableDistance`
-     * BY CONSTRUCTION rather than by coincidence: that is where the rig stops
-     * being drawn, so one metre further is a solver tumbling something the
+     * It is the FOG WALL, and it is the same number as the distance a body
+     * stops being drawn (`NetRoster.viewDistance`) BY CONSTRUCTION rather than
+     * by coincidence: that is where the rig stops being drawn, so one metre further is a solver tumbling something the
      * player cannot see. Every death inside the fog is eligible, which is
      * what a marksman rifle needs — its own range is bounded by the same wall.
      *
@@ -644,14 +625,14 @@ export const bots = {
      * (`bodyDrawDistanceOf`) and pushes it to both. This value is what a map
      * with no opinion gets.
      *
-     * It is deliberately NOT `lodFreezeDistance` (35), which is what this was
-     * pinned to and why nothing dying across the square ever fell over. That
-     * LOD only skips posing, and a bot's rig is not posed at all while
-     * `BotRig.ragdolling` — a ragdoll poses through the proxy nodes
-     * its joints are parented to, which the solver writes whatever the LOD
-     * says. Verified: a corpse at 50 m driven through the real
-     * `BattleSystem.update` (the LOD is `BattleView`'s now) tumbles from a 0.64 m standing joint spread to
-     * 0.002 m face-down on the floor, rig still enabled.
+     * It is deliberately NOT the old pose-freeze LOD distance (35 m), which
+     * is what this was pinned to and why nothing dying across the square ever
+     * fell over. That LOD only skipped posing, and a ragdolled rig is not
+     * posed at all — a ragdoll poses through the proxy nodes its joints are
+     * parented to, which the solver writes whatever the LOD says. Verified: a
+     * corpse at 50 m driven through the real `BattleSystem.update` tumbled
+     * from a 0.64 m standing joint spread to 0.002 m face-down on the floor,
+     * rig still enabled.
      *
      * This costs nothing per frame on its own — `maxConcurrent` is what
      * bounds the solver — but it does keep the pool busier, which is the

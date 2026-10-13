@@ -1,7 +1,8 @@
 /**
  * src/sim/SimCore.ts — The simulation: the systems that decide a round, and
  * the wiring between them. No engine and no scene. ONE copy, on every host —
- * the authority, `simulate` and the offline page.
+ * `Match` (a remote authority, or the page's own local match), `simulate`
+ * and `server/corecheck.ts`.
  * Owns: the map's lifetime and the per-tick order. It is the one place the
  * SIMULATION's systems meet, as `core/Game.ts` is the one place the page's
  * views meet its events — systems never import each other, every
@@ -22,26 +23,20 @@
  *
  * **It lives in `src/sim/` rather than `server/` because it is not the
  * server's** (`BABYLON_EXIT.md` X2.5a): the core reads no clock and draws no
- * seed of its own, so a host — `Match`, `simulate`, and since X2.5a C4a the
- * offline page (`core/Game.ts`, which simulates no round of its own) — hands
+ * seed of its own, so a host — `Match`, `simulate`, `corecheck` — hands
  * it the round's seed in `RoundSpec`, its world as the data `buildSimWorld`
- * takes (the page's is `collisionOf` its own build), and its wall-clock anchor
+ * takes (the collider bake and the floor), and its wall-clock anchor
  * through `anchor` and `drop` — and, for a host that profiles, the clock its
  * step's phases are timed with (`SimCoreOptions.timing`, `timeSteps`), read
- * only into `frame.timing` and never by anything that decides (C6). Nothing
- * in this directory may import from
- * `server/`. **The page reads its STATE off the frame and its NEWS off the
- * ring and nothing else** (`BABYLON_EXIT.md` X2.5a C5): a core built with
- * `publish` fills `frame` (`src/sim/frame.ts`) at the end of every `step`,
- * and on the first READ after any other call that can change it — `submit`,
- * `startRound`, `addPlayer`, `removePlayer`, `releaseWorld` mark it stale
- * rather than filling it, so a host that submits three reports between two
- * steps pays for one fill, not four — and the page's views read that copy
- * through `src/sim/mirror.ts`, never an object of this class — through its
- * HOST (`src/sim/simHost.ts`, `BABYLON_EXIT.md` X2.5b), which holds this class
- * in the page's own thread or in a Worker (`src/sim/simWorker.ts`) and hands
- * the page the frame and the news as numbers either way. The page lets the
- * world go between rounds with `releaseWorld`.
+ * only into `timing` (`src/sim/stepTiming.ts`) and never by anything that
+ * decides (C6). Nothing in this directory may import from `server/`.
+ *
+ * **Its hosts are `Match`, `simulate` and `server/corecheck.ts`, and no page
+ * holds one** (`BABYLON_EXIT.md` X2.5c). Offline the page is a client of a
+ * `Match` of its own — in a Worker (`server/localMatchWorker.ts`) or in the
+ * page's thread — exactly as it is a client of a remote one, so what the page
+ * learns of a round it learns off the wire, and this class publishes no copy
+ * of its state for anybody to read.
  *
  * **Everything it has to SAY leaves through one event ring and nothing else**
  * (`src/sim/events.ts`, `BABYLON_EXIT.md` X2.5a C2). There is no outward
@@ -78,19 +73,18 @@
  * on team 1 at every rotation — and fields the map's own `perTeamOf` out of
  * it, which is what makes Sarab twenty-four a side in a match and every other
  * map eight. An OWNED match (`BABYLON_EXIT.md` X2.5c C2) never rotates and
- * asks for the map's own roster instead, as the offline page does. See
- * `server/Roster.ts` for the whole argument, including why human capacity
- * stays at sixteen whatever the map fields. A host whose pool
- * is the map's own (the offline page, since C4a) states it and fields all of
- * it. Either way `startRound` re-benches every seated person over the bot in
+ * asks for the map's own roster instead — which is how the page's local
+ * match plays offline. See `server/Roster.ts` for the whole argument,
+ * including why human capacity stays at sixteen whatever the map fields. A
+ * host whose pool is the map's own states it and fields all of it. Either way `startRound` re-benches every seated person over the bot in
  * their slot itself, last.
  *
  * **A person reaches the simulation through ONE door: `submit`**
  * (`src/sim/commands.ts`), applied on arrival, its results written to the
  * ring. `Match` validates a client's claim (the rate buckets, the cones, the
  * slips, the movement and drive validators, the corrections) and submits
- * what it accepts; the offline page submits its player's acts trusted. What
- * DECIDES is here, once, for both: whose body moves, which round is resolved
+ * what it accepts — a remote peer's and, offline, the page's own player's
+ * alike. What DECIDES is here, once, for every host: whose body moves, which round is resolved
  * against what, the pouches, the seat policy (`mount`/`dismount` around
  * `seat`), when a person comes back in, and what a person's REPORTED landing
  * costs their helicopter (`applyDrive` → `src/sim/reportedLanding.ts`, spent
@@ -168,12 +162,11 @@ import type { GameMap } from "../world/MapBuilder";
 import type { MapDef } from "../world/maps";
 import type { MapCollision } from "../world/collision";
 import type { Heightfield } from "../world/layout";
-import { TerrainField } from "../world/TerrainField";
 import { LagComp } from "./LagComp";
 import { SimPlayer } from "./SimPlayer";
 import { ReportedLanding } from "./reportedLanding";
 import { buildSimWorld } from "./simWorld";
-import { SIM_PHASES, fillFrame, newFrame, type SimFrame } from "./frame";
+import { SIM_PHASES, newStepTiming, type StepTiming } from "./stepTiming";
 import type { ShotCommand, SimCommand } from "./commands";
 import {
   EV,
@@ -203,13 +196,12 @@ import {
   type EventCursor,
 } from "./events";
 
-/** `SIM_PHASES` slots, by name — `step`'s timing writes (`frame.timing`). */
+/** `SIM_PHASES` slots, by name — `step`'s timing writes (`timing`). */
 const SIM_CONQUEST = SIM_PHASES.indexOf("conquest");
 const SIM_VEHICLES = SIM_PHASES.indexOf("vehicles");
 const SIM_BOTS = SIM_PHASES.indexOf("bots");
 const SIM_GRENADES = SIM_PHASES.indexOf("grenades");
 const SIM_ANTITANK = SIM_PHASES.indexOf("antiTank");
-const SIM_PUBLISH = SIM_PHASES.indexOf("publish");
 
 /**
  * Everything a round is, as its HOST hands it over: the map, its world as data
@@ -259,9 +251,10 @@ export interface SimCoreOptions {
   /**
    * The HOST holds a person's respawn clock, and a `deploy` is honoured the
    * moment it is submitted rather than once this core's clock has run out.
-   * The offline page's: nothing steps under its deploy screen (the bots do
-   * not fight while the player chooses), so the core's clock cannot be the
-   * one that decides — the page owns the wait, as it always has. Either way
+   * An OWNED match's (`Match.owned`, the page's local match offline):
+   * nothing steps under its owner's deploy screen (the bots do not fight
+   * while the player chooses), so the core's clock cannot be the one that
+   * decides — the page owns the wait, as it always has. Either way
    * the spawn goes through `deployPerson`, the door the reinforcement pass
    * uses: one door, two triggers, the spawn stream drawn the same way.
    */
@@ -269,24 +262,15 @@ export interface SimCoreOptions {
   /**
    * The CLOCK the step's phases are timed with, for a host that files them
    * (`BABYLON_EXIT.md` X2.5a C6, the profiler's `sim` phase): milliseconds,
-   * in whatever units and origin the host wants `FrameTiming.start` in —
-   * offline the page's own `performance.now`, `simulate --phases` Node's.
+   * in whatever units and origin the host wants `StepTiming.start` in —
+   * the page's own `performance.now` for the page's local match (which posts
+   * the row back for the profiler to file), `simulate --phases` Node's.
    * **Injected, because this class reads no clock of its own**, and read
-   * only to write `frame.timing`: nothing in the simulation ever sees a
-   * reading, so a timed step and an untimed one are the same step. Absent,
-   * `timeSteps` cannot turn timing on. The authority passes none.
+   * only to write `timing`: nothing in the simulation ever sees a reading,
+   * so a timed step and an untimed one are the same step. Absent,
+   * `timeSteps` cannot turn timing on. A remote authority passes none.
    */
   timing?: () => number;
-  /**
-   * Keep `frame` filled — the STATE a host reads the round off without an
-   * object of this class (`src/sim/frame.ts`, `BABYLON_EXIT.md` X2.5a C5). The
-   * offline page's, whose views read nothing else, and the shape X2.5b posts
-   * out of a Worker. **Off on the authority**: `Match` reads its validators'
-   * and its snapshot's answers off this process's own objects, in-process,
-   * and a frame nobody reads is a copy of every body paid every tick.
-   * `simulate --frame` turns it on to price it.
-   */
-  publish?: boolean;
   /**
    * The shortest interval between two of a person's `drive` reports that is
    * a RATE, seconds — closer than this and the second is no sample for the
@@ -311,29 +295,16 @@ export class SimCore {
   private timed = false;
   /** The clock as the phase being timed opened — `openPhase`. */
   private phaseT0 = 0;
-  /** Whether `frame` is kept filled — `SimCoreOptions.publish`. */
-  readonly publishing: boolean;
   /** `SimCoreOptions.reportGap`, handed to every `ReportedLanding`. */
   private readonly reportGap: number | undefined;
   /**
-   * The standing round as numbers (`src/sim/frame.ts`), when this core is
-   * `publishing` — empty otherwise. Filled at the end of every `step`; any
-   * other call that changes the round only marks it `stale`, and the first
-   * read after that fills it (`frame`), so what a reader sees is always the
-   * round as it stands and a host that never looks between two steps pays
-   * one fill a step. The object stands for the life of the core; a section
-   * inside it is rebuilt when its count moves (a new pool, a new map), so a
-   * reader holds the frame and never a section of it.
+   * How long the last timed `step` took, phase by phase
+   * (`src/sim/stepTiming.ts`) — written only while `timeSteps` is on, and
+   * `total` -1 otherwise. MEASUREMENT: nothing in the simulation reads it.
+   * The row stands for the life of the core and is written in place; a host
+   * that hands it on copies it (the local match posts it, which clones).
    */
-  private readonly framed: SimFrame = newFrame();
-  /** A call since the last fill changed what `framed` would say. */
-  private stale = false;
-
-  /** `framed`, filled first if a call since the last fill left it stale. */
-  get frame(): SimFrame {
-    if (this.stale) this.publish();
-    return this.framed;
-  }
+  readonly timing: StepTiming = newStepTiming();
 
   readonly combat: CombatSystem;
   readonly battle: BattleSystem;
@@ -405,7 +376,7 @@ export class SimCore {
   readonly players = new Map<number, SimPlayer>();
   /**
    * `players`' values in the map's own order (join order), held as an array
-   * so the step and the frame walk them by INDEX — a `Map` iterator is an
+   * so the step walks them by INDEX — a `Map` iterator is an
    * object, and the step runs every frame (`docs/profiling.md`: nothing
    * allocates per frame while the profiler records). Written beside the map
    * by `addPlayer` and `removePlayer` and by nothing else.
@@ -486,7 +457,6 @@ export class SimCore {
     this.rewind = options.rewind ?? false;
     this.hostHoldsRespawn = options.hostHoldsRespawn ?? false;
     this.clock = options.timing ?? null;
-    this.publishing = options.publish ?? false;
     this.reportGap = options.reportGap;
     // No scene and no material factory: the last thing that wanted a factory
     // was the fleet's rigs, which are the client's `VehicleViews` since
@@ -497,8 +467,8 @@ export class SimCore {
     // `onRound` is wired to a `round` EVENT and nothing more (X2.5a C2).
     this.combat = new CombatSystem();
     // …and the roster's simulation without a rig in it: the bodies, their
-    // poses as numbers and the LOD are `BattleView`'s, which only a client
-    // builds (`BABYLON_EXIT.md` X2.2 C7).
+    // poses as numbers and the LOD are a client's, off the wire
+    // (`BABYLON_EXIT.md` X2.2 C7).
     this.battle = new BattleSystem(this.combat, this.random);
     // The pool is NOT built here: its size is the round's `RoundSpec.pool`,
     // and `startRound` builds it (`setRoster` is a no-op when the size has not
@@ -574,67 +544,6 @@ export class SimCore {
     this.events.drainInto(out);
     this.pendingRound = -1;
     this.personDeaths.clear();
-  }
-
-  /**
-   * Refreshes `frame` off the live objects, when this core is `publishing` —
-   * at the end of every call below that can change what is in it. Public for
-   * a harness that has written the core's state directly and wants the
-   * readers to see it; nothing in the game calls it.
-   */
-  publish(): void {
-    this.stale = false;
-    if (this.publishing) fillFrame(this.framed, this);
-  }
-
-  /**
-   * What the calls that change the round between steps say instead of
-   * `publish`: the frame is out of date, and the next READ fills it. Nothing
-   * is filled for a host that does not look — `Match`, which never does, and
-   * the page between its per-frame reports and its step.
-   */
-  private markStale(): void {
-    if (this.publishing) this.stale = true;
-  }
-
-  /**
-   * Lets go of the standing round's world — the host's teardown, for a host
-   * that will not start another one at once (the offline page going back to
-   * its menu, or into a match or the editor, none of which steps this core).
-   *
-   * `startRound`'s first half without its second: every seated person put
-   * back on foot before the fleet under them goes, the crews disbanded, the
-   * hulls out of the fight and disposed, nothing left in the air, every
-   * system's handle on the map's queries dropped, and the map itself. The
-   * people stay seated in their SLOTS — a host that is done with them says so
-   * with `removePlayer`. After this `step` refuses (there is no map) and so
-   * does every `submit` but a `kit` or a `deploy`, until `startRound`.
-   */
-  releaseWorld(): void {
-    for (const player of this.players.values()) {
-      if (player.seat >= 0) this.seat(player, null);
-    }
-    this.crew.clear();
-    this.crew.setMap(null);
-    this.driven.clear();
-    this.landings.clear();
-    this.landingOrder.length = 0;
-    this.laid.clear();
-    for (const tank of this.vehicles.hulls) this.battle.removeHuman(tank);
-    this.vehicles.dispose();
-    this.grenades.reset();
-    this.grenades.setWorld(null);
-    this.grenades.setTerrain(new TerrainField());
-    this.antiTank.reset();
-    this.antiTank.setWorld(null);
-    this.antiTank.setTerrain(new TerrainField());
-    this.combat.setWorld(null);
-    this.glass.clearMap();
-    this.battle.reset();
-    this.battle.clearMap();
-    this.map?.dispose();
-    this.map = null;
-    this.markStale();
   }
 
   /**
@@ -891,7 +800,6 @@ export class SimCore {
     for (const player of this.players.values()) {
       this.battle.setBenched(this.battle.bots[player.slot], true);
     }
-    this.markStale();
     // The wall clock is NOT read here: the host calls `anchor` the moment this
     // returns, which is where the anchor has always been taken — LAST, after
     // the dispose, the build and the reset. See `anchor` for why that place.
@@ -906,24 +814,19 @@ export class SimCore {
    */
   step(dt: number): boolean {
     const clock = this.timed ? this.clock : null;
-    const t = this.framed.timing;
+    const t = this.timing;
     if (clock) {
       t.at.fill(-1);
       t.ms.fill(0);
       t.start = clock();
     }
     const live = this.advance(dt);
-    if (clock) this.openPhase(SIM_PUBLISH);
-    this.publish();
-    if (clock) {
-      this.closePhase(SIM_PUBLISH);
-      t.total = clock() - t.start;
-    }
+    if (clock) t.total = clock() - t.start;
     return live;
   }
 
   /**
-   * Whether `step` times its phases into `frame.timing` — the profiler's
+   * Whether `step` times its phases into `timing` — the profiler's
    * `sim` phase (`BABYLON_EXIT.md` X2.5a C6). A host turns it on while
    * something is recording and off when nothing is, so an unwatched step
    * reads no clock at all. A no-op on a core built without a clock. Off
@@ -931,22 +834,22 @@ export class SimCore {
    */
   timeSteps(on: boolean): void {
     this.timed = on && this.clock !== null;
-    if (!this.timed) this.framed.timing.total = -1;
+    if (!this.timed) this.timing.total = -1;
   }
 
   /** Opens `SIM_PHASES[i]` on a timed step. MEASURES and never decides. */
   private openPhase(i: number): void {
     const t = this.clock!();
-    this.framed.timing.at[i] = t - this.framed.timing.start;
+    this.timing.at[i] = t - this.timing.start;
     this.phaseT0 = t;
   }
 
   /** Closes `SIM_PHASES[i]`, opened by `openPhase`. */
   private closePhase(i: number): void {
-    this.framed.timing.ms[i] = this.clock!() - this.phaseT0;
+    this.timing.ms[i] = this.clock!() - this.phaseT0;
   }
 
-  /** `step`'s simulation, before the frame is refreshed off it. */
+  /** `step`'s simulation, inside the clock's bracket. */
   private advance(dt: number): boolean {
     if (!this.map) return false;
     this.tick++;
@@ -1053,7 +956,7 @@ export class SimCore {
     }
 
     // The phases are timed only on a host that asked (`timeSteps`), and in
-    // `SIM_PHASES`' order — see `frame.timing`. Nothing reads a reading back.
+    // `SIM_PHASES`' order — see `timing`. Nothing reads a reading back.
     const timed = this.timed;
 
     // Both kinds of body, in one list. `ConquestSystem` counts occupancy off
@@ -1123,8 +1026,8 @@ export class SimCore {
     }
     if (timed) this.closePhase(SIM_VEHICLES);
 
-    // No camera: the LOD is a drawing budget and belongs to `BattleView`,
-    // which this side never builds. It used to be handed the map's centre
+    // No camera: the LOD is a drawing budget and belongs to a client's
+    // roster, which this side never builds. It used to be handed the map's centre
     // here, and what that decided about the fight was the last thing to go
     // (X2.2 C6, C7).
     if (timed) this.openPhase(SIM_BOTS);
@@ -1223,8 +1126,8 @@ export class SimCore {
   /**
    * Everything the systems need from each other, and everything they say.
    *
-   * The sounds and the minimap reveals are the page's (`Game.onSimEvent`,
-   * off the events below), so what is here is the callbacks
+   * The sounds and the minimap reveals are the page's (off the events below,
+   * as the wire carries them), so what is here is the callbacks
    * that are actually about the fight — and, since X2.5a C2, a ring write at
    * the end of every one that has news in it. **Every system callback here is
    * this method's and none is a host's**: a callback has one owner, the owner
@@ -1508,13 +1411,6 @@ export class SimCore {
    * a `kit` or a `deploy` before there is a world.
    */
   submit(slot: number, cmd: SimCommand): boolean {
-    const acted = this.apply(slot, cmd);
-    this.markStale();
-    return acted;
-  }
-
-  /** `submit`'s simulation, before the frame is marked stale off it. */
-  private apply(slot: number, cmd: SimCommand): boolean {
     const player = this.players.get(slot);
     if (!player) return false;
     switch (cmd.t) {
@@ -1560,10 +1456,9 @@ export class SimCore {
         return this.throwGrenade(player, cmd.origin, cmd.dir, cmd.kind);
       case "ordnance": {
         // The third slot is carried by a body, never out of a hull. Refused
-        // ALOUD, as the pool's refusal is: the host that predicted the pouch
-        // spent the item before asking, and from a Worker it may have asked
-        // from a body this side has already killed or seated
-        // (`BABYLON_EXIT.md` X2.5b).
+        // ALOUD, as the pool's refusal is, for the HOST: a client that
+        // predicted the pouch spent the item before asking, and may have
+        // asked from a body this side has already killed or seated.
         if (!player.alive || player.ordnance <= 0 || player.seat >= 0) {
           emitPair(this.events, EV.ordnanceRefused, this.tick, player.slot,
             refusedCode(cmd.kind === "mine" ? "mine" : "rocket"));
@@ -1621,11 +1516,10 @@ export class SimCore {
   /**
    * A person's throw, from the pouch this side counts. Spent only if the arm
    * accepts it — the pool refuses rather than stealing a live slot — and a
-   * refused throw costs nothing but says so (`ordnanceRefused`, so a host
-   * that predicted the pouch can take its throw back), whichever gate refused
-   * it: the offline page books a throw before asking, and from a Worker it can
-   * ask from a body this side has already killed or seated
-   * (`BABYLON_EXIT.md` X2.5b).
+   * refused throw costs nothing but says so (`ordnanceRefused`, for the
+   * host, whose client may have predicted the pouch), whichever gate refused
+   * it: a client books a throw before asking, and can ask from a body this
+   * side has already killed or seated.
    */
   private throwGrenade(
     player: SimPlayer,
@@ -1703,15 +1597,6 @@ export class SimCore {
     player.apply(0, x, y, z, player.yaw, 0, false, false);
     this.seatAnswer(player, -1, player.position, player.yaw);
     return true;
-  }
-
-  /**
-   * The first slot of `team`'s block — where a host seats its one person
-   * (`addPlayer(firstSlotOf(team), team)`). The pool is laid out team 0 then
-   * team 1 in two equal blocks, so team 1's begins at the pool's half.
-   */
-  firstSlotOf(team: Team): number {
-    return team === 0 ? 0 : this.battle.bots.length / 2;
   }
 
   /**
@@ -2204,7 +2089,6 @@ export class SimCore {
     // it); the round's own re-bench, last of `startRound`, covers that person.
     const bot = this.battle.bots[slot];
     if (bot) this.battle.setBenched(bot, true);
-    this.markStale();
     return player;
   }
 
@@ -2232,7 +2116,6 @@ export class SimCore {
     this.battle.removeHuman(player);
     const bot = this.battle.bots[slot];
     if (bot) this.battle.setBenched(bot, false);
-    this.markStale();
   }
 
   /**
@@ -2500,8 +2383,9 @@ export class SimCore {
    * about the BODY in that slot, which is what makes benching invisible here
    * exactly as it is everywhere else. Sized to the roster in `startRound`.
    *
-   * The ONE board, offline as on the authority — the page draws it off the
-   * frame (`ScoresMirror`) — which is what makes a kill worth what a player
+   * The ONE board, offline as on the authority — offline the page's own
+   * local match holds it, and the page draws it off the wire's `scores` as a
+   * remote client does — which is what makes a kill worth what a player
    * learned it was worth wherever they learned it. `Match` watches its
    * `version` to decide when the table has to go out again.
    */

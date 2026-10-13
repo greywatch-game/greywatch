@@ -21,8 +21,8 @@ import { CONFIG } from "../config";
 import { RAGDOLL_BONES, type SoldierRig } from "../entities/SoldierModel";
 
 /**
- * What a shadow needs of a soldier: a rig to read joints off. A bot's `BotRig`
- * satisfies it (the `Bot` itself has no rig), and so does a netplay body.
+ * What a shadow needs of a soldier: a rig to read joints off. A body off the
+ * wire (`NetSoldier`) satisfies it — a `Bot` itself has no rig.
  */
 export interface ShadowBody {
   readonly rig: SoldierRig;

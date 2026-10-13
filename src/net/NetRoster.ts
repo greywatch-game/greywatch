@@ -60,8 +60,7 @@ export class NetRoster {
   /**
    * How far a body is worth drawing — the match's map's, pushed by
    * `Game.installMap` (and again by `wireNet`, for a join into a match already
-   * standing). `BattleView.viewDistance` is the same field for the same
-   * reason: past the fog there is nothing to see, and a map with no fog has no
+   * standing). Past the fog there is nothing to see, and a map with no fog has no
    * such distance short of its own far side — which is why a map may now state
    * one outright as `EnvironmentSpec.bodyDrawDistance`, resolved by
    * `bodyDrawDistanceOf` and pushed to the three body gates together.
@@ -175,8 +174,7 @@ export class NetRoster {
   /**
    * How many bodies a side the standing map fields, from `Game.buildRound`.
    *
-   * **The exact counterpart of `BattleSystem.setRoster` and
-   * `BattleView.syncPool` together, down to being the one
+   * **The exact counterpart of `BattleSystem.setRoster`, down to being the one
    * place "built once and never disposed" bends and to bending at a MAP
    * CHANGE** — the world is being torn down and rebuilt anyway and a loading
    * card is already up. It is called for the same reason too: a pool built to
@@ -290,7 +288,7 @@ export class NetRoster {
         const soldier = new NetSoldier(this.scene, this.mats, slot, team as Team);
         // Wired at construction, because a soldier lives exactly as long as
         // the pool it is in — the same lifetime `BattleSystem` gives a bot's
-        // own hooks and `BattleView` its rig.
+        // own hooks.
         soldier.onStep = () => this.onStep(soldier);
         this.soldiers.push(soldier);
         this.bySlot[slot] = soldier;
@@ -386,8 +384,8 @@ export class NetRoster {
         soldier.setEnabled(false);
         continue;
       }
-      // A corpse under physics is re-shown here for the same reason
-      // `BattleView` keeps a ragdolled bot's rig shown inside the fog: the
+      // A corpse under physics is re-shown here because the pool keeps a
+      // ragdolled rig shown inside the fog: the
       // branch above hides whatever walks out of range, and a body that came
       // back into it has no other way home. `NetSoldier.update` cannot do it —
       // it stands aside entirely while the pool owns the rig.

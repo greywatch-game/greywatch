@@ -712,8 +712,8 @@ export interface SoldierRig {
    *
    * Deliberately NOT a ragdoll bone and deliberately not in `RAGDOLL_BONES`:
    * it is welded to the torso, so it falls with the body under Havok as part
-   * of the chest and needs no joint of its own. See `Bot.launcher` and
-   * `BotRig`, which shows it.
+   * of the chest and needs no joint of its own. See `Bot.launcher`, and
+   * `NetSoldier`, which shows it.
    */
   launcher: TransformNode;
   /** Muzzle landmark, for tracer origins. */
@@ -727,9 +727,9 @@ export interface SoldierRig {
 }
 
 /**
- * Everything `RagdollSystem` needs of a body it is about to throw. A bot's
- * `BotRig` satisfies it structurally (the `Bot` itself has no rig to throw),
- * and so do a netplay body and the player's corpse stand-in, which is the
+ * Everything `RagdollSystem` needs of a body it is about to throw. A body off
+ * the wire (`NetSoldier`) satisfies it structurally (a `Bot` itself has no rig
+ * to throw), and so does the player's corpse stand-in, which is the
  * whole point: the pool has no business knowing which of them it holds. The
  * three vectors are either library's, since a bot's are `src/math`.
  *
@@ -737,7 +737,7 @@ export interface SoldierRig {
  * soldier rig, and because the alternative is `DeathCam` importing a type from
  * another system — the one thing the wiring rules in CLAUDE.md forbid. Nothing
  * implementing it has to import it either; TypeScript's structural typing is
- * what keeps `BotRig` free of any knowledge that a physics engine exists.
+ * what keeps `NetSoldier` free of any knowledge that a physics engine exists.
  */
 export interface RagdollSubject {
   readonly rig: SoldierRig;

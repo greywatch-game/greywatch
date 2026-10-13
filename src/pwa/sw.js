@@ -116,12 +116,13 @@ const DOCS = new Set(["/profile_viewer.html", "/profile_viewer"]);
  * **Cross-origin isolation is a property of the RESPONSE, and this worker
  * answers responses** (`BABYLON_EXIT.md` X2.5b). COOP `same-origin` and COEP
  * `require-corp` are what give the page `crossOriginIsolated`, which is what
- * gives it `SharedArrayBuffer`, which is what lets the simulation run in its
- * Worker (`src/sim/simHost.ts`). A navigation answered from the cache is
- * answered with whatever headers were STORED — and a copy stored by a build
- * from before the headers existed, or copied across from another cache by the
- * install below, has none: the installed app would silently lose isolation
- * offline and run the simulation in the page. The same failure shape as
+ * gave it the `SharedArrayBuffer` the simulation's Worker once needed — the
+ * local match's Worker (`src/net/matchHost.ts`) posts JSON and needs none, so
+ * the pair goes at `BABYLON_EXIT.md` X2.5c C6. Until then: a navigation
+ * answered from the cache is answered with whatever headers were STORED — and
+ * a copy stored by a build from before the headers existed, or copied across
+ * from another cache by the install below, has none: the installed app would
+ * silently lose isolation offline. The same failure shape as
  * `DOCS` beside it, so the same cure: every same-origin response this worker
  * hands back is given the pair, network or cache alike — the document and the
  * Worker's own script both, since a Worker is isolated by its own headers.

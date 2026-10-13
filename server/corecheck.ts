@@ -123,8 +123,6 @@ import type { Heightfield } from "../src/world/layout";
 import { SimCore, type RoundSpec, type SimCoreOptions } from "../src/sim/SimCore";
 import type { KitCommand } from "../src/sim/commands";
 import type { SimPlayer } from "../src/sim/SimPlayer";
-import { SimMirror } from "../src/sim/mirror";
-import { simCheck } from "../src/sim/simCheck";
 import {
   EV,
   EventCursor,
@@ -273,19 +271,9 @@ class CoreHost implements Host {
   readonly log = new Log();
   private readonly cursor = new EventCursor();
   private readonly dir = new Vector3();
-  /**
-   * With `mirror`, the page's readers (`src/sim/mirror.ts`) off a structured
-   * clone of the core's frame, held against the live core by `simCheck`
-   * after every drain — the page's `?simcheck` and `?simcopy` together, with
-   * the PERSON paths in it that a bench never has.
-   */
-  private readonly mirror: SimMirror | null;
-  /** `simCheck` passes run and mismatches summed, and the first few by name. */
-  readonly mirrorChecks = { passes: 0, mismatches: 0, first: [] as string[] };
 
-  constructor(options: SimCoreOptions = { rewind: true }, mirror = false) {
-    this.core = new SimCore(mirror ? { ...options, publish: true } : options);
-    this.mirror = mirror ? new SimMirror() : null;
+  constructor(options: SimCoreOptions = { rewind: true }) {
+    this.core = new SimCore(options);
   }
 
   start(world: World, fielded?: number): void {
@@ -305,16 +293,6 @@ class CoreHost implements Host {
   flush(): void {
     this.core.drain(this.cursor);
     this.log.absorb(this.cursor);
-    if (!this.mirror) return;
-    // Published again first: a fixture may have written the core directly,
-    // which no door of the core's publishes (`SimCore.publish`'s note).
-    this.core.publish();
-    this.mirror.sync(structuredClone(this.core.frame));
-    const tally = this.mirrorChecks;
-    tally.passes++;
-    tally.mismatches += simCheck(this.core, this.mirror, {}, (what) => {
-      if (tally.first.length < 8) tally.first.push(`tick ${this.core.tick} ${what}`);
-    });
   }
 
   /** `Match.onDeploy`'s two submits: the kit the deploy confirms, then the ask. */
@@ -1103,7 +1081,7 @@ const BENCH = CONFIG.profiling.bench;
 const BENCH_ROUND: RoundChoice = { seed: BENCH.seed, difficulty: CONFIG.bots.skill.defaultDifficulty };
 const BENCH_STEPS = Math.round(BENCH.leadSeconds / BENCH.dt) + Math.round(BENCH.fightSeconds / BENCH.dt);
 
-/** The bench's fold (`Game.onSimEvent`): every award and death after `mark`, stamped from `tick0`. */
+/** The bench's fold (the local match's, `server/localMatch.ts`): every award and death after `mark`, stamped from `tick0`. */
 function benchFight(log: Log, mark: number, tick0: number): FightHash {
   const fight = new FightHash();
   for (const ev of log.events.slice(mark)) {
@@ -2501,8 +2479,8 @@ interface Run {
   host: Host;
 }
 
-async function runCore(world: World, script: Script, tag: string, mirror = false): Promise<Run> {
-  const host = new CoreHost(undefined, mirror);
+async function runCore(world: World, script: Script, tag: string): Promise<Run> {
+  const host = new CoreHost();
   host.start(world);
   const checks = new Checks(tag);
   await script(host, checks);
@@ -2546,10 +2524,9 @@ function bodyState(core: SimCore): unknown {
       team: b.team,
       aside: core.battle.aside(b),
       deathFrom: [b.deathFrom.x, b.deathFrom.y, b.deathFrom.z],
-      // The SOLVED pose, not the private cache behind it: a core that
-      // publishes solves every bot's joints each step and one that does not
-      // solves only on a read, so the caches differ while the answer — a pure
-      // function of the pose — cannot.
+      // The SOLVED pose, not the private cache behind it: the cache is filled
+      // only on a read, so two cores read at different moments differ in it
+      // while the answer — a pure function of the pose — cannot.
       joints: { ...b.solved },
     })),
     players: [...core.players.values()].map((p) => ({
@@ -2592,9 +2569,9 @@ async function main(): Promise<void> {
     const world: World = { def, ...(await loadSimWorld(def)) };
 
     const a = await runCore(world, script, `${id}/core`);
-    // The repeat PUBLISHES and reads the frame back after every drain: the
-    // same stream from it is what says the frame costs the fight nothing.
-    const b = await runCore(world, script, `${id}/core#2`, true);
+    // The repeat: the same seed and the same commands on a second core must
+    // say the same stream, which is what says nothing outside them decides.
+    const b = await runCore(world, script, `${id}/core#2`);
     const m = await runMatch(world, script, `${id}/match`);
 
     // The first core run's assertions are the pass list; the repeat and the
@@ -2621,12 +2598,6 @@ async function main(): Promise<void> {
       name: `same seed + same commands twice: identical event-stream hash (${a.log.digest()}, ${a.log.events.length} events)`,
       ok: a.log.digest() === b.log.digest(),
       detail: `${a.log.digest()} vs ${b.log.digest()}`,
-    });
-    const mc = (b.host as CoreHost).mirrorChecks;
-    report(tag, {
-      name: `the frame's readers equal the live core, Object.is, after every drain (${mc.passes} passes)`,
-      ok: mc.passes > 0 && mc.mismatches === 0,
-      detail: `${mc.mismatches} mismatches: ${mc.first.join("; ")}`,
     });
     const coreScore = scoreList(a.log.events);
     const matchScore = scoreList(m.log.events);

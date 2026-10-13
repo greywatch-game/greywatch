@@ -2,9 +2,10 @@
  * bench/fightHash.ts — `FightHash`: one string that says whether two runs of
  * the benchmark's round fought the same fight.
  * Owns: the fold — every award and death, in order, with the step it landed
- * on — and nothing about where those come from: the page folds the round's
- * events as it draws them (`Game.onSimEvent`), and `server/corecheck.ts` folds
- * a local `Match`'s the same way to show the round it plays is the bench's.
+ * on — and nothing about where those come from: the page's local match folds
+ * its round's events as it drains them (`server/localMatch.ts`), and
+ * `server/corecheck.ts` folds a core's and a `Match`'s the same way to show
+ * the round they play is the bench's.
  * Invariants: allocation-free per event, and a pure function of what it is
  * handed. Imports nothing, so the authority's bundle may hold it (the
  * babylon-free gate walks every server import).

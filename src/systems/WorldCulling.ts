@@ -127,8 +127,8 @@ export interface PooledBody {
  * One pooled body: the rig root the roster switches, and whether what was filed
  * under it is in the candidate list right now.
  *
- * The root rather than a flag of our own, because it is what `BotRig` (following
- * `Bot.shown`) and `NetSoldier.setEnabled` already write and there must not be a second
+ * The root rather than a flag of our own, because it is what
+ * `NetSoldier.setEnabled` already writes and there must not be a second
  * answer to "is this body in the round". `isEnabled(false)` — the mesh's OWN
  * flag, no ancestor walk — because a rig root is parented to nothing and both
  * of those callers set it directly; asking for the inherited answer would walk
@@ -402,10 +402,9 @@ export class WorldCulling {
    * filed last time has been disposed by now, and a pool still holding one
    * would hand Babylon a dead mesh.
    *
-   * **Both pools are handed over, not whichever one this round steps.** A
-   * netplay round leaves `BattleView`'s rigs built and never enables one, so
-   * they are exactly the case this exists for — sixteen bodies of pure walk —
-   * and an offline round's `NetRoster` is empty and files nothing.
+   * Every pooled body is handed over, whether or not this round enables it:
+   * a rig built and never enabled is exactly the case this exists for — a
+   * body of pure walk.
    *
    * The ROOT is filed alongside the drawn meshes on purpose: it is an
    * invisible capsule Babylon rejects late rather than early, and one per body
@@ -456,7 +455,7 @@ export class WorldCulling {
       this.evaluate(eye.x, eye.y, eye.z);
     }
     // Unconditional, and it is the roster rather than the camera: a body is
-    // switched by DISTANCE from the camera (`BattleView`'s LOD gates)
+    // switched by DISTANCE from the camera (`NetRoster`'s LOD gate)
     // and by being alive, benched, aside or crewed, so there is no travelled
     // distance this could hang off. It is one property read per BODY — 48 on
     // the densest map in the tree, against the 1,008 nodes a rebuild answers

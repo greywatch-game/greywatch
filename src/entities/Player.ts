@@ -2196,10 +2196,10 @@ export class Player implements Combatant {
 
   /**
    * Gives back a grenade booked for a throw the simulation then refused — the
-   * offline core's `ordnanceRefused` (`Game.onSimEvent`), which arrives AFTER
-   * the booking whenever the core is not in this thread (`BABYLON_EXIT.md`
-   * X2.5b): the page books the throw it predicts, as a match's client does,
-   * and this is the refusal taking it back. Bounded by what is carried, as
+   * core's `ordnanceRefused`, which arrives AFTER the booking: the page books
+   * the throw it predicts, as a match's client does, and this is the refusal
+   * taking it back. (Nothing calls it while `ordnanceRefused` is not relayed
+   * onto the wire — `BABYLON_EXIT.md` X2.5c.) Bounded by what is carried, as
    * `returnRound` is by the magazine.
    */
   returnGrenade(): void {

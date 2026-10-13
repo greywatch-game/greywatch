@@ -195,7 +195,7 @@ import {
 import type { KillLedger } from "../systems/killRules";
 import { GrenadeFx } from "../systems/GrenadeFx";
 import { GrenadeSystem, type BlastGround } from "../systems/GrenadeSystem";
-import { SIM_PHASES, type FrameTiming, type SimPhase } from "../sim/frame";
+import { SIM_PHASES, type StepTiming, type SimPhase } from "../sim/stepTiming";
 import { PhysicsWorld, type HavokInstance } from "../systems/PhysicsWorld";
 import { RagdollSystem } from "../systems/RagdollSystem";
 import { ReflectionSystem } from "../systems/ReflectionSystem";
@@ -302,9 +302,8 @@ const SIM_SLOT: Readonly<Record<SimPhase, number>> = {
   bots: P.simBots,
   grenades: P.simGrenades,
   antiTank: P.simAntiTank,
-  publish: P.simPublish,
 };
-/** …indexed as `frame.timing` is. */
+/** …indexed as `SimCore.timing` is. */
 const SIM_SLOTS: readonly number[] = SIM_PHASES.map((name) => SIM_SLOT[name]);
 
 /** Nobody — what the page's prediction systems are handed to hurt. */
@@ -585,7 +584,7 @@ export class Game {
    * nothing, so it waits here for the next frame that steps
    * (`fileLocalTiming`).
    */
-  private localTiming: FrameTiming | null = null;
+  private localTiming: StepTiming | null = null;
   /**
    * Seconds of this frame handed to the match as STEPPED (`advance`), so
    * `passLocalClock` hands it the rest as held. Zeroed there, once a frame.
@@ -4672,11 +4671,11 @@ export class Game {
     // none can be missed.
     if (this.volumetrics) this.seedVolumetrics(this.volumetrics, environment);
     this.shadows.setFogRange(environment.fogStart, environment.fogEnd);
-    // How far a BODY is worth drawing, to the three systems that gate on it: a
-    // rig is not drawn, a remote body is not drawn and a corpse is not worth
-    // tumbling. One number resolved once and pushed three times, which is what
-    // keeps `bots.lodDisableDistance` and `bots.death.maxDistance` the same
-    // distance by construction — see `config/fogWall.ts`.
+    // How far a BODY is worth drawing, to the two systems that gate on it: a
+    // body is not drawn and a corpse is not worth tumbling. One number
+    // resolved once and pushed to both, which is what keeps the roster's draw
+    // gate and `bots.death.maxDistance` the same distance by construction —
+    // see `config/fogWall.ts`.
     //
     // It used to be stated twice — here, where the fog is painted, and in
     // CONFIG, where those three read it — with a dev warning when a map

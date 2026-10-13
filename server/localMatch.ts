@@ -177,7 +177,7 @@ export function serveLocalMatch(owner: OwnerPort): void {
           steps,
           ended: m.game.conquest.winner !== null,
           // Cloned as it is posted, so the core's own row is never handed out.
-          timing: msg.timed && steps > 0 ? m.game.frame.timing : null,
+          timing: msg.timed && steps > 0 ? m.game.timing : null,
         };
       }
       case "hold":

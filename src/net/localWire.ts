@@ -12,7 +12,7 @@
  * Never: hold a `ClientMessage`. The owner channel is not the protocol: no
  * remote client can say any of this, and `server/wire.ts` never reads it.
  */
-import type { FrameTiming } from "../sim/frame";
+import type { StepTiming } from "../sim/stepTiming";
 
 /**
  * Whatever the owner channel runs over: the page's `Worker`, the Worker's own
@@ -77,7 +77,7 @@ export interface Advanced {
    * The LAST step's phases on the page's clock, when it was timed and
    * something stepped; null otherwise.
    */
-  timing: FrameTiming | null;
+  timing: StepTiming | null;
 }
 
 /** …and what comes back, one per call. */

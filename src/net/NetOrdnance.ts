@@ -104,7 +104,8 @@ export class NetOrdnance {
    *
    * Kept because the LAYER's own HUD counts them: the per-owner cap retires
    * your oldest when you lay a third, so this is a number a player is making a
-   * decision with. Offline the same figure is `AntiTankSystem.minesFor`.
+   * decision with — offline as in a match, the page being a client of its
+   * own local match.
    */
   private readonly laid = new Map<number, number>();
 
@@ -176,7 +177,7 @@ export class NetOrdnance {
     }
   }
 
-  /** How many mines `slot` has on the field. `AntiTankSystem.minesFor`'s twin. */
+  /** How many mines `slot` has on the field, as the last table said. */
   minesFor(slot: number): number {
     return this.laid.get(slot) ?? 0;
   }

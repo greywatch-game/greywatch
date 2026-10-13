@@ -12,9 +12,7 @@
     "useDefineForClassFields": false,
     "module": "ESNext",
     "moduleResolution": "bundler",
-    // ES2024 for the growable `SharedArrayBuffer` the simulation's Worker
-    // publishes through (`src/sim/publication.ts`, BABYLON_EXIT.md X2.5b).
-    "lib": ["ES2024", "DOM"],
+    "lib": ["ES2022", "DOM"],
     "strict": true,
     "noUnusedLocals": true,
     "noUnusedParameters": true,

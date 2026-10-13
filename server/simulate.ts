@@ -1,7 +1,7 @@
 /**
  * server/simulate.ts — Runs a whole Conquest round headlessly and prints what
  * happened. `npm run simulate [map] [difficulty] [rounds] [seed] [--events]
- * [--frame] [--phases]`.
+ * [--phases]`.
  *
  * **A round is a function of its map, its difficulty and its SEED**
  * (`src/systems/RoundRandom.ts`), and every round printed says which seed it
@@ -33,13 +33,6 @@
  * nothing `Match` sends. The lines are written between steps, outside the
  * timed region.
  *
- * **`--frame` builds the core `publish`ing** (`SimCoreOptions.publish`): the
- * frame the offline page reads (`src/sim/frame.ts`) is filled at the end of
- * every step, inside the timed region, so the tick printed is the tick with
- * the copy in it and the difference is its price. The authority does not
- * fill one (`Match` reads its own objects), so the plain run is the one that
- * measures a match. The frame's size is printed beside it.
- *
  * **`--phases` hands the core a clock and turns its step timing on**
  * (`SimCoreOptions.timing`, `SimCore.timeSteps`, `BABYLON_EXIT.md` X2.5a C6)
  * — the timing the page's profiler files as `sim` and its five children — and
@@ -47,7 +40,7 @@
  * the timed region, twelve times a step, so the tick printed is the tick with
  * the instrument in it; the plain run is still the one that measures a match,
  * which passes no clock. The fight is the same fight either way: the clock is
- * read into `frame.timing` and nothing else.
+ * read into `SimCore.timing` (`src/sim/stepTiming.ts`) and nothing else.
  *
  * This is the server's equivalent of playing a round, and it is the only way to
  * see the simulation on its own — no clients, no rendering, no wall clock. A
@@ -88,7 +81,7 @@ import { perTeamOf } from "../src/world/layout";
 import { freshSeed, parseSeed } from "../src/systems/RoundRandom";
 import type { DeathCause } from "../src/systems/killRules";
 import { SimCore } from "../src/sim/SimCore";
-import { SIM_PHASES, frameBytes } from "../src/sim/frame";
+import { SIM_PHASES } from "../src/sim/stepTiming";
 import { EV, EventCursor, decode, type EventKind, type Vec3 } from "../src/sim/events";
 import { loadSimWorld } from "./world";
 
@@ -168,7 +161,6 @@ async function runRound(mapId: string, difficulty: number, seed: number) {
   // printed below is the one a match pays.
   const game = new SimCore({
     rewind: true,
-    publish: publishFrame,
     timing: timePhases ? () => performance.now() : undefined,
   });
   game.timeSteps(timePhases);
@@ -322,7 +314,7 @@ async function runRound(mapId: string, difficulty: number, seed: number) {
     // What the step said, folded outside the clock above.
     read();
     if (timePhases) {
-      const t = game.frame.timing;
+      const t = game.timing;
       phaseTotal += t.total;
       for (let i = 0; i < SIM_PHASES.length; i++) phaseMs[i] += t.ms[i];
     }
@@ -386,8 +378,6 @@ async function runRound(mapId: string, difficulty: number, seed: number) {
     difficulty,
     seed,
     buildMs,
-    /** The published frame's size in bytes, or 0 when `--frame` is off. */
-    frameBytes: publishFrame ? frameBytes(game.frame) : 0,
     /**
      * `--phases`: the mean ms per step of the core's own timing — the whole
      * step and each `SIM_PHASES` entry — or null when not asked for.
@@ -598,12 +588,10 @@ function describe(ev: ReturnType<typeof decode>, game: SimCore): string {
 const argv = process.argv.slice(2);
 /** `--events`: print the ordered event list — see the header. */
 const printEvents = argv.includes("--events");
-/** `--frame`: keep the page's frame filled, to price it — see the header. */
-const publishFrame = argv.includes("--frame");
 /** `--phases`: the core times its own step — see the header. */
 const timePhases = argv.includes("--phases");
 const [mapId = "hollowmere", difficulty = "1", rounds = "1", seedArg] = argv.filter(
-  (a) => a !== "--events" && a !== "--frame" && a !== "--phases",
+  (a) => a !== "--events" && a !== "--phases",
 );
 // Refused rather than ignored: a typo that quietly drew a fresh seed would
 // print a different fight and call it the one that was asked for.
@@ -622,8 +610,7 @@ for (let i = 0; i < Number(rounds); i++) {
   console.log(
     [
       `${r.map} (difficulty ${r.difficulty}, seed ${r.seed})`,
-      `  world built in ${r.buildMs} ms` +
-        (r.frameBytes > 0 ? `; frame published, ${r.frameBytes} bytes` : ""),
+      `  world built in ${r.buildMs} ms`,
       `  round ran ${r.ticks} ticks = ${mins} min of game time in ${r.wallMs} ms of wall clock`,
       `           = ${(r.simSeconds / (r.wallMs / 1000)).toFixed(1)}x real time on one core`,
       `  tick:    ${r.tick.over} of ${r.ticks} over the ${TICK_BUDGET_MS.toFixed(2)} ms budget ` +
