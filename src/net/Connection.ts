@@ -99,6 +99,9 @@ const SLEW = 0.02;
  */
 const SNAP_MS = 250;
 
+/** How often the silence timer looks, in ms — once a second is plenty against `silenceTimeout`. */
+const LISTEN_EVERY_MS = 1000;
+
 /**
  * Everything the handshake needs, as one object.
  *
@@ -156,6 +159,17 @@ export class Connection {
   private closedByUs = false;
   /** Whoever is waiting on `joinSent`. Settled together, never one at a time. */
   private joinWaiters: Array<() => void> = [];
+  /** How the standing attempt was dialled — what a retry dials again. */
+  private dial: (() => ClientTransport) | null = null;
+  /**
+   * When the standing attempt last showed it was alive — dialled, opened, or
+   * a message — on `performance.now()`'s clock. What the silence timer
+   * (`listen`) measures.
+   */
+  private heardAt = 0;
+  /** When the silence timer last looked, to tell this page's own stall from the server's. */
+  private lookAt = 0;
+  private listener: ReturnType<typeof setInterval> | null = null;
 
   /**
    * Recent `serverNow - localNow` samples, in ms. Bounded by `clockWindow`
@@ -280,9 +294,13 @@ export class Connection {
     this.setState("connecting");
     const transport = dial();
     this.transport = transport;
+    this.dial = dial;
+    this.heardAt = performance.now();
+    if (transport.watched) this.listen();
 
     transport.listen({
       opened: () => {
+        if (this.transport === transport) this.heardAt = performance.now();
         this.attempts = 0;
         this.setState("open");
         this.send({
@@ -301,6 +319,9 @@ export class Connection {
       },
 
       message: (text) => {
+        // Before the decode: a frame that does not parse is still the far
+        // end alive.
+        if (this.transport === transport) this.heardAt = performance.now();
         const msg = decode(text) as ServerMessage | null;
         if (!msg) return;
         // Every stamped message is a clock sample, not just an explicit ping —
@@ -337,6 +358,61 @@ export class Connection {
     // rejoins a round that is already over.
     const delay = CONFIG.net.reconnectDelay * 1000 * this.attempts;
     this.retryTimer = setTimeout(() => this.open(dial), delay);
+  }
+
+  /**
+   * Starts the SILENCE TIMER, if it is not already running: a connection to
+   * a match server that has heard nothing at all for
+   * `CONFIG.net.silenceTimeout` is dead, whatever the socket says, and is
+   * let go and retried exactly as a closed one is (`retry`).
+   *
+   * **A socket can stay open with nothing coming through it** — a network
+   * that died without a goodbye, or a server whose loop wedged behind a
+   * proxy that holds this side open — and a page is shown no ping, so what
+   * arrives is the one thing it can watch. Measured from the DIAL, so an
+   * attempt that never opens (a wedged server's upgrade nobody answers) is
+   * let go too. Only a transport that is `watched`: a local match's owner
+   * holds its clock, and its host has a watchdog of its own (`LocalMatch`).
+   *
+   * **A stall of the PAGE's own is not the server's** — a long build on this
+   * thread, a throttled background tab, a debugger — and through it the
+   * server's messages sit queued behind this very callback, unread. So a
+   * look that itself arrives far later than it was due restarts the wait
+   * instead of judging it, as `LocalMatch.watch` does.
+   *
+   * One interval for the life of the connection rather than a timer per
+   * message: snapshots arrive twenty times a second. Stopped when the
+   * connection is `closed` (`setState`).
+   */
+  private listen(): void {
+    if (this.listener !== null) return;
+    this.lookAt = performance.now();
+    this.listener = setInterval(() => this.look(), LISTEN_EVERY_MS);
+  }
+
+  /** The silence timer's look — see `listen`. */
+  private look(): void {
+    const now = performance.now();
+    const late = now - this.lookAt > 2 * LISTEN_EVERY_MS;
+    this.lookAt = now;
+    const transport = this.transport;
+    // Between attempts (a retry's delay), or a transport whose silence says
+    // nothing: there is nobody to judge.
+    if (!transport?.watched || !this.dial) return;
+    if (late) {
+      this.heardAt = now;
+      return;
+    }
+    const silent = now - this.heardAt;
+    if (silent <= CONFIG.net.silenceTimeout * 1000) return;
+    console.warn(`[net] nothing from the match server in ${Math.round(silent / 1000)} s; reconnecting`);
+    // Let go BEFORE closing, so the `closed` the close raises — whenever a
+    // socket over a dead network gets round to it — is an attempt this
+    // connection has already replaced, and says nothing (`open`).
+    this.transport = null;
+    transport.close();
+    this.settleJoin();
+    this.retry(this.dial);
   }
 
   private sample(serverNow: number): void {
@@ -401,6 +477,11 @@ export class Connection {
   private setState(state: ConnectionState): void {
     if (this.state === state) return;
     this.state = state;
+    // Given up for good, or closed by its owner: nothing left to listen to.
+    if (state === "closed" && this.listener !== null) {
+      clearInterval(this.listener);
+      this.listener = null;
+    }
     this.onStateChange(state);
   }
 }

@@ -2102,10 +2102,13 @@ src/
     Connection.ts     #   Connection lifetime, reconnect, and the server-clock
                       #   offset every interpolated body is drawn against.
                       #   Dials a ClientTransport: a WebSocket to `url`, or
-                      #   `JoinOptions.dial`'s (a local match's port)
+                      #   `JoinOptions.dial`'s (a local match's port). A
+                      #   silence timer retries a socket that has said
+                      #   nothing for `CONFIG.net.silenceTimeout`
     transport.ts      #   ClientTransport and its two kinds: socketTransport
                       #   and portTransport (protocol text both ways, and
-                      #   PORT_CLOSE, the one word a port cannot say itself)
+                      #   PORT_CLOSE, the one word a port cannot say itself).
+                      #   `watched`: whether silence means the far end is gone
     LocalMatch.ts     #   The OWNER's client to a match the page hosts
                       #   (server/localMatch.ts): calls awaited in order, so
                       #   any is a settle (`settle` is the bare one); `advance`

@@ -34,6 +34,15 @@ export interface ClientTransport {
   readonly connecting: boolean;
   /** Whether `send` reaches the far end. */
   readonly open: boolean;
+  /**
+   * Whether the far end's SILENCE means it is gone — `Connection`'s silence
+   * timer (`CONFIG.net.silenceTimeout`). A server streams for as long as it
+   * lives, so a socket that goes quiet past every healthy pause is a dead
+   * one. A local match does not: its owner HOLDS its clock (the deploy
+   * screen, a pause) and nothing is sent while it does, so a port is never
+   * judged by its silence — `LocalMatch`'s watchdog judges its host instead.
+   */
+  readonly watched: boolean;
   /** One encoded `ClientMessage`. Dropped when not `open`. */
   send(text: string): void;
   /** Ends the connection. Idempotent. */
@@ -59,6 +68,7 @@ export function socketTransport(url: string): ClientTransport {
     get open() {
       return socket.readyState === WebSocket.OPEN;
     },
+    watched: true,
     send(text) {
       if (socket.readyState === WebSocket.OPEN) socket.send(text);
     },
@@ -90,6 +100,7 @@ export function portTransport(port: MessagePort): ClientTransport {
     get open() {
       return state === "open";
     },
+    watched: false,
     send(text) {
       if (state === "open") port.postMessage(text);
     },

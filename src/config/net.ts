@@ -35,6 +35,30 @@ export const net = {
   reconnectDelay: 1,
   reconnectMax: 8,
 
+  /**
+   * How long a match SERVER may say nothing at all before this client calls
+   * the connection dead and reconnects, in seconds (`Connection`'s silence
+   * timer; a socket only — `ClientTransport.watched`).
+   *
+   * A socket can stay OPEN with nothing coming through it: a network that
+   * died without a goodbye (a phone moving between Wi-Fi and cellular, a
+   * laptop waking) or a server whose loop has wedged, which nginx's hour-long
+   * `proxy_read_timeout` holds open on this side. The browser shows a page
+   * no ping, so the one thing a client can watch is whether anything ARRIVES.
+   *
+   * It is one flat number above the longest silence a HEALTHY server keeps,
+   * because `Connection` does not know what phase a round is in: snapshots
+   * come twenty times a second, but the round-over card is 8 s of none
+   * (`ROUND_OVER_MS`), and a world build — the next map, or a new match's
+   * first — is one synchronous job the server sends nothing through. Too
+   * short calls a healthy rotation a dead server and rejoins mid-build; too
+   * long is a frozen screen for that long. Measured 2026-10-12 on the Windows
+   * box, the server's world build is 0.15–0.75 s (Harrowmead to Cinderhaven,
+   * `npm run simulate`'s "world built"), so a healthy server's longest quiet
+   * is about nine seconds — the card, then the build. Twenty leaves a slower
+   * server CPU twice that.
+   */
+  silenceTimeout: 20,
 
   /**
    * How long a hitmarker this client PREDICTED stands in for the authority's

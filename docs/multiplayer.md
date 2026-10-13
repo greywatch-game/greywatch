@@ -2979,6 +2979,41 @@ that did not would still drain its socket. Fifteen seconds is picked against
 that: it is far past any hitch a page recovers from and far short of the two
 hours the alternative costs.
 
+### The silence timer, which is the pong deadline's other half
+
+**The deadline frees the SERVER of a client that went quiet; nothing freed the
+CLIENT of a server that did** — until `Connection`'s silence timer
+(`CONFIG.net.silenceTimeout`, 20 s). A socket can stay open with nothing coming
+through it: a network that died without a goodbye (the phone handover and the
+laptop lid above, seen from the other end), or a server whose loop has wedged,
+which nginx's hour-long `proxy_read_timeout` holds open on the page's side. The
+page is shown no ping, so the one thing it can watch is whether anything
+ARRIVES. Before it, the player's world froze, their shots went nowhere and
+Deploy did nothing, with no message and no reconnect.
+
+**One flat number, above the longest silence a HEALTHY server keeps**, because
+`Connection` does not know what phase a round is in: snapshots arrive twenty
+times a second, but the round-over card is 8 s of none (`ROUND_OVER_MS`) and a
+world build is one synchronous job the server sends nothing through — 0.15 to
+0.75 s on the Windows box (`npm run simulate`'s "world built"). So about nine
+seconds is the longest a healthy server is quiet, and twenty leaves a slower
+server CPU twice that. It is measured from the DIAL, so a retry against a
+wedged server whose upgrade nobody answers is let go too, and a look that
+arrives late — this page's own long build, a throttled tab — restarts the wait
+rather than judging it, as `LocalMatch`'s watchdog does.
+
+**Silence is answered exactly as a close is**: the attempt is let go BEFORE it
+is closed (a socket over a dead network may take its time raising `close`, and
+the handler then finds an attempt already replaced) and `retry` takes over —
+the same backoff, the same `reconnectMax`, the same pinned rejoin. **Only a
+`watched` transport**, which is a socket: a local match's port goes silent by
+design while its owner holds the clock, and its host has a watchdog of its own.
+Measured headless on the Windows box through a proxy that stops forwarding with
+both sockets left open: the page let go at 21 s, was welcomed back into the
+same match a second later, and the black-holed socket was still not closed —
+which is why the let-go comes first. An offline deploy screen held for 30 s ran
+no timer at all.
+
 ## What is not built yet
 
 Stated so nobody assumes otherwise:

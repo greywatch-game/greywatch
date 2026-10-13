@@ -1756,9 +1756,19 @@ wire comes later, for both at once, and only if a profiler capture asks for it.
     a new Worker up in 90 ms; mid-round, the round left with "restarting it,
     play again in a moment" and the next round played; the third, "reload
     the page".
-  - Also owed, for BOTH modes: `Connection` has no silence timer, so a
-    remote server whose loop wedges with its socket open leaves a client
-    waiting for ever too.
+  - ~~**`Connection` has no silence timer.**~~ **Decided and done** (the
+    user's call, 2026-10-12): a socket that has said nothing for
+    `CONFIG.net.silenceTimeout` (20 s, from the dial) is let go and retried
+    as a closed one is — a network that died without a goodbye, or a server
+    wedged behind nginx's hour-long read timeout. One flat number above a
+    healthy server's longest quiet (the 8 s round-over card, then a world
+    build measured at 0.15–0.75 s); a port is not `watched`, its host having
+    the watchdog. Measured headless through a proxy that stops forwarding
+    with both sockets open: let go at 21 s, welcomed back into the same match
+    a second later; an offline deploy screen held 30 s ran no timer. The
+    browser's network events (`offline`, waking from sleep), which would
+    catch a phone's handover sooner, are left for later, if it proves
+    needed. `docs/multiplayer.md`, "The silence timer".
   - Smaller, owed to C5 or a later pass: `ordnanceRefused` is not relayed,
     so a refused throw is never given back (the pouch drifts until death);
     `WorldCulling`'s pools hold the disposed session's rigs until the next
