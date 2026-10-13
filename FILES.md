@@ -2122,7 +2122,8 @@ src/
                       #   this thread on a MessageChannel, through the one
                       #   value import of server/ in src/, a dynamic one.
                       #   The Worker's onerror is a log line: silence, the
-                      #   watchdog's, is what calls a host lost
+                      #   watchdog's, is what calls a host lost, and
+                      #   `MatchHost.replace` opens its successor
     NetSession.ts     #   One networked round — every round, from X2.5c C4:
                       #   the seam between Game and the wire. `local` says
                       #   whether the page OWNS the match, the one authority

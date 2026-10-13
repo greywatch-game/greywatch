@@ -562,8 +562,16 @@ export class Game {
    * and the deploy screen genuinely hold the world, and the time a frame does
    * not step is handed over as HELD (`passLocalClock`) so the match's clock
    * stays on the wall's and the client's offset never sees a hold.
+   *
+   * The HOST is replaced when it is lost (`rehostLocal`), so this is read
+   * off it every time rather than held — a round captures the one it opened
+   * on (`openLocalRound`), and nothing else may keep one.
    */
-  private readonly local: LocalMatch;
+  private get local(): LocalMatch {
+    return this.localHost.match;
+  }
+  /** Where the page's own match runs, and the way to replace it (`rehostLocal`). */
+  private localHost: MatchHost;
   /**
    * The match `local` holds has answered this round's `begin` — so every
    * `advanced` answer from here on is about THIS round. The owner's port
@@ -1405,7 +1413,7 @@ export class Game {
     // thread (`src/net/matchHost.ts`, `BABYLON_EXIT.md` X2.5c C4), chosen by
     // the boot and handed in as `havok` and `engine` are. Every round that is
     // not a server's is a match on it (`openLocalRound`).
-    this.local = local.match;
+    this.localHost = local;
     this.prof.setSimMode(local.mode);
     this.wireLocal();
     this.engine.customAnimationFrameRequester = this.frameCap.requester;
@@ -7139,7 +7147,8 @@ export class Game {
   /**
    * What the match host's own channel says that is not an answer to a call:
    * a step's report, a call nobody awaited that failed, and the host gone.
-   * Wired once — the host outlives every round on it.
+   * Wired once per HOST — a host outlives every round on it, and is replaced
+   * only when it is lost (`rehostLocal`).
    */
   private wireLocal(): void {
     this.local.onAdvanced = (advanced) => {
@@ -7154,17 +7163,54 @@ export class Game {
       console.error(`[local match] ${message}`);
       if (this.localRound && this.localBegun) this.failLocalRound(message, this.net!);
     };
-    // The host gone — final: `LocalMatch` refuses every call after it, so
-    // every later offline round fails at once, and the toast says so.
+    // The host gone — final for THIS host: `LocalMatch` refuses every call
+    // after it. The round on it (if any) ends, since its whole fight lived
+    // over there, and then the host is replaced — unless this page has
+    // already replaced it as often as it may.
     this.local.onLost = (reason) => {
       console.error(`[local match] lost: ${reason}`);
-      this.localLost = true;
+      this.localHostState = this.localRehosts < CONFIG.net.localRehosts ? "restarting" : "gone";
       if (this.localRound) this.failLocalRound(reason, this.net!);
+      if (this.localHostState === "restarting") this.rehostLocal();
     };
   }
 
-  /** The page's own match host is gone for the life of the page (`wireLocal`). */
-  private localLost = false;
+  /**
+   * Whether the page's own match host can take a round: `up`; `restarting`
+   * — lost, and its replacement still coming up (`rehostLocal`), so a round
+   * asked for now fails at once on the lost one; or `gone` — lost past
+   * `CONFIG.net.localRehosts`, or its replacement failed to open, for the
+   * life of the page.
+   */
+  private localHostState: "up" | "restarting" | "gone" = "up";
+  /** How many times this page has replaced its match host (`rehostLocal`). */
+  private localRehosts = 0;
+
+  /**
+   * Replaces a LOST match host (`MatchHost.replace`): the old one torn down,
+   * a new one opened the boot's way and wired in its place, so the next
+   * offline round is played on it. The round that was on the old one is
+   * already over (`wireLocal`'s `onLost`) — there is nothing to carry across,
+   * since the fight lived in the host that died.
+   */
+  private rehostLocal(): void {
+    this.localRehosts++;
+    this.localHost.replace().then(
+      (host) => {
+        this.localHost = host;
+        this.prof.setSimMode(host.mode);
+        this.wireLocal();
+        this.localHostState = "up";
+        console.info(
+          `[local match] replaced; the simulation runs in ${host.mode === "worker" ? "a Worker" : "the page"}: ${host.why}`,
+        );
+      },
+      (err: unknown) => {
+        console.error("[local match] could not be replaced:", err);
+        this.localHostState = "gone";
+      },
+    );
+  }
 
   /**
    * The page's own match failed under the round `net` is playing — a step
@@ -7177,9 +7223,11 @@ export class Game {
     console.error(`[local match] the round stopped: ${reason}`);
     this.enterMenu();
     this.hud.toast(
-      this.localLost
+      this.localHostState === "gone"
         ? "the offline match has stopped — reload the page to play again"
-        : `the round stopped — ${reason}`,
+        : this.localHostState === "restarting"
+          ? "the offline match stopped — restarting it, play again in a moment"
+          : `the round stopped — ${reason}`,
     );
   }
 

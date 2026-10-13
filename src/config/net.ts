@@ -35,6 +35,7 @@ export const net = {
   reconnectDelay: 1,
   reconnectMax: 8,
 
+
   /**
    * How long a hitmarker this client PREDICTED stands in for the authority's
    * `hit`, in seconds.
@@ -81,6 +82,20 @@ export const net = {
    * back, since its fight must be the same however slowly a device runs it.
    */
   localSlack: 0.15,
+
+  /**
+   * How many times a page may REPLACE its own match host after losing one
+   * (`Game.rehostLocal`, `MatchHost.replace`) before it stops trying and
+   * asks for a reload.
+   *
+   * A lost host is a Worker that died or wedged — out of memory, a loop —
+   * and most such deaths are the moment's, so a fresh Worker plays the next
+   * round. A death that is the BUILD's (one map or seed that kills the host
+   * every time) would replace a host on every round, or every ten seconds
+   * in the menu if it dies idle; this bounds that, and past it the reload is
+   * the honest answer. Two leaves room for one unlucky repeat.
+   */
+  localRehosts: 2,
 
   /**
    * Where a round trip stops reading as fine, and where it starts reading as a

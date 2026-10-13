@@ -1742,9 +1742,21 @@ wire comes later, for both at once, and only if a profiler capture asks for it.
     cover the welcome window and the menu alike — the latter found in
     seconds rather than at the next build's two minutes. A host that is up
     but never welcomes is not this: `admit`'s rejection is already answered
-    `rejected`. Lost is still final for the page's life; re-hosting
-    (`openMatchHost` again) on a loss found in the menu is a later call.
-    Also owed, for BOTH modes: `Connection` has no silence timer, so a
+    `rejected`.
+  - ~~**A lost host was final for the page's life.**~~ **Decided and done**
+    (the user's call, 2026-10-12): the page REPLACES it — the round on it
+    ends, the old host is torn down (a wedged Worker terminated) and a new
+    one opened the boot's way (`MatchHost.replace`, `Game.rehostLocal`), up
+    to `CONFIG.net.localRehosts` (2) times a page; past that, or if the
+    replacement fails to open, the reload toast as before. A deliberate
+    fallback to this thread after a LOSS (rather than the boot's own, when a
+    Worker does not come up) was left for later, if it proves needed.
+    Measured headless on the Windows box, the real Worker `terminate()`d
+    three times on Hollowmere: in the menu found at 11 s (the heartbeat) and
+    a new Worker up in 90 ms; mid-round, the round left with "restarting it,
+    play again in a moment" and the next round played; the third, "reload
+    the page".
+  - Also owed, for BOTH modes: `Connection` has no silence timer, so a
     remote server whose loop wedges with its socket open leaves a client
     waiting for ever too.
   - Smaller, owed to C5 or a later pass: `ordnanceRefused` is not relayed,

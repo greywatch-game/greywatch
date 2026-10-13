@@ -4,7 +4,10 @@
  * and handed back as a `LocalMatch` either way.
  * Owns: `openMatchHost` — starting the host (`server/localMatchWorker.ts` in a
  * Worker, or `server/localMatch.ts` on a `MessageChannel` here), proving it is
- * up, and, for a Worker, saying what it throws.
+ * up, for a Worker saying what it throws, and REPLACING a host its owner
+ * lost (`MatchHost.replace`: the old one torn down, a new one opened by this
+ * same choice — so a lost Worker's successor is a Worker again when it
+ * comes up, and this thread's host only on the boot's own terms).
  * Invariants:
  * - **One code path either way.** The Worker's scope and a `MessageChannel`'s
  *   port are both an `OwnerPort`, `serveLocalMatch` is the whole of the host
@@ -38,13 +41,23 @@ import { LocalMatch } from "./LocalMatch";
 
 /** The page's own match, wherever it runs. */
 export interface MatchHost {
-  /** The owner's channel to it — the one thing `Game` holds. */
+  /** The owner's channel to it — what `Game` makes its calls on. */
   match: LocalMatch;
   /** Where the host runs: a Worker, or this thread on a `MessageChannel`. */
   mode: "worker" | "page";
   /** Why — the boot line's half of the answer. */
   why: string;
+  /**
+   * Ends this host for good and opens a fresh one the boot's way — for an
+   * owner whose host was LOST (`LocalMatch.onLost`; `Game.rehostLocal`). The
+   * old one is torn down first: a wedged Worker is terminated rather than
+   * left spinning a core, and an in-page host's channel is closed. The new
+   * one is chosen as at boot, by the same options.
+   */
+  replace(): Promise<MatchHost>;
 }
+
+type HostOptions = { simpage: boolean };
 
 /**
  * How long a new Worker may take to answer its first call before the boot
@@ -61,8 +74,8 @@ const READY_PATIENCE_MS = 20_000;
  * a Worker unless `?simpage` asks for this thread or the Worker does not come
  * up, and in this thread otherwise.
  */
-export async function openMatchHost(opts: { simpage: boolean }): Promise<MatchHost> {
-  if (opts.simpage) return inPage("asked for by ?simpage");
+export async function openMatchHost(opts: HostOptions): Promise<MatchHost> {
+  if (opts.simpage) return inPage(opts, "asked for by ?simpage");
   let worker: Worker;
   try {
     worker = new Worker(new URL("../../server/localMatchWorker.ts", import.meta.url), {
@@ -70,7 +83,7 @@ export async function openMatchHost(opts: { simpage: boolean }): Promise<MatchHo
       name: "match",
     });
   } catch (err) {
-    return inPage(`the Worker could not be created (${String(err)})`);
+    return inPage(opts, `the Worker could not be created (${String(err)})`);
   }
   // The Worker's scope is the host's `OwnerPort`; the Worker object is the
   // page's end of the same channel.
@@ -99,7 +112,7 @@ export async function openMatchHost(opts: { simpage: boolean }): Promise<MatchHo
   if (failed !== null) {
     match.dispose();
     worker.terminate();
-    return inPage(`the Worker did not come up (${failed})`);
+    return inPage(opts, `the Worker did not come up (${failed})`);
   }
   const upIn = Math.round(performance.now() - asked);
   // Up. The boot's `onerror` is REPLACED rather than left: it cancels the
@@ -114,7 +127,16 @@ export async function openMatchHost(opts: { simpage: boolean }): Promise<MatchHo
     e.preventDefault();
     console.error(`[local match] Worker: uncaught ${e.message || "error"} (${e.filename}:${e.lineno}:${e.colno}) — the host survived it`);
   };
-  return { match, mode: "worker", why: `it answered its first call in ${upIn} ms` };
+  return {
+    match,
+    mode: "worker",
+    why: `it answered its first call in ${upIn} ms`,
+    replace() {
+      match.dispose();
+      worker.terminate();
+      return openMatchHost(opts);
+    },
+  };
 }
 
 /**
@@ -122,9 +144,20 @@ export async function openMatchHost(opts: { simpage: boolean }): Promise<MatchHo
  * import (the header), served on one end of a `MessageChannel` and owned
  * through the other — exactly the Worker's shape with the thread taken out.
  */
-async function inPage(why: string): Promise<MatchHost> {
+async function inPage(opts: HostOptions, why: string): Promise<MatchHost> {
   const { serveLocalMatch } = await import("../../server/localMatch");
   const { port1, port2 } = new MessageChannel();
   serveLocalMatch(port2);
-  return { match: new LocalMatch(port1), mode: "page", why };
+  const match = new LocalMatch(port1);
+  return {
+    match,
+    mode: "page",
+    why,
+    replace() {
+      match.dispose();
+      port1.close();
+      port2.close();
+      return openMatchHost(opts);
+    },
+  };
 }

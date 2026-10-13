@@ -1397,10 +1397,17 @@ it would silence every later error): an error event is one task that threw,
 which a Worker survives as the server's process survives it past its
 backstop and the page's thread does under `?simpage`, while a Worker that
 genuinely dies or wedges raises nothing — only its silence says so.
-Lost is final and raised once (`onLost`, which the owner answers by ending the
-session): every awaited call rejects, every later call rejects at once and
-posts nothing, and a later `dial` hears its port close — what a socket to a
-dead server hears.
+Lost is final FOR THAT HOST and raised once (`onLost`): every awaited call
+rejects, every later call rejects at once and posts nothing, and a later
+`dial` hears its port close — what a socket to a dead server hears. **The
+page then REPLACES it** (`Game.rehostLocal`, `MatchHost.replace`): the round
+that was on it ends, since its fight lived in the host that died, the old
+host is torn down (a wedged Worker terminated, not left spinning a core),
+and a new one is opened the boot's way, so the next offline round plays on
+it. A round asked for while the new one is coming up fails at once and says
+so. **It is bounded** (`CONFIG.net.localRehosts`, 2): a death that is the
+build's rather than the moment's would otherwise replace a host every round,
+so past it, or when a replacement fails to open, the page asks for a reload.
 
 `npm run corecheck`'s `greyfen/local` runs it on a
 `MessageChannel`: the bench's round over the owner channel alone folds the
