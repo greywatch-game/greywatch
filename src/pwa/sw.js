@@ -46,8 +46,7 @@
  *   fetch     a navigation is the network's answer, or the cached shell if the
  *             network does not answer in time. Everything else same-origin
  *             comes from the cache when it is there and fills it when it is
- *             not. Either way it leaves with the isolation pair on it
- *             (`ISOLATION`). Everything else again is passed through.
+ *             not. Everything else again is passed through.
  *
  * `sw.js` MUST still be served no-cache (see docker/default.conf.template): the
  * navigation above keeps a launch current on its own, but a worker that can
@@ -111,36 +110,6 @@ const SHELL = "/";
  * file and nginx serves the extensionless form too.
  */
 const DOCS = new Set(["/profile_viewer.html", "/profile_viewer"]);
-
-/**
- * **Cross-origin isolation is a property of the RESPONSE, and this worker
- * answers responses** (`BABYLON_EXIT.md` X2.5b). COOP `same-origin` and COEP
- * `require-corp` are what give the page `crossOriginIsolated`, which is what
- * gave it the `SharedArrayBuffer` the simulation's Worker once needed — the
- * local match's Worker (`src/net/matchHost.ts`) posts JSON and needs none, so
- * the pair goes at `BABYLON_EXIT.md` X2.5c C6. Until then: a navigation
- * answered from the cache is answered with whatever headers were STORED — and
- * a copy stored by a build from before the headers existed, or copied across
- * from another cache by the install below, has none: the installed app would
- * silently lose isolation offline. The same failure shape as
- * `DOCS` beside it, so the same cure: every same-origin response this worker
- * hands back is given the pair, network or cache alike — the document and the
- * Worker's own script both, since a Worker is isolated by its own headers.
- * The pair is stated in `vite.config.ts` (both servers) and the nginx
- * template too, and the four must agree.
- */
-const ISOLATION = {
-  "Cross-Origin-Opener-Policy": "same-origin",
-  "Cross-Origin-Embedder-Policy": "require-corp",
-};
-
-/** `res` with the isolation pair on it — a new `Response` over the same body. */
-function isolated(res) {
-  if (!res || res.type !== "basic" && res.type !== "default") return res;
-  const headers = new Headers(res.headers);
-  for (const [name, value] of Object.entries(ISOLATION)) headers.set(name, value);
-  return new Response(res.body, { status: res.status, statusText: res.statusText, headers });
-}
 
 /** The cache key a navigation to `pathname` should be answered from. */
 function shellFor(pathname) {
@@ -342,7 +311,7 @@ self.addEventListener("fetch", (event) => {
   }
 
   if (req.mode === "navigate") {
-    event.respondWith(freshShell(event).then(isolated));
+    event.respondWith(freshShell(event));
     return;
   }
 
@@ -356,14 +325,14 @@ self.addEventListener("fetch", (event) => {
       // so the URL alone is the identity and there is nothing for Vary to tell
       // apart.
       const hit = await cache.match(req, { ignoreVary: true });
-      if (hit) return isolated(hit);
+      if (hit) return hit;
       const res = await fetch(req);
       // Only a clean same-origin response is worth keeping. An opaque or
       // errored one cached here would be served for the life of the build.
       if (res.ok && res.type === "basic") {
         void cache.put(req, res.clone());
       }
-      return isolated(res);
+      return res;
     })(),
   );
 });

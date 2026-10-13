@@ -335,29 +335,8 @@ function serviceWorker(): Plugin {
   };
 }
 
-/**
- * **Cross-origin isolation, on every response either server sends**
- * (`BABYLON_EXIT.md` X2.5b): COOP `same-origin` and COEP `require-corp` are
- * what put `crossOriginIsolated` on the page, without which there is no
- * `SharedArrayBuffer` — which the simulation's Worker once needed and the
- * local match's (`src/net/matchHost.ts`), posting JSON, does not; the pair
- * goes at `BABYLON_EXIT.md` X2.5c C6. On every
- * response rather than the document alone because the Worker's own script is
- * a response too, and a Worker is isolated by its own headers. The same pair
- * is stated three more times and they must agree: the nginx template, the
- * service worker's cached navigations (`src/pwa/sw.js`) and `docs/pwa.md`'s
- * list of them.
- */
-const ISOLATION = {
-  "Cross-Origin-Opener-Policy": "same-origin",
-  "Cross-Origin-Embedder-Policy": "require-corp",
-};
-
 export default defineConfig({
   plugins: [layoutWriter(), serviceWorker()],
-
-  server: { headers: ISOLATION },
-  preview: { headers: ISOLATION },
 
   /**
    * The local match's Worker (`server/localMatchWorker.ts`, opened by
