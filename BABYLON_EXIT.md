@@ -456,7 +456,7 @@ what each commit found and decided, and what each left behind.
 Babylon still owns the frame. Our module draws inside Babylon's passes through
 the seam.
 
-### X3.1 — The shared WGSL (PERF_PLAN B0) — **M**
+### X3.1 — The shared WGSL (PERF_PLAN B0) — **M** — **LANDED** (ab51aa7)
 
 As B0 states it: `CelShader.ts`'s fragment factored into WGSL chunks that both
 Babylon's `ShaderMaterial` and our pipelines include. Two copies drift, and
@@ -469,6 +469,52 @@ the failure is silent.
   The bodies are shared; the declarations are per side.
 - **Verify:** `bank.mjs --check` with no pixel moved on every map;
   `plans/webgpu-ref/shaders.mjs`.
+
+**Landed** (ab51aa7, review fixes f5320eb).
+- **The bodies.** They are Babylon-free chunks: `shaders/wgsl/chunks.ts`
+  (`WGSL_CHUNKS`, the one table) and `shaders/wgsl/celSurface.ts`. The cel
+  fragment's whole body is the function `celSurface()`. A body declares
+  nothing.
+- **Babylon's side.** Its declarations are `includes.ts`'s `DECLARATIONS`
+  and the fragment's own in `celFragmentShader`. Every registered include is
+  declarations plus the body, verbatim, so grass, water and the air include
+  exactly as before.
+- **Our side.** `render/celFragment.ts` declares the frame (group 0) and the
+  material (group 1) as data. `render/wgsl/assemble.ts` and
+  `render/wgsl/preprocess.ts` turn that into plain WGSL with explicit bind
+  groups. `src/render/` joined the Babylon-free gate here, a step early,
+  because the directory exists from this step on.
+- **Measured.** Every shader module Babylon compiles on all seven maps was
+  dumped before and after. The 68 cel fragments differ only by `main`'s body
+  becoming `celSurface()`, and every other module is identical up to order.
+- **The bank.** 47 of 47 rows are within the floor: 45 at 0%, and Sarab's
+  `rig-near` and `rig-far` at 0.0721% and 0.0014% of pixels. The parent
+  commit gives those two rows the same numbers, so the banked Sarab rig
+  frames are stale from an earlier commit. They are not this step's
+  difference, and they want re-banking.
+- **`shaders.mjs`.** It is clean on seven maps. It now also builds our module
+  for every shape each map compiled into a pipeline against an EXPLICIT
+  layout. It was proven to fail on a uniform our side does not declare and
+  on a 17th sampled texture. The bumped ground is at 16 of 16 sampled
+  textures and 16 of 16 samplers on our side too.
+- **What the review found.** Babylon strips the comments of the top-level
+  source only, and pastes an include in whole, comments and all. So the cel
+  body's ~700 lines of prose had become text Babylon's declaration regexes
+  read. Nothing matched them, so nothing broke, but any comment quoting a
+  declaration would have minted a binding with nothing behind it. Every
+  registered entry now goes through `stripComments`, the same function our
+  preprocessor runs. Also fixed:
+  - the preprocessor no longer accepts `#define` (a body's define would not
+    reach the declaration guards);
+  - our varying locations are counted as Babylon counts them;
+  - the frame block is one layout in every variant but its last field;
+  - stale pointers to code that moved.
+- **Owed to X3.2 and X3.3:**
+  - our `main` lacks Babylon's `position.y` flip for a pass that renders to
+    a texture, and the dither is keyed on that position;
+  - the WGSL struct layout is not yet the layout anything uploads;
+  - the vertex stage's sway is not shared yet. X3.3 needs it as a chunk, the
+    same way.
 
 ### X3.2 — `src/render/`: device, pipelines, frame uniforms, and the seam — **M**
 
