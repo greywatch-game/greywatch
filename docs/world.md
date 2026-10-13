@@ -494,9 +494,9 @@ and 2.6 ms of a 9.2 ms frame**. It is `ENGINE_UPGRADE.md` S8.
 
 **Two things about it are the whole of its design.** The first is that both
 gates are handed ONE number, resolved once by `installMap` — which is what keeps
-the distance a rig stops being drawn (`NetRoster`'s) and `bots.death.maxDistance`
-the same distance by construction, the property `config/fogWall.ts` was written
-to protect (the first was `bots.lodDisableDistance` until X2.5c C5 deleted
+the distance a rig stops being drawn (`NetRoster`'s) and the ragdoll gate
+(`RagdollSystem.viewDistance`) the same distance by construction, the property
+`config/fogWall.ts` was written to protect (the first was `bots.lodDisableDistance` until X2.5c C5 deleted
 it). A corpse refused a tumble somewhere its own rig is still being drawn would
 stand to attention until `death.hideTime`.
 
@@ -539,9 +539,8 @@ viewer's side moved since the session's pool was built — which on a server's
 session, living across rotations, is a map change. The page's own match is a
 fresh session every round (`Game.openLocalRound` disposes the last through
 `leaveMatch`), so offline every round builds its rigs anew, a same-map restart
-included — and on Sarab and Cinderhaven twice, `CONFIG.bots.perTeam` a side in
-`NetRoster`'s constructor and then twenty-four through `setFielded`, a known
-cost. That is the one place the "built once and never disposed" rule bends,
+included — once, at the map's own `perTeam`, which the session's constructor is
+handed so `setFielded` finds nothing to rebuild, a known cost. That is the one place the "built once and never disposed" rule bends,
 and it bends only at a round's build, where a loading card is already up;
 inside a round it holds. Measured on the box this was
 written on, Sarab is 15.2-15.7 ms a frame at 24 a side against 10.8 at 8, warm

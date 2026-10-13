@@ -254,12 +254,14 @@ kinds of match.** A server's session outlives every rotation, so its pool is
 rebuilt only when the count or the side moves. The page's own match is a FRESH
 session every round — `Game.openLocalRound` calls `leaveMatch`, which disposes
 the last `NetSession` and its `NetRoster`, and builds a new one whose
-constructor builds a pool of `CONFIG.bots.perTeam` a side — so every offline
-round, a same-map restart included, builds its rigs anew. On the two 24-a-side
-maps it builds them TWICE: eight a side in the constructor, then twenty-four
-through `setFielded` from `buildRound`. That is a known cost, paid under the
-loading card; "built once and never disposed" still holds INSIDE a round, which
-is the frame budget's claim — so a map that says nothing
+constructor builds a pool of the map's own `perTeam` a side (the session is
+handed it, `perTeamOf(mapDef.layout)`) — so every offline round, a same-map
+restart included, builds its rigs anew, ONCE, and `buildRound`'s `setFielded`
+finds nothing to do unless the viewer's side moved. (Until the constructor was
+handed the roster it built the shipped eight, and the two 24-a-side maps
+built their rigs twice a round.) That is a known cost, paid under the loading
+card; "built once and never disposed" still holds INSIDE a round, which is the
+frame budget's claim — so a map that says nothing
 gets the same sixteen bodies with the same squads, the same launchers, the same
 molotov carriers (each squad's LAST body, the launcher's rule from the other end
 — `docs/grenades.md`) and the same movement seeds it always had, bit for bit.

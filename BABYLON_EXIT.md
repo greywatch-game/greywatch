@@ -1865,12 +1865,18 @@ wire comes later, for both at once, and only if a profiler capture asks for it.
     constructor — and `buildRound`'s `setFielded` then rebuilds it at the
     map's 24. A build-time cost on Sarab and Cinderhaven, behind the
     building card; taking the map's roster into the session's constructor
-    would halve it.
+    would halve it. **Fixed after C6**: `NetSession` and `NetRoster` take
+    `perTeam`, which `Game` hands them off `perTeamOf(mapDef.layout)`.
   - **At a benchmark SEGMENT boundary the `sim` filing lags one frame**:
     `updateBench` sets the segment before the frame's first `updateWorld`
     files the previous frame's answers, so the first `fight` frame carries
-    the last lead frame's summed steps. One row of a segment's mean;
-    `docs/profiling.md` says so.
+    the last lead frame's summed steps. **Fixed after C6**: a frame that
+    changes segment drops what is waiting and counts off the answers still
+    owed (`Game.dropLocalTiming`, the held world's own mechanism).
+  - **`CONFIG.bots.death.maxDistance` was never read**, back to the repo's
+    first commit, while the docs called it the ragdoll gate —
+    `RagdollSystem.viewDistance` always was. **Deleted after C6**, every
+    reference re-pointed; `config/fogWall.ts` stays a module of its own.
   - Everything under "Verify" that needs a person or the phone: the
     play-test, the phone's offline Sarab, and the deployed build installed
     and offline on the phone.

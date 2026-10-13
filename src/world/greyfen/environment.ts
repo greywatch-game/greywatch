@@ -45,7 +45,7 @@ import type { EnvironmentSpec } from "../environment";
  * ## What did NOT move
  *
  * **`fogEnd` stays at 78.** `FOG_WALL` in `config/fogWall.ts` is the same
- * number as the body draw distance and `bots.death.maxDistance`, and it is
+ * number as the body draw distance and the ragdoll gate, and it is
  * also what `bots.perception.engageRange` (55) and `audio.maxDistance` (70)
  * were sized against. Coldharbour is the map that moved them, at the cost of a
  * layout built around the move; this valley is a fog that happens to be lit, so

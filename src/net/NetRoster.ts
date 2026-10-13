@@ -159,11 +159,15 @@ export class NetRoster {
   constructor(
     private readonly scene: Scene,
     private readonly mats: CelMaterialFactory,
+    perTeam: number,
   ) {
-    // What a map that states nothing fields, which is four of the five and is
-    // the only honest guess before a `roundstart` has named one. `Game`
-    // pushes the real number every round.
-    this.buildPool(CONFIG.bots.perTeam);
+    // The map the session is opened for, as `Game` knows it then — the
+    // page's own match is opened ON its map, so this is the round's own
+    // roster and `buildRound`'s `setFielded` finds nothing to rebuild; a
+    // server's is the map the join expects, which the welcome may yet move.
+    // Building the shipped eight here instead built Sarab's and
+    // Cinderhaven's pool twice every offline round.
+    this.buildPool(perTeam);
   }
 
   /**

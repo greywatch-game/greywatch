@@ -308,8 +308,9 @@ Two things bound it either way, and they are what still hold:
   20, velocity under `sleepSpeed` by frame 30, frozen by ~frame 65), and from
   then to the sink at 6 s it costs ~0 (re-measured: 0.0004 ms/frame with eight
   settled corpses — `update` does not touch the engine). The window is the fall.
-- **It is capped and gated.** Eight at once, and none past `death.maxDistance`,
-  which `bodyDrawDistanceOf` resolves to at most the map's `fogEnd`. The cap
+- **It is capped and gated.** Eight at once, and none past
+  `RagdollSystem.viewDistance`, which `bodyDrawDistanceOf` resolves to at most
+  the map's `fogEnd`. The cap
   is what makes the cost bounded rather than a function of how many people are
   dying — and it still is, now that a ninth body EVICTS the oldest corpse rather
   than being refused: the eviction changes which bodies are falling, never how

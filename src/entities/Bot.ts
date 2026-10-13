@@ -796,8 +796,8 @@ export class Bot implements Combatant {
       // DRAWN past this — that is the view's (`NetSoldier`), which knows a ragdoll
       // exists; this class does not, and the simulation's answer is the same
       // whether anybody watched the body fall. What is left without one is a
-      // body killed past `death.maxDistance`, which is the fog wall, where the
-      // rig has already stopped being drawn: it holds whatever it died in
+      // body killed past the body draw distance (`RagdollSystem.viewDistance`),
+      // where the rig has already stopped being drawn: it holds whatever it died in
       // until this clock hides it. This used to run a collapse tween, exempt
       // from the pose-freeze LOD because a corpse that held its mid-stride
       // pose and then vanished read as a pop; nothing that could be seen

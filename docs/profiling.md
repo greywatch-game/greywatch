@@ -697,7 +697,9 @@ So **the core times its own step, with a clock its host INJECTS**
   the answers still owed to `advance`s posted before it are dropped as they
   arrive (`passLocalClock`, `localTimingSkip` counted off `LocalMatch.owed`):
   the next frame that steps may be seconds away, and a profiler handed those
-  steps then would charge them to it.
+  steps then would charge them to it. **A benchmark SEGMENT's first frame drops
+  them the same way** (`Game.dropLocalTiming`, from `updateBench`) — see
+  "So a benchmark SEGMENT's first frame files no `sim` at all" below.
 - **The recording path allocates nothing, and that took one call rather than
   seven**: a double handed to a call a once-a-frame function does not inline is
   a heap number, and the per-phase `file` it replaced was ~660 B a frame
@@ -735,17 +737,16 @@ thread — a frame after the one that posted it, whose picture it is, because
 that is the first frame the page has heard of it. Its `start` is earlier than
 that frame's own, so the trace draws it where it ran, across the boundary.
 
-**So at a benchmark SEGMENT boundary the filing lags the label by a frame.**
-`updateBench` calls `setSegment(cue.segment)` before the frame's first
-`updateWorld`, and the top of that `updateWorld` is `fileLocalTiming` — so the
-first `fight` frame files whatever answers the page has taken in since the
-last filing, which is the last `lead` frame's steps summed (that leg's
-`lastSteps`, up to `leadSteps`; more if a Worker's answers ran later than
-that), into the `fight` segment's
-`sim`. One frame of a segment that long is noise in a mean, but it is a lead
-frame's several steps in a frame whose own is one: read a `fight` segment's
-`sim` maximum, or its first frames, knowing the first row is not a fight
-step's.
+**So a benchmark SEGMENT's first frame files no `sim` at all.** Filed as
+it arrives, it would be the last segment's: `updateBench` labels the frame
+before its first `updateWorld` files, so the first `fight` frame would carry
+the last `lead` frame's steps summed (that leg's `lastSteps`, up to
+`leadSteps`; more if a Worker answered late) — a lead frame's several steps in
+a row whose own is one, which a segment's `sim` maximum would report as the
+fight's. So a frame that changes segment drops what is waiting and counts off
+the answers still owed (`Game.dropLocalTiming`, the held world's own
+mechanism): each segment files only steps posted under it, and loses its LAST
+frame's to the next boundary, as any segment loses the frame after its end.
 
 **What X2.5b named and X2.5c deleted, kept as history.** While the core ran in
 a Worker over shared memory (X2.5b until X2.5c's C5, report version 15), the

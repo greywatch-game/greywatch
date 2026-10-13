@@ -1366,7 +1366,7 @@ common but the `postMessage`:
   overwritten per step. `Game` reads only the timing: it adds each answer's
   into one row (`localTiming`) for the next frame that steps to file
   (`docs/profiling.md`), skipping the answers counted off by `localTimingSkip`
-  (owed when the world was held) and any that arrive before the round's
+  (owed when the world was held, or when a benchmark segment began) and any that arrive before the round's
   `begin` was answered (`localBegun`). Nothing on the page reads `steps` or
   `ended` — the round's end is heard off the wire's `roundover`, on the
   person's port (`Game.endRound`). A `hold`'s `done` finds nobody waiting and

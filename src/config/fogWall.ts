@@ -2,9 +2,13 @@
  * config/fogWall.ts — the fog wall, alone in a module.
  * Owns: the one distance the body draw gate, the ragdoll gate and the map's
  * fog all have to agree on. Its own doc below is the whole story.
- * Why its own file: `config/bots.ts` reads it, and pulling it from
- * `config/index.ts` — which imports `bots.ts` — would be an import cycle, and a
- * cycle between two `const` initializers is a TDZ crash at load, not a warning.
+ * Why its own file: it is not a section of `CONFIG` but a constant beside it,
+ * and `config/index.ts` holds one import per module and nothing else. (It
+ * first moved here because `config/bots.ts` read it, for a ragdoll gate that
+ * nothing ever read — `RagdollSystem.viewDistance` was always the gate — and
+ * a section module that reads it again must still take it from here, since
+ * `index.ts` imports every section and a cycle between two `const`
+ * initializers is a TDZ crash at load.)
  */
 
 /**
@@ -13,9 +17,9 @@
  *
  * It is a module constant rather than a field because two unrelated gates are
  * the SAME distance and have to move together — `NetRoster.viewDistance`,
- * where a body stops being drawn at all, and `bots.death.maxDistance` (the
- * ragdoll pool's `RagdollSystem.viewDistance`), past which a corpse would be
- * tumbling somewhere nobody can see. It was written
+ * where a body stops being drawn at all, and the ragdoll pool's
+ * `RagdollSystem.viewDistance`, past which a corpse would be tumbling
+ * somewhere nobody can see. It was written
  * out by hand in `BattleSystem` before this, which is how the ragdoll gate came
  * to be pinned to an unrelated number instead.
  *

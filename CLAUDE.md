@@ -1565,8 +1565,9 @@ built.
   which is the only file that imports the sections. **A new tunable goes in the
   section module it belongs to, never in `index.ts`** — that file is a spine and
   holds one import per module and nothing else. `FOG_WALL` is alone in
-  `config/fogWall.ts` because `config/bots.ts` reads it, and taking it from
-  `index.ts` would be an import cycle.
+  `config/fogWall.ts` because it is a constant rather than a section, and a
+  section that reads it must take it from there: `index.ts` imports every
+  section, so taking it from `index.ts` would be an import cycle.
 - `CONFIG` is `as const`, so a field like `bots.engageRange` has a *literal* type.
   `let x = CONFIG.bots.engageRange` then reassigning it fails to compile — annotate
   `let x: number` instead.

@@ -148,8 +148,8 @@ export class RagdollSystem implements PhysicsClient {
    * Past this a body is not worth tumbling, because it is not worth drawing —
    * the map's body draw distance, pushed by `Game.installMap` beside the same
    * number going to `NetRoster`. It is where the rig stops being drawn by
-   * construction rather than by coincidence (see `bots.death.maxDistance`),
-   * and the construction is that both are
+   * construction rather than by coincidence (see `config/fogWall.ts`), and
+   * the construction is that both are
    * handed one number resolved once (`bodyDrawDistanceOf`); `CONFIG` holds
    * what a map with no opinion gets.
    *

@@ -335,6 +335,12 @@ interface BenchRun {
   script: BenchScript | null;
   /** Fight steps handed to the match — one `advance` each. */
   steps: number;
+  /**
+   * The segment the last frame was labelled with, -1 before the first: a
+   * frame that changes it drops the step timing still to be filed
+   * (`dropLocalTiming`), which belongs to the segment it was posted under.
+   */
+  segment: number;
   /** The player's own tier, put back when the run ends. */
   difficulty: number;
   /** The bot the spectator follows, by roster index; -1 for none yet. */
@@ -591,9 +597,11 @@ export class Game {
   private readonly localTiming = newStepTiming();
   /**
    * How many `advance` answers still to come were posted BEFORE the world
-   * was last held (`passLocalClock`): their timing is dropped as it arrives,
-   * since filing it on the first frame after a pause would charge that frame
-   * with steps taken seconds earlier.
+   * was last held (`passLocalClock`) or a benchmark segment last began
+   * (`updateBench`): their timing is dropped as it arrives, since filing it
+   * on the first frame after a pause would charge that frame with steps
+   * taken seconds earlier, and on a segment's first frame would charge the
+   * segment with the last one's (`dropLocalTiming`).
    */
   private localTimingSkip = 0;
   /** `updateWorld` advanced the page's own match this frame — read and reset by `passLocalClock`. */
@@ -4687,7 +4695,7 @@ export class Game {
     // How far a BODY is worth drawing, to the two systems that gate on it: a
     // body is not drawn and a corpse is not worth tumbling. One number
     // resolved once and pushed to both, which is what keeps the roster's draw
-    // gate and `bots.death.maxDistance` the same distance by construction —
+    // gate and the ragdoll pool's the same distance by construction —
     // see `config/fogWall.ts`.
     //
     // It used to be stated twice — here, where the fog is painted, and in
@@ -7069,7 +7077,9 @@ export class Game {
     // it awaits that read before it draws a row — and it means the same thing
     // it always did: whatever is answering `/ws` on this page's own origin.
     const region = this.regionBook.resolve(opts.regionId);
-    const net = new NetSession(this.scene, this.mats, false);
+    // Its rigs built to the map the join expects, which the welcome may yet
+    // move (`applyMatchMap`), and `buildRound`'s `setFielded` with it.
+    const net = new NetSession(this.scene, this.mats, false, perTeamOf(this.mapDef.layout));
     this.net = net;
 
     this.wireNet(net);
@@ -7136,7 +7146,9 @@ export class Game {
   private openLocalRound(seed: number): void {
     this.leaveMatch();
     const host = this.local;
-    const net = new NetSession(this.scene, this.mats, true);
+    // Its rigs built to this round's own roster, so `buildRound`'s
+    // `setFielded` has nothing to rebuild unless the viewer's side moved.
+    const net = new NetSession(this.scene, this.mats, true, perTeamOf(this.mapDef.layout));
     this.net = net;
     this.wireNet(net);
     this.localBegun = false;
@@ -8694,6 +8706,19 @@ export class Game {
   }
 
   /**
+   * Drops the step timing not yet filed — what has arrived (`localTiming`)
+   * and every answer still owed for an `advance` already posted
+   * (`localTimingSkip`) — because the frame that would file it is not the
+   * frame those steps belong to: the first after a HELD world
+   * (`passLocalClock`), or the first of a new benchmark segment
+   * (`updateBench`).
+   */
+  private dropLocalTiming(): void {
+    clearStepTiming(this.localTiming);
+    this.localTimingSkip = this.local.owed;
+  }
+
+  /**
    * Hands the page's own match the rest of this frame's clock: whatever of
    * the `seen` seconds since the last frame `updateWorld` did not step, as
    * time the match HELD (`LocalMatch.hold`) — its clock passes and nothing
@@ -8718,10 +8743,7 @@ export class Game {
     this.localStepped = 0;
     this.localWorldRan = false;
     if (!this.localRound) return;
-    if (!ran) {
-      clearStepTiming(this.localTiming);
-      this.localTimingSkip = this.local.owed;
-    }
+    if (!ran) this.dropLocalTiming();
     if (!this.net!.seated) return;
     const held = seen - stepped;
     if (held > 0) this.local.hold(held);
@@ -8891,6 +8913,7 @@ export class Game {
       kit,
       script: null,
       steps: 0,
+      segment: -1,
       difficulty: this.difficulty,
       focus: -1,
       roundEnded: false,
@@ -8968,6 +8991,13 @@ export class Game {
     if (cue.kind === "done") {
       this.endBench(true);
       return;
+    }
+    // The filing lags the steps by a frame (`fileLocalTiming`), so the first
+    // frame of a segment would file the last frame of the one before — a
+    // lead leg's several summed steps in a fight row whose own is one.
+    if (cue.segment !== run.segment) {
+      run.segment = cue.segment;
+      this.dropLocalTiming();
     }
     this.prof.setSegment(cue.segment);
     if (cue.kind === "fight") {

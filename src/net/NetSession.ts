@@ -294,9 +294,13 @@ export class NetSession {
    */
   readonly local: boolean;
 
-  constructor(scene: Scene, mats: CelMaterialFactory, local: boolean) {
+  /**
+   * `perTeam` is the roster the session's rigs are first built to — the map
+   * it is opened for (`NetRoster`'s constructor); `setFielded` moves it.
+   */
+  constructor(scene: Scene, mats: CelMaterialFactory, local: boolean, perTeam: number) {
     this.local = local;
-    this.roster = new NetRoster(scene, mats);
+    this.roster = new NetRoster(scene, mats, perTeam);
     this.grenades = new NetGrenades(scene, mats);
     this.ordnance = new NetOrdnance(scene, mats);
     this.conn.onStateChange = (s) => this.onStateChange(s);

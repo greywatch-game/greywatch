@@ -360,8 +360,9 @@ src/
                     #   One module per subsystem; import `CONFIG` from "…/config"
     index.ts            # Composes CONFIG from the sections. The ONLY importer of
                         #   them. A new tunable goes in a section, not here
-    fogWall.ts          # FOG_WALL alone — bots.ts reads it, so it cannot live in
-                        #   index.ts without an import cycle. The DEFAULT view
+    fogWall.ts          # FOG_WALL alone — a constant, not a section, and a
+                        #   section reading it from index.ts would be an import
+                        #   cycle. The DEFAULT view
                         #   distance now: a map's `fogEnd`, or its
                         #   `bodyDrawDistance`, overrides it, and Game.installMap
                         #   resolves ONE number into the two body gates

@@ -424,8 +424,9 @@ export interface EnvironmentSpec {
    * as fog.
    *
    * **The two riders stay pinned to each other**, which is what
-   * `config/fogWall.ts` exists to say: the roster's draw gate and
-   * `bots.death.maxDistance` are the same distance BY CONSTRUCTION, and they
+   * `config/fogWall.ts` exists to say: the roster's draw gate and the
+   * ragdoll pool's (`RagdollSystem.viewDistance`) are the same distance BY
+   * CONSTRUCTION, and they
    * still are — both systems above are handed the one number this
    * resolves to, so a corpse can never be refused a tumble somewhere its rig
    * is still being drawn.

@@ -88,8 +88,10 @@ stay on the wall clock the client's offset is sampled against (`Match.hold`'s
 argument). Only once the session is seated: before the welcome there is no
 round on the host to hold. A frame that did not run `updateWorld` also drops
 the step timing waiting to be filed and counts off the answers still owed for
-advances posted before it (`localTimingSkip`), so the profiler never charges a
-resumed frame with steps taken seconds earlier; otherwise every answer's timing
+advances posted before it (`localTimingSkip`, through `dropLocalTiming`), so
+the profiler never charges a resumed frame with steps taken seconds earlier —
+and a benchmark segment's first frame does the same, so a segment never files
+the last one's steps; otherwise every answer's timing
 is SUMMED into one row (`localTiming`) and filed as the `sim` root by the next
 frame that steps (`fileLocalTiming`, `docs/profiling.md`).
 

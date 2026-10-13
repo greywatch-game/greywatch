@@ -209,10 +209,10 @@ and since X2.5c C4 the pool hears of every death the same way, off the wire
 That tween was exempt from the pose-freeze LOD *because it was five property
 writes*; **a ragdoll needs no such exemption**, because it poses through the proxy
 nodes its joints are parented to and its view writes those whatever the LOD says.
-Reading those two as one fact is what pinned `maxDistance` to `lodFreezeDistance`
+Reading those two as one fact is what pinned the ragdoll gate to `lodFreezeDistance`
 (35) and stopped anything dying across the square from falling over at all — a
 marksman rifle's whole range. The two were never the same question, and the
-distinction is why `maxDistance` may only ever be the distance a rig stops being
+distinction is why that gate may only ever be the distance a rig stops being
 drawn (`NetRoster`'s; it was `lodDisableDistance` until X2.5c C5 took the
 offline rig and both its LODs away).
 
@@ -261,7 +261,7 @@ session, and headless absolutes are inflated anyway. The PAIR is the measurement
 in — and it is one number for everything that stops at it, the MAP's number.** Two systems gate on the same distance for the same reason
 (there is nothing to see past it): `NetRoster`, where a rig stops being drawn —
 every body the page draws comes off the wire, offline as in a match — and
-`death.maxDistance` here, one metre past which the solver would be tumbling
+`RagdollSystem.viewDistance` here, one metre past which the solver would be tumbling
 something nobody can see. There were three while the offline page drew its own
 bots — `BattleSystem`, then `BattleView` once the rigs left it, until X2.5c C4.
 `BattleSystem` wrote its own `78` out by hand before any of this, which is how
@@ -272,9 +272,11 @@ resolved distance into, and `FOG_WALL` in `config/fogWall.ts` is what they carry
 before a map is installed. It used to be the answer, with a dev warning when a
 map's `fogEnd` disagreed — and the disagreement is now the point: Coldharbour
 has no fog wall at all, sees 480 m, and a body vanishing at 78 there would
-vanish in plain sight. `config/fogWall.ts` is still its own module for the
-original reason (`config/bots.ts` reads it, and taking it from `index.ts` would
-be an import cycle).
+vanish in plain sight. `config/fogWall.ts` is still its own module, though its
+original reason has gone: `config/bots.ts` read it for a `death.maxDistance`
+that nothing ever read — this field was always the gate — and the key was
+deleted after BABYLON_EXIT.md X2.5c. It stays a module because it is not a
+section of `CONFIG` and `index.ts` holds imports only.
 
 **That distance is the map's `fogEnd` until the map states an
 `EnvironmentSpec.bodyDrawDistance`, and the pinning survives it because the

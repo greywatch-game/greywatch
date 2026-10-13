@@ -8,7 +8,6 @@
  * permanent hitch.
  */
 
-import { FOG_WALL } from "./fogWall";
 
 /** Bot roster, AI cadence, and the render LOD that makes 16 of them viable. */
 export const bots = {
@@ -567,8 +566,9 @@ export const bots = {
     /**
      * When a body the pool did NOT take is hidden.
      *
-     * That is only ever a death past `maxDistance` — the fog wall, where the
-     * rig has already stopped being drawn — so this is a bookkeeping clock and
+     * That is only ever a death past the body draw distance
+     * (`RagdollSystem.viewDistance`), where the rig has already stopped being
+     * drawn — so this is a bookkeeping clock and
      * not a piece of timing anybody watches. It is still on the wire: netplay
      * sends `deathProgress` as `since / hideTime` and a client hides a body it
      * did not ragdoll when that reaches 1.
@@ -603,42 +603,6 @@ export const bots = {
      * the RATIO to the roster as the trustworthy part.
      */
     maxConcurrent: 8,
-    /**
-     * No ragdoll past this, measured ONCE at the moment of death — a corpse
-     * does not move, and re-testing per frame would switch a tumble off
-     * halfway through because the player backed away.
-     *
-     * **It is the pool's ONE remaining refusal**, and that is why it has to be
-     * exactly where a body stops being drawn rather than merely near it: a
-     * body refused inside the fog would stand where it died until `hideTime`,
-     * with nothing left to pose it.
-     *
-     * It is the FOG WALL, and it is the same number as the distance a body
-     * stops being drawn (`NetRoster.viewDistance`) BY CONSTRUCTION rather than
-     * by coincidence: that is where the rig stops being drawn, so one metre further is a solver tumbling something the
-     * player cannot see. Every death inside the fog is eligible, which is
-     * what a marksman rifle needs — its own range is bounded by the same wall.
-     *
-     * The construction now has something to survive: a map may state a
-     * `bodyDrawDistance` shorter than its fog, and when it does the rig LOD and
-     * this move together because `Game.installMap` resolves ONE number
-     * (`bodyDrawDistanceOf`) and pushes it to both. This value is what a map
-     * with no opinion gets.
-     *
-     * It is deliberately NOT the old pose-freeze LOD distance (35 m), which
-     * is what this was pinned to and why nothing dying across the square ever
-     * fell over. That LOD only skipped posing, and a ragdolled rig is not
-     * posed at all — a ragdoll poses through the proxy nodes its joints are
-     * parented to, which the solver writes whatever the LOD says. Verified: a
-     * corpse at 50 m driven through the real `BattleSystem.update` tumbled
-     * from a 0.64 m standing joint spread to 0.002 m face-down on the floor,
-     * rig still enabled.
-     *
-     * This costs nothing per frame on its own — `maxConcurrent` is what
-     * bounds the solver — but it does keep the pool busier, which is the
-     * other half of why that went up with it.
-     */
-    maxDistance: FOG_WALL,
     /** Matches the grenade's exaggerated fall, not the player's. */
     gravity: -18,
     /**
