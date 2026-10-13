@@ -46,6 +46,35 @@ export function views(spec = "all") {
   });
 }
 
+// Into a live round with the player on the ground. Every round is a MATCH
+// the page joins, so a deploy is an ASK answered by a message: wait for the
+// body rather than for a clock (VERIFYING.md).
+const INTO_ROUND =
+  "g.startRound(); await until(() => g.state === 'deploy' && g.net?.seated);" +
+  " g.spawnPlayer(); await until(() => g.state === 'playing'); await wait(300);";
+
+// Tab held for as long as the picture takes.
+const HOLD_TAB =
+  "Object.defineProperty(g.input, 'scoreboard', { get: () => true, set() {}, configurable: true });";
+
+// A few rows of the board PAID, so the sort has something to order. The page
+// holds no ledger — its board is the authority's `scores` table, read through
+// `scoreRows` by both the Tab board and the round-over card — so the payment
+// is laid over THAT read rather than written into the match, and a live
+// table arriving under it cannot take it back: the player's own row gets
+// `kills` and `deaths`, every few other rows a kill or three, each kill worth
+// `CONFIG.score.kill` (100). The team totals are summed from these rows
+// downstream, so the header agrees with them.
+function paid(kills, deaths) {
+  return (
+    " const rows = g.scoreRows.bind(g);" +
+    " g.scoreRows = () => rows().map((r, i) => {" +
+    `   const k = r.you ? ${kills} : i % 3 === 1 ? 0 : (i * 7) % 4;` +
+    `   const d = r.you ? ${deaths} : (i * 5) % 3;` +
+    "   return { ...r, kills: r.kills + k, deaths: r.deaths + d, score: r.score + k * 100 }; });"
+  );
+}
+
 // How each screen is reached from a booted page, and its root element. Every
 // opener is a private method in TypeScript and an ordinary property in the
 // page. The round-based ones wait for `deploy`, which is when the build and
@@ -67,17 +96,18 @@ export const SCREENS = {
   // A round ENDED rather than played out: the player is spawned, a few rows
   // of the board are paid so it has something to rank, and the enemy's
   // tickets are taken to nothing — the offline card, with its Another round.
+  // The end arrives the way the wire's does (`onNetEvent`'s `roundover`),
+  // the tickets written into the page's mirror on the line before, which
+  // `endRound` reads once and nothing re-reads after the card is up.
   roundover: {
     open:
-      "g.startRound(); await until(() => g.state === 'deploy'); g.spawnPlayer(); await wait(300);" +
-      " const s = g.simSlot; for (let i = 0; i < 6; i++) g.core.scores.award(s, 'kill');" +
-      " for (let i = 0; i < 9; i++) g.core.scores.award((i * 5) % g.core.battle.bots.length, 'kill');" +
-      " g.core.scores.registerDeath(s); g.core.scores.registerDeath(s);" +
-      " g.core.conquest.tickets[1 - g.player.team] = 0; g.core.publish(); g.simSync(); g.endRound(g.player.team);",
+      `${INTO_ROUND} ${paid(6, 2)}` +
+      " g.conquest.tickets[1 - g.player.team] = 0;" +
+      " g.onNetEvent({ e: 'roundover', winner: g.player.team });",
     root: "#overlay",
   },
   pause: {
-    open: "g.startRound(); await until(() => g.state === 'deploy'); g.spawnPlayer(); await wait(300); g.pause();",
+    open: `${INTO_ROUND} g.pause();`,
     root: "#overlay",
   },
   // The Tab board over a live round, held rather than pressed: `scoreboard` is
@@ -85,36 +115,28 @@ export const SCREENS = {
   // by one that always reads held. A few rows are paid so the sort has
   // something to order. `--map 4` (Sarab) is the deep, two-up roster.
   scoreboard: {
-    open:
-      "g.startRound(); await until(() => g.state === 'deploy'); g.spawnPlayer(); await wait(300);" +
-      " const s = g.simSlot; for (let i = 0; i < 5; i++) g.core.scores.award(s, 'kill');" +
-      " for (let i = 0; i < 14; i++) g.core.scores.award((i * 5) % g.core.battle.bots.length, 'kill');" +
-      " g.core.scores.registerDeath(s); g.core.publish(); g.simSync();" +
-      " Object.defineProperty(g.input, 'scoreboard', { get: () => true, set() {}, configurable: true });",
+    open: `${INTO_ROUND} ${paid(5, 1)} ${HOLD_TAB}`,
     root: "#scoreboard",
   },
   // The same board over the DEPLOY screen, which is where a player waiting
   // out a reinforcement clock reads it.
   "scoreboard-deploy": {
-    open:
-      "g.startRound(); await until(() => g.state === 'deploy');" +
-      " Object.defineProperty(g.input, 'scoreboard', { get: () => true, set() {}, configurable: true });",
+    open: `g.startRound(); await until(() => g.state === 'deploy'); ${HOLD_TAB}`,
     root: "#scoreboard",
   },
   // A MATCH's board, faked offline: the ping column forced on, a spread of
   // readings and dashes, and two names at `MAX_NAME_LENGTH` — the width a
-  // stranger's name can actually take.
+  // stranger's name can actually take. Written over the VIEW the Tab board is
+  // handed (`g.scoreboard.set`), after `pushScoreboard` has summed the team
+  // totals, which neither a name nor a ping moves.
   "scoreboard-net": {
     open:
-      "g.startRound(); await until(() => g.state === 'deploy'); g.spawnPlayer(); await wait(300);" +
-      " const s = g.simSlot; for (let i = 0; i < 5; i++) g.core.scores.award(s, 'kill');" +
-      " for (let i = 0; i < 14; i++) g.core.scores.award((i * 5) % g.core.battle.bots.length, 'kill');" +
-      " g.core.publish(); g.simSync();" +
-      " const f = g.hud.setScoreboard.bind(g.hud);" +
-      " g.hud.setScoreboard = (v, r) => f(v, r && { ...r, pings: true, rows: r.rows.map((x, i) => ({ ...x," +
+      `${INTO_ROUND} ${paid(5, 0)}` +
+      " const set = g.scoreboard.set.bind(g.scoreboard);" +
+      " g.scoreboard.set = (on, v) => set(on, v && { ...v, pings: true, rows: v.rows.map((x, i) => ({ ...x," +
       "   name: i === 3 ? 'WWWWWWWWWWWWWWWWWWWW' : i === 12 ? 'The_Longest_Callsign' : x.name," +
       "   ping: i % 4 === 0 ? -1 : [28, 64, 131, 212][i % 4] })) });" +
-      " Object.defineProperty(g.input, 'scoreboard', { get: () => true, set() {}, configurable: true });",
+      ` ${HOLD_TAB}`,
     root: "#scoreboard",
   },
 };
