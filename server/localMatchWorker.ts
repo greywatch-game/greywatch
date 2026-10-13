@@ -1,6 +1,6 @@
 /**
- * server/localMatchWorker.ts — The Worker a local match runs in
- * (`BABYLON_EXIT.md` X2.5c C3): this thread's scope is the owner's port, and
+ * server/localMatchWorker.ts — The Worker a local match runs in:
+ * this thread's scope is the owner's port, and
  * `serveLocalMatch` is everything it does.
  * Owns: nothing — the host is `localMatch.ts`, which a page without this
  * Worker runs on a `MessageChannel` in its own thread, the same code path.

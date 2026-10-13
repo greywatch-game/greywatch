@@ -24,8 +24,8 @@
  * a comparison between a handful of runs. Nothing here allocates: an event is
  * folded in as it is reported, a string by its char codes.
  *
- * **The step an event is stamped with is the EVENT's** (`BABYLON_EXIT.md`
- * X2.5a C4a): the fight is the simulation core's, which says what happened
+ * **The step an event is stamped with is the EVENT's**: the fight is the
+ * simulation core's, which says what happened
  * through its event ring with the tick it happened on, and the folder — the
  * local match, as it drains — hands that tick less the fight's first in. One
  * step is one tick, and folding the tick the event carries is what keeps the

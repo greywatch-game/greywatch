@@ -23,14 +23,13 @@
  * body sphere encloses it and it could not win a nearest-hit search.
  * Never: import `@babylonjs/core` or `math/babylon.ts`, hold a mesh, or draw.
  * Its vectors are `src/math`'s and what it is handed is `Vector3Like`, read
- * through the fields (`BABYLON_EXIT.md` X2.2).
+ * through the fields.
  *
  * THE PICTURE IS `CombatFx`'s, AND THIS FILE RAISES IT RATHER THAN DRAWING IT.
- * Until X2.2 C2 the tracer, spark, disc and mark pools lived here and the
- * authority built all four under a NullEngine to draw nothing. Now each
- * resolved round raises `onRound` once — where the tracer used to be spawned,
- * so it is still ahead of `onShotPath` and a break's own effects still fall
- * behind the round that caused them — and `Game` wires it to
+ * The tracer, spark, disc and mark pools are the view's, so the authority
+ * builds none of them. Each resolved round raises `onRound` once — ahead of
+ * `onShotPath`, so a break's own effects fall behind the round that caused
+ * them — and `Game` wires it to
  * `CombatFx.drawRound`. On the authority nothing is wired, and the default is a
  * no-op. `RayHit.surface` chooses the impact's kind, which the event carries;
  * "hard" is what everything but the floor answers, exactly as
@@ -79,7 +78,7 @@ export type DamageKind = "bullet" | "blast" | "shell" | "crush" | "fire";
 /**
  * Anything a hitscan shot can damage.
  *
- * **Its vectors are either library's** (`BABYLON_EXIT.md` X2.2): `center` and
+ * **Its vectors are either library's**: `center` and
  * `eyePos` are `Vector3Ref` — read through their fields, and written through
  * `set`/`copyFromFloats` by the one thing that moves them from outside,
  * `src/sim/LagComp.ts`'s rewind — so nothing that reaches a target through
@@ -103,11 +102,11 @@ export interface Hittable {
    * This target is a `Bot`, and nothing else may declare it — `isBotVictim`
    * in `killRules.ts` narrows on it to the class.
    *
-   * A flag rather than an `instanceof` for `armoured`'s reason one level
-   * down: the one reader is `settleKill`, which every door onto a kill reaches, and
-   * an `instanceof` is a VALUE import of `Bot` — which pulled the whole
-   * soldier rig and the scene behind it into a module that only books a kill
-   * (`BABYLON_EXIT.md` X2.2). Absent on everything that is not one.
+   * A flag rather than an `instanceof` for `armoured`'s reason one level down:
+   * the one reader is `settleKill`, which every door onto a kill reaches, and
+   * an `instanceof` is a VALUE import of `Bot` — which would pull the whole
+   * soldier rig into a module that only books a kill. Absent on everything that
+   * is not one.
    */
   readonly isBot?: true;
   /**

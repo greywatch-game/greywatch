@@ -6,7 +6,7 @@
  * gun's own two angles, both weapons' clocks, which of its two seats are
  * filled, the health, and the `HullPose` its joints are drawn at.
  * Invariants:
- * - **The SIMULATION and nothing else** (`BABYLON_EXIT.md` X2.2 C9): no
+ * - **The SIMULATION and nothing else**: no
  *   `@babylonjs/core`, no mesh, no rig, no scene — every vector is
  *   `src/math`'s — so the authority builds the same hull a client does.
  * - **Nothing it asks is read off a node.** Where the hull is, is `pos`;
@@ -1433,13 +1433,12 @@ export class Vehicle implements Combatant, RayHull {
    * **It is ARITHMETIC, off the hull's own fields** (`entities/hullFrame.ts`):
    * the float32 node chain from the collider box down to the muzzle, replayed
    * off `pos`, `yaw`, the drawn pose and the kind's frame, bit for bit what
-   * `muzzle.computeWorldMatrix(true)` returned off the rig on both sides — a
-   * forced read walks every ancestor, so it was always the FRESH chain. It
-   * used to BE that read, forced because the authority never renders and an
-   * unforced one there returned the first answer it ever computed for the
-   * life of the process (a hull driven to (115, -26) on Sarab still fired
-   * every shell from the (-192, -217) hardstanding it spawned on). Since
-   * `BABYLON_EXIT.md` X2.2 C8 there is no node in it to force.
+   * `muzzle.computeWorldMatrix(true)` returns off the rig — a forced read
+   * walks every ancestor, so it is the FRESH chain. There is no node in it to
+   * force, which is the point: an UNFORCED read off a rig that never renders
+   * answers with the first value it ever computed for the life of the process
+   * (a hull driven to (115, -26) on Sarab still fired every shell from the
+   * (-192, -217) hardstanding it spawned on).
    */
   muzzleToRef<T extends Vector3Ref>(out: T): T {
     return this.pointToRef(HULL_MUZZLE, out);

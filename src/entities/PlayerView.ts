@@ -20,7 +20,7 @@
  * - The flash joins `VIEWMODEL_GROUP` with the rifle it hangs off; the brass
  *   is thrown into the WORLD and stays in the ordinary group, occluded like
  *   anything else. Both are built as `Part`s on `src/geometry/` buffers and
- *   made meshes by `drawnMesh` (BABYLON_EXIT.md X1.3).
+ *   made meshes by `drawnMesh`.
  * Never: write anything on `Player` — it reads nothing back from the picture
  * but the model's own answers (`carriedSight`, `reloadAction`, the reload's
  * head pose), which are the drawing's to give.

@@ -12,8 +12,8 @@
  * reference to any other system, imports nothing from `@babylonjs/core`, and
  * draws nothing: the PICTURE of a break — the collapsed vertex range and the
  * collider mesh's editor flags — is `GlassFx`'s, which only the client builds
- * and which hears of a pane through `onBroken` and `onCleared`
- * (`BABYLON_EXIT.md` X2.2 C4). The authority runs this file alone.
+ * and which hears of a pane through `onBroken` and `onCleared`.
+ * The authority runs this file alone.
  *
  * ## Why the sweep is analytic and not a pick
  *
@@ -346,10 +346,9 @@ export class GlassSystem {
     // not relink the same ground twice for nothing.
     delete box.glass;
 
-    // The collider MESH is not touched here: nothing that moves or shoots
-    // reads one (the rays stopped at `ENGINE_UPGRADE.md` wall 2 and the sweeps
-    // at `BABYLON_EXIT.md` X2.1), and its three editor-facing writes are
-    // `GlassFx.clear`'s, off `onCleared` below.
+    // The collider MESH is not touched here: nothing that moves or shoots reads
+    // one (the rays and the sweeps both answer off boxes), and its three
+    // editor-facing writes are `GlassFx.clear`'s, off `onCleared` below.
     map.obstacles.remove(box);
     // And out of every ray in the game, which is the write that used to be
     // `mesh.metadata.solid = false` — one flag, clearing both questions at

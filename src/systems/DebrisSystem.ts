@@ -8,7 +8,7 @@
  * Invariants: it is the second `PhysicsClient` and owns no engine — see
  * `PhysicsWorld`. Nothing here feeds navigation, cover or hit detection: a shard
  * is dressing, exactly as a corpse is, and rounds and bodies pass through it.
- * A shard's place is its body's `pose` (`BABYLON_EXIT.md` X2.4 C5): a burst
+ * A shard's place is its body's `pose`: a burst
  * writes it, the step moves it, the sink lowers it — and the VIEW writes it
  * onto the mesh (`drawLive`, `poseView.applyPose`) when a burst places it,
  * at the end of `update`, and when a release parks it, which are the points

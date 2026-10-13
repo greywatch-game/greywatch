@@ -2271,19 +2271,18 @@ export class MapBuilder {
    * a tank's chase camera.
    *
    * **NONE OF THOSE IS A PICK ANY MORE** (`RayWorld`, `ENGINE_UPGRADE.md` wall
-   * 2), so the frame no longer cares how these are grouped. Two things do,
-   * and they are why this stays: the editor still picks meshes, and the
-   * grouping rides to the server as `MapCollision.boxGroups` — the order a
-   * body's sweep breaks a tie in, a decision this side made that the other
-   * side has to reproduce (it builds no mesh from it since `BABYLON_EXIT.md`
-   * X2.3). `colliderBoxes` keeps one entry per prop however the
-   * meshes are grouped, which is why nothing derived from geometry — the ray
-   * queries now included — can tell either way. Greyfen's five belts were 354
-   * loose tree boxes out of
-   * 696 solid meshes, so half of every ray in the game was already being spent
-   * on trees — and a jungle dense enough to be worth the name needs three
-   * times that. Merged per 12 m square the same 950 trees are ~120 meshes, so
-   * the map gets a forest and the ray budget gets *cheaper* than it was.
+   * 2), so the frame no longer cares how these are grouped. Two things do, and
+   * they are why this stays: the editor still picks meshes, and the grouping
+   * rides to the server as `MapCollision.boxGroups` — the order a body's sweep
+   * breaks a tie in, a decision this side made that the other side has to
+   * reproduce (it builds no mesh from it). `colliderBoxes` keeps one entry per
+   * prop however the meshes are grouped, which is why nothing derived from
+   * geometry — the ray queries now included — can tell either way. Greyfen's
+   * five belts were 354 loose tree boxes out of 696 solid meshes, so half of
+   * every ray in the game was already being spent on trees — and a jungle dense
+   * enough to be worth the name needs three times that. Merged per 12 m square
+   * the same 950 trees are ~120 meshes, so the map gets a forest and the ray
+   * budget gets *cheaper* than it was.
    *
    * **Locality is the whole of it.** `struts()` merges per fence for the
    * reason this merges per square: one mesh around every tree on the map would

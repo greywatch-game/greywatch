@@ -7,16 +7,16 @@
  * typed (`parseSeed`). Owns no system and decides no outcome: a system asks it
  * for a stream once, when it builds the thing that draws, and keeps it.
  *
- * **Why outcomes are seeded at all** (`BABYLON_EXIT.md` X0.2, `PERF_PLAN.md`
- * C1): `Math.random` decided where every round went inside its cone, which
- * spawn a body took and where in it, and how far off a tank crew laid its gun.
- * A round could therefore never be played twice, so a bug in one could never
- * be watched again and a benchmark's fight was a different fight every run.
- * Now a round is a function of its map, its difficulty and ONE number — and
- * that number is per ROUND rather than per build, because a game whose every
- * round fought out identically would be a worse game. Normal play draws a
- * fresh one (`freshSeed`); a benchmark, a replay or a bug report passes one
- * (`?seed=`, `npm run simulate`'s fourth argument).
+ * **Why outcomes are seeded at all**: `Math.random` decided where every round
+ * went inside its cone, which spawn a body took and where in it, and how far
+ * off a tank crew laid its gun. A round could therefore never be played twice,
+ * so a bug in one could never be watched again and a benchmark's fight was a
+ * different fight every run. Now a round is a function of its map, its
+ * difficulty and ONE number — and that number is per ROUND rather than per
+ * build, because a game whose every round fought out identically would be a
+ * worse game. Normal play draws a fresh one (`freshSeed`); a benchmark, a
+ * replay or a bug report passes one (`?seed=`, `npm run simulate`'s fourth
+ * argument).
  *
  * **One stream per SHOOTER, not one for the round**, so that what one shooter
  * does cannot move another's draws. A shared stream is reproducible only while

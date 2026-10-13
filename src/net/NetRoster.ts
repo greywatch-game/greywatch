@@ -24,7 +24,7 @@
  * is the ceiling any map may field (`CONFIG.bots.maxPerTeam`, so that a
  * rotation never renumbers a player — see `server/Roster.ts`), so on a map
  * fielding eight a side the bodies are slots 0-7 and 24-31; on a match the
- * page owns it is the map's own roster (`BABYLON_EXIT.md` X2.5c C2), so the
+ * page owns it is the map's own roster, so the
  * same bodies are 0-7 and 8-15. The welcome says which (`Welcome.blockWidth`,
  * `setBlockWidth`), and until it has, the ceiling is assumed. So this class
  * keeps two views of one pool: `soldiers`, dense, for everything that walks
@@ -353,11 +353,10 @@ export class NetRoster {
   }
 
   /**
-   * Poses every body for `renderTime`, and applies the distance LOD — the
-   * body draw distance `RagdollSystem` gates its corpses on too, one number
-   * pushed to both (`setViewDistance`). Since `BABYLON_EXIT.md` X2.5c C4 this
-   * is the only rig LOD there is, offline included: every body the page draws
-   * is one of these.
+   * Poses every body for `renderTime`, and applies the distance LOD — the body
+   * draw distance `RagdollSystem` gates its corpses on too, one number pushed
+   * to both (`setViewDistance`). This is the only rig LOD there is, offline
+   * included: every body the page draws is one of these.
    *
    * The LOD is worth keeping even though nothing here is simulated: it is a
    * DRAWING budget, and a roster of rigs is the same number of draw calls

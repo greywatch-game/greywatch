@@ -20,7 +20,7 @@
  *
  * **The same class runs on both sides and only one of them is real.** The
  * simulation core holds one per `SimPlayer` and its verdict is what kills —
- * on the authority and, since `BABYLON_EXIT.md` X2.5a C4a, offline too; the
+ * on the authority and offline alike; the
  * page holds one for its own player and uses it for nothing but the number on
  * the HUD. That is the ordinary split — a client predicts its movement, and
  * this is a pure function of movement — and it is why the leash costs the

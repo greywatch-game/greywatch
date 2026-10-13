@@ -3,7 +3,7 @@
  * per 48 m block, and the fixed-step clock everything under it advances on.
  * Owns: the engine — Havok's own world, created and stepped through the raw
  * API in [`havok.ts`](havok.ts), with no Babylon plugin and no scene physics
- * engine between (`BABYLON_EXIT.md` X2.4 C4) — the static world, the substep
+ * engine between — the static world, the substep
  * accumulator, and the register of clients that have bodies in it.
  * Owns no body but the static world's. `RagdollSystem` has the corpses,
  * `DebrisSystem` the glass shards and `BlastDebrisSystem` the rubble a blast
@@ -32,7 +32,7 @@
  * - **Babylon-free** (`scripts/check-babylon-free.mjs` holds it, beside
  *   `havok.ts`). It reaches no node, no mesh and no scene: a body's pose is a
  *   plain array (`WorldBody.pose`) that a client's VIEW writes onto whatever
- *   it draws (`BABYLON_EXIT.md` X2.4 C5), and the floor arrives as the
+ *   it draws, and the floor arrives as the
  *   collider clones' own vertex arrays (`GameMap.terrainGeometry`), not as
  *   the meshes.
  * - Stepping is `update()`'s job and it is only ever called from a gameplay
@@ -43,11 +43,9 @@
  * - The sim is a FIXED step with a CARRIED remainder, so a tumble is identical
  *   at 30, 60 and 144 fps and reproducible headless, where `dt` is clamped to
  *   0.05. Both halves are load-bearing and both have already been wrong once.
- *   The step IS `death.substep`, every substep, and has been only since the
- *   plugin left: Babylon's engine reset the plugin's step to its own 1/60
- *   straight after it was set, so the setting said nothing until X2.4 — and is
- *   1/60 itself, which is why taking the plugin out moved no bits (see the
- *   constructor).
+ *   The step IS `death.substep`, every substep, and is 1/60 — the step
+ *   Babylon's engine forced on its plugin whatever it was told, which is why
+ *   calling Havok directly moved no bits (see the constructor).
  * - Everything under it is COSMETIC. Nothing here feeds navigation, cover or
  *   hit detection, and nothing under it may ever decide anything — that rule
  *   outlived the fallbacks and is the one that has not moved.
@@ -177,7 +175,7 @@ export interface PhysicsClient {
  * plugin's `executeStep` did for a `PhysicsBody`: teleport it from its pose
  * before a substep, and write its pose back after one.
  *
- * **The pose is a plain array, not a node** (`BABYLON_EXIT.md` X2.4 C5), and
+ * **The pose is a plain array, not a node**, and
  * it is exactly what the plugin's node was to it: the plugin teleported from
  * an UNPARENTED node's raw `position` and `rotationQuaternion` and synced back
  * into the same two, neither normalised — so this array is those seven

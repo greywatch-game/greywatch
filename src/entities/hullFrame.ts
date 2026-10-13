@@ -21,8 +21,8 @@
  *   lean, the heave and the suspension's tilt were written to their nodes
  *   behind a 1e-5 guard, so a drawn joint trails its spring by up to that
  *   much — and the muzzle was always read off the drawn joint. So the record
- *   keeps the guards, and since `BABYLON_EXIT.md` X2.2 C9 it is the record
- *   that is written and the view that copies it: the node is what the record
+ *   keeps the guards, and it is the record that is written and the view
+ *   that copies it: the node is what the record
  *   says, never the other way round.
  * - **A frame is the DRAWING's**: each kind states its own in a Babylon-free
  *   frame file (`TANK_FRAME` in `tankFrame.ts`, `TRUCK_FRAME`, `HELI_FRAME`),

@@ -239,9 +239,6 @@ function describeScript(s: LoafScript): string {
  * after it. `_gpuTimeInFrameId` is which frame the counter currently holds.
  * It is private in Babylon and there is no public equivalent, and it is read
  * anyway because the alternative is not a simpler instrument but a wrong one.
- * (The precedent this used to cite — `PhysicsWorld`'s two handles onto Babylon's
- * Havok plugin — went with the plugin at `BABYLON_EXIT.md` X2.4; this is the one
- * private field left.)
  */
 interface GpuCounter {
   readonly counter: { readonly current: number };
@@ -993,8 +990,8 @@ export class FrameProfile {
   }
 
   /**
-   * Files a step's whole timing row (`SimCore.timing`, the simulation core's
-   * — `BABYLON_EXIT.md` X2.5a C6) in ONE call: the step into `root`, and each
+   * Files a step's whole timing row (`SimCore.timing`, the simulation core's)
+   * in ONE call: the step into `root`, and each
    * phase the step reached into `slots[i]` — a span measured ELSEWHERE, by
    * whoever ran it, on this file's own clock. The row may already be a SUM
    * of steps (`addStepTiming` — a benchmark's lead steps the core several

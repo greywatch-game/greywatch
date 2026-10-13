@@ -11,8 +11,7 @@
  * claimed flag is penalised, never excluded. Round numbers come from
  * CONFIG.conquest, squad ones from CONFIG.bots.squad. Babylon-free: positions
  * are read as `Vector3Like` and the one it hands out (`scatterSpawn`) is
- * `src/math`'s, so a caller feeding Babylon copies it by its fields
- * (`BABYLON_EXIT.md` X2.2 C4).
+ * `src/math`'s, so a caller feeding Babylon copies it by its fields.
  */
 import { CONFIG } from "../config";
 import { clamp } from "../core/math";

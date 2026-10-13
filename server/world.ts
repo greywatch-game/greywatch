@@ -3,7 +3,7 @@
  * collider set and the floor, the two lazy imports `buildSimWorld` takes.
  * Owns: the LOAD and nothing else. The rebuild itself — nav, cover, obstacles,
  * rays, the sweep and the `GameMap` that carries them — is
- * `src/sim/simWorld.ts`, which every host shares (`BABYLON_EXIT.md` X2.5a).
+ * `src/sim/simWorld.ts`, which every host shares.
  * Invariants: what it loads is exactly what the client built from, or a shot
  * that lands on a wall here passes through it there — the bake is checked
  * against its layout by `scripts/check-collision.mjs` and the derived

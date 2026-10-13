@@ -15,8 +15,8 @@
  *   TYPE: the module itself is what `loadHavok` fetched and `main.ts` awaited,
  *   handed down through `PhysicsWorld`. Vectors and quaternions cross as
  *   Havok's own tuples (`[x, y, z]`, `[x, y, z, w]`), never as a class.
- * - **Call for call the plugin's.** `BABYLON_EXIT.md` X2.4 ported
- *   `PhysicsWorld` and its three clients off the plugin, and the bar is bits:
+ * - **Call for call the plugin's** — Babylon's Havok plugin, which this
+ *   replaces under `PhysicsWorld` and its three clients, and the bar is bits:
  *   the oracles (`plans/physics-ref/`) hash Havok's own poses, and a port that
  *   makes the plugin's calls in the plugin's order with the plugin's values is
  *   the only port that passes them. So each method here names the plugin

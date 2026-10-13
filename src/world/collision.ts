@@ -11,14 +11,14 @@
  * built (`src/ui/mapPlan.ts`). Only the server EXPANDS them into a world; the
  * interface reads the tuples and draws them.
  *
- * **Every host of the simulation core reads it** (`BABYLON_EXIT.md` X2.5c):
+ * **Every host of the simulation core reads it**:
  * `Match` — a server's, or the page's own local match offline — `simulate`
  * and `corecheck` all build the core's world (`buildSimWorld`) off the
  * COMMITTED bake, which is why `npm run build` refuses one older than its
  * layout. `scripts/bake-collision.mjs` is what writes it, off a built map.
  *
- * Why the data exists: the server simulates with no Babylon and no canvas
- * (`BABYLON_EXIT.md` X2.3), and `MapBuilder` builds meshes and reaches a
+ * Why the data exists: the server simulates with no Babylon and no canvas,
+ * and `MapBuilder` builds meshes and reaches a
  * `DynamicTexture` through `floorMaterial`, so it cannot run there. The server
  * rebuilds the solid world from these boxes instead, as data. That is sound
  * because `MapBuilder.collider()` is the one place a collider is made and a

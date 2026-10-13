@@ -412,7 +412,7 @@ export interface GameMap {
    * what `GlassFx` and `WorldCulling` index. **Client-only and EMPTY on the
    * authority**, like `visuals`: no ray and no sweep reads a mesh on either
    * side (they answer off `colliderBoxes`, `rayGroups` and the floor through
-   * `rays`), and `buildSimWorld` builds none (`BABYLON_EXIT.md` X2.3).
+   * `rays`), and `buildSimWorld` builds none.
    */
   colliders: Mesh[];
   /** The same colliders as plain boxes, for the nav grid. */
@@ -508,7 +508,7 @@ export interface GameMap {
    * The same floor blocks as GEOMETRY, one entry per `terrainColliders` mesh
    * and in its order: the very vertex and index arrays each clone was made
    * of. `PhysicsWorld` is the reader — it rests a body on the floor and
-   * reaches no mesh to do it (`BABYLON_EXIT.md` X2.4 C5). **Empty on the
+   * reaches no mesh to do it. **Empty on the
    * authority**, with `terrainColliders`.
    */
   terrainGeometry: TerrainGeometry[];
@@ -554,7 +554,7 @@ export interface GameMap {
    * Baked directional cover over the nav graph, for the AI — or null on a
    * world no AI is stepped on.
    *
-   * **The page's build carries none** (`BABYLON_EXIT.md` X2.5a C4a): its one
+   * **The page's build carries none**: its one
    * reader is `BattleSystem`, and the page has none — offline the bots are the
    * simulation core's, whose world `buildSimWorld` rebuilds from the same boxes
    * and bakes its own cover over, and in a match they are the authority's. Baking

@@ -11,12 +11,11 @@
  * `onIgnited`, `burntOut` on `onBurntOut`). Nothing here decides where a
  * grenade goes, whom a blast hurts or where a fire burns, and every random in
  * it is a PICTURE's (`Math.random`, never a round stream). The authority never
- * builds one (`BABYLON_EXIT.md` X2.2): the simulation half is all
- * `src/sim/SimCore.ts` holds, so nothing here has to survive a NullEngine.
+ * builds one: the simulation half is all `src/sim/SimCore.ts` holds.
  * Contract: `docs/grenades.md`.
  *
- * Split out of `GrenadeSystem` at X2.2 C3, on the line `CombatFx` drew one
- * system over: the simulation keeps the name, the pools and every rule, and
+ * Split out of `GrenadeSystem` on the line `CombatFx` is split on: the
+ * simulation keeps the name, the pools and every rule, and
  * this file keeps everything a GPU is needed for. It imports two helpers from
  * the simulation's module that hold no state of the simulation's —
  * `fireStrength`, a pure function of a fire's age, and `floorUnder`, which

@@ -2,8 +2,8 @@
  * net/Connection.ts — The connection to a match: lifetime, reconnection, and
  * the clock offset every interpolated body is drawn against.
  * Owns: the transport it is dialled over (`transport.ts` — a WebSocket to a
- * match server, or a port to a match the page hosts, `BABYLON_EXIT.md` X2.5c
- * C3), the inbound message callback, and the estimate of what time it is on
+ * match server, or a port to a match the page hosts), the inbound message
+ * callback, and the estimate of what time it is on
  * the server. Owns no game state — it hands decoded messages upward and knows
  * nothing about rosters, soldiers or rounds, nor which kind of transport it
  * is holding.

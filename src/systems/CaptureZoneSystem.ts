@@ -37,7 +37,7 @@
  * (`ZoneState`), which `ControlPoint` satisfies, so Game can pass its points
  * straight through without this becoming a system-to-system import.
  *
- * The ring's geometry is ours (BABYLON_EXIT.md X1.3): each stone is a
+ * The ring's geometry is ours: each stone is a
  * `createPolyhedron` shape put through its own scale, turn and seat into a
  * batch, and a batch becomes a mesh only at `finish`, through `drawnMesh`.
  *

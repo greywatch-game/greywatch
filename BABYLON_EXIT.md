@@ -148,182 +148,48 @@ before its last part and brings you what you need to answer it.
 
 ## Phase 0 — Instruments
 
-Nothing in the game moves in this phase. Every later step is graded with what
-it builds, so a gap here is a gap in every step after it.
+**Landed, and tagged `exit-phase-0` on 2026-10-09:** the bank 47 of 47, the
+benchmark within 2.3% on the desktop and 4.5% on the phone's Sarab, one fight
+per map on both devices. Phases 0 to 2 are archived word for word, with every
+step's brief, findings and measurements, in
+[`plans/done/babylon_exit_phases_0-2.md`](plans/done/babylon_exit_phases_0-2.md).
+What stays here under each heading is what it landed and what a later step still
+uses or owes.
 
 ### X0.1 — A reference bank that reproduces, and covers what will move — **M** — **LANDED** (9246a72)
 
-**Landed.** The unpinned clock was the IRRADIANCE VOLUME's rolling sweep: it
-converges per sweep (~72 frames), not per frame, and moved 7.4% of Greyfen's
-pixels, up to 78/255, between two consecutive grabs. `freeze` now re-sweeps it
-8 times at its warm budget after everything else is pinned, then holds it (1
-sweep still leaves 6.4% off across processes). The cloud ring's turn and
-Cinderhaven's storm were unpinned too and are now. The water, the grass and the
-wind were already pinned, the flags' cloth is not stepped in `deploy`, and the
-particles are off in the freeze. The bank went from 22 frames on six maps to 47
-on seven. The new rows hold rigs at 6 m and 250 m, all three hull kinds, the
-viewmodel hip and aimed for one weapon per optic, a blast in the air, a
-see-through shopfront, a capture ring, Cinderhaven at night, and the blur in
-flight beside each post setting off. Four rows had gone stale with the re-lays
-and were re-posed. Every row now places the shadow maps, the lamps' atlas, the
-water and the grass at its own eye. It was re-taken on 9.28 with the current
-clouds, and `mode.json` now records the Chromium build, Playwright, the adapter,
-the driver and the settings. **Measured:** two `--check` runs in a row, from two
-separate shells, came back 47 of 47 at 0% of pixels and 0/255. `FINDINGS.md` 20
-was fixed and deleted. The bank's README has a table of which rows serve which
-exit step.
-
-`FINDINGS.md` 20: the bank in `plans/webgpu-ref/` cannot reproduce a frame on
-any map, is stale against the clouds and Babylon 9.28, and `ref/mode.json`
-records nothing but the mode. It is the look oracle for all of Phases 3–5.
-
-- **Read first:** `FINDINGS.md` 20; `plans/webgpu-ref/README.md`;
-  `bank.mjs`, `vantages.mjs`, `diff.mjs`.
-- **Do:**
-  - Find what makes two consecutive grabs differ, and pin it the way the
-    lantern's flicker and the cube probe were pinned. The finding's suspects
-    are the water's swell (363eb8b) and the grass field (c0f17b1). Also check
-    the wind, the clouds, the flags' cloth, the ash particles and the GI's
-    rolling sweep.
-  - Add vantages for what this plan will move, which the map views alone do
-    not cover:
-    - a rig up close and one at ~250 m
-    - a hull from each kind
-    - the viewmodel, hip and aimed, for one weapon per optic
-    - a blast posed mid-flight (the pools' `warm` poses already do this)
-    - water, see-through glazing, a backed pane
-    - the night map
-    - each post setting on and off
-  - Re-take on the current engine, and say so in the commit as the README
-    asks. Write the Chromium build and driver into `mode.json`.
-- **Verify:** `bank.mjs --check` passes twice in a row on an unchanged tree,
-  in the same session and in a fresh one.
-- **Rewrites:** `FINDINGS.md` 20 (closed or narrowed),
-  `plans/webgpu-ref/README.md`.
+The reference bank in `plans/webgpu-ref/` (`bank.mjs`, `vantages.mjs`,
+`diff.mjs`) reproduces: 47 rows on seven maps, `--check` twice in a row at 0%
+of pixels and 0/255. Its rows cover what Phases 3 to 5 move: rigs at 6 m and
+250 m, every hull kind, the viewmodel hip and aimed for each optic, a blast in
+the air, see-through glazing, a capture ring, the night map, and each post
+setting on and off. The bank's README says which rows serve which step, and
+`mode.json` records the browser, the adapter and the settings. **It is the look
+oracle for every step from X3.1 on** (`bank.mjs --check`). The full record is
+in the archive.
 
 ### X0.2 — Seeded randomness in the simulation (PERF_PLAN C1) — **S** — **LANDED** (08a52fd)
 
-**Landed.** Every outcome `Math.random` decided now draws from a stream out of
-`src/systems/RoundRandom.ts`: the spread cone, spawn choice and scatter, a
-crew's lay, and also the player's recoil drift and flinch, since those move
-where the player's rounds go. There is one stream per shooter, keyed by the
-authority's slot for a bot and by hardstanding for a hull's cupola gun, so one
-shooter's draws never move another's. Each side calls one `seedRound` per round
-(`Game.buildRound`, `HeadlessGame.startRound`). Normal play draws a fresh seed;
-`?seed=` and `npm run simulate`'s fourth argument fix one. The seed is in the
-profiler capture (report version 12, shown in the viewer), on a DEV console
-line, and in the match server's round log. In a match the client's capture
-says null, because the seed is the authority's. The bots' movement streams
-still use their constant seeds, but `BattleSystem.reset` now restarts them every
-round. Without that, a seed reproduced only the first round of a session. The
-skill draw is untouched. Pictures and sounds stay on `Math.random`. `simulate`
-now prints `fight`, a hash over the whole kill list in order. **Measured:** from
-seed 777, all seven maps (the four vehicle maps among them) printed one hash
-for two rounds in each of two processes, and every board balanced. Seed 778 and
-two fresh seeds printed different hashes. `npm run parity` passed on all eight
-maps, `npm run build` passed, and `bank.mjs --check` passed with no pixel
-moved. In a browser, `?seed=4242` reached two rounds in a row, the DEV line, and
-the capture, with the player firing and bots fighting and no page errors.
-
-As `PERF_PLAN.md` C1 states it — `CombatSystem`'s spread cone,
-`ConquestSystem`'s spawn choice and scatter, `VehicleCrew`'s aim onto seeded
-`mulberry32` streams; visual-only draws may stay. **This plan adds two
-requirements:**
-
-- **The seed is per ROUND.** Normal play draws a fresh seed for each round; the
-  benchmark and any replay pass a fixed one.
-- **The round's seed is readable.** Once outcomes vary by seed, reproducing a
-  bug needs that round's seed. Write it into the profiler capture and into a
-  DEV-visible line, and let a URL override set it.
-
-**Leave the bots' own streams as they are.** Each bot's movement stream
-(`BattleSystem.ts`, `CONFIG.bots.skill.seed + team * 131 + i * 17`) and the
-per-squad skill draw stay on their constant seeds. That is deliberate, the
-code says so, and it does not affect the exit: the benchmark passes a fixed
-seed either way. Whether bots' movement should vary between rounds is a
-game-feel question for later (see "Decisions that are yours"). The skill draw
-should stay constant regardless, because seeding it per round would make squad
-strength, and so balance, a matter of chance.
-
-- **Verify:** `npm run parity`; `npm run simulate`; a bot-only round run twice
-  from one seed at a fixed `dt` reaches the same score and the same kill
-  list.
+Every outcome draws from a per-shooter stream out of
+`src/systems/RoundRandom.ts`, reseeded once a round. `?seed=` and `simulate`'s
+fourth argument fix the seed, every capture records it, and `simulate` prints
+`fight`, a hash over the kill list in order. **The fixed seed (777) is what
+makes the benchmark's and `simulate`'s fight hashes an oracle for every later
+step.** The bots' movement streams and the per-squad skill draw keep their
+constant seeds on purpose; whether the movement streams should vary is in
+"Decisions that are yours". The full record is in the archive.
 
 ### X0.3 — A benchmark that runs itself on any device — **M** — **LANDED** (6e2e7a9)
 
-**Landed.** `?bench=<map>` (or `?bench` for the menu's map) builds the map and
-plays three parts. First, the bank's vantages: one stop per position, eight
-headings each. Second, a loop through the quarter with the most built ground,
-which means collider boxes weighed by footprint, because a plain count picked
-Hollowmere's dead-tree wood. Third, a bot-only round from seed 777: nobody is
-seated, the player's body is dead, and a 45 s lead-in at nine steps a frame
-gets the bots into contact before 45 s of fight is measured. Every bench frame
-is the fixed 1/60 s step, so every device draws the same measured frames and
-fights the same fight. The run ends in a capture on a HALTED ring, so `VIEW`,
-`SAVE` and `TRACE` hand over the run and nothing after it. Every row of that
-capture is labelled by segment (report version 13: `bench`, `segments`,
-`series.segment`, and a table in the viewer), and it carries `FightHash`. The
-page then goes back to its menu with the player's own map and tier. `bench` is
-a new step state. The script and the bank's vantage table are a lazy chunk;
-the table moved to `src/bench/vantages.ts`, which `vantages.mjs` re-exports.
-`plans/webgpu-ref/bench.mjs` is the desktop wrapper. It also fixed a recorder
-bug: arming mid-frame, which the settings toggle does, filed a row stamped 0,
-so `window.seconds` read as the page's lifetime.
-
-Three things the first version got wrong were found by the verify, and each
-is now in `docs/profiling.md`'s "The benchmark":
-- **A first look's GPU bill.** It surfaced, uncapped, as one 110-570 ms wait
-  at a frame nobody can predict, which moved a vantage up to 71% between runs.
-  Settles now end on quiet frames, and every stop is rehearsed before it is
-  measured.
-- **A GPU-bound frame arrives in bursts.** So the vantages are measured for at
-  least 1,152 frames between them.
-- **1920x1080 was too small to measure at.** A frame there is ~2.5 ms, which
-  is pacing jitter. The wrapper defaults to the box's own 3440x1440.
-
-**Measured:** the Windows box, headless and uncapped at 3440x1440, three runs
-per map in one session. Every group on all seven maps agreed:
-
-| map | vantages | path | fight | fight ms (median) |
-| --- | --- | --- | --- | --- |
-| hollowmere | 2.5% | 2.2% | 3.1% | 5.85 |
-| greyfen | 0.7% | 0.4% | 1.3% | 7.12 |
-| coldharbour | 2.1% | 0.5% | 0.2% | 7.33 |
-| harrowmead | 0.6% | 0.3% | 2.3% | 5.98 |
-| sarab | 0.7% | 1.4% | 0.5% | 11.14 |
-| cinderhaven | 0.1% | 0.4% | 1.4% | 10.07 |
-| kurenai | 0.4% | 0.7% | 5.4% | 5.98 |
-
-Each figure is the spread of the mean across the three runs. Each map fought
-one fight on every run. Of the individual vantage holds, only Coldharbour's
-`avenue` was over 8%, at 8.8%. The last three rows were re-run after the
-1,152-frame floor, which changes only maps with fewer than four stops.
-
-**Not run: a real phone.** Nothing here can reach one, and X0.4 owes that run.
-A phone-SHAPED run did complete with nothing but the URL: touch, a coarse
-pointer, a 915x412 viewport at DPR 2.625 and the CPU throttled 4x. It came
-back to the menu with the hand-off written, and its fight hash on Greyfen
-matched the desktop's. `bank.mjs --check` passed and `npm run build` passed.
-
-USB and wireless debugging both failed on the phone (`PERF_PLAN.md` P0), so
-the benchmark must need no tooling: **a URL starts it, it plays itself, and it
-ends in a profiler capture.**
-
-- **Read first:** `docs/profiling.md`; `plans/webgpu-ref/gate.mjs` (its
-  `--uncap` run is the nearest thing that exists); FINDINGS 32's warning about
-  variation between sessions.
-- **Do:** `?bench=<map>` (or a settings entry) that runs, in order:
-  - the bank's vantages, eight headings each, held long enough to settle
-  - one scripted camera path through the map's densest quarter
-  - a bot-only round from X0.2's fixed seed, with the simulation stepped at a
-    fixed `dt` whatever the wall clock does, so the same fight happens every
-    run while the frame time is still real
-
-  It ends in a `FrameProfile` capture with each segment labelled. A desktop
-  wrapper script runs it N times and reports medians and ratios.
-- **Verify:** three runs in one session on the Windows box agree within the
-  protocol's ~8% on every segment. A phone run completes with nothing but the
-  URL.
+`?bench=<map>` plays the bank's vantages at eight headings, a path through the
+quarter with the most built ground, and a bot-only round from seed 777, every
+frame on the fixed 1/60 s step. It ends in a capture labelled by segment on a
+halted ring, carrying the fight's hash, and needs nothing on a phone but the
+URL. `plans/webgpu-ref/bench.mjs` is the desktop wrapper (3440x1440 by
+default). **Every "X0.3" under a later Verify means this run**, read by
+`PERF_PLAN.md`'s protocol (the ~8% floor); `docs/profiling.md`'s "The
+benchmark" holds the three things its first version got wrong. The full record
+is in the archive.
 
 ### X0.4 — The "before", then the targets — **S** (decision at the end) — **LANDED** (2048484)
 
@@ -357,1219 +223,196 @@ blind can be out of the exit's reach whatever the exit does. At render scale
 per-pixel shader cost (`FINDINGS.md` 13). The shaders port unchanged, so no
 renderer rewrite moves either.
 
-- **Do, first:** take the "before" with X0.3 on **Greyfen and Sarab**, on
-  **the desktop and the phone**, several runs each. The two maps are the two
-  ends of the game: Greyfen is small, 8 a side and has no vehicles; Sarab is
-  large, 24 a side and has all three kinds. The two devices are the two ends
-  of its settings:
-  - **the desktop at MAX settings**: `bench.mjs --max`, which fails a run
-    whose capture is not at the top of every ladder, uncapped at 3440x1440.
-  - **the phone at minimal settings**: render scale 0.5, the 60 fps cap, every
-    quality setting at its lowest, GI off. It runs from the deployed build
-    (`develop` carries X0.1 to X0.3; see "The branch").
-
-  Cinderhaven and Coldharbour were dropped (the user's call, 2026-10-09):
-  Sarab covers Cinderhaven's size, roster and armour, and the steps that need
-  either map (X1.x's build times, X4.2) take their own before and after. The
-  tablet was dropped too: it is faster than the phone, so a target the phone
-  meets says nothing more on the tablet.
-
-  **Measure the phone WARM.** A player plays for more than a minute, and the
-  phone slows as it heats: on Greyfen the runs after a cold first run took
-  33-49% longer a frame, and the cold run slowed through its own 164 s
-  (`FINDINGS.md` 52). So: one warm-up run
-  that is thrown away, then the runs back to back, in the same screen state
-  (installed app or fullscreen) and the same settings. Do `PERF_PLAN.md` G1
-  where the device allows it; the phone's GPU cost moves with the shaders, not
-  the engine.
-- **Output:** a `FINDINGS.md` entry with the tables. For each device, split
-  the time into what the exit can move (draw calls, CPU time in the render)
-  and what it cannot (GPU fill, the browser's floor), as far as the captures
-  allow. Every later step quotes its numbers against this entry.
-- **Then stop, and bring the user the tables.** The user writes the targets
-  into this file. Each target names:
-  - a device
-  - a map
-  - a render scale
-  - a statistic: a p95 or the 1% low, never a mean (`FINDINGS.md` 1 found
-    the mean at 60 while the slowest frames were at 28)
-
-  For example: "p95 at or under 16.7 ms on the Sarab benchmark, Android
-  phone, render scale 0.5".
-- **Nothing needs the targets until X6.2's sign-off.** The X3.3 gate only asks
-  whether any device's frame improved. So if the user is not ready to set them,
-  the step still lands, and Phase 1 can start.
-
-**Gate after Phase 0:** the bank and the benchmark both reproduce. If either
-does not, no later step can claim it moved nothing or saved anything. Fix them
-before going on.
-
-**Met 2026-10-09, tagged `exit-phase-0`:** the bank 47 of 47 (X0.1), the
-benchmark within 2.3% on the desktop and 4.5% on the phone's Sarab, and one
-fight per map on both devices (X0.3, X0.4).
+**How the "before" was taken, which X6.2's runs repeat:** the desktop with
+`bench.mjs --max`, uncapped at 3440x1440, three runs a map in one session; the
+phone from the deployed build at minimal settings (render scale 0.5, the 60 fps
+cap, every quality setting at its lowest, GI off), **warm**: one warm-up run
+thrown away, then the runs back to back in the same screen state and settings.
+The full brief, and why Cinderhaven, Coldharbour and the tablet were dropped,
+are in the archive.
 
 ---
 
 ## Phase 1 — Data off Babylon types
 
-The cheapest phase and the one that pays most: the maps, the kit and the merge
-stop depending on Babylon, and every oracle stays byte-identical.
+**Landed, and tagged `exit-phase-1` on 2026-10-10** (the merge of `develop` at
+09e35f8): `kit:hash` (3,722 builds), `kit:hash --models` (244, no content
+change), `merge:hash` on all eight maps shipped and `--editor`, and the bank 47
+of 47 at 0% of pixels at 3b35779.
 
 ### X1.1 — `src/math/`, and the world's data layer on it — **M** — **LANDED** (ad863e7)
 
-**Landed.** `src/math/` holds `Vector3`, `Quaternion`, `Matrix`, `Color3` and
-`Color4`: the members of Babylon's classes that the tree calls (a TypeScript
-compiler survey listed them), under the same names and signatures. Every body
-is copied from Babylon 9.28 in the same order of operations, with Babylon's
-Apache-2.0 notice in each header. The matrix stores float32 and keeps the
-identity flag its shortcuts read, so the answers are the same bits.
-`scripts/math-check.mjs` checks that. It runs every method in both libraries
-on seeded inputs (zeros, negative zeros, right angles, identity-flagged
-matrices), compares the results with `Object.is`, and fails when a member has
-no test case. Each map's `layout.ts`, the eight generators that write those
-files, `mapTypes`, `NavGrid`, `CoverMap`, `ObstacleField` and `RayWorld` now
-use it. The rest of the list had nothing to move: `TerrainField`'s queries
-take numbers, and its `VertexData` waits for X1.3. `layout`, `boxGeometry`,
-`boxIndex`, `roads`, `roadPaths`, `leash` and `collision` imported no Babylon
-math.
-
-**What the types found, and what it costs later steps.** Babylon's vector
-methods read `_x`, not `x`. Passing one of ours to a Babylon method therefore
-produces NaN, with no error. The reverse fails too: a Babylon vector cannot
-stand in for ours, because its `add` would be handed one of ours and read `_x`
-from it. So every function that both sides call takes `Vector3Like` (it only
-reads `x`, `y`, `z`) or `Vector3Ref` (it only writes, through `set`). A Babylon
-vector satisfies both as it is. `RayHit` is generic over which library's
-vectors it holds. Every copy from our math to Babylon's goes through
-`src/math/babylon.ts`, the one file under `src/math/` that imports Babylon (Rule 6
-names it). For now that is `toBabylon` at thirteen call sites and
-`babylonRayHit` in the three systems that read a hit with Babylon's methods.
-The file is deleted at X6.1, and each step that moves a caller off Babylon
-removes that caller's use of it. Two crossings get past the types. The
-editor's serializer recognises a position with `instanceof`, so `serialize.ts`
-and the editor's new layout entries now use our `Vector3` (`CLAUDE.md`,
-Conventions). A compiler scan for any of our values passed to a Babylon
-declaration finds none; a planted one is caught. `npm run collision`
-changed only the eight hash stamps, because the layouts' text changed and no
-box did.
-
-**Measured:**
-- **math-check:** 1,440,000 comparisons, all identical. A sum with its terms
-  reordered was planted, and it was caught.
-- **kit:hash:** identical on every kind, for both the drawing and the
-  colliders.
-- **merge:hash:** identical on all eight maps, shipped and `--editor`.
-- **parity:** passes on all eight maps.
-- **drop.mjs --check:** identical on five maps, and on Greyfen at its banked
-  2,400 steps. Harrowmead is "within tol" with the same hash on the parent, so
-  that state predates this step. At the default 480 steps Greyfen does not
-  settle, as its header says it won't, even though a run with no map named
-  still includes it. (Fixed after this step landed: a bare `--check` now runs
-  each map at its bank's count, and passes on all seven.)
-- **simulate, seed 777:** two processes of three rounds on each side (before
-  and after). Both sides fought the same fight (Greyfen `6ef4707c3c7a8414`,
-  Sarab `c109c06104830c4a`), and tick times differ by at most 2%, which is
-  within noise. The plain fields are neither faster nor slower here, because
-  no vector on a hot path left Babylon's math in this step. Bots, bodies and
-  hulls still hold Babylon's; X2.2 is where that question gets a real answer.
-- **The benchmark at `--max`:** fought X0.4's fights (Greyfen
-  `7ee089c174427e3d`, Sarab `1cab861b4ea23f7f`). Sarab's fight measured a 1%
-  low of 16.8 ms against 17.2.
-- **Generators and serializer:** every generator rewrites its layout byte for
-  byte apart from the import line. (Sarab's file has one comment added by hand
-  after generation, which the generator would drop.) The editor's serializer
-  rewrites every untouched layout byte for byte.
-- **A live round:** plays offline on Sarab and in a match on Greyfen, with no
-  page errors.
-- **`npm run build`:** passes.
-
-- **Do:** A small vector, quaternion, matrix and colour module covering the
-  methods the tree actually calls — a subset, with the same names, so the swap
-  is an import change. **Name the vector class `Vector3`**: every map's
-  `layout.ts` is generated text full of `new Vector3(`, the generators emit it,
-  and the editor's `sourceScan` patches that text byte for byte. Move the
-  world's data layer onto it:
-  - `mapTypes`, `layout`, every map's `layout.ts`
-  - `TerrainField`'s queries, `NavGrid`, `CoverMap`, `ObstacleField`
-  - `RayWorld`, `boxGeometry`, `boxIndex`
-  - `roads`, `roadPaths`, `leash`, `collision`
-
-  Where that data meets a mesh, convert in one bridge file (`src/math/babylon.ts`,
-  deleted in X6.1).
-- **Must not:** convert the rendering side. It is rewritten later, and
-  converting it twice is waste.
-- **Verify:** `npm run parity`, `npm run simulate`, `kit:hash` and
-  `merge:hash` identical, `drop.mjs --check`, and `simulate`'s tick times
-  within noise. Babylon's `Vector3` dirties itself on every write, so plain
-  fields may be faster; say which.
+`src/math/` holds the subset of Babylon's `Vector3`, `Quaternion`, `Matrix`,
+`Color3` and `Color4` that the tree calls, under the same names, bit for bit
+(`scripts/math-check.mjs`). The world's data layer runs on it: every layout and
+generator, `mapTypes`, `NavGrid`, `CoverMap`, `ObstacleField` and `RayWorld`.
+**What it costs every later step:** one of our vectors handed to a Babylon
+method reads `_x` and writes NaN without an error, so a function both sides
+call takes `Vector3Like` or `Vector3Ref`. Every copy into Babylon goes through
+`src/math/babylon.ts`, the one file under `src/math/` that imports Babylon.
+Rule 6 names it, X6.1 deletes it, and each step that moves a caller off
+Babylon removes that caller's use of it. The editor's serializer recognises a
+position with `instanceof`, so anything put into a layout is our `Vector3`.
+The full record is in the archive.
 
 ### X1.2 — Geometry as typed arrays: the `Build` layer and the kit — **M** — **LANDED** (df89358)
 
-**Landed.** `src/geometry/` holds `GeometryBuffer` and the six generators.
-The buffer stores positions, normals, uvs, uv2, colours and indices as typed
-arrays, with `VertexData`'s merge, transform and `ComputeNormals`. The
-generators are box, cylinder, torus, icosphere, sphere and polyhedron. All of
-it is copied from Babylon 9.28 operation for operation, with the Apache-2.0
-notice in each header (the licence obligation is the notice, which is kept).
-One rule came out of matching bits: **an array's type is its precision**.
-Babylon keeps whatever array it is given. A merge whose first member is a
-`Float32Array` rounds what it copies, and one whose first member is a
-`number[]` keeps doubles. So a buffer holds a `Float64Array` where Babylon
-held a `number[]` and a `Float32Array` where it held one, and never converts
-between the two. `scripts/geometry-check.mjs` builds every generator both
-ways over seeded options, runs merge, transform and normals against
-`VertexData`'s, and compares every number with `Object.is`. It fails on an
-export with no case.
-
-`Build` and every scatter prop now make `Part`s (`world/parts.ts`): a buffer,
-a local transform, a material and metadata, with the members a builder used
-to touch on a mesh under the same names. **The 52 `.parent =` became data,
-and the transform is applied at emit time, not at build time.** The
-placement is set on a prop's ROOT after the builder returns, so the whole
-transform is not known until `MapBuilder` places it. `flattenParts` runs
-there. It composes each link into the part's own transform the way Babylon's
-`setParent(null)` did, in the same float32 steps and in Babylon's child order,
-because that order is the merge's vertex order. Composing at build time would
-have needed an extra multiply by the placement, which moves bits. `partMesh`
-is the one adapter into Babylon (`MapBuilder.structureMeshes`, `propMeshes`).
-It hands back the arrays in the types Babylon held, by a loop, because
-`Array.from` over a typed array cost +15% of a map build on its own. Scatter
-builders no longer take a scene. Kit builders still do, for materials and
-textures. Pulled forward from X1.3, because the kit uses them: `flame.ts`
-(the molotov adapts it through `vertexDataOf`), `TerrainField`'s accumulator
-(the roads are built from it, and the terrain patches with them), and the
-fire drum's torus. `kit:hash` now hashes a prop after `flattenParts`
-(713bdcd, committed before any conversion, and the baseline for this step).
-
-**Measured:**
-- **geometry-check:** 33,000 comparisons, all identical. A planted constant
-  in the icosphere was caught. Past ~3,000 trials Node runs out of heap. The
-  leak is Babylon's `CreateSphereVertexData` (1,588 MB against our 67 over
-  3,000 calls).
-- **math-check:** 1,520,000 comparisons, identical, with the four `Vector3`
-  members the generators added.
-- **kit:hash:** identical on all 3,722 builds of 105 kinds, drawing and
-  colliders. A planted flatten error moved palm and pine and not cottage.
-- **merge:hash:** identical on all eight maps, shipped and `--editor`, before
-  and after the copy fix.
-- **`npm run collision`:** no diff. **parity:** passes on all eight maps.
-- **simulate, seed 777:** fought X1.1's fights (Greyfen `6ef4707c3c7a8414`,
-  Sarab `c109c06104830c4a`).
-- **The benchmark at `--max`:** played both rounds to the end and fought
-  X0.4's fights (Greyfen `7ee089c174427e3d`, Sarab `1cab861b4ea23f7f`). One
-  run each, so no frame figure is quoted. The scene is the same geometry by
-  `merge:hash`.
-- **`build:total`**, median of 5 per side, parent / this step / parent again:
-  Greyfen 9,932 / 10,047 / 9,840 ms, Coldharbour 3,587 / 3,599 / 3,541. That
-  is +1-2%, inside the 8% bar. The placement phase is +11-13% (~140 ms), which
-  is the adapter's copies. X1.4 deletes them.
-- **What was not run:** a live match against `server/`. Its one change is
-  that the terrain patches go through `vertexDataOf`, which parity exercises.
-- **`npm run build`:** passes.
-
-The kit makes 2,316 calls through its own layer (`Build`, `StoneBatch`,
-`Mesher`, `Lapidary`, `Joinery`). About 30 call Babylon's vertex generators
-directly, and there are 52 `.parent =` assignments.
-
-- **Read first:** `parts.ts`, `kit/core.ts`, `docs/build.md` (the four places
-  the build copies Babylon), `scripts/kit-hash.mjs`.
-- **Do:**
-  - Define a `GeometryBuffer`: positions, normals, uvs, uv2, colours, indices,
-    as typed arrays, plus the metadata a part carries.
-  - Write the primitive generators — box, cylinder, torus, icosphere,
-    polyhedron, sphere — to produce **exactly** Babylon's vertex order,
-    normals and UVs. Babylon is Apache-2.0, so they may be copied; keep its
-    licence notice in the file header, and confirm the obligation before
-    shipping.
-  - Rewrite `parts.ts` and `kit/core.ts` to emit buffers. Replace each
-    `.parent =` with a transform applied at emit time. Where Babylon meshes
-    are still needed, a single adapter turns a buffer into one.
-- **Verify:** `npm run kit:hash -- --against` identical for every kind, the
-  drawing and the colliders both; `merge:hash` identical; `npm run collision`
-  produces no diff.
-- **Rewrites:** `docs/build.md` (the four copied internals start going away),
-  `parts.ts`'s header.
+`src/geometry/` holds `GeometryBuffer` and six generators (box, cylinder,
+torus, icosphere, sphere, polyhedron), copied from Babylon 9.28 with its
+Apache-2.0 notice and checked by `scripts/geometry-check.mjs`. `Build` and
+every scatter prop make `Part`s whose transforms are data, composed at emit
+time by `flattenParts`. **An array's type is its precision:** a buffer holds a
+`Float64Array` where Babylon held a `number[]` and a `Float32Array` where it
+held one, and never converts between them. Rule 8 dates from here: a builder
+is written against this layer and proven with `kit:hash`, and a kit change
+merged in from `develop` is converted in the merge commit. The full record is
+in the archive.
 
 ### X1.3 — The rest of the geometry — **M** — **LANDED** (3bcaca7)
 
-**Landed.** The oracle came before any model moved: `kit:hash --models`
-(9b76260) builds every model that is not the kit under a NullEngine, 244
-builds of 20 kinds, and
-hashes every mesh AND transform node left in the scene, each vertex array with
-its TYPE and as exact doubles. It keeps two hashes a build, one in scene order
-and one over the sorted records, so `--against` can tell "content changed"
-from "scene order differs". The foundation (31c672a) added
-`mergeTransformed` to `src/geometry/buffer.ts`, which is
-`VertexData._mergeCoroutine`, the merge `Mesh.MergeMeshes` runs. Each member is
-transformed INSIDE the merge, after it has been copied into the first member's
-array type, so "transform, then merge" rounds at the other end and is not the
-same bits. It also added `GeometryBuffer.bake` (`bakeTransformIntoVertices`,
-which renormalises where a merge does not), and `createPlane` and `createDisc`
-for the optics' glass. `world/parts.ts` gained `PartNode` (a build frame that
-draws nothing, standing where a model hung a `TransformNode`), `detachPart`
-(`setParent(null)`, now the step `flattenParts` runs), `mergeParts`,
-`bakePartTransform`, and `drawnMesh`, the one adapter a model's surface
-becomes an uploaded Babylon mesh through. Then `facet.ts` (754ef99) was
-converted, with a temporary `drawnMesh` bridge at each caller, and the three
-families in parallel: the hulls (01b0fad), the soldier, the capture ring and
-the flag's pole (1c2b6ab), and the weapons, optics, the viewmodel's arms and
-card, the player's petals and casings and the four thrown or laid things
-(b992968). Every family removed facet's bridges in its own files. Every model's
-geometry is now ours. Its merges run on buffers, and its live joints are still
-Babylon `TransformNode`s (the rig is X4's). What is left on `MeshBuilder` is
-there on purpose. The player's capsule and a hull's box are colliders, and the
-sweeps are X2.1's. The rig's root capsule is what `WorldCulling` measures a body
-by and goes with the rig at X4.1. The flag's cloth is a live simulation with
-updatable buffers.
-
-**Scene order moved and no pixel did.** The weapons family came back with 201
-builds (every gun, the launcher, the viewmodel, the player) "scene order
-differs" and no content change, for two reasons. First, a lone colour group's
-mesh is now minted at merge time and not when its one part was made: the
-magazine's rubber on five guns and the sleeve on all 19 arms. Second, Babylon's
-`removeTransformNode` is a swap-remove, so disposing the old pivots used to
-shuffle the last live nodes into their slots. The hulls keep the old order on
-purpose (`vehicleRig.mergeByColor` mints lone colours first). A transform
-node's order draws nothing. A mesh's order is the opaque draw order, which the
-bank judged.
-
-**Measured:**
-- **kit:hash --models:** no content change on any of the 244 builds. 43 are
-  identical, and 201 differ in scene order only, for the two causes above.
-- **The bank, `--check` on Harrowmead, Sarab and Hollowmere:** every row is at
-  0% of pixels and 0/255. That covers the ten viewmodel rows (each optic, hip
-  and aimed), the three hulls, both rigs and the ring. The same check passed
-  before the conversion.
-- **geometry-check:** 55,548 comparisons over 14 cases at 3,000 trials, all
-  identical. Three plants were caught: no first-member flip, no renormalise in
-  `bake`, and no transform on a float32 first member.
-- **kit:hash:** identical on all 3,722 builds, drawing and colliders.
-- **merge:hash:** identical on all eight maps, shipped and `--editor`, against
-  2fc1286.
-- **parity:** passes.
-- **simulate, seed 777:** fought X1.1's fights (Greyfen `6ef4707c3c7a8414`,
-  Sarab `c109c06104830c4a`). The server builds the rigs and the hulls too.
-- **gate.mjs:** a real round on Harrowmead and Sarab is clean.
-- **`npm run build`:** passes.
-
-The same for what is not in the kit:
-- `weaponKit` and the seven weapon models, `optics.ts`
-- `vehicleRig` and the three hull models
-- `SoldierModel`'s geometry (the rig itself is X4.1)
-- the grenade, molotov, rocket and mine models
-- the capture zone's polyhedron (`createPolyhedron` exists and is checked)
-
-(`flame.ts`, `fireDrum`'s torus and `TerrainField`'s `VertexData` landed with
-X1.2, because the kit and the props are built from them.)
-
-- **First:** none of these is hashed today. Extend `kit:hash` with a models
-  mode that fingerprints them, commit it, and only then convert anything.
-- **Verify:** that new mode identical; `kit:hash` and `merge:hash` identical;
-  the bank's viewmodel and hull vantages pixel-identical.
+Every model outside the kit builds on buffers: the weapons, the optics, the
+hulls, the soldier's geometry, the four thrown or laid things and the capture
+ring. They merge with `mergeTransformed`, which reproduces
+`VertexData._mergeCoroutine`'s bits, and `kit:hash --models` (244 builds of 20
+kinds) is their oracle. **What it leaves for later steps:** live joints are
+still Babylon `TransformNode`s. The rig, and the root capsule `WorldCulling`
+measures a body by, go at X4.1. The flag's cloth stays a live simulation with
+updatable buffers. The full record is in the archive.
 
 ### X1.4 — The merge and the vertex bake on arrays — **M** — **LANDED** (3b35779)
 
-**Landed**, in seven commits graded one at a time:
-- **C0** (0879ffe): `merge:hash` sees what an upload at the end could get wrong. Each mesh's `sceneRank` (its creation order), `positionUpdatable`, `hasVertexAlpha` and `frozen` are recorded. So are the `panes`, the `paneGroups` and each editor item's visuals.
-- **C1** (68e7a8e): `kit:hash` hashes Parts directly.
-- **C2** (4992dbe): the bake's core runs on arrays (`shadingContext`, `takesShading`, `shadeVertices`). The dead child walk left over from the ink twins was deleted.
-- **C3** (ddad7e5): the merges run on `WorldSurface`s (`worldGeometry.ts`). `mergeByMaterial`, `BlockMerge`, `PaneBlocks` and `paneGroup` all use `mergeParts` and `bakePartTransform`. The palette is written into the buffer. A merged mesh is made in ONE place: `worldMeshes`, the adapter, which uses `drawnMesh`.
-- **C4** (080cff0): the floor and the rim become surfaces (`Ridge.ts` returns a `GeometryBuffer`). The bake runs on the surfaces before the upload. `GameMap.world` is the record: one `SurfaceRecord` per visual with its name, material, metadata, block, pieces and counts. Its arrays are released as each mesh is made, so the CPU holds the world's geometry once.
-- **C5** (f4d9b4b): the part mesh is deleted (`partMesh`, `partSurface`, `uploadPart`, `bakePart`, `setPartVerticesData`, `structureMeshes`, `propMeshes`), and so is the mesh form of `writePaletteIndex`. `shaders/` no longer imports `world/`.
-- **C6** (3b35779): each surface carries its PIECE ranges (a piece is a layout item, from the `GameMap.world.pieces` table) through every merge, and a DEV assertion checks that they tile each surface exactly.
+The merges and the vertex bake run on `WorldSurface`s. `GameMap.world` is the
+record, one `SurfaceRecord` per visual (name, material, metadata, block,
+pieces, counts), and `worldMeshes` is the one adapter.
+- **Each surface carries PIECE ranges** through every merge. A piece is a
+  layout item from `GameMap.world.pieces`, and a DEV assertion checks that the
+  ranges tile each surface. **X3.3 keeps a piece id per cluster, and
+  destructible buildings need it.**
+- **A surface's creation order (`born`) is part of the picture:** candidates
+  arrive in scene order, which reaches the glow mask and the transparent
+  tie-breaks.
+- **What is left between the world and Babylon is public API:** the adapter
+  (`VertexData.applyToMesh`, `Mesh.setVerticesData`), and the colliders
+  (`MeshBuilder.CreateBox`, `Mesh.MergeMeshes`), which now serve only the
+  editor's pick.
+- **A Babylon upgrade owes geometry-check, then math-check, then
+  `merge:hash`** (`docs/build.md`).
 
-The design came from a survey first, and two of its rules were what the bits turned on:
-- **A survivor's creation order is part of the picture.** `WorldCulling` hands candidates in scene order, and that order reaches the glow mask and the transparent tie-breaks. So every surface is minted a `born` number where Babylon used to make its mesh (a part on admission, a merge of two or more when it runs, a merge of one inheriting its member's), and the adapter makes the meshes in that order. List order is not creation order: Hollowmere differs on 91 of 135 visuals.
-- **The floor's collider clone still shares its arrays with its ground** through a per-build memo (`PlainArrays`).
-
-**What is left between the world and Babylon is public API in two places:**
-- the adapter, through `VertexData.applyToMesh` and `Mesh.setVerticesData`;
-- the colliders, through `MeshBuilder.CreateBox` and `Mesh.MergeMeshes`. Since X2.1 nothing that moves or shoots reads them: they remain only for the editor's centre-screen pick on the client, and as an inert mirror on the server, which X2.3 deletes.
-
-All three internals `docs/build.md` listed are gone. `geometry-check` is now the only caller of `_mergeCoroutine`, as the reference our copy is checked against. A Babylon upgrade now owes geometry-check, math-check, then `merge:hash` (`docs/build.md`).
-
-**Measured:**
-- **merge:hash:** identical on all eight maps, shipped and `--editor`, after every commit from C2 on, against C0's baselines: every field, including `sceneRank`, the pane ranges and their updatability, and the editor items. No `info` line moved.
-- **The piece assertion:** holds on all eight maps in both modes, and a planted bad offset was caught. Pieces per map, table entries / shipped ranges / editor ranges: Greyfen 809 / 2,202 / 3,586, Coldharbour 313 / 690 / 2,098. Every editor surface is one piece, and the widest shipped surface (Harrowmead) spans 170.
-- **kit:hash:** identical on all 3,722 builds. **kit:hash --models:** identical on all 244.
-- **geometry-check and math-check:** clean.
-- **`build:total`, median of 5, parent / this step / parent again, one session:**
-  - Greyfen: 13,652 / **8,875** / 13,559 ms, **-35%**.
-  - Coldharbour: 4,433 / **2,996** / 4,368 ms, **-32%**.
-  - Where it went, on Greyfen: placements 1,311 to 564 ms, scatter 5,935 to 3,117, the block merge 2,990 to 703, and the bake 2,881 to 1,893.
-  - What it now costs: the new `upload` phase, 2,137 ms. That is the adapter's `number[]` copies and the device upload, and it is the next thing to take (`FINDINGS.md` 26).
-  - The same session also cleared X1.3: X1.2's commit measured 13,598 and 4,446 ms against X1.3's 13,652 and 4,433.
-- **The bank, `--check`:** all 47 rows on all seven maps at 0% of pixels.
-- **parity:** passes.
-- **simulate, seed 777:** fought X1.1's fights (Greyfen `6ef4707c3c7a8414`, Sarab `c109c06104830c4a`).
-- **gate.mjs:** a real round is clean on all seven maps.
-- **`npm run build`:** passes.
-
-`PERF_PLAN.md` B1's "first job". `mergeByMaterial`, `BlockMerge`,
-`PaneBlocks`, `writePaletteIndex`, the emissive palette and `vertexShading`
-(AO, sway, wear, the world mark) run on `GeometryBuffer`s. What comes out is a
-`WorldGeometry` record: per block, per material key, the arrays plus the
-metadata `CLAUDE.md` makes a contract (`block`, `surface`, `noShadowCaster`,
-`noGlow`, `noInk`). The adapter uploads Babylon meshes carrying identical
-metadata, so `WorldCulling` and every reader of `metadata.*` are untouched.
-X1.3 left the merge it needs in place: `mergeTransformed` is
-`VertexData._mergeCoroutine`, checked by `geometry-check`, and the models
-already merge with it (`mergeParts`).
-
-- **Do also:** carry a **piece id** per vertex range through the merge, the
-  `paneGroup` precedent. It costs nothing now, and destructible buildings need
-  it.
-- **Verify:** `npm run merge:hash` identical, shipped and `--editor`;
-  `build:total` before and after on Greyfen and Coldharbour (typed arrays
-  should be faster; say by how much — X1.2's adapter costs ~140 ms of
-  Greyfen's placement phase in copies this removes). X1.2 took the fourth
-  internal `docs/build.md` listed; of the three left, the merge's two should
-  be gone. Name what is left.
-
-**Gate after Phase 1:** `kit:hash` and `merge:hash` identical, and no pixel
-moved.
-
-**Met 2026-10-10:** `kit:hash` (3,722 builds), `kit:hash --models` (244, no
-content change), `merge:hash` on all eight maps shipped and `--editor`, and
-the bank 47 of 47 at 0% of pixels at 3b35779. **Tagged** by the user on
-2026-10-10: `develop` merged in at 09e35f8 (it carried one commit, a7b58ea,
-whose content was already here), and `exit-phase-1` is that merge.
+The full record is in the archive.
 
 ---
 
 ## Phase 2 — The simulation off the scene
 
-The server is the proof. When this phase ends, the authority runs without
-Babylon, and a build gate keeps it that way.
+`server/` and every simulation import nothing from Babylon, and X2.3's gate
+says so. **No phase tag yet:** X2.5c's Verify still owes the play-test and the
+phone (below).
 
 ### X2.1 — The three sweeps are ours (PERF_PLAN C2) — **L** — **LANDED** (b7607c3)
 
-**Landed** 2026-10-10, on the user's play-test: a round on foot and in all
-three vehicle kinds, and "everything feels good". Four commits:
-- **C1** (d11ba15): `src/world/ellipsoidSweep.ts`, Babylon 9.28's
-  `moveWithCollisions` ported against each `WorldBox`'s twelve triangles,
-  `RayWorld.bodyNear` as its candidate list, and the oracle
-  `scripts/sweep-check.mjs`. Nothing wired.
-- **C2** (869bddc): `CollisionField` rewritten over `RayWorld`. The player,
-  a driven hull and a coasting wreck move by it on both sides. `narrowedMove`,
-  its forced world matrix, `CollisionField.movers` and
-  `scene.collisionsEnabled` are gone. Static boxes are ranked in the client's
-  collider-mesh order, derived from `boxGroups` on both sides.
-- **C3** (0372808): the contracts and docs below, and the collision bakes
-  regenerated for `boxGroups`' new header text.
-- b7607c3: the DEV sweep-order assertion made a module function, so a
-  production bundle drops it whole.
-
-**Why a port and not a new analytic sweep.** The feel is the acceptance test,
-and every push-out, the hull's offset sphere and its climb band were tuned
-against Babylon's response loop. A difference that starts at the last bit can
-pick the other triangle of a tie and slide somewhere else, so the port keeps
-Babylon's arithmetic, quirks included: back faces are tested (the default
-material meant Babylon's cull never ran in this game), and the 1 mm
-write-back is kept.
-
-**Where it differs from the text above:**
-- **The candidates come from `RayWorld`'s grid** (`bodyNear`), not from a grid
-  `CollisionField` keeps. One index, so a hull (`rays.hulls`) and a broken pane
-  (`RayWorld.remove`) leave every ray and every sweep in one write.
-  `CollisionField` holds no geometry of its own.
-- **The terrain is not swept**, as it never was. Vertical placement is the
-  ground probe's.
-- **The candidate list is checked against the path the centre took.** A sweep
-  that outran it is re-gathered at the reach it needed (three times, then the
-  whole map).
-
-**Three deliberate differences from what shipped**, named in
-`CollisionField.ts`'s header. All three matter only on knife edges at embedded
-starts:
-- the start is the body's own float64 position, where Babylon read the float32
-  world matrix;
-- a merged scatter cluster's triangles round as a mesh of their own did;
-- a hull is swept where it IS. Babylon read a stale world matrix on a client,
-  and on the authority possibly the origin.
-
-**Measured:**
-- **sweep-check, exact** (one mesh per box in the client's order, Babylon's
-  float32 start, the production gather): 56,000 of 56,000 bit-identical over
-  the seven maps; 44-73% of samples blocked. Ours takes 10-33 us a move, against
-  Babylon narrowed to the same boxes at 13-80 us and its whole walk at 52-524.
-- **sweep-check, `--tight`:** the same 56,000, with 104,118 re-gathers and
-  52,069 whole-map fallbacks. In C1 a reviewer forced the redo on 93% of
-  samples and it stayed 8,000/8,000.
-- **sweep-check, shipped** (the client's real merged scene, float64 starts
-  both sides): 40,345 of 56,000 within 1e-9, 90 over 1 mm. Every one of the 90
-  is an embedded start on a knife edge or merged-cluster rounding; 0
-  unexplained.
-- **sweep-check, walk** (700 chained fixed-step trajectories): the player never
-  drifts past 7 mm. Hulls pinned on box edges at those same knife edges drive
-  apart open-loop. Of the six worst, traced: three were merge rounding, three
-  were the start, none were ties.
-- **simulate, seed 777:** Greyfen fought X1.1's fight (`6ef4707c3c7a8414`). The
-  armour maps' fights changed: Sarab `dd2ee4abacfda2fe`, Coldharbour
-  `81e262436c7af253`, Harrowmead `6c61e93be2cffcbc`, Cinderhaven
-  `0e09b2c0616d9fa7`. Every change is attributed: with a float32 start, ours
-  fights the parent's own Babylon fight exactly once the parent is given
-  unmerged clusters and fresh hull matrices.
-- **parity:** passes on all eight maps.
-- **drop.mjs --check:** identical on six maps. Harrowmead is "within tol", as
-  it has been since X1.1.
-- **gate.mjs:** a real round on all seven maps is clean.
-- **A netplay round on Coldharbour**, on foot and driving into a building:
-  client and authority agree to 0.000 m. No body correction in ~640 uploads,
-  and no hull correction in 391 drive samples without bots. A drive refused
-  for speed after a long frame was found on the way and is pre-existing
-  (`FINDINGS.md` 54).
-- **`npm run build`:** passes.
-
-**Rewritten:** `CLAUDE.md` ("Visual meshes and collider proxies", and the
-hull's line in "Vehicles"), `CollisionField.ts`'s header, `docs/vehicles.md`,
-`docs/multiplayer.md`, `docs/editor.md`, `docs/world.md`, `docs/build.md` (the
-sweep is a copied Babylon internal; `sweep-check` is owed by an upgrade),
-`FILES.md` and `VERIFYING.md`. The collision bakes were regenerated for the
-new `boxGroups` header text.
-
-**The play-test** (the user's, 2026-10-10): on foot and in the tank, the truck
-and the helicopter — everything feels good.
-
-As `PERF_PLAN.md` C2 states it: an analytic swept capsule (or ellipsoid)
-against `WorldBox`es, hull boxes and the terrain, over the buckets
-`CollisionField` keeps, answering `castBody`'s question exactly. The feel is
-the acceptance test, through the scripted comparison harness C2 describes.
-Every divergence over a few centimetres is investigated, not averaged away.
-
-- **Verify:** the comparison harness; `drop.mjs --check` on every map;
-  `npm run parity`; a played round on foot and in each vehicle kind.
-- **The played round is the USER's** (decided 2026-10-10). The scripted
-  comparison and the automated checks do not land the step on their own: when
-  they pass, stop and hand the user a build to play on foot and in all three
-  vehicle kinds, and land only on their word.
-- **Rewrites:** `CLAUDE.md`, "Visual meshes and collider proxies" — "exactly
-  three sweeps through `narrowedMove`" becomes the new primitive's rule;
-  `CollisionField.ts`'s header.
+Landed on the user's play-test, on foot and in all three vehicle kinds. The
+three sweeps (`Player.update`, `Vehicle.update`, `Vehicle.coast`) run through
+`CollisionField` over `src/world/ellipsoidSweep.ts`: Babylon 9.28's
+`moveWithCollisions` ported with its arithmetic and quirks, fed
+`RayWorld.bodyNear`'s candidates and ranked in the client's collider-mesh order
+from `boxGroups`. `scripts/sweep-check.mjs` is the oracle. **The sweep is a
+copied Babylon internal, so a Babylon upgrade owes `sweep-check`**
+(`docs/build.md`). The full record is in the archive.
 
 ### X2.2 — State off the nodes, and every mixed system split (PERF_PLAN C3) — **L** — **LANDED** (11f731f)
 
-**Landed** 2026-10-10, after a five-way code review whose findings are
-11f731f. Every system that simulated and drew is now two modules: the
-SIMULATION keeps the old name, holds its state on `src/math` and imports
-nothing from Babylon; its VIEW sits beside it, reads it and never writes it;
-`Game` builds both and wires them; the authority builds the simulations only.
-CLAUDE.md "Ownership and wiring" states the rule. The list, confirmed against
-the code:
-
-| simulation | view |
-| --- | --- |
-| `CombatSystem` (the shot, `onRound`) | `CombatFx` (tracers, sparks, discs, `BulletMarks`) |
-| `GrenadeSystem`, `AntiTankSystem` (`pos`/`vel` fields, `onBlast`) | `GrenadeFx`, `AntiTankFx` (shared with `NetGrenades`/`NetOrdnance`) |
-| `GlassSystem` (`onBroken`, `onCleared`) | `GlassFx` (the collapse, the collider's editor flags) |
-| `Bot`, `BattleSystem` (`shown`, `life`, `poolVersion`) | `BotRig`, `BattleView` (the rig pool, LOD, flashes) |
-| `Vehicle`, `HullSprings`, `VehicleSystem` (`HullPose`, `HullPicture` events) | `VehicleView`, `HullWhips`, `VehicleViews`; `vehicleModels.ts` beside the Babylon-free `vehicleKinds.ts` and per-kind frames |
-| `Player` (`mid`, `ellipsoid`, `PlayerPicture` events) | `PlayerView` (viewmodel, flash, brass) |
-| `ConquestSystem` | — (it drew nothing) |
-
-Commits: C1 3075f89 (the shared `Hittable`/`Combatant` contract reads either
-library's vector; `takeDamage` and the cross-system callbacks are PROPERTIES so
-`strictFunctionTypes` checks them; `hullSeats.ts`, `blocks.ts`), C2 97e966f,
-C3 54415ed, C4 d4678d5, C5 af2fc79 + 4ee3066, C6 f327ca9, C7 2ba6f69,
-C8 96adb2b, C9 8f1d287, C10 242cdd8, C11 1ce7529, review 11f731f.
-
-**No outcome reads a node any more.** The bot's muzzle (`soldierPose.ts`'s
-`soldierMuzzleToRef`) and the hull's three (`hullFrame.ts`) replay Babylon's
-forced float32 node chain from fields. Babylon's `computeWorldMatrix(true)`
-forces every ancestor (`transformNode.pure.js` ~1003), so there was no stale
-matrix to model. The hull's 1e-5 pose guards are simulation state
-(`HullPose`), because the nodes trailed the fields by them. CLAUDE.md's
-forced-world-matrix rule became its converse.
-
-**One named fight change, C6.** The authority posed only bots within 35 m of
-the map centre, and offline the camera decided; an outcome may not depend on
-the camera. Every live bot's pose is now filled each frame (solved on demand).
-New hashes at seed 777, held from C6 to the end: Greyfen `fc958d7e0d0e65c1`,
-Hollowmere `1c14cd10dad9cead`, Coldharbour `da7b7d7ed3355f4f`, Harrowmead
-`c5650f9f2ba94654`, Sarab `d13d7fe62cf059e5`, Cinderhaven `d0519088626918ec`,
-Kurenai `471b692bc45bc1be`. The parent with every bot forced to animate fights
-these exact seven fights, so the change is the pose and nothing else.
-
-**Measured:**
-- **simulate, seed 777:** every other commit held its parent's seven hashes
-  (baseline f6a9d56: Greyfen `6ef4707c3c7a8414`, Hollowmere
-  `50368db11f538d0f`, Coldharbour `81e262436c7af253`, Harrowmead
-  `6c61e93be2cffcbc`, Sarab `dd2ee4abacfda2fe`, Cinderhaven
-  `0e09b2c0616d9fa7`, Kurenai `9f3486e3b7e07880`).
-- **Equivalence of the replayed muzzles:** bots 28,913 server reads and 157
-  live, 0 mismatches (`Object.is`); hulls 300,000+ server reads over four maps
-  and three seeds plus live driving of all three kinds, 0 mismatches.
-- **The player's movement replay** (fixed-step, fixed input, walls, stairs,
-  roofs, push-out, broken panes, boarding): 81,433 steps over Greyfen,
-  Coldharbour and Sarab, bit-identical to the parent.
-- **The authority** (median of 3 interleaved runs; C6 changed the fight, so
-  compare per tick): tick p50/p95 flat on Sarab (0.110/0.172 → 0.113/0.170 ms)
-  and Cinderhaven (0.104/0.170 → 0.104/0.161); peak RSS down 12-16% (Sarab
-  483 → 405 MB); `dist-server` JS 5.03 → 4.59 MB. It builds no rig, no hull
-  model, no pool and no material.
-- **The server's import closure:** 263 modules with 104 importing Babylon
-  directly, down to 136 with 4 — `HeadlessGame` (its `Scene`/`NullEngine`),
-  `parity.ts`, `world.ts` and `world/parts.ts`, which X2.3 removes.
-- **parity**, **build**, **gate.mjs** on all seven maps, **bank.mjs --check**
-  (47 rows, 0%), **sweep-check** (exact, `--tight`, shipped) identical to the
-  parent, **kit:hash --models** identical but for the rig fields and the
-  player capsule that moved out on purpose.
-- **Netplay** (a scripted two-client match plus a raw observer, Coldharbour
-  botless and Sarab with bots): green throughout; client and authority agree on
-  tickets every tick and on the board at a common tick; 0 hull corrections.
-
-**Review findings fixed (11f731f):** a bot respawned and killed in one frame
-stood up as a corpse (`BotRig.syncLife`), and a wreck painted a frame late
-(`HullPicture.wrecked`); both were reproduced, then fixed. Plus `HullWhips`
-sized from the kind's antennae, dead editor-pick flags on the hull body, and
-the stale text.
-
-**Found on the way** (`FINDINGS.md`): 55 — offline, the local player's
-grenade and rocket START POINTS are read off the viewmodel's nodes, so a
-drawing still decides those two outcomes; 56 — long sprints in a netplay round
-collect `speed` corrections, cause not identified. `Player` still drives its
-`ViewModel` through `PlayerPicture.model` (no outcome reads it); X2.5 must
-settle both before the local player is split from the core.
-
-As `PERF_PLAN.md` C3 states it — the player off its capsule, a hull's body
-into fields, grenades and rockets as `{pos, vel}`, analytic muzzles, the
-authority no longer posing rigs. **This plan adds the split**: every system
-that both simulates and draws becomes two modules, a simulation module that
-owns the state and a view module that reads it and never writes it. The likely
-list:
-- `CombatSystem` and its pools
-- `GrenadeSystem`, `AntiTankSystem`
-- `VehicleSystem` and `Vehicle`
-- `BattleSystem` and `Bot` against the rig
-- `Player`
-- `GlassSystem`'s collapse
-
-The step's first job is to confirm that list against the code. The view
-modules are what Phase 4 moves; the simulation modules move onto `src/math/`
-here.
-
-- **Verify:** `npm run parity`, `npm run simulate`, `drop.mjs --check`, a
-  netplay round, and the profiler's `world` phase on the authority before and
-  after.
-- **Rewrites:** `CLAUDE.md`'s forced-world-matrix rule (its server reason
-  ends), `docs/game.md`.
+Every system that both simulated and drew is now two modules. The simulation
+keeps the old name, holds its state on `src/math` and imports no Babylon. Its
+view (`CombatFx`, `GrenadeFx`, `AntiTankFx`, `GlassFx`, `VehicleView`,
+`HullWhips`, `VehicleViews`, `PlayerView`) reads it and never writes it.
+**Phase 4 moves the view modules.** No outcome reads a node: the muzzles are
+replayed from fields (`soldierPose.ts`, `hullFrame.ts`). This step's
+`BotRig` and `BattleView` were deleted at X2.5c C5, and every body a page draws
+is now a `NetSoldier`. The full record, with the table and the fight change at
+C6, is in the archive.
 
 ### X2.3 — The authority without Babylon — **M** — **LANDED** (8a4831d)
 
-**Landed** 2026-10-10: 3f69200, and the review's fixes 8a4831d.
-- **`buildServerWorld(def)`** builds from the bake with no mesh and no scene;
-  `GameMap.colliders`/`terrainColliders` are empty on the authority (every
-  reader is a client view). **`HeadlessGame` and `parity.ts` have no engine.**
-  `dist-server` imports no `@babylonjs` at all — before, the SSR build had left
-  Babylon EXTERNAL and loaded it from `node_modules` at runtime.
-- **The gate**, `scripts/check-babylon-free.mjs`, runs in `npm run build`
-  after `check-deep-imports.mjs`. Roots: every file in `server/` plus the
-  eleven simulations of X2.2's table, named one by one (so `Player`, which the
-  server never reaches, is covered for being a simulation). A new simulation
-  joins `SIMULATIONS` in the commit that creates it (CLAUDE.md "Ownership and
-  wiring"). It skips only erased imports, counts `export … from` and
-  `import()`, and FAILS on what it cannot follow: a computed `import()`,
-  `import.meta.glob`, an unresolvable relative path; the package reached by a
-  relative path into `node_modules` is caught by the resolved file.
-  `DIRECTORIES`/`NOT_ROOTS` are where X3.2 adds `src/render/`, `src/math/` and
-  the `src/math/babylon.ts` exception. Each refusal was proved with a probe and
-  reverted. **`vite.server.config.ts`'s `no-babylon` plugin** is the same rule
-  at the bundler (`enforce: "pre"`, before Vite marks a dependency external),
-  so `build:server` and `simulate` refuse too.
-- **`sweep-check --reference server`** rebuilds the old server scene itself
-  (clusters first, then each ungrouped box); every mode identical to the parent.
+The authority builds its world from the bake with no mesh and no scene, and
+`dist-server` imports no Babylon. **The gate** is
+`scripts/check-babylon-free.mjs`, run by `npm run build`:
+- Its roots are every file in `server/`, plus the simulations listed in
+  `SIMULATIONS`. A new simulation joins that list in the commit that creates
+  it.
+- It skips only erased imports, and fails on anything it cannot follow.
+- `vite.server.config.ts`'s `no-babylon` plugin applies the same rule in the
+  bundler.
 
-**Measured** (median of 3 interleaved `simulate <map> 1 1 777` runs, d0fa2b7 →
-3f69200):
-
-| map | world build ms | tick p50 / p95 / p99 ms | peak RSS MB |
-| --- | --- | --- | --- |
-| Sarab | 623 → 461 | 0.112/0.166/0.270 → 0.112/0.171/0.282 | 406 → 132 |
-| Cinderhaven | 931 → 761 | 0.103/0.157/0.248 → 0.102/0.157/0.259 | 468 → 237 |
-| Greyfen | 262 → 171 | 0.024/0.041/0.071 → 0.024/0.042/0.082 | 315 → 101 |
-
-- **Server boot** (to listening): 1.42-1.47 s at 190 MB → 72-76 ms at 57 MB.
-- **p99 rose ~0.01 ms** (Greyfen +15%, over the noise bar): the smaller heap
-  runs ~6x the young-generation GCs (56 → 370 on Greyfen), and
-  `--min-semi-space-size=16` halves the gap. Left as it is; the p50 and p95 did
-  not move.
-- **simulate:** the seven C6 hashes on every map. **parity**, **build**,
-  **sweep-check** (every mode, both references) identical. **Netplay** (the
-  scripted two-client match): Coldharbour botless with B driving, and Sarab with
-  bots, both green — tickets every tick, the board at a common tick, 0 hull
-  corrections.
-
-**Rewritten:** CLAUDE.md ("Ownership and wiring", "Multiplayer", the
-`terrainBlock` row), `docs/multiplayer.md`, `server/README.md`,
-`docs/build.md` (the gate), `docs/world.md`, FILES.md, VERIFYING.md, and the
-headers of `check-deep-imports.mjs`, `bake-collision.mjs`,
-`vite.server.config.ts`, `HeadlessGame`, `world`, `parity` and the world data
-modules.
-
-- **Do:**
-  - `buildServerWorld` builds from the bake with no meshes.
-  - `HeadlessGame` has no `Scene` and no `NullEngine`.
-  - Add a build gate, `scripts/check-babylon-free.mjs`, that walks the import
-    graph from `server/` and fails on any path that reaches `@babylonjs/core`.
-    Wire it into `npm run build` beside `check-deep-imports.mjs`.
-- **Verify:** the gate; `npm run parity`; `npm run simulate` timings and
-  `dist-server` size before and after; a two-client match on a map with
-  armour.
-- **Rewrites:** `CLAUDE.md`, "Multiplayer" (the server cannot run
-  `MapBuilder` because it has no canvas; that stays true, but `NullEngine`
-  goes), `docs/multiplayer.md`, `server/README.md`.
+**`DIRECTORIES`/`NOT_ROOTS` are where X3.2 adds `src/render/`, `src/math/` and
+the `src/math/babylon.ts` exception** (Rule 6). X6.1 then widens the gate to
+the whole tree. The full record is in the archive.
 
 ### X2.4 — Havok, called directly — **M** — **LANDED** (823906c)
 
-**Landed** 2026-10-11, after a two-way review whose fixes are f60ae44 and
-823906c. Babylon's `HavokPlugin` is gone: `src/systems/havok.ts` is the one
-dialect over `@babylonjs/havok`'s raw `HP_*` API, the four clients speak it,
-and `PhysicsWorld` (Babylon-free, a root of the gate beside `havok.ts`) owns
-the world, a `WorldBody` table whose pose is seven numbers in a
-`Float64Array`, and the substep (pending teleports, step, read back). The
-ragdoll and both debris pools draw those poses onto their proxies and meshes
-(`poseView.ts`) before anything reads a node. The floor reaches the physics as
-data (`GameMap.terrainGeometry`). `scene.physicsEnabled = false` is `Game`'s.
-
-Commits: C0 fb90b7d (the oracles), C1 728d046 (the static world), C2 ea7bb95
-(shards and rubble; `PhysicsWorld` owns the substep), C3 8b0382b (ragdolls,
-constraints), C4 f56a1e3 (the plugin dropped), C5 8a49494 (poses in arrays,
-drawn by views), C6 4c2c35d (docs), review f60ae44 + 823906c.
-
-**The bar was bits, and it held at every commit.** The port replays the
-plugin's own calls in its own order — the lazily created bucket containers,
-the reversed terrain winding, the material-free world (FINDINGS 53's 0.5
-kept), the two mass-property sets that keep the shape's inertia, park keeping
-the current orientation, the sync's `p + 0`.
-- **`drop.mjs --check --exact`:** "bits identical" on all seven maps, against a
-  full-precision fingerprint banked at the parent (`ref/exact.json`).
-- **`clients.mjs --check`**, new: ragdolls (a bullet death, a blast death, an
-  eviction), glass bursts with re-shapes, and rubble, stepped 600 frames. It
-  hashes every live body, every pooled body including the PARKED ones (each
-  must sit at y = -1000), and every node the views draw. It rebuilds the world
-  twice first and counts Havok's bodies. Banked on the PRE-PORT tree, and
-  identical on the port; a park with its teleport removed fails it.
-- **simulate**, the seven C6 hashes, unchanged. **bank.mjs** 47 rows, 0 moved.
-  **gate.mjs** all seven maps.
-- **A real round:** a bullet drops a body, a blast throws one, the ninth corpse
-  evicts the oldest, shards fall, the death cam's stand-in falls.
-- **Main bundle:** 9,390.8 kB → 9,345.1 kB.
-
-**Found on the way, all pre-existing, none fixed here** (each changes the
-picture, so each is the user's call):
-- **FINDINGS 57:** a ragdoll's impulse lands while its bodies are still parked
-  1 km down, so the chest spins at Havok's 100 rad/s cap. Reproduced bit for
-  bit.
-- **FINDINGS 58:** debris is culled off a stale bounding sphere. Rubble never
-  draws, and a glass shard's sphere sits at the map ORIGIN, so on Cinderhaven
-  only 6-8 of a pane's 12 shards draw.
-- **FINDINGS 59:** shards and chunks never sink more than one frame's step.
-
-`death.substep` now really is the step: Babylon's engine had overwritten the
-plugin's timestep with its own 1/60 default, the same value today.
-
-`PhysicsWorld`, `RagdollSystem`, `DebrisSystem` and `BlastDebrisSystem` use
-Babylon's plugin (`HavokPlugin`, `PhysicsBody`, `Physics6DoFConstraint`, …).
-`@babylonjs/havok` is a standalone WASM with its own API, and the plugin is a
-wrapper over it.
-
-- **Read first:** `docs/deaths.md`; Babylon's `HavokPlugin` source, for the
-  raw calls it makes.
-- **Do:** the four clients against the raw API, writing poses into plain
-  arrays that a view applies to the rig. Injection stays as `CLAUDE.md` states
-  it: `Game` steps the engine and then its clients.
-- **Verify:** `drop.mjs --check` on every map. In a real round: a bullet drops
-  a body, a blast throws one, shards fall, rubble falls, and the pool evicts
-  the oldest corpse when full.
-- **Must not:** fix `FINDINGS.md` 53 (the static world's friction is 0.5, not
-  the configured 0.8, because Havok combines by minimum). Decided 2026-10-10:
-  the port keeps 0.5, so `drop.mjs --check` stays a bit-for-bit oracle for this
-  step. Raising the world to 0.8 is a separate commit after X2.4 lands. It
-  changes the feel, so it is the user's to ask for, and it re-takes
-  `drop.mjs`'s bank.
-- **Rewrites:** `docs/deaths.md`. The `scene.physicsEnabled` rule stays until
-  the scene is gone.
+Babylon's `HavokPlugin` is gone. `src/systems/havok.ts` speaks Havok's raw
+`HP_*` API, and `PhysicsWorld` (Babylon-free, a root of the gate) owns the
+world and the substep. **A body's pose is seven numbers in a `Float64Array`**
+(`WorldBody.pose`), which each client's view draws (`poseView.ts`); those are
+the arrays X4.1 reads. The port was bit-exact (`drop.mjs --check --exact`,
+`clients.mjs --check`). It kept the world's friction at 0.5 (`FINDINGS.md` 53),
+and raising it is a separate commit, on the user's word. `FINDINGS.md` 57, 58
+and 59 were found on the way and left, each the user's call.
+`scene.physicsEnabled = false` stays `Game`'s until X5.4. The full record is in
+the archive.
 
 ### X2.5 — One simulation core, in a Worker — **L**, as three sub-steps (two decided 2026-10-10, the third 2026-10-11)
 
-Not needed to leave Babylon, and cheapest right here, with both simulations
-Babylon-free. `Game` offline and `HeadlessGame` on the authority become one
-core, and offline play runs it in a Worker (`PERF_PLAN.md` C4). One core ends
-the class of bug where the two drift apart (`paysKiller`, the capture awards).
+One core ends the class of bug where two simulations drift apart (`paysKiller`,
+the capture awards). The Worker was the user's call on 2026-10-10, for where
+the game is going rather than what it measured:
+- Phases 3 to 5 cut the CPU the frame is bound by, so the simulation becomes a
+  larger share of what is left.
+- Larger maps with more bodies are coming.
+- Moving the core while it is being made one is cheapest.
 
-**Why a Worker now, although P0 measured the simulation at only 5-8% of a
-GPU-bound phone tick (0.5-1.0 ms of 9.5-12).** The user decided it on
-2026-10-10, and the case is about where the game is going rather than what it
-measures today:
-- Phases 3-5 cut the draw-call CPU the frame is bound by, so the simulation
-  becomes a larger share of what is left.
-- The game is going to large battlefield maps with more bodies, more vehicles
-  and destructible buildings.
-- Moving the core while it is being made one is cheaper than moving it after
-  Phases 3-5 have built on it.
-
-**What the Worker costs**, which this step owes in full rather than discovers:
-- cross-origin isolation, which the shared state needs;
-- the local player split from the world it reads;
-- a frame of bot latency;
-- one more place for two seeded runs to diverge.
-
-The two sub-steps land separately, each with its own oracle, because a
-divergence after both at once could not be placed in either.
-
-**A third sub-step, X2.5c, was added after X2.5b landed** (the user's call,
-2026-10-11, after a review of the branch). X2.5a and X2.5b made one core but
-left the PAGE with two client models: a match client (snapshots, `ServerEvent`,
-`NetRoster`, local predictions) and an offline one (`SimFrame`, mirrors,
-`SimEvent`, bare asks). X2.5c makes offline a match client of a `Match` running
-in a Worker, so there is one client, and deletes most of X2.5b's transport.
+X2.5c was added after X2.5b, to give the page one client model instead of two.
+The full argument is in the archive.
 
 #### X2.5a — One core, in the page — **M** (ran **L**) — **LANDED** (e328d43)
 
-**Landed** 2026-10-11, after a three-way review whose fixes are 3e154cd and
-e328d43, and the USER's offline play-test of C4b in the tank, the truck and the
-helicopter ("Everything feels fine. I tested all, and noticed no issues").
+Landed on the user's offline play-test. `SimCore` (`src/sim/`) is the one
+simulation, hosted by `Match`, `simulate` and `corecheck`; since X2.5c the
+page's own round is a `Match` too.
+- It reads no clock and draws no seed: its host supplies `RoundSpec.seed`,
+  `anchor`/`drop` and an optional timing clock.
+- `SimCore.submit(slot, SimCommand)` is the one way in, and an allocation-free
+  event ring is the one way out.
+- `npm run corecheck` drives the core with no `Game`, through the trusted door
+  and then through a real `Match`, and both must drain identical events.
 
-**What exists.**
-- **`SimCore`** (`src/sim/`, `HeadlessGame` moved and generalised) is the one
-  simulation. `Match`, `simulate`, `corecheck` and the page all host it. Its
-  systems meet only inside it. It reads no clock and draws no seed: the host
-  supplies `RoundSpec.seed`, `anchor`/`drop`, and an optional timing clock.
-- **Commands in.** `SimCore.submit(slot, SimCommand)` (`commands.ts`) is the one
-  door. `Match` VALIDATES, then submits; the page's commands are trusted.
-- **Events out.** Events go into an allocation-free typed ring (`events.ts`),
-  with every number captured at emission. `Match` drains and relays them;
-  `Game.onSimEvent` draws them.
-- **State out.** A plain-data `SimFrame` (`frame.ts`) is read by the page's
-  mirrors (`mirror.ts`). `Game` holds the core only as a `SimDoor`.
-- **The local `Player` is outside the core**, offline as in a match: a
-  prediction that submits `move`/`shot`/`grenade`/`ordnance`/`deploy`/`mount`/
-  `drive`/`gun`. Its throw and launch start points are command INPUTS (FINDINGS
-  55). Its own hull is predicted on the page and reported (C4b).
-- **`hostHoldsRespawn`** keeps the offline deploy screen over a held world.
-  `RoundSpec.pool`/`fielded` keeps offline's per-map pool, which keeps the
-  bench.
-- **Twenty-one drifts between the two old simulations are gone** (the brief's
-  D1-D22). Among them:
-  - the player's death or ticket could be dropped by UI state;
-  - bots heard the player's rifle at the VIEWMODEL muzzle;
-  - offline deaths were filed with no cause;
-  - offline riders lagged their hull by a frame;
-  - offline spawns skipped the authority's check.
-
-Commits: C0 a81895e, C1 2f34bca, C2 0ae6474, C3 e5b9cc3, C4a-1 115432b, C4a-2
-159cec3, C4b bb8345e, be031a6 (FINDINGS 60), C5 22bc7ec, C6 f707238, C7
-d91dcfa, review 3e154cd + e328d43.
-
-**Measured:**
-- **The bench's seven fight hashes** (bot-only, recorded at C0): identical at
-  every commit, plain and under `?simcopy` (every command, frame and event
-  through `structuredClone`). Greyfen `83e8e74ef36916ba`, Hollowmere
-  `549487ba93bceefe`, Coldharbour `de5622634abca6e7`, Harrowmead
-  `3ae90f2f08fb0643`, Sarab `986c2e35557fb679`, Cinderhaven `2f97c9072ab1762b`,
-  Kurenai `cd58b73111eacbdd`.
-- **simulate:** X2.2's seven C6 hashes and every map's `--events` list
-  identical at every commit.
-- **`?simcheck`** (DEV: every mirror read equals the live object, `Object.is`):
-  0 mismatches over the bench on all seven maps and an offline round with a
-  person.
-- **`npm run corecheck`**, new: 108 assertions driving the core with no `Game`.
-  They cover the scoring rules (attack, defend, headshot keyed on the victim's
-  flag, capture paid to present bodies, `paysKiller`, the hull pays nobody, crew
-  deaths), deploy and seats, the leash, and reported landings. The same scripts
-  through a real `Match` with fake peers give the identical event stream.
-- **The core's cost** (the profiler's `sim` phase, v14): 0.14-0.52 ms per
-  desktop fight frame (Sarab 0.52). Offline the page builds no `CoverMap` and no
-  flow fields (Cinderhaven: 15.5 + 13.6 MB). The core's own world adds ~28 MB on
-  Sarab and ~75 MB on Cinderhaven, and `core.startRound` adds 0.44 / 0.71 s to
-  the build.
-- **parity**, **build** (the gate walks `server/`, `src/sim/` and the
-  simulations), **gate.mjs** all seven maps, **bank.mjs**, **clients.mjs**, and
-  the scripted netplay match (Coldharbour botless, Sarab with bots, Sarab in the
-  helicopter): green throughout.
-
-**Found and fixed on the way:**
-- **FINDINGS 60:** a helicopter a person flew never took crash damage, in a
-  match always. It is now charged off the accepted drive reports
-  (`reportedLanding.ts`) by one rule on both sides, matching the bot path to
-  6e-11 at 60 Hz.
-- **The leash never killed a seated flier.** It now puts the person on foot,
-  then kills them.
-- **A client's raw stamps could dodge or deal crash damage** and buy ~10x the
-  movement allowance. `Match.onStamp` now holds each peer's stamp lead to
-  ±250 ms; an honest peer's numbers are bit-unchanged.
-- **A correction mid-descent charged a phantom crash.** A `resync` on the first
-  drive after a `hullcorrect` now rebases the history without making a landing
-  free.
-
-**Open for X2.5b**, from the review (session notes): `RoundSpec.def` holds
-import thunks and cannot be posted; the timing clock is a function with a
-different `timeOrigin` in a Worker; five page call sites use `submit`'s
-boolean synchronously; `ShotCommand.weapon` carries the whole `WeaponSetup`;
-some mirror readers read the frame lazily; the frame's counts and header live
-outside its typed arrays; one frame must be applied before that call's events;
-`?simcheck` needs the core in-process. FINDINGS 61: `BotMirror.read` allocates
-~3.2 kB a frame.
-
-- **Do:** extract the core behind the interface the Worker will use.
-  - Inputs go in: the local player's commands and the net events.
-  - `step(dt)` runs.
-  - Out come state as plain data (typed arrays where it is per-body) and an
-    event queue: shots, hits, kills, captures, blasts and sound cues.
-  - The core has no DOM, no Babylon, and no reference to anything a view owns.
-  - Nothing in it may assume it shares a heap with its caller: everything
-    crossing the boundary is data that could be posted or shared.
-  - `Game` reads the queue and does its wiring there (`onBotKill`,
-    `onCaptured` and the rest become events), which keeps "systems never
-    import each other" true on the main thread.
-  - The authority runs the same core in-process as `HeadlessGame`'s
-    replacement.
-- **Verify:**
-  - `parity` and `simulate`;
-  - the scoring rules, exercised offline and online;
-  - the benchmark's fights: X0.4's hashes, or new ones with the reason named;
-  - a test that drives the core with no `Game` at all;
-  - a netplay round.
-- **Rewrites:** `CLAUDE.md`, "Ownership and wiring" (the core's events are
-  where systems meet) and "Conquest rules" (one ledger, one core); `docs/game.md`;
-  `docs/multiplayer.md`.
+**The bench's seven fight hashes, held through X2.5b and X2.5c:**
+Greyfen `83e8e74ef36916ba`, Hollowmere `549487ba93bceefe`,
+Coldharbour `de5622634abca6e7`, Harrowmead `3ae90f2f08fb0643`, Sarab
+`986c2e35557fb679`, Cinderhaven `2f97c9072ab1762b`, Kurenai
+`cd58b73111eacbdd`. The full record, with the twenty-one drifts it removed, is
+in the archive.
 
 #### X2.5b — The core in a Worker — **M** — **LANDED** (e454421) — **transport SUPERSEDED by X2.5c**
 
-**Superseded in part, 2026-10-11.** X2.5c replaces this step's transport
-(shared memory, `SimHost`, the codec and the publication) with a local `Match`
-over the existing protocol, and its two owed Verify items (the phone run and
-the docker image's isolation) move to X2.5c. What X2.5c keeps from here is
-listed in its "Keep". The record below stays as it landed.
-
-**Landed** 2026-10-11, at the end of one session; **two Verify items are owed
-by the deploy, not by this commit**: the phone run (the user's review, then the
-`--no-ff` merge to `develop`, then the deployed build — "The branch") and
-`crossOriginIsolated` in the docker image (no docker or nginx on this box; the
-template's pair is untested until that deploy, and the installed app's own
-service worker stamps the pair whatever the server sends — below).
-
-**What exists.**
-- **`SimHost`** (`src/sim/simHost.ts`) is the page's one door into the core,
-  wherever it runs. `PageSimHost` is X2.5a's arrangement exactly;
-  `WorkerSimHost` runs the core in a Worker (`src/sim/simWorker.ts`) over
-  shared memory. `openSimHost` chooses at boot (`main.ts`, awaited and
-  injected as `havok` and `engine` are): a Worker when the page is
-  cross-origin isolated and has growable `SharedArrayBuffer`s, the page
-  otherwise, under `?simpage`, `?simcheck` (DEV) or `?simcopy`, or when a
-  Worker fails or stays silent for 20 s. The boot's console line says which
-  and why; every capture says it as `simMode`. `SimDoor` is gone.
-- **The transport allocates nothing per frame on either thread.** Commands are
-  encoded into one of two growable float64 buffers (`commandCodec.ts`, one held
-  object per kind on the decode side; `ShotCommand.weapon` is now `ShotWeapon`,
-  the five numbers resolving a round reads). Each operation's frame and news
-  are published into one of two growable buffers (`publication.ts`: the layout
-  derived from `newFrame()`, per-round lengths and a version in the header,
-  the scalars through `frame.ts`' written-out `FRAME_SCALARS` pair, checked
-  against the walk at load). The signal is an `Atomics` store the Worker
-  `Atomics.wait`s on; the page never sends before it has taken in, so each
-  buffer is one side's at a time. A posted message is a round's cost
-  (`startRound` names the map by id; `addPlayer`, `removePlayer`,
-  `releaseWorld`), answered while the page spins (`hostWire.ts`).
-- **One code path in `Game`, which depends on nothing about WHEN the core
-  answers.** `ask` returns nothing; the five sites that read `submit`'s boolean
-  decide off the page's own state as a match's client does — the main gun off
-  `gunReady`, the cupola gun off the page hull's `fireMg`, the grenade booked
-  before the ask and returned by `ordnanceRefused` (`Player.returnGrenade`),
-  the rocket and the mine as in a match. **From a Worker the step overlaps the
-  frame**: `step` takes in the step started a frame ago and starts this one,
-  so the frame drawn is the step before; a frame that does not step calls
-  `pumpSim` (the deploy's `spawned` comes back that way); the bench `settle`s
-  before its hash and a round build drops what the last round still owed.
-- **Offline shots are rewound** (decided): the page's core is built with
-  `rewind` in both modes, and a round carries `renderTime`, the synced frame's
-  `time`. In the page that is the core's present and moves nobody.
-- **The profiler sees the Worker** (report version 15): `sim` is a third ROOT,
-  filed against the frame that takes its answer in, its clock moved onto the
-  page's `timeOrigin`; `simPublish` is the fill plus the shared copy; `world`
-  gains `simWait` (the page blocked on the Worker) and `simSync`;
-  `SegmentStat.sim.hop` and `bench.mjs` print both. `FrameProfile.fileTiming`
-  files the row in one call (`file` is gone).
-- **Isolation** (COOP `same-origin`, COEP `require-corp`) on every response
-  from the Vite dev and preview servers, the nginx template (server level and
-  every location with its own `add_header`), and every response `sw.js`
-  answers. `server/` serves no page; the lobby's cross-region list is CORS,
-  which `require-corp` accepts; the page makes no other cross-origin load.
-- **FINDINGS 61, fixed at its root, and the entry deleted.** It was boxed
-  doubles, as suspected — but from the COMPILER, not the tier: under ES2022's
-  [[Define]] class fields `x: number;` is emitted as `x;`, the field starts
-  `undefined`, and V8 holds it Tagged, so every `Vector3` store was a fresh heap
-  number even on TurboFan. `useDefineForClassFields: false` (`tsconfig.json`,
-  now a `CLAUDE.md` convention). Beside it: `RosterMirror.aliveCount`'s
-  `for...of`, `LagComp.record`'s, and the per-phase `file` (~660 B a frame).
-
-**Measured:**
-- **The benchmark's seven fights, from the Worker: X2.5a's hashes, every one**
-  (Greyfen `83e8e74ef36916ba`, Hollowmere `549487ba93bceefe`, Coldharbour
-  `de5622634abca6e7`, Harrowmead `3ae90f2f08fb0643`, Sarab `986c2e35557fb679`,
-  Cinderhaven `2f97c9072ab1762b`, Kurenai `cd58b73111eacbdd`), and Sarab's the
-  same with `?simpage`. `?simcheck&simcopy` (the page): Hollowmere and
-  Coldharbour 5,402 checks each, 0 mismatches, the same hashes; an offline
-  round with a PERSON in it under `?simcheck` (a rewound rifle round that
-  hit, a grenade, a seat, the main gun) 449 checks, 0 mismatches.
-- **simulate, seed 777:** X2.2's seven C6 hashes and every map's `--events`
-  list identical (the timing lines aside), and the authority's round 7-16%
-  faster on wall clock on every map (Cinderhaven 5,315 → 4,487 ms) from the
-  class-field setting alone. **corecheck** all passed; **parity** every map;
-  **merge:hash** identical on all eight against the parent; **kit:hash**
-  identical; **bank.mjs --check** 47 rows within the floor; **drop.mjs
-  --check** bits identical and **clients.mjs --check** identical on every map;
-  **build** green (the babylon-free gate walks the five new files).
-- **`crossOriginIsolated`**: true in dev and under `vite preview`; the
-  production build installed, then OFFLINE — still true, the core in the
-  Worker, a round deployed and stepping. A bare server sending no headers: false
-  on the first load, the boot falling back to the page and saying so — and true
-  once the service worker controls the page, online and offline (it stamps the
-  pair). Docker: owed (above).
-- **A netplay round** (Coldharbour, a local match server, `?mp`): joined,
-  deployed, played; left to the menu and played an offline round on the Worker.
-- **The phone check, read off the profiler — on the desktop, the phone owed**
-  (Sarab fight, 3440x1440, two runs a side in one session, final code):
-  - `sim` OFF the main thread: 0.27 ms of step on the Worker, `simWait`
-    0.000 ms (the Worker always finished inside the frame), `simSync`
-    0.015 ms, `simPublish` 0.029 ms (on the Worker).
-  - **The main thread's frame against X2.5a's** (the parent, my work
-    stashed, same session): fight tick **10.04 vs 10.48 ms (−4.2%)**, wall
-    10.39 vs 10.84 ms, run spreads 0.2–0.3%. Under the protocol's 8% floor,
-    and the size of X2.5a's `sim` (0.39 ms) — the expected reading.
-  - The same code with the core in the page (`?simpage`): tick 10.58 ms,
-    `sim` 0.37 inside it — the page and the Worker are within this
-    desktop's spread once the class-field fix cut the step, which is why
-    the phone, where the step is a larger share, is the reading that
-    matters.
-- **Allocation** (CDP sampler, both collected-object flags, Sarab fight):
-  `BotMirror.read` 117 → 6.5 B a call (the empty loop's floor), ~3 µs → 34 ns;
-  the page's whole frame 692 → 620 kB with the core in the page, 357 kB with
-  it in the Worker (the core's allocation leaves with it); the hop's own code
-  on the main thread at the sampler's floor (`take`, the mirrors, `pumpSim`,
-  `fileSimTiming` all gone from the list); the Worker's publish path ~80 B a
-  frame (getter boxing inside `fillFrame`, sampling-level) and its timing
-  ~4 B.
-- **The cost**: the Worker's bundle is a second copy of the simulation and the
-  map data, 568 kB (127 kB gzipped) beside a 9.2 MB entry.
-
-The step as handed over follows.
-
-As `PERF_PLAN.md` C4 states it:
-- **The shared state.** Per-body state and the event queue are double-buffered
-  in a `SharedArrayBuffer`.
-- **The local player stays on the main thread** with the camera, so the time
-  from input to photon is unchanged. It reads the world from the last
-  published state and runs its own sweep there (X2.1's primitive, now plain
-  code).
-- **Bots and everything else run a frame ahead** in the Worker.
-- **The authority** runs the core in-process (decided 2026-10-11, below).
-  C4 left it to whichever measured better; no measurement is owed.
-
-**Decided 2026-10-11, before the step:**
-- **Shared memory, not posted frames.** Posting the frame and transferring its
-  buffers was weighed. It needs no isolation, and `?simcopy` already proves
-  the clone boundary. But every message allocates on the receiving thread (the
-  event, and new buffers that need new views), so it cannot meet the
-  allocation-free rule below. Shared memory allocates nothing on either
-  thread, and Phase 4's instanced bodies can upload straight from it. The speed
-  difference (an estimated 0.1-0.3 ms a phone frame) is below the measurement
-  protocol's floor and did not decide it. **The transport is one small module
-  behind one interface**, and the frame's layout is the same for both, so
-  posting can replace shared memory later as a contained change if isolation
-  causes trouble.
-- **Offline shots are rewound.** With the bots a frame ahead, a person's shot
-  resolves about two steps after the picture it was aimed at (15-20 cm at a
-  run). The offline core is built with `rewind` in both modes, so a shot is
-  resolved against what was drawn, by the same rule as a match. The bench is
-  bot-only, so its hashes are not expected to move.
-- **The phone check is restated** (see Verify): the simulation's share of a
-  phone tick (5-8% at P0) is at or under the protocol's ~8% floor, so "the main
-  thread gets faster by roughly that share" could not be read either way.
-- **The phone run goes through `develop`.** After the step lands, it is
-  reviewed and then merged `--no-ff` into `develop` by the user's call, so the
-  deployed build can be installed and run on the phone (see "The branch").
-- **The authority stays in-process.** A server runs one core per match and
-  draws nothing, so a Worker there would only add a thread hop to every
-  command and event `Match` relays. The server is in no X0.4 target, so a
-  measurement would have nothing to be graded against.
-
-**Cross-origin isolation** (COOP `same-origin`, COEP `require-corp`) is owed on
-EVERY document response:
-- the Vite dev server;
-- `docker/default.conf.template`;
-- anything in `server/` that serves the client;
-- the navigations the service worker answers from its cache. Missing this one
-  makes the installed app silently lose isolation offline, which is the same
-  failure shape as `sw.js`'s `DOCS` list (`docs/pwa.md`).
-
-Check every cross-origin load the page makes (fonts, anything from a CDN)
-against `require-corp` before turning it on.
-
-**Do:**
-- **The fixed step survives the hop.** The benchmark and `simulate` still
-  fight the same fight from the same seed. Nothing in the core may read a clock
-  the Worker owns.
-- **The profiler sees the Worker.** The core's `step` reports its own timing
-  back through the published state. `FrameProfile` shows it as a phase that is
-  not inside `frame`, in the way `present` is not (`docs/profiling.md`). Its
-  allocation-free rule holds on both threads.
-- **Fallback:** a browser without cross-origin isolation (or without
-  `SharedArrayBuffer`) runs the core in the page, exactly as X2.5a left it. It
-  stays one code path behind one interface, and the boot says which one is
-  running. The in-page mode also stays selectable by a flag, because
-  `?simcheck` needs the core in-process.
-- **Offline rewind** (decided above): the offline core is built with `rewind`
-  in both modes.
-- **FINDINGS 61 is fixed in the step.** `BotMirror.read`'s ~3.2 kB a frame
-  breaks the allocation-free rule this step extends to both threads.
-
-**Verify:**
-- `crossOriginIsolated` is true in dev, in the docker image, and in the
-  installed app OFFLINE.
-- The benchmark's fights are unchanged from X2.5a.
-- `parity` and `simulate`.
-- A netplay round, and an offline round on the phone (on the deployed
-  `develop` build, after the review and merge decided above).
-- **The phone, before and after, read off the profiler rather than the frame
-  rate** (restated 2026-10-11):
-  - the main thread's `sim` phase goes to about zero;
-  - the page's new per-frame costs (publishing, syncing the mirrors) are
-    measured and named;
-  - the main thread's frame is no slower than X2.5a's.
-  **If `sim` does not leave the main thread, or the new costs eat what it
-  freed, stop and find out why before going on.**
-
-**Rewrites:**
-- `CLAUDE.md`: "Ownership and wiring" (the simulation runs off the main
-  thread), "Measuring a frame" (the Worker's phase, a third root), and "The
-  installable app" (the isolation headers, beside `DOCS`);
-- `docs/pwa.md`, `docs/profiling.md`, `docs/game.md`;
-- `VERIFYING.md`, which has to say how a headless run gets isolation.
+The shared-memory transport (`SimHost`, the codec, the publication) was deleted
+at X2.5c C5, and cross-origin isolation was removed at C6. What survived is
+X2.5c's "Keep from X2.5b", below. Among it is the root fix for
+`FINDINGS.md` 61, `useDefineForClassFields: false`. The two decisions taken
+here still hold, and both are in "Decisions that are yours": offline shots are
+rewound in both modes, and the authority runs its core in-process. The full
+record is in the archive.
 
 #### X2.5c — Offline is a match client of a local `Match` — **M–L**
 
-**Why** (the user's call, 2026-10-11, after a review of the branch).
-"Single-player is a local server." After X2.5b the page had two client models,
-and they had begun to drift:
-- **Two event switches.** `Game.onSimEvent` and `Game.onNetEvent` shared about
-  half their arms. The hit cue already differed: offline picked it by cause,
-  while a match sends every hit through `hitCredits`.
-- **Two prediction models.** In a match the page predicts with its own
-  `CombatSystem`, `GrenadeSystem` and the rest. Offline the same acts were bare
-  asks. 23 methods in `Game.ts` forked on `this.net` (0 on `develop`).
-- **Two state vocabularies.** `SimFrame` and the mirrors offline; `Snapshot`
-  and `NetRoster` in a match. A field the page can see was added twice, and the
-  offline half took five edits, three of which failed silently if forgotten.
-- **Event payloads read by raw offset.** `onSimEvent` made 61 reads like
-  `c.f(i, 7)`, checked against nothing.
-- **The tank gun's reload clock kept twice**, reconciled by `HULL_EARLY` slack.
+**C0 to C6 have landed** (C0 99cbfb3 through C6's review 1f4fa6f, plus the
+fixes after that review, 132277a). Offline is a match client of an owned
+`Match` in a Worker, over the existing JSON protocol, and the page has one
+client model. **The step's rule stands for every later step:** whatever about
+the online experience is not acceptable offline is fixed for BOTH. Offline
+never gets a better transport, and a binary wire comes later, for both, only
+if a capture asks for it.
 
-**The rule this step sets: if anything about the online experience is not
-acceptable offline, it is fixed for BOTH.** Offline does not get a better
-transport than a match. The step uses the existing JSON protocol. A binary
-wire comes later, for both at once, and only if a profiler capture asks for it.
-
-**Read first:**
-- `server/Match.ts`: its header, `Peer`, `addPeer`, the step loop around
-  `TICK_HZ`, `broadcastSnapshot`, `retire`, the map vote and rotation.
-- `src/net/Connection.ts`: the whole header (the clock offset), and
-  `NetSession`.
-- `server/corecheck.ts`: the half that drives the core through a real `Match`
-  with fake peers. It is this step's model.
-- `docs/multiplayer.md`, `docs/game.md`, `docs/states.md` (pausing and its
-  netplay inversion), X2.5a's "What exists", and X2.5b's "What exists".
-
-**The shape.**
-- **The Worker hosts a `Match`** with one in-memory peer per person (offline:
-  one). The page joins it through the same `NetSession` and `Connection` a
-  remote match uses, so `Game.net` is non-null in every round.
-- **There is a second channel for the OWNER only:** start a round on a map
-  with a seed and a difficulty, advance by `dt`, settle, report the step's
-  timing and the bench's fight hash. It is not a `ClientMessage`, so no remote
-  client can send it, and `server/wire.ts` never sees it.
-- **The Worker's entry lives in `server/`** (e.g. `server/localMatch.ts`), and
-  the page reaches it only as a Worker URL. Nothing in `src/` value-imports
-  `server/`, so CLAUDE.md's "nothing in `src/sim/` imports from `server/`"
-  still holds, and the babylon-free gate already walks it.
-- **The page also keeps a same-thread local match**, hosted on a
-  `MessageChannel`, selected by `?simpage` and used when the Worker fails to
-  start. It is the same code path, and it is what a debugger steps through.
-
-**Do**, as commits each proven against its parent:
-- **C0, the oracle.** Record the bench's seven fight hashes, `simulate --events`
-  for every map, and `corecheck` at the parent. These are X2.5a's hashes,
-  unchanged through X2.5b.
-- **C1, Match off the socket.**
-  - Introduce a `Peer` transport (send, close, ping) with a `ws` adapter in
-    `server/index.ts`, replacing `peer.socket`, `socket.ping` and `on("pong")`.
-  - Behaviour unchanged. Verify with `corecheck`, `parity` and a netplay round.
-- **C2, a Match the owner drives.**
-  - Its clock becomes a choice. The server free-runs (today's wall-clock
-    accumulator). A local owner calls `advance(dt)`, and the same accumulator
-    steps `1 / TICK_HZ`.
-  - The bench's `dt` is already `1 / 60` (`CONFIG.profiling`), so a bench frame
-    stays one step.
-  - Add the options a local match needs:
-    - the seed (`?seed=`, the bench);
-    - the difficulty (`Match` hardcodes 1);
-    - the map named by the owner, with no vote and no rotation;
-    - no idle retire, since the bench is a match with no person;
-    - **the per-map pool**: `RoundSpec.pool` equal to the map's own roster,
-      as offline builds it today. A slot index is a bot index, and every
-      outcome stream is keyed by slot, so the authority's 48-slot ceiling
-      would renumber team 1 and change the fight. Keeping the per-map pool
-      keeps the fight hashes as the oracle.
-- **C3, the local transport.**
-  - The Worker entry, the owner channel, and `Connection` taking a transport
-    (a WebSocket, or a `MessagePort`).
-  - Nothing in `Game` uses it yet. `corecheck` gains a run through the local
-    transport.
-- **C4, offline is a local match.**
-  - `Game`'s offline round goes through `NetSession` over the local transport.
-  - **The forks about AUTHORITY stay, as one question:** `net.local`, true when
-    the page owns the match. Restart, choosing the map, the difficulty, and
-    pause and the deploy screen holding the world. Every door that asks
-    `!Game.net` today asks `!net.local` instead.
-  - **The forks about PREDICTION go.** Offline predicts exactly as a match
-    client does.
-  - **Holding the world is not stepping it.** While a lid holds the world, or
-    the deploy screen holds a respawn (`hostHoldsRespawn`'s job today), the
-    page does not call `advance`. An ask made while held (deploy, `spawned`)
-    must still be answered: `Match` handles a message on arrival, not on a
-    tick. Check that it is.
-  - The bench drives the local match. Its fight hash comes back over the owner
-    channel, after a `settle`.
-- **C5, delete.** **LANDED** (d6183c0, 8fbadcc, 260382a; review fixes
-  2e1384a, f21c726, f4acf08, 900ce21, 1cf8e61, 0e83c0d, fa091e5).
-  - `simHost.ts`, `simWorker.ts`, `hostWire.ts`, `commandCodec.ts`,
-    `publication.ts`.
-  - `frame.ts`, `mirror.ts` and `simCheck.ts`, wherever nothing outside the
-    page used them. `simulate`, `corecheck`, `BotRig` and `BattleView` read
-    them today: move each onto `SimCore` directly or onto the match path.
-  - `Game.onSimEvent`, the pump, settle and ask plumbing, `?simcheck` and
-    `?simcopy`.
-  - `ordnanceRefused` and `Player.returnGrenade`, if the match client already
-    has the same path; keep one.
-  - The profiler's `sim` root is now fed from the owner channel.
-- **C6, cross-origin isolation comes out, then the contracts** (decided
-  2026-10-11, below). **LANDED** (ee686a6, then the contracts; see "What C6
-  did").
-  - Posting needs no cross-origin isolation; only `SharedArrayBuffer` did.
-    Remove the COOP `same-origin` / COEP `require-corp` pair from all four
-    places X2.5b put it:
-    - `vite.config.ts` (the dev and preview servers);
-    - `docker/default.conf.template` (the server level and every location
-      with its own `add_header`);
-    - `src/pwa/sw.js` (every response it answers);
-    - and any check left reading `crossOriginIsolated`.
-  - Verify: `grep -rE "crossOriginIsolated|Cross-Origin-(Opener|Embedder)|require-corp"`
-    finds nothing outside this file, `PERF_PLAN.md` and the docs' history.
-    The local match still runs in the Worker in dev, under `vite preview`, and
-    in the installed app offline, now with `crossOriginIsolated` false.
-  - Rewrite the contracts (below).
-
-**Keep from X2.5b:**
+**Keep from X2.5b** (all kept):
 - `useDefineForClassFields: false` and its CLAUDE.md convention;
 - `LagComp.record`'s allocation fix;
 - `ShotWeapon` (a shot carries five numbers, not the `WeaponSetup`);
@@ -1577,346 +420,34 @@ wire comes later, for both at once, and only if a profiler capture asks for it.
 - the Worker boot in `main.ts` (awaited, with a fallback, and a boot line
   saying which one runs);
 - the round named by map id rather than by posted import thunks;
-- the profiler's `sim` root on the page's `timeOrigin` (report version 15),
-  re-pointed at `Match`'s step.
+- the profiler's `sim` root on the page's `timeOrigin`, re-pointed at
+  `Match`'s step.
 
-**Traps:**
-- **A hold stops the server's clock and the client's offset estimate does not
-  know.** `Connection` estimates server time as the MAXIMUM sample in a
-  five-second window. After a hold of P seconds every new sample is P lower, so
-  the stale maximum keeps render time P ahead of the server for up to five
-  seconds. Bodies then stand at their newest snapshot, and rewound shots are
-  stamped in the future. Resetting the window on release is the likely fix.
-  Whatever the fix, a remote client must never take that path.
-- **The anti-cheat gates see the local peer.** Stamp leads are clamped to
-  ±250 ms (`Match.onStamp`), there is a message-rate bucket, and the move and
-  drive validation run on every report. An honest local peer must pass them
-  bit-unchanged, as an honest remote one does, and a hold must not read as a
-  stamp jump.
-- **Validation now runs offline.** That is the point: one rule. But a refusal
-  offline that an offline player could not trigger before is a finding, not
-  noise.
-- **The client numbers slots by the ceiling** (found at C2). An owned match's
-  slot table is its map's own roster, so team 1 begins at slot `perTeam` (8 on
-  most maps), but `NetRoster.buildPool` places team 1 at
-  `CONFIG.bots.maxPerTeam` (24). Before C4 puts a client in front of an owned
-  match, the client must take the block width from the match rather than from
-  `CONFIG`. A remote match's width is still 24.
-- **Two ports, and no order between them** (found at C3). The page speaks to
-  a local match as a PERSON on its `Connection`'s port and as the OWNER on
-  the owner channel, and a port promises order only within itself: a
-  `deploy` posted before an `advance` may be read after it. Anything C4
-  needs ordered across the two (an ask answered while held, a settle before a
-  read) must come from an answer on one port, never from the order the page
-  posted in (`docs/multiplayer.md`, "The local transport").
-- **The benchmark has to WATCH its fight, and a peer is a seat** (found at
-  C3's review). The bench draws the fight it measures — the bodies, the
-  tracers, the chase camera over a bot (`Game.chaseBench`, reading the
-  page's own core today) — and once the frame and the mirrors go (C5) the
-  wire is the only picture there is. But the wire reaches only an ADMITTED
-  peer, and `admit` claims a slot and benches its bot, which moves the fight
-  hash. C4 owes a peer with no seat — snapshots and events, never
-  `Roster.claim` — or another way to draw the round that leaves the slot
-  table alone.
-- **`advance` is seconds, and seconds do not sum to whole steps** (found at
-  C3's review). `accrue` adds milliseconds, so one `advance(9 / 60)` steps 8
-  and carries most of a ninth: 150 ms less nine `STEP_MS` in floating point
-  is a hair under a step. One `advance(1 / 60)` IS one step exactly (C2), so
-  the bench's multi-step lead-in frames post one advance per STEP, as
-  `Game.updateBench` already loops `updateWorld` per step, never one per
-  frame.
-- **A port opens whoever is at the far end** (found at C3's review). A
-  WebSocket to a dead server closes; a port into a Worker that died or
-  wedged says nothing, so `Connection` goes `open`, sends its join and waits
-  for ever, and `LocalMatch`'s awaited calls never settle. C4 owes the
-  Worker's own failure signal (`onerror`, and a call that does not answer)
-  routed to the session, as the boot already does for X2.5b's Worker.
-- **Nothing yet enforces that the local match's reach imports no Node.**
-  `server/localMatch.ts` and everything it reaches — `Match` included — run
-  in a browser, but `check-babylon-free.mjs` gates Babylon only and
-  `npm run build` does not bundle the Worker until C4 names it as a Worker
-  URL. From then the page build refuses a `node:` or `ws` import in its
-  reach; until then it is a rule in the headers alone.
-- **The same-thread fallback is a value import of `server/`** (found at C3).
-  `serveLocalMatch` is one code path in a Worker and on a `MessageChannel`,
-  but running it in the page's thread means the page imports
-  `server/localMatch.ts`, which "nothing in `src/` value-imports `server/`"
-  forbids. C4 decides: a dynamic `import()` taken only on the fallback keeps
-  the Worker path's bundle free of it, and the rule is restated as "only the
-  fallback's one dynamic import". Until something references
-  `server/localMatchWorker.ts` as a Worker URL, `npm run build` does not
-  bundle it — C3 proved it under `vite dev` in a real Worker.
-- **The bench's fight must not move.** If the hashes differ, the slot layout
-  (the pool), the step order around `Match.step`, and the seed's route are the
-  suspects, in that order. Attribute the change to one cause, as X2.2 C6 did,
-  or do not land.
-- **The page's own match is built off the map's committed BAKE** (found at
-  C4). The old offline core was handed `collisionOf(map)`, the map the page
-  had just built; a `Match` reads `MapDef.collision`, as a server's does. So
-  an edit the editor saved plays against stale colliders on the authority's
-  side until `npm run collision` re-bakes it — the same rule a server match
-  has always had, now met in the dev loop. Not a bug in either half; a
-  workflow to know (`Game.toggleEditor`'s header says it).
-- **What C4 leaves C5** (found at C4). `Game` constructs no `BattleView` and
-  holds no `SimHost`, frame or mirror: every one of `simHost.ts`,
-  `simWorker.ts`, `hostWire.ts`, `commandCodec.ts`, `publication.ts`,
-  `mirror.ts`, `simCheck.ts`, `BattleView.ts` and (if nothing else draws a
-  bot) `BotRig.ts` is now unreachable from the page and still typechecks.
-  `src/sim/frame.ts` is still where `FrameTiming` and `SIM_PHASES` live, and
-  `localWire.ts` and `Game` read them — C5 moves those two before deleting
-  the rest — and drops `SIM_SLOT`'s `publish` row with it, which a `Match`'s
-  core (built without `publish`) never files. `?simcheck` and `?simcopy` now
-  do nothing (`VERIFYING.md` says so). `VehicleSystem.onRespawned` never fires on a page's fleet (it is always
-  `predicted`); the READY toast is the wire's arrival edge
-  (`Game.syncNetVehicles`).
-- **Fixed for BOTH at C4, by the step's rule** (found at C4 — each was a
-  match's behaviour that offline would otherwise have inherited): bodies off
-  the wire now cast body shadows, get blob shadows and bend the grass
-  (`mapBodies`, `fillPushers`); a remote rocket's launch is heard
-  (`NetOrdnance.onLaunch`); the shooter's mark for a blast, a killing burn, a
-  hull gun's kill and the tracks rides the wire (`hit`'s new `cause`); a
-  hull's return says READY; the player's own scoreboard row and own death on
-  the feed read "YOU".
-- **Still different, and owed** (found at C4): the feed names a kill BY the
-  player as their team, never "YOU" — the `kill` event carries the killer's
-  team and not their slot, so a client cannot tell its own kills from its
-  squad's. Fixing it is a field on `kill`, for both.
-- **A person's FIRST `move` was budgeted one input interval, and that was a
-  match's bug** (found at C4, fixed for both). Validation runs offline now,
-  and a headless Sarab walk came back `speed`-corrected by a third of a
-  metre on `seq` 1 — once in fourteen walks, whenever the frames right after
-  a spawn ran long. A client sends on the first frame its upload clock
-  reaches an interval, so its first sample spans up to one interval plus a
-  frame, and a frame is capped at one interval. `Match.onStamp` now assumes
-  `FIRST_STAMP_GAP` (two intervals); every later sample is priced by its own
-  stamps. corecheck's every banked line is unchanged by it.
-- **The benchmark watches through interpolation** (found at C4): its bodies
-  are the watcher's, drawn `interpDelay` behind 20 Hz snapshots, and an
-  uncapped run steps the match faster than the wall, so the render clock
-  snaps forward as the offset estimate catches up. A picture, which the hash
-  does not fold; what it costs is that the bench's bodies are no longer the
-  core's exact pose each frame, which is the cost this step exists to measure.
-- **The contracts are C6's** (found at C4): `CLAUDE.md`'s "Ownership and
-  wiring", "Multiplayer" and "Measuring a frame", and `docs/game.md`,
-  `docs/states.md` and `docs/profiling.md`, still describe the core-in-a-Worker
-  page; C4 rewrote only `docs/multiplayer.md`, `FILES.md`, `VERIFYING.md`'s
-  misleading lines and the contract headers it touched.
-- **Fixed at C4's third review** (each something C4 lost, or a match's
-  behaviour C4 handed offline): a posed hull's main-gun kick (the loader's
-  clock, the rock, the masts) is the wire's `cannon` arm's now, for both — a
-  match never had it, and offline lost it with `hullKicked`, so a gunner's
-  loader row stayed full and a TAKE OVER predicted a shell the authority was
-  still loading; the kill's rumble is back on the authority's verdict; a
-  leash death has no bearing (`damage`'s additive `dealt: false`, a corpse
-  thrown from its own centre on `killer: -1`); the player's own death is
-  highlighted on the feed again; `buildRound` asks whether it is still
-  wanted BEFORE opening the page's match (a join refused inside
-  `startRound`'s two frames left a seated match behind the lobby and Join
-  dead); an owned match's ended round deploys nobody; a `hit` is
-  addressed only while its author still holds the slot (`SimCore.markerSlot`
-  — a leaver's mine marked the slot's next person); and corecheck's hold
-  line no longer claims an honest `move` after it is uncorrected, which no
-  hold could change (the stamp gates read the wall clock).
-- **Open, and the user's to decide** (found at C4's third review):
-  - ~~**The backlog counts CALLS, not seconds.**~~ **Decided and done**
-    (the user's call, 2026-10-12): on a device the match could not keep up
-    on, each folded advance grew to `MAX_CARRIED_MS`, so four of them queued
-    about a second of fight behind the picture rather than four frames. Now
-    `LocalMatch.behind` is SECONDS, and a frame steps only what fits under
-    `CONFIG.net.localSlack` (0.15 s, three frames at the `dt` clamp) and
-    holds the rest — slower than real time, never further behind than that.
-    The phone run is still where it shows.
-  - ~~**Any uncaught error in the Worker ends offline play for the page's
-    life.**~~ **Decided and done** (the user's call, 2026-10-12): the
-    Worker's `onerror` is a LOG LINE (`matchHost.ts`), never `lost`. An error
-    event is one task that threw and the Worker carries on past it — as the
-    server's process does past its backstop and the page's thread under
-    `?simpage` — while a Worker that truly dies or wedges raises nothing, so
-    `onerror → lost` caught the survivable case and missed the fatal one.
-    Catching around the per-peer handlers was rejected: it misses
-    `portPeer`'s microtask and `Match`'s timers, and makes the local host
-    stricter than the server. Silence is the one signal; `LocalMatch.lost`
-    is private to the watchdog now.
-  - ~~**No watchdog covers `begin`'s answer to the welcome.**~~ **Decided and
-    done** (the user's call, 2026-10-12): once the host has answered, a
-    watchdog look that finds nothing owed posts a HEARTBEAT (a `settle`
-    nobody awaits), so something is always owed and the stall's ten seconds
-    cover the welcome window and the menu alike — the latter found in
-    seconds rather than at the next build's two minutes. A host that is up
-    but never welcomes is not this: `admit`'s rejection is already answered
-    `rejected`.
-  - ~~**A lost host was final for the page's life.**~~ **Decided and done**
-    (the user's call, 2026-10-12): the page REPLACES it — the round on it
-    ends, the old host is torn down (a wedged Worker terminated) and a new
-    one opened the boot's way (`MatchHost.replace`, `Game.rehostLocal`), up
-    to `CONFIG.net.localRehosts` (2) times a page; past that, or if the
-    replacement fails to open, the reload toast as before. A deliberate
-    fallback to this thread after a LOSS (rather than the boot's own, when a
-    Worker does not come up) was left for later, if it proves needed.
-    Measured headless on the Windows box, the real Worker `terminate()`d
-    three times on Hollowmere: in the menu found at 11 s (the heartbeat) and
-    a new Worker up in 90 ms; mid-round, the round left with "restarting it,
-    play again in a moment" and the next round played; the third, "reload
-    the page".
-  - ~~**`Connection` has no silence timer.**~~ **Decided and done** (the
-    user's call, 2026-10-12): a socket that has said nothing for
-    `CONFIG.net.silenceTimeout` (20 s, from the dial) is let go and retried
-    as a closed one is — a network that died without a goodbye, or a server
-    wedged behind nginx's hour-long read timeout. One flat number above a
-    healthy server's longest quiet (the 8 s round-over card, then a world
-    build measured at 0.15–0.75 s); a port is not `watched`, its host having
-    the watchdog. Measured headless through a proxy that stops forwarding
-    with both sockets open: let go at 21 s, welcomed back into the same match
-    a second later; an offline deploy screen held 30 s ran no timer. The
-    browser's network events (`offline`, waking from sleep), which would
-    catch a phone's handover sooner, are left for later, if it proves
-    needed. `docs/multiplayer.md`, "The silence timer".
-  - Smaller, owed to C5 or a later pass: ~~`ordnanceRefused` is not
-    relayed~~ (done at C5, below); ~~`WorldCulling`'s pools hold the
-    disposed session's rigs~~ (done at C5: `leaveMatch` reinstalls them);
-    ~~a `sim` timing taken before a pause is filed seconds later~~ (done at
-    C5: a frame that holds the world drops it); the bench's round-end
-    capture path is still unexercised.
-- **What C5 did** (found and decided at C5):
-  - The old host is gone: `simHost`, `simWorker`, `hostWire`,
-    `commandCodec`, `publication`, `frame`, `mirror`, `simCheck`, `BotRig`
-    and `BattleView`, and what only they read (`SimCore.publish`,
-    `releaseWorld`, `firstSlotOf`, `EventRing.append`, the joint packing,
-    `CONFIG.bots.lodFreezeDistance`/`lodDisableDistance` — the body gates
-    are TWO now, `NetRoster` and `RagdollSystem`). The step's timing lives
-    in `src/sim/stepTiming.ts` as `SimCore.timing`; `simulate` lost
-    `--frame`; corecheck lost its two mirror lines (re-banked, nothing else
-    moved). `tsconfig`'s lib is ES2022 again, the growable SAB being gone.
-  - The profiler lost `simPublish`, `simWait`, `simSync`, the dead `bots`
-    slot and `sim.hop` (report version 16). **The `sim` root is every step
-    a frame files**: the local match sums an `advance`'s steps
-    (`MatchOptions.stepped`, `addStepTiming`) and the page sums every answer
-    until a frame files them — it filed one step of N before.
-  - **A refused throw is given back, for both** (`ordnanceRefused` and
-    `Player.returnGrenade` kept, the relay added): one addressed `refused`
-    event, from the core's pool refusal and from `Match`'s own claim gates,
-    silent for a dead body or an empty pouch; `Player.returnOrdnance` is the
-    third slot's twin. A leaver takes what is queued for their slot with
-    them (`Match.unqueueTo`), so neither a `refused` nor a `hit` reaches
-    the next occupant. corecheck's `sarab/refused` covers `Match`'s gates.
-  - **A launcher bot's tube is drawn again, for both** — lost at C4 with
-    `BotRig`, never drawn in a remote match: `SlotOccupant.launcher` on the
-    roster, `NetSoldier.setLauncher`.
-  - Harness scripts off `g.battleView` (`npm run shots`, the webgpu-ref
-    harness, the model-detail and map-layout skills) and the ui-screen
-    stagings off `g.core`.
-- **What C5 leaves** (found at C5):
-  - **C6's contracts**, beyond the list below: `docs/game.md`,
-    `docs/bots.md`, `docs/deaths.md`, `docs/profiling.md` (the old phases),
-    `docs/rendering.md`, `docs/world.md`, `docs/antitank.md`, and
-    `CLAUDE.md`'s `bodyDrawDistance` row (it names `lodDisableDistance`) and
-    every `BattleView`/`BotRig`/`onSimEvent`/`?simcheck` mention.
-  - A refused grenade or rocket is still DRAWN: the page's predicted one
-    flies on and fizzles, since `refused` names no throw to take back. A
-    picture, and rare (an honest client trips a gate only under jitter).
-  - corecheck does not cover the core's own refusal (a full pool), the rate
-    gate, the mine, or the silence for a dead or empty ask.
-  - The feed's "YOU" for the player's own kills (a field on `kill`), still
-    owed from C4.
-- **What C6 did** (found and decided at C6):
-  - The pair is gone from all four places (ee686a6). Nothing read
-    `crossOriginIsolated`, so no check went with it; the nginx template and
-    `sw.js` are their pre-X2.5b text again, nothing else in either having
-    changed since. Measured headless on the Windows box: no COOP/COEP on the
-    document and `crossOriginIsolated` false under `vite dev`, under `vite
-    preview`, and on a `vite preview` reload answered by the service worker
-    with the network cut — the local match up in a Worker each time and an
-    offline round played on it. The profiler's grain is Chrome's 100 us
-    again, which `FrameProfile`'s header and `config/profiling.ts` already
-    said, and every capture still records (`grainMs`).
-  - The contracts: `CLAUDE.md`'s "Ownership and wiring" (the page is a
-    match client and offline HOSTS its own `Match`), "Multiplayer" (the
-    owned match, the owner channel, `localRound`/`remoteRound`, the hold
-    and the lost host), "Measuring a frame" (where `sim`'s timing comes
-    from), "The installable app" (the isolation paragraph deleted),
-    "Conquest rules" (corecheck's two doors), the bots and deaths sections
-    and the `bodyDrawDistance`/`perTeam` rows; `docs/game.md`,
-    `docs/states.md`, `docs/profiling.md`, `docs/pwa.md`, `docs/bots.md`,
-    `docs/deaths.md`, `docs/rendering.md`, `docs/world.md`,
-    `docs/vehicles.md`, `docs/antitank.md`, `docs/grenades.md`, one
-    sentence of `docs/multiplayer.md` (C5 had rewritten the rest), `FILES.md`,
-    `VERIFYING.md`, `FINDINGS.md` 30, and the contract headers that still
-    named the deleted host. `BattleSystem.seatPlayer`, `playerSlot` and
-    `seated` had no caller since C4 and went with them.
-  - `Game.ts` has no `onSimEvent`, and 25 lines ask who hosts the round
-    (`remoteRound`, `localRound`, `net.local`), every one an authority or a
-    hosting question: restart and its doors, the map card's labels, the
-    seed a capture names, the shared sky clock (clouds, storm), the server's
-    smoke-walker flow fields, the ping column, holding and stepping the
-    page's own match, and a lost host.
-- **What C6 leaves** (found at C6):
-  - **With the match on the page's own thread (`simMode` `page`) its step
-    runs in a message task BETWEEN frames** — in the residue, outside both
-    `frame` and `present` — not inside the frame as X2.5b's in-page core
-    did. `profilePhases.ts` and `docs/profiling.md` now say so.
-  - **An armed profiler's `advance` answer carries the summed timing as a
-    structured clone**, so the page takes in a fresh copy each frame. Every
-    posted answer is a fresh object anyway — the price of posting, as the
-    JSON wire is — and the profiler's own recording path still allocates
-    nothing; a capture that shows it matters is a binary owner channel.
-  - **Every offline round builds its rig pool TWICE on the 24-a-side
-    maps.** The page's own match is a fresh session per round, so its
-    `NetRoster` is built anew — `CONFIG.bots.perTeam` (8) a side in the
-    constructor — and `buildRound`'s `setFielded` then rebuilds it at the
-    map's 24. A build-time cost on Sarab and Cinderhaven, behind the
-    building card; taking the map's roster into the session's constructor
-    would halve it. **Fixed after C6**: `NetSession` and `NetRoster` take
-    `perTeam`, which `Game` hands them off `perTeamOf(mapDef.layout)`.
-  - **At a benchmark SEGMENT boundary the `sim` filing lags one frame**:
-    `updateBench` sets the segment before the frame's first `updateWorld`
-    files the previous frame's answers, so the first `fight` frame carries
-    the last lead frame's summed steps. **Fixed after C6**: a frame that
-    changes segment drops what is waiting and counts off the answers still
-    owed (`Game.dropLocalTiming`, the held world's own mechanism).
-  - **`CONFIG.bots.death.maxDistance` was never read**, back to the repo's
-    first commit, while the docs called it the ragdoll gate —
-    `RagdollSystem.viewDistance` always was. **Deleted after C6**, every
-    reference re-pointed; `config/fogWall.ts` stays a module of its own.
-  - Everything under "Verify" that needs a person or the phone: the
-    play-test, the phone's offline Sarab, and the deployed build installed
-    and offline on the phone.
+**Still owed before the step is closed:**
+- **The user's play-test:** a netplay round on a local match server, then back
+  to the menu for an offline round on the local match, on foot and in each
+  vehicle kind.
+- **The phone, offline Sarab, read off the profiler,** against X0.4's "before"
+  and X2.5b's desktop reading. It runs from the deployed build, installed and
+  offline, with the local match in its Worker. Anything wrong there is fixed
+  for both modes.
+- **Then the second early merge** to `develop`, after a code review ("The
+  branch").
 
-**Verify:**
-- The bench's seven fight hashes: X2.5a's table, identical, from the Worker and
-  under `?simpage`.
-- `simulate --events` identical for every map; `corecheck` all passed,
-  including the new local-transport run; `parity`; `merge:hash` and
-  `kit:hash` identical; `npm run build`.
-- **A netplay round** on a local match server, then leave to the menu and play
-  an offline round on the local match: on foot, then in each vehicle kind. The
-  USER play-tests this, as for X2.1 and X2.5a.
-- **The phone, offline Sarab, off the profiler** (moved here from X2.5b). This
-  is where the 100 ms interpolation (`CONFIG.net.interpDelay`, 20 Hz
-  snapshots) and the JSON allocation would show. By this step's rule, anything
-  wrong there is fixed for both modes. Compare against X0.4's "before" and
-  against X2.5b's desktop reading.
-- `Game.ts` has no `onSimEvent`. Count the `this.net` forks and name each one
-  left: every one should be an authority question (`net.local`).
-- The docker image's isolation, owed from X2.5b, is no longer owed: the
-  headers are gone. What the deploy owes instead is the local match running in
-  the Worker from the deployed build, installed and offline, on the phone run
-  above.
+**Left open, smaller:**
+- The feed never says "YOU" for the player's own kills: `kill` carries the
+  killer's team and not their slot. The fix is a field on `kill`, for both.
+- A refused grenade or rocket is still drawn flying on.
+- The bench's round-end capture path (a fight that ends the round before
+  its clock does) has never been exercised.
+- corecheck does not cover the core's own refusal (a full pool), the rate
+  gate, the mine, or the silence after an ask from a dead body or an empty
+  pouch.
+- An armed profiler's `advance` answer brings its timing as a fresh copy. A
+  binary owner channel is the answer if a capture ever shows it matters.
 
-**Rewrites:**
-- `CLAUDE.md`, "Ownership and wiring": offline is a match client of a local
-  `Match`; `SimHost`, the frame and the mirrors are gone.
-- `CLAUDE.md`, "Multiplayer": the local match, the owner channel, and
-  `net.local`.
-- `CLAUDE.md`, "Measuring a frame": where the `sim` root's timing comes from.
-- `CLAUDE.md`, "The installable app": the isolation paragraph (every response
-  owes COOP and COEP, beside `DOCS`) is deleted, and so is the sentence on
-  `require-corp` in "Ownership and wiring".
-- `CLAUDE.md`, "Conquest rules": corecheck's two halves.
-- `docs/game.md`, `docs/multiplayer.md`, `docs/states.md` (a pause holds the
-  world in a LOCAL match, and still holds nothing in a remote one),
-  `docs/profiling.md`, `docs/pwa.md` (the isolation headers' four places),
-  `FILES.md`, `VERIFYING.md` (how a headless run gets isolation, no longer
-  needed), and every contract header the deletions touch.
+The full record is in the archive: the shape, the commits C0 to C6, the traps,
+what each commit found and decided, and what each left behind.
 
 ---
 

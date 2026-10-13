@@ -22,8 +22,8 @@
  * **Scoped to `src/` and `main.ts`**, which is what ships to a browser through
  * Vite. `server/` is outside it because it needs no rule of this shape: it
  * once imported `NullEngine` by subpath on purpose (no optimizer in front of a
- * headless process, and a class the barrel does not carry), and since
- * `BABYLON_EXIT.md` X2.3 it imports no Babylon at all — which
+ * headless process, and a class the barrel does not carry), and now imports
+ * no Babylon at all — which
  * `check-babylon-free.mjs`, run beside this, enforces for every path out of
  * it, subpath or barrel.
  *

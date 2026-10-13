@@ -1,14 +1,12 @@
 /**
- * net/matchHost.ts — Where the page's own match runs (`BABYLON_EXIT.md`
- * X2.5c C4): the boot's choice between a Worker and this thread, made once
- * and handed back as a `LocalMatch` either way.
- * Owns: `openMatchHost` — starting the host (`server/localMatchWorker.ts` in a
- * Worker, or `server/localMatch.ts` on a `MessageChannel` here), proving it is
- * up, for a Worker saying what it throws, and REPLACING a host its owner
+ * net/matchHost.ts — Where the page's own match runs: the boot's choice between
+ * a Worker and this thread, made once and handed back as a `LocalMatch` either
+ * way. Owns: `openMatchHost` — starting the host (`server/localMatchWorker.ts`
+ * in a Worker, or `server/localMatch.ts` on a `MessageChannel` here), proving
+ * it is up, for a Worker saying what it throws, and REPLACING a host its owner
  * lost (`MatchHost.replace`: the old one torn down, a new one opened by this
- * same choice — so a lost Worker's successor is a Worker again when it
- * comes up, and this thread's host only on the boot's own terms).
- * Invariants:
+ * same choice — so a lost Worker's successor is a Worker again when it comes
+ * up, and this thread's host only on the boot's own terms). Invariants:
  * - **One code path either way.** The Worker's scope and a `MessageChannel`'s
  *   port are both an `OwnerPort`, `serveLocalMatch` is the whole of the host
  *   in both, and `LocalMatch` cannot tell which it was handed — so the page,
@@ -29,9 +27,8 @@
  * - **`?simpage` asks for this thread**, as it asked for the core in it
  *   before: what a debugger steps through.
  * Never: value-import `server/` statically. **The fallback's one dynamic
- * `import()` is the only value import of `server/` anywhere in `src/`**
- * (X2.5c C4's decision on "The same-thread fallback is a value import of
- * `server/`"): taken only when this thread hosts, so the Worker path's bundle
+ * `import()` is the only value import of `server/` anywhere in `src/`**:
+ * taken only when this thread hosts, so the Worker path's bundle
  * carries none of the authority — the Worker is reached as a URL, which is a
  * chunk of its own. Everything that import reaches must run in a browser,
  * which `scripts/check-babylon-free.mjs` holds (no Node in the local match's

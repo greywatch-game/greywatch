@@ -9,7 +9,7 @@
  * the origin with the bottle's middle there, so a tumble about the mesh's own
  * origin is a bottle turning end over end rather than swinging round its base.
  * Each mesh is a `Part` on a `src/geometry/` buffer made a mesh by
- * `drawnMesh` (BABYLON_EXIT.md X1.3).
+ * `drawnMesh`.
  *
  * A file of its own for `GrenadeModel`'s reason, and there are THREE builders
  * of it rather than two: `GrenadeFx`'s pool, `net/NetGrenades`' drawn

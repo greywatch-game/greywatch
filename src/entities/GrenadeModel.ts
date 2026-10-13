@@ -7,7 +7,7 @@
  * no `solid` flag and no `WorldBox`, so nothing shoots it, walks into it or
  * treats it as cover, and it must stay that way on both sides of the wire.
  * Both meshes are `Part`s on `src/geometry/` spheres made meshes by
- * `drawnMesh` (BABYLON_EXIT.md X1.3).
+ * `drawnMesh`.
  *
  * It is a file of its own for the reason `SoldierModel` is one: two things
  * build a grenade now, both through `GrenadeFx`'s `GrenadeBody`: `GrenadeFx`

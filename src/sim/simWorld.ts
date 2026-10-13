@@ -4,14 +4,10 @@
  * Owns: the nav/cover/obstacle/ray/sweep structures built from the baked
  * boxes and the map's floor, and the `GameMap` that carries them.
  *
- * **There are no collider meshes on this side any more, and that is the end of
- * a road rather than a shortcut.** They existed first so this process's
- * `scene.pickWithRay` had something to pick, and then so a driven hull's
- * `moveWithCollisions` had something to walk. Every ray became a box query
- * (`RayWorld`, `ENGINE_UPGRADE.md` wall 2) and so did every sweep
- * (`CollisionField`, `BABYLON_EXIT.md` X2.1), both off `colliderBoxes`, which
- * left the meshes an inert mirror of the client's that nothing read; X2.3 took
- * them away with the scene they stood in. `GameMap.colliders` and
+ * **There are no collider meshes on this side, and none is owed.** Every ray
+ * is a box query (`RayWorld`) and so is every sweep (`CollisionField`), both
+ * off `colliderBoxes`, so a mesh here would be an inert mirror of the
+ * client's that nothing read. `GameMap.colliders` and
  * `terrainColliders` are therefore EMPTY here, as `visuals` and `paneGroups`
  * always were — every reader of either is a client view (`GlassFx`,
  * `WorldCulling`, `PhysicsWorld`), and the authority builds none of them.
@@ -42,11 +38,11 @@
  *     (see `MapDef.heights`). Baking those too would be three more things that
  *     can go stale for no gain.
  *
- * **Both arrive as DATA and this file loads neither** (`BABYLON_EXIT.md`
- * X2.5a): `buildSimWorld` is synchronous, and the two lazy imports are the
- * host's — `server/world.ts`'s `loadSimWorld` on the authority, which is all
- * that file still is. So the core that owns this world can be handed one by
- * any host that holds a `MapCollision`, and none of it lives in `server/`.
+ * **Both arrive as DATA and this file loads neither**: `buildSimWorld` is
+ * synchronous, and the two lazy imports are the host's — `server/world.ts`'s
+ * `loadSimWorld` on the authority, which is all that file still is. So the core
+ * that owns this world can be handed one by any host that holds a
+ * `MapCollision`, and none of it lives in `server/`.
  *
  * The four boundary boxes need no special handling — `collider()` made them,
  * so they are in the bake like everything else, and they keep the `w > 200 ||

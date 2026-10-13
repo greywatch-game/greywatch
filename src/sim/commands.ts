@@ -28,12 +28,11 @@
  * SIZES a kit fills. One kind has no wire
  * message: `kit` (the wire resolves a kit inside `join`/`deploy`).
  *
- * **A person's HULL is reported, never steered** (`BABYLON_EXIT.md` X2.5a
- * C4b): `drive` and `gun` carry where the host's own prediction put the hull
- * and the cupola gun, and the core poses its copy to them on its next step —
- * every person alike, the offline page's player being a peer of its own
- * `Match` (`BABYLON_EXIT.md` X2.5c). There is no command carrying a stick: raw
- * input is the predicting client's, which is what keeps the hull a person
+ * **A person's HULL is reported, never steered**: `drive` and `gun` carry where
+ * the host's own prediction put the hull and the cupola gun, and the core poses
+ * its copy to them on its next step — every person alike, the offline page's
+ * player being a peer of its own `Match`. There is no command carrying a stick:
+ * raw input is the predicting client's, which is what keeps the hull a person
  * drives the same machine offline and in a match.
  *
  * There is no `swapSeat`: on the wire and here a swap is a `mount` naming the
@@ -54,7 +53,7 @@ import type { WeaponSetup } from "../entities/weapons";
  * A `WeaponSetup` is one (the authority hands its peer's whole loadout row);
  * the page's player's is resolved the same way, off the kit its deploy
  * names. Five numbers rather than the whole setup because that is all
- * resolving a round reads (`BABYLON_EXIT.md` X2.5b): the core had no use for
+ * resolving a round reads: the core has no use for
  * the other thirty.
  */
 export type ShotWeapon = Pick<

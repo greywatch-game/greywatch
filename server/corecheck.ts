@@ -15,39 +15,37 @@
  * person's door is driven through the door the CORE itself calls, and each
  * case below says which door it uses.
  *
- * **Why it exists** (`BABYLON_EXIT.md` X2.5a C3): the offline page hosted the
- * core the authority hosts (from C4a; since X2.5c it plays an owned `Match`
- * instead, so both rounds are the authority's), and `simulate` cannot see a
+ * **Why it exists**: every round a person plays — a server's or the page's
+ * own — runs the core the authority hosts, and `simulate` cannot see a
  * person — it seats nobody, so every rule about a person's death, a person's
- * award and a person's seat had no instrument at all. This is that
+ * award and a person's seat would have no instrument at all. This is that
  * instrument, and the second half is the point: the same script run through
  * `Match`'s VALIDATED door (a fake transport, the client messages a real one
  * would send, every claim gate in the path) must leave the identical award
  * and death list — the scoring rules exercised offline and online.
  *
- * **The hosts.** `CoreHost` is the TRUSTED door — the offline page's shape
- * until X2.5c, kept as the bare core's: it submits each of the person's acts
- * as a `SimCommand` (`src/sim/commands.ts`) with nothing in front of it.
- * `MatchHost` is the VALIDATED door: a real `Match`, its loop timer stopped
- * so the script steps it by hand, fed JSON through its transport's `message`
- * handler — every claim gate runs and then `Match` submits the same command. So the identity
- * below is the proof that the two doors agree: the rules are the core's, once
- * (`SimCore.submit`), and nothing in either host restates one. Each records
- * every event the core drained, in order, raw (`Log`). Setup that no person's
- * message could do — placing a body, setting a flag's owner, lowering a
- * victim's health, seating a bot crew — is done identically on both, between
- * calls, on the live core; it is a fixture, not a door.
+ * **The hosts.** `CoreHost` is the TRUSTED door — the bare core's: it submits
+ * each of the person's acts as a `SimCommand` (`src/sim/commands.ts`) with
+ * nothing in front of it. `MatchHost` is the VALIDATED door: a real `Match`,
+ * its loop timer stopped so the script steps it by hand, fed JSON through its
+ * transport's `message` handler — every claim gate runs and then `Match`
+ * submits the same command. So the identity below is the proof that the two
+ * doors agree: the rules are the core's, once (`SimCore.submit`), and nothing
+ * in either host restates one. Each records every event the core drained, in
+ * order, raw (`Log`). Setup that no person's message could do — placing a body,
+ * setting a flag's owner, lowering a victim's health, seating a bot crew — is
+ * done identically on both, between calls, on the live core; it is a fixture,
+ * not a door.
  *
- * Two cases are the core's alone, on a bare core built as the offline page
- * built it until X2.5c. `holdsRespawn`: a core built with `hostHoldsRespawn`
- * — the respawn clock an OWNER holds, the page's own match's — must honour a
- * deploy AT SUBMIT through the same door and the same spawn stream the
- * authority's reinforcement pass uses, where the default core (above) keeps
- * the request until its own clock runs out.
- * `reportedHull` (X2.5a C4b): a person's hull is POSED from their `drive` and
- * `gun` reports — a peer's predicted hull, the offline page's as well since
- * X2.5c — and the shell asked between the step and the next report leaves
- * the reported pose's muzzle.
+ * Two cases are the core's alone, on an OWNER's bare core — built as a match
+ * its owner drives builds its own. `holdsRespawn`: a core built with
+ * `hostHoldsRespawn` — the respawn clock an OWNER holds, the page's own match's
+ * — must honour a deploy AT SUBMIT through the same door and the same spawn
+ * stream the authority's reinforcement pass uses, where the default core
+ * (above) keeps the request until its own clock runs out. `reportedHull`: a
+ * person's hull is POSED from their `drive` and `gun` reports — every peer's
+ * predicted hull, the offline page's included — and the shell asked between the
+ * step and the next report leaves the reported pose's muzzle.
  *
  * And `crashCalibration` (`sarab/crash`, FINDINGS.md 60), on botless Sarab:
  * scripted flights of the person's helicopter — hard, firm, under the
@@ -59,7 +57,7 @@
  * and the same uploads through `Match` (the identical charge, the snapshot's
  * `hp` saying so, nothing corrected). It prints the calibration table.
  *
- * And the X2.5a review's three, on the same botless Sarab: `sarab/leash` — a
+ * And three more on the same botless Sarab: `sarab/leash` — a
  * person in a FLYING hull past the play square (pilot and gunner, trusted
  * door and `Match`) is put on foot and killed by the leash, the hull left
  * standing; `sarab/clock` — a peer's stamps are bounded against when they
@@ -69,33 +67,33 @@
  * refused sample mid-descent followed by the client's `resync` costs nothing,
  * and a lie on the sample before touchdown still pays the landing.
  *
- * And `sarab/refused` (X2.5c C5), on the same botless Sarab through `Match`:
+ * And `sarab/refused`, on the same botless Sarab through `Match`:
  * a throw or a rocket the authority refuses — out of the cone, or from a
  * seat — is answered with one `refused` to the person who asked and to
  * nobody else, and leaves the authority's pouch as it was.
  *
- * And `greyfen/owned` (X2.5c C2): a match its OWNER drives (`Match`'s
+ * And `greyfen/owned`: a match its OWNER drives (`Match`'s
  * `owned`) plays the benchmark's round — its seed, difficulty and length — as
- * a bare core built the offline page's old way plays it, a tick an `advance`
+ * an owner's bare core plays it, a tick an `advance`
  * and at 144 Hz alike, one event stream and the bench's own `FightHash`;
  * then the owned lifecycle: the map's own slot table, no admit before
  * `begin`, a round that ends held with no ballot or rotation until the owner
  * begins the next, empty is not idle, and `close`.
  *
- * And `greyfen/local` (X2.5c C3): the same round through the LOCAL
+ * And `greyfen/local`: the same round through the LOCAL
  * TRANSPORT — the host the page runs in a Worker (`server/localMatch.ts`),
  * here on a `MessageChannel` in this thread, driven through the owner's own
  * client (`src/net/LocalMatch.ts`): the bench's fight hash comes back over
  * the owner channel, and a person joins over a port through the page's real
  * `Connection` — welcomed, deployed, an honest report uncorrected, the
  * scoreboard's ping row filled, and told why when the owner closes the match.
- * X2.5c C4 adds, on the same run: the welcome names the table's block width
+ * And on the same run: the welcome names the table's block width
  * (the map's own); a deploy made while the owner HOLDS the clock is answered
  * with no advance (the owner's respawn clock, the owned deploy's flush); and
  * a `hold` passes the clock without a step, so the offset a client samples
  * does not drop with it.
  *
- * And `greyfen/watch` (X2.5c C4): a WATCHER (`Match.watch`) connected for the
+ * And `greyfen/watch`: a WATCHER (`Match.watch`) connected for the
  * whole of the bench's round over the local transport — welcomed at no slot,
  * sent every snapshot and the shared events, and the fight hash still the
  * core's; then, white-box on an owned `Match`, that an addressed event never
@@ -161,7 +159,7 @@ const RESPAWN_TICKS = Math.round(CONFIG.conquest.respawnDelay * TICK_HZ);
  * a hash: the kind byte, the tick, all `STRIDE` float64s of the record (NaN
  * normals and the zero-filled tail included) and a glass event's pane run.
  * Each drain's cursor and decoded batch are also put through
- * `structuredClone` and compared back, which is the transfer X2.5b will make.
+ * `structuredClone` and compared back, as a posted transfer carries them.
  */
 class Log {
   readonly events: SimEvent[] = [];
@@ -1112,12 +1110,12 @@ async function ownedOn(world: World): Promise<{ match: Match; log: Log; mark: nu
 }
 
 /**
- * **A match its OWNER drives plays the offline page's round** (`BABYLON_EXIT.md`
- * X2.5c C2) — and since C4 it IS the offline page's round. The benchmark's
+ * **A match its OWNER drives plays the offline page's round** — it IS the
+ * offline page's round. The benchmark's
  * round — its seed, its difficulty, its length — played three ways on the
- * same map: on a bare core built as the offline page built one until X2.5c
+ * same map: on an owner's bare core
  * (the map's own pool, fielded whole, `hostHoldsRespawn`; the printed line
- * still calls it "the offline page's core") stepped by hand; through an
+ * calls it "the offline page's core") stepped by hand; through an
  * owned `Match` advanced by the bench's own step, one `advance` a tick; and
  * through another advanced in 144 Hz frames, most of which hold no whole
  * step. All three must be one event stream, which is what
@@ -1270,7 +1268,7 @@ async function until(ready: () => boolean, ms = 2000): Promise<boolean> {
 }
 
 /**
- * **The local match, through its transport** (`BABYLON_EXIT.md` X2.5c C3).
+ * **The local match, through its transport.**
  * The host the page runs in a Worker (`serveLocalMatch`), on a
  * `MessageChannel` in this thread — the same code path as the page's
  * fallback — driven through the owner's client the page will hold
@@ -1355,7 +1353,7 @@ async function localMatch(world: World, c: Checks, benchHex: string): Promise<vo
     `blockWidth ${welcome?.blockWidth}`,
   );
 
-  // The deploy is answered while the owner HOLDS the clock (X2.5c C4): the
+  // The deploy is answered while the owner HOLDS the clock: the
   // owner holds the respawn clock, so the core honours it at submit, and an
   // owned match flushes the answer at once rather than on a snapshot. The
   // owner channel is settled first, so nothing it posted is still stepping,
@@ -1498,8 +1496,8 @@ async function localMatch(world: World, c: Checks, benchHex: string): Promise<vo
 }
 
 /**
- * **A WATCHER sees the fight and is nobody in it** (`BABYLON_EXIT.md` X2.5c
- * C4, "The benchmark has to WATCH its fight, and a peer is a seat"). The
+ * **A WATCHER sees the fight and is nobody in it** — the benchmark has to
+ * WATCH its fight, and a peer is a seat. The
  * bench's round over the local transport again, with a watcher dialled by the
  * owner (`LocalMatch.dial({ watch: true })`) through the page's real
  * `Connection` and connected for the whole of it:
@@ -1616,15 +1614,14 @@ async function watchMatch(world: World, c: Checks, benchHex: string): Promise<vo
 }
 
 /**
- * **A person's hull is REPORTED, never steered** (`BABYLON_EXIT.md` X2.5a C4b)
- * — every driver alike, the offline page's being a peer of its own `Match`
- * since X2.5c — so the door is asserted on a bare core built as the page
- * built one until then (`hostHoldsRespawn`, no rewind). A driver's `drive` is
+ * **A person's hull is REPORTED, never steered** — every driver alike, the
+ * offline page's being a peer of its own `Match` — so the door is asserted on
+ * an owner's bare core (`hostHoldsRespawn`, no rewind). A driver's `drive` is
  * where the core's copy stands after its next step — position, heading, the
- * gun's bearing and elevation — with the person riding it and the look on
- * the body; the shell asked after that step leaves
- * the muzzle of the REPORTED pose; a gunner's `gun` is where the cupola gun
- * points; and a report from the wrong chair moves nothing.
+ * gun's bearing and elevation — with the person riding it and the look on the
+ * body; the shell asked after that step leaves the muzzle of the REPORTED pose;
+ * a gunner's `gun` is where the cupola gun points; and a report from the wrong
+ * chair moves nothing.
  */
 function reportedHull(world: World, c: Checks): void {
   const tag = "reported";
@@ -1671,8 +1668,7 @@ function reportedHull(world: World, c: Checks): void {
     `hull ${tank.position.x},${tank.position.z} yaw ${tank.yaw} turret ${tank.turretYaw} gun ${tank.gunPitch}`,
   );
 
-  // The trigger, asked between the step and the next report — the moment
-  // the page's `pullHullTrigger` asked it at until X2.5c C4: the round
+  // The trigger, asked between the step and the next report: the round
   // leaves the reported pose's muzzle.
   const muzzle = tank.muzzleToRef(new Vector3());
   let mark = h.log.events.length;
@@ -2002,8 +1998,7 @@ async function seatPilot(h: Host, tank: number, chair: CrewSeat = DRIVER): Promi
 
 /**
  * Path (b), the PERSON's, on the trusted door: every sample a `drive`, one
- * per step, as the offline page reported its predicted hull to the core it
- * hosted until X2.5c — or, with `wire`, the jittered `INPUT_HZ` uploads a
+ * per step — or, with `wire`, the jittered `INPUT_HZ` uploads a
  * match's client sends, submitted as `Match.onDrive` would (the stamp in
  * seconds). Returns what the core's hull
  * lost.
@@ -2106,7 +2101,7 @@ async function flyReportedMatch(
  * Each flight in `CRASH_PROFILES` is flown once by `Vehicle.update` — the bot
  * path, whose own `jolt` charges the crash — and the samples that flight
  * leaves are then REPORTED to a core with a person in the same seat: one per
- * step as the offline page reported before X2.5c (which must charge what the
+ * step (which must charge what the
  * bot path charged, to float noise), and at `INPUT_HZ` with a client's clock
  * jitter as a match's peer uploads, on the trusted door and through
  * `Match`'s validated one (which must agree with each other exactly, and with the bot path within
@@ -2175,7 +2170,7 @@ async function crashCalibration(world: World, c: Checks): Promise<string[]> {
 }
 
 // ---------------------------------------------------------------------------
-// The X2.5a review: the leash in a seat, the bounded clock, the broken series.
+// The leash in a seat, the bounded clock, the broken series.
 
 /** Runs `fn` with `console.log` silenced — a `Match` narrates its round. */
 async function quietly<T>(fn: () => Promise<T>): Promise<T> {
@@ -2198,10 +2193,10 @@ function deliver(h: MatchHost, msg: object): void {
 const PEER0 = 1_700_000_000_000;
 
 /**
- * **The leash kills a person in a flying hull** (the X2.5a review, item 1).
+ * **The leash kills a person in a flying hull.**
  * The person's own helicopter out past the play square — flown there as its
  * PILOT, reporting a hover twenty metres up, or set down there with them on
- * its GUN — on a bare core built as the offline page built one until X2.5c,
+ * its GUN — on an owner's bare core,
  * and through `Match`'s validated door. Inside the count they are put on
  * foot (`seat` -1) and killed from nobody, filed `other` and uncredited,
  * exactly as the leash kills a body; the hull is left standing, out of its chair; and both
@@ -2481,7 +2476,7 @@ async function correctionBreak(world: World, c: Checks, route: { yaw: number; to
 }
 
 /**
- * **A refused throw is given back** (X2.5c C5): on botless Sarab through
+ * **A refused throw is given back**: on botless Sarab through
  * `Match` with a fake peer and a second one beside it. A grenade claimed
  * outside the look's cone, a rocket claimed backwards and a grenade thrown
  * from a helicopter's seat are each answered with exactly ONE `refused`
@@ -2601,7 +2596,7 @@ async function runMatch(world: World, script: Script, tag: string): Promise<Run>
   }
 }
 
-/** The per-body state the core exposes, as plain numbers — a summary of what X2.5a C5's frame carries. */
+/** The per-body state the core exposes, as plain numbers. */
 function bodyState(core: SimCore): unknown {
   return {
     tick: core.tick,
@@ -2783,8 +2778,8 @@ async function main(): Promise<void> {
     for (const r of checks.results) report(checks.tag, r);
     lines.push(...table);
 
-    // The review's three (X2.5a): the leash in a seat, the bounded clock,
-    // the broken series — on the same botless Sarab and the same corridor.
+    // The leash in a seat, the bounded clock, the broken series — on the same
+    // botless Sarab and the same corridor.
     const probe = new SimCore({});
     probe.startRound(roundOf(world, 0));
     const route = clearBearing(probe, probe.vehicles.hulls[heliOf(probe)]);

@@ -6,8 +6,7 @@
  * `public/icons/` — see `docs/multiplayer.md` for why this file exists at all.
  *
  * **Why a bake and not a server-side build.** The server runs the simulation
- * with no Babylon and no canvas (`BABYLON_EXIT.md` X2.3; it had a NullEngine
- * before that, and a NullEngine has no canvas either), and `MapBuilder` builds
+ * with no Babylon and no canvas, and `MapBuilder` builds
  * meshes and reaches a `DynamicTexture` through `floorMaterial` →
  * `textures.ts`, so the server cannot run a build at all. What it CAN do is
  * reproduce the solid world from the boxes, because `MapBuilder.collider()` is

@@ -8,13 +8,13 @@
  * reaches it as `CombatSystem.onRound` (wired by `Game`) or as a `drawRounds`
  * call, and nothing here deals damage, raises a near miss or breaks glass.
  * Every pool is fixed-size: add new effects to a pool, NEVER allocate per
- * shot. The authority never builds one (`BABYLON_EXIT.md` X2.2) — the
+ * shot. The authority never builds one — the
  * simulation half is all `src/sim/SimCore.ts` holds.
  * Contract: this header. `docs/rendering.md` "Impacts" for the disc and the
  * mark, `docs/multiplayer.md` for `drawRounds`.
  *
- * Split out of `CombatSystem` at X2.2 C2, and the line is the one the brief
- * draws for every mixed system: the simulation keeps the name and the shot,
+ * Split out of `CombatSystem` on the line every mixed system is split on:
+ * the simulation keeps the name and the shot,
  * and this file keeps everything a GPU is needed for. Its inputs are
  * `Vector3Like` and are read through their FIELDS, because the simulation's
  * vectors are `src/math`'s and a Babylon method would read `_x` off one and

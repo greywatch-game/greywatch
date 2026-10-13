@@ -30,8 +30,10 @@ anti-tank rocket is the other, and it lives in `AntiTankSystem` because it
 shares nothing with a grenade but the fact of flying (no fuse, no bounce, no
 rest, no tumble). What it DOES share is the first two rules below, copied
 deliberately: they are the two things about flying through this world that were
-got wrong first. Everything about `src/systems/GrenadeSystem.ts` follows from
-being a thrown thing with a clock in it:
+got wrong first. Both fly, both cost one collision ray a frame, and both are
+arguments about giving a player time to react rather than oversights.
+Everything about `src/systems/GrenadeSystem.ts` follows from being a thrown
+thing with a clock in it:
 
 - **ONE ray per grenade per frame**, cast along the step and a radius past it so a
   fast grenade cannot tunnel between frames, filtered on `metadata.solid === true`.

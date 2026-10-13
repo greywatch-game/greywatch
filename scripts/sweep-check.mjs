@@ -11,7 +11,7 @@
  *
  * The three body sweeps — the player on foot, a hull driving, a wreck coasting
  * — left Babylon's collider for a port of it that runs on plain numbers
- * against `WorldBox`es (BABYLON_EXIT.md X2.1, PERF_PLAN.md C2). The port's
+ * against `WorldBox`es. The port's
  * whole claim is that it is the SAME algorithm, quirks included, because the
  * feel of moving is that algorithm's and everything built over it (the
  * push-outs, the hull's offset sphere, its climb band) was tuned against it. A
@@ -25,9 +25,9 @@
  * `RayWorld` whose `bodyNear` every sweep gathers from and the
  * `CollisionField` over it (`map.collidables`). Every Babylon scene a mode
  * compares against is built HERE, from those boxes, on a `NullEngine` of this
- * script's own — the authority has had no scene to borrow since
- * BABYLON_EXIT.md X2.3, and this file is a dev oracle that keeps Babylon until
- * X6.1 deletes it. The bodies are the player and the three vehicle kinds, their
+ * script's own — the authority has no scene to borrow, and this file is a
+ * dev oracle that keeps Babylon until X6.1 deletes it.
+ * The bodies are the player and the three vehicle kinds, their
  * ellipsoids and offsets DERIVED from `CONFIG` as `Player` and `Vehicle`
  * derive them, so a retune is checked without anybody telling this file.
  *
@@ -61,7 +61,7 @@
  *   start (float64 against Babylon's float32), and a merged box's triangles,
  *   which bake the world matrix in before the ellipsoid scale and so round at
  *   the other end. `--reference server` puts the authority's scene there
- *   instead — the one `buildServerWorld` stood up under Babylon until X2.3,
+ *   instead — the one `buildServerWorld` stood up under Babylon,
  *   rebuilt here as it built it (each cluster merged, FIRST, then every other
  *   box as its own mesh; its struts and floor never walked) — so it adds tie
  *   order as a third difference. Agreement is a HISTOGRAM, and every sample over
@@ -111,7 +111,7 @@
  *   what it drifts by is the tie order and the merge, and what ours drifts
  *   by beyond that is the start. It reports how far each pair drifted apart
  *   and when; it does not fail, because whether a drift matters is a
- *   judgement and the user's (BABYLON_EXIT.md X2.1). A drift that grows to
+ *   judgement and the user's. A drift that grows to
  *   metres is not by itself a body through a wall — a hull wedged against a
  *   corner at full speed is chaotic, and the two can each take a path
  *   Babylon itself takes from that state — so replay it before reading it.
@@ -355,7 +355,10 @@ function clientOrder(map) {
   return [...map.colliderBoxes.keys()].filter((i) => !grouped.has(i)).concat(map.boxGroups.flat());
 }
 
-/** The AUTHORITY's under Babylon (`buildServerWorld` until X2.3): every cluster first, then the rest. */
+/**
+ * The AUTHORITY's under Babylon (`buildServerWorld`): every cluster first,
+ * then the rest.
+ */
 function serverOrder(map) {
   const grouped = new Set(map.boxGroups.flat());
   return map.boxGroups.flat().concat([...map.colliderBoxes.keys()].filter((i) => !grouped.has(i)));
@@ -411,7 +414,7 @@ function clientScene(env, engine, map) {
 }
 
 /**
- * The scene the AUTHORITY stood up under Babylon until X2.3, as
+ * The scene the AUTHORITY stood up under Babylon, as
  * `buildServerWorld` built it: each `boxGroups` cluster MERGED (a cluster of
  * one kept as its mesh), FIRST, then every box no cluster holds as its own
  * mesh in collider order. Its fence struts and floor clones are left out:

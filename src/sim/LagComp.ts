@@ -89,7 +89,7 @@ export class LagComp {
    * by an indexed loop, because a `for...of` here allocates its iterator every
    * step on the tier a once-a-step function runs on (`docs/profiling.md`),
    * and every host's core records every step — the page's own (offline)
-   * `Match` included (`BABYLON_EXIT.md` X2.5c).
+   * `Match` included.
    */
   record(now: number): void {
     const tracked = this.tracked;

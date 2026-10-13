@@ -1,7 +1,7 @@
 /**
  * net/transport.ts — What `Connection` talks to a match through: a WebSocket
  * to a match server, or a `MessagePort` to a match the page hosts itself
- * (`BABYLON_EXIT.md` X2.5c C3, `server/localMatch.ts`).
+ * (`server/localMatch.ts`).
  * Owns: the `ClientTransport` shape and its two kinds. Owns no message: what crosses either kind is the protocol's
  * JSON text (`protocol.ts`), encoded and decoded above this file, so a local
  * match is reached over exactly the wire a remote one is.

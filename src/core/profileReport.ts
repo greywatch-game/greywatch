@@ -437,8 +437,8 @@ export interface ProfileReport {
    */
   seed: number | null;
   /**
-   * Where the page's own local match stepped its core (`MatchHost.mode`,
-   * `BABYLON_EXIT.md` X2.5b, X2.5c): `worker` — its step on another thread,
+   * Where the page's own local match stepped its core (`MatchHost.mode`):
+   * `worker` — its step on another thread,
    * `sim` a root beside `frame` — or `page`, the step on this one. Null where
    * nothing pushed it. Absent before report version 15.
    */
@@ -998,19 +998,19 @@ export function buildReport(
     // 14: `sim` and its five children — the simulation core's step, timed by
     // the core itself (`SimCore.timeSteps`) and filed by `Game` — in the tree,
     // the phase table and every hitch, plus `SegmentStat.sim`; and `conquest`
-    // is GONE from the tree, its work being `simConquest` now. Offline from
-    // X2.5a C4a until this, the step was inside `world` and named by nothing,
+    // is GONE from the tree, its work being `simConquest` now. Before this, the
+    // offline step was inside `world` and named by nothing,
     // so a v13 capture's `world` holds the whole simulation unattributed and
     // its `conquest` was never entered. Nothing else changed meaning.
-    // 15: `sim` is a ROOT, beside `frame` and `present` (`BABYLON_EXIT.md`
-    // X2.5b — with the core in a Worker its step runs on another thread and
+    // 15: `sim` is a ROOT, beside `frame` and `present` (with the
+    // core in a Worker its step runs on another thread and
     // is filed against the frame that takes its answer in), and gains
     // `simPublish`; `world` gains `simWait` and `simSync`, the page's half
     // of the hop (and `SimSegment.hop`, their means over a segment's stepped
     // frames); and `simMode` says which thread the step ran on. A v14
     // capture's `sim` is inside `world` and its fill is in `sim`'s remainder.
     // 16: simPublish, simWait, simSync and sim.hop gone; sim is the local
-    // Match's step, over the owner channel (`BABYLON_EXIT.md` X2.5c — the
+    // Match's step, over the owner channel (the
     // page is a match client of its own local match, so there is no frame to
     // publish, no Worker to wait on and no mirror to sync). `bots` is gone
     // with them: it was the old host's picture of the core's bots, and the

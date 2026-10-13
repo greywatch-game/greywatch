@@ -11,36 +11,35 @@
  * tick sees this frame's flag ownership.
  * Invariants: NOTHING here may render, and nothing may reach a canvas — see
  * `server/README.md`. **Nothing here imports `@babylonjs/core`, and every
- * vector is `src/math`'s**, as every system this file builds is — the last
- * scene, a NullEngine's that stood the server world's collider meshes up,
- * went at `BABYLON_EXIT.md` X2.3, and `scripts/check-babylon-free.mjs` fails
+ * vector is `src/math`'s**, as every system this file builds is, and
+ * `scripts/check-babylon-free.mjs` fails
  * the build on any import path from `server/` or `src/sim/` that reaches
  * Babylon again.
  * `GrenadeSystem` and `AntiTankSystem` are here as the
  * SIMULATIONS they are — where a grenade or a rocket goes and whom it hurts
  * is a rule and belongs to the authority — and their pictures, `GrenadeFx`
- * and `AntiTankFx`, are never built on this side (`BABYLON_EXIT.md` X2.2).
+ * and `AntiTankFx`, are never built on this side.
  *
  * **It lives in `src/sim/` rather than `server/` because it is not the
- * server's** (`BABYLON_EXIT.md` X2.5a): the core reads no clock and draws no
+ * server's**: the core reads no clock and draws no
  * seed of its own, so a host — `Match`, `simulate`, `corecheck` — hands
  * it the round's seed in `RoundSpec`, its world as the data `buildSimWorld`
  * takes (the collider bake and the floor), and its wall-clock anchor
  * through `anchor` and `drop` — and, for a host that profiles, the clock its
  * step's phases are timed with (`SimCoreOptions.timing`, `timeSteps`), read
  * only into `timing` (`src/sim/stepTiming.ts`) and never by anything that
- * decides (C6). Nothing in this directory may import from `server/`.
+ * decides. Nothing in this directory may import from `server/`.
  *
  * **Its hosts are `Match`, `simulate` and `server/corecheck.ts`, and no page
- * holds one** (`BABYLON_EXIT.md` X2.5c). Offline the page is a client of a
+ * holds one**. Offline the page is a client of a
  * `Match` of its own — in a Worker (`server/localMatchWorker.ts`) or in the
  * page's thread — exactly as it is a client of a remote one, so what the page
  * learns of a round it learns off the wire, and this class publishes no copy
  * of its state for anybody to read.
  *
  * **Everything it has to SAY leaves through one event ring and nothing else**
- * (`src/sim/events.ts`, `BABYLON_EXIT.md` X2.5a C2). There is no outward
- * callback on this class: every fact a host used to be called back with — a
+ * (`src/sim/events.ts`). There is no outward callback on this class: every
+ * fact a host hears — a
  * death, an award, a flag, a blast, a seat, a person's damage — and every
  * presentation fact the page draws from (a round's tracer, a footstep, a
  * hull's kick) is WRITTEN, as numbers captured at the moment it happened, in
@@ -66,13 +65,13 @@
  * array index rather than a mapping that can disagree.
  *
  * **The POOL and the ROUND are two numbers the host states** (`RoundSpec`'s
- * `pool` and `fielded`, `BABYLON_EXIT.md` X2.5a D15). The authority asks for
+ * `pool` and `fielded`). The authority asks for
  * the CEILING, `CONFIG.bots.maxPerTeam` a side, on every round — `setRoster`
  * builds it on the first and is a no-op after, because a match rotates maps
  * under one slot table and a table sized per map would renumber every player
  * on team 1 at every rotation — and fields the map's own `perTeamOf` out of
  * it, which is what makes Sarab twenty-four a side in a match and every other
- * map eight. An OWNED match (`BABYLON_EXIT.md` X2.5c C2) never rotates and
+ * map eight. An OWNED match never rotates and
  * asks for the map's own roster instead — which is how the page's local
  * match plays offline. See `server/Roster.ts` for the whole argument,
  * including why human capacity stays at sixteen whatever the map fields. A
@@ -80,20 +79,19 @@
  * their slot itself, last.
  *
  * **A person reaches the simulation through ONE door: `submit`**
- * (`src/sim/commands.ts`), applied on arrival, its results written to the
- * ring. `Match` validates a client's claim (the rate buckets, the cones, the
- * slips, the movement and drive validators, the corrections) and submits
- * what it accepts — a remote peer's and, offline, the page's own player's
- * alike, the page being a peer of its own local match (`BABYLON_EXIT.md`
- * X2.5c). `simulate` and `corecheck` submit without a `Match` in front, as
- * trusted callers. What DECIDES is here, once, for every host: whose body moves, which round is resolved
- * against what, the pouches, the seat policy (`mount`/`dismount` around
- * `seat`), when a person comes back in, and what a person's REPORTED landing
- * costs their helicopter (`applyDrive` → `src/sim/reportedLanding.ts`, spent
- * after the hulls move — a posed hull charges itself nothing, FINDINGS.md
- * 60). The `SimCoreOptions` say how the
- * hosts' roles differ — a rewind for remote shooters, a respawn clock the
- * host holds — and none of them changes a rule.
+ * (`src/sim/commands.ts`), applied on arrival, its results written to the ring.
+ * `Match` validates a client's claim (the rate buckets, the cones, the slips,
+ * the movement and drive validators, the corrections) and submits what it
+ * accepts — a remote peer's and, offline, the page's own player's alike, the
+ * page being a peer of its own local match. `simulate` and `corecheck` submit
+ * without a `Match` in front, as trusted callers. What DECIDES is here, once,
+ * for every host: whose body moves, which round is resolved against what, the
+ * pouches, the seat policy (`mount`/`dismount` around `seat`), when a person
+ * comes back in, and what a person's REPORTED landing costs their helicopter
+ * (`applyDrive` → `src/sim/reportedLanding.ts`, spent after the hulls move — a
+ * posed hull charges itself nothing, FINDINGS.md 60). The `SimCoreOptions` say
+ * how the hosts' roles differ — a rewind for remote shooters, a respawn clock
+ * the host holds — and none of them changes a rule.
  *
  * A person enters the world through `deployPerson` and nowhere else, and only
  * once they have ASKED (`deploy`) — spent by the reinforcement pass in `step`
@@ -215,7 +213,7 @@ const SIM_ANTITANK = SIM_PHASES.indexOf("antiTank");
  * `simulate` the one it was given.
  *
  * **`pool` and `fielded` are two numbers because the two hosts spend them
- * differently** (`BABYLON_EXIT.md` X2.5a D15). A slot index is a bot index and
+ * differently**. A slot index is a bot index and
  * every outcome stream is keyed by slot, so the slot LAYOUT is the fight: the
  * authority builds the ceiling (`CONFIG.bots.maxPerTeam` a side, so a match
  * rotating maps under one slot table never renumbers team 1) and fields the
@@ -263,7 +261,7 @@ export interface SimCoreOptions {
   hostHoldsRespawn?: boolean;
   /**
    * The CLOCK the step's phases are timed with, for a host that files them
-   * (`BABYLON_EXIT.md` X2.5a C6, the profiler's `sim` phase): milliseconds,
+   * (the profiler's `sim` phase): milliseconds,
    * in whatever units and origin the host wants `StepTiming.start` in —
    * the page's own `performance.now` for the page's local match (which posts
    * the row back for the profiler to file), `simulate --phases` Node's.
@@ -460,17 +458,14 @@ export class SimCore {
     this.hostHoldsRespawn = options.hostHoldsRespawn ?? false;
     this.clock = options.timing ?? null;
     this.reportGap = options.reportGap;
-    // No scene and no material factory: the last thing that wanted a factory
-    // was the fleet's rigs, which are the client's `VehicleViews` since
-    // `BABYLON_EXIT.md` X2.2 C9, and the last thing that wanted a scene was
-    // `buildServerWorld`'s collider meshes, which went at X2.3.
+    // No scene and no material factory: the fleet's rigs are the client's
+    // `VehicleViews`, and the world's colliders are boxes.
     // The simulation half alone: the tracer, spark, disc and mark pools are
-    // `CombatFx`'s, which only a client builds (`BABYLON_EXIT.md` X2.2), so
-    // `onRound` is wired to a `round` EVENT and nothing more (X2.5a C2).
+    // `CombatFx`'s, which only a client builds, so `onRound` is wired to a
+    // `round` EVENT and nothing more.
     this.combat = new CombatSystem();
     // …and the roster's simulation without a rig in it: the bodies, their
-    // poses as numbers and the LOD are a client's, off the wire
-    // (`BABYLON_EXIT.md` X2.2 C7).
+    // poses as numbers and the LOD are a client's, off the wire.
     this.battle = new BattleSystem(this.combat, this.random);
     // The pool is NOT built here: its size is the round's `RoundSpec.pool`,
     // and `startRound` builds it (`setRoster` is a no-op when the size has not
@@ -566,7 +561,7 @@ export class SimCore {
     // Only a bot crew is ever STEPPED from input on this side: a person's hull
     // is posed from what they reported (`remoteFor`, asked first), on every
     // host — every person is a match's peer, the offline page's player
-    // included (a peer of its own local match, `BABYLON_EXIT.md` X2.5c), and
+    // included (a peer of its own local match), and
     // their page predicts the hull and reports it.
     driveFor: (tank) => this.crew.driveFor(tank),
     gunFor: (tank) => this.crew.gunFor(tank),
@@ -828,7 +823,7 @@ export class SimCore {
 
   /**
    * Whether `step` times its phases into `timing` — the profiler's
-   * `sim` phase (`BABYLON_EXIT.md` X2.5a C6). A host turns it on while
+   * `sim` phase. A host turns it on while
    * something is recording and off when nothing is, so an unwatched step
    * reads no clock at all. A no-op on a core built without a clock. Off
    * marks the row untimed (`total` -1), so a stale reading is never filed.
@@ -1028,9 +1023,8 @@ export class SimCore {
     if (timed) this.closePhase(SIM_VEHICLES);
 
     // No camera: the LOD is a drawing budget and belongs to a client's
-    // roster, which this side never builds. It used to be handed the map's centre
-    // here, and what that decided about the fight was the last thing to go
-    // (X2.2 C6, C7).
+    // roster, which this side never builds, so nothing about a camera reaches
+    // the fight.
     if (timed) this.openPhase(SIM_BOTS);
     this.battle.update(dt);
     if (timed) this.closePhase(SIM_BOTS);
@@ -1057,11 +1051,11 @@ export class SimCore {
   /**
    * Puts a dead person into the world at the spawn they asked for, if they
    * asked — **the ONE door a person is spawned through**, which the
-   * reinforcement pass in `step` calls once the clock has run out and
-   * `submit` calls at once under `hostHoldsRespawn` (`BABYLON_EXIT.md` X2.5a
-   * D21). One door, two triggers: the request is resolved against what the
-   * team may use NOW (`spawnPointFor`, the spawn stream drawn exactly as
-   * before), and a pick the conquest cannot place keeps the request standing.
+   * reinforcement pass in `step` calls once the clock has run out and `submit`
+   * calls at once under `hostHoldsRespawn`. One door, two triggers: the request
+   * is resolved against what the team may use NOW (`spawnPointFor`, the spawn
+   * stream drawn exactly as before), and a pick the conquest cannot place keeps
+   * the request standing.
    */
   private deployPerson(player: SimPlayer): boolean {
     if (player.deployRequest === null) return false;
@@ -1096,7 +1090,7 @@ export class SimCore {
    * numbers, and the map that builds slowest is the biggest in the tree.
    *
    * A HOST's call rather than a `Date.now()` in here because the core reads
-   * no clock (`BABYLON_EXIT.md` X2.5a, D18). See `now` for what this clock
+   * no clock. See `now` for what this clock
    * is, and `drop` for the driver's half of the same anchor.
    */
   anchor(ms: number): void {
@@ -1129,7 +1123,7 @@ export class SimCore {
    *
    * The sounds and the minimap reveals are the page's (off the events below,
    * as the wire carries them), so what is here is the callbacks
-   * that are actually about the fight — and, since X2.5a C2, a ring write at
+   * that are actually about the fight — and a ring write at
    * the end of every one that has news in it. **Every system callback here is
    * this method's and none is a host's**: a callback has one owner, the owner
    * is the side that decides, and what the host hears it hears off the ring

@@ -13,7 +13,7 @@
  * below applies to both, which is what stopped the player's corpse needing a
  * second copy of any of it.
  *
- * **Two halves, one file** (`BABYLON_EXIT.md` X2.4 C5). The PHYSICS half is
+ * **Two halves, one file.** The PHYSICS half is
  * the bodies, the constraints, the impulses and every spawn, freeze, park and
  * eviction decision, and it holds a bone's pose as `WorldBody.pose` — seven
  * plain numbers `PhysicsWorld` steps. The VIEW half is the proxies and the
@@ -84,8 +84,8 @@ interface Bone {
    */
   proxy: TransformNode;
   /**
-   * On Havok's raw API, through `PhysicsWorld` (`BABYLON_EXIT.md` X2.4 C3);
-   * where the bone IS is `body.pose` (C5), which the proxy is drawn from.
+   * On Havok's raw API, through `PhysicsWorld`;
+   * where the bone IS is `body.pose`, which the proxy is drawn from.
    */
   body: WorldBody;
   /**

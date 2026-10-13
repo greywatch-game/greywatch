@@ -12,7 +12,7 @@
  * vehicle**: these sat in `Vehicle.ts`, and a value import of `DRIVER` from
  * there pulled the hull's model, its rig and Babylon behind it into
  * `server/Match.ts` and `src/sim/SimPlayer.ts`, which only ever wanted the
- * number (`BABYLON_EXIT.md` X2.2).
+ * number.
  */
 
 /**

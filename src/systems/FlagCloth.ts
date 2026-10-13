@@ -7,10 +7,10 @@
  * is flown at.
  *
  * The POLE is static geometry and is built as `Part`s through `src/geometry/`,
- * merged by `mergeParts` and made a mesh by `drawnMesh` (BABYLON_EXIT.md
- * X1.3). The CLOTH is not: its meshes are the simulation's output, written
- * every frame into updatable Babylon buffers, and stay Babylon's until the
- * renderer that draws them is ours.
+ * merged by `mergeParts` and made a mesh by `drawnMesh`. The CLOTH is not: its
+ * meshes are the simulation's output, written every frame into updatable
+ * Babylon buffers, and stay Babylon's until the renderer that draws them is
+ * ours.
  *
  * Invariants: annotation exactly as the ring is — never `solid`, never
  * `checkCollisions`, never pickable, never a WorldBox, so no ray, no nav

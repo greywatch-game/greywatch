@@ -32,7 +32,7 @@
  * precisely so that a rotation re-seats nobody.
  *
  * **A match that never rotates is the one exception, and it is sized to its
- * map** (`BABYLON_EXIT.md` X2.5c C2): an OWNED match (`MatchOptions.owned`,
+ * map**: an OWNED match (`MatchOptions.owned`,
  * the page's offline round) stays on the one map its owner named, so nothing
  * can ever renumber it — and its table is that map's own roster, because every
  * outcome stream is keyed by slot and the offline fight has always been played

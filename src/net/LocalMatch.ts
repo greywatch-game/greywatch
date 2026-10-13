@@ -1,6 +1,6 @@
 /**
- * net/LocalMatch.ts — The OWNER's channel to a match the page hosts itself
- * (`BABYLON_EXIT.md` X2.5c C3): the calls it makes, the answers it hears, and
+ * net/LocalMatch.ts — The OWNER's channel to a match the page hosts itself:
+ * the calls it makes, the answers it hears, and
  * the dial that puts a person into that match over a port.
  * Owns: the owner's half of the channel — the call counter, the calls
  * awaiting an answer, the `advance`s still unanswered and the seconds they
@@ -21,16 +21,15 @@
  *   every call before it has finished — `begin` included, which builds a
  *   world. So any call is a SETTLE: its answer says everything posted ahead
  *   of it has run. That is what the benchmark's fight read relies on.
- * - **A dead host is SAID, never waited on** (X2.5c C4, "A port opens
- *   whoever is at the far end"). A WebSocket to a dead server closes; a port
- *   into a Worker that died or wedged says nothing at all, so every awaited
- *   call would hang for ever and a person's `Connection` would sit `open`
- *   on a join nobody reads. ONE signal ends it, and it is SILENCE: this
- *   file's own watchdog calls the host lost when a call has gone unanswered
- *   past its patience (`STALL_PATIENCE_MS`, a build's far longer) — once the
- *   host has answered anything at all: before that, whether it is up is the
- *   boot's question (`matchHost.ts`), not a stall. Never an error event: a
- *   Worker survives a throw and a dead one raises nothing (`matchHost.ts`).
+ * - **A dead host is SAID, never waited on.** A WebSocket to a dead server
+ *   closes; a port into a Worker that died or wedged says nothing at all, so
+ *   every awaited call would hang for ever and a person's `Connection` would
+ *   sit `open` on a join nobody reads. ONE signal ends it, and it is SILENCE:
+ *   this file's own watchdog calls the host lost when a call has gone
+ *   unanswered past its patience (`STALL_PATIENCE_MS`, a build's far longer) —
+ *   once the host has answered anything at all: before that, whether it is up
+ *   is the boot's question (`matchHost.ts`), not a stall. Never an error event:
+ *   a Worker survives a throw and a dead one raises nothing (`matchHost.ts`).
  * - **The host always OWES something** once it has answered, so the silence
  *   is measured whenever the page could be waiting on it — not only while
  *   it steps. A quiet spell (the menu; a round between `begin`'s answer and

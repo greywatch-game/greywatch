@@ -12,7 +12,7 @@
  * where a rifle is without a rig.
  * The geometry is built as `Part`s on `GeometryBuffer`s (`src/geometry/`,
  * `facet.ts`) and is NOT Babylon's until `mergeByColor` makes a segment's
- * mesh through `drawnMesh` (BABYLON_EXIT.md X1.3) and it is hung off its live
+ * mesh through `drawnMesh` and it is hung off its live
  * joint; the visor is the one part drawn on its own, through the same door.
  * What stays Babylon's is the rig (X4.1): the joints, the poser, and the
  * invisible root — still `MeshBuilder`'s capsule, because it is never drawn

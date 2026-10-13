@@ -2049,22 +2049,16 @@ export class Bot implements Combatant {
    * the flash is lit, and where the shot is HEARD from.
    *
    * **Replayed off numbers, never read off the rig** (`soldierMuzzleToRef`):
-   * the root `syncTransform` last stood (`rx`..`ryaw`) and the pose
-   * last filled (`solved`),
-   * through the same float32 chain Babylon composes — so it is the value
-   * `rig.muzzle.computeWorldMatrix(true)` would return for a rig posed from
-   * `joints`, bit for bit (proved against the rig over whole rounds on all
-   * seven maps, BABYLON_EXIT.md X2.2 C5). It is the CURRENT pose's muzzle at
-   * any distance: a rig was posed only inside the LOD's freeze distance, and
-   * before X2.2 C6 the muzzle was that frozen rig's — so the authority
-   * answered with a live pose only for bots within 35 m of the map's centre,
-   * and offline the camera decided. That forced call recomputed every
-   * ancestor; UNFORCED it had answered with the rig's pose at the first read
-   * for the life of the server
-   * process, since a joint is only invalidated by its parent being recomputed
-   * and the authority does not render — measured on Sarab, (0.2, 0.8), the
+   * the root `syncTransform` last stood (`rx`..`ryaw`) and the pose last filled
+   * (`solved`), through the same float32 chain Babylon composes — so it is the
+   * value `rig.muzzle.computeWorldMatrix(true)` would return for a rig posed
+   * from `joints`, bit for bit (proved against the rig over whole rounds on all
+   * seven maps). It is the CURRENT pose's muzzle at any distance, whoever is
+   * looking — a muzzle read off a drawn rig is only as current as the LOD let
+   * the rig be posed, and an UNFORCED read off a rig that never renders answers
+   * with the pose at the first read for the life of the process (on Sarab, the
    * ORIGIN a pooled rig is built at, which put every bot's `hearGunshot` cue at
-   * the middle of the map. Nothing here can go stale that way: there is no
+   * the middle of the map). Nothing here can go stale that way: there is no
    * cache. The round's own ray is `eyePos` (`BattleSystem.botFire`).
    *
    * The shared vector comes back; a caller that keeps it copies it.

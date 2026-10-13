@@ -10,11 +10,11 @@
  * broken, whether its box is out of the queries and the nav graph, and the
  * whole netplay question of who decided it are `GlassSystem`'s. A pane is
  * collapsed at most once and cleared at most once per map, because the
- * simulation raises each event once per pane. The authority never builds one
- * (`BABYLON_EXIT.md` X2.2): it draws no glazing (`paneGroups` is empty there)
+ * simulation raises each event once per pane. The authority never builds
+ * one: it draws no glazing (`paneGroups` is empty there)
  * and nothing on it reads a collider mesh. Contract: `docs/world.md` "Panes".
  *
- * Split out of `GlassSystem` at X2.2 C4, on `CombatFx`'s line: `Game` builds
+ * Split out of `GlassSystem` on `CombatFx`'s line: `Game` builds
  * both, wires the two events, and hands both the same map in `installMap`.
  *
  * ## Why the collapse is the whole of the visual
@@ -29,8 +29,8 @@
  *
  * ## Why the collider mesh is written at all
  *
- * Nothing that moves or shoots reads it: the rays stopped at
- * `ENGINE_UPGRADE.md` wall 2 and the sweeps at `BABYLON_EXIT.md` X2.1, and both
+ * Nothing that moves or shoots reads it: the rays (`RayWorld`) and the
+ * sweeps (`CollisionField`) both
  * read the BOX, which `GlassSystem` takes out. `metadata.solid` is still read
  * by `world/solid.ts`, which is the editor's centre-screen pick — the
  * editor's side of CLAUDE.md's "one write on each side", `RayWorld.remove`

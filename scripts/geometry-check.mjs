@@ -8,7 +8,7 @@
  * from and of what the kit and the models do to vertex data — merge it (with
  * each member under its own matrix, as `Mesh.MergeMeshes` does), transform
  * it, bake a transform into it as `Mesh.bakeTransformIntoVertices` does,
- * compute its normals (BABYLON_EXIT.md X1.2, X1.3) — and its whole
+ * compute its normals — and its whole
  * claim is that a surface built through it is the surface Babylon built: one
  * vertex out of place moves every building made of it, and `kit:hash` and
  * `merge:hash` compare bits. This builds each one both ways over seeded

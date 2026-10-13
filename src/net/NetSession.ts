@@ -7,8 +7,8 @@
  * socket and never to a game system it was not handed. It decides nothing about
  * the round — every outcome here arrived from the authority.
  *
- * It exists so that `Game` gains a field rather than a protocol — and from
- * `BABYLON_EXIT.md` X2.5c C4 EVERY round has one. A match on a server is
+ * It exists so that `Game` gains a field rather than a protocol — and EVERY
+ * round has one. A match on a server is
  * reached over a WebSocket; the offline round is a session on a match the
  * page hosts itself (`LocalMatch`, `matchHost.ts`), reached over a port, and
  * this class cannot tell the two apart by anything it does: the same
@@ -285,8 +285,8 @@ export class NetSession {
   /**
    * Whether the page OWNS this match — a match it hosts itself
    * (`LocalMatch`), as the offline round is — rather than sits in one a
-   * server runs. **The AUTHORITY question, and the only one**
-   * (`BABYLON_EXIT.md` X2.5c C4): restarting the round, choosing its map and
+   * server runs. **The AUTHORITY question, and the only one**:
+   * restarting the round, choosing its map and
    * its difficulty, and pause and the deploy screen HOLDING the world are the
    * owner's, so every door that asked whether there was a session at all now
    * asks this. Nothing about PREDICTION may ask it — offline predicts exactly

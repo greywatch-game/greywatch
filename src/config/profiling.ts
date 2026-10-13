@@ -212,8 +212,8 @@ export const profiling = {
    */
   bench: {
     /**
-     * The round's seed — `BABYLON_EXIT.md` X0.2's fixed seed, so the fight is
-     * the one that step proved reproduces. `?seed=` overrides it.
+     * The round's seed, fixed so that every run fights the same fight — the
+     * capture's `bench.fight.hash` says whether it did. `?seed=` overrides it.
      */
     seed: 777,
     /**

@@ -60,8 +60,8 @@
  * The first answer was the part MESH: a mesh holding vertices with nothing on
  * the device, by holding `Geometry.delayLoadState` at NOTLOADED for the one
  * call that would have created its buffers — a Babylon internal leaned on —
- * and an upload every path out of a merge owed. The second, BABYLON_EXIT.md
- * X1.4's, is that there is no mesh at all until the merges and the vertex
+ * and an upload every path out of a merge owed. The second is that there is
+ * no mesh at all until the merges and the vertex
  * bake are done: they run on parts, and `worldMeshes` uploads each surface the
  * world keeps, once, through public API. The part mesh, and every helper that
  * kept it honest, is deleted.

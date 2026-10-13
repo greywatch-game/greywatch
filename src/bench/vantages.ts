@@ -1,7 +1,7 @@
 /**
  * bench/vantages.ts — Where the reference frames are taken from, beyond the
  * one photograph each map already has, and where the benchmark stands to look
- * (`bench/BenchScript.ts`, `BABYLON_EXIT.md` X0.3).
+ * (`bench/BenchScript.ts`).
  * Owns: `DIFF_VANTAGES`, the table of poses, and the `Vantage` row shape.
  * Invariants: ERASABLE SYNTAX ONLY and no import that survives compilation —
  * Node loads this file by type stripping (`plans/webgpu-ref/vantages.mjs`
@@ -50,7 +50,7 @@
  *
  * **The rest of the optional fields stand something in front of the camera
  * that the map alone does not have**, because the bank is the look oracle for
- * a renderer being replaced piece by piece (`BABYLON_EXIT.md` X0.1) and a
+ * a renderer being replaced piece by piece, and a
  * table of map views holds none of the pieces after the static world. Each is
  * posed by the game's own code from a fixed starting state through fixed
  * steps, so it is the same picture every run; `placeVantage` in `harness.mjs`

@@ -200,7 +200,7 @@ export const MAX_PALETTE = 128;
  * slots in the kit palette `getBodyCel` holds. What they share is this
  * attribute and the varying that reads it, which is the shader's, so the one
  * thing neither of them may state twice is where the index goes. Both write a
- * `GeometryBuffer`, never a mesh: the map merges parts (BABYLON_EXIT.md X1.4)
+ * `GeometryBuffer`, never a mesh: the map merges parts
  * and a soldier merges buffers (`SoldierModel`'s `mergeByColor`), so a merge
  * of parts carries the array exactly as `MergeMeshes` carried a mesh's.
  */

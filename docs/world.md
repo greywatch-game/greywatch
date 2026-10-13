@@ -510,6 +510,11 @@ building that vanishes out of a skyline they are looking at. So the world's
 answer to a map you cannot fog is still S8's first one — **fog it**, well inside
 its own diagonal — and this field is only for the bodies standing in it.
 
+**A map's `fogEnd` is a distance from the EYE and a LANDMARK is a fixed thing in
+the world** — a fog wall chosen for the cull budget put Cinderhaven's volcano in
+flat `fogColor` from everywhere anybody played, and the fix was to buy the fog
+back and take the saving out of this row.
+
 **`MapLayout.surfaces` — how deep the nav graph stacks** (`CONFIG.nav.maxSurfaces`,
 3). See `docs/bots.md`: a map raises it only because it stacks FLOORS, and the
 guarantee that a floor survives is the ORDER its builder declares colliders in,

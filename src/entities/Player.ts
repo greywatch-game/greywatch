@@ -32,8 +32,7 @@
  * NaN without a word, and a crossing is a copy (`src/math/babylon.ts`).
  * There is no collider MESH: the sweep is `CollisionField`'s and takes a
  * `SweepBody` record (`sweepBody`, over `mid` and `ellipsoid`), the probe and
- * the push-out read the same two fields, and nothing else ever looked at the
- * capsule this used to keep (BABYLON_EXIT.md X2.2 C10).
+ * the push-out read the same two fields.
  * Crouch moves `eyePos` AND `center` on one blend — the eye is the camera, the
  * LOS target and the bots' aim point at once, so lowering it without lowering
  * the hit sphere makes crouching a liability rather than cover.

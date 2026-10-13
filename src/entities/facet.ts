@@ -9,7 +9,7 @@
  * on a `GeometryBuffer` (`src/geometry/`) — the model that asked for it decides
  * when it becomes a mesh, and `drawnMesh` is where it does — and this file
  * imports nothing from `@babylonjs/core`: its vectors are `src/math/`'s, which
- * are Babylon's bit for bit (BABYLON_EXIT.md X1.3).
+ * are Babylon's bit for bit (`scripts/math-check.mjs`).
  * Invariants: every face carries its own normal and its own vertices, so the
  * part shades in flat planes exactly as a `createBox` does and a `mergeByColor`
  * beside boxes cannot tell the two apart; positions, normals AND uvs are

@@ -5,9 +5,9 @@
  *
  * Run from `npm run build`, beside `check-deep-imports.mjs`, and by hand as
  * `node scripts/check-babylon-free.mjs` (pass paths to walk from those roots
- * instead, which is how a step finds out how far it has to go). Phase 2 of
- * `BABYLON_EXIT.md` ended with the simulation off the scene and the authority
- * without an engine (X2.3); **this is what keeps them there**, because the way
+ * instead, which is how a step finds out how far it has to go). The simulation
+ * is off the scene and the authority runs without an engine; **this is what
+ * keeps them there**, because the way
  * back in is one innocent import. A simulation module that imports a helper
  * that imports a mesh builder typechecks, plays, and passes review — and puts
  * Babylon back in the match server's bundle and a node back under an outcome,
@@ -19,12 +19,11 @@
  * **The roots are two kinds, and the rule for adding one is mechanical.**
  *
  *   - `server/`, every file in it: the authority imports no Babylon at all.
- *   - `src/sim/`, every file in it: the simulation core the authority runs
- *     and the offline page will host (`SimCore`, `SimPlayer`, `LagComp`,
- *     `buildSimWorld` — moved out of `server/` at `BABYLON_EXIT.md` X2.5a), so
- *     a file added there is held whoever builds it.
- *   - Every SIMULATION module, named one by one — the left column of
- *     `BABYLON_EXIT.md` X2.2's table. Most of them the server reaches anyway,
+ *   - `src/sim/`, every file in it: the simulation core every `Match` runs,
+ *     the page's own included (`SimCore`, `SimPlayer`, `LagComp`,
+ *     `buildSimWorld`), so a file added there is held whoever builds it.
+ *   - Every SIMULATION module, named one by one (`SIMULATIONS`,
+ *     `docs/build.md`). Most of them the server reaches anyway,
  *     and they are listed regardless, so a simulation is held because it IS
  *     one rather than because the authority happens to build it today:
  *     `Player` is the case that proves the point, a simulation only a client
@@ -34,8 +33,8 @@
  *     rename cannot quietly drop one out.
  *
  * `BABYLON_EXIT.md` rule 6 widens this twice: X3.2 adds `src/render/` and
- * `src/math/` to `DIRECTORIES`, with `src/math/babylon.ts` — the crossing X1.1
- * made, deleted at X6.1 — named in `NOT_ROOTS`; X6.1 widens it to the whole
+ * `src/math/` to `DIRECTORIES`, with `src/math/babylon.ts` — the crossing,
+ * deleted at X6.1 — named in `NOT_ROOTS`; X6.1 widens it to the whole
  * tree. **An entry in `NOT_ROOTS` is exempt from being a root, never from
  * being REACHED**: a simulation that imports the crossing still fails, which
  * is the point of having one door.
@@ -62,12 +61,11 @@
  *   - **Bare specifiers are leaves**, and the one refused is `@babylonjs/core`
  *     and its subpaths — and the same package reached by a RELATIVE path into
  *     `node_modules`, which the resolved file betrays where the specifier does
- *     not. `@babylonjs/havok` (a standalone WASM, X2.4's) is not this gate's
+ *     not. `@babylonjs/havok` (a standalone WASM) is not this gate's
  *     business, and neither is Node — on THIS walk (below).
  *
- * **The second walk is NODE, from the local match's two entries**
- * (`BABYLON_EXIT.md` X2.5c C4, "Nothing yet enforces that the local match's
- * reach imports no Node"). `server/localMatchWorker.ts` and
+ * **The second walk is NODE, from the local match's two entries.**
+ * `server/localMatchWorker.ts` and
  * `server/localMatch.ts` are the host the page runs — in a Worker, or in its
  * own thread when the Worker does not come up — and everything they reach,
  * `Match` included, runs in a BROWSER, while every other file in `server/`
@@ -97,7 +95,7 @@ const REPO = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const DIRECTORIES = ["server", "src/sim"];
 
 /**
- * The simulation modules, one by one: `BABYLON_EXIT.md` X2.2's left column.
+ * The simulation modules, one by one.
  * See the header for the rule that adds one.
  */
 const SIMULATIONS = [
@@ -113,12 +111,12 @@ const SIMULATIONS = [
   "src/entities/Player.ts",
   "src/systems/ConquestSystem.ts",
   // Not a simulation but held as one: the raw Havok dialect every physics
-  // client shares from X2.4 on, whose whole point is that it is not Babylon.
+  // client shares, whose whole point is that it is not Babylon.
   "src/systems/havok.ts",
   // Not a simulation either, and held as one for the same reason: the engine
   // that dialect speaks for — Havok's world, the static map and the substep —
   // which keeps every body's pose in a plain array and reaches no node
-  // (X2.4 C5). Its three clients are views and are not roots.
+  // Its three clients are views and are not roots.
   "src/systems/PhysicsWorld.ts",
 ];
 

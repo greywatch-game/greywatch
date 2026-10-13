@@ -21,8 +21,8 @@
  * Where the slope under the tracks puts the hull — `groundPitch`/`groundRoll`
  * on `rig.hull` — is `Vehicle`'s, because `standOnGround` measures it and the
  * flying branch overrides it. This class is the OTHER half, on `rig.sprung`.
- * The two whip antennae were here until `BABYLON_EXIT.md` X2.2 C9 and are a
- * picture with nothing downstream of them, so they are the client's
+ * The two whip antennae are a picture with nothing downstream of them, so
+ * they are the client's
  * (`entities/HullWhips.ts`), told the two halves SUMMED — the mast feet's
  * attitude — by `Vehicle`'s `HullPicture`. See `docs/vehicles.md`.
  */

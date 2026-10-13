@@ -7,8 +7,8 @@
  * Invariants: it is the THIRD `PhysicsClient` and owns no engine — see
  * `PhysicsWorld`. Nothing here feeds navigation, cover or hit detection: a
  * chunk is dressing exactly as a corpse and a glass shard are, and rounds and
- * bodies pass through it. A chunk's place is its body's `pose`
- * (`BABYLON_EXIT.md` X2.4 C5), drawn onto its mesh by the VIEW (`drawLive`,
+ * bodies pass through it. A chunk's place is its body's `pose`,
+ * drawn onto its mesh by the VIEW (`drawLive`,
  * `poseView.applyPose`) exactly where `DebrisSystem` draws a shard: when a
  * burst places it, at the end of `update`, and when a release parks it.
  *
@@ -87,7 +87,7 @@ import { absolutePose, applyPose, drawPieces, parkPose, storePose } from "./pose
  * the scorch's turn go through Babylon's statics, which read `_x` off a
  * vector, and the simulation's normal is `src/math`'s — so `Game` hands this
  * a COPY (`Game.debrisGroundOf`), never the simulation's own. It goes when
- * this system leaves Babylon's math with Havok (`BABYLON_EXIT.md` X2.4).
+ * this system leaves Babylon's math.
  */
 export interface DebrisGround {
   surface: BlastGround["surface"];

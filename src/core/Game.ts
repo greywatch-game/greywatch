@@ -3,7 +3,7 @@
  * wiring on the PAGE. The only place the page's systems and views meet —
  * systems never import each other; new cross-system behavior is a callback
  * wired here.
- * **The round is not simulated here** (`BABYLON_EXIT.md` X2.5c C4). Every
+ * **The round is not simulated here.** Every
  * round is a MATCH, played by a `Match` (`server/Match.ts`, running the
  * simulation core the authority always runs) — a server's, or the page's
  * OWN: a `Match` this page hosts in a Worker or on a channel in its own
@@ -315,8 +315,7 @@ const NO_BODIES: Combatant[] = [];
  * The ledger the page's own hull rules hold: a door no kill reaches. Those
  * rules run only as a PREDICTION (`resolveShell`/`resolveMg`), where every
  * target refuses local damage, so nothing is ever credited or charged through
- * them — the round's kills are the authority's, whoever hosts the match
- * (`BABYLON_EXIT.md` X2.5c C4).
+ * them — the round's kills are the authority's, whoever hosts the match.
  */
 const NO_LEDGER: KillLedger = {
   credit: () => false,
@@ -554,7 +553,7 @@ export class Game {
   private sfx: Sfx;
   private mapBuilder: MapBuilder;
   /**
-   * **The page's own match host** (`BABYLON_EXIT.md` X2.5c C4): the OWNER's
+   * **The page's own match host**: the OWNER's
    * channel to a `Match` this page hosts — in a Worker, or on a channel in
    * this thread (`src/net/matchHost.ts`). Every round that is not a server's
    * is one of its matches, opened, begun and closed from here
@@ -612,7 +611,7 @@ export class Game {
    */
   private localStepped = 0;
   /**
-   * Every round's resolve — the simulation half (`BABYLON_EXIT.md` X2.2) —
+   * Every round's resolve — the simulation half —
    * and on this page only ever a PREDICTION: this client's own shot, shell
    * and belt, resolved here for the tracer and the hitmarker guess while the
    * authority decides.
@@ -665,7 +664,7 @@ export class Game {
    * which is three of the seven shipped.
    *
    * **The page's fleet is a picture and one prediction, whoever hosts the
-   * match** (`BABYLON_EXIT.md` X2.5c C4): it is built `predicted`, so no hull
+   * match**: it is built `predicted`, so no hull
    * here takes local damage and neither hardstanding clock runs, and every
    * hull but the one this player drives is POSED off the wire
    * (`syncNetVehicles`). The one exception is the hull under its own driver,
@@ -1114,7 +1113,7 @@ export class Game {
    * The round's session — null only where there is no round (the menu, the
    * editor, a build that has not opened one yet).
    *
-   * **Every round is a match** (`BABYLON_EXIT.md` X2.5c C4). A server's, or
+   * **Every round is a match.** A server's, or
    * the page's own: a `Match` this page hosts
    * (`local`, in a Worker or on a channel in this thread) and joins through
    * this same session, so there is one client model — the same prediction,
@@ -1306,8 +1305,8 @@ export class Game {
    * round allocates nothing.
    */
   private readonly vehicleOrders: VehicleOrders = {
-    // Only the hull this player is PREDICTING is ever stepped from input here
-    // (`BABYLON_EXIT.md` X2.5a C4b), and there is no crew on this page: the
+    // Only the hull this player is PREDICTING is ever stepped from input here,
+    // and there is no crew on this page: the
     // bots that drive are the authority's, whoever hosts the match.
     driveFor: (tank) =>
       tank === this.driving && this.drivingSeat === DRIVER ? this.drive : null,
@@ -1336,8 +1335,8 @@ export class Game {
      * answer, where only the hulls with a PERSON in them are posed from a
      * report.
      *
-     * **The one under a DRIVER is this page's PREDICTION** (`BABYLON_EXIT.md`
-     * X2.5a C4b): stepped by `driveFor` off this player's sticks through
+     * **The one under a DRIVER is this page's PREDICTION**:
+     * stepped by `driveFor` off this player's sticks through
      * `Vehicle.update`, and reported as a `DriveMessage` at `INPUT_HZ`, so the
      * machine a person drives is the same one whoever hosts the match,
      * picture included. Asked before `driveFor` by `VehicleSystem.update`,
@@ -1430,7 +1429,7 @@ export class Game {
     this.canvas = canvas;
     this.engine = engine;
     // **The page's own match host** — in a Worker or on a channel in this
-    // thread (`src/net/matchHost.ts`, `BABYLON_EXIT.md` X2.5c C4), chosen by
+    // thread (`src/net/matchHost.ts`), chosen by
     // the boot and handed in as `havok` and `engine` are. Every round that is
     // not a server's is a match on it (`openLocalRound`).
     this.localHost = local;
@@ -1863,7 +1862,7 @@ export class Game {
    * another is a callback assigned here or in one of the methods below.
    *
    * **What is wired here is the page's PICTURE and its PREDICTION — no
-   * rule** (`BABYLON_EXIT.md` X2.5c C4). The systems that decide a round meet
+   * rule**. The systems that decide a round meet
    * inside the authority's `SimCore`, whose own `wire` is their wiring
    * whoever hosts the match; the page hears what they decided through one
    * switch, `onNetEvent`, which ends in the presentation methods for the
@@ -4871,10 +4870,10 @@ export class Game {
     // centre-screen pick can land on and fail to resolve. The last map's fleet
     // and its crews are already gone — `teardownMap`, at the top.
     //
-    // **And the fleet is not this page's either** (`BABYLON_EXIT.md` X2.5c
-    // C4): the authority fleets its own off the same spawns, whoever hosts the
+    // **And the fleet is not this page's either**: the
+    // authority fleets its own off the same spawns, whoever hosts the
     // match, and this one is posed off the wire (`syncNetVehicles`), the hull
-    // under a driver predicted here and reported (X2.5a C4b) — so it is
+    // under a driver predicted here and reported — so it is
     // `predicted`, refusing local damage and running neither hardstanding
     // clock. It is still the fleet this page's rays, sweeps, decks and cameras
     // meet.
@@ -5691,7 +5690,7 @@ export class Game {
    */
   private updateOnFoot(dt: number): void {
     // --- player ---
-    // The page's own body, PREDICTED (`BABYLON_EXIT.md` X2.5a): its sweep, its
+    // The page's own body, PREDICTED: its sweep, its
     // ground, its stance and its regen for the HUD are all this page's, and
     // the authority is told where it went at `INPUT_HZ` (`NetSession.update`).
     const ev = this.player.update(dt, this.input, this.cameraSys);
@@ -6041,8 +6040,8 @@ export class Game {
       this.drive.lift = this.input.lift;
       this.drive.aimYaw = this.vehicleCam.yaw;
       this.drive.aimPitch = this.vehicleCam.pitch;
-      // These sticks step THIS PAGE's hull — `driveFor`, in the world step
-      // (`BABYLON_EXIT.md` X2.5a C4b) — and what the authority is told is
+      // These sticks step THIS PAGE's hull — `driveFor`, in the world step —
+      // and what the authority is told is
       // where that prediction has the hull: a `drive` at `INPUT_HZ`, validated
       // (`localHull`'s fields, `NetSession.update`).
     } else {
@@ -7118,8 +7117,8 @@ export class Game {
   }
 
   /**
-   * The page's OWN match, for the round `buildRound` is about to build
-   * (`BABYLON_EXIT.md` X2.5c C4): the last one closed, a fresh one opened on
+   * The page's OWN match, for the round `buildRound` is about to build:
+   * the last one closed, a fresh one opened on
    * the map the player chose and begun on this round's seed and the player's
    * difficulty, and this page joined to it through a session exactly as a
    * server's match is joined — so the round is played by the same `Match`, on
@@ -8651,7 +8650,7 @@ export class Game {
    */
   private updateWorld(dt: number): void {
     // **Every round is a match, and this page's half of one is DRESSING on
-    // what it was told** (`BABYLON_EXIT.md` X2.5c C4). The authority has
+    // what it was told**. The authority has
     // decided who owns a flag, where a bot is going and who died; the bodies,
     // the flags and the tickets arrive through `NetSession`, and what this
     // page still owes is the picture of them — a tracer, the impact at the
@@ -8884,8 +8883,7 @@ export class Game {
   /**
    * Books the benchmark `?bench=<map>` asked for: that map, the default enemy
    * tier and the bench's fixed seed, then a round started exactly as the
-   * menu's Deploy starts one. `BABYLON_EXIT.md` X0.3, `docs/profiling.md`'s
-   * "The benchmark".
+   * menu's Deploy starts one. `docs/profiling.md`'s "The benchmark".
    *
    * **Nothing it sets is the PLAYER's choice, so none of it is remembered**:
    * the map and the tier are written to the fields and not to `prefs`, and
@@ -9800,11 +9798,10 @@ export class Game {
    * arc, the flinch, the grain's flash, the hurt sound and the rumble — and,
    * for a killing blow, NOTHING ELSE: the death is `playerDown`'s.
    *
-   * **No rule is left in here** (`BABYLON_EXIT.md` X2.5a D6): the ticket and
-   * the death on the board are counted where the blow landed — on the
-   * authority, whoever hosts the match — unconditionally, where this method's
-   * `playing` gate used to be able to drop both. Reached from `playerHit`,
-   * the one door a hit comes through.
+   * **No rule is in here**: the ticket and the death on the board are counted
+   * where the blow landed — on the authority, whoever hosts the match —
+   * unconditionally, so no state gate here can drop either. Reached from
+   * `playerHit`, the one door a hit comes through.
    */
   private onPlayerDamaged(
     amount: number,

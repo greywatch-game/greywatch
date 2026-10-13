@@ -726,7 +726,7 @@ export type ServerEvent =
    * **`cause` says WHAT landed, and absent is a ROUND** — the only cause an
    * older server sends, and the only one a client predicts in full
    * (`HitCredits`). The others are the shooter's feedback for what nothing on
-   * the page resolves (`BABYLON_EXIT.md` X2.5c C4): a grenade's or a mine's
+   * the page resolves: a grenade's or a mine's
    * BLAST on a body, a burn that KILLED, a body under the TRACKS, and a hull
    * gun's round that KILLED — the page predicts a shell's and a belt's hit,
    * and only the kill is the authority's to add. Each is sent only where the
@@ -997,7 +997,7 @@ export interface Welcome {
    * The slot table's block width a team (`Roster.perTeam`): team 1's first
    * slot. `CONFIG.bots.maxPerTeam` on a server's match, whose table is the
    * ceiling so a rotation never renumbers anybody; the map's OWN roster on a
-   * match the page owns (`BABYLON_EXIT.md` X2.5c C2), which never rotates and
+   * match the page owns, which never rotates and
    * whose slots are the offline round's bot indices. A client numbers its
    * bodies by it (`NetRoster.setBlockWidth`) rather than by `CONFIG`, or
    * every snapshot about team 1 on an owned match is addressed to a hole.

@@ -5,7 +5,7 @@
  * Owns: nothing — five functions, shared by the three physics clients' VIEWS
  * (`RagdollSystem`'s proxies, `DebrisSystem`'s shards, `BlastDebrisSystem`'s
  * chunks). `PhysicsWorld` keeps each body's pose as seven plain numbers
- * (`WorldBody.pose`, `BABYLON_EXIT.md` X2.4 C5) and never sees a node; this is
+ * (`WorldBody.pose`) and never sees a node; this is
  * the client side of that line.
  * Invariants:
  * - **A posed node is UNPARENTED and carries a `rotationQuaternion`.** That is

@@ -5,7 +5,7 @@
  * friendly fire is excluded by construction, never by a team check inside.
  * `position` is a `Vector3Like` — either library's vector, READ through its
  * fields — so nothing reaching a body through this interface may hand it to
- * a Babylon method (`Hittable`'s note, `BABYLON_EXIT.md` X2.2).
+ * a Babylon method (`Hittable`'s note).
  */
 import type { Vector3Like } from "../math";
 import type { Hittable } from "../systems/CombatSystem";

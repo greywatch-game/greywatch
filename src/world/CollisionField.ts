@@ -17,7 +17,7 @@
  * used to narrow that walk by handing Babylon a bucketed mesh list through
  * `surroundingMeshes` (Sarab's fleet 2.30 ms a frame to 0.12, the player's own
  * sweep 2.21 to 0.036). Now the collider itself is ours (`ellipsoidSweep.ts`,
- * a port of Babylon's, BABYLON_EXIT.md X2.1) and it is fed boxes rather than
+ * a port of Babylon's) and it is fed boxes rather than
  * meshes, so no collider mesh is walked by anything and the authority's
  * sweeps need no scene at all.
  *

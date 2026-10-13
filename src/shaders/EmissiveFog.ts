@@ -166,16 +166,14 @@ class EmissiveFogPlugin extends MaterialPluginBase {
  * with it — a plugin added after an effect is built does not reach that effect.
  */
 export function attachEmissiveFog(material: StandardMaterial): void {
-  // **Defensive: nothing reaches this under an engine that cannot draw any
-  // more.** The authority built its pools' materials under `NullEngine` until
-  // `BABYLON_EXIT.md` X2.2 and had an engine until X2.3; no script builds an
-  // emissive under one. Kept because the failure it guards is silent about its
-  // cause: off WebGPU, `Material._createUniformBuffer` picks GLSL for a
-  // `StandardMaterial`, `isCompatible` above answers false, and `_addPlugin`
-  // THROWS on the mismatch rather than declining — which once killed every
-  // match server inside `new SimCore()` with a message about a shader
-  // language and nothing about where. A fog is a PICTURE; skipping it there
-  // costs nothing.
+  // **Defensive: nothing reaches this under an engine that cannot draw** — no
+  // script builds an emissive under one. Kept because the failure it guards is
+  // silent about its cause: off WebGPU, `Material._createUniformBuffer` picks
+  // GLSL for a `StandardMaterial`, `isCompatible` above answers false, and
+  // `_addPlugin` THROWS on the mismatch rather than declining — which once
+  // killed every match server inside `new SimCore()` with a message about a
+  // shader language and nothing about where. A fog is a PICTURE; skipping it
+  // there costs nothing.
   if (!material.getScene().getEngine().isWebGPU) return;
   new EmissiveFogPlugin(material);
 }

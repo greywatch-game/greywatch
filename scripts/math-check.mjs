@@ -4,7 +4,7 @@
  *   node scripts/math-check.mjs [--trials 20000] [--seed 1]
  *
  * `src/math/` is a port of the subset of Babylon's `Vector3`, `Quaternion`,
- * `Matrix`, `Color3` and `Color4` the tree calls (BABYLON_EXIT.md X1.1), and
+ * `Matrix`, `Color3` and `Color4` the tree calls, and
  * its whole claim is that a file moved onto it computes exactly what it did:
  * every oracle the exit is graded by compares bits, so "close" is a failure.
  * This runs every ported method on seeded random inputs through both and

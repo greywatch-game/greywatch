@@ -81,8 +81,7 @@ export const net = {
   /**
    * How many SECONDS of the page's own `advance`s may be unanswered before
    * it stops handing the match the frame's time to STEP and hands it over as
-   * HELD instead (`Game.updateWorld`, `LocalMatch.behind`; `BABYLON_EXIT.md`
-   * X2.5c C4).
+   * HELD instead (`Game.updateWorld`, `LocalMatch.behind`).
    *
    * The page never waits for its own match — an advance is posted and its
    * answer read whenever it lands — so on a device where a step costs the

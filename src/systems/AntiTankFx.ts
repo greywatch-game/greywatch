@@ -9,11 +9,10 @@
  * detonates. `update` runs straight after `AntiTankSystem.update` every frame
  * that runs, so a rocket launched this frame is shown on it and one that went
  * off is gone on the frame its fireball appears (the fireball itself is the
- * one blast's, `GrenadeFx`). The authority never builds one
- * (`BABYLON_EXIT.md` X2.2).
+ * one blast's, `GrenadeFx`). The authority never builds one.
  * Contract: `docs/antitank.md`.
  *
- * Split out of `AntiTankSystem` at X2.2 C3, on `CombatFx`'s line. It imports
+ * Split out of `AntiTankSystem` on `CombatFx`'s line. It imports
  * the simulation's pool sizes and is handed the instance by `Game`; it holds
  * no other system. `RocketBody` and `MineBody` are exported because
  * `net/NetOrdnance` draws the same two objects off the wire, and a remote

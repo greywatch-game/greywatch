@@ -1,7 +1,7 @@
 /**
  * primitives.ts — The eight primitive surfaces the tree builds from: box,
  * cylinder, torus, icosphere, sphere, polyhedron, plane and disc, as
- * `GeometryBuffer`s (the last two for the optics' glass, X1.3).
+ * `GeometryBuffer`s (the last two for the optics' glass).
  * Owns: the generators, their option shapes, and the side-orientation step
  * they share. No state but one cached unit cube (`createBox`); imports nothing
  * but `src/math/` and `buffer.ts`.

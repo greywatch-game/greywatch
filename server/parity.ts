@@ -29,7 +29,6 @@ for (const def of MAPS) {
 }
 
 // The only thing this process means to write to stdout, so the caller can
-// parse it whole. The marker is kept although Babylon's banner, which used to
-// share stdout, went with the engine (`BABYLON_EXIT.md` X2.3): anything else a
-// shared module ever logs there must not be able to break the parse either.
+// parse it whole. The marker is there because anything a shared module ever
+// logs to stdout must not be able to break the parse.
 console.log(`__PARITY__${JSON.stringify(out)}`);

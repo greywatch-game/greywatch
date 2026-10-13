@@ -9,9 +9,8 @@
  * builds one per hull and is told by `Vehicle`'s `HullPicture` when the gun
  * fires and when the hull has been stepped, with the numbers this needs), the
  * authority builds none, and nothing aims, walks, collides or is picked
- * against a mast. It was `HullFlex`'s other half until `BABYLON_EXIT.md` X2.2
- * C9 split the springs, which ARE on a muzzle's path, into the simulation
- * (`entities/HullSprings.ts`).
+ * against a mast. The springs, which ARE on a muzzle's path, are the
+ * simulation's (`entities/HullSprings.ts`).
  * It never asks what KIND of hull it is drawing: a hull with no masts has an
  * empty `antennae`, and every loop here is over that list — and so is every
  * spring array's length, sized off it once, so a kind with three masts is a

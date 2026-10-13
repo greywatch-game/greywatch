@@ -1,6 +1,6 @@
 /**
- * net/localWire.ts — The words a local match's two halves share
- * (`BABYLON_EXIT.md` X2.5c C3): the owner channel's calls and replies, and
+ * net/localWire.ts — The words a local match's two halves share: the owner
+ * channel's calls and replies, and
  * the one control word a person's port carries besides protocol text.
  * Owns: those types and that constant, and nothing else — `protocol.ts`'s
  * twin for the local match, imported by the page's halves (`LocalMatch.ts`,

@@ -19,8 +19,8 @@
  */
 
 /**
- * The phases of `SimCore.step` the profiler files under its `sim` phase
- * (`BABYLON_EXIT.md` X2.5a C6), in the order the step runs them — the index
+ * The phases of `SimCore.step` the profiler files under its `sim` phase, in
+ * the order the step runs them — the index
  * into `StepTiming.at` and `StepTiming.ms`. `conquest` is the combatant list
  * and the flags; `vehicles` the crews, the hulls, a person's reported crashes,
  * the tracks and the riders; `bots` `BattleSystem.update`; `grenades` and

@@ -23,7 +23,7 @@
  * bot charge its death" out by hand, on the client and again on the
  * authority, and the two had already disagreed about what `creditKill`
  * returned. A door that goes through `settleKill` cannot forget either half —
- * and since `BABYLON_EXIT.md` X2.5a C4a every door is the core's.
+ * and every door is the core's.
  */
 import type { Bot } from "../entities/Bot";
 import type { Combatant, Team } from "../entities/Combatant";
@@ -47,7 +47,7 @@ import type { Hittable } from "./CombatSystem";
  * to name and nobody to pay — today the leash, which kills a person through
  * their own `takeDamage` with no killer on the far side of it. A person's
  * death by any of the doors above is filed under that door exactly as a bot's
- * is (`KillLedger.personDown`, `BABYLON_EXIT.md` X2.5a C3), and one going up
+ * is (`KillLedger.personDown`), and one going up
  * with the hull it rode is `crew` like a bot crewman's; `server/corecheck.ts`
  * is what holds both to it, since `simulate` seats nobody.
  */

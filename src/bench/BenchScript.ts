@@ -2,7 +2,7 @@
  * bench/BenchScript.ts — What the benchmark (`?bench=<map>`) shows, frame by
  * frame: the bank's vantages turned through eight headings, one camera path
  * through the map's densest quarter, then a bot-only round from a fixed seed.
- * `BABYLON_EXIT.md` X0.3, and `docs/profiling.md`'s "The benchmark".
+ * `docs/profiling.md`'s "The benchmark".
  * Owns: the PLAN — which frames are which segment, where the camera stands on
  * each frame that is a look, how many fixed steps each frame that is the
  * fight takes — and the two pieces of arithmetic the plan implies: the

@@ -1,14 +1,12 @@
 /**
- * server/localMatch.ts — A match the page hosts itself (`BABYLON_EXIT.md`
- * X2.5c C3): one OWNED `Match` at a time, its owner's calls answered off one
- * port and each person admitted off a port of their own.
- * Owns: the open match, the benchmark's fight fold, an `advance`'s timing
- * (every step it took, summed — `src/sim/stepTiming.ts`), and the two adapters a
- * port needs — `portPeer`, the `PeerTransport` a person's port is to `Match`,
- * and the handshake that reads a `join` off it, as `server/index.ts` reads
- * one off a socket, and hands the port to `Match.admit` — or to
- * `Match.watch`, when the owner dialled a WATCHER (X2.5c C4).
- * Invariants:
+ * server/localMatch.ts — A match the page hosts itself: one OWNED `Match` at a
+ * time, its owner's calls answered off one port and each person admitted off a
+ * port of their own. Owns: the open match, the benchmark's fight fold, an
+ * `advance`'s timing (every step it took, summed — `src/sim/stepTiming.ts`),
+ * and the two adapters a port needs — `portPeer`, the `PeerTransport` a
+ * person's port is to `Match`, and the handshake that reads a `join` off it, as
+ * `server/index.ts` reads one off a socket, and hands the port to `Match.admit`
+ * — or to `Match.watch`, when the owner dialled a WATCHER. Invariants:
  * - **The owner's calls run one at a time, in the order they were posted**
  *   (`LocalMatch`'s header): a call is answered only after every call before
  *   it has finished, so any answer is a settle. A person's port is queued

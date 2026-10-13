@@ -60,7 +60,7 @@ export const PHASES = [
    * answer since the last filing by the page (`Game.localTiming`) — so a
    * benchmark's lead, several steps a frame, reads as all of them.
    *
-   * **It is a ROOT** (X2.5b): with the match in a Worker the step runs on
+   * **It is a ROOT**: with the match in a Worker the step runs on
    * another thread, overlapping the page's frame rather than inside it, and
    * it is filed against a frame that takes in its answer. With the match on
    * this thread (`MatchHost.mode`, in every capture) it runs in a message
@@ -183,7 +183,7 @@ export const P = Object.fromEntries(
  * **There are three roots because the frame has two parts and only one of
  * them is the tick — and the simulation is no longer either.** `frame` is
  * `Game.tick`, wall to wall; `present` is what the engine does after it
- * returns; `sim` is the core's step, in the local match (X2.5b, X2.5c). None
+ * returns; `sim` is the core's step, in the local match. None
  * contains another, and a reader that drew `present` or `sim` inside `frame`
  * would be drawing a containment that does not exist — which is exactly what the fallback tree in
  * `public/profile_viewer.html` does to any phase it has not been told about, so
@@ -199,7 +199,7 @@ export const PARENT_OF: Readonly<
   onFoot: "gameplay",
   world: "gameplay",
   net: "world",
-  // The core's step is a third ROOT (X2.5b): in a Worker it runs off this
+  // The core's step is a third ROOT: in a Worker it runs off this
   // thread, so it is in the `Exclude` above and the viewer's
   // `FALLBACK_ROOTS`, and its five children stay its own.
   simConquest: "sim",

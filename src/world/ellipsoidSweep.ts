@@ -8,7 +8,7 @@
  * the last `begin`, and choosing that — and where a sweep starts from — is the
  * caller's job (`CollisionField`).
  * Imports nothing but `src/math/`, the box generator and a type — never
- * `@babylonjs/core` (BABYLON_EXIT.md X2.1).
+ * `@babylonjs/core`.
  *
  * ## Why a port and not a new sweep
  *

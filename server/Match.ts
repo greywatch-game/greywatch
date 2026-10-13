@@ -13,7 +13,7 @@
  * accepted message — and `relay` turns what it drained into wire events. It
  * installs no callback on the core and reads nothing back off a live object
  * to finish an event (`src/sim/events.ts`).
- * **It VALIDATES and the core DECIDES** (`BABYLON_EXIT.md` X2.5a C4a): each
+ * **It VALIDATES and the core DECIDES**: each
  * message handler runs this side's claim gates — the shape (`server/wire.ts`),
  * the sequence and the clock (a peer's stamps BOUNDED against when its
  * messages arrive, `onStamp` — the state is this class's `Peer`, never the
@@ -30,7 +30,7 @@
  * steps it by hand — it reaches `step`, `relay`, `timer`, `peers`,
  * `arrivalClock`, `rotateTimer`, `idleTimer`, `retired`, `queue`, `queueTo`
  * and `flushEvents` by name — so renaming one of those owes that file a look.
- * **Its CLOCK is a choice** (`BABYLON_EXIT.md` X2.5c C2). A match the server
+ * **Its CLOCK is a choice.** A match the server
  * hosts FREE-RUNS: an interval polls the wall clock into the accumulator
  * (`accrue`), which steps it `1 / TICK_HZ` at a time. A match built `owned`
  * is DRIVEN by its owner — the page, for the offline round — which feeds the
@@ -41,7 +41,7 @@
  * retired for being empty: whatever ends it is the owner's. Its owner also
  * holds the RESPAWN clock (`game`), hands over the time it HELD as well as
  * the time it stepped (`hold`), and may let a WATCHER in — a peer with no
- * seat, which hears the round and is nobody in it (`watch`, X2.5c C4).
+ * seat, which hears the round and is nobody in it (`watch`).
  * Invariants: a peer's slot is assigned here and nowhere else, and a peer never
  * names its own slot. **A peer is a seat**: everything in `peers` holds one,
  * and a watcher is never in it — the slot-indexed tables (`pings`, the vote,
@@ -215,8 +215,8 @@ function freshSlot(): SlotRecord {
 }
 
 /**
- * The one connection a peer is reached over, as this class needs it
- * (`BABYLON_EXIT.md` X2.5c C1): a WebSocket on the server (`server/index.ts`'s
+ * The one connection a peer is reached over, as this class needs it: a
+ * WebSocket on the server (`server/index.ts`'s
  * `wsTransport`), a port on a match the page hosts (`server/localMatch.ts`'s
  * `portPeer`), and a fake one in `server/corecheck.ts`. Everything about
  * what is CARRIED — the JSON both ways, the claim gates, the rate bucket — is
@@ -273,7 +273,7 @@ export interface MatchOptions {
   bots?: boolean;
   /**
    * The match has an OWNER that drives its clock, begins its rounds and ends
-   * it (`BABYLON_EXIT.md` X2.5c C2) — see the header for everything that
+   * it — see the header for everything that
    * changes with it. False when absent: the server's free-running match.
    */
   owned?: boolean;
@@ -455,8 +455,7 @@ const MAX_MOVE_GAP = 0.5;
  * today's `INPUT_HZ`, so the sum is two). One interval,
  * which this was, refused an honest walk whenever the frames right after a
  * spawn were long: Sarab's first `move` came back `speed`-corrected by a third
- * of a metre (`BABYLON_EXIT.md` X2.5c C4, found when the page's own match
- * began validating offline play). A step of two intervals' worth from the
+ * of a metre. A step of two intervals' worth from the
  * spawn is still a step, and every later sample is priced by its own stamps.
  */
 const FIRST_STAMP_GAP = 1 / INPUT_HZ + MAX_FRAME_DT;
@@ -1241,8 +1240,8 @@ export class Match {
    * Lets a connection WATCH an owned match: welcomed, and then sent everything
    * a seated peer is sent about the round — every snapshot, the roster, the
    * board, the mines, the ping table, every SHARED event — and nothing that is
-   * one person's (`flushEvents`). **It holds no seat** (`BABYLON_EXIT.md`
-   * X2.5c C4, "The benchmark has to WATCH its fight, and a peer is a seat"):
+   * one person's (`flushEvents`). **It holds no seat**, because a peer is a
+   * seat:
    * no `Roster.claim`, no `addPlayer`, no `relay` — the core never hears of
    * it, so nothing about the fight can move with it, which is the whole of why
    * it exists. The benchmark draws the round it measures off the wire, and
@@ -1626,8 +1625,8 @@ export class Match {
    * A round on `def`, as this host owes it to the core: the bake and the floor
    * LOADED (the one await), the seed — drawn by the server, chosen by an
    * owner — HANDED OVER, and the clock ANCHORED: the three things `SimCore`
-   * does not do for itself, because it reads no clock and no entropy
-   * (`BABYLON_EXIT.md` X2.5a). The anchor is taken the moment the build
+   * does not do for itself, because it reads no clock and no entropy.
+   * The anchor is taken the moment the build
    * returns, which is where `SimCore.anchor` says it must be.
    */
   private async startRound(def: MapDef, round: RoundChoice): Promise<void> {
@@ -2383,7 +2382,7 @@ export class Match {
         // it a mark (`ServerEvent`'s `hit`): a blast on a BODY, a burn or a
         // hull gun's round that KILLED one, and the tracks — what nothing on
         // the shooter's page resolves, so without it a grenade into a squad
-        // marks nothing (X2.5c C4: the page's own match is no better a
+        // marks nothing (the page's own match is no better a
         // transport than this, so the fix is this wire's).
         case "hit": {
           // A blow nobody is named for (`slotOf` of no body) is nobody's

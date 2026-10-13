@@ -328,8 +328,7 @@ export function terrainPatches(
    * **A whole number of terrain cells**, or the round below cuts somewhere
    * other than where the caller said. Both callers — `buildValley` and the
    * editor's brush — must pass the same map's value or the brush re-cuts
-   * patches the floor was never cut into. (The server's `terrainColliders`
-   * was a third until `BABYLON_EXIT.md` X2.3; the authority builds no mesh.)
+   * patches the floor was never cut into.
    */
   blockSize: number,
 ): TerrainPatch[] {

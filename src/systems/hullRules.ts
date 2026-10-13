@@ -106,19 +106,17 @@ const ROUND: HullRound = { muzzle: MUZZLE, dir: DIR, shot: null! };
  * somewhere else, and the hull's clock, asked strictly, refuses rounds that
  * gate let through.
  * - **That gate is `Match`'s rate bucket**, and this is that bucket's slack
- *   (`SHOT_SLACK`, `server/claimGates.ts` — `Match` refuses to load if the
- *   two disagree): the jitter a claimed round arriving on the network's
- *   schedule is forgiven. Since `BABYLON_EXIT.md` X2.5c it is the only gate
- *   there is, offline included — the page's own round is a `Match` too, and
- *   its player a peer of it.
- * - **The number was first a second host's.** While the page hosted a core
- *   itself (X2.5b), its gate was its own predicted hull (`gunReady`,
- *   `fireMg`), stepped AFTER the trigger in its frame while the core's hull
- *   was stepped before it — so the two clocks counted the same number of
- *   steps shifted by one frame, and under a varying `dt` the core's could
- *   stand up to a frame behind. Asked strictly it refused the round the page
- *   had already kicked and drawn, in silence. That is three times
- *   `Game.tick`'s 0.05 s frame clamp.
+ *   (`SHOT_SLACK`, `server/claimGates.ts` — `Match` refuses to load if the two
+ *   disagree): the jitter a claimed round arriving on the network's schedule is
+ *   forgiven. It is the only gate there is, offline included — the page's own
+ *   round is a `Match` too, and its player a peer of it.
+ * - **Why 0.15 s.** A client predicts its hull (`gunReady`, `fireMg`) and
+ *   steps it AFTER the trigger in its frame, while the core steps its own
+ *   copy before — so the two clocks count the same steps shifted by one
+ *   frame, and under a varying `dt` the core's can stand up to a frame
+ *   behind. Asked strictly it would refuse the round the page has already
+ *   kicked and drawn, in silence. 0.15 is three times `Game.tick`'s 0.05 s
+ *   frame clamp.
  * Longer than the cupola gun's whole interval, so on that gun the hull's
  * clock never refuses a round the gate passed; on the main gun it refuses
  * only a shell fired through somebody else's reload.

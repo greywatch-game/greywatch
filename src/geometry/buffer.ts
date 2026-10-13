@@ -9,11 +9,10 @@
  * `@babylonjs/core`, not `CONFIG` — so a Node script loads it by type stripping
  * (`scripts/geometry-check.mjs`), and so will the server and the renderer.
  *
- * **It exists so the world's geometry stops being Babylon's** (BABYLON_EXIT.md
- * X1.2, X1.3): the kit, the scatter props and the models (weapons, optics,
- * hulls, soldiers, throwables) build these, `world/parts.ts` is the one place
- * one becomes a Babylon mesh, the models already merge on them, and the
- * world's merge moves onto them next (X1.4).
+ * **It exists so the world's geometry is not Babylon's**: the kit, the
+ * scatter props and the models (weapons, optics, hulls, soldiers, throwables)
+ * build these, both the models and the world merge on them, and
+ * `world/parts.ts` is the one place one becomes a Babylon mesh.
  *
  * ## The one rule: the same bits as Babylon
  *

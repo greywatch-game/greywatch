@@ -20,8 +20,8 @@
  *   bot on the map is drawn at full rig, which is the honest worst case for
  *   wall 1.
  * - **`bodyDrawDistance` is deliberately ABSENT**, which is the same decision
- *   one field along. S8 landed it — a map may now pull the body gates (two since
- *   `BABYLON_EXIT.md` X2.5c C4, `NetRoster` and `RagdollSystem`) in ahead of
+ *   one field along. S8 landed it — a map may now pull the body gates
+ *   (`NetRoster` and `RagdollSystem`) in ahead of
  *   its fog — and stating one here would soften the instrument in
  *   exactly the way a short `fogEnd` would: S8 prices the lever
  *   at **2.6 ms of a 9.2 ms frame** with the roster in view, and it prices it

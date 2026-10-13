@@ -11,8 +11,8 @@
  * preview would build it.
  *
  * **A part is hashed as the Babylon mesh it used to be made into**
- * (`hashPart`), so the fingerprint is the one `MapBuilder`'s part meshes gave
- * before `BABYLON_EXIT.md` X1.4 took the merge off meshes and deleted them:
+ * (`hashPart`), so the fingerprint is the one a part MESH gives, and a
+ * baseline taken through meshes still compares:
  * the transform as a mesh holds it (a quaternion zeroes the Euler angles, as
  * Babylon's setter does), each attribute cut to the vertex count and hashed as
  * float32 bytes, the indices as Uint32. A baseline taken through the meshes
@@ -65,8 +65,8 @@
  * kind is named in `--kinds` like any other.
  *
  * **`--models` fingerprints everything drawn that is NOT the kit**, which is
- * what `BABYLON_EXIT.md` X1.3 moves onto `src/geometry/` and has to prove it
- * moved nothing:
+ * what is built on `src/geometry/`, and proves a change to it moved
+ * nothing:
  *
  * - each carried weapon's model (`weapon:<id>`, the builders `ViewModel`'s
  *   `WEAPON_BUILDERS` names: the seven guns, the launcher and the mine). A
@@ -81,8 +81,7 @@
  *   pivots, which are MEASURED off the magazine's bounds;
  * - the `PlayerView` (`player`): its flash petals and casing pool, over a
  *   `ViewModel` of its own, as the `Player` it is handed to leaves it.
- *   `Player` itself draws nothing and owns no mesh (BABYLON_EXIT.md X2.2 C10
- *   took its collider capsule away);
+ *   `Player` itself draws nothing and owns no mesh;
  * - the four pooled bodies that fly or lie (`grenade`, `molotov`, `rocket`
  *   with its flame, `mine`, the laid one);
  * - every vehicle kind (`vehicle:<kind>`: the `CONFIG.vehicles` blocks
@@ -212,8 +211,8 @@ const ATTRIBUTES = [
 ];
 
 /**
- * One part's transform and geometry into `draw`, as the part MESH it was made
- * into until X1.4 hashed — byte for byte, so a baseline taken
+ * One part's transform and geometry into `draw`, as a part MESH hashes —
+ * byte for byte, so a baseline taken
  * through meshes still compares. Each caller writes its own header line first
  * — the name and material, and whatever else its kind of build can see — so a
  * structure's hash is what it was before scatter shared this.

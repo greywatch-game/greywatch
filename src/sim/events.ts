@@ -16,7 +16,7 @@
  * for the one variable-length list (a round's broken panes) — so a ring is
  * three typed arrays and a fourth, and can be copied or transferred whole.
  *
- * **Why a ring and not callbacks** (`BABYLON_EXIT.md` X2.5a C2): a callback
+ * **Why a ring and not callbacks**: a callback
  * hands the reader the live object and lets it read whatever it likes off it,
  * whenever it likes — `Match` read `player.health`, `respawnT` and
  * `bot.deathFrom` inside its handlers. That works in one process and is

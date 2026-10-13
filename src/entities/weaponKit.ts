@@ -8,17 +8,17 @@
  * and `optics.ts`
  * is the seventh.
  *
- * **It builds `Part`s, and `merge` is where they become meshes** (BABYLON_EXIT.md
- * X1.3). Every helper makes a `Part` (`world/parts.ts`) on a `src/geometry/`
- * buffer — `createBox`, `createCylinder`, `facet`'s lofts and slabs — and hangs
- * it from a `PartNode`: the build's `frame`, which stands in for the weapon's
- * live root, or a raking `pivot` under it. Nothing is in the scene until
- * `merge` hands one buffer per colour group to `drawnMesh` and parents that
- * mesh to the LIVE node it was given (the root, the magazine, the bolt, a
- * sight). So the pivots are build-time frames that are never meshes and never
- * nodes, and there is nothing to dispose once the build is done. A reticle or
- * a bead is drawn on its own, and `lit` is where it becomes a mesh; an optic's
- * glass, which wears a material of its own, is made one in `optics.ts`.
+ * **It builds `Part`s, and `merge` is where they become meshes.** Every helper
+ * makes a `Part` (`world/parts.ts`) on a `src/geometry/` buffer — `createBox`,
+ * `createCylinder`, `facet`'s lofts and slabs — and hangs it from a `PartNode`:
+ * the build's `frame`, which stands in for the weapon's live root, or a raking
+ * `pivot` under it. Nothing is in the scene until `merge` hands one buffer per
+ * colour group to `drawnMesh` and parents that mesh to the LIVE node it was
+ * given (the root, the magazine, the bolt, a sight). So the pivots are
+ * build-time frames that are never meshes and never nodes, and there is nothing
+ * to dispose once the build is done. A reticle or a bead is drawn on its own,
+ * and `lit` is where it becomes a mesh; an optic's glass, which wears a
+ * material of its own, is made one in `optics.ts`.
  *
  * Invariants:
  * - A builder assembles at the ORIGIN with its root at identity and merges

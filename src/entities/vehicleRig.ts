@@ -10,17 +10,16 @@
  * come out in, and the one thing `entities/VehicleView.ts` draws. CLIENT-only:
  * `entities/Vehicle.ts` has never heard of it — the simulation reads a
  * `HullFrame` and writes a `HullPose`, and the view copies the pose onto these
- * joints (`BABYLON_EXIT.md` X2.2 C9).
+ * joints.
  *
- * **A hull's geometry is PARTS until `segment` merges it** (BABYLON_EXIT.md
- * X1.3): a box or a cylinder is a `Part` on `src/geometry/`'s generators, a
- * `Shape` is a `Part` from `facet.ts`, `mergeParts` is the per-colour merge,
- * and `drawnMesh` is the one place any of it becomes a Babylon mesh — the mesh
- * then hung off a live joint. The JOINTS are still Babylon `TransformNode`s
- * (the rig is X4's), and so is the body box `VehicleView` builds, which is a
- * follower of the hull's collider and not a drawing. The meshes are MADE in
- * the order the scene used to receive them, which `mergeByColor` explains;
- * `kit:hash --models` hashes that order.
+ * **A hull's geometry is PARTS until `segment` merges it**: a box or a cylinder
+ * is a `Part` on `src/geometry/`'s generators, a `Shape` is a `Part` from
+ * `facet.ts`, `mergeParts` is the per-colour merge, and `drawnMesh` is the one
+ * place any of it becomes a Babylon mesh — the mesh then hung off a live joint.
+ * The JOINTS are still Babylon `TransformNode`s (the rig is X4's), and so is
+ * the body box `VehicleView` builds, which is a follower of the hull's collider
+ * and not a drawing. The meshes are MADE in the order the scene used to receive
+ * them, which `mergeByColor` explains; `kit:hash --models` hashes that order.
  *
  * ## The rig is CLOSED over its own model, which is what buys the second kind
  *
@@ -48,9 +47,7 @@
  * kind's lives in a Babylon-free frame file of its own (`tankFrame.ts`,
  * `truckFrame.ts`, `heliFrame.ts`) that its model IMPORTS and places its
  * nodes FROM, and `entities/vehicleKinds.ts` hands it to the hull beside the
- * spec, so neither `Vehicle` nor the authority imports a model file. They rode
- * on this rig until `BABYLON_EXIT.md` X2.2 C8 took the simulation off it, and
- * in the model files until C9 took the model files off the authority.
+ * spec, so neither `Vehicle` nor the authority imports a model file.
  *
  * ## Two rules every model owes, both inherited and both already broken once
  *

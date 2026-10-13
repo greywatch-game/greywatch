@@ -8,8 +8,8 @@
  * Owns NO player: nothing in here knows what a player is. `Game` decides who is
  * driving and hands the drive in, exactly as it hands `BattleSystem` a
  * `BattleCtx` rather than letting it reach for one.
- * Owns NO drawing: **no `@babylonjs/core`**, no scene and no materials
- * (`BABYLON_EXIT.md` X2.2 C9). The hulls are the simulation; what they look
+ * Owns NO drawing: **no `@babylonjs/core`**, no scene and no materials.
+ * The hulls are the simulation; what they look
  * like is the client's `VehicleViews`, built by `Game.installMap` over this
  * fleet in hardstanding order, so the authority builds this file as it is.
  *

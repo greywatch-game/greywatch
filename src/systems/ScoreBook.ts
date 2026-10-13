@@ -21,13 +21,13 @@
  * — `SimCore.creditKill`/`awardZone` — and handed in.
  *
  * **There is ONE of these, the simulation core's, and that is the point**
- * (`SimCore.scores`, offline and on the authority alike since `BABYLON_EXIT.md`
- * X2.5a C4a). The offline round and the authority used to keep a
- * `slotKills`/`slotDeaths` pair each, with a `creditKill` and a
- * `registerDeath` each, written twice and documented twice, and later one of
- * these each. The page draws the authority's — a remote match's, or offline
- * its own local match's — which arrives whole (`NetSession`), because a client adding up the events it happened to
- * receive would show a different board on every screen.
+ * (`SimCore.scores`, offline and on the authority alike). The offline round and
+ * the authority used to keep a `slotKills`/`slotDeaths` pair each, with a
+ * `creditKill` and a `registerDeath` each, written twice and documented twice,
+ * and later one of these each. The page draws the authority's — a remote
+ * match's, or offline its own local match's — which arrives whole
+ * (`NetSession`), because a client adding up the events it happened to receive
+ * would show a different board on every screen.
  */
 import { CONFIG } from "../config";
 import type { Combatant, Team } from "../entities/Combatant";

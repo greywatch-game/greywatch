@@ -3354,6 +3354,22 @@ all in the counter this finding is named after. Not chased.
   lighting put them. Both ride the grade setting, so a player who turns the grain off
   turns them off with it, and the menu's photographs are taken through the same pass,
   so a change here owes `npm run shots`.
+- **A team's colour is WORN, not merely drawn.** `CONFIG.teams[].color` paints a
+  soldier's pauldrons, bandolier and helmet band as well as the deploy map's
+  markers, so it has to stay saturated enough to read at three pixels through
+  fog — a dull tone is only dull on a screen, and is no marking at all on a
+  body. `SoldierModel`'s `KITS` owns the rest, and the two sides are told apart
+  three ways on purpose, each covering where the last fails: **hue** (the only
+  one that survives a body three pixels wide), **accent** (that team colour,
+  placed so some of it faces every direction), and **silhouette** (a helmet
+  shape per side, which is what is left when there is no colour at all).
+- **The bullet mark pool is the one whose slots outlive the shot**
+  (`systems/BulletMarks.ts`): it is the one effect wearing a CEL material rather
+  than `getEmissive`, because a hole still there a minute later has to be lit by
+  the same map the wall is — which also puts it inside `WorldCulling`'s size
+  gate — and it is stood on the STATIC world only, a hull answering "hard" like
+  any other box while being the one solid thing in the game that drives away
+  from where it was shot.
 - Glow is an emissive MASK blurred and added to the frame (`src/shaders/GlowPass.ts`),
   keyed off emissive colour and deliberately not threshold bloom —
   bright-but-not-emissive surfaces must stay crisp.

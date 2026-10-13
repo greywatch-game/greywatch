@@ -27,14 +27,14 @@
  * line is `<tick> <kind> <fields>`, numbers printed in full, so two runs of
  * one seed diff line by line and a divergence is named by the first line that
  * differs rather than by a hash that moved. The kinds and the line format are
- * the C0 set (`BABYLON_EXIT.md` X2.5a) and are kept byte for byte: the ring's
+ * kept byte for byte: the ring's
  * presentation-only kinds — a footstep, a tracer, a hit, a hull's kick, a
  * rocket, a fire going out — are left out, being most of the file and
  * nothing `Match` sends. The lines are written between steps, outside the
  * timed region.
  *
  * **`--phases` hands the core a clock and turns its step timing on**
- * (`SimCoreOptions.timing`, `SimCore.timeSteps`, `BABYLON_EXIT.md` X2.5a C6)
+ * (`SimCoreOptions.timing`, `SimCore.timeSteps`)
  * — the timing the page's profiler files as `sim` and its five children — and
  * prints each phase's mean beside the tick. The core reads that clock inside
  * the timed region, twelve times a step, so the tick printed is the tick with

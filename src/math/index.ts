@@ -1,7 +1,6 @@
 /**
  * math/ — the game's own vector, quaternion, matrix and colour classes, under
- * Babylon's names so that moving a file off Babylon's math is an import change
- * (`BABYLON_EXIT.md` X1.1).
+ * Babylon's names so that moving a file off Babylon's math is an import change.
  * Owns: nothing of its own; it re-exports `vector.ts` and `color.ts`.
  *
  * **Nothing under `src/math/` may import `@babylonjs/core`** — except
