@@ -684,10 +684,10 @@ So **the core times its own step, with a clock its host INJECTS**
   SUMMED** (`addStepTiming`). The core overwrites its row each step and an
   `advance` may step more than once, so the host adds each step into one row
   as it runs (`MatchOptions.stepped`) and its answer (`Advanced.timing`) is the
-  sum; the page adds every answer into one held row (`Game.localTiming`) as it
+  sum; the page adds every answer into one held row (`LocalOwner.timing`) as it
   arrives — BETWEEN frames, where the profiler files nothing — and the next
   frame that steps files it at the top of `updateWorld`
-  (`Game.fileLocalTiming`, through `FrameProfile.fileTiming`) and empties it.
+  (`LocalOwner.step`, through `FrameProfile.fileTiming`) and empties it.
   So a benchmark's lead, several steps a frame, reads as all of them; at C4,
   before the sums, it read as one step of N. A summed row is one span made of
   pieces — `start` and each `at` the first piece's, `total` and each `ms` the
@@ -695,11 +695,12 @@ So **the core times its own step, with a clock its host INJECTS**
 - **A frame that HELD the world files nothing it did not step.** One that did
   not run `updateWorld` — a pause, the deploy screen — drops the held row, and
   the answers still owed to `advance`s posted before it are dropped as they
-  arrive (`passLocalClock`, `localTimingSkip` counted off `LocalMatch.owed`):
-  the next frame that steps may be seconds away, and a profiler handed those
-  steps then would charge them to it. **A benchmark SEGMENT's first frame drops
-  them the same way** (`Game.dropLocalTiming`, from `updateBench`) — see
-  "So a benchmark SEGMENT's first frame files no `sim` at all" below.
+  arrive (`LocalOwner.pass`, `LocalOwner.timingSkip` counted off
+  `LocalMatch.owed`): the next frame that steps may be seconds away, and a
+  profiler handed those steps then would charge them to it. **A benchmark
+  SEGMENT's first frame drops them the same way** (`LocalOwner.dropTiming`, from
+  `updateBench`) — see "So a benchmark SEGMENT's first frame files no `sim` at
+  all" below.
 - **The recording path allocates nothing, and that took one call rather than
   seven**: a double handed to a call a once-a-frame function does not inline is
   a heap number, and the per-phase `file` it replaced was ~660 B a frame
@@ -744,7 +745,7 @@ the last `lead` frame's steps summed (that leg's `lastSteps`, up to
 `leadSteps`; more if a Worker answered late) — a lead frame's several steps in
 a row whose own is one, which a segment's `sim` maximum would report as the
 fight's. So a frame that changes segment drops what is waiting and counts off
-the answers still owed (`Game.dropLocalTiming`, the held world's own
+the answers still owed (`LocalOwner.dropTiming`, the held world's own
 mechanism): each segment files only steps posted under it, and loses its LAST
 frame's to the next boundary, as any segment loses the frame after its end.
 
@@ -1025,8 +1026,8 @@ versions and a bit read from memory was wrong here. On the mid tier:
   it. Keep the setting false; `CLAUDE.md`'s conventions say why.
 - **A double crossing a call that is not inlined is still a heap number**, and
   the profiler's own filing was the worked example: `Game.fileSimTiming`'s
-  (`fileLocalTiming` since X2.5c) seven `file`s with doubles in were ~660 B a frame, which `fileTiming` (one
-  call, the timing row's arrays in) took to nothing.
+  (`LocalOwner.step`) seven `file`s with doubles in were ~660 B a frame, which
+  `fileTiming` (one call, the timing row's arrays in) took to nothing.
 
 What works is to put the per-ELEMENT work in a small method that the loop calls
 often enough to reach TurboFan, with no double crossing its boundary — objects

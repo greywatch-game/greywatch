@@ -194,7 +194,7 @@ export class LocalMatch {
    * How many posted `advance`s the host has not answered yet — `behind`
    * counted in calls rather than seconds. The owner reads it to know how many
    * answers still to come were posted before a moment of its own (the world
-   * held, `Game.passLocalClock`). 0 once the host is lost.
+   * held, `LocalOwner.pass`). 0 once the host is lost.
    */
   get owed(): number {
     return this.owedAdvances;

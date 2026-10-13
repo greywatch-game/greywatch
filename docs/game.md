@@ -46,9 +46,13 @@ Worker (`server/localMatchWorker.ts`), proved up by answering a `settle`, or —
 under `?simpage`, or when the Worker does not come up — a `MessageChannel` in
 the page's own thread, reached through the one dynamic `import()` of
 `server/localMatch.ts` in `src/`. The boot's console line says which and why,
-and `prof.setSimMode` puts it in every capture. `Game` reads the host's
-`LocalMatch` off `localHost.match` every time it asks (`local`) rather than
-holding one, because the host can be REPLACED (below).
+and `prof.setSimMode` puts it in every capture. `Game` hands the host to
+`net/LocalOwner.ts`, which holds everything OWNING it means — the begun line,
+the clock's `step` and `pass`, the step timing waiting to be filed, a lost
+host replaced — and answers `Game` through four hooks (a timing to file, a
+round failed, the host lost, its replacement up). `Game` reads the
+`LocalMatch` off `localOwner.match` every time it asks rather than holding
+one, because the host can be REPLACED (below).
 
 **The OWNER's channel is what owning buys, and it is not a `ClientMessage`**
 (`src/net/LocalMatch.ts`, the words in `src/net/localWire.ts`). Per round,
@@ -80,20 +84,20 @@ picture. The benchmark posts one advance per STEP and holds nothing back
 (`advance` is seconds, and one tick's worth is exactly one step).
 
 **Everything a frame did not step is handed over as HELD.** After the state's
-arm, `tick` calls `passLocalClock(seen)`, which posts `hold` for the frame's
-real time less what `updateWorld` advanced — a pause, the deploy screen, the
-slack's remainder, what `MAX_FRAME_DT` cut off a long frame, a benchmark's
-LOOK — so the match's clock passes with nothing stepped and its snapshot stamps
-stay on the wall clock the client's offset is sampled against (`Match.hold`'s
-argument). Only once the session is seated: before the welcome there is no
-round on the host to hold. A frame that did not run `updateWorld` also drops
-the step timing waiting to be filed and counts off the answers still owed for
-advances posted before it (`localTimingSkip`, through `dropLocalTiming`), so
-the profiler never charges a resumed frame with steps taken seconds earlier —
-and a benchmark segment's first frame does the same, so a segment never files
-the last one's steps; otherwise every answer's timing
-is SUMMED into one row (`localTiming`) and filed as the `sim` root by the next
-frame that steps (`fileLocalTiming`, `docs/profiling.md`).
+arm, `tick` calls `LocalOwner.pass`, which posts `hold` for the frame's real
+time less what `updateWorld` advanced — a pause, the deploy screen, the slack's
+remainder, what `MAX_FRAME_DT` cut off a long frame, a benchmark's LOOK — so the
+match's clock passes with nothing stepped and its snapshot stamps stay on the
+wall clock the client's offset is sampled against (`Match.hold`'s argument).
+Only once the session is seated: before the welcome there is no round on the
+host to hold. A frame that did not run `updateWorld` also drops the step timing
+waiting to be filed and counts off the answers still owed for advances posted
+before it (`LocalOwner.timingSkip`, through `LocalOwner.dropTiming`), so the
+profiler never charges a resumed frame with steps taken seconds earlier — and a
+benchmark segment's first frame does the same, so a segment never files the last
+one's steps; otherwise every answer's timing is SUMMED into one row
+(`LocalOwner.timing`) and filed as the `sim` root by the next frame that steps
+(`LocalOwner.step`, `docs/profiling.md`).
 
 **WHO HOSTS is asked as two getters, and only about AUTHORITY.**
 `remoteRound` (a session that is not `local`) and `localRound` (one that is) —
@@ -146,19 +150,19 @@ world.
 
 **A host that dies is SAID, and REPLACED.** A port into a dead Worker says
 nothing, so `LocalMatch`'s watchdog calls the host lost on SILENCE
-(`docs/multiplayer.md`, "The local transport"). `wireLocal`, wired once per
-HOST because a host outlives every round on it, hears three things: a step's
-report (`onAdvanced`, gated on `localBegun` so the last match's late answers
-are not this round's), a posted call that failed (`onFailed`) and the host gone
-(`onLost`). A failure under the round standing — or the local session's port
-closing, or its join refused — ends that round through `failLocalRound`, which
-leaves for the menu with a toast: there is no authority left to play it, the
-fight having lived in the host. A loss then REPLACES the host (`rehostLocal`,
-`MatchHost.replace`: the old one torn down, a wedged Worker terminated, a new
-one opened the boot's way and re-wired), up to `CONFIG.net.localRehosts` times
-a page. A round asked for while the replacement is coming up fails at once,
-and past the bound, or when a replacement fails to open, the toast asks for a
-reload (`localHostState`).
+(`docs/multiplayer.md`, "The local transport"). `LocalOwner.wire`, wired once
+per HOST because a host outlives every round on it, hears three things: a step's
+report (`onAdvanced`, gated on `LocalOwner.begun` so the last match's late
+answers are not this round's), a posted call that failed (`onFailed`) and the
+host gone (`onLost`). A failure under the round standing — or the local
+session's port closing, or its join refused — ends that round through
+`failLocalRound`, which leaves for the menu with a toast: there is no authority
+left to play it, the fight having lived in the host. A loss then REPLACES the
+host (`LocalOwner.rehost`, `MatchHost.replace`: the old one torn down, a wedged
+Worker terminated, a new one opened the boot's way and re-wired), up to
+`CONFIG.net.localRehosts` times a page. A round asked for while the replacement
+is coming up fails at once, and past the bound, or when a replacement fails to
+open, the toast asks for a reload (`LocalOwner.state`).
 
 **Until X2.5c the page hosted a CORE rather than a match**, and the shape is
 kept here as history because each piece of it is a thing a refactor might
@@ -189,9 +193,9 @@ cannot fail by its Worker, which falls back to the page, only by the in-page
 module's fetch failing too — so nothing in this file is written twice for a
 machine that never got one, and there is no init state, no `ready` flag and no
 "has it arrived yet" question anywhere below. The host is the one of the three
-that can be REPLACED after the boot (`rehostLocal`, above), which is why `Game`
-keeps it as `localHost` and reads its match off it rather than holding the
-match.
+that can be REPLACED after the boot (`LocalOwner.rehost`, above), which is why
+`LocalOwner` keeps the host and everything reads the match off it rather than
+holding the match.
 
 **The engine used to be built here**, back when it was a `WebGLEngine` with a
 synchronous constructor. WebGPU's is not — an adapter and a device are both
@@ -222,7 +226,7 @@ and each other, so most of its length *is* its job — and splitting the wiring 
 system→system edges the rule above spends itself preventing. What may leave is a
 cluster of **private fields that answers only to itself**: nothing else in the
 file reads them, and the methods over them touch no system, no mesh and no
-frame. There are two worked examples. `net/HitCredits.ts` is the smaller and
+frame. There are three worked examples. `net/HitCredits.ts` is the smaller and
 the plainer: the queue of rounds this client has already cued a hitmarker for
 was one field and three methods that no line outside them touched, so the rule
 that a landed round is announced ONCE is now stated in one file that flashes
@@ -230,7 +234,14 @@ nothing, plays nothing and never reads the wire — `Game` spends the answer and
 draws the cue, which is the two halves below staying behind exactly as they
 should. `net/RegionBook.ts` is the larger — the region list, its one
 read, the player's pick, the automatic pick and the pings ranking it were six
-fields no line outside the five lobby methods over them ever touched. What may
+fields no line outside the five lobby methods over them ever touched.
+`net/LocalOwner.ts` is the third, and the one with HOOKS: the page's ownership
+of its own match was eight fields whose methods touched only the owner's
+channel, so the hold accounting and the timing skip are one file now — and
+the two halves stayed behind as four hooks, `fileTiming` (the profiler, which
+`Game` files into) and `roundFailed`/`hostLost`/`replaced` (the toast and the
+menu, which `Game` draws). Four is the ceiling of that shape: a cluster that
+needs more callbacks than that is reaching across systems. What may
 **not** leave is anything whose methods reach across systems, however big it
 gets: the netplay client is the biggest cluster in the file and touches ~35 of
 its members across a dozen systems, so extracting it would hand a constructor
@@ -457,7 +468,7 @@ site:
 | `hud.setFps`, `profChip.update` | every state | they are instruments, and a frame rate that stops being reported when a menu opens cannot be investigated |
 | `updateRoundBehind` | in a SERVER's round, the states whose `ScreenSpec.roundBehind` says so | the authority's round carries on behind the screen (the page's own is held there instead); BEFORE the switch, because `dt` has already passed under the screen that was up (`docs/states.md`) |
 | *the state's own arm* | | |
-| `passLocalClock` | every state, in the page's own match once seated | after the arm, so what `updateWorld` advanced is counted first: the rest of the frame's real time is posted as `hold`, so the match's clock stays on the wall's and the client's offset never sees a hold (`docs/multiplayer.md`, "Holding the world") |
+| `LocalOwner.pass` | every state, in the page's own match once seated | after the arm, so what `updateWorld` advanced is counted first: the rest of the frame's real time is posted as `hold`, so the match's clock stays on the wall's and the client's offset never sees a hold (`docs/multiplayer.md`, "Holding the world") |
 | `netShots.clear` | every state | the wire's shots a state did not draw are DROPPED, or the menu's worth leave the barrel on the next round's first frame |
 | `hud.update` | every state, at `dt` 0 under a held world | a pause over the page's own match freezes the killfeed with the world; one over a server's round holds nothing, so neither does the feed |
 | `post.update`, `sky.update`, `setCloudShadow`, `pushLightning` | every state | the sky and the weather do not stop for a menu; in a server's match the clouds' turn and the lightning run on the authority's clock, so every client agrees |

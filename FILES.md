@@ -488,10 +488,10 @@ src/
     Game.ts             # Orchestrator + main loop + all the PAGE's wiring.
                         #   Simulates no round: EVERY round is a match
                         #   (X2.5c C4) — a server's, or the page's own
-                        #   (`local`, a LocalMatch: opened per round by
-                        #   `openLocalRound`, stepped only by `updateWorld`'s
-                        #   `advance`, its held time handed over by
-                        #   `passLocalClock`) — joined through one NetSession
+                        #   (`localOwner`, net/LocalOwner.ts: opened per
+                        #   round by `openLocalRound`, stepped only from
+                        #   `updateWorld`, its held time handed over from
+                        #   `tick`) — joined through one NetSession
                         #   and heard through ONE switch (`onNetEvent`). The
                         #   player, their hull and their gun are PREDICTED
                         #   here and reported. The authority questions are
@@ -2068,6 +2068,13 @@ src/
                       #   host is said (`onLost`);
                       #   `behind`, the owner's back-pressure (seconds). Not a
                       #   ClientMessage: no remote client can say it
+    LocalOwner.ts     #   The page's OWNERSHIP of its own match: the host
+                      #   (replaced when lost, up to CONFIG.net.localRehosts),
+                      #   the begun line, `step` (the one door the clock is
+                      #   advanced through, under the slack) and `pass` (the
+                      #   rest of the frame as HELD), the summed step timing
+                      #   and its skip count. Answers Game through four hooks;
+                      #   imports no core/ module
     matchHost.ts      #   Where the page's own match runs: `openMatchHost`,
                       #   the boot's choice — a Worker proved up by a settle,
                       #   or (?simpage, or a Worker that did not come up)

@@ -7,9 +7,9 @@
  * round is a MATCH, played by a `Match` (`server/Match.ts`, running the
  * simulation core the authority always runs) — a server's, or the page's
  * OWN: a `Match` this page hosts in a Worker or on a channel in its own
- * thread (`local`, a `LocalMatch`), opened per round by `openLocalRound`,
- * stepped once a frame in `updateWorld` and handed the time it held by
- * `passLocalClock`. Either way the page joins it through the same
+ * thread (`localOwner`, `net/LocalOwner.ts`), opened per round by
+ * `openLocalRound`, stepped once a frame in `updateWorld` and handed the time
+ * it held from `tick`. Either way the page joins it through the same
  * `NetSession`, sends its player's acts as messages the authority validates,
  * and hears what it decided through one switch, `onNetEvent`, which ends in
  * the presentation methods for the player (`playerHit`, `playerDown`,
@@ -121,7 +121,7 @@ import { FrameProfile } from "./FrameProfile";
 import { PipelineWarmup } from "./PipelineWarmup";
 import { P } from "./profilePhases";
 import { NetSession, type LocalGun, type LocalHull } from "../net/NetSession";
-import type { LocalMatch } from "../net/LocalMatch";
+import { LocalOwner } from "../net/LocalOwner";
 import type { MatchHost } from "../net/matchHost";
 import { NetSoldier } from "../entities/NetSoldier";
 import { clearRequestTimings, fetchMatches } from "../net/lobby";
@@ -195,7 +195,7 @@ import {
 import type { KillLedger } from "../systems/killRules";
 import { GrenadeFx } from "../systems/GrenadeFx";
 import { GrenadeSystem, type BlastGround } from "../systems/GrenadeSystem";
-import { SIM_PHASES, addStepTiming, clearStepTiming, newStepTiming, type SimPhase } from "../sim/stepTiming";
+import { SIM_PHASES, type SimPhase } from "../sim/stepTiming";
 import { PhysicsWorld, type HavokInstance } from "../systems/PhysicsWorld";
 import { RagdollSystem } from "../systems/RagdollSystem";
 import { ReflectionSystem } from "../systems/ReflectionSystem";
@@ -292,9 +292,9 @@ const NO_SOLDIERS: readonly NetSoldier[] = [];
 
 /**
  * The profiler slot each of the core's timed phases is filed into
- * (`fileLocalTiming`, off the page's own match). A `Record` over the core's
- * phase names, so a phase the core adds does not compile here until it has a
- * slot.
+ * (`LocalOwnerHooks.fileTiming`, off the page's own match). A `Record` over the
+ * core's phase names, so a phase the core adds does not compile here until it
+ * has a slot.
  */
 const SIM_SLOT: Readonly<Record<SimPhase, number>> = {
   conquest: P.simConquest,
@@ -335,9 +335,10 @@ interface BenchRun {
   /** Fight steps handed to the match — one `advance` each. */
   steps: number;
   /**
-   * The segment the last frame was labelled with, -1 before the first: a
-   * frame that changes it drops the step timing still to be filed
-   * (`dropLocalTiming`), which belongs to the segment it was posted under.
+   * The segment the last frame was labelled with, -1 before the first: a frame
+   * that changes it drops the step timing still to be filed
+   * (`LocalOwner.dropTiming`), which belongs to the segment it was posted
+   * under.
    */
   segment: number;
   /** The player's own tier, put back when the run ends. */
@@ -553,63 +554,24 @@ export class Game {
   private sfx: Sfx;
   private mapBuilder: MapBuilder;
   /**
-   * **The page's own match host**: the OWNER's
-   * channel to a `Match` this page hosts — in a Worker, or on a channel in
-   * this thread (`src/net/matchHost.ts`). Every round that is not a server's
-   * is one of its matches, opened, begun and closed from here
-   * (`openLocalRound`, `leaveMatch`), and joined through a `NetSession`
-   * exactly as a server's is — so the round is decided over there, by the
-   * same `Match` a server runs, and reaches this page only as the wire.
+   * **The page's own match**, and this page's OWNERSHIP of it
+   * (`net/LocalOwner.ts`): the host — a `Match` in a Worker, or on a channel
+   * in this thread (`src/net/matchHost.ts`) — and everything owning it means.
+   * Every round that is not a server's is one of its matches, opened, begun
+   * and closed from here (`openLocalRound`, `leaveMatch`), and joined
+   * through a `NetSession` exactly as a server's is — so the round is decided
+   * over there, by the same `Match` a server runs, and reaches this page only
+   * as the wire.
    *
    * What OWNING it buys is the clock: the match steps only when this page
-   * hands it time (`advance`, from `updateWorld` — the one door), so a pause
-   * and the deploy screen genuinely hold the world, and the time a frame does
-   * not step is handed over as HELD (`passLocalClock`) so the match's clock
-   * stays on the wall's and the client's offset never sees a hold.
-   *
-   * The HOST is replaced when it is lost (`rehostLocal`), so this is read
-   * off it every time rather than held — a round captures the one it opened
-   * on (`openLocalRound`), and nothing else may keep one.
+   * hands it time (`LocalOwner.step`, from `updateWorld` — the one door), so
+   * a pause and the deploy screen genuinely hold the world, and the time a
+   * frame does not step is handed over as HELD (`LocalOwner.pass`, from
+   * `tick`) so the match's clock stays on the wall's and the client's offset
+   * never sees a hold. Its channel is read off it every time
+   * (`localOwner.match`), because a lost host is replaced.
    */
-  private get local(): LocalMatch {
-    return this.localHost.match;
-  }
-  /** Where the page's own match runs, and the way to replace it (`rehostLocal`). */
-  private localHost: MatchHost;
-  /**
-   * The match `local` holds has answered this round's `begin` — so every
-   * `advanced` answer from here on is about THIS round. The owner's port
-   * answers in posting order, which is what makes the begin's answer the
-   * line: anything before it is the last match's (`wireLocal`).
-   */
-  private localBegun = false;
-  /**
-   * Every timed step the match has reported and this page has not filed yet
-   * (`Advanced.timing`), SUMMED into one row on this page's clock
-   * (`addStepTiming`) — empty while `total` < 0. An answer arrives BETWEEN
-   * frames, where the profiler files nothing, so it waits here for the next
-   * frame that steps (`fileLocalTiming`), which files it and empties it; a
-   * frame whose posts were answered twice before it (a benchmark's lead-in
-   * posts one `advance` per step) files them all. One row for the life of
-   * the page, written in place: the profiler allocates nothing per frame.
-   */
-  private readonly localTiming = newStepTiming();
-  /**
-   * How many `advance` answers still to come were posted BEFORE the world
-   * was last held (`passLocalClock`) or a benchmark segment last began
-   * (`updateBench`): their timing is dropped as it arrives, since filing it
-   * on the first frame after a pause would charge that frame with steps
-   * taken seconds earlier, and on a segment's first frame would charge the
-   * segment with the last one's (`dropLocalTiming`).
-   */
-  private localTimingSkip = 0;
-  /** `updateWorld` advanced the page's own match this frame — read and reset by `passLocalClock`. */
-  private localWorldRan = false;
-  /**
-   * Seconds of this frame handed to the match as STEPPED (`advance`), so
-   * `passLocalClock` hands it the rest as held. Zeroed there, once a frame.
-   */
-  private localStepped = 0;
+  private readonly localOwner: LocalOwner;
   /**
    * Every round's resolve — the simulation half —
    * and on this page only ever a PREDICTION: this client's own shot, shell
@@ -1432,9 +1394,17 @@ export class Game {
     // thread (`src/net/matchHost.ts`), chosen by
     // the boot and handed in as `havok` and `engine` are. Every round that is
     // not a server's is a match on it (`openLocalRound`).
-    this.localHost = local;
+    this.localOwner = new LocalOwner(local, {
+      fileTiming: (timing) => this.prof.fileTiming(P.sim, SIM_SLOTS, timing),
+      roundFailed: (reason) => {
+        if (this.localRound) this.failLocalRound(reason, this.net!);
+      },
+      hostLost: (reason) => {
+        if (this.localRound) this.failLocalRound(reason, this.net!);
+      },
+      replaced: (host) => this.prof.setSimMode(host.mode),
+    });
     this.prof.setSimMode(local.mode);
-    this.wireLocal();
     this.engine.customAnimationFrameRequester = this.frameCap.requester;
     this.scene = new Scene(this.engine);
     // The `Scene` constructor sets this true, and it is held FALSE: Babylon
@@ -3566,9 +3536,9 @@ export class Game {
     }
 
     // The page's own match is handed the frame's clock: what `updateWorld`
-    // stepped, and the rest of the frame as time it HELD (`passLocalClock`).
+    // stepped, and the rest of the frame as time it HELD (`LocalOwner.pass`).
     // After the arm, so whatever this frame stepped is counted first.
-    this.passLocalClock(seen);
+    this.localOwner.pass(seen, this.localRound, this.localRound && this.net!.seated);
 
     // Whatever the wire queued for a netplay frame that this state did not
     // run. It is DROPPED rather than carried: a `fire` event is a moment, and
@@ -7144,21 +7114,20 @@ export class Game {
    */
   private openLocalRound(seed: number): void {
     this.leaveMatch();
-    const host = this.local;
+    const host = this.localOwner.match;
     // Its rigs built to this round's own roster, so `buildRound`'s
     // `setFielded` has nothing to rebuild unless the viewer's side moved.
     const net = new NetSession(this.scene, this.mats, true, perTeamOf(this.mapDef.layout));
     this.net = net;
     this.wireNet(net);
-    this.localBegun = false;
-    clearStepTiming(this.localTiming);
+    this.localOwner.reset();
     const failed = (err: unknown): void =>
       this.failLocalRound(err instanceof Error ? err.message : String(err), net);
     host.open(this.mapDef.id).catch(failed);
     host
       .begin({ seed, difficulty: this.difficulty })
       .then(() => {
-        if (this.net === net) this.localBegun = true;
+        if (this.net === net) this.localOwner.began();
       })
       .catch(failed);
     const watch = this.bench !== null;
@@ -7172,82 +7141,6 @@ export class Game {
   }
 
   /**
-   * What the match host's own channel says that is not an answer to a call:
-   * a step's report, a call nobody awaited that failed, and the host gone.
-   * Wired once per HOST — a host outlives every round on it, and is replaced
-   * only when it is lost (`rehostLocal`).
-   */
-  private wireLocal(): void {
-    // A new host owes nothing posted to the one it replaced.
-    this.localTimingSkip = 0;
-    this.local.onAdvanced = (advanced) => {
-      // Posted before the world was last held — counted off first, whichever
-      // match it was posted to, since `LocalMatch.owed` counted it.
-      if (this.localTimingSkip > 0) {
-        this.localTimingSkip--;
-        return;
-      }
-      // Anything before the round's `begin` was answered is the last match's.
-      if (!this.localBegun) return;
-      if (advanced.timing) addStepTiming(this.localTiming, advanced.timing);
-    };
-    // A posted call that failed — gated as `onAdvanced` is, because the
-    // last match's last `advance` can be answered after this round opened,
-    // and a failure there is about a match already closed.
-    this.local.onFailed = (message) => {
-      console.error(`[local match] ${message}`);
-      if (this.localRound && this.localBegun) this.failLocalRound(message, this.net!);
-    };
-    // The host gone — final for THIS host: `LocalMatch` refuses every call
-    // after it. The round on it (if any) ends, since its whole fight lived
-    // over there, and then the host is replaced — unless this page has
-    // already replaced it as often as it may.
-    this.local.onLost = (reason) => {
-      console.error(`[local match] lost: ${reason}`);
-      this.localHostState = this.localRehosts < CONFIG.net.localRehosts ? "restarting" : "gone";
-      if (this.localRound) this.failLocalRound(reason, this.net!);
-      if (this.localHostState === "restarting") this.rehostLocal();
-    };
-  }
-
-  /**
-   * Whether the page's own match host can take a round: `up`; `restarting`
-   * — lost, and its replacement still coming up (`rehostLocal`), so a round
-   * asked for now fails at once on the lost one; or `gone` — lost past
-   * `CONFIG.net.localRehosts`, or its replacement failed to open, for the
-   * life of the page.
-   */
-  private localHostState: "up" | "restarting" | "gone" = "up";
-  /** How many times this page has replaced its match host (`rehostLocal`). */
-  private localRehosts = 0;
-
-  /**
-   * Replaces a LOST match host (`MatchHost.replace`): the old one torn down,
-   * a new one opened the boot's way and wired in its place, so the next
-   * offline round is played on it. The round that was on the old one is
-   * already over (`wireLocal`'s `onLost`) — there is nothing to carry across,
-   * since the fight lived in the host that died.
-   */
-  private rehostLocal(): void {
-    this.localRehosts++;
-    this.localHost.replace().then(
-      (host) => {
-        this.localHost = host;
-        this.prof.setSimMode(host.mode);
-        this.wireLocal();
-        this.localHostState = "up";
-        console.info(
-          `[local match] replaced; the simulation runs in ${host.mode === "worker" ? "a Worker" : "the page"}: ${host.why}`,
-        );
-      },
-      (err: unknown) => {
-        console.error("[local match] could not be replaced:", err);
-        this.localHostState = "gone";
-      },
-    );
-  }
-
-  /**
    * The page's own match failed under the round `net` is playing — a step
    * that threw, a call refused, the host's Worker dead or silent. Said, and
    * the round left: there is no authority left to play it. A stale round's
@@ -7258,9 +7151,9 @@ export class Game {
     console.error(`[local match] the round stopped: ${reason}`);
     this.enterMenu();
     this.hud.toast(
-      this.localHostState === "gone"
+      this.localOwner.state === "gone"
         ? "the offline match has stopped — reload the page to play again"
-        : this.localHostState === "restarting"
+        : this.localOwner.state === "restarting"
           ? "the offline match stopped — restarting it, play again in a moment"
           : `the round stopped — ${reason}`,
     );
@@ -7528,13 +7421,7 @@ export class Game {
     // death cam's body alone rather than freed meshes until the next round
     // files its own — which an editor session after F2 never does.
     if (net) this.installBodyPools();
-    if (net?.local) {
-      this.localBegun = false;
-      // Posted behind everything the round said: the owner's port runs it
-      // after the last `advance`. A host already lost refuses it, and that
-      // was said when it was lost.
-      this.local.close().catch(() => {});
-    }
+    if (net?.local) this.localOwner.close();
     // Nothing can claim these now, and dropping them at the boundary is what
     // stops that being a property of the window's length.
     this.hitCredits.clear();
@@ -8436,7 +8323,7 @@ export class Game {
     // A frame is `world` > `net` > these, and what is MISSING from it (the
     // bots, the flags) is missing because the authority ran it — in its own
     // process, or in the page's own match, whose step the profiler files as
-    // the `sim` root (`fileLocalTiming`).
+    // the `sim` root (`LocalOwnerHooks.fileTiming`).
     this.prof.begin(P.net);
     this.updateNet(dt);
     this.prof.end(P.net);
@@ -8669,83 +8556,15 @@ export class Game {
     // and never awaited: the match answers between frames, and what it says
     // reaches this frame or the next as the wire, exactly as a server's does.
     //
-    // **Only what fits under the slack is stepped** (`CONFIG.net.
-    // localSlack`): a frame posts as much of its `dt` as keeps the match's
-    // unanswered time under it, and the rest is HELD (`passLocalClock`, which
-    // hands over whatever this did not step), so a device the match cannot
-    // keep up on plays the fight slower than real time rather than further
-    // and further behind its picture. Never the benchmark's, which posts one
-    // advance per step and holds nothing back.
-    if (this.localRound) {
-      this.localWorldRan = true;
-      this.fileLocalTiming();
-      const step = this.bench
-        ? dt
-        : Math.min(dt, CONFIG.net.localSlack - this.local.behind);
-      if (step > 0) {
-        this.local.advance(step, this.prof.armed);
-        this.localStepped += step;
-      }
-    }
+    // **Only what fits under the slack is stepped** (`CONFIG.net. localSlack`):
+    // a frame posts as much of its `dt` as keeps the match's unanswered time
+    // under it, and the rest is HELD (`LocalOwner.pass`, which hands over
+    // whatever this did not step), so a device the match cannot keep up on
+    // plays the fight slower than real time rather than further and further
+    // behind its picture. Never the benchmark's, which posts one advance per
+    // step and holds nothing back.
+    if (this.localRound) this.localOwner.step(dt, this.bench !== null, this.prof.armed);
     this.updateNetWorld(dt);
-  }
-
-  /**
-   * Every timed step the match has reported since the last filing, summed
-   * (`localTiming`), filed as this frame's `sim` root
-   * (`FrameProfile.fileTiming`) — the steps' own phases on this page's clock,
-   * however many frames ago their answers arrived — and emptied. Most frames
-   * have exactly one answer to file; a benchmark's lead-in has several.
-   */
-  private fileLocalTiming(): void {
-    const timing = this.localTiming;
-    if (timing.total < 0) return;
-    this.prof.fileTiming(P.sim, SIM_SLOTS, timing);
-    clearStepTiming(timing);
-  }
-
-  /**
-   * Drops the step timing not yet filed — what has arrived (`localTiming`)
-   * and every answer still owed for an `advance` already posted
-   * (`localTimingSkip`) — because the frame that would file it is not the
-   * frame those steps belong to: the first after a HELD world
-   * (`passLocalClock`), or the first of a new benchmark segment
-   * (`updateBench`).
-   */
-  private dropLocalTiming(): void {
-    clearStepTiming(this.localTiming);
-    this.localTimingSkip = this.local.owed;
-  }
-
-  /**
-   * Hands the page's own match the rest of this frame's clock: whatever of
-   * the `seen` seconds since the last frame `updateWorld` did not step, as
-   * time the match HELD (`LocalMatch.hold`) — its clock passes and nothing
-   * steps. A pause, the deploy screen, the part of a long frame `tick`'s
-   * `dt` clamp cut off and a benchmark's vantages are all that. Why the clock
-   * must pass at all is `Match.hold`'s to argue: so the stamps stay on the
-   * wall clock and no client needs a path of its own for a hold.
-   *
-   * Only once the session is SEATED: before the welcome there is no round
-   * standing on the host to hold (`begin` is still building it), and the
-   * clock is anchored at the end of that build anyway.
-   *
-   * **A frame that did not run `updateWorld` HELD the world**, and the step
-   * timing still waiting to be filed (`localTiming`) — or still to be
-   * answered for an `advance` posted before it — is dropped: the next frame
-   * that steps may be seconds away, and a profiler handed those steps then
-   * would charge them to it.
-   */
-  private passLocalClock(seen: number): void {
-    const stepped = this.localStepped;
-    const ran = this.localWorldRan;
-    this.localStepped = 0;
-    this.localWorldRan = false;
-    if (!this.localRound) return;
-    if (!ran) this.dropLocalTiming();
-    if (!this.net!.seated) return;
-    const held = seen - stepped;
-    if (held > 0) this.local.hold(held);
   }
 
   /**
@@ -8960,7 +8779,7 @@ export class Game {
     // tick less this one (`FightHash`), folded where the match runs — no
     // wire event carries a bot's award. Posted behind the round's `begin`,
     // and ahead of the first fight step.
-    this.local.markFight().catch((err: unknown) => console.error("[bench] markFight:", err));
+    this.localOwner.match.markFight().catch((err: unknown) => console.error("[bench] markFight:", err));
     this.cameraSys.reset(0);
     this.go("bench");
   }
@@ -8990,12 +8809,12 @@ export class Game {
       this.endBench(true);
       return;
     }
-    // The filing lags the steps by a frame (`fileLocalTiming`), so the first
+    // The filing lags the steps by a frame (`LocalOwner.step`), so the first
     // frame of a segment would file the last frame of the one before — a
     // lead leg's several summed steps in a fight row whose own is one.
     if (cue.segment !== run.segment) {
       run.segment = cue.segment;
-      this.dropLocalTiming();
+      this.localOwner.dropTiming();
     }
     this.prof.setSegment(cue.segment);
     if (cue.kind === "fight") {
@@ -9123,7 +8942,7 @@ export class Game {
     run.ending = true;
     this.prof.setSegment(-1);
     this.prof.halt();
-    this.local.fight().then(
+    this.localOwner.match.fight().then(
       (fight) => this.finishBench(run, completed, fight),
       (err: unknown) => {
         console.error("[bench] the fight's hash could not be read:", err);

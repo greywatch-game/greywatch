@@ -290,7 +290,7 @@ one).
 **In the page's own match what holds the world is not the pause.** The match
 steps only through `updateWorld` (`docs/game.md`, "Offline, the round is the
 page's own match"), and `tick`'s `paused` arm does not call it, so nothing
-posts an `advance`; `passLocalClock` hands the frame's real time over as a
+posts an `advance`; `LocalOwner.pass` hands the frame's real time over as a
 `hold`, so the match's clock stays on the wall's and the client's offset never
 sees the pause; and with nothing stepped nothing is relayed — no snapshot, no
 event. Everything else still renders, so the round reads as held rather than

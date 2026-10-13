@@ -1363,22 +1363,22 @@ common but the `postMessage`:
   answer (`Advanced`) carries the steps taken, whether the round ended, and —
   when asked — every step's timing SUMMED on the page's clock, each step added
   as it runs through `MatchOptions.stepped`, since the core's own row is
-  overwritten per step. `Game` reads only the timing: it adds each answer's
-  into one row (`localTiming`) for the next frame that steps to file
-  (`docs/profiling.md`), skipping the answers counted off by `localTimingSkip`
-  (owed when the world was held, or when a benchmark segment began) and any that arrive before the round's
-  `begin` was answered (`localBegun`). Nothing on the page reads `steps` or
-  `ended` — the round's end is heard off the wire's `roundover`, on the
-  person's port (`Game.endRound`). A `hold`'s `done` finds nobody waiting and
-  is dropped.
-  Each of the two is ONE held message rewritten per post, so the per-frame
-  calls allocate nothing of their own, and `LocalMatch.behind` sums the
-  SECONDS the `advance`s still unanswered carry — the owner's back-pressure,
-  since a host slower than the page is otherwise a queue that grows a call a
-  frame. The page steps only what fits under `CONFIG.net.localSlack` and
-  holds the rest, so the fight is never more than that behind the picture. The fight is
-  folded off `MatchOptions.hear`, an in-process ear on every drain, because no
-  wire event carries a bot's award.
+  overwritten per step. `Game` reads only the timing: it adds each answer's into
+  one row (`LocalOwner.timing`) for the next frame that steps to file
+  (`docs/profiling.md`), skipping the answers counted off by
+  `LocalOwner.timingSkip` (owed when the world was held, or when a benchmark
+  segment began) and any that arrive before the round's `begin` was answered
+  (`LocalOwner.begun`). Nothing on the page reads `steps` or `ended` — the
+  round's end is heard off the wire's `roundover`, on the person's port
+  (`Game.endRound`). A `hold`'s `done` finds nobody waiting and is dropped. Each
+  of the two is ONE held message rewritten per post, so the per-frame calls
+  allocate nothing of their own, and `LocalMatch.behind` sums the SECONDS the
+  `advance`s still unanswered carry — the owner's back-pressure, since a host
+  slower than the page is otherwise a queue that grows a call a frame. The page
+  steps only what fits under `CONFIG.net.localSlack` and holds the rest, so the
+  fight is never more than that behind the picture. The fight is folded off
+  `MatchOptions.hear`, an in-process ear on every drain, because no wire event
+  carries a bot's award.
 - **A PERSON's port**, dialled by the owner (`LocalMatch.dial`) and held by
   the page's own `Connection` (`JoinOptions.dial`, `src/net/transport.ts`'s
   `portTransport`): the protocol's JSON text both ways, the `join` read off it
@@ -1439,7 +1439,7 @@ genuinely dies or wedges raises nothing — only its silence says so.
 Lost is final FOR THAT HOST and raised once (`onLost`): every awaited call
 rejects, every later call rejects at once and posts nothing, and a later
 `dial` hears its port close — what a socket to a dead server hears. **The
-page then REPLACES it** (`Game.rehostLocal`, `MatchHost.replace`): the round
+page then REPLACES it** (`LocalOwner.rehost`, `MatchHost.replace`): the round
 that was on it ends, since its fight lived in the host that died, the old
 host is torn down (a wedged Worker terminated, not left spinning a core),
 and a new one is opened the boot's way, so the next offline round plays on

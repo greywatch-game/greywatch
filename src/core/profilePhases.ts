@@ -57,7 +57,7 @@ export const PHASES = [
    * (`FrameProfile.fileTiming`) — so the brackets are the core's and the
    * slots are this list's. Steps that one frame files are SUMMED — every
    * step of one `advance` by the local match (`server/localMatch.ts`), every
-   * answer since the last filing by the page (`Game.localTiming`) — so a
+   * answer since the last filing by the page (`LocalOwner.timing`) — so a
    * benchmark's lead, several steps a frame, reads as all of them.
    *
    * **It is a ROOT**: with the match in a Worker the step runs on

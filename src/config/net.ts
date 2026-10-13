@@ -108,7 +108,7 @@ export const net = {
 
   /**
    * How many times a page may REPLACE its own match host after losing one
-   * (`Game.rehostLocal`, `MatchHost.replace`) before it stops trying and
+   * (`LocalOwner.rehost`, `MatchHost.replace`) before it stops trying and
    * asks for a reload.
    *
    * A lost host is a Worker that died or wedged — out of memory, a loop —

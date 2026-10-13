@@ -46,7 +46,7 @@ export interface MatchHost {
   why: string;
   /**
    * Ends this host for good and opens a fresh one the boot's way — for an
-   * owner whose host was LOST (`LocalMatch.onLost`; `Game.rehostLocal`). The
+   * owner whose host was LOST (`LocalMatch.onLost`; `LocalOwner.rehost`). The
    * old one is torn down first: a wedged Worker is terminated rather than
    * left spinning a core, and an in-page host's channel is closed. The new
    * one is chosen as at boot, by the same options.
