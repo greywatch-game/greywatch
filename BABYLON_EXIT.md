@@ -1540,7 +1540,8 @@ wire comes later, for both at once, and only if a profiler capture asks for it.
     tick. Check that it is.
   - The bench drives the local match. Its fight hash comes back over the owner
     channel, after a `settle`.
-- **C5, delete.**
+- **C5, delete.** **LANDED** (d6183c0, 8fbadcc, 260382a; review fixes
+  2e1384a, f21c726, f4acf08, 900ce21, 1cf8e61, 0e83c0d, fa091e5).
   - `simHost.ts`, `simWorker.ts`, `hostWire.ts`, `commandCodec.ts`,
     `publication.ts`.
   - `frame.ts`, `mirror.ts` and `simCheck.ts`, wherever nothing outside the
@@ -1769,12 +1770,53 @@ wire comes later, for both at once, and only if a profiler capture asks for it.
     browser's network events (`offline`, waking from sleep), which would
     catch a phone's handover sooner, are left for later, if it proves
     needed. `docs/multiplayer.md`, "The silence timer".
-  - Smaller, owed to C5 or a later pass: `ordnanceRefused` is not relayed,
-    so a refused throw is never given back (the pouch drifts until death);
-    `WorldCulling`'s pools hold the disposed session's rigs until the next
-    `installBodyPools` (all of an editor session after F2); a `sim` timing
-    taken before a pause is filed seconds later; the bench's round-end
+  - Smaller, owed to C5 or a later pass: ~~`ordnanceRefused` is not
+    relayed~~ (done at C5, below); ~~`WorldCulling`'s pools hold the
+    disposed session's rigs~~ (done at C5: `leaveMatch` reinstalls them);
+    ~~a `sim` timing taken before a pause is filed seconds later~~ (done at
+    C5: a frame that holds the world drops it); the bench's round-end
     capture path is still unexercised.
+- **What C5 did** (found and decided at C5):
+  - The old host is gone: `simHost`, `simWorker`, `hostWire`,
+    `commandCodec`, `publication`, `frame`, `mirror`, `simCheck`, `BotRig`
+    and `BattleView`, and what only they read (`SimCore.publish`,
+    `releaseWorld`, `firstSlotOf`, `EventRing.append`, the joint packing,
+    `CONFIG.bots.lodFreezeDistance`/`lodDisableDistance` — the body gates
+    are TWO now, `NetRoster` and `RagdollSystem`). The step's timing lives
+    in `src/sim/stepTiming.ts` as `SimCore.timing`; `simulate` lost
+    `--frame`; corecheck lost its two mirror lines (re-banked, nothing else
+    moved). `tsconfig`'s lib is ES2022 again, the growable SAB being gone.
+  - The profiler lost `simPublish`, `simWait`, `simSync`, the dead `bots`
+    slot and `sim.hop` (report version 16). **The `sim` root is every step
+    a frame files**: the local match sums an `advance`'s steps
+    (`MatchOptions.stepped`, `addStepTiming`) and the page sums every answer
+    until a frame files them — it filed one step of N before.
+  - **A refused throw is given back, for both** (`ordnanceRefused` and
+    `Player.returnGrenade` kept, the relay added): one addressed `refused`
+    event, from the core's pool refusal and from `Match`'s own claim gates,
+    silent for a dead body or an empty pouch; `Player.returnOrdnance` is the
+    third slot's twin. A leaver takes what is queued for their slot with
+    them (`Match.unqueueTo`), so neither a `refused` nor a `hit` reaches
+    the next occupant. corecheck's `sarab/refused` covers `Match`'s gates.
+  - **A launcher bot's tube is drawn again, for both** — lost at C4 with
+    `BotRig`, never drawn in a remote match: `SlotOccupant.launcher` on the
+    roster, `NetSoldier.setLauncher`.
+  - Harness scripts off `g.battleView` (`npm run shots`, the webgpu-ref
+    harness, the model-detail and map-layout skills) and the ui-screen
+    stagings off `g.core`.
+- **What C5 leaves** (found at C5):
+  - **C6's contracts**, beyond the list below: `docs/game.md`,
+    `docs/bots.md`, `docs/deaths.md`, `docs/profiling.md` (the old phases),
+    `docs/rendering.md`, `docs/world.md`, `docs/antitank.md`, and
+    `CLAUDE.md`'s `bodyDrawDistance` row (it names `lodDisableDistance`) and
+    every `BattleView`/`BotRig`/`onSimEvent`/`?simcheck` mention.
+  - A refused grenade or rocket is still DRAWN: the page's predicted one
+    flies on and fizzles, since `refused` names no throw to take back. A
+    picture, and rare (an honest client trips a gate only under jitter).
+  - corecheck does not cover the core's own refusal (a full pool), the rate
+    gate, the mine, or the silence for a dead or empty ask.
+  - The feed's "YOU" for the player's own kills (a field on `kill`), still
+    owed from C4.
 
 **Verify:**
 - The bench's seven fight hashes: X2.5a's table, identical, from the Worker and
