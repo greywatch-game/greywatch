@@ -1724,16 +1724,29 @@ wire comes later, for both at once, and only if a profiler capture asks for it.
     `CONFIG.net.localSlack` (0.15 s, three frames at the `dt` clamp) and
     holds the rest — slower than real time, never further behind than that.
     The phone run is still where it shows.
-  - **Any uncaught error in the Worker ends offline play for the page's
-    life** (`matchHost.ts`'s `onerror` → `lost`), including a throw in a
-    person-port handler that a server would log and survive and `?simpage`
-    survives too. Catch around the per-peer handlers in
-    `server/localMatch.ts`, or make `onerror` a log line and leave stalls to
-    the watchdog.
-  - **No watchdog covers `begin`'s answer to the welcome**: a Worker that
-    dies silently there leaves the deploy screen's Deploy dead; one that dies
-    in the menu is found by the next round's `open`, at the building card's
-    patience.
+  - ~~**Any uncaught error in the Worker ends offline play for the page's
+    life.**~~ **Decided and done** (the user's call, 2026-10-12): the
+    Worker's `onerror` is a LOG LINE (`matchHost.ts`), never `lost`. An error
+    event is one task that threw and the Worker carries on past it — as the
+    server's process does past its backstop and the page's thread under
+    `?simpage` — while a Worker that truly dies or wedges raises nothing, so
+    `onerror → lost` caught the survivable case and missed the fatal one.
+    Catching around the per-peer handlers was rejected: it misses
+    `portPeer`'s microtask and `Match`'s timers, and makes the local host
+    stricter than the server. Silence is the one signal; `LocalMatch.lost`
+    is private to the watchdog now.
+  - ~~**No watchdog covers `begin`'s answer to the welcome.**~~ **Decided and
+    done** (the user's call, 2026-10-12): once the host has answered, a
+    watchdog look that finds nothing owed posts a HEARTBEAT (a `settle`
+    nobody awaits), so something is always owed and the stall's ten seconds
+    cover the welcome window and the menu alike — the latter found in
+    seconds rather than at the next build's two minutes. A host that is up
+    but never welcomes is not this: `admit`'s rejection is already answered
+    `rejected`. Lost is still final for the page's life; re-hosting
+    (`openMatchHost` again) on a loss found in the menu is a later call.
+    Also owed, for BOTH modes: `Connection` has no silence timer, so a
+    remote server whose loop wedges with its socket open leaves a client
+    waiting for ever too.
   - Smaller, owed to C5 or a later pass: `ordnanceRefused` is not relayed,
     so a refused throw is never given back (the pouch drifts until death);
     `WorldCulling`'s pools hold the disposed session's rigs until the next

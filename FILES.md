@@ -2110,9 +2110,10 @@ src/
                       #   (server/localMatch.ts): calls awaited in order, so
                       #   any is a settle (`settle` is the bare one); `advance`
                       #   and `hold` posted every frame; `dial`, a person's
-                      #   port in (or a watcher's); `lost` and a stall
-                      #   watchdog (standing down until the host first
-                      #   answers), so a dead host is said (`onLost`);
+                      #   port in (or a watcher's); a stall watchdog
+                      #   (standing down until the host first answers, then
+                      #   a heartbeat whenever nothing is owed), so a dead
+                      #   host is said (`onLost`);
                       #   `behind`, the owner's back-pressure (seconds). Not a
                       #   ClientMessage: no remote client can say it
     matchHost.ts      #   Where the page's own match runs: `openMatchHost`,
@@ -2120,7 +2121,8 @@ src/
                       #   or (?simpage, or a Worker that did not come up)
                       #   this thread on a MessageChannel, through the one
                       #   value import of server/ in src/, a dynamic one.
-                      #   Routes the Worker's onerror to `LocalMatch.lost`
+                      #   The Worker's onerror is a log line: silence, the
+                      #   watchdog's, is what calls a host lost
     NetSession.ts     #   One networked round — every round, from X2.5c C4:
                       #   the seam between Game and the wire. `local` says
                       #   whether the page OWNS the match, the one authority

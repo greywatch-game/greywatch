@@ -4,7 +4,7 @@
  * and handed back as a `LocalMatch` either way.
  * Owns: `openMatchHost` — starting the host (`server/localMatchWorker.ts` in a
  * Worker, or `server/localMatch.ts` on a `MessageChannel` here), proving it is
- * up, and, for a Worker, routing its failure to the owner (`LocalMatch.lost`).
+ * up, and, for a Worker, saying what it throws.
  * Invariants:
  * - **One code path either way.** The Worker's scope and a `MessageChannel`'s
  *   port are both an `OwnerPort`, `serveLocalMatch` is the whole of the host
@@ -15,9 +15,14 @@
  *   load or does not answer in `READY_PATIENCE_MS` is terminated and the page
  *   hosts the match itself, saying why. Until that first answer the race
  *   here is the only judge — `LocalMatch`'s watchdog stands down until the
- *   host has answered once. Once up, its `onerror` is the match LOST — a
- *   port into a dead Worker says nothing, so this is the one place that
- *   learns of it ("A port opens whoever is at the far end").
+ *   host has answered once, and from then on it is the ONLY judge.
+ * - **Once up, an uncaught error is a LOG LINE, never the match lost.** An
+ *   error event is one task that threw, and a Worker carries on to its next
+ *   message after it — as the server's process does past its backstop
+ *   (`server/index.ts`) and the page's own thread does under `?simpage`, so
+ *   the three hosts survive the same throws. A Worker that genuinely dies or
+ *   wedges raises nothing at all; what finds it is SILENCE, which is the
+ *   watchdog's (`LocalMatch`, "A port opens whoever is at the far end").
  * - **`?simpage` asks for this thread**, as it asked for the core in it
  *   before: what a debugger steps through.
  * Never: value-import `server/` statically. **The fallback's one dynamic
@@ -100,15 +105,14 @@ export async function openMatchHost(opts: { simpage: boolean }): Promise<MatchHo
   // Up. The boot's `onerror` is REPLACED rather than left: it cancels the
   // event it resolves on (`preventDefault`), so left standing it would
   // swallow every uncaught error the Worker throws for the rest of the
-  // session — the console would never show one. An uncaught error in the
-  // host is the match lost — `serveLocalMatch` catches what a call throws
-  // and answers `failed`, so what reaches here is the host itself broken,
-  // and nothing on the far side will answer again.
+  // session — the console would never show one. What reaches here is a throw
+  // outside an owner call (`serveLocalMatch` answers those `failed`): a
+  // person's port handler, a `Match` timer, a microtask. The Worker survives
+  // it, so this SAYS it and nothing more — the server's backstop, in the
+  // header's terms. A host that went on to stop answering is the watchdog's.
   worker.onerror = (e) => {
     e.preventDefault();
-    const what = `uncaught ${e.message || "error"} (${e.filename}:${e.lineno}:${e.colno})`;
-    console.error(`[local match] Worker: ${what}`);
-    match.lost(`the Worker failed: ${what}`);
+    console.error(`[local match] Worker: uncaught ${e.message || "error"} (${e.filename}:${e.lineno}:${e.colno}) — the host survived it`);
   };
   return { match, mode: "worker", why: `it answered its first call in ${upIn} ms` };
 }

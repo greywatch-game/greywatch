@@ -1378,17 +1378,25 @@ chunk of its own.
 **A port opens whoever is at the far end, so a dead host must be SAID.** A
 WebSocket to a dead server closes; a port into a Worker that died or wedged
 says nothing, so a person's `Connection` would sit `open` on a join nobody
-reads and every awaited owner call would hang for ever. Two signals end it,
-both into `LocalMatch.lost`: the Worker's `onerror` once it is up (the boot's
-handler is REPLACED, not left — it cancels the event it resolves on, and left
-standing it would silence every later error), and `LocalMatch`'s own watchdog,
-which calls the host lost when a call has been owed past its patience — ten
-seconds for anything but a build, two minutes while an `open` or `begin` is
-owed — measured only while the page's own thread was listening, so a breakpoint
-or a throttled tab is never the host's fault, and only once the host has
-answered something: before that, whether a Worker is up at all is the boot's
-race to judge (twenty seconds, above), and the watchdog's ten would otherwise
-call a slow first-visit Worker lost while the boot was still waiting for it.
+reads and every awaited owner call would hang for ever. **ONE signal ends it,
+and it is SILENCE**: `LocalMatch`'s own watchdog, which calls the host lost
+when a call has been owed past its patience — ten seconds for anything but a
+build, two minutes while an `open` or `begin` is owed — measured only while
+the page's own thread was listening, so a breakpoint or a throttled tab is
+never the host's fault, and only once the host has answered something: before
+that, whether a Worker is up at all is the boot's race to judge (twenty
+seconds, above), and the watchdog's ten would otherwise call a slow
+first-visit Worker lost while the boot was still waiting for it. **Something
+is always owed** from then on: a look that finds every call answered posts a
+HEARTBEAT (a `settle` nobody awaits), so the windows where the page waits on
+the host off the owner channel — the welcome on the person's port after
+`begin`, and the menu — are watched as a stepping round is. **The Worker's
+`onerror` is a LOG LINE, never the match lost** (the boot's handler is
+REPLACED, not left — it cancels the event it resolves on, and left standing
+it would silence every later error): an error event is one task that threw,
+which a Worker survives as the server's process survives it past its
+backstop and the page's thread does under `?simpage`, while a Worker that
+genuinely dies or wedges raises nothing — only its silence says so.
 Lost is final and raised once (`onLost`, which the owner answers by ending the
 session): every awaited call rejects, every later call rejects at once and
 posts nothing, and a later `dial` hears its port close — what a socket to a

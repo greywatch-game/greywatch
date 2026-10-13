@@ -25,12 +25,19 @@
  *   whoever is at the far end"). A WebSocket to a dead server closes; a port
  *   into a Worker that died or wedged says nothing at all, so every awaited
  *   call would hang for ever and a person's `Connection` would sit `open`
- *   on a join nobody reads. Two signals end it: whoever holds the Worker
- *   routes its `onerror` here (`lost`, `matchHost.ts`), and this file's own
- *   watchdog calls the host lost when a call has gone unanswered past its
- *   patience (`STALL_PATIENCE_MS`, a build's far longer) — once the host has
- *   answered anything at all: before that, whether it is up is the boot's
- *   question (`matchHost.ts`), not a stall. Lost is final and raised ONCE
+ *   on a join nobody reads. ONE signal ends it, and it is SILENCE: this
+ *   file's own watchdog calls the host lost when a call has gone unanswered
+ *   past its patience (`STALL_PATIENCE_MS`, a build's far longer) — once the
+ *   host has answered anything at all: before that, whether it is up is the
+ *   boot's question (`matchHost.ts`), not a stall. Never an error event: a
+ *   Worker survives a throw and a dead one raises nothing (`matchHost.ts`).
+ * - **The host always OWES something** once it has answered, so the silence
+ *   is measured whenever the page could be waiting on it — not only while
+ *   it steps. A quiet spell (the menu; a round between `begin`'s answer and
+ *   the welcome on the person's port, which this channel cannot see) gets a
+ *   HEARTBEAT, a posted `settle` nobody awaits (`watch`), so a host that
+ *   died there is found in the stall's patience rather than never, or at the
+ *   next build's. Lost is final and raised ONCE
  *   (`onLost`): every awaiting call rejects, every later one rejects at once
  *   and posts nothing, and a later `dial` hears its port close — what a
  *   socket to a dead server hears.
@@ -103,9 +110,9 @@ export class LocalMatch {
    */
   onFailed: (message: string) => void = (message) => console.error(`[local match] ${message}`);
   /**
-   * Wired by the owner: the host is LOST — its Worker raised an error, or a
-   * call went unanswered past its patience (`STALL_PATIENCE_MS`, the
-   * header). Raised once, after every awaiting call has rejected; the owner
+   * Wired by the owner: the host is LOST — a call (the heartbeat included)
+   * went unanswered past its patience (`STALL_PATIENCE_MS`, the header).
+   * Raised once, after every awaiting call has rejected; the owner
    * ends the session on it, since nothing on the far side is ever going to
    * answer again.
    */
@@ -147,6 +154,8 @@ export class LocalMatch {
     call: 0,
   };
   private readonly holdMsg: OwnerCall & { t: "hold"; call: number } = { t: "hold", dt: 0, call: 0 };
+  /** The watchdog's heartbeat (`watch`), held and posted as the per-frame calls are. */
+  private readonly beatMsg: OwnerCall & { t: "settle"; call: number } = { t: "settle", call: 0 };
   /** When the watchdog last looked, to tell the page's own stall from the host's. */
   private lastWatch = 0;
   private readonly watchdog: ReturnType<typeof setInterval>;
@@ -266,11 +275,10 @@ export class LocalMatch {
   }
 
   /**
-   * The host is gone, for `reason` — whoever holds the Worker calls this from
-   * its `onerror` (`matchHost.ts`), and the watchdog calls it on a stall. See
+   * The host is gone, for `reason` — the watchdog's verdict on a stall. See
    * the header. Idempotent: the first reason is the one kept and raised.
    */
-  lost(reason: string): void {
+  private lost(reason: string): void {
     if (this.lostWhy !== null) return;
     this.lostWhy = reason;
     clearInterval(this.watchdog);
@@ -353,6 +361,14 @@ export class LocalMatch {
    * queued behind this very callback, unread. So a look that itself arrives
    * far later than it was due restarts the wait instead of judging it: what
    * is measured is the host's silence while this thread was LISTENING.
+   *
+   * **Nothing owed is a HEARTBEAT, never a pass.** A look that finds every
+   * call answered posts a `settle` nobody awaits (its `done` is dropped, as a
+   * `hold`'s is), so the next looks have something to judge. Without it the
+   * watchdog is blind exactly where the page waits on the host off this
+   * channel — the welcome after `begin`, on the person's port — and in the
+   * menu, where a dead host was found only by the next round's build. While
+   * a round steps, a call is posted every frame and no beat is ever needed.
    */
   private watch(): void {
     const now = performance.now();
@@ -360,7 +376,10 @@ export class LocalMatch {
     this.lastWatch = now;
     // Never answered: the boot's question, not a stall (above).
     if (this.answeredThrough === 0) return;
-    if (this.answeredThrough >= this.nextCall - 1) return;
+    if (this.answeredThrough >= this.nextCall - 1) {
+      this.post(this.beatMsg);
+      return;
+    }
     if (late) {
       this.owedSince = now;
       return;
