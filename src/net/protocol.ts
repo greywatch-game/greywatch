@@ -676,6 +676,26 @@ export type ServerEvent =
    */
   | { e: "nearmiss"; at: Vec3 }
   /**
+   * A throw, a rocket or a mine this client asked for was REFUSED, so the
+   * one it booked is given back.
+   *
+   * **Addressed to the thrower**, `nearmiss`'s way and for the same reason:
+   * it is the answer to their own ask and nobody else's business. A client
+   * PREDICTS its pouch — it spends the grenade, the rocket or the mine as it
+   * asks, a round trip before the authority decides — so a refusal it never
+   * heard of would leave its count one short of the authority's until the
+   * body died. Sent only while the body is ALIVE (a dead one's pouch is
+   * refilled by its next kit) and never for an empty pouch, since the two
+   * counts move together and empty means empty on both sides. The give-back
+   * is capped at what the kit carries, so an answer the client did not need
+   * cannot overfill it.
+   *
+   * Additive: an older client has no arm for it and keeps the drift it always
+   * had, and a newer one against an older server simply never hears one — so
+   * no `PROTOCOL_VERSION` bump.
+   */
+  | { e: "refused"; item: "grenade" | "rocket" | "mine" }
+  /**
    * A round the authority agrees landed — the shooter's own hitmarker, arriving
    * a round trip after the prediction it either claims or corrects.
    *

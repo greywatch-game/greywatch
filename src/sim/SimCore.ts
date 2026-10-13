@@ -729,9 +729,7 @@ export class SimCore {
     // people in it are still connected and still in their slots across a
     // rotation — so nothing else would ever take a tank out of it, and what
     // was left behind was a disposed mesh that `hittablesAgainst` still
-    // handed to every bot on the other side. `Game` never had this problem
-    // because `setPlayer` clears the list down to the one body; there is no
-    // one body here.
+    // handed to every bot on the other side.
     for (const tank of this.vehicles.hulls) this.battle.removeHuman(tank);
     this.vehicles.build(this.map);
     // Each hull's three told-not-polled moments, as events — the page's
@@ -1456,9 +1454,10 @@ export class SimCore {
         return this.throwGrenade(player, cmd.origin, cmd.dir, cmd.kind);
       case "ordnance": {
         // The third slot is carried by a body, never out of a hull. Refused
-        // ALOUD, as the pool's refusal is, for the HOST: a client that
-        // predicted the pouch spent the item before asking, and may have
-        // asked from a body this side has already killed or seated.
+        // ALOUD, as the pool's refusal is: the client predicts the pouch,
+        // spending the item before asking (and may have asked from a body
+        // this side has already killed or seated), and `Match` relays
+        // `ordnanceRefused` addressed to it so the item is given back.
         if (!player.alive || player.ordnance <= 0 || player.seat >= 0) {
           emitPair(this.events, EV.ordnanceRefused, this.tick, player.slot,
             refusedCode(cmd.kind === "mine" ? "mine" : "rocket"));
@@ -1516,10 +1515,11 @@ export class SimCore {
   /**
    * A person's throw, from the pouch this side counts. Spent only if the arm
    * accepts it — the pool refuses rather than stealing a live slot — and a
-   * refused throw costs nothing but says so (`ordnanceRefused`, for the
-   * host, whose client may have predicted the pouch), whichever gate refused
-   * it: a client books a throw before asking, and can ask from a body this
-   * side has already killed or seated.
+   * refused throw costs nothing but says so (`ordnanceRefused`), whichever
+   * gate refused it: the client predicts the pouch, booking a throw before
+   * asking (and can ask from a body this side has already killed or seated),
+   * and `Match` relays the refusal addressed to it so the throw is given
+   * back.
    */
   private throwGrenade(
     player: SimPlayer,
@@ -2003,7 +2003,9 @@ export class SimCore {
    *
    * Returns false when the pool refused it, and a caller that gets a false must
    * not debit the pouch — `AntiTankSystem.launch`'s contract, unchanged by
-   * being reached over a socket. `submit`'s `ordnance` is the caller.
+   * being reached over a socket. `submit`'s `ordnance` is the caller. The
+   * refusal is said (`ordnanceRefused`): the client predicts the pouch, and
+   * `Match` relays it addressed to the shooter so the rocket is given back.
    */
   private launchRocket(from: Vector3Like, dir: Vector3Like, by: SimPlayer): boolean {
     if (!this.antiTank.launch(from, dir, by.team, by)) {
@@ -2018,7 +2020,11 @@ export class SimCore {
     return true;
   }
 
-  /** A person's mine, laid by the authority on their behalf. */
+  /**
+   * A person's mine, laid by the authority on their behalf — refused aloud
+   * (`ordnanceRefused`) for `launchRocket`'s reason: the client predicts the
+   * pouch, and `Match` relays the refusal addressed to it.
+   */
   private layMine(at: Vector3Like, by: SimPlayer): boolean {
     if (this.antiTank.place(at, by.team, by)) return true;
     emitPair(this.events, EV.ordnanceRefused, this.tick, by.slot, refusedCode("mine"));

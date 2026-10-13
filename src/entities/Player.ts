@@ -64,11 +64,14 @@
  * thrown body belongs to GrenadeSystem, which is Game's. The clock is what
  * makes the throw a gesture rather than an event: `beginThrow` starts it,
  * `throwReleaseDue` reports the frame the hand reaches full extension, and
- * only then does Game book the grenade (`spendGrenade`). Offline the count is
- * PREDICTED: booked at the release, before the core is asked, because a core
- * in a Worker answers a frame later — and given back by `returnGrenade` when
- * its refusal arrives. In a match it is booked once this page's own pool has
- * taken the predicted arc. WHICH throwable the pouch holds (`throwable`, a frag or a
+ * only then does Game book the grenade (`spendGrenade`). The count is a
+ * PREDICTION, as every round's is: the page is a match client of the
+ * authority — a server, or the page's own local match — so it books the
+ * throw once its own pool has taken the predicted arc, a round trip before
+ * the authority decides, and gives it back (`returnGrenade`) when the
+ * authority's `refused` arrives. The third slot's items are predicted the
+ * same way (`tryShot` spends one, `returnOrdnance` gives it back). WHICH
+ * throwable the pouch holds (`throwable`, a frag or a
  * molotov) is the kit's, set from the menu and the deploy screen only, and it
  * changes nothing here but the count a life starts with and what the hand is
  * seen holding — the gesture is the same one for both.
@@ -299,8 +302,8 @@ export class Player implements Combatant {
    * FEET, as `Combatant` requires — NOT `mid`, which is the sweep body's
    * centre and sits `groundY` above them.
    *
-   * The distinction is invisible offline, where nothing outside this file reads
-   * the `y` at all, and it is the whole ballgame over a wire: the server and
+   * It is the whole ballgame over the wire, which every round is — a
+   * server's or the page's own local match's: the authority and
    * every other client take a combatant's `position.y` as the ground under it
    * and build the body, the centre and the eye up from there. Handed the body's
    * centre they build all three half a body too high — the remote body floats,
@@ -855,17 +858,6 @@ export class Player implements Combatant {
 
   set ammo(rounds: number) {
     this.carried.ammo = rounds;
-  }
-
-  /**
-   * The whole `WeaponSetup` in the hands — what an offline round is resolved
-   * with by the simulation core (`ShotCommand.weapon`), the page's half of the
-   * table `Match` reads a netplay round's damage out of. The same object
-   * `damage`, `shotOptions` and `range` are read off, so the core and those
-   * three cannot name different guns.
-   */
-  get heldSetup(): WeaponSetup {
-    return this.weapon;
   }
 
   /** Which weapon is in the hands — for the camera's fit and the HUD's caption. */
@@ -1559,8 +1551,8 @@ export class Player implements Combatant {
    * It also settles what the AUTHORITY thinks. `server/validate.ts` runs this
    * same `resolve` over every reported position and calls one deeper than
    * `nav.bodyRadius` a noclip — so a body welded inside a rail is a body being
-   * corrected back into it on every input tick, which is why this reads as far
-   * worse in a match than offline.
+   * corrected back into it on every input tick — offline as well, the page's
+   * own local match validating it the same way.
    *
    * **It is a rate and never a snap**, for `freeFromWalls`'s reason: what
    * arrived gradually can leave gradually, and a body that has sunk into
@@ -2134,7 +2126,9 @@ export class Player implements Combatant {
    * against a full pool at the frame rate.
    *
    * Bounded by the magazine for the reason every other write to `ammo` is:
-   * two returns for one shot would be a rocket out of nowhere.
+   * two returns for one shot would be a rocket out of nowhere. This is THIS
+   * page's pool refusing, in the same frame; the authority's refusal arrives
+   * later and is `returnOrdnance`.
    */
   returnRound(): void {
     this.ammo = Math.min(this.magSize, this.ammo + 1);
@@ -2183,27 +2177,44 @@ export class Player implements Combatant {
   }
 
   /**
-   * Books the grenade this release throws. Offline it is a PREDICTION, booked
-   * before the core is asked, and the core's refusal takes it back
-   * (`returnGrenade`); in a match it is booked only once this page's own pool
-   * has taken the arc. Either way a refused release costs the arm's cooldown
-   * and nothing else. Deliberately separate from `throwReleaseDue`, because a
-   * release the caller does not throw must not touch the count.
+   * Books the grenade this release throws — a PREDICTION, booked only once
+   * this page's own pool has taken the arc and before the authority (a
+   * server, or the page's own local match) is asked; its refusal takes it
+   * back (`returnGrenade`). A release this page's pool refuses costs the
+   * arm's cooldown and nothing else. Deliberately separate from
+   * `throwReleaseDue`, because a release the caller does not throw must not
+   * touch the count.
    */
   spendGrenade(): void {
     this.grenades -= 1;
   }
 
   /**
-   * Gives back a grenade booked for a throw the simulation then refused — the
-   * core's `ordnanceRefused`, which arrives AFTER the booking: the page books
-   * the throw it predicts, as a match's client does, and this is the refusal
-   * taking it back. (Nothing calls it while `ordnanceRefused` is not relayed
-   * onto the wire — `BABYLON_EXIT.md` X2.5c.) Bounded by what is carried, as
-   * `returnRound` is by the magazine.
+   * Gives back a grenade booked for a throw the authority then refused — its
+   * `refused` event (`Match.refuse`), which arrives a round trip AFTER the
+   * booking: the page books the throw it predicts, and this is the refusal
+   * taking it back. Bounded by what the pouch carries, as `returnRound` is
+   * by the magazine, so an answer arriving after a respawn refilled the
+   * pouch — or one the page did not need — cannot overfill it.
    */
   returnGrenade(): void {
     this.grenades = Math.min(throwableCarried(this.throwable), this.grenades + 1);
+  }
+
+  /**
+   * Gives back a rocket or a mine booked for an item the authority then
+   * refused — `returnGrenade`'s twin for the third slot, off the same
+   * `refused` event. Written to the EQUIPMENT holster rather than through
+   * `returnRound`, because the answer arrives a round trip later, when the
+   * weapon in the hands may no longer be the tube (an empty launcher is
+   * already being put away). Bounded by what the kit carries (`magSize`
+   * IS `CONFIG.equipment[id].carried` on that holster), and nothing at all
+   * on a kit with no third slot.
+   */
+  returnOrdnance(): void {
+    if (this.slots.length <= EQUIP_SLOT) return;
+    const held = this.slots[EQUIP_SLOT];
+    held.ammo = Math.min(held.setup.magSize, held.ammo + 1);
   }
 
   startReload(): boolean {

@@ -67,6 +67,11 @@
  * refused sample mid-descent followed by the client's `resync` costs nothing,
  * and a lie on the sample before touchdown still pays the landing.
  *
+ * And `sarab/refused` (X2.5c C5), on the same botless Sarab through `Match`:
+ * a throw or a rocket the authority refuses — out of the cone, or from a
+ * seat — is answered with one `refused` to the person who asked and to
+ * nobody else, and leaves the authority's pouch as it was.
+ *
  * And `greyfen/owned` (X2.5c C2): a match its OWNER drives (`Match`'s
  * `owned`) plays the benchmark's round — its seed, difficulty and length — as
  * the offline page's core plays it, a tick an `advance` and at 144 Hz alike,
@@ -2468,6 +2473,94 @@ async function correctionBreak(world: World, c: Checks, route: { yaw: number; to
   probe.dispose();
 }
 
+/**
+ * **A refused throw is given back** (X2.5c C5): on botless Sarab through
+ * `Match` with a fake peer and a second one beside it. A grenade claimed
+ * outside the look's cone, a rocket claimed backwards and a grenade thrown
+ * from a helicopter's seat are each answered with exactly ONE `refused`
+ * naming the item, sent to the person who asked and to nobody else, and the
+ * authority's pouch is untouched by each; an honest throw is answered with
+ * none and spends one.
+ */
+async function refusedThrow(world: World, c: Checks): Promise<void> {
+  await quietly(async () => {
+    const h = new MatchHost(world.def, false);
+    await h.start(world, 0);
+    const other = new FakeTransport();
+    await h.match.admit(other, "other");
+    const core = h.core;
+    const tag = "refused";
+    await h.deploy(homeSpawn(h, PERSON_TEAM));
+    if (!c.that(`${tag}: fixture — the person is deployed`, h.player().alive || stepUntilSpawned(h, 120) >= 0)) {
+      core.dispose();
+      return;
+    }
+    const sent = (t: FakeTransport) => {
+      const out: string[] = [];
+      for (const f of t.frames) {
+        if (f.t !== "events") continue;
+        for (const ev of f.events as Array<Record<string, unknown>>) if (ev.e === "refused") out.push(String(ev.item));
+      }
+      return out;
+    };
+    let seq = 9000;
+    // One ask, the snapshot ticks that flush it, and what each side heard.
+    const ask = (t: "grenade" | "ordnance", dir: Vec3) => {
+      const mine = sent(h.transport).length;
+      const theirs = sent(other).length;
+      const p = h.player();
+      const before = { grenades: p.grenades, ordnance: p.ordnance };
+      const eye = p.eyePos;
+      deliver(h, { t, seq: ++seq, time: core.now, origin: [eye.x, eye.y, eye.z], dir });
+      for (let i = 0; i < 6; i++) h.step();
+      return {
+        mine: sent(h.transport).slice(mine),
+        theirs: sent(other).slice(theirs).length,
+        grenades: p.grenades - before.grenades,
+        ordnance: p.ordnance - before.ordnance,
+      };
+    };
+    const fmt = (r: ReturnType<typeof ask>) =>
+      `sent [${r.mine.join(", ")}], the other peer ${r.theirs}, pouch ${r.grenades} / ${r.ordnance}`;
+
+    // Looking down +z, level, so a claim down -z is outside every cone.
+    await h.aim(0, 0);
+    h.flush();
+    const back: Vec3 = [0, 0, -1];
+    const cone = ask("grenade", back);
+    c.that(
+      `${tag}: a grenade claimed outside the look's cone — one \`refused\` (grenade) to the thrower, none to the other peer, the pouch unspent`,
+      cone.mine.length === 1 && cone.mine[0] === "grenade" && cone.theirs === 0 && cone.grenades === 0,
+      fmt(cone),
+    );
+    const rocket = ask("ordnance", back);
+    c.that(
+      `${tag}: a rocket claimed backwards — one \`refused\` (rocket) to the shooter, none to the other peer, the tube unspent`,
+      rocket.mine.length === 1 && rocket.mine[0] === "rocket" && rocket.theirs === 0 && rocket.ordnance === 0,
+      fmt(rocket),
+    );
+    const honest = ask("grenade", [0, 0.3, 1]);
+    c.that(
+      `${tag}: an honest throw — no \`refused\`, one grenade spent`,
+      honest.mine.length === 0 && honest.theirs === 0 && honest.grenades === -1,
+      fmt(honest),
+    );
+    const index = heliOf(core);
+    // `seatPilot` sends two messages straight onto the transport, past
+    // `deliver`'s top-up — so the budget the asks above spent is put back.
+    for (const peer of h.match["peers"].values()) peer.budget = 2;
+    if (c.that(`${tag}: fixture — seated in the person's helicopter`, index >= 0 && (await seatPilot(h, index)))) {
+      const seated = ask("grenade", [0, 0, 1]);
+      c.that(
+        `${tag}: a grenade from a seat — one \`refused\` (grenade) to the thrower, none to the other peer, the pouch unspent`,
+        seated.mine.length === 1 && seated.mine[0] === "grenade" && seated.theirs === 0 && seated.grenades === 0,
+        fmt(seated),
+      );
+    }
+    core.dispose();
+  });
+}
+
 // ---------------------------------------------------------------------------
 // The run.
 
@@ -2693,6 +2786,7 @@ async function main(): Promise<void> {
       ["sarab/leash", (c) => leashSeated(world, c)],
       ["sarab/clock", (c) => clockBound(world, c, route)],
       ["sarab/break", (c) => correctionBreak(world, c, route)],
+      ["sarab/refused", (c) => refusedThrow(world, c)],
     ];
     for (const [tag, run] of review) {
       const c = new Checks(tag);

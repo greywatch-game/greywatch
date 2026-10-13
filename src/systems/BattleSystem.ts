@@ -634,15 +634,9 @@ export class BattleSystem {
   }
 
   /**
-   * The one non-bot combatant, offline. Replaces whatever was there, so calling
-   * it twice does not put the player in the fight twice.
+   * Adds a human to the fight — a person (`SimCore.addPlayer`) or a hull.
+   * Idempotent, so a body added twice is in the fight once.
    */
-  setPlayer(player: Combatant): void {
-    this.humans.length = 0;
-    this.humans.push(player);
-  }
-
-  /** Adds a human to the fight. The server's path; `setPlayer` is the game's. */
   addHuman(human: Combatant): void {
     if (!this.humans.includes(human)) this.humans.push(human);
   }

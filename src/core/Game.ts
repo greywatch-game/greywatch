@@ -6334,12 +6334,14 @@ export class Game {
           forward.z * cfg.launchAhead,
         );
     }
-    // The pool has the last word, and a refusal gives the rocket back — the
-    // same contract the grenade pool has with `spendGrenade`, arrived at from
-    // the other direction because the trigger and the round are one call
-    // here. It cannot happen with eight slots and five possible shooters;
-    // what matters is that it costs a cooldown rather than a rocket if it
-    // ever does.
+    // This page's pool has the first word, and a refusal gives the rocket
+    // back — the same contract the grenade pool has with `spendGrenade`,
+    // arrived at from the other direction because the trigger and the round
+    // are one call here. It cannot happen with eight slots and five possible
+    // shooters; what matters is that it costs a cooldown rather than a rocket
+    // if it ever does. The AUTHORITY has the last word, and a rocket it
+    // refuses comes back a round trip later as `refused`
+    // (`Player.returnOrdnance`).
     if (!this.antiTank.launch(this.ordnanceAt, forward, this.player.team, this.player)) {
       this.player.returnRound();
       return;
@@ -6399,10 +6401,12 @@ export class Game {
     // the two objects ARE: a mine is laid at the feet and never moves, so the
     // round trip before it appears is invisible, while a second plate on the
     // ground would be one to reconcile against the `mines` table for the rest
-    // of the round. The pouch is spent either way — the count in the hand is
-    // the client's picture of a number the authority is also keeping, exactly
-    // as the grenade pouch is. The `standableAt` probe above is the message's
-    // input: the authority reads no ground of its own for it.
+    // of the round. The pouch is spent here as a PREDICTION — the count in
+    // the hand is the client's picture of a number the authority is also
+    // keeping, exactly as the grenade pouch is — and a mine the authority
+    // refuses is given back by its `refused` (`Player.returnOrdnance`). The
+    // `standableAt` probe above is the message's input: the authority reads
+    // no ground of its own for it.
     this.net?.sendOrdnance(this.ordnanceAt, forward);
     this.sfx.mineSet();
   }
@@ -7664,6 +7668,16 @@ export class Game {
       case "nearmiss":
         this.netNearPoint.set(event.at[0], event.at[1], event.at[2]);
         this.roundPassed(this.netNearPoint);
+        break;
+
+      // A throw, a rocket or a mine of ours the authority refused: the one
+      // this page booked as it asked is given back, capped at what the kit
+      // carries. Addressed to us, so there is no slot to guard on; a body
+      // that has died since is refilled by its next kit and owed nothing.
+      case "refused":
+        if (!this.player.alive) break;
+        if (event.item === "grenade") this.player.returnGrenade();
+        else this.player.returnOrdnance();
         break;
 
       // A molotov the authority lit. `drawBlast`'s twin: the flames, the
@@ -9143,8 +9157,9 @@ export class Game {
     // hitmarker; a blast owes nothing of the kind — its light, noise and
     // concussion all arrive on the server's `explode` event — so pointing this
     // at them would buy a line-of-sight ray per body within the radius and
-    // nothing else. The pouch is the server's count too; spending here only
-    // keeps the HUD honest.
+    // nothing else. The pouch is the authority's count too; spending here is
+    // the HUD's prediction of it, and a throw the authority refuses is given
+    // back by its `refused` (`Player.returnGrenade`).
     this.net?.sendGrenade(this.grenadeHand, this.cameraSys.forward);
     this.sfx.grenadeThrow();
     // The body's own follow-through, through the spring the landing and the

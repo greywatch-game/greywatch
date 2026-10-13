@@ -55,7 +55,8 @@ this side's kit record), `deploy`, `kit` (the pouch sizes `setKit` resolves),
 `mount`/`dismount`, `drive`, `gun`, `shell`, `mg`. What DECIDES is the core's,
 once, for every host: whose body moves, the rewound round (`rewind`, the
 authority's `SimCoreOptions`), the POUCH COUNTS (debited only for an item the
-pool took — a refused one raises `ordnanceRefused`, a throw included), the
+pool took — a refused one raises `ordnanceRefused`, a throw included, which
+`Match` relays as `refused`), the
 SEAT POLICY (the swap, the offer, the named hull, the dismount the hull cannot
 make — `mount`/`dismount` around `seat`) and when a person comes back in.
 `submit` answers only whether the core acted, which is what the shell, mg and
@@ -1466,7 +1467,11 @@ Two are not, and both were broadcast with the client filtering them on arrival:
 mechanism is for once it exists: `nearmiss`, which says a named player was very
 nearly hit, and `score`, which says what one player was just paid and for what.
 Neither carries a slot at all — the only client either is ever sent to is the
-one it happened to, so there is nothing for a guard to compare.
+one it happened to, so there is nothing for a guard to compare. `refused` is a
+third of that kind: a throw, rocket or mine the authority turned down — the
+core's `ordnanceRefused` or one of `Match`'s own claim gates, through one
+`Match.refuse` — sent only while the body is alive and never for an empty
+pouch, so the client gives back the item it predicted (capped at its kit).
 
 **`mapvote` is addressed too, and it is the one that is not an event at all.**
 It is a whole MESSAGE rather than a queued instant, because a ballot is state

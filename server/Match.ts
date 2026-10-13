@@ -98,7 +98,7 @@ import { perTeamOf } from "../src/world/layout";
 import { freshSeed } from "../src/systems/RoundRandom";
 import { HULL_EARLY } from "../src/systems/hullRules";
 import { SimCore } from "../src/sim/SimCore";
-import { EV, EventCursor, decode, type EventKind } from "../src/sim/events";
+import { EV, EventCursor, decode, type EventKind, type RefusedItem } from "../src/sim/events";
 import { MapVote } from "./MapVote";
 import { Roster } from "./Roster";
 import { validateDrive, validateMove } from "./validate";
@@ -389,6 +389,7 @@ const RELAYED: ReadonlySet<EventKind> = new Set<EventKind>([
   EV.glass,
   EV.spawned,
   EV.hit,
+  EV.ordnanceRefused,
   EV.roundOver,
 ]);
 
@@ -2407,6 +2408,12 @@ export class Match {
           }
           break;
         }
+        // A person's throw, rocket or mine the CORE refused (the pool full,
+        // in practice: every other refusal is answered by this class's own
+        // gates before the core is asked) — given back, see `refuse`.
+        case "ordnanceRefused":
+          this.refuse(ev.slot, ev.item);
+          break;
         case "roundOver":
           this.queue({ e: "roundover", winner: ev.winner });
           break;
@@ -2414,6 +2421,25 @@ export class Match {
           break;
       }
     }
+  }
+
+  /**
+   * Tells a person the throw, rocket or mine they asked for was refused, so
+   * the one their client booked is given back (`ServerEvent`'s `refused`):
+   * a client PREDICTS its pouch, spending the item as it asks, and a refusal
+   * it never heard of would drift its count from the core's until the body
+   * died. ONE path for every refusal — the core's (`relay`) and this class's
+   * own claim gates (`onGrenade`, `onOrdnance`) — addressed to the one who
+   * asked, and only while that body is ALIVE: a dead one's pouch is refilled
+   * by its next kit. Never for an empty pouch, which those gates return on
+   * silently: the two counts move together, so empty means empty on both
+   * sides. A refusal answered to a lying client is harmless — the give-back
+   * is capped at the kit's count on the far side, and it only returns what
+   * that client predicted and this side never spent.
+   */
+  private refuse(slot: number, item: RefusedItem): void {
+    if (!this.game.players.get(slot)?.alive) return;
+    this.queueTo(slot, { e: "refused", item });
   }
 
   /** A control point's id, from the index a `captured`/`neutralised` names. */
@@ -3076,24 +3102,29 @@ export class Match {
    * client's: a client that tracked its own would throw as many as it liked.
    */
   private onGrenade(peer: Peer, msg: Extract<ClientMessage, { t: "grenade" }>): void {
-    // Nothing is thrown from inside a hull, for `onShot`'s reason exactly —
-    // and the core refuses it too; asked here first so a seated, dead or
-    // empty-handed peer costs no cone arithmetic.
-    if ((this.game.players.get(peer.slot)?.seat ?? -1) >= 0) return;
+    // A dead or empty-handed peer is refused SILENTLY: a dead body's pouch is
+    // refilled by its next kit, and an empty one is empty on both sides.
+    // Every refusal after these two is answered (`refuse`), because the
+    // client spent the grenade as it asked.
     const player = this.game.players.get(peer.slot);
     if (!player || !player.alive) return;
     if (player.grenades <= 0) return;
+    // Nothing is thrown from inside a hull, for `onShot`'s reason exactly —
+    // and the core refuses it too; asked here first so a seated peer costs
+    // no cone arithmetic.
+    if (player.seat >= 0) return this.refuse(peer.slot, "grenade");
 
-    if (!claimedDir(msg.dir, SHOT_DIR)) return;
+    if (!claimedDir(msg.dir, SHOT_DIR)) return this.refuse(peer.slot, "grenade");
     lookDir(player.yaw, player.pitch, CLAIM_LOOK);
     // A grenade leaves along a lifted version of the aim, so the cone has to be
     // wider than a bullet's — `throwLift` tilts it up before it is thrown.
-    if (!withinCone(CLAIM_LOOK, SHOT_DIR, GRENADE_CONE_COS)) return;
-    if (!withinSlip(msg.origin, player.eyePos, MAX_ORIGIN_SLIP)) return;
+    if (!withinCone(CLAIM_LOOK, SHOT_DIR, GRENADE_CONE_COS)) return this.refuse(peer.slot, "grenade");
+    if (!withinSlip(msg.origin, player.eyePos, MAX_ORIGIN_SLIP)) return this.refuse(peer.slot, "grenade");
 
     SHOT_ORIGIN.fromArray(msg.origin);
     // Spent by the core only if the arm accepts it — the pool refuses rather
-    // than stealing a live slot, and a refused throw costs nothing. WHAT is
+    // than stealing a live slot, and a refused throw costs nothing and is
+    // answered through `relay` (the core's `ordnanceRefused`). WHAT is
     // thrown is this side's record of the kit, never anything on the message.
     this.game.submit(peer.slot, {
       t: "grenade",
@@ -3441,31 +3472,38 @@ export class Match {
     peer: Peer,
     msg: Extract<ClientMessage, { t: "ordnance" }>,
   ): void {
+    // Dead or empty: refused SILENTLY, `onGrenade`'s rule — every refusal
+    // after these is answered (`refuse`), the client having spent the item
+    // as it asked.
     const player = this.game.players.get(peer.slot);
     if (!player || !player.alive || player.ordnance <= 0) return;
+    const held = this.slots[peer.slot];
+    const kind = held.equipment;
+    // No kit is no count either — `setKit` writes the item and the core's
+    // `ordnance` together — so this is unreachable past the gate above, and
+    // there would be no item to name.
+    if (!kind) return;
+    const item: RefusedItem = kind === "mine" ? "mine" : "rocket";
     // Not from inside a tank. The third slot is carried by a body, and
     // `Player.tryShot` cannot even reach the trigger while driving — this is
     // the authority saying the same thing rather than trusting it.
-    if (player.seat >= 0) return;
-    const held = this.slots[peer.slot];
-    const kind = held.equipment;
-    if (!kind) return;
+    if (player.seat >= 0) return this.refuse(peer.slot, item);
 
     const now = Date.now();
     const interval = equipmentSetup(kind).shotInterval * 1000;
     const gate = held.ordnanceGate;
-    if (!gate.ready(now, interval)) return;
+    if (!gate.ready(now, interval)) return this.refuse(peer.slot, item);
 
-    if (!withinSlip(msg.origin, player.eyePos, ORDNANCE_ORIGIN_SLACK)) return;
+    if (!withinSlip(msg.origin, player.eyePos, ORDNANCE_ORIGIN_SLACK)) return this.refuse(peer.slot, item);
 
     ORDNANCE_AT.fromArray(msg.origin);
     if (kind !== "mine") {
       // The same cone a rifle round is bounded by, and for the same reason —
       // it stops a claimed rocket leaving backwards or through the shooter's
       // own feet, and it stops nothing else.
-      if (!claimedDir(msg.dir, ORDNANCE_DIR)) return;
+      if (!claimedDir(msg.dir, ORDNANCE_DIR)) return this.refuse(peer.slot, item);
       lookDir(player.yaw, player.pitch, CLAIM_LOOK);
-      if (!withinCone(CLAIM_LOOK, ORDNANCE_DIR, SHOT_CONE_COS)) return;
+      if (!withinCone(CLAIM_LOOK, ORDNANCE_DIR, SHOT_CONE_COS)) return this.refuse(peer.slot, item);
     }
     // A mine ignores the direction and lands where the origin says.
     const placed = this.game.submit(peer.slot, {
@@ -3474,6 +3512,8 @@ export class Match {
       origin: ORDNANCE_AT,
       dir: ORDNANCE_DIR,
     });
+    // A refusal the CORE made (the pool) raised `ordnanceRefused`, which
+    // `relay` answers — so nothing more is owed here, and nothing is spent.
     if (!placed) return;
     gate.spend(interval);
     // Heard as a shot is, so the fifteen other clients get the report and the

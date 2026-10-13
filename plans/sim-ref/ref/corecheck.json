@@ -1,5 +1,5 @@
 {
- "at": "b85e6d1+",
+ "at": "8fbadcc+",
  "lines": [
   "  ok   greyfen/core       deploy: an unasked person is never put in (30 ticks, no spawned)",
   "  ok   greyfen/core       deploy: an ask with the clock run out deploys on the next tick",
@@ -141,6 +141,12 @@
   "  ok   sarab/break        break: fixture — a sample in a full-rate descent, 5 m up",
   "  ok   sarab/break        break: refused mid-descent, put back, resynced and flown down gently — charged nothing (0.0)",
   "  ok   sarab/break        break: fixture — the touchdown sample",
-  "  ok   sarab/break        break: a lie before touchdown and a resync on it still pays the landing (128.7, uninterrupted 128.9)"
+  "  ok   sarab/break        break: a lie before touchdown and a resync on it still pays the landing (128.7, uninterrupted 128.9)",
+  "  ok   sarab/refused      refused: fixture — the person is deployed",
+  "  ok   sarab/refused      refused: a grenade claimed outside the look's cone — one `refused` (grenade) to the thrower, none to the other peer, the pouch unspent",
+  "  ok   sarab/refused      refused: a rocket claimed backwards — one `refused` (rocket) to the shooter, none to the other peer, the tube unspent",
+  "  ok   sarab/refused      refused: an honest throw — no `refused`, one grenade spent",
+  "  ok   sarab/refused      refused: fixture — seated in the person's helicopter",
+  "  ok   sarab/refused      refused: a grenade from a seat — one `refused` (grenade) to the thrower, none to the other peer, the pouch unspent"
  ]
 }
