@@ -996,9 +996,11 @@ export class FrameProfile {
    * Files a step's whole timing row (`SimCore.timing`, the simulation core's
    * — `BABYLON_EXIT.md` X2.5a C6) in ONE call: the step into `root`, and each
    * phase the step reached into `slots[i]` — a span measured ELSEWHERE, by
-   * whoever ran it, on this file's own clock. Like `endAdd`, a slot filed
-   * twice in a frame ADDS (a benchmark's lead steps the core several times a
-   * frame) and keeps the first piece's start for the trace.
+   * whoever ran it, on this file's own clock. The row may already be a SUM
+   * of steps (`addStepTiming` — a benchmark's lead steps the core several
+   * times a frame, and the page files them as one row); like `endAdd`, a
+   * slot filed twice in a frame ADDS too, and keeps the first piece's start
+   * for the trace.
    *
    * **One call with objects in, rather than a call per phase with doubles in**,
    * because a double handed to a call that is not inlined is a heap number,

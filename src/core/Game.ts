@@ -195,7 +195,7 @@ import {
 import type { KillLedger } from "../systems/killRules";
 import { GrenadeFx } from "../systems/GrenadeFx";
 import { GrenadeSystem, type BlastGround } from "../systems/GrenadeSystem";
-import { SIM_PHASES, type StepTiming, type SimPhase } from "../sim/stepTiming";
+import { SIM_PHASES, addStepTiming, clearStepTiming, newStepTiming, type SimPhase } from "../sim/stepTiming";
 import { PhysicsWorld, type HavokInstance } from "../systems/PhysicsWorld";
 import { RagdollSystem } from "../systems/RagdollSystem";
 import { ReflectionSystem } from "../systems/ReflectionSystem";
@@ -579,12 +579,25 @@ export class Game {
    */
   private localBegun = false;
   /**
-   * The newest timed step's phases (`Advanced.timing`), on this page's clock,
-   * not yet filed. An answer arrives BETWEEN frames, where the profiler files
-   * nothing, so it waits here for the next frame that steps
-   * (`fileLocalTiming`).
+   * Every timed step the match has reported and this page has not filed yet
+   * (`Advanced.timing`), SUMMED into one row on this page's clock
+   * (`addStepTiming`) — empty while `total` < 0. An answer arrives BETWEEN
+   * frames, where the profiler files nothing, so it waits here for the next
+   * frame that steps (`fileLocalTiming`), which files it and empties it; a
+   * frame whose posts were answered twice before it (a benchmark's lead-in
+   * posts one `advance` per step) files them all. One row for the life of
+   * the page, written in place: the profiler allocates nothing per frame.
    */
-  private localTiming: StepTiming | null = null;
+  private readonly localTiming = newStepTiming();
+  /**
+   * How many `advance` answers still to come were posted BEFORE the world
+   * was last held (`passLocalClock`): their timing is dropped as it arrives,
+   * since filing it on the first frame after a pause would charge that frame
+   * with steps taken seconds earlier.
+   */
+  private localTimingSkip = 0;
+  /** `updateWorld` advanced the page's own match this frame — read and reset by `passLocalClock`. */
+  private localWorldRan = false;
   /**
    * Seconds of this frame handed to the match as STEPPED (`advance`), so
    * `passLocalClock` hands it the rest as held. Zeroed there, once a frame.
@@ -7127,7 +7140,7 @@ export class Game {
     this.net = net;
     this.wireNet(net);
     this.localBegun = false;
-    this.localTiming = null;
+    clearStepTiming(this.localTiming);
     const failed = (err: unknown): void =>
       this.failLocalRound(err instanceof Error ? err.message : String(err), net);
     host.open(this.mapDef.id).catch(failed);
@@ -7154,10 +7167,18 @@ export class Game {
    * only when it is lost (`rehostLocal`).
    */
   private wireLocal(): void {
+    // A new host owes nothing posted to the one it replaced.
+    this.localTimingSkip = 0;
     this.local.onAdvanced = (advanced) => {
+      // Posted before the world was last held — counted off first, whichever
+      // match it was posted to, since `LocalMatch.owed` counted it.
+      if (this.localTimingSkip > 0) {
+        this.localTimingSkip--;
+        return;
+      }
       // Anything before the round's `begin` was answered is the last match's.
       if (!this.localBegun) return;
-      if (advanced.timing) this.localTiming = advanced.timing;
+      if (advanced.timing) addStepTiming(this.localTiming, advanced.timing);
     };
     // A posted call that failed — gated as `onAdvanced` is, because the
     // last match's last `advance` can be answered after this round opened,
@@ -8637,6 +8658,7 @@ export class Game {
     // and further behind its picture. Never the benchmark's, which posts one
     // advance per step and holds nothing back.
     if (this.localRound) {
+      this.localWorldRan = true;
       this.fileLocalTiming();
       const step = this.bench
         ? dt
@@ -8650,16 +8672,17 @@ export class Game {
   }
 
   /**
-   * The last timed step the match reported, filed as this frame's `sim` root
-   * (`FrameProfile.fileTiming`) — the step's own phases on this page's clock,
-   * however many frames ago its answer arrived. A frame that steps files the
-   * newest one it has; most frames have exactly one.
+   * Every timed step the match has reported since the last filing, summed
+   * (`localTiming`), filed as this frame's `sim` root
+   * (`FrameProfile.fileTiming`) — the steps' own phases on this page's clock,
+   * however many frames ago their answers arrived — and emptied. Most frames
+   * have exactly one answer to file; a benchmark's lead-in has several.
    */
   private fileLocalTiming(): void {
     const timing = this.localTiming;
-    if (!timing) return;
-    this.localTiming = null;
+    if (timing.total < 0) return;
     this.prof.fileTiming(P.sim, SIM_SLOTS, timing);
+    clearStepTiming(timing);
   }
 
   /**
@@ -8674,11 +8697,24 @@ export class Game {
    * Only once the session is SEATED: before the welcome there is no round
    * standing on the host to hold (`begin` is still building it), and the
    * clock is anchored at the end of that build anyway.
+   *
+   * **A frame that did not run `updateWorld` HELD the world**, and the step
+   * timing still waiting to be filed (`localTiming`) — or still to be
+   * answered for an `advance` posted before it — is dropped: the next frame
+   * that steps may be seconds away, and a profiler handed those steps then
+   * would charge them to it.
    */
   private passLocalClock(seen: number): void {
     const stepped = this.localStepped;
+    const ran = this.localWorldRan;
     this.localStepped = 0;
-    if (!this.localRound || !this.net!.seated) return;
+    this.localWorldRan = false;
+    if (!this.localRound) return;
+    if (!ran) {
+      clearStepTiming(this.localTiming);
+      this.localTimingSkip = this.local.owed;
+    }
+    if (!this.net!.seated) return;
     const held = seen - stepped;
     if (held > 0) this.local.hold(held);
   }

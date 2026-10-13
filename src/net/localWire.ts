@@ -74,8 +74,9 @@ export interface Advanced {
   /** The round has a winner: it ended on a step, and nothing steps until the next `begin`. */
   ended: boolean;
   /**
-   * The LAST step's phases on the page's clock, when it was timed and
-   * something stepped; null otherwise.
+   * Every step this advance took, its phases SUMMED (`addStepTiming`, which
+   * says what `start` and `at` mean for a sum), on the page's clock — when
+   * they were timed and something stepped; null otherwise.
    */
   timing: StepTiming | null;
 }

@@ -289,6 +289,14 @@ export interface MatchOptions {
    * hears the wire and never this.
    */
   hear?: (said: EventCursor) => void;
+  /**
+   * Called after every step the match takes, straight after `SimCore.step`
+   * — the owner's look at what that one step cost (`SimCore.timing`, which
+   * the next step overwrites), so an `advance` that stepped several times
+   * can report all of them. In-process only, and it MEASURES: nothing it
+   * does may reach the round. The server passes none.
+   */
+  stepped?: () => void;
 }
 
 /**
@@ -866,6 +874,8 @@ export class Match {
   private readonly drained = new EventCursor();
   /** `MatchOptions.hear`, or null. */
   private readonly hear: ((said: EventCursor) => void) | null;
+  /** `MatchOptions.stepped`, or null. */
+  private readonly stepped: (() => void) | null;
 
   /** Reused so a snapshot allocates nothing per tick beyond its own arrays. */
   private readonly entityScratch: EntityState[] = [];
@@ -999,6 +1009,7 @@ export class Match {
       hostHoldsRespawn: this.owned,
     });
     this.hear = options.hear ?? null;
+    this.stepped = options.stepped ?? null;
     // The table, and with it the pool: the ceiling under a match that rotates
     // maps, the map's own roster under one that never leaves it — see
     // `server/Roster.ts` for why each.
@@ -1825,6 +1836,7 @@ export class Match {
     }
 
     const live = this.game.step(1 / TICK_HZ);
+    this.stepped?.();
     this.relay();
     this.ticks++;
 

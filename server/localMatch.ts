@@ -2,7 +2,8 @@
  * server/localMatch.ts — A match the page hosts itself (`BABYLON_EXIT.md`
  * X2.5c C3): one OWNED `Match` at a time, its owner's calls answered off one
  * port and each person admitted off a port of their own.
- * Owns: the open match, the benchmark's fight fold, and the two adapters a
+ * Owns: the open match, the benchmark's fight fold, an `advance`'s timing
+ * (every step it took, summed — `src/sim/stepTiming.ts`), and the two adapters a
  * port needs — `portPeer`, the `PeerTransport` a person's port is to `Match`,
  * and the handshake that reads a `join` off it, as `server/index.ts` reads
  * one off a socket, and hands the port to `Match.admit` — or to
@@ -42,6 +43,7 @@ import { encode, PROTOCOL_VERSION } from "../src/net/protocol";
 import { PORT_CLOSE, type OwnerCall, type OwnerMessage, type OwnerPort, type OwnerReply } from "../src/net/localWire";
 import { EV, SCORE_KINDS, type EventCursor } from "../src/sim/events";
 import { FightHash } from "../src/bench/fightHash";
+import { addStepTiming, clearStepTiming, newStepTiming } from "../src/sim/stepTiming";
 import { Match, type PeerHandlers, type PeerTransport } from "./Match";
 import { readClientMessage } from "./wire";
 
@@ -117,6 +119,14 @@ export function serveLocalMatch(owner: OwnerPort): void {
   let fightFrom = 0;
   /** The call running and those behind it — see the header. */
   let queue: Promise<void> = Promise.resolve();
+  /**
+   * Every timed step of the `advance` being answered, SUMMED
+   * (`addStepTiming`): the core overwrites its row each step, and an
+   * `advance` may step more than once, so each step is added here as it
+   * runs (`MatchOptions.stepped`) and the sum is the answer. One row for the
+   * life of the host, cleared per `advance` — the post clones it.
+   */
+  const summed = newStepTiming();
 
   const reply = (r: OwnerReply): void => owner.postMessage(r, []);
 
@@ -153,12 +163,14 @@ export function serveLocalMatch(owner: OwnerPort): void {
         // the page without a conversion — 0 in the page's own thread.
         const toPage = performance.timeOrigin - msg.timeOrigin;
         fight = null;
-        match = new Match(LOCAL_ID, {
+        const opened = new Match(LOCAL_ID, {
           map: msg.map,
           owned: true,
           timing: () => performance.now() + toPage,
           hear,
+          stepped: () => addStepTiming(summed, opened.game.timing),
         });
+        match = opened;
         return { t: "done", call };
       }
       case "begin":
@@ -168,6 +180,7 @@ export function serveLocalMatch(owner: OwnerPort): void {
       case "advance": {
         const m = need();
         m.game.timeSteps(msg.timed);
+        clearStepTiming(summed);
         const before = m.game.tick;
         m.advance(msg.dt);
         const steps = m.game.tick - before;
@@ -176,8 +189,8 @@ export function serveLocalMatch(owner: OwnerPort): void {
           call,
           steps,
           ended: m.game.conquest.winner !== null,
-          // Cloned as it is posted, so the core's own row is never handed out.
-          timing: msg.timed && steps > 0 ? m.game.timing : null,
+          // Every step this advance took, summed; cloned as it is posted.
+          timing: msg.timed && summed.total >= 0 ? summed : null,
         };
       }
       case "hold":

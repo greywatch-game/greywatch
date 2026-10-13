@@ -25,7 +25,7 @@
  * phase's slot id**, which is what keeps the recording loop free of strings.
  *
  * They NEST and they do not partition: `frame` contains `gameplay` contains
- * `world` contains `bots`, and what is left over inside each is the lines
+ * `world` contains `net`, and what is left over inside each is the lines
  * nobody thought worth naming. Read a report as an attribution, exactly as
  * `buildProfile`'s header says to read the build's.
  *
@@ -55,8 +55,10 @@ export const PHASES = [
    * profiler is armed), the local match reports the row over its owner
    * channel (`src/sim/stepTiming.ts`), and `Game` FILES it
    * (`FrameProfile.fileTiming`) — so the brackets are the core's and the
-   * slots are this list's. A step run more than once a frame (a benchmark's
-   * lead) is summed.
+   * slots are this list's. Steps that one frame files are SUMMED — every
+   * step of one `advance` by the local match (`server/localMatch.ts`), every
+   * answer since the last filing by the page (`Game.localTiming`) — so a
+   * benchmark's lead, several steps a frame, reads as all of them.
    *
    * **It is a ROOT** (X2.5b): with the match in a Worker the step runs on
    * another thread, overlapping the page's frame rather than inside it, and
@@ -146,7 +148,7 @@ export type Phase = (typeof PHASES)[number];
 export const SLOTS = PHASES.length;
 
 /**
- * `P.bots` is the slot id for `"bots"`.
+ * `P.simBots` is the slot id for `"simBots"`.
  *
  * Derived from `PHASES` rather than written out, so the list is stated once
  * and an id cannot drift from its label. The values are plain numbers by the
