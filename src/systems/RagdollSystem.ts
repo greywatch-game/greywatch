@@ -234,8 +234,10 @@ export class RagdollSystem implements PhysicsClient {
    * a corpse does not move, and re-testing per frame would switch a tumble off
    * halfway through because the player backed away from it. Past
    * `viewDistance` the rig is not drawn at all, so what is refused is a body
-   * nobody can see; the bot's own clock takes it out of the world
-   * (`Bot.update`'s dead branch) and its rig follows.
+   * nobody can see. Every subject is a `NetSoldier` or the death cam's
+   * stand-in, and a refused `NetSoldier` keeps the stance it was hit in and
+   * hides itself when its death progress off the wire reaches 1
+   * (`NetSoldier`'s `dead >= 1` branch).
    */
   spawn(subject: RagdollSubject, camPos: Vector3): boolean {
     // There is a map to land on. The only thing `PhysicsWorld` can still say
@@ -243,8 +245,9 @@ export class RagdollSystem implements PhysicsClient {
     // being built — which is not a window anything dies in, but a body spawned
     // in it would fall for ever.
     if (!this.physics.hasWorld || this.slots.length === 0) return false;
-    // By fields: a bot's body is `src/math`, and Babylon's `Distance` reads
-    // `_x` (the NaN trap, `src/math/vector.ts`).
+    // By fields: a subject's vectors are typed `Vector3Like` (`RagdollSubject`),
+    // which admits `src/math`'s as well as Babylon's, and Babylon's `Distance`
+    // reads `_x` (the NaN trap, `src/math/vector.ts`).
     const gx = subject.position.x - camPos.x;
     const gy = subject.position.y - camPos.y;
     const gz = subject.position.z - camPos.z;

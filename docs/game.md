@@ -96,9 +96,10 @@ frame that steps (`fileLocalTiming`, `docs/profiling.md`).
 **WHO HOSTS is asked as two getters, and only about AUTHORITY.**
 `remoteRound` (a session that is not `local`) and `localRound` (one that is) —
 never `!this.net`, which is true of no round any more. They answer who may
-restart a round and choose the map and the difficulty (the round-over card, its
-confirm, the pause menu's Restart — absent in a server's match rather than
-dimmed), whether a lid or the deploy screen holds the world (`worldHeld`,
+restart a round and choose the map and the difficulty (the round-over card's
+Another round plate and the pause menu's Restart, both DRAWN and so absent in a
+server's match rather than dimmed, and the round-over card's confirm KEY, which
+is a guard — `updateMenuCard`'s `!this.remoteRound`; `docs/states.md`), whether a lid or the deploy screen holds the world (`worldHeld`,
 `updateRoundBehind`, `docs/states.md`), and the facts that follow from there
 being a server at all: the clouds' turn and the storm on the authority's
 clock, the ping column, whose seed a capture names, and the flow fields
@@ -125,9 +126,10 @@ behind its snapshots in its own match as in a server's. **There is no
 `SimCore`, `BattleSystem`, `VehicleCrew` or `ScoreBook` on the page**:
 `conquest` is a copy written off the wire, the bodies are `net.roster`'s
 `NetSoldier`s (read through `mapBodies`), and the posed fleet is
-`syncNetVehicles`'. Nor the AI's map data: the page's build sets `cover` null
-and skips the flow fields wherever nothing on the page steers by them, and
-keeps the nav GRAPH for `standableAt` and the editor.
+`syncNetVehicles`'. Nor the AI's map data: the page's build always returns
+`cover: null` (`MapBuilder.build`), skips the flow fields wherever nothing on
+the page steers by them (`BuildOptions.navFields`, set only for the editor and
+a server's match), and keeps the nav GRAPH for `standableAt` and the editor.
 
 **The match's world is the map's committed BAKE, not the page's build**
 (found at X2.5c C4). The old in-page core was handed `collisionOf(map)` off the

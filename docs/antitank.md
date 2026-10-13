@@ -421,10 +421,14 @@ in that slot is not the bot and wears no tube.
 **On the server this runs exactly as it does offline**, and it has to: the bots
 are simulated in the core and nowhere else — the page's own match's offline, the
 server's in a match — so a `SimCore` that wired nothing would field squads with
-no answer to a tank. `SimCore.wire` installs `fireRocketFor`, with no sound —
-which is the authority's to ANNOUNCE (`hearGunshot`, and the `fire` event
-`Match.onOrdnance` raises) rather than to play; the page hears it off that
-event like any other shot.
+no answer to a tank. `SimCore.wire` installs `fireRocketFor`, with no sound:
+it flies the rocket (`AntiTankSystem.launchToward`), lets the other side's bots
+HEAR it (`BattleSystem.hearGunshot`) and emits `EV.rocket`, which `Match` does
+not relay. The page hears a bot's launch the way it hears anybody else's —
+when the rocket first appears in a snapshot and is first posed
+(`NetOrdnance.onLaunch`, wired in `Game.wireNet` to `Sfx.launcher`). The
+`fire` event `Match.onOrdnance` notes (`noteFire`, kind `rpg`) is a PERSON's
+rocket, at that person's claim gate, and never a bot's.
 
 ## The models, and the one pose knob they needed
 

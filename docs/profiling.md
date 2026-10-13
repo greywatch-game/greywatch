@@ -735,6 +735,18 @@ thread — a frame after the one that posted it, whose picture it is, because
 that is the first frame the page has heard of it. Its `start` is earlier than
 that frame's own, so the trace draws it where it ran, across the boundary.
 
+**So at a benchmark SEGMENT boundary the filing lags the label by a frame.**
+`updateBench` calls `setSegment(cue.segment)` before the frame's first
+`updateWorld`, and the top of that `updateWorld` is `fileLocalTiming` — so the
+first `fight` frame files whatever answers the page has taken in since the
+last filing, which is the last `lead` frame's steps summed (that leg's
+`lastSteps`, up to `leadSteps`; more if a Worker's answers ran later than
+that), into the `fight` segment's
+`sim`. One frame of a segment that long is noise in a mean, but it is a lead
+frame's several steps in a frame whose own is one: read a `fight` segment's
+`sim` maximum, or its first frames, knowing the first row is not a fight
+step's.
+
 **What X2.5b named and X2.5c deleted, kept as history.** While the core ran in
 a Worker over shared memory (X2.5b until X2.5c's C5, report version 15), the
 page's half of that hop had two phases of its own under `world`: `simWait`,

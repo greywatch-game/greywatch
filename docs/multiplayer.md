@@ -1297,7 +1297,7 @@ drop, and an honest `move` is still not corrected.
 **A peer is a seat** — `admit` claims a slot, benches the bot in it and adds a
 person to the core, which is right for a person and is a different FIGHT for
 anybody who only wants to see one. The benchmark is that somebody: it draws
-the round it measures, and with the page's frame and mirrors gone (X2.5c C5)
+the round it measures, and with the page's frame and mirrors gone (X2.5c C4)
 the wire is the only picture there is. So an owned match lets its owner dial a
 WATCHER (`LocalMatch.dial({ watch: true })`, the `connect` call's `watch`, and
 `Match.watch`): the same handshake as a person, and then a welcome at
@@ -1359,11 +1359,18 @@ common but the `postMessage`:
   (`begin` builds a world), so ANY answer is a settle (`settle` is the one that
   does nothing else): `fight`'s hash is the fold of every step posted ahead of
   it. `advance` and `hold` are posted and never awaited — the page posts them
-  every frame and reads the newest `advance` answer (`onAdvanced`: the steps
-  taken, whether the round ended, and — when asked — every step's timing
-  SUMMED on the page's clock, each step added as it runs through
-  `MatchOptions.stepped`, since the core's own row is overwritten per step);
-  a `hold`'s `done` finds nobody waiting and is dropped.
+  every frame, and EVERY `advance` answer reaches `LocalMatch.onAdvanced`. An
+  answer (`Advanced`) carries the steps taken, whether the round ended, and —
+  when asked — every step's timing SUMMED on the page's clock, each step added
+  as it runs through `MatchOptions.stepped`, since the core's own row is
+  overwritten per step. `Game` reads only the timing: it adds each answer's
+  into one row (`localTiming`) for the next frame that steps to file
+  (`docs/profiling.md`), skipping the answers counted off by `localTimingSkip`
+  (owed when the world was held) and any that arrive before the round's
+  `begin` was answered (`localBegun`). Nothing on the page reads `steps` or
+  `ended` — the round's end is heard off the wire's `roundover`, on the
+  person's port (`Game.endRound`). A `hold`'s `done` finds nobody waiting and
+  is dropped.
   Each of the two is ONE held message rewritten per post, so the per-frame
   calls allocate nothing of their own, and `LocalMatch.behind` sums the
   SECONDS the `advance`s still unanswered carry — the owner's back-pressure,

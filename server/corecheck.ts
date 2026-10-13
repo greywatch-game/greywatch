@@ -1672,7 +1672,7 @@ function reportedHull(world: World, c: Checks): void {
   );
 
   // The trigger, asked between the step and the next report — the moment
-  // the page's `pullHullTrigger` asked it at until X2.5c C5: the round
+  // the page's `pullHullTrigger` asked it at until X2.5c C4: the round
   // leaves the reported pose's muzzle.
   const muzzle = tank.muzzleToRef(new Vector3());
   let mark = h.log.events.length;

@@ -2547,8 +2547,11 @@ reported centre stands on it and the report's own vertical rate otherwise, the
 change across the sample clamped to `joltLimit`, charged by `crashCost` and
 spent after the hulls move through the same `Vehicle.crash` (a `shell`, so the
 burn, the crew and the person in the seat follow as from any blow). The
-interval is the reporter's clock: `DriveCommand.time` (the page's `hullClock`,
-the client's `DriveMessage.time`). Bots, `simulate` (all seven `--events` md5s)
+interval is the reporter's clock: `DriveCommand.time`, which `Match` fills from
+the client's `DriveMessage.time` (the `Date.now()` stamp `NetSession` puts on
+every `drive`) on the peer's bounded clock, `(time - behind) / 1000` — offline
+as in a match since `BABYLON_EXIT.md` X2.5c C4, when the page's own `hullClock`
+went with its trusted core; `corecheck`'s bare core states its own. Bots, `simulate` (all seven `--events` md5s)
 and the seven bench hashes are unmoved.
 
 **Measured after** (`npm run corecheck`, `sarab/crash`, botless Sarab; hull

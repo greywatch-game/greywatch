@@ -213,7 +213,7 @@ new screen does not compile until it has answered all four questions, and
 | `covers` | which states may this be raised over? (`null` makes it a step) | the four lids |
 | `holdsWorld` | in the page's own match, is the world under this genuinely stopped — the HUD's clock and the audio with it? | `paused` |
 | `roundBehind` | in a server's match, does the authority's fight carry on behind this with nothing else stepping it? | the three lids that can cover a round, and `deploy` |
-| `inRound` | is the player in a round here — is the scoreboard owed? | `deploy`, `playing`, `dying` |
+| `inRound` | is the player in a round here — is the scoreboard owed? | `deploy`, `playing`, `dying`, `bench` |
 
 This replaced three `-From` fields on `Game`, a two-deep chain of `if`s that
 peeled them, and four screens that each had to REMEMBER to step the half of a

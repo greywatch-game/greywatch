@@ -1838,8 +1838,11 @@ wire comes later, for both at once, and only if a profiler capture asks for it.
     and the `bodyDrawDistance`/`perTeam` rows; `docs/game.md`,
     `docs/states.md`, `docs/profiling.md`, `docs/pwa.md`, `docs/bots.md`,
     `docs/deaths.md`, `docs/rendering.md`, `docs/world.md`,
-    `docs/vehicles.md`, `FILES.md`, `VERIFYING.md`, `FINDINGS.md` 30, and
-    the contract headers that still named the deleted host.
+    `docs/vehicles.md`, `docs/antitank.md`, `docs/grenades.md`, one
+    sentence of `docs/multiplayer.md` (C5 had rewritten the rest), `FILES.md`,
+    `VERIFYING.md`, `FINDINGS.md` 30, and the contract headers that still
+    named the deleted host. `BattleSystem.seatPlayer`, `playerSlot` and
+    `seated` had no caller since C4 and went with them.
   - `Game.ts` has no `onSimEvent`, and 25 lines ask who hosts the round
     (`remoteRound`, `localRound`, `net.local`), every one an authority or a
     hosting question: restart and its doors, the map card's labels, the
@@ -1856,6 +1859,18 @@ wire comes later, for both at once, and only if a profiler capture asks for it.
     posted answer is a fresh object anyway — the price of posting, as the
     JSON wire is — and the profiler's own recording path still allocates
     nothing; a capture that shows it matters is a binary owner channel.
+  - **Every offline round builds its rig pool TWICE on the 24-a-side
+    maps.** The page's own match is a fresh session per round, so its
+    `NetRoster` is built anew — `CONFIG.bots.perTeam` (8) a side in the
+    constructor — and `buildRound`'s `setFielded` then rebuilds it at the
+    map's 24. A build-time cost on Sarab and Cinderhaven, behind the
+    building card; taking the map's roster into the session's constructor
+    would halve it.
+  - **At a benchmark SEGMENT boundary the `sim` filing lags one frame**:
+    `updateBench` sets the segment before the frame's first `updateWorld`
+    files the previous frame's answers, so the first `fight` frame carries
+    the last lead frame's summed steps. One row of a segment's mean;
+    `docs/profiling.md` says so.
   - Everything under "Verify" that needs a person or the phone: the
     play-test, the phone's offline Sarab, and the deployed build installed
     and offline on the phone.

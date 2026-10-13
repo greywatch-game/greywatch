@@ -2,9 +2,10 @@
  * net/NetRoster.ts — The other bodies on screen, driven by snapshots.
  * Owns: the `NetSoldier` pool, applying snapshots to it, the mirrored flag and
  * ticket state, the distance LOD, and the target list the local player's own
- * rounds are resolved against. It is the client's replacement for
- * `BattleSystem` in a networked round — same job on screen, none of the job
- * underneath, because no AI runs here.
+ * rounds are resolved against. It is the page's whole picture of the
+ * authority's `BattleSystem` in every round — a server's match and the page's
+ * own alike, every round being a match — the same job on screen and none of
+ * the job underneath, because no AI runs here.
  * Invariants: the pool holds one soldier per slot the ROUND fields, and a
  * slot's soldier is the same object for as long as the map is standing; only
  * its OCCUPANT changes, which is why a human taking a bot's place costs nothing
@@ -350,7 +351,7 @@ export class NetRoster {
   /**
    * Poses every body for `renderTime`, and applies the distance LOD — the
    * body draw distance `RagdollSystem` gates its corpses on too, one number
-   * pushed to both (`setViewDistance`). Since `BABYLON_EXIT.md` X2.5c C5 this
+   * pushed to both (`setViewDistance`). Since `BABYLON_EXIT.md` X2.5c C4 this
    * is the only rig LOD there is, offline included: every body the page draws
    * is one of these.
    *

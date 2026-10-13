@@ -3092,7 +3092,7 @@ was offered to the walk whether the
 body was in the round or not — a bot past `bodyDrawDistance`, a bot benched for
 a human, a bot crewing a tank, and — while the offline page still kept a
 `BattleView` pool of its own beside the roster (until `BABYLON_EXIT.md` X2.5c
-C5) — the whole of that pool on a netplay round, built and never enabled at
+C4) — the whole of that pool on a netplay round, built and never enabled at
 all.
 `Game.installBodyPools` files them and `WorldCulling.update` polls each
 rig ROOT once a frame, marking the list dirty only on a transition — 48 property
@@ -3101,7 +3101,7 @@ reads against the 1,008 nodes a rebuild answers for.
 **The roster is not the only rig filed, and the other is the one the player
 looks at.** `buildSoldier` has exactly two callers — `NetSoldier` and
 `DeathCam`, which builds the stand-in body the player watches their own death
-over (it had a third, the offline page's own rig, until X2.5c C5) — and for a
+over (it had a third, the offline page's own rig, until X2.5c C4) — and for a
 long time only the ROSTERS were handed over. The death cam's was loose, four
 metres from the camera, and what that cost is under the size gate below. It is
 filed on the same terms the roster is: `SoldierRig` already IS `PooledBody`,

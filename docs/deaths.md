@@ -191,9 +191,11 @@ reason that is not this one (see `BoxSpec.glass`).
 **There were five refusals and there is ONE.** The WASM not having loaded, the
 WASM having failed and the setting being off are all answered by the boot gate
 above; a full pool no longer refuses but evicts (see below). What is left is a
-death past `death.maxDistance`, and that number has to be exactly where a rig
-stops being drawn rather than merely near it — because a body refused inside the
-fog would stand where it died until `death.hideTime`, with the tween that used to
+death past the map's body draw distance (`RagdollSystem.viewDistance`:
+`FOG_WALL` until `installMap` pushes the map's `bodyDrawDistanceOf`, which
+defaults to its `fogEnd`), and that number has to be exactly
+where a rig stops being drawn rather than merely near it — because a body
+refused where it is still drawn would stand where it died until `death.hideTime`, with the tween that used to
 lay it down gone. `Bot.update`'s dead branch is what remains in the core: it
 takes the body out of the world on the clock (`Bot.shown`, which the wire
 carries as `deathProgress`) and poses nothing; on the page the rig
@@ -201,7 +203,7 @@ carries as `deathProgress`) and poses nothing; on the page the rig
 progress reaches 1, unless a ragdoll owns its joints, in which case it stands
 aside entirely — the rig stays drawn and nothing writes its root or its pose.
 The simulation has not known a ragdoll exists since BABYLON_EXIT.md X2.2 C7,
-and since X2.5c C5 the pool hears of every death the same way, off the wire
+and since X2.5c C4 the pool hears of every death the same way, off the wire
 (`NetRoster.onDeath`), offline as in a match.
 
 That tween was exempt from the pose-freeze LOD *because it was five property
@@ -255,13 +257,13 @@ trial spread of 0.24-0.42. Those absolutes do not line up with the ones
 `maxConcurrent` carries below and are not meant to: different harness, different
 session, and headless absolutes are inflated anyway. The PAIR is the measurement.
 
-**The gate is the FOG WALL, and it is one number for everything that stops at it
-— the MAP's number.** Two systems gate on the same distance for the same reason
+**The gate is the BODY DRAW DISTANCE — the fog wall unless the map pulls it
+in — and it is one number for everything that stops at it, the MAP's number.** Two systems gate on the same distance for the same reason
 (there is nothing to see past it): `NetRoster`, where a rig stops being drawn —
 every body the page draws comes off the wire, offline as in a match — and
 `death.maxDistance` here, one metre past which the solver would be tumbling
 something nobody can see. There were three while the offline page drew its own
-bots — `BattleSystem`, then `BattleView` once the rigs left it, until X2.5c C5.
+bots — `BattleSystem`, then `BattleView` once the rigs left it, until X2.5c C4.
 `BattleSystem` wrote its own `78` out by hand before any of this, which is how
 the ragdoll gate came to be keyed off an unrelated LOD.
 
@@ -341,7 +343,7 @@ FINDINGS #8's older 1.37 ms for four does not reproduce; see the note there.
   place in the torso, and never a `parent`, a `rotationQuaternion`, a `scaling` or the
   position of any joint but `body` and `gun`. `RagdollSystem.release` calls the
   former on every rig it hands back, and `NetSoldier.reset` on every change of
-  a slot's occupant. Until X2.5c C5 the offline page's `BotRig` called it too,
+  a slot's occupant. Until X2.5c C4 the offline page's `BotRig` called it too,
   on every new `Bot.life` — at any distance, and before EITHER of its writers
   posed the rig (`syncLife`, at the top of `follow` and of `catchUp`): a bot put
   back and killed inside one `battle.update` reached `catchUp` before any
@@ -469,11 +471,11 @@ about — not in `RagdollSystem`, because `DeathCam` needs it too and a system m
 import another one. A `NetSoldier` satisfies it structurally and imports nothing
 of the pool's, which keeps it free of any knowledge that a physics engine exists
 — and the `Bot` itself is not a subject at all, having no rig and, since X2.5c
-C5, no place on the page: `NetRoster.onDeath` hands the pool the slot's
+C4, no place on the page: `NetRoster.onDeath` hands the pool the slot's
 `NetSoldier` at the edge its interpolated `alive` falls on, and `Game` wires
 that to `ragdolls.spawn`. The three vectors the pool reads are `Vector3Like`, a
 remnant of the offline page offering a `BotRig` caught up to its `src/math`
-bot (`BattleView.corpseOf`, until C5). `retire(subject)` is
+bot (`BattleView.corpseOf`, until C4). `retire(subject)` is
 the one thing the player's corpse needs that a bot's does not: a bot's body outlives
 the death cam's window and goes on its own clock, while the player's has to be gone
 before the deploy screen comes up over it.

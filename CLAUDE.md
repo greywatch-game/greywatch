@@ -250,22 +250,15 @@ for both kinds of round at once. So "systems never import each other" holds
 on the page, and new cross-system behaviour goes in one of the two wirings.
 Type-only imports are fine — erased.
 
-**Offline the page HOSTS that `Match` itself** (`src/net/matchHost.ts`): in a
-Worker, or on a `MessageChannel` in its own thread under `?simpage` or when no
-Worker comes up — one code path, reached on the fallback through **the one
-value import of `server/` anywhere in `src/`**, a dynamic `import()`. It is an
-**OWNED** match: its clock is the page's (`advance` from `updateWorld`, `hold`
-for the rest of the frame, so a lid or the deploy screen holds the world),
-its rounds are begun on the page's seed and difficulty, and the owner drives
-it over a channel of its own that is not a `ClientMessage`
-(`src/net/LocalMatch.ts`); everything else is the JSON wire a server speaks.
-**The rule is ONE client model: whatever about the online experience is not
-acceptable offline is fixed for BOTH**, and offline never gets a better
-transport than a match. **Nothing on the page may depend on WHEN the match
-answers**, and **the local `Player` is a PREDICTION exactly as in a server's
-match** — its sweep, its ground, its stance, the HUD's regen and, in a hull,
-the DRIVE — validated on arrival, everything it decides the authority's and
-answered as events (`docs/game.md`, `docs/multiplayer.md`).
+**Offline the page HOSTS that `Match` itself and OWNS it** (the Multiplayer
+section): its clock is advanced from `updateWorld` and held otherwise, so a
+lid or the deploy screen holds the world. **The rule is ONE client model:
+whatever about the online experience is not acceptable offline is fixed for
+BOTH**, and offline never gets a better transport than a match. **Nothing on
+the page may depend on WHEN the match answers**, and **the local `Player` is a
+PREDICTION exactly as in a server's match** — its sweep, its ground, its
+stance, the HUD's regen and, in a hull, the DRIVE — validated on arrival and
+answered as events (`docs/game.md`).
 
 **There is one system that calls another directly, and it is injected rather
 than imported**: `BattleSystem` takes `CombatSystem` in its constructor
@@ -997,11 +990,13 @@ that same object, unchanged; `GameMap.world` keeps it beside the mesh:
 **How many bots there ARE is the MAP's on both sides** (`MapLayout.perTeam`, 8
 on the five smaller maps, 24 on Sarab and Cinderhaven), and the two kinds of
 `Match` state it differently, as `RoundSpec.pool` and `fielded`. An OWNED
-match's pool — the page's own — IS that roster, fielded whole:
-`BattleSystem.setRoster` rebuilds it when the number moves, and the page's
-`NetRoster.setFielded` rebuilds the rigs beside it — from `buildRound`, never
-from `installMap` — which is the one place "built once and never disposed"
-bends. **A SERVER's pool is the ceiling, built once**
+match's pool — the page's own — IS that roster, fielded whole. **The RIGS are
+the session's**, so "built once and never disposed" holds inside a round and
+bends only between rounds: the page's own match is a fresh session every
+round, its rigs built for that map, and a server's session keeps its pool
+across a rotation and rebuilds it (`NetRoster.setFielded`, from `buildRound`,
+never from `installMap`) only when the count or the viewer's side moves.
+**A SERVER's pool is the ceiling, built once**
 (`CONFIG.bots.maxPerTeam` a side, because a slot index is a bot index and a
 match rotates maps under one slot table) and `setFielded` takes the surplus out
 of each round, which is the third reason a bot can be `aside`. **Nothing else in
@@ -1023,7 +1018,7 @@ never sweep**. `ObstacleField` is the sub-cell half, and its
 push-out is a preference, never a veto.
 
 **`Bot` and `BattleSystem` are the SIMULATION and draw nothing** (`src/math`, no
-Babylon, no camera), **and no page holds one**: every body a page draws is a
+Babylon, no camera), **and no view names one**: every body a page draws is a
 `NetSoldier` on its session's `NetRoster`, one per slot the round fields, posed
 off the wire and never writing back — so the distance LOD and a ragdoll holding
 a corpse are the view's, and nothing about the camera reaches an outcome. **Three things carry the frame budget and undoing any costs ~10x draw
@@ -1068,13 +1063,13 @@ nor a chunk is either. `scene.physicsEnabled` is **false and must stay false**
 until the scene goes (the game renders in every state, so a scene-driven step
 would tumble corpses under the pause card) — `Game` writes it, though the scene
 has no physics engine left to step — and Havok never touches a node at all.
-**What the pool holds
-for a body is its RIG** (a `NetSoldier`'s, or the death cam's stand-in), never
-the simulation's `Bot`, which no page holds.
+**What the pool holds for a body is its RIG** (a `NetSoldier`'s, or the death
+cam's stand-in), never the simulation's `Bot`.
 
 **The engine is required and there is no fallback.** A full pool **evicts the
 oldest corpse** rather than refusing, which protects the death cam's body for
-free; **one refusal is left, a death past the fog wall**, where nothing is drawn.
+free; **one refusal is left, a death past the body draw distance**, where
+nothing is drawn.
 
 **A round DROPS a body and an explosion THROWS it**: a round is a
 newton-second on the chest, a blast is a SPEED given to every bone at once, and
@@ -1350,8 +1345,8 @@ are therefore THREE ROOTS with `sim` below** (`ROOTS`, derived from `PHASES`
 minus `PARENT_OF` so it cannot drift, and shipped in every capture as
 `ProfileReport.roots`). **What
 is left over is the answer, not a gap**: `frame` + `present` short of the wall
-clock is the rAF wait, the compositor, the panel — and naming it would be
-claiming to know which.
+clock is the rAF wait, the compositor, the panel — and, with the match on the
+page's own thread, its step — and naming it would be claiming to know which.
 
 **The third is `sim`: the core TIMES ITSELF with a clock its host INJECTS**
 (`SimCoreOptions.timing`), a round's step having no line of `Game.ts` between
@@ -1362,9 +1357,11 @@ is armed, the host's clock is moved onto the page's `timeOrigin`, every step
 an `advance` takes is SUMMED (`MatchOptions.stepped`) and comes back in its
 answer, and `Game.fileLocalTiming` files whatever has arrived since the last
 filing (`FrameProfile.fileTiming`) against the frame that takes it in — and
-drops it on a frame that HELD the world. **`sim` is a THIRD ROOT**, since in
-a Worker it runs on another thread; every capture says which (`simMode`), and
-**the no-allocation rule holds on BOTH threads**.
+drops it on a frame that HELD the world. **`sim` is a THIRD ROOT**, since it
+never runs inside a tick — on another thread, or between frames on this one;
+every capture says which (`simMode`), and **the recording path allocates
+nothing on EITHER thread** (the posted answer carrying the timing is a fresh
+object, as every posted message is).
 
 **THE BENCHMARK IS A URL** (`?bench=<map>`, `bench/BenchScript.ts`): the bank's
 vantages at eight headings, a path through the densest quarter and a bot-only
@@ -1434,8 +1431,9 @@ viewport any more).
 
 ### Multiplayer: the server is the authority, and a slot is a slot
 
-A dedicated Node process runs the real simulation and clients render it; there
-is no host client. **`Match` is the HOST of the one `SimCore`**: it VALIDATES each message (`server/wire.ts`, the claim
+A server's match is a dedicated Node process running the real simulation,
+which its clients render; no client hosts one. **`Match` is the HOST of the
+one `SimCore`**: it VALIDATES each message (`server/wire.ts`, the claim
 gates, `validateMove`/`validateDrive`), `submit`s what it accepted as a
 `SimCommand`, and drains the core's events after every call to `relay` them
 onto the wire — **validation is `Match`'s and every rule is the core's**, so
@@ -1447,21 +1445,18 @@ arrival; everything else a client steps is DRESSING.
 
 **Offline is a match too, and the page is its OWNER as well as its one
 client** (`BABYLON_EXIT.md` X2.5c): an owned `Match` in a Worker
-(`server/localMatchWorker.ts`) or on a channel in the page's own thread,
-joined through the same `NetSession` and `Connection` over a port rather than
-a socket (`src/net/transport.ts`), every claim gate and validation met as a
-remote peer meets them. **What only the owner may do goes on a SECOND channel
-that is not a `ClientMessage`** (`src/net/LocalMatch.ts` to
-`server/localMatch.ts`, in `src/net/localWire.ts`'s words): open, begin a
-round on a seed and a difficulty, `advance` or `hold` the clock, settle, read
-the bench's fight, dial a person or a seatless WATCHER — so nothing a remote
-client sends can begin a round or move a clock. **Whether the page owns the
-match is ONE question (`Game.localRound`/`remoteRound`), asked only about
-AUTHORITY** — restart, the map and the difficulty, a lid holding the world —
-and never about what the page PREDICTS. **A hold is handed over as CLOCK and
-not as steps** (`Match.hold`), so no client needs a path of its own for one,
-and **a host that goes SILENT is lost and replaced** (`LocalMatch`'s watchdog,
-`Game.rehostLocal`), since a port into a dead Worker says nothing.
+(`src/net/matchHost.ts`), or on a channel in the page's own thread under
+`?simpage` or when no Worker comes up — reached through **the one value
+import of `server/` anywhere in `src/`**, that fallback's dynamic `import()`.
+The page joins it over a port rather than a socket, meeting every claim gate
+as a remote peer does. **What only the owner may do goes on a SECOND channel
+that is not a `ClientMessage`** (`src/net/LocalMatch.ts`): begin a round on a
+seed and a difficulty, `advance` or `hold` the clock, read the bench's fight,
+dial a seatless WATCHER — so nothing a remote client sends can begin a round
+or move a clock. **Whether the page owns the match is ONE question
+(`Game.localRound`/`remoteRound`), asked only about AUTHORITY** — restart,
+the map and the difficulty, a lid holding the world — never about what the
+page PREDICTS.
 
 **The slot table is forty-eight slots, built once, never resized or reordered**
 — `CONFIG.bots.maxPerTeam` a side, on every map, because a match rotates maps

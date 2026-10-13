@@ -214,7 +214,7 @@ permanent hitch:
   is two halves since BABYLON_EXIT.md X2.2 C7**: `BattleSystem` holds the
   `Bot`s — simulation on `src/math`, no rig, no scene, no camera — and a
   client's `NetRoster` holds one `NetSoldier` per slot the round fields, drawn
-  off the snapshots and writing nothing back. **Since X2.5c C5 that is the
+  off the snapshots and writing nothing back. **Since X2.5c C4 that is the
   only rig a bot has, offline included**, the page being a client of its own
   match; until then the offline page held a `BattleView` of `BotRig`s that
   followed the core's bots directly. The authority builds no rig at all (its
@@ -242,13 +242,24 @@ permanent hitch:
 **How big the roster IS is the map's, on both sides**, and on a CLIENT the pool
 is exactly that roster rather than a ceiling every map pays for.
 `MapLayout.perTeam` defaults to `CONFIG.bots.perTeam` (8) and is bounded by
-`CONFIG.bots.maxPerTeam` (24); Sarab is the only map that states one, and
-`perTeamOf` is where the default and the bound live. The page's own match
-asks the core for exactly that pool (`RoundSpec.pool`, `SimCore.startRound`),
-which reaches `BattleSystem.setRoster` — a no-op at the same size and
-otherwise a new pool — and `Game.buildRound` hands the same number to
-`NetRoster.setFielded` (through `NetSession.setFielded`), which rebuilds the
-rigs when the count or the viewer's side moved — so a map that says nothing
+`CONFIG.bots.maxPerTeam` (24); Sarab and Cinderhaven are the two maps that
+state one (24 each), and `perTeamOf` is where the default and the bound live.
+The page's own match asks the core for exactly that pool (`RoundSpec.pool`,
+`SimCore.startRound`), which reaches `BattleSystem.setRoster` — a no-op at the
+same size and otherwise a new pool — and `Game.buildRound` hands the same
+number to `NetRoster.setFielded` (through `NetSession.setFielded`), which
+rebuilds the rigs when the count or the viewer's side moved since the
+session's own pool was built. **That is two different lifetimes on the two
+kinds of match.** A server's session outlives every rotation, so its pool is
+rebuilt only when the count or the side moves. The page's own match is a FRESH
+session every round — `Game.openLocalRound` calls `leaveMatch`, which disposes
+the last `NetSession` and its `NetRoster`, and builds a new one whose
+constructor builds a pool of `CONFIG.bots.perTeam` a side — so every offline
+round, a same-map restart included, builds its rigs anew. On the two 24-a-side
+maps it builds them TWICE: eight a side in the constructor, then twenty-four
+through `setFielded` from `buildRound`. That is a known cost, paid under the
+loading card; "built once and never disposed" still holds INSIDE a round, which
+is the frame budget's claim — so a map that says nothing
 gets the same sixteen bodies with the same squads, the same launchers, the same
 molotov carriers (each squad's LAST body, the launcher's rule from the other end
 — `docs/grenades.md`) and the same movement seeds it always had, bit for bit.
@@ -259,8 +270,10 @@ pool built to `maxPerTeam` would leave thirty-two bodies nobody is fighting in
 the frame's own active-mesh walk on every 8v8 map — `WorldCulling`'s whole
 argument is that a DISABLED mesh is skipped cheaply and not skipped, six hundred
 meshes at ~0.67 µs on a village whose entire frame is under 2 ms. So the bend is
-placed where a map change already disposes the world, rebuilds it and holds a
-loading card over the wait. Both halves sit at a ROUND's start and neither
+placed where a round's build already holds a loading card over the wait — on a
+server's session only when the map changes what it fields, on the page's own
+match at every round, the session being new (above). Both halves sit at a
+ROUND's start and neither
 in `installMap` — the editor is that method's other caller and has no round,
 no player and no bots. On the page `NetRoster.setFielded` is called from
 `buildRound` after `RagdollSystem.reset`, the ragdolls being what holds a RIG;

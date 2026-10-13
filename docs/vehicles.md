@@ -3686,7 +3686,7 @@ reports themselves (`src/sim/reportedLanding.ts`, "A person's landing is
 charged off their REPORTS" above, `FINDINGS.md` 60). Offline the trigger is
 what it is in a match: the page predicts the round (`Game.fireShell`,
 `fireMg`) and reports it as a `shell` or an `mg`, and the core decides. Until
-X2.5c C5 it was asked of the page's own core between its step and the page's
+X2.5c C4 it was asked of the page's own core between its step and the page's
 fleet, the one moment the two copies stood in the same place
 (`Game.pullHullTrigger`).
 

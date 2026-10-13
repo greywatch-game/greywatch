@@ -466,7 +466,7 @@ grade check, and `buildSimWorld`. Three things a larger map owes:
 `config/fogWall.ts` used to be the answer and is now only the DEFAULT: a map's
 `fogEnd` is pushed by `Game.installMap` into the two systems that gate on it —
 `NetRoster` (where a rig stops being drawn) and `RagdollSystem` (where a corpse
-is not worth tumbling). There were three until `BABYLON_EXIT.md` X2.5c C5: the
+is not worth tumbling). There were three until `BABYLON_EXIT.md` X2.5c C4: the
 offline page's own `BattleView` was the first, and went when every body the
 page draws became a wire body. The old dev warning that checked the two against each other is gone, because the
 disagreement it reported is now the feature.
@@ -533,10 +533,17 @@ or not — `WorldCulling` is explicit that a disabled mesh is skipped CHEAPLY an
 not skipped, which is the whole reason that file exists. So a pool built to
 `CONFIG.bots.maxPerTeam` (24) on every map would put six hundred meshes nobody
 is fighting into a village whose entire frame is under 2 ms.
-`BattleSystem.setRoster` therefore builds a new pool when the number MOVES (and
-`NetRoster.setFielded` new rigs for it, on the page), which is the one place the
-"built once and never disposed" rule bends, and it bends at a map change — where the whole world is being
-rebuilt anyway and a loading card is already up. Measured on the box this was
+`BattleSystem.setRoster` therefore builds a new pool when the number MOVES, and
+`NetRoster.setFielded` new rigs for it on the page when the count or the
+viewer's side moved since the session's pool was built — which on a server's
+session, living across rotations, is a map change. The page's own match is a
+fresh session every round (`Game.openLocalRound` disposes the last through
+`leaveMatch`), so offline every round builds its rigs anew, a same-map restart
+included — and on Sarab and Cinderhaven twice, `CONFIG.bots.perTeam` a side in
+`NetRoster`'s constructor and then twenty-four through `setFielded`, a known
+cost. That is the one place the "built once and never disposed" rule bends,
+and it bends only at a round's build, where a loading card is already up;
+inside a round it holds. Measured on the box this was
 written on, Sarab is 15.2-15.7 ms a frame at 24 a side against 10.8 at 8, warm
 and uncapped; every other map is untouched code and an untouched pool.
 
