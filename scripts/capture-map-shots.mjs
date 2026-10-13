@@ -211,8 +211,16 @@ async function captureMap(browser, url, id, vantage) {
         const poll = () => (g.state === "deploy" ? resolve() : setTimeout(poll, 50));
         poll();
       });
-      // The place, not the fight: no bodies, no rings, no beacons.
-      for (const body of g.battleView.rigs) body.rig.root.setEnabled(false);
+      // The place, not the fight: no bodies, no rings, no beacons. The bodies
+      // are the round's session's (`g.net.roster`, offline too), and the
+      // roster re-shows a living one every frame the deploy screen draws — so
+      // they are hidden AND drawn no further than 0 m, which is what the
+      // roster hides every body past, each frame, after posing it.
+      const roster = g.net?.roster;
+      if (roster) {
+        roster.setViewDistance(0);
+        for (const body of roster.soldiers) body.setEnabled(false);
+      }
       g.zones.dispose();
 
       const cam = g.cameraSys.camera;

@@ -249,8 +249,19 @@ export function placeVantage(page, vantage) {
     // **Every subject a row can ask for is put away first, every time**, so a
     // vantage's frame is a function of its own row and never of the one shot
     // before it in the same boot.
-    // The place, not the fight: no bodies, no rings, no beacons.
-    for (const body of g.battleView.rigs) body.rig.root.setEnabled(false);
+    // The place, not the fight: no bodies, no rings, no beacons. The bodies
+    // are the round's session's (`g.net.roster` — a client's, offline too),
+    // and the roster poses and re-shows every living one off the wire each
+    // frame, the deploy screen included, which would undo a hidden body and
+    // re-pose a posed one before the frame is drawn. So its per-frame update
+    // is HELD for the life of the boot — a bank boot photographs and never
+    // plays — and a body is shown or hidden by `NetSoldier.setEnabled`, which
+    // then stays as it is put.
+    const roster = g.net?.roster;
+    if (roster) {
+      roster.update = () => {};
+      for (const body of roster.soldiers) body.setEnabled(false);
+    }
     // HIDDEN rather than disposed, which is what a row asking for them needs:
     // a boot shoots the whole table in order and a disposed ring is gone for
     // every row after the one that took it.
@@ -296,13 +307,14 @@ export function placeVantage(page, vantage) {
       const soldier = await import("/src/entities/SoldierModel.ts");
       const { REST_POSE } = await import("/src/entities/soldierPose.ts");
       v.rigs.forEach((r, i) => {
-        const rig = g.battleView.rigs[i].rig;
+        const body = roster.soldiers[i];
+        const rig = body.rig;
         soldier.resetSoldierPose(rig);
         soldier.animateSoldier(rig, { ...REST_POSE, ...(r.pose ?? {}) });
         const [rx, rz] = r.at;
         rig.root.position.set(rx, g.map.terrain.surfaceAt(rx, rz, true) + rig.centerHeight, rz);
         rig.root.rotation.y = r.yaw ?? 0;
-        rig.root.setEnabled(true);
+        body.setEnabled(true);
       });
     }
 
@@ -315,7 +327,8 @@ export function placeVantage(page, vantage) {
     // shadow window cannot check it. Focus as `updateCameraAndLighting` puts
     // it: ahead of the eye along the view.
     const focus = target.subtract(cam.position).normalize().scaleInPlace(8).addInPlace(cam.position);
-    g.updateSceneForCamera(0, focus, null, [], g.battleView.rigs);
+    // No bodies argument: the default is the roster's, which is what is drawn.
+    g.updateSceneForCamera(0, focus, null, []);
 
     // A blast in the air: the real `BlastFx` raised at a point and aged by
     // a fixed number of fixed steps, so it is posed in flight the same way

@@ -65,7 +65,13 @@ try {
       const poll = () => (g.state === "deploy" ? r() : setTimeout(poll, 50));
       poll();
     });
-    if (!bots) for (const r of g.battleView.rigs) r.rig.root.setEnabled(false);
+    // No bodies unless asked: the session's roster (`g.net.roster`) re-shows
+    // a living one every frame, so it draws none past 0 m instead.
+    const roster = g.net?.roster;
+    if (!bots && roster) {
+      roster.setViewDistance(0);
+      for (const body of roster.soldiers) body.setEnabled(false);
+    }
   }, args.includes("--bots"));
   for (const [name, v] of Object.entries(views)) {
     if (only && !only.has(name)) continue;

@@ -116,7 +116,13 @@ try {
     }
     await page.evaluate(({ px, pz, rot, v, keepZones }) => {
       const g = window.__celshock;
-      for (const body of g.battleView.rigs) body.rig.root.setEnabled(false);
+      // No bodies: the session's roster (`g.net.roster`) re-shows a living
+      // one every frame, so it draws none past 0 m instead.
+      const roster = g.net?.roster;
+      if (roster) {
+        roster.setViewDistance(0);
+        for (const body of roster.soldiers) body.setEnabled(false);
+      }
       if (!keepZones) g.zones?.dispose?.();
       const c = Math.cos(rot);
       const s = Math.sin(rot);
