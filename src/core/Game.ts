@@ -4691,7 +4691,7 @@ export class Game {
     // see `config/fogWall.ts`.
     //
     // It used to be stated twice — here, where the fog is painted, and in
-    // CONFIG, where those three read it — with a dev warning when a map
+    // CONFIG, where its readers took it — with a dev warning when a map
     // disagreed. It is now stated once, by the map, for a reason that warning
     // could only report: a map is allowed to have no fog, and on one that can
     // see three hundred metres a body vanishing at seventy-eight vanishes in
@@ -4702,16 +4702,16 @@ export class Game {
     // WORLD stops being worth drawing; a body is fourteen meshes wide and two
     // pixels tall long before that, and a map with no fog at all had no such
     // distance to give them. See `EnvironmentSpec.bodyDrawDistance`, which is
-    // `ENGINE_UPGRADE.md` S8, and note that the fourth reader below is
+    // `ENGINE_UPGRADE.md` S8, and note that the third reader below is
     // deliberately NOT on it.
     const bodyDraw = bodyDrawDistanceOf(environment);
     this.ragdolls.setViewDistance(bodyDraw);
     this.net?.roster.setViewDistance(bodyDraw);
-    // And a fourth reader of the FOG, for the same reason turned inside out:
+    // And a third reader of the FOG, for the same reason turned inside out:
     // past the fog wall there is nothing to see, so there is nothing to WALK
     // either. `WorldCulling` files the fresh map's meshes and
     // decides which of them Babylon's per-frame active-mesh pass is offered —
-    // it writes nothing onto any of them, so unlike the three lines above it,
+    // it writes nothing onto any of them, so unlike the two lines above it,
     // and unlike every other line in this method, nothing downstream can tell
     // it ran. See `ENGINE_UPGRADE.md` wall 1.
     //
@@ -8398,12 +8398,15 @@ export class Game {
    * authority's: everybody else's bodies, and the effects nobody else advances.
    *
    * One method because it has two callers that must never drift apart —
-   * `updateWorld` for the states that are IN the round, and the deploy screen
-   * for the one state that is not. A player waiting to come back is watching a
-   * fight that has not stopped for them, and this screen is a live view of it
-   * with a top-down map of the flags over the top; left unstepped, sixteen
-   * bodies stand frozen behind the card and then snap to wherever they really
-   * are on the frame the player deploys.
+   * `updateWorld` for the states that are IN the round, and
+   * `updateNetUnderCard` for a SERVER's round carried on behind a screen that
+   * is not: the deploy screen, or a lid over the round (`updateRoundBehind`).
+   * A player waiting to come back is watching a fight that has not stopped
+   * for them, and the deploy screen is a live view of it with a top-down map
+   * of the flags over the top; left unstepped, sixteen bodies stand frozen
+   * behind the card and then snap to wherever they really are on the frame
+   * the player deploys. In the page's own match there is no such fight: the
+   * card HOLDS the match, so the second caller never runs there.
    *
    * `RagdollSystem` is in here for a reason sharper than symmetry: `updateNet`
    * is what raises an interpolated death, and a death raised while the pool is
@@ -8414,9 +8417,9 @@ export class Game {
    *
    * This is still not simulation and may never become it. Nothing here decides
    * an outcome, which is what keeps it callable from a state that owns none —
-   * and it stays out of `paused` and `menu` for the reason it belongs in
-   * `deploy`: those two are a round that is not running, and this is a round
-   * running without you.
+   * and it stays out of `menu` and every round the page holds for the reason
+   * it belongs under a server's `deploy`: those are a round that is not
+   * running, and this is a round running without you.
    */
   private updateNetWorld(dt: number): void {
     // A frame is `world` > `net` > these, and what is MISSING from it (the

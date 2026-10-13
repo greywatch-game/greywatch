@@ -252,7 +252,7 @@ export class RagdollSystem implements PhysicsClient {
       return false;
     }
     // A body already held is not offered twice. Each death has one caller
-    // (`Game.botDown`, a match's `NetRoster.onDeath`, the death cam) and fires
+    // (`NetRoster.onDeath` for every body off the wire, the death cam) and fires
     // once, but a rig in two slots would be two sets of
     // bodies fighting over the same joints.
     if (subject.ragdolling || this.slots.some((s) => s.subject === subject)) {

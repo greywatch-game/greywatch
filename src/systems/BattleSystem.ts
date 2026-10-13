@@ -27,7 +27,7 @@
  * CONFIG.lighting.muzzleBudgetPerFrame on the nearest few (16 shader light
  * slots are absolute). Runs AFTER ConquestSystem.update each frame.
  * Cross-system effects go out via onBotKill/onBotFired callbacks wired in
- * Game — never import other systems. A bot's grenade leaves the same way
+ * SimCore — never import other systems. A bot's grenade leaves the same way
  * (throwGrenadeFor): the ballistics and the pool are GrenadeSystem's, and this
  * file only forwards the bot's ask and its answer.
  * Non-bot combatants live in `humans` (one offline, up to sixteen on the
@@ -44,9 +44,11 @@
  * `setFielded`. Every loop over `bots` must skip all three, and the one test
  * that does it is `aside` — never `benched.has` directly. `Bot` itself knows
  * nothing about any of it.
- * A HUMAN ALWAYS HOLDS A SLOT, offline as well as on the server: `seatPlayer`
- * benches the local player's, which is what makes a single-player round 8v8
- * rather than 8v9.
+ * A HUMAN ALWAYS HOLDS A SLOT, offline as well as on the server: the core
+ * benches the bot in every seated person's slot (`SimCore.startRound`, last,
+ * and the seat's own door), the offline player being a seated person of the
+ * page's own match — which is what makes a single-player round 8v8 rather
+ * than 8v9.
  * HOW BIG THE ROSTER IS is the MAP's on both sides now (`MapLayout.perTeam`,
  * resolved by `perTeamOf`), and the two hosts of the core spend it
  * differently (`RoundSpec.pool`/`fielded`). An OWNED match — the page's
@@ -239,9 +241,9 @@ export class BattleSystem {
    * the human leaves it is back with the same skill and the same squad, because
    * nothing about it was ever torn down.
    *
-   * Exactly one entry offline — the slot the local player holds, see
-   * `seatPlayer` — so the single-player path pays one `Set.has` per bot per
-   * frame for the same rule the server runs.
+   * Exactly one entry offline — the slot the local player holds in the
+   * page's own match — so the single-player path pays one `Set.has` per bot
+   * per frame for the same rule the server runs.
    */
   private readonly benched = new Set<Bot>();
   /**
@@ -284,10 +286,11 @@ export class BattleSystem {
    * — and folding them would let a rotation hand a leaver's slot back to a body
    * this map does not field.
    *
-   * EMPTY OFFLINE, always: `Game.buildRound` sizes the pool to the map through
-   * `setRoster` and never calls `setFielded`, which is the only thing that
-   * writes this. The single-player path pays one more `Set.has` per bot per
-   * frame for a rule only the server spends.
+   * EMPTY OFFLINE, always: the page's own match asks `SimCore.startRound` for
+   * a pool of the map's own size and fields all of it (`RoundSpec.pool` and
+   * `fielded` the same number), so `setFielded` takes nobody out. The
+   * single-player path pays one more `Set.has` per bot per frame for a rule
+   * only the server spends.
    */
   private readonly unfielded = new Set<Bot>();
   /**
@@ -301,12 +304,6 @@ export class BattleSystem {
    * spending on it.
    */
   private inPlay = 0;
-  /**
-   * The roster slot the offline player sits in, or -1 before a round has
-   * seated them. Written only by `seatPlayer`, and read by the scoreboard,
-   * which draws the player's line in place of that slot's bot.
-   */
-  private seated = -1;
   private thinkCursor = 0;
   /**
    * Live orders per team, indexed by squad. Replanned on their own slow timer
@@ -347,10 +344,10 @@ export class BattleSystem {
    * How many bodies a side the pool currently holds — `bots.length / 2`, and
    * the map's own `perTeamOf` from the moment one is installed.
    *
-   * `CONFIG.bots.perTeam` until then, which is what the four maps that state
-   * nothing field and what the AUTHORITY fields on every map: the netplay
-   * roster is sixteen fixed slots and `setRoster` is never called on the
-   * server, so a slot index is still a bot index there. See `setRoster`.
+   * `CONFIG.bots.perTeam` until then, which is what the maps that state
+   * nothing field. Whatever pool the HOST asks for (`RoundSpec.pool`) is what
+   * `setRoster` makes it — the ceiling on a rotating match, the map's own on
+   * an owned one — so a slot index is a bot index on both. See `setRoster`.
    */
   private perTeam: number = CONFIG.bots.perTeam;
 
@@ -567,14 +564,13 @@ export class BattleSystem {
   setRoster(perTeam: number): void {
     if (perTeam === this.perTeam) return;
     this.perTeam = perTeam;
-    // Nothing may be holding a body across this. The two sets are the only
-    // things in this file that do, and `seated` is an index into a pool that
-    // is about to be a different length — `Game.buildRound` seats the player
-    // again a few lines later, through `seatPlayer`, which is idempotent.
+    // Nothing may be holding a body across this. The sets are the only
+    // things in this file that do, and the pool is about to be a different
+    // length — `SimCore.startRound` re-benches every seated person over the
+    // new pool at its own end.
     this.benched.clear();
     this.crewed.clear();
     this.unfielded.clear();
-    this.seated = -1;
     this.thinkCursor = 0;
     this.bots.length = 0;
     this.buildPool(perTeam);
@@ -585,9 +581,9 @@ export class BattleSystem {
    *
    * **The pool's size and the round's are the same number offline and two
    * numbers on the authority**, which is the whole of why this is a second
-   * method rather than an argument to `setRoster`. Offline nothing calls this
-   * at all: `Game.buildRound` builds exactly what the map asks for, and a call
-   * here would be handed the number the pool already is and add nobody. In a
+   * method rather than an argument to `setRoster`. Offline the call is handed
+   * the number the pool already is and takes nobody out: the page's own match
+   * builds exactly what the map asks for (`RoundSpec.fielded` is its pool). In a
    * match a slot index is a bot index, so team 1's block must begin at the same
    * number on every map a rotation can put up — the pool is therefore
    * `CONFIG.bots.maxPerTeam` a side on all of them, and this is what takes the
@@ -708,38 +704,6 @@ export class BattleSystem {
     return (
       this.benched.has(bot) || this.crewed.has(bot) || this.unfielded.has(bot)
     );
-  }
-
-  /** The slot the offline player holds, or -1 if none has been taken. */
-  get playerSlot(): number {
-    return this.seated;
-  }
-
-  /**
-   * Seats the offline player in a roster slot: the lowest-numbered one on
-   * `team`, whose bot is benched for as long as they hold it.
-   *
-   * The player used to be a SEVENTEENTH body standing beside a full sixteen-bot
-   * roster, which made a single-player round 8v9 in their favour — the one
-   * place in the game where the two sides were not the same size, and it read
-   * as an extra friendly rather than as a bug. The answer was already in this
-   * file: a human takes a slot and the bot in it is benched. This is that rule
-   * applied to the one human a local round has, rather than a second mechanism
-   * that counts bodies and could disagree with the first.
-   *
-   * The lowest-numbered slot on the side, because that is what `Roster.claim`
-   * picks on the server — so the callsign a local round takes off the board is
-   * the one a match would have taken.
-   *
-   * Idempotent, and it hands the old bot back if the side ever changes, so
-   * `Game.buildRound` can call it on every round without asking anything.
-   */
-  seatPlayer(team: Team): void {
-    const slot = this.bots.findIndex((bot) => bot.team === team);
-    if (slot === this.seated) return;
-    if (this.seated >= 0) this.setBenched(this.bots[this.seated], false);
-    this.seated = slot;
-    if (slot >= 0) this.setBenched(this.bots[slot], true);
   }
 
   /**

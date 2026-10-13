@@ -1179,9 +1179,11 @@ part is not a real mesh; what it does not yet do is let one avoid BEING one.
 **Status:** the gate landed (`ENGINE_UPGRADE.md` S8, `EnvironmentSpec.bodyDrawDistance`,
 stated by Sarab and Cinderhaven). What is open is how it ends.
 
-- **A fade was not built.** The gate is a hard on/off, as `lodDisableDistance`
-  always was, and it was invisible only because it sat where everything was
-  already `fogColor`. If a stated `bodyDrawDistance` reads badly, a short fade
+- **A fade was not built.** The gate is a hard on/off — `NetRoster`'s
+  `viewDistance` and `RagdollSystem`'s, the one number `bodyDrawDistanceOf`
+  resolves — as the retired `CONFIG.bots.lodDisableDistance` always was, and
+  it was invisible only because it sat where everything was already
+  `fogColor`. If a stated `bodyDrawDistance` reads badly, a short fade
   band is the obvious next thing and nothing here has costed one.
 - **There is a SECOND hard pop, and on a phone it is the nearer one.**
   `WorldCulling.offer`'s size gate (`CONFIG.graphics.culling.minPixels`, 3 px)

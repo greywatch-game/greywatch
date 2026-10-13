@@ -8,7 +8,8 @@ list both read), [`src/ui/ProfileChip.ts`](../src/ui/ProfileChip.ts) and
 [`src/config/profiling.ts`](../src/config/profiling.ts), and for the ~22 pairs
 of brackets in `Game.ts` that feed them, plus the four inside `render` that
 `FrameProfile` hangs off the scene itself and the simulation core's timing of
-its own step (`SimCore.timeSteps`, filed as `sim`) — and for the BENCHMARK that rides
+its own step (`SimCore.timeSteps`, carried back over the page's own local
+match's owner channel and filed as `sim`) — and for the BENCHMARK that rides
 on all of it, [`src/bench/BenchScript.ts`](../src/bench/BenchScript.ts),
 `Game.updateBench` and the desktop wrapper
 [`plans/webgpu-ref/bench.mjs`](../plans/webgpu-ref/bench.mjs). [`CLAUDE.md`](../CLAUDE.md) carries the
@@ -244,12 +245,17 @@ tier are the run's for its length and the stored picks come back after it.
    this exit cannot move and a count of them is a census of tree trunks — at
    eye height over the street, lifted over a roof and walked past a trunk.
 3. **A bot-only round from the fixed seed** (`bench.seed`, X0.2's 777;
-   `?seed=` overrides): nobody is seated, so every slot fights, and the player's
-   body is DEAD, which takes it out of every count. The first `leadSeconds` are
+   `?seed=` overrides), played on the page's own local match like every
+   offline round — but the page joins it as a WATCHER (`LocalMatch.dial`'s
+   `watch`, `Match.watch`: a peer welcomed at no slot and seated nowhere), so
+   nobody is seated, every slot fights, and the player's own body is left
+   DEAD, which takes it out of every count. The first `leadSeconds` are
    stepped `leadSteps` fixed steps a frame and not measured — they are bots
    running to flags on every map, the empty frame `FINDINGS.md` 32 warned
    about — and then `fightSeconds` are measured one step a frame, the camera
-   over the shoulder of the lowest-numbered bot still standing.
+   over the shoulder of the lowest-numbered bot still standing
+   (`Game.chaseBench`, which reads the bodies off the wire's `NetRoster` as
+   the watcher is drawn them, and so decides nothing the hash folds).
 
 **A SETTLE ends when the device has caught up, and the first look at a place
 is REHEARSED — both because of one measurement.** The first version settled
@@ -294,6 +300,19 @@ on, into a hash the capture carries, and **two runs whose hashes differ did not
 fight the same fight** and their `fight` segments are not comparable. The
 frame TIME is still the real one, read off the same clock every capture reads.
 
+**The fight is folded WHERE THE MATCH RUNS, and read back only once the ring
+has halted** (`BABYLON_EXIT.md` X2.5c). No wire event carries a bot's award,
+so the page cannot fold it off what it is drawn: `enterBench` posts
+`markFight` behind the round's `begin` — the fight's zero, every stamp being
+the match's tick less that one — and `server/localMatch.ts` folds every award
+and death from there. A fight frame posts one `advance` per STEP, at the fixed
+`dt` and never trimmed to `CONFIG.net.localSlack` as a played frame's is,
+because an `advance` is seconds and nine steps' worth in one call steps eight
+and carries the ninth. `endBench` halts the ring FIRST and only then asks
+(`LocalMatch.fight`): the owner's port answers in posting order, so the answer
+is a settle and folds every step posted ahead of it, and the frames spent
+waiting for it are not the run's.
+
 **The capture says what each frame was showing.** The ring is armed at the
 run's first frame, SIZED to the script (`BenchScript.frames`, every settle
 counted at its cap, so nothing is ever lapped out), and every row carries a SEGMENT label: each vantage's hold,
@@ -304,8 +323,9 @@ measurements — `rehearsal`, `settle` and `lead`. Report version 13 rolls them 
 `render`, the draw and mesh counts and `gpu.frame` over the rows that got a
 reading — and from version 14 `sim`, the core's step and its phases over
 the rows that ran one, which is the fight and its lead and never a vantage or
-the path, where the world is held (and from version 15 `sim.hop`, the page's
-`simWait` and `simSync` over the same rows); `bench` carries the run's own facts (completed or not, the plan, the
+the path, where the world is held (version 15 alone also carried
+`sim.hop`, the old Worker host's `simWait` and `simSync` over the same rows,
+gone with that host in version 16); `bench` carries the run's own facts (completed or not, the plan, the
 path's loop, the fight's hash and steps); `series.segment` labels every row of
 a SAVE. **A capture with `bench.completed` false was stopped** — Escape, or a
 round that ran out of tickets inside it — and its fight is short.
@@ -353,7 +373,8 @@ vantage's hold moved 23% between runs.
 `PHASES` in `profilePhases.ts` is the list, and **an index into it is a slot id**,
 which is what keeps the recording loop free of strings. The brackets are in
 `Game.ts` and nowhere else **except the four inside `render`, `present` after
-it, and the simulation core's own timing of its step, which `Game` files**: `tick`,
+it, and the simulation core's own timing of its step, which the local match
+carries back and `Game` files**: `tick`,
 `updateGameplay`, `updateNetWorld` and `updateWorld` are where the frame's
 order is already declared with the argument for it written down, so **the phase
 list IS that order** and no system had to be taught the profiler exists. A
@@ -368,14 +389,11 @@ frame                       the whole tick, wall to wall
 │  │                        cam steps the world too) and the bench's
 │  ├─ driver / onFoot       whichever half of a body's frame this is
 │  ├─ world                 updateWorld entire
-│  │  ├─ net                updateNetWorld — a match's dressing
-│  │  ├─ simWait            OFFLINE, core in a Worker: the page spinning for a
-│  │  │                     step the Worker had not finished (zero when it kept up)
-│  │  ├─ simSync            OFFLINE: the core's frame into the page's readers
-│  │  ├─ vehicles           offline the page's fleet POSED off the core's and
-│  │  │                     its views; in a match the wire's posing
-│  │  ├─ bots               BattleView.update + the muzzle-light budget
-│  │  ├─ combat, grenades, antiTank   the pictures (and a match's prediction)
+│  │  ├─ net                updateNet — the wire read and the bodies posed off
+│  │  │                     it, a server's match or the page's own alike
+│  │  ├─ vehicles           the fleet posed off the wire, the player's own
+│  │  │                     hull predicted, and the views
+│  │  ├─ combat, grenades, antiTank   the pictures (and the page's prediction)
 │  │  └─ physics            Havok and its three clients
 │  ├─ camera                the eye, the lights, the chase cam
 │  │  └─ localShadows       which lamps cast, their proxies packed (the passes
@@ -399,21 +417,22 @@ present                     the engine's endFrame AFTER tick returns: the
                             render pass closed and queue.submit. A ROOT, not a
                             child of frame — see below.
 
-sim                         OFFLINE: SimCore.step, timed BY THE CORE and filed
-│                           (see "`sim`" below); never entered in a match. A
-│                           ROOT: in a Worker it runs on another thread
+sim                         OFFLINE: SimCore.step in the page's own local
+│                           match, timed BY THE CORE, carried back on the
+│                           owner channel and filed (see "`sim`" below);
+│                           never entered in a server's match. A ROOT: it
+│                           never runs inside a tick
 ├─ simConquest              the combatant list and the flags
 ├─ simVehicles              the crews, the hulls, the tracks, the riders
 ├─ simBots                  BattleSystem.update — think, move, fire
 ├─ simGrenades              the grenades and the fires
-├─ simAntiTank              the rockets and the mines
-└─ simPublish               the frame's fill, and from a Worker its copy into
-                            shared memory
+└─ simAntiTank              the rockets and the mines
 
   (residue)                 wall clock minus frame minus present: the rAF wait,
                             the compositor, the panel. Deliberately unnamed.
-                            `sim` is not in this subtraction: from a Worker
-                            it overlaps the frame rather than taking a part.
+                            `sim` is not in this subtraction: in a Worker it
+                            overlaps the frame, and on this thread
+                            (`simMode` `page`) it is INSIDE the residue.
 ```
 
 **That subtraction only means anything because a row's wall clock is the
@@ -612,99 +631,121 @@ interesting frame of a session would be the wrong kind of missing.
 **Adding a phase** is a name in `PHASES`, a parent in `PARENT_OF` (it will not
 compile without one) and a `begin`/`end` pair — or, inside `render`, a
 `begin`/`endAdd` pair on an observable in `hookRender`; or, inside the core's
-step, an entry in `SIM_PHASES` (`src/sim/frame.ts`), an `openPhase`/`closePhase`
-pair in `SimCore.advance` (or `step`, for `publish`) and a slot in `Game`'s
+step, an entry in `SIM_PHASES` (`src/sim/stepTiming.ts`), an
+`openPhase`/`closePhase` pair in `SimCore.advance` and a slot in `Game`'s
 `SIM_SLOT`, which is a `Record` over the core's names and will not compile
-without it. Nothing else moves, unless it is a new ROOT, for which see
+without it — the owner channel carries the row whole, so nothing between the
+core and `Game` learns the name. Nothing else moves, unless it is a new ROOT, for which see
 `present` below.
 
-### `sim`: the core times itself, and `Game` files it
+### `sim`: the core times itself, the local match carries it, and `Game` files it
 
-**Offline the round is the simulation core's** (`BABYLON_EXIT.md` X2.5a C4a):
-`updateWorld` makes one call, `SimCore.step`, and every system that decides
-an outcome runs inside it. There is no line in `Game.ts` between its phases,
-so a bracket there could only ever say how long the whole call took — and
-from C4a until C6 there was not even that: the step sat inside `world` named
-by nothing, and the page's `conquest` phase, which had timed the flags, was
-never entered again.
+**Offline the round is the simulation core's, and the core is not on the
+page** (`BABYLON_EXIT.md` X2.5a C4a, then X2.5c). Every offline round is
+played on the page's own OWNED `Match` (`server/Match.ts`), hosted in a Worker
+(`server/localMatchWorker.ts`) or on a `MessageChannel` in the page's own
+thread (`?simpage`, or a Worker that did not come up — `src/net/matchHost.ts`),
+and the page is a match client of it. `updateWorld` steps it by POSTING
+`LocalMatch.advance`, never awaited, and every system that decides an outcome
+runs inside the `SimCore.step`s that one call makes, on the far side of the
+owner channel. There is no line in `Game.ts` between its phases, nor around the
+whole of it — and from C4a until X2.5a's C6 there was not even a span: the step
+sat inside `world` named by nothing, and the page's `conquest` phase, which had
+timed the flags, was never entered again.
 
 So **the core times its own step, with a clock its host INJECTS**
-(`SimCoreOptions.timing`), and `Game` files the result:
+(`SimCoreOptions.timing`), the local match carries the reading back, and
+`Game` files it:
 
-- **The clock is the host's and the core reads it only into `frame.timing`**
-  (`FrameTiming`: the step's `start`, its `total`, and per `SIM_PHASES` entry
-  an `at` and an `ms`). The core reads no clock of its own and draws no seed
-  of its own; this is the same rule. Nothing in the simulation reads a
-  reading back, so a timed step and an untimed one are the same step — the
-  seven bench fight hashes and `simulate --events` are unchanged by it — and
-  the authority, which passes no clock, cannot time anything at all.
-- **It costs nothing unless something is recording.** `SimCore.timeSteps(on)`
-  switches it, and `Game` keeps it in step with `FrameProfile.armed` before
-  each step, so an unwatched core reads no clock — the rule a disarmed
-  profiler holds itself to. Timed, it is fourteen clock reads a step since
-  X2.5b gave the fill a phase (twelve when this was measured) — about a
-  microsecond on Sarab's authority tick
-  (`simulate --phases`, 0.119 → 0.120 ms mean), and armed against armed
-  on the page (C6 against its parent, Hollowmere, four pairs) inside the
-  run-to-run spread, with the span probe unchanged at 0.25 us.
-- **`Game.fileLocalTiming` files it** through `FrameProfile.fileTiming` — the
-  whole row in one call, a span measured ELSEWHERE, on this file's own
-  clock. In the page the injected clock IS the page's `performance.now`, and
-  from a Worker it is moved onto it (below), so `start` lands in the frame
-  without a conversion and the trace draws `sim` where it ran. **What one
-  frame files is every step answered since the last filing, SUMMED**
-  (`addStepTiming`, `src/sim/stepTiming.ts`): the local match sums the steps
-  of one `advance` (`MatchOptions.stepped`), the page sums every answer into
-  one held row and empties it when filed — so a benchmark's lead, several
-  steps a frame, reads as all of them — and a frame that HELD the world (a
-  pause, the deploy screen) drops the row and the answers still owed, rather
-  than charging steps taken seconds ago to the first frame back. Like
-  `endAdd`, a slot filed twice in a frame ADDS too. **Nothing allocates, and that took one call
-  rather than seven**: a double handed to a call a once-a-frame function does
-  not inline is a heap number, and the per-phase `file` it replaced was
-  ~660 B a frame (X2.5b, "Finding WHO allocates").
-- **`sim` is the whole of `step`**, and its six children are where the time
-  goes: five are the decisions, and `simPublish` is the frame's fill
-  (`fillFrame`) plus, from a Worker, the copy of the frame and the news into
-  shared memory — which the Worker adds to the phase and to `total` after
-  the step returns, and writes the timing again (`PublicationWriter.retime`).
-  What `sim` holds outside them — the persons' regen, leash and deploy and
-  the rewind's record — is its unattributed remainder. A person's act
-  resolved on SUBMIT (a round, a throw, a seat) is not inside the step: in
-  the page it is charged to whichever page phase made the `ask`, and from a
-  Worker it is applied before the next step and is in nobody's span.
+- **The clock is the host's and the core reads it only into `SimCore.timing`**
+  (`StepTiming`, `src/sim/stepTiming.ts`: the step's `start`, its `total`, and
+  per `SIM_PHASES` entry an `at` and an `ms`). The core reads no clock of its
+  own and draws no seed of its own; this is the same rule. Nothing in the
+  simulation reads a reading back, so a timed step and an untimed one are the
+  same step — the seven bench fight hashes and `simulate --events` are
+  unchanged by it — and the authority, which passes no clock, cannot time
+  anything at all.
+- **The clock is the PAGE's wherever the match runs.** `LocalMatch.open`
+  posts the page's `performance.timeOrigin`, and `server/localMatch.ts` hands
+  the core `performance.now()` plus its own `timeOrigin` less the page's — 0
+  on the page's own thread — so `start` lands on the page's clock and the trace
+  draws `sim` where it ran, with no conversion anywhere after.
+- **It costs nothing unless something is recording.** Every `advance` says
+  whether to time it (`LocalMatch.advance(dt, timed)`, `Game` passing
+  `FrameProfile.armed`) and the host switches `SimCore.timeSteps` before it
+  steps, so an unwatched core reads no clock — the rule a disarmed profiler
+  holds itself to. Timed, it is twelve clock reads a step, two for the step
+  and two per phase (fourteen while X2.5b's `simPublish` stood) — about a
+  microsecond on Sarab's authority tick (`simulate --phases`, 0.119 → 0.120 ms
+  mean), and armed against armed on the page (X2.5a's C6 against its parent,
+  Hollowmere, four pairs) inside the run-to-run spread, with the span probe
+  unchanged at 0.25 us.
+- **What one frame files is every step answered since the last filing,
+  SUMMED** (`addStepTiming`). The core overwrites its row each step and an
+  `advance` may step more than once, so the host adds each step into one row
+  as it runs (`MatchOptions.stepped`) and its answer (`Advanced.timing`) is the
+  sum; the page adds every answer into one held row (`Game.localTiming`) as it
+  arrives — BETWEEN frames, where the profiler files nothing — and the next
+  frame that steps files it at the top of `updateWorld`
+  (`Game.fileLocalTiming`, through `FrameProfile.fileTiming`) and empties it.
+  So a benchmark's lead, several steps a frame, reads as all of them; at C4,
+  before the sums, it read as one step of N. A summed row is one span made of
+  pieces — `start` and each `at` the first piece's, `total` and each `ms` the
+  sum — which is how `endAdd`, and a slot filed twice in a frame, ADD too.
+- **A frame that HELD the world files nothing it did not step.** One that did
+  not run `updateWorld` — a pause, the deploy screen — drops the held row, and
+  the answers still owed to `advance`s posted before it are dropped as they
+  arrive (`passLocalClock`, `localTimingSkip` counted off `LocalMatch.owed`):
+  the next frame that steps may be seconds away, and a profiler handed those
+  steps then would charge them to it.
+- **The recording path allocates nothing, and that took one call rather than
+  seven**: a double handed to a call a once-a-frame function does not inline is
+  a heap number, and the per-phase `file` it replaced was ~660 B a frame
+  (X2.5b, "Finding WHO allocates"). Both rows are written in place. What the
+  row RIDES in is another matter: an `advance` is answered whether or not it
+  was timed, and that answer is a posted message the page receives as a fresh
+  object — but a timed one brings the row's two small typed arrays with it,
+  the one allocation an armed profiler adds to a frame, outside its own path.
+- **`sim` is the whole of `step`**, and its five children are where the time
+  goes: the decisions, in the order the step runs them. What `sim` holds
+  outside them — the persons' regen, leash and deploy and the rewind's record —
+  is its unattributed remainder. Until X2.5c there was a sixth, `simPublish`,
+  the old host's frame fill and its copy into shared memory; there is no frame
+  to publish now. A person's act is not inside the step either: it reaches the
+  match as a message on that person's own port, through `Match`'s own door, and
+  is resolved by `SimCore.submit` in whatever task read it — in nobody's span.
 
-**`sim` is a THIRD ROOT** (`BABYLON_EXIT.md` X2.5b, report version 15). With
-the core in a Worker (`src/sim/simHost.ts` — the boot says which, and every
-capture carries `simMode`) its step runs on another thread and overlaps the
-page's frame rather than taking a part of it, so it is out of `PARENT_OF`,
-in the `Exclude` beside `frame` and `present`, and in the viewer's
-`FALLBACK_ROOTS`; its children stay its own, and the core's timing did not
-change by a line. With the core in the page the same span ran inside
-`world`, and is filed as a root all the same so one tree reads both — read
-`simMode` before adding `sim` to anything.
+**`sim` is a THIRD ROOT** (`BABYLON_EXIT.md` X2.5b, report version 15), and
+since X2.5c on either thread, because the step never runs inside a tick
+whichever one it is on. In a Worker (`simMode` `worker`) it runs on another
+thread and overlaps the page's frame. On the page's own thread (`simMode`
+`page`) it runs in the owner port's message task BETWEEN two frames — after
+the `present` of the frame that posted it and before the next tick opens — so
+it sits inside that interval's RESIDUE, the one case where the residue holds
+the game's own work. Either way it is out of `PARENT_OF`, in the `Exclude`
+beside `frame` and `present`, and in the viewer's `FALLBACK_ROOTS`, and **read
+`simMode` before reading the residue or adding `sim` to anything**: over a
+window, a `page` capture's `frame` + `present` + `sim` is spent out of the same
+wall clock, and a `worker` capture's is not. (From X2.5b until X2.5c the page
+fallback stepped the core synchronously inside `world`, and was filed as a
+root only so one tree read both.)
 
-**Two things did change, and both are the hop's.** The CLOCK: a Worker's
-`performance.now` has its own `timeOrigin`, so the Worker hands its core
-`performance.now() + (its timeOrigin - the page's)` (`simWorker.ts`, the
-page's origin posted at init) and `start` lands on the page's clock as it
-did in the page. And the PAIRING: a step is filed against the frame that
-TAKES IN its answer — the frame whose picture it is, a frame after the one
-that started it — because that is where the page learns of it and where
-`simWait` says whether the page paid for it. Its `start` is earlier than that
-frame's own, so the trace draws it where it ran, across the boundary.
+**A step is filed against the frame that TAKES IN its answer**, on either
+thread — a frame after the one that posted it, whose picture it is, because
+that is the first frame the page has heard of it. Its `start` is earlier than
+that frame's own, so the trace draws it where it ran, across the boundary.
 
-**The page's half of the hop is named, beside `world`'s other children**:
-`simWait`, the main thread spinning for a step the Worker had not finished
-(filed from `SimHost.waitMs`, so zero whenever the Worker kept up and never
-entered with the core in the page), and `simSync`, the frame read into the
-page's readers (`SimMirror.sync`, closed with `endAdd` — it runs after a
-step, a pump and every `ask` that is not a report, and the frame's sum is
-the phase). `SegmentStat.sim.hop` carries both over a segment's stepped
-frames, and `bench.mjs` prints them beside the core's phases: **moving the
-core off the thread is worth `sim` minus `wait` minus whatever `sync` grew
-by**, which is the reading `BABYLON_EXIT.md` X2.5b's phone check is taken
-from.
+**What X2.5b named and X2.5c deleted, kept as history.** While the core ran in
+a Worker over shared memory (X2.5b until X2.5c's C5, report version 15), the
+page's half of that hop had two phases of its own under `world`: `simWait`,
+the main thread spinning for a step the Worker had not finished, and
+`simSync`, the core's frame read into the page's readers; `SegmentStat.sim.hop`
+carried both over a segment's stepped frames, and moving the core off the
+thread was read as `sim` minus `wait` minus whatever `sync` grew by — the
+reading X2.5b's phone check was taken from. Nothing on the page waits on the
+match now and nothing is synced from it — its answers are the wire, read under
+`net` — so both phases, `sim.hop` and the host that needed them went in
+report version 16.
 
 `simulate --phases` is the authority-side reading of the same numbers: the
 core built with Node's `performance.now`, each phase's mean printed beside
@@ -747,7 +788,8 @@ the clock grain, so read its MEAN and never its percentiles (it is in
 backpressure; a residue that grows is not the game's at all.
 
 **There are therefore THREE ROOTS** — `frame`, `present`, and since X2.5b
-`sim` (above) — and the report says so. `ROOTS` is derived
+`sim` (above; the page's own local match's step since X2.5c) — and the report
+says so. `ROOTS` is derived
 as `PHASES` minus the keys of `PARENT_OF`, so it cannot drift from either, and
 it ships as `ProfileReport.roots` (report **version 3**). That field exists
 because a reader handed only a child→parent map cannot distinguish a root from
@@ -961,16 +1003,16 @@ versions and a bit read from memory was wrong here. On the mid tier:
   defines the field as `undefined` before the constructor stores a number, and
   V8 then holds it TAGGED for good — so `Vector3`'s `x`, `y` and `z`, and any
   class written the same way, boxed a fresh number per store even on TurboFan.
-  Measured in a live Sarab fight: 12 B a store, `BotMirror.read` 117 → 6.5 B a
-  call (the empty loop's floor) and ~3 µs → 34 ns, the page's whole frame
-  692 → 620 kB, the authority's tick 7-16% faster on every map
+  Measured in a live Sarab fight: 12 B a store, `BotMirror.read` (X2.5b's
+  mirror, gone with its host at X2.5c) 117 → 6.5 B a call (the empty loop's
+  floor) and ~3 µs → 34 ns, the page's whole frame 692 → 620 kB, the authority's tick 7-16% faster on every map
   (`simulate`). **It is invisible to `%GetOptimizationStatus`** — `read` was
   on TurboFan the whole time — and to a reading of the source; the sampler
   finds it, and the emitted module (`curl` the dev server's `/src/...`) shows
   it. Keep the setting false; `CLAUDE.md`'s conventions say why.
 - **A double crossing a call that is not inlined is still a heap number**, and
   the profiler's own filing was the worked example: `Game.fileSimTiming`'s
-  seven `file`s with doubles in were ~660 B a frame, which `fileTiming` (one
+  (`fileLocalTiming` since X2.5c) seven `file`s with doubles in were ~660 B a frame, which `fileTiming` (one
   call, the timing row's arrays in) took to nothing.
 
 What works is to put the per-ELEMENT work in a small method that the loop calls
@@ -1104,10 +1146,20 @@ details:
   `sameGraphics` and the viewer's `Graphics` row, or captures go on describing
   a configuration that no longer names everything the frame paid for.
 
+**From report version 16 `sim` is the page's own local match's step**, carried
+back over the owner channel and summed (`BABYLON_EXIT.md` X2.5c), and
+`simMode` names where that MATCH ran — `worker`, or `page` for one on this
+thread, whose step then sits in the residue ("`sim`" above). `simPublish`,
+`simWait`, `simSync`, `sim.hop` and `world`'s `bots` are gone; a v15 capture's
+`sim` and its five children read the same, and its `bots` timed the old host's
+picture of the core's bots, which the wire's bodies under `net` are now.
+
 **From report version 15 `sim` is a ROOT and a capture says which thread it
 ran on** (`simMode`, `BABYLON_EXIT.md` X2.5b) — `worker` or `page` — with
-`simPublish` under it and the page's `simWait` and `simSync` under `world`. A
-v14 capture's `sim` is `world`'s child and its fill is in its remainder.
+`simPublish` under it and the page's `simWait` and `simSync` under `world`,
+all three the old shared-memory host's and in version 15 alone. A `page`
+capture of that version stepped the core INSIDE `world`. A v14 capture's
+`sim` is `world`'s child and its fill is in its remainder.
 
 **From report version 14 a capture names the SIMULATION** — `sim` and its
 five children in the tree, the phase table, every hitch and the trace, and
@@ -1536,10 +1588,23 @@ gives collections rather than bytes.
 
 **A 5 us clock.** Cross-origin isolation (COOP + COEP) drops
 `performance.now()`'s grain from 100 us to 5, which would make every row of the
-phase table real rather than seventeen of them means-only.
-`docker/default.conf.template` sets neither header, and adding them makes every
-cross-origin subresource need CORP — including whatever the lobby's match-server
-fetches touch. That is a deployment change, not a profiler change.
+phase table real rather than seventeen of them means-only. **The game had it
+once, and gave it back on purpose.** From X2.5b until X2.5c's C6 every
+response carried the pair, because the simulation's Worker shared memory with
+the page and `SharedArrayBuffer` needs it — so a capture from that stretch may
+state a finer `clock.grainMs` than one from before or since, and the 0.1 ms of
+a capture taken after C6 is that decision rather than a regression. When the
+local match replaced shared memory with posted messages nothing needed it any
+more, and C6 took it out of all four places it was stated (both of
+`vite.config.ts`'s servers, the nginx template and `src/pwa/sw.js`): a
+contract that fails SILENTLY is not worth keeping for the one thing left that
+it bought, which is this grain, on phases that average over many frames anyway
+(`BABYLON_EXIT.md`'s decisions table, "Keep cross-origin isolation"). So
+`docker/default.conf.template` sets neither header, and putting them back makes
+every cross-origin subresource need CORP — including whatever the lobby's
+match-server fetches touch. If a capture ever shows the coarser grain hiding
+something, that is a new decision, and a deployment change rather than a
+profiler change.
 
 **Per-callsite timing.** Not a lever, a category error: see the grain note
 above. Wrap the call site from a Playwright script, the way `ENGINE_UPGRADE.md` S2 did.

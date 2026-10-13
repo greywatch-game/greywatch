@@ -25,14 +25,15 @@ The kit is six things and one line of map data:
 They meet where every other system does: the simulation's half in `SimCore`,
 the page's in `Game`. `Game` holds the pick (`Game.equipment`), decides whether
 there is a slot for it (`armourOffered`), branches the trigger into
-`fireOrdnance` (an `ordnance` command offline), and the core answers the one
-question the system asks about a world it may not know.
+`fireOrdnance` (an `ordnance` message to the authority, offline as in a match),
+and the core answers the one question the system asks about a world it may not
+know.
 
 **There is no third system-to-system edge.** `AntiTankSystem` has never heard of
 a `VehicleSystem`, a `Vehicle`, a `Player` or a `GrenadeSystem`: it asks "is there a
 hostile hull within this many metres of this point" through `hullNear` and
 announces "this went off, on this" through `onDetonated`, and `SimCore` wires
-both (`Game` wires `hullNear` again for a match client's predicted rocket).
+both (`Game` wires `hullNear` again for the page's own predicted rocket).
 
 ## One slot, two items, and why they are one decision
 
@@ -418,11 +419,12 @@ because it is a fact about the pool slot, fixed for the match: a person sitting
 in that slot is not the bot and wears no tube.
 
 **On the server this runs exactly as it does offline**, and it has to: the bots
-in a match are simulated there and nowhere else, so a `SimCore` that wired
-nothing would field the only squads in the game with no answer to a tank.
-`SimCore.wire` installs the same `fireRocketFor` `Game` does, less the
-sound — which is the authority's to ANNOUNCE (`hearGunshot`, and the `fire`
-event `Match.onOrdnance` raises) rather than to play.
+are simulated in the core and nowhere else — the page's own match's offline, the
+server's in a match — so a `SimCore` that wired nothing would field squads with
+no answer to a tank. `SimCore.wire` installs `fireRocketFor`, with no sound —
+which is the authority's to ANNOUNCE (`hearGunshot`, and the `fire` event
+`Match.onOrdnance` raises) rather than to play; the page hears it off that
+event like any other shot.
 
 ## The models, and the one pose knob they needed
 

@@ -1553,7 +1553,8 @@ wire comes later, for both at once, and only if a profiler capture asks for it.
     has the same path; keep one.
   - The profiler's `sim` root is now fed from the owner channel.
 - **C6, cross-origin isolation comes out, then the contracts** (decided
-  2026-10-11, below).
+  2026-10-11, below). **LANDED** (ee686a6, then the contracts; see "What C6
+  did").
   - Posting needs no cross-origin isolation; only `SharedArrayBuffer` did.
     Remove the COOP `same-origin` / COEP `require-corp` pair from all four
     places X2.5b put it:
@@ -1817,6 +1818,47 @@ wire comes later, for both at once, and only if a profiler capture asks for it.
     gate, the mine, or the silence for a dead or empty ask.
   - The feed's "YOU" for the player's own kills (a field on `kill`), still
     owed from C4.
+- **What C6 did** (found and decided at C6):
+  - The pair is gone from all four places (ee686a6). Nothing read
+    `crossOriginIsolated`, so no check went with it; the nginx template and
+    `sw.js` are their pre-X2.5b text again, nothing else in either having
+    changed since. Measured headless on the Windows box: no COOP/COEP on the
+    document and `crossOriginIsolated` false under `vite dev`, under `vite
+    preview`, and on a `vite preview` reload answered by the service worker
+    with the network cut — the local match up in a Worker each time and an
+    offline round played on it. The profiler's grain is Chrome's 100 us
+    again, which `FrameProfile`'s header and `config/profiling.ts` already
+    said, and every capture still records (`grainMs`).
+  - The contracts: `CLAUDE.md`'s "Ownership and wiring" (the page is a
+    match client and offline HOSTS its own `Match`), "Multiplayer" (the
+    owned match, the owner channel, `localRound`/`remoteRound`, the hold
+    and the lost host), "Measuring a frame" (where `sim`'s timing comes
+    from), "The installable app" (the isolation paragraph deleted),
+    "Conquest rules" (corecheck's two doors), the bots and deaths sections
+    and the `bodyDrawDistance`/`perTeam` rows; `docs/game.md`,
+    `docs/states.md`, `docs/profiling.md`, `docs/pwa.md`, `docs/bots.md`,
+    `docs/deaths.md`, `docs/rendering.md`, `docs/world.md`,
+    `docs/vehicles.md`, `FILES.md`, `VERIFYING.md`, `FINDINGS.md` 30, and
+    the contract headers that still named the deleted host.
+  - `Game.ts` has no `onSimEvent`, and 25 lines ask who hosts the round
+    (`remoteRound`, `localRound`, `net.local`), every one an authority or a
+    hosting question: restart and its doors, the map card's labels, the
+    seed a capture names, the shared sky clock (clouds, storm), the server's
+    smoke-walker flow fields, the ping column, holding and stepping the
+    page's own match, and a lost host.
+- **What C6 leaves** (found at C6):
+  - **With the match on the page's own thread (`simMode` `page`) its step
+    runs in a message task BETWEEN frames** — in the residue, outside both
+    `frame` and `present` — not inside the frame as X2.5b's in-page core
+    did. `profilePhases.ts` and `docs/profiling.md` now say so.
+  - **An armed profiler's `advance` answer carries the summed timing as a
+    structured clone**, so the page takes in a fresh copy each frame. Every
+    posted answer is a fresh object anyway — the price of posting, as the
+    JSON wire is — and the profiler's own recording path still allocates
+    nothing; a capture that shows it matters is a binary owner channel.
+  - Everything under "Verify" that needs a person or the phone: the
+    play-test, the phone's offline Sarab, and the deployed build installed
+    and offline on the phone.
 
 **Verify:**
 - The bench's seven fight hashes: X2.5a's table, identical, from the Worker and

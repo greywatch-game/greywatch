@@ -8,9 +8,10 @@
  * takes a slot's name off the board, it does not shuffle the fifteen others.
  *
  * A person's name is their own and comes from the roster (`SlotOccupant`); this
- * is only for the slots no person is in. Offline the index is the bot's index
- * in `BattleSystem.bots`, and every bot but the one the local player sits on
- * (`BattleSystem.seatPlayer`) gets a name from it.
+ * is only for the slots no person is in. In the core the index is the bot's
+ * index in `BattleSystem.bots`, and every bot but the ones a person sits on
+ * (benched by the core, `SimCore.startRound` and the seat's door) gets a name
+ * from it.
  *
  * **In a match it is the row's place on the BOARD and not the roster slot**,
  * which used to be the same number and stopped being one when the authority's

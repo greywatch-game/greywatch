@@ -206,15 +206,19 @@ Three things carry the frame budget; undoing any costs ~10× draw calls or a
 permanent hitch:
 
 - **The rig pool is built once per ROSTER SIZE and never disposed inside a
-  round.** Death takes a body out of the world (`Bot.shown`) and its rig
-  follows; respawn puts it back and counts a new `life`, on which the rig is
-  put back in its rest pose. A rig is a dozen meshes and their GPU buffers,
-  and Conquest respawns continuously. **The pool is two halves since
-  BABYLON_EXIT.md X2.2 C7**: `BattleSystem` holds the `Bot`s — simulation on
-  `src/math`, no rig, no scene, no camera — and a client's `BattleView` holds
-  one `BotRig` per bot, which reads the bot and never writes it. The
-  authority builds no rig at all (its peak RSS on Sarab fell from 471 MB to
-  426).
+  round.** Death takes a body out of the world — `Bot.shown` in the core, and
+  on the wire the `dead` progress a client's `NetSoldier` hides its rig at —
+  and respawn puts it back; a rig the ragdoll pool held is handed back in its
+  rest pose (`RagdollSystem.release`, `resetSoldierPose`). A rig is a dozen
+  meshes and their GPU buffers, and Conquest respawns continuously. **The pool
+  is two halves since BABYLON_EXIT.md X2.2 C7**: `BattleSystem` holds the
+  `Bot`s — simulation on `src/math`, no rig, no scene, no camera — and a
+  client's `NetRoster` holds one `NetSoldier` per slot the round fields, drawn
+  off the snapshots and writing nothing back. **Since X2.5c C5 that is the
+  only rig a bot has, offline included**, the page being a client of its own
+  match; until then the offline page held a `BattleView` of `BotRig`s that
+  followed the core's bots directly. The authority builds no rig at all (its
+  peak RSS on Sarab fell from 471 MB to 426).
 - **Bot rigs are fourteen merged meshes and two materials** (`SoldierModel`) —
   forty-odd boxes and faceted lofts merged one mesh per SEGMENT, which is one
   per joint. **What a rig costs is therefore JOINTS, and no longer colours or
@@ -239,11 +243,12 @@ permanent hitch:
 is exactly that roster rather than a ceiling every map pays for.
 `MapLayout.perTeam` defaults to `CONFIG.bots.perTeam` (8) and is bounded by
 `CONFIG.bots.maxPerTeam` (24); Sarab is the only map that states one, and
-`perTeamOf` is where the default and the bound live. `Game.buildRound` pushes it
-through `BattleSystem.setRoster`, which is a no-op at the same size and
-otherwise builds a new pool (bumping `poolVersion`), and then
-`BattleView.syncPool`, which rebuilds the rigs when that version or the
-viewer's side moved — so a map that says nothing
+`perTeamOf` is where the default and the bound live. The page's own match
+asks the core for exactly that pool (`RoundSpec.pool`, `SimCore.startRound`),
+which reaches `BattleSystem.setRoster` — a no-op at the same size and
+otherwise a new pool — and `Game.buildRound` hands the same number to
+`NetRoster.setFielded` (through `NetSession.setFielded`), which rebuilds the
+rigs when the count or the viewer's side moved — so a map that says nothing
 gets the same sixteen bodies with the same squads, the same launchers, the same
 molotov carriers (each squad's LAST body, the launcher's rule from the other end
 — `docs/grenades.md`) and the same movement seeds it always had, bit for bit.
@@ -255,12 +260,13 @@ the frame's own active-mesh walk on every 8v8 map — `WorldCulling`'s whole
 argument is that a DISABLED mesh is skipped cheaply and not skipped, six hundred
 meshes at ~0.67 µs on a village whose entire frame is under 2 ms. So the bend is
 placed where a map change already disposes the world, rebuilds it and holds a
-loading card over the wait, and `setRoster` is called from `buildRound` and
-never from `installMap` — the editor is that method's other caller and has no
-round, no player and no bots. It runs after `RagdollSystem.reset` and
-`VehicleCrew.clear`, the two things that hold a body (the ragdolls a RIG, the
-crews a BOT), and before `setDifficulty`, which draws a skill for every bot in
-the pool it is handed.
+loading card over the wait. Both halves sit at a ROUND's start and neither
+in `installMap` — the editor is that method's other caller and has no round,
+no player and no bots. On the page `NetRoster.setFielded` is called from
+`buildRound` after `RagdollSystem.reset`, the ragdolls being what holds a RIG;
+in the core `setRoster` is `startRound`'s first line, before `setDifficulty`,
+which draws a skill for every bot in the pool it is handed, and `setRoster`
+clears what holds a BOT (the bench, the crews, the unfielded) itself.
 
 **Nothing else in this layer knows a size.** The squads come out of
 `squadSize` (24 a side is six squads rather than two, and `planSquads` has never
@@ -289,7 +295,7 @@ squad, nothing torn down. It is a separate set from `benched` because the two
 are cleared by different things — a human leaving un-benches one slot, a
 rotation re-decides all of them — and because `SimCore.startRound` re-benches its
 seated humans over the top of whatever a rotation just decided. It is EMPTY offline, where the pool
-is already the map's. The one thing that had to follow it is the think budget:
+is already the map's and the page's own match fields all of it. The one thing that had to follow it is the think budget:
 the pass skips an aside bot without spending on it, so a budget taken from a
 pool three times the size of the fight would have given the bodies that ARE
 fighting three times their advertised reaction speed.
@@ -321,24 +327,25 @@ budget is the one thing here that does not scale.
   ground in them) and starts `burnT` instead — a run straight away from the fire
   that overrides whatever the state wanted. See `docs/grenades.md`.
 - **Hearing** is a squared-distance sweep inside `BattleSystem.botFire`, with a
-  jittered position so bots converge on the *sound*, not the shooter. `Game` calls
-  `hearGunshot` for the player's own fire.
+  jittered position so bots converge on the *sound*, not the shooter. The core
+  calls `hearGunshot` for a person's own fire (`SimCore`, at the shot and the
+  hull's gun alike).
 - **A bot's MUZZLE is an outcome, so it is ARITHMETIC and never a rig read.**
   It is where a bot's shot is heard from and where its rocket leaves, and
   `Bot.muzzleWorld` replays it (`soldierPose.ts`'s `soldierMuzzleToRef`) off
-  the root `syncTransform` last stood (`Bot.rootX`..`rootYaw`, which `BotRig`
-  writes onto the rig's root unchanged) and the pose last solved
-  — the same float32 node chain Babylon's forced `computeWorldMatrix(true)`
-  walked, bit for bit (BABYLON_EXIT.md X2.2 C5 proved it against the rig at
-  every read over whole rounds on all seven maps). **The pose is FILLED every
-  frame for every live bot, and only WRITING it onto the rig is the LOD's**
-  (`lodFreezeDistance`, `BattleView`) — solving it is deferred to whoever reads it, the rig
-  or a shot (`Bot.solved`), which is the same numbers since `SoldierMotion.fill`
-  is the stateful half — because the muzzle used to be the frozen rig's: the
-  authority, whose "camera" is the origin, answered with a live pose only for
-  bots within 35 m of the map's centre, and offline the camera decided (X2.2
-  C6, a named fight-hash change). The round's own ray is `eyePos` and does not
-  move with it.
+  the root `syncTransform` last stood (`Bot.rx`..`ryaw`) and the pose last
+  solved — the same float32 node chain Babylon's forced
+  `computeWorldMatrix(true)` walked, bit for bit (BABYLON_EXIT.md X2.2 C5
+  proved it against the rig at every read over whole rounds on all seven
+  maps). **The pose is FILLED every frame for every live bot and SOLVED only
+  when something reads it** (`Bot.solved` — the same numbers whenever, since
+  `SoldierMotion.fill` is the stateful half), because the muzzle used to be
+  the frozen rig's: the authority, whose "camera" is the origin, answered with
+  a live pose only for bots within 35 m of the map's centre, and offline the
+  camera decided (X2.2 C6, a named fight-hash change). No rig reads a `Bot`
+  any more — X2.5c C5 deleted the offline `BotRig` with its pose-freeze LOD
+  (`lodFreezeDistance`), and a client poses its `NetSoldier` off the wire. The
+  round's own ray is `eyePos` and does not move with it.
 - **A shot is heard differently by the two sides, and the difference is WHERE
   the cue lands.** To the side being shot at, the noise IS the shooter: the cue
   is the muzzle, which is the thing worth looking at. To the shooter's own side

@@ -1,46 +1,59 @@
 # The state machine: steps, lids, and what still moves under one
 
 What each game state IS, which of them are screens laid over another, and what a
-frame owes when there is one up — offline, where a lid genuinely holds the world,
-and in a netplay round, where it holds nothing at all. Split out of
+frame owes when there is one up — in the page's own match, where a lid genuinely
+holds the world, and in a server's, where it holds nothing at all. Split out of
 [`CLAUDE.md`](../CLAUDE.md), which keeps the summary; this file is the contract
 for `src/core/ScreenStack.ts` and for `Game`'s `tick`, `pause`/`resume` and every
 `open*`/`close*` next to them.
 
-## The machine does not exist until TWO awaits have resolved
+## The machine does not exist until THREE awaits have resolved
 
 **`menu` is not the first thing that happens on the page, and the boot screen is
-what covers the stretch before it.** `main.ts` awaits two things before it
-constructs `Game` at all — the WebGPU device (an adapter, then `initAsync`) and
-the Havok WASM — and both are REQUIRED, so a failure of either is a sentence on
-the boot screen rather than a state anything below has to be written for. There
-is no `booting` state and there must not be one: the states in this file are
-states of a `Game` that exists, and everything before the constructor returns is
-`index.html`'s markup and `main.ts`'s three failure branches.
+what covers the stretch before it.** `main.ts` awaits three things before it
+constructs `Game` at all — the WebGPU device (an adapter, then `initAsync`), the
+Havok WASM, and the page's own match host (`openMatchHost`, X2.5c C4: a Worker
+that has answered its first call, or the page's own thread when it will not) —
+and all three are REQUIRED, so a failure of any is a sentence on the boot screen
+rather than a state anything below has to be written for. (The host fails the
+boot only when the in-page module cannot be fetched either; a Worker that does
+not come up is a fallback, not a failure.) There is no `booting` state and there
+must not be one: the states in this file are states of a `Game` that exists,
+and everything before the constructor returns is `index.html`'s markup and
+`main.ts`'s failure branches.
 
-**What that buys is the property ~40 smoke scripts rest on**: because both
-awaits are `main.ts`'s, the constructor stays SYNCHRONOUS, so `window.__celshock`
+**What that buys is the property ~40 smoke scripts rest on**: because every
+await is `main.ts`'s, the constructor stays SYNCHRONOUS, so `window.__celshock`
 is non-null with every pool built the moment it returns and the machine is in
 `menu` on the same tick. A `static async create()` would have moved the awaits
 inside and taken that away. `VERIFYING.md` says how to wait for it from a script
-— two awaits, not one, and neither of them is a frame count.
+— more than one await, and none of them is a frame count.
 
 ## The cycle
 
 `Game`'s state machine is `menu -> loading -> deploy -> playing -> dying ->
 deploy`, with `roundover` when a side runs out of tickets. The 3D scene renders
 in **every** state, which is what lets the deploy screen sit over a live view.
-**Offline that view is HELD**: `deploy` steps no world — `tick`'s arm runs the
-deploy screen and the page's own respawn wait and nothing else, and the
-simulation core is built `hostHoldsRespawn` (`docs/game.md`), so no bot fights
-behind the deploy map and a `deploy` is honoured the moment it is submitted.
-In a match the authority's round carries on behind it (`roundBehind`, below).
-The menu does NOT: it stands on a photograph of the chosen map, and entering it
-tears the round's map down (`Game.teardownMap`, `installMap`'s other half), so
-nothing of an abandoned round is drawn, heard or simulated behind the title
-card. It used to be left standing as a live backdrop, from before the menu had
-photographs, and the cost was a city rendered every frame under a picture of
-another one with its fires and its shore still playing.
+**In the page's own match that view is HELD**: `deploy` steps no world —
+`tick`'s arm runs the deploy screen and the page's own respawn countdown and
+nothing else, so nothing posts the match an `advance` (`updateWorld` is the one
+door, `docs/game.md`), no bot fights behind the deploy map, and the frame's
+time is handed over as a `hold` instead. The respawn clock is therefore the
+PAGE's: an owned `Match` builds its core `hostHoldsRespawn`
+(`docs/multiplayer.md`, "A match its OWNER drives"), so a `deploy` is honoured
+the moment it is submitted rather than once a reinforcement clock that would
+only run while the page advanced it runs out — and, the world being held,
+answered at once (an owned `onDeploy` flushes the `spawn` it raised rather than
+waiting for a snapshot nothing is stepping to send). In a server's match the
+authority's round carries on behind the deploy screen and its respawn clock is
+the core's (`roundBehind`, below).
+The menu sits over no view at all: it stands on a photograph of the chosen map,
+and entering it tears the round's map down (`Game.teardownMap`, `installMap`'s
+other half) and closes the match (`leaveMatch`), so nothing of an abandoned
+round is drawn, heard or simulated behind the title card. It used to be left
+standing as a live backdrop, from before the menu had photographs, and the cost
+was a city rendered every frame under a picture of another one with its fires
+and its shore still playing.
 
 **`loading` is the map being built, and the split that creates it is the whole
 feature.** Building one is the better part of a second of synchronous work —
@@ -122,8 +135,8 @@ exists. Three rules hold it to `loading`'s contract:
   `updateSceneForCamera` at `dt` 0 — the editor's tail — and the bounce volume
   and the ear are not moved at all, because both are owed to the camera the
   deploy screen will be drawn from. That tail runs once more at the end, around
-  that camera, because offline nothing in `deploy` would place the shadow
-  window again.
+  that camera, because in the page's own match nothing in `deploy` would place
+  the shadow window again.
 - **It ends.** A vantage is left after `CONFIG.graphics.warmup.quietFrames`
   frames that compiled nothing or `maxFramesPerVantage` frames whatever, and
   the whole of it is capped by `capMs`; what it does not reach compiles in the
@@ -162,16 +175,20 @@ rule a change near it could break:
 - **Every frame in it is the FIXED step** (`CONFIG.profiling.bench.dt`), the
   one place `tick`'s `dt` is not the refresh clock — the run compares the cost
   of the same frames, so the frames may not depend on the device.
-- **The player is in no slot and is DEAD.** `buildRound` seats nobody when a
-  benchmark is booked, so every slot is a fielded bot, and `enterBench` sets
-  the body dead, which is the state the death cam already runs the world in:
-  skipped by conquest's count, by acquisition and by every damage path.
+- **The player is in no slot and is DEAD.** A benchmark's page joins its own
+  match as a WATCHER (`openLocalRound`, `LocalMatch.dial({ watch: true })`), a
+  connection with no seat, so every slot is a fielded bot and the fight is the
+  one the bench's hash banks; and `enterBench` sets the page's body dead, which
+  is the state the death cam already runs the frame in — nothing on the page
+  reports it, places it or lets it bend the grass.
 - **Nothing covers it.** `SCREENS.bench.covers` is null and so is every lid's
   claim on it, so no pause card can stand in a run's capture; Escape ENDS it.
 
-Its frames are `updateWorld` and the camera tail when its script says FIGHT,
-and the camera tail alone, the world held as `deploy` holds it, when the script
-says LOOK — so it simulates exactly when a played frame would. A benchmark
+Its frames are `updateWorld` and the camera tail when its script says FIGHT —
+one `updateWorld`, so one `advance`, per fixed STEP — and the camera tail alone,
+the world held as `deploy` holds it and the frame's time handed over as a
+`hold`, when the script says LOOK — so it simulates exactly when a played frame
+would. A benchmark
 booked and never reached (a build that failed under it) is dropped by
 `enterMenu`, or the next round the player started would be taken over by it.
 `docs/profiling.md`, "The benchmark", has the run itself.
@@ -194,8 +211,8 @@ new screen does not compile until it has answered all four questions, and
 | field | the question | answered `true` by |
 | --- | --- | --- |
 | `covers` | which states may this be raised over? (`null` makes it a step) | the four lids |
-| `holdsWorld` | offline, is the world under this genuinely stopped? | `paused` |
-| `roundBehind` | online, does the authority's fight carry on behind this with nothing else stepping it? | the lids, and `deploy` |
+| `holdsWorld` | in the page's own match, is the world under this genuinely stopped — the HUD's clock and the audio with it? | `paused` |
+| `roundBehind` | in a server's match, does the authority's fight carry on behind this with nothing else stepping it? | the three lids that can cover a round, and `deploy` |
 | `inRound` | is the player in a round here — is the scoreboard owed? | `deploy`, `playing`, `dying` |
 
 This replaced three `-From` fields on `Game`, a two-deep chain of `if`s that
@@ -219,9 +236,10 @@ screens to put away, and the copies had already drifted: F2 from the lobby left
 the match list hanging over the editor's own panel. The other twelve wrote none
 of it, which was invisible offline (nothing moves the state while a lid is up
 when the player is the only thing deciding) and broken online, where the wire
-decides: a `died` landing under the settings screen overwrote `settings` with
-`deploy` and stranded the screen on top — visible, uncloseable, with the deploy
-screen live and taking input underneath it. `ScreenStack.go` hands back what was
+decides — as it now does in the page's own match too: a `died` landing under
+the settings screen overwrote `settings` with `deploy` and stranded the screen
+on top — visible, uncloseable, with the deploy screen live and taking input
+underneath it. `ScreenStack.go` hands back what was
 up and **`Game.takeDown` — exhaustive over `LidState`, enforced with a `never` —
 is the single place that knows what putting one away means.**
 
@@ -232,9 +250,10 @@ STEP rather than being laid over one, so there is no row in `SCREENS` to hang
 them off and they were left to the callers — where they drifted exactly as the
 lid lists had: of the seven `go` call sites, `startRound`, `toggleEditor` and
 `enterMenu` took the card down, `endRound` replaced it, and `enterDeploy`,
-`spawnPlayer` and `enterDying` did neither. Offline that is invisible, because
-those three are only ever reached from a state with no card up. Online the wire
-decides the step, and a `spawn` arriving while the client was still building put
+`spawnPlayer` and `enterDying` did neither. Where the player alone decides the
+step that is invisible, because those three are only ever reached from a state
+with no card up. Where the wire decides it — a server's match, and since X2.5c
+C4 the page's own — a `spawn` arriving while the client was still building put
 the player in the world behind an opaque `BUILDING…` card.
 
 **What made it permanent rather than ugly is that `go` also clears `bakeWait`,
@@ -263,27 +282,59 @@ which is precisely how the stranded card above was reached in a real match.
 
 ## Pausing, and the netplay inversion
 
-Pausing is just `tick` not calling `updateGameplay` — everything else still
-renders, so the round reads as held rather than gone — plus two things that would
-leak past it: `Sfx.setSuspended` stops the audio clock (the tail of the last shot
-is still there on return, and the voice counter stays honest because nothing ends
-while the clock is stopped), and the HUD is ticked with `dt = 0` so the killfeed
-and toasts freeze with the world instead of fading off a frozen screen.
+**A pause holds the world in the page's OWN match, and still holds nothing in a
+SERVER's** — and the code asks exactly that question, of who hosts the round,
+rather than whether there is a session at all (since X2.5c C4 every round has
+one).
 
-**Both of those invert under a NETPLAY lid, because there the game is not
-held.** The authority never heard the key, so every lid declares `roundBehind`
-and `Game.updateRoundBehind` — called once from `tick`, before the switch, for
-whatever is on screen — steps the netplay frame and the gauges as the deploy
-screen draws them, plus the reinforcement clock when the deploy screen is what
-the stack is over, since that clock is the round's and the server runs it down
-regardless. The HUD keeps its real `dt` (kills arrive while the card is up), and
-the audio clock is left running: a suspended context would not play the wire's
-`hit`/`damage`/`explode` cues *or* let them end, and the whole pause-worth of
-them would sound on the resume. **The question is never which screen is up, but
-whether what is under it is moving** — `holdsWorld` and `roundBehind` in the
-table are that question asked once per screen, `Game.worldHeld` adds the one
-thing the table cannot know (is there a session at all), and a new screen over a
-round cannot fail to answer.
+**In the page's own match what holds the world is not the pause.** The match
+steps only through `updateWorld` (`docs/game.md`, "Offline, the round is the
+page's own match"), and `tick`'s `paused` arm does not call it, so nothing
+posts an `advance`; `passLocalClock` hands the frame's real time over as a
+`hold`, so the match's clock stays on the wall's and the client's offset never
+sees the pause; and with nothing stepped nothing is relayed — no snapshot, no
+event. Everything else still renders, so the round reads as held rather than
+gone, and two things that would leak past it are stopped by hand:
+`Sfx.setSuspended` stops the audio clock (the tail of the last shot is still
+there on return, and the voice counter stays honest because nothing ends while
+the clock is stopped), and the HUD is ticked with `dt = 0` so the killfeed and
+toasts freeze with the world instead of fading off a frozen screen. Both key off
+`Game.worldHeld` — `!remoteRound && ScreenStack.holdsWorld` — and `holdsWorld`
+is the table's answer asked of the WHOLE stack, so a settings screen raised over
+a pause still holds. The pause card's round summary is not refreshed while it
+holds (`updatePauseMenu`'s `pauseRoundT`): what the card was raised with stays
+true.
+
+**`holdsWorld` is narrower than "the match is not advanced", on purpose.** Every
+state but `playing`, `dying` and a benchmark's FIGHT holds the page's own match
+— the deploy screen and the kit and settings screens over it advance nothing
+either — but only `paused` answers `holdsWorld`. The deploy screen answers
+`false` because the gauges under it are the ones a player reads while choosing
+and the countdown on its card is a clock of its own; the kit and settings
+screens answer `false` because they hold nothing by themselves. So under them
+the HUD keeps its real `dt` and the audio runs, while the world stands still —
+and so does the respawn countdown when one of them is over the deploy screen,
+since the deploy arm is not run under a lid and `updateRoundBehind` returns at
+once in the page's own match: there is no round behind the card to carry on, so
+nothing behind it may run down the clock that lets the player back in.
+
+**Both of the stops invert in a SERVER's round, because there the game is not
+held.** The authority never heard the key, so the three lids that can cover a
+round declare `roundBehind`, as `deploy` does, and `Game.updateRoundBehind` —
+called once from `tick`, before the switch, for whatever is on screen, and
+returning on its first line unless the round is `remoteRound` — steps the
+netplay frame and the gauges as the deploy screen draws them
+(`updateNetUnderCard`), plus the reinforcement clock when the deploy screen is
+what the stack is over, since that clock is the round's and the server runs it
+down regardless. The HUD keeps its real `dt` (kills arrive while the card is
+up), and the audio clock is left running: a suspended context would not play
+the wire's `hit`/`damage`/`explode` cues *or* let them end, and the whole
+pause-worth of them would sound on the resume. **The question is never which
+screen is up, but whether what is under it is moving** — `holdsWorld` and
+`roundBehind` in the table are that question asked once per screen,
+`Game.worldHeld` and `updateRoundBehind` add the one thing the table cannot
+know (who hosts the round), and a new screen over a round cannot fail to
+answer.
 
 It is called before the switch rather than after it because `dt` is time that has
 already passed, and the screen that was up while it passed is the one the frame
@@ -291,8 +342,10 @@ belongs to. The states that are IN the fight answer `false` — `updateWorld` st
 that same frame already, and a second answer here would step it twice.
 
 **The same inversion decides who may START a round, and there `roundover` is the
-state that gets it wrong on its own.** Offline the round-over card is a menu: the
-player asks for another one and `startRound` gives it to them. In a match it is a
+state that gets it wrong on its own.** In the page's own match the round-over
+card is a menu: the player asks for another one and `startRound` gives it to
+them, on a fresh match (`openLocalRound`) — the owned match holds its ended
+round, stepping nothing, until its owner acts. In a server's match it is a
 WAIT — the authority holds the result up for `ROUND_OVER_MS`, builds the next map
 and says so with a `roundstart` — and a client that started its own round there
 disposed the `GameMap` under a live match, offered a deploy screen for a round
@@ -305,14 +358,15 @@ rather than a hang.
 **There were three doors into it and the widest was a key.** `updateMenuCard`'s
 confirm tail fires on Enter, pad A and Start for both cards it draws; the
 round-over card's own Another round plate is the second; the pause menu's "Restart
-round" is the third. All three now ask `!this.net`, and the two that are drawn ask
-it in the DRAWING as well — `showRoundOver` and `showPause` are told `solo`, so
-in a match the button is ABSENT rather than dimmed and the card says the server is
-choosing. The handler guards stay because the markup is what a handler is bound
-to and the markup outlives none of these transitions. The keyboard door is the one
-that was actually being fallen through: pad Start closes the kit screen and is
-that very key, and when a round ends under it the round-over card arrives beneath
-the player's fingers.
+round" is the third. All three ask `!this.remoteRound` — they asked `!this.net`
+until X2.5c C4 gave every round a session — and the two that are drawn ask it in
+the DRAWING as well: `showRoundOver` and `showPause` are told `solo`, so in a
+server's match the button is ABSENT rather than dimmed and the card says the
+server is choosing. The handler guards stay because the markup is what a handler
+is bound to and the markup outlives none of these transitions. The keyboard door
+is the one that was actually being fallen through: pad Start closes the kit
+screen and is that very key, and when a round ends under it the round-over card
+arrives beneath the player's fingers.
 
 ## The pointer lock
 
@@ -349,9 +403,9 @@ departure pauses.
 `#hud.paused` is deliberately **not** `.overlaid`: the menu and round-over card
 hide the gauges because what is under them is last round's, while under a pause the
 tickets, flags and vitals are current and frozen with the scene — which is also
-why the card is one column anchored left rather than a screen, and why in a match
-its eyebrow says the match is live rather than paused (`docs/ui.md`). It hides what
-would be lying — hitmarker, damage arcs, capture panel, mouse hint. It is also the one
-overlay taking pointer events across its whole area, because the deploy screen
-underneath takes them too and a click through the backdrop would land on its map or
-Deploy button.
+why the card is one column anchored left rather than a screen, and why in a
+server's match its eyebrow says the match is live rather than paused
+(`docs/ui.md`). It hides what would be lying — hitmarker, damage arcs, capture
+panel, mouse hint. It is also the one overlay taking pointer events across its
+whole area, because the deploy screen underneath takes them too and a click
+through the backdrop would land on its map or Deploy button.

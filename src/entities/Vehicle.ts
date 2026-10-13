@@ -1793,10 +1793,12 @@ export class Vehicle implements Combatant, RayHull {
     // moment it most obviously does.
     this.flight?.stop();
     this.lift = 0;
-    // The charred repaint is the view's, TOLD on the same call: the battle,
-    // the grenades and the rockets that wreck a hull all step after the
-    // frame's `VehicleViews.update`, so a view reading `alive` would paint the
-    // wreck on the next frame and draw one frame of a live hull burning.
+    // The charred repaint is the view's, TOLD on the same call: while the
+    // page hosted its own core, the battle, the grenades and the rockets that
+    // wreck a hull all stepped after the frame's `VehicleViews.update`, so a
+    // view reading `alive` painted the wreck on the next frame and drew one
+    // frame of a live hull burning. A page posing hulls off the wire wrecks
+    // one in `Game.syncNetVehicles`, and is told here the same way.
     this.picture?.wrecked();
     this.wreckT = CONFIG.vehicles.wreckTime;
     this.onDestroyed();

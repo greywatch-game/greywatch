@@ -1671,8 +1671,9 @@ function reportedHull(world: World, c: Checks): void {
     `hull ${tank.position.x},${tank.position.z} yaw ${tank.yaw} turret ${tank.turretYaw} gun ${tank.gunPitch}`,
   );
 
-  // The trigger, asked between the step and the next report — the page's
-  // `pullHullTrigger` moment: the round leaves the reported pose's muzzle.
+  // The trigger, asked between the step and the next report — the moment
+  // the page's `pullHullTrigger` asked it at until X2.5c C5: the round
+  // leaves the reported pose's muzzle.
   const muzzle = tank.muzzleToRef(new Vector3());
   let mark = h.log.events.length;
   const fired = tank.gunReady && core.submit(PERSON_SLOT, { t: "shell", early: 0 });

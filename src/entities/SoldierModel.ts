@@ -733,7 +733,7 @@ export interface SoldierRig {
  * the wire (`NetSoldier`) satisfies it structurally (a `Bot` itself has no rig
  * to throw), and so does the player's corpse stand-in, which is the
  * whole point: the pool has no business knowing which of them it holds. The
- * three vectors are either library's, since a bot's are `src/math`.
+ * three vectors are `Vector3Like`, so either library's satisfies them.
  *
  * It lives HERE rather than in `RagdollSystem` because it is a fact about a
  * soldier rig, and because the alternative is `DeathCam` importing a type from

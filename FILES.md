@@ -100,7 +100,8 @@ server/               # The authoritative match server. Node, no Babylon (the
                       #   their arrivals) and `sarab/break` (a correction
                       #   rebases the crash series, a touchdown still pays);
                       #   and `greyfen/owned` (X2.5c C2): the bench's round on
-                      #   the offline core and through an owned Match at two
+                      #   a bare core (built as the offline page built one
+                      #   until X2.5c) and through an owned Match at two
                       #   cadences is one stream and the bench's FightHash,
                       #   plus the owned lifecycle; and `greyfen/local` (C3):
                       #   the same round through the LOCAL TRANSPORT — the
@@ -327,9 +328,8 @@ vite.config.ts      # The client build, and the two plugins only it can hold:
                     #   three per map) and the build-only service worker
                     #   substitution (src/pwa/sw.js's PRECACHE, split
                     #   immutable/mutable, into dist/sw.js). Also: never
-                    #   inline a sound, optimizeDeps.exclude for Havok, the
-                    #   COOP/COEP pair on both servers and the ES-module
-                    #   Worker format (X2.5b).
+                    #   inline a sound, optimizeDeps.exclude for Havok, and
+                    #   the ES-module format the local match's Worker needs.
                     #   Outside tsconfig's include, so it stays thin
 vite.server.config.ts # Builds server/ into dist-server/, for
                     #   `npm run build:server`, `simulate` and `corecheck` — and with
@@ -2027,8 +2027,8 @@ src/
                       #   mesh): the collider half of MapBuilder and nothing
                       #   else. Loads nothing; the host does
     LagComp.ts        #   Position history + the rewind around a shot, kept
-                      #   only under `SimCoreOptions.rewind` (the authority's,
-                      #   and since X2.5b the offline core's).
+                      #   only under `SimCoreOptions.rewind` (every Match's,
+                      #   the page's own local match included).
                       #   `resolve` takes a callback so the restore cannot be
                       #   skipped
     reportedLanding.ts #  The crash of a hull a PERSON flies (FINDINGS 60):
@@ -2150,9 +2150,7 @@ src/
     sw.js               # The service worker, as a TEMPLATE — not typechecked,
                         #   never imported; vite.config.ts emits dist/sw.js.
                         #   Network-first for the navigation, cache-first for
-                        #   the content-hashed rest; every response it answers
-                        #   carries the COOP/COEP pair (`isolated`), so the
-                        #   installed app stays isolated offline (X2.5b)
+                        #   the content-hashed rest
   shaders/
     CelShader.ts        # Custom cel ShaderMaterial. Both stages WGSL; six
                         #   defines, six UBO layouts. writePaletteIndex stamps

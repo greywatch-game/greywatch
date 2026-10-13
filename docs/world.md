@@ -464,10 +464,11 @@ grade check, and `buildSimWorld`. Three things a larger map owes:
 
 **`EnvironmentSpec.fogEnd` — how far you can see.** `FOG_WALL` in
 `config/fogWall.ts` used to be the answer and is now only the DEFAULT: a map's
-`fogEnd` is pushed by `Game.installMap` into the three systems that gate on it —
-`BattleView` (where a rig stops being drawn), `RagdollSystem` (where a corpse
-is not worth tumbling) and `NetRoster` (the same call for a remote body). The
-old dev warning that checked the two against each other is gone, because the
+`fogEnd` is pushed by `Game.installMap` into the two systems that gate on it —
+`NetRoster` (where a rig stops being drawn) and `RagdollSystem` (where a corpse
+is not worth tumbling). There were three until `BABYLON_EXIT.md` X2.5c C5: the
+offline page's own `BattleView` was the first, and went when every body the
+page draws became a wire body. The old dev warning that checked the two against each other is gone, because the
 disagreement it reported is now the feature.
 
 **What deliberately did NOT move with it** is the whole reason a clear map is a
@@ -484,19 +485,20 @@ one term along.
 
 **`EnvironmentSpec.bodyDrawDistance` — how far a BODY is worth drawing**,
 defaulting to `fogEnd`, clamped to it, and resolved in exactly one place
-(`bodyDrawDistanceOf`). It exists because the three gates above were pinned to
+(`bodyDrawDistanceOf`). It exists because the gates above were pinned to
 the WEATHER, and on a map with no weather that is not a distance at all:
 Coldharbour and Harrowmead both see past their own diagonals, so both of them
 draw every rig on the map at every moment, and at 1500 m that is measurably the
 largest thing in the frame — **65% of the active meshes with the roster in view,
 and 2.6 ms of a 9.2 ms frame**. It is `ENGINE_UPGRADE.md` S8.
 
-**Two things about it are the whole of its design.** The first is that all three
+**Two things about it are the whole of its design.** The first is that both
 gates are handed ONE number, resolved once by `installMap` — which is what keeps
-`bots.lodDisableDistance` and `bots.death.maxDistance` the same distance by
-construction, the property `config/fogWall.ts` was written to protect. A corpse
-refused a tumble somewhere its own rig is still being drawn would stand to
-attention until `death.hideTime`.
+the distance a rig stops being drawn (`NetRoster`'s) and `bots.death.maxDistance`
+the same distance by construction, the property `config/fogWall.ts` was written
+to protect (the first was `bots.lodDisableDistance` until X2.5c C5 deleted
+it). A corpse refused a tumble somewhere its own rig is still being drawn would
+stand to attention until `death.hideTime`.
 
 The second is that **`WorldCulling`'s reach deliberately did not move with it**,
 and the asymmetry is the argument rather than an omission. Past `fogEnd` a
@@ -532,9 +534,8 @@ not skipped, which is the whole reason that file exists. So a pool built to
 `CONFIG.bots.maxPerTeam` (24) on every map would put six hundred meshes nobody
 is fighting into a village whose entire frame is under 2 ms.
 `BattleSystem.setRoster` therefore builds a new pool when the number MOVES (and
-`BattleView.syncPool` new rigs for it), which is the one place the "built once
-and never disposed"
-rule bends, and it bends at a map change — where the whole world is being
+`NetRoster.setFielded` new rigs for it, on the page), which is the one place the
+"built once and never disposed" rule bends, and it bends at a map change — where the whole world is being
 rebuilt anyway and a loading card is already up. Measured on the box this was
 written on, Sarab is 15.2-15.7 ms a frame at 24 a side against 10.8 at 8, warm
 and uncapped; every other map is untouched code and an untouched pool.

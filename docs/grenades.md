@@ -283,9 +283,11 @@ reaches further than the dip, and is the one half a hull's crew gets, through
 blast kills through the one ledger** (`settleKill`, in the simulation core —
 offline as on the authority since `BABYLON_EXIT.md` X2.5a C4a), the one place a
 bot's death reaches the scoreboard and tickets from every cause, and the page draws
-the corpse and the killfeed line off the core's `botDown` (`Game.botDown`; the
-hitmarker and rumble stay with the weapon's own `hit`, being about the shot that
-landed rather than the body).
+the corpse off the body's death arriving on the wire (`NetRoster.onDeath`) and the
+killfeed line off the authority's `kill` event (`Game.onNetEvent`) — offline as in a
+match since X2.5c C4, the page having drawn both off its own core's `botDown`
+before that (the hitmarker and rumble stay with the weapon's own `hit`, being about
+the shot that landed rather than the body).
 
 **What a grenade LOOKS like is `entities/GrenadeModel.ts` and not this system**,
 for the reason the bot rig is `SoldierModel`: two things build one now, both

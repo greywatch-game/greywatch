@@ -89,10 +89,10 @@ export class NetRoster {
   /**
    * Which slots are inside a hull, by slot.
    *
-   * A body in a tank is not drawn: offline `Game.mount` hides the player's
-   * viewmodel and `VehicleCrew` takes a bot out of the world (`Bot.shown`),
-   * and this is the same statement made from the wire. Without it a crewed
-   * hull drives down the street with its driver standing in the road at the
+   * A body in a tank is not drawn: `Game.mount` hides the player's viewmodel
+   * and, in the core, `VehicleCrew` takes a bot out of the world
+   * (`Bot.shown`), and this is the same statement made from the wire.
+   * Without it a crewed hull drives down the street with its driver standing in the road at the
    * hull's own position, at the hull's own SPEED — which reads as a man being
    * dragged along under the tracks.
    *
@@ -348,12 +348,15 @@ export class NetRoster {
   }
 
   /**
-   * Poses every body for `renderTime`, and applies the same distance LOD
-   * `BattleSystem` applies to bots.
+   * Poses every body for `renderTime`, and applies the distance LOD — the
+   * body draw distance `RagdollSystem` gates its corpses on too, one number
+   * pushed to both (`setViewDistance`). Since `BABYLON_EXIT.md` X2.5c C5 this
+   * is the only rig LOD there is, offline included: every body the page draws
+   * is one of these.
    *
    * The LOD is worth keeping even though nothing here is simulated: it is a
-   * DRAWING budget, and sixteen rigs with outlines is the same number of draw
-   * calls whether an FSM or a socket decided where they stand.
+   * DRAWING budget, and a roster of rigs is the same number of draw calls
+   * whether an FSM or a socket decided where they stand.
    *
    * No `dt`, for the reason `NetSoldier.update` gives: nothing on this path
    * integrates against frame time.

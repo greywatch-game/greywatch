@@ -2267,8 +2267,9 @@ Lights come in three flavors: static fixtures (`lighting.add()`, registered by
 lights (`setCarried()`/`removeCarried()`). Transient and carried lights always get a
 slot; static fixtures compete nearest-first. **That is why bot muzzle flashes are
 budgeted**: 16 bots firing would take all 16 slots with transients and black out the
-village's lanterns, so `BattleView` only records flash positions (told by
-`BattleSystem.onBotFired`) and
+village's lanterns, so a bot's shot — which reaches the page as a `fire` event
+like anybody's, offline as in a match — only has its flash position recorded
+(`Game.drawNetShots`, into `netFlashes`), and
 `Game.spendMuzzleLightBudget` spends `CONFIG.lighting.muzzleBudgetPerFrame` on the
 nearest few. Any new per-bot transient light needs the same treatment. Fixture
 lights are hand-placed and must stay **spatially spread** — clustering lanterns
@@ -3089,20 +3090,23 @@ because a ROSTER is the one thing on a map a layout may triple.**
 nodes — twenty meshes and a root apiece — or **1,008**, and every one of them
 was offered to the walk whether the
 body was in the round or not — a bot past `bodyDrawDistance`, a bot benched for
-a human, a bot crewing a tank, and on a netplay round the whole of
-`BattleView`'s sixteen, which are built and never enabled at all.
+a human, a bot crewing a tank, and — while the offline page still kept a
+`BattleView` pool of its own beside the roster (until `BABYLON_EXIT.md` X2.5c
+C5) — the whole of that pool on a netplay round, built and never enabled at
+all.
 `Game.installBodyPools` files them and `WorldCulling.update` polls each
 rig ROOT once a frame, marking the list dirty only on a transition — 48 property
 reads against the 1,008 nodes a rebuild answers for.
 
-**THREE rigs are filed and not two, and the third is the one the player looks
-at.** `buildSoldier` has exactly three callers — `Bot`, `NetSoldier` and
+**The roster is not the only rig filed, and the other is the one the player
+looks at.** `buildSoldier` has exactly two callers — `NetSoldier` and
 `DeathCam`, which builds the stand-in body the player watches their own death
-over — and for a long time only the two ROSTERS were handed over. The third was
-loose, four metres from the camera, and what that cost is under the size gate
-below. It is filed on the same terms the other two are: `SoldierRig` already IS
-`PooledBody`, and `DeathCam` switches it by the same `root.setEnabled` a roster
-writes. **`installBodyPools` therefore runs AFTER `applyPlayerTeam` in
+over (it had a third, the offline page's own rig, until X2.5c C5) — and for a
+long time only the ROSTERS were handed over. The death cam's was loose, four
+metres from the camera, and what that cost is under the size gate below. It is
+filed on the same terms the roster is: `SoldierRig` already IS `PooledBody`,
+and `DeathCam` switches it by the same `root.setEnabled` a roster writes.
+**`installBodyPools` therefore runs AFTER `applyPlayerTeam` in
 `buildRound`** — that is the one call that can DISPOSE a rig and build another,
 on a change of side, and filing before it would leave the pool pointing at freed
 meshes for the rest of the round.

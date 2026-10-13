@@ -1096,9 +1096,9 @@ builds no hulls), the rig, the belts' run, the whips (`HullWhips`) and the
 paint.
 
 **A view READS its hull and never writes it.** Everything that is STATE is
-read in `VehicleView.update`, which runs right after every
-`VehicleSystem.update` (both call sites, offline and in a match) before
-anything reads a node: the body at `pos` turned `yaw`, enabled exactly while
+read in `VehicleView.update`, which runs right after `VehicleSystem.update`
+(one call site, the page's, offline and in a match alike — the authority builds
+no view) before anything reads a node: the body at `pos` turned `yaw`, enabled exactly while
 `present`, and each joint copied
 off `Vehicle.pose` where it differs — the hull wrote the record behind the
 guards the node writes had, so a node is exactly what the record says.
@@ -1110,7 +1110,7 @@ guards the node writes had, so a node is exactly what the record says.
 | --- | --- | --- |
 | `placed()` | `placeAt` | the rig goes back to rest and to its livery, and the whips straighten — a reset the hull may be stepped past again (a netplay placing lands BEFORE the step that frame) before the view next looks |
 | `kicked()` | `fireGun` | the masts crack once, between two steps — the springs' half of the shot is the hull's own (`HullSprings.kick`), on the muzzle's path |
-| `wrecked()` | `wreck` | the charred paint — the battle, the grenades and the rockets that wreck a hull step AFTER the frame's `VehicleViews.update`, so a view reading `alive` painted the wreck a frame late (the X2.2 review) |
+| `wrecked()` | `wreck` | the charred paint — while the page hosted its own core the battle, the grenades and the rockets that wreck a hull stepped AFTER the frame's `VehicleViews.update`, so a view reading `alive` painted the wreck a frame late (the X2.2 review); a page posing hulls off the wire wrecks one in `syncNetVehicles`, ahead of the update, and is told on the same call |
 | `rolled(dt, speed, yawRate, steer, rotor, moved, linkage)` | each `update`/`updateRemote` | the belts are an INTEGRATOR: the view keeps the run and the stick and disc last drawn, and the gate (skip a hull that neither moved nor turned and whose linkage and disc are as drawn) is its own |
 | `flexed(dt, accel, lateral, footPitch, footRoll)` | after each `leanHull` | the whips are an integrator too, against the mast feet's attitude — the ground lean and the springs summed as HELD — whose rate `HullWhips.step` takes as a difference across one step |
 
@@ -1757,10 +1757,10 @@ the previous sample's tracks (`Vehicle.restAt`, `standOnGround`'s own
 `plankUnder`); the rise rate is the PLANK's if the reported centre stands on it
 and the report's own vertical motion otherwise; the jolt is the change in rise
 rate across the sample, clamped to `joltLimit`; `crashCost` charges it. The
-interval is the REPORTER's clock (`DriveCommand.time`): the page's
-`hullClock` offline, and in a match the client's `DriveMessage.time` BOUNDED
-against when its messages arrive (`Match.onStamp`, `STAMP_SLACK` — an honest
-client's own stamp to the bit, a stretched one spent at the arrival rate), with
+interval is the REPORTER's clock (`DriveCommand.time`): the client's
+`DriveMessage.time` — offline as in a match since X2.5c C4, the page's own
+`hullClock` before that — BOUNDED against when its messages arrive
+(`Match.onStamp`, `STAMP_SLACK` — an honest client's own stamp to the bit, a stretched one spent at the arrival rate), with
 two samples closer than half an upload interval taken as one
 (`SimCoreOptions.reportGap`). Nothing reported is a velocity — where the hull
 was and when, the `updateRemote` bargain. **A correction breaks the series**:
@@ -1770,10 +1770,12 @@ descent it cut is carried to the next rate, which a touchdown pays —
 `reportedLanding.ts`, "A broken series", and `npm run corecheck`'s
 `sarab/break`.
 
-**Offline every step is a sample, and the rule IS `standOnGround`'s arithmetic**
-— measured on Sarab (`npm run corecheck`, `sarab/crash`) to 6e-11 of 129
-points against the bot path on the same flight. **At `INPUT_HZ` it errs two
-ways, both measured there**: on the client's clock — a whole-ms `Date.now()`
+**With every step a sample the rule IS `standOnGround`'s arithmetic** — which
+is what the offline page reported until X2.5c C4 and what `corecheck`'s bare
+core still does, measured on Sarab (`npm run corecheck`, `sarab/crash`) to
+6e-11 of 129 points against the bot path on the same flight. **At `INPUT_HZ` —
+every person's rate now, offline included — it errs two ways, both measured
+there**: on the client's clock — a whole-ms `Date.now()`
 read a millisecond or so late moves a 50 ms interval's rate a few percent,
 ±21 points at 8 m/s — and HIGH on a descent whose rate changes inside its last
 interval, because the wire sees the rate before the change: a full-up flare at
@@ -1919,25 +1921,24 @@ death uses.
 The kill itself takes the ordinary doors: `creditKill` files the row (keyed on
 the flag the VICTIM fell in, like every other kill), the bot's death door
 (`SimCore.onKill`) charges the ticket and the page offers the corpse to the pool
-off its `botDown`, and a player victim needs neither
-because `takeDamage` is the one door a death offline takes. A player DRIVER
+when that death arrives off the wire (`NetRoster.onDeath`), and a player victim
+needs neither because `takeDamage` is the one door a person's death takes. A player DRIVER
 gets the hitmarker and its note, on the same terms a shell's direct hit gets
 them; a bot crew gets none of it.
 
 ### It is the simulation's, and a driven hull is swept like any other
 
 The page never calls `crushSweep`. The simulation core does, from
-`SimCore.step` — the authority's in a match and the offline page's own since
-`BABYLON_EXIT.md` X2.5a C4a — and it sweeps **every** hull on the field, the
-ones a PERSON is driving included, because its `personIn` answers for every
-person it holds. Those are posed from the person's report (`drive`: off the
-wire on the authority, off the page's own prediction offline since C4b) — but
+`SimCore.step` — the authority's in a match and the page's own match's offline
+(the page's own core's from `BABYLON_EXIT.md` X2.5a C4a until X2.5c C4) — and
+it sweeps **every** hull on the field, the ones a PERSON is driving included,
+because its `personIn` answers for every person it holds. Those are posed from the person's report (`drive`, off the
+wire — offline as in a match since X2.5c C4) — but
 `Vehicle.updateRemote` measures `speed` out of the ground the hull covered,
 precisely so everything downstream reads a remote hull the way it reads a local
 one, so a person running a squad over resolves there exactly as a bot crew's
 hull does. Nothing about it is predicted on the page: the driver learns of the
-kill when the killfeed says so — a round trip in a match, the next drain
-offline.
+kill when the killfeed says so — a round trip, offline as in a match.
 
 ## Two seats, and what each of them is
 
@@ -2002,9 +2003,9 @@ bot crew never denies the player their own armour** — and the objection is
 answered rather than dropped: the eviction has a PROMPT in front of it now, in
 the words the ground offer already uses (`TAKE OVER TANK`, `TAKE OVER GUN`
 against a bot; `SWAP SEAT` into an empty chair). A PERSON is never moved, on
-either side: `Game.seatHeldBy` is what tells the three kinds apart — offline
-through `VehicleCrew.crewOf`, in a match through `VehicleState.by`/`by2` against
-the roster, which is the one exception to "a client never learns which slots
+either side: `Game.seatHeldBy` is what tells the three kinds apart — through
+`VehicleState.by`/`by2` against the roster, offline as in a match (never
+`VehicleCrew.crewOf`, a crew table no client holds), which is the one exception to "a client never learns which slots
 are bots", made because this draws a PROMPT. The authority's twin is
 `SimCore.seatHolder`, reading the crew table the client cannot.
 
@@ -3682,10 +3683,12 @@ remote half lacks, it lacks offline too. **The crash is the one thing that
 gap cost and it is closed on both at once**: a posed hull runs `updateRemote`,
 which charges nothing, so the core charges a person-flown landing off the
 reports themselves (`src/sim/reportedLanding.ts`, "A person's landing is
-charged off their REPORTS" above, `FINDINGS.md` 60). Offline
-the trigger is asked of the core between its step and the page's fleet, the one
-moment the two copies stand in the same place (`Game.pullHullTrigger`,
-`docs/game.md`).
+charged off their REPORTS" above, `FINDINGS.md` 60). Offline the trigger is
+what it is in a match: the page predicts the round (`Game.fireShell`,
+`fireMg`) and reports it as a `shell` or an `mg`, and the core decides. Until
+X2.5c C5 it was asked of the page's own core between its step and the page's
+fleet, the one moment the two copies stood in the same place
+(`Game.pullHullTrigger`).
 
 **The second seat is a second pair of questions and NOT a mode on the first**,
 because the two chairs in one hull can be filled by two different kinds of

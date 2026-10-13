@@ -48,10 +48,11 @@
  * **The page's own match host is the third** (`BABYLON_EXIT.md` X2.5c C4):
  * every round that is not a server's is a `Match` the page hosts, in a Worker
  * that has to load and answer before it can be handed one, so
- * `openMatchHost` is awaited here and injected too. Unlike the other two it
- * cannot fail the boot — a Worker that does not come up falls back to the
- * match on a channel in this thread — and the console line it leaves says
- * which one is running and why.
+ * `openMatchHost` is awaited here and injected too. A Worker that does not
+ * come up does not fail the boot — it falls back to the match on a channel in
+ * this thread, and the console line it leaves says which one is running and
+ * why — so the one way it fails is that fallback's own module failing to
+ * load, when there is no game to boot and the plate says so.
  */
 import "./src/ui/base.css";
 import { WebGPUEngine } from "@babylonjs/core";

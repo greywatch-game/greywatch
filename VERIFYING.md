@@ -43,19 +43,18 @@ you are on before you believe anything else in this section.
   constructed, and the script fails as `waitForFunction` timing out on
   `window.__celshock` — which says nothing about why. `scripts/browser.mjs`
   exists to get this right once; go there before you suspect the game.
-- **The page is CROSS-ORIGIN ISOLATED, and whatever serves it to a script
-  has to be too** (`BABYLON_EXIT.md` X2.5b). `scripts/dev-server.mjs` (Vite)
-  and `vite preview` send COOP `same-origin` and COEP `require-corp` on every
-  response, so a page either serves has `crossOriginIsolated`. **Since X2.5c
-  C4 nothing the game runs NEEDS it**: the page's own match runs in a Worker
-  that posts JSON (`src/net/matchHost.ts`) and wants no `SharedArrayBuffer`,
-  so a page served without the pair still runs its match in the Worker, and
-  the pair itself goes at X2.5c C6 (`src/pwa/sw.js`). What decides where the
-  match runs is whether the Worker COMES UP, and `?simpage`: the boot's one
+- **The page is NOT cross-origin isolated, and nothing serving it to a
+  script has to be**: `crossOriginIsolated` is false, because no server and
+  no service worker sends the pair any more. The page's own match runs in a
+  Worker that posts JSON (`src/net/matchHost.ts`) and wants no
+  `SharedArrayBuffer`, so the COOP/COEP pair X2.5b sent for one went at
+  `BABYLON_EXIT.md` X2.5c C6 (`docs/pwa.md`) — and the dev server,
+  `vite preview` and a bare `node:http` server all serve the page alike.
+  What decides where the match runs is whether the Worker COMES UP, and
+  `?simpage`: the boot's one
   `[sim] the simulation runs in …` console line says where and why, and every
-  capture's `simMode` does. Assert on one of those, never on the frame rate —
-  and read the measurement below as X2.5b's, when isolation was what the
-  Worker turned on. Two things a script must know:
+  capture's `simMode` does. Assert on one of those, never on the frame rate.
+  Two things a script must know:
   **every round is a MATCH now** (`BABYLON_EXIT.md` X2.5c C4) — offline the
   page joins a `Match` it hosts itself, in the Worker or (under `?simpage`,
   or when the Worker cannot be had) on a channel in its own thread — **so an
@@ -64,13 +63,6 @@ you are on before you believe anything else in this section.
   `g.player.alive` or `g.state === "playing"` rather than reading it on the
   next line, and wait for `g.net.seated` before asking anything of a round
   that has just been built.
-  Measured headless on the Windows box: `crossOriginIsolated` true under
-  both servers, and false on the first load from a bare `node:http` server
-  that sends no headers, with the boot falling back to the page — and true
-  on that same server once the production build's service worker controls
-  the page, because `sw.js` stamps the pair on every response it answers
-  (`docs/pwa.md`). So a script testing the fallback serves a build it has
-  not let install a worker, or a dev build, which has none.
 - **The local match's Worker can be driven with no game at all**, under the
   dev server: open any document on its origin (`/FILES.md` will do — nothing
   of the game boots), then in `page.evaluate` import
@@ -628,11 +620,13 @@ is one machine's:
   `conquest.update(1/60, fakeCombatants)` in a loop, **in a headless probe or
   `corecheck`**: both are the authority's (X2.5c C4), and the page's
   `g.conquest` is a MIRROR the next snapshot overwrites.
-- **`window.__celshock` now appears TWO awaits later than it used to.**
+- **`window.__celshock` now appears THREE awaits later than it used to.**
   `main.ts` awaits an adapter and a device (`checkWebGPU`, then
-  `new WebGPUEngine(...)` + `initAsync()`) and then `loadHavok()` before
-  constructing `Game`, so a script that polls for the handle is waiting on a GPU
-  device and a ~2 MB physics binary as well as on the bundle — give
+  `new WebGPUEngine(...)` + `initAsync()`), then `loadHavok()`, then the
+  page's own match host (`openMatchHost`, a Worker answering its first call)
+  before constructing `Game`, so a script that polls for the handle is waiting
+  on a GPU device, a ~2 MB physics binary and a Worker as well as on the
+  bundle — give
   `waitForFunction` a generous timeout and do not read the absence of the handle
   as a construction failure. The upside is unchanged and is the whole point of
   keeping the constructor synchronous: `g.engine`, `g.physics.havok` (the raw

@@ -63,8 +63,10 @@ export const PHASES = [
    * **It is a ROOT** (X2.5b): with the match in a Worker the step runs on
    * another thread, overlapping the page's frame rather than inside it, and
    * it is filed against a frame that takes in its answer. With the match on
-   * this thread (`MatchHost.mode`, in every capture) the same span ran
-   * inside the frame, and is still filed as a root so one tree reads both.
+   * this thread (`MatchHost.mode`, in every capture) it runs in a message
+   * task BETWEEN frames — outside `frame` and `present` alike, in the
+   * residue — so it is a root there for the same reason, and one tree reads
+   * both.
    *
    * `simConquest` is the combatant list and the flags; `simVehicles` the
    * crews, the hulls, the tracks and the riders; `simBots` the bots' think
@@ -229,7 +231,8 @@ export const PARENT_OF: Readonly<
 
 /**
  * The phases nothing contains: `frame` (the tick), `present` (what the
- * engine does after it) and `sim` (the core's step, on its own thread).
+ * engine does after it) and `sim` (the core's step, on its own thread or
+ * between frames).
  *
  * DERIVED from the two tables above rather than written out, so it cannot go
  * stale the way a hand-kept list would, and SHIPPED in every capture — because
