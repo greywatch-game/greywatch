@@ -382,7 +382,11 @@ Five things are load-bearing:
 the squad's FIRST body when it cuts the squads — a fixed slot rather than a roll,
 so a team fields exactly `perSquad` of them however the pool is seeded. It rides
 the pool slot the way the skill seed does, so it survives a bench, a respawn and
-a round. It is a plain field; the tube on the back is `BotRig`'s, which reads it.
+a round. It is a plain field, and the tube on the back is the CLIENT's: `Match`
+reads it off the pool onto the roster (`SlotOccupant.launcher`, a bot's row
+only) and `NetSession` switches the rig's tube from that
+(`NetSoldier.setLauncher`) — offline and online alike, the offline page being a
+client of its own match.
 
 **A bot's launcher is for ARMOUR and nothing else**, and that test is the first
 line of `considerRocket` rather than a band or a chance, because it is the rule
@@ -409,8 +413,9 @@ An AT gunner carries a rifle and a tube, and the tube is over their shoulder
 until there is armour to point it at — which is the honest shape as well as the
 cheap one. What it buys is the thing a player in a hull actually needs: being
 able to tell WHICH body in a squad is the one that can hurt them, from the side,
-at range, in one silhouette. `Bot.launcher` is a property rather than a field so
-that the write and the mesh are one statement.
+at range, in one silhouette. It rides the ROSTER rather than the snapshot
+because it is a fact about the pool slot, fixed for the match: a person sitting
+in that slot is not the bot and wears no tube.
 
 **On the server this runs exactly as it does offline**, and it has to: the bots
 in a match are simulated there and nowhere else, so a `SimCore` that wired

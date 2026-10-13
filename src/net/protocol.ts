@@ -218,7 +218,22 @@ export interface MatchList {
  * anybody. See `server/Roster.ts`.
  */
 export type SlotOccupant =
-  | { kind: "bot" }
+  | {
+      kind: "bot";
+      /**
+       * This bot carries a rocket launcher (`Bot.launcher`), so its body is
+       * drawn with the tube slung across its back. Present (true) on those
+       * bots only and absent on every other: a fact about the POOL SLOT, fixed
+       * for the life of the match, so it rides the roster rather than every
+       * snapshot. A person in the slot is not that bot and carries nothing.
+       *
+       * Additive, and no `PROTOCOL_VERSION` bump: an older client ignores it
+       * and draws no tube, which is what a client of a server always drew; a
+       * newer client against an older server draws none either. Nothing it
+       * says reaches an outcome.
+       */
+      launcher?: boolean;
+    }
   | { kind: "human"; peerId: string; name: string };
 
 export interface SlotState {

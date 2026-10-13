@@ -576,8 +576,10 @@ export class Bot implements Combatant {
    * It changes nothing about how the bot fights infantry: the rifle is still
    * the weapon, the rig still carries one, and the launcher exists only in
    * `considerRocket`. What a launcher bot IS, is the one body in its squad
-   * that can hurt a tank. The tube on its back is the client's rig's, drawn
-   * off what the wire says of this — the field and the mesh used to be one
+   * that can hurt a tank. The tube on its back is the client's rig's: the
+   * authority puts this on the roster (`SlotOccupant.launcher`, read off the
+   * pool by `Match`) and `NetSession` switches the rig's tube from it
+   * (`NetSoldier.setLauncher`) — the field and the mesh used to be one
    * setter, while the rig was this class's.
    */
   launcher = false;

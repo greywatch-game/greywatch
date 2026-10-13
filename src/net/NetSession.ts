@@ -644,6 +644,32 @@ export class NetSession {
     });
   }
 
+  /**
+   * The pool to `perTeam` bodies a side (`NetRoster.setFielded`, from
+   * `Game.buildRound`), with the slung launchers the last roster message
+   * named put back on it: a pool REBUILT for a new map or side is new rigs,
+   * every tube off, and the roster that names them may have arrived first.
+   */
+  setFielded(perTeam: number): void {
+    this.roster.setFielded(perTeam);
+    this.drawLaunchers();
+  }
+
+  /**
+   * Every body's slung launcher, as the last roster message says
+   * (`SlotOccupant.launcher`): on for a bot that carries one, off for every
+   * other body — a person, or a slot whose bot does not — since a roster
+   * message or a re-addressed pool (`NetRoster.setBlockWidth`) can move the
+   * tube to a different body. What the core decided (`Bot.launcher`), drawn;
+   * nothing reads it back.
+   */
+  private drawLaunchers(): void {
+    for (const soldier of this.roster.soldiers) soldier.setLauncher(false);
+    for (const s of this.slots) {
+      if (s.occupant.kind === "bot" && s.occupant.launcher) this.roster.at(s.index)?.setLauncher(true);
+    }
+  }
+
   /** Mirrored ticket counts, for the HUD. */
   get tickets(): readonly [number, number] {
     return this.roster.tickets;
@@ -656,6 +682,9 @@ export class NetSession {
         // body is re-addressed to the slot this match numbers it by — the
         // ceiling when a server says nothing. See `NetRoster.setBlockWidth`.
         this.roster.setBlockWidth(msg.blockWidth ?? CONFIG.bots.maxPerTeam);
+        // …which may have moved a tube to another body: back where the roster
+        // put it, until the roster behind this welcome restates it.
+        this.drawLaunchers();
         this.slot = msg.slot;
         this.team = msg.team;
         this.mapId = msg.mapId;
@@ -736,6 +765,7 @@ export class NetSession {
       case "roster":
         this.slots = msg.slots;
         this.roster.applyRoster(msg.slots, this.slot);
+        this.drawLaunchers();
         break;
 
       // The board, whole. Copied INTO the arrays rather than replacing them,

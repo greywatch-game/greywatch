@@ -5185,7 +5185,7 @@ export class Game {
     // server's session lives across rotations; the page's own match is a
     // fresh session every round). After the ragdolls' reset above, which is
     // the other thing that holds a rig.
-    this.net?.roster.setFielded(perTeam);
+    this.net?.setFielded(perTeam);
     // The page's own streams to the round's seed — the player's cone, drawn
     // HERE and carried by the round as the direction it flew, the same
     // `deriveSeed(seed, STREAM.player, 0)` it always was.

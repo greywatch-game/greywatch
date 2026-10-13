@@ -708,12 +708,14 @@ export interface SoldierRig {
   gun: TransformNode;
   /**
    * The rocket launcher slung across the back — disabled on every rig until a
-   * bot is told it carries one, which `BattleSystem` decides per squad.
+   * body is told it carries one: `BattleSystem` decides per squad
+   * (`Bot.launcher`), the authority says so on the roster
+   * (`SlotOccupant.launcher`), and `NetSession` switches it on through
+   * `NetSoldier.setLauncher`.
    *
    * Deliberately NOT a ragdoll bone and deliberately not in `RAGDOLL_BONES`:
    * it is welded to the torso, so it falls with the body under Havok as part
-   * of the chest and needs no joint of its own. See `Bot.launcher`, and
-   * `NetSoldier`, which shows it.
+   * of the chest and needs no joint of its own.
    */
   launcher: TransformNode;
   /** Muzzle landmark, for tracer origins. */
@@ -1281,8 +1283,8 @@ export function buildSoldier(
   muzzle.parent = gun;
   muzzle.position.set(...MUZZLE_AT);
 
-  // --- the launcher, slung across the back. Off on every rig until a bot says
-  // otherwise, and one bot in each squad does ---
+  // --- the launcher, slung across the back. Off on every rig until the
+  // roster says otherwise, and it does for one bot in each squad ---
   //
   // **It is worn rather than held**, and that is the honest shape as well as
   // the cheap one: an AT gunner carries a rifle and a tube, and the tube is

@@ -392,6 +392,17 @@ export class NetSoldier implements Combatant, RagdollSubject {
     return this.rig.muzzle.getAbsolutePosition();
   }
 
+  /**
+   * Whether this body carries the slung rocket launcher — the roster's word
+   * on the slot (`SlotOccupant.launcher`, `NetSession`'s `roster` arm): the
+   * tube's node switched, and with it the mesh under it, which `setEnabled`
+   * switches with the rest of the rig but which draws only while its node is
+   * on. Off on every rig until told, as `buildSoldier` leaves it.
+   */
+  setLauncher(on: boolean): void {
+    this.rig.launcher.setEnabled(on);
+  }
+
   setEnabled(on: boolean): void {
     this.enabled = on;
     this.rig.root.setEnabled(on);

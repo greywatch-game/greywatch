@@ -64,6 +64,7 @@ import {
   type MatchSummary,
   type PointState,
   type MineState,
+  type RosterMessage,
   type RocketState,
   type ServerEvent,
   type ServerMessage,
@@ -1312,7 +1313,7 @@ export class Match {
     });
     // The roster and the board as they stand, to this connection alone: the
     // seat table did not change, so there is nothing to broadcast.
-    say({ t: "roster", slots: this.roster.fielded() });
+    say(this.rosterMessage());
     say(this.scores());
     console.log(`[${this.id}] a watcher joined`);
   }
@@ -3605,7 +3606,27 @@ export class Match {
    * for a slot nobody is in costs three zeros a few times a minute.
    */
   private broadcastRoster(): void {
-    this.broadcast({ t: "roster", slots: this.roster.fielded() });
+    this.broadcast(this.rosterMessage());
+  }
+
+  /**
+   * The roster message — `broadcastRoster`'s slots, with what the CORE says
+   * of each bot that the table does not: whether it carries the launcher
+   * (`Bot.launcher`, `SlotOccupant`), so a client draws the tube on its
+   * back. A fact about the pool slot, so it is read off the pool here rather
+   * than kept in `Roster`, which owns no simulation; and a bot's row is
+   * COPIED to say it, so the table's own occupant is never written.
+   */
+  private rosterMessage(): RosterMessage {
+    const bots = this.game.battle.bots;
+    const slots = this.roster.fielded();
+    for (let i = 0; i < slots.length; i++) {
+      const s = slots[i];
+      if (s.occupant.kind === "bot" && bots[s.index]?.launcher) {
+        slots[i] = { index: s.index, team: s.team, occupant: { kind: "bot", launcher: true } };
+      }
+    }
+    return { t: "roster", slots };
   }
 
   /**
