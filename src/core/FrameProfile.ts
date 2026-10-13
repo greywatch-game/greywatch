@@ -7,10 +7,9 @@
  * is `profilePhases.ts`'s and what a capture SAYS is `profileReport.ts`'s,
  * which this hands a `ProfileRing` at the moment of a capture. Owns NO game
  * state and reads none: `Game` brackets the phases it already sequences,
- * files the simulation core's own timing of its step (`fileTiming`, and the
- * page's wait for it, `fileWait`), and pushes
- * the per-frame context, so nothing here imports a system and no system has
- * heard of this.
+ * files the simulation core's own timing of its step (`fileTiming`, as the
+ * page's own local match reports it), and pushes the per-frame context, so
+ * nothing here imports a system and no system has heard of this.
  *
  * Invariants:
  *  - **It MEASURES and never decides.** No caller may read a phase back to
@@ -666,7 +665,11 @@ export class FrameProfile {
     this.seed = seed;
   }
 
-  /** Which thread the simulation core steps on (`SimHost.mode`). Set by `Game` at construction. */
+  /**
+   * Which thread the page's own local match steps its core on
+   * (`MatchHost.mode`). Set by `Game` at construction, and again when a lost
+   * host is replaced.
+   */
   setSimMode(mode: "worker" | "page"): void {
     this.simMode = mode;
   }
@@ -960,10 +963,8 @@ export class FrameProfile {
    * Closes a span that may open MORE THAN ONCE in a frame, adding to whatever
    * the frame already has in that slot.
    *
-   * **Every one of `hookRender`'s spans needs this, and of `Game`'s only
-   * `simSync`** (the core's frame read after a step, a pump and every `ask`
-   * that is not a report — `BABYLON_EXIT.md` X2.5b), which is the whole reason
-   * it is a second method rather than `end` growing a flag: a rendering group
+   * **Every one of `hookRender`'s spans needs this**, which is the whole
+   * reason it is a second method rather than `end` growing a flag: a rendering group
    * is entered once per group per camera, and a plain `end` would report the
    * LAST of those as the phase's whole cost.
    *
@@ -1002,11 +1003,10 @@ export class FrameProfile {
    * **One call with objects in, rather than a call per phase with doubles in**,
    * because a double handed to a call that is not inlined is a heap number,
    * and the filing runs once a frame — the tier that does not inline
-   * (`docs/profiling.md`, "Finding WHO allocates"). Measured with the core in
-   * a Worker on Sarab: `Game.fileSimTiming`'s seven such calls were ~660 B a
-   * frame, the profiler's own recording path breaking its own rule. Here the
-   * doubles go from the row's typed arrays into the ring's without crossing
-   * a call.
+   * (`docs/profiling.md`, "Finding WHO allocates"). Measured on Sarab, a
+   * call per phase was ~660 B a frame, the profiler's own recording path
+   * breaking its own rule. Here the doubles go from the row's typed arrays
+   * into the ring's without crossing a call.
    */
   fileTiming(
     root: number,
@@ -1037,25 +1037,6 @@ export class FrameProfile {
       dur[at] = t.ms[i];
       entered[at] = 1;
     }
-  }
-
-  /**
-   * Files `ms` ending NOW into `slot` — a wait measured elsewhere
-   * (`SimHost.waitMs`, the profiler's `simWait`), read off its holder inside
-   * this call so no double crosses one (`fileTiming`).
-   */
-  fileWait(slot: number, holder: { readonly waitMs: number }): void {
-    if (!this.on || !this.frameOpen) return;
-    const ms = holder.waitMs;
-    if (ms <= 0) return;
-    const at = this.cursor * SLOTS + slot;
-    if (this.entered![at] === 1) {
-      this.durMs![at] += ms;
-      return;
-    }
-    this.startMs![at] = performance.now() - ms - this.frameT0;
-    this.durMs![at] = ms;
-    this.entered![at] = 1;
   }
 
   /**

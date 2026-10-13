@@ -48,39 +48,27 @@ export const PHASES = [
   "world",
   "net",
   /**
-   * The PAGE's half of the simulation's hop (`BABYLON_EXIT.md` X2.5b), both
-   * inside `world`. `simWait` is the time the page spent waiting for the
-   * Worker to finish the step it is taking in — zero whenever the Worker
-   * kept up, and never entered with the core in this thread. `simSync` was
-   * the copy of the core's frame into the page's readers after the step.
-   * Neither is entered since the page became a client of its own local
-   * match (`BABYLON_EXIT.md` X2.5c); the list keeps them until the
-   * profiler's own pass takes them out.
-   */
-  "simWait",
-  "simSync",
-  /**
-   * The SIMULATION's step (`SimCore.step`, offline) and its six phases — the
-   * one span in this list that `Game` does not stamp. **The core times itself
-   * with a clock the page hands it** (`SimCoreOptions.timing`, switched by
-   * `SimCore.timeSteps` while this profiler is armed) and `Game` FILES what
-   * it reports (`frame.timing`, `FrameProfile.fileTiming`) — so the brackets are
-   * the core's and the slots are this list's. A step run more than once a
-   * frame (a benchmark's lead) is summed.
+   * The SIMULATION's step (`SimCore.step` in the page's own local match,
+   * offline) and its five phases — the one span in this list that `Game`
+   * does not stamp. **The core times itself with a clock its host hands it**
+   * (`SimCoreOptions.timing`, switched by `SimCore.timeSteps` while this
+   * profiler is armed), the local match reports the row over its owner
+   * channel (`src/sim/stepTiming.ts`), and `Game` FILES it
+   * (`FrameProfile.fileTiming`) — so the brackets are the core's and the
+   * slots are this list's. A step run more than once a frame (a benchmark's
+   * lead) is summed.
    *
-   * **It is a ROOT** (X2.5b): with the core in a Worker the step runs on
+   * **It is a ROOT** (X2.5b): with the match in a Worker the step runs on
    * another thread, overlapping the page's frame rather than inside it, and
-   * it is filed against the frame that TAKES IN its answer — the frame whose
-   * picture it is. With the core in the page (`SimHost.mode`, in every
-   * capture) the same span ran inside `world`, and is still filed as a root
-   * so one tree reads both.
+   * it is filed against a frame that takes in its answer. With the match on
+   * this thread (`MatchHost.mode`, in every capture) the same span ran
+   * inside the frame, and is still filed as a root so one tree reads both.
    *
    * `simConquest` is the combatant list and the flags; `simVehicles` the
    * crews, the hulls, the tracks and the riders; `simBots` the bots' think
-   * and move; `simGrenades` and `simAntiTank` what is in the air;
-   * `simPublish` the frame's fill and, from a Worker, its copy into shared
-   * memory. What `sim` holds outside them is the persons' regen, leash and
-   * deploy and the rewind's record.
+   * and move; `simGrenades` and `simAntiTank` what is in the air. What `sim`
+   * holds outside them is the persons' regen, leash and deploy and the
+   * rewind's record.
    */
   "sim",
   "simConquest",
@@ -88,13 +76,12 @@ export const PHASES = [
   "simBots",
   "simGrenades",
   "simAntiTank",
-  "simPublish",
   /**
-   * The PAGE's armour: offline the fleet posed off the core's frame and the
-   * player's hull predicted, plus the views; in a match the wire's posing.
+   * The PAGE's armour: the fleet posed off the wire — a server's or the
+   * page's own local match's — and the player's hull predicted, plus the
+   * views.
    */
   "vehicles",
-  "bots",
   "combat",
   "grenades",
   "antiTank",
@@ -192,7 +179,7 @@ export const P = Object.fromEntries(
  * **There are three roots because the frame has two parts and only one of
  * them is the tick — and the simulation is no longer either.** `frame` is
  * `Game.tick`, wall to wall; `present` is what the engine does after it
- * returns; `sim` is the core's step, on the Worker's thread (X2.5b). None
+ * returns; `sim` is the core's step, in the local match (X2.5b, X2.5c). None
  * contains another, and a reader that drew `present` or `sim` inside `frame`
  * would be drawing a containment that does not exist — which is exactly what the fallback tree in
  * `public/profile_viewer.html` does to any phase it has not been told about, so
@@ -208,19 +195,15 @@ export const PARENT_OF: Readonly<
   onFoot: "gameplay",
   world: "gameplay",
   net: "world",
-  simWait: "world",
-  simSync: "world",
   // The core's step is a third ROOT (X2.5b): in a Worker it runs off this
   // thread, so it is in the `Exclude` above and the viewer's
-  // `FALLBACK_ROOTS`, and its six children stay its own.
+  // `FALLBACK_ROOTS`, and its five children stay its own.
   simConquest: "sim",
   simVehicles: "sim",
   simBots: "sim",
   simGrenades: "sim",
   simAntiTank: "sim",
-  simPublish: "sim",
   vehicles: "world",
-  bots: "world",
   combat: "world",
   grenades: "world",
   antiTank: "world",

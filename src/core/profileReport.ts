@@ -341,14 +341,6 @@ export interface SimSegment {
   frames: number;
   mean: number;
   phases: Record<string, number>;
-  /**
-   * The PAGE's half of the hop over the same frames (report version 15,
-   * `BABYLON_EXIT.md` X2.5b): `wait`, the main thread blocked on a Worker
-   * that had not finished (`simWait`), and `sync`, the frame read into the
-   * page's mirrors (`simSync`) — what moving the core off the thread costs
-   * the thread it left.
-   */
-  hop: { wait: number; sync: number };
 }
 
 /** The phases nested directly under `sim`, in `PHASES` order. */
@@ -445,10 +437,10 @@ export interface ProfileReport {
    */
   seed: number | null;
   /**
-   * Where the simulation core ran (`SimHost.mode`, `BABYLON_EXIT.md` X2.5b):
-   * `worker` — its step on another thread, `sim` a root beside `frame` — or
-   * `page`, the step inside `world` on this one. Null where nothing pushed
-   * it. Absent before report version 15.
+   * Where the page's own local match stepped its core (`MatchHost.mode`,
+   * `BABYLON_EXIT.md` X2.5b, X2.5c): `worker` — its step on another thread,
+   * `sim` a root beside `frame` — or `page`, the step on this one. Null where
+   * nothing pushed it. Absent before report version 15.
    */
   simMode: "worker" | "page" | null;
   device: {
@@ -1017,7 +1009,14 @@ export function buildReport(
     // of the hop (and `SimSegment.hop`, their means over a segment's stepped
     // frames); and `simMode` says which thread the step ran on. A v14
     // capture's `sim` is inside `world` and its fill is in `sim`'s remainder.
-    version: 15,
+    // 16: simPublish, simWait, simSync and sim.hop gone; sim is the local
+    // Match's step, over the owner channel (`BABYLON_EXIT.md` X2.5c — the
+    // page is a match client of its own local match, so there is no frame to
+    // publish, no Worker to wait on and no mirror to sync). `bots` is gone
+    // with them: it was the old host's picture of the core's bots, and the
+    // bodies are the wire's now, posed under `net`. Nothing else changed
+    // meaning: a v15 capture's `sim` and its five children read the same.
+    version: 16,
     takenAt: new Date().toISOString(),
     reason,
     map: r.mapId,
@@ -1272,8 +1271,6 @@ function segmentStat(
   let gpuN = 0;
   let sim = 0;
   let sims = 0;
-  let wait = 0;
-  let sync = 0;
   const kids = new Float64Array(SIM_CHILDREN.length);
   for (let k = 0; k < m; k++) {
     const i = at[k];
@@ -1286,10 +1283,6 @@ function segmentStat(
         const q = i * SLOTS + P[SIM_CHILDREN[j]];
         if (r.entered[q] === 1) kids[j] += r.durMs[q];
       }
-      const qw = i * SLOTS + P.simWait;
-      if (r.entered[qw] === 1) wait += r.durMs[qw];
-      const qs = i * SLOTS + P.simSync;
-      if (r.entered[qs] === 1) sync += r.durMs[qs];
     }
     const f = i * SLOTS + P.frame;
     if (r.entered[f] === 1) tick[ticks++] = r.durMs[f];
@@ -1336,7 +1329,6 @@ function segmentStat(
             phases: Object.fromEntries(
               SIM_CHILDREN.map((name, j) => [name, round(kids[j] / sims)]),
             ),
-            hop: { wait: round(wait / sims), sync: round(sync / sims) },
           }
         : null,
   };

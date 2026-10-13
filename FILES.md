@@ -617,9 +617,9 @@ src/
                         #   at all while it is off. Allocates nothing while
                         #   recording (GC is what it exists to catch). Game
                         #   brackets the phases it already sequences, and
-                        #   files the core's own step timing under `sim`, a
-                        #   root (`fileTiming`, one call), and the wait for a
-                        #   Worker under `simWait` (`fileWait`); no
+                        #   files the core's own step timing, as the page's
+                        #   local match reports it, under `sim`, a root
+                        #   (`fileTiming`, one call); no
                         #   system has heard of it. Handle: `window.__profile`.
                         #   The RECORDER only: lends the ring to profileReport
                         #   at a capture. A benchmark's ring is sized to its
@@ -627,11 +627,12 @@ src/
                         #   rather than disarmed, so it can still be read
     profilePhases.ts    # The profiler's phase list (PHASES, the slot ids P
                         #   and SLOTS) and the tree it nests in (PARENT_OF,
-                        #   ROOTS) — `sim` under `world`, with the core's five
-                        #   children. Both halves read it, which is why it is
+                        #   ROOTS) — `sim` a third root beside `frame` and
+                        #   `present`, with the core's five children. Both halves read it, which is why it is
                         #   neither's — kept in either, they would be a cycle
     profileReport.ts    # What a capture SAYS: the ProfileReport shape (the
-                        #   JSON the viewer reads; v14 adds SegmentStat.sim),
+                        #   JSON the viewer reads; v14 adds SegmentStat.sim,
+                        #   v16 drops the old host's hop),
                         #   buildReport, buildTrace and
                         #   the stats. Allocates freely and never writes the
                         #   ProfileRing it is lent

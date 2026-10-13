@@ -664,9 +664,9 @@ const FALLBACK_TREE = {
      and a ROOT from version 15 (BABYLON_EXIT.md X2.5b: in a Worker it runs
      on another thread) — so it is in FALLBACK_ROOTS, not here, and its
      children stay under it. A v14 capture carries its own tree, which puts
-     it under `world`. `simWait` and `simSync` are the page's half of the
-     hop. `conquest` and `glass` are kept for the older traces that carry
-     them. */
+     it under `world`. `simWait`, `simSync` and `simPublish` were the old
+     host's hop (version 15 only, gone in 16), and `conquest` and `glass`
+     are kept for the older traces that carry them, as those three are. */
   net: "world", simWait: "world", simSync: "world",
   simConquest: "sim", simVehicles: "sim", simBots: "sim",
   simGrenades: "sim", simAntiTank: "sim", simPublish: "sim",

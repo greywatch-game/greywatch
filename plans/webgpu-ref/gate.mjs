@@ -119,7 +119,10 @@ for (const id of targets) {
         medianMs: +times[Math.floor(times.length / 2)].toFixed(2),
         p95Ms: +times[Math.floor(times.length * 0.95)].toFixed(2),
         state: g.state,
-        bots: g.core?.frame ? g.core.frame.bots.count : g.battle.bots.length,
+        // Every body the round fields, people and bots, as the wire drew them
+        // (`NetSession.roster`) — offline too, the page being a client of its
+        // own local match (`BABYLON_EXIT.md` X2.5c).
+        bodies: g.net ? g.net.roster.soldiers.length : 0,
         activeMeshes: g.scene.getActiveMeshes().length,
         isWebGPU: !!g.engine.isWebGPU,
         engine: g.engine.constructor.name,
