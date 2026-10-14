@@ -719,10 +719,9 @@ plan with the user before X3.4. Leaving Babylon would still remove the bugs
 and the upkeep, but the performance case would be gone, and the order of
 everything after this point should be weighed again.
 
-**Two things outside the branch decide whether the gate can be read:**
-- **The phone runs only what `develop` deploys.** So the merge owed after
-  X2.5c (your play-test, then the `--no-ff` merge, "The branch") has to have
-  happened first.
+**One thing outside the branch decides whether the gate can be read.**
+(The phone reaches the branch itself: `babylon-exit` is deployable as well
+as `develop`, since 2026-10-13, so the gate does not wait on a merge.)
 - **The phone may be GPU-bound.** The 2026-10-13 Greyfen captures read as a
   GPU wait plus heat. X3.3 mainly removes CPU-side draws, so a phone frame
   that does not move may say nothing about the renderer. A `?gpu` phone
