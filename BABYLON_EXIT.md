@@ -761,14 +761,15 @@ did.
 - **Owed onward.**
   - X3.3b: the clusters and the cull keep the ON rule's other half, the
     walk's frustum and readiness, which X3.3a asks of Babylon's mesh.
+    **Done at X3.3b.**
   - X3.3b: a mesh whose `visibility` drops below 1 would go to Babylon's
     blended list, and ours would still draw it opaque. No block changes its
-    visibility today.
+    visibility today. **Answered at X3.3b** by a contract and a DEV check.
   - X3.3c: `PipelineWarmup` learns our pipelines.
   - X3.3c: the census's equal totals become falling totals (`census.mjs
-    --fall`).
+    --fall`). **They fell at X3.3b already**; X3.3c reads them again.
 
-#### X3.3b — Clusters, the compute cull and indirect draws — **M–L**
+#### X3.3b — Clusters, the compute cull and indirect draws — **M–L** — **LANDED** (04d1b89, review fixes e21c9ac)
 
 - **Do:**
   - The blocks cut into clusters of ~128–256 triangles, each carrying its
@@ -790,6 +791,91 @@ did.
   - X0.3 on the desktop, read as an indication only; the step's number is
     (c)'s.
 - **Must not:** let the cull read a node; re-cut clusters per frame.
+
+**Landed** (04d1b89, review fixes e21c9ac).
+- **The cut.** `render/clusters.ts` cuts each taken surface once, at
+  install (`WorldBlocks.finish`, after `WorldCulling.setMap`), into runs of
+  at most 128 triangles of ONE X1.4 piece in the surface's own order
+  (`CONFIG.graphics.clusters`). Each cluster carries its block, its piece,
+  its float32 box, and how far the wind can move it: its largest ramp
+  weight, and whether it is rigged.
+- **A group is a recipe.** Every surface of one cel recipe is laid end to
+  end on one set of vertex buffers, with its indices rebased onto them. An
+  attribute a surface lacks but the variant reads is zero-filled, which is
+  what Babylon's empty buffer reads. One pipeline, one material, one
+  `drawIndexedIndirect` a group, at the same draw point X3.3a found.
+- **The cull** (`render/ClusterCull.ts`, `render/wgsl/clusterCull.ts`) is
+  three compute passes, submitted as a command buffer of their own when the
+  main pass begins (`Renderer.onFrame`), which the queue runs ahead of the
+  frame's:
+  - `cullClusters`: the block's box against the reach, the SURFACE's sphere
+    against the size gate (as `WorldCulling.tooSmall` measures the mesh, so
+    a cluster of a drawn surface is never too small), then the cluster's
+    box against the view-projection's four side planes and the eye's own
+    plane, grown by the most the frame's wind can move its vertices;
+  - `prefix`: one workgroup scans the workgroups' totals and writes each
+    group's indirect arguments;
+  - `scatter`: each survivor's indices copied into its group's region.
+  The reach and the size gate's scale are `WorldCulling`'s own, stated as
+  numbers (`WorldCulling.reachGate`), and the reach is measured to the box
+  of the cell the mesh is filed in (`blockBoxOf`). So the cull reads no node.
+- **Near-first, in one order.** The survivors are placed by a SCAN, never
+  an atomic append: band first (24, 64 and 160 m, nearest first), then
+  cluster index. The same eye draws the same triangles in the same order,
+  so an equal-depth tie is settled the same way every time. The four bands
+  are the four lanes of one `vec4u`, so one scan orders all of them. **The
+  band is the SURFACE's** (the distance to its sphere's centre, as Babylon
+  sorts a mesh), never the cluster's own: banded per cluster, two coplanar
+  runs of one surface would trade places as the eye crossed a band's edge,
+  which no still vantage of the bank can show. The review found it.
+- **X3.3a's two owed items.** The ON rule's other half (the walk's frustum
+  and readiness) is now the cull's frustum and our own pipelines' and bind
+  groups' readiness. The per-frame mesh reads are gone. The layer mask moved
+  into the take test. A taken mesh whose `visibility` drops below 1 is
+  answered by a contract rather than followed: nothing in the tree switches,
+  hides or fades a block, and a DEV build checks every frame and says so if
+  one ever is.
+- **Measured.**
+  - **`bank.mjs --check` with the switch ON: 47 of 47 within the floor**,
+    the same residue as X3.3a's (equal-depth ties). The worst rows are
+    Sarab's `wadi` at 0.1222% of pixels and Coldharbour's `curtain90` at a
+    mean of 0.0104/255, after the review fixes (0.1227% and 0.0105 before
+    them). **With it OFF: 47 of 47 at 0%.**
+  - **`census.mjs --fall`: main-pass draws fall on all seven maps**, every
+    vantage, with our side down to one draw a recipe:
+
+    | map | without | with | ours (surfaces taken) |
+    | --- | --- | --- | --- |
+    | Hollowmere | 629 | 497 | 2 (54) |
+    | Greyfen | 382 | 172 | 9 (354) |
+    | Coldharbour | 1,104 | 836 | 7 (108) |
+    | Harrowmead | 1,514 | 869 | 8 (104) |
+    | Sarab | 1,206 | 891 | 7 (165) |
+    | Cinderhaven | 294 | 217 | 5 (130) |
+    | Kurenai | 89 | 61 | 12 (170) |
+
+  - **`shaders.mjs`** builds the cull's three entry points as well, clean
+    on seven maps. **`gate.mjs`** is clean both ways. `npm run build` passes.
+  - **X0.3 on the desktop, as an indication only** (one run a side,
+    `bench.mjs --query ourworld`, the fight hashes equal). The tick falls in
+    every group: Greyfen's fight 6.80 to 6.24 ms, Sarab's 11.26 to 9.93 ms,
+    with draws 389 to 312 and 603 to 510. The wall-clock frame is mixed
+    within this box's noise. The step's number is (c)'s.
+- **What the review found** (fixed before the step was marked): the
+  band per cluster (above); a compile or a cull that settled after its map
+  was torn down could still write the draw state or the next map's
+  failures (a generation now guards both, and a disposed cull drops late
+  pipelines); the vertex buffers missing from the device-limit check; a cull
+  built for a map with nothing taken; and a frame's submit allocating its
+  descriptors.
+- **Owed onward.**
+  - X3.3c: the cull is submitted outside Babylon's encoder, so a GPU timer
+    bracketing Babylon's frame (`?gpu`, `gpu.frame`) does not see it. Before
+    the phone's `gpu.frame` is read at the gate, either the timer brackets
+    it or it is encoded into the frame's own command buffer.
+  - X3.3c: `PipelineWarmup` learns our pipelines, the cull's included.
+  - A5 (occlusion), when it comes, goes into `cullClusters` beside the
+    frustum. Destructible buildings mask by the cluster's piece.
 
 #### X3.3c — Our path is the path — **S–M**
 
