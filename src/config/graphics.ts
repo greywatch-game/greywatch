@@ -1324,8 +1324,8 @@ export const graphics = {
     minPixels: 3,
   },
   /**
-   * How our renderer cuts the blocks it draws (`?ourworld`;
-   * `render/WorldBlocks.ts`, `BABYLON_EXIT.md` X3.3b): into CLUSTERS, culled
+   * How our renderer cuts the blocks it draws (`render/WorldBlocks.ts`,
+   * `BABYLON_EXIT.md` X3.3b): into CLUSTERS, culled
    * per frame on the GPU and drawn with one indirect draw per material.
    */
   clusters: {
@@ -1528,6 +1528,15 @@ export const graphics = {
      * all of it did before this existed.
      */
     capMs: 8_000,
+    /**
+     * The most the warm-up waits, before its first vantage, for our
+     * renderer's own pipelines (`render/PipelineCache.ts`), in milliseconds.
+     * Long, as the bake's drain is, and for the same reason: a pipeline of
+     * ours still compiling past it is a group of the world drawn by NOBODY
+     * until it lands — a hole, not a hitch — so this is a backstop for a
+     * compile that never settles, never a budget.
+     */
+    oursCapMs: 90_000,
   },
   /**
    * Albedo weathering on flat cel colours — a slow value drift over world space

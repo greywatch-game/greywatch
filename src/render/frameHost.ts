@@ -72,6 +72,14 @@ export interface FrameHost {
    * host's, so it changes NONE of them (or restores each before returning).
    */
   queue(run: (pass: GPURenderPassEncoder) => void): void;
+  /**
+   * The command encoder the host submits AHEAD of the frame's draws, with no
+   * pass open in it — so a compute pass recorded here reaches the GPU before
+   * the main pass's draws read what it wrote, and the frame's GPU timer
+   * (`?gpu`, `gpu.frame`) measures it as the frame's. Asked as the main pass
+   * begins and used at once: never kept, never finished, never submitted.
+   */
+  prepareEncoder(): GPUCommandEncoder;
   /** The view-projection the frame's camera is drawn with, as 16 floats. */
   viewProjection(out: Float32Array): void;
   /**

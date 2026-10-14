@@ -276,11 +276,14 @@ there that takes it back.
 **`loading` ends in a PIPELINE WARM-UP** (`core/PipelineWarmup.ts`): after the
 reflection bake, the card draws the whole map from each home spawn and flag
 until a frame compiles nothing, because WebGPU compiles a pipeline on the frame
-that first draws it. What it cannot see it is SHOWN, one frame at a time, by a
-`warm(on)` on whatever owns an idle pool (a shot's effects, a blast, a scorch,
-a body, a blob, the weapon) — **posed as IN FLIGHT**, since a stretched mesh or
-a `visibility` under 1 is a different pipeline from the idle pose. **A new pool
-that idles switched off owes one**, or its first use compiles in the round.
+that first draws it. **It OPENS by waiting for OUR renderer's pipelines**,
+which are asked for ahead and compiled off the frame (`PipelineCache`'s
+counts), since a group of ours still compiling draws nothing. What it cannot
+see it is SHOWN, one frame at a time, by a `warm(on)` on whatever owns an idle
+pool (a shot's effects, a blast, a scorch, a body, a blob, the weapon) —
+**posed as IN FLIGHT**, since a stretched mesh or a `visibility` under 1 is a
+different pipeline from the idle pose. **A new pool that idles switched off
+owes one**, or its first use compiles in the round.
 
 **A LID is a screen laid over a state, which taking it off puts back rather than
 moving the game on — and which state is which, and what each one owes, is
@@ -585,9 +588,12 @@ of either kind is a shadow caster**, and see-through glazing gets no ink.
 **The frame WALKS the scene, and the scene is the map.** `WorldCulling`
 **replaces `scene.getActiveMeshCandidates` and writes nothing onto any mesh**:
 it never disables, never hides, never unpickles. **A collider is never a
-candidate**, **a mesh carrying `metadata.block` is one only while the camera is
-inside the map's `fogEnd`**, **a body's RIG only while the root the roster
-switches is enabled**, and **everything else is ELIGIBLE**. **A BODY is measured
+candidate, and nor is a BLOCK our renderer TAKES** (`BlockHandover`): the map's
+blocks are drawn in the MAIN pass by `src/render/` in every build, their
+Babylon meshes kept for every OTHER pass. **Any other mesh carrying
+`metadata.block` is one only while the camera is inside the map's `fogEnd`**,
+**a body's RIG only while the root the roster switches is enabled**, and
+**everything else is ELIGIBLE**. **A BODY is measured
 ONCE, off its rig ROOT, and drops WHOLE.** **Anything EMISSIVE and anything
 outside rendering group 0 are exempt outright.** **Nothing pooled may ever be
 block-keyed**, and the rigs are **filed mesh by mesh and never by ancestry**
@@ -604,7 +610,9 @@ vertex for that one**.
 
 **OUR renderer (`src/render/`) draws INSIDE Babylon's frame through ONE seam**
 (`render/babylonSeam.ts`, the only file there that names Babylon, and only as
-types). A draw is QUEUED into Babylon's bundle list and never issued. The
+types). A draw is QUEUED into Babylon's bundle list and never issued, and
+work owed AHEAD of the draws (the cluster cull) is RECORDED into the encoder
+the host submits first (`prepareEncoder`), never submitted on its own. The
 attachments are stated once (`FRAME_TARGETS`). The frame's uniforms are PULLED
 off the factory's fields (`CelMaterialFactory.fillFrame`), so **a new value
 every cel material holds owes `render/frame.ts` a field and `fillFrame` a

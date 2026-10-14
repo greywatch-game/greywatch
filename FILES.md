@@ -641,9 +641,11 @@ src/
                         #   ProfileRing it is lent
     PipelineWarmup.ts   # Where the building card stands the camera while the
                         #   round's render pipelines are compiled, and when it
-                        #   may stop: the vantages (home spawns and flags), the
-                        #   quiet-frame count off Babylon's pipeline-cache miss
-                        #   counter, and the cap. Decides WHEN; Game stages
+                        #   may stop: first a wait at no vantage for OUR
+                        #   renderer's pipelines (PipelineCache's
+                        #   CompileProgress, oursCapMs), then the vantages
+                        #   (home spawns and flags), the quiet-frame count off
+                        #   both caches, and the cap. Decides WHEN; Game stages
                         #   each frame (WorldCulling.setWarm, the pools' warm)
     FrameCap.ts         # The frame-rate cap (Settings.fpsCap): the engine's
                         #   frame REQUESTER, refusing a refresh before the
@@ -1241,16 +1243,19 @@ src/
                         #   every sweep unable to tell it ran. A collider
                         #   is never a candidate, a mesh carrying metadata.block
                         #   is one inside the map's fogEnd, everything else
-                        #   always is. Under ?ourworld a TAKEN block is never
-                        #   one; reachGate states the reach and the size gate
-                        #   as numbers for the GPU cull, blockBoxOf the cell
-    BlockHandover.ts    # ?ourworld (DEV, BABYLON_EXIT.md X3.3a-b): which block
-                        #   surfaces OUR renderer draws in the main pass —
+                        #   always is. A TAKEN block (BlockHandover) is never
+                        #   one, in every build; reachGate states the reach and
+                        #   the size gate as numbers for the GPU cull,
+                        #   blockBoxOf the cell
+    BlockHandover.ts    # Which block surfaces OUR renderer draws in the main
+                        #   pass, in every build (BABYLON_EXIT.md X3.3) —
                         #   taken at the build (BuildOptions.onSurface),
                         #   handed to render/WorldBlocks, kept out of the
-                        #   candidates, cut at install against their cells;
-                        #   reads no node per frame (a DEV check that none is
-                        #   switched, hidden or faded)
+                        #   candidates, cut at install against their cells, a
+                        #   failed compile's surfaces handed back to Babylon;
+                        #   their meshes stay for every other pass. Reads no
+                        #   node per frame (a DEV check that none is switched,
+                        #   hidden or faded)
     WaterSystem.ts      # Water surfaces from map WaterRects; bakes their bed depth
                         #   and stands the one wave GRID under the eye (`follow`,
                         #   pushed from `tick` in every state). `setWash` is the
@@ -2289,19 +2294,24 @@ src/
                         #   every internal it reaches: device, lazy pass, the
                         #   bundle list our draws are QUEUED into, the pass's
                         #   attachments, the render target's y-flip, group 0's
-                        #   onBeforeTransparentRendering, a texture's own view
-                        #   and Babylon's sampler cache. hostTexture, the one
-                        #   crossing that mints a HostTexture
+                        #   onBeforeTransparentRendering, a texture's own view,
+                        #   Babylon's sampler cache and the upload encoder
+                        #   submitted ahead of the draws (prepareEncoder) — nine.
+                        #   hostTexture, the one crossing that mints a
+                        #   HostTexture
     frameHost.ts        # FrameHost (what the renderer needs from whoever owns
                         #   the frame: the device, the queue, the three main-
-                        #   pass hooks, a texture's view and sampler NOW),
+                        #   pass hooks, the encoder it submits ahead of the
+                        #   draws, a texture's view and sampler NOW),
                         #   PassTargets, HostTexture
     Renderer.ts         # Renderer: the frame's uniforms, textures and their
                         #   group 0, the pipeline cache, the FrameDraws it
                         #   queues at two points of group 0 in the MAIN pass —
                         #   where its opaque meshes end, and after it — and the
-                        #   FramePrepares run as it begins (a compute cull);
-                        #   refuses to draw if the pass is not FRAME_TARGETS
+                        #   FramePrepares run as it begins (a compute cull),
+                        #   recorded into the host's prepareEncoder, never
+                        #   submitted; refuses to draw if the pass is not
+                        #   FRAME_TARGETS
     targets.ts          # FRAME_TARGETS, stated once: rgba8unorm, depth32float,
                         #   1 sample, flipY (CelInk's target, not the canvas)
     frame.ts            # FRAME_BLOCK (group 0, binding 0 of every program:
@@ -2322,7 +2332,9 @@ src/
     PipelineCache.ts    # Shader modules, explicit bind-group layouts and
                         #   createRenderPipelineAsync pipelines, keyed on
                         #   variant, vertex layout, targets and state; the
-                        #   front face by Babylon's rule
+                        #   front face by Babylon's rule; compute pipelines on
+                        #   "auto" layouts, cached across maps; and the compile
+                        #   counts the warm-up waits on (CompileProgress)
     celFragment.ts      # The cel fragment as WE declare it: frame (group 0)
                         #   and material (group 1) uniforms and textures, the
                         #   inputs (CEL_VARYINGS), over the shared celSurface
@@ -2331,7 +2343,7 @@ src/
                         #   attributes, the frame and the draw's world, over
                         #   the shared celVertex body. Both stages compiled per
                         #   variant by plans/webgpu-ref/shaders.mjs
-    WorldBlocks.ts      # The map's block surfaces drawn by US (?ourworld):
+    WorldBlocks.ts      # The map's block surfaces drawn by US, every build:
                         #   one GROUP per recipe (its surfaces' buffers end to
                         #   end, one pipeline, one material), the map cut once
                         #   (finish), ONE drawIndexedIndirect a group at the
@@ -2339,8 +2351,10 @@ src/
     clusters.ts         # cutClusters: a surface cut into short runs of
                         #   one piece's triangles, each with its box and how
                         #   the wind can move it (BABYLON_EXIT.md X3.3b)
-    ClusterCull.ts      # The GPU cull, once a frame and submitted ahead of
-                        #   the frame: reach, size gate, frustum; survivors
+    ClusterCull.ts      # The GPU cull, once a frame, recorded into the host's
+                        #   encoder ahead of the draws (inside gpu.frame), its
+                        #   pipelines PipelineCache's: reach, size gate,
+                        #   frustum; survivors
                         #   scanned NEAR-FIRST (by surface) into the index
                         #   buffer and each group's indirect args.
                         #   ReachGate, BlockBox

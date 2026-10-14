@@ -24,7 +24,7 @@
  * pipeline compiling or a texture unpublished draws that group not at all
  * rather than wrongly; a material's block is re-copied from its recipe only
  * when asked (`writeMaterials`); nothing here allocates on a frame but the
- * cull's submit.
+ * cull's compute pass.
  * Never: imports Babylon; reads a node, or decides the reach or the size gate
  * (`ReachGate` is handed in); reads a Babylon material — a material is its
  * `CelRecipe`.
@@ -293,6 +293,7 @@ export class WorldBlocks {
     const bands = this.options.nearBands;
     this.cull = new ClusterCull(
       device,
+      this.renderer.pipelines,
       {
         clusters: words,
         clusterCount,
@@ -445,9 +446,9 @@ export class WorldBlocks {
   }
 
   /** As the main pass begins: this frame's cull, ahead of the draws. */
-  private readonly prepare = (frame: FrameUniforms): void => {
+  private readonly prepare = (frame: FrameUniforms, encoder: GPUCommandEncoder): void => {
     const cull = this.cull;
-    if (this.culling && cull) cull.dispatch(frame);
+    if (this.culling && cull) cull.dispatch(frame, encoder);
   };
 
   private readonly draw = (pass: GPURenderPassEncoder, ctx: FrameContext): void => {

@@ -511,11 +511,11 @@ export class Game {
    */
   readonly renderer: Renderer;
   /**
-   * The map's blocks drawn in the main pass by `renderer` instead of Babylon
-   * (`BABYLON_EXIT.md` X3.3a) — a DEV switch, `?ourworld`, read once here;
-   * null without it, and then nothing about the frame differs.
+   * The map's blocks, drawn in the main pass by `renderer` and never by
+   * Babylon (`BABYLON_EXIT.md` X3.3) — their Babylon meshes stay for every
+   * other pass.
    */
-  readonly handover: BlockHandover | null;
+  readonly handover: BlockHandover;
   private input: InputManager;
   private cameraSys: CameraSystem;
   private hud: HUD;
@@ -1715,10 +1715,7 @@ export class Game {
     // flag. Nothing it does is visible to a ray, a collision, a shadow caster
     // or a cube probe; see `WorldCulling`, which is the whole argument.
     this.culling = new WorldCulling(this.scene);
-    this.handover =
-      import.meta.env.DEV && urlFlag("ourworld")
-        ? new BlockHandover(this.renderer, this.mats, this.culling)
-        : null;
+    this.handover = new BlockHandover(this.renderer, this.mats, this.culling);
     this.mapBuilder = new MapBuilder(
       this.scene,
       this.mats,
@@ -4518,7 +4515,7 @@ export class Game {
     // exists, under whatever the new one builds there — or under the menu.
     this.sfx.ambienceAllOff();
     // Our renderer's copies of the blocks go with the meshes they stand for.
-    this.handover?.clear();
+    this.handover.clear();
     this.map?.dispose();
     this.map = null;
     this.combatFx.clearTransient();
@@ -4662,7 +4659,7 @@ export class Game {
       ...opts,
       foliage,
       navFields,
-      onSurface: this.handover?.onSurface,
+      onSurface: this.handover.onSurface,
     });
     this.map = map;
     // What the profiler reports is the rung this map was built WITH.
@@ -4731,9 +4728,9 @@ export class Game {
     // the second one exact — past it a structure draws `fogColor` in front of
     // ground that draws `fogColor` — and nothing else does.
     this.culling.setMap(map, environment.fogEnd);
-    // And which of the fresh map's blocks our renderer draws instead, which
-    // the cull has to be told after it has filed them (`?ourworld`).
-    this.handover?.install();
+    // And which of the fresh map's blocks our renderer draws in the main pass
+    // instead, which the cull has to be told after it has filed them.
+    this.handover.install();
     // How hard the grade is pushed is the map's; whether it runs at all stays
     // the player's (`applySettings`). A vignette that reads as dread over a
     // night village reads as a lens fault over a bright one.
@@ -5359,7 +5356,13 @@ export class Game {
     this.warmBodies.length = 0;
     const body = this.deathCam.body;
     if (body) this.warmBodies.push({ rig: body });
-    wait.warm = new PipelineWarmup(points, WebGPUCacheRenderPipeline.NumCacheMiss);
+    // Our renderer's pipelines are awaited by the warm-up itself, before its
+    // first vantage (see `PipelineWarmup`).
+    wait.warm = new PipelineWarmup(
+      points,
+      WebGPUCacheRenderPipeline.NumCacheMiss,
+      this.renderer.pipelines,
+    );
   }
 
   /**
@@ -5439,18 +5442,6 @@ export class Game {
       if (wait.warm.afterFrame(WebGPUCacheRenderPipeline.NumCacheMiss)) {
         this.finishBakeWait();
       }
-      return;
-    }
-    // Our renderer's pipelines (`?ourworld`) are built before the warm-up
-    // starts, so the warm-up draws with them and no frame of the round
-    // draws with one still compiling. They were asked for as the map built.
-    // Under the card's own cap, as the bake is: a compile that never
-    // settles must not hang the card.
-    if (
-      this.handover &&
-      !this.handover.compiled &&
-      performance.now() - wait.since < CONFIG.graphics.reflection.drainCapMs
-    ) {
       return;
     }
     const cfg = CONFIG.graphics.reflection;

@@ -1,8 +1,8 @@
 /**
  * systems/BlockHandover.ts — The map's BLOCKS handed from Babylon's main pass
- * to our renderer's, behind the DEV switch `?ourworld` (`BABYLON_EXIT.md`
- * X3.3a, X3.3b): which surfaces are taken, their arrays handed over on the
- * way past the build, and the map cut once it is filed.
+ * to our renderer's (`BABYLON_EXIT.md` X3.3): which surfaces are taken, their
+ * arrays handed over on the way past the build, and the map cut once it is
+ * filed.
  * Owns: `BlockHandover` — our renderer's `WorldBlocks`, the taken meshes in
  * surface order, and the material epoch last copied.
  * Invariants: a surface is TAKEN only if our pipeline draws it exactly as
@@ -22,13 +22,15 @@
  * filed in, `blockBoxOf`) — so no node is read per frame; a taken mesh is
  * never switched off, hidden or faded after its build, because nothing in
  * the tree does that to a block and the cull could not follow it if
- * something did (a DEV build checks every frame and says so); the switch is
- * read once, at construction, and a build without it makes no
- * `BlockHandover` at all.
+ * something did (a DEV build checks every frame and says so); the building
+ * card waits for our pipelines through the renderer's own cache
+ * (`core/PipelineWarmup.ts`), never through this, and a surface handed back
+ * is handed back in the same turn its compile settles, so before the next
+ * frame.
  * Never: draws, or reads a material's uniforms — a material reaches our side
  * as its recipe; writes a property on a mesh.
  * Contract: `docs/rendering.md`, "Our renderer's frame";
- * `BABYLON_EXIT.md` X3.3a, X3.3b.
+ * `BABYLON_EXIT.md` X3.3a, X3.3b, X3.3c.
  */
 import type { AbstractMesh, Mesh } from "@babylonjs/core";
 import { CONFIG } from "../config";
@@ -48,8 +50,6 @@ export class BlockHandover {
   private meshes: Mesh[] = [];
   /** `CelMaterialFactory.materialEpoch` as last copied; -1 is never. */
   private epoch = -1;
-  /** Whether every pipeline the taken surfaces need is built. */
-  private compiledFlag = false;
   /** Bumped by `clear`, so a compile that finishes for an old map is ignored. */
   private generation = 0;
   /** The DEV check has reported a changed mesh: once a map is enough. */
@@ -96,7 +96,7 @@ export class BlockHandover {
   /**
    * After the map's build and `WorldCulling.setMap`: hands the taken meshes
    * to the cull, cuts the map against the cells they were filed in, and
-   * starts waiting on the pipelines.
+   * hands back whatever surfaces' pipelines fail.
    */
   install(): void {
     const meshes = this.meshes;
@@ -108,7 +108,6 @@ export class BlockHandover {
     });
     this.blocks.finish(boxes);
     this.epoch = -1;
-    this.compiledFlag = false;
     this.reported = false;
     const generation = this.generation;
     void this.blocks.compiled().then((failed) => {
@@ -119,16 +118,7 @@ export class BlockHandover {
         const back = new Set(failed.map((at) => meshes[at]));
         this.culling.setTaken(meshes.filter((m) => !back.has(m)));
       }
-      this.compiledFlag = true;
     });
-  }
-
-  /**
-   * Whether every pipeline the taken surfaces need is built — the building
-   * card waits on it, so no frame of the round draws with one compiling.
-   */
-  get compiled(): boolean {
-    return this.compiledFlag;
   }
 
   /**
@@ -145,7 +135,6 @@ export class BlockHandover {
     this.generation++;
     this.blocks.clear();
     this.meshes = [];
-    this.compiledFlag = false;
   }
 
   dispose(): void {

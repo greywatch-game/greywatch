@@ -17,7 +17,9 @@
  * per frame as the main pass begins, and uploaded only when something will
  * draw — with nothing added it costs one empty branch a
  * frame; every `FramePrepare` runs right after that fill, on the same frames,
- * so what it hands the GPU is this frame's; a frame draws only if it was
+ * so what it hands the GPU is this frame's, and records into the host's
+ * encoder rather than submitting one of its own, so the frame's GPU timer
+ * sees it; a frame draws only if it was
  * FILLED this frame (a draw added
  * mid-phase waits for the next) and only if the open pass is exactly
  * `FRAME_TARGETS`, checked every frame — a pass that is not draws nothing
@@ -78,11 +80,11 @@ export type FrameDraw = (pass: GPURenderPassEncoder, ctx: FrameContext) => void;
 /**
  * Work for the frame that must reach the GPU before the main pass's draws do
  * — a compute cull. Run once a frame as the pass begins, after the frame is
- * filled; it may SUBMIT a command buffer of its own, which the queue runs
- * ahead of the frame's (the pass is still being recorded), and it records
- * nothing into the pass.
+ * filled; it records into `encoder`, the host's own, which is submitted ahead
+ * of the frame's draws and inside its GPU timer (`FrameHost.prepareEncoder`),
+ * and it records nothing into the pass, submits nothing and keeps neither.
  */
-export type FramePrepare = (frame: FrameUniforms) => void;
+export type FramePrepare = (frame: FrameUniforms, encoder: GPUCommandEncoder) => void;
 
 /** Where in the main pass a `FrameDraw` is drawn — see the header. */
 export type DrawPoint = "opaque" | "afterGroup";
@@ -178,7 +180,9 @@ export class Renderer {
     this.fillTextures(this.textures);
     this.frameBindings.refresh(this.host, this.textures);
     const prepares = this.prepares;
-    for (let i = 0; i < prepares.length; i++) prepares[i](this.frame);
+    if (prepares.length === 0) return;
+    const encoder = this.host.prepareEncoder();
+    for (let i = 0; i < prepares.length; i++) prepares[i](this.frame, encoder);
   };
 
   private readonly afterOpaque = (): void => {

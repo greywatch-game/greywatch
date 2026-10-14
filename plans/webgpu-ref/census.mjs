@@ -1,15 +1,19 @@
 /**
  * The MAIN PASS's draw count at every bank vantage — Babylon's draws into the
- * frame's own target plus our renderer's — with and without a DEV switch, so
- * a step that moves the world's draws from one renderer to the other can say
- * what it traded (`BABYLON_EXIT.md` X3.3a: one draw for one draw; X3.3b: the
+ * frame's own target plus our renderer's — so a step that moves the world's
+ * draws from one renderer to the other can say what it traded
+ * (`BABYLON_EXIT.md` X3.3a: one draw for one draw; X3.3b and X3.3c: the
  * count falls).
  *
- * Run with `node plans/webgpu-ref/census.mjs [map...] [--query=ourworld]`.
- * Without `--query` it counts the game as it ships; with one it counts both
- * and prints the two side by side, row by row, and fails if the switch's
- * total differs from the build's without it (`--fall` instead fails unless
- * it is LOWER — X3.3b's test).
+ * Run with `node plans/webgpu-ref/census.mjs [map...] [--query=<flags>]
+ * [--out f.json] [--against f.json] [--fall]`. Without `--query` it counts the
+ * game as it ships; with one it counts both and prints the two side by side,
+ * row by row, and fails if the switch's total differs from the build's
+ * without it. `--out` writes the shipping build's rows; `--against` compares
+ * them, row by row, with rows an earlier `--out` wrote — the BEFORE of a step
+ * that leaves no switch behind (X3.3c), taken by running this file in a
+ * worktree of the commit before it — and fails if a map's total differs.
+ * `--fall` makes either comparison fail unless the total is LOWER instead.
  *
  * **What a "main-pass draw" is**: a call of Babylon's `engine._draw` made
  * while the target bound as the draw phase began is still bound and the
@@ -24,13 +28,23 @@
  * already chose; `VERIFYING.md`'s 30-sample sweep is the protocol for a
  * figure quoted as a map's.
  */
+import { readFileSync, writeFileSync } from "node:fs";
 import { freeze, installRound, MAP_IDS, placeVantage, root, settle, startDevServer, launchClient, thaw, vantages, waitUntilDrawn, bootMap } from "./harness.mjs";
 import { shotList } from "./vantages.mjs";
 
 const args = process.argv.slice(2);
 const QUERY = args.find((a) => a.startsWith("--query="))?.slice("--query=".length) ?? "";
 const FALL = args.includes("--fall");
-const maps = args.filter((a) => !a.startsWith("--"));
+/** The value after `flag`, or null. */
+function value(flag) {
+  const i = args.indexOf(flag);
+  return i >= 0 ? (args[i + 1] ?? null) : null;
+}
+const OUT = value("--out");
+const AGAINST = value("--against");
+const BEFORE = AGAINST ? JSON.parse(readFileSync(AGAINST, "utf8")) : null;
+const valued = new Set([OUT, AGAINST]);
+const maps = args.filter((a) => !a.startsWith("--") && !valued.has(a));
 const targets = maps.length ? maps : MAP_IDS;
 
 /** The bank's own settle, so the count is of the frame `bank.mjs` grades. */
@@ -72,6 +86,8 @@ function read(page) {
         res();
       });
     });
+    // Null before X3.3c unless the switch was on, so a BEFORE taken in a
+    // worktree of then counts Babylon alone.
     const ours = g.handover ? g.handover.stats : { taken: 0, drawn: 0 };
     return { babylon: window.__census.babylon, ours: ours.drawn, taken: ours.taken };
   });
@@ -98,17 +114,31 @@ async function census(id, query) {
 }
 
 const problems = [];
-console.log(`census: main-pass draws${QUERY ? `, against ?${QUERY}` : ""}\n`);
+const written = {};
+console.log(
+  `census: main-pass draws${QUERY ? `, against ?${QUERY}` : ""}${AGAINST ? `, against ${AGAINST}` : ""}\n`,
+);
 for (const id of targets) {
   const base = await census(id, "");
+  written[id] = base;
   const sw = QUERY ? await census(id, QUERY) : null;
+  const before = BEFORE ? BEFORE[id] : null;
+  if (BEFORE && !before) problems.push(`${id}: not in ${AGAINST}`);
   console.log(id);
   let total = 0;
   let totalSw = 0;
+  let totalBefore = 0;
   base.forEach((b, i) => {
     const n = b.babylon + b.ours;
     total += n;
-    let line = `  ${b.id.padEnd(13)} ${String(n).padStart(5)}`;
+    let line = `  ${b.id.padEnd(13)} ${String(n).padStart(5)} (Babylon ${b.babylon}, ours ${b.ours} of ${b.taken} taken)`;
+    const was = before?.find((r) => r.id === b.id);
+    if (before && !was) problems.push(`${id}: vantage ${b.id} not in ${AGAINST}`);
+    if (was) {
+      const w = was.babylon + was.ours;
+      totalBefore += w;
+      line += `   before ${String(w).padStart(5)}  ${n === w ? "=" : n < w ? `-${w - n}` : `+${n - w}`}`;
+    }
     if (sw) {
       const s = sw[i];
       const m = s.babylon + s.ours;
@@ -121,7 +151,17 @@ for (const id of targets) {
     const verdict = FALL ? totalSw < total : totalSw === total;
     if (!verdict) problems.push(`${id}: ${total} draws without the switch, ${totalSw} with it`);
     console.log(`  ${"total".padEnd(13)} ${String(total).padStart(5)}   ?${QUERY} ${String(totalSw).padStart(5)}  ${verdict ? "ok" : "FAIL"}`);
+  } else if (before) {
+    const verdict = FALL ? total < totalBefore : total === totalBefore;
+    if (!verdict) problems.push(`${id}: ${totalBefore} draws before, ${total} now`);
+    console.log(`  ${"total".padEnd(13)} ${String(total).padStart(5)}   before ${String(totalBefore).padStart(5)}  ${verdict ? "ok" : "FAIL"}`);
+  } else {
+    console.log(`  ${"total".padEnd(13)} ${String(total).padStart(5)}`);
   }
+}
+if (OUT) {
+  writeFileSync(OUT, `${JSON.stringify(written, null, 2)}\n`);
+  console.log(`\nrows -> ${OUT}`);
 }
 
 await browser.close();

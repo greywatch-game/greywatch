@@ -2,7 +2,8 @@
  * render/ClusterCull.ts — The static world's clusters culled on the GPU once
  * a frame, writing each group's surviving indices and its indirect draw
  * (`BABYLON_EXIT.md` X3.3b; the WGSL is `wgsl/clusterCull.ts`).
- * Owns: `ClusterCull` — the three compute pipelines, their bind groups, the
+ * Owns: `ClusterCull` — the three compute passes' bind groups (their
+ * pipelines are the renderer's `PipelineCache`'s, shared by every map), the
  * cluster, block and sphere tables, the scan's buffers, each group's record,
  * the INDIRECT arguments (`args`, one `drawIndexedIndirect` a group) and the
  * index buffer they draw (`indices`, written every frame); `ReachGate`, what
@@ -14,17 +15,19 @@
  * from the frame's own wind — so the cull never reads a node; the frustum is
  * the view-projection's four side planes and the eye's own plane, normalised
  * here, and a cluster is dropped only when its box lies wholly outside one,
- * so it drops nothing the frustum did not already hide; the work is SUBMITTED
- * as a command buffer of its own when the frame's main pass begins, which the
- * queue runs ahead of the frame's own (still being recorded); until the
+ * so it drops nothing the frustum did not already hide; the work is RECORDED
+ * when the frame's main pass begins into the encoder the host submits ahead
+ * of the frame's draws (`FrameHost.prepareEncoder`), so it reaches the GPU
+ * before the draws that read it and inside the frame's GPU timer; until the
  * pipelines are built (`ready`) nothing is dispatched and `args` stays the
  * zeros it was made with, so a group draws nothing rather than garbage.
- * Never: imports Babylon; reads a node; allocates on a frame beyond the
- * command encoder, pass and buffer WebGPU makes for every submit; sets
- * anything after `dispose`, however late its pipelines arrive.
+ * Never: imports Babylon; reads a node; submits; allocates on a frame beyond
+ * the compute pass WebGPU makes for every pass; sets anything after
+ * `dispose`, however late its pipelines arrive.
  * Contract: `docs/rendering.md`, "Our renderer's frame".
  */
 import type { FrameUniforms } from "./frame";
+import type { PipelineCache } from "./PipelineCache";
 import {
   BLOCK_WORDS,
   CLUSTER_CULL_WGSL,
@@ -75,8 +78,7 @@ export interface CullTables {
   readonly bands2: readonly number[];
 }
 
-/** The descriptors a frame's submit is made with, made once. */
-const ENCODER: GPUCommandEncoderDescriptor = { label: "cluster cull" };
+/** The descriptor a frame's pass is begun with, made once. */
 const PASS: GPUComputePassDescriptor = { label: "cluster cull" };
 
 /** The largest `f32` short of infinity — a shader may assume there is none. */
@@ -102,13 +104,12 @@ export class ClusterCull {
   private readonly workgroups: number;
   private readonly scatterX: number;
   private readonly scatterY: number;
-  /** The one command buffer a submit hands over, reused so a frame allocates no array. */
-  private readonly submit: GPUCommandBuffer[] = [];
   /** The three passes in dispatch order: cull, prefix, scatter. */
   private readonly passes: { pipeline: GPUComputePipeline; group: GPUBindGroup }[] = [];
 
   constructor(
     private readonly device: GPUDevice,
+    pipelines: PipelineCache,
     tables: CullTables,
     private readonly gate: ReachGate,
   ) {
@@ -142,7 +143,6 @@ export class ClusterCull {
     u[33] = tables.groups.length;
     u[34] = this.workgroups;
 
-    const module = device.createShaderModule({ label: "cluster cull", code: CLUSTER_CULL_WGSL });
     // Each entry point's own bindings: an "auto" layout holds only what its
     // entry point reads, so each pass binds exactly those.
     const entries: { entry: string; bind: readonly [number, GPUBuffer][] }[] = [
@@ -158,12 +158,8 @@ export class ClusterCull {
     ];
     this.ready = Promise.all(
       entries.map(({ entry, bind }) =>
-        device
-          .createComputePipelineAsync({
-            label: `cluster cull: ${entry}`,
-            layout: "auto",
-            compute: { module, entryPoint: entry },
-          })
+        pipelines
+          .compute("cluster cull", CLUSTER_CULL_WGSL, entry)
           .then((pipeline) => ({
             pipeline,
             group: device.createBindGroup({
@@ -189,10 +185,11 @@ export class ClusterCull {
 
   /**
    * Culls this frame's clusters against `frame` (its view-projection, its
-   * eye and its wind) and the reach and size gate, and submits the work.
-   * Called once a frame as the main pass begins (`Renderer.onFrame`).
+   * eye and its wind) and the reach and size gate, recording the work into
+   * `encoder` — the host's, submitted ahead of the frame's draws. Called once
+   * a frame as the main pass begins (`Renderer.onFrame`).
    */
-  dispatch(frame: FrameUniforms): void {
+  dispatch(frame: FrameUniforms, encoder: GPUCommandEncoder): void {
     if (!this.built || this.clusterCount === 0) return;
     const f = this.f32;
     const u = this.u32;
@@ -210,7 +207,6 @@ export class ClusterCull {
     f[31] = rigReach(frame);
     this.device.queue.writeBuffer(this.uniform, 0, this.bytes);
 
-    const encoder = this.device.createCommandEncoder(ENCODER);
     const pass = encoder.beginComputePass(PASS);
     const passes = this.passes;
     pass.setPipeline(passes[0].pipeline);
@@ -223,8 +219,6 @@ export class ClusterCull {
     pass.setBindGroup(0, passes[2].group);
     pass.dispatchWorkgroups(this.scatterX, this.scatterY);
     pass.end();
-    this.submit[0] = encoder.finish();
-    this.device.queue.submit(this.submit);
   }
 
   dispose(): void {

@@ -1,8 +1,8 @@
 /**
  * WorldCulling.ts — What the frame's own mesh walk is allowed to see.
  * Owns: `Scene.getActiveMeshCandidates`, the map's meshes filed into cull
- * cells, and the list handed back to Babylon each frame — and, under
- * `?ourworld`, the TAKEN meshes our renderer draws in the main pass instead
+ * cells, and the list handed back to Babylon each frame — and the TAKEN
+ * meshes, the blocks our renderer draws in the main pass instead
  * (`setTaken`), never candidates, with the reach and the size gate this file
  * decides handed to its GPU cull as numbers (`reachGate`).
  * There are TWO lists and they run on different clocks: `eligible` is the
@@ -81,8 +81,8 @@
  * They are also a few hundred meshes against several thousand structures.
  *
  * **A TAKEN mesh is a block our renderer draws in the main pass**
- * (`systems/BlockHandover.ts`, behind the DEV switch `?ourworld`,
- * `BABYLON_EXIT.md` X3.3a and X3.3b). It is filed in its cell like any block,
+ * (`systems/BlockHandover.ts`, `BABYLON_EXIT.md` X3.3), in every build and
+ * whatever the handover's test admits. It is filed in its cell like any block,
  * which is the box our renderer's GPU cull measures the reach to
  * (`blockBoxOf`), but it is never a candidate — so the main pass's mesh walk
  * never sees it, and nothing else does either: every other pass draws from a

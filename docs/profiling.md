@@ -1401,11 +1401,16 @@ take one**.
 and in this pipeline the world renders into post-process targets, so the only
 thing drawn there is the final full-screen quad. It measured **27 microseconds**
 on Hollowmere, which is right for one quad and would be a catastrophic
-misreading of "the GPU is idle". `gpu.frame` brackets the whole command
-encoder — Babylon's, and only Babylon's. **Under `?ourworld` our renderer's
-cluster cull is a command buffer of its own** (`render/ClusterCull.ts`,
-submitted ahead of the frame's), so its GPU time is in no `gpu.frame` until
-`BABYLON_EXIT.md` X3.3c brackets it or folds it into the frame's encoder.
+misreading of "the GPU is idle". `gpu.frame` brackets the whole frame: it is
+opened on Babylon's UPLOAD encoder (`_timestampQuery.startFrame`), which is
+submitted first, and closed on the RENDER encoder in `endFrame`. **Our
+renderer's cluster cull is inside it** (`render/ClusterCull.ts`): it is
+recorded into that same upload encoder as the main pass begins
+(`FrameHost.prepareEncoder`, item 9 of `render/babylonSeam.ts`'s list),
+never submitted as a command buffer of its own, so its GPU time is the
+frame's (`BABYLON_EXIT.md` X3.3c). **Anything of ours that reaches the GPU
+outside the host's encoders is outside `gpu.frame`**, so new GPU work owes
+the same route or its own timer.
 
 The two are attributed differently and the report says so:
 

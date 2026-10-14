@@ -4,7 +4,8 @@
  * draw order to record into.
  * Owns: `BabylonFrameHost`, Babylon's engine and scene as our renderer's
  * `FrameHost`: the device, what the open pass draws into, a slot in
- * Babylon's own draw order (`queue`), the camera's matrix, the frame's main
+ * Babylon's own draw order (`queue`), the encoder submitted ahead of the
+ * frame's draws (`prepareEncoder`), the camera's matrix, the frame's main
  * pass told apart from every render target that also draws rendering group
  * 0 — and the point inside it where that group's opaque meshes end — and a
  * Babylon texture's own view and sampler (`bind`); and `hostTexture`, the one
@@ -64,6 +65,15 @@
  *      `_comparisonFunction`; `_setTexture`, E:2134): the `GPUSampler` out of
  *      Babylon's own cache for the state Babylon would bind, so its filter
  *      and wrap rules are not restated here.
+ *   9. `engine._uploadEncoder` (E:519, E:2388) — the encoder Babylon finishes
+ *      and submits FIRST in `flushFramebuffer`, ahead of `_renderEncoder`
+ *      (E:2381), and the one `_timestampQuery.startFrame` opens the frame's
+ *      GPU timer on (E:2397; it is closed on `_renderEncoder` in `endFrame`).
+ *      Copies and mip generation are recorded into it, each pass begun and
+ *      ended inside one call, so it has no pass open while ours records. A
+ *      flush mid-frame replaces it, which is why it is read at the call and
+ *      never kept: whichever one is current is submitted before the draws
+ *      recorded after it, and inside the timer.
  *
  * Public API used here and nowhere else in `src/render/`, for the same
  * reason (it is Babylon's shape): `engine.currentSampleCount`,
@@ -113,6 +123,7 @@ interface EngineInternals {
     readonly depthTextureFormat: GPUTextureFormat | undefined;
   };
   readonly _bundleList: { addItem(item: QueuedItem): void };
+  readonly _uploadEncoder: GPUCommandEncoder;
   readonly _cacheSampler: { getSampler(sampler: SamplerState): GPUSampler };
 }
 
@@ -228,6 +239,11 @@ export class BabylonFrameHost implements FrameHost {
     }
     this.e._getCurrentRenderPass();
     this.e._bundleList.addItem(item);
+  }
+
+  /** Item 9. */
+  prepareEncoder(): GPUCommandEncoder {
+    return this.e._uploadEncoder;
   }
 
   viewProjection(out: Float32Array): void {

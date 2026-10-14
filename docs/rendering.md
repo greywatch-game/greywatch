@@ -3117,8 +3117,10 @@ seam's header.** At X3.2 there were five: the device, the lazily-started
 pass, the bundle list, the pass's attachment wrapper, and the render
 target (its identity and its flip). X3.3a added three: rendering group 0's
 `onBeforeTransparentRendering`, a texture's own `GPUTextureView`, and the
-sampler out of Babylon's own sampler cache. That list only shrinks after
-Phase 3.
+sampler out of Babylon's own sampler cache. X3.3c added a ninth: the upload
+encoder Babylon submits ahead of the frame's draws, which the cluster cull is
+recorded into (`FrameHost.prepareEncoder`, below). That list only shrinks
+after Phase 3.
 Six older touches in four files (`FrameDepth`, `webgpuLeaks`,
 `ReflectionSystem`, `FrameProfile`) are not the renderer's and stay where
 they are, listed in the seam's header with the step each leaves at; one of
@@ -3295,7 +3297,10 @@ reader re-copies the blocks when it moves.
 (`render/PipelineCache.ts`). The cache key is the shader variant (both
 modules' labels, which carry the define set), the vertex layout, the
 targets and the fixed-function state. So a compile never stalls a frame,
-and a caller asks ahead.
+and a caller asks ahead. The same cache builds the COMPUTE pipelines
+(`compute`, `createComputePipelineAsync`), and it COUNTS every compile it
+starts, in flight and settled (`CompileProgress`), which is what the
+building card's warm-up waits on.
 
 **Every layout is EXPLICIT**, built from the bindings the assembly reports,
 never `"auto"`. Layouts are shared by their entries, so a bind group made for
@@ -3310,9 +3315,13 @@ view. None of the sixteen the cel program binds is either: every shadow map
 is `rgba16float`, the lamps' atlas `r16float`, the cloud field `rg8unorm`,
 the volume `rgba16float` and `rgba8unorm`, and the ground `rgba8unorm`.
 
-**The world's BLOCKS can be drawn by our side, behind a DEV switch**
-(`?ourworld`, `BABYLON_EXIT.md` X3.3a and X3.3b). Without it nothing about
-the frame differs. With it:
+**The world's BLOCKS are drawn by our side, in the MAIN pass, in every
+build** (`BABYLON_EXIT.md` X3.3a, X3.3b and X3.3c). X3.3a and X3.3b proved
+them behind a DEV switch, `?ourworld`, against the bank Babylon drew without
+it; X3.3c took the switch out, so Babylon draws a block in the main pass only
+when the handover refused it or handed it back. **Their Babylon meshes STAY**, and are
+still drawn by Babylon in every OTHER pass — the shadow maps, the reflection
+probes, the lamps' atlas and the glow — until X3.6 moves those passes.
 
 - **`systems/BlockHandover.ts` decides which surfaces are TAKEN.** A
   surface is taken if it is block-merged, at identity, never written after
@@ -3320,7 +3329,8 @@ the frame differs. With it:
   recipe. Its arrays are handed over as the build makes its mesh
   (`BuildOptions.onSurface`), the one moment they can still be read, and
   read once more when the map is CUT (`WorldBlocks.finish`, from
-  `installMap` after `WorldCulling.setMap`).
+  `installMap` after `WorldCulling.setMap`). `Game.handover` is always
+  built; a map whose surfaces fail the test simply has fewer taken.
 - **`render/WorldBlocks.ts` draws one GROUP per cel recipe** at
   `"opaque"`: every surface of the recipe end to end on one set of vertex
   buffers (an attribute a surface lacks but the variant reads is zeros,
@@ -3350,29 +3360,49 @@ the frame differs. With it:
   flicker in and out of the wall under it. The
   order is chosen while the list is written, never sorted, so a later
   depth-ordered draw can let the GPU skip hidden pixels.
-- **The cull is SUBMITTED on its own as the main pass begins**
-  (`Renderer.onFrame`), so the queue runs it ahead of the frame's command
-  buffer, which is still being recorded. It is outside Babylon's encoder,
-  so a GPU timer bracketing Babylon's frame does not see it. Its three
-  compute pipelines are the one place our renderer takes an `"auto"`
-  layout: one hand-written module, each pass binding exactly what its entry
-  point reads from its own pipeline's layout, and nothing shared between
-  them, so the reason the cache's layouts are explicit does not arise.
+- **The cull is RECORDED into the host's encoder, never submitted on its
+  own.** As the main pass begins (`Renderer.onFrame`) every `FramePrepare`
+  is handed `FrameHost.prepareEncoder()`, which the seam answers with
+  Babylon's upload encoder (item 9) — the one Babylon finishes and submits
+  FIRST, ahead of the render encoder the draws are recorded into. So the cull
+  reaches the GPU before the draws that read it, and it is inside the frame's
+  GPU timer (`?gpu`, `gpu.frame`, which Babylon opens on that same encoder;
+  `docs/profiling.md`). The encoder is read at the call and never kept: a
+  mid-frame flush replaces it, and whichever is current is submitted before
+  the draws recorded after it. X3.3b submitted a command buffer of its own,
+  which the queue ran ahead of the frame's but which no `gpu.frame` saw.
+- **Its three compute pipelines are the one place our renderer takes an
+  `"auto"` layout**: one hand-written module, each pass binding exactly what
+  its entry point reads from its own pipeline's layout, and nothing shared
+  between them, so the reason the cache's layouts are explicit does not
+  arise. They are `PipelineCache`'s (`compute`), keyed on their code, so
+  they compile once a SESSION rather than once a map.
 - **A taken mesh is drawn by our side in the MAIN pass only.**
-  `WorldCulling.setTaken` keeps it out of the candidate list, and every
-  other pass draws from a list of its own. The glow's mask, which reads the
-  main pass's active meshes, keeps only what glows, which a taken mesh never
-  does.
+  `WorldCulling.setTaken` keeps it out of the candidate list for good, and
+  every other pass draws from a list of its own. The glow's mask, which reads
+  the main pass's active meshes, keeps only what glows, which a taken mesh
+  never does.
 - **A taken mesh is never switched off, hidden or faded after its build.**
   Nothing in the tree does it to a block, and the cull could not follow: a
   faded mesh goes to Babylon's blended list and ours would still draw it
   opaque. A DEV build checks every frame and says so.
-- **The building card waits for every pipeline, the cull's included**, so no
-  frame of the round draws with one still compiling. A group whose pipeline
-  fails goes back to Babylon whole; a cull that fails sends every surface
-  back.
-- **`plans/webgpu-ref/census.mjs --fall`** counts it: the main pass's draws
-  fall from one a surface to one a recipe.
+- **The building card waits for every pipeline of ours, the cull's
+  included**, so no frame of the round draws with one still compiling — and
+  since Babylon no longer draws the blocks in the main pass, a group of ours
+  still compiling is a HOLE rather than a hitch. The wait is the pipeline
+  warm-up's opening phase (`core/PipelineWarmup.ts`, `docs/states.md`): it
+  reads `PipelineCache`'s compile counts (`CompileProgress`) and stands at no
+  vantage until nothing of ours is compiling, under `oursCapMs`, a backstop
+  rather than a budget. **Our pipelines are not compiled by DRAWING**, as
+  Babylon's are: our renderer states every field of one itself and asks for
+  it as the map is built, so the warm-up only has to wait. A group whose
+  pipeline fails goes back to Babylon whole, in the turn its compile settles,
+  and Babylon compiles it at a vantage like any other mesh; a cull that
+  fails sends every surface back.
+- **`plans/webgpu-ref/census.mjs`** counts it: the main pass's draws fall
+  from one a surface to one a recipe (`--fall` against the switch while
+  there was one; `--out` and `--against` against a BEFORE taken in a
+  worktree of an earlier commit, now there is not).
 
 ## Block visibility: how much of the map the frame walks
 
@@ -3414,14 +3444,22 @@ disabled mesh is still in the walk, and merely shortens what the walk does with
 it. That is what made the palette measurement's 0.67 us ("The paint palette",
 below) and S0's 1.10 us disagree about the same number.
 
-**Four classes of mesh, and which class a mesh is in is the design.**
+**Five classes of mesh, and which class a mesh is in is the design.**
 
 | class | what | offered |
 | --- | --- | --- |
 | hidden | `map.colliders` — invisible by construction | **never**, at any distance |
+| taken | a blocked mesh OUR renderer draws in the main pass (`setTaken`, "Our renderer's frame" above) | **never** — filed in its cell only so the GPU cull can measure the reach to it |
 | blocked | drawn map geometry carrying `metadata.block` | while the camera is within the map's `fogEnd` |
 | pooled | a body's rig, filed under the root the roster switches | while that root is enabled |
 | loose | everything else in the scene | **always** |
+
+**The taken class is most of the blocked one, in every build** (X3.3c): the
+walk this section exists to shorten no longer sees the map's blocks at all,
+and what is left in the blocked class is the surfaces `BlockHandover`'s test
+refused or a failed compile handed back. The reach and the size gate still
+decide a taken mesh, as numbers handed to the cull (`reachGate`), so the
+class changes who draws a block and never whether it is drawn.
 
 **Most of the win is the hidden class and it is exact rather than a trade.** A
 collider proxy cannot draw — `MapBuilder.boxMesh` sets `isVisible = false` and

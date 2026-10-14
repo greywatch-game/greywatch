@@ -357,7 +357,7 @@ export interface BuildOptions {
    * ARRAYS can still be read: after the mesh takes them and before they are
    * released (`worldMeshes`, and `SurfaceRecord` for why they go). For a
    * renderer of our own that uploads a surface itself
-   * (`systems/BlockHandover.ts`, under `?ourworld`). Absent is nothing handed
+   * (`systems/BlockHandover.ts`, which the game always passes). Absent is nothing handed
    * and nothing kept.
    */
   onSurface?: (surface: WorldSurface, mesh: Mesh) => void;

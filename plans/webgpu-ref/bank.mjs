@@ -6,10 +6,17 @@
  * bank in headed mode, `--check` to compare against what is already banked
  * rather than replacing it. Frames land in
  * `plans/webgpu-ref/ref/<map>-<vantage>.png`. `--query=<flags>` boots the
- * game with that URL query (`--query=ourworld` is `?ourworld`) — a check of a
- * DEV switch against the bank taken without it, which is what a switch that
- * must draw the same picture is proven by; it refuses to TAKE a bank, since
- * a bank is the switch-off picture by definition.
+ * game with that URL query — a check of a DEV switch against the bank taken
+ * without it, which is what a switch that must draw the same picture is
+ * proven by (`BABYLON_EXIT.md` X3.3a's `?ourworld`); it refuses to TAKE a
+ * bank, since a bank is the switch-off picture by definition.
+ *
+ * **The bank is BABYLON's picture of the blocks, taken before X3.3c.** Since
+ * X3.3c our renderer draws them in every build, so a plain `--check` grades
+ * it against Babylon's frames and lands WITHIN the floor rather than at 0%:
+ * the residue is X3.3a's equal-depth ties, which Babylon's front-to-back sort
+ * settles pair by pair. Re-taking the bank gives that up for good — nothing
+ * in the tree draws Babylon's picture of the blocks any more.
  *
  * **A map is several frames and not one, because a reference set is a defence
  * against a SHADER being wrong in one place.** The menu backdrop's vantage is
@@ -241,11 +248,11 @@ for (const id of targets) {
     }
   }
   if (pageErrors.length) problems.push(`${id}: ${pageErrors.length} page errors`);
-  // Under a switch the console is part of the verdict: a draw of ours that
-  // fails says so there (an uncaptured WebGPU error, a pipeline that did not
-  // build) and draws nothing, which a frame alone can mistake for a pass.
-  if (QUERY && consoleErrors.length) {
-    problems.push(`${id}: ${consoleErrors.length} console errors under ?${QUERY}`);
+  // The console is part of the verdict: a draw of ours that fails says so
+  // there (an uncaptured WebGPU error, a pipeline that did not build) and
+  // draws nothing, which a frame alone can mistake for a pass.
+  if (consoleErrors.length) {
+    problems.push(`${id}: ${consoleErrors.length} console errors${QUERY ? ` under ?${QUERY}` : ""}`);
     for (const e of consoleErrors.slice(0, 5)) console.log(`  console: ${e.slice(0, 300)}`);
   }
   await page.close();

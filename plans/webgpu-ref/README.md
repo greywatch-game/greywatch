@@ -32,7 +32,7 @@ own dev server.
 ```
 node plans/webgpu-ref/gate.mjs [map...] [--headed] [--uncap] [--query=<flags>]
 node plans/webgpu-ref/bank.mjs [map...] [--headed] [--check] [--query=<flags>]
-node plans/webgpu-ref/census.mjs [map...] [--query=<flags>] [--fall]
+node plans/webgpu-ref/census.mjs [map...] [--query=<flags>] [--out f.json] [--against f.json] [--fall]
 node plans/webgpu-ref/shaders.mjs [map...] [--headed] [--list]
 node plans/webgpu-ref/depth.mjs glass|zoffset [--headed]
 node plans/webgpu-ref/diff.mjs a.png b.png [--tiles]
@@ -46,21 +46,30 @@ node plans/webgpu-ref/bench.mjs [map...] [--runs 3] [--capped] [--gpu] [--max] [
   errors. It exits non-zero, so it can stand in front of a merge.
 - **`bank.mjs`** takes the reference frames into `ref/<map>-<vantage>.png`, and
   refuses to write one that is not reproducible. `--check` re-takes and grades
-  against what is banked instead of replacing it. `--query=ourworld` boots
-  the game with that URL query and grades it against the bank taken WITHOUT
-  it — how a DEV switch that must draw the same picture is proven
-  (`BABYLON_EXIT.md` X3.3a) — and counts the page's console errors as
-  problems, since a draw of ours that fails says so there and draws nothing.
-  It refuses to take a bank: the bank is the switch-off picture. **A row's
-  frame depends on the rows shot before it** (state carries between them):
-  a frame shot at one vantage alone differs from its banked row by tens of
-  thousands of pixels with nothing changed, so a scratch diff against the
-  bank owes the bank's own sequence up to that row.
+  against what is banked instead of replacing it, and counts the page's
+  console errors as problems on every check, since a draw of ours that fails
+  says so there and draws nothing. **The bank is BABYLON's picture of the
+  blocks, taken before `BABYLON_EXIT.md` X3.3c**: our renderer draws them in
+  every build now, so a plain `--check` lands WITHIN the floor rather than at
+  0% (the residue is X3.3a's equal-depth ties), and re-taking the bank gives
+  that reference up for good. `--query=<flags>` boots the game with that URL
+  query and grades it against the bank taken WITHOUT it — how a DEV switch
+  that must draw the same picture is proven (X3.3a's `?ourworld`, gone since
+  X3.3c) — and refuses to take a bank: the bank is the switch-off picture.
+  **A row's frame depends on the rows shot before it** (state carries between
+  them): a frame shot at one vantage alone differs from its banked row by
+  tens of thousands of pixels with nothing changed, so a scratch diff against
+  the bank owes the bank's own sequence up to that row.
 - **`census.mjs`** counts the MAIN pass's draws at every bank vantage —
   Babylon's into the frame's own target plus our renderer's — on the same
-  frozen frame the bank grades. With `--query` it counts the build both ways
-  and fails unless the totals are EQUAL (X3.3a: one draw for one), or with
-  `--fall` unless the switch's is LOWER (X3.3b).
+  frozen frame the bank grades, each row split into Babylon's and ours. With
+  `--query` it counts the build both ways and fails unless the totals are
+  EQUAL (X3.3a: one draw for one), or with `--fall` unless the switch's is
+  LOWER (X3.3b). For a step that leaves no switch behind (X3.3c), `--out
+  f.json` writes the shipping build's rows and `--against f.json` compares
+  them with rows an earlier `--out` wrote — the BEFORE, taken by running this
+  file in a worktree of the commit before the step — failing unless every
+  map's total is equal, or with `--fall` lower.
 - **`shaders.mjs`** compiles every shader on every map and fails on anything
   the driver called an error. It asks the FACTORY rather than the frame — walk
   the cel cache, hand each material a probe mesh, poll `isReady` — so it reaches

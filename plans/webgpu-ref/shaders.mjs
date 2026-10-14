@@ -20,9 +20,9 @@
  * shape this page's factory compiled is also assembled by
  * `render/celVertex.ts` and `render/celFragment.ts` and built into a pipeline
  * by our own `PipelineCache` (`oursCheck`). Only the block variants draw with
- * those modules, and only under `?ourworld`, which is exactly why every shape
- * is compiled here: an unused module is one nobody else would ever find
- * broken.
+ * those modules — the shapes a map's TAKEN blocks wear (`BABYLON_EXIT.md`
+ * X3.3c) — which is exactly why every shape is compiled here: an unused
+ * module is one nobody else would ever find broken.
  *
  * **A frame count is not coverage, so this asks the FACTORY rather than the
  * frame.** Every cel material in the game comes from one cache, so the check

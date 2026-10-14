@@ -122,10 +122,18 @@ a few more frames that draw the WHOLE map from each home spawn and each flag in
 turn (`core/PipelineWarmup.ts`), until a frame compiles nothing. It is a phase
 of the same wait rather than a wait of its own, on purpose: `go` and
 `buildPending` already answer for that one, so nothing had to be taught it
-exists. Three rules hold it to `loading`'s contract:
+exists. **It OPENS with no vantage at all, waiting for OUR renderer's
+pipelines** (`render/PipelineCache.ts`, handed in as `CompileProgress`):
+those were asked for as the map was built and compile off the frame, so
+drawing does not hurry them, but a group of ours still compiling draws
+NOTHING and Babylon no longer draws the blocks in the main pass — so the
+vantages are drawn with ours built. Three rules hold it to `loading`'s
+contract:
 
 - **Nothing a warm frame changes outlives that frame.** `Game.stageWarmFrame`
-  stands the camera at the vantage, offers every mesh (`WorldCulling.setWarm`),
+  stands the camera at the vantage, offers every mesh but the blocks our
+  renderer draws, whose cull is handed an unbounded reach instead
+  (`WorldCulling.setWarm`),
   turns the frustum test off and shows an idle member of each pool, posed as
   it is in flight;
   `unstageWarmFrame` puts every one of those back straight after the render. A
@@ -138,9 +146,13 @@ exists. Three rules hold it to `loading`'s contract:
   that camera, because in the page's own match nothing in `deploy` would place
   the shadow window again.
 - **It ends.** A vantage is left after `CONFIG.graphics.warmup.quietFrames`
-  frames that compiled nothing or `maxFramesPerVantage` frames whatever, and
-  the whole of it is capped by `capMs`; what it does not reach compiles in the
-  round, as all of it used to.
+  frames that compiled nothing in EITHER cache and left nothing of ours
+  compiling, or `maxFramesPerVantage` frames whatever, and the vantages are
+  capped by `capMs`, measured from the first; what they do not reach compiles
+  in the round, as all of it used to. The opening wait has a cap of its own,
+  `oursCapMs`, and it is long, like the bake's drain: a pipeline of ours past
+  it is a HOLE in the frame rather than a hitch, so the cap is a backstop for
+  a compile that never settles, never a budget.
 
 **News from the authority that needs a world is HELD across `buildPending`, not
 applied and not dropped**, and there are two of them for the same reason.

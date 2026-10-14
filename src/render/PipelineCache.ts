@@ -1,9 +1,10 @@
 /**
- * render/PipelineCache.ts — Every shader module, bind-group layout and render
- * pipeline our renderer draws with, built once and keyed on what makes one
- * different from another.
- * Owns: the three caches, and the rule that turns an assembled binding list
- * into a `GPUBindGroupLayout` (`layoutEntry`).
+ * render/PipelineCache.ts — Every shader module, bind-group layout and
+ * pipeline our renderer draws or computes with, built once and keyed on what
+ * makes one different from another, and how many of them are compiling.
+ * Owns: the four caches, the rule that turns an assembled binding list into
+ * a `GPUBindGroupLayout` (`layoutEntry`), and the compile counts the building
+ * card's warm-up reads (`CompileProgress`).
  * Invariants: a pipeline is keyed on its shader VARIANT (both modules'
  * CODE, which a label is not trusted to stand for), its VERTEX LAYOUT, its
  * TARGETS (`targetsKey`) and its fixed-function state, and nothing else
@@ -11,19 +12,24 @@
  * compile never stalls a frame and a caller asks AHEAD of the frame that
  * draws with it (`docs/rendering.md`: WebGPU compiles a pipeline on the
  * frame that first uses it, which is what the warm-up exists to move); a
- * compile that FAILS is not cached, so asking again retries it; every layout
+ * compile that FAILS is not cached, so asking again retries it; every compile
+ * this cache starts is COUNTED, in flight and once settled, so the warm-up
+ * can wait on it (`core/PipelineWarmup.ts`); every RENDER pipeline's layout
  * is EXPLICIT, built from the bindings the modules were assembled with,
  * never `"auto"`, and layouts are shared by their entries — so a bind group
  * made for one pipeline binds into any other whose group has the same
  * entries (the frame block's always does when both stages see it alike; a
- * material's group differs per variant); the WINDING is derived, never
+ * material's group differs per variant); a COMPUTE pipeline's layout is
+ * `"auto"`, because nothing else binds into it: its bind groups are made
+ * against its own `getBindGroupLayout`; the WINDING is derived, never
  * stated, by Babylon's rule (`webgpuEngine.pure.js`, "Front face", and
  * `Material._preBind`): a mesh in this left-handed scene is born
  * `CounterClockWiseSideOrientation` (`Mesh`'s constructor), which faces the
  * eye wound `"ccw"` on screen — and `"cw"` in a pass that flips y
  * (`PassTargets.flipY`), because the flip mirrors every triangle's turn. A
  * `reversed` mesh is the other way round in both.
- * Never: imports Babylon; builds a pipeline for targets it was not handed.
+ * Never: imports Babylon; builds a render pipeline for targets it was not
+ * handed.
  * Contract: `docs/rendering.md`, "Our renderer's frame".
  */
 import type { PassTargets } from "./frameHost";
@@ -71,22 +77,68 @@ export interface BuiltPipeline {
   readonly groups: readonly GPUBindGroupLayout[];
 }
 
-export class PipelineCache {
+/** How far a cache's compiles have got — what the building card waits on. */
+export interface CompileProgress {
+  /** Compiles started and not yet settled. */
+  readonly compiling: number;
+  /** Compiles settled, built or failed, since the cache was made: a running count. */
+  readonly settled: number;
+}
+
+export class PipelineCache implements CompileProgress {
   /** Keyed on the CODE: two programs may share a label, never a module. */
   private readonly modules = new Map<string, GPUShaderModule>();
   private readonly layouts = new Map<string, GPUBindGroupLayout>();
   private readonly pipelines = new Map<string, Promise<BuiltPipeline>>();
+  private readonly computes = new Map<string, Promise<GPUComputePipeline>>();
+  private inFlight = 0;
+  private done = 0;
 
   constructor(private readonly device: GPUDevice) {}
 
+  get compiling(): number {
+    return this.inFlight;
+  }
+
+  get settled(): number {
+    return this.done;
+  }
+
   /** The pipeline for `spec`, compiled once; every later ask shares the same promise. */
   get(spec: PipelineSpec): Promise<BuiltPipeline> {
-    const key = pipelineKey(spec);
-    let built = this.pipelines.get(key);
+    return this.cached(this.pipelines, pipelineKey(spec), (key) => this.build(spec, key));
+  }
+
+  /**
+   * The compute pipeline for entry point `entry` of the module `code`,
+   * compiled once on an `"auto"` layout (see the header); every later ask
+   * shares the same promise.
+   */
+  compute(label: string, code: string, entry: string): Promise<GPUComputePipeline> {
+    return this.cached(this.computes, `${label}:${entry}:${code}`, async () =>
+      this.device.createComputePipelineAsync({
+        label: `${label}: ${entry}`,
+        layout: "auto",
+        compute: { module: this.module({ label, code, bindings: [] }), entryPoint: entry },
+      }),
+    );
+  }
+
+  /** `key`'s compile out of `cache`, started and counted on a miss; a failure is forgotten. */
+  private cached<T>(cache: Map<string, Promise<T>>, key: string, start: (key: string) => Promise<T>): Promise<T> {
+    let built = cache.get(key);
     if (!built) {
-      built = this.build(spec, key);
-      this.pipelines.set(key, built);
-      built.catch(() => this.pipelines.delete(key));
+      this.inFlight++;
+      built = start(key);
+      cache.set(key, built);
+      const settle = (): void => {
+        this.inFlight--;
+        this.done++;
+      };
+      built.then(settle, () => {
+        settle();
+        cache.delete(key);
+      });
     }
     return built;
   }

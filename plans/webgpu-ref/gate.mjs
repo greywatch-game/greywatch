@@ -4,7 +4,7 @@
  *
  * Run with `node plans/webgpu-ref/gate.mjs [map...]`, `--headed` to watch it,
  * `--uncap` to take the frame limiter off before quoting a frame rate,
- * `--query=<flags>` to play the rounds under a DEV switch (`?ourworld`). It
+ * `--query=<flags>` to play the rounds under a DEV switch. It
  * exits non-zero when an assertion fails, so it can stand in front of a merge.
  *
  * **What this gate is FOR is the engine and not the picture.** Whether the
@@ -46,7 +46,7 @@ import {
 const args = process.argv.slice(2);
 const HEADED = args.includes("--headed");
 const UNCAP = args.includes("--uncap");
-// A DEV switch to gate the round under (`--query=ourworld` boots `?ourworld`).
+// A DEV switch to gate the round under (`--query=<flags>` boots `?<flags>`).
 const QUERY = args.find((a) => a.startsWith("--query="))?.slice("--query=".length) ?? "";
 const maps = args.filter((a) => !a.startsWith("--"));
 const targets = maps.length ? maps : MAP_IDS;
