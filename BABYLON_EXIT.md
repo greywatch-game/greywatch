@@ -1047,7 +1047,7 @@ gate, and is judged only by the GPU-side work after the exit. The phone
 reaches the branch itself: `babylon-exit` is deployable as well as
 `develop`, since 2026-10-13.
 
-### X3.4 — Scatter as instances (PERF_PLAN B2) — **M–L** (decision) — **LANDED** (1a20232, X3.4b below)
+### X3.4 — Scatter as instances (PERF_PLAN B2) — **M–L** (decision) — **LANDED** (1a20232 + f20a9ae)
 
 As B2 states it: keep the seeded placement exactly; emit one source mesh per
 (kind, variant, material, foliage rung) and a transform per placement.
@@ -1151,7 +1151,7 @@ the decision.
     `bank.mjs --keep=<dir>` (new) keeps a check's frames for that judging.
   - `npm run build`, `corecheck` and `gate.mjs` (a round on all seven maps)
     pass.
-- **X3.4a landed at 1a20232.**
+- **X3.4a landed at 1a20232, X3.4b at f20a9ae.**
 - **X3.4b, measured** (2026-10-14, against X3.4a in the same session):
   - **How it is drawn.** `BuildOptions.onScatter` hands `BlockHandover` the
     FIELD: each worn variant a set of parts, merged through the block
