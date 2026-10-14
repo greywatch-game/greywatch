@@ -491,7 +491,9 @@ the failure is silent.
   `rig-near` and `rig-far` at 0.0721% and 0.0014% of pixels. The parent
   commit gives those two rows the same numbers, so the banked Sarab rig
   frames are stale from an earlier commit. They are not this step's
-  difference, and they want re-banking.
+  difference. Sarab was re-banked after X3.1 landed, and `--check` now puts
+  every row on every map at 0%, which is X3.2's baseline. The bank lives
+  outside git (`ref/` is ignored), so the re-bank is recorded only here.
 - **`shaders.mjs`.** It is clean on seven maps. It now also builds our module
   for every shape each map compiled into a pipeline against an EXPLICIT
   layout. It was proven to fail on a uniform our side does not declare and
