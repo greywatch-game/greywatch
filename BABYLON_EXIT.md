@@ -286,7 +286,7 @@ record, one `SurfaceRecord` per visual (name, material, metadata, block,
 pieces, counts), and `worldMeshes` is the one adapter.
 - **Each surface carries PIECE ranges** through every merge. A piece is a
   layout item from `GameMap.world.pieces`, and a DEV assertion checks that the
-  ranges tile each surface. **X3.3 keeps a piece id per cluster, and
+  ranges tile each surface. **X3.3b keeps a piece id per cluster, and
   destructible buildings need it.**
 - **A surface's creation order (`born`) is part of the picture:** candidates
   arrive in scene order, which reaches the glow mask and the transparent
@@ -598,7 +598,7 @@ the failure is silent.
   `src/render/` may not import. So rule 4 holds as "every internal OUR
   RENDERER reaches". The seam's header lists the six and the step each
   leaves at (FrameDepth at X5.4, the rest at X6.1).
-- **Owed to X3.3:**
+- **Owed to X3.3** (all four are X3.3a's):
   - the fragment's `position.y` flip, since the main pass is a texture;
   - the vertex sway as a shared chunk;
   - a hook BEFORE group 0's blended meshes, if the world must draw there
@@ -607,28 +607,127 @@ the failure is silent.
   - a binding field for a depth or unfilterable texture (every texture is
     laid out filterable `float` today).
 
-### X3.3 — The static world's main pass (PERF_PLAN B1) — **L**
+### X3.3 — The static world's main pass (PERF_PLAN B1) — **L, as three sub-steps** (split 2026-10-13)
 
 As B1 states it: clusters of ~128–256 triangles, a compute cull (frustum, the
 fog reach `WorldCulling` walks to, the size gate), one `drawIndexedIndirect`
 per material per pass, and the blocks taken out of `WorldCulling`'s main-pass
 candidate list while their Babylon meshes live on for the other passes.
 
-- **Contracts it keeps:**
+It is split so that correctness and speed are proven apart. **(a)** makes our
+pipeline draw the blocks to the pixel, behind a DEV switch, with Babylon's
+draw counts untouched. **(b)** changes HOW they are drawn, under the same
+switch, with the pixels already pinned. **(c)** makes it the only path and
+takes the measurement. Each sub-step lands on its own and leaves the game
+shippable. Until (c), a build without the switch draws exactly what X3.2's
+did.
+
+- **Contracts all three keep:**
   - a per-cluster block id for `ReflectionSystem.encloses`, plus X1.4's piece
     id
   - fog to `fogEnd`
-  - `opaqueAlpha` 0 in the frame and 1 under a probe bake
+  - `opaqueAlpha` 0 in the frame and 1 under a probe bake (the probes keep
+    drawing Babylon's meshes until X3.6c, so our pipeline draws only the
+    main pass, at 0)
   - the wind's ramp and rigged layers
-  - every caster a closed shape
-- **Verify:** `bank.mjs --check`; P0's census (main-pass draws); X0.3 on the
-  desktop and the phone against X0.4's "before".
+  - every caster a closed shape (the casters stay Babylon's until X3.6a)
 
-**Gate after X3.3 — the first number that says whether the renderer pays.**
+#### X3.3a — Our cel pipeline draws the blocks, to the pixel — **M**
+
+- **Do:**
+  - **The vertex stage as a shared chunk.** `CelShader.ts`'s vertex body,
+    sway included, becomes a Babylon-free chunk both sides include, as X3.1
+    did for the fragment (X3.1's third owed item). Ours is declared as data
+    beside `celFragment.ts`, with the frame's camera and wind from
+    `FRAME_BLOCK`.
+  - **The fragment's `position.y` flip** in our `main` (X3.1's and X3.2's
+    owed item; the frame's main pass is a texture), so the dither is not
+    mirrored.
+  - **The textures the cel surface samples**, bound as wrapped views of
+    Babylon's own through the seam (rule 5): every shadow map, the lamps'
+    atlas, the flash map, the cloud field, the foliage map, the GI volume's
+    seven 3D textures, the ground textures and the reflection cubes. Each is
+    a numbered internal in the seam's header, the list growing as Phase 3
+    allows. Babylon re-creates some of these on a quality change, so a view
+    is re-taken when its owner replaces it, never cached across that. A
+    depth or unfilterable texture gets a field on its binding (X3.2's owed
+    item) rather than the filterable default.
+  - **The material block** (group 1), filled from the same spec a Babylon
+    cel material is born with, through a pull on the factory like
+    `fillFrame`. Never read off a `ShaderMaterial`.
+  - **The geometry** uploaded from the world's `GeometryBuffer` records
+    (X1.4) into buffers our renderer owns. Whole blocks, one draw per block
+    material, no clusters yet.
+  - **Where in the pass the blocks draw.** They draw BEFORE group 0's
+    blended meshes, through a second host hook
+    (`RenderingGroup.onBeforeTransparentRendering`; X3.2's owed item). It is
+    not optional: glazing and water write no depth, so an opaque wall drawn
+    after them would paint over the glass in front of it.
+  - **A DEV switch** (`?ourworld`) under which our pipeline draws the blocks
+    in the main pass and `WorldCulling` leaves them out of the main pass's
+    candidates only. Every other pass keeps drawing Babylon's meshes.
+    Without the switch, nothing changes.
+  - The pipelines are compiled at load, under the building card, so the
+    switch never draws a frame with a pipeline still compiling.
+- **Verify:**
+  - `bank.mjs --check` with the switch ON is within the floor on every row
+    of every map, and with it OFF is still 0%.
+  - The census shows main-pass draws unchanged with the switch on: this
+    step trades one draw for one draw.
+  - `shaders.mjs` builds our vertex module for every shape as well.
+- **Must not:** change a pixel without the switch; read a Babylon material;
+  copy a Babylon texture.
+
+#### X3.3b — Clusters, the compute cull and indirect draws — **M–L**
+
+- **Do:**
+  - The blocks cut into clusters of ~128–256 triangles, each carrying its
+    block id and its X1.4 piece id.
+  - A compute cull per frame over the clusters: the frustum, the fog reach
+    `WorldCulling` walks to (`fogEnd` and the size gate, as it decides them
+    today), writing indirect arguments.
+  - One `drawIndexedIndirect` per material per pass. All of it under the
+    same DEV switch.
+- **Verify:**
+  - `bank.mjs --check` with the switch on, within the floor everywhere: the
+    cull may drop only what the fog or the frustum already hid.
+  - P0's census with the switch on: main-pass draws fall.
+  - X0.3 on the desktop, read as an indication only; the step's number is
+    (c)'s.
+- **Must not:** let the cull read a node; re-cut clusters per frame.
+
+#### X3.3c — Our path is the path — **S–M**
+
+- **Do:**
+  - The switch comes out: the blocks are drawn by our renderer in every
+    build, and `WorldCulling` leaves them out of the main pass for good.
+    Their Babylon meshes stay for the shadow maps, the probes, the lamps'
+    atlas and the glow until X3.6 moves those passes.
+  - The pipeline warm-up (`core/PipelineWarmup.ts`) learns about our
+    pipelines.
+  - The contracts it breaks are rewritten: `CLAUDE.md`'s "the frame walks the
+    scene" for the blocks, `docs/rendering.md`, and `FILES.md`.
+- **Verify:**
+  - `bank.mjs --check` on every map.
+  - P0's census.
+  - X0.3 on the desktop and the phone against X0.4's "before".
+  - A round played offline and in a match.
+
+**Gate after X3.3c — the first number that says whether the renderer pays.**
 If main-pass draws fall and no device's frame improves, stop and re-read this
 plan with the user before X3.4. Leaving Babylon would still remove the bugs
 and the upkeep, but the performance case would be gone, and the order of
 everything after this point should be weighed again.
+
+**Two things outside the branch decide whether the gate can be read:**
+- **The phone runs only what `develop` deploys.** So the merge owed after
+  X2.5c (your play-test, then the `--no-ff` merge, "The branch") has to have
+  happened first.
+- **The phone may be GPU-bound.** The 2026-10-13 Greyfen captures read as a
+  GPU wait plus heat. X3.3 mainly removes CPU-side draws, so a phone frame
+  that does not move may say nothing about the renderer. A `?gpu` phone
+  capture taken before the gate is what tells a flat result apart from a
+  failed one.
 
 ### X3.4 — Scatter as instances (PERF_PLAN B2) — **M–L** (decision)
 
@@ -894,9 +993,9 @@ to X0.3 (see "The branch"). It is the user's to start.
 | A1, A2 | landed; X1.4 builds on both |
 | A3 vehicle detail tier | X4.2, built in the new renderer, not in Babylon |
 | A4 body fade | X4.1 |
-| A5 occlusion culling | optional, after X3.3, in the compute cull; occluders skip `RayWorld.removed` |
+| A5 occlusion culling | optional, after X3.3b, in the compute cull; occluders skip `RayWorld.removed` |
 | A6 snapshot rendering | dropped: it is a Babylon mechanism |
-| B0, B1, B2, B3, B5 | X3.1, X3.3, X3.4, X3.6, X3.5 |
+| B0, B1, B2, B3, B5 | X3.1, X3.3 (a–c), X3.4, X3.6, X3.5 |
 | B4 who owns the frame | decided: X5.4 |
 | C1 | X0.2 |
 | C2, C3 | X2.1, X2.2 |
@@ -915,7 +1014,7 @@ Each is rewritten by the step that breaks it, in the same commit.
 | `CLAUDE.md`: every cel material is frozen; `remember`; a vertex colour buffer gained after a first draw | end of Phase 4 (deleted) |
 | `CLAUDE.md`: `shaderLanguage` is load-bearing; a declared sampler must be bound | X3.1, X5.2 (becomes a bind-group-layout rule) |
 | `CLAUDE.md`: the two shadow maps; the lamps' atlas | X3.6a, X3.6b, X4.1 |
-| `CLAUDE.md`: the frame walks the scene (`WorldCulling`) | X3.3 through X4.7 |
+| `CLAUDE.md`: the frame walks the scene (`WorldCulling`) | X3.3c through X4.7 |
 | `CLAUDE.md`: the glow | X3.6d, X5.2 |
 | `CLAUDE.md`: visual meshes and collider proxies; exactly three sweeps | X2.1, X2.3 |
 | `CLAUDE.md`: mesh metadata is a contract | X1.4 (moves to the geometry record), X3.3 onward |
