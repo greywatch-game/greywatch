@@ -602,13 +602,22 @@ the chain. **A map's merged emissives are a PALETTE like its albedo**
 `emissiveColor`, so **a new reader asking a material what it emits must ask the
 vertex for that one**.
 
+**OUR renderer (`src/render/`) draws INSIDE Babylon's frame through ONE seam**
+(`render/babylonSeam.ts`, the only file there that names Babylon, and only as
+types). A draw is QUEUED into Babylon's bundle list and never issued. The
+attachments are stated once (`FRAME_TARGETS`). The frame's uniforms are PULLED
+off the factory's fields (`CelMaterialFactory.fillFrame`), so **a new value
+every cel material holds owes `render/frame.ts` a field and `fillFrame` a
+line**, or our draws shade without it.
+
 → **[`docs/rendering.md`](docs/rendering.md)** — the frozen define set, the
 irradiance volume (why not Lumen, why the blend is 1), the four light terms and
 the three `DirectionalLight`s, the colour buffer and the map's grime, the shadow
 window, back faces and the foliage's third map, the bodies' map, the rungs, the
 lamps' atlas, lightning, the ink's NIB and its coverage channel's two blended
 exceptions, the wind's rigs, the fire, the glazing and reflection bake, the
-grass and turf, the water, the WGSL traps, the candidate list and size gate,
+grass and turf, the water, the WGSL traps, our renderer's frame and its seam,
+the candidate list and size gate,
 the glow's three failed attempts, and the sky and its clouds' depths.
 ### The map is data, not code
 

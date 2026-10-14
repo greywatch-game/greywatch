@@ -2937,7 +2937,10 @@ the cel fragment's `main` becoming a call to `celSurface()`.
 **What our side does not do yet** is Babylon's flip of `fragmentInputs.position`
 for a pass that draws into a texture (`internals.yFactor_`, injected before
 the body runs). The dither is keyed on that position, so a pass of ours that
-renders to a texture owes the same flip in its `main`.
+renders to a texture owes the same flip in its `main`. The frame's MAIN pass is
+one of those: it draws into the post chain's first target (see "Our renderer's
+frame" below), so the first cel draw (X3.3) owes the flip. The vertex half of
+the same flip is already the renderer's (`PassTargets.flipY`).
 
 **Every entry is prefixed `cel`, and the prefix is a collision guard rather than
 a style.** Babylon registers an include first-writer-wins and its own library
@@ -3074,6 +3077,152 @@ silently, as a dev-server 500 on the module, which reads as anything but a
 comment. Escape the backtick or write the name bare. It is the same class of trap
 as the `//`-with-a-`;` one below and it bites in the opposite direction: that one
 is the preprocessor eating code, this one is JavaScript eating the shader.
+
+## Our renderer's frame: inside Babylon's, through one seam
+
+**Our renderer (`src/render/`) draws inside Babylon's frame and owns
+everything it draws with**: the frame's uniform buffer, every bind-group
+layout and every pipeline. It reaches Babylon through ONE object,
+`BabylonFrameHost` (`render/babylonSeam.ts`), which implements the
+renderer's `FrameHost` interface (`render/frameHost.ts`). Nothing else in
+the directory names a Babylon type. The seam only names them: every import
+there is `import type`, so the Babylon-free gate walks it with the rest of
+the directory. When the game takes the frame (`BABYLON_EXIT.md` X5.4), a
+host of its own implements `FrameHost` and the renderer does not notice.
+**Every Babylon INTERNAL the renderer reaches is on the numbered list in the
+seam's header.** At X3.2 there are five: the device, the lazily-started
+pass, the bundle list, the pass's attachment wrapper, and the render
+target (its identity and its flip). That list only shrinks after Phase 3.
+Six older touches in four files (`FrameDepth`, `webgpuLeaks`,
+`ReflectionSystem`, `FrameProfile`) are not the renderer's and stay where
+they are, listed in the seam's header with the step each leaves at; one of
+them patches a Babylon class's prototype, a value this directory may not
+import.
+
+**A draw is QUEUED into Babylon's order, never issued.** Under
+`compatibilityMode = false` Babylon does not draw into the pass as it goes.
+It records render bundles into `engine._bundleList` and replays the list
+into the pass when the pass ENDS. A raw `pass.draw` from an observable
+would therefore land BEFORE every Babylon draw already queued in that pass,
+however late the observable fires. `FrameHost.queue` adds an item to that
+same list (`addItem({ run })`). The item closes the open bundle and is run
+in order, with the real encoder, at the pass's end. Two consequences
+follow:
+
+- The bundles around an item reset the pipeline, the bind groups and the
+  vertex and index buffers, so **a `FrameDraw` sets every one it uses**.
+- They do NOT reset the viewport, the scissor, the stencil reference or the
+  blend constant, and Babylon re-emits one only when its own cache thinks it
+  changed. So **a `FrameDraw` changes none of the four**, or restores each:
+  one left changed is Babylon's next draws drawn with it.
+
+**The main pass is told apart by its TARGET, not by the group.** Every
+shadow map, probe face, the lamps' atlas and the glow draw rendering group
+0 too, each into its own target. The frame's target is the one bound as
+`onBeforeDrawPhaseObservable` fires (the post chain binds it just before),
+and a group counts only if it finishes into that same target before the
+draw phase ends (`FrameHost.onMainPass`). **The window alone is not
+enough.** The probes and the shadow maps draw before the phase, but the
+glow renders its mask from `onAfterDrawPhaseObservable` ITSELF. Whether
+its group 0 fell inside the window would depend on which observer was
+added first, and the review of X3.2 found the renderer safe only because
+`Game` happened to build it before `GlowPass`.
+
+**A draw lands after rendering group 0 has been queued**, which means after
+its opaque, alpha-tested and blended meshes alike. It lands before the
+viewmodel's group, whose auto-clear `Game` turns off, so the pass is not
+restarted between them. A draw that must come before group 0's blended
+meshes owes the host a second hook point; `RenderingGroup`'s
+`onBeforeTransparentRendering` is where it would go.
+
+**The attachments are stated ONCE** (`render/targets.ts`, `FRAME_TARGETS`).
+A pipeline is compiled AHEAD of the frame that draws with it, so its formats
+must be known ahead. What the frame draws into is NOT the canvas: the post
+chain binds its first target, `CelInk`'s, before the draw phase. So the
+frame is:
+
+- one `rgba8unorm` colour attachment (a post-process's default);
+- one sample (`antialias: false`);
+- `depth32float` (`stencil: false`; `plans/webgpu-ref/depth.mjs`);
+- a TEXTURE, which Babylon draws upside down so a later sample reads it the
+  GL way up.
+
+`flipY` is that last fact. Every vertex stage of ours negates clip-space y
+under it, or its picture is mirrored against everything Babylon drew into
+the same target. **The flip reverses the winding too**, so `PipelineCache`
+derives the front face by Babylon's rule rather than taking one. Geometry in
+this left-handed scene is authored CLOCKWISE (a Babylon mesh's default
+`sideOrientation`), so its front face is `"cw"` on screen and `"ccw"` under
+`flipY`. `PipelineState.counterClockwise` is the other orientation, which
+Babylon also reaches for a world matrix with a negative determinant. A
+pipeline with a hand-stated front face would cull the world's front faces
+in one of the two kinds of pass.
+
+**`Renderer` checks the open pass against `FRAME_TARGETS` on every frame it
+draws, and a pass that differs draws nothing that frame**, with one console
+error per change. The check compares in place (`FrameHost.passIs`), so it
+allocates nothing. This is the bundle trap again: one pipeline whose attachment state
+the pass cannot take poisons the bundle and blacks out the frame.
+
+**The frame's uniforms are ONE block, declared once and filled by a pull.**
+`render/frame.ts`'s `FRAME_BLOCK` is group 0, binding 0 of every program.
+It holds the cel fragment's frame (`celFragment.ts` includes it) plus the
+vertex stage's share: `viewProjection` and the wind. Those are declared now
+so that a vertex stage arriving later reads offsets that already exist. The
+values are a `FrameUniforms`: one tight `Float32Array` per field, named as
+the shader names it, made once and filled in place.
+
+- **`CelMaterialFactory.fillFrame`** fills everything the factory
+  publishes, with `ShadowBindings.fillFrame` and the irradiance volume's
+  binding beside it. It runs as the main pass begins, and only when
+  something will draw.
+- **It is a PULL off the fields, never a push or a read of a material.**
+  Half of what a cel material holds is never pushed. The shadow matrices
+  are the generators' own, which Babylon rewrites in place. The clouds,
+  the flash, the lamps' slots and the GI vectors are rewritten in place by
+  their owners. A copy taken off the fields cannot miss a change; an
+  interceptor on the setters would.
+- **The CONFIG-derived values are module constants in `CelShader.ts`**
+  (`windShape`, `surfaceLook`). `applyWind` and `applyEnvironment` read
+  them, and so does `fillFrame`, so the materials and the frame are one
+  statement.
+- **`viewProjection` is the host's** (`scene.getTransformMatrix()`), as
+  Babylon's own `ShaderMaterial` takes it. The factory never had it.
+
+**The byte layout is computed, never written.** `render/wgsl/layout.ts`
+places each field by WGSL's uniform-address-space rules, from the same data
+the WGSL is assembled from, and `FrameUniformBuffer` copies by that plan.
+**Every array member is declared `@align(16)`.** The uniform address space
+REQUIRES an array at a multiple of 16, and WGSL aligns an array of
+`Strided_f32` like an `f32`, so an array after a member ending off a 16-byte
+boundary would be rejected. The frame block never put one there, which is
+the only reason the module compiled without it.
+When X3.2 landed, a compute shader declared the frame block exactly as
+every program does and read back all 869 floats. It was run twice, once
+with a unique value in every float and once with the real frame, and every
+float matched both times.
+
+**One buffer is one pass's frame.** A `writeBuffer` lands before the next
+submit, whichever pass reads it. So a probe's bake, whose eye and
+`opaqueAlpha` differ, owes a buffer of its own (X3.6c), never a second
+write to this one.
+
+**Pipelines are built with `createRenderPipelineAsync` and cached**
+(`render/PipelineCache.ts`). The cache key is the shader variant (both
+modules' labels, which carry the define set), the vertex layout, the
+targets and the fixed-function state. So a compile never stalls a frame,
+and a caller asks ahead.
+
+**Every layout is EXPLICIT**, built from the bindings the assembly reports,
+never `"auto"`. Layouts are shared by their entries, so a bind group made for
+one pipeline binds into any other whose group has the same entries. The
+frame's group does whenever both stages see it alike; a material's group
+differs per variant. Modules are cached by their CODE, never their label,
+and a compile that fails is not cached. A binding the two stages declare
+differently is refused when the layout is built. A texture binding is laid out as filterable
+`float` with a filtering sampler. A depth texture or an unfilterable format
+bound later owes its binding a field saying so, or the layout refuses the
+view.
 
 ## Block visibility: how much of the map the frame walks
 

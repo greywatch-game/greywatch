@@ -105,6 +105,8 @@ import {
   CelMaterialFactory,
   fogAmountAt,
 } from "../shaders/CelShader";
+import { BabylonFrameHost } from "../render/babylonSeam";
+import { Renderer } from "../render/Renderer";
 import { PaperGrain } from "../shaders/PaperGrain";
 import { CelInk } from "../shaders/CelInk";
 import { fxaaShaderIsOurs } from "../shaders/Fxaa";
@@ -500,6 +502,13 @@ export class Game {
   private engine: WebGPUEngine;
   private scene: Scene;
   private mats: CelMaterialFactory;
+  /**
+   * OUR renderer (`src/render/`), drawing inside Babylon's frame through the
+   * seam (`render/babylonSeam.ts`). Built once with the factory whose fields
+   * fill its frame; it draws nothing until something is `add`ed to it
+   * (`BABYLON_EXIT.md` Phase 3), and costs one empty branch a frame until then.
+   */
+  readonly renderer: Renderer;
   private input: InputManager;
   private cameraSys: CameraSystem;
   private hud: HUD;
@@ -1420,6 +1429,9 @@ export class Game {
     // key/ambient/point-light uniforms (fed by the LightingSystem) and every
     // effect material is unlit emissive.
     this.mats = new CelMaterialFactory(this.scene);
+    this.renderer = new Renderer(new BabylonFrameHost(this.engine, this.scene), (out) =>
+      this.mats.fillFrame(out),
+    );
     // Stepped moon shadows + contact blobs. Must exist before any cel
     // material is created so the shadow map binds on creation.
     this.shadows = new ShadowSystem(this.scene, this.mats, this.shadowQuality);

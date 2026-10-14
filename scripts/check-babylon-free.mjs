@@ -23,9 +23,13 @@
  *     the page's own included (`SimCore`, `SimPlayer`, `LagComp`,
  *     `buildSimWorld`), so a file added there is held whoever builds it.
  *   - `src/render/`, every file in it: our own renderer, which takes a GPU
- *     device and never a Babylon type (`BABYLON_EXIT.md` rule 6) — and what
- *     it reaches, so the shared shader bodies it assembles
- *     (`src/shaders/wgsl/chunks.ts`) are held Babylon-free by the same walk.
+ *     device and never a Babylon value (`BABYLON_EXIT.md` rule 6) — its seam
+ *     (`src/render/babylonSeam.ts`) NAMES Babylon's types, erased, and loads
+ *     none of it — and what it reaches, so the shared shader bodies it
+ *     assembles (`src/shaders/wgsl/chunks.ts`) are held Babylon-free by the
+ *     same walk.
+ *   - `src/math/`, every file in it but the crossing (`NOT_ROOTS`): the
+ *     game's own vectors, which a layout and the world's data are made of.
  *   - Every SIMULATION module, named one by one (`SIMULATIONS`,
  *     `docs/build.md`). Most of them the server reaches anyway,
  *     and they are listed regardless, so a simulation is held because it IS
@@ -37,7 +41,7 @@
  *     rename cannot quietly drop one out.
  *
  * `BABYLON_EXIT.md` rule 6 widens this three times: X3.1 added `src/render/`
- * in the commit that made the directory, X3.2 adds `src/math/` to
+ * in the commit that made the directory, X3.2 added `src/math/` to
  * `DIRECTORIES` with `src/math/babylon.ts` — the crossing, deleted at X6.1 —
  * named in `NOT_ROOTS`, and X6.1 widens it to the whole tree. **An entry in
  * `NOT_ROOTS` is exempt from being a root, never from being REACHED**: a
@@ -97,7 +101,7 @@ import { fileURLToPath } from "node:url";
 const REPO = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 
 /** Every source file under these is a root. */
-const DIRECTORIES = ["server", "src/sim", "src/render"];
+const DIRECTORIES = ["server", "src/sim", "src/render", "src/math"];
 
 /**
  * The simulation modules, one by one.
@@ -126,11 +130,11 @@ const SIMULATIONS = [
 ];
 
 /**
- * Files under a `DIRECTORIES` entry that are not roots themselves. Empty until
- * X3.2 adds `src/math/` and names `src/math/babylon.ts` here. Never exempt from
- * being reached — see the header.
+ * Files under a `DIRECTORIES` entry that are not roots themselves: the one
+ * crossing between our vectors and Babylon's (`src/math/babylon.ts`), deleted
+ * at X6.1. Never exempt from being reached — see the header.
  */
-const NOT_ROOTS = [];
+const NOT_ROOTS = ["src/math/babylon.ts"];
 
 const SOURCE = [".ts", ".tsx", ".mts", ".js", ".mjs"];
 const BANNED = /^@babylonjs\/core(?:\/|$)/;

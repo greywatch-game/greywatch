@@ -36,6 +36,7 @@ import {
   Vector3,
   Vector4,
 } from "@babylonjs/core";
+import type { FrameUniforms } from "../render/frame";
 import { MAX_POINT_LIGHTS } from "./wgsl/celSurface";
 
 export class ShadowBindings {
@@ -154,6 +155,36 @@ export class ShadowBindings {
   private eachShadowReader(fn: (mat: ShaderMaterial) => void): void {
     this.cels.forEach(fn);
     this.shadowConsumers.forEach(fn);
+  }
+
+  /**
+   * Copies every shadow value a cel material holds into our renderer's frame
+   * (`CelMaterialFactory.fillFrame`, which calls this). A pull rather than a
+   * push because half of what is here is never pushed: the matrices are the
+   * generators' own and Babylon rewrites them in place, and the clouds, the
+   * flash and the lamps' slots are rewritten in place by their owners — so the
+   * only copy that cannot miss a change is one taken off the fields.
+   */
+  fillFrame(out: FrameUniforms): void {
+    out.lightMatrix.set(this.shadowMatrix.m);
+    this.shadowParams.toArray(out.shadowParams);
+    out.nearLightMatrix.set(this.nearShadowMatrix.m);
+    this.nearShadowParams.toArray(out.nearShadowParams);
+    out.bodyLightMatrix.set(this.bodyShadowMatrix.m);
+    this.bodyShadowParams.toArray(out.bodyShadowParams);
+    out.foliageLightMatrix.set(this.foliageMatrix.m);
+    this.foliageParams.toArray(out.foliageParams);
+    // What the materials HOLD, `w` forced while a bake holds the clouds off.
+    this.cloudShadowPushed.toArray(out.cloudShadow);
+    this.cloudShadowRay.toArray(out.cloudShadowRay);
+    this.flashDir.toArray(out.flashDir);
+    this.flashColor.toArray(out.flashColor);
+    out.flashLightMatrix.set(this.flashMatrix.m);
+    this.flashParams.toArray(out.flashParams);
+    out.pointSpot.set(this.pointSpot);
+    out.pointShade.set(this.pointShade);
+    this.localAtlas.toArray(out.localAtlas);
+    this.localParams.toArray(out.localParams);
   }
 
   /**

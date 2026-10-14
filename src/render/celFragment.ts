@@ -24,58 +24,27 @@
  * a material is born with from its own spec: its albedo, its ground texture
  * and relief depth, its gloss, translucency and glazing, and a pane's own
  * probe. That is the split the factory already makes, read off the code
- * rather than chosen; X3.2 owns the frame's buffer and may move a name
- * between the two without touching a body.
+ * rather than chosen. The frame's block is `render/frame.ts`'s `FRAME_BLOCK`,
+ * one declaration every program binds at group 0, binding 0, so a name can
+ * move between the two without touching a body.
  *
  * **The frame is ONE layout in every variant but the last field**, because it
  * is one buffer shared by every material: a frame name Babylon declares only
  * for some variants (`skyZenithColor` for glazing, `reliefMarch` for the
- * bumped ground) is declared here for all of them, which an unread member
- * costs nothing, and the one that cannot be — the 2 KB palette — is guarded
- * and LAST, so the variants that have it read the same offsets as the rest
- * and a longer buffer.
+ * bumped ground) is declared for all of them, which an unread member costs
+ * nothing, and the one that cannot be — the 2 KB palette — is guarded and
+ * LAST, so the variants that have it read the same offsets as the rest and a
+ * longer buffer (`frame.ts` states it; `FrameUniformBuffer` writes it).
  *
- * WHAT THIS DOES NOT DO YET, and owes before it draws (X3.2, X3.3):
- * Babylon flips `position.y` before the body runs when its pass draws into a
- * texture (`internals.yFactor_`), and the dither is keyed on that position,
- * so a pass that renders to a texture owes the same flip in `main` or its
- * grain is mirrored. And the world's uniforms here are laid out by WGSL's
- * rules, which is not the byte layout anything uploads yet.
+ * WHAT THIS DOES NOT DO YET, and owes before it draws (X3.3): Babylon flips
+ * `position.y` before the body runs when its pass draws into a texture
+ * (`internals.yFactor_`), and the dither is keyed on that position, so a pass
+ * that renders to a texture owes the same flip in `main` or its grain is
+ * mirrored — and the frame's main pass IS one (`targets.ts`, `flipY`).
  */
-import { MAX_PALETTE, MAX_POINT_LIGHTS } from "../shaders/wgsl/celSurface";
 import { WGSL_CHUNKS } from "../shaders/wgsl/chunks";
-import {
-  assembleFragment,
-  type AssembledModule,
-  type FragmentProgram,
-  type UniformField,
-} from "./wgsl/assemble";
-
-/** `celCloud`'s, `celShadow`'s and `celGi`'s uniforms, which every consumer owes. */
-const SHARED_FIELDS: readonly UniformField[] = [
-  { name: "cloudShadow", type: "vec4f" },
-  { name: "cloudShadowRay", type: "vec4f" },
-  { name: "lightMatrix", type: "mat4x4f" },
-  { name: "shadowParams", type: "vec4f" },
-  { name: "nearLightMatrix", type: "mat4x4f" },
-  { name: "nearShadowParams", type: "vec4f" },
-  { name: "bodyLightMatrix", type: "mat4x4f" },
-  { name: "bodyShadowParams", type: "vec4f" },
-  { name: "pointSpot", type: "vec4f", count: MAX_POINT_LIGHTS },
-  { name: "pointShade", type: "vec4f", count: MAX_POINT_LIGHTS },
-  { name: "localAtlas", type: "vec4f" },
-  { name: "localParams", type: "vec4f" },
-  { name: "flashDir", type: "vec3f" },
-  { name: "flashColor", type: "vec3f" },
-  { name: "flashLightMatrix", type: "mat4x4f" },
-  { name: "flashParams", type: "vec4f" },
-  { name: "giGrid", type: "vec4f" },
-  { name: "giWindow", type: "vec4f" },
-  { name: "giShade", type: "vec4f" },
-  { name: "giBand", type: "vec4f" },
-  { name: "giExtra", type: "vec4f" },
-  { name: "giSlotChannel", type: "f32", count: MAX_POINT_LIGHTS },
-];
+import { FRAME_BLOCK } from "./frame";
+import { assembleFragment, type AssembledModule, type FragmentProgram } from "./wgsl/assemble";
 
 /** The cel fragment, declared for our renderer. */
 export const CEL_FRAGMENT: FragmentProgram = {
@@ -86,41 +55,7 @@ export const CEL_FRAGMENT: FragmentProgram = {
   diagnosticsOff: ["derivative_uniformity"],
   groups: [
     [
-      {
-        kind: "uniform",
-        var: "frame",
-        struct: "CelFrame",
-        fields: [
-          { name: "lightDir", type: "vec3f" },
-          { name: "lightColor", type: "vec3f" },
-          { name: "keyWrap", type: "f32" },
-          { name: "ambientColor", type: "vec3f" },
-          { name: "skyLightColor", type: "vec3f" },
-          { name: "skyZenithColor", type: "vec3f" },
-          { name: "rimColor", type: "vec3f" },
-          { name: "fogColor", type: "vec3f" },
-          { name: "fogParams", type: "vec2f" },
-          { name: "mistColor", type: "vec3f" },
-          { name: "mistParams", type: "vec2f" },
-          { name: "camPos", type: "vec3f" },
-          { name: "opaqueAlpha", type: "f32" },
-          { name: "variationScale", type: "f32" },
-          { name: "variationAmount", type: "f32" },
-          { name: "wearColor", type: "vec3f" },
-          { name: "wearParams", type: "vec4f" },
-          { name: "wearGrain", type: "vec3f" },
-          { name: "pointPos", type: "vec3f", count: MAX_POINT_LIGHTS },
-          { name: "pointColor", type: "vec3f", count: MAX_POINT_LIGHTS },
-          { name: "pointRange", type: "f32", count: MAX_POINT_LIGHTS },
-          { name: "pointCount", type: "f32" },
-          { name: "foliageLightMatrix", type: "mat4x4f" },
-          { name: "foliageParams", type: "vec4f" },
-          { name: "reliefMarch", type: "f32" },
-          ...SHARED_FIELDS,
-          // Guarded, so LAST — see the header.
-          { name: "celPalette", type: "vec3f", count: MAX_PALETTE, when: ["CEL_PALETTE"] },
-        ],
-      },
+      FRAME_BLOCK,
       { kind: "sampled", name: "shadowMap", type: "texture_2d<f32>" },
       { kind: "sampled", name: "nearShadowMap", type: "texture_2d<f32>" },
       { kind: "sampled", name: "bodyShadowMap", type: "texture_2d<f32>" },

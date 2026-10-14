@@ -135,7 +135,8 @@ scripts/                      # Node tooling, run by hand or by `npm run build`,
                               #   entries, which run in a browser. Prints the
                               #   chain. Paths on the command line walk from
                               #   those instead (Babylon only).
-                              #   Widens to src/render/ + src/math/ at X3.2
+                              #   Also every file under src/render/ and
+                              #   src/math/ (bar the crossing, math/babylon.ts)
   check-audio.mjs             # BUILD GATE: audio/ stale against its masters,
                               #   over its mono-seconds budget, an encoded file
                               #   samples.ts does not load (or a url it loads
@@ -2265,6 +2266,29 @@ src/
                         #   `filmGrain`, which is what it used to be. WGSL
   render/               # OUR renderer (BABYLON_EXIT.md Phase 3). Never imports
                         #   Babylon — the build gate walks every file in it
+    babylonSeam.ts      # THE SEAM: BabylonFrameHost, the one place anything
+                        #   here meets Babylon (types only). Its header numbers
+                        #   every internal it reaches: device, lazy pass, the
+                        #   bundle list our draws are QUEUED into, the pass's
+                        #   attachments, the render target's y-flip
+    frameHost.ts        # FrameHost (what the renderer needs from whoever owns
+                        #   the frame) and PassTargets
+    Renderer.ts         # Renderer: the frame's uniforms and buffer, the
+                        #   pipeline cache, the FrameDraws it queues after
+                        #   group 0 in the MAIN pass; refuses to draw if the
+                        #   pass is not FRAME_TARGETS
+    targets.ts          # FRAME_TARGETS, stated once: rgba8unorm, depth32float,
+                        #   1 sample, flipY (CelInk's target, not the canvas)
+    frame.ts            # FRAME_BLOCK (group 0, binding 0 of every program:
+                        #   camera, environment, wind, lights, shadows, GI,
+                        #   palette LAST) and FrameUniforms, the plain struct
+                        #   CelMaterialFactory.fillFrame fills
+    FrameUniformBuffer.ts # The frame block's GPU buffer and the copy plan
+                        #   from FrameUniforms by the computed layout; one
+                        #   buffer per pass
+    PipelineCache.ts    # Shader modules, explicit bind-group layouts and
+                        #   createRenderPipelineAsync pipelines, keyed on
+                        #   variant, vertex layout, targets and state
     celFragment.ts      # The cel fragment as WE declare it: frame (group 0)
                         #   and material (group 1) uniforms and textures, the
                         #   inputs, over the shared celSurface body. Compiled
@@ -2276,5 +2300,10 @@ src/
                         #   runs over every entry it hands Babylon
       assemble.ts       # Declarations as DATA, and assembleFragment: plain
                         #   WGSL with explicit @group/@binding, uniforms.<name>
-                        #   routed to its block, strided arrays read via .el
+                        #   routed to its block, strided arrays read via .el.
+                        #   declareGroups, the declarations alone, for a module
+                        #   with another stage
+      layout.ts         # blockLayout: a uniform block's byte offsets and
+                        #   strides by WGSL's rules, from the same data; the
+                        #   guard rule assemble.ts shares
 ```

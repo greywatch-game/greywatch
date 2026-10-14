@@ -44,6 +44,7 @@
  * write one, because the same text goes through Babylon's
  * (`docs/rendering.md` has the trap).
  */
+import { guardHolds } from "./layout";
 import { preprocess } from "./preprocess";
 
 /**
@@ -152,10 +153,7 @@ export function assembleFragment(
 ): AssembledModule {
   const variant = new Set(defines);
   const tag = `${program.label} [${[...variant].sort().join("+")}]`;
-  const holds = (when?: Guard): boolean =>
-    (when ?? []).every((d) =>
-      d.startsWith("!") ? !variant.has(d.slice(1)) : variant.has(d),
-    );
+  const holds = (when?: Guard): boolean => guardHolds(when, variant);
 
   const lines: string[] = [];
   for (const d of program.diagnosticsOff ?? []) lines.push(`diagnostic(off, ${d});`);
@@ -166,13 +164,56 @@ export function assembleFragment(
     .forEach((v, location) => lines.push(`  @location(${location}) ${v.name}: ${v.type},`));
   lines.push("}", "var<private> fragmentInputs: FragmentInputs;");
 
+  const declared = declareGroups(program.groups, variant, tag);
+  lines.push(...declared.lines);
+
+  const body = preprocess(program.body, {
+    defines: variant,
+    includes: program.includes,
+    label: tag,
+  });
+  lines.push(bindUniforms(body, declared.owner, declared.strided, tag));
+
+  lines.push(
+    "@fragment",
+    "fn main(input: FragmentInputs) -> @location(0) vec4f {",
+    "  fragmentInputs = input;",
+    `  return ${program.surface}();`,
+    "}",
+  );
+  return { label: tag, code: lines.join("\n"), bindings: declared.bindings };
+}
+
+/** What `declareGroups` hands back: the WGSL, what it binds, and how a body's names route. */
+export interface Declared {
+  /** The `Strided_` wrappers, then every struct and `@group`/`@binding` line. */
+  readonly lines: readonly string[];
+  readonly bindings: readonly AssembledBinding[];
+  /** A uniform's name to the variable of the block that declares it. */
+  readonly owner: ReadonlyMap<string, string>;
+  /** The uniforms laid out as `Strided_` arrays, read through `.el`. */
+  readonly strided: ReadonlySet<string>;
+}
+
+/**
+ * The bind groups of a program, declared for one variant — what
+ * `assembleFragment` writes above its body, and what a module with another
+ * stage (a vertex program, X3.3) writes above its own, so the frame block is
+ * one declaration whichever stage reads it.
+ */
+export function declareGroups(
+  groups: readonly (readonly Binding[])[],
+  variant: ReadonlySet<string>,
+  tag: string,
+): Declared {
+  const holds = (when?: Guard): boolean => guardHolds(when, variant);
   const owner = new Map<string, string>();
   const strided = new Set<string>();
   const wrappers = new Set<string>();
   const bindings: AssembledBinding[] = [];
   const declare: string[] = [];
 
-  program.groups.forEach((entries, group) => {
+  groups.forEach((entries, group) => {
     let binding = 0;
     for (const entry of entries) {
       const at = binding;
@@ -194,7 +235,7 @@ export function assembleFragment(
           throw new Error(`${tag}: uniform "${f.name}" is declared twice`);
         }
         owner.set(f.name, entry.var);
-        members.push(`  ${f.name}: ${fieldType(f, tag, strided, wrappers)},`);
+        members.push(`  ${memberDecl(f, tag, strided, wrappers)},`);
       }
       // A struct may not be empty; a block the variant leaves nothing in is
       // not bound, and keeps its number for the variants that do bind it.
@@ -205,24 +246,23 @@ export function assembleFragment(
     }
   });
 
-  for (const type of wrappers) lines.push(`struct ${stridedName(type)} { @size(16) el: ${type} }`);
-  lines.push(...declare);
+  const lines = [
+    ...[...wrappers].map((t) => `struct ${stridedName(t)} { @size(16) el: ${t} }`),
+    ...declare,
+  ];
+  return { lines, bindings, owner, strided };
+}
 
-  const body = preprocess(program.body, {
-    defines: variant,
-    includes: program.includes,
-    label: tag,
-  });
-  lines.push(bindUniforms(body, owner, strided, tag));
-
-  lines.push(
-    "@fragment",
-    "fn main(input: FragmentInputs) -> @location(0) vec4f {",
-    "  fragmentInputs = input;",
-    `  return ${program.surface}();`,
-    "}",
-  );
-  return { label: tag, code: lines.join("\n"), bindings };
+/** A member's declaration: an array's `@align` goes before its NAME, not its type. */
+function memberDecl(
+  f: UniformField,
+  tag: string,
+  strided: Set<string>,
+  wrappers: Set<string>,
+): string {
+  const type = fieldType(f, tag, strided, wrappers);
+  const align = "@align(16) ";
+  return type.startsWith(align) ? `${align}${f.name}: ${type.slice(align.length)}` : `${f.name}: ${type}`;
 }
 
 /** A field's WGSL type, wrapping an array element whose stride is not 16. */
@@ -237,10 +277,15 @@ function fieldType(
   if (stride === undefined) {
     throw new Error(`${tag}: "${f.name}" is an array of ${f.type}, which has no stride rule`);
   }
-  if (stride % 16 === 0) return `array<${f.type}, ${f.count}>`;
+  // `@align(16)` because the uniform address space REQUIRES an array at a
+  // multiple of 16 and WGSL does not put it there: a `Strided_f32` array is
+  // aligned like an `f32`, so after a member ending off a 16-byte boundary
+  // the module is rejected. Where it is already aligned this is a no-op, and
+  // `layout.ts` places every array at 16 either way.
+  if (stride % 16 === 0) return `@align(16) array<${f.type}, ${f.count}>`;
   strided.add(f.name);
   wrappers.add(f.type);
-  return `array<${stridedName(f.type)}, ${f.count}>`;
+  return `@align(16) array<${stridedName(f.type)}, ${f.count}>`;
 }
 
 function stridedName(type: string): string {

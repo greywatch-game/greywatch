@@ -84,6 +84,7 @@ import { attachEmissiveFog, setEmissiveFog } from "./EmissiveFog";
 import { EmissiveWorldMaterial, MAX_EMISSIVE_PALETTE } from "./EmissiveWorld";
 import { FlameMaterial } from "./FlameShader";
 import { BlastMaterial } from "./BlastShader";
+import type { FrameUniforms } from "../render/frame";
 import { ShadowBindings } from "./ShadowBindings";
 // The shared chunks self-register in the IncludesShadersStoreWGSL; import
 // them for that effect so the #include<cel...> lines below can never be
@@ -2133,6 +2134,67 @@ export class CelMaterialFactory {
   }
 
   /**
+   * Copies the frame every cel material holds — the environment, the eye, the
+   * wind, the point lights, every shadow, the irradiance volume, the map's
+   * palette and the relief setting — into our renderer's frame
+   * (`render/frame.ts`), once a frame as its main pass begins
+   * (`render/Renderer.ts`). Off the FIELDS, never off a material: a material
+   * is what this factory writes, and the factory is what holds the values.
+   * The camera's matrix is not here — the factory never had it; Babylon fills
+   * `viewProjection` from the scene's camera, and so does the renderer's host.
+   */
+  fillFrame(out: FrameUniforms): void {
+    this.camPos.toArray(out.camPos);
+    out.opaqueAlpha[0] = this.opaqueAlpha;
+    this.lightDir.toArray(out.lightDir);
+    out.keyWrap[0] = this.keyWrap;
+    this.lightColor.toArray(out.lightColor);
+    this.ambientColor.toArray(out.ambientColor);
+    this.skyLightColor.toArray(out.skyLightColor);
+    this.skyZenithColor.toArray(out.skyZenithColor);
+    this.rimColor.toArray(out.rimColor);
+    fogState.color.toArray(out.fogColor);
+    out.fogParams[0] = fogState.start;
+    out.fogParams[1] = fogState.end;
+    this.mistColor.toArray(out.mistColor);
+    this.mistParams.toArray(out.mistParams);
+    const look = surfaceLook;
+    out.variationScale[0] = look.variationScale;
+    out.variationAmount[0] = look.variationAmount;
+    this.wearColor.toArray(out.wearColor);
+    out.wearParams[0] = this.wearAmount;
+    out.wearParams[1] = look.wearVertical;
+    out.wearParams[2] = look.wearFalloff;
+    out.wearParams[3] = look.wearEdgeBreak;
+    out.wearGrain.set(look.wearGrain);
+    out.reliefMarch[0] = this.reliefMarch;
+    const w = windShape;
+    out.windTime[0] = this.windTime;
+    windBearing.toArray(out.windDir);
+    out.windParams.set(w.params);
+    out.windFrond.set(w.frond);
+    out.windFrondRate.set(w.frondRate);
+    out.windBough.set(w.bough);
+    out.windBoughRate.set(w.boughRate);
+    out.windBoughFade.set(w.boughFade);
+    out.pointPos.set(this.pointPos);
+    out.pointColor.set(this.pointColor);
+    out.pointRange.set(this.pointRange);
+    out.pointCount[0] = this.pointCount;
+    this.shadows.fillFrame(out);
+    const gi = this.gi;
+    if (gi) {
+      gi.grid.toArray(out.giGrid);
+      gi.window.toArray(out.giWindow);
+      gi.shade.toArray(out.giShade);
+      gi.band.toArray(out.giBand);
+      gi.extra.toArray(out.giExtra);
+      out.giSlotChannel.set(gi.slotChannel);
+    }
+    out.celPalette.set(this.palette);
+  }
+
+  /**
    * What an OPAQUE cel fragment writes into the alpha channel: 0 for the frame,
    * 1 for a reflection bake. The argument is on `opaqueAlpha` in the fragment
    * source; this is only the walk.
@@ -2348,9 +2410,8 @@ export class CelMaterialFactory {
     // from CONFIG and not from the environment — but it rides along here
     // because this is what already runs on every material, on creation and on
     // every environment change.
-    const variation = CONFIG.graphics.albedoVariation;
-    mat.setFloat("variationScale", 1 / Math.max(0.001, variation.metersPerCell));
-    mat.setFloat("variationAmount", variation.amount);
+    mat.setFloat("variationScale", surfaceLook.variationScale);
+    mat.setFloat("variationAmount", surfaceLook.variationAmount);
     // The map's grime, and the AMOUNT is the one piece of state in this method
     // that IS the map's — see `EnvironmentSpec.wear` for why dirt is a claim
     // about a place where the albedo variation above is a claim about the
@@ -2360,23 +2421,12 @@ export class CelMaterialFactory {
     // the bake because a curve baked at a wall's two corners arrives as a
     // straight line; see the fragment's WEAR block.
     mat.setColor3("wearColor", this.wearColor);
+    const look = surfaceLook;
     mat.setVector4(
       "wearParams",
-      new Vector4(
-        this.wearAmount,
-        Math.sin((CONFIG.wear.verticalDegrees * Math.PI) / 180),
-        CONFIG.wear.falloff,
-        CONFIG.wear.edgeBreak,
-      ),
+      new Vector4(this.wearAmount, look.wearVertical, look.wearFalloff, look.wearEdgeBreak),
     );
-    mat.setVector3(
-      "wearGrain",
-      new Vector3(
-        1 / Math.max(0.001, CONFIG.wear.metersPerCell),
-        CONFIG.wear.streak,
-        CONFIG.wear.contrast,
-      ),
-    );
+    mat.setVector3("wearGrain", Vector3.FromArray(look.wearGrain));
   }
 
   /**
@@ -2402,32 +2452,15 @@ export class CelMaterialFactory {
    * from wherever the rest of the valley is not.
    */
   private applyWind(mat: ShaderMaterial): void {
-    const w = CONFIG.wind;
+    const w = windShape;
     mat.setFloat("windTime", this.windTime);
     mat.setVector2("windDir", windBearing);
-    mat.setVector3(
-      "windParams",
-      // z is the gust's wavenumber — a wavelength in metres is what the config
-      // states, because that is the number anyone tuning it can pace out.
-      new Vector3(
-        w.foliage.travel,
-        w.foliage.speed,
-        (Math.PI * 2) / w.foliage.gust,
-      ),
-    );
-    const f = w.frond;
-    mat.setVector4("windFrond", new Vector4(f.lean, f.flap, f.swing, f.flutter));
-    mat.setVector4(
-      "windFrondRate",
-      new Vector4(f.calm, f.flapRate, f.flutterRate, (Math.PI * 2) / f.flutterWave),
-    );
-    const b = w.bough;
-    mat.setVector4("windBough", new Vector4(b.lean, b.flap, b.swing, b.rustle));
-    mat.setVector4(
-      "windBoughRate",
-      new Vector4(b.calm, b.flapRate, b.rustleRate, b.swellRate),
-    );
-    mat.setVector2("windBoughFade", new Vector2(b.rustleFade[0], b.rustleFade[1]));
+    mat.setVector3("windParams", Vector3.FromArray(w.params));
+    mat.setVector4("windFrond", Vector4.FromArray(w.frond));
+    mat.setVector4("windFrondRate", Vector4.FromArray(w.frondRate));
+    mat.setVector4("windBough", Vector4.FromArray(w.bough));
+    mat.setVector4("windBoughRate", Vector4.FromArray(w.boughRate));
+    mat.setVector2("windBoughFade", Vector2.FromArray(w.boughFade));
   }
 
   /**
@@ -2644,6 +2677,46 @@ const windBearing = new Vector2(
   CONFIG.wind.dir[0],
   CONFIG.wind.dir[1],
 ).normalize();
+
+/**
+ * The wind's SHAPE, read once from `CONFIG.wind` — what `applyWind` pushes
+ * onto a material and `fillFrame` copies into our renderer's frame, so the
+ * two are one statement. `params.z` is the gust's wavenumber: a wavelength in
+ * metres is what the config states, because that is the number anyone tuning
+ * it can pace out.
+ */
+const windShape = (() => {
+  const w = CONFIG.wind;
+  const f = w.frond;
+  const b = w.bough;
+  return {
+    params: [w.foliage.travel, w.foliage.speed, (Math.PI * 2) / w.foliage.gust],
+    frond: [f.lean, f.flap, f.swing, f.flutter],
+    frondRate: [f.calm, f.flapRate, f.flutterRate, (Math.PI * 2) / f.flutterWave],
+    bough: [b.lean, b.flap, b.swing, b.rustle],
+    boughRate: [b.calm, b.flapRate, b.rustleRate, b.swellRate],
+    boughFade: [b.rustleFade[0], b.rustleFade[1]],
+  } as const;
+})();
+
+/**
+ * The renderer's own share of the surface — the albedo variation and the
+ * wear ramp's shape and grain, all `CONFIG`'s — read once, for the reason
+ * `windShape` is: `applyEnvironment` and `fillFrame` read one copy. The wear
+ * AMOUNT is the map's and is not here (`EnvironmentSpec.wear`).
+ */
+const surfaceLook = (() => {
+  const v = CONFIG.graphics.albedoVariation;
+  const w = CONFIG.wear;
+  return {
+    variationScale: 1 / Math.max(0.001, v.metersPerCell),
+    variationAmount: v.amount,
+    wearVertical: Math.sin((w.verticalDegrees * Math.PI) / 180),
+    wearFalloff: w.falloff,
+    wearEdgeBreak: w.edgeBreak,
+    wearGrain: [1 / Math.max(0.001, w.metersPerCell), w.streak, w.contrast],
+  } as const;
+})();
 
 /**
  * How much of the fog colour a surface `dist` from the eye is buried under, on
