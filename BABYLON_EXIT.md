@@ -765,9 +765,10 @@ did.
   - X3.3b: a mesh whose `visibility` drops below 1 would go to Babylon's
     blended list, and ours would still draw it opaque. No block changes its
     visibility today. **Answered at X3.3b** by a contract and a DEV check.
-  - X3.3c: `PipelineWarmup` learns our pipelines.
+  - X3.3c: `PipelineWarmup` learns our pipelines. **Done at X3.3c.**
   - X3.3c: the census's equal totals become falling totals (`census.mjs
     --fall`). **They fell at X3.3b already**; X3.3c reads them again.
+    **Read at X3.3c**, against a BEFORE taken at the commit before it.
 
 #### X3.3b — Clusters, the compute cull and indirect draws — **M–L** — **LANDED** (04d1b89, review fixes e21c9ac)
 
@@ -872,12 +873,14 @@ did.
   - X3.3c: the cull is submitted outside Babylon's encoder, so a GPU timer
     bracketing Babylon's frame (`?gpu`, `gpu.frame`) does not see it. Before
     the phone's `gpu.frame` is read at the gate, either the timer brackets
-    it or it is encoded into the frame's own command buffer.
+    it or it is encoded into the frame's own command buffer. **Done at
+    X3.3c**: it is recorded into Babylon's upload encoder.
   - X3.3c: `PipelineWarmup` learns our pipelines, the cull's included.
+    **Done at X3.3c.**
   - A5 (occlusion), when it comes, goes into `cullClusters` beside the
     frustum. Destructible buildings mask by the cluster's piece.
 
-#### X3.3c — Our path is the path — **S–M**
+#### X3.3c — Our path is the path — **S–M** — **LANDED** (0b49881, review fixes 70cb3f8)
 
 - **Do:**
   - The switch comes out: the blocks are drawn by our renderer in every
@@ -895,6 +898,90 @@ did.
     (`FINDINGS.md` 52). The phone is read as two numbers, never as its
     frame: its tick and its `gpu.frame`, warm, after one warm-up run.
   - A round played offline and in a match.
+
+**Landed** (0b49881, review fixes 70cb3f8).
+- **The switch is out.** `Game.handover` is built in every build, so the
+  blocks `BlockHandover` takes are drawn in the main pass by our renderer
+  and never offered to Babylon's walk. Their Babylon meshes stay for the
+  shadow maps, the probes and the lamps' atlas (the glow draws only what
+  glows, which a taken block never does). A surface the take
+  test refuses, or whose compile fails, is Babylon's in the main pass as
+  before. The editor's build is unmerged, so it takes nothing.
+- **The cull is inside the frame's GPU timer** (X3.3b's owed item). It is
+  no longer a command buffer of its own: it is recorded, as the main pass
+  begins, into the encoder Babylon submits FIRST (`FrameHost.prepareEncoder`,
+  the seam's item 9, `engine._uploadEncoder`), which is also the encoder
+  Babylon opens `gpu.frame` on. So it still reaches the GPU before the draws
+  that read it, and `?gpu` now counts it.
+- **The warm-up learns our pipelines.** `PipelineCache` builds the cull's
+  compute pipelines too (`compute`, cached across maps, so they compile once
+  a session) and counts every compile (`CompileProgress`). The warm-up opens
+  by waiting for them at no vantage, under `warmup.oursCapMs` (90 s, a
+  backstop, because a group of ours compiling is a hole and not a hitch).
+  Then a vantage is quiet only when neither cache built anything and nothing
+  of ours is compiling. The separate wait on `handover.compiled` is gone.
+- **The census reads a BEFORE now.** With no switch left, `census.mjs --out`
+  takes the rows at the previous commit and `--against ... --fall` compares
+  them. `bank.mjs` counts console errors on every check, and its bank stays
+  Babylon's picture from before this step.
+- **What the review found** (fixed before the step was marked): our draw
+  and the cull's prepare were on the renderer for good, so every frame of
+  the menu filled and uploaded the frame for nothing — a DEV switch's cost
+  that every build now paid; they are registered once a map's cull is built.
+  A prepare is once a submit (its `writeBuffer` is read by the whole
+  submit), now stated. A compile start that threw would have leaked the
+  count. The contracts claimed the glow as one of Babylon's passes over a
+  taken block, and a hand-back "in the turn its compile settles", which is
+  after the map's LAST compile.
+- **Measured** (after the review fixes, which moved no total).
+  - **`bank.mjs --check`: 47 of 47 within the floor**, no console errors,
+    the same residue as X3.3b's switch-on rows (equal-depth ties). The worst
+    rows are Sarab's `wadi` at 0.1222% of pixels and Coldharbour's
+    `curtain90` at a mean of 0.0104/255.
+  - **`census.mjs --against --fall`** (the BEFORE taken at 69a7744 without
+    the switch, equal to X3.3b's "without" column on every map): main-pass
+    draws fall on all seven maps, Hollowmere 629 to 497, Greyfen 382 to 172,
+    Coldharbour 1,104 to 836, Harrowmead 1,514 to 869, Sarab 1,206 to 891,
+    Cinderhaven 294 to 217, Kurenai 89 to 61.
+  - **X0.3 on the desktop** (`bench.mjs --max --runs 3`, 3440x1440
+    uncapped, the BEFORE at 69a7744 in the same session, fight hashes
+    `83e8e74ef36916ba` and `986c2e35557fb679` on every run). **The tick
+    falls in every group:**
+
+    | map | part | tick before | tick after | draws | mean, new / old |
+    | --- | --- | --- | --- | --- | --- |
+    | Greyfen | vantages | 5.04 | 4.34 | 131 to 58 | 1.024 |
+    | Greyfen | path | 4.88 | 4.20 | 184 to 114 | 1.091 |
+    | Greyfen | fight | 6.95 | 6.37 | 388 to 313 | 0.923 |
+    | Sarab | vantages | 3.51 | 3.36 | 181 to 130 | 0.992 |
+    | Sarab | path | 3.87 | 3.85 | 175 to 131 | 1.044 |
+    | Sarab | fight | 11.40 | 9.56 | 604 to 510 | 0.843 |
+
+    Against X0.4's desktop "before" (`FINDINGS.md` 52, an older fight),
+    Sarab's fight 1% low is 17.1 ms against 17.2, with X6.2's target at 12.
+  - **The frame did not follow the tick on Greyfen's path, and the GPU is
+    why.** Its mean rose 9% while its tick fell 14%. `?gpu` on Greyfen
+    (`--max --gpu --runs 2`, before and after): `gpu.frame` 5.60 to 5.55 ms
+    on the vantages, **5.31 to 5.77 on the path**, 5.95 to 5.99 in the fight.
+    So the desktop's path is GPU-bound now (`gpu.frame` 5.77 against a tick
+    of 4.46). The after includes the cull, which no before had, and no timer
+    here separates the cull from the draws. That is GPU-side work, so it waits
+    with the rest of it until after the exit.
+  - **`shaders.mjs`** clean on seven maps, **`gate.mjs`** clean on seven (an
+    offline round on each), and **a round played in a server match**
+    (Hollowmere, `?mp=`, 54 surfaces taken, 9,721 clusters, our 2 draws a
+    frame, no page or console errors). `corecheck` and `npm run build` pass.
+- **The gate.** Main-pass draws fall, and the desktop's CPU tick improves in
+  every group, so the stop condition ("no device's CPU tick improves") is not
+  met, and X3.4 may proceed on the desktop's reading.
+- **Owed onward.**
+  - **The phone's reading**, the user's to take: X0.3 on the deployed
+    `babylon-exit` build, minimal settings, warm (one warm-up run thrown
+    away), Greyfen and Sarab, read as its tick and its `gpu.frame`
+    (`?bench=<map>&gpu`), against `FINDINGS.md` 52.
+  - The desktop path's `gpu.frame` rise above goes to the GPU-side work after
+    the exit, with the phone's. Separating the cull's own GPU time would need
+    a timestamp pair of its own around the compute pass.
 
 **Gate after X3.3c — the first number that says whether the renderer pays.**
 If main-pass draws fall and no device's CPU TICK improves, stop and re-read
