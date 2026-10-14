@@ -518,7 +518,7 @@ the failure is silent.
   - the vertex stage's sway is not shared yet. X3.3 needs it as a chunk, the
     same way.
 
-### X3.2 — `src/render/`: device, pipelines, frame uniforms, and the seam — **M**
+### X3.2 — `src/render/`: device, pipelines, frame uniforms, and the seam — **M** — **LANDED** (e59b96a)
 
 - **Do:**
   - The module owns its buffers, bind-group layouts and pipelines. It creates
@@ -540,6 +540,72 @@ the failure is silent.
   passes; a DEV-only test draw shows up where expected and then comes out.
 - **Must not:** import `@babylonjs/core`; reach an internal from anywhere but
   the seam.
+
+**Landed** (e59b96a).
+- **The seam.** `render/babylonSeam.ts`'s `BabylonFrameHost` implements
+  `render/frameHost.ts`'s `FrameHost`, which a host of the game's own
+  implements at X5.4. It imports Babylon's types only, so the gate walks it
+  like the rest of the directory. Its header numbers five internals:
+  - the device;
+  - the lazily-started pass;
+  - `_bundleList.addItem`;
+  - the pass's attachment wrapper;
+  - the render target (its identity and its flip).
+- **Draws are QUEUED, not issued.** Under bundles a raw `pass.draw` lands
+  before every Babylon draw already in the pass. An item in Babylon's own
+  bundle list runs in order at the pass's end.
+- **The main pass is the target bound as the draw phase begins.** The
+  window alone was not enough: the glow renders its mask from
+  `onAfterDrawPhase`, so whether its group 0 fell inside the window
+  depended on observer order. The review found this.
+- **The attachments are stated once** (`render/targets.ts`).
+  - The frame does not draw to the canvas. It draws into `CelInk`'s
+    target: `rgba8unorm`, `depth32float`, 1 sample, y-flipped.
+  - `Renderer` checks the open pass every frame and draws nothing into one
+    that differs.
+  - `PipelineCache` derives the front face by Babylon's rule: clockwise as
+    authored, `ccw` under the flip.
+- **The frame's uniforms.** `render/frame.ts`'s `FRAME_BLOCK` is the cel
+  frame plus the camera and the wind, with the palette last.
+  - `CelMaterialFactory.fillFrame` and `ShadowBindings.fillFrame` PULL it
+    off the fields once a frame, and only when something draws. A push
+    would miss the in-place writes: the shadow matrices, the clouds, the
+    flash, the lamps' slots and the GI vectors.
+  - `render/wgsl/layout.ts` computes the byte layout, and
+    `FrameUniformBuffer` copies by it.
+  - `assemble.ts` gained `declareGroups` and `@align(16)` on every array.
+    Without it, an `f32` array after a member ending off 16 bytes is
+    rejected; the frame block never put one there.
+- **The gate** walks `src/math/`, with `math/babylon.ts` in `NOT_ROOTS`.
+  The server typecheck gained `@webgpu/types`, because it includes
+  `src/`.
+- **Measured.**
+  - `bank.mjs --check`: every row on all seven maps at 0%.
+  - `shaders.mjs`: clean on seven maps, ours built for every variant.
+  - A DEV-only draw, deleted before the commit:
+    - a compute shader read the frame block back through WGSL, and 869 of
+      869 floats matched, with unique values and with the real frame;
+    - a triangle 10 m ahead of the deploy camera on Hollowmere landed
+      upright above centre, occluded by the nearer flagpole;
+    - it ran exactly once a frame for 91 frames;
+    - authored clockwise it drew, and declared counter-clockwise it was
+      culled;
+    - removing it left 0 pixels different.
+- **Rule 4, as read here.** Six older touches of internals in four files
+  stay where they are: `FrameDepth`, `webgpuLeaks`, `ReflectionSystem`
+  (two) and `FrameProfile` (two). None is the renderer's, and
+  `FrameProfile`'s prototype patch needs a Babylon VALUE, which
+  `src/render/` may not import. So rule 4 holds as "every internal OUR
+  RENDERER reaches". The seam's header lists the six and the step each
+  leaves at (FrameDepth at X5.4, the rest at X6.1).
+- **Owed to X3.3:**
+  - the fragment's `position.y` flip, since the main pass is a texture;
+  - the vertex sway as a shared chunk;
+  - a hook BEFORE group 0's blended meshes, if the world must draw there
+    (`RenderingGroup.onBeforeTransparentRendering`); today a draw lands
+    after the whole group;
+  - a binding field for a depth or unfilterable texture (every texture is
+    laid out filterable `float` today).
 
 ### X3.3 — The static world's main pass (PERF_PLAN B1) — **L**
 
