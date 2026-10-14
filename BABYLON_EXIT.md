@@ -633,7 +633,7 @@ did.
   - the wind's ramp and rigged layers
   - every caster a closed shape (the casters stay Babylon's until X3.6a)
 
-#### X3.3a — Our cel pipeline draws the blocks, to the pixel — **M** — **LANDED** (COMMIT)
+#### X3.3a — Our cel pipeline draws the blocks, to the pixel — **M** — **LANDED** (b130995)
 
 - **Do:**
   - **The vertex stage as a shared chunk.** `CelShader.ts`'s vertex body,
@@ -679,7 +679,7 @@ did.
 - **Must not:** change a pixel without the switch; read a Babylon material;
   copy a Babylon texture.
 
-**Landed** (COMMIT).
+**Landed** (b130995).
 - **The vertex body is shared.** `shaders/wgsl/celVertex.ts` is the cel
   vertex stage as one function, `celVertex()`, which Babylon's `main` calls
   and `render/celVertex.ts` declares as data. The frame block, the material
