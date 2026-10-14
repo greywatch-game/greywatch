@@ -207,7 +207,9 @@ you are on before you believe anything else in this section.
   WHO, wrap `GPUDevice.prototype.createRenderPipeline` in an init script and
   `_processRendering` on a mesh's prototype in the page; the mesh being drawn
   when the pipeline is created is the answer, and the profiler names the
-  effect and defines.
+  effect and defines. That wrap sees BABYLON's compiles only: our renderer's
+  are `createRenderPipelineAsync` and `createComputePipelineAsync`, off the
+  frame (`PipelineCache`'s `CompileProgress` counts them).
 
 - **Two traps from a raw-WebGPU pipeline spike, both of which cost time.**
 
@@ -284,7 +286,8 @@ you are on before you believe anything else in this section.
   bring it.** `timestamp-query` is a device feature, so it is asked for when
   the device is created and cannot be armed afterwards by anything — see
   `docs/profiling.md`. Boot with `?profile&gpu` and read `gpu.frame`, which
-  is the whole command encoder; `gpu.mainPass` is the final full-screen quad in
+  is the whole frame, from Babylon's upload encoder to its render encoder;
+  `gpu.mainPass` is the final full-screen quad in
   this pipeline and reads in tens of microseconds, so a script that asserts on
   it is asserting on a composite. `gpu.frame` samples about HALF the frames —
   only one measurement is in flight at a time — so `gpu.frame.samples` is the

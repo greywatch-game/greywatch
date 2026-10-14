@@ -9,14 +9,17 @@
  * game with that URL query — a check of a DEV switch against the bank taken
  * without it, which is what a switch that must draw the same picture is
  * proven by (`BABYLON_EXIT.md` X3.3a's `?ourworld`); it refuses to TAKE a
- * bank, since a bank is the switch-off picture by definition.
+ * bank under a switch.
  *
- * **The bank is BABYLON's picture of the blocks, taken before X3.3c.** Since
- * X3.3c our renderer draws them in every build, so a plain `--check` grades
- * it against Babylon's frames and lands WITHIN the floor rather than at 0%:
- * the residue is X3.3a's equal-depth ties, which Babylon's front-to-back sort
- * settles pair by pair. Re-taking the bank gives that up for good — nothing
- * in the tree draws Babylon's picture of the blocks any more.
+ * **The bank is BABYLON's picture of the blocks, taken before X3.3c, and no
+ * longer the switch-off picture.** Since X3.3c our renderer draws them in
+ * every build, so a plain `--check` grades it against Babylon's frames and
+ * lands WITHIN the floor rather than at 0%: the residue is X3.3a's
+ * equal-depth ties, which Babylon's front-to-back sort settles pair by pair.
+ * A future `--query` check is graded against those same frames and absorbs
+ * the same residue until the bank is re-taken. Re-taking it gives Babylon's
+ * picture up for good — nothing in the tree draws Babylon's picture of the
+ * blocks any more.
  *
  * **A map is several frames and not one, because a reference set is a defence
  * against a SHADER being wrong in one place.** The menu backdrop's vantage is

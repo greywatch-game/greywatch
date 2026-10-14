@@ -10,7 +10,8 @@
  * (assembled once); the `ClusterCull` that writes the indices and the
  * indirect arguments every group draws; which surfaces FAILED; and the
  * `FrameDraw` that draws the groups at the end of group 0's opaque meshes
- * (`DrawPoint` `"opaque"`).
+ * (`DrawPoint` `"opaque"`) with the `FramePrepare` that culls ahead of it,
+ * both on the renderer only while a map's cull is built.
  * Invariants: a GROUP is one cel recipe — one pipeline, one material, one
  * draw — and a surface belongs to exactly one; its vertex arrays are uploaded
  * once as Babylon uploads a mesh's (floats as `float32`, a `Float64Array`
@@ -135,8 +136,13 @@ export class WorldBlocks {
    * nothing — not the draw state, not the next map's failures.
    */
   private generation = 0;
-  private readonly removeDraw: () => void;
-  private readonly removeFrame: () => void;
+  /**
+   * Takes the draw and the cull's prepare back off the renderer; null while
+   * nothing is registered. Registered only while a map's cull is BUILT, so a
+   * frame with nothing of ours to draw — the menu, an editor build — costs
+   * the renderer one empty branch rather than a filled and uploaded frame.
+   */
+  private unhook: (() => void) | null = null;
 
   /** Draws issued last frame — what a census of the main pass adds to Babylon's. */
   drawn = 0;
@@ -154,8 +160,6 @@ export class WorldBlocks {
     });
     // No textures: resolved once, whole for good.
     this.meshGroup.refresh(renderer.host, {});
-    this.removeDraw = renderer.add(this.draw, "opaque");
-    this.removeFrame = renderer.onFrame(this.prepare);
   }
 
   /** How many surfaces are handed over, and how many clusters they were cut into. */
@@ -310,7 +314,8 @@ export class WorldBlocks {
       this.cull.ready.then((ok) => {
         if (generation !== this.generation) return;
         this.culling = ok;
-        if (!ok) this.giveUpAll();
+        if (ok) this.hook();
+        else this.giveUpAll();
       }),
     );
     // The build's arrays are ours no longer.
@@ -338,6 +343,8 @@ export class WorldBlocks {
       for (const b of g.vertex) b.destroy();
       g.material.block.destroy();
     }
+    this.unhook?.();
+    this.unhook = null;
     this.cull?.dispose();
     this.cull = null;
     this.culling = false;
@@ -353,9 +360,17 @@ export class WorldBlocks {
 
   dispose(): void {
     this.clear();
-    this.removeDraw();
-    this.removeFrame();
     this.mesh.destroy();
+  }
+
+  /** The draw at the end of group 0's opaque meshes, and the cull ahead of it. */
+  private hook(): void {
+    const removeDraw = this.renderer.add(this.draw, "opaque");
+    const removeFrame = this.renderer.onFrame(this.prepare);
+    this.unhook = () => {
+      removeDraw();
+      removeFrame();
+    };
   }
 
   /** Every surface failed: the cull, or the whole cut, could not be built. */

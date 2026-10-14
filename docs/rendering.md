@@ -3295,15 +3295,16 @@ reader re-copies the blocks when it moves.
 
 **Pipelines are built with `createRenderPipelineAsync` and cached**
 (`render/PipelineCache.ts`). The cache key is the shader variant (both
-modules' labels, which carry the define set), the vertex layout, the
-targets and the fixed-function state. So a compile never stalls a frame,
+modules' label, entry point and CODE — the code is the identity, since a
+label is not trusted to stand for it), the vertex layout, the targets and
+the fixed-function state. So a compile never stalls a frame,
 and a caller asks ahead. The same cache builds the COMPUTE pipelines
 (`compute`, `createComputePipelineAsync`), and it COUNTS every compile it
 starts, in flight and settled (`CompileProgress`), which is what the
 building card's warm-up waits on.
 
-**Every layout is EXPLICIT**, built from the bindings the assembly reports,
-never `"auto"`. Layouts are shared by their entries, so a bind group made for
+**Every RENDER pipeline's layout is EXPLICIT**, built from the bindings the
+assembly reports, never `"auto"`. Layouts are shared by their entries, so a bind group made for
 one pipeline binds into any other whose group has the same entries. The
 frame's group does whenever both stages see it alike; a material's group
 differs per variant. Modules are cached by their CODE, never their label,
@@ -3321,7 +3322,7 @@ them behind a DEV switch, `?ourworld`, against the bank Babylon drew without
 it; X3.3c took the switch out, so Babylon draws a block in the main pass only
 when the handover refused it or handed it back. **Their Babylon meshes STAY**, and are
 still drawn by Babylon in every OTHER pass — the shadow maps, the reflection
-probes, the lamps' atlas and the glow — until X3.6 moves those passes.
+probes and the lamps' atlas — until X3.6 moves those passes.
 
 - **`systems/BlockHandover.ts` decides which surfaces are TAKEN.** A
   surface is taken if it is block-merged, at identity, never written after
@@ -3378,8 +3379,9 @@ probes, the lamps' atlas and the glow — until X3.6 moves those passes.
   arise. They are `PipelineCache`'s (`compute`), keyed on their code, so
   they compile once a SESSION rather than once a map.
 - **A taken mesh is drawn by our side in the MAIN pass only.**
-  `WorldCulling.setTaken` keeps it out of the candidate list for good, and
-  every other pass draws from a list of its own. The glow's mask, which reads
+  `WorldCulling.setTaken` keeps it out of the candidate list — never a
+  candidate unless a failed compile hands it back — and every other pass
+  draws from a list of its own. The glow's mask, which reads
   the main pass's active meshes, keeps only what glows, which a taken mesh
   never does.
 - **A taken mesh is never switched off, hidden or faded after its build.**
@@ -3396,9 +3398,12 @@ probes, the lamps' atlas and the glow — until X3.6 moves those passes.
   rather than a budget. **Our pipelines are not compiled by DRAWING**, as
   Babylon's are: our renderer states every field of one itself and asks for
   it as the map is built, so the warm-up only has to wait. A group whose
-  pipeline fails goes back to Babylon whole, in the turn its compile settles,
-  and Babylon compiles it at a vantage like any other mesh; a cull that
-  fails sends every surface back.
+  pipeline fails goes back to Babylon whole once the map's LAST compile
+  settles (`WorldBlocks.compiled` waits on all of them, and
+  `BlockHandover.install` hands back in its `then`) — still before the first
+  vantage, since the opening wait ends only when nothing of ours is
+  compiling, unless `oursCapMs` ran out first — and Babylon compiles it at a
+  vantage like any other mesh; a cull that fails sends every surface back.
 - **`plans/webgpu-ref/census.mjs`** counts it: the main pass's draws fall
   from one a surface to one a recipe (`--fall` against the switch while
   there was one; `--out` and `--against` against a BEFORE taken in a
@@ -3455,7 +3460,7 @@ below) and S0's 1.10 us disagree about the same number.
 | loose | everything else in the scene | **always** |
 
 **The taken class is most of the blocked one, in every build** (X3.3c): the
-walk this section exists to shorten no longer sees the map's blocks at all,
+walk this section exists to shorten no longer sees most of the map's blocks,
 and what is left in the blocked class is the surfaces `BlockHandover`'s test
 refused or a failed compile handed back. The reach and the size gate still
 decide a taken mesh, as numbers handed to the cull (`reachGate`), so the

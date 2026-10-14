@@ -67,7 +67,7 @@
  *      and wrap rules are not restated here.
  *   9. `engine._uploadEncoder` (E:519, E:2388) — the encoder Babylon finishes
  *      and submits FIRST in `flushFramebuffer`, ahead of `_renderEncoder`
- *      (E:2381), and the one `_timestampQuery.startFrame` opens the frame's
+ *      (E:2381-2382), and the one `_timestampQuery.startFrame` opens the frame's
  *      GPU timer on (E:2397; it is closed on `_renderEncoder` in `endFrame`).
  *      Copies and mip generation are recorded into it, each pass begun and
  *      ended inside one call, so it has no pass open while ours records. A

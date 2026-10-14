@@ -55,7 +55,11 @@ node plans/webgpu-ref/bench.mjs [map...] [--runs 3] [--capped] [--gpu] [--max] [
   that reference up for good. `--query=<flags>` boots the game with that URL
   query and grades it against the bank taken WITHOUT it — how a DEV switch
   that must draw the same picture is proven (X3.3a's `?ourworld`, gone since
-  X3.3c) — and refuses to take a bank: the bank is the switch-off picture.
+  X3.3c) — and refuses to take a bank. **The bank is no longer the switch-off
+  picture**: the shipping build draws our renderer's, and the bank is
+  Babylon's from before X3.3c, so a future `--query` check is graded against
+  Babylon's and absorbs the same tie residue (within the floor, not 0%) until
+  the bank is re-taken.
   **A row's frame depends on the rows shot before it** (state carries between
   them): a frame shot at one vantage alone differs from its banked row by
   tens of thousands of pixels with nothing changed, so a scratch diff against

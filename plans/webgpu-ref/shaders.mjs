@@ -128,8 +128,9 @@ const HOOK = () => {
  *
  * **And the compute cull those draws read (X3.3b)**: `render/wgsl/
  * clusterCull.ts` compiled and each of its three entry points built into a
- * compute pipeline, as `render/ClusterCull.ts` builds them — one more row,
- * the same on every map.
+ * compute pipeline on an `"auto"` layout — on the device here, not through
+ * the cache, but as `PipelineCache.compute` builds them for the cull — one
+ * more row, the same on every map.
  */
 async function oursCheck(shapes) {
   const { celFragment } = await import("/src/render/celFragment.ts");

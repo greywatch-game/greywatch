@@ -83,6 +83,11 @@ export type FrameDraw = (pass: GPURenderPassEncoder, ctx: FrameContext) => void;
  * filled; it records into `encoder`, the host's own, which is submitted ahead
  * of the frame's draws and inside its GPU timer (`FrameHost.prepareEncoder`),
  * and it records nothing into the pass, submits nothing and keeps neither.
+ * **Once a SUBMIT, as the frame block is**: what it hands the queue
+ * (`writeBuffer`) lands before the submit its recording rides in, so a second
+ * run before that submit would leave both reading the second one's values.
+ * The main pass begins once a frame; a second pass that runs prepares owes
+ * them a buffer of its own.
  */
 export type FramePrepare = (frame: FrameUniforms, encoder: GPUCommandEncoder) => void;
 

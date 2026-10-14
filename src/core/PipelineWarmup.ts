@@ -22,7 +22,9 @@
  * `CONFIG.graphics.warmup.quietFrames` in a row that created nothing in
  * either cache and left nothing of ours compiling, because a mesh whose
  * effect is still compiling is SKIPPED by a frame rather than compiled by it
- * and turns up on the next one.
+ * and turns up on the next one. "Ours" is the whole of our renderer's cache,
+ * so a compile a torn-down map left in flight holds the wait too — at worst a
+ * slower card, since a later map reuses what it built.
  * Never: reads the scene, touches the GPU, or allocates per frame.
  *
  * **Why Babylon's pipelines are DRAWN rather than pre-built.** Babylon 9.28 has
@@ -124,7 +126,8 @@ export class PipelineWarmup {
       console.info(
         `[warmup] ${this.built} pipeline(s) from ${Math.min(this.index, this.vantages.length)}` +
           ` of ${this.vantages.length} vantage(s) in ` +
-          `${Math.round(now - this.since)} ms` +
+          `${Math.round(now - this.drawingSince)} ms, after ` +
+          `${Math.round(this.drawingSince - this.since)} ms waiting for ours` +
           (overrun && !done ? " — over the cap, the rest compiles in the round" : ""),
       );
     }

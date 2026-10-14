@@ -24,9 +24,9 @@
  * the tree does that to a block and the cull could not follow it if
  * something did (a DEV build checks every frame and says so); the building
  * card waits for our pipelines through the renderer's own cache
- * (`core/PipelineWarmup.ts`), never through this, and a surface handed back
- * is handed back in the same turn its compile settles, so before the next
- * frame.
+ * (`core/PipelineWarmup.ts`), never through this, and a failed surface is
+ * handed back once the map's LAST compile settles, in the same turn — so
+ * before the frame after the warm-up stops waiting for ours.
  * Never: draws, or reads a material's uniforms — a material reaches our side
  * as its recipe; writes a property on a mesh.
  * Contract: `docs/rendering.md`, "Our renderer's frame";

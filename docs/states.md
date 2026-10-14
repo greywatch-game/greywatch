@@ -132,10 +132,11 @@ contract:
 
 - **Nothing a warm frame changes outlives that frame.** `Game.stageWarmFrame`
   stands the camera at the vantage, offers every mesh but the blocks our
-  renderer draws, whose cull is handed an unbounded reach instead
-  (`WorldCulling.setWarm`),
-  turns the frustum test off and shows an idle member of each pool, posed as
-  it is in flight;
+  renderer draws, whose cull is handed an unbounded reach and no size gate
+  instead (`WorldCulling.setWarm`), turns Babylon's frustum test off
+  (`skipFrustumClipping`) and shows an idle member of each pool, posed as it
+  is in flight — our cull keeps its frustum, which costs nothing, since our
+  pipelines are not compiled by drawing;
   `unstageWarmFrame` puts every one of those back straight after the render. A
   wait abandoned between two frames therefore leaves no map drawn unculled and
   no camera parked at a flag.

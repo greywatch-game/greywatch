@@ -1377,7 +1377,8 @@ different facts and neither is "the GPU took no time".
 the whole-frame counter ALSO needs **`--enable-unsafe-webgpu` on the command
 line**, and without it the report comes back `requested: true, available: true,
 frame.samples: 0`, which reads exactly like a GPU that did no work. Babylon
-brackets the whole command encoder with `GPUCommandEncoder.writeTimestamp`,
+brackets the whole frame — from its upload encoder, where it opens, to its
+render encoder, where it closes — with `GPUCommandEncoder.writeTimestamp`,
 which was removed from the WebGPU spec and which Chrome therefore keeps behind
 that flag; the FEATURE and the `timestampWrites` pass descriptor `gpu.mainPass`
 is written with need no flag at all, which is why the main-pass counter keeps

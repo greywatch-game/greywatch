@@ -1523,9 +1523,10 @@ export const graphics = {
     /** The most frames spent at one vantage, quiet or not. */
     maxFramesPerVantage: 8,
     /**
-     * The backstop on the whole warm-up, in milliseconds. A warm-up that runs
-     * out simply stops: whatever it did not reach compiles in the round, as
-     * all of it did before this existed.
+     * The backstop on the vantages, in milliseconds from the first one (the
+     * wait for our renderer's pipelines before it is `oursCapMs`'s). A
+     * warm-up that runs out simply stops: whatever it did not reach compiles
+     * in the round, as all of it did before this existed.
      */
     capMs: 8_000,
     /**

@@ -128,8 +128,9 @@ export class PipelineCache implements CompileProgress {
   private cached<T>(cache: Map<string, Promise<T>>, key: string, start: (key: string) => Promise<T>): Promise<T> {
     let built = cache.get(key);
     if (!built) {
-      this.inFlight++;
+      // Counted once started, so a start that throws counts nothing.
       built = start(key);
+      this.inFlight++;
       cache.set(key, built);
       const settle = (): void => {
         this.inFlight--;

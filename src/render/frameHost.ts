@@ -5,9 +5,11 @@
  * Owns: `FrameHost`, `PassTargets`, `MainPassHooks`, `HostTexture` and
  * `BoundTexture`.
  * Invariants: everything a `FrameHost` hands over is WebGPU's or plain data —
- * a device, a pass encoder, a texture view and a sampler, formats, floats; a
- * draw reaches the pass through `queue` and nothing else, in the host's own
- * order; a texture the host owns is handed over as ITS view, read where it
+ * a device, a pass encoder, a command encoder, a texture view and a sampler,
+ * formats, floats; a draw reaches the pass through `queue` and nothing else,
+ * in the host's own order; work owed ahead of the draws reaches the GPU
+ * through `prepareEncoder` and nothing else — recorded there, never kept,
+ * finished or submitted by the renderer; a texture the host owns is handed over as ITS view, read where it
  * lies and never copied (`BABYLON_EXIT.md` rule 5).
  * Never: imports Babylon. Babylon's host is `babylonSeam.ts`'s
  * `BabylonFrameHost`, until the game owns the frame (`BABYLON_EXIT.md` X5.4)

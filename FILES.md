@@ -2352,8 +2352,8 @@ src/
                         #   one piece's triangles, each with its box and how
                         #   the wind can move it (BABYLON_EXIT.md X3.3b)
     ClusterCull.ts      # The GPU cull, once a frame, recorded into the host's
-                        #   encoder ahead of the draws (inside gpu.frame), its
-                        #   pipelines PipelineCache's: reach, size gate,
+                        #   encoder ahead of the draws (inside gpu.frame;
+                        #   pipelines from PipelineCache) — reach, size gate,
                         #   frustum; survivors
                         #   scanned NEAR-FIRST (by surface) into the index
                         #   buffer and each group's indirect args.

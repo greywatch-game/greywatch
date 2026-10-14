@@ -278,12 +278,11 @@ reflection bake, the card draws the whole map from each home spawn and flag
 until a frame compiles nothing, because WebGPU compiles a pipeline on the frame
 that first draws it. **It OPENS by waiting for OUR renderer's pipelines**,
 which are asked for ahead and compiled off the frame (`PipelineCache`'s
-counts), since a group of ours still compiling draws nothing. What it cannot
-see it is SHOWN, one frame at a time, by a `warm(on)` on whatever owns an idle
-pool (a shot's effects, a blast, a scorch, a body, a blob, the weapon) —
-**posed as IN FLIGHT**, since a stretched mesh or a `visibility` under 1 is a
-different pipeline from the idle pose. **A new pool that idles switched off
-owes one**, or its first use compiles in the round.
+counts). What it cannot see it is SHOWN, one frame at a time, by a `warm(on)`
+on whatever owns an idle pool (a shot's effects, a blast, a scorch, a body, a
+blob, the weapon) — **posed as IN FLIGHT**, since a stretched mesh or a
+`visibility` under 1 is a different pipeline from the idle pose. **A new pool
+that idles switched off owes one**, or its first use compiles in the round.
 
 **A LID is a screen laid over a state, which taking it off puts back rather than
 moving the game on — and which state is which, and what each one owes, is
@@ -590,14 +589,16 @@ of either kind is a shadow caster**, and see-through glazing gets no ink.
 it never disables, never hides, never unpickles. **A collider is never a
 candidate, and nor is a BLOCK our renderer TAKES** (`BlockHandover`): the map's
 blocks are drawn in the MAIN pass by `src/render/` in every build, their
-Babylon meshes kept for every OTHER pass. **Any other mesh carrying
-`metadata.block` is one only while the camera is inside the map's `fogEnd`**,
-**a body's RIG only while the root the roster switches is enabled**, and
-**everything else is ELIGIBLE**. **A BODY is measured
-ONCE, off its rig ROOT, and drops WHOLE.** **Anything EMISSIVE and anything
-outside rendering group 0 are exempt outright.** **Nothing pooled may ever be
-block-keyed**, and the rigs are **filed mesh by mesh and never by ancestry**
-(`RagdollSystem` reparents a corpse's joints).
+Babylon meshes kept for every OTHER pass, and **a taken block is never switched
+off, hidden or faded after its build** — ours reads no node and would still
+draw it (a DEV check says so). **Any other mesh carrying `metadata.block` is
+one only while the camera is inside the map's `fogEnd`**, **a body's RIG only
+while the root the roster switches is enabled**, and **everything else is
+ELIGIBLE**. **A BODY is measured ONCE, off its rig ROOT, and drops WHOLE.**
+**Anything EMISSIVE and anything outside rendering group 0 are exempt
+outright.** **Nothing pooled may ever be block-keyed**, and the rigs are
+**filed mesh by mesh and never by ancestry** (`RagdollSystem` reparents a
+corpse's joints).
 
 **The GLOW draws the EMISSIVE meshes and nothing else, its occlusion being the
 FRAME's own depth buffer** (`src/shaders/GlowPass.ts`). **What may bloom is read

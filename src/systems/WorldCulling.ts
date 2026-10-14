@@ -40,7 +40,9 @@
  * `createOrUpdateSelectionOctree` replaces), it is read in exactly one place,
  * and a mesh left out of it is skipped ENTIRELY rather than skipped cheaply.
  *
- * **Three classes of mesh, and which class a mesh is in is the whole design.**
+ * **Four classes of mesh, and which class a mesh is in is the whole design**
+ * — five with the TAKEN blocks, below, which are filed as blocked and never
+ * offered.
  *
  * - **Hidden** — the map's collider proxies, `map.colliders`. Invisible by
  *   construction (`MapBuilder.boxMesh` sets `isVisible = false` and nothing
@@ -537,7 +539,9 @@ export class WorldCulling {
    * Offers every mesh this file would otherwise hold back, for as long as it is
    * on: every cell whatever its distance, every pool whether or not its root
    * is in the round, and no size gate. What is switched OFF is still dropped by
-   * `offer`, because Babylon would drop it too.
+   * `offer`, because Babylon would drop it too, and a TAKEN mesh is still no
+   * candidate: what warm changes for it is `reachGate` — no reach and no size
+   * gate — handed to our renderer's cull, which keeps its own frustum.
    *
    * It exists for one caller — the warm-up under the building card, which
    * draws the whole map once from each vantage so that every pipeline the

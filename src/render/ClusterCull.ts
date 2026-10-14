@@ -18,7 +18,9 @@
  * so it drops nothing the frustum did not already hide; the work is RECORDED
  * when the frame's main pass begins into the encoder the host submits ahead
  * of the frame's draws (`FrameHost.prepareEncoder`), so it reaches the GPU
- * before the draws that read it and inside the frame's GPU timer; until the
+ * before the draws that read it and inside the frame's GPU timer — once a
+ * submit, because the frame's inputs are a `writeBuffer` the whole submit
+ * reads (`FramePrepare`); until the
  * pipelines are built (`ready`) nothing is dispatched and `args` stays the
  * zeros it was made with, so a group draws nothing rather than garbage.
  * Never: imports Babylon; reads a node; submits; allocates on a frame beyond
