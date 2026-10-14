@@ -59,7 +59,7 @@ import { CLUSTER_WORDS, INDIRECT_BYTES } from "./wgsl/clusterCull";
 /** How the blocks are cut — `CONFIG.graphics.clusters`. */
 export interface ClusterOptions {
   readonly triangles: number;
-  readonly nearBands: readonly number[];
+  readonly nearBands: readonly [number, number, number];
 }
 
 /** A recipe's GPU half: its block's buffer and its group. */
@@ -130,6 +130,11 @@ export class WorldBlocks {
   /** Whether the cull is built: until then nothing draws. */
   private culling = false;
   private clusterCount = 0;
+  /**
+   * Bumped by `clear`: a compile that settles for a map already gone writes
+   * nothing — not the draw state, not the next map's failures.
+   */
+  private generation = 0;
   private readonly removeDraw: () => void;
   private readonly removeFrame: () => void;
 
@@ -198,14 +203,24 @@ export class WorldBlocks {
   finish(blocks: readonly BlockBox[]): void {
     const surfaces = this.surfaces;
     if (blocks.length !== surfaces.length) throw new Error("world blocks: a block for every surface");
+    // Nothing taken (an editor build, a map of loose surfaces): no cull.
+    if (surfaces.length === 0) return;
     const device = this.renderer.device;
     const blockIds = new Map<BlockBox, number>();
     const blockList: BlockBox[] = [];
     let indexTotal = 0;
     for (const s of surfaces) indexTotal += s.geometry.indices.length;
-    const limit = Math.min(device.limits.maxStorageBufferBindingSize, device.limits.maxBufferSize);
-    if (indexTotal * 4 > limit) {
-      console.error(`world blocks: ${indexTotal} indices are past the device's storage limit; the blocks go back to Babylon`);
+    // The largest buffer the cut makes: the indices (a storage binding), or
+    // a group's widest attribute (four floats a vertex).
+    let widest = 0;
+    for (const group of this.groups) {
+      let vertices = 0;
+      for (const s of group.members) vertices += surfaces[s].geometry.positions.length / 3;
+      widest = Math.max(widest, vertices * 16);
+    }
+    const limits = device.limits;
+    if (indexTotal * 4 > Math.min(limits.maxStorageBufferBindingSize, limits.maxBufferSize) || widest > limits.maxBufferSize) {
+      console.error("world blocks: the cut is past the device's buffer limits; the blocks go back to Babylon");
       this.giveUpAll();
       this.surfaces = [];
       return;
@@ -289,8 +304,10 @@ export class WorldBlocks {
       },
       this.gate,
     );
+    const generation = this.generation;
     this.pending.push(
       this.cull.ready.then((ok) => {
+        if (generation !== this.generation) return;
         this.culling = ok;
         if (!ok) this.giveUpAll();
       }),
@@ -315,6 +332,7 @@ export class WorldBlocks {
 
   /** Drops every surface, group and material: the map they were is gone. */
   clear(): void {
+    this.generation++;
     for (const g of this.groups) {
       for (const b of g.vertex) b.destroy();
       g.material.block.destroy();
@@ -370,6 +388,7 @@ export class WorldBlocks {
   /** Asks for a group's pipeline; a failure hands every member back. */
   private ask(group: Group, buffers: GPUVertexBufferLayout[]): void {
     const recipe = group.material.recipe;
+    const generation = this.generation;
     const spec: PipelineSpec = {
       vertex: group.program.vertex,
       vertexEntry: "main",
@@ -385,6 +404,7 @@ export class WorldBlocks {
           group.built = built;
         },
         (err: unknown) => {
+          if (generation !== this.generation) return;
           this.failed.push(...group.members);
           console.error(
             `world blocks: [${recipe.defines.join("+")}] has no pipeline; its ${group.members.length} surfaces go back to Babylon`,
@@ -426,7 +446,8 @@ export class WorldBlocks {
 
   /** As the main pass begins: this frame's cull, ahead of the draws. */
   private readonly prepare = (frame: FrameUniforms): void => {
-    if (this.culling) this.cull!.dispatch(frame);
+    const cull = this.cull;
+    if (this.culling && cull) cull.dispatch(frame);
   };
 
   private readonly draw = (pass: GPURenderPassEncoder, ctx: FrameContext): void => {
@@ -434,6 +455,7 @@ export class WorldBlocks {
     const cull = this.cull;
     if (this.culling && cull) {
       const host = this.renderer.host;
+      pass.setIndexBuffer(cull.indices, "uint32");
       const groups = this.groups;
       for (let g = 0; g < groups.length; g++) {
         const group = groups[g];
@@ -451,7 +473,6 @@ export class WorldBlocks {
         pass.setBindGroup(2, world);
         const vertex = group.vertex;
         for (let k = 0; k < vertex.length; k++) pass.setVertexBuffer(k, vertex[k]);
-        pass.setIndexBuffer(cull.indices, "uint32");
         pass.drawIndexedIndirect(cull.args, g * INDIRECT_BYTES);
         drawn++;
       }

@@ -1402,7 +1402,10 @@ and in this pipeline the world renders into post-process targets, so the only
 thing drawn there is the final full-screen quad. It measured **27 microseconds**
 on Hollowmere, which is right for one quad and would be a catastrophic
 misreading of "the GPU is idle". `gpu.frame` brackets the whole command
-encoder.
+encoder — Babylon's, and only Babylon's. **Under `?ourworld` our renderer's
+cluster cull is a command buffer of its own** (`render/ClusterCull.ts`,
+submitted ahead of the frame's), so its GPU time is in no `gpu.frame` until
+`BABYLON_EXIT.md` X3.3c brackets it or folds it into the frame's encoder.
 
 The two are attributed differently and the report says so:
 

@@ -5,9 +5,12 @@
  * `CLUSTER_WORDS`, `GROUP_WORDS`, `BLOCK_WORDS`) and its workgroup sizes.
  * Invariants: the surviving clusters of a group are written in one ORDER
  * that is a pure function of the frame's inputs — by near-first band, then
- * by cluster index — through a SCAN, never an atomic append, so two frames
- * that see the same thing draw the same triangles in the same order and an
- * equal-depth tie is decided the same way every frame; a cluster is dropped
+ * by cluster index — through a SCAN, never an atomic append, so the same eye
+ * draws the same triangles in the same order and an equal-depth tie is
+ * decided the same way every time; the band is the SURFACE's (the distance
+ * to its sphere's centre, as Babylon sorts a mesh), so a surface's clusters
+ * keep their own index order whatever the eye does and only whole surfaces
+ * trade places as it moves, as Babylon's meshes do; a cluster is dropped
  * only if its block is past the reach, its surface is under the size gate,
  * or its box (grown by the most its vertices can sway) is wholly outside one
  * of the five planes.
@@ -163,7 +166,11 @@ fn cullClusters(
     let c = clusters[i];
     var band = NONE;
     if (visible(c)) {
-      let d2 = dist2(c.lo, c.hi);
+      // The SURFACE's band, never the cluster's own: a surface's clusters
+      // then always draw in their own order, so a tie between two of them is
+      // settled as Babylon settles it, by index order, whatever the eye does.
+      let s = spheres[c.surface].xyz - cull.eye;
+      let d2 = dot(s, s);
       band = select(select(select(3u, 2u, d2 < cull.bands2.z), 1u, d2 < cull.bands2.y), 0u, d2 < cull.bands2.x);
       v[band] = c.indexCount;
     }

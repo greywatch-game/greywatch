@@ -3327,8 +3327,8 @@ the frame differs. With it:
   which is what Babylon's empty buffer reads), one pipeline, one material,
   the identity `world` at group 2, and ONE `drawIndexedIndirect`.
 - **The map is cut into CLUSTERS once** (`render/clusters.ts`,
-  `CONFIG.graphics.clusters`): runs of at most 128 triangles of one X1.4
-  piece, in the surface's own order, each carrying its block, its piece,
+  `CONFIG.graphics.clusters`): runs of at most `triangles` triangles of one
+  X1.4 piece, in the surface's own order, each carrying its block, its piece,
   its box, and how far the wind can move it. Never re-cut per frame.
 - **What draws is decided on the GPU, once a frame, from numbers alone**
   (`render/ClusterCull.ts`, `render/wgsl/clusterCull.ts`). A cluster is
@@ -3342,8 +3342,12 @@ the frame differs. With it:
   node.
 - **The survivors are written NEAR-FIRST, and in one order.** A scan, never
   an atomic append: by band (`nearBands`, nearest first), then by cluster.
-  Two frames that see the same thing draw the same triangles in the same
-  order, so an equal-depth tie is settled the same way every frame. The
+  The same eye draws the same triangles in the same order, so an equal-depth
+  tie is settled the same way every time. The band is the SURFACE's (the
+  distance to its sphere's centre, which is what Babylon sorts a mesh by),
+  never the cluster's: banded per cluster, two coplanar runs of one surface
+  would trade places as the eye crossed a band's edge, and a flush trim would
+  flicker in and out of the wall under it. The
   order is chosen while the list is written, never sorted, so a later
   depth-ordered draw can let the GPU skip hidden pixels.
 - **The cull is SUBMITTED on its own as the main pass begins**

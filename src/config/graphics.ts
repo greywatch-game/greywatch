@@ -1337,10 +1337,11 @@ export const graphics = {
      */
     triangles: 128,
     /**
-     * Where the cull's NEAR-FIRST bands end, metres from the eye to a
-     * cluster's box: the surviving clusters of a material are written band by
-     * band, nearest first, the fourth band being everything past the last
-     * number. An order chosen while the list is written anyway, never a sort,
+     * Where the cull's NEAR-FIRST bands end, metres from the eye to the
+     * centre of a cluster's SURFACE (never the cluster's own box, so a
+     * surface's clusters keep their order as the eye moves): the surviving
+     * clusters of a material are written band by band, nearest first, the
+     * fourth band being everything past the last number. An order chosen while the list is written anyway, never a sort,
      * so a later depth-ordered draw can let the GPU skip hidden pixels
      * (`BABYLON_EXIT.md`, "What this plan does not do"). Exactly three, rising.
      */

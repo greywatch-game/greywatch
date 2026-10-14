@@ -2336,13 +2336,14 @@ src/
                         #   end, one pipeline, one material), the map cut once
                         #   (finish), ONE drawIndexedIndirect a group at the
                         #   end of group 0's opaque meshes
-    clusters.ts         # cutClusters: a surface cut into runs of <= 128 of
+    clusters.ts         # cutClusters: a surface cut into short runs of
                         #   one piece's triangles, each with its box and how
                         #   the wind can move it (BABYLON_EXIT.md X3.3b)
     ClusterCull.ts      # The GPU cull, once a frame and submitted ahead of
                         #   the frame: reach, size gate, frustum; survivors
-                        #   scanned NEAR-FIRST into the index buffer and each
-                        #   group's indirect args. ReachGate, BlockBox
+                        #   scanned NEAR-FIRST (by surface) into the index
+                        #   buffer and each group's indirect args.
+                        #   ReachGate, BlockBox
     wgsl/
       preprocess.ts     # #include and the #ifdef family over a define set —
                         #   the subset a shared body may use; anything else is

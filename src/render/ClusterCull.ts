@@ -20,7 +20,8 @@
  * pipelines are built (`ready`) nothing is dispatched and `args` stays the
  * zeros it was made with, so a group draws nothing rather than garbage.
  * Never: imports Babylon; reads a node; allocates on a frame beyond the
- * command encoder, pass and buffer WebGPU makes for every submit.
+ * command encoder, pass and buffer WebGPU makes for every submit; sets
+ * anything after `dispose`, however late its pipelines arrive.
  * Contract: `docs/rendering.md`, "Our renderer's frame".
  */
 import type { FrameUniforms } from "./frame";
@@ -74,6 +75,10 @@ export interface CullTables {
   readonly bands2: readonly number[];
 }
 
+/** The descriptors a frame's submit is made with, made once. */
+const ENCODER: GPUCommandEncoderDescriptor = { label: "cluster cull" };
+const PASS: GPUComputePassDescriptor = { label: "cluster cull" };
+
 /** The largest `f32` short of infinity — a shader may assume there is none. */
 const F32_MAX = 3.0e38;
 
@@ -85,6 +90,8 @@ export class ClusterCull {
   /** Resolves true once the three pipelines are built; false if one failed. */
   readonly ready: Promise<boolean>;
   private built = false;
+  /** Set by `dispose`: pipelines that arrive after it are dropped. */
+  private disposed = false;
 
   private readonly buffers: GPUBuffer[] = [];
   private readonly uniform: GPUBuffer;
@@ -95,6 +102,8 @@ export class ClusterCull {
   private readonly workgroups: number;
   private readonly scatterX: number;
   private readonly scatterY: number;
+  /** The one command buffer a submit hands over, reused so a frame allocates no array. */
+  private readonly submit: GPUCommandBuffer[] = [];
   /** The three passes in dispatch order: cull, prefix, scatter. */
   private readonly passes: { pipeline: GPUComputePipeline; group: GPUBindGroup }[] = [];
 
@@ -166,6 +175,7 @@ export class ClusterCull {
       ),
     ).then(
       (passes) => {
+        if (this.disposed) return false;
         this.passes.push(...passes);
         this.built = true;
         return true;
@@ -200,8 +210,8 @@ export class ClusterCull {
     f[31] = rigReach(frame);
     this.device.queue.writeBuffer(this.uniform, 0, this.bytes);
 
-    const encoder = this.device.createCommandEncoder({ label: "cluster cull" });
-    const pass = encoder.beginComputePass({ label: "cluster cull" });
+    const encoder = this.device.createCommandEncoder(ENCODER);
+    const pass = encoder.beginComputePass(PASS);
     const passes = this.passes;
     pass.setPipeline(passes[0].pipeline);
     pass.setBindGroup(0, passes[0].group);
@@ -213,7 +223,8 @@ export class ClusterCull {
     pass.setBindGroup(0, passes[2].group);
     pass.dispatchWorkgroups(this.scatterX, this.scatterY);
     pass.end();
-    this.device.queue.submit([encoder.finish()]);
+    this.submit[0] = encoder.finish();
+    this.device.queue.submit(this.submit);
   }
 
   dispose(): void {
@@ -221,6 +232,7 @@ export class ClusterCull {
     this.buffers.length = 0;
     this.passes.length = 0;
     this.built = false;
+    this.disposed = true;
   }
 
   private make(label: string, size: number, usage: number): GPUBuffer {
