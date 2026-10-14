@@ -756,6 +756,8 @@ did.
     `PipelineCache` for every shape on seven maps (5 to 7 variants a map),
     clean.
   - `npm run build` passes every gate.
+  - **The user's play-test under `?ourworld`** (2026-10-14): everything
+    looked fine.
 - **Owed onward.**
   - X3.3b: the clusters and the cull keep the ON rule's other half, the
     walk's frustum and readiness, which X3.3a asks of Babylon's mesh.
