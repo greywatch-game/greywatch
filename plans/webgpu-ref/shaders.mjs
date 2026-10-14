@@ -13,13 +13,16 @@
  * eighth cel variant failing to compile on the one map that carries it, because
  * a material that never binds costs a draw and no diagnostic.
  *
- * **It compiles the cel fragment TWICE, once per renderer.** The body is one
- * text (`shaders/wgsl/chunks.ts`) with two readers, Babylon's material and our
- * own `src/render/`, and each declares what the body reads its own way — so a
+ * **It compiles the cel material TWICE, once per renderer.** Both bodies,
+ * the vertex stage's and the fragment's, are one text each
+ * (`shaders/wgsl/chunks.ts`) with two readers, Babylon's material and our own
+ * `src/render/`, and each declares what the bodies read its own way — so a
  * shape this page's factory compiled is also assembled by
- * `render/celFragment.ts` and built into a pipeline (`oursCheck`). Nothing in
- * the game draws with that module yet, which is exactly why it is compiled
- * here: an unused module is one nobody else would ever find broken.
+ * `render/celVertex.ts` and `render/celFragment.ts` and built into a pipeline
+ * by our own `PipelineCache` (`oursCheck`). Only the block variants draw with
+ * those modules, and only under `?ourworld`, which is exactly why every shape
+ * is compiled here: an unused module is one nobody else would ever find
+ * broken.
  *
  * **A frame count is not coverage, so this asks the FACTORY rather than the
  * frame.** Every cel material in the game comes from one cache, so the check
@@ -107,79 +110,76 @@ const HOOK = () => {
 };
 
 /**
- * OUR renderer's half of the same shapes (`BABYLON_EXIT.md` X3.1): every cel
- * shape this page's factory compiled, assembled by `render/celFragment.ts`
- * into plain WGSL with explicit bind groups and built into a real pipeline,
- * on a device of its own so nothing of Babylon's stands between the module and
- * the driver.
+ * OUR renderer's half of the same shapes (`BABYLON_EXIT.md` X3.1, X3.3a):
+ * every cel shape this page's factory compiled, assembled by
+ * `render/celVertex.ts` and `render/celFragment.ts` into plain WGSL with
+ * explicit bind groups and built into a real pipeline by our own
+ * `PipelineCache` — the call `render/WorldBlocks.ts` makes, against
+ * `FRAME_TARGETS` — on a device of its own so nothing of Babylon's stands
+ * between the modules and the driver.
  *
  * **The layout is EXPLICIT, made from the bindings the assembly reports**,
  * not `"auto"`: an auto layout keeps only what the body happens to use, so it
  * would pass a declaration list that disagrees with the module, and it would
  * count against the per-stage limits only what is used rather than what is
  * bound. The bumped ground is at 16 of 16 sampled textures and 16 of 16
- * samplers; one more on either side of the split fails here, by name.
- * The vertex stage is a stub that writes the fragment's own inputs, which is
- * all a pipeline needs to link one.
+ * samplers; one more on either side of the split fails here, by name. The
+ * vertex buffers are one per attribute the variant reads, as a block draws.
  */
 async function oursCheck(shapes) {
   const { celFragment } = await import("/src/render/celFragment.ts");
+  const { celVertex } = await import("/src/render/celVertex.ts");
+  const { PipelineCache } = await import("/src/render/PipelineCache.ts");
+  const { FRAME_TARGETS } = await import("/src/render/targets.ts");
   const adapter = await navigator.gpu.requestAdapter();
   const device = await adapter.requestDevice();
-  const FRAG = GPUShaderStage.FRAGMENT;
+  const cache = new PipelineCache(device);
+  const FORMATS = { vec2f: "float32x2", vec3f: "float32x3", vec4f: "float32x4" };
+  const FLOATS = { vec2f: 2, vec3f: 3, vec4f: 4 };
   const out = [];
   for (const shape of shapes) {
-    let m;
+    const defines = shape ? shape.split("+") : [];
+    let vm;
+    let fm;
     try {
-      m = celFragment(shape ? shape.split("+") : []);
+      vm = celVertex(defines, FRAME_TARGETS);
+      fm = celFragment(defines, FRAME_TARGETS);
     } catch (e) {
       out.push({ error: String(e?.message ?? e), source: "" });
       continue;
     }
-    const inputs = /struct FragmentInputs \{([\s\S]*?)\n\}/.exec(m.code)?.[1];
-    if (inputs === undefined) {
-      out.push({ error: `${m.label}: no FragmentInputs struct to stub`, source: "" });
-      continue;
-    }
     device.pushErrorScope("validation");
-    const fs = device.createShaderModule({ label: m.label, code: m.code });
-    const vs = device.createShaderModule({
-      label: `${m.label} stub`,
-      code: `struct VertexOutputs {${inputs}\n}\n@vertex fn main() -> VertexOutputs { var o: VertexOutputs; return o; }`,
-    });
-    const groups = [];
-    for (const b of m.bindings) {
-      (groups[b.group] ??= []).push(
-        b.kind === "uniform"
-          ? { binding: b.binding, visibility: FRAG, buffer: { type: "uniform" } }
-          : b.kind === "sampler"
-            ? { binding: b.binding, visibility: FRAG, sampler: { type: "filtering" } }
-            : {
-                binding: b.binding,
-                visibility: FRAG,
-                texture: { sampleType: "float", viewDimension: b.type.split("<")[0].slice(8) },
-              },
-      );
+    let built = "";
+    try {
+      await cache.get({
+        vertex: vm,
+        vertexEntry: "main",
+        fragment: fm,
+        fragmentEntry: "main",
+        buffers: vm.attributes.map((a) => ({
+          arrayStride: FLOATS[a.type] * 4,
+          attributes: [{ shaderLocation: a.location, offset: 0, format: FORMATS[a.type] }],
+        })),
+        targets: FRAME_TARGETS,
+      });
+    } catch (e) {
+      built = String(e?.message ?? e);
     }
-    const layout = device.createPipelineLayout({
-      bindGroupLayouts: [...groups].map((entries) =>
-        device.createBindGroupLayout({ entries: entries ?? [] }),
-      ),
-    });
-    device.createRenderPipeline({
-      layout,
-      vertex: { module: vs, entryPoint: "main" },
-      fragment: { module: fs, entryPoint: "main", targets: [{ format: "rgba8unorm" }] },
-    });
     const scope = await device.popErrorScope();
-    const info = await fs.getCompilationInfo();
-    const errors = [...info.messages]
-      .filter((x) => x.type === "error")
-      .map((e) => `${e.lineNum}:${e.linePos} ${e.message}`);
-    const all = [...errors, scope?.message].filter(Boolean);
+    const errorsOf = async (m, code) => {
+      const info = await device.createShaderModule({ label: m.label, code }).getCompilationInfo();
+      return [...info.messages]
+        .filter((x) => x.type === "error")
+        .map((e) => `${m.label} ${e.lineNum}:${e.linePos} ${e.message}`);
+    };
+    const vErrors = await errorsOf(vm, vm.code);
+    const fErrors = await errorsOf(fm, fm.code);
+    const all = [...vErrors, ...fErrors, built, scope?.message].filter(Boolean);
     out.push({
-      error: all.length > 0 ? `${m.label}: ${all.join("; ")}` : "",
-      source: errors.length > 0 ? m.code : "",
+      error: all.length > 0 ? `${fm.label}: ${all.join("; ")}` : "",
+      source: [vErrors.length > 0 ? vm.code : "", fErrors.length > 0 ? fm.code : ""]
+        .filter(Boolean)
+        .join("\n// ---- fragment ----\n"),
     });
   }
   device.destroy();

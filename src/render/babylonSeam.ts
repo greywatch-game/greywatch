@@ -4,9 +4,11 @@
  * draw order to record into.
  * Owns: `BabylonFrameHost`, Babylon's engine and scene as our renderer's
  * `FrameHost`: the device, what the open pass draws into, a slot in
- * Babylon's own draw order (`queue`), the camera's matrix, and the frame's
- * main pass told apart from every render target that also draws rendering
- * group 0.
+ * Babylon's own draw order (`queue`), the camera's matrix, the frame's main
+ * pass told apart from every render target that also draws rendering group
+ * 0 — and the point inside it where that group's opaque meshes end — and a
+ * Babylon texture's own view and sampler (`bind`); and `hostTexture`, the one
+ * crossing that turns a Babylon texture into the handle the renderer holds.
  * Invariants: NAMES Babylon's types and loads none of it (every import here
  * is `import type`, so the Babylon-free gate walks this file as it walks the
  * rest of `src/render/`); every Babylon INTERNAL anything in `src/render/`
@@ -45,11 +47,30 @@
  *      up — our clip-space y owes the same flip there, and the winding with it
  *      (E:2842); and WHICH target, which is how `onMainPass` knows the frame's
  *      from the glow's (see it).
+ *   6. `RenderingGroup.onBeforeTransparentRendering`
+ *      (`Rendering/renderingGroup.js`), reached by the public
+ *      `scene.renderingManager.getRenderingGroup`, on a class Babylon tags
+ *      `@internal`. One slot, called in `render` after the group's opaque and
+ *      alpha-tested meshes, its sprites and its particles. Only the SCENE's
+ *      manager is reached — every render target owns a manager of its own —
+ *      so it fires in the camera's pass and in no other.
+ *   7. `internalTexture._hardwareTexture.view` (`WebGPU/webgpuHardwareTexture
+ *      .js`): the `GPUTextureView` Babylon itself binds for a texture
+ *      (`webgpuCacheBindGroups.js`, `getBindGroups`), so ours is the same view
+ *      of the same texture, never a copy (`BABYLON_EXIT.md` rule 5).
+ *   8. `engine._cacheSampler.getSampler` (`WebGPU/webgpuCacheSampler.js`)
+ *      with the `TextureSampler` fields Babylon's bind fills on the internal
+ *      texture first (`_cachedWrapU`/`V`/`R`, `_cachedAnisotropicFilteringLevel`,
+ *      `_comparisonFunction`; `_setTexture`, E:2134): the `GPUSampler` out of
+ *      Babylon's own cache for the state Babylon would bind, so its filter
+ *      and wrap rules are not restated here.
  *
  * Public API used here and nowhere else in `src/render/`, for the same
  * reason (it is Babylon's shape): `engine.currentSampleCount`,
- * `scene.getTransformMatrix()`, and the scene's draw-phase and
- * rendering-group observables (`onMainPass`).
+ * `scene.getTransformMatrix()`, the scene's draw-phase, rendering-group,
+ * sprite and particle observables (`onMainPass`), and a texture's readiness,
+ * wrap modes and filtering level and the engine's empty textures and
+ * anisotropy cap (`bind`).
  *
  * WHAT IS NOT HERE. Six touches of Babylon internals in four files predate
  * this one and stay where they were written, because none of them is our
@@ -64,8 +85,22 @@
  * (X6.1). So rule 4 holds here as "every internal OUR RENDERER reaches";
  * `BABYLON_EXIT.md` records that reading at X3.2.
  */
-import type { Observer, RenderingGroupInfo, Scene, WebGPUEngine } from "@babylonjs/core";
-import type { FrameHost, PassTargets } from "./frameHost";
+import type {
+  BaseTexture,
+  InternalTexture,
+  Observable,
+  Observer,
+  RenderingGroupInfo,
+  Scene,
+  WebGPUEngine,
+} from "@babylonjs/core";
+import type {
+  BoundTexture,
+  FrameHost,
+  HostTexture,
+  MainPassHooks,
+  PassTargets,
+} from "./frameHost";
 
 /** The internals above, typed as far as this file reads them. */
 interface EngineInternals {
@@ -78,6 +113,34 @@ interface EngineInternals {
     readonly depthTextureFormat: GPUTextureFormat | undefined;
   };
   readonly _bundleList: { addItem(item: QueuedItem): void };
+  readonly _cacheSampler: { getSampler(sampler: SamplerState): GPUSampler };
+}
+
+/** Item 7: what an internal texture holds on the device. */
+interface InternalTextureInternals {
+  readonly _hardwareTexture: { readonly view?: GPUTextureView } | null;
+  readonly _cachedWrapR: number | null;
+  readonly _comparisonFunction: number;
+}
+
+/**
+ * Item 8: what `WebGPUCacheSampler` reads off the `TextureSampler` it is
+ * handed — a plain object of the same shape serves, filled as `_setTexture`
+ * fills the internal texture before Babylon's own bind.
+ */
+interface SamplerState {
+  samplingMode: number;
+  useMipMaps: boolean | null;
+  _comparisonFunction: number;
+  _cachedWrapU: number;
+  _cachedWrapV: number;
+  _cachedWrapR: number | null;
+  _cachedAnisotropicFilteringLevel: number;
+}
+
+/** A Babylon texture as the handle our renderer holds — the one crossing that mints one. */
+export function hostTexture(texture: BaseTexture): HostTexture {
+  return texture as unknown as HostTexture;
 }
 
 interface RenderTargetInternals {
@@ -96,9 +159,19 @@ export class BabylonFrameHost implements FrameHost {
   private readonly e: EngineInternals;
   /** One list item per queued function, so a frame's `queue` allocates nothing. */
   private readonly items = new Map<(pass: GPURenderPassEncoder) => void, QueuedItem>();
+  /** `bind`'s sampler state, rewritten in place per texture. */
+  private readonly sampler: SamplerState = {
+    samplingMode: 0,
+    useMipMaps: null,
+    _comparisonFunction: 0,
+    _cachedWrapU: 1,
+    _cachedWrapV: 1,
+    _cachedWrapR: null,
+    _cachedAnisotropicFilteringLevel: 1,
+  };
 
   constructor(
-    engine: WebGPUEngine,
+    private readonly engine: WebGPUEngine,
     private readonly scene: Scene,
   ) {
     this.e = engine as unknown as EngineInternals;
@@ -164,45 +237,130 @@ export class BabylonFrameHost implements FrameHost {
   /**
    * The frame's main pass is the TARGET bound as the draw phase begins — the
    * post chain's first, bound by `_prepareFrame` just before — and a group
-   * finishing into THAT target before the draw phase ends. Both halves are
+   * rendering into THAT target before the draw phase ends. Both halves are
    * needed: probes and shadow maps draw before the phase (so outside it), but
    * the glow renders its mask from `onAfterDrawPhaseObservable` itself, so
    * whether its group 0 lands inside the window depends on which observer
    * was added first. The target does not.
+   *
+   * WHERE THE OPAQUE MESHES END is the first of three things the group does
+   * after its opaque and alpha-tested lists, whichever it reaches: its
+   * sprites (an observable only once the sprite component is loaded), its
+   * particles (each raises its observable only when the group holds some — and the particles' also fires in the active-mesh walk, which
+   * is outside any group, so it counts only inside one), or item 6, which it
+   * always reaches. A group with none of them, a `customRenderFunction`'s,
+   * is answered as it ends, before `afterGroup`.
    */
-  onMainPass(groupId: number, begin: () => void, afterGroup: () => void): { dispose(): void } {
+  onMainPass(groupId: number, hooks: MainPassHooks): { dispose(): void } {
     const scene = this.scene;
     const e = this.e;
     let frame: RenderTargetInternals | null | undefined;
+    /** Inside group `groupId` of the main pass, and whether its opaque meshes have ended. */
+    let inGroup = false;
+    let opaqueDone = false;
+    const inMainPass = (): boolean => frame !== undefined && e._currentRenderTarget === frame;
+    const opaqueEnds = (): void => {
+      if (!inGroup || opaqueDone) return;
+      opaqueDone = true;
+      hooks.afterOpaque();
+    };
     const before: Observer<Scene> = scene.onBeforeDrawPhaseObservable.add(() => {
       frame = e._currentRenderTarget;
-      begin();
+      hooks.begin();
     });
     const after: Observer<Scene> = scene.onAfterDrawPhaseObservable.add(
       () => {
         frame = undefined;
+        inGroup = false;
       },
       undefined,
       true,
     );
-    const group: Observer<RenderingGroupInfo> = scene.onAfterRenderingGroupObservable.add(
+    const groupStart: Observer<RenderingGroupInfo> = scene.onBeforeRenderingGroupObservable.add(
       (info) => {
-        if (
-          frame !== undefined &&
-          info.renderingGroupId === groupId &&
-          e._currentRenderTarget === frame
-        ) {
-          afterGroup();
-        }
+        if (info.renderingGroupId !== groupId || !inMainPass()) return;
+        inGroup = true;
+        opaqueDone = false;
       },
     );
+    const groupEnd: Observer<RenderingGroupInfo> = scene.onAfterRenderingGroupObservable.add(
+      (info) => {
+        if (!inGroup || info.renderingGroupId !== groupId) return;
+        opaqueEnds();
+        inGroup = false;
+        hooks.afterGroup();
+      },
+    );
+    // The sprites' observable exists only once Babylon's sprite component is
+    // loaded (`spriteSceneComponent`), and nothing draws a sprite without it.
+    type Sprites = { onBeforeSpritesRenderingObservable?: Observable<Scene> };
+    const spriteHook = (scene as Sprites).onBeforeSpritesRenderingObservable;
+    const sprites = spriteHook?.add(opaqueEnds) ?? null;
+    const particles: Observer<Scene> = scene.onBeforeParticlesRenderingObservable.add(opaqueEnds);
+    // Item 6. Typed as always set; it is one slot nothing in Babylon fills.
+    const group = scene.renderingManager.getRenderingGroup(groupId) as {
+      onBeforeTransparentRendering: (() => void) | undefined;
+    };
+    if (group.onBeforeTransparentRendering) {
+      throw new Error(`babylonSeam: rendering group ${groupId}'s transparent hook is already taken`);
+    }
+    group.onBeforeTransparentRendering = opaqueEnds;
     return {
       dispose: () => {
         scene.onBeforeDrawPhaseObservable.remove(before);
         scene.onAfterDrawPhaseObservable.remove(after);
-        scene.onAfterRenderingGroupObservable.remove(group);
+        scene.onBeforeRenderingGroupObservable.remove(groupStart);
+        scene.onAfterRenderingGroupObservable.remove(groupEnd);
+        if (sprites) spriteHook?.remove(sprites);
+        scene.onBeforeParticlesRenderingObservable.remove(particles);
+        if (group.onBeforeTransparentRendering === opaqueEnds) {
+          group.onBeforeTransparentRendering = undefined;
+        }
       },
     };
+  }
+
+  /**
+   * Items 7 and 8: what Babylon's own bind of `t` would be now, by
+   * `_setTexture`'s rules — the empty texture of the right kind while `t` is
+   * not ready, a cube's wrap from its coordinates mode, the anisotropy capped
+   * by the device — and nothing written onto `t` or its internal texture.
+   */
+  bind(t: HostTexture, out: BoundTexture): void {
+    const tex = t as unknown as BaseTexture;
+    const engine = this.engine;
+    let internal: InternalTexture | null;
+    if (tex.isReady()) internal = tex.getInternalTexture();
+    else if (tex.isCube) internal = engine.emptyCubeTexture;
+    else if (tex.is3D) internal = engine.emptyTexture3D;
+    else if (tex.is2DArray) internal = engine.emptyTexture2DArray;
+    else internal = engine.emptyTexture;
+    if (!internal) {
+      out.view = null;
+      out.sampler = null;
+      return;
+    }
+    const inner = internal as unknown as InternalTextureInternals;
+    out.view = inner._hardwareTexture?.view ?? null; // item 7
+    const s = this.sampler;
+    s.samplingMode = internal.samplingMode;
+    s.useMipMaps = internal.useMipMaps;
+    s._comparisonFunction = inner._comparisonFunction;
+    if (internal.isCube) {
+      // CUBIC_MODE (3) and SKYBOX_MODE (5) clamp; every other mode repeats.
+      const wrap = tex.coordinatesMode !== 3 && tex.coordinatesMode !== 5 ? 1 : 0;
+      s._cachedWrapU = wrap;
+      s._cachedWrapV = wrap;
+    } else {
+      s._cachedWrapU = tex.wrapU;
+      s._cachedWrapV = tex.wrapV;
+    }
+    s._cachedWrapR = internal.is3D ? tex.wrapR : inner._cachedWrapR;
+    s._cachedAnisotropicFilteringLevel = Math.min(
+      tex.anisotropicFilteringLevel,
+      engine.getCaps().maxAnisotropy,
+    );
+    out.sampler = this.e._cacheSampler.getSampler(s); // item 8
   }
 
   /** Item 5: whether the open pass draws into a target Babylon flips. */

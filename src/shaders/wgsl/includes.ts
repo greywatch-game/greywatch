@@ -3,7 +3,7 @@
  * Babylon WGSL includes: Babylon's half of `wgsl/chunks.ts`.
  * Owns: the registration of every chunk in `WGSL_CHUNKS` (`celBand`,
  * `celCloud`, `celShadow`, `celGi`, `celProbe`, `celProbeBox`, `celDither`,
- * `celSurface`) and of the two `celInstances` entries into
+ * `celSurface`, `celVertex`) and of the two `celInstances` entries into
  * `ShaderStore.IncludesShadersStoreWGSL`, and BABYLON'S DECLARATIONS for each
  * chunk that reads a uniform or a texture — the `uniform` and
  * `var … sampler` lines in Babylon's dialect, which the shared bodies may not
@@ -90,7 +90,8 @@ function register(name: string, source: string): void {
  * chunk. What each value MEANS is stated beside it; what the body DOES with it
  * is in `chunks.ts`. A chunk with no row here reads only what its consumer
  * declares (`celBand`, `celDither`) or what the cel fragment does
- * (`celSurface`, whose declarations are the fragment's own, in `CelShader.ts`).
+ * (`celSurface` and `celVertex`, whose declarations are the two stages' own,
+ * in `CelShader.ts`).
  *
  * **Order is the LeftOver UBO's layout, and nothing reads the layout by
  * offset** — every uniform is set by name — so the order here is free; it is

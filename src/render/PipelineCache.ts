@@ -17,11 +17,12 @@
  * made for one pipeline binds into any other whose group has the same
  * entries (the frame block's always does when both stages see it alike; a
  * material's group differs per variant); the WINDING is derived, never
- * stated, by Babylon's rule (`webgpuEngine.pure.js`, "Front face"): geometry
- * in this left-handed scene is authored CLOCKWISE (a Babylon mesh's default
- * `sideOrientation`), so its front face is `"cw"` on screen and `"ccw"` in a
- * pass that flips y (`PassTargets.flipY`) — the flip mirrors every
- * triangle's turn.
+ * stated, by Babylon's rule (`webgpuEngine.pure.js`, "Front face", and
+ * `Material._preBind`): a mesh in this left-handed scene is born
+ * `CounterClockWiseSideOrientation` (`Mesh`'s constructor), which faces the
+ * eye wound `"ccw"` on screen — and `"cw"` in a pass that flips y
+ * (`PassTargets.flipY`), because the flip mirrors every triangle's turn. A
+ * `reversed` mesh is the other way round in both.
  * Never: imports Babylon; builds a pipeline for targets it was not handed.
  * Contract: `docs/rendering.md`, "Our renderer's frame".
  */
@@ -40,11 +41,11 @@ export interface ShaderSource {
 export interface PipelineState {
   readonly cullMode?: GPUCullMode;
   /**
-   * The mesh is wound COUNTER-clockwise: Babylon's
-   * `CounterClockWiseSideOrientation`, or a clockwise mesh under a world
-   * matrix with a negative determinant, which Babylon turns the same way.
+   * The mesh is the REVERSE of a mesh's default orientation: Babylon's
+   * `ClockWiseSideOrientation`, or a default mesh under a world matrix with a
+   * negative determinant, which Babylon turns the same way.
    */
-  readonly counterClockwise?: boolean;
+  readonly reversed?: boolean;
   readonly topology?: GPUPrimitiveTopology;
   readonly depthWrite?: boolean;
   readonly depthCompare?: GPUCompareFunction;
@@ -110,7 +111,7 @@ export class PipelineCache {
       primitive: {
         topology: s.topology ?? "triangle-list",
         cullMode: s.cullMode ?? "back",
-        frontFace: !(s.counterClockwise ?? false) !== t.flipY ? "cw" : "ccw",
+        frontFace: (s.reversed ?? false) !== t.flipY ? "cw" : "ccw",
       },
       depthStencil: t.depthFormat
         ? {

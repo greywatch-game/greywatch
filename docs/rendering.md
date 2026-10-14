@@ -2893,23 +2893,46 @@ them speaks Babylon's dialect** (`BABYLON_EXIT.md` X3.1). Our own renderer
 (`src/render/`) includes the same chunks by the same names, and it needs plain
 WGSL with explicit bind groups. So a chunk is a body with no `uniform`, no
 `varying` and no texture or sampler line. It reads a uniform as
-`uniforms.<name>`, an input as `fragmentInputs.<name>` and a texture by its
+`uniforms.<name>`, an input as `fragmentInputs.<name>` (a vertex body:
+`vertexInputs.<name>`, writing `vertexOutputs.<name>`) and a texture by its
 own name, and its only directives are `#include<cel…>` and the `#ifdef` family.
-Each side declares for itself:
+**Both of the cel material's stages are bodies now**: the fragment is
+`celSurface()` (`wgsl/celSurface.ts`) and the vertex stage — the world
+transform, the wind's ramp and both rigged layers, the varyings — is
+`celVertex()` (`wgsl/celVertex.ts`, `BABYLON_EXIT.md` X3.3a). Each side
+declares for itself:
 
 - **Babylon's declarations** are text in its dialect. Each chunk's are in
   `includes.ts`'s `DECLARATIONS`, and every registered entry is those
   declarations followed by the body, verbatim, so grass, water and the air
-  include `celShadow` exactly as they did. The cel fragment's own are
+  include `celShadow` exactly as they did. The cel material's own are
   `CelShader.ts`'s `celFragmentShader`, which ends in `#include<celSurface>`
-  and a `main` that writes `celSurface()`.
-- **Ours are DATA** (`render/celFragment.ts`). `render/wgsl/assemble.ts` turns
-  them into a module. It emits the structs and every `@group`/`@binding`, runs
+  and a `main` that writes `celSurface()`, and its `celVertexShader`, whose
+  `main` is one call of `celVertex()`.
+- **Ours are DATA** (`render/celFragment.ts`, `render/celVertex.ts`, the
+  blocks they bind in `render/frame.ts` and `render/celMaterial.ts`).
+  `render/wgsl/assemble.ts` turns them into a module. It emits the structs and every `@group`/`@binding`, runs
   the body through `render/wgsl/preprocess.ts` (which refuses any directive it
   does not implement), and makes two rewrites. Each `uniforms.<name>` goes to
   the block that declares it (`frame` or `material`), and an assembly that
   finds a name nobody declared fails there. A strided scalar array's element
   is read through `.el`, Babylon's own layout for one.
+
+**The y flip is the PASS's, never a body's.** Babylon draws a pass that
+renders to a TEXTURE upside down, and its shader processor writes that into
+every module rather than into the source: the vertex stage's clip y times
+`yFactor_` (-1 into a texture, 1 onto the canvas), and in the fragment every
+`dpdy`, and the position's y (as `textureOutputHeight_ - y`) where the
+fragment reads `fragmentInputs.position`, turned around ONTO THE CANVAS,
+where `yFactor_` is 1. So a fragment built for a texture pass needs nothing.
+**The dither and the facet normal are the two readers that would otherwise
+mirror.** `assemble.ts` writes the rule for the kind of pass a module is
+built for (`StageTarget`). The frame's main pass is a texture, so ours
+negates clip y and leaves the fragment alone, exactly as Babylon's modules
+do there. **A fragment for the CANVAS is refused** until a frame field
+carries the render height, which the engine rewrites into its internals on
+every resize; nothing of ours draws onto the canvas before X5. X3.1 recorded
+this owed the other way round; it was the processor's code that settled it.
 
 **Babylon never strips an include's comments, so `includes.ts` does.** Its
 processor removes comments from the top-level source and THEN pastes includes
@@ -3090,9 +3113,12 @@ there is `import type`, so the Babylon-free gate walks it with the rest of
 the directory. When the game takes the frame (`BABYLON_EXIT.md` X5.4), a
 host of its own implements `FrameHost` and the renderer does not notice.
 **Every Babylon INTERNAL the renderer reaches is on the numbered list in the
-seam's header.** At X3.2 there are five: the device, the lazily-started
+seam's header.** At X3.2 there were five: the device, the lazily-started
 pass, the bundle list, the pass's attachment wrapper, and the render
-target (its identity and its flip). That list only shrinks after Phase 3.
+target (its identity and its flip). X3.3a added three: rendering group 0's
+`onBeforeTransparentRendering`, a texture's own `GPUTextureView`, and the
+sampler out of Babylon's own sampler cache. That list only shrinks after
+Phase 3.
 Six older touches in four files (`FrameDepth`, `webgpuLeaks`,
 `ReflectionSystem`, `FrameProfile`) are not the renderer's and stay where
 they are, listed in the seam's header with the step each leaves at; one of
@@ -3128,12 +3154,30 @@ its group 0 fell inside the window would depend on which observer was
 added first, and the review of X3.2 found the renderer safe only because
 `Game` happened to build it before `GlowPass`.
 
-**A draw lands after rendering group 0 has been queued**, which means after
-its opaque, alpha-tested and blended meshes alike. It lands before the
-viewmodel's group, whose auto-clear `Game` turns off, so the pass is not
-restarted between them. A draw that must come before group 0's blended
-meshes owes the host a second hook point; `RenderingGroup`'s
-`onBeforeTransparentRendering` is where it would go.
+**A draw lands at one of TWO points of rendering group 0** (`DrawPoint`),
+both before the viewmodel's group, whose auto-clear `Game` turns off, so the
+pass is not restarted between them:
+
+- **`"opaque"`: where the group's opaque and alpha-tested meshes end**, before
+  anything blended in it. **Every opaque draw of ours goes here**, because
+  the blended surfaces write no depth: an opaque wall drawn after the
+  glazing or the water in front of it paints over them. The point is the
+  FIRST of three things Babylon's `RenderingGroup.render` does after its
+  alpha-tested list: its sprites (an observable only once Babylon's sprite
+  component is loaded, which nothing here loads), its particles (an
+  observable only when the group holds some, which also fires in the
+  active-mesh walk, outside any group), and `onBeforeTransparentRendering`,
+  which it always reaches. **That last hook alone is too late**: the
+  particles come before it, so a wall drawn there paints over every particle
+  in front of it.
+- **`"afterGroup"`**: after the group has been queued whole, blended meshes
+  and all.
+
+Every opaque draw of Babylon's in the group lands BEFORE an opaque draw of
+ours, which changes only which of two surfaces at EXACTLY the same depth
+wins under `less-equal`. Drawing ours at the group's START instead was
+weighed and refused: the sky dome writes no depth and draws first, at a
+600 m radius, so a block past 600 m drawn before it would be painted over.
 
 **The attachments are stated ONCE** (`render/targets.ts`, `FRAME_TARGETS`).
 A pipeline is compiled AHEAD of the frame that draws with it, so its formats
@@ -3150,13 +3194,17 @@ frame is:
 `flipY` is that last fact. Every vertex stage of ours negates clip-space y
 under it, or its picture is mirrored against everything Babylon drew into
 the same target. **The flip reverses the winding too**, so `PipelineCache`
-derives the front face by Babylon's rule rather than taking one. Geometry in
-this left-handed scene is authored CLOCKWISE (a Babylon mesh's default
-`sideOrientation`), so its front face is `"cw"` on screen and `"ccw"` under
-`flipY`. `PipelineState.counterClockwise` is the other orientation, which
-Babylon also reaches for a world matrix with a negative determinant. A
-pipeline with a hand-stated front face would cull the world's front faces
-in one of the two kinds of pass.
+derives the front face by Babylon's rule rather than taking one. A mesh in
+this left-handed scene is born `CounterClockWiseSideOrientation` (`Mesh`'s
+constructor), which faces the eye wound `"ccw"` on screen, so its front face
+is `"ccw"` on screen and `"cw"` under `flipY` (`Material._preBind`, the
+engine's "Front face"). `PipelineState.reversed` is the other orientation,
+Babylon's `ClockWiseSideOrientation`, which Babylon also reaches for a world
+matrix with a negative determinant. A pipeline with a hand-stated front
+face would cull the world's front faces in one of the two kinds of pass.
+**X3.2 had this the wrong way round, and its test could not see it**: the
+test triangle was authored to the rule it tested. The first real mesh drawn
+(X3.3a's blocks) was what found it.
 
 **`Renderer` checks the open pass against `FRAME_TARGETS` on every frame it
 draws, and a pass that differs draws nothing that frame**, with one console
@@ -3207,6 +3255,42 @@ submit, whichever pass reads it. So a probe's bake, whose eye and
 `opaqueAlpha` differ, owes a buffer of its own (X3.6c), never a second
 write to this one.
 
+**The frame's TEXTURES are the rest of group 0, pulled the same way**
+(`render/frame.ts`, `FRAME_TEXTURES`): every shadow map, the lamps' atlas,
+the flash map, the cloud field, the foliage map and the irradiance volume's
+seven. Each is pushed onto every cel material as shared state, so it is one
+bind group a frame rather than one per material.
+
+- **`CelMaterialFactory.fillFrameTextures`** hands over the very objects it
+  binds (`ShadowBindings.fillFrameTextures`, the volume's set), as
+  `HostTexture` handles that only the host can resolve, and the
+  seam's `hostTexture` is the one crossing that mints one.
+- **The host resolves a handle EVERY frame** (`FrameHost.bind`) into
+  Babylon's own `GPUTextureView` and the `GPUSampler` out of Babylon's own
+  cache, for the state Babylon's bind would use. So nothing is copied
+  (`BABYLON_EXIT.md` rule 5), no filter rule is restated, and a texture its
+  owner replaces — a quality change re-creates a shadow map — is picked up
+  on the next frame.
+- **A bind group is re-made only on the frame a view or sampler changed**
+  (`render/HostBindGroup.ts`, which builds it from the group's DECLARED
+  entries by the numbering the WGSL is declared with, `firstBindings`).
+- **A handle not published yet is null, and the frame draws nothing that
+  binds it**, as a Babylon material with that sampler unbound draws nothing.
+  A texture not READY binds Babylon's empty texture of its kind, as
+  Babylon's own bind does.
+
+**A cel material reaches our side as its RECIPE, never as itself**
+(`render/celMaterial.ts`, `CelMaterialFactory.celRecipe`): its variant, its
+depth bias (`zOffsetUnits`) and its own block and textures — group 1, what a
+material is born with from its own spec. **Every per-material value is set
+through the factory's `own`** (`ownTexture` for a texture), which sets it on
+the material AND writes it into the material's recipe in one statement. So
+a value our side lacks cannot be one Babylon's has. The recipe is kept only
+by the getters whose meshes our side takes: `getWorldCel`, `get`,
+`getGlossy`, `getTranslucent` and `getGroundTextured`. A rewrite after birth
+moves `materialEpoch` (`setGroundSpec` re-applies the ground's sheen), and a
+reader re-copies the blocks when it moves.
+
 **Pipelines are built with `createRenderPipelineAsync` and cached**
 (`render/PipelineCache.ts`). The cache key is the shader variant (both
 modules' labels, which carry the define set), the vertex layout, the
@@ -3222,7 +3306,34 @@ and a compile that fails is not cached. A binding the two stages declare
 differently is refused when the layout is built. A texture binding is laid out as filterable
 `float` with a filtering sampler. A depth texture or an unfilterable format
 bound later owes its binding a field saying so, or the layout refuses the
-view.
+view. None of the sixteen the cel program binds is either: every shadow map
+is `rgba16float`, the lamps' atlas `r16float`, the cloud field `rg8unorm`,
+the volume `rgba16float` and `rgba8unorm`, and the ground `rgba8unorm`.
+
+**The world's BLOCKS can be drawn by our side, behind a DEV switch**
+(`?ourworld`, `BABYLON_EXIT.md` X3.3a). Without it nothing about the frame
+differs. With it:
+
+- **`systems/BlockHandover.ts` decides which surfaces are TAKEN.** A
+  surface is taken if it is block-merged, at identity, never written after
+  the build, and on a material that keeps a recipe. It is uploaded as the
+  build makes its mesh (`BuildOptions.onSurface`), the one moment its
+  arrays can still be read.
+- **`render/WorldBlocks.ts` draws each taken surface at `"opaque"`**: one draw
+  per surface, its geometry on buffers of our own, one material group per
+  recipe, and the identity `world` at group 2.
+- **A taken mesh is drawn by our side in the MAIN pass only.**
+  `WorldCulling.setTaken` keeps it out of the candidate list, and every
+  other pass draws from a list of its own. The glow's mask, which reads the
+  main pass's active meshes, keeps only what glows, which a taken mesh never
+  does.
+- **A taken mesh is ON exactly when Babylon's walk would have drawn it.** It
+  must pass `WorldCulling`'s tests, then the walk's own (`isReady`, enabled,
+  visible, the layer mask and `isInFrustum` against the walk's own planes),
+  asked through the mesh's public API right after the walk. So a frame
+  trades one draw for one draw, which `plans/webgpu-ref/census.mjs` counts.
+- **The building card waits for every pipeline the taken surfaces need**, so
+  no frame of the round draws with one still compiling.
 
 ## Block visibility: how much of the map the frame walks
 

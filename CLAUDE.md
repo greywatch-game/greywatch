@@ -608,7 +608,11 @@ types). A draw is QUEUED into Babylon's bundle list and never issued. The
 attachments are stated once (`FRAME_TARGETS`). The frame's uniforms are PULLED
 off the factory's fields (`CelMaterialFactory.fillFrame`), so **a new value
 every cel material holds owes `render/frame.ts` a field and `fillFrame` a
-line**, or our draws shade without it.
+line**, or our draws shade without it — a shared TEXTURE the same, in
+`FRAME_TEXTURES` and `fillFrameTextures`. **A material's OWN value is set
+through the factory's `own`**, which keeps it in the recipe our renderer
+draws that material with (`render/celMaterial.ts`); a `setFloat` beside it is
+a value Babylon's draw has and ours does not.
 
 → **[`docs/rendering.md`](docs/rendering.md)** — the frozen define set, the
 irradiance volume (why not Lumen, why the blend is 1), the four light terms and

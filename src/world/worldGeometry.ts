@@ -122,8 +122,9 @@ export interface PaneSurfaceGroup {
  * keeps for the mesh; holding them here as well would hold the world's
  * geometry twice on the CPU (Greyfen is ~6 M vertices), and nothing reads
  * them back. `worldMeshes` releases each surface's arrays as it uploads them
- * (`releaseArrays`). Whether a renderer of our own wants them kept is
- * BABYLON_EXIT.md X3.3's question.
+ * (`releaseArrays`). A renderer of our own that draws a surface takes its
+ * arrays on the way past instead (`BuildOptions.onSurface`, just before the
+ * release), so they are never kept here either.
  */
 export interface SurfaceRecord {
   name: string;

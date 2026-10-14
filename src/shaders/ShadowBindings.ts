@@ -36,7 +36,8 @@ import {
   Vector3,
   Vector4,
 } from "@babylonjs/core";
-import type { FrameUniforms } from "../render/frame";
+import { hostTexture } from "../render/babylonSeam";
+import type { FrameTextures, FrameUniforms } from "../render/frame";
 import { MAX_POINT_LIGHTS } from "./wgsl/celSurface";
 
 export class ShadowBindings {
@@ -155,6 +156,22 @@ export class ShadowBindings {
   private eachShadowReader(fn: (mat: ShaderMaterial) => void): void {
     this.cels.forEach(fn);
     this.shadowConsumers.forEach(fn);
+  }
+
+  /**
+   * The maps `applyShadow` binds, as our renderer's frame textures — off the
+   * same fields, so a map replaced here is replaced there on the next frame;
+   * one never published is null, which draws nothing, as a Babylon material
+   * with that sampler unbound draws nothing.
+   */
+  fillFrameTextures(out: FrameTextures): void {
+    out.shadowMap = this.shadowMap && hostTexture(this.shadowMap);
+    out.nearShadowMap = this.nearShadowMap && hostTexture(this.nearShadowMap);
+    out.bodyShadowMap = this.bodyShadowMap && hostTexture(this.bodyShadowMap);
+    out.localAtlasMap = this.localAtlasMap && hostTexture(this.localAtlasMap);
+    out.flashMap = this.flashMap && hostTexture(this.flashMap);
+    out.cloudShadowMap = hostTexture(this.cloudShadowMap);
+    out.foliageMap = this.foliageMap && hostTexture(this.foliageMap);
   }
 
   /**

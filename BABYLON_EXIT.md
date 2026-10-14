@@ -598,7 +598,8 @@ the failure is silent.
   `src/render/` may not import. So rule 4 holds as "every internal OUR
   RENDERER reaches". The seam's header lists the six and the step each
   leaves at (FrameDepth at X5.4, the rest at X6.1).
-- **Owed to X3.3** (all four are X3.3a's):
+- **Owed to X3.3** (all four are X3.3a's, and X3.3a's "Landed" says where
+  each went):
   - the fragment's `position.y` flip, since the main pass is a texture;
   - the vertex sway as a shared chunk;
   - a hook BEFORE group 0's blended meshes, if the world must draw there
@@ -632,7 +633,7 @@ did.
   - the wind's ramp and rigged layers
   - every caster a closed shape (the casters stay Babylon's until X3.6a)
 
-#### X3.3a — Our cel pipeline draws the blocks, to the pixel — **M**
+#### X3.3a — Our cel pipeline draws the blocks, to the pixel — **M** — **LANDED** (COMMIT)
 
 - **Do:**
   - **The vertex stage as a shared chunk.** `CelShader.ts`'s vertex body,
@@ -677,6 +678,93 @@ did.
   - `shaders.mjs` builds our vertex module for every shape as well.
 - **Must not:** change a pixel without the switch; read a Babylon material;
   copy a Babylon texture.
+
+**Landed** (COMMIT).
+- **The vertex body is shared.** `shaders/wgsl/celVertex.ts` is the cel
+  vertex stage as one function, `celVertex()`, which Babylon's `main` calls
+  and `render/celVertex.ts` declares as data. The frame block, the material
+  block (`render/celMaterial.ts`) and group 2's `world` are declared once
+  each.
+- **The flip, settled by Babylon's processor rather than by the brief.**
+  Into a texture, Babylon negates clip y and leaves the fragment as written.
+  It turns `dpdy` and the position around only ONTO THE CANVAS, and the
+  position by the render height it rewrites on every resize. So our main
+  pass owes the vertex negation and nothing in the fragment. X3.1 and X3.2
+  recorded it the other way round. A fragment for the canvas is refused until
+  a frame field carries that height; the first canvas pass (X5) owes it.
+- **Where in the pass.** The draw point is the END of group 0's opaque and
+  alpha-tested lists: the first of its sprites, its particles and item 6,
+  `onBeforeTransparentRendering`. That hook alone was too late, because the
+  particles come before it, so a wall drawn there paints over every particle
+  in front of it. The START of the group was tried as well and refused: the
+  sky dome writes no depth, draws first and stands at 600 m, and
+  Cinderhaven's `fogEnd` is 1,250 m.
+- **The textures are Babylon's own.** Items 7 and 8 are each texture's own
+  `GPUTextureView` and the `GPUSampler` from Babylon's own cache, for the
+  state `_setTexture` would bind. They are re-resolved every frame
+  (`FrameHost.bind`, `render/HostBindGroup.ts`), and a bind group is re-made
+  only when a view moves. **No depth or unfilterable texture is bound**: the
+  sixteen are `rgba16float`, `r16float`, `rg8unorm` and `rgba8unorm`. So X3.2's
+  binding field stays owed to the first one that is, and with it Babylon's
+  `unfilterable-float` fallback for a full-float texture on a device without
+  `float32-filterable`.
+- **A material is its RECIPE.** Every per-material value goes through the
+  factory's `own`/`ownTexture`, which set the material and its recipe in one
+  statement (`CelMaterialFactory.celRecipe`, `materialEpoch`). It applies to
+  the five getters whose meshes our side takes.
+- **What is taken.** A block-merged surface in group 0, at identity, under
+  no parent, not `updatable`, on a recipe material. Its arrays are taken on
+  the way past the build (`BuildOptions.onSurface`), before the release
+  (`systems/BlockHandover.ts`), and it is drawn by `render/WorldBlocks.ts`.
+  `WorldCulling.setTaken` keeps it out of the main pass's candidates and of
+  nothing else. It is ON exactly when Babylon's walk would draw it, asked
+  through the mesh right after the walk. A surface whose pipeline fails goes
+  back to Babylon. The card waits for the pipelines, under the bake's own cap.
+- **Found on the way: `PipelineCache` had the front face backwards.** A mesh
+  in this left-handed scene is born `CounterClockWiseSideOrientation`, so it
+  faces the eye `"ccw"` on screen and `"cw"` in a flipped pass. X3.2's test
+  triangle was authored to the rule it tested. `PipelineState.reversed`
+  replaces `counterClockwise`.
+- **Measured.**
+  - **`bank.mjs --check` with the switch OFF: every row of every map at 0%**
+    (47 of 47).
+  - **With it ON** (`--query=ourworld`, new here): every row within the
+    floor. The worst row is Coldharbour's `curtain90`, at 0.093% of pixels
+    and a mean of 0.0104/255, against 0.02. Sarab's `wadi` is the widest, at
+    0.12%.
+  - **The residue is equal-depth TIES**, traced on `curtain90` (1,931
+    pixels differ by any amount) with frames taken in the bank's own vantage
+    order. **A frame shot at one vantage alone differs from the bank by
+    41,271 pixels with no switch at all**, from state carried between the
+    rows, and the first round of experiments was confounded by it. A scratch
+    diff owes the bank's sequence.
+    - With Babylon drawing every block AND ours drawn over them, the frame
+      is the same 1,931 pixels as ours alone. So our vertices land bit for
+      bit where Babylon's do, and our shading is the same.
+    - Moving our draws to the group's start moves the residue to a
+      complementary set of 1,094.
+    - What is left is coplanar surfaces (lit-window quads, mullions, slab
+      edges) whose winner Babylon decides by its front-to-back sort, pair by
+      pair. No fixed point of ours can reproduce that.
+  - **`census.mjs`** (new: main-pass draws, Babylon's into the frame's target
+    plus ours, on the bank's frozen frames): **equal with and without the
+    switch on every vantage of all seven maps.** Hollowmere is 629, Greyfen
+    382, Coldharbour 1,104, Harrowmead 1,514, Sarab 1,206, Cinderhaven 294,
+    Kurenai 89. Taken surfaces per map run from 54 (Hollowmere) to 354
+    (Greyfen).
+  - **`shaders.mjs`** builds both of our stages through our own
+    `PipelineCache` for every shape on seven maps (5 to 7 variants a map),
+    clean.
+  - `npm run build` passes every gate.
+- **Owed onward.**
+  - X3.3b: the clusters and the cull keep the ON rule's other half, the
+    walk's frustum and readiness, which X3.3a asks of Babylon's mesh.
+  - X3.3b: a mesh whose `visibility` drops below 1 would go to Babylon's
+    blended list, and ours would still draw it opaque. No block changes its
+    visibility today.
+  - X3.3c: `PipelineWarmup` learns our pipelines.
+  - X3.3c: the census's equal totals become falling totals (`census.mjs
+    --fall`).
 
 #### X3.3b — Clusters, the compute cull and indirect draws — **M–L**
 

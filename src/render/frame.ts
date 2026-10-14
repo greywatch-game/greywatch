@@ -2,9 +2,12 @@
  * render/frame.ts — The FRAME's uniforms: the one block every program our
  * renderer draws with binds at group 0, binding 0, stated once as data, and
  * the plain struct it is written from.
- * Owns: `FRAME_FIELDS` and `FRAME_BLOCK` (the declaration `celFragment.ts`
- * and every later program include), `FrameUniforms` (one `Float32Array` per
- * field, named as the shader names it) and `createFrameUniforms`.
+ * Owns: `FRAME_FIELDS` and `FRAME_BLOCK` (the declaration `celFragment.ts`,
+ * `celVertex.ts` and every later program include), `FrameUniforms` (one
+ * `Float32Array` per field, named as the shader names it) and
+ * `createFrameUniforms`; `FRAME_TEXTURES`, the rest of group 0 — every
+ * shadow map, the foliage map and the irradiance volume — and
+ * `FrameTextures`, the handles they are bound from.
  * Invariants: one LAYOUT in every variant but the last field — a name only
  * some programs read is declared for all of them, and the one guarded field,
  * the 2 KB palette, is LAST, so every variant reads the same offsets (the
@@ -12,7 +15,8 @@
  * `count * components` floats, a `vec3f` three — and only the upload
  * (`FrameUniformBuffer`) knows the padding; the struct is filled by whoever
  * already publishes the value (`CelMaterialFactory.fillFrame`), never read
- * off a Babylon material.
+ * off a Babylon material; so are the textures (`CelMaterialFactory
+ * .fillFrameTextures`), as handles only the host resolves.
  * Never: imports Babylon; allocates per frame — the struct is made once and
  * filled in place.
  * Contract: `docs/rendering.md`, "Our renderer's frame".
@@ -23,9 +27,15 @@
  * so a vertex stage that arrives later (X3.3) reads offsets that already
  * exist rather than moving every field after them. An unread member costs a
  * few bytes and nothing else.
+ *
+ * WHY THE TEXTURES ARE THE FRAME'S. Every one of them is pushed onto EVERY cel
+ * material as shared state (`ShadowBindings.applyShadow`,
+ * `CelMaterialFactory.setGi`) and replaced under all of them at once, so it
+ * is one bind group per frame rather than one per material.
  */
 import { MAX_PALETTE, MAX_POINT_LIGHTS } from "../shaders/wgsl/celSurface";
 import { GI_SLOTS } from "../shaders/wgsl/giTrace";
+import type { HostTexture } from "./frameHost";
 import type { Binding, UniformField } from "./wgsl/assemble";
 
 // `giSlotChannel` is one channel per POINT-LIGHT slot, and the volume's table
@@ -113,6 +123,41 @@ export const FRAME_BLOCK = {
   struct: "CelFrame",
   fields: FRAME_FIELDS,
 } as const satisfies Binding;
+
+/** The rest of group 0, after the block, in binding order. */
+export const FRAME_TEXTURES = [
+  { kind: "sampled", name: "shadowMap", type: "texture_2d<f32>" },
+  { kind: "sampled", name: "nearShadowMap", type: "texture_2d<f32>" },
+  { kind: "sampled", name: "bodyShadowMap", type: "texture_2d<f32>" },
+  { kind: "sampled", name: "localAtlasMap", type: "texture_2d<f32>" },
+  { kind: "sampled", name: "flashMap", type: "texture_2d<f32>" },
+  { kind: "sampled", name: "cloudShadowMap", type: "texture_2d<f32>" },
+  { kind: "sampled", name: "foliageMap", type: "texture_2d<f32>" },
+  { kind: "sampled", name: "giIrr", type: "texture_3d<f32>" },
+  { kind: "sampled", name: "giDir", type: "texture_3d<f32>" },
+  { kind: "sampled", name: "giAux", type: "texture_3d<f32>" },
+  { kind: "sampled", name: "giVis0", type: "texture_3d<f32>" },
+  { kind: "sampled", name: "giVis1", type: "texture_3d<f32>" },
+  { kind: "sampled", name: "giVis2", type: "texture_3d<f32>" },
+  { kind: "sampled", name: "giVis3", type: "texture_3d<f32>" },
+] as const satisfies readonly Binding[];
+
+/** The name of a frame texture. */
+export type FrameTexture = (typeof FRAME_TEXTURES)[number]["name"];
+
+/**
+ * The frame's textures as last pulled: a handle per binding, or null for one
+ * its owner has not published yet — a frame with any null draws nothing, as
+ * a Babylon material with a sampler unbound draws nothing.
+ */
+export type FrameTextures = { [K in FrameTexture]: HostTexture | null };
+
+/** Every frame texture unpublished. Made once by whoever fills it. */
+export function createFrameTextures(): FrameTextures {
+  const out: Partial<Record<FrameTexture, HostTexture | null>> = {};
+  for (const t of FRAME_TEXTURES) out[t.name] = null;
+  return out as FrameTextures;
+}
 
 /** The name of a frame field — what the shader calls it. */
 export type FrameField = (typeof FRAME_FIELDS)[number]["name"];

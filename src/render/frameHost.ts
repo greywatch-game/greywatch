@@ -2,10 +2,13 @@
  * render/frameHost.ts — What our renderer needs from whoever owns the frame,
  * stated as an interface so the owner can change without the renderer
  * noticing.
- * Owns: `FrameHost` and `PassTargets`.
+ * Owns: `FrameHost`, `PassTargets`, `MainPassHooks`, `HostTexture` and
+ * `BoundTexture`.
  * Invariants: everything a `FrameHost` hands over is WebGPU's or plain data —
- * a device, a pass encoder, formats, floats; a draw reaches the pass through
- * `queue` and nothing else, in the host's own order.
+ * a device, a pass encoder, a texture view and a sampler, formats, floats; a
+ * draw reaches the pass through `queue` and nothing else, in the host's own
+ * order; a texture the host owns is handed over as ITS view, read where it
+ * lies and never copied (`BABYLON_EXIT.md` rule 5).
  * Never: imports Babylon. Babylon's host is `babylonSeam.ts`'s
  * `BabylonFrameHost`, until the game owns the frame (`BABYLON_EXIT.md` X5.4)
  * and a host of its own implements this instead.
@@ -23,6 +26,35 @@ export interface PassTargets {
    * sample reads it the GL way up — clip-space y is negated there.
    */
   readonly flipY: boolean;
+}
+
+/**
+ * A texture the HOST owns, as the renderer holds it: a name for one, which
+ * only the host can turn into something to bind (`FrameHost.bind`). Branded
+ * so nothing but the host's own crossing mints one.
+ */
+export interface HostTexture {
+  readonly __hostTexture: never;
+}
+
+/** What a `HostTexture` binds as, this frame: the host's own view and sampler. */
+export interface BoundTexture {
+  view: GPUTextureView | null;
+  sampler: GPUSampler | null;
+}
+
+/** The three points of the frame's main pass a renderer draws at. */
+export interface MainPassHooks {
+  /** Once, as the main pass's drawing starts. */
+  begin(): void;
+  /**
+   * Once, after rendering group `groupId`'s OPAQUE and alpha-tested meshes
+   * have been queued and before anything blended in it is — its sprites, its
+   * particles and its transparent meshes.
+   */
+  afterOpaque(): void;
+  /** Once, after rendering group `groupId` has been queued whole. */
+  afterGroup(): void;
 }
 
 /** Whoever owns the frame, as the renderer sees it. */
@@ -44,8 +76,16 @@ export interface FrameHost {
   viewProjection(out: Float32Array): void;
   /**
    * Hooks the frame's MAIN pass — never a shadow map's, a probe's or any other
-   * render target's: `begin` once as its drawing starts, `afterGroup` once
-   * after rendering group `groupId` has been queued in it.
+   * render target's — at the three points of `MainPassHooks`, for rendering
+   * group `groupId`.
    */
-  onMainPass(groupId: number, begin: () => void, afterGroup: () => void): { dispose(): void };
+  onMainPass(groupId: number, hooks: MainPassHooks): { dispose(): void };
+  /**
+   * What `t` binds as NOW — exactly the view and sampler the host itself
+   * would bind for it, a texture not yet ready included — into `out`. Read
+   * every frame and compared, never kept across one: an owner may replace
+   * what is behind a handle (a quality change re-creates a shadow map).
+   * Allocates nothing.
+   */
+  bind(t: HostTexture, out: BoundTexture): void;
 }

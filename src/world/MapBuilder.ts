@@ -865,7 +865,7 @@ export class MapBuilder {
     );
 
     const glazing = this.mergeBlocks(run);
-    const world = this.bake(run, size, glazing);
+    const world = this.bake(run, size, glazing, opts?.onSurface);
     if (import.meta.env.DEV) assertPieces(world, unpieced, index !== undefined);
     const { nav, obstacles, rays, collidables } = this.derive(run, size, opts?.navFields ?? true);
     since("build:total", buildStart);
@@ -1252,7 +1252,12 @@ export class MapBuilder {
    * The vertex-colour bake over the finished record, the upload, and the
    * freeze — and what the map keeps of the record (`GameMap.world`).
    */
-  private bake(run: BuildRun, size: number, glazing: PaneSurfaceGroup[]): WorldGeometry {
+  private bake(
+    run: BuildRun,
+    size: number,
+    glazing: PaneSurfaceGroup[],
+    onSurface: BuildOptions["onSurface"],
+  ): WorldGeometry {
     const { terrain, visuals, surfaces, plain } = run;
     // The vertex-colour bake — occlusion, the world mark, the wind's sway
     // weight and the wear ramp — and its position in `build` is the whole of
@@ -1294,7 +1299,7 @@ export class MapBuilder {
     // their meshes on the way past, which is the shape `GameMap.paneGroups`
     // and `GlassFx` read.
     const { meshes, records } = record("upload", () =>
-      worldMeshes(surfaces, this.scene, plain),
+      worldMeshes(surfaces, this.scene, plain, onSurface),
     );
     const meshOf = new Map<WorldSurface, Mesh>();
     surfaces.forEach((surface, i) => meshOf.set(surface, meshes[i]));

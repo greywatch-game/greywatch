@@ -3,7 +3,8 @@
  * real round on each, and fails loudly if any of them is not clean.
  *
  * Run with `node plans/webgpu-ref/gate.mjs [map...]`, `--headed` to watch it,
- * `--uncap` to take the frame limiter off before quoting a frame rate. It
+ * `--uncap` to take the frame limiter off before quoting a frame rate,
+ * `--query=<flags>` to play the rounds under a DEV switch (`?ourworld`). It
  * exits non-zero when an assertion fails, so it can stand in front of a merge.
  *
  * **What this gate is FOR is the engine and not the picture.** Whether the
@@ -45,6 +46,8 @@ import {
 const args = process.argv.slice(2);
 const HEADED = args.includes("--headed");
 const UNCAP = args.includes("--uncap");
+// A DEV switch to gate the round under (`--query=ourworld` boots `?ourworld`).
+const QUERY = args.find((a) => a.startsWith("--query="))?.slice("--query=".length) ?? "";
 const maps = args.filter((a) => !a.startsWith("--"));
 const targets = maps.length ? maps : MAP_IDS;
 
@@ -84,7 +87,7 @@ const failures = [];
 for (const id of targets) {
   const { page, bootMs, pageErrors, consoleErrors, cdnRequests } = await bootMap(
     browser,
-    vite.url,
+    QUERY ? `${vite.url}/?${QUERY}` : vite.url,
     id,
   );
   const build = await installRound(page);

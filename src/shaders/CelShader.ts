@@ -84,7 +84,15 @@ import { attachEmissiveFog, setEmissiveFog } from "./EmissiveFog";
 import { EmissiveWorldMaterial, MAX_EMISSIVE_PALETTE } from "./EmissiveWorld";
 import { FlameMaterial } from "./FlameShader";
 import { BlastMaterial } from "./BlastShader";
-import type { FrameUniforms } from "../render/frame";
+import type { FrameTextures, FrameUniforms } from "../render/frame";
+import {
+  createMaterialUniforms,
+  type CelMaterialField,
+  type CelMaterialTexture,
+  type CelRecipe,
+} from "../render/celMaterial";
+import { hostTexture } from "../render/babylonSeam";
+import type { HostTexture } from "../render/frameHost";
 import { ShadowBindings } from "./ShadowBindings";
 // The shared chunks self-register in the IncludesShadersStoreWGSL; import
 // them for that effect so the #include<cel...> lines below can never be
@@ -404,127 +412,15 @@ varying vBaked: vec4f;
 varying vPalette: f32;
 #endif
 
+// The body: the world transform, the sway and the varyings —
+// wgsl/celVertex.ts, shared verbatim with src/render/, which declares the
+// same names its own way. Babylon's processor appends the y flip of a pass
+// that renders to a texture after it.
+#include<celVertex>
+
 @vertex
 fn main(input: VertexInputs) -> FragmentInputs {
-  var worldPos = uniforms.world * vec4f(vertexInputs.position, 1.0);
-
-  // --- foliage sway, in world space, weighted by the baked red channel ---
-  //
-  // Branched rather than multiplied out, and the branch costs nothing because
-  // it is coherent: the sway mark is part of the merge KEY, so a draw is either
-  // all foliage or all wall and no warp ever has both answers in it. Everything
-  // that is not world geometry — every rig, the viewmodel, every grenade and
-  // every effect mesh — carries no colour buffer at all and takes the disabled
-  // attrib's 0, so it pays one compare and no transcendentals.
-  //
-  // The gust is the grass shader's shape at the canopy's scale: two crossing
-  // sines, the second at 2.33x so the field never repeats on a clean beat,
-  // phased along the wind's own bearing so a gust TRAVELS rather than every
-  // crown leaning at once.
-  if (vertexInputs.color.r != 0.0) {
-    // Subtracted, not added: a gust has to travel WITH the wind, and a wave
-    // whose phase runs the other way rolls up the valley against the lean of
-    // everything in it. The grass shader adds instead, and gets away with it
-    // because its phase is not along the bearing at all — here it is.
-    let phase = dot(worldPos.xz, uniforms.windDir) * uniforms.windParams.z;
-    let gust = sin(uniforms.windTime * uniforms.windParams.y - phase)
-      + 0.5 * sin(uniforms.windTime * uniforms.windParams.y * 2.33 - phase * 1.71);
-    if (vertexInputs.color.r > 0.0) {
-      // The RAMP: one lateral swing along the bearing, as much of it as the
-      // height above the ground entitles this vertex to.
-      // Two component writes rather than one swizzle write: WGSL allows an
-      // assignment to a single component and forbids one to a multi-component
-      // swizzle, so the GLSL "worldPos.xz +=" has to be spelled out.
-      let lean =
-        uniforms.windDir * (gust * uniforms.windParams.x * vertexInputs.color.r);
-      worldPos.x += lean.x;
-      worldPos.z += lean.y;
-    } else {
-      // The RIG (world/sway.ts): this vertex knows where it is on its own
-      // frond, so the frond bends from its root and no two move as one.
-      //
-      // Which rigged layer: -1 a palm's frond, -2 an ash's bough — coherent
-      // per draw like the branch above, the layer being in the merge key. A
-      // bough packs one number more (\`boughRig\`): its bend is in u's whole
-      // part with its leaf cluster's phase in the fraction, and v's whole
-      // part is a SIGNED tilt across that cluster rather than a frond's edge.
-      let bough = vertexInputs.color.r < -1.5;
-      let bend = select(vertexInputs.uv.x, floor(vertexInputs.uv.x) / 1023.0, bough);
-      let edge = select(floor(vertexInputs.uv.y) / 63.0,
-        (floor(vertexInputs.uv.y) - 31.0) / 31.0, bough);
-      let tau = fract(vertexInputs.uv.y) * 6.2831853;
-      let rig = select(uniforms.windFrond, uniforms.windBough, bough);
-      let rigRate = select(uniforms.windFrondRate, uniforms.windBoughRate, bough);
-      // The same gust as the ramp's, read as PRESSURE: 0 in a lull, 1 at the
-      // top of a gust, squared so a gust arrives rather than the wind simply
-      // breathing. It only ever pushes downwind — nothing leans into a wind.
-      let g = clamp(0.5 + gust / 3.0, 0.0, 1.0);
-      let press = g * g;
-      let t = uniforms.windTime;
-      // Each frond on its own rate (+-15%) as well as its own phase, so a
-      // crown's fronds drift in and out of step instead of nodding together.
-      let rate = rigRate.y * (0.85 + 0.3 * fract(tau * 1.618));
-      let flap = sin(t * rate + tau) + 0.35 * sin(t * rate * 2.17 + tau * 3.1);
-      let swing = sin(t * rate * 0.61 + tau * 5.3);
-      let stir = 0.45 + 0.55 * press;
-      let down = rig.x * mix(rigRate.x, 1.0, press);
-      let across = rig.z * swing * stir;
-      let crosswind = vec2f(-uniforms.windDir.y, uniforms.windDir.x);
-      let sway = (uniforms.windDir * down + crosswind * across) * bend;
-      worldPos.x += sway.x;
-      worldPos.z += sway.y;
-      worldPos.y += rig.y * flap * stir * bend;
-      if (bough) {
-        // The LEAF: every cluster TIPS whole on its stalk — the same number
-        // for all of its vertices, times how far across it each one sits
-        // (\`edge\`, signed), so the displacement is linear across a cluster
-        // and the cluster turns without changing shape. Each cluster on its
-        // own phase and rate (+-25%), three incommensurate partials so no
-        // beat repeats, and a slow SWELL of its own on top of the gust, so
-        // the crown rustles in patches — some clusters busy, some nearly
-        // still — and harder as a gust arrives. Tipped up and a little
-        // downwind, so a cluster facing the wind turns out of its face too.
-        // It fades out with distance (CONFIG.wind.bough's header): a
-        // pixel-wide cluster crossing a band is a twinkle.
-        let leafTau = fract(vertexInputs.uv.x) * 6.2831853;
-        let lr = rigRate.z * (0.75 + 0.5 * fract(leafTau * 2.618));
-        let wob = (sin(t * lr + leafTau)
-          + 0.55 * sin(t * lr * 1.73 + leafTau * 2.3)
-          + 0.3 * sin(t * lr * 2.91 + leafTau * 4.1)) / 1.85;
-        let swell = 0.5 + 0.5 * sin(t * rigRate.w * (0.8 + 0.4 * fract(leafTau * 1.618)) + leafTau * 3.0);
-        let near = 1.0 - smoothstep(uniforms.windBoughFade.x, uniforms.windBoughFade.y,
-          distance(worldPos.xyz, uniforms.camPos));
-        let rustle = rig.w * edge * wob * (0.15 + 0.85 * press) * (0.35 + 0.65 * swell) * near;
-        worldPos.y += rustle;
-        worldPos.x += uniforms.windDir.x * rustle * 0.5;
-        worldPos.z += uniforms.windDir.y * rustle * 0.5;
-      } else {
-        // The pinnae: a ripple running along the frond on a short wave, so
-        // the fringe flutters rather than shivers in unison — nothing at the
-        // rib, most at a pinna's point, and more out along the frond than
-        // near it.
-        let ripple = sin(t * rigRate.z
-          - dot(worldPos.xyz, vec3f(0.71, 0.45, 0.54)) * rigRate.w
-          + tau * 7.0);
-        worldPos.y += rig.w * edge * (0.3 + 0.7 * bend)
-          * (0.35 + 0.65 * press) * ripple;
-      }
-    }
-  }
-
-  // WGSL has no mat4 -> mat3 conversion, so the upper-left block is taken by
-  // hand; a matrix indexes by COLUMN, which is what makes that read correctly.
-  let nW = normalize(
-    mat3x3f(uniforms.world[0].xyz, uniforms.world[1].xyz, uniforms.world[2].xyz)
-      * vertexInputs.normal);
-  vertexOutputs.vNormalW = nW;
-
-  vertexOutputs.vPosW = worldPos.xyz;
-  vertexOutputs.vBaked = vertexInputs.color;
-  #ifdef CEL_PALETTE
-  vertexOutputs.vPalette = vertexInputs.uv2.x;
-  #endif
-  vertexOutputs.position = uniforms.viewProjection * worldPos;
+  celVertex();
 }
 `;
 
@@ -694,6 +590,25 @@ fn main(input: FragmentInputs) -> FragmentOutputs {
   fragmentOutputs.color = celSurface();
 }
 `;
+
+/** A `CelRecipe` as the factory writes it. */
+interface MutableRecipe extends CelRecipe {
+  readonly textures: Partial<Record<CelMaterialTexture, HostTexture>>;
+}
+
+/**
+ * The variants a recipe-keeping getter compiles, bare — one statement each,
+ * read by Babylon's `defines` (`babylonDefines`) and by the recipe alike.
+ */
+const PLAIN_VARIANT: readonly string[] = [];
+const PALETTE_VARIANT: readonly string[] = ["CEL_PALETTE"];
+const GROUND_VARIANT: readonly string[] = ["CEL_GROUND_TEX"];
+const GROUND_BUMP_VARIANT: readonly string[] = ["CEL_GROUND_TEX", "CEL_BUMP"];
+
+/** A variant as a `ShaderMaterial`'s `defines` option spells it. */
+function babylonDefines(variant: readonly string[]): string[] {
+  return variant.map((d) => `#define ${d}`);
+}
 
 /** One dynamic light as uploaded to the cel shader. */
 export interface PointLightData {
@@ -1291,6 +1206,74 @@ export class CelMaterialFactory {
   }
 
   /**
+   * What each material our renderer may draw was BORN with, kept beside it:
+   * its variant, its depth bias and its own block and textures, written by
+   * `own` and `ownTexture` in the same call that sets them on the material.
+   * Only the getters whose meshes our renderer takes keep one —
+   * `getWorldCel`, `get`, `getGlossy`, `getTranslucent`, `getGroundTextured`;
+   * glazing, cloth and a body are Babylon's alone (`BABYLON_EXIT.md` X3.3a).
+   */
+  private readonly recipes = new Map<ShaderMaterial, MutableRecipe>();
+
+  /**
+   * Moves every time a value in any recipe is written, birth included — so a
+   * reader that copied the recipes knows when to copy them again
+   * (`setGroundSpec` re-applies the sheen to a cached ground mid-session).
+   */
+  materialEpoch = 0;
+
+  /**
+   * What our renderer draws `mat` with, or null for a material it does not
+   * draw. A PULL off what the factory kept as it made the material, never a
+   * read of it: the values are the very arrays `own` writes, so a reader
+   * holding one sees every later rewrite (and `materialEpoch` says when).
+   */
+  celRecipe(mat: unknown): CelRecipe | null {
+    return this.recipes.get(mat as ShaderMaterial) ?? null;
+  }
+
+  /** Starts `mat`'s recipe — before the first `own`, which is what it keeps. */
+  private bear(mat: ShaderMaterial, variant: readonly string[], depthUnits: number): void {
+    this.recipes.set(mat, {
+      defines: variant,
+      depthBias: depthUnits,
+      values: createMaterialUniforms(variant),
+      textures: {},
+    });
+  }
+
+  /**
+   * One of a material's OWN uniforms (`render/celMaterial.ts`), set on the
+   * material and — when it keeps a recipe and its variant declares the field
+   * — kept in it: one statement of the value, two readers.
+   */
+  private own(
+    mat: ShaderMaterial,
+    name: CelMaterialField,
+    value: Color3 | Vector2 | Vector4 | number,
+  ): void {
+    if (typeof value === "number") mat.setFloat(name, value);
+    else if (value instanceof Color3) mat.setColor3(name, value);
+    else if (value instanceof Vector2) mat.setVector2(name, value);
+    else mat.setVector4(name, value);
+    const out = this.recipes.get(mat)?.values[name];
+    if (!out) return;
+    if (typeof value === "number") out[0] = value;
+    else if (value instanceof Color3) value.toArray(out);
+    else value.toArray(out);
+    this.materialEpoch++;
+  }
+
+  /** `own` for one of a material's own textures. */
+  private ownTexture(mat: ShaderMaterial, name: CelMaterialTexture, tex: BaseTexture): void {
+    mat.setTexture(name, tex);
+    const recipe = this.recipes.get(mat);
+    if (!recipe) return;
+    recipe.textures[name] = hostTexture(tex);
+    this.materialEpoch++;
+  }
+
+  /**
    * Pushes the palette onto one material.
    *
    * Unconditional, and that is deliberate rather than lazy: a `setArray3` for a
@@ -1339,10 +1322,11 @@ export class CelMaterialFactory {
           attributes: [...CelMaterialFactory.PALETTE_ATTRIBUTES],
           uniforms: [...CelMaterialFactory.UNIFORMS, "celPalette"],
           samplers: [...CelMaterialFactory.SAMPLERS],
-          defines: ["#define CEL_PALETTE"],
+          defines: babylonDefines(PALETTE_VARIANT),
           shaderLanguage: ShaderLanguage.WGSL,
         },
       );
+      this.bear(mat, PALETTE_VARIANT, 0);
       // `baseColor` is deliberately NOT set. Every vertex this material ever
       // draws carries an index, because `MapBuilder` only hands a mesh to this
       // material when it has one — so the uniform path is unreachable here and
@@ -1464,7 +1448,8 @@ export class CelMaterialFactory {
           shaderLanguage: ShaderLanguage.WGSL,
         },
       );
-      mat.setColor3("baseColor", Color3.FromHexString(hex));
+      this.bear(mat, PLAIN_VARIANT, depthUnits);
+      this.own(mat, "baseColor", Color3.FromHexString(hex));
       this.albedos.set(mat, Color3.FromHexString(hex));
       this.applyCamera(mat);
       this.applyWind(mat);
@@ -1514,7 +1499,8 @@ export class CelMaterialFactory {
           shaderLanguage: ShaderLanguage.WGSL,
         },
       );
-      mat.setColor3("baseColor", Color3.FromHexString(hex));
+      this.bear(mat, PLAIN_VARIANT, 0);
+      this.own(mat, "baseColor", Color3.FromHexString(hex));
       this.albedos.set(mat, Color3.FromHexString(hex));
       this.applyCamera(mat);
       this.applyWind(mat);
@@ -1558,7 +1544,8 @@ export class CelMaterialFactory {
           shaderLanguage: ShaderLanguage.WGSL,
         },
       );
-      mat.setColor3("baseColor", Color3.FromHexString(hex));
+      this.bear(mat, PLAIN_VARIANT, 0);
+      this.own(mat, "baseColor", Color3.FromHexString(hex));
       this.albedos.set(mat, Color3.FromHexString(hex));
       this.applyCamera(mat);
       this.applyWind(mat);
@@ -1760,6 +1747,7 @@ export class CelMaterialFactory {
       (depthUnits === 0 ? "" : `-proud${depthUnits}`);
     let mat = this.cache.get(cacheKey);
     if (!mat) {
+      const variant = bump ? GROUND_BUMP_VARIANT : GROUND_VARIANT;
       mat = new ShaderMaterial(
         `cel-ground-${key}`,
         this.scene,
@@ -1778,30 +1766,26 @@ export class CelMaterialFactory {
             ...(bump ? ["bumpTex"] : []),
             ...CelMaterialFactory.SAMPLERS,
           ],
-          defines: [
-            "#define CEL_GROUND_TEX",
-            ...(bump ? ["#define CEL_BUMP"] : []),
-          ],
+          defines: babylonDefines(variant),
           shaderLanguage: ShaderLanguage.WGSL,
         },
       );
-      mat.setTexture("baseColorTex", tex);
-      mat.setFloat("texScale", texScale);
+      this.bear(mat, variant, depthUnits);
+      this.ownTexture(mat, "baseColorTex", tex);
+      this.own(mat, "texScale", texScale);
       // Set once here rather than in `applyEnvironment` beside the flat
       // colours' pair: these two come from CONFIG and not from the map, so
       // nothing an environment change carries could move them.
       const groundVar = CONFIG.graphics.groundVariation;
-      mat.setFloat(
-        "groundVariationScale",
-        1 / Math.max(0.001, groundVar.metersPerCell),
-      );
-      mat.setFloat("groundVariationAmount", groundVar.amount);
+      this.own(mat, "groundVariationScale", 1 / Math.max(0.001, groundVar.metersPerCell));
+      this.own(mat, "groundVariationAmount", groundVar.amount);
       if (bump) {
-        mat.setTexture("bumpTex", bump);
-        mat.setFloat("bumpScale", opts.bumpScale ?? 0.1);
+        this.ownTexture(mat, "bumpTex", bump);
+        this.own(mat, "bumpScale", opts.bumpScale ?? 0.1);
         // CONFIG's and never the map's, for groundVariation's reason above.
         const relief = CONFIG.graphics.relief;
-        mat.setVector4(
+        this.own(
+          mat,
           "reliefFade",
           new Vector4(
             relief.parallaxFade[0],
@@ -1810,10 +1794,7 @@ export class CelMaterialFactory {
             relief.shadowFade[1],
           ),
         );
-        mat.setVector2(
-          "reliefShade",
-          new Vector2(relief.shadowStrength, relief.cavity),
-        );
+        this.own(mat, "reliefShade", new Vector2(relief.shadowStrength, relief.cavity));
         mat.setFloat("reliefMarch", this.reliefMarch);
         this.relieved.add(mat);
       }
@@ -2195,6 +2176,26 @@ export class CelMaterialFactory {
   }
 
   /**
+   * The frame's TEXTURES for our renderer (`render/frame.ts`,
+   * `FRAME_TEXTURES`): every one is pushed onto every cel material as shared
+   * state, and this hands over the same objects off the same fields —
+   * `ShadowBindings`' maps and the irradiance volume's set — as handles only
+   * the frame's host resolves. A pull, beside `fillFrame`; allocates nothing.
+   */
+  fillFrameTextures(out: FrameTextures): void {
+    this.shadows.fillFrameTextures(out);
+    const gi = this.gi;
+    if (!gi) return;
+    out.giIrr = hostTexture(gi.textures.giIrr);
+    out.giDir = hostTexture(gi.textures.giDir);
+    out.giAux = hostTexture(gi.textures.giAux);
+    out.giVis0 = hostTexture(gi.textures.giVis0);
+    out.giVis1 = hostTexture(gi.textures.giVis1);
+    out.giVis2 = hostTexture(gi.textures.giVis2);
+    out.giVis3 = hostTexture(gi.textures.giVis3);
+  }
+
+  /**
    * What an OPAQUE cel fragment writes into the alpha channel: 0 for the frame,
    * 1 for a reflection bake. The argument is on `opaqueAlpha` in the fragment
    * source; this is only the walk.
@@ -2499,23 +2500,20 @@ export class CelMaterialFactory {
   /** Specular is per-material, never theme-wide: null keeps a material matte. */
   private applySpec(mat: ShaderMaterial, spec: SpecSpec | null): void {
     if (!spec) {
-      mat.setColor3("specColor", Color3.Black());
+      this.own(mat, "specColor", Color3.Black());
       // Shininess 1 is a no-op exponent — the zero specColor wins anyway.
-      mat.setFloat("specShininess", 1);
+      this.own(mat, "specShininess", 1);
       // Zero is WRITTEN rather than left where the last spec put it: these
       // materials are cached and re-applied over (see `specs`), so an
       // unwritten uniform on a re-used material is the previous map's answer,
       // and this one is the branch the mirror block is behind.
-      mat.setFloat("specMirror", 0);
+      this.own(mat, "specMirror", 0);
       return;
     }
     this.specs.set(mat, spec);
-    mat.setColor3(
-      "specColor",
-      Color3.FromHexString(spec.color).scale(spec.intensity),
-    );
-    mat.setFloat("specShininess", Math.max(1, spec.shininess));
-    mat.setFloat("specMirror", Math.min(1, Math.max(0, spec.mirror ?? 0)));
+    this.own(mat, "specColor", Color3.FromHexString(spec.color).scale(spec.intensity));
+    this.own(mat, "specShininess", Math.max(1, spec.shininess));
+    this.own(mat, "specMirror", Math.min(1, Math.max(0, spec.mirror ?? 0)));
   }
 
   /** What a ground material created from here on is built with. */
@@ -2567,14 +2565,13 @@ export class CelMaterialFactory {
     mat: ShaderMaterial,
     trans: TranslucencySpec | null,
   ): void {
-    mat.setColor3(
+    this.own(
+      mat,
       "transColor",
-      trans
-        ? Color3.FromHexString(trans.color).scale(trans.intensity)
-        : Color3.Black(),
+      trans ? Color3.FromHexString(trans.color).scale(trans.intensity) : Color3.Black(),
     );
     const depth = trans?.depth ?? 0;
-    mat.setFloat("transDepth", depth);
+    this.own(mat, "transDepth", depth);
     if (depth > 0) this.solids.add(mat);
     else this.solids.delete(mat);
   }

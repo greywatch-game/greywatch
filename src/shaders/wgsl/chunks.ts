@@ -3,12 +3,14 @@
  * renderers include: Babylon's (`wgsl/includes.ts` registers each under its
  * name) and ours (`src/render/`, which assembles them by the same names).
  * Owns: `WGSL_CHUNKS`, the one table of shared shader text — `celBand`,
- * `celCloud`, `celShadow`, `celGi`, `celProbe`, `celProbeBox`, `celDither` and
- * `celSurface` — and the compile-time literals the bodies are written with.
+ * `celCloud`, `celShadow`, `celGi`, `celProbe`, `celProbeBox`, `celDither`,
+ * `celSurface` (the fragment) and `celVertex` (the vertex stage) — and the
+ * compile-time literals the bodies are written with.
  * Invariants: **a body DECLARES NOTHING** — no `uniform`, no `varying`, no
  * texture or sampler — because each renderer declares in its own form, and
  * Babylon's dialect is not WGSL; a body reads a uniform as `uniforms.<name>`,
- * an input as `fragmentInputs.<name>` and a texture by its own name, which is
+ * an input as `fragmentInputs.<name>` (a vertex body: `vertexInputs.<name>`,
+ * writing `vertexOutputs.<name>`) and a texture by its own name, which is
  * the one spelling both sides honour. The directives in a body are
  * `#include<cel…>` and the `#ifdef` family over a variant's defines, and
  * nothing else — the subset `render/wgsl/preprocess.ts` implements.
@@ -27,6 +29,7 @@
 import { CONFIG } from "../../config";
 import { DITHER_WGSL } from "../Dither";
 import { CEL_SURFACE } from "./celSurface";
+import { CEL_VERTEX } from "./celVertex";
 
 /**
  * `CONFIG.graphics.shadows.edgeFade`, interpolated into `celShadow` below as a
@@ -853,6 +856,7 @@ export const WGSL_CHUNKS = {
   celProbeBox: CEL_PROBE_BOX,
   celDither: CEL_DITHER,
   celSurface: CEL_SURFACE,
+  celVertex: CEL_VERTEX,
 } as const satisfies Record<`cel${string}`, string>;
 
 /** A chunk's name. */

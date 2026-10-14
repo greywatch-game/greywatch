@@ -2,12 +2,14 @@
  * render/wgsl/assemble.ts — Our renderer's half of a shared WGSL body: its
  * DECLARATIONS, stated as data, and the one function that turns them and a
  * body into a plain WGSL module with explicit bind groups.
- * Owns: the declaration types (`FragmentProgram`, `Binding`, `UniformField`,
- * `Varying`, `Guard`); `assembleFragment`, which emits the inputs struct, the
- * uniform structs, every `@group`/`@binding`, the preprocessed body and the
- * entry point; and the two rewrites that make a body written for Babylon's
- * accessors read ours — `uniforms.<name>` to the block that declares it, and a
- * strided scalar array's element to its `.el`.
+ * Owns: the declaration types (`FragmentProgram`, `VertexProgram`, `Binding`,
+ * `UniformField`, `Varying`, `Attribute`, `Guard`, `StageTarget`);
+ * `assembleFragment` and `assembleVertex`, which emit the stage's input and
+ * output structs, the uniform structs, every `@group`/`@binding`, the
+ * preprocessed body and the entry point — with Babylon's y flip for the kind
+ * of pass the module is built for; and the two rewrites that make a body
+ * written for Babylon's accessors read ours — `uniforms.<name>` to the block
+ * that declares it, and a strided scalar array's element to its `.el`.
  * Invariants: a binding's number is its place in its group's list, counted
  * over every entry whatever the variant (a texture entry takes two: its
  * sampler, then itself), so a binding keeps its number in every variant of a
@@ -19,6 +21,25 @@
  * declarations are the program's to state and the body's to be checked
  * against.
  * Contract: `docs/rendering.md`, "Hand-written WGSL".
+ *
+ * WHY THE FLIP IS HERE AND NOT IN A BODY. Babylon draws a pass that renders
+ * to a TEXTURE upside down, so a later sample reads it the GL way up
+ * (`render/targets.ts`), and its shader processor writes that into every
+ * module it compiles rather than into the source
+ * (`webgpuShaderProcessorsWGSL.pure.js`, `finalizeShaders`): the vertex
+ * stage's clip y times `yFactor_`, which is -1 into a texture and 1 onto the
+ * canvas; and, in a fragment, every `dpdy` — and the position's y, as
+ * `textureOutputHeight_ - y`, where the fragment reads
+ * `fragmentInputs.position` — turned around ONTO THE CANVAS, where
+ * `yFactor_` is 1. So a fragment built for a texture pass needs nothing, and
+ * the vertex stage's flip is written here. A fragment for the CANVAS is
+ * REFUSED: its position rule reads the render height, which the engine
+ * rewrites on every resize (`_initializeMainAttachments`), and no frame field
+ * carries it yet — nothing of ours draws onto the canvas before the game owns
+ * the frame (`BABYLON_EXIT.md` X5), and the step that draws there owes the
+ * frame that field. The dither keyed on the pixel (`celDither`) and the facet
+ * normal off `dpdy` (`celSurface`) are what the rule exists for. The flip is
+ * the PASS's, so it is written here, once, and never in a body.
  *
  * WHY DATA RATHER THAN DECLARATION TEXT. The same list that writes the WGSL
  * is what the pipeline's bind-group layouts and the uniform uploads will be
@@ -113,6 +134,55 @@ export interface FragmentProgram {
   readonly surface: string;
 }
 
+/**
+ * One vertex attribute, read by a body as `vertexInputs.<name>`. Locations are
+ * counted over the attributes the variant HAS, in list order.
+ */
+export interface Attribute {
+  readonly name: string;
+  /** `f32`, `vec2f`, `vec3f` or `vec4f` — every attribute here is float. */
+  readonly type: string;
+  readonly when?: Guard;
+}
+
+/** A vertex stage, declared: what a shared vertex body is assembled against. */
+export interface VertexProgram {
+  /** Names the program in every error and in the module's label. */
+  readonly label: string;
+  /** The bind groups, in group order. */
+  readonly groups: readonly (readonly Binding[])[];
+  readonly attributes: readonly Attribute[];
+  /**
+   * What it hands the fragment after `@builtin(position)`: the fragment
+   * program's own `varyings`, the same list, so the locations agree.
+   */
+  readonly varyings: readonly Varying[];
+  /** What `#include` resolves against. */
+  readonly includes: Readonly<Record<string, string>>;
+  /** The body: directives allowed, declarations not. */
+  readonly body: string;
+  /** The body's function that fills `vertexOutputs`, called by `main`. */
+  readonly entry: string;
+}
+
+/** What kind of pass a module is built for: the one fact the flip turns on. */
+export interface StageTarget {
+  /** The pass renders to a texture Babylon flips (`PassTargets.flipY`). */
+  readonly flipY: boolean;
+}
+
+/** One attribute as a variant resolved it: what a vertex buffer layout is built from. */
+export interface AssembledAttribute {
+  readonly name: string;
+  readonly location: number;
+  readonly type: string;
+}
+
+/** A vertex module, and the attributes it reads. */
+export interface AssembledVertex extends AssembledModule {
+  readonly attributes: readonly AssembledAttribute[];
+}
+
 /** One binding as a variant resolved it — what a bind-group layout is built from. */
 export interface AssembledBinding {
   readonly group: number;
@@ -150,10 +220,17 @@ const ELEMENT_STRIDE: Readonly<Record<string, number>> = {
 export function assembleFragment(
   program: FragmentProgram,
   defines: Iterable<string>,
+  target: StageTarget,
 ): AssembledModule {
   const variant = new Set(defines);
   const tag = `${program.label} [${[...variant].sort().join("+")}]`;
   const holds = (when?: Guard): boolean => guardHolds(when, variant);
+  if (!target.flipY) {
+    throw new Error(
+      `${tag}: a fragment for the canvas owes Babylon's position rule the render height, ` +
+        "which no frame field carries yet (see the header)",
+    );
+  }
 
   const lines: string[] = [];
   for (const d of program.diagnosticsOff ?? []) lines.push(`diagnostic(off, ${d});`);
@@ -167,12 +244,14 @@ export function assembleFragment(
   const declared = declareGroups(program.groups, variant, tag);
   lines.push(...declared.lines);
 
-  const body = preprocess(program.body, {
-    defines: variant,
-    includes: program.includes,
-    label: tag,
-  });
-  lines.push(bindUniforms(body, declared.owner, declared.strided, tag));
+  const body = bindUniforms(
+    preprocess(program.body, { defines: variant, includes: program.includes, label: tag }),
+    declared.owner,
+    declared.strided,
+    tag,
+  );
+  // Into a texture, Babylon's processor leaves the fragment as written.
+  lines.push(body);
 
   lines.push(
     "@fragment",
@@ -182,6 +261,53 @@ export function assembleFragment(
     "}",
   );
   return { label: tag, code: lines.join("\n"), bindings: declared.bindings };
+}
+
+/** The variant `defines` of a vertex stage, for a pass of `target`'s kind. */
+export function assembleVertex(
+  program: VertexProgram,
+  defines: Iterable<string>,
+  target: StageTarget,
+): AssembledVertex {
+  const variant = new Set(defines);
+  const tag = `${program.label} [${[...variant].sort().join("+")}]`;
+  const holds = (when?: Guard): boolean => guardHolds(when, variant);
+
+  const attributes = program.attributes
+    .filter((a) => holds(a.when))
+    .map((a, location) => ({ name: a.name, location, type: a.type }));
+  const lines = ["struct VertexInputs {"];
+  for (const a of attributes) lines.push(`  @location(${a.location}) ${a.name}: ${a.type},`);
+  lines.push("}", "var<private> vertexInputs: VertexInputs;");
+
+  lines.push("struct FragmentInputs {", "  @builtin(position) position: vec4f,");
+  program.varyings
+    .filter((v) => holds(v.when))
+    .forEach((v, location) => lines.push(`  @location(${location}) ${v.name}: ${v.type},`));
+  lines.push("}", "var<private> vertexOutputs: FragmentInputs;");
+
+  const declared = declareGroups(program.groups, variant, tag);
+  lines.push(...declared.lines);
+  lines.push(
+    bindUniforms(
+      preprocess(program.body, { defines: variant, includes: program.includes, label: tag }),
+      declared.owner,
+      declared.strided,
+      tag,
+    ),
+  );
+  lines.push(
+    "@vertex",
+    "fn main(input: VertexInputs) -> FragmentInputs {",
+    "  vertexInputs = input;",
+    `  ${program.entry}();`,
+    // Babylon's own line, with the factor its internals buffer holds for a
+    // texture pass (the header).
+    ...(target.flipY ? ["  vertexOutputs.position.y = vertexOutputs.position.y * -1.0;"] : []),
+    "  return vertexOutputs;",
+    "}",
+  );
+  return { label: tag, code: lines.join("\n"), bindings: declared.bindings, attributes };
 }
 
 /** What `declareGroups` hands back: the WGSL, what it binds, and how a body's names route. */
@@ -197,9 +323,8 @@ export interface Declared {
 
 /**
  * The bind groups of a program, declared for one variant — what
- * `assembleFragment` writes above its body, and what a module with another
- * stage (a vertex program, X3.3) writes above its own, so the frame block is
- * one declaration whichever stage reads it.
+ * `assembleFragment` and `assembleVertex` write above their bodies, so the
+ * frame block is one declaration whichever stage reads it.
  */
 export function declareGroups(
   groups: readonly (readonly Binding[])[],
@@ -214,11 +339,10 @@ export function declareGroups(
   const declare: string[] = [];
 
   groups.forEach((entries, group) => {
-    let binding = 0;
-    for (const entry of entries) {
-      const at = binding;
-      binding += entry.kind === "sampled" ? 2 : 1;
-      if (!holds(entry.when)) continue;
+    const first = firstBindings(entries);
+    entries.forEach((entry, e) => {
+      const at = first[e];
+      if (!holds(entry.when)) return;
       const prefix = `@group(${group}) @binding(${at})`;
       if (entry.kind === "sampled") {
         const sampler = `${entry.name}Sampler`;
@@ -226,7 +350,7 @@ export function declareGroups(
         declare.push(`@group(${group}) @binding(${at + 1}) var ${entry.name}: ${entry.type};`);
         bindings.push({ group, binding: at, kind: "sampler", name: sampler, type: "sampler" });
         bindings.push({ group, binding: at + 1, kind: "texture", name: entry.name, type: entry.type });
-        continue;
+        return;
       }
       const members: string[] = [];
       for (const f of entry.fields) {
@@ -239,11 +363,11 @@ export function declareGroups(
       }
       // A struct may not be empty; a block the variant leaves nothing in is
       // not bound, and keeps its number for the variants that do bind it.
-      if (members.length === 0) continue;
+      if (members.length === 0) return;
       declare.push(`struct ${entry.struct} {`, ...members, "}");
       declare.push(`${prefix} var<uniform> ${entry.var}: ${entry.struct};`);
       bindings.push({ group, binding: at, kind: "uniform", name: entry.var, type: entry.struct });
-    }
+    });
   });
 
   const lines = [
@@ -251,6 +375,22 @@ export function declareGroups(
     ...declare,
   ];
   return { lines, bindings, owner, strided };
+}
+
+/**
+ * The binding number each entry of a group starts at: its place in the list,
+ * counted over EVERY entry whatever the variant, a `sampled` one taking two
+ * (its sampler, then itself) — so an entry keeps its number in every variant,
+ * and a bind group is built from the same numbers the WGSL is declared with.
+ */
+export function firstBindings(entries: readonly Binding[]): number[] {
+  const out: number[] = [];
+  let binding = 0;
+  for (const entry of entries) {
+    out.push(binding);
+    binding += entry.kind === "sampled" ? 2 : 1;
+  }
+  return out;
 }
 
 /** A member's declaration: an array's `@align` goes before its NAME, not its type. */

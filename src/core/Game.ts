@@ -213,6 +213,7 @@ import { Sky } from "../systems/Sky";
 import { LightningStrikes } from "../systems/LightningStrikes";
 import { WaterSystem } from "../systems/WaterSystem";
 import { WorldCulling, type PooledBody } from "../systems/WorldCulling";
+import { BlockHandover } from "../systems/BlockHandover";
 import {
   applyEnvironment,
   bodyDrawDistanceOf,
@@ -509,6 +510,12 @@ export class Game {
    * (`BABYLON_EXIT.md` Phase 3), and costs one empty branch a frame until then.
    */
   readonly renderer: Renderer;
+  /**
+   * The map's blocks drawn in the main pass by `renderer` instead of Babylon
+   * (`BABYLON_EXIT.md` X3.3a) — a DEV switch, `?ourworld`, read once here;
+   * null without it, and then nothing about the frame differs.
+   */
+  readonly handover: BlockHandover | null;
   private input: InputManager;
   private cameraSys: CameraSystem;
   private hud: HUD;
@@ -1429,8 +1436,10 @@ export class Game {
     // key/ambient/point-light uniforms (fed by the LightingSystem) and every
     // effect material is unlit emissive.
     this.mats = new CelMaterialFactory(this.scene);
-    this.renderer = new Renderer(new BabylonFrameHost(this.engine, this.scene), (out) =>
-      this.mats.fillFrame(out),
+    this.renderer = new Renderer(
+      new BabylonFrameHost(this.engine, this.scene),
+      (out) => this.mats.fillFrame(out),
+      (out) => this.mats.fillFrameTextures(out),
     );
     // Stepped moon shadows + contact blobs. Must exist before any cel
     // material is created so the shadow map binds on creation.
@@ -1706,6 +1715,10 @@ export class Game {
     // flag. Nothing it does is visible to a ray, a collision, a shadow caster
     // or a cube probe; see `WorldCulling`, which is the whole argument.
     this.culling = new WorldCulling(this.scene);
+    this.handover =
+      import.meta.env.DEV && urlFlag("ourworld")
+        ? new BlockHandover(this.renderer, this.scene, this.mats, this.culling)
+        : null;
     this.mapBuilder = new MapBuilder(
       this.scene,
       this.mats,
@@ -4504,6 +4517,8 @@ export class Game {
     // this leaves a fire crackling at a coordinate on a map that no longer
     // exists, under whatever the new one builds there — or under the menu.
     this.sfx.ambienceAllOff();
+    // Our renderer's copies of the blocks go with the meshes they stand for.
+    this.handover?.clear();
     this.map?.dispose();
     this.map = null;
     this.combatFx.clearTransient();
@@ -4643,7 +4658,12 @@ export class Game {
     // The bots are steered by the authority off its own world
     // (`BuildOptions.navFields`) — in the page's own match, in its host.
     const navFields = opts?.editor === true || this.remoteRound;
-    const map = this.mapBuilder.build(layout, environment, heights, { ...opts, foliage, navFields });
+    const map = this.mapBuilder.build(layout, environment, heights, {
+      ...opts,
+      foliage,
+      navFields,
+      onSurface: this.handover?.onSurface,
+    });
     this.map = map;
     // What the profiler reports is the rung this map was built WITH.
     this.foliageBuilt = this.settings.foliage;
@@ -4711,6 +4731,9 @@ export class Game {
     // the second one exact — past it a structure draws `fogColor` in front of
     // ground that draws `fogColor` — and nothing else does.
     this.culling.setMap(map, environment.fogEnd);
+    // And which of the fresh map's blocks our renderer draws instead, which
+    // the cull has to be told after it has filed them (`?ourworld`).
+    this.handover?.install();
     // How hard the grade is pushed is the map's; whether it runs at all stays
     // the player's (`applySettings`). A vignette that reads as dread over a
     // night village reads as a lens fault over a bright one.
@@ -5416,6 +5439,18 @@ export class Game {
       if (wait.warm.afterFrame(WebGPUCacheRenderPipeline.NumCacheMiss)) {
         this.finishBakeWait();
       }
+      return;
+    }
+    // Our renderer's pipelines (`?ourworld`) are built before the warm-up
+    // starts, so the warm-up draws with them and no frame of the round
+    // draws with one still compiling. They were asked for as the map built.
+    // Under the card's own cap, as the bake is: a compile that never
+    // settles must not hang the card.
+    if (
+      this.handover &&
+      !this.handover.compiled &&
+      performance.now() - wait.since < CONFIG.graphics.reflection.drainCapMs
+    ) {
       return;
     }
     const cfg = CONFIG.graphics.reflection;

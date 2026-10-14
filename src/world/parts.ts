@@ -383,12 +383,14 @@ export function drawnMesh(
  * else, so the CPU holds the world's geometry once — in the arrays Babylon
  * keeps — rather than twice. `plain` is the build's `PlainArrays`, which is
  * how the floor's mesh comes out holding the arrays its collider clone was
- * already made of.
+ * already made of. `onSurface` (`BuildOptions.onSurface`) is handed each
+ * surface and its mesh on the way past, before the release.
  */
 export function worldMeshes(
   surfaces: readonly WorldSurface[],
   scene: Scene,
   plain: PlainArrays,
+  onSurface?: (surface: WorldSurface, mesh: Mesh) => void,
 ): { meshes: Mesh[]; records: SurfaceRecord[] } {
   const order = surfaces.map((_, i) => i).sort((a, b) => surfaces[a].born - surfaces[b].born);
   if (import.meta.env.DEV) {
@@ -413,6 +415,7 @@ export function worldMeshes(
     }
     meshes[i] = mesh;
     records[i] = recordOf(surface);
+    onSurface?.(surface, mesh);
     releaseArrays(surface.part);
   }
   surfaces.forEach((surface, i) => surface.owner?.visuals.push(meshes[i]));

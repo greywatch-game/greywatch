@@ -27,7 +27,7 @@ import type { ObstacleField } from "./ObstacleField";
 import type { RayWorld } from "./RayWorld";
 import type { RoadFootprint } from "./roads";
 import type { TerrainField } from "./TerrainField";
-import type { WorldGeometry } from "./worldGeometry";
+import type { WorldGeometry, WorldSurface } from "./worldGeometry";
 
 /**
  * One floor block's collider as data: the positions it was built from (three
@@ -352,6 +352,15 @@ export interface BuildOptions {
    * draws one; the scratch netplay smoke steers its walker by them).
    */
   navFields?: boolean;
+  /**
+   * Handed every surface with the mesh made of it, in the one moment its
+   * ARRAYS can still be read: after the mesh takes them and before they are
+   * released (`worldMeshes`, and `SurfaceRecord` for why they go). For a
+   * renderer of our own that uploads a surface itself
+   * (`systems/BlockHandover.ts`, under `?ourworld`). Absent is nothing handed
+   * and nothing kept.
+   */
+  onSurface?: (surface: WorldSurface, mesh: Mesh) => void;
 }
 
 /** The built world: geometry is in the scene, this is the queryable part. */

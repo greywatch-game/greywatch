@@ -1,7 +1,9 @@
 /**
  * WorldCulling.ts — What the frame's own mesh walk is allowed to see.
  * Owns: `Scene.getActiveMeshCandidates`, the map's meshes filed into cull
- * cells, and the list handed back to Babylon each frame.
+ * cells, and the list handed back to Babylon each frame — and, under
+ * `?ourworld`, the TAKEN meshes our renderer draws in the main pass instead
+ * (`setTaken`), never candidates, offered to it as `takenOffered`.
  * There are TWO lists and they run on different clocks: `eligible` is the
  * structural answer, rebuilt only when a cell, a pool or the scene's
  * membership moves, and `candidates` is that list minus whatever is switched
@@ -76,6 +78,16 @@
  * only required to sit CLOSE to the fog — so a hole cut in the rim is a hole
  * onto a gradient, and the further up the dome it is the less it is fogColor.
  * They are also a few hundred meshes against several thousand structures.
+ *
+ * **A TAKEN mesh is a block our renderer draws in the main pass**
+ * (`systems/BlockHandover.ts`, behind the DEV switch `?ourworld`,
+ * `BABYLON_EXIT.md` X3.3a). It is filed in its cell like any block and meets
+ * every test a candidate meets here, but what passes goes to `takenOffered`
+ * rather than to Babylon — so the main pass's mesh walk never sees it, and
+ * nothing else does either: every other pass draws from a list of its own
+ * (the shadow maps, the probes, the lamps' atlas), and the glow's mask,
+ * which reads the main pass's ACTIVE meshes, keeps only what glows, which a
+ * taken mesh never does.
  *
  * The reach is the map's own `fogEnd` plus `CONFIG.graphics.culling.pad`, and
  * on a map whose fog never closes — `fogEnd` past its own diagonal, which the
@@ -242,6 +254,20 @@ export class WorldCulling {
   private poolOf = new Map<AbstractMesh, Pool>();
   private pools: Pool[] = [];
 
+  /** The meshes our renderer draws in the main pass instead — see the header. */
+  private taken = new Set<AbstractMesh>();
+  /** The taken meshes in a cell that is on: `eligible`'s twin. */
+  private takenEligible: AbstractMesh[] = [];
+  /**
+   * The taken meshes that passed every test here THIS frame — what Babylon
+   * would have been offered of them. Read by whoever draws them, after this
+   * frame's `update`; rewritten in place by the next.
+   */
+  readonly takenOffered: { readonly data: AbstractMesh[]; length: number } = {
+    data: [],
+    length: 0,
+  };
+
   /** Set when the candidate list no longer matches the state above. */
   private listDirty = true;
 
@@ -325,6 +351,10 @@ export class WorldCulling {
     this.candidates.data.length = 0;
     this.candidates.length = 0;
     this.eligible.length = 0;
+    this.taken = new Set();
+    this.takenEligible.length = 0;
+    this.takenOffered.data.length = 0;
+    this.takenOffered.length = 0;
     this.gateOf = new Map();
     if (!map) {
       this.onSq = Number.POSITIVE_INFINITY;
@@ -429,6 +459,21 @@ export class WorldCulling {
         this.stats.pooled++;
       }
     }
+  }
+
+  /**
+   * The meshes our renderer draws in the main pass from now on — each one a
+   * mesh `setMap` filed in a cell (anything else is refused: only a block is
+   * drawn by our side). Replaced whole; empty hands every one back.
+   */
+  setTaken(meshes: readonly AbstractMesh[]): void {
+    for (const mesh of meshes) {
+      if (!this.cellOf.has(mesh)) {
+        throw new Error(`WorldCulling: "${mesh.name}" is taken but is no block`);
+      }
+    }
+    this.taken = new Set(meshes);
+    this.listDirty = true;
   }
 
   /**
@@ -537,11 +582,13 @@ export class WorldCulling {
   private rebuildList(): void {
     const data = this.eligible;
     data.length = 0;
+    const taken = this.takenEligible;
+    taken.length = 0;
     let loose = 0;
     for (const mesh of this.scene.meshes) {
       const cell = this.cellOf.get(mesh);
       if (cell) {
-        if (cell.on || this.warm) data.push(mesh);
+        if (cell.on || this.warm) (this.taken.has(mesh) ? taken : data).push(mesh);
         continue;
       }
       if (this.hidden.has(mesh)) continue;
@@ -663,6 +710,32 @@ export class WorldCulling {
       pool.root.computeWorldMatrix(true);
       pool.small = this.tooSmall(pool.root, eye, perRad, px2);
     }
+    const k = this.pass(src, n, out, gate, eye, perRad, px2);
+    // Length rather than truncation: the backing array is reused every frame
+    // and Babylon reads `length`, so shrinking `data` would be a free-list
+    // churn this is trying to avoid.
+    out.length = k > out.length ? k : out.length;
+    this.candidates.length = k;
+    this.stats.offered = k;
+    // The taken meshes meet the same tests, into their own list.
+    const taken = this.takenOffered;
+    const from = this.takenEligible;
+    taken.length = this.pass(from, from.length, taken.data, gate, eye, perRad, px2);
+  }
+
+  /**
+   * One walk of `offer`'s: the meshes of `src[0..n)` switched on this frame
+   * and big enough on screen, written into `out` from 0; returns how many.
+   */
+  private pass(
+    src: readonly AbstractMesh[],
+    n: number,
+    out: AbstractMesh[],
+    gate: boolean,
+    eye: Vector3,
+    perRad: number,
+    px2: number,
+  ): number {
     let k = 0;
     for (let i = 0; i < n; i++) {
       const mesh = src[i];
@@ -690,12 +763,7 @@ export class WorldCulling {
       }
       out[k++] = mesh;
     }
-    // Length rather than truncation: the backing array is reused every frame
-    // and Babylon reads `length`, so shrinking `data` would be a free-list
-    // churn this is trying to avoid.
-    out.length = k > out.length ? k : out.length;
-    this.candidates.length = k;
-    this.stats.offered = k;
+    return k;
   }
 
   /**

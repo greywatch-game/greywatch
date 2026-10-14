@@ -1241,7 +1241,14 @@ src/
                         #   every sweep unable to tell it ran. A collider
                         #   is never a candidate, a mesh carrying metadata.block
                         #   is one inside the map's fogEnd, everything else
-                        #   always is
+                        #   always is. Under ?ourworld a TAKEN block is never
+                        #   one: what passes goes to takenOffered instead
+    BlockHandover.ts    # ?ourworld (DEV, BABYLON_EXIT.md X3.3a): which block
+                        #   surfaces OUR renderer draws in the main pass —
+                        #   taken at the build (BuildOptions.onSurface),
+                        #   uploaded into render/WorldBlocks, kept out of the
+                        #   candidates, and ON each frame exactly when
+                        #   Babylon's own active-mesh walk would draw it
     WaterSystem.ts      # Water surfaces from map WaterRects; bakes their bed depth
                         #   and stands the one wave GRID under the eye (`follow`,
                         #   pushed from `tick` in every state). `setWash` is the
@@ -2162,9 +2169,13 @@ src/
                         #   the content-hashed rest
   shaders/
     CelShader.ts        # Custom cel ShaderMaterial. Both stages WGSL; six
-                        #   defines, six UBO layouts. The fragment is Babylon's
-                        #   DECLARATIONS and a three-line main over the shared
-                        #   wgsl/celSurface.ts. writePaletteIndex stamps
+                        #   defines, six UBO layouts. Each stage is Babylon's
+                        #   DECLARATIONS and a one-line main over a shared body
+                        #   (wgsl/celVertex.ts, wgsl/celSurface.ts). Every
+                        #   per-material value is set through own(), which
+                        #   keeps it in the material's RECIPE (celRecipe) for
+                        #   src/render/; fillFrame and fillFrameTextures are
+                        #   the frame's pulls. writePaletteIndex stamps
                         #   a part's palette slot into its buffer's uv2 for
                         #   both palette merges (the map's, the soldier's)
     ShadowBindings.ts   # Every shadow a lit material samples (world, bodies,
@@ -2209,13 +2220,18 @@ src/
     wgsl/
       chunks.ts         # The WGSL BODIES every surface shares, Babylon-free:
                         #   celBand, celCloud, celShadow, celGi, celProbe,
-                        #   celProbeBox, celDither, celSurface, as WGSL_CHUNKS —
+                        #   celProbeBox, celDither, celSurface, celVertex, as
+                        #   WGSL_CHUNKS —
                         #   the one table both renderers include from. A body
                         #   declares NOTHING; each side states its own
       celSurface.ts     # The cel fragment's BODY as one function,
                         #   celSurface(): every term the cel material lights a
                         #   pixel with. Babylon-free; shared verbatim with
                         #   src/render/. MAX_POINT_LIGHTS and MAX_PALETTE
+      celVertex.ts      # The cel VERTEX stage's body, celVertex(): the world
+                        #   transform, the wind's ramp and rigged layers, the
+                        #   varyings. Babylon-free; shared verbatim with
+                        #   src/render/; no y flip (each side's main owns it)
       includes.ts       # Babylon's half of chunks.ts: its DECLARATIONS for
                         #   each chunk, and every chunk registered as an
                         #   include (declarations + body, comments stripped:
@@ -2270,39 +2286,63 @@ src/
                         #   here meets Babylon (types only). Its header numbers
                         #   every internal it reaches: device, lazy pass, the
                         #   bundle list our draws are QUEUED into, the pass's
-                        #   attachments, the render target's y-flip
+                        #   attachments, the render target's y-flip, group 0's
+                        #   onBeforeTransparentRendering, a texture's own view
+                        #   and Babylon's sampler cache. hostTexture, the one
+                        #   crossing that mints a HostTexture
     frameHost.ts        # FrameHost (what the renderer needs from whoever owns
-                        #   the frame) and PassTargets
-    Renderer.ts         # Renderer: the frame's uniforms and buffer, the
-                        #   pipeline cache, the FrameDraws it queues after
-                        #   group 0 in the MAIN pass; refuses to draw if the
-                        #   pass is not FRAME_TARGETS
+                        #   the frame: the device, the queue, the three main-
+                        #   pass hooks, a texture's view and sampler NOW),
+                        #   PassTargets, HostTexture
+    Renderer.ts         # Renderer: the frame's uniforms, textures and their
+                        #   group 0, the pipeline cache, the FrameDraws it
+                        #   queues at two points of group 0 in the MAIN pass —
+                        #   where its opaque meshes end, and after it; refuses
+                        #   to draw if the pass is not FRAME_TARGETS
     targets.ts          # FRAME_TARGETS, stated once: rgba8unorm, depth32float,
                         #   1 sample, flipY (CelInk's target, not the canvas)
     frame.ts            # FRAME_BLOCK (group 0, binding 0 of every program:
                         #   camera, environment, wind, lights, shadows, GI,
                         #   palette LAST) and FrameUniforms, the plain struct
-                        #   CelMaterialFactory.fillFrame fills
-    FrameUniformBuffer.ts # The frame block's GPU buffer and the copy plan
-                        #   from FrameUniforms by the computed layout; one
-                        #   buffer per pass
+                        #   CelMaterialFactory.fillFrame fills; FRAME_TEXTURES,
+                        #   the rest of group 0, and FrameTextures
+    celMaterial.ts      # A cel material as WE draw one: its own block and
+                        #   textures (group 1), the draw's world (group 2), and
+                        #   CelRecipe — what the factory kept at its birth
+    UniformBlockBuffer.ts # One uniform block's GPU buffer and the copy plan
+                        #   from its values by the computed layout
+    FrameUniformBuffer.ts # The frame block's UniformBlockBuffer, laid out for
+                        #   the palette's variant; one buffer per pass
+    HostBindGroup.ts    # A bind group from a group's DECLARED entries: our
+                        #   buffers and the host's textures, re-resolved every
+                        #   frame and re-made only when a view moved
     PipelineCache.ts    # Shader modules, explicit bind-group layouts and
                         #   createRenderPipelineAsync pipelines, keyed on
-                        #   variant, vertex layout, targets and state
+                        #   variant, vertex layout, targets and state; the
+                        #   front face by Babylon's rule
     celFragment.ts      # The cel fragment as WE declare it: frame (group 0)
                         #   and material (group 1) uniforms and textures, the
-                        #   inputs, over the shared celSurface body. Compiled
-                        #   per variant by plans/webgpu-ref/shaders.mjs
+                        #   inputs (CEL_VARYINGS), over the shared celSurface
+                        #   body
+    celVertex.ts        # The cel vertex stage as WE declare it: the
+                        #   attributes, the frame and the draw's world, over
+                        #   the shared celVertex body. Both stages compiled per
+                        #   variant by plans/webgpu-ref/shaders.mjs
+    WorldBlocks.ts      # The map's block surfaces drawn by US (?ourworld):
+                        #   their buffers, a material group per recipe, a
+                        #   pipeline per variant, one draw per surface at the
+                        #   end of group 0's opaque meshes, ON as told
     wgsl/
       preprocess.ts     # #include and the #ifdef family over a define set —
                         #   the subset a shared body may use; anything else is
                         #   REFUSED by name. stripComments, which includes.ts
                         #   runs over every entry it hands Babylon
-      assemble.ts       # Declarations as DATA, and assembleFragment: plain
-                        #   WGSL with explicit @group/@binding, uniforms.<name>
-                        #   routed to its block, strided arrays read via .el.
-                        #   declareGroups, the declarations alone, for a module
-                        #   with another stage
+      assemble.ts       # Declarations as DATA, and assembleFragment and
+                        #   assembleVertex: plain WGSL with explicit
+                        #   @group/@binding, uniforms.<name> routed to its
+                        #   block, strided arrays read via .el, and Babylon's y
+                        #   flip for the kind of pass. firstBindings, the one
+                        #   numbering rule a bind group is built by
       layout.ts         # blockLayout: a uniform block's byte offsets and
                         #   strides by WGSL's rules, from the same data; the
                         #   guard rule assemble.ts shares

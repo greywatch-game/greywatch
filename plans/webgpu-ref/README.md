@@ -30,8 +30,9 @@ Nothing needs `npm run dev` running first — each script starts and stops its
 own dev server.
 
 ```
-node plans/webgpu-ref/gate.mjs [map...] [--headed] [--uncap]
-node plans/webgpu-ref/bank.mjs [map...] [--headed] [--check]
+node plans/webgpu-ref/gate.mjs [map...] [--headed] [--uncap] [--query=<flags>]
+node plans/webgpu-ref/bank.mjs [map...] [--headed] [--check] [--query=<flags>]
+node plans/webgpu-ref/census.mjs [map...] [--query=<flags>] [--fall]
 node plans/webgpu-ref/shaders.mjs [map...] [--headed] [--list]
 node plans/webgpu-ref/depth.mjs glass|zoffset [--headed]
 node plans/webgpu-ref/diff.mjs a.png b.png [--tiles]
@@ -45,7 +46,21 @@ node plans/webgpu-ref/bench.mjs [map...] [--runs 3] [--capped] [--gpu] [--max] [
   errors. It exits non-zero, so it can stand in front of a merge.
 - **`bank.mjs`** takes the reference frames into `ref/<map>-<vantage>.png`, and
   refuses to write one that is not reproducible. `--check` re-takes and grades
-  against what is banked instead of replacing it.
+  against what is banked instead of replacing it. `--query=ourworld` boots
+  the game with that URL query and grades it against the bank taken WITHOUT
+  it — how a DEV switch that must draw the same picture is proven
+  (`BABYLON_EXIT.md` X3.3a) — and counts the page's console errors as
+  problems, since a draw of ours that fails says so there and draws nothing.
+  It refuses to take a bank: the bank is the switch-off picture. **A row's
+  frame depends on the rows shot before it** (state carries between them):
+  a frame shot at one vantage alone differs from its banked row by tens of
+  thousands of pixels with nothing changed, so a scratch diff against the
+  bank owes the bank's own sequence up to that row.
+- **`census.mjs`** counts the MAIN pass's draws at every bank vantage —
+  Babylon's into the frame's own target plus our renderer's — on the same
+  frozen frame the bank grades. With `--query` it counts the build both ways
+  and fails unless the totals are EQUAL (X3.3a: one draw for one), or with
+  `--fall` unless the switch's is LOWER (X3.3b).
 - **`shaders.mjs`** compiles every shader on every map and fails on anything
   the driver called an error. It asks the FACTORY rather than the frame — walk
   the cel cache, hand each material a probe mesh, poll `isReady` — so it reaches
@@ -53,11 +68,12 @@ node plans/webgpu-ref/bench.mjs [map...] [--runs 3] [--capped] [--gpu] [--max] [
   define-shapes were all compiled somewhere across the maps. It also mints
   the one shape no shipped map does: a ground albedo with no height map beside
   it, which both call sites happen to pass, and which would otherwise rot
-  uncompiled. And it builds OUR renderer's module for every shape a map
-  compiled (`src/render/celFragment.ts`, `BABYLON_EXIT.md` X3.1) into a real
-  pipeline against an explicit layout, on a device of its own, so the shared
-  body's second reader is compiled before anything draws with it — and the
-  per-stage texture and sampler limits are counted against what is bound.
+  uncompiled. And it builds OUR renderer's modules — both stages — for every
+  shape a map compiled (`src/render/celVertex.ts` and `celFragment.ts`,
+  `BABYLON_EXIT.md` X3.1 and X3.3a) into a real pipeline through our own
+  `PipelineCache`, on a device of its own, so the shared bodies' second
+  reader is compiled for every shape, drawn or not — and the per-stage
+  texture and sampler limits are counted against what is bound.
   Exits non-zero, so it stands in front of a merge beside
   `gate.mjs`. It is also the strongest place the transpiler tripwire is asked,
   because it forces the CACHED materials to compile rather than the drawn ones.

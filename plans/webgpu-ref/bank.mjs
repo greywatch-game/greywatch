@@ -5,7 +5,11 @@
  * Run with `node plans/webgpu-ref/bank.mjs [map...]`, `--headed` to take the
  * bank in headed mode, `--check` to compare against what is already banked
  * rather than replacing it. Frames land in
- * `plans/webgpu-ref/ref/<map>-<vantage>.png`.
+ * `plans/webgpu-ref/ref/<map>-<vantage>.png`. `--query=<flags>` boots the
+ * game with that URL query (`--query=ourworld` is `?ourworld`) — a check of a
+ * DEV switch against the bank taken without it, which is what a switch that
+ * must draw the same picture is proven by; it refuses to TAKE a bank, since
+ * a bank is the switch-off picture by definition.
  *
  * **A map is several frames and not one, because a reference set is a defence
  * against a SHADER being wrong in one place.** The menu backdrop's vantage is
@@ -90,7 +94,12 @@ import { shotList } from "./vantages.mjs";
 const args = process.argv.slice(2);
 const HEADED = args.includes("--headed");
 const CHECK = args.includes("--check");
+const QUERY = args.find((a) => a.startsWith("--query="))?.slice("--query=".length) ?? "";
 const maps = args.filter((a) => !a.startsWith("--"));
+if (QUERY && !CHECK) {
+  console.error("--query checks a switch against the bank; it never takes one (see the header).");
+  process.exit(2);
+}
 const targets = maps.length ? maps : MAP_IDS;
 
 /** Frames to let the camera-derived passes converge, BEFORE the freeze. */
@@ -138,7 +147,9 @@ const decoder = CHECK
   : null;
 const VANTAGES = await vantages(browser, vite.url);
 
-console.log(`bank: ${mode} @ ${vite.url}${CHECK ? "  (check only)" : ""}\n`);
+console.log(
+  `bank: ${mode} @ ${vite.url}${CHECK ? "  (check only)" : ""}${QUERY ? `  ?${QUERY}` : ""}\n`,
+);
 const problems = [];
 for (const id of targets) {
   const shots = shotList(id, VANTAGES[id]);
@@ -150,7 +161,11 @@ for (const id of targets) {
   // one-vantage-per-process rule is about cycling back through `playing`
   // between vantages, which lets a frame of gameplay run and moves the player;
   // holding the lid up and placing the camera by hand moves nothing at all.
-  const { page, pageErrors } = await bootMap(browser, vite.url, id);
+  const { page, pageErrors, consoleErrors } = await bootMap(
+    browser,
+    QUERY ? `${vite.url}/?${QUERY}` : vite.url,
+    id,
+  );
   await installRound(page);
   // The settings every row is shot at unless it states its own: this
   // machine's defaults, which are DEVICE-derived (`settings.ts`), and which
@@ -226,6 +241,13 @@ for (const id of targets) {
     }
   }
   if (pageErrors.length) problems.push(`${id}: ${pageErrors.length} page errors`);
+  // Under a switch the console is part of the verdict: a draw of ours that
+  // fails says so there (an uncaptured WebGPU error, a pipeline that did not
+  // build) and draws nothing, which a frame alone can mistake for a pass.
+  if (QUERY && consoleErrors.length) {
+    problems.push(`${id}: ${consoleErrors.length} console errors under ?${QUERY}`);
+    for (const e of consoleErrors.slice(0, 5)) console.log(`  console: ${e.slice(0, 300)}`);
+  }
   await page.close();
 }
 
