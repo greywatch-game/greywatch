@@ -1047,7 +1047,7 @@ gate, and is judged only by the GPU-side work after the exit. The phone
 reaches the branch itself: `babylon-exit` is deployable as well as
 `develop`, since 2026-10-13.
 
-### X3.4 — Scatter as instances (PERF_PLAN B2) — **M–L** (decision)
+### X3.4 — Scatter as instances (PERF_PLAN B2) — **M–L** (decision) — **LANDED** (1a20232, X3.4b below)
 
 As B2 states it: keep the seeded placement exactly; emit one source mesh per
 (kind, variant, material, foliage rung) and a transform per placement.
@@ -1151,6 +1151,51 @@ the decision.
     `bank.mjs --keep=<dir>` (new) keeps a check's frames for that judging.
   - `npm run build`, `corecheck` and `gate.mjs` (a round on all seven maps)
     pass.
+- **X3.4a landed at 1a20232.**
+- **X3.4b, measured** (2026-10-14, against X3.4a in the same session):
+  - **How it is drawn.** `BuildOptions.onScatter` hands `BlockHandover` the
+    FIELD: each worn variant a set of parts, merged through the block
+    merge's palette, its colour buffer baked once per kind, and the matrix
+    of every placement wearing it. `WorldBlocks` appends each set's parts to
+    its recipe's group, cuts the scatter's pieces out of the group's taken
+    blocks (`withoutPieces`), and draws one `drawIndexedIndirect` per part
+    of a set. `InstanceCull` culls the instances on the GPU on the cluster
+    cull's terms (reach, size gate, frustum, near-first by a scan) into each
+    set's own region of the instance buffer. The instanced vertex stage is
+    the same body with `world` built per instance in `main` (the assembler
+    gained instance-step attributes, a `PrivateBlock` and a prelude). A
+    group is ours whole or Babylon's whole: either pipeline failing hands
+    every surface back.
+  - **What it bought is memory.** Our renderer's buffers for the world:
+    Greyfen 680 to 81 MB, Harrowmead 467 to 65, Kurenai 415 to 136,
+    Hollowmere 124 to 75, Coldharbour 171 to 114, Sarab 130 to 57,
+    Cinderhaven 288 to 244. Greyfen's clusters 86,192 to 4,731. Babylon's
+    copy is unchanged until X3.6.
+  - **What it cost is draws.** One a part of a set, because WebGPU has no
+    multi-draw-indirect: `census.mjs` totals (every vantage) rise from
+    X3.3c's 497 / 172 / 836 / 869 / 891 / 217 / 61 to 1,663 / 776 / 1,942 /
+    3,534 / 2,673 / 613 / 170 (Hollowmere, Greyfen, Coldharbour,
+    Harrowmead, Sarab, Cinderhaven, Kurenai). Babylon's share is unmoved.
+    Greyfen's main pass is our 9 block draws and 151 instanced.
+  - **The desktop's frame did not move.** X0.3 (`bench.mjs --max --runs
+    3`, 3440x1440, same session, the fight hashes X3.3c's on every run):
+    every group's tick within the protocol's 8%. Greyfen fight 7.24 to
+    7.18 ms, path 4.35 to 4.67; Harrowmead path 5.51 to 5.23, fight 6.12 to
+    6.14; Sarab fight 12.37 to 13.09 (its before spread 5.8%). The desktop
+    is not bound by the memory this freed; the phone's reading is owed, as
+    X3.3c's is.
+  - **The bank, judged.** Against X3.4a's frames, the per-kind bake moves
+    a mean of 0.22/255 at most (Greyfen's `menu`; Coldharbour's
+    `curtain40` 0.13, Sarab's `wadi` 0.14, the rest under 0.08), and rows
+    with no scatter stay at 0. By eye nothing reads differently.
+  - **Checks.** The DEV trade check (the indices cut out of a group equal
+    its instanced parts' times their instances) is silent on all seven
+    maps, and `bank.mjs` counts no console error. `shaders.mjs` builds
+    both vertex stages for every shape on seven maps and both culls.
+    `gate.mjs`, `npm run build`, `corecheck` and `parity` pass.
+  - **Owed.** The phone's reading (tick, `gpu.frame`, and whether the
+    memory moves its frame). If the instanced draws ever cost there, they
+    fold into one draw per recipe by vertex pulling; not built.
 - **Verify:** `kit:hash` (it hashes scatter over fixed seeds and rungs,
   rng-draw count included) plus the replay check; `npm run collision` and
   `npm run parity`; the bank on every map, judged; the census; X0.3.

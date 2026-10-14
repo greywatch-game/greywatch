@@ -593,7 +593,11 @@ candidate, and nor is a BLOCK our renderer TAKES** (`BlockHandover`): the map's
 blocks are drawn in the MAIN pass by `src/render/` in every build, their
 Babylon meshes kept for every OTHER pass, and **a taken block is never switched
 off, hidden or faded after its build** — ours reads no node and would still
-draw it (a DEV check says so). **Any other mesh carrying `metadata.block` is
+draw it (a DEV check says so). **The SCATTER is drawn twice over and the
+two must agree**: our main pass draws it as INSTANCES of its variants, its
+colour baked once per kind, and cuts its pieces out of the blocks it takes,
+while Babylon's merged copy stays in those blocks for every other pass
+(`BuildOptions.onScatter`, `docs/rendering.md`). **Any other mesh carrying `metadata.block` is
 one only while the camera is inside the map's `fogEnd`**, **a body's RIG only
 while the root the roster switches is enabled**, and **everything else is
 ELIGIBLE**. **A BODY is measured ONCE, off its rig ROOT, and drops WHOLE.**

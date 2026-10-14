@@ -84,7 +84,7 @@ export interface CullTables {
 const PASS: GPUComputePassDescriptor = { label: "cluster cull" };
 
 /** The largest `f32` short of infinity — a shader may assume there is none. */
-const F32_MAX = 3.0e38;
+export const F32_MAX = 3.0e38;
 
 export class ClusterCull {
   /** Each group's `drawIndexedIndirect` arguments, at `INDIRECT_BYTES` a group. */
@@ -263,7 +263,7 @@ export class ClusterCull {
  * view-projection laid out as WGSL's `mat4x4f` reads it (a column every four
  * floats), each normalised so a plane's value is metres — into `out[0..20)`.
  */
-function writePlanes(m: Float32Array, out: Float32Array): void {
+export function writePlanes(m: Float32Array, out: Float32Array): void {
   for (let k = 0; k < 5; k++) {
     // clip = column0 * x + column1 * y + column2 * z + column3; a side plane
     // is w + x, w - x, w + y, w - y, and the eye's plane w alone.
@@ -285,7 +285,7 @@ function writePlanes(m: Float32Array, out: Float32Array): void {
  * The most a RAMP weight of 1 moves a vertex this frame, metres: the gust is
  * two sines summing to at most 1.5 (`celVertex`'s ramp).
  */
-function rampReach(frame: FrameUniforms): number {
+export function rampReach(frame: FrameUniforms): number {
   return 1.5 * Math.abs(frame.windParams[0]);
 }
 
@@ -296,7 +296,7 @@ function rampReach(frame: FrameUniforms): number {
  * half that downwind) — each with the bend, edge and pressure factors at
  * their bound of 1 (`celVertex`'s rig).
  */
-function rigReach(frame: FrameUniforms): number {
+export function rigReach(frame: FrameUniforms): number {
   return Math.max(
     layerReach(frame.windFrond, frame.windFrondRate),
     layerReach(frame.windBough, frame.windBoughRate),

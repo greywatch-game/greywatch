@@ -4,7 +4,10 @@
  * it wearing one of them (`BABYLON_EXIT.md` X3.4a).
  * Owns: `ScatterVariants` — one build's variants, made the first time a kind
  * is asked for and kept for the build; which variant a placement wears
- * (`pick`); and a placement's parts, cloned off its variant (`place`).
+ * (`pick`); a placement's parts, cloned off its variant (`place`), and its
+ * world matrix, recorded as it is placed; and the FIELD our renderer draws
+ * the scatter from (`field`: each worn variant a `ScatterSet` of instances,
+ * `BABYLON_EXIT.md` X3.4b).
  * Invariants: a variant is its kind's builder run off a stream of its OWN,
  * seeded from the layout's seed, the kind and the variant's number, never the
  * build's shared scatter stream — so making the variants takes nothing from
@@ -35,7 +38,8 @@
 import { CONFIG } from "../config";
 import type { CelMaterialFactory } from "../shaders/CelShader";
 import type { ScatterSpec } from "./layout";
-import { mergeByMaterial } from "./merge";
+import { Matrix, Quaternion, Vector3 } from "../math";
+import { mergeByMaterial, type Palette } from "./merge";
 import { flattenParts, Part } from "./parts";
 import { mapleCrownOf } from "./props";
 import { mulberry32 } from "./rng";
@@ -54,6 +58,38 @@ export type VariantBuilder = (
 /** One variant of a kind: its parts in the prop's own frame, each at identity. */
 export interface ScatterVariant {
   readonly parts: readonly Part[];
+}
+
+/** Where a scatter REGION stands: its origin in the world and its turn. */
+export interface RegionFrame {
+  readonly x: number;
+  readonly y: number;
+  readonly z: number;
+  readonly rotY: number;
+}
+
+/**
+ * One variant that placements wear, as our renderer draws it — a SET of
+ * instances (`BABYLON_EXIT.md` X3.4b).
+ */
+export interface ScatterSet {
+  readonly kind: Kind;
+  readonly variant: number;
+  /**
+   * Its surfaces in its own frame, merged per material through the BLOCK
+   * merge's palette, so each is drawn with the material the block that holds
+   * its placements' copies is — and only those the field was told to keep.
+   */
+  readonly parts: readonly Part[];
+  /** Each placement wearing it: its world matrix, Babylon's `m`, 16 floats. */
+  readonly matrices: Float32Array;
+  /** Each placement's uniform scale. */
+  readonly scales: Float32Array;
+}
+
+/** Every set a build's placements wear, in the order each was first worn. */
+export interface ScatterField {
+  readonly sets: readonly ScatterSet[];
 }
 
 /**
@@ -78,6 +114,16 @@ function kindHash(kind: string): number {
 
 export class ScatterVariants {
   private readonly made = new Map<Kind, ScatterVariant[]>();
+  /**
+   * Each worn variant's placements, keyed `kind/variant`, in the order each
+   * was first worn: their matrices and scales, as `ScatterSet` holds them.
+   */
+  private readonly worn = new Map<string, { kind: Kind; variant: number; matrices: number[]; scales: number[] }>();
+  private readonly local = new Matrix();
+  private readonly region = new Matrix();
+  private readonly turn = new Quaternion();
+  private readonly at = new Vector3();
+  private readonly size = new Vector3();
 
   constructor(
     private readonly builders: Record<Kind, VariantBuilder>,
@@ -115,7 +161,17 @@ export class ScatterVariants {
    * what the placement's root transform used to be, with the root's own
    * height and lean already in the variant.
    */
-  place(kind: Kind, v: number, x: number, y: number, z: number, yaw: number, scale: number): Part[] {
+  place(
+    kind: Kind,
+    v: number,
+    x: number,
+    y: number,
+    z: number,
+    yaw: number,
+    scale: number,
+    frame: RegionFrame,
+  ): Part[] {
+    this.record(kind, v, x, y, z, yaw, scale, frame);
     return this.of(kind)[v].parts.map((src) => {
       const part = new Part(src.name, src.geometry.clone());
       part.material = src.material;
@@ -125,6 +181,74 @@ export class ScatterVariants {
       part.scaling.setAll(scale);
       return part;
     });
+  }
+
+  /**
+   * Every worn variant as a SET: its parts merged through `palette` (the
+   * block merge's, so call it after `BlockMerge.finish` has met every colour)
+   * and filtered by `keep`, each kept part handed to `shade` — and the
+   * matrices of the placements wearing it. A set none of whose parts is kept
+   * is left out.
+   */
+  field(palette: Palette, keep: (part: Part) => boolean, shade: (part: Part) => void): ScatterField {
+    const sets: ScatterSet[] = [];
+    for (const w of this.worn.values()) {
+      const mint = mintFrom();
+      const parts = mergeByMaterial(
+        this.of(w.kind)[w.variant].parts.map((src) => {
+          const part = new Part(src.name, src.geometry.clone());
+          part.material = src.material;
+          part.metadata = src.metadata ? { ...src.metadata } : null;
+          return surfaceOf(part, mint());
+        }),
+        `${w.kind}${w.variant}`,
+        { palette, mint },
+      )
+        .map((m) => m.part)
+        .filter(keep);
+      if (parts.length === 0) continue;
+      for (const part of parts) shade(part);
+      sets.push({
+        kind: w.kind,
+        variant: w.variant,
+        parts,
+        matrices: Float32Array.from(w.matrices),
+        scales: Float32Array.from(w.scales),
+      });
+    }
+    return { sets };
+  }
+
+  /**
+   * One placement's world matrix, as the merge composes it: the part's own
+   * transform (scale, yaw, where it stands in its region), then its region's
+   * (`place` in `MapBuilder`: the region's turn, then its origin).
+   */
+  private record(
+    kind: Kind,
+    v: number,
+    x: number,
+    y: number,
+    z: number,
+    yaw: number,
+    scale: number,
+    frame: RegionFrame,
+  ): void {
+    const key = `${kind}/${v}`;
+    let w = this.worn.get(key);
+    if (!w) this.worn.set(key, (w = { kind, variant: v, matrices: [], scales: [] }));
+    this.size.copyFromFloats(scale, scale, scale);
+    Quaternion.RotationYawPitchRollToRef(yaw, 0, 0, this.turn);
+    this.at.copyFromFloats(x, y, z);
+    Matrix.ComposeToRef(this.size, this.turn, this.at, this.local);
+    this.size.copyFromFloats(1, 1, 1);
+    Quaternion.RotationYawPitchRollToRef(frame.rotY, 0, 0, this.turn);
+    this.at.copyFromFloats(frame.x, frame.y, frame.z);
+    Matrix.ComposeToRef(this.size, this.turn, this.at, this.region);
+    this.local.multiplyToRef(this.region, this.local);
+    const m = this.local.m;
+    for (let i = 0; i < 16; i++) w.matrices.push(m[i]);
+    w.scales.push(scale);
   }
 
   /**

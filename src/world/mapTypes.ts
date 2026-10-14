@@ -27,6 +27,7 @@ import type { ObstacleField } from "./ObstacleField";
 import type { RayWorld } from "./RayWorld";
 import type { RoadFootprint } from "./roads";
 import type { TerrainField } from "./TerrainField";
+import type { ScatterField } from "./scatterVariants";
 import type { WorldGeometry, WorldSurface } from "./worldGeometry";
 
 /**
@@ -361,6 +362,13 @@ export interface BuildOptions {
    * and nothing kept.
    */
   onSurface?: (surface: WorldSurface, mesh: Mesh) => void;
+  /**
+   * Handed the scatter as our renderer draws it — every worn variant a set
+   * of instances (`world/scatterVariants.ts`, `BABYLON_EXIT.md` X3.4b) — once
+   * a build, after the block merge, on a shipped build only. Its arrays are
+   * the taker's: nothing else keeps them. Absent is no field built at all.
+   */
+  onScatter?: (field: ScatterField) => void;
 }
 
 /** The built world: geometry is in the scene, this is the queryable part. */

@@ -3418,6 +3418,54 @@ probes and the lamps' atlas — until X3.6 moves those passes.
   there was one; `--out` and `--against` against a BEFORE taken in a
   worktree of an earlier commit, now there is not).
 
+**The SCATTER is drawn by our side as INSTANCES** (`BABYLON_EXIT.md` X3.4b).
+Each scatter kind is built as 16 variants a build and every placement wears
+one (`world/scatterVariants.ts`, `docs/world.md`). So a worn variant is a SET:
+its parts, merged through the block merge's palette so each is drawn with the
+material its blocks are, and the world matrix of every placement wearing it.
+The build hands the sets over once (`BuildOptions.onScatter`), and
+`BlockHandover` adds each part to its recipe's group in `WorldBlocks`.
+
+- **Its colour buffer is baked ONCE PER KIND**, the variant standing alone on
+  level, open ground: the user's call over a per-instance bake. A prop no
+  longer darkens against the wall beside it or carries the grime of the
+  street under it; the bank judged that small (a mean of 0.04-0.22/255 on
+  Greyfen against the variants alone). The fallback, if a frame ever says
+  otherwise, is a per-kind bake plus a term or two per INSTANCE, never a
+  per-instance bake (`BABYLON_EXIT.md` X3.4).
+- **Babylon's copy of the scatter stays in the blocks**, built from the same
+  variants, because the shadow maps, the probes and the lamps' atlas still
+  draw Babylon's meshes until X3.6: the shadows are the variants' shapes
+  too. In the MAIN pass the scatter's pieces (its regions) are CUT out of
+  every taken block of a group that draws them as instances
+  (`clusters.ts`'s `withoutPieces`) before the block is uploaded, and **a
+  DEV build checks the trade is one for one**: the indices cut out of a group
+  equal its instanced parts' indices times their sets' instances, or
+  something is drawn twice or not at all. A recipe our side does not take is
+  drawn whole by Babylon, scatter and all, so a group with no surface of its
+  own draws none of its instanced parts.
+- **A group is ours WHOLE or Babylon's whole.** It has two pipelines, the
+  blocks' and the instanced stage's (`celVertex.ts`'s
+  `CEL_INSTANCED_VERTEX_PROGRAM`: the same body, `world` built per instance
+  in `main` from three columns, through a `PrivateBlock` the assembler routes
+  `uniforms.world` to). If either fails, the group draws nothing and every
+  surface of it goes back, since Babylon's surfaces would draw the scatter
+  our side was cutting out.
+- **The instances are culled on the GPU the way the clusters are**
+  (`render/InstanceCull.ts`, `render/wgsl/instanceCull.ts`), recorded into
+  the same encoder: the instance's sphere against the reach, the size gate
+  and the five planes, grown by the most its set can sway. Survivors are
+  scanned near-first into their SET's own region of `placed`, which is bound
+  as the instance buffer at that region's offset, because an indirect draw
+  may not carry a `firstInstance` without `indirect-first-instance`. **The
+  size gate is per INSTANCE here, where it was per block surface**, so a
+  scrap of litter under 3 px drops where its block never would.
+- **A draw a variant a material**: WebGPU has no multi-draw-indirect, so
+  Greyfen's main pass went from our 9 draws to 160 (9 groups and 151
+  instanced). An empty one costs two calls and no instance. What it bought
+  is memory: our side of Greyfen holds 81 MB where it held 680 (its clusters
+  86,192 to 4,731).
+
 ## Block visibility: how much of the map the frame walks
 
 `ENGINE_UPGRADE.md` wall 1, and `src/systems/WorldCulling.ts` is all of it.

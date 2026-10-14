@@ -1259,7 +1259,10 @@ src/
                         #   candidates, cut at install against their cells, a
                         #   failed compile's surfaces handed back to Babylon as
                         #   it lands, the whole map on a refused main pass;
-                        #   their meshes stay for every other pass. Reads no
+                        #   their meshes stay for every other pass. The
+                        #   scatter's field (BuildOptions.onScatter) added as
+                        #   instances at install, its pieces cut out of the
+                        #   taken blocks (X3.4b). Reads no
                         #   node per frame (a DEV check that none is switched,
                         #   hidden or faded)
     WaterSystem.ts      # Water surfaces from map WaterRects; bakes their bed depth
@@ -1355,7 +1358,9 @@ src/
     scatterVariants.ts  # ScatterVariants — each scatter kind built 16 times a
                         #   build off streams of its own, in the prop's own
                         #   frame; which one a placement wears (a hash, never
-                        #   a draw); a placement's parts cloned off it
+                        #   a draw); a placement's parts cloned off it, and its
+                        #   matrix recorded; the FIELD our renderer draws the
+                        #   scatter from, a set of instances per worn variant
     rng.ts              # mulberry32 — the seeded PRNG world-building uses,
                         #   and the map generators' too: Node loads it by type
                         #   stripping through scripts/lib/mapgen.mjs, the
@@ -2356,17 +2361,29 @@ src/
                         #   body
     celVertex.ts        # The cel vertex stage as WE declare it: the
                         #   attributes, the frame and the draw's world, over
-                        #   the shared celVertex body. Both stages compiled per
-                        #   variant by plans/webgpu-ref/shaders.mjs
+                        #   the shared celVertex body — and its INSTANCED twin,
+                        #   world read per instance (the scatter, X3.4b);
+                        #   bufferLayouts, the vertex buffers a stage is drawn
+                        #   with. Every stage compiled per variant by
+                        #   plans/webgpu-ref/shaders.mjs
     WorldBlocks.ts      # The map's block surfaces drawn by US, every build:
                         #   one GROUP per recipe (its surfaces' buffers end to
-                        #   end, one pipeline, one material), the map cut once
-                        #   (finish), ONE drawIndexedIndirect a group at the
-                        #   end of group 0's opaque meshes; what it will never
-                        #   draw goes to onFailed as it lands; stop() for good
+                        #   end, then its scatter parts; one material), the map
+                        #   cut once (finish), ONE drawIndexedIndirect a group
+                        #   at the end of group 0's opaque meshes, then one per
+                        #   scatter variant per material, instanced (X3.4b) —
+                        #   the scatter's pieces cut out of the blocks that do;
+                        #   what it will never draw goes to onFailed as it
+                        #   lands, a group whole; stop() for good
     clusters.ts         # cutClusters: a surface cut into short runs of
                         #   one piece's triangles, each with its box and how
-                        #   the wind can move it (BABYLON_EXIT.md X3.3b)
+                        #   the wind can move it (BABYLON_EXIT.md X3.3b);
+                        #   withoutPieces, a surface with pieces cut out
+    InstanceCull.ts     # The scatter's per-instance GPU cull, beside
+                        #   ClusterCull and on its terms (X3.4b): reach, size
+                        #   gate, frustum per instance sphere; survivors
+                        #   scanned NEAR-FIRST into each set's own region of
+                        #   `placed` and every instanced draw's indirect args
     ClusterCull.ts      # The GPU cull, once a frame, recorded into the host's
                         #   encoder ahead of the draws (inside gpu.frame;
                         #   pipelines from PipelineCache) — reach, size gate,
@@ -2390,4 +2407,7 @@ src/
                         #   guard rule assemble.ts shares
       clusterCull.ts    # The cull's WGSL — cullClusters, prefix, scatter —
                         #   and the record layouts ClusterCull uploads
+      instanceCull.ts   # The instance cull's WGSL — cullInstances, prefix,
+                        #   place — and the record layouts InstanceCull
+                        #   uploads
 ```

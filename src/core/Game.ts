@@ -4670,6 +4670,7 @@ export class Game {
       foliage,
       navFields,
       onSurface: this.handover.onSurface,
+      onScatter: this.handover.onScatter,
     });
     this.map = map;
     // What the profiler reports is the rung this map was built WITH.
@@ -4740,7 +4741,7 @@ export class Game {
     this.culling.setMap(map, environment.fogEnd);
     // And which of the fresh map's blocks our renderer draws in the main pass
     // instead, which the cull has to be told after it has filed them.
-    this.handover.install();
+    this.handover.install(map.world);
     // How hard the grade is pushed is the map's; whether it runs at all stays
     // the player's (`applySettings`). A vignette that reads as dread over a
     // night village reads as a lens fault over a bright one.

@@ -4,8 +4,8 @@
  * arrays handed over on the way past the build, and the map cut once it is
  * filed.
  * Owns: `BlockHandover` — our renderer's `WorldBlocks`, the taken meshes in
- * surface order, which of them were handed back, and the material epoch last
- * copied.
+ * surface order, which of them were handed back, the material epoch last
+ * copied, and the build's scatter FIELD until the map is cut (X3.4b).
  * Invariants: a surface is TAKEN only if our pipeline draws it exactly as
  * Babylon would — block-merged, in rendering group 0, at identity and under
  * no parent, never written after its build (`updatable` is a breakable
@@ -31,7 +31,14 @@
  * card waits for our pipelines through the renderer's own cache
  * (`core/PipelineWarmup.ts`), never through this, and a failed surface is
  * handed back in the turn its compile settles, which is also the turn the
- * cache stops counting it — so before the warm-up's next frame.
+ * cache stops counting it — so before the warm-up's next frame; the SCATTER
+ * is drawn by our side as instances of its variants (`BABYLON_EXIT.md`
+ * X3.4b), each set's parts added to the group of its recipe, and the
+ * scatter's pieces (its regions) are cut out of the taken blocks of every
+ * group that draws them so — Babylon's copy of them stays in its meshes for
+ * every other pass, until X3.6 — while a recipe our side does not take is
+ * drawn whole by Babylon, scatter and all, and a group that fails goes back
+ * whole, scatter and all.
  * Never: draws, or reads a material's uniforms — a material reaches our side
  * as its recipe; writes a property on a mesh.
  * Contract: `docs/rendering.md`, "Our renderer's frame";
@@ -43,7 +50,8 @@ import type { BlockBox } from "../render/ClusterCull";
 import type { Renderer } from "../render/Renderer";
 import { WorldBlocks } from "../render/WorldBlocks";
 import type { CelMaterialFactory } from "../shaders/CelShader";
-import type { WorldSurface } from "../world/worldGeometry";
+import type { ScatterField } from "../world/scatterVariants";
+import type { WorldGeometry, WorldSurface } from "../world/worldGeometry";
 import type { WorldCulling } from "./WorldCulling";
 
 /** The layer mask a mesh is born with, which every camera in the game sees. */
@@ -61,6 +69,8 @@ export class BlockHandover {
   private epoch = -1;
   /** The DEV check has reported a changed mesh: once a map is enough. */
   private reported = false;
+  /** The build's scatter, held from `onScatter` until `install` hands it over. */
+  private field: ScatterField | null = null;
   private readonly removeFrame: () => void;
   private readonly removeRefused: () => void;
 
@@ -108,12 +118,35 @@ export class BlockHandover {
   };
 
   /**
-   * After the map's build and `WorldCulling.setMap`: hands the taken meshes
-   * to the cull and cuts the map against the cells they were filed in. What
-   * our side then cannot draw comes back through `failed` and `refused`.
+   * The build's `BuildOptions.onScatter`: the scatter as our side draws it,
+   * kept until `install`.
    */
-  install(): void {
+  readonly onScatter = (field: ScatterField): void => {
+    this.field = field;
+  };
+
+  /**
+   * After the map's build and `WorldCulling.setMap`: hands the taken meshes
+   * to the cull and cuts the map against the cells they were filed in, the
+   * scatter's sets added as instances and its pieces (`world`'s scatter
+   * regions) cut out of the blocks that draw them so. What our side then
+   * cannot draw comes back through `failed` and `refused`.
+   */
+  install(world: WorldGeometry): void {
     const meshes = this.meshes;
+    const field = this.field;
+    this.field = null;
+    if (field) {
+      field.sets.forEach((set, s) => {
+        for (const part of set.parts) {
+          const recipe = this.mats.celRecipe(part.material);
+          const g = part.geometry;
+          if (!recipe || !g.normals || !g.colors) continue;
+          if (recipe.defines.includes("CEL_PALETTE") && !g.uvs2) continue;
+          this.blocks.addInstanced(s, part.name, g, recipe);
+        }
+      });
+    }
     this.back = new Set();
     this.handedBack = false;
     this.epoch = -1;
@@ -124,7 +157,15 @@ export class BlockHandover {
       if (!box) throw new Error(`BlockHandover: "${mesh.name}" is taken but filed in no cell`);
       return box;
     });
-    this.blocks.finish(boxes);
+    this.blocks.finish(
+      boxes,
+      field
+        ? {
+            cut: (piece) => world.pieces[piece]?.list === "scatter",
+            sets: field.sets.map((set) => ({ matrices: set.matrices, scales: set.scales })),
+          }
+        : null,
+    );
   }
 
   /**
@@ -152,6 +193,7 @@ export class BlockHandover {
   /** The map is going: every surface, buffer and material of ours with it. */
   clear(): void {
     this.blocks.clear();
+    this.field = null;
     this.meshes = [];
     this.back = new Set();
     this.handedBack = false;

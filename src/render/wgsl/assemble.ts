@@ -3,7 +3,7 @@
  * DECLARATIONS, stated as data, and the one function that turns them and a
  * body into a plain WGSL module with explicit bind groups.
  * Owns: the declaration types (`FragmentProgram`, `VertexProgram`, `Binding`,
- * `UniformField`, `Varying`, `Attribute`, `Guard`, `StageTarget`);
+ * `UniformField`, `Varying`, `Attribute`, `PrivateBlock`, `Guard`, `StageTarget`);
  * `assembleFragment` and `assembleVertex`, which emit the stage's input and
  * output structs, the uniform structs, every `@group`/`@binding`, the
  * preprocessed body and the entry point — with Babylon's y flip for the kind
@@ -143,6 +143,25 @@ export interface Attribute {
   /** `f32`, `vec2f`, `vec3f` or `vec4f` — every attribute here is float. */
   readonly type: string;
   readonly when?: Guard;
+  /**
+   * `"instance"`: read once an INSTANCE rather than once a vertex. A draw
+   * packs every instance attribute into one buffer, in list order
+   * (`render/celVertex.ts`'s `bufferLayouts`). Absent is a vertex's own.
+   */
+  readonly step?: "instance";
+}
+
+/**
+ * A block of values a vertex stage's `main` WRITES before calling the body,
+ * declared `var<private>` and routed like a uniform block: a body reading
+ * `uniforms.<name>` reads it from here. It is how one body is fed a value
+ * that is a uniform on one side and per instance on the other — the scatter's
+ * `world` (`BABYLON_EXIT.md` X3.4b).
+ */
+export interface PrivateBlock {
+  readonly var: string;
+  readonly struct: string;
+  readonly fields: readonly UniformField[];
 }
 
 /** A vertex stage, declared: what a shared vertex body is assembled against. */
@@ -163,6 +182,14 @@ export interface VertexProgram {
   readonly body: string;
   /** The body's function that fills `vertexOutputs`, called by `main`. */
   readonly entry: string;
+  /** Blocks `main` writes before the body runs — see `PrivateBlock`. */
+  readonly privates?: readonly PrivateBlock[];
+  /**
+   * WGSL statements `main` runs after it has copied its inputs into
+   * `vertexInputs` and before it calls `entry`: where a `PrivateBlock` is
+   * written.
+   */
+  readonly prelude?: string;
 }
 
 /** What kind of pass a module is built for: the one fact the flip turns on. */
@@ -176,6 +203,8 @@ export interface AssembledAttribute {
   readonly name: string;
   readonly location: number;
   readonly type: string;
+  /** Read once an instance — see `Attribute.step`. */
+  readonly instance: boolean;
 }
 
 /** A vertex module, and the attributes it reads. */
@@ -275,7 +304,7 @@ export function assembleVertex(
 
   const attributes = program.attributes
     .filter((a) => holds(a.when))
-    .map((a, location) => ({ name: a.name, location, type: a.type }));
+    .map((a, location) => ({ name: a.name, location, type: a.type, instance: a.step === "instance" }));
   const lines = ["struct VertexInputs {"];
   for (const a of attributes) lines.push(`  @location(${a.location}) ${a.name}: ${a.type},`);
   lines.push("}", "var<private> vertexInputs: VertexInputs;");
@@ -288,10 +317,23 @@ export function assembleVertex(
 
   const declared = declareGroups(program.groups, variant, tag);
   lines.push(...declared.lines);
+  const owner = new Map(declared.owner);
+  for (const block of program.privates ?? []) {
+    const members: string[] = [];
+    for (const f of block.fields) {
+      if (!guardHolds(f.when, variant)) continue;
+      if (owner.has(f.name)) throw new Error(`${tag}: uniform "${f.name}" is declared twice`);
+      if (f.count !== undefined) throw new Error(`${tag}: private "${f.name}" may not be an array`);
+      owner.set(f.name, block.var);
+      members.push(`  ${f.name}: ${f.type},`);
+    }
+    if (members.length === 0) continue;
+    lines.push(`struct ${block.struct} {`, ...members, "}", `var<private> ${block.var}: ${block.struct};`);
+  }
   lines.push(
     bindUniforms(
       preprocess(program.body, { defines: variant, includes: program.includes, label: tag }),
-      declared.owner,
+      owner,
       declared.strided,
       tag,
     ),
@@ -300,6 +342,7 @@ export function assembleVertex(
     "@vertex",
     "fn main(input: VertexInputs) -> FragmentInputs {",
     "  vertexInputs = input;",
+    ...(program.prelude ? [program.prelude] : []),
     `  ${program.entry}();`,
     // Babylon's own line, with the factor its internals buffer holds for a
     // texture pass (the header).

@@ -130,28 +130,36 @@ const HOOK = () => {
  * clusterCull.ts` compiled and each of its three entry points built into a
  * compute pipeline on an `"auto"` layout — on the device here, not through
  * the cache, but as `PipelineCache.compute` builds them for the cull — one
- * more row, the same on every map.
+ * more row, the same on every map. Since X3.4b every shape is built twice,
+ * the second time with the scatter's INSTANCED vertex stage
+ * (`celInstancedVertex`), and the instance cull's three entry points
+ * (`render/wgsl/instanceCull.ts`) are a row of their own beside the
+ * cluster cull's.
  */
 async function oursCheck(shapes) {
   const { celFragment } = await import("/src/render/celFragment.ts");
-  const { celVertex } = await import("/src/render/celVertex.ts");
+  const { bufferLayouts, celInstancedVertex, celVertex } = await import("/src/render/celVertex.ts");
   const { PipelineCache } = await import("/src/render/PipelineCache.ts");
   const { FRAME_TARGETS } = await import("/src/render/targets.ts");
   const adapter = await navigator.gpu.requestAdapter();
   const device = await adapter.requestDevice();
   const cache = new PipelineCache(device);
-  const FORMATS = { vec2f: "float32x2", vec3f: "float32x3", vec4f: "float32x4" };
-  const FLOATS = { vec2f: 2, vec3f: 3, vec4f: 4 };
   const out = [];
-  for (const shape of shapes) {
+  // Each shape twice: the blocks' vertex stage and the scatter's instanced
+  // one (X3.4b), against the same fragment.
+  const stages = [
+    ["", celVertex],
+    ["instanced ", celInstancedVertex],
+  ];
+  for (const shape of shapes) for (const [kind, vertexOf] of stages) {
     const defines = shape ? shape.split("+") : [];
     let vm;
     let fm;
     try {
-      vm = celVertex(defines, FRAME_TARGETS);
+      vm = vertexOf(defines, FRAME_TARGETS);
       fm = celFragment(defines, FRAME_TARGETS);
     } catch (e) {
-      out.push({ error: String(e?.message ?? e), source: "" });
+      out.push({ error: `${kind}${String(e?.message ?? e)}`, source: "" });
       continue;
     }
     device.pushErrorScope("validation");
@@ -162,10 +170,7 @@ async function oursCheck(shapes) {
         vertexEntry: "main",
         fragment: fm,
         fragmentEntry: "main",
-        buffers: vm.attributes.map((a) => ({
-          arrayStride: FLOATS[a.type] * 4,
-          attributes: [{ shaderLocation: a.location, offset: 0, format: FORMATS[a.type] }],
-        })),
+        buffers: bufferLayouts(vm),
         targets: FRAME_TARGETS,
       });
     } catch (e) {
@@ -182,21 +187,26 @@ async function oursCheck(shapes) {
     const fErrors = await errorsOf(fm, fm.code);
     const all = [...vErrors, ...fErrors, built, scope?.message].filter(Boolean);
     out.push({
-      error: all.length > 0 ? `${fm.label}: ${all.join("; ")}` : "",
+      error: all.length > 0 ? `${kind}${fm.label}: ${all.join("; ")}` : "",
       source: [vErrors.length > 0 ? vm.code : "", fErrors.length > 0 ? fm.code : ""]
         .filter(Boolean)
         .join("\n// ---- fragment ----\n"),
     });
   }
-  {
-    const { CLUSTER_CULL_WGSL } = await import("/src/render/wgsl/clusterCull.ts");
+  const { CLUSTER_CULL_WGSL } = await import("/src/render/wgsl/clusterCull.ts");
+  const { INSTANCE_CULL_WGSL } = await import("/src/render/wgsl/instanceCull.ts");
+  const culls = [
+    ["cluster cull", CLUSTER_CULL_WGSL, ["cullClusters", "prefix", "scatter"]],
+    ["instance cull", INSTANCE_CULL_WGSL, ["cullInstances", "prefix", "place"]],
+  ];
+  for (const [label, code, entries] of culls) {
     device.pushErrorScope("validation");
-    const module = device.createShaderModule({ label: "cluster cull", code: CLUSTER_CULL_WGSL });
+    const module = device.createShaderModule({ label, code });
     const info = await module.getCompilationInfo();
     const errors = [...info.messages]
       .filter((x) => x.type === "error")
       .map((e) => `${e.lineNum}:${e.linePos} ${e.message}`);
-    for (const entryPoint of ["cullClusters", "prefix", "scatter"]) {
+    for (const entryPoint of entries) {
       try {
         await device.createComputePipelineAsync({ layout: "auto", compute: { module, entryPoint } });
       } catch (e) {
@@ -206,8 +216,8 @@ async function oursCheck(shapes) {
     const scope = await device.popErrorScope();
     if (scope) errors.push(scope.message);
     out.push({
-      error: errors.length > 0 ? `[cluster cull]: ${errors.join("; ")}` : "",
-      source: errors.length > 0 ? CLUSTER_CULL_WGSL : "",
+      error: errors.length > 0 ? `[${label}]: ${errors.join("; ")}` : "",
+      source: errors.length > 0 ? code : "",
     });
   }
   device.destroy();

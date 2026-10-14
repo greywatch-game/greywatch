@@ -58,7 +58,8 @@ import { CONFIG } from "../config";
 import { kindOf } from "../entities/vehicleKinds";
 import { MAX_PALETTE, type CelMaterialFactory } from "../shaders/CelShader";
 import { MAX_EMISSIVE_PALETTE } from "../shaders/EmissiveWorld";
-import { bakeVertexShading } from "./vertexShading";
+import { bakeVertexShading, shadeVertices, shadingContext, takesShading } from "./vertexShading";
+import { swayLayerOf } from "./sway";
 import { begin as beginProfile, record, since } from "./buildProfile";
 import type { LightingSystem } from "../systems/LightingSystem";
 import type { AmbienceSystem } from "../systems/AmbienceSystem";
@@ -114,6 +115,7 @@ import {
   mergeByMaterial,
   mergeSurfaces,
   PaneBlocks,
+  type Palette,
   tag,
 } from "./merge";
 import type {
@@ -129,7 +131,7 @@ import type {
   WorldPane,
 } from "./mapTypes";
 import { mulberry32 } from "./rng";
-import { ScatterVariants } from "./scatterVariants";
+import { type ScatterField, ScatterVariants } from "./scatterVariants";
 import {
   buildAshTree,
   buildBamboo,
@@ -869,7 +871,7 @@ export class MapBuilder {
       this.waterAmbience(layout.water ?? [], terrain, size / 2 + terrain.margin),
     );
 
-    const glazing = this.mergeBlocks(run);
+    const glazing = this.mergeBlocks(run, size, opts?.onScatter);
     const world = this.bake(run, size, glazing, opts?.onSurface);
     if (import.meta.env.DEV) assertPieces(world, unpieced, index !== undefined);
     const { nav, obstacles, rays, collidables } = this.derive(run, size, opts?.navFields ?? true);
@@ -965,6 +967,29 @@ export class MapBuilder {
     // How full a tree's crown is in this build — `BuildOptions.foliage`,
     // which the variants are built at.
     this.variants = new ScatterVariants(SCATTER_BUILDERS, this.mats, this.propSeed, opts?.foliage ?? 1);
+  }
+
+  /**
+   * Every worn variant as a set of instances, through `palette`, its colour
+   * buffer baked ONCE PER KIND (the user's call, `BABYLON_EXIT.md` X3.4): the
+   * variant standing alone on level, open ground, so every placement of it
+   * wears one bake. Only what our renderer could draw is kept — a cel
+   * surface with normals (`takesShading`) — so an ember or a flame stays
+   * Babylon's in the block it was merged into. Null when the bake is off
+   * (`ao.strength` 0), which leaves every block whole.
+   */
+  private scatterField(palette: Palette, size: number): ScatterField | null {
+    const ctx = shadingContext([], new TerrainField(undefined), size);
+    if (!ctx || !this.variants) return null;
+    const identity = Matrix.Identity().m;
+    return this.variants.field(
+      palette,
+      (part) => takesShading(part.material) && part.geometry.normals !== null,
+      (part) => {
+        const { positions, normals } = part.geometry;
+        part.geometry.colors = shadeVertices(ctx, positions, normals!, identity, swayLayerOf(part));
+      },
+    );
   }
 
   /** The floor this build stands everything on — see `TerrainField`. */
@@ -1199,23 +1224,35 @@ export class MapBuilder {
    * and the palette the first of them discovers. Hands back the glazing's
    * groups, which become `GameMap.paneGroups` once their surfaces are meshes.
    */
-  private mergeBlocks(run: BuildRun): PaneSurfaceGroup[] {
+  private mergeBlocks(
+    run: BuildRun,
+    size: number,
+    onScatter: BuildOptions["onScatter"],
+  ): PaneSurfaceGroup[] {
     const { surfaces, blocks, paneBlocks } = run;
     // One more merge across neighbouring structures — see BlockMerge. This is
     // the ONE merge that paletteises, which is also what exempts the editor for
     // free: an editor build files its meshes on the item instead and never
     // reaches this pass at all (see the `item` branch in `placeStructures`).
-    for (const merged of record("blockMerge", () =>
-      blocks.finish({
-        slot: (hex) => this.paletteIndex(hex),
-        material: this.mats.getWorldCel(),
-        glow: {
-          slot: (hex) => this.glowIndex(hex),
-          material: (overGlass) => this.mats.getEmissiveWorld(overGlass),
-        },
-      }),
-    )) {
+    const palette: Palette = {
+      slot: (hex) => this.paletteIndex(hex),
+      material: this.mats.getWorldCel(),
+      glow: {
+        slot: (hex) => this.glowIndex(hex),
+        material: (overGlass) => this.mats.getEmissiveWorld(overGlass),
+      },
+    };
+    for (const merged of record("blockMerge", () => blocks.finish(palette))) {
       surfaces.push(merged);
+    }
+    // The scatter as our renderer draws it — each worn variant a set of
+    // instances (`BABYLON_EXIT.md` X3.4b) — through the SAME palette, after
+    // the merge that met every colour a placement wears and before the
+    // palette is published. Not on an editor build, whose blocks are not
+    // merged and whose surfaces our renderer never takes.
+    if (onScatter && !run.index) {
+      const field = record("scatterField", () => this.scatterField(palette, size));
+      if (field) onScatter(field);
     }
     // Published before anything draws and after the merge that discovers it —
     // see `CelMaterialFactory.setPalette`. Unconditional, so a rebuild that
@@ -1702,6 +1739,9 @@ export class MapBuilder {
       (spec.y ?? 0) + terrain.heightAt(spec.x, spec.z),
       spec.z,
     );
+    // Where the region's merged surfaces are put below (`place`), which every
+    // placement's recorded matrix ends in.
+    const frame = { x: origin.x, y: origin.y, z: origin.z, rotY: rot };
 
     for (let i = 0; i < spec.count; i++) {
       const scale = minS + rng() * (maxS - minS);
@@ -1745,7 +1785,7 @@ export class MapBuilder {
       // height and lean are already in the variant. The merge bakes each
       // part's transform into its vertices, the same identity-transform trick
       // the structures use, applied one level up.
-      const flat = variants.place(spec.prop, variants.pick(index, i), spot.lx, base, spot.lz, yaw, scale);
+      const flat = variants.place(spec.prop, variants.pick(index, i), spot.lx, base, spot.lz, yaw, scale, frame);
       // Its box, if it gets one, bounces light in its own colours.
       if (spec.blocking) this.albedoFromParts(flat);
       parts.push(...admitProp(flat, piece, mint));
