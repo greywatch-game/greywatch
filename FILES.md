@@ -1242,13 +1242,15 @@ src/
                         #   is never a candidate, a mesh carrying metadata.block
                         #   is one inside the map's fogEnd, everything else
                         #   always is. Under ?ourworld a TAKEN block is never
-                        #   one: what passes goes to takenOffered instead
-    BlockHandover.ts    # ?ourworld (DEV, BABYLON_EXIT.md X3.3a): which block
+                        #   one; reachGate states the reach and the size gate
+                        #   as numbers for the GPU cull, blockBoxOf the cell
+    BlockHandover.ts    # ?ourworld (DEV, BABYLON_EXIT.md X3.3a-b): which block
                         #   surfaces OUR renderer draws in the main pass —
                         #   taken at the build (BuildOptions.onSurface),
-                        #   uploaded into render/WorldBlocks, kept out of the
-                        #   candidates, and ON each frame exactly when
-                        #   Babylon's own active-mesh walk would draw it
+                        #   handed to render/WorldBlocks, kept out of the
+                        #   candidates, cut at install against their cells;
+                        #   reads no node per frame (a DEV check that none is
+                        #   switched, hidden or faded)
     WaterSystem.ts      # Water surfaces from map WaterRects; bakes their bed depth
                         #   and stands the one wave GRID under the eye (`follow`,
                         #   pushed from `tick` in every state). `setWash` is the
@@ -2297,8 +2299,9 @@ src/
     Renderer.ts         # Renderer: the frame's uniforms, textures and their
                         #   group 0, the pipeline cache, the FrameDraws it
                         #   queues at two points of group 0 in the MAIN pass —
-                        #   where its opaque meshes end, and after it; refuses
-                        #   to draw if the pass is not FRAME_TARGETS
+                        #   where its opaque meshes end, and after it — and the
+                        #   FramePrepares run as it begins (a compute cull);
+                        #   refuses to draw if the pass is not FRAME_TARGETS
     targets.ts          # FRAME_TARGETS, stated once: rgba8unorm, depth32float,
                         #   1 sample, flipY (CelInk's target, not the canvas)
     frame.ts            # FRAME_BLOCK (group 0, binding 0 of every program:
@@ -2329,9 +2332,17 @@ src/
                         #   the shared celVertex body. Both stages compiled per
                         #   variant by plans/webgpu-ref/shaders.mjs
     WorldBlocks.ts      # The map's block surfaces drawn by US (?ourworld):
-                        #   their buffers, a material group per recipe, a
-                        #   pipeline per variant, one draw per surface at the
-                        #   end of group 0's opaque meshes, ON as told
+                        #   one GROUP per recipe (its surfaces' buffers end to
+                        #   end, one pipeline, one material), the map cut once
+                        #   (finish), ONE drawIndexedIndirect a group at the
+                        #   end of group 0's opaque meshes
+    clusters.ts         # cutClusters: a surface cut into runs of <= 128 of
+                        #   one piece's triangles, each with its box and how
+                        #   the wind can move it (BABYLON_EXIT.md X3.3b)
+    ClusterCull.ts      # The GPU cull, once a frame and submitted ahead of
+                        #   the frame: reach, size gate, frustum; survivors
+                        #   scanned NEAR-FIRST into the index buffer and each
+                        #   group's indirect args. ReachGate, BlockBox
     wgsl/
       preprocess.ts     # #include and the #ifdef family over a define set —
                         #   the subset a shared body may use; anything else is
@@ -2346,4 +2357,6 @@ src/
       layout.ts         # blockLayout: a uniform block's byte offsets and
                         #   strides by WGSL's rules, from the same data; the
                         #   guard rule assemble.ts shares
+      clusterCull.ts    # The cull's WGSL — cullClusters, prefix, scatter —
+                        #   and the record layouts ClusterCull uploads
 ```

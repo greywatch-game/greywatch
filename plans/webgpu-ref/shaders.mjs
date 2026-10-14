@@ -125,6 +125,11 @@ const HOOK = () => {
  * bound. The bumped ground is at 16 of 16 sampled textures and 16 of 16
  * samplers; one more on either side of the split fails here, by name. The
  * vertex buffers are one per attribute the variant reads, as a block draws.
+ *
+ * **And the compute cull those draws read (X3.3b)**: `render/wgsl/
+ * clusterCull.ts` compiled and each of its three entry points built into a
+ * compute pipeline, as `render/ClusterCull.ts` builds them — one more row,
+ * the same on every map.
  */
 async function oursCheck(shapes) {
   const { celFragment } = await import("/src/render/celFragment.ts");
@@ -180,6 +185,28 @@ async function oursCheck(shapes) {
       source: [vErrors.length > 0 ? vm.code : "", fErrors.length > 0 ? fm.code : ""]
         .filter(Boolean)
         .join("\n// ---- fragment ----\n"),
+    });
+  }
+  {
+    const { CLUSTER_CULL_WGSL } = await import("/src/render/wgsl/clusterCull.ts");
+    device.pushErrorScope("validation");
+    const module = device.createShaderModule({ label: "cluster cull", code: CLUSTER_CULL_WGSL });
+    const info = await module.getCompilationInfo();
+    const errors = [...info.messages]
+      .filter((x) => x.type === "error")
+      .map((e) => `${e.lineNum}:${e.linePos} ${e.message}`);
+    for (const entryPoint of ["cullClusters", "prefix", "scatter"]) {
+      try {
+        await device.createComputePipelineAsync({ layout: "auto", compute: { module, entryPoint } });
+      } catch (e) {
+        errors.push(`${entryPoint}: ${String(e?.message ?? e)}`);
+      }
+    }
+    const scope = await device.popErrorScope();
+    if (scope) errors.push(scope.message);
+    out.push({
+      error: errors.length > 0 ? `[cluster cull]: ${errors.join("; ")}` : "",
+      source: errors.length > 0 ? CLUSTER_CULL_WGSL : "",
     });
   }
   device.destroy();

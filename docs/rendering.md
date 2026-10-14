@@ -3311,29 +3311,64 @@ is `rgba16float`, the lamps' atlas `r16float`, the cloud field `rg8unorm`,
 the volume `rgba16float` and `rgba8unorm`, and the ground `rgba8unorm`.
 
 **The world's BLOCKS can be drawn by our side, behind a DEV switch**
-(`?ourworld`, `BABYLON_EXIT.md` X3.3a). Without it nothing about the frame
-differs. With it:
+(`?ourworld`, `BABYLON_EXIT.md` X3.3a and X3.3b). Without it nothing about
+the frame differs. With it:
 
 - **`systems/BlockHandover.ts` decides which surfaces are TAKEN.** A
   surface is taken if it is block-merged, at identity, never written after
-  the build, and on a material that keeps a recipe. It is uploaded as the
-  build makes its mesh (`BuildOptions.onSurface`), the one moment its
-  arrays can still be read.
-- **`render/WorldBlocks.ts` draws each taken surface at `"opaque"`**: one draw
-  per surface, its geometry on buffers of our own, one material group per
-  recipe, and the identity `world` at group 2.
+  the build, on the default layer mask, and on a material that keeps a
+  recipe. Its arrays are handed over as the build makes its mesh
+  (`BuildOptions.onSurface`), the one moment they can still be read, and
+  read once more when the map is CUT (`WorldBlocks.finish`, from
+  `installMap` after `WorldCulling.setMap`).
+- **`render/WorldBlocks.ts` draws one GROUP per cel recipe** at
+  `"opaque"`: every surface of the recipe end to end on one set of vertex
+  buffers (an attribute a surface lacks but the variant reads is zeros,
+  which is what Babylon's empty buffer reads), one pipeline, one material,
+  the identity `world` at group 2, and ONE `drawIndexedIndirect`.
+- **The map is cut into CLUSTERS once** (`render/clusters.ts`,
+  `CONFIG.graphics.clusters`): runs of at most 128 triangles of one X1.4
+  piece, in the surface's own order, each carrying its block, its piece,
+  its box, and how far the wind can move it. Never re-cut per frame.
+- **What draws is decided on the GPU, once a frame, from numbers alone**
+  (`render/ClusterCull.ts`, `render/wgsl/clusterCull.ts`). A cluster is
+  dropped only if its BLOCK's box (the cell `WorldCulling` filed it in) is
+  past the reach, its SURFACE is under the size gate, or its box, grown by
+  the most the wind can move its vertices this frame, lies wholly outside one
+  of the view-projection's four side planes or the eye's own plane. The
+  reach and the size gate's scale are `WorldCulling`'s own
+  (`WorldCulling.reachGate`), so a cluster is decided as a candidate would
+  be, and the frustum only ever drops what the frustum hid. The cull reads no
+  node.
+- **The survivors are written NEAR-FIRST, and in one order.** A scan, never
+  an atomic append: by band (`nearBands`, nearest first), then by cluster.
+  Two frames that see the same thing draw the same triangles in the same
+  order, so an equal-depth tie is settled the same way every frame. The
+  order is chosen while the list is written, never sorted, so a later
+  depth-ordered draw can let the GPU skip hidden pixels.
+- **The cull is SUBMITTED on its own as the main pass begins**
+  (`Renderer.onFrame`), so the queue runs it ahead of the frame's command
+  buffer, which is still being recorded. It is outside Babylon's encoder,
+  so a GPU timer bracketing Babylon's frame does not see it. Its three
+  compute pipelines are the one place our renderer takes an `"auto"`
+  layout: one hand-written module, each pass binding exactly what its entry
+  point reads from its own pipeline's layout, and nothing shared between
+  them, so the reason the cache's layouts are explicit does not arise.
 - **A taken mesh is drawn by our side in the MAIN pass only.**
   `WorldCulling.setTaken` keeps it out of the candidate list, and every
   other pass draws from a list of its own. The glow's mask, which reads the
   main pass's active meshes, keeps only what glows, which a taken mesh never
   does.
-- **A taken mesh is ON exactly when Babylon's walk would have drawn it.** It
-  must pass `WorldCulling`'s tests, then the walk's own (`isReady`, enabled,
-  visible, the layer mask and `isInFrustum` against the walk's own planes),
-  asked through the mesh's public API right after the walk. So a frame
-  trades one draw for one draw, which `plans/webgpu-ref/census.mjs` counts.
-- **The building card waits for every pipeline the taken surfaces need**, so
-  no frame of the round draws with one still compiling.
+- **A taken mesh is never switched off, hidden or faded after its build.**
+  Nothing in the tree does it to a block, and the cull could not follow: a
+  faded mesh goes to Babylon's blended list and ours would still draw it
+  opaque. A DEV build checks every frame and says so.
+- **The building card waits for every pipeline, the cull's included**, so no
+  frame of the round draws with one still compiling. A group whose pipeline
+  fails goes back to Babylon whole; a cull that fails sends every surface
+  back.
+- **`plans/webgpu-ref/census.mjs --fall`** counts it: the main pass's draws
+  fall from one a surface to one a recipe.
 
 ## Block visibility: how much of the map the frame walks
 

@@ -73,7 +73,9 @@ node plans/webgpu-ref/bench.mjs [map...] [--runs 3] [--capped] [--gpu] [--max] [
   `BABYLON_EXIT.md` X3.1 and X3.3a) into a real pipeline through our own
   `PipelineCache`, on a device of its own, so the shared bodies' second
   reader is compiled for every shape, drawn or not — and the per-stage
-  texture and sampler limits are counted against what is bound.
+  texture and sampler limits are counted against what is bound. Beside them
+  it builds the compute cull those draws read (`src/render/wgsl/
+  clusterCull.ts`, X3.3b), each of its three entry points into a pipeline.
   Exits non-zero, so it stands in front of a merge beside
   `gate.mjs`. It is also the strongest place the transpiler tripwire is asked,
   because it forces the CACHED materials to compile rather than the drawn ones.

@@ -3,7 +3,8 @@
  * Owns: `Scene.getActiveMeshCandidates`, the map's meshes filed into cull
  * cells, and the list handed back to Babylon each frame — and, under
  * `?ourworld`, the TAKEN meshes our renderer draws in the main pass instead
- * (`setTaken`), never candidates, offered to it as `takenOffered`.
+ * (`setTaken`), never candidates, with the reach and the size gate this file
+ * decides handed to its GPU cull as numbers (`reachGate`).
  * There are TWO lists and they run on different clocks: `eligible` is the
  * structural answer, rebuilt only when a cell, a pool or the scene's
  * membership moves, and `candidates` is that list minus whatever is switched
@@ -81,13 +82,16 @@
  *
  * **A TAKEN mesh is a block our renderer draws in the main pass**
  * (`systems/BlockHandover.ts`, behind the DEV switch `?ourworld`,
- * `BABYLON_EXIT.md` X3.3a). It is filed in its cell like any block and meets
- * every test a candidate meets here, but what passes goes to `takenOffered`
- * rather than to Babylon — so the main pass's mesh walk never sees it, and
- * nothing else does either: every other pass draws from a list of its own
- * (the shadow maps, the probes, the lamps' atlas), and the glow's mask,
- * which reads the main pass's ACTIVE meshes, keeps only what glows, which a
- * taken mesh never does.
+ * `BABYLON_EXIT.md` X3.3a and X3.3b). It is filed in its cell like any block,
+ * which is the box our renderer's GPU cull measures the reach to
+ * (`blockBoxOf`), but it is never a candidate — so the main pass's mesh walk
+ * never sees it, and nothing else does either: every other pass draws from a
+ * list of its own (the shadow maps, the probes, the lamps' atlas), and the
+ * glow's mask, which reads the main pass's ACTIVE meshes, keeps only what
+ * glows, which a taken mesh never does. What this file decides for the
+ * candidates — the reach, and the size gate's scale this frame — it states
+ * as numbers in `reachGate`, so the GPU cull decides a taken mesh's clusters
+ * as this decides a candidate, and reads no node to do it.
  *
  * The reach is the map's own `fogEnd` plus `CONFIG.graphics.culling.pad`, and
  * on a map whose fog never closes — `fogEnd` past its own diagonal, which the
@@ -96,6 +100,7 @@
  */
 import type { AbstractMesh, Mesh, Scene, Vector3 } from "@babylonjs/core";
 import { CONFIG } from "../config";
+import type { BlockBox, ReachGate } from "../render/ClusterCull";
 import type { GameMap } from "../world/MapBuilder";
 
 /**
@@ -256,16 +261,19 @@ export class WorldCulling {
 
   /** The meshes our renderer draws in the main pass instead — see the header. */
   private taken = new Set<AbstractMesh>();
-  /** The taken meshes in a cell that is on: `eligible`'s twin. */
-  private takenEligible: AbstractMesh[] = [];
+
   /**
-   * The taken meshes that passed every test here THIS frame — what Babylon
-   * would have been offered of them. Read by whoever draws them, after this
-   * frame's `update`; rewritten in place by the next.
+   * The reach and the size gate as this file decides them THIS frame, for
+   * our renderer's GPU cull (`render/ClusterCull.ts`): rewritten in place by
+   * every `update`. The reach is the distance a cell switches ON at, from
+   * the eye to the cell's box, and Infinity while everything is offered; the
+   * size gate is `offer`'s own, off under the warm-up.
    */
-  readonly takenOffered: { readonly data: AbstractMesh[]; length: number } = {
-    data: [],
-    length: 0,
+  readonly reachGate: ReachGate = {
+    reach: Number.POSITIVE_INFINITY,
+    sizeGate: false,
+    perRad: 0,
+    px2: 0,
   };
 
   /** Set when the candidate list no longer matches the state above. */
@@ -279,6 +287,7 @@ export class WorldCulling {
   private warm = false;
 
   /** Squared distances a cell switches at. Infinite reach culls nothing. */
+  private on = Number.POSITIVE_INFINITY;
   private onSq = Number.POSITIVE_INFINITY;
   private offSq = Number.POSITIVE_INFINITY;
 
@@ -352,11 +361,9 @@ export class WorldCulling {
     this.candidates.length = 0;
     this.eligible.length = 0;
     this.taken = new Set();
-    this.takenEligible.length = 0;
-    this.takenOffered.data.length = 0;
-    this.takenOffered.length = 0;
     this.gateOf = new Map();
     if (!map) {
+      this.on = Number.POSITIVE_INFINITY;
       this.onSq = Number.POSITIVE_INFINITY;
       this.offSq = Number.POSITIVE_INFINITY;
       return;
@@ -369,6 +376,7 @@ export class WorldCulling {
     // honest reading of it: only the cell the camera is standing in.
     const on = Math.max(0, fogEnd + c.pad + c.step);
     const off = on + c.hysteresis;
+    this.on = on;
     this.onSq = on * on;
     this.offSq = off * off;
 
@@ -464,7 +472,8 @@ export class WorldCulling {
   /**
    * The meshes our renderer draws in the main pass from now on — each one a
    * mesh `setMap` filed in a cell (anything else is refused: only a block is
-   * drawn by our side). Replaced whole; empty hands every one back.
+   * drawn by our side). Replaced whole; empty hands every one back. They are
+   * never candidates again until handed back.
    */
   setTaken(meshes: readonly AbstractMesh[]): void {
     for (const mesh of meshes) {
@@ -474,6 +483,15 @@ export class WorldCulling {
     }
     this.taken = new Set(meshes);
     this.listDirty = true;
+  }
+
+  /**
+   * The box of the cell `mesh` was filed in — the bounds of every mesh of its
+   * block, glazing included, that the reach is measured to — or undefined
+   * for a mesh in no cell. Meshes of one block share the object.
+   */
+  blockBoxOf(mesh: AbstractMesh): BlockBox | undefined {
+    return this.cellOf.get(mesh);
   }
 
   /**
@@ -582,13 +600,11 @@ export class WorldCulling {
   private rebuildList(): void {
     const data = this.eligible;
     data.length = 0;
-    const taken = this.takenEligible;
-    taken.length = 0;
     let loose = 0;
     for (const mesh of this.scene.meshes) {
       const cell = this.cellOf.get(mesh);
       if (cell) {
-        if (cell.on || this.warm) (this.taken.has(mesh) ? taken : data).push(mesh);
+        if ((cell.on || this.warm) && !this.taken.has(mesh)) data.push(mesh);
         continue;
       }
       if (this.hidden.has(mesh)) continue;
@@ -683,6 +699,11 @@ export class WorldCulling {
         (cam!.fov || 1)
       : 0;
     const px2 = minPx * minPx;
+    const reachGate = this.reachGate;
+    reachGate.reach = this.warm ? Number.POSITIVE_INFINITY : this.on;
+    reachGate.sizeGate = gate;
+    reachGate.perRad = perRad;
+    reachGate.px2 = px2;
     // **A BODY is measured ONCE, off its root, and drops whole.** One test per
     // body rather than per mesh, taken before the walk so that the walk reads
     // an answer instead of computing fourteen of them — and, far more
@@ -717,10 +738,6 @@ export class WorldCulling {
     out.length = k > out.length ? k : out.length;
     this.candidates.length = k;
     this.stats.offered = k;
-    // The taken meshes meet the same tests, into their own list.
-    const taken = this.takenOffered;
-    const from = this.takenEligible;
-    taken.length = this.pass(from, from.length, taken.data, gate, eye, perRad, px2);
   }
 
   /**

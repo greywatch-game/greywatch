@@ -1717,7 +1717,7 @@ export class Game {
     this.culling = new WorldCulling(this.scene);
     this.handover =
       import.meta.env.DEV && urlFlag("ourworld")
-        ? new BlockHandover(this.renderer, this.scene, this.mats, this.culling)
+        ? new BlockHandover(this.renderer, this.mats, this.culling)
         : null;
     this.mapBuilder = new MapBuilder(
       this.scene,

@@ -5,8 +5,9 @@
  * Owns: `Renderer` — the frame's `FrameUniforms` and `FrameUniformBuffer`,
  * its `FrameTextures` and the bind group they make with the buffer (group 0
  * of every program, `FrameContext.frameGroup`), the `PipelineCache`, the `FrameDraw`s at each of the two points they may be
- * drawn at, and the hook into the host's main pass; `FrameDraw`, `DrawPoint`
- * and `FrameContext`.
+ * drawn at, the `FramePrepare`s run as the pass begins, and the hook into the
+ * host's main pass; `FrameDraw`, `FramePrepare`, `DrawPoint` and
+ * `FrameContext`.
  * Invariants: every GPU resource it holds it made, on the host's device, and
  * destroys in `dispose` (`BABYLON_EXIT.md` rule 5 — a texture another side
  * owns is READ through the seam, never copied); the frame's uniforms are
@@ -15,7 +16,9 @@
  * (`CelMaterialFactory.fillFrameTextures`) resolved through the host, once
  * per frame as the main pass begins, and uploaded only when something will
  * draw — with nothing added it costs one empty branch a
- * frame; a frame draws only if it was FILLED this frame (a draw added
+ * frame; every `FramePrepare` runs right after that fill, on the same frames,
+ * so what it hands the GPU is this frame's; a frame draws only if it was
+ * FILLED this frame (a draw added
  * mid-phase waits for the next) and only if the open pass is exactly
  * `FRAME_TARGETS`, checked every frame — a pass that is not draws nothing
  * that frame, with one console error per change, rather than recording a
@@ -72,6 +75,15 @@ export interface FrameContext {
  */
 export type FrameDraw = (pass: GPURenderPassEncoder, ctx: FrameContext) => void;
 
+/**
+ * Work for the frame that must reach the GPU before the main pass's draws do
+ * — a compute cull. Run once a frame as the pass begins, after the frame is
+ * filled; it may SUBMIT a command buffer of its own, which the queue runs
+ * ahead of the frame's (the pass is still being recorded), and it records
+ * nothing into the pass.
+ */
+export type FramePrepare = (frame: FrameUniforms) => void;
+
 /** Where in the main pass a `FrameDraw` is drawn — see the header. */
 export type DrawPoint = "opaque" | "afterGroup";
 
@@ -89,6 +101,7 @@ export class Renderer {
   /** In the order added, one list per point. Arrays, so a frame's walk allocates no iterator. */
   private readonly opaque: FrameDraw[] = [];
   private readonly after: FrameDraw[] = [];
+  private readonly prepares: FramePrepare[] = [];
   private readonly ctx: FrameContext;
   private readonly hook: { dispose(): void };
   /** Whether `begin` filled and uploaded the frame this draw phase. */
@@ -139,10 +152,20 @@ export class Renderer {
     };
   }
 
+  /** Runs `prepare` in every main pass from the next one on, until the returned function is called. */
+  onFrame(prepare: FramePrepare): () => void {
+    this.prepares.push(prepare);
+    return () => {
+      const i = this.prepares.indexOf(prepare);
+      if (i >= 0) this.prepares.splice(i, 1);
+    };
+  }
+
   dispose(): void {
     this.hook.dispose();
     this.opaque.length = 0;
     this.after.length = 0;
+    this.prepares.length = 0;
     this.frameBuffer.destroy();
   }
 
@@ -154,6 +177,8 @@ export class Renderer {
     this.frameBuffer.write(this.frame);
     this.fillTextures(this.textures);
     this.frameBindings.refresh(this.host, this.textures);
+    const prepares = this.prepares;
+    for (let i = 0; i < prepares.length; i++) prepares[i](this.frame);
   };
 
   private readonly afterOpaque = (): void => {

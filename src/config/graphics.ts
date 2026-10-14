@@ -1324,6 +1324,29 @@ export const graphics = {
     minPixels: 3,
   },
   /**
+   * How our renderer cuts the blocks it draws (`?ourworld`;
+   * `render/WorldBlocks.ts`, `BABYLON_EXIT.md` X3.3b): into CLUSTERS, culled
+   * per frame on the GPU and drawn with one indirect draw per material.
+   */
+  clusters: {
+    /**
+     * The most triangles a cluster holds. A cluster is a run of one piece's
+     * triangles in their own order, so it is this many or the piece's
+     * remainder. Smaller is a finer frustum cull and more work for the scan;
+     * B1 asked for 128-256.
+     */
+    triangles: 128,
+    /**
+     * Where the cull's NEAR-FIRST bands end, metres from the eye to a
+     * cluster's box: the surviving clusters of a material are written band by
+     * band, nearest first, the fourth band being everything past the last
+     * number. An order chosen while the list is written anyway, never a sort,
+     * so a later depth-ordered draw can let the GPU skip hidden pixels
+     * (`BABYLON_EXIT.md`, "What this plan does not do"). Exactly three, rising.
+     */
+    nearBands: [24, 64, 160],
+  },
+  /**
    * The cubes behind the glazing: what `ReflectionSystem` bakes per map
    * install, and what the shader mixes over the sky gradient inside it.
    *
