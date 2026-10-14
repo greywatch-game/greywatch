@@ -981,7 +981,55 @@ did.
     (`?bench=<map>&gpu`), against `FINDINGS.md` 52.
   - The desktop path's `gpu.frame` rise above goes to the GPU-side work after
     the exit, with the phone's. Separating the cull's own GPU time would need
-    a timestamp pair of its own around the compute pass.
+    a timestamp pair of its own around the compute pass. **The whole-step
+    review named a second suspect**, the draw order (below, and
+    `FINDINGS.md` 61).
+
+**The whole-step review of X3.3** (2026-10-14, fixes 5525a5d). X3.3a, b
+and c were reviewed together after all three had landed.
+- **A refused main pass was a HOLE.** `Renderer` refuses a pass that is not
+  `FRAME_TARGETS` and draws nothing of ours. Before X3.3c that cost a test
+  draw. Since then it left every taken block drawn by nobody, because
+  Babylon's walk no longer offers them. Now `Renderer.onRefused` tells
+  `BlockHandover`, which stops our side for the rest of the map
+  (`WorldBlocks.stop`, keeping the buffers this frame's commands hold) and
+  hands every block back to Babylon from the next frame. Nothing ships such
+  a pass (`CelInk` is fixed first in the chain), so it is a backstop.
+- **A failed compile waited for the map's LAST one.** `WorldBlocks.compiled`
+  resolved once every compile settled, so a compile that never settled
+  kept a failed group a hole for the round. `WorldBlocks.onFailed` now hands
+  back a group's surfaces (or every surface, for the cull) in the turn its
+  failure lands.
+- **A capture could not see our renderer.** Its draw count is Babylon's
+  counter. Report version 17 adds `blocks` (taken, clusters, groups, our
+  draws last frame, handed back), read at the capture, and the viewer prints
+  it as `ours`. A phone capture now says whether the handover took anything.
+- **The draw order is a suspect for the desktop path's GPU rise**
+  (`FINDINGS.md` 61). The blocks draw after Babylon's whole front-to-back
+  opaque queue, so the terrain, the roads and the loose props are shaded
+  before the buildings that hide them. Greyfen's `fogEnd` (78 m) is inside
+  the sky dome, so drawing ours at the group's start is legal there and
+  separates the order from the cull. That is GPU-side work, deferred with
+  the rest of it.
+- **Tidy.** `WorldCulling.pass` folded back into `offer` (its second caller
+  went at X3.3b), `FrameUniformBuffer`'s type-only `write` gone,
+  `WorldBlocks.finish` sums each group's vertices once, and `ClusterCull`
+  logs nothing after `dispose`.
+- **Measured after the fixes.**
+  - `bank.mjs --check`: 47 of 47 within the floor. The worst rows are
+    unchanged (Sarab's `wadi` at 0.1222% of pixels, Coldharbour's
+    `curtain90` at a mean of 0.0104/255).
+  - `census.mjs --against` the BEFORE at 69a7744, `--fall`: totals identical
+    to X3.3c's on all seven maps.
+  - `shaders.mjs` and `gate.mjs` clean on seven maps. A server-match round
+    on Hollowmere took 54, drew 2 and handed back none, with no errors.
+    `corecheck` and `npm run build` pass.
+  - **Both new paths, forced, on Greyfen** (a scratch test at the first bank
+    vantage). A refused pass hands back all 354 surfaces, and the next frame
+    matches the bank to the pixel: Babylon draws every block again. One
+    group's pipeline failing before install hands back its 41 surfaces, the
+    other 8 groups draw, and the frame is within the floor (0.0476% of
+    pixels).
 
 **Gate after X3.3c — the first number that says whether the renderer pays.**
 If main-pass draws fall and no device's CPU TICK improves, stop and re-read
