@@ -3465,6 +3465,15 @@ The build hands the sets over once (`BuildOptions.onScatter`), and
   instanced). An empty one costs two calls and no instance. What it bought
   is memory: our side of Greyfen holds 81 MB where it held 680 (its clusters
   86,192 to 4,731).
+- **Three URL switches A/B all of this on a device nobody here owns**, in a
+  shipped build (`core/urlOverrides.ts`), and a capture names whichever was
+  set in `graphics.forced`. `?babylonworld` takes nothing, so Babylon draws
+  the static world whole, as before X3.3. `?nocull` keeps both culls' every
+  cluster and instance: no frustum, no reach, no size gate. `?nofrustum`
+  turns off the five planes only (`ClusterCull.ts`'s `openTests`). So a
+  picture that is wrong by default and right under `?nocull` is a cull's
+  DECISION, and one still wrong under `?nocull` and right under
+  `?babylonworld` is our DRAW. Diagnostics, never settings.
 
 ## Block visibility: how much of the map the frame walks
 

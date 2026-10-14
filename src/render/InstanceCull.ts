@@ -22,7 +22,7 @@
  * `dispose`.
  * Contract: `docs/rendering.md`, "Our renderer's frame".
  */
-import { type ReachGate, rampReach, rigReach, writePlanes, F32_MAX } from "./ClusterCull";
+import { type CullMode, type ReachGate, openTests, rampReach, rigReach, writePlanes, F32_MAX } from "./ClusterCull";
 import type { FrameUniforms } from "./frame";
 import type { PipelineCache } from "./PipelineCache";
 import {
@@ -78,6 +78,8 @@ export class InstanceCull {
     pipelines: PipelineCache,
     tables: InstanceTables,
     private readonly gate: ReachGate,
+    /** Which tests run — `CullMode`; "full" but for a diagnostic. */
+    private readonly mode: CullMode = "full",
   ) {
     const n = tables.instanceCount;
     this.count = n;
@@ -168,6 +170,7 @@ export class InstanceCull {
     u[26] = g.sizeGate ? 1 : 0;
     f[27] = rampReach(frame);
     f[31] = rigReach(frame);
+    openTests(this.mode, f, u);
     this.device.queue.writeBuffer(this.uniform, 0, this.bytes);
 
     const pass = encoder.beginComputePass(PASS);

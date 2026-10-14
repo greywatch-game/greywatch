@@ -1722,7 +1722,7 @@ export class Game {
     // flag. Nothing it does is visible to a ray, a collision, a shadow caster
     // or a cube probe; see `WorldCulling`, which is the whole argument.
     this.culling = new WorldCulling(this.scene);
-    this.handover = new BlockHandover(this.renderer, this.mats, this.culling);
+    this.handover = new BlockHandover(this.renderer, this.mats, this.culling, this.overrides.cullMode);
     // A capture says what our renderer took and drew, which Babylon's own
     // draw counter cannot (`ProfileReport.blocks`).
     this.prof.setBlocks(() => this.handover.stats);
@@ -4669,8 +4669,9 @@ export class Game {
       ...opts,
       foliage,
       navFields,
-      onSurface: this.handover.onSurface,
-      onScatter: this.handover.onScatter,
+      // `?babylonworld` takes nothing, and Babylon draws the world whole.
+      onSurface: this.overrides.ourWorld ? this.handover.onSurface : undefined,
+      onScatter: this.overrides.ourWorld ? this.handover.onScatter : undefined,
     });
     this.map = map;
     // What the profiler reports is the rung this map was built WITH.

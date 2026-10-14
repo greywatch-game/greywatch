@@ -54,6 +54,33 @@ export interface ReachGate {
   px2: number;
 }
 
+/**
+ * Which of a cull's tests run: all of them; the reach and the size gate with
+ * the frustum untested (`?nofrustum`); or none, so everything is kept
+ * (`?nocull`). A diagnostic for a device nobody here owns (`urlOverrides.ts`),
+ * never a setting.
+ */
+export type CullMode = "full" | "nofrustum" | "none";
+
+/**
+ * Opens the tests `mode` turns off in a cull's uniform block, after the frame
+ * has written it — both culls lay the planes, the reach and the gate out
+ * alike (`wgsl/clusterCull.ts`, `wgsl/instanceCull.ts`).
+ */
+export function openTests(mode: CullMode, f: Float32Array, u: Uint32Array): void {
+  if (mode === "full") return;
+  // Every plane 0x + 0y + 0z + 1: nothing lies outside it.
+  for (let k = 0; k < 5; k++) {
+    f[k * 4] = 0;
+    f[k * 4 + 1] = 0;
+    f[k * 4 + 2] = 0;
+    f[k * 4 + 3] = 1;
+  }
+  if (mode === "nofrustum") return;
+  f[23] = F32_MAX;
+  u[26] = 0;
+}
+
 /** A block's box, as `WorldCulling` files a cell. */
 export interface BlockBox {
   readonly minX: number;
@@ -114,6 +141,8 @@ export class ClusterCull {
     pipelines: PipelineCache,
     tables: CullTables,
     private readonly gate: ReachGate,
+    /** Which tests run — `CullMode`; "full" but for a diagnostic. */
+    private readonly mode: CullMode = "full",
   ) {
     const n = tables.clusterCount;
     this.clusterCount = n;
@@ -210,6 +239,7 @@ export class ClusterCull {
     u[26] = g.sizeGate ? 1 : 0;
     f[27] = rampReach(frame);
     f[31] = rigReach(frame);
+    openTests(this.mode, f, u);
     this.device.queue.writeBuffer(this.uniform, 0, this.bytes);
 
     const pass = encoder.beginComputePass(PASS);
