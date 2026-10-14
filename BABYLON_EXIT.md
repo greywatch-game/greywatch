@@ -1194,8 +1194,8 @@ the decision.
     both vertex stages for every shape on seven maps and both culls.
     `gate.mjs`, `npm run build`, `corecheck` and `parity` pass.
   - **Owed.** The phone's reading (tick, `gpu.frame`, and whether the
-    memory moves its frame). If the instanced draws ever cost there, they
-    fold into one draw per recipe by vertex pulling; not built.
+    memory moves its frame). The draws fold into one draw per recipe by
+    vertex pulling in X3.5b, before X3.6 repeats them in every pass.
 - **Verify:** `kit:hash` (it hashes scatter over fixed seeds and rungs,
   rng-draw count included) plus the replay check; `npm run collision` and
   `npm run parity`; the bank on every map, judged; the census; X0.3.
@@ -1213,11 +1213,70 @@ contracts:
 - **Verify:** the bank on every map, closest to the ground and on a road
   crossing; `merge:hash`; X0.3.
 
+### X3.5b — The fold: one draw a recipe, blocks and scatter together — **M–L** (decision)
+
+Numbered after X3.5 rather than renumbering X3.6, whose sub-steps are named
+across the tree. **Decided** (the user, 2026-10-14): it lands before X3.6.
+
+**Why.** X3.4b draws the scatter at one `drawIndexedIndirect` per part of a
+set, because WebGPU has no multi-draw-indirect. The count is fixed per map
+and issued every frame whatever the cull keeps: 151 instanced draws a frame
+on Greyfen, and several hundred on Harrowmead and Sarab (the census totals,
+over each map's vantages). Three things make that the wrong shape to carry
+into X3.6:
+- **They are encoded live.** Babylon's own draws replay from render bundles;
+  ours run through `run(pass)` every frame, each draw two WebGPU calls
+  across Chrome's wire. The desktop absorbed it (Sarab's fight rose 5.8%,
+  inside the floor); the phone's reading is not yet taken.
+- **Most of them draw nothing.** A set with no survivors is still a draw,
+  which costs the command processor of a phone that is already GPU-bound
+  (`FINDINGS.md` 52).
+- **X3.6 multiplies them.** Every pass it moves (both cascades, the foliage
+  map, the lamps' atlas, every probe face, the glow mask) would repeat the
+  same draws: thousands a frame.
+
+**What.** Every recipe draws ONCE per pass, the blocks, the scatter and the
+terrain (X3.5) in one stream:
+- The scatter's variant parts are cut into clusters as the blocks are
+  (`clusters.ts`), each part a run of clusters in its set's own frame.
+- The instance cull keeps its per-instance tests and then expands each
+  surviving instance into its clusters, testing each against the frustum, so
+  a big tree half in view draws half. It writes (instance, cluster) records
+  into the SAME compacted stream the cluster cull writes the blocks into, in
+  the same near-first order, by a scan, never an atomic append.
+- The vertex stage reads its attributes from storage buffers instead of
+  vertex buffers, and its `world` from the record's instance: the blocks'
+  identity becomes instance 0, so one vertex stage draws both.
+- **How the vertex stage learns its record is the step's first decision.**
+  (a) The instance in the index's high bits and the vertex in its low bits:
+  indexed draws and the post-transform cache are kept, but the two must fit
+  32 bits, so the cut asserts it and hands back what does not fit. (b)
+  Non-indexed draws over (record, corner): no limit, but every vertex is
+  shaded once per triangle, about three times over, on a phone that is
+  GPU-bound. (a), unless a map's counts break the budget.
+- **Two things X3.4b left are settled here:**
+  - the size gate per instance against per surface (a cone or a litter pile
+    under 3 px now drops where Babylon drew it inside a block);
+  - the hole `BlockHandover.install` could leave: a part it skips while its
+    pieces are still cut. It hands its group back instead.
+- **Interim lever, not built:** if the phone shows the live encoding costing
+  before the fold lands, the draw list is static (every argument indirect),
+  so it can be recorded into a `GPURenderBundle` at the cut and re-recorded
+  only when a bind group changes. It removes the CPU cost and not the empty
+  draws, so it does not replace the fold.
+
+- **Verify:** the census, ours at one draw a recipe in the main pass;
+  `bank.mjs --check` within the floor against X3.5 (the fold moves no
+  pixel but equal-depth ties); the DEV trade check silent; `shaders.mjs` for
+  the new vertex stage and both culls; X0.3; the phone's tick and
+  `gpu.frame` on Greyfen, Harrowmead and Sarab.
+
 ### X3.6 — The static world's other passes (PERF_PLAN B3) — **L, as four sub-steps**
 
 Each sub-step lands on its own. Under rule 5, each pass's texture moves to our
 side here, and Babylon's materials, which still draw the bodies and the rest,
-sample a wrapped view of it.
+sample a wrapped view of it. Every pass draws through X3.5b's fold: one draw a
+recipe a pass.
 
 - **X3.6a — the world's shadows:** both cascades, the foliage map and the
   lightning flash map (`ShadowSystem`, today a `ShadowGenerator` with a
@@ -1463,7 +1522,7 @@ to X0.3 (see "The branch"). It is the user's to start.
 | A4 body fade | X4.1 |
 | A5 occlusion culling | optional, after X3.3b, in the compute cull; occluders skip `RayWorld.removed` |
 | A6 snapshot rendering | dropped: it is a Babylon mechanism |
-| B0, B1, B2, B3, B5 | X3.1, X3.3 (a–c), X3.4, X3.6, X3.5 |
+| B0, B1, B2, B3, B5 | X3.1, X3.3 (a–c), X3.4 and X3.5b, X3.6, X3.5 |
 | B4 who owns the frame | decided: X5.4 |
 | C1 | X0.2 |
 | C2, C3 | X2.1, X2.2 |
@@ -1572,5 +1631,7 @@ Phase 1 actually took.
 | X3.3 | The phone is GPU-bound on Greyfen once warm (`FINDINGS.md` 52). Add the GPU-side work to the exit, or after it? | **Decided** 2026-10-14: after the exit is complete. Meanwhile the gate after X3.3c reads the CPU tick, the phone's `gpu.frame` is recorded at every phone measurement, and X3.3b and X5.2 keep the door open ("What this plan does not do"). |
 | X3.4 | Every prop was unique, so there were no variants to instance: how many variants a kind, or defer the step? | **Decided** 2026-10-14: 16 variants a kind, each placement under its own yaw and scale; maple's four crowns four variants each (X3.4). |
 | X3.4 | Scatter AO: baked per kind (cheaper, changes the look) or per instance? | **Decided** 2026-10-14: per kind, judged in the bank. If the look is wrong, the fix is X3.4's "If the look is wrong" (a per-kind bake plus a per-instance term), not a per-instance bake. |
+| X3.5b | X3.4b's instanced draws are one a part of a set, issued every frame: fold them into one draw a recipe, and when? | **Decided** 2026-10-14: fold them by vertex pulling, blocks and scatter in one stream, before X3.6 repeats them in every pass. Fewer variants was not the lever: it halves the count and costs the look. |
+| X3.5b | The instance in the index's high bits, or non-indexed draws over (record, corner)? | The step's first decision: the high bits unless a map's counts break the 32-bit budget. |
 | X4.2 | Which hull parts drop at range (the tank's links and wheels, the MG rings)? | An art call; PERF_PLAN A3 measured +6.5% at 300 m on Cinderhaven. |
 | X6.2 | Is it ready to merge to `develop`? | Only when X6.2's "Before" list passes in full. |
