@@ -90,7 +90,6 @@ import { CollisionField } from "./CollisionField";
 import { ObstacleField } from "./ObstacleField";
 import {
   bakePartTransform,
-  flattenParts,
   Part,
   type PlainArrays,
   vertexDataOf,
@@ -130,6 +129,7 @@ import type {
   WorldPane,
 } from "./mapTypes";
 import { mulberry32 } from "./rng";
+import { ScatterVariants } from "./scatterVariants";
 import {
   buildAshTree,
   buildBamboo,
@@ -156,6 +156,7 @@ import {
   buildSkip,
   buildTrafficCone,
   RIM_WOOD,
+  SHARED_DRAWS,
 } from "./props";
 
 export type {
@@ -179,7 +180,8 @@ export { BLOCK_SIZE } from "./blocks";
 /**
  * One scatter prop's factory: the prop's ROOT part, with the rest of it
  * parented under it (`world/parts.ts`). No scene — a prop is geometry and
- * paint, and becomes meshes only here, after `flattenParts`.
+ * paint. It is run only to make its kind's VARIANTS (`ScatterVariants`),
+ * never per placement, and is `scatterVariants.ts`'s `VariantBuilder`.
  *
  * **Typed rather than inferred, and the third argument is why.** Only
  * `buildJungleTree` reads `sub`, and a `Record` of the builders as written
@@ -663,26 +665,28 @@ export class MapBuilder {
   private item: EditorItem | null = null;
 
   /**
-   * The layout's own seed, kept so `scatterRegion` can mint a SECOND stream
-   * per placed prop. Set at the top of every `build`.
+   * The layout's own seed, which the shared scatter stream is minted from and
+   * the scatter's VARIANTS are seeded off. Set at the top of every `build`.
    *
    * The shared stream is why a scatter field is reproducible and also why it
    * is brittle: it is consumed in authored order, so one extra draw anywhere
    * moves every prop after it. That is a real cost — on Greyfen it is 354
    * trees, 149 fern clumps and a re-walk of all five flags — and it is what a
-   * builder pays the moment it wants to randomise something new. A stream
-   * keyed to (region, index) buys that back: it is just as reproducible, it is
-   * independent of what any other prop drew, and adding one leaves the shared
-   * stream untouched down to the draw. Today the jungle tree's liana veil is
-   * the only thing that takes it.
+   * builder used to pay the moment it wanted to randomise something new. Since
+   * X3.4a no placement builds its prop: a builder runs only to make its
+   * kind's variants, off streams of their own (`ScatterVariants`), and a
+   * placement spends what its builder took from the shared stream by replay
+   * (`props/sharedDraws.ts`). So a builder may draw what it likes from its
+   * own streams; only a change to what it takes from `rng` owes the replay.
    */
   private propSeed = 0;
 
   /**
-   * How full a tree's crown is in this build — `BuildOptions.foliage`, set
-   * at the top of every `build` and handed to every scatter builder.
+   * This build's scatter variants (`world/scatterVariants.ts`), made in
+   * `reset` off the layout's seed and the build's foliage rung, and dropped
+   * by `release` — they hold every kind's geometry sixteen times over.
    */
-  private foliage = 1;
+  private variants: ScatterVariants | null = null;
 
   /**
    * This map's albedo palette: the colours the block merge collapsed, in the
@@ -757,6 +761,7 @@ export class MapBuilder {
     this.roads = roadFootprint([], []);
     this.boxIndex = emptyBoxIndex(CONFIG.map.size, 0);
     this.item = null;
+    this.variants = null;
   }
 
   /**
@@ -957,7 +962,9 @@ export class MapBuilder {
     // a single box exists, which is the only moment the index can be told.
     this.boxIndex = emptyBoxIndex(size, maxScatterClearance(layout));
     this.propSeed = layout.seed ?? 0x484c;
-    this.foliage = opts?.foliage ?? 1;
+    // How full a tree's crown is in this build — `BuildOptions.foliage`,
+    // which the variants are built at.
+    this.variants = new ScatterVariants(SCATTER_BUILDERS, this.mats, this.propSeed, opts?.foliage ?? 1);
   }
 
   /** The floor this build stands everything on — see `TerrainField`. */
@@ -1680,7 +1687,8 @@ export class MapBuilder {
     /** The region's PIECE id — see `worldGeometry.ts`. */
     piece: number,
   ): WorldSurface[] {
-    const build = SCATTER_BUILDERS[spec.prop];
+    const variants = this.variants;
+    if (!variants) throw new Error("MapBuilder: scatter placed outside a build");
     const light = SCATTER_LIGHTS[spec.prop];
     const sound = SCATTER_AMBIENCE[spec.prop];
     const [minS, maxS] = scatterScale(spec);
@@ -1720,27 +1728,24 @@ export class MapBuilder {
         roadTopAt(this.roads, spot.x, spot.z) -
         origin.y;
 
-      // The prop's own stream, keyed to where it sits in the layout rather
-      // than to how much has been drawn before it — see `propSeed`. Minted
-      // per prop and not per region so that changing a region's `count`
-      // leaves the props it still places drawing what they drew.
-      const sub = mulberry32(this.propSeed ^ (index * 7919 + i));
-      const prop = build(this.mats, rng, sub, this.foliage);
-      prop.scaling.setAll(scale);
-      prop.position.x = spot.lx;
-      prop.position.z = spot.lz;
-      prop.position.y = prop.position.y * scale + base;
-      // Drawn here and not a line earlier: `build` consumes the same seeded
+      // The prop is no longer BUILT here: it wears one of its kind's variants
+      // (`world/scatterVariants.ts`, `BABYLON_EXIT.md` X3.4a), picked by
+      // where it sits in the layout. What its builder took from the shared
+      // stream is still taken, by the kind's REPLAY (`props/sharedDraws.ts`)
+      // — the yaw below and the next prop's spot come off the same stream,
+      // so a draw fewer would move every prop after it and the bake with them.
+      SHARED_DRAWS[spec.prop](rng);
+      // Drawn here and not a line earlier: the replay consumes the same seeded
       // stream, so moving this draw would reroll the whole dressing field.
       // Kept in a local because the collider below is oriented with the prop —
       // the only way a headstone or a fallen log gets a box that means anything.
       const yaw = rng() * Math.PI * 2;
-      prop.rotation.y = yaw;
-      // Compose the placement into every part and cut the links
-      // (`flattenParts`), then admit the parts to the merge — which bakes each
-      // one's transform into its vertices, the same identity-transform trick
+      // The variant's parts, standing where the placement's root used to: its
+      // spot, the ground under it, its yaw and its scale. The root's own
+      // height and lean are already in the variant. The merge bakes each
+      // part's transform into its vertices, the same identity-transform trick
       // the structures use, applied one level up.
-      const flat = flattenParts(prop);
+      const flat = variants.place(spec.prop, variants.pick(index, i), spot.lx, base, spot.lz, yaw, scale);
       // Its box, if it gets one, bounces light in its own colours.
       if (spec.blocking) this.albedoFromParts(flat);
       parts.push(...admitProp(flat, piece, mint));
@@ -1755,10 +1760,11 @@ export class MapBuilder {
         );
       }
       // Beside the light and on the same terms: the prop's own position, taken
-      // here because nothing downstream still has one. `flattenParts` above composes
-      // this placement into every part, the merge bakes it into the vertices
-      // and then takes the mesh away entirely, so an emitter that is not recorded on this line has no
-      // second chance to be — see `AmbienceSystem`.
+      // here because nothing downstream still has one. `variants.place` above
+      // stands every part at this placement, the merge bakes it into the
+      // vertices and then takes the mesh away entirely, so an emitter that is
+      // not recorded on this line has no second chance to be — see
+      // `AmbienceSystem`.
       if (sound) {
         this.ambience.add(
           spot.x,

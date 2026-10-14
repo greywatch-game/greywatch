@@ -36,7 +36,7 @@ import { net } from "./net";
 import { profiling } from "./profiling";
 import { lighting } from "./lighting";
 import { gi } from "./gi";
-import { ao, map, water, grass, wear } from "./world";
+import { ao, map, water, grass, wear, scatter } from "./world";
 import { sky } from "./sky";
 import { wind } from "./wind";
 import { teams } from "./teams";
@@ -60,6 +60,7 @@ export const CONFIG = {
   bots,
   nav,
   map,
+  scatter,
   player,
   weapons,
   combat,

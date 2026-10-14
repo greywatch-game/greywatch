@@ -1,6 +1,7 @@
 /**
  * config/world.ts — the map's extents and its surface dressing.
- * Owns: map size, water and grass. Contract: `docs/world.md`.
+ * Owns: map size, water, grass and the scatter's variants. Contract:
+ * `docs/world.md`.
  * Gotcha: water and grass are VISUAL ONLY — no collider, no picking. Their
  * palettes live in the map's `EnvironmentSpec`; this is motion and shape.
  */
@@ -862,4 +863,22 @@ export const grass = {
    * nearest bots; beyond that the bend is outside reading distance anyway.
    */
   maxPushers: 8,
+} as const;
+
+/**
+ * The scatter's VARIANTS (`world/scatterVariants.ts`, `BABYLON_EXIT.md`
+ * X3.4): how many shapes of each kind a build makes, every placement wearing
+ * one of them under its own yaw and scale.
+ */
+export const scatter = {
+  /**
+   * Shapes a kind. Sixteen was the user's call over eight (2026-10-14): a
+   * forest repeats a shape once in sixteen trees, broken up by each tree's
+   * own turn and size. It is DRAWS as well as variety — our renderer draws a
+   * variant per material as one instanced draw, WebGPU having no
+   * multi-draw-indirect — and costs nothing in placement: which variant a
+   * prop wears is a hash, never a draw. A kind with classes (maple's four
+   * crowns) shares them out evenly, so this should stay a multiple of four.
+   */
+  variants: 16,
 } as const;

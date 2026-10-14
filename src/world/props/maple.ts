@@ -78,7 +78,7 @@ const BAMBOO_LEAF_LIT = "#789441";
  * Returns the three it still spends, as the old tree did: two for the lean
  * and one for which crown it wears, so every maple keeps the colour it had.
  */
-function mapleSharedDraws(rng: () => number): [number, number, number] {
+export function mapleSharedDraws(rng: () => number): [number, number, number] {
   const lz = rng();
   const lx = rng();
   const crown = rng();
@@ -94,6 +94,20 @@ function mapleSharedDraws(rng: () => number): [number, number, number] {
     rng();
   }
   return [lz, lx, crown];
+}
+
+/**
+ * Which of `MAPLE_CROWNS` the maple built off `rng` wears, read without
+ * building it — what `world/scatterVariants.ts` shares a kind's variants out
+ * by, so each crown gets its four.
+ */
+export function mapleCrownOf(rng: () => number): number {
+  return crownOf(mapleSharedDraws(rng)[2]);
+}
+
+/** The crown a maple's third shared draw picks. */
+function crownOf(pick: number): number {
+  return Math.floor(pick * MAPLE_CROWNS.length);
 }
 
 /**
@@ -266,7 +280,7 @@ export function buildMaple(
   detail = 1,
 ): Part {
   const [lz, lx, pick] = mapleSharedDraws(rng);
-  const crown = Math.floor(pick * MAPLE_CROWNS.length);
+  const crown = crownOf(pick);
   const [shadeHex, litHex] = MAPLE_CROWNS[crown];
   const bark = mats.get(MAPLE_BARK);
   const leafMat = (hex: string) => mats.getTranslucent(hex, CONFIG.graphics.translucency.maple);

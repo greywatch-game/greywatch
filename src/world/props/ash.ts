@@ -61,7 +61,7 @@ const IVY = "#2a3f2b";
  * number the plate crown it replaced took, and fixed there, so redrawing the
  * tree moved no prop on the map. See its header.
  */
-const ASH_SHARED_DRAWS = 56;
+export const ASH_SHARED_DRAWS = 56;
 
 /**
  * Hedgerow ash: a pale, faintly ridged bole on a flare of root knees, forking

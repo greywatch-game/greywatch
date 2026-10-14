@@ -383,6 +383,7 @@ async function hashJobs(jobs) {
     B.Logger.LogLevels = B.Logger.NoneLogLevel;
     const { BUILDERS } = await server.ssrLoadModule("/src/world/BuildingKit.ts");
     const { SCATTER_BUILDERS, PROP_BODIES } = await server.ssrLoadModule("/src/world/MapBuilder.ts");
+    const { SHARED_DRAWS } = await server.ssrLoadModule("/src/world/props/sharedDraws.ts");
     const { flattenParts, worldMatrixOf } = await server.ssrLoadModule("/src/world/parts.ts");
     const { Matrix } = await server.ssrLoadModule("/src/math/index.ts");
     const engine = new B.NullEngine();
@@ -397,6 +398,12 @@ async function hashJobs(jobs) {
       try {
         if (p.scatter) {
           out[key] = hashScatter(SCATTER_BUILDERS[p.kind], PROP_BODIES[p.kind], flattenParts, mats, p);
+          // The replay `MapBuilder` spends a placement's shared draws with
+          // (`props/sharedDraws.ts`) must take exactly what the builder took.
+          const replayed = counted(mulberry32(p.seed));
+          SHARED_DRAWS[p.kind](replayed);
+          const built = out[key].draws;
+          if (replayed.draws !== built) out[key].replay = `builder ${built}, replay ${replayed.draws}`;
           continue;
         }
         const floor = p.bare ? 0 : swell(p.x, p.z);
@@ -445,7 +452,7 @@ function hashScatter(build, body, flattenParts, mats, p) {
     hashPart(draw, part);
   }
   const colliders = createHash("sha256").update(JSON.stringify([body, rng.draws]));
-  return { draw: draw.digest("hex").slice(0, 16), colliders: colliders.digest("hex").slice(0, 16) };
+  return { draw: draw.digest("hex").slice(0, 16), colliders: colliders.digest("hex").slice(0, 16), draws: rng.draws };
 }
 
 /*
@@ -940,9 +947,17 @@ if (process.env.KIT_HASH_WORKER) {
   const errors = keys.filter((k) => result[k].error);
   console.log(`${keys.length} builds of ${new Set(keys.map(kindOf)).size} kinds, ${errors.length} threw`);
   for (const k of errors.slice(0, 10)) console.log(`  threw  ${k}: ${result[k].error}`);
+  // A scatter kind's replay that takes a different count from its builder
+  // would move every prop after it on a map: never a difference to weigh.
+  const replays = keys.filter((k) => result[k].replay);
+  for (const k of replays.slice(0, 10)) console.log(`  REPLAY ${k}: ${result[k].replay}`);
+  if (replays.length) {
+    console.log(`${replays.length} scatter builds take a different count from their replay (props/sharedDraws.ts)`);
+    process.exit(1);
+  }
   if (feet) await reportFeet(result, notBuilt);
   if (outFile) {
-    const hashOnly = ({ plan: _p, ground: _g, ...r }) => r;
+    const hashOnly = ({ plan: _p, ground: _g, draws: _d, replay: _r, ...r }) => r;
     writeFileSync(outFile, JSON.stringify(Object.fromEntries(keys.map((k) => [k, hashOnly(result[k])])), null, 1));
     console.log(`wrote ${outFile}`);
   }

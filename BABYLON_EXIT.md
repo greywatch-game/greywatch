@@ -1054,9 +1054,106 @@ As B2 states it: keep the seeded placement exactly; emit one source mesh per
 Destructible props become a per-instance flag. The AO question B2 raises is
 the decision.
 
+- **Decided** (2026-10-14): **the colour buffer is baked once per kind**, as
+  if the prop stood alone on flat, open ground, and every placement of it
+  shares that bake. The look change is judged in the bank, frame by frame,
+  rather than held to the floor. It is not only the AO: the colour buffer's
+  four channels (`world/vertexShading.ts`) split two and two.
+  - **Placement-dependent, so they change:** the AO in the ALPHA (a prop
+    against a wall or under a tree no longer darkens on that side, and a prop
+    on a slope loses its slope's grounding) and the wear ramp in the BLUE
+    (measured from the ground under each vertex, and zero under a roof, so a
+    crate under an eave now carries street grime).
+  - **The prop's own, so they hold:** the world mark in the GREEN, and the
+    sway weight in the RED nearly so. A rigged layer's sign holds exactly. A
+    ramp is height above the ground, so it is now measured up the prop at
+    scale 1 on level ground: a prop sown on a slope or drawn at 1.3x sways a
+    little differently.
+- **If the look is wrong** (the user's fallback, 2026-10-14): keep the
+  per-kind bake for the prop's SELF-occlusion and add one or two numbers PER
+  INSTANCE, baked at placement from the world around it. For example, how
+  hemmed in the spot is (the AO's box term at the prop's footing) and how far
+  the ground darkens its base (the ground term along its height). The shader
+  combines them with the per-kind alpha. That is most of the grounding back
+  for a few bytes an instance, against a per-instance bake, which costs as
+  much colour data as today. It is a look change of its own, judged in the
+  bank again.
+- **Found on the way in (2026-10-14): there were no variants to instance.**
+  B2's premise was "scatter is made of a few kinds × variants × foliage
+  rungs". It was not. Every prop is built per placement from the shared
+  stream, and the five tree builders seed a stream of their own from one of
+  those draws, so every tree is a different shape: Greyfen's 1,737 jungle
+  trees were 1,737 meshes' worth of unique geometry. Measured off the build's
+  piece ranges, scatter is most of the world on the forest maps:
+
+  | map | vertices | scatter | the biggest kind |
+  | --- | --- | --- | --- |
+  | Hollowmere | 1.96 M | 38% | `deadTree`, 0.64 M |
+  | Greyfen | 8.93 M | 87% | `jungleTree`, 7.29 M |
+  | Coldharbour | 2.97 M | 33% | `pine`, 0.59 M |
+  | Harrowmead | 6.37 M | 84% | `ashTree`, 3.78 M |
+  | Sarab | 2.02 M | 50% | `boulder`, 0.63 M |
+  | Cinderhaven | 4.77 M | 15% | `pine`, 0.20 M |
+  | Kurenai | 5.56 M | 60% | `maple`, 3.09 M |
+
+  **Decided** (the user, 2026-10-14): **16 variants a kind.** Each kind is
+  built 16 times a build, and every placement wears one of them under its
+  own scale, yaw and translation. That is a second look change, judged in
+  the bank like the first: a forest repeats shapes, broken up by yaw and
+  scale. Maple's four crown colours become four variants each. The other
+  two answers were 8 variants, and deferring the step, since X3.3 already
+  draws scatter at one draw a material.
+- **Destructible props: nothing to flag.** Destruction's stage one
+  (06fca4f) was never merged to `develop` or to this branch. It is a dangling
+  commit, so no prop on the branch is destructible. When it lands, a wrecked
+  prop is an instance the cull drops (a flag in its record), and Babylon's
+  copy of it is the vertex range its piece already names.
+- **Two sub-steps**, split as X3.3 was so the two claims are proven apart:
+  - **X3.4a — the variants, on the path as it stands.** Each kind's 16
+    variants are built once a build (`world/scatterVariants.ts`), and a
+    placement takes one by a hash of where it sits in the layout, never by
+    a draw. **The placement must not move**, and that is the step's oracle.
+    The shared stream is spent exactly as the builder would have spent it,
+    by a REPLAY per kind (`world/props/sharedDraws.ts`, maple's
+    `mapleSharedDraws` generalised), which `kit:hash` checks against the
+    builder's own count at every seed and rung. So `npm run collision`
+    rewrites no bake and `npm run parity` passes untouched. `kit:hash` is
+    identical (the builders are not touched); `merge:hash` moves (the
+    scatter's drawing is the variants'). The picture moves only by the
+    variants.
+  - **X3.4b — our main pass draws the variants as instances.** One source
+    surface per (variant, material) with its colour buffer baked once per
+    kind, a transform per placement, a compute cull per instance (the
+    frustum, the reach and the size gate, near-first, in one order), and one
+    `drawIndexedIndirect` per (variant, material): WebGPU has no
+    multi-draw-indirect. The scatter's clusters are left out of the blocks'
+    cut, and Babylon's merged copy stays in the blocks for the other passes
+    until X3.6, so the shadows are the variants' shapes as well. The picture
+    moves by the per-kind bake.
+- **X3.4a, measured** (2026-10-14, before its commit):
+  - **The placement did not move.** `npm run collision` rewrote none of the
+    eight bakes, and `npm run parity` passes on all eight. `kit:hash` is
+    identical against the parent (3,722 builds), and every scatter kind's
+    replay takes its builder's count at all 8 seeds and 3 rungs. The check
+    was shown to bite: `log` replayed as 2 draws failed 24 builds.
+    `merge:hash`: colliders and terrain identical on every map; the visuals
+    and `colliderAlbedo` (now weighed off the variant's parts) moved.
+  - **The build:** the scatter phase falls 2-4x (Greyfen 2,241 to 602 ms,
+    Harrowmead 1,698 to 454, Kurenai 1,170 to 302), `build:total` 4-26%
+    (Greyfen 6,279 to 4,658 ms). The scatter's vertices are within 3% of
+    before, so the AO bake and the upload are unmoved, as expected until
+    X3.4b.
+  - **The bank, judged:** every row with scatter in view moves (Greyfen's
+    `canopy` 91% of pixels, its `menu` 55%); every row with none stays in
+    the floor (`shopfront`, the three hulls, Cinderhaven's `menu`). By eye:
+    the same trunks in the same places, each wearing a variant's crown,
+    lean and lianas, and Kurenai's crowns still in all four colours.
+    `bank.mjs --keep=<dir>` (new) keeps a check's frames for that judging.
+  - `npm run build`, `corecheck` and `gate.mjs` (a round on all seven maps)
+    pass.
 - **Verify:** `kit:hash` (it hashes scatter over fixed seeds and rungs,
-  rng-draw count included); `npm run collision` and `npm run parity`; the bank
-  on Greyfen and Kurenai; X0.3.
+  rng-draw count included) plus the replay check; `npm run collision` and
+  `npm run parity`; the bank on every map, judged; the census; X0.3.
 
 ### X3.5 — Terrain and roads (PERF_PLAN B5) — **M**
 
@@ -1428,6 +1525,7 @@ Phase 1 actually took.
 | X2.5b | Revert X2.5b, or replace it? | **Decided** 2026-10-11: replace it with forward commits, keeping what X2.5c lists under "Keep". A revert would take the keepers out and conflict with 934b695. |
 | X2.5c | Keep cross-origin isolation (COOP/COEP) once nothing needs `SharedArrayBuffer`? | **Decided** 2026-10-11: remove it, in X2.5c's C6. It is a contract in four places that fails silently. The one thing it bought was finer `performance.now()` resolution for the profiler, whose phases average over many frames anyway. If a capture ever shows the coarser timer hurts, that is a new decision. |
 | X3.3 | The phone is GPU-bound on Greyfen once warm (`FINDINGS.md` 52). Add the GPU-side work to the exit, or after it? | **Decided** 2026-10-14: after the exit is complete. Meanwhile the gate after X3.3c reads the CPU tick, the phone's `gpu.frame` is recorded at every phone measurement, and X3.3b and X5.2 keep the door open ("What this plan does not do"). |
-| X3.4 | Scatter AO: baked per kind (cheaper, changes the look) or per instance? | Per kind, judged in the bank. |
+| X3.4 | Every prop was unique, so there were no variants to instance: how many variants a kind, or defer the step? | **Decided** 2026-10-14: 16 variants a kind, each placement under its own yaw and scale; maple's four crowns four variants each (X3.4). |
+| X3.4 | Scatter AO: baked per kind (cheaper, changes the look) or per instance? | **Decided** 2026-10-14: per kind, judged in the bank. If the look is wrong, the fix is X3.4's "If the look is wrong" (a per-kind bake plus a per-instance term), not a per-instance bake. |
 | X4.2 | Which hull parts drop at range (the tank's links and wheels, the MG rings)? | An art call; PERF_PLAN A3 measured +6.5% at 300 m on Cinderhaven. |
 | X6.2 | Is it ready to merge to `develop`? | Only when X6.2's "Before" list passes in full. |

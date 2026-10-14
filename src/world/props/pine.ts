@@ -17,7 +17,7 @@ import { BARK, NEEDLE, NEEDLE_LIT } from "./palette";
  * there, so redrawing the tree moved no prop on any map it stands on. See its
  * header.
  */
-const PINE_SHARED_DRAWS = 17;
+export const PINE_SHARED_DRAWS = 17;
 
 /**
  * Living pine: a planted conifer of the spruce habit — a straight, fluted bole

@@ -1960,6 +1960,32 @@ packing its clearance describes places fewer than it asks for. That is the
 intended way to author a dense field: a count tuned so nothing is ever refused
 is a count that stops short.
 
+**A placement does not BUILD its prop: it wears one of its kind's VARIANTS**
+(`world/scatterVariants.ts`, `BABYLON_EXIT.md` X3.4). Each kind is built
+`CONFIG.scatter.variants` (16) times a build, off streams of its own seeded
+from the layout's seed, the kind and the variant's number, and taken off the
+placement it would have had: standing at the origin at scale 1 and yaw 0,
+its root's own height and lean kept. A placement wears one by a HASH of where
+it sits (its region and its index), never a draw, under its own spot, yaw
+and scale. Before X3.4 every tree was a different shape (a tree builder seeds
+a stream of its own from one shared draw), so Greyfen's forest was 7.3 M
+vertices of unique geometry; our renderer draws scatter as instances, which
+only pays when placements share a shape. Maple's four crown colours are
+shared out four variants each (`CLASSES`), so no crown is left out of a map.
+
+**What a builder takes from the shared stream is spent by a REPLAY, and the
+replay is the rule a builder change has to keep.** The shared stream still
+places everything: each prop's scale, its spot, its yaw and the next prop's
+spot come off it. So a placement spends exactly what its builder would have
+drawn from `rng`, without building it, through its kind's replay
+(`props/sharedDraws.ts`; maple's `mapleSharedDraws` was the first). **A
+builder that changes what it draws from `rng` owes its replay the same
+change**, and `npm run kit:hash` builds every kind over its seeds and rungs
+and fails if the two counts differ. What a builder draws from its own
+streams (`sub`, a tree's `own`) moves only its variants, and is free. When
+X3.4a landed, `npm run collision` rewrote no bake on any map: the placement
+had not moved a box.
+
 **Blocking scatter colliders are MERGED BY LOCALITY, not one mesh per prop**
 (`MapBuilder.clusterColliders`), and it is the fence lesson at forest scale. A
 `pickWithRay` costs per mesh before it costs per triangle — a predicate call, a

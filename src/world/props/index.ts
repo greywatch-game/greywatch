@@ -11,16 +11,23 @@
  * Foliage the wind moves calls `marksSway`, and NOTHING a collider stands in
  * for may (`PROP_BODIES` is the list to check) — see `world/sway.ts`.
  * Never set metadata.solid here — colliders come from MapBuilder only.
- * Never call rng() here — the per-prop jitter that makes a stand of
- * trees look like a stand of trees comes from the caller's seeded `rng`, so the
- * same layout builds the same world on every boot (see world/rng.ts).
+ * Never call `Math.random()` here — the jitter that makes a stand of trees look
+ * like a stand of trees comes from the seeded streams the caller hands in, so
+ * the same layout builds the same world on every boot (see world/rng.ts).
+ * **What a builder draws from `rng` is stated twice**, in the builder and in
+ * its replay (`sharedDraws.ts`): a placement no longer builds its prop — it
+ * wears one of its kind's variants (`world/scatterVariants.ts`) — and spends
+ * its builder's shared draws by replay, so a builder that changes what it
+ * draws from `rng` owes its replay the same change. `npm run kit:hash` fails
+ * when the two disagree. A builder's own streams (`sub`, a tree's `own`) move
+ * only its variants.
  * One builder here is NOT a scatter prop and may not become one: the liana
  * veil is built by `buildJungleTree` and parented to its trunk, because a
  * curtain has to hang from a crown and scatter placement is what pushed it
  * away from every crown on the map. Its own header carries the measurement.
  *
  * This file is the set's contract and its barrel: `MapBuilder` imports the
- * builders and `RIM_WOOD` from here. Each prop is a file of its own beside it
+ * builders, their replays and `RIM_WOOD` from here. Each prop is a file of its own beside it
  * — `deadTree`, `pine`, `ash`, `jungleTree` (with the liana veil), `palm`,
  * `fern`, `fireDrum`, `boulder` and `cask` — with the few-dozen-line ones
  * together in `small.ts`, the city's dressing in `junk.ts` and the temple
@@ -74,4 +81,5 @@ export {
   buildLitter,
 } from "./junk";
 export { buildPalm } from "./palm";
-export { buildMaple, buildLeafLitter, buildBamboo } from "./maple";
+export { buildMaple, buildLeafLitter, buildBamboo, mapleCrownOf } from "./maple";
+export { SHARED_DRAWS } from "./sharedDraws";

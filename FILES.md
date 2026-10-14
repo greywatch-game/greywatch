@@ -184,7 +184,10 @@ scripts/                      # Node tooling, run by hand or by `npm run build`,
                               #   PARTS the merge is handed, a prop flattened,
                               #   hashed as the part meshes they once became)
                               #   and the COLLIDERS hashed apart, so a refactor
-                              #   proves it moved nothing. `--feet` measures the
+                              #   proves it moved nothing. Fails outright if a
+                              #   scatter kind's replay (props/sharedDraws.ts)
+                              #   takes a different count from its builder.
+                              #   `--feet` measures the
                               #   kinds against lib/footprints.mjs. `--models`
                               #   does the rest: weapons in every finish, the
                               #   viewmodel in every sight, the player, the
@@ -432,8 +435,9 @@ src/
     gi.ts               # The irradiance volume's tiers (grid, rays, budget),
                         #   the fast layer's caps and how the traced light is
                         #   banded back into the cel shader's indirect term
-    world.ts            # Map extents, occlusion, water, grass (map, ao, water,
-                        #   grass)
+    world.ts            # Map extents, occlusion, water, grass, and how many
+                        #   variants a scatter kind is built as (map, ao,
+                        #   water, grass, scatter)
     sky.ts              # The sky (sky): the dome, the stars, the disc, and the
                         #   cloud ring's count, spread, shape and drift
     wind.ts             # The one wind: a shared bearing, and what the grass
@@ -1348,6 +1352,10 @@ src/
                         #   ground, water makes reeds) and the
                         #   field's frayed EDGE, and the per-patch summary the
                         #   GrassSystem culls with. Pure — no scene
+    scatterVariants.ts  # ScatterVariants — each scatter kind built 16 times a
+                        #   build off streams of its own, in the prop's own
+                        #   frame; which one a placement wears (a hash, never
+                        #   a draw); a placement's parts cloned off it
     rng.ts              # mulberry32 — the seeded PRNG world-building uses,
                         #   and the map generators' too: Node loads it by type
                         #   stripping through scripts/lib/mapgen.mjs, the
@@ -1652,6 +1660,11 @@ src/
                         #   gravestone, lantern, fungus, log, bramble, rubble
       junk.ts           #   The city's own dressing: skip, bins, pallets, cone,
                         #   litter
+      sharedDraws.ts    #   SHARED_DRAWS — what each builder takes from the
+                        #   build's shared scatter stream, replayed without
+                        #   building it, so a placement wearing a variant
+                        #   spends exactly what its builder would have.
+                        #   `kit:hash` fails if a replay and its builder differ
     textures.ts         # Generated canvas textures: the cobbles, and the floor
                         #   surfaces — noise fields posterized onto a ramp of
                         #   the map's floorColor, albedo and height in one pass

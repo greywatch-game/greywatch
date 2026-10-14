@@ -9,7 +9,9 @@
  * game with that URL query — a check of a DEV switch against the bank taken
  * without it, which is what a switch that must draw the same picture is
  * proven by (`BABYLON_EXIT.md` X3.3a's `?ourworld`); it refuses to TAKE a
- * bank under a switch.
+ * bank under a switch. `--keep=<dir>` makes a check also write every frame it
+ * grabbed to `<dir>`, for a step that moves the picture on purpose and is
+ * judged by eye (`BABYLON_EXIT.md` X3.4).
  *
  * **The bank is BABYLON's picture of the blocks, taken before X3.3c, and no
  * longer the switch-off picture.** Since X3.3c our renderer draws them in
@@ -105,7 +107,16 @@ const args = process.argv.slice(2);
 const HEADED = args.includes("--headed");
 const CHECK = args.includes("--check");
 const QUERY = args.find((a) => a.startsWith("--query="))?.slice("--query=".length) ?? "";
+// `--keep=<dir>`: a check also writes each frame it grabbed to <dir>, as
+// <map>-<vantage>.png, so a step that MOVES the picture on purpose can be
+// judged by eye beside the bank (`BABYLON_EXIT.md` X3.4).
+const KEEP = args.find((a) => a.startsWith("--keep="))?.slice("--keep=".length) ?? "";
 const maps = args.filter((a) => !a.startsWith("--"));
+if (KEEP && !CHECK) {
+  console.error("--keep keeps a check's frames; it is no use without --check.");
+  process.exit(2);
+}
+if (KEEP) mkdirSync(KEEP, { recursive: true });
 if (QUERY && !CHECK) {
   console.error("--query checks a switch against the bank; it never takes one (see the header).");
   process.exit(2);
@@ -221,6 +232,7 @@ for (const id of targets) {
         // fail on every run and teach everyone to ignore it.
         const grab = join(refDir, `${id}-${v.id}.check.png`);
         writeFileSync(grab, a);
+        if (KEEP) writeFileSync(join(KEEP, `${id}-${v.id}.png`), a);
         const d = await comparePngs(out, grab, { tiles: true, browser: decoder });
         rmSync(grab, { force: true });
         const bad = d.sizeMismatch || d.meanAbs > CHECK_TOLERANCE;

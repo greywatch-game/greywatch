@@ -158,7 +158,9 @@ npm run kit:hash   # fingerprint every kit builder over every placement, the
                    #   refactor moved nothing, or a rework kept its colliders.
                    #   The SCATTER props too, over fixed seeds and every
                    #   foliage rung, their collider half being the
-                   #   `PROP_BODIES` row and the region-stream draw count.
+                   #   `PROP_BODIES` row and the region-stream draw count,
+                   #   and FAILS if a kind's replay (`props/sharedDraws.ts`)
+                   #   draws a different count from its builder.
                    #   `-- --kinds a,b`, `--out f.json`, `--against f.json`.
                    #   `-- --feet` measures every kind against the generators'
                    #   footprint table (`scripts/lib/footprints.mjs`)

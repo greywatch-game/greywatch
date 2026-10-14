@@ -25,7 +25,7 @@ const BOULDER_DARK = "#474e4a";
  * shoulder stone's three turns), fixed there so redrawing it moved no prop on
  * any map. See its header.
  */
-const BOULDER_SHARED_DRAWS = 7;
+export const BOULDER_SHARED_DRAWS = 7;
 
 /**
  * Subdivisions of the geodesic a boulder's mass is drawn over: 162 directions,
