@@ -8,10 +8,10 @@
  * group, end to end), its pipeline, its material block and bind group; the
  * identity `world` every group binds (group 2); each variant's two modules
  * (assembled once); the `ClusterCull` that writes the indices and the
- * indirect arguments every group draws; which surfaces FAILED; and the
- * `FrameDraw` that draws the groups at the end of group 0's opaque meshes
- * (`DrawPoint` `"opaque"`) with the `FramePrepare` that culls ahead of it,
- * both on the renderer only while a map's cull is built.
+ * indirect arguments every group draws; and the `FrameDraw` that draws the
+ * groups at the end of group 0's opaque meshes (`DrawPoint` `"opaque"`) with
+ * the `FramePrepare` that culls ahead of it, both on the renderer only while
+ * a map's cull is built and nobody has `stop`ped it.
  * Invariants: a GROUP is one cel recipe — one pipeline, one material, one
  * draw — and a surface belongs to exactly one; its vertex arrays are uploaded
  * once as Babylon uploads a mesh's (floats as `float32`, a `Float64Array`
@@ -23,9 +23,12 @@
  * were added, and never re-cut; a group draws only once its pipeline and the
  * cull's are built and every group it binds is whole, so a frame with a
  * pipeline compiling or a texture unpublished draws that group not at all
- * rather than wrongly; a material's block is re-copied from its recipe only
- * when asked (`writeMaterials`); nothing here allocates on a frame but the
- * cull's compute pass.
+ * rather than wrongly; a surface it will never draw — its group's pipeline
+ * failed, or the cull's, or the cut is past the device's limits — is handed
+ * to `onFailed` in the turn that failure lands, never held for the map's
+ * other compiles, so whoever took it can give it back at once; a material's
+ * block is re-copied from its recipe only when asked (`writeMaterials`);
+ * nothing here allocates on a frame but the cull's compute pass.
  * Never: imports Babylon; reads a node, or decides the reach or the size gate
  * (`ReachGate` is handed in); reads a Babylon material — a material is its
  * `CelRecipe`.
@@ -119,9 +122,6 @@ export class WorldBlocks {
   private readonly groupOf = new Map<CelRecipe, Group>();
   private readonly mesh: UniformBlockBuffer;
   private readonly meshGroup: HostBindGroup;
-  private readonly pending: Promise<void>[] = [];
-  /** Surfaces drawn by neither side unless handed back — see `compiled`. */
-  private readonly failed: number[] = [];
   /**
    * Each variant's two modules, assembled once rather than per surface: a
    * map is thousands of surfaces over a handful of variants.
@@ -132,8 +132,8 @@ export class WorldBlocks {
   private culling = false;
   private clusterCount = 0;
   /**
-   * Bumped by `clear`: a compile that settles for a map already gone writes
-   * nothing — not the draw state, not the next map's failures.
+   * Bumped by `clear` and `stop`: a compile that settles for a map already
+   * gone, or stopped, writes nothing — not the draw state, not a failure.
    */
   private generation = 0;
   /**
@@ -151,6 +151,12 @@ export class WorldBlocks {
     private readonly renderer: Renderer,
     private readonly gate: ReachGate,
     private readonly options: ClusterOptions,
+    /**
+     * Handed the surfaces (by `add`'s index) this will never draw, as each
+     * failure lands — drawn by NEITHER side unless whoever took them hands
+     * them back.
+     */
+    private readonly onFailed: (surfaces: readonly number[]) => void,
   ) {
     const device = renderer.device;
     this.mesh = new UniformBlockBuffer(device, CEL_MESH_BLOCK, [], "world blocks: world");
@@ -169,7 +175,7 @@ export class WorldBlocks {
 
   /**
    * Hands over one block surface, drawn with `recipe`; its index is the
-   * surface's, for `compiled`. Its arrays are READ at `finish`, so they must
+   * surface's, for `onFailed`. Its arrays are READ at `finish`, so they must
    * stand until then.
    */
   add(label: string, geometry: GeometryBuffer, recipe: CelRecipe, pieces: readonly PieceSpan[]): number {
@@ -214,14 +220,15 @@ export class WorldBlocks {
     const blockList: BlockBox[] = [];
     let indexTotal = 0;
     for (const s of surfaces) indexTotal += s.geometry.indices.length;
+    const vertexTotals = this.groups.map((group) => {
+      let vertices = 0;
+      for (const s of group.members) vertices += surfaces[s].geometry.positions.length / 3;
+      return vertices;
+    });
     // The largest buffer the cut makes: the indices (a storage binding), or
     // a group's widest attribute (four floats a vertex).
     let widest = 0;
-    for (const group of this.groups) {
-      let vertices = 0;
-      for (const s of group.members) vertices += surfaces[s].geometry.positions.length / 3;
-      widest = Math.max(widest, vertices * 16);
-    }
+    for (const vertices of vertexTotals) widest = Math.max(widest, vertices * 16);
     const limits = device.limits;
     if (indexTotal * 4 > Math.min(limits.maxStorageBufferBindingSize, limits.maxBufferSize) || widest > limits.maxBufferSize) {
       console.error("world blocks: the cut is past the device's buffer limits; the blocks go back to Babylon");
@@ -238,10 +245,8 @@ export class WorldBlocks {
     this.groups.forEach((group, g) => {
       const start = clusterCount;
       const base = indexAt;
-      let vertexTotal = 0;
-      for (const s of group.members) vertexTotal += surfaces[s].geometry.positions.length / 3;
       const attributes = group.program.vertex.attributes;
-      group.vertex = attributes.map((a) => this.vertexBuffer(group, a, vertexTotal));
+      group.vertex = attributes.map((a) => this.vertexBuffer(group, a, vertexTotals[g]));
       const layouts = attributes.map((a) => layoutOf(a));
       let vertexBase = 0;
       for (const s of group.members) {
@@ -310,25 +315,29 @@ export class WorldBlocks {
       this.gate,
     );
     const generation = this.generation;
-    this.pending.push(
-      this.cull.ready.then((ok) => {
-        if (generation !== this.generation) return;
-        this.culling = ok;
-        if (ok) this.hook();
-        else this.giveUpAll();
-      }),
-    );
+    void this.cull.ready.then((ok) => {
+      if (generation !== this.generation) return;
+      this.culling = ok;
+      if (ok) this.hook();
+      else this.giveUpAll();
+    });
     // The build's arrays are ours no longer.
     this.surfaces = [];
   }
 
   /**
-   * Resolves once every pipeline asked for is built or has failed, with the
-   * surfaces whose pipeline FAILED — which this never draws, so whoever took
-   * them owes them back to whoever drew them before.
+   * Stops drawing this map for good, whatever is still compiling: the draw
+   * and the cull come off the renderer and nothing that settles later writes
+   * anything. Every buffer stays until `clear`, because this may be called
+   * inside a render whose commands already hold them (`Renderer.onRefused`).
    */
-  compiled(): Promise<readonly number[]> {
-    return Promise.all(this.pending).then(() => [...new Set(this.failed)]);
+  stop(): void {
+    this.generation++;
+    this.culling = false;
+    this.unhook?.();
+    this.unhook = null;
+    // The draw that counted it is off the renderer now.
+    this.drawn = 0;
   }
 
   /** Re-copies every material's block from its recipe — after its owner rewrote one. */
@@ -353,8 +362,6 @@ export class WorldBlocks {
     this.clusterCount = 0;
     this.groups.length = 0;
     this.groupOf.clear();
-    this.pending.length = 0;
-    this.failed.length = 0;
     this.drawn = 0;
   }
 
@@ -376,7 +383,7 @@ export class WorldBlocks {
   /** Every surface failed: the cull, or the whole cut, could not be built. */
   private giveUpAll(): void {
     this.culling = false;
-    for (let s = 0; s < this.surfaceCount; s++) this.failed.push(s);
+    this.onFailed(Array.from({ length: this.surfaceCount }, (_, s) => s));
   }
 
   /** One attribute's buffer for the whole group, MAPPED, filled surface by surface. */
@@ -401,7 +408,7 @@ export class WorldBlocks {
     return buffer;
   }
 
-  /** Asks for a group's pipeline; a failure hands every member back. */
+  /** Asks for a group's pipeline; a failure hands every member back, at once. */
   private ask(group: Group, buffers: GPUVertexBufferLayout[]): void {
     const recipe = group.material.recipe;
     const generation = this.generation;
@@ -414,20 +421,18 @@ export class WorldBlocks {
       targets: FRAME_TARGETS,
       state: recipe.depthBias === 0 ? undefined : { depthBias: recipe.depthBias },
     };
-    this.pending.push(
-      this.renderer.pipelines.get(spec).then(
-        (built) => {
-          group.built = built;
-        },
-        (err: unknown) => {
-          if (generation !== this.generation) return;
-          this.failed.push(...group.members);
-          console.error(
-            `world blocks: [${recipe.defines.join("+")}] has no pipeline; its ${group.members.length} surfaces go back to Babylon`,
-            err,
-          );
-        },
-      ),
+    this.renderer.pipelines.get(spec).then(
+      (built) => {
+        group.built = built;
+      },
+      (err: unknown) => {
+        if (generation !== this.generation) return;
+        console.error(
+          `world blocks: [${recipe.defines.join("+")}] has no pipeline; its ${group.members.length} surfaces go back to Babylon`,
+          err,
+        );
+        this.onFailed(group.members);
+      },
     );
   }
 

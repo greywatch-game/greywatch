@@ -4,10 +4,11 @@
  * frame's main pass.
  * Owns: `Renderer` — the frame's `FrameUniforms` and `FrameUniformBuffer`,
  * its `FrameTextures` and the bind group they make with the buffer (group 0
- * of every program, `FrameContext.frameGroup`), the `PipelineCache`, the `FrameDraw`s at each of the two points they may be
- * drawn at, the `FramePrepare`s run as the pass begins, and the hook into the
- * host's main pass; `FrameDraw`, `FramePrepare`, `DrawPoint` and
- * `FrameContext`.
+ * of every program, `FrameContext.frameGroup`), the `PipelineCache`, the
+ * `FrameDraw`s at each of the two points they may be drawn at, the
+ * `FramePrepare`s run as the pass begins, whoever is told of a refused pass
+ * (`onRefused`), and the hook into the host's main pass; `FrameDraw`,
+ * `FramePrepare`, `DrawPoint` and `FrameContext`.
  * Invariants: every GPU resource it holds it made, on the host's device, and
  * destroys in `dispose` (`BABYLON_EXIT.md` rule 5 — a texture another side
  * owns is READ through the seam, never copied); the frame's uniforms are
@@ -24,7 +25,9 @@
  * mid-phase waits for the next) and only if the open pass is exactly
  * `FRAME_TARGETS`, checked every frame — a pass that is not draws nothing
  * that frame, with one console error per change, rather than recording a
- * pipeline the pass cannot take (that blacks out the frame under bundles);
+ * pipeline the pass cannot take (that blacks out the frame under bundles),
+ * and every `onRefused` listener is told, on every frame it is refused, so a
+ * draw that something else would otherwise draw can be handed back to it;
  * nothing here allocates on a frame.
  * Never: imports Babylon — it is handed a `FrameHost`; draws into any pass
  * but the main one; reads a Babylon material.
@@ -109,6 +112,7 @@ export class Renderer {
   private readonly opaque: FrameDraw[] = [];
   private readonly after: FrameDraw[] = [];
   private readonly prepares: FramePrepare[] = [];
+  private readonly refusals: (() => void)[] = [];
   private readonly ctx: FrameContext;
   private readonly hook: { dispose(): void };
   /** Whether `begin` filled and uploaded the frame this draw phase. */
@@ -168,11 +172,27 @@ export class Renderer {
     };
   }
 
+  /**
+   * Calls `refused` on every frame whose main pass is not `FRAME_TARGETS` and
+   * something was to draw, until the returned function is called. It runs
+   * INSIDE the render, after this frame's prepares were recorded, so it may
+   * take draws and prepares off this renderer but must free nothing this
+   * frame's commands hold.
+   */
+  onRefused(refused: () => void): () => void {
+    this.refusals.push(refused);
+    return () => {
+      const i = this.refusals.indexOf(refused);
+      if (i >= 0) this.refusals.splice(i, 1);
+    };
+  }
+
   dispose(): void {
     this.hook.dispose();
     this.opaque.length = 0;
     this.after.length = 0;
     this.prepares.length = 0;
+    this.refusals.length = 0;
     this.frameBuffer.destroy();
   }
 
@@ -205,11 +225,13 @@ export class Renderer {
     if (!this.host.passIs(FRAME_TARGETS)) {
       if (!this.refused) {
         console.error(
-          "render: the main pass is not what FRAME_TARGETS states — drawing nothing",
+          "render: the main pass is not what FRAME_TARGETS states — drawing nothing of ours",
           { open: this.host.openPass(), stated: FRAME_TARGETS },
         );
       }
       this.refused = true;
+      const refusals = this.refusals;
+      for (let i = 0; i < refusals.length; i++) refusals[i]();
       return false;
     }
     this.refused = false;

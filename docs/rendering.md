@@ -3177,7 +3177,10 @@ pass is not restarted between them:
 
 Every opaque draw of Babylon's in the group lands BEFORE an opaque draw of
 ours, which changes only which of two surfaces at EXACTLY the same depth
-wins under `less-equal`. Drawing ours at the group's START instead was
+wins under `less-equal` — in the PICTURE. In the GPU's time it changes more:
+`Game`'s front-to-back sort no longer reaches the blocks, so the terrain, the
+roads and the loose props are shaded before the buildings that hide them
+(`FINDINGS.md` 61, open). Drawing ours at the group's START instead was
 weighed and refused: the sky dome writes no depth and draws first, at a
 600 m radius, so a block past 600 m drawn before it would be painted over.
 
@@ -3212,7 +3215,13 @@ test triangle was authored to the rule it tested. The first real mesh drawn
 draws, and a pass that differs draws nothing that frame**, with one console
 error per change. The check compares in place (`FrameHost.passIs`), so it
 allocates nothing. This is the bundle trap again: one pipeline whose attachment state
-the pass cannot take poisons the bundle and blacks out the frame.
+the pass cannot take poisons the bundle and blacks out the frame. **Drawing
+nothing would be a HOLE wherever ours stands in for Babylon's**, so every
+`onRefused` listener is told on the frame it happens: `BlockHandover` stops
+our side for the rest of the map and gives every block back to Babylon's
+walk, which draws them from the next frame. The refused frame is the one
+drawn without them. Nothing ships a pass that differs — `CelInk` is fixed
+first in the chain — so this is a backstop, not a path.
 
 **The frame's uniforms are ONE block, declared once and filled by a pull.**
 `render/frame.ts`'s `FRAME_BLOCK` is group 0, binding 0 of every program.
@@ -3398,12 +3407,12 @@ probes and the lamps' atlas — until X3.6 moves those passes.
   rather than a budget. **Our pipelines are not compiled by DRAWING**, as
   Babylon's are: our renderer states every field of one itself and asks for
   it as the map is built, so the warm-up only has to wait. A group whose
-  pipeline fails goes back to Babylon whole once the map's LAST compile
-  settles (`WorldBlocks.compiled` waits on all of them, and
-  `BlockHandover.install` hands back in its `then`) — still before the first
-  vantage, since the opening wait ends only when nothing of ours is
-  compiling, unless `oursCapMs` ran out first — and Babylon compiles it at a
-  vantage like any other mesh; a cull that fails sends every surface back.
+  pipeline fails goes back to Babylon whole in the turn ITS compile settles
+  (`WorldBlocks`'s `onFailed`, which `BlockHandover` answers with a shorter
+  `setTaken`), never held for the map's other compiles — so before the
+  warm-up reads the cache's counts again, and still before the first vantage
+  unless `oursCapMs` ran out first — and Babylon compiles it at a vantage
+  like any other mesh; a cull that fails sends every surface back.
 - **`plans/webgpu-ref/census.mjs`** counts it: the main pass's draws fall
   from one a surface to one a recipe (`--fall` against the switch while
   there was one; `--out` and `--against` against a BEFORE taken in a

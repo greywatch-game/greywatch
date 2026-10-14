@@ -179,7 +179,10 @@ export class ClusterCull {
         return true;
       },
       (err: unknown) => {
-        console.error("cluster cull: a pipeline did not build; the blocks go back to Babylon", err);
+        // A cull disposed with its map has no blocks left to give back.
+        if (!this.disposed) {
+          console.error("cluster cull: a pipeline did not build; the blocks go back to Babylon", err);
+        }
         return false;
       },
     );

@@ -1160,6 +1160,19 @@ details:
   `sameGraphics` and the viewer's `Graphics` row, or captures go on describing
   a configuration that no longer names everything the frame paid for.
 
+**From report version 17 a capture says what OUR renderer took and drew**
+(`blocks`, `BABYLON_EXIT.md` X3.3): the surfaces `BlockHandover` took, the
+clusters and material groups they were cut into, our main-pass draws last
+frame, and how many taken surfaces went back to Babylon. **Our draws are not
+in `counters.drawCalls`**, which is Babylon's own counter, so a main pass's
+draws are that plus `blocks.drawn`. A non-zero `handedBack` is a failed compile
+of ours or a main pass our renderer refused; when it equals `taken`, Babylon
+drew every block (the cull failed, or the pass was refused, and the console
+says which). It is read once, at the capture, through a
+reader `Game` pushes (`FrameProfile.setBlocks`), so it describes the end of
+the window and not every frame in it. The viewer prints it beside `taken` as
+`ours`.
+
 **From report version 16 `sim` is the page's own local match's step**, carried
 back over the owner channel and summed (`BABYLON_EXIT.md` X2.5c), and
 `simMode` names where that MATCH ran — `worker`, or `page` for one on this

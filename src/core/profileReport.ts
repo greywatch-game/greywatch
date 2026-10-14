@@ -372,6 +372,23 @@ export interface BenchFacts {
   fight: { hash: string; events: number; steps: number; roundEnded: boolean };
 }
 
+/**
+ * Our renderer's take of the map's blocks when the capture was taken
+ * (`systems/BlockHandover.ts`, `BABYLON_EXIT.md` X3.3) — read through the
+ * reader `Game` pushes, at the capture and never per frame. `drawn` is the
+ * main pass's draws of ours last frame, which `counters.drawCalls` (Babylon's
+ * own counter) does not see; `handedBack` is how many taken surfaces went
+ * back to Babylon's main pass — a failed compile's, or every one once the
+ * main pass was refused.
+ */
+export interface BlockFacts {
+  taken: number;
+  clusters: number;
+  groups: number;
+  drawn: number;
+  handedBack: number;
+}
+
 export interface ProfileGraphics {
   /** `Settings.renderScale` — a share of the panel's native resolution. */
   renderScale: number;
@@ -471,6 +488,11 @@ export interface ProfileReport {
    * Absent before report version 13.
    */
   bench: BenchFacts | null;
+  /**
+   * Our renderer's take of the blocks at the capture, or null where nothing
+   * pushed a reader. Absent before report version 17.
+   */
+  blocks: BlockFacts | null;
   /**
    * The ring's labelled stretches, in the order they were reached, and the
    * same rows rolled up by group — null where no row carried a label. Absent
@@ -798,6 +820,7 @@ export interface ProfileRing {
   readonly segmentAt: Uint8Array;
   readonly segments: readonly ProfileSegment[];
   readonly bench: BenchFacts | null;
+  readonly blocks: BlockFacts | null;
   readonly heapMb: Float32Array | null;
   readonly gcAt: Uint8Array;
   readonly loafMs: Float32Array;
@@ -1016,7 +1039,10 @@ export function buildReport(
     // with them: it was the old host's picture of the core's bots, and the
     // bodies are the wire's now, posed under `net`. Nothing else changed
     // meaning: a v15 capture's `sim` and its five children read the same.
-    version: 16,
+    // 17: `blocks`, our renderer's take of the map's blocks at the capture —
+    // its draws are not in `counters.drawCalls`, which is Babylon's counter.
+    // Nothing else changed meaning.
+    version: 17,
     takenAt: new Date().toISOString(),
     reason,
     map: r.mapId,
@@ -1035,6 +1061,7 @@ export function buildReport(
     bench: r.bench
       ? { ...r.bench, vantages: [...r.bench.vantages], path: { ...r.bench.path }, fight: { ...r.bench.fight } }
       : null,
+    blocks: r.blocks ? { ...r.blocks } : null,
     segments: segmentFacts(r, first, n, cap),
     clock: {
       grainMs: round(r.grainMs, 4),

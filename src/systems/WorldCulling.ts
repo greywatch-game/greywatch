@@ -40,8 +40,8 @@
  * `createOrUpdateSelectionOctree` replaces), it is read in exactly one place,
  * and a mesh left out of it is skipped ENTIRELY rather than skipped cheaply.
  *
- * **Four classes of mesh, and which class a mesh is in is the whole design**
- * — five with the TAKEN blocks, below, which are filed as blocked and never
+ * **Four classes of mesh, and which class a mesh is in is the whole design.**
+ * A TAKEN block (below) is no fifth: it is a Blocked mesh that is never
  * offered.
  *
  * - **Hidden** — the map's collider proxies, `map.colliders`. Invisible by
@@ -735,28 +735,6 @@ export class WorldCulling {
       pool.root.computeWorldMatrix(true);
       pool.small = this.tooSmall(pool.root, eye, perRad, px2);
     }
-    const k = this.pass(src, n, out, gate, eye, perRad, px2);
-    // Length rather than truncation: the backing array is reused every frame
-    // and Babylon reads `length`, so shrinking `data` would be a free-list
-    // churn this is trying to avoid.
-    out.length = k > out.length ? k : out.length;
-    this.candidates.length = k;
-    this.stats.offered = k;
-  }
-
-  /**
-   * One walk of `offer`'s: the meshes of `src[0..n)` switched on this frame
-   * and big enough on screen, written into `out` from 0; returns how many.
-   */
-  private pass(
-    src: readonly AbstractMesh[],
-    n: number,
-    out: AbstractMesh[],
-    gate: boolean,
-    eye: Vector3,
-    perRad: number,
-    px2: number,
-  ): number {
     let k = 0;
     for (let i = 0; i < n; i++) {
       const mesh = src[i];
@@ -784,7 +762,12 @@ export class WorldCulling {
       }
       out[k++] = mesh;
     }
-    return k;
+    // Length rather than truncation: the backing array is reused every frame
+    // and Babylon reads `length`, so shrinking `data` would be a free-list
+    // churn this is trying to avoid.
+    out.length = k > out.length ? k : out.length;
+    this.candidates.length = k;
+    this.stats.offered = k;
   }
 
   /**

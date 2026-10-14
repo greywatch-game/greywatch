@@ -2687,3 +2687,62 @@ motion — e.g. the descent rate over the last accepted samples at the moment th
 reported height meets the plank (`validateDrive` already holds the previous
 accepted sample) — asserted against the bot's `update` figure on the same
 landing, then the same rule offline for free.
+
+---
+
+## 61. Our renderer draws the blocks AFTER Babylon's whole opaque queue, which may be what raised the desktop's GPU frame on Greyfen's path at X3.3c
+
+**Status:** open; derived from the code, with one measurement behind it.
+Found by the whole-step review of `BABYLON_EXIT.md` X3.3 (2026-10-14). It is
+GPU-side work, so it waits with the rest of that until the exit is complete
+(`BABYLON_EXIT.md`, "What this plan does not do"; finding 52).
+
+### What was measured
+
+At X3.3c, on the desktop at `--max` (`BABYLON_EXIT.md` X3.3c, "Measured"),
+Greyfen's camera PATH got slower while its tick got faster: the frame mean
+rose 9% while the tick fell 14%. `?gpu` (`--max --gpu --runs 2`, before and
+after) put it on the GPU: `gpu.frame` 5.31 to 5.77 ms on the path, against
+5.60 to 5.55 on the vantages and 5.95 to 5.99 in the fight. The after
+includes the cluster cull, which no before had, and no timer separates the
+cull from the draws, so the step's record names the cull as the suspect.
+
+### What is derived from the code
+
+There is a second suspect, and it is the draw ORDER, not the cull.
+`Game` sorts rendering group 0's opaque queue front to back
+(`scene.setRenderingOrder(0, …)`), and the comment there argues that the
+ordering "is the whole of the win", because this scene's cost is pixels: a
+fragment is rejected before it shades only if whatever stands in front of it
+was drawn first. Since X3.3c the map's BLOCKS (the buildings, the main
+occluders) are not in that queue. Our renderer draws them at the END of the
+group's opaque and alpha-tested meshes (`render/Renderer.ts`, `"opaque"`),
+so the terrain, the roads and every loose prop are fully shaded first and
+the buildings are drawn over them. Inside our own draws the near-first bands
+order a recipe's clusters, but each recipe is one draw and the recipes do
+not interleave. A path through Greyfen's streets, with buildings close on
+both sides, is where that would cost most, which fits the one segment that
+rose.
+
+X3.3a put the draw point there on purpose. The group's START was refused
+because the sky dome writes no depth, draws first, and stands at 600 m, so a
+block past 600 m drawn before it would be painted over (`docs/rendering.md`,
+"Our renderer's frame"). That argument is about maps whose `fogEnd` passes
+600 m (Cinderhaven's is 1,250 m). Greyfen's is 78 m.
+
+### How to settle it
+
+- **Separate the order from the cull, on Greyfen**, where drawing ours at the
+  group's START is legal (its `fogEnd` is far inside the sky dome). In a
+  scratch build, queue our draw where the group begins instead of where its
+  opaque meshes end, and take `?gpu` on the path (`bench.mjs --max --gpu
+  --runs 2`, the same protocol as X3.3c). If `gpu.frame` falls back toward
+  5.31 ms, the order is the cost; if it does not, the cull is.
+- **If it is the cull**, a timestamp pair around its compute pass prices it
+  alone (`BABYLON_EXIT.md` X3.3c, "Owed onward").
+- **If it is the order**, the fix is a draw point that puts the blocks ahead
+  of what they hide without the sky painting over them — e.g. drawing the sky
+  last behind the world rather than first — which is the GPU-side work this
+  plan defers, and which the near-first bands were kept for.
+- **The phone's `gpu.frame` on Greyfen** (finding 52) is the number this
+  matters for; the desktop only says where to look.

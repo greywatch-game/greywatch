@@ -1484,6 +1484,13 @@ export class Game {
     // only on the transparent path. Cost is two bounding-sphere reads per
     // comparison over a couple of hundred submeshes — microseconds, against the
     // fill it is buying back.
+    //
+    // **The map's BLOCKS are no longer in this queue** (`BABYLON_EXIT.md`
+    // X3.3): our renderer draws them AFTER all of it, at the end of the
+    // group's opaque meshes (`render/Renderer.ts`, `"opaque"`), so the
+    // terrain, the roads and the loose props are shaded before the buildings
+    // that hide them. What this sort still orders is what Babylon draws, and
+    // the cost of the blocks coming last is `FINDINGS.md` 61's open question.
     this.scene.setRenderingOrder(0, (a, b) => {
       const eye = this.scene.activeCamera?.globalPosition;
       if (!eye) return 0;
@@ -1716,6 +1723,9 @@ export class Game {
     // or a cube probe; see `WorldCulling`, which is the whole argument.
     this.culling = new WorldCulling(this.scene);
     this.handover = new BlockHandover(this.renderer, this.mats, this.culling);
+    // A capture says what our renderer took and drew, which Babylon's own
+    // draw counter cannot (`ProfileReport.blocks`).
+    this.prof.setBlocks(() => this.handover.stats);
     this.mapBuilder = new MapBuilder(
       this.scene,
       this.mats,

@@ -16,16 +16,12 @@
  * different frames — the main pass and a probe's bake, whose eye and
  * `opaqueAlpha` differ — owe a buffer EACH (X3.6c), never two writes to one.
  */
-import { FRAME_BLOCK, type FrameUniforms } from "./frame";
+import { FRAME_BLOCK } from "./frame";
 import { UniformBlockBuffer } from "./UniformBlockBuffer";
 
+/** Written with a `FrameUniforms`, which is a `BlockValues` by its shape. */
 export class FrameUniformBuffer extends UniformBlockBuffer {
   constructor(device: GPUDevice, label: string) {
     super(device, FRAME_BLOCK, ["CEL_PALETTE"], `${label} frame`);
-  }
-
-  /** Lays `u` out as WGSL reads it and queues the upload. */
-  override write(u: FrameUniforms): void {
-    super.write(u);
   }
 }

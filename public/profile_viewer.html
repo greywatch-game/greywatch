@@ -982,6 +982,15 @@ function renderReport(r) {
   /* Which thread the simulation stepped on (report version 15): `worker` puts
      `sim` beside the frame, `page` inside it. */
   if (r.simMode) bits.push(["sim", r.simMode]);
+  /* Our renderer's take of the map's blocks (report version 17). Its draws are
+     NOT in the draw-call counter, which is Babylon's; anything handed back to
+     Babylon is said, since a refused main pass hands back the whole map. */
+  const ours = r.blocks;
+  if (ours && ours.taken > 0) {
+    let line = ours.drawn + " draws, " + ours.taken + " blocks, " + ours.clusters + " clusters";
+    if (ours.handedBack > 0) line += ", " + ours.handedBack + " handed back";
+    bits.push(["ours", line]);
+  }
   for (const [k, v] of bits) {
     const d = el("div");
     if (k) d.appendChild(el("b", null, k + " "));

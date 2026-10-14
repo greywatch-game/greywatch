@@ -635,7 +635,8 @@ src/
                         #   neither's — kept in either, they would be a cycle
     profileReport.ts    # What a capture SAYS: the ProfileReport shape (the
                         #   JSON the viewer reads; v14 adds SegmentStat.sim,
-                        #   v16 drops the old host's hop),
+                        #   v16 drops the old host's hop, v17 adds blocks —
+                        #   our renderer's take, read at the capture),
                         #   buildReport, buildTrace and
                         #   the stats. Allocates freely and never writes the
                         #   ProfileRing it is lent
@@ -1252,7 +1253,8 @@ src/
                         #   taken at the build (BuildOptions.onSurface),
                         #   handed to render/WorldBlocks, kept out of the
                         #   candidates, cut at install against their cells, a
-                        #   failed compile's surfaces handed back to Babylon;
+                        #   failed compile's surfaces handed back to Babylon as
+                        #   it lands, the whole map on a refused main pass;
                         #   their meshes stay for every other pass. Reads no
                         #   node per frame (a DEV check that none is switched,
                         #   hidden or faded)
@@ -2311,7 +2313,7 @@ src/
                         #   FramePrepares run as it begins (a compute cull),
                         #   recorded into the host's prepareEncoder, never
                         #   submitted; refuses to draw if the pass is not
-                        #   FRAME_TARGETS
+                        #   FRAME_TARGETS, and tells onRefused listeners
     targets.ts          # FRAME_TARGETS, stated once: rgba8unorm, depth32float,
                         #   1 sample, flipY (CelInk's target, not the canvas)
     frame.ts            # FRAME_BLOCK (group 0, binding 0 of every program:
@@ -2347,7 +2349,8 @@ src/
                         #   one GROUP per recipe (its surfaces' buffers end to
                         #   end, one pipeline, one material), the map cut once
                         #   (finish), ONE drawIndexedIndirect a group at the
-                        #   end of group 0's opaque meshes
+                        #   end of group 0's opaque meshes; what it will never
+                        #   draw goes to onFailed as it lands; stop() for good
     clusters.ts         # cutClusters: a surface cut into short runs of
                         #   one piece's triangles, each with its box and how
                         #   the wind can move it (BABYLON_EXIT.md X3.3b)

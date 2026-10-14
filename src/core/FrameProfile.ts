@@ -131,6 +131,7 @@ import {
   buildReport,
   buildTrace,
   type BenchFacts,
+  type BlockFacts,
   type LoafRecord,
   type ProfileGraphics,
   type ProfileReport,
@@ -617,6 +618,11 @@ export class FrameProfile {
   /** What a benchmark says about its own run, pushed by `Game` before its capture. */
   private bench: BenchFacts | null = null;
   /**
+   * Reads our renderer's take of the blocks, pushed by `Game` once and asked
+   * only at a capture. See `ProfileReport.blocks`.
+   */
+  private blocksOf: (() => BlockFacts) | null = null;
+  /**
    * How many rows the ring holds — `CONFIG.profiling.frames`, or what `arm`
    * was asked for. Fixed between an `arm` and the next.
    */
@@ -660,6 +666,14 @@ export class FrameProfile {
    */
   setSeed(seed: number | null): void {
     this.seed = seed;
+  }
+
+  /**
+   * How a capture reads our renderer's take of the map's blocks — asked at
+   * the capture, never per frame. Set by `Game` at construction.
+   */
+  setBlocks(read: () => BlockFacts): void {
+    this.blocksOf = read;
   }
 
   /**
@@ -1574,6 +1588,7 @@ export class FrameProfile {
       mapId: this.mapId,
       seed: this.seed,
       simMode: this.simMode,
+      blocks: this.blocksOf?.() ?? null,
       graphics: this.graphics,
       graphicsAt: this.graphicsAt,
       gpuRequested: this.gpuRequested,

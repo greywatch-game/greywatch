@@ -4,15 +4,20 @@
  * arrays handed over on the way past the build, and the map cut once it is
  * filed.
  * Owns: `BlockHandover` — our renderer's `WorldBlocks`, the taken meshes in
- * surface order, and the material epoch last copied.
+ * surface order, which of them were handed back, and the material epoch last
+ * copied.
  * Invariants: a surface is TAKEN only if our pipeline draws it exactly as
  * Babylon would — block-merged, in rendering group 0, at identity and under
  * no parent, never written after its build (`updatable` is a breakable
  * pane's), on the layer mask every camera sees, and on a cel material that
  * keeps a recipe (`CelMaterialFactory.celRecipe`: no glazing, no cloth, no
  * emissive) — and every other surface stays Babylon's in every pass, as do
- * the taken surfaces of a pipeline that failed to build (handed back whole,
- * so every surface is drawn by one side); a taken mesh is drawn by our side
+ * the taken surfaces our side will never draw (handed back whole, so every
+ * surface is drawn by one side): a pipeline's or the cull's failure hands
+ * back its surfaces in the turn it lands, and a main pass our renderer
+ * REFUSES (`Renderer.onRefused`) hands back the whole map, for the rest of
+ * it, from the next frame — the refused one is the one frame drawn without
+ * them; a taken mesh is drawn by our side
  * in the MAIN pass only and stays Babylon's in every other (the shadow maps,
  * the probes, the lamps' atlas), because only the main pass's candidate list
  * is told (`WorldCulling.setTaken`); what our side draws of it each frame is
@@ -25,8 +30,8 @@
  * something did (a DEV build checks every frame and says so); the building
  * card waits for our pipelines through the renderer's own cache
  * (`core/PipelineWarmup.ts`), never through this, and a failed surface is
- * handed back once the map's LAST compile settles, in the same turn — so
- * before the frame after the warm-up stops waiting for ours.
+ * handed back in the turn its compile settles, which is also the turn the
+ * cache stops counting it — so before the warm-up's next frame.
  * Never: draws, or reads a material's uniforms — a material reaches our side
  * as its recipe; writes a property on a mesh.
  * Contract: `docs/rendering.md`, "Our renderer's frame";
@@ -48,21 +53,30 @@ export class BlockHandover {
   private readonly blocks: WorldBlocks;
   /** The taken meshes, a mesh's index being its surface's. */
   private meshes: Mesh[] = [];
+  /** Of those, the ones handed back to Babylon's main pass. */
+  private back = new Set<Mesh>();
+  /** The whole map was handed back, its main pass refused. */
+  private handedBack = false;
   /** `CelMaterialFactory.materialEpoch` as last copied; -1 is never. */
   private epoch = -1;
-  /** Bumped by `clear`, so a compile that finishes for an old map is ignored. */
-  private generation = 0;
   /** The DEV check has reported a changed mesh: once a map is enough. */
   private reported = false;
   private readonly removeFrame: () => void;
+  private readonly removeRefused: () => void;
 
   constructor(
     renderer: Renderer,
     private readonly mats: CelMaterialFactory,
     private readonly culling: WorldCulling,
   ) {
-    this.blocks = new WorldBlocks(renderer, culling.reachGate, CONFIG.graphics.clusters);
+    this.blocks = new WorldBlocks(
+      renderer,
+      culling.reachGate,
+      CONFIG.graphics.clusters,
+      this.failed,
+    );
     this.removeFrame = renderer.onFrame(this.frame);
+    this.removeRefused = renderer.onRefused(this.refused);
   }
 
   /**
@@ -95,11 +109,15 @@ export class BlockHandover {
 
   /**
    * After the map's build and `WorldCulling.setMap`: hands the taken meshes
-   * to the cull, cuts the map against the cells they were filed in, and
-   * hands back whatever surfaces' pipelines fail.
+   * to the cull and cuts the map against the cells they were filed in. What
+   * our side then cannot draw comes back through `failed` and `refused`.
    */
   install(): void {
     const meshes = this.meshes;
+    this.back = new Set();
+    this.handedBack = false;
+    this.epoch = -1;
+    this.reported = false;
     this.culling.setTaken(meshes);
     const boxes: BlockBox[] = meshes.map((mesh) => {
       const box = this.culling.blockBoxOf(mesh);
@@ -107,41 +125,73 @@ export class BlockHandover {
       return box;
     });
     this.blocks.finish(boxes);
-    this.epoch = -1;
-    this.reported = false;
-    const generation = this.generation;
-    void this.blocks.compiled().then((failed) => {
-      if (generation !== this.generation) return;
-      // A surface whose pipeline did not build goes back to Babylon whole —
-      // drawn by NEITHER side would be a hole in the world.
-      if (failed.length > 0) {
-        const back = new Set(failed.map((at) => meshes[at]));
-        this.culling.setTaken(meshes.filter((m) => !back.has(m)));
-      }
-    });
   }
 
   /**
    * How many surfaces are taken, how many clusters and material groups they
-   * were cut into, and how many draws our side issued last frame.
+   * were cut into, how many draws our side issued last frame, and how many
+   * taken surfaces went back to Babylon — every one, once a pass was refused.
    */
-  get stats(): { taken: number; clusters: number; groups: number; drawn: number } {
+  get stats(): {
+    taken: number;
+    clusters: number;
+    groups: number;
+    drawn: number;
+    handedBack: number;
+  } {
     const { surfaces, clusters, groups } = this.blocks.count;
-    return { taken: surfaces, clusters, groups, drawn: this.blocks.drawn };
+    return {
+      taken: surfaces,
+      clusters,
+      groups,
+      drawn: this.blocks.drawn,
+      handedBack: this.handedBack ? surfaces : this.back.size,
+    };
   }
 
   /** The map is going: every surface, buffer and material of ours with it. */
   clear(): void {
-    this.generation++;
     this.blocks.clear();
     this.meshes = [];
+    this.back = new Set();
+    this.handedBack = false;
   }
 
   dispose(): void {
     this.clear();
     this.removeFrame();
+    this.removeRefused();
     this.blocks.dispose();
   }
+
+  /**
+   * `WorldBlocks.onFailed`: surfaces our side will never draw go back to
+   * Babylon at once, whole — drawn by NEITHER side would be a hole in the
+   * world. Only for the map installed now: `WorldBlocks` drops a failure
+   * that settles after its map.
+   */
+  private readonly failed = (surfaces: readonly number[]): void => {
+    if (this.handedBack) return;
+    for (const at of surfaces) this.back.add(this.meshes[at]);
+    this.culling.setTaken(this.meshes.filter((m) => !this.back.has(m)));
+  };
+
+  /**
+   * `Renderer.onRefused`: the main pass is not what our pipelines were built
+   * for, so nothing of ours draws in it — and every taken block would be a
+   * hole. The whole map goes back to Babylon, for the rest of it: our side
+   * stops (keeping its buffers, which this frame's commands hold) and the
+   * candidate list has every block again from the next frame.
+   */
+  private readonly refused = (): void => {
+    if (this.handedBack || this.meshes.length === 0) return;
+    this.handedBack = true;
+    this.blocks.stop();
+    this.culling.setTaken([]);
+    console.error(
+      `BlockHandover: the main pass was refused; all ${this.meshes.length} taken blocks go back to Babylon for this map`,
+    );
+  };
 
   /**
    * Once a frame as the main pass begins: a material rewritten by its owner
