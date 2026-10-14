@@ -688,6 +688,11 @@ did.
     today), writing indirect arguments.
   - One `drawIndexedIndirect` per material per pass. All of it under the
     same DEV switch.
+  - **Keep the door open for the GPU side** (deferred until after the exit;
+    "What this plan does not do"). Where the cull compacts the surviving
+    clusters, it writes them NEAR-FIRST, so that a later depth-ordered draw
+    lets the GPU skip hidden pixels. It costs nothing now: an order chosen
+    while the list is being written anyway. It is not a sort per frame.
 - **Verify:**
   - `bank.mjs --check` with the switch on, within the floor everywhere: the
     cull may drop only what the fog or the frustum already hid.
@@ -710,23 +715,26 @@ did.
 - **Verify:**
   - `bank.mjs --check` on every map.
   - P0's census.
-  - X0.3 on the desktop and the phone against X0.4's "before".
+  - X0.3 on the desktop and the phone against X0.4's "before"
+    (`FINDINGS.md` 52). The phone is read as two numbers, never as its
+    frame: its tick and its `gpu.frame`, warm, after one warm-up run.
   - A round played offline and in a match.
 
 **Gate after X3.3c — the first number that says whether the renderer pays.**
-If main-pass draws fall and no device's frame improves, stop and re-read this
-plan with the user before X3.4. Leaving Babylon would still remove the bugs
-and the upkeep, but the performance case would be gone, and the order of
-everything after this point should be weighed again.
+If main-pass draws fall and no device's CPU TICK improves, stop and re-read
+this plan with the user before X3.4. Leaving Babylon would still remove the
+bugs and the upkeep, but the performance case would be gone, and the order
+of everything after this point should be weighed again.
 
-**One thing outside the branch decides whether the gate can be read.**
-(The phone reaches the branch itself: `babylon-exit` is deployable as well
-as `develop`, since 2026-10-13, so the gate does not wait on a merge.)
-- **The phone may be GPU-bound.** The 2026-10-13 Greyfen captures read as a
-  GPU wait plus heat. X3.3 mainly removes CPU-side draws, so a phone frame
-  that does not move may say nothing about the renderer. A `?gpu` phone
-  capture taken before the gate is what tells a flat result apart from a
-  failed one.
+**The gate reads the tick, not the frame, and the phone is why.** On the
+desktop the two are nearly the same number (the tick is 89-97% of the
+frame). The phone is GPU-bound on Greyfen once warm: `gpu.frame` is 22-29
+ms against a tick of 9-17.5 ms (`FINDINGS.md` 52, "The GPU half,
+measured"). X3.3 moves the tick, so a phone frame that does not move says
+nothing about the renderer. The phone's `gpu.frame` is RECORDED at the
+gate, and is judged only by the GPU-side work after the exit. The phone
+reaches the branch itself: `babylon-exit` is deployable as well as
+`develop`, since 2026-10-13.
 
 ### X3.4 — Scatter as instances (PERF_PLAN B2) — **M–L** (decision)
 
@@ -908,6 +916,14 @@ mask and blur, FXAA (already our own shader), `Volumetrics`, `MotionBlur`,
 slot-claiming tricks `Game` uses today (attach, then detach, to hold a place
 in an append-only list) go away.
 
+- **Keep the door open for the GPU side** (deferred until after the exit;
+  "What this plan does not do"). The full-screen passes after `CelInk`
+  (FXAA, the volumetrics, the blur, the grain) are written so that two
+  neighbours can later be FUSED into one pass reading the same input, rather
+  than each one hard-wired to read and write a target of its own. On a
+  phone every full-screen pass is a whole frame's reads and writes, and the
+  `gpu.mainPass` lead in `FINDINGS.md` 52 points here. Fusing them is not
+  this step: this step only must not make it a rewrite.
 - **Verify:** the bank with every post setting on and off; X0.3.
 - **Rewrites:** `docs/rendering.md`'s post sections; the glow rules in
   `CLAUDE.md`.
@@ -1053,6 +1069,21 @@ Each is rewritten by the step that breaks it, in the same commit.
 - No new features inside a step. A step that wants one splits it out.
 - Phone fill at render scale 0.75 is per-pixel shader cost, and the shaders
   port unchanged (`PERF_PLAN.md`, "What this plan does not fix").
+- **The GPU side, until the exit is complete** (the user's call,
+  2026-10-14). The phone is GPU-bound on Greyfen once warm, and it throttles
+  (`FINDINGS.md` 52). What would make each frame cheaper for the GPU to
+  paint comes AFTER X6.2, starting with short captures that find where the
+  time goes, and then only the work those numbers justify. That means the
+  post chain's passes fused or skipped on a phone, near-first drawing, and
+  keeping the phone cool. Until then the exit does two things for it:
+  - it keeps the door open (X3.3b writes clusters near-first; X5.2 keeps
+    the post passes fusable);
+  - it records the phone's `gpu.frame` beside every phone tick it
+    measures.
+
+  A 30 fps cap or an automatic render-scale drop on a phone needs nothing
+  from the exit and can land on `develop` at any time if the phone cannot
+  wait.
 - The browser's own floor: compositor scheduling, present mode, per-tab
   memory.
 - Rust (C5), and threads inside the simulation.
@@ -1085,6 +1116,7 @@ Phase 1 actually took.
 | after X2.5b | Keep two client models, or make offline a match client? | **Decided** 2026-10-11: offline is a match client of a local `Match` in a Worker, over the existing protocol. Anything not acceptable offline is fixed for both; a binary wire comes later, for both, if needed (X2.5c). |
 | X2.5b | Revert X2.5b, or replace it? | **Decided** 2026-10-11: replace it with forward commits, keeping what X2.5c lists under "Keep". A revert would take the keepers out and conflict with 934b695. |
 | X2.5c | Keep cross-origin isolation (COOP/COEP) once nothing needs `SharedArrayBuffer`? | **Decided** 2026-10-11: remove it, in X2.5c's C6. It is a contract in four places that fails silently. The one thing it bought was finer `performance.now()` resolution for the profiler, whose phases average over many frames anyway. If a capture ever shows the coarser timer hurts, that is a new decision. |
+| X3.3 | The phone is GPU-bound on Greyfen once warm (`FINDINGS.md` 52). Add the GPU-side work to the exit, or after it? | **Decided** 2026-10-14: after the exit is complete. Meanwhile the gate after X3.3c reads the CPU tick, the phone's `gpu.frame` is recorded at every phone measurement, and X3.3b and X5.2 keep the door open ("What this plan does not do"). |
 | X3.4 | Scatter AO: baked per kind (cheaper, changes the look) or per instance? | Per kind, judged in the bank. |
 | X4.2 | Which hull parts drop at range (the tank's links and wheels, the MG rings)? | An art call; PERF_PLAN A3 measured +6.5% at 300 m on Cinderhaven. |
 | X6.2 | Is it ready to merge to `develop`? | Only when X6.2's "Before" list passes in full. |

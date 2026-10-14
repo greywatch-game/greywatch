@@ -2139,10 +2139,12 @@ drawn in before.
 ## 52. The exit's "before": Greyfen and Sarab, the desktop at max and the phone at minimum — **the phone's fight on Sarab is CPU in the render, and its look frames on Greyfen are not**
 
 **Status:** `BABYLON_EXIT.md` X0.4's measurements, taken 2026-10-09. Every
-later step of the exit quotes its numbers against this entry. **Open:** the
-phone's GPU share is INFERRED (frame minus tick), because none of its
-captures carried `?gpu`; `?bench=<map>&gpu` on the same phone would measure it
-(the phone reports `gpu.frame`; see 50).
+later step of the exit quotes its numbers against this entry. **Greyfen's GPU
+half is MEASURED** (2026-10-14, "The GPU half, measured" below): the phone
+is GPU-bound there once warm. **Sarab's is still inferred.** The GPU-side work
+is deferred until the exit is complete, by the user's call on 2026-10-14
+(`BABYLON_EXIT.md`, "What this plan does not do"); these figures are its
+baseline.
 
 ### What was measured
 
@@ -2213,11 +2215,64 @@ away.
   the GPU half moves, and the shaders port unchanged.
 - **Sarab's look frames sit between the two**: tick ~11 ms of ~19 ms.
 
-### What would settle the open half
+### The GPU half, measured (2026-10-14, Greyfen)
 
-Two warm `?bench=greyfen&gpu` and `?bench=sarab&gpu` runs on the phone, after
-one warm-up run: `gpu.frame` splits the wait above into GPU work and
-everything else, and with it the "what the exit cannot move" column.
+Three `?bench=greyfen&gpu` runs on the same phone, back to back at
+03:25, 03:32 and 03:40 UTC, from the `babylon-exit` deployment at
+`3e41c95`. That is after X3.2, whose renderer draws nothing, so the frame is
+X0.4's frame. The settings are the same as above (render scale 0.5, blur
+and grain on). Each capture has `gpu.frameMeasurable: true` and 3,000-4,000
+`gpu.frame` samples, so the unsafe-WebGPU flag took. The fight hash is
+`83e8e74ef36916ba` on all three. It differs from the `7ee089c174427e3d`
+above because the fight changed at X2.2 C6, which landed after X0.4.
+
+The first run is the warm-up and is shown for contrast. "Tick" and "render"
+are as above; "GPU" is `gpu.frame`, the whole command encoder, as a mean
+over its samples.
+
+| part | run | mean | p95 | 1% low | tick | render | GPU | draws |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| vantages | cold | 16.8 | 18 | 33 | 5.9 | 4.8 | 12.4 | 125 |
+| vantages | warm | 28.6 / 26.7 | 78 / 67 | 97 / 86 | 9.5 / 9.2 | 7.3 / 7.1 | 24.0 / 22.0 | 125 |
+| path | cold | 17.6 | 31 | 44 | 6.6 | 5.1 | 14.4 | 133 |
+| path | warm | 32.2 / 29.3 | 86 / 77 | 106 / 102 | 9.4 / 9.2 | 7.1 / 7.0 | 27.4 / 24.6 | 133 |
+| fight | cold | 23.7 | 57 | 106 | 13.5 | 10.5 | 17.6 | 326 |
+| fight | warm | 34.6 / 37.1 | 85 / 93 | 110 / 116 | 17.0 / 17.5 | 13.3 / 13.7 | 27.3 / 29.3 | 333 |
+
+What the figures show:
+
+- **Warm, the GPU is the frame on every part.** `gpu.frame` is 22-29 ms
+  against a tick of 9-17.5 ms. The look frames are GPU at 2.5-3x the CPU.
+  Even the fight, the CPU's worst part, is GPU at 1.6-1.7x.
+- **Warming is THROTTLING, not more work.** The same frames (the same draws,
+  the same vantages) cost about 1.9x the GPU and 1.5x the tick from the
+  cold run to the warm ones.
+- **The stalls are the GPU queue backing up.** In the fight, 1,804 of 2,699
+  frames finished under 20 ms cold and 783 warm, and 403 took over 70 ms.
+  The p50 stays at 17-24 ms because frames arrive in bursts, then the CPU
+  waits on the queue. That is this entry's "70-85 ms waits", now measured
+  as GPU.
+- **`gpu.mainPass` reads 6.1 ms cold and 10.2 ms warm.** That pass draws
+  only the final full-screen quad, which measured 27 µs on the desktop. A
+  tiling GPU's pass timestamps may not bracket what they say, so this is a
+  lead and not a cost: it points at the post chain.
+
+What it means for the exit:
+
+- **The phone's Greyfen frame cannot move until the GPU half does.** The
+  exit's draw-call savings move the tick, and the tick is not what the
+  phone waits on.
+- **So the exit's phone figures are read as two numbers**: the tick, which
+  the exit owns, and `gpu.frame`, which it records. They are never read as
+  the frame (`BABYLON_EXIT.md`, the gate after X3.3c).
+
+### What would settle the rest
+
+- **Sarab's half:** two warm `?bench=sarab&gpu` runs after one warm-up.
+- **Where the phone's GPU time goes:** for when the GPU-side work starts.
+  Short phone captures (one vantage segment is enough), each changing one
+  thing from the settings above: blur off, grain off, render scale lower,
+  shadows off. Each split is read on `gpu.frame`, warm.
 
 ## 53. A body's friction is configured at 0.8 and is 0.5 against the whole world
 
