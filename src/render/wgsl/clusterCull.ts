@@ -56,15 +56,16 @@ const SLACK: f32 = 0.05;
 struct Cull {
   // Left, right, bottom, top, and the eye's own plane (w >= 0), normalised.
   planes: array<vec4f, 5>,
-  eye: vec3f,
-  reach2: f32,
+  // The eye, and the reach squared in w. No \`vec3f\` beside a scalar in
+  // this block — the same bytes, declared as four lanes (\`outside\` says why).
+  eyeReach: vec4f,
   perRad: f32,
   px2: f32,
   gate: u32,
-  // How far a ramp weight of 1 can move a vertex, and a rigged vertex.
+  // How far a ramp weight of 1 can move a vertex.
   rampReach: f32,
-  bands2: vec3f,
-  rigReach: f32,
+  // Each near-first band's end squared, and in w how far a rigged vertex can move.
+  bandsRig: vec4f,
   clusters: u32,
   groups: u32,
   workgroups: u32,
@@ -129,29 +130,41 @@ fn scanWorkgroup(li: u32) {
 
 /** Squared distance from the eye to a box; 0 inside it. */
 fn dist2(lo: vec3f, hi: vec3f) -> f32 {
-  let d = max(max(lo - cull.eye, vec3f(0.0)), cull.eye - hi);
+  let d = max(max(lo - cull.eyeReach.xyz, vec3f(0.0)), cull.eyeReach.xyz - hi);
   return dot(d, d);
+}
+
+/**
+ * Whether a box (its middle and half its size) lies wholly outside plane \`p\`
+ * by more than \`grow\` metres: the far corner's distance, as the middle's
+ * plus the half-size along the plane's |normal|. Every plane is named by a
+ * constant index and the corner found by \`abs\` — not the form first shipped,
+ * a vector \`select\` in a loop over the uniform array, under which a phone
+ * dropped whole structures by heading and no desktop did. Whether that form
+ * was WHY is what \`?cullcheck\` reads on the device (\`wgsl/cullProbe.ts\`).
+ */
+fn outside(p: vec4f, mid: vec3f, half: vec3f, grow: f32) -> bool {
+  return dot(p.xyz, mid) + dot(abs(p.xyz), half) + p.w < -grow;
 }
 
 fn visible(c: Cluster) -> bool {
   let b = blocks[c.block];
-  if (dist2(b.lo, b.hi) > cull.reach2) { return false; }
+  if (dist2(b.lo, b.hi) > cull.eyeReach.w) { return false; }
   if (cull.gate != 0u) {
     let s = spheres[c.surface];
-    let d = s.xyz - cull.eye;
+    let d = s.xyz - cull.eyeReach.xyz;
     let d2 = dot(d, d);
     if (d2 > 1.0) {
       let w = 2.0 * s.w * cull.perRad;
       if (w * w < cull.px2 * d2) { return false; }
     }
   }
-  let grow = c.ramp * cull.rampReach + select(0.0, cull.rigReach, c.rigged != 0u) + SLACK;
-  for (var k = 0u; k < 5u; k++) {
-    let p = cull.planes[k];
-    let far = select(c.lo, c.hi, p.xyz > vec3f(0.0));
-    if (dot(p.xyz, far) + p.w < -grow) { return false; }
-  }
-  return true;
+  let grow = c.ramp * cull.rampReach + select(0.0, cull.bandsRig.w, c.rigged != 0u) + SLACK;
+  let mid = 0.5 * (c.lo + c.hi);
+  let half = 0.5 * (c.hi - c.lo);
+  return !(outside(cull.planes[0], mid, half, grow) || outside(cull.planes[1], mid, half, grow) ||
+    outside(cull.planes[2], mid, half, grow) || outside(cull.planes[3], mid, half, grow) ||
+    outside(cull.planes[4], mid, half, grow));
 }
 
 @compute @workgroup_size(${SCAN_SIZE})
@@ -169,9 +182,9 @@ fn cullClusters(
       // The SURFACE's band, never the cluster's own: a surface's clusters
       // then always draw in their own order, so a tie between two of them is
       // settled as Babylon settles it, by index order, whatever the eye does.
-      let s = spheres[c.surface].xyz - cull.eye;
+      let s = spheres[c.surface].xyz - cull.eyeReach.xyz;
       let d2 = dot(s, s);
-      band = select(select(select(3u, 2u, d2 < cull.bands2.z), 1u, d2 < cull.bands2.y), 0u, d2 < cull.bands2.x);
+      band = select(select(select(3u, 2u, d2 < cull.bandsRig.z), 1u, d2 < cull.bandsRig.y), 0u, d2 < cull.bandsRig.x);
       v[band] = c.indexCount;
     }
     bandOf[i] = band;

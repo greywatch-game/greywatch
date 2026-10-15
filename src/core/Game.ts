@@ -244,6 +244,7 @@ import { LobbyScreen } from "../ui/LobbyScreen";
 import { Minimap } from "../ui/Minimap";
 import { TouchControls } from "../ui/TouchControls";
 import { GyroInput } from "./GyroInput";
+import { CullCheckPanel } from "../ui/CullCheckPanel";
 import { ProfileChip } from "../ui/ProfileChip";
 import { enterFullscreenOnTouch } from "../pwa/register";
 import { CameraSystem } from "./CameraSystem";
@@ -1722,7 +1723,11 @@ export class Game {
     // flag. Nothing it does is visible to a ray, a collision, a shadow caster
     // or a cube probe; see `WorldCulling`, which is the whole argument.
     this.culling = new WorldCulling(this.scene);
-    this.handover = new BlockHandover(this.renderer, this.mats, this.culling, this.overrides.cullMode);
+    this.handover = new BlockHandover(this.renderer, this.mats, this.culling, {
+      mode: this.overrides.cullMode,
+      // After the HUD, which built `#hud`.
+      report: this.overrides.cullCheck ? new CullCheckPanel().show : null,
+    });
     // A capture says what our renderer took and drew, which Babylon's own
     // draw counter cannot (`ProfileReport.blocks`).
     this.prof.setBlocks(() => this.handover.stats);

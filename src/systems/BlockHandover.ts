@@ -46,7 +46,7 @@
  */
 import type { AbstractMesh, Mesh } from "@babylonjs/core";
 import { CONFIG } from "../config";
-import type { BlockBox, CullMode } from "../render/ClusterCull";
+import { type BlockBox, type CullDiagnostics, NO_DIAGNOSTICS } from "../render/ClusterCull";
 import type { Renderer } from "../render/Renderer";
 import { WorldBlocks } from "../render/WorldBlocks";
 import type { CelMaterialFactory } from "../shaders/CelShader";
@@ -78,15 +78,15 @@ export class BlockHandover {
     renderer: Renderer,
     private readonly mats: CelMaterialFactory,
     private readonly culling: WorldCulling,
-    /** Which of our culls' tests run — `?nocull`, `?nofrustum` (`core/urlOverrides.ts`). */
-    cullMode: CullMode = "full",
+    /** Our culls' diagnostics — `?nocull`, `?nofrustum`, `?cullcheck` (`core/urlOverrides.ts`). */
+    diagnostics: CullDiagnostics = NO_DIAGNOSTICS,
   ) {
     this.blocks = new WorldBlocks(
       renderer,
       culling.reachGate,
       CONFIG.graphics.clusters,
       this.failed,
-      cullMode,
+      diagnostics,
     );
     this.removeFrame = renderer.onFrame(this.frame);
     this.removeRefused = renderer.onRefused(this.refused);

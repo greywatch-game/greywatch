@@ -1976,6 +1976,9 @@ src/
                         #   the plate's translucency is one alpha on that BLIT.
                         #   The one canvas that RESIZES itself: the box is
                         #   --hud-map and the backing store follows it
+    CullCheckPanel.ts   # ?cullcheck's readings on the glass, for a phone with
+      cullcheck.css     #   no console. A DEVICE on #hud like ProfileChip; built
+                        #   only under the flag
     ProfileChip.ts      # The frame profiler's corner of the HUD: what the ring
       profile.css       #   is holding, and the four buttons that get a capture
                         #   off the device or into the reader. A DEVICE on #hud
@@ -2390,7 +2393,13 @@ src/
                         #   frustum; survivors
                         #   scanned NEAR-FIRST (by surface) into the index
                         #   buffer and each group's indirect args.
-                        #   ReachGate, BlockBox
+                        #   ReachGate, BlockBox, CullMode and CullDiagnostics
+                        #   (?nocull, ?nofrustum, ?cullcheck)
+    CullCheck.ts        # ?cullcheck: a cull's verdicts and the uniform block
+                        #   the GPU read, copied out about once a second and
+                        #   replayed on the CPU; the probe's forms of the plane
+                        #   test counted against it. For a device nobody here
+                        #   owns; reports through CullReport
     wgsl/
       preprocess.ts     # #include and the #ifdef family over a define set —
                         #   the subset a shared body may use; anything else is
@@ -2410,4 +2419,7 @@ src/
       instanceCull.ts   # The instance cull's WGSL — cullInstances, prefix,
                         #   place — and the record layouts InstanceCull
                         #   uploads
+      cullProbe.ts      # ?cullcheck's probes: each cull's plane test re-run
+                        #   in every form it has been written in, one bit a
+                        #   form, over the cull's own buffers
 ```

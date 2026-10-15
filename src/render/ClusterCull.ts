@@ -28,16 +28,19 @@
  * `dispose`, however late its pipelines arrive.
  * Contract: `docs/rendering.md`, "Our renderer's frame".
  */
+import { closeness, CullCheck, type CullCheckSpec, type CullReport } from "./CullCheck";
 import type { FrameUniforms } from "./frame";
 import type { PipelineCache } from "./PipelineCache";
 import {
   BLOCK_WORDS,
   CLUSTER_CULL_WGSL,
+  CLUSTER_WORDS,
   CULL_UNIFORM_BYTES,
   GROUP_WORDS,
   INDIRECT_BYTES,
   SCAN_SIZE,
 } from "./wgsl/clusterCull";
+import { CLUSTER_FORMS, CLUSTER_PROBE_WGSL } from "./wgsl/cullProbe";
 
 /**
  * The reach and the size gate as the frame's own mesh walk decides them
@@ -61,6 +64,19 @@ export interface ReachGate {
  * never a setting.
  */
 export type CullMode = "full" | "nofrustum" | "none";
+
+/**
+ * A cull's two diagnostics, both off the URL (`core/urlOverrides.ts`): which
+ * tests run (`CullMode`), and where `?cullcheck` reports its readings
+ * (`CullCheck`) — null for no check.
+ */
+export interface CullDiagnostics {
+  readonly mode: CullMode;
+  readonly report: CullReport | null;
+}
+
+/** Every test, and no check: what a cull runs with but for a diagnostic. */
+export const NO_DIAGNOSTICS: CullDiagnostics = { mode: "full", report: null };
 
 /**
  * Opens the tests `mode` turns off in a cull's uniform block, after the frame
@@ -135,15 +151,19 @@ export class ClusterCull {
   private readonly scatterY: number;
   /** The three passes in dispatch order: cull, prefix, scatter. */
   private readonly passes: { pipeline: GPUComputePipeline; group: GPUBindGroup }[] = [];
+  /** Which tests run — `CullMode`; "full" but for a diagnostic. */
+  private readonly mode: CullMode;
+  /** `?cullcheck`'s reader, or null. */
+  private readonly check: CullCheck | null;
 
   constructor(
     private readonly device: GPUDevice,
     pipelines: PipelineCache,
     tables: CullTables,
     private readonly gate: ReachGate,
-    /** Which tests run — `CullMode`; "full" but for a diagnostic. */
-    private readonly mode: CullMode = "full",
+    diagnostics: CullDiagnostics = NO_DIAGNOSTICS,
   ) {
+    this.mode = diagnostics.mode;
     const n = tables.clusterCount;
     this.clusterCount = n;
     this.workgroups = Math.max(1, Math.ceil(n / SCAN_SIZE));
@@ -152,11 +172,13 @@ export class ClusterCull {
     this.scatterY = Math.max(1, Math.ceil(n / this.scatterX));
 
     const storage = GPUBufferUsage.STORAGE;
-    this.uniform = this.make("uniform", CULL_UNIFORM_BYTES, GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST);
+    // `?cullcheck` copies the uniform block and the verdicts out.
+    const read = diagnostics.report ? GPUBufferUsage.COPY_SRC : 0;
+    this.uniform = this.make("uniform", CULL_UNIFORM_BYTES, GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST | read);
     const clusters = this.upload("clusters", storage, new Uint8Array(tables.clusters));
     const blocks = this.upload("blocks", storage, blockWords(tables.blocks));
     const spheres = this.upload("spheres", storage, tables.spheres);
-    const bandOf = this.make("bands", n * 4, storage);
+    const bandOf = this.make("bands", n * 4, storage | read);
     const local = this.make("local", n * 16, storage);
     const sums = this.make("sums", (this.workgroups + 1) * 16, storage);
     const groups = this.upload("groups", storage, groupWords(tables.groups));
@@ -173,6 +195,25 @@ export class ClusterCull {
     u[32] = n;
     u[33] = tables.groups.length;
     u[34] = this.workgroups;
+
+    this.check = diagnostics.report
+      ? new CullCheck(
+          device,
+          pipelines,
+          {
+            label: "clusters",
+            count: n,
+            uniform: this.uniform,
+            uniformBytes: CULL_UNIFORM_BYTES,
+            bands: bandOf,
+            probe: CLUSTER_PROBE_WGSL,
+            probeBind: [[0, this.uniform], [1, clusters], [2, blocks], [3, spheres]],
+            forms: CLUSTER_FORMS,
+            ...clusterReplay(tables),
+          },
+          diagnostics.report,
+        )
+      : null;
 
     // Each entry point's own bindings: an "auto" layout holds only what its
     // entry point reads, so each pass binds exactly those.
@@ -254,9 +295,11 @@ export class ClusterCull {
     pass.setBindGroup(0, passes[2].group);
     pass.dispatchWorkgroups(this.scatterX, this.scatterY);
     pass.end();
+    this.check?.record(encoder, this.bytes);
   }
 
   dispose(): void {
+    this.check?.dispose();
     for (const b of this.buffers) b.destroy();
     this.buffers.length = 0;
     this.passes.length = 0;
@@ -338,6 +381,69 @@ function layerReach(rig: Float32Array, rate: Float32Array): number {
   const across = Math.abs(rig[0]) * Math.max(Math.abs(rate[0]), 1) + Math.abs(rig[2]) + 0.5 * Math.abs(rig[3]);
   const up = 1.35 * Math.abs(rig[1]) + Math.abs(rig[3]);
   return across + up;
+}
+
+/**
+ * `?cullcheck`'s CPU replay of `wgsl/clusterCull.ts`'s `visible` over
+ * `tables`, and its one-line account of a cluster.
+ */
+function clusterReplay(tables: CullTables): Pick<CullCheckSpec, "replay" | "describe"> {
+  const cf = new Float32Array(tables.clusters);
+  const cu = new Uint32Array(tables.clusters);
+  const sp = tables.spheres;
+  const grow = (f: Float32Array, o: number): number =>
+    cf[o + 12] * f[27] + (cu[o + 13] !== 0 ? f[31] : 0) + 0.05;
+  /** Plane k's value at the cluster's far corner. */
+  const plane = (f: Float32Array, o: number, k: number): number => {
+    let v = f[k * 4 + 3];
+    for (let a = 0; a < 3; a++) v += f[k * 4 + a] * (f[k * 4 + a] > 0 ? cf[o + 4 + a] : cf[o + a]);
+    return v;
+  };
+  const boxDist2 = (f: Float32Array, b: BlockBox): number => {
+    const dx = Math.max(b.minX - f[20], 0, f[20] - b.maxX);
+    const dy = Math.max(b.minY - f[21], 0, f[21] - b.maxY);
+    const dz = Math.max(b.minZ - f[22], 0, f[22] - b.maxZ);
+    return dx * dx + dy * dy + dz * dz;
+  };
+  const sphere = (f: Float32Array, s: number): { d2: number; w2: number } => {
+    const dx = sp[s * 4] - f[20];
+    const dy = sp[s * 4 + 1] - f[21];
+    const dz = sp[s * 4 + 2] - f[22];
+    const w = 2 * sp[s * 4 + 3] * f[24];
+    return { d2: dx * dx + dy * dy + dz * dz, w2: w * w };
+  };
+  return {
+    replay: (f, u, i, near) => {
+      const o = i * CLUSTER_WORDS;
+      const d2b = boxDist2(f, tables.blocks[cu[o + 9]]);
+      near[0] = closeness(d2b, f[23]);
+      if (d2b > f[23]) return 1;
+      if (u[26] !== 0) {
+        const { d2, w2 } = sphere(f, cu[o + 10]);
+        if (d2 > 1) {
+          near[0] = Math.min(near[0], closeness(w2, f[25] * d2));
+          if (w2 < f[25] * d2) return 2;
+        }
+      }
+      const g = grow(f, o);
+      for (let k = 0; k < 5; k++) {
+        const v = plane(f, o, k);
+        near[0] = Math.min(near[0], closeness(v, -g));
+        if (v < -g) return 3 + k;
+      }
+      return 0;
+    },
+    describe: (f, u, i) => {
+      const o = i * CLUSTER_WORDS;
+      const { d2, w2 } = sphere(f, cu[o + 10]);
+      const planes = [0, 1, 2, 3, 4].map((k) => plane(f, o, k).toFixed(2)).join(" ");
+      return (
+        `block ${cu[o + 9]} surface ${cu[o + 10]} box [${[0, 1, 2].map((a) => cf[o + a].toFixed(1))}]..[${[4, 5, 6].map((a) => cf[o + a].toFixed(1))}]` +
+        ` · to block ${Math.sqrt(boxDist2(f, tables.blocks[cu[o + 9]])).toFixed(1)} m · gate ${u[26] ? (Math.sqrt(w2 / Math.max(d2, 1))).toFixed(1) : "-"} px` +
+        ` · planes at far corner ${planes} vs -${grow(f, o).toFixed(2)}`
+      );
+    },
+  };
 }
 
 /** The blocks' boxes as the WGSL's `Box`. */

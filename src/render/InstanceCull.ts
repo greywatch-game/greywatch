@@ -22,14 +22,27 @@
  * `dispose`.
  * Contract: `docs/rendering.md`, "Our renderer's frame".
  */
-import { type CullMode, type ReachGate, openTests, rampReach, rigReach, writePlanes, F32_MAX } from "./ClusterCull";
+import {
+  type CullDiagnostics,
+  type CullMode,
+  type ReachGate,
+  NO_DIAGNOSTICS,
+  openTests,
+  rampReach,
+  rigReach,
+  writePlanes,
+  F32_MAX,
+} from "./ClusterCull";
+import { closeness, CullCheck, type CullCheckSpec } from "./CullCheck";
 import type { FrameUniforms } from "./frame";
 import type { PipelineCache } from "./PipelineCache";
+import { INSTANCE_FORMS, INSTANCE_PROBE_WGSL } from "./wgsl/cullProbe";
 import {
   DRAW_WORDS,
   INSTANCE_CULL_UNIFORM_BYTES,
   INSTANCE_CULL_WGSL,
   INSTANCE_SCAN_SIZE,
+  INSTANCE_WORDS,
   PLACE_SIZE,
   SET_WORDS,
   TRANSFORM_WORDS,
@@ -72,15 +85,19 @@ export class InstanceCull {
   private readonly placeY: number;
   /** The three passes in dispatch order: cull, prefix, place. */
   private readonly passes: { pipeline: GPUComputePipeline; group: GPUBindGroup }[] = [];
+  /** Which tests run — `CullMode`; "full" but for a diagnostic. */
+  private readonly mode: CullMode;
+  /** `?cullcheck`'s reader, or null. */
+  private readonly check: CullCheck | null;
 
   constructor(
     private readonly device: GPUDevice,
     pipelines: PipelineCache,
     tables: InstanceTables,
     private readonly gate: ReachGate,
-    /** Which tests run — `CullMode`; "full" but for a diagnostic. */
-    private readonly mode: CullMode = "full",
+    diagnostics: CullDiagnostics = NO_DIAGNOSTICS,
   ) {
+    this.mode = diagnostics.mode;
     const n = tables.instanceCount;
     this.count = n;
     this.workgroups = Math.max(1, Math.ceil(n / INSTANCE_SCAN_SIZE));
@@ -90,9 +107,15 @@ export class InstanceCull {
     this.placeY = Math.ceil(groups / this.placeX);
 
     const storage = GPUBufferUsage.STORAGE;
-    this.uniform = this.make("uniform", INSTANCE_CULL_UNIFORM_BYTES, GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST);
+    // `?cullcheck` copies the uniform block and the verdicts out.
+    const read = diagnostics.report ? GPUBufferUsage.COPY_SRC : 0;
+    this.uniform = this.make(
+      "uniform",
+      INSTANCE_CULL_UNIFORM_BYTES,
+      GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST | read,
+    );
     const instances = this.upload("instances", storage, new Uint8Array(tables.instances));
-    const bandOf = this.make("bands", n * 4, storage);
+    const bandOf = this.make("bands", n * 4, storage | read);
     const local = this.make("local", n * 16, storage);
     const sums = this.make("sums", (this.workgroups + 1) * 16, storage);
     const sets = this.upload("sets", storage, setWords(tables.sets));
@@ -110,6 +133,25 @@ export class InstanceCull {
     u[33] = tables.sets.length;
     u[34] = this.workgroups;
     u[35] = tables.draws.length;
+
+    this.check = diagnostics.report
+      ? new CullCheck(
+          device,
+          pipelines,
+          {
+            label: "instances",
+            count: n,
+            uniform: this.uniform,
+            uniformBytes: INSTANCE_CULL_UNIFORM_BYTES,
+            bands: bandOf,
+            probe: INSTANCE_PROBE_WGSL,
+            probeBind: [[0, this.uniform], [1, instances], [5, sets]],
+            forms: INSTANCE_FORMS,
+            ...instanceReplay(tables),
+          },
+          diagnostics.report,
+        )
+      : null;
 
     const entries: { entry: string; bind: readonly [number, GPUBuffer][] }[] = [
       {
@@ -185,9 +227,11 @@ export class InstanceCull {
     pass.setBindGroup(0, passes[2].group);
     pass.dispatchWorkgroups(this.placeX, this.placeY);
     pass.end();
+    this.check?.record(encoder, this.bytes);
   }
 
   dispose(): void {
+    this.check?.dispose();
     for (const b of this.buffers) b.destroy();
     this.buffers.length = 0;
     this.passes.length = 0;
@@ -217,6 +261,58 @@ export class InstanceCull {
     this.buffers.push(buffer);
     return buffer;
   }
+}
+
+/**
+ * `?cullcheck`'s CPU replay of `wgsl/instanceCull.ts`'s `visible` over
+ * `tables`, and its one-line account of an instance.
+ */
+function instanceReplay(tables: InstanceTables): Pick<CullCheckSpec, "replay" | "describe"> {
+  const nf = new Float32Array(tables.instances);
+  const nu = new Uint32Array(tables.instances);
+  const grow = (f: Float32Array, o: number): number => {
+    const s = tables.sets[nu[o + 16]];
+    return nf[o + 3] + s.ramp * f[27] + (s.rigged ? f[31] : 0) + 0.05;
+  };
+  const plane = (f: Float32Array, o: number, k: number): number =>
+    f[k * 4] * nf[o] + f[k * 4 + 1] * nf[o + 1] + f[k * 4 + 2] * nf[o + 2] + f[k * 4 + 3];
+  const dist2 = (f: Float32Array, o: number): number => {
+    const dx = nf[o] - f[20];
+    const dy = nf[o + 1] - f[21];
+    const dz = nf[o + 2] - f[22];
+    return dx * dx + dy * dy + dz * dz;
+  };
+  return {
+    replay: (f, u, i, near) => {
+      const o = i * INSTANCE_WORDS;
+      const d2 = dist2(f, o);
+      const r = nf[o + 3];
+      const gap = Math.max(0, Math.sqrt(d2) - r);
+      near[0] = closeness(gap * gap, f[23]);
+      if (gap * gap > f[23]) return 1;
+      if (u[26] !== 0 && d2 > 1) {
+        const w = 2 * r * f[24];
+        near[0] = Math.min(near[0], closeness(w * w, f[25] * d2));
+        if (w * w < f[25] * d2) return 2;
+      }
+      const g = grow(f, o);
+      for (let k = 0; k < 5; k++) {
+        const v = plane(f, o, k);
+        near[0] = Math.min(near[0], closeness(v, -g));
+        if (v < -g) return 3 + k;
+      }
+      return 0;
+    },
+    describe: (f, _u, i) => {
+      const o = i * INSTANCE_WORDS;
+      const d = Math.sqrt(dist2(f, o));
+      const planes = [0, 1, 2, 3, 4].map((k) => plane(f, o, k).toFixed(2)).join(" ");
+      return (
+        `set ${nu[o + 16]} at [${[0, 1, 2].map((a) => nf[o + a].toFixed(1))}] r ${nf[o + 3].toFixed(2)} m · ${d.toFixed(1)} m away` +
+        ` · ${((2 * nf[o + 3] * f[24]) / Math.max(d, 1)).toFixed(1)} px · planes ${planes} vs -${grow(f, o).toFixed(2)}`
+      );
+    },
+  };
 }
 
 /** The sets as the WGSL's `Set`, the scan's half zero. */

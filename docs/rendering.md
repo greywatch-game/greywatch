@@ -3474,6 +3474,29 @@ The build hands the sets over once (`BuildOptions.onScatter`), and
   picture that is wrong by default and right under `?nocull` is a cull's
   DECISION, and one still wrong under `?nocull` and right under
   `?babylonworld` is our DRAW. Diagnostics, never settings.
+- **`?cullcheck` says WHICH decision, on the device** (`render/CullCheck.ts`).
+  About once a second each cull copies out the uniform block the GPU read and
+  every verdict it made, and the CPU replays the WGSL test over the same
+  tables against those exact bytes; a PROBE re-runs the plane test on the GPU
+  in every form it has been written in, one bit a form
+  (`wgsl/cullProbe.ts`). The panel (`ui/CullCheckPanel.ts`) prints, per
+  cull: what the GPU and the CPU kept, every disagreement either way (those
+  within float error of a threshold apart, as marginal), what the CPU dropped
+  by test and by plane, how many verdicts each probe form got wrong, whether
+  the uniform block read back as written, how far the five planes pass from
+  the eye (0 for a perspective frustum), and the first cluster or instance
+  the GPU dropped against the CPU, with its numbers. Disagreement with the
+  uniform as written is the device's SHADER; agreement while the picture is
+  still wrong is the NUMBERS — the matrix or the boxes. A desktop reads zero
+  everywhere.
+- **The plane test is written UNROLLED, the far corner found by `abs`**
+  (`clusterCull.ts`'s `outside`), and the uniform block declares no `vec3f`
+  beside a scalar — the same bytes as four lanes. The first form shipped, a
+  vector `select` in a loop over the uniform array, is what a phone was
+  running when it dropped Kurenai's hall by heading and no desktop did
+  (2026-10-15); `?nofrustum` cured the hall there. Whether that FORM was
+  the cause is the probe's question, and until a device answers it, this
+  is the form a plane test here is written in.
 
 ## Block visibility: how much of the map the frame walks
 

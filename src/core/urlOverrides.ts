@@ -6,7 +6,8 @@
  * `?bench=<map>`, which overrides the session itself: the page plays the
  * benchmark on that map instead of offering a menu (`bench/BenchScript.ts`) —
  * and `?babylonworld`, `?nocull` and `?nofrustum`, which take our renderer's
- * static world or its culls out, for an A/B on a device (`BABYLON_EXIT.md`).
+ * static world or its culls out, for an A/B on a device (`BABYLON_EXIT.md`),
+ * and `?cullcheck`, which reads those culls back on the device.
  * Owns: reading them once, validating each against its own table, the rule
  * that an override BEATS the setting it shadows, and the list of which ones a
  * capture must say were forced. Owns the URL-flag reader `FrameProfile` uses
@@ -115,6 +116,13 @@ export class UrlOverrides {
    */
   readonly cullMode: CullMode;
   /**
+   * `?cullcheck` — our culls' verdicts read back off the GPU about once a
+   * second and replayed on the CPU, with the plane test re-run in each form
+   * it has been written in, on the glass (`render/CullCheck.ts`). The third
+   * half of the A/B: WHICH test a device's GPU gets wrong, and in which form.
+   */
+  readonly cullCheck: boolean;
+  /**
    * Which of the above the URL set, by the name a capture files it under —
    * `graphics.forced`, so a report off a device nobody here owns says which of
    * its numbers were somebody's experiment rather than the player's choice.
@@ -138,6 +146,7 @@ export class UrlOverrides {
     this.bench = urlParam("bench");
     this.ourWorld = !urlFlag("babylonworld");
     this.cullMode = urlFlag("nocull") ? "none" : urlFlag("nofrustum") ? "nofrustum" : "full";
+    this.cullCheck = urlFlag("cullcheck");
     const forced: string[] = [];
     if (this.giForced) forced.push("gi");
     if (this.shadowsForced) forced.push("shadows");
@@ -145,6 +154,7 @@ export class UrlOverrides {
     if (!this.minimap) forced.push("minimap");
     if (!this.ourWorld) forced.push("babylonworld");
     if (this.cullMode !== "full") forced.push(this.cullMode === "none" ? "nocull" : "nofrustum");
+    if (this.cullCheck) forced.push("cullcheck");
     this.forced = forced;
   }
 

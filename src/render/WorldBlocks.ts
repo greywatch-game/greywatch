@@ -59,7 +59,14 @@
 import { CEL_MATERIAL_BLOCK, CEL_MATERIAL_TEXTURES, CEL_MESH_BLOCK, type CelRecipe } from "./celMaterial";
 import { celFragment } from "./celFragment";
 import { ATTRIBUTE_FORMATS, bufferLayouts, celInstancedVertex, celVertex } from "./celVertex";
-import { type BlockBox, ClusterCull, type CullMode, type CullTables, type ReachGate } from "./ClusterCull";
+import {
+  type BlockBox,
+  ClusterCull,
+  type CullDiagnostics,
+  type CullTables,
+  NO_DIAGNOSTICS,
+  type ReachGate,
+} from "./ClusterCull";
 import { type Cluster, cutClusters, type PieceSpan, type SurfaceArrays, withoutPieces } from "./clusters";
 import type { FrameUniforms } from "./frame";
 import { HostBindGroup } from "./HostBindGroup";
@@ -205,8 +212,8 @@ export class WorldBlocks {
      * them back.
      */
     private readonly onFailed: (surfaces: readonly number[]) => void,
-    /** Which of the culls' tests run (`ClusterCull`'s `CullMode`); "full" but for a diagnostic. */
-    private readonly cullMode: CullMode = "full",
+    /** The culls' diagnostics (`ClusterCull`'s `CullDiagnostics`); none but off the URL. */
+    private readonly diagnostics: CullDiagnostics = NO_DIAGNOSTICS,
   ) {
     const device = renderer.device;
     this.mesh = new UniformBlockBuffer(device, CEL_MESH_BLOCK, [], "world blocks: world");
@@ -392,12 +399,12 @@ export class WorldBlocks {
       this.renderer.pipelines,
       { clusters: words, clusterCount, blocks: blockList, spheres, groups: ranges, indices, bands2 },
       this.gate,
-      this.cullMode,
+      this.diagnostics,
     );
     const ready: Promise<boolean>[] = [this.cull.ready];
     if (scatter && draws.length > 0) {
       const tables = this.instanceTables(scatter.sets, draws, bands2);
-      this.instances = new InstanceCull(device, this.renderer.pipelines, tables, this.gate, this.cullMode);
+      this.instances = new InstanceCull(device, this.renderer.pipelines, tables, this.gate, this.diagnostics);
       ready.push(this.instances.ready);
     }
     const generation = this.generation;

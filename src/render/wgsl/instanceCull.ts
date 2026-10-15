@@ -58,15 +58,15 @@ const SLACK: f32 = 0.05;
 struct Cull {
   // Left, right, bottom, top, and the eye's own plane (w >= 0), normalised.
   planes: array<vec4f, 5>,
-  eye: vec3f,
-  reach2: f32,
+  // The eye, and the reach squared in w — \`clusterCull.ts\`'s block, byte for byte.
+  eyeReach: vec4f,
   perRad: f32,
   px2: f32,
   gate: u32,
-  // How far a ramp weight of 1 can move a vertex, and a rigged vertex.
+  // How far a ramp weight of 1 can move a vertex.
   rampReach: f32,
-  bands2: vec3f,
-  rigReach: f32,
+  // Each near-first band's end squared, and in w how far a rigged vertex can move.
+  bandsRig: vec4f,
   instances: u32,
   sets: u32,
   workgroups: u32,
@@ -128,23 +128,30 @@ fn scanWorkgroup(li: u32) {
   }
 }
 
+/**
+ * Whether a sphere's centre lies outside plane \`p\` by more than \`grow\`
+ * metres. Every plane is named by a constant index, never picked by a loop
+ * over the uniform array — \`clusterCull.ts\`'s \`outside\` says why.
+ */
+fn outside(p: vec4f, at: vec3f, grow: f32) -> bool {
+  return dot(p.xyz, at) + p.w < -grow;
+}
+
 fn visible(inst: Instance) -> bool {
-  let d = inst.center - cull.eye;
+  let d = inst.center - cull.eyeReach.xyz;
   let d2 = dot(d, d);
   // The reach, measured to the sphere's near side.
   let near = max(0.0, sqrt(d2) - inst.radius);
-  if (near * near > cull.reach2) { return false; }
+  if (near * near > cull.eyeReach.w) { return false; }
   if (cull.gate != 0u && d2 > 1.0) {
     let w = 2.0 * inst.radius * cull.perRad;
     if (w * w < cull.px2 * d2) { return false; }
   }
   let s = sets[inst.owner];
-  let grow = inst.radius + s.ramp * cull.rampReach + select(0.0, cull.rigReach, s.rigged != 0u) + SLACK;
-  for (var k = 0u; k < 5u; k++) {
-    let p = cull.planes[k];
-    if (dot(p.xyz, inst.center) + p.w < -grow) { return false; }
-  }
-  return true;
+  let grow = inst.radius + s.ramp * cull.rampReach + select(0.0, cull.bandsRig.w, s.rigged != 0u) + SLACK;
+  let at = inst.center;
+  return !(outside(cull.planes[0], at, grow) || outside(cull.planes[1], at, grow) ||
+    outside(cull.planes[2], at, grow) || outside(cull.planes[3], at, grow) || outside(cull.planes[4], at, grow));
 }
 
 @compute @workgroup_size(${INSTANCE_SCAN_SIZE})
@@ -159,9 +166,9 @@ fn cullInstances(
     let inst = instances[i];
     var band = NONE;
     if (visible(inst)) {
-      let d = inst.center - cull.eye;
+      let d = inst.center - cull.eyeReach.xyz;
       let d2 = dot(d, d);
-      band = select(select(select(3u, 2u, d2 < cull.bands2.z), 1u, d2 < cull.bands2.y), 0u, d2 < cull.bands2.x);
+      band = select(select(select(3u, 2u, d2 < cull.bandsRig.z), 1u, d2 < cull.bandsRig.y), 0u, d2 < cull.bandsRig.x);
       v[band] = 1u;
     }
     bandOf[i] = band;
