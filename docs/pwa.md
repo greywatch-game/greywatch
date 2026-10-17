@@ -63,6 +63,17 @@ the version: a hit is the build you already have, a miss is the one you do not, 
 the cache fills itself either way. Offline the fetch rejects at once and the
 precached shell answers, so the flight-mode promise is untouched.
 
+**A link that is merely SLOW gets the previous build, and the settings screen
+says which one answered.** The navigation waits `SHELL_TIMEOUT_MS` (3 s) and
+then draws the cached shell, and the fresh one lands for the next launch only if
+it arrives inside `SHELL_GIVE_UP_MS` — so a phone on a crawling cell can run the
+previous build through every reload (2026-10-16: a fix tested on yesterday's
+build read as no fix). `vite.config.ts` stamps each `index.html` with its commit
+and day (`<meta name="greywatch-build">`, `BUILD_COMMIT` from CI since the
+image has no `.git`), and the settings screen prints it in its corner. Being in
+the shell, it is the build the worker SERVED, and it costs the content-hashed
+bundle nothing.
+
 **It used to be cache-first for the navigation too, and the comment claiming that
 cost "the launch after next" was wrong by a factor of five.** Two assumptions
 underneath it do not hold, and both had to be fixed — either one alone still leaves

@@ -972,6 +972,28 @@
 #settings.dev-pad .se-foot [data-dev="kbm"],
 #settings.dev-touch .se-foot { display: none; }
 
+/* THE BUILD — which build this page is, small in the bottom corner on every
+   page and every device (`buildStamp.ts`). Out of the grid, so no layout
+   makes room for it, and off the pointer, so it covers nothing: bottom LEFT,
+   where the foot's hints (justified to the right) leave the row empty, and
+   bottom RIGHT on a landscape phone, whose left column is the tabs. Where
+   there is no foot (under a finger, and on a landscape phone) nothing else
+   holds that row, so the grid gives up a band for it rather than letting a
+   long page run under the stamp. */
+#settings .se-build {
+  position: absolute;
+  left: max(var(--gx), env(safe-area-inset-left));
+  bottom: max(var(--gy), env(safe-area-inset-bottom));
+  pointer-events: none;
+  font-size: var(--t-cap);
+  letter-spacing: 0.08em;
+  color: rgba(255, 255, 255, 0.34);
+  text-shadow: 0 2px 8px rgba(0, 0, 0, 0.9), 0 0 2px rgba(0, 0, 0, 0.8);
+}
+#settings.dev-touch {
+  padding-bottom: calc(max(var(--gy), env(safe-area-inset-bottom)) + 1.8 * var(--t-cap));
+}
+
 /* --- the screen arriving, and a page turning ---
    Staggered, and every block is opacity and a transform so the whole thing
    is the compositor's. `.enter` is put on the root by `show` on a RAISE
@@ -1074,6 +1096,8 @@
   #settings .se-facts,
   #settings .se-nav { display: none; }
   #settings .se-hero { padding-top: 0; }
+  #settings .se-build { left: auto; right: max(var(--gx), env(safe-area-inset-right)); }
+  #settings { padding-bottom: calc(max(var(--gy), env(safe-area-inset-bottom)) + 1.8 * var(--t-cap)); }
   #settings .se-hero-in { --t: max(20px, min(8vh, 9cqw)); }
   #settings .se-title { margin: 2px 0 0; }
   /* The pages fill the height as equal plates — a thumb's target each. */

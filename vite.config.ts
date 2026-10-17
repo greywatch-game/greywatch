@@ -15,6 +15,7 @@
  *
  * The plugin is `apply: "serve"`, so it does not exist in a production build.
  */
+import { execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import { readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join, relative, resolve } from "node:path";
@@ -237,6 +238,51 @@ function layoutWriter(): Plugin {
 }
 
 /**
+ * Stamps `index.html` with which build it is, as `<meta name="greywatch-build">`
+ * — the commit and the day it was built — which the settings screen prints in
+ * its corner (`src/ui/buildStamp.ts`).
+ *
+ * **It is written into `index.html` and never into the bundle**, for two
+ * reasons. The entry chunk is 7.7 MB and keeps its hash across a deploy only
+ * when its code did not move; a commit baked into it would re-hash it on every
+ * commit, a docs-only one included, and a phone on a slow link pays for that
+ * in full. And `index.html` is the file whose cached copy decides which build
+ * runs (`src/pwa/sw.js`), so the stamp read off it is the build actually
+ * running — which is the question a stale tab on a slow link could not answer.
+ *
+ * The commit is `BUILD_COMMIT` when the environment states one (the image is
+ * built without `.git`; CI passes its sha as a build argument — `Dockerfile`,
+ * `.github/workflows/docker.yml`), else asked of git, else `unknown`. Asked of
+ * git, a working tree with uncommitted changes to tracked files adds `+`: the
+ * commit alone would name a build that differs from it. Under the dev server
+ * the stamp says `dev` beside it.
+ */
+function buildStamp(): Plugin {
+  const git = (args: string[]): string | null => {
+    try {
+      return execFileSync("git", args, { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] }).trim();
+    } catch {
+      return null;
+    }
+  };
+  const stated = process.env.BUILD_COMMIT?.trim();
+  let commit = stated ? stated.slice(0, 7) : git(["rev-parse", "--short=7", "HEAD"]);
+  if (!stated && commit && git(["status", "--porcelain", "--untracked-files=no"])) commit += "+";
+  const day = new Date().toISOString().slice(0, 10);
+  let dev = false;
+  return {
+    name: "greywatch-build-stamp",
+    configResolved(config) {
+      dev = config.command === "serve";
+    },
+    transformIndexHtml() {
+      const content = `${commit ?? "unknown"} · ${dev ? "dev" : day}`;
+      return [{ tag: "meta", attrs: { name: "greywatch-build", content }, injectTo: "head" }];
+    },
+  };
+}
+
+/**
  * Emits `dist/sw.js` from the template at `src/pwa/sw.js`, with `__PRECACHE__`
  * replaced by a manifest of everything the build produced.
  *
@@ -336,7 +382,7 @@ function serviceWorker(): Plugin {
 }
 
 export default defineConfig({
-  plugins: [layoutWriter(), serviceWorker()],
+  plugins: [layoutWriter(), buildStamp(), serviceWorker()],
 
   /**
    * The local match's Worker (`server/localMatchWorker.ts`, opened by

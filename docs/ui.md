@@ -272,6 +272,17 @@ on this machine; Back is the system corner; the prompts are drawn on their
 controls for the device in hand. Every block is a named grid area over four
 templates, as on the other two.
 
+- **It prints WHICH BUILD this is, small in the bottom corner, on every page
+  and every device** (`buildStamp.ts`): the commit and the day, read off
+  the `<meta name="greywatch-build">` `vite.config.ts` stamps into
+  `index.html` — never compiled into the bundle, whose hash would then move
+  with every commit, and read off the document the service worker actually
+  served, so it is the build RUNNING (`docs/pwa.md`). It stands outside the
+  grid and off the pointer, bottom left where the foot's right-justified
+  hints leave the row empty and bottom right on a landscape phone, and where
+  there is no foot to hold that row (under a finger, on a landscape phone)
+  the grid gives up a band for it. Its first reader was a phone on a slow
+  link that ran yesterday's build through every reload without a word.
 - **It stands over the SCENE, not over a black veil.** Everything it can be
   raised over — the menu, the deploy map, the pause card — is DOM, so it takes
   them off the glass while it is up (`#hud.setting`, the kit screen's

@@ -37,6 +37,12 @@
  * left and right step the row's value, and the bumpers turn the PAGE from
  * wherever the cursor is.
  *
+ * The BUILD is printed small in the bottom corner (`buildStamp`), on every
+ * page and every device — the one place a player can see which build is
+ * running, which a phone on a slow link may not be the one just deployed
+ * (`src/pwa/sw.js`). Out of the grid and off the pointer, so no layout makes
+ * room for it.
+ *
  * Above #loadout's z-index, because it is reachable from the pause lid and has
  * to cover everything the pause card sits over.
  */
@@ -50,6 +56,7 @@ import {
   type Settings,
 } from "../core/settings";
 import type { GyroStatus } from "../core/GyroInput";
+import { buildStamp } from "./buildStamp";
 import { glyph, guessDevice, markDevice, type InputDevice } from "./prompts";
 
 /**
@@ -612,6 +619,7 @@ export class SettingsScreen {
         <span data-dev="kbm"><kbd>&larr;</kbd><kbd>&rarr;</kbd> Change</span>
         <span data-dev="pad"><kbd class="pd">D-pad</kbd> Navigate</span>
       </div>
+      <span class="se-build">Build ${buildStamp()}</span>
     `;
     document.getElementById("hud")!.appendChild(this.root);
     const q = <T extends HTMLElement>(sel: string) => this.root.querySelector<T>(sel)!;

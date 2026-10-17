@@ -326,10 +326,12 @@ main.ts             # Bootstrap. Imports src/ui/base.css FIRST. Awaits the two
                     #   await on its load plate, paints before the constructor,
                     #   fades it on the first drawn frame, or fills plate and
                     #   note with one of the four failures.
-vite.config.ts      # The client build, and the two plugins only it can hold:
+vite.config.ts      # The client build, and the three plugins only it can hold:
                     #   the DEV-only layout writer the editor saves through
                     #   (WRITABLE, the literal table of files it may write —
-                    #   three per map) and the build-only service worker
+                    #   three per map), the build stamp in index.html (the
+                    #   commit, BUILD_COMMIT from CI or else git), and the
+                    #   build-only service worker
                     #   substitution (src/pwa/sw.js's PRECACHE, split
                     #   immutable/mutable, into dist/sw.js). Also: never
                     #   inline a sound, optimizeDeps.exclude for Havok, and
@@ -1950,7 +1952,12 @@ src/
                         #   bindings for the device in hand. Laid over the
                         #   scene: #hud.setting hides every other screen.
                         #   Owns no setting: picks leave through onChange and
-                        #   return as setValues
+                        #   return as setValues. Prints the build stamp small
+                        #   in its bottom corner
+    buildStamp.ts       # Which build this page is: the commit and day
+                        #   vite.config.ts stamps into index.html's
+                        #   <meta name="greywatch-build">, read off the
+                        #   document the worker served, never the bundle
     LobbyScreen.ts      # The match browser, a TITLE SCREEN for the match the
       lobby.css         #   cursor is on: its map's name over its photograph
                         #   (the menu's MenuBackdrop, handed in), two pages

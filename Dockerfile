@@ -76,6 +76,13 @@ COPY public ./public
 COPY CLAUDE.md ./
 COPY docs ./docs
 
+# Which commit this is, for the stamp `index.html` carries (`vite.config.ts`'s
+# `buildStamp`, printed on the settings screen): the build context has no
+# `.git` (`.dockerignore`), so CI states it (`.github/workflows/docker.yml`).
+# Empty, the stamp says `unknown`. Declared after the copies, so a new commit
+# re-runs only the steps a new commit re-runs anyway.
+ARG BUILD_COMMIT=
+
 # `npm run build` checks the collision bake is current, typechecks BOTH
 # tsconfigs — via `npm run typecheck`, and that indirection is the whole point —
 # and then bundles. A type error fails the image build, and the bake check means
