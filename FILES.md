@@ -2397,9 +2397,11 @@ src/
                         #   (?nocull, ?nofrustum, ?cullcheck)
     CullCheck.ts        # ?cullcheck: a cull's verdicts and the uniform block
                         #   the GPU read, copied out about once a second and
-                        #   replayed on the CPU; the probe's forms of the plane
-                        #   test counted against it. For a device nobody here
-                        #   owns; reports through CullReport
+                        #   replayed on the CPU; the probe's read forms counted
+                        #   against it, its echoes and the record table
+                        #   compared, and a SEND line to read down a phone.
+                        #   For a device nobody here owns; reports through
+                        #   CullReport
     wgsl/
       preprocess.ts     # #include and the #ifdef family over a define set —
                         #   the subset a shared body may use; anything else is
@@ -2415,11 +2417,14 @@ src/
                         #   strides by WGSL's rules, from the same data; the
                         #   guard rule assemble.ts shares
       clusterCull.ts    # The cull's WGSL — cullClusters, prefix, scatter —
-                        #   and the record layouts ClusterCull uploads
+                        #   and the record layouts ClusterCull uploads;
+                        #   CULL_DECLARATIONS, the uniform as words and the
+                        #   records as whole vec4s, both culls' and the probe's
       instanceCull.ts   # The instance cull's WGSL — cullInstances, prefix,
                         #   place — and the record layouts InstanceCull
                         #   uploads
-      cullProbe.ts      # ?cullcheck's probes: each cull's plane test re-run
-                        #   in every form it has been written in, one bit a
-                        #   form, over the cull's own buffers
+      cullProbe.ts      # ?cullcheck's probes: each cull's test re-run with
+                        #   its inputs read each way they have been declared,
+                        #   one bit a form, over the cull's own buffers, and
+                        #   what the shader read echoed out
 ```

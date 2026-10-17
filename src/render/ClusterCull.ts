@@ -175,7 +175,7 @@ export class ClusterCull {
     // `?cullcheck` copies the uniform block and the verdicts out.
     const read = diagnostics.report ? GPUBufferUsage.COPY_SRC : 0;
     this.uniform = this.make("uniform", CULL_UNIFORM_BYTES, GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST | read);
-    const clusters = this.upload("clusters", storage, new Uint8Array(tables.clusters));
+    const clusters = this.upload("clusters", storage | read, new Uint8Array(tables.clusters));
     const blocks = this.upload("blocks", storage, blockWords(tables.blocks));
     const spheres = this.upload("spheres", storage, tables.spheres);
     const bandOf = this.make("bands", n * 4, storage | read);
@@ -207,7 +207,9 @@ export class ClusterCull {
             uniformBytes: CULL_UNIFORM_BYTES,
             bands: bandOf,
             probe: CLUSTER_PROBE_WGSL,
-            probeBind: [[0, this.uniform], [1, clusters], [2, blocks], [3, spheres]],
+            data: clusters,
+            dataBytes: new Uint8Array(tables.clusters),
+            probeBind: [[0, this.uniform], [12, this.uniform], [1, clusters], [11, clusters], [2, blocks], [10, blocks], [3, spheres]],
             forms: CLUSTER_FORMS,
             ...clusterReplay(tables),
           },
@@ -387,7 +389,9 @@ function layerReach(rig: Float32Array, rate: Float32Array): number {
  * `?cullcheck`'s CPU replay of `wgsl/clusterCull.ts`'s `visible` over
  * `tables`, and its one-line account of a cluster.
  */
-function clusterReplay(tables: CullTables): Pick<CullCheckSpec, "replay" | "describe"> {
+function clusterReplay(
+  tables: CullTables,
+): Pick<CullCheckSpec, "positionWords" | "expect" | "planes" | "replay" | "describe"> {
   const cf = new Float32Array(tables.clusters);
   const cu = new Uint32Array(tables.clusters);
   const sp = tables.spheres;
@@ -413,6 +417,19 @@ function clusterReplay(tables: CullTables): Pick<CullCheckSpec, "replay" | "desc
     return { d2: dx * dx + dy * dy + dz * dz, w2: w * w };
   };
   return {
+    positionWords: 6,
+    expect: (i, out) => {
+      const o = i * CLUSTER_WORDS;
+      for (let a = 0; a < 3; a++) {
+        out[a] = cu[o + a];
+        out[3 + a] = cu[o + 4 + a];
+      }
+    },
+    planes: (f, i, out) => {
+      const o = i * CLUSTER_WORDS;
+      for (let k = 0; k < 5; k++) out[k] = plane(f, o, k);
+      out[5] = grow(f, o);
+    },
     replay: (f, u, i, near) => {
       const o = i * CLUSTER_WORDS;
       const d2b = boxDist2(f, tables.blocks[cu[o + 9]]);

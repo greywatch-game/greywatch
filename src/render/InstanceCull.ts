@@ -114,7 +114,7 @@ export class InstanceCull {
       INSTANCE_CULL_UNIFORM_BYTES,
       GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST | read,
     );
-    const instances = this.upload("instances", storage, new Uint8Array(tables.instances));
+    const instances = this.upload("instances", storage | read, new Uint8Array(tables.instances));
     const bandOf = this.make("bands", n * 4, storage | read);
     const local = this.make("local", n * 16, storage);
     const sums = this.make("sums", (this.workgroups + 1) * 16, storage);
@@ -145,7 +145,9 @@ export class InstanceCull {
             uniformBytes: INSTANCE_CULL_UNIFORM_BYTES,
             bands: bandOf,
             probe: INSTANCE_PROBE_WGSL,
-            probeBind: [[0, this.uniform], [1, instances], [5, sets]],
+            data: instances,
+            dataBytes: new Uint8Array(tables.instances),
+            probeBind: [[0, this.uniform], [12, this.uniform], [1, instances], [11, instances], [5, sets], [9, sets]],
             forms: INSTANCE_FORMS,
             ...instanceReplay(tables),
           },
@@ -267,7 +269,9 @@ export class InstanceCull {
  * `?cullcheck`'s CPU replay of `wgsl/instanceCull.ts`'s `visible` over
  * `tables`, and its one-line account of an instance.
  */
-function instanceReplay(tables: InstanceTables): Pick<CullCheckSpec, "replay" | "describe"> {
+function instanceReplay(
+  tables: InstanceTables,
+): Pick<CullCheckSpec, "positionWords" | "expect" | "planes" | "replay" | "describe"> {
   const nf = new Float32Array(tables.instances);
   const nu = new Uint32Array(tables.instances);
   const grow = (f: Float32Array, o: number): number => {
@@ -283,6 +287,16 @@ function instanceReplay(tables: InstanceTables): Pick<CullCheckSpec, "replay" | 
     return dx * dx + dy * dy + dz * dz;
   };
   return {
+    positionWords: 4,
+    expect: (i, out) => {
+      const o = i * INSTANCE_WORDS;
+      for (let a = 0; a < 4; a++) out[a] = nu[o + a];
+    },
+    planes: (f, i, out) => {
+      const o = i * INSTANCE_WORDS;
+      for (let k = 0; k < 5; k++) out[k] = plane(f, o, k);
+      out[5] = grow(f, o);
+    },
     replay: (f, u, i, near) => {
       const o = i * INSTANCE_WORDS;
       const d2 = dist2(f, o);

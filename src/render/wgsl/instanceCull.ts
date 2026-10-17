@@ -3,7 +3,8 @@
  * entry points, run in order once a frame (`InstanceCull.dispatch`,
  * `BABYLON_EXIT.md` X3.4b) — the cluster cull's shape (`clusterCull.ts`)
  * over placements instead of clusters.
- * Owns: `INSTANCE_CULL_WGSL`, the byte layouts it reads
+ * Owns: `INSTANCE_CULL_WGSL`; `INSTANCE_DECLARATIONS`, the instance and set
+ * records as the cull and the probe declare them; the byte layouts it reads
  * (`INSTANCE_CULL_UNIFORM_BYTES`, `INSTANCE_WORDS`, `SET_WORDS`,
  * `DRAW_WORDS`, `TRANSFORM_WORDS`) and its workgroup sizes.
  * Invariants: a SET is one variant of one kind — the instances that wear it,
@@ -32,6 +33,8 @@
  * - `place` (a thread an instance): a survivor's transform copied to its slot.
  */
 
+import { CULL_DECLARATIONS } from "./clusterCull";
+
 /** Threads in a `cullInstances` and a `prefix` workgroup. */
 export const INSTANCE_SCAN_SIZE = 256;
 /** Threads in a `place` workgroup. */
@@ -47,6 +50,37 @@ export const TRANSFORM_WORDS = 12;
 /** The uniform block (`Cull` below), in bytes. */
 export const INSTANCE_CULL_UNIFORM_BYTES = 144;
 
+/**
+ * The instance and set records as whole `vec4`s — `CULL_DECLARATIONS`'s rule
+ * for the scatter's tables, shared with `?cullcheck`'s probe.
+ */
+export const INSTANCE_DECLARATIONS = /* wgsl */ `
+// The transform is the world matrix's three columns, each with the matching
+// row of its translation in w: the vertex stage rebuilds the matrix from them.
+struct Instance {
+  // The bounding sphere: centre, radius.
+  sphere: vec4f,
+  c0: vec4f,
+  c1: vec4f,
+  c2: vec4f,
+  // The set it wears in x (\`set\` is a reserved word in WGSL), padding.
+  refs: vec4u,
+}
+
+struct Set {
+  // start, end, the ramp weight as float bits, whether it is rigged.
+  head: vec4u,
+  base: vec4u,
+  bandStart: vec4u,
+  _pad: vec4u,
+}
+
+/** Whether a sphere's centre lies outside plane \`p\` by more than \`grow\` metres. */
+fn outsidePoint(p: vec4f, at: vec3f, grow: f32) -> bool {
+  return dot(p.xyz, at) + p.w < -grow;
+}
+`;
+
 export const INSTANCE_CULL_WGSL = /* wgsl */ `
 const SCAN: u32 = ${INSTANCE_SCAN_SIZE}u;
 const PLACE: u32 = ${PLACE_SIZE}u;
@@ -55,48 +89,8 @@ const NONE: u32 = 0xffffffffu;
 // instance that is in view.
 const SLACK: f32 = 0.05;
 
-struct Cull {
-  // Left, right, bottom, top, and the eye's own plane (w >= 0), normalised.
-  planes: array<vec4f, 5>,
-  // The eye, and the reach squared in w — \`clusterCull.ts\`'s block, byte for byte.
-  eyeReach: vec4f,
-  perRad: f32,
-  px2: f32,
-  gate: u32,
-  // How far a ramp weight of 1 can move a vertex.
-  rampReach: f32,
-  // Each near-first band's end squared, and in w how far a rigged vertex can move.
-  bandsRig: vec4f,
-  instances: u32,
-  sets: u32,
-  workgroups: u32,
-  draws: u32,
-}
-
-// The transform is the world matrix's three columns, each with the matching
-// row of its translation in w: the vertex stage rebuilds the matrix from them.
-struct Instance {
-  center: vec3f,
-  radius: f32,
-  c0: vec4f,
-  c1: vec4f,
-  c2: vec4f,
-  // The set it wears: \`set\` is a reserved word in WGSL.
-  owner: u32,
-  _a: u32,
-  _b: u32,
-  _c: u32,
-}
-
-struct Set {
-  start: u32,
-  end: u32,
-  ramp: f32,
-  rigged: u32,
-  base: vec4u,
-  bandStart: vec4u,
-  _pad: vec4u,
-}
+${CULL_DECLARATIONS}
+${INSTANCE_DECLARATIONS}
 
 struct Draw {
   owner: u32,
@@ -105,7 +99,6 @@ struct Draw {
   baseVertex: i32,
 }
 
-@group(0) @binding(0) var<uniform> cull: Cull;
 @group(0) @binding(1) var<storage, read> instances: array<Instance>;
 @group(0) @binding(2) var<storage, read_write> bandOf: array<u32>;
 @group(0) @binding(3) var<storage, read_write> local: array<vec4u>;
@@ -128,30 +121,23 @@ fn scanWorkgroup(li: u32) {
   }
 }
 
-/**
- * Whether a sphere's centre lies outside plane \`p\` by more than \`grow\`
- * metres. Every plane is named by a constant index, never picked by a loop
- * over the uniform array — \`clusterCull.ts\`'s \`outside\` says why.
- */
-fn outside(p: vec4f, at: vec3f, grow: f32) -> bool {
-  return dot(p.xyz, at) + p.w < -grow;
-}
-
 fn visible(inst: Instance) -> bool {
-  let d = inst.center - cull.eyeReach.xyz;
+  let at = inst.sphere.xyz;
+  let r = inst.sphere.w;
+  let d = at - eye();
   let d2 = dot(d, d);
   // The reach, measured to the sphere's near side.
-  let near = max(0.0, sqrt(d2) - inst.radius);
-  if (near * near > cull.eyeReach.w) { return false; }
-  if (cull.gate != 0u && d2 > 1.0) {
-    let w = 2.0 * inst.radius * cull.perRad;
-    if (w * w < cull.px2 * d2) { return false; }
+  let near = max(0.0, sqrt(d2) - r);
+  if (near * near > reach2()) { return false; }
+  if (gateOn() && d2 > 1.0) {
+    let w = 2.0 * r * perRad();
+    if (w * w < px2() * d2) { return false; }
   }
-  let s = sets[inst.owner];
-  let grow = inst.radius + s.ramp * cull.rampReach + select(0.0, cull.bandsRig.w, s.rigged != 0u) + SLACK;
-  let at = inst.center;
-  return !(outside(cull.planes[0], at, grow) || outside(cull.planes[1], at, grow) ||
-    outside(cull.planes[2], at, grow) || outside(cull.planes[3], at, grow) || outside(cull.planes[4], at, grow));
+  let s = sets[inst.refs.x].head;
+  let grow = r + bitcast<f32>(s.z) * rampReach() + select(0.0, rigReach(), s.w != 0u) + SLACK;
+  return !(outsidePoint(plane(cull[0]), at, grow) || outsidePoint(plane(cull[1]), at, grow) ||
+    outsidePoint(plane(cull[2]), at, grow) || outsidePoint(plane(cull[3]), at, grow) ||
+    outsidePoint(plane(cull[4]), at, grow));
 }
 
 @compute @workgroup_size(${INSTANCE_SCAN_SIZE})
@@ -162,13 +148,14 @@ fn cullInstances(
 ) {
   let i = gid.x;
   var v = vec4u(0u);
-  if (i < cull.instances) {
+  if (i < itemCount()) {
     let inst = instances[i];
     var band = NONE;
     if (visible(inst)) {
-      let d = inst.center - cull.eyeReach.xyz;
+      let d = inst.sphere.xyz - eye();
       let d2 = dot(d, d);
-      band = select(select(select(3u, 2u, d2 < cull.bandsRig.z), 1u, d2 < cull.bandsRig.y), 0u, d2 < cull.bandsRig.x);
+      let b = bands2();
+      band = select(select(select(3u, 2u, d2 < b.z), 1u, d2 < b.y), 0u, d2 < b.x);
       v[band] = 1u;
     }
     bandOf[i] = band;
@@ -176,20 +163,20 @@ fn cullInstances(
   scan[li] = v;
   workgroupBarrier();
   scanWorkgroup(li);
-  if (i < cull.instances) { local[i] = scan[li] - v; }
+  if (i < itemCount()) { local[i] = scan[li] - v; }
   if (li == SCAN - 1u) { sums[wid.x] = scan[li]; }
 }
 
 /** What the scan has written ahead of instance \`x\`; the grand total at \`x == instances\`. */
 fn ahead(x: u32) -> vec4u {
-  if (x >= cull.instances) { return sums[cull.workgroups]; }
+  if (x >= itemCount()) { return sums[cull[8].z]; }
   return sums[x / SCAN] + local[x];
 }
 
 @compute @workgroup_size(${INSTANCE_SCAN_SIZE})
 fn prefix(@builtin(local_invocation_index) li: u32) {
   // Each thread scans a run of the workgroups' totals in place.
-  let n = cull.workgroups;
+  let n = cull[8].z;
   let per = (n + SCAN - 1u) / SCAN;
   let k0 = min(n, li * per);
   let k1 = min(n, k0 + per);
@@ -206,17 +193,18 @@ fn prefix(@builtin(local_invocation_index) li: u32) {
   }
   if (li == SCAN - 1u) { sums[n] = scan[li]; }
   storageBarrier();
-  for (var s = li; s < cull.sets; s += SCAN) {
-    let base = ahead(sets[s].start);
-    let t = ahead(sets[s].end) - base;
+  for (var s = li; s < cull[8].y; s += SCAN) {
+    let base = ahead(sets[s].head.x);
+    let t = ahead(sets[s].head.y) - base;
     sets[s].base = base;
     sets[s].bandStart = vec4u(0u, t.x, t.x + t.y, t.x + t.y + t.z);
   }
   // A draw's count is its set's survivors, read off the scan rather than off
   // \`sets\`, which other threads of this loop are still writing.
-  for (var d = li; d < cull.draws; d += SCAN) {
+  for (var d = li; d < cull[8].w; d += SCAN) {
     let draw = draws[d];
-    let t = ahead(sets[draw.owner].end) - ahead(sets[draw.owner].start);
+    let head = sets[draw.owner].head;
+    let t = ahead(head.y) - ahead(head.x);
     let o = d * 5u;
     args[o] = draw.indexCount;
     args[o + 1u] = t.x + t.y + t.z + t.w;
@@ -232,12 +220,12 @@ fn place(
   @builtin(num_workgroups) nw: vec3u,
 ) {
   let i = gid.y * nw.x * PLACE + gid.x;
-  if (i >= cull.instances) { return; }
+  if (i >= itemCount()) { return; }
   let band = bandOf[i];
   if (band == NONE) { return; }
   let inst = instances[i];
-  let s = sets[inst.owner];
-  let slot = s.start + s.bandStart[band] + (ahead(i)[band] - s.base[band]);
+  let s = sets[inst.refs.x];
+  let slot = s.head.x + s.bandStart[band] + (ahead(i)[band] - s.base[band]);
   placed[slot * 3u] = inst.c0;
   placed[slot * 3u + 1u] = inst.c1;
   placed[slot * 3u + 2u] = inst.c2;

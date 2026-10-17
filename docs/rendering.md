@@ -3477,26 +3477,37 @@ The build hands the sets over once (`BuildOptions.onScatter`), and
 - **`?cullcheck` says WHICH decision, on the device** (`render/CullCheck.ts`).
   About once a second each cull copies out the uniform block the GPU read and
   every verdict it made, and the CPU replays the WGSL test over the same
-  tables against those exact bytes; a PROBE re-runs the plane test on the GPU
-  in every form it has been written in, one bit a form
-  (`wgsl/cullProbe.ts`). The panel (`ui/CullCheckPanel.ts`) prints, per
-  cull: what the GPU and the CPU kept, every disagreement either way (those
+  tables against those exact bytes; a PROBE re-runs the test on the GPU over
+  the cull's own buffers with its inputs READ each way they have been
+  declared — the uniform as a struct or as words, the records with a `vec3f`
+  beside a scalar or as whole `vec4`s — one bit a form and one `decide` for
+  all four, and ECHOES what it read (`wgsl/cullProbe.ts`); the record table
+  is copied back too. The panel (`ui/CullCheckPanel.ts`) leads each cull
+  with a `SEND` line short enough to read down a phone, then prints: what the
+  GPU and the CPU kept, every disagreement either way (those
   within float error of a threshold apart, as marginal), what the CPU dropped
   by test and by plane, how many verdicts each probe form got wrong, whether
   the uniform block read back as written, how far the five planes pass from
   the eye (0 for a perspective frustum), and the first cluster or instance
-  the GPU dropped against the CPU, with its numbers. Disagreement with the
-  uniform as written is the device's SHADER; agreement while the picture is
-  still wrong is the NUMBERS — the matrix or the boxes. A desktop reads zero
-  everywhere.
-- **The plane test is written UNROLLED, the far corner found by `abs`**
-  (`clusterCull.ts`'s `outside`), and the uniform block declares no `vec3f`
-  beside a scalar — the same bytes as four lanes. The first form shipped, a
-  vector `select` in a loop over the uniform array, is what a phone was
-  running when it dropped Kurenai's hall by heading and no desktop did
-  (2026-10-15); `?nofrustum` cured the hall there. Whether that FORM was
-  the cause is the probe's question, and until a device answers it, this
-  is the form a plane test here is written in.
+  the GPU dropped against the CPU, with its numbers — and which of three
+  things differs from the CPU: the BYTES the GPU holds (`data`), the numbers
+  the shader reads out of the right bytes (`reads`, the old way then the
+  new), or what it computes from the right numbers (`values`, each plane at
+  the far corner). `why` is the probe's own new/new verdict on what the cull
+  dropped against the CPU, so `why kept` is the cull shader disagreeing with
+  an identical read. A desktop reads zero everywhere.
+- **A cull reads its tables as WHOLE `vec4`s and its uniform block as
+  WORDS** (`clusterCull.ts`'s `CULL_DECLARATIONS`, `instanceCull.ts`'s
+  `INSTANCE_DECLARATIONS`): no `vec3f` beside a scalar and no scalar
+  member anywhere a test reads, a float taken out of a `u32` lane by
+  `bitcast` and never the other way (a small integer's bits are a denormal,
+  which a GPU may flush). The plane test is unrolled, the far corner found
+  by `abs`. On an Adreno 7xx (2026-10-15/16) Kurenai's structures dropped
+  by heading and `?nofrustum` cured them; the first `?cullcheck` reading
+  had every form of the plane test wrong on the same 900 clusters with the
+  uniform as written, so the FORM of the arithmetic was not the cause and
+  its INPUTS were. Whether the read was is the probe's next answer; until a
+  device gives it, this is how a cull here declares what it reads.
 
 ## Block visibility: how much of the map the frame walks
 
