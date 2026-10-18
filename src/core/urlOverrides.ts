@@ -26,7 +26,14 @@
  * be offered — `?nominimap` is a flag precisely because losing the map is not
  * a setting.
  */
-import { CULL_BUFFERS, type CullBuffer, type CullMode, type CullSplit } from "../render/ClusterCull";
+import {
+  CULL_BUFFERS,
+  CULL_COPIED,
+  type CullBuffer,
+  type CullCopied,
+  type CullMode,
+  type CullSplit,
+} from "../render/ClusterCull";
 import { isVolumetricRung, type VolumetricRung } from "../shaders/Volumetrics";
 import { parseSeed } from "../systems/RoundRandom";
 import {
@@ -57,12 +64,15 @@ export function urlFlag(name: string): boolean {
   }
 }
 
-/** `?cullflags`'s buffers: none when absent, all three when bare, else those it names. */
-function cullFlagsOf(value: string | null): ReadonlySet<CullBuffer> {
+/**
+ * A list-valued diagnostic (`?cullflags`, `?cullcopy`): none when absent,
+ * all of `all` when bare, else those it names, comma-joined.
+ */
+function namedOf<T extends string>(value: string | null, all: readonly T[]): ReadonlySet<T> {
   if (value === null) return new Set();
-  if (value.trim() === "") return new Set(CULL_BUFFERS);
+  if (value.trim() === "") return new Set(all);
   const named = value.split(",").map((s) => s.trim());
-  return new Set(CULL_BUFFERS.filter((b) => named.includes(b)));
+  return new Set(all.filter((b) => named.includes(b)));
 }
 
 export class UrlOverrides {
@@ -148,6 +158,12 @@ export class UrlOverrides {
    */
   readonly cullSplit: CullSplit;
   /**
+   * `?cullcopy` — the cluster cull's draws read a copy of what its compute
+   * wrote, the indices and the indirect arguments, or the one it names
+   * (`?cullcopy=indices`, `=args`; `render/ClusterCull.ts`'s `CullCopied`).
+   */
+  readonly cullCopy: ReadonlySet<CullCopied>;
+  /**
    * Which of the above the URL set, by the name a capture files it under —
    * `graphics.forced`, so a report off a device nobody here owns says which of
    * its numbers were somebody's experiment rather than the player's choice.
@@ -173,7 +189,8 @@ export class UrlOverrides {
     this.cullMode = urlFlag("nocull") ? "none" : urlFlag("nofrustum") ? "nofrustum" : "full";
     this.cullCheck = urlFlag("cullcheck");
     this.cullQuiet = urlFlag("cullquiet");
-    this.cullFlags = cullFlagsOf(urlParam("cullflags"));
+    this.cullFlags = namedOf(urlParam("cullflags"), CULL_BUFFERS);
+    this.cullCopy = namedOf(urlParam("cullcopy"), CULL_COPIED);
     const split = urlParam("cullsplit");
     this.cullSplit = split === null ? "none" : split === "submits" ? "submits" : "passes";
     const forced: string[] = [];
@@ -185,6 +202,7 @@ export class UrlOverrides {
     if (this.cullMode !== "full") forced.push(this.cullMode === "none" ? "nocull" : "nofrustum");
     if (this.cullCheck) forced.push(this.cullQuiet ? "cullcheck-quiet" : "cullcheck");
     if (this.cullSplit !== "none") forced.push(`cullsplit=${this.cullSplit}`);
+    if (this.cullCopy.size > 0) forced.push(`cullcopy=${[...this.cullCopy].join("+")}`);
     if (this.cullFlags.size > 0) forced.push(`cullflags=${[...this.cullFlags].join("+")}`);
     this.forced = forced;
   }

@@ -1726,6 +1726,7 @@ export class Game {
     this.handover = new BlockHandover(this.renderer, this.mats, this.culling, {
       mode: this.overrides.cullMode,
       split: this.overrides.cullSplit,
+      copied: this.overrides.cullCopy,
       readable: this.overrides.cullFlags,
       // After the HUD, which built `#hud`.
       report: !this.overrides.cullCheck

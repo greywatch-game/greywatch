@@ -3516,7 +3516,17 @@ The build hands the sets over once (`BuildOptions.onScatter`), and
   it half written reads last frame's same numbers; the one thing that can
   differ is what a dispatch reads of the one before it, mid-write (the
   scan's `sums`, `local`, `bandOf`, `groups`). The flicker is the
-  BUILDINGS' and not the trees' — only the cluster cull's.
+  BUILDINGS' and not the trees' — only the cluster cull's. **It did not
+  cure it** (3 of 4 loads flickered under `?cullsplit=submits`), and the
+  premise was short: a cluster carrying a sway weight (the colour buffer's
+  red) at the frustum's edge can sway in and out with the gust, and the
+  compacted list shifts behind it, so the output need not repeat standing
+  still.
+- **`?cullcopy` hands the blocks' draws a COPY of what the cull wrote**
+  (`ClusterCull.ts`'s `CullCopied`): the indices, the indirect arguments,
+  or both, `copyBufferToBuffer`'d after the compute into buffers that are
+  only INDEX or INDIRECT. The blocks' draw is the one that reads an index
+  buffer a compute shader wrote; the scatter's index buffers never change.
 - **A cull reads its tables as WHOLE `vec4`s and its uniform block as
   WORDS** (`clusterCull.ts`'s `CULL_DECLARATIONS`, `instanceCull.ts`'s
   `INSTANCE_DECLARATIONS`): no `vec3f` beside a scalar and no scalar

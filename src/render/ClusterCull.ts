@@ -76,6 +76,18 @@ export type CullMode = "full" | "nofrustum" | "none";
  */
 export type CullSplit = "none" | "passes" | "submits";
 
+/**
+ * What the cluster cull's draws read: the buffers its compute writes (what it
+ * always does), or a COPY of them made after the compute by
+ * `copyBufferToBuffer` — the indices (`?cullcopy=indices`), the indirect
+ * arguments (`?cullcopy=args`), or both (`?cullcopy`). A diagnostic for
+ * a device whose buildings flicker standing still: the one thing the blocks'
+ * draw does that the scatter's does not is read an INDEX buffer a compute
+ * shader wrote, and a copy reaches the draw by another path. Never a setting.
+ */
+export type CullCopied = "indices" | "args";
+export const CULL_COPIED: readonly CullCopied[] = ["indices", "args"];
+
 /** The three buffers of a cull `?cullcheck` copies out, as `?cullflags=` names them. */
 export type CullBuffer = "uniform" | "records" | "bands";
 export const CULL_BUFFERS: readonly CullBuffer[] = ["uniform", "records", "bands"];
@@ -91,12 +103,19 @@ export const CULL_BUFFERS: readonly CullBuffer[] = ["uniform", "records", "bands
 export interface CullDiagnostics {
   readonly mode: CullMode;
   readonly split: CullSplit;
+  readonly copied: ReadonlySet<CullCopied>;
   readonly readable: ReadonlySet<CullBuffer>;
   readonly report: CullReport | null;
 }
 
 /** Every test, and no check: what a cull runs with but for a diagnostic. */
-export const NO_DIAGNOSTICS: CullDiagnostics = { mode: "full", split: "none", readable: new Set(), report: null };
+export const NO_DIAGNOSTICS: CullDiagnostics = {
+  mode: "full",
+  split: "none",
+  copied: new Set(),
+  readable: new Set(),
+  report: null,
+};
 
 /** COPY_SRC for `which` when the check copies it out or `?cullflags` names it; else 0. */
 export function readUsage(d: CullDiagnostics, which: CullBuffer): number {
@@ -180,6 +199,8 @@ export class ClusterCull {
   private readonly mode: CullMode;
   /** How the dispatches are kept apart — `CullSplit`; "none" but for a diagnostic. */
   private readonly split: CullSplit;
+  /** `?cullcopy`: each buffer the compute writes and the copy the draws read, or none. */
+  private readonly copies: { from: GPUBuffer; to: GPUBuffer }[] = [];
   /** `?cullcheck`'s reader, or null. */
   private readonly check: CullCheck | null;
 
@@ -214,9 +235,22 @@ export class ClusterCull {
     const local = this.make("local", n * 16, storage);
     const sums = this.make("sums", (this.workgroups + 1) * 16, storage);
     const groups = this.upload("groups", storage, groupWords(tables.groups));
-    this.args = this.make("args", tables.groups.length * INDIRECT_BYTES, storage | GPUBufferUsage.INDIRECT);
+    // `?cullcopy`: the compute writes one buffer and the draws read a copy.
+    const copied = diagnostics.copied;
+    const copySrc = (which: CullCopied): number => (copied.has(which) ? GPUBufferUsage.COPY_SRC : 0);
+    const args = this.make(
+      "args",
+      tables.groups.length * INDIRECT_BYTES,
+      storage | GPUBufferUsage.INDIRECT | copySrc("args"),
+    );
+    this.args = copied.has("args") ? this.copyOf(args, GPUBufferUsage.INDIRECT) : args;
     const source = this.upload("source indices", storage, tables.indices);
-    this.indices = this.make("indices", tables.indices.byteLength, storage | GPUBufferUsage.INDEX);
+    const written = this.make(
+      "indices",
+      tables.indices.byteLength,
+      storage | GPUBufferUsage.INDEX | copySrc("indices"),
+    );
+    this.indices = copied.has("indices") ? this.copyOf(written, GPUBufferUsage.INDEX) : written;
 
     // The static half of the uniform block.
     const u = this.u32;
@@ -256,10 +290,10 @@ export class ClusterCull {
         entry: "cullClusters",
         bind: [[0, this.uniform], [1, clusters], [2, blocks], [3, spheres], [4, bandOf], [5, local], [6, sums]],
       },
-      { entry: "prefix", bind: [[0, this.uniform], [5, local], [6, sums], [7, groups], [8, this.args]] },
+      { entry: "prefix", bind: [[0, this.uniform], [5, local], [6, sums], [7, groups], [8, args]] },
       {
         entry: "scatter",
-        bind: [[0, this.uniform], [1, clusters], [4, bandOf], [5, local], [6, sums], [7, groups], [9, source], [10, this.indices]],
+        bind: [[0, this.uniform], [1, clusters], [4, bandOf], [5, local], [6, sums], [7, groups], [9, source], [10, written]],
       },
     ];
     this.ready = Promise.all(
@@ -333,6 +367,10 @@ export class ClusterCull {
       pass.dispatchWorkgroups(this.scatterX, this.scatterY);
       pass.end();
     }
+    const copies = this.copies;
+    for (let i = 0; i < copies.length; i++) {
+      encoder.copyBufferToBuffer(copies[i].from, 0, copies[i].to, 0, copies[i].to.size);
+    }
     this.check?.record(encoder, this.bytes);
   }
 
@@ -362,6 +400,13 @@ export class ClusterCull {
     this.passes.length = 0;
     this.built = false;
     this.disposed = true;
+  }
+
+  /** `?cullcopy`: a buffer the draws read in place of `from`, copied from it every frame. */
+  private copyOf(from: GPUBuffer, usage: number): GPUBuffer {
+    const to = this.make(`${from.label.replace("cluster cull: ", "")} copy`, from.size, usage | GPUBufferUsage.COPY_DST);
+    this.copies.push({ from, to });
+    return to;
   }
 
   private make(label: string, size: number, usage: number): GPUBuffer {
