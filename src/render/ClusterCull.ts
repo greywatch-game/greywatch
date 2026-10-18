@@ -65,22 +65,31 @@ export interface ReachGate {
  */
 export type CullMode = "full" | "nofrustum" | "none";
 
+/** The three buffers of a cull `?cullcheck` copies out, as `?cullflags=` names them. */
+export type CullBuffer = "uniform" | "records" | "bands";
+export const CULL_BUFFERS: readonly CullBuffer[] = ["uniform", "records", "bands"];
+
 /**
  * A cull's diagnostics, all off the URL (`core/urlOverrides.ts`): which
- * tests run (`CullMode`); whether the buffers `?cullcheck` copies out are
- * made COPY_SRC (`readable`) — the check makes them so, and `?cullflags`
- * does alone, so a device whose bug the check hides can be asked whether the
- * FLAGS hide it; and where `?cullcheck` reports its readings (`CullCheck`)
- * — null for no check.
+ * tests run (`CullMode`); which of the buffers `?cullcheck` copies out are
+ * made COPY_SRC (`readable`) — the check makes all three so, and
+ * `?cullflags` does alone, so a device whose bug the check hides can be
+ * asked which buffer's FLAG hides it; and where `?cullcheck` reports its
+ * readings (`CullCheck`) — null for no check.
  */
 export interface CullDiagnostics {
   readonly mode: CullMode;
-  readonly readable: boolean;
+  readonly readable: ReadonlySet<CullBuffer>;
   readonly report: CullReport | null;
 }
 
 /** Every test, and no check: what a cull runs with but for a diagnostic. */
-export const NO_DIAGNOSTICS: CullDiagnostics = { mode: "full", readable: false, report: null };
+export const NO_DIAGNOSTICS: CullDiagnostics = { mode: "full", readable: new Set(), report: null };
+
+/** COPY_SRC for `which` when the check copies it out or `?cullflags` names it; else 0. */
+export function readUsage(d: CullDiagnostics, which: CullBuffer): number {
+  return d.report || d.readable.has(which) ? GPUBufferUsage.COPY_SRC : 0;
+}
 
 /**
  * Opens the tests `mode` turns off in a cull's uniform block, after the frame
@@ -176,13 +185,17 @@ export class ClusterCull {
     this.scatterY = Math.max(1, Math.ceil(n / this.scatterX));
 
     const storage = GPUBufferUsage.STORAGE;
-    // `?cullcheck` copies the uniform block and the verdicts out.
-    const read = diagnostics.readable || diagnostics.report ? GPUBufferUsage.COPY_SRC : 0;
-    this.uniform = this.make("uniform", CULL_UNIFORM_BYTES, GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST | read);
-    const clusters = this.upload("clusters", storage | read, new Uint8Array(tables.clusters));
+    // `?cullcheck` copies the uniform block, the records and the verdicts out.
+    const read = (which: CullBuffer): number => readUsage(diagnostics, which);
+    this.uniform = this.make(
+      "uniform",
+      CULL_UNIFORM_BYTES,
+      GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST | read("uniform"),
+    );
+    const clusters = this.upload("clusters", storage | read("records"), new Uint8Array(tables.clusters));
     const blocks = this.upload("blocks", storage, blockWords(tables.blocks));
     const spheres = this.upload("spheres", storage, tables.spheres);
-    const bandOf = this.make("bands", n * 4, storage | read);
+    const bandOf = this.make("bands", n * 4, storage | read("bands"));
     const local = this.make("local", n * 16, storage);
     const sums = this.make("sums", (this.workgroups + 1) * 16, storage);
     const groups = this.upload("groups", storage, groupWords(tables.groups));

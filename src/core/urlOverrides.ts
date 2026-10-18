@@ -26,7 +26,7 @@
  * be offered — `?nominimap` is a flag precisely because losing the map is not
  * a setting.
  */
-import type { CullMode } from "../render/ClusterCull";
+import { CULL_BUFFERS, type CullBuffer, type CullMode } from "../render/ClusterCull";
 import { isVolumetricRung, type VolumetricRung } from "../shaders/Volumetrics";
 import { parseSeed } from "../systems/RoundRandom";
 import {
@@ -55,6 +55,14 @@ export function urlFlag(name: string): boolean {
   } catch {
     return false;
   }
+}
+
+/** `?cullflags`'s buffers: none when absent, all three when bare, else those it names. */
+function cullFlagsOf(value: string | null): ReadonlySet<CullBuffer> {
+  if (value === null) return new Set();
+  if (value.trim() === "") return new Set(CULL_BUFFERS);
+  const named = value.split(",").map((s) => s.trim());
+  return new Set(CULL_BUFFERS.filter((b) => named.includes(b)));
 }
 
 export class UrlOverrides {
@@ -126,12 +134,13 @@ export class UrlOverrides {
   /**
    * `?cullquiet` — `?cullcheck`'s readings go to the console and nothing is
    * laid on the glass; `?cullflags` — no check, but the buffers it copies
-   * out made copyable as it makes them. Each is one of the two things the
+   * out made copyable as it makes them: all three bare, or those named
+   * (`?cullflags=uniform,records,bands`). Each is one of the two things the
    * check changes on the frames it does not read (the panel over the canvas,
    * the buffers' usage), for a device whose bug `?cullcheck` makes go away.
    */
   readonly cullQuiet: boolean;
-  readonly cullFlags: boolean;
+  readonly cullFlags: ReadonlySet<CullBuffer>;
   /**
    * Which of the above the URL set, by the name a capture files it under —
    * `graphics.forced`, so a report off a device nobody here owns says which of
@@ -158,7 +167,7 @@ export class UrlOverrides {
     this.cullMode = urlFlag("nocull") ? "none" : urlFlag("nofrustum") ? "nofrustum" : "full";
     this.cullCheck = urlFlag("cullcheck");
     this.cullQuiet = urlFlag("cullquiet");
-    this.cullFlags = urlFlag("cullflags");
+    this.cullFlags = cullFlagsOf(urlParam("cullflags"));
     const forced: string[] = [];
     if (this.giForced) forced.push("gi");
     if (this.shadowsForced) forced.push("shadows");
@@ -167,7 +176,7 @@ export class UrlOverrides {
     if (!this.ourWorld) forced.push("babylonworld");
     if (this.cullMode !== "full") forced.push(this.cullMode === "none" ? "nocull" : "nofrustum");
     if (this.cullCheck) forced.push(this.cullQuiet ? "cullcheck-quiet" : "cullcheck");
-    if (this.cullFlags) forced.push("cullflags");
+    if (this.cullFlags.size > 0) forced.push(`cullflags=${[...this.cullFlags].join("+")}`);
     this.forced = forced;
   }
 

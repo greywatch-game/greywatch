@@ -3502,7 +3502,8 @@ The build hands the sets over once (`BuildOptions.onScatter`), and
   COPY_SRC on the buffers it copies (each cull's uniform block, its record
   table and its bands — `CullDiagnostics.readable`). `?cullcheck&cullquiet`
   keeps the check and sends its lines to the console with no panel;
-  `?cullflags` keeps the flags and runs no check. A laptop's Chrome
+  `?cullflags` keeps the flags and runs no check — all three bare, or the
+  ones it names (`?cullflags=uniform`, `records`, `bands`, comma-joined). A laptop's Chrome
   (2026-10-18) flickered Kurenai's structures standing still, and stopped
   under `?cullcheck` — that is what the pair is for.
 - **A cull reads its tables as WHOLE `vec4`s and its uniform block as
