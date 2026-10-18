@@ -1730,6 +1730,7 @@ export class Game {
       direct: this.overrides.directDraw,
       cpuArgs: this.overrides.cpuArgs,
       skipEmpty: this.overrides.skipEmpty,
+      scatterFirst: this.overrides.scatterFirst,
       copied: this.overrides.cullCopy,
       readable: this.overrides.cullFlags,
       // After the HUD, which built `#hud`.

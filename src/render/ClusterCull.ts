@@ -105,7 +105,8 @@ export const CULL_BUFFERS: readonly CullBuffer[] = ["uniform", "records", "bands
  * knows — every index of a group, so right only under `?nocull` — rather
  * than `drawIndexedIndirect` at the cull's arguments. `source` reads a
  * STATIC copy of the cut's indices, uploaded once as the scatter's are, and
- * `cull` reads the cull's own index buffer.
+ * `cull` reads the cull's own index buffer. With `?indirectcpu` the draw
+ * stays indirect and only the index buffer is chosen.
  */
 export type DirectDraw = "none" | "source" | "cull";
 
@@ -129,6 +130,8 @@ export interface CullDiagnostics {
   readonly cpuArgs: number;
   /** `?skipempty`: a group whose cut kept no index issues no draw at all. */
   readonly skipEmpty: boolean;
+  /** `?scatterfirst`: the scatter's instanced draws ahead of the blocks'. */
+  readonly scatterFirst: boolean;
   readonly copied: ReadonlySet<CullCopied>;
   readonly readable: ReadonlySet<CullBuffer>;
   readonly report: CullReport | null;
@@ -142,6 +145,7 @@ export const NO_DIAGNOSTICS: CullDiagnostics = {
   direct: "none",
   cpuArgs: 0,
   skipEmpty: false,
+  scatterFirst: false,
   copied: new Set(),
   readable: new Set(),
   report: null,

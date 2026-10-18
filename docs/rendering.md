@@ -3560,6 +3560,14 @@ The build hands the sets over once (`BuildOptions.onScatter`), and
   `?nocull`), so no compute writes them ever; `=N` splits each group's into
   N draws, so no one draw is large. `?skipempty` issues no draw for a group
   whose cut kept no index, and works with the cull on.
+  **All three flickered**, and split eight ways the pieces dropped out
+  INDEPENDENTLY: single indirect draws are lost, at arguments the CPU wrote
+  once, of a third of a million indices, beside no empty draw. The trees'
+  indirect draws are not seen to drop.
+- **`?directdraw&indirectcpu` and `?scatterfirst` take the rest of the
+  difference from the trees away.** Together (with `?nocull`) the blocks are
+  drawn indirect over a STATIC index buffer nothing else touches, as a tree
+  is; `?scatterfirst` draws the trees ahead of the blocks.
 - **A cull reads its tables as WHOLE `vec4`s and its uniform block as
   WORDS** (`clusterCull.ts`'s `CULL_DECLARATIONS`, `instanceCull.ts`'s
   `INSTANCE_DECLARATIONS`): no `vec3f` beside a scalar and no scalar

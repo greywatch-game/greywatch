@@ -790,68 +790,86 @@ export class WorldBlocks {
     let drawn = 0;
     const cull = this.cull;
     if (this.culling && cull) {
-      const host = this.renderer.host;
-      const groups = this.groups;
-      const direct = this.diagnostics.direct;
-      const skipEmpty = this.diagnostics.skipEmpty;
-      const cpuArgs = this.cpuArgs;
-      const split = this.diagnostics.cpuArgs;
-      pass.setIndexBuffer(this.directIndex ?? cull.indices, "uint32");
-      for (let g = 0; g < groups.length; g++) {
-        const group = groups[g];
-        const built = group.built;
-        if (!built || group.failed || (skipEmpty && group.indexCount === 0)) continue;
-        const material = group.material;
-        material.group.refresh(host, material.recipe.textures);
-        const frame = ctx.frameGroup(built.groups[0]);
-        const own = material.group.get(built.groups[1]);
-        const world = this.meshGroup.get(built.groups[2]);
-        if (!frame || !own || !world) continue;
-        pass.setPipeline(built.pipeline);
-        pass.setBindGroup(0, frame);
-        pass.setBindGroup(1, own);
-        pass.setBindGroup(2, world);
-        const vertex = group.vertex;
-        for (let k = 0; k < vertex.length; k++) pass.setVertexBuffer(k, vertex[k]);
-        if (direct !== "none") pass.drawIndexed(group.indexCount, 1, group.indexBase, 0, 0);
-        else if (cpuArgs) {
-          for (let c = 0; c < split; c++) pass.drawIndexedIndirect(cpuArgs, (group.cpuFirst + c) * INDIRECT_BYTES);
-        } else pass.drawIndexedIndirect(cull.args, g * INDIRECT_BYTES);
-        drawn++;
-      }
-      if (drawn < this.fewestBlockDraws) this.fewestBlockDraws = drawn;
-      if (drawn > this.mostBlockDraws) this.mostBlockDraws = drawn;
-      // The scatter, after the blocks: each group's parts against its own
-      // index buffer, each part's instances bound at its set's region.
-      const instances = this.instances;
-      if (instances) {
-        const draws = this.draws;
-        for (let g = 0; g < groups.length; g++) {
-          const group = groups[g];
-          const built = group.instancedBuilt;
-          if (!built || group.failed || !group.instancedIndex) continue;
-          const material = group.material;
-          material.group.refresh(host, material.recipe.textures);
-          const frame = ctx.frameGroup(built.groups[0]);
-          const own = material.group.get(built.groups[1]);
-          if (!frame || !own) continue;
-          pass.setPipeline(built.pipeline);
-          pass.setBindGroup(0, frame);
-          pass.setBindGroup(1, own);
-          const vertex = group.vertex;
-          for (let k = 0; k < vertex.length; k++) pass.setVertexBuffer(k, vertex[k]);
-          pass.setIndexBuffer(group.instancedIndex, "uint32");
-          const slot = vertex.length;
-          for (let d = group.drawStart; d < group.drawEnd; d++) {
-            pass.setVertexBuffer(slot, instances.placed, draws[d].offset);
-            pass.drawIndexedIndirect(instances.args, d * INDIRECT_BYTES);
-            drawn++;
-          }
-        }
-      }
+      // `?scatterfirst`: the scatter's draws ahead of the blocks'.
+      if (this.diagnostics.scatterFirst) drawn += this.drawScatter(pass, ctx);
+      const blocks = this.drawBlocks(pass, ctx, cull);
+      if (blocks < this.fewestBlockDraws) this.fewestBlockDraws = blocks;
+      if (blocks > this.mostBlockDraws) this.mostBlockDraws = blocks;
+      drawn += blocks;
+      if (!this.diagnostics.scatterFirst) drawn += this.drawScatter(pass, ctx);
     }
     this.drawn = drawn;
   };
+
+  /** The blocks: one draw a group, against the cull's indices at its own arguments. */
+  private drawBlocks(pass: GPURenderPassEncoder, ctx: FrameContext, cull: ClusterCull): number {
+    let drawn = 0;
+    const host = this.renderer.host;
+    const groups = this.groups;
+    const direct = this.diagnostics.direct;
+    const skipEmpty = this.diagnostics.skipEmpty;
+    const cpuArgs = this.cpuArgs;
+    const split = this.diagnostics.cpuArgs;
+    pass.setIndexBuffer(this.directIndex ?? cull.indices, "uint32");
+    for (let g = 0; g < groups.length; g++) {
+      const group = groups[g];
+      const built = group.built;
+      if (!built || group.failed || (skipEmpty && group.indexCount === 0)) continue;
+      const material = group.material;
+      material.group.refresh(host, material.recipe.textures);
+      const frame = ctx.frameGroup(built.groups[0]);
+      const own = material.group.get(built.groups[1]);
+      const world = this.meshGroup.get(built.groups[2]);
+      if (!frame || !own || !world) continue;
+      pass.setPipeline(built.pipeline);
+      pass.setBindGroup(0, frame);
+      pass.setBindGroup(1, own);
+      pass.setBindGroup(2, world);
+      const vertex = group.vertex;
+      for (let k = 0; k < vertex.length; k++) pass.setVertexBuffer(k, vertex[k]);
+      // `?indirectcpu` draws indirect over whichever indices are bound —
+      // `?directdraw`'s static copy, or the cull's.
+      if (cpuArgs) {
+        for (let c = 0; c < split; c++) pass.drawIndexedIndirect(cpuArgs, (group.cpuFirst + c) * INDIRECT_BYTES);
+      } else if (direct !== "none") pass.drawIndexed(group.indexCount, 1, group.indexBase, 0, 0);
+      else pass.drawIndexedIndirect(cull.args, g * INDIRECT_BYTES);
+      drawn++;
+    }
+    return drawn;
+  }
+
+  /** The scatter: each group's parts against its own index buffer, each part's instances bound at its set's region. */
+  private drawScatter(pass: GPURenderPassEncoder, ctx: FrameContext): number {
+    const instances = this.instances;
+    if (!instances) return 0;
+    let drawn = 0;
+    const host = this.renderer.host;
+    const groups = this.groups;
+    const draws = this.draws;
+    for (let g = 0; g < groups.length; g++) {
+      const group = groups[g];
+      const built = group.instancedBuilt;
+      if (!built || group.failed || !group.instancedIndex) continue;
+      const material = group.material;
+      material.group.refresh(host, material.recipe.textures);
+      const frame = ctx.frameGroup(built.groups[0]);
+      const own = material.group.get(built.groups[1]);
+      if (!frame || !own) continue;
+      pass.setPipeline(built.pipeline);
+      pass.setBindGroup(0, frame);
+      pass.setBindGroup(1, own);
+      const vertex = group.vertex;
+      for (let k = 0; k < vertex.length; k++) pass.setVertexBuffer(k, vertex[k]);
+      pass.setIndexBuffer(group.instancedIndex, "uint32");
+      const slot = vertex.length;
+      for (let d = group.drawStart; d < group.drawEnd; d++) {
+        pass.setVertexBuffer(slot, instances.placed, draws[d].offset);
+        pass.drawIndexedIndirect(instances.args, d * INDIRECT_BYTES);
+        drawn++;
+      }
+    }
+    return drawn;
+  }
 }
 
 /** A float array as the device holds it — rounded exactly as `new Float32Array(numbers)`. */
