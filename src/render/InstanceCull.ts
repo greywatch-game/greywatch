@@ -108,7 +108,7 @@ export class InstanceCull {
 
     const storage = GPUBufferUsage.STORAGE;
     // `?cullcheck` copies the uniform block and the verdicts out.
-    const read = diagnostics.report ? GPUBufferUsage.COPY_SRC : 0;
+    const read = diagnostics.readable || diagnostics.report ? GPUBufferUsage.COPY_SRC : 0;
     this.uniform = this.make(
       "uniform",
       INSTANCE_CULL_UNIFORM_BYTES,

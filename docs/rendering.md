@@ -3496,6 +3496,15 @@ The build hands the sets over once (`BuildOptions.onScatter`), and
   the far corner). `why` is the probe's own new/new verdict on what the cull
   dropped against the CPU, so `why kept` is the cull shader disagreeing with
   an identical read. A desktop reads zero everywhere.
+- **`?cullquiet` and `?cullflags` take the check apart, for a device whose
+  bug `?cullcheck` makes GO AWAY.** On the 59 frames in 60 it reads
+  nothing, the check changes two things: the panel laid over the canvas, and
+  COPY_SRC on the buffers it copies (each cull's uniform block, its record
+  table and its bands — `CullDiagnostics.readable`). `?cullcheck&cullquiet`
+  keeps the check and sends its lines to the console with no panel;
+  `?cullflags` keeps the flags and runs no check. A laptop's Chrome
+  (2026-10-18) flickered Kurenai's structures standing still, and stopped
+  under `?cullcheck` — that is what the pair is for.
 - **A cull reads its tables as WHOLE `vec4`s and its uniform block as
   WORDS** (`clusterCull.ts`'s `CULL_DECLARATIONS`, `instanceCull.ts`'s
   `INSTANCE_DECLARATIONS`): no `vec3f` beside a scalar and no scalar

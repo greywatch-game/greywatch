@@ -66,17 +66,21 @@ export interface ReachGate {
 export type CullMode = "full" | "nofrustum" | "none";
 
 /**
- * A cull's two diagnostics, both off the URL (`core/urlOverrides.ts`): which
- * tests run (`CullMode`), and where `?cullcheck` reports its readings
- * (`CullCheck`) — null for no check.
+ * A cull's diagnostics, all off the URL (`core/urlOverrides.ts`): which
+ * tests run (`CullMode`); whether the buffers `?cullcheck` copies out are
+ * made COPY_SRC (`readable`) — the check makes them so, and `?cullflags`
+ * does alone, so a device whose bug the check hides can be asked whether the
+ * FLAGS hide it; and where `?cullcheck` reports its readings (`CullCheck`)
+ * — null for no check.
  */
 export interface CullDiagnostics {
   readonly mode: CullMode;
+  readonly readable: boolean;
   readonly report: CullReport | null;
 }
 
 /** Every test, and no check: what a cull runs with but for a diagnostic. */
-export const NO_DIAGNOSTICS: CullDiagnostics = { mode: "full", report: null };
+export const NO_DIAGNOSTICS: CullDiagnostics = { mode: "full", readable: false, report: null };
 
 /**
  * Opens the tests `mode` turns off in a cull's uniform block, after the frame
@@ -173,7 +177,7 @@ export class ClusterCull {
 
     const storage = GPUBufferUsage.STORAGE;
     // `?cullcheck` copies the uniform block and the verdicts out.
-    const read = diagnostics.report ? GPUBufferUsage.COPY_SRC : 0;
+    const read = diagnostics.readable || diagnostics.report ? GPUBufferUsage.COPY_SRC : 0;
     this.uniform = this.make("uniform", CULL_UNIFORM_BYTES, GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST | read);
     const clusters = this.upload("clusters", storage | read, new Uint8Array(tables.clusters));
     const blocks = this.upload("blocks", storage, blockWords(tables.blocks));

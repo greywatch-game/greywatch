@@ -1725,8 +1725,13 @@ export class Game {
     this.culling = new WorldCulling(this.scene);
     this.handover = new BlockHandover(this.renderer, this.mats, this.culling, {
       mode: this.overrides.cullMode,
+      readable: this.overrides.cullFlags,
       // After the HUD, which built `#hud`.
-      report: this.overrides.cullCheck ? new CullCheckPanel().show : null,
+      report: !this.overrides.cullCheck
+        ? null
+        : this.overrides.cullQuiet
+          ? (label, lines) => console.info(`[cullcheck] ${label}\n${lines.join("\n")}`)
+          : new CullCheckPanel().show,
     });
     // A capture says what our renderer took and drew, which Babylon's own
     // draw counter cannot (`ProfileReport.blocks`).
