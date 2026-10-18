@@ -100,6 +100,15 @@ export const CULL_BUFFERS: readonly CullBuffer[] = ["uniform", "records", "bands
  * asked which buffer's FLAG hides it; and where `?cullcheck` reports its
  * readings (`CullCheck`) — null for no check.
  */
+/**
+ * `?directdraw`: the blocks drawn with `drawIndexed` at counts the CPU
+ * knows — every index of a group, so right only under `?nocull` — rather
+ * than `drawIndexedIndirect` at the cull's arguments. `source` reads a
+ * STATIC copy of the cut's indices, uploaded once as the scatter's are, and
+ * `cull` reads the cull's own index buffer.
+ */
+export type DirectDraw = "none" | "source" | "cull";
+
 export interface CullDiagnostics {
   readonly mode: CullMode;
   readonly split: CullSplit;
@@ -111,6 +120,7 @@ export interface CullDiagnostics {
    * where the first frame stood.
    */
   readonly once: boolean;
+  readonly direct: DirectDraw;
   readonly copied: ReadonlySet<CullCopied>;
   readonly readable: ReadonlySet<CullBuffer>;
   readonly report: CullReport | null;
@@ -121,6 +131,7 @@ export const NO_DIAGNOSTICS: CullDiagnostics = {
   mode: "full",
   split: "none",
   once: false,
+  direct: "none",
   copied: new Set(),
   readable: new Set(),
   report: null,

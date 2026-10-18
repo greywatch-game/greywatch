@@ -1727,6 +1727,7 @@ export class Game {
       mode: this.overrides.cullMode,
       split: this.overrides.cullSplit,
       once: this.overrides.cullOnce,
+      direct: this.overrides.directDraw,
       copied: this.overrides.cullCopy,
       readable: this.overrides.cullFlags,
       // After the HUD, which built `#hud`.

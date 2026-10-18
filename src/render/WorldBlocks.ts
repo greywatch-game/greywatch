@@ -145,6 +145,9 @@ interface Group {
   vertex: GPUBuffer[];
   /** The instanced parts' indices, each part's own; null without parts. */
   instancedIndex: GPUBuffer | null;
+  /** Its blocks' indices in the cut, `[indexBase, indexBase + indexCount)` — `?directdraw`. */
+  indexBase: number;
+  indexCount: number;
   /** Its draws in the instance cull's table: `[drawStart, drawEnd)`. */
   drawStart: number;
   drawEnd: number;
@@ -178,6 +181,8 @@ export class WorldBlocks {
    */
   private readonly programs = new Map<string, Program>();
   private cull: ClusterCull | null = null;
+  /** `?directdraw=source`: the cut's indices, static; null otherwise. */
+  private directIndex: GPUBuffer | null = null;
   private instances: InstanceCull | null = null;
   /** Each instanced draw, in the instance cull's draw order. */
   private draws: InstancedDraw[] = [];
@@ -334,6 +339,8 @@ export class WorldBlocks {
         indexAt += local.length;
       }
       ranges.push({ start, end: clusterCount, base });
+      group.indexBase = base;
+      group.indexCount = indexAt - base;
       // The instanced parts after the surfaces, each drawn at its own index
       // range from its own vertex base.
       group.drawStart = draws.length;
@@ -398,6 +405,16 @@ export class WorldBlocks {
       }
     }
     this.clusterCount = clusterCount;
+    if (this.diagnostics.direct === "source") {
+      this.directIndex = device.createBuffer({
+        label: "world blocks: direct indices",
+        size: Math.max(4, indexTotal * 4),
+        usage: GPUBufferUsage.INDEX,
+        mappedAtCreation: true,
+      });
+      new Uint32Array(this.directIndex.getMappedRange()).set(indices);
+      this.directIndex.unmap();
+    }
     const bands = this.options.nearBands;
     const bands2 = [bands[0] * bands[0], bands[1] * bands[1], bands[2] * bands[2]];
     this.cull = new ClusterCull(
@@ -458,6 +475,8 @@ export class WorldBlocks {
     this.unhook = null;
     this.cull?.dispose();
     this.cull = null;
+    this.directIndex?.destroy();
+    this.directIndex = null;
     this.instances?.dispose();
     this.instances = null;
     this.draws = [];
@@ -489,6 +508,8 @@ export class WorldBlocks {
         instanced: [],
         vertex: [],
         instancedIndex: null,
+        indexBase: 0,
+        indexCount: 0,
         drawStart: 0,
         drawEnd: 0,
         built: null,
@@ -740,7 +761,8 @@ export class WorldBlocks {
     if (this.culling && cull) {
       const host = this.renderer.host;
       const groups = this.groups;
-      pass.setIndexBuffer(cull.indices, "uint32");
+      const direct = this.diagnostics.direct;
+      pass.setIndexBuffer(this.directIndex ?? cull.indices, "uint32");
       for (let g = 0; g < groups.length; g++) {
         const group = groups[g];
         const built = group.built;
@@ -757,7 +779,8 @@ export class WorldBlocks {
         pass.setBindGroup(2, world);
         const vertex = group.vertex;
         for (let k = 0; k < vertex.length; k++) pass.setVertexBuffer(k, vertex[k]);
-        pass.drawIndexedIndirect(cull.args, g * INDIRECT_BYTES);
+        if (direct === "none") pass.drawIndexedIndirect(cull.args, g * INDIRECT_BYTES);
+        else pass.drawIndexed(group.indexCount, 1, group.indexBase, 0, 0);
         drawn++;
       }
       if (drawn < this.fewestBlockDraws) this.fewestBlockDraws = drawn;

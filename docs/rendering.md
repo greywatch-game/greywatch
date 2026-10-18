@@ -3540,6 +3540,15 @@ The build hands the sets over once (`BuildOptions.onScatter`), and
   frame and never again (`CullDiagnostics.once`), so the blocks' index
   buffer and arguments are written once and only read, as the scatter's
   are; with `?nocull` the frame is right from anywhere.
+  **`?drawcheck` read level on the laptop**: every second, frames, begins,
+  queued and ran were one number and the block draws twelve, so every frame
+  hands the GPU all of them and the GPU loses some.
+- **`?directdraw` takes the INDIRECT draw away** (`DirectDraw`): with
+  `?nocull` each group's blocks are drawn with `drawIndexed` at counts the
+  CPU knows — over a static copy of the cut's indices uploaded once
+  (`?directdraw`), or over the cull's own buffer (`?directdraw=cull`). Clean
+  under the first is the indirect path or the computed indices; clean only
+  under the second is the indirect path alone.
 - **A cull reads its tables as WHOLE `vec4`s and its uniform block as
   WORDS** (`clusterCull.ts`'s `CULL_DECLARATIONS`, `instanceCull.ts`'s
   `INSTANCE_DECLARATIONS`): no `vec3f` beside a scalar and no scalar

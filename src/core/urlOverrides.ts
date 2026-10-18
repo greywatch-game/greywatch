@@ -33,6 +33,7 @@ import {
   type CullCopied,
   type CullMode,
   type CullSplit,
+  type DirectDraw,
 } from "../render/ClusterCull";
 import { isVolumetricRung, type VolumetricRung } from "../shaders/Volumetrics";
 import { parseSeed } from "../systems/RoundRandom";
@@ -163,6 +164,12 @@ export class UrlOverrides {
    * (`?cullcopy=indices`, `=args`; `render/ClusterCull.ts`'s `CullCopied`).
    */
   readonly cullCopy: ReadonlySet<CullCopied>;
+  /**
+   * `?directdraw` (`=source`) — the blocks drawn with `drawIndexed` over a
+   * static copy of their indices; `?directdraw=cull` over the cull's own.
+   * Right only with `?nocull` (`render/ClusterCull.ts`'s `DirectDraw`).
+   */
+  readonly directDraw: DirectDraw;
   /** `?cullonce` — the cluster cull dispatched once, never again (`CullDiagnostics.once`). */
   readonly cullOnce: boolean;
   /**
@@ -202,6 +209,8 @@ export class UrlOverrides {
     this.cullFlags = namedOf(urlParam("cullflags"), CULL_BUFFERS);
     this.cullCopy = namedOf(urlParam("cullcopy"), CULL_COPIED);
     this.cullOnce = urlFlag("cullonce");
+    const direct = urlParam("directdraw");
+    this.directDraw = direct === null ? "none" : direct === "cull" ? "cull" : "source";
     this.drawCheck = urlFlag("drawcheck");
     const split = urlParam("cullsplit");
     this.cullSplit = split === null ? "none" : split === "submits" ? "submits" : "passes";
@@ -215,6 +224,7 @@ export class UrlOverrides {
     if (this.cullCheck) forced.push(this.cullQuiet ? "cullcheck-quiet" : "cullcheck");
     if (this.cullSplit !== "none") forced.push(`cullsplit=${this.cullSplit}`);
     if (this.cullOnce) forced.push("cullonce");
+    if (this.directDraw !== "none") forced.push(`directdraw=${this.directDraw}`);
     if (this.drawCheck) forced.push("drawcheck");
     if (this.cullCopy.size > 0) forced.push(`cullcopy=${[...this.cullCopy].join("+")}`);
     if (this.cullFlags.size > 0) forced.push(`cullflags=${[...this.cullFlags].join("+")}`);
