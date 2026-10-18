@@ -148,6 +148,8 @@ interface Group {
   /** Its blocks' indices in the cut, `[indexBase, indexBase + indexCount)` — `?directdraw`. */
   indexBase: number;
   indexCount: number;
+  /** `?indirectcpu`: its first draw in `cpuArgs`. */
+  cpuFirst: number;
   /** Its draws in the instance cull's table: `[drawStart, drawEnd)`. */
   drawStart: number;
   drawEnd: number;
@@ -183,6 +185,8 @@ export class WorldBlocks {
   private cull: ClusterCull | null = null;
   /** `?directdraw=source`: the cut's indices, static; null otherwise. */
   private directIndex: GPUBuffer | null = null;
+  /** `?indirectcpu`: every group's arguments, `diagnostics.cpuArgs` a group; null otherwise. */
+  private cpuArgs: GPUBuffer | null = null;
   private instances: InstanceCull | null = null;
   /** Each instanced draw, in the instance cull's draw order. */
   private draws: InstancedDraw[] = [];
@@ -415,6 +419,30 @@ export class WorldBlocks {
       new Uint32Array(this.directIndex.getMappedRange()).set(indices);
       this.directIndex.unmap();
     }
+    const split = this.diagnostics.cpuArgs;
+    if (split > 0) {
+      this.cpuArgs = device.createBuffer({
+        label: "world blocks: cpu arguments",
+        size: Math.max(1, this.groups.length * split) * INDIRECT_BYTES,
+        usage: GPUBufferUsage.INDIRECT,
+        mappedAtCreation: true,
+      });
+      const a = new Uint32Array(this.cpuArgs.getMappedRange());
+      this.groups.forEach((group, g) => {
+        group.cpuFirst = g * split;
+        const triangles = group.indexCount / 3;
+        let done = 0;
+        for (let c = 0; c < split; c++) {
+          const upto = Math.round((triangles * (c + 1)) / split);
+          const o = (g * split + c) * 5;
+          a[o] = (upto - done) * 3;
+          a[o + 1] = 1;
+          a[o + 2] = group.indexBase + done * 3;
+          done = upto;
+        }
+      });
+      this.cpuArgs.unmap();
+    }
     const bands = this.options.nearBands;
     const bands2 = [bands[0] * bands[0], bands[1] * bands[1], bands[2] * bands[2]];
     this.cull = new ClusterCull(
@@ -477,6 +505,8 @@ export class WorldBlocks {
     this.cull = null;
     this.directIndex?.destroy();
     this.directIndex = null;
+    this.cpuArgs?.destroy();
+    this.cpuArgs = null;
     this.instances?.dispose();
     this.instances = null;
     this.draws = [];
@@ -510,6 +540,7 @@ export class WorldBlocks {
         instancedIndex: null,
         indexBase: 0,
         indexCount: 0,
+        cpuFirst: 0,
         drawStart: 0,
         drawEnd: 0,
         built: null,
@@ -762,11 +793,14 @@ export class WorldBlocks {
       const host = this.renderer.host;
       const groups = this.groups;
       const direct = this.diagnostics.direct;
+      const skipEmpty = this.diagnostics.skipEmpty;
+      const cpuArgs = this.cpuArgs;
+      const split = this.diagnostics.cpuArgs;
       pass.setIndexBuffer(this.directIndex ?? cull.indices, "uint32");
       for (let g = 0; g < groups.length; g++) {
         const group = groups[g];
         const built = group.built;
-        if (!built || group.failed) continue;
+        if (!built || group.failed || (skipEmpty && group.indexCount === 0)) continue;
         const material = group.material;
         material.group.refresh(host, material.recipe.textures);
         const frame = ctx.frameGroup(built.groups[0]);
@@ -779,8 +813,10 @@ export class WorldBlocks {
         pass.setBindGroup(2, world);
         const vertex = group.vertex;
         for (let k = 0; k < vertex.length; k++) pass.setVertexBuffer(k, vertex[k]);
-        if (direct === "none") pass.drawIndexedIndirect(cull.args, g * INDIRECT_BYTES);
-        else pass.drawIndexed(group.indexCount, 1, group.indexBase, 0, 0);
+        if (direct !== "none") pass.drawIndexed(group.indexCount, 1, group.indexBase, 0, 0);
+        else if (cpuArgs) {
+          for (let c = 0; c < split; c++) pass.drawIndexedIndirect(cpuArgs, (group.cpuFirst + c) * INDIRECT_BYTES);
+        } else pass.drawIndexedIndirect(cull.args, g * INDIRECT_BYTES);
         drawn++;
       }
       if (drawn < this.fewestBlockDraws) this.fewestBlockDraws = drawn;

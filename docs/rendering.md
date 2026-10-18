@@ -3549,6 +3549,17 @@ The build hands the sets over once (`BuildOptions.onScatter`), and
   (`?directdraw`), or over the cull's own buffer (`?directdraw=cull`). Clean
   under the first is the indirect path or the computed indices; clean only
   under the second is the indirect path alone.
+  **On the laptop both were clean and `?nocull&cullonce` still flickered**,
+  a building leaving what is behind it: arguments written once and right,
+  and the draw is still dropped. So it is the INDIRECT draw itself. On
+  Kurenai that is almost one draw — the palette group's 2,822,847 indices
+  (the largest tree draw is ~118k) — beside ten EMPTY groups, whose
+  surfaces were all scatter and cut out, two pointing at the buffer's end.
+- **`?indirectcpu` (`=N`) and `?skipempty` take that draw apart.**
+  `?indirectcpu` keeps it indirect at arguments the CPU wrote once (with
+  `?nocull`), so no compute writes them ever; `=N` splits each group's into
+  N draws, so no one draw is large. `?skipempty` issues no draw for a group
+  whose cut kept no index, and works with the cull on.
 - **A cull reads its tables as WHOLE `vec4`s and its uniform block as
   WORDS** (`clusterCull.ts`'s `CULL_DECLARATIONS`, `instanceCull.ts`'s
   `INSTANCE_DECLARATIONS`): no `vec3f` beside a scalar and no scalar

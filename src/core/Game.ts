@@ -1728,6 +1728,8 @@ export class Game {
       split: this.overrides.cullSplit,
       once: this.overrides.cullOnce,
       direct: this.overrides.directDraw,
+      cpuArgs: this.overrides.cpuArgs,
+      skipEmpty: this.overrides.skipEmpty,
       copied: this.overrides.cullCopy,
       readable: this.overrides.cullFlags,
       // After the HUD, which built `#hud`.

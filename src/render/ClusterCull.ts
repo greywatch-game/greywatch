@@ -121,6 +121,14 @@ export interface CullDiagnostics {
    */
   readonly once: boolean;
   readonly direct: DirectDraw;
+  /**
+   * `?indirectcpu` (`=N`): the blocks still drawn INDIRECT, but at arguments
+   * the CPU wrote once — every index of a group, so right only under
+   * `?nocull` — split into N draws a group (1 bare).
+   */
+  readonly cpuArgs: number;
+  /** `?skipempty`: a group whose cut kept no index issues no draw at all. */
+  readonly skipEmpty: boolean;
   readonly copied: ReadonlySet<CullCopied>;
   readonly readable: ReadonlySet<CullBuffer>;
   readonly report: CullReport | null;
@@ -132,6 +140,8 @@ export const NO_DIAGNOSTICS: CullDiagnostics = {
   split: "none",
   once: false,
   direct: "none",
+  cpuArgs: 0,
+  skipEmpty: false,
   copied: new Set(),
   readable: new Set(),
   report: null,

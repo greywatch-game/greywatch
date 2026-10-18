@@ -78,7 +78,7 @@ export class BlockHandover {
     renderer: Renderer,
     private readonly mats: CelMaterialFactory,
     private readonly culling: WorldCulling,
-    /** Our culls' diagnostics — `?nocull`, `?nofrustum`, `?cullcheck`, `?cullflags`, `?cullsplit`, `?cullcopy`, `?cullonce`, `?directdraw` (`core/urlOverrides.ts`). */
+    /** Our culls' diagnostics — `?nocull`, `?nofrustum`, `?cullcheck`, `?cullflags`, `?cullsplit`, `?cullcopy`, `?cullonce`, `?directdraw`, `?indirectcpu`, `?skipempty` (`core/urlOverrides.ts`). */
     diagnostics: CullDiagnostics = NO_DIAGNOSTICS,
   ) {
     this.blocks = new WorldBlocks(
