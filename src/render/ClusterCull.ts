@@ -103,6 +103,14 @@ export const CULL_BUFFERS: readonly CullBuffer[] = ["uniform", "records", "bands
 export interface CullDiagnostics {
   readonly mode: CullMode;
   readonly split: CullSplit;
+  /**
+   * `?cullonce`: the cull is dispatched on the first frame its pipelines
+   * are built and never again, so its index buffer and indirect arguments
+   * are written ONCE and then only read, as the scatter's index buffers are.
+   * With `?nocull` the frame is right from anywhere; without it, right only
+   * where the first frame stood.
+   */
+  readonly once: boolean;
   readonly copied: ReadonlySet<CullCopied>;
   readonly readable: ReadonlySet<CullBuffer>;
   readonly report: CullReport | null;
@@ -112,6 +120,7 @@ export interface CullDiagnostics {
 export const NO_DIAGNOSTICS: CullDiagnostics = {
   mode: "full",
   split: "none",
+  once: false,
   copied: new Set(),
   readable: new Set(),
   report: null,
@@ -199,6 +208,9 @@ export class ClusterCull {
   private readonly mode: CullMode;
   /** How the dispatches are kept apart — `CullSplit`; "none" but for a diagnostic. */
   private readonly split: CullSplit;
+  /** `?cullonce`, and whether the one dispatch has been recorded. */
+  private readonly once: boolean;
+  private dispatched = false;
   /** `?cullcopy`: each buffer the compute writes and the copy the draws read, or none. */
   private readonly copies: { from: GPUBuffer; to: GPUBuffer }[] = [];
   /** `?cullcheck`'s reader, or null. */
@@ -213,6 +225,7 @@ export class ClusterCull {
   ) {
     this.mode = diagnostics.mode;
     this.split = diagnostics.split;
+    this.once = diagnostics.once;
     const n = tables.clusterCount;
     this.clusterCount = n;
     this.workgroups = Math.max(1, Math.ceil(n / SCAN_SIZE));
@@ -334,6 +347,8 @@ export class ClusterCull {
    */
   dispatch(frame: FrameUniforms, encoder: GPUCommandEncoder): void {
     if (!this.built || this.clusterCount === 0) return;
+    if (this.once && this.dispatched) return;
+    this.dispatched = true;
     const f = this.f32;
     const u = this.u32;
     writePlanes(frame.viewProjection, f);

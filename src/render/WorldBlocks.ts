@@ -201,6 +201,12 @@ export class WorldBlocks {
 
   /** Draws issued last frame — what a census of the main pass adds to Babylon's. */
   drawn = 0;
+  /**
+   * The fewest and most BLOCK draws (one a group, the scatter's apart) a run
+   * has issued since the reader last reset them — `?drawcheck`.
+   */
+  fewestBlockDraws = Number.POSITIVE_INFINITY;
+  mostBlockDraws = 0;
 
   constructor(
     private readonly renderer: Renderer,
@@ -754,6 +760,8 @@ export class WorldBlocks {
         pass.drawIndexedIndirect(cull.args, g * INDIRECT_BYTES);
         drawn++;
       }
+      if (drawn < this.fewestBlockDraws) this.fewestBlockDraws = drawn;
+      if (drawn > this.mostBlockDraws) this.mostBlockDraws = drawn;
       // The scatter, after the blocks: each group's parts against its own
       // index buffer, each part's instances bound at its set's region.
       const instances = this.instances;

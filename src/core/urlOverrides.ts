@@ -163,6 +163,16 @@ export class UrlOverrides {
    * (`?cullcopy=indices`, `=args`; `render/ClusterCull.ts`'s `CullCopied`).
    */
   readonly cullCopy: ReadonlySet<CullCopied>;
+  /** `?cullonce` — the cluster cull dispatched once, never again (`CullDiagnostics.once`). */
+  readonly cullOnce: boolean;
+  /**
+   * `?drawcheck` — once a second, to the console: how many frames the scene
+   * rendered, and how many times our main pass began, queued its opaque
+   * draws and ran them, with the fewest and most block draws a run issued
+   * (`Renderer.tally`). Whether a frame went without our draws is a CPU
+   * question, and this answers it without touching the GPU.
+   */
+  readonly drawCheck: boolean;
   /**
    * Which of the above the URL set, by the name a capture files it under —
    * `graphics.forced`, so a report off a device nobody here owns says which of
@@ -191,6 +201,8 @@ export class UrlOverrides {
     this.cullQuiet = urlFlag("cullquiet");
     this.cullFlags = namedOf(urlParam("cullflags"), CULL_BUFFERS);
     this.cullCopy = namedOf(urlParam("cullcopy"), CULL_COPIED);
+    this.cullOnce = urlFlag("cullonce");
+    this.drawCheck = urlFlag("drawcheck");
     const split = urlParam("cullsplit");
     this.cullSplit = split === null ? "none" : split === "submits" ? "submits" : "passes";
     const forced: string[] = [];
@@ -202,6 +214,8 @@ export class UrlOverrides {
     if (this.cullMode !== "full") forced.push(this.cullMode === "none" ? "nocull" : "nofrustum");
     if (this.cullCheck) forced.push(this.cullQuiet ? "cullcheck-quiet" : "cullcheck");
     if (this.cullSplit !== "none") forced.push(`cullsplit=${this.cullSplit}`);
+    if (this.cullOnce) forced.push("cullonce");
+    if (this.drawCheck) forced.push("drawcheck");
     if (this.cullCopy.size > 0) forced.push(`cullcopy=${[...this.cullCopy].join("+")}`);
     if (this.cullFlags.size > 0) forced.push(`cullflags=${[...this.cullFlags].join("+")}`);
     this.forced = forced;

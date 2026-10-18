@@ -3527,6 +3527,19 @@ The build hands the sets over once (`BuildOptions.onScatter`), and
   or both, `copyBufferToBuffer`'d after the compute into buffers that are
   only INDEX or INDIRECT. The blocks' draw is the one that reads an index
   buffer a compute shader wrote; the scatter's index buffers never change.
+  **It did not cure it, and nor did `?nocull`** — which keeps everything,
+  so the cull's output is the same every frame — while `?babylonworld` did
+  not flicker. So the Intel laptop's flicker is our DRAW of the blocks, not
+  a cull's decision.
+- **`?drawcheck` and `?cullonce` ask the next two questions.**
+  `?drawcheck` prints, once a second to the console, the frames the scene
+  rendered against how often our main pass began, queued its opaque draws
+  and ran them (`Renderer.tally`), with the fewest and most block draws a
+  run issued — whether a frame went without our draws, which is a CPU
+  question. `?cullonce` dispatches the cluster cull on its first built
+  frame and never again (`CullDiagnostics.once`), so the blocks' index
+  buffer and arguments are written once and only read, as the scatter's
+  are; with `?nocull` the frame is right from anywhere.
 - **A cull reads its tables as WHOLE `vec4`s and its uniform block as
   WORDS** (`clusterCull.ts`'s `CULL_DECLARATIONS`, `instanceCull.ts`'s
   `INSTANCE_DECLARATIONS`): no `vec3f` beside a scalar and no scalar
