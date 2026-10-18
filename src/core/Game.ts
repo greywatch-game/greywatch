@@ -1725,6 +1725,7 @@ export class Game {
     this.culling = new WorldCulling(this.scene);
     this.handover = new BlockHandover(this.renderer, this.mats, this.culling, {
       mode: this.overrides.cullMode,
+      split: this.overrides.cullSplit,
       readable: this.overrides.cullFlags,
       // After the HUD, which built `#hud`.
       report: !this.overrides.cullCheck

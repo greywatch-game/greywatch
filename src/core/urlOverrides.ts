@@ -26,7 +26,7 @@
  * be offered — `?nominimap` is a flag precisely because losing the map is not
  * a setting.
  */
-import { CULL_BUFFERS, type CullBuffer, type CullMode } from "../render/ClusterCull";
+import { CULL_BUFFERS, type CullBuffer, type CullMode, type CullSplit } from "../render/ClusterCull";
 import { isVolumetricRung, type VolumetricRung } from "../shaders/Volumetrics";
 import { parseSeed } from "../systems/RoundRandom";
 import {
@@ -142,6 +142,12 @@ export class UrlOverrides {
   readonly cullQuiet: boolean;
   readonly cullFlags: ReadonlySet<CullBuffer>;
   /**
+   * `?cullsplit` — the cluster cull's three dispatches each in a compute pass
+   * of its own; `?cullsplit=submits` — each in a submit of its own, ahead of
+   * the frame (`render/ClusterCull.ts`'s `CullSplit`).
+   */
+  readonly cullSplit: CullSplit;
+  /**
    * Which of the above the URL set, by the name a capture files it under —
    * `graphics.forced`, so a report off a device nobody here owns says which of
    * its numbers were somebody's experiment rather than the player's choice.
@@ -168,6 +174,8 @@ export class UrlOverrides {
     this.cullCheck = urlFlag("cullcheck");
     this.cullQuiet = urlFlag("cullquiet");
     this.cullFlags = cullFlagsOf(urlParam("cullflags"));
+    const split = urlParam("cullsplit");
+    this.cullSplit = split === null ? "none" : split === "submits" ? "submits" : "passes";
     const forced: string[] = [];
     if (this.giForced) forced.push("gi");
     if (this.shadowsForced) forced.push("shadows");
@@ -176,6 +184,7 @@ export class UrlOverrides {
     if (!this.ourWorld) forced.push("babylonworld");
     if (this.cullMode !== "full") forced.push(this.cullMode === "none" ? "nocull" : "nofrustum");
     if (this.cullCheck) forced.push(this.cullQuiet ? "cullcheck-quiet" : "cullcheck");
+    if (this.cullSplit !== "none") forced.push(`cullsplit=${this.cullSplit}`);
     if (this.cullFlags.size > 0) forced.push(`cullflags=${[...this.cullFlags].join("+")}`);
     this.forced = forced;
   }

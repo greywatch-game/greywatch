@@ -3505,7 +3505,18 @@ The build hands the sets over once (`BuildOptions.onScatter`), and
   `?cullflags` keeps the flags and runs no check — all three bare, or the
   ones it names (`?cullflags=uniform`, `records`, `bands`, comma-joined). A laptop's Chrome
   (2026-10-18) flickered Kurenai's structures standing still, and stopped
-  under `?cullcheck` — that is what the pair is for.
+  under `?cullcheck` — that is what the pair is for. **It was luck**: the
+  same laptop (Intel Xe-LPG) flickers on some loads of the plain build and
+  not others, in bursts, and `?cullflags=uniform` flickered where the plain
+  build had not — so one load proves nothing either way.
+- **`?cullsplit` keeps the cluster cull's three dispatches further apart**:
+  each in a compute pass of its own, or (`?cullsplit=submits`) each in a
+  submit of its own (`ClusterCull.ts`'s `CullSplit`). Standing still, a
+  frame's inputs repeat, so a cull's OUTPUT repeats too and a draw reading
+  it half written reads last frame's same numbers; the one thing that can
+  differ is what a dispatch reads of the one before it, mid-write (the
+  scan's `sums`, `local`, `bandOf`, `groups`). The flicker is the
+  BUILDINGS' and not the trees' — only the cluster cull's.
 - **A cull reads its tables as WHOLE `vec4`s and its uniform block as
   WORDS** (`clusterCull.ts`'s `CULL_DECLARATIONS`, `instanceCull.ts`'s
   `INSTANCE_DECLARATIONS`): no `vec3f` beside a scalar and no scalar
