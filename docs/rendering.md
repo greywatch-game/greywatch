@@ -3197,11 +3197,24 @@ pass is not restarted between them, and in this order every frame:
   and all.
 
 Every opaque draw of Babylon's in the group lands BEFORE an opaque draw of
-ours, which changes only which of two surfaces at EXACTLY the same depth
-wins under `less-equal` — in the PICTURE. In the GPU's time it changes more:
-`Game`'s front-to-back sort no longer reaches the blocks or the landform, so
-the loose props, then the landform, are shaded before the buildings that hide
-them (`FINDINGS.md` 61, open). Drawing ours at the group's START instead was
+ours. **Between two draws that both WRITE depth** that changes only which of
+two surfaces at EXACTLY the same depth wins under `less-equal` — in the
+PICTURE. **A draw that writes NO depth is another matter**: nothing stops a
+later surface painting over it, so whatever Babylon draws OPAQUE without
+writing depth is drawn over by every surface of ours behind it. Since X3.5
+that includes the FLOOR. **So a mesh that lies on the floor and
+writes no depth must be BLENDED or on group 0's ALPHA-TEST list (the turf, the
+clouds), never on the opaque list**, or the floor paints over it every frame —
+a rule anyone adding a decal, a mark or a sheet on the ground can break
+without touching the renderer (`CLAUDE.md` states it). The sky dome is the one
+deliberate case: it writes no depth, draws first, and is MEANT to be painted
+over by everything, ours included. The clouds, on the alpha-tested list, now
+land after our landform and BEFORE our blocks (since X3.3 the blocks have
+drawn after them), which their 7 km depth makes harmless: a block nearer than
+that wins the depth test whichever draws first. In the GPU's time it changes
+more: `Game`'s front-to-back sort no longer reaches the blocks or the
+landform, so the loose props, then the landform, are shaded before the
+buildings that hide them (`FINDINGS.md` 61, open). Drawing ours at the group's START instead was
 weighed and refused: the sky dome writes no depth and draws first, at a
 600 m radius, so a block past 600 m drawn before it would be painted over.
 
@@ -3309,7 +3322,12 @@ bind group a frame rather than one per material.
 - **A handle not published yet is null, and the frame draws nothing that
   binds it**, as a Babylon material with that sampler unbound draws nothing.
   A texture not READY binds Babylon's empty texture of its kind, as
-  Babylon's own bind does.
+  Babylon's own bind does. **A material's own texture not ready is the one
+  place the two sides differ**: Babylon's material is not ready and Babylon
+  SKIPS the mesh, while ours draws it over the engine's empty texture. Since
+  X3.5 that reaches the floor's and the roads' ground textures, and it is a
+  stated ASSUMPTION rather than a fix — they are procedural, made on a canvas
+  at build time, and ready at once.
 
 **A cel material reaches our side as its RECIPE, never as itself**
 (`render/celMaterial.ts`, `CelMaterialFactory.celRecipe`): its variant, its
@@ -3441,10 +3459,11 @@ probes and the lamps' atlas — until X3.6 moves those passes.
   `WorldCulling.setTaken` keeps it out of the candidate list — a block filed
   in its cell, or one of the map's own visuals that carries no block, the
   landform; never a candidate unless a failed compile hands it back — and
-  every other pass
-  draws from a list of its own. The glow's mask, which reads
-  the main pass's active meshes, keeps only what glows, which a taken mesh
-  never does.
+  every other pass draws from a list of its own. **The handover says which
+  each is** (`setTaken`'s two lists, `reachBoxOf`'s `landform`), so a block
+  whose mesh was filed in no cell is refused, never taken as landform. The
+  glow's mask, which reads the main pass's active meshes, keeps only what
+  glows, which a taken mesh never does.
 - **A taken mesh is never switched off, hidden or faded after its build.**
   Nothing in the tree does it to a block, and the cull could not follow: a
   faded mesh goes to Babylon's blended list and ours would still draw it

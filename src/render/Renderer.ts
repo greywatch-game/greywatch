@@ -187,9 +187,9 @@ export class Renderer {
    * Calls `refused` on every frame whose main pass is not `FRAME_TARGETS` and
    * something was to draw, until the returned function is called — at each
    * point with something to draw, so up to three times a frame, which a
-   * listener must take as one refusal. It runs INSIDE the render, after this frame's prepares were recorded, so it may
-   * take draws and prepares off this renderer but must free nothing this
-   * frame's commands hold.
+   * listener must take as one refusal. It runs INSIDE the render, after this
+   * frame's prepares were recorded, so it may take draws and prepares off
+   * this renderer but must free nothing this frame's commands hold.
    */
   onRefused(refused: () => void): () => void {
     this.refusals.push(refused);

@@ -824,7 +824,8 @@ did.
   - `scatter`: each survivor's indices copied into its group's region.
   The reach and the size gate's scale are `WorldCulling`'s own, stated as
   numbers (`WorldCulling.reachGate`), and the reach is measured to the box
-  of the cell the mesh is filed in (`blockBoxOf`). So the cull reads no node.
+  of the cell the mesh is filed in (`blockBoxOf`; `reachBoxOf` since X3.5).
+  So the cull reads no node.
 - **Near-first, in one order.** The survivors are placed by a SCAN, never
   an atomic append: band first (24, 64 and 160 m, nearest first), then
   cluster index. The same eye draws the same triangles in the same order,

@@ -572,13 +572,13 @@ owes one on every vertex.
 tree owes it.** Everything opaque writes **0** (`CelShader`'s `opaqueAlpha`, a
 literal 0 in the grass and the water, the clear in `applyEnvironment`), every
 alpha-blended draw accumulates into it (`ALPHA_COMBINE`), and `CelInk` scales
-its edge by `1 - a`. **A REFLECTION PROBE inverts it** (`opaqueAlpha` is 1 for
-a bake), so **a shader that hardcodes either value breaks one of the two passes
+its edge by `1 - a`. **A REFLECTION PROBE inverts it** (`opaqueAlpha` is 1 for a
+bake), so **a shader that hardcodes either value breaks one of the two passes
 silently**. **The EMISSIVE palette is the one deliberate exception**
 (`EmissiveWorld.ts` hardcodes **1** in both passes) — do not "fix" it onto
 `opaqueAlpha`. **The sky's CLOUDS write the depth of a point 7 km out**, so
-every surface a map draws must be nearer than that, and they draw on group 0's
-ALPHA-TEST list, after every opaque surface and before everything blended.
+every surface must be nearer; they draw on group 0's ALPHA-TEST list, after our
+floor, before our blocks. **Nothing on the floor writing NO depth is OPAQUE**.
 
 **The world is OPAQUE with exactly one exception, and it is glazing.** Glass you
 can see THROUGH is `getGlass` over a cube `ReflectionSystem` bakes **one per
@@ -590,24 +590,21 @@ of either kind is a shadow caster**, and see-through glazing gets no ink.
 **replaces `scene.getActiveMeshCandidates` and writes nothing onto any mesh**:
 it never disables, never hides, never unpickles. **A collider is never a
 candidate, and nor is a BLOCK or the LANDFORM our renderer TAKES**
-(`BlockHandover`): the map's blocks, and its floor, rim and road merge
-(`WorldSurface.landform`, which the BUILD marks), are drawn in the MAIN pass by
-`src/render/` in every build but the editor's — **the landform AHEAD of group
-0's alpha-tested list, whose turf blends over it, the blocks after** — their
-Babylon meshes kept for every OTHER pass, and **a taken mesh is never switched
-off, hidden or faded after its build** — ours reads no node and would still
-draw it (a DEV check says so). **The SCATTER is drawn twice over and the
+(`BlockHandover`; the BUILD marks `WorldSurface.landform`), drawn in the MAIN
+pass by `src/render/` — **the landform before group 0's alpha-tested list** —
+their Babylon meshes kept for every OTHER pass, and **a taken mesh is never
+switched off, hidden or faded after its build** — ours reads no node and would
+still draw it (a DEV check says so). **The SCATTER is drawn twice over and the
 two must agree**: our main pass draws it as INSTANCES of its variants, its
 colour baked once per kind, and cuts its pieces out of the blocks it takes,
 while Babylon's merged copy stays in those blocks for every other pass
-(`BuildOptions.onScatter`, `docs/rendering.md`). **Any other mesh carrying `metadata.block` is
-one only while the camera is inside the map's `fogEnd`**, **a body's RIG only
-while the root the roster switches is enabled**, and **everything else is
-ELIGIBLE**. **A BODY is measured ONCE, off its rig ROOT, and drops WHOLE.**
-**Anything EMISSIVE and anything outside rendering group 0 are exempt
-outright.** **Nothing pooled may ever be block-keyed**, and the rigs are
-**filed mesh by mesh and never by ancestry** (`RagdollSystem` reparents a
-corpse's joints).
+(`BuildOptions.onScatter`). **Any other mesh carrying `metadata.block` is one
+only while the camera is inside the map's `fogEnd`**, **a body's RIG only while
+the root the roster switches is enabled**, and **everything else is ELIGIBLE**.
+**A BODY is measured ONCE, off its rig ROOT, and drops WHOLE.** **Anything
+EMISSIVE and anything outside rendering group 0 are exempt outright.** **Nothing
+pooled may ever be block-keyed**, and the rigs are **filed mesh by mesh and
+never by ancestry** (`RagdollSystem` reparents a corpse's joints).
 
 **The GLOW draws the EMISSIVE meshes and nothing else, its occlusion being the
 FRAME's own depth buffer** (`src/shaders/GlowPass.ts`). **What may bloom is read

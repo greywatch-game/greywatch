@@ -69,6 +69,8 @@ export class BlockHandover {
   private readonly blocks: WorldBlocks;
   /** The taken meshes, a mesh's index being its surface's. */
   private meshes: Mesh[] = [];
+  /** Of those, the LANDFORM (`WorldSurface.landform`), as the build marked it. */
+  private landform = new Set<Mesh>();
   /** Of those, the ones handed back to Babylon's main pass. */
   private back = new Set<Mesh>();
   /** The whole map was handed back, its main pass refused. */
@@ -126,6 +128,7 @@ export class BlockHandover {
     if (recipe.defines.includes("CEL_PALETTE") && !g.uvs2) return;
     const at = this.blocks.add(part.name, g, recipe, surface.pieces, surface.landform);
     this.meshes[at] = mesh;
+    if (surface.landform) this.landform.add(mesh);
   };
 
   /**
@@ -162,10 +165,15 @@ export class BlockHandover {
     this.handedBack = false;
     this.epoch = -1;
     this.reported = false;
-    this.culling.setTaken(meshes);
+    this.take(meshes);
     const boxes: BlockBox[] = meshes.map((mesh) => {
-      const box = this.culling.reachBoxOf(mesh);
-      if (!box) throw new Error(`BlockHandover: "${mesh.name}" is taken but has no reach box`);
+      const landform = this.landform.has(mesh);
+      const box = this.culling.reachBoxOf(mesh, landform);
+      if (!box) {
+        throw new Error(
+          `BlockHandover: "${mesh.name}" is taken but ${landform ? "is no unfiled map visual" : "filed in no cell"}`,
+        );
+      }
       return box;
     });
     this.blocks.finish(
@@ -206,6 +214,7 @@ export class BlockHandover {
     this.blocks.clear();
     this.field = null;
     this.meshes = [];
+    this.landform = new Set();
     this.back = new Set();
     this.handedBack = false;
   }
@@ -226,8 +235,16 @@ export class BlockHandover {
   private readonly failed = (surfaces: readonly number[]): void => {
     if (this.handedBack) return;
     for (const at of surfaces) this.back.add(this.meshes[at]);
-    this.culling.setTaken(this.meshes.filter((m) => !this.back.has(m)));
+    this.take(this.meshes.filter((m) => !this.back.has(m)));
   };
+
+  /** Tells the cull `meshes` are ours, each as the block or the landform the build said it was. */
+  private take(meshes: readonly Mesh[]): void {
+    this.culling.setTaken(
+      meshes.filter((m) => !this.landform.has(m)),
+      meshes.filter((m) => this.landform.has(m)),
+    );
+  }
 
   /**
    * `Renderer.onRefused`: the main pass is not what our pipelines were built
@@ -240,7 +257,7 @@ export class BlockHandover {
     if (this.handedBack || this.meshes.length === 0) return;
     this.handedBack = true;
     this.blocks.stop();
-    this.culling.setTaken([]);
+    this.culling.setTaken([], []);
     console.error(
       `BlockHandover: the main pass was refused; all ${this.meshes.length} taken surfaces go back to Babylon for this map`,
     );

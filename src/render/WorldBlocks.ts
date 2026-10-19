@@ -40,12 +40,13 @@
  * its recipe's group at `"opaque"`, so a rim wearing the pines' material
  * never shares their group or their scatter; the two points share ONE cut,
  * one cull, one cluster list and one index buffer, each drawing only its own
- * groups' ranges of it; its vertex arrays are uploaded once as Babylon uploads a mesh's
- * (floats as `float32`, a `Float64Array` rounded exactly as Babylon's
- * `Float32Array` of the same numbers is), an attribute a surface lacks but its
- * variant reads being 0 for every one of its vertices — what Babylon's empty
- * vertex buffer reads — and its indices once, rebased onto the group's
- * buffers, as the source the cull copies the survivors from; the map is CUT
+ * groups' ranges of it; its vertex arrays are uploaded once as Babylon
+ * uploads a mesh's (floats as `float32`, a `Float64Array` rounded exactly as
+ * Babylon's `Float32Array` of the same numbers is), an attribute a surface
+ * lacks but its variant reads being 0 for every one of its vertices — what
+ * Babylon's empty vertex buffer reads — and its indices once, rebased onto
+ * the group's buffers, as the source the cull copies the survivors from; the
+ * map is CUT
  * once (`finish`), in the order the surfaces were added, and never re-cut; in
  * a group that has instanced parts, the pieces `finish` is told to CUT (the
  * scatter's regions) are taken out of every surface before it is uploaded,

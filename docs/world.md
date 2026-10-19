@@ -1777,8 +1777,9 @@ floor's block and the floor carries no `metadata.block`, so every patch was a
 `WorldCulling` candidate at every distance: at the default 48 this map's ground
 is 193 meshes. (Since `BABYLON_EXIT.md` X3.5 our renderer draws the floor in
 the main pass, so a patch is no candidate there — it is clusters in one cut,
-one draw a recipe — and the count is what every OTHER pass still walks.) Harrowmead states `terrainBlock: 96` and it is 57 — **fewer than
-the 97 it had at 560 m square**, because the play floor's own share falls from 81
+one draw a recipe — and the count is what every OTHER pass still walks.)
+Harrowmead states `terrainBlock: 96` and it is 57 — **fewer than the 97 it had
+at 560 m square**, because the play floor's own share falls from 81
 draws to 25. The trade is frustum granularity on the ground you fight over, which
 on a 400 m map stating a `fogEnd` of 520 is very nearly nothing: the whole floor
 is inside the view from the middle of the vale however it is cut.

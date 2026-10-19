@@ -510,32 +510,41 @@ export class WorldCulling {
   }
 
   /**
-   * The meshes our renderer draws in the main pass from now on — each one a
-   * mesh `setMap` filed: a block in its cell, or one of the map's own visuals
-   * that carries no block, the landform (anything else is refused: a collider
-   * or a body is never drawn by our side). Replaced whole; empty hands every
-   * one back. They are never candidates again until handed back.
+   * The meshes our renderer draws in the main pass from now on, the caller
+   * stating which kind each is: `blocks`, each one `setMap` filed in a cell,
+   * and `landform`, each one of the map's own visuals that carries no block.
+   * A mesh that is not what it is handed as is refused — a block filed in no
+   * cell (a `metadata.block` that never reached its mesh) is not quietly
+   * taken as landform. Replaced whole; empty hands every one back. They are
+   * never candidates again until handed back.
    */
-  setTaken(meshes: readonly AbstractMesh[]): void {
-    for (const mesh of meshes) {
-      if (!this.cellOf.has(mesh) && !this.unfiled.has(mesh)) {
-        throw new Error(`WorldCulling: "${mesh.name}" is taken but is neither a block nor the map's landform`);
+  setTaken(blocks: readonly AbstractMesh[], landform: readonly AbstractMesh[]): void {
+    for (const mesh of blocks) {
+      if (!this.cellOf.has(mesh)) {
+        throw new Error(`WorldCulling: "${mesh.name}" is taken as a block but is filed in no cell`);
       }
     }
-    this.taken = new Set(meshes);
+    for (const mesh of landform) {
+      if (!this.unfiled.has(mesh)) {
+        throw new Error(`WorldCulling: "${mesh.name}" is taken as landform but is no unfiled map visual`);
+      }
+    }
+    this.taken = new Set([...blocks, ...landform]);
     this.listDirty = true;
   }
 
   /**
-   * The box our renderer's cull measures `mesh`'s reach to: for a block the
-   * box of the cell it was filed in — the bounds of every mesh of its block,
-   * glazing included — and for one of the map's visuals that carries no
-   * block (the landform) `NO_REACH`, which the reach never cuts, as it never
-   * cuts a loose mesh; undefined for anything else. Meshes of one block share
+   * The box our renderer's cull measures `mesh`'s reach to, the caller
+   * stating whether it is the LANDFORM: for a block the box of the cell it
+   * was filed in — the bounds of every mesh of its block, glazing included —
+   * and for the landform `NO_REACH`, which the reach never cuts, as it never
+   * cuts a loose mesh; undefined for a block in no cell or a landform mesh
+   * that is not one of the map's unfiled visuals. Meshes of one block share
    * the object, and every landform surface shares the one box.
    */
-  reachBoxOf(mesh: AbstractMesh): BlockBox | undefined {
-    return this.cellOf.get(mesh) ?? (this.unfiled.has(mesh) ? NO_REACH : undefined);
+  reachBoxOf(mesh: AbstractMesh, landform: boolean): BlockBox | undefined {
+    if (landform) return this.unfiled.has(mesh) ? NO_REACH : undefined;
+    return this.cellOf.get(mesh);
   }
 
   /**
