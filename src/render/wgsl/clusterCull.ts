@@ -26,10 +26,11 @@
  *   bands are the four lanes of a `vec4u`, so one scan orders all four.
  * - `prefix` (ONE workgroup): `sums` scanned in place to each workgroup's
  *   exclusive prefix, the grand total at `sums[workgroups]`; then each group's
- *   per-band totals, where each band starts in the group's output, and its
- *   indirect arguments.
+ *   per-band totals and where each band starts in the group's output.
  * - `scatter` (a workgroup a cluster): a surviving cluster's indices copied
- *   to where the scan says, in the group's region of the output.
+ *   to where the scan says, in the group's region of the output — which the
+ *   host CLEARED first, so the rest of the region is triangles of no area and
+ *   the blocks are drawn plain over the whole of it (`ClusterCull.ts`).
  */
 
 /** Threads in a `cull` and a `prefix` workgroup. */
@@ -44,7 +45,7 @@ export const GROUP_WORDS = 12;
 export const BLOCK_WORDS = 8;
 /** The uniform block (`Cull` below), in bytes. */
 export const CULL_UNIFORM_BYTES = 144;
-/** `drawIndexedIndirect`'s five arguments, in bytes. */
+/** `drawIndexedIndirect`'s five arguments, in bytes — the instance cull's draws. */
 export const INDIRECT_BYTES = 20;
 
 /**
@@ -133,7 +134,6 @@ struct Group {
 @group(0) @binding(5) var<storage, read_write> local: array<vec4u>;
 @group(0) @binding(6) var<storage, read_write> sums: array<vec4u>;
 @group(0) @binding(7) var<storage, read_write> groups: array<Group>;
-@group(0) @binding(8) var<storage, read_write> args: array<u32>;
 @group(0) @binding(9) var<storage, read> source: array<u32>;
 @group(0) @binding(10) var<storage, read_write> written: array<u32>;
 
@@ -240,12 +240,6 @@ fn prefix(@builtin(local_invocation_index) li: u32) {
     let t = ahead(groups[g].end) - base;
     groups[g].base = base;
     groups[g].bandStart = vec4u(0u, t.x, t.x + t.y, t.x + t.y + t.z);
-    let o = g * 5u;
-    args[o] = t.x + t.y + t.z + t.w;
-    args[o + 1u] = 1u;
-    args[o + 2u] = groups[g].outBase;
-    args[o + 3u] = 0u;
-    args[o + 4u] = 0u;
   }
 }
 

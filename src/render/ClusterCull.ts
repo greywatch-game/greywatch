@@ -1,13 +1,14 @@
 /**
  * render/ClusterCull.ts — The static world's clusters culled on the GPU once
- * a frame, writing each group's surviving indices and its indirect draw
- * (`BABYLON_EXIT.md` X3.3b; the WGSL is `wgsl/clusterCull.ts`).
+ * a frame, writing each group's surviving indices at the front of its range
+ * and zeros after them (`BABYLON_EXIT.md` X3.3b; the WGSL is
+ * `wgsl/clusterCull.ts`).
  * Owns: `ClusterCull` — the three compute passes' bind groups (their
  * pipelines are the renderer's `PipelineCache`'s, shared by every map), the
  * cluster, block and sphere tables, the scan's buffers, each group's record,
- * the INDIRECT arguments (`args`, one `drawIndexedIndirect` a group) and the
- * index buffer they draw (`indices`, written every frame); `ReachGate`, what
- * whoever decides the reach and the size gate hands it.
+ * and the index buffer the blocks draw (`indices`, cleared and written
+ * every frame); `ReachGate`, what whoever decides the reach and the size
+ * gate hands it.
  * Invariants: every table is uploaded once, when the map is cut, and never
  * re-cut; a frame's inputs are numbers only — the frame's own
  * view-projection and eye (`FrameUniforms`), the reach and the size gate as
@@ -20,9 +21,15 @@
  * of the frame's draws (`FrameHost.prepareEncoder`), so it reaches the GPU
  * before the draws that read it and inside the frame's GPU timer — once a
  * submit, because the frame's inputs are a `writeBuffer` the whole submit
- * reads (`FramePrepare`); until the
- * pipelines are built (`ready`) nothing is dispatched and `args` stays the
- * zeros it was made with, so a group draws nothing rather than garbage.
+ * reads (`FramePrepare`); a group's range of `indices` is CLEARED ahead
+ * of the scatter every frame, so whatever its survivors do not fill is index
+ * 0 three times over — a triangle of no area, which the plain draw over the
+ * group's whole range (`WorldBlocks`) hands the GPU to discard — and the
+ * blocks are never drawn INDIRECT: an Intel Xe-LPG dropped single indirect
+ * draws at random, whatever wrote their arguments (`docs/rendering.md`);
+ * until the pipelines are built (`ready`) nothing is dispatched and
+ * `indices` stays the zeros it was made with, so a group draws nothing
+ * rather than garbage.
  * Never: imports Babylon; reads a node; submits; allocates on a frame beyond
  * the compute pass WebGPU makes for every pass; sets anything after
  * `dispose`, however late its pipelines arrive.
@@ -37,7 +44,6 @@ import {
   CLUSTER_WORDS,
   CULL_UNIFORM_BYTES,
   GROUP_WORDS,
-  INDIRECT_BYTES,
   SCAN_SIZE,
 } from "./wgsl/clusterCull";
 import { CLUSTER_FORMS, CLUSTER_PROBE_WGSL } from "./wgsl/cullProbe";
@@ -76,18 +82,6 @@ export type CullMode = "full" | "nofrustum" | "none";
  */
 export type CullSplit = "none" | "passes" | "submits";
 
-/**
- * What the cluster cull's draws read: the buffers its compute writes (what it
- * always does), or a COPY of them made after the compute by
- * `copyBufferToBuffer` — the indices (`?cullcopy=indices`), the indirect
- * arguments (`?cullcopy=args`), or both (`?cullcopy`). A diagnostic for
- * a device whose buildings flicker standing still: the one thing the blocks'
- * draw does that the scatter's does not is read an INDEX buffer a compute
- * shader wrote, and a copy reaches the draw by another path. Never a setting.
- */
-export type CullCopied = "indices" | "args";
-export const CULL_COPIED: readonly CullCopied[] = ["indices", "args"];
-
 /** The three buffers of a cull `?cullcheck` copies out, as `?cullflags=` names them. */
 export type CullBuffer = "uniform" | "records" | "bands";
 export const CULL_BUFFERS: readonly CullBuffer[] = ["uniform", "records", "bands"];
@@ -100,39 +94,17 @@ export const CULL_BUFFERS: readonly CullBuffer[] = ["uniform", "records", "bands
  * asked which buffer's FLAG hides it; and where `?cullcheck` reports its
  * readings (`CullCheck`) — null for no check.
  */
-/**
- * `?directdraw`: the blocks drawn with `drawIndexed` at counts the CPU
- * knows — every index of a group, so right only under `?nocull` — rather
- * than `drawIndexedIndirect` at the cull's arguments. `source` reads a
- * STATIC copy of the cut's indices, uploaded once as the scatter's are, and
- * `cull` reads the cull's own index buffer. With `?indirectcpu` the draw
- * stays indirect and only the index buffer is chosen.
- */
-export type DirectDraw = "none" | "source" | "cull";
-
 export interface CullDiagnostics {
   readonly mode: CullMode;
   readonly split: CullSplit;
   /**
    * `?cullonce`: the cull is dispatched on the first frame its pipelines
-   * are built and never again, so its index buffer and indirect arguments
-   * are written ONCE and then only read, as the scatter's index buffers are.
+   * are built and never again, so its index buffer is written ONCE and
+   * then only read, as the scatter's index buffers are.
    * With `?nocull` the frame is right from anywhere; without it, right only
    * where the first frame stood.
    */
   readonly once: boolean;
-  readonly direct: DirectDraw;
-  /**
-   * `?indirectcpu` (`=N`): the blocks still drawn INDIRECT, but at arguments
-   * the CPU wrote once — every index of a group, so right only under
-   * `?nocull` — split into N draws a group (1 bare).
-   */
-  readonly cpuArgs: number;
-  /** `?skipempty`: a group whose cut kept no index issues no draw at all. */
-  readonly skipEmpty: boolean;
-  /** `?scatterfirst`: the scatter's instanced draws ahead of the blocks'. */
-  readonly scatterFirst: boolean;
-  readonly copied: ReadonlySet<CullCopied>;
   readonly readable: ReadonlySet<CullBuffer>;
   readonly report: CullReport | null;
 }
@@ -142,11 +114,6 @@ export const NO_DIAGNOSTICS: CullDiagnostics = {
   mode: "full",
   split: "none",
   once: false,
-  direct: "none",
-  cpuArgs: 0,
-  skipEmpty: false,
-  scatterFirst: false,
-  copied: new Set(),
   readable: new Set(),
   report: null,
 };
@@ -208,9 +175,7 @@ const PASS: GPUComputePassDescriptor = { label: "cluster cull" };
 export const F32_MAX = 3.0e38;
 
 export class ClusterCull {
-  /** Each group's `drawIndexedIndirect` arguments, at `INDIRECT_BYTES` a group. */
-  readonly args: GPUBuffer;
-  /** What the draws index: each group's surviving clusters, near-first. */
+  /** What the draws index: each group's surviving clusters, near-first, then zeros. */
   readonly indices: GPUBuffer;
   /** Resolves true once the three pipelines are built; false if one failed. */
   readonly ready: Promise<boolean>;
@@ -236,8 +201,6 @@ export class ClusterCull {
   /** `?cullonce`, and whether the one dispatch has been recorded. */
   private readonly once: boolean;
   private dispatched = false;
-  /** `?cullcopy`: each buffer the compute writes and the copy the draws read, or none. */
-  private readonly copies: { from: GPUBuffer; to: GPUBuffer }[] = [];
   /** `?cullcheck`'s reader, or null. */
   private readonly check: CullCheck | null;
 
@@ -273,22 +236,10 @@ export class ClusterCull {
     const local = this.make("local", n * 16, storage);
     const sums = this.make("sums", (this.workgroups + 1) * 16, storage);
     const groups = this.upload("groups", storage, groupWords(tables.groups));
-    // `?cullcopy`: the compute writes one buffer and the draws read a copy.
-    const copied = diagnostics.copied;
-    const copySrc = (which: CullCopied): number => (copied.has(which) ? GPUBufferUsage.COPY_SRC : 0);
-    const args = this.make(
-      "args",
-      tables.groups.length * INDIRECT_BYTES,
-      storage | GPUBufferUsage.INDIRECT | copySrc("args"),
-    );
-    this.args = copied.has("args") ? this.copyOf(args, GPUBufferUsage.INDIRECT) : args;
     const source = this.upload("source indices", storage, tables.indices);
-    const written = this.make(
-      "indices",
-      tables.indices.byteLength,
-      storage | GPUBufferUsage.INDEX | copySrc("indices"),
-    );
-    this.indices = copied.has("indices") ? this.copyOf(written, GPUBufferUsage.INDEX) : written;
+    // COPY_DST for the clear ahead of each frame's scatter.
+    const written = this.make("indices", tables.indices.byteLength, storage | GPUBufferUsage.INDEX | GPUBufferUsage.COPY_DST);
+    this.indices = written;
 
     // The static half of the uniform block.
     const u = this.u32;
@@ -328,7 +279,7 @@ export class ClusterCull {
         entry: "cullClusters",
         bind: [[0, this.uniform], [1, clusters], [2, blocks], [3, spheres], [4, bandOf], [5, local], [6, sums]],
       },
-      { entry: "prefix", bind: [[0, this.uniform], [5, local], [6, sums], [7, groups], [8, args]] },
+      { entry: "prefix", bind: [[0, this.uniform], [5, local], [6, sums], [7, groups]] },
       {
         entry: "scatter",
         bind: [[0, this.uniform], [1, clusters], [4, bandOf], [5, local], [6, sums], [7, groups], [9, source], [10, written]],
@@ -394,6 +345,8 @@ export class ClusterCull {
     if (this.split !== "none") {
       this.dispatchSplit(encoder);
     } else {
+      // What the survivors do not fill is a triangle of no area.
+      encoder.clearBuffer(this.indices);
       const pass = encoder.beginComputePass(PASS);
       const passes = this.passes;
       pass.setPipeline(passes[0].pipeline);
@@ -406,10 +359,6 @@ export class ClusterCull {
       pass.setBindGroup(0, passes[2].group);
       pass.dispatchWorkgroups(this.scatterX, this.scatterY);
       pass.end();
-    }
-    const copies = this.copies;
-    for (let i = 0; i < copies.length; i++) {
-      encoder.copyBufferToBuffer(copies[i].from, 0, copies[i].to, 0, copies[i].to.size);
     }
     this.check?.record(encoder, this.bytes);
   }
@@ -424,6 +373,9 @@ export class ClusterCull {
     const sizes: readonly [number, number][] = [[this.workgroups, 1], [1, 1], [this.scatterX, this.scatterY]];
     for (let k = 0; k < 3; k++) {
       const own = this.split === "submits" ? this.device.createCommandEncoder({ label: "cluster cull: split" }) : encoder;
+      // The clear goes ahead of the first dispatch, in whatever reaches the
+      // queue first: under `submits` the host's encoder is submitted last.
+      if (k === 0) own.clearBuffer(this.indices);
       const pass = own.beginComputePass(PASS);
       pass.setPipeline(this.passes[k].pipeline);
       pass.setBindGroup(0, this.passes[k].group);
@@ -440,13 +392,6 @@ export class ClusterCull {
     this.passes.length = 0;
     this.built = false;
     this.disposed = true;
-  }
-
-  /** `?cullcopy`: a buffer the draws read in place of `from`, copied from it every frame. */
-  private copyOf(from: GPUBuffer, usage: number): GPUBuffer {
-    const to = this.make(`${from.label.replace("cluster cull: ", "")} copy`, from.size, usage | GPUBufferUsage.COPY_DST);
-    this.copies.push({ from, to });
-    return to;
   }
 
   private make(label: string, size: number, usage: number): GPUBuffer {

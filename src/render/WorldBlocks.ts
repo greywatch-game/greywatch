@@ -1,9 +1,11 @@
 /**
  * render/WorldBlocks.ts — The static world's BLOCKS as our renderer draws
  * them in the frame's main pass: cut into clusters, culled on the GPU, and
- * drawn with ONE indirect draw per material (`BABYLON_EXIT.md` X3.3b; X3.3a
- * drew one per surface) — and the SCATTER beside them, drawn as instances of
- * its variants, one indirect draw per variant per material (X3.4b).
+ * drawn with ONE plain draw per material over its whole range, the survivors
+ * at the front and triangles of no area after them (`BABYLON_EXIT.md`
+ * X3.3b; X3.3a drew one per surface) — and the SCATTER beside them, drawn as
+ * instances of its variants, one indirect draw per variant per material
+ * (X3.4b).
  * Owns: `WorldBlocks` — the surfaces and the scatter's instanced parts handed
  * to it until the map is cut (`finish`), then each material GROUP's vertex
  * buffers (every surface of the group end to end, then every instanced part
@@ -16,6 +18,10 @@
  * the end of group 0's opaque meshes (`DrawPoint` `"opaque"`) with the
  * `FramePrepare` that culls ahead of it, both on the renderer only while a
  * map's culls are built and nobody has `stop`ped it.
+ * The BLOCKS are never drawn indirect: an Intel Xe-LPG dropped single
+ * indirect draws at random, at arguments however written, and drew the same
+ * triangles plain every frame (`docs/rendering.md`). The scatter's indirect
+ * draws were never seen to drop.
  * Invariants: a GROUP is one cel recipe — one material, one cluster draw and
  * one draw per instanced part — and a surface or an instanced part belongs to
  * exactly one; its vertex arrays are uploaded once as Babylon uploads a mesh's
@@ -51,8 +57,9 @@
  * draw only; an instanced draw reads its `world` per instance. Vertex buffers
  * in the vertex program's attribute order, one buffer an attribute
  * (`celVertex.ts`'s `bufferLayouts`); a block draw's index buffer is the
- * cluster cull's, `uint32`, and the draw is `drawIndexedIndirect` at the
- * group's own arguments; an instanced draw's is the group's own instanced
+ * cluster cull's, `uint32`, and the draw is `drawIndexed` over the group's
+ * whole range of it — none for a group whose cut kept no index; an
+ * instanced draw's is the group's own instanced
  * index buffer, its instances the instance cull's `placed` bound at the SET's
  * region, and the draw `drawIndexedIndirect` at the part's own arguments.
  */
@@ -145,11 +152,9 @@ interface Group {
   vertex: GPUBuffer[];
   /** The instanced parts' indices, each part's own; null without parts. */
   instancedIndex: GPUBuffer | null;
-  /** Its blocks' indices in the cut, `[indexBase, indexBase + indexCount)` — `?directdraw`. */
+  /** Its blocks' range of the cut's indices, `[indexBase, indexBase + indexCount)` — what its draw covers. */
   indexBase: number;
   indexCount: number;
-  /** `?indirectcpu`: its first draw in `cpuArgs`. */
-  cpuFirst: number;
   /** Its draws in the instance cull's table: `[drawStart, drawEnd)`. */
   drawStart: number;
   drawEnd: number;
@@ -183,10 +188,6 @@ export class WorldBlocks {
    */
   private readonly programs = new Map<string, Program>();
   private cull: ClusterCull | null = null;
-  /** `?directdraw=source`: the cut's indices, static; null otherwise. */
-  private directIndex: GPUBuffer | null = null;
-  /** `?indirectcpu`: every group's arguments, `diagnostics.cpuArgs` a group; null otherwise. */
-  private cpuArgs: GPUBuffer | null = null;
   private instances: InstanceCull | null = null;
   /** Each instanced draw, in the instance cull's draw order. */
   private draws: InstancedDraw[] = [];
@@ -409,40 +410,6 @@ export class WorldBlocks {
       }
     }
     this.clusterCount = clusterCount;
-    if (this.diagnostics.direct === "source") {
-      this.directIndex = device.createBuffer({
-        label: "world blocks: direct indices",
-        size: Math.max(4, indexTotal * 4),
-        usage: GPUBufferUsage.INDEX,
-        mappedAtCreation: true,
-      });
-      new Uint32Array(this.directIndex.getMappedRange()).set(indices);
-      this.directIndex.unmap();
-    }
-    const split = this.diagnostics.cpuArgs;
-    if (split > 0) {
-      this.cpuArgs = device.createBuffer({
-        label: "world blocks: cpu arguments",
-        size: Math.max(1, this.groups.length * split) * INDIRECT_BYTES,
-        usage: GPUBufferUsage.INDIRECT,
-        mappedAtCreation: true,
-      });
-      const a = new Uint32Array(this.cpuArgs.getMappedRange());
-      this.groups.forEach((group, g) => {
-        group.cpuFirst = g * split;
-        const triangles = group.indexCount / 3;
-        let done = 0;
-        for (let c = 0; c < split; c++) {
-          const upto = Math.round((triangles * (c + 1)) / split);
-          const o = (g * split + c) * 5;
-          a[o] = (upto - done) * 3;
-          a[o + 1] = 1;
-          a[o + 2] = group.indexBase + done * 3;
-          done = upto;
-        }
-      });
-      this.cpuArgs.unmap();
-    }
     const bands = this.options.nearBands;
     const bands2 = [bands[0] * bands[0], bands[1] * bands[1], bands[2] * bands[2]];
     this.cull = new ClusterCull(
@@ -503,10 +470,6 @@ export class WorldBlocks {
     this.unhook = null;
     this.cull?.dispose();
     this.cull = null;
-    this.directIndex?.destroy();
-    this.directIndex = null;
-    this.cpuArgs?.destroy();
-    this.cpuArgs = null;
     this.instances?.dispose();
     this.instances = null;
     this.draws = [];
@@ -540,7 +503,6 @@ export class WorldBlocks {
         instancedIndex: null,
         indexBase: 0,
         indexCount: 0,
-        cpuFirst: 0,
         drawStart: 0,
         drawEnd: 0,
         built: null,
@@ -790,31 +752,25 @@ export class WorldBlocks {
     let drawn = 0;
     const cull = this.cull;
     if (this.culling && cull) {
-      // `?scatterfirst`: the scatter's draws ahead of the blocks'.
-      if (this.diagnostics.scatterFirst) drawn += this.drawScatter(pass, ctx);
       const blocks = this.drawBlocks(pass, ctx, cull);
       if (blocks < this.fewestBlockDraws) this.fewestBlockDraws = blocks;
       if (blocks > this.mostBlockDraws) this.mostBlockDraws = blocks;
-      drawn += blocks;
-      if (!this.diagnostics.scatterFirst) drawn += this.drawScatter(pass, ctx);
+      drawn += blocks + this.drawScatter(pass, ctx);
     }
     this.drawn = drawn;
   };
 
-  /** The blocks: one draw a group, against the cull's indices at its own arguments. */
+  /** The blocks: one plain draw a group over its whole range of the cull's indices. */
   private drawBlocks(pass: GPURenderPassEncoder, ctx: FrameContext, cull: ClusterCull): number {
     let drawn = 0;
     const host = this.renderer.host;
     const groups = this.groups;
-    const direct = this.diagnostics.direct;
-    const skipEmpty = this.diagnostics.skipEmpty;
-    const cpuArgs = this.cpuArgs;
-    const split = this.diagnostics.cpuArgs;
-    pass.setIndexBuffer(this.directIndex ?? cull.indices, "uint32");
+    pass.setIndexBuffer(cull.indices, "uint32");
     for (let g = 0; g < groups.length; g++) {
       const group = groups[g];
       const built = group.built;
-      if (!built || group.failed || (skipEmpty && group.indexCount === 0)) continue;
+      // A group whose surfaces were all scatter draws its parts as instances.
+      if (!built || group.failed || group.indexCount === 0) continue;
       const material = group.material;
       material.group.refresh(host, material.recipe.textures);
       const frame = ctx.frameGroup(built.groups[0]);
@@ -827,12 +783,7 @@ export class WorldBlocks {
       pass.setBindGroup(2, world);
       const vertex = group.vertex;
       for (let k = 0; k < vertex.length; k++) pass.setVertexBuffer(k, vertex[k]);
-      // `?indirectcpu` draws indirect over whichever indices are bound —
-      // `?directdraw`'s static copy, or the cull's.
-      if (cpuArgs) {
-        for (let c = 0; c < split; c++) pass.drawIndexedIndirect(cpuArgs, (group.cpuFirst + c) * INDIRECT_BYTES);
-      } else if (direct !== "none") pass.drawIndexed(group.indexCount, 1, group.indexBase, 0, 0);
-      else pass.drawIndexedIndirect(cull.args, g * INDIRECT_BYTES);
+      pass.drawIndexed(group.indexCount, 1, group.indexBase, 0, 0);
       drawn++;
     }
     return drawn;

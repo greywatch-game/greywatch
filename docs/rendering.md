@@ -3345,7 +3345,8 @@ probes and the lamps' atlas — until X3.6 moves those passes.
   `"opaque"`: every surface of the recipe end to end on one set of vertex
   buffers (an attribute a surface lacks but the variant reads is zeros,
   which is what Babylon's empty buffer reads), one pipeline, one material,
-  the identity `world` at group 2, and ONE `drawIndexedIndirect`.
+  the identity `world` at group 2, and ONE plain `drawIndexed` over the
+  group's whole range of the cull's indices — never an indirect draw (below).
 - **The map is cut into CLUSTERS once** (`render/clusters.ts`,
   `CONFIG.graphics.clusters`): runs of at most `triangles` triangles of one
   X1.4 piece, in the surface's own order, each carrying its block, its piece,
@@ -3496,78 +3497,49 @@ The build hands the sets over once (`BuildOptions.onScatter`), and
   the far corner). `why` is the probe's own new/new verdict on what the cull
   dropped against the CPU, so `why kept` is the cull shader disagreeing with
   an identical read. A desktop reads zero everywhere.
-- **`?cullquiet` and `?cullflags` take the check apart, for a device whose
-  bug `?cullcheck` makes GO AWAY.** On the 59 frames in 60 it reads
-  nothing, the check changes two things: the panel laid over the canvas, and
-  COPY_SRC on the buffers it copies (each cull's uniform block, its record
-  table and its bands — `CullDiagnostics.readable`). `?cullcheck&cullquiet`
-  keeps the check and sends its lines to the console with no panel;
-  `?cullflags` keeps the flags and runs no check — all three bare, or the
-  ones it names (`?cullflags=uniform`, `records`, `bands`, comma-joined). A laptop's Chrome
-  (2026-10-18) flickered Kurenai's structures standing still, and stopped
-  under `?cullcheck` — that is what the pair is for. **It was luck**: the
-  same laptop (Intel Xe-LPG) flickers on some loads of the plain build and
-  not others, in bursts, and `?cullflags=uniform` flickered where the plain
-  build had not — so one load proves nothing either way.
-- **`?cullsplit` keeps the cluster cull's three dispatches further apart**:
-  each in a compute pass of its own, or (`?cullsplit=submits`) each in a
-  submit of its own (`ClusterCull.ts`'s `CullSplit`). Standing still, a
-  frame's inputs repeat, so a cull's OUTPUT repeats too and a draw reading
-  it half written reads last frame's same numbers; the one thing that can
-  differ is what a dispatch reads of the one before it, mid-write (the
-  scan's `sums`, `local`, `bandOf`, `groups`). The flicker is the
-  BUILDINGS' and not the trees' — only the cluster cull's. **It did not
-  cure it** (3 of 4 loads flickered under `?cullsplit=submits`), and the
-  premise was short: a cluster carrying a sway weight (the colour buffer's
-  red) at the frustum's edge can sway in and out with the gust, and the
-  compacted list shifts behind it, so the output need not repeat standing
-  still.
-- **`?cullcopy` hands the blocks' draws a COPY of what the cull wrote**
-  (`ClusterCull.ts`'s `CullCopied`): the indices, the indirect arguments,
-  or both, `copyBufferToBuffer`'d after the compute into buffers that are
-  only INDEX or INDIRECT. The blocks' draw is the one that reads an index
-  buffer a compute shader wrote; the scatter's index buffers never change.
-  **It did not cure it, and nor did `?nocull`** — which keeps everything,
-  so the cull's output is the same every frame — while `?babylonworld` did
-  not flicker. So the Intel laptop's flicker is our DRAW of the blocks, not
-  a cull's decision.
-- **`?drawcheck` and `?cullonce` ask the next two questions.**
-  `?drawcheck` prints, once a second to the console, the frames the scene
-  rendered against how often our main pass began, queued its opaque draws
-  and ran them (`Renderer.tally`), with the fewest and most block draws a
-  run issued — whether a frame went without our draws, which is a CPU
-  question. `?cullonce` dispatches the cluster cull on its first built
-  frame and never again (`CullDiagnostics.once`), so the blocks' index
-  buffer and arguments are written once and only read, as the scatter's
-  are; with `?nocull` the frame is right from anywhere.
-  **`?drawcheck` read level on the laptop**: every second, frames, begins,
-  queued and ran were one number and the block draws twelve, so every frame
-  hands the GPU all of them and the GPU loses some.
-- **`?directdraw` takes the INDIRECT draw away** (`DirectDraw`): with
-  `?nocull` each group's blocks are drawn with `drawIndexed` at counts the
-  CPU knows — over a static copy of the cut's indices uploaded once
-  (`?directdraw`), or over the cull's own buffer (`?directdraw=cull`). Clean
-  under the first is the indirect path or the computed indices; clean only
-  under the second is the indirect path alone.
-  **On the laptop both were clean and `?nocull&cullonce` still flickered**,
-  a building leaving what is behind it: arguments written once and right,
-  and the draw is still dropped. So it is the INDIRECT draw itself. On
-  Kurenai that is almost one draw — the palette group's 2,822,847 indices
-  (the largest tree draw is ~118k) — beside ten EMPTY groups, whose
-  surfaces were all scatter and cut out, two pointing at the buffer's end.
-- **`?indirectcpu` (`=N`) and `?skipempty` take that draw apart.**
-  `?indirectcpu` keeps it indirect at arguments the CPU wrote once (with
-  `?nocull`), so no compute writes them ever; `=N` splits each group's into
-  N draws, so no one draw is large. `?skipempty` issues no draw for a group
-  whose cut kept no index, and works with the cull on.
-  **All three flickered**, and split eight ways the pieces dropped out
-  INDEPENDENTLY: single indirect draws are lost, at arguments the CPU wrote
-  once, of a third of a million indices, beside no empty draw. The trees'
-  indirect draws are not seen to drop.
-- **`?directdraw&indirectcpu` and `?scatterfirst` take the rest of the
-  difference from the trees away.** Together (with `?nocull`) the blocks are
-  drawn indirect over a STATIC index buffer nothing else touches, as a tree
-  is; `?scatterfirst` draws the trees ahead of the blocks.
+- **THE BLOCKS ARE NEVER DRAWN INDIRECT.** The cull writes each group's
+  survivors near-first at the front of its range, as ever, into a buffer
+  CLEARED ahead of the scatter every frame (`encoder.clearBuffer`), so the
+  rest of the range is index 0 three times over — a triangle of no area —
+  and each group is ONE `drawIndexed` over its whole range, at a count the
+  CPU knows. A group whose cut kept no index (all of its surfaces were
+  scatter, cut out and drawn as instances) issues no draw. The price is the
+  input assembler reading every index of the cut every frame, survivors or
+  not — 11 MB on Kurenai — against which the indirect arguments and the
+  third of the prefix that wrote them are gone.
+- **Why: an Intel Xe-LPG (a laptop's Chrome, 2026-10-17/18) dropped single
+  indirect draws at random.** Kurenai's structures flickered out standing
+  still, in bursts, on two or three loads of four, showing what was behind
+  them — never its trees. Every switch that "cured" it once was luck
+  (`?cullcheck`, `?cullflags`); taken four loads at a time:
+  `?cullsplit=submits`, `?cullcopy` (the draws reading a copy of what the
+  compute wrote) and `?nocull` all flickered and `?babylonworld` did not, so
+  it was our DRAW and no cull's decision. `?drawcheck` read level while it
+  flickered: every frame handed the GPU all twelve block draws. Drawn with
+  `drawIndexed` at counts the CPU knew — over a static copy of the indices,
+  or over the cull's own buffer — it never flickered; drawn indirect it
+  flickered with arguments written once (`?cullonce`), with arguments the CPU
+  wrote once and the empty groups not drawn, over a static index buffer as a
+  tree's is, and with the trees drawn first. Split eight ways, the pieces
+  dropped out INDEPENDENTLY. So the loss is in the indirect draw itself —
+  the driver, or Chrome's validation of it; the page cannot tell which — and
+  Babylon never met it because Babylon never draws indirect. (Intel lists
+  indirect-draw hangs on Iris Xe-class iGPUs; this is not that, but it is
+  the same path.)
+- **The scatter's indirect draws were never seen to drop**, on that laptop or
+  anywhere, and stay indirect: an instance count is not a range a plain draw
+  can cover with triangles of no area. A device that drops THEM owes the
+  instance cull the same question; `?drawcheck`, `?cullonce` and the split
+  above are how it was asked. The SECTIONS OF GRASS that flicker on the same
+  laptop are older than our renderer and draw nothing indirect — a separate
+  finding.
+- **What is left of the hunt**, until a device confirms the plain draw:
+  `?cullquiet` and `?cullflags` (`?cullcheck` without its panel, or with
+  only its buffers' COPY_SRC), `?cullsplit` (`=submits`: the three dispatches
+  in passes or submits of their own), `?cullonce` (the cluster cull
+  dispatched once) and `?drawcheck` (frames against our pass's begins,
+  queues and runs, and the block draws a frame issued, once a second to the
+  console).
 - **A cull reads its tables as WHOLE `vec4`s and its uniform block as
   WORDS** (`clusterCull.ts`'s `CULL_DECLARATIONS`, `instanceCull.ts`'s
   `INSTANCE_DECLARATIONS`): no `vec3f` beside a scalar and no scalar

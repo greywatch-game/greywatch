@@ -28,12 +28,9 @@
  */
 import {
   CULL_BUFFERS,
-  CULL_COPIED,
   type CullBuffer,
-  type CullCopied,
   type CullMode,
   type CullSplit,
-  type DirectDraw,
 } from "../render/ClusterCull";
 import { isVolumetricRung, type VolumetricRung } from "../shaders/Volumetrics";
 import { parseSeed } from "../systems/RoundRandom";
@@ -158,28 +155,6 @@ export class UrlOverrides {
    * the frame (`render/ClusterCull.ts`'s `CullSplit`).
    */
   readonly cullSplit: CullSplit;
-  /**
-   * `?cullcopy` — the cluster cull's draws read a copy of what its compute
-   * wrote, the indices and the indirect arguments, or the one it names
-   * (`?cullcopy=indices`, `=args`; `render/ClusterCull.ts`'s `CullCopied`).
-   */
-  readonly cullCopy: ReadonlySet<CullCopied>;
-  /**
-   * `?directdraw` (`=source`) — the blocks drawn with `drawIndexed` over a
-   * static copy of their indices; `?directdraw=cull` over the cull's own.
-   * Right only with `?nocull` (`render/ClusterCull.ts`'s `DirectDraw`).
-   */
-  readonly directDraw: DirectDraw;
-  /**
-   * `?indirectcpu` (`=N`) — the blocks drawn indirect at arguments the CPU
-   * wrote once, N draws a group; right only with `?nocull`
-   * (`CullDiagnostics.cpuArgs`). 0 off.
-   */
-  readonly cpuArgs: number;
-  /** `?skipempty` — no draw for a group whose cut kept no index (`CullDiagnostics.skipEmpty`). */
-  readonly skipEmpty: boolean;
-  /** `?scatterfirst` — the scatter drawn ahead of the blocks (`CullDiagnostics.scatterFirst`). */
-  readonly scatterFirst: boolean;
   /** `?cullonce` — the cluster cull dispatched once, never again (`CullDiagnostics.once`). */
   readonly cullOnce: boolean;
   /**
@@ -217,14 +192,7 @@ export class UrlOverrides {
     this.cullCheck = urlFlag("cullcheck");
     this.cullQuiet = urlFlag("cullquiet");
     this.cullFlags = namedOf(urlParam("cullflags"), CULL_BUFFERS);
-    this.cullCopy = namedOf(urlParam("cullcopy"), CULL_COPIED);
     this.cullOnce = urlFlag("cullonce");
-    const direct = urlParam("directdraw");
-    this.directDraw = direct === null ? "none" : direct === "cull" ? "cull" : "source";
-    const cpu = urlParam("indirectcpu");
-    this.cpuArgs = cpu === null ? 0 : Math.min(64, Math.max(1, Math.floor(Number(cpu)) || 1));
-    this.skipEmpty = urlFlag("skipempty");
-    this.scatterFirst = urlFlag("scatterfirst");
     this.drawCheck = urlFlag("drawcheck");
     const split = urlParam("cullsplit");
     this.cullSplit = split === null ? "none" : split === "submits" ? "submits" : "passes";
@@ -238,12 +206,7 @@ export class UrlOverrides {
     if (this.cullCheck) forced.push(this.cullQuiet ? "cullcheck-quiet" : "cullcheck");
     if (this.cullSplit !== "none") forced.push(`cullsplit=${this.cullSplit}`);
     if (this.cullOnce) forced.push("cullonce");
-    if (this.directDraw !== "none") forced.push(`directdraw=${this.directDraw}`);
-    if (this.cpuArgs > 0) forced.push(`indirectcpu=${this.cpuArgs}`);
-    if (this.skipEmpty) forced.push("skipempty");
-    if (this.scatterFirst) forced.push("scatterfirst");
     if (this.drawCheck) forced.push("drawcheck");
-    if (this.cullCopy.size > 0) forced.push(`cullcopy=${[...this.cullCopy].join("+")}`);
     if (this.cullFlags.size > 0) forced.push(`cullflags=${[...this.cullFlags].join("+")}`);
     this.forced = forced;
   }

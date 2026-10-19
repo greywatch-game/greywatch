@@ -780,6 +780,11 @@ did.
     today), writing indirect arguments.
   - One `drawIndexedIndirect` per material per pass. All of it under the
     same DEV switch.
+    **Since 2026-10-18 the blocks' draw is a PLAIN `drawIndexed` over the
+    group's whole range**, the cull clearing its output first so the
+    survivors' remainder is triangles of no area: an Intel Xe-LPG dropped
+    single indirect draws at random (`docs/rendering.md`, "THE BLOCKS ARE
+    NEVER DRAWN INDIRECT"). The scatter's draws (X3.4b) stay indirect.
   - **Keep the door open for the GPU side** (deferred until after the exit;
     "What this plan does not do"). Where the cull compacts the surviving
     clusters, it writes them NEAR-FIRST, so that a later depth-ordered draw

@@ -2379,7 +2379,7 @@ src/
     WorldBlocks.ts      # The map's block surfaces drawn by US, every build:
                         #   one GROUP per recipe (its surfaces' buffers end to
                         #   end, then its scatter parts; one material), the map
-                        #   cut once (finish), ONE drawIndexedIndirect a group
+                        #   cut once (finish), ONE plain drawIndexed a group
                         #   at the end of group 0's opaque meshes, then one per
                         #   scatter variant per material, instanced (X3.4b) —
                         #   the scatter's pieces cut out of the blocks that do;
@@ -2399,7 +2399,8 @@ src/
                         #   pipelines from PipelineCache) — reach, size gate,
                         #   frustum; survivors
                         #   scanned NEAR-FIRST (by surface) into the index
-                        #   buffer and each group's indirect args.
+                        #   buffer, cleared first so the rest of each group's
+                        #   range is triangles of no area (never indirect).
                         #   ReachGate, BlockBox, CullMode and CullDiagnostics
                         #   (?nocull, ?nofrustum, ?cullcheck)
     CullCheck.ts        # ?cullcheck: a cull's verdicts and the uniform block
