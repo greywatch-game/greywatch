@@ -3,7 +3,8 @@
  * `WorldSurface` (one surface of the world — the floor's patches, the rim's
  * runs, and every merged surface: a `Part`, the map block it was filed under,
  * which layout items its vertex ranges came from, whether its positions must
- * stay writable, when its mesh is BORN, and the editor item it joins),
+ * stay writable, when its mesh is BORN, whether it is the LANDFORM, and the
+ * editor item it joins),
  * `PaneSurfaceGroup` (a glazing surface and the breakable panes that live in
  * it), `SurfaceRecord` and `WorldGeometry` (what `GameMap.world` keeps of a
  * build once its meshes are made — everything but the arrays), and
@@ -86,6 +87,17 @@ export interface WorldSurface {
   part: Part;
   /** Mirrors `part.metadata.block`; null on roads, the editor's surfaces, and anything not block-merged. */
   block: string | null;
+  /**
+   * The LANDFORM: the floor's patches (the borderland's included), the rim's
+   * runs, and on a shipped build the map-wide road merge — the surfaces that
+   * are no block and no scatter, that our renderer draws ahead of rendering
+   * group 0's alpha-tested meshes (`BlockHandover`, `WorldBlocks`), and whose
+   * reach is none. Marked by the BUILD (`MapBuilder`) where it makes them,
+   * never guessed from a name or a missing block. On the RECORD only and
+   * never in `part.metadata`, so it reaches no mesh and nothing `merge:hash`
+   * fingerprints; an editor build's roads are its items' and not landform.
+   */
+  landform: boolean;
   /** See `PieceRange`. */
   pieces: PieceRange[];
   /**
@@ -188,9 +200,9 @@ export function mintFrom(start = 0): Mint {
   return () => next++;
 }
 
-/** A surface for `part`, born `born`, filed nowhere yet and of no piece. */
+/** A surface for `part`, born `born`, filed nowhere yet, of no piece and no landform. */
 export function surfaceOf(part: Part, born: number): WorldSurface {
-  return { part, block: null, pieces: [], updatable: false, born, owner: null };
+  return { part, block: null, landform: false, pieces: [], updatable: false, born, owner: null };
 }
 
 /**

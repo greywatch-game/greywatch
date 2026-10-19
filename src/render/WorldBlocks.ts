@@ -3,9 +3,11 @@
  * them in the frame's main pass: cut into clusters, culled on the GPU, and
  * drawn with ONE plain draw per material over its whole range, the survivors
  * at the front and triangles of no area after them (`BABYLON_EXIT.md`
- * X3.3b; X3.3a drew one per surface) — and the SCATTER beside them, drawn as
+ * X3.3b; X3.3a drew one per surface) — the SCATTER beside them, drawn as
  * instances of its variants, one indirect draw per variant per material
- * (X3.4b).
+ * (X3.4b) — and the LANDFORM, the floor's patches, the rim's runs and the
+ * map-wide road merge, cut, culled and drawn as the blocks are but at a point
+ * of its own (X3.5).
  * Owns: `WorldBlocks` — the surfaces and the scatter's instanced parts handed
  * to it until the map is cut (`finish`), then each material GROUP's vertex
  * buffers (every surface of the group end to end, then every instanced part
@@ -14,17 +16,31 @@
  * identity `world` the blocks bind (group 2); each variant's three modules
  * (assembled once); the `ClusterCull` that writes the blocks' indices
  * and the `InstanceCull` that writes the scatter's
- * transforms and indirect arguments; and the `FrameDraw` that draws both at
- * the end of group 0's opaque meshes (`DrawPoint` `"opaque"`) with the
- * `FramePrepare` that culls ahead of it, both on the renderer only while a
- * map's culls are built and nobody has `stop`ped it.
+ * transforms and indirect arguments; and the two `FrameDraw`s — the
+ * landform's ahead of group 0's alpha-tested meshes (`DrawPoint`
+ * `"beforeAlphaTest"`), the blocks' and the scatter's at the end of its
+ * opaque and alpha-tested meshes (`"opaque"`) — with the `FramePrepare` that
+ * culls ahead of both, all on the renderer only while a map's culls are built
+ * and nobody has `stop`ped it, and a draw only while some group is at its
+ * point.
+ * WHY TWO POINTS: the turf (`GrassSystem`) is a blend laid over the floor on
+ * group 0's alpha-tested list, and it writes no depth of its own — so the
+ * floor, and a road beside it, must be drawn before that list, or they would
+ * paint over it. The blocks stay where X3.3a put them (`Renderer`'s header).
+ * The two points are one cut, one cull and one index buffer, so X3.5b's one
+ * draw a pass folds both.
  * The BLOCKS are never drawn indirect: an Intel Xe-LPG dropped single
  * indirect draws at random, at arguments however written, and drew the same
  * triangles plain every frame (`docs/rendering.md`). The scatter's indirect
  * draws were never seen to drop.
- * Invariants: a GROUP is one cel recipe — one material, one cluster draw and
- * one draw per instanced part — and a surface or an instanced part belongs to
- * exactly one; its vertex arrays are uploaded once as Babylon uploads a mesh's
+ * Invariants: a GROUP is one cel recipe AT ONE POINT — one material, one
+ * cluster draw and one draw per instanced part — and a surface or an
+ * instanced part belongs to exactly one: a landform surface to its recipe's
+ * group at `"beforeAlphaTest"`, a block surface and every instanced part to
+ * its recipe's group at `"opaque"`, so a rim wearing the pines' material
+ * never shares their group or their scatter; the two points share ONE cut,
+ * one cull, one cluster list and one index buffer, each drawing only its own
+ * groups' ranges of it; its vertex arrays are uploaded once as Babylon uploads a mesh's
  * (floats as `float32`, a `Float64Array` rounded exactly as Babylon's
  * `Float32Array` of the same numbers is), an attribute a surface lacks but its
  * variant reads being 0 for every one of its vertices — what Babylon's empty
@@ -140,8 +156,12 @@ interface InstancedDraw {
   readonly offset: number;
 }
 
-/** One material's draws: its surfaces' buffers end to end, its parts after them. */
+/** Where a group of the world is drawn: the landform's point, or the blocks'. */
+type WorldPoint = "beforeAlphaTest" | "opaque";
+
+/** One material's draws at one point: its surfaces' buffers end to end, its parts after them. */
 interface Group {
+  readonly point: WorldPoint;
   readonly material: MaterialSlot;
   readonly program: Program;
   /** Indices into `surfaces`, in the order added. */
@@ -177,9 +197,13 @@ export class WorldBlocks {
   /** Until `finish`; emptied there, so the build's arrays can go. */
   private surfaces: Surface[] = [];
   private surfaceCount = 0;
-  /** One per recipe, in the order first added — the order they draw in. */
+  /** One per recipe a point, in the order first added — the order each point draws its own in. */
   private readonly groups: Group[] = [];
-  private readonly groupOf = new Map<CelRecipe, Group>();
+  /** Each point's groups by recipe: one recipe at both points is two groups. */
+  private readonly groupOf: Record<WorldPoint, Map<CelRecipe, Group>> = {
+    beforeAlphaTest: new Map(),
+    opaque: new Map(),
+  };
   private readonly mesh: UniformBlockBuffer;
   private readonly meshGroup: HostBindGroup;
   /**
@@ -202,15 +226,16 @@ export class WorldBlocks {
    */
   private generation = 0;
   /**
-   * Takes the draw and the culls' prepare back off the renderer; null while
+   * Takes the draws and the culls' prepare back off the renderer; null while
    * nothing is registered. Registered only while a map's culls are BUILT, so
    * a frame with nothing of ours to draw — the menu, an editor build — costs
    * the renderer one empty branch rather than a filled and uploaded frame.
    */
   private unhook: (() => void) | null = null;
 
-  /** Draws issued last frame — what a census of the main pass adds to Babylon's. */
-  drawn = 0;
+  /** Draws issued last frame at each point — see `drawn`. */
+  private drawnLandform = 0;
+  private drawnBlocks = 0;
 
   constructor(
     private readonly renderer: Renderer,
@@ -235,6 +260,11 @@ export class WorldBlocks {
     this.meshGroup.refresh(renderer.host, {});
   }
 
+  /** Draws issued last frame at both points — what a census of the main pass adds to Babylon's. */
+  get drawn(): number {
+    return this.drawnLandform + this.drawnBlocks;
+  }
+
   /** What is handed over, and what it was cut into. */
   get count(): { surfaces: number; clusters: number; groups: number; instances: number; sets: number } {
     return {
@@ -247,12 +277,19 @@ export class WorldBlocks {
   }
 
   /**
-   * Hands over one block surface, drawn with `recipe`; its index is the
-   * surface's, for `onFailed`. Its arrays are READ at `finish`, so they must
-   * stand until then.
+   * Hands over one surface, drawn with `recipe` — a block, or with `landform`
+   * the floor, the rim or the road merge, drawn ahead of the alpha-tested
+   * meshes (see the header); its index is the surface's, for `onFailed`. Its
+   * arrays are READ at `finish`, so they must stand until then.
    */
-  add(label: string, geometry: SurfaceArrays, recipe: CelRecipe, pieces: readonly PieceSpan[]): number {
-    const group = this.groupFor(label, geometry, recipe);
+  add(
+    label: string,
+    geometry: SurfaceArrays,
+    recipe: CelRecipe,
+    pieces: readonly PieceSpan[],
+    landform: boolean,
+  ): number {
+    const group = this.groupFor(label, geometry, recipe, landform ? "beforeAlphaTest" : "opaque");
     const at = this.surfaces.length;
     this.surfaces.push({ geometry, pieces });
     group.members.push(at);
@@ -265,15 +302,16 @@ export class WorldBlocks {
    * `recipe` once per surviving instance. Its arrays are READ at `finish`.
    */
   addInstanced(set: number, label: string, geometry: SurfaceArrays, recipe: CelRecipe): void {
-    this.groupFor(label, geometry, recipe).instanced.push({ geometry, set });
+    this.groupFor(label, geometry, recipe, "opaque").instanced.push({ geometry, set });
   }
 
   /**
    * Cuts the map: every group's buffers uploaded and its pipelines asked for,
    * every surface cut into clusters — the scatter's pieces cut out of it
    * first, where its group draws them as instances — and the culls built.
-   * `blocks[s]` is surface `s`'s block — its box, as the frame's mesh walk
-   * files it; surfaces of one block share the object.
+   * `blocks[s]` is surface `s`'s REACH box — its block's, as the frame's mesh
+   * walk files it, or the one box of no reach every landform surface is
+   * handed (`WorldCulling.reachBoxOf`); surfaces of one box share the object.
    */
   finish(blocks: readonly BlockBox[], scatter: ScatterCut | null = null): void {
     const surfaces = this.surfaces;
@@ -444,7 +482,8 @@ export class WorldBlocks {
     this.unhook?.();
     this.unhook = null;
     // The draw that counted it is off the renderer now.
-    this.drawn = 0;
+    this.drawnLandform = 0;
+    this.drawnBlocks = 0;
   }
 
   /** Re-copies every material's block from its recipe — after its owner rewrote one. */
@@ -474,8 +513,10 @@ export class WorldBlocks {
     this.instanceCount = 0;
     this.setCount = 0;
     this.groups.length = 0;
-    this.groupOf.clear();
-    this.drawn = 0;
+    this.groupOf.beforeAlphaTest.clear();
+    this.groupOf.opaque.clear();
+    this.drawnLandform = 0;
+    this.drawnBlocks = 0;
   }
 
   dispose(): void {
@@ -483,12 +524,19 @@ export class WorldBlocks {
     this.mesh.destroy();
   }
 
-  /** The group `recipe` is drawn in, made on its first surface; refuses a surface missing what its variant reads. */
-  private groupFor(label: string, geometry: SurfaceArrays, recipe: CelRecipe): Group {
+  /**
+   * The group `recipe` is drawn in at `point`, made on its first surface;
+   * refuses a surface missing what its variant reads. One recipe's groups at
+   * the two points share its program (assembled once a variant) and each own
+   * a material slot, as each owns its buffers.
+   */
+  private groupFor(label: string, geometry: SurfaceArrays, recipe: CelRecipe, point: WorldPoint): Group {
     if (this.cull) throw new Error("world blocks: a surface added after the map was cut");
-    let group = this.groupOf.get(recipe);
+    const of = this.groupOf[point];
+    let group = of.get(recipe);
     if (!group) {
       group = {
+        point,
         material: this.materialOf(recipe),
         program: this.programOf(recipe.defines),
         members: [],
@@ -503,7 +551,7 @@ export class WorldBlocks {
         instancedBuilt: null,
         failed: false,
       };
-      this.groupOf.set(recipe, group);
+      of.set(recipe, group);
       this.groups.push(group);
     }
     for (const a of group.program.vertex.attributes) {
@@ -628,13 +676,23 @@ export class WorldBlocks {
     return { instances: words, instanceCount: total, sets: out, draws, bands2 };
   }
 
-  /** The draw at the end of group 0's opaque meshes, and the culls ahead of it. */
+  /**
+   * The culls, and a draw at each point some group is at: the landform's
+   * ahead of group 0's alpha-tested meshes, the blocks' and the scatter's at
+   * the end of its opaque and alpha-tested meshes. A point no group is at is
+   * not registered, so it queues nothing — an item in Babylon's bundle list
+   * closes the bundle open there.
+   */
   private hook(): void {
-    const removeDraw = this.renderer.add(this.draw, "opaque");
-    const removeFrame = this.renderer.onFrame(this.prepare);
+    const removes: (() => void)[] = [this.renderer.onFrame(this.prepare)];
+    if (this.groups.some((g) => g.point === "beforeAlphaTest")) {
+      removes.push(this.renderer.add(this.drawLandform, "beforeAlphaTest"));
+    }
+    if (this.groups.some((g) => g.point === "opaque")) {
+      removes.push(this.renderer.add(this.drawOpaque, "opaque"));
+    }
     this.unhook = () => {
-      removeDraw();
-      removeFrame();
+      for (const remove of removes) remove();
     };
   }
 
@@ -742,23 +800,34 @@ export class WorldBlocks {
     this.instances?.dispatch(frame, encoder);
   };
 
-  private readonly draw = (pass: GPURenderPassEncoder, ctx: FrameContext): void => {
+  /** Ahead of group 0's alpha-tested meshes: the landform. */
+  private readonly drawLandform = (pass: GPURenderPassEncoder, ctx: FrameContext): void => {
+    const cull = this.cull;
+    this.drawnLandform = this.culling && cull ? this.drawClusters(pass, ctx, cull, "beforeAlphaTest") : 0;
+  };
+
+  /** At the end of group 0's opaque and alpha-tested meshes: the blocks, then the scatter. */
+  private readonly drawOpaque = (pass: GPURenderPassEncoder, ctx: FrameContext): void => {
     let drawn = 0;
     const cull = this.cull;
     if (this.culling && cull) {
-      drawn = this.drawBlocks(pass, ctx, cull) + this.drawScatter(pass, ctx);
+      drawn = this.drawClusters(pass, ctx, cull, "opaque") + this.drawScatter(pass, ctx);
     }
-    this.drawn = drawn;
+    this.drawnBlocks = drawn;
   };
 
-  /** The blocks: one plain draw a group over its whole range of the cull's indices. */
-  private drawBlocks(pass: GPURenderPassEncoder, ctx: FrameContext, cull: ClusterCull): number {
+  /**
+   * The surfaces of `point`'s groups: one plain draw a group over its whole
+   * range of the cull's indices.
+   */
+  private drawClusters(pass: GPURenderPassEncoder, ctx: FrameContext, cull: ClusterCull, point: WorldPoint): number {
     let drawn = 0;
     const host = this.renderer.host;
     const groups = this.groups;
     pass.setIndexBuffer(cull.indices, "uint32");
     for (let g = 0; g < groups.length; g++) {
       const group = groups[g];
+      if (group.point !== point) continue;
       const built = group.built;
       // A group whose surfaces were all scatter draws its parts as instances.
       if (!built || group.failed || group.indexCount === 0) continue;

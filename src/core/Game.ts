@@ -1487,11 +1487,13 @@ export class Game {
     // fill it is buying back.
     //
     // **The map's BLOCKS are no longer in this queue** (`BABYLON_EXIT.md`
-    // X3.3): our renderer draws them AFTER all of it, at the end of the
-    // group's opaque meshes (`render/Renderer.ts`, `"opaque"`), so the
-    // terrain, the roads and the loose props are shaded before the buildings
-    // that hide them. What this sort still orders is what Babylon draws, and
-    // the cost of the blocks coming last is `FINDINGS.md` 61's open question.
+    // X3.3), **nor is its LANDFORM** (X3.5): our renderer draws both AFTER
+    // all of it — the floor, the rim and the roads ahead of the group's
+    // alpha-tested meshes, the blocks at the end of them (`render/Renderer.ts`,
+    // `"beforeAlphaTest"` and `"opaque"`) — so the landform and the loose
+    // props are shaded before the buildings that hide them. What this sort
+    // still orders is what Babylon draws, and the cost of the blocks coming
+    // last is `FINDINGS.md` 61's open question.
     this.scene.setRenderingOrder(0, (a, b) => {
       const eye = this.scene.activeCamera?.globalPosition;
       if (!eye) return 0;
@@ -4670,13 +4672,18 @@ export class Game {
     // The bots are steered by the authority off its own world
     // (`BuildOptions.navFields`) — in the page's own match, in its host.
     const navFields = opts?.editor === true || this.remoteRound;
+    // `?babylonworld` takes nothing, and Babylon draws the world whole — and
+    // so does an EDITOR build: its blocks are unmerged, so nothing of them
+    // would be taken anyway, and its brush rewrites the floor's meshes in
+    // place (`editor/terrainBrush.ts`), which our side, holding a copy cut
+    // once, could not follow.
+    const take = this.overrides.ourWorld && opts?.editor !== true;
     const map = this.mapBuilder.build(layout, environment, heights, {
       ...opts,
       foliage,
       navFields,
-      // `?babylonworld` takes nothing, and Babylon draws the world whole.
-      onSurface: this.overrides.ourWorld ? this.handover.onSurface : undefined,
-      onScatter: this.overrides.ourWorld ? this.handover.onScatter : undefined,
+      onSurface: take ? this.handover.onSurface : undefined,
+      onScatter: take ? this.handover.onScatter : undefined,
     });
     this.map = map;
     // What the profiler reports is the rung this map was built WITH.

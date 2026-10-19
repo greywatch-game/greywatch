@@ -1212,11 +1212,46 @@ contracts:
 - the road depth bias in the material cache key
 - `ROAD_RANK` and the rest of the road ladder
 - the turf
-- `terrainBlock` agreeing across the three callers of `terrainPatches`
+- `terrainBlock` agreeing across the two callers of `terrainPatches`
+  (`MapBuilder.buildValley` and the editor's brush; the server's went at X2.3)
 - the collider clone, which stays as it is
 
 - **Verify:** the bank on every map, closest to the ground and on a road
   crossing; `merge:hash`; X0.3.
+- **Built, not yet measured** (2026-10-18, branch `x35-floor`; no browser
+  was run):
+  - **The landform is marked by the BUILD.** `WorldSurface.landform` is set
+    where `MapBuilder` makes the floor's patches (the borderland's too), the
+    rim's runs and the map-wide road merge — on the record only, never in
+    `part.metadata`, so `merge:hash` and `kit:hash` have nothing new to see
+    (no builder, no metadata, no collider clone, no `terrainPatches` call
+    moved). `BlockHandover` takes a landform surface under the block's other
+    tests; an EDITOR build hands over nothing at all (`Game` passes no
+    `onSurface`), which keeps the brush's in-place rewrite of the floor
+    Babylon's.
+  - **A second draw point, `"beforeAlphaTest"`**, between group 0's opaque
+    and alpha-tested lists, because the turf is a blend on the alpha-tested
+    list that writes no depth and lies on the floor. Babylon has no hook
+    there, so the seam wraps the group's `_renderAlphaTest` while the main
+    pass's group 0 renders (item 10) and fires before the call with
+    `_alphaTestSubMeshes`; a frame with that list empty fires it just ahead
+    of `"opaque"`. The blocks stay at `"opaque"`.
+  - **One cut, one cull, two draws.** `WorldBlocks` keys a group by (recipe,
+    point), so the rim (the pines' material) never shares a group or the
+    scatter with a block; both points read the one cluster list and index
+    buffer. The floor and the rim carry no piece and are cut as one span
+    under `NO_PIECE`; the roads keep their pieces. The landform's reach box
+    is ±`F32_MAX` (`WorldCulling.reachBoxOf`), so the GPU cull keeps it to
+    the size gate and the frustum, as `WorldCulling` kept it loose; a taken
+    loose mesh leaves the candidate list. The roads' -8 reaches our pipeline
+    as `CelRecipe.depthBias`, which `shaders.mjs` now builds per biased shape.
+  - **Owed before it lands:** `shaders.mjs` on seven maps (the bumped ground
+    variant, 16/16 sampled textures, has never drawn in a frame of ours, and
+    the biased road pipelines are new); the bank closest to the ground and
+    on a road crossing on every map (the turf over our floor, the roads over
+    it, the rim against the sky, the borderland); `census.mjs` (the
+    landform's draws fall to one a recipe); `merge:hash` and `kit:hash`
+    against the parent (identical expected); X0.3; the phone.
 
 ### X3.5b — The fold: one draw a recipe, blocks and scatter together — **M–L** (decision)
 

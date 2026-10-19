@@ -1184,6 +1184,11 @@ export class MapBuilder {
       // measured on Sarab, where the ink of whichever mesh the front-to-back
       // sort drew second covered the whole intersection, and no amount of lift
       // fixed it because the shell rode with the slab.
+      //
+      // And it is LANDFORM, as the floor it lies on is (`WorldSurface
+      // .landform`): drawn by our renderer at the floor's point, ahead of the
+      // turf that grows up to its verge.
+      merged.landform = true;
       surfaces.push(merged);
     }
   }
@@ -1451,7 +1456,11 @@ export class MapBuilder {
       ground.material = floorMat;
       // Receiver only: a floor casting into its own depth map is pure acne.
       ground.metadata = { noShadowCaster: true };
-      surfaces.push(surfaceOf(ground, mint()));
+      // The LANDFORM, which our renderer draws ahead of the turf laid over it
+      // (`WorldSurface.landform`) — stated here, where the floor is made.
+      const floor = surfaceOf(ground, mint());
+      floor.landform = true;
+      surfaces.push(floor);
 
       // The floor is the one place a collider shares the visual's vertices.
       // `collider()` builds boxes and records a WorldBox for the nav grid, and
@@ -1547,7 +1556,9 @@ export class MapBuilder {
       // casting rim would end its shadow in a hard line that slides across open
       // ground as you walk. It is a receiver only.
       part.metadata = { noShadowCaster: true };
-      surfaces.push(surfaceOf(part, mint()));
+      const rim = surfaceOf(part, mint());
+      rim.landform = true;
+      surfaces.push(rim);
     }
   }
 

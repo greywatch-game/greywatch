@@ -1250,12 +1250,15 @@ src/
                         #   every sweep unable to tell it ran. A collider
                         #   is never a candidate, a mesh carrying metadata.block
                         #   is one inside the map's fogEnd, everything else
-                        #   always is. A TAKEN block (BlockHandover) is never
-                        #   one, in every build; reachGate states the reach and
-                        #   the size gate as numbers for the GPU cull,
-                        #   blockBoxOf the cell
-    BlockHandover.ts    # Which block surfaces OUR renderer draws in the main
-                        #   pass, in every build (BABYLON_EXIT.md X3.3) —
+                        #   always is. A TAKEN block or the taken landform
+                        #   (BlockHandover) is never one, in every build;
+                        #   reachGate states the reach and the size gate as
+                        #   numbers for the GPU cull, reachBoxOf the box: a
+                        #   block's cell, the landform's NO_REACH
+    BlockHandover.ts    # Which block surfaces, and since X3.5 which landform
+                        #   surfaces (WorldSurface.landform), OUR renderer
+                        #   draws in the main pass, in every build but the
+                        #   editor's (BABYLON_EXIT.md X3.3, X3.5) —
                         #   taken at the build (BuildOptions.onSurface),
                         #   handed to render/WorldBlocks, kept out of the
                         #   candidates, cut at install against their cells, a
@@ -1387,9 +1390,11 @@ src/
                         #   physics buckets and the pane index. Imports
                         #   nothing, so the server reads it without MapBuilder
     worldGeometry.ts    # The world's geometry as a record: WorldSurface (a
-                        #   Part, its block, its piece ranges, whether its
-                        #   positions stay writable, its BIRTH — the scene
-                        #   order its mesh is made in — and its editor item),
+                        #   Part, its block, whether it is the LANDFORM our
+                        #   renderer draws ahead of the alpha-tested list, its
+                        #   piece ranges, whether its positions stay writable,
+                        #   its BIRTH — the scene order its mesh is made in —
+                        #   and its editor item),
                         #   PaneSurfaceGroup, SurfaceRecord / WorldGeometry
                         #   (GameMap.world: everything kept but the arrays,
                         #   which releaseArrays drops at upload), and admission
@@ -2325,19 +2330,22 @@ src/
                         #   bundle list our draws are QUEUED into, the pass's
                         #   attachments, the render target's y-flip, group 0's
                         #   onBeforeTransparentRendering, a texture's own view,
-                        #   Babylon's sampler cache and the upload encoder
-                        #   submitted ahead of the draws (prepareEncoder) — nine.
+                        #   Babylon's sampler cache, the upload encoder
+                        #   submitted ahead of the draws (prepareEncoder), and
+                        #   group 0's _renderAlphaTest, wrapped for the point
+                        #   between its opaque and alpha-tested lists — ten.
                         #   hostTexture, the one crossing that mints a
                         #   HostTexture
     frameHost.ts        # FrameHost (what the renderer needs from whoever owns
-                        #   the frame: the device, the queue, the three main-
+                        #   the frame: the device, the queue, the four main-
                         #   pass hooks, the encoder it submits ahead of the
                         #   draws, a texture's view and sampler NOW),
                         #   PassTargets, HostTexture
     Renderer.ts         # Renderer: the frame's uniforms, textures and their
                         #   group 0, the pipeline cache, the FrameDraws it
-                        #   queues at two points of group 0 in the MAIN pass —
-                        #   where its opaque meshes end, and after it — and the
+                        #   queues at three points of group 0 in the MAIN pass —
+                        #   before its alpha-tested meshes, where its opaque
+                        #   and alpha-tested meshes end, and after it — and the
                         #   FramePrepares run as it begins (a compute cull),
                         #   recorded into the host's prepareEncoder, never
                         #   submitted; refuses to draw if the pass is not
@@ -2376,19 +2384,22 @@ src/
                         #   bufferLayouts, the vertex buffers a stage is drawn
                         #   with. Every stage compiled per variant by
                         #   plans/webgpu-ref/shaders.mjs
-    WorldBlocks.ts      # The map's block surfaces drawn by US, every build:
-                        #   one GROUP per recipe (its surfaces' buffers end to
-                        #   end, then its scatter parts; one material), the map
-                        #   cut once (finish), ONE plain drawIndexed a group
-                        #   at the end of group 0's opaque meshes, then one per
+    WorldBlocks.ts      # The map's block and landform surfaces drawn by US:
+                        #   one GROUP per recipe a point (its surfaces' buffers
+                        #   end to end, then its scatter parts; one material),
+                        #   the map cut once (finish), ONE plain drawIndexed a
+                        #   group — the landform's ahead of group 0's
+                        #   alpha-tested meshes, the blocks' at the end of its
+                        #   opaque ones — then one per
                         #   scatter variant per material, instanced (X3.4b) —
                         #   the scatter's pieces cut out of the blocks that do;
                         #   what it will never draw goes to onFailed as it
                         #   lands, a group whole; stop() for good
     clusters.ts         # cutClusters: a surface cut into short runs of
                         #   one piece's triangles, each with its box and how
-                        #   the wind can move it (BABYLON_EXIT.md X3.3b);
-                        #   withoutPieces, a surface with pieces cut out
+                        #   the wind can move it (BABYLON_EXIT.md X3.3b) — an
+                        #   unpieced surface (the landform) as one NO_PIECE
+                        #   span; withoutPieces, a surface with pieces cut out
     InstanceCull.ts     # The scatter's per-instance GPU cull, beside
                         #   ClusterCull and on its terms (X3.4b): reach, size
                         #   gate, frustum per instance sphere; survivors

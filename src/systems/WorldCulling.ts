@@ -2,9 +2,10 @@
  * WorldCulling.ts — What the frame's own mesh walk is allowed to see.
  * Owns: `Scene.getActiveMeshCandidates`, the map's meshes filed into cull
  * cells, and the list handed back to Babylon each frame — and the TAKEN
- * meshes, the blocks our renderer draws in the main pass instead
- * (`setTaken`), never candidates, with the reach and the size gate this file
- * decides handed to its GPU cull as numbers (`reachGate`).
+ * meshes, the blocks and the landform our renderer draws in the main pass
+ * instead (`setTaken`), never candidates, with the reach and the size gate
+ * this file decides handed to its GPU cull as numbers (`reachGate`) and the
+ * box each is measured to (`reachBoxOf`).
  * There are TWO lists and they run on different clocks: `eligible` is the
  * structural answer, rebuilt only when a cell, a pool or the scene's
  * membership moves, and `candidates` is that list minus whatever is switched
@@ -41,8 +42,8 @@
  * and a mesh left out of it is skipped ENTIRELY rather than skipped cheaply.
  *
  * **Four classes of mesh, and which class a mesh is in is the whole design.**
- * A TAKEN block (below) is no fifth: it is a Blocked mesh that is never
- * offered.
+ * A TAKEN mesh (below) is no fifth: it is a Blocked mesh, or the landform
+ * among the Loose ones, that is never offered.
  *
  * - **Hidden** — the map's collider proxies, `map.colliders`. Invisible by
  *   construction (`MapBuilder.boxMesh` sets `isVisible = false` and nothing
@@ -69,7 +70,8 @@
  *   the other pools (tracers, shards, ragdolls, grenades, rubble), the sky, the
  *   water, the grass, the viewmodel, the hulls, and every visual an EDITOR
  *   build makes, which is keyed per placement and carries no block at all.
- *   Always ELIGIBLE — but `offer` still drops the ones that are switched off,
+ *   Always ELIGIBLE — but for the landform our renderer TAKES (below), which
+ *   is no candidate at all — and `offer` still drops the ones that are switched off,
  *   which is what reaches the effect pools: they are built once and idled with
  *   `isVisible = false`, and were most of a candidate list the frame could not
  *   draw from.
@@ -81,19 +83,23 @@
  * only required to sit CLOSE to the fog — so a hole cut in the rim is a hole
  * onto a gradient, and the further up the dome it is the less it is fogColor.
  * They are also a few hundred meshes against several thousand structures.
+ * Taken by our renderer (X3.5), they keep that answer: no reach, the size
+ * gate per surface, the frustum (`reachBoxOf`).
  *
- * **A TAKEN mesh is a block our renderer draws in the main pass**
- * (`systems/BlockHandover.ts`, `BABYLON_EXIT.md` X3.3), in every build and
- * whatever the handover's test admits. It is filed in its cell like any block,
- * which is the box our renderer's GPU cull measures the reach to
- * (`blockBoxOf`), but it is never a candidate — so the main pass's mesh walk
- * never sees it, and nothing else does either: every other pass draws from a
- * list of its own (the shadow maps, the probes, the lamps' atlas), and the
- * glow's mask, which reads the main pass's ACTIVE meshes, keeps only what
- * glows, which a taken mesh never does. What this file decides for the
- * candidates — the reach, and the size gate's scale this frame — it states
- * as numbers in `reachGate`, so the GPU cull decides a taken mesh's clusters
- * as this decides a candidate, and reads no node to do it.
+ * **A TAKEN mesh is one our renderer draws in the main pass**
+ * (`systems/BlockHandover.ts`, `BABYLON_EXIT.md` X3.3, X3.5), in every build
+ * and whatever the handover's test admits: a BLOCK, filed in its cell like
+ * any block, which is the box our renderer's GPU cull measures the reach to,
+ * or the LANDFORM — one of the map's own visuals that carries no block —
+ * which is measured to a box no reach is ever short of (`reachBoxOf`). Either
+ * way it is never a candidate — so the main pass's mesh walk never sees it,
+ * and nothing else does either: every other pass draws from a list of its own
+ * (the shadow maps, the probes, the lamps' atlas), and the glow's mask, which
+ * reads the main pass's ACTIVE meshes, keeps only what glows, which a taken
+ * mesh never does. What this file decides for the candidates — the reach, and
+ * the size gate's scale this frame — it states as numbers in `reachGate`, so
+ * the GPU cull decides a taken mesh's clusters as this decides a candidate,
+ * and reads no node to do it.
  *
  * The reach is the map's own `fogEnd` plus `CONFIG.graphics.culling.pad`, and
  * on a map whose fog never closes — `fogEnd` past its own diagonal, which the
@@ -102,8 +108,29 @@
  */
 import type { AbstractMesh, Mesh, Scene, Vector3 } from "@babylonjs/core";
 import { CONFIG } from "../config";
-import type { BlockBox, ReachGate } from "../render/ClusterCull";
+import { type BlockBox, F32_MAX, type ReachGate } from "../render/ClusterCull";
 import type { GameMap } from "../world/MapBuilder";
+
+/**
+ * The reach box of the LANDFORM — the floor, the rim and the road merge, once
+ * our renderer draws them (`reachBoxOf`): every point is inside it, so no
+ * reach is ever short of it, and the GPU cull keeps the landform's clusters
+ * to the size gate and the frustum, exactly as `rebuildList` keeps a loose
+ * mesh. **The sky is behind the landform** — see "The landform is
+ * deliberately loose" in the header — so a reach cut into it would be a hole
+ * onto a gradient rather than onto `fogColor`. FINITE, at the largest `f32`
+ * (`F32_MAX`), never Infinity: the cull's arithmetic may assume there is
+ * none, and a box from minus to plus the largest float leaves every
+ * distance to it 0.
+ */
+const NO_REACH: BlockBox = {
+  minX: -F32_MAX,
+  minY: -F32_MAX,
+  minZ: -F32_MAX,
+  maxX: F32_MAX,
+  maxY: F32_MAX,
+  maxZ: F32_MAX,
+};
 
 /**
  * One cull cell: a map block's own world box, and whether what was filed under
@@ -248,6 +275,13 @@ export class WorldCulling {
   /** Every drawn map mesh that carries a block, and the cell it was filed in. */
   private cellOf = new Map<AbstractMesh, Cell>();
   private cells: Cell[] = [];
+  /**
+   * The map's own visuals that carry NO block — on a shipped build its
+   * landform: the floor's patches, the rim's runs and the road merge. Loose
+   * like any mesh outside a cell; kept apart only so `setTaken` can tell one
+   * of these from a mesh that is not the map's at all.
+   */
+  private unfiled = new Set<AbstractMesh>();
 
   /**
    * Every mesh of every pooled body, and the pool it was filed in.
@@ -350,6 +384,7 @@ export class WorldCulling {
     this.hidden = new Set();
     this.cellOf = new Map();
     this.cells = [];
+    this.unfiled = new Set();
     this.listDirty = true;
     this.evalX = Number.POSITIVE_INFINITY;
     this.evalZ = Number.POSITIVE_INFINITY;
@@ -433,6 +468,9 @@ export class WorldCulling {
     // out of the frame together, or the tower is a sheet of glass hanging in
     // the fog with nothing behind it.
     for (const group of map.paneGroups) file(group.mesh);
+    for (const mesh of map.visuals) {
+      if (!this.cellOf.has(mesh) && !this.hidden.has(mesh)) this.unfiled.add(mesh);
+    }
     this.stats.cells = this.cells.length;
   }
 
@@ -473,14 +511,15 @@ export class WorldCulling {
 
   /**
    * The meshes our renderer draws in the main pass from now on — each one a
-   * mesh `setMap` filed in a cell (anything else is refused: only a block is
-   * drawn by our side). Replaced whole; empty hands every one back. They are
-   * never candidates again until handed back.
+   * mesh `setMap` filed: a block in its cell, or one of the map's own visuals
+   * that carries no block, the landform (anything else is refused: a collider
+   * or a body is never drawn by our side). Replaced whole; empty hands every
+   * one back. They are never candidates again until handed back.
    */
   setTaken(meshes: readonly AbstractMesh[]): void {
     for (const mesh of meshes) {
-      if (!this.cellOf.has(mesh)) {
-        throw new Error(`WorldCulling: "${mesh.name}" is taken but is no block`);
+      if (!this.cellOf.has(mesh) && !this.unfiled.has(mesh)) {
+        throw new Error(`WorldCulling: "${mesh.name}" is taken but is neither a block nor the map's landform`);
       }
     }
     this.taken = new Set(meshes);
@@ -488,12 +527,15 @@ export class WorldCulling {
   }
 
   /**
-   * The box of the cell `mesh` was filed in — the bounds of every mesh of its
-   * block, glazing included, that the reach is measured to — or undefined
-   * for a mesh in no cell. Meshes of one block share the object.
+   * The box our renderer's cull measures `mesh`'s reach to: for a block the
+   * box of the cell it was filed in — the bounds of every mesh of its block,
+   * glazing included — and for one of the map's visuals that carries no
+   * block (the landform) `NO_REACH`, which the reach never cuts, as it never
+   * cuts a loose mesh; undefined for anything else. Meshes of one block share
+   * the object, and every landform surface shares the one box.
    */
-  blockBoxOf(mesh: AbstractMesh): BlockBox | undefined {
-    return this.cellOf.get(mesh);
+  reachBoxOf(mesh: AbstractMesh): BlockBox | undefined {
+    return this.cellOf.get(mesh) ?? (this.unfiled.has(mesh) ? NO_REACH : undefined);
   }
 
   /**
@@ -617,6 +659,8 @@ export class WorldCulling {
         if (pool.on || this.warm) data.push(mesh);
         continue;
       }
+      // The landform our renderer draws: loose, and drawn by our side instead.
+      if (this.taken.has(mesh)) continue;
       loose++;
       data.push(mesh);
     }

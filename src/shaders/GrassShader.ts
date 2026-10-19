@@ -796,10 +796,14 @@ export function createGrassMaterial(scene: Scene, name: string): ShaderMaterial 
  * them because the mode it compares against is DISABLE again.
  *
  * Two more things follow from blending. It draws on group 0's ALPHA-TEST list
- * (as the clouds do, and for their reason: that list is the ORDER, after every
- * opaque surface), because a blend has to land on the floor it lies over and
- * the opaque list has no order in which the terrain comes first. And it writes
- * NO depth: the floor under it already wrote the surface, the blades over it
+ * (as the clouds do, and for their reason: that list is the ORDER, after
+ * Babylon's opaque surfaces), because a blend has to land on the floor it lies
+ * over and the opaque list has no order in which the terrain comes first. The
+ * floor and the roads are OUR renderer's since `BABYLON_EXIT.md` X3.5, and it
+ * draws them at the one point that keeps this true — after the opaque list and
+ * before this one (`render/Renderer.ts`, `"beforeAlphaTest"`); the blocks it
+ * draws after this list, which a sheet on the floor does not lie over. And it
+ * writes NO depth: the floor under it already wrote the surface, the blades over it
  * are drawn before it and test it out where they stand, and a sheet writing a
  * depth wherever it is a hundredth covered would hide every coplanar mark laid
  * after it.

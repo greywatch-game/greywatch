@@ -481,8 +481,9 @@ question of who calls whom.
 
 ~153 active terrain patches on Cinderhaven. Clusters, as the blocks. Last in
 Part B because the floor carries the most contracts — the road depth bias in
-the material cache key, the turf, `terrainBlock` agreeing across the three
-callers of `terrainPatches`, the collider clone (which stays as it is) — and
+the material cache key, the turf, `terrainBlock` agreeing across the two
+callers of `terrainPatches` (the server's third went at `BABYLON_EXIT.md`
+X2.3), the collider clone (which stays as it is) — and
 the gain is a third of the blocks'.
 
 ---

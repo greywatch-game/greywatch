@@ -7,7 +7,8 @@
  * Babylon's own draw order (`queue`), the encoder submitted ahead of the
  * frame's draws (`prepareEncoder`), the camera's matrix, the frame's main
  * pass told apart from every render target that also draws rendering group
- * 0 — and the point inside it where that group's opaque meshes end — and a
+ * 0 — and the two points inside it where that group's alpha-tested meshes
+ * begin and where its opaque and alpha-tested meshes end — and a
  * Babylon texture's own view and sampler (`bind`); and `hostTexture`, the one
  * crossing that turns a Babylon texture into the handle the renderer holds.
  * Invariants: NAMES Babylon's types and loads none of it (every import here
@@ -74,6 +75,18 @@
  *      flush mid-frame replaces it, which is why it is read at the call and
  *      never kept: whichever one is current is submitted before the draws
  *      recorded after it, and inside the timer.
+ *  10. `RenderingGroup._renderAlphaTest` and `_alphaTestSubMeshes`
+ *      (`Rendering/renderingGroup.js`, the group item 6 reaches): `render`
+ *      draws its opaque list, then calls `_renderAlphaTest` with
+ *      `_alphaTestSubMeshes` — and calls the same function once BEFORE that,
+ *      with its depth-only list, which is why the argument is compared and
+ *      never the call counted. Babylon has no hook between the two lists, so
+ *      the function is WRAPPED while the main pass's group renders: the
+ *      wrapper is made once, installed as the group starts and restored as it
+ *      ends (and on `dispose`), and re-read at every start because the
+ *      `alphaTestSortCompareFn` setter replaces it (`Game` sets the group's
+ *      order through `setRenderingOrder`). A list empty that frame is never
+ *      handed over, so the point falls back to item 6's slot, ahead of it.
  *
  * Public API used here and nowhere else in `src/render/`, for the same
  * reason (it is Babylon's shape): `engine.currentSampleCount`,
@@ -156,6 +169,14 @@ export function hostTexture(texture: BaseTexture): HostTexture {
 
 interface RenderTargetInternals {
   readonly _disableEngineYFlip?: boolean;
+}
+
+/** Items 6 and 10: the scene's rendering group, as far as this file reaches into it. */
+interface GroupInternals {
+  onBeforeTransparentRendering: (() => void) | undefined;
+  /** Called with the depth-only list, then with `_alphaTestSubMeshes`; replaced by the sort setters. */
+  _renderAlphaTest: (this: GroupInternals, subMeshes: unknown) => void;
+  readonly _alphaTestSubMeshes: unknown;
 }
 
 /** What Babylon's bundle list runs: `run` with the pass, and `clone` for its snapshot path. */
@@ -259,6 +280,13 @@ export class BabylonFrameHost implements FrameHost {
    * whether its group 0 lands inside the window depends on which observer
    * was added first. The target does not.
    *
+   * WHERE THE ALPHA-TESTED MESHES BEGIN is the call item 10 wraps, made with
+   * the group's alpha-tested list — after its depth-only and opaque lists.
+   * Babylon skips the call for a list empty that frame (and for a group
+   * drawn with `renderAlphaTestMeshes` off), and then the point is answered
+   * where the opaque meshes end, immediately ahead of that hook: so it fires
+   * once a group, always before `afterOpaque`.
+   *
    * WHERE THE OPAQUE MESHES END is the first of three things the group does
    * after its opaque and alpha-tested lists, whichever it reaches: its
    * sprites (an observable only once the sprite component is loaded), its
@@ -271,14 +299,40 @@ export class BabylonFrameHost implements FrameHost {
     const scene = this.scene;
     const e = this.e;
     let frame: RenderTargetInternals | null | undefined;
-    /** Inside group `groupId` of the main pass, and whether its opaque meshes have ended. */
+    /**
+     * Inside group `groupId` of the main pass, and whether its alpha-tested
+     * meshes have begun and its opaque meshes ended.
+     */
     let inGroup = false;
+    let alphaBegun = false;
     let opaqueDone = false;
     const inMainPass = (): boolean => frame !== undefined && e._currentRenderTarget === frame;
+    const alphaTestBegins = (): void => {
+      if (!inGroup || alphaBegun) return;
+      alphaBegun = true;
+      hooks.beforeAlphaTest();
+    };
     const opaqueEnds = (): void => {
       if (!inGroup || opaqueDone) return;
+      // A group whose alpha-tested list was empty never called item 10.
+      alphaTestBegins();
       opaqueDone = true;
       hooks.afterOpaque();
+    };
+    // Items 6 and 10. Typed as always set; item 6 is one slot nothing in
+    // Babylon fills, and item 10 is set by the group's constructor.
+    const group = scene.renderingManager.getRenderingGroup(groupId) as unknown as GroupInternals;
+    /** Item 10: the group's own function while the wrapper stands in for it; null otherwise. */
+    let alphaTest: GroupInternals["_renderAlphaTest"] | null = null;
+    const wrapped = (subMeshes: unknown): void => {
+      if (subMeshes === group._alphaTestSubMeshes) alphaTestBegins();
+      // Installed only with `alphaTest` set, and `unwrap` is the one place
+      // that clears it — after taking the wrapper out.
+      alphaTest!.call(group, subMeshes);
+    };
+    const unwrap = (): void => {
+      if (alphaTest && group._renderAlphaTest === wrapped) group._renderAlphaTest = alphaTest;
+      alphaTest = null;
     };
     const before: Observer<Scene> = scene.onBeforeDrawPhaseObservable.add(() => {
       frame = e._currentRenderTarget;
@@ -288,6 +342,7 @@ export class BabylonFrameHost implements FrameHost {
       () => {
         frame = undefined;
         inGroup = false;
+        unwrap();
       },
       undefined,
       true,
@@ -296,7 +351,14 @@ export class BabylonFrameHost implements FrameHost {
       (info) => {
         if (info.renderingGroupId !== groupId || !inMainPass()) return;
         inGroup = true;
+        alphaBegun = false;
         opaqueDone = false;
+        // Re-read every frame: the sort setters replace the function.
+        const own = group._renderAlphaTest;
+        if (own !== wrapped) {
+          alphaTest = own;
+          group._renderAlphaTest = wrapped;
+        }
       },
     );
     const groupEnd: Observer<RenderingGroupInfo> = scene.onAfterRenderingGroupObservable.add(
@@ -304,6 +366,7 @@ export class BabylonFrameHost implements FrameHost {
         if (!inGroup || info.renderingGroupId !== groupId) return;
         opaqueEnds();
         inGroup = false;
+        unwrap();
         hooks.afterGroup();
       },
     );
@@ -313,10 +376,7 @@ export class BabylonFrameHost implements FrameHost {
     const spriteHook = (scene as Sprites).onBeforeSpritesRenderingObservable;
     const sprites = spriteHook?.add(opaqueEnds) ?? null;
     const particles: Observer<Scene> = scene.onBeforeParticlesRenderingObservable.add(opaqueEnds);
-    // Item 6. Typed as always set; it is one slot nothing in Babylon fills.
-    const group = scene.renderingManager.getRenderingGroup(groupId) as {
-      onBeforeTransparentRendering: (() => void) | undefined;
-    };
+    // Item 6.
     if (group.onBeforeTransparentRendering) {
       throw new Error(`babylonSeam: rendering group ${groupId}'s transparent hook is already taken`);
     }
@@ -332,6 +392,7 @@ export class BabylonFrameHost implements FrameHost {
         if (group.onBeforeTransparentRendering === opaqueEnds) {
           group.onBeforeTransparentRendering = undefined;
         }
+        unwrap();
       },
     };
   }

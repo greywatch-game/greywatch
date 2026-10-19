@@ -19,10 +19,11 @@
  * `src/render/`, and each declares what the bodies read its own way — so a
  * shape this page's factory compiled is also assembled by
  * `render/celVertex.ts` and `render/celFragment.ts` and built into a pipeline
- * by our own `PipelineCache` (`oursCheck`). Only the block variants draw with
- * those modules — the shapes a map's TAKEN blocks wear (`BABYLON_EXIT.md`
- * X3.3c) — which is exactly why every shape is compiled here: an unused
- * module is one nobody else would ever find broken.
+ * by our own `PipelineCache` (`oursCheck`). Only the TAKEN surfaces' variants
+ * draw with those modules — the shapes a map's blocks wear (`BABYLON_EXIT.md`
+ * X3.3c) and since X3.5 its landform, the bumped ground among them — which
+ * is exactly why every shape is compiled here: an unused module is one nobody
+ * else would ever find broken.
  *
  * **A frame count is not coverage, so this asks the FACTORY rather than the
  * frame.** Every cel material in the game comes from one cache, so the check
@@ -135,8 +136,16 @@ const HOOK = () => {
  * (`celInstancedVertex`), and the instance cull's three entry points
  * (`render/wgsl/instanceCull.ts`) are a row of their own beside the
  * cluster cull's.
+ *
+ * **And the pipeline STATES the world draws them in (X3.5).** A pipeline is
+ * its fixed-function state as well as its modules, and `WorldBlocks` asks for
+ * a recipe's with its `depthBias` — the ROADS' (`ROAD_DEPTH_UNITS`), since
+ * X3.5 took the landform, and anything else this page's factory made with a
+ * `zOffsetUnits`. So every (shape, bias) a cel material that keeps a recipe
+ * carries is built once more, both stages, with that bias as `WorldBlocks`
+ * states it — or the first frame to draw a road is the first to try it.
  */
-async function oursCheck(shapes) {
+async function oursCheck({ shapes, biased }) {
   const { celFragment } = await import("/src/render/celFragment.ts");
   const { bufferLayouts, celInstancedVertex, celVertex } = await import("/src/render/celVertex.ts");
   const { PipelineCache } = await import("/src/render/PipelineCache.ts");
@@ -151,7 +160,13 @@ async function oursCheck(shapes) {
     ["", celVertex],
     ["instanced ", celInstancedVertex],
   ];
-  for (const shape of shapes) for (const [kind, vertexOf] of stages) {
+  // Every shape at no bias, then each biased (shape, bias) the page carries.
+  const builds = [
+    ...shapes.map((shape) => ({ shape, depthBias: 0 })),
+    ...biased.map(({ shape, depthBias }) => ({ shape, depthBias })),
+  ];
+  for (const { shape, depthBias } of builds) for (const [stage, vertexOf] of stages) {
+    const kind = depthBias === 0 ? stage : `${stage}bias ${depthBias} `;
     const defines = shape ? shape.split("+") : [];
     let vm;
     let fm;
@@ -172,6 +187,8 @@ async function oursCheck(shapes) {
         fragmentEntry: "main",
         buffers: bufferLayouts(vm),
         targets: FRAME_TARGETS,
+        // As `WorldBlocks.ask` states it: no state at all for no bias.
+        state: depthBias === 0 ? undefined : { depthBias },
       });
     } catch (e) {
       built = String(e?.message ?? e);
@@ -295,6 +312,9 @@ for (const id of MAPS) {
 
     const materials = [];
     const cel = new Set();
+    // Each (shape, bias) a material our renderer could draw carries — a recipe
+    // with a depth bias (X3.5's roads) — for `oursCheck`'s pipeline states.
+    const biased = new Map();
     for (const mat of shaders) {
       const effect = mat.getEffect?.();
       const defines = mat._options.defines
@@ -303,6 +323,12 @@ for (const id of MAPS) {
         .sort();
       const isCel = mat.name.startsWith("cel-");
       if (isCel) cel.add(defines.join("+"));
+      const recipe = g.mats.celRecipe(mat);
+      if (recipe && recipe.depthBias !== 0) {
+        // In the recipe's own order, as `WorldBlocks` assembles it.
+        const shape = recipe.defines.join("+");
+        biased.set(`${shape}|${recipe.depthBias}`, { shape, depthBias: recipe.depthBias });
+      }
       materials.push({
         name: mat.name,
         defines: defines.join("+"),
@@ -326,11 +352,17 @@ for (const id of MAPS) {
         });
       }
     }
-    return { materials, cel: [...cel].sort(), modules, moduleCount: window.__modules.length };
+    return {
+      materials,
+      cel: [...cel].sort(),
+      biased: [...biased.values()],
+      modules,
+      moduleCount: window.__modules.length,
+    };
   });
 
   for (const v of out.cel) seen.add(v);
-  const ours = await page.evaluate(oursCheck, out.cel);
+  const ours = await page.evaluate(oursCheck, { shapes: out.cel, biased: out.biased });
   const badOurs = ours.filter((o) => o.error);
 
   const badMats = out.materials.filter((m) => !m.ready || m.error);

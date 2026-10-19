@@ -16,7 +16,9 @@
  * from the frame's own wind — so the cull never reads a node; the frustum is
  * the view-projection's four side planes and the eye's own plane, normalised
  * here, and a cluster is dropped only when its box lies wholly outside one,
- * so it drops nothing the frustum did not already hide; the work is RECORDED
+ * so it drops nothing the frustum did not already hide; the reach is measured
+ * to the box each surface was handed (`BlockBox`), which for the landform is
+ * one the reach is never short of; the work is RECORDED
  * when the frame's main pass begins into the encoder the host submits ahead
  * of the frame's draws (`FrameHost.prepareEncoder`), so it reaches the GPU
  * before the draws that read it and inside the frame's GPU timer — once a
@@ -35,6 +37,7 @@
  * `dispose`, however late its pipelines arrive.
  * Contract: `docs/rendering.md`, "Our renderer's frame".
  */
+import { NO_PIECE } from "./clusters";
 import { closeness, CullCheck, type CullCheckSpec, type CullReport } from "./CullCheck";
 import type { FrameUniforms } from "./frame";
 import type { PipelineCache } from "./PipelineCache";
@@ -103,7 +106,12 @@ export function openTests(mode: CullMode, f: Float32Array, u: Uint32Array): void
   u[26] = 0;
 }
 
-/** A block's box, as `WorldCulling` files a cell. */
+/**
+ * A cluster's REACH box: its block's, as `WorldCulling` files a cell — or,
+ * for the landform, one every point is inside, from minus to plus `F32_MAX`
+ * (`WorldCulling.reachBoxOf`), so the reach never drops it. Finite always:
+ * the cull's arithmetic assumes no infinity.
+ */
 export interface BlockBox {
   readonly minX: number;
   readonly minY: number;
@@ -460,9 +468,13 @@ function clusterReplay(
       const o = i * CLUSTER_WORDS;
       const { d2, w2 } = sphere(f, cu[o + 10]);
       const planes = [0, 1, 2, 3, 4].map((k) => plane(f, o, k).toFixed(2)).join(" ");
+      const box = tables.blocks[cu[o + 9]];
+      // The landform's box, which no reach is short of (`WorldCulling.reachBoxOf`).
+      const reach = box.maxX >= F32_MAX ? "no reach" : `to block ${Math.sqrt(boxDist2(f, box)).toFixed(1)} m`;
+      const piece = cu[o + 11] === NO_PIECE ? "no piece" : `piece ${cu[o + 11]}`;
       return (
-        `block ${cu[o + 9]} surface ${cu[o + 10]} box [${[0, 1, 2].map((a) => cf[o + a].toFixed(1))}]..[${[4, 5, 6].map((a) => cf[o + a].toFixed(1))}]` +
-        ` · to block ${Math.sqrt(boxDist2(f, tables.blocks[cu[o + 9]])).toFixed(1)} m · gate ${u[26] ? (Math.sqrt(w2 / Math.max(d2, 1))).toFixed(1) : "-"} px` +
+        `block ${cu[o + 9]} surface ${cu[o + 10]} ${piece} box [${[0, 1, 2].map((a) => cf[o + a].toFixed(1))}]..[${[4, 5, 6].map((a) => cf[o + a].toFixed(1))}]` +
+        ` · ${reach} · gate ${u[26] ? (Math.sqrt(w2 / Math.max(d2, 1))).toFixed(1) : "-"} px` +
         ` · planes at far corner ${planes} vs -${grow(f, o).toFixed(2)}`
       );
     },

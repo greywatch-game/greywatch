@@ -2393,10 +2393,14 @@ that state's arrays at draw time, and resetting the MODE is what makes the next
 is already set. Two more things follow. It draws on group 0's **ALPHA-TEST
 list**, the clouds' trick for the clouds' reason — that list is the ORDER, and a
 blend has to land after the floor it lies over, which the opaque list does not
-promise. And it writes **no depth**: the floor has written the surface, the
-blades are drawn before it and test it out where they stand, and a sheet that
-wrote depth wherever it was a hundredth covered would hide every coplanar mark
-laid after it.
+promise. **Since `BABYLON_EXIT.md` X3.5 the floor and the roads are OUR
+renderer's, and they keep this contract by a draw point of their own**:
+`"beforeAlphaTest"`, after Babylon's opaque list and before this one ("Our
+renderer's frame", below). Drawn where the blocks are, at the end of this list,
+they would paint over the turf. And it writes **no depth**: the floor has
+written the surface, the blades are drawn before it and test it out where they
+stand, and a sheet that wrote depth wherever it was a hundredth covered would
+hide every coplanar mark laid after it.
 
 **The patches are STITCHED rather than skirted.** A fine patch beside a coarse
 one samples the ground at different points, so their shared edge is two
@@ -3119,8 +3123,10 @@ target (its identity and its flip). X3.3a added three: rendering group 0's
 `onBeforeTransparentRendering`, a texture's own `GPUTextureView`, and the
 sampler out of Babylon's own sampler cache. X3.3c added a ninth: the upload
 encoder Babylon submits ahead of the frame's draws, which the cluster cull is
-recorded into (`FrameHost.prepareEncoder`, below). That list only shrinks
-after Phase 3.
+recorded into (`FrameHost.prepareEncoder`, below). X3.5 added a tenth: the
+group's `_renderAlphaTest`, WRAPPED while the main pass's group 0 renders, so
+a draw can land between its opaque and alpha-tested lists (below). That list
+only shrinks after Phase 3.
 Six older touches in four files (`FrameDepth`, `webgpuLeaks`,
 `ReflectionSystem`, `FrameProfile`) are not the renderer's and stay where
 they are, listed in the seam's header with the step each leaves at; one of
@@ -3156,12 +3162,27 @@ its group 0 fell inside the window would depend on which observer was
 added first, and the review of X3.2 found the renderer safe only because
 `Game` happened to build it before `GlowPass`.
 
-**A draw lands at one of TWO points of rendering group 0** (`DrawPoint`),
-both before the viewmodel's group, whose auto-clear `Game` turns off, so the
-pass is not restarted between them:
+**A draw lands at one of THREE points of rendering group 0** (`DrawPoint`),
+all before the viewmodel's group, whose auto-clear `Game` turns off, so the
+pass is not restarted between them, and in this order every frame:
 
+- **`"beforeAlphaTest"`: where the group's opaque meshes end and its
+  ALPHA-TESTED meshes begin** (X3.5). Babylon has no hook there, so the seam
+  WRAPS the group's `_renderAlphaTest` while the main pass's group 0 renders
+  (item 10): the wrapper is made once, installed as the group starts — re-read
+  every frame, since the sort setters replace the function — restored as it
+  ends, and fires the point before the call that hands it the
+  `_alphaTestSubMeshes` list, never the earlier call with the depth-only list.
+  A frame whose alpha-tested list is empty makes no such call, and the point
+  fires at `"opaque"`'s trigger instead, immediately AHEAD of it, so the
+  order holds every frame. **The LANDFORM is drawn here** — the floor, the
+  rim and the road merge — because the turf is a blend on the alpha-tested
+  list that writes no depth and must land on a floor already drawn ("The
+  turf", above). Nothing else is: the blocks stay at `"opaque"`, where X3.3a
+  put them, and nothing on the alpha-tested list lies over them.
 - **`"opaque"`: where the group's opaque and alpha-tested meshes end**, before
-  anything blended in it. **Every opaque draw of ours goes here**, because
+  anything blended in it. **Every other opaque draw of ours goes here, and
+  none goes later**, because
   the blended surfaces write no depth: an opaque wall drawn after the
   glazing or the water in front of it paints over them. The point is the
   FIRST of three things Babylon's `RenderingGroup.render` does after its
@@ -3178,9 +3199,9 @@ pass is not restarted between them:
 Every opaque draw of Babylon's in the group lands BEFORE an opaque draw of
 ours, which changes only which of two surfaces at EXACTLY the same depth
 wins under `less-equal` — in the PICTURE. In the GPU's time it changes more:
-`Game`'s front-to-back sort no longer reaches the blocks, so the terrain, the
-roads and the loose props are shaded before the buildings that hide them
-(`FINDINGS.md` 61, open). Drawing ours at the group's START instead was
+`Game`'s front-to-back sort no longer reaches the blocks or the landform, so
+the loose props, then the landform, are shaded before the buildings that hide
+them (`FINDINGS.md` 61, open). Drawing ours at the group's START instead was
 weighed and refused: the sky dome writes no depth and draws first, at a
 600 m radius, so a block past 600 m drawn before it would be painted over.
 
@@ -3326,7 +3347,9 @@ is `rgba16float`, the lamps' atlas `r16float`, the cloud field `rg8unorm`,
 the volume `rgba16float` and `rgba8unorm`, and the ground `rgba8unorm`.
 
 **The world's BLOCKS are drawn by our side, in the MAIN pass, in every
-build** (`BABYLON_EXIT.md` X3.3a, X3.3b and X3.3c). X3.3a and X3.3b proved
+build** (`BABYLON_EXIT.md` X3.3a, X3.3b and X3.3c) — **and since X3.5 its
+LANDFORM**: the floor's patches (the borderland's too), the rim's runs and
+the map-wide road merge. X3.3a and X3.3b proved
 them behind a DEV switch, `?ourworld`, against the bank Babylon drew without
 it; X3.3c took the switch out, so Babylon draws a block in the main pass only
 when the handover refused it or handed it back. **Their Babylon meshes STAY**, and are
@@ -3334,23 +3357,44 @@ still drawn by Babylon in every OTHER pass — the shadow maps, the reflection
 probes and the lamps' atlas — until X3.6 moves those passes.
 
 - **`systems/BlockHandover.ts` decides which surfaces are TAKEN.** A
-  surface is taken if it is block-merged, at identity, never written after
-  the build, on the default layer mask, and on a material that keeps a
-  recipe. Its arrays are handed over as the build makes its mesh
+  surface is taken if it is block-merged OR the landform, at identity, never
+  written after the build, on the default layer mask, and on a material that
+  keeps a recipe. Its arrays are handed over as the build makes its mesh
   (`BuildOptions.onSurface`), the one moment they can still be read, and
   read once more when the map is CUT (`WorldBlocks.finish`, from
   `installMap` after `WorldCulling.setMap`). `Game.handover` is always
-  built; a map whose surfaces fail the test simply has fewer taken.
-- **`render/WorldBlocks.ts` draws one GROUP per cel recipe** at
-  `"opaque"`: every surface of the recipe end to end on one set of vertex
-  buffers (an attribute a surface lacks but the variant reads is zeros,
-  which is what Babylon's empty buffer reads), one pipeline, one material,
-  the identity `world` at group 2, and ONE plain `drawIndexed` over the
-  group's whole range of the cull's indices — never an indirect draw (below).
+  built; a map whose surfaces fail the test simply has fewer taken. **The
+  landform is MARKED BY THE BUILD** (`WorldSurface.landform`, set where
+  `MapBuilder` makes the floor, the rim and the road merge), never guessed
+  from a name or a missing block, and the flag is on the RECORD only — never
+  in `part.metadata`, which `merge:hash` fingerprints. **An EDITOR build
+  hands over nothing** (`Game` passes no `onSurface`): its blocks are
+  unmerged, and its terrain brush rewrites the floor's meshes in place, which
+  a copy cut once could not follow.
+- **`render/WorldBlocks.ts` draws one GROUP per cel recipe A POINT** — the
+  landform's at `"beforeAlphaTest"`, the blocks' at `"opaque"`, so the rim
+  (which wears the pines' material) never shares a group, or the scatter's
+  instanced parts, with a block: every surface of the group end to end on
+  one set of vertex buffers (an attribute a surface lacks but the variant
+  reads is zeros, which is what Babylon's empty buffer reads), one pipeline,
+  one material, the identity `world` at group 2, and ONE plain `drawIndexed`
+  over the group's whole range of the cull's indices — never an indirect draw
+  (below). **The two points are ONE cut, one cull, one cluster list and one
+  index buffer**, two `FrameDraw`s each drawing its own groups, so X3.5b's
+  one draw a pass folds both; a point no group is at queues nothing.
+- **A recipe's DEPTH BIAS is its pipeline's** (`CelRecipe.depthBias`, Babylon's
+  `zOffsetUnits`, `PipelineState.depthBias`), asked for by `WorldBlocks` with
+  the recipe — so the roads' `ROAD_DEPTH_UNITS` (-8) is drawn by our side as
+  by Babylon's, and the roads are the first world materials it reaches.
+  `plans/webgpu-ref/shaders.mjs` builds every biased (shape, bias) a page
+  carries as well as every shape unbiased.
 - **The map is cut into CLUSTERS once** (`render/clusters.ts`,
   `CONFIG.graphics.clusters`): runs of at most `triangles` triangles of one
   X1.4 piece, in the surface's own order, each carrying its block, its piece,
-  its box, and how far the wind can move it. Never re-cut per frame.
+  its box, and how far the wind can move it. Never re-cut per frame. **The
+  floor and the rim carry no piece** (they are no layout item), so each is cut
+  as ONE span over the whole surface under `NO_PIECE`, an id no piece table
+  holds and nothing reads; the roads keep their placements' pieces.
 - **What draws is decided on the GPU, once a frame, from numbers alone**
   (`render/ClusterCull.ts`, `render/wgsl/clusterCull.ts`). A cluster is
   dropped only if its BLOCK's box (the cell `WorldCulling` filed it in) is
@@ -3360,7 +3404,12 @@ probes and the lamps' atlas — until X3.6 moves those passes.
   reach and the size gate's scale are `WorldCulling`'s own
   (`WorldCulling.reachGate`), so a cluster is decided as a candidate would
   be, and the frustum only ever drops what the frustum hid. The cull reads no
-  node.
+  node. **The landform has NO reach, as it had none as a loose mesh**: every
+  landform surface is handed one box from minus to plus the largest `f32`
+  (`WorldCulling.reachBoxOf`, `F32_MAX` — finite, since the shader may assume
+  no infinity), so its clusters meet the size gate per surface (as `tooSmall`
+  met the mesh) and the frustum, and never the fog. The sky is behind the
+  landform ("The landform is deliberately loose", below).
 - **The survivors are written NEAR-FIRST, and in one order.** A scan, never
   an atomic append: by band (`nearBands`, nearest first), then by cluster.
   The same eye draws the same triangles in the same order, so an equal-depth
@@ -3389,8 +3438,10 @@ probes and the lamps' atlas — until X3.6 moves those passes.
   arise. They are `PipelineCache`'s (`compute`), keyed on their code, so
   they compile once a SESSION rather than once a map.
 - **A taken mesh is drawn by our side in the MAIN pass only.**
-  `WorldCulling.setTaken` keeps it out of the candidate list — never a
-  candidate unless a failed compile hands it back — and every other pass
+  `WorldCulling.setTaken` keeps it out of the candidate list — a block filed
+  in its cell, or one of the map's own visuals that carries no block, the
+  landform; never a candidate unless a failed compile hands it back — and
+  every other pass
   draws from a list of its own. The glow's mask, which reads
   the main pass's active meshes, keeps only what glows, which a taken mesh
   never does.
@@ -3598,15 +3649,17 @@ below) and S0's 1.10 us disagree about the same number.
 | class | what | offered |
 | --- | --- | --- |
 | hidden | `map.colliders` — invisible by construction | **never**, at any distance |
-| taken | a blocked mesh OUR renderer draws in the main pass (`setTaken`, "Our renderer's frame" above) | **never** — filed in its cell only so the GPU cull can measure the reach to it |
+| taken | a blocked mesh, or the landform, OUR renderer draws in the main pass (`setTaken`, "Our renderer's frame" above) | **never** — a block filed in its cell only so the GPU cull can measure the reach to it; the landform measured to a box no reach is short of |
 | blocked | drawn map geometry carrying `metadata.block` | while the camera is within the map's `fogEnd` |
 | pooled | a body's rig, filed under the root the roster switches | while that root is enabled |
-| loose | everything else in the scene | **always** |
+| loose | everything else in the scene — the landform, until our renderer takes it | **always** |
 
 **The taken class is most of the blocked one, in every build** (X3.3c): the
 walk this section exists to shorten no longer sees most of the map's blocks,
 and what is left in the blocked class is the surfaces `BlockHandover`'s test
-refused or a failed compile handed back. The reach and the size gate still
+refused or a failed compile handed back. Since X3.5 it is the landform too,
+which was loose: a taken loose mesh is left out of the candidates and nothing
+else about the class changes. The reach and the size gate still
 decide a taken mesh, as numbers handed to the cull (`reachGate`), so the
 class changes who draws a block and never whether it is drawn.
 
@@ -3623,7 +3676,9 @@ so dropping it is invisible. The terrain, the roads and the rim are what the SKY
 is behind, and `SkySpec.horizonColor` is only required to sit CLOSE to the fog —
 a hole cut in the rim is a hole onto a gradient, and the further up the dome the
 less it is fogColor. They carry no `metadata.block`, which is what makes that
-mechanical rather than a rule anyone has to remember.
+mechanical rather than a rule anyone has to remember. **Our renderer keeps the
+answer** since it took them (X3.5): it measures their reach to a box every
+point is inside (`reachBoxOf`), so the fog never cuts them on either side.
 
 **The pooled class is the ONE whose switch is not a distance, and it exists
 because a ROSTER is the one thing on a map a layout may triple.**

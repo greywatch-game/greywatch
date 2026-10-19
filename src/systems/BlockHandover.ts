@@ -1,17 +1,24 @@
 /**
- * systems/BlockHandover.ts — The map's BLOCKS handed from Babylon's main pass
- * to our renderer's (`BABYLON_EXIT.md` X3.3): which surfaces are taken, their
- * arrays handed over on the way past the build, and the map cut once it is
- * filed.
+ * systems/BlockHandover.ts — The map's BLOCKS, and since X3.5 its LANDFORM,
+ * handed from Babylon's main pass to our renderer's (`BABYLON_EXIT.md` X3.3,
+ * X3.5): which surfaces are taken, their arrays handed over on the way past
+ * the build, and the map cut once it is filed.
  * Owns: `BlockHandover` — our renderer's `WorldBlocks`, the taken meshes in
  * surface order, which of them were handed back, the material epoch last
  * copied, and the build's scatter FIELD until the map is cut (X3.4b).
  * Invariants: a surface is TAKEN only if our pipeline draws it exactly as
- * Babylon would — block-merged, in rendering group 0, at identity and under
- * no parent, never written after its build (`updatable` is a breakable
- * pane's), on the layer mask every camera sees, and on a cel material that
- * keeps a recipe (`CelMaterialFactory.celRecipe`: no glazing, no cloth, no
- * emissive) — and every other surface stays Babylon's in every pass, as do
+ * Babylon would — block-merged or the LANDFORM (`WorldSurface.landform`: the
+ * floor's patches, the rim's runs and the map-wide road merge, which the
+ * BUILD marks and nothing here guesses), in rendering group 0, at identity
+ * and under no parent, never written after its build (`updatable` is a
+ * breakable pane's), on the layer mask every camera sees, and on a cel
+ * material that keeps a recipe (`CelMaterialFactory.celRecipe`: no glazing,
+ * no cloth, no emissive) — and the landform is drawn by our side ahead of
+ * group 0's alpha-tested meshes, the blocks after them (`WorldBlocks`'s
+ * header says why); nothing is taken from an EDITOR build, which `Game`
+ * hands no `onSurface` — its blocks are unmerged, and its brush rewrites the
+ * floor's meshes in place — and every other surface stays Babylon's in every
+ * pass, as do
  * the taken surfaces our side will never draw (handed back whole, so every
  * surface is drawn by one side): a pipeline's or the cull's failure hands
  * back its surfaces in the turn it lands, and a main pass our renderer
@@ -23,10 +30,11 @@
  * is told (`WorldCulling.setTaken`); what our side draws of it each frame is
  * decided on the GPU, cluster by cluster, from numbers alone — the frame's
  * camera, and the reach and size gate `WorldCulling` decides
- * (`WorldCulling.reachGate`, measured to the box of the cell the mesh is
- * filed in, `blockBoxOf`) — so no node is read per frame; a taken mesh is
- * never switched off, hidden or faded after its build, because nothing in
- * the tree does that to a block and the cull could not follow it if
+ * (`WorldCulling.reachGate`, measured to the box of the cell a block is filed
+ * in, and never cutting the landform, which has none — `reachBoxOf`) — so no
+ * node is read per frame; a taken mesh is never switched off, hidden or
+ * faded after its build, because nothing in the tree does that to a block or
+ * to the landform and the cull could not follow it if
  * something did (a DEV build checks every frame and says so); the building
  * card waits for our pipelines through the renderer's own cache
  * (`core/PipelineWarmup.ts`), never through this, and a failed surface is
@@ -42,7 +50,7 @@
  * Never: draws, or reads a material's uniforms — a material reaches our side
  * as its recipe; writes a property on a mesh.
  * Contract: `docs/rendering.md`, "Our renderer's frame";
- * `BABYLON_EXIT.md` X3.3a, X3.3b, X3.3c.
+ * `BABYLON_EXIT.md` X3.3a, X3.3b, X3.3c, X3.4, X3.5.
  */
 import type { AbstractMesh, Mesh } from "@babylonjs/core";
 import { CONFIG } from "../config";
@@ -99,7 +107,7 @@ export class BlockHandover {
    */
   readonly onSurface = (surface: WorldSurface, mesh: Mesh): void => {
     const { part } = surface;
-    if (surface.block === null || surface.updatable) return;
+    if ((surface.block === null && !surface.landform) || surface.updatable) return;
     // Drawn in group 0's slot, at the world's own origin, by every camera.
     if (mesh.renderingGroupId !== 0 || mesh.parent !== null) return;
     if (mesh.layerMask !== DEFAULT_LAYER_MASK) return;
@@ -116,7 +124,7 @@ export class BlockHandover {
     const g = part.geometry;
     if (!atIdentity || !g.normals || !g.colors) return;
     if (recipe.defines.includes("CEL_PALETTE") && !g.uvs2) return;
-    const at = this.blocks.add(part.name, g, recipe, surface.pieces);
+    const at = this.blocks.add(part.name, g, recipe, surface.pieces, surface.landform);
     this.meshes[at] = mesh;
   };
 
@@ -156,8 +164,8 @@ export class BlockHandover {
     this.reported = false;
     this.culling.setTaken(meshes);
     const boxes: BlockBox[] = meshes.map((mesh) => {
-      const box = this.culling.blockBoxOf(mesh);
-      if (!box) throw new Error(`BlockHandover: "${mesh.name}" is taken but filed in no cell`);
+      const box = this.culling.reachBoxOf(mesh);
+      if (!box) throw new Error(`BlockHandover: "${mesh.name}" is taken but has no reach box`);
       return box;
     });
     this.blocks.finish(
@@ -234,7 +242,7 @@ export class BlockHandover {
     this.blocks.stop();
     this.culling.setTaken([]);
     console.error(
-      `BlockHandover: the main pass was refused; all ${this.meshes.length} taken blocks go back to Babylon for this map`,
+      `BlockHandover: the main pass was refused; all ${this.meshes.length} taken surfaces go back to Babylon for this map`,
     );
   };
 

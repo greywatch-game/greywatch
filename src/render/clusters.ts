@@ -1,14 +1,16 @@
 /**
- * render/clusters.ts — A block surface CUT into clusters: runs of one piece's
+ * render/clusters.ts — A world surface CUT into clusters: runs of one piece's
  * triangles, each with its box, for the compute cull (`ClusterCull`,
- * `BABYLON_EXIT.md` X3.3b).
+ * `BABYLON_EXIT.md` X3.3b) — a block's, or the landform's (X3.5).
  * Owns: `cutClusters` and the `Cluster` it makes; `withoutPieces`, a surface
  * with some of its pieces cut out (the scatter's, which our renderer draws
  * as instances instead — `BABYLON_EXIT.md` X3.4b).
  * Invariants: a cluster is a run of at most `maxTriangles` CONSECUTIVE
  * triangles of ONE piece, in the surface's own index order, so the clusters
  * of a surface tile its index list in order and a cluster's piece is the
- * X1.4 piece its triangles came from (`PieceRange`); its box is the exact
+ * X1.4 piece its triangles came from (`PieceRange`) — or `NO_PIECE` for a
+ * surface that carries none, which is cut as ONE span over the whole of it;
+ * its box is the exact
  * float32 bounds of the vertices its triangles name — the values the device
  * holds — so a cull that tests it drops only what lies wholly outside; its
  * sway is read off the colour buffer's red channel exactly as the vertex
@@ -43,7 +45,9 @@ export interface SurfaceArrays {
  * `geometry` without the pieces `cut` names, and the pieces it keeps — or
  * the surface as it is when it cuts none. Each attribute keeps its array's
  * type, so a kept vertex is the bits it was; each kept index moves down by
- * the vertices cut out ahead of its piece.
+ * the vertices cut out ahead of its piece. A surface that carries no piece
+ * (the landform) has nothing to cut and comes back as it is; one cut down to
+ * no piece at all keeps no index, so `cutClusters` makes nothing of it.
  */
 export function withoutPieces(
   geometry: SurfaceArrays,
@@ -93,12 +97,22 @@ export function withoutPieces(
   };
 }
 
+/**
+ * The piece of a cluster cut from a surface that carries none — the floor's
+ * patches and the rim's runs, which are no layout item (`worldGeometry.ts`'s
+ * header): one span over the whole surface, under an id no piece table holds
+ * (`u32`'s largest, as the cluster record stores it). Nothing masks the
+ * landform by piece — no scatter is cut out of it and no placement owns any
+ * of it — so the id is never looked up, only carried.
+ */
+export const NO_PIECE = 0xffffffff;
+
 /** One cluster of a surface. */
 export interface Cluster {
   /** Into the surface's own index list. */
   readonly indexStart: number;
   readonly indexCount: number;
-  /** The X1.4 piece (`GameMap.world.pieces`) its triangles came from. */
+  /** The X1.4 piece (`GameMap.world.pieces`) its triangles came from; `NO_PIECE` on an unpieced surface. */
   readonly piece: number;
   /** The box of its vertices, as the float32 values the device holds. */
   readonly lo: readonly [number, number, number];
@@ -112,7 +126,8 @@ export interface Cluster {
 /**
  * Cuts one surface: `positions` as float32 (three a vertex), its `indices`
  * (three a triangle), its `colors` (four a vertex, or null: no sway) and the
- * piece spans that tile its index list.
+ * piece spans that tile its index list — none for a surface that carries no
+ * piece, which is cut as one span of `NO_PIECE` over every index.
  */
 export function cutClusters(
   positions: Float32Array,
@@ -123,7 +138,11 @@ export function cutClusters(
 ): Cluster[] {
   const out: Cluster[] = [];
   const step = maxTriangles * 3;
-  for (const span of pieces) {
+  const spans: readonly PieceSpan[] =
+    pieces.length > 0
+      ? pieces
+      : [{ piece: NO_PIECE, vertexStart: 0, vertexCount: positions.length / 3, indexStart: 0, indexCount: indices.length }];
+  for (const span of spans) {
     const end = span.indexStart + span.indexCount;
     for (let start = span.indexStart; start < end; start += step) {
       const stop = Math.min(end, start + step);

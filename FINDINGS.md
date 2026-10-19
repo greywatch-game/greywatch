@@ -2720,7 +2720,11 @@ group's opaque and alpha-tested meshes (`render/Renderer.ts`, `"opaque"`),
 so the terrain, the roads and every loose prop are fully shaded first and
 the buildings are drawn over them. Inside our own draws the near-first bands
 order a recipe's clusters, but each recipe is one draw and the recipes do
-not interleave. A path through Greyfen's streets, with buildings close on
+not interleave. Since X3.5 the terrain, the rim and the roads are OUR draws
+too, at `"beforeAlphaTest"` — still ahead of the blocks, because the turf
+lies on the floor and must follow it — so the argument stands, and the order
+between the landform and the blocks is now ours to choose rather than
+Babylon's. A path through Greyfen's streets, with buildings close on
 both sides, is where that would cost most, which fits the one segment that
 rose.
 

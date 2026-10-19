@@ -1090,7 +1090,12 @@ unbiased, 34.1% at -2 and 35.7% from -4, where it stops moving and is still
 **It is carried by the BUILDER and not by the slab** (`Build`'s `depthUnits`,
 which reaches `CelMaterialFactory.get` and `getGroundTextured` and is part of
 their cache KEY — one hex at two biases is two materials, or a car's underbody
-is lifted off the ground because a road minted its colour first). That is what
+is lifted off the ground because a road minted its colour first). **And the
+material carries it into OUR renderer**, which draws the road merge since
+`BABYLON_EXIT.md` X3.5: a cel material's recipe keeps its `zOffsetUnits` as
+`depthBias`, and `WorldBlocks` asks for the recipe's pipeline with it, so a
+road is -8 in both renderers' draws and the ladder below holds in each
+(`docs/rendering.md`, "Our renderer's frame"). That is what
 keeps the road's own internal ladder intact: the lane markings are painted 2 cm
 over their slab and move toward the eye WITH it, so that pair is settled by the
 same geometry it always was, and what changes is only the road against the
@@ -1768,9 +1773,11 @@ rather than anything about the margin.
 160,000 quads, against Sarab's 140,625 and Cinderhaven's 111,556, so it is the
 biggest floor in the tree but not by a new order. The mesh COUNT is the part that
 would have hurt, because `terrainPatches` cuts the borderland at four times the
-floor's block and the floor carries no `metadata.block`, so every patch is a
+floor's block and the floor carries no `metadata.block`, so every patch was a
 `WorldCulling` candidate at every distance: at the default 48 this map's ground
-is 193 meshes. Harrowmead states `terrainBlock: 96` and it is 57 — **fewer than
+is 193 meshes. (Since `BABYLON_EXIT.md` X3.5 our renderer draws the floor in
+the main pass, so a patch is no candidate there — it is clusters in one cut,
+one draw a recipe — and the count is what every OTHER pass still walks.) Harrowmead states `terrainBlock: 96` and it is 57 — **fewer than
 the 97 it had at 560 m square**, because the play floor's own share falls from 81
 draws to 25. The trade is frustum granularity on the ground you fight over, which
 on a 400 m map stating a `fogEnd` of 520 is very nearly nothing: the whole floor

@@ -589,9 +589,12 @@ of either kind is a shadow caster**, and see-through glazing gets no ink.
 **The frame WALKS the scene, and the scene is the map.** `WorldCulling`
 **replaces `scene.getActiveMeshCandidates` and writes nothing onto any mesh**:
 it never disables, never hides, never unpickles. **A collider is never a
-candidate, and nor is a BLOCK our renderer TAKES** (`BlockHandover`): the map's
-blocks are drawn in the MAIN pass by `src/render/` in every build, their
-Babylon meshes kept for every OTHER pass, and **a taken block is never switched
+candidate, and nor is a BLOCK or the LANDFORM our renderer TAKES**
+(`BlockHandover`): the map's blocks, and its floor, rim and road merge
+(`WorldSurface.landform`, which the BUILD marks), are drawn in the MAIN pass by
+`src/render/` in every build but the editor's — **the landform AHEAD of group
+0's alpha-tested list, whose turf blends over it, the blocks after** — their
+Babylon meshes kept for every OTHER pass, and **a taken mesh is never switched
 off, hidden or faded after its build** — ours reads no node and would still
 draw it (a DEV check says so). **The SCATTER is drawn twice over and the
 two must agree**: our main pass draws it as INSTANCES of its variants, its

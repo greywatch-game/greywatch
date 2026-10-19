@@ -5,7 +5,7 @@
  * Owns: `Renderer` — the frame's `FrameUniforms` and `FrameUniformBuffer`,
  * its `FrameTextures` and the bind group they make with the buffer (group 0
  * of every program, `FrameContext.frameGroup`), the `PipelineCache`, the
- * `FrameDraw`s at each of the two points they may be drawn at, the
+ * `FrameDraw`s at each of the three points they may be drawn at, the
  * `FramePrepare`s run as the pass begins, whoever is told of a refused pass
  * (`onRefused`), and the hook into the host's main pass; `FrameDraw`,
  * `FramePrepare`, `DrawPoint` and `FrameContext`.
@@ -33,14 +33,22 @@
  * but the main one; reads a Babylon material.
  * Contract: `docs/rendering.md`, "Our renderer's frame".
  *
- * WHERE A DRAW LANDS, in the host's own order, at one of two points of
- * rendering group `groupId` (0: the world) in the main pass (`DrawPoint`):
+ * WHERE A DRAW LANDS, in the host's own order, at one of three points of
+ * rendering group `groupId` (0: the world) in the main pass (`DrawPoint`),
+ * which come in this order in every frame the group is drawn:
+ * - `"beforeAlphaTest"`: after the group's opaque meshes and before its
+ *   ALPHA-TESTED ones — or, in a frame with none of those, immediately ahead
+ *   of `"opaque"`. An opaque draw that something on the alpha-tested list
+ *   is laid OVER goes here: that list is where a blend that must land after
+ *   the surface under it is put (the turf, `GrassSystem`; the clouds), and
+ *   the turf writes no depth of its own — so the FLOOR it lies on must be in
+ *   the depth buffer, and in the picture, before it draws.
  * - `"opaque"`: after the group's opaque and alpha-tested meshes and before
- *   anything blended in it — its particles and its transparent meshes. An
- *   OPAQUE draw goes here and nowhere else, because the blended surfaces
- *   write no depth: an opaque wall drawn after the glazing or the water in
- *   front of it paints over them, and one drawn after a particle in front of
- *   it paints over the particle.
+ *   anything blended in it — its particles and its transparent meshes. Every
+ *   other OPAQUE draw goes here, and no opaque draw goes later, because the
+ *   blended surfaces write no depth: an opaque wall drawn after the glazing
+ *   or the water in front of it paints over them, and one drawn after a
+ *   particle in front of it paints over the particle.
  * - `"afterGroup"`: after the group has been queued whole, and before the
  *   next group (the viewmodel's).
  */
@@ -95,7 +103,7 @@ export type FrameDraw = (pass: GPURenderPassEncoder, ctx: FrameContext) => void;
 export type FramePrepare = (frame: FrameUniforms, encoder: GPUCommandEncoder) => void;
 
 /** Where in the main pass a `FrameDraw` is drawn — see the header. */
-export type DrawPoint = "opaque" | "afterGroup";
+export type DrawPoint = "beforeAlphaTest" | "opaque" | "afterGroup";
 
 export class Renderer {
   readonly device: GPUDevice;
@@ -109,6 +117,7 @@ export class Renderer {
   private readonly frameBindings: HostBindGroup;
 
   /** In the order added, one list per point. Arrays, so a frame's walk allocates no iterator. */
+  private readonly beforeAlpha: FrameDraw[] = [];
   private readonly opaque: FrameDraw[] = [];
   private readonly after: FrameDraw[] = [];
   private readonly prepares: FramePrepare[] = [];
@@ -145,6 +154,7 @@ export class Renderer {
     };
     this.hook = host.onMainPass(groupId, {
       begin: this.begin,
+      beforeAlphaTest: this.beforeAlphaTest,
       afterOpaque: this.afterOpaque,
       afterGroup: this.afterGroup,
     });
@@ -155,7 +165,8 @@ export class Renderer {
    * returned function is called.
    */
   add(draw: FrameDraw, at: DrawPoint = "afterGroup"): () => void {
-    const list = at === "opaque" ? this.opaque : this.after;
+    const list =
+      at === "beforeAlphaTest" ? this.beforeAlpha : at === "opaque" ? this.opaque : this.after;
     list.push(draw);
     return () => {
       const i = list.indexOf(draw);
@@ -174,8 +185,9 @@ export class Renderer {
 
   /**
    * Calls `refused` on every frame whose main pass is not `FRAME_TARGETS` and
-   * something was to draw, until the returned function is called. It runs
-   * INSIDE the render, after this frame's prepares were recorded, so it may
+   * something was to draw, until the returned function is called — at each
+   * point with something to draw, so up to three times a frame, which a
+   * listener must take as one refusal. It runs INSIDE the render, after this frame's prepares were recorded, so it may
    * take draws and prepares off this renderer but must free nothing this
    * frame's commands hold.
    */
@@ -189,6 +201,7 @@ export class Renderer {
 
   dispose(): void {
     this.hook.dispose();
+    this.beforeAlpha.length = 0;
     this.opaque.length = 0;
     this.after.length = 0;
     this.prepares.length = 0;
@@ -197,7 +210,7 @@ export class Renderer {
   }
 
   private readonly begin = (): void => {
-    this.filled = this.opaque.length + this.after.length > 0;
+    this.filled = this.beforeAlpha.length + this.opaque.length + this.after.length > 0;
     if (!this.filled) return;
     this.fill(this.frame);
     this.host.viewProjection(this.frame.viewProjection);
@@ -208,6 +221,10 @@ export class Renderer {
     if (prepares.length === 0) return;
     const encoder = this.host.prepareEncoder();
     for (let i = 0; i < prepares.length; i++) prepares[i](this.frame, encoder);
+  };
+
+  private readonly beforeAlphaTest = (): void => {
+    if (this.filled && this.beforeAlpha.length > 0 && this.passOk()) this.host.queue(this.runBeforeAlpha);
   };
 
   private readonly afterOpaque = (): void => {
@@ -237,6 +254,11 @@ export class Renderer {
     this.refused = false;
     return true;
   }
+
+  private readonly runBeforeAlpha = (pass: GPURenderPassEncoder): void => {
+    const draws = this.beforeAlpha;
+    for (let i = 0; i < draws.length; i++) draws[i](pass, this.ctx);
+  };
 
   private readonly runOpaque = (pass: GPURenderPassEncoder): void => {
     const draws = this.opaque;

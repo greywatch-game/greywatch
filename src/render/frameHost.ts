@@ -45,10 +45,23 @@ export interface BoundTexture {
   sampler: GPUSampler | null;
 }
 
-/** The three points of the frame's main pass a renderer draws at. */
+/**
+ * The four points of the frame's main pass a renderer is told of, in the
+ * order they come: `begin` as the pass starts, then — in every frame rendering
+ * group `groupId` is drawn, whatever it holds — `beforeAlphaTest`,
+ * `afterOpaque` and `afterGroup`, once each.
+ */
 export interface MainPassHooks {
   /** Once, as the main pass's drawing starts. */
   begin(): void;
+  /**
+   * Once, after rendering group `groupId`'s OPAQUE meshes have been queued
+   * and before its ALPHA-TESTED meshes are. In a frame whose group has no
+   * alpha-tested mesh to draw, immediately before `afterOpaque` instead — so
+   * it always comes before that hook, and nothing of the group's is queued
+   * between the two.
+   */
+  beforeAlphaTest(): void;
   /**
    * Once, after rendering group `groupId`'s OPAQUE and alpha-tested meshes
    * have been queued and before anything blended in it is — its sprites, its
@@ -86,8 +99,8 @@ export interface FrameHost {
   viewProjection(out: Float32Array): void;
   /**
    * Hooks the frame's MAIN pass — never a shadow map's, a probe's or any other
-   * render target's — at the three points of `MainPassHooks`, for rendering
-   * group `groupId`.
+   * render target's — at the points of `MainPassHooks`, for rendering group
+   * `groupId`.
    */
   onMainPass(groupId: number, hooks: MainPassHooks): { dispose(): void };
   /**
