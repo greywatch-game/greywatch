@@ -72,56 +72,17 @@ export interface ReachGate {
 export type CullMode = "full" | "nofrustum" | "none";
 
 /**
- * How the cluster cull's three dispatches are kept apart: in one compute pass
- * (WebGPU orders them; what it always does), each in a pass of its own
- * (`?cullsplit`), or each in an encoder of its own submitted at once, ahead
- * of the frame (`?cullsplit=submits`). A diagnostic for a device whose
- * buildings flicker standing still — the one thing that can differ between
- * two frames with the same inputs is what a dispatch reads of the one before
- * it, half written — never a setting.
- */
-export type CullSplit = "none" | "passes" | "submits";
-
-/** The three buffers of a cull `?cullcheck` copies out, as `?cullflags=` names them. */
-export type CullBuffer = "uniform" | "records" | "bands";
-export const CULL_BUFFERS: readonly CullBuffer[] = ["uniform", "records", "bands"];
-
-/**
- * A cull's diagnostics, all off the URL (`core/urlOverrides.ts`): which
- * tests run (`CullMode`); which of the buffers `?cullcheck` copies out are
- * made COPY_SRC (`readable`) — the check makes all three so, and
- * `?cullflags` does alone, so a device whose bug the check hides can be
- * asked which buffer's FLAG hides it; and where `?cullcheck` reports its
- * readings (`CullCheck`) — null for no check.
+ * A cull's two diagnostics, both off the URL (`core/urlOverrides.ts`): which
+ * tests run (`CullMode`), and where `?cullcheck` reports its readings
+ * (`CullCheck`) — null for no check.
  */
 export interface CullDiagnostics {
   readonly mode: CullMode;
-  readonly split: CullSplit;
-  /**
-   * `?cullonce`: the cull is dispatched on the first frame its pipelines
-   * are built and never again, so its index buffer is written ONCE and
-   * then only read, as the scatter's index buffers are.
-   * With `?nocull` the frame is right from anywhere; without it, right only
-   * where the first frame stood.
-   */
-  readonly once: boolean;
-  readonly readable: ReadonlySet<CullBuffer>;
   readonly report: CullReport | null;
 }
 
 /** Every test, and no check: what a cull runs with but for a diagnostic. */
-export const NO_DIAGNOSTICS: CullDiagnostics = {
-  mode: "full",
-  split: "none",
-  once: false,
-  readable: new Set(),
-  report: null,
-};
-
-/** COPY_SRC for `which` when the check copies it out or `?cullflags` names it; else 0. */
-export function readUsage(d: CullDiagnostics, which: CullBuffer): number {
-  return d.report || d.readable.has(which) ? GPUBufferUsage.COPY_SRC : 0;
-}
+export const NO_DIAGNOSTICS: CullDiagnostics = { mode: "full", report: null };
 
 /**
  * Opens the tests `mode` turns off in a cull's uniform block, after the frame
@@ -196,11 +157,6 @@ export class ClusterCull {
   private readonly passes: { pipeline: GPUComputePipeline; group: GPUBindGroup }[] = [];
   /** Which tests run — `CullMode`; "full" but for a diagnostic. */
   private readonly mode: CullMode;
-  /** How the dispatches are kept apart — `CullSplit`; "none" but for a diagnostic. */
-  private readonly split: CullSplit;
-  /** `?cullonce`, and whether the one dispatch has been recorded. */
-  private readonly once: boolean;
-  private dispatched = false;
   /** `?cullcheck`'s reader, or null. */
   private readonly check: CullCheck | null;
 
@@ -212,8 +168,6 @@ export class ClusterCull {
     diagnostics: CullDiagnostics = NO_DIAGNOSTICS,
   ) {
     this.mode = diagnostics.mode;
-    this.split = diagnostics.split;
-    this.once = diagnostics.once;
     const n = tables.clusterCount;
     this.clusterCount = n;
     this.workgroups = Math.max(1, Math.ceil(n / SCAN_SIZE));
@@ -222,24 +176,19 @@ export class ClusterCull {
     this.scatterY = Math.max(1, Math.ceil(n / this.scatterX));
 
     const storage = GPUBufferUsage.STORAGE;
-    // `?cullcheck` copies the uniform block, the records and the verdicts out.
-    const read = (which: CullBuffer): number => readUsage(diagnostics, which);
-    this.uniform = this.make(
-      "uniform",
-      CULL_UNIFORM_BYTES,
-      GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST | read("uniform"),
-    );
-    const clusters = this.upload("clusters", storage | read("records"), new Uint8Array(tables.clusters));
+    // `?cullcheck` copies the uniform block and the verdicts out.
+    const read = diagnostics.report ? GPUBufferUsage.COPY_SRC : 0;
+    this.uniform = this.make("uniform", CULL_UNIFORM_BYTES, GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST | read);
+    const clusters = this.upload("clusters", storage | read, new Uint8Array(tables.clusters));
     const blocks = this.upload("blocks", storage, blockWords(tables.blocks));
     const spheres = this.upload("spheres", storage, tables.spheres);
-    const bandOf = this.make("bands", n * 4, storage | read("bands"));
+    const bandOf = this.make("bands", n * 4, storage | read);
     const local = this.make("local", n * 16, storage);
     const sums = this.make("sums", (this.workgroups + 1) * 16, storage);
     const groups = this.upload("groups", storage, groupWords(tables.groups));
     const source = this.upload("source indices", storage, tables.indices);
     // COPY_DST for the clear ahead of each frame's scatter.
-    const written = this.make("indices", tables.indices.byteLength, storage | GPUBufferUsage.INDEX | GPUBufferUsage.COPY_DST);
-    this.indices = written;
+    this.indices = this.make("indices", tables.indices.byteLength, storage | GPUBufferUsage.INDEX | GPUBufferUsage.COPY_DST);
 
     // The static half of the uniform block.
     const u = this.u32;
@@ -282,7 +231,7 @@ export class ClusterCull {
       { entry: "prefix", bind: [[0, this.uniform], [5, local], [6, sums], [7, groups]] },
       {
         entry: "scatter",
-        bind: [[0, this.uniform], [1, clusters], [4, bandOf], [5, local], [6, sums], [7, groups], [9, source], [10, written]],
+        bind: [[0, this.uniform], [1, clusters], [4, bandOf], [5, local], [6, sums], [7, groups], [9, source], [10, this.indices]],
       },
     ];
     this.ready = Promise.all(
@@ -323,8 +272,6 @@ export class ClusterCull {
    */
   dispatch(frame: FrameUniforms, encoder: GPUCommandEncoder): void {
     if (!this.built || this.clusterCount === 0) return;
-    if (this.once && this.dispatched) return;
-    this.dispatched = true;
     const f = this.f32;
     const u = this.u32;
     writePlanes(frame.viewProjection, f);
@@ -342,47 +289,21 @@ export class ClusterCull {
     openTests(this.mode, f, u);
     this.device.queue.writeBuffer(this.uniform, 0, this.bytes);
 
-    if (this.split !== "none") {
-      this.dispatchSplit(encoder);
-    } else {
-      // What the survivors do not fill is a triangle of no area.
-      encoder.clearBuffer(this.indices);
-      const pass = encoder.beginComputePass(PASS);
-      const passes = this.passes;
-      pass.setPipeline(passes[0].pipeline);
-      pass.setBindGroup(0, passes[0].group);
-      pass.dispatchWorkgroups(this.workgroups);
-      pass.setPipeline(passes[1].pipeline);
-      pass.setBindGroup(0, passes[1].group);
-      pass.dispatchWorkgroups(1);
-      pass.setPipeline(passes[2].pipeline);
-      pass.setBindGroup(0, passes[2].group);
-      pass.dispatchWorkgroups(this.scatterX, this.scatterY);
-      pass.end();
-    }
+    // What the survivors do not fill is a triangle of no area.
+    encoder.clearBuffer(this.indices);
+    const pass = encoder.beginComputePass(PASS);
+    const passes = this.passes;
+    pass.setPipeline(passes[0].pipeline);
+    pass.setBindGroup(0, passes[0].group);
+    pass.dispatchWorkgroups(this.workgroups);
+    pass.setPipeline(passes[1].pipeline);
+    pass.setBindGroup(0, passes[1].group);
+    pass.dispatchWorkgroups(1);
+    pass.setPipeline(passes[2].pipeline);
+    pass.setBindGroup(0, passes[2].group);
+    pass.dispatchWorkgroups(this.scatterX, this.scatterY);
+    pass.end();
     this.check?.record(encoder, this.bytes);
-  }
-
-  /**
-   * `?cullsplit`: the three dispatches each in a pass of its own in
-   * `encoder`, or (`submits`) each in an encoder of its own, submitted here —
-   * the one place a cull submits, and only for the diagnostic. Allocates a
-   * pass (and an encoder) a dispatch, which is the diagnostic's cost.
-   */
-  private dispatchSplit(encoder: GPUCommandEncoder): void {
-    const sizes: readonly [number, number][] = [[this.workgroups, 1], [1, 1], [this.scatterX, this.scatterY]];
-    for (let k = 0; k < 3; k++) {
-      const own = this.split === "submits" ? this.device.createCommandEncoder({ label: "cluster cull: split" }) : encoder;
-      // The clear goes ahead of the first dispatch, in whatever reaches the
-      // queue first: under `submits` the host's encoder is submitted last.
-      if (k === 0) own.clearBuffer(this.indices);
-      const pass = own.beginComputePass(PASS);
-      pass.setPipeline(this.passes[k].pipeline);
-      pass.setBindGroup(0, this.passes[k].group);
-      pass.dispatchWorkgroups(sizes[k][0], sizes[k][1]);
-      pass.end();
-      if (own !== encoder) this.device.queue.submit([own.finish()]);
-    }
   }
 
   dispose(): void {

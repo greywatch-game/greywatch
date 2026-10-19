@@ -78,7 +78,7 @@ export class BlockHandover {
     renderer: Renderer,
     private readonly mats: CelMaterialFactory,
     private readonly culling: WorldCulling,
-    /** Our culls' diagnostics — `?nocull`, `?nofrustum`, `?cullcheck`, `?cullflags`, `?cullsplit`, `?cullonce` (`core/urlOverrides.ts`). */
+    /** Our culls' diagnostics — `?nocull`, `?nofrustum`, `?cullcheck` (`core/urlOverrides.ts`). */
     diagnostics: CullDiagnostics = NO_DIAGNOSTICS,
   ) {
     this.blocks = new WorldBlocks(
@@ -176,18 +176,6 @@ export class BlockHandover {
    * were cut into, how many draws our side issued last frame, and how many
    * taken surfaces went back to Babylon — every one, once a pass was refused.
    */
-  /**
-   * `?drawcheck`: the fewest and most block draws a frame issued since the
-   * last call, and resets both — Infinity and 0 when no frame drew.
-   */
-  takeBlockDrawRange(): [number, number] {
-    const b = this.blocks;
-    const range: [number, number] = [b.fewestBlockDraws, b.mostBlockDraws];
-    b.fewestBlockDraws = Number.POSITIVE_INFINITY;
-    b.mostBlockDraws = 0;
-    return range;
-  }
-
   get stats(): {
     taken: number;
     clusters: number;

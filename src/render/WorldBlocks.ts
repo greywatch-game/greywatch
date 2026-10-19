@@ -211,12 +211,6 @@ export class WorldBlocks {
 
   /** Draws issued last frame — what a census of the main pass adds to Babylon's. */
   drawn = 0;
-  /**
-   * The fewest and most BLOCK draws (one a group, the scatter's apart) a run
-   * has issued since the reader last reset them — `?drawcheck`.
-   */
-  fewestBlockDraws = Number.POSITIVE_INFINITY;
-  mostBlockDraws = 0;
 
   constructor(
     private readonly renderer: Renderer,
@@ -752,10 +746,7 @@ export class WorldBlocks {
     let drawn = 0;
     const cull = this.cull;
     if (this.culling && cull) {
-      const blocks = this.drawBlocks(pass, ctx, cull);
-      if (blocks < this.fewestBlockDraws) this.fewestBlockDraws = blocks;
-      if (blocks > this.mostBlockDraws) this.mostBlockDraws = blocks;
-      drawn += blocks + this.drawScatter(pass, ctx);
+      drawn = this.drawBlocks(pass, ctx, cull) + this.drawScatter(pass, ctx);
     }
     this.drawn = drawn;
   };

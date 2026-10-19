@@ -119,13 +119,6 @@ export class Renderer {
   private filled = false;
   /** Whether the last pass checked was refused — so a refusal is reported once per change. */
   private refused = false;
-  /**
-   * How many times each moment of the main pass has come round since the
-   * reader last zeroed it — `begin` filling the frame, the opaque draws
-   * QUEUED, and the queued item RUN by the host — for `?drawcheck`
-   * (`core/urlOverrides.ts`). Counted always: three integers.
-   */
-  readonly tally = { begins: 0, queued: 0, ran: 0 };
 
   constructor(
     host: FrameHost,
@@ -206,7 +199,6 @@ export class Renderer {
   private readonly begin = (): void => {
     this.filled = this.opaque.length + this.after.length > 0;
     if (!this.filled) return;
-    this.tally.begins++;
     this.fill(this.frame);
     this.host.viewProjection(this.frame.viewProjection);
     this.frameBuffer.write(this.frame);
@@ -219,10 +211,7 @@ export class Renderer {
   };
 
   private readonly afterOpaque = (): void => {
-    if (this.filled && this.opaque.length > 0 && this.passOk()) {
-      this.tally.queued++;
-      this.host.queue(this.runOpaque);
-    }
+    if (this.filled && this.opaque.length > 0 && this.passOk()) this.host.queue(this.runOpaque);
   };
 
   private readonly afterGroup = (): void => {
@@ -250,7 +239,6 @@ export class Renderer {
   }
 
   private readonly runOpaque = (pass: GPURenderPassEncoder): void => {
-    this.tally.ran++;
     const draws = this.opaque;
     for (let i = 0; i < draws.length; i++) draws[i](pass, this.ctx);
   };

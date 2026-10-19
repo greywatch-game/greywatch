@@ -1725,20 +1725,12 @@ export class Game {
     this.culling = new WorldCulling(this.scene);
     this.handover = new BlockHandover(this.renderer, this.mats, this.culling, {
       mode: this.overrides.cullMode,
-      split: this.overrides.cullSplit,
-      once: this.overrides.cullOnce,
-      readable: this.overrides.cullFlags,
       // After the HUD, which built `#hud`.
-      report: !this.overrides.cullCheck
-        ? null
-        : this.overrides.cullQuiet
-          ? (label, lines) => console.info(`[cullcheck] ${label}\n${lines.join("\n")}`)
-          : new CullCheckPanel().show,
+      report: this.overrides.cullCheck ? new CullCheckPanel().show : null,
     });
     // A capture says what our renderer took and drew, which Babylon's own
     // draw counter cannot (`ProfileReport.blocks`).
     this.prof.setBlocks(() => this.handover.stats);
-    if (this.overrides.drawCheck) this.startDrawCheck();
     this.mapBuilder = new MapBuilder(
       this.scene,
       this.mats,
@@ -2851,31 +2843,6 @@ export class Game {
       this.prof.disarm();
     }
     this.profChip.setArmed(on);
-  }
-
-  /**
-   * `?drawcheck`: once a second, to the console, the frames the scene rendered
-   * against how often our main pass began, queued its opaque draws and ran
-   * them (`Renderer.tally`), and the fewest and most block draws a run issued.
-   * A frame whose buildings vanished with every count equal is the GPU's; a
-   * count short of `frames` is a frame our draw never reached it. Lives for
-   * the session, as the flag does.
-   */
-  private startDrawCheck(): void {
-    let frames = 0;
-    this.scene.onAfterRenderObservable.add(() => frames++);
-    const tally = this.renderer.tally;
-    setInterval(() => {
-      const [fewest, most] = this.handover.takeBlockDrawRange();
-      const range = most === 0 ? "none" : fewest === most ? `${most}` : `${fewest}..${most}`;
-      console.info(
-        `[drawcheck] frames ${frames} · begins ${tally.begins} · queued ${tally.queued} · ran ${tally.ran} · block draws ${range}`,
-      );
-      frames = 0;
-      tally.begins = 0;
-      tally.queued = 0;
-      tally.ran = 0;
-    }, 1000);
   }
 
   /**

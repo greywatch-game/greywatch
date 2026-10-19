@@ -23,14 +23,12 @@
  * Contract: `docs/rendering.md`, "Our renderer's frame".
  */
 import {
-  type CullBuffer,
   type CullDiagnostics,
   type CullMode,
   type ReachGate,
   NO_DIAGNOSTICS,
   openTests,
   rampReach,
-  readUsage,
   rigReach,
   writePlanes,
   F32_MAX,
@@ -109,15 +107,15 @@ export class InstanceCull {
     this.placeY = Math.ceil(groups / this.placeX);
 
     const storage = GPUBufferUsage.STORAGE;
-    // `?cullcheck` copies the uniform block, the records and the verdicts out.
-    const read = (which: CullBuffer): number => readUsage(diagnostics, which);
+    // `?cullcheck` copies the uniform block and the verdicts out.
+    const read = diagnostics.report ? GPUBufferUsage.COPY_SRC : 0;
     this.uniform = this.make(
       "uniform",
       INSTANCE_CULL_UNIFORM_BYTES,
-      GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST | read("uniform"),
+      GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST | read,
     );
-    const instances = this.upload("instances", storage | read("records"), new Uint8Array(tables.instances));
-    const bandOf = this.make("bands", n * 4, storage | read("bands"));
+    const instances = this.upload("instances", storage | read, new Uint8Array(tables.instances));
+    const bandOf = this.make("bands", n * 4, storage | read);
     const local = this.make("local", n * 16, storage);
     const sums = this.make("sums", (this.workgroups + 1) * 16, storage);
     const sets = this.upload("sets", storage, setWords(tables.sets));

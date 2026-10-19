@@ -3529,17 +3529,17 @@ The build hands the sets over once (`BuildOptions.onScatter`), and
 - **The scatter's indirect draws were never seen to drop**, on that laptop or
   anywhere, and stay indirect: an instance count is not a range a plain draw
   can cover with triangles of no area. A device that drops THEM owes the
-  instance cull the same question; `?drawcheck`, `?cullonce` and the split
-  above are how it was asked. The SECTIONS OF GRASS that flicker on the same
+  instance cull the same question, and the switches above are how it was
+  asked. The SECTIONS OF GRASS that flicker on the same
   laptop are older than our renderer and draw nothing indirect — a separate
   finding.
-- **What is left of the hunt**, until a device confirms the plain draw:
-  `?cullquiet` and `?cullflags` (`?cullcheck` without its panel, or with
-  only its buffers' COPY_SRC), `?cullsplit` (`=submits`: the three dispatches
-  in passes or submits of their own), `?cullonce` (the cluster cull
-  dispatched once) and `?drawcheck` (frames against our pass's begins,
-  queues and runs, and the block draws a frame issued, once a second to the
-  console).
+- **The hunt's switches are GONE**, taken out once the laptop stopped
+  flickering and the phone drew right on the plain draw (2026-10-18):
+  `?cullquiet`, `?cullflags`, `?cullsplit`, `?cullcopy`, `?cullonce`,
+  `?drawcheck`, `?directdraw`, `?indirectcpu`, `?skipempty` and
+  `?scatterfirst` all stand in the history at 4459cd5, for a device that
+  needs the question asked again. `?cullcheck`, `?nocull`, `?nofrustum` and
+  `?babylonworld` stay.
 - **A cull reads its tables as WHOLE `vec4`s and its uniform block as
   WORDS** (`clusterCull.ts`'s `CULL_DECLARATIONS`, `instanceCull.ts`'s
   `INSTANCE_DECLARATIONS`): no `vec3f` beside a scalar and no scalar

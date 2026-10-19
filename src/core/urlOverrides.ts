@@ -7,8 +7,7 @@
  * benchmark on that map instead of offering a menu (`bench/BenchScript.ts`) —
  * and `?babylonworld`, `?nocull` and `?nofrustum`, which take our renderer's
  * static world or its culls out, for an A/B on a device (`BABYLON_EXIT.md`),
- * and `?cullcheck`, which reads those culls back on the device, with
- * `?cullquiet` and `?cullflags` taking it apart.
+ * and `?cullcheck`, which reads those culls back on the device.
  * Owns: reading them once, validating each against its own table, the rule
  * that an override BEATS the setting it shadows, and the list of which ones a
  * capture must say were forced. Owns the URL-flag reader `FrameProfile` uses
@@ -26,12 +25,7 @@
  * be offered — `?nominimap` is a flag precisely because losing the map is not
  * a setting.
  */
-import {
-  CULL_BUFFERS,
-  type CullBuffer,
-  type CullMode,
-  type CullSplit,
-} from "../render/ClusterCull";
+import type { CullMode } from "../render/ClusterCull";
 import { isVolumetricRung, type VolumetricRung } from "../shaders/Volumetrics";
 import { parseSeed } from "../systems/RoundRandom";
 import {
@@ -60,17 +54,6 @@ export function urlFlag(name: string): boolean {
   } catch {
     return false;
   }
-}
-
-/**
- * A list-valued diagnostic (`?cullflags`, `?cullcopy`): none when absent,
- * all of `all` when bare, else those it names, comma-joined.
- */
-function namedOf<T extends string>(value: string | null, all: readonly T[]): ReadonlySet<T> {
-  if (value === null) return new Set();
-  if (value.trim() === "") return new Set(all);
-  const named = value.split(",").map((s) => s.trim());
-  return new Set(all.filter((b) => named.includes(b)));
 }
 
 export class UrlOverrides {
@@ -140,32 +123,6 @@ export class UrlOverrides {
    */
   readonly cullCheck: boolean;
   /**
-   * `?cullquiet` — `?cullcheck`'s readings go to the console and nothing is
-   * laid on the glass; `?cullflags` — no check, but the buffers it copies
-   * out made copyable as it makes them: all three bare, or those named
-   * (`?cullflags=uniform,records,bands`). Each is one of the two things the
-   * check changes on the frames it does not read (the panel over the canvas,
-   * the buffers' usage), for a device whose bug `?cullcheck` makes go away.
-   */
-  readonly cullQuiet: boolean;
-  readonly cullFlags: ReadonlySet<CullBuffer>;
-  /**
-   * `?cullsplit` — the cluster cull's three dispatches each in a compute pass
-   * of its own; `?cullsplit=submits` — each in a submit of its own, ahead of
-   * the frame (`render/ClusterCull.ts`'s `CullSplit`).
-   */
-  readonly cullSplit: CullSplit;
-  /** `?cullonce` — the cluster cull dispatched once, never again (`CullDiagnostics.once`). */
-  readonly cullOnce: boolean;
-  /**
-   * `?drawcheck` — once a second, to the console: how many frames the scene
-   * rendered, and how many times our main pass began, queued its opaque
-   * draws and ran them, with the fewest and most block draws a run issued
-   * (`Renderer.tally`). Whether a frame went without our draws is a CPU
-   * question, and this answers it without touching the GPU.
-   */
-  readonly drawCheck: boolean;
-  /**
    * Which of the above the URL set, by the name a capture files it under —
    * `graphics.forced`, so a report off a device nobody here owns says which of
    * its numbers were somebody's experiment rather than the player's choice.
@@ -190,12 +147,6 @@ export class UrlOverrides {
     this.ourWorld = !urlFlag("babylonworld");
     this.cullMode = urlFlag("nocull") ? "none" : urlFlag("nofrustum") ? "nofrustum" : "full";
     this.cullCheck = urlFlag("cullcheck");
-    this.cullQuiet = urlFlag("cullquiet");
-    this.cullFlags = namedOf(urlParam("cullflags"), CULL_BUFFERS);
-    this.cullOnce = urlFlag("cullonce");
-    this.drawCheck = urlFlag("drawcheck");
-    const split = urlParam("cullsplit");
-    this.cullSplit = split === null ? "none" : split === "submits" ? "submits" : "passes";
     const forced: string[] = [];
     if (this.giForced) forced.push("gi");
     if (this.shadowsForced) forced.push("shadows");
@@ -203,11 +154,7 @@ export class UrlOverrides {
     if (!this.minimap) forced.push("minimap");
     if (!this.ourWorld) forced.push("babylonworld");
     if (this.cullMode !== "full") forced.push(this.cullMode === "none" ? "nocull" : "nofrustum");
-    if (this.cullCheck) forced.push(this.cullQuiet ? "cullcheck-quiet" : "cullcheck");
-    if (this.cullSplit !== "none") forced.push(`cullsplit=${this.cullSplit}`);
-    if (this.cullOnce) forced.push("cullonce");
-    if (this.drawCheck) forced.push("drawcheck");
-    if (this.cullFlags.size > 0) forced.push(`cullflags=${[...this.cullFlags].join("+")}`);
+    if (this.cullCheck) forced.push("cullcheck");
     this.forced = forced;
   }
 
