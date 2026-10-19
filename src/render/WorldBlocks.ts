@@ -829,9 +829,8 @@ export class WorldBlocks {
    * the same either way; the order decides what is SHADED. Drawn after the
    * floor, every road pixel was the bumped floor shaded and then painted
    * over; drawn first, the floor under a road fails the depth test before it
-   * shades. Measured at X3.5 on Cinderhaven (`BABYLON_EXIT.md`), where the
-   * landform's draw order cost the desktop's `gpu.frame` about a millisecond
-   * and the roads were half of it.
+   * shades. Measured at X3.5 on Cinderhaven (`BABYLON_EXIT.md`): about half
+   * the landform's rise at a road crossing, most of it in the town.
    */
   private drawClusters(pass: GPURenderPassEncoder, ctx: FrameContext, cull: ClusterCull, point: WorldPoint): number {
     let drawn = 0;

@@ -23,13 +23,15 @@
  *
  * **The bank is BABYLON's picture of the blocks, taken before X3.3c, and no
  * longer the switch-off picture.** Since X3.3c our renderer draws them in
- * every build, so a plain `--check` grades it against Babylon's frames and
- * lands WITHIN the floor rather than at 0%: the residue is X3.3a's
- * equal-depth ties, which Babylon's front-to-back sort settles pair by pair.
- * A future `--query` check is graded against those same frames and absorbs
- * the same residue until the bank is re-taken. Re-taking it gives Babylon's
- * picture up for good — nothing in the tree draws Babylon's picture of the
- * blocks any more.
+ * every build, so a plain `--check` grades it against Babylon's frames: the
+ * residue is X3.3a's equal-depth ties, which Babylon's front-to-back sort
+ * settles pair by pair. **And its old rows are STALE since X3.4**, which
+ * moved the scatter on purpose, and since a GPU driver update: 33 of the 47
+ * rows banked before X3.5 fail a plain `--check` on an unchanged tree, so a
+ * step is graded against a BEFORE taken with `--keep` at its parent
+ * (`README.md`) until the user re-takes the bank. Re-taking it gives
+ * Babylon's picture up for good — nothing in the tree draws Babylon's
+ * picture of the blocks any more.
  *
  * **A map is several frames and not one, because a reference set is a defence
  * against a SHADER being wrong in one place.** The menu backdrop's vantage is

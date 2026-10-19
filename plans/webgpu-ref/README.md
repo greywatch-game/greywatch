@@ -49,17 +49,25 @@ node plans/webgpu-ref/bench.mjs [map...] [--runs 3] [--capped] [--gpu] [--max] [
   against what is banked instead of replacing it, and counts the page's
   console errors as problems on every check, since a draw of ours that fails
   says so there and draws nothing. **The bank is BABYLON's picture of the
-  blocks, taken before `BABYLON_EXIT.md` X3.3c**: our renderer draws them in
-  every build now, so a plain `--check` lands WITHIN the floor rather than at
-  0% (the residue is X3.3a's equal-depth ties), and re-taking the bank gives
-  that reference up for good. `--query=<flags>` boots the game with that URL
-  query and grades it against the bank taken WITHOUT it — how a DEV switch
-  that must draw the same picture is proven (X3.3a's `?ourworld`, gone since
-  X3.3c) — and refuses to take a bank. **The bank is no longer the switch-off
-  picture**: the shipping build draws our renderer's, and the bank is
-  Babylon's from before X3.3c, so a future `--query` check is graded against
-  Babylon's and absorbs the same tie residue (within the floor, not 0%) until
-  the bank is re-taken.
+  blocks, taken before `BABYLON_EXIT.md` X3.3c, and its old rows are STALE**:
+  X3.4 moved the scatter on purpose (sixteen variants a kind, one colour bake
+  a kind) and the GPU driver has moved since the bank was taken (596.21 to
+  610.88), so a plain `--check` fails 33 of the 47 rows banked before X3.5 —
+  Greyfen's `canopy` at a mean of 44/255 — whatever the tree under test does.
+  Only the fourteen `ground` and `crossing` rows, banked at 54ec8c0, still
+  grade within the floor against the bank. **Until the bank is re-taken
+  (the user's call), a step is graded against a BEFORE**: `--check
+  --keep=<dir>` at the parent commit and again at the step, the two
+  directories compared frame by frame with `diff.mjs`'s `comparePngs` at
+  `CHECK_TOLERANCE` (X3.5 did; its record has the numbers). Re-taking the
+  bank gives Babylon's picture of the blocks up for good. `--query=<flags>`
+  boots the game with that URL query and grades it against the bank taken
+  WITHOUT it — how a DEV switch that must draw the same picture is proven
+  (X3.3a's `?ourworld`, gone since X3.3c) — and refuses to take a bank.
+  **The bank is no longer the switch-off picture**: the shipping build draws
+  our renderer's, and the bank is Babylon's from before X3.3c, so a future
+  `--query` check is graded against Babylon's and absorbs the same tie
+  residue, and the stale rows' drift with it, until the bank is re-taken.
   **A row's frame depends on the rows shot before it** (state carries between
   them): a frame shot at one vantage alone differs from its banked row by
   tens of thousands of pixels with nothing changed, so a scratch diff against

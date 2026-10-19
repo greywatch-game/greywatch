@@ -1206,7 +1206,7 @@ the decision.
   rng-draw count included) plus the replay check; `npm run collision` and
   `npm run parity`; the bank on every map, judged; the census; X0.3.
 
-### X3.5 — Terrain and roads (PERF_PLAN B5) — **M**
+### X3.5 — Terrain and roads (PERF_PLAN B5) — **M** — **LANDED** (b2c9bc6, review fixes a24339d, 0dd2d09)
 
 As B5 states it: clusters, as the blocks. The floor carries the most
 contracts:
@@ -1219,40 +1219,162 @@ contracts:
 
 - **Verify:** the bank on every map, closest to the ground and on a road
   crossing; `merge:hash`; X0.3.
-- **Built, not yet measured** (2026-10-18, branch `x35-floor`; no browser
-  was run):
-  - **The landform is marked by the BUILD.** `WorldSurface.landform` is set
-    where `MapBuilder` makes the floor's patches (the borderland's too), the
-    rim's runs and the map-wide road merge — on the record only, never in
-    `part.metadata`, so `merge:hash` and `kit:hash` have nothing new to see
-    (no builder, no metadata, no collider clone, no `terrainPatches` call
-    moved). `BlockHandover` takes a landform surface under the block's other
-    tests; an EDITOR build hands over nothing at all (`Game` passes no
-    `onSurface`), which keeps the brush's in-place rewrite of the floor
-    Babylon's.
+**Landed** (54ec8c0 the instruments, b2c9bc6 the step, a24339d the review's
+fixes, 0dd2d09 the measurement's fix).
+- **What it is.** Our renderer takes the LANDFORM from Babylon's main pass —
+  the floor's patches (the borderland's too), the rim's runs and the
+  map-wide road merge — and draws it through the blocks' cut and cull.
   - **A second draw point, `"beforeAlphaTest"`**, between group 0's opaque
     and alpha-tested lists, because the turf is a blend on the alpha-tested
-    list that writes no depth and lies on the floor. Babylon has no hook
-    there, so the seam wraps the group's `_renderAlphaTest` while the main
-    pass's group 0 renders (item 10) and fires before the call with
-    `_alphaTestSubMeshes`; a frame with that list empty fires it just ahead
-    of `"opaque"`. The blocks stay at `"opaque"`.
-  - **One cut, one cull, two draws.** `WorldBlocks` keys a group by (recipe,
-    point), so the rim (the pines' material) never shares a group or the
-    scatter with a block; both points read the one cluster list and index
-    buffer. The floor and the rim carry no piece and are cut as one span
-    under `NO_PIECE`; the roads keep their pieces. The landform's reach box
-    is ±`F32_MAX` (`WorldCulling.reachBoxOf`), so the GPU cull keeps it to
-    the size gate and the frustum, as `WorldCulling` kept it loose; a taken
-    loose mesh leaves the candidate list. The roads' -8 reaches our pipeline
-    as `CelRecipe.depthBias`, which `shaders.mjs` now builds per biased shape.
-  - **Owed before it lands:** `shaders.mjs` on seven maps (the bumped ground
-    variant, 16/16 sampled textures, has never drawn in a frame of ours, and
-    the biased road pipelines are new); the bank closest to the ground and
-    on a road crossing on every map (the turf over our floor, the roads over
-    it, the rim against the sky, the borderland); `census.mjs` (the
-    landform's draws fall to one a recipe); `merge:hash` and `kit:hash`
-    against the parent (identical expected); X0.3; the phone.
+    list that writes no depth and must land on a floor already drawn. Babylon
+    has no hook there, so the seam wraps the group's `_renderAlphaTest` while
+    the main pass's group 0 renders (item 10). A frame whose alpha-tested
+    list is empty fires the point just ahead of `"opaque"`. The blocks stay
+    at `"opaque"`.
+  - **The landform is marked by the BUILD** (`WorldSurface.landform`), on the
+    record and never in `part.metadata`, so `merge:hash` and `kit:hash` have
+    nothing new to see. `BlockHandover` tells the cull which taken mesh is a
+    block and which the landform (`WorldCulling.setTaken`'s two lists).
+  - **No reach.** The landform's reach box is ±`F32_MAX`
+    (`WorldCulling.reachBoxOf`), so the GPU cull keeps it to the size gate
+    and the frustum, the no-reach answer it had as a loose mesh. The floor
+    and the rim carry no piece and are cut as one `NO_PIECE` span; the
+    roads keep theirs.
+  - **A group is (recipe, point)** over one cut, one cull and one index
+    buffer, with two `FrameDraw`s, so the rim (the pines' material) never
+    shares a group or the scatter with a block. The roads' -8 is the
+    pipeline's `depthBias` (`CelRecipe.depthBias`), and a biased group draws
+    first at its point (0dd2d09, below).
+  - **An editor build takes nothing** (`Game` passes no `onSurface`), which
+    keeps the terrain brush's in-place rewrite of the floor Babylon's.
+- **What the review found** (a24339d, before any browser ran).
+  `reachBoxOf` gave ANY taken mesh filed in no cell the landform's no-reach
+  box, so a block that had lost its cell would have drawn at every distance
+  instead of throwing. It now takes a `landform` flag, and a block in no
+  cell throws again. And the contract X3.5 opened is written down: Babylon's
+  opaque list now always draws before our floor, so anything lying on the
+  floor that writes NO depth must be blended or on the alpha-tested list,
+  never opaque, or the floor paints over it every frame (the sky dome is the
+  one deliberate case). `CLAUDE.md` states it, `docs/rendering.md` argues
+  it.
+- **What the measurement found** (0dd2d09). X0.3 put Cinderhaven's frame up,
+  and a paired, alternating A/B on the GPU confirmed it (`bench.mjs
+  cinderhaven --max --gpu --runs 2`, twice a side, 3440x1440, `src/` swapped
+  between 54ec8c0 and a24339d in one session). `gpu.frame` rose 4.38 to
+  5.55 ms on the vantages, 5.19 to 6.27 on the path and 4.70 to 5.69 in the
+  fight; the frame 5.44 to 6.02 ms on the vantages and 5.47 to 6.55 on the
+  path. The fight still got faster, 13.31 to 11.17 ms, its tick falling
+  12.40 to 10.30 as 193 meshes left Babylon's walk.
+  - **Part of the rise was the roads.** Drawn after the floor, every road
+    pixel was the bumped floor shaded and then painted over.
+    `WorldBlocks.drawClusters` now draws a point's biased groups first, so
+    the floor under a road fails the depth test before it shades. The
+    picture does not move: the bias decides who wins, the order only what is
+    shaded.
+  - **What that bought**, paired against a24339d (two runs a side): the
+    crossing vantage's frame 7.46 to 6.92 ms (about half its rise), the
+    town's 6.55 to 6.09 (most of it); `gpu.frame` 5.70 to 5.32 ms on the
+    vantages and 6.13 to 5.95 on the path.
+  - **The rest is the landform's ORDER** against what Babylon's
+    front-to-back queue gave it, `FINDINGS.md` 61's question, which now
+    holds both measurements.
+- **Measured** (after 0dd2d09 unless named; the BEFORE taken at 54ec8c0 in
+  the same session).
+  - **`merge:hash`: identical** to the BEFORE on all eight maps (the proving
+    ground included), so `kit:hash` was not owed.
+  - **`shaders.mjs`: clean on seven maps.** Our builds are 18/18 on the
+    five-variant maps (12/12 before) and 22/22 on the seven-variant ones
+    (16/16): the -8 road pipelines, both stages, for every biased shape.
+  - **The bank, against the BEFORE.** Every row's frame was graded against
+    the same row's frame kept at 54ec8c0 (`--check --keep`, `diff.mjs`'s
+    `comparePngs` at `CHECK_TOLERANCE`), because the bank's old rows are
+    stale (below). **61 of 61 within the floor**, at a24339d and again at
+    0dd2d09. The worst are Sarab's `shelf` (0.0025/255, 0.037% of pixels),
+    Sarab's `wadi` (0.0019), Kurenai's `crossing` (0.0014) and Greyfen's
+    `crossing` (0.0010): equal-depth ties, as X3.3c's. 21 rows are
+    byte-identical, the `ground` rows of Greyfen, Harrowmead and Cinderhaven
+    among them.
+  - **The 14 new rows against the bank: within the floor**, worst Kurenai's
+    `crossing` at 0.0014/255 and Greyfen's at 0.0010. The other 33
+    over-tolerance rows are the same 33 the BEFORE fails (stale). No console
+    or page error on any check.
+  - **By eye** (`ground`, `crossing`, Harrowmead's `borderland`): the turf
+    still lies over the floor and the blades stand in it; the roads sit on
+    the floor with their kerbs and no z-fighting at range, two ranks
+    crossing cleanly on Sarab and Coldharbour; the borderland's turf rolls
+    to the horizon, and Cinderhaven's floor runs to its night skyline.
+  - **The empty alpha-tested list**, forced at every map's `ground` and
+    `crossing` vantage by switching off what was on it (the turf patches and
+    `sky-clouds`). Babylon then makes no `_renderAlphaTest` call with that
+    list, and the landform still draws its 5 (or 11) groups from the
+    fallback. The frame differs from the same frame under `?babylonworld`
+    exactly as the turfed frame does (the scatter's per-kind bake), with no
+    hole.
+  - **`?babylonworld`** takes nothing (0 surfaces, 0 draws of ours) on all
+    seven maps, and Babylon draws the floor.
+  - **The handover**, per map: the surfaces taken, how many are landform,
+    its groups, and our draws at each point on every frame of a played
+    round. Nothing was handed back and nothing threw.
+
+    | map | taken | landform | its groups | draws, landform / blocks |
+    | --- | --- | --- | --- | --- |
+    | Hollowmere | 95 | 41 | 5 | 5 / 108 |
+    | Greyfen | 385 | 41 | 5 | 5 / 156 |
+    | Coldharbour | 172 | 64 | 11 | 11 / 161 |
+    | Harrowmead | 120 | 16 | 5 | 5 / 207 |
+    | Sarab | 303 | 138 | 5 | 5 / 203 |
+    | Cinderhaven | 323 | 193 | 5 | 5 / 201 |
+    | Kurenai | 251 | 81 | 11 | 11 / 111 |
+
+  - **`census.mjs --against --fall`: every row falls.** Totals: Hollowmere
+    1,958 to 1,749, Greyfen 1,172 to 1,090, Coldharbour 2,403 to 2,206,
+    Harrowmead 3,967 to 3,861, Sarab 3,213 to 2,818, Cinderhaven 1,196 to
+    1,008, Kurenai 507 to 428 (the landform's draws fall to one a group).
+  - **X0.3 on the desktop** (`bench.mjs greyfen sarab cinderhaven --max
+    --runs 3`, 3440x1440 uncapped, a24339d against 54ec8c0, install times
+    within each other's spread). The fight hashes are `83e8e74ef36916ba`,
+    `986c2e35557fb679` and `2f97c9072ab1762b` on every run.
+
+    | map | part | tick before | tick after | draws | mean, new / old |
+    | --- | --- | --- | --- | --- | --- |
+    | Greyfen | vantages | 4.40 | 3.84 | 59 to 40 | 1.060 |
+    | Greyfen | path | 4.79 | 5.14 | 113 to 97 | 1.034 |
+    | Greyfen | fight | 6.58 | 6.92 | 313 to 287 | 1.053 |
+    | Sarab | vantages | 3.48 | 3.35 | 130 to 78 | 0.999 |
+    | Sarab | path | 3.92 | 3.79 | 131 to 86 | 1.000 |
+    | Sarab | fight | 10.26 | 9.36 | 510 to 435 | 0.927 |
+    | Cinderhaven | vantages | 4.40 | 4.89 | 176 to 108 | 1.133 |
+    | Cinderhaven | path | 4.74 | 5.49 | 177 to 114 | 1.214 |
+    | Cinderhaven | fight | 9.08 | 9.77 | 487 to 375 | 1.077 |
+
+    Greyfen's fight spread 9.0% and Cinderhaven's 34% in that run, so those
+    two fight rows are noise; Cinderhaven's paired A/B above is its reading.
+    A run at 0dd2d09 printed the same three hashes, but its installs ran
+    25-35% slow against the BEFORE's, so its frame rates are not comparable
+    (`VERIFYING.md`). Only the paired A/B prices the fix.
+  - **`gate.mjs`** is clean on seven maps (an offline round on each).
+  - **A round in a server match** (Cinderhaven, `?mp=`): 323 taken, 193 of
+    them landform, 5 and 201 draws a frame, nothing handed back, no page or
+    console error.
+  - **The editor** (`F2` on Hollowmere): nothing taken. A sculpt stroke
+    raised the floor from 3.25 to 7.25 m under the brush, and the drawn floor
+    rose with it.
+  - `npm run corecheck`, `npm run build` and `npm run parity` (all eight
+    maps, every scene ready on frame 1) pass.
+- **Owed onward.**
+  - **The phone's reading**, the user's to take as for X3.3c and X3.4b: X0.3
+    on the deployed `babylon-exit` build, warm, on Greyfen and Sarab, and on
+    Cinderhaven, where the desktop's GPU rose. Read it as its tick and its
+    `gpu.frame` (`?bench=<map>&gpu`).
+  - **The landform's remaining GPU rise** (Cinderhaven's vantages and path,
+    0.8-0.9 ms of `gpu.frame` on the desktop after 0dd2d09) goes to
+    `FINDINGS.md` 61 with the blocks'. The draw order is ours to choose now,
+    and front-to-back is what Babylon's queue gave the floor.
+  - **The bank's old rows are stale.** X3.4 moved the scatter and the GPU
+    driver moved (596.21 to 610.88), so 33 of the 47 rows banked before X3.5
+    fail a plain `--check` on an unchanged tree. Re-taking them is the
+    user's call. Until then a step is graded against a BEFORE taken with
+    `--keep` at its parent (`plans/webgpu-ref/README.md` now says so).
 
 ### X3.5b — The fold: one draw a recipe, blocks and scatter together — **M–L** (decision)
 

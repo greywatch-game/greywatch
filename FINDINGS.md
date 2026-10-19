@@ -2707,6 +2707,15 @@ after) put it on the GPU: `gpu.frame` 5.31 to 5.77 ms on the path, against
 includes the cluster cull, which no before had, and no timer separates the
 cull from the draws, so the step's record names the cull as the suspect.
 
+**And again at X3.5, on Cinderhaven** (`BABYLON_EXIT.md` X3.5, a paired,
+alternating A/B with `?gpu`): taking the landform raised `gpu.frame` 4.38 to
+5.55 ms on the vantages and 5.19 to 6.27 on the path while the fight's tick
+fell 12.40 to 10.30. Part of it was the roads drawn after the floor, which
+0dd2d09 fixed by drawing a biased group first; 0.8-0.9 ms of `gpu.frame`
+remains. The floor was in Babylon's front-to-back queue before X3.5 and is
+one draw a recipe in cut order now, so the same question is open for the
+landform as for the blocks.
+
 ### What is derived from the code
 
 There is a second suspect, and it is the draw ORDER, not the cull.
