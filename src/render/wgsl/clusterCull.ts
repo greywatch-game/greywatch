@@ -45,8 +45,6 @@ export const GROUP_WORDS = 12;
 export const BLOCK_WORDS = 8;
 /** The uniform block (`Cull` below), in bytes. */
 export const CULL_UNIFORM_BYTES = 144;
-/** `drawIndexedIndirect`'s five arguments, in bytes — the instance cull's draws. */
-export const INDIRECT_BYTES = 20;
 
 /**
  * The uniform block (`CULL_UNIFORM_BYTES`) as nine `vec4u`s of words, and the

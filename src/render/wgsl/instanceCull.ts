@@ -6,7 +6,8 @@
  * Owns: `INSTANCE_CULL_WGSL`; `INSTANCE_DECLARATIONS`, the instance and set
  * records as the cull and the probe declare them; the byte layouts it reads
  * (`INSTANCE_CULL_UNIFORM_BYTES`, `INSTANCE_WORDS`, `SET_WORDS`,
- * `DRAW_WORDS`, `TRANSFORM_WORDS`) and its workgroup sizes.
+ * `DRAW_WORDS`, `TRANSFORM_WORDS`), the indirect arguments it writes
+ * (`INDIRECT_BYTES`) and its workgroup sizes.
  * Invariants: a SET is one variant of one kind — the instances that wear it,
  * contiguous in the instance table — and its survivors are written to the
  * set's OWN region of the output (its first instance onward), so a draw binds
@@ -49,6 +50,8 @@ export const DRAW_WORDS = 4;
 export const TRANSFORM_WORDS = 12;
 /** The uniform block (`Cull` below), in bytes. */
 export const INSTANCE_CULL_UNIFORM_BYTES = 144;
+/** `drawIndexedIndirect`'s five arguments, in bytes — one a draw. */
+export const INDIRECT_BYTES = 20;
 
 /**
  * The instance and set records as whole `vec4`s — `CULL_DECLARATIONS`'s rule

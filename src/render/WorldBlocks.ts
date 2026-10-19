@@ -12,8 +12,8 @@
  * of it), its two pipelines (the blocks', and the instanced stage's), its
  * material block and bind group, and its instanced parts' index buffer; the
  * identity `world` the blocks bind (group 2); each variant's three modules
- * (assembled once); the `ClusterCull` that writes the blocks' indices and
- * indirect arguments and the `InstanceCull` that writes the scatter's
+ * (assembled once); the `ClusterCull` that writes the blocks' indices
+ * and the `InstanceCull` that writes the scatter's
  * transforms and indirect arguments; and the `FrameDraw` that draws both at
  * the end of group 0's opaque meshes (`DrawPoint` `"opaque"`) with the
  * `FramePrepare` that culls ahead of it, both on the renderer only while a
@@ -83,8 +83,8 @@ import type { FrameContext, Renderer } from "./Renderer";
 import { FRAME_TARGETS } from "./targets";
 import { UniformBlockBuffer } from "./UniformBlockBuffer";
 import type { AssembledModule, AssembledVertex } from "./wgsl/assemble";
-import { CLUSTER_WORDS, INDIRECT_BYTES } from "./wgsl/clusterCull";
-import { INSTANCE_WORDS, TRANSFORM_WORDS } from "./wgsl/instanceCull";
+import { CLUSTER_WORDS } from "./wgsl/clusterCull";
+import { INDIRECT_BYTES, INSTANCE_WORDS, TRANSFORM_WORDS } from "./wgsl/instanceCull";
 
 /** How the blocks are cut — `CONFIG.graphics.clusters`. */
 export interface ClusterOptions {

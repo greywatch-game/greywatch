@@ -39,6 +39,7 @@ import type { PipelineCache } from "./PipelineCache";
 import { INSTANCE_FORMS, INSTANCE_PROBE_WGSL } from "./wgsl/cullProbe";
 import {
   DRAW_WORDS,
+  INDIRECT_BYTES,
   INSTANCE_CULL_UNIFORM_BYTES,
   INSTANCE_CULL_WGSL,
   INSTANCE_SCAN_SIZE,
@@ -120,7 +121,7 @@ export class InstanceCull {
     const sums = this.make("sums", (this.workgroups + 1) * 16, storage);
     const sets = this.upload("sets", storage, setWords(tables.sets));
     const draws = this.upload("draws", storage, drawWords(tables.draws));
-    this.args = this.make("args", tables.draws.length * 20, storage | GPUBufferUsage.INDIRECT);
+    this.args = this.make("args", tables.draws.length * INDIRECT_BYTES, storage | GPUBufferUsage.INDIRECT);
     this.placed = this.make("placed", n * TRANSFORM_WORDS * 4, storage | GPUBufferUsage.VERTEX);
 
     // The static half of the uniform block.

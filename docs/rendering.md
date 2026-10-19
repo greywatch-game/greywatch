@@ -3503,10 +3503,11 @@ The build hands the sets over once (`BuildOptions.onScatter`), and
   rest of the range is index 0 three times over — a triangle of no area —
   and each group is ONE `drawIndexed` over its whole range, at a count the
   CPU knows. A group whose cut kept no index (all of its surfaces were
-  scatter, cut out and drawn as instances) issues no draw. The price is the
-  input assembler reading every index of the cut every frame, survivors or
-  not — 11 MB on Kurenai — against which the indirect arguments and the
-  third of the prefix that wrote them are gone.
+  scatter, cut out and drawn as instances) issues no draw. The price is
+  bandwidth: the clear writes, and the input assembler reads, every index of
+  the cut every frame, survivors or not — 11 MB each way on Kurenai, which
+  the phone did not show (2026-10-18). The indirect arguments, and the
+  prefix's writing of them, are gone.
 - **Why: an Intel Xe-LPG (a laptop's Chrome, 2026-10-17/18) dropped single
   indirect draws at random.** Kurenai's structures flickered out standing
   still, in bursts, on two or three loads of four, showing what was behind
@@ -3530,9 +3531,8 @@ The build hands the sets over once (`BuildOptions.onScatter`), and
   anywhere, and stay indirect: an instance count is not a range a plain draw
   can cover with triangles of no area. A device that drops THEM owes the
   instance cull the same question, and the switches above are how it was
-  asked. The SECTIONS OF GRASS that flicker on the same
-  laptop are older than our renderer and draw nothing indirect — a separate
-  finding.
+  asked. The SECTIONS OF GRASS that flicker on the same laptop are older
+  than our renderer and draw nothing indirect: `FINDINGS.md` 62.
 - **The hunt's switches are GONE**, taken out once the laptop stopped
   flickering and the phone drew right on the plain draw (2026-10-18):
   `?cullquiet`, `?cullflags`, `?cullsplit`, `?cullcopy`, `?cullonce`,
