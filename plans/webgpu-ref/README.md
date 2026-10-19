@@ -31,7 +31,7 @@ own dev server.
 
 ```
 node plans/webgpu-ref/gate.mjs [map...] [--headed] [--uncap] [--query=<flags>]
-node plans/webgpu-ref/bank.mjs [map...] [--headed] [--check] [--query=<flags>]
+node plans/webgpu-ref/bank.mjs [map...] [--headed] [--check] [--query=<flags>] [--keep=<dir>] [--rows=<id,...>]
 node plans/webgpu-ref/census.mjs [map...] [--query=<flags>] [--out f.json] [--against f.json] [--fall]
 node plans/webgpu-ref/shaders.mjs [map...] [--headed] [--list]
 node plans/webgpu-ref/depth.mjs glass|zoffset [--headed]
@@ -63,7 +63,13 @@ node plans/webgpu-ref/bench.mjs [map...] [--runs 3] [--capped] [--gpu] [--max] [
   **A row's frame depends on the rows shot before it** (state carries between
   them): a frame shot at one vantage alone differs from its banked row by
   tens of thousands of pixels with nothing changed, so a scratch diff against
-  the bank owes the bank's own sequence up to that row.
+  the bank owes the bank's own sequence up to that row. **`--rows=<id,...>`
+  is how a NEW row is banked without re-taking the old ones**: it shoots each
+  map's sequence in order up to its last named row and writes (under
+  `--check`, grades) only the named rows, leaving every other PNG and
+  `ref/mode.json` alone — so a row appended for a later step is Babylon's
+  picture taken beside a bank it does not disturb. Append new rows at the END
+  of a map's list, or every row after them carries a different state.
 - **`census.mjs`** counts the MAIN pass's draws at every bank vantage —
   Babylon's into the frame's own target plus our renderer's — on the same
   frozen frame the bank grades, each row split into Babylon's and ours. With
@@ -292,6 +298,7 @@ for each step of the exit:
 | exit step | rows |
 | --- | --- |
 | X3 the static world | every map's menu and map views |
+| X3.5 terrain and roads | every map's `ground` (the eye 35 cm off the floor, a turf edge in frame) and `crossing` (two road ranks meeting), banked by `--rows` before X3.5 so they are Babylon's floor |
 | X4.1 bodies | `sarab-rig-near`, `sarab-rig-far` (250 m, inside `bodyDrawDistance`) |
 | X4.2 vehicles | `sarab-tank`, `sarab-truck`, `sarab-heli` |
 | X4.3 the viewmodel | `harrowmead-view-<optic>-hip` / `-aim`, one weapon per optic |

@@ -11,7 +11,15 @@
  * proven by (`BABYLON_EXIT.md` X3.3a's `?ourworld`); it refuses to TAKE a
  * bank under a switch. `--keep=<dir>` makes a check also write every frame it
  * grabbed to `<dir>`, for a step that moves the picture on purpose and is
- * judged by eye (`BABYLON_EXIT.md` X3.4).
+ * judged by eye (`BABYLON_EXIT.md` X3.4). `--rows=<id,id,...>` WRITES (or,
+ * under `--check`, grades) only the named rows and leaves every other banked
+ * frame alone — how a row ADDED to the table is banked without re-taking the
+ * rows beside it, which would give their reference up (see below). A row's
+ * frame depends on the rows shot before it, so the map's whole sequence is
+ * still shot in order, up to its last named row, exactly as a full run or a
+ * `--check` would shoot it; the frames before are grabbed and thrown away. A
+ * map with none of the named rows is skipped, and a run under `--rows` never
+ * rewrites `ref/mode.json`.
  *
  * **The bank is BABYLON's picture of the blocks, taken before X3.3c, and no
  * longer the switch-off picture.** Since X3.3c our renderer draws them in
@@ -111,6 +119,10 @@ const QUERY = args.find((a) => a.startsWith("--query="))?.slice("--query=".lengt
 // <map>-<vantage>.png, so a step that MOVES the picture on purpose can be
 // judged by eye beside the bank (`BABYLON_EXIT.md` X3.4).
 const KEEP = args.find((a) => a.startsWith("--keep="))?.slice("--keep=".length) ?? "";
+// `--rows=<id,id,...>`: write (or grade) only these rows — see the header.
+const ROWS = new Set(
+  (args.find((a) => a.startsWith("--rows="))?.slice("--rows=".length) ?? "").split(",").filter(Boolean),
+);
 const maps = args.filter((a) => !a.startsWith("--"));
 if (KEEP && !CHECK) {
   console.error("--keep keeps a check's frames; it is no use without --check.");
@@ -172,11 +184,25 @@ console.log(
   `bank: ${mode} @ ${vite.url}${CHECK ? "  (check only)" : ""}${QUERY ? `  ?${QUERY}` : ""}\n`,
 );
 const problems = [];
+// The named rows some map in the run actually has: a misspelt `--rows` id
+// would otherwise skip every map and pass.
+const rowsFound = new Set();
 for (const id of targets) {
-  const shots = shotList(id, VANTAGES[id]);
+  let shots = shotList(id, VANTAGES[id]);
   if (!shots.length) {
     console.log(`${id.padEnd(12)} no vantage anywhere for this map — skipped, which is not an error`);
     continue;
+  }
+  if (ROWS.size) {
+    // The sequence up to the last named row and no further: the rows before
+    // it are shot for the state they carry, not for their frames.
+    for (const v of shots) if (ROWS.has(v.id)) rowsFound.add(v.id);
+    const last = shots.findLastIndex((v) => ROWS.has(v.id));
+    if (last < 0) {
+      console.log(`${id.padEnd(12)} none of --rows here — skipped`);
+      continue;
+    }
+    shots = shots.slice(0, last + 1);
   }
   // ONE boot per map and every vantage shot out of it. `VERIFYING.md`'s
   // one-vantage-per-process rule is about cycling back through `playing`
@@ -218,7 +244,9 @@ for (const id of targets) {
     const reproducible = sha(a) === sha(b);
     const out = join(refDir, `${id}-${v.id}.png`);
 
-    if (!reproducible) {
+    if (ROWS.size && !ROWS.has(v.id)) {
+      console.log(`${label} shot for the sequence, not ${CHECK ? "graded" : "written"} (--rows)`);
+    } else if (!reproducible) {
       problems.push(`${id}/${v.id}: frame is not reproducible — two consecutive grabs differ`);
       console.log(`${label} NOT REPRODUCIBLE — nothing written (drawn on frame ${drawnOnFrame})`);
     } else if (CHECK) {
@@ -273,10 +301,12 @@ for (const id of targets) {
   await page.close();
 }
 
+for (const r of ROWS) if (!rowsFound.has(r)) problems.push(`--rows: no map in this run has a row "${r}"`);
+
 // Only a FULL re-take may say what the bank was taken on: a run over some
-// maps leaves the rest of the frames as they were, taken on whatever was
-// recorded before it.
-if (!CHECK && !maps.length) writeFileSync(modePath, JSON.stringify({ mode, ...stack }, null, 2));
+// maps, or some rows, leaves the rest of the frames as they were, taken on
+// whatever was recorded before it.
+if (!CHECK && !maps.length && !ROWS.size) writeFileSync(modePath, JSON.stringify({ mode, ...stack }, null, 2));
 else if (!CHECK && !existsSync(modePath)) {
   writeFileSync(modePath, JSON.stringify({ mode, ...stack, partial: targets }, null, 2));
 }

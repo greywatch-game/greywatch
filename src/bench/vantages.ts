@@ -204,6 +204,22 @@ export const DIFF_VANTAGES: Readonly<Record<string, readonly Vantage[]>> = {
       target: [0, 2.2, -14],
       settings: { glow: "low" },
     },
+    {
+      id: "ground",
+      of: "the eye 35 cm off the bare floor by the farm lane, looking south-east to the farmstead's paddock, the field's grass and turf behind the rails and the floor running out into the fog on the right",
+      proves:
+        "the floor's bumped ground variant at grazing incidence under a night key — the relief read edge-on, where a lost tangent frame or a flipped bump shows first — and the turf's edge against bare floor, which must still draw over the floor it lies on (X3.5)",
+      pos: [52, 0.35, 62],
+      target: [104, 2.89, 22],
+    },
+    {
+      id: "crossing",
+      of: "High Street east's cobbled junction from six metres over it, lamp-lit, where the farm lane (dirt) leaves it northward between the floor and the field grass",
+      proves:
+        "a cobble road's junction patch and its kerb against a DIRT road — `ROAD_RANK` 1 against 0 — and both against the floor beside them: the road depth bias (`ROAD_DEPTH_UNITS`, -8) and the rank ladder that X3.5 moves into our renderer",
+      pos: [61, 6.5, -7],
+      target: [64, 1.01, 7],
+    },
   ],
   greyfen: [
     {
@@ -230,6 +246,22 @@ export const DIFF_VANTAGES: Readonly<Record<string, readonly Vantage[]>> = {
         "the WATER (M6) — the wave trains, the mirror and the dark body under it — against the reed beds standing in it, which is the one place the grass field and the water surface share pixels",
       pos: [22, 1.6, 38],
       target: [-12, 0.8, 34],
+    },
+    {
+      id: "ground",
+      of: "the eye 35 cm off the forest floor south-west of the manor, under the canopy, looking north across sun-flecks to where the valley's thin cover meets a dense stand of grass, trunks receding into the fog",
+      proves:
+        "the floor's bumped ground variant at grazing incidence in the canopy's shadow and its sun-flecks, and the edge where the thin cover (no turf) meets a dense field (turf) — the turf must still draw over the floor (X3.5)",
+      pos: [-34, 0.35, -40],
+      target: [-26, -0.94, 20],
+    },
+    {
+      id: "crossing",
+      of: "the one place a cobbled path meets a dirt track, east of the manor, from six metres up: the cobbles, the track running in, the floor and the grass round them",
+      proves:
+        "the map's only crossing of two ranks — cobble against dirt, `ROAD_RANK` 1 against 0 — with the cobble's kerb and the floor and grass beside it: the road depth bias (`ROAD_DEPTH_UNITS`, -8) and the rank ladder that X3.5 moves into our renderer",
+      pos: [82, 6, 23],
+      target: [72, 1.93, 12],
     },
   ],
   coldharbour: [
@@ -285,6 +317,22 @@ export const DIFF_VANTAGES: Readonly<Record<string, readonly Vantage[]>> = {
       target: [-4, 3, -3],
       blast: { at: [-4, -3], age: 0.5 },
     },
+    {
+      id: "ground",
+      of: "the eye 35 cm off the civic square's floor at its south-west corner, sunlit, looking north-east past the clean-cut lawns to the war memorial",
+      proves:
+        "the floor's bumped ground variant at grazing incidence in full sun, where the relief reads hardest, and a turf edge cut CLEAN (`GrassRect.edge` 0) against bare floor — the turf must still draw over the floor (X3.5)",
+      pos: [-25, 0.35, -19],
+      target: [26, 1, 26],
+    },
+    {
+      id: "crossing",
+      of: "the asphalt avenue's junction at the town's west side from six metres up, where a cobbled lane runs into it, the floor beside both",
+      proves:
+        "ASPHALT meeting COBBLE — `ROAD_RANK` 2 against 1, the top of the ladder — and both against the floor: the road depth bias (`ROAD_DEPTH_UNITS`, -8) and the rank ladder that X3.5 moves into our renderer",
+      pos: [-41, 6, -41],
+      target: [-51, 0.02, -51],
+    },
   ],
   harrowmead: [
     {
@@ -304,6 +352,22 @@ export const DIFF_VANTAGES: Readonly<Record<string, readonly Vantage[]>> = {
       target: [10, 12, -260],
     },
     ...viewRows(),
+    {
+      id: "ground",
+      of: "the eye 35 cm off the floor behind the high street's south row, against the evening light, looking west along the strip between the houses and the field, the grass's edge on the left",
+      proves:
+        "the floor's bumped ground variant at grazing incidence, backlit, and the edge where the field's turf stops at the bare strip — the turf must still draw over the floor (X3.5)",
+      pos: [-12, 0.35, -36],
+      target: [-75, 1.15, -39],
+    },
+    {
+      id: "crossing",
+      of: "the dirt lane running into the cobbled high street, from nine metres over it, the street's kerbs, the floor either side and the market green beyond",
+      proves:
+        "DIRT meeting COBBLE at the cobble's kerb — `ROAD_RANK` 0 against 1, a path road against a rectangle — and both against the floor and the green's turf: the road depth bias (`ROAD_DEPTH_UNITS`, -8) and the rank ladder that X3.5 moves into our renderer",
+      pos: [0.5, 9, -29],
+      target: [0, 0.8, -16],
+    },
   ],
   sarab: [
     {
@@ -377,6 +441,22 @@ export const DIFF_VANTAGES: Readonly<Record<string, readonly Vantage[]>> = {
       fov: 10,
       rigs: [{ at: [-66, 250], yaw: Math.PI }],
     },
+    {
+      id: "ground",
+      of: "the eye 35 cm off the sand on the oasis's east bank, looking south-west over the ripples to the edge of the grass by the pool, and the walls past it",
+      proves:
+        "the floor's bumped ground variant at grazing incidence on the map's sand, whose ripples are the deepest relief in the set, and a dense grass rect's edge against bare sand — the turf must still draw over the floor (X3.5)",
+      pos: [-157, 0.35, 66],
+      target: [-205, 0.4, 40],
+    },
+    {
+      id: "crossing",
+      of: "the west highway (asphalt) crossing the northern track (dirt) from seven metres up, cones on the verge, the sand in all four corners",
+      proves:
+        "two RECTANGLE roads crossing as coplanar sheets, asphalt over dirt (`ROAD_RANK` 2 against 0) — the case the rank ladder exists for, with no junction patch to hide it — and both against the sand: the road depth bias (`ROAD_DEPTH_UNITS`, -8) and the rank ladder that X3.5 moves into our renderer",
+      pos: [-55, 7, 197],
+      target: [-66, 0, 208],
+    },
   ],
   cinderhaven: [
     {
@@ -386,6 +466,40 @@ export const DIFF_VANTAGES: Readonly<Record<string, readonly Vantage[]>> = {
         "the night map at street level — a moonless violet key, the lamps and the emissive palette carrying the frame — where its menu row is a far shot of the island",
       pos: [-90, 1.7, 300],
       target: [-60, 8.4, 340],
+    },
+    {
+      id: "ground",
+      of: "the eye 35 cm off the floor north-east of the town, at night, looking east along it to the farm walls, a field's grass at the left edge and the floor running out to the horizon",
+      proves:
+        "the floor's bumped ground variant at grazing incidence under the moonless key, out to the horizon of the largest floor in the set, and a turf edge against bare floor — the turf must still draw over the floor (X3.5)",
+      pos: [250, 0.35, 404],
+      target: [330, 2.29, 412],
+    },
+    {
+      id: "crossing",
+      of: "a cobbled junction in the old town at night, from six metres up, where a dirt lane comes in beside it, the floor between the houses",
+      proves:
+        "COBBLE meeting DIRT on a PATH network — `roadPaths.ts`'s junction patch and its kerb, `ROAD_RANK` 1 against 0 — and both against the floor on a slope: the road depth bias (`ROAD_DEPTH_UNITS`, -8) and the rank ladder that X3.5 moves into our renderer",
+      pos: [-150, 6, 262],
+      target: [-159, 9.29, 273],
+    },
+  ],
+  kurenai: [
+    {
+      id: "ground",
+      of: "the eye 35 cm off the mossy floor south-west of the town, fallen leaves on it, looking west under a maple to the storehouses and the edge of the field's grass",
+      proves:
+        "the floor's bumped ground variant at grazing incidence with its wear and moss, and the field's turf edge against bare floor — the turf must still draw over the floor (X3.5)",
+      pos: [-20, 0.35, -74],
+      target: [-60, 0.9, -90],
+    },
+    {
+      id: "crossing",
+      of: "the dirt lane coming between two rows of houses to the cobbled street's end, from seven metres up, where the cross lane runs past it",
+      proves:
+        "DIRT meeting COBBLE across a rectangle road's end, at its kerb — `ROAD_RANK` 0 against 1 — and the floor on the verges: the road depth bias (`ROAD_DEPTH_UNITS`, -8) and the rank ladder that X3.5 moves into our renderer",
+      pos: [0, 7, -70],
+      target: [0, 0.01, -52],
     },
   ],
 };
