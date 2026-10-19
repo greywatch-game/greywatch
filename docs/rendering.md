@@ -3405,7 +3405,13 @@ probes and the lamps' atlas — until X3.6 moves those passes.
   the recipe — so the roads' `ROAD_DEPTH_UNITS` (-8) is drawn by our side as
   by Babylon's, and the roads are the first world materials it reaches.
   `plans/webgpu-ref/shaders.mjs` builds every biased (shape, bias) a page
-  carries as well as every shape unbiased.
+  carries as well as every shape unbiased. **A biased group is DRAWN first
+  at its point** (`WorldBlocks.drawClusters`): the bias decides which surface
+  wins and the order only what is shaded, so the floor under a road fails
+  the depth test before it shades rather than being shaded and painted over.
+  It is a cost and never a picture: on Cinderhaven the floor drawn first cost
+  the desktop's `gpu.frame` about half a millisecond at a road crossing
+  (`BABYLON_EXIT.md` X3.5).
 - **The map is cut into CLUSTERS once** (`render/clusters.ts`,
   `CONFIG.graphics.clusters`): runs of at most `triangles` triangles of one
   X1.4 piece, in the surface's own order, each carrying its block, its piece,

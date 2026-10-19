@@ -198,7 +198,10 @@ export class WorldBlocks {
   /** Until `finish`; emptied there, so the build's arrays can go. */
   private surfaces: Surface[] = [];
   private surfaceCount = 0;
-  /** One per recipe a point, in the order first added — the order each point draws its own in. */
+  /**
+   * One per recipe a point, in the order first added — the order each point
+   * draws its own in, its biased ones first (`drawClusters`).
+   */
   private readonly groups: Group[] = [];
   /** Each point's groups by recipe: one recipe at both points is two groups. */
   private readonly groupOf: Record<WorldPoint, Map<CelRecipe, Group>> = {
@@ -819,16 +822,28 @@ export class WorldBlocks {
 
   /**
    * The surfaces of `point`'s groups: one plain draw a group over its whole
-   * range of the cull's indices.
+   * range of the cull's indices — the groups whose recipe carries a depth
+   * BIAS first (the roads), then the rest in the order first added.
+   *
+   * The bias decides which surface wins, never the order, so the picture is
+   * the same either way; the order decides what is SHADED. Drawn after the
+   * floor, every road pixel was the bumped floor shaded and then painted
+   * over; drawn first, the floor under a road fails the depth test before it
+   * shades. Measured at X3.5 on Cinderhaven (`BABYLON_EXIT.md`), where the
+   * landform's draw order cost the desktop's `gpu.frame` about a millisecond
+   * and the roads were half of it.
    */
   private drawClusters(pass: GPURenderPassEncoder, ctx: FrameContext, cull: ClusterCull, point: WorldPoint): number {
     let drawn = 0;
     const host = this.renderer.host;
     const groups = this.groups;
+    const n = groups.length;
     pass.setIndexBuffer(cull.indices, "uint32");
-    for (let g = 0; g < groups.length; g++) {
-      const group = groups[g];
+    // Twice over the groups: the biased ones on the first lap, the rest on the second.
+    for (let k = 0; k < 2 * n; k++) {
+      const group = groups[k % n];
       if (group.point !== point) continue;
+      if ((group.material.recipe.depthBias !== 0) !== (k < n)) continue;
       const built = group.built;
       // A group whose surfaces were all scatter draws its parts as instances.
       if (!built || group.failed || group.indexCount === 0) continue;
