@@ -2746,3 +2746,34 @@ block past 600 m drawn before it would be painted over (`docs/rendering.md`,
   plan defers, and which the near-first bands were kept for.
 - **The phone's `gpu.frame` on Greyfen** (finding 52) is the number this
   matters for; the desktop only says where to look.
+
+## 62. Sections of grass flicker on an Intel Xe-LPG laptop, and have since before the Babylon exit
+
+**Status:** open; one observation, nothing measured. Reported 2026-10-18 by
+the user on the laptop whose buildings flickered from dropped INDIRECT draws
+(`docs/rendering.md`, "THE BLOCKS ARE NEVER DRAWN INDIRECT"). It was parked
+then as minor.
+
+### What was observed
+
+"Sections of grass" blink out on that laptop (Intel Xe-LPG, Chrome), and the
+user dates it from before the exit work began. The buildings' flicker is
+fixed and its trees never flickered.
+
+### What is derived from the code
+
+It is NOT the same cause, or not by the same door: the grass draws nothing
+indirect. It is Babylon's thin instances (`systems/GrassSystem.ts`), patch
+meshes chosen per frame around the eye, a patch mesh with no patches made
+INVISIBLE rather than emptied. A SECTION going is the shape of a patch, so
+the first suspects are the per-frame choice of which mesh draws a patch and
+its thin-instance buffer being rewritten while that device reads it — but
+that is a guess from the shape, not a reading.
+
+### How to settle it
+
+- **Ask what a section is**: a square patch of the field, standing still or
+  only while moving, near or far.
+- **A diagnostic switch that holds the patch choice fixed** (the meshes and
+  their instance buffers written once, as `?cullonce` did for the blocks):
+  if the flicker stops, it is the rewrite; if not, it is the draw.
