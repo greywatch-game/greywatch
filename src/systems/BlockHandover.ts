@@ -18,10 +18,9 @@
  * header says why); nothing is taken from an EDITOR build, which `Game`
  * hands no `onSurface` — its blocks are unmerged, and its brush rewrites the
  * floor's meshes in place — and every other surface stays Babylon's in every
- * pass, as do
- * the taken surfaces our side will never draw (handed back whole, so every
- * surface is drawn by one side): a pipeline's or the cull's failure hands
- * back its surfaces in the turn it lands, and a main pass our renderer
+ * pass, as do the taken surfaces our side will never draw (handed back whole,
+ * so every surface is drawn by one side): a pipeline's or the cull's failure
+ * hands back its surfaces in the turn it lands, and a main pass our renderer
  * REFUSES (`Renderer.onRefused`) hands back the whole map, for the rest of
  * it, from the next frame — the refused one is the one frame drawn without
  * them; a taken mesh is drawn by our side
@@ -166,16 +165,7 @@ export class BlockHandover {
     this.epoch = -1;
     this.reported = false;
     this.take(meshes);
-    const boxes: BlockBox[] = meshes.map((mesh) => {
-      const landform = this.landform.has(mesh);
-      const box = this.culling.reachBoxOf(mesh, landform);
-      if (!box) {
-        throw new Error(
-          `BlockHandover: "${mesh.name}" is taken but ${landform ? "is no unfiled map visual" : "filed in no cell"}`,
-        );
-      }
-      return box;
-    });
+    const boxes: BlockBox[] = meshes.map((mesh) => this.culling.reachBoxOf(mesh));
     this.blocks.finish(
       boxes,
       field

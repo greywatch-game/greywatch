@@ -140,7 +140,7 @@ export interface CullTables {
 /** The descriptor a frame's pass is begun with, made once. */
 const PASS: GPUComputePassDescriptor = { label: "cluster cull" };
 
-/** The largest `f32` short of infinity — a shader may assume there is none. */
+/** Near the largest `f32`, and short of infinity — a shader may assume there is none. */
 export const F32_MAX = 3.0e38;
 
 export class ClusterCull {

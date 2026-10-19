@@ -10,15 +10,14 @@
  * of a surface tile its index list in order and a cluster's piece is the
  * X1.4 piece its triangles came from (`PieceRange`) — or `NO_PIECE` for a
  * surface that carries none, which is cut as ONE span over the whole of it;
- * its box is the exact
- * float32 bounds of the vertices its triangles name — the values the device
- * holds — so a cull that tests it drops only what lies wholly outside; its
- * sway is read off the colour buffer's red channel exactly as the vertex
- * stage reads it (`shaders/wgsl/celVertex.ts`): above 0 a RAMP weight,
- * below 0 a RIGGED layer. Cut once per map, never per frame. A piece's
- * triangles name only its own vertices (`worldGeometry.ts`'s `PieceRange`),
- * so cutting a piece out is dropping its two ranges and moving every later
- * index down by the vertices dropped ahead of it.
+ * its box is the exact float32 bounds of the vertices its triangles name —
+ * the values the device holds — so a cull that tests it drops only what lies
+ * wholly outside; its sway is read off the colour buffer's red channel
+ * exactly as the vertex stage reads it (`shaders/wgsl/celVertex.ts`): above 0
+ * a RAMP weight, below 0 a RIGGED layer. Cut once per map, never per frame. A
+ * piece's triangles name only its own vertices (`worldGeometry.ts`'s
+ * `PieceRange`), so cutting a piece out is dropping its two ranges and moving
+ * every later index down by the vertices dropped ahead of it.
  * Never: imports Babylon; reads a node; reorders a triangle.
  */
 

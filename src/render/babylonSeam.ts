@@ -86,7 +86,8 @@
  *      ends (and on `dispose`), and re-read at every start because the
  *      `alphaTestSortCompareFn` setter replaces it (`Game` sets the group's
  *      order through `setRenderingOrder`). A list empty that frame is never
- *      handed over, so the point falls back to item 6's slot, ahead of it.
+ *      handed over, so the point falls back to `"opaque"`'s trigger (the first
+ *      of the sprites, the particles, item 6 or the group's end), ahead of it.
  *
  * Public API used here and nowhere else in `src/render/`, for the same
  * reason (it is Babylon's shape): `engine.currentSampleCount`,

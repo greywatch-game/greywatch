@@ -71,10 +71,10 @@
  *   water, the grass, the viewmodel, the hulls, and every visual an EDITOR
  *   build makes, which is keyed per placement and carries no block at all.
  *   Always ELIGIBLE — but for the landform our renderer TAKES (below), which
- *   is no candidate at all — and `offer` still drops the ones that are switched off,
- *   which is what reaches the effect pools: they are built once and idled with
- *   `isVisible = false`, and were most of a candidate list the frame could not
- *   draw from.
+ *   is no candidate at all — and `offer` still drops the ones that are
+ *   switched off, which is what reaches the effect pools: they are built once
+ *   and idled with `isVisible = false`, and were most of a candidate list the
+ *   frame could not draw from.
  *
  * **The landform is deliberately loose and that is not an oversight.** A
  * structure past the fog wall draws exactly `fogColor` and stands in front of
@@ -118,9 +118,9 @@ import type { GameMap } from "../world/MapBuilder";
  * to the size gate and the frustum, exactly as `rebuildList` keeps a loose
  * mesh. **The sky is behind the landform** — see "The landform is
  * deliberately loose" in the header — so a reach cut into it would be a hole
- * onto a gradient rather than onto `fogColor`. FINITE, at the largest `f32`
- * (`F32_MAX`), never Infinity: the cull's arithmetic may assume there is
- * none, and a box from minus to plus the largest float leaves every
+ * onto a gradient rather than onto `fogColor`. FINITE, near the largest `f32`
+ * (`F32_MAX`, 3e38), never Infinity: the cull's arithmetic may assume there
+ * is none, and a box from minus to plus the largest float leaves every
  * distance to it 0.
  */
 const NO_REACH: BlockBox = {
@@ -534,17 +534,17 @@ export class WorldCulling {
   }
 
   /**
-   * The box our renderer's cull measures `mesh`'s reach to, the caller
-   * stating whether it is the LANDFORM: for a block the box of the cell it
-   * was filed in — the bounds of every mesh of its block, glazing included —
-   * and for the landform `NO_REACH`, which the reach never cuts, as it never
-   * cuts a loose mesh; undefined for a block in no cell or a landform mesh
-   * that is not one of the map's unfiled visuals. Meshes of one block share
-   * the object, and every landform surface shares the one box.
+   * The box our renderer's cull measures a TAKEN mesh's reach to: for a block
+   * the box of the cell it was filed in — the bounds of every mesh of its
+   * block, glazing included — and for the landform `NO_REACH`, which the
+   * reach never cuts, as it never cuts a loose mesh. `setTaken` has already
+   * refused a mesh that is not what it was handed as, so a taken mesh in no
+   * cell IS the landform. Meshes of one block share the object, and every
+   * landform surface shares the one box.
    */
-  reachBoxOf(mesh: AbstractMesh, landform: boolean): BlockBox | undefined {
-    if (landform) return this.unfiled.has(mesh) ? NO_REACH : undefined;
-    return this.cellOf.get(mesh);
+  reachBoxOf(mesh: AbstractMesh): BlockBox {
+    if (!this.taken.has(mesh)) throw new Error(`WorldCulling: "${mesh.name}" is not taken`);
+    return this.cellOf.get(mesh) ?? NO_REACH;
   }
 
   /**

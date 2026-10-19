@@ -3399,7 +3399,8 @@ probes and the lamps' atlas — until X3.6 moves those passes.
   over the group's whole range of the cull's indices — never an indirect draw
   (below). **The two points are ONE cut, one cull, one cluster list and one
   index buffer**, two `FrameDraw`s each drawing its own groups, so X3.5b's
-  one draw a pass folds both; a point no group is at queues nothing.
+  fold is one draw a POINT — never one a pass, since the turf comes between
+  them; a point no group is at queues nothing.
 - **A recipe's DEPTH BIAS is its pipeline's** (`CelRecipe.depthBias`, Babylon's
   `zOffsetUnits`, `PipelineState.depthBias`), asked for by `WorldBlocks` with
   the recipe — so the roads' `ROAD_DEPTH_UNITS` (-8) is drawn by our side as
@@ -3410,7 +3411,7 @@ probes and the lamps' atlas — until X3.6 moves those passes.
   wins and the order only what is shaded, so the floor under a road fails
   the depth test before it shades rather than being shaded and painted over.
   It is a cost and never a picture: on Cinderhaven the floor drawn first cost
-  the desktop's `gpu.frame` about half a millisecond at a road crossing
+  the desktop's mean frame about half a millisecond at a road crossing
   (`BABYLON_EXIT.md` X3.5).
 - **The map is cut into CLUSTERS once** (`render/clusters.ts`,
   `CONFIG.graphics.clusters`): runs of at most `triangles` triangles of one
@@ -3429,8 +3430,8 @@ probes and the lamps' atlas — until X3.6 moves those passes.
   (`WorldCulling.reachGate`), so a cluster is decided as a candidate would
   be, and the frustum only ever drops what the frustum hid. The cull reads no
   node. **The landform has NO reach, as it had none as a loose mesh**: every
-  landform surface is handed one box from minus to plus the largest `f32`
-  (`WorldCulling.reachBoxOf`, `F32_MAX` — finite, since the shader may assume
+  landform surface is handed one box from minus to plus near the largest
+  `f32` (`WorldCulling.reachBoxOf`, `F32_MAX`, 3e38 — finite, since the shader may assume
   no infinity), so its clusters meet the size gate per surface (as `tooSmall`
   met the mesh) and the frustum, and never the fog. The sky is behind the
   landform ("The landform is deliberately loose", below).
@@ -3466,8 +3467,9 @@ probes and the lamps' atlas — until X3.6 moves those passes.
   in its cell, or one of the map's own visuals that carries no block, the
   landform; never a candidate unless a failed compile hands it back — and
   every other pass draws from a list of its own. **The handover says which
-  each is** (`setTaken`'s two lists, `reachBoxOf`'s `landform`), so a block
-  whose mesh was filed in no cell is refused, never taken as landform. The
+  each is** (`setTaken`'s two lists; `reachBoxOf` then answers a taken mesh
+  by its cell, the landform by the box of no reach), so a block whose mesh
+  was filed in no cell is refused, never taken as landform. The
   glow's mask, which reads the main pass's active meshes, keeps only what
   glows, which a taken mesh never does.
 - **A taken mesh is never switched off, hidden or faded after its build.**

@@ -27,8 +27,8 @@
  * group 0's alpha-tested list, and it writes no depth of its own — so the
  * floor, and a road beside it, must be drawn before that list, or they would
  * paint over it. The blocks stay where X3.3a put them (`Renderer`'s header).
- * The two points are one cut, one cull and one index buffer, so X3.5b's one
- * draw a pass folds both.
+ * The two points are one cut, one cull and one index buffer, so X3.5b's fold
+ * is one draw a POINT — never one a pass, since the turf comes between them.
  * The BLOCKS are never drawn indirect: an Intel Xe-LPG dropped single
  * indirect draws at random, at arguments however written, and drew the same
  * triangles plain every frame (`docs/rendering.md`). The scatter's indirect
@@ -46,14 +46,13 @@
  * lacks but its variant reads being 0 for every one of its vertices — what
  * Babylon's empty vertex buffer reads — and its indices once, rebased onto
  * the group's buffers, as the source the cull copies the survivors from; the
- * map is CUT
- * once (`finish`), in the order the surfaces were added, and never re-cut; in
- * a group that has instanced parts, the pieces `finish` is told to CUT (the
- * scatter's regions) are taken out of every surface before it is uploaded,
- * because those triangles are drawn as instances instead — and a group with
- * no surface of its own draws none of its instanced parts, since Babylon
- * draws that recipe whole; a group draws only once its pipelines and the
- * culls are built and every group it binds is whole, so a frame with a
+ * map is CUT once (`finish`), in the order the surfaces were added, and never
+ * re-cut; in a group that has instanced parts, the pieces `finish` is told to
+ * CUT (the scatter's regions) are taken out of every surface before it is
+ * uploaded, because those triangles are drawn as instances instead — and a
+ * group with no surface of its own draws none of its instanced parts, since
+ * Babylon draws that recipe whole; a group draws only once its pipelines and
+ * the culls are built and every group it binds is whole, so a frame with a
  * pipeline compiling or a texture unpublished draws that group not at all
  * rather than wrongly; a group one of whose pipelines FAILS draws nothing at
  * all and hands every surface of it back, since half of a recipe would be a
@@ -839,10 +838,10 @@ export class WorldBlocks {
     const n = groups.length;
     pass.setIndexBuffer(cull.indices, "uint32");
     // Twice over the groups: the biased ones on the first lap, the rest on the second.
-    for (let k = 0; k < 2 * n; k++) {
-      const group = groups[k % n];
+    for (let lap = 0; lap < 2 * n; lap++) {
+      const group = groups[lap % n];
       if (group.point !== point) continue;
-      if ((group.material.recipe.depthBias !== 0) !== (k < n)) continue;
+      if ((group.material.recipe.depthBias !== 0) !== (lap < n)) continue;
       const built = group.built;
       // A group whose surfaces were all scatter draws its parts as instances.
       if (!built || group.failed || group.indexCount === 0) continue;

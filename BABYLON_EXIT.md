@@ -1272,7 +1272,7 @@ fixes, 0dd2d09 the measurement's fix).
     picture does not move: the bias decides who wins, the order only what is
     shaded.
   - **What that bought**, paired against a24339d (two runs a side): the
-    crossing vantage's frame 7.46 to 6.92 ms (about half its rise), the
+    crossing vantage's mean frame 7.46 to 6.92 ms (about half its rise), the
     town's 6.55 to 6.09 (most of it); `gpu.frame` 5.70 to 5.32 ms on the
     vantages and 6.13 to 5.95 on the path.
   - **The rest is the landform's ORDER** against what Babylon's
@@ -1399,7 +1399,10 @@ into X3.6:
   same draws: thousands a frame.
 
 **What.** Every recipe draws ONCE per pass, the blocks, the scatter and the
-terrain (X3.5) in one stream:
+terrain (X3.5) in one stream — **except the main pass, which draws it once a
+POINT**: the landform must be drawn before group 0's alpha-tested list, whose
+turf writes no depth, and the blocks after it (X3.5), so a recipe at both
+points is two draws there, out of the one stream:
 - The scatter's variant parts are cut into clusters as the blocks are
   (`clusters.ts`), each part a run of clusters in its set's own frame.
 - The instance cull keeps its per-instance tests and then expands each
