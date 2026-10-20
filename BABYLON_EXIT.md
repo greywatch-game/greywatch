@@ -1363,10 +1363,44 @@ fixes, 0dd2d09 the measurement's fix).
   - `npm run corecheck`, `npm run build` and `npm run parity` (all eight
     maps, every scene ready on frame 1) pass.
 - **Owed onward.**
-  - **The phone's reading**, the user's to take as for X3.3c and X3.4b: X0.3
-    on the deployed `babylon-exit` build, warm, on Greyfen and Sarab, and on
-    Cinderhaven, where the desktop's GPU rose. Read it as its tick and its
-    `gpu.frame` (`?bench=<map>&gpu`).
+  - **The phone's reading — taken 2026-10-20 as X3.5b's phone BEFORE**, at
+    the blocks-ahead-of-the-landform order below (39d84ea's code; the
+    capture states no commit, and 67b6ad6 and 743de3e differ by a comment).
+    X0.3, one run a map, back to back 05:08-05:25 UTC: Greyfen, Harrowmead,
+    Sarab. **The settings X3.5b's AFTER must repeat**: `?bench=<map>&gpu`
+    with the unsafe-WebGPU flag (`frameMeasurable`, 4,400-5,500 samples a
+    run), render scale 0.5, cap 60, shadows, grass, Trees and glow `low`,
+    volumetrics, GI, ground relief and FXAA off, **blur and grain OFF**
+    (`FINDINGS.md` 52 had both on, so its frames are not this table's), the
+    minimap on. The backing store was **1170x540 on Greyfen and 1170x618 on
+    the other two**: a run whose `device.backingStore` differs is not
+    comparable. Fight hashes `83e8e74ef36916ba`, `3ae90f2f08fb0643`,
+    `986c2e35557fb679`. "GPU" is `gpu.frame`'s mean over its samples.
+
+    | map | part | mean | p95 | 1% low | tick | render | draws | GPU |
+    | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+    | Greyfen | vantages | 18.4 | 35.0 | 58.5 | 4.97 | 3.48 | 34 | 13.9 |
+    | Greyfen | path | 20.9 | 50.7 | 72.9 | 5.37 | 3.63 | 47 | 17.1 |
+    | Greyfen | fight | 24.9 | 64.4 | 85.1 | 11.96 | 8.66 | 234 | 19.0 |
+    | Harrowmead | vantages | 23.6 | 60.4 | 94.0 | 6.47 | 4.25 | 46 | 19.0 |
+    | Harrowmead | path | 26.2 | 66.2 | 99.0 | 6.47 | 4.17 | 50 | 21.8 |
+    | Harrowmead | fight | 28.0 | 68.4 | 94.9 | 11.35 | 7.32 | 156 | 22.6 |
+    | Sarab | vantages | 17.0 | 17.9 | 38.8 | 6.05 | 4.38 | 53 | 11.9 |
+    | Sarab | path | 17.4 | 23.0 | 49.5 | 6.32 | 4.41 | 54 | 12.5 |
+    | Sarab | fight | 22.9 | 32.6 | 63.5 | 19.11 | 14.89 | 320 | 16.0 |
+
+    The phone is GPU-bound on every part but Sarab's fight: `gpu.frame` is
+    2-3.4x the tick on the look parts and 1.6-2x in Greyfen's and
+    Harrowmead's fights, while Sarab's fight is the CPU (a 19.1 ms tick
+    against 16.0 of GPU; its p95 is 32.6 against X0.4's target of 25).
+    `draws` is Babylon's counter and does not see ours. Every run's
+    heaviest eighth is its last, the fight (GPU by eighths: Greyfen 13.7 to
+    20.4, Harrowmead 15.8-24.6, Sarab 10.8 to 17.7), so heat and the fight
+    are not separable in one run. **What is short of the protocol**: one
+    run a map rather than two, no stated warm-up before Greyfen, and
+    Greyfen's smaller screen. X3.5b's AFTER takes a thrown-away warm-up,
+    then two runs a map in this order and at these backing stores, and
+    re-takes this BEFORE beside it if a store will not match.
   - **The landform's remaining GPU rise** (Cinderhaven's vantages and path,
     0.8-0.9 ms of `gpu.frame` on the desktop after 0dd2d09) went to
     `FINDINGS.md` 61 with the blocks'. The order half is settled below; what
