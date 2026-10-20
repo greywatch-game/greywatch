@@ -40,29 +40,29 @@
  * landform group, a block surface and every instanced part to its recipe's
  * block group, so a rim wearing the pines' material never shares their group
  * or their scatter; the two layers share ONE cut, one cull, one cluster list
- * and one index buffer, each group drawing only its own range of it; its vertex arrays are uploaded once as Babylon
- * uploads a mesh's (floats as `float32`, a `Float64Array` rounded exactly as
- * Babylon's `Float32Array` of the same numbers is), an attribute a surface
- * lacks but its variant reads being 0 for every one of its vertices — what
- * Babylon's empty vertex buffer reads — and its indices once, rebased onto
- * the group's buffers, as the source the cull copies the survivors from; the
- * map is CUT once (`finish`), in the order the surfaces were added, and never
- * re-cut; in a group that has instanced parts, the pieces `finish` is told to
- * CUT (the scatter's regions) are taken out of every surface before it is
- * uploaded, because those triangles are drawn as instances instead — and a
- * group with no surface of its own draws none of its instanced parts, since
- * Babylon draws that recipe whole; a group draws only once its pipelines and
- * the culls are built and every group it binds is whole, so a frame with a
- * pipeline compiling or a texture unpublished draws that group not at all
- * rather than wrongly; a group one of whose pipelines FAILS draws nothing at
- * all and hands every surface of it back, since half of a recipe would be a
- * hole where Babylon draws the other half; a surface it will never draw — its
- * group failed, or a cull did, or the cut is past the device's limits — is
- * handed to `onFailed` in the turn that failure lands, never held for the
- * map's other compiles, so whoever took it can give it back at once; a
- * material's block is re-copied from its recipe only when asked
- * (`writeMaterials`); nothing here allocates on a frame but the culls'
- * compute passes.
+ * and one index buffer, each group drawing only its own range of it; its
+ * vertex arrays are uploaded once as Babylon uploads a mesh's (floats as
+ * `float32`, a `Float64Array` rounded exactly as Babylon's `Float32Array` of
+ * the same numbers is), an attribute a surface lacks but its variant reads
+ * being 0 for every one of its vertices — what Babylon's empty vertex buffer
+ * reads — and its indices once, rebased onto the group's buffers, as the
+ * source the cull copies the survivors from; the map is CUT once (`finish`),
+ * in the order the surfaces were added, and never re-cut; in a group that has
+ * instanced parts, the pieces `finish` is told to CUT (the scatter's regions)
+ * are taken out of every surface before it is uploaded, because those
+ * triangles are drawn as instances instead — and a group with no surface of
+ * its own draws none of its instanced parts, since Babylon draws that recipe
+ * whole; a group draws only once its pipelines and the culls are built and
+ * every group it binds is whole, so a frame with a pipeline compiling or a
+ * texture unpublished draws that group not at all rather than wrongly; a
+ * group one of whose pipelines FAILS draws nothing at all and hands every
+ * surface of it back, since half of a recipe would be a hole where Babylon
+ * draws the other half; a surface it will never draw — its group failed, or a
+ * cull did, or the cut is past the device's limits — is handed to `onFailed`
+ * in the turn that failure lands, never held for the map's other compiles, so
+ * whoever took it can give it back at once; a material's block is re-copied
+ * from its recipe only when asked (`writeMaterials`); nothing here allocates
+ * on a frame but the culls' compute passes.
  * Never: imports Babylon; reads a node, or decides the reach or the size gate
  * (`ReachGate` is handed in); reads a Babylon material — a material is its
  * `CelRecipe`.
