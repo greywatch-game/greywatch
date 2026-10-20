@@ -304,6 +304,11 @@ you are on before you believe anything else in this section.
   apart; check it before believing a zero. Verified both ways on this box:
   1549 samples with `--enable-unsafe-webgpu`, 0 without, same build and same
   map.
+  **`gpu.cull` (report v18) is our culls alone and needs no flag** — stamps
+  on their own compute passes, read to the microsecond on this box's
+  Chromium with the flag and without; it is part of `gpu.frame`, never added
+  to it. In an uncapped `bench.mjs --gpu` run both sampled counters land on
+  only 1-3% of a vantage's frames, so read their `samples` first.
 - **The profiler's HEAP columns need `--enable-precise-memory-info` and its GC
   count needs nothing.** Chrome rate-limits the bucketised `performance.memory`
   to one update every twenty minutes on purpose, so without that flag a capture

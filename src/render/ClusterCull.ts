@@ -40,6 +40,7 @@
 import { NO_PIECE } from "./clusters";
 import { closeness, CullCheck, type CullCheckSpec, type CullReport } from "./CullCheck";
 import type { FrameUniforms } from "./frame";
+import type { PassTiming } from "./PassTimer";
 import type { PipelineCache } from "./PipelineCache";
 import {
   BLOCK_WORDS,
@@ -276,9 +277,11 @@ export class ClusterCull {
    * Culls this frame's clusters against `frame` (its view-projection, its
    * eye and its wind) and the reach and size gate, recording the work into
    * `encoder` — the host's, submitted ahead of the frame's draws. Called once
-   * a frame as the main pass begins (`Renderer.onFrame`).
+   * a frame as the main pass begins (`Renderer.onFrame`); its one pass is
+   * timed when `timing` is handed (`gpu.cull`), the index clear ahead of it
+   * not.
    */
-  dispatch(frame: FrameUniforms, encoder: GPUCommandEncoder): void {
+  dispatch(frame: FrameUniforms, encoder: GPUCommandEncoder, timing: PassTiming | null = null): void {
     if (!this.built || this.clusterCount === 0) return;
     const f = this.f32;
     const u = this.u32;
@@ -299,7 +302,7 @@ export class ClusterCull {
 
     // What the survivors do not fill is a triangle of no area.
     encoder.clearBuffer(this.indices);
-    const pass = encoder.beginComputePass(PASS);
+    const pass = encoder.beginComputePass(timing ? timing.pass(PASS) : PASS);
     const passes = this.passes;
     pass.setPipeline(passes[0].pipeline);
     pass.setBindGroup(0, passes[0].group);

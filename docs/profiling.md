@@ -321,7 +321,7 @@ measurements — `rehearsal`, `settle` and `lead`. Report version 13 rolls them 
 `segments.list` (each label) and `segments.groups` (`vantages`, `path`,
 `fight`), each with the wall clock's mean, p50, p95, p99 and 1% low, the tick,
 `render`, the draw and mesh counts and `gpu.frame` over the rows that got a
-reading — and from version 14 `sim`, the core's step and its phases over
+reading (from version 18 `gpu.cull` too, over its own) — and from version 14 `sim`, the core's step and its phases over
 the rows that ran one, which is the fight and its lead and never a vantage or
 the path, where the world is held (version 15 alone also carried
 `sim.hop`, the old Worker host's `simWait` and `simSync` over the same rows,
@@ -1426,16 +1426,55 @@ frame's (`BABYLON_EXIT.md` X3.3c). **Anything of ours that reaches the GPU
 outside the host's encoders is outside `gpu.frame`**, so new GPU work owes
 the same route or its own timer.
 
-The two are attributed differently and the report says so:
+**`gpu.cull` is the culls ALONE, and it is the one GPU counter that is ours
+rather than Babylon's** (report version 18). Under `?gpu`, on a device with
+`timestamp-query`, the `Renderer` builds a `PassTimer`
+(`render/PassTimer.ts`), and on a frame it times every `FramePrepare` is
+handed a `PassTiming`: each compute pass of ours begins with
+`timing.pass(its descriptor)`, which adds timestamp writes at the pass's
+start and end, and the reading is the SUM of the passes' own durations — the
+cluster cull's and the instance cull's — so the gaps between them, and the
+index buffer's clear ahead of the first, are not in it. It is inside
+`gpu.frame`, so the two are read side by side and never added. **A new
+compute pass of ours owes the same call**, or it is in `gpu.frame` and in no
+counter that names it. It needs no browser flag — the stamps are the pass
+descriptor's, which `gpu.mainPass` already showed Chrome allows — and on the
+Windows box's Chromium they come back to the microsecond with and without
+`--enable-unsafe-webgpu`, so nothing here is quantised to 100 µs; a browser
+that did quantise would mostly read a cull as 0, which files as unmeasured.
+**The read-back is mapped on the NEXT main pass**, after the submit that
+carries its copy (a buffer pending a map fails the submit that uses it), and
+one reading is in flight at a time; it is attributed by the timer's own
+`inFlight` and `count`, the two transitions `gpu.frame` is read by. It
+allocates once a READING (the `mapAsync` and the view of its range), never
+once a frame, and nothing at all without `?gpu`.
+
+**Measured on the desktop, 2026-10-20** (`bench.mjs --max --gpu --runs 2`,
+3440x1440, medians of the two runs' means): the culls cost **27-66 µs**,
+0.5-1.2% of `gpu.frame` — Greyfen 27/27/34 µs on the vantages, the path and
+the fight against 5.41/5.68/6.41 ms; Sarab 29/28/32 against 3.68/3.93/4.05;
+Cinderhaven 49/46/66 against 5.36/5.72/5.56. `gpu.frame` itself read within
+0.03 ms of the same paths a day earlier, so the timer costs nothing that
+counter can see (`FINDINGS.md` 61).
+
+The three are attributed differently and the report says so:
 
 | | attribution | coverage |
 | --- | --- | --- |
 | `gpu.mainPass`, `series.gpuMs` | **exact** — Babylon stamps the frame id and the row is derived from it | nearly every frame |
-| `gpu.frame`, `series.gpuFrameMs` | **exact**, by watching the measure's own state machine | **about half** the frames — only one measurement is in flight at a time |
+| `gpu.frame`, `series.gpuFrameMs` | **exact**, by watching the measure's own state machine | a SUBSET — only one measurement is in flight at a time |
+| `gpu.cull`, `series.gpuCullMs` | **exact**, by watching `PassTimer`'s `inFlight` and `count` | a subset, on rows of its OWN |
 
-`gpu.frame.samples` is the denominator and the mean is over those rows, never
-over the window: a row with no reading is a missing measurement, not a fast
-frame, and a zero in either series means the same thing it means in `loafMs`.
+**"A subset" is not "about half" in an uncapped run**: the read-back's round
+trip is what paces both sampled counters, and in the benchmark above at
+160-250 fps they landed on 1-3% of a vantage's or the path's frames (13-44
+samples over a group) and 5-50% of the fight's, the two at comparable rates.
+`gpu.frame.samples` and `gpu.cull.samples` are the denominators and each mean
+is over its own rows, never over the window: a row with no reading is a
+missing measurement, not a fast frame, and a zero in any of the three series
+means the same thing it means in `loafMs`. **Since version 18 a GPU reading
+is cleared when the ring laps its row**, as the LoAF's is: before it a row
+not measured on this lap kept the last lap's.
 
 **Three Babylon internals hold it up** — `_gpuTimeInFrameId`,
 `_timestampQuery` and `_measureDurationState` — because neither counter is

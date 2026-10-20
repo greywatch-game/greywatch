@@ -1441,7 +1441,11 @@ export class Game {
       new BabylonFrameHost(this.engine, this.scene),
       (out) => this.mats.fillFrame(out),
       (out) => this.mats.fillFrameTextures(out),
+      // `?gpu` times our culls too (`gpu.cull`); `main.ts` asked the device
+      // for `timestamp-query`, and the renderer builds no timer without it.
+      { timePasses: urlFlag("gpu") },
     );
+    this.prof.setCullTimer(this.renderer.timer);
     // Stepped moon shadows + contact blobs. Must exist before any cel
     // material is created so the shadow map binds on creation.
     this.shadows = new ShadowSystem(this.scene, this.mats, this.shadowQuality);

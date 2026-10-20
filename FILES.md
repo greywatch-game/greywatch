@@ -642,7 +642,8 @@ src/
     profileReport.ts    # What a capture SAYS: the ProfileReport shape (the
                         #   JSON the viewer reads; v14 adds SegmentStat.sim,
                         #   v16 drops the old host's hop, v17 adds blocks —
-                        #   our renderer's take, read at the capture),
+                        #   our renderer's take, read at the capture — v18
+                        #   gpu.cull, our culls' GPU time off PassTimer),
                         #   buildReport, buildTrace and
                         #   the stats. Allocates freely and never writes the
                         #   ProfileRing it is lent
@@ -2348,7 +2349,8 @@ src/
                         #   and alpha-tested meshes end, and after it — and the
                         #   FramePrepares run as it begins (a compute cull),
                         #   recorded into the host's prepareEncoder, never
-                        #   submitted; refuses to draw if the pass is not
+                        #   submitted, and timed under ?gpu (its PassTimer,
+                        #   gpu.cull); refuses to draw if the pass is not
                         #   FRAME_TARGETS, and tells onRefused listeners
     targets.ts          # FRAME_TARGETS, stated once: rgba8unorm, depth32float,
                         #   1 sample, flipY (CelInk's target, not the canvas)
@@ -2414,6 +2416,10 @@ src/
                         #   range is triangles of no area (never indirect).
                         #   ReachGate, BlockBox, CullMode and CullDiagnostics
                         #   (?nocull, ?nofrustum, ?cullcheck)
+    PassTimer.ts        # ?gpu's timer of our compute passes (gpu.cull):
+                        #   timestamp writes on each cull's pass, summed, one
+                        #   reading in flight, mapped the frame after its
+                        #   submit; handed to the prepares as PassTiming
     CullCheck.ts        # ?cullcheck: a cull's verdicts and the uniform block
                         #   the GPU read, copied out about once a second and
                         #   replayed on the CPU; the probe's read forms counted

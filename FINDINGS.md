@@ -2692,8 +2692,11 @@ landing, then the same rule offline for free.
 
 ## 61. What is left of the desktop's GPU rise since our renderer took the blocks (X3.3c) and the landform (X3.5)
 
-**Status:** open, narrowed. Its first suspect, the draw ORDER, is settled
-and fixed (2026-10-19, below); what remains is measured and not explained.
+**Status:** open, narrowed twice. Its first suspect, the draw ORDER, is
+settled and fixed (2026-10-19, below); its second, the CULL's compute
+passes, is priced and acquitted (2026-10-20, below). What remains is
+measured and not explained; the next suspect is the zero-area remainder
+every block and landform draw hands the GPU.
 Found by the whole-step review of `BABYLON_EXIT.md` X3.3 (2026-10-14). It is
 GPU-side work, so it waits with the rest of that until the exit is complete
 (`BABYLON_EXIT.md`, "What this plan does not do"; finding 52).
@@ -2745,18 +2748,55 @@ The largest single holds were Greyfen's `crossing` (6.13 to 5.52) and Sarab's
 the fight hashes. The two fights on the CPU-bound maps (Sarab, Cinderhaven)
 moved +1.3%, inside the runs' spread.
 
+### The cull, priced (2026-10-20)
+
+`gpu.cull` (report version 18, `render/PassTimer.ts`) stamps the cluster
+cull's and the instance cull's compute passes at their own start and end
+under `?gpu` and sums them. `bench.mjs --max --gpu --runs 2`, 3440x1440 on
+the desktop, medians of the two runs' means (their own samples beside, in
+the same order as the frame's):
+
+| map | part | `gpu.cull` µs | samples | `gpu.frame` ms | samples | share |
+| --- | --- | --- | --- | --- | --- | --- |
+| Greyfen | vantages | 27 | 21 | 5.41 | 21 | 0.5% |
+| Greyfen | path | 27 | 17 | 5.68 | 17 | 0.5% |
+| Greyfen | fight | 34 | 144 | 6.41 | 144 | 0.5% |
+| Sarab | vantages | 29 | 43 | 3.68 | 44 | 0.8% |
+| Sarab | path | 28 | 23 | 3.93 | 23 | 0.7% |
+| Sarab | fight | 32 | 1335 | 4.05 | 900 | 0.8% |
+| Cinderhaven | vantages | 49 | 13 | 5.36 | 15 | 0.9% |
+| Cinderhaven | path | 46 | 23 | 5.72 | 23 | 0.8% |
+| Cinderhaven | fight | 66 | 947 | 5.56 | 898 | 1.2% |
+
+**The cull is not it.** The WHOLE cull is a quarter of the 0.11 ms left on
+Greyfen's path and under a tenth of the ~0.6 ms left on Cinderhaven's —
+and it ran before X3.5 too, so only the landform's clusters are X3.5's. It
+scales with the clusters (Cinderhaven cuts 18,928, Greyfen 5,612) as it
+should. `gpu.frame` read within 0.03 ms
+of 39d84ea's medians on every path, so the timer moved nothing it measures.
+X3.5b makes the cull bigger (the instances expanded into their clusters);
+this is its BEFORE.
+
 ### What is left
 
-- **Greyfen's path** got back 0.35 ms against X3.3c's 0.46 ms rise. The two
-  were taken in different sessions, so they are not one subtraction, but the
-  order was most of it; the cull's compute pass is the suspect for the rest.
+- **Greyfen's path** got back 0.35 ms against X3.3c's 0.46 ms rise, the
+  sessions apart; the cull is 0.03 ms of the rest.
 - **Cinderhaven** got back 0.24 ms on the path and 0.27 at the `crossing`,
-  of the 0.8-0.9 X3.5 left. Babylon drew the floor patch by patch in its
-  front-to-back queue; ours draws it as one draw a recipe, its clusters in
-  near-first bands, so the order WITHIN the landform is no longer the
-  question it was, and the cull is again the first suspect.
-- **How to settle it**: a timestamp pair around the cull's compute pass
-  prices it alone (`BABYLON_EXIT.md` X3.3c, "Owed onward").
+  of the 0.8-0.9 X3.5 left; the cull is 0.05 ms of it.
+- **The next suspect is the REMAINDER of each plain draw.** The blocks and
+  the landform are drawn over their group's WHOLE index range every frame,
+  the survivors at the front and index 0 three times over after them, never
+  indirect (the Intel laptop dropped indirect draws, `docs/rendering.md`) —
+  so every frame the GPU walks every triangle of the map, culled or not, as
+  zero-area triangles, where Babylon drew only the meshes it kept. Measured
+  2026-10-20 at max settings, what the draws cover a frame: Cinderhaven
+  5,771,289 block indices and 1,270,212 landform (2.35M triangles), Greyfen
+  1,788,246 and 332,640 (0.71M); X3.3c's rise came with Greyfen's blocks
+  and X3.5's with Cinderhaven's landform. **How to settle it**: on the
+  desktop, whose NVIDIA driver draws indirect faithfully, a URL diagnostic
+  that draws the blocks and the landform INDIRECT at their survivors'
+  count, A/B against the plain draw with `gpu.frame`. X3.5b's fold draws
+  the same way, so it inherits the answer.
 - **The phone's `gpu.frame`** on Greyfen and Cinderhaven (finding 52) is the
   number this matters for; the desktop only says where to look.
 

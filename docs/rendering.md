@@ -3465,6 +3465,11 @@ probes and the lamps' atlas — until X3.6 moves those passes.
   mid-frame flush replaces it, and whichever is current is submitted before
   the draws recorded after it. X3.3b submitted a command buffer of its own,
   which the queue ran ahead of the frame's but which no `gpu.frame` saw.
+  Under `?gpu` each cull's pass also carries timestamp writes on the frames
+  the `Renderer`'s `PassTimer` times (`FramePrepare`'s `timing`), which is
+  `gpu.cull` — measured at 27-66 µs a frame on the desktop
+  (`docs/profiling.md`); a new compute pass of ours begins with
+  `timing.pass(...)` or no counter names it.
 - **Its three compute pipelines are the one place our renderer takes an
   `"auto"` layout**: one hand-written module, each pass binding exactly what
   its entry point reads from its own pipeline's layout, and nothing shared

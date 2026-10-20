@@ -7,8 +7,9 @@
  * of every program, `FrameContext.frameGroup`), the `PipelineCache`, the
  * `FrameDraw`s at each of the three points they may be drawn at, the
  * `FramePrepare`s run as the pass begins, whoever is told of a refused pass
- * (`onRefused`), and the hook into the host's main pass; `FrameDraw`,
- * `FramePrepare`, `DrawPoint` and `FrameContext`.
+ * (`onRefused`), the hook into the host's main pass, and the `PassTimer`
+ * that times the prepares' passes under `?gpu` (`timer`); `FrameDraw`,
+ * `FramePrepare`, `DrawPoint`, `FrameContext` and `RendererOptions`.
  * Invariants: every GPU resource it holds it made, on the host's device, and
  * destroys in `dispose` (`BABYLON_EXIT.md` rule 5 — a texture another side
  * owns is READ through the seam, never copied); the frame's uniforms are
@@ -20,7 +21,10 @@
  * frame; every `FramePrepare` runs right after that fill, on the same frames,
  * so what it hands the GPU is this frame's, and records into the host's
  * encoder rather than submitting one of its own, so the frame's GPU timer
- * sees it; a frame draws only if it was
+ * sees it — and, with a `timer`, is handed the `PassTiming` its passes take
+ * their timestamp writes from on a frame being timed, null on every other
+ * (`gpu.cull`); without one, timing costs the frame one null test; a frame
+ * draws only if it was
  * FILLED this frame (a draw added
  * mid-phase waits for the next) and only if the open pass is exactly
  * `FRAME_TARGETS`, checked every frame — a pass that is not draws nothing
@@ -66,6 +70,7 @@ import {
 import type { FrameHost } from "./frameHost";
 import { FrameUniformBuffer } from "./FrameUniformBuffer";
 import { HostBindGroup } from "./HostBindGroup";
+import { type PassTiming, PassTimer } from "./PassTimer";
 import { PipelineCache } from "./PipelineCache";
 import { FRAME_TARGETS } from "./targets";
 
@@ -97,13 +102,32 @@ export type FrameDraw = (pass: GPURenderPassEncoder, ctx: FrameContext) => void;
  * filled; it records into `encoder`, the host's own, which is submitted ahead
  * of the frame's draws and inside its GPU timer (`FrameHost.prepareEncoder`),
  * and it records nothing into the pass, submits nothing and keeps neither.
+ * `timing` is non-null on a frame whose passes are timed (`PassTimer`): each
+ * compute pass it records then begins with `timing.pass(its descriptor)`, so
+ * `gpu.cull` is the sum of them.
  * **Once a SUBMIT, as the frame block is**: what it hands the queue
  * (`writeBuffer`) lands before the submit its recording rides in, so a second
  * run before that submit would leave both reading the second one's values.
  * The main pass begins once a frame; a second pass that runs prepares owes
  * them a buffer of its own.
  */
-export type FramePrepare = (frame: FrameUniforms, encoder: GPUCommandEncoder) => void;
+export type FramePrepare = (
+  frame: FrameUniforms,
+  encoder: GPUCommandEncoder,
+  timing: PassTiming | null,
+) => void;
+
+/** How a `Renderer` is built beyond its host and its fills. */
+export interface RendererOptions {
+  /** The rendering group its draws are hooked into: 0, the world. */
+  readonly groupId?: number;
+  /**
+   * Time the prepares' compute passes (`PassTimer`, `gpu.cull`): `?gpu`,
+   * and only where the device has `timestamp-query` — asked of the device,
+   * so a request it cannot answer builds no timer.
+   */
+  readonly timePasses?: boolean;
+}
 
 /** Where in the main pass a `FrameDraw` is drawn — see the header. */
 export type DrawPoint = "beforeAlphaTest" | "opaque" | "afterGroup";
@@ -117,6 +141,8 @@ export class Renderer {
   readonly frameBuffer: FrameUniformBuffer;
   /** The frame's textures as last pulled. Read-only to anything but `begin`. */
   readonly textures: FrameTextures = createFrameTextures();
+  /** The prepares' pass timer, under `?gpu` on a device that can; null otherwise. */
+  readonly timer: PassTimer | null;
   private readonly frameBindings: HostBindGroup;
 
   /** In the order added, one list per point. Arrays, so a frame's walk allocates no iterator. */
@@ -136,11 +162,13 @@ export class Renderer {
     host: FrameHost,
     private readonly fill: (out: FrameUniforms) => void,
     private readonly fillTextures: (out: FrameTextures) => void,
-    groupId = 0,
+    options: RendererOptions = {},
   ) {
     this.host = host;
     this.device = host.device;
     this.pipelines = new PipelineCache(this.device);
+    this.timer =
+      options.timePasses && this.device.features.has("timestamp-query") ? new PassTimer(this.device) : null;
     this.frameBuffer = new FrameUniformBuffer(this.device, "main pass");
     this.frameBindings = new HostBindGroup(
       this.device,
@@ -155,7 +183,7 @@ export class Renderer {
       flipY: FRAME_TARGETS.flipY,
       frameGroup: (layout) => bindings.get(layout),
     };
-    this.hook = host.onMainPass(groupId, {
+    this.hook = host.onMainPass(options.groupId ?? 0, {
       begin: this.begin,
       beforeAlphaTest: this.beforeAlphaTest,
       afterOpaque: this.afterOpaque,
@@ -210,9 +238,13 @@ export class Renderer {
     this.prepares.length = 0;
     this.refusals.length = 0;
     this.frameBuffer.destroy();
+    this.timer?.dispose();
   }
 
   private readonly begin = (): void => {
+    const timer = this.timer;
+    // Last frame's reading, if one was recorded: its submit is past now.
+    timer?.settle();
     this.filled = this.beforeAlpha.length + this.opaque.length + this.after.length > 0;
     if (!this.filled) return;
     this.fill(this.frame);
@@ -223,7 +255,9 @@ export class Renderer {
     const prepares = this.prepares;
     if (prepares.length === 0) return;
     const encoder = this.host.prepareEncoder();
-    for (let i = 0; i < prepares.length; i++) prepares[i](this.frame, encoder);
+    const timing = timer !== null && timer.open() ? timer : null;
+    for (let i = 0; i < prepares.length; i++) prepares[i](this.frame, encoder, timing);
+    if (timing) timing.close(encoder);
   };
 
   private readonly beforeAlphaTest = (): void => {

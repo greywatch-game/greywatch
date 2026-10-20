@@ -102,7 +102,10 @@
  *    Read `gpu.frame` and not `gpu.mainPass`: this pipeline draws the world
  *    into post-process targets, so the "main pass" is the final full-screen
  *    quad and reads in the tens of microseconds. Measured cost of the flag:
- *    130.0 fps against 129.9 disarmed, which is nothing.
+ *    130.0 fps against 129.9 disarmed, which is nothing. **`gpu.cull` is the
+ *    one GPU counter that is OURS rather than Babylon's** — our renderer's
+ *    culls, stamped on their own compute passes (`render/PassTimer.ts`), a
+ *    part of `gpu.frame` and attributed the way it is (`GpuPassTimer`).
  *  - **The heap is usually FROZEN and the GC is only ever INFERRED.** Chrome
  *    rate-limits the bucketised `performance.memory` to one update every twenty
  *    minutes on purpose, so on a stock browser its reading does not move and a
@@ -278,6 +281,22 @@ interface GpuTimestampQuery {
   readonly _measureDurationState?: number;
 }
 
+/**
+ * Our renderer's pass timer (`render/PassTimer.ts`), as this file reads it —
+ * structural, so nothing here imports the renderer. It is attributed exactly
+ * as `GpuTimestampQuery`'s counter is: `inFlight` turns true during the
+ * render of the frame being timed, which is before `endFrame` polls it, so
+ * the row that first sees it is the row measured; `count` moving is the
+ * reading landing, a map-async round trip later. One reading is in flight
+ * at a time. It is ours and public, so nothing here is guarded: it is
+ * there under `?gpu` on a device with `timestamp-query`, or it is null.
+ */
+interface GpuPassTimer {
+  readonly ms: number;
+  readonly count: number;
+  readonly inFlight: boolean;
+}
+
 interface GpuEngine {
   readonly frameId: number;
   readonly gpuTimeInFrameForMainPass?: GpuCounter;
@@ -433,6 +452,13 @@ export class FrameProfile {
   private gpuMs: Float32Array | null = null;
   /** Whole-frame GPU time, on the rows that were actually measured. */
   private gpuFrameMs: Float32Array | null = null;
+  /** Our culls' GPU time (`gpu.cull`), on the rows that were measured. */
+  private gpuCullMs: Float32Array | null = null;
+  /** Our renderer's pass timer, pushed by `Game` once; null without `?gpu`. */
+  private cullTimer: GpuPassTimer | null = null;
+  /** The row a cull reading is in flight for, and the timer's count then. */
+  private cullPendingRow = -1;
+  private cullLastCount = -1;
   private frameIdAt: Uint32Array | null = null;
   /** The row a whole-frame measurement is in flight for, and the count when it began. */
   private gpuPendingRow = -1;
@@ -677,6 +703,15 @@ export class FrameProfile {
   }
 
   /**
+   * Our renderer's pass timer, whose readings are `gpu.cull` — null where
+   * none was built (no `?gpu`, or no `timestamp-query`). Set by `Game` at
+   * construction; polled every frame, like Babylon's counters.
+   */
+  setCullTimer(timer: GpuPassTimer | null): void {
+    this.cullTimer = timer;
+  }
+
+  /**
    * Which thread the page's own local match steps its core on
    * (`MatchHost.mode`). Set by `Game` at construction, and again when a lost
    * host is replaced.
@@ -767,6 +802,7 @@ export class FrameProfile {
     this.loafHead = new Uint8Array(n);
     this.gpuMs = new Float32Array(n);
     this.gpuFrameMs = new Float32Array(n);
+    this.gpuCullMs = new Float32Array(n);
     this.frameIdAt = new Uint32Array(n);
     this.madeRender = new Uint16Array(n);
     this.madeCompute = new Uint16Array(n);
@@ -784,6 +820,8 @@ export class FrameProfile {
     this.gpuFiledId = -1;
     this.gpuPendingRow = -1;
     this.gpuLastCount = -1;
+    this.cullPendingRow = -1;
+    this.cullLastCount = -1;
     // Read here rather than passed in: `main.ts` acts on this flag at device
     // creation and cannot reach an instrument that is armed later, and a
     // capture has to be able to tell "nobody asked" from "the adapter said no".
@@ -901,6 +939,7 @@ export class FrameProfile {
     this.loafHead = null;
     this.gpuMs = null;
     this.gpuFrameMs = null;
+    this.gpuCullMs = null;
     this.frameIdAt = null;
     this.madeRender = null;
     this.madeCompute = null;
@@ -921,6 +960,8 @@ export class FrameProfile {
     this.gpuFiledId = -1;
     this.gpuPendingRow = -1;
     this.gpuLastCount = -1;
+    this.cullPendingRow = -1;
+    this.cullLastCount = -1;
     this.gpuRequested = false;
     this.loafWorst = [];
     this.loafSupported = false;
@@ -1443,6 +1484,12 @@ export class FrameProfile {
     this.madeCompute![this.cursor] = 0;
     this.madeModules![this.cursor] = 0;
     this.madeCallMs![this.cursor] = 0;
+    // The GPU's readings are ASSIGNED to a row only when one lands for it,
+    // so a row that is not measured on this lap would keep the last lap's —
+    // a reading from another stretch of the session, filed in this window.
+    this.gpuMs![this.cursor] = 0;
+    this.gpuFrameMs![this.cursor] = 0;
+    this.gpuCullMs![this.cursor] = 0;
     // …and the hitch this lap is about to overwrite stops being a hitch. The
     // list is in ring order, so the stale ones are always at the FRONT and this
     // is one comparison on nearly every frame. Without it the chip counts
@@ -1562,6 +1609,7 @@ export class FrameProfile {
       loafHead: this.loafHead!,
       gpuMs: this.gpuMs!,
       gpuFrameMs: this.gpuFrameMs!,
+      gpuCullMs: this.gpuCullMs!,
       madeRender: this.madeRender!,
       madeCompute: this.madeCompute!,
       madeModules: this.madeModules!,
@@ -1593,6 +1641,7 @@ export class FrameProfile {
       graphicsAt: this.graphicsAt,
       gpuRequested: this.gpuRequested,
       gpuAvailable: !!gpu?.gpuTimeInFrameForMainPass,
+      cullTimed: this.cullTimer !== null,
       engine,
     };
   }
@@ -1792,6 +1841,7 @@ export class FrameProfile {
    * returns on its second line.
    */
   private pollGpu(i: number): void {
+    this.pollGpuCull(i);
     const engine = this.scene?.getEngine() as unknown as GpuEngine | undefined;
     if (!engine) return;
     this.frameIdAt![i] = engine.frameId;
@@ -1837,6 +1887,28 @@ export class FrameProfile {
     if (this.gpuPendingRow < 0 && (q?._measureDurationState ?? 0) !== 0) {
       this.gpuPendingRow = i;
     }
+  }
+
+  /**
+   * Our culls' GPU time, filed against the row it was measured on — the
+   * same two transitions as `pollGpuFrame`, read off `GpuPassTimer`. A
+   * reading that lands as 0 (one that could not be read) leaves its row's
+   * zero, which is "not measured". Three reads on a healthy frame; nothing
+   * without a timer.
+   */
+  private pollGpuCull(i: number): void {
+    const t = this.cullTimer;
+    if (!t) return;
+    const count = t.count;
+    if (this.cullLastCount < 0) this.cullLastCount = count;
+    else if (count !== this.cullLastCount) {
+      this.cullLastCount = count;
+      if (this.cullPendingRow >= 0) {
+        this.gpuCullMs![this.cullPendingRow] = t.ms;
+        this.cullPendingRow = -1;
+      }
+    }
+    if (this.cullPendingRow < 0 && t.inFlight) this.cullPendingRow = i;
   }
 
   /**

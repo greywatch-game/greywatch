@@ -250,6 +250,11 @@ export interface HitchFrame {
    * number that matters: a 240 ms wall clock over 3 ms of GPU is not the GPU.
    */
   gpuFrameMs: number;
+  /**
+   * Our culls' GPU time on this frame, **0 where it was not measured** —
+   * see `ProfileReport.gpu.cull`. Report version 18.
+   */
+  gpuCullMs: number;
   drawCalls: number;
   activeMeshes: number;
   meshWalkMs: number;
@@ -321,6 +326,14 @@ export interface SegmentStat {
   activeMeshes: number;
   gpuFrame: number;
   gpuSamples: number;
+  /**
+   * Our culls' GPU time over the rows of the stretch that got a reading, and
+   * how many did — `gpu.cull`'s, as `gpuFrame` is `gpu.frame`'s. Its rows are
+   * not `gpuFrame`'s, so the two are read side by side as means, never as a
+   * share taken row by row. Report version 18.
+   */
+  gpuCull: number;
+  gpuCullSamples: number;
   /**
    * The simulation core's step over the rows that ran one — the `fight` and
    * its lead, never a vantage or the path, which step nothing — or null where
@@ -678,6 +691,18 @@ export interface ProfileReport {
      * answer.
      */
     mainPass: { frames: number; meanMs: number; p95Ms: number; maxMs: number };
+    /**
+     * OUR renderer's culls — the cluster cull's and the instance cull's
+     * compute passes, each stamped at its own start and end and summed
+     * (`render/PassTimer.ts`) — which are part of `frame`: they are recorded
+     * into the encoder Babylon opens the frame's counter on. Sampled, one
+     * reading in flight at a time, so `samples` is the denominator, as for
+     * `frame`. `timed` says a timer was built at all (`?gpu` on a device
+     * with `timestamp-query`); timed with `samples: 0` is a window in which
+     * nothing was culled (the menu) or no reading landed. It needs no
+     * browser flag, and that is no claim about `frame`. Report version 18.
+     */
+    cull: { timed: boolean; samples: number; meanMs: number; p95Ms: number; maxMs: number };
   };
   /**
    * What was COMPILED during the window, and whether the slow frames sat on it.
@@ -751,6 +776,11 @@ export interface ProfileReport {
      * time. Not a curve; a scatter. See `ProfileReport.gpu`.
      */
     gpuFrameMs: number[];
+    /**
+     * Our culls' GPU time on the rows that were measured, 0 on the rest — a
+     * scatter, as `gpuFrameMs` is, on rows of its own. Report version 18.
+     */
+    gpuCullMs: number[];
     /**
      * Pipelines (render and compute) and shader modules created per frame.
      * Laid against `frameMs` this is the first-use question asked of the whole
@@ -830,6 +860,7 @@ export interface ProfileRing {
   readonly loafHead: Uint8Array;
   readonly gpuMs: Float32Array;
   readonly gpuFrameMs: Float32Array;
+  readonly gpuCullMs: Float32Array;
   readonly madeRender: Uint16Array;
   readonly madeCompute: Uint16Array;
   readonly madeModules: Uint16Array;
@@ -865,6 +896,8 @@ export interface ProfileRing {
    * engine by the recorder, which is the half that holds Babylon's internals.
    */
   readonly gpuAvailable: boolean;
+  /** Whether our renderer built a pass timer — see `ProfileReport.gpu.cull`. */
+  readonly cullTimed: boolean;
   /** The engine, for the backing store's size. Null where there is no scene. */
   readonly engine: {
     getRenderWidth(): number;
@@ -915,6 +948,7 @@ export function buildReport(
     loafMs: [],
     gpuMs: [],
     gpuFrameMs: [],
+    gpuCullMs: [],
     pipelines: [],
     modules: [],
     segment: [],
@@ -931,6 +965,7 @@ export function buildReport(
       series.loafMs.push(round(r.loafMs[i]));
       series.gpuMs.push(round(r.gpuMs[i], 3));
       series.gpuFrameMs.push(round(r.gpuFrameMs[i], 3));
+      series.gpuCullMs.push(round(r.gpuCullMs[i], 4));
       series.pipelines.push(r.madeRender[i] + r.madeCompute[i]);
       series.modules.push(r.madeModules[i]);
       series.segment.push(r.segmentAt[i] - 1);
@@ -1042,7 +1077,14 @@ export function buildReport(
     // 17: `blocks`, our renderer's take of the map's blocks at the capture —
     // its draws are not in `counters.drawCalls`, which is Babylon's counter.
     // Nothing else changed meaning.
-    version: 17,
+    // 18: `gpu.cull` — our renderer's culls' GPU time, off timestamps on
+    // their own compute passes — with `gpuCullMs` in the series and on every
+    // hitch, and `SegmentStat.gpuCull`/`gpuCullSamples`. And a GPU reading
+    // is cleared when the ring laps its row, as the LoAF's has been since
+    // v9: before it a row not measured on this lap kept the last lap's, so a
+    // v17 capture over a ring that had lapped could carry `gpu.frame` and
+    // `gpu.mainPass` readings from outside its window.
+    version: 18,
     takenAt: new Date().toISOString(),
     reason,
     map: r.mapId,
@@ -1296,6 +1338,8 @@ function segmentStat(
   let meshes = 0;
   let gpu = 0;
   let gpuN = 0;
+  let cull = 0;
+  let cullN = 0;
   let sim = 0;
   let sims = 0;
   const kids = new Float64Array(SIM_CHILDREN.length);
@@ -1324,6 +1368,10 @@ function segmentStat(
       gpu += r.gpuFrameMs[i];
       gpuN++;
     }
+    if (r.gpuCullMs[i] > 0) {
+      cull += r.gpuCullMs[i];
+      cullN++;
+    }
   }
   const w = stats(wall, m);
   let seconds = 0;
@@ -1348,6 +1396,8 @@ function segmentStat(
     activeMeshes: Math.round(meshes / m),
     gpuFrame: gpuN > 0 ? round(gpu / gpuN, 3) : 0,
     gpuSamples: gpuN,
+    gpuCull: cullN > 0 ? round(cull / cullN, 4) : 0,
+    gpuCullSamples: cullN,
     sim:
       sims > 0
         ? {
@@ -1403,7 +1453,7 @@ function gpuFacts(
   n: number,
   cap: number,
 ): ProfileReport["gpu"] {
-  const over = (src: Float32Array | null) => {
+  const over = (src: Float32Array | null, digits = 3) => {
     let count = 0;
     if (src) {
       const scratch = new Float64Array(n);
@@ -1415,9 +1465,9 @@ function gpuFacts(
         const s = stats(scratch, count);
         return {
           n: count,
-          meanMs: round(s.mean, 3),
-          p95Ms: round(s.p95, 3),
-          maxMs: round(s.max, 3),
+          meanMs: round(s.mean, digits),
+          p95Ms: round(s.p95, digits),
+          maxMs: round(s.max, digits),
         };
       }
     }
@@ -1425,6 +1475,8 @@ function gpuFacts(
   };
   const whole = over(r.gpuFrameMs);
   const main = over(r.gpuMs);
+  // A cull is tens of microseconds: a tenth of one is the grain worth keeping.
+  const cull = over(r.gpuCullMs, 4);
   return {
     requested: r.gpuRequested,
     available: r.gpuAvailable,
@@ -1440,6 +1492,13 @@ function gpuFacts(
       meanMs: main.meanMs,
       p95Ms: main.p95Ms,
       maxMs: main.maxMs,
+    },
+    cull: {
+      timed: r.cullTimed,
+      samples: cull.n,
+      meanMs: cull.meanMs,
+      p95Ms: cull.p95Ms,
+      maxMs: cull.maxMs,
     },
   };
 }
@@ -1549,6 +1608,7 @@ function worstHitches(r: ProfileRing): HitchFrame[] {
       loafRenderMs: round(r.loafRenderMs[i]),
       gpuMs: round(r.gpuMs[i], 3),
       gpuFrameMs: round(r.gpuFrameMs[i], 3),
+      gpuCullMs: round(r.gpuCullMs[i], 4),
       drawCalls: r.drawCalls[i],
       activeMeshes: r.activeMeshes[i],
       meshWalkMs: round(r.meshWalkMs[i]),

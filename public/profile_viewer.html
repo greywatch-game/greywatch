@@ -856,6 +856,14 @@ function gpuRead(r) {
   };
 }
 
+/* Our renderer's culls' GPU time (`gpu.cull`, report version 18), or null
+   where the capture has no reading of it. It needs no browser flag, so it can
+   stand where `gpuRead` says the whole frame could not be measured. */
+function gpuCull(r) {
+  const c = r.gpu && r.gpu.cull;
+  return c && c.samples > 0 ? c : null;
+}
+
 /* The window's long-animation-frame totals, which are only readable from
    report version 9. Before it the ring never cleared a row's LoAF numbers when
    it lapped, so the totals carry every long frame the PROCESS ever saw — the
@@ -1126,6 +1134,18 @@ function renderReport(r) {
       gpu.state === "unmeasurable" ? "browser cannot" : "0 samples",
       gpu.state === "unmeasurable" || gpu.state === "ambiguous" ? "fault" : null));
   }
+  /* Our renderer's culls (report version 18): a part of the GPU frame, on
+     rows of their own, so it is a second tile and never a share of the first.
+     Absent where nothing timed them — no `?gpu`, an older capture, or a
+     window in which nothing was culled. */
+  const cull = gpuCull(r);
+  if (cull) {
+    stats.appendChild(tile(
+      "GPU cull", fmt(cull.meanMs * 1000, 0), " µs",
+      "p95 " + fmt(cull.p95Ms * 1000, 0) + " · max " + fmt(cull.maxMs * 1000, 0) +
+        " · " + cull.samples + " sampled",
+      "gpu"));
+  }
   const lt = loafTotals(r);
   if (lt) {
     stats.appendChild(tile(
@@ -1305,7 +1325,7 @@ function renderBench(r) {
   $("n-bench").textContent = notes.join(" · ");
   if (!seg) return;
   const head = el("tr");
-  for (const k of ["", "frames", "fps", "mean", "p95", "1% low", "tick", "render", "sim", "draws", "gpu"]) {
+  for (const k of ["", "frames", "fps", "mean", "p95", "1% low", "tick", "render", "sim", "draws", "gpu", "cull"]) {
     head.appendChild(el("th", null, k));
   }
   table.appendChild(head);
@@ -1324,6 +1344,8 @@ function renderBench(r) {
     tr.appendChild(el("td", "num", s.sim ? fmt(s.sim.mean, 2) + " ms" : "—"));
     tr.appendChild(el("td", "num", String(s.drawCalls)));
     tr.appendChild(el("td", "num", s.gpuSamples ? fmt(s.gpuFrame, 2) + " ms" : "—"));
+    // Our culls (report version 18), in microseconds: "—" where none landed.
+    tr.appendChild(el("td", "num", s.gpuCullSamples ? fmt(s.gpuCull * 1000, 0) + " µs" : "—"));
     table.appendChild(tr);
   };
   for (const g of seg.groups || []) row(g, "group");
@@ -1520,6 +1542,7 @@ function hitchRow(h, read, below) {
   w("rtt", fmt(h.renderTargetsMs, 2) + " ms");
   if (h.particlesMs != null) w("particles", fmt(h.particlesMs, 2) + " ms");
   if (GPU_OK && h.gpuFrameMs > 0) w("gpu", fmt(h.gpuFrameMs, 2) + " ms");
+  if (h.gpuCullMs > 0) w("cull", fmt(h.gpuCullMs * 1000, 0) + " µs");
   if (h.createdNear != null) w("compiled", h.createdOn + " here, " + h.createdNear + " within 2 frames");
   if (h.heapMb) w("heap", fmt(h.heapMb, 1) + " MB");
   det.appendChild(where);
@@ -1873,6 +1896,10 @@ function drawGpu(r, gpu) {
     (r.gpu && r.gpu.mainPass && r.gpu.mainPass.frames
       ? " The main pass alone is " + fmt(r.gpu.mainPass.meanMs, 3) +
         " ms — in this pipeline that is the final full-screen quad, not the scene."
+      : "") +
+    (gpuCull(r)
+      ? " Our culls' compute passes, inside it, are " + fmt(gpuCull(r).meanMs * 1000, 0) +
+        " µs mean over " + gpuCull(r).samples + " frames of their own."
       : "");
 
   hover(canvas, $("t-gpu"), n, X, (i) =>

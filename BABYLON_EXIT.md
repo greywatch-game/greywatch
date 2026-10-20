@@ -987,7 +987,9 @@ did.
     (`?bench=<map>&gpu`), against `FINDINGS.md` 52.
   - The desktop path's `gpu.frame` rise above goes to the GPU-side work after
     the exit, with the phone's. Separating the cull's own GPU time would need
-    a timestamp pair of its own around the compute pass. **The whole-step
+    a timestamp pair of its own around the compute pass — **built 2026-10-20**
+    as `gpu.cull` (`render/PassTimer.ts`), and it is 27-66 µs on the
+    desktop, so it is not the rise (`FINDINGS.md` 61). **The whole-step
     review named a second suspect**, the draw order (below, and
     `FINDINGS.md` 61).
 

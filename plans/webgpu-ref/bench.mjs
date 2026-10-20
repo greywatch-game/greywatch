@@ -39,6 +39,12 @@
  *   which thread the page's local match stepped on (`sim worker` or
  *   `sim page`, `BABYLON_EXIT.md` X2.5b, X2.5c); `--query simpage` asks for
  *   the page.
+ * - With `--gpu`, the GPU per group: `gpu.frame`'s mean over its sampled
+ *   rows and `gpu.cull`'s — our culls' compute passes, report version 18 —
+ *   medians over the runs, the cull's as a share of the frame, and each
+ *   one's samples. The two are sampled on different rows, so the share is a
+ *   ratio of means. `frame` reads 0 in a browser without
+ *   `--enable-unsafe-webgpu`; the cull needs no flag.
  * - `install`, from the URL to the first bench frame — `VERIFYING.md`'s free
  *   control: when the installs differ, the frame rates are not comparable.
  * - `--against f.json` (a previous `--out`): each group's median mean as a
@@ -165,6 +171,23 @@ for (const id of targets) {
         `${String(g.drawCalls).padStart(6)}  ${(g.spread * 100).toFixed(1).padStart(5)}%` +
         (g.spread > SPREAD_FLAG ? "  OVER 8%" : ""),
     );
+  }
+}
+
+// The GPU per group (`?gpu`): the whole frame and our culls inside it.
+if (GPU) {
+  console.log("\nthe GPU per group (median of the runs' means over their sampled rows, ms)");
+  console.log("map           group        frame  samples      cull  samples  cull/frame");
+  for (const id of targets) {
+    for (const k of GROUPS) {
+      const g = results[id].groups[k];
+      if (!g) continue;
+      console.log(
+        `${id.padEnd(13)} ${k.padEnd(9)} ${g.gpuFrame.toFixed(3).padStart(8)} ${String(Math.round(g.gpuSamples)).padStart(8)} ` +
+          `${g.gpuCull.toFixed(4).padStart(9)} ${String(Math.round(g.gpuCullSamples)).padStart(8)} ` +
+          `${(g.gpuFrame > 0 ? ((g.gpuCull / g.gpuFrame) * 100).toFixed(1) + "%" : "-").padStart(11)}`,
+      );
+    }
   }
 }
 
@@ -322,6 +345,10 @@ function summarise(id, runs) {
       render: med((g) => g.render),
       drawCalls: Math.round(med((g) => g.drawCalls)),
       gpuFrame: med((g) => g.gpuFrame),
+      gpuSamples: med((g) => g.gpuSamples),
+      // Our culls' GPU time (report version 18); 0 on an older capture.
+      gpuCull: med((g) => g.gpuCull ?? 0),
+      gpuCullSamples: med((g) => g.gpuCullSamples ?? 0),
       // The core's step (report version 14): null on a group that stepped
       // nothing, and on a capture from before the field.
       sim: per.every((g) => g.sim) ? med((g) => g.sim.mean) : null,

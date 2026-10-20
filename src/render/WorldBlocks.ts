@@ -94,6 +94,7 @@ import { type Cluster, cutClusters, type PieceSpan, type SurfaceArrays, withoutP
 import type { FrameUniforms } from "./frame";
 import { HostBindGroup } from "./HostBindGroup";
 import { InstanceCull, type InstanceTables } from "./InstanceCull";
+import type { PassTiming } from "./PassTimer";
 import type { BuiltPipeline, PipelineSpec } from "./PipelineCache";
 import type { FrameContext, Renderer } from "./Renderer";
 import { FRAME_TARGETS } from "./targets";
@@ -787,10 +788,14 @@ export class WorldBlocks {
   }
 
   /** As the main pass begins: this frame's culls, ahead of the draws. */
-  private readonly prepare = (frame: FrameUniforms, encoder: GPUCommandEncoder): void => {
+  private readonly prepare = (
+    frame: FrameUniforms,
+    encoder: GPUCommandEncoder,
+    timing: PassTiming | null,
+  ): void => {
     if (!this.culling) return;
-    this.cull?.dispatch(frame, encoder);
-    this.instances?.dispatch(frame, encoder);
+    this.cull?.dispatch(frame, encoder, timing);
+    this.instances?.dispatch(frame, encoder, timing);
   };
 
   /**

@@ -35,6 +35,7 @@ import {
 } from "./ClusterCull";
 import { closeness, CullCheck, type CullCheckSpec } from "./CullCheck";
 import type { FrameUniforms } from "./frame";
+import type { PassTiming } from "./PassTimer";
 import type { PipelineCache } from "./PipelineCache";
 import { INSTANCE_FORMS, INSTANCE_PROBE_WGSL } from "./wgsl/cullProbe";
 import {
@@ -197,9 +198,10 @@ export class InstanceCull {
   /**
    * Culls this frame's instances against `frame` and the reach and size gate,
    * recording the work into `encoder` — the host's, submitted ahead of the
-   * frame's draws. Once a frame, as the main pass begins.
+   * frame's draws. Once a frame, as the main pass begins; its one pass is
+   * timed when `timing` is handed (`gpu.cull`).
    */
-  dispatch(frame: FrameUniforms, encoder: GPUCommandEncoder): void {
+  dispatch(frame: FrameUniforms, encoder: GPUCommandEncoder, timing: PassTiming | null = null): void {
     if (!this.built || this.count === 0) return;
     const f = this.f32;
     const u = this.u32;
@@ -218,7 +220,7 @@ export class InstanceCull {
     openTests(this.mode, f, u);
     this.device.queue.writeBuffer(this.uniform, 0, this.bytes);
 
-    const pass = encoder.beginComputePass(PASS);
+    const pass = encoder.beginComputePass(timing ? timing.pass(PASS) : PASS);
     const passes = this.passes;
     pass.setPipeline(passes[0].pipeline);
     pass.setBindGroup(0, passes[0].group);
