@@ -1494,6 +1494,40 @@ floor its shading:
   Non-indexed draws over (record, corner): no limit, but every vertex is
   shaded once per triangle, about three times over, on a phone that is
   GPU-bound. (a), unless a map's counts break the budget.
+  - **The counts, measured 2026-10-20**, at max settings on all seven
+    maps off the real cut (`WorldBlocks.finish` wrapped in a scratch
+    script). The VERTEX is an index into its group's buffer — every surface
+    end to end, then the group's instanced parts (`finish`); the INSTANCE is
+    global, the blocks' identity 0 and every scatter instance after it:
+
+    | map | vertices, worst group | bits | instances + 1 | bits | sum | records |
+    | --- | --- | --- | --- | --- | --- | --- |
+    | Hollowmere | 1,127,702 | 21 | 917 | 10 | 31 | 5,315 |
+    | Greyfen | 1,148,398 | 21 | 2,133 | 12 | **33** | 83,846 |
+    | Coldharbour | 1,630,106 | 21 | 729 | 10 | 31 | 7,690 |
+    | Harrowmead | 868,180 | 20 | 2,125 | 12 | 32 | 59,995 |
+    | Sarab | 835,074 | 20 | 2,995 | 12 | 32 | 9,638 |
+    | Cinderhaven | 3,672,515 | 22 | 1,351 | 11 | **33** | 5,275 |
+    | Kurenai | 2,004,484 | 21 | 804 | 10 | 31 | 43,576 |
+
+    The worst group is the merged world's (`CEL_PALETTE`) on every map, and
+    it holds every set's instances too, so a split per group buys nothing;
+    folding the landform into its recipe's stream moves no maximum (no
+    landform group passes 163k vertices). Records, (instance, cluster) over
+    every instance, peak at 83,846 (17 bits).
+  - **Verdict: (a) as written does NOT fit.** Greyfen and Cinderhaven need
+    33 bits, Harrowmead and Sarab exactly 32, and one split for every map
+    34 (22 + 12). The product does not save it either: an index of
+    instance × group vertices + vertex reaches 116% of 2^32 on Cinderhaven.
+  - **What fits is (a) with the scatter addressed in its OWN region**: the
+    blocks' indices stay plain vertex numbers (instance 0, at most
+    3,603,508 surface vertices, 22 bits), and a scatter index sets the top
+    bit, then the instance, then the vertex counted from the group's
+    instanced parts (at most 69,007 a group, Cinderhaven's, 17 bits) —
+    1 + 12 + 17 = **30 bits** worst (Sarab's 2,994 instances, Cinderhaven's
+    parts), two to spare, decoded by shifts and a per-group base, no
+    divide. It keeps (a)'s indexed draws and post-transform cache; the cut
+    still asserts the budget and hands back what does not fit.
 - **Two things X3.4b left are settled here:**
   - the size gate per instance against per surface (a cone or a litter pile
     under 3 px now drops where Babylon drew it inside a block);
