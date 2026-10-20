@@ -1488,12 +1488,12 @@ export class Game {
     //
     // **The map's BLOCKS are no longer in this queue** (`BABYLON_EXIT.md`
     // X3.3), **nor is its LANDFORM** (X3.5): our renderer draws both AFTER
-    // all of it — the floor, the rim and the roads ahead of the group's
-    // alpha-tested meshes, the blocks at the end of them (`render/Renderer.ts`,
-    // `"beforeAlphaTest"` and `"opaque"`) — so the landform and the loose
-    // props are shaded before the buildings that hide them. What this sort
-    // still orders is what Babylon draws, and the cost of the blocks coming
-    // last is `FINDINGS.md` 61's open question.
+    // all of it, ahead of the group's alpha-tested meshes — the blocks and
+    // the scatter first and the floor, the rim and the roads after them
+    // (`render/Renderer.ts`, `"beforeAlphaTest"`) — so the floor behind a
+    // building fails the depth test before it shades. What this sort still
+    // orders is what Babylon draws; what is left of the cost of ours coming
+    // after it is `FINDINGS.md` 61's.
     this.scene.setRenderingOrder(0, (a, b) => {
       const eye = this.scene.activeCamera?.globalPosition;
       if (!eye) return 0;

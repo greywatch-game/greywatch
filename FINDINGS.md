@@ -2690,9 +2690,10 @@ landing, then the same rule offline for free.
 
 ---
 
-## 61. Our renderer draws the blocks AFTER Babylon's whole opaque queue, which may be what raised the desktop's GPU frame on Greyfen's path at X3.3c
+## 61. What is left of the desktop's GPU rise since our renderer took the blocks (X3.3c) and the landform (X3.5)
 
-**Status:** open; derived from the code, with one measurement behind it.
+**Status:** open, narrowed. Its first suspect, the draw ORDER, is settled
+and fixed (2026-10-19, below); what remains is measured and not explained.
 Found by the whole-step review of `BABYLON_EXIT.md` X3.3 (2026-10-14). It is
 GPU-side work, so it waits with the rest of that until the exit is complete
 (`BABYLON_EXIT.md`, "What this plan does not do"; finding 52).
@@ -2705,60 +2706,59 @@ rose 9% while the tick fell 14%. `?gpu` (`--max --gpu --runs 2`, before and
 after) put it on the GPU: `gpu.frame` 5.31 to 5.77 ms on the path, against
 5.60 to 5.55 on the vantages and 5.95 to 5.99 in the fight. The after
 includes the cluster cull, which no before had, and no timer separates the
-cull from the draws, so the step's record names the cull as the suspect.
+cull from the draws.
 
 **And again at X3.5, on Cinderhaven** (`BABYLON_EXIT.md` X3.5, a paired,
 alternating A/B with `?gpu`): taking the landform raised `gpu.frame` 4.38 to
 5.55 ms on the vantages and 5.19 to 6.27 on the path while the fight's tick
-fell 12.40 to 10.30. Part of it was the roads drawn after the floor, which
-0dd2d09 fixed by drawing a biased group first; 0.8-0.9 ms of `gpu.frame`
-remains. The floor was in Babylon's front-to-back queue before X3.5 and is
-one draw a recipe in cut order now, so the same question is open for the
-landform as for the blocks.
+fell 12.40 to 10.30. Drawing the roads before the floor (0dd2d09) took back
+part of it; 0.8-0.9 ms of `gpu.frame` remained.
 
-### What is derived from the code
+### The order, settled
 
-There is a second suspect, and it is the draw ORDER, not the cull.
-`Game` sorts rendering group 0's opaque queue front to back
-(`scene.setRenderingOrder(0, …)`), and the comment there argues that the
-ordering "is the whole of the win", because this scene's cost is pixels: a
-fragment is rejected before it shades only if whatever stands in front of it
-was drawn first. Since X3.3c the map's BLOCKS (the buildings, the main
-occluders) are not in that queue. Our renderer draws them at the END of the
-group's opaque and alpha-tested meshes (`render/Renderer.ts`, `"opaque"`),
-so the terrain, the roads and every loose prop are fully shaded first and
-the buildings are drawn over them. Inside our own draws the near-first bands
-order a recipe's clusters, but each recipe is one draw and the recipes do
-not interleave. Since X3.5 the terrain, the rim and the roads are OUR draws
-too, at `"beforeAlphaTest"` — still ahead of the blocks, because the turf
-lies on the floor and must follow it — so the argument stands, and the order
-between the landform and the blocks is now ours to choose rather than
-Babylon's. A path through Greyfen's streets, with buildings close on
-both sides, is where that would cost most, which fits the one segment that
-rose.
+Until 2026-10-19 the blocks were drawn at the END of group 0's opaque and
+alpha-tested lists and the landform ahead of the alpha-tested list, so the
+floor behind every building was shaded and then painted over: `Game`'s
+front-to-back sort no longer reached either. X3.3a had refused the group's
+START because the sky dome writes no depth and draws first; but
+`"beforeAlphaTest"` is already after the dome, so the blocks and the scatter
+now draw there, AHEAD of the landform (`render/WorldBlocks.ts`). A paired,
+alternating A/B against afa0327 (`bench.mjs --max --gpu --runs 2`, two
+invocations a side, ABAB on one dev server, 3440x1440; medians of four runs,
+the range beside) took `gpu.frame` down on every path and fight:
 
-X3.3a put the draw point there on purpose. The group's START was refused
-because the sky dome writes no depth, draws first, and stands at 600 m, so a
-block past 600 m drawn before it would be painted over (`docs/rendering.md`,
-"Our renderer's frame"). That argument is about maps whose `fogEnd` passes
-600 m (Cinderhaven's is 1,250 m). Greyfen's is 78 m.
+| map | part | `gpu.frame` before | after | mean frame before | after |
+| --- | --- | --- | --- | --- | --- |
+| Greyfen | path | 6.05 (5.99-6.11) | 5.70 (5.54-5.83) | 6.38 | 6.08 |
+| Greyfen | vantages | 5.69 | 5.47 | 6.00 | 5.79 |
+| Greyfen | fight | 6.86 | 6.48 | 7.50 | 7.07 |
+| Sarab | path | 4.22 (4.17-4.26) | 3.95 (3.84-3.95) | 4.70 | 4.35 |
+| Sarab | vantages | 3.84 | 3.66 | 4.16 | 3.97 |
+| Sarab | fight | 4.32 | 4.05 | 9.04 | 9.15 |
+| Cinderhaven | path | 5.98 (5.89-6.03) | 5.74 (5.73-5.76) | 6.44 | 6.10 |
+| Cinderhaven | vantages | 5.38 | 5.32 | 5.80 | 5.69 |
+| Cinderhaven | fight | 5.69 | 5.57 | 7.60 | 7.70 |
 
-### How to settle it
+The largest single holds were Greyfen's `crossing` (6.13 to 5.52) and Sarab's
+`alley` (4.02 to 3.47); Cinderhaven's `ground` and Greyfen's `canopy` and
+`ground` rose 1-2%, inside their ranges. The draws are identical and so are
+the fight hashes. The two fights on the CPU-bound maps (Sarab, Cinderhaven)
+moved +1.3%, inside the runs' spread.
 
-- **Separate the order from the cull, on Greyfen**, where drawing ours at the
-  group's START is legal (its `fogEnd` is far inside the sky dome). In a
-  scratch build, queue our draw where the group begins instead of where its
-  opaque meshes end, and take `?gpu` on the path (`bench.mjs --max --gpu
-  --runs 2`, the same protocol as X3.3c). If `gpu.frame` falls back toward
-  5.31 ms, the order is the cost; if it does not, the cull is.
-- **If it is the cull**, a timestamp pair around its compute pass prices it
-  alone (`BABYLON_EXIT.md` X3.3c, "Owed onward").
-- **If it is the order**, the fix is a draw point that puts the blocks ahead
-  of what they hide without the sky painting over them — e.g. drawing the sky
-  last behind the world rather than first — which is the GPU-side work this
-  plan defers, and which the near-first bands were kept for.
-- **The phone's `gpu.frame` on Greyfen** (finding 52) is the number this
-  matters for; the desktop only says where to look.
+### What is left
+
+- **Greyfen's path** got back 0.35 ms against X3.3c's 0.46 ms rise. The two
+  were taken in different sessions, so they are not one subtraction, but the
+  order was most of it; the cull's compute pass is the suspect for the rest.
+- **Cinderhaven** got back 0.24 ms on the path and 0.27 at the `crossing`,
+  of the 0.8-0.9 X3.5 left. Babylon drew the floor patch by patch in its
+  front-to-back queue; ours draws it as one draw a recipe, its clusters in
+  near-first bands, so the order WITHIN the landform is no longer the
+  question it was, and the cull is again the first suspect.
+- **How to settle it**: a timestamp pair around the cull's compute pass
+  prices it alone (`BABYLON_EXIT.md` X3.3c, "Owed onward").
+- **The phone's `gpu.frame`** on Greyfen and Cinderhaven (finding 52) is the
+  number this matters for; the desktop only says where to look.
 
 ## 62. Sections of grass flicker on an Intel Xe-LPG laptop, and have since before the Babylon exit
 

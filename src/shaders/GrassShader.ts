@@ -801,8 +801,10 @@ export function createGrassMaterial(scene: Scene, name: string): ShaderMaterial 
  * over and the opaque list has no order in which the terrain comes first. The
  * floor and the roads are OUR renderer's since `BABYLON_EXIT.md` X3.5, and it
  * draws them at the one point that keeps this true — after the opaque list and
- * before this one (`render/Renderer.ts`, `"beforeAlphaTest"`); the blocks it
- * draws after this list, which a sheet on the floor does not lie over. And it
+ * before this one (`render/Renderer.ts`, `"beforeAlphaTest"`), the blocks
+ * there too and ahead of the floor, as Babylon's opaque list put them before
+ * this one — so where the sheet floats over a slab laid level with the floor,
+ * it blends over the slab's edge, as it always did under Babylon. And it
  * writes NO depth: the floor under it already wrote the surface, the blades over it
  * are drawn before it and test it out where they stand, and a sheet writing a
  * depth wherever it is a hundredth covered would hide every coplanar mark laid

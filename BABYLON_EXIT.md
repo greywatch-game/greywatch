@@ -1016,7 +1016,8 @@ and c were reviewed together after all three had landed.
   before the buildings that hide them. Greyfen's `fogEnd` (78 m) is inside
   the sky dome, so drawing ours at the group's start is legal there and
   separates the order from the cull. That is GPU-side work, deferred with
-  the rest of it.
+  the rest of it. (Settled at X3.5, "The blocks ahead of the landform": the
+  order was most of Greyfen's rise.)
 - **Tidy.** `WorldCulling.pass` folded back into `offer` (its second caller
   went at X3.3b), `FrameUniformBuffer`'s type-only `write` gone,
   `WorldBlocks.finish` sums each group's vertices once, and `ClusterCull`
@@ -1367,14 +1368,51 @@ fixes, 0dd2d09 the measurement's fix).
     Cinderhaven, where the desktop's GPU rose. Read it as its tick and its
     `gpu.frame` (`?bench=<map>&gpu`).
   - **The landform's remaining GPU rise** (Cinderhaven's vantages and path,
-    0.8-0.9 ms of `gpu.frame` on the desktop after 0dd2d09) goes to
-    `FINDINGS.md` 61 with the blocks'. The draw order is ours to choose now,
-    and front-to-back is what Babylon's queue gave the floor.
+    0.8-0.9 ms of `gpu.frame` on the desktop after 0dd2d09) went to
+    `FINDINGS.md` 61 with the blocks'. The order half is settled below; what
+    is left (about 0.6 ms on Cinderhaven's path) stays there, the cull its
+    first suspect.
   - **The bank's old rows are stale.** X3.4 moved the scatter and the GPU
     driver moved (596.21 to 610.88), so 33 of the 47 rows banked before X3.5
     fail a plain `--check` on an unchanged tree. Re-taking them is the
     user's call. Until then a step is graded against a BEFORE taken with
     `--keep` at its parent (`plans/webgpu-ref/README.md` now says so).
+
+- **The blocks ahead of the landform** (2026-10-19, after the record above).
+  `"beforeAlphaTest"` is already after the sky dome, which was X3.3a's one
+  objection to drawing the blocks early, so `WorldBlocks` now draws the
+  blocks, the scatter and then the landform there, as ONE `FrameDraw`; a
+  group is (recipe, LAYER), and nothing of ours draws at `"opaque"`. The
+  floor behind a building fails the depth test before it shades.
+  - **Measured**, a paired, alternating A/B against afa0327 (`bench.mjs
+    --max --gpu --runs 2`, two invocations a side, ABAB on one dev server,
+    3440x1440, installs within each other's spread). `gpu.frame`, median of
+    four runs a side:
+
+    | map | vantages | path | fight |
+    | --- | --- | --- | --- |
+    | Greyfen | 5.69 to 5.47 | 6.05 to 5.70 | 6.86 to 6.48 |
+    | Sarab | 3.84 to 3.66 | 4.22 to 3.95 | 4.32 to 4.05 |
+    | Cinderhaven | 5.38 to 5.32 | 5.98 to 5.74 | 5.69 to 5.57 |
+
+    The mean frame fell 4.7-7.5% on every path (Greyfen 6.38 to 6.08, Sarab
+    4.70 to 4.35, Cinderhaven 6.44 to 6.10); the CPU-bound fights on Sarab
+    and Cinderhaven rose 1.3%, inside their spread. Every path's range of
+    four runs clears the other side's. Draws and fight hashes unchanged.
+    `FINDINGS.md` 61 has the per-segment table.
+  - **The picture.** `bank.mjs --check --keep` graded against a BEFORE kept
+    at afa0327 in the same session: 60 of 61 within the floor, the worst
+    equal-depth ties at a building's foot (Sarab's `shelf` and `wadi`,
+    0.007/255). The one over is Greyfen's `crossing` (0.056/255): the turf
+    now lands after the blocks, so its sheet blends over the edge of a grave
+    ledger laid level with the floor. That is BABYLON's picture — the same
+    region under `?babylonworld` matches the after to 0.002/255 and the
+    before by 0.96 — which X3.3c to X3.5 had lost by drawing the blocks after
+    the turf.
+  - **X3.5b's main pass** is no longer two draws a recipe: nothing of
+    Babylon's comes between the blocks and the landform, so the fold's
+    stream is one in the main pass as in every other, if it keeps the
+    blocks ahead of the landform (its "What", below).
 
 ### X3.5b — The fold: one draw a recipe, blocks and scatter together — **M–L** (decision)
 
@@ -1399,10 +1437,10 @@ into X3.6:
   same draws: thousands a frame.
 
 **What.** Every recipe draws ONCE per pass, the blocks, the scatter and the
-terrain (X3.5) in one stream — **except the main pass, which draws it once a
-POINT**: the landform must be drawn before group 0's alpha-tested list, whose
-turf writes no depth, and the blocks after it (X3.5), so a recipe at both
-points is two draws there, out of the one stream:
+terrain (X3.5) in one stream — **the main pass included**, at
+`"beforeAlphaTest"` (X3.5, "The blocks ahead of the landform"), so long as
+the stream keeps the blocks ahead of the landform, which is what spares the
+floor its shading:
 - The scatter's variant parts are cut into clusters as the blocks are
   (`clusters.ts`), each part a run of clusters in its set's own frame.
 - The instance cull keeps its per-instance tests and then expands each

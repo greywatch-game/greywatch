@@ -3178,11 +3178,12 @@ pass is not restarted between them, and in this order every frame:
   order holds every frame. **The LANDFORM is drawn here** — the floor, the
   rim and the road merge — because the turf is a blend on the alpha-tested
   list that writes no depth and must land on a floor already drawn ("The
-  turf", above). Nothing else is: the blocks stay at `"opaque"`, where X3.3a
-  put them, and nothing on the alpha-tested list lies over them.
+  turf", above). **So are the blocks and the scatter, AHEAD of the
+  landform** (since X3.5's measurement): the point is after the sky dome, so
+  the dome's objection to the group's start (below) does not reach it, and a
+  building drawn first spares the floor behind it its shading.
 - **`"opaque"`: where the group's opaque and alpha-tested meshes end**, before
-  anything blended in it. **Every other opaque draw of ours goes here, and
-  none goes later**, because
+  anything blended in it. **No opaque draw of ours goes later**, because
   the blended surfaces write no depth: an opaque wall drawn after the
   glazing or the water in front of it paints over them. The point is the
   FIRST of three things Babylon's `RenderingGroup.render` does after its
@@ -3208,15 +3209,22 @@ clouds), never on the opaque list**, or the floor paints over it every frame —
 a rule anyone adding a decal, a mark or a sheet on the ground can break
 without touching the renderer (`CLAUDE.md` states it). The sky dome is the one
 deliberate case: it writes no depth, draws first, and is MEANT to be painted
-over by everything, ours included. The clouds, on the alpha-tested list, now
-land after our landform and BEFORE our blocks (since X3.3 the blocks have
-drawn after them), which their 7 km depth makes harmless: a block nearer than
-that wins the depth test whichever draws first. In the GPU's time it changes
-more: `Game`'s front-to-back sort no longer reaches the blocks or the
-landform, so the loose props, then the landform, are shaded before the
-buildings that hide them (`FINDINGS.md` 61, open). Drawing ours at the group's START instead was
-weighed and refused: the sky dome writes no depth and draws first, at a
-600 m radius, so a block past 600 m drawn before it would be painted over.
+over by everything, ours included. The clouds, on the alpha-tested list,
+land after our blocks and our landform, which their 7 km depth makes
+harmless: a surface nearer than that wins the depth test whichever draws
+first. **The turf lands after the blocks too**, as it did when Babylon's
+opaque list drew them: where its sheet floats over a slab laid level with the
+floor, it blends over the slab's edge (Greyfen's `crossing` row, a grave
+ledger). From X3.3c to X3.5 the blocks drew after the turf and hid that; the
+order since puts back Babylon's picture (the row against `?babylonworld`). In
+the GPU's time the order is the point: `Game`'s front-to-back sort no longer
+reaches the blocks or the landform, so the loose props are shaded before the
+buildings that hide them, but the floor no longer is — measured at X3.5, the
+blocks drawn ahead of the landform took 4-7% off `gpu.frame` on the paths of
+Greyfen, Sarab and Cinderhaven (`FINDINGS.md` 61 holds what is left). Drawing
+ours at the group's START was weighed and refused: the sky dome writes no
+depth and draws first, at a 600 m radius, so a block past 600 m drawn before
+it would be painted over.
 
 **The attachments are stated ONCE** (`render/targets.ts`, `FRAME_TARGETS`).
 A pipeline is compiled AHEAD of the frame that draws with it, so its formats
@@ -3389,25 +3397,26 @@ probes and the lamps' atlas — until X3.6 moves those passes.
   hands over nothing** (`Game` passes no `onSurface`): its blocks are
   unmerged, and its terrain brush rewrites the floor's meshes in place, which
   a copy cut once could not follow.
-- **`render/WorldBlocks.ts` draws one GROUP per cel recipe A POINT** — the
-  landform's at `"beforeAlphaTest"`, the blocks' at `"opaque"`, so the rim
-  (which wears the pines' material) never shares a group, or the scatter's
-  instanced parts, with a block: every surface of the group end to end on
+- **`render/WorldBlocks.ts` draws one GROUP per cel recipe A LAYER** — the
+  blocks' and the landform's, so the rim (which wears the pines' material)
+  never shares a group, or the scatter's instanced parts, with a block —
+  every surface of the group end to end on
   one set of vertex buffers (an attribute a surface lacks but the variant
   reads is zeros, which is what Babylon's empty buffer reads), one pipeline,
   one material, the identity `world` at group 2, and ONE plain `drawIndexed`
   over the group's whole range of the cull's indices — never an indirect draw
-  (below). **The two points are ONE cut, one cull, one cluster list and one
-  index buffer**, two `FrameDraw`s each drawing its own groups, so X3.5b's
-  fold is one draw a POINT — never one a pass, since the turf comes between
-  them; a point no group is at queues nothing.
+  (below). **The two layers are ONE cut, one cull, one cluster list and one
+  index buffer**, drawn by ONE `FrameDraw` at `"beforeAlphaTest"` — the
+  blocks, the scatter, then the landform — so nothing of Babylon's comes
+  between them, and X3.5b's fold may be one stream in the main pass as in
+  every other, if it keeps the blocks ahead of the landform.
 - **A recipe's DEPTH BIAS is its pipeline's** (`CelRecipe.depthBias`, Babylon's
   `zOffsetUnits`, `PipelineState.depthBias`), asked for by `WorldBlocks` with
   the recipe — so the roads' `ROAD_DEPTH_UNITS` (-8) is drawn by our side as
   by Babylon's, and the roads are the first world materials it reaches.
   `plans/webgpu-ref/shaders.mjs` builds every biased (shape, bias) a page
   carries as well as every shape unbiased. **A biased group is DRAWN first
-  at its point** (`WorldBlocks.drawClusters`): the bias decides which surface
+  in its layer** (`WorldBlocks.drawClusters`): the bias decides which surface
   wins and the order only what is shaded, so the floor under a road fails
   the depth test before it shades rather than being shaded and painted over.
   It is a cost and never a picture: on Cinderhaven the floor drawn first cost

@@ -42,13 +42,16 @@
  *   is laid OVER goes here: that list is where a blend that must land after
  *   the surface under it is put (the turf, `GrassSystem`; the clouds), and
  *   the turf writes no depth of its own — so the FLOOR it lies on must be in
- *   the depth buffer, and in the picture, before it draws.
+ *   the depth buffer, and in the picture, before it draws. The world's other
+ *   opaque draws go here too, AHEAD of the floor (`WorldBlocks`): the point
+ *   is after the sky dome, which writes no depth, and a building drawn
+ *   before the floor behind it spares that floor its shading.
  * - `"opaque"`: after the group's opaque and alpha-tested meshes and before
- *   anything blended in it — its particles and its transparent meshes. Every
- *   other OPAQUE draw goes here, and no opaque draw goes later, because the
- *   blended surfaces write no depth: an opaque wall drawn after the glazing
- *   or the water in front of it paints over them, and one drawn after a
- *   particle in front of it paints over the particle.
+ *   anything blended in it — its particles and its transparent meshes. No
+ *   OPAQUE draw goes later, because the blended surfaces write no depth: an
+ *   opaque wall drawn after the glazing or the water in front of it paints
+ *   over them, and one drawn after a particle in front of it paints over
+ *   the particle.
  * - `"afterGroup"`: after the group has been queued whole, and before the
  *   next group (the viewmodel's).
  */

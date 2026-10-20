@@ -13,8 +13,8 @@
  * and under no parent, never written after its build (`updatable` is a
  * breakable pane's), on the layer mask every camera sees, and on a cel
  * material that keeps a recipe (`CelMaterialFactory.celRecipe`: no glazing,
- * no cloth, no emissive) — and the landform is drawn by our side ahead of
- * group 0's alpha-tested meshes, the blocks after them (`WorldBlocks`'s
+ * no cloth, no emissive) — and both are drawn by our side ahead of group
+ * 0's alpha-tested meshes, the blocks before the landform (`WorldBlocks`'s
  * header says why); nothing is taken from an EDITOR build, which `Game`
  * hands no `onSurface` — its blocks are unmerged, and its brush rewrites the
  * floor's meshes in place — and every other surface stays Babylon's in every
