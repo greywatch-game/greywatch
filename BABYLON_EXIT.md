@@ -1365,52 +1365,55 @@ fixes, 0dd2d09 the measurement's fix).
   - `npm run corecheck`, `npm run build` and `npm run parity` (all eight
     maps, every scene ready on frame 1) pass.
 - **Owed onward.**
-  - **The phone's reading — taken 2026-10-20 as X3.5b's phone BEFORE**, at
-    the blocks-ahead-of-the-landform order below (39d84ea's code; the
-    capture states no commit, and 67b6ad6 and 743de3e differ by a comment).
-    X0.3, one run a map, back to back 05:08-05:25 UTC: Greyfen, Harrowmead,
-    Sarab. **The settings X3.5b's AFTER must repeat**: `?bench=<map>&gpu`
-    with the unsafe-WebGPU flag (`frameMeasurable`, 4,400-5,500 samples a
-    run), render scale 0.5, cap 60, shadows, grass, Trees and glow `low`,
-    volumetrics, GI, ground relief and FXAA off, **blur and grain OFF**
-    (`FINDINGS.md` 52 had both on, so its frames are not this table's), the
-    minimap on. The backing store read at save was **1170x540 on Greyfen and
-    1170x618 on the other two**, in an 832x384 window on all three: Greyfen's
-    is the canvas that window makes, and Harrowmead's and Sarab's is not —
-    their canvas had not followed the window (about 440 CSS pixels tall in a
-    384-pixel window), so they may have shaded up to 14% more rows, and an
-    at-save reading cannot say what the runs were drawn at. Report version
-    18 files the size of every frame (`viewport`, `docs/profiling.md`). Fight hashes `83e8e74ef36916ba`, `3ae90f2f08fb0643`,
-    `986c2e35557fb679`. "GPU" is `gpu.frame`'s mean over its samples.
+  - **The phone's reading — X3.5b's phone BEFORE, taken 2026-10-21** on
+    the deployed v18 build (3b9be6c: the blocks ahead of the landform, the
+    cull timer, a phone's run held for a tap and a settled fullscreen
+    canvas). X0.3, a thrown-away warm-up run, then one run a map back to
+    back 03:45-04:02 UTC: Greyfen, Harrowmead, Sarab. **The settings X3.5b's
+    AFTER must repeat**: `?bench=<map>&gpu` with the unsafe-WebGPU flag
+    (`frameMeasurable`, 4,500-6,300 samples a run), render scale 0.5, cap
+    60, shadows, grass, Trees and glow `low`, volumetrics, GI, ground relief
+    and FXAA off, **blur and grain OFF** (`FINDINGS.md` 52 had both on, so
+    its frames are not this table's), the minimap on. **Every frame of all
+    three was drawn at one matched size** (`viewport`: 1170x540 in an
+    832x384 window, `sizes` 1, `staleFrames` 0). Fight hashes
+    `83e8e74ef36916ba`, `3ae90f2f08fb0643`, `986c2e35557fb679`. "GPU" is
+    `gpu.frame`'s mean over its samples; "cull" is `gpu.cull`'s.
 
-    | map | part | mean | p95 | 1% low | tick | render | draws | GPU |
-    | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-    | Greyfen | vantages | 18.4 | 35.0 | 58.5 | 4.97 | 3.48 | 34 | 13.9 |
-    | Greyfen | path | 20.9 | 50.7 | 72.9 | 5.37 | 3.63 | 47 | 17.1 |
-    | Greyfen | fight | 24.9 | 64.4 | 85.1 | 11.96 | 8.66 | 234 | 19.0 |
-    | Harrowmead | vantages | 23.6 | 60.4 | 94.0 | 6.47 | 4.25 | 46 | 19.0 |
-    | Harrowmead | path | 26.2 | 66.2 | 99.0 | 6.47 | 4.17 | 50 | 21.8 |
-    | Harrowmead | fight | 28.0 | 68.4 | 94.9 | 11.35 | 7.32 | 156 | 22.6 |
-    | Sarab | vantages | 17.0 | 17.9 | 38.8 | 6.05 | 4.38 | 53 | 11.9 |
-    | Sarab | path | 17.4 | 23.0 | 49.5 | 6.32 | 4.41 | 54 | 12.5 |
-    | Sarab | fight | 22.9 | 32.6 | 63.5 | 19.11 | 14.89 | 320 | 16.0 |
+    | map | part | mean | p95 | 1% low | tick | render | draws | GPU | cull |
+    | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+    | Greyfen | vantages | 18.0 | 32.7 | 55.6 | 4.71 | 3.29 | 34 | 13.2 | 0.27 |
+    | Greyfen | path | 19.4 | 40.1 | 61.1 | 5.23 | 3.56 | 47 | 15.8 | 0.26 |
+    | Greyfen | fight | 23.7 | 61.9 | 78.5 | 11.15 | 8.09 | 234 | 17.7 | 0.34 |
+    | Harrowmead | vantages | 19.5 | 42.9 | 70.1 | 5.61 | 3.75 | 49 | 14.6 | 0.34 |
+    | Harrowmead | path | 22.6 | 53.2 | 77.8 | 6.47 | 4.15 | 52 | 18.0 | 0.35 |
+    | Harrowmead | fight | 25.8 | 61.1 | 79.5 | 11.13 | 7.24 | 162 | 20.4 | 0.47 |
+    | Sarab | vantages | 17.0 | 18.5 | 42.5 | 6.28 | 4.57 | 56 | 11.3 | 0.46 |
+    | Sarab | path | 16.7 | 18.1 | 23.6 | 6.22 | 4.35 | 56 | 11.1 | 0.39 |
+    | Sarab | fight | 22.7 | 36.1 | 63.1 | 18.34 | 14.23 | 333 | 15.6 | 0.57 |
 
     The phone is GPU-bound on every part but Sarab's fight: `gpu.frame` is
-    2-3.4x the tick on the look parts and 1.6-2x in Greyfen's and
-    Harrowmead's fights, while Sarab's fight is the CPU (a 19.1 ms tick
-    against 16.0 of GPU; its p95 is 32.6 against X0.4's target of 25).
-    `draws` is Babylon's counter and does not see ours. Every run's
-    heaviest eighth is its last, the fight (GPU by eighths: Greyfen 13.7 to
-    20.4, Harrowmead 15.8-24.6, Sarab 10.8 to 17.7), so heat and the fight
-    are not separable in one run. **What is short of the protocol**: one
-    run a map rather than two, no stated warm-up before Greyfen, and
-    Harrowmead's and Sarab's stale canvases. **This BEFORE is re-taken on a
-    v18 build**, which holds a phone's run for a tap and a fullscreen,
-    settled canvas before it measures (`docs/profiling.md`), with a
-    thrown-away warm-up, then two runs a map in this order, every group's
-    `viewport` a single matched size (`staleFrames` 0, `sizes` 1, the
-    1170x540 an 832x384 window makes); X3.5b's AFTER repeats it the same
-    way.
+    2.5-3x the tick on the look parts and 1.6-1.8x in Greyfen's and
+    Harrowmead's fights, while Sarab's fight is the CPU (an 18.3 ms tick
+    against 15.6 of GPU; its p95 is 36.1 against X0.4's target of 25).
+    `draws` is Babylon's counter and does not see ours. **Our culls are
+    1.9-3.9% of the phone's `gpu.frame`** (0.26-0.57 ms), against 0.5-1.2%
+    on the desktop. Every run's heaviest eighth is still its last, the
+    fight (GPU by eighths: Greyfen 13.6-20.1, Harrowmead 13.9-20.5, Sarab
+    10.7-17.8), so heat and the fight are not separable in one run.
+
+    **The provisional reading it replaces** (2026-10-20, 39d84ea's code, one
+    run a map, no warm-up) drew Harrowmead and Sarab on a canvas that had
+    not followed its window, 1170x618 in the same 832x384 window: about 14%
+    more rows, squashed into a narrower view, which is why their draws rise
+    here (46 to 49 on Harrowmead's vantages, 320 to 333 in Sarab's fight)
+    while their GPU fell (Harrowmead's vantages 19.0 to 14.6, path 21.8 to
+    18.0). **Greyfen is the session-to-session reading**: one matched
+    1170x540 both times, the same draws, and `gpu.frame` 13.9/17.1/19.0
+    then against 13.2/15.8/17.7 now, 5-8% apart with no change to what it
+    draws. So **an X3.5b AFTER on the phone is a difference only past about
+    8%** unless it is taken in one session beside a BEFORE. **What is short
+    of the protocol**: one run a map rather than two.
   - **The landform's remaining GPU rise** (Cinderhaven's vantages and path,
     0.8-0.9 ms of `gpu.frame` on the desktop after 0dd2d09) went to
     `FINDINGS.md` 61 with the blocks'. The order half is settled below; what
